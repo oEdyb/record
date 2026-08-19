@@ -15,8 +15,13 @@ import type {
 	ZoomRegion as LegacyZoomRegion,
 } from "@/components/video-editor/types";
 import { getZoomScale } from "@/components/video-editor/types";
-import type { AxcutZoomRegion } from "@/lib/ai-edition/schema";
-import { findDominantRegion } from "@/lib/zoomMath/zoomRegionUtils";
+import { resolvePlaybackSegments } from "@/lib/ai-edition/document/timeline";
+import type { AxcutClip, AxcutTrimRange, AxcutZoomRegion } from "@/lib/ai-edition/schema";
+import {
+	buildZoomVisualEnvelopes,
+	findDominantRegion,
+	type ZoomVisualEnvelope,
+} from "@/lib/zoomMath/zoomRegionUtils";
 import { computeZoomTransform } from "@/lib/zoomMath/zoomTransform";
 
 export interface ZoomPreviewTransform {
@@ -31,6 +36,77 @@ export const IDENTITY_ZOOM_TRANSFORM: ZoomPreviewTransform = {
 	translateYPercent: 0,
 };
 
+export interface ZoomPlaybackSegment {
+	startMs: number;
+	endMs: number;
+}
+
+/**
+ * Keep the browser preview on the same per-clip/per-trim region slice that the
+ * native compositor receives. Raw timeline time stays unchanged; only regions
+ * outside the active kept segment are removed from connected-pan matching.
+ */
+export function buildZoomPlaybackSegments(
+	clips: AxcutClip[],
+	trimRanges: AxcutTrimRange[],
+): ZoomPlaybackSegment[] {
+	return [...clips]
+		.sort((left, right) => left.timelineStartSec - right.timelineStartSec)
+		.flatMap((clip) =>
+			resolvePlaybackSegments([clip], trimRanges).map((segment) => ({
+				startMs: (clip.timelineStartSec + segment.sourceStartSec - clip.sourceStartSec) * 1_000,
+				endMs:
+					(clip.timelineStartSec +
+						(segment.sourceEndSec ?? segment.sourceStartSec) -
+						clip.sourceStartSec) *
+					1_000,
+			})),
+		);
+}
+
+function regionsInPlaybackSegment(regions: AxcutZoomRegion[], segment: ZoomPlaybackSegment) {
+	return regions.flatMap((region) => {
+		const startMs = Math.max(region.startMs, segment.startMs);
+		const endMs = Math.min(region.endMs, segment.endMs);
+		return endMs > startMs ? [{ ...region, startMs, endMs }] : [];
+	});
+}
+
+function regionsInActivePlaybackSegment(
+	regions: AxcutZoomRegion[],
+	virtualTimeMs: number,
+	segments: ZoomPlaybackSegment[],
+) {
+	const active = segments.find(
+		(segment, index) =>
+			virtualTimeMs >= segment.startMs &&
+			(virtualTimeMs < segment.endMs ||
+				(index === segments.length - 1 && virtualTimeMs === segment.endMs)),
+	);
+	return active ? regionsInPlaybackSegment(regions, active) : [];
+}
+
+/**
+ * Build the timeline's passive motion bands from the same kept playback
+ * segments that preview uses. Clip and trim boundaries are hard barriers: a
+ * nearby Zoom on the other side cannot look connected when preview/export
+ * resolve it as a separate passage.
+ */
+export function buildZoomTimelineEnvelopes(
+	regions: AxcutZoomRegion[],
+	segments?: ZoomPlaybackSegment[],
+): ZoomVisualEnvelope[] {
+	if (segments === undefined) return buildZoomVisualEnvelopes(regions);
+	if (segments.length === 0) return [];
+	return segments.flatMap((segment) =>
+		buildZoomVisualEnvelopes(regionsInPlaybackSegment(regions, segment)).flatMap((envelope) => {
+			const startMs = Math.max(segment.startMs, envelope.startMs);
+			const endMs = Math.min(segment.endMs, envelope.endMs);
+			return endMs > startMs ? [{ ...envelope, startMs, endMs }] : [];
+		}),
+	);
+}
+
 const UNIT_STAGE = { width: 1, height: 1 };
 const UNIT_MASK = { x: 0, y: 0, width: 1, height: 1 };
 
@@ -44,6 +120,8 @@ function toLegacyZoomRegion(region: AxcutZoomRegion): LegacyZoomRegion {
 		focusMode: region.focusMode,
 		rotationPreset: region.rotationPreset,
 		customScale: region.customScale,
+		motionStyle: region.motionStyle,
+		motionSpeed: region.motionSpeed,
 		source: region.source,
 	};
 }
@@ -54,22 +132,27 @@ function toLegacyZoomRegion(region: AxcutZoomRegion): LegacyZoomRegion {
  * coordinate space as `zoomRegion.startMs`/`endMs` (the timeline shown in
  * the ruler, not raw source-media time).
  *
- * `playbackRate` scales the zoom-in/out transition windows in source-time
- * so the transition keeps its authored wall-clock duration inside speed
- * regions. Defaults to 1 (no scaling).
+ * Zoom transition windows stay in source time, matching native preview and
+ * export. A speed region speeds the Zoom together with the recorded content.
  */
 export function computeZoomPreviewTransform(
 	zoomRegions: AxcutZoomRegion[],
 	virtualTimeMs: number,
 	cursorTelemetry?: CursorTelemetryPoint[],
-	playbackRate = 1,
+	playbackSegments?: ZoomPlaybackSegment[],
 ): ZoomPreviewTransform {
 	if (zoomRegions.length === 0) return IDENTITY_ZOOM_TRANSFORM;
 
-	const legacyRegions = zoomRegions.map(toLegacyZoomRegion);
+	const activeRegions =
+		playbackSegments === undefined
+			? zoomRegions
+			: regionsInActivePlaybackSegment(zoomRegions, virtualTimeMs, playbackSegments);
+	const legacyRegions = activeRegions.map(toLegacyZoomRegion);
 	const dominant = findDominantRegion(legacyRegions, virtualTimeMs, {
 		cursorTelemetry,
-		playbackRate,
+		// Keep nearby regions at full scale and pan between their focal points.
+		// This avoids a needless zoom-out/zoom-in pulse during one short action.
+		connectZooms: true,
 	});
 	if (!dominant.region || dominant.strength <= 0) return IDENTITY_ZOOM_TRANSFORM;
 

@@ -193,6 +193,18 @@ describe("axcut-schema v7", () => {
 		}
 	});
 
+	it("zoomRegionSchema accepts only editor-visible motion speeds", () => {
+		const base = {
+			id: "z_speed",
+			startMs: 0,
+			endMs: 1000,
+			depth: 2,
+			focus: { cx: 0.5, cy: 0.5 },
+		};
+		expect(zoomRegionSchema.parse({ ...base, motionSpeed: 1.25 }).motionSpeed).toBe(1.25);
+		expect(() => zoomRegionSchema.parse({ ...base, motionSpeed: 1.1 })).toThrow();
+	});
+
 	it("legacyEditorSchema accepts arbitrary passthrough keys", () => {
 		const legacy = legacyEditorSchema.parse({
 			wallpaper: "/wallpapers/wallpaper1.jpg",

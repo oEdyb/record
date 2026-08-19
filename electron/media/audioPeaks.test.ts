@@ -1,9 +1,10 @@
 // @vitest-environment node
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ffmpegCandidates, peakBlockCount, resolveFfmpeg } from "./audioPeaks";
+import { audioTrackMapArgs, ffmpegCandidates, peakBlockCount, resolveFfmpeg } from "./audioPeaks";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 
@@ -22,6 +23,60 @@ describe("peakBlockCount", () => {
 	it("never returns zero blocks for a sliver of audio", () => {
 		expect(peakBlockCount(0.001)).toBe(1);
 	});
+});
+
+describe("audio track selection", () => {
+	it("keeps the normal mixed waveform on ffmpeg's default audio track", () => {
+		expect(audioTrackMapArgs("mixed")).toEqual([]);
+	});
+
+	it("selects only the isolated native Mac microphone track", () => {
+		expect(audioTrackMapArgs("microphone")).toEqual(["-map", "0:m:language:qac"]);
+	});
+
+	it.runIf(resolveFfmpeg(ROOT) !== null)(
+		"fails closed instead of decoding the default track when qac is absent",
+		() => {
+			const ffmpeg = resolveFfmpeg(ROOT);
+			if (!ffmpeg) throw new Error("FFmpeg disappeared after test selection");
+			const folder = mkdtempSync(path.join(tmpdir(), "openscreen-audio-map-"));
+			const fixture = path.join(folder, "mixed-only.m4a");
+			try {
+				const created = spawnSync(ffmpeg, [
+					"-hide_banner",
+					"-loglevel",
+					"error",
+					"-f",
+					"lavfi",
+					"-i",
+					"sine=frequency=1000:duration=0.2",
+					"-c:a",
+					"aac",
+					"-metadata:s:a:0",
+					"language=qaa",
+					"-y",
+					fixture,
+				]);
+				expect(created.status).toBe(0);
+
+				const decoded = spawnSync(ffmpeg, [
+					"-hide_banner",
+					"-loglevel",
+					"error",
+					"-i",
+					fixture,
+					...audioTrackMapArgs("microphone"),
+					"-f",
+					"s16le",
+					"-",
+				]);
+				expect(decoded.status).not.toBe(0);
+				expect(decoded.stdout).toHaveLength(0);
+			} finally {
+				rmSync(folder, { recursive: true, force: true });
+			}
+		},
+	);
 });
 
 describe("ffmpeg resolution", () => {

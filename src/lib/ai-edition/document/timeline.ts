@@ -309,6 +309,184 @@ export function rederiveRegionMs(document: AxcutDocument, clips: AxcutClip[]): A
 	);
 }
 
+/**
+ * Resolve an editor playhead to a safe place for a new recording section.
+ *
+ * A recording inserts between clips; it never cuts a clip just because the
+ * playhead happened to sit in its middle. At an existing boundary we preserve
+ * that boundary. Inside a clip we choose the end of that clip, which matches the
+ * natural "record after this section" action.
+ */
+export function resolveClipInsertionBoundary(clips: AxcutClip[], playheadSec: number): number {
+	const ordered = [...clips].sort((a, b) => a.timelineStartSec - b.timelineStartSec);
+	if (ordered.length === 0) return 0;
+	const playhead = Number.isFinite(playheadSec) ? Math.max(0, playheadSec) : 0;
+	const boundaries = Array.from(
+		new Set(ordered.flatMap((clip) => [clip.timelineStartSec, clip.timelineEndSec])),
+	).sort((a, b) => a - b);
+	const exact = boundaries.find((boundary) => Math.abs(boundary - playhead) <= 0.001);
+	if (exact !== undefined) return exact;
+
+	const active = ordered.find(
+		(clip) => playhead > clip.timelineStartSec && playhead < clip.timelineEndSec,
+	);
+	if (active) return active.timelineEndSec;
+
+	return boundaries.reduce((nearest, boundary) =>
+		Math.abs(boundary - playhead) < Math.abs(nearest - playhead) ? boundary : nearest,
+	);
+}
+
+function insertIntoSecondRanges<T extends { startSec: number; endSec: number }>(
+	ranges: T[],
+	boundarySec: number,
+	durationSec: number,
+): T[] {
+	return ranges.flatMap((range) => {
+		if (range.endSec <= boundarySec) return [range];
+		if (range.startSec >= boundarySec) {
+			return [
+				{
+					...range,
+					startSec: range.startSec + durationSec,
+					endSec: range.endSec + durationSec,
+				},
+			];
+		}
+		// Do not let a range authored over two adjacent old sections silently
+		// apply to newly recorded media inserted between them.
+		return [
+			{ ...range, endSec: boundarySec },
+			{
+				...range,
+				startSec: boundarySec + durationSec,
+				endSec: range.endSec + durationSec,
+			},
+		];
+	});
+}
+
+function shiftUnanchoredRegionsForInsertion(
+	document: AxcutDocument,
+	boundarySec: number,
+	durationSec: number,
+): AxcutDocument {
+	const boundaryMs = boundarySec * 1000;
+	const durationMs = durationSec * 1000;
+	return mapAllRegionCollections(document, (regions, prefix) =>
+		regions.flatMap((region) => {
+			if (isAnchored(region) || region.endMs <= boundaryMs) return [region];
+			if (region.startMs >= boundaryMs) {
+				return [
+					{
+						...region,
+						startMs: region.startMs + durationMs,
+						endMs: region.endMs + durationMs,
+					},
+				];
+			}
+			// The legacy region covered media on both sides of the insertion point.
+			// Keep both original shares without applying the effect to the new media.
+			return [
+				{ ...region, endMs: boundaryMs },
+				{
+					...region,
+					id: createId(prefix),
+					startMs: boundaryMs + durationMs,
+					endMs: region.endMs + durationMs,
+				},
+			];
+		}),
+	);
+}
+
+/**
+ * Insert already-imported media clips at a real timeline boundary.
+ *
+ * Existing clips after the boundary move as one block. Clip-anchored effects
+ * then rederive their cached positions from those moved clips, so zooms,
+ * captions, annotations, and camera layout stay attached to the original media.
+ */
+export function insertClipsAtBoundary(
+	document: AxcutDocument,
+	clipsToInsert: AxcutClip[],
+	requestedBoundarySec: number,
+): AxcutDocument {
+	if (clipsToInsert.length === 0) return document;
+	const boundarySec = resolveClipInsertionBoundary(document.timeline.clips, requestedBoundarySec);
+	let cursor = boundarySec;
+	const inserted = clipsToInsert.map((clip) => {
+		const durationSec = Math.max(0, clip.timelineEndSec - clip.timelineStartSec);
+		const next = {
+			...clip,
+			timelineStartSec: cursor,
+			timelineEndSec: cursor + durationSec,
+		};
+		cursor = next.timelineEndSec;
+		return next;
+	});
+	const insertedDurationSec = cursor - boundarySec;
+	const shiftedExisting = document.timeline.clips.map((clip) =>
+		clip.timelineStartSec >= boundarySec - 0.001
+			? {
+					...clip,
+					timelineStartSec: clip.timelineStartSec + insertedDurationSec,
+					timelineEndSec: clip.timelineEndSec + insertedDurationSec,
+				}
+			: clip,
+	);
+	const nextClips = [...shiftedExisting, ...inserted].sort(
+		(a, b) => a.timelineStartSec - b.timelineStartSec,
+	);
+	const next: AxcutDocument = {
+		...document,
+		timeline: {
+			...document.timeline,
+			clips: nextClips,
+			gaps: document.timeline.gaps.flatMap((gap) => {
+				if (gap.timelineEndSec <= boundarySec) return [gap];
+				if (gap.timelineStartSec >= boundarySec) {
+					return [
+						{
+							...gap,
+							timelineStartSec: gap.timelineStartSec + insertedDurationSec,
+							timelineEndSec: gap.timelineEndSec + insertedDurationSec,
+						},
+					];
+				}
+				return [
+					{ ...gap, timelineEndSec: boundarySec },
+					{
+						...gap,
+						id: createId("gap"),
+						timelineStartSec: boundarySec + insertedDurationSec,
+						timelineEndSec: gap.timelineEndSec + insertedDurationSec,
+					},
+				];
+			}),
+			muteRanges: insertIntoSecondRanges(
+				document.timeline.muteRanges,
+				boundarySec,
+				insertedDurationSec,
+			),
+			speedRanges: insertIntoSecondRanges(
+				document.timeline.speedRanges,
+				boundarySec,
+				insertedDurationSec,
+			),
+			captionRanges: insertIntoSecondRanges(
+				document.timeline.captionRanges,
+				boundarySec,
+				insertedDurationSec,
+			),
+		},
+	};
+	return rederiveRegionMs(
+		shiftUnanchoredRegionsForInsertion(next, boundarySec, insertedDurationSec),
+		nextClips,
+	);
+}
+
 /** One region's share of {@link rederiveRegionMs}: clamp it to its clip's current
  *  source window, drop it when nothing survives, refresh its derived ms. Extracted
  *  so `replaceTimeline` can apply it to the regions whose clip SURVIVED while

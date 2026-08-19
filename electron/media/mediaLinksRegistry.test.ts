@@ -7,6 +7,7 @@ import {
 	findMediaLinksByFingerprint,
 	findRelocatedMediaByStoredPath,
 	registerMediaLinks,
+	resolveMediaLinkSources,
 	whenRegistryIdle,
 } from "./mediaLinksRegistry";
 
@@ -99,6 +100,27 @@ describe("mediaLinksRegistry", () => {
 	});
 
 	describe("resolution via sidecar (fast path)", () => {
+		it("fills a missing webcam link from the registry without replacing the sidecar cursor", async () => {
+			const findByFingerprint = vi.fn().mockResolvedValue({
+				webcamVideoPath: "/recordings/camera.webm",
+				webcamOffsetMs: -1_185,
+				cursorTelemetryPath: "/registry/cursor.json",
+			});
+
+			await expect(
+				resolveMediaLinkSources(
+					{ cursorTelemetryPath: "/recordings/screen.mp4.cursor.json" },
+					findByFingerprint,
+				),
+			).resolves.toEqual({
+				webcamVideoPath: "/recordings/camera.webm",
+				webcamOffsetMs: -1_185,
+				cursorTelemetryPath: "/recordings/screen.mp4.cursor.json",
+				resolvedVia: "fingerprint",
+			});
+			expect(findByFingerprint).toHaveBeenCalledOnce();
+		});
+
 		it("returns webcam + cursor links found next to the video and backfills the registry", async () => {
 			const screenPath = path.join(tempDir, "recording-1.webm");
 			const webcamPath = path.join(tempDir, "recording-1-webcam.webm");

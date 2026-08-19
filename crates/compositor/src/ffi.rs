@@ -1,5 +1,10 @@
 //! Bindings libav* bruts, générés par bindgen sur les headers ffmpeg 8.x (voir build.rs).
-#![allow(non_upper_case_globals, non_camel_case_types, non_snake_case, dead_code)]
+#![allow(
+    non_upper_case_globals,
+    non_camel_case_types,
+    non_snake_case,
+    dead_code
+)]
 include!(concat!(env!("OUT_DIR"), "/ffi.rs"));
 
 // ---------------------------------------------------------------------------
@@ -42,6 +47,12 @@ extern "C" {
     pub fn sn_fmt_stream(s: *mut AVFormatContext, i: i32) -> *mut AVStream;
     /// `s->nb_streams` (cf. `shim.c`).
     pub fn sn_fmt_nb_streams(s: *mut AVFormatContext) -> u32;
+    /// `av_dict_get(s->streams[i]->metadata, key, NULL, 0)->value`, ou NULL.
+    pub fn sn_fmt_stream_metadata(
+        s: *mut AVFormatContext,
+        i: i32,
+        key: *const std::ffi::c_char,
+    ) -> *const std::ffi::c_char;
     /// `s->pb` (cf. `shim.c`).
     pub fn sn_fmt_get_pb(s: *mut AVFormatContext) -> *mut AVIOContext;
     /// `s->pb = p` (cf. `shim.c`).

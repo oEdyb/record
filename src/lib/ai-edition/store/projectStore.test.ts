@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useProjectStore } from "./projectStore";
+import type { AxcutDocument } from "../schema";
+import { saveEditorDefaultPreferences } from "./editingPreferences";
+import { DEFAULT_EDITOR_SETTINGS, getEditorSettings } from "./editorSettings";
+import { getProjectMutationGeneration, useProjectStore } from "./projectStore";
+import { redo, undo } from "./undo";
 
 const bridgeMocks = vi.hoisted(() => ({
 	get: vi.fn(),
@@ -70,6 +74,8 @@ describe("useProjectStore", () => {
 		for (const mock of Object.values(bridgeMocks)) {
 			mock.mockReset();
 		}
+		localStorage.clear();
+		bridgeMocks.save.mockImplementation(async (document) => ({ success: true, document }));
 		toastMocks.error.mockReset();
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the legacy contextBridge surface
 		(window as any).electronAPI = { findRecordingCamera: vi.fn() };
@@ -92,6 +98,401 @@ describe("useProjectStore", () => {
 		expect(state.document?.project.title).toBe("Test");
 		expect(state.revision).toBe(1);
 		expect(state.status).toBe("ready");
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+	});
+
+	it("seeds a new project from the last committed editor settings", async () => {
+		saveEditorDefaultPreferences({
+			...DEFAULT_EDITOR_SETTINGS,
+			padding: 27,
+			showBlur: true,
+			webcamMaskShape: "circle",
+			cursor: { ...DEFAULT_EDITOR_SETTINGS.cursor, smoothing: 0.88 },
+		});
+		bridgeMocks.create.mockResolvedValue({ success: true, document: sampleDoc });
+
+		const document = await useProjectStore.getState().createProject("Test");
+		const settings = getEditorSettings(document);
+
+		expect(settings.padding).toBe(27);
+		expect(settings.showBlur).toBe(true);
+		expect(settings.webcamMaskShape).toBe("circle");
+		expect(settings.cursor.smoothing).toBe(0.88);
+		expect(bridgeMocks.save).toHaveBeenCalledWith(document);
+	});
+
+	it("keeps a newly created project open when applying defaults cannot be saved", async () => {
+		bridgeMocks.create.mockResolvedValue({ success: true, document: sampleDoc });
+		bridgeMocks.save.mockResolvedValue({ success: false, error: "disk full" });
+
+		await expect(useProjectStore.getState().createProject("Test")).resolves.toEqual(sampleDoc);
+
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: "proj_test",
+			document: sampleDoc,
+			status: "ready",
+		});
+		await vi.waitFor(() => expect(toastMocks.error).toHaveBeenCalledTimes(1));
+	});
+
+	it("does not publish an older save after a newer save starts", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		let finishFirst: ((result: unknown) => void) | undefined;
+		let finishSecond: ((result: unknown) => void) | undefined;
+		bridgeMocks.save
+			.mockImplementationOnce(
+				(document) =>
+					new Promise((resolve) => {
+						finishFirst = () => resolve({ success: true, document });
+					}),
+			)
+			.mockImplementationOnce(
+				(document) =>
+					new Promise((resolve) => {
+						finishSecond = () => resolve({ success: true, document });
+					}),
+			);
+		const firstDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "First" },
+		};
+		const secondDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "Second" },
+		};
+
+		const firstSave = useProjectStore.getState().saveDocument(firstDocument);
+		const secondSave = useProjectStore.getState().saveDocument(secondDocument);
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(1));
+
+		finishFirst?.({});
+		await expect(firstSave).resolves.toBe(false);
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(2));
+		finishSecond?.({});
+		await expect(secondSave).resolves.toBe(true);
+
+		expect(useProjectStore.getState().document?.project.title).toBe("Second");
+	});
+
+	it("rejects a background continuation after a user save starts", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		const guard = {
+			revision: 1,
+			mutationGeneration: getProjectMutationGeneration("proj_test"),
+		};
+		let finishUserSave: ((result: unknown) => void) | undefined;
+		bridgeMocks.save.mockImplementationOnce(
+			(document) =>
+				new Promise((resolve) => {
+					finishUserSave = () => resolve({ success: true, document });
+				}),
+		);
+		const userDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "User edit" },
+		};
+		const cameraDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "Stale camera continuation" },
+		};
+
+		const userSave = useProjectStore.getState().saveDocumentAsEdit(userDocument);
+		const cameraSave = useProjectStore.getState().saveDocumentIfCurrent(cameraDocument, guard);
+
+		await expect(cameraSave).resolves.toBe(false);
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+		finishUserSave?.({});
+		await expect(userSave).resolves.toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("User edit");
+	});
+
+	it("rejects a background continuation after an asset mutation starts", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		const guard = {
+			revision: 1,
+			mutationGeneration: getProjectMutationGeneration("proj_test"),
+		};
+		let finishRemoval: ((result: unknown) => void) | undefined;
+		bridgeMocks.removeAsset.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishRemoval = () => resolve({ document: sampleDoc });
+				}),
+		);
+		const removal = useProjectStore.getState().removeAsset("asset-1");
+		const cameraSave = useProjectStore.getState().saveDocumentIfCurrent(sampleDoc, guard);
+
+		await expect(cameraSave).resolves.toBe(false);
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+		finishRemoval?.({});
+		await expect(removal).resolves.toBeUndefined();
+	});
+
+	it("retries a background document patch against the latest user edit", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		const completions: Array<(result: unknown) => void> = [];
+		bridgeMocks.save.mockImplementation(
+			(document) =>
+				new Promise((resolve) => {
+					completions.push(() => resolve({ success: true, document }));
+				}),
+		);
+
+		const patching = useProjectStore.getState().applyDocumentPatch(
+			"proj_test",
+			(document) => ({
+				...document,
+				project: { ...document.project, title: `${document.project.title} + camera` },
+			}),
+			{ coalesceIntoHistory: true },
+		);
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(1));
+
+		const userDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "User edit" },
+		};
+		const userSave = useProjectStore.getState().saveDocumentAsEdit(userDocument);
+		completions[0]?.({});
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(2));
+		completions[1]?.({});
+		await expect(userSave).resolves.toBe(true);
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(3));
+		completions[2]?.({});
+
+		await expect(patching).resolves.toBe("applied");
+		expect(useProjectStore.getState().document?.project.title).toBe("User edit + camera");
+	});
+
+	it("coalesces a background patch into existing undo snapshots", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		const userDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "User edit" },
+		};
+		await useProjectStore.getState().saveDocumentAsEdit(userDocument);
+
+		await expect(
+			useProjectStore.getState().applyDocumentPatch(
+				"proj_test",
+				(document) => ({
+					...document,
+					project: { ...document.project, title: `${document.project.title} + camera` },
+				}),
+				{ coalesceIntoHistory: true },
+			),
+		).resolves.toBe("applied");
+
+		expect(useProjectStore.getState().document?.project.title).toBe("User edit + camera");
+		expect(undo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("Test + camera");
+		expect(undo()).toBe(false);
+	});
+
+	it("coalesces a no-op background patch into a pending redo snapshot", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		const imported = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "Imported" },
+		};
+		await useProjectStore.getState().saveDocumentAsEdit(imported);
+		expect(undo()).toBe(true);
+
+		const patch = (document: AxcutDocument) =>
+			document.project.title === "Imported"
+				? {
+						...document,
+						project: { ...document.project, title: "Imported + camera" },
+					}
+				: document;
+		await expect(
+			useProjectStore
+				.getState()
+				.applyDocumentPatch("proj_test", patch, { coalesceIntoHistory: true }),
+		).resolves.toBe("unchanged");
+
+		expect(redo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("Imported + camera");
+	});
+
+	it("retries one transactional edit patch and keeps a newer edit in its Undo snapshot", async () => {
+		const pendingAsset = {
+			id: "recording-asset",
+			kind: "video" as const,
+			label: "Recording",
+			originalPath: "/tmp/recording.mp4",
+			recordingImportId: "recording-1",
+			cameraTrack: null,
+		};
+		const partialImport = { ...sampleDoc, assets: [pendingAsset] };
+		const stripPartialImport = (document: AxcutDocument): AxcutDocument => ({
+			...document,
+			assets: document.assets.filter((asset) => asset.recordingImportId !== "recording-1"),
+		});
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: partialImport,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		const completions: Array<(result: unknown) => void> = [];
+		bridgeMocks.save.mockImplementation(
+			(document) =>
+				new Promise((resolve) => {
+					completions.push(() => resolve({ success: true, document }));
+				}),
+		);
+
+		const importing = useProjectStore.getState().applyDocumentPatch(
+			"proj_test",
+			(document) => ({
+				...document,
+				project: { ...document.project, title: `${document.project.title} + recording` },
+			}),
+			{
+				createHistorySnapshot: stripPartialImport,
+				normalizeHistorySnapshots: stripPartialImport,
+			},
+		);
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(1));
+
+		const userDocument = {
+			...partialImport,
+			project: { ...partialImport.project, title: "User edit" },
+		};
+		const userSave = useProjectStore.getState().saveDocumentAsEdit(userDocument);
+		completions[0]?.({});
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(2));
+		completions[1]?.({});
+		await expect(userSave).resolves.toBe(true);
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(3));
+		completions[2]?.({});
+
+		await expect(importing).resolves.toBe("applied");
+		expect(useProjectStore.getState().document?.project.title).toBe("User edit + recording");
+		expect(useProjectStore.getState().document?.assets).toEqual([pendingAsset]);
+		expect(undo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("User edit");
+		expect(useProjectStore.getState().document?.assets).toEqual([]);
+		expect(undo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("Test");
+		expect(useProjectStore.getState().document?.assets).toEqual([]);
+		expect(redo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("User edit");
+		expect(useProjectStore.getState().document?.assets).toEqual([]);
+		expect(redo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("User edit + recording");
+		expect(useProjectStore.getState().document?.assets).toEqual([pendingAsset]);
+	});
+
+	it("waits for an in-flight asset mutation before applying a document patch", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		let finishRemoval: ((result: unknown) => void) | undefined;
+		bridgeMocks.removeAsset.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishRemoval = () =>
+						resolve({
+							document: {
+								...sampleDoc,
+								project: { ...sampleDoc.project, title: "After removal" },
+							},
+						});
+				}),
+		);
+
+		const removal = useProjectStore.getState().removeAsset("asset-1");
+		const patching = useProjectStore.getState().applyDocumentPatch("proj_test", (document) => ({
+			...document,
+			project: { ...document.project, title: `${document.project.title} + camera` },
+		}));
+		await Promise.resolve();
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+
+		finishRemoval?.({});
+		await removal;
+		await expect(patching).resolves.toBe("applied");
+		expect(useProjectStore.getState().document?.project.title).toBe("After removal + camera");
+	});
+
+	it("does not publish a completed save after the user switches projects", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		let finishSave: ((result: unknown) => void) | undefined;
+		bridgeMocks.save.mockImplementationOnce(
+			(document) =>
+				new Promise((resolve) => {
+					finishSave = () => resolve({ success: true, document });
+				}),
+		);
+		const saving = useProjectStore.getState().saveDocument({
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "Late save" },
+		});
+		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(1));
+		const otherDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, id: "proj_other", title: "Other" },
+		};
+		useProjectStore.setState({
+			projectId: "proj_other",
+			document: otherDocument,
+			revision: 2,
+		});
+
+		finishSave?.({});
+		await expect(saving).resolves.toBe(false);
+
+		expect(useProjectStore.getState().projectId).toBe("proj_other");
+		expect(useProjectStore.getState().document?.project.title).toBe("Other");
 	});
 
 	it("loadProject handles a failed bridge response by setting error status", async () => {
@@ -168,7 +569,7 @@ describe("useProjectStore", () => {
 				project: { ...sampleDoc.project, primaryAssetId: "asset_1" },
 			},
 		});
-		await useProjectStore.getState().addAsset("/tmp/screen1.webm");
+		const firstAsset = await useProjectStore.getState().addAsset("/tmp/screen1.webm");
 
 		bridgeMocks.addAsset.mockResolvedValueOnce({
 			assetId: "asset_2",
@@ -185,7 +586,7 @@ describe("useProjectStore", () => {
 				],
 			},
 		});
-		await useProjectStore.getState().addAsset("/tmp/screen2.webm");
+		const secondAsset = await useProjectStore.getState().addAsset("/tmp/screen2.webm");
 
 		const assets = useProjectStore.getState().document?.assets ?? [];
 		expect(assets).toHaveLength(2);
@@ -195,6 +596,8 @@ describe("useProjectStore", () => {
 		expect(assets.find((a) => a.id === "asset_2")?.cameraTrack?.sourcePath).toBe(
 			"/tmp/screen2-webcam.webm",
 		);
+		expect(firstAsset?.cameraTrack?.sourcePath).toBe("/tmp/screen1-webcam.webm");
+		expect(secondAsset?.cameraTrack?.sourcePath).toBe("/tmp/screen2-webcam.webm");
 	});
 
 	it("addAsset links the camera when the recorder measured a sub-millisecond offset", async () => {

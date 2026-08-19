@@ -104,6 +104,34 @@ describe("user preferences", () => {
 		expect(loadUserPreferences().trayLayout).toBe("horizontal");
 	});
 
+	it("persists and normalizes the floating camera preview position", () => {
+		saveUserPreferences({ cameraPreviewPosition: { x: -241.4, y: 81.7 } });
+
+		expect(loadUserPreferences().cameraPreviewPosition).toEqual({ x: -241, y: 82 });
+	});
+
+	it("ignores an invalid floating camera preview position", () => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ cameraPreviewPosition: { x: "left", y: 80 } }),
+		);
+
+		expect(loadUserPreferences().cameraPreviewPosition).toBeNull();
+	});
+
+	it("starts with the AI editor sidebar collapsed and remembers the last state", () => {
+		expect(loadUserPreferences().editorChatOpen).toBe(false);
+
+		saveUserPreferences({ editorChatOpen: true });
+		expect(loadUserPreferences().editorChatOpen).toBe(true);
+	});
+
+	it("ignores an invalid AI editor sidebar preference", () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ editorChatOpen: "open" }));
+
+		expect(loadUserPreferences().editorChatOpen).toBe(false);
+	});
+
 	it("persists the software encoder preference", () => {
 		saveUserPreferences({ preferSoftwareEncoder: true });
 

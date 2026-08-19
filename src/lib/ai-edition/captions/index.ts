@@ -19,6 +19,7 @@ export {
 	captionBandRect,
 	DEFAULT_CAPTION_SETTINGS,
 	getCaptionSettings,
+	normalizeCaptionSettings,
 	patchCaptionSettings,
 } from "./settings";
 export type {

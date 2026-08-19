@@ -9,6 +9,7 @@ import "@testing-library/jest-dom";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
+import { LOCALE_STORAGE_KEY } from "@/i18n/config";
 import type { AxcutAsset, AxcutDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useTranscriptionStore } from "@/lib/ai-edition/store/transcriptionStore";
@@ -77,6 +78,7 @@ function load(document: AxcutDocument) {
 }
 
 beforeEach(() => {
+	localStorage.setItem(LOCALE_STORAGE_KEY, "en");
 	useTranscriptionStore.getState().reset();
 	useProjectStore.getState().clear();
 });
@@ -94,6 +96,9 @@ describe("captions pane gating", () => {
 			</I18nProvider>,
 		);
 		expect(screen.getByRole("button", { name: "Transcribe video" })).toBeEnabled();
+		expect(
+			screen.getByRole("heading", { name: "Captions" }).closest('[data-inspector-layout="flat"]'),
+		).toBeInTheDocument();
 	});
 
 	it("shows the queued background run instead of an idle button", () => {

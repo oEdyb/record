@@ -2,7 +2,11 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { NativeLinuxRecordingRequest } from "../src/lib/nativeLinuxRecording";
 import type { NativeMacRecordingRequest } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
-import type { RecordingSession, StoreRecordedSessionInput } from "../src/lib/recordingSession";
+import type {
+	RecordingSession,
+	RecordingWorkspaceContext,
+	StoreRecordedSessionInput,
+} from "../src/lib/recordingSession";
 import type { ShortcutBinding } from "../src/lib/shortcuts";
 import type { AiEditionChatEvent } from "../src/native/contracts";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
@@ -23,6 +27,17 @@ const assetBaseUrl = assetBaseUrlArg ? assetBaseUrlArg.slice(ASSET_BASE_URL_ARG_
 // Renderer side: process.platform is the same Node global as in the main process,
 // so a synchronous read here saves the renderer's every-call IPC round-trip.
 const PLATFORM = process.platform;
+
+// MessagePort is the one Electron primitive that can move transferable preview
+// frames renderer-to-renderer without copying them through the main process.
+// Forward the port from the isolated preload world into the page world.
+ipcRenderer.on("camera-preview-port", (event, payload: { role: "producer" | "consumer" }) => {
+	window.postMessage(
+		{ type: "openscreen-camera-preview-port", role: payload.role },
+		"*",
+		event.ports,
+	);
+});
 
 contextBridge.exposeInMainWorld("electronAPI", {
 	assetBaseUrl,
@@ -92,6 +107,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setHudOverlaySize: (width: number, height: number) => {
 		ipcRenderer.send("hud-overlay-set-size", width, height);
 	},
+	setHudDirectionExclusionRectangles: (
+		rectangles: Array<{ x: number; y: number; width: number; height: number }>,
+	) => {
+		ipcRenderer.send("hud-overlay-set-direction-exclusion-rects", rectangles);
+	},
+	setCameraPreviewVisible: (visible: boolean) => {
+		ipcRenderer.send("camera-preview-set-visible", visible);
+	},
+	requestCameraPreviewConnection: () => {
+		ipcRenderer.send("camera-preview-request-connection");
+	},
+	setCameraPreviewPosition: (position: { x: number; y: number }) => {
+		ipcRenderer.send("camera-preview-set-position", position);
+	},
+	onCameraPreviewPositionChanged: (callback: (position: { x: number; y: number }) => void) => {
+		const listener = (_event: unknown, position: { x: number; y: number }) => callback(position);
+		ipcRenderer.on("camera-preview-position-changed", listener);
+		return () => ipcRenderer.removeListener("camera-preview-position-changed", listener);
+	},
 	getSources: async (opts: Electron.SourcesOptions) => {
 		return await ipcRenderer.invoke("get-sources", opts);
 	},
@@ -101,8 +135,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	switchToHud: () => {
 		return ipcRenderer.invoke("switch-to-hud");
 	},
-	startNewRecording: () => {
-		return ipcRenderer.invoke("start-new-recording");
+	startNewRecording: (context?: RecordingWorkspaceContext) => {
+		return ipcRenderer.invoke("start-new-recording", context);
+	},
+	getRecordingWorkspaceContext: () => {
+		return ipcRenderer.invoke("get-recording-workspace-context");
+	},
+	setRecordingWorkspaceContext: (context: RecordingWorkspaceContext | null) => {
+		return ipcRenderer.invoke("set-recording-workspace-context", context);
+	},
+	returnToEditorIfRecordingWorkspace: () => {
+		return ipcRenderer.invoke("return-to-editor-if-recording-workspace");
 	},
 	openSourceSelector: () => {
 		return ipcRenderer.invoke("open-source-selector");
@@ -136,11 +179,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = () => callback();
 		ipcRenderer.on("source-selector-closed", listener);
 		return () => ipcRenderer.removeListener("source-selector-closed", listener);
-	},
-	onAutoStartRecording: (callback: () => void) => {
-		const listener = () => callback();
-		ipcRenderer.on("hud-auto-start-recording", listener);
-		return () => ipcRenderer.removeListener("hud-auto-start-recording", listener);
 	},
 	requestCameraAccess: () => {
 		return ipcRenderer.invoke("request-camera-access");
@@ -232,8 +270,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	pauseNativeMacRecording: () => {
 		return ipcRenderer.invoke("pause-native-mac-recording");
 	},
-	resumeNativeMacRecording: () => {
-		return ipcRenderer.invoke("resume-native-mac-recording");
+	resumeNativeMacRecording: (request?: NativeMacRecordingRequest) => {
+		return ipcRenderer.invoke("resume-native-mac-recording", request);
+	},
+	removePreviousNativeMacClip: () => {
+		return ipcRenderer.invoke("remove-previous-native-mac-clip");
+	},
+	onNativeMacRecordingError: (
+		callback: (failure: import("../src/lib/nativeMacRecording").NativeMacRecordingFailure) => void,
+	) => {
+		const listener = (
+			_: Electron.IpcRendererEvent,
+			failure: import("../src/lib/nativeMacRecording").NativeMacRecordingFailure,
+		) => callback(failure);
+		ipcRenderer.on("native-mac-recording-error", listener);
+		return () => ipcRenderer.removeListener("native-mac-recording-error", listener);
 	},
 	stopNativeMacRecording: (discard?: boolean) => {
 		return ipcRenderer.invoke("stop-native-mac-recording", discard);
@@ -242,11 +293,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		screenVideoPath: string;
 		recordingId: number;
 		webcam: { fileName: string; videoData: ArrayBuffer };
+		clips?: import("../src/lib/recordingSession").RecordingSessionClip[];
 		cursorCaptureMode?: import("../src/lib/recordingSession").CursorCaptureMode;
 		durationMs?: number;
 		webcamOffsetMs?: number;
 	}) => {
 		return ipcRenderer.invoke("attach-native-mac-webcam-recording", payload);
+	},
+	attachNativeMacClipWebcams: (payload: {
+		screenVideoPath: string;
+		recordingId: number;
+		clips: import("../src/lib/recordingSession").RecordingSessionClip[];
+		webcams: import("../src/lib/nativeMacRecording").NativeMacClipWebcamInput[];
+	}) => {
+		return ipcRenderer.invoke("attach-native-mac-clip-webcams", payload);
 	},
 	getCursorTelemetry: (videoPath?: string) => {
 		return ipcRenderer.invoke("get-cursor-telemetry", videoPath);
@@ -293,8 +353,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("get-readable-file-info", filePath);
 	},
 	/** Native waveform peaks, disk-cached. See electron/media/audioPeaks.ts. */
-	getAudioPeaks: (filePath: string, durationSec: number) => {
-		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec);
+	getAudioPeaks: (filePath: string, durationSec: number, track?: "mixed" | "microphone") => {
+		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec, track);
 	},
 	readFileChunk: (filePath: string, offset: number, length: number) => {
 		return ipcRenderer.invoke("read-file-chunk", filePath, offset, length);
@@ -431,6 +491,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return () => ipcRenderer.removeListener("ai-edition.chat-event", listener);
 	},
 	stt: {
+		isAvailable: (): Promise<boolean> => ipcRenderer.invoke("stt:is-available") as Promise<boolean>,
 		transcribe: (request: SttTranscribeRequest): Promise<SttTranscribeResponse> => {
 			return ipcRenderer.invoke("stt:transcribe", request) as Promise<SttTranscribeResponse>;
 		},

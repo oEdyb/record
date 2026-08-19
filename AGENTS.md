@@ -1,164 +1,577 @@
-# AGENTS.md
+# AGENTS.md — record product and engineering guide
 
-OpenScreen is a free, open-source screen recorder and video editor (Electron + React + TypeScript + Pixi.js) maintained as a continuation of the original v1.5.0 release. This file is the canonical guide for any AI coding agent working in this repo.
+This repository is the private working copy for **record**, currently hosted at
+`github.com/oEdyb/record`. record is a normal, high-quality screen recorder and editor with
+clip-native recording built into the core workflow. It starts from the MIT-licensed OpenScreen
+continuation, but it is a separate, proprietary commercial product.
 
-## Setup commands
+`record` is the working product name. Keep legacy OpenScreen bundle IDs, helper names, environment
+variables, and the `.openscreen` project extension stable until a deliberate migration includes
+permissions, user data, compatibility, packaging, and rollback. Do not perform a blind global
+rename.
 
-- Install deps: `npm install` (Node 22.22.1, npm 10.9.4 — see `package.json#engines`)
-- Start dev:    `npm run dev` (Vite dev server; Electron window opens via `vite-plugin-electron`)
-- Build:        `npm run build` (TypeScript check + Vite build + electron-builder)
-- Typecheck:    `npx tsc --noEmit` — app code only. CI also runs `npx tsc -p tsconfig.test.json --noEmit` in a separate job ("Typecheck (tests)"), so **run both**: test files are invisible to the root config, and a type error in a `*.test.ts` fails CI while the root check stays green.
-- Test (unit):  `npx vitest --run <path>` while you work, `npm run test` once at the end — see [Testing instructions](#testing-instructions)
-- Test (e2e):   `npm run test:e2e` (Playwright)
-- Lint:         `npm run lint` (Biome 2.4)
-- Format:       `npm run format` (Biome, tabs, double quotes, 100-col)
-- i18n check:   `npm run i18n:check` (validates the 13 locale files)
+Read this file before changing product behavior, UI, recording, project storage, preview,
+or export. Preserve these decisions across context compaction and future agent sessions.
 
-**Use npm, not bun/pnpm/yarn/Deno.** Not a style preference. Node native modules are rebuilt against Electron's ABI by electron-builder + `@electron/rebuild`, which resolve the tree through `package-lock.json`. Another package manager writes a different lockfile, so that rebuild breaks. `packageManager` + `engines` in `package.json` pin the versions; CI installs with `npm ci`. Note what this does *not* cover: the standalone Swift (macOS) and C++ (Windows) capture helpers are separate executables, built by `npm run build:native:<platform>` and only *copied* into the package as `extraResources` — `build:win` even passes `--config.npmRebuild=false`. Nothing in a normal build compiles them.
+Use [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md) for delivery order and release gates. This file remains
+the source of truth for product behavior and engineering constraints.
 
-## Development principles
+## Product goal
 
-- Prefer the simplest solution that stays readable — no abstraction for hypothetical needs (YAGNI).
-- **No mandated app-stack choice yet.** Contributors pick their own state/data library. Don't impose one across the codebase and don't refactor existing code onto a different one — keep each addition self-contained and consistent within its own module. A single choice may be enforced later.
-- Don't optimize for line count. A dense one-liner that hides control flow is worse than the explicit version.
-- Match the surrounding code's idiom rather than introducing a new pattern next to it.
+Build a recorder with Screen Studio-level refinement and a faster speaking workflow:
 
-## Project layout
+1. From the editor, use the normal Record action to enter the recording workspace at the
+   current insertion boundary.
+2. The editor gets out of the way and the floating panel appears idle. Set up the
+   screen/window, microphone, system audio, camera, and cursor there.
+3. Start recording from the floating panel.
+4. Pause whenever a spoken section ends.
+5. While paused, optionally change the source, microphone, system audio, camera, or cursor
+   setup for the next clip.
+6. Continue into a new clip. Reuse the current capture pipeline when settings did not
+   change; safely reconfigure it when they did.
+7. Remove the previous completed clip immediately with Backspace when it was bad.
+8. Stop to return to the editor.
+9. Review, remove, reorder, and insert clips with normal editor actions.
+10. Move between Edit and Record as often as needed.
+11. Export one normal MP4.
 
-- `src/` — React app: UI, editor components, timeline, i18n, captioning/cursor/exporter libs
-- `electron/` — main process, IPC, recording orchestration
-- `electron/native/` — **native** capture helpers: `screencapturekit/` (Swift, macOS) and `wgc-capture/` (C++/Win32, Windows). These are built and shipped with the app, not loaded from npm
-- `technical-documentation/` — architecture, engineering and testing reference (start at its README)
-- `tests/` — Playwright e2e specs + fixtures
-- `scripts/` — native build scripts, diagnostic tools
-- `nix/`, `flake.nix` — Linux packaging
-- `release/`, `dist-electron/` — build artifacts (gitignored)
+The product must feel like a normal recording app. Clip-native recording is built in; it is
+not a separate mode or an advanced workflow.
 
-## Code style
+## Product language — non-negotiable
 
-- TypeScript strict mode (`tsconfig.json`). No `any` (Biome `noExplicitAny` is `warn` — don't add new `any`).
-- Biome handles lint AND format. Tabs, double quotes, 100-col width, LF line endings. Run `npm run lint:fix` before committing.
-- React functional components only. Hooks at top level (Biome `useHookAtTopLevel` is `error`).
-- Imports: use the `useImportType` discipline (Biome organizes them).
-- Husky + lint-staged runs Biome on staged `*.{ts,tsx,js,jsx,mts,cts,json}`.
-- The repo is pre-1.x and not production-grade — rough edges are expected, but new code should be clean.
+- Call recorded sections **clips**.
+- Use normal words such as **Record**, **Pause**, **Continue**, **Stop**, **Remove previous
+  clip**, **Split**, and **Undo**.
+- Never call clips “takes”.
+- Never add a “redo take”, “replacement take”, “candidate”, “pickup”, “record here”,
+  “keep”, or “retry” workflow.
+- To record something again, the user removes the clip, leaves the insertion cursor at that
+  position, and uses the same normal Record action.
 
-## Testing instructions
+## Current delivery target: first working version
 
-### When to run what
+The first version is a bare Mac-first vertical slice. It is working only when this complete
+path works with real capture:
 
-The full unit suite is ~1670 tests over 140 files and takes over a minute. Running it after
-every edit is the main way an agent turns a 5-minute task into a 30-minute one, so don't:
+1. The user selects a real screen/window and audio settings.
+2. Record starts after the countdown.
+3. The active two-row floating panel appears.
+4. Pause finalizes the current clip without stopping ScreenCaptureKit when settings stay
+   unchanged.
+5. Paused setup changes apply to the next clip without ending the logical recording.
+6. Continue starts a new clip. It does not ask for setup again unless the user opened a
+   source picker while paused.
+7. Pause and Continue can repeat several times.
+8. Backspace removes the newest completed clip; repeated presses can remove all completed
+   clips.
+9. Stop finalizes the active clip, ends capture, hides the panel, and opens one project in
+   the editor.
+10. Every kept clip appears in order with a visible cut boundary and plays continuously.
+11. Export produces a normal MP4.
 
-- **While you work** — run only what you touched: `npx vitest --run src/lib/foo.test.ts`,
-  or `npx vitest --run src/lib/ai-edition` for a directory. `npm run test:changed` picks
-  the affected files off the working tree, `npx vitest --run --changed main` off the
-  branch diff. A single file is 1–10s against ~80s for everything.
-- **Typecheck and lint freely** — `npx tsc --noEmit` and `npm run lint` are seconds, not
-  minutes. They are the right inner-loop check, not the test suite.
-- **Once, at the end** — `npm run test` before you commit or open the PR. One full run per
-  task, not per edit. If the change is narrow and CI will run anyway, the targeted run plus
-  CI is enough; say so rather than burning the wall-clock twice.
-- **Never** `npm run test:watch` — it does not terminate, and it will hang the session.
+Keep this slice minimal. Do not block it on captions, transcript, paused playback,
+thumbnails, waveforms, automatic zoom, AI editing, Windows, Linux, broad rebranding, or a
+large library redesign.
 
-### Layout and conventions
+## Recording model
 
-- Unit tests live next to source as `*.test.ts` / `*.test.tsx` (Vitest). Config is
-  `vitest.config.ts`; it covers `src/`, `electron/` and `.github/`.
-- **The default environment is `node`.** A test that needs a DOM opts in with
-  `// @vitest-environment jsdom` on line 1 — that is also the fix for `document is not
-  defined`. Don't add it to a test that doesn't need it: jsdom setup dominates this
-  suite's runtime (see the comment in `vitest.config.ts`).
-- Anything platform-conditional (`process.platform`) must pin the platform in the test.
-  CI is Linux-only, so a Linux-only code path left unpinned is green in CI and red on
-  every Windows and macOS machine — `electron/recording/webm-seek-index.test.ts` is the
-  worked example.
-- E2E tests are in `tests/e2e/` (Playwright). Some specs are platform-specific (e.g. `windows-native-checklist.spec.ts`).
-- **Playwright is not the end of the e2e story.** It drives the app through CDP, which cannot reach real capture, a real webcam, the tray, or the click-through HUD. Everything those miss is covered by a manual pass driven with computer-use — see [Desktop E2E testing with computer-use](#desktop-e2e-testing-with-computer-use) below, which is required for native changes and before promoting a release candidate.
-- Add a test for every new behavior in the same package as the code under test.
-- All tests must pass before opening a PR. CI runs `npm run test` on every PR.
-- **Which kind of test to write, and where: [`technical-documentation/testing/writing-tests.md`](technical-documentation/testing/writing-tests.md).**
+Do not invent a video format.
 
-## Desktop E2E testing with computer-use
+- Keep one live ScreenCaptureKit `SCStream` for the recording session.
+- Each Pause finalizes one standard fragmented H.264/AAC MP4 clip.
+- Continue creates a fresh `AVAssetWriter` and starts it on the first valid sample.
+- Store clip order and state in a versioned JSON project document.
+- Stop finalizes the active writer, closes capture, and opens the project.
+- Export composes kept clips into one standard MP4.
+- Backspace changes project state immediately. Keep removed media until normal cleanup so
+  Undo and crash recovery remain possible.
 
-**Computer-use is how the manual end-to-end pass is driven — all of it, not only the native parts.** Real capture is what forces it (native screen recording, a physical webcam, the tray: no unit or browser test reaches those), but once the app is up you drive everything the same way — editor, timeline, regions, transcript, export, settings, persistence. Screenshot and click/type on the desktop, through the **computer-use** MCP, against the actual Electron app. This is the required "manual smoke test on real Windows/macOS" for native changes, and the only mode in which the checklist below means anything.
+Pause by itself must not restart source selection, ScreenCaptureKit, or permissions. If the
+user changes capture setup while paused, reconfigure or restart only the capture parts that
+must change before Continue. Keep all completed clips in the same logical recording. Pause
+must not wait for transcription, thumbnail generation, waveforms, proxy creation, cleanup,
+concat, remux, or re-encoding.
 
-This section is the *mechanics*. **What to actually run is [`technical-documentation/testing/manual-e2e-checklist.md`](technical-documentation/testing/manual-e2e-checklist.md)** — the capture-to-export pass, per-platform sections, and a results log to append to. Run it before promoting a release candidate and after any change to native capture, preview or export. For cursor work specifically, [`native-cursor-diagnostics.md`](technical-documentation/testing/native-cursor-diagnostics.md) gets you sidecars and reports without a full record-edit-export cycle. The checklist links back here for the mechanics below; the pairing only works if you know both halves exist.
+Treat the final countdown value as the recording-start barrier. Start the capture pipeline
+while `1` is still visible, keep `1` visible until the recorder confirms its real first frame,
+paint the HUD timer, and only then hide the countdown overlay. Never hide the countdown and
+initialize capture afterward; that creates a dead gap where neither countdown nor timer is
+visible.
 
-**Launch the app**
+Target local-SSD Pause finalization at p95 below 300 ms on this Mac. Show Pause feedback
+immediately. If `AVAssetWriter.finishWriting` is still running, show a quiet saving state and
+disable Continue until the clip is safe.
 
-- Normal: `npm run dev` — Vite serves the renderer and `vite-plugin-electron` opens the Electron window. The main process logs `Global shortcut registered: CommandOrControl+Shift+O` when ready (Ctrl/Cmd+Shift+O toggles the HUD).
-- **Set `OPENSCREEN_DISABLE_CONTENT_PROTECTION=1` in the environment you launch from, or the HUD is invisible in every screenshot you take.** It is a module-scope constant (`electron/windows.ts:20`), read once as the main process loads, so it cannot be turned on afterwards — you relaunch or you work blind. The main process prints `[content-protection] OFF for the HUD window` when it took effect; if that line is missing, stop and relaunch rather than hunting a HUD you will never see. What it does and when to unset it: the HUD notes below.
-- The app is single-instance through `app.requestSingleInstanceLock()`, which keys on the `userData` path. If a leftover Electron process still holds it, a new launch quits silently (exit 0, no window) — kill leftover `electron` processes before relaunching. The lock is held by the OS and dies with the process, so there is nothing to clean up on disk. A dev build and the installed `Openscreen` resolve different `userData` paths and can run side by side.
-- **From a git worktree** (no `node_modules`/native binaries): junction/symlink `node_modules` from the main checkout (deps are usually identical — check `package-lock.json`), and copy the prebuilt native capture binaries from `electron/native/bin/<platform>/` (gitignored — rebuilding needs the full VS/Xcode toolchain). Then `npm run dev` works normally.
-- **Those binaries are frozen at whenever someone last built them, and nothing warns you.** They are not rebuilt by `npm run dev` or `npm run build`, so a helper older than the native change you came to test will run happily and silently exercise the old code path — the recording succeeds, and the thing you wanted to see is simply absent. Before trusting any native result, date the binary against the commit and search it for a string the change introduced — from the repo root:
+## Pause, Continue, Stop, and Backspace
 
-  ```powershell
-  # the string the change introduced — absent from a stale helper
-  findstr /M /C:"fragmented-mp4" electron\native\bin\win32-x64\wgc-capture.exe
-  # the control — present in every helper, stale or not
-  findstr /M /C:"encoder-selection" electron\native\bin\win32-x64\wgc-capture.exe
-  ```
+- **Pause** finalizes the active clip and stays in the recording session.
+- **Continue** starts the next clip after a short countdown.
+- **Stop** is different from Pause. Stop ends capture and opens the editor. The Record circle
+  changes into a clear Stop square while recording. Keep it icon-only; do not add permanent
+  `Stop` or `Stop Recording` text. The tooltip and accessibility label explain the action.
+- **Backspace** removes the newest completed clip immediately.
+- Backspace has no confirmation dialog and no removal mode.
+- Repeated Backspace presses continue backward, including removing every completed clip.
+- Disable Backspace when no completed clip remains.
+- Use the tooltip and accessibility label `Remove previous clip`.
+- Do not implement whole-recording Restart as the normal recovery action.
 
-  Run **both**. Only the second tells "the binary is stale" apart from "my search is broken", and that distinction is not hypothetical: `findstr` handles binaries and ships with Windows, but Git Bash has **no `strings`**, so `strings … | grep` there returns nothing and reads as a confident *absent* for every binary you point it at. Measured against the two helpers this section is about — stale: no match, then HIT; current: HIT, HIT. A control that does not hit means you learned nothing about the binary. If it is stale, rebuild it with `npm run build:native:win` (or `:mac` / `:linux`) — that is the only thing that compiles a helper. Without the toolchain, test the CI-built artifact instead; a dev build cannot answer the question.
-- **And it is the whole directory, not the one binary you came for.** `electron/native/bin/<platform>/` also holds the compositor addon, the cursor sampler, the ffmpeg DLLs it dlopens, and the STT binaries — each frozen independently at whenever someone last ran a build. Refreshing only the helper leaves a mismatched set, and a mismatched set fails like a product bug: an export died on `open_input: -22 (Invalid argument)` from `compositor.exportMulti` purely because the addon was four days older than the av\* DLLs it was built against, while `ffmpeg` on the command line opened the very same file without complaint. If you are borrowing binaries from an installed build, copy the **entire** directory and diff it by hash afterwards — the last check turned up sixteen differing files and two missing outright.
+## Floating recording panel
 
-**Granting access**
+Editing and recording are two states of the same project. They are not top-level tabs. Remove
+the editor's Record tab instead of treating setup as another inspector page.
 
-- `request_access` resolves names against installed apps. A **dev build runs as `electron.exe`** (or `Electron.app`), *not* the installed `Openscreen` — grant **`electron.exe`** or the dev window stays masked in screenshots. Non-allowlisted windows are masked (solid rectangles); the screenshot note lists their process names to add.
-- **Start the app before asking for it.** `electron.exe` is not an installed app, so the resolver only finds it once the process exists *and* owns a window; ask any earlier and the call fails with `doesn't match any installed or running application` — and one unresolvable name short-circuits the whole request, including the names that would have resolved. Granting `Openscreen` instead is not a workaround: it resolves to `…\programs\openscreen\openscreen.exe`, so the dev window stays masked while the grant reports success.
+The editor's normal Record action saves the current insertion boundary, moves the editor out
+of the way, and shows the floating panel at the bottom center. The panel starts idle. Source,
+microphone, system-audio, camera, device, and cursor controls are available, but the timer does
+not run and no media file exists. Only the panel's Record circle starts the countdown and real
+capture. Closing the idle panel or pressing Escape returns to the editor without changing the
+project. Stop during capture returns to the same project and inserts the kept clips at the saved
+boundary.
 
-**The HUD widget** (recording controller)
+Use a quick, restrained transition between the workspaces. Preserve timeline selection,
+insertion boundary, preview time, inspector state, and window geometry. Do not show a setup
+page, dashboard, mode chooser, or navigation stack between Edit and Record.
 
-- **It is invisible in screenshots by default.** The HUD (and the Notes window) call `setContentProtection(true)` so the recording controls never end up baked into a recording — the same `SetWindowDisplayAffinity` that WGC honours also hides them from *your* screenshots. The window is there, and clicks land, but you are aiming blind at a rectangle you cannot see. Set **`OPENSCREEN_DISABLE_CONTENT_PROTECTION=1`** in the app's environment to turn it off for a session; every skipped window logs a warning. Unset it before recording anything real, or the HUD ends up in the video.
-- **On macOS 26+ content protection is auto-disabled, so the HUD *is* visible and screenshottable with no flag.** That OS never displays a content-protected window at all — not just absent from captures, but never painted, leaving a tray icon, a live renderer and nothing on screen (confirmed on macOS 26.5 / Electron 41.2.1). `applyContentProtection` therefore skips the call there and logs a warning per window; the trade-off is that the HUD can appear in recordings on that OS until the ScreenCaptureKit helper excludes our own windows via `SCContentFilter(excludingWindows:)`, which it currently passes as `[]`. `OPENSCREEN_FORCE_CONTENT_PROTECTION=1` re-enables it to re-test against a future Electron.
-- The HUD is what opens the editor (clapper icon, tooltip *Open Studio*), so without that flag a whole slice of the app is unreachable from automation: killing the app to redeploy a native addon leaves you unable to reopen a project.
-- Frameless, transparent, always-on-top, `skipTaskbar`, centered at the **bottom of the primary display** (`createHudOverlayWindow`, 600×160). It is **click-through** (`setIgnoreMouseEvents(true, { forward: true })`): moving the real cursor over an interactive control makes that region clickable and shows its tooltip, so `mouse_move` → screenshot → `left_click` works; a blind click on empty HUD area passes through to the desktop.
-- **Only a real OS mouse move reaches the HUD — on macOS as much as on Windows.** `forward` is `@platform darwin,win32` in Electron's own typings, and the renderer asks for click-through on both; **Linux is the exception** (`!enabled && !isLinuxHud` in `LaunchWindow.tsx`, where the call is a no-op), so it is the one platform where a blind click on the HUD simply lands. The implementations differ — Windows installs a global `WH_MOUSE_LL` hook, macOS forwards through its own event path — but the consequence is identical: moving the real cursor onto a control is what lifts the input-transparency. CDP-injected input never does that, on any platform: Playwright's `.click()`, `javascript_tool`-dispatched pointer events, and anything else synthesised into the renderer arrive *below* the OS hit-test, fire the DOM handler, and look like they worked — while the click-through path was never exercised at all. `tests/e2e/windows-native-checklist.spec.ts` does click HUD test IDs and stays green for exactly that reason; it proves renderer wiring, not reachability, and a macOS spec written the same way would prove no more. Use computer-use (`mouse_move` → `left_click`), and never conclude from a passing injected click that a user could have clicked it.
-- Control row (left→right): layout preset, **source** button (`Screen`/`Window` → label becomes the picked source), system-audio toggle, mic toggle, **webcam toggle** (shows the detected camera name), cursor-highlight toggle, **record**, notes, open-editor, language, minimize, close. The record button is disabled until a source is chosen (tooltip: "Please select a source to record").
+Keep OpenScreen's existing floating bar as the first row during recording. Add clip history
+as a second row inside the same surface. The rows share one background, border, radius,
+shadow, and material. Do not replace the first row or create a detached timeline pill.
 
-**The tray icon** (bottom-right notification area)
+The current real Mac render is approximately 829 CSS px wide and 84 px tall on a
+1710 px-wide work area. Preserve the familiar setup-to-recording transition. If future
+display or accessibility testing needs a compact layout, adapt this same surface instead of
+switching to a different recording panel.
 
-- Because the HUD skips the taskbar and can be minimized/hidden, the **system-tray icon is the reliable way to refocus the app**: **left-click or double-click reopens/focuses the HUD** (`showMainWindow`). Its icon swaps to a red dot while recording.
-- **Right-click → context menu**: *Open* / *Quit* when idle, or ***Stop Recording*** while recording (mirrors the HUD's stop). Tooltip shows `OpenScreen` or `Recording: <source>`. Use this to stop a recording if the HUD isn't reachable.
+### First row
 
-**End-to-end flow (record → edit)**
+- Keep OpenScreen's source, system-audio, microphone, camera, cursor, tray-orientation,
+  notes, language, minimize, and close controls in their existing positions.
+- Lock setup controls while a clip is actively recording or finalizing.
+- Unlock source, system-audio, microphone, camera, device, and cursor controls after Pause.
+  A paused change applies to the next clip and must never rewrite a completed clip.
+- Do not enable a paused control until its change reaches the real capture pipeline. A local
+  UI toggle that the next clip ignores is a recording bug.
+- Keep OpenScreen's primary Stop button and live timer.
+- Add Backspace beside Pause/Continue.
+- Keep the separate drag handle and the existing window-control behavior.
 
-1. On the HUD: click the **webcam** toggle to enable the camera, then the **source** button → pick the *Screens*/*Windows* tab → select a thumbnail → **Share**.
-2. Click **record**; the HUD switches to a red stop button with a running timer (a countdown overlay may show first).
-3. Stop via the HUD's red button (or tray → *Stop Recording*). The **editor window opens** with the screen recording and the webcam PiP.
-4. Exercise the feature in the editor (e.g. Full Camera: press **C** to add a segment on the timeline, scrub to see the webcam grow to fullscreen and ease back; **Ctrl+Z** / **Ctrl+Shift+Z** undo/redo).
-5. Capture a screenshot as proof. Clean up: stop `npm run dev`, remove temporary worktree junctions/lock.
+### Lower row
 
-**Judging the rendered picture**
+Show a read-only live clip-history strip.
 
-- A preview screenshot is a **downscaled** view of the compositor's output (a 1920-wide render shown in a ~600px pane, then downscaled again by the screenshot). Fine detail — a corner radius, a 1° edge slope, a soft shadow — does not survive that, and squinting at it produces confident wrong conclusions. To decide anything about pixels, **export and measure**: `Export → MP4 1080p`, then `ffmpeg -ss <t> -i out.mp4 -frames:v 1 -c:v ppm frame.ppm` and walk the raw bytes (a P6 PPM is a 15-line parser) for the exact edges. That is what settled a "the tilt is truncated" report: measured right edge 1539 px against a computed corner at 1540 — no clipping at all, the real defect was elsewhere.
-- ffmpeg lives at `crates/thirdparty/ffmpeg-*/bin/ffmpeg.exe` (also needed on `PATH` for the compositor addon to load).
+- One small rounded segment represents each kept clip.
+- Segment width uses one linear duration scale, with a minimum visible width.
+- The active segment grows while recording.
+- Completed clips are quiet; the newest completed clip has priority; the active clip uses
+  the semantic recording color.
+- Keep the newest six to eight clips visible.
+- When history is longer, compress old clips first and collapse the oldest into `+N`.
+- Keep the newest clip fully visible.
+- Backspace removes the newest segment with a short 140–180 ms collapse.
+- Respect Reduce Motion by changing state without movement.
+- The strip is not clickable, selectable, draggable, scrubbable, or editable.
+- VoiceOver gets one combined history value. Do not expose every decorative segment as a
+  focus stop.
 
-## PR & commit conventions
+Do **not** show a clip-count label. The segments already communicate clip count. Do not show
+text such as `6 clips`. The main timer already communicates duration, so the lower row can
+remain a clean visual history rather than a second status readout.
 
-- Branch from `main`; never push to it directly.
-- Commit messages: short imperative summary, optional body. Recent style mixes conventional-ish prefixes (`ci:`, `chore:`, `fix:`) with plain messages — either is fine, just be consistent within a PR.
-- **PR titles must follow Conventional Commits** (`feat:`, `fix:`, `chore:`, `refactor:`, `perf:`, `docs:`, `test:`, `build:`, `ci:`, `style:`, `revert:`). Enforced by the `semantic-pr` job in `ci.yml`. This feeds GitHub's auto-generated release notes with clean categories.
-- Open PR via `gh pr create` once CI is green.
-- PR template is in `.github/pull_request_template.md`.
+Keep the lower row present whenever the horizontal recording panel is visible, including the
+idle state before capture. Show an empty rail while idle. Fill the first active segment without
+changing the panel's outer geometry. Keep that same geometry in active, finalizing, paused,
+empty-history, and many-clip states.
 
-## Release flow
+The HUD uses a native transparent backing window that is much larger than the painted panel so
+menus can open without resizing the window. On macOS, make that window click-through before its
+first visible frame. Forward pointer movement and enable mouse input only over painted HUD
+surfaces. Never leave a startup gap where the invisible backing window can swallow a click meant
+for another app. Keep the delayed renderer-driven startup on Windows because Electron implements
+forwarded mouse movement there with a global low-level hook.
 
-Two `workflow_dispatch` workflows: cut an RC, then promote it to stable. **Full operational guide, branch contract, cherry-pick rules, and manual fallback: `technical-documentation/engineering/release-and-secrets.md`.** Read it before touching a release.
+Pause must keep the transport geometry stable. Clip finalization must not replace the Stop
+button or timer with a Saving label, and the Pause/Continue control must stay mounted in one
+slot while it is temporarily disabled. Morph the active history segment into the finalized
+clip in place, with no empty frame or node replacement, so its color and glow can ease from
+active to completed.
 
-The one rule to know before you merge anything: **there is one release branch per stable version** (`release/vX.Y.Z`), created at rc.1 and **frozen** until promote. Only cherry-picked bugfixes land on it, so anything merged to `main` after the cut ships in the *next* cycle, not the one in flight.
+### Camera confidence monitor
 
-## Security
+- Keep the camera monitor as a separate preview-only window. Its position and shape never set
+  the recorded camera's editor layout.
+- Keep it always on top but non-focusable. Show it without activating OpenScreen so it does not
+  steal keyboard focus from the app underneath. Its own small surface remains draggable.
+- Reuse the recorder-owned camera stream. Never open a second camera session for the monitor.
+- Relay one backpressured 576 × 324 Retina frame at no more than 24 FPS. Use high-quality
+  downsampling and GPU bitmap transfer. The monitor must not change the selected recording
+  resolution or FPS.
+- Request a new renderer-to-renderer connection after either preview side mounts or reloads.
+  The monitor must not remain on Loading after a renderer reload.
+- Keep the monitor and its cursor activity out of display capture and automatic direction.
 
-- Never commit secrets. `.env.example` exists; real `.env` is gitignored.
-- `macos.entitlements` controls macOS permissions — review when touching native recorder.
-- Native helpers run with elevated privileges on user systems; treat code in `electron/*-helper/` as security-sensitive.
+The timer is the total duration of kept completed clips plus the current active clip. It
+must decrease immediately after Backspace. If Backspace removes every clip, the timer must
+return to `00:00` before Continue starts a new clip.
 
-## Specialized notes
+Removed sections must not appear in editor video or camera playback. Camera media can stay
+continuous during capture, so import each kept clip with the camera offset for its physical
+capture start, including the durations of earlier removed clips. Change the in-memory clip
+state before awaiting manifest persistence so a simultaneous Stop cannot import stale
+removal state.
 
-- **Native capture is platform-fragile**: macOS uses ScreenCaptureKit (Swift), Windows uses WGC (C++/Win32). CI runs on Linux only — manual smoke test on real macOS/Windows is required for native changes.
-- **Pixi.js v8** is the rendering engine. Filters come from `pixi-filters` and `@pixi/filter-drop-shadow`. GSAP + `motion` for animation.
-- **i18n**: 13 locales in `src/i18n/locales/<locale>/` (e.g. `src/i18n/locales/en/settings.json`). The `i18n:check` script validates them — run it after touching translation files.
-- **Build pipeline**: `npm run build` is full electron-builder. For iterating on renderer only, use `npm run build-vite` (Vite + tsc, no packaging).
-- **Product constraints**: the project is free forever and explicitly "not production-grade". Don't add paywalls, premium tiers, or logic that gates a feature on who the user is, and don't add upsell language to the README or UI copy. This is a hard constraint, not a judgement call. (A flag that hides an unfinished capture backend is fine — it gates on readiness, not on the user.)
+Persist normal recording setup as app preferences. Restore microphone enabled state and
+device, camera enabled state and device, system-audio enabled state, and cursor mode after a
+full app relaunch. Validate stored device IDs against current hardware and fall back safely
+if a device disappeared. These preferences are not project content.
+
+## Editor behavior
+
+- Stop opens the editor and its preview. The recording panel does not contain playback.
+- Do not show a top-level Record tab. The editor and recording workspace are two states of
+  the same project, reached through the normal Record action and Stop or Cancel.
+- Every Pause becomes a visible cut boundary between adjacent clips.
+- Adjacent clips play without an artificial gap.
+- The editor has one normal Record action and keybind.
+- The timeline has an insertion cursor between clips.
+- Record inserts new clips at the selected boundary and moves later clips forward.
+- Record first opens the idle floating panel. It must not begin the countdown or capture.
+- Removing a clip leaves the insertion cursor at the removed clip's former position.
+- Remove a selected clip with Delete or Backspace. Do not put a trash button inside clip
+  cards.
+- Show the resolved insertion boundary as one quiet, read-only capsule centered in the
+  visible gutter between clip cards. Do not add a plus icon, insertion mode, separate tool,
+  or extra panel.
+- Treat one recording import as one document edit. Its Undo snapshot includes the imported
+  assets, clips, camera offsets, shifted later clips, and edits attached to those clips.
+- `Command-Z` restores a removal or reverses an insertion or reorder.
+  `Shift-Command-Z` and `Command-Y` redo it. Keep `Command-C` for Copy.
+- Recording inside a clip requires Split first.
+- Save every editor control in the project. Also remember the last committed reusable controls
+  as defaults for the next project: background, output shape, effects, padding, webcam layout,
+  webcam presentation, cursor presentation, and automatic focus. Validate the versioned preference
+  record before use. Keep a custom uploaded background in its project. Do not put its full data URL
+  in browser preference storage; retain the previous reusable color, gradient, or built-in image as
+  the next-project default. Do not carry source-specific crops, clips, cuts, zoom regions, caption
+  text or translation, or other timeline content into a new project.
+- Let picture-in-picture camera size range from 10% to 80% of the canvas reference dimension.
+  Keep the range constants shared by the slider, project validation, reusable preferences,
+  preview, and export so a saved large camera cannot shrink after reopening.
+
+Version 1 does not show transcript, tail playback, thumbnails, or a review surface in the
+paused panel. If real use later proves that Stop → editor → Record is too disruptive, test a
+small last-clip review feature then. Do not build it before that evidence exists.
+
+## Automatic direction
+
+Automatic direction is a normal editor enhancement. It is not an AI mode and does not add a
+second timeline model.
+
+- Keep one pipeline: recorded observations → small intent detectors → one versioned automatic-
+  direction plan → ordinary timeline regions. `automatic-direction.ts` owns cross-effect planning;
+  click, drag, typing, trace, microphone, and future detectors must not write project regions on
+  their own.
+- Keep every analyzer threshold, duration, density limit, and handoff rule in the nested typed
+  `AutomaticDirectionPolicy`. New presets or a later Advanced Auto-Editing UI pass validated
+  overrides through that policy tree. They must not fork the analyzer or add tuning literals to UI
+  components.
+- Plan screen direction first and let Camera Emphasis fill compatible quiet time under the shared
+  direction budget. Give every planned effect a stable identity, then convert the plan into normal
+  clip-anchored regions. A repeated application of the same plan must be idempotent.
+- Apply a late asynchronous enhancement through the retryable project document-patch path. Rebuild
+  the patch from the newest document after a concurrent edit, coalesce it into the existing import
+  history, and report a real conflict. Never use a fire-and-forget stale document save or silently
+  drop a valid automatic result.
+- A click-only detector chain can still split at six seconds. If nearby chains form one visual
+  passage, keep that split internal. Plan the complete passage before writing Zoom regions. Within
+  the useful stable-scale range, choose the fewest safe focus changes first and the deepest scale
+  among equally simple plans. Hold the current framing when it still contains the next target. Pan
+  at one stable scale only when the target leaves. Lower the passage scale only when no safe focus
+  path exists at a useful deeper scale. Internal detector boundaries must never create a visible
+  scale pulse, redundant timeline item, or full-frame exit.
+- Treat a qualified drag as one bounded visual activity. Frame its complete press/path/release area
+  with one stable crop when possible. Center that crop on the complete drag bounds instead of the
+  press point, and reduce depth when needed to keep the full bounds visible. Pan only when no useful
+  centered crop can contain the drag and the surrounding passage. A mouse release supplies the final
+  bound; it does not create another score.
+- After Stop, use the cursor sidecars that recording already produced. Do not analyze or
+  re-encode video before the editor opens.
+- Mark cursor samples over every visible private recorder surface, including the HUD, webcam
+  confidence monitor, and Notes, as excluded direction input. Those surfaces are absent from
+  captured pixels, so their clicks, drags, and movement must never create or strengthen a screen
+  zoom. Exclusion ignores that input; it does not force a full-frame gap. Separately qualified
+  content intent before and after an excluded interval can use the normal smooth handoff. On macOS
+  display capture, exclude the complete OpenScreen process through ScreenCaptureKit so private
+  windows created after capture starts stay absent too.
+- Start with deterministic local signals: click groups and deliberate cursor traces that
+  settle. A passive cursor dwell is not intent and must not create a zoom by itself.
+- Preserve left-button press and release as separate input events. A normal release must not
+  create a second zoom target. Use the press-to-release interval only to recognize a real drag;
+  a qualified drag can keep its source and destination visible or direct one connected pan.
+- Treat sustained typing in an editable element as screen intent. Record only local event times,
+  burst counts, and the focused editable element or caret bounds. Never record key codes,
+  characters, clipboard data, shortcuts, field values, or typed text. Ignore secure text fields
+  and fail closed when the focused target cannot be resolved safely.
+- When typing follows a click into the same target, extend or hold the existing screen zoom instead
+  of adding another zoom-out and zoom-in. When a clear typing burst starts without a nearby click,
+  it can create one normal editable auto Zoom region around the focused writing area. A parked
+  pointer must not pull that framing away from the text. Typing must also count as screen activity
+  when Camera Emphasis is selected.
+- Treat uninterrupted same-target typing as one renewable activity with one direction score. Each
+  accepted key event renews the activity, with no maximum visible duration. End it only after the
+  typed-policy idle gap, a real target change, an excluded/private interval, or a clip boundary.
+  The idle gap means no accepted keyboard events; microphone silence is unrelated. The six-second
+  click-chain safeguard applies only to click-only chains. Internal checkpoints must not create a
+  visible exit, a second timeline item, or another score. A nearby content click after typing can
+  receive a direct connected handoff instead of forcing full frame first.
+- Resolve typing position from a trustworthy Accessibility caret rectangle first. If the target
+  exposes only broad bounds, use the latest recent content click only when it lies inside that same
+  focused editable target. Use the center only for a compact target whose bounds are precise enough.
+  If none of those positions is trustworthy, omit the automatic typing Zoom. Once a connected Zoom
+  reaches its next typing position, keep full scale and pan without restarting the incoming
+  region's entrance animation.
+- Keep typing qualification, minimum activity, idle-gap, target confidence, and framing values in a
+  typed policy. Use a passive low-cost event counter during capture and do target lookup at a
+  bounded rate so keyboard direction cannot make recording or other apps lag.
+- After a content click, observe a short bounded attention window. Fit one padded crop around the
+  click and the positions where the cursor then spends time. Ignore isolated fly-by samples. Keep
+  a separate later click from being absorbed into the first crop. If the cursor quickly relocates
+  to a distant place and parks there, end the click observation instead of widening or suppressing
+  the click zoom. If the remaining useful activity is too wide for a readable zoom, use no
+  automatic zoom.
+- Rank all candidate moments together. Prefer precision over recall and keep a global motion
+  budget near four zooms per minute. Do not add an effect for every click.
+- Vary focus, duration, and scale with the interaction. Do not apply one fixed zoom to every
+  generated region.
+- Store every result as an ordinary clip-anchored zoom region with `source: "auto"`. The user
+  can resize, move, focus, copy, delete, Undo, and Redo it with the normal editor actions.
+- Never overwrite manual regions. Existing zoom regions reserve their timeline spans.
+- Apply automatic-zoom spacing, occupancy, and density in trim-compressed playback time. Store the
+  accepted regions on the raw timeline so normal editing and clip anchors remain authoritative.
+- Use one deterministic motion function in TypeScript preview and native export. Smooth is the
+  normal zero-bounce S-curve. Snappy preserves the faster Screen Studio-style ease. Linear moves
+  at constant speed. Instant uses a hold boundary with no transition. Screen zoom and camera
+  regions choose and persist their motion styles independently, so a camera can switch instantly
+  while the screen still moves smoothly. Keep the normal UI to these intent-level names. Do not
+  expose raw Bézier coordinates.
+- Let each screen zoom and camera region also choose one compact transition-speed multiplier:
+  0.5×, 0.75×, 1×, 1.25×, 1.5×, or 2×. New regions start at 1×. Apply the same validated value to
+  entry, exit, and connected screen pans in TypeScript preview and native export. Disable the speed
+  control for Instant because a cut has no transition duration. Keep this as a small selected-region
+  control, not a new global settings panel.
+- Keep automatic-direction thresholds and effect timing in typed policy objects. Motion style is
+  a presentation setting on the ordinary region, not an analyzer threshold. A later Advanced
+  Auto-Editing section can pass validated project overrides into the same policies; it must not
+  require a second analyzer or scatter tuning constants through UI components.
+- Let automatic screen zooms breathe. The initial policy uses a 3.0-second preferred duration,
+  a 2.7-second minimum, and a 6.0-second maximum, with up to 4.5 seconds of post-click attention.
+  Measure spacing as the visible quiet gap between effects, not the distance between their
+  centers, so longer zooms do not create a rapid out-and-in pulse. Do not leave a rejection-only
+  timing range between connected and separate effects: by default, a valid effect either connects
+  inside the renderer's pan window or remains as a separate effect after that window.
+- Add speech activity, screen readability, and camera activity as new observation signals in
+  the direction engine. Do not replace the deterministic engine with an LLM.
+- Automatic camera emphasis uses the isolated microphone track, a quiet cursor, and an active
+  camera track. It does not depend on STT. Require 2.5 seconds of sustained microphone activity,
+  1.5 seconds without cursor activity, at least 3.5 seconds of useful emphasis, no overlap with
+  a screen zoom, and a sparse limit of two camera regions per minute. Apply all density and
+  spacing limits in trim-compressed playback time, while stored regions stay on the raw timeline.
+- Camera analysis runs after recording, so the 2.5-second speech requirement is a confidence
+  window, not a visible delay. After speech qualifies, anchor Camera Emphasis at the detected
+  speech onset. Add up to 250 ms of quiet lead-in so the camera starts moving into place before
+  the first spoken sound. Never extend that lead-in across cursor activity.
+- Keep the full camera-to-camera spacing after Camera Emphasis. A screen-to-camera return has its
+  own short typed gap because cursor quiet already proves that screen activity stopped. Let a later,
+  non-overlapping screen zoom take focus sooner when the screen becomes active; that camera-to-screen
+  change is an intentional handoff, not repeated motion.
+- Store camera emphasis as a normal clip-anchored camera-layout region with `mode: "emphasis"`,
+  `source: "auto"`, and a default 1.35× camera scale. Never generate automatic full-screen
+  camera regions. Show it in the camera effect lane immediately above the clip lane. Preview and
+  native export must use the same smooth contained motion envelope.
+
+## Technical-content quality and export
+
+Olle records terminals, code, and other interfaces with small text. Preserve fine text as a
+product requirement, not as an optional maximum-quality mode.
+
+- On Retina Macs, capture the best available backing-pixel resolution. Do not silently record
+  the logical point size. Use ScreenCaptureKit's pixel scale and best-resolution controls, with
+  an explicit lower-resolution option only when the user chooses speed or smaller files.
+- Output shape and output resolution are separate controls. The editor already defaults to a
+  padded 16:9 canvas and offers 16:9, 9:16, 1:1, 4:3, 4:5, 16:10, 10:16, and original shapes.
+  Preserve the selected background and padding without stretching the captured screen.
+- Export must offer real control over resolution, frame rate, codec, and bitrate. A quality
+  preset must pass its resolved bitrate to the native encoder; do not calculate a value in the
+  UI and then let the native pipeline replace it with a hidden fixed bitrate.
+- Use the normal names Medium, High, and Highest for the quality presets. Do not create a
+  separate mode named for terminals, code, or technical text. Show each preset's resolution,
+  resolved bitrate, estimated file size, and selected encoder. Persist normal export choices.
+- Resolve Medium to a 1080-pixel short side, High to a 1440-pixel short side (consumer 2K,
+  2560 × 1440 for 16:9), and Highest to the source-sized project output. Keep Highest visibly
+  identified as matching the recording so source quality is not hidden behind the preset name.
+- Let the user choose webcam resolution and frame rate as one real format, such as 4K/30,
+  2K/30, or 1080p/60. Persist the choice. Do not combine independent capability maxima into a
+  format the camera cannot produce; test each offered width, height, and FPS combination against
+  the camera and fall back safely if saved hardware capabilities changed.
+- Keep the local Mac path first: VideoToolbox decode, Metal composition, and VideoToolbox
+  encode without CPU readback. Add an edit-free remux/concatenate fast path when no visual
+  composition is required.
+- Remote export must run the same versioned project renderer, not a generic transcoder. Do not
+  build cloud or LAN offload until a headless worker can package the project, referenced media,
+  fonts, and assets and reproduce the local output deterministically.
+
+## YouTube-ready audio and delivery
+
+record must export a file that Olle can upload without a separate audio-mastering step.
+Keep capture media recoverable and non-destructive; do not permanently bake loudness changes
+into the raw clips.
+
+- Preserve microphone and system audio as separate source tracks or stems. The current Mac
+  helper mixes them into one AAC track, which prevents independent dialogue leveling, system
+  audio ducking, and later mix correction. Replace that limitation before calling automatic
+  audio mastering complete.
+- After a clip finalizes, analyze its spoken dialogue asynchronously. This work must never block
+  Pause or Continue. Use ITU-R BS.1770 loudness and true-peak measurement, ignore silence and
+  room tone, cap automatic gain changes, and store the result as editable project metadata.
+- Make dialogue sound consistent across adjacent clips. Do not independently normalize each
+  whole clip to one peak or LUFS value because short silence and low room noise can be boosted
+  into audible jumps at every cut.
+- After cuts, speed changes, voiceovers, microphone gain, and system-audio mixing are applied,
+  measure and master the complete edited program. `Normalize volume` is one simple export option
+  and is on by default. Use -14 LUFS integrated and no more than -1 dBTP as the practical default
+  for online video. This is a record mastering default, not an official YouTube upload rule.
+  Use a transparent true-peak limiter only where needed. Let the user disable normalization.
+- Automatic system-audio ducking under speech can follow the first mastering slice. Keep it
+  subtle and reversible.
+- Export normal YouTube audio as 48 kHz stereo AAC-LC at 384 kbps. Show measured input loudness,
+  output loudness, true peak, and any warning that prevented safe normalization.
+- Export a standard MP4 with Fast Start, H.264 progressive 4:2:0 video, the recorded frame rate,
+  explicit BT.709 SDR color metadata, and the selected real output bitrate. Verify High Profile,
+  GOP, B-frame, and container metadata from the saved file instead of assuming encoder defaults.
+- Persist the user's normal export choices. A later direct YouTube upload action must first save
+  the local MP4, use OAuth and a resumable upload, show progress and retry state, require title,
+  description, and privacy, and default to Private or Unlisted. Never publish by surprise.
+- Restore the last export format, quality, frame rate, codec, volume-normalization choice, and GIF
+  options when the export dialog opens again.
+
+## Visual direction
+
+Aim for Screen Studio-level refinement, not a pixel copy.
+
+- Use Screen Studio's broad professional-editor structure and calm density as a quality
+  reference.
+- Create original tokens, colors, icons, motion, copy, assets, empty states, and branding.
+- Use one dark, content-first editor window with a dominant preview, stable trailing
+  inspector, and precise bottom timeline.
+- Use restrained material/blur only for floating surfaces and window chrome.
+- Keep canvas, inspector, and editor timeline mostly opaque for contrast and performance.
+- Use one icon family and one token system for spacing, type, radii, color, shadows, and
+  motion.
+- Use one continuous surface for dense inspector settings. Ordinary toggle rows and sliders
+  must not become cards inside the inspector. Keep bordered tiles only when the tile is the
+  actual option, such as a cursor theme or camera shape.
+- Prefer low visual weight over artificially tiny controls.
+- Keep controls reachable with keyboard and VoiceOver. Support Increased Contrast, larger
+  text, and Reduce Motion.
+- Never sacrifice recording reliability for animation or glass effects.
+
+## Architecture
+
+record is Mac-first, not Mac-only.
+
+- Shared app/editor: Electron, React, TypeScript, PixiJS, and the existing project model.
+- macOS capture: Swift, ScreenCaptureKit, AVFoundation, and `AVAssetWriter`.
+- Windows later: C++ and Windows Graphics Capture behind the same capture-helper contract.
+- Linux later: Rust and PipeWire/portal capture behind the same contract.
+- Do not duplicate the editor per operating system.
+- Do not rewrite the whole app in Swift merely to make the UI look native. Screen Studio
+  itself proves that Electron plus native media helpers can produce a refined Mac app.
+
+## Commercial and licensing boundary
+
+This is a private proprietary product intended to make money.
+
+- The business model stays open. record can become a paid app, a subscription, or a hybrid later.
+  Do not hardcode the inherited “free forever” promise into product behavior.
+- Do not add billing or entitlement code before the paid-product requirements are chosen. A future
+  entitlement failure must never delete, corrupt, or hide the user's local recordings and projects.
+- The pinned OpenScreen base is MIT licensed and permits commercial proprietary use.
+- Preserve the exact upstream copyright and MIT permission notice in source and every
+  distribution.
+- Keep the public repository as fetch-only `upstream`. Never push product work there.
+- Add a private `origin` only when Olle supplies or creates the private remote.
+- Complete the runtime and visual rebrand before public distribution. Do not ship the OpenScreen
+  name, logo, identity, screenshots, or marketing assets as record.
+- Do not copy AGPL Recordly code.
+- Before a paid release, generate and review dependency and asset notices. Preserve LGPL
+  requirements for dynamically linked FFmpeg. Reject unapproved GPL/AGPL/nonfree or unknown
+  components.
+
+## Performance and reliability gates
+
+- Recording failure must be loud and recoverable. Never let the HUD count while the writer
+  has already failed.
+- Save project state after each committed clip and removal.
+- Keep capture and writer work off the renderer thread.
+- Use standard files that remain recoverable after a crash where possible.
+- Do not delete media synchronously from Backspace.
+- Test clips shorter than one second and recordings of 5, 30, and 60 minutes.
+- Test microphone only, system audio only, both, and neither.
+- Test repeated Pause/Continue, Pause followed immediately by Stop, and removal back to zero.
+- Exclude recorder windows from captured output. On macOS 26, fix this in the
+  ScreenCaptureKit `SCContentFilter` by excluding the app's own windows; Electron content
+  protection alone is not sufficient.
+- Report native export throughput and the selected decode, compositor, and encoder paths so a
+  software fallback cannot look like a slow but successful hardware export.
+- Benchmark export with representative terminal footage at 1080p60, source resolution, and the
+  Highest quality preset before selecting speed/quality defaults.
+
+## Repository commands
+
+Use npm only. Native modules and the lockfile depend on it.
+
+- Install: `npm install`
+- Dev app: `npm run dev`
+- App typecheck: `npx tsc --noEmit`
+- Test typecheck: `npx tsc -p tsconfig.test.json --noEmit`
+- Targeted unit test: `npx vitest --run <path>`
+- Full unit suite: `npm run test`
+- Lint: `npm run lint`
+- Format: `npm run format`
+- i18n validation: `npm run i18n:check`
+- Build macOS helpers: `npm run build:native:mac`
+- Build app: `npm run build`
+
+Run targeted tests during development. Run the full suite once at the end. Never use the
+non-terminating test watcher.
+
+The normal app build does not rebuild the Swift/C++/Rust capture helpers. Rebuild the full
+platform-native directory before trusting native results. A successful Electron build does
+not prove the helper contains the current source.
+
+## Code and test rules
+
+- Do not use TestSprite for record unless Olle explicitly asks for it.
+- TypeScript is strict. Do not add explicit `any`.
+- Match the surrounding module's architecture. Do not refactor unrelated code.
+- React uses functional components and top-level hooks.
+- Add tests for each new behavior in the same package as the code.
+- Platform-conditional tests must pin the platform because CI is Linux.
+- Native capture, preview, or export changes require a real Mac desktop recording pass in
+  addition to unit tests.
+- For HUD screenshots in development, `OPENSCREEN_DISABLE_CONTENT_PROTECTION=1` makes the
+  panel capturable, but a recording made with it can include the HUD. Unset it for real
+  capture validation.
+- Read `technical-documentation/testing/manual-e2e-checklist.md` before a release-candidate
+  smoke test.
+
+## Working discipline
+
+- Preserve unrelated user changes in a dirty worktree.
+- Keep the first working path small and real. Do not substitute a visual mock for working
+  media behavior.
+- Do not expose controls that claim an operation succeeded when only local UI state changed.
+- Do not call the first version working until real files, project state, playback, and export
+  agree.
+- Update this guide when Olle changes a durable product decision.

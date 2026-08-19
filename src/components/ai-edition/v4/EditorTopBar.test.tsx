@@ -7,20 +7,22 @@ import { describe, expect, it, vi } from "vitest";
 // the public topbar instead. The translator echoes keys; assertions read better
 // against keys than against prose that drifts with copy edits.
 vi.mock("@/contexts/I18nContext", () => ({
-	useI18n: () => ({ locale: "en", setLocale: () => {} }),
+	useI18n: () => ({ locale: "en", setLocale: () => undefined }),
 	useScopedT: () => (key: string) => key,
 }));
 
 vi.mock("@/hooks/useTheme", () => ({
-	useTheme: () => ({ theme: "dark", toggle: () => {} }),
+	useTheme: () => ({ theme: "dark", toggle: () => undefined }),
 }));
 
 import { EditorTopBar } from "./EditorTopBar";
 
-const noop = () => {};
+const noop = () => undefined;
 
 function renderTopBar(projectTitle: string | null) {
 	const onRename = vi.fn();
+	const onRecord = vi.fn();
+	const onRegenerate = vi.fn();
 	render(
 		<EditorTopBar
 			mode="edit"
@@ -28,6 +30,8 @@ function renderTopBar(projectTitle: string | null) {
 			projectTitle={projectTitle}
 			dirty={false}
 			canExport={false}
+			canRegenerateAutomaticEdits={projectTitle != null}
+			regeneratingAutomaticEdits={false}
 			chatOpen={false}
 			actions={{
 				openProject: noop,
@@ -37,11 +41,31 @@ function renderTopBar(projectTitle: string | null) {
 				openSettings: noop,
 				renameProject: onRename,
 				toggleChat: noop,
+				record: onRecord,
+				regenerateAutomaticEdits: onRegenerate,
 			}}
 		/>,
 	);
-	return { onRename };
+	return { onRename, onRecord, onRegenerate };
 }
+
+describe("editor workspace navigation", () => {
+	it("keeps recording as an action instead of a third editor tab", () => {
+		const { onRecord } = renderTopBar("Demo Project");
+
+		expect(screen.getAllByRole("tab")).toHaveLength(2);
+		expect(screen.queryByRole("tab", { name: "topbar.modes.rec" })).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "rec.startRecording" }));
+		expect(onRecord).toHaveBeenCalledOnce();
+	});
+
+	it("exposes automatic-edit regeneration as one editor action", () => {
+		const { onRegenerate } = renderTopBar("Demo Project");
+
+		fireEvent.click(screen.getByRole("button", { name: "topbar.regenerateAutomaticEdits" }));
+		expect(onRegenerate).toHaveBeenCalledOnce();
+	});
+});
 
 describe("ProjectNameField (issue #180)", () => {
 	it("renders the project title on the button", () => {

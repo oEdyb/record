@@ -29,6 +29,7 @@
 		"annotationItem": "标注",
 		"imageItem": "图片",
 		"emptyText": "空文本",
+		"cameraEmphasis": "摄像头强调",
 		"cameraFullscreen": "全屏摄像头",
 		"cameraFullscreenItem": "全屏摄像头 {{index}}"
 	},

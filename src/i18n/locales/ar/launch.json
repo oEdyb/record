@@ -92,6 +92,7 @@
 		"micLevel": "مستوى الإدخال",
 		"micHint": "تحدّث لاختبار الميكروفون",
 		"noMicrophones": "لم يتم العثور على ميكروفون",
+		"cameraQuality": "جودة الكاميرا",
 		"preview": "معاينة",
 		"previewUnavailable": "المعاينة غير متاحة"
 	}

@@ -25,7 +25,7 @@
 #![allow(dead_code)]
 
 use crate::config::Cfg;
-use crate::scene::{Scene, SceneCrop};
+use crate::scene::{Scene, SceneCameraLayoutMode, SceneCrop};
 
 /// Constant buffer d'un calque : **128 octets**, un par draw.
 ///
@@ -833,11 +833,11 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             pp.zoom = zs_p.scale;
             pp.focus = zs_p.focus;
         }
-        // Full Camera ignore le rétrécissement réactif de la webcam (design web : mélanger
-        // "rétrécit pour le zoom" et "grandit en plein cadre" dans la même frame n'a pas de sens).
-        let cam_progress = crate::regions::camera_fullscreen_progress_at(cam_regions, source_t);
-        let cam_progress_prev =
-            crate::regions::camera_fullscreen_progress_at(cam_regions, source_t_prev);
+        // Resolve the active camera layout once so preview and export use the same motion state.
+        let cam_layout = crate::regions::camera_layout_state_at(cam_regions, source_t);
+        let cam_layout_prev = crate::regions::camera_layout_state_at(cam_regions, source_t_prev);
+        let cam_progress = cam_layout.progress;
+        let cam_progress_prev = cam_layout_prev.progress;
         // rétrécissement réactif : la webcam rétrécit pendant un zoom actif (1/zoom, plancher
         // 0.35 — parité `reactiveWebcamScale`, TS). Ignoré pendant Full Camera (voir ci-dessus).
         let reactive_scale = |zoom: f32, progress: f32| -> f32 {
@@ -1023,25 +1023,55 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             fit_cam_aspect(scale_corner_br(pp.webcam.dst, webcam_size_scale_prev))
         };
 
-        // Full Camera : la caméra PREND le cadre — parité `computeCameraFullscreenRect` (TS).
-        // La cible est exactement [0,0,1,1] : pas de marge, pas de padding, pas d'arrondi, et
-        // plus rien de la composition (fond, écran, ombre) derrière. Le rect change de ratio en
-        // chemin, mais `cover_crop_uv` (plus bas) dérive la coupe source du ratio RÉEL de la
-        // boîte à chaque frame : la caméra n'est donc jamais étirée pendant l'animation.
-        let fullscreen_dst = |dst: [f32; 4], progress: f32| -> [f32; 4] {
+        // Fullscreen fills the frame. Emphasis grows the camera in place while it keeps the
+        // closest horizontal and vertical margins, so the screen remains visible.
+        let camera_layout_dst = |
+            dst: [f32; 4],
+            progress: f32,
+            mode: SceneCameraLayoutMode,
+            emphasis_scale: f32,
+        | -> [f32; 4] {
             if progress <= 0.0 {
                 return dst;
             }
+            let target = match mode {
+                SceneCameraLayoutMode::Fullscreen => [0.0, 0.0, 1.0, 1.0],
+                SceneCameraLayoutMode::Emphasis => {
+                    let scale = emphasis_scale.clamp(1.0, 1.6);
+                    let width = (dst[2] * scale).min(1.0);
+                    let height = (dst[3] * scale).min(1.0);
+                    let right_anchored = dst[0] + dst[2] * 0.5 > 0.5;
+                    let bottom_anchored = dst[1] + dst[3] * 0.5 > 0.5;
+                    let x = if right_anchored { dst[0] + dst[2] - width } else { dst[0] };
+                    let y = if bottom_anchored { dst[1] + dst[3] - height } else { dst[1] };
+                    [x.clamp(0.0, 1.0 - width), y.clamp(0.0, 1.0 - height), width, height]
+                }
+            };
             let lerp = |a: f32, b: f32| a + (b - a) * progress;
-            [lerp(dst[0], 0.0), lerp(dst[1], 0.0), lerp(dst[2], 1.0), lerp(dst[3], 1.0)]
+            [
+                lerp(dst[0], target[0]),
+                lerp(dst[1], target[1]),
+                lerp(dst[2], target[2]),
+                lerp(dst[3], target[3]),
+            ]
         };
         // Petit côté de la boîte caméra AVANT que Full Camera ne la fasse grandir. C'est la
         // référence du rayon de coin : le zoom réactif est déjà dedans (il rétrécit la boîte,
         // donc l'arrondi suit tout seul — parité `borderRadius * reactiveFactor` côté TS), alors
         // que Full Camera ne fait pas grossir l'arrondi, il le DISSOUT (cf. `shape_fade`).
         let w_nominal_min = (w_dst[2] * rw).min(w_dst[3] * rh);
-        w_dst = fullscreen_dst(w_dst, cam_progress);
-        w_dst_prev = fullscreen_dst(w_dst_prev, cam_progress_prev);
+        w_dst = camera_layout_dst(
+            w_dst,
+            cam_progress,
+            cam_layout.mode,
+            cam_layout.camera_scale,
+        );
+        w_dst_prev = camera_layout_dst(
+            w_dst_prev,
+            cam_progress_prev,
+            cam_layout_prev.mode,
+            cam_layout_prev.camera_scale,
+        );
 
         // Contre-étirement "fit" : le canvas interne compose TOUJOURS en OUT_W×OUT_H (16:9),
         // puis `blit_resized` étire tout, de façon non uniforme si besoin, vers la résolution
@@ -1092,7 +1122,10 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // francs puis un plein cadre net — aucun masque ne survit au plein écran (parité
         // `computeCameraFullscreenRect`, qui ramène `maskShape` à "rectangle" et lerpe le
         // rayon vers 0 pour exactement la même raison).
-        let shape_fade = (1.0 - cam_progress).clamp(0.0, 1.0);
+        let shape_fade = match cam_layout.mode {
+            SceneCameraLayoutMode::Fullscreen => (1.0 - cam_progress).clamp(0.0, 1.0),
+            SceneCameraLayoutMode::Emphasis => 1.0,
+        };
         let w_radius = shape_fade
             * w_nominal_min
             * match app_webcam_radius_frac {
@@ -1250,6 +1283,7 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::SceneCameraFullscreenRegion;
 
     /// La scène de référence du golden : un cas qui exerce le padding, le crop, le zoom,
     /// une caméra PiP décalée, un rayon et une inclinaison nulle.
@@ -1289,6 +1323,36 @@ mod tests {
             cursor: None,
             timeline_t_override: Some(1.5),
         }
+    }
+
+    #[test]
+    fn camera_emphasis_grows_the_pip_without_hiding_the_screen_or_shape() {
+        let cfg = crate::config::all().pop().expect("at least one config");
+        let plain = golden_scene();
+        let mut emphasized = golden_scene();
+        emphasized.camera_fullscreen_regions.push(SceneCameraFullscreenRegion {
+            clip_index: Some(0),
+            start_sec: 0.0,
+            end_sec: 5.0,
+            mode: SceneCameraLayoutMode::Emphasis,
+            camera_scale: 1.35,
+            motion_style: crate::scene::SceneMotionStyle::Smooth,
+            motion_speed: 1.0,
+        });
+        let base = plan_frame(&golden_input(&plain, &cfg));
+        let grown = plan_frame(&golden_input(&emphasized, &cfg));
+
+        assert_eq!(grown.s_dst, base.s_dst, "emphasis must not replace the screen");
+        assert!((grown.w_dst[2] / base.w_dst[2] - 1.35).abs() < 1e-5);
+        assert!((grown.w_dst[3] / base.w_dst[3] - 1.35).abs() < 1e-5);
+        let base_right = 1.0 - base.w_dst[0] - base.w_dst[2];
+        let grown_right = 1.0 - grown.w_dst[0] - grown.w_dst[2];
+        let base_bottom = 1.0 - base.w_dst[1] - base.w_dst[3];
+        let grown_bottom = 1.0 - grown.w_dst[1] - grown.w_dst[3];
+        assert!((grown_right - base_right).abs() < 1e-5);
+        assert!((grown_bottom - base_bottom).abs() < 1e-5);
+        assert_eq!(grown.shape_fade, 1.0, "emphasis must preserve the camera mask");
+        assert_eq!(grown.w_radius, base.w_radius);
     }
 
     /// La même scène, avec une région de zoom active à `t = 1.5 s`.

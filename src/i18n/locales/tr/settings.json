@@ -28,6 +28,14 @@
 			"hint": "0 = en sol / en üst, 100 = en sağ / en alt"
 		}
 	},
+	"motion": {
+		"title": "Hareket",
+		"speed": "Hız",
+		"smooth": "Yumuşak",
+		"snappy": "Hızlı",
+		"linear": "Doğrusal",
+		"instant": "Anında"
+	},
 	"speed": {
 		"playbackSpeed": "Oynatma Hızı",
 		"selectRegion": "Ayarlamak için bir hız bölgesi seçin",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "Dışa aktarma çözünürlüğü",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "Orta",
+		"medium": "Yüksek",
+		"high": "En yüksek"
 	},
 	"gifSettings": {
 		"frameRate": "GIF Kare Hızı",

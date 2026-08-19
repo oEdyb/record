@@ -285,6 +285,12 @@ pub struct SceneZoomRegion {
     pub focus_mode: Option<String>,
     /// "iso" | "left" | "right" | null.
     pub rotation: Option<String>,
+    /// Temporal interpolation. Missing values preserve the legacy Snappy curve.
+    #[serde(default)]
+    pub motion_style: SceneMotionStyle,
+    /// Transition speed multiplier. Missing values keep the authored 1x timing.
+    #[serde(default = "default_motion_speed")]
+    pub motion_speed: f32,
 }
 
 /// Une zone de vitesse portée par le temps source d'un clip.
@@ -299,9 +305,34 @@ pub struct SceneSpeedRegion {
     pub speed: f64,
 }
 
-/// Une zone "Full Camera" de la timeline (temps en secondes) : la caméra PREND tout le cadre
-/// pendant cette fenêtre (plein écran net — ni marge, ni arrondi, ni masque, ni fond derrière).
-/// Pas de champs au-delà des bornes temporelles (miroir de `CameraFullscreenRegion`, TS).
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SceneCameraLayoutMode {
+    #[default]
+    Fullscreen,
+    Emphasis,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SceneMotionStyle {
+    Smooth,
+    #[default]
+    Snappy,
+    Linear,
+    Instant,
+}
+
+fn default_camera_emphasis_scale() -> f32 {
+    1.35
+}
+
+fn default_motion_speed() -> f32 {
+    1.0
+}
+
+/// A camera-layout timeline region. Payloads without `mode` remain Full Camera.
+/// `emphasis` grows the camera moderately without hiding the screen.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneCameraFullscreenRegion {
@@ -310,6 +341,14 @@ pub struct SceneCameraFullscreenRegion {
     pub clip_index: Option<usize>,
     pub start_sec: f64,
     pub end_sec: f64,
+    #[serde(default)]
+    pub mode: SceneCameraLayoutMode,
+    #[serde(default = "default_camera_emphasis_scale")]
+    pub camera_scale: f32,
+    #[serde(default)]
+    pub motion_style: SceneMotionStyle,
+    #[serde(default = "default_motion_speed")]
+    pub motion_speed: f32,
 }
 
 /// Rendu du curseur.
@@ -481,6 +520,8 @@ mod tests {
         }
         assert_eq!(scene.zoom_regions[0].scale, 2.0);
         assert_eq!(scene.zoom_regions[0].clip_index, Some(0));
+        assert_eq!(scene.zoom_regions[0].motion_style, SceneMotionStyle::Snappy);
+        assert_eq!(scene.zoom_regions[0].motion_speed, 1.0);
         assert_eq!(scene.speed_regions[0].speed, 2.0);
         assert!(scene.clips[0].has_audio);
         assert_eq!(scene.crop_by_clip.len(), 1);

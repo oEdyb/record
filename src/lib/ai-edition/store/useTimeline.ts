@@ -5,8 +5,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
-import type { AnnotationRegion, AnnotationType } from "@/components/video-editor/types";
+import type {
+	AnnotationRegion,
+	AnnotationType,
+	CameraFullscreenRegion,
+} from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import {
+	DEFAULT_MOTION_SPEED,
+	type MotionStyle,
+	NEW_CAMERA_MOTION_STYLE,
+	NEW_ZOOM_MOTION_STYLE,
+	normalizeMotionSpeed,
+} from "@/lib/zoomMath/motionCurve";
 import { createId } from "../document/ids";
 import {
 	duplicateClip as duplicateClipInDocument,
@@ -28,7 +39,7 @@ import {
 	resolvePillIds,
 } from "../timeline/timelineMap";
 import { dropTrimPillsByIds, resolveTimelineSpanToTrim } from "../timeline/trim-mapping";
-import type { AutoZoomSuggestion } from "../timeline/zoom-suggestions";
+import { type AutoZoomSuggestion, appendAutoZoomSuggestions } from "../timeline/zoom-suggestions";
 import { useProjectStore } from "./projectStore";
 
 // How long a region lasts when the caller doesn't say. The timeline's toolbar
@@ -97,6 +108,7 @@ export function useTimeline() {
 	const document = useProjectStore((s) => s.document);
 	const projectId = useProjectStore((s) => s.projectId);
 	const saveDocument = useProjectStore((s) => s.saveDocument);
+	const saveDocumentAsEdit = useProjectStore((s) => s.saveDocumentAsEdit);
 	const setDocument = useProjectStore((s) => s.setDocument);
 	const [selection, setSelection] = useState<RegionHandle | null>(null);
 	// F2.7 — shift-click multi-selection. `selection` stays the inspector's
@@ -176,6 +188,8 @@ export function useTimeline() {
 						depth: 3,
 						focus: { cx: 0.5, cy: 0.5 },
 						focusMode: "manual" as const,
+						motionStyle: NEW_ZOOM_MOTION_STYLE,
+						motionSpeed: DEFAULT_MOTION_SPEED,
 					},
 				],
 				document.timeline.clips,
@@ -191,36 +205,30 @@ export function useTimeline() {
 	);
 
 	// Append several auto-generated zoom regions in one save (auto-enhance).
-	// Suggestions come from buildAutoZoomSuggestions, which already reserves
-	// existing zoom spans, so no extra overlap filtering is needed here.
-	// Returns the count actually added (0 when there's no doc/suggestions).
+	// Re-read and reserve against the live document. Sidecar analysis is async,
+	// so a manual edit can land after suggestion generation but before this call.
+	// Returns the count actually added (0 when none still fit).
 	const addZoomsBulk = useCallback(
 		async (suggestions: AutoZoomSuggestion[]) => {
-			if (!document || suggestions.length === 0) return 0;
-			const anchored = suggestions.flatMap((s) =>
-				anchorRegionsWithDerivedMs(
-					[
-						{
-							id: createId("zoom"),
-							startMs: Math.round(s.span.start),
-							endMs: Math.round(s.span.end),
-							depth: 3 as const,
-							focus: { cx: s.focus.cx, cy: s.focus.cy },
-							focusMode: "auto" as const,
-						},
-					],
-					document.timeline.clips,
-					() => createId("zoom"),
-				),
-			);
-			const next: AxcutDocument = {
-				...document,
-				zoomRanges: [...document.zoomRanges, ...anchored] as AxcutDocument["zoomRanges"],
-			};
-			await saveDocument(next);
-			return suggestions.length;
+			const currentDocument = useProjectStore.getState().document;
+			if (!currentDocument || suggestions.length === 0) return 0;
+			const occupied = currentDocument.zoomRanges.map((zoom) => ({
+				start: zoom.startMs,
+				end: zoom.endMs,
+			}));
+			const accepted = suggestions.filter((suggestion) => {
+				const overlaps = occupied.some(
+					(span) => suggestion.span.end > span.start && suggestion.span.start < span.end,
+				);
+				if (!overlaps) occupied.push(suggestion.span);
+				return !overlaps;
+			});
+			if (accepted.length === 0) return 0;
+			const next = appendAutoZoomSuggestions(currentDocument, accepted);
+			await saveDocumentAsEdit(next);
+			return accepted.length;
 		},
-		[document, saveDocument],
+		[saveDocumentAsEdit],
 	);
 
 	const addTrim = useCallback(
@@ -359,7 +367,15 @@ export function useTimeline() {
 					cameraFullscreenRegions: [
 						...prev,
 						...anchorRegionsWithDerivedMs(
-							[{ id: createId("camfull"), startMs: timeMs, endMs }],
+							[
+								{
+									id: createId("camfull"),
+									startMs: timeMs,
+									endMs,
+									motionStyle: NEW_CAMERA_MOTION_STYLE,
+									motionSpeed: DEFAULT_MOTION_SPEED,
+								},
+							],
 							document.timeline.clips,
 							() => createId("camfull"),
 						),
@@ -473,9 +489,9 @@ export function useTimeline() {
 					() => createId("zoom"),
 				) as AxcutDocument["zoomRanges"],
 			};
-			await saveDocument(next);
+			await saveDocumentAsEdit(next);
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	// ponytail: the focus overlay drags at pointermove frequency (~60-120 Hz).
@@ -560,6 +576,34 @@ export function useTimeline() {
 			await saveDocument(next);
 		},
 		[document, saveDocument],
+	);
+
+	const updateZoomMotionStyle = useCallback(
+		async (id: string, motionStyle: MotionStyle) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				zoomRanges: patchPillById(document.zoomRanges, id, {
+					motionStyle,
+				}) as AxcutDocument["zoomRanges"],
+			};
+			await saveDocumentAsEdit(next);
+		},
+		[document, saveDocumentAsEdit],
+	);
+
+	const updateZoomMotionSpeed = useCallback(
+		async (id: string, motionSpeed: number) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				zoomRanges: patchPillById(document.zoomRanges, id, {
+					motionSpeed: normalizeMotionSpeed(motionSpeed),
+				}) as AxcutDocument["zoomRanges"],
+			};
+			await saveDocumentAsEdit(next);
+		},
+		[document, saveDocumentAsEdit],
 	);
 
 	const updateAnnotationSpan = useCallback(
@@ -664,6 +708,42 @@ export function useTimeline() {
 			await saveDocument(next);
 		},
 		[document, saveDocument],
+	);
+
+	const updateCameraMotionStyle = useCallback(
+		async (id: string, motionStyle: MotionStyle) => {
+			if (!document) return;
+			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const prev = (legacy.cameraFullscreenRegions as CameraFullscreenRegion[] | undefined) ?? [];
+			const next: AxcutDocument = {
+				...document,
+				legacyEditor: {
+					...legacy,
+					cameraFullscreenRegions: patchPillById(prev, id, { motionStyle }),
+				},
+			};
+			await saveDocumentAsEdit(next);
+		},
+		[document, saveDocumentAsEdit],
+	);
+
+	const updateCameraMotionSpeed = useCallback(
+		async (id: string, motionSpeed: number) => {
+			if (!document) return;
+			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const prev = (legacy.cameraFullscreenRegions as CameraFullscreenRegion[] | undefined) ?? [];
+			const next: AxcutDocument = {
+				...document,
+				legacyEditor: {
+					...legacy,
+					cameraFullscreenRegions: patchPillById(prev, id, {
+						motionSpeed: normalizeMotionSpeed(motionSpeed),
+					}),
+				},
+			};
+			await saveDocumentAsEdit(next);
+		},
+		[document, saveDocumentAsEdit],
 	);
 
 	const updateSpeedValue = useCallback(
@@ -926,7 +1006,7 @@ export function useTimeline() {
 				timeline: { ...currentDoc.timeline, clips: newClips },
 			};
 			const finalDoc = rederiveRegionMs(next, newClips);
-			await saveDocument(finalDoc);
+			await saveDocumentAsEdit(finalDoc);
 			setClipSelection(newClip.id);
 
 			// If we used the placeholder, kick off the probe in the background.
@@ -943,7 +1023,7 @@ export function useTimeline() {
 				});
 			}
 		},
-		[saveDocument, probeAndCorrectClip],
+		[saveDocumentAsEdit, probeAndCorrectClip],
 	);
 
 	// Reorder a clip to a new index, then resequence timeline positions.
@@ -955,9 +1035,9 @@ export function useTimeline() {
 		async (clipId: string, toIndex: number) => {
 			if (!document) return;
 			if (!document.timeline.clips.some((c) => c.id === clipId)) return;
-			await saveDocument(moveClipInDocument(document, clipId, toIndex));
+			await saveDocumentAsEdit(moveClipInDocument(document, clipId, toIndex));
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	// Duplicate a clip in place (same asset + source range), inserted right
@@ -971,20 +1051,26 @@ export function useTimeline() {
 			// original, so its index in the result is the original's index + 1.
 			const insertedIndex = document.timeline.clips.findIndex((c) => c.id === clipId) + 1;
 			const next = duplicateClipInDocument(document, clipId, "user", "Duplicated clip");
-			await saveDocument(next);
+			await saveDocumentAsEdit(next);
 			setClipSelection(next.timeline.clips[insertedIndex]?.id ?? null);
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	const removeClip = useCallback(
 		async (clipId: string) => {
-			if (!document) return;
+			const currentDocument = useProjectStore.getState().document;
+			if (!currentDocument) return;
+			const removed = currentDocument.timeline.clips.find((clip) => clip.id === clipId);
+			if (!removed) return;
 			// One shared mutator with the agent's removeClip tool: reflow survivors + rederive pills.
-			await saveDocument(removeClipInDocument(document, clipId));
+			await saveDocumentAsEdit(removeClipInDocument(currentDocument, clipId));
+			// The playhead is also the recording insertion cursor. Leave it at the
+			// removed clip's former start so the normal Record action inserts there.
+			useProjectStore.getState().setCurrentTime(removed.timelineStartSec);
 			if (clipSelection === clipId) setClipSelection(null);
 		},
-		[document, clipSelection, saveDocument],
+		[clipSelection, saveDocumentAsEdit],
 	);
 
 	// Mirror of selectRegion: picking a clip retires the pill selection.
@@ -1005,11 +1091,7 @@ export function useTimeline() {
 
 	const cameraFullscreenRegions = hasDoc
 		? (((document.legacyEditor as Record<string, unknown> | null)
-				?.cameraFullscreenRegions as Array<{
-				id: string;
-				startMs: number;
-				endMs: number;
-			}>) ?? [])
+				?.cameraFullscreenRegions as CameraFullscreenRegion[]) ?? [])
 		: [];
 
 	return {
@@ -1049,12 +1131,16 @@ export function useTimeline() {
 		updateZoomDepth,
 		updateZoomRotation,
 		updateZoomFocusMode,
+		updateZoomMotionStyle,
+		updateZoomMotionSpeed,
 		updateAnnotationSpan,
 		updateAnnotationLive,
 		commitAnnotationChange,
 		updateSpeedSpan,
 		updateSpeedValue,
 		updateCameraFullscreenSpan,
+		updateCameraMotionStyle,
+		updateCameraMotionSpeed,
 		// T19 — drives the preview video during trim-edge resize.
 		setCurrentTime: useProjectStore((s) => s.setCurrentTime),
 	};

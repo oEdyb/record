@@ -56,7 +56,11 @@ import { formatMs } from "@/lib/ai-edition/timeline/format";
 import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview";
 import type { TranscriptGateReason } from "@/lib/ai-edition/transcription/status";
 import { getAssetPath } from "@/lib/assetPath";
-import { supportsWebcamReactiveZoom } from "@/lib/compositeLayout";
+import {
+	MAX_WEBCAM_SIZE_PERCENT,
+	MIN_WEBCAM_SIZE_PERCENT,
+	supportsWebcamReactiveZoom,
+} from "@/lib/compositeLayout";
 import { supportsCursorClickEffects } from "@/lib/cursor/cursorCapabilities";
 import { CURSOR_THEMES, DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
 import { buildGradientFromEditor } from "@/lib/gradientBuilder";
@@ -70,14 +74,18 @@ interface PaneProps {
 	// P3.3 — contextual help shown in a popover when the ? button is clicked.
 	helpText: string;
 	children: ReactNode;
+	flat?: boolean;
 }
 
-function Pane({ title, icon, helpText, children }: PaneProps) {
+function Pane({ title, icon, helpText, children, flat = false }: PaneProps) {
 	const ts = useScopedT("settings");
 	const helpLabel = ts("panes.help");
 	const [helpOpen, setHelpOpen] = useState(false);
 	return (
-		<div className={`${styles.pane} ${styles.isActive}`}>
+		<div
+			className={`${styles.pane} ${styles.isActive}${flat ? ` ${styles.flatInspectorPane}` : ""}`}
+			data-inspector-layout={flat ? "flat" : undefined}
+		>
 			<header className={styles.paneHead} style={{ position: "relative" }}>
 				<h2>{title}</h2>
 				<span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
@@ -1378,7 +1386,12 @@ export function VideoEffectsPane() {
 	// ete ouvert. Les handlers par controle ci-dessous poussent toujours leurs diffs.
 
 	return (
-		<Pane title={ts("effects.title")} icon={<Sliders size={14} />} helpText={ts("effects.help")}>
+		<Pane
+			title={ts("effects.title")}
+			icon={<Sliders size={14} />}
+			helpText={ts("effects.help")}
+			flat
+		>
 			<div className={styles.paneRow}>
 				<span className="label">{ts("effects.blurBg")}</span>
 				<Toggle
@@ -1521,7 +1534,12 @@ export function LayoutPane() {
 		: false;
 	const layoutControlsDisabled = !hasDocument || !hasAnyCamera;
 	return (
-		<Pane title={ts("layout.title")} icon={<LayoutIcon size={14} />} helpText={ts("layout.help")}>
+		<Pane
+			title={ts("layout.title")}
+			icon={<LayoutIcon size={14} />}
+			helpText={ts("layout.help")}
+			flat
+		>
 			<div className={styles.sectionLabel}>{ts("layout.preset")}</div>
 			<div className={styles.field}>
 				<label>{ts("layout.title")}</label>
@@ -1633,8 +1651,8 @@ export function LayoutPane() {
 						</div>
 						<input
 							type="range"
-							min={10}
-							max={50}
+							min={MIN_WEBCAM_SIZE_PERCENT}
+							max={MAX_WEBCAM_SIZE_PERCENT}
 							step={1}
 							defaultValue={settings.webcamSizePreset}
 							disabled={layoutControlsDisabled}
@@ -1701,6 +1719,7 @@ export function CursorPane() {
 			title={ts("cursor.title")}
 			icon={<MousePointerClick size={14} />}
 			helpText={ts("cursor.help")}
+			flat
 		>
 			<div className={styles.paneRow}>
 				<span className="label">{ts("cursor.show")}</span>

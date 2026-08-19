@@ -20,6 +20,7 @@ const showNotes = new URLSearchParams(window.location.search).get("showNotes") =
 if (
 	showNotes ||
 	windowType === "hud-overlay" ||
+	windowType === "camera-preview" ||
 	windowType === "source-selector" ||
 	windowType === "countdown-overlay"
 ) {

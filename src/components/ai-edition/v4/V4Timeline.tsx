@@ -9,7 +9,6 @@ import {
 	Scissors,
 	Sparkles,
 	SplitSquareHorizontal,
-	Trash2,
 	Wand2,
 	ZoomIn,
 } from "lucide-react";
@@ -31,6 +30,7 @@ import { useScopedT } from "@/contexts/I18nContext";
 import { useAudioPeaks } from "@/hooks/useAudioPeaks";
 import { createId } from "@/lib/ai-edition/document/ids";
 import { collectNativeFormats } from "@/lib/ai-edition/document/outputFormat";
+import { resolveClipInsertionBoundary } from "@/lib/ai-edition/document/timeline";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -38,6 +38,7 @@ import { useTimelineTranscriptGate } from "@/lib/ai-edition/store/transcriptionS
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
+import { buildAutomaticDirectionPlan } from "@/lib/ai-edition/timeline/automatic-direction";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
 	newRegionDurationSec,
@@ -50,10 +51,6 @@ import {
 	resolveTimelineSpanToTrim,
 	ventilateTimelineSpanToTrims,
 } from "@/lib/ai-edition/timeline/trim-mapping";
-import {
-	type AutoZoomSuggestion,
-	buildAutoZoomSuggestionsForClips,
-} from "@/lib/ai-edition/timeline/zoom-suggestions";
 import { nativeBridgeClient } from "@/native/client";
 import { ASPECT_RATIO_PRESETS, getAspectRatioLabel } from "@/utils/aspectRatioUtils";
 import { TransportBar } from "../TransportBar";
@@ -123,9 +120,11 @@ const PILL_HANDLES_MIN_PX = PILL_HANDLE_PX * 2 + PILL_MOVE_PX;
 const PILL_MOVE_GAP_PX = 4;
 /** Offset of an outside-mounted handle from the pill's edge. */
 const PILL_HANDLE_OUT_PX = PILL_HANDLE_PX + PILL_MOVE_GAP_PX;
-/** Icon (11px) + the pill's own padding (15px): below this, content is pure
- *  overflow — the lane's colour already says which kind it is, and the title
- *  attribute still gives the value on hover. */
+/** Small icon-only marker for a short pill. It keeps a real effect visible
+ *  without widening the pill beyond its exact duration. */
+const PILL_MARKER_MIN_PX = 8;
+/** Room needed for the normal icon-and-label content. Shorter pills use the
+ *  icon-only marker above instead of widening or hiding the real span. */
 const PILL_CONTENT_MIN_PX = 34;
 /** Edge-snap radius while dragging a pill, in screen px. */
 const PILL_SNAP_PX = 8;
@@ -160,7 +159,7 @@ const MIN_REGION_SEC = 0.001;
 export function pillAffordance(
 	durSec: number,
 	pxPerSec: number,
-): { compact: boolean; roomForLabel: boolean } {
+): { compact: boolean; roomForLabel: boolean; roomForMarker: boolean } {
 	const widthPx = pxPerSec > 0 ? durSec * pxPerSec : Number.POSITIVE_INFINITY;
 	const compact = widthPx < PILL_HANDLES_MIN_PX;
 	// `!compact &&` is load-bearing, not belt-and-braces: .lanePillCompact turns
@@ -168,7 +167,12 @@ export function pillAffordance(
 	// pill that rendered a label would spill it across the lane with nothing to
 	// clip it. Today PILL_CONTENT_MIN_PX > PILL_HANDLES_MIN_PX makes that
 	// impossible; this makes it impossible whatever those two numbers become.
-	return { compact, roomForLabel: !compact && widthPx >= PILL_CONTENT_MIN_PX };
+	const roomForLabel = !compact && widthPx >= PILL_CONTENT_MIN_PX;
+	return {
+		compact,
+		roomForLabel,
+		roomForMarker: !roomForLabel && widthPx >= PILL_MARKER_MIN_PX,
+	};
 }
 
 // Ruler tick label. Precision follows the step: whole seconds read as a clean
@@ -247,6 +251,42 @@ const PlayheadOverlay = memo(function PlayheadOverlay({
 				</div>
 			</div>
 		</div>
+	);
+});
+
+/**
+ * Quietly shows where the normal Record action will insert new clips.
+ *
+ * This is a separate memoized leaf for the same reason as PlayheadOverlay. The
+ * playhead moves on every frame, but the complete timeline must stay static.
+ * The derived selector returns null during playback, so those frame updates do
+ * not even re-render this hidden marker.
+ */
+const InsertionBoundaryMarker = memo(function InsertionBoundaryMarker({
+	clips,
+	totalSec,
+}: {
+	clips: AxcutClip[];
+	totalSec: number;
+}) {
+	const boundarySec = useProjectStore((state) =>
+		state.playing ? null : resolveClipInsertionBoundary(clips, state.currentTimeSec),
+	);
+	if (boundarySec === null || clips.length === 0 || totalSec <= 0) return null;
+	const isTimelineStart = boundarySec <= 0.001;
+	const boundaryPct = (boundarySec / totalSec) * 100;
+	return (
+		<div
+			aria-hidden
+			data-testid="timeline-insertion-boundary"
+			className={styles.tlInsertionBoundary}
+			style={{
+				// A clip's card ends one gutter before the next clip's true start.
+				// Put the marker in that visible gap instead of on the next card.
+				left: isTimelineStart ? "0%" : `calc(${boundaryPct}% - ${CLIP_GUTTER_PX / 2}px)`,
+				transform: isTimelineStart ? "translate(0px, -50%)" : "translate(-50%, -50%)",
+			}}
+		/>
 	);
 });
 
@@ -403,6 +443,18 @@ export function V4Timeline({
 		pointerDeltaX: number;
 		shiftPx: number;
 	} | null>(null);
+	const [activePillDrag, setActivePillDrag] = useState<{
+		id: string;
+		kind: LanePill["kind"];
+		start: number;
+		end: number;
+	} | null>(null);
+	const activePillDragRef = useRef<{
+		id: string;
+		kind: LanePill["kind"];
+		start: number;
+		end: number;
+	} | null>(null);
 	const { settings, set: setSettings } = useEditorSettings();
 	const document = useProjectStore((s) => s.document);
 	// The distinct native shapes of the clips actually on the timeline. "Original" used to be a
@@ -441,14 +493,11 @@ export function V4Timeline({
 							: t("toolbar.smartCutsNeedsTranscript");
 
 	const clips = tl.clips;
-	const total = useMemo(
-		() =>
-			Math.max(
-				1,
-				clips.reduce((m, c) => Math.max(m, c.timelineEndSec), 0),
-			),
+	const timelineEndSec = useMemo(
+		() => clips.reduce((m, c) => Math.max(m, c.timelineEndSec), 0),
 		[clips],
 	);
+	const total = Math.max(1, timelineEndSec);
 	const pctOf = useCallback((sec: number) => (sec / total) * 100, [total]);
 	const showLanes = variant === "edit";
 
@@ -496,7 +545,10 @@ export function V4Timeline({
 			kind: "cameraFullscreen",
 			start: p.start,
 			end: p.end,
-			label: "Full Camera",
+			label:
+				(p.member as { mode?: string }).mode === "emphasis"
+					? t("labels.cameraEmphasis")
+					: t("labels.cameraFullscreen"),
 			sourceIds: p.ids,
 		}),
 	);
@@ -645,19 +697,6 @@ export function V4Timeline({
 		},
 		[seekToClientX, tl, setCurrentTime, showLanes],
 	);
-
-	const [activePillDrag, setActivePillDrag] = useState<{
-		id: string;
-		kind: LanePill["kind"];
-		start: number;
-		end: number;
-	} | null>(null);
-	const activePillDragRef = useRef<{
-		id: string;
-		kind: LanePill["kind"];
-		start: number;
-		end: number;
-	} | null>(null);
 
 	// Drag a lane pill to move it (mode "move", keeps duration) or resize one
 	// edge (mode "l"/"r"). Zoom/speed/annotation are timeline-ms; trims map
@@ -1011,47 +1050,46 @@ export function V4Timeline({
 		{ id: "speed", label: t("buttons.addSpeed"), icon: <Clock size={15} /> },
 	];
 
-	// Auto-enhance option 1 — the deterministic cursor-telemetry auto-zoom
-	// (ported from main; NOT AI). Reads the recorded cursor movement and drops
-	// zoom-ins on the dwell moments.
+	// Auto-enhance option 1 — deterministic local direction (NOT AI). The full
+	// recording data preserves clicks, cursor types, and movement. The engine
+	// uses those signals to add a sparse set of normal editable zoom regions.
 	//
-	// Telemetry belongs to a RECORDING, not to a clip: it is fetched per asset and read in
-	// that asset's source time. Projecting it onto the ruler is `buildAutoZoomSuggestionsForClips`'
-	// job — every clip drawing on the asset gets its own zooms, including the second clip over
-	// a recording already used once. Feeding the raw source-time spans to `addZoomsBulk` (which
-	// reads RAW TIMELINE ms) is what confined every suggestion to the first clip's stretch of
-	// ruler. Each asset with clips is asked, not just the first: a second recording on the
-	// timeline was previously never consulted at all.
+	// Telemetry belongs to a recording, not to a clip. Fetch each source once, then
+	// project and rank every current clip together. The fresh store read after IPC
+	// prevents a slow sidecar from restoring edits made while Auto Enhance waited.
 	const runAutoZooms = useCallback(async () => {
 		setAutoEnhanceOpen(false);
+		const requestedProjectId = useProjectStore.getState().document?.project.id;
 		const sources = videoSources.filter((source) => clips.some((c) => c.assetId === source.id));
-		if (sources.length === 0) {
+		if (!requestedProjectId || sources.length === 0) {
 			toast.error(t("toolbar.importRecordingFirst"));
 			return;
 		}
 		setAutoBusy(true);
 		try {
-			// Read once, up front: every clip reserves against the zooms the document
-			// ALREADY holds, and two clips can never contest the same stretch of ruler, so
-			// nothing here depends on the order the assets are visited — which is what lets
-			// their telemetry be fetched concurrently rather than one IPC round trip after
-			// another. `Promise.all` preserves input order, so the suggestions come out in
-			// the same sequence a loop would have produced.
-			const existingRegions = tl.zoomRegions.map((z) => ({ startMs: z.startMs, endMs: z.endMs }));
-			const perSource = await Promise.all(
+			const recordings = await Promise.all(
 				sources.map(async (source) => {
-					const telemetry =
-						(await nativeBridgeClient.cursor.getTelemetry(fromFileUrl(source.src))) ?? [];
-					return buildAutoZoomSuggestionsForClips({
-						cursorTelemetry: telemetry,
+					const recording = await nativeBridgeClient.cursor.getRecordingData(
+						fromFileUrl(source.src),
+					);
+					return {
 						assetId: source.id,
-						clips,
-						existingRegions,
-						defaultDurationMs: 2000,
-					});
+						cursorTelemetry: recording.samples,
+						keyboardActivity: recording.keyboardActivity,
+					};
 				}),
 			);
-			const suggestions: AutoZoomSuggestion[] = perSource.flat();
+			const currentDocument = useProjectStore.getState().document;
+			if (!currentDocument || currentDocument.project.id !== requestedProjectId) return;
+			const plan = buildAutomaticDirectionPlan({
+				id: `manual-${currentDocument.project.id}-${Date.now()}`,
+				document: currentDocument,
+				recordings,
+				phases: { screen: true, camera: false },
+			});
+			const suggestions = plan.effects.flatMap((effect) =>
+				effect.kind === "screen-zoom" ? [effect.suggestion] : [],
+			);
 			if (suggestions.length === 0) {
 				toast.info(t("toolbar.noAutoZoomMoments"), {
 					description: t("toolbar.noAutoZoomMomentsDescription"),
@@ -1122,7 +1160,7 @@ export function V4Timeline({
 		const durSec = seg.segEnd - seg.segStart;
 		// The box is exactly as long as the effect is; only what fits INSIDE it
 		// varies with the zoom.
-		const { compact, roomForLabel } = pillAffordance(durSec, pxPerSec);
+		const { compact, roomForLabel, roomForMarker } = pillAffordance(durSec, pxPerSec);
 		return (
 			<div
 				key={seg.key}
@@ -1162,6 +1200,10 @@ export function V4Timeline({
 						{pillIcon(p.kind)}
 						<span className={styles.lanePillLabel}>{p.label}</span>
 					</>
+				) : seg.showContent && roomForMarker ? (
+					<span className={styles.lanePillMarker} aria-hidden="true">
+						{pillIcon(p.kind)}
+					</span>
 				) : null}
 				{seg.interactive ? (
 					<span
@@ -1548,6 +1590,7 @@ export function V4Timeline({
 								if (id && onDropAsset) onDropAsset(id);
 							}}
 						>
+							{showLanes ? <InsertionBoundaryMarker clips={clips} totalSec={total} /> : null}
 							{clips.map((c, i) => {
 								const dur = c.timelineEndSec - c.timelineStartSec;
 								const asset = tl.assets.find((a) => a.id === c.assetId);
@@ -1624,21 +1667,6 @@ export function V4Timeline({
 												{tl.assets.find((a) => a.id === c.assetId)?.label ?? c.assetId}
 											</span>
 										</div>
-										{selected ? (
-											<button
-												type="button"
-												data-no-clip-drag
-												className={styles.tlClipDelete}
-												title={t("toolbar.deleteClip")}
-												aria-label={t("toolbar.deleteClip")}
-												onClick={(e) => {
-													e.stopPropagation();
-													void tl.removeClip(c.id);
-												}}
-											>
-												<Trash2 size={13} />
-											</button>
-										) : null}
 									</div>
 								);
 							})}

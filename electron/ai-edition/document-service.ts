@@ -38,6 +38,7 @@ export interface ProjectSummary {
 export interface AddAssetInput {
 	path: string;
 	label?: string;
+	recordingImportId?: string;
 }
 
 export class DocumentNotFoundError extends Error {
@@ -303,6 +304,7 @@ export class DocumentService {
 			kind: "video",
 			label: input.label?.trim() || path.basename(absolutePath),
 			originalPath: absolutePath,
+			...(input.recordingImportId ? { recordingImportId: input.recordingImportId } : {}),
 			sizeBytes,
 			cameraTrack: null,
 		};

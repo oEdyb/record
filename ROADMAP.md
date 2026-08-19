@@ -1,7 +1,13 @@
 # OpenScreen Roadmap
+
+> [!IMPORTANT]
+> This file is the inherited OpenScreen roadmap and is not the product plan for screenrec.
+> The active proprietary product sequence is in [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md), and the
+> durable behavior rules are in [`AGENTS.md`](AGENTS.md).
 The recorder you love, with an optional AI sidekick. Same sleek, low-friction recorder UX. An opt-in AI editing layer is on the way for users who want it — never required, never snuck in.
 
-This roadmap is the source of truth for what we're shipping next in OpenScreen. It is a living document — items move between tiers as work lands. Have an idea, a vote, or a dissenting opinion? Drop into the 🗺️・roadmap channel on our Discord or open a GitHub issue with the `roadmap` label.
+For the upstream OpenScreen project, this was the source of truth for planned work. It is retained
+here for history and upstream comparison; it does not set screenrec priorities.
 
 ## 🧭 North Star
 **Record → Edit → Export.** (with an optional AI shortcut for users who want one)

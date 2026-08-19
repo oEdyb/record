@@ -1,4 +1,4 @@
-import { clamp01 } from "@/utils/math";
+import { clamp01 } from "../../utils/math";
 
 function sampleCubicBezier(a1: number, a2: number, t: number) {
 	const oneMinusT = 1 - t;

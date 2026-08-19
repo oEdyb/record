@@ -6,7 +6,10 @@
 //! tilt perspective — ce module ne fait que le calcul temporel, pas le rendu GPU).
 
 use crate::cursor::CursorTrack;
-use crate::scene::{SceneCameraFullscreenRegion, SceneSpeedRegion, SceneZoomRegion};
+use crate::scene::{
+    SceneCameraFullscreenRegion, SceneCameraLayoutMode, SceneMotionStyle, SceneSpeedRegion,
+    SceneZoomRegion,
+};
 
 /// Quantification commune vidéo/audio : le web retranche exactement 1 ms avant `ceil`.
 pub const SPEED_FRAME_EPSILON_SEC: f64 = 0.001;
@@ -167,6 +170,32 @@ fn ease_out_screen_studio(t: f32) -> f32 {
     cubic_bezier(0.16, 1.0, 0.3, 1.0, t)
 }
 
+/// Mirror of `applyMotionCurve` in TypeScript. Keeping the four named profiles in this
+/// pure time function makes every export frame seekable and independent of render order.
+fn apply_motion_curve(style: SceneMotionStyle, t: f32) -> f32 {
+    let t = clamp01(t);
+    match style {
+        SceneMotionStyle::Smooth => t * t * t * (t * (t * 6.0 - 15.0) + 10.0),
+        SceneMotionStyle::Snappy => ease_out_screen_studio(t),
+        SceneMotionStyle::Linear => t,
+        SceneMotionStyle::Instant => {
+            if t <= 0.0 {
+                0.0
+            } else {
+                1.0
+            }
+        }
+    }
+}
+
+fn normalized_motion_speed(speed: f32) -> f32 {
+    if speed.is_finite() {
+        speed.clamp(0.5, 2.0)
+    } else {
+        1.0
+    }
+}
+
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
@@ -178,21 +207,24 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 fn zoom_region_strength(region: &SceneZoomRegion, t: f32) -> f32 {
     let start = region.start_sec as f32;
     let end = region.end_sec as f32;
+    let motion_speed = normalized_motion_speed(region.motion_speed);
+    let zoom_in_window = ZOOM_IN_TRANSITION_WINDOW_S / motion_speed;
+    let zoom_out_window = TRANSITION_WINDOW_S / motion_speed;
     let zoom_in_end = start + ZOOM_IN_OVERLAP_S;
-    let lead_in_start = zoom_in_end - ZOOM_IN_TRANSITION_WINDOW_S;
-    let lead_out_end = end + TRANSITION_WINDOW_S;
+    let lead_in_start = zoom_in_end - zoom_in_window;
+    let lead_out_end = end + zoom_out_window;
     if t < lead_in_start || t > lead_out_end {
         return 0.0;
     }
     if t < zoom_in_end {
-        let progress = (t - lead_in_start) / ZOOM_IN_TRANSITION_WINDOW_S;
-        return ease_out_screen_studio(progress);
+        let progress = (t - lead_in_start) / zoom_in_window;
+        return apply_motion_curve(region.motion_style, progress);
     }
     if t <= end {
         return 1.0;
     }
-    let progress = clamp01((t - end) / TRANSITION_WINDOW_S);
-    1.0 - ease_out_screen_studio(progress)
+    let progress = clamp01((t - end) / zoom_out_window);
+    1.0 - apply_motion_curve(region.motion_style, progress)
 }
 
 /// État de zoom complet au temps `t` : échelle, focus, ET tilt 3D (degrés X/Y/Z — rendu en
@@ -206,8 +238,8 @@ pub struct ZoomState {
 const IDENTITY_ZOOM: ZoomState = ZoomState { scale: 1.0, focus: [0.5, 0.5], rotation: [0.0, 0.0, 0.0] };
 
 /// Port de `easeConnectedPan` (TS) : cubic-bezier(0.1, 0, 0.2, 1).
-fn ease_connected_pan(t: f32) -> f32 {
-    cubic_bezier(0.1, 0.0, 0.2, 1.0, t)
+fn ease_connected_pan(style: SceneMotionStyle, t: f32) -> f32 {
+    apply_motion_curve(style, t)
 }
 
 /// Port de `getRotation3D`/`ROTATION_3D_PRESETS` (TS, `types.ts`) — degrés (rotationX, Y, Z).
@@ -318,9 +350,12 @@ fn connected_pairs(regions: &[SceneZoomRegion]) -> Vec<(usize, usize, f32, f32)>
     for w in order.windows(2) {
         let (ci, ni) = (w[0], w[1]);
         let gap = regions[ni].start_sec as f32 - regions[ci].end_sec as f32;
-        if gap <= CHAINED_ZOOM_PAN_GAP_S {
+        if gap <= CHAINED_ZOOM_PAN_GAP_S && regions[ni].end_sec > regions[ci].end_sec {
             let transition_start = regions[ci].end_sec as f32;
-            pairs.push((ci, ni, transition_start, transition_start + CONNECTED_ZOOM_PAN_DURATION_S));
+            let duration =
+                CONNECTED_ZOOM_PAN_DURATION_S / normalized_motion_speed(regions[ni].motion_speed);
+            let transition_end = (transition_start + duration).min(regions[ni].end_sec as f32);
+            pairs.push((ci, ni, transition_start, transition_end));
         }
     }
     pairs
@@ -341,8 +376,11 @@ pub fn zoom_state_at(regions: &[SceneZoomRegion], t: f32, cursor: Option<&Cursor
         if t < t_start || t > t_end {
             continue;
         }
-        let progress = ease_connected_pan(clamp01((t - t_start) / (t_end - t_start).max(1e-3)));
         let (cur, next) = (&regions[ci], &regions[ni]);
+        let progress = ease_connected_pan(
+            next.motion_style,
+            clamp01((t - t_start) / (t_end - t_start).max(1e-3)),
+        );
         let cur_focus = resolve_focus(cur, t, cursor);
         let next_focus = resolve_focus(next, t, cursor);
         return ZoomState {
@@ -352,11 +390,11 @@ pub fn zoom_state_at(regions: &[SceneZoomRegion], t: f32, cursor: Option<&Cursor
         };
     }
 
-    // 2) palier chaîné : entre la fin de la transition et le début officiel de la région
-    // suivante, celle-ci est déjà pleinement active (anticipe son propre ease-in).
+    // 2) palier chaîné : une fois la région suivante atteinte, elle reste pleinement active
+    // jusqu'à sa fin. Ne pas relancer son propre ease-in après la transition.
     for &(_, ni, _, t_end) in &pairs {
         let next = &regions[ni];
-        if t > t_end && t < next.start_sec as f32 {
+        if t > t_end && t <= next.end_sec as f32 {
             return ZoomState {
                 scale: next.scale,
                 focus: resolve_focus(next, t, cursor),
@@ -423,19 +461,20 @@ fn camera_fullscreen_region_strength(region: &SceneCameraFullscreenRegion, t: f3
         return 0.0;
     }
     let half = (end - start) * 0.5;
-    let lead_in = TRANSITION_WINDOW_S.min(half);
-    let lead_out = FULLSCREEN_LEAD_OUT_WINDOW_S.min(half);
+    let motion_speed = normalized_motion_speed(region.motion_speed);
+    let lead_in = (TRANSITION_WINDOW_S / motion_speed).min(half);
+    let lead_out = (FULLSCREEN_LEAD_OUT_WINDOW_S / motion_speed).min(half);
     let lead_in_end = start + lead_in;
     let lead_out_start = end - lead_out;
     if t < lead_in_end {
         let progress = if lead_in > 0.0 { (t - start) / lead_in } else { 1.0 };
-        return ease_out_screen_studio(progress);
+        return apply_motion_curve(region.motion_style, progress);
     }
     if t <= lead_out_start {
         return 1.0;
     }
     let progress = if lead_out > 0.0 { (end - t) / lead_out } else { 0.0 };
-    ease_out_screen_studio(progress)
+    apply_motion_curve(region.motion_style, progress)
 }
 
 /// Progrès Full Camera (0..1) au temps `t` : 0 = webcam à sa taille normale, 1 = plein cadre.
@@ -444,12 +483,118 @@ fn camera_fullscreen_region_strength(region: &SceneCameraFullscreenRegion, t: f3
 pub fn camera_fullscreen_progress_at(regions: &[SceneCameraFullscreenRegion], t: f32) -> f32 {
     let mut strongest = 0.0f32;
     for r in regions {
+        if r.mode == SceneCameraLayoutMode::Emphasis {
+            continue;
+        }
         let s = camera_fullscreen_region_strength(r, t);
         if s > strongest {
             strongest = s;
         }
     }
     strongest
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CameraLayoutState {
+    pub progress: f32,
+    pub mode: SceneCameraLayoutMode,
+    pub camera_scale: f32,
+}
+
+/// Resolve the strongest camera layout at `t`. Legacy regions remain Full Camera.
+/// Emphasis uses the same smooth envelope with a bounded scale target.
+pub fn camera_layout_state_at(
+    regions: &[SceneCameraFullscreenRegion],
+    t: f32,
+) -> CameraLayoutState {
+    let mut state = CameraLayoutState {
+        progress: 0.0,
+        mode: SceneCameraLayoutMode::Fullscreen,
+        camera_scale: 1.0,
+    };
+    for region in regions {
+        let progress = camera_fullscreen_region_strength(region, t);
+        if progress <= state.progress {
+            continue;
+        }
+        state = CameraLayoutState {
+            progress,
+            mode: region.mode,
+            camera_scale: if region.mode == SceneCameraLayoutMode::Emphasis {
+                region.camera_scale.clamp(1.0, 1.6)
+            } else {
+                1.0
+            },
+        };
+    }
+    state
+}
+
+#[cfg(test)]
+mod camera_layout_tests {
+    use super::*;
+
+    fn region(mode: SceneCameraLayoutMode, camera_scale: f32) -> SceneCameraFullscreenRegion {
+        SceneCameraFullscreenRegion {
+            clip_index: None,
+            start_sec: 1.0,
+            end_sec: 6.0,
+            mode,
+            camera_scale,
+            motion_style: SceneMotionStyle::Smooth,
+            motion_speed: 1.0,
+        }
+    }
+
+    #[test]
+    fn legacy_fullscreen_and_emphasis_share_the_envelope_but_not_the_target() {
+        let fullscreen = region(SceneCameraLayoutMode::Fullscreen, 9.0);
+        let emphasis = region(SceneCameraLayoutMode::Emphasis, 1.35);
+        let full_state = camera_layout_state_at(&[fullscreen], 3.0);
+        let emphasis_state = camera_layout_state_at(&[emphasis], 3.0);
+        assert_eq!(full_state.mode, SceneCameraLayoutMode::Fullscreen);
+        assert_eq!(full_state.camera_scale, 1.0);
+        assert_eq!(full_state.progress, 1.0);
+        assert_eq!(emphasis_state.mode, SceneCameraLayoutMode::Emphasis);
+        assert_eq!(emphasis_state.camera_scale, 1.35);
+        assert_eq!(emphasis_state.progress, 1.0);
+        assert_eq!(camera_fullscreen_progress_at(&[emphasis], 3.0), 0.0);
+    }
+
+    #[test]
+    fn emphasis_uses_the_contained_slow_return_envelope() {
+        let emphasis = region(SceneCameraLayoutMode::Emphasis, 1.35);
+        assert_eq!(camera_layout_state_at(&[emphasis], 1.0).progress, 0.0);
+        assert_eq!(camera_layout_state_at(&[emphasis], 6.0).progress, 0.0);
+        let near_end = camera_layout_state_at(&[emphasis], 5.5).progress;
+        assert!(near_end > 0.0 && near_end < 1.0);
+    }
+
+    #[test]
+    fn camera_motion_profiles_are_independent_and_deterministic() {
+        let mut smooth = region(SceneCameraLayoutMode::Emphasis, 1.35);
+        let mut linear = smooth;
+        linear.motion_style = SceneMotionStyle::Linear;
+        let mut instant = smooth;
+        instant.motion_style = SceneMotionStyle::Instant;
+        smooth.motion_style = SceneMotionStyle::Smooth;
+
+        // At 25% of the shared lead-in, Smooth is still gentle, Linear is exactly
+        // one quarter complete, and Instant has already switched state.
+        let time = 1.0 + TRANSITION_WINDOW_S * 0.25;
+        let smooth_progress = camera_layout_state_at(&[smooth], time).progress;
+        let linear_progress = camera_layout_state_at(&[linear], time).progress;
+        let instant_progress = camera_layout_state_at(&[instant], time).progress;
+        assert!(smooth_progress < linear_progress);
+        assert!((linear_progress - 0.25).abs() < 1e-4);
+        assert_eq!(instant_progress, 1.0);
+
+        let mut fast = linear;
+        fast.motion_speed = 2.0;
+        let fast_time = 1.0 + (TRANSITION_WINDOW_S / 2.0) * 0.25;
+        let fast_progress = camera_layout_state_at(&[fast], fast_time).progress;
+        assert!((fast_progress - 0.25).abs() < 1e-4);
+    }
 }
 
 // ============ Rotation 3D (tilt perspective, présets iso/left/right) ================
@@ -628,6 +773,8 @@ mod zoom_focus_tests {
             focus_y: 0.5,
             focus_mode: Some("manual".into()),
             rotation: None,
+            motion_style: SceneMotionStyle::Smooth,
+            motion_speed: 1.0,
         }
     }
 
@@ -677,6 +824,101 @@ mod zoom_focus_tests {
         let state = zoom_state_at(&regions, 0.0, None);
         assert_eq!(state.scale, 1.0);
         assert_eq!(state.focus, [0.5, 0.5]);
+    }
+
+    #[test]
+    fn screen_zoom_motion_profiles_match_the_authored_curve() {
+        let mut smooth = region(2.5, 0.5);
+        let mut linear = smooth.clone();
+        linear.motion_style = SceneMotionStyle::Linear;
+        let mut instant = smooth.clone();
+        instant.motion_style = SceneMotionStyle::Instant;
+        smooth.motion_style = SceneMotionStyle::Smooth;
+
+        let lead_in_start =
+            smooth.start_sec as f32 + ZOOM_IN_OVERLAP_S - ZOOM_IN_TRANSITION_WINDOW_S;
+        let time = lead_in_start + ZOOM_IN_TRANSITION_WINDOW_S * 0.25;
+        let smooth_strength = zoom_region_strength(&smooth, time);
+        let linear_strength = zoom_region_strength(&linear, time);
+        let instant_strength = zoom_region_strength(&instant, time);
+        assert!(smooth_strength < linear_strength);
+        assert!((linear_strength - 0.25).abs() < 1e-4);
+        assert_eq!(instant_strength, 1.0);
+
+        let mut fast = linear;
+        fast.motion_speed = 2.0;
+        let fast_window = ZOOM_IN_TRANSITION_WINDOW_S / 2.0;
+        let fast_lead_in_start = fast.start_sec as f32 + ZOOM_IN_OVERLAP_S - fast_window;
+        let fast_strength = zoom_region_strength(&fast, fast_lead_in_start + fast_window * 0.25);
+        assert!((fast_strength - 0.25).abs() < 1e-4);
+    }
+
+    #[test]
+    fn connected_pan_uses_the_incoming_region_motion_speed() {
+        let mut left = region(1.5, 0.2);
+        left.start_sec = 1.0;
+        left.end_sec = 3.0;
+        left.motion_style = SceneMotionStyle::Linear;
+        let mut right = region(1.5, 0.8);
+        right.start_sec = 4.0;
+        right.end_sec = 6.0;
+        right.motion_style = SceneMotionStyle::Linear;
+
+        let normal = zoom_state_at(&[left.clone(), right.clone()], 3.25, None);
+        right.motion_speed = 2.0;
+        let fast = zoom_state_at(&[left, right], 3.25, None);
+
+        assert!(fast.focus[0] > normal.focus[0]);
+        assert!((normal.focus[0] - 0.35).abs() < 1e-4);
+        assert!((fast.focus[0] - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn connected_pan_keeps_full_scale_after_arrival() {
+        let mut left = region(1.264, 0.58);
+        left.start_sec = 1.0;
+        left.end_sec = 3.0;
+        let mut right = region(1.264, 0.60);
+        right.start_sec = 3.5;
+        right.end_sec = 5.5;
+        right.motion_speed = 2.0;
+
+        let arrival = zoom_state_at(&[left.clone(), right.clone()], 3.5, None);
+        let next_frame = zoom_state_at(&[left.clone(), right.clone()], 3.501, None);
+        let lead_out = zoom_state_at(&[left, right], 5.75, None);
+
+        assert!((arrival.scale - 1.264).abs() < 1e-4);
+        assert!((next_frame.scale - 1.264).abs() < 1e-4);
+        assert!(lead_out.scale > 1.0 && lead_out.scale < 1.264);
+    }
+
+    #[test]
+    fn short_connected_region_starts_its_final_lead_out_at_its_end() {
+        let mut left = region(1.264, 0.58);
+        left.start_sec = 1.0;
+        left.end_sec = 3.0;
+        let mut right = region(1.264, 0.60);
+        right.start_sec = 3.5;
+        right.end_sec = 3.6;
+        right.motion_speed = 0.5;
+
+        let after_end = zoom_state_at(&[left, right], 3.7, None);
+
+        assert!(after_end.scale > 1.0 && after_end.scale < 1.264);
+    }
+
+    #[test]
+    fn a_contained_region_is_not_given_a_reversed_connected_window() {
+        let mut long = region(1.5, 0.2);
+        long.start_sec = 1.0;
+        long.end_sec = 5.0;
+        let mut contained = region(1.5, 0.8);
+        contained.start_sec = 2.0;
+        contained.end_sec = 3.0;
+
+        let active = zoom_state_at(&[long, contained], 2.5, None);
+
+        assert!((active.focus[0] - 0.8).abs() < 1e-4);
     }
 }
 

@@ -29,6 +29,7 @@
 		"annotationItem": "Annotation",
 		"imageItem": "Image",
 		"emptyText": "Empty text",
+		"cameraEmphasis": "Camera Emphasis",
 		"cameraFullscreen": "Full Camera",
 		"cameraFullscreenItem": "Full Camera {{index}}"
 	},
@@ -78,7 +79,7 @@
 		"dropToAdd": "Drop to add to timeline",
 		"importRecordingFirst": "Import a recording first",
 		"noAutoZoomMoments": "No auto-zoom moments found",
-		"noAutoZoomMomentsDescription": "This recording has no cursor movement data, or existing zooms already cover the busy moments.",
+		"noAutoZoomMomentsDescription": "No clear clicks or deliberate cursor movement were found, or existing zooms already cover them.",
 		"addedAutoZoom": "Added {{count}} automatic zoom",
 		"addedAutoZoomPlural": "Added {{count}} automatic zooms",
 		"autoZoomFailed": "Auto-zoom failed",

@@ -379,6 +379,18 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 						case "setPlaying":
 							compositorViewService.setPlaying(request.payload.id, request.payload.playing);
 							return createSuccessResponse(requestId, { ok: true });
+						case "syncTransport":
+							compositorViewService.syncTransport(
+								request.payload.id,
+								request.payload.generation,
+								request.payload.playing,
+								request.payload.screenPath,
+								request.payload.webcamPath,
+								request.payload.webcamOffsetSec,
+								request.payload.clipIndex,
+								request.payload.sourceTimeSec,
+							);
+							return createSuccessResponse(requestId, { ok: true });
 						case "presentTime":
 							compositorViewService.presentTime(request.payload.id, request.payload.seconds);
 							return createSuccessResponse(requestId, { ok: true });
@@ -483,6 +495,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 									request.payload.projectId,
 									request.payload.path,
 									request.payload.label,
+									request.payload.recordingImportId,
 								),
 							);
 						case "document.removeAsset":

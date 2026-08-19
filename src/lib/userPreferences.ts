@@ -22,6 +22,10 @@ export interface UserPreferences {
 	projectFolder: string | null;
 	/** Recording HUD control layout */
 	trayLayout: "horizontal" | "vertical";
+	/** Last native screen position of the recording-mode webcam confidence monitor */
+	cameraPreviewPosition: { x: number; y: number } | null;
+	/** Whether the AI editor sidebar was open when the user last changed it */
+	editorChatOpen: boolean;
 	/** Force the Windows native recorder to use the software H.264 encoder */
 	preferSoftwareEncoder: boolean;
 	/** Stop showing the notice that recording fell back to software encoding */
@@ -36,6 +40,8 @@ export const DEFAULT_PREFS: UserPreferences = {
 	exportFolder: null,
 	projectFolder: null,
 	trayLayout: "horizontal",
+	cameraPreviewPosition: null,
+	editorChatOpen: false,
 	preferSoftwareEncoder: false,
 	hideSoftwareEncoderFallbackNotice: false,
 };
@@ -91,6 +97,20 @@ export function loadUserPreferences(): UserPreferences {
 			raw.trayLayout === "horizontal" || raw.trayLayout === "vertical"
 				? raw.trayLayout
 				: DEFAULT_PREFS.trayLayout,
+		cameraPreviewPosition:
+			raw.cameraPreviewPosition &&
+			typeof raw.cameraPreviewPosition === "object" &&
+			typeof (raw.cameraPreviewPosition as Record<string, unknown>).x === "number" &&
+			Number.isFinite((raw.cameraPreviewPosition as Record<string, unknown>).x) &&
+			typeof (raw.cameraPreviewPosition as Record<string, unknown>).y === "number" &&
+			Number.isFinite((raw.cameraPreviewPosition as Record<string, unknown>).y)
+				? {
+						x: Math.round((raw.cameraPreviewPosition as Record<string, number>).x),
+						y: Math.round((raw.cameraPreviewPosition as Record<string, number>).y),
+					}
+				: DEFAULT_PREFS.cameraPreviewPosition,
+		editorChatOpen:
+			typeof raw.editorChatOpen === "boolean" ? raw.editorChatOpen : DEFAULT_PREFS.editorChatOpen,
 		preferSoftwareEncoder:
 			typeof raw.preferSoftwareEncoder === "boolean"
 				? raw.preferSoftwareEncoder

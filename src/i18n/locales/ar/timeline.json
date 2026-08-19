@@ -29,6 +29,7 @@
 		"annotationItem": "شرح",
 		"imageItem": "صورة",
 		"emptyText": "نص فارغ",
+		"cameraEmphasis": "إبراز الكاميرا",
 		"cameraFullscreen": "كاميرا كاملة الشاشة",
 		"cameraFullscreenItem": "كاميرا كاملة الشاشة {{index}}"
 	},

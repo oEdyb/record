@@ -39,6 +39,11 @@ import {
 	webcamSizeToFraction,
 } from "@/lib/compositeLayout";
 import { parseCssGradient, resolveLinearGradientAngle } from "@/lib/exporter/gradientParser";
+import {
+	type MotionSpeed,
+	type MotionStyle,
+	normalizeMotionSpeed,
+} from "@/lib/zoomMath/motionCurve";
 import type { CompositorClipInput } from "./contracts";
 
 /** Background behind the screen. Parsed from `settings.wallpaper`. */
@@ -62,6 +67,8 @@ export interface SceneZoomRegion {
 	focusMode: "manual" | "auto" | null;
 	/** Optional rotation preset for the zoom. */
 	rotation: "iso" | "left" | "right" | null;
+	motionStyle?: MotionStyle;
+	motionSpeed?: MotionSpeed;
 	/** Index of the clip (within `SceneDescription.clips`) whose source time this region's
 	 *  `startSec`/`endSec` are expressed in — disambiguates clips whose source windows
 	 *  numerically overlap (same or different asset). Unset only for a region that
@@ -73,6 +80,10 @@ export interface SceneZoomRegion {
 export interface SceneCameraFullscreenRegion {
 	startSec: number;
 	endSec: number;
+	mode?: "fullscreen" | "emphasis";
+	cameraScale?: number;
+	motionStyle?: MotionStyle;
+	motionSpeed?: MotionSpeed;
 	/** See `SceneZoomRegion.clipIndex`. */
 	clipIndex?: number;
 }
@@ -720,6 +731,10 @@ export function buildSceneDescription(
 			// button a one-click "make every zoom follow the cursor".
 			focusMode: settings.autoFocusAll ? "auto" : (region.focusMode ?? null),
 			rotation: region.rotationPreset ?? null,
+			...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
+			...(region.motionSpeed !== undefined
+				? { motionSpeed: normalizeMotionSpeed(region.motionSpeed) }
+				: {}),
 			clipIndex: region.clipIndex,
 		})),
 		annotations: projectedAnnotations
@@ -805,6 +820,13 @@ export function buildSceneDescription(
 			startSec: region.startMs / 1000,
 			endSec: region.endMs / 1000,
 			clipIndex: region.clipIndex,
+			...(region.mode === "emphasis"
+				? { mode: "emphasis" as const, cameraScale: region.cameraScale ?? 1.35 }
+				: {}),
+			...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
+			...(region.motionSpeed !== undefined
+				? { motionSpeed: normalizeMotionSpeed(region.motionSpeed) }
+				: {}),
 		})),
 		speedRegions: projectedSpeedRegions.map((region) => ({
 			startSec: region.startMs / 1000,

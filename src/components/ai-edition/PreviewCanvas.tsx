@@ -45,13 +45,14 @@ import { createPlaybackClockRef } from "@/lib/ai-edition/timeline/playback-clock
 import type { SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview";
 import {
+	computeCameraEmphasisRect,
 	computeCameraFullscreenRect,
 	computeCompositeLayout,
 	type WebcamCompositeLayout,
 } from "@/lib/compositeLayout";
 import { classifyWallpaper, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
-import { computeCameraFullscreenProgress } from "@/lib/zoomMath/cameraFullscreenUtils";
+import { computeCameraLayoutState } from "@/lib/zoomMath/cameraFullscreenUtils";
 import { clamp, clamp01 } from "@/utils/math";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { NativeCompositorOverlay } from "./NativeCompositorOverlay";
@@ -278,25 +279,30 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	// Full Camera: during a cameraFullscreen region the webcam takes the whole
 	// frame and eases back. Same `computeCameraFullscreenRect` call as both
 	// exporters and the native compositor, so all four animate identically.
-	const cameraFullscreenProgress = useMemo(
+	const cameraLayoutState = useMemo(
 		() =>
-			computeCameraFullscreenProgress(
+			computeCameraLayoutState(
 				props.cameraFullscreenRegions ?? [],
 				Math.round(props.currentTimeSec * 1000),
 			),
 		[props.cameraFullscreenRegions, props.currentTimeSec],
 	);
 	const effectiveLayout = useMemo<WebcamCompositeLayout | null>(() => {
-		if (!layout?.webcamRect || cameraFullscreenProgress <= 0) return layout;
+		if (!layout?.webcamRect || cameraLayoutState.progress <= 0) return layout;
+		const webcamRect =
+			cameraLayoutState.mode === "emphasis"
+				? computeCameraEmphasisRect(
+						layout.webcamRect,
+						frameSize,
+						cameraLayoutState.progress,
+						cameraLayoutState.cameraScale,
+					)
+				: computeCameraFullscreenRect(layout.webcamRect, frameSize, cameraLayoutState.progress);
 		return {
 			...layout,
-			webcamRect: computeCameraFullscreenRect(
-				layout.webcamRect,
-				frameSize,
-				cameraFullscreenProgress,
-			),
+			webcamRect,
 		};
-	}, [layout, cameraFullscreenProgress, frameSize]);
+	}, [layout, cameraLayoutState, frameSize]);
 
 	const frameStyle = useMemo(() => buildFrameStyle(settings), [settings]);
 	const screenStyle = useMemo(

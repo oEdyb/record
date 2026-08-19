@@ -5,6 +5,7 @@ import { I18nProvider } from "@/contexts/I18nContext";
 import type { AxcutDocument } from "../schema";
 import { axcutSchemaVersion } from "../schema";
 import { useProjectStore } from "./projectStore";
+import { clearHistory, redo, undo } from "./undo";
 import { useTimeline } from "./useTimeline";
 
 /**
@@ -173,6 +174,72 @@ describe("useTimeline.insertClipAt background duration probe", () => {
 	});
 });
 
+describe("useTimeline.addZoomsBulk", () => {
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	it("keeps edits added while cursor telemetry was loading", async () => {
+		const { result } = renderTimeline();
+		const addZoomsBulk = result.current.addZoomsBulk;
+		useProjectStore.setState({
+			document: {
+				...sampleDoc,
+				zoomRanges: [
+					{
+						id: "manual_zoom",
+						startMs: 1_000,
+						endMs: 3_000,
+						depth: 3,
+						focus: { cx: 0.5, cy: 0.5 },
+						focusMode: "manual",
+					},
+				],
+			},
+		});
+
+		let added = 0;
+		await act(async () => {
+			added = await addZoomsBulk([
+				{
+					span: { start: 2_000, end: 4_000 },
+					focus: { cx: 0.2, cy: 0.4 },
+					focusMode: "manual",
+					customScale: 1.65,
+					source: "auto",
+				},
+				{
+					span: { start: 5_000, end: 7_000 },
+					focus: { cx: 0.8, cy: 0.4 },
+					focusMode: "manual",
+					customScale: 1.5,
+					source: "auto",
+				},
+			]);
+		});
+
+		expect(added).toBe(1);
+		expect(useProjectStore.getState().document?.zoomRanges).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: "manual_zoom" }),
+				expect.objectContaining({ startMs: 5_000, endMs: 7_000, source: "auto" }),
+			]),
+		);
+	});
+});
+
 describe("useTimeline.moveClip / duplicateClip (delegates to document/timeline.ts)", () => {
 	const twoClipDoc: AxcutDocument = {
 		...sampleDoc,
@@ -255,6 +322,34 @@ describe("useTimeline.moveClip / duplicateClip (delegates to document/timeline.t
 			await result.current.duplicateClip("clip_missing");
 		});
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+
+	it("deletes a clip at its start boundary and restores it with undo and redo", async () => {
+		const { result } = renderTimeline();
+		act(() => {
+			useProjectStore.getState().setCurrentTime(17);
+			result.current.selectClip("clip_b");
+		});
+
+		await act(async () => {
+			await result.current.removeClip("clip_b");
+		});
+
+		expect(useProjectStore.getState().currentTimeSec).toBe(10);
+		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
+			"clip_a",
+		]);
+
+		act(() => expect(undo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
+			"clip_a",
+			"clip_b",
+		]);
+
+		act(() => expect(redo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
+			"clip_a",
+		]);
 	});
 });
 
@@ -610,6 +705,22 @@ describe("useTimeline is not re-rendered by playhead ticks", () => {
 		expect(useProjectStore.getState().document?.zoomRanges.at(-1)).toMatchObject({
 			startMs: 4200,
 			endMs: 6200,
+			motionStyle: "smooth",
+			motionSpeed: 1,
+		});
+	});
+
+	it("stores Smooth explicitly on a new camera region", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraFullscreen();
+		});
+		const legacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions?: Array<{ motionStyle?: string }>;
+		};
+		expect(legacy.cameraFullscreenRegions?.at(-1)).toMatchObject({
+			motionStyle: "smooth",
+			motionSpeed: 1,
 		});
 	});
 
@@ -642,6 +753,93 @@ describe("useTimeline is not re-rendered by playhead ticks", () => {
 			startMs: 4200,
 			endMs: 4600,
 		});
+	});
+});
+
+describe("useTimeline motion history", () => {
+	beforeEach(() => {
+		clearHistory();
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: {
+				...sampleDoc,
+				zoomRanges: [
+					{
+						id: "zoom-motion",
+						startMs: 1_000,
+						endMs: 4_000,
+						depth: 3,
+						focus: { cx: 0.5, cy: 0.5 },
+						motionStyle: "smooth",
+					},
+				],
+				legacyEditor: {
+					cameraFullscreenRegions: [
+						{ id: "camera-motion", startMs: 4_000, endMs: 8_000, motionStyle: "smooth" },
+					],
+				},
+			},
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	it("undoes a screen Zoom motion change", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.updateZoomMotionStyle("zoom-motion", "instant");
+		});
+		expect(useProjectStore.getState().document?.zoomRanges[0].motionStyle).toBe("instant");
+
+		act(() => expect(undo()).toBe(true));
+		expect(useProjectStore.getState().document?.zoomRanges[0].motionStyle).toBe("smooth");
+	});
+
+	it("undoes a Camera Emphasis motion change", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.updateCameraMotionStyle("camera-motion", "linear");
+		});
+		const currentLegacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ motionStyle?: string }>;
+		};
+		expect(currentLegacy.cameraFullscreenRegions[0].motionStyle).toBe("linear");
+
+		act(() => expect(undo()).toBe(true));
+		const restoredLegacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ motionStyle?: string }>;
+		};
+		expect(restoredLegacy.cameraFullscreenRegions[0].motionStyle).toBe("smooth");
+	});
+
+	it("undoes independent screen and camera motion-speed changes", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.updateZoomMotionSpeed("zoom-motion", 1.5);
+		});
+		expect(useProjectStore.getState().document?.zoomRanges[0].motionSpeed).toBe(1.5);
+		act(() => expect(undo()).toBe(true));
+		expect(useProjectStore.getState().document?.zoomRanges[0].motionSpeed).toBeUndefined();
+
+		await act(async () => {
+			await result.current.updateCameraMotionSpeed("camera-motion", 0.75);
+		});
+		const currentLegacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ motionSpeed?: number }>;
+		};
+		expect(currentLegacy.cameraFullscreenRegions[0].motionSpeed).toBe(0.75);
+		act(() => expect(undo()).toBe(true));
+		const restoredLegacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ motionSpeed?: number }>;
+		};
+		expect(restoredLegacy.cameraFullscreenRegions[0].motionSpeed).toBeUndefined();
 	});
 });
 

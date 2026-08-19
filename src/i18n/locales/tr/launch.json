@@ -92,6 +92,7 @@
 		"micLevel": "Giriş seviyesi",
 		"micHint": "Mikrofonunuzu test etmek için konuşun",
 		"noMicrophones": "Mikrofon bulunamadı",
+		"cameraQuality": "Kamera kalitesi",
 		"preview": "Önizleme",
 		"previewUnavailable": "Önizleme kullanılamıyor"
 	}

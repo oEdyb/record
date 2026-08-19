@@ -27,8 +27,8 @@
   "publish": [
     {
       "provider": "github",
-      "owner": "getopenscreen",
-      "repo": "openscreen"
+      "owner": "oEdyb",
+      "repo": "record"
     }
   ],
   // Fails the build when compositor_view.node is older than the crates/ Rust sources. Plain

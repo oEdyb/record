@@ -1,6 +1,7 @@
 import path from "node:path";
 import { app, type IpcMain } from "electron";
 import { planChunks } from "./chunking";
+import { resolveBinaryPath } from "./gpuDetector";
 import { ensureModels, modelPaths } from "./modelManager";
 import type {
 	SttPhraseSegment,
@@ -324,6 +325,7 @@ export function _resetSttManagerForTests(): void {
  */
 export function registerSttIpc(ipcMain: IpcMain): void {
 	const manager = getSttManager();
+	ipcMain.handle("stt:is-available", async () => Boolean((await resolveBinaryPath()).path));
 	ipcMain.handle(
 		"stt:transcribe",
 		async (event, req: SttTranscribeRequest): Promise<SttTranscribeResponse> => {

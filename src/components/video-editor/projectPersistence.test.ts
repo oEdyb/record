@@ -82,6 +82,79 @@ describe("projectPersistence media compatibility", () => {
 		expect(normalizeProjectEditor({ webcamMirrored: "yes" as never }).webcamMirrored).toBe(false);
 	});
 
+	it("preserves large webcam sizes and clamps them at 80 percent", () => {
+		expect(normalizeProjectEditor({ webcamSizePreset: 70 }).webcamSizePreset).toBe(70);
+		expect(normalizeProjectEditor({ webcamSizePreset: 90 }).webcamSizePreset).toBe(80);
+	});
+
+	it("round-trips a large webcam size through the saved project", () => {
+		const saved = createProjectData(
+			{ screenVideoPath: "/tmp/screen.webm" },
+			normalizeProjectEditor({ webcamSizePreset: 78 }),
+		);
+		const reopened = JSON.parse(JSON.stringify(saved));
+
+		expect(validateProjectData(reopened)).toBe(true);
+		expect(normalizeProjectEditor(reopened.editor).webcamSizePreset).toBe(78);
+	});
+
+	it("preserves bounded automatic camera emphasis regions", () => {
+		const editor = normalizeProjectEditor({
+			cameraFullscreenRegions: [
+				{
+					id: "camera-emphasis",
+					startMs: 1_000,
+					endMs: 5_000,
+					mode: "emphasis",
+					cameraScale: 8,
+					source: "auto",
+				},
+			],
+		});
+		expect(editor.cameraFullscreenRegions).toEqual([
+			{
+				id: "camera-emphasis",
+				startMs: 1_000,
+				endMs: 5_000,
+				mode: "emphasis",
+				cameraScale: 1.6,
+				source: "auto",
+			},
+		]);
+	});
+
+	it("preserves independent zoom and camera motion styles", () => {
+		const editor = normalizeProjectEditor({
+			zoomRegions: [
+				{
+					id: "zoom-linear",
+					startMs: 1_000,
+					endMs: 4_000,
+					depth: 2,
+					focus: { cx: 0.5, cy: 0.5 },
+					motionStyle: "linear",
+					motionSpeed: 1.5,
+				},
+			],
+			cameraFullscreenRegions: [
+				{
+					id: "camera-instant",
+					startMs: 1_000,
+					endMs: 4_000,
+					mode: "emphasis",
+					cameraScale: 1.35,
+					motionStyle: "instant",
+					motionSpeed: 0.75,
+				},
+			],
+		});
+
+		expect(editor.zoomRegions[0].motionStyle).toBe("linear");
+		expect(editor.zoomRegions[0].motionSpeed).toBe(1.5);
+		expect(editor.cameraFullscreenRegions[0].motionStyle).toBe("instant");
+		expect(editor.cameraFullscreenRegions[0].motionSpeed).toBe(0.75);
+	});
+
 	it("normalizes blur region type and mosaic block size safely", () => {
 		const editor = normalizeProjectEditor({
 			annotationRegions: [

@@ -11,20 +11,22 @@ import {
 	lerpRotation3D,
 } from "@/components/video-editor/types";
 import { clamp01 } from "@/utils/math";
-import { TRANSITION_WINDOW_MS, ZOOM_IN_TRANSITION_WINDOW_MS } from "./constants";
+import {
+	TRANSITION_WINDOW_MS,
+	ZOOM_IN_OVERLAP_MS,
+	ZOOM_IN_TRANSITION_WINDOW_MS,
+} from "./constants";
 import { interpolateCursorAt } from "./cursorFollowUtils";
 import { clampFocusToScale } from "./focusUtils";
-import { cubicBezier, easeOutScreenStudio } from "./mathUtils";
+import { applyMotionCurve, DEFAULT_ZOOM_MOTION_STYLE, normalizeMotionSpeed } from "./motionCurve";
 
-const CHAINED_ZOOM_PAN_GAP_MS = 1500;
-const CONNECTED_ZOOM_PAN_DURATION_MS = 1000;
-const ZOOM_IN_OVERLAP_MS = 500;
+export const CHAINED_ZOOM_PAN_GAP_MS = 1500;
+export const CONNECTED_ZOOM_PAN_DURATION_MS = 1000;
 
 type DominantRegionOptions = {
 	connectZooms?: boolean;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	viewportRatio?: ViewportRatio;
-	playbackRate?: number;
 };
 
 type ConnectedRegionPair = {
@@ -46,24 +48,18 @@ function lerp(start: number, end: number, amount: number) {
 	return start + (end - start) * amount;
 }
 
-function easeConnectedPan(value: number) {
-	return cubicBezier(0.1, 0.0, 0.2, 1.0, value);
+function easeConnectedPan(value: number, region: ZoomRegion) {
+	return applyMotionCurve(region.motionStyle ?? DEFAULT_ZOOM_MOTION_STYLE, value);
 }
 
-// ponytail: `playbackRate` lets the caller scale the lead-in / lead-out
-// windows in source-time so the zoom transition stays wall-clock constant
-// inside speed regions (2× speed → window is 2× source-ms → takes 1×
-// wall-clock-ms to traverse). Hold span between `zoomInEnd` and
-// `region.endMs` stays in source-time, so the zoomed state still flies
-// through under speed regions — that's the duration the user expects
-// to scale.
-export function computeRegionStrength(
-	region: ZoomRegion,
-	timeMs: number,
-	playbackRate = 1,
-): number {
-	const zoomInWindow = ZOOM_IN_TRANSITION_WINDOW_MS * playbackRate;
-	const zoomOutWindow = TRANSITION_WINDOW_MS * playbackRate;
+// Zoom motion uses the same source-time coordinate space as the region and
+// clip. A speed region therefore speeds up the transition together with the
+// recorded content. The native compositor uses the same rule.
+export function computeRegionStrength(region: ZoomRegion, timeMs: number): number {
+	const motionStyle = region.motionStyle ?? DEFAULT_ZOOM_MOTION_STYLE;
+	const motionSpeed = normalizeMotionSpeed(region.motionSpeed);
+	const zoomInWindow = ZOOM_IN_TRANSITION_WINDOW_MS / motionSpeed;
+	const zoomOutWindow = TRANSITION_WINDOW_MS / motionSpeed;
 	const zoomInEnd = region.startMs + ZOOM_IN_OVERLAP_MS;
 	const leadInStart = zoomInEnd - zoomInWindow;
 	const leadOutEnd = region.endMs + zoomOutWindow;
@@ -74,7 +70,7 @@ export function computeRegionStrength(
 
 	if (timeMs < zoomInEnd) {
 		const progress = (timeMs - leadInStart) / zoomInWindow;
-		return easeOutScreenStudio(progress);
+		return applyMotionCurve(motionStyle, progress);
 	}
 
 	if (timeMs <= region.endMs) {
@@ -82,7 +78,7 @@ export function computeRegionStrength(
 	}
 
 	const progress = clamp01((timeMs - region.endMs) / zoomOutWindow);
-	return 1 - easeOutScreenStudio(progress);
+	return 1 - applyMotionCurve(motionStyle, progress);
 }
 
 function getLinearFocus(start: ZoomFocus, end: ZoomFocus, amount: number): ZoomFocus {
@@ -130,7 +126,7 @@ function getConnectedRegionPairs(regions: ZoomRegion[]) {
 		const nextRegion = sortedRegions[index + 1];
 		const gapMs = nextRegion.startMs - currentRegion.endMs;
 
-		if (gapMs > CHAINED_ZOOM_PAN_GAP_MS) {
+		if (gapMs > CHAINED_ZOOM_PAN_GAP_MS || nextRegion.endMs <= currentRegion.endMs) {
 			continue;
 		}
 
@@ -138,11 +134,63 @@ function getConnectedRegionPairs(regions: ZoomRegion[]) {
 			currentRegion,
 			nextRegion,
 			transitionStart: currentRegion.endMs,
-			transitionEnd: currentRegion.endMs + CONNECTED_ZOOM_PAN_DURATION_MS,
+			transitionEnd: Math.min(
+				nextRegion.endMs,
+				currentRegion.endMs +
+					CONNECTED_ZOOM_PAN_DURATION_MS / normalizeMotionSpeed(nextRegion.motionSpeed),
+			),
 		});
 	}
 
 	return pairs;
+}
+
+export type ZoomVisualEnvelope = {
+	startMs: number;
+	endMs: number;
+	regionIds: string[];
+};
+
+/**
+ * Describe the complete time range where each independent or connected Zoom
+ * passage changes the rendered frame. Stored Zoom bodies mark authored focus
+ * spans, while the renderer also eases in before the first body, pans through
+ * short gaps, and eases out after the last body. The timeline uses these
+ * envelopes as a quiet background band so its visible state matches preview
+ * and export without widening the editable bodies.
+ */
+export function buildZoomVisualEnvelopes(regions: ZoomRegion[]): ZoomVisualEnvelope[] {
+	if (regions.length === 0) return [];
+	const sorted = [...regions].sort((a, b) => a.startMs - b.startMs);
+	const nextByCurrentId = new Map(
+		getConnectedRegionPairs(sorted).map((pair) => [pair.currentRegion.id, pair.nextRegion]),
+	);
+	const envelopes: ZoomVisualEnvelope[] = [];
+
+	for (let index = 0; index < sorted.length; ) {
+		const first = sorted[index];
+		const group = [first];
+		let last = first;
+
+		while (index + 1 < sorted.length) {
+			const connectedNext = nextByCurrentId.get(last.id);
+			if (!connectedNext || connectedNext.id !== sorted[index + 1].id) break;
+			index += 1;
+			last = sorted[index];
+			group.push(last);
+		}
+
+		const entryWindow = ZOOM_IN_TRANSITION_WINDOW_MS / normalizeMotionSpeed(first.motionSpeed);
+		const exitWindow = TRANSITION_WINDOW_MS / normalizeMotionSpeed(last.motionSpeed);
+		envelopes.push({
+			startMs: Math.max(0, first.startMs + ZOOM_IN_OVERLAP_MS - entryWindow),
+			endMs: last.endMs + exitWindow,
+			regionIds: group.map((region) => region.id),
+		});
+		index += 1;
+	}
+
+	return envelopes;
 }
 
 function getActiveRegion(
@@ -151,7 +199,6 @@ function getActiveRegion(
 	connectedPairs: ConnectedRegionPair[],
 	cursorTelemetry?: CursorTelemetryPoint[],
 	viewportRatio?: ViewportRatio,
-	playbackRate = 1,
 ) {
 	const activeRegions = regions
 		.map((region) => {
@@ -165,7 +212,7 @@ function getActiveRegion(
 				return { region, strength: 0 };
 			}
 
-			return { region, strength: computeRegionStrength(region, timeMs, playbackRate) };
+			return { region, strength: computeRegionStrength(region, timeMs) };
 		})
 		.filter((entry) => entry.strength > 0)
 		.sort((left, right) => {
@@ -201,7 +248,7 @@ function getConnectedRegionHold(
 	viewportRatio?: ViewportRatio,
 ) {
 	for (const pair of connectedPairs) {
-		if (timeMs > pair.transitionEnd && timeMs < pair.nextRegion.startMs) {
+		if (timeMs > pair.transitionEnd && timeMs <= pair.nextRegion.endMs) {
 			const nextScale = getZoomScale(pair.nextRegion);
 			return {
 				region: {
@@ -239,6 +286,7 @@ function getConnectedRegionTransition(
 
 		const transitionProgress = easeConnectedPan(
 			clamp01((timeMs - transitionStart) / Math.max(1, transitionEnd - transitionStart)),
+			nextRegion,
 		);
 		const currentScale = getZoomScale(currentRegion);
 		const nextScale = getZoomScale(nextRegion);
@@ -302,7 +350,6 @@ type DominantRegionResult = {
 let dominantRegionCache: {
 	regions: ZoomRegion[];
 	timeMsKey: number;
-	playbackRateKey: number;
 	telemetry: CursorTelemetryPoint[] | undefined;
 	connectZooms: boolean;
 	viewportRatio: ViewportRatio | undefined;
@@ -317,9 +364,7 @@ export function findDominantRegion(
 	const connectZooms = !!options.connectZooms;
 	const telemetry = options.cursorTelemetry;
 	const vr = options.viewportRatio;
-	const playbackRate = options.playbackRate ?? 1;
 	const timeMsKey = Math.round(timeMs);
-	const playbackRateKey = Math.round(playbackRate * 1000);
 
 	if (
 		dominantRegionCache &&
@@ -327,8 +372,7 @@ export function findDominantRegion(
 		dominantRegionCache.timeMsKey === timeMsKey &&
 		dominantRegionCache.telemetry === telemetry &&
 		dominantRegionCache.connectZooms === connectZooms &&
-		dominantRegionCache.viewportRatio === vr &&
-		dominantRegionCache.playbackRateKey === playbackRateKey
+		dominantRegionCache.viewportRatio === vr
 	) {
 		return dominantRegionCache.result;
 	}
@@ -345,14 +389,7 @@ export function findDominantRegion(
 			if (connectedHold) {
 				result = { ...connectedHold, transition: null };
 			} else {
-				const activeRegion = getActiveRegion(
-					regions,
-					timeMs,
-					connectedPairs,
-					telemetry,
-					vr,
-					playbackRate,
-				);
+				const activeRegion = getActiveRegion(regions, timeMs, connectedPairs, telemetry, vr);
 				result = activeRegion
 					? { ...activeRegion, transition: null }
 					: {
@@ -365,14 +402,7 @@ export function findDominantRegion(
 			}
 		}
 	} else {
-		const activeRegion = getActiveRegion(
-			regions,
-			timeMs,
-			connectedPairs,
-			telemetry,
-			vr,
-			playbackRate,
-		);
+		const activeRegion = getActiveRegion(regions, timeMs, connectedPairs, telemetry, vr);
 		result = activeRegion
 			? { ...activeRegion, transition: null }
 			: {
@@ -387,7 +417,6 @@ export function findDominantRegion(
 	dominantRegionCache = {
 		regions,
 		timeMsKey,
-		playbackRateKey,
 		telemetry,
 		connectZooms,
 		viewportRatio: vr,

@@ -20,6 +20,7 @@ import {
 	totalVirtualDuration,
 } from "@/lib/ai-edition/timeline/virtual-preview";
 import {
+	buildZoomPlaybackSegments,
 	computeZoomPreviewTransform,
 	IDENTITY_ZOOM_TRANSFORM,
 } from "@/lib/ai-edition/timeline/zoom-preview";
@@ -51,6 +52,8 @@ interface VirtualPreviewProps {
 	zoomRegions?: AxcutZoomRegion[];
 	speedRegions?: SpeedRegion[];
 	trimRanges?: AxcutTrimRange[];
+	/** Editor-owned timeline position. It stays authoritative while playback is paused. */
+	currentTimeSec?: number;
 	seekTarget?: { timeSec: number; isSource?: boolean; requestId: number } | null;
 	onTimeChange?: (timeSec: number) => void;
 	onLoadedMetadata?: (
@@ -83,6 +86,7 @@ export function VirtualPreview({
 	zoomRegions = [],
 	speedRegions = [],
 	trimRanges = [],
+	currentTimeSec,
 	seekTarget,
 	onTimeChange,
 	onLoadedMetadata,
@@ -171,6 +175,10 @@ export function VirtualPreview({
 	// width the moment the video itself jumps — matching the marker's own pixel span.
 	const playbackClips = useMemo(
 		() => resolvePlaybackSegments(clips, trimRanges),
+		[clips, trimRanges],
+	);
+	const zoomPlaybackSegments = useMemo(
+		() => buildZoomPlaybackSegments(clips, trimRanges),
 		[clips, trimRanges],
 	);
 	const playbackClipsRef = useRef(playbackClips);
@@ -403,21 +411,17 @@ export function VirtualPreview({
 	useEffect(() => {
 		const frame = videoFrameRef.current;
 		if (!frame) return;
-		// ponytail: scale the zoom-in/out transition windows by the current
-		// playback rate so the transition stays wall-clock constant inside
-		// speed regions. The cursor still flies through (ruler + playhead
-		// read source-time), only the easing duration is decoupled.
-		const activeSpeedRegion = findActiveSpeedRegion(
-			speedRegionsRef.current,
-			Math.round(virtualTimeSec * 1000),
-		);
-		const playbackRate = activeSpeedRegion?.speed ?? 1;
 		const transform =
 			zoomRegions.length === 0
 				? IDENTITY_ZOOM_TRANSFORM
-				: computeZoomPreviewTransform(zoomRegions, virtualTimeSec * 1000, undefined, playbackRate);
+				: computeZoomPreviewTransform(
+						zoomRegions,
+						virtualTimeSec * 1000,
+						undefined,
+						zoomPlaybackSegments,
+					);
 		frame.style.transform = `translate(${transform.translateXPercent}%, ${transform.translateYPercent}%) scale(${transform.scale})`;
-	}, [zoomRegions, virtualTimeSec]);
+	}, [zoomPlaybackSegments, zoomRegions, virtualTimeSec]);
 
 	const seekToVirtualTime = useCallback(
 		(nextVirtualTimeSec: number, preservePlayback = false, forceResume = false) => {
@@ -572,7 +576,10 @@ export function VirtualPreview({
 										});
 									}
 								} else if (clips.length > 0) {
-									seekToVirtualTime(virtualTimeSec);
+									// A timeline edit can remount the source after the editor has
+									// moved the playhead to an insertion boundary. The editor value
+									// is newer than this component's local clock in that window.
+									seekToVirtualTime(currentTimeSec ?? virtualTimeSec);
 								}
 							}}
 							onWaiting={() => setLoadState("loading")}

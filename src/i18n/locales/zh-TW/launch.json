@@ -92,6 +92,7 @@
 		"micLevel": "輸入音量",
 		"micHint": "說話以測試麥克風",
 		"noMicrophones": "找不到麥克風",
+		"cameraQuality": "相機畫質",
 		"preview": "預覽",
 		"previewUnavailable": "預覽無法使用"
 	}

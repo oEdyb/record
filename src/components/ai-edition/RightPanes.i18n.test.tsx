@@ -39,21 +39,27 @@ describe("right-rail panes are localized", () => {
 
 	it("renders the video-effects pane in Spanish", () => {
 		renderIn("es", <VideoEffectsPane />);
-		expect(screen.getByRole("heading", { name: "Efectos de video" })).toBeInTheDocument();
+		const heading = screen.getByRole("heading", { name: "Efectos de video" });
+		expect(heading).toBeInTheDocument();
+		expect(heading.closest('[data-inspector-layout="flat"]')).toBeInTheDocument();
 		expect(screen.getByText("Desenfoque de movimiento")).toBeInTheDocument();
 		expect(screen.getByText("Sombra")).toBeInTheDocument();
 	});
 
 	it("renders the layout pane in Japanese", () => {
 		renderIn("ja-JP", <LayoutPane />);
-		expect(screen.getByRole("heading", { name: "レイアウト" })).toBeInTheDocument();
+		const heading = screen.getByRole("heading", { name: "レイアウト" });
+		expect(heading).toBeInTheDocument();
+		expect(heading.closest('[data-inspector-layout="flat"]')).toBeInTheDocument();
 		// the preset <option> labels come from the shared layout.* catalog
 		expect(screen.getByRole("option", { name: "ピクチャーインピクチャ" })).toBeInTheDocument();
 	});
 
 	it("renders the cursor pane in French", () => {
 		renderIn("fr", <CursorPane />);
-		expect(screen.getByRole("heading", { name: "Curseur" })).toBeInTheDocument();
+		const heading = screen.getByRole("heading", { name: "Curseur" });
+		expect(heading).toBeInTheDocument();
+		expect(heading.closest('[data-inspector-layout="flat"]')).toBeInTheDocument();
 		expect(screen.getByText("Lissage")).toBeInTheDocument();
 		expect(screen.getByText("Rebond au clic")).toBeInTheDocument();
 	});
@@ -62,5 +68,11 @@ describe("right-rail panes are localized", () => {
 		renderIn("en", <VideoEffectsPane />);
 		expect(screen.getByRole("heading", { name: "Video Effects" })).toBeInTheDocument();
 		expect(screen.getByText("Blur BG")).toBeInTheDocument();
+	});
+
+	it("keeps the Background pane on its existing card layout", () => {
+		renderIn("en", <BackgroundPane />);
+		const heading = screen.getByRole("heading", { name: "Background" });
+		expect(heading.closest('[data-inspector-layout="flat"]')).not.toBeInTheDocument();
 	});
 });

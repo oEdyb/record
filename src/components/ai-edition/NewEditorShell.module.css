@@ -872,6 +872,73 @@
 	min-height: 0;
 }
 
+/* Dense inspectors use one continuous surface. Controls still keep their own
+   shape, but ordinary settings rows do not become cards inside the inspector. */
+.flatInspectorPane .paneBody {
+	padding: 0 var(--sp-4) var(--sp-4);
+}
+.flatInspectorPane .paneRow {
+	margin: 0;
+	padding: 12px 0;
+	border: 0;
+	border-bottom: 1px solid var(--border-soft);
+	border-radius: 0;
+	background: transparent;
+}
+.flatInspectorPane .sliderGrid {
+	gap: 0;
+	padding: 0;
+}
+.flatInspectorPane .sliderCell {
+	padding: 12px 0 14px;
+	border: 0;
+	border-bottom: 1px solid var(--border-soft);
+	border-radius: 0;
+	background: transparent;
+}
+.flatInspectorPane .sectionLabel {
+	margin: 18px 0 4px;
+	color: var(--muted);
+	font-size: 10.5px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.flatInspectorPane .paneTabs {
+	margin: 10px 0 0;
+}
+.captionStatus,
+.captionLegacyNotice {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 14px 0;
+	border-bottom: 1px solid var(--border-soft);
+}
+.captionLegacyNotice {
+	gap: 8px;
+}
+.captionHint,
+.captionError,
+.captionFinePrint {
+	margin: 10px 0 0;
+	font: 400 11.5px/1.5 var(--font-body);
+	color: var(--meta);
+}
+.captionError {
+	margin-bottom: 12px;
+	color: var(--danger);
+}
+.captionFinePrint {
+	margin-bottom: 14px;
+	font-size: 11px;
+}
+.captionTranslationRow {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 0 12px;
+}
+
 /* ─── pane tabs (sub-nav inside a pane) ───────────────────────── */
 .paneTabs {
 	display: flex;
@@ -912,8 +979,8 @@
 	border-radius: 10px;
 	background: var(--bg);
 }
-.paneRow .label { font: 500 var(--fs-app) var(--font-body); color: var(--fg-2); }
-.paneRow .info  { color: var(--meta); font-size: var(--fs-app-sm); margin-left: 4px; }
+.paneRow :global(.label) { font: 500 var(--fs-app) var(--font-body); color: var(--fg-2); }
+.paneRow :global(.info)  { color: var(--meta); font-size: var(--fs-app-sm); margin-left: 4px; }
 .sectionLabel {
 	font: 500 var(--fs-app-sm) var(--font-body);
 	color: var(--fg-2);
@@ -1027,9 +1094,16 @@
 	grid-template-rows: auto auto;
 	gap: 8px;
 }
-.sliderCell .head { display: flex; align-items: center; gap: 6px; }
-.sliderCell .label { font: 500 11px var(--font-body); color: var(--fg-2); }
-.sliderCell .val { font: 500 11px var(--font-mono); color: var(--brand); margin-left: auto; }
+.sliderCell :global(.head) { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
+.sliderCell :global(.label) { min-width: 0; font: 500 11px var(--font-body); color: var(--fg-2); }
+.sliderCell :global(.val) {
+	flex-shrink: 0;
+	min-width: 54px;
+	font: 500 11px var(--font-mono);
+	color: var(--brand);
+	text-align: right;
+	white-space: nowrap;
+}
 .sliderCell input[type=range] {
 	width: 100%;
 	height: 4px;

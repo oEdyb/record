@@ -29,6 +29,7 @@
 		"annotationItem": "Аннотация",
 		"imageItem": "Изображение",
 		"emptyText": "Пустой текст",
+		"cameraEmphasis": "Акцент на камере",
 		"cameraFullscreen": "Камера на весь экран",
 		"cameraFullscreenItem": "Камера на весь экран {{index}}"
 	},

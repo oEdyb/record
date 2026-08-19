@@ -92,6 +92,7 @@
 		"micLevel": "Mức đầu vào",
 		"micHint": "Hãy nói để kiểm tra micrô",
 		"noMicrophones": "Không tìm thấy micrô",
+		"cameraQuality": "Chất lượng camera",
 		"preview": "Xem trước",
 		"previewUnavailable": "Không thể xem trước"
 	}

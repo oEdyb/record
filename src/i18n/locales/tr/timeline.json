@@ -29,6 +29,7 @@
 		"annotationItem": "Açıklama",
 		"imageItem": "Görüntü",
 		"emptyText": "Boş metin",
+		"cameraEmphasis": "Kamera vurgusu",
 		"cameraFullscreen": "Tam Ekran Kamera",
 		"cameraFullscreenItem": "Tam Ekran Kamera {{index}}"
 	},

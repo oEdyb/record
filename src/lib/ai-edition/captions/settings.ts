@@ -117,7 +117,15 @@ function storedCaptions(doc: AxcutDocument | null | undefined): Record<string, u
 }
 
 export function getCaptionSettings(doc: AxcutDocument | null | undefined): CaptionSettings {
-	const raw = storedCaptions(doc);
+	return normalizeCaptionSettings(storedCaptions(doc));
+}
+
+/** Validate caption settings read from a project or the app preference record. */
+export function normalizeCaptionSettings(value: unknown): CaptionSettings {
+	const raw =
+		value && typeof value === "object" && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: null;
 	const d = DEFAULT_CAPTION_SETTINGS;
 	if (!raw) return { ...d };
 

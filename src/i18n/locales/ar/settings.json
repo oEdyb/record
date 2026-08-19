@@ -28,6 +28,14 @@
 			"none": "بلا"
 		}
 	},
+	"motion": {
+		"title": "الحركة",
+		"speed": "السرعة",
+		"smooth": "سلس",
+		"snappy": "سريع",
+		"linear": "خطي",
+		"instant": "فوري"
+	},
 	"speed": {
 		"playbackSpeed": "سرعة التشغيل",
 		"selectRegion": "حدد منطقة السرعة للتعديل",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "دقة التصدير",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "متوسط",
+		"medium": "عالي",
+		"high": "الأعلى"
 	},
 	"gifSettings": {
 		"frameRate": "معدل إطارات GIF",

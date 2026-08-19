@@ -29,6 +29,7 @@
 		"annotationItem": "주석",
 		"imageItem": "이미지",
 		"emptyText": "빈 텍스트",
+		"cameraEmphasis": "카메라 강조",
 		"cameraFullscreen": "전체 화면 카메라",
 		"cameraFullscreenItem": "전체 화면 카메라 {{index}}"
 	},

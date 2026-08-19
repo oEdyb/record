@@ -30,6 +30,7 @@
 pub mod audio;
 pub mod config;
 pub mod cursor;
+pub mod export_settings;
 pub mod ffi;
 pub mod frame_geometry;
 pub mod gif_export;
@@ -102,11 +103,11 @@ pub mod pipeline_macos;
 pub mod text_macos;
 
 #[cfg(target_os = "linux")]
-pub mod text_linux;
-#[cfg(target_os = "linux")]
 pub mod compositor_linux;
 #[cfg(target_os = "linux")]
 pub mod pipeline_linux;
+#[cfg(target_os = "linux")]
+pub mod text_linux;
 
 #[cfg(windows)]
 pub use compositor_windows as compositor;
@@ -123,11 +124,11 @@ pub use pipeline_macos as pipeline;
 pub use text_macos as text;
 
 #[cfg(target_os = "linux")]
-pub use text_linux as text;
-#[cfg(target_os = "linux")]
 pub use compositor_linux as compositor;
 #[cfg(target_os = "linux")]
 pub use pipeline_linux as pipeline;
+#[cfg(target_os = "linux")]
+pub use text_linux as text;
 
 // `live.rs` est resté un fichier unique parce que sa machinerie principale (Player,
 // LiveView, render_thread) est entièrement cross-platform : elle ne touche qu'au

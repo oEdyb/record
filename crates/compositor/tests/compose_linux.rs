@@ -67,7 +67,8 @@ fn compose_linux_rend_une_frame() {
         let mut cfg = Cfg::c8();
         cfg.bg_blur = true;
         // webcam = screen (mon compose coeur ne dessine que l'ecran).
-        comp.compose_frame(sf, sf, 0.0, &cfg).expect("compose_frame");
+        comp.compose_frame(sf, sf, 0.0, &cfg)
+            .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
 
@@ -77,7 +78,11 @@ fn compose_linux_rend_une_frame() {
         sum += px[0] as u64;
     }
     let mean_r = sum as f32 / n;
-    println!("compose_linux : {w}x{h} bytes={} mean_R={:.1}", rgba.len(), mean_r);
+    println!(
+        "compose_linux : {w}x{h} bytes={} mean_R={:.1}",
+        rgba.len(),
+        mean_r
+    );
 
     // PPM P6 pour inspection visuelle.
     let out = std::env::var("OPENSCREEN_VK_OUT").unwrap_or_else(|_| "target".into());
@@ -176,9 +181,12 @@ fn compose_linux_ecran_tilte() {
         let render = |json: String| {
             let scene = Scene::from_json(&json).expect("scene json");
             // Le padding transite par les live_params, pas la scene brute.
-            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&scene));
+            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+                &scene,
+            ));
             comp.set_scene(Some(scene));
-            comp.compose_frame(sf, sf, 90.0, &cfg).expect("compose_frame");
+            comp.compose_frame(sf, sf, 90.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback_direct")
         };
         let (w, h, upright) = render(tilt_scene_json("null", 0, 0.0));
@@ -247,11 +255,14 @@ fn compose_linux_ombre_du_quad_tilte() {
         let sf = dec.seek_to(1.0).expect("Decoder::seek_to");
         let render = |json: String, shadow: bool| {
             let scene = Scene::from_json(&json).expect("scene json");
-            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&scene));
+            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+                &scene,
+            ));
             comp.set_scene(Some(scene));
             let mut cfg = Cfg::c8();
             cfg.shadow = shadow;
-            comp.compose_frame(sf, sf, 90.0, &cfg).expect("compose_frame");
+            comp.compose_frame(sf, sf, 90.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback_direct")
         };
         // Rayon non nul : c'est la seule facon d'exercer `inset_corner`/`line_cross`
@@ -280,7 +291,10 @@ fn compose_linux_ombre_du_quad_tilte() {
     let swing = top_edge_swing(&edge);
     println!("compose_linux ombre tiltee : {count} px assombris, bordure haute swing={swing}px");
 
-    assert!(count > 3000, "ombre absente ({count} px assombris) — mode 12 pas dessine ?");
+    assert!(
+        count > 3000,
+        "ombre absente ({count} px assombris) — mode 12 pas dessine ?"
+    );
     // Un repli sur le mode 2 donnerait une bordure haute rigoureusement plate.
     assert!(
         swing >= 15,
@@ -314,7 +328,8 @@ fn compose_linux_curseur_sur_ecran_tilte() {
         r#"{"samples":[{"timeMs":3000,"cx":0.22,"cy":0.24,"cursorType":"arrow"}]}"#,
     )
     .expect("write track");
-    let track = CursorTrack::load(track_path.to_str().unwrap(), 0.0, 6.0).expect("CursorTrack::load");
+    let track =
+        CursorTrack::load(track_path.to_str().unwrap(), 0.0, 6.0).expect("CursorTrack::load");
     comp.set_cursor(track);
     comp.set_cursor_time(Some(3.0));
 
@@ -328,9 +343,12 @@ fn compose_linux_curseur_sur_ecran_tilte() {
         let sf = dec.seek_to(1.0).expect("Decoder::seek_to");
         let render = |json: String| {
             let scene = Scene::from_json(&json).expect("scene json");
-            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&scene));
+            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+                &scene,
+            ));
             comp.set_scene(Some(scene));
-            comp.compose_frame(sf, sf, 90.0, &Cfg::c8()).expect("compose_frame");
+            comp.compose_frame(sf, sf, 90.0, &Cfg::c8())
+                .expect("compose_frame");
             comp.readback_direct().expect("readback_direct")
         };
         let (w, h, upright) = render(scene_json("null"));
@@ -400,14 +418,16 @@ fn compose_linux_dessine_le_curseur() {
         r#"{"samples":[{"timeMs":0,"cx":0.5,"cy":0.5,"cursorType":"arrow"}]}"#,
     )
     .expect("write track");
-    let track = CursorTrack::load(track_path.to_str().unwrap(), 0.0, 2.0).expect("CursorTrack::load");
+    let track =
+        CursorTrack::load(track_path.to_str().unwrap(), 0.0, 2.0).expect("CursorTrack::load");
     comp.set_cursor(track);
     comp.set_cursor_time(Some(0.0));
 
     let (w, h, rgba) = unsafe {
         let sf = dec.seek_to(1.0).expect("Decoder::seek_to");
         let cfg = Cfg::c8();
-        comp.compose_frame(sf, sf, 0.0, &cfg).expect("compose_frame");
+        comp.compose_frame(sf, sf, 0.0, &cfg)
+            .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
 
@@ -457,13 +477,16 @@ fn compose_linux_fond_image() {
     let scene = Scene::from_json(&scene_json).expect("scene json");
     // Le padding (et les autres effets) transitent par les live_params, pas la
     // scene brute -> sans ca l'ecran remplit tout le cadre et masque le fond.
-    comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&scene));
+    comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+        &scene,
+    ));
     comp.set_scene(Some(scene));
 
     let (w, h, rgba) = unsafe {
         let sf = dec.seek_to(1.0).expect("Decoder::seek_to");
         let cfg = Cfg::c8();
-        comp.compose_frame(sf, sf, 0.0, &cfg).expect("compose_frame");
+        comp.compose_frame(sf, sf, 0.0, &cfg)
+            .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
     // Orange (255,128,0) : R haut, G moyen, B bas.
@@ -527,8 +550,11 @@ fn compose_linux_flou_de_velocite_ecran() {
         let sf = dec.seek_to(1.1).expect("Decoder::seek_to");
         let cfg = Cfg::c8();
         let render = |mblur: f32| {
-            comp.set_scene(Some(Scene::from_json(&scene_of(mblur)).expect("scene json")));
-            comp.compose_frame(sf, sf, 66.0, &cfg).expect("compose_frame");
+            comp.set_scene(Some(
+                Scene::from_json(&scene_of(mblur)).expect("scene json"),
+            ));
+            comp.compose_frame(sf, sf, 66.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback_direct").2
         };
         (render(0.0), render(1.0))
@@ -615,10 +641,13 @@ fn compose_linux_flou_de_velocite_camera() {
         let cfg = Cfg::c8();
         let render = |mblur: f32| {
             let scene = Scene::from_json(&scene_of(mblur)).expect("scene json");
-            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&scene));
+            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+                &scene,
+            ));
             comp.set_scene(Some(scene));
             // frame 126 = t 2,1 s : la camera est a mi-ouverture.
-            comp.compose_frame(sf, wf, 126.0, &cfg).expect("compose_frame");
+            comp.compose_frame(sf, wf, 126.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback_direct").2
         };
         (render(0.0), render(1.0))
@@ -701,7 +730,8 @@ fn compose_linux_trainee_de_curseur() {
     }
     let track_path = std::env::temp_dir().join("os_cursor_trail_track.json");
     std::fs::write(&track_path, format!(r#"{{"samples":[{samples}]}}"#)).expect("write track");
-    let track = CursorTrack::load(track_path.to_str().unwrap(), 0.0, 2.0).expect("CursorTrack::load");
+    let track =
+        CursorTrack::load(track_path.to_str().unwrap(), 0.0, 2.0).expect("CursorTrack::load");
     comp.set_cursor(track);
     comp.set_cursor_time(Some(0.35));
 
@@ -718,9 +748,12 @@ fn compose_linux_trainee_de_curseur() {
             let scene = Scene::from_json(&scene_of(mblur)).expect("scene json");
             // `cursor.motionBlur` ET `cursor.size` transitent par les LiveParams,
             // pas par la scene brute : sans ca `plan_cursor` verrait toujours 0.
-            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&scene));
+            comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+                &scene,
+            ));
             comp.set_scene(Some(scene));
-            comp.compose_frame(sf, sf, 15.0, &cfg).expect("compose_frame");
+            comp.compose_frame(sf, sf, 15.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback_direct").2
         };
         (render(0.0), render(1.0))
@@ -737,9 +770,8 @@ fn compose_linux_trainee_de_curseur() {
     // rapport a l'axe horizontal de l'image (cy = 0,28 est hors de cet axe
     // exprès), donc un `accum` composite a l'envers y atterrirait.
     let greener = |x0: u32, x1: u32, y0: u32, y1: u32| -> usize {
-        let excess = |img: &[u8], i: usize| {
-            img[i + 1] as i32 - (img[i] as i32).max(img[i + 2] as i32)
-        };
+        let excess =
+            |img: &[u8], i: usize| img[i + 1] as i32 - (img[i] as i32).max(img[i + 2] as i32);
         let mut n = 0;
         for y in y0..y1 {
             for x in x0..x1 {
@@ -782,8 +814,12 @@ fn export_linux_mp4() {
     // Petite sortie : l'export est un smoke test, pas un bench.
     let comp = Compositor::new_sized(&gpu, 640, 360).expect("Compositor::new_sized");
 
-    let out = std::env::var("OPENSCREEN_EXPORT_OUT")
-        .unwrap_or_else(|_| std::env::temp_dir().join("os_export_linux.mp4").to_string_lossy().into());
+    let out = std::env::var("OPENSCREEN_EXPORT_OUT").unwrap_or_else(|_| {
+        std::env::temp_dir()
+            .join("os_export_linux.mp4")
+            .to_string_lossy()
+            .into()
+    });
     let clips = vec![ClipSource {
         screen: FIXTURE.to_string(),
         webcam: FIXTURE.to_string(),
@@ -797,18 +833,14 @@ fn export_linux_mp4() {
         height: 360,
         fps: Some(30),
         codec: ExportCodec::H264,
+        bitrate: None,
+        normalize_audio: true,
     };
 
     let mut last = 0u64;
-    let stats = run_composited_multi(
-        &clips,
-        &out,
-        &gpu,
-        &comp,
-        &Cfg::c8(),
-        &params,
-        &mut |n| last = n,
-    )
+    let stats = run_composited_multi(&clips, &out, &gpu, &comp, &Cfg::c8(), &params, &mut |n| {
+        last = n
+    })
     .expect("run_composited_multi");
     println!(
         "export_linux : {} frames, {:.1} fps encode, {:.2}s video, progress={last} -> {out}",
@@ -817,7 +849,11 @@ fn export_linux_mp4() {
 
     assert!(stats.frames > 0, "aucune frame exportee");
     let meta = std::fs::metadata(&out).expect("mp4 metadata");
-    assert!(meta.len() > 2000, "mp4 trop petit ({} octets) — muxer ?", meta.len());
+    assert!(
+        meta.len() > 2000,
+        "mp4 trop petit ({} octets) — muxer ?",
+        meta.len()
+    );
 }
 
 /// Rend une frame qui exerce EN MEME TEMPS les trois corrections de cette
@@ -849,7 +885,9 @@ fn compose_linux_ombre_webcam_ronde_et_texte() {
     let parsed = Scene::from_json(scene_json).expect("scene json");
     // Cf. le commentaire dans compose_linux_forme_webcam_cercle : sans les
     // LiveParams, la scene est parsee et ignoree.
-    comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&parsed));
+    comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+        &parsed,
+    ));
     comp.set_scene(Some(parsed));
 
     let (w, h, rgba) = unsafe {
@@ -857,7 +895,8 @@ fn compose_linux_ombre_webcam_ronde_et_texte() {
         let wf = cam.seek_to(1.0).expect("seek webcam");
         let mut cfg = Cfg::c8();
         cfg.shadow = true;
-        comp.compose_frame(sf, wf, 1.0, &cfg).expect("compose_frame");
+        comp.compose_frame(sf, wf, 1.0, &cfg)
+            .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
 
@@ -936,14 +975,17 @@ fn compose_linux_forme_webcam_cercle() {
         // la forme webcam, le padding et les effets y transitent. Sans cette
         // ligne la scene est parsee mais ignoree, et le test mesure la forme par
         // defaut ("rounded") en croyant mesurer celle qu'il a demandee.
-        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&parsed));
+        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+            &parsed,
+        ));
         comp.set_scene(Some(parsed));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek screen");
             let wf = cam.seek_to(1.0).expect("seek webcam");
             let mut cfg = Cfg::c8();
             cfg.shadow = false;
-            comp.compose_frame(sf, wf, 1.0, &cfg).expect("compose_frame");
+            comp.compose_frame(sf, wf, 1.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -973,7 +1015,11 @@ fn compose_linux_forme_webcam_cercle() {
         for y in 0..H {
             for x in 0..W {
                 if mask[(y * W + x) as usize] {
-                    x0 = x0.min(x); y0 = y0.min(y); x1 = x1.max(x); y1 = y1.max(y); n += 1;
+                    x0 = x0.min(x);
+                    y0 = y0.min(y);
+                    x1 = x1.max(x);
+                    y1 = y1.max(y);
+                    n += 1;
                 }
             }
         }
@@ -988,7 +1034,10 @@ fn compose_linux_forme_webcam_cercle() {
     let rect_fill = fill(&footprint(&rect), "rectangle");
     let circle_fill = fill(&footprint(&circle), "cercle");
 
-    assert!(rect_fill > 0.95, "le rectangle devrait remplir sa boite ({rect_fill:.3})");
+    assert!(
+        rect_fill > 0.95,
+        "le rectangle devrait remplir sa boite ({rect_fill:.3})"
+    );
     // pi/4 = 0,785 ; on tolere l'antialiasing du SDF sur le pourtour.
     assert!(
         (circle_fill - 0.785).abs() < 0.06,
@@ -1032,7 +1081,8 @@ fn compose_linux_sans_camera_ne_dessine_pas_de_vignette() {
             cfg.shadow = false;
             // La frame ecran passee AUSSI comme webcam : le repli exact de
             // `open_and_seek_clip` quand il n'y a pas de fichier camera.
-            comp.compose_frame(sf, sf, 1.0, &cfg).expect("compose_frame");
+            comp.compose_frame(sf, sf, 1.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1066,13 +1116,16 @@ fn compose_linux_sans_camera_ne_dessine_pas_de_vignette() {
             r#""preset":"no-webcam""#,
         ))
         .expect("scene json");
-        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&parsed));
+        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+            &parsed,
+        ));
         comp.set_scene(Some(parsed));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek screen");
             let mut cfg = Cfg::c8();
             cfg.shadow = false;
-            comp.compose_frame(sf, sf, 1.0, &cfg).expect("compose_frame");
+            comp.compose_frame(sf, sf, 1.0, &cfg)
+                .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1162,7 +1215,9 @@ fn compose_linux_annotation_fleche() {
         let parsed = Scene::from_json(&annotation_scene(annotations)).expect("scene json");
         // Cf. compose_linux_forme_webcam_cercle : sans les LiveParams la scene
         // est parsee puis ignoree, et le test mesure les valeurs par defaut.
-        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&parsed));
+        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+            &parsed,
+        ));
         comp.set_scene(Some(parsed));
         // Le 3e argument de `compose_frame` est un NUMERO DE FRAME (source_t =
         // frame / 60), pas des secondes. `set_timeline_time` fixe directement
@@ -1172,7 +1227,8 @@ fn compose_linux_annotation_fleche() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8()).expect("compose_frame");
+            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
+                .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1238,7 +1294,9 @@ fn compose_linux_annotation_flou_et_mosaique() {
 
     let mut render = |annotations: &str| -> Vec<u8> {
         let parsed = Scene::from_json(&annotation_scene(annotations)).expect("scene json");
-        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&parsed));
+        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+            &parsed,
+        ));
         comp.set_scene(Some(parsed));
         // Le 3e argument de `compose_frame` est un NUMERO DE FRAME (source_t =
         // frame / 60), pas des secondes. `set_timeline_time` fixe directement
@@ -1248,7 +1306,8 @@ fn compose_linux_annotation_flou_et_mosaique() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8()).expect("compose_frame");
+            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
+                .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1346,7 +1405,9 @@ fn compose_linux_annotation_image() {
 
     let mut render = |annotations: &str| -> Vec<u8> {
         let parsed = Scene::from_json(&annotation_scene(annotations)).expect("scene json");
-        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&parsed));
+        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+            &parsed,
+        ));
         comp.set_scene(Some(parsed));
         // Le 3e argument de `compose_frame` est un NUMERO DE FRAME (source_t =
         // frame / 60), pas des secondes. `set_timeline_time` fixe directement
@@ -1356,7 +1417,8 @@ fn compose_linux_annotation_image() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8()).expect("compose_frame");
+            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
+                .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1387,7 +1449,11 @@ fn compose_linux_annotation_image() {
     // le centre doit etre magenta.
     let (cx, cy) = ((x0 + x1) / 2, (y0 + y1) / 2);
     let i = ((cy * W + cx) * 4) as usize;
-    let (r, g_, b) = (with_image[i] as i32, with_image[i + 1] as i32, with_image[i + 2] as i32);
+    let (r, g_, b) = (
+        with_image[i] as i32,
+        with_image[i + 1] as i32,
+        with_image[i + 2] as i32,
+    );
     assert!(
         r > 200 && g_ < 80 && b > 200,
         "centre de l'empreinte non magenta : ({r}, {g_}, {b})"
@@ -1414,7 +1480,9 @@ fn compose_linux_animation_texte() {
 
     let mut render = |annotations: &str| -> Vec<u8> {
         let parsed = Scene::from_json(&annotation_scene(annotations)).expect("scene json");
-        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(&parsed));
+        comp.set_live_params(openscreen_compositor::compositor::live_params_from_scene(
+            &parsed,
+        ));
         comp.set_scene(Some(parsed));
         // Le 3e argument de `compose_frame` est un NUMERO DE FRAME (source_t =
         // frame / 60), pas des secondes. `set_timeline_time` fixe directement
@@ -1424,7 +1492,8 @@ fn compose_linux_animation_texte() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8()).expect("compose_frame");
+            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
+                .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1459,7 +1528,10 @@ fn compose_linux_animation_texte() {
     let typed_half = render(&text("typewriter", 0.65));
     let full_px = changed_pixels(&none, &typed_full);
     let half_px = changed_pixels(&none, &typed_half);
-    assert!(!half_px.is_empty(), "la machine a ecrire n'a rien revele a mi-course");
+    assert!(
+        !half_px.is_empty(),
+        "la machine a ecrire n'a rien revele a mi-course"
+    );
     let full_right = bbox(&full_px, W).2;
     let half_right = bbox(&half_px, W).2;
     assert!(

@@ -6,6 +6,21 @@ export interface Mp4ExportSettings {
 	bitrate: number;
 }
 
+interface ExportDurationClip {
+	sourceStartSec: number;
+	sourceEndSec: number;
+}
+
+interface ExportSpeedRegion {
+	startSec: number;
+	endSec: number;
+	speed: number;
+	clipIndex?: number | null;
+}
+
+const AAC_AUDIO_BITRATE = 384_000;
+const MP4_CONTAINER_OVERHEAD = 1.02;
+
 interface SourceCropRegion {
 	width: number;
 	height: number;
@@ -30,11 +45,15 @@ export function wouldUpscale(output: Dims, source: Dims): boolean {
 	return Math.min(output.width / source.width, output.height / source.height) > 1;
 }
 
-const MEDIUM_SHORT_SIDE = 720;
-const HIGH_SHORT_SIDE = 1080;
+const MEDIUM_SHORT_SIDE = 1080;
+const HIGH_SHORT_SIDE = 1440;
 
 function even(value: number) {
 	return Math.floor(value / 2) * 2;
+}
+
+function evenUp(value: number) {
+	return Math.ceil(value / 2) * 2;
 }
 
 function atLeastEven(value: number) {
@@ -76,40 +95,22 @@ function calculateSourceDimensions(
 	sourceHeight: number,
 	aspectRatioValue: number,
 ) {
-	const sourceLongDim = Math.max(sourceWidth, sourceHeight);
+	const width = Math.max(2, sourceWidth);
+	const height = Math.max(2, sourceHeight);
+	const sourceAspectRatio = width / height;
 
-	if (aspectRatioValue === 1) {
-		const baseDimension = even(Math.min(sourceWidth, sourceHeight));
+	// Highest is source-preserving. Change only the canvas dimension needed to fit the
+	// selected aspect ratio, then CONTAIN-fit the unscaled source over the background.
+	if (aspectRatioValue >= sourceAspectRatio) {
 		return {
-			width: baseDimension,
-			height: baseDimension,
+			width: evenUp(height * aspectRatioValue),
+			height: evenUp(height),
 		};
 	}
 
-	if (aspectRatioValue > 1) {
-		const baseWidth = even(sourceLongDim);
-		for (let width = baseWidth; width >= 100; width -= 2) {
-			const height = Math.round(width / aspectRatioValue);
-			if (height % 2 === 0 && Math.abs(width / height - aspectRatioValue) < 0.0001) {
-				return { width, height };
-			}
-		}
-		return {
-			width: baseWidth,
-			height: even(baseWidth / aspectRatioValue),
-		};
-	}
-
-	const baseHeight = even(sourceLongDim);
-	for (let height = baseHeight; height >= 100; height -= 2) {
-		const width = Math.round(height * aspectRatioValue);
-		if (width % 2 === 0 && Math.abs(width / height - aspectRatioValue) < 0.0001) {
-			return { width, height };
-		}
-	}
 	return {
-		width: even(baseHeight * aspectRatioValue),
-		height: baseHeight,
+		width: evenUp(width),
+		height: evenUp(width / aspectRatioValue),
 	};
 }
 
@@ -122,9 +123,66 @@ function calculateBitrate(width: number, height: number, quality: ExportQuality)
 		return 30_000_000;
 	}
 
-	if (totalPixels <= 1280 * 720) return 10_000_000;
-	if (totalPixels <= 1920 * 1080) return 20_000_000;
-	return 30_000_000;
+	return quality === "medium" ? 20_000_000 : 30_000_000;
+}
+
+/**
+ * Matches the native timeline walk's output-duration math. Speed regions are in source time
+ * and can belong to one clip. When old data omits clipIndex, the region applies to every
+ * overlapping clip, which is the native compatibility rule too.
+ */
+export function calculateEffectiveExportDuration(
+	clips: ExportDurationClip[],
+	speedRegions: ExportSpeedRegion[] = [],
+): number {
+	return clips.reduce((total, clip, clipIndex) => {
+		const start = Math.max(0, clip.sourceStartSec);
+		const end = Math.max(start, clip.sourceEndSec);
+		const regions = speedRegions
+			.filter(
+				(region) =>
+					(region.clipIndex == null || region.clipIndex === clipIndex) &&
+					region.startSec < end &&
+					region.endSec > start,
+			)
+			.sort((a, b) => a.startSec - b.startSec);
+
+		let duration = 0;
+		let cursor = start;
+		for (const region of regions) {
+			const regionStart = Math.max(start, region.startSec, cursor);
+			const regionEnd = Math.min(end, region.endSec);
+			if (regionStart > cursor) duration += regionStart - cursor;
+			if (regionEnd > regionStart) {
+				const speed = Number.isFinite(region.speed) && region.speed > 0 ? region.speed : 1;
+				duration += (regionEnd - regionStart) / speed;
+				cursor = regionEnd;
+			}
+		}
+		if (cursor < end) duration += end - cursor;
+		return total + duration;
+	}, 0);
+}
+
+/** A bitrate-based estimate. The native MP4 pipeline adds 384 kbps AAC when audio exists. */
+export function estimateMp4FileSizeBytes({
+	durationSec,
+	videoBitrate,
+	hasAudio,
+}: {
+	durationSec: number;
+	videoBitrate: number;
+	hasAudio: boolean;
+}): number {
+	if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
+	if (!Number.isFinite(videoBitrate) || videoBitrate <= 0) return 0;
+	const totalBitrate = videoBitrate + (hasAudio ? AAC_AUDIO_BITRATE : 0);
+	return Math.ceil((totalBitrate * durationSec * MP4_CONTAINER_OVERHEAD) / 8);
+}
+
+export function formatBitrate(bitrate: number): string {
+	if (!Number.isFinite(bitrate) || bitrate <= 0) return "—";
+	return `${Number((bitrate / 1_000_000).toFixed(1))} Mbps`;
 }
 
 export function calculateMp4ExportSettings({

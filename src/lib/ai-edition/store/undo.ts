@@ -1,61 +1,28 @@
-// Lightweight undo/redo for the project document. The store fires
-// `documentChanged` whenever `setDocument` is called; subscribers record
-// snapshots up to a bounded history. Cmd+Z / Cmd+Shift+Z use the snapshot
-// stack to roll back / roll forward. Designed to be small and side-effect
-// free so it works in any renderer.
+// Document-level undo and redo. Each history entry restores one complete edit.
 
 import { useEffect, useRef } from "react";
+import { clearDocumentHistory, takeRedoDocument, takeUndoDocument } from "./documentHistory";
 import { useProjectStore } from "./projectStore";
 
-type Snapshot = { projectId: string; doc: unknown };
-
-const MAX_HISTORY = 50;
-const past: Snapshot[] = [];
-const future: Snapshot[] = [];
-
-let enabled = true;
-
-export function pushHistory(snapshot: Snapshot) {
-	if (!enabled) return;
-	past.push(snapshot);
-	if (past.length > MAX_HISTORY) past.shift();
-	future.length = 0;
-}
-
-export function clearHistory() {
-	past.length = 0;
-	future.length = 0;
+export function clearHistory(): void {
+	clearDocumentHistory();
 }
 
 export function undo(): boolean {
-	const prev = past.pop();
-	if (!prev) return false;
 	const state = useProjectStore.getState();
-	if (!state.projectId || state.projectId !== prev.projectId) {
-		clearHistory();
-		return false;
-	}
-	const doc = state.document;
-	if (doc) future.push({ projectId: prev.projectId, doc: structuredClone(doc) });
-	enabled = false;
-	state.setDocument(prev.doc as never);
-	enabled = true;
+	if (!state.document) return false;
+	const previous = takeUndoDocument(state.document);
+	if (!previous) return false;
+	state.restoreDocumentFromHistory(previous);
 	return true;
 }
 
 export function redo(): boolean {
-	const next = future.pop();
-	if (!next) return false;
 	const state = useProjectStore.getState();
-	if (!state.projectId || state.projectId !== next.projectId) {
-		clearHistory();
-		return false;
-	}
-	const doc = state.document;
-	if (doc) past.push({ projectId: doc.project.id, doc: structuredClone(doc) });
-	enabled = false;
-	state.setDocument(next.doc as never);
-	enabled = true;
+	if (!state.document) return false;
+	const next = takeRedoDocument(state.document);
+	if (!next) return false;
+	state.restoreDocumentFromHistory(next);
 	return true;
 }
 
@@ -77,7 +44,7 @@ export function useUndoRedoShortcuts(onAfter: () => void) {
 				if (redo()) onAfterRef.current();
 				return;
 			}
-			if (ctrl && e.key === "z") {
+			if (ctrl && e.key.toLowerCase() === "z") {
 				e.preventDefault();
 				if (undo()) onAfterRef.current();
 				return;

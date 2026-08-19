@@ -31,7 +31,8 @@
 
 use crate::audio::{
     assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio,
-    stretch_clip_pcm_by_speed, AacEncoder, PlanarPcm,
+    finalize_decoded_clip_audio, master_program_audio, stretch_decoded_clip_audio_by_speed,
+    AacEncoder, AudioMasteringStats, DecodedClipAudio,
 };
 use crate::compositor::Compositor;
 use crate::d3d::Gpu;
@@ -46,6 +47,7 @@ pub struct Stats {
     pub wall_s: f64,
     pub fps: f64,
     pub video_duration_s: f64,
+    pub audio_mastering: AudioMasteringStats,
 }
 
 /// Garde RAII sur une AVFrame (la libère au Drop). Identique à
@@ -102,7 +104,12 @@ impl Decoder {
             let mut fmt: *mut crate::ffi::AVFormatContext = ptr::null_mut();
             let cpath = CString::new(path)?;
             crate::ffi::averr(
-                crate::ffi::avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+                crate::ffi::avformat_open_input(
+                    &mut fmt,
+                    cpath.as_ptr(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                ),
                 "open_input",
             )?;
             crate::ffi::averr(
@@ -160,8 +167,8 @@ impl Decoder {
             // figées par l'ABI de libavcodec.
             const FF_PROFILE_H264_BASELINE: i32 = 66;
             const FF_PROFILE_H264_CONSTRAINED_BASELINE: i32 = 578;
-            let is_baseline =
-                profile == FF_PROFILE_H264_BASELINE || profile == FF_PROFILE_H264_CONSTRAINED_BASELINE;
+            let is_baseline = profile == FF_PROFILE_H264_BASELINE
+                || profile == FF_PROFILE_H264_CONSTRAINED_BASELINE;
             let forced = std::env::var("OPENSCREEN_MAC_DECODE").ok();
             let want_hw = match forced.as_deref() {
                 Some("software") => false,
@@ -223,12 +230,7 @@ impl Decoder {
         // avec son ancien `cur_pts`.
         self.has_peek = false;
         crate::ffi::averr(
-            crate::ffi::av_seek_frame(
-                self.fmt,
-                self.vidx,
-                0,
-                crate::ffi::AVSEEK_FLAG_BACKWARD,
-            ),
+            crate::ffi::av_seek_frame(self.fmt, self.vidx, 0, crate::ffi::AVSEEK_FLAG_BACKWARD),
             "rewind_seek",
         )?;
         crate::ffi::avcodec_flush_buffers(self.dctx);
@@ -280,9 +282,18 @@ impl Decoder {
             }
         }
 
-        let target = if tb_sec > 0.0 { (seconds / tb_sec) as i64 } else { 0 };
+        let target = if tb_sec > 0.0 {
+            (seconds / tb_sec) as i64
+        } else {
+            0
+        };
         crate::ffi::averr(
-            crate::ffi::av_seek_frame(self.fmt, self.vidx, target, crate::ffi::AVSEEK_FLAG_BACKWARD),
+            crate::ffi::av_seek_frame(
+                self.fmt,
+                self.vidx,
+                target,
+                crate::ffi::AVSEEK_FLAG_BACKWARD,
+            ),
             "seek_to",
         )?;
         crate::ffi::avcodec_flush_buffers(self.dctx);
@@ -306,7 +317,11 @@ impl Decoder {
 
     /// Déroule le décodeur en avant jusqu'à la première frame à `seconds` ou après, SANS
     /// jeter son état. Symétrique de `pipeline_windows::Decoder::decode_forward_to`.
-    unsafe fn decode_forward_to(&mut self, seconds: f64, tb_sec: f64) -> Result<*mut crate::ffi::AVFrame> {
+    unsafe fn decode_forward_to(
+        &mut self,
+        seconds: f64,
+        tb_sec: f64,
+    ) -> Result<*mut crate::ffi::AVFrame> {
         loop {
             let f = self.next()?;
             if f.is_null() {
@@ -610,6 +625,8 @@ pub struct ExportParams {
     pub height: u32,
     pub fps: Option<u32>,
     pub codec: ExportCodec,
+    pub bitrate: Option<u32>,
+    pub normalize_audio: bool,
 }
 
 impl Default for ExportParams {
@@ -619,6 +636,8 @@ impl Default for ExportParams {
             height: 1080,
             fps: None,
             codec: ExportCodec::H264,
+            bitrate: None,
+            normalize_audio: true,
         }
     }
 }
@@ -696,7 +715,10 @@ impl VideoEncoder {
             Some(name) if refused.is_empty() => {
                 bail!("OPENSCREEN_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
             }
-            Some(name) => bail!("OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
+            Some(name) => bail!(
+                "OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}",
+                refused[0]
+            ),
             None => bail!(
                 "aucun encodeur vidéo utilisable sur cette machine : {}",
                 refused.join(" ; ")
@@ -784,7 +806,11 @@ impl VideoEncoder {
             return Err(e);
         }
 
-        let mut encoder = VideoEncoder { ctx, sw: ptr::null_mut(), nv12: ptr::null_mut() };
+        let mut encoder = VideoEncoder {
+            ctx,
+            sw: ptr::null_mut(),
+            nv12: ptr::null_mut(),
+        };
         if candidate.pix_fmt != crate::ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX {
             encoder.sw = alloc_sw_frame(candidate.pix_fmt, w, h)?;
             if candidate.pix_fmt != crate::ffi::AVPixelFormat::AV_PIX_FMT_YUV420P {
@@ -813,8 +839,15 @@ impl VideoEncoder {
                     "send_frame",
                 );
             }
-            crate::ffi::averr(crate::ffi::av_frame_make_writable(self.sw), "make_writable_sw")?;
-            let landing = if self.nv12.is_null() { self.sw } else { self.nv12 };
+            crate::ffi::averr(
+                crate::ffi::av_frame_make_writable(self.sw),
+                "make_writable_sw",
+            )?;
+            let landing = if self.nv12.is_null() {
+                self.sw
+            } else {
+                self.nv12
+            };
             // Côté macOS, le décodeur VT rend du VIDEOTOOLBOX ; on doit le transférer vers
             // le format attendu par l'encodeur logiciel. Le `av_hwframe_transfer_data`
             // fait ça si l'encodeur attend du NV12 ; sinon, `nv12_to_yuv420p` est notre
@@ -936,7 +969,12 @@ unsafe fn alloc_sw_frame(
     (*frame).height = h;
     if crate::ffi::av_frame_get_buffer(frame, 32) < 0 {
         crate::ffi::av_frame_free(&mut frame);
-        bail!("av_frame_get_buffer (encodeur) {}x{} pix_fmt={}", w, h, pix_fmt);
+        bail!(
+            "av_frame_get_buffer (encodeur) {}x{} pix_fmt={}",
+            w,
+            h,
+            pix_fmt
+        );
     }
     Ok(frame)
 }
@@ -964,12 +1002,7 @@ pub fn run_preview_bench(_gpu: &Gpu) -> Result<Stats> {
     Err(anyhow!("pipeline_macos::run_preview_bench: non implémenté"))
 }
 
-pub fn run_composited(
-    _screen: &str,
-    _out: &str,
-    _gpu: &Gpu,
-    _scene_json: &str,
-) -> Result<Stats> {
+pub fn run_composited(_screen: &str, _out: &str, _gpu: &Gpu, _scene_json: &str) -> Result<Stats> {
     Err(anyhow!("pipeline_macos::run_composited: non implémenté"))
 }
 
@@ -1003,8 +1036,11 @@ pub fn run_composited_multi(
 
     // fps : explicite > dérivé du premier clip.
     let out_fps = params.fps.unwrap_or(30) as i32;
-    // bitrate proportionnel à la surface de sortie (référence : 8Mbps @ 1920x1080).
-    let bit_rate = ((out_w as i64 * out_h as i64 * 8_000_000) / (1920 * 1080)).max(2_000_000);
+    let bit_rate = crate::export_settings::resolve_video_bitrate(out_w, out_h, params.bitrate);
+    eprintln!(
+        "[pipeline] export video: {}x{} @ {} fps, bitrate={} bits/s",
+        out_w, out_h, out_fps, bit_rate
+    );
 
     // ---- decodeurs : un par chemin, réutilisés entre clips (screen ≠ webcam → 2 maps) ----
     let mut screen_decs: std::collections::HashMap<String, Decoder> =
@@ -1013,13 +1049,20 @@ pub fn run_composited_multi(
         std::collections::HashMap::new();
 
     // ---- encodeur (candidat VT ou software) ----
-    let mut enc =
-        VideoEncoder::open(&params.codec, gpu, out_w as i32, out_h as i32, out_fps, bit_rate)?;
+    let mut enc = VideoEncoder::open(
+        &params.codec,
+        gpu,
+        out_w as i32,
+        out_h as i32,
+        out_fps,
+        bit_rate,
+    )?;
     let ectx = enc.ctx;
 
     // ---- muxer MP4 ----
     let mut octx: *mut crate::ffi::AVFormatContext = ptr::null_mut();
     let outc = CString::new(out)?;
+    let audio_mastering;
     unsafe {
         crate::ffi::averr(
             crate::ffi::avformat_alloc_output_context2(
@@ -1057,14 +1100,11 @@ pub fn run_composited_multi(
     // qui manquait, pas la machinerie.
     let mut audio_encoder = unsafe { AacEncoder::open(octx)? };
     unsafe {
-        crate::ffi::averr(
-            crate::ffi::avformat_write_header(octx, ptr::null_mut()),
-            "write_header",
-        )?;
+        crate::export_settings::write_mp4_header(octx)?;
     }
     // Un PCM par clip, assemblé après la marche vidéo : c'est elle qui dit combien de
     // frames chaque clip a réellement produit, donc combien d'audio lui revient.
-    let mut clip_pcm: Vec<Option<PlanarPcm>> = (0..clips.len()).map(|_| None).collect();
+    let mut clip_audio: Vec<Option<DecodedClipAudio>> = (0..clips.len()).map(|_| None).collect();
     let mut clip_frame_counts: Vec<u64> = vec![0; clips.len()];
 
     let mut opkt = unsafe { crate::ffi::av_packet_alloc() };
@@ -1097,9 +1137,9 @@ pub fn run_composited_multi(
                 let clip = &clips[clip_index];
                 if clip.has_audio && frames_in_clip > 0 {
                     match decode_clip_audio(&clip.screen, clip.source_start_sec, source_end_sec) {
-                        Ok(Some(pcm)) => {
-                            clip_pcm[clip_index] = Some(stretch_clip_pcm_by_speed(
-                                &pcm,
+                        Ok(Some(audio)) => {
+                            clip_audio[clip_index] = Some(stretch_decoded_clip_audio_by_speed(
+                                audio,
                                 speed_segments,
                                 out_fps as f64,
                             ));
@@ -1130,12 +1170,12 @@ pub fn run_composited_multi(
         // d'autant, sinon la piste dérive pour tous les suivants.
         let declared_audio: Vec<bool> = clips.iter().map(|clip| clip.has_audio).collect();
         let plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
-        audio_encoder.encode(&assemble_concatenated_pcm(&clip_pcm, &plan), octx)?;
+        let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.normalize_audio);
+        let mut assembled_audio = assemble_concatenated_pcm(&clip_pcm, &plan);
+        audio_mastering = master_program_audio(&mut assembled_audio, params.normalize_audio);
+        audio_encoder.encode(&assembled_audio, octx)?;
 
-        crate::ffi::averr(
-            crate::ffi::av_write_trailer(octx),
-            "write_trailer",
-        )?;
+        crate::ffi::averr(crate::ffi::av_write_trailer(octx), "write_trailer")?;
         crate::ffi::avio_closep(&mut pb);
         crate::ffi::avformat_free_context(octx);
         crate::ffi::av_packet_free(&mut opkt);
@@ -1145,8 +1185,13 @@ pub fn run_composited_multi(
     Ok(Stats {
         frames,
         wall_s,
-        fps: if wall_s > 0.0 { frames as f64 / wall_s } else { 0.0 },
+        fps: if wall_s > 0.0 {
+            frames as f64 / wall_s
+        } else {
+            0.0
+        },
         video_duration_s: frames as f64 / out_fps as f64,
+        audio_mastering,
     })
 }
 

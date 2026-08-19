@@ -29,6 +29,7 @@
 		"annotationItem": "標註",
 		"imageItem": "圖片",
 		"emptyText": "空文字",
+		"cameraEmphasis": "攝影機強調",
 		"cameraFullscreen": "全螢幕攝影機",
 		"cameraFullscreenItem": "全螢幕攝影機 {{index}}"
 	},

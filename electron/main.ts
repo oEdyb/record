@@ -41,11 +41,13 @@ import { installMainProcessErrorGuards } from "./main-process-errors";
 import { registerSttIpc } from "./stt";
 import { checkLatestRelease } from "./update-checker";
 import {
+	createCameraPreviewWindow,
 	createCountdownOverlayWindow,
 	createEditorWindow,
 	createHudOverlayWindow,
 	createNotesWindow,
 	createSourceSelectorWindow,
+	isPointOverPrivateRecordingUi,
 } from "./windows";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -132,6 +134,7 @@ function createWindow() {
 	}
 
 	mainWindow = createHudOverlayWindow();
+	if (isMac) createCameraPreviewWindow();
 }
 
 function showMainWindow() {
@@ -553,6 +556,7 @@ function updateTrayMenu(recording: boolean = false) {
 let editorHasUnsavedChanges = false;
 let isForceClosing = false;
 let isCloseConfirmInFlight = false;
+let workspaceTransition: { target: "editor" | "hud"; window: BrowserWindow } | null = null;
 
 ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
 	editorHasUnsavedChanges = hasChanges;
@@ -580,22 +584,41 @@ function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 }
 
 function createEditorWindowWrapper() {
-	if (mainWindow) {
-		isForceClosing = true;
-		mainWindow.close();
-		isForceClosing = false;
-		mainWindow = null;
+	if (workspaceTransition?.target === "editor" && !workspaceTransition.window.isDestroyed()) {
+		return;
 	}
-	mainWindow = createEditorWindow();
+	if (mainWindow && !mainWindow.isDestroyed() && isEditorWindow(mainWindow)) {
+		mainWindow.show();
+		mainWindow.focus();
+		return;
+	}
+	const previousWindow = mainWindow;
+	const editorWindow = createEditorWindow();
+	workspaceTransition = { target: "editor", window: editorWindow };
+	mainWindow = editorWindow;
 	editorHasUnsavedChanges = false;
 
-	mainWindow.on("close", (event) => {
+	// Keep the old workspace visible until the editor has painted its first
+	// frame. This removes the desktop flash between Stop and the editor without
+	// keeping two renderer states alive after the hand-off.
+	editorWindow.once("ready-to-show", () => {
+		if (workspaceTransition?.window === editorWindow) workspaceTransition = null;
+		if (!previousWindow || previousWindow.isDestroyed()) return;
+		isForceClosing = true;
+		previousWindow.close();
+		isForceClosing = false;
+	});
+	editorWindow.once("closed", () => {
+		if (workspaceTransition?.window === editorWindow) workspaceTransition = null;
+	});
+
+	editorWindow.on("close", (event) => {
 		if (isForceClosing || !editorHasUnsavedChanges || isCloseConfirmInFlight) return;
 
 		event.preventDefault();
 		isCloseConfirmInFlight = true;
 
-		const windowToClose = mainWindow;
+		const windowToClose = editorWindow;
 		if (!windowToClose || windowToClose.isDestroyed()) return;
 
 		// Ask renderer to show the in-app close dialog.
@@ -815,13 +838,37 @@ appReady?.then(async () => {
 	await ensureRecordingsDir();
 
 	function switchToHudWrapper() {
-		if (mainWindow) {
-			isForceClosing = true;
-			mainWindow.close();
-			isForceClosing = false;
-			mainWindow = null;
+		if (workspaceTransition?.target === "hud" && !workspaceTransition.window.isDestroyed()) {
+			return;
 		}
-		showMainWindow();
+		if (
+			mainWindow &&
+			!mainWindow.isDestroyed() &&
+			mainWindow.webContents.getURL().includes("windowType=hud-overlay")
+		) {
+			mainWindow.show();
+			mainWindow.focus();
+			return;
+		}
+		const previousWindow = mainWindow;
+		const hudWindow = createHudOverlayWindow();
+		if (isMac) createCameraPreviewWindow();
+		workspaceTransition = { target: "hud", window: hudWindow };
+		mainWindow = hudWindow;
+		if (!hudWindow || !previousWindow || previousWindow.isDestroyed()) return;
+		// The editor stays visible while the transparent HUD loads. Close it only
+		// when the HUD can paint, so Record feels like one workspace changing shape
+		// instead of one app disappearing before another appears.
+		hudWindow.once("ready-to-show", () => {
+			if (workspaceTransition?.window === hudWindow) workspaceTransition = null;
+			if (previousWindow.isDestroyed()) return;
+			isForceClosing = true;
+			previousWindow.close();
+			isForceClosing = false;
+		});
+		hudWindow.once("closed", () => {
+			if (workspaceTransition?.window === hudWindow) workspaceTransition = null;
+		});
 	}
 
 	registerIpcHandlers(
@@ -843,6 +890,13 @@ appReady?.then(async () => {
 			}
 		},
 		switchToHudWrapper,
+		(point) =>
+			isPointOverPrivateRecordingUi(
+				point,
+				[notesWindow, sourceSelectorWindow, countdownOverlayWindow].filter(
+					(window): window is BrowserWindow => Boolean(window),
+				),
+			),
 	);
 
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.

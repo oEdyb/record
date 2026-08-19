@@ -17,6 +17,7 @@ import { z } from "zod";
 // Relative, not `@/`: the Electron main bundle imports this module and
 // vite-plugin-electron builds it without the root resolve.alias.
 import { toAspectRatioToken } from "../../../utils/aspectRatioUtils";
+import { isMotionSpeed, type MotionSpeed } from "../../zoomMath/motionCurve";
 // Cycle-safe: `document/ids` only pulls `uuid`, and `timeline/timelineMap`'s
 // transitive value-imports (region-ventilation, virtual-preview) import from this
 // module TYPE-ONLY, so requiring them here never re-enters schema at runtime.
@@ -142,6 +143,8 @@ export const assetSchema = z.object({
 	kind: z.literal("video"),
 	label: z.string().min(1),
 	originalPath: z.string().min(1),
+	/** Stable owner for a recorder-to-editor import that may retry after interruption. */
+	recordingImportId: z.string().min(1).optional(),
 	proxyPath: z.string().optional(),
 	waveformPath: z.string().optional(),
 	durationSec: z.number().nonnegative().optional(),
@@ -454,6 +457,8 @@ export const zoomRegionSchema = endGteStart(
 		focusMode: z.enum(["manual", "auto"]).optional(),
 		rotationPreset: z.enum(["iso", "left", "right"]).optional(),
 		customScale: z.number().positive().optional(),
+		motionStyle: z.enum(["smooth", "snappy", "linear", "instant"]).optional(),
+		motionSpeed: z.custom<MotionSpeed>(isMotionSpeed, "Invalid motion speed").optional(),
 		source: z.enum(["auto", "manual"]).optional(),
 	}),
 	"endMs",
@@ -792,6 +797,7 @@ export const createProjectInputSchema = z.object({
 export const addAssetInputSchema = z.object({
 	path: z.string().trim().min(1),
 	label: z.string().trim().optional(),
+	recordingImportId: z.string().trim().min(1).optional(),
 	autoTranscribe: z.boolean().default(true),
 });
 

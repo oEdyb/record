@@ -61,6 +61,48 @@ export function computeCameraFullscreenRect(
 	};
 }
 
+/**
+ * Moderately enlarge a picture-in-picture camera while preserving its nearest edge
+ * margins. A bottom-right camera therefore grows up and left instead of drifting into
+ * the frame edge. The mask and corner radius stay unchanged, so this reads as emphasis
+ * rather than a mode switch.
+ */
+export function computeCameraEmphasisRect(
+	base: StyledRenderRect,
+	canvasSize: Size,
+	progress: number,
+	targetScale = 1.35,
+): StyledRenderRect {
+	const t = Math.max(0, Math.min(1, progress));
+	const scale = Math.max(1, Math.min(1.6, targetScale));
+	const targetWidth = Math.min(canvasSize.width, base.width * scale);
+	const targetHeight = Math.min(canvasSize.height, base.height * scale);
+	const rightMargin = Math.max(0, canvasSize.width - base.x - base.width);
+	const bottomMargin = Math.max(0, canvasSize.height - base.y - base.height);
+	const targetX = Math.max(
+		0,
+		Math.min(
+			canvasSize.width - targetWidth,
+			base.x <= rightMargin ? base.x : canvasSize.width - rightMargin - targetWidth,
+		),
+	);
+	const targetY = Math.max(
+		0,
+		Math.min(
+			canvasSize.height - targetHeight,
+			base.y <= bottomMargin ? base.y : canvasSize.height - bottomMargin - targetHeight,
+		),
+	);
+	const lerp = (from: number, to: number) => from + (to - from) * t;
+	return {
+		...base,
+		x: lerp(base.x, targetX),
+		y: lerp(base.y, targetY),
+		width: lerp(base.width, targetWidth),
+		height: lerp(base.height, targetHeight),
+	};
+}
+
 export interface Size {
 	width: number;
 	height: number;
@@ -71,8 +113,11 @@ export type WebcamLayoutPreset =
 	| "vertical-stack"
 	| "dual-frame"
 	| "no-webcam";
-/** Webcam size as a percentage of the canvas reference dimension (10–50). */
+/** Webcam size as a percentage of the canvas reference dimension (10–80). */
 export type WebcamSizePreset = number;
+
+export const MIN_WEBCAM_SIZE_PERCENT = 10;
+export const MAX_WEBCAM_SIZE_PERCENT = 80;
 
 export interface WebcamLayoutShadow {
 	color: string;
@@ -152,10 +197,10 @@ export interface WebcamCompositeLayout {
 	screenCover?: boolean;
 }
 
-/** Convert a webcam size percentage (10–50) to a fraction (0..1) of the reference dimension. */
+/** Convert a webcam size percentage (10–80) to a fraction (0..1) of the reference dimension. */
 export function webcamSizeToFraction(percent: number): number {
 	const safe = Number.isFinite(percent) ? percent : 25;
-	const clamped = Math.max(10, Math.min(50, safe));
+	const clamped = Math.max(MIN_WEBCAM_SIZE_PERCENT, Math.min(MAX_WEBCAM_SIZE_PERCENT, safe));
 	return clamped / 100;
 }
 

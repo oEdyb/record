@@ -36,7 +36,20 @@ interface Window {
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
 		switchToHud: () => Promise<void>;
-		startNewRecording: () => Promise<{ success: boolean; error?: string }>;
+		startNewRecording: (
+			context?: import("../src/lib/recordingSession").RecordingWorkspaceContext,
+		) => Promise<{ success: boolean; error?: string }>;
+		getRecordingWorkspaceContext: () => Promise<{
+			success: boolean;
+			context?: import("../src/lib/recordingSession").RecordingWorkspaceContext | null;
+		}>;
+		setRecordingWorkspaceContext: (
+			context: import("../src/lib/recordingSession").RecordingWorkspaceContext | null,
+		) => Promise<{
+			success: boolean;
+			context?: import("../src/lib/recordingSession").RecordingWorkspaceContext | null;
+		}>;
+		returnToEditorIfRecordingWorkspace: () => Promise<{ returned: boolean }>;
 		openSourceSelector: () => Promise<{
 			opened: boolean;
 			reason?: string;
@@ -62,7 +75,6 @@ interface Window {
 			callback: (prefs: import("./ipc/handlers").RecordingPrefs) => void,
 		) => () => void;
 		onSourceSelectorClosed: (callback: () => void) => () => void;
-		onAutoStartRecording: (callback: () => void) => () => void;
 		onAiEditionChatEvent: (
 			callback: (event: import("../src/native/contracts").AiEditionChatEvent) => void,
 		) => () => void;
@@ -159,17 +171,33 @@ interface Window {
 		) => Promise<import("../src/lib/nativeMacRecording").NativeMacRecordingStartResult>;
 		pauseNativeMacRecording: () => Promise<{
 			success: boolean;
+			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
+			paused?: boolean;
 			error?: string;
 		}>;
-		resumeNativeMacRecording: () => Promise<{
+		resumeNativeMacRecording: (
+			request?: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
+		) => Promise<{
 			success: boolean;
+			clipIndex?: number;
 			error?: string;
 		}>;
+		removePreviousNativeMacClip: () => Promise<{
+			success: boolean;
+			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
+			error?: string;
+		}>;
+		onNativeMacRecordingError: (
+			callback: (
+				failure: import("../src/lib/nativeMacRecording").NativeMacRecordingFailure,
+			) => void,
+		) => () => void;
 		stopNativeMacRecording: (discard?: boolean) => Promise<{
 			success: boolean;
 			path?: string;
 			session?: import("../src/lib/recordingSession").RecordingSession;
 			message?: string;
+			warning?: string;
 			discarded?: boolean;
 			error?: string;
 		}>;
@@ -177,9 +205,22 @@ interface Window {
 			screenVideoPath: string;
 			recordingId: number;
 			webcam: import("../src/lib/recordingSession").RecordedVideoAssetInput;
+			clips?: import("../src/lib/recordingSession").RecordingSessionClip[];
 			cursorCaptureMode?: import("../src/lib/recordingSession").CursorCaptureMode;
 			durationMs?: number;
 			webcamOffsetMs?: number;
+		}) => Promise<{
+			success: boolean;
+			path?: string;
+			session?: import("../src/lib/recordingSession").RecordingSession;
+			message?: string;
+			error?: string;
+		}>;
+		attachNativeMacClipWebcams: (payload: {
+			screenVideoPath: string;
+			recordingId: number;
+			clips: import("../src/lib/recordingSession").RecordingSessionClip[];
+			webcams: import("../src/lib/nativeMacRecording").NativeMacClipWebcamInput[];
 		}) => Promise<{
 			success: boolean;
 			path?: string;
@@ -291,7 +332,7 @@ interface Window {
 		getCurrentVideoPath: () => Promise<{ success: boolean; path?: string }>;
 		getCurrentRecordingSession: () => Promise<{
 			success: boolean;
-			session?: RecordingSession | null;
+			session?: import("../src/lib/recordingSession").RecordingSession | null;
 			canceled?: boolean;
 		}>;
 		findRecordingCamera: (videoPath: string) => Promise<{
@@ -318,6 +359,7 @@ interface Window {
 		getAudioPeaks: (
 			filePath: string,
 			durationSec: number,
+			track?: import("./media/audioPeaks").AudioTrackSelection,
 		) => Promise<import("./media/audioPeaks").AudioPeaksResult>;
 		readFileChunk: (
 			filePath: string,
@@ -401,6 +443,15 @@ interface Window {
 		dragHudOverlayTo: (deltaX: number, deltaY: number) => void;
 		endHudOverlayDrag: () => void;
 		setHudOverlaySize: (width: number, height: number) => void;
+		setHudDirectionExclusionRectangles: (
+			rectangles: Array<{ x: number; y: number; width: number; height: number }>,
+		) => void;
+		setCameraPreviewVisible: (visible: boolean) => void;
+		requestCameraPreviewConnection: () => void;
+		setCameraPreviewPosition: (position: { x: number; y: number }) => void;
+		onCameraPreviewPositionChanged: (
+			callback: (position: { x: number; y: number }) => void,
+		) => () => void;
 		showCountdownOverlay: (value: number, runId: number) => Promise<void>;
 		setCountdownOverlayValue: (value: number, runId: number) => Promise<void>;
 		hideCountdownOverlay: (runId: number) => Promise<void>;
@@ -411,6 +462,7 @@ interface Window {
 		onRequestCloseConfirm: (callback: () => void) => () => void;
 		sendCloseConfirmResponse: (choice: "save" | "discard" | "cancel") => void;
 		stt: {
+			isAvailable: () => Promise<boolean>;
 			transcribe: (
 				request: import("./stt/transcriptionContract").SttTranscribeRequest,
 			) => Promise<import("./stt/transcriptionContract").SttTranscribeResponse>;

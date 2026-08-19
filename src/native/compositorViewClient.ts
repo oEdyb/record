@@ -18,6 +18,7 @@ import type {
 	CompositorExportResult,
 	CompositorFramePacket,
 	CompositorParamValue,
+	CompositorTransportCommand,
 	CompositorViewRect,
 	CompositorViewResult,
 } from "./contracts";
@@ -92,6 +93,16 @@ export function setCompositorPlaying(id: number, playing: boolean): Promise<{ ok
 		domain: "compositor",
 		action: "setPlaying",
 		payload: { id, playing },
+	});
+}
+
+export function syncCompositorTransport(
+	command: CompositorTransportCommand,
+): Promise<{ ok: true }> {
+	return requireNativeBridgeData<{ ok: true }>({
+		domain: "compositor",
+		action: "syncTransport",
+		payload: command,
 	});
 }
 

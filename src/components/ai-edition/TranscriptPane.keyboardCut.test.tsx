@@ -116,6 +116,7 @@ function cutRange(onAddTrimRange: ReturnType<typeof vi.fn>): [number, number] | 
 }
 
 beforeEach(() => {
+	localStorage.clear();
 	useProjectStore.setState({ currentTimeSec: 0 });
 });
 

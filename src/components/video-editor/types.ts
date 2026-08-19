@@ -4,12 +4,13 @@ import {
 	type ZoomScaleInput,
 } from "@/lib/ai-edition/timeline/zoom-scale";
 import type { WebcamLayoutPreset } from "@/lib/compositeLayout";
+import type { MotionSpeed, MotionStyle } from "@/lib/zoomMath/motionCurve";
 import { clamp01 } from "@/utils/math";
 
 export type { ZoomDepth, ZoomScaleInput };
 export type ZoomFocusMode = "manual" | "auto";
 export type { WebcamLayoutPreset };
-/** Webcam size as a percentage of the canvas reference dimension (10-50). */
+/** Webcam size as a percentage of the canvas reference dimension (10-80). */
 export type WebcamSizePreset = number;
 
 export const DEFAULT_WEBCAM_SIZE_PRESET: WebcamSizePreset = 25;
@@ -92,6 +93,10 @@ export interface ZoomRegion {
 	rotationPreset?: Rotation3DPreset;
 	/** Custom scale overriding the preset depth (1.0-5.0, two decimal precision). */
 	customScale?: number;
+	/** Temporal interpolation for scale, position, and connected pans. */
+	motionStyle?: MotionStyle;
+	/** Transition speed multiplier. 1 is the authored default. */
+	motionSpeed?: MotionSpeed;
 	source?: ZoomRegionSource;
 }
 
@@ -228,17 +233,25 @@ export interface TrimRegion {
 	endMs: number;
 }
 
+export type CameraLayoutMode = "fullscreen" | "emphasis";
+
 /**
- * "Full Camera" / "Cut to camera" timeline region. During this span, the webcam overlay
- * animates its size/position until it covers the entire canvas, visually hiding the
- * desktop behind it (the desktop keeps recording underneath, it's just covered).
- * No focus/depth/rotation needed: unlike ZoomRegion, the destination is always "fill the
- * canvas", so the shape stays intentionally simpler.
+ * A camera-layout timeline region. Old regions omit `mode` and remain Full Camera.
+ * Automatic direction uses `emphasis`: the webcam grows moderately while the screen
+ * remains visible. Both modes use the same contained ease-in/hold/ease-out envelope.
  */
 export interface CameraFullscreenRegion {
 	id: string;
 	startMs: number;
 	endMs: number;
+	mode?: CameraLayoutMode;
+	/** Target multiplier for emphasis. Ignored by Full Camera. */
+	cameraScale?: number;
+	/** Independent from screen zoom motion. Undefined preserves the legacy Snappy curve. */
+	motionStyle?: MotionStyle;
+	/** Transition speed multiplier. 1 is the authored default. */
+	motionSpeed?: MotionSpeed;
+	source?: "auto" | "manual";
 }
 
 export type AnnotationType = "text" | "image" | "figure" | "blur";

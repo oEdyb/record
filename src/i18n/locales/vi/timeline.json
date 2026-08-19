@@ -29,6 +29,7 @@
 		"annotationItem": "Chú thích",
 		"imageItem": "Hình ảnh",
 		"emptyText": "Văn bản trống",
+		"cameraEmphasis": "Nhấn mạnh camera",
 		"cameraFullscreen": "Camera Toàn màn hình",
 		"cameraFullscreenItem": "Camera Toàn màn hình {{index}}"
 	},

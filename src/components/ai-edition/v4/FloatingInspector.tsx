@@ -39,6 +39,14 @@ import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
+import {
+	DEFAULT_CAMERA_MOTION_STYLE,
+	DEFAULT_ZOOM_MOTION_STYLE,
+	MOTION_SPEED_VALUES,
+	MOTION_STYLE_VALUES,
+	type MotionStyle,
+	normalizeMotionSpeed,
+} from "@/lib/zoomMath/motionCurve";
 import { CaptionsPane } from "../CaptionsPane";
 import { ColorField } from "../ColorField";
 import {
@@ -566,6 +574,41 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							<option value="auto">{ts("zoom.focusMode.auto")}</option>
 						</select>,
 					)}
+					{paneRow(
+						ts("motion.title"),
+						<select
+							value={region.motionStyle ?? DEFAULT_ZOOM_MOTION_STYLE}
+							onChange={(e) =>
+								void tl.updateZoomMotionStyle(region.id, e.target.value as MotionStyle)
+							}
+							style={selectStyle}
+						>
+							{MOTION_STYLE_VALUES.map((style) => (
+								<option key={style} value={style}>
+									{ts(`motion.${style}`)}
+								</option>
+							))}
+						</select>,
+					)}
+					{paneRow(
+						ts("motion.speed"),
+						<select
+							value={normalizeMotionSpeed(region.motionSpeed)}
+							disabled={region.motionStyle === "instant"}
+							onChange={(e) => void tl.updateZoomMotionSpeed(region.id, Number(e.target.value))}
+							style={
+								region.motionStyle === "instant"
+									? { ...selectStyle, opacity: 0.5, cursor: "not-allowed" }
+									: selectStyle
+							}
+						>
+							{MOTION_SPEED_VALUES.map((speed) => (
+								<option key={speed} value={speed}>
+									{speed}×
+								</option>
+							))}
+						</select>,
+					)}
 					{autoFocusAll || region.focusMode === "auto" ? (
 						// Auto resamples the focus from cursor telemetry every frame, so there is no fixed
 						// point to reset and no gimbal on the canvas (ZoomFocusOverlay bows out) — the
@@ -944,18 +987,56 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 	if (selection.kind === "cameraFullscreen") {
 		const region = tl.cameraFullscreenRegions.find((c) => c.id === selection.id);
 		if (!region) return null;
+		const isEmphasis = region.mode === "emphasis";
 		return (
 			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 				{paneHeader(
 					<Maximize2 size={15} />,
-					tt("labels.cameraFullscreen"),
+					isEmphasis ? tt("labels.cameraEmphasis") : tt("labels.cameraFullscreen"),
 					onClose,
 					tc("actions.close"),
 				)}
 				<div style={bodyStyle}>
 					<p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--muted)" }}>
-						{te("inspector.cameraFullscreenDescription")}
+						{isEmphasis
+							? te("inspector.cameraEmphasisDescription")
+							: te("inspector.cameraFullscreenDescription")}
 					</p>
+					{paneRow(
+						ts("motion.title"),
+						<select
+							value={region.motionStyle ?? DEFAULT_CAMERA_MOTION_STYLE}
+							onChange={(e) =>
+								void tl.updateCameraMotionStyle(region.id, e.target.value as MotionStyle)
+							}
+							style={selectStyle}
+						>
+							{MOTION_STYLE_VALUES.map((style) => (
+								<option key={style} value={style}>
+									{ts(`motion.${style}`)}
+								</option>
+							))}
+						</select>,
+					)}
+					{paneRow(
+						ts("motion.speed"),
+						<select
+							value={normalizeMotionSpeed(region.motionSpeed)}
+							disabled={region.motionStyle === "instant"}
+							onChange={(e) => void tl.updateCameraMotionSpeed(region.id, Number(e.target.value))}
+							style={
+								region.motionStyle === "instant"
+									? { ...selectStyle, opacity: 0.5, cursor: "not-allowed" }
+									: selectStyle
+							}
+						>
+							{MOTION_SPEED_VALUES.map((speed) => (
+								<option key={speed} value={speed}>
+									{speed}×
+								</option>
+							))}
+						</select>,
+					)}
 					<button type="button" onClick={deleteAndClose} style={deleteBtnStyle}>
 						<Trash2 size={14} />
 						{te("inspector.deleteRegion")}

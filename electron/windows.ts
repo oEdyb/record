@@ -1,6 +1,20 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { BrowserWindow, ipcMain, screen } from "electron";
+import { BrowserWindow, ipcMain, MessageChannelMain, screen } from "electron";
+import {
+	type CameraPreviewPoint,
+	clampCameraPreviewPosition,
+	defaultCameraPreviewPosition,
+} from "./cameraPreviewGeometry";
+import { shouldStartHudClickThrough } from "./hudInputPolicy";
+import {
+	localRectanglesContainScreenPoint,
+	normalizePrivateUiRectangles,
+	type PrivateUiPoint,
+	type PrivateUiRectangle,
+	rectangleContainsScreenPoint,
+	rectanglesContainScreenPoint,
+} from "./privateRecordingUi";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -91,6 +105,145 @@ const ASSET_BASE_DIR = process.defaultApp
 export const ASSET_BASE_URL_ARG = `--asset-base-url=${pathToFileURL(`${ASSET_BASE_DIR}${path.sep}`).toString()}`;
 
 let hudOverlayWindow: BrowserWindow | null = null;
+let cameraPreviewWindow: BrowserWindow | null = null;
+let cameraPreviewReady = false;
+let cameraPreviewVisible = false;
+let hudRendererReady = false;
+let cameraPreviewRendererReady = false;
+let cameraPreviewPortsConnected = false;
+let hudDirectionExclusionRectangles: PrivateUiRectangle[] = [];
+
+const CAMERA_PREVIEW_SIZE = { width: 312, height: 186 } as const;
+
+function isHudSender(senderId: number) {
+	return Boolean(
+		hudOverlayWindow &&
+			!hudOverlayWindow.isDestroyed() &&
+			hudOverlayWindow.webContents.id === senderId,
+	);
+}
+
+ipcMain.on("hud-overlay-set-direction-exclusion-rects", (event, rectangles: unknown) => {
+	if (!isHudSender(event.sender.id)) return;
+	hudDirectionExclusionRectangles = normalizePrivateUiRectangles(rectangles);
+});
+
+/** True only for painted private surfaces, not the HUD's large transparent backing window. */
+export function isPointOverPrivateRecordingUi(
+	point: PrivateUiPoint,
+	additionalPrivateWindows: BrowserWindow[] = [],
+) {
+	if (
+		hudOverlayWindow &&
+		!hudOverlayWindow.isDestroyed() &&
+		hudOverlayWindow.isVisible() &&
+		localRectanglesContainScreenPoint(
+			point,
+			hudOverlayWindow.getContentBounds(),
+			hudDirectionExclusionRectangles,
+		)
+	) {
+		return true;
+	}
+
+	if (
+		cameraPreviewVisible &&
+		cameraPreviewWindow &&
+		!cameraPreviewWindow.isDestroyed() &&
+		cameraPreviewWindow.isVisible() &&
+		rectangleContainsScreenPoint(point, cameraPreviewWindow.getContentBounds())
+	) {
+		return true;
+	}
+
+	return rectanglesContainScreenPoint(
+		point,
+		additionalPrivateWindows
+			.filter((window) => !window.isDestroyed() && window.isVisible())
+			.map((window) => window.getContentBounds()),
+	);
+}
+
+function connectCameraPreviewRenderers() {
+	if (
+		cameraPreviewPortsConnected ||
+		!hudRendererReady ||
+		!cameraPreviewRendererReady ||
+		!hudOverlayWindow ||
+		hudOverlayWindow.isDestroyed() ||
+		!cameraPreviewWindow ||
+		cameraPreviewWindow.isDestroyed()
+	) {
+		return;
+	}
+
+	const { port1, port2 } = new MessageChannelMain();
+	cameraPreviewPortsConnected = true;
+	hudOverlayWindow.webContents.postMessage("camera-preview-port", { role: "producer" }, [port1]);
+	cameraPreviewWindow.webContents.postMessage("camera-preview-port", { role: "consumer" }, [port2]);
+}
+
+function isCameraPreviewSender(senderId: number): boolean {
+	return Boolean(
+		cameraPreviewWindow &&
+			!cameraPreviewWindow.isDestroyed() &&
+			cameraPreviewWindow.webContents.id === senderId,
+	);
+}
+
+// A renderer can mount after did-finish-load delivered the first MessagePort,
+// and Vite can remount either side without reloading its BrowserWindow. Let the
+// mounted page request a fresh pair so the preview cannot remain on Loading.
+ipcMain.on("camera-preview-request-connection", (event) => {
+	const senderId = event.sender.id;
+	if (isHudSender(senderId)) hudRendererReady = true;
+	else if (isCameraPreviewSender(senderId)) cameraPreviewRendererReady = true;
+	else return;
+	cameraPreviewPortsConnected = false;
+	connectCameraPreviewRenderers();
+});
+
+function placeCameraPreview(position?: CameraPreviewPoint): CameraPreviewPoint | null {
+	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed()) return null;
+	const display = position ? screen.getDisplayNearestPoint(position) : screen.getPrimaryDisplay();
+	const nextPosition = position
+		? clampCameraPreviewPosition(position, CAMERA_PREVIEW_SIZE, display.workArea)
+		: defaultCameraPreviewPosition(display.workArea, CAMERA_PREVIEW_SIZE);
+	cameraPreviewWindow.setPosition(nextPosition.x, nextPosition.y, false);
+	return nextPosition;
+}
+
+function applyCameraPreviewVisibility() {
+	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed() || !cameraPreviewReady) return;
+	if (cameraPreviewVisible) {
+		cameraPreviewWindow.showInactive();
+	} else {
+		cameraPreviewWindow.hide();
+	}
+}
+
+ipcMain.on("camera-preview-set-visible", (event, visible: boolean) => {
+	if (!isCameraPreviewSender(event.sender.id) || typeof visible !== "boolean") return;
+	cameraPreviewVisible = visible;
+	applyCameraPreviewVisibility();
+});
+
+ipcMain.on("camera-preview-set-position", (event, position: CameraPreviewPoint) => {
+	if (
+		!isCameraPreviewSender(event.sender.id) ||
+		!position ||
+		typeof position.x !== "number" ||
+		!Number.isFinite(position.x) ||
+		typeof position.y !== "number" ||
+		!Number.isFinite(position.y)
+	) {
+		return;
+	}
+	const appliedPosition = placeCameraPreview(position);
+	if (appliedPosition) {
+		cameraPreviewWindow?.webContents.send("camera-preview-position-changed", appliedPosition);
+	}
+});
 
 // Origin the current drag gesture started from. The renderer sends the pointer's
 // *total* travel since pointerdown rather than per-frame deltas, so every move is
@@ -264,13 +417,20 @@ export function createHudOverlayWindow(): BrowserWindow {
 			backgroundThrottling: false,
 		},
 	});
+	hudRendererReady = false;
+	cameraPreviewPortsConnected = false;
 
-	// Deliberately NOT born click-through: the renderer asks for it on mount, over
-	// "hud-overlay-ignore-mouse-events" (`show: false` holds this window back until
-	// ready-to-show, so the two are ~85 ms apart — measured, not assumed). What that
-	// leaves open is an invisible rectangle that can swallow one desktop click in
-	// those 85 ms, right after the user launched the app — against what doing it here
-	// cost them: the whole app (issue #266). On Windows the `forward` option is a global
+	// On macOS the renderer can still receive forwarded pointer movement while
+	// this window is click-through. Set the native state before the first show so
+	// the transparent backing surface cannot swallow a desktop click during the
+	// short gap before React mounts. Windows keeps the renderer-driven path below:
+	// Electron implements forwarding there with a global low-level mouse hook.
+	if (shouldStartHudClickThrough(process.platform)) {
+		win.setIgnoreMouseEvents(true, { forward: true });
+	}
+
+	// Windows is deliberately not born click-through: the renderer asks for it on
+	// mount over "hud-overlay-ignore-mouse-events". On Windows the `forward` option is a global
 	// WH_MOUSE_LL hook, and that hook is the only way out of the state, because
 	// Chromium sends no pointermove to a window it has made input-transparent — so
 	// the renderer can never ask to leave it on its own. Electron latches
@@ -298,6 +458,9 @@ export function createHudOverlayWindow(): BrowserWindow {
 	});
 
 	win.webContents.on("did-finish-load", () => {
+		hudRendererReady = true;
+		cameraPreviewPortsConnected = false;
+		connectCameraPreviewRenderers();
 		win?.webContents.send("main-process-message", new Date().toLocaleString());
 	});
 
@@ -306,7 +469,10 @@ export function createHudOverlayWindow(): BrowserWindow {
 	win.on("closed", () => {
 		if (hudOverlayWindow === win) {
 			hudOverlayWindow = null;
+			hudDirectionExclusionRectangles = [];
 			hudDragOrigin = null;
+			hudRendererReady = false;
+			closeCameraPreviewWindow();
 		}
 	});
 
@@ -319,6 +485,127 @@ export function createHudOverlayWindow(): BrowserWindow {
 	}
 
 	return win;
+}
+
+/**
+ * Separate private webcam monitor for the recording workspace. It is never
+ * composited with the screen or used as final camera-layout state.
+ */
+export function createCameraPreviewWindow(): BrowserWindow {
+	if (cameraPreviewWindow && !cameraPreviewWindow.isDestroyed()) return cameraPreviewWindow;
+
+	const initialPosition = defaultCameraPreviewPosition(
+		screen.getPrimaryDisplay().workArea,
+		CAMERA_PREVIEW_SIZE,
+	);
+	const win = new BrowserWindow({
+		...CAMERA_PREVIEW_SIZE,
+		x: initialPosition.x,
+		y: initialPosition.y,
+		frame: false,
+		transparent: true,
+		backgroundColor: "#00000000",
+		roundedCorners: false,
+		resizable: false,
+		movable: true,
+		minimizable: false,
+		maximizable: false,
+		fullscreenable: false,
+		focusable: false,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		hasShadow: false,
+		show: false,
+		...(process.platform === "darwin" ? { type: "panel" as const } : {}),
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
+
+	applyContentProtection(win, "camera preview");
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+		win.setAlwaysOnTop(true, "floating");
+	}
+
+	cameraPreviewWindow = win;
+	cameraPreviewReady = false;
+	cameraPreviewVisible = false;
+	cameraPreviewRendererReady = false;
+	cameraPreviewPortsConnected = false;
+
+	win.once("ready-to-show", () => {
+		if (cameraPreviewWindow !== win || win.isDestroyed()) return;
+		cameraPreviewReady = true;
+		applyContentProtection(win, "camera preview");
+		applyCameraPreviewVisibility();
+	});
+
+	win.webContents.on("did-finish-load", () => {
+		cameraPreviewRendererReady = true;
+		cameraPreviewPortsConnected = false;
+		connectCameraPreviewRenderers();
+	});
+
+	win.on("moved", () => {
+		if (
+			cameraPreviewWindow !== win ||
+			win.isDestroyed() ||
+			!cameraPreviewReady ||
+			!cameraPreviewVisible ||
+			!win.isVisible()
+		) {
+			return;
+		}
+		const [x, y] = win.getPosition();
+		win.webContents.send("camera-preview-position-changed", { x, y });
+	});
+
+	const keepPreviewOnScreen = () => {
+		if (cameraPreviewWindow !== win || win.isDestroyed()) return;
+		const [x, y] = win.getPosition();
+		const appliedPosition = placeCameraPreview({ x, y });
+		if (appliedPosition) {
+			win.webContents.send("camera-preview-position-changed", appliedPosition);
+		}
+	};
+	screen.on("display-removed", keepPreviewOnScreen);
+	screen.on("display-metrics-changed", keepPreviewOnScreen);
+
+	win.on("closed", () => {
+		screen.off("display-removed", keepPreviewOnScreen);
+		screen.off("display-metrics-changed", keepPreviewOnScreen);
+		if (cameraPreviewWindow !== win) return;
+		cameraPreviewWindow = null;
+		cameraPreviewReady = false;
+		cameraPreviewVisible = false;
+		cameraPreviewRendererReady = false;
+		cameraPreviewPortsConnected = false;
+	});
+
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=camera-preview");
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
+			query: { windowType: "camera-preview" },
+		});
+	}
+
+	return win;
+}
+
+export function closeCameraPreviewWindow() {
+	const win = cameraPreviewWindow;
+	cameraPreviewWindow = null;
+	cameraPreviewReady = false;
+	cameraPreviewVisible = false;
+	cameraPreviewRendererReady = false;
+	cameraPreviewPortsConnected = false;
+	if (win && !win.isDestroyed()) win.close();
 }
 
 /**

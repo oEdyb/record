@@ -22,6 +22,7 @@ import type {
 	ZoomRegion,
 } from "@/components/video-editor/types";
 import type { ProjectMedia } from "@/lib/recordingSession";
+import { isMotionSpeed } from "@/lib/zoomMath/motionCurve";
 import {
 	type AxcutAnnotationRegion,
 	type AxcutDocument,
@@ -192,6 +193,8 @@ export function migrateProjectDataToAxcutDocument(
 			...(region.focusMode === "auto" ? { focusMode: "auto" as const } : {}),
 			...(region.rotationPreset ? { rotationPreset: region.rotationPreset } : {}),
 			...(typeof region.customScale === "number" ? { customScale: region.customScale } : {}),
+			...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
+			...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 			...(region.source === "auto" || region.source === "manual" ? { source: region.source } : {}),
 		}));
 
@@ -327,6 +330,8 @@ export function migrateAxcutDocumentToProjectData(input: AxcutDocument): EditorP
 		...(region.focusMode ? { focusMode: region.focusMode } : {}),
 		...(region.rotationPreset ? { rotationPreset: region.rotationPreset } : {}),
 		...(typeof region.customScale === "number" ? { customScale: region.customScale } : {}),
+		...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
+		...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 		...(region.source ? { source: region.source } : {}),
 	}));
 	editor.zoomRegions = reverseZoomRegions;

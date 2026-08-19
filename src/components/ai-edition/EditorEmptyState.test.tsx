@@ -95,6 +95,8 @@ describe("EditorEmptyState (new editor)", () => {
 		for (const mock of Object.values(bridgeMocks)) {
 			mock.mockReset();
 		}
+		localStorage.clear();
+		bridgeMocks.save.mockImplementation(async (document) => ({ success: true, document }));
 	});
 
 	afterEach(() => {

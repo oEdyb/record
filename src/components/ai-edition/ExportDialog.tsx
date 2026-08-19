@@ -3,7 +3,8 @@
 // 2. the native D3D exporter (exportMultiNative / exportGifNative)
 // 3. writeExportToPath (writes the resulting buffer to disk)
 //
-// Format/quality/GIF options live in the dialog's local state. The
+// Format/quality/GIF options use local state while the dialog is mounted and
+// restore from the versioned editing-preference record across app launches. The
 // legacy `ExportDialog` (in components/video-editor) is the rich version
 // used by the legacy VideoEditor; this one is a compact surface tuned for
 // the new shell's modal style.
@@ -19,6 +20,10 @@ import {
 	resolveAspectRatioValue,
 } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
+import {
+	loadEditingPreferences,
+	saveExportPreferences,
+} from "@/lib/ai-edition/store/editingPreferences";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
@@ -32,10 +37,17 @@ import {
 	type GifFrameRate,
 	type GifSizePreset,
 } from "@/lib/exporter";
-import { calculateMp4ExportSettings, wouldUpscale } from "@/lib/exporter/mp4ExportSettings";
+import {
+	calculateEffectiveExportDuration,
+	calculateMp4ExportSettings,
+	estimateMp4FileSizeBytes,
+	formatBitrate,
+	wouldUpscale,
+} from "@/lib/exporter/mp4ExportSettings";
 import { exportGifNative, exportMultiNative, useIsCpuCompositor } from "@/native";
-import type { CompositorClipInput } from "@/native/contracts";
+import type { CompositorAudioMasteringResult, CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
+import { formatBytes } from "@/utils/formatBytes";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
 
@@ -105,17 +117,20 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	// No usable GPU: the export still applies every effect (output is identical), it
 	// just runs on the software encoder and takes minutes instead of seconds.
 	const cpuCompositor = useIsCpuCompositor();
-	const [format, setFormat] = useState<ExportFormat>("mp4");
-	const [quality, setQuality] = useState<ExportQuality>("good");
-	const [fps, setFps] = useState<24 | 30 | 60>(60);
-	const [codec, setCodec] = useState<ExportVideoCodec>("h264");
-	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(15);
-	const [gifSize, setGifSize] = useState<GifSizePreset>("medium");
-	const [gifLoop, setGifLoop] = useState(true);
+	const [initialPreferences] = useState(() => loadEditingPreferences().export);
+	const [format, setFormat] = useState<ExportFormat>(initialPreferences.format);
+	const [quality, setQuality] = useState<ExportQuality>(initialPreferences.quality);
+	const [fps, setFps] = useState<24 | 30 | 60>(initialPreferences.fps);
+	const [codec, setCodec] = useState<ExportVideoCodec>(initialPreferences.codec);
+	const [normalizeVolume, setNormalizeVolume] = useState(initialPreferences.normalizeVolume);
+	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(initialPreferences.gifFrameRate);
+	const [gifSize, setGifSize] = useState<GifSizePreset>(initialPreferences.gifSize);
+	const [gifLoop, setGifLoop] = useState(initialPreferences.gifLoop);
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [progress, setProgress] = useState<ExportProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [savedPath, setSavedPath] = useState<string | null>(null);
+	const [audioMastering, setAudioMastering] = useState<CompositorAudioMasteringResult | null>(null);
 	const cancelRef = useRef<{ cancel: () => void } | null>(null);
 
 	// (Old behavior: the native compositor overlay used to be a top-level OS window outside the
@@ -153,7 +168,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	// crops/resolutions, so this is what "Source" quality actually targets: sizing to the
 	// SMALLEST clip's own resolution means no clip on the timeline is ever upscaled past its
 	// true footprint by picking Source. It also feeds the upscale badge on the fixed
-	// 720p/1080p tiers, which can still genuinely upscale a small clip.
+	// 1080p/2K tiers, which can still genuinely upscale a small clip.
 	const smallestSource = useMemo(
 		() => pickExtremeDims(effectiveClipDims, "smallest"),
 		[effectiveClipDims],
@@ -170,7 +185,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	);
 	// Output dimensions the export will produce for a given tier, from the (crop-aware)
 	// SMALLEST clip on the timeline — see `smallestSource` above for why. Only "Source"
-	// quality actually uses these as its target size; 720p/1080p target a fixed short side
+	// quality actually uses these as its target size; 1080p/2K target a fixed short side
 	// regardless (`calculateDimensionsForShortSide`), so this only changes what "Source"
 	// resolves to.
 	// GIF is 8-bit indexed and grows fast with area, so the size preset caps the
@@ -202,15 +217,61 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				})
 			: null;
 
+	const nativeClips = useMemo(
+		() => (open && document ? buildNativeClipList(document) : []),
+		[open, document],
+	);
+	const nativeScene = useMemo(
+		() => (open && document ? buildSceneDescription(document) : null),
+		[open, document],
+	);
+	const selectedMp4Settings = useMemo(
+		() =>
+			smallestSource
+				? calculateMp4ExportSettings({
+						quality,
+						sourceWidth: smallestSource.width,
+						sourceHeight: smallestSource.height,
+						aspectRatioValue: EXPORT_ASPECT,
+					})
+				: null,
+		[quality, smallestSource, EXPORT_ASPECT],
+	);
+	const effectiveDurationSec = useMemo(
+		() => calculateEffectiveExportDuration(nativeClips, nativeScene?.speedRegions ?? []),
+		[nativeClips, nativeScene],
+	);
+	const estimatedMp4Bytes = selectedMp4Settings
+		? estimateMp4FileSizeBytes({
+				durationSec: effectiveDurationSec,
+				videoBitrate: selectedMp4Settings.bitrate,
+				hasAudio: nativeClips.some((clip) => clip.hasAudio),
+			})
+		: 0;
+
 	useEffect(() => {
 		if (!open) {
 			setPhase("idle");
 			setProgress(null);
 			setError(null);
 			setSavedPath(null);
+			setAudioMastering(null);
 			cancelRef.current = null;
 		}
 	}, [open]);
+
+	useEffect(() => {
+		saveExportPreferences({
+			format,
+			quality,
+			fps,
+			codec: codec === "h265" ? "h265" : "h264",
+			normalizeVolume,
+			gifFrameRate,
+			gifSize,
+			gifLoop,
+		});
+	}, [codec, format, fps, gifFrameRate, gifLoop, gifSize, normalizeVolume, quality]);
 
 	const handleClose = () => {
 		if (phase === "rendering" || phase === "writing") return;
@@ -236,6 +297,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		setError(null);
 		setProgress(null);
 		setSavedPath(null);
+		setAudioMastering(null);
 
 		let pickedPath: string | undefined;
 		try {
@@ -261,17 +323,14 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		{
 			setPhase("rendering");
 			// Render the real timeline when there are clips; else fall back to the fixture.
-			const clips = buildNativeClipList(document);
+			const clips = nativeClips;
 			// GIF runs at its own frame rate, so the progress total has to use it.
 			const outFps = format === "gif" ? gifFrameRate : fps;
 			// Total frames the encoder will produce, known upfront from the timeline (sum of
 			// each clip's trimmed source duration) — the native side only reports frames
 			// AFTER encoding one (onNativeExportProgress), it doesn't know/send a total, so
 			// this is computed here to turn that raw count into a percentage.
-			const totalDurationSec = clips.reduce(
-				(sum, c) => sum + Math.max(0, c.sourceEndSec - c.sourceStartSec),
-				0,
-			);
+			const totalDurationSec = effectiveDurationSec;
 			const totalFrames = Math.max(1, Math.round(totalDurationSec * outFps));
 			const startedAt = Date.now();
 			const unsubscribeProgress = window.electronAPI?.onNativeExportProgress?.((frames) => {
@@ -286,7 +345,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				});
 			});
 			try {
-				const sceneJson = JSON.stringify(buildSceneDescription(document));
+				const sceneJson = JSON.stringify(nativeScene ?? buildSceneDescription(document));
 				const outDims = tierOutputDims(quality);
 				if (clips.length === 0) {
 					throw new Error(t("exportDialog.nothingToExport"));
@@ -306,7 +365,10 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								height: outDims?.height,
 								fps,
 								codec,
+								bitrate: outDims?.bitrate,
+								normalizeAudio: normalizeVolume,
 							});
+				setAudioMastering("audioMastering" in stats ? stats.audioMastering : null);
 				setSavedPath(pickedPath);
 				setPhase("done");
 				toast.success(t("exportDialog.exportedVideo"), {
@@ -425,6 +487,12 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 													color: isUpscale ? "var(--warn)" : "var(--muted)",
 												}}
 											>
+												{q.value === "source"
+													? t("exportDialog.qualityMatchRecording")
+													: q.value === "good"
+														? "2K"
+														: "1080p"}
+												{" · "}
 												{dims.width} × {dims.height}
 												{isUpscale ? ` · ${t("exportDialog.qualityUpscaleWarning")}` : ""}
 											</span>
@@ -514,6 +582,69 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								</div>
 							</div>
 						</div>
+						{selectedMp4Settings && effectiveDurationSec > 0 && (
+							<div
+								data-testid="export-estimate"
+								style={{
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									gap: 16,
+									marginTop: 12,
+									padding: "12px 14px",
+									border: "1px solid var(--border-soft)",
+									borderRadius: 10,
+									background: "var(--surface-1)",
+								}}
+							>
+								<div style={{ minWidth: 0 }}>
+									<div
+										style={{
+											font: "500 11px/1 var(--font-body)",
+											color: "var(--muted)",
+											marginBottom: 6,
+										}}
+									>
+										{t("exportDialog.estimatedSize")}
+									</div>
+									<div
+										style={{
+											font: "500 11px/1.4 var(--font-mono)",
+											color: "var(--muted)",
+										}}
+									>
+										{selectedMp4Settings.width} × {selectedMp4Settings.height} · {fps} FPS ·{" "}
+										{codec === "h264" ? "H.264" : "H.265"} ·{" "}
+										{formatBitrate(selectedMp4Settings.bitrate)} · {formatHms(effectiveDurationSec)}
+									</div>
+								</div>
+								<strong
+									style={{
+										flexShrink: 0,
+										font: "650 18px/1 var(--font-body)",
+										color: "var(--fg)",
+									}}
+								>
+									~{formatBytes(estimatedMp4Bytes)}
+								</strong>
+							</div>
+						)}
+						<div className={styles.paneRow} style={{ margin: "12px 0 0" }}>
+							<div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+								<span className="label">{t("exportDialog.normalizeVolume")}</span>
+								<span style={{ font: "500 11px/1.35 var(--font-body)", color: "var(--muted)" }}>
+									{t("exportDialog.normalizeVolumeHint")}
+								</span>
+							</div>
+							<button
+								type="button"
+								data-testid="normalize-volume-toggle"
+								className={`${styles.toggle} ${normalizeVolume ? styles.isOn : ""}`}
+								aria-pressed={normalizeVolume}
+								disabled={isBusy}
+								onClick={() => setNormalizeVolume((value) => !value)}
+							/>
+						</div>
 					</section>
 				) : (
 					<section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -598,6 +729,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					error={error}
 					pct={pct}
 					savedPath={savedPath}
+					audioMastering={audioMastering}
 				/>
 
 				{cpuCompositor && phase !== "done" && (
@@ -711,12 +843,14 @@ function ProgressBlock({
 	error,
 	pct,
 	savedPath,
+	audioMastering,
 }: {
 	phase: Phase;
 	progress: ExportProgress | null;
 	error: string | null;
 	pct: number;
 	savedPath: string | null;
+	audioMastering: CompositorAudioMasteringResult | null;
 }) {
 	const t = useScopedT("editor");
 	if (phase === "idle" || phase === "configuring") {
@@ -737,6 +871,9 @@ function ProgressBlock({
 		);
 	}
 	if (phase === "done") {
+		const masteringSummary = audioMastering?.analyzed
+			? `${audioMastering.inputLufs?.toFixed(1)} → ${audioMastering.outputLufs?.toFixed(1)} LUFS · ${audioMastering.outputTruePeakDbtp?.toFixed(1)} dBTP`
+			: null;
 		return (
 			<div
 				style={{
@@ -748,8 +885,18 @@ function ProgressBlock({
 					font: "500 12px var(--font-body)",
 				}}
 			>
-				{t("exportDialog.savedTo")}{" "}
-				<span style={{ fontFamily: "var(--font-mono)" }}>{savedPath}</span>
+				<div>
+					{t("exportDialog.savedTo")}{" "}
+					<span style={{ fontFamily: "var(--font-mono)" }}>{savedPath}</span>
+				</div>
+				{masteringSummary && (
+					<div data-testid="audio-mastering-summary" style={{ marginTop: 8 }}>
+						{t("exportDialog.audioLevel")} {masteringSummary}
+					</div>
+				)}
+				{audioMastering?.warning && (
+					<div style={{ marginTop: 6, color: "var(--warn)" }}>{audioMastering.warning}</div>
+				)}
 			</div>
 		);
 	}

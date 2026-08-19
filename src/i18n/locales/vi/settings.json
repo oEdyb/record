@@ -28,6 +28,14 @@
 			"none": "Không"
 		}
 	},
+	"motion": {
+		"title": "Chuyển động",
+		"speed": "Tốc độ",
+		"smooth": "Mượt",
+		"snappy": "Nhanh",
+		"linear": "Tuyến tính",
+		"instant": "Tức thì"
+	},
 	"speed": {
 		"playbackSpeed": "Tốc độ phát",
 		"selectRegion": "Chọn vùng tốc độ để điều chỉnh",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "Độ phân giải xuất",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "Trung bình",
+		"medium": "Cao",
+		"high": "Cao nhất"
 	},
 	"gifSettings": {
 		"frameRate": "Tốc độ khung hình GIF",

@@ -92,6 +92,7 @@
 		"micLevel": "Input level",
 		"micHint": "Speak to check your microphone",
 		"noMicrophones": "No microphone found",
+		"cameraQuality": "Camera quality",
 		"preview": "Preview",
 		"previewUnavailable": "Preview unavailable"
 	}

@@ -1,13 +1,16 @@
 import {
 	ChevronDown,
+	Circle,
 	Download,
 	FolderOpen,
 	FolderPlus,
 	Languages,
+	LoaderCircle,
 	Moon,
 	PanelLeft,
 	Save,
 	Settings,
+	Sparkles,
 	Sun,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -17,7 +20,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { getAvailableLocales, getLocaleName, getLocaleShort } from "@/i18n/loader";
 import styles from "./EditorShellV4.module.css";
 
-export type EditorMode = "media" | "edit" | "rec";
+export type EditorMode = "media" | "edit";
 
 export interface TopBarActions {
 	openProject: () => void;
@@ -27,6 +30,8 @@ export interface TopBarActions {
 	openSettings: () => void;
 	renameProject: (title: string) => void;
 	toggleChat: () => void;
+	record: () => void;
+	regenerateAutomaticEdits: () => void;
 }
 
 interface EditorTopBarProps {
@@ -35,6 +40,8 @@ interface EditorTopBarProps {
 	projectTitle: string | null;
 	dirty: boolean;
 	canExport: boolean;
+	canRegenerateAutomaticEdits: boolean;
+	regeneratingAutomaticEdits: boolean;
 	chatOpen: boolean;
 	actions: TopBarActions;
 }
@@ -42,7 +49,6 @@ interface EditorTopBarProps {
 const MODES: Array<{ id: EditorMode; labelKey: string }> = [
 	{ id: "media", labelKey: "topbar.modes.media" },
 	{ id: "edit", labelKey: "topbar.modes.edit" },
-	{ id: "rec", labelKey: "topbar.modes.rec" },
 ];
 
 export function EditorTopBar({
@@ -51,6 +57,8 @@ export function EditorTopBar({
 	projectTitle,
 	dirty,
 	canExport,
+	canRegenerateAutomaticEdits,
+	regeneratingAutomaticEdits,
 	chatOpen,
 	actions,
 }: EditorTopBarProps) {
@@ -132,6 +140,28 @@ export function EditorTopBar({
 					/>
 				) : null}
 			</button>
+			<button
+				type="button"
+				className={styles.iconBtn}
+				title={t(
+					regeneratingAutomaticEdits
+						? "topbar.regeneratingAutomaticEdits"
+						: "topbar.regenerateAutomaticEdits",
+				)}
+				aria-label={t(
+					regeneratingAutomaticEdits
+						? "topbar.regeneratingAutomaticEdits"
+						: "topbar.regenerateAutomaticEdits",
+				)}
+				onClick={actions.regenerateAutomaticEdits}
+				disabled={!canRegenerateAutomaticEdits || regeneratingAutomaticEdits}
+			>
+				{regeneratingAutomaticEdits ? (
+					<LoaderCircle size={16} className={styles.spin} aria-hidden />
+				) : (
+					<Sparkles size={16} aria-hidden />
+				)}
+			</button>
 			<span className={styles.sep} aria-hidden />
 			<LangButton />
 			{/* Both states are always rendered, stacked in one grid cell, so the slot
@@ -153,21 +183,31 @@ export function EditorTopBar({
 				</span>
 			</span>
 
-			<div className={styles.modeSwitch} role="tablist" aria-label={t("topbar.editorMode")}>
-				{MODES.map((m) => (
-					<button
-						key={m.id}
-						type="button"
-						role="tab"
-						aria-selected={mode === m.id}
-						// Feeds the hidden bold copy that reserves the selected width — see
-						// .modeSwitch button::before.
-						data-label={t(m.labelKey)}
-						onClick={() => onModeChange(m.id)}
-					>
-						<span className={styles.modeLabel}>{t(m.labelKey)}</span>
-					</button>
-				))}
+			<div className={styles.workspaceNav}>
+				<div className={styles.modeSwitch} role="tablist" aria-label={t("topbar.editorMode")}>
+					{MODES.map((m) => (
+						<button
+							key={m.id}
+							type="button"
+							role="tab"
+							aria-selected={mode === m.id}
+							data-label={t(m.labelKey)}
+							onClick={() => onModeChange(m.id)}
+						>
+							<span className={styles.modeLabel}>{t(m.labelKey)}</span>
+						</button>
+					))}
+				</div>
+				<button
+					type="button"
+					className={styles.recordBtn}
+					title={t("rec.startRecording")}
+					aria-label={t("rec.startRecording")}
+					onClick={actions.record}
+				>
+					<Circle size={10} fill="currentColor" strokeWidth={0} aria-hidden />
+					{t("topbar.modes.rec")}
+				</button>
 			</div>
 
 			<button

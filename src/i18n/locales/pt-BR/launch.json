@@ -92,6 +92,7 @@
 		"micLevel": "Nível de entrada",
 		"micHint": "Fale para testar seu microfone",
 		"noMicrophones": "Nenhum microfone encontrado",
+		"cameraQuality": "Qualidade da câmera",
 		"preview": "Pré-visualização",
 		"previewUnavailable": "Pré-visualização indisponível"
 	}

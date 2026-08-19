@@ -206,4 +206,50 @@ describe("VirtualPreview playback across a clip boundary", () => {
 		expect(video.currentTime).toBe(6); // jumped to where clip_1's content resumes
 		expect(video.pauseCalls).toHaveLength(0);
 	});
+
+	it("uses the editor playhead when metadata reloads after a timeline edit", () => {
+		const before = [clip("clip_1", "a1", 0, 10, 0)];
+		const after = [clip("clip_1", "a1", 0, 6, 0)];
+		const sources: VideoSource[] = [{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" }];
+		const onTimeChange = vi.fn();
+		const seekTarget = { timeSec: 8, requestId: 1 };
+		const { container, rerender } = render(
+			<VirtualPreview
+				videoSources={sources}
+				clips={before}
+				currentTimeSec={0}
+				onTimeChange={onTimeChange}
+			/>,
+		);
+		const element = container.querySelector("video");
+		if (!element) throw new Error("no <video> rendered");
+		driveVideo(element);
+		act(() => fireEvent.loadedMetadata(element));
+
+		// Move the preview's internal clock to 8 s, then remove content and place
+		// the editor playhead at the resulting 4 s insertion boundary. A source
+		// reload must not replay the stale 8 s clock and clamp it to the new end.
+		rerender(
+			<VirtualPreview
+				videoSources={sources}
+				clips={before}
+				currentTimeSec={8}
+				seekTarget={seekTarget}
+				onTimeChange={onTimeChange}
+			/>,
+		);
+		onTimeChange.mockClear();
+		rerender(
+			<VirtualPreview
+				videoSources={sources}
+				clips={after}
+				currentTimeSec={4}
+				seekTarget={seekTarget}
+				onTimeChange={onTimeChange}
+			/>,
+		);
+		act(() => fireEvent.loadedMetadata(element));
+
+		expect(onTimeChange).toHaveBeenLastCalledWith(4);
+	});
 });

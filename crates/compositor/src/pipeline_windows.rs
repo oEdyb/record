@@ -4,7 +4,8 @@
 
 use crate::audio::{
     assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio,
-    stretch_clip_pcm_by_speed, AacEncoder, PlanarPcm,
+    finalize_decoded_clip_audio, master_program_audio, stretch_decoded_clip_audio_by_speed,
+    AacEncoder, AudioMasteringStats, DecodedClipAudio,
 };
 use crate::compositor::{Compositor, OUT_H, OUT_W};
 use crate::config::Cfg;
@@ -47,6 +48,7 @@ pub struct Stats {
     /// Durée de la vidéo exportée (secondes) = frames / cadence de sortie. Distincte de
     /// `wall_s` (temps de rendu réel) — sert au message de succès ("vidéo de Xs exportée en Ys").
     pub video_duration_s: f64,
+    pub audio_mastering: AudioMasteringStats,
 }
 
 /// Garde RAII sur une AVFrame (la libère au Drop).
@@ -70,8 +72,18 @@ unsafe fn decode_frame_n_inner(path: &str, gpu: &Gpu, n: u32) -> Result<FrameGua
         avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
         "open_input",
     )?;
-    averr(avformat_find_stream_info(fmt, ptr::null_mut()), "find_stream_info")?;
-    let vidx = av_find_best_stream(fmt, AVMediaType::AVMEDIA_TYPE_VIDEO, -1, -1, ptr::null_mut(), 0);
+    averr(
+        avformat_find_stream_info(fmt, ptr::null_mut()),
+        "find_stream_info",
+    )?;
+    let vidx = av_find_best_stream(
+        fmt,
+        AVMediaType::AVMEDIA_TYPE_VIDEO,
+        -1,
+        -1,
+        ptr::null_mut(),
+        0,
+    );
     if vidx < 0 {
         bail!("aucun flux vidéo");
     }
@@ -79,7 +91,10 @@ unsafe fn decode_frame_n_inner(path: &str, gpu: &Gpu, n: u32) -> Result<FrameGua
     let codecpar = (*stream).codecpar;
     let dec = avcodec_find_decoder((*codecpar).codec_id);
     let dctx = avcodec_alloc_context3(dec);
-    averr(avcodec_parameters_to_context(dctx, codecpar), "params_to_ctx")?;
+    averr(
+        avcodec_parameters_to_context(dctx, codecpar),
+        "params_to_ctx",
+    )?;
     allow_d3d11va_h264_baseline(dctx);
 
     let hwdev = av_hwdevice_ctx_alloc(AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA);
@@ -229,7 +244,10 @@ unsafe fn run_c0_inner(screen: &str, out: &str, gpu: &Gpu) -> Result<Stats> {
         avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
         "avformat_open_input",
     )?;
-    averr(avformat_find_stream_info(fmt, ptr::null_mut()), "find_stream_info")?;
+    averr(
+        avformat_find_stream_info(fmt, ptr::null_mut()),
+        "find_stream_info",
+    )?;
 
     let vidx = av_find_best_stream(
         fmt,
@@ -251,7 +269,10 @@ unsafe fn run_c0_inner(screen: &str, out: &str, gpu: &Gpu) -> Result<Stats> {
         bail!("décodeur introuvable");
     }
     let dctx = avcodec_alloc_context3(dec);
-    averr(avcodec_parameters_to_context(dctx, codecpar), "params_to_ctx")?;
+    averr(
+        avcodec_parameters_to_context(dctx, codecpar),
+        "params_to_ctx",
+    )?;
     allow_d3d11va_h264_baseline(dctx);
 
     let hwdev = av_hwdevice_ctx_alloc(AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA);
@@ -268,7 +289,10 @@ unsafe fn run_c0_inner(screen: &str, out: &str, gpu: &Gpu) -> Result<Stats> {
 
     (*dctx).hw_device_ctx = av_buffer_ref(hwdev);
     (*dctx).get_format = Some(get_hw_format);
-    averr(avcodec_open2(dctx, dec, ptr::null_mut()), "avcodec_open2(dec)")?;
+    averr(
+        avcodec_open2(dctx, dec, ptr::null_mut()),
+        "avcodec_open2(dec)",
+    )?;
 
     // ---- encodeur (ouvert paresseusement à la 1re frame : il lui faut ses dims + hw_frames_ctx) ----
     let mut enc: Option<VideoEncoder> = None;
@@ -393,7 +417,12 @@ unsafe fn run_c0_inner(screen: &str, out: &str, gpu: &Gpu) -> Result<Stats> {
     avformat_close_input(&mut fmt);
 
     let fps = frames as f64 / wall_s;
-    Ok(Stats { frames, wall_s, fps, video_duration_s: frames as f64 / 60.0 })
+    Ok(Stats {
+        frames,
+        wall_s,
+        fps,
+        video_duration_s: frames as f64 / 60.0,
+    })
 }
 
 /// Boucle de PREVIEW mesurée : décode → compose → readback, sans encodeur.
@@ -508,8 +537,18 @@ impl Decoder {
             avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
             "open_input",
         )?;
-        averr(avformat_find_stream_info(fmt, ptr::null_mut()), "find_stream_info")?;
-        let vidx = av_find_best_stream(fmt, AVMediaType::AVMEDIA_TYPE_VIDEO, -1, -1, ptr::null_mut(), 0);
+        averr(
+            avformat_find_stream_info(fmt, ptr::null_mut()),
+            "find_stream_info",
+        )?;
+        let vidx = av_find_best_stream(
+            fmt,
+            AVMediaType::AVMEDIA_TYPE_VIDEO,
+            -1,
+            -1,
+            ptr::null_mut(),
+            0,
+        );
         if vidx < 0 {
             bail!("aucun flux vidéo dans {path}");
         }
@@ -517,7 +556,10 @@ impl Decoder {
         let codecpar = (*stream).codecpar;
         let dec = avcodec_find_decoder((*codecpar).codec_id);
         let dctx = avcodec_alloc_context3(dec);
-        averr(avcodec_parameters_to_context(dctx, codecpar), "params_to_ctx")?;
+        averr(
+            avcodec_parameters_to_context(dctx, codecpar),
+            "params_to_ctx",
+        )?;
         allow_d3d11va_h264_baseline(dctx);
 
         // Backend CPU : on n'attache AUCUN hw_device_ctx et on ne force pas `get_format`,
@@ -587,7 +629,10 @@ impl Decoder {
         // ici — sans ça le `next()` suivant promouvait une frame décodée avant le rewind,
         // avec son ancien `cur_pts`.
         self.has_peek = false;
-        averr(av_seek_frame(self.fmt, self.vidx, 0, AVSEEK_FLAG_BACKWARD), "seek")?;
+        averr(
+            av_seek_frame(self.fmt, self.vidx, 0, AVSEEK_FLAG_BACKWARD),
+            "seek",
+        )?;
         avcodec_flush_buffers(self.dctx);
         self.sent_eof = false;
         Ok(())
@@ -596,7 +641,11 @@ impl Decoder {
     /// Time_base du flux vidéo (secondes par unité de pts).
     unsafe fn tb_sec(&self) -> f64 {
         let tb = (*sn_fmt_stream(self.fmt, self.vidx)).time_base;
-        if tb.den != 0 { tb.num as f64 / tb.den as f64 } else { 0.0 }
+        if tb.den != 0 {
+            tb.num as f64 / tb.den as f64
+        } else {
+            0.0
+        }
     }
 
     /// Seek keyframe vers `seconds` puis décode-avant jusqu'à la 1re frame dont le temps
@@ -649,8 +698,15 @@ impl Decoder {
             }
         }
 
-        let target = if tb_sec > 0.0 { (seconds / tb_sec) as i64 } else { 0 };
-        averr(av_seek_frame(self.fmt, self.vidx, target, AVSEEK_FLAG_BACKWARD), "seek_to")?;
+        let target = if tb_sec > 0.0 {
+            (seconds / tb_sec) as i64
+        } else {
+            0
+        };
+        averr(
+            av_seek_frame(self.fmt, self.vidx, target, AVSEEK_FLAG_BACKWARD),
+            "seek_to",
+        )?;
         avcodec_flush_buffers(self.dctx);
         // L'état vient d'être jeté : plus aucune frame courante exploitable.
         self.cur_pts = None;
@@ -693,13 +749,21 @@ impl Decoder {
     /// Temps (s) de la frame courante, via son pts. 0 si pas de pts fiable.
     pub(crate) unsafe fn cur_time_sec(&self) -> f64 {
         let pts = (*self.frame).best_effort_timestamp;
-        if pts == i64::MIN { 0.0 } else { pts as f64 * self.tb_sec() }
+        if pts == i64::MIN {
+            0.0
+        } else {
+            pts as f64 * self.tb_sec()
+        }
     }
 
     /// Cadence moyenne du flux (fps). 30 par défaut si indéterminée.
     pub(crate) unsafe fn fps(&self) -> f64 {
         let r = (*sn_fmt_stream(self.fmt, self.vidx)).avg_frame_rate;
-        if r.den != 0 && r.num != 0 { r.num as f64 / r.den as f64 } else { 30.0 }
+        if r.den != 0 && r.num != 0 {
+            r.num as f64 / r.den as f64
+        } else {
+            30.0
+        }
     }
 
     /// Durée réellement annoncée par le flux vidéo. La durée du stream est prioritaire ;
@@ -830,7 +894,11 @@ impl Drop for Decoder {
 /// coûte moins cher que de jeter l'état du décodeur et redécoder depuis la clé précédente.
 const SEEK_FORWARD_MAX_SEC: f64 = 0.5;
 
-unsafe fn make_enc_frames(gpu: &Gpu, w: i32, h: i32) -> Result<(*mut AVBufferRef, *mut AVBufferRef)> {
+unsafe fn make_enc_frames(
+    gpu: &Gpu,
+    w: i32,
+    h: i32,
+) -> Result<(*mut AVBufferRef, *mut AVBufferRef)> {
     let hwdev = av_hwdevice_ctx_alloc(AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA);
     let hwdc = (*hwdev).data as *mut AVHWDeviceContext;
     let d3dctx = (*hwdc).hwctx as *mut AVD3D11VADeviceContext;
@@ -903,12 +971,18 @@ unsafe fn run_c1_inner(
         "alloc_output_context2",
     )?;
     let ostream = avformat_new_stream(octx, ptr::null());
-    averr(avcodec_parameters_from_context((*ostream).codecpar, ectx), "params_from_ctx")?;
+    averr(
+        avcodec_parameters_from_context((*ostream).codecpar, ectx),
+        "params_from_ctx",
+    )?;
     (*ostream).time_base = (*ectx).time_base;
     let mut pb: *mut AVIOContext = ptr::null_mut();
-    averr(avio_open(&mut pb, outc.as_ptr(), AVIO_FLAG_WRITE as i32), "avio_open")?;
+    averr(
+        avio_open(&mut pb, outc.as_ptr(), AVIO_FLAG_WRITE as i32),
+        "avio_open",
+    )?;
     sn_fmt_set_pb(octx, pb);
-    averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
+    crate::export_settings::write_mp4_header(octx)?;
 
     let opkt = av_packet_alloc();
     let mut frames: u64 = 0;
@@ -926,7 +1000,10 @@ unsafe fn run_c1_inner(
         comp.compose_frame(sf, wf, frames as f32, cfg)?;
 
         let outf = av_frame_alloc();
-        averr(av_hwframe_get_buffer(enc_frames, outf, 0), "hwframe_get_buffer")?;
+        averr(
+            av_hwframe_get_buffer(enc_frames, outf, 0),
+            "hwframe_get_buffer",
+        )?;
         let out_tex = (*outf).data[0] as *mut c_void;
         let out_slice = (*outf).data[1] as u32;
         comp.rgb_to_nv12(out_tex, out_slice)?;
@@ -956,7 +1033,12 @@ unsafe fn run_c1_inner(
     av_buffer_unref(&mut enc_hwdev);
 
     let fps = frames as f64 / wall_s;
-    Ok(Stats { frames, wall_s, fps, video_duration_s: frames as f64 / 60.0 })
+    Ok(Stats {
+        frames,
+        wall_s,
+        fps,
+        video_duration_s: frames as f64 / 60.0,
+    })
 }
 
 /// Une source de clip pour l'export multiclip : fichiers screen+webcam + fenêtre source
@@ -1132,7 +1214,10 @@ impl VideoEncoder {
             Some(name) if refused.is_empty() => {
                 bail!("OPENSCREEN_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
             }
-            Some(name) => bail!("OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
+            Some(name) => bail!(
+                "OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}",
+                refused[0]
+            ),
             None => bail!(
                 "aucun encodeur vidéo utilisable sur cette machine : {}",
                 refused.join(" ; "),
@@ -1183,14 +1268,21 @@ impl VideoEncoder {
         if pix_fmt == AVPixelFormat::AV_PIX_FMT_D3D11 {
             (*ctx).hw_frames_ctx = av_buffer_ref(hw_frames);
         }
-        if let Err(error) = averr(avcodec_open2(ctx, enc, ptr::null_mut()), "avcodec_open2(enc)") {
+        if let Err(error) = averr(
+            avcodec_open2(ctx, enc, ptr::null_mut()),
+            "avcodec_open2(enc)",
+        ) {
             avcodec_free_context(&mut ctx);
             return Err(error);
         }
 
         // À partir d'ici le contexte est à nous : le mettre dans la struct d'abord, pour que
         // le Drop le libère si l'allocation des tampons échoue.
-        let mut encoder = VideoEncoder { ctx, sw: ptr::null_mut(), nv12: ptr::null_mut() };
+        let mut encoder = VideoEncoder {
+            ctx,
+            sw: ptr::null_mut(),
+            nv12: ptr::null_mut(),
+        };
         if pix_fmt != AVPixelFormat::AV_PIX_FMT_D3D11 {
             encoder.sw = alloc_sw_frame(pix_fmt, w, h)?;
             if pix_fmt != AVPixelFormat::AV_PIX_FMT_NV12 {
@@ -1207,8 +1299,15 @@ impl VideoEncoder {
         }
         // L'encodeur garde une référence sur les frames en vol : ne jamais réécrire par-dessus.
         averr(av_frame_make_writable(self.sw), "frame_make_writable")?;
-        let landing = if self.nv12.is_null() { self.sw } else { self.nv12 };
-        averr(av_hwframe_transfer_data(landing, frame, 0), "hwframe_transfer_data")?;
+        let landing = if self.nv12.is_null() {
+            self.sw
+        } else {
+            self.nv12
+        };
+        averr(
+            av_hwframe_transfer_data(landing, frame, 0),
+            "hwframe_transfer_data",
+        )?;
         if !self.nv12.is_null() {
             nv12_to_yuv420p(self.nv12, self.sw);
         }
@@ -1230,9 +1329,16 @@ impl VideoEncoder {
         h: u32,
         pts: i64,
     ) -> Result<()> {
-        debug_assert!(!self.sw.is_null(), "backend CPU : aucun candidat D3D11 ne doit gagner");
+        debug_assert!(
+            !self.sw.is_null(),
+            "backend CPU : aucun candidat D3D11 ne doit gagner"
+        );
         averr(av_frame_make_writable(self.sw), "frame_make_writable")?;
-        let landing = if self.nv12.is_null() { self.sw } else { self.nv12 };
+        let landing = if self.nv12.is_null() {
+            self.sw
+        } else {
+            self.nv12
+        };
         comp.read_nv12_scaled(
             w,
             h,
@@ -1258,8 +1364,10 @@ unsafe fn alloc_sw_frame(pix_fmt: AVPixelFormat::Type, w: i32, h: i32) -> Result
     (*frame).format = pix_fmt;
     (*frame).width = w;
     (*frame).height = h;
-    if let Err(error) = averr(av_frame_get_buffer(frame, 0), "av_frame_get_buffer (tampon encodeur)")
-    {
+    if let Err(error) = averr(
+        av_frame_get_buffer(frame, 0),
+        "av_frame_get_buffer (tampon encodeur)",
+    ) {
         av_frame_free(&mut (frame as *mut _));
         return Err(error);
     }
@@ -1304,14 +1412,22 @@ pub struct ExportParams {
     pub height: u32,
     pub fps: Option<u32>,
     pub codec: ExportCodec,
+    pub bitrate: Option<u32>,
+    pub normalize_audio: bool,
 }
 
 impl Default for ExportParams {
     fn default() -> Self {
-        Self { width: OUT_W, height: OUT_H, fps: None, codec: ExportCodec::H264 }
+        Self {
+            width: OUT_W,
+            height: OUT_H,
+            fps: None,
+            codec: ExportCodec::H264,
+            bitrate: None,
+            normalize_audio: true,
+        }
     }
 }
-
 
 unsafe fn run_multi_inner(
     clips: &[ClipSource],
@@ -1333,7 +1449,10 @@ unsafe fn run_multi_inner(
 
     // fps de sortie : choix explicite de l'app si fourni, sinon dérivé du 1er clip (recordings
     // uniformes) — comportement historique.
-    screen_decs.insert(clips[0].screen.clone(), Decoder::open(&clips[0].screen, gpu)?);
+    screen_decs.insert(
+        clips[0].screen.clone(),
+        Decoder::open(&clips[0].screen, gpu)?,
+    );
     let out_fps = params
         .fps
         .unwrap_or_else(|| screen_decs[&clips[0].screen].fps().round().max(1.0) as u32)
@@ -1354,9 +1473,11 @@ unsafe fn run_multi_inner(
     } else {
         make_enc_frames(gpu, out_w as i32, out_h as i32)?
     };
-    // débit proportionnel à la surface de sortie (référence : 8Mbps @ 1920x1080), plancher
-    // 2Mbps pour rester regardable sur les petites tailles.
-    let bit_rate = ((out_w as i64 * out_h as i64 * 8_000_000) / (1920 * 1080)).max(2_000_000);
+    let bit_rate = crate::export_settings::resolve_video_bitrate(out_w, out_h, params.bitrate);
+    eprintln!(
+        "[pipeline] export video: {}x{} @ {} fps, bitrate={} bits/s",
+        out_w, out_h, out_fps, bit_rate
+    );
     let mut enc = VideoEncoder::open(
         &params.codec,
         out_w as i32,
@@ -1377,19 +1498,25 @@ unsafe fn run_multi_inner(
     if ostream.is_null() {
         bail!("video avformat_new_stream");
     }
-    averr(avcodec_parameters_from_context((*ostream).codecpar, ectx), "params_from_ctx")?;
+    averr(
+        avcodec_parameters_from_context((*ostream).codecpar, ectx),
+        "params_from_ctx",
+    )?;
     (*ostream).time_base = (*ectx).time_base;
     // Les deux streams doivent exister avant le header MP4 ; l'AAC reste ouvert pendant le
     // rendu puis reçoit le PCM assemblé à partir des comptes de frames réellement produits.
     let mut audio_encoder = AacEncoder::open(octx)?;
     let mut pb: *mut AVIOContext = ptr::null_mut();
-    averr(avio_open(&mut pb, outc.as_ptr(), AVIO_FLAG_WRITE as i32), "avio_open")?;
+    averr(
+        avio_open(&mut pb, outc.as_ptr(), AVIO_FLAG_WRITE as i32),
+        "avio_open",
+    )?;
     sn_fmt_set_pb(octx, pb);
     averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
 
     let opkt = av_packet_alloc();
     let mut clip_frame_counts = vec![0u64; clips.len()];
-    let mut clip_pcm: Vec<Option<PlanarPcm>> =
+    let mut clip_audio: Vec<Option<DecodedClipAudio>> =
         std::iter::repeat_with(|| None).take(clips.len()).collect();
     let t0 = Instant::now();
 
@@ -1414,7 +1541,10 @@ unsafe fn run_multi_inner(
                 // Hardware path: the composed texture goes straight into an NV12
                 // encoder frame, so nothing ever descends to system memory.
                 let outf = av_frame_alloc();
-                averr(av_hwframe_get_buffer(enc_frames, outf, 0), "hwframe_get_buffer")?;
+                averr(
+                    av_hwframe_get_buffer(enc_frames, outf, 0),
+                    "hwframe_get_buffer",
+                )?;
                 let out_tex = (*outf).data[0] as *mut c_void;
                 let out_slice = (*outf).data[1] as u32;
                 comp.rgb_to_nv12_scaled(out_w, out_h, out_tex, out_slice)?;
@@ -1431,9 +1561,9 @@ unsafe fn run_multi_inner(
             let clip = &clips[clip_index];
             if clip.has_audio && frames_in_clip > 0 {
                 match decode_clip_audio(&clip.screen, clip.source_start_sec, source_end_sec) {
-                    Ok(Some(pcm)) => {
-                        clip_pcm[clip_index] = Some(stretch_clip_pcm_by_speed(
-                            &pcm,
+                    Ok(Some(audio)) => {
+                        clip_audio[clip_index] = Some(stretch_decoded_clip_audio_by_speed(
+                            audio,
                             speed_segments,
                             out_fps as f64,
                         ));
@@ -1460,12 +1590,10 @@ unsafe fn run_multi_inner(
     drain_encoder(ectx, octx, ostream, opkt)?;
 
     let declared_audio: Vec<bool> = clips.iter().map(|clip| clip.has_audio).collect();
-    let audio_plan = build_audio_concat_plan(
-        &clip_frame_counts,
-        &declared_audio,
-        out_fps as f64,
-    );
-    let assembled_audio = assemble_concatenated_pcm(&clip_pcm, &audio_plan);
+    let audio_plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
+    let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.normalize_audio);
+    let mut assembled_audio = assemble_concatenated_pcm(&clip_pcm, &audio_plan);
+    let audio_mastering = master_program_audio(&mut assembled_audio, params.normalize_audio);
     audio_encoder.encode(&assembled_audio, octx)?;
 
     averr(av_write_trailer(octx), "write_trailer")?;
@@ -1485,7 +1613,13 @@ unsafe fn run_multi_inner(
     av_buffer_unref(&mut enc_hwdev);
 
     let fps = frames as f64 / wall_s;
-    Ok(Stats { frames, wall_s, fps, video_duration_s: frames as f64 / out_fps as f64 })
+    Ok(Stats {
+        frames,
+        wall_s,
+        fps,
+        video_duration_s: frames as f64 / out_fps as f64,
+        audio_mastering,
+    })
 }
 
 #[cfg(test)]
@@ -1526,7 +1660,10 @@ mod tests {
         assert_eq!(fallbacks, ["libopenh264", "libkvazaar"]);
         for codec in [ExportCodec::H264, ExportCodec::H265] {
             for &(name, _) in codec.candidates() {
-                assert!(!matches!(name, "libx264" | "libx265"), "{name} absent du build LGPL");
+                assert!(
+                    !matches!(name, "libx264" | "libx265"),
+                    "{name} absent du build LGPL"
+                );
             }
         }
     }
@@ -1568,15 +1705,27 @@ mod tests {
                 for y in 0..h {
                     let row = (*dst).data[0].add(y * (*dst).linesize[0] as usize);
                     for x in 0..w {
-                        assert_eq!(*row.add(x), (10 + y * w + x) as u8, "luma ({x},{y}) en {w}x{h}");
+                        assert_eq!(
+                            *row.add(x),
+                            (10 + y * w + x) as u8,
+                            "luma ({x},{y}) en {w}x{h}"
+                        );
                     }
                 }
                 for y in 0..ch {
                     let u = (*dst).data[1].add(y * (*dst).linesize[1] as usize);
                     let v = (*dst).data[2].add(y * (*dst).linesize[2] as usize);
                     for x in 0..cw {
-                        assert_eq!(*u.add(x), (100 + y * cw + x) as u8, "U ({x},{y}) en {w}x{h}");
-                        assert_eq!(*v.add(x), (200 + y * cw + x) as u8, "V ({x},{y}) en {w}x{h}");
+                        assert_eq!(
+                            *u.add(x),
+                            (100 + y * cw + x) as u8,
+                            "U ({x},{y}) en {w}x{h}"
+                        );
+                        assert_eq!(
+                            *v.add(x),
+                            (200 + y * cw + x) as u8,
+                            "V ({x},{y}) en {w}x{h}"
+                        );
                     }
                 }
 
@@ -1620,8 +1769,18 @@ pub fn probe_frame_count(path: &str) -> Result<u64> {
             avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
             "open_input",
         )?;
-        averr(avformat_find_stream_info(fmt, ptr::null_mut()), "find_stream_info")?;
-        let vidx = av_find_best_stream(fmt, AVMediaType::AVMEDIA_TYPE_VIDEO, -1, -1, ptr::null_mut(), 0);
+        averr(
+            avformat_find_stream_info(fmt, ptr::null_mut()),
+            "find_stream_info",
+        )?;
+        let vidx = av_find_best_stream(
+            fmt,
+            AVMediaType::AVMEDIA_TYPE_VIDEO,
+            -1,
+            -1,
+            ptr::null_mut(),
+            0,
+        );
         let mut n: u64 = 0;
         if vidx >= 0 {
             let stream = sn_fmt_stream(fmt, vidx);

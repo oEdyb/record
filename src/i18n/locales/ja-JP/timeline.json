@@ -29,6 +29,7 @@
 		"annotationItem": "注釈",
 		"imageItem": "画像",
 		"emptyText": "空のテキスト",
+		"cameraEmphasis": "カメラ強調",
 		"cameraFullscreen": "フルスクリーンカメラ",
 		"cameraFullscreenItem": "フルスクリーンカメラ {{index}}"
 	},

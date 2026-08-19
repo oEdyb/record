@@ -151,8 +151,17 @@ export class AiEditionService {
 		}
 	}
 
-	async addAsset(projectId: string, path: string, label?: string): Promise<AiEditionAssetResult> {
-		const document = await this.options.documents.addAsset(projectId, { path, label });
+	async addAsset(
+		projectId: string,
+		path: string,
+		label?: string,
+		recordingImportId?: string,
+	): Promise<AiEditionAssetResult> {
+		const document = await this.options.documents.addAsset(projectId, {
+			path,
+			label,
+			recordingImportId,
+		});
 		const assetId = document.project.primaryAssetId ?? document.assets.at(-1)?.id ?? "";
 		return { assetId, document };
 	}

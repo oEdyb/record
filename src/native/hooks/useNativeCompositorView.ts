@@ -29,7 +29,7 @@ import {
 	setCompositorPlaying,
 	setCompositorRect,
 } from "../compositorViewClient";
-import type { CompositorParamValue, CompositorViewRect } from "../contracts";
+import type { CompositorFrameTiming, CompositorParamValue, CompositorViewRect } from "../contracts";
 import { computeDeviceRect, rectsEqual } from "../nativeViewRect";
 
 export interface UseNativeCompositorViewOptions {
@@ -41,6 +41,8 @@ export interface UseNativeCompositorViewOptions {
 	 * creation, so resolve them before enabling the hook to avoid a fixture→real
 	 * re-create. */
 	sources?: { screenPath?: string; webcamPath?: string; cursorPath?: string };
+	/** Receives the source PTS and transport identity of each validated native frame. */
+	onFrame?: (frame: CompositorFrameTiming) => void;
 }
 
 export interface UseNativeCompositorViewResult {
@@ -90,6 +92,8 @@ export function useNativeCompositorView(
 	// Re-create the native view when the screen source changes (e.g. loading a different
 	// project) so it never keeps showing a stale clip.
 	const screenPath = opts.sources?.screenPath;
+	const onFrameRef = useRef(opts.onFrame);
+	onFrameRef.current = opts.onFrame;
 	const [viewId, setViewId] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	// Mirror into a ref so async callbacks always see the freshest id without
@@ -97,6 +101,9 @@ export function useNativeCompositorView(
 	const viewIdRef = useRef<number | null>(null);
 	viewIdRef.current = viewId;
 
+	// Recreate only when the screen decoder identity changes. Camera and cursor changes
+	// travel through the active transport/scene paths and must not destroy the view.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: screenPath is the intentional source identity
 	useEffect(() => {
 		if (!enabled) {
 			return;
@@ -201,7 +208,7 @@ export function useNativeCompositorView(
 					if (disposed || !frame) {
 						return;
 					}
-					const { gen, width, height, data } = frame;
+					const { gen, width, height, data, sourceTimeSec, clipIndex, transportGeneration } = frame;
 					// Defensive: the packet's byte count must match its own declared
 					// dimensions. A mismatch would corrupt the image silently — bail.
 					if (data.byteLength !== width * height * 4 || width === 0 || height === 0) {
@@ -244,6 +251,7 @@ export function useNativeCompositorView(
 					// Advance only after a successful, validated frame — so a dropped/
 					// malformed packet is retried rather than silently skipped.
 					lastGen = gen;
+					onFrameRef.current?.({ sourceTimeSec, clipIndex, transportGeneration });
 					// Sonde de fluidité : signale qu'une frame a réellement été livrée, pour
 					// que les intervalles rAF soient rangés dans l'état « preview active »
 					// plutôt que moyennés avec des périodes de repos.

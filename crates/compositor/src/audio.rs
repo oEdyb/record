@@ -5,14 +5,26 @@
 use crate::ffi::*;
 use crate::regions::SpeedSegment;
 use anyhow::{bail, Result};
+use ebur128::{EbuR128, Mode};
 use std::f32::consts::PI;
 use std::ffi::CString;
 use std::ptr;
 
 pub const AUDIO_OUTPUT_SAMPLE_RATE: i32 = 48_000;
 pub const AUDIO_OUTPUT_CHANNELS: usize = 2;
-pub const AUDIO_BITRATE: i64 = 128_000;
+pub const AUDIO_BITRATE: i64 = 384_000;
 pub const AUDIO_BOUNDARY_FADE_SAMPLES: usize = 240;
+pub const DEFAULT_TARGET_LUFS: f64 = -14.0;
+pub const DEFAULT_TRUE_PEAK_LIMIT_DBTP: f64 = -1.0;
+const MAX_AUTOMATIC_GAIN_DB: f64 = 12.0;
+const MAX_CLIP_DIALOGUE_GAIN_DB: f64 = 6.0;
+const MIN_DIALOGUE_LUFS: f64 = -50.0;
+const PREVIEW_MIX_TRACK_TITLE: &str = "screenrec.mix.v1";
+const SYSTEM_TRACK_TITLE: &str = "screenrec.system.v1";
+const MICROPHONE_TRACK_TITLE: &str = "screenrec.microphone.v1";
+const PREVIEW_MIX_TRACK_LANGUAGE: &str = "qaa";
+const SYSTEM_TRACK_LANGUAGE: &str = "qab";
+const MICROPHONE_TRACK_LANGUAGE: &str = "qac";
 
 // Valeurs partagées : `AVERROR(EAGAIN)` dépend de la plateforme (-11 vs -35), et ce
 // module est compilé sur les deux. Cf. `crate::ffi`.
@@ -26,11 +38,309 @@ const PASSTHROUGH_EPSILON: f64 = 1e-3;
 
 pub type PlanarPcm = Vec<Vec<f32>>;
 
+/// Source stems kept separate until clip-level dialogue matching is complete.
+/// Old recordings have only `bed`; tagged ScreenRec recordings put the mic in
+/// `microphone`, so system audio never moves when dialogue is corrected.
+pub struct DecodedClipAudio {
+    bed: Option<PlanarPcm>,
+    microphone: Option<PlanarPcm>,
+}
+
+impl DecodedClipAudio {
+    pub fn into_mixed(self) -> PlanarPcm {
+        match (self.bed, self.microphone) {
+            (Some(bed), Some(microphone)) => {
+                let sample_count = bed
+                    .iter()
+                    .chain(microphone.iter())
+                    .map(Vec::len)
+                    .max()
+                    .unwrap_or(0);
+                mix_aligned_tracks(&[(0.0, &bed), (0.0, &microphone)], 0.0, sample_count)
+            }
+            (Some(bed), None) => bed,
+            (None, Some(microphone)) => microphone,
+            (None, None) => vec![Vec::new(); AUDIO_OUTPUT_CHANNELS],
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipDialogueAdjustment {
+    pub input_lufs: f64,
+    pub reference_lufs: f64,
+    pub applied_gain_db: f64,
+    pub limited_by_gain_cap: bool,
+    pub limited_by_true_peak: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioMasteringStats {
+    pub enabled: bool,
+    pub analyzed: bool,
+    pub applied_gain_db: f64,
+    pub input_lufs: Option<f64>,
+    pub output_lufs: Option<f64>,
+    pub input_true_peak_dbtp: Option<f64>,
+    pub output_true_peak_dbtp: Option<f64>,
+    pub limited_by_true_peak: bool,
+    pub limited_by_gain_cap: bool,
+    pub warning: Option<String>,
+}
+
+impl AudioMasteringStats {
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            analyzed: false,
+            applied_gain_db: 0.0,
+            input_lufs: None,
+            output_lufs: None,
+            input_true_peak_dbtp: None,
+            output_true_peak_dbtp: None,
+            limited_by_true_peak: false,
+            limited_by_gain_cap: false,
+            warning: None,
+        }
+    }
+
+    fn skipped(warning: String) -> Self {
+        Self {
+            enabled: true,
+            warning: Some(warning),
+            ..Self::disabled()
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AudioMeasurement {
+    integrated_lufs: f64,
+    true_peak_dbtp: f64,
+}
+
+fn measure_program_audio(pcm: &PlanarPcm) -> std::result::Result<AudioMeasurement, String> {
+    let frame_count = pcm
+        .iter()
+        .take(AUDIO_OUTPUT_CHANNELS)
+        .map(Vec::len)
+        .min()
+        .unwrap_or(0);
+    if pcm.len() < AUDIO_OUTPUT_CHANNELS
+        || frame_count < (AUDIO_OUTPUT_SAMPLE_RATE as usize * 4 / 10)
+    {
+        return Err("Audio is shorter than the 400 ms EBU R128 analysis window.".to_string());
+    }
+
+    let mut analyzer = EbuR128::new(
+        AUDIO_OUTPUT_CHANNELS as u32,
+        AUDIO_OUTPUT_SAMPLE_RATE as u32,
+        Mode::I | Mode::TRUE_PEAK,
+    )
+    .map_err(|error| format!("Could not start EBU R128 analysis: {error}"))?;
+    let planes: Vec<&[f32]> = pcm
+        .iter()
+        .take(AUDIO_OUTPUT_CHANNELS)
+        .map(|plane| &plane[..frame_count])
+        .collect();
+    analyzer
+        .add_frames_planar_f32(&planes)
+        .map_err(|error| format!("Could not analyze audio: {error}"))?;
+    let integrated_lufs = analyzer
+        .loudness_global()
+        .map_err(|error| format!("Could not measure integrated loudness: {error}"))?;
+    if !integrated_lufs.is_finite() {
+        return Err("Audio is silent, so integrated loudness is undefined.".to_string());
+    }
+
+    let true_peak = (0..AUDIO_OUTPUT_CHANNELS)
+        .filter_map(|channel| analyzer.true_peak(channel as u32).ok())
+        .fold(0.0_f64, f64::max);
+    let true_peak_dbtp = if true_peak > 0.0 {
+        20.0 * true_peak.log10()
+    } else {
+        f64::NEG_INFINITY
+    };
+    Ok(AudioMeasurement {
+        integrated_lufs,
+        true_peak_dbtp,
+    })
+}
+
+/// Matches speech-bearing microphone stems to the median clip level. This is
+/// not per-clip target normalization: the recording stays at its natural
+/// overall level, while only large clip-to-clip voice jumps are reduced.
+pub fn match_clip_dialogue_levels(
+    clips: &mut [Option<DecodedClipAudio>],
+    enabled: bool,
+) -> Vec<Option<ClipDialogueAdjustment>> {
+    let mut adjustments = vec![None; clips.len()];
+    if !enabled {
+        return adjustments;
+    }
+
+    let measured = clips
+        .iter()
+        .enumerate()
+        .filter_map(|(index, clip)| {
+            let microphone = clip.as_ref()?.microphone.as_ref()?;
+            let measurement = measure_program_audio(microphone).ok()?;
+            (measurement.integrated_lufs >= MIN_DIALOGUE_LUFS).then_some((index, measurement))
+        })
+        .collect::<Vec<_>>();
+    if measured.len() < 2 {
+        return adjustments;
+    }
+
+    let mut loudness = measured
+        .iter()
+        .map(|(_, measurement)| measurement.integrated_lufs)
+        .collect::<Vec<_>>();
+    loudness.sort_by(f64::total_cmp);
+    let midpoint = loudness.len() / 2;
+    let reference_lufs = if loudness.len() % 2 == 0 {
+        (loudness[midpoint - 1] + loudness[midpoint]) / 2.0
+    } else {
+        loudness[midpoint]
+    };
+
+    for (index, measurement) in measured {
+        let requested_gain_db = reference_lufs - measurement.integrated_lufs;
+        let capped_gain_db =
+            requested_gain_db.clamp(-MAX_CLIP_DIALOGUE_GAIN_DB, MAX_CLIP_DIALOGUE_GAIN_DB);
+        let true_peak_headroom_db =
+            (DEFAULT_TRUE_PEAK_LIMIT_DBTP - measurement.true_peak_dbtp).max(0.0);
+        let applied_gain_db = if capped_gain_db > 0.0 {
+            capped_gain_db.min(true_peak_headroom_db)
+        } else {
+            capped_gain_db
+        };
+        if applied_gain_db.abs() >= 0.01 {
+            let gain = 10.0_f32.powf((applied_gain_db / 20.0) as f32);
+            if let Some(microphone) = clips[index]
+                .as_mut()
+                .and_then(|clip| clip.microphone.as_mut())
+            {
+                for plane in microphone.iter_mut().take(AUDIO_OUTPUT_CHANNELS) {
+                    for sample in plane {
+                        *sample *= gain;
+                    }
+                }
+            }
+        }
+        adjustments[index] = Some(ClipDialogueAdjustment {
+            input_lufs: measurement.integrated_lufs,
+            reference_lufs,
+            applied_gain_db,
+            limited_by_gain_cap: (capped_gain_db - requested_gain_db).abs() >= 0.01,
+            limited_by_true_peak: applied_gain_db + 0.01 < capped_gain_db,
+        });
+    }
+    adjustments
+}
+
+/// Measures and masters the fully edited program. Capture files stay unchanged. A single gain
+/// preserves dynamics; the gain is capped before it can cross the true-peak ceiling.
+pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasteringStats {
+    if !enabled {
+        return AudioMasteringStats::disabled();
+    }
+    let input = match measure_program_audio(pcm) {
+        Ok(measurement) => measurement,
+        Err(warning) => return AudioMasteringStats::skipped(warning),
+    };
+
+    let requested_gain_db = DEFAULT_TARGET_LUFS - input.integrated_lufs;
+    let true_peak_headroom_db = DEFAULT_TRUE_PEAK_LIMIT_DBTP - input.true_peak_dbtp;
+    let applied_gain_db = requested_gain_db
+        .min(true_peak_headroom_db)
+        .min(MAX_AUTOMATIC_GAIN_DB);
+    let limited_by_true_peak =
+        true_peak_headroom_db < requested_gain_db.min(MAX_AUTOMATIC_GAIN_DB) - 0.01;
+    let limited_by_gain_cap = MAX_AUTOMATIC_GAIN_DB < requested_gain_db - 0.01
+        && MAX_AUTOMATIC_GAIN_DB <= true_peak_headroom_db + 0.01;
+    if applied_gain_db.abs() >= 0.01 {
+        let gain = 10.0_f32.powf((applied_gain_db / 20.0) as f32);
+        for plane in pcm.iter_mut().take(AUDIO_OUTPUT_CHANNELS) {
+            for sample in plane {
+                *sample = (*sample * gain).clamp(-1.0, 1.0);
+            }
+        }
+    }
+
+    let output = measure_program_audio(pcm).unwrap_or(input);
+    let warning = if limited_by_true_peak {
+        Some(format!(
+            "Normalization stopped below {DEFAULT_TARGET_LUFS:.0} LUFS to keep true peaks at or below {DEFAULT_TRUE_PEAK_LIMIT_DBTP:.0} dBTP."
+        ))
+    } else if limited_by_gain_cap {
+        Some(format!(
+            "Normalization stopped at the {MAX_AUTOMATIC_GAIN_DB:.0} dB automatic gain limit."
+        ))
+    } else {
+        None
+    };
+
+    AudioMasteringStats {
+        enabled: true,
+        analyzed: true,
+        applied_gain_db,
+        input_lufs: Some(input.integrated_lufs),
+        output_lufs: Some(output.integrated_lufs),
+        input_true_peak_dbtp: input
+            .true_peak_dbtp
+            .is_finite()
+            .then_some(input.true_peak_dbtp),
+        output_true_peak_dbtp: output
+            .true_peak_dbtp
+            .is_finite()
+            .then_some(output.true_peak_dbtp),
+        limited_by_true_peak,
+        limited_by_gain_cap,
+        warning,
+    }
+}
+
 extern "C" {
     fn sn_fmt_stream(s: *mut AVFormatContext, i: i32) -> *mut AVStream;
     // bindgen rend `AVFormatContext` opaque (atteinte seulement par pointeur), d'où l'accesseur
     // compilé contre les vrais headers — voir shim.c.
     fn sn_fmt_nb_streams(s: *mut AVFormatContext) -> u32;
+    fn sn_fmt_stream_metadata(
+        s: *mut AVFormatContext,
+        i: i32,
+        key: *const std::ffi::c_char,
+    ) -> *const std::ffi::c_char;
+}
+
+fn is_source_track(title: Option<&str>, language: Option<&str>) -> bool {
+    matches!(title, Some(SYSTEM_TRACK_TITLE | MICROPHONE_TRACK_TITLE))
+        || matches!(
+            language,
+            Some(SYSTEM_TRACK_LANGUAGE | MICROPHONE_TRACK_LANGUAGE)
+        )
+}
+
+fn is_microphone_track(title: Option<&str>, language: Option<&str>) -> bool {
+    title == Some(MICROPHONE_TRACK_TITLE) || language == Some(MICROPHONE_TRACK_LANGUAGE)
+}
+
+fn should_decode_audio_track(
+    title: Option<&str>,
+    language: Option<&str>,
+    has_source_tracks: bool,
+) -> bool {
+    !has_source_tracks
+        || (title != Some(PREVIEW_MIX_TRACK_TITLE) && language != Some(PREVIEW_MIX_TRACK_LANGUAGE))
+}
+
+unsafe fn audio_track_tag(fmt: *mut AVFormatContext, index: i32, key: &[u8]) -> Option<String> {
+    let value = sn_fmt_stream_metadata(fmt, index, key.as_ptr() as *const std::ffi::c_char);
+    (!value.is_null()).then(|| {
+        std::ffi::CStr::from_ptr(value)
+            .to_string_lossy()
+            .into_owned()
+    })
 }
 
 fn averr(ret: i32, ctx: &str) -> Result<()> {
@@ -127,8 +437,8 @@ impl AudioResampler {
             if delay <= 0 {
                 break;
             }
-            let out_capacity = (((delay * AUDIO_OUTPUT_SAMPLE_RATE as i64)
-                + self.input_rate as i64 - 1)
+            let out_capacity =
+                (((delay * AUDIO_OUTPUT_SAMPLE_RATE as i64) + self.input_rate as i64 - 1)
                 / self.input_rate as i64
                 + 32) as usize;
             let mut planes = vec![vec![0.0f32; out_capacity]; AUDIO_OUTPUT_CHANNELS];
@@ -174,6 +484,7 @@ struct AudioTrackDecoder {
     origin_sec: Option<f64>,
     reached_end: bool,
     decoder_eof: bool,
+    microphone: bool,
 }
 
 impl Drop for AudioTrackDecoder {
@@ -186,13 +497,15 @@ impl Drop for AudioTrackDecoder {
 /// antérieure ; l'origine pts du premier bloc resamplé permet ensuite de couper précisément la
 /// prélecture sans supposer que la piste commence à t=0.
 ///
-/// TOUTES les pistes audio sont décodées puis mixées. L'enregistreur natif macOS écrit l'audio
-/// système et le micro en deux pistes AAC distinctes, toutes deux marquées `default` :
-/// `av_find_best_stream` n'en rendait qu'une — la première, silencieuse dès que rien ne joue sur
-/// le système — et le micro disparaissait de l'export (issue #108). La PR #109 avait corrigé ce
-/// défaut dans l'exporteur navigateur ; l'app n'emprunte plus ce chemin, d'où la même correction
-/// ici, dans le chemin natif.
-pub fn decode_clip_audio(path: &str, source_start_sec: f64, source_end_sec: f64) -> Result<Option<PlanarPcm>> {
+/// All legacy audio tracks are decoded and mixed. New macOS clips contain an HTML preview mix
+/// plus tagged source tracks. In that case, ignore the preview mix because summing all three
+/// tracks would double each source. Untagged tracks keep the legacy multi-track behavior
+/// from issue #108.
+pub fn decode_clip_audio(
+    path: &str,
+    source_start_sec: f64,
+    source_end_sec: f64,
+) -> Result<Option<DecodedClipAudio>> {
     unsafe { decode_clip_audio_inner(path, source_start_sec, source_end_sec) }
 }
 
@@ -200,24 +513,40 @@ unsafe fn decode_clip_audio_inner(
     path: &str,
     source_start_sec: f64,
     source_end_sec: f64,
-) -> Result<Option<PlanarPcm>> {
+) -> Result<Option<DecodedClipAudio>> {
     let mut fmt: *mut AVFormatContext = ptr::null_mut();
     let cpath = CString::new(path)?;
     averr(
         avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
         "audio open_input",
     )?;
-    averr(avformat_find_stream_info(fmt, ptr::null_mut()), "audio find_stream_info")?;
-    // Énumération de toutes les pistes audio (voir le commentaire de `decode_clip_audio`).
-    let mut audio_stream_count = 0usize;
-    let mut tracks: Vec<AudioTrackDecoder> = Vec::new();
+    averr(
+        avformat_find_stream_info(fmt, ptr::null_mut()),
+        "audio find_stream_info",
+    )?;
+    // Enumerate first so preview-mix filtering knows whether any tagged source track exists.
+    let mut audio_streams = Vec::new();
     for index in 0..sn_fmt_nb_streams(fmt) as i32 {
         let stream = sn_fmt_stream(fmt, index);
-        let codecpar = (*stream).codecpar;
-        if (*codecpar).codec_type != AVMediaType::AVMEDIA_TYPE_AUDIO {
+        if (*(*stream).codecpar).codec_type == AVMediaType::AVMEDIA_TYPE_AUDIO {
+            audio_streams.push((
+                index,
+                audio_track_tag(fmt, index, b"title\0"),
+                audio_track_tag(fmt, index, b"language\0"),
+            ));
+        }
+    }
+    let audio_stream_count = audio_streams.len();
+    let has_source_tracks = audio_streams
+        .iter()
+        .any(|(_, title, language)| is_source_track(title.as_deref(), language.as_deref()));
+    let mut tracks: Vec<AudioTrackDecoder> = Vec::new();
+    for (index, title, language) in audio_streams {
+        if !should_decode_audio_track(title.as_deref(), language.as_deref(), has_source_tracks) {
             continue;
         }
-        audio_stream_count += 1;
+        let stream = sn_fmt_stream(fmt, index);
+        let codecpar = (*stream).codecpar;
         // Une piste qu'on ne sait pas ouvrir est ignorée, pas fatale : avant ce mixage une
         // seule piste était ouverte, donc une piste annexe exotique ne pouvait pas casser un
         // export. Le `bail!` plus bas garantit qu'on ne perd pas l'audio en silence pour
@@ -251,6 +580,7 @@ unsafe fn decode_clip_audio_inner(
             origin_sec: None,
             reached_end: false,
             decoder_eof: false,
+            microphone: is_microphone_track(title.as_deref(), language.as_deref()),
         });
     }
     if tracks.is_empty() {
@@ -362,15 +692,22 @@ unsafe fn decode_clip_audio_inner(
     let target_samples = (((source_end_sec - source_start_sec).max(0.0)
         * AUDIO_OUTPUT_SAMPLE_RATE as f64)
         .round()) as usize;
-    let aligned: Vec<(f64, &PlanarPcm)> = tracks
+    let microphone_tracks: Vec<(f64, &PlanarPcm)> = tracks
         .iter()
+        .filter(|track| track.microphone)
         .map(|track| (track.origin_sec.unwrap_or(source_start_sec), &track.decoded))
         .collect();
-    Ok(Some(mix_aligned_tracks(
-        &aligned,
-        source_start_sec,
-        target_samples,
-    )))
+    let bed_tracks: Vec<(f64, &PlanarPcm)> = tracks
+        .iter()
+        .filter(|track| !track.microphone)
+        .map(|track| (track.origin_sec.unwrap_or(source_start_sec), &track.decoded))
+        .collect();
+    Ok(Some(DecodedClipAudio {
+        bed: (!bed_tracks.is_empty())
+            .then(|| mix_aligned_tracks(&bed_tracks, source_start_sec, target_samples)),
+        microphone: (!microphone_tracks.is_empty())
+            .then(|| mix_aligned_tracks(&microphone_tracks, source_start_sec, target_samples)),
+    }))
 }
 
 /// Recadre chaque piste sur la MÊME fenêtre (`target_samples` échantillons à partir de
@@ -463,15 +800,13 @@ impl WsolaTimeStretcher {
         }
         let mut hs = n / 2;
         if expected_output_samples > 0 {
-            let min_hs = 2usize.max(
-                ((sample_rate as f64 * MIN_FRAME_SEC) / 2.0).round() as usize,
-            );
+            let min_hs = 2usize.max(((sample_rate as f64 * MIN_FRAME_SEC) / 2.0).round() as usize);
             let target_hs = expected_output_samples / TARGET_GRAINS;
             hs = hs.min(min_hs.max(target_hs));
         }
         let n = hs * 2;
-        let search_radius = ((sample_rate as f64 * DEFAULT_SEARCH_SEC).round() as usize)
-            .min(hs) as i64;
+        let search_radius =
+            ((sample_rate as f64 * DEFAULT_SEARCH_SEC).round() as usize).min(hs) as i64;
         Self {
             channels,
             passthrough,
@@ -557,7 +892,10 @@ impl WsolaTimeStretcher {
         if index < 0 {
             0.0
         } else {
-            self.buf[channel].get(index as usize).copied().unwrap_or(0.0)
+            self.buf[channel]
+                .get(index as usize)
+                .copied()
+                .unwrap_or(0.0)
         }
     }
 
@@ -645,7 +983,11 @@ impl WsolaTimeStretcher {
                 dot += candidate * self.mono_at(reference_start + k as i64);
                 energy += candidate * candidate;
             }
-            let score = if energy > 0.0 { dot / energy.sqrt() } else { 0.0 };
+            let score = if energy > 0.0 {
+                dot / energy.sqrt()
+            } else {
+                0.0
+            };
             if score > best_score {
                 best_score = score;
                 best_delta = delta;
@@ -701,7 +1043,8 @@ impl WsolaTimeStretcher {
         }
         let drop_count = drop_count as usize;
         for channel in 0..self.channels {
-            self.buf[channel] = self.buf[channel][drop_count.min(self.buf[channel].len())..].to_vec();
+            self.buf[channel] =
+                self.buf[channel][drop_count.min(self.buf[channel].len())..].to_vec();
         }
         self.mono = self.mono[drop_count.min(self.mono.len())..].to_vec();
         self.buf_start = absolute_index;
@@ -793,6 +1136,32 @@ pub fn stretch_clip_pcm_by_speed(
     output
 }
 
+pub fn stretch_decoded_clip_audio_by_speed(
+    audio: DecodedClipAudio,
+    speed_segments: &[SpeedSegment],
+    output_fps: f64,
+) -> DecodedClipAudio {
+    DecodedClipAudio {
+        bed: audio
+            .bed
+            .map(|pcm| stretch_clip_pcm_by_speed(&pcm, speed_segments, output_fps)),
+        microphone: audio
+            .microphone
+            .map(|pcm| stretch_clip_pcm_by_speed(&pcm, speed_segments, output_fps)),
+    }
+}
+
+pub fn finalize_decoded_clip_audio(
+    mut clips: Vec<Option<DecodedClipAudio>>,
+    match_dialogue: bool,
+) -> Vec<Option<PlanarPcm>> {
+    match_clip_dialogue_levels(&mut clips, match_dialogue);
+    clips
+        .into_iter()
+        .map(|clip| clip.map(DecodedClipAudio::into_mixed))
+        .collect()
+}
+
 #[derive(Clone, Copy)]
 pub struct AudioConcatSegmentPlan {
     pub start_sample: usize,
@@ -829,7 +1198,10 @@ pub fn build_audio_concat_plan(
         });
         cursor += sample_count;
     }
-    AudioConcatPlan { total_samples: cursor, segments }
+    AudioConcatPlan {
+        total_samples: cursor,
+        segments,
+    }
 }
 
 pub fn assemble_concatenated_pcm(
@@ -897,9 +1269,15 @@ impl AacEncoder {
         (*context).sample_fmt = AVSampleFormat::AV_SAMPLE_FMT_FLTP;
         (*context).sample_rate = AUDIO_OUTPUT_SAMPLE_RATE;
         (*context).bit_rate = AUDIO_BITRATE;
-        (*context).time_base = AVRational { num: 1, den: AUDIO_OUTPUT_SAMPLE_RATE };
+        (*context).time_base = AVRational {
+            num: 1,
+            den: AUDIO_OUTPUT_SAMPLE_RATE,
+        };
         av_channel_layout_default(&mut (*context).ch_layout, AUDIO_OUTPUT_CHANNELS as i32);
-        averr(avcodec_open2(context, codec, ptr::null_mut()), "aac avcodec_open2")?;
+        averr(
+            avcodec_open2(context, codec, ptr::null_mut()),
+            "aac avcodec_open2",
+        )?;
 
         let stream = avformat_new_stream(output, ptr::null());
         if stream.is_null() {
@@ -914,10 +1292,18 @@ impl AacEncoder {
         if packet.is_null() {
             bail!("aac av_packet_alloc");
         }
-        Ok(Self { context, stream, packet })
+        Ok(Self {
+            context,
+            stream,
+            packet,
+        })
     }
 
-    pub(crate) unsafe fn encode(&mut self, pcm: &[Vec<f32>], output: *mut AVFormatContext) -> Result<()> {
+    pub(crate) unsafe fn encode(
+        &mut self,
+        pcm: &[Vec<f32>],
+        output: *mut AVFormatContext,
+    ) -> Result<()> {
         let total_samples = pcm.first().map(|channel| channel.len()).unwrap_or(0);
         let frame_size = if (*self.context).frame_size > 0 {
             (*self.context).frame_size as usize
@@ -946,7 +1332,11 @@ impl AacEncoder {
                 if let Some(source) = pcm.get(channel) {
                     let available = source.len().saturating_sub(offset).min(sample_count);
                     if available > 0 {
-                        ptr::copy_nonoverlapping(source.as_ptr().add(offset), destination, available);
+                        ptr::copy_nonoverlapping(
+                            source.as_ptr().add(offset),
+                            destination,
+                            available,
+                        );
                     }
                 }
             }
@@ -968,7 +1358,11 @@ impl AacEncoder {
             }
             averr(ret, "aac receive_packet")?;
             (*self.packet).stream_index = (*self.stream).index;
-            av_packet_rescale_ts(self.packet, (*self.context).time_base, (*self.stream).time_base);
+            av_packet_rescale_ts(
+                self.packet,
+                (*self.context).time_base,
+                (*self.stream).time_base,
+            );
             averr(
                 av_interleaved_write_frame(output, self.packet),
                 "aac interleaved_write_frame",
@@ -1023,6 +1417,189 @@ mod tests {
         let microphone = planar(&[0.3, -0.4, 0.5]);
         let mixed = mix_aligned_tracks(&[(0.0, &system_audio), (0.0, &microphone)], 0.0, 3);
         assert_eq!(mixed[0], vec![0.3, -0.4, 0.5]);
+    }
+
+    #[test]
+    fn tagged_source_tracks_replace_the_preview_mix_during_export() {
+        assert!(!should_decode_audio_track(
+            Some(PREVIEW_MIX_TRACK_TITLE),
+            None,
+            true,
+        ));
+        assert!(!should_decode_audio_track(
+            None,
+            Some(PREVIEW_MIX_TRACK_LANGUAGE),
+            true,
+        ));
+        assert!(should_decode_audio_track(
+            Some(SYSTEM_TRACK_TITLE),
+            None,
+            true,
+        ));
+        assert!(should_decode_audio_track(
+            None,
+            Some(MICROPHONE_TRACK_LANGUAGE),
+            true,
+        ));
+        assert!(should_decode_audio_track(
+            Some("commentary"),
+            Some("eng"),
+            true,
+        ));
+        assert!(should_decode_audio_track(
+            Some(PREVIEW_MIX_TRACK_TITLE),
+            None,
+            false,
+        ));
+        assert!(should_decode_audio_track(None, None, false));
+    }
+
+    fn stereo_sine(amplitude: f32, seconds: usize) -> PlanarPcm {
+        let samples = (0..AUDIO_OUTPUT_SAMPLE_RATE as usize * seconds)
+            .map(|index| {
+                let phase = 2.0 * PI * 1_000.0 * index as f32 / AUDIO_OUTPUT_SAMPLE_RATE as f32;
+                amplitude * phase.sin()
+            })
+            .collect::<Vec<_>>();
+        vec![samples.clone(), samples]
+    }
+
+    fn decoded_microphone(amplitude: f32) -> DecodedClipAudio {
+        DecodedClipAudio {
+            bed: None,
+            microphone: Some(stereo_sine(amplitude, 1)),
+        }
+    }
+
+    #[test]
+    fn clip_dialogue_consistency_matches_microphone_stems_to_the_median() {
+        let mut clips = vec![
+            Some(decoded_microphone(0.03)),
+            Some(decoded_microphone(0.06)),
+            Some(decoded_microphone(0.12)),
+        ];
+
+        let adjustments = match_clip_dialogue_levels(&mut clips, true);
+        let measured = clips
+            .iter()
+            .map(|clip| {
+                measure_program_audio(clip.as_ref().unwrap().microphone.as_ref().unwrap())
+                    .unwrap()
+                    .integrated_lufs
+            })
+            .collect::<Vec<_>>();
+
+        assert!(measured
+            .iter()
+            .all(|lufs| (lufs - measured[1]).abs() < 0.08));
+        assert!(adjustments[0].as_ref().unwrap().applied_gain_db > 5.9);
+        assert!(adjustments[1].as_ref().unwrap().applied_gain_db.abs() < 0.01);
+        assert!(adjustments[2].as_ref().unwrap().applied_gain_db < -5.9);
+    }
+
+    #[test]
+    fn clip_dialogue_consistency_does_not_change_the_system_audio_bed() {
+        let bed = stereo_sine(0.2, 1);
+        let mut clips = vec![
+            Some(DecodedClipAudio {
+                bed: Some(bed.clone()),
+                microphone: Some(stereo_sine(0.02, 1)),
+            }),
+            Some(decoded_microphone(0.08)),
+        ];
+
+        match_clip_dialogue_levels(&mut clips, true);
+
+        assert_eq!(clips[0].as_ref().unwrap().bed.as_ref().unwrap(), &bed);
+    }
+
+    #[test]
+    fn clip_dialogue_consistency_is_a_noop_when_disabled() {
+        let bed = stereo_sine(0.2, 1);
+        let microphone = stereo_sine(0.02, 1);
+        let mut clips = vec![
+            Some(DecodedClipAudio {
+                bed: Some(bed.clone()),
+                microphone: Some(microphone.clone()),
+            }),
+            Some(decoded_microphone(0.08)),
+        ];
+
+        let adjustments = match_clip_dialogue_levels(&mut clips, false);
+
+        assert_eq!(adjustments, vec![None, None]);
+        assert_eq!(clips[0].as_ref().unwrap().bed.as_ref().unwrap(), &bed);
+        assert_eq!(
+            clips[0].as_ref().unwrap().microphone.as_ref().unwrap(),
+            &microphone
+        );
+    }
+
+    #[test]
+    fn clip_dialogue_consistency_ignores_room_tone_and_legacy_mixes() {
+        let legacy_mix = stereo_sine(0.04, 1);
+        let mut clips = vec![
+            Some(decoded_microphone(0.00001)),
+            Some(DecodedClipAudio {
+                bed: Some(legacy_mix.clone()),
+                microphone: None,
+            }),
+            Some(decoded_microphone(0.08)),
+        ];
+
+        let adjustments = match_clip_dialogue_levels(&mut clips, true);
+
+        assert_eq!(adjustments, vec![None, None, None]);
+        assert_eq!(
+            clips[1].as_ref().unwrap().bed.as_ref().unwrap(),
+            &legacy_mix
+        );
+    }
+
+    #[test]
+    fn program_mastering_reaches_the_loudness_target_without_crossing_true_peak() {
+        let mut pcm = stereo_sine(0.1, 1);
+        let stats = master_program_audio(&mut pcm, true);
+        assert!(stats.analyzed);
+        assert!((stats.output_lufs.unwrap() - DEFAULT_TARGET_LUFS).abs() < 0.1);
+        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_LIMIT_DBTP + 0.01);
+        assert!(!stats.limited_by_true_peak);
+    }
+
+    #[test]
+    fn program_mastering_does_not_boost_a_quiet_program_past_true_peak() {
+        let mut pcm = stereo_sine(0.001, 1);
+        pcm[0][24_000] = 0.95;
+        pcm[1][24_000] = 0.95;
+        let stats = master_program_audio(&mut pcm, true);
+        assert!(stats.limited_by_true_peak);
+        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_LIMIT_DBTP + 0.01);
+        assert!(stats.output_lufs.unwrap() < DEFAULT_TARGET_LUFS);
+        assert!(stats.warning.is_some());
+    }
+
+    #[test]
+    fn program_mastering_reports_the_gain_cap_when_it_is_the_active_limit() {
+        let mut pcm = stereo_sine(0.001, 1);
+        let stats = master_program_audio(&mut pcm, true);
+
+        assert!(stats.limited_by_gain_cap);
+        assert!(!stats.limited_by_true_peak);
+        assert_eq!(stats.applied_gain_db, MAX_AUTOMATIC_GAIN_DB);
+        assert!(stats
+            .warning
+            .unwrap()
+            .contains("12 dB automatic gain limit"));
+    }
+
+    #[test]
+    fn program_mastering_leaves_silence_unchanged() {
+        let mut pcm = vec![vec![0.0; 48_000], vec![0.0; 48_000]];
+        let stats = master_program_audio(&mut pcm, true);
+        assert!(!stats.analyzed);
+        assert_eq!(stats.applied_gain_db, 0.0);
+        assert!(stats.warning.unwrap().contains("silent"));
+        assert!(pcm.iter().flatten().all(|sample| *sample == 0.0));
     }
 
     #[test]

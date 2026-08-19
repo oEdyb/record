@@ -28,6 +28,14 @@
 			"hint": "0 = mais à esquerda / topo, 100 = mais à direita / inferior"
 		}
 	},
+	"motion": {
+		"title": "Movimento",
+		"speed": "Velocidade",
+		"smooth": "Suave",
+		"snappy": "Ágil",
+		"linear": "Linear",
+		"instant": "Instantâneo"
+	},
 	"speed": {
 		"playbackSpeed": "Velocidade de Reprodução",
 		"selectRegion": "Selecione uma região de velocidade para ajustar",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "Qualidade de Exportação",
-		"low": "Baixa",
-		"medium": "Média",
-		"high": "Alta"
+		"low": "Média",
+		"medium": "Alta",
+		"high": "Máxima"
 	},
 	"gifSettings": {
 		"frameRate": "Taxa de Quadros do GIF",

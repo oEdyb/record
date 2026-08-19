@@ -19,14 +19,20 @@ struct CapturedCursorAsset {
 
 final class MouseButtonTracker {
 	private let lock = NSLock()
-	private var leftDownCount = 0
-	private var leftUpCount = 0
+	private var transitions: [Transition] = []
+	private var isLeftButtonDown = false
 	private var eventTap: CFMachPort?
 	private var runLoopSource: CFRunLoopSource?
 
-	struct Events {
-		let leftDownCount: Int
-		let leftUpCount: Int
+	struct Transition {
+		let kind: String
+		let timestampMs: Int
+		let point: CGPoint
+	}
+
+	struct Batch {
+		let transitions: [Transition]
+		let isLeftButtonDown: Bool
 	}
 
 	func start() -> Bool {
@@ -41,7 +47,7 @@ final class MouseButtonTracker {
 			callback: { _, type, event, userInfo in
 				if let userInfo {
 					let tracker = Unmanaged<MouseButtonTracker>.fromOpaque(userInfo).takeUnretainedValue()
-					tracker.record(type)
+					tracker.record(type, event: event)
 				}
 				return Unmanaged.passUnretained(event)
 			},
@@ -65,16 +71,15 @@ final class MouseButtonTracker {
 		CFRunLoopRunInMode(.defaultMode, 0.001, false)
 	}
 
-	func consume() -> Events {
+	func consume() -> Batch {
 		lock.lock()
 		defer { lock.unlock() }
-		let events = Events(leftDownCount: leftDownCount, leftUpCount: leftUpCount)
-		leftDownCount = 0
-		leftUpCount = 0
-		return events
+		let events = transitions
+		transitions.removeAll(keepingCapacity: true)
+		return Batch(transitions: events, isLeftButtonDown: isLeftButtonDown)
 	}
 
-	private func record(_ type: CGEventType) {
+	private func record(_ type: CGEventType, event: CGEvent) {
 		lock.lock()
 		defer { lock.unlock() }
 		if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -82,9 +87,11 @@ final class MouseButtonTracker {
 			return
 		}
 		if type == .leftMouseDown {
-			leftDownCount += 1
+			isLeftButtonDown = true
+			transitions.append(Transition(kind: "down", timestampMs: timestampMs(), point: event.location))
 		} else if type == .leftMouseUp {
-			leftUpCount += 1
+			isLeftButtonDown = false
+			transitions.append(Transition(kind: "up", timestampMs: timestampMs(), point: event.location))
 		}
 	}
 
@@ -93,6 +100,113 @@ final class MouseButtonTracker {
 			CGEvent.tapEnable(tap: eventTap, enable: true)
 		}
 	}
+}
+
+final class KeyboardActivityTracker {
+	private let lock = NSLock()
+	private var activities: [Activity] = []
+	private var lastTargetLookupMs = 0
+	private var targetLookupInFlight = false
+	private var eventTap: CFMachPort?
+	private var runLoopSource: CFRunLoopSource?
+	private static let targetLookupIntervalMs = 100
+	private let targetQueue = DispatchQueue(
+		label: "co.openscreen.cursor-helper.typing-target",
+		qos: .utility
+	)
+
+	struct Activity {
+		let timestampMs: Int
+		let target: TypingTarget
+	}
+
+	func start() -> Bool {
+		let mask = 1 << CGEventType.keyDown.rawValue
+		guard let tap = CGEvent.tapCreate(
+			tap: .cgSessionEventTap,
+			place: .headInsertEventTap,
+			options: .listenOnly,
+			eventsOfInterest: CGEventMask(mask),
+			callback: { _, type, event, userInfo in
+				if let userInfo {
+					let tracker = Unmanaged<KeyboardActivityTracker>.fromOpaque(userInfo)
+						.takeUnretainedValue()
+					tracker.record(type, event: event)
+				}
+				return Unmanaged.passUnretained(event)
+			},
+			userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+		) else {
+			return false
+		}
+
+		guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+			return false
+		}
+
+		eventTap = tap
+		runLoopSource = source
+		CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+		CGEvent.tapEnable(tap: tap, enable: true)
+		return true
+	}
+
+	func consume() -> [Activity] {
+		lock.lock()
+		defer { lock.unlock() }
+		let consumed = activities
+		activities.removeAll(keepingCapacity: true)
+		return consumed
+	}
+
+	private func record(_ type: CGEventType, event _: CGEvent) {
+		if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+			lock.lock()
+			if let eventTap {
+				CGEvent.tapEnable(tap: eventTap, enable: true)
+			}
+			lock.unlock()
+			return
+		}
+		guard type == .keyDown else {
+			return
+		}
+
+		// Look up at most ten targets per second. Each accepted event is tied to
+		// the target that was focused when that event arrived. If Accessibility
+		// cannot prove that target is a non-secure editable element, drop it.
+		let nowMs = timestampMs()
+		lock.lock()
+		guard nowMs - lastTargetLookupMs >= Self.targetLookupIntervalMs,
+			!targetLookupInFlight,
+			let focused = focusedElement()
+		else {
+			lock.unlock()
+			return
+		}
+		lastTargetLookupMs = nowMs
+		targetLookupInFlight = true
+		lock.unlock()
+
+		targetQueue.async { [weak self] in
+			guard let self else {
+				return
+			}
+			let target = typingTarget(startingAt: focused)
+			self.lock.lock()
+			if let target {
+				self.activities.append(Activity(timestampMs: nowMs, target: target))
+			}
+			self.targetLookupInFlight = false
+			self.lock.unlock()
+		}
+	}
+}
+
+struct TypingTarget {
+	let focus: CGPoint
+	let bounds: CGRect
+	let focusSource: String
 }
 
 func emit(_ fields: [String: Any?]) {
@@ -113,6 +227,166 @@ func stringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
 	}
 
 	return value as? String
+}
+
+func booleanAttribute(_ element: AXUIElement, _ attribute: String) -> Bool? {
+	var value: CFTypeRef?
+	let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+	guard result == .success else {
+		return nil
+	}
+	return value as? Bool
+}
+
+func pointAttribute(_ element: AXUIElement, _ attribute: String) -> CGPoint? {
+	var value: CFTypeRef?
+	let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+	guard result == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else {
+		return nil
+	}
+	let axValue = value as! AXValue
+	guard AXValueGetType(axValue) == .cgPoint else {
+		return nil
+	}
+	var point = CGPoint.zero
+	return AXValueGetValue(axValue, .cgPoint, &point) ? point : nil
+}
+
+func sizeAttribute(_ element: AXUIElement, _ attribute: String) -> CGSize? {
+	var value: CFTypeRef?
+	let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+	guard result == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else {
+		return nil
+	}
+	let axValue = value as! AXValue
+	guard AXValueGetType(axValue) == .cgSize else {
+		return nil
+	}
+	var size = CGSize.zero
+	return AXValueGetValue(axValue, .cgSize, &size) ? size : nil
+}
+
+func elementBounds(_ element: AXUIElement) -> CGRect? {
+	guard let position = pointAttribute(element, kAXPositionAttribute),
+		let size = sizeAttribute(element, kAXSizeAttribute),
+		size.width >= 0,
+		size.height >= 0
+	else {
+		return nil
+	}
+	return CGRect(origin: position, size: size)
+}
+
+func selectedTextBounds(_ element: AXUIElement) -> CGRect? {
+	var rangeValue: CFTypeRef?
+	guard AXUIElementCopyAttributeValue(
+		element,
+		kAXSelectedTextRangeAttribute as CFString,
+		&rangeValue
+	) == .success, let rangeValue else {
+		return nil
+	}
+
+	var boundsValue: CFTypeRef?
+	guard AXUIElementCopyParameterizedAttributeValue(
+		element,
+		kAXBoundsForRangeParameterizedAttribute as CFString,
+		rangeValue,
+		&boundsValue
+	) == .success,
+		let boundsValue,
+		CFGetTypeID(boundsValue) == AXValueGetTypeID()
+	else {
+		return nil
+	}
+	let axValue = boundsValue as! AXValue
+	guard AXValueGetType(axValue) == .cgRect else {
+		return nil
+	}
+	var bounds = CGRect.zero
+	return AXValueGetValue(axValue, .cgRect, &bounds) ? bounds : nil
+}
+
+func focusedElement() -> AXUIElement? {
+	let systemWide = AXUIElementCreateSystemWide()
+	guard AXUIElementSetMessagingTimeout(systemWide, 0.01) == .success else {
+		return nil
+	}
+	var value: CFTypeRef?
+	guard AXUIElementCopyAttributeValue(
+		systemWide,
+		kAXFocusedUIElementAttribute as CFString,
+		&value
+	) == .success,
+		let value,
+		CFGetTypeID(value) == AXUIElementGetTypeID()
+	else {
+		return nil
+	}
+	return (value as! AXUIElement)
+}
+
+enum SafeAXLookup<Value> {
+	case value(Value)
+	case absent
+	case failed
+}
+
+func safeAttribute(_ element: AXUIElement, _ attribute: String) -> SafeAXLookup<CFTypeRef> {
+	var value: CFTypeRef?
+	let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+	if result == .noValue || result == .attributeUnsupported {
+		return .absent
+	}
+	guard result == .success, let value else {
+		return .failed
+	}
+	return .value(value)
+}
+
+func safeStringAttribute(_ element: AXUIElement, _ attribute: String) -> SafeAXLookup<String> {
+	switch safeAttribute(element, attribute) {
+	case let .value(value):
+		guard let string = value as? String else {
+			return .failed
+		}
+		return .value(string)
+	case .absent:
+		return .absent
+	case .failed:
+		return .failed
+	}
+}
+
+func safeBooleanAttribute(_ element: AXUIElement, _ attribute: String) -> SafeAXLookup<Bool> {
+	switch safeAttribute(element, attribute) {
+	case let .value(value):
+		guard let boolean = value as? Bool else {
+			return .failed
+		}
+		return .value(boolean)
+	case .absent:
+		return .absent
+	case .failed:
+		return .failed
+	}
+}
+
+enum SafeAXParent {
+	case parent(AXUIElement)
+	case failed
+}
+
+func safeParentElement(_ element: AXUIElement) -> SafeAXParent {
+	var value: CFTypeRef?
+	let result = AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &value)
+	guard result == .success,
+		let value,
+		CFGetTypeID(value) == AXUIElementGetTypeID()
+	else {
+		return .failed
+	}
+	return .parent(value as! AXUIElement)
 }
 
 func parentElement(_ element: AXUIElement) -> AXUIElement? {
@@ -153,6 +427,99 @@ func isTextInputRole(_ role: String?) -> Bool {
 		role == "AXTextArea" ||
 		role == "AXTextView" ||
 		role == "AXComboBox"
+}
+
+func isSecureTextInput(_ protectedContent: Bool?, role: String?, subrole: String?) -> Bool {
+	if role == "AXSecureTextField" || subrole == "AXSecureTextField" {
+		return true
+	}
+	return protectedContent == true
+}
+
+func typingTarget(startingAt focused: AXUIElement) -> TypingTarget? {
+	guard AXIsProcessTrusted() else {
+		return nil
+	}
+	var pid: pid_t = 0
+	guard AXUIElementGetPid(focused, &pid) == .success else {
+		return nil
+	}
+	let application = AXUIElementCreateApplication(pid)
+	guard AXUIElementSetMessagingTimeout(application, 0.01) == .success else {
+		return nil
+	}
+
+	var element = focused
+	var editableTarget: AXUIElement?
+	var reachedRoot = false
+	for _ in 0..<8 {
+		guard case let .value(role) = safeStringAttribute(element, kAXRoleAttribute) else {
+			return nil
+		}
+		let subrole: String?
+		switch safeStringAttribute(element, kAXSubroleAttribute) {
+		case let .value(value): subrole = value
+		case .absent: subrole = nil
+		case .failed: return nil
+		}
+		let protectedContent: Bool?
+		switch safeBooleanAttribute(element, "AXProtectedContent") {
+		case let .value(value): protectedContent = value
+		case .absent: protectedContent = nil
+		case .failed: return nil
+		}
+		if isSecureTextInput(protectedContent, role: role, subrole: subrole) {
+			return nil
+		}
+		let editable: Bool?
+		switch safeBooleanAttribute(element, "AXEditable") {
+		case let .value(value): editable = value
+		case .absent: editable = nil
+		case .failed: return nil
+		}
+		if editableTarget == nil && (isTextInputRole(role) || editable == true) {
+			editableTarget = element
+		}
+		if role == "AXApplication" {
+			reachedRoot = true
+			break
+		}
+		switch safeParentElement(element) {
+		case let .parent(parent):
+			element = parent
+		case .failed:
+			return nil
+		}
+		if reachedRoot {
+			break
+		}
+	}
+
+	guard reachedRoot,
+		let editableTarget,
+		let bounds = elementBounds(editableTarget),
+		!bounds.isNull,
+		!bounds.isInfinite
+	else {
+		return nil
+	}
+	let resolvedCaret = selectedTextBounds(editableTarget)
+	let caret: CGRect?
+	if let resolvedCaret,
+		!resolvedCaret.isNull,
+		!resolvedCaret.isInfinite,
+		resolvedCaret.origin.x.isFinite,
+		resolvedCaret.origin.y.isFinite,
+		resolvedCaret.width.isFinite,
+		resolvedCaret.height.isFinite
+	{
+		caret = resolvedCaret
+	} else {
+		caret = nil
+	}
+	let focus = caret.map { CGPoint(x: $0.midX, y: $0.midY) }
+		?? CGPoint(x: bounds.midX, y: bounds.midY)
+	return TypingTarget(focus: focus, bounds: bounds, focusSource: caret == nil ? "target" : "caret")
 }
 
 func isPointerRole(_ role: String?, _ subrole: String?, _ description: String?) -> Bool {
@@ -282,10 +649,6 @@ func timestampMs() -> Int {
 	Int(Date().timeIntervalSince1970 * 1000)
 }
 
-func leftButtonDown() -> Bool {
-	CGEventSource.buttonState(.hidSystemState, button: .left)
-}
-
 func requestAccessibilityTrust() -> Bool {
 	let options = [
 		kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
@@ -307,21 +670,25 @@ let intervalMs = max(8, request.sampleIntervalMs ?? 33)
 let accessibilityTrusted = requestAccessibilityTrust()
 let mouseTracker = MouseButtonTracker()
 let mouseTapReady = mouseTracker.start()
+let keyboardTracker = KeyboardActivityTracker()
+let keyboardTapReady = accessibilityTrusted && keyboardTracker.start()
 emit([
 	"type": "ready",
 	"timestampMs": timestampMs(),
 	"accessibilityTrusted": accessibilityTrusted,
 	"mouseTapReady": mouseTapReady,
+	"keyboardTapReady": keyboardTapReady,
 ])
 
 // Process-wide set so each unique cursor shape is serialised at most once,
 // even if the user alternates between shapes (e.g. arrow → text → arrow).
 var emittedAssetIds = Set<String>()
-
 while true {
 	autoreleasepool {
 		mouseTracker.pump()
-		let mouseEvents = mouseTracker.consume()
+		let mouseBatch = mouseTracker.consume()
+		let keyboardActivities = keyboardTracker.consume()
+		let nowMs = timestampMs()
 		let asset = currentCursorAsset()
 		// Only ship the (large) base64 payload the first time a cursor shape is seen;
 		// subsequent samples reference it by assetId so stdout stays small.
@@ -337,16 +704,35 @@ while true {
 				"scaleFactor": asset.scaleFactor,
 			]
 		}
-		emit([
+		let fields: [String: Any?] = [
 			"type": "sample",
-			"timestampMs": timestampMs(),
+			"timestampMs": nowMs,
 			"cursorType": currentCursorType(),
 			"assetId": asset?.id,
 			"asset": assetPayload,
-			"leftButtonDown": leftButtonDown(),
-			"leftButtonPressed": mouseEvents.leftDownCount > 0,
-			"leftButtonReleased": mouseEvents.leftUpCount > 0,
-		])
+			"leftButtonDown": mouseBatch.isLeftButtonDown,
+			"mouseButtonTransitions": mouseBatch.transitions.map { transition in
+				[
+					"kind": transition.kind,
+					"timestampMs": transition.timestampMs,
+					"x": transition.point.x,
+					"y": transition.point.y,
+				] as [String: Any]
+			},
+			"keyboardActivityEvents": keyboardActivities.map { activity in
+				[
+					"timestampMs": activity.timestampMs,
+					"focusX": activity.target.focus.x,
+					"focusY": activity.target.focus.y,
+					"focusSource": activity.target.focusSource,
+					"targetX": activity.target.bounds.origin.x,
+					"targetY": activity.target.bounds.origin.y,
+					"targetWidth": activity.target.bounds.width,
+					"targetHeight": activity.target.bounds.height,
+				] as [String: Any]
+			},
+		]
+		emit(fields)
 		Thread.sleep(forTimeInterval: Double(intervalMs) / 1000.0)
 	}
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 // The regression under test is geometric, so the environment has to have a size:
@@ -14,6 +14,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 
+import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { V4Timeline } from "./V4Timeline";
 
@@ -67,22 +68,43 @@ function clip(startSec: number, endSec: number) {
 function renderTimeline(
 	clips = [clip(0, TOTAL_SEC)],
 	annotation = { id: "ann1", startMs: 10_000, endMs: 11_000 },
+	clipSelection: string | null = null,
+	cameraFullscreenRegions: Array<{
+		id: string;
+		startMs: number;
+		endMs: number;
+		mode: "emphasis";
+		cameraScale: number;
+		source: "auto";
+	}> = [],
+	zoomRegions: Array<{
+		id: string;
+		startMs: number;
+		endMs: number;
+		depth: 3;
+		focus: { cx: number; cy: number };
+		customScale: number;
+		motionSpeed?: 2;
+	}> = [],
 ) {
 	const tl = {
 		clips,
 		assets: [{ id: "a1", label: "rec", durationSec: TOTAL_SEC }],
 		annotationRegions: [annotation],
 		speedRegions: [],
-		cameraFullscreenRegions: [],
-		zoomRegions: [],
+		cameraFullscreenRegions,
+		zoomRegions,
 		trimRanges: [],
 		selection: null,
 		multiSelection: [],
-		clipSelection: null,
+		clipSelection,
 		clearSelection: vi.fn(),
 		selectRegion: vi.fn(),
 		selectClip: vi.fn(),
 		updateAnnotationSpan: vi.fn(async () => {
+			/* the drag only awaits it */
+		}),
+		updateCameraFullscreenSpan: vi.fn(async () => {
 			/* the drag only awaits it */
 		}),
 		addZoom: vi.fn(async () => {
@@ -126,6 +148,55 @@ function zoomIn(notches: number) {
 }
 
 describe("V4Timeline lane pills", () => {
+	it("shows one clean icon pill for a short Zoom that is too narrow for its label", () => {
+		renderTimeline(
+			[clip(0, 35.55)],
+			undefined,
+			null,
+			[],
+			[
+				{
+					id: "first-auto-zoom",
+					startMs: 2_098,
+					endMs: 2_517,
+					depth: 3,
+					focus: { cx: 0.54, cy: 0.5 },
+					customScale: 1.65,
+					motionSpeed: 2,
+				},
+			],
+		);
+
+		const pill = screen.getByTitle("1.65×");
+		expect(Number.parseFloat(pill.style.width)).toBeCloseTo((0.419 / 35.55) * 100, 10);
+		expect(pill.querySelector("svg")).toBeInTheDocument();
+		expect(pill.textContent).toBe("");
+		expect(document.querySelector("[data-zoom-motion-envelope]")).toBeNull();
+	});
+
+	it("shows automatic camera emphasis as a normal editable timeline pill", () => {
+		const { tl } = renderTimeline([clip(0, 20)], undefined, null, [
+			{
+				id: "camera-emphasis-1",
+				startMs: 2_000,
+				endMs: 6_000,
+				mode: "emphasis",
+				cameraScale: 1.35,
+				source: "auto",
+			},
+		]);
+
+		const pill = screen.getByTitle("labels.cameraEmphasis");
+		expect(pill.style.left).toBe("10%");
+		expect(pill.style.width).toBe("20%");
+
+		fireEvent.pointerDown(pill, { clientX: 180 });
+		window.dispatchEvent(new MouseEvent("pointerup", { clientX: 180 }));
+		expect(tl.selectRegion).toHaveBeenCalledWith("cameraFullscreen", "camera-emphasis-1", {
+			additive: false,
+		});
+	});
+
 	it("draws a pill exactly as wide as its region, at any zoom", () => {
 		// 1 s of 1800 s. The old `Math.max(1.5, …)` floor drew this as 1.5% — 27
 		// seconds of ruler for a one-second annotation — and did it at every zoom,
@@ -261,5 +332,31 @@ describe("V4Timeline clip row", () => {
 				3,
 			);
 		}
+	});
+
+	it("shows the recording insertion boundary after the clip under the playhead", () => {
+		act(() => useProjectStore.getState().setCurrentTime(650));
+		renderTimeline(CLIPS);
+
+		// Each card ends 6px before the next clip's true start. The marker belongs
+		// in the middle of that visual gap, not on the next card's leading edge.
+		expect(screen.getByTestId("timeline-insertion-boundary").style.left).toBe(
+			`calc(${startsAt(900)} - 3px)`,
+		);
+	});
+
+	it("keeps the first insertion boundary inside the clip row", () => {
+		act(() => useProjectStore.getState().setCurrentTime(0));
+		renderTimeline(CLIPS);
+
+		const marker = screen.getByTestId("timeline-insertion-boundary");
+		expect(marker.style.left).toBe("0%");
+		expect(marker.style.transform).toBe("translate(0px, -50%)");
+	});
+
+	it("does not put a delete button inside a selected clip", () => {
+		renderTimeline(CLIPS, undefined, "c@600");
+
+		expect(screen.queryByRole("button", { name: "toolbar.deleteClip" })).not.toBeInTheDocument();
 	});
 });

@@ -80,6 +80,8 @@
 		"openProject": "Open project",
 		"newProject": "New project",
 		"saveProject": "Save project",
+		"regenerateAutomaticEdits": "Regenerate automatic edits",
+		"regeneratingAutomaticEdits": "Regenerating automatic edits…",
 		"unsaved": "Unsaved",
 		"saved": "Saved",
 		"switchToLightTheme": "Switch to light theme",
@@ -94,7 +96,7 @@
 		"modes": {
 			"media": "Media",
 			"edit": "Edit",
-			"rec": "Rec"
+			"rec": "Record"
 		}
 	},
 	"rec": {
@@ -168,6 +170,10 @@
 		"codec": "Codec",
 		"codecBestCompatibility": "Best compatibility",
 		"codecMaySupportVary": "May not be supported by every system encoder",
+		"estimatedSize": "Estimated size",
+		"normalizeVolume": "Normalize volume",
+		"normalizeVolumeHint": "Master the full video to -14 LUFS and keep true peaks at or below -1 dBTP.",
+		"audioLevel": "Audio:",
 		"size": "Size",
 		"loopGif": "Loop GIF",
 		"loopOn": "Loop on",
@@ -205,6 +211,7 @@
 		"generateCaptions": "Generate captions",
 		"cropDescription": "Reframe the recording — pick an aspect ratio and zoom into the region you want to keep.",
 		"openCrop": "Open crop…",
+		"cameraEmphasisDescription": "The camera grows gently while the screen stays visible, then returns to its normal size.",
 		"cameraFullscreenDescription": "While this region plays, the camera takes the whole frame — no border, no rounding, no background — and eases back at the end. Drag the region's edges on the timeline to change when it starts and how long it lasts.",
 		"deleteRegion": "Delete region",
 		"freehandRendersAsBox": "In the export, a freehand shape is covered by its bounding box — over-covered, never under."

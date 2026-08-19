@@ -6,10 +6,16 @@ import { type Rectangle, screen, systemPreferences } from "electron";
 import type {
 	CursorRecordingData,
 	CursorRecordingSample,
+	KeyboardActivitySample,
 	NativeCursorAsset,
 	NativeCursorType,
 } from "../../../../src/native/contracts";
 import { clamp } from "../../../../src/utils/math";
+import {
+	type MacMouseButtonTransition,
+	normalizeMacMouseButtonTransitions,
+	resolveMacMouseInteraction,
+} from "./macInputEvents";
 import type { CursorRecordingSession } from "./session";
 
 interface MacCursorAssetPayload {
@@ -24,9 +30,21 @@ interface MacCursorAssetPayload {
 
 interface MacNativeCursorRecordingSessionOptions {
 	getDisplayBounds: () => Rectangle | null;
+	isDirectionExcludedPoint?: (point: { x: number; y: number }) => boolean;
 	maxSamples: number;
 	sampleIntervalMs: number;
 	startTimeMs?: number;
+}
+
+interface MacKeyboardActivityEvent {
+	timestampMs: number;
+	focusX: number;
+	focusY: number;
+	focusSource?: "caret" | "target";
+	targetX: number;
+	targetY: number;
+	targetWidth: number;
+	targetHeight: number;
 }
 
 type MacCursorEvent =
@@ -35,6 +53,7 @@ type MacCursorEvent =
 			timestampMs: number;
 			accessibilityTrusted?: boolean;
 			mouseTapReady?: boolean;
+			keyboardTapReady?: boolean;
 	  }
 	| {
 			type: "sample";
@@ -45,6 +64,15 @@ type MacCursorEvent =
 			leftButtonDown?: boolean;
 			leftButtonPressed?: boolean;
 			leftButtonReleased?: boolean;
+			mouseButtonTransitions?: MacMouseButtonTransition[];
+			keyboardActivityEvents?: MacKeyboardActivityEvent[];
+			typingKeyDownCount?: number;
+			typingFocusX?: number;
+			typingFocusY?: number;
+			typingTargetX?: number;
+			typingTargetY?: number;
+			typingTargetWidth?: number;
+			typingTargetHeight?: number;
 	  };
 
 const HELPER_NAME = "openscreen-macos-cursor-helper";
@@ -180,6 +208,7 @@ function normalizeCursorType(value: unknown): NativeCursorType | null {
 
 export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 	private samples: CursorRecordingSample[] = [];
+	private keyboardActivity: KeyboardActivitySample[] = [];
 	private assets = new Map<string, NativeCursorAsset>();
 	private process: ChildProcessByStdio<null, Readable, Readable> | null = null;
 	private lineBuffer = "";
@@ -198,6 +227,7 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 
 	async start(): Promise<void> {
 		this.samples = [];
+		this.keyboardActivity = [];
 		this.assets.clear();
 		this.lineBuffer = "";
 		this.startTimeMs = this.options.startTimeMs ?? Date.now();
@@ -275,10 +305,11 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		}
 
 		return {
-			version: 2,
+			version: 4,
 			provider: this.assets.size > 0 ? "native" : "none",
 			samples: this.samples,
 			assets: [...this.assets.values()],
+			keyboardActivity: this.keyboardActivity,
 		};
 	}
 
@@ -334,20 +365,130 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 					"[cursor-macos] Accessibility is not trusted; text/pointer affordance detection disabled (bitmap capture still active).",
 				);
 			}
+			if (payload.accessibilityTrusted === true && payload.keyboardTapReady === false) {
+				console.warn("[cursor-macos] Keyboard activity tap is unavailable.");
+			}
 			this.resolveReady();
 			return;
 		}
 
 		if (payload.type === "sample") {
 			this.rememberAsset(payload.asset);
-			this.captureSample(
-				payload.timestampMs,
-				normalizeCursorType(payload.cursorType),
-				payload.assetId ?? null,
-				payload.leftButtonDown === true,
-				payload.leftButtonPressed === true,
-				payload.leftButtonReleased === true,
-			);
+			const cursorType = normalizeCursorType(payload.cursorType);
+			const assetId = payload.assetId ?? null;
+			const transitions = normalizeMacMouseButtonTransitions(payload.mouseButtonTransitions);
+			if (transitions.length > 0) {
+				for (const transition of transitions) {
+					const isDown = transition.kind === "down";
+					this.captureSample(transition.timestampMs, cursorType, assetId, isDown, isDown, !isDown, {
+						x: transition.x,
+						y: transition.y,
+					});
+				}
+				this.captureSample(
+					payload.timestampMs,
+					cursorType,
+					assetId,
+					payload.leftButtonDown === true,
+					false,
+					false,
+					undefined,
+					false,
+				);
+			} else {
+				this.captureSample(
+					payload.timestampMs,
+					cursorType,
+					assetId,
+					payload.leftButtonDown === true,
+					payload.leftButtonPressed === true,
+					payload.leftButtonReleased === true,
+				);
+			}
+			if (Array.isArray(payload.keyboardActivityEvents)) {
+				for (const activity of payload.keyboardActivityEvents) {
+					this.captureKeyboardActivity(activity);
+				}
+			} else {
+				this.captureLegacyKeyboardActivity(payload);
+			}
+		}
+	}
+
+	private captureLegacyKeyboardActivity(payload: Extract<MacCursorEvent, { type: "sample" }>) {
+		const values = [
+			payload.typingKeyDownCount,
+			payload.typingFocusX,
+			payload.typingFocusY,
+			payload.typingTargetX,
+			payload.typingTargetY,
+			payload.typingTargetWidth,
+			payload.typingTargetHeight,
+		];
+		if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) return;
+
+		const count = Math.round(payload.typingKeyDownCount!);
+		if (count <= 0) return;
+		this.captureKeyboardActivity(
+			{
+				timestampMs: payload.timestampMs,
+				focusX: payload.typingFocusX!,
+				focusY: payload.typingFocusY!,
+				targetX: payload.typingTargetX!,
+				targetY: payload.typingTargetY!,
+				targetWidth: payload.typingTargetWidth!,
+				targetHeight: payload.typingTargetHeight!,
+			},
+			count,
+		);
+	}
+
+	private captureKeyboardActivity(payload: MacKeyboardActivityEvent, count = 1) {
+		const values = [
+			payload.timestampMs,
+			payload.focusX,
+			payload.focusY,
+			payload.targetX,
+			payload.targetY,
+			payload.targetWidth,
+			payload.targetHeight,
+		];
+		if (!values.every(Number.isFinite) || count <= 0) return;
+		const bounds = this.options.getDisplayBounds();
+		if (!bounds) return;
+		const width = Math.max(1, bounds.width);
+		const height = Math.max(1, bounds.height);
+		const focusX = payload.focusX;
+		const focusY = payload.focusY;
+		const normalizedX = (focusX - bounds.x) / width;
+		const normalizedY = (focusY - bounds.y) / height;
+		if (normalizedX < 0 || normalizedX > 1 || normalizedY < 0 || normalizedY > 1) return;
+
+		const targetLeft = clamp((payload.targetX - bounds.x) / width, 0, 1);
+		const targetTop = clamp((payload.targetY - bounds.y) / height, 0, 1);
+		const targetRight = clamp((payload.targetX + payload.targetWidth - bounds.x) / width, 0, 1);
+		const targetBottom = clamp((payload.targetY + payload.targetHeight - bounds.y) / height, 0, 1);
+		const directionExcluded =
+			this.options.isDirectionExcludedPoint?.({ x: focusX, y: focusY }) === true;
+		this.keyboardActivity.push({
+			timeMs: Math.max(0, payload.timestampMs - this.startTimeMs),
+			cx: normalizedX,
+			cy: normalizedY,
+			count,
+			...(payload.focusSource === "caret" || payload.focusSource === "target"
+				? { focusSource: payload.focusSource }
+				: {}),
+			targetRect: {
+				x: targetLeft,
+				y: targetTop,
+				width: Math.max(0, targetRight - targetLeft),
+				height: Math.max(0, targetBottom - targetTop),
+			},
+			...(directionExcluded ? { directionExcluded: true } : {}),
+		});
+
+		if (this.keyboardActivity.length > this.options.maxSamples) {
+			this.keyboardActivity.shift();
 		}
 	}
 
@@ -358,8 +499,10 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		leftButtonDown: boolean,
 		leftButtonPressed: boolean,
 		leftButtonReleased: boolean,
+		cursorPoint?: { x: number; y: number },
+		inferStateTransition = true,
 	) {
-		const cursor = screen.getCursorScreenPoint();
+		const cursor = cursorPoint ?? screen.getCursorScreenPoint();
 		const bounds = this.options.getDisplayBounds() ?? screen.getDisplayNearestPoint(cursor).bounds;
 		const width = Math.max(1, bounds.width);
 		const height = Math.max(1, bounds.height);
@@ -377,20 +520,23 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		}
 		const visible =
 			this.consecutiveOutsideSamples < MacNativeCursorRecordingSession.OUTSIDE_HIDE_THRESHOLD;
-		const interactionType =
-			leftButtonPressed || (leftButtonDown && !this.previousLeftButtonDown)
-				? "click"
-				: leftButtonReleased || (!leftButtonDown && this.previousLeftButtonDown)
-					? "mouseup"
-					: "move";
+		const interactionType = resolveMacMouseInteraction({
+			leftButtonDown,
+			leftButtonPressed,
+			leftButtonReleased,
+			previousLeftButtonDown: this.previousLeftButtonDown,
+			inferStateTransition,
+		});
 		this.previousLeftButtonDown = leftButtonDown;
 
+		const directionExcluded = this.options.isDirectionExcludedPoint?.(cursor) === true;
 		this.samples.push({
 			timeMs: Math.max(0, timestampMs - this.startTimeMs),
 			cx: clamp(normalizedX, 0, 1),
 			cy: clamp(normalizedY, 0, 1),
 			visible,
 			interactionType,
+			...(directionExcluded ? { directionExcluded: true } : {}),
 			...(assetId ? { assetId } : {}),
 			...(cursorType ? { cursorType } : {}),
 		});

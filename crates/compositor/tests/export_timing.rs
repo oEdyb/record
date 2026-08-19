@@ -136,6 +136,8 @@ fn mp4_export_frame_count_follows_output_fps() {
         height: 360,
         fps: Some(30),
         codec: ExportCodec::H264,
+        bitrate: None,
+        normalize_audio: true,
     };
     let comp = Compositor::new_sized(&gpu, params.width, params.height).expect("compositor");
     let out = dir.join("out_timing.mp4");

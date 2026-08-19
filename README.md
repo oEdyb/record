@@ -1,3 +1,14 @@
+# record
+
+This is the private working repository for **record**, a Mac-first clip-native recorder and editor.
+The code started from the MIT-licensed OpenScreen continuation. Runtime identifiers and some
+documentation still use the inherited name until the planned compatibility-safe rebrand.
+
+The OpenScreen material below is retained for upstream attribution and technical history. Its
+public links, release instructions, and “free forever” product promises do not describe record.
+
+---
+
 <p align="center">
   <img src="public/openscreen.png" alt="OpenScreen Logo" width="64" />
 </p>

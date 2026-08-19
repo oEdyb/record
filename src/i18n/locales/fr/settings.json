@@ -28,6 +28,14 @@
 			"hint": "0 = tout à gauche / en haut, 100 = tout à droite / en bas"
 		}
 	},
+	"motion": {
+		"title": "Mouvement",
+		"speed": "Vitesse",
+		"smooth": "Fluide",
+		"snappy": "Vif",
+		"linear": "Linéaire",
+		"instant": "Instantané"
+	},
 	"speed": {
 		"playbackSpeed": "Vitesse de lecture",
 		"selectRegion": "Sélectionnez une région de vitesse à ajuster",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "Résolution d'export",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "Moyenne",
+		"medium": "Élevée",
+		"high": "Maximale"
 	},
 	"gifSettings": {
 		"frameRate": "Fréquence d'images GIF",

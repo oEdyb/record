@@ -13,6 +13,7 @@
 // extra state, no caches — the document is the single source of truth.
 
 import { useCallback, useMemo } from "react";
+import { saveEditorDefaultPreferences } from "./editingPreferences";
 import {
 	type EditorSettingsPatch,
 	type EditorSettingsSnapshot,
@@ -48,7 +49,9 @@ export function useEditorSettings(): UseEditorSettingsResult {
 			if (!doc) return;
 			const next = patchEditorSettings(doc, patch);
 			setDocument(next);
-			await saveDocument(next);
+			if (await saveDocument(next)) {
+				saveEditorDefaultPreferences(getEditorSettings(next));
+			}
 		},
 		[setDocument, saveDocument],
 	);
@@ -65,7 +68,9 @@ export function useEditorSettings(): UseEditorSettingsResult {
 	const commit = useCallback(async () => {
 		const doc = useProjectStore.getState().document;
 		if (!doc) return;
-		await saveDocument(doc);
+		if (await saveDocument(doc)) {
+			saveEditorDefaultPreferences(getEditorSettings(doc));
+		}
 	}, [saveDocument]);
 
 	return { settings, hasDocument, set, setLive, commit };

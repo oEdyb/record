@@ -266,6 +266,19 @@ describe("DocumentService", () => {
 			expect(path.isAbsolute(updated.assets[0]?.originalPath ?? "")).toBe(true);
 		});
 
+		it("persists the stable recording import identity on its asset", async () => {
+			const doc = await service.createProject("P");
+			const updated = await service.addAsset(doc.project.id, {
+				path: "/tmp/recording.mp4",
+				recordingImportId: "recording-42",
+			});
+
+			expect(updated.assets[0]?.recordingImportId).toBe("recording-42");
+			await expect(service.getProject(doc.project.id)).resolves.toMatchObject({
+				assets: [{ recordingImportId: "recording-42" }],
+			});
+		});
+
 		it("rejects unsupported video extensions", async () => {
 			const doc = await service.createProject("P");
 			await expect(

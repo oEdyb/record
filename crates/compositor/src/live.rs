@@ -23,13 +23,13 @@
 //! le napi — le `gen` est l'identité de la frame (cf. `LatestFrame`).
 
 use crate::compositor::{Compositor, LiveParams};
-use crate::regions::speed_at;
-use crate::scene::Scene;
 use crate::config::{self, Cfg};
 use crate::cursor::CursorTrack;
 use crate::d3d::Gpu;
 use crate::frame_geometry::webcam_is_real;
 use crate::pipeline::Decoder;
+use crate::regions::speed_at;
+use crate::scene::Scene;
 use crate::timeline_walk::{frame_step, FrameStep, NextFrameTime};
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -131,11 +131,20 @@ unsafe fn open_and_seek_clip(
         wf = wdec.seek_to(0.0)?;
     }
     if sf.is_null() {
-        anyhow::bail!("clip préchargé vide au temps source {source_time_sec:.3}s (screen=\"{screen_path}\")");
+        anyhow::bail!(
+            "clip préchargé vide au temps source {source_time_sec:.3}s (screen=\"{screen_path}\")"
+        );
     }
     let idx = (source_time_sec * sdec.fps()).round().max(0.0) as u32;
-    let cursor_track = CursorTrack::load(&format!("{screen_path}.cursor.json"), 0.0, 24.0 * 3600.0).ok();
-    Ok(PrefetchedClip { sdec, wdec, webcam_offset_sec, idx, cursor_track })
+    let cursor_track =
+        CursorTrack::load(&format!("{screen_path}.cursor.json"), 0.0, 24.0 * 3600.0).ok();
+    Ok(PrefetchedClip {
+        sdec,
+        wdec,
+        webcam_offset_sec,
+        idx,
+        cursor_track,
+    })
 }
 
 /// Nombre de paires de décodeurs INACTIVES gardées ouvertes en plus de la paire active.
@@ -207,16 +216,31 @@ unsafe fn swap_clip_pooled(
             let mut pooled = pool.remove(i);
             // Reseek les décodeurs poolés AVANT de les installer. Échec → on les jette et on
             // ouvre à neuf (chemin connu sûr), jamais une frame vide.
-            if seek_pair(&mut pooled.clip.sdec, &mut pooled.clip.wdec, t, request.webcam_offset_sec)? {
+            if seek_pair(
+                &mut pooled.clip.sdec,
+                &mut pooled.clip.wdec,
+                t,
+                request.webcam_offset_sec,
+            )? {
                 pooled.clip.idx = (t * pooled.clip.sdec.fps()).round().max(0.0) as u32;
                 hit = true;
                 pooled.clip
             } else {
                 drop(pooled);
-                player.open_clip(&request.screen_path, &request.webcam_path, request.webcam_offset_sec, t)?
+                player.open_clip(
+                    &request.screen_path,
+                    &request.webcam_path,
+                    request.webcam_offset_sec,
+                    t,
+                )?
             }
         }
-        None => player.open_clip(&request.screen_path, &request.webcam_path, request.webcam_offset_sec, t)?,
+        None => player.open_clip(
+            &request.screen_path,
+            &request.webcam_path,
+            request.webcam_offset_sec,
+            t,
+        )?,
     };
     let outgoing = player.swap_active(incoming);
     // Met la paire quittée en pool : dédup par clé (jamais deux entrées d'un même média), puis
@@ -238,7 +262,11 @@ unsafe fn swap_clip_pooled(
     if timing {
         eprintln!(
             "[clipswitch] {} {:.1}ms (t_src={:.2}s, pool={})",
-            if hit { "POOL_HIT reseek" } else { "OPEN     fresh " },
+            if hit {
+                "POOL_HIT reseek"
+            } else {
+                "OPEN     fresh "
+            },
             t0.elapsed().as_secs_f64() * 1000.0,
             t,
             pool.len(),
@@ -291,8 +319,13 @@ impl Player {
         webcam_offset_sec: f64,
         source_time_sec: f64,
     ) -> Result<()> {
-        let prefetched =
-            open_and_seek_clip(screen_path, webcam_path, webcam_offset_sec, source_time_sec, &self.gpu)?;
+        let prefetched = open_and_seek_clip(
+            screen_path,
+            webcam_path,
+            webcam_offset_sec,
+            source_time_sec,
+            &self.gpu,
+        )?;
         self.apply_prefetched(prefetched);
         Ok(())
     }
@@ -323,7 +356,12 @@ impl Player {
         // Les DEUX flux doivent avoir une frame : `compose_frame` les échantillonne tous les
         // deux sans condition, un seul manquant suffit à le faire échouer (d'où le `false` que
         // `seek_pair` peut rendre → l'appelant retombe sur l'ouverture complète).
-        if !seek_pair(&mut self.sdec, &mut self.wdec, source_time_sec, self.webcam_offset_sec)? {
+        if !seek_pair(
+            &mut self.sdec,
+            &mut self.wdec,
+            source_time_sec,
+            self.webcam_offset_sec,
+        )? {
             return Ok(false);
         }
         self.idx = (source_time_sec * self.sdec.fps()).round().max(0.0) as u32;
@@ -369,7 +407,13 @@ impl Player {
         webcam_offset_sec: f64,
         source_time_sec: f64,
     ) -> Result<PrefetchedClip> {
-        open_and_seek_clip(screen, webcam, webcam_offset_sec, source_time_sec, &self.gpu)
+        open_and_seek_clip(
+            screen,
+            webcam,
+            webcam_offset_sec,
+            source_time_sec,
+            &self.gpu,
+        )
     }
 
     /// Temps source courant du décodeur écran — utilisé par `render_thread` pour détecter le
@@ -408,7 +452,12 @@ impl Player {
     /// propre EOF — un clip webcam plus court que l'écran, cas normal quand la caméra
     /// s'arrête avant la capture — elle TIENT sa dernière image et laisse l'écran
     /// continuer seul, plutôt que de reboucler au début.
-    pub unsafe fn step(&mut self, comp: &Compositor, cfg: &Cfg, target_source_time: f64) -> Result<bool> {
+    pub unsafe fn step(
+        &mut self,
+        comp: &Compositor,
+        cfg: &Cfg,
+        target_source_time: f64,
+    ) -> Result<bool> {
         let use_current = self.use_current_on_next_step;
         self.use_current_on_next_step = false;
 
@@ -526,7 +575,12 @@ impl Player {
     /// "compte de frames" qui rewindait tout au frame 0 pour le moindre seek arrière et n'avait
     /// aucun raccourci keyframe pour les seeks avant lointains (lent ET, combiné au bug de
     /// `set_time`, incorrect au-delà de 6s sur un enregistrement réel).
-    pub unsafe fn present_frame(&mut self, comp: &Compositor, cfg: &Cfg, target_sec: f64) -> Result<bool> {
+    pub unsafe fn present_frame(
+        &mut self,
+        comp: &Compositor,
+        cfg: &Cfg,
+        target_sec: f64,
+    ) -> Result<bool> {
         let sf = self.sdec.seek_to(target_sec)?;
         let wf = self
             .wdec
@@ -618,6 +672,10 @@ struct ActiveClipRequest {
     clip_index: usize,
     /// Playhead exprimé sur l'horloge source écran du nouveau clip.
     source_time_sec: f64,
+    /// Present only for the atomic renderer transport command. Legacy clip switches
+    /// leave both transport fields empty and keep the current play state unchanged.
+    transport_generation: Option<u64>,
+    playing_after_seek: Option<bool>,
 }
 
 fn same_source_path(a: &str, b: &str) -> bool {
@@ -641,12 +699,16 @@ fn find_scene_clip_index(
     webcam_path: &str,
     webcam_offset_sec: f64,
 ) -> Option<usize> {
-    scene.clips.iter()
+    scene
+        .clips
+        .iter()
         .position(|clip| scene_clip_matches(clip, screen_path, webcam_path, webcam_offset_sec))
-        .or_else(|| scene.clips.iter().position(|clip| {
-            same_source_path(&clip.screen_path, screen_path)
-                && same_source_path(&clip.webcam_path, webcam_path)
-        }))
+        .or_else(|| {
+            scene.clips.iter().position(|clip| {
+                same_source_path(&clip.screen_path, screen_path)
+                    && same_source_path(&clip.webcam_path, webcam_path)
+            })
+        })
 }
 
 /// Paths and the asset-level webcam offset are identical for multiple cuts of one recording,
@@ -658,7 +720,9 @@ fn resolve_scene_clip_index(
     webcam_path: &str,
     webcam_offset_sec: f64,
 ) -> Option<usize> {
-    if scene.clips.get(requested_clip_index)
+    if scene
+        .clips
+        .get(requested_clip_index)
         .is_some_and(|clip| scene_clip_matches(clip, screen_path, webcam_path, webcam_offset_sec))
     {
         Some(requested_clip_index)
@@ -669,11 +733,7 @@ fn resolve_scene_clip_index(
 
 fn scene_for_clip(scene: &Scene, clip_index: usize) -> Scene {
     match scene.clips.get(clip_index) {
-        Some(clip) => scene.for_clip_window(
-            clip_index,
-            clip.source_start_sec,
-            clip.source_end_sec,
-        ),
+        Some(clip) => scene.for_clip_window(clip_index, clip.source_start_sec, clip.source_end_sec),
         None => scene.clone(),
     }
 }
@@ -688,7 +748,7 @@ fn scene_for_clip(scene: &Scene, clip_index: usize) -> Scene {
 /// est l'IDENTITÉ de la frame : le consommateur (`read_frame`) ne repaie le clone + l'IPC
 /// que lorsqu'elle change. `None` = "aucune frame composée pour l'instant" (toutes les
 /// lectures avant la 1re frame composée retournent `None` côté napi, jamais un buffer vide).
-type LatestFrame = (u64, u32, u32, Vec<u8>);
+pub type LatestFrame = (u64, u32, u32, f64, usize, u64, Vec<u8>);
 
 /// État partagé thread appelant → thread de rendu (commandes sans blocage).
 struct Shared {
@@ -708,6 +768,9 @@ struct Shared {
     requested_frame: Mutex<Option<f64>>,
     /// Changement de sources consommé par le thread de rendu, seul propriétaire des décodeurs.
     active_clip_request: Mutex<Option<ActiveClipRequest>>,
+    /// Highest atomic transport generation accepted from the renderer. It prevents
+    /// a late IPC command from replacing a newer pending anchor.
+    latest_transport_generation: AtomicU64,
     /// scène de l'app (contrat) ; appliquée au compositeur quand `scene_dirty`.
     scene: Mutex<Option<Scene>>,
     scene_dirty: AtomicBool,
@@ -771,16 +834,23 @@ impl LiveView {
             inspector: Mutex::new(InspectorParams::default()),
             requested_frame: Mutex::new(None),
             active_clip_request: Mutex::new(None),
+            latest_transport_generation: AtomicU64::new(0),
             scene: Mutex::new(None),
             scene_dirty: AtomicBool::new(false),
-            playing: AtomicBool::new(true),
+            // The renderer owns transport. Starting paused prevents the native decoder
+            // from running ahead before the first atomic source-time anchor arrives.
+            playing: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             latest_frame: Mutex::new(None),
             frame_gen: AtomicU64::new(0),
             fatal: Mutex::new(None),
         });
         let sh = shared.clone();
-        let (s, wc, cj) = (screen.to_string(), webcam.to_string(), cursor_json.to_string());
+        let (s, wc, cj) = (
+            screen.to_string(),
+            webcam.to_string(),
+            cursor_json.to_string(),
+        );
         let thread = std::thread::spawn(move || {
             if let Err(e) = unsafe { render_thread(sh.clone(), &s, &wc, &cj) } {
                 eprintln!("[live] render thread error: {e:#}");
@@ -790,7 +860,10 @@ impl LiveView {
             }
         });
 
-        Ok(LiveView { shared, thread: Some(thread) })
+        Ok(LiveView {
+            shared,
+            thread: Some(thread),
+        })
     }
 
     /// Met à jour la résolution cible du preview. Force le redimensionnement des
@@ -809,7 +882,11 @@ impl LiveView {
     /// Message de l'erreur qui a tué le thread de rendu, `None` tant qu'il tourne.
     /// Définitif : le thread ne redémarre pas.
     pub fn fatal_error(&self) -> Option<String> {
-        self.shared.fatal.lock().ok().and_then(|guard| guard.clone())
+        self.shared
+            .fatal
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 
     /// Récupère la dernière frame readback (gen + taille + RGBA8 tightly-packed).
@@ -818,7 +895,7 @@ impl LiveView {
     /// FFI vers le Buffer napi). Le `Vec<u8>` retourné a `len() == w*h*4`.
     /// Préférer `latest_frame_since` sur le chemin chaud : il évite ce clone quand
     /// le consommateur possède déjà la génération courante.
-    pub fn latest_frame(&self) -> Option<(u64, u32, u32, Vec<u8>)> {
+    pub fn latest_frame(&self) -> Option<LatestFrame> {
         self.shared
             .latest_frame
             .lock()
@@ -834,7 +911,7 @@ impl LiveView {
     /// frame figée — on n'exécute PAS le clone `O(w·h)` : c'est tout l'intérêt du
     /// compteur. Le consommateur passe la dernière génération qu'il a peinte (`0` au
     /// départ) ; `None` ⇒ il ne fait rien, `Some` ⇒ il peint et retient `gen`.
-    pub fn latest_frame_since(&self, since_gen: u64) -> Option<(u64, u32, u32, Vec<u8>)> {
+    pub fn latest_frame_since(&self, since_gen: u64) -> Option<LatestFrame> {
         let mut guard = self.shared.latest_frame.lock().ok()?;
         match guard.as_ref() {
             // Le buffer est EMPORTÉ, pas copié. Le thread de rendu le remplace à chaque
@@ -953,6 +1030,49 @@ impl LiveView {
                 webcam_offset_sec,
                 clip_index,
                 source_time_sec: source_time_sec.max(0.0),
+                transport_generation: None,
+                playing_after_seek: None,
+            });
+        }
+    }
+
+    /// Applies clip identity, source time, and play state as one ordered transport anchor.
+    /// Newer generations always win, even if Electron delivers an older IPC request late.
+    pub fn sync_transport(
+        &self,
+        generation: u64,
+        playing: bool,
+        screen_path: &str,
+        webcam_path: &str,
+        webcam_offset_sec: f64,
+        clip_index: usize,
+        source_time_sec: f64,
+    ) {
+        let previous = self
+            .shared
+            .latest_transport_generation
+            .fetch_max(generation, Ordering::AcqRel);
+        if generation < previous {
+            return;
+        }
+        if let Ok(mut request) = self.shared.active_clip_request.lock() {
+            // A newer caller can update the atomic while this caller waits for the lock.
+            if self
+                .shared
+                .latest_transport_generation
+                .load(Ordering::Acquire)
+                != generation
+            {
+                return;
+            }
+            *request = Some(ActiveClipRequest {
+                screen_path: screen_path.to_string(),
+                webcam_path: webcam_path.to_string(),
+                webcam_offset_sec,
+                clip_index,
+                source_time_sec: source_time_sec.max(0.0),
+                transport_generation: Some(generation),
+                playing_after_seek: Some(playing),
             });
         }
     }
@@ -1016,13 +1136,17 @@ pub struct PausedPreviews<K> {
 
 impl<K> Default for PausedPreviews<K> {
     fn default() -> Self {
-        Self { was_playing: Vec::new() }
+        Self {
+            was_playing: Vec::new(),
+        }
     }
 }
 
 impl<K: Copy + PartialEq> PausedPreviews<K> {
     /// Pauses every preview and reports what each one was doing.
-    pub fn pause<'a, V: PreviewTransport + 'a>(views: impl IntoIterator<Item = (K, &'a V)>) -> Self {
+    pub fn pause<'a, V: PreviewTransport + 'a>(
+        views: impl IntoIterator<Item = (K, &'a V)>,
+    ) -> Self {
         let mut was_playing = Vec::new();
         for (key, view) in views {
             was_playing.push((key, view.playing()));
@@ -1032,7 +1156,10 @@ impl<K: Copy + PartialEq> PausedPreviews<K> {
     }
 
     /// Gives every preview the snapshot knows about the state it was found in.
-    pub fn restore<'a, V: PreviewTransport + 'a>(&self, views: impl IntoIterator<Item = (K, &'a V)>) {
+    pub fn restore<'a, V: PreviewTransport + 'a>(
+        &self,
+        views: impl IntoIterator<Item = (K, &'a V)>,
+    ) {
         for (key, view) in views {
             if let Some((_, was_playing)) = self.was_playing.iter().find(|(k, _)| *k == key) {
                 view.set_playing(*was_playing);
@@ -1149,7 +1276,11 @@ unsafe fn advance_to_next_scene_clip(
     // de la franchir, bien ou mal ciblée) — on le consomme s'il correspond, on l'abandonne
     // sinon, dans tous les cas il ne doit pas survivre à cet appel.
     let ready = prefetch.take().and_then(|(idx, rx)| {
-        if idx == next_index { rx.try_recv().ok() } else { None }
+        if idx == next_index {
+            rx.try_recv().ok()
+        } else {
+            None
+        }
     });
 
     // Le curseur préchargé (voir `PrefetchedClip::cursor_track`) doit être extrait AVANT de
@@ -1166,7 +1297,9 @@ unsafe fn advance_to_next_scene_clip(
             Ok(())
         }
         Some(Err(e)) => {
-            eprintln!("[live] préchargement du clip suivant: {e:#} — repli sur ouverture synchrone");
+            eprintln!(
+                "[live] préchargement du clip suivant: {e:#} — repli sur ouverture synchrone"
+            );
             player.set_active_clip(
                 &next_clip.screen_path,
                 &next_clip.webcam_path,
@@ -1233,7 +1366,10 @@ fn preview_render_size(scene: Option<&Scene>, pw: u32, ph: u32) -> (u32, u32) {
     let Some(scene) = scene else {
         return (pw, ph);
     };
-    let (ow, oh) = (scene.output.width.max(1) as f64, scene.output.height.max(1) as f64);
+    let (ow, oh) = (
+        scene.output.width.max(1) as f64,
+        scene.output.height.max(1) as f64,
+    );
     // "contain" : le plus grand cadre au ratio de sortie qui tienne dans le panneau.
     let scale = (pw as f64 / ow).min(ph as f64 / oh).min(1.0);
     // Arrondi via la MÊME règle que `new_sized` : la boucle de rendu compare cette
@@ -1270,6 +1406,7 @@ unsafe fn render_thread(
     let mut active_webcam_path = webcam.to_string();
     let mut active_webcam_offset_sec = 0.0f64;
     let mut active_clip_index = 0usize;
+    let mut applied_transport_generation = 0u64;
     // Copie de la Scene complète (tous les clips), tenue à jour à chaque push de l'app —
     // permet à la boucle de lecture libre de connaître la fenêtre source
     // [source_start_sec, source_end_sec) du clip actif et d'enchaîner elle-même sur le
@@ -1303,9 +1440,9 @@ unsafe fn render_thread(
     let mut last_preview_size: (u32, u32) = (0, 0);
     let mut last_ip: Option<InspectorParams> = None;
     let mut last_smoothing: f32 = -1.0; // force la 1re application (0.0 est une valeur valide)
-    // La vue live est TOUJOURS pilotée par la scène de l'app. Tant qu'aucune scène n'a été
-    // appliquée, on refuse de jouer le layout fixture (POC) : un fallback fixture ne ferait que
-    // MASQUER un scene-push cassé. On attend la scène avant de produire le 1er frame.
+                                        // La vue live est TOUJOURS pilotée par la scène de l'app. Tant qu'aucune scène n'a été
+                                        // appliquée, on refuse de jouer le layout fixture (POC) : un fallback fixture ne ferait que
+                                        // MASQUER un scene-push cassé. On attend la scène avant de produire le 1er frame.
     let mut scene_applied = false;
 
     while !shared.stop.load(Ordering::SeqCst) {
@@ -1314,6 +1451,13 @@ unsafe fn render_thread(
         let mut clip_changed = false;
         let clip_request = shared.active_clip_request.lock().unwrap().take();
         if let Some(request) = clip_request {
+            let transport_generation = request.transport_generation;
+            let playing_after_seek = request.playing_after_seek;
+            if transport_generation.is_some() {
+                // An atomic anchor always seeks while paused. This prevents a decoder step
+                // from landing between the requested source time and play-state update.
+                shared.playing.store(false, Ordering::Release);
+            }
             // Un changement de clip explicite depuis l'app rend obsolète tout préchargement
             // en cours (il visait la suite du clip qu'on est en train de quitter maintenant
             // autrement) — sans ça, `advance_to_next_scene_clip` pourrait plus tard appliquer
@@ -1328,7 +1472,8 @@ unsafe fn render_thread(
             // Le repositionnement n'est tenté que sur médias identiques, et son échec n'est
             // JAMAIS fatal : on retombe sur l'ouverture complète, chemin connu comme sûr.
             // L'optimisation ne s'applique donc que là où elle fonctionne démontrablement.
-            let repositioned = same_media && matches!(player.seek_active(request.source_time_sec), Ok(true));
+            let repositioned =
+                same_media && matches!(player.seek_active(request.source_time_sec), Ok(true));
             let switch_result = if repositioned {
                 Ok(())
             } else {
@@ -1416,7 +1561,21 @@ unsafe fn render_thread(
                     }
                     last_smoothing = -1.0;
                     clip_changed = true;
+                    if let Some(generation) = transport_generation {
+                        applied_transport_generation = generation;
+                        // Do not let an older request resume playback while a newer anchor
+                        // is already pending. The next render-loop pass applies the winner.
+                        if shared.latest_transport_generation.load(Ordering::Acquire) == generation
+                        {
+                            shared
+                                .playing
+                                .store(playing_after_seek.unwrap_or(false), Ordering::Release);
+                        }
+                        last = Instant::now();
+                        acc = 0.0;
+                    }
                 }
+                Err(e) if transport_generation.is_some() => return Err(e),
                 Err(e) => eprintln!("[live] set_active_clip: {e:#}"),
             }
         }
@@ -1544,7 +1703,13 @@ unsafe fn render_thread(
             // frame et n'avancent le décodeur que quand une frame due existe vraiment.
             let speed = full_scene
                 .as_ref()
-                .map(|scene| speed_at(&scene.speed_regions, active_clip_index, player.screen_time_sec()))
+                .map(|scene| {
+                    speed_at(
+                        &scene.speed_regions,
+                        active_clip_index,
+                        player.screen_time_sec(),
+                    )
+                })
                 .unwrap_or(1.0);
             acc += dt * speed;
             let mut n = 0;
@@ -1662,8 +1827,17 @@ unsafe fn render_thread(
                         // des générations déjà peintes et boucherait. Séquence identique à
                         // l'ancienne dérivation tant que le slot n'est pas vidé.
                         let next_gen = shared.frame_gen.fetch_add(1, Ordering::Relaxed) + 1;
+                        let source_time_sec = player.screen_time_sec();
                         if let Ok(mut slot) = shared.latest_frame.lock() {
-                            *slot = Some((next_gen, rw, rh, rgba));
+                            *slot = Some((
+                                next_gen,
+                                rw,
+                                rh,
+                                source_time_sec,
+                                active_clip_index,
+                                applied_transport_generation,
+                                rgba,
+                            ));
                         }
                         first = false;
                     }
@@ -1696,146 +1870,150 @@ unsafe fn render_thread(
 #[cfg(windows)]
 pub mod standalone_harness {
 
-use crate::live::LiveView;
-use anyhow::Result;
-use std::time::Duration;
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::WindowsAndMessaging::*;
+    use crate::live::LiveView;
+    use anyhow::Result;
+    use std::time::Duration;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::UI::WindowsAndMessaging::*;
 
-extern "system" fn host_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    unsafe {
-        if msg == WM_DESTROY {
-            PostQuitMessage(0);
-            return LRESULT(0);
+    extern "system" fn host_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        unsafe {
+            if msg == WM_DESTROY {
+                PostQuitMessage(0);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wp, lp)
         }
-        DefWindowProcW(hwnd, msg, wp, lp)
     }
-}
 
-/// Test hors Electron : fenêtre hôte top-level (juste pour drainer les messages Windows
-/// du main thread) + une `LiveView` offscreen qui produit des frames RGBA8 dans un
-/// `<canvas>` HTML via le harnais d'affichage standalone. Valide le rendu threadé
-/// + le readback CPU sans dépendre d'Electron.
-pub fn run_standalone(screen: &str, webcam: &str, cursor_json: &str) -> Result<()> {
-    unsafe {
-        let hinst = HINSTANCE(GetModuleHandleW(None)?.0);
-        let cls = wide("PocD3DLiveHost");
-        let wc = WNDCLASSW {
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(host_proc),
-            hInstance: hinst,
-            lpszClassName: PCWSTR(cls.as_ptr()),
-            hbrBackground: windows::Win32::Graphics::Gdi::HBRUSH(std::ptr::null_mut()),
-            ..Default::default()
-        };
-        RegisterClassW(&wc);
+    /// Test hors Electron : fenêtre hôte top-level (juste pour drainer les messages Windows
+    /// du main thread) + une `LiveView` offscreen qui produit des frames RGBA8 dans un
+    /// `<canvas>` HTML via le harnais d'affichage standalone. Valide le rendu threadé
+    /// + le readback CPU sans dépendre d'Electron.
+    pub fn run_standalone(screen: &str, webcam: &str, cursor_json: &str) -> Result<()> {
+        unsafe {
+            let hinst = HINSTANCE(GetModuleHandleW(None)?.0);
+            let cls = wide("PocD3DLiveHost");
+            let wc = WNDCLASSW {
+                style: CS_HREDRAW | CS_VREDRAW,
+                lpfnWndProc: Some(host_proc),
+                hInstance: hinst,
+                lpszClassName: PCWSTR(cls.as_ptr()),
+                hbrBackground: windows::Win32::Graphics::Gdi::HBRUSH(std::ptr::null_mut()),
+                ..Default::default()
+            };
+            RegisterClassW(&wc);
 
-        let title = wide("poc-d3d — live embed test (offscreen RGBA8 readback)");
-        let host = CreateWindowExW(
-            WINDOW_EX_STYLE(0),
-            PCWSTR(cls.as_ptr()),
-            PCWSTR(title.as_ptr()),
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            1280,
-            760,
-            HWND::default(),
-            HMENU::default(),
-            hinst,
-            None,
-        )?;
+            let title = wide("poc-d3d — live embed test (offscreen RGBA8 readback)");
+            let host = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                PCWSTR(cls.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                1280,
+                760,
+                HWND::default(),
+                HMENU::default(),
+                hinst,
+                None,
+            )?;
 
-        // Résolution preview = client de la fenêtre host. Ajustable au resize du host.
-        let mut last = (0u32, 0u32);
-        let (mut w, mut h) = client_size(host);
-        last = (w, h);
-        let view = LiveView::create(w, h, screen, webcam, cursor_json)?;
-        let _ = ShowWindow(host, SW_SHOW);
-        println!("live embed: vue offscreen créée, thread de rendu démarré");
-        println!("  touches : [B] flou de fond (param → D3D)   [Espace] pause/lecture");
+            // Résolution preview = client de la fenêtre host. Ajustable au resize du host.
+            let mut last = (0u32, 0u32);
+            let (mut w, mut h) = client_size(host);
+            last = (w, h);
+            let view = LiveView::create(w, h, screen, webcam, cursor_json)?;
+            let _ = ShowWindow(host, SW_SHOW);
+            println!("live embed: vue offscreen créée, thread de rendu démarré");
+            println!("  touches : [B] flou de fond (param → D3D)   [Espace] pause/lecture");
 
-        // état des paramètres pilotés au clavier (le MÊME set_param que l'addon napi appelle)
-        let mut blur = false;
-        let mut playing = true;
-        let set_title = |b: bool, p: bool| unsafe {
-            let t = wide(&format!(
-                "poc-d3d — live embed  ·  flou: {}  ·  {}   (B / Espace)",
-                if b { "ON" } else { "off" },
-                if p { "lecture" } else { "PAUSE" }
-            ));
-            let _ = SetWindowTextW(host, PCWSTR(t.as_ptr()));
-        };
-        set_title(blur, playing);
+            // état des paramètres pilotés au clavier (le MÊME set_param que l'addon napi appelle)
+            let mut blur = false;
+        let mut playing = false;
+            let set_title = |b: bool, p: bool| unsafe {
+                let t = wide(&format!(
+                    "poc-d3d — live embed  ·  flou: {}  ·  {}   (B / Espace)",
+                    if b { "ON" } else { "off" },
+                    if p { "lecture" } else { "PAUSE" }
+                ));
+                let _ = SetWindowTextW(host, PCWSTR(t.as_ptr()));
+            };
+            set_title(blur, playing);
 
-        let mut msg = MSG::default();
-        let mut running = true;
-        while running {
-            while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
-                if msg.message == WM_QUIT {
-                    running = false;
+            let mut msg = MSG::default();
+            let mut running = true;
+            while running {
+                while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+                    if msg.message == WM_QUIT {
+                        running = false;
+                        break;
+                    }
+                    if msg.message == WM_KEYDOWN {
+                        match msg.wParam.0 as u32 {
+                            0x42 => {
+                                // 'B' : bascule le fond flouté via set_param — chemin param → D3D
+                                blur = !blur;
+                                view.set_param_bool("backgroundBlur", blur);
+                                set_title(blur, playing);
+                            }
+                            0x20 => {
+                                // Espace : pause/lecture
+                                playing = !playing;
+                                view.set_playing(playing);
+                                set_title(blur, playing);
+                            }
+                            _ => {}
+                        }
+                    }
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                if !running {
                     break;
                 }
-                if msg.message == WM_KEYDOWN {
-                    match msg.wParam.0 as u32 {
-                        0x42 => {
-                            // 'B' : bascule le fond flouté via set_param — chemin param → D3D
-                            blur = !blur;
-                            view.set_param_bool("backgroundBlur", blur);
-                            set_title(blur, playing);
-                        }
-                        0x20 => {
-                            // Espace : pause/lecture
-                            playing = !playing;
-                            view.set_playing(playing);
-                            set_title(blur, playing);
-                        }
-                        _ => {}
+                let (cw, ch) = client_size(host);
+                if (cw, ch) != last {
+                    view.set_rect(cw, ch);
+                    last = (cw, ch);
+                    w = cw;
+                    h = ch;
+                }
+                // Force `first=false` côté render thread : si la preview était en pause
+                // totale, on n'a pas publié de frame. On laisse le canvas vide ; le harnais
+                // standalone n'affiche pas réellement les pixels ici (l'embed Electron est
+                // le consumer réel). On imprime juste une frame de temps en temps pour
+                // confirmer que la chaîne fonctionne.
+                if let Some((_gen, fw, fh, _source_time, _clip_index, _transport_gen, _pixels)) =
+                    view.latest_frame()
+                {
+                    if (fw, fh) != (w, h) {
+                        // garde-fou : la staging de readback suit `set_rect` côté thread
+                        // de rendu, donc ce serait une désynchro transitoire — acceptable.
                     }
                 }
-                let _ = TranslateMessage(&msg);
-                DispatchMessageW(&msg);
+                std::thread::sleep(Duration::from_millis(8));
             }
-            if !running {
-                break;
-            }
-            let (cw, ch) = client_size(host);
-            if (cw, ch) != last {
-                view.set_rect(cw, ch);
-                last = (cw, ch);
-                w = cw;
-                h = ch;
-            }
-            // Force `first=false` côté render thread : si la preview était en pause
-            // totale, on n'a pas publié de frame. On laisse le canvas vide ; le harnais
-            // standalone n'affiche pas réellement les pixels ici (l'embed Electron est
-            // le consumer réel). On imprime juste une frame de temps en temps pour
-            // confirmer que la chaîne fonctionne.
-            if let Some((_gen, fw, fh, _pixels)) = view.latest_frame() {
-                if (fw, fh) != (w, h) {
-                    // garde-fou : la staging de readback suit `set_rect` côté thread
-                    // de rendu, donc ce serait une désynchro transitoire — acceptable.
-                }
-            }
-            std::thread::sleep(Duration::from_millis(8));
+            drop(view);
+            Ok(())
         }
-        drop(view);
-        Ok(())
     }
-}
 
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
 
-unsafe fn client_size(hwnd: HWND) -> (u32, u32) {
-    let mut rc = RECT::default();
-    let _ = GetClientRect(hwnd, &mut rc);
-    ((rc.right - rc.left).max(0) as u32, (rc.bottom - rc.top).max(0) as u32)
-}
-
+    unsafe fn client_size(hwnd: HWND) -> (u32, u32) {
+        let mut rc = RECT::default();
+        let _ = GetClientRect(hwnd, &mut rc);
+        (
+            (rc.right - rc.left).max(0) as u32,
+            (rc.bottom - rc.top).max(0) as u32,
+        )
+    }
 } // fin du mod standalone_harness — pas d'équivalent macOS, c'est un harnais dev Windows.
 
 // Ré-export pour que `live::run_standalone` reste l'API stable appelée par `poc-d3d`.
@@ -1897,14 +2075,29 @@ mod tests {
     #[test]
     fn explicit_index_disambiguates_clips_sharing_sources() {
         let scene = multiclip_scene();
-        assert_eq!(find_scene_clip_index(&scene, "/shared-screen.mp4", "/shared-webcam.mp4", 1.25), Some(0));
-        assert_eq!(resolve_scene_clip_index(&scene, 1, "/shared-screen.mp4", "/shared-webcam.mp4", 1.25), Some(1));
+        assert_eq!(
+            find_scene_clip_index(&scene, "/shared-screen.mp4", "/shared-webcam.mp4", 1.25),
+            Some(0)
+        );
+        assert_eq!(
+            resolve_scene_clip_index(&scene, 1, "/shared-screen.mp4", "/shared-webcam.mp4", 1.25),
+            Some(1)
+        );
     }
 
     #[test]
     fn explicit_index_tracks_a_distinct_asset() {
         let scene = multiclip_scene();
-        assert_eq!(resolve_scene_clip_index(&scene, 2, "/distinct-screen.mp4", "/distinct-webcam.mp4", 0.5), Some(2));
+        assert_eq!(
+            resolve_scene_clip_index(
+                &scene,
+                2,
+                "/distinct-screen.mp4",
+                "/distinct-webcam.mp4",
+                0.5
+            ),
+            Some(2)
+        );
     }
 
     #[test]
@@ -1921,13 +2114,22 @@ mod tests {
         assert!(!webcam_is_real("", "/rec/recording-1.mp4"));
         assert!(!webcam_is_real("   ", "/rec/recording-1.mp4"));
         // The older sentinel: webcam path == screen path.
-        assert!(!webcam_is_real("/rec/recording-1.mp4", "/rec/recording-1.mp4"));
-        assert!(!webcam_is_real("/rec/RECORDING-1.mp4", "/rec/recording-1.mp4"));
+        assert!(!webcam_is_real(
+            "/rec/recording-1.mp4",
+            "/rec/recording-1.mp4"
+        ));
+        assert!(!webcam_is_real(
+            "/rec/RECORDING-1.mp4",
+            "/rec/recording-1.mp4"
+        ));
     }
 
     #[test]
     fn a_clip_with_a_camera_draws_it() {
-        assert!(webcam_is_real("/rec/recording-1-webcam.webm", "/rec/recording-1.mp4"));
+        assert!(webcam_is_real(
+            "/rec/recording-1-webcam.webm",
+            "/rec/recording-1.mp4"
+        ));
     }
 
     // --- transport handed to an export and back -------------------------------
@@ -1961,10 +2163,16 @@ mod tests {
     fn an_export_leaves_a_paused_preview_paused() {
         let paused = FakePreview::new(false);
         let snapshot = PausedPreviews::pause([(7, &paused)]);
-        assert!(!paused.playing(), "the export must free the GPU while it encodes");
+        assert!(
+            !paused.playing(),
+            "the export must free the GPU while it encodes"
+        );
 
         snapshot.restore([(7, &paused)]);
-        assert!(!paused.playing(), "the app never asked for playback — it must still be paused");
+        assert!(
+            !paused.playing(),
+            "the app never asked for playback — it must still be paused"
+        );
     }
 
     /// The other half of "as found": a preview that WAS playing gets its playback back,
@@ -2039,9 +2247,15 @@ mod tests {
     fn preview_size_follows_the_output_shape_not_the_panel_shape() {
         let portrait = scene_with_output(1080, 1920);
         let (w, h) = preview_render_size(Some(&portrait), 1600, 900);
-        assert!(h > w, "sortie portrait dans un panneau paysage → cadre portrait, obtenu {w}x{h}");
+        assert!(
+            h > w,
+            "sortie portrait dans un panneau paysage → cadre portrait, obtenu {w}x{h}"
+        );
         let got = w as f64 / h as f64;
-        assert!((got - 1080.0 / 1920.0).abs() < 0.01, "ratio {got}, attendu 0.5625");
+        assert!(
+            (got - 1080.0 / 1920.0).abs() < 0.01,
+            "ratio {got}, attendu 0.5625"
+        );
     }
 
     /// Jamais plus grand que le panneau : les pixels en trop seraient réduits

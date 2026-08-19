@@ -482,6 +482,32 @@ export class CompositorViewService {
 		addon.setPlaying(id, playing);
 	}
 
+	syncTransport(
+		id: number,
+		generation: number,
+		playing: boolean,
+		screenPath: string,
+		webcamPath: string,
+		webcamOffsetSec: number,
+		clipIndex: number,
+		sourceTimeSec: number,
+	): void {
+		const addon = this.ensureAddon();
+		if (!addon) {
+			return;
+		}
+		addon.syncTransport(
+			id,
+			generation,
+			playing,
+			screenPath,
+			webcamPath,
+			webcamOffsetSec,
+			clipIndex,
+			sourceTimeSec,
+		);
+	}
+
 	presentTime(id: number, seconds: number): void {
 		const addon = this.ensureAddon();
 		if (!addon) {

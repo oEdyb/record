@@ -17,6 +17,7 @@ import {
 	putCaptionTranslation,
 	removeCaptionTranslation,
 } from "../captions";
+import { saveCaptionDefaultPreferences } from "./editingPreferences";
 import { useProjectStore } from "./projectStore";
 
 export interface UseCaptionsResult {
@@ -65,7 +66,9 @@ export function useCaptions(): UseCaptionsResult {
 			if (!doc) return;
 			const next = patchCaptionSettings(doc, patch);
 			setDocument(next);
-			await saveDocument(next);
+			if (await saveDocument(next)) {
+				saveCaptionDefaultPreferences(getCaptionSettings(next));
+			}
 		},
 		[setDocument, saveDocument],
 	);
@@ -82,7 +85,9 @@ export function useCaptions(): UseCaptionsResult {
 	const commit = useCallback(async () => {
 		const doc = useProjectStore.getState().document;
 		if (!doc) return;
-		await saveDocument(doc);
+		if (await saveDocument(doc)) {
+			saveCaptionDefaultPreferences(getCaptionSettings(doc));
+		}
 	}, [saveDocument]);
 
 	const saveTranslation = useCallback<UseCaptionsResult["saveTranslation"]>(

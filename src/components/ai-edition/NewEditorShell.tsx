@@ -11,6 +11,7 @@ import {
 import {
 	applyProbedDuration,
 	replaceTimeline as replaceTimelineOp,
+	resolveClipInsertionBoundary,
 } from "@/lib/ai-edition/document/timeline";
 import { type AxcutClip, documentSchema } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -24,11 +25,11 @@ import { useUndoRedoShortcuts } from "@/lib/ai-edition/store/undo";
 import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTimelineOps";
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
+import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
+import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
-import { resolveVisibleClips } from "@/native/sceneDescription";
-import { useNativePlaybackSync } from "@/native/useNativePlaybackSync";
 import { ExportDialog } from "./ExportDialog";
 import { LeftPanel } from "./LeftPanel";
 import {
@@ -41,49 +42,21 @@ import {
 } from "./Modals";
 import { Preview } from "./Preview";
 import type { TrimTarget } from "./RightPanes";
-import { importPendingRecording } from "./recordingImport";
+import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
+import {
+	canRegenerateAutomaticDirection,
+	regenerateProjectAutomaticDirection,
+} from "./regenerateAutomaticDirection";
 import v4 from "./v4/EditorShellV4.module.css";
 import { type EditorMode, EditorTopBar } from "./v4/EditorTopBar";
 import { type Facet, FloatingInspector } from "./v4/FloatingInspector";
 import { MediaStage } from "./v4/MediaStage";
-import { RecStage } from "./v4/RecStage";
 import { V4Timeline } from "./v4/V4Timeline";
 
 interface SeekTarget {
 	timeSec: number;
 	isSource?: boolean;
 	requestId: number;
-}
-
-/**
- * Renders nothing. Exists purely so the per-frame `currentTimeSec` subscription
- * that feeds the native transport lives in a LEAF instead of in the shell.
- *
- * `currentTimeSec` is rewritten on every animation frame during playback
- * (VirtualPreview's rAF tick → onTimeChange → setCurrentTime). Reading it
- * directly in NewEditorShell re-rendered the entire editor — timeline, clips,
- * waveforms, inspector, preview — 60×/s, which is what made the playhead and
- * the transcript cue point stutter: the whole tree had to commit before the
- * playhead's own DOM node moved. Everything that genuinely needs the live
- * playhead now subscribes to it where it is actually rendered (PlayheadOverlay,
- * TransportBar, Preview, TranscriptPane, NativeCompositorOverlay, and this
- * component); the shell itself reads it imperatively via getState() in the
- * handlers that need it. The store write cadence is unchanged — `currentTimeSec`
- * is still the source of truth, still updated every frame.
- */
-function NativePlaybackSync({
-	visibleClips,
-	clips,
-}: {
-	visibleClips: AxcutClip[];
-	clips: AxcutClip[];
-}) {
-	const playing = useProjectStore((s) => s.playing);
-	const currentTimeSec = useProjectStore((s) => s.currentTimeSec);
-	// visibleClips = trim-compressed native stream; `clips` = RAW layout currentTimeSec
-	// is measured against. resolveNativePosition needs both (see timelineMap).
-	useNativePlaybackSync(playing, currentTimeSec, visibleClips, clips);
-	return null;
 }
 
 export function NewEditorShell() {
@@ -105,10 +78,11 @@ export function NewEditorShell() {
 
 	const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
 	const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
-	// v4 shell: three modes (Media / Edit / Rec), a collapsible agent (chat)
+	// Media and Edit are editor workspaces. Record is an action that opens the
+	// floating HUD, not a third editor tab.
 	// column, and a floating facet inspector over the stage.
 	const [mode, setMode] = useState<EditorMode>("edit");
-	const [chatOpen, setChatOpen] = useState(true);
+	const [chatOpen, setChatOpen] = useState(() => loadUserPreferences().editorChatOpen);
 	const [chatWidthPx, setChatWidthPx] = useState(
 		() => Number(localStorage.getItem("os-editor-chat-width")) || 392,
 	);
@@ -125,10 +99,18 @@ export function NewEditorShell() {
 	// mounted per trigger site.
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
 	const [exportOpen, setExportOpen] = useState(false);
+	const [regeneratingAutomaticEdits, setRegeneratingAutomaticEdits] = useState(false);
 	const [unsavedPrompt, setUnsavedPrompt] = useState<{
-		action: "close" | "new" | "open" | "record";
+		action: "close" | "new" | "open";
 		resolve: (choice: UnsavedChoice) => void;
 	} | null>(null);
+	const toggleChat = useCallback(() => {
+		setChatOpen((open) => {
+			const next = !open;
+			saveUserPreferences({ editorChatOpen: next });
+			return next;
+		});
+	}, []);
 	const { shortcuts, isMac, openConfig: openShortcutsConfig } = useShortcuts();
 	// Transcription is local and every transcript-driven feature (Smart cuts,
 	// captions, the transcript pane) needs one, so the editor produces them by
@@ -154,7 +136,11 @@ export function NewEditorShell() {
 	);
 	const tl = useTimeline();
 	useUndoRedoShortcuts(() => {
-		// ponytail: placeholder, wire when undo stack merges with history
+		setPlaying(false);
+		tl.clearSelection();
+		const state = useProjectStore.getState();
+		const timelineEnd = state.document?.timeline.clips.at(-1)?.timelineEndSec ?? 0;
+		if (state.currentTimeSec > timelineEnd) state.setCurrentTime(timelineEnd);
 	});
 	const [copiedClipId, setCopiedClipId] = useState<string | null>(null);
 	const [projectSummaries, setProjectSummaries] = useState<AiEditionProjectSummary[]>([]);
@@ -178,7 +164,7 @@ export function NewEditorShell() {
 	});
 
 	const promptUnsaved = useCallback(
-		(action: "close" | "new" | "open" | "record"): Promise<UnsavedChoice> => {
+		(action: "close" | "new" | "open"): Promise<UnsavedChoice> => {
 			if (!dirty) return Promise.resolve("discard");
 			return new Promise<UnsavedChoice>((resolve) => {
 				setUnsavedPrompt({ action, resolve });
@@ -191,7 +177,6 @@ export function NewEditorShell() {
 		document?.assets.find((a) => a.id === document.project.primaryAssetId)?.originalPath ?? null;
 	void primaryAssetPath;
 	const clips: AxcutClip[] = document?.timeline.clips ?? [];
-	const visibleClips = useMemo(() => (document ? resolveVisibleClips(document) : []), [document]);
 	const hasProject = Boolean(document);
 	const hasAsset = projectId !== null && (document?.assets.length ?? 0) > 0;
 	const project = document?.project
@@ -221,15 +206,40 @@ export function NewEditorShell() {
 		initRef.current = true;
 		void (async () => {
 			if (!window.electronAPI) return;
+			const workspaceResult = await window.electronAPI.getRecordingWorkspaceContext?.();
+			const workspace = workspaceResult?.success ? workspaceResult.context : null;
+			const restoreWorkspace = (context: RecordingWorkspaceContext, afterRecording: boolean) => {
+				setMode(context.mode);
+				setInspectorOpen(context.inspectorOpen);
+				setFacet(context.facet);
+				setCurrentTime(afterRecording ? context.insertionTimeSec : context.currentTimeSec);
+			};
 			try {
 				if (await importPendingRecording()) {
-					toast.success("Recording added to a new project");
+					if (workspace) restoreWorkspace(workspace, true);
+					toast.success(workspace ? "Recording added" : "Recording added to a new project");
 					return;
 				}
 			} catch (err) {
 				toast.error("Could not auto-create project from recording", {
 					description: err instanceof Error ? err.message : String(err),
 				});
+				return;
+			}
+			if (workspace) {
+				try {
+					await loadProject(workspace.projectId);
+					const state = useProjectStore.getState();
+					if (!state.document || state.document.project.id !== workspace.projectId) {
+						throw new Error("Could not reopen the recording project");
+					}
+					restoreWorkspace(workspace, false);
+					await window.electronAPI.setRecordingWorkspaceContext?.(null);
+				} catch (err) {
+					toast.error("Could not return to the project", {
+						description: err instanceof Error ? err.message : String(err),
+					});
+				}
 				return;
 			}
 			// ponytail: no recording waiting — restore the user's most recent
@@ -260,7 +270,7 @@ export function NewEditorShell() {
 				console.warn("[editor] auto-load failed", e);
 			}
 		})();
-	}, [loadProject]);
+	}, [loadProject, setCurrentTime]);
 
 	// Warn on close when dirty
 	useEffect(() => {
@@ -337,6 +347,7 @@ export function NewEditorShell() {
 
 	const handleLoadedMetadata = useCallback(
 		(durationSec: number, assetId: string) => {
+			if (isPendingRecordingImportInProgress()) return;
 			// ponytail: WebM recordings from MediaRecorder report NaN/Infinity
 			// until the main-process EBML fix lands. Fall back to a 60s seed if
 			// duration is unknown so the timeline never gets stuck on an empty
@@ -407,8 +418,8 @@ export function NewEditorShell() {
 
 	// Ref so the 'ended' listener below always sees the latest clips without tearing
 	// down and re-registering the DOM listener on every document change. (The playhead
-	// it also needs is read straight off the store at call time — see NativePlaybackSync
-	// above for why nothing in this component subscribes to it.)
+	// it also needs is read straight off the store at call time, so the full shell
+	// does not subscribe to per-frame transport updates.)
 	const clipsForEndedRef = useRef(clips);
 	clipsForEndedRef.current = clips;
 
@@ -578,13 +589,25 @@ export function NewEditorShell() {
 		[loadProject],
 	);
 
-	// The dialog's starting point picks the tab the fresh project opens on:
-	// "import" → Media (browse/drop assets), "screen-recording" → Rec (capture).
+	// The dialog's starting point either opens Media or moves directly to the
+	// idle floating recording panel for the new project.
 	const handleCreateProject = useCallback(
 		async (title: string, startingPoint: StartingPoint) => {
 			try {
-				await createProject(title);
-				setMode(startingPoint === "screen-recording" ? "rec" : "media");
+				const created = await createProject(title);
+				if (startingPoint === "screen-recording") {
+					await window.electronAPI?.startNewRecording?.({
+						origin: "editor",
+						projectId: created.project.id,
+						insertionTimeSec: 0,
+						currentTimeSec: 0,
+						mode: "edit",
+						inspectorOpen: true,
+						facet: "effects",
+					});
+				} else {
+					setMode("media");
+				}
 			} catch (err) {
 				toast.error("Could not create project", {
 					description: err instanceof Error ? err.message : String(err),
@@ -667,12 +690,10 @@ export function NewEditorShell() {
 	const handleConfirmUnsaved = useCallback(
 		(choice: UnsavedChoice) => {
 			if (!unsavedPrompt) return;
-			const { action, resolve } = unsavedPrompt;
+			const { resolve } = unsavedPrompt;
 			setUnsavedPrompt(null);
 			// ponytail: resolve the action when the user picks save / discard.
-			// The "continue with action" path is handled below in handleNewRecording /
-			// the open-project branch. We resolve the promise once the work is done
-			// (or cancelled).
+			// The caller continues its open/new/close action after this promise resolves.
 			void (async () => {
 				if (choice === "cancel") {
 					resolve("cancel");
@@ -689,11 +710,6 @@ export function NewEditorShell() {
 						}
 					}
 				}
-				if (action === "record") {
-					void window.electronAPI?.startNewRecording?.().catch((err) => {
-						console.warn("[editor] failed to start a new recording:", err);
-					});
-				}
 				resolve(choice);
 			})();
 		},
@@ -701,13 +717,43 @@ export function NewEditorShell() {
 	);
 
 	const handleNewRecording = useCallback(async () => {
-		const choice = await promptUnsaved("record");
-		if (choice !== "cancel") {
-			void window.electronAPI?.startNewRecording?.().catch((err) => {
-				console.warn("[editor] failed to start a new recording:", err);
+		const api = window.electronAPI;
+		if (!api?.startNewRecording) return;
+		try {
+			// Stop the playback clock synchronously before any awaited save. Reading
+			// the store after this gives one authoritative playhead for both return
+			// state and insertion placement.
+			setPlaying(false);
+			let state = useProjectStore.getState();
+			let currentDocument = state.document;
+			// The editor window closes during the workspace switch. Save first so
+			// reopening the project is exact and never needs an unsaved-changes modal.
+			if (currentDocument && state.dirty) await saveDocument(currentDocument);
+			state = useProjectStore.getState();
+			currentDocument = state.document;
+			const context: RecordingWorkspaceContext | undefined =
+				state.projectId && currentDocument
+					? {
+							origin: "editor",
+							projectId: state.projectId,
+							insertionTimeSec: resolveClipInsertionBoundary(
+								currentDocument.timeline.clips,
+								state.currentTimeSec,
+							),
+							currentTimeSec: state.currentTimeSec,
+							mode,
+							inspectorOpen,
+							facet,
+						}
+					: undefined;
+			const result = await api.startNewRecording(context);
+			if (!result.success) throw new Error(result.error ?? "Could not open recording controls");
+		} catch (err) {
+			toast.error("Could not open recording controls", {
+				description: err instanceof Error ? err.message : String(err),
 			});
 		}
-	}, [promptUnsaved]);
+	}, [facet, inspectorOpen, mode, saveDocument, setPlaying]);
 
 	const handleExport = useCallback(() => {
 		if (!hasAsset) {
@@ -716,6 +762,30 @@ export function NewEditorShell() {
 		}
 		setExportOpen(true);
 	}, [hasAsset]);
+
+	const handleRegenerateAutomaticEdits = useCallback(async () => {
+		const activeProjectId = useProjectStore.getState().projectId;
+		if (!activeProjectId || regeneratingAutomaticEdits) return;
+		setPlaying(false);
+		setRegeneratingAutomaticEdits(true);
+		try {
+			const result = await regenerateProjectAutomaticDirection(activeProjectId);
+			const total = result.screenZooms + result.cameraEmphasis;
+			if (total === 0) {
+				toast.info("No automatic edits matched the current rules");
+			} else {
+				toast.success("Automatic edits regenerated", {
+					description: `${result.screenZooms} Zoom${result.screenZooms === 1 ? "" : "s"} and ${result.cameraEmphasis} Camera Emphasis region${result.cameraEmphasis === 1 ? "" : "s"}.`,
+				});
+			}
+		} catch (error) {
+			toast.error("Could not regenerate automatic edits", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setRegeneratingAutomaticEdits(false);
+		}
+	}, [regeneratingAutomaticEdits, setPlaying]);
 
 	const handleOpenSettings = useCallback(() => {
 		openShortcutsConfig();
@@ -877,7 +947,7 @@ export function NewEditorShell() {
 				return;
 			}
 			if (!hasProject && e.key !== "?") return;
-			if (ctrl && (e.key === "z" || e.key.toLowerCase() === "y")) return;
+			if (ctrl && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) return;
 			if (e.key === "?" || (e.shiftKey && e.key === "/")) {
 				e.preventDefault();
 				openShortcutsConfig();
@@ -885,6 +955,10 @@ export function NewEditorShell() {
 			}
 
 			const deleteSelection = () => {
+				if (tl.clipSelection) {
+					void tl.removeClip(tl.clipSelection);
+					return;
+				}
 				// F2.7 — a shift-click multi-selection deletes as one batch (one
 				// undo snapshot); a single selection keeps the original path.
 				if (tl.multiSelection.length > 1) {
@@ -1033,7 +1107,7 @@ export function NewEditorShell() {
 		handleSeek,
 	]);
 
-	const showTimeline = mode !== "rec";
+	const showTimeline = true;
 	const timelineRow = mode === "media" ? "188px" : `${timelineHeightPx}px`;
 	const bodyColumns = mode === "edit" && chatOpen ? `${chatWidthPx}px 1fr` : "1fr";
 
@@ -1110,13 +1184,14 @@ export function NewEditorShell() {
 			className={v4.app}
 			style={{ gridTemplateRows: `58px 1fr ${showTimeline ? timelineRow : "0px"}` }}
 		>
-			<NativePlaybackSync visibleClips={visibleClips} clips={clips} />
 			<EditorTopBar
 				mode={mode}
 				onModeChange={setMode}
 				projectTitle={project?.title ?? null}
 				dirty={dirty}
 				canExport={hasAsset}
+				canRegenerateAutomaticEdits={canRegenerateAutomaticDirection(document)}
+				regeneratingAutomaticEdits={regeneratingAutomaticEdits}
 				chatOpen={chatOpen}
 				actions={{
 					openProject: () => setOpenProjectOpen(true),
@@ -1125,7 +1200,9 @@ export function NewEditorShell() {
 					export: handleExport,
 					openSettings: handleOpenSettings,
 					renameProject: handleRenameProject,
-					toggleChat: () => setChatOpen((v) => !v),
+					toggleChat,
+					record: () => void handleNewRecording(),
+					regenerateAutomaticEdits: () => void handleRegenerateAutomaticEdits(),
 				}}
 			/>
 
@@ -1225,18 +1302,13 @@ export function NewEditorShell() {
 								transcriptProps={transcriptProps}
 							/>
 						</>
-					) : mode === "media" ? (
-						<MediaStage />
 					) : (
-						<RecStage
-							onStartRecording={() => void handleNewRecording()}
-							onClose={() => setMode("edit")}
-						/>
+						<MediaStage />
 					)}
 				</section>
 			</div>
 
-			{/* Timeline footer (hidden in Rec mode) — rebuilt from the v4 design. */}
+			{/* Timeline footer shared by the Media and Edit workspaces. */}
 			{showTimeline ? (
 				<div
 					style={{

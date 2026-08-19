@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CameraFullscreenRegion } from "@/components/video-editor/types";
-import { computeCameraFullscreenProgress } from "./cameraFullscreenUtils";
+import { computeCameraFullscreenProgress, computeCameraLayoutState } from "./cameraFullscreenUtils";
 import { TRANSITION_WINDOW_MS } from "./constants";
 
 function makeRegion(startMs: number, endMs: number): CameraFullscreenRegion {
@@ -30,9 +30,9 @@ describe("computeCameraFullscreenProgress", () => {
 	});
 
 	it("holds at 1 for the full duration between the lead-in and lead-out windows", () => {
-		const region = makeRegion(1000, 3000);
+		const region = makeRegion(1000, 5000);
 		const leadInEnd = region.startMs + TRANSITION_WINDOW_MS;
-		const leadOutStart = region.endMs - TRANSITION_WINDOW_MS;
+		const leadOutStart = region.endMs - TRANSITION_WINDOW_MS * 1.5;
 		expect(computeCameraFullscreenProgress([region], leadInEnd)).toBeCloseTo(1, 5);
 		expect(computeCameraFullscreenProgress([region], leadOutStart)).toBeCloseTo(1, 5);
 		expect(computeCameraFullscreenProgress([region], (leadInEnd + leadOutStart) / 2)).toBe(1);
@@ -131,5 +131,68 @@ describe("computeCameraFullscreenProgress", () => {
 		expect(computeCameraFullscreenProgress([first, second], 500)).toBe(1);
 		expect(computeCameraFullscreenProgress([first, second], 5000)).toBe(0);
 		expect(computeCameraFullscreenProgress([first, second], 11000)).toBe(1);
+	});
+});
+
+describe("computeCameraLayoutState", () => {
+	it("keeps legacy regions as Full Camera", () => {
+		expect(computeCameraLayoutState([makeRegion(0, 4000)], 2000)).toEqual({
+			progress: 1,
+			mode: "fullscreen",
+			cameraScale: 1,
+		});
+	});
+
+	it("returns a bounded emphasis target without leaking into Full Camera progress", () => {
+		const emphasis: CameraFullscreenRegion = {
+			...makeRegion(0, 4000),
+			mode: "emphasis",
+			cameraScale: 1.35,
+		};
+		expect(computeCameraLayoutState([emphasis], 2000)).toEqual({
+			progress: 1,
+			mode: "emphasis",
+			cameraScale: 1.35,
+		});
+		expect(computeCameraFullscreenProgress([emphasis], 2000)).toBe(0);
+	});
+
+	it("lets camera motion differ from screen zoom motion", () => {
+		const startMs = 5_000;
+		const endMs = 10_000;
+		const atQuarter = startMs + TRANSITION_WINDOW_MS * 0.25;
+		const smooth = {
+			...makeRegion(startMs, endMs),
+			mode: "emphasis" as const,
+			motionStyle: "smooth" as const,
+		};
+		const snappy = { ...smooth, motionStyle: "snappy" as const };
+		const instant = { ...smooth, motionStyle: "instant" as const };
+
+		expect(computeCameraLayoutState([smooth], atQuarter).progress).toBeCloseTo(0.103515625, 8);
+		expect(computeCameraLayoutState([snappy], atQuarter).progress).toBeGreaterThan(0.8);
+		expect(computeCameraLayoutState([instant], startMs)).toHaveProperty("progress", 0);
+		expect(computeCameraLayoutState([instant], startMs + 1)).toHaveProperty("progress", 1);
+		expect(computeCameraLayoutState([instant], endMs - 1)).toHaveProperty("progress", 1);
+		expect(computeCameraLayoutState([instant], endMs)).toHaveProperty("progress", 0);
+	});
+
+	it("preserves Snappy when an older camera region has no stored motion style", () => {
+		const legacy = { ...makeRegion(5_000, 10_000), mode: "emphasis" as const };
+		const atQuarter = legacy.startMs + TRANSITION_WINDOW_MS * 0.25;
+
+		expect(computeCameraLayoutState([legacy], atQuarter).progress).toBeGreaterThan(0.8);
+	});
+
+	it("shortens the contained camera transition when its motion speed increases", () => {
+		const fast: CameraFullscreenRegion = {
+			...makeRegion(5_000, 10_000),
+			mode: "emphasis",
+			motionStyle: "linear",
+			motionSpeed: 2,
+		};
+		const atFastQuarter = fast.startMs + (TRANSITION_WINDOW_MS / 2) * 0.25;
+
+		expect(computeCameraLayoutState([fast], atFastQuarter).progress).toBeCloseTo(0.25, 8);
 	});
 });

@@ -28,6 +28,14 @@
 			"hint": "0 = 가장 왼쪽 / 위쪽, 100 = 가장 오른쪽 / 아래쪽"
 		}
 	},
+	"motion": {
+		"title": "모션",
+		"speed": "속도",
+		"smooth": "부드럽게",
+		"snappy": "빠르게",
+		"linear": "선형",
+		"instant": "즉시"
+	},
 	"speed": {
 		"playbackSpeed": "재생 속도",
 		"selectRegion": "조정할 속도 구간을 선택하세요",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "내보내기 해상도",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "보통",
+		"medium": "높음",
+		"high": "최고"
 	},
 	"gifSettings": {
 		"frameRate": "GIF 프레임 속도",

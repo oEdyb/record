@@ -4,6 +4,12 @@ import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import type { CameraDevice } from "../../hooks/useCameraDevices";
 import { useCameraPreviewStream } from "../../hooks/useCameraPreviewStream";
 import type { MicrophoneDevice } from "../../hooks/useMicrophoneDevices";
+import {
+	formatWebcamFormat,
+	sameWebcamFormat,
+	type WebcamFormat,
+	webcamFormatKey,
+} from "../../lib/webcamFormats";
 import styles from "./LaunchWindow.module.css";
 
 const LEVEL_SEGMENTS = 12;
@@ -20,6 +26,7 @@ export interface HudDeviceSettingsLabels {
 	searching: string;
 	noCameras: string;
 	cameraUnavailable: string;
+	cameraQuality: string;
 	preview: string;
 	previewUnavailable: string;
 }
@@ -77,20 +84,24 @@ function CameraPreview({
  * Picking a device here never turns anything on: the HUD's mic and camera
  * buttons are plain on/off toggles that use whatever is selected here, which is
  * what separates "choose my hardware" from "start capturing it". While this
- * panel is open it holds its own preview stream and analyser so the user can
- * confirm the device actually works before recording — those are torn down with
- * the panel and are entirely separate from the recorder's capture streams.
+ * panel is open it reuses the recorder's camera feed when available. If camera
+ * capture is off, it owns one temporary verification stream and tears that down
+ * before the recorder can acquire the device.
  */
 export const HudDeviceSettings = memo(function HudDeviceSettings({
 	micDevices,
 	cameraDevices,
 	activeMicId,
 	activeCameraId,
+	cameraEnabled,
+	cameraStream,
+	webcamFormat,
 	cameraLoading,
 	cameraError,
 	labels,
 	onSelectMic,
 	onSelectCamera,
+	onSelectWebcamFormat,
 	onClose,
 	panelRef,
 }: {
@@ -98,11 +109,15 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	cameraDevices: CameraDevice[];
 	activeMicId: string | undefined;
 	activeCameraId: string | undefined;
+	cameraEnabled: boolean;
+	cameraStream: MediaStream | null;
+	webcamFormat: WebcamFormat;
 	cameraLoading: boolean;
 	cameraError: string | null;
 	labels: HudDeviceSettingsLabels;
 	onSelectMic: (device: MicrophoneDevice) => void;
 	onSelectCamera: (device: CameraDevice) => void;
+	onSelectWebcamFormat: (format: WebcamFormat) => void;
 	onClose: () => void;
 	panelRef: (el: HTMLDivElement | null) => void;
 }) {
@@ -113,10 +128,30 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		enabled: micDevices.length > 0,
 		deviceId: activeMicId,
 	});
-	const { stream, error: previewError } = useCameraPreviewStream({
-		enabled: hasCamera,
+	const {
+		stream,
+		error: previewError,
+		supportedFormats,
+		activeFormat,
+	} = useCameraPreviewStream({
+		// When the recorder owns the camera, reuse that feed. If camera capture is
+		// off, this panel can own one temporary verification stream.
+		enabled: hasCamera && (!cameraEnabled || cameraStream !== null),
 		deviceId: activeCameraId,
+		format: webcamFormat,
+		externalStream: cameraStream,
 	});
+	const formatOptions = supportedFormats.length > 0 ? supportedFormats : [webcamFormat];
+
+	useEffect(() => {
+		if (
+			supportedFormats.length > 0 &&
+			!sameWebcamFormat(activeFormat, webcamFormat) &&
+			supportedFormats.some((format) => sameWebcamFormat(format, activeFormat))
+		) {
+			onSelectWebcamFormat(activeFormat);
+		}
+	}, [activeFormat, onSelectWebcamFormat, supportedFormats, webcamFormat]);
 
 	return (
 		<div
@@ -192,6 +227,32 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					);
 				})
 			)}
+			{hasCamera ? (
+				<div className={styles.hudModalMeterRow}>
+					<label className={styles.hudModalMeterLabel} htmlFor="hud-webcam-format">
+						{labels.cameraQuality}
+					</label>
+					<select
+						id="hud-webcam-format"
+						data-testid="hud-webcam-format"
+						className={styles.hudModalSelect}
+						value={webcamFormatKey(webcamFormat)}
+						disabled={supportedFormats.length === 0}
+						onChange={(event) => {
+							const selected = formatOptions.find(
+								(format) => webcamFormatKey(format) === event.target.value,
+							);
+							if (selected) onSelectWebcamFormat(selected);
+						}}
+					>
+						{formatOptions.map((format) => (
+							<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
+								{formatWebcamFormat(format)}
+							</option>
+						))}
+					</select>
+				</div>
+			) : null}
 			{hasCamera ? (
 				<>
 					<div className={styles.hudModalMeterRow}>

@@ -2,7 +2,8 @@ import AVFoundation
 import CoreMedia
 import Foundation
 
-/// Sums system audio and the microphone into the single AAC track the helper muxes.
+/// Places system audio and the microphone on one shared timeline, then writes a mixed preview
+/// track plus an independent track for each enabled source.
 ///
 /// The helper used to give AVAssetWriter one input per source, so a recording with both
 /// enabled carried two audio tracks. Export never noticed — `crates/compositor/src/audio.rs`
@@ -11,7 +12,9 @@ import Foundation
 /// implements no `audioTracks` API. Filming a silent screen while talking therefore produced
 /// a preview with no sound at all, even though the microphone was in the file. Windows has
 /// muxed a single mixed track all along (`AudioMixer`, wgc-capture/src/audio_sample_utils.h);
-/// this is that model in Swift.
+/// this is that model in Swift. The source tracks let export master dialogue without changing
+/// the browser preview path; the compositor recognizes their `screenrec.*.v1` track titles and
+/// ignores the preview mix when either source track is present.
 ///
 /// The two sources run off independent clocks, so samples are placed on a shared timeline by
 /// presentation timestamp rather than by arrival order: a source that starts late, drifts, or
@@ -48,11 +51,69 @@ final class AudioTrackMixer {
 		/// Writer backpressure allowance, in chunks (5 s). `expectsMediaDataInRealTime` keeps
 		/// this at zero or one in practice; the cap only bounds a pathological writer stall.
 		static let maxPendingChunks = 500
-		/// How long the final flush waits for the input to accept the tail before giving up.
-		static let finalFlushTimeout = 5.0
+		/// Total final-flush budget shared by every track. Pause must stay responsive even
+		/// when an AAC input stops accepting data.
+		static let finalFlushTimeout = 0.25
 	}
 
-	private let input: AVAssetWriterInput
+	private final class TrackOutput {
+		let input: AVAssetWriterInput
+		let label: String
+		private var pending: [CMSampleBuffer] = []
+		private var didWarnAboutBacklog = false
+
+		init(input: AVAssetWriterInput, label: String) {
+			self.input = input
+			self.label = label
+		}
+
+		func enqueue(_ sampleBuffer: CMSampleBuffer) {
+			pending.append(sampleBuffer)
+			flush(until: nil)
+		}
+
+		func flush(until deadline: Date?) {
+			while !pending.isEmpty && input.isReadyForMoreMediaData {
+				input.append(pending.removeFirst())
+			}
+			if let deadline {
+				while !pending.isEmpty {
+					if input.isReadyForMoreMediaData {
+						input.append(pending.removeFirst())
+						continue
+					}
+					if Date() >= deadline {
+							emit([
+								"event": "warning",
+								"code": "audio-mixer-tail-dropped",
+								"message": "The \(label) AAC input never drained; \(pending.count) chunk(s) were dropped.",
+						])
+						pending.removeAll()
+						break
+					}
+					Thread.sleep(forTimeInterval: 0.002)
+				}
+				return
+			}
+			guard pending.count > MixFormat.maxPendingChunks else {
+				return
+			}
+
+			pending.removeFirst(pending.count - MixFormat.maxPendingChunks)
+			if !didWarnAboutBacklog {
+				didWarnAboutBacklog = true
+				emit([
+					"event": "warning",
+					"code": "audio-mixer-backlog",
+					"message": "The \(label) AAC input stalled for seconds; its oldest audio was dropped.",
+				])
+			}
+		}
+	}
+
+	private let mixedOutput: TrackOutput
+	private let systemOutput: TrackOutput?
+	private let microphoneOutput: TrackOutput?
 	private let includesSystemAudio: Bool
 	private let includesMicrophone: Bool
 	private let microphoneGain: Float
@@ -64,17 +125,19 @@ final class AudioTrackMixer {
 	private var anchor: CMTime?
 	/// Absolute frame index of the next chunk to emit.
 	private var cursor: Int64 = 0
-	private var pending: [CMSampleBuffer] = []
-	private var didWarnAboutBacklog = false
 	private var didWarnAboutDecode: Set<Int> = []
 
 	init(
-		input: AVAssetWriterInput,
+		mixedInput: AVAssetWriterInput,
+		systemInput: AVAssetWriterInput?,
+		microphoneInput: AVAssetWriterInput?,
 		includesSystemAudio: Bool,
 		includesMicrophone: Bool,
 		microphoneGain: Double
 	) {
-		self.input = input
+		self.mixedOutput = TrackOutput(input: mixedInput, label: "mixed preview")
+		self.systemOutput = systemInput.map { TrackOutput(input: $0, label: "system audio") }
+		self.microphoneOutput = microphoneInput.map { TrackOutput(input: $0, label: "microphone") }
 		self.includesSystemAudio = includesSystemAudio
 		self.includesMicrophone = includesMicrophone
 		// The request carries MIC_GAIN_BOOST (1.4); Windows applies it unconditionally and so
@@ -135,7 +198,10 @@ final class AudioTrackMixer {
 	/// writer input is marked as finished.
 	func finish() {
 		drain(flushing: true)
-		flushPending(force: true)
+		let deadline = Date().addingTimeInterval(MixFormat.finalFlushTimeout)
+		mixedOutput.flush(until: deadline)
+		systemOutput?.flush(until: deadline)
+		microphoneOutput?.flush(until: deadline)
 	}
 
 	private func warnAboutDecodeFailure(_ source: Source, _ sampleBuffer: CMSampleBuffer) {
@@ -215,9 +281,22 @@ final class AudioTrackMixer {
 			return false
 		}
 
-		var mix = [Float](repeating: 0, count: MixFormat.chunkFrames * MixFormat.channelCount)
-		for index in sources.indices {
-			sources[index].drain(into: &mix, from: cursor, frameCount: MixFormat.chunkFrames)
+		let sampleCount = MixFormat.chunkFrames * MixFormat.channelCount
+		var system = [Float](repeating: 0, count: sampleCount)
+		var microphone = [Float](repeating: 0, count: sampleCount)
+		sources[Source.system.rawValue].drain(
+			into: &system,
+			from: cursor,
+			frameCount: MixFormat.chunkFrames
+		)
+		sources[Source.microphone.rawValue].drain(
+			into: &microphone,
+			from: cursor,
+			frameCount: MixFormat.chunkFrames
+		)
+		var mix = [Float](repeating: 0, count: sampleCount)
+		for index in mix.indices {
+			mix[index] = system[index] + microphone[index]
 		}
 
 		let presentationTime = CMTimeAdd(
@@ -226,55 +305,20 @@ final class AudioTrackMixer {
 		)
 		cursor += Int64(MixFormat.chunkFrames)
 
-		guard let sampleBuffer = makeSampleBuffer(from: mix, at: presentationTime) else {
-			return true
+		if let sampleBuffer = makeSampleBuffer(from: mix, at: presentationTime) {
+			mixedOutput.enqueue(sampleBuffer)
 		}
-		pending.append(sampleBuffer)
-		flushPending(force: false)
+		if let systemOutput,
+			let sampleBuffer = makeSampleBuffer(from: system, at: presentationTime)
+		{
+			systemOutput.enqueue(sampleBuffer)
+		}
+		if let microphoneOutput,
+			let sampleBuffer = makeSampleBuffer(from: microphone, at: presentationTime)
+		{
+			microphoneOutput.enqueue(sampleBuffer)
+		}
 		return true
-	}
-
-	/// `append` is not advisory backpressure — it raises an NSException when the input is not
-	/// ready — so every path here waits for readiness rather than pushing through it.
-	private func flushPending(force: Bool) {
-		while !pending.isEmpty && input.isReadyForMoreMediaData {
-			input.append(pending.removeFirst())
-		}
-		if force {
-			// Teardown: this is the tail's last chance, and the writer is still draining, so
-			// give it a bounded moment instead of dropping audio the recording just captured.
-			let deadline = Date().addingTimeInterval(MixFormat.finalFlushTimeout)
-			while !pending.isEmpty {
-				if input.isReadyForMoreMediaData {
-					input.append(pending.removeFirst())
-					continue
-				}
-				if Date() >= deadline {
-					emit([
-						"event": "warning",
-						"code": "audio-mixer-tail-dropped",
-						"message": "The AAC input never drained; \(pending.count) mixed chunk(s) were dropped.",
-					])
-					pending.removeAll()
-					break
-				}
-				Thread.sleep(forTimeInterval: 0.002)
-			}
-			return
-		}
-		guard pending.count > MixFormat.maxPendingChunks else {
-			return
-		}
-
-		pending.removeFirst(pending.count - MixFormat.maxPendingChunks)
-		if !didWarnAboutBacklog {
-			didWarnAboutBacklog = true
-			emit([
-				"event": "warning",
-				"code": "audio-mixer-backlog",
-				"message": "The AAC input stalled for seconds; the oldest mixed audio was dropped.",
-			])
-		}
 	}
 
 	// MARK: - Sample conversion

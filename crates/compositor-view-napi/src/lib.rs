@@ -77,8 +77,8 @@ pub fn create_view(
     webcam_path: Option<String>,
     cursor_path: Option<String>,
 ) -> Result<i32> {
-    let screen = screen_path
-        .ok_or_else(|| Error::from_reason("create_view: screen_path is required"))?;
+    let screen =
+        screen_path.ok_or_else(|| Error::from_reason("create_view: screen_path is required"))?;
     let webcam = webcam_path.unwrap_or_default();
     let cursor = cursor_path.unwrap_or_default();
     let view = LiveView::create(
@@ -127,6 +127,11 @@ pub struct FramePacket {
     pub gen: f64,
     pub width: u32,
     pub height: u32,
+    /// Source-media time and clip identity of the frame native actually rendered.
+    /// These fields let the renderer measure drift instead of inferring it.
+    pub source_time_sec: f64,
+    pub clip_index: u32,
+    pub transport_generation: f64,
     /// R,G,B,A tightly-packed, `width * height * 4` octets — ce que `putImageData` /
     /// `ImageData` attendent côté JS (canvas 2D, format natif RGBA8).
     pub data: Buffer,
@@ -169,15 +174,20 @@ pub fn read_frame(id: i32, since_gen: f64) -> Result<Option<FramePacket>> {
             v.latest_frame_since(since_gen.max(0.0) as u64)
         }
     };
-    Ok(slot.map(|(gen, w, h, pixels)| {
-        debug_assert_eq!(pixels.len(), (w as usize) * (h as usize) * 4);
-        FramePacket {
-            gen: gen as f64,
-            width: w,
-            height: h,
-            data: Buffer::from(pixels),
-        }
-    }))
+    Ok(slot.map(
+        |(gen, w, h, source_time_sec, clip_index, transport_generation, pixels)| {
+            debug_assert_eq!(pixels.len(), (w as usize) * (h as usize) * 4);
+            FramePacket {
+                gen: gen as f64,
+                width: w,
+                height: h,
+                source_time_sec,
+                clip_index: clip_index as u32,
+                transport_generation: transport_generation as f64,
+                data: Buffer::from(pixels),
+            }
+        },
+    ))
 }
 
 /// Param live (inspector). Le type de valeur route vers le bon setter :
@@ -232,6 +242,32 @@ pub fn set_active_clip(
     }
 }
 
+/// Applies one complete renderer transport anchor. Clip identity, exact source time,
+/// and play state reach the render thread together under one ordered generation.
+#[napi]
+pub fn sync_transport(
+    id: i32,
+    generation: f64,
+    playing: bool,
+    screen_path: String,
+    webcam_path: String,
+    webcam_offset_sec: f64,
+    clip_index: u32,
+    source_time_sec: f64,
+) {
+    if let Some(v) = registry().lock().unwrap().get(&id) {
+        v.sync_transport(
+            generation.max(0.0) as u64,
+            playing,
+            &screen_path,
+            &webcam_path,
+            webcam_offset_sec,
+            clip_index as usize,
+            source_time_sec,
+        );
+    }
+}
+
 /// Installe la scène de l'app (JSON `SceneDescription`) sur la vue : layout preset piloté par
 /// l'app au lieu de la fixture. JSON invalide → ignoré côté natif.
 #[napi]
@@ -250,12 +286,44 @@ pub fn destroy_view(id: i32) {
 
 /// Bilan d'un export natif (mesure §10 : une lecture d'horloge avant-après tout le run).
 #[napi(object)]
+pub struct AudioMasteringStatsOutput {
+    pub enabled: bool,
+    pub analyzed: bool,
+    pub applied_gain_db: f64,
+    pub input_lufs: Option<f64>,
+    pub output_lufs: Option<f64>,
+    pub input_true_peak_dbtp: Option<f64>,
+    pub output_true_peak_dbtp: Option<f64>,
+    pub limited_by_true_peak: bool,
+    pub limited_by_gain_cap: bool,
+    pub warning: Option<String>,
+}
+
+impl From<openscreen_compositor::audio::AudioMasteringStats> for AudioMasteringStatsOutput {
+    fn from(stats: openscreen_compositor::audio::AudioMasteringStats) -> Self {
+        Self {
+            enabled: stats.enabled,
+            analyzed: stats.analyzed,
+            applied_gain_db: stats.applied_gain_db,
+            input_lufs: stats.input_lufs,
+            output_lufs: stats.output_lufs,
+            input_true_peak_dbtp: stats.input_true_peak_dbtp,
+            output_true_peak_dbtp: stats.output_true_peak_dbtp,
+            limited_by_true_peak: stats.limited_by_true_peak,
+            limited_by_gain_cap: stats.limited_by_gain_cap,
+            warning: stats.warning,
+        }
+    }
+}
+
+#[napi(object)]
 pub struct ExportStats {
     pub frames: u32,
     pub wall_s: f64,
     pub fps: f64,
     /// Durée de la vidéo exportée (secondes) — distincte de `wall_s` (temps de rendu réel).
     pub video_duration_s: f64,
+    pub audio_mastering: AudioMasteringStatsOutput,
 }
 
 /// Bilan d'un export GIF natif. Mêmes champs que `ExportStats` (frames /
@@ -358,6 +426,10 @@ pub struct ExportParamsInput {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub fps: Option<u32>,
+    /// Target video bitrate in bits/s. Omitted keeps the native legacy fallback.
+    pub bitrate: Option<u32>,
+    /// Full-program EBU R128 normalization. Omitted defaults to enabled.
+    pub normalize_audio: Option<bool>,
     /// "h264" | "h265". Toute autre valeur (ex. "vp9", pas d'équivalent matériel AMF) fait
     /// échouer l'export avec un message clair plutôt que de silencieusement retomber sur h264.
     pub codec: Option<String>,
@@ -377,8 +449,16 @@ pub struct ExportMultiTask {
     on_progress: Option<ThreadsafeFunction<u32, ErrorStrategy::Fatal>>,
 }
 
+pub struct ExportMultiOutput {
+    frames: u32,
+    wall_s: f64,
+    fps: f64,
+    video_duration_s: f64,
+    audio_mastering: openscreen_compositor::audio::AudioMasteringStats,
+}
+
 impl Task for ExportMultiTask {
-    type Output = (u32, f64, f64, f64);
+    type Output = ExportMultiOutput;
     type JsValue = ExportStats;
 
     fn compute(&mut self) -> Result<Self::Output> {
@@ -396,7 +476,10 @@ impl Task for ExportMultiTask {
         // scène de l'app = même chemin que la preview live : fond, layout, webcam, curseur.
         // JSON absent/invalide → pas de scène (fixture), pareil que si la preview n'en avait
         // jamais reçu — jamais un fallback masquant, juste rien de configuré.
-        let scene = self.scene_json.as_deref().and_then(|j| Scene::from_json(j).ok());
+        let scene = self
+            .scene_json
+            .as_deref()
+            .and_then(|j| Scene::from_json(j).ok());
         if let Some(scene) = &scene {
             cfg.bg_blur = scene.effects.blur;
             cfg.cursor = scene.cursor.show;
@@ -413,6 +496,13 @@ impl Task for ExportMultiTask {
                 export_params.height = h.max(2) & !1;
             }
             export_params.fps = p.fps;
+            export_params.normalize_audio = p.normalize_audio.unwrap_or(true);
+            if let Some(bitrate) = p.bitrate {
+                export_params.bitrate = Some(
+                    openscreen_compositor::export_settings::validate_video_bitrate(bitrate)
+                        .map_err(Error::from_reason)?,
+                );
+            }
             if let Some(codec) = &p.codec {
                 export_params.codec = match codec.as_str() {
                     "h264" => pipeline::ExportCodec::H264,
@@ -454,11 +544,23 @@ impl Task for ExportMultiTask {
             &mut progress,
         )
         .map_err(|e| Error::from_reason(format!("{e:#}")))?;
-        Ok((s.frames as u32, s.wall_s, s.fps, s.video_duration_s))
+        Ok(ExportMultiOutput {
+            frames: s.frames as u32,
+            wall_s: s.wall_s,
+            fps: s.fps,
+            video_duration_s: s.video_duration_s,
+            audio_mastering: s.audio_mastering,
+        })
     }
 
     fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
-        Ok(ExportStats { frames: out.0, wall_s: out.1, fps: out.2, video_duration_s: out.3 })
+        Ok(ExportStats {
+            frames: out.frames,
+            wall_s: out.wall_s,
+            fps: out.fps,
+            video_duration_s: out.video_duration_s,
+            audio_mastering: out.audio_mastering.into(),
+        })
     }
 }
 
@@ -565,7 +667,10 @@ impl Task for ExportGifTask {
         cfg.layout_anim = false;
         cfg.mblur_n = 1;
 
-        let scene = self.scene_json.as_deref().and_then(|j| Scene::from_json(j).ok());
+        let scene = self
+            .scene_json
+            .as_deref()
+            .and_then(|j| Scene::from_json(j).ok());
         if let Some(scene) = &scene {
             cfg.bg_blur = scene.effects.blur;
             cfg.cursor = scene.cursor.show;
@@ -681,8 +786,11 @@ impl Task for RemuxTask {
     type JsValue = RemuxStats;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        openscreen_compositor::remux::remux_to_seekable_matroska(&self.input_path, &self.output_path)
-            .map_err(|e| Error::from_reason(format!("{e:#}")))
+        openscreen_compositor::remux::remux_to_seekable_matroska(
+            &self.input_path,
+            &self.output_path,
+        )
+        .map_err(|e| Error::from_reason(format!("{e:#}")))
     }
 
     fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {

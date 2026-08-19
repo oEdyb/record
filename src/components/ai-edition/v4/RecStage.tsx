@@ -10,7 +10,7 @@ import {
 	Volume2,
 	VolumeX,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLevelMeter } from "@/components/ui/audio-level-meter";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useAudioLevelMeter } from "@/hooks/useAudioLevelMeter";
@@ -18,6 +18,13 @@ import { useCameraDevices } from "@/hooks/useCameraDevices";
 import { useCameraPreviewStream } from "@/hooks/useCameraPreviewStream";
 import { useMicrophoneDevices } from "@/hooks/useMicrophoneDevices";
 import { usePortalOwnsSource } from "@/hooks/usePortalOwnsSource";
+import {
+	DEFAULT_WEBCAM_FORMAT,
+	formatWebcamFormat,
+	sameWebcamFormat,
+	type WebcamFormat,
+	webcamFormatKey,
+} from "@/lib/webcamFormats";
 import styles from "./EditorShellV4.module.css";
 
 interface RecordingPrefsState {
@@ -25,6 +32,7 @@ interface RecordingPrefsState {
 	micDeviceId: string | null;
 	camEnabled: boolean;
 	camDeviceId: string | null;
+	camFormat: WebcamFormat;
 	systemAudioEnabled: boolean;
 	cursorCaptureMode: "editable-overlay" | "system";
 }
@@ -34,9 +42,12 @@ const DEFAULT_PREFS: RecordingPrefsState = {
 	micDeviceId: null,
 	camEnabled: false,
 	camDeviceId: null,
+	camFormat: DEFAULT_WEBCAM_FORMAT,
 	systemAudioEnabled: false,
 	cursorCaptureMode: "editable-overlay",
 };
+
+const DEVICE_OFF_VALUE = "__off__";
 
 /**
  * Rec-mode stage. The real capture pipeline lives in the standalone recorder
@@ -76,7 +87,7 @@ export function RecStage({
 			cancelled = true;
 		};
 	}, []);
-	const updatePrefs = (patch: Partial<RecordingPrefsState>) => {
+	const updatePrefs = useCallback((patch: Partial<RecordingPrefsState>) => {
 		setPrefsState((prev) => {
 			const next = { ...prev, ...patch };
 			void window.electronAPI?.setRecordingPrefs?.(patch).catch((err) => {
@@ -84,10 +95,18 @@ export function RecStage({
 			});
 			return next;
 		});
-	};
+	}, []);
 
 	const micDevices = useMicrophoneDevices(true);
 	const camDevices = useCameraDevices(true);
+	const selectedMicDeviceId = prefs.micDeviceId ?? micDevices.selectedDeviceId;
+	const selectedCameraDeviceId = prefs.camDeviceId ?? camDevices.selectedDeviceId;
+	const micDeviceAvailable = micDevices.devices.some(
+		(device) => device.deviceId === selectedMicDeviceId,
+	);
+	const cameraDeviceAvailable = camDevices.devices.some(
+		(device) => device.deviceId === selectedCameraDeviceId,
+	);
 
 	// Seed the device hooks' local "selected" state from the persisted prefs
 	// once devices are enumerated, so the dropdown reflects the last real
@@ -102,6 +121,14 @@ export function RecStage({
 			camDevices.setSelectedDeviceId(prefs.camDeviceId);
 		}
 	}, [prefs.camDeviceId, camDevices.devices, camDevices.setSelectedDeviceId]);
+	useEffect(() => {
+		if (micDevices.isLoading || !prefs.micEnabled || micDeviceAvailable) return;
+		updatePrefs({ micEnabled: false });
+	}, [micDeviceAvailable, micDevices.isLoading, prefs.micEnabled, updatePrefs]);
+	useEffect(() => {
+		if (camDevices.isLoading || !prefs.camEnabled || cameraDeviceAvailable) return;
+		updatePrefs({ camEnabled: false });
+	}, [cameraDeviceAvailable, camDevices.isLoading, prefs.camEnabled, updatePrefs]);
 
 	// Live proof the selected devices actually work — a level meter for mic,
 	// a real <video> feed for camera — instead of just toggling a pref flag.
@@ -109,10 +136,30 @@ export function RecStage({
 		enabled: prefs.micEnabled,
 		deviceId: prefs.micDeviceId ?? undefined,
 	});
-	const { stream: cameraStream, error: cameraError } = useCameraPreviewStream({
+	const {
+		stream: cameraStream,
+		error: cameraError,
+		supportedFormats: webcamFormats,
+		activeFormat: activeWebcamFormat,
+	} = useCameraPreviewStream({
 		enabled: prefs.camEnabled,
 		deviceId: prefs.camDeviceId ?? undefined,
+		format: prefs.camFormat,
 	});
+	const webcamFormatOptions = webcamFormats.length > 0 ? webcamFormats : [prefs.camFormat];
+	useEffect(() => {
+		if (
+			webcamFormats.length === 0 ||
+			sameWebcamFormat(activeWebcamFormat, prefs.camFormat) ||
+			!webcamFormats.some((format) => sameWebcamFormat(format, activeWebcamFormat))
+		) {
+			return;
+		}
+		setPrefsState((previous) => ({ ...previous, camFormat: activeWebcamFormat }));
+		void window.electronAPI?.setRecordingPrefs?.({ camFormat: activeWebcamFormat }).catch((err) => {
+			console.warn("[rec-stage] failed to persist the resolved webcam format:", err);
+		});
+	}, [activeWebcamFormat, prefs.camFormat, webcamFormats]);
 	const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
 	useEffect(() => {
 		if (cameraVideoRef.current) cameraVideoRef.current.srcObject = cameraStream;
@@ -123,7 +170,7 @@ export function RecStage({
 	useEffect(() => {
 		void window.electronAPI
 			?.getSelectedSource?.()
-			.then((s) => setSource(s ?? null))
+			.then((selected) => setSource(selected ?? null))
 			.catch((err) => {
 				console.warn("[rec-stage] failed to read the selected source:", err);
 			});
@@ -162,7 +209,7 @@ export function RecStage({
 	const portalOwnsSource = usePortalOwnsSource();
 	const sourceLabel = portalOwnsSource
 		? t("rec.systemPicker")
-		: (source?.name ?? t("rec.entireScreen"));
+		: (source?.name ?? t("recording.selectSource"));
 
 	return (
 		<div className={styles.recStage}>
@@ -177,6 +224,7 @@ export function RecStage({
 									muted
 									playsInline
 									className={styles.recCameraVideo}
+									data-testid="recording-camera-preview"
 								/>
 							) : cameraError ? (
 								<div className={styles.recPreviewPlaceholder}>
@@ -191,14 +239,14 @@ export function RecStage({
 							)
 						) : (
 							<div className={styles.recPreviewPlaceholder}>
-								<MonitorSmartphone size={28} />
-								<span>{sourceLabel}</span>
+								<CameraOff size={28} />
+								<span>{t("rec.camera")}</span>
 								<span className={styles.recPreviewHint}>{t("rec.turnOnCameraHint")}</span>
 							</div>
 						)}
 						<div className={styles.recBadge}>
 							<span className={styles.recDot} aria-hidden />
-							<span>{sourceLabel}</span>
+							<span>{t("rec.camera")}</span>
 						</div>
 					</div>
 				</div>
@@ -258,42 +306,35 @@ export function RecStage({
 						<div className={styles.recRowLabel}>
 							{prefs.micEnabled ? <MicOn size={15} /> : <MicOff size={15} />}
 							{t("rec.microphone")}
+							{prefs.micEnabled ? (
+								<AudioLevelMeter level={micLevel} className={styles.recLevelMeter} />
+							) : null}
 						</div>
 						<div className={styles.recRowControl}>
-							{prefs.micEnabled ? (
-								<>
-									{micDevices.isLoading ? (
-										<span className={styles.recRowMuted}>
-											<Loader2 size={13} className="animate-spin" />
-											{t("rec.loading")}
-										</span>
-									) : (
-										<select
-											className={styles.recSelect}
-											value={prefs.micDeviceId ?? micDevices.selectedDeviceId}
-											onChange={(e) => {
-												micDevices.setSelectedDeviceId(e.target.value);
-												updatePrefs({ micDeviceId: e.target.value });
-											}}
-										>
-											{micDevices.devices.map((d) => (
-												<option key={d.deviceId} value={d.deviceId}>
-													{d.label}
-												</option>
-											))}
-										</select>
-									)}
-									<AudioLevelMeter level={micLevel} className={styles.recLevelMeter} />
-								</>
-							) : null}
-							<button
-								type="button"
-								className={`${styles.recToggleBtn}${prefs.micEnabled ? ` ${styles.on}` : ""}`}
-								aria-pressed={prefs.micEnabled}
-								onClick={() => updatePrefs({ micEnabled: !prefs.micEnabled })}
+							<select
+								className={styles.recSelect}
+								aria-label={t("rec.microphone")}
+								disabled={micDevices.isLoading}
+								value={
+									prefs.micEnabled && micDeviceAvailable ? selectedMicDeviceId : DEVICE_OFF_VALUE
+								}
+								onChange={(event) => {
+									const deviceId = event.target.value;
+									if (deviceId === DEVICE_OFF_VALUE) {
+										updatePrefs({ micEnabled: false });
+										return;
+									}
+									micDevices.setSelectedDeviceId(deviceId);
+									updatePrefs({ micEnabled: true, micDeviceId: deviceId });
+								}}
 							>
-								{prefs.micEnabled ? t("rec.on") : t("rec.off")}
-							</button>
+								<option value={DEVICE_OFF_VALUE}>{t("rec.off")}</option>
+								{micDevices.devices.map((device) => (
+									<option key={device.deviceId} value={device.deviceId}>
+										{device.label}
+									</option>
+								))}
+							</select>
 						</div>
 					</div>
 
@@ -303,41 +344,61 @@ export function RecStage({
 							{t("rec.camera")}
 						</div>
 						<div className={styles.recRowControl}>
-							{prefs.camEnabled ? (
-								camDevices.isLoading ? (
-									<span className={styles.recRowMuted}>
-										<Loader2 size={13} className="animate-spin" />
-										{t("rec.loading")}
-									</span>
-								) : camDevices.devices.length === 0 ? (
-									<span className={styles.recRowMuted}>{t("rec.noCameraFound")}</span>
-								) : (
-									<select
-										className={styles.recSelect}
-										value={prefs.camDeviceId ?? camDevices.selectedDeviceId}
-										onChange={(e) => {
-											camDevices.setSelectedDeviceId(e.target.value);
-											updatePrefs({ camDeviceId: e.target.value });
-										}}
-									>
-										{camDevices.devices.map((d) => (
-											<option key={d.deviceId} value={d.deviceId}>
-												{d.label}
-											</option>
-										))}
-									</select>
-								)
-							) : null}
-							<button
-								type="button"
-								className={`${styles.recToggleBtn}${prefs.camEnabled ? ` ${styles.on}` : ""}`}
-								aria-pressed={prefs.camEnabled}
-								onClick={() => updatePrefs({ camEnabled: !prefs.camEnabled })}
+							<select
+								className={styles.recSelect}
+								aria-label={t("rec.camera")}
+								disabled={camDevices.isLoading}
+								value={
+									prefs.camEnabled && cameraDeviceAvailable
+										? selectedCameraDeviceId
+										: DEVICE_OFF_VALUE
+								}
+								onChange={(event) => {
+									const deviceId = event.target.value;
+									if (deviceId === DEVICE_OFF_VALUE) {
+										updatePrefs({ camEnabled: false });
+										return;
+									}
+									camDevices.setSelectedDeviceId(deviceId);
+									updatePrefs({ camEnabled: true, camDeviceId: deviceId });
+								}}
 							>
-								{prefs.camEnabled ? t("rec.on") : t("rec.off")}
-							</button>
+								<option value={DEVICE_OFF_VALUE}>{t("rec.off")}</option>
+								{camDevices.devices.map((device) => (
+									<option key={device.deviceId} value={device.deviceId}>
+										{device.label}
+									</option>
+								))}
+							</select>
 						</div>
 					</div>
+
+					{prefs.camEnabled ? (
+						<div className={styles.recRow}>
+							<div className={styles.recRowLabel}>
+								<Camera size={15} />
+								{t("exportDialog.quality")}
+							</div>
+							<select
+								className={styles.recSelect}
+								aria-label={`${t("rec.camera")} ${t("exportDialog.quality")}`}
+								value={webcamFormatKey(prefs.camFormat)}
+								disabled={webcamFormats.length === 0}
+								onChange={(event) => {
+									const selected = webcamFormatOptions.find(
+										(format) => webcamFormatKey(format) === event.target.value,
+									);
+									if (selected) updatePrefs({ camFormat: selected });
+								}}
+							>
+								{webcamFormatOptions.map((format) => (
+									<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
+										{formatWebcamFormat(format)}
+									</option>
+								))}
+							</select>
+						</div>
+					) : null}
 
 					<div className={styles.recRow}>
 						<div className={styles.recRowLabel}>

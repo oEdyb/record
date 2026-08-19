@@ -28,6 +28,14 @@
 			"hint": "0 = 左端 / 上端、100 = 右端 / 下端"
 		}
 	},
+	"motion": {
+		"title": "モーション",
+		"speed": "速度",
+		"smooth": "なめらか",
+		"snappy": "キビキビ",
+		"linear": "リニア",
+		"instant": "即時"
+	},
 	"speed": {
 		"playbackSpeed": "再生速度",
 		"selectRegion": "再生速度の範囲を選択して調整",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "書き出し解像度",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "中",
+		"medium": "高",
+		"high": "最高"
 	},
 	"gifSettings": {
 		"frameRate": "GIF フレームレート",

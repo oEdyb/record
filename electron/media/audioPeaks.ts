@@ -35,6 +35,22 @@ export interface AudioPeaksResult {
 	message?: string;
 }
 
+export type AudioTrackSelection = "mixed" | "microphone";
+
+/**
+ * Native Mac clips tag the isolated microphone track with the private ISO-639
+ * language code `qac`. FFmpeg exposes that tag reliably, unlike AVAssetWriter's
+ * common-title metadata. The required map rejects an older or non-Mac recording
+ * with no isolated mic track; the IPC layer catches that result and automatic
+ * camera direction stays off.
+ */
+export function audioTrackMapArgs(track: AudioTrackSelection): string[] {
+	// Keep this map required. An optional metadata map falls back to FFmpeg's
+	// automatic default-stream selection when qac is absent, which can mistake
+	// mixed or system audio for microphone activity.
+	return track === "microphone" ? ["-map", "0:m:language:qac"] : [];
+}
+
 /** PCM the peaks are computed from. Mono (ffmpeg downmixes) so channels are
  *  already averaged, and 16 kHz because peak buckets are at most 200/s: that
  *  still leaves 80 samples per bucket, far more than a min/max needs. */
@@ -48,6 +64,7 @@ const PEAK_BLOCKS_PER_SEC = 200;
 /** A recording whose audio takes longer than this to decode is not a recording,
  *  it is a wedged ffmpeg. ~30x the worst measured case. */
 const DECODE_TIMEOUT_MS = 60_000;
+const MICROPHONE_DECODE_TIMEOUT_MS = 3_000;
 
 /**
  * Where to find an ffmpeg that actually exists at runtime, in priority order.
@@ -93,6 +110,18 @@ export function ffmpegCandidates(here: string = process.cwd()): string[] {
 		...roots.flatMap((root) =>
 			names.map((n) => path.join(root, "electron", "native", "bin", tag, n)),
 		),
+		...(process.platform === "darwin"
+			? [
+					path.join(
+						here,
+						"crates",
+						"thirdparty",
+						"ffmpeg-n8.1.2-macos64-lgpl-shared",
+						"bin",
+						"ffmpeg",
+					),
+				]
+			: []),
 	];
 }
 
@@ -209,6 +238,7 @@ async function decodePeaks(
 	ffmpeg: string,
 	filePath: string,
 	durationSec: number,
+	track: AudioTrackSelection,
 ): Promise<Float32Array> {
 	const blocks = peakBlockCount(durationSec);
 	const folder = new PeakFolder(blocks, durationSec * PCM_RATE);
@@ -220,6 +250,7 @@ async function decodePeaks(
 			"error",
 			"-i",
 			filePath,
+			...audioTrackMapArgs(track),
 			"-vn",
 			"-ac",
 			"1",
@@ -234,10 +265,11 @@ async function decodePeaks(
 
 	return new Promise<Float32Array>((resolve, reject) => {
 		let stderr = "";
+		const timeoutMs = track === "microphone" ? MICROPHONE_DECODE_TIMEOUT_MS : DECODE_TIMEOUT_MS;
 		const timer = setTimeout(() => {
 			child.kill("SIGKILL");
-			reject(new Error(`ffmpeg timed out after ${DECODE_TIMEOUT_MS}ms on ${filePath}`));
-		}, DECODE_TIMEOUT_MS);
+			reject(new Error(`ffmpeg timed out after ${timeoutMs}ms on ${filePath}`));
+		}, timeoutMs);
 
 		child.stdout.on("data", (c: Buffer) => folder.push(c));
 		child.stderr.on("data", (c: Buffer) => {
@@ -297,12 +329,13 @@ function cacheDir(): string | null {
 export async function getAudioPeaks(
 	filePath: string,
 	durationSec: number,
+	track: AudioTrackSelection = "mixed",
 ): Promise<Float32Array | null> {
 	const ffmpeg = resolveFfmpeg();
 	if (!ffmpeg || !durationSec || durationSec <= 0) return null;
 
 	const dir = cacheDir();
-	const cachePath = dir ? path.join(dir, `${await cacheKey(filePath)}.f32`) : null;
+	const cachePath = dir ? path.join(dir, `${await cacheKey(filePath)}-${track}.f32`) : null;
 	if (cachePath) {
 		try {
 			const cached = await readFile(cachePath);
@@ -316,7 +349,7 @@ export async function getAudioPeaks(
 		}
 	}
 
-	const peaks = await decodePeaks(ffmpeg, filePath, durationSec);
+	const peaks = await decodePeaks(ffmpeg, filePath, durationSec, track);
 	if (cachePath && dir) {
 		try {
 			await mkdir(dir, { recursive: true });

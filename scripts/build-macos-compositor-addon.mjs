@@ -154,20 +154,34 @@ function installAtomically(from, to) {
  * signature no longer matches (the same `SIGKILL (Code Signature Invalid)` documented on
  * `installAtomically` above).
  */
-function vendorFfmpegDylibs(nodePath, ffmpegDir) {
+function vendorFfmpegDylibs(nodePath, ffmpegDir, executablePaths = []) {
 	const outDir = path.dirname(nodePath);
 	const libDir = path.join(ffmpegDir, "lib");
-	const linked = execFileSync("otool", ["-L", nodePath], { encoding: "utf8" })
-		.split("\n")
-		.map((line) => line.trim().split(" ")[0])
-		.filter((p) => /\/lib(av|sw)\w+\.\d+\.dylib$/.test(p));
-	if (linked.length === 0) {
+	const linkedFfmpegPaths = (file) =>
+		execFileSync("otool", ["-L", file], { encoding: "utf8" })
+			.split("\n")
+			.map((line) => line.trim().split(" ")[0])
+			.filter((p) => /\/lib(av|sw)\w+\.\d+\.dylib$/.test(p));
+	const roots = [nodePath, ...executablePaths];
+	const namesByPath = new Map();
+	const queue = [...roots];
+	while (queue.length > 0) {
+		const current = queue.shift();
+		for (const linked of linkedFfmpegPaths(current)) {
+			const name = path.basename(linked);
+			if (namesByPath.has(name)) continue;
+			const source = path.join(libDir, name);
+			namesByPath.set(name, source);
+			queue.push(source);
+		}
+	}
+	if (namesByPath.size === 0) {
 		throw new Error(`${nodePath} links no ffmpeg dylib — nothing to vendor, which is wrong.`);
 	}
 
-	const names = linked.map((p) => path.basename(p));
+	const names = [...namesByPath.keys()];
 	for (const name of names) {
-		const from = path.join(libDir, name);
+		const from = namesByPath.get(name);
 		if (!fs.existsSync(from)) {
 			throw new Error(`Missing ${from}; the addon links it but the SDK does not ship it.`);
 		}
@@ -177,7 +191,7 @@ function vendorFfmpegDylibs(nodePath, ffmpegDir) {
 		execFileSync("install_name_tool", ["-id", `@rpath/${name}`, to]);
 	}
 	// Inter-library references, and the addon's own.
-	for (const target of [...names.map((n) => path.join(outDir, n)), nodePath]) {
+	for (const target of [...names.map((n) => path.join(outDir, n)), ...roots]) {
 		const deps = execFileSync("otool", ["-L", target], { encoding: "utf8" })
 			.split("\n")
 			.map((line) => line.trim().split(" ")[0])
@@ -220,7 +234,7 @@ function vendorFfmpegDylibs(nodePath, ffmpegDir) {
 		);
 	};
 
-	for (const file of [nodePath, ...names.map((n) => path.join(outDir, n))]) {
+	for (const file of [...roots, ...names.map((n) => path.join(outDir, n))]) {
 		const remaining = absolutePaths(file);
 		if (remaining.length > 0) {
 			throw new Error(
@@ -267,13 +281,21 @@ const archBinDir = path.join(ROOT, "electron", "native", "bin", `darwin-${proces
 const archDest = path.join(archBinDir, "compositor_view.node");
 installAtomically(builtDylib, archDest);
 
+// audioPeaks.ts uses the same pinned LGPL build for native waveform and isolated-mic
+// analysis. Stage the executable beside the addon so its @loader_path resolves the
+// same vendored dylibs in development and in the packaged app.
+const ffmpegDest = path.join(archBinDir, "ffmpeg");
+installAtomically(path.join(macFfmpegDir, "bin", "ffmpeg"), ffmpegDest);
+fs.chmodSync(ffmpegDest, 0o755);
+
 // Only the arch-tagged copy ships (mac `extraResources`, filter `darwin-*/*`), so that
 // is the one that gets its dylibs and its @rpath.
-vendorFfmpegDylibs(archDest, macFfmpegDir);
+vendorFfmpegDylibs(archDest, macFfmpegDir, [ffmpegDest]);
 
 console.log(`Built  ${builtDylib}`);
 console.log(`Copied ${dest}`);
 console.log(`Copied ${archDest}`);
+console.log(`Copied ${ffmpegDest}`);
 console.log(
 	`\nThe shipped copy (${archDest}) carries its own LGPL ffmpeg dylibs and resolves them\n` +
 		"through @rpath/@loader_path, so the packaged app does not depend on this machine's\n" +

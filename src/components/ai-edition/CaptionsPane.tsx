@@ -173,14 +173,17 @@ export function CaptionsPane() {
 	};
 
 	return (
-		<div className={`${styles.pane} ${styles.isActive}`}>
+		<div
+			className={`${styles.pane} ${styles.isActive} ${styles.flatInspectorPane}`}
+			data-inspector-layout="flat"
+		>
 			<header className={styles.paneHead}>
 				<h2>{t("facets.captions")}</h2>
 				<span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
 					<CaptionsIcon size={14} style={{ color: "var(--muted)" }} />
 				</span>
 			</header>
-			<div className={styles.paneBody} style={{ padding: 0 }}>
+			<div className={styles.paneBody}>
 				<div className={styles.paneRow}>
 					<span className="label">{t("captions.show")}</span>
 					<Toggle
@@ -191,17 +194,7 @@ export function CaptionsPane() {
 				</div>
 
 				{!hasTranscript ? (
-					<div
-						style={{
-							margin: "0 var(--sp-4) 12px",
-							padding: "14px",
-							border: "1px dashed var(--border-hi)",
-							borderRadius: 10,
-							display: "flex",
-							flexDirection: "column",
-							gap: 10,
-						}}
-					>
+					<div className={styles.captionStatus}>
 						<p style={{ margin: 0, font: "400 12px/1.5 var(--font-body)", color: "var(--muted)" }}>
 							{silentMedia ? te("mediaStage.noAudioTrackHint") : t("captions.noTranscript")}
 						</p>
@@ -229,13 +222,7 @@ export function CaptionsPane() {
 						</button>
 					</div>
 				) : (
-					<p
-						style={{
-							margin: "0 var(--sp-4) 12px",
-							font: "400 11.5px/1.5 var(--font-body)",
-							color: "var(--meta)",
-						}}
-					>
+					<p className={styles.captionHint}>
 						{/* The cue count is only meaningful while the layer is on — deriving
 						    cues short-circuits when it's off, so a "0 lines" reading there
 						    would say the transcript is empty when it isn't. */}
@@ -246,18 +233,7 @@ export function CaptionsPane() {
 				)}
 
 				{legacyCaptionAnnotations.length > 0 ? (
-					<div
-						style={{
-							margin: "0 var(--sp-4) 12px",
-							padding: "12px 14px",
-							border: "1px solid var(--border)",
-							borderRadius: 10,
-							background: "var(--surface-warm)",
-							display: "flex",
-							flexDirection: "column",
-							gap: 8,
-						}}
-					>
+					<div className={styles.captionLegacyNotice}>
 						<p style={{ margin: 0, font: "400 11.5px/1.5 var(--font-body)", color: "var(--fg-2)" }}>
 							{t("captions.legacyAnnotations", { count: legacyCaptionAnnotations.length })}
 						</p>
@@ -291,14 +267,7 @@ export function CaptionsPane() {
 					</select>
 				</div>
 
-				<div
-					style={{
-						margin: "0 var(--sp-4) 12px",
-						display: "flex",
-						alignItems: "center",
-						gap: 8,
-					}}
-				>
+				<div className={styles.captionTranslationRow}>
 					<select
 						value={target}
 						disabled={disabled || translating}
@@ -326,7 +295,7 @@ export function CaptionsPane() {
 					<button
 						type="button"
 						className={`${styles.btn} ${styles.btnSecondary}`}
-						style={{ margin: "0 var(--sp-4) 12px" }}
+						style={{ marginBottom: 12 }}
 						disabled={disabled}
 						onClick={() => void deleteTranslation(settings.language as string)}
 					>
@@ -334,26 +303,8 @@ export function CaptionsPane() {
 						{t("captions.deleteTranslation")}
 					</button>
 				) : null}
-				{translateError ? (
-					<p
-						style={{
-							margin: "0 var(--sp-4) 12px",
-							font: "400 11.5px/1.5 var(--font-body)",
-							color: "var(--danger)",
-						}}
-					>
-						{translateError}
-					</p>
-				) : null}
-				<p
-					style={{
-						margin: "0 var(--sp-4) 14px",
-						font: "400 11px/1.5 var(--font-body)",
-						color: "var(--meta)",
-					}}
-				>
-					{t("captions.translationIsNonDestructive")}
-				</p>
+				{translateError ? <p className={styles.captionError}>{translateError}</p> : null}
+				<p className={styles.captionFinePrint}>{t("captions.translationIsNonDestructive")}</p>
 
 				{/* ── Text ───────────────────────────────────────────────── */}
 				<div className={styles.sectionLabel}>{t("captions.text")}</div>
@@ -502,7 +453,7 @@ export function CaptionsPane() {
 						))}
 					</select>
 				</div>
-				<div className={styles.paneRow} style={{ marginBottom: 16 }}>
+				<div className={styles.paneRow}>
 					<span className="label">{t("captions.maxWords")}</span>
 					<select
 						value={settings.maxWordsPerLine}

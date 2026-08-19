@@ -22,7 +22,7 @@
 //     audio extraction is memory-hungry), guarded by a module-level promise,
 //     and it drops any job a run left behind rather than spinning on it.
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
 import { DEFAULT_LOCALE, LOCALE_STORAGE_KEY, type Locale } from "@/i18n/config";
@@ -66,7 +66,7 @@ interface TranscriptionState {
 	jobs: Record<string, TranscriptionJob>;
 
 	/** Reconcile the queue with a document. Idempotent; safe to call on every document change. */
-	sync: (document: AxcutDocument | null) => void;
+	sync: (document: AxcutDocument | null, localEngineAvailable?: boolean) => void;
 	/** Transcribe (or re-transcribe) one asset now. Resolves once the run settles. */
 	request: (assetId: string, language?: string) => Promise<void>;
 	/**
@@ -105,7 +105,7 @@ export const useTranscriptionStore = create<TranscriptionState>((set, get) => ({
 	projectId: null,
 	jobs: {},
 
-	sync(document) {
+	sync(document, localEngineAvailable = hasLocalSttEngine()) {
 		if (!document) {
 			if (get().projectId !== null || Object.keys(get().jobs).length > 0) get().reset();
 			return;
@@ -129,7 +129,7 @@ export const useTranscriptionStore = create<TranscriptionState>((set, get) => ({
 			if (!assetIds.has(assetId)) delete patch()[assetId];
 		}
 
-		if (hasLocalSttEngine()) {
+		if (localEngineAvailable) {
 			for (const asset of document.assets) {
 				if (jobs[asset.id]) continue;
 				if (findAssetTranscript(document, asset.id)) continue;
@@ -481,9 +481,36 @@ export function whenTranscriptionIdle(): Promise<void> {
 export function useAutoTranscription(): void {
 	const document = useProjectStore((s) => s.document);
 	const sync = useTranscriptionStore((s) => s.sync);
+	const [localEngineAvailable, setLocalEngineAvailable] = useState(false);
+
 	useEffect(() => {
-		sync(document);
-	}, [document, sync]);
+		const stt = window.electronAPI?.stt;
+		if (typeof stt?.transcribe !== "function") {
+			setLocalEngineAvailable(false);
+			return;
+		}
+		if (typeof stt.isAvailable !== "function") {
+			setLocalEngineAvailable(true);
+			return;
+		}
+
+		let cancelled = false;
+		void stt
+			.isAvailable()
+			.then((available) => {
+				if (!cancelled) setLocalEngineAvailable(available);
+			})
+			.catch(() => {
+				if (!cancelled) setLocalEngineAvailable(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		sync(document, localEngineAvailable);
+	}, [document, localEngineAvailable, sync]);
 }
 
 /**

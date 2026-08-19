@@ -33,6 +33,9 @@ export interface NativeFramePacket {
 	gen: number;
 	width: number;
 	height: number;
+	sourceTimeSec: number;
+	clipIndex: number;
+	transportGeneration: number;
 	data: Buffer;
 }
 
@@ -42,6 +45,20 @@ export interface ExportStats {
 	fps: number;
 	/** Duration of the exported video (seconds) — distinct from `wallS` (real render time). */
 	videoDurationS: number;
+	audioMastering: AudioMasteringStats;
+}
+
+export interface AudioMasteringStats {
+	enabled: boolean;
+	analyzed: boolean;
+	appliedGainDb: number;
+	inputLufs?: number;
+	outputLufs?: number;
+	inputTruePeakDbtp?: number;
+	outputTruePeakDbtp?: number;
+	limitedByTruePeak: boolean;
+	limitedByGainCap: boolean;
+	warning?: string;
 }
 
 /** Bilan d'un export GIF natif (slice 1). Mêmes champs que `ExportStats`
@@ -83,6 +100,10 @@ export interface ExportParamsInput {
 	width?: number;
 	height?: number;
 	fps?: number;
+	/** Target video bitrate in bits/s. */
+	bitrate?: number;
+	/** Full-program EBU R128 normalization. Omitted defaults to enabled. */
+	normalizeAudio?: boolean;
 	/** "h264" | "h265". Anything else (e.g. "vp9", no AMF hardware equivalent) fails the export
 	 *  with a clear error instead of silently falling back to h264. */
 	codec?: string;
@@ -136,6 +157,17 @@ export interface CompositorViewAddon {
 	readFrame(id: number, sinceGen: number): NativeFramePacket | null;
 	setParam(id: number, key: string, value: CompositorParamValue): void;
 	setPlaying(id: number, playing: boolean): void;
+	/** Applies clip identity, source time, and play state as one ordered anchor. */
+	syncTransport(
+		id: number,
+		generation: number,
+		playing: boolean,
+		screenPath: string,
+		webcamPath: string,
+		webcamOffsetSec: number,
+		clipIndex: number,
+		sourceTimeSec: number,
+	): void;
 	/** Seeks the view to source-media `seconds` for the active clip. */
 	presentTime(id: number, seconds: number): void;
 	/** Installs the app scene (JSON `SceneDescription`) — layout preset etc. drive the render

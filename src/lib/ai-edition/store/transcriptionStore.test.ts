@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
+import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AxcutDocument, AxcutTranscript } from "../schema";
 import { useProjectStore } from "./projectStore";
-import { useTranscriptionStore, whenTranscriptionIdle } from "./transcriptionStore";
+import {
+	useAutoTranscription,
+	useTranscriptionStore,
+	whenTranscriptionIdle,
+} from "./transcriptionStore";
 
 const bridgeMocks = vi.hoisted(() => ({
 	save: vi.fn(),
@@ -313,6 +318,41 @@ describe("useTranscriptionStore", () => {
 
 		expect(transcribeMocks.transcribeAsset).not.toHaveBeenCalled();
 		expect(useTranscriptionStore.getState().jobs).toEqual({});
+	});
+
+	it("does not start the background pass when the preload bridge exists but its helper is missing", async () => {
+		const isAvailable = vi.fn(async () => false);
+		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge
+		(window as any).electronAPI = { stt: { transcribe: vi.fn(), isAvailable } };
+		loadDocument(makeDoc(["asset_1"]));
+
+		const view = renderHook(() => useAutoTranscription());
+		await vi.waitFor(() => expect(isAvailable).toHaveBeenCalledOnce());
+		await whenTranscriptionIdle();
+
+		expect(transcribeMocks.transcribeAsset).not.toHaveBeenCalled();
+		expect(toastMocks.error).not.toHaveBeenCalled();
+		expect(useTranscriptionStore.getState().jobs).toEqual({});
+		view.unmount();
+	});
+
+	it("starts the background pass after the native helper reports that it is available", async () => {
+		const isAvailable = vi.fn(async () => true);
+		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge
+		(window as any).electronAPI = { stt: { transcribe: vi.fn(), isAvailable } };
+		transcribeMocks.transcribeAsset.mockImplementation(
+			async (_doc: AxcutDocument, assetId: string) => transcriptFor(assetId),
+		);
+		loadDocument(makeDoc(["asset_1"]));
+
+		const view = renderHook(() => useAutoTranscription());
+		await vi.waitFor(() => expect(isAvailable).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(transcribeMocks.transcribeAsset).toHaveBeenCalledOnce());
+		await whenTranscriptionIdle();
+
+		expect(useProjectStore.getState().document?.transcripts[0]?.assetId).toBe("asset_1");
+		expect(toastMocks.error).not.toHaveBeenCalled();
+		view.unmount();
 	});
 
 	it("lets a manual request supersede the background run of the same asset", async () => {

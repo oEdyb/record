@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { TooltipProvider } from "../ui/tooltip";
 import { HUD_BAR_BOTTOM, HUD_POPOVER_GAP, HUD_POPOVER_MAX_HEIGHT } from "./hudGeometry";
 import { LaunchWindow } from "./LaunchWindow";
@@ -38,10 +40,16 @@ const recorderState = vi.hoisted(() => ({
 		recording: false,
 		paused: false,
 		saving: false,
+		clipFinalizing: false,
 		elapsedSeconds: 0,
+		activeClipElapsedMs: 0,
+		recordedClips: [] as RecordingSessionClip[],
 		toggleRecording: vi.fn(),
 		togglePaused: vi.fn(),
 		canPauseRecording: false,
+		canReconfigureWhilePaused: false,
+		canRemovePreviousClip: false,
+		removePreviousClip: vi.fn(),
 		restartRecording: vi.fn(),
 		cancelRecording: vi.fn(),
 		microphoneEnabled: false,
@@ -50,10 +58,13 @@ const recorderState = vi.hoisted(() => ({
 		setMicrophoneDeviceId: vi.fn(),
 		setMicrophoneDeviceName: vi.fn(),
 		webcamEnabled: false,
+		webcamPreviewStream: null as MediaStream | null,
 		setWebcamEnabled: vi.fn(async () => true),
 		webcamDeviceId: undefined,
 		setWebcamDeviceId: vi.fn(),
 		setWebcamDeviceName: vi.fn(),
+		webcamFormat: { width: 1920, height: 1080, fps: 30 },
+		setWebcamFormat: vi.fn(),
 		systemAudioEnabled: false,
 		setSystemAudioEnabled: vi.fn(),
 		cursorCaptureMode: "editable-overlay",
@@ -73,6 +84,9 @@ vi.mock("../../hooks/useScreenRecorder", () => ({
 const micDevicesState = vi.hoisted(() => ({
 	value: [] as Array<{ deviceId: string; label: string; groupId: string }>,
 }));
+const cameraDevicesState = vi.hoisted(() => ({
+	value: [] as Array<{ deviceId: string; label: string; groupId: string }>,
+}));
 
 vi.mock("../../hooks/useMicrophoneDevices", () => ({
 	useMicrophoneDevices: () => ({
@@ -84,8 +98,8 @@ vi.mock("../../hooks/useMicrophoneDevices", () => ({
 
 vi.mock("../../hooks/useCameraDevices", () => ({
 	useCameraDevices: () => ({
-		devices: [],
-		selectedDeviceId: "",
+		devices: cameraDevicesState.value,
+		selectedDeviceId: cameraDevicesState.value[0]?.deviceId ?? "",
 		setSelectedDeviceId: vi.fn(),
 		isLoading: false,
 		error: null,
@@ -97,7 +111,15 @@ vi.mock("../../hooks/useAudioLevelMeter", () => ({
 }));
 
 vi.mock("../../hooks/useCameraPreviewStream", () => ({
-	useCameraPreviewStream: () => ({ stream: null, error: null }),
+	useCameraPreviewStream: () => ({
+		stream: null,
+		error: null,
+		supportedFormats: [
+			{ width: 3840, height: 2160, fps: 30 },
+			{ width: 1920, height: 1080, fps: 30 },
+		],
+		activeFormat: recorderState.value.webcamFormat,
+	}),
 }));
 
 vi.mock("../../lib/requestCameraAccess", () => ({
@@ -154,6 +176,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 			"deviceSettings.micLevel": "Input level",
 			"deviceSettings.micHint": "Speak to check your microphone",
 			"deviceSettings.noMicrophones": "No microphone found",
+			"deviceSettings.cameraQuality": "Camera quality",
 			"deviceSettings.preview": "Preview",
 			"deviceSettings.previewUnavailable": "Preview unavailable",
 			"audio.inputDevice": "Input device",
@@ -187,6 +210,16 @@ function renderLaunchWindow() {
 	);
 }
 
+function renderStrictLaunchWindow() {
+	return render(
+		<StrictMode>
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>
+		</StrictMode>,
+	);
+}
+
 function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSource"]) {
 	window.electronAPI = {
 		...window.electronAPI,
@@ -207,7 +240,19 @@ function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSo
 			success: true,
 			available: linuxHelperAvailable.value,
 		})),
+		setRecordingPrefs: vi.fn(async (patch) => ({
+			micEnabled: false,
+			micDeviceId: null,
+			camEnabled: false,
+			camDeviceId: null,
+			camFormat: { width: 1920, height: 1080, fps: 30 },
+			systemAudioEnabled: false,
+			cursorCaptureMode: "editable-overlay",
+			...patch,
+		})),
 		setHudOverlaySize: vi.fn(),
+		setHudDirectionExclusionRectangles: vi.fn(),
+		requestCameraPreviewConnection: vi.fn(),
 		setHudOverlayIgnoreMouseEvents: vi.fn(),
 		beginHudOverlayDrag: vi.fn(),
 		dragHudOverlayTo: vi.fn(),
@@ -216,6 +261,9 @@ function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSo
 		hudOverlayClose: vi.fn(),
 		openNotes: vi.fn(),
 		switchToEditor: vi.fn(async () => undefined),
+		getRecordingWorkspaceContext: vi.fn(async () => ({ success: false, context: null })),
+		setRecordingWorkspaceContext: vi.fn(async () => ({ success: true, context: null })),
+		returnToEditorIfRecordingWorkspace: vi.fn(async () => ({ returned: false })),
 		onSelectedSourceChanged: vi.fn((callback) => {
 			selectedSourceChangedListeners.push(callback);
 			return () => {
@@ -267,12 +315,26 @@ function resetLaunchMocks() {
 	recorderState.value.softwareEncoderFallbackNoticeVisible = false;
 	recorderState.value.dismissSoftwareEncoderFallbackNotice.mockClear();
 	recorderState.value.recording = false;
+	recorderState.value.paused = false;
+	recorderState.value.saving = false;
+	recorderState.value.clipFinalizing = false;
+	recorderState.value.elapsedSeconds = 0;
+	recorderState.value.activeClipElapsedMs = 0;
+	recorderState.value.recordedClips = [];
+	recorderState.value.canPauseRecording = false;
+	recorderState.value.canReconfigureWhilePaused = false;
+	recorderState.value.canRemovePreviousClip = false;
+	recorderState.value.removePreviousClip.mockClear();
+	recorderState.value.togglePaused.mockClear();
 	recorderState.value.microphoneEnabled = false;
 	recorderState.value.setMicrophoneEnabled.mockClear();
 	recorderState.value.setMicrophoneDeviceId.mockClear();
 	recorderState.value.webcamEnabled = false;
 	recorderState.value.setWebcamEnabled.mockClear();
+	recorderState.value.webcamFormat = { width: 1920, height: 1080, fps: 30 };
+	recorderState.value.setWebcamFormat.mockClear();
 	micDevicesState.value = [];
+	cameraDevicesState.value = [];
 	selectedSourceChangedListeners = [];
 	sourceSelectorClosedListeners = [];
 	i18nState.value.systemLocaleSuggestion = null;
@@ -308,6 +370,27 @@ describe("LaunchWindow record button", () => {
 			expect(window.electronAPI.openSourceSelector).toHaveBeenCalledTimes(1);
 		});
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("restores HUD direction exclusions after a StrictMode effect restart", async () => {
+		vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+			x: 10,
+			y: 20,
+			width: 240,
+			height: 48,
+			top: 20,
+			right: 250,
+			bottom: 68,
+			left: 10,
+			toJSON: () => ({}),
+		});
+
+		renderStrictLaunchWindow();
+
+		await waitFor(() => {
+			const calls = vi.mocked(window.electronAPI.setHudDirectionExclusionRectangles).mock.calls;
+			expect(calls.at(-1)?.[0]).toEqual([{ x: 10, y: 20, width: 240, height: 48 }]);
+		});
 	});
 
 	it("records immediately after source selection when the record button opened the picker", async () => {
@@ -409,6 +492,41 @@ describe("LaunchWindow record button", () => {
 		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
 	});
 
+	it("returns to the editor from the idle HUD with Escape or the close button", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		window.electronAPI.getRecordingWorkspaceContext = vi.fn(async () => ({
+			success: true,
+			context: {
+				origin: "editor",
+				projectId: "project-1",
+				insertionTimeSec: 4,
+				currentTimeSec: 3,
+				mode: "edit",
+				inspectorOpen: true,
+				facet: "effects",
+			} as const,
+		}));
+		let returnStarted = false;
+		window.electronAPI.returnToEditorIfRecordingWorkspace = vi.fn(async () => {
+			if (!returnStarted) {
+				returnStarted = true;
+				await window.electronAPI.switchToEditor();
+			}
+			return { returned: true };
+		});
+
+		renderLaunchWindow();
+		const close = await screen.findByRole("button", { name: "Open Studio" });
+		fireEvent.keyDown(window, { key: "Escape" });
+		fireEvent.click(close);
+
+		await waitFor(() => {
+			expect(window.electronAPI.returnToEditorIfRecordingWorkspace).toHaveBeenCalledTimes(2);
+		});
+		expect(window.electronAPI.switchToEditor).toHaveBeenCalledTimes(1);
+		expect(window.electronAPI.hudOverlayClose).not.toHaveBeenCalled();
+	});
+
 	it("keeps the HUD interactive on Linux so the drag handle can receive pointer events", async () => {
 		platformState.value = "linux";
 
@@ -500,16 +618,149 @@ describe("LaunchWindow record button", () => {
 		});
 	});
 
-	it("does not name a source while recording on Linux", async () => {
+	it("keeps the original recording controls on Linux", async () => {
 		platformState.value = "linux";
 		recorderState.value.recording = true;
 
 		renderLaunchWindow();
 
-		const recordButton = await screen.findByTestId("launch-record-button");
-		await waitFor(() => {
-			expect(recordButton).toHaveAttribute("title", "Recording");
+		expect(await screen.findByTestId("launch-record-button")).toBeEnabled();
+		expect(screen.queryByTestId("launch-source-selector-button")).not.toBeInTheDocument();
+	});
+
+	it("keeps one clip-history surface before and during recording", async () => {
+		recorderState.value.recording = false;
+		recorderState.value.recordedClips = [];
+
+		const view = renderLaunchWindow();
+
+		const history = await screen.findByRole("img", { name: /Clip history: 0 completed clips/ });
+		expect(history).toBeVisible();
+		expect(history.firstElementChild?.children).toHaveLength(1);
+		const surface = history.parentElement;
+
+		recorderState.value.recording = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		const activeHistory = screen.getByRole("img", {
+			name: /Clip history: 0 completed clips, active clip/,
 		});
+		expect(activeHistory.parentElement).toBe(surface);
+	});
+
+	it("morphs the active history segment into the finalized clip without an empty frame", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.paused = false;
+		recorderState.value.clipFinalizing = false;
+		recorderState.value.activeClipElapsedMs = 1_200;
+		recorderState.value.recordedClips = [];
+
+		const view = renderLaunchWindow();
+		const activeHistory = await screen.findByRole("img", {
+			name: /Clip history: 0 completed clips, active clip/,
+		});
+		const activeSegment = activeHistory.firstElementChild?.firstElementChild;
+
+		recorderState.value.paused = true;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 1_200 },
+		];
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		const finalizedHistory = screen.getByRole("img", {
+			name: /Clip history: 1 completed clip$/,
+		});
+		expect(finalizedHistory.firstElementChild?.children).toHaveLength(1);
+		expect(finalizedHistory.firstElementChild?.firstElementChild).toBe(activeSegment);
+	});
+
+	it("keeps the existing HUD row and adds proportional clip history below it", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.canPauseRecording = true;
+		recorderState.value.canRemovePreviousClip = true;
+		recorderState.value.elapsedSeconds = 12;
+		recorderState.value.activeClipElapsedMs = 900;
+		recorderState.value.microphoneEnabled = true;
+		recorderState.value.systemAudioEnabled = false;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2200 },
+			{ index: 1, screenVideoPath: "/recordings/clip-2.mp4", durationMs: 4100 },
+		];
+
+		renderLaunchWindow();
+
+		expect(screen.getByRole("button", { name: "tooltips.pauseRecording" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "Remove previous clip" })).toBeEnabled();
+		const history = screen.getByRole("img", { name: /Clip history: 2 completed clips/ });
+		expect(history).toBeVisible();
+		const segments = history.firstElementChild?.children;
+		expect((segments?.[0] as HTMLElement).style.flexGrow).toBe("2200");
+		expect((segments?.[1] as HTMLElement).style.flexGrow).toBe("4100");
+		expect(screen.queryByText(/2 clips/i)).not.toBeInTheDocument();
+		expect(screen.getByTestId("launch-source-selector-button")).toBeDisabled();
+		expect(screen.getByTestId("launch-microphone-button")).toBeDisabled();
+		expect(screen.getByTestId("launch-record-button")).toBeEnabled();
+		expect(screen.getByTestId("launch-record-button")).not.toHaveTextContent("Stop Recording");
+		expect(
+			screen.getByTestId("launch-record-button").querySelector('rect[x="6.5"][y="6.5"]'),
+		).toBeInTheDocument();
+	});
+
+	it("unlocks the existing setup controls only after a completed macOS Pause", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.canPauseRecording = true;
+		recorderState.value.canReconfigureWhilePaused = true;
+
+		renderLaunchWindow();
+		const cursorModeButton = await screen.findByTestId("launch-cursor-mode-button");
+
+		expect(screen.getByTestId("launch-source-selector-button")).toBeEnabled();
+		expect(screen.getByTestId("launch-system-audio-button")).toBeEnabled();
+		expect(screen.getByTestId("launch-microphone-button")).toBeEnabled();
+		expect(screen.getByTestId("launch-webcam-button")).toBeEnabled();
+		expect(screen.getByTestId("launch-device-settings-button")).toBeEnabled();
+		expect(cursorModeButton).toBeEnabled();
+		expect(screen.getByTestId("launch-record-button")).toBeEnabled();
+	});
+
+	it("keeps the recording transport visually stable while a paused clip finalizes", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.saving = false;
+		recorderState.value.clipFinalizing = true;
+		recorderState.value.elapsedSeconds = 12;
+		recorderState.value.canPauseRecording = false;
+
+		renderLaunchWindow();
+
+		const stop = await screen.findByTestId("launch-record-button");
+		expect(stop).toBeDisabled();
+		expect(stop).toHaveTextContent("00:12");
+		expect(stop).not.toHaveTextContent("recording.saving");
+		expect(screen.getByRole("button", { name: "tooltips.resumeRecording" })).toBeDisabled();
+	});
+
+	it("removes the previous clip from the button and Backspace key", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.canRemovePreviousClip = true;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2200 },
+		];
+
+		renderLaunchWindow();
+		fireEvent.click(screen.getByRole("button", { name: "Remove previous clip" }));
+		fireEvent.keyDown(window, { key: "Backspace" });
+
+		expect(recorderState.value.removePreviousClip).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -761,6 +1012,22 @@ describe("LaunchWindow device buttons", () => {
 			expect(recorderState.value.setWebcamEnabled).toHaveBeenCalledWith(false);
 		});
 	});
+
+	it("persists audio and camera toggles for the next app launch", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-system-audio-button"));
+		fireEvent.click(screen.getByTestId("launch-microphone-button"));
+		fireEvent.click(screen.getByTestId("launch-webcam-button"));
+
+		await waitFor(() => {
+			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+				systemAudioEnabled: true,
+			});
+			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ micEnabled: true });
+			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ camEnabled: true });
+		});
+	});
 });
 
 describe("LaunchWindow device settings", () => {
@@ -805,9 +1072,31 @@ describe("LaunchWindow device settings", () => {
 		// whole reason the picker moved out of the mic button.
 		expect(recorderState.value.setMicrophoneDeviceId).toHaveBeenCalledWith("mic-b");
 		expect(recorderState.value.setMicrophoneEnabled).not.toHaveBeenCalled();
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+			micDeviceId: "mic-b",
+		});
 	});
 
-	it("is unavailable while recording, when devices can't be changed anyway", async () => {
+	it("persists a tested webcam resolution and frame-rate choice", async () => {
+		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
+
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const formatSelect = await screen.findByTestId("hud-webcam-format");
+
+		fireEvent.change(formatSelect, { target: { value: "3840x2160@30" } });
+
+		expect(recorderState.value.setWebcamFormat).toHaveBeenCalledWith({
+			width: 3840,
+			height: 2160,
+			fps: 30,
+		});
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+			camFormat: { width: 3840, height: 2160, fps: 30 },
+		});
+	});
+
+	it("stays visible but disabled while recording", async () => {
 		recorderState.value.recording = true;
 
 		renderLaunchWindow();

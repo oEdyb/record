@@ -92,6 +92,7 @@
 		"micLevel": "入力レベル",
 		"micHint": "マイクをテストするには話してください",
 		"noMicrophones": "マイクが見つかりません",
+		"cameraQuality": "カメラ画質",
 		"preview": "プレビュー",
 		"previewUnavailable": "プレビューを利用できません"
 	}

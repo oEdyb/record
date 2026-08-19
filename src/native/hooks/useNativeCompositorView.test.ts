@@ -50,7 +50,10 @@ globalThis.ResizeObserver = class {
 /** A canvas with a stubbed 2D context — jsdom has none, and the pull loop bails without it. */
 function stubCanvasRef(): RefObject<HTMLCanvasElement> {
 	const canvas = document.createElement("canvas");
-	canvas.getContext = vi.fn(() => ({})) as unknown as HTMLCanvasElement["getContext"];
+	canvas.getContext = vi.fn(() => ({
+		drawImage: vi.fn(),
+		putImageData: vi.fn(),
+	})) as unknown as HTMLCanvasElement["getContext"];
 	return { current: canvas };
 }
 
@@ -60,6 +63,49 @@ const DEVICE_FAILURE =
 describe("useNativeCompositorView", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it("reports the exact native frame timing after validating the packet", async () => {
+		vi.stubGlobal(
+			"ImageData",
+			class {
+				constructor(
+					readonly data: Uint8ClampedArray,
+					readonly width: number,
+					readonly height: number,
+				) {}
+			},
+		);
+		vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ close: vi.fn() }));
+		mocks.createCompositorView.mockResolvedValue({ id: 7 });
+		mocks.readCompositorFrame.mockResolvedValueOnce({
+			gen: 4,
+			width: 1,
+			height: 1,
+			data: Buffer.from([0, 0, 0, 255]),
+			sourceTimeSec: 1.25,
+			clipIndex: 2,
+			transportGeneration: 9,
+		});
+		mocks.readCompositorFrame.mockResolvedValue(null);
+		const onFrame = vi.fn();
+		const ref = stubCanvasRef();
+
+		renderHook(() =>
+			useNativeCompositorView(ref, {
+				sources: { screenPath: "rec.mp4" },
+				onFrame,
+			}),
+		);
+
+		await waitFor(() =>
+			expect(onFrame).toHaveBeenCalledWith({
+				sourceTimeSec: 1.25,
+				clipIndex: 2,
+				transportGeneration: 9,
+			}),
+		);
 	});
 
 	it("surfaces the native message when the render thread dies", async () => {

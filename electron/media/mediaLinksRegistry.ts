@@ -262,6 +262,39 @@ export interface MediaLinksLookup {
 	cursorCaptureMode?: CursorCaptureMode;
 }
 
+export interface ResolvedMediaLinks extends MediaLinksLookup {
+	resolvedVia: "sidecar" | "fingerprint" | "none";
+}
+
+/**
+ * Keeps sidecars as the fast path, but lets the fingerprint registry fill any
+ * missing webcam link. A cursor sidecar alone is not a complete result: recent
+ * recording manifests keep the webcam link in the registry instead.
+ */
+export async function resolveMediaLinkSources(
+	sidecar: MediaLinksLookup,
+	findByFingerprint: () => Promise<MediaLinksLookup | null>,
+): Promise<ResolvedMediaLinks> {
+	if (sidecar.webcamVideoPath) {
+		return { ...sidecar, resolvedVia: "sidecar" };
+	}
+
+	const fingerprint = await findByFingerprint();
+	if (fingerprint?.webcamVideoPath || fingerprint?.cursorTelemetryPath) {
+		return {
+			...fingerprint,
+			...sidecar,
+			resolvedVia: "fingerprint",
+		};
+	}
+
+	if (sidecar.cursorTelemetryPath) {
+		return { ...sidecar, resolvedVia: "sidecar" };
+	}
+
+	return { resolvedVia: "none" };
+}
+
 export interface RelocatedMediaLookup extends MediaLinksLookup {
 	screenVideoPath: string;
 }

@@ -1,10 +1,12 @@
 import { normalizeTextAnimation } from "@/lib/annotationTextAnimation";
 import { normalizeBlurColor, normalizeBlurType } from "@/lib/blurEffects";
+import { MAX_WEBCAM_SIZE_PERCENT, MIN_WEBCAM_SIZE_PERCENT } from "@/lib/compositeLayout";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
 import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
 import type { ProjectMedia } from "@/lib/recordingSession";
 import { normalizeProjectMedia } from "@/lib/recordingSession";
 import { DEFAULT_WALLPAPER, WALLPAPER_PATHS } from "@/lib/wallpaper";
+import { isMotionSpeed, isMotionStyle } from "@/lib/zoomMath/motionCurve";
 import { type AspectRatio, isAspectRatio, isPortraitAspectRatio } from "@/utils/aspectRatioUtils";
 import { clamp } from "@/utils/math";
 import {
@@ -270,6 +272,8 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						},
 						focusMode: region.focusMode === "auto" ? "auto" : "manual",
 						source: region.source === "auto" ? "auto" : "manual",
+						...(isMotionStyle(region.motionStyle) ? { motionStyle: region.motionStyle } : {}),
+						...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 						...(validPreset ? { rotationPreset: validPreset } : {}),
 					};
 				})
@@ -291,6 +295,13 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						id: region.id,
 						startMs,
 						endMs,
+						...(region.mode === "emphasis" ? { mode: "emphasis" as const } : {}),
+						...(region.mode === "emphasis" && isFiniteNumber(region.cameraScale)
+							? { cameraScale: clamp(region.cameraScale, 1, 1.6) }
+							: {}),
+						...(isMotionStyle(region.motionStyle) ? { motionStyle: region.motionStyle } : {}),
+						...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
+						...(region.source === "auto" ? { source: "auto" as const } : {}),
 					};
 				})
 		: [];
@@ -529,7 +540,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				: DEFAULT_WEBCAM_REACTIVE_ZOOM,
 		webcamSizePreset:
 			typeof editor.webcamSizePreset === "number" && isFiniteNumber(editor.webcamSizePreset)
-				? Math.max(10, Math.min(50, editor.webcamSizePreset))
+				? Math.max(
+						MIN_WEBCAM_SIZE_PERCENT,
+						Math.min(MAX_WEBCAM_SIZE_PERCENT, editor.webcamSizePreset),
+					)
 				: DEFAULT_WEBCAM_SETTINGS.sizePreset,
 		webcamPosition: normalizedWebcamPosition,
 		exportQuality:

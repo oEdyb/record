@@ -1,4 +1,4 @@
-import { Check, Languages, NotepadText, Settings } from "lucide-react";
+import { Check, Delete, Languages, NotepadText, Settings } from "lucide-react";
 import { memo } from "react";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { Button } from "../ui/button";
@@ -285,6 +285,7 @@ export const HudRecordButton = memo(function HudRecordButton({
 	recording,
 	paused,
 	saving,
+	disabled,
 	elapsedSeconds,
 	label,
 	savingLabel,
@@ -293,6 +294,7 @@ export const HudRecordButton = memo(function HudRecordButton({
 	recording: boolean;
 	paused: boolean;
 	saving: boolean;
+	disabled: boolean;
 	elapsedSeconds: number;
 	label: string;
 	savingLabel: string;
@@ -302,11 +304,13 @@ export const HudRecordButton = memo(function HudRecordButton({
 		<Tooltip content={label}>
 			<button
 				data-testid="launch-record-button"
-				disabled={saving}
-				className={`flex h-[34px] shrink-0 items-center justify-center rounded-[17px] border-0 transition-all duration-150 ${recording || saving ? "min-w-[78px] px-3" : "w-[34px]"} ${styles.electronNoDrag} ${
+				disabled={disabled}
+				className={`flex h-[34px] shrink-0 items-center justify-center rounded-[17px] border-0 transition-all duration-150 ${recording || saving ? "min-w-[86px] px-3" : "w-[34px]"} ${styles.electronNoDrag} ${
 					saving
 						? "bg-transparent opacity-60 cursor-not-allowed"
-						: "bg-transparent hover:bg-[rgba(248,113,113,0.16)]"
+						: recording
+							? "bg-[rgba(248,113,113,0.14)] hover:bg-[rgba(248,113,113,0.22)]"
+							: "bg-transparent hover:bg-[rgba(248,113,113,0.16)]"
 				}`}
 				onClick={onClick}
 				title={label}
@@ -392,10 +396,13 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 	paused,
 	saving,
 	canPause,
+	canRemovePreviousClip,
 	pauseLabel,
+	removePreviousLabel,
 	restartLabel,
 	cancelLabel,
 	onTogglePause,
+	onRemovePreviousClip,
 	onRestart,
 	onCancel,
 }: {
@@ -403,10 +410,13 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 	paused: boolean;
 	saving: boolean;
 	canPause: boolean;
+	canRemovePreviousClip: boolean;
 	pauseLabel: string;
+	removePreviousLabel: string;
 	restartLabel: string;
 	cancelLabel: string;
 	onTogglePause: () => void;
+	onRemovePreviousClip: () => void;
 	onRestart: () => void;
 	onCancel: () => void;
 }) {
@@ -414,20 +424,49 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 		<div
 			className={`flex items-center gap-0.5 ${vertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
 		>
-			{canPause && (
+			<Tooltip content={removePreviousLabel}>
+				<button
+					type="button"
+					className={hudAuxIconBtnClasses}
+					onClick={onRemovePreviousClip}
+					disabled={saving || !canRemovePreviousClip}
+					aria-label={removePreviousLabel}
+				>
+					<Delete size={18} aria-hidden />
+				</button>
+			</Tooltip>
+			{(canPause || paused) && (
 				<Tooltip content={pauseLabel}>
-					<button className={hudAuxIconBtnClasses} onClick={onTogglePause} disabled={saving}>
+					<button
+						type="button"
+						className={hudAuxIconBtnClasses}
+						onClick={onTogglePause}
+						disabled={saving || !canPause}
+						aria-label={pauseLabel}
+					>
 						{getIcon(paused ? "resume" : "pause", paused ? "text-amber-400" : "text-white/60")}
 					</button>
 				</Tooltip>
 			)}
 			<Tooltip content={restartLabel}>
-				<button className={hudAuxIconBtnClasses} onClick={onRestart} disabled={saving}>
+				<button
+					type="button"
+					className={hudAuxIconBtnClasses}
+					onClick={onRestart}
+					disabled={saving}
+					aria-label={restartLabel}
+				>
 					{getIcon("restart", "text-white/60")}
 				</button>
 			</Tooltip>
 			<Tooltip content={cancelLabel}>
-				<button className={hudAuxIconBtnClasses} onClick={onCancel} disabled={saving}>
+				<button
+					type="button"
+					className={hudAuxIconBtnClasses}
+					onClick={onCancel}
+					disabled={saving}
+					aria-label={cancelLabel}
+				>
 					{getIcon("cancel", "text-white/60")}
 				</button>
 			</Tooltip>

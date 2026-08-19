@@ -69,6 +69,95 @@
 	overflow-x: hidden;
 }
 
+.hudBarRecording {
+	width: var(--hud-horizontal-width, 832px);
+	box-sizing: border-box;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0;
+	padding: 0;
+	overflow: hidden;
+}
+
+.hudPrimaryRow {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 7px 9px;
+}
+
+.hudPrimaryRowContents {
+	display: contents;
+}
+
+.recordingHistoryRow {
+	display: flex;
+	height: 30px;
+	box-sizing: border-box;
+	align-items: center;
+	padding: 5px 12px 8px;
+	border-top: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.recordingHistoryRail {
+	display: flex;
+	width: 100%;
+	height: 9px;
+	align-items: stretch;
+	gap: 3px;
+}
+
+.recordingHistorySegment {
+	min-width: 2px;
+	border-radius: 3px;
+	background: #3a414b;
+	transition:
+		flex-grow 160ms ease,
+		opacity 160ms ease,
+		transform 160ms ease,
+		background-color 160ms ease,
+		box-shadow 160ms ease;
+}
+
+.recordingHistorySegmentNewest {
+	background: #5d6875;
+}
+
+.recordingHistorySegmentActive {
+	background: #db5964;
+	box-shadow: 0 0 8px rgba(219, 89, 100, 0.22);
+}
+
+.recordingHistorySegmentExit {
+	opacity: 0;
+	transform: scaleX(0.45);
+}
+
+.recordingHistoryOverflow {
+	display: flex;
+	min-width: 25px;
+	align-items: center;
+	justify-content: center;
+	border-radius: 3px;
+	background: rgba(255, 255, 255, 0.045);
+	color: #68727e;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 8px;
+	font-weight: 650;
+}
+
+.recordingHistoryEmpty {
+	width: 100%;
+	border-radius: 3px;
+	background: rgba(255, 255, 255, 0.035);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.recordingHistorySegment {
+		transition: none;
+	}
+}
+
 /* Shared shell for every floating HUD menu (language list, device pickers), so
    they all read as one design and all reserve the same space in the window. */
 .hudPopover {
@@ -203,6 +292,22 @@
 	font-size: 10px;
 	color: rgba(255, 255, 255, 0.45);
 	white-space: nowrap;
+}
+
+.hudModalSelect {
+	min-width: 132px;
+	height: 28px;
+	margin-left: auto;
+	padding: 0 8px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 8px;
+	background: #171b21;
+	color: #f5f7fa;
+	font-size: 11px;
+}
+
+.hudModalSelect:disabled {
+	opacity: 0.55;
 }
 
 .hudModalHint {

@@ -137,6 +137,63 @@ describe("readCursorRecordingFileAt", () => {
 		expect(data.samples).toHaveLength(1);
 		expect(data.samples[0].interactionType).toBe("move");
 	});
+
+	it("preserves the private-UI exclusion marker used by automatic direction", async () => {
+		const file = path.join(dir, "private-ui.cursor.json");
+		await fs.writeFile(
+			file,
+			JSON.stringify([
+				{ timeMs: 10, cx: 0.4, cy: 0.8, interactionType: "click", directionExcluded: true },
+			]),
+			"utf-8",
+		);
+
+		const data = await readCursorRecordingFileAt(file);
+
+		expect(data.samples[0].directionExcluded).toBe(true);
+	});
+
+	it("keeps only privacy-safe keyboard activity fields", async () => {
+		const file = path.join(dir, "typing.cursor.json");
+		await fs.writeFile(
+			file,
+			JSON.stringify({
+				version: 3,
+				provider: "native",
+				samples: [{ timeMs: 0, cx: 0.5, cy: 0.5 }],
+				assets: [],
+				keyboardActivity: [
+					{
+						timeMs: 400,
+						cx: 0.6,
+						cy: 0.4,
+						count: 2,
+						focusSource: "caret",
+						targetRect: { x: 0.3, y: 0.2, width: 0.5, height: 0.4 },
+						keyCode: 0,
+						text: "secret",
+					},
+					{ timeMs: 200, cx: 0.6, cy: 0.4, count: 1 },
+					{ timeMs: 100, cx: 0.6, cy: 0.4, count: 0 },
+				],
+			}),
+			"utf-8",
+		);
+
+		const data = await readCursorRecordingFileAt(file);
+
+		expect(data.keyboardActivity?.map((sample) => sample.timeMs)).toEqual([200, 400]);
+		expect(data.keyboardActivity?.[1]).toEqual({
+			timeMs: 400,
+			cx: 0.6,
+			cy: 0.4,
+			count: 2,
+			focusSource: "caret",
+			targetRect: { x: 0.3, y: 0.2, width: 0.5, height: 0.4 },
+		});
+		expect(data.keyboardActivity?.[1]).not.toHaveProperty("keyCode");
+		expect(data.keyboardActivity?.[1]).not.toHaveProperty("text");
+	});
 });
 
 describe("readCursorTelemetryFile", () => {

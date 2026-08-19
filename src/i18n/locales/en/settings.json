@@ -28,6 +28,14 @@
 			"hint": "0 = leftmost / topmost, 100 = rightmost / bottommost"
 		}
 	},
+	"motion": {
+		"title": "Motion",
+		"speed": "Speed",
+		"smooth": "Smooth",
+		"snappy": "Snappy",
+		"linear": "Linear",
+		"instant": "Instant"
+	},
 	"speed": {
 		"playbackSpeed": "Playback Speed",
 		"selectRegion": "Select a speed region to adjust",
@@ -109,9 +117,9 @@
 	},
 	"exportQuality": {
 		"title": "Export resolution",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "Medium",
+		"medium": "High",
+		"high": "Highest"
 	},
 	"gifSettings": {
 		"frameRate": "GIF Frame Rate",

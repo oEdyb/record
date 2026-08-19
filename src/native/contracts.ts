@@ -32,6 +32,19 @@ export interface CursorRecordingSample extends CursorTelemetryPoint {
 	visible?: boolean;
 	cursorType?: NativeCursorType | null;
 	interactionType?: "move" | "click" | "mouseup";
+	/** Pointer was over private recorder UI that is excluded from captured pixels. */
+	directionExcluded?: boolean;
+}
+
+export interface KeyboardActivitySample extends CursorTelemetryPoint {
+	/** Number of key-down events observed in this sampling interval. */
+	count: number;
+	/** Whether macOS resolved an exact caret/selection bound or only the editable target. */
+	focusSource?: "caret" | "target";
+	/** Bounds of the focused editable element, normalized to the captured source. */
+	targetRect?: { x: number; y: number; width: number; height: number };
+	/** Focused target belongs to private recorder UI that is absent from captured pixels. */
+	directionExcluded?: boolean;
 }
 
 export interface NativeCursorAsset {
@@ -51,6 +64,8 @@ export interface CursorRecordingData {
 	provider: CursorProviderKind;
 	samples: CursorRecordingSample[];
 	assets: NativeCursorAsset[];
+	/** Privacy-safe activity only. Key codes, characters, shortcuts, and text are never stored. */
+	keyboardActivity?: KeyboardActivitySample[];
 }
 
 export interface CursorCapabilities {
@@ -137,6 +152,33 @@ export interface CompositorFramePacket {
 	width: number;
 	height: number;
 	data: Buffer;
+	/** Source-media PTS of the frame native actually rendered. This is measured,
+	 * not inferred from the renderer clock, so transport drift is observable. */
+	sourceTimeSec: number;
+	/** Sorted SceneDescription clip index used to render this frame. */
+	clipIndex: number;
+	/** Atomic transport command that produced this frame. Old frames can arrive
+	 * after a seek; their lower generation keeps them out of drift decisions. */
+	transportGeneration: number;
+}
+
+export type CompositorFrameTiming = Pick<
+	CompositorFramePacket,
+	"sourceTimeSec" | "clipIndex" | "transportGeneration"
+>;
+
+/** One indivisible preview transport state. Keeping clip identity, exact source
+ * time, and play state in one command prevents a late clip switch from undoing
+ * a newer pause or seek. */
+export interface CompositorTransportCommand {
+	id: number;
+	generation: number;
+	playing: boolean;
+	clipIndex: number;
+	screenPath: string;
+	webcamPath: string;
+	webcamOffsetSec: number;
+	sourceTimeSec: number;
 }
 
 /** Un clip de la timeline pour l'export multiclip natif (fichiers screen+webcam + trim). */
@@ -162,6 +204,20 @@ export interface CompositorExportResult {
 	fps: number;
 	/** Durée de la vidéo exportée (secondes) — distincte de `wallS` (temps de rendu réel). */
 	videoDurationS: number;
+	audioMastering: CompositorAudioMasteringResult;
+}
+
+export interface CompositorAudioMasteringResult {
+	enabled: boolean;
+	analyzed: boolean;
+	appliedGainDb: number;
+	inputLufs?: number;
+	outputLufs?: number;
+	inputTruePeakDbtp?: number;
+	outputTruePeakDbtp?: number;
+	limitedByTruePeak: boolean;
+	limitedByGainCap: boolean;
+	warning?: string;
 }
 
 /** Taille/cadence/codec de sortie voulus. Tout omis → 1920x1080 / fps du 1er clip / h264. */
@@ -169,6 +225,10 @@ export interface CompositorExportParams {
 	width?: number;
 	height?: number;
 	fps?: number;
+	/** Target video bitrate in bits/s. */
+	bitrate?: number;
+	/** Full-program EBU R128 normalization. Omitted defaults to enabled. */
+	normalizeAudio?: boolean;
 	/** "h264" | "h265" — pas de vp9 (aucun équivalent matériel AMF côté natif). */
 	codec?: string;
 }
@@ -516,7 +576,7 @@ export type NativeBridgeRequest =
 	| {
 			domain: "aiEdition";
 			action: "document.addAsset";
-			payload: { projectId: string; path: string; label?: string };
+			payload: { projectId: string; path: string; label?: string; recordingImportId?: string };
 			requestId?: string;
 	  }
 	| {
@@ -703,6 +763,12 @@ export type NativeBridgeRequest =
 			domain: "compositor";
 			action: "setPlaying";
 			payload: { id: number; playing: boolean };
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
+			action: "syncTransport";
+			payload: CompositorTransportCommand;
 			requestId?: string;
 	  }
 	| {

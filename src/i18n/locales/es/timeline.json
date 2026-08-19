@@ -29,6 +29,7 @@
 		"annotationItem": "Anotación",
 		"imageItem": "Imagen",
 		"emptyText": "Texto vacío",
+		"cameraEmphasis": "Énfasis de cámara",
 		"cameraFullscreen": "Cámara a pantalla completa",
 		"cameraFullscreenItem": "Cámara a pantalla completa {{index}}"
 	},

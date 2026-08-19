@@ -4,193 +4,185 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
-struct Rectangle: Decodable {
-	let x: Double
-	let y: Double
-	let width: Double
-	let height: Double
-}
-
-struct RecordingRequest: Decodable {
-	struct Source: Decodable {
-		let type: String
-		let sourceId: String
-		let displayId: UInt32?
-		let windowId: UInt32?
-		let bounds: Rectangle?
-	}
-
-	struct Video: Decodable {
-		let fps: Int
-		let width: Int
-		let height: Int
-		let bitrate: Int?
-		let hideSystemCursor: Bool
-	}
-
-	struct Audio: Decodable {
-		struct SystemAudio: Decodable {
-			let enabled: Bool
-		}
-
-		struct Microphone: Decodable {
-			let enabled: Bool
-			let deviceId: String?
-			let deviceName: String?
-			let gain: Double
-		}
-
-		let system: SystemAudio
-		let microphone: Microphone
-	}
-
-	struct Webcam: Decodable {
-		let enabled: Bool
-		let deviceId: String?
-		let deviceName: String?
-		let width: Int
-		let height: Int
-		let fps: Int
-	}
-
-	struct Cursor: Decodable {
-		let mode: String
-	}
-
-	struct Outputs: Decodable {
-		let screenPath: String
-		let manifestPath: String?
-	}
-
-	let schemaVersion: Int?
-	let recordingId: Int?
-	let source: Source
-	let video: Video
-	let audio: Audio
-	let webcam: Webcam
-	let cursor: Cursor
-	let outputs: Outputs
-}
-
-enum HelperError: Error, CustomStringConvertible {
-	case invalidArguments
-	case unsupportedMacOS
-	case unsupportedFeature(String)
-	case sourceNotFound(String)
-	case invalidSourceType(String)
-	case permissionDenied(String)
-	case writerSetupFailed(String)
-
-	var description: String {
-		switch self {
-		case .invalidArguments:
-			return "Expected one JSON recording request argument."
-		case .unsupportedMacOS:
-			return "ScreenCaptureKit recording requires macOS 13 or newer."
-		case .unsupportedFeature(let message):
-			return message
-		case .sourceNotFound(let message):
-			return message
-		case .invalidSourceType(let sourceType):
-			return "Unsupported source type: \(sourceType)."
-		case .permissionDenied(let message):
-			return message
-		case .writerSetupFailed(let message):
-			return message
-		}
-	}
-}
-
-func emit(_ fields: [String: Any]) {
-	if let data = try? JSONSerialization.data(withJSONObject: fields, options: []),
-		let line = String(data: data, encoding: .utf8)
-	{
-		print(line)
-		fflush(stdout)
-	}
-}
-
-func emitError(code: String, message: String) {
-	emit([
-		"event": "error",
-		"code": code,
-		"message": message,
-	])
-}
-
 @available(macOS 13.0, *)
 final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
-	private struct CaptureTarget {
-		let filter: SCContentFilter
-		let width: Int
-		let height: Int
-		// Global frame (points, top-left origin) of the captured region. Used by the
-		// renderer to normalize cursor positions into the captured window's space.
-		let captureFrame: CGRect
+	private struct FinalizedClip {
+		let index: Int
+		let path: String
+		let durationMs: Int
+
+		var payload: [String: Any] {
+			[
+				"index": index,
+				"screenVideoPath": path,
+				"durationMs": durationMs,
+			]
+		}
 	}
 
-	private let request: RecordingRequest
+	private struct DetachedWriter {
+		let writer: AVAssetWriter
+		let path: String
+		let index: Int
+		let started: Bool
+		let startTime: CMTime?
+		let lastTime: CMTime?
+		let lastFrameDuration: CMTime
+	}
+
+	private var request: RecordingRequest
+	private let captureSetupBuilder = CaptureSetupBuilder()
 	private let sampleQueue = DispatchQueue(label: "app.openscreen.sck-helper.samples")
 	private let stateQueue = DispatchQueue(label: "app.openscreen.sck-helper.state")
 	private var stream: SCStream?
+	private var activeFilter: SCContentFilter?
+	private var activeConfiguration: SCStreamConfiguration?
 	private var writer: AVAssetWriter?
 	private var videoInput: AVAssetWriterInput?
-	// One AAC track, never one per source: the editor preview is an HTML5 <video>, which plays
-	// audio track 0 and nothing else. See AudioTrackMixer.
-	private var audioInput: AVAssetWriterInput?
+	// The mixed track stays first for HTML5 preview. Tagged source tracks give export clean
+	// microphone/system stems without changing the one-file-per-clip project model.
+	private var audioInputs: [AVAssetWriterInput] = []
 	private var audioMixer: AudioTrackMixer?
 	private var didStartWriting = false
 	private var didEmitRecordingStarted = false
 	private var didReportWriterFailure = false
 	private var isStopping = false
 	private var isPaused = false
-	private var pauseStartedAt: CMTime?
-	private var totalPausedDuration = CMTime.zero
+	private var hasTerminalFailure = false
+	private var currentClipIndex = 0
+	private var currentClipPath: String?
+	private var clipStartTime: CMTime?
+	private var clipLastTime: CMTime?
+	private var clipLastFrameDuration = CMTime.zero
+	private var finalizedClips: [FinalizedClip] = []
 	private var nativeMicrophoneEnabled = false
 	private var outputWidth = 1920
 	private var outputHeight = 1080
 	private var captureFrame = CGRect.zero
-	private let microphoneOutputTypeRawValue = 2
-	private let hostClock = CMClockGetHostTimeClock()
+	private let unexpectedStopHandler: (ScreenCaptureRecorder, Error) -> Void
 
-	init(request: RecordingRequest) {
+	init(
+		request: RecordingRequest,
+		unexpectedStopHandler: @escaping (ScreenCaptureRecorder, Error) -> Void
+	) {
 		self.request = request
+		self.unexpectedStopHandler = unexpectedStopHandler
 	}
 
 	func start() async throws {
-		try ensureRequestedPermissions()
+		try ensureRequestedPermissions(for: request)
 
 		let content = try await SCShareableContent.excludingDesktopWindows(
 			false,
 			onScreenWindowsOnly: true
 		)
-		let target = try makeCaptureTarget(from: content)
-		outputWidth = target.width
-		outputHeight = target.height
-		captureFrame = target.captureFrame
-		let configuration = makeStreamConfiguration()
-		let stream = SCStream(filter: target.filter, configuration: configuration, delegate: self)
+		let setup = try captureSetupBuilder.make(from: content, request: request)
+		outputWidth = setup.width
+		outputHeight = setup.height
+		captureFrame = setup.captureFrame
+		nativeMicrophoneEnabled = setup.microphoneEnabled
+		let stream = SCStream(
+			filter: setup.filter,
+			configuration: setup.configuration,
+			delegate: self
+		)
 
 		try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
-		if request.audio.system.enabled {
-			try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+		// Apple supports live configuration updates on one SCStream. Keep all
+		// available destinations attached for the full session; the configuration
+		// decides which sample types flow into each new clip.
+		try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+		if #available(macOS 15.0, *),
+			let microphoneOutputType = SCStreamOutputType(
+				rawValue: screenCaptureKitMicrophoneOutputTypeRawValue
+			)
+		{
+			try stream.addStreamOutput(
+				self,
+				type: microphoneOutputType,
+				sampleHandlerQueue: sampleQueue
+			)
 		}
-		if nativeMicrophoneEnabled {
-			guard let microphoneOutputType = SCStreamOutputType(rawValue: microphoneOutputTypeRawValue) else {
-				throw HelperError.unsupportedFeature(
-					"Native microphone capture requires a macOS version with ScreenCaptureKit microphone output."
-				)
-			}
-			try stream.addStreamOutput(self, type: microphoneOutputType, sampleHandlerQueue: sampleQueue)
-		}
-		try setupWriter()
+		try setupWriter(for: currentClipIndex)
 
 		self.stream = stream
+		activeFilter = setup.filter
+		activeConfiguration = setup.configuration
 		emit([
 			"event": "ready",
 			"schemaVersion": 1,
 		])
 		try await stream.startCapture()
+	}
+
+	func reconfigure(with nextRequest: RecordingRequest) async {
+		let canReconfigure = stateQueue.sync { !isStopping && isPaused && !hasTerminalFailure }
+		guard canReconfigure else {
+			emitError(code: "reconfigure-not-paused", message: "Capture setup can change only while paused.")
+			return
+		}
+
+		do {
+			try ensureRequestedPermissions(for: nextRequest)
+			let content = try await SCShareableContent.excludingDesktopWindows(
+				false,
+				onScreenWindowsOnly: true
+			)
+			let setup = try captureSetupBuilder.make(from: content, request: nextRequest)
+			guard let stream else {
+				throw HelperError.writerSetupFailed("ScreenCaptureKit stream is not running.")
+			}
+			guard let previousFilter = activeFilter,
+				let previousConfiguration = activeConfiguration
+			else {
+				throw HelperError.writerSetupFailed("The active ScreenCaptureKit setup is missing.")
+			}
+
+			// Await both operations before changing the writer settings. Continue stays
+			// disabled in the renderer until this acknowledgement arrives.
+			do {
+				try await stream.updateConfiguration(setup.configuration)
+				try await stream.updateContentFilter(setup.filter)
+			} catch {
+				var rollbackErrors: [String] = []
+				do {
+					try await stream.updateConfiguration(previousConfiguration)
+				} catch let rollbackError {
+					rollbackErrors.append("configuration: \(rollbackError)")
+				}
+				do {
+					try await stream.updateContentFilter(previousFilter)
+				} catch let rollbackError {
+					rollbackErrors.append("filter: \(rollbackError)")
+				}
+				if !rollbackErrors.isEmpty {
+					stateQueue.sync { hasTerminalFailure = true }
+					emitError(
+						code: "writer-failed-during-capture",
+						message: "Capture reconfiguration and rollback failed: \(error). Rollback: \(rollbackErrors.joined(separator: "; "))"
+					)
+					await stop()
+					return
+				}
+				throw error
+			}
+			request = nextRequest
+			activeFilter = setup.filter
+			activeConfiguration = setup.configuration
+			outputWidth = setup.width
+			outputHeight = setup.height
+			captureFrame = setup.captureFrame
+			nativeMicrophoneEnabled = setup.microphoneEnabled
+			emit([
+				"event": "recording-reconfigured",
+				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
+				"width": outputWidth,
+				"height": outputHeight,
+				"captureBounds": captureBoundsPayload(),
+			])
+		} catch {
+			emitError(code: "reconfigure-failed", message: "\(error)")
+		}
 	}
 
 	func stop() async {
@@ -215,70 +207,106 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			])
 		}
 
-		await finishWriter()
+		var finalClipWarning: [String: String]?
+		do {
+			if let clip = try await finishCurrentClip() {
+				finalizedClips.append(clip)
+				emit(["event": "clip-finalized", "clip": clip.payload])
+			}
+		} catch {
+			finalClipWarning = [
+				"code": "final-clip-failed",
+				"message": "\(error)",
+			]
+			emit([
+				"event": "warning",
+				"code": "final-clip-failed",
+				"message": "\(error)",
+			])
+		}
+
+		var stoppedPayload: [String: Any] = [
+			"event": "recording-stopped",
+			"screenPath": finalizedClips.first?.path ?? request.outputs.screenPath,
+			"clips": finalizedClips.map(\.payload),
+		]
+		if let finalClipWarning {
+			stoppedPayload["warning"] = finalClipWarning
+		}
+		emit(stoppedPayload)
 	}
 
-	func pause() {
+	func pause() async {
 		let didPause = stateQueue.sync {
 			if isStopping || isPaused {
 				return false
 			}
 
 			isPaused = true
-			pauseStartedAt = CMClockGetTime(hostClock)
 			return true
 		}
 
-		if didPause {
+		guard didPause else { return }
+		emit(["event": "clip-finalizing"])
+		do {
+			if let clip = try await finishCurrentClip() {
+				finalizedClips.append(clip)
+				emit(["event": "clip-finalized", "clip": clip.payload])
+			}
 			emit([
 				"event": "recording-paused",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
 			])
+		} catch {
+			emitError(code: "clip-finalize-failed", message: "\(error)")
 		}
 	}
 
-	func resume() {
-		let didResume = stateQueue.sync {
-			if isStopping || !isPaused {
-				return false
-			}
-
-			if let pauseStartedAt {
-				let now = CMClockGetTime(hostClock)
-				totalPausedDuration = CMTimeAdd(
-					totalPausedDuration,
-					CMTimeSubtract(now, pauseStartedAt)
+	func resume() async {
+		let resumeState = stateQueue.sync {
+			(!isStopping && isPaused && !hasTerminalFailure, hasTerminalFailure)
+		}
+		guard resumeState.0 else {
+			if resumeState.1 {
+				emitError(
+					code: "clip-start-failed",
+					message: "The current writer failed. Stop now to keep earlier completed clips."
 				)
 			}
-			isPaused = false
-			pauseStartedAt = nil
-			return true
+			return
 		}
 
-		if didResume {
+		do {
+			let nextClipIndex = currentClipIndex + 1
+			try sampleQueue.sync {
+				do {
+					try setupWriter(for: nextClipIndex)
+				} catch {
+					discardCurrentWriterOnSampleQueue()
+					throw error
+				}
+			}
+			currentClipIndex = nextClipIndex
+			stateQueue.sync { isPaused = false }
 			emit([
 				"event": "recording-resumed",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
+				"clipIndex": currentClipIndex,
 			])
+		} catch {
+			emitError(code: "clip-start-failed", message: "\(error)")
 		}
 	}
 
 	func stream(_ stream: SCStream, didStopWithError error: Error) {
-		emitError(code: "capture-stopped-with-error", message: "\(error)")
-		Task {
-			await stop()
-		}
+		unexpectedStopHandler(self, error)
 	}
 
 	func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
 		guard CMSampleBufferDataIsReady(sampleBuffer) else {
 			return
 		}
-		let pauseState = currentPauseState()
-		if pauseState.paused {
-			return
-		}
-		guard let sampleBuffer = retimedSampleBuffer(sampleBuffer, subtracting: pauseState.offset) else {
+		if stateQueue.sync(execute: { isPaused }) {
 			return
 		}
 
@@ -287,7 +315,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 
-		if type.rawValue == microphoneOutputTypeRawValue {
+		if type.rawValue == screenCaptureKitMicrophoneOutputTypeRawValue {
 			audioMixer?.ingest(sampleBuffer, from: .microphone)
 			return
 		}
@@ -306,11 +334,19 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			writer.startWriting()
 			writer.startSession(atSourceTime: presentationTime)
 			didStartWriting = true
+			clipStartTime = presentationTime
 			audioMixer?.beginTimeline(at: presentationTime)
 		}
 
 		if videoInput.isReadyForMoreMediaData {
 			let appended = videoInput.append(sampleBuffer)
+			if appended {
+				clipLastTime = presentationTime
+				let duration = CMSampleBufferGetDuration(sampleBuffer)
+				clipLastFrameDuration = duration.isValid && duration > .zero
+					? duration
+					: CMTime(value: 1, timescale: CMTimeScale(max(1, request.video.fps)))
+			}
 			if appended, !didEmitRecordingStarted {
 				didEmitRecordingStarted = true
 				emit([
@@ -328,7 +364,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 	/// A failed AVAssetWriter keeps accepting appends and keeps answering false, so
 	/// a recorder that discards that Bool records nothing while the HUD counts on.
-	/// That is how a two-minute take was already lost by its fourth second and only
+	/// That is how a two-minute recording was already lost by its fourth second and only
 	/// said so at finishWriting(). The Windows helper checks every WriteSample
 	/// HRESULT and escalates; this is the macOS half of the same contract -- report
 	/// once, at the append that actually failed, carrying the live writer.error.
@@ -346,6 +382,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 		didReportWriterFailure = true
+		stateQueue.sync {
+			isPaused = true
+			hasTerminalFailure = true
+		}
 		emitError(
 			code: "writer-failed-during-capture",
 			message: "\(stage): "
@@ -354,7 +394,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		)
 	}
 
-	private func ensureRequestedPermissions() throws {
+	private func ensureRequestedPermissions(for request: RecordingRequest) throws {
 		if !CGPreflightScreenCaptureAccess() {
 			let granted = CGRequestScreenCaptureAccess()
 			if !granted {
@@ -390,85 +430,22 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		]
 	}
 
-	private func makeCaptureTarget(from content: SCShareableContent) throws -> CaptureTarget {
-		switch request.source.type {
-		case "display":
-			guard let displayId = request.source.displayId else {
-				throw HelperError.sourceNotFound("Display capture requires source.displayId.")
-			}
-			guard let display = content.displays.first(where: { $0.displayID == displayId }) else {
-				throw HelperError.sourceNotFound("No ScreenCaptureKit display found for id \(displayId).")
-			}
-			let width = Int(CGDisplayPixelsWide(display.displayID))
-			let height = Int(CGDisplayPixelsHigh(display.displayID))
-			return CaptureTarget(
-				filter: SCContentFilter(display: display, excludingWindows: []),
-				width: clampCaptureDimension(width, fallback: request.video.width),
-				height: clampCaptureDimension(height, fallback: request.video.height),
-				captureFrame: display.frame
-			)
-		case "window":
-			guard let windowId = request.source.windowId else {
-				throw HelperError.sourceNotFound("Window capture requires source.windowId.")
-			}
-			guard let window = content.windows.first(where: { $0.windowID == windowId }) else {
-				throw HelperError.sourceNotFound("No ScreenCaptureKit window found for id \(windowId).")
-			}
-			let candidateDisplay = content.displays.first {
-				$0.frame.intersects(window.frame) || $0.frame.contains(CGPoint(x: window.frame.midX, y: window.frame.midY))
-			}
-			let scaleFactor = Self.scaleFactor(for: candidateDisplay?.displayID ?? CGMainDisplayID())
-			let width = Int(window.frame.width) * scaleFactor
-			let height = Int(window.frame.height) * scaleFactor
-			return CaptureTarget(
-				filter: SCContentFilter(desktopIndependentWindow: window),
-				width: clampCaptureDimension(width, fallback: request.video.width),
-				height: clampCaptureDimension(height, fallback: request.video.height),
-				captureFrame: window.frame
-			)
-		default:
-			throw HelperError.invalidSourceType(request.source.type)
-		}
+	private func clipPath(for index: Int) -> String {
+		let requested = URL(fileURLWithPath: request.outputs.screenPath)
+		let ext = requested.pathExtension.isEmpty ? "mp4" : requested.pathExtension
+		let stem = requested.deletingPathExtension().lastPathComponent
+		let suffix = "-clip-0001"
+		let base = stem.hasSuffix(suffix) ? String(stem.dropLast(suffix.count)) : stem
+		let sequence = String(format: "%04d", index + 1)
+		return requested.deletingLastPathComponent()
+			.appendingPathComponent("\(base)-clip-\(sequence)")
+			.appendingPathExtension(ext)
+			.path
 	}
 
-	private func makeStreamConfiguration() -> SCStreamConfiguration {
-		let configuration = SCStreamConfiguration()
-		configuration.width = outputWidth
-		configuration.height = outputHeight
-		configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, request.video.fps)))
-		configuration.queueDepth = 6
-		configuration.showsCursor = !request.video.hideSystemCursor
-		configuration.pixelFormat = kCVPixelFormatType_32BGRA
-		configuration.sampleRate = 48_000
-		configuration.channelCount = 2
-		configuration.excludesCurrentProcessAudio = true
-		configuration.capturesAudio = request.audio.system.enabled
-
-		if request.audio.microphone.enabled {
-			guard supportsNativeMicrophoneCapture(streamConfig: configuration) else {
-				nativeMicrophoneEnabled = false
-				emit([
-					"event": "warning",
-					"code": "microphone-unavailable",
-					"message": "Native microphone capture requires ScreenCaptureKit microphone support on this macOS version.",
-				])
-				return configuration
-			}
-			nativeMicrophoneEnabled = true
-			configuration.capturesAudio = true
-			configuration.setValue(true, forKey: "captureMicrophone")
-			if let deviceId = resolveMicrophoneCaptureDeviceID() {
-				configuration.setValue(deviceId, forKey: "microphoneCaptureDeviceID")
-			}
-		} else {
-			nativeMicrophoneEnabled = false
-		}
-
-		return configuration
-	}
-
-	private func setupWriter() throws {
-		let outputUrl = URL(fileURLWithPath: request.outputs.screenPath)
+	private func setupWriter(for index: Int) throws {
+		let outputPath = clipPath(for: index)
+		let outputUrl = URL(fileURLWithPath: outputPath)
 		try? FileManager.default.removeItem(at: outputUrl)
 		try FileManager.default.createDirectory(
 			at: outputUrl.deletingLastPathComponent(),
@@ -527,14 +504,47 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		writer.add(input)
 		self.writer = writer
 		self.videoInput = input
+		currentClipPath = outputPath
+		didStartWriting = false
+		didReportWriterFailure = false
+		clipStartTime = nil
+		clipLastTime = nil
+		clipLastFrameDuration = .zero
+		audioInputs = []
+		audioMixer = nil
 
-		// A single mixed AAC track at the bitrate Windows encodes its own mixed track with
-		// (24 000 B/s), so the two platforms produce comparable files.
 		if request.audio.system.enabled || nativeMicrophoneEnabled {
-			let input = try addAudioInput(to: writer, bitRate: 192_000)
-			audioInput = input
+			// Apple AAC rejects 384 kbps in this real-time AVAssetWriter configuration. Keep
+			// each editable capture track at 256 kbps; the final YouTube-ready mix is encoded
+			// once at 384 kbps by the native compositor.
+			let captureAudioBitRate = 256_000
+			let mixedInput = try addAudioInput(
+				to: writer,
+				bitRate: captureAudioBitRate,
+				trackTitle: "screenrec.mix.v1",
+				trackLanguageCode: "qaa"
+			)
+			let systemInput = request.audio.system.enabled
+				? try addAudioInput(
+					to: writer,
+					bitRate: captureAudioBitRate,
+					trackTitle: "screenrec.system.v1",
+					trackLanguageCode: "qab"
+				)
+				: nil
+			let microphoneInput = nativeMicrophoneEnabled
+				? try addAudioInput(
+					to: writer,
+					bitRate: captureAudioBitRate,
+					trackTitle: "screenrec.microphone.v1",
+					trackLanguageCode: "qac"
+				)
+				: nil
+			audioInputs = [mixedInput, systemInput, microphoneInput].compactMap { $0 }
 			audioMixer = AudioTrackMixer(
-				input: input,
+				mixedInput: mixedInput,
+				systemInput: systemInput,
+				microphoneInput: microphoneInput,
 				includesSystemAudio: request.audio.system.enabled,
 				includesMicrophone: nativeMicrophoneEnabled,
 				microphoneGain: request.audio.microphone.gain
@@ -542,40 +552,100 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 	}
 
-	private func finishWriter() async {
-		guard let writer else {
-			return
-		}
-
-		// Capture has stopped, so nothing is in flight on the sample queue any more; hopping
-		// onto it once is what makes the mixer's final flush safe without a lock.
+	private func detachCurrentWriter() -> DetachedWriter? {
 		sampleQueue.sync {
+			guard let writer, let currentClipPath else { return nil }
 			audioMixer?.finish()
-		}
+			videoInput?.markAsFinished()
+			audioInputs.forEach { $0.markAsFinished() }
 
-		videoInput?.markAsFinished()
-		audioInput?.markAsFinished()
-
-		await withCheckedContinuation { continuation in
-			writer.finishWriting {
-				continuation.resume()
-			}
-		}
-
-		if writer.status == .completed {
-			emit([
-				"event": "recording-stopped",
-				"screenPath": request.outputs.screenPath,
-			])
-		} else {
-			emitError(
-				code: "writer-failed",
-				message: writer.error.map { "\($0)" } ?? "AVAssetWriter failed with status \(writer.status.rawValue)."
+			let detached = DetachedWriter(
+				writer: writer,
+				path: currentClipPath,
+				index: currentClipIndex,
+				started: didStartWriting,
+				startTime: clipStartTime,
+				lastTime: clipLastTime,
+				lastFrameDuration: clipLastFrameDuration
 			)
+			self.writer = nil
+			self.videoInput = nil
+			self.audioInputs = []
+			self.audioMixer = nil
+			self.currentClipPath = nil
+			self.didStartWriting = false
+			self.clipStartTime = nil
+			self.clipLastTime = nil
+			self.clipLastFrameDuration = .zero
+			return detached
 		}
 	}
 
-	private func addAudioInput(to writer: AVAssetWriter, bitRate: Int) throws -> AVAssetWriterInput {
+	/// Runs only on `sampleQueue`. It makes a failed next-writer setup retryable without
+	/// advancing the authoritative clip index or retaining a half-configured writer.
+	private func discardCurrentWriterOnSampleQueue() {
+		writer?.cancelWriting()
+		if let currentClipPath {
+			try? FileManager.default.removeItem(atPath: currentClipPath)
+		}
+		writer = nil
+		videoInput = nil
+		audioInputs = []
+		audioMixer = nil
+		currentClipPath = nil
+		didStartWriting = false
+		clipStartTime = nil
+		clipLastTime = nil
+		clipLastFrameDuration = .zero
+	}
+
+	private func finishCurrentClip() async throws -> FinalizedClip? {
+		guard let detached = detachCurrentWriter() else { return nil }
+		guard detached.started else {
+			detached.writer.cancelWriting()
+			try? FileManager.default.removeItem(atPath: detached.path)
+			return nil
+		}
+
+		await withCheckedContinuation { continuation in
+			detached.writer.finishWriting {
+				continuation.resume()
+			}
+		}
+		guard detached.writer.status == .completed else {
+			throw HelperError.writerSetupFailed(
+				detached.writer.error.map { "\($0)" }
+					?? "AVAssetWriter failed with status \(detached.writer.status.rawValue)."
+			)
+		}
+
+		let measuredDuration: CMTime
+		if let start = detached.startTime, let last = detached.lastTime {
+			measuredDuration = CMTimeAdd(CMTimeSubtract(last, start), detached.lastFrameDuration)
+		} else {
+			measuredDuration = detached.lastFrameDuration
+		}
+		let assetDuration = try? await AVURLAsset(url: URL(fileURLWithPath: detached.path)).load(.duration)
+		let finalizedDuration = assetDuration.flatMap { duration -> CMTime? in
+			guard duration.isValid, duration.isNumeric, duration > .zero else { return nil }
+			return duration
+		} ?? measuredDuration
+		let durationSeconds = finalizedDuration.isValid
+			? max(0, CMTimeGetSeconds(finalizedDuration))
+			: 0
+		// Round upward. A session boundary must include the media tail, not cut the
+		// final video frame or AAC packet because the container duration had a
+		// fractional millisecond.
+		let durationMs = max(1, Int(ceil(durationSeconds * 1000)))
+		return FinalizedClip(index: detached.index, path: detached.path, durationMs: durationMs)
+	}
+
+	private func addAudioInput(
+		to writer: AVAssetWriter,
+		bitRate: Int,
+		trackTitle: String,
+		trackLanguageCode: String
+	) throws -> AVAssetWriterInput {
 		let settings: [String: Any] = [
 			AVFormatIDKey: kAudioFormatMPEG4AAC,
 			AVSampleRateKey: 48_000,
@@ -584,6 +654,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		]
 		let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
 		input.expectsMediaDataInRealTime = true
+		let metadata = AVMutableMetadataItem()
+		metadata.identifier = .commonIdentifierTitle
+		metadata.value = trackTitle as NSString
+		input.metadata = [metadata]
+		// ISO 639-2 reserves qaa–qtz for local use. FFmpeg does not expose the ISO `titl`
+		// track metadata above, but it does expose this media-header language tag.
+		input.languageCode = trackLanguageCode
 
 		guard writer.canAdd(input) else {
 			throw HelperError.writerSetupFailed("Unable to add AAC audio input to AVAssetWriter.")
@@ -591,70 +668,6 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 		writer.add(input)
 		return input
-	}
-
-	private func currentPauseState() -> (paused: Bool, offset: CMTime) {
-		stateQueue.sync {
-			(isPaused, totalPausedDuration)
-		}
-	}
-
-	private func retimedSampleBuffer(_ sampleBuffer: CMSampleBuffer, subtracting offset: CMTime) -> CMSampleBuffer? {
-		if !offset.isValid || offset == .zero {
-			return sampleBuffer
-		}
-
-		let sampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
-		if sampleCount <= 0 {
-			return sampleBuffer
-		}
-
-		var timing = Array(repeating: CMSampleTimingInfo(), count: sampleCount)
-		let timingStatus = CMSampleBufferGetSampleTimingInfoArray(
-			sampleBuffer,
-			entryCount: sampleCount,
-			arrayToFill: &timing,
-			entriesNeededOut: nil
-		)
-		if timingStatus != noErr {
-			emit([
-				"event": "warning",
-				"code": "sample-retime-failed",
-				"message": "Unable to read sample timing info: \(timingStatus).",
-			])
-			return sampleBuffer
-		}
-
-		for index in timing.indices {
-			if timing[index].presentationTimeStamp.isValid {
-				timing[index].presentationTimeStamp = CMTimeSubtract(
-					timing[index].presentationTimeStamp,
-					offset
-				)
-			}
-			if timing[index].decodeTimeStamp.isValid {
-				timing[index].decodeTimeStamp = CMTimeSubtract(timing[index].decodeTimeStamp, offset)
-			}
-		}
-
-		var retimedBuffer: CMSampleBuffer?
-		let copyStatus = CMSampleBufferCreateCopyWithNewTiming(
-			allocator: kCFAllocatorDefault,
-			sampleBuffer: sampleBuffer,
-			sampleTimingEntryCount: sampleCount,
-			sampleTimingArray: &timing,
-			sampleBufferOut: &retimedBuffer
-		)
-		if copyStatus != noErr {
-			emit([
-				"event": "warning",
-				"code": "sample-retime-failed",
-				"message": "Unable to copy sample timing info: \(copyStatus).",
-			])
-			return sampleBuffer
-		}
-
-		return retimedBuffer
 	}
 
 	private func isCompleteFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
@@ -672,89 +685,4 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		return status == .complete
 	}
 
-	private func clampCaptureDimension(_ value: Int, fallback: Int) -> Int {
-		let requested = max(2, fallback)
-		let candidate = value > 0 ? value : requested
-		let clamped = min(candidate, requested)
-		return max(2, clamped - (clamped % 2))
-	}
-
-	private static func scaleFactor(for displayId: CGDirectDisplayID) -> Int {
-		guard let mode = CGDisplayCopyDisplayMode(displayId) else {
-			return 1
-		}
-
-		return max(1, mode.pixelWidth / max(1, mode.width))
-	}
-
-	private func supportsNativeMicrophoneCapture(streamConfig: SCStreamConfiguration) -> Bool {
-		streamConfig.responds(to: Selector(("setCaptureMicrophone:"))) &&
-			streamConfig.responds(to: Selector(("setMicrophoneCaptureDeviceID:"))) &&
-			SCStreamOutputType(rawValue: microphoneOutputTypeRawValue) != nil
-	}
-
-	private func resolveMicrophoneCaptureDeviceID() -> String? {
-		let devices = AVCaptureDevice.devices(for: .audio)
-
-		if let deviceName = request.audio.microphone.deviceName?.trimmingCharacters(in: .whitespacesAndNewlines),
-			!deviceName.isEmpty,
-			let device = devices.first(where: { $0.localizedName == deviceName })
-		{
-			return device.uniqueID
-		}
-
-		if let deviceId = request.audio.microphone.deviceId?.trimmingCharacters(in: .whitespacesAndNewlines),
-			!deviceId.isEmpty,
-			devices.contains(where: { $0.uniqueID == deviceId })
-		{
-			return deviceId
-		}
-
-		return nil
-	}
-}
-
-@main
-struct OpenScreenScreenCaptureKitHelper {
-	static func main() async {
-		do {
-			guard CommandLine.arguments.count == 2 else {
-				throw HelperError.invalidArguments
-			}
-
-			guard #available(macOS 13.0, *) else {
-				throw HelperError.unsupportedMacOS
-			}
-
-			let requestData = Data(CommandLine.arguments[1].utf8)
-			let decoder = JSONDecoder()
-			let request = try decoder.decode(RecordingRequest.self, from: requestData)
-			let recorder = ScreenCaptureRecorder(request: request)
-			let stopTask = Task.detached {
-				while let line = readLine() {
-					let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
-					switch command {
-					case "pause":
-						recorder.pause()
-					case "resume":
-						recorder.resume()
-					case "stop":
-						await recorder.stop()
-						exit(0)
-					default:
-						break
-					}
-				}
-			}
-
-			try await recorder.start()
-			await stopTask.value
-		} catch let error as HelperError {
-			emitError(code: "helper-error", message: error.description)
-			exit(1)
-		} catch {
-			emitError(code: "helper-error", message: "\(error)")
-			exit(1)
-		}
-	}
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { noteUiProbeClipSwitch } from "@/lib/ai-edition/perf/uiFrameProbe";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
@@ -7,15 +7,15 @@ import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveNativePosition } from "@/lib/ai-edition/timeline/timelineMap";
 import {
 	pushAllNativeParams,
-	setActiveClip,
 	setCurrentNativeViewId,
-	setNativePlaying,
 	setNativeScene,
 	subscribeNativeCompositor,
 	useIsCpuCompositor,
 	useNativeCompositorView,
 } from "@/native";
+import type { CompositorFrameTiming } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
+import { useNativePlaybackSync } from "@/native/useNativePlaybackSync";
 import {
 	getWebcamNativeSize,
 	getWebcamNativeSizeRevision,
@@ -33,9 +33,9 @@ import {
  * correspondre au buffer de pixels).
  *
  * F3 : la vue est amorcée avec les sources de l'**asset primaire du document courant**
- * (fallback fixture sans asset/document), puis `setActiveClip` remplace screen + webcam quand
- * le playhead entre dans un autre clip. Le hook recrée seulement la vue si le chemin screen
- * primaire change (changement de projet), pas à chaque frontière de clip.
+ * (fallback fixture sans asset/document), puis l'ancre transport atomique remplace screen +
+ * webcam quand le playhead entre dans un autre clip. Le hook recrée seulement la vue si le
+ * chemin screen primaire change (changement de projet), pas à chaque frontière de clip.
  *
  * Aucun contrôle ici : paramètres via l'inspector (`setNativeParam`), lecture via
  * `useNativePlaybackSync`, export via la vraie modale (`ExportDialog`).
@@ -48,8 +48,13 @@ import {
 export function NativeCompositorOverlay() {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const previousActiveClipIdRef = useRef<string | null>(null);
+	const nativeFrameHandlerRef = useRef<(frame: CompositorFrameTiming) => void>(() => undefined);
+	const handleNativeFrame = useCallback((frame: CompositorFrameTiming) => {
+		nativeFrameHandlerRef.current(frame);
+	}, []);
 	const document = useProjectStore((s) => s.document);
 	const currentTimeSec = useProjectStore((s) => s.currentTimeSec);
+	const playing = useProjectStore((s) => s.playing);
 	// ponytail: re-render whenever the webcam dim cache changes (the WebcamOverlay
 	// mounts AFTER the first scene push and only knows the real dims once the <video>
 	// fires loadedmetadata; subscribing here re-triggers the scene push so the native
@@ -106,6 +111,7 @@ export function NativeCompositorOverlay() {
 	const ready = sources !== null;
 	const { viewId, error } = useNativeCompositorView(canvasRef, {
 		sources: sources ?? undefined,
+		onFrame: handleNativeFrame,
 	});
 	const t = useScopedT("editor");
 	// No usable GPU: the preview still renders every effect, just slowly (~8 fps with
@@ -174,12 +180,7 @@ export function NativeCompositorOverlay() {
 	const activeClipId = activeClip?.id ?? null;
 	const activeClipIndex = activePosition?.clipIndex ?? null;
 	const activeSourceTimeSec = activePosition?.sourceTimeSec ?? null;
-	const pendingTargetClipIdRef = useRef<string | null>(null);
-
-	const playing = useProjectStore((s) => s.playing);
-
-	// Change les décodeurs screen/webcam uniquement quand le playhead entre dans un autre clip.
-	useEffect(() => {
+	const transportTarget = useMemo(() => {
 		if (
 			viewId === null ||
 			!document ||
@@ -188,58 +189,36 @@ export function NativeCompositorOverlay() {
 			activeClipIndex === null ||
 			activeSourceTimeSec === null
 		) {
-			return;
-		}
-		if (previousActiveClipIdRef.current === activeClipId) {
-			return;
+			return null;
 		}
 		const asset = document.assets.find((candidate) => candidate.id === activeClip.assetId);
 		if (!asset?.originalPath) {
-			return;
+			return null;
 		}
 		const camera = assetCameraSource(asset);
-		const targetClipId = activeClipId;
-		// Sonde de fluidité (diagnostic) : sépare les mesures d'avant et d'après un
-		// franchissement de clip, qui se sont déjà révélées non comparables.
-		noteUiProbeClipSwitch(previousActiveClipIdRef.current, activeClipId);
-		pendingTargetClipIdRef.current = targetClipId;
-		previousActiveClipIdRef.current = targetClipId;
-
-		// Pause native across the decoder swap. Deliberately NOT kept in a variable to
-		// resume from later — see the `.then` below, which re-reads the live transport.
-		if (playing) {
-			setNativePlaying(false);
-		}
-
-		setActiveClip(
+		return {
 			viewId,
-			asset.originalPath,
-			camera.path,
-			camera.offsetSec,
-			activeClipIndex,
-			activeSourceTimeSec,
-		)
-			.then(() => {
-				if (pendingTargetClipIdRef.current !== targetClipId) {
-					return;
-				}
-				// Re-read the transport NOW rather than trusting `isPlaying`, captured
-				// before the await. Otherwise pausing *during* a clip transition is
-				// silently undone: the in-flight `.then` resumes native playback on top
-				// of the user's pause, and the preview plays on by itself. The store is
-				// the single source of truth for "is the transport playing", so ask it
-				// at the moment we'd act on it.
-				if (useProjectStore.getState().playing) {
-					setNativePlaying(true);
-				}
-			})
-			.catch((error: unknown) => {
-				console.warn("[compositor-view] setActiveClip failed:", error);
-				if (previousActiveClipIdRef.current === targetClipId) {
-					previousActiveClipIdRef.current = null;
-				}
-			});
+			clipId: activeClipId,
+			clipIndex: activeClipIndex,
+			screenPath: asset.originalPath,
+			webcamPath: camera.path,
+			webcamOffsetSec: camera.offsetSec,
+			sourceTimeSec: activeSourceTimeSec,
+			playing,
+		};
 	}, [viewId, document, activeClipId, activeClip, activeClipIndex, activeSourceTimeSec, playing]);
+	const observeNativeFrame = useNativePlaybackSync(transportTarget);
+	nativeFrameHandlerRef.current = observeNativeFrame;
+
+	// Keep clip-switch diagnostics separate from transport. The atomic transport hook
+	// owns decoder selection, source time, and play state as one operation.
+	useEffect(() => {
+		if (!activeClipId || previousActiveClipIdRef.current === activeClipId) {
+			return;
+		}
+		noteUiProbeClipSwitch(previousActiveClipIdRef.current, activeClipId);
+		previousActiveClipIdRef.current = activeClipId;
+	}, [activeClipId]);
 
 	if (!ready) {
 		return null;

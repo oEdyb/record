@@ -397,6 +397,23 @@ describe("buildSceneDescription.clips", () => {
 // --- zoomRegions -----------------------------------------------------------
 
 describe("buildSceneDescription.zoomRegions", () => {
+	it("preserves the authored motion style for native preview and export", () => {
+		const zoom = makeZoom({
+			id: "z-motion",
+			startMs: 1_000,
+			endMs: 4_000,
+			depth: 2,
+			focus: { cx: 0.5, cy: 0.5 },
+			motionStyle: "linear",
+			motionSpeed: 1.5,
+		});
+
+		expect(buildSceneDescription(makeDoc({ zoomRanges: [zoom] })).zoomRegions[0]).toMatchObject({
+			motionStyle: "linear",
+			motionSpeed: 1.5,
+		});
+	});
+
 	// Ces deux tests attendaient `depth / 2 + 0.5` — la formule qui vivait dans
 	// `sceneDescription`, à côté de la table que le reste de l'app utilise. Ils verrouillaient donc
 	// le bug : le focus était borné avec la table et la fenêtre source découpée avec la formule.
@@ -584,6 +601,44 @@ describe("buildSceneDescription.zoomRegions with an earlier trim", () => {
 // --- cameraFullscreenRegions -------------------------------------------------
 
 describe("buildSceneDescription.cameraFullscreenRegions", () => {
+	it("preserves a camera motion style independently from screen zooms", () => {
+		const doc = makeDoc({
+			legacyEditor: {
+				cameraFullscreenRegions: [
+					{
+						id: "camera-motion",
+						startMs: 2_000,
+						endMs: 5_500,
+						motionStyle: "instant",
+						motionSpeed: 0.75,
+					},
+				],
+			},
+		});
+
+		expect(buildSceneDescription(doc).cameraFullscreenRegions[0]).toMatchObject({
+			motionStyle: "instant",
+			motionSpeed: 0.75,
+		});
+	});
+
+	it("sanitizes a malformed passthrough camera speed before native serialization", () => {
+		const doc = makeDoc({
+			legacyEditor: {
+				cameraFullscreenRegions: [
+					{
+						id: "camera-malformed-speed",
+						startMs: 2_000,
+						endMs: 5_500,
+						motionSpeed: "fast",
+					},
+				],
+			},
+		});
+
+		expect(buildSceneDescription(doc).cameraFullscreenRegions[0]?.motionSpeed).toBe(1);
+	});
+
 	it("converts ms->sec for start/end", () => {
 		const doc = makeDoc({
 			legacyEditor: {
@@ -597,6 +652,25 @@ describe("buildSceneDescription.cameraFullscreenRegions", () => {
 	it("yields [] when legacyEditor.cameraFullscreenRegions is missing", () => {
 		const doc = makeDoc({ legacyEditor: {} });
 		expect(buildSceneDescription(doc).cameraFullscreenRegions).toEqual([]);
+	});
+
+	it("passes moderate camera emphasis metadata to the native compositor", () => {
+		const doc = makeDoc({
+			legacyEditor: {
+				cameraFullscreenRegions: [
+					{
+						id: "camera-emphasis",
+						startMs: 1000,
+						endMs: 6000,
+						mode: "emphasis",
+						cameraScale: 1.35,
+					},
+				],
+			},
+		});
+		expect(buildSceneDescription(doc).cameraFullscreenRegions).toEqual([
+			{ startSec: 1, endSec: 6, mode: "emphasis", cameraScale: 1.35 },
+		]);
 	});
 
 	it("splits a region straddling two clips into one entry per clip's source time", () => {
@@ -809,16 +883,16 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(at(3840, 2160)).toBeCloseTo(24, 6);
 	});
 
-	it("webcamSize is webcamSizeToFraction(webcamSizePreset) — clamp(preset,10,50)/100", () => {
+	it("webcamSize is webcamSizeToFraction(webcamSizePreset) — clamp(preset,10,80)/100", () => {
 		const doc = makeDoc({ legacyEditor: { webcamSizePreset: 33.4 } });
 		expect(buildSceneDescription(doc).layout.webcamSize).toBeCloseTo(0.334, 5);
 	});
 
-	it("webcamSize clamps below 10 and above 50", () => {
+	it("webcamSize clamps below 10 and above 80", () => {
 		const low = makeDoc({ legacyEditor: { webcamSizePreset: 2 } });
 		const high = makeDoc({ legacyEditor: { webcamSizePreset: 90 } });
 		expect(buildSceneDescription(low).layout.webcamSize).toBeCloseTo(0.1, 5);
-		expect(buildSceneDescription(high).layout.webcamSize).toBeCloseTo(0.5, 5);
+		expect(buildSceneDescription(high).layout.webcamSize).toBeCloseTo(0.8, 5);
 	});
 
 	it("maps the cursor sub-settings", () => {

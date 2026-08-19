@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { finalizeWebcamAsset } from "@/lib/recording/webcamSidecars";
 import type { RecorderHandle } from "./recorderHandle";
-import { finalizeWebcamAsset } from "./useScreenRecorder";
 
 /**
  * The property under test is that a webcam track is never lost without a word.

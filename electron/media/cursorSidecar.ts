@@ -21,11 +21,12 @@ import type {
 	CursorProviderKind,
 	CursorRecordingData,
 	CursorRecordingSample,
+	KeyboardActivitySample,
 	NativeCursorAsset,
 } from "../../src/native/contracts";
 import { findMediaLinksByFingerprint } from "./mediaLinksRegistry";
 
-export const CURSOR_TELEMETRY_VERSION = 2;
+export const CURSOR_TELEMETRY_VERSION = 4;
 
 /** Where a sidecar was found, or why it was not. `"none"` means we LOOKED and
  * there was nothing — distinct from never having looked, which this module
@@ -46,6 +47,62 @@ function emptyRecording(): CursorRecordingData {
 		provider: "none",
 		samples: [],
 		assets: [],
+		keyboardActivity: [],
+	};
+}
+
+export function normalizeKeyboardActivitySample(sample: unknown): KeyboardActivitySample | null {
+	if (!sample || typeof sample !== "object") return null;
+	const point = sample as Partial<KeyboardActivitySample>;
+	if (
+		typeof point.timeMs !== "number" ||
+		!Number.isFinite(point.timeMs) ||
+		typeof point.cx !== "number" ||
+		!Number.isFinite(point.cx) ||
+		typeof point.cy !== "number" ||
+		!Number.isFinite(point.cy) ||
+		typeof point.count !== "number" ||
+		!Number.isFinite(point.count) ||
+		point.count <= 0
+	) {
+		return null;
+	}
+
+	const rect = point.targetRect;
+	const targetRect =
+		rect &&
+		typeof rect.x === "number" &&
+		Number.isFinite(rect.x) &&
+		typeof rect.y === "number" &&
+		Number.isFinite(rect.y) &&
+		typeof rect.width === "number" &&
+		Number.isFinite(rect.width) &&
+		typeof rect.height === "number" &&
+		Number.isFinite(rect.height)
+			? (() => {
+					const x = Math.max(0, Math.min(1, rect.x));
+					const y = Math.max(0, Math.min(1, rect.y));
+					const right = Math.max(0, Math.min(1, rect.x + Math.max(0, rect.width)));
+					const bottom = Math.max(0, Math.min(1, rect.y + Math.max(0, rect.height)));
+					return {
+						x,
+						y,
+						width: rect.x >= 0 ? Math.max(0, Math.min(1 - x, rect.width)) : Math.max(0, right),
+						height: rect.y >= 0 ? Math.max(0, Math.min(1 - y, rect.height)) : Math.max(0, bottom),
+					};
+				})()
+			: undefined;
+
+	return {
+		timeMs: Math.max(0, point.timeMs),
+		cx: Math.max(0, Math.min(1, point.cx)),
+		cy: Math.max(0, Math.min(1, point.cy)),
+		count: Math.max(1, Math.round(point.count)),
+		...(point.focusSource === "caret" || point.focusSource === "target"
+			? { focusSource: point.focusSource }
+			: {}),
+		...(targetRect ? { targetRect } : {}),
+		...(point.directionExcluded === true ? { directionExcluded: true } : {}),
 	};
 }
 
@@ -72,6 +129,7 @@ export function normalizeCursorSample(sample: unknown): CursorRecordingSample | 
 		visible: typeof point.visible === "boolean" ? point.visible : true,
 		cursorType: typeof point.cursorType === "string" ? point.cursorType : null,
 		interactionType,
+		directionExcluded: point.directionExcluded === true,
 	};
 }
 
@@ -128,6 +186,9 @@ export async function readCursorRecordingFileAt(
 				? parsed.samples
 				: [];
 		const rawAssets = Array.isArray(parsed?.assets) ? parsed.assets : [];
+		const rawKeyboardActivity = Array.isArray(parsed?.keyboardActivity)
+			? parsed.keyboardActivity
+			: [];
 
 		const samples = rawSamples
 			.map((sample: unknown) => normalizeCursorSample(sample))
@@ -139,6 +200,12 @@ export async function readCursorRecordingFileAt(
 		const assets = rawAssets
 			.map((asset: unknown) => normalizeCursorAsset(asset))
 			.filter((asset: NativeCursorAsset | null): asset is NativeCursorAsset => Boolean(asset));
+		const keyboardActivity = rawKeyboardActivity
+			.map((sample: unknown) => normalizeKeyboardActivitySample(sample))
+			.filter((sample: KeyboardActivitySample | null): sample is KeyboardActivitySample =>
+				Boolean(sample),
+			)
+			.sort((a: KeyboardActivitySample, b: KeyboardActivitySample) => a.timeMs - b.timeMs);
 
 		return {
 			version:
@@ -146,6 +213,7 @@ export async function readCursorRecordingFileAt(
 			provider: (parsed?.provider === "native" ? "native" : "none") as CursorProviderKind,
 			samples,
 			assets,
+			keyboardActivity,
 		};
 	} catch (error) {
 		const nodeError = error as NodeJS.ErrnoException;

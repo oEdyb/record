@@ -1,5 +1,10 @@
 import type { Rectangle } from "electron";
-import type { CursorCaptureMode } from "./recordingSession";
+import type {
+	CursorCaptureMode,
+	RecordedVideoAssetInput,
+	RecordingSessionClip,
+} from "./recordingSession";
+import { normalizeCursorCaptureMode } from "./recordingSession";
 
 export type NativeMacSourceType = "display" | "window";
 
@@ -11,6 +16,8 @@ export type NativeMacRecordingRequest = {
 		sourceId: string;
 		displayId?: number;
 		windowId?: number;
+		excludedWindowIds?: number[];
+		excludedProcessIds?: number[];
 		bounds?: Rectangle;
 	};
 	video: {
@@ -59,9 +66,35 @@ export type NativeMacHelperRecordingStartedEvent = {
 	captureBounds?: Rectangle;
 };
 
+export type NativeMacHelperClipFinalizedEvent = {
+	event: "clip-finalized";
+	clip: RecordingSessionClip;
+};
+
+export type NativeMacHelperRecordingPausedEvent = {
+	event: "recording-paused";
+	timestampMs: number;
+};
+
+export type NativeMacHelperRecordingResumedEvent = {
+	event: "recording-resumed";
+	timestampMs: number;
+};
+
+export type NativeMacHelperRecordingReconfiguredEvent = {
+	event: "recording-reconfigured";
+	timestampMs: number;
+	captureBounds?: Rectangle;
+};
+
 export type NativeMacHelperRecordingStoppedEvent = {
 	event: "recording-stopped";
 	screenPath: string;
+	clips: RecordingSessionClip[];
+	warning?: {
+		code: string;
+		message: string;
+	};
 };
 
 export type NativeMacHelperWarningEvent = {
@@ -79,6 +112,10 @@ export type NativeMacHelperErrorEvent = {
 export type NativeMacHelperEvent =
 	| NativeMacHelperReadyEvent
 	| NativeMacHelperRecordingStartedEvent
+	| NativeMacHelperClipFinalizedEvent
+	| NativeMacHelperRecordingPausedEvent
+	| NativeMacHelperRecordingReconfiguredEvent
+	| NativeMacHelperRecordingResumedEvent
 	| NativeMacHelperRecordingStoppedEvent
 	| NativeMacHelperWarningEvent
 	| NativeMacHelperErrorEvent;
@@ -90,6 +127,50 @@ export type NativeMacRecordingStartResult = {
 	helperPath?: string;
 	error?: string;
 };
+
+export type NativeMacRecordingClipResult = {
+	success: boolean;
+	clip?: RecordingSessionClip;
+	paused?: boolean;
+	error?: string;
+};
+
+export type NativeMacClipWebcamInput = {
+	clipIndex: number;
+	webcam: RecordedVideoAssetInput;
+	durationMs: number;
+	webcamOffsetMs: number;
+};
+
+export type NativeMacRecordingFailure = {
+	code: string;
+	message: string;
+};
+
+export function parseNativeMacRecordingClip(value: unknown): RecordingSessionClip | null {
+	if (!value || typeof value !== "object") return null;
+	const clip = value as Partial<RecordingSessionClip>;
+	if (
+		typeof clip.index !== "number" ||
+		!Number.isInteger(clip.index) ||
+		clip.index < 0 ||
+		typeof clip.screenVideoPath !== "string" ||
+		!clip.screenVideoPath.trim() ||
+		typeof clip.durationMs !== "number" ||
+		!Number.isFinite(clip.durationMs) ||
+		clip.durationMs < 0
+	) {
+		return null;
+	}
+	const cursorCaptureMode = normalizeCursorCaptureMode(clip.cursorCaptureMode);
+	return {
+		index: clip.index,
+		screenVideoPath: clip.screenVideoPath,
+		durationMs: clip.durationMs,
+		...(clip.removed === true ? { removed: true } : {}),
+		...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+	};
+}
 
 export function parseMacWindowIdFromSourceId(sourceId?: string | null) {
 	if (!sourceId?.startsWith("window:")) {

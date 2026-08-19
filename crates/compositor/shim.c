@@ -8,6 +8,10 @@
 
 AVStream* sn_fmt_stream(AVFormatContext* s, int i) { return s->streams[i]; }
 unsigned  sn_fmt_nb_streams(AVFormatContext* s)    { return s->nb_streams; }
+const char* sn_fmt_stream_metadata(AVFormatContext* s, int i, const char* key) {
+    const AVDictionaryEntry* entry = av_dict_get(s->streams[i]->metadata, key, NULL, 0);
+    return entry ? entry->value : NULL;
+}
 AVIOContext* sn_fmt_get_pb(AVFormatContext* s)     { return s->pb; }
 void      sn_fmt_set_pb(AVFormatContext* s, AVIOContext* p) { s->pb = p; }
 

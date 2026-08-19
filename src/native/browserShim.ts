@@ -44,6 +44,7 @@ type ShimRecordingPrefs = {
 	micDeviceId: string | null;
 	camEnabled: boolean;
 	camDeviceId: string | null;
+	camFormat: { width: number; height: number; fps: number };
 	systemAudioEnabled: boolean;
 	cursorCaptureMode: "editable-overlay" | "system";
 };
@@ -53,6 +54,7 @@ let shimRecordingPrefs: ShimRecordingPrefs = {
 	micDeviceId: null,
 	camEnabled: false,
 	camDeviceId: null,
+	camFormat: { width: 1920, height: 1080, fps: 30 },
 	systemAudioEnabled: false,
 	cursorCaptureMode: "editable-overlay",
 };
@@ -115,6 +117,9 @@ function createShimElectronAPI() {
 		switchToHud: () => Promise.resolve({ success: true }),
 		switchToEditor: () => Promise.resolve({ success: true }),
 		startNewRecording: () => Promise.resolve({ success: true }),
+		getRecordingWorkspaceContext: () => Promise.resolve({ success: false, context: null }),
+		setRecordingWorkspaceContext: () => Promise.resolve({ success: true, context: null }),
+		returnToEditorIfRecordingWorkspace: () => Promise.resolve({ returned: false }),
 		openSourceSelector: () => Promise.resolve({ success: true }),
 		setHasUnsavedChanges: () => undefined,
 		sendCloseConfirmResponse: () => undefined,
@@ -396,7 +401,7 @@ function createShimBridgeClient() {
 				saveProjectsState();
 				return Promise.resolve({ success: true });
 			},
-			addAsset: (projectId: string, path: string, label?: string) => {
+			addAsset: (projectId: string, path: string, label?: string, recordingImportId?: string) => {
 				const doc = documentsByProject[projectId];
 				if (!doc) return Promise.resolve({ assetId: "", document: null });
 				const assetId = `asset_${Math.random().toString(36).slice(2, 10)}`;
@@ -405,6 +410,7 @@ function createShimBridgeClient() {
 					kind: "video" as const,
 					label: label || path.split(/[\\/]/).pop() || "Recording",
 					originalPath: path,
+					...(recordingImportId ? { recordingImportId } : {}),
 				};
 				const next: ShimDocument = {
 					...doc,

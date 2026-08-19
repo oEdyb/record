@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	computeCameraEmphasisRect,
 	computeCameraFullscreenRect,
 	computeCompositeLayout,
 	isWebcamBlockLayout,
@@ -147,7 +148,7 @@ describe("computeCompositeLayout", () => {
 		expect(medium!.webcamRect!.height).toBeLessThan(large!.webcamRect!.height);
 	});
 
-	it("clamps webcamSizePreset to the valid range (10–50)", () => {
+	it("clamps webcamSizePreset to the valid range (10–80)", () => {
 		const canvasSize = { width: 1920, height: 1080 };
 		const screenSize = { width: 1920, height: 1080 };
 		const webcamSize = { width: 1280, height: 720 };
@@ -168,7 +169,7 @@ describe("computeCompositeLayout", () => {
 			canvasSize,
 			screenSize,
 			webcamSize,
-			webcamSizePreset: 50,
+			webcamSizePreset: 80,
 		});
 		const aboveMax = computeCompositeLayout({
 			canvasSize,
@@ -176,9 +177,17 @@ describe("computeCompositeLayout", () => {
 			webcamSize,
 			webcamSizePreset: 100,
 		});
+		const legacyMax = computeCompositeLayout({
+			canvasSize,
+			screenSize,
+			webcamSize,
+			webcamSizePreset: 50,
+		});
 
 		expect(belowMin!.webcamRect!.width).toBe(atMin!.webcamRect!.width);
 		expect(belowMin!.webcamRect!.height).toBe(atMin!.webcamRect!.height);
+		expect(atMax!.webcamRect!.width).toBeGreaterThan(legacyMax!.webcamRect!.width);
+		expect(atMax!.webcamRect!.height).toBeGreaterThan(legacyMax!.webcamRect!.height);
 		expect(aboveMax!.webcamRect!.width).toBe(atMax!.webcamRect!.width);
 		expect(aboveMax!.webcamRect!.height).toBe(atMax!.webcamRect!.height);
 	});
@@ -444,6 +453,38 @@ describe("computeCompositeLayout", () => {
 			rectangleLayout?.webcamRect?.borderRadius ?? 0,
 		);
 		expect(roundedLayout?.webcamRect?.maskShape).toBe("rounded");
+	});
+});
+
+describe("computeCameraEmphasisRect", () => {
+	const canvas = { width: 1920, height: 1080 };
+	const base: StyledRenderRect = {
+		x: 1520,
+		y: 740,
+		width: 360,
+		height: 270,
+		borderRadius: 24,
+		maskShape: "rounded",
+	};
+
+	it("grows moderately while preserving bottom-right margins and camera shape", () => {
+		const rect = computeCameraEmphasisRect(base, canvas, 1, 1.35);
+		expect(rect.width).toBeCloseTo(486);
+		expect(rect.height).toBeCloseTo(364.5);
+		expect(canvas.width - rect.x - rect.width).toBeCloseTo(40);
+		expect(canvas.height - rect.y - rect.height).toBeCloseTo(70);
+		expect(rect.borderRadius).toBe(base.borderRadius);
+		expect(rect.maskShape).toBe(base.maskShape);
+	});
+
+	it("uses the same rect at zero and moves monotonically toward emphasis", () => {
+		expect(computeCameraEmphasisRect(base, canvas, 0)).toEqual(base);
+		const half = computeCameraEmphasisRect(base, canvas, 0.5);
+		const full = computeCameraEmphasisRect(base, canvas, 1);
+		expect(half.width).toBeGreaterThan(base.width);
+		expect(half.width).toBeLessThan(full.width);
+		expect(half.x).toBeLessThan(base.x);
+		expect(half.x).toBeGreaterThan(full.x);
 	});
 });
 
