@@ -31,7 +31,7 @@ jobs:
     env:
       TAP_OWNER: ${{ vars.HOMEBREW_TAP_OWNER }}
       TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
-      CASK_NAME: ${{ vars.HOMEBREW_CASK_NAME || 'openscreen' }}
+      CASK_NAME: ${{ vars.HOMEBREW_CASK_NAME || 'klippt' }}
       # `secrets` is not a context an `if:` can read, at job level or step level — only
       # `env` is. Hence this boolean-as-string, which exposes whether the token is set
       # without ever exposing its value. Same trick as publish-winget.yml.
@@ -98,7 +98,7 @@ jobs:
           MAX_ATTEMPTS=$(( (TIMEOUT_MINUTES * 60) / POLL_INTERVAL ))
 
           # Match on the arch marker, not on an exact filename. build.yml names
-          # the DMGs `Openscreen-macOS-Apple-Silicon-<ver>.dmg` and
+          # the DMGs `Klippt-macOS-Apple-Silicon-<ver>.dmg` and
           # `-Intel-`; older releases used `-Mac-arm64-` / `-Mac-x64-`. An
           # exact-name wait would poll for the full 12 minutes and warn, on a
           # release whose assets were there the whole time. These are the same
@@ -217,14 +217,14 @@ jobs:
               url "https://github.com/${REPO}/releases/download/v#{version}/${X64_NAME}"
             end
 
-            name "Openscreen"
+            name "Klippt"
             desc "Screen recorder and video editor"
             homepage "https://github.com/${REPO}"
 
             auto_updates false
             depends_on macos: ">= :big_sur"
 
-            app "Openscreen.app"
+            app "Klippt.app"
 
             zap trash: [
               "~/Library/Application Support/Openscreen",

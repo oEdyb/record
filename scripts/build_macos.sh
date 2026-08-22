@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# OpenScreen macOS Build Script
-# Produces: release/<version>/OpenScreen-Mac-<arch>-<version>.dmg
+# Klippt macOS Build Script
+# Produces: release/<version>/Klippt-Mac-<arch>-<version>.dmg
 #
 # Usage: chmod +x scripts/build_macos.sh && ./scripts/build_macos.sh
 #
@@ -26,7 +26,17 @@ fi
 VERSION=$(node -p "require('${PROJECT_ROOT}/package.json').version")
 RELEASE_DIR="${PROJECT_ROOT}/release/${VERSION}"
 ENTITLEMENTS="${PROJECT_ROOT}/macos.entitlements"
-ARCHS=("arm64" "x64")
+HOST_ARCH=$(node -p "process.arch")
+IFS=',' read -r -a ARCHS <<< "${MAC_ARCHS:-$HOST_ARCH}"
+
+for i in "${!ARCHS[@]}"; do
+    ARCHS[$i]="$(echo "${ARCHS[$i]}" | xargs)"
+    if [[ "${ARCHS[$i]}" != "$HOST_ARCH" ]]; then
+        echo "ERROR: Local release builds support the host architecture (${HOST_ARCH}) only."
+        echo "Use the macOS CI matrix for ${ARCHS[$i]}."
+        exit 1
+    fi
+done
 
 # ── Colors ────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -105,6 +115,12 @@ print_ok "Dependencies installed"
 print_step "Building Vite + Electron... (this may take a minute)"
 npx tsc && npx vite build
 print_ok "Vite + Electron build complete"
+
+print_step "Building the native macOS capture and compositor payload..."
+OPENSCREEN_MAC_HELPER_ARCHS="$HOST_ARCH" npm run build:native:mac
+npm run fetch:ffmpeg:mac
+npm run build:native:compositor:mac
+print_ok "Native macOS payload built for ${HOST_ARCH}"
 
 # ── Package, Sign, Notarize per Architecture ─────────────────────────
 for ARCH in "${ARCHS[@]}"; do

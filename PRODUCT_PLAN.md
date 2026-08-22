@@ -719,12 +719,14 @@ After Gate 0:
    identity or navigation that does not belong in Klippt.
 3. **Done:** Use one restrained steel-blue editor accent for selection, the playhead, and automatic
    edit regions. The floating recording panel remains monochrome.
-4. **Paused by product decision:** Build the packaged Klippt app and verify current projects,
-   preferences, capture permission, and the legacy user-data location. Resume this when alpha
-   distribution becomes the active gate.
-5. **Blocked until distribution work resumes:** Sign with Developer ID, enable Hardened Runtime,
-   notarize, staple, and test on a clean Mac. The current keychain has an Apple Development
-   certificate but no Developer ID Application certificate.
+4. **Done on the development Mac:** Build the packaged Klippt app and verify current projects,
+   preferences, capture permission, and the legacy user-data location. Clean-Mac verification
+   remains part of the signed alpha test.
+5. **Signing pipeline ready; account blocked:** The release workflow uses Hardened Runtime,
+   Developer ID signing, notarization, stapling, and Gatekeeper validation. The current keychain
+   has only an Apple Development certificate from a free Personal Team. Join the paid Apple
+   Developer Program and issue a Developer ID Application certificate before the public alpha.
+   Run `npm run release:check:mac` to verify the local signing setup.
 6. Add the private alpha update channel and a privacy-safe crash-report export when distribution
    becomes the active gate.
 

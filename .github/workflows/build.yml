@@ -365,14 +365,9 @@ jobs:
           VERSION="$(node -e "console.log(require('./package.json').version)")"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # `--${{ matrix.arch }}` above does NOT restrict the architecture: the
-      # `arch` list in electron-builder.json5's `mac.target` names both x64 and
-      # arm64 and the config wins, so BOTH bundles are produced in every job —
-      # x64 in release/<ver>/mac/, arm64 in release/<ver>/mac-arm64/. The old
-      # `find release/<ver> ... | head -n1` took whichever came first in
-      # directory order (x64, in practice), so the arm64 job could package the
-      # x64 bundle into a DMG named `-arm64-`. Nothing downstream compared the
-      # name against the contents, so that would have published silently.
+      # The architecture comes only from the matrix CLI flag above. Do not add an
+      # arch list to electron-builder.json5: config-level arches override the CLI
+      # and can put an Intel bundle in an Apple-Silicon-labelled artifact.
       - name: Find .app bundle
         id: find_app
         run: |
@@ -392,7 +387,9 @@ jobs:
       # slow enough to be unusable, so a mislabelled DMG is a real user harm.
       - name: Verify .app architecture matches the job
         run: |
-          BIN="${{ steps.find_app.outputs.app_bundle }}/Contents/MacOS/Openscreen"
+          APP="${{ steps.find_app.outputs.app_bundle }}"
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          BIN="$APP/Contents/MacOS/$EXECUTABLE"
           if [[ "${{ matrix.arch }}" == "arm64" ]]; then EXPECTED="arm64"; else EXPECTED="x86_64"; fi
           ACTUAL="$(lipo -archs "$BIN")"
           echo "job arch=${{ matrix.arch }}  expected=${EXPECTED}  actual=${ACTUAL}"
@@ -470,7 +467,7 @@ jobs:
           RELEASE_DIR="release/${VERSION}"
           # The instruction set, NOT the marketing name used for the DMG: electron-updater picks
           # the file for an Apple Silicon client by matching the literal substring "arm64".
-          ZIP="${RELEASE_DIR}/Openscreen-Mac-${{ matrix.arch }}-${VERSION}.zip"
+          ZIP="${RELEASE_DIR}/Klippt-Mac-${{ matrix.arch }}-${VERSION}.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
           node scripts/mac-update-feed.mjs describe "$ZIP" "$VERSION" \
             "${RELEASE_DIR}/update-info-${{ matrix.arch }}.json"
@@ -482,8 +479,9 @@ jobs:
       - name: Verify update ZIP
         run: |
           ZIP="${{ steps.update_zip.outputs.zip_path }}"
-          unzip -l "$ZIP" | grep -q "Openscreen.app/Contents/MacOS/" \
-            || { echo "::error::${ZIP} does not contain Openscreen.app/Contents/MacOS — ditto lost the bundle root"; exit 1; }
+          APP_NAME="$(basename "${{ steps.find_app.outputs.app_bundle }}")"
+          unzip -Z1 "$ZIP" | grep -Fq "${APP_NAME}/Contents/MacOS/" \
+            || { echo "::error::${ZIP} does not contain ${APP_NAME}/Contents/MacOS — ditto lost the bundle root"; exit 1; }
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             case "$ZIP" in
               *arm64*) ;;
@@ -506,7 +504,7 @@ jobs:
             x64)   ARCH_LABEL="Intel" ;;
             *)     ARCH_LABEL="$ARCH" ;;
           esac
-          DMG_NAME="Openscreen-macOS-${ARCH_LABEL}-${VERSION}.dmg"
+          DMG_NAME="Klippt-macOS-${ARCH_LABEL}-${VERSION}.dmg"
           RELEASE_DIR="release/${VERSION}"
           DMG_OUTPUT="${RELEASE_DIR}/${DMG_NAME}"
           STAGING="${RELEASE_DIR}/dmg-staging"
@@ -519,7 +517,7 @@ jobs:
 
           hdiutil create \
             -srcfolder "$STAGING" \
-            -volname "Openscreen" \
+            -volname "Klippt" \
             -fs HFS+ \
             -fsargs "-c c=64,a=16,e=16" \
             -format UDBZ \
@@ -581,7 +579,7 @@ jobs:
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v7
         with:
-          name: openscreen-mac-${{ matrix.arch }}
+          name: klippt-mac-${{ matrix.arch }}
           # The DMG is what a new user downloads; the ZIP is what an existing install updates
           # from. The JSON sidecar is folded into a single latest-mac.yml in publish-release —
           # each arch is built on a different runner, so neither job can write the feed alone.
@@ -859,13 +857,13 @@ jobs:
       - name: Download macOS arm64 DMG
         uses: actions/download-artifact@v8
         with:
-          name: openscreen-mac-arm64
+          name: klippt-mac-arm64
           path: artifacts/mac-arm64
 
       - name: Download macOS x64 DMG
         uses: actions/download-artifact@v8
         with:
-          name: openscreen-mac-x64
+          name: klippt-mac-x64
           path: artifacts/mac-x64
 
       - name: Download Linux packages

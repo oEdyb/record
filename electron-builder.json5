@@ -107,12 +107,10 @@
     // rather than following `artifactName`. The update ZIP is produced with `ditto` in the same
     // job, from the signed and stapled .app. Same trap as `linux.target` below, where the CLI
     // target list replaces this one.
-    "target": [
-      {
-        "target": "dmg",
-        "arch": ["x64", "arm64"]
-      }
-    ],
+    // Keep architecture out of this config. The CLI or CI matrix selects one architecture.
+    // Listing both here overrides `electron-builder --arm64` / `--x64` and can put an Intel
+    // bundle inside an Apple-Silicon-labelled artifact.
+    "target": ["dmg"],
     "icon": "icons/icons/mac/icon.icns",
     "artifactName": "${productName}-Mac-${arch}-${version}-Installer.${ext}",
     "extraResources": [

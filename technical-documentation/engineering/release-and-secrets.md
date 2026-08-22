@@ -1,6 +1,6 @@
 # Release and secrets
 
-OpenScreen's release machinery lives in `.github/workflows/prerelease.yml`, `promote.yml`, and `build.yml`; its credentials are repository secrets and variables consumed by those workflows and the downstream package and Discord automations. This page is the operational reference for cutting releases and maintaining those credentials.
+Klippt's release machinery lives in `.github/workflows/prerelease.yml`, `promote.yml`, and `build.yml`; its credentials are repository secrets and variables consumed by those workflows and the downstream package automations. Legacy secret names stay stable until a separate credential migration. This page is the operational reference for cutting releases and maintaining those credentials.
 
 ## Release flow
 
@@ -127,13 +127,17 @@ The repository's main-branch ruleset must also permit the configured maintainer/
 
 ## Apple signing and notarization
 
+Run `npm run release:check:mac` before a local public build. The command requires a real
+`Developer ID Application` identity. An `Apple Development` identity is valid for development,
+but Gatekeeper rejects it for public distribution.
+
 `build.yml` enables signing only when all of these secrets are present:
 
 | Secret | Purpose |
 |---|---|
 | `MAC_CERTIFICATE_P12` | Base64-encoded Developer ID Application certificate and private key imported into a temporary keychain. |
 | `MAC_CERTIFICATE_PASSWORD` | Password protecting the P12 archive. |
-| `MAC_CSC_NAME` | Signing identity passed to electron-builder and `codesign`. |
+| `MAC_CSC_NAME` | Identity name without the `Developer ID Application:` prefix, passed to electron-builder and `codesign`. |
 | `APPLE_ID` | Apple account used by `notarytool`. |
 | `APPLE_TEAM_ID` | Apple Developer team identifier. |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password used by `notarytool`. |
