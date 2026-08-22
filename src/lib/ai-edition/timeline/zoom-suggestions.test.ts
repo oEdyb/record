@@ -785,6 +785,8 @@ describe("buildAutoZoomSuggestionsForClips", () => {
 
 		expect(next.zoomRanges).toHaveLength(suggestions.length);
 		expect(new Set(next.zoomRanges.map((region) => region.id)).size).toBe(suggestions.length);
+		expect(suggestions.every((suggestion) => suggestion.directionGroupId)).toBe(true);
+		expect(new Set(next.zoomRanges.map((region) => region.directionGroupId)).size).toBe(1);
 		expect(
 			next.zoomRanges.every(
 				(region) =>

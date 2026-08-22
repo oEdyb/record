@@ -77,6 +77,8 @@ export interface ProjectState {
 		},
 	) => Promise<DocumentPatchResult>;
 	setDocument: (document: AxcutDocument) => void;
+	/** Update a live gesture without adding an Undo snapshot for each frame. */
+	setDocumentLive: (document: AxcutDocument) => void;
 	restoreDocumentFromHistory: (document: AxcutDocument) => void;
 	replaceTimeline: (intervals: Interval[], reason: string) => Promise<void>;
 	restoreFullTimeline: () => Promise<void>;
@@ -153,7 +155,7 @@ export function getProjectMutationGeneration(projectId: string): number {
 	return latestMutationByProject.get(projectId) ?? 0;
 }
 
-async function waitForProjectMutations(projectId: string): Promise<void> {
+export async function waitForProjectMutations(projectId: string): Promise<void> {
 	while ((activeMutationCountByProject.get(projectId) ?? 0) > 0) {
 		await new Promise<void>((resolve) => {
 			const waiters = idleWaitersByProject.get(projectId) ?? [];
@@ -483,6 +485,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 		if (prev && prev !== document) {
 			recordDocumentSnapshot(prev);
 		}
+		set({
+			document,
+			revision: get().revision + 1,
+			dirty: true,
+		});
+	},
+
+	setDocumentLive(document) {
 		set({
 			document,
 			revision: get().revision + 1,

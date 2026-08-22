@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "所有縮放的自動對焦已開啟 — 點擊可將全部切換為手動",
 		"autoFocusAllOff": "為所有縮放開啟自動對焦（攝影機跟隨游標）",
 		"addTrim": "新增剪輯 (T)",
+		"splitClip": "在播放頭處分割片段",
 		"addAnnotation": "新增標註 (A)",
 		"addSpeed": "新增速度 (S)",
 		"addCameraFullscreen": "新增全螢幕攝影機 (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "按 C 新增一個全螢幕攝影機片段"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "平移",
 		"zoom": "縮放",
 		"trim": "剪輯",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "自動加強",
 		"automaticZooms": "自動縮放",
+		"automaticDirection": "自動導向",
 		"automaticZoomsHint": "根據錄製的游標移動",
 		"smartZoomsAndCuts": "智慧剪輯",
 		"smartZoomsAndCutsHint": "使用 AI",

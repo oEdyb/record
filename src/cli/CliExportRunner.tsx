@@ -1,4 +1,4 @@
-// Hidden-window runner for `openscreen export`. Loads an .openscreen project,
+// Hidden-window runner for `klippt export`. Loads a Klippt or legacy project,
 // migrates it to the AxcutDocument the native Rust compositor consumes, and
 // drives exportMultiNative/exportGifNative — mirroring the v4 ExportDialog so
 // CLI exports and GUI exports stay pixel-identical. The hidden window does no
@@ -6,6 +6,10 @@
 // builds the clip list + scene JSON and relays progress.
 
 import { useEffect, useRef, useState } from "react";
+import {
+	DEFAULT_EXPORT_SETTINGS,
+	DEFAULT_GIF_SETTINGS,
+} from "@/components/video-editor/editorDefaults";
 import {
 	normalizeProjectEditor,
 	resolveProjectMedia,
@@ -17,10 +21,14 @@ import {
 	collectEffectiveClipDims,
 	type Dims,
 	pickExtremeDims,
-	resolveAspectRatioValue,
+	resolveOutputAspectRatioValue,
 } from "@/lib/ai-edition/document/outputFormat";
 import { applyProbedDuration } from "@/lib/ai-edition/document/timeline";
-import type { AxcutDocument } from "@/lib/ai-edition/schema";
+import {
+	type AxcutDocument,
+	documentSchema,
+	migrateRawDocumentToCurrent,
+} from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import {
 	applyAutomaticDirectionPlan,
@@ -31,7 +39,10 @@ import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration"
 import type { DirectionCursorSample } from "@/lib/ai-edition/timeline/direction-engine";
 import type { CliDoneResult, CliExportRequest } from "@/lib/cliContracts";
 import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
-import { calculateMp4ExportSettings } from "@/lib/exporter/mp4ExportSettings";
+import {
+	calculateMp4ExportSettings,
+	calculateMp4ExportSettingsForResolution,
+} from "@/lib/exporter/mp4ExportSettings";
 import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
 import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native";
 import type { CompositorClipInput } from "@/native/contracts";
@@ -72,7 +83,7 @@ function probeVideoDimensions(
 }
 
 function replaceExtension(filePath: string, newExtension: string): string {
-	return filePath.replace(/\.(openscreen|json)$/i, "") + newExtension;
+	return filePath.replace(/\.(klippt|openscreen|axcut|json)$/i, "") + newExtension;
 }
 
 /** Mirrors ExportDialog.buildNativeClipList: trim-narrowed visible clips mapped
@@ -131,100 +142,147 @@ function appendAutoZoomRanges(
 	return plan.effects.filter((effect) => effect.kind === "screen-zoom").length;
 }
 
-async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
+export async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 	const loaded = await nativeBridgeClient.project.loadProjectFileFromPath(request.projectPath);
 	if (!loaded.success || loaded.project === undefined) {
 		throw new Error(loaded.error ?? loaded.message ?? "Failed to load project file");
 	}
-	if (!validateProjectData(loaded.project)) {
-		throw new Error("Project file is not a valid .openscreen project");
-	}
-	const project = loaded.project;
-	const media = resolveProjectMedia(project);
-	if (!media) {
-		throw new Error("Project file does not reference any recorded media");
-	}
-	// Prefer the main process's approved session paths: they carry the
-	// packed-project sibling fallback when the stored absolute paths are stale.
-	try {
-		const sessionResult = await window.electronAPI.getCurrentRecordingSession();
-		const session = sessionResult?.session;
-		if (session?.screenVideoPath) {
-			media.screenVideoPath = session.screenVideoPath;
-			if (media.webcamVideoPath && session.webcamVideoPath) {
-				media.webcamVideoPath = session.webcamVideoPath;
-			}
-		}
-	} catch {
-		// Fall back to the paths stored in the project file.
-	}
-	const editor = normalizeProjectEditor(project.editor ?? {});
+	const rawProject = loaded.project as unknown;
+	const isCurrentDocument =
+		typeof rawProject === "object" &&
+		rawProject !== null &&
+		"schemaVersion" in rawProject &&
+		"timeline" in rawProject;
 
-	const format = request.format ?? editor.exportFormat;
+	let axcutDocument: AxcutDocument;
+	let storedFormat = DEFAULT_EXPORT_SETTINGS.format;
+	let storedQuality = DEFAULT_EXPORT_SETTINGS.quality;
+	let storedGifFrameRate = DEFAULT_GIF_SETTINGS.frameRate;
+	let storedGifSizePreset = DEFAULT_GIF_SETTINGS.sizePreset;
+	let storedGifLoop = DEFAULT_GIF_SETTINGS.loop;
+	if (isCurrentDocument) {
+		axcutDocument = documentSchema.parse(migrateRawDocumentToCurrent(rawProject));
+		const editor = normalizeProjectEditor(
+			(axcutDocument.legacyEditor ?? {}) as Parameters<typeof normalizeProjectEditor>[0],
+		);
+		storedFormat = editor.exportFormat;
+		storedQuality = editor.exportQuality;
+		storedGifFrameRate = editor.gifFrameRate;
+		storedGifSizePreset = editor.gifSizePreset;
+		storedGifLoop = editor.gifLoop;
+	} else {
+		if (!validateProjectData(rawProject)) {
+			throw new Error("Project file is not a valid Klippt project");
+		}
+		const project = rawProject;
+		const media = resolveProjectMedia(project);
+		if (!media) {
+			throw new Error("Project file does not reference any recorded media");
+		}
+		// Prefer the main process's approved session paths: they carry the
+		// packed-project sibling fallback when the stored absolute paths are stale.
+		try {
+			const sessionResult = await window.electronAPI.getCurrentRecordingSession();
+			const session = sessionResult?.session;
+			if (session?.screenVideoPath) {
+				media.screenVideoPath = session.screenVideoPath;
+				if (media.webcamVideoPath && session.webcamVideoPath) {
+					media.webcamVideoPath = session.webcamVideoPath;
+				}
+			}
+		} catch {
+			// Fall back to the paths stored in the project file.
+		}
+		const editor = normalizeProjectEditor(project.editor ?? {});
+		storedFormat = editor.exportFormat;
+		storedQuality = editor.exportQuality;
+		storedGifFrameRate = editor.gifFrameRate;
+		storedGifSizePreset = editor.gifSizePreset;
+		storedGifLoop = editor.gifLoop;
+		axcutDocument = migrateProjectDataToAxcutDocument({ ...project, media, editor });
+	}
+
+	const format = request.format ?? storedFormat;
 	if (request.audioPath && format === "gif") {
 		throw new Error(
 			"--audio is only supported for MP4 exports (this project's stored format is gif; pass --format mp4)",
 		);
 	}
-	const quality = request.quality ?? editor.exportQuality;
-	const gifFrameRate = request.gifFrameRate ?? editor.gifFrameRate;
-	const gifSizePreset = request.gifSizePreset ?? editor.gifSizePreset;
+	const quality = request.quality ?? storedQuality;
+	const gifFrameRate = request.gifFrameRate ?? storedGifFrameRate;
+	const gifSizePreset = request.gifSizePreset ?? storedGifSizePreset;
 	const outPath =
 		request.outPath ?? replaceExtension(request.projectPath, format === "gif" ? ".gif" : ".mp4");
-	// Cursor telemetry: only needed to compute --auto-zoom suggestions. The
-	// native compositor discovers the `<video>.cursor.json` sidecar itself.
-	let cursorTelemetry: DirectionCursorSample[] = [];
-	if (request.autoZoom) {
-		try {
-			cursorTelemetry = (await nativeBridgeClient.cursor.getRecordingData(media.screenVideoPath))
-				.samples;
-		} catch {
-			cursorTelemetry = [];
+	// Probe each used asset once. Current editor projects can contain many clips
+	// from different recordings; the legacy CLI path only probed the first file.
+	const assetById = new Map(axcutDocument.assets.map((asset) => [asset.id, asset]));
+	const usedAssets = [
+		...new Set(resolveVisibleClips(axcutDocument).map((clip) => clip.assetId)),
+	].flatMap((assetId) => {
+		const asset = assetById.get(assetId);
+		return asset?.originalPath ? [asset] : [];
+	});
+	if (usedAssets.length === 0) {
+		throw new Error("The project's timeline has no readable media to export");
+	}
+	const probedAssetDims: Record<string, Dims> = {};
+	for (const asset of usedAssets) {
+		// A recording can contain dozens of clip assets. Probe them in sequence so
+		// the hidden CLI window never opens dozens of media decoders at once.
+		const probe = await probeVideoDimensions(toFileUrl(asset.originalPath));
+		probedAssetDims[asset.id] = { width: probe.width, height: probe.height };
+		if (probe.durationMs > 0) {
+			axcutDocument = applyProbedDuration(axcutDocument, asset.id, probe.durationMs / 1000);
 		}
 	}
-
-	const probed = await probeVideoDimensions(toFileUrl(media.screenVideoPath));
-
-	// Migrate the .openscreen project onto the AxcutDocument the native
-	// compositor consumes. The migration is pure and carries zooms, annotations,
-	// trims and the legacy editor settings; the clip's duration is unknown until
-	// probed, so applyProbedDuration must run or the export is a single frame.
-	let axcutDocument = migrateProjectDataToAxcutDocument({
-		...project,
-		media,
-		editor,
-	});
 	const primaryAssetId = axcutDocument.project.primaryAssetId ?? axcutDocument.assets[0]?.id;
 	if (!primaryAssetId) {
-		throw new Error("Project migration produced no media asset");
-	}
-	if (probed.durationMs > 0) {
-		axcutDocument = applyProbedDuration(axcutDocument, primaryAssetId, probed.durationMs / 1000);
+		throw new Error("Project contains no media asset");
 	}
 
 	if (request.autoZoom) {
+		let cursorTelemetry: DirectionCursorSample[] = [];
+		const primaryAsset = axcutDocument.assets.find((asset) => asset.id === primaryAssetId);
+		if (primaryAsset?.originalPath) {
+			try {
+				cursorTelemetry = (
+					await nativeBridgeClient.cursor.getRecordingData(primaryAsset.originalPath)
+				).samples;
+			} catch {
+				cursorTelemetry = [];
+			}
+		}
 		const added = appendAutoZoomRanges(axcutDocument, cursorTelemetry, primaryAssetId);
 		window.electronAPI.cliLog("info", `Auto-zoom: added ${added} region(s) from cursor telemetry`);
 	}
 
 	// Output sizing mirrors the ExportDialog: crop-aware smallest clip on the
 	// timeline, normalized to the document's aspect ratio.
-	const probedAssetDims: Record<string, Dims> = {
-		[primaryAssetId]: { width: probed.width, height: probed.height },
-	};
 	const smallestSource =
 		pickExtremeDims(collectEffectiveClipDims(axcutDocument, probedAssetDims), "smallest") ??
-		({ width: probed.width, height: probed.height } as Dims);
-	const aspectRatioValue = resolveAspectRatioValue(
+		probedAssetDims[primaryAssetId] ??
+		Object.values(probedAssetDims)[0];
+	if (!smallestSource) {
+		throw new Error("Could not determine the export dimensions");
+	}
+	const editorSettings = getEditorSettings(axcutDocument);
+	const aspectRatioValue = resolveOutputAspectRatioValue(
 		axcutDocument,
-		getEditorSettings(axcutDocument).aspectRatio,
+		editorSettings.aspectRatio,
+		editorSettings.outputResolution,
 	);
-	const outDims = calculateMp4ExportSettings({
-		quality,
-		sourceWidth: smallestSource.width,
-		sourceHeight: smallestSource.height,
-		aspectRatioValue,
-	});
+	const outDims =
+		quality === "source" && editorSettings.outputResolution
+			? calculateMp4ExportSettingsForResolution({
+					quality,
+					...editorSettings.outputResolution,
+				})
+			: calculateMp4ExportSettings({
+					quality,
+					sourceWidth: smallestSource.width,
+					sourceHeight: smallestSource.height,
+					aspectRatioValue,
+				});
 
 	const clips = buildNativeClipList(axcutDocument);
 	if (clips.length === 0) {
@@ -260,7 +318,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 			await exportGifNative(clips, outPath, sceneJson, {
 				...dims,
 				fps: gifFrameRate,
-				loopCount: editor.gifLoop ? 0 : 1,
+				loopCount: storedGifLoop ? 0 : 1,
 			});
 			return {
 				success: true,

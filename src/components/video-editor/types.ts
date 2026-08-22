@@ -3,19 +3,32 @@ import {
 	type ZoomDepth,
 	type ZoomScaleInput,
 } from "@/lib/ai-edition/timeline/zoom-scale";
-import type { WebcamLayoutPreset } from "@/lib/compositeLayout";
+import {
+	DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE,
+	type WebcamBlockCameraShare,
+	type WebcamBlockOrder,
+	type WebcamLayoutPreset,
+} from "@/lib/compositeLayout";
 import type { MotionSpeed, MotionStyle } from "@/lib/zoomMath/motionCurve";
 import { clamp01 } from "@/utils/math";
 
 export type { ZoomDepth, ZoomScaleInput };
 export type ZoomFocusMode = "manual" | "auto";
-export type { WebcamLayoutPreset };
+export type { WebcamBlockCameraShare, WebcamBlockOrder, WebcamLayoutPreset };
 /** Webcam size as a percentage of the canvas reference dimension (10-80). */
 export type WebcamSizePreset = number;
 
 export const DEFAULT_WEBCAM_SIZE_PRESET: WebcamSizePreset = 25;
 
+/** Crop scale inside the webcam frame. The frame itself does not move or resize. */
+export type WebcamZoom = number;
+
+export const MIN_WEBCAM_ZOOM = 1;
+export const MAX_WEBCAM_ZOOM = 3;
+export const DEFAULT_WEBCAM_ZOOM: WebcamZoom = 1;
+
 export const DEFAULT_WEBCAM_LAYOUT_PRESET: WebcamLayoutPreset = "picture-in-picture";
+export { DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE };
 
 export type WebcamMaskShape = "rectangle" | "circle" | "square" | "rounded";
 
@@ -30,6 +43,11 @@ export interface WebcamPosition {
 	cx: number; // normalized horizontal center (0-1)
 	cy: number; // normalized vertical center (0-1)
 }
+
+/** Visual focus point inside the webcam crop. It is independent of widget placement. */
+export type WebcamFocalPoint = WebcamPosition;
+
+export const DEFAULT_WEBCAM_FOCAL_POINT: WebcamFocalPoint = { cx: 0.5, cy: 0.5 };
 
 export const DEFAULT_WEBCAM_POSITION: WebcamPosition | null = null;
 
@@ -98,6 +116,8 @@ export interface ZoomRegion {
 	/** Transition speed multiplier. 1 is the authored default. */
 	motionSpeed?: MotionSpeed;
 	source?: ZoomRegionSource;
+	/** Stable ownership for one connected automatic-direction passage. */
+	directionGroupId?: string;
 }
 
 export function getRotation3D(region: Pick<ZoomRegion, "rotationPreset">): Rotation3D {
@@ -252,6 +272,8 @@ export interface CameraFullscreenRegion {
 	/** Transition speed multiplier. 1 is the authored default. */
 	motionSpeed?: MotionSpeed;
 	source?: "auto" | "manual";
+	/** Stable ownership for one automatic-direction passage. */
+	directionGroupId?: string;
 }
 
 export type AnnotationType = "text" | "image" | "figure" | "blur";

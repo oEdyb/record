@@ -9,6 +9,10 @@ import {
 	NativeMacRecordingService,
 	type NativeMacRecordingServiceDependencies,
 } from "./nativeMacRecordingService";
+import {
+	nativeMacRecoveryJournalPath,
+	restoreNativeMacRecoverySession,
+} from "./nativeMacRecoveryJournal";
 
 class FakeHelper implements NativeMacCaptureHelper {
 	captureBounds = null;
@@ -131,6 +135,108 @@ describe("NativeMacRecordingService", () => {
 		expect(helper.resume).toHaveBeenCalledOnce();
 	});
 
+	it("journals the active clip and removes the handoff only when the recording is discarded", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+			durationMs: 500,
+		};
+		helper.pauseResult = Promise.resolve(clip);
+		const service = new NativeMacRecordingService(deps);
+
+		await service.start(baseRequest);
+		const journalPath = nativeMacRecoveryJournalPath(recordingsDir, 100);
+		let envelope = JSON.parse(await fs.readFile(journalPath, "utf-8"));
+		expect(envelope.session.clips).toEqual([
+			expect.objectContaining({ index: 0, provisionalDuration: true }),
+		]);
+
+		await service.pause();
+		envelope = JSON.parse(await fs.readFile(journalPath, "utf-8"));
+		expect(envelope.session.clips).toEqual([
+			expect.objectContaining({ index: 0, durationMs: 500 }),
+		]);
+		expect(envelope.session.clips[0]).not.toHaveProperty("provisionalDuration");
+
+		await service.resume(baseRequest);
+		envelope = JSON.parse(await fs.readFile(journalPath, "utf-8"));
+		expect(envelope.session.clips).toEqual([
+			expect.objectContaining({ index: 0, durationMs: 500 }),
+			expect.objectContaining({ index: 1, provisionalDuration: true }),
+		]);
+
+		await service.stop(true);
+		await expect(fs.access(journalPath)).rejects.toThrow();
+	});
+
+	it("does not start capture when the initial recovery journal cannot be made durable", async () => {
+		const open = vi.spyOn(fs, "open").mockRejectedValueOnce(new Error("ENOSPC: disk full"));
+		const service = new NativeMacRecordingService(deps);
+
+		await expect(service.start(baseRequest)).resolves.toMatchObject({
+			success: false,
+			error: expect.stringContaining("ENOSPC"),
+		});
+		expect(deps.createHelper).not.toHaveBeenCalled();
+		expect(deps.onRecordingStateChange).not.toHaveBeenCalledWith(true);
+		open.mockRestore();
+	});
+
+	it("rolls back Remove previous clip when its durable state update fails", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+			durationMs: 500,
+		};
+		helper.pauseResult = Promise.resolve(clip);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+
+		const open = vi.spyOn(fs, "open").mockRejectedValueOnce(new Error("ENOSPC: disk full"));
+		await expect(service.removePreviousClip()).rejects.toThrow("ENOSPC");
+		open.mockRestore();
+		helper.stopClips = [clip];
+
+		await expect(service.stop()).resolves.toMatchObject({
+			success: true,
+			session: {
+				clips: [{ ...clip, cursorCaptureMode: "editable-overlay" }],
+			},
+		});
+	});
+
+	it("recovers a later clip even when Continue could not update the journal", async () => {
+		const firstClip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+			durationMs: 500,
+		};
+		const secondPath = path.join(recordingsDir, "recording-100-clip-0002.mp4");
+		helper.pauseResult = Promise.resolve(firstClip);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await fs.writeFile(firstClip.screenVideoPath, Buffer.alloc(70 * 1024));
+		await service.pause();
+
+		const open = vi.spyOn(fs, "open").mockRejectedValueOnce(new Error("ENOSPC: disk full"));
+		await expect(service.resume(baseRequest)).resolves.toEqual({ success: true, clipIndex: 1 });
+		open.mockRestore();
+		await fs.writeFile(secondPath, Buffer.alloc(70 * 1024));
+
+		await expect(restoreNativeMacRecoverySession(recordingsDir, 100)).resolves.toMatchObject({
+			clips: [
+				expect.objectContaining({ index: 0, screenVideoPath: firstClip.screenVideoPath }),
+				expect.objectContaining({
+					index: 1,
+					screenVideoPath: secondPath,
+					provisionalDuration: true,
+				}),
+			],
+		});
+		await service.stop(true);
+	});
+
 	it("does not reconfigure an unchanged paused setup", async () => {
 		helper.pauseResult = Promise.resolve({
 			index: 0,
@@ -202,6 +308,47 @@ describe("NativeMacRecordingService", () => {
 		await expect(fs.access(outputPath)).rejects.toThrow();
 		await expect(fs.access(`${outputPath}.cursor.json`)).rejects.toThrow();
 		await expect(fs.access(manifestPath)).rejects.toThrow();
+	});
+
+	it("recovers a fragmented active clip when the helper exits before Stop", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const started = await service.start(baseRequest);
+		await fs.writeFile(started.path as string, Buffer.alloc(70 * 1024));
+		helper.running = false;
+
+		await expect(service.stop()).resolves.toMatchObject({
+			success: true,
+			path: started.path,
+			warning: expect.stringContaining("recovered from fragmented MP4"),
+			session: {
+				clips: [
+					expect.objectContaining({
+						index: 0,
+						provisionalDuration: true,
+					}),
+				],
+			},
+		});
+	});
+
+	it("recovers the fragmented tail when Stop returns without the active clip", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const started = await service.start(baseRequest);
+		await fs.writeFile(started.path as string, Buffer.alloc(70 * 1024));
+
+		await expect(service.stop()).resolves.toMatchObject({
+			success: true,
+			path: started.path,
+			warning: expect.stringContaining("unfinished active clip was recovered"),
+			session: {
+				clips: [
+					expect.objectContaining({
+						index: 0,
+						provisionalDuration: true,
+					}),
+				],
+			},
+		});
 	});
 
 	it("discovers and removes the active later clip when discard Stop fails", async () => {

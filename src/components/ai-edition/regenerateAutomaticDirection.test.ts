@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
+import { DEFAULT_AUTOMATIC_DIRECTION_POLICY } from "@/lib/ai-edition/timeline/automatic-direction";
 
 const mocks = vi.hoisted(() => ({
 	document: null as AxcutDocument | null,
@@ -25,6 +26,7 @@ vi.mock("@/lib/ai-edition/store/projectStore", () => ({
 
 import {
 	canRegenerateAutomaticDirection,
+	clearAutomaticDirectionObservationCache,
 	regenerateProjectAutomaticDirection,
 } from "./regenerateAutomaticDirection";
 
@@ -73,7 +75,7 @@ function project(): AxcutDocument {
 				{ id: "old-auto-camera", startMs: 0, endMs: 4_000, source: "auto" },
 			],
 		},
-	} as AxcutDocument;
+	} as unknown as AxcutDocument;
 }
 
 function microphonePeaks() {
@@ -88,6 +90,7 @@ function microphonePeaks() {
 
 describe("regenerate automatic direction", () => {
 	beforeEach(() => {
+		clearAutomaticDirectionObservationCache();
 		mocks.document = project();
 		mocks.getRecordingData.mockReset();
 		mocks.applyDocumentPatch.mockReset();
@@ -137,6 +140,36 @@ describe("regenerate automatic direction", () => {
 		expect(camera.some((region) => region.id === "old-auto-camera")).toBe(false);
 		expect(camera.some((region) => region.id.startsWith("auto-direction:regenerated-"))).toBe(true);
 		expect(result.cameraEmphasis).toBe(1);
+	});
+
+	it("reuses raw observations while live policy tuning changes", async () => {
+		mocks.applyDocumentPatch.mockImplementation(async (_projectId, patch) => {
+			mocks.document = patch(mocks.document!);
+			return "applied";
+		});
+		await regenerateProjectAutomaticDirection("project-1", {
+			policy: {
+				...DEFAULT_AUTOMATIC_DIRECTION_POLICY,
+				maximumScreenScale: 1.4,
+			},
+		});
+		await regenerateProjectAutomaticDirection("project-1", {
+			policy: {
+				...DEFAULT_AUTOMATIC_DIRECTION_POLICY,
+				maximumScreenScale: 1.5,
+			},
+			createHistorySnapshot: false,
+		});
+
+		expect(mocks.getRecordingData).toHaveBeenCalledOnce();
+		expect(window.electronAPI?.getAudioPeaks).toHaveBeenCalledOnce();
+		expect(
+			(
+				(mocks.document?.legacyEditor as Record<string, unknown>).automaticDirectionSettings as {
+					policy: { maximumScreenScale: number };
+				}
+			).policy.maximumScreenScale,
+		).toBe(1.5);
 	});
 
 	it("keeps new recording edits when the source set changes during analysis", async () => {

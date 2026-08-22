@@ -79,12 +79,12 @@
 		"saveGif": "Salva GIF esportata",
 		"saveVideo": "Salva video esportato",
 		"selectVideo": "Seleziona file video",
-		"saveProject": "Salva progetto OpenScreen",
-		"openProject": "Apri progetto OpenScreen",
+		"saveProject": "Salva progetto Klippt",
+		"openProject": "Apri progetto Klippt",
 		"gifImage": "Immagine GIF",
 		"mp4Video": "Video MP4",
 		"videoFiles": "File video",
-		"openscreenProject": "Progetto OpenScreen",
+		"openscreenProject": "Progetto Klippt",
 		"allFiles": "Tutti i file"
 	}
 }

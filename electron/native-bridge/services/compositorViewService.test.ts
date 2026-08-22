@@ -115,7 +115,7 @@ describe("buildCandidatePaths", () => {
 	const norm = (p: string) => p.replace(/\\/g, "/");
 
 	it("finds the addon from dist-electron, which is what app.getAppPath() returns unpackaged", () => {
-		// The regression this exists for: `electron dist-electron/main.js` — the entry
+		// The regression this exists for: `electron dist-electron/bootstrap.js` — the entry
 		// `npm run dev` uses — makes app.getAppPath() the dist-electron DIRECTORY, not
 		// the checkout root. Every candidate was built by joining "electron/native/..."
 		// onto it, so none of them existed and the editor ran with a no-op compositor

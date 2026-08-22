@@ -8,7 +8,7 @@ export type CliCursorCaptureMode = "editable-overlay" | "system";
 
 export interface CliExportRequest {
 	kind: "export";
-	/** Absolute path to the .openscreen project file. */
+	/** Absolute path to a .klippt project file (legacy project files are readable). */
 	projectPath: string;
 	/** Absolute output path; null = derive from projectPath + format. */
 	outPath: string | null;
@@ -50,7 +50,7 @@ export interface CliRecordRequest {
 	cursorMode: CliCursorCaptureMode;
 	/** Auto-stop after this many milliseconds; null = stop via signal/stdin. */
 	durationMs: number | null;
-	/** When set, write a ready-to-export .openscreen project here after recording. */
+	/** When set, write a ready-to-export .klippt project here after recording. */
 	projectOut: string | null;
 }
 
@@ -60,7 +60,7 @@ export interface CliSourcesRequest {
 
 export interface CliCaptionsRequest {
 	kind: "captions";
-	/** Absolute path to the .openscreen project file (updated in place). */
+	/** Absolute path to a .klippt project file (updated in place). */
 	projectPath: string;
 	minWordsPerCaption: number;
 	maxWordsPerCaption: number;
@@ -104,7 +104,7 @@ export interface CliDoneResult {
 	projectPath?: string;
 	durationMs?: number;
 	/**
-	 * Record: a ready-to-save .openscreen project object built by the runner.
+	 * Record: a ready-to-save .klippt project object built by the runner.
 	 * The main process writes it to the --project path (renderer has no fs).
 	 */
 	projectData?: unknown;

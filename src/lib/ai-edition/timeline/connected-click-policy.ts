@@ -1,5 +1,6 @@
 import type { MotionSpeed } from "@/lib/zoomMath/motionCurve";
 import { CHAINED_ZOOM_PAN_GAP_MS } from "@/lib/zoomMath/zoomRegionUtils";
+import { MAX_ZOOM_SCALE } from "./zoom-scale";
 
 /**
  * All tunable behavior for automatic connected click sequences.
@@ -42,8 +43,11 @@ export interface ConnectedClickPolicy {
 	minimumUsefulScale: number;
 }
 
-/** Automatic direction never creates a deeper crop than this. */
-export const AUTOMATIC_DIRECTION_MAX_SCALE = 1.65;
+/** Normal automatic depth before the user changes the project Max Zoom setting. */
+export const DEFAULT_AUTOMATIC_DIRECTION_MAX_SCALE = 1.65;
+
+/** Automatic and manual Zoom share the renderer's validated upper bound. */
+export const AUTOMATIC_DIRECTION_MAX_SCALE = MAX_ZOOM_SCALE;
 
 export const DEFAULT_CONNECTED_CLICK_POLICY: ConnectedClickPolicy = Object.freeze({
 	clickDedupeMs: 120,
@@ -61,7 +65,7 @@ export const DEFAULT_CONNECTED_CLICK_POLICY: ConnectedClickPolicy = Object.freez
 	shortDragDestinationDelayMs: 0,
 	targetMergeMs: 1_600,
 	targetMergeDistance: 0.08,
-	requestedScale: AUTOMATIC_DIRECTION_MAX_SCALE,
+	requestedScale: DEFAULT_AUTOMATIC_DIRECTION_MAX_SCALE,
 	safeInset: 0.18,
 	deadZoneWidthRatio: 0.5,
 	deadZoneHeightRatio: 0.7,

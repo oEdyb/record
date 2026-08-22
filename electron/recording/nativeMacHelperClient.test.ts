@@ -114,4 +114,39 @@ describe("NativeMacHelperClient", () => {
 		emit(process, { event: "recording-resumed", clipIndex: 1 });
 		await expect(resumed).resolves.toBe(1);
 	});
+
+	it("reports an unexpected stream stop once and replays its completed result to late Stop", async () => {
+		const process = fakeProcess();
+		const write = vi.spyOn(process.stdin, "write");
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { onFatalError });
+		const clip = { index: 0, screenVideoPath: "/tmp/clip.mp4", durationMs: 1_234 };
+
+		emit(process, {
+			event: "error",
+			code: "capture-stopped-with-error",
+			message: "Display disconnected",
+		});
+		emit(process, {
+			event: "recording-stopped",
+			screenPath: clip.screenVideoPath,
+			clips: [clip],
+		});
+		emit(process, {
+			event: "error",
+			code: "capture-stopped-with-error",
+			message: "duplicate terminal callback",
+		});
+
+		expect(onFatalError).toHaveBeenCalledOnce();
+		expect(onFatalError).toHaveBeenCalledWith({
+			code: "capture-stopped-with-error",
+			message: "Display disconnected",
+		});
+		await expect(client.stop({ screenPath: "/tmp/fallback.mp4", clips: [] })).resolves.toEqual({
+			screenPath: clip.screenVideoPath,
+			clips: [clip],
+		});
+		expect(write).not.toHaveBeenCalledWith("stop\n");
+	});
 });

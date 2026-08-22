@@ -139,6 +139,9 @@ export function pushAllNativeParams(settings: EditorSettingsSnapshot): void {
 	}
 
 	setNativeParam("webcamSize", settings.webcamSizePreset / NATIVE_WEBCAM_BASE_PCT);
+	setNativeParam("webcamZoom", settings.webcamZoom);
+	setNativeParam("webcamFocusX", settings.webcamFocalPoint.cx);
+	setNativeParam("webcamFocusY", settings.webcamFocalPoint.cy);
 	setNativeParam("webcamMirror", settings.webcamMirrored);
 	setNativeParam("webcamShape", settings.webcamMaskShape);
 

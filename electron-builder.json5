@@ -9,7 +9,7 @@
   "asarUnpack": [
     "**/*.node"
   ],
-  "productName": "Openscreen",
+  "productName": "Klippt",
   // Declared explicitly, NOT to start publishing from CI — every build still passes
   // `--publish never`, which suppresses uploading only. What this turns on is the update
   // METADATA: `latest.yml` / `latest-mac.yml` / `latest-linux.yml`, the `.blockmap` used for
@@ -123,10 +123,10 @@
       }
     ],
     "extendInfo": {
-      "NSAudioCaptureUsageDescription": "OpenScreen needs audio capture permission to record system audio.",
-      "NSMicrophoneUsageDescription": "OpenScreen needs microphone access to record voice audio.",
-      "NSCameraUsageDescription": "OpenScreen needs camera access to record webcam video.",
-      "NSScreenCaptureUsageDescription": "OpenScreen needs screen recording permission to detect and capture windows.",
+      "NSAudioCaptureUsageDescription": "Klippt needs audio capture permission to record system audio.",
+      "NSMicrophoneUsageDescription": "Klippt needs microphone access to record voice audio.",
+      "NSCameraUsageDescription": "Klippt needs camera access to record webcam video.",
+      "NSScreenCaptureUsageDescription": "Klippt needs screen recording permission to detect and capture windows.",
       "NSCameraUseContinuityCameraDeviceType": true
     }
   },
@@ -356,13 +356,13 @@
     "allowToChangeInstallationDirectory": true
   },
   // Microsoft Store packaging identity, from Partner Center's "Product identity" page
-  // (Applications et jeux > OpenScreen > Product identity).
+  // (Applications et jeux > Klippt > Product identity).
   "appx": {
     "identityName": "EtienneLescot.OpenScreen",
     "publisher": "CN=03B0FC8C-2067-45D9-BE82-9F15CE264B4A",
     "publisherDisplayName": "Etienne Lescot",
     "applicationId": "Openscreen",
-    "displayName": "OpenScreen",
+    "displayName": "Klippt",
     "backgroundColor": "transparent",
     "capabilities": ["runFullTrust", "microphone", "webcam"],
     // Mirrors SUPPORTED_LOCALES in src/i18n/config.ts. This list is what the Store

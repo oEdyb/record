@@ -44,6 +44,211 @@
 	display: none;
 }
 
+/* Pauses inspector. One continuous surface, with controls separated by spacing
+ * and hairlines instead of nested cards. Candidate rows use the editor's normal
+ * steel-blue selection color because they are temporary timeline selections. */
+.pauseInspector {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding-top: 14px;
+}
+.inspectorSelectField {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	align-items: center;
+	gap: 12px;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--fg-2);
+}
+.inspectorSelectField select,
+.pausePresetSave select,
+.pausePresetSave input {
+	min-width: 118px;
+	height: 30px;
+	padding: 0 9px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--surface);
+	color: var(--fg);
+	font: 500 12px var(--font-body);
+}
+.pausePresetRow {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 4px;
+	padding: 3px;
+	border-radius: 9px;
+	background: var(--surface-2);
+}
+.pausePresetRow button,
+.pauseResultHeader button,
+.pauseAdvancedButton,
+.pauseActions button,
+.pausePresetSave button,
+.pauseSuggestionList button {
+	border: 0;
+	color: var(--fg-2);
+	background: transparent;
+	font: 500 12px var(--font-body);
+	cursor: pointer;
+}
+.pausePresetRow button {
+	height: 28px;
+	border-radius: 7px;
+}
+.pausePresetRow button:hover,
+.pausePresetRow .pausePresetActive {
+	background: var(--surface);
+	color: var(--fg-emphasis);
+	box-shadow: 0 1px 2px color-mix(in srgb, black 8%, transparent);
+}
+.pauseAdvancedButton {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	padding: 10px 0 2px;
+	border-top: 1px solid var(--border-soft);
+}
+.pauseAdvanced {
+	display: flex;
+	flex-direction: column;
+	gap: 13px;
+}
+.pauseToggleRow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--fg-2);
+}
+.pauseTransitionNote,
+.pauseNotice {
+	margin: 0;
+	font: 400 11.5px/1.45 var(--font-body);
+	color: var(--muted);
+}
+.pauseResultHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--border-soft);
+}
+.pauseResultHeader > div {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.pauseResultHeader strong {
+	font: 600 12.5px var(--font-display);
+	color: var(--fg-emphasis);
+}
+.pauseResultHeader span {
+	font: 500 11px var(--font-mono);
+	color: var(--muted);
+}
+.pauseResultHeader button {
+	padding: 5px 0;
+	color: var(--editor-accent);
+}
+.pauseSuggestionList {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 5px;
+	max-height: 136px;
+	overflow-y: auto;
+}
+.pauseSuggestionList button {
+	display: grid;
+	grid-template-columns: 17px 1fr auto;
+	align-items: center;
+	gap: 6px;
+	height: 31px;
+	padding: 0 8px;
+	border: 1px solid var(--border-soft);
+	border-radius: 8px;
+	text-align: left;
+}
+.pauseSuggestionList button:hover,
+.pauseSuggestionList .pauseSuggestionSelected {
+	border-color: color-mix(in srgb, var(--editor-accent) 55%, var(--border));
+	background: var(--editor-accent-soft);
+	color: var(--fg-emphasis);
+}
+.pauseSuggestionCheck {
+	display: grid;
+	place-items: center;
+	width: 14px;
+	height: 14px;
+	border: 1px solid var(--border-hi);
+	border-radius: 4px;
+}
+.pauseSuggestionSelected .pauseSuggestionCheck {
+	border-color: var(--editor-accent);
+	background: var(--editor-accent);
+	color: white;
+}
+.pauseSuggestionList small {
+	font: 500 10.5px var(--font-mono);
+	color: var(--muted);
+}
+.pauseActions {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 7px;
+}
+.pauseActions button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 34px;
+	padding: 0 11px;
+	border: 1px solid var(--border);
+	border-radius: 9px;
+	background: var(--surface);
+}
+.pauseActions button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.pauseActions .pauseApplyButton {
+	border-color: var(--fg-emphasis);
+	background: var(--fg-emphasis);
+	color: var(--surface);
+}
+.pausePresetSave {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 7px;
+}
+.pausePresetSave > button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	align-self: flex-start;
+	padding: 3px 0;
+	color: var(--muted);
+}
+.pausePresetSave form {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 6px;
+}
+.pausePresetSave form button {
+	padding: 0 10px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--surface);
+}
+
 /* ─── titlebar ──────────────────────────────────────────────────── */
 .titlebar {
 	display: flex;
@@ -532,20 +737,20 @@
 	align-items: center;
 	justify-content: center;
 	gap: var(--sp-2);
-	border: 2px dashed var(--primary, #34B27B);
-	background: color-mix(in srgb, var(--primary, #34B27B) 10%, transparent);
+	border: 2px dashed var(--primary);
+	background: color-mix(in srgb, var(--primary) 10%, transparent);
 	border-radius: var(--r-sm);
 	pointer-events: none;
 }
 .previewEmptyDropIcon {
 	width: 40px;
 	height: 40px;
-	color: var(--primary, #34B27B);
+	color: var(--primary);
 }
 .previewEmptyDropLabel {
 	font-size: var(--fs-app);
 	font-weight: 600;
-	color: var(--primary, #34B27B);
+	color: var(--primary);
 }
 .previewEmptyInner {
 	display: flex;
@@ -593,8 +798,8 @@
 	gap: var(--sp-2);
 	padding: var(--sp-3) var(--sp-4);
 	border-radius: var(--r-sm);
-	background: var(--primary, #34B27B);
-	color: #fff;
+	background: var(--primary);
+	color: var(--accent-on);
 	border: none;
 	font-weight: 500;
 	font-size: 0.875rem;
@@ -875,11 +1080,19 @@
 /* Dense inspectors use one continuous surface. Controls still keep their own
    shape, but ordinary settings rows do not become cards inside the inspector. */
 .flatInspectorPane .paneBody {
-	padding: 0 var(--sp-4) var(--sp-4);
+	padding: 0 18px 18px;
+}
+.flatInspectorPane .paneHead .iconBtn {
+	opacity: 0.28;
+	transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+.flatInspectorPane:hover .paneHead .iconBtn,
+.flatInspectorPane .paneHead .iconBtn:focus-visible {
+	opacity: 1;
 }
 .flatInspectorPane .paneRow {
 	margin: 0;
-	padding: 12px 0;
+	padding: 14px 0;
 	border: 0;
 	border-bottom: 1px solid var(--border-soft);
 	border-radius: 0;
@@ -890,21 +1103,405 @@
 	padding: 0;
 }
 .flatInspectorPane .sliderCell {
-	padding: 12px 0 14px;
+	padding: 14px 0 16px;
 	border: 0;
 	border-bottom: 1px solid var(--border-soft);
 	border-radius: 0;
 	background: transparent;
 }
 .flatInspectorPane .sectionLabel {
-	margin: 18px 0 4px;
-	color: var(--muted);
-	font-size: 10.5px;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
+	margin: 18px 0 9px;
+	color: var(--fg-2);
+	font: 500 12.5px/1.25 var(--font-body);
 }
 .flatInspectorPane .paneTabs {
+	margin: 14px 0;
+}
+.flatInspectorPane .bgGrid,
+.flatInspectorPane .cursorGrid {
+	padding: 0 0 16px;
+}
+.flatInspectorPane .uploadBtn {
+	margin: 0 0 14px;
+}
+.inspectorSection {
+	padding: 18px 0;
+	border-bottom: 1px solid var(--border-soft);
+}
+.inspectorSection:last-child {
+	border-bottom: 0;
+}
+.inspectorSectionTitle {
+	margin: 0 0 10px;
+	color: var(--fg-2);
+	font: 500 12.5px/1.25 var(--font-body);
+}
+.inspectorFieldGroup {
+	padding-top: 16px;
+}
+.inspectorFieldLabel {
+	color: var(--fg);
+	font: 450 12px/1.25 var(--font-body);
+}
+.inspectorFieldMeta {
+	margin-top: 4px;
+	color: var(--meta);
+	font: 500 10.5px/1.2 var(--font-mono);
+}
+.automaticPresetHead {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 32px auto;
+	gap: 6px;
+}
+.automaticPresetHead select,
+.automaticPresetSave input {
+	min-width: 0;
+	height: 32px;
+	padding: 0 9px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: var(--surface-2);
+	color: var(--fg);
+	font: 500 12px/1 var(--font-body);
+	outline: none;
+}
+.automaticPresetHead select:focus-visible,
+.automaticPresetSave input:focus-visible {
+	border-color: var(--editor-accent-border);
+	box-shadow: 0 0 0 2px var(--editor-accent-ring);
+}
+.automaticPresetHead button,
+.automaticStatus button {
+	height: 32px;
+	padding: 0 8px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--muted);
+	font: 500 11px/1 var(--font-body);
+	cursor: pointer;
+}
+.automaticPresetHead button:hover:not(:disabled),
+.automaticStatus button:hover:not(:disabled) {
+	background: var(--surface-2);
+	color: var(--fg);
+}
+.automaticPresetHead button:focus-visible,
+.automaticStatus button:focus-visible {
+	outline: 2px solid var(--editor-accent-border);
+	outline-offset: 1px;
+}
+.automaticPresetHead button:disabled,
+.automaticStatus button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.automaticPresetSave {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 6px;
+	margin-top: 8px;
+}
+.automaticPresetSave button {
+	padding: 0 10px;
+	border: 0;
+	border-radius: 8px;
+	background: var(--surface-3);
+	color: var(--fg);
+	font: 600 11px/1 var(--font-body);
+	cursor: pointer;
+}
+.automaticStatus {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 26px;
+	margin-top: 7px;
+	color: var(--meta);
+	font: 500 10.5px/1 var(--font-body);
+}
+.automaticStatus[data-state="updating"] span {
+	color: var(--fg-2);
+}
+.automaticStatus[data-state="error"] span {
+	color: var(--danger);
+}
+.automaticStatus button {
+	height: 26px;
+	padding-right: 0;
+}
+.automaticAdvanced {
+	padding: 14px 0 18px;
+}
+.automaticAdvanced > summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	list-style: none;
+	color: var(--fg-2);
+	font: 600 12px/1 var(--font-body);
+	cursor: pointer;
+}
+.automaticAdvanced > summary::-webkit-details-marker {
+	display: none;
+}
+.automaticAdvanced > summary span:last-child {
+	color: var(--meta);
+	font: 500 10px/1 var(--font-mono);
+}
+.automaticAdvanced > p {
 	margin: 10px 0 0;
+	color: var(--meta);
+	font: 450 10.5px/1.45 var(--font-body);
+}
+.automaticAdvancedGroup {
+	padding-top: 18px;
+}
+.automaticAdvancedGroup + .automaticAdvancedGroup {
+	margin-top: 2px;
+	border-top: 1px solid var(--border-soft);
+}
+.automaticAdvancedGroup h3 {
+	margin: 0;
+	color: var(--fg-2);
+	font: 600 10.5px/1 var(--font-body);
+	letter-spacing: 0.02em;
+}
+.automaticAdvancedGroup .sliderCell {
+	padding: 12px 0 14px;
+}
+.layoutSelectRow {
+	padding: 0;
+}
+.layoutSelectRow select {
+	width: 100%;
+	height: 36px;
+	padding: 0 10px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: var(--surface-2);
+	color: var(--fg);
+	font: 450 12px/1 var(--font-body);
+	outline: none;
+	transition: background 120ms ease, border-color 120ms ease;
+}
+.layoutSelectRow select:hover:not(:disabled) { background: var(--surface-3); }
+.layoutSelectRow select:focus-visible {
+	border-color: var(--editor-accent-border);
+	box-shadow: 0 0 0 2px var(--editor-accent-ring);
+}
+.layoutSelectRow select:disabled { opacity: 0.5; cursor: not-allowed; }
+.resolutionControlRow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding-top: 14px;
+}
+.resolutionMode {
+	display: inline-grid;
+	grid-template-columns: repeat(2, minmax(58px, 1fr));
+	gap: 2px;
+	padding: 2px;
+	margin: 0;
+	border: 0;
+	border-radius: 7px;
+	background: var(--surface-2);
+}
+.resolutionMode button {
+	height: 26px;
+	min-width: 0;
+	padding: 0 9px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--muted);
+	font: 500 10.5px/1 var(--font-body);
+	cursor: pointer;
+}
+.resolutionMode button.isActive {
+	background: var(--surface-3);
+	color: var(--fg);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+.resolutionMode button:disabled { opacity: 0.5; cursor: not-allowed; }
+.resolutionFields {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	align-items: end;
+	gap: 7px;
+	padding-top: 10px;
+}
+.resolutionFields > span {
+	padding-bottom: 8px;
+	color: var(--meta);
+	font: 400 11px/1 var(--font-body);
+}
+.resolutionFields label {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 6px;
+}
+.resolutionFields label > span {
+	color: var(--meta);
+	font: 500 10px/1 var(--font-mono);
+}
+.resolutionFields input {
+	width: 100%;
+	min-width: 0;
+	height: 32px;
+	padding: 0 7px;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	background: var(--surface-2);
+	color: var(--fg-2);
+	font: 500 11px/1 var(--font-mono);
+	text-align: right;
+	outline: none;
+}
+.resolutionFields input:focus-visible {
+	border-color: var(--editor-accent-border);
+	box-shadow: 0 0 0 2px var(--editor-accent-ring);
+}
+.cameraShapeControl {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 2px;
+	padding: 3px;
+	margin-top: 9px;
+	border-radius: 9px;
+	background: var(--surface-2);
+}
+.cameraShapeButton {
+	min-width: 0;
+	height: 56px;
+	padding: 6px 2px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+}
+.cameraShapeButton svg {
+	width: 19px;
+	height: 19px;
+}
+.cameraShapeButton span {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font: 500 10px/1 var(--font-body);
+}
+.cameraShapeButton:hover:not(:disabled) {
+	background: color-mix(in oklab, var(--surface-3), transparent 35%);
+	color: var(--fg);
+}
+.cameraShapeButton.isActive {
+	background: var(--surface-3);
+	color: var(--fg);
+	box-shadow: inset 0 0 0 1px var(--border-hi), 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+.cameraShapeButton:focus-visible {
+	outline: 2px solid var(--editor-accent-border);
+	outline-offset: 1px;
+}
+.cameraShapeButton:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.cameraPositionField {
+	padding: 14px 0 16px;
+	border-bottom: 1px solid var(--border-soft);
+}
+.cameraPositionHead {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 10px;
+	color: var(--fg-2);
+	font: 500 11px/1 var(--font-body);
+}
+.cameraPositionHead button {
+	padding: 2px 0;
+	border: 0;
+	background: transparent;
+	color: var(--muted);
+	font: 500 10.5px/1 var(--font-body);
+	cursor: pointer;
+}
+.cameraPositionHead button:hover:not(:disabled) {
+	color: var(--fg);
+}
+.cameraPositionHead button:focus-visible {
+	outline: 2px solid var(--editor-accent-border);
+	outline-offset: 3px;
+}
+.cameraPositionHead button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.cameraPositionPad {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	border: 1px solid var(--border-soft);
+	border-radius: 8px;
+	background:
+		linear-gradient(
+			to right,
+			transparent calc(33.333% - 0.5px),
+			var(--border-soft) 33.333%,
+			transparent calc(33.333% + 0.5px),
+			transparent calc(66.666% - 0.5px),
+			var(--border-soft) 66.666%,
+			transparent calc(66.666% + 0.5px)
+		),
+		linear-gradient(
+			to bottom,
+			transparent calc(33.333% - 0.5px),
+			var(--border-soft) 33.333%,
+			transparent calc(33.333% + 0.5px),
+			transparent calc(66.666% - 0.5px),
+			var(--border-soft) 66.666%,
+			transparent calc(66.666% + 0.5px)
+		),
+		var(--surface-2);
+	cursor: crosshair;
+	touch-action: none;
+}
+.cameraPositionPad:hover:not([aria-disabled="true"]) {
+	border-color: var(--border-hi);
+}
+.cameraPositionPad:focus-visible {
+	outline: 2px solid var(--editor-accent-border);
+	outline-offset: 2px;
+}
+.cameraPositionPad[aria-disabled="true"] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.cameraPositionTarget {
+	position: absolute;
+	width: 14px;
+	height: 14px;
+	transform: translate(-50%, -50%);
+	border: 2px solid var(--surface-1);
+	border-radius: 50%;
+	background: var(--brand);
+	box-shadow: 0 0 0 1px var(--editor-accent-border), 0 2px 7px rgba(0, 0, 0, 0.25);
+	pointer-events: none;
 }
 .captionStatus,
 .captionLegacyNotice {
@@ -943,26 +1540,26 @@
 .paneTabs {
 	display: flex;
 	gap: 2px;
-	padding: 3px;
+	padding: 2px;
 	margin: 12px var(--sp-4);
-	background: var(--surface-warm);
-	border-radius: 10px;
+	background: var(--surface-2);
+	border-radius: 8px;
 }
 .paneTabs button {
 	flex: 1;
 	padding: 7px 10px;
 	border: 0;
 	background: transparent;
-	border-radius: 7px;
+	border-radius: 6px;
 	font: 500 var(--fs-app-sm)/1 var(--font-body);
 	color: var(--muted);
 	cursor: pointer;
 	transition: background 150ms ease, color 150ms ease;
 }
 .paneTabs button.isActive {
-	background: var(--brand);
-	color: var(--accent-on);
-	box-shadow: 0 1px 2px rgba(22, 23, 29, 0.12);
+	background: var(--surface-3);
+	color: var(--fg);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
 }
 .paneSection { display: none; }
 .paneSection.isActive { display: block; }
@@ -992,15 +1589,20 @@
 	justify-content: center;
 	gap: 8px;
 	margin: 0 var(--sp-4) 12px;
-	padding: 12px;
-	border: 1px dashed var(--border);
-	border-radius: 10px;
-	background: var(--bg);
+	height: 36px;
+	padding: 0 11px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: var(--surface-2);
 	color: var(--muted);
 	font: 500 var(--fs-app-sm) var(--font-body);
 	cursor: pointer;
 }
-.uploadBtn:hover { border-color: var(--success); color: var(--success); }
+.uploadBtn:hover:not(:disabled) { background: var(--surface-3); color: var(--fg); }
+.uploadBtn:focus-visible {
+	outline: 2px solid var(--editor-accent-border);
+	outline-offset: 2px;
+}
 .field {
 	display: grid;
 	grid-template-columns: 80px 1fr;
@@ -1031,23 +1633,70 @@
 /* ─── bg thumb grid ────────────────────────────────────────────── */
 .bgGrid {
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
-	gap: 8px;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 7px;
 	padding: 0 var(--sp-4) var(--sp-4);
 }
 .bgThumb {
 	aspect-ratio: 1/1;
-	border-radius: 10px;
+	border-radius: 8px;
 	border: 1px solid transparent;
 	cursor: pointer;
 	transition: transform 150ms ease, border-color 150ms ease;
 	background: var(--surface-2);
 }
-.bgThumb:hover { transform: translateY(-1px); }
+.bgThumb:hover:not(:disabled) { border-color: var(--border-hi); }
 .bgThumb.isActive {
-	border-color: var(--brand);
-	box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand), transparent 70%);
+	border-color: var(--editor-accent-strong);
+	box-shadow: 0 0 0 2px var(--editor-accent-ring);
 }
+.backgroundColorFields {
+	display: grid;
+	grid-template-columns: 42px minmax(0, 1fr);
+	align-items: center;
+	gap: 8px;
+	padding-bottom: 4px;
+}
+.backgroundColorFields input[type="color"] {
+	width: 42px;
+	height: 36px;
+	padding: 3px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: var(--surface-2);
+}
+.backgroundColorFields input[type="text"] {
+	width: 100%;
+	height: 36px;
+	padding: 0 11px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	outline: none;
+	background: var(--surface-2);
+	color: var(--fg);
+	font: 500 12px/1 var(--font-mono);
+}
+.backgroundColorFields input:focus-visible {
+	border-color: var(--editor-accent-border);
+	box-shadow: 0 0 0 2px var(--editor-accent-ring);
+}
+.gradientEditorSection {
+	padding-top: 18px;
+	border-top: 1px solid var(--border-soft);
+}
+.gradientEditorSummary {
+	padding: 0 0 16px;
+	color: var(--fg-2);
+	font: 500 12.5px/1.25 var(--font-body);
+	cursor: pointer;
+	list-style-position: outside;
+}
+.gradientEditorSummary:hover { color: var(--fg); }
+.gradientEditorSummary:focus-visible {
+	outline: 2px solid var(--editor-accent-border);
+	outline-offset: 3px;
+}
+.gradientEditorBody { padding-bottom: 4px; }
 
 /* ─── toggle (switch) ──────────────────────────────────────────── */
 .toggle {
@@ -1104,6 +1753,13 @@
 	text-align: right;
 	white-space: nowrap;
 }
+.sliderCell.isFlat {
+	padding: 14px 0 16px;
+	border: 0;
+	border-bottom: 1px solid var(--border-soft);
+	border-radius: 0;
+	background: transparent;
+}
 .sliderCell input[type=range] {
 	width: 100%;
 	height: 4px;
@@ -1143,21 +1799,21 @@
 }
 .cursorCell {
 	aspect-ratio: 1/1;
-	border: 1px solid var(--border);
+	border: 1px solid transparent;
 	border-radius: 8px;
-	background: var(--bg);
+	background: var(--surface-2);
 	display: grid;
 	place-items: center;
 	cursor: pointer;
 	transition: border-color 150ms ease, box-shadow 150ms ease;
 	color: var(--muted);
 }
-.cursorCell:hover { border-color: var(--border-hi); color: var(--fg-2); }
+.cursorCell:hover { border-color: var(--border-hi); background: var(--surface-3); color: var(--fg-2); }
 .cursorCell:disabled { opacity: 0.5; cursor: not-allowed; }
 .cursorCell:disabled:hover { border-color: var(--border); color: var(--muted); }
 .cursorCell.isActive {
-	border-color: var(--brand);
-	box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand), transparent 75%);
+	border-color: var(--editor-accent-strong);
+	box-shadow: 0 0 0 2px var(--editor-accent-ring);
 }
 
 /* ─── chat strip + input ───────────────────────────────────────── */

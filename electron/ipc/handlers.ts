@@ -15,6 +15,7 @@ import {
 	shell,
 	systemPreferences,
 } from "electron";
+import { APP_DISPLAY_NAME } from "../../src/lib/brand";
 import {
 	type NativeLinuxRecordingRequest,
 	portalCursorMode,
@@ -31,6 +32,12 @@ import type {
 } from "../../src/lib/nativeMacRecording";
 import { parseNativeMacRecordingClip } from "../../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../../src/lib/nativeWindowsRecording";
+import {
+	isSupportedProjectFile,
+	PROJECT_FILE_EXTENSION,
+	SUPPORTED_PROJECT_FILE_EXTENSIONS,
+	withCanonicalProjectExtension,
+} from "../../src/lib/projectFileFormat";
 import {
 	type CursorCaptureMode,
 	normalizeCursorCaptureMode,
@@ -64,9 +71,11 @@ import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
+import { writeJsonDurably } from "../filesystem/durableJson";
 import { mainT } from "../i18n";
 import { RECORDINGS_DIR } from "../main";
 import {
+	type AudioPeakProfile,
 	type AudioPeaksResult,
 	type AudioTrackSelection,
 	getAudioPeaks,
@@ -82,6 +91,7 @@ import {
 	resolveMediaLinkSources,
 } from "../media/mediaLinksRegistry";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
+import { getSpeechActivity, type SpeechActivityIpcResult } from "../media/speechActivity";
 import {
 	type LinuxCaptureSourceKind,
 	LinuxNativeCaptureSession,
@@ -95,6 +105,11 @@ import { addNativeMacDisplayPrivacyExclusions } from "../recording/nativeMacCapt
 import { NativeMacHelperClient } from "../recording/nativeMacHelperClient";
 import { NativeMacRecordingService } from "../recording/nativeMacRecordingService";
 import {
+	clearNativeMacRecoveryJournal,
+	restoreLatestNativeMacRecoverySession,
+	updateNativeMacRecoveryJournalIfPresent,
+} from "../recording/nativeMacRecoveryJournal";
+import {
 	isSalvageableFragmentedCapture,
 	NATIVE_WINDOWS_SALVAGEABLE_OUTPUT_BYTES,
 	terminateNativeWindowsCapture,
@@ -106,7 +121,6 @@ import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
-const PROJECT_FILE_EXTENSION = "openscreen";
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
 const RECORDING_PREFS_FILE = path.join(app.getPath("userData"), "recording-preferences.json");
 const recordingPrefsStore = new RecordingPrefsStore(RECORDING_PREFS_FILE);
@@ -1372,6 +1386,20 @@ function setCurrentRecordingSessionState(session: RecordingSession | null) {
 	currentVideoPath = session?.screenVideoPath ?? null;
 }
 
+/**
+ * Marks the current recording handoff as durably consumed. The journal is
+ * removed before process-local state changes, so a failed unlink remains
+ * retryable after restart.
+ */
+export async function consumeCurrentRecordingSession(): Promise<void> {
+	const session = currentRecordingSession;
+	if (session) {
+		await clearNativeMacRecoveryJournal(RECORDINGS_DIR, session.createdAt);
+	}
+	setCurrentRecordingSessionState(null);
+	currentProjectPath = null;
+}
+
 function getSessionManifestPathForVideo(videoPath: string) {
 	const parsedPath = path.parse(videoPath);
 	const baseName = parsedPath.name.endsWith("-webcam")
@@ -1553,7 +1581,8 @@ export function registerIpcHandlers(
 	onRecordingStateChange?: (recording: boolean, sourceName: string) => void,
 	_switchToHud?: () => void,
 	isPrivateRecordingUiPoint?: (point: { x: number; y: number }) => boolean,
-) {
+	options: { restoreInterruptedRecording?: boolean } = {},
+): Promise<boolean> {
 	isDirectionExcludedPoint = isPrivateRecordingUiPoint ?? (() => false);
 	async function requestScreenAccess() {
 		if (process.platform !== "darwin") {
@@ -1702,7 +1731,7 @@ export function registerIpcHandlers(
 			const detail =
 				access.status === "missing-helper"
 					? "The cursor helper couldn't be found in this build, so the editable cursor can't be enabled. Rebuild the native helper (npm run build:native:mac) or switch the HUD cursor mode to system."
-					: "Allow OpenScreen under System Settings → Privacy & Security → Accessibility, then press record again to start the countdown.";
+					: `Allow ${APP_DISPLAY_NAME} under System Settings → Privacy & Security → Accessibility, then press record again to start the countdown.`;
 			const messageOptions = {
 				type: "warning",
 				buttons: ["Open Accessibility Settings", "Cancel"],
@@ -1749,8 +1778,7 @@ export function registerIpcHandlers(
 					defaultId: 0,
 					cancelId: 1,
 					message: "Screen Recording permission is required",
-					detail:
-						"Allow OpenScreen in macOS System Settings, then come back and choose a screen or window.",
+					detail: `Allow ${APP_DISPLAY_NAME} in macOS System Settings, then come back and choose a screen or window.`,
 				} satisfies Electron.MessageBoxOptions;
 				const result =
 					mainWin && !mainWin.isDestroyed()
@@ -3447,6 +3475,7 @@ export function registerIpcHandlers(
 			filePath: string,
 			durationSec: number,
 			track: AudioTrackSelection = "mixed",
+			profile: AudioPeakProfile = "waveform",
 		): Promise<AudioPeaksResult> => {
 			try {
 				// Same approval gate as every other read of a renderer-supplied path.
@@ -3457,12 +3486,29 @@ export function registerIpcHandlers(
 				const peaks = await getAudioPeaks(
 					normalizedPath,
 					durationSec,
-					track === "microphone" ? "microphone" : "mixed",
+					track === "microphone" || track === "system" ? track : "mixed",
+					profile === "analysis" ? "analysis" : "waveform",
 				);
 				return { success: true, peaks };
 			} catch (error) {
 				// A clip with no audio track lands here. Degrade quietly: the renderer
 				// draws no waveform, which is correct, and logs its own warning.
+				return { success: false, message: String(error) };
+			}
+		},
+	);
+
+	// Silero speech probabilities for Shorten Pauses. This always analyzes the
+	// isolated microphone track and never falls back to the mixed program.
+	ipcMain.handle(
+		"get-speech-activity",
+		async (_, filePath: string): Promise<SpeechActivityIpcResult> => {
+			try {
+				const normalizedPath = await approveReadableVideoPath(filePath);
+				if (!normalizedPath) return { success: false, message: "File path is not approved" };
+				const result = await getSpeechActivity(normalizedPath);
+				return { success: true, ...result };
+			} catch (error) {
 				return { success: false, message: String(error) };
 			}
 		},
@@ -3545,23 +3591,24 @@ export function registerIpcHandlers(
 				: null;
 
 			if (trustedExistingProjectPath) {
-				await fs.writeFile(
-					trustedExistingProjectPath,
-					JSON.stringify(projectData, null, 2),
-					"utf-8",
-				);
-				currentProjectPath = trustedExistingProjectPath;
+				// Saving a legacy project creates a `.klippt` sibling and keeps the old
+				// file untouched as a rollback copy.
+				const canonicalPath = withCanonicalProjectExtension(trustedExistingProjectPath);
+				await writeJsonDurably(canonicalPath, projectData, { followFinalSymlink: true });
+				currentProjectPath = canonicalPath;
 				return {
 					success: true,
-					path: trustedExistingProjectPath,
+					path: canonicalPath,
 					message: "Project saved successfully",
 				};
 			}
 
-			const safeName = (suggestedName || `project-${Date.now()}`).replace(/[^a-zA-Z0-9-_]/g, "_");
-			const defaultName = safeName.endsWith(`.${PROJECT_FILE_EXTENSION}`)
-				? safeName
-				: `${safeName}.${PROJECT_FILE_EXTENSION}`;
+			const rawName = suggestedName || `project-${Date.now()}`;
+			const nameWithoutProjectExtension = isSupportedProjectFile(rawName)
+				? rawName.slice(0, rawName.lastIndexOf("."))
+				: rawName;
+			const safeName = nameWithoutProjectExtension.replace(/[^a-zA-Z0-9-_]/g, "_");
+			const defaultName = withCanonicalProjectExtension(safeName);
 
 			const dialogOptions = buildDialogOptions(
 				{
@@ -3572,7 +3619,6 @@ export function registerIpcHandlers(
 							name: mainT("dialogs", "fileDialogs.openscreenProject"),
 							extensions: [PROJECT_FILE_EXTENSION],
 						},
-						{ name: "JSON", extensions: ["json"] },
 					],
 					properties: ["createDirectory", "showOverwriteConfirmation"],
 				},
@@ -3588,12 +3634,13 @@ export function registerIpcHandlers(
 				};
 			}
 
-			await fs.writeFile(result.filePath, JSON.stringify(projectData, null, 2), "utf-8");
-			currentProjectPath = result.filePath;
+			const canonicalPath = withCanonicalProjectExtension(result.filePath);
+			await writeJsonDurably(canonicalPath, projectData, { followFinalSymlink: true });
+			currentProjectPath = canonicalPath;
 
 			return {
 				success: true,
-				path: result.filePath,
+				path: canonicalPath,
 				message: "Project saved successfully",
 			};
 		} catch (error) {
@@ -3613,7 +3660,7 @@ export function registerIpcHandlers(
 	async function loadProjectFile(projectFolder?: string): Promise<ProjectFileResult> {
 		try {
 			// Default to the projects directory, where the editor actually stores
-			// openable project files (one `.openscreen` per project). Prefer the user's
+			// openable project files (one `.klippt` per project). Prefer the user's
 			// last opened-project folder if given and still valid; only fall back to
 			// RECORDINGS_DIR if the projects dir doesn't exist yet (fresh install).
 			// Validate here because the renderer can't stat the filesystem.
@@ -3647,11 +3694,8 @@ export function registerIpcHandlers(
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.openscreenProject"),
-							// All projects are `.openscreen`; `.axcut` is kept only so files
-							// written by older builds (pre-migration) still show up.
-							extensions: [PROJECT_FILE_EXTENSION, "axcut"],
+							extensions: [...SUPPORTED_PROJECT_FILE_EXTENSIONS],
 						},
-						{ name: "JSON", extensions: ["json"] },
 						{ name: mainT("dialogs", "fileDialogs.allFiles"), extensions: ["*"] },
 					],
 					properties: ["openFile"],
@@ -3703,9 +3747,9 @@ export function registerIpcHandlers(
 			if (!filePath || typeof filePath !== "string") {
 				return { success: false, message: "Invalid file path" };
 			}
-			// Validate extension and readability
-			if (path.extname(filePath).toLowerCase() !== `.${PROJECT_FILE_EXTENSION}`) {
-				return { success: false, message: "Not an Openscreen project file" };
+			// Klippt is canonical; legacy OpenScreen/Axcut projects remain readable.
+			if (!isSupportedProjectFile(filePath)) {
+				return { success: false, message: "Not a Klippt project file" };
 			}
 			const stats = await fs.stat(filePath).catch(() => null);
 			if (!stats?.isFile()) {
@@ -3770,11 +3814,24 @@ export function registerIpcHandlers(
 		return setCurrentVideoPath(path);
 	});
 
-	ipcMain.handle("set-current-recording-session", (_, session: RecordingSession | null) => {
+	ipcMain.handle("set-current-recording-session", async (_, session: RecordingSession | null) => {
+		const previousSession = currentRecordingSession;
 		const normalizedSession = normalizeRecordingSession(session);
-		setCurrentRecordingSessionState(normalizedSession);
-		currentVideoPath = normalizedSession?.screenVideoPath ?? null;
-		currentProjectPath = null;
+		try {
+			if (!normalizedSession) {
+				await consumeCurrentRecordingSession();
+			} else if (normalizedSession) {
+				await updateNativeMacRecoveryJournalIfPresent(RECORDINGS_DIR, normalizedSession);
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.warn("[capture-mac] could not update the recovery handoff:", error);
+			return { success: false, error: message, session: previousSession };
+		}
+		if (normalizedSession) {
+			setCurrentRecordingSessionState(normalizedSession);
+			currentProjectPath = null;
+		}
 		return { success: true, session: currentRecordingSession };
 	});
 
@@ -4024,4 +4081,23 @@ export function registerIpcHandlers(
 			renameSession(projectId, sessionId, title),
 		deleteAiEditionChatSession: (projectId, sessionId) => deleteSession(projectId, sessionId),
 	});
+
+	return (async () => {
+		if (process.platform !== "darwin" || options.restoreInterruptedRecording === false) {
+			return false;
+		}
+		try {
+			const recoveredSession = await restoreLatestNativeMacRecoverySession(RECORDINGS_DIR);
+			if (!recoveredSession) return false;
+			setCurrentRecordingSessionState(recoveredSession);
+			currentProjectPath = null;
+			console.info(
+				`[capture-mac] restoring interrupted recording ${recoveredSession.createdAt} in the editor`,
+			);
+			return true;
+		} catch (error) {
+			console.warn("[capture-mac] could not inspect recovery journals:", error);
+			return false;
+		}
+	})();
 }

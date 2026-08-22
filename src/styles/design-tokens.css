@@ -1,7 +1,7 @@
-/* OpenScreen design system — light + dark.
+/* Klippt design system — light + dark.
  * Single source of truth for tokens used by the new editor shell.
- * Mint #10b981 is the sole chromatic accent. Red is reserved for
- * REC / cut / skip / trim / transcript-highlight only. */
+ * Monochrome contrast is the product accent. Red is reserved for recording
+ * and destructive actions. Green is semantic success only. */
 
 /* :root:root (doubled pseudo-class) deliberately outranks a plain `:root` —
  * src/index.css's shadcn/Tailwind base ALSO declares --accent/--border/
@@ -11,52 +11,60 @@
  * emit last silently wins the collision — pin it here instead of
  * depending on import order. */
 :root:root {
+	color-scheme: light;
+
 	/* canvas */
-	--bg: #f8fafc;
-	--bg-grad: radial-gradient(ellipse 1200px 800px at 50% -200px, #ffffff 0%, #f1f5f9 80%);
+	--bg: #f7f7f9;
+	--bg-grad: radial-gradient(ellipse 1200px 800px at 50% -200px, #ffffff 0%, #f2f2f5 80%);
 	--surface: #ffffff;
-	--surface-1: #f1f5f9;
-	--surface-2: #e2e8f0;
-	--surface-3: #cbd5e1;
+	--surface-1: #f2f2f5;
+	--surface-2: #e8e8ed;
+	--surface-3: #dddde5;
 	--surface-hi: #ffffff;
-	--surface-warm: #f1f5f9;
+	--surface-warm: #f2f2f5;
 
 	/* lines */
-	--border: #e2e8f0;
-	--border-soft: #e6eaef;
-	--border-hi: #cbd5e1;
-	--border-dark: #0f172a;
+	--border: #e1e1e8;
+	--border-soft: #e9e9ee;
+	--border-hi: #cccbd6;
+	--border-dark: #17171c;
 
 	/* foreground */
-	--fg: #0f172a;
-	--fg-2: #334155;
-	--fg-emphasis: #020617;
-	--muted: #64748b;
-	--muted-soft: #94a3b8;
-	--meta: #7c8aa0;
-	--dim: #b6c2d1;
+	--fg: #1b1b20;
+	--fg-2: #34343c;
+	--fg-emphasis: #101014;
+	--muted: #6f6f7b;
+	--muted-soft: #9797a3;
+	--meta: #858590;
+	--dim: #bdbdc7;
 
-	/* mint brand */
-	--brand: #10b981;
-	--brand-lo: #059669;
-	--brand-glow: rgba(16, 185, 129, 0.35);
-	--brand-soft: rgba(16, 185, 129, 0.10);
-	--accent: #10b981;
-	--accent-on: #04221a;
-	--accent-soft: rgba(16, 185, 129, 0.10);
-	--accent-wash: rgba(16, 185, 129, 0.06);
-	--accent-border: rgba(16, 185, 129, 0.26);
-	--accent-ring: rgba(16, 185, 129, 0.28);
-	--accent-stripe: rgba(16, 185, 129, 0.30);
+	/* Klippt accent */
+	--brand: #24242a;
+	--brand-lo: #101014;
+	--brand-glow: rgba(24, 24, 27, 0.22);
+	--brand-soft: rgba(24, 24, 27, 0.08);
+	--accent: #24242a;
+	--accent-on: #ffffff;
+	--accent-soft: rgba(24, 24, 27, 0.08);
+	--accent-wash: rgba(24, 24, 27, 0.045);
+	--accent-border: rgba(24, 24, 27, 0.22);
+	--accent-ring: rgba(24, 24, 27, 0.24);
+	--accent-stripe: rgba(24, 24, 27, 0.26);
 
-	/* timeline playhead — deliberately NOT the mint accent. The scrub cursor
-	   crosses every lane, including the accent-coloured zoom pills, so it needs
-	   a hue of its own to stay readable on top of them. One value for both
-	   themes (the dark block doesn't override it): this violet carries against
-	   the light and the dark timeline surfaces alike. */
-	--playhead: #6c55ff;
-	--playhead-glow: rgba(108, 85, 255, 0.68);
-	--playhead-shadow: rgba(108, 85, 255, 0.35);
+	/* Editor-only functional color. Klippt's chrome stays monochrome; this muted
+	   steel blue marks time, selection, and automatic edits inside the editor. */
+	--editor-accent: #536f91;
+	--editor-accent-strong: #3f5f84;
+	--editor-accent-soft: rgba(83, 111, 145, 0.12);
+	--editor-accent-wash: rgba(83, 111, 145, 0.07);
+	--editor-accent-border: rgba(63, 95, 132, 0.52);
+	--editor-accent-ring: rgba(83, 111, 145, 0.24);
+
+	/* The playhead stays in the accent family but uses a brighter value than
+	   effect regions so it remains readable across every timeline lane. */
+	--playhead: var(--editor-accent-strong);
+	--playhead-glow: rgba(83, 111, 145, 0.42);
+	--playhead-shadow: rgba(63, 95, 132, 0.24);
 
 	/* legacy shadcn-style aliases → canonical tokens. Referenced by the
 	   TimelinePane / TranscriptEditor / VirtualPreview / NewEditorShell module
@@ -86,8 +94,8 @@
 	--speed-soft: rgba(249, 115, 22, 0.14);
 	--speed-wash: rgba(249, 115, 22, 0.14);
 
-	--success: #10b981;
-	--success-soft: rgba(16, 185, 129, 0.10);
+	--success: #2f9e69;
+	--success-soft: rgba(47, 158, 105, 0.10);
 
 	/* macOS traffic lights */
 	--light-red: #ff5f57;
@@ -159,7 +167,7 @@
 	--elev-card-soft: 0 1px 2px rgba(15, 23, 42, 0.03);
 	--elev-pop: 0 8px 24px -8px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.04);
 
-	--focus-ring: 0 0 0 3px rgba(16, 185, 129, 0.18);
+	--focus-ring: 0 0 0 3px rgba(24, 24, 27, 0.16);
 
 	--motion-fast: 120ms;
 	--motion-base: 180ms;
@@ -167,38 +175,49 @@
 }
 
 :root[data-theme="dark"] {
-	--bg: #0a0d12;
-	--bg-grad: radial-gradient(ellipse at 50% 0%, #13171f 0%, #0a0d12 60%);
-	--surface: #14181f;
-	--surface-1: #14181f;
-	--surface-2: #1c2029;
-	--surface-3: #252a35;
-	--surface-hi: #2b313b;
-	--surface-warm: #1c2029;
+	color-scheme: dark;
+	--bg: #0d0d10;
+	--bg-grad: radial-gradient(ellipse at 50% 0%, #17171c 0%, #0d0d10 62%);
+	--surface: #151519;
+	--surface-1: #151519;
+	--surface-2: #1c1c21;
+	--surface-3: #25252b;
+	--surface-hi: #2e2e36;
+	--surface-warm: #1c1c21;
 
 	--fg-emphasis: #ffffff;
-	--border: #252a35;
-	--border-soft: #1c2029;
-	--border-hi: #3a4150;
-	--border-dark: #0a0d12;
+	--border: #292930;
+	--border-soft: #202026;
+	--border-hi: #3c3c46;
+	--border-dark: #0d0d10;
 
-	--fg: #e6e9ef;
-	--fg-2: #f3f5f8;
-	--muted: #8b95a3;
-	--meta: #5b6470;
-	--dim: #1c2029;
+	--fg: #e7e7ec;
+	--fg-2: #f5f5f7;
+	--muted: #92929d;
+	--muted-soft: #71717c;
+	--meta: #666671;
+	--dim: #24242a;
 
-	--brand: #10b981;
-	--brand-lo: #34d399;
-	--brand-glow: rgba(16, 185, 129, 0.40);
-	--brand-soft: rgba(16, 185, 129, 0.14);
-	--accent: #10b981;
-	--accent-on: #0a0d12;
-	--accent-soft: rgba(16, 185, 129, 0.14);
-	--accent-wash: rgba(16, 185, 129, 0.06);
-	--accent-border: rgba(16, 185, 129, 0.26);
-	--accent-ring: rgba(16, 185, 129, 0.32);
-	--accent-stripe: rgba(16, 185, 129, 0.34);
+	--brand: #f1f1f3;
+	--brand-lo: #ffffff;
+	--brand-glow: rgba(255, 255, 255, 0.20);
+	--brand-soft: rgba(255, 255, 255, 0.10);
+	--accent: #f1f1f3;
+	--accent-on: #111116;
+	--accent-soft: rgba(255, 255, 255, 0.10);
+	--accent-wash: rgba(255, 255, 255, 0.055);
+	--accent-border: rgba(255, 255, 255, 0.20);
+	--accent-ring: rgba(255, 255, 255, 0.24);
+	--accent-stripe: rgba(255, 255, 255, 0.28);
+	--editor-accent: #91aac8;
+	--editor-accent-strong: #b4c8df;
+	--editor-accent-soft: rgba(145, 170, 200, 0.15);
+	--editor-accent-wash: rgba(145, 170, 200, 0.08);
+	--editor-accent-border: rgba(145, 170, 200, 0.56);
+	--editor-accent-ring: rgba(145, 170, 200, 0.25);
+	--playhead: var(--editor-accent-strong);
+	--playhead-glow: rgba(145, 170, 200, 0.46);
+	--playhead-shadow: rgba(145, 170, 200, 0.28);
 
 	--danger: #f87171;
 	--danger-lo: #ef4444;
@@ -216,8 +235,8 @@
 	--speed-soft: rgba(251, 146, 60, 0.16);
 	--speed-wash: rgba(251, 146, 60, 0.16);
 
-	--success: #10b981;
-	--success-soft: rgba(16, 185, 129, 0.14);
+	--success: #45b97c;
+	--success-soft: rgba(69, 185, 124, 0.14);
 
 	--scene-sky-hi: #2e3440;
 	--scene-sky-mid: #252a35;
@@ -242,5 +261,5 @@
 	--elev-card: 0 1px 2px rgba(0, 0, 0, 0.40), 0 4px 12px -4px rgba(0, 0, 0, 0.50);
 	--elev-card-soft: 0 1px 2px rgba(0, 0, 0, 0.30);
 	--elev-pop: 0 8px 24px -8px rgba(0, 0, 0, 0.60);
-	--focus-ring: 0 0 0 3px rgba(16, 185, 129, 0.30);
+	--focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.20);
 }

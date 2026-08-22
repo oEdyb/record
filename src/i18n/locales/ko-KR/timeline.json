@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "모든 줌에 자동 초점 켜짐 — 클릭하면 모두 수동으로 전환합니다",
 		"autoFocusAllOff": "모든 줌에 자동 초점 켜기 (카메라가 커서를 따라갑니다)",
 		"addTrim": "트림 추가 (T)",
+		"splitClip": "재생 헤드에서 클립 분할",
 		"addAnnotation": "주석 추가 (A)",
 		"addSpeed": "속도 추가 (S)",
 		"addCameraFullscreen": "전체 화면 카메라 추가 (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "C를 눌러 전체 화면 카메라 구간을 추가하세요"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "이동",
 		"zoom": "줌",
 		"trim": "트림",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "자동 향상",
 		"automaticZooms": "자동 줌",
+		"automaticDirection": "자동 디렉션",
 		"automaticZoomsHint": "녹화된 커서 움직임 기반",
 		"smartZoomsAndCuts": "스마트 컷",
 		"smartZoomsAndCutsHint": "AI 사용",

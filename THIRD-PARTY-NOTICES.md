@@ -1,12 +1,14 @@
 # Third-party notices
 
-OpenScreen is MIT licensed (see [LICENSE](LICENSE)). The installers additionally
-bundle the pre-built native components below. This file ships inside the
-application resources and satisfies the attribution and source-offer obligations
-that come with them.
+Klippt contains code derived from OpenScreen. OpenScreen is MIT licensed. The
+upstream copyright and permission notice are preserved in [LICENSE](LICENSE),
+which ships inside the application resources.
 
-npm dependencies are not listed here: they are resolved from `package.json` and
-distributed by their own registries, not redistributed inside our binaries.
+Packaged Electron applications also redistribute production npm dependencies.
+Their license texts remain in the packaged dependency tree where supplied. The
+release process must generate and review the complete dependency inventory from
+`package-lock.json`. The sections below call out native, copyleft, and separately
+distributed components that need extra release attention.
 
 ---
 
@@ -80,7 +82,27 @@ distributed by their own registries, not redistributed inside our binaries.
   so nothing of PipeWire's ships inside our installers beyond the compiled
   result of its headers (inline functions and struct layouts).
 
-## OpenScreen native helpers
+## Mediabunny
+
+- **Component**: `mediabunny` 1.40.1, used to mux edited audio and video.
+- **License**: Mozilla Public License 2.0 —
+  <https://www.mozilla.org/MPL/2.0/>.
+- **Source**: <https://github.com/Vanilagy/mediabunny>.
+- Klippt currently uses the upstream package without modifying its source. Keep
+  the package license and notices in every distribution. If its source is
+  modified, publish those modified MPL-covered files as the MPL requires.
+
+## web-demuxer and FFmpeg WebAssembly
+
+- **Components**: the `web-demuxer` 4.0.0 JavaScript package and
+  `web-demuxer.wasm`, used for streaming media demuxing.
+- **Wrapper license**: MIT — <https://github.com/bilibili/web-demuxer>.
+- **FFmpeg-derived WebAssembly**: LGPL-covered code. Confirm the exact FFmpeg
+  configuration, corresponding source, notices, and relinking method before a
+  paid distribution. Do not treat the npm wrapper license as covering the
+  bundled FFmpeg-derived binary.
+
+## OpenScreen-derived native helpers
 
 `wgc-capture` (Windows Graphics Capture), the ScreenCaptureKit helper (macOS),
 the PipeWire helper (Linux) and the compositor addon are part of this repository
@@ -88,5 +110,5 @@ and are covered by [LICENSE](LICENSE).
 
 ---
 
-To report an omission or request source for anything bundled here, open an issue
-at <https://github.com/getopenscreen/openscreen/issues>.
+Before release, direct notice or source requests to the Klippt support channel.
+Do not send Klippt product support requests to the OpenScreen project.

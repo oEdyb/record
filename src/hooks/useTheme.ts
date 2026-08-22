@@ -7,9 +7,9 @@ const STORAGE_KEY = "openscreen-theme";
 function readStoredTheme(): Theme {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
-		return raw === "dark" ? "dark" : "light";
+		return raw === "light" ? "light" : "dark";
 	} catch {
-		return "light";
+		return "dark";
 	}
 }
 

@@ -13,10 +13,15 @@ import type {
 	CliRequest,
 	CliSourcesResult,
 } from "../../src/lib/cliContracts";
-import { getSelectedDesktopSource, registerIpcHandlers } from "../ipc/handlers";
+import {
+	consumeCurrentRecordingSession,
+	getSelectedDesktopSource,
+	registerIpcHandlers,
+} from "../ipc/handlers";
 import { registerSttIpc } from "../stt";
 import { ASSET_BASE_URL_ARG } from "../windows";
 import { CLI_USAGE, type CliCommand } from "./args";
+import { finalizeCliResult } from "./cliCompletion";
 import { runInfoCommand, runPackCommand } from "./projectCommands";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,7 +132,7 @@ function loadRunnerWindow(windowType: string): BrowserWindow {
 	return win;
 }
 
-function registerAppHandlersForCli(cliWindowRef: () => BrowserWindow | null) {
+async function registerAppHandlersForCli(cliWindowRef: () => BrowserWindow | null): Promise<void> {
 	// The recording/export pipelines are driven through the same IPC surface the
 	// GUI uses. Window-management callbacks become no-ops; "switch-to-editor"
 	// (fired by the recorder hook after it stores a finished session) is handled
@@ -138,7 +143,7 @@ function registerAppHandlersForCli(cliWindowRef: () => BrowserWindow | null) {
 	const notAvailable = () => {
 		throw new Error("Window not available in CLI mode");
 	};
-	registerIpcHandlers(
+	await registerIpcHandlers(
 		noop, // createEditorWindow: recording finished; runner drives completion
 		notAvailable, // createSourceSelectorWindow
 		notAvailable, // createCountdownOverlayWindow
@@ -149,6 +154,10 @@ function registerAppHandlersForCli(cliWindowRef: () => BrowserWindow | null) {
 		() => null,
 		noop, // onRecordingStateChange: no tray to update
 		noop, // switchToHud
+		undefined,
+		// A CLI invocation must not claim or replace an interrupted GUI session.
+		// The GUI will restore that journal on its next normal launch.
+		{ restoreInterruptedRecording: false },
 	);
 }
 
@@ -179,11 +188,6 @@ function printSources(output: CliOutput, sources: CliSourcesResult): void {
 		lines.push(`  - ${mic.label}`);
 	}
 	output.info(lines.join("\n"));
-}
-
-async function writeProjectFile(projectOut: string, projectData: unknown): Promise<void> {
-	await fs.mkdir(path.dirname(projectOut), { recursive: true });
-	await fs.writeFile(projectOut, JSON.stringify(projectData, null, 2), "utf8");
 }
 
 function setupRecordStopSignals(stop: (reason: string) => void): void {
@@ -352,7 +356,7 @@ export function runCli(command: CliCommand): void {
 			}
 
 			let cliWindow: BrowserWindow | null = null;
-			registerAppHandlersForCli(() => cliWindow);
+			await registerAppHandlersForCli(() => cliWindow);
 
 			// Speech-to-text backs the captions command; registered by the GUI boot
 			// path (main.ts) rather than registerIpcHandlers.
@@ -379,24 +383,12 @@ export function runCli(command: CliCommand): void {
 				output.progress(progress);
 			});
 
-			ipcMain.handle("cli-done", async (_event, result: CliDoneResult) => {
+			ipcMain.handle("cli-done", async (_event, incomingResult: CliDoneResult) => {
 				if (finished) return;
 				finished = true;
-
-				try {
-					if (result.success && command.kind === "record" && command.projectOut) {
-						if (result.projectData !== undefined) {
-							await writeProjectFile(command.projectOut, result.projectData);
-							result.projectPath = command.projectOut;
-						}
-					}
-					if (result.success && command.kind === "captions" && result.projectData !== undefined) {
-						await writeProjectFile(command.projectPath, result.projectData);
-					}
-				} catch (error) {
-					result.success = false;
-					result.error = `Run succeeded but writing the project file failed: ${String(error)}`;
-				}
+				const result = await finalizeCliResult(command, incomingResult, {
+					consumeRecordingSession: consumeCurrentRecordingSession,
+				});
 
 				if (result.success) {
 					for (const warning of result.warnings ?? []) {

@@ -29,7 +29,15 @@ export interface RecordingWorkspaceContext {
 	currentTimeSec: number;
 	mode: "media" | "edit";
 	inspectorOpen: boolean;
-	facet: "background" | "effects" | "layout" | "cursor" | "captions" | "transcript";
+	facet:
+		| "background"
+		| "effects"
+		| "layout"
+		| "cursor"
+		| "pauses"
+		| "automatic"
+		| "captions"
+		| "transcript";
 }
 
 export interface RecordingSession extends ProjectMedia {
@@ -52,6 +60,12 @@ export interface RecordingSessionClip {
 	screenVideoPath: string;
 	durationMs: number;
 	removed?: boolean;
+	/**
+	 * The helper was interrupted before it could report the exact duration. The
+	 * editor uses the normal 60-second probe placeholder, then replaces it with
+	 * the media duration as soon as the recovered file loads.
+	 */
+	provisionalDuration?: boolean;
 	/** Capture style used for this clip. Paused changes apply to the next clip only. */
 	cursorCaptureMode?: CursorCaptureMode;
 }
@@ -101,6 +115,8 @@ export function normalizeRecordingWorkspaceContext(
 			facet !== "effects" &&
 			facet !== "layout" &&
 			facet !== "cursor" &&
+			facet !== "pauses" &&
+			facet !== "automatic" &&
 			facet !== "captions" &&
 			facet !== "transcript")
 	) {
@@ -187,6 +203,7 @@ export function normalizeRecordingSession(candidate: unknown): RecordingSession 
 						screenVideoPath,
 						durationMs: value.durationMs,
 						...(value.removed === true ? { removed: true } : {}),
+						...(value.provisionalDuration === true ? { provisionalDuration: true } : {}),
 						...(normalizeCursorCaptureMode(value.cursorCaptureMode)
 							? { cursorCaptureMode: normalizeCursorCaptureMode(value.cursorCaptureMode) }
 							: {}),

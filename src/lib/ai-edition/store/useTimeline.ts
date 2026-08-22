@@ -29,8 +29,10 @@ import {
 	removeRegion as removeRegionInDocument,
 	resequenceClips,
 	setClipSourceRange,
+	splitClipAt as splitClipAtInDocument,
 } from "../document/timeline";
 import type { AxcutClipCropRegion, AxcutDocument } from "../schema";
+import { promoteAutomaticDirectionGroup } from "../timeline/automatic-direction-ownership";
 import { probeVideoDimensions, probeVideoDuration } from "../timeline/duration";
 import {
 	anchorRegionsWithDerivedMs,
@@ -110,6 +112,8 @@ export function useTimeline() {
 	const saveDocument = useProjectStore((s) => s.saveDocument);
 	const saveDocumentAsEdit = useProjectStore((s) => s.saveDocumentAsEdit);
 	const setDocument = useProjectStore((s) => s.setDocument);
+	const setDocumentLive = useProjectStore((s) => s.setDocumentLive);
+	const zoomLiveEditBaseRef = useRef<AxcutDocument | null>(null);
 	const [selection, setSelection] = useState<RegionHandle | null>(null);
 	// F2.7 — shift-click multi-selection. `selection` stays the inspector's
 	// focused region (the last one clicked); `multiSelection` is the full set
@@ -478,14 +482,15 @@ export function useTimeline() {
 			if (!document) return;
 			const s = finiteMs(startMs);
 			const e = finiteMs(endMs);
+			const promoted = promoteAutomaticDirectionGroup(document, "zoom", id);
 			const next: AxcutDocument = {
-				...document,
+				...promoted,
 				zoomRanges: replacePillSpan(
-					document.zoomRanges,
+					promoted.zoomRanges,
 					id,
 					Math.min(s, e),
 					Math.max(s, e),
-					document.timeline.clips,
+					promoted.timeline.clips,
 					() => createId("zoom"),
 				) as AxcutDocument["zoomRanges"],
 			};
@@ -503,39 +508,47 @@ export function useTimeline() {
 		(id: string, focus: { cx: number; cy: number }) => {
 			const doc = useProjectStore.getState().document;
 			if (!doc) return;
+			if (!zoomLiveEditBaseRef.current) zoomLiveEditBaseRef.current = doc;
+			const promoted = promoteAutomaticDirectionGroup(doc, "zoom", id);
 			const next: AxcutDocument = {
-				...doc,
-				zoomRanges: patchPillById(doc.zoomRanges, id, {
+				...promoted,
+				zoomRanges: patchPillById(promoted.zoomRanges, id, {
 					focus: { cx: finiteFraction(focus.cx), cy: finiteFraction(focus.cy) },
 				}) as AxcutDocument["zoomRanges"],
 			};
-			setDocument(next);
+			setDocumentLive(next);
 		},
-		[setDocument],
+		[setDocumentLive],
 	);
 
-	const commitZoomFocus = useCallback(async () => {
+	const commitZoomLiveEdit = useCallback(async () => {
 		const doc = useProjectStore.getState().document;
-		if (!doc) return;
-		await saveDocument(doc);
-	}, [saveDocument]);
+		const base = zoomLiveEditBaseRef.current;
+		zoomLiveEditBaseRef.current = null;
+		if (!doc || !base || doc === base) return;
+		await saveDocumentAsEdit(doc, base);
+	}, [saveDocumentAsEdit]);
 
-	// Zoom-level control for the region-settings panel (1-6, matches
-	// zoomRegionSchema's depth literal union — 1.0x..3.5x in 0.5x steps per
-	// the `depth/2 + 0.5` label formula used throughout the timeline UI).
-	const updateZoomDepth = useCallback(
-		async (id: string, depth: 1 | 2 | 3 | 4 | 5 | 6) => {
-			if (!document) return;
+	const commitZoomFocus = commitZoomLiveEdit;
+
+	const updateZoomScaleLive = useCallback(
+		(id: string, scale: number) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			if (!zoomLiveEditBaseRef.current) zoomLiveEditBaseRef.current = doc;
+			const promoted = promoteAutomaticDirectionGroup(doc, "zoom", id);
+			const customScale = Math.round(Math.min(5, Math.max(1, scale)) * 100) / 100;
 			const next: AxcutDocument = {
-				...document,
-				zoomRanges: patchPillById(document.zoomRanges, id, {
-					depth,
+				...promoted,
+				zoomRanges: patchPillById(promoted.zoomRanges, id, {
+					customScale,
 				}) as AxcutDocument["zoomRanges"],
 			};
-			await saveDocument(next);
+			setDocumentLive(next);
 		},
-		[document, saveDocument],
+		[setDocumentLive],
 	);
+	const commitZoomScale = commitZoomLiveEdit;
 
 	// Same story as `focusMode` below: the 3D tilt was implemented end to end — schema
 	// (`rotationPreset`), migration, `sceneDescription` (`rotation:`), `rotation3d_for` in
@@ -545,15 +558,16 @@ export function useTimeline() {
 	const updateZoomRotation = useCallback(
 		async (id: string, rotationPreset: "iso" | "left" | "right" | undefined) => {
 			if (!document) return;
+			const promoted = promoteAutomaticDirectionGroup(document, "zoom", id);
 			const next: AxcutDocument = {
-				...document,
-				zoomRanges: patchPillById(document.zoomRanges, id, {
+				...promoted,
+				zoomRanges: patchPillById(promoted.zoomRanges, id, {
 					rotationPreset,
 				}) as AxcutDocument["zoomRanges"],
 			};
-			await saveDocument(next);
+			await saveDocumentAsEdit(next);
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	// Nothing could set `focusMode`: "auto" only ever arrived from the automatic suggestion pass
@@ -567,23 +581,25 @@ export function useTimeline() {
 	const updateZoomFocusMode = useCallback(
 		async (id: string, focusMode: "manual" | "auto") => {
 			if (!document) return;
+			const promoted = promoteAutomaticDirectionGroup(document, "zoom", id);
 			const next: AxcutDocument = {
-				...document,
-				zoomRanges: patchPillById(document.zoomRanges, id, {
+				...promoted,
+				zoomRanges: patchPillById(promoted.zoomRanges, id, {
 					focusMode,
 				}) as AxcutDocument["zoomRanges"],
 			};
-			await saveDocument(next);
+			await saveDocumentAsEdit(next);
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	const updateZoomMotionStyle = useCallback(
 		async (id: string, motionStyle: MotionStyle) => {
 			if (!document) return;
+			const promoted = promoteAutomaticDirectionGroup(document, "zoom", id);
 			const next: AxcutDocument = {
-				...document,
-				zoomRanges: patchPillById(document.zoomRanges, id, {
+				...promoted,
+				zoomRanges: patchPillById(promoted.zoomRanges, id, {
 					motionStyle,
 				}) as AxcutDocument["zoomRanges"],
 			};
@@ -595,9 +611,10 @@ export function useTimeline() {
 	const updateZoomMotionSpeed = useCallback(
 		async (id: string, motionSpeed: number) => {
 			if (!document) return;
+			const promoted = promoteAutomaticDirectionGroup(document, "zoom", id);
 			const next: AxcutDocument = {
-				...document,
-				zoomRanges: patchPillById(document.zoomRanges, id, {
+				...promoted,
+				zoomRanges: patchPillById(promoted.zoomRanges, id, {
 					motionSpeed: normalizeMotionSpeed(motionSpeed),
 				}) as AxcutDocument["zoomRanges"],
 			};
@@ -685,14 +702,15 @@ export function useTimeline() {
 			if (!document) return;
 			const s = finiteMs(startMs);
 			const e = finiteMs(endMs);
-			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const promoted = promoteAutomaticDirectionGroup(document, "cameraFullscreen", id);
+			const legacy = (promoted.legacyEditor as Record<string, unknown>) ?? {};
 			const prev = ((legacy.cameraFullscreenRegions as unknown[]) ?? []) as Array<{
 				id: string;
 				startMs: number;
 				endMs: number;
 			}>;
 			const next: AxcutDocument = {
-				...document,
+				...promoted,
 				legacyEditor: {
 					...legacy,
 					cameraFullscreenRegions: replacePillSpan(
@@ -700,23 +718,24 @@ export function useTimeline() {
 						id,
 						Math.min(s, e),
 						Math.max(s, e),
-						document.timeline.clips,
+						promoted.timeline.clips,
 						() => createId("camfull"),
 					),
 				},
 			};
-			await saveDocument(next);
+			await saveDocumentAsEdit(next);
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	const updateCameraMotionStyle = useCallback(
 		async (id: string, motionStyle: MotionStyle) => {
 			if (!document) return;
-			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const promoted = promoteAutomaticDirectionGroup(document, "cameraFullscreen", id);
+			const legacy = (promoted.legacyEditor as Record<string, unknown>) ?? {};
 			const prev = (legacy.cameraFullscreenRegions as CameraFullscreenRegion[] | undefined) ?? [];
 			const next: AxcutDocument = {
-				...document,
+				...promoted,
 				legacyEditor: {
 					...legacy,
 					cameraFullscreenRegions: patchPillById(prev, id, { motionStyle }),
@@ -730,10 +749,11 @@ export function useTimeline() {
 	const updateCameraMotionSpeed = useCallback(
 		async (id: string, motionSpeed: number) => {
 			if (!document) return;
-			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const promoted = promoteAutomaticDirectionGroup(document, "cameraFullscreen", id);
+			const legacy = (promoted.legacyEditor as Record<string, unknown>) ?? {};
 			const prev = (legacy.cameraFullscreenRegions as CameraFullscreenRegion[] | undefined) ?? [];
 			const next: AxcutDocument = {
-				...document,
+				...promoted,
 				legacyEditor: {
 					...legacy,
 					cameraFullscreenRegions: patchPillById(prev, id, {
@@ -772,11 +792,15 @@ export function useTimeline() {
 		async (kind: RegionKind, id: string) => {
 			if (!document) return;
 			// One shared mutator with the agent's removeTrim / removeModifier tools.
-			await saveDocument(removeRegionInDocument(document, kind, id));
+			const promoted =
+				kind === "zoom" || kind === "cameraFullscreen"
+					? promoteAutomaticDirectionGroup(document, kind, id)
+					: document;
+			await saveDocumentAsEdit(removeRegionInDocument(promoted, kind, id));
 			if (selection?.id === id) setSelection(null);
 			setMultiSelection((prev) => prev.filter((h) => h.id !== id));
 		},
-		[document, selection, saveDocument],
+		[document, selection, saveDocumentAsEdit],
 	);
 
 	// F2.7 — batch removal for multi-selection: one document save (one undo
@@ -784,6 +808,12 @@ export function useTimeline() {
 	const removeRegions = useCallback(
 		async (handles: RegionHandle[]) => {
 			if (!document || handles.length === 0) return;
+			let promoted = document;
+			for (const handle of handles) {
+				if (handle.kind === "zoom" || handle.kind === "cameraFullscreen") {
+					promoted = promoteAutomaticDirectionGroup(promoted, handle.kind, handle.id);
+				}
+			}
 			const zoomIds = new Set(handles.filter((h) => h.kind === "zoom").map((h) => h.id));
 			const trimIds = new Set(handles.filter((h) => h.kind === "trim").map((h) => h.id));
 			const annotationIds = new Set(
@@ -793,7 +823,7 @@ export function useTimeline() {
 			const cameraFullscreenIds = new Set(
 				handles.filter((h) => h.kind === "cameraFullscreen").map((h) => h.id),
 			);
-			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const legacy = (promoted.legacyEditor as Record<string, unknown>) ?? {};
 			const prevSpeed = dropPillsByIds(
 				(legacy.speedRegions as Array<{ id: string; startMs: number; endMs: number }>) ?? [],
 				speedIds,
@@ -804,30 +834,30 @@ export function useTimeline() {
 				cameraFullscreenIds,
 			);
 			const next: AxcutDocument = {
-				...document,
-				zoomRanges: dropPillsByIds(document.zoomRanges, zoomIds) as AxcutDocument["zoomRanges"],
-				annotations: dropPillsByIds(document.annotations, annotationIds),
+				...promoted,
+				zoomRanges: dropPillsByIds(promoted.zoomRanges, zoomIds) as AxcutDocument["zoomRanges"],
+				annotations: dropPillsByIds(promoted.annotations, annotationIds),
 				timeline: {
-					...document.timeline,
+					...promoted.timeline,
 					// Whole-pill delete, same as the zoom/annotation lines above — a trim grown
 					// across a clip boundary is 2+ rows rendering as one stripe, and a bare id
 					// filter left the halves the selection didn't name still cutting.
 					trimRanges: dropTrimPillsByIds(
-						document.timeline.trimRanges,
-						document.timeline.clips,
+						promoted.timeline.trimRanges,
+						promoted.timeline.clips,
 						trimIds,
 					),
 				},
 				legacyEditor:
 					speedIds.size > 0 || cameraFullscreenIds.size > 0
 						? { ...legacy, speedRegions: prevSpeed, cameraFullscreenRegions: prevCameraFullscreen }
-						: document.legacyEditor,
+						: promoted.legacyEditor,
 			};
-			await saveDocument(next);
+			await saveDocumentAsEdit(next);
 			setSelection(null);
 			setMultiSelection([]);
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	// Selecting a pill and selecting a clip are the SAME act — "this is the thing
@@ -871,9 +901,9 @@ export function useTimeline() {
 	const updateClipSourceRange = useCallback(
 		async (clipId: string, sourceStartSec: number, sourceEndSec: number) => {
 			if (!document) return;
-			await saveDocument(setClipSourceRange(document, clipId, sourceStartSec, sourceEndSec));
+			await saveDocumentAsEdit(setClipSourceRange(document, clipId, sourceStartSec, sourceEndSec));
 		},
-		[document, saveDocument],
+		[document, saveDocumentAsEdit],
 	);
 
 	// Crop is a per-clip framing, not a document-wide setting — two clips
@@ -1040,6 +1070,31 @@ export function useTimeline() {
 		[document, saveDocumentAsEdit],
 	);
 
+	const splitClipAtPlayhead = useCallback(async () => {
+		const state = useProjectStore.getState();
+		const currentDocument = state.document;
+		if (!currentDocument) return false;
+		const playhead = state.currentTimeSec;
+		const clip = currentDocument.timeline.clips.find(
+			(candidate) =>
+				playhead > candidate.timelineStartSec + 0.001 &&
+				playhead < candidate.timelineEndSec - 0.001,
+		);
+		if (!clip) return false;
+		const clipIndex = currentDocument.timeline.clips.findIndex(
+			(candidate) => candidate.id === clip.id,
+		);
+		const next = splitClipAtInDocument(currentDocument, clip.id, playhead);
+		if (next === currentDocument) return false;
+		const saved = await saveDocumentAsEdit(next);
+		if (!saved) return false;
+		setClipSelection(next.timeline.clips[clipIndex + 1]?.id ?? null);
+		// Keep the playhead on the new boundary. The normal Record action then inserts
+		// between these halves instead of snapping to the end of the original clip.
+		useProjectStore.getState().setCurrentTime(playhead);
+		return true;
+	}, [saveDocumentAsEdit]);
+
 	// Duplicate a clip in place (same asset + source range), inserted right
 	// after the original, then resequenced. Mirrors Axcut's Ctrl+C/Ctrl+V.
 	// Delegates to the shared implementation (see moveClip above).
@@ -1120,6 +1175,7 @@ export function useTimeline() {
 		updateClipCrop,
 		insertClipAt,
 		moveClip,
+		splitClipAtPlayhead,
 		duplicateClip,
 		removeClip,
 		selectClip,
@@ -1128,7 +1184,8 @@ export function useTimeline() {
 		updateZoomSpan,
 		updateZoomFocusLive,
 		commitZoomFocus,
-		updateZoomDepth,
+		updateZoomScaleLive,
+		commitZoomScale,
 		updateZoomRotation,
 		updateZoomFocusMode,
 		updateZoomMotionStyle,

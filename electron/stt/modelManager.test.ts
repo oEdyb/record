@@ -30,9 +30,21 @@ describe("modelManager", () => {
 		}
 	});
 
+	it("pins the small Silero VAD model independently from the caption model", () => {
+		const vad = STT_MODELS["silero-vad"];
+		expect(vad.repoId).toBe("ggml-org/whisper-vad");
+		expect(vad.files[0]).toMatchObject({
+			name: "ggml-silero-v6.2.0.bin",
+			approximateBytes: 885_098,
+			expectedSha256: "2AA269B785EEB53A82983A20501DDF7C1D9C48E33AB63A41391AC6C9F7FB6987",
+		});
+		expect(vad.files[0].url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
+	});
+
 	it("modelPaths places the GGML file under the cache directory", () => {
 		const paths = modelPaths(dir);
 		expect(paths.whisper).toBe(path.join(dir, "whisper-ggml", "ggml-small-q8_0.bin"));
+		expect(paths["silero-vad"]).toBe(path.join(dir, "silero-vad", "ggml-silero-v6.2.0.bin"));
 	});
 
 	it("areModelsPresent returns false when the model file is missing", async () => {

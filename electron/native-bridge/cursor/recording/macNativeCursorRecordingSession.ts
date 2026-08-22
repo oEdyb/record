@@ -14,6 +14,7 @@ import { clamp } from "../../../../src/utils/math";
 import {
 	type MacMouseButtonTransition,
 	normalizeMacMouseButtonTransitions,
+	resolveMacKeyboardDirectionExcluded,
 	resolveMacMouseInteraction,
 } from "./macInputEvents";
 import type { CursorRecordingSession } from "./session";
@@ -45,6 +46,7 @@ interface MacKeyboardActivityEvent {
 	targetY: number;
 	targetWidth: number;
 	targetHeight: number;
+	targetProcessId?: number;
 }
 
 type MacCursorEvent =
@@ -468,8 +470,13 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		const targetTop = clamp((payload.targetY - bounds.y) / height, 0, 1);
 		const targetRight = clamp((payload.targetX + payload.targetWidth - bounds.x) / width, 0, 1);
 		const targetBottom = clamp((payload.targetY + payload.targetHeight - bounds.y) / height, 0, 1);
-		const directionExcluded =
-			this.options.isDirectionExcludedPoint?.({ x: focusX, y: focusY }) === true;
+		const directionExcluded = resolveMacKeyboardDirectionExcluded({
+			focusPointExcluded:
+				this.options.isDirectionExcludedPoint?.({ x: focusX, y: focusY }) === true,
+			focusSource: payload.focusSource,
+			hostProcessId: process.pid,
+			targetProcessId: payload.targetProcessId,
+		});
 		this.keyboardActivity.push({
 			timeMs: Math.max(0, payload.timestampMs - this.startTimeMs),
 			cx: normalizedX,

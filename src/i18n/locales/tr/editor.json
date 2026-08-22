@@ -35,7 +35,7 @@
 		"permissionDenied": "Kayıt izni reddedildi. Lütfen ekran kaydına izin verin.",
 		"cameraDisconnected": "Webcam bağlantısı kesildi.",
 		"cameraNotFound": "Kamera bulunamadı.",
-		"accessibilityAllowAndRetry": "OpenScreen için Erişilebilirlik erişimine izin verin, ardından geri sayımı başlatmak için tekrar kayda basın.",
+		"accessibilityAllowAndRetry": "Klippt için Erişilebilirlik erişimine izin verin, ardından geri sayımı başlatmak için tekrar kayda basın.",
 		"selectSource": "Lütfen kayıt için bir kaynak seçin"
 	},
 	"loadingVideo": "Video yükleniyor...",
@@ -55,11 +55,11 @@
 		"importVideoButton": "Video içe aktar",
 		"loadProjectButton": "Proje aç",
 		"supportedFormats": "Desteklenen formatlar: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "veya bir .openscreen proje dosyasını buraya sürükleyip bırakın",
+		"dragDropHint": "veya bir .klippt proje dosyasını buraya sürükleyip bırakın",
 		"dropOverlay": "Açmak için proje dosyasını bırakın",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Desteklenmeyen Format",
-			"unsupportedFormatMessage": "Buraya yalnızca .openscreen proje dosyaları bırakılabilir. Video içe aktarmak için \"Video Dosyası İçe Aktar...\" düğmesini kullanın.",
+			"unsupportedFormatMessage": "Buraya yalnızca .klippt proje dosyaları bırakılabilir. Video içe aktarmak için \"Video Dosyası İçe Aktar...\" düğmesini kullanın.",
 			"couldNotOpenTitle": "Dosya Açılamadı",
 			"couldNotOpenMessage": "Proje dosyası açılamadı. Başvurulan video taşınmış veya silinmiş olabilir."
 		}
@@ -274,7 +274,7 @@
 			"disclaimer": "Videonuzun transkripsiyonu seçtiğiniz sağlayıcıya gönderilecek. Bir sağlayıcı bağlamadan hiçbir şey paylaşılmaz."
 		},
 		"authorUser": "Siz",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Klippt",
 		"rewindToMessage": "Bu mesaja geri sar",
 		"copyMessage": "Mesajı kopyala",
 		"copiedToClipboard": "Panoya kopyalandı",

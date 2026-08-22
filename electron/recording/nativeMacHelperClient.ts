@@ -37,6 +37,8 @@ export class NativeMacHelperClient {
 	private lineBuffer = "";
 	private bounds: Rectangle | null = null;
 	private closed = false;
+	private fatalReported = false;
+	private stoppedResult: NativeMacStopResult | null = null;
 
 	constructor(
 		private readonly process: ChildProcessWithoutNullStreams,
@@ -167,6 +169,12 @@ export class NativeMacHelperClient {
 		screenPath: string;
 		clips: RecordingSessionClip[];
 	}): Promise<NativeMacStopResult> {
+		if (this.stoppedResult) {
+			return {
+				...this.stoppedResult,
+				screenPath: this.stoppedResult.screenPath || fallback.screenPath,
+			};
+		}
 		this.requireWritableCommandChannel();
 		const pending = new Promise<NativeMacStopResult>((resolve, reject) => {
 			const cleanup = this.observe({
@@ -175,17 +183,7 @@ export class NativeMacHelperClient {
 				onEvent: (event) => {
 					if (event.event === "recording-stopped") {
 						cleanup();
-						const clips = Array.isArray(event.clips)
-							? event.clips
-									.map(parseNativeMacRecordingClip)
-									.filter((clip): clip is RecordingSessionClip => clip !== null)
-							: [];
-						const warning = this.parseWarning(event.warning);
-						resolve({
-							screenPath: String(event.screenPath ?? fallback.screenPath),
-							clips,
-							...(warning ? { warning } : {}),
-						});
+						resolve(this.stoppedResultFromEvent(event, fallback.screenPath));
 					} else if (event.event === "error" && event.code !== "writer-failed-during-capture") {
 						cleanup();
 						reject(new Error(this.eventError(event, "Native macOS capture failed")));
@@ -310,7 +308,15 @@ export class NativeMacHelperClient {
 		if (!event) return;
 		const bounds = event.captureBounds as Rectangle | undefined;
 		if (bounds && bounds.width > 0 && bounds.height > 0) this.bounds = bounds;
-		if (event.event === "error" && event.code === "writer-failed-during-capture") {
+		if (event.event === "recording-stopped") {
+			this.stoppedResult = this.stoppedResultFromEvent(event, "");
+		}
+		const fatalCode =
+			event.event === "error" &&
+			(event.code === "writer-failed-during-capture" ||
+				event.code === "capture-stopped-with-error");
+		if (fatalCode && !this.fatalReported) {
+			this.fatalReported = true;
 			this.options.onFatalError?.({
 				code: String(event.code),
 				message: String(event.message ?? "The current macOS recording clip failed."),
@@ -338,6 +344,23 @@ export class NativeMacHelperClient {
 		return {
 			code: String(warning.code ?? "final-clip-failed"),
 			message: String(warning.message ?? "The final clip could not be saved."),
+		};
+	}
+
+	private stoppedResultFromEvent(
+		event: Record<string, unknown>,
+		fallbackScreenPath: string,
+	): NativeMacStopResult {
+		const clips = Array.isArray(event.clips)
+			? event.clips
+					.map(parseNativeMacRecordingClip)
+					.filter((clip): clip is RecordingSessionClip => clip !== null)
+			: [];
+		const warning = this.parseWarning(event.warning);
+		return {
+			screenPath: String(event.screenPath ?? fallbackScreenPath),
+			clips,
+			...(warning ? { warning } : {}),
 		};
 	}
 

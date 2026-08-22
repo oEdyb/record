@@ -21,6 +21,7 @@ import {
 	resolvePlaybackSegments,
 	restoreFullTimeline,
 	setClipSourceRange,
+	splitClipAt,
 	subtractInterval,
 	timelineIntervals,
 } from "./timeline";
@@ -840,7 +841,201 @@ describe("resolvePlaybackSegments", () => {
 	});
 });
 
-describe("duplicateClip / moveClip", () => {
+describe("splitClipAt / duplicateClip / moveClip", () => {
+	it("splits one clip at the playhead without changing timeline duration", () => {
+		const doc = makeDoc({
+			timeline: {
+				...makeDoc().timeline,
+				clips: [
+					makeClip({
+						id: "clip_a",
+						sourceStartSec: 10,
+						sourceEndSec: 20,
+						timelineStartSec: 0,
+						timelineEndSec: 10,
+					}),
+				],
+			},
+		});
+
+		const next = splitClipAt(doc, "clip_a", 5);
+
+		expect(next.timeline.clips).toHaveLength(2);
+		expect(next.timeline.clips[0]).toMatchObject({
+			id: "clip_a",
+			sourceStartSec: 10,
+			sourceEndSec: 15,
+			timelineStartSec: 0,
+			timelineEndSec: 5,
+		});
+		expect(next.timeline.clips[1]).toMatchObject({
+			sourceStartSec: 15,
+			sourceEndSec: 20,
+			timelineStartSec: 5,
+			timelineEndSec: 10,
+		});
+		expect(next.timeline.clips[1].id).not.toBe("clip_a");
+	});
+
+	it("waits for the real media duration before splitting a placeholder clip", () => {
+		const doc = makeDoc({
+			assets: [{ ...makeDoc().assets[0], durationSec: undefined }],
+			timeline: {
+				...makeDoc().timeline,
+				clips: [makeClip({ sourceEndSec: 60, timelineEndSec: 60 })],
+			},
+		});
+
+		expect(splitClipAt(doc, "clip_a", 30)).toBe(doc);
+	});
+
+	it("uses the transcript for the clip asset when splitting word references", () => {
+		const primaryTranscript = {
+			assetId: "asset_1",
+			language: "en",
+			segments: [],
+			words: [{ id: "primary", segmentId: "primary-segment", startSec: 1, endSec: 2, text: "old" }],
+		};
+		const secondaryTranscript = {
+			assetId: "asset_2",
+			language: "en",
+			segments: [],
+			words: [
+				{ id: "left", segmentId: "secondary-segment", startSec: 1, endSec: 2, text: "left" },
+				{ id: "right", segmentId: "secondary-segment", startSec: 7, endSec: 8, text: "right" },
+			],
+		};
+		const doc = makeDoc({
+			assets: [
+				makeDoc().assets[0],
+				{ ...makeDoc().assets[0], id: "asset_2", originalPath: "/tmp/second.mp4", durationSec: 10 },
+			],
+			transcript: primaryTranscript,
+			transcripts: [secondaryTranscript],
+			timeline: {
+				...makeDoc().timeline,
+				clips: [makeClip({ assetId: "asset_2", sourceEndSec: 10, timelineEndSec: 10 })],
+			},
+		});
+
+		const next = splitClipAt(doc, "clip_a", 5);
+
+		expect(next.timeline.clips[0].wordRefs).toEqual(["left"]);
+		expect(next.timeline.clips[1].wordRefs).toEqual(["right"]);
+	});
+
+	it("moves and splits every anchored edit with its source content", () => {
+		const doc = makeDoc({
+			timeline: {
+				...makeDoc().timeline,
+				clips: [makeClip({ sourceStartSec: 10, sourceEndSec: 20, timelineEndSec: 10 })],
+				trimRanges: [makeTrim({ id: "trim_cross", clipId: "clip_a", startSec: 14, endSec: 16 })],
+			},
+			zoomRanges: [
+				makeZoom({
+					id: "zoom_cross",
+					clipId: "clip_a",
+					sourceStartSec: 13,
+					sourceEndSec: 17,
+					startMs: 3_000,
+					endMs: 7_000,
+				}),
+			],
+			annotations: [
+				{
+					id: "annotation_after",
+					clipId: "clip_a",
+					sourceStartSec: 18,
+					sourceEndSec: 19,
+					startMs: 8_000,
+					endMs: 9_000,
+					type: "text",
+					content: "after",
+					position: { x: 50, y: 50 },
+					size: { width: 20, height: 10 },
+					style: {
+						color: "#fff",
+						backgroundColor: "transparent",
+						fontSize: 24,
+						fontFamily: "Inter",
+						fontWeight: "bold",
+						fontStyle: "normal",
+						textDecoration: "none",
+						textAlign: "center",
+					},
+					zIndex: 1,
+				},
+			] as AxcutDocument["annotations"],
+			legacyEditor: {
+				speedRegions: [
+					{
+						id: "speed_before",
+						clipId: "clip_a",
+						sourceStartSec: 11,
+						sourceEndSec: 12,
+						startMs: 1_000,
+						endMs: 2_000,
+						speed: 2,
+					},
+				],
+				cameraFullscreenRegions: [
+					{
+						id: "camera_after",
+						clipId: "clip_a",
+						sourceStartSec: 16,
+						sourceEndSec: 18,
+						startMs: 6_000,
+						endMs: 8_000,
+					},
+				],
+			},
+		});
+
+		const next = splitClipAt(doc, "clip_a", 5);
+		const rightId = next.timeline.clips[1].id;
+
+		expect(next.timeline.trimRanges).toEqual([
+			expect.objectContaining({
+				id: "trim_cross",
+				clipId: "clip_a",
+				startSec: 14,
+				endSec: 15,
+			}),
+			expect.objectContaining({ clipId: rightId, startSec: 15, endSec: 16 }),
+		]);
+		expect(next.zoomRanges).toEqual([
+			expect.objectContaining({
+				id: "zoom_cross",
+				clipId: "clip_a",
+				sourceStartSec: 13,
+				sourceEndSec: 15,
+				startMs: 3_000,
+				endMs: 5_000,
+			}),
+			expect.objectContaining({
+				clipId: rightId,
+				sourceStartSec: 15,
+				sourceEndSec: 17,
+				startMs: 5_000,
+				endMs: 7_000,
+			}),
+		]);
+		expect(next.annotations[0]).toMatchObject({ clipId: rightId, startMs: 8_000, endMs: 9_000 });
+		const legacy = next.legacyEditor as {
+			speedRegions: Array<{ clipId: string }>;
+			cameraFullscreenRegions: Array<{ clipId: string }>;
+		};
+		expect(legacy.speedRegions[0].clipId).toBe("clip_a");
+		expect(legacy.cameraFullscreenRegions[0].clipId).toBe(rightId);
+	});
+
+	it("does not create a zero-length clip at an edge", () => {
+		const doc = makeDoc({ timeline: { ...makeDoc().timeline, clips: [makeClip()] } });
+		expect(splitClipAt(doc, "clip_a", 0)).toBe(doc);
+		expect(splitClipAt(doc, "clip_a", 5)).toBe(doc);
+		expect(splitClipAt(doc, "missing", 2)).toBe(doc);
+	});
+
 	it("duplicateClip gives the copy a fresh, collision-free id even when called repeatedly", () => {
 		// Regression test: this used to id the copy as `clip_${clips.length + 1}_copy`,
 		// a counter that collides across repeated duplicates of a shrinking/growing

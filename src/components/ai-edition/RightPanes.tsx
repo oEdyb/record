@@ -14,6 +14,7 @@ import {
 	Palette,
 	Sliders,
 	Trash2,
+	Upload,
 } from "lucide-react";
 import {
 	type ChangeEvent,
@@ -33,7 +34,19 @@ import {
 import { toast } from "sonner";
 import defaultCursorPreviewUrl from "@/assets/cursors/Cursor=Default.svg";
 import GradientEditor, { type GradientEditorState } from "@/components/ui/gradient-editor";
+import {
+	MAX_WEBCAM_ZOOM,
+	MIN_WEBCAM_ZOOM,
+	type WebcamFocalPoint,
+} from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import {
+	collectNativeFormats,
+	MAX_OUTPUT_DIMENSION,
+	MIN_OUTPUT_DIMENSION,
+	normalizeOutputResolution,
+	pickOutputDims,
+} from "@/lib/ai-edition/document/outputFormat";
 import type {
 	AxcutAsset,
 	AxcutClip,
@@ -57,7 +70,10 @@ import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview
 import type { TranscriptGateReason } from "@/lib/ai-edition/transcription/status";
 import { getAssetPath } from "@/lib/assetPath";
 import {
+	isWebcamBlockLayout,
+	MAX_WEBCAM_BLOCK_CAMERA_SHARE,
 	MAX_WEBCAM_SIZE_PERCENT,
+	MIN_WEBCAM_BLOCK_CAMERA_SHARE,
 	MIN_WEBCAM_SIZE_PERCENT,
 	supportsWebcamReactiveZoom,
 } from "@/lib/compositeLayout";
@@ -66,9 +82,15 @@ import { CURSOR_THEMES, DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorTheme
 import { buildGradientFromEditor } from "@/lib/gradientBuilder";
 import { resolveImageWallpaperUrl, WALLPAPER_PATHS, WALLPAPER_THUMB_PATHS } from "@/lib/wallpaper";
 import { isNativeCompositorActive, setNativeParam } from "@/native";
+import {
+	ASPECT_RATIO_PRESETS,
+	type AspectRatio,
+	getAspectRatioValue,
+	toAspectRatioToken,
+} from "@/utils/aspectRatioUtils";
 import styles from "./NewEditorShell.module.css";
 
-interface PaneProps {
+export interface PaneProps {
 	title: string;
 	icon: ReactNode;
 	// P3.3 — contextual help shown in a popover when the ? button is clicked.
@@ -77,7 +99,7 @@ interface PaneProps {
 	flat?: boolean;
 }
 
-function Pane({ title, icon, helpText, children, flat = false }: PaneProps) {
+export function Pane({ title, icon, helpText, children, flat = false }: PaneProps) {
 	const ts = useScopedT("settings");
 	const helpLabel = ts("panes.help");
 	const [helpOpen, setHelpOpen] = useState(false);
@@ -135,20 +157,20 @@ function Pane({ title, icon, helpText, children, flat = false }: PaneProps) {
 // in the picker and gets serialized to legacyEditor on save.
 const GRAD_PRESETS: readonly string[] = [
 	"linear-gradient(135deg, #eaebed, #bcc0c6)",
-	"linear-gradient(135deg, #10b981, #eaebed)",
+	"linear-gradient(135deg, #d7d7de, #eaebed)",
 	"linear-gradient(135deg, #6b7280, #bcc0c6)",
-	"linear-gradient(135deg, #eaebed, #10b981)",
+	"linear-gradient(135deg, #eaebed, #757781)",
 	"linear-gradient(135deg, #16171d, #6b7280)",
 	"linear-gradient(135deg, #bcc0c6, #16171d)",
-	"linear-gradient(135deg, #10b981, #6b7280)",
-	"linear-gradient(135deg, #eaebed, #10b981)",
+	"linear-gradient(135deg, #757781, #6b7280)",
+	"linear-gradient(135deg, #eaebed, #d7d7de)",
 	"linear-gradient(135deg, #6b7280, #16171d)",
-	"linear-gradient(135deg, #bcc0c6, #10b981)",
+	"linear-gradient(135deg, #bcc0c6, #757781)",
 	"linear-gradient(135deg, #16171d, #6b7280)",
 	"linear-gradient(135deg, #eaebed, #bcc0c6)",
-	"linear-gradient(135deg, #10b981, #bcc0c6)",
+	"linear-gradient(135deg, #d7d7de, #bcc0c6)",
 	"linear-gradient(135deg, #eaebed, #16171d)",
-	"linear-gradient(135deg, #6b7280, #10b981)",
+	"linear-gradient(135deg, #6b7280, #757781)",
 	"linear-gradient(135deg, #bcc0c6, #eaebed)",
 ];
 
@@ -158,9 +180,9 @@ const COLOR_PALETTE: readonly string[] = [
 	"#bcc0c6",
 	"#eaebed",
 	"#ffffff",
-	"#10b981",
-	"#0ea371",
-	"#34d399",
+	"#757781",
+	"#d7d7de",
+	"#f4f4f5",
 	"#f59e0b",
 	"#ef4444",
 	"#3b82f6",
@@ -277,6 +299,7 @@ export function BackgroundPane() {
 			title={ts("background.title")}
 			icon={<Palette size={14} />}
 			helpText={ts("background.help")}
+			flat
 		>
 			<div className={styles.paneTabs} role="tablist">
 				<button
@@ -309,6 +332,7 @@ export function BackgroundPane() {
 						disabled={!hasDocument}
 						onClick={handlePickFile}
 					>
+						<Upload size={13} aria-hidden="true" />
 						{ts("background.uploadCustom")}
 					</button>
 					<input
@@ -371,7 +395,14 @@ export function BackgroundPane() {
 							/>
 						))}
 					</div>
-					{hasDocument ? <GradientEditor onChange={handleGradientChange} /> : null}
+					{hasDocument ? (
+						<details className={styles.gradientEditorSection}>
+							<summary className={styles.gradientEditorSummary}>{ts("background.custom")}</summary>
+							<div className={styles.gradientEditorBody}>
+								<GradientEditor onChange={handleGradientChange} />
+							</div>
+						</details>
+					) : null}
 				</>
 			)}
 		</Pane>
@@ -422,7 +453,7 @@ function BackgroundColorTab({
 	};
 	return (
 		<>
-			<div className={styles.bgGrid} style={{ margin: "0 var(--sp-4) 12px" }}>
+			<div className={styles.bgGrid}>
 				{COLOR_PALETTE.map((c) => (
 					<button
 						type="button"
@@ -440,28 +471,13 @@ function BackgroundColorTab({
 					/>
 				))}
 			</div>
-			<div
-				style={{
-					margin: "0 var(--sp-4) 12px",
-					display: "flex",
-					alignItems: "center",
-					gap: 8,
-				}}
-			>
+			<div className={styles.backgroundColorFields}>
 				<input
 					type="color"
 					value={hexDraft}
 					disabled={!hasDocument}
 					onChange={(e) => setHexDraft(e.target.value)}
 					onBlur={commitHex}
-					style={{
-						width: 48,
-						height: 36,
-						border: "1px solid var(--border)",
-						borderRadius: 8,
-						background: "var(--surface)",
-						padding: 0,
-					}}
 				/>
 				<input
 					type="text"
@@ -471,16 +487,6 @@ function BackgroundColorTab({
 					onBlur={commitHex}
 					onKeyDown={(e) => {
 						if (e.key === "Enter") commitHex();
-					}}
-					style={{
-						flex: 1,
-						height: 36,
-						border: "1px solid var(--border)",
-						borderRadius: 8,
-						background: "var(--surface)",
-						padding: "0 12px",
-						color: "var(--fg-2)",
-						font: "500 13px var(--font-mono)",
 					}}
 				/>
 			</div>
@@ -606,6 +612,7 @@ export function TranscriptPane({
 				title={ts("transcript.title")}
 				icon={<FileText size={14} />}
 				helpText={ts("transcript.help")}
+				flat
 			>
 				<div
 					style={{
@@ -650,7 +657,10 @@ export function TranscriptPane({
 	}
 
 	return (
-		<div className={`${styles.pane} ${styles.isActive}`}>
+		<div
+			className={`${styles.pane} ${styles.isActive} ${styles.flatInspectorPane}`}
+			data-inspector-layout="flat"
+		>
 			<header className={styles.paneHead}>
 				<h2>{ts("transcript.title")}</h2>
 			</header>
@@ -1376,14 +1386,10 @@ export function VideoEffectsPane() {
 	// The onChange handlers above already push per-control diffs; this effect
 	// also covers the "user tweaked a setting before the native view was
 	// mounted" case so the view doesn't render with stale defaults.
-	// Le rayon natif = rayon de base de la fixture (~24px @1920) × cette échelle. Diviser la
-	// valeur px de l'UI par ce même rayon de base fait que le coin natif ≈ les px affichés
-	// (au lieu de plafonner à ~24px comme avec /64).
+	// The native radius is the fixture's base radius (~24px at 1920) multiplied by this scale.
+	// Dividing the UI's pixel value by the same base keeps native and preview corners aligned.
 	const NATIVE_SCREEN_BASE_RADIUS_PX = 24;
-	// La synchro initiale de ces params vit desormais dans NativeCompositorOverlay
-	// (`pushAllNativeParams`) : l'inspecteur n'affiche qu'un panneau a la fois, donc
-	// un effet de montage ici ne poussait rien tant que ce panneau precis n'avait pas
-	// ete ouvert. Les handlers par controle ci-dessous poussent toujours leurs diffs.
+	// NativeCompositorOverlay owns the initial sync. The handlers below still push live changes.
 
 	return (
 		<Pane
@@ -1509,13 +1515,190 @@ const CAMERA_SHAPES: Array<{
 	},
 ];
 
+function CameraPositionPad({
+	value,
+	disabled,
+	onChange,
+	onCommit,
+	label,
+	centerLabel,
+}: {
+	value: WebcamFocalPoint;
+	disabled: boolean;
+	onChange: (next: WebcamFocalPoint) => void;
+	onCommit: () => void;
+	label: string;
+	centerLabel: string;
+}) {
+	const padRef = useRef<HTMLDivElement | null>(null);
+	const updateFromPoint = useCallback(
+		(clientX: number, clientY: number) => {
+			const rect = padRef.current?.getBoundingClientRect();
+			if (!rect || rect.width <= 0 || rect.height <= 0) return;
+			onChange({
+				cx: Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)),
+				cy: Math.min(1, Math.max(0, (clientY - rect.top) / rect.height)),
+			});
+		},
+		[onChange],
+	);
+	const moveBy = useCallback(
+		(dx: number, dy: number) => {
+			onChange({
+				cx: Math.min(1, Math.max(0, value.cx + dx)),
+				cy: Math.min(1, Math.max(0, value.cy + dy)),
+			});
+		},
+		[onChange, value],
+	);
+
+	return (
+		<div className={styles.cameraPositionField}>
+			<div className={styles.cameraPositionHead}>
+				<span>{label}</span>
+				<button
+					type="button"
+					disabled={disabled}
+					onClick={() => {
+						onChange({ cx: 0.5, cy: 0.5 });
+						onCommit();
+					}}
+				>
+					{centerLabel}
+				</button>
+			</div>
+			<div
+				ref={padRef}
+				className={styles.cameraPositionPad}
+				role="slider"
+				tabIndex={disabled ? -1 : 0}
+				aria-disabled={disabled}
+				aria-label={label}
+				aria-valuemin={0}
+				aria-valuemax={100}
+				aria-valuenow={Math.round(value.cx * 100)}
+				aria-valuetext={`${Math.round(value.cx * 100)}%, ${Math.round(value.cy * 100)}%`}
+				onPointerDown={(event) => {
+					if (disabled) return;
+					event.currentTarget.setPointerCapture(event.pointerId);
+					updateFromPoint(event.clientX, event.clientY);
+				}}
+				onPointerMove={(event) => {
+					if (disabled || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+					updateFromPoint(event.clientX, event.clientY);
+				}}
+				onPointerUp={(event) => {
+					if (disabled) return;
+					updateFromPoint(event.clientX, event.clientY);
+					event.currentTarget.releasePointerCapture(event.pointerId);
+					onCommit();
+				}}
+				onPointerCancel={onCommit}
+				onKeyDown={(event) => {
+					if (disabled) return;
+					const step = event.shiftKey ? 0.1 : 0.02;
+					if (event.key === "ArrowLeft") moveBy(-step, 0);
+					else if (event.key === "ArrowRight") moveBy(step, 0);
+					else if (event.key === "ArrowUp") moveBy(0, -step);
+					else if (event.key === "ArrowDown") moveBy(0, step);
+					else if (event.key === "Home") onChange({ cx: 0.5, cy: 0.5 });
+					else return;
+					event.preventDefault();
+				}}
+				onKeyUp={(event) => {
+					if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home"].includes(event.key)) {
+						onCommit();
+					}
+				}}
+				onBlur={onCommit}
+			>
+				<span
+					className={styles.cameraPositionTarget}
+					style={{ left: `${value.cx * 100}%`, top: `${value.cy * 100}%` }}
+				/>
+			</div>
+		</div>
+	);
+}
+
 export function LayoutPane() {
 	const ts = useScopedT("settings");
+	const tt = useScopedT("timeline");
+	const tc = useScopedT("common");
+	const te = useScopedT("editor");
 	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
 	const document = useProjectStore((s) => s.document);
+	const nativeFormats = useMemo(() => (document ? collectNativeFormats(document) : []), [document]);
+	const automaticResolution = useMemo(
+		() =>
+			document ? pickOutputDims(document, settings.aspectRatio) : { width: 1920, height: 1080 },
+		[document, settings.aspectRatio],
+	);
+	const activeResolution = settings.outputResolution ?? automaticResolution;
+	const [draftWidth, setDraftWidth] = useState(String(activeResolution.width));
+	const [draftHeight, setDraftHeight] = useState(String(activeResolution.height));
 
-	// Synchro initiale : cf. NativeCompositorOverlay (`pushAllNativeParams`).
-	// the mask shape picker only makes sense for Picture-in-Picture.
+	useEffect(() => {
+		setDraftWidth(String(activeResolution.width));
+		setDraftHeight(String(activeResolution.height));
+	}, [activeResolution.width, activeResolution.height]);
+
+	const setCanvasFormat = useCallback(
+		(ratio: AspectRatio) => {
+			if (!settings.outputResolution) {
+				void set({ aspectRatio: ratio });
+				return;
+			}
+
+			const ratioValue = getAspectRatioValue(ratio);
+			const longSide = Math.max(settings.outputResolution.width, settings.outputResolution.height);
+			const nextResolution = normalizeOutputResolution(
+				ratioValue >= 1
+					? { width: longSide, height: longSide / ratioValue }
+					: { width: longSide * ratioValue, height: longSide },
+			);
+			void set({ aspectRatio: ratio, outputResolution: nextResolution });
+		},
+		[set, settings.outputResolution],
+	);
+
+	const commitCustomResolution = useCallback(() => {
+		const nextResolution = normalizeOutputResolution({
+			width: Number(draftWidth),
+			height: Number(draftHeight),
+		});
+		if (!nextResolution) {
+			setDraftWidth(String(activeResolution.width));
+			setDraftHeight(String(activeResolution.height));
+			return;
+		}
+		setDraftWidth(String(nextResolution.width));
+		setDraftHeight(String(nextResolution.height));
+		void set({
+			outputResolution: nextResolution,
+			aspectRatio:
+				toAspectRatioToken(nextResolution.width, nextResolution.height) ?? settings.aspectRatio,
+		});
+	}, [
+		activeResolution.height,
+		activeResolution.width,
+		draftHeight,
+		draftWidth,
+		set,
+		settings.aspectRatio,
+	]);
+
+	const selectedFormatValue = settings.outputResolution
+		? `preset:${settings.aspectRatio}`
+		: nativeFormats.some((format) => format.token === settings.aspectRatio)
+			? `native:${settings.aspectRatio}`
+			: `preset:${settings.aspectRatio}`;
+	const knownFormatTokens = new Set<string>([
+		...ASPECT_RATIO_PRESETS,
+		...nativeFormats.map((f) => f.token),
+	]);
+
+	// The mask shape picker only makes sense for Picture-in-Picture.
 	// Dual-frame (side-by-side) and vertical-stack (top/bottom) weld the camera
 	// to the screen as one block — the mask is rectangular and sized off the
 	// screen capture — so we hide those controls when the preset isn't PiP.
@@ -1540,136 +1723,285 @@ export function LayoutPane() {
 			helpText={ts("layout.help")}
 			flat
 		>
-			<div className={styles.sectionLabel}>{ts("layout.preset")}</div>
-			<div className={styles.field}>
-				<label>{ts("layout.title")}</label>
-				<select
-					value={settings.webcamLayoutPreset}
-					disabled={layoutControlsDisabled}
-					onChange={(e) =>
-						void set({ webcamLayoutPreset: e.target.value as typeof settings.webcamLayoutPreset })
-					}
-				>
-					{WEBCAM_PRESETS.map((p) => (
-						<option key={p.value} value={p.value}>
-							{ts(p.labelKey)}
-						</option>
-					))}
-				</select>
-			</div>
-			<div className={styles.paneRow}>
-				<span className="label">{ts("layout.mirrorWebcam")}</span>
-				<Toggle
-					checked={settings.webcamMirrored}
-					disabled={layoutControlsDisabled}
-					onChange={(v) => {
-						void set({ webcamMirrored: v });
-						if (isNativeCompositorActive()) {
-							setNativeParam("webcamMirror", v);
-						}
-					}}
-				/>
-			</div>
-			{supportsReactiveZoom ? (
-				<div className={styles.paneRow}>
-					<span className="label">{ts("layout.reactiveWebcam")}</span>
-					<Toggle
-						checked={settings.webcamReactiveZoom}
-						disabled={layoutControlsDisabled}
-						onChange={(v) => void set({ webcamReactiveZoom: v })}
-					/>
-				</div>
-			) : null}
-			{isPip ? (
-				<>
-					<div className={styles.sectionLabel}>{ts("layout.webcamShape")}</div>
-					<div
-						style={{
-							display: "grid",
-							// `minmax(0, 1fr)` et non `1fr`. `1fr` vaut `minmax(auto, 1fr)`,
-							// donc la taille MINIMALE de la piste est `auto`, ce qui resout
-							// pour chaque bouton a son minimum de contenu -- et « Rounded »
-							// est un mot insecable. Quatre boutons a 64,83 px plus trois
-							// gouttieres de 8 px reclamaient 283,3 px la ou le panneau n'en
-							// offre que 234 : les pistes refusaient de retrecir et la grille
-							// debordait, en coupant le dernier bouton. `minmax(0, ...)`
-							// autorise la piste a passer sous son contenu.
-							gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-							gap: 8,
-							padding: "0 var(--sp-4) 12px",
+			<section className={styles.inspectorSection}>
+				<div className={styles.inspectorSectionTitle}>{tt("toolbar.aspectRatio")}</div>
+				<div className={styles.layoutSelectRow}>
+					<select
+						value={selectedFormatValue}
+						disabled={!hasDocument}
+						onChange={(event) => {
+							const [kind, token] = event.target.value.split(":", 2);
+							const ratio = (
+								token ? event.target.value.slice(kind.length + 1) : token
+							) as AspectRatio;
+							if (kind === "native") {
+								void set({ aspectRatio: ratio, outputResolution: null });
+								return;
+							}
+							setCanvasFormat(ratio);
 						}}
 					>
-						{CAMERA_SHAPES.map((shape) => {
-							const isActive = settings.webcamMaskShape === shape.value;
-							return (
-								<button
-									type="button"
-									key={shape.value}
-									className={`${styles.cursorCell} ${isActive ? styles.isActive : ""}`}
-									style={{
-										flexDirection: "column",
-										gap: 4,
-										padding: 8,
-										display: "flex",
-										alignItems: "center",
-										// Sans `minWidth: 0` le bouton garde son minimum de
-										// contenu et rouvre le debordement que `minmax(0, 1fr)`
-										// vient de fermer sur la piste.
-										minWidth: 0,
-									}}
-									disabled={layoutControlsDisabled}
-									onClick={() => {
-										void set({ webcamMaskShape: shape.value });
-										if (isNativeCompositorActive()) {
-											setNativeParam("webcamShape", shape.value);
-										}
-									}}
-								>
-									<svg
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										strokeWidth="2"
-										width={22}
-										height={22}
-									>
-										{shape.icon}
-									</svg>
-									<span style={{ font: "500 11px/1 var(--font-body)" }}>{ts(shape.labelKey)}</span>
-								</button>
-							);
-						})}
+						<optgroup label={ts("layout.preset")}>
+							{ASPECT_RATIO_PRESETS.map((ratio) => (
+								<option key={ratio} value={`preset:${ratio}`}>
+									{ratio}
+								</option>
+							))}
+							{!knownFormatTokens.has(settings.aspectRatio) ? (
+								<option value={`preset:${settings.aspectRatio}`}>{settings.aspectRatio}</option>
+							) : null}
+						</optgroup>
+						{nativeFormats.length > 0 ? (
+							<optgroup label={tt("toolbar.original")}>
+								{nativeFormats.map((format) => (
+									<option key={format.token} value={`native:${format.token}`}>
+										{format.token} · {format.width} × {format.height}
+									</option>
+								))}
+							</optgroup>
+						) : null}
+					</select>
+				</div>
+
+				<div className={styles.resolutionControlRow}>
+					<div>
+						<div className={styles.inspectorFieldLabel}>{ts("layout.resolution")}</div>
+						{!settings.outputResolution ? (
+							<div className={styles.inspectorFieldMeta}>
+								{automaticResolution.width} × {automaticResolution.height}
+							</div>
+						) : null}
 					</div>
-				</>
-			) : null}
-			{isPip ? (
-				<div className={styles.sliderGrid}>
-					<div className={`${styles.sliderCell} ${styles.full}`}>
-						<div className="head">
-							<span className="label">{ts("layout.webcamSize")}</span>
-							<span className="val">{Math.round(settings.webcamSizePreset)}%</span>
-						</div>
-						<input
-							type="range"
-							min={MIN_WEBCAM_SIZE_PERCENT}
-							max={MAX_WEBCAM_SIZE_PERCENT}
-							step={1}
-							defaultValue={settings.webcamSizePreset}
-							disabled={layoutControlsDisabled}
-							onChange={(e) => {
-								const next = Number(e.target.value);
-								setLive({ webcamSizePreset: next });
-								if (isNativeCompositorActive()) {
-									setNativeParam("webcamSize", next / NATIVE_WEBCAM_BASE_PCT);
-								}
+					<div className={styles.resolutionMode}>
+						<button
+							type="button"
+							disabled={!hasDocument}
+							className={!settings.outputResolution ? styles.isActive : ""}
+							onClick={() => void set({ outputResolution: null })}
+						>
+							{ts("zoom.focusMode.auto")}
+						</button>
+						<button
+							type="button"
+							disabled={!hasDocument}
+							className={settings.outputResolution ? styles.isActive : ""}
+							onClick={() => {
+								if (settings.outputResolution) return;
+								void set({ outputResolution: automaticResolution });
 							}}
-							onMouseUp={() => void commit()}
-							onTouchEnd={() => void commit()}
-							onKeyUp={() => void commit()}
-						/>
+						>
+							{ts("background.custom")}
+						</button>
 					</div>
 				</div>
-			) : null}
+				{settings.outputResolution ? (
+					<div className={styles.resolutionFields}>
+						<label>
+							<span>W</span>
+							<input
+								type="number"
+								min={MIN_OUTPUT_DIMENSION}
+								max={MAX_OUTPUT_DIMENSION}
+								step={2}
+								value={draftWidth}
+								onChange={(event) => setDraftWidth(event.target.value)}
+								onBlur={commitCustomResolution}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") event.currentTarget.blur();
+								}}
+							/>
+						</label>
+						<span aria-hidden>×</span>
+						<label>
+							<span>H</span>
+							<input
+								type="number"
+								min={MIN_OUTPUT_DIMENSION}
+								max={MAX_OUTPUT_DIMENSION}
+								step={2}
+								value={draftHeight}
+								onChange={(event) => setDraftHeight(event.target.value)}
+								onBlur={commitCustomResolution}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") event.currentTarget.blur();
+								}}
+							/>
+						</label>
+					</div>
+				) : null}
+			</section>
+
+			<section className={styles.inspectorSection}>
+				<div className={styles.inspectorSectionTitle}>{ts("layout.cameraLayout")}</div>
+				<div className={styles.layoutSelectRow}>
+					<select
+						value={settings.webcamLayoutPreset}
+						disabled={layoutControlsDisabled}
+						onChange={(e) =>
+							void set({ webcamLayoutPreset: e.target.value as typeof settings.webcamLayoutPreset })
+						}
+					>
+						{WEBCAM_PRESETS.map((p) => (
+							<option key={p.value} value={p.value}>
+								{ts(p.labelKey)}
+							</option>
+						))}
+					</select>
+				</div>
+				{isWebcamBlockLayout(settings.webcamLayoutPreset) ? (
+					<div className={styles.inspectorFieldGroup}>
+						<div className={styles.inspectorFieldLabel}>{ts("layout.order")}</div>
+						<div className={styles.resolutionMode}>
+							<button
+								type="button"
+								disabled={layoutControlsDisabled}
+								className={settings.webcamBlockOrder === "screen-first" ? styles.isActive : ""}
+								onClick={() => void set({ webcamBlockOrder: "screen-first" })}
+							>
+								{tc("recordingSource.screen")}
+							</button>
+							<button
+								type="button"
+								disabled={layoutControlsDisabled}
+								className={settings.webcamBlockOrder === "camera-first" ? styles.isActive : ""}
+								onClick={() => void set({ webcamBlockOrder: "camera-first" })}
+							>
+								{te("rec.camera")}
+							</button>
+						</div>
+					</div>
+				) : null}
+				{settings.webcamLayoutPreset === "vertical-stack" ? (
+					<div className={styles.sliderGrid}>
+						<SliderCell
+							label={ts("layout.cameraShare")}
+							value={settings.webcamBlockCameraShare}
+							min={MIN_WEBCAM_BLOCK_CAMERA_SHARE}
+							max={MAX_WEBCAM_BLOCK_CAMERA_SHARE}
+							suffix="%"
+							disabled={layoutControlsDisabled}
+							onChange={(next) => setLive({ webcamBlockCameraShare: next })}
+							onCommit={() => void commit()}
+						/>
+					</div>
+				) : null}
+				<div className={styles.paneRow}>
+					<span className="label">{ts("layout.mirrorWebcam")}</span>
+					<Toggle
+						checked={settings.webcamMirrored}
+						disabled={layoutControlsDisabled}
+						onChange={(v) => {
+							void set({ webcamMirrored: v });
+							if (isNativeCompositorActive()) {
+								setNativeParam("webcamMirror", v);
+							}
+						}}
+					/>
+				</div>
+				{supportsReactiveZoom ? (
+					<div className={styles.paneRow}>
+						<span className="label">{ts("layout.reactiveWebcam")}</span>
+						<Toggle
+							checked={settings.webcamReactiveZoom}
+							disabled={layoutControlsDisabled}
+							onChange={(v) => void set({ webcamReactiveZoom: v })}
+						/>
+					</div>
+				) : null}
+				{isPip ? (
+					<>
+						<div className={styles.inspectorFieldGroup}>
+							<div className={styles.inspectorFieldLabel}>{ts("layout.webcamShape")}</div>
+							<div className={styles.cameraShapeControl}>
+								{CAMERA_SHAPES.map((shape) => {
+									const isActive = settings.webcamMaskShape === shape.value;
+									return (
+										<button
+											type="button"
+											key={shape.value}
+											className={`${styles.cameraShapeButton} ${isActive ? styles.isActive : ""}`}
+											disabled={layoutControlsDisabled}
+											aria-pressed={isActive}
+											onClick={() => {
+												void set({ webcamMaskShape: shape.value });
+												if (isNativeCompositorActive()) {
+													setNativeParam("webcamShape", shape.value);
+												}
+											}}
+										>
+											<svg
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												strokeWidth="2"
+												width={22}
+												height={22}
+											>
+												{shape.icon}
+											</svg>
+											<span>{ts(shape.labelKey)}</span>
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					</>
+				) : null}
+				{settings.webcamLayoutPreset !== "no-webcam" ? (
+					<>
+						<div className={styles.sliderGrid}>
+							{isPip ? (
+								<SliderCell
+									label={ts("layout.webcamSize")}
+									value={settings.webcamSizePreset}
+									min={MIN_WEBCAM_SIZE_PERCENT}
+									max={MAX_WEBCAM_SIZE_PERCENT}
+									suffix="%"
+									disabled={layoutControlsDisabled}
+									onChange={(next) => {
+										setLive({ webcamSizePreset: next });
+										if (isNativeCompositorActive()) {
+											setNativeParam("webcamSize", next / NATIVE_WEBCAM_BASE_PCT);
+										}
+									}}
+									onCommit={() => void commit()}
+								/>
+							) : null}
+							<SliderCell
+								label={ts("layout.webcamZoom")}
+								value={settings.webcamZoom}
+								min={MIN_WEBCAM_ZOOM}
+								max={MAX_WEBCAM_ZOOM}
+								step={0.05}
+								decimals={2}
+								suffix="×"
+								disabled={layoutControlsDisabled}
+								onChange={(next) => {
+									setLive({ webcamZoom: next });
+									if (isNativeCompositorActive()) {
+										setNativeParam("webcamZoom", next);
+									}
+								}}
+								onCommit={() => void commit()}
+							/>
+						</div>
+						<CameraPositionPad
+							value={settings.webcamFocalPoint}
+							disabled={layoutControlsDisabled}
+							label={ts("layout.webcamPosition")}
+							centerLabel={ts("layout.centerCamera")}
+							onChange={(next) => {
+								setLive({ webcamFocalPoint: next });
+								if (isNativeCompositorActive()) {
+									setNativeParam("webcamFocusX", next.cx);
+									setNativeParam("webcamFocusY", next.cy);
+								}
+							}}
+							onCommit={() => void commit()}
+						/>
+					</>
+				) : null}
+			</section>
 		</Pane>
 	);
 }
@@ -1870,9 +2202,7 @@ export function Toggle({
 	);
 }
 
-/** Le slider commun des panneaux — exporté pour que l'inspecteur V4 s'en serve au lieu de
- *  restyler un `<input type="range">` isolé qui ne ressemblait à rien de l'app. Il porte aussi
- *  la bonne cadence : `onChange` en direct, `onCommit` à la fin du geste. */
+/** Shared pane slider. Preview updates live, then one commit persists the completed gesture. */
 export function SliderCell({
 	label,
 	value,
@@ -1885,6 +2215,7 @@ export function SliderCell({
 	onChange,
 	onCommit,
 	showValue = true,
+	flat = false,
 }: {
 	label: string;
 	value: number;
@@ -1896,12 +2227,13 @@ export function SliderCell({
 	disabled?: boolean;
 	onChange: (next: number) => void;
 	onCommit: () => void;
-	/** À passer `false` quand le libellé porte déjà la valeur (certaines chaînes i18n
-	 *  l'interpolent), sans quoi elle s'affiche deux fois. */
+	/** Hide the value when the localized label already contains it. */
 	showValue?: boolean;
+	/** Use the continuous inspector treatment when the cell is outside a flat Pane. */
+	flat?: boolean;
 }) {
 	return (
-		<div className={styles.sliderCell}>
+		<div className={`${styles.sliderCell} ${flat ? styles.isFlat : ""}`}>
 			<div className="head">
 				<span className="label">{label}</span>
 				{showValue ? (
@@ -1913,6 +2245,7 @@ export function SliderCell({
 			</div>
 			<input
 				type="range"
+				aria-label={label}
 				min={min}
 				max={max}
 				step={step}

@@ -9,7 +9,7 @@ import { NATIVE_BRIDGE_CHANNEL, NATIVE_BRIDGE_VERSION } from "../../src/native/c
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "../..");
-const MAIN_JS = path.join(ROOT, "dist-electron/main.js");
+const MAIN_JS = path.join(ROOT, "dist-electron/bootstrap.js");
 const TEST_VIDEO = path.join(__dirname, "../fixtures/sample.webm");
 
 async function launchApp() {

@@ -128,21 +128,18 @@ export function AnnotationOverlay({
 				onClick(annotation.id);
 			}}
 			bounds="parent"
-			className={cn(
-				"cursor-move",
-				isSelected &&
-					annotation.type !== "blur" &&
-					"ring-2 ring-[#34B27B] ring-offset-2 ring-offset-transparent",
-			)}
+			className="cursor-move"
 			style={{
 				zIndex: isSelectedBoost ? zIndex + 1000 : zIndex,
 				pointerEvents: isSelected ? "auto" : "none",
 				border:
-					isSelected && annotation.type !== "blur" ? "2px solid rgba(52, 178, 123, 0.8)" : "none",
+					isSelected && annotation.type !== "blur"
+						? "2px solid var(--editor-accent-border)"
+						: "none",
 				backgroundColor:
-					isSelected && annotation.type !== "blur" ? "rgba(52, 178, 123, 0.1)" : "transparent",
+					isSelected && annotation.type !== "blur" ? "var(--editor-accent-wash)" : "transparent",
 				boxShadow:
-					isSelected && annotation.type !== "blur" ? "0 0 0 1px rgba(52, 178, 123, 0.35)" : "none",
+					isSelected && annotation.type !== "blur" ? "0 0 0 1px var(--editor-accent-ring)" : "none",
 			}}
 			// Un flou en tracé libre se déplace et se redimensionne comme les autres : ce qui le
 			// bloquait, c'était la zone de saisie du tracé qui capturait le pointeur — et elle est
@@ -154,7 +151,7 @@ export function AnnotationOverlay({
 					width: "12px",
 					height: "12px",
 					backgroundColor: isSelected ? "white" : "transparent",
-					border: isSelected ? "2px solid #34B27B" : "none",
+					border: isSelected ? "2px solid var(--editor-accent)" : "none",
 					borderRadius: "50%",
 					left: "-6px",
 					top: "-6px",
@@ -164,7 +161,7 @@ export function AnnotationOverlay({
 					width: "12px",
 					height: "12px",
 					backgroundColor: isSelected ? "white" : "transparent",
-					border: isSelected ? "2px solid #34B27B" : "none",
+					border: isSelected ? "2px solid var(--editor-accent)" : "none",
 					borderRadius: "50%",
 					right: "-6px",
 					top: "-6px",
@@ -174,7 +171,7 @@ export function AnnotationOverlay({
 					width: "12px",
 					height: "12px",
 					backgroundColor: isSelected ? "white" : "transparent",
-					border: isSelected ? "2px solid #34B27B" : "none",
+					border: isSelected ? "2px solid var(--editor-accent)" : "none",
 					borderRadius: "50%",
 					left: "-6px",
 					bottom: "-6px",
@@ -184,7 +181,7 @@ export function AnnotationOverlay({
 					width: "12px",
 					height: "12px",
 					backgroundColor: isSelected ? "white" : "transparent",
-					border: isSelected ? "2px solid #34B27B" : "none",
+					border: isSelected ? "2px solid var(--editor-accent)" : "none",
 					borderRadius: "50%",
 					right: "-6px",
 					bottom: "-6px",
@@ -204,8 +201,11 @@ export function AnnotationOverlay({
 				    est censé cacher — sans ce liseré il n'aurait AUCUN retour de sélection. */}
 				{isSelected && annotation.type === "blur" ? (
 					<div
-						className="absolute inset-0 pointer-events-none border-2 border-[#34B27B]/80"
-						style={{ borderRadius: blurShape === "oval" ? "50%" : "8px" }}
+						className="absolute inset-0 pointer-events-none"
+						style={{
+							border: "2px solid var(--editor-accent-border)",
+							borderRadius: blurShape === "oval" ? "50%" : "8px",
+						}}
 					/>
 				) : null}
 			</div>

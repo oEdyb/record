@@ -36,7 +36,7 @@ describe("DocumentService", () => {
 			expect(doc.project.id).toMatch(/^proj_/);
 			expect(doc.assets).toEqual([]);
 
-			const filePath = path.join(tempDir, `${doc.project.id}.openscreen`);
+			const filePath = path.join(tempDir, `${doc.project.id}.klippt`);
 			const raw = await fs.readFile(filePath, "utf8");
 			expect(JSON.parse(raw)).toMatchObject({
 				schemaVersion: axcutSchemaVersion,
@@ -220,28 +220,44 @@ describe("DocumentService", () => {
 
 		it("skips files that fail to parse rather than throwing", async () => {
 			const a = await service.createProject("OK");
-			await fs.writeFile(path.join(tempDir, "garbage.openscreen"), "not json", "utf8");
+			await fs.writeFile(path.join(tempDir, "garbage.klippt"), "not json", "utf8");
 			const summaries = await service.listProjects();
 			expect(summaries.map((s) => s.id)).toEqual([a.project.id]);
 		});
 
-		it("migrates a legacy .axcut project to .openscreen on access", async () => {
-			// A project written by an older build: same document bytes, `.axcut` name.
+		it.each([
+			"openscreen",
+			"axcut",
+		])("copies a legacy .%s project to .klippt without deleting the rollback file", async (legacyExtension) => {
+			// A project written by an older build: same document bytes, legacy name.
 			const created = await service.createProject("Legacy");
-			const openscreenPath = path.join(tempDir, `${created.project.id}.openscreen`);
-			const axcutPath = path.join(tempDir, `${created.project.id}.axcut`);
-			await fs.rename(openscreenPath, axcutPath);
+			const klipptPath = path.join(tempDir, `${created.project.id}.klippt`);
+			const legacyPath = path.join(tempDir, `${created.project.id}.${legacyExtension}`);
+			await fs.rename(klipptPath, legacyPath);
 
-			// A fresh service (new process) must still surface and load it, renaming
-			// the file across in the process.
+			// A fresh process surfaces the project through the new extension while
+			// preserving the legacy file for rollback.
 			const fresh = new DocumentService(tempDir, mediaDir);
 			const summaries = await fresh.listProjects();
 			expect(summaries.map((s) => s.id)).toEqual([created.project.id]);
 			await expect(fresh.getProject(created.project.id)).resolves.toMatchObject({
 				project: { id: created.project.id, title: "Legacy" },
 			});
-			await expect(fs.access(axcutPath)).rejects.toBeTruthy();
-			await expect(fs.access(openscreenPath)).resolves.toBeUndefined();
+			await expect(fs.access(legacyPath)).resolves.toBeUndefined();
+			await expect(fs.access(klipptPath)).resolves.toBeUndefined();
+		});
+
+		it("makes concurrent startup readers wait for the same legacy migration", async () => {
+			const created = await service.createProject("Concurrent legacy");
+			const klipptPath = path.join(tempDir, `${created.project.id}.klippt`);
+			await fs.rename(klipptPath, path.join(tempDir, `${created.project.id}.OPENSCREEN`));
+
+			const fresh = new DocumentService(tempDir, mediaDir);
+			const [first, second] = await Promise.all([fresh.listProjects(), fresh.listProjects()]);
+
+			expect(first.map((summary) => summary.id)).toEqual([created.project.id]);
+			expect(second.map((summary) => summary.id)).toEqual([created.project.id]);
+			await expect(fs.access(klipptPath)).resolves.toBeUndefined();
 		});
 	});
 
@@ -441,7 +457,7 @@ describe("DocumentService", () => {
 		it("leaves valid JSON when a long and a short save race", async () => {
 			for (let round = 0; round < 12; round++) {
 				const doc = await service.createProject(`Race ${round}`);
-				const file = path.join(tempDir, `${doc.project.id}.openscreen`);
+				const file = path.join(tempDir, `${doc.project.id}.klippt`);
 
 				// Unawaited on purpose: this is the exact shape of the real failure —
 				// two saves of one project in flight at once.

@@ -1,4 +1,4 @@
-// Hidden-window runner for `openscreen captions`: transcribes the project's
+// Hidden-window runner for `klippt captions`: transcribes the project's
 // audio with the on-device Whisper worker and writes the resulting caption
 // annotations back into the project. Mirrors VideoEditor.generateAutoCaptions.
 
@@ -36,7 +36,7 @@ async function runCaptions(request: CliCaptionsRequest): Promise<CliDoneResult> 
 		throw new Error(loaded.error ?? loaded.message ?? "Failed to load project file");
 	}
 	if (!validateProjectData(loaded.project)) {
-		throw new Error("Project file is not a valid .openscreen project");
+		throw new Error("Project file is not a valid Klippt project");
 	}
 	const project = loaded.project;
 	const media = resolveProjectMedia(project);

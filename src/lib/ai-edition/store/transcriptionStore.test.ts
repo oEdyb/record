@@ -336,6 +336,22 @@ describe("useTranscriptionStore", () => {
 		view.unmount();
 	});
 
+	it("does not probe or queue STT when automatic transcription is hidden from the product surface", async () => {
+		const isAvailable = vi.fn(async () => true);
+		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge
+		(window as any).electronAPI = { stt: { transcribe: vi.fn(), isAvailable } };
+		loadDocument(makeDoc(["asset_1"]));
+
+		const view = renderHook(() => useAutoTranscription(false));
+		await Promise.resolve();
+		await whenTranscriptionIdle();
+
+		expect(isAvailable).not.toHaveBeenCalled();
+		expect(transcribeMocks.transcribeAsset).not.toHaveBeenCalled();
+		expect(useTranscriptionStore.getState().jobs).toEqual({});
+		view.unmount();
+	});
+
 	it("starts the background pass after the native helper reports that it is available", async () => {
 		const isAvailable = vi.fn(async () => true);
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge

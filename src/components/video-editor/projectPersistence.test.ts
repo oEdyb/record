@@ -47,10 +47,14 @@ describe("projectPersistence media compatibility", () => {
 				annotationRegions: [],
 				aspectRatio: "16:9",
 				webcamLayoutPreset: "picture-in-picture",
+				webcamBlockOrder: "screen-first",
+				webcamBlockCameraShare: 50,
 				webcamMaskShape: "circle",
 				webcamMirrored: true,
 				webcamReactiveZoom: false,
 				webcamSizePreset: 25,
+				webcamZoom: 1,
+				webcamFocalPoint: { cx: 0.5, cy: 0.5 },
 				webcamPosition: null,
 				exportQuality: "good",
 				exportFormat: "mp4",
@@ -85,6 +89,27 @@ describe("projectPersistence media compatibility", () => {
 	it("preserves large webcam sizes and clamps them at 80 percent", () => {
 		expect(normalizeProjectEditor({ webcamSizePreset: 70 }).webcamSizePreset).toBe(70);
 		expect(normalizeProjectEditor({ webcamSizePreset: 90 }).webcamSizePreset).toBe(80);
+	});
+
+	it("preserves the stacked camera share and clamps it to a useful range", () => {
+		expect(normalizeProjectEditor({ webcamBlockCameraShare: 64 }).webcamBlockCameraShare).toBe(64);
+		expect(normalizeProjectEditor({ webcamBlockCameraShare: 5 }).webcamBlockCameraShare).toBe(20);
+		expect(normalizeProjectEditor({ webcamBlockCameraShare: 95 }).webcamBlockCameraShare).toBe(80);
+	});
+
+	it("preserves camera crop zoom and clamps it independently of webcam size", () => {
+		expect(normalizeProjectEditor({ webcamZoom: 1.75 }).webcamZoom).toBe(1.75);
+		expect(normalizeProjectEditor({ webcamZoom: 0.5 }).webcamZoom).toBe(1);
+		expect(normalizeProjectEditor({ webcamZoom: 5 }).webcamZoom).toBe(3);
+	});
+
+	it("preserves and clamps camera focal position", () => {
+		expect(
+			normalizeProjectEditor({ webcamFocalPoint: { cx: 0.2, cy: 0.8 } }).webcamFocalPoint,
+		).toEqual({ cx: 0.2, cy: 0.8 });
+		expect(
+			normalizeProjectEditor({ webcamFocalPoint: { cx: -0.5, cy: 1.5 } }).webcamFocalPoint,
+		).toEqual({ cx: 0, cy: 1 });
 	});
 
 	it("round-trips a large webcam size through the saved project", () => {
@@ -153,6 +178,40 @@ describe("projectPersistence media compatibility", () => {
 		expect(editor.zoomRegions[0].motionSpeed).toBe(1.5);
 		expect(editor.cameraFullscreenRegions[0].motionStyle).toBe("instant");
 		expect(editor.cameraFullscreenRegions[0].motionSpeed).toBe(0.75);
+	});
+
+	it("preserves the rendered zoom scale and automatic-direction ownership", () => {
+		const editor = normalizeProjectEditor({
+			zoomRegions: [
+				{
+					id: "zoom-owned",
+					startMs: 1_000,
+					endMs: 4_000,
+					depth: 6,
+					focus: { cx: 0.5, cy: 0.5 },
+					customScale: 1.52,
+					source: "auto",
+					directionGroupId: "screen-passage",
+				},
+			],
+			cameraFullscreenRegions: [
+				{
+					id: "camera-owned",
+					startMs: 5_000,
+					endMs: 8_000,
+					source: "auto",
+					directionGroupId: "camera-passage",
+				},
+			],
+		});
+
+		expect(editor.zoomRegions[0]).toMatchObject({
+			customScale: 1.52,
+			directionGroupId: "screen-passage",
+		});
+		expect(editor.cameraFullscreenRegions[0]).toMatchObject({
+			directionGroupId: "camera-passage",
+		});
 	});
 
 	it("normalizes blur region type and mosaic block size safely", () => {

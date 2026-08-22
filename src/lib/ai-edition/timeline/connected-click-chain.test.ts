@@ -245,15 +245,15 @@ describe("connected click chain planner", () => {
 		expect(sequence.croppedFrames).toBe(0);
 	});
 
-	it("caps automatic connected Zooms at 1.65x", () => {
+	it("caps automatic connected Zooms at the shared renderer limit", () => {
 		const plan = planConnectedClickChains({
 			cursor: clickPath(),
 			durationMs: 8_000,
-			policy: { ...DEFAULT_CONNECTED_CLICK_POLICY, requestedScale: 2.4 },
+			policy: { ...DEFAULT_CONNECTED_CLICK_POLICY, requestedScale: 8 },
 		});
 
 		expect(plan.sequences).not.toHaveLength(0);
-		expect(plan.sequences.every((sequence) => sequence.resolvedScale <= 1.65)).toBe(true);
+		expect(plan.sequences.every((sequence) => sequence.resolvedScale <= 5)).toBe(true);
 	});
 
 	it("never returns overlapping groups when a short target cannot fit a pan", () => {
@@ -630,6 +630,44 @@ describe("connected click chain planner", () => {
 		expect(plan.sequences).toHaveLength(1);
 		expect(plan.sequences[0].scoreWeight).toBe(2);
 		expect(plan.sequences[0].span.end).toBeGreaterThan(focusActivities.at(-1)!.timeMs);
+	});
+
+	it("does not let a later click chain flatten a long typing focus", () => {
+		const framingRect = {
+			x: 0.5407602339181287,
+			y: 0.58869918699187,
+			width: 0.45923976608187134,
+			height: 0.36,
+		};
+		const focusActivities = Array.from({ length: 41 }, (_, index) =>
+			sample(6_844 + index * 326, 0.7703801169590643, 0.76869918699187, "typing", {
+				directionActivityId: "typing-6844",
+				directionWeight: index === 0 ? 1 : 0,
+				framingRect,
+			}),
+		);
+		const plan = planConnectedClickChains({
+			cursor: [
+				sample(22_184, 0.4423359831871345, 0.5063410399728997, "click"),
+				sample(23_029, 0.47164656432748536, 0.5128973294941283, "click"),
+				sample(24_494, 0.12668357090643276, 0.4074638663053297, "mouseup"),
+				sample(25_430, 0.5060147112573099, 0.5208756775067751, "click"),
+			],
+			focusActivities,
+			durationMs: 27_000,
+		});
+
+		const typingSequence = plan.sequences.find(
+			(sequence) =>
+				sequence.intentSpan.start <= focusActivities[0].timeMs &&
+				sequence.intentSpan.end >= focusActivities.at(-1)!.timeMs,
+		);
+		expect(typingSequence).toBeDefined();
+		expect(typingSequence!.resolvedScale).toBeGreaterThanOrEqual(
+			DEFAULT_CONNECTED_CLICK_POLICY.passageMinimumStableScale,
+		);
+		expect(typingSequence!.zooms.at(-1)!.focus.cx).toBeGreaterThan(0.65);
+		expect(typingSequence!.zooms.at(-1)!.focus.cy).toBeGreaterThan(0.65);
 	});
 
 	it("keeps the click-only duration limit as an internal detector safeguard", () => {

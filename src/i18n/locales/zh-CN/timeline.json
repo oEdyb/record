@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "所有缩放的自动对焦已开启 — 点击可将全部切换为手动",
 		"autoFocusAllOff": "为所有缩放开启自动对焦（摄像头跟随光标）",
 		"addTrim": "添加剪辑 (T)",
+		"splitClip": "在播放头处分割片段",
 		"addAnnotation": "添加标注 (A)",
 		"addSpeed": "添加速度 (S)",
 		"addCameraFullscreen": "添加全屏摄像头 (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "按 C 添加一个全屏摄像头片段"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "平移",
 		"zoom": "缩放",
 		"trim": "剪辑",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "自动增强",
 		"automaticZooms": "自动缩放",
+		"automaticDirection": "自动导向",
 		"automaticZoomsHint": "基于录制的光标移动",
 		"smartZoomsAndCuts": "智能剪切",
 		"smartZoomsAndCutsHint": "使用 AI",

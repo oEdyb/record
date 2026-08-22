@@ -266,7 +266,7 @@ export interface CompositorExportGifResult {
 }
 
 // ---- AI Edition domain (Phase 1+) -----------------------------------------
-// v3/v4 AxcutDocument projects live under userData/projects/<id>.openscreen
+// v3/v4 AxcutDocument projects live under userData/projects/<id>.klippt
 // (older builds used <id>.axcut, migrated on access). Project ids are
 // uuid-prefixed strings (e.g. "proj_<uuid>"). Asset ids likewise.
 

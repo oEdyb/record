@@ -328,6 +328,7 @@ interface Window {
 		) => Promise<{
 			success: boolean;
 			session?: import("../src/lib/recordingSession").RecordingSession;
+			error?: string;
 		}>;
 		getCurrentVideoPath: () => Promise<{ success: boolean; path?: string }>;
 		getCurrentRecordingSession: () => Promise<{
@@ -360,7 +361,11 @@ interface Window {
 			filePath: string,
 			durationSec: number,
 			track?: import("./media/audioPeaks").AudioTrackSelection,
+			profile?: import("./media/audioPeaks").AudioPeakProfile,
 		) => Promise<import("./media/audioPeaks").AudioPeaksResult>;
+		getSpeechActivity: (
+			filePath: string,
+		) => Promise<import("./media/speechActivity").SpeechActivityIpcResult>;
 		readFileChunk: (
 			filePath: string,
 			offset: number,

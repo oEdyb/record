@@ -1,5 +1,4 @@
 import {
-	ChevronDown,
 	Clock,
 	Crosshair,
 	Loader2,
@@ -13,7 +12,6 @@ import {
 	ZoomIn,
 } from "lucide-react";
 import {
-	type CSSProperties,
 	memo,
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
@@ -25,11 +23,9 @@ import {
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { fromFileUrl } from "@/components/video-editor/projectPersistence";
-import { ZOOM_DEPTH_SCALES } from "@/components/video-editor/types";
+import { effectiveZoomScale } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
-import { useAudioPeaks } from "@/hooks/useAudioPeaks";
 import { createId } from "@/lib/ai-edition/document/ids";
-import { collectNativeFormats } from "@/lib/ai-edition/document/outputFormat";
 import { resolveClipInsertionBoundary } from "@/lib/ai-edition/document/timeline";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
@@ -38,7 +34,10 @@ import { useTimelineTranscriptGate } from "@/lib/ai-edition/store/transcriptionS
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
-import { buildAutomaticDirectionPlan } from "@/lib/ai-edition/timeline/automatic-direction";
+import {
+	buildAutomaticDirectionPlan,
+	materializeAutomaticDirectionEffect,
+} from "@/lib/ai-edition/timeline/automatic-direction";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
 	newRegionDurationSec,
@@ -52,9 +51,10 @@ import {
 	ventilateTimelineSpanToTrims,
 } from "@/lib/ai-edition/timeline/trim-mapping";
 import { nativeBridgeClient } from "@/native/client";
-import { ASPECT_RATIO_PRESETS, getAspectRatioLabel } from "@/utils/aspectRatioUtils";
+import type { SelectablePauseSuggestion } from "../PausesPane";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
+import { ClipWaveform } from "./ClipWaveform";
 import styles from "./EditorShellV4.module.css";
 
 // The AI option's prompt — sent straight to the chat agent via the prompt-bus.
@@ -290,92 +290,6 @@ const InsertionBoundaryMarker = memo(function InsertionBoundaryMarker({
 	);
 });
 
-// Waveform preview bars inside a timeline clip. Derived from peaks data;
-// asset only decode once. Renders nothing while decoding or if the source has
-// no audio track, so the clip pill just shows its label until peaks arrive.
-const ClipWaveform = memo(function ClipWaveform({
-	videoUrl,
-	assetDurationSec,
-	sourceStartSec,
-	sourceEndSec,
-}: {
-	videoUrl: string | undefined;
-	assetDurationSec: number | undefined;
-	sourceStartSec: number;
-	sourceEndSec: number;
-}) {
-	// The duration is what tells `useAudioPeaks` whether this recording is small
-	// enough to decode whole — the file's byte size does not, on compressed video.
-	const peaks = useAudioPeaks(videoUrl, assetDurationSec);
-	const bars = useMemo(() => {
-		if (!peaks || peaks.length === 0 || !assetDurationSec) return null;
-		const totalBlocks = Math.floor(peaks.length / 2);
-		if (totalBlocks === 0) return null;
-		const blocksPerSec = totalBlocks / assetDurationSec;
-		const startBlock = Math.max(0, Math.floor(sourceStartSec * blocksPerSec));
-		const endBlock = Math.min(totalBlocks, Math.ceil(sourceEndSec * blocksPerSec));
-		const rangeBlocks = Math.max(1, endBlock - startBlock);
-		// One bar per ~120ms of clip duration — dense enough to read as a
-		// continuous waveform — but capped so a long recording doesn't spawn
-		// thousands of DOM nodes in a single clip (a clip is at most ~the timeline
-		// width on screen, so beyond a few hundred bars they're sub-pixel anyway).
-		const barCount = Math.min(400, Math.max(20, Math.round((sourceEndSec - sourceStartSec) * 8)));
-		const result: number[] = [];
-		for (let i = 0; i < barCount; i++) {
-			const blockStart = startBlock + Math.floor((i / barCount) * rangeBlocks);
-			const blockEnd = Math.max(
-				blockStart + 1,
-				startBlock + Math.floor(((i + 1) / barCount) * rangeBlocks),
-			);
-			let amp = 0;
-			for (let b = blockStart; b < blockEnd && b < totalBlocks; b++) {
-				const lo = Math.abs(peaks[b * 2] ?? 0);
-				const hi = Math.abs(peaks[b * 2 + 1] ?? 0);
-				amp = Math.max(amp, lo, hi);
-			}
-			result.push(amp);
-		}
-		return result;
-	}, [peaks, assetDurationSec, sourceStartSec, sourceEndSec]);
-
-	if (!bars) return null;
-	return (
-		<div aria-hidden className={styles.tlWave}>
-			{bars.map((h, bi) => (
-				<span
-					key={bi}
-					style={{
-						height: `${Math.max(8, Math.round(h * 100))}%`,
-						opacity: (0.5 + h * 0.5).toFixed(2),
-					}}
-				/>
-			))}
-		</div>
-	);
-});
-
-/** Right-aligned hint on a ratio row. Marks the shapes that are native to the timeline's own
- *  clips, so "Original" annotates a concrete ratio the user can name instead of being a separate
- *  menu entry that resolves to a different shape depending on which clips are loaded. */
-const nativeBadgeStyle: CSSProperties = {
-	marginLeft: "auto",
-	fontSize: 10.5,
-	fontWeight: 500,
-	color: "var(--muted)",
-	whiteSpace: "nowrap",
-};
-
-/** Header for native shapes that match no preset (an ultrawide, an odd capture size) and so
- *  need a row of their own. */
-const aspectSectionLabelStyle: CSSProperties = {
-	padding: "8px 10px 4px",
-	fontSize: 10,
-	fontWeight: 600,
-	letterSpacing: "0.04em",
-	textTransform: "uppercase",
-	color: "var(--muted)",
-};
-
 interface LanePill {
 	id: string;
 	kind: "annotation" | "speed" | "trim" | "zoom" | "cameraFullscreen";
@@ -392,6 +306,8 @@ export function V4Timeline({
 	variant = "edit",
 	onDropAsset,
 	videoSources = [],
+	pauseSuggestions = [],
+	onPauseSuggestionToggle,
 	playing,
 	onTogglePlay,
 	onPrevClip,
@@ -403,6 +319,8 @@ export function V4Timeline({
 	variant?: "edit" | "media";
 	onDropAsset?: (assetId: string) => void;
 	videoSources?: VideoSource[];
+	pauseSuggestions?: SelectablePauseSuggestion[];
+	onPauseSuggestionToggle?: (id: string) => void;
 	playing: boolean;
 	onTogglePlay: () => void;
 	onPrevClip: () => void;
@@ -456,21 +374,6 @@ export function V4Timeline({
 		end: number;
 	} | null>(null);
 	const { settings, set: setSettings } = useEditorSettings();
-	const document = useProjectStore((s) => s.document);
-	// The distinct native shapes of the clips actually on the timeline. "Original" used to be a
-	// single menu entry that silently resolved to whichever clip had the most pixels — so adding
-	// a 4K portrait rush flipped the whole project to portrait with no UI feedback. Enumerating
-	// them instead means the user picks a shape explicitly, and what gets stored is a concrete
-	// "W:H" token that no longer moves when the clip list changes.
-	const nativeFormats = useMemo(() => (document ? collectNativeFormats(document) : []), [document]);
-	// The ORIGINAL section lists every distinct shape actually on the timeline (deduplicated by
-	// ratio), so the user sees what their footage is — including shapes that also happen to match a
-	// preset. A preset row and its matching Original row select the same token; the preset section
-	// stays a pure list of fixed choices, and "which shapes are my clips" lives solely in ORIGINAL
-	// (no more per-preset badge, which split that one answer across two places).
-	const timelineIsMixed = nativeFormats.length > 1;
-
-	const [aspectMenuOpen, setAspectMenuOpen] = useState(false);
 	const [autoEnhanceOpen, setAutoEnhanceOpen] = useState(false);
 	const [autoBusy, setAutoBusy] = useState(false);
 	// The AI cut pass reads the transcript, and the transcript is produced in the
@@ -539,19 +442,17 @@ export function V4Timeline({
 		label: `${(p.member as { speed?: number }).speed ?? 1.5}×`,
 		sourceIds: p.ids,
 	}));
-	const cameraFullscreenPills: LanePill[] = coalesceRegionsForRuler(tl.cameraFullscreenRegions).map(
-		(p) => ({
-			id: p.ids[0],
-			kind: "cameraFullscreen",
-			start: p.start,
-			end: p.end,
-			label:
-				(p.member as { mode?: string }).mode === "emphasis"
-					? t("labels.cameraEmphasis")
-					: t("labels.cameraFullscreen"),
-			sourceIds: p.ids,
-		}),
-	);
+	const cameraPills: LanePill[] = coalesceRegionsForRuler(tl.cameraFullscreenRegions).map((p) => ({
+		id: p.ids[0],
+		kind: "cameraFullscreen",
+		start: p.start,
+		end: p.end,
+		label:
+			(p.member as { mode?: string }).mode === "emphasis"
+				? t("labels.cameraEmphasis")
+				: t("labels.cameraFullscreen"),
+		sourceIds: p.ids,
+	}));
 	const zoomPills: LanePill[] = coalesceRegionsForRuler(tl.zoomRegions).map((p) => ({
 		id: p.ids[0],
 		kind: "zoom",
@@ -560,7 +461,7 @@ export function V4Timeline({
 		// Matches RightPanelStack's effectiveZoomScale: a custom scale (from the
 		// slider) overrides the depth preset; otherwise show the depth's actual
 		// preset value, not a fabricated linear approximation of it.
-		label: `${(p.member.customScale ?? ZOOM_DEPTH_SCALES[p.member.depth]).toFixed(2)}×`,
+		label: `${effectiveZoomScale(p.member).toFixed(2)}×`,
 		sourceIds: p.ids,
 	}));
 	// trims: content-free (no per-instance text/settings), so touching rows —
@@ -1087,9 +988,10 @@ export function V4Timeline({
 				recordings,
 				phases: { screen: true, camera: false },
 			});
-			const suggestions = plan.effects.flatMap((effect) =>
-				effect.kind === "screen-zoom" ? [effect.suggestion] : [],
-			);
+			const suggestions = plan.effects.flatMap((effect) => {
+				const materialized = materializeAutomaticDirectionEffect(plan, effect);
+				return materialized.kind === "screen-zoom" ? [materialized.suggestion] : [];
+			});
 			if (suggestions.length === 0) {
 				toast.info(t("toolbar.noAutoZoomMoments"), {
 					description: t("toolbar.noAutoZoomMomentsDescription"),
@@ -1187,6 +1089,15 @@ export function V4Timeline({
 				}}
 				onPointerDown={seg.interactive ? (e) => startPillDrag(e, p, "move") : undefined}
 				title={p.label}
+				onKeyDown={
+					seg.interactive
+						? (event) => {
+								if (event.key !== "Enter" && event.key !== " ") return;
+								event.preventDefault();
+								tl.selectRegion(p.kind, p.id, { additive: event.shiftKey });
+							}
+						: undefined
+				}
 			>
 				{seg.interactive ? (
 					<span
@@ -1216,7 +1127,7 @@ export function V4Timeline({
 		);
 	};
 
-	const renderPills = (pills: LanePill[], emptyLabel: string) => {
+	const renderPills = (pills: LanePill[]) => {
 		const effectivePills = pills.map((p) => {
 			if (activePillDrag && activePillDrag.id === p.id) {
 				return { ...p, start: activePillDrag.start, end: activePillDrag.end };
@@ -1225,17 +1136,6 @@ export function V4Timeline({
 		});
 		return (
 			<>
-				{effectivePills.length === 0 ? (
-					// The lane is as wide as the ZOOMED canvas, so centring the hint on it
-					// would slide it off-screen as soon as the timeline is zoomed in. Span
-					// the visible window instead, and the hint stays centred in view.
-					<span
-						className={styles.laneEmpty}
-						style={{ left: `${nav.start * 100}%`, width: `${navSpan * 100}%` }}
-					>
-						{emptyLabel}
-					</span>
-				) : null}
 				{effectivePills.flatMap((p) => {
 					// Eager split preview: the instant a clip is grabbed, a pill that
 					// straddles the dragged clip's junction shows the same per-clip
@@ -1383,6 +1283,15 @@ export function V4Timeline({
 						<button
 							type="button"
 							className={styles.tlToolBtn}
+							title={t("buttons.splitClip")}
+							aria-label={t("buttons.splitClip")}
+							onClick={() => void tl.splitClipAtPlayhead()}
+						>
+							<Scissors size={15} />
+						</button>
+						<button
+							type="button"
+							className={styles.tlToolBtn}
 							title={t("buttons.addZoom")}
 							aria-label={t("buttons.addZoom")}
 							onClick={() => void tl.addZoom(newRegionDurationSec())}
@@ -1412,71 +1321,6 @@ export function V4Timeline({
 						>
 							<Maximize2 size={15} />
 						</button>
-						<span className={styles.tlToolSep} aria-hidden />
-						<Popover open={aspectMenuOpen} onOpenChange={setAspectMenuOpen}>
-							<PopoverTrigger asChild>
-								<button
-									type="button"
-									className={styles.tlAspect}
-									title={t("toolbar.aspectRatio")}
-									aria-label={t("toolbar.aspectRatio")}
-								>
-									{getAspectRatioLabel(settings.aspectRatio)}
-									<ChevronDown size={10} />
-								</button>
-							</PopoverTrigger>
-							<PopoverContent
-								align="end"
-								sideOffset={6}
-								animated={false}
-								className="w-auto border-0 bg-transparent p-0 shadow-none"
-							>
-								<div
-									className={styles.recMenu}
-									style={{ position: "relative", bottom: "auto", width: 210 }}
-								>
-									{ASPECT_RATIO_PRESETS.map((ratio) => (
-										<button
-											type="button"
-											key={ratio}
-											className={`${styles.recMenuRow}${
-												ratio === settings.aspectRatio ? ` ${styles.active}` : ""
-											}`}
-											onClick={() => {
-												void setSettings({ aspectRatio: ratio });
-												setAspectMenuOpen(false);
-											}}
-										>
-											{ratio}
-										</button>
-									))}
-									{nativeFormats.length > 0 ? (
-										<>
-											<div style={aspectSectionLabelStyle}>{t("toolbar.original")}</div>
-											{nativeFormats.map((format) => (
-												<button
-													type="button"
-													key={format.token}
-													className={`${styles.recMenuRow}${
-														format.token === settings.aspectRatio ? ` ${styles.active}` : ""
-													}`}
-													onClick={() => {
-														void setSettings({ aspectRatio: format.token });
-														setAspectMenuOpen(false);
-													}}
-												>
-													{format.token}
-													<span style={nativeBadgeStyle}>
-														{`${format.width}×${format.height}`}
-														{timelineIsMixed ? ` · ${format.clipCount}` : ""}
-													</span>
-												</button>
-											))}
-										</>
-									) : null}
-								</div>
-							</PopoverContent>
-						</Popover>
 					</div>
 				) : (
 					// Media is an ARRANGING surface: add, remove, reorder. Nothing here
@@ -1557,20 +1401,21 @@ export function V4Timeline({
 
 						{showLanes ? (
 							<>
-								{/* An empty lane advertises the shortcut that fills it ("Press A to add
-								    annotation") rather than restating that it is empty — the same hint
-								    strings the pre-v4 timeline used, so the keys stay translated. */}
-								<div className={styles.tlLane}>
-									{renderPills(annPills, t("hints.pressAnnotation"))}
-								</div>
-								<div className={styles.tlLane}>
-									{renderPills(speedPills, t("hints.pressSpeed"))}
-								</div>
-								<div className={styles.tlLane}>{renderPills(trimPills, t("hints.pressTrim"))}</div>
-								<div className={styles.tlLane}>{renderPills(zoomPills, t("hints.pressZoom"))}</div>
-								<div className={styles.tlLane}>
-									{renderPills(cameraFullscreenPills, t("hints.pressCameraFullscreen"))}
-								</div>
+								{annPills.length > 0 ? (
+									<div className={styles.tlLane}>{renderPills(annPills)}</div>
+								) : null}
+								{speedPills.length > 0 ? (
+									<div className={styles.tlLane}>{renderPills(speedPills)}</div>
+								) : null}
+								{trimPills.length > 0 ? (
+									<div className={styles.tlLane}>{renderPills(trimPills)}</div>
+								) : null}
+								{cameraPills.length > 0 ? (
+									<div className={styles.tlLane}>{renderPills(cameraPills)}</div>
+								) : null}
+								{zoomPills.length > 0 ? (
+									<div className={styles.tlLane}>{renderPills(zoomPills)}</div>
+								) : null}
 							</>
 						) : null}
 
@@ -1591,6 +1436,29 @@ export function V4Timeline({
 							}}
 						>
 							{showLanes ? <InsertionBoundaryMarker clips={clips} totalSec={total} /> : null}
+							{showLanes && pauseSuggestions.length > 0 ? (
+								<div className={styles.pauseCandidateOverlay}>
+									{pauseSuggestions.map((suggestion) => (
+										<button
+											key={suggestion.id}
+											type="button"
+											className={`${styles.pauseCandidatePill}${suggestion.selected ? ` ${styles.pauseCandidateSelected}` : ""}`}
+											style={{
+												left: `${pctOf(suggestion.timelineStartSec)}%`,
+												width: `${Math.max(0, pctOf(suggestion.timelineEndSec - suggestion.timelineStartSec))}%`,
+											}}
+											title={t("labels.pauseSuggestion", {
+												duration: formatSec(suggestion.savedSec),
+											})}
+											onPointerDown={(event) => event.stopPropagation()}
+											onClick={(event) => {
+												event.stopPropagation();
+												onPauseSuggestionToggle?.(suggestion.id);
+											}}
+										/>
+									))}
+								</div>
+							) : null}
 							{clips.map((c, i) => {
 								const dur = c.timelineEndSec - c.timelineStartSec;
 								const asset = tl.assets.find((a) => a.id === c.assetId);

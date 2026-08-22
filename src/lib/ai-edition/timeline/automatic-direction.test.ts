@@ -6,6 +6,7 @@ import {
 	DEFAULT_AUTOMATIC_DIRECTION_POLICY,
 	regenerateAutomaticDirection,
 	removeAutomaticDirection,
+	resolveAutomaticDirectionPlanningPolicy,
 	resolveAutomaticDirectionPolicy,
 } from "./automatic-direction";
 
@@ -75,7 +76,7 @@ describe("automatic direction plan", () => {
 		expect(DEFAULT_AUTOMATIC_DIRECTION_POLICY.screen.defaultZoomDurationMs).toBe(3_000);
 	});
 
-	it("caps every automatic screen scale override at 1.65x", () => {
+	it("caps every automatic screen scale override at the shared 5x renderer limit", () => {
 		const tuned = resolveAutomaticDirectionPolicy({
 			screen: {
 				clickMinimumScale: 2.4,
@@ -89,14 +90,67 @@ describe("automatic direction plan", () => {
 			connectedClicks: { requestedScale: 2.4 },
 		});
 
-		expect(tuned.screen.clickMinimumScale).toBe(1.65);
+		expect(tuned.screen.clickMinimumScale).toBe(2.4);
+		expect(tuned.screen.clickMaximumScale).toBe(2.4);
+		expect(tuned.screen.clickEnvelopeFallbackScale).toBe(2.4);
+		expect(tuned.screen.clickEnvelopeScaleSteps[0].scale).toBe(2.4);
+		expect(tuned.screen.traceShortScale).toBe(2.4);
+		expect(tuned.screen.traceMediumScale).toBe(2.4);
+		expect(tuned.screen.traceLongScale).toBe(2.4);
+		expect(tuned.connectedClicks.requestedScale).toBe(2.4);
+		expect(resolveAutomaticDirectionPolicy({ maximumScreenScale: 9 }).maximumScreenScale).toBe(5);
+	});
+
+	it("keeps deeper detector values behind a lower project Max Zoom", () => {
+		const tuned = resolveAutomaticDirectionPolicy({
+			maximumScreenScale: 1.35,
+			screen: { clickMaximumScale: 1.65 },
+			connectedClicks: { requestedScale: 1.65 },
+		});
+
+		expect(tuned.maximumScreenScale).toBe(1.35);
 		expect(tuned.screen.clickMaximumScale).toBe(1.65);
-		expect(tuned.screen.clickEnvelopeFallbackScale).toBe(1.65);
-		expect(tuned.screen.clickEnvelopeScaleSteps[0].scale).toBe(1.65);
-		expect(tuned.screen.traceShortScale).toBe(1.65);
-		expect(tuned.screen.traceMediumScale).toBe(1.65);
-		expect(tuned.screen.traceLongScale).toBe(1.65);
 		expect(tuned.connectedClicks.requestedScale).toBe(1.65);
+	});
+
+	it("raises requested depth without raising the planner's safe minimum", () => {
+		const deeper = resolveAutomaticDirectionPlanningPolicy(
+			resolveAutomaticDirectionPolicy({ maximumScreenScale: 3 }),
+		);
+		expect(deeper.connectedClicks.requestedScale).toBe(3);
+		expect(deeper.connectedClicks.passageMinimumStableScale).toBe(1.35);
+		expect(deeper.screen.clickMinimumScale).toBe(1.35);
+
+		const shallower = resolveAutomaticDirectionPlanningPolicy(
+			resolveAutomaticDirectionPolicy({ maximumScreenScale: 1.1 }),
+		);
+		expect(shallower.connectedClicks.requestedScale).toBe(1.1);
+		expect(shallower.connectedClicks.passageMinimumStableScale).toBe(1.1);
+		expect(shallower.screen.clickMinimumScale).toBe(1.1);
+	});
+
+	it("expands generated screen depth above 1.65x when project Max Zoom allows it", () => {
+		const plan = buildAutomaticDirectionPlan({
+			id: "limited-zoom",
+			document: recordingDocument(),
+			phases: { screen: true, camera: false },
+			policy: resolveAutomaticDirectionPolicy({ maximumScreenScale: 3 }),
+			recordings: [
+				{
+					assetId: "asset-1",
+					cursorTelemetry: [
+						{ timeMs: 0, cx: 0.5, cy: 0.5, interactionType: "move" },
+						{ timeMs: 4_000, cx: 0.8, cy: 0.5, interactionType: "click" },
+						{ timeMs: 8_000, cx: 0.8, cy: 0.5, interactionType: "move" },
+					],
+				},
+			],
+		});
+
+		const screen = plan.effects.filter((effect) => effect.kind === "screen-zoom");
+		expect(screen.length).toBeGreaterThan(0);
+		expect(screen.every((effect) => effect.suggestion.customScale <= 3)).toBe(true);
+		expect(screen.some((effect) => effect.suggestion.customScale > 1.65)).toBe(true);
 	});
 
 	it("plans screen and camera attention together as ordinary editable regions", () => {
@@ -124,11 +178,18 @@ describe("automatic direction plan", () => {
 
 		const directed = applyAutomaticDirectionPlan(document, plan);
 		expect(directed.zoomRanges).toHaveLength(1);
+		expect(directed.zoomRanges[0].directionGroupId).toMatch(
+			/^auto-direction:recording-1:screen-zoom:/,
+		);
 		const cameraRegions = (
 			directed.legacyEditor as { cameraFullscreenRegions?: Array<Record<string, unknown>> }
 		).cameraFullscreenRegions;
 		expect(cameraRegions).toHaveLength(1);
-		expect(cameraRegions?.[0]).toMatchObject({ mode: "emphasis", source: "auto" });
+		expect(cameraRegions?.[0]).toMatchObject({
+			mode: "emphasis",
+			source: "auto",
+			directionGroupId: expect.stringMatching(/^auto-direction:recording-1:camera-emphasis:/),
+		});
 
 		// A retry applies the same stable plan without duplicating its regions.
 		const retried = applyAutomaticDirectionPlan(directed, plan);
@@ -137,6 +198,45 @@ describe("automatic direction plan", () => {
 			(retried.legacyEditor as { cameraFullscreenRegions?: Array<Record<string, unknown>> })
 				.cameraFullscreenRegions,
 		).toHaveLength(1);
+	});
+
+	it("persists every target in one connected screen passage under the same group", () => {
+		const suggestion = {
+			focusMode: "manual" as const,
+			customScale: 1.65,
+			source: "auto" as const,
+			directionGroupId: "connected-screen-sequence",
+		};
+		const plan = {
+			schemaVersion: 1 as const,
+			id: "connected-plan",
+			effects: [
+				{
+					id: "screen-0",
+					kind: "screen-zoom" as const,
+					suggestion: {
+						...suggestion,
+						span: { start: 1_000, end: 3_000 },
+						focus: { cx: 0.25, cy: 0.5 },
+					},
+				},
+				{
+					id: "screen-1",
+					kind: "screen-zoom" as const,
+					suggestion: {
+						...suggestion,
+						span: { start: 3_500, end: 5_500 },
+						focus: { cx: 0.75, cy: 0.5 },
+					},
+				},
+			],
+		};
+
+		const directed = applyAutomaticDirectionPlan(recordingDocument(), plan);
+		expect(directed.zoomRanges).toHaveLength(2);
+		expect(new Set(directed.zoomRanges.map((region) => region.directionGroupId))).toEqual(
+			new Set(["auto-direction:connected-plan:screen-zoom:connected-screen-sequence"]),
+		);
 	});
 
 	it("reserves a quiet speech moment before later screen activity fills the shared budget", () => {
@@ -230,8 +330,22 @@ describe("automatic direction plan", () => {
 		const edited = {
 			...document,
 			zoomRanges: [
-				{ id: "auto-zoom", startMs: 1_000, endMs: 4_000, depth: 3, source: "auto" },
-				{ id: "manual-zoom", startMs: 8_000, endMs: 11_000, depth: 2, source: "manual" },
+				{
+					id: "auto-zoom",
+					startMs: 1_000,
+					endMs: 4_000,
+					depth: 3,
+					focus: { cx: 0.5, cy: 0.5 },
+					source: "auto",
+				},
+				{
+					id: "manual-zoom",
+					startMs: 8_000,
+					endMs: 11_000,
+					depth: 2,
+					focus: { cx: 0.5, cy: 0.5 },
+					source: "manual",
+				},
 			],
 			legacyEditor: {
 				padding: 18,

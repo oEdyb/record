@@ -1,10 +1,15 @@
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import {
+	type AutomaticDirectionPolicy,
 	regenerateAutomaticDirection as buildRegeneratedDirection,
 	DEFAULT_AUTOMATIC_DIRECTION_POLICY,
 	type RecordedDirectionObservation,
 } from "@/lib/ai-edition/timeline/automatic-direction";
+import {
+	readAutomaticDirectionSettings,
+	writeAutomaticDirectionSettings,
+} from "@/lib/ai-edition/timeline/automatic-direction-settings";
 import { buildMicrophoneActivitySpans } from "@/lib/ai-edition/timeline/microphone-activity";
 import { nativeBridgeClient } from "@/native/client";
 
@@ -16,6 +21,19 @@ type RecordedSource = {
 	durationMs: number;
 	hasCamera: boolean;
 };
+
+type RawRecordedDirectionObservation = Omit<RecordedDirectionObservation, "microphoneActivity"> & {
+	durationMs: number;
+	microphonePeaks?: Float32Array;
+};
+
+export interface RegenerateAutomaticDirectionOptions {
+	policy?: AutomaticDirectionPolicy;
+	presetId?: string | null;
+	/** The first live tuning change creates history. Later changes in the same session do not. */
+	createHistorySnapshot?: boolean;
+	refreshObservations?: boolean;
+}
 
 export type RegeneratedDirectionResult = {
 	screenZooms: number;
@@ -78,10 +96,35 @@ export function canRegenerateAutomaticDirection(document: AxcutDocument | null):
 
 async function readObservations(
 	sources: RecordedSource[],
+	policy: AutomaticDirectionPolicy,
 ): Promise<RecordedDirectionObservation[]> {
+	const raw = await readRawObservations(sources);
+	return raw.map((observation) => ({
+		assetId: observation.assetId,
+		cursorTelemetry: observation.cursorTelemetry,
+		keyboardActivity: observation.keyboardActivity,
+		microphoneActivity: observation.microphonePeaks
+			? buildMicrophoneActivitySpans(
+					observation.microphonePeaks,
+					observation.durationMs,
+					policy.microphoneActivity,
+				)
+			: [],
+	}));
+}
+
+const observationCache = new Map<string, Promise<RawRecordedDirectionObservation[]>>();
+
+export function clearAutomaticDirectionObservationCache(): void {
+	observationCache.clear();
+}
+
+async function loadRawObservations(
+	sources: RecordedSource[],
+): Promise<RawRecordedDirectionObservation[]> {
 	return mapWithConcurrency(sources, async (source) => {
 		const cursor = await nativeBridgeClient.cursor.getRecordingData(source.path);
-		let microphoneActivity: RecordedDirectionObservation["microphoneActivity"] = [];
+		let microphonePeaks: Float32Array | undefined;
 		if (source.hasCamera) {
 			const audioApi = window.electronAPI?.getAudioPeaks;
 			if (!audioApi) throw new Error("Microphone analysis is unavailable in this build");
@@ -89,19 +132,35 @@ async function readObservations(
 			if (!microphone.success || !microphone.peaks) {
 				throw new Error("The isolated microphone track could not be read");
 			}
-			microphoneActivity = buildMicrophoneActivitySpans(
-				microphone.peaks,
-				source.durationMs,
-				DEFAULT_AUTOMATIC_DIRECTION_POLICY.microphoneActivity,
-			);
+			microphonePeaks = microphone.peaks;
 		}
 		return {
 			assetId: source.assetId,
+			durationMs: source.durationMs,
 			cursorTelemetry: cursor.samples,
 			keyboardActivity: cursor.keyboardActivity ?? [],
-			microphoneActivity,
+			microphonePeaks,
 		};
 	});
+}
+
+function readRawObservations(
+	sources: RecordedSource[],
+): Promise<RawRecordedDirectionObservation[]> {
+	const key = sourceFingerprint(sources);
+	const cached = observationCache.get(key);
+	if (cached) return cached;
+	const loading = loadRawObservations(sources).catch((error) => {
+		observationCache.delete(key);
+		throw error;
+	});
+	observationCache.set(key, loading);
+	while (observationCache.size > 4) {
+		const oldest = observationCache.keys().next().value;
+		if (typeof oldest !== "string") break;
+		observationCache.delete(oldest);
+	}
+	return loading;
 }
 
 /**
@@ -111,13 +170,18 @@ async function readObservations(
  */
 export async function regenerateProjectAutomaticDirection(
 	projectId: string,
+	options: RegenerateAutomaticDirectionOptions = {},
 ): Promise<RegeneratedDirectionResult> {
 	const initial = useProjectStore.getState().document;
 	if (!initial || initial.project.id !== projectId) throw new Error("No recording project is open");
 	const sources = recordedSources(initial);
 	if (sources.length === 0) throw new Error("This project has no recorded direction data");
 	const analyzedSourceFingerprint = sourceFingerprint(sources);
-	const observations = await readObservations(sources);
+	if (options.refreshObservations) clearAutomaticDirectionObservationCache();
+	const storedSettings = readAutomaticDirectionSettings(initial);
+	const policy = options.policy ?? storedSettings.policy ?? DEFAULT_AUTOMATIC_DIRECTION_POLICY;
+	const presetId = options.presetId === undefined ? storedSettings.presetId : options.presetId;
+	const observations = await readObservations(sources, policy);
 	if (
 		observations.every(
 			(observation) =>
@@ -137,12 +201,13 @@ export async function regenerateProjectAutomaticDirection(
 			if (sourceFingerprint(recordedSources(document)) !== analyzedSourceFingerprint) {
 				throw new Error("The project recordings changed during analysis. Regenerate again");
 			}
-			const next = buildRegeneratedDirection({
+			const directed = buildRegeneratedDirection({
 				id: planId,
 				document,
 				recordings: observations,
-				policy: DEFAULT_AUTOMATIC_DIRECTION_POLICY,
+				policy,
 			});
+			const next = writeAutomaticDirectionSettings(directed, { policy, presetId });
 			counts = {
 				screenZooms: next.zoomRanges.filter((region) => region.source === "auto").length,
 				cameraEmphasis: (
@@ -154,7 +219,9 @@ export async function regenerateProjectAutomaticDirection(
 			};
 			return next;
 		},
-		{ createHistorySnapshot: (base) => structuredClone(base) },
+		options.createHistorySnapshot === false
+			? undefined
+			: { createHistorySnapshot: (base) => structuredClone(base) },
 	);
 	if (result === "project-changed") throw new Error("The open project changed during analysis");
 	if (result === "conflict") throw new Error("The project kept changing during regeneration");

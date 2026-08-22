@@ -4,7 +4,13 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { audioTrackMapArgs, ffmpegCandidates, peakBlockCount, resolveFfmpeg } from "./audioPeaks";
+import {
+	audioTrackMapArgs,
+	ffmpegCandidates,
+	isAudioPeaksCacheCompatible,
+	peakBlockCount,
+	resolveFfmpeg,
+} from "./audioPeaks";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 
@@ -14,14 +20,28 @@ describe("peakBlockCount", () => {
 		// not change shape depending on which pipeline drew it.
 		expect(peakBlockCount(10)).toBe(2000);
 		expect(peakBlockCount(60)).toBe(12000);
-		// Capped, so a 30-minute recording costs the same DOM/array budget as a
-		// 2-minute one.
-		expect(peakBlockCount(1951)).toBe(24000);
-		expect(peakBlockCount(99999)).toBe(24000);
+		// Creator-length recordings retain 5 ms source detail. The bounded cap is
+		// reached only after one hour, not after the old two-minute threshold.
+		expect(peakBlockCount(1951)).toBe(390200);
+		expect(peakBlockCount(3_600)).toBe(720000);
+		expect(peakBlockCount(99999)).toBe(720000);
 	});
 
 	it("never returns zero blocks for a sliver of audio", () => {
 		expect(peakBlockCount(0.001)).toBe(1);
+	});
+
+	it("keeps 20 ms cut-analysis frames after the visible waveform cap", () => {
+		expect(peakBlockCount(1_800, "waveform")).toBe(360_000);
+		expect(peakBlockCount(1_800, "analysis")).toBe(90_000);
+	});
+
+	it("refreshes a long waveform cache made with the old low-resolution cap", () => {
+		const oldCacheBytes = 24_000 * 2 * Float32Array.BYTES_PER_ELEMENT;
+		const currentCacheBytes = peakBlockCount(1_800) * 2 * Float32Array.BYTES_PER_ELEMENT;
+
+		expect(isAudioPeaksCacheCompatible(oldCacheBytes, 1_800, "waveform")).toBe(false);
+		expect(isAudioPeaksCacheCompatible(currentCacheBytes, 1_800, "waveform")).toBe(true);
 	});
 });
 
@@ -32,6 +52,10 @@ describe("audio track selection", () => {
 
 	it("selects only the isolated native Mac microphone track", () => {
 		expect(audioTrackMapArgs("microphone")).toEqual(["-map", "0:m:language:qac"]);
+	});
+
+	it("selects only the isolated native Mac system-audio track", () => {
+		expect(audioTrackMapArgs("system")).toEqual(["-map", "0:m:language:qab"]);
 	});
 
 	it.runIf(resolveFfmpeg(ROOT) !== null)(

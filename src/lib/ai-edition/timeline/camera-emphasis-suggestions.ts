@@ -14,6 +14,8 @@ export interface AutoCameraEmphasisSuggestion {
 	mode: "emphasis";
 	cameraScale: number;
 	source: "auto";
+	/** Stable ownership after a plan namespaces and persists this suggestion. */
+	directionGroupId?: string;
 }
 
 export interface CameraEmphasisPolicy {
@@ -96,7 +98,9 @@ function detectCursorActivity(
 		clicked[bucket] = 1;
 	}
 	for (const sample of keyboardActivity) {
-		if (sample.directionExcluded) continue;
+		// A private target cannot provide a Zoom focus, but its key timing still
+		// proves that the creator is working on the screen. Use only the timing as
+		// a Camera Emphasis blocker; never read its target or position here.
 		const bucket = Math.min(bucketCount - 1, Math.floor(sample.timeMs / policy.motionBucketMs));
 		clicked[bucket] = 1;
 	}
@@ -431,6 +435,7 @@ export function appendAutoCameraEmphasisSuggestions(
 					source: suggestion.source,
 					motionStyle: NEW_CAMERA_MOTION_STYLE,
 					motionSpeed: DEFAULT_MOTION_SPEED,
+					...(suggestion.directionGroupId ? { directionGroupId: suggestion.directionGroupId } : {}),
 				},
 			],
 			document.timeline.clips,

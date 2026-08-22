@@ -293,12 +293,103 @@ describe("useTimeline.moveClip / duplicateClip (delegates to document/timeline.t
 		expect(clips?.[1]).toMatchObject({ timelineStartSec: 10, timelineEndSec: 20 });
 	});
 
+	it("restores a clip reorder with Undo and Redo", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.moveClip("clip_a", 1);
+		});
+		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
+			"clip_b",
+			"clip_a",
+		]);
+
+		act(() => expect(undo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
+			"clip_a",
+			"clip_b",
+		]);
+		act(() => expect(redo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
+			"clip_b",
+			"clip_a",
+		]);
+	});
+
 	it("moveClip no-ops for an unknown clip id", async () => {
 		const { result } = renderTimeline();
 		await act(async () => {
 			await result.current.moveClip("clip_missing", 0);
 		});
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+
+	it("splits at the playhead as one undoable edit and keeps the new insertion boundary", async () => {
+		const { result } = renderTimeline();
+		act(() => useProjectStore.getState().setCurrentTime(4));
+
+		await act(async () => {
+			expect(await result.current.splitClipAtPlayhead()).toBe(true);
+		});
+
+		const split = useProjectStore.getState().document?.timeline.clips ?? [];
+		expect(
+			split.map(({ sourceStartSec, sourceEndSec, timelineStartSec, timelineEndSec }) => ({
+				sourceStartSec,
+				sourceEndSec,
+				timelineStartSec,
+				timelineEndSec,
+			})),
+		).toEqual([
+			{ sourceStartSec: 0, sourceEndSec: 4, timelineStartSec: 0, timelineEndSec: 4 },
+			{ sourceStartSec: 4, sourceEndSec: 10, timelineStartSec: 4, timelineEndSec: 10 },
+			{ sourceStartSec: 10, sourceEndSec: 20, timelineStartSec: 10, timelineEndSec: 20 },
+		]);
+		expect(useProjectStore.getState().currentTimeSec).toBe(4);
+		expect(result.current.clipSelection).toBe(split[1].id);
+
+		act(() => expect(undo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
+			"clip_a",
+			"clip_b",
+		]);
+		act(() => expect(redo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips).toHaveLength(3);
+	});
+
+	it("does not split when the playhead is already on a clip boundary", async () => {
+		const { result } = renderTimeline();
+		act(() => useProjectStore.getState().setCurrentTime(10));
+
+		await act(async () => {
+			expect(await result.current.splitClipAtPlayhead()).toBe(false);
+		});
+
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+
+	it("makes clip in/out changes undoable", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.updateClipSourceRange("clip_a", 1, 8);
+		});
+		expect(useProjectStore.getState().document?.timeline.clips[0]).toMatchObject({
+			sourceStartSec: 1,
+			sourceEndSec: 8,
+			timelineStartSec: 0,
+			timelineEndSec: 7,
+		});
+
+		act(() => expect(undo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips[0]).toMatchObject({
+			sourceStartSec: 0,
+			sourceEndSec: 10,
+		});
+		act(() => expect(redo()).toBe(true));
+		expect(useProjectStore.getState().document?.timeline.clips[0]).toMatchObject({
+			sourceStartSec: 1,
+			sourceEndSec: 8,
+		});
 	});
 
 	it("duplicateClip inserts a copy right after the original and selects it", async () => {
@@ -840,6 +931,171 @@ describe("useTimeline motion history", () => {
 			cameraFullscreenRegions: Array<{ motionSpeed?: number }>;
 		};
 		expect(restoredLegacy.cameraFullscreenRegions[0].motionSpeed).toBeUndefined();
+	});
+});
+
+describe("useTimeline automatic direction ownership", () => {
+	beforeEach(() => {
+		clearHistory();
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: {
+				...sampleDoc,
+				zoomRanges: [
+					{
+						id: "zoom-a",
+						startMs: 1_000,
+						endMs: 3_000,
+						depth: 3,
+						focus: { cx: 0.25, cy: 0.5 },
+						customScale: 1.65,
+						source: "auto",
+						directionGroupId: "screen-passage",
+					},
+					{
+						id: "zoom-b",
+						startMs: 3_500,
+						endMs: 5_500,
+						depth: 3,
+						focus: { cx: 0.75, cy: 0.5 },
+						customScale: 1.65,
+						source: "auto",
+						directionGroupId: "screen-passage",
+					},
+				],
+				legacyEditor: {
+					cameraFullscreenRegions: [
+						{
+							id: "camera-a",
+							startMs: 6_000,
+							endMs: 8_000,
+							source: "auto",
+							directionGroupId: "camera-passage",
+						},
+						{
+							id: "camera-b",
+							startMs: 8_000,
+							endMs: 10_000,
+							source: "auto",
+							directionGroupId: "camera-passage",
+						},
+					],
+				},
+			},
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	it("edits the rendered scale and promotes the full connected passage as one undo step", async () => {
+		const { result } = renderTimeline();
+		act(() => result.current.updateZoomScaleLive("zoom-a", 1.42));
+		await act(async () => result.current.commitZoomScale());
+
+		const zooms = useProjectStore.getState().document?.zoomRanges ?? [];
+		expect(zooms.map((region) => region.source)).toEqual(["manual", "manual"]);
+		expect(zooms[0].customScale).toBe(1.42);
+		expect(zooms[1].customScale).toBe(1.65);
+
+		act(() => expect(undo()).toBe(true));
+		const restored = useProjectStore.getState().document?.zoomRanges ?? [];
+		expect(restored.map((region) => region.source)).toEqual(["auto", "auto"]);
+		expect(restored[0].customScale).toBe(1.65);
+	});
+
+	it("promotes every camera member before changing one member's motion", async () => {
+		const { result } = renderTimeline();
+		await act(async () => result.current.updateCameraMotionStyle("camera-b", "linear"));
+
+		const legacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ source?: string; motionStyle?: string }>;
+		};
+		expect(legacy.cameraFullscreenRegions.map((region) => region.source)).toEqual([
+			"manual",
+			"manual",
+		]);
+		expect(legacy.cameraFullscreenRegions[1].motionStyle).toBe("linear");
+	});
+
+	it.each([
+		[
+			"resizing",
+			async (timeline: ReturnType<typeof useTimeline>) =>
+				timeline.updateZoomSpan("zoom-a", 1_100, 3_100),
+		],
+		[
+			"reframing",
+			async (timeline: ReturnType<typeof useTimeline>) => {
+				timeline.updateZoomFocusLive("zoom-a", { cx: 0.4, cy: 0.6 });
+				await timeline.commitZoomFocus();
+			},
+		],
+		[
+			"changing tracking",
+			async (timeline: ReturnType<typeof useTimeline>) =>
+				timeline.updateZoomFocusMode("zoom-a", "auto"),
+		],
+		[
+			"changing 3D tilt",
+			async (timeline: ReturnType<typeof useTimeline>) =>
+				timeline.updateZoomRotation("zoom-a", "iso"),
+		],
+		[
+			"changing motion style",
+			async (timeline: ReturnType<typeof useTimeline>) =>
+				timeline.updateZoomMotionStyle("zoom-a", "snappy"),
+		],
+		[
+			"changing motion speed",
+			async (timeline: ReturnType<typeof useTimeline>) =>
+				timeline.updateZoomMotionSpeed("zoom-a", 1.5),
+		],
+	] as const)("promotes the full screen passage when %s", async (_label, edit) => {
+		const { result } = renderTimeline();
+		await act(async () => edit(result.current));
+
+		expect(useProjectStore.getState().document?.zoomRanges.map((region) => region.source)).toEqual([
+			"manual",
+			"manual",
+		]);
+	});
+
+	it.each([
+		[
+			"resizing",
+			async (timeline: ReturnType<typeof useTimeline>) =>
+				timeline.updateCameraFullscreenSpan("camera-a", 6_100, 7_900),
+		],
+		[
+			"changing motion speed",
+			async (timeline: ReturnType<typeof useTimeline>) =>
+				timeline.updateCameraMotionSpeed("camera-a", 1.5),
+		],
+	] as const)("promotes the full camera passage when %s", async (_label, edit) => {
+		const { result } = renderTimeline();
+		await act(async () => edit(result.current));
+
+		const legacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ source?: string }>;
+		};
+		expect(legacy.cameraFullscreenRegions.length).toBeGreaterThan(0);
+		expect(legacy.cameraFullscreenRegions.every((region) => region.source === "manual")).toBe(true);
+	});
+
+	it("keeps the rest of an automatic screen passage manual after one target is deleted", async () => {
+		const { result } = renderTimeline();
+		await act(async () => result.current.removeRegion("zoom", "zoom-a"));
+
+		expect(useProjectStore.getState().document?.zoomRanges).toEqual([
+			expect.objectContaining({ id: "zoom-b", source: "manual" }),
+		]);
 	});
 });
 

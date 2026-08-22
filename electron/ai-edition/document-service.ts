@@ -1,8 +1,9 @@
 // DocumentService — main-process owner of v3 AxcutDocument projects.
-// Persists one .openscreen JSON per project under userData/projects/ (the file
+// Persists one .klippt JSON per project under userData/projects/ (the file
 // carries its own `schemaVersion`, so migration keys off the content, not the
-// extension). Older builds wrote these same documents as `.axcut`; those are
-// renamed to `.openscreen` on first access. Slim port of
+// extension). Older builds wrote these same documents as `.openscreen` and
+// `.axcut`; those remain readable and are copied to `.klippt` on first access.
+// Slim port of
 // axcut's apps/server/src/services/document-service.ts (no separate paths.ts —
 // uses app.getPath("userData") directly; no Python probe_media — assets carry
 // only path metadata, duration is filled in by the renderer).
@@ -21,12 +22,16 @@ import {
 	documentSchema,
 	migrateRawDocumentToCurrent,
 } from "../../src/lib/ai-edition/schema";
+import {
+	LEGACY_PROJECT_FILE_EXTENSIONS,
+	PROJECT_FILE_EXTENSION,
+} from "../../src/lib/projectFileFormat";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
 
-const PROJECT_FILE_EXTENSION = ".openscreen";
-// Older builds stored these same v3/v4 AxcutDocuments under `.axcut`. We read
-// them for back-compat and rename them to PROJECT_FILE_EXTENSION on access.
-const LEGACY_PROJECT_FILE_EXTENSION = ".axcut";
+const CANONICAL_PROJECT_FILE_EXTENSION = `.${PROJECT_FILE_EXTENSION}`;
+const LEGACY_PROJECT_FILE_SUFFIXES = LEGACY_PROJECT_FILE_EXTENSIONS.map(
+	(extension) => `.${extension}`,
+);
 
 export interface ProjectSummary {
 	id: string;
@@ -115,10 +120,27 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
 	}
 }
 
+async function writeFileAtomically(filePath: string, contents: string): Promise<void> {
+	const tempPath = `${filePath}.tmp-${process.pid}-${createId("w")}`;
+	let handle: FileHandle | undefined;
+	try {
+		handle = await fs.open(tempPath, "w");
+		await handle.writeFile(contents, "utf8");
+		await handle.sync();
+		await handle.close();
+		handle = undefined;
+		await renameWithRetry(tempPath, filePath);
+	} catch (error) {
+		await handle?.close().catch(() => undefined);
+		await fs.unlink(tempPath).catch(() => undefined);
+		throw error;
+	}
+}
+
 export class DocumentService {
 	private readonly projectsRoot: string;
 	private readonly mediaRegistryDir: string;
-	private legacyMigrationDone = false;
+	private legacyMigration: Promise<void> | null = null;
 	/** Tail of the in-flight save chain per project id — see writeProject. */
 	private readonly writeQueues = new Map<string, Promise<void>>();
 
@@ -135,56 +157,56 @@ export class DocumentService {
 		await this.migrateLegacyExtensions();
 	}
 
-	// One-time-per-process pass renaming any legacy `.axcut` project files to
-	// `.openscreen`. The document bytes are identical (same schemaVersion), so
-	// this is a pure rename — no content migration involved.
-	private async migrateLegacyExtensions(): Promise<void> {
-		if (this.legacyMigrationDone) return;
-		this.legacyMigrationDone = true;
+	// One-time-per-process compatibility pass. A legacy file stays in place as a
+	// rollback copy. Klippt validates and copies it to the canonical extension,
+	// then all future writes target only the `.klippt` file.
+	private migrateLegacyExtensions(): Promise<void> {
+		this.legacyMigration ??= this.copyLegacyProjectsToCanonicalExtension();
+		return this.legacyMigration;
+	}
+
+	private async copyLegacyProjectsToCanonicalExtension(): Promise<void> {
 		let entries: string[];
 		try {
 			entries = await fs.readdir(this.projectsRoot);
 		} catch {
 			return;
 		}
-		await Promise.all(
-			entries
-				.filter((name) => name.endsWith(LEGACY_PROJECT_FILE_EXTENSION))
-				.map(async (name) => {
-					const from = path.join(this.projectsRoot, name);
-					const base = name.slice(0, -LEGACY_PROJECT_FILE_EXTENSION.length);
-					const to = path.join(this.projectsRoot, `${base}${PROJECT_FILE_EXTENSION}`);
-					try {
-						// If a `.openscreen` already exists for this id it's authoritative;
-						// drop the stale `.axcut`. Otherwise rename the legacy file across.
-						await fs.access(to);
-						await fs.unlink(from);
-					} catch {
-						await fs
-							.rename(from, to)
-							.catch((err) =>
-								console.warn(`[ai-edition] failed to migrate ${from} -> ${to}:`, err),
-							);
-					}
-				}),
-		);
+		for (const suffix of LEGACY_PROJECT_FILE_SUFFIXES) {
+			for (const name of entries.filter((entry) => entry.toLowerCase().endsWith(suffix))) {
+				const from = path.join(this.projectsRoot, name);
+				const base = name.slice(0, -suffix.length);
+				const to = path.join(this.projectsRoot, `${base}${CANONICAL_PROJECT_FILE_EXTENSION}`);
+				try {
+					await fs.access(to);
+					continue;
+				} catch {
+					// No canonical project exists yet.
+				}
+				try {
+					const parsed = parseLoadedDocument(await fs.readFile(from, "utf8"));
+					await writeFileAtomically(to, JSON.stringify(parsed, null, 2));
+				} catch (error) {
+					console.warn(`[ai-edition] failed to copy legacy project ${from} -> ${to}:`, error);
+				}
+			}
+		}
 	}
 
 	private fileFor(projectId: string): string {
 		const safe = safeProjectId(projectId);
-		return path.join(this.projectsRoot, `${safe}${PROJECT_FILE_EXTENSION}`);
+		return path.join(this.projectsRoot, `${safe}${CANONICAL_PROJECT_FILE_EXTENSION}`);
 	}
 
-	private legacyFileFor(projectId: string): string {
+	private legacyFileFor(projectId: string, suffix: string): string {
 		const safe = safeProjectId(projectId);
-		return path.join(this.projectsRoot, `${safe}${LEGACY_PROJECT_FILE_EXTENSION}`);
+		return path.join(this.projectsRoot, `${safe}${suffix}`);
 	}
 
 	async listProjects(): Promise<ProjectSummary[]> {
 		await this.ensureProjectsDir();
 		const entries = await fs.readdir(this.projectsRoot);
-		// ensureProjectsDir (above) already migrated any legacy `.axcut` files.
-		const projectFiles = entries.filter((name) => name.endsWith(PROJECT_FILE_EXTENSION));
+		const projectFiles = entries.filter((name) => name.endsWith(CANONICAL_PROJECT_FILE_EXTENSION));
 		const summaries: ProjectSummary[] = [];
 		for (const name of projectFiles) {
 			const filePath = path.join(this.projectsRoot, name);
@@ -208,30 +230,26 @@ export class DocumentService {
 	}
 
 	async getProject(projectId: string): Promise<AxcutDocument> {
-		// Prefer the canonical `.openscreen` file, falling back to a not-yet-migrated
-		// legacy `.axcut` so a project opened before its migration pass still loads.
-		let raw: string;
-		try {
-			raw = await fs.readFile(this.fileFor(projectId), "utf8");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
-				throw new ProjectFileError(
-					`Failed to read project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
-					projectId,
-				);
-			}
+		await this.ensureProjectsDir();
+		const candidates = [
+			this.fileFor(projectId),
+			...LEGACY_PROJECT_FILE_SUFFIXES.map((suffix) => this.legacyFileFor(projectId, suffix)),
+		];
+		let raw: string | undefined;
+		for (const candidate of candidates) {
 			try {
-				raw = await fs.readFile(this.legacyFileFor(projectId), "utf8");
-			} catch (legacyError) {
-				if ((legacyError as NodeJS.ErrnoException)?.code === "ENOENT") {
-					throw new DocumentNotFoundError(projectId);
+				raw = await fs.readFile(candidate, "utf8");
+				break;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+					throw new ProjectFileError(
+						`Failed to read project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
+						projectId,
+					);
 				}
-				throw new ProjectFileError(
-					`Failed to read project ${projectId}: ${legacyError instanceof Error ? legacyError.message : String(legacyError)}`,
-					projectId,
-				);
 			}
 		}
+		if (raw === undefined) throw new DocumentNotFoundError(projectId);
 		// Relink here rather than in the .openscreen import handlers, because this
 		// is the one place every open funnels through — the project picker, the
 		// agent, and the auto-load-last-project effect on launch. A document whose
@@ -267,8 +285,10 @@ export class DocumentService {
 	}
 
 	async deleteProject(projectId: string): Promise<void> {
-		// Remove the canonical file and any lingering legacy `.axcut` for this id.
-		for (const filePath of [this.fileFor(projectId), this.legacyFileFor(projectId)]) {
+		for (const filePath of [
+			this.fileFor(projectId),
+			...LEGACY_PROJECT_FILE_SUFFIXES.map((suffix) => this.legacyFileFor(projectId, suffix)),
+		]) {
 			try {
 				await fs.unlink(filePath);
 			} catch (error) {
@@ -389,41 +409,17 @@ export class DocumentService {
 		await this.ensureProjectsDir();
 		const filePath = this.fileFor(doc.project.id);
 		// The suffix goes AFTER the extension on purpose: listProjects matches on a
-		// trailing `.openscreen`, so an interrupted write's leftover is invisible to
+		// trailing `.klippt`, so an interrupted write's leftover is invisible to
 		// it rather than showing up as a corrupt project. Unique per write, so two
 		// queues (or two processes) never share a temp path.
-		const tempPath = `${filePath}.tmp-${process.pid}-${createId("w")}`;
 		const json = JSON.stringify(doc, null, 2);
-
-		let handle: FileHandle | undefined;
 		try {
-			handle = await fs.open(tempPath, "w");
-			await handle.writeFile(json, "utf8");
-			// Flush before the rename: without it the rename can reach the disk first
-			// and a power loss leaves the new name pointing at unwritten blocks.
-			await handle.sync();
+			await writeFileAtomically(filePath, json);
 		} catch (error) {
-			await handle?.close().catch(() => undefined);
-			await fs.unlink(tempPath).catch(() => undefined);
-			throw new ProjectFileError(
-				`Failed to write project ${doc.project.id}: ${error instanceof Error ? error.message : String(error)}`,
-				doc.project.id,
-			);
-		}
-		await handle.close();
-
-		try {
-			await renameWithRetry(tempPath, filePath);
-		} catch (error) {
-			await fs.unlink(tempPath).catch(() => undefined);
 			throw new ProjectFileError(
 				`Failed to save project ${doc.project.id}: ${error instanceof Error ? error.message : String(error)}`,
 				doc.project.id,
 			);
 		}
-
-		// A save supersedes any legacy `.axcut` for this id (ensureProjectsDir
-		// usually renamed it already; this is a belt-and-braces cleanup).
-		await fs.unlink(this.legacyFileFor(doc.project.id)).catch(() => undefined);
 	}
 }

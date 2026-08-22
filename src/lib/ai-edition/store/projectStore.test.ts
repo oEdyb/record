@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AxcutDocument } from "../schema";
 import { saveEditorDefaultPreferences } from "./editingPreferences";
 import { DEFAULT_EDITOR_SETTINGS, getEditorSettings } from "./editorSettings";
-import { getProjectMutationGeneration, useProjectStore } from "./projectStore";
+import {
+	getProjectMutationGeneration,
+	useProjectStore,
+	waitForProjectMutations,
+} from "./projectStore";
 import { redo, undo } from "./undo";
 
 const bridgeMocks = vi.hoisted(() => ({
@@ -216,6 +220,42 @@ describe("useProjectStore", () => {
 		finishUserSave?.({});
 		await expect(userSave).resolves.toBe(true);
 		expect(useProjectStore.getState().document?.project.title).toBe("User edit");
+	});
+
+	it("waits for an in-flight structural edit before a workspace transition reads state", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+		let finishSave: (() => void) | undefined;
+		bridgeMocks.save.mockImplementationOnce(
+			(document) =>
+				new Promise((resolve) => {
+					finishSave = () => resolve({ success: true, document });
+				}),
+		);
+		const splitDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "Split committed" },
+		};
+
+		const saving = useProjectStore.getState().saveDocumentAsEdit(splitDocument);
+		let transitionReady = false;
+		const waiting = waitForProjectMutations("proj_test").then(() => {
+			transitionReady = true;
+		});
+		await Promise.resolve();
+		expect(transitionReady).toBe(false);
+
+		finishSave?.();
+		await expect(saving).resolves.toBe(true);
+		await waiting;
+
+		expect(transitionReady).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("Split committed");
 	});
 
 	it("rejects a background continuation after an asset mutation starts", async () => {

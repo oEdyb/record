@@ -14,6 +14,7 @@ import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
+import { APP_DISPLAY_NAME } from "./lib/brand";
 import { loadAllCustomFonts } from "./lib/customFonts";
 
 const VideoEditorEntry = lazy(() =>
@@ -119,7 +120,7 @@ export default function App() {
 							fallback={
 								<div className="flex flex-col items-center justify-center gap-3 h-screen bg-[#09090b]">
 									<svg
-										className="animate-spin text-[#34B27B]"
+										className="animate-spin text-[var(--accent)]"
 										xmlns="http://www.w3.org/2000/svg"
 										fill="none"
 										viewBox="0 0 24 24"
@@ -153,7 +154,7 @@ export default function App() {
 				return (
 					<div>
 						<div className="w-full h-full bg-background text-foreground">
-							<h1>Openscreen</h1>
+							<h1 translate="no">{APP_DISPLAY_NAME}</h1>
 						</div>
 					</div>
 				);

@@ -14,6 +14,7 @@
 // derived `currentVideoPath`); the only renderer that still needs the session
 // after this point is the CLI runner, which lives in its own process.
 
+import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { insertClipsAtBoundary } from "@/lib/ai-edition/document/timeline";
 import type { AxcutAsset, AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -21,13 +22,16 @@ import {
 	applyAutomaticDirection,
 	DEFAULT_AUTOMATIC_DIRECTION_POLICY,
 } from "@/lib/ai-edition/timeline/automatic-direction";
+import { readAutomaticDirectionSettings } from "@/lib/ai-edition/timeline/automatic-direction-settings";
+import { probeVideoDuration } from "@/lib/ai-edition/timeline/duration";
 import { buildMicrophoneActivitySpans } from "@/lib/ai-edition/timeline/microphone-activity";
+import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { nativeBridgeClient } from "@/native/client";
 
 let pendingRecordingImportInProgress = false;
 const DIRECTION_READ_TIMEOUT_MS = 500;
 const DIRECTION_ANALYSIS_CONCURRENCY = 2;
-const RECORDING_DIRECTION_POLICY = DEFAULT_AUTOMATIC_DIRECTION_POLICY;
+const RECOVERED_CLIP_DURATION_TIMEOUT_MS = 5_000;
 
 /**
  * Prevents the preview's normal single-file bootstrap from racing the recorder
@@ -55,6 +59,27 @@ async function mapWithConcurrency<T, R>(
 		Array.from({ length: Math.min(Math.max(1, limit), items.length) }, () => worker()),
 	);
 	return results;
+}
+
+async function resolveRecoveredClipDurations(
+	clips: RecordingSessionClip[],
+): Promise<Map<number, number>> {
+	const provisional = clips.filter((clip) => !clip.removed && clip.provisionalDuration);
+	const resolved = await mapWithConcurrency(
+		provisional,
+		DIRECTION_ANALYSIS_CONCURRENCY,
+		async (clip) => {
+			const durationSec = await probeVideoDuration(
+				toFileUrl(clip.screenVideoPath),
+				RECOVERED_CLIP_DURATION_TIMEOUT_MS,
+			);
+			if (!durationSec) {
+				throw new Error(`Could not read the recovered clip duration: ${clip.screenVideoPath}`);
+			}
+			return [clip.index, durationSec * 1_000] as const;
+		},
+	);
+	return new Map(resolved);
 }
 
 type RecordedDirectionInput = {
@@ -198,12 +223,13 @@ async function commitRecordedImport(options: {
 					? options.prepareMissingAssets(document, missingAssetIds)
 					: document;
 			const arranged = insertClipsAtBoundary(prepared, missingClips, options.insertionTimeSec);
+			const policy = readAutomaticDirectionSettings(arranged).policy;
 			return applyAutomaticDirection({
 				id: options.planId,
 				document: arranged,
 				recordings: options.telemetry,
 				phases: { screen: true, camera: false },
-				policy: RECORDING_DIRECTION_POLICY,
+				policy,
 			});
 		},
 		{
@@ -228,6 +254,10 @@ async function appendRecordedCameraDirection(
 	projectId: string,
 	planId: string,
 ) {
+	const currentDocument = useProjectStore.getState().document;
+	const policy = currentDocument
+		? readAutomaticDirectionSettings(currentDocument).policy
+		: DEFAULT_AUTOMATIC_DIRECTION_POLICY;
 	const microphoneByAssetId = new Map(
 		await mapWithConcurrency(
 			recordings.filter((recording) => recording.hasCamera),
@@ -243,7 +273,7 @@ async function appendRecordedCameraDirection(
 						? buildMicrophoneActivitySpans(
 								microphone.peaks,
 								recording.durationMs,
-								RECORDING_DIRECTION_POLICY.microphoneActivity,
+								policy.microphoneActivity,
 							)
 						: [],
 				] as const;
@@ -261,7 +291,7 @@ async function appendRecordedCameraDirection(
 					microphoneActivity: microphoneByAssetId.get(item.assetId) ?? [],
 				})),
 				phases: { screen: false, camera: true },
-				policy: RECORDING_DIRECTION_POLICY,
+				policy,
 			}),
 		{ coalesceIntoHistory: true },
 	);
@@ -330,16 +360,22 @@ export async function importPendingRecording(): Promise<boolean> {
 		if (!historyBase) throw new Error("Could not capture the project before recording import");
 
 		if (session.clips) {
+			const sortedClips = [...session.clips].sort((a, b) => a.index - b.index);
+			const keptClips = sortedClips.filter((clip) => !clip.removed);
+			const recoveredDurationMsByIndex = await resolveRecoveredClipDurations(keptClips);
+			const durationMsForClip = (clip: RecordingSessionClip) =>
+				recoveredDurationMsByIndex.get(clip.index) ?? clip.durationMs;
 			const capturedStartMsByIndex = new Map<number, number>();
 			let capturedDurationMs = 0;
-			for (const clip of [...session.clips].sort((a, b) => a.index - b.index)) {
+			for (const clip of sortedClips) {
 				capturedStartMsByIndex.set(clip.index, capturedDurationMs);
-				capturedDurationMs += clip.durationMs;
+				capturedDurationMs += durationMsForClip(clip);
 			}
-			const keptClips = session.clips
-				.filter((clip) => !clip.removed)
-				.sort((a, b) => a.index - b.index);
-			const imported = [];
+			const imported: Array<{
+				asset: AxcutAsset;
+				clip: RecordingSessionClip;
+				durationMs: number;
+			}> = [];
 			for (const clip of keptClips) {
 				const label = clip.screenVideoPath.split(/[\\/]/).pop() || `Clip ${clip.index + 1}`;
 				const asset = await acquireRecordedAsset({
@@ -348,14 +384,14 @@ export async function importPendingRecording(): Promise<boolean> {
 					clipId: recordedClipId(session.createdAt, clip.index),
 					recordingImportId: directionPlanId,
 				});
-				if (asset) imported.push({ asset, clip });
+				if (asset) imported.push({ asset, clip, durationMs: durationMsForClip(clip) });
 			}
 
 			const document = useProjectStore.getState().document;
 			if (document && imported.length > 0) {
 				let timelineStartSec = 0;
-				const clips: AxcutClip[] = imported.map(({ asset, clip }) => {
-					const durationSec = Math.max(0.001, clip.durationMs / 1000);
+				const clips: AxcutClip[] = imported.map(({ asset, clip, durationMs }) => {
+					const durationSec = Math.max(0.001, durationMs / 1000);
 					const timelineEndSec = timelineStartSec + durationSec;
 					const timelineClip = {
 						id: recordedClipId(session.createdAt, clip.index),
@@ -372,15 +408,17 @@ export async function importPendingRecording(): Promise<boolean> {
 					return timelineClip;
 				});
 				const durationByAssetId = new Map(
-					imported.map(({ asset, clip }) => [asset.id, Math.max(0.001, clip.durationMs / 1000)]),
+					imported.map(({ asset, durationMs }) => [asset.id, Math.max(0.001, durationMs / 1000)]),
 				);
 				const clipByAssetId = new Map(imported.map(({ asset, clip }) => [asset.id, clip]));
-				const directionRecordings = imported.map(({ asset, clip }) => ({
-					assetId: asset.id,
-					screenVideoPath: clip.screenVideoPath,
-					durationMs: clip.durationMs,
-					hasCamera: asset.cameraTrack != null && asset.cameraTrack.visible !== false,
-				}));
+				const directionRecordings = imported
+					.filter(({ clip }) => !clip.provisionalDuration)
+					.map(({ asset, clip, durationMs }) => ({
+						assetId: asset.id,
+						screenVideoPath: clip.screenVideoPath,
+						durationMs,
+						hasCamera: asset.cameraTrack != null && asset.cameraTrack.visible !== false,
+					}));
 				const telemetry = await readRecordedScreenTelemetry(directionRecordings);
 				await commitRecordedImport({
 					projectId: document.project.id,
@@ -478,7 +516,12 @@ export async function importPendingRecording(): Promise<boolean> {
 		// Consumed: the recording now lives in a project. Cleared here rather than
 		// after the timeline seed below so a failure down there can't hand the same
 		// recording to the next editor window.
-		await api.setCurrentRecordingSession(null);
+		const consumed = await api.setCurrentRecordingSession(null);
+		if (!consumed.success) {
+			throw new Error(
+				`Could not consume the recording recovery handoff: ${consumed.error ?? "unknown error"}`,
+			);
+		}
 		await api.setRecordingWorkspaceContext?.(null);
 
 		// ponytail: MediaRecorder WebMs ship with duration = NaN until

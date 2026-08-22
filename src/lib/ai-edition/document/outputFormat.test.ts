@@ -13,9 +13,11 @@ import {
 import {
 	collectEffectiveClipDims,
 	collectNativeFormats,
+	normalizeOutputResolution,
 	pickOutputDims,
 	referenceClipDims,
 	resolveAspectRatioValue,
+	resolveOutputAspectRatioValue,
 } from "./outputFormat";
 
 function asset(id: string, width: number, height: number): AxcutAsset {
@@ -199,6 +201,14 @@ describe("referenceClipDims", () => {
 });
 
 describe("pickOutputDims", () => {
+	it("uses a valid custom output resolution instead of source-derived dimensions", () => {
+		const d = doc([asset("a1", 1920, 1080)], [clip("c1", "a1")]);
+		expect(pickOutputDims(d, "9:16", {}, { width: 1440, height: 2560 })).toEqual({
+			width: 1440,
+			height: 2560,
+		});
+	});
+
 	it("derives the short side from the chosen ratio, keeping the reference long side", () => {
 		const d = doc([asset("a1", 1920, 1080)], [clip("c1", "a1")]);
 		expect(pickOutputDims(d, "16:9")).toEqual({ width: 1920, height: 1080 });
@@ -281,6 +291,22 @@ describe("pickOutputDims", () => {
 	});
 });
 
+describe("normalizeOutputResolution", () => {
+	it("snaps valid dimensions to even pixels", () => {
+		expect(normalizeOutputResolution({ width: 1921, height: 1081 })).toEqual({
+			width: 1922,
+			height: 1082,
+		});
+	});
+
+	it("rejects missing, tiny, and oversized dimensions", () => {
+		expect(normalizeOutputResolution(null)).toBeNull();
+		expect(normalizeOutputResolution({ width: 1920 })).toBeNull();
+		expect(normalizeOutputResolution({ width: 100, height: 100 })).toBeNull();
+		expect(normalizeOutputResolution({ width: 8000, height: 4320 })).toBeNull();
+	});
+});
+
 describe("resolveAspectRatioValue", () => {
 	it('resolves legacy "native" against the document instead of the 16/9 fallback', () => {
 		const d = doc([asset("a1", 1080, 1920)], [clip("c1", "a1")]);
@@ -295,5 +321,15 @@ describe("resolveAspectRatioValue", () => {
 		const d = doc([asset("a1", 1080, 1920)], [clip("c1", "a1")]);
 		expect(resolveAspectRatioValue(d, "4:5")).toBeCloseTo(0.8, 6);
 		expect(resolveAspectRatioValue(d, "64:27")).toBeCloseTo(64 / 27, 6);
+	});
+});
+
+describe("resolveOutputAspectRatioValue", () => {
+	it("uses the custom pixel shape when it exists", () => {
+		const d = doc([asset("a1", 1920, 1080)], [clip("c1", "a1")]);
+		expect(resolveOutputAspectRatioValue(d, "16:9", { width: 1080, height: 1920 })).toBeCloseTo(
+			9 / 16,
+			6,
+		);
 	});
 });

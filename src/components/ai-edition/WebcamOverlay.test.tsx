@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { axcutSchemaVersion } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
-import { WebcamOverlay } from "./WebcamOverlay";
+import { getWebcamCropStyle, WebcamOverlay } from "./WebcamOverlay";
 
 // P4 regression test: a project can hold multiple assets, each with its own
 // (or no) camera link. The overlay must resolve the camera from the ACTIVE
@@ -153,5 +153,36 @@ describe("WebcamOverlay (per-clip camera resolution)", () => {
 
 		rerender(<WebcamOverlay {...baseProps(2)} />);
 		expect(container.querySelector("video")).toBeTruthy();
+	});
+});
+
+describe("getWebcamCropStyle", () => {
+	it("keeps the whole camera visible at 1x", () => {
+		expect(getWebcamCropStyle(1, { cx: 1, cy: 0 })).toMatchObject({
+			width: "100%",
+			height: "100%",
+			left: "0%",
+			top: "0%",
+		});
+	});
+
+	it("centres and moves a 2x camera crop", () => {
+		expect(getWebcamCropStyle(2, { cx: 0.5, cy: 0.5 })).toMatchObject({
+			width: "200%",
+			height: "200%",
+			left: "-50%",
+			top: "-50%",
+		});
+		expect(getWebcamCropStyle(2, { cx: 1, cy: 1 })).toMatchObject({
+			left: "-100%",
+			top: "-100%",
+		});
+	});
+
+	it("keeps focal coordinates visual when the webcam is mirrored", () => {
+		expect(getWebcamCropStyle(2, { cx: 1, cy: 0.5 }, true)).toMatchObject({
+			left: "0%",
+			top: "-50%",
+		});
 	});
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type AxcutClip, createEmptyDocument } from "../schema";
-import { insertClipsAtBoundary, resolveClipInsertionBoundary } from "./timeline";
+import { insertClipsAtBoundary, resolveClipInsertionBoundary, splitClipAt } from "./timeline";
 
 function clip(id: string, start: number, end: number): AxcutClip {
 	return {
@@ -105,5 +105,50 @@ describe("recording timeline insertion", () => {
 			{ startSec: 7, endSec: 8, reason: "crossing" },
 		]);
 		expect(next.timeline.speedRanges).toEqual([{ startSec: 9, endSec: 10, reason: "after" }]);
+	});
+
+	it("inserts a new recording between two halves created by Split", () => {
+		const base = createEmptyDocument({ title: "Split insertion", projectId: "split-insert" });
+		const original = {
+			...base,
+			timeline: { ...base.timeline, clips: [clip("original", 0, 10)] },
+			zoomRanges: [
+				{
+					id: "zoom-after",
+					clipId: "original",
+					sourceStartSec: 7,
+					sourceEndSec: 9,
+					startMs: 7_000,
+					endMs: 9_000,
+					depth: 2 as const,
+					focus: { cx: 0.5, cy: 0.5 },
+				},
+			],
+		};
+		const split = splitClipAt(original, "original", 4);
+		const rightId = split.timeline.clips[1].id;
+
+		expect(resolveClipInsertionBoundary(split.timeline.clips, 4)).toBe(4);
+		const next = insertClipsAtBoundary(split, [clip("recorded", 0, 2)], 4);
+
+		expect(next.timeline.clips.map((item) => item.id)).toEqual(["original", "recorded", rightId]);
+		expect(
+			next.timeline.clips.map(({ timelineStartSec, timelineEndSec }) => ({
+				timelineStartSec,
+				timelineEndSec,
+			})),
+		).toEqual([
+			{ timelineStartSec: 0, timelineEndSec: 4 },
+			{ timelineStartSec: 4, timelineEndSec: 6 },
+			{ timelineStartSec: 6, timelineEndSec: 12 },
+		]);
+		expect(next.zoomRanges).toEqual([
+			expect.objectContaining({
+				id: "zoom-after",
+				clipId: rightId,
+				startMs: 9_000,
+				endMs: 11_000,
+			}),
+		]);
 	});
 });

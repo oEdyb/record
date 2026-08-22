@@ -150,10 +150,11 @@ export class SttManager {
 		this.emit({ phase: "model", model: "whisper", downloadedBytes: 0, totalBytes: 0 });
 		await ensureModels({
 			baseDir: modelsDir,
+			only: ["whisper"],
 			onProgress: (event) => {
 				this.emit({
 					phase: "model",
-					model: event.id,
+					model: "whisper",
 					downloadedBytes: event.downloadedBytes,
 					totalBytes: event.totalBytes,
 				});

@@ -17,7 +17,7 @@ import {
 	collectEffectiveClipDims,
 	type Dims,
 	pickExtremeDims,
-	resolveAspectRatioValue,
+	resolveOutputAspectRatioValue,
 } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import {
@@ -27,6 +27,7 @@ import {
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
+import { APP_DISPLAY_NAME } from "@/lib/brand";
 import {
 	type ExportFormat,
 	type ExportProgress,
@@ -40,6 +41,7 @@ import {
 import {
 	calculateEffectiveExportDuration,
 	calculateMp4ExportSettings,
+	calculateMp4ExportSettingsForResolution,
 	estimateMp4FileSizeBytes,
 	formatBitrate,
 	wouldUpscale,
@@ -173,6 +175,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		() => pickExtremeDims(effectiveClipDims, "smallest"),
 		[effectiveClipDims],
 	);
+	const editorSettings = useMemo(() => getEditorSettings(document), [document]);
 
 	// Aspect the export normalizes to: the timeline's selected ratio (mirrors documentExporter),
 	// so the sizes shown match what the export produces. Read through `getEditorSettings` — the
@@ -180,8 +183,13 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	// this dialog can't drift from the compositor if the storage ever moves. `resolveAspectRatioValue`
 	// owns the legacy "native" case (uncropped reference asset), previously hand-rolled here.
 	const EXPORT_ASPECT = useMemo(
-		() => resolveAspectRatioValue(document, getEditorSettings(document).aspectRatio),
-		[document],
+		() =>
+			resolveOutputAspectRatioValue(
+				document,
+				editorSettings.aspectRatio,
+				editorSettings.outputResolution,
+			),
+		[document, editorSettings.aspectRatio, editorSettings.outputResolution],
 	);
 	// Output dimensions the export will produce for a given tier, from the (crop-aware)
 	// SMALLEST clip on the timeline — see `smallestSource` above for why. Only "Source"
@@ -207,8 +215,14 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		return { width: even(tierDims.width), height: even(tierDims.height) };
 	};
 
-	const tierOutputDims = (value: ExportQuality) =>
-		smallestSource
+	const tierOutputDims = (value: ExportQuality) => {
+		if (value === "source" && editorSettings.outputResolution) {
+			return calculateMp4ExportSettingsForResolution({
+				quality: value,
+				...editorSettings.outputResolution,
+			});
+		}
+		return smallestSource
 			? calculateMp4ExportSettings({
 					quality: value,
 					sourceWidth: smallestSource.width,
@@ -216,6 +230,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					aspectRatioValue: EXPORT_ASPECT,
 				})
 			: null;
+	};
 
 	const nativeClips = useMemo(
 		() => (open && document ? buildNativeClipList(document) : []),
@@ -225,18 +240,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		() => (open && document ? buildSceneDescription(document) : null),
 		[open, document],
 	);
-	const selectedMp4Settings = useMemo(
-		() =>
-			smallestSource
-				? calculateMp4ExportSettings({
-						quality,
-						sourceWidth: smallestSource.width,
-						sourceHeight: smallestSource.height,
-						aspectRatioValue: EXPORT_ASPECT,
-					})
-				: null,
-		[quality, smallestSource, EXPORT_ASPECT],
-	);
+	const selectedMp4Settings = tierOutputDims(quality);
 	const effectiveDurationSec = useMemo(
 		() => calculateEffectiveExportDuration(nativeClips, nativeScene?.speedRegions ?? []),
 		[nativeClips, nativeScene],
@@ -287,7 +291,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			return;
 		}
 
-		const safeName = (document.project.title || "OpenScreen")
+		const safeName = (document.project.title || APP_DISPLAY_NAME)
 			.replace(/[^a-z0-9-_]+/gi, "_")
 			.replace(/^_+|_+$/g, "")
 			.slice(0, 60);
@@ -488,7 +492,9 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 												}}
 											>
 												{q.value === "source"
-													? t("exportDialog.qualityMatchRecording")
+													? editorSettings.outputResolution
+														? ts("background.custom")
+														: t("exportDialog.qualityMatchRecording")
 													: q.value === "good"
 														? "2K"
 														: "1080p"}

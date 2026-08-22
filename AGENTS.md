@@ -1,14 +1,16 @@
-# AGENTS.md — record product and engineering guide
+# AGENTS.md — Klippt product and engineering guide
 
-This repository is the private working copy for **record**, currently hosted at
-`github.com/oEdyb/record`. record is a normal, high-quality screen recorder and editor with
+This repository is the private working copy for **Klippt**, currently hosted at the legacy
+repository `github.com/oEdyb/record`. Klippt is a normal, high-quality screen recorder and editor with
 clip-native recording built into the core workflow. It starts from the MIT-licensed OpenScreen
 continuation, but it is a separate, proprietary commercial product.
 
-`record` is the working product name. Keep legacy OpenScreen bundle IDs, helper names, environment
-variables, and the `.openscreen` project extension stable until a deliberate migration includes
-permissions, user data, compatibility, packaging, and rollback. Do not perform a blind global
-rename.
+`Klippt` is the selected product name. `.klippt` is the canonical project extension. Keep reading
+legacy `.openscreen` and `.axcut` projects, copy them forward after validation, and do not delete the
+legacy files during migration. Keep the current `oEdyb/record` repository name and legacy OpenScreen
+bundle IDs, helper names, environment variables, and user-data location stable until a separate
+migration includes permissions, compatibility, packaging, and rollback. Do not perform a blind
+global rename.
 
 Read this file before changing product behavior, UI, recording, project storage, preview,
 or export. Preserve these decisions across context compaction and future agent sessions.
@@ -38,6 +40,23 @@ Build a recorder with Screen Studio-level refinement and a faster speaking workf
 
 The product must feel like a normal recording app. Clip-native recording is built in; it is
 not a separate mode or an advanced workflow.
+
+## Agent-native product model
+
+Klippt must be excellent to use through both the UI and coding agents. The CLI and future local
+agent bridge operate on the same versioned project document and the same typed editing commands as
+the UI. Do not create an agent-only timeline, duplicate editing logic, or let agents rewrite project
+JSON directly.
+
+Machine-facing commands must return stable IDs and structured JSON. Every write must support a
+clear dry run, require the expected project revision, save atomically, and create one normal Undo
+step. Agent edits preserve source media and follow the same recovery, ownership, and history rules
+as UI edits. An agent can remove a clip from the edit, but it cannot silently delete recorded media.
+
+The complete target command surface includes project inspection, media health, Split, Remove,
+Restore, reorder, trim, insertion, layout, Screen Zoom, Camera Emphasis, audio settings, automatic
+direction, validation, and export. Keep the transport thin. A future MCP or JSON-RPC adapter must
+call the shared command service instead of owning product behavior.
 
 ## Product language — non-negotiable
 
@@ -263,6 +282,32 @@ Version 1 does not show transcript, tail playback, thumbnails, or a review surfa
 paused panel. If real use later proves that Stop → editor → Record is too disruptive, test a
 small last-clip review feature then. Do not build it before that evidence exists.
 
+## Pause shortening
+
+- Put pause shortening in one right-side **Pauses** pane. Do not hide it in Automatic direction,
+  captions, or the recording HUD.
+- Call the action **Shorten Pauses**. Do not promise destructive “silence removal.”
+- Analyze cached source observations without changing the project. Show temporary candidates over
+  the clip waveform. Let the user preview, select, clear, and apply them.
+- Confirmed candidates become ordinary clip-anchored `trimRanges`. Apply one selected batch through
+  the retryable document-patch path as one normal Undo step. Do not add a silence-only timeline,
+  rendered media, split clip, or permanent analysis lane.
+- Speech mode uses the verified sub-megabyte Silero v6.2 model as its primary isolated-microphone
+  signal. Run it through the existing whisper.cpp helper without loading the 264 MB caption model;
+  cache its 32 ms probability envelope by immutable source identity. Use isolated-microphone energy
+  and local word timing as extra protection. Speech mode can work without a transcript, but it must
+  not silently fall back when Silero or the isolated microphone is missing.
+- Audio-level mode is the explicit no-model fallback. It can use adaptive level or a manual dB
+  threshold and can disclose when an older file requires the mixed audio track.
+- Protect isolated system audio and meaningful screen activity by default. Click, mouse-up, drag,
+  keyboard timing, and pointer travel above jitter are hard cut blockers. Private input contributes
+  timing only and never geometry.
+- Keep all pacing and detector values in the typed `PauseAnalysisPolicy`. Presets and live tuning
+  must use that policy instead of adding literals to the pane.
+- Use the lightweight capped envelope for the visible waveform and a disk-cached 20 ms envelope for
+  cut analysis. Keep source media unchanged. Render structural boundaries with the shared 10 ms
+  equal-power audio fade.
+
 ## Automatic direction
 
 Automatic direction is a normal editor enhancement. It is not an AI mode and does not add a
@@ -273,9 +318,14 @@ second timeline model.
   click, drag, typing, trace, microphone, and future detectors must not write project regions on
   their own.
 - Keep every analyzer threshold, duration, density limit, and handoff rule in the nested typed
-  `AutomaticDirectionPolicy`. New presets or a later Advanced Auto-Editing UI pass validated
-  overrides through that policy tree. They must not fork the analyzer or add tuning literals to UI
-  components.
+  `AutomaticDirectionPolicy`. The right-side **Automatic** pane and its versioned presets pass
+  validated overrides through that policy tree. They must not fork the analyzer or add tuning
+  literals to UI components. Cache raw recording observations during one tuning session, replan
+  after a short debounce, and keep the session to one Undo action.
+- Default project Max Zoom to 1.65×, but let the user expand the automatic depth profile up to the
+  shared 5× renderer limit. A higher request must not raise the planner's minimum acceptable safe
+  scale. Cursor safety can reduce or omit a crop. Do not expose safety-solver sampling or search
+  values as creative settings.
 - Plan screen direction first and let Camera Emphasis fill compatible quiet time under the shared
   direction budget. Give every planned effect a stable identity, then convert the plan into normal
   clip-anchored regions. A repeated application of the same plan must be idempotent.
@@ -312,7 +362,9 @@ second timeline model.
 - Treat sustained typing in an editable element as screen intent. Record only local event times,
   burst counts, and the focused editable element or caret bounds. Never record key codes,
   characters, clipboard data, shortcuts, field values, or typed text. Ignore secure text fields
-  and fail closed when the focused target cannot be resolved safely.
+  and fail closed when the focused target cannot be resolved safely. Classify recorder-owned
+  keyboard focus by the focused Accessibility process, not by whether a broad target-center
+  fallback happens to sit underneath the HUD or camera monitor.
 - When typing follows a click into the same target, extend or hold the existing screen zoom instead
   of adding another zoom-out and zoom-in. When a clear typing burst starts without a nearby click,
   it can create one normal editable auto Zoom region around the focused writing area. A parked
@@ -325,6 +377,10 @@ second timeline model.
   click-chain safeguard applies only to click-only chains. Internal checkpoints must not create a
   visible exit, a second timeline item, or another score. A nearby content click after typing can
   receive a direct connected handoff instead of forcing full frame first.
+- Keep each renewable typing chain indivisible, but do not let one typing chain flatten unrelated
+  neighboring chains into one shallow crop. If a later connected handoff would crop the real
+  pointer, preserve the safe typing crop and create the smallest full-frame disconnect around that
+  handoff instead of lowering the complete passage.
 - Resolve typing position from a trustworthy Accessibility caret rectangle first. If the target
   exposes only broad bounds, use the latest recent content click only when it lies inside that same
   focused editable target. Use the center only for a compact target whose bounds are precise enough.
@@ -346,6 +402,10 @@ second timeline model.
   generated region.
 - Store every result as an ordinary clip-anchored zoom region with `source: "auto"`. The user
   can resize, move, focus, copy, delete, Undo, and Redo it with the normal editor actions.
+- Show every ordinary Zoom and Camera Emphasis region directly on the timeline. Do not replace
+  real regions with an **Automatic direction** summary pill. Keep `directionGroupId` as internal
+  ownership and regeneration metadata. Render only effect lanes that contain regions, and keep
+  Zoom closest to the clip row.
 - Never overwrite manual regions. Existing zoom regions reserve their timeline spans.
 - Apply automatic-zoom spacing, occupancy, and density in trim-compressed playback time. Store the
   accepted regions on the raw timeline so normal editing and clip anchors remain authoritative.
@@ -398,9 +458,18 @@ product requirement, not as an optional maximum-quality mode.
 - On Retina Macs, capture the best available backing-pixel resolution. Do not silently record
   the logical point size. Use ScreenCaptureKit's pixel scale and best-resolution controls, with
   an explicit lower-resolution option only when the user chooses speed or smaller files.
-- Output shape and output resolution are separate controls. The editor already defaults to a
-  padded 16:9 canvas and offers 16:9, 9:16, 1:1, 4:3, 4:5, 16:10, 10:16, and original shapes.
-  Preserve the selected background and padding without stretching the captured screen.
+- Output shape and output resolution are separate controls in the right-side **Layout** pane.
+  The editor defaults to a padded 16:9 canvas and offers 16:9, 9:16, 1:1, 4:3, 4:5, 16:10,
+  10:16, original shapes, and an encoder-safe custom width and height from 256 to 7680 pixels.
+  Custom pixels define the editable project canvas; **Highest** export uses them while lower
+  quality presets can render smaller delivery files. Preview, native scene, GUI export, and CLI
+  export must resolve the same canvas. Preserve the selected background and padding without
+  stretching the captured screen. Do not add a second aspect-ratio control to the timeline.
+- For Dual Frame and Vertical Stack, let the user put the screen or camera first. Store that
+  choice as project data and reusable editor defaults. Keep source tracks unchanged.
+- Vertical Stack divides the complete padded canvas into cover-cropped screen and camera cells.
+  Default to an equal split, and let the user set the camera share from 20% to 80%. Preview,
+  native export, CLI export, saved projects, and remembered editor defaults must use one value.
 - Export must offer real control over resolution, frame rate, codec, and bitrate. A quality
   preset must pass its resolved bitrate to the native encoder; do not calculate a value in the
   UI and then let the native pipeline replace it with a hidden fixed bitrate.
@@ -423,7 +492,7 @@ product requirement, not as an optional maximum-quality mode.
 
 ## YouTube-ready audio and delivery
 
-record must export a file that Olle can upload without a separate audio-mastering step.
+Klippt must export a file that Olle can upload without a separate audio-mastering step.
 Keep capture media recoverable and non-destructive; do not permanently bake loudness changes
 into the raw clips.
 
@@ -440,7 +509,7 @@ into the raw clips.
 - After cuts, speed changes, voiceovers, microphone gain, and system-audio mixing are applied,
   measure and master the complete edited program. `Normalize volume` is one simple export option
   and is on by default. Use -14 LUFS integrated and no more than -1 dBTP as the practical default
-  for online video. This is a record mastering default, not an official YouTube upload rule.
+  for online video. This is a Klippt mastering default, not an official YouTube upload rule.
   Use a transparent true-peak limiter only where needed. Let the user disable normalization.
 - Automatic system-audio ducking under speech can follow the first mastering slice. Keep it
   subtle and reversible.
@@ -462,6 +531,19 @@ Aim for Screen Studio-level refinement, not a pixel copy.
 - Use Screen Studio's broad professional-editor structure and calm density as a quality
   reference.
 - Create original tokens, colors, icons, motion, copy, assets, empty states, and branding.
+- Use the free-standing Klippt K on a transparent canvas for in-app and system icons. Keep its thin
+  graphite outline so the light strokes work on light and dark surfaces. Do not restore a white,
+  surface-colored, or rounded-square plate behind it. Keep the macOS menu-bar mark as a monochrome
+  16 px template image with a transparent 32 px `@2x` companion; an opaque background becomes a
+  solid status-item square.
+- Klippt's product chrome is monochrome: graphite surfaces, soft-white text and controls,
+  and neutral grays for hierarchy. Keep red for recording and destructive actions. Keep green
+  for transient success and live audio state. Do not use a green glowing dot for passive state such
+  as “Saved”; show that as quiet neutral text and reserve emphasis for “Unsaved”. Do not add a bright
+  brand accent, colored glow, or decorative gradient to make the interface feel distinctive.
+- Use one muted steel-blue functional accent for editor selection, the playhead, and automatic edit
+  regions. Keep that color inside the editing workspace. Do not tint whole panels or use the accent
+  as decoration. Keep the recording HUD monochrome.
 - Use one dark, content-first editor window with a dominant preview, stable trailing
   inspector, and precise bottom timeline.
 - Use restrained material/blur only for floating surfaces and window chrome.
@@ -478,7 +560,7 @@ Aim for Screen Studio-level refinement, not a pixel copy.
 
 ## Architecture
 
-record is Mac-first, not Mac-only.
+Klippt is Mac-first, not Mac-only.
 
 - Shared app/editor: Electron, React, TypeScript, PixiJS, and the existing project model.
 - macOS capture: Swift, ScreenCaptureKit, AVFoundation, and `AVAssetWriter`.
@@ -492,17 +574,23 @@ record is Mac-first, not Mac-only.
 
 This is a private proprietary product intended to make money.
 
-- The business model stays open. record can become a paid app, a subscription, or a hybrid later.
-  Do not hardcode the inherited “free forever” promise into product behavior.
-- Do not add billing or entitlement code before the paid-product requirements are chosen. A future
-  entitlement failure must never delete, corrupt, or hide the user's local recordings and projects.
+- The first commercial release is a subscription-first paid private alpha. Keep one simple Klippt
+  Pro entitlement. Monthly and annual prices can map to the same product capability.
+- Keep billing behind a small provider adapter. Do not embed a provider API secret in the desktop
+  app. Store local license state with Electron `safeStorage`, allow a bounded offline grace period,
+  and validate again when the network returns.
+- An entitlement failure must never delete, corrupt, or hide the user's local recordings and
+  projects. Do not interrupt an active recording or export because a validation request fails.
+- Lemon Squeezy is the current fastest provider candidate because it can be the merchant of record
+  and connect subscription status to license keys. It is not selected until Olle creates the store,
+  chooses prices and trial behavior, and provides the public product identifiers.
 - The pinned OpenScreen base is MIT licensed and permits commercial proprietary use.
 - Preserve the exact upstream copyright and MIT permission notice in source and every
   distribution.
 - Keep the public repository as fetch-only `upstream`. Never push product work there.
 - Add a private `origin` only when Olle supplies or creates the private remote.
 - Complete the runtime and visual rebrand before public distribution. Do not ship the OpenScreen
-  name, logo, identity, screenshots, or marketing assets as record.
+  name, logo, identity, screenshots, or marketing assets as Klippt.
 - Do not copy AGPL Recordly code.
 - Before a paid release, generate and review dependency and asset notices. Preserve LGPL
   requirements for dynamically linked FFmpeg. Reject unapproved GPL/AGPL/nonfree or unknown
@@ -552,7 +640,7 @@ not prove the helper contains the current source.
 
 ## Code and test rules
 
-- Do not use TestSprite for record unless Olle explicitly asks for it.
+- Do not use TestSprite for Klippt unless Olle explicitly asks for it.
 - TypeScript is strict. Do not add explicit `any`.
 - Match the surrounding module's architecture. Do not refactor unrelated code.
 - React uses functional components and top-level hooks.

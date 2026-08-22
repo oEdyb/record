@@ -56,6 +56,9 @@ playwright-report/
 __screenshots__/
 .vitest-attachments/
 
+# Local visual-reference and agent scratch files. Never source.
+/tmp/
+
 # shell files
 /shell.sh
 # Nix

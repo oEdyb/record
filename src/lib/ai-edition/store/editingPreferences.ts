@@ -1,4 +1,11 @@
-import { MAX_WEBCAM_SIZE_PERCENT, MIN_WEBCAM_SIZE_PERCENT } from "@/lib/compositeLayout";
+import { MAX_WEBCAM_ZOOM, MIN_WEBCAM_ZOOM } from "@/components/video-editor/types";
+import { normalizeOutputResolution } from "@/lib/ai-edition/document/outputFormat";
+import {
+	MAX_WEBCAM_BLOCK_CAMERA_SHARE,
+	MAX_WEBCAM_SIZE_PERCENT,
+	MIN_WEBCAM_BLOCK_CAMERA_SHARE,
+	MIN_WEBCAM_SIZE_PERCENT,
+} from "@/lib/compositeLayout";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
 import type {
 	ExportFormat,
@@ -67,7 +74,9 @@ function cloneEditorDefaults(): EditorDefaultPreferences {
 	const { cropRegion: _cropRegion, ...defaults } = DEFAULT_EDITOR_SETTINGS;
 	return {
 		...defaults,
+		outputResolution: defaults.outputResolution ? { ...defaults.outputResolution } : null,
 		webcamPosition: defaults.webcamPosition ? { ...defaults.webcamPosition } : null,
+		webcamFocalPoint: { ...defaults.webcamFocalPoint },
 		cursor: { ...defaults.cursor },
 	};
 }
@@ -124,6 +133,7 @@ function normalizeEditorDefaults(
 	const defaults = cloneEditorDefaults();
 	const cursor = record(raw?.cursor);
 	const position = record(raw?.webcamPosition);
+	const focalPoint = record(raw?.webcamFocalPoint);
 	const legacyAspect = isAspectRatio(legacy?.aspectRatio)
 		? legacy.aspectRatio
 		: defaults.aspectRatio;
@@ -134,6 +144,7 @@ function normalizeEditorDefaults(
 	return {
 		wallpaper: isReusableWallpaper(raw?.wallpaper) ? raw.wallpaper : defaults.wallpaper,
 		aspectRatio: isAspectRatio(raw?.aspectRatio) ? raw.aspectRatio : legacyAspect,
+		outputResolution: normalizeOutputResolution(raw?.outputResolution),
 		shadowIntensity: numberInRange(raw?.shadowIntensity, defaults.shadowIntensity, 0, 1),
 		showBlur: booleanOr(raw?.showBlur, defaults.showBlur),
 		motionBlurAmount: numberInRange(raw?.motionBlurAmount, defaults.motionBlurAmount, 0, 1),
@@ -146,6 +157,13 @@ function normalizeEditorDefaults(
 			layout === "no-webcam"
 				? layout
 				: defaults.webcamLayoutPreset,
+		webcamBlockOrder: raw?.webcamBlockOrder === "camera-first" ? "camera-first" : "screen-first",
+		webcamBlockCameraShare: numberInRange(
+			raw?.webcamBlockCameraShare,
+			defaults.webcamBlockCameraShare,
+			MIN_WEBCAM_BLOCK_CAMERA_SHARE,
+			MAX_WEBCAM_BLOCK_CAMERA_SHARE,
+		),
 		webcamMaskShape:
 			mask === "rectangle" || mask === "circle" || mask === "square" || mask === "rounded"
 				? mask
@@ -158,6 +176,22 @@ function normalizeEditorDefaults(
 			MIN_WEBCAM_SIZE_PERCENT,
 			MAX_WEBCAM_SIZE_PERCENT,
 		),
+		webcamZoom: numberInRange(
+			raw?.webcamZoom,
+			defaults.webcamZoom,
+			MIN_WEBCAM_ZOOM,
+			MAX_WEBCAM_ZOOM,
+		),
+		webcamFocalPoint:
+			typeof focalPoint?.cx === "number" &&
+			Number.isFinite(focalPoint.cx) &&
+			typeof focalPoint.cy === "number" &&
+			Number.isFinite(focalPoint.cy)
+				? {
+						cx: Math.min(1, Math.max(0, focalPoint.cx)),
+						cy: Math.min(1, Math.max(0, focalPoint.cy)),
+					}
+				: { ...defaults.webcamFocalPoint },
 		webcamPosition:
 			typeof position?.cx === "number" &&
 			Number.isFinite(position.cx) &&
@@ -324,16 +358,21 @@ export function editorDefaultPreferencesToPatch(
 	return {
 		wallpaper: preferences.wallpaper,
 		aspectRatio: preferences.aspectRatio,
+		outputResolution: preferences.outputResolution,
 		shadowIntensity: preferences.shadowIntensity,
 		showBlur: preferences.showBlur,
 		motionBlurAmount: preferences.motionBlurAmount,
 		borderRadius: preferences.borderRadius,
 		padding: preferences.padding,
 		webcamLayoutPreset: preferences.webcamLayoutPreset,
+		webcamBlockOrder: preferences.webcamBlockOrder,
+		webcamBlockCameraShare: preferences.webcamBlockCameraShare,
 		webcamMaskShape: preferences.webcamMaskShape,
 		webcamMirrored: preferences.webcamMirrored,
 		webcamReactiveZoom: preferences.webcamReactiveZoom,
 		webcamSizePreset: preferences.webcamSizePreset,
+		webcamZoom: preferences.webcamZoom,
+		webcamFocalPoint: preferences.webcamFocalPoint,
 		webcamPosition: preferences.webcamPosition,
 		cursor: {
 			...preferences.cursor,

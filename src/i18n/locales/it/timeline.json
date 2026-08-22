@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "Messa a fuoco automatica attiva per tutti gli zoom — clicca per passare tutti a manuale",
 		"autoFocusAllOff": "Attiva la messa a fuoco automatica per tutti gli zoom (la fotocamera segue il cursore)",
 		"addTrim": "Aggiungi taglio (T)",
+		"splitClip": "Dividi il clip alla testina di riproduzione",
 		"addAnnotation": "Aggiungi annotazione (A)",
 		"addSpeed": "Aggiungi velocità (S)",
 		"addCameraFullscreen": "Aggiungi Camera a schermo intero (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "Premi C per aggiungere un segmento Camera a schermo intero"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "Panoramica",
 		"zoom": "Zoom",
 		"trim": "Taglio",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "Miglioramento automatico",
 		"automaticZooms": "Zoom automatici",
+		"automaticDirection": "Regia automatica",
 		"automaticZoomsHint": "Dal movimento del cursore registrato",
 		"smartZoomsAndCuts": "Tagli intelligenti",
 		"smartZoomsAndCutsHint": "Con l'IA",

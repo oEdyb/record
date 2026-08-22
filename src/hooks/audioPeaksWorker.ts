@@ -1,3 +1,5 @@
+import { waveformPeakBlockCount } from "@/lib/audio/waveformPeaks";
+
 /**
  * Web Worker: computes min/max peak pairs from raw audio channel data.
  * In: { channels: Float32Array[]; duration: number }.
@@ -13,7 +15,7 @@ self.onmessage = (event: MessageEvent<{ channels: Float32Array[]; duration: numb
 	}
 
 	const totalSamples = channels[0].length;
-	const N = Math.min(24000, Math.ceil(duration * 200));
+	const N = waveformPeakBlockCount(duration);
 	const blockSize = totalSamples / N;
 	const peaks = new Float32Array(N * 2); // [min0, max0, min1, max1, ...]
 

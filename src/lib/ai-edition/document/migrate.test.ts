@@ -29,10 +29,14 @@ function makeV2Project(overrides: Partial<EditorProjectData> = {}): EditorProjec
 			annotationRegions: [],
 			aspectRatio: "16:9",
 			webcamLayoutPreset: "picture-in-picture",
+			webcamBlockOrder: "screen-first",
+			webcamBlockCameraShare: 50,
 			webcamMaskShape: "circle",
 			webcamMirrored: true,
 			webcamReactiveZoom: true,
 			webcamSizePreset: 25,
+			webcamZoom: 1,
+			webcamFocalPoint: { cx: 0.5, cy: 0.5 },
 			webcamPosition: { cx: 0.5, cy: 0.5 },
 			exportQuality: "good",
 			exportFormat: "mp4",
@@ -111,6 +115,7 @@ describe("migrateProjectDataToAxcutDocument", () => {
 							rotationPreset: "iso",
 							customScale: 2.5,
 							source: "manual",
+							directionGroupId: "screen-passage",
 						},
 					],
 				},
@@ -125,6 +130,7 @@ describe("migrateProjectDataToAxcutDocument", () => {
 		expect(z.endMs).toBe(2000);
 		expect(z.customScale).toBe(2.5);
 		expect(z.rotationPreset).toBe("iso");
+		expect(z.directionGroupId).toBe("screen-passage");
 	});
 
 	it("converts annotationRegions to seconds with type and content preserved", () => {

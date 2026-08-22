@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { GradientEditorState } from "./gradient-editor";
 import GradientEditor from "./gradient-editor";
@@ -12,6 +13,17 @@ const getLastState = (onChange: ReturnType<typeof vi.fn>): GradientEditorState =
 };
 
 describe("GradientEditor", () => {
+	it("does not change the project merely because the editor opened", () => {
+		const onChange = vi.fn();
+		render(
+			<StrictMode>
+				<GradientEditor onChange={onChange} />
+			</StrictMode>,
+		);
+
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
 	it("emits unique point IDs after an interaction", async () => {
 		const onChange = vi.fn();
 		render(<GradientEditor onChange={onChange} />);

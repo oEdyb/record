@@ -895,6 +895,27 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(buildSceneDescription(high).layout.webcamSize).toBeCloseTo(0.8, 5);
 	});
 
+	it("maps and clamps the camera crop zoom independently of webcam size", () => {
+		const normal = makeDoc({ legacyEditor: { webcamSizePreset: 25, webcamZoom: 1.8 } });
+		const high = makeDoc({ legacyEditor: { webcamSizePreset: 25, webcamZoom: 9 } });
+		expect(buildSceneDescription(normal).layout.webcamZoom).toBe(1.8);
+		expect(buildSceneDescription(high).layout.webcamZoom).toBe(3);
+		expect(buildSceneDescription(normal).layout.webcamSize).toBe(0.25);
+	});
+
+	it("maps and clamps the camera focal point independently of widget position", () => {
+		const scene = buildSceneDescription(
+			makeDoc({
+				legacyEditor: {
+					webcamFocalPoint: { cx: 1.4, cy: 0.25 },
+					webcamPosition: { cx: 0.2, cy: 0.8 },
+				},
+			}),
+		);
+		expect(scene.layout.webcamFocalPoint).toEqual({ cx: 1, cy: 0.25 });
+		expect(scene.layout.webcamPosition).toEqual({ cx: 0.2, cy: 0.8 });
+	});
+
 	it("maps the cursor sub-settings", () => {
 		const doc = makeDoc({
 			legacyEditor: {
@@ -1028,6 +1049,34 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(scene.layout.screenRadiusFrac).toBeGreaterThan(0);
 	});
 
+	it("can put the camera first in a stacked composition", () => {
+		const scene = buildSceneDescription(
+			docWithCamera({
+				webcamLayoutPreset: "vertical-stack",
+				webcamBlockOrder: "camera-first",
+				padding: 0,
+			}),
+		);
+		expect(scene.layout.webcamRect).not.toBeNull();
+		expect(scene.layout.screenRect).not.toBeNull();
+		expect(scene.layout.webcamRect!.y).toBeLessThan(scene.layout.screenRect!.y);
+	});
+
+	it("ships an editable stacked camera share through the resolved native layout", () => {
+		const scene = buildSceneDescription(
+			docWithCamera({
+				aspectRatio: "9:16",
+				webcamLayoutPreset: "vertical-stack",
+				webcamBlockCameraShare: 35,
+				padding: 0,
+			}),
+		);
+		const camera = scene.layout.webcamRect!;
+		const screen = scene.layout.screenRect!;
+		expect(camera.height / (camera.height + screen.height)).toBeCloseTo(0.35, 2);
+		expect(scene.layout.screenCover).toBe(true);
+	});
+
 	it("leaves screenRadiusFrac null for picture-in-picture, so the Roundness slider still drives it", () => {
 		const doc = makeDoc({ legacyEditor: { webcamLayoutPreset: "picture-in-picture" } });
 		expect(buildSceneDescription(doc).layout.screenRadiusFrac).toBeNull();
@@ -1123,6 +1172,33 @@ describe("buildSceneDescription.settings mapping", () => {
 // --- output dims -----------------------------------------------------------
 
 describe("buildSceneDescription.output", () => {
+	it("uses the exact custom output resolution", () => {
+		const asset = makeAsset({
+			id: "a",
+			originalPath: "/a.mp4",
+			video: { codec: "h264", width: 3840, height: 2160, fps: 30 },
+		});
+		const doc = makeDoc({
+			assets: [asset],
+			clips: [
+				makeClip({
+					id: "c1",
+					assetId: "a",
+					sourceStartSec: 0,
+					sourceEndSec: 1,
+					timelineStartSec: 0,
+					timelineEndSec: 1,
+				}),
+			],
+			legacyEditor: {
+				aspectRatio: "4:5",
+				outputResolution: { width: 1080, height: 1350 },
+			},
+		});
+
+		expect(buildSceneDescription(doc).output).toEqual({ width: 1080, height: 1350, fps: null });
+	});
+
 	it("picks the larger of two used assets", () => {
 		const small = makeAsset({
 			id: "small",

@@ -211,7 +211,7 @@ describe("EditorEmptyState (new editor)", () => {
 		});
 	});
 
-	it("opens a .openscreen project file via the load button", async () => {
+	it("opens a project file via the load button", async () => {
 		bridgeMocks.loadProjectFile.mockResolvedValue({
 			success: true,
 			project: { id: "loaded", title: "Loaded" },
@@ -230,7 +230,31 @@ describe("EditorEmptyState (new editor)", () => {
 		});
 	});
 
-	it("shows the unsupported-format dialog when a non-.openscreen file is dropped", async () => {
+	it.each([
+		"demo.klippt",
+		"demo.openscreen",
+		"demo.axcut",
+	])("opens supported project file %s when dropped", async (fileName) => {
+		bridgeMocks.getPathForFile.mockReturnValue(`/tmp/${fileName}`);
+		bridgeMocks.loadProjectFileFromPath.mockResolvedValue({
+			success: true,
+			project: { id: "loaded", title: "Loaded" },
+		});
+		bridgeMocks.save.mockResolvedValue({ success: true, document: sampleDoc });
+		renderWithI18n(<EditorEmptyState hasProject={false} />);
+
+		const file = new File(["{}"], fileName, { type: "application/json" });
+		const dropZone = screen.getByText(/no project open/i).parentElement?.parentElement
+			?.parentElement as HTMLElement;
+		fireEvent.drop(dropZone, { dataTransfer: { files: [file] } });
+
+		await waitFor(() => {
+			expect(bridgeMocks.loadProjectFileFromPath).toHaveBeenCalledWith(`/tmp/${fileName}`);
+			expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("shows the unsupported-format dialog when a non-project file is dropped", async () => {
 		renderWithI18n(<EditorEmptyState hasProject={false} />);
 
 		const file = new File([new Uint8Array([0, 1, 2])], "recording.mp4", { type: "video/mp4" });

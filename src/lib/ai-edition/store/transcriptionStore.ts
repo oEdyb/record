@@ -478,12 +478,18 @@ export function whenTranscriptionIdle(): Promise<void> {
  * Mount once (the editor shell does). Keeps the queue reconciled with whatever
  * document is loaded — a new project, an imported asset, a removed one.
  */
-export function useAutoTranscription(): void {
+export function useAutoTranscription(enabled = true): void {
 	const document = useProjectStore((s) => s.document);
 	const sync = useTranscriptionStore((s) => s.sync);
+	const reset = useTranscriptionStore((s) => s.reset);
 	const [localEngineAvailable, setLocalEngineAvailable] = useState(false);
 
 	useEffect(() => {
+		if (!enabled) {
+			reset();
+			setLocalEngineAvailable(false);
+			return;
+		}
 		const stt = window.electronAPI?.stt;
 		if (typeof stt?.transcribe !== "function") {
 			setLocalEngineAvailable(false);
@@ -506,11 +512,12 @@ export function useAutoTranscription(): void {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [enabled, reset]);
 
 	useEffect(() => {
+		if (!enabled) return;
 		sync(document, localEngineAvailable);
-	}, [document, localEngineAvailable, sync]);
+	}, [document, enabled, localEngineAvailable, sync]);
 }
 
 /**

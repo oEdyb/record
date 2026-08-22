@@ -8,13 +8,14 @@ import {
 	migrateProjectDataToAxcutDocument,
 	migrateRawDocumentToCurrent,
 } from "@/lib/ai-edition/document/migrate";
+import { pauseSuggestionsAsTrims } from "@/lib/ai-edition/document/pause-edits";
 import {
 	applyProbedDuration,
 	replaceTimeline as replaceTimelineOp,
 	resolveClipInsertionBoundary,
 } from "@/lib/ai-edition/document/timeline";
 import { type AxcutClip, documentSchema } from "@/lib/ai-edition/schema";
-import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { useProjectStore, waitForProjectMutations } from "@/lib/ai-edition/store/projectStore";
 import {
 	useAssetTranscriptions,
 	useAutoTranscription,
@@ -25,6 +26,7 @@ import { useUndoRedoShortcuts } from "@/lib/ai-edition/store/undo";
 import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTimelineOps";
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
+import { AUTOMATIC_TRANSCRIPTION_ENABLED, PRODUCT_SURFACE } from "@/lib/productSurface";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
@@ -40,6 +42,7 @@ import {
 	UnsavedChangesModal,
 	type UnsavedChoice,
 } from "./Modals";
+import type { SelectablePauseSuggestion } from "./PausesPane";
 import { Preview } from "./Preview";
 import type { TrimTarget } from "./RightPanes";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
@@ -65,6 +68,7 @@ export function NewEditorShell() {
 	const projectId = useProjectStore((s) => s.projectId);
 	const dirty = useProjectStore((s) => s.dirty);
 	const createProject = useProjectStore((s) => s.createProject);
+	const addAsset = useProjectStore((s) => s.addAsset);
 	const setCurrentTime = useProjectStore((s) => s.setCurrentTime);
 	const setSourceDuration = useProjectStore((s) => s.setSourceDuration);
 	const loadProject = useProjectStore((s) => s.loadProject);
@@ -82,7 +86,10 @@ export function NewEditorShell() {
 	// floating HUD, not a third editor tab.
 	// column, and a floating facet inspector over the stage.
 	const [mode, setMode] = useState<EditorMode>("edit");
-	const [chatOpen, setChatOpen] = useState(() => loadUserPreferences().editorChatOpen);
+	const [chatOpen, setChatOpen] = useState<boolean>(
+		() => PRODUCT_SURFACE.agentEditor && loadUserPreferences().editorChatOpen,
+	);
+	const [importingMedia, setImportingMedia] = useState(false);
 	const [chatWidthPx, setChatWidthPx] = useState(
 		() => Number(localStorage.getItem("os-editor-chat-width")) || 392,
 	);
@@ -100,23 +107,42 @@ export function NewEditorShell() {
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
 	const [exportOpen, setExportOpen] = useState(false);
 	const [regeneratingAutomaticEdits, setRegeneratingAutomaticEdits] = useState(false);
+	const [pauseSuggestions, setPauseSuggestions] = useState<SelectablePauseSuggestion[]>([]);
+	const [pausePreviewSuggestions, setPausePreviewSuggestions] = useState<
+		SelectablePauseSuggestion[] | null
+	>(null);
 	const [unsavedPrompt, setUnsavedPrompt] = useState<{
 		action: "close" | "new" | "open";
 		resolve: (choice: UnsavedChoice) => void;
 	} | null>(null);
 	const toggleChat = useCallback(() => {
+		if (!PRODUCT_SURFACE.agentEditor) return;
 		setChatOpen((open) => {
 			const next = !open;
 			saveUserPreferences({ editorChatOpen: next });
 			return next;
 		});
 	}, []);
+	const handlePauseSuggestionsChange = useCallback(
+		(suggestions: SelectablePauseSuggestion[]) => setPauseSuggestions(suggestions),
+		[],
+	);
+	const handlePausePreview = useCallback(
+		(suggestions: SelectablePauseSuggestion[] | null) => {
+			setPausePreviewSuggestions(suggestions);
+			const first = suggestions?.[0];
+			if (!first) return;
+			setCurrentTime(Math.max(0, first.timelineStartSec - 0.8));
+			setPlaying(true);
+		},
+		[setCurrentTime, setPlaying],
+	);
 	const { shortcuts, isMac, openConfig: openShortcutsConfig } = useShortcuts();
 	// Transcription is local and every transcript-driven feature (Smart cuts,
 	// captions, the transcript pane) needs one, so the editor produces them by
 	// itself instead of waiting for the user to find the button. This hook is
 	// the ONLY place the background pass is driven from — see transcriptionStore.
-	useAutoTranscription();
+	useAutoTranscription(AUTOMATIC_TRANSCRIPTION_ENABLED);
 	const requestTimelineTranscripts = useTranscriptionStore((s) => s.requestTimelineTranscripts);
 	// Resolved over the assets the TIMELINE plays, not over the primary asset: in
 	// a recording project the primary asset is the screen capture, which is
@@ -606,7 +632,7 @@ export function NewEditorShell() {
 						facet: "effects",
 					});
 				} else {
-					setMode("media");
+					setMode(PRODUCT_SURFACE.mediaWorkspace ? "media" : "edit");
 				}
 			} catch (err) {
 				toast.error("Could not create project", {
@@ -716,6 +742,28 @@ export function NewEditorShell() {
 		[saveDocument, unsavedPrompt],
 	);
 
+	const handleImportMedia = useCallback(async () => {
+		if (!useProjectStore.getState().projectId || importingMedia) return;
+		const picker = await window.electronAPI?.openVideoFilePicker?.();
+		if (!picker?.success || picker.canceled || !picker.path) return;
+
+		setImportingMedia(true);
+		try {
+			const label = picker.name || picker.path.split(/[\\/]/).pop() || "Video";
+			const asset = await addAsset(picker.path, label);
+			if (!asset) throw new Error("The imported file was not added to the project");
+			const insertAt = useProjectStore.getState().document?.timeline.clips.length ?? 0;
+			await tl.insertClipAt(asset.id, insertAt);
+			toast.success(te("mediaStage.added", { label }));
+		} catch (error) {
+			toast.error(te("mediaStage.couldNotAddAsset"), {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setImportingMedia(false);
+		}
+	}, [addAsset, importingMedia, te, tl]);
+
 	const handleNewRecording = useCallback(async () => {
 		const api = window.electronAPI;
 		if (!api?.startNewRecording) return;
@@ -724,6 +772,8 @@ export function NewEditorShell() {
 			// the store after this gives one authoritative playhead for both return
 			// state and insertion placement.
 			setPlaying(false);
+			const activeProjectId = useProjectStore.getState().projectId;
+			if (activeProjectId) await waitForProjectMutations(activeProjectId);
 			let state = useProjectStore.getState();
 			let currentDocument = state.document;
 			// The editor window closes during the workspace switch. Save first so
@@ -1108,8 +1158,12 @@ export function NewEditorShell() {
 	]);
 
 	const showTimeline = true;
-	const timelineRow = mode === "media" ? "188px" : `${timelineHeightPx}px`;
-	const bodyColumns = mode === "edit" && chatOpen ? `${chatWidthPx}px 1fr` : "1fr";
+	const visibleMode = PRODUCT_SURFACE.mediaWorkspace ? mode : "edit";
+	const timelineRow = visibleMode === "media" ? "188px" : `${timelineHeightPx}px`;
+	const bodyColumns =
+		visibleMode === "edit" && PRODUCT_SURFACE.agentEditor && chatOpen
+			? `${chatWidthPx}px 1fr`
+			: "1fr";
 
 	// Drag the chat/stage divider (col-resize) or the timeline's top edge
 	// (row-resize) to resize. Pointer-driven like V4Timeline's pill/nav/clip
@@ -1178,6 +1232,9 @@ export function NewEditorShell() {
 				? { reason: transcriptGate.reason, message: transcriptGate.message }
 				: undefined,
 	};
+	const previewTrimRanges = pausePreviewSuggestions
+		? [...tl.trimRanges, ...pauseSuggestionsAsTrims(pausePreviewSuggestions)]
+		: tl.trimRanges;
 
 	return (
 		<div
@@ -1185,17 +1242,20 @@ export function NewEditorShell() {
 			style={{ gridTemplateRows: `58px 1fr ${showTimeline ? timelineRow : "0px"}` }}
 		>
 			<EditorTopBar
-				mode={mode}
+				mode={visibleMode}
 				onModeChange={setMode}
 				projectTitle={project?.title ?? null}
 				dirty={dirty}
 				canExport={hasAsset}
+				canImportMedia={hasProject}
 				canRegenerateAutomaticEdits={canRegenerateAutomaticDirection(document)}
 				regeneratingAutomaticEdits={regeneratingAutomaticEdits}
+				importingMedia={importingMedia}
 				chatOpen={chatOpen}
 				actions={{
 					openProject: () => setOpenProjectOpen(true),
 					newProject: () => setNewProjectOpen(true),
+					importMedia: () => void handleImportMedia(),
 					save: () => void handleSave(),
 					export: handleExport,
 					openSettings: handleOpenSettings,
@@ -1207,7 +1267,7 @@ export function NewEditorShell() {
 			/>
 
 			<div className={v4.body} style={{ gridTemplateColumns: bodyColumns }}>
-				{mode === "edit" && chatOpen ? (
+				{visibleMode === "edit" && PRODUCT_SURFACE.agentEditor && chatOpen ? (
 					<>
 						<aside className={v4.agent} aria-label={te("shell.aiEditor")}>
 							<LeftPanel active="chat" />
@@ -1224,7 +1284,7 @@ export function NewEditorShell() {
 				) : null}
 
 				<section className={v4.stage} aria-label={te("shell.previewStage")}>
-					{mode === "edit" ? (
+					{visibleMode === "edit" ? (
 						<>
 							<div
 								style={{
@@ -1246,7 +1306,7 @@ export function NewEditorShell() {
 									// issue) — still reserve the inspector's real footprint (right:20 +
 									// rail:50 + gap:10 + panel:300 ≈ 380, +a small gap) so it doesn't
 									// draw its own translucent panel flush against the canvas edge.
-									padding: `16px ${inspectorOpen ? 400 : 74}px 16px 16px`,
+									padding: `16px ${inspectorOpen ? 432 : 74}px 16px 16px`,
 									boxSizing: "border-box",
 								}}
 							>
@@ -1258,7 +1318,7 @@ export function NewEditorShell() {
 									zoomRegions={tl.zoomRegions}
 									speedRegions={tl.speedRegions}
 									cameraFullscreenRegions={tl.cameraFullscreenRegions}
-									trimRanges={tl.trimRanges}
+									trimRanges={previewTrimRanges}
 									selectedZoomRegionId={tl.selection?.kind === "zoom" ? tl.selection.id : null}
 									onZoomFocusChange={tl.updateZoomFocusLive}
 									onZoomFocusCommit={() => void tl.commitZoomFocus()}
@@ -1300,6 +1360,9 @@ export function NewEditorShell() {
 								clips={tl.clips}
 								onEditClip={setEditClipTarget}
 								transcriptProps={transcriptProps}
+								pauseSuggestions={pauseSuggestions}
+								onPauseSuggestionsChange={handlePauseSuggestionsChange}
+								onPausePreview={handlePausePreview}
 							/>
 						</>
 					) : (
@@ -1319,7 +1382,7 @@ export function NewEditorShell() {
 						borderTop: "1px solid var(--border)",
 					}}
 				>
-					{mode !== "media" ? (
+					{visibleMode !== "media" ? (
 						<div
 							className={v4.timelineResizeHandle}
 							role="separator"
@@ -1331,9 +1394,19 @@ export function NewEditorShell() {
 					<V4Timeline
 						tl={tl}
 						setCurrentTime={handleSeek}
-						variant={mode === "media" ? "media" : "edit"}
+						variant={visibleMode === "media" ? "media" : "edit"}
 						onDropAsset={handleDropAsset}
 						videoSources={videoSources}
+						pauseSuggestions={pauseSuggestions}
+						onPauseSuggestionToggle={(id) =>
+							setPauseSuggestions((current) =>
+								current.map((suggestion) =>
+									suggestion.id === id
+										? { ...suggestion, selected: !suggestion.selected }
+										: suggestion,
+								),
+							)
+						}
 						playing={playing}
 						onTogglePlay={togglePlay}
 						onPrevClip={handlePrevClip}

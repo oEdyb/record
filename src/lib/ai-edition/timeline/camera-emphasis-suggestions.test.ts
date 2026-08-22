@@ -168,6 +168,26 @@ describe("automatic camera emphasis", () => {
 		expect(result[0].span.start).toBeGreaterThanOrEqual(4_500);
 	});
 
+	it("treats private typing as camera activity without using its focus", () => {
+		const result = build({
+			recordings: [
+				{
+					assetId: "asset-1",
+					microphoneActivity: [{ startMs: 0, endMs: 10_000 }],
+					cursorTelemetry: stationaryCursor(),
+					keyboardActivity: [
+						{ timeMs: 1_000, cx: 0.5, cy: 0.5, count: 1, directionExcluded: true },
+						{ timeMs: 2_000, cx: 0.5, cy: 0.5, count: 1, directionExcluded: true },
+						{ timeMs: 3_000, cx: 0.5, cy: 0.5, count: 1, directionExcluded: true },
+					],
+				},
+			],
+		});
+
+		expect(result).toHaveLength(1);
+		expect(result[0].span.start).toBeGreaterThanOrEqual(4_500);
+	});
+
 	it("does nothing without a camera or when a screen zoom owns the moment", () => {
 		expect(build({ cameraAssetIds: new Set() })).toEqual([]);
 		expect(build({ occupiedScreenDirections: [{ start: 2_000, end: 10_000 }] })).toEqual([]);

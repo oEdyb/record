@@ -36,6 +36,12 @@ pub struct SceneLayout {
     pub preset: String,
     /// échelle taille webcam (1 = défaut PiP du compositeur).
     pub webcam_size: f32,
+    /// Centered crop scale inside the webcam rect. `1` keeps the cover crop.
+    #[serde(default = "default_webcam_zoom")]
+    pub webcam_zoom: f32,
+    /// Visual focus point inside the webcam crop. It does not move the destination rect.
+    #[serde(default = "default_webcam_focal_point")]
+    pub webcam_focal_point: WebcamPosition,
     /// "rectangle" | "circle" | "square" | "rounded" — la forme RÉSOLUE par le layout, pas le
     /// réglage brut de l'utilisateur : seul le PiP honore le sélecteur de forme, les layouts en
     /// bloc découpent toujours un rectangle (côté app, cf. `computeCompositeLayout`).
@@ -103,6 +109,14 @@ pub struct SceneLayout {
     /// `#[serde(default)]` : ancien payload / tests → None → table Rust historique.
     #[serde(default)]
     pub webcam_radius_frac: Option<f32>,
+}
+
+fn default_webcam_zoom() -> f32 {
+    1.0
+}
+
+fn default_webcam_focal_point() -> WebcamPosition {
+    WebcamPosition { cx: 0.5, cy: 0.5 }
 }
 
 /// La moitié du layout qui dépend de la FORME de la source, résolue pour un clip.
@@ -510,6 +524,9 @@ mod tests {
         assert_eq!(scene.clips[0].screen_path, "/s.mp4");
         assert_eq!(scene.layout.preset, "picture-in-picture");
         assert!(scene.layout.webcam_mirror);
+        assert_eq!(scene.layout.webcam_zoom, 1.0);
+        assert_eq!(scene.layout.webcam_focal_point.cx, 0.5);
+        assert_eq!(scene.layout.webcam_focal_point.cy, 0.5);
         assert!((scene.effects.roundness_frac - 0.0222).abs() < 1e-6);
         match scene.background {
             SceneBackground::Gradient { angle_deg, ref stops } => {

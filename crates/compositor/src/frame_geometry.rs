@@ -284,6 +284,44 @@ pub(crate) fn cover_crop_uv(visible: [f32; 2], tex: [f32; 2], box_ar: f32) -> (f
     let [u0, v0, u1, v1] = cover_uv_rect(full, tex, box_ar);
     (u0, v0, u1, v1)
 }
+
+/// Applies a centered user crop after the webcam's aspect-preserving cover crop.
+/// The destination rect is unchanged, so this changes framing without changing
+/// webcam size or position. Invalid values fail closed to the current 1x crop.
+pub(crate) fn zoom_crop_uv(
+    uv: (f32, f32, f32, f32),
+    zoom: f32,
+    focus: [f32; 2],
+) -> (f32, f32, f32, f32) {
+    let zoom = if zoom.is_finite() { zoom.clamp(1.0, 3.0) } else { 1.0 };
+    let (u0, v0, u1, v1) = uv;
+    let (half_w, half_h) = ((u1 - u0) * 0.5 / zoom, (v1 - v0) * 0.5 / zoom);
+    let focus_x = if focus[0].is_finite() { focus[0].clamp(0.0, 1.0) } else { 0.5 };
+    let focus_y = if focus[1].is_finite() { focus[1].clamp(0.0, 1.0) } else { 0.5 };
+    let cx = (u0 + (u1 - u0) * focus_x).clamp(u0 + half_w, u1 - half_w);
+    let cy = (v0 + (v1 - v0) * focus_y).clamp(v0 + half_h, v1 - half_h);
+    (cx - half_w, cy - half_h, cx + half_w, cy + half_h)
+}
+
+/// Resolves the complete webcam source rectangle in final visual coordinates.
+/// Focal X follows what the user sees, so mirroring reverses source focus before
+/// the final UV interval is flipped.
+pub(crate) fn webcam_crop_uv(
+    visible: [f32; 2],
+    tex: [f32; 2],
+    box_ar: f32,
+    zoom: f32,
+    focus: [f32; 2],
+    mirror: bool,
+) -> (f32, f32, f32, f32) {
+    let source_focus_x = if mirror { 1.0 - focus[0] } else { focus[0] };
+    let (u0, v0, u1, v1) = zoom_crop_uv(
+        cover_crop_uv(visible, tex, box_ar),
+        zoom,
+        [source_focus_x, focus[1]],
+    );
+    if mirror { (u1, v0, u0, v1) } else { (u0, v0, u1, v1) }
+}
 /// Rétrécit un rect SOURCE déjà exprimé en UV (`[u0, v0, u1, v1]`) autour de son
 /// centre pour qu'il porte le ratio `box_ar` une fois rapporté aux pixels de la
 /// texture. C'est la forme générale de `object-fit: cover`, et LA primitive qui
@@ -589,6 +627,8 @@ pub struct LiveParams {
     pub radius_scale: f32,        // multiplie le rayon des coins (1 = défaut, 0 = carré)
     pub padding: f32,             // 0..1 : inset supplémentaire du screen (0 = défaut fixture)
     pub webcam_size_scale: f32,   // multiplie la taille de la webcam (1 = défaut)
+    pub webcam_zoom: f32,         // crop centré dans la webcam (1 = crop cover)
+    pub webcam_focus: [f32; 2],   // point focal visuel dans le crop (0..1)
     pub webcam_mirror: bool,      // miroir horizontal de la webcam
     pub webcam_shape: u32,        // 0=rect, 1=circle, 2=square, 3=rounded (défaut)
     pub cursor_size_scale: f32,   // multiplie la taille du curseur (1 = défaut)
@@ -640,6 +680,8 @@ impl Default for LiveParams {
             radius_scale: 1.0,
             padding: 0.0,
             webcam_size_scale: 1.0,
+            webcam_zoom: 1.0,
+            webcam_focus: [0.5, 0.5],
             webcam_mirror: false,
             webcam_shape: 3,
             cursor_size_scale: 1.0,
@@ -677,6 +719,11 @@ pub fn live_params_from_scene(s: &crate::scene::Scene) -> LiveParams {
         // qui ne servait qu'à faire passer des pixels pour un ratio.
         padding: s.effects.padding,
         webcam_size_scale: s.layout.webcam_size,
+        webcam_zoom: s.layout.webcam_zoom.clamp(1.0, 3.0),
+        webcam_focus: [
+            s.layout.webcam_focal_point.cx.clamp(0.0, 1.0),
+            s.layout.webcam_focal_point.cy.clamp(0.0, 1.0),
+        ],
         webcam_mirror: s.layout.webcam_mirror,
         webcam_shape: webcam_shape_code(&s.layout.webcam_shape),
         cursor_size_scale: s.cursor.size,
@@ -1769,6 +1816,52 @@ mod tests {
             assert!((mx - cam[0] / tex[0]).abs() < 1e-6, "pas centre en x");
             assert!((my - cam[1] / tex[1]).abs() < 1e-6, "pas centre en y");
         }
+    }
+
+    #[test]
+    fn webcam_zoom_tightens_the_cover_crop_without_moving_its_center() {
+        let base = cover_crop_uv([1280.0, 720.0], [2048.0, 1024.0], 1.0);
+        assert_eq!(zoom_crop_uv(base, 1.0, [0.5, 0.5]), base);
+
+        let zoomed = zoom_crop_uv(base, 2.0, [0.5, 0.5]);
+        assert!(((zoomed.0 + zoomed.2) - (base.0 + base.2)).abs() < 1e-6);
+        assert!(((zoomed.1 + zoomed.3) - (base.1 + base.3)).abs() < 1e-6);
+        assert!(((zoomed.2 - zoomed.0) * 2.0 - (base.2 - base.0)).abs() < 1e-6);
+        assert!(((zoomed.3 - zoomed.1) * 2.0 - (base.3 - base.1)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn webcam_focus_moves_the_crop_without_leaving_the_cover_rect() {
+        let base = cover_crop_uv([1280.0, 720.0], [2048.0, 1024.0], 1.0);
+        let left = zoom_crop_uv(base, 2.0, [0.0, 0.5]);
+        let right = zoom_crop_uv(base, 2.0, [1.0, 0.5]);
+
+        assert!((left.0 - base.0).abs() < 1e-6);
+        assert!((right.2 - base.2).abs() < 1e-6);
+        assert!(((left.2 - left.0) - (right.2 - right.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mirrored_webcam_focus_uses_visual_coordinates() {
+        let normal = webcam_crop_uv(
+            [1280.0, 720.0],
+            [2048.0, 1024.0],
+            1.0,
+            2.0,
+            [0.75, 0.5],
+            false,
+        );
+        let mirrored = webcam_crop_uv(
+            [1280.0, 720.0],
+            [2048.0, 1024.0],
+            1.0,
+            2.0,
+            [0.25, 0.5],
+            true,
+        );
+
+        assert!((normal.0 - mirrored.2).abs() < 1e-6);
+        assert!((normal.2 - mirrored.0).abs() < 1e-6);
     }
 
     /// L'écran en layout bloc : le cover s'applique au rect DÉJÀ réduit par le crop

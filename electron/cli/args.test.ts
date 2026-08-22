@@ -16,9 +16,9 @@ describe("parseCliArgs", () => {
 	});
 
 	it("skips leading Chromium switches before the subcommand (AppImage --no-sandbox)", () => {
-		expect(parse(["--no-sandbox", "export", "demo.openscreen"])).toMatchObject({
+		expect(parse(["--no-sandbox", "export", "demo.klippt"])).toMatchObject({
 			kind: "export",
-			projectPath: inCwd("demo.openscreen"),
+			projectPath: inCwd("demo.klippt"),
 		});
 		expect(parse(["--no-sandbox", "--enable-unsafe-swiftshader", "record"])).toMatchObject({
 			kind: "record",
@@ -28,25 +28,28 @@ describe("parseCliArgs", () => {
 	});
 
 	it("parses a minimal export command and resolves relative paths", () => {
-		const cmd = parse(["export", "demo.openscreen"]);
+		const cmd = parse(["export", "demo.klippt"]);
 		expect(cmd).toMatchObject({
 			kind: "export",
-			projectPath: inCwd("demo.openscreen"),
+			projectPath: inCwd("demo.klippt"),
 			outPath: null,
 			format: null,
 		});
 	});
 
+	it("keeps legacy projects readable", () => {
+		expect(parse(["export", "demo.openscreen"])).toMatchObject({
+			kind: "export",
+			projectPath: inCwd("demo.openscreen"),
+		});
+		expect(parse(["info", "demo.axcut"])).toMatchObject({
+			kind: "info",
+			projectPath: inCwd("demo.axcut"),
+		});
+	});
+
 	it("parses export options and infers format from --out extension", () => {
-		const cmd = parse([
-			"export",
-			"/p/demo.openscreen",
-			"-o",
-			"out.gif",
-			"--gif-fps",
-			"20",
-			"--json",
-		]);
+		const cmd = parse(["export", "/p/demo.klippt", "-o", "out.gif", "--gif-fps", "20", "--json"]);
 		expect(cmd).toMatchObject({
 			kind: "export",
 			outPath: inCwd("out.gif"),
@@ -57,7 +60,7 @@ describe("parseCliArgs", () => {
 	});
 
 	it("rejects a --format that conflicts with the --out extension", () => {
-		const cmd = parse(["export", "a.openscreen", "-o", "x.mp4", "--format", "gif"]);
+		const cmd = parse(["export", "a.klippt", "-o", "x.mp4", "--format", "gif"]);
 		expect(cmd).toMatchObject({ kind: "error" });
 	});
 
@@ -68,7 +71,7 @@ describe("parseCliArgs", () => {
 	it("parses voiceover audio options", () => {
 		const cmd = parse([
 			"export",
-			"a.openscreen",
+			"a.klippt",
 			"--audio",
 			"voice.mp3",
 			"--audio-mode",
@@ -85,18 +88,18 @@ describe("parseCliArgs", () => {
 	});
 
 	it("defaults audio mode to mix and rejects --audio with gif", () => {
-		expect(parse(["export", "a.openscreen", "--audio", "v.mp3"])).toMatchObject({
+		expect(parse(["export", "a.klippt", "--audio", "v.mp3"])).toMatchObject({
 			audioMode: "mix",
 			audioOffsetSec: 0,
 		});
-		expect(parse(["export", "a.openscreen", "--audio", "v.mp3", "--format", "gif"])).toMatchObject({
+		expect(parse(["export", "a.klippt", "--audio", "v.mp3", "--format", "gif"])).toMatchObject({
 			kind: "error",
 		});
 		// gif inferred from --out, with no explicit --format
-		expect(parse(["export", "a.openscreen", "--audio", "v.mp3", "-o", "out.gif"])).toMatchObject({
+		expect(parse(["export", "a.klippt", "--audio", "v.mp3", "-o", "out.gif"])).toMatchObject({
 			kind: "error",
 		});
-		expect(parse(["export", "a.openscreen", "--audio-offset", "-1"])).toMatchObject({
+		expect(parse(["export", "a.klippt", "--audio-offset", "-1"])).toMatchObject({
 			kind: "error",
 		});
 	});
@@ -124,7 +127,7 @@ describe("parseCliArgs", () => {
 			"--duration",
 			"12.5",
 			"--project",
-			"demo.openscreen",
+			"demo.klippt",
 		]);
 		expect(cmd).toMatchObject({
 			kind: "record",
@@ -133,7 +136,7 @@ describe("parseCliArgs", () => {
 			micDevice: "MacBook",
 			systemAudio: true,
 			durationMs: 12500,
-			projectOut: inCwd("demo.openscreen"),
+			projectOut: inCwd("demo.klippt"),
 		});
 	});
 
@@ -141,14 +144,15 @@ describe("parseCliArgs", () => {
 		expect(parse(["record", "--duration", "0"])).toMatchObject({ kind: "error" });
 		expect(parse(["record", "--cursor", "off"])).toMatchObject({ kind: "error" });
 		expect(parse(["record", "--project", "demo.json"])).toMatchObject({ kind: "error" });
+		expect(parse(["record", "--project", "demo.openscreen"])).toMatchObject({ kind: "error" });
 	});
 
 	it("parses --auto-zoom", () => {
-		expect(parse(["export", "a.openscreen", "--auto-zoom"])).toMatchObject({
+		expect(parse(["export", "a.klippt", "--auto-zoom"])).toMatchObject({
 			kind: "export",
 			autoZoom: true,
 		});
-		expect(parse(["export", "a.openscreen"])).toMatchObject({ autoZoom: false });
+		expect(parse(["export", "a.klippt"])).toMatchObject({ autoZoom: false });
 	});
 
 	it("parses sources", () => {
@@ -158,43 +162,43 @@ describe("parseCliArgs", () => {
 	});
 
 	it("parses pack", () => {
-		expect(parse(["pack", "demo.openscreen", "--out", "bundle"])).toMatchObject({
+		expect(parse(["pack", "demo.klippt", "--out", "bundle"])).toMatchObject({
 			kind: "pack",
-			projectPath: inCwd("demo.openscreen"),
+			projectPath: inCwd("demo.klippt"),
 			outDir: inCwd("bundle"),
 		});
-		expect(parse(["pack", "demo.openscreen"])).toMatchObject({ kind: "error" });
+		expect(parse(["pack", "demo.klippt"])).toMatchObject({ kind: "error" });
 		expect(parse(["pack", "--out", "bundle"])).toMatchObject({ kind: "error" });
-		expect(parse(["pack", "demo.openscreen", "--out", "bundle", "--bogus"])).toMatchObject({
+		expect(parse(["pack", "demo.klippt", "--out", "bundle", "--bogus"])).toMatchObject({
 			kind: "error",
 		});
-		expect(parse(["pack", "a.openscreen", "b.openscreen", "--out", "bundle"])).toMatchObject({
+		expect(parse(["pack", "a.klippt", "b.klippt", "--out", "bundle"])).toMatchObject({
 			kind: "error",
 		});
 	});
 
 	it("parses captions", () => {
 		expect(
-			parse(["captions", "demo.openscreen", "--min-words", "1", "--max-words", "5"]),
+			parse(["captions", "demo.klippt", "--min-words", "1", "--max-words", "5"]),
 		).toMatchObject({
 			kind: "captions",
-			projectPath: inCwd("demo.openscreen"),
+			projectPath: inCwd("demo.klippt"),
 			minWordsPerCaption: 1,
 			maxWordsPerCaption: 5,
 		});
-		expect(parse(["captions", "demo.openscreen"])).toMatchObject({
+		expect(parse(["captions", "demo.klippt"])).toMatchObject({
 			minWordsPerCaption: 2,
 			maxWordsPerCaption: 7,
 		});
-		expect(
-			parse(["captions", "a.openscreen", "--min-words", "9", "--max-words", "3"]),
-		).toMatchObject({ kind: "error" });
+		expect(parse(["captions", "a.klippt", "--min-words", "9", "--max-words", "3"])).toMatchObject({
+			kind: "error",
+		});
 	});
 
 	it("parses info and help", () => {
-		expect(parse(["info", "demo.openscreen", "--json"])).toMatchObject({
+		expect(parse(["info", "demo.klippt", "--json"])).toMatchObject({
 			kind: "info",
-			projectPath: inCwd("demo.openscreen"),
+			projectPath: inCwd("demo.klippt"),
 			json: true,
 		});
 		expect(parse(["help"])).toMatchObject({ kind: "help" });

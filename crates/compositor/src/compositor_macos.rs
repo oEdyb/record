@@ -1601,12 +1601,14 @@ impl Compositor {
         // --- caméra : ombre PiP puis vidéo ---
         let enc = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
         if let (true, Some((wy, wuv))) = (lp.has_webcam, webcam_tex.as_ref()) {
-            let (cu0, cv0, cu1, cv1) = crate::frame_geometry::cover_crop_uv(
+            let (u0, cv0, u1, cv1) = crate::frame_geometry::webcam_crop_uv(
                 [wcw, wch],
                 [wtw as f32, wth as f32],
                 g.w_px[0] / g.w_px[1].max(0.0001),
+                lp.webcam_zoom,
+                lp.webcam_focus,
+                lp.webcam_mirror,
             );
-            let (u0, u1) = if lp.webcam_mirror { (cu1, cu0) } else { (cu0, cu1) };
             let webcam_is_block = matches!(
                 g.scene_preset.as_deref(),
                 Some("dual-frame") | Some("vertical-stack")

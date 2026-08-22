@@ -10,6 +10,7 @@ import {
 import {
 	AUTOMATIC_DIRECTION_MAX_SCALE,
 	type ConnectedClickPolicy,
+	DEFAULT_AUTOMATIC_DIRECTION_MAX_SCALE,
 	DEFAULT_CONNECTED_CLICK_POLICY,
 } from "./connected-click-policy";
 import {
@@ -30,6 +31,8 @@ import {
 } from "./zoom-suggestions";
 
 export interface AutomaticDirectionPolicy {
+	/** Project-selected ceiling for generated screen crops. */
+	maximumScreenScale: number;
 	screen: DirectionPolicy;
 	connectedClicks: ConnectedClickPolicy;
 	typing: TypingDirectionPolicy;
@@ -38,6 +41,7 @@ export interface AutomaticDirectionPolicy {
 }
 
 export interface AutomaticDirectionPolicyOverrides {
+	maximumScreenScale?: number;
 	screen?: Partial<DirectionPolicy>;
 	connectedClicks?: Partial<ConnectedClickPolicy>;
 	typing?: Partial<TypingDirectionPolicy>;
@@ -54,6 +58,10 @@ export function resolveAutomaticDirectionPolicy(
 	overrides: AutomaticDirectionPolicyOverrides = {},
 ): AutomaticDirectionPolicy {
 	const capScale = (value: number) => Math.min(AUTOMATIC_DIRECTION_MAX_SCALE, Math.max(1, value));
+	const maximumScreenScale = Math.max(
+		1.05,
+		capScale(overrides.maximumScreenScale ?? DEFAULT_AUTOMATIC_DIRECTION_MAX_SCALE),
+	);
 	const screen = { ...DEFAULT_DIRECTION_POLICY, ...overrides.screen };
 	screen.clickMinimumScale = capScale(screen.clickMinimumScale);
 	screen.clickMaximumScale = capScale(screen.clickMaximumScale);
@@ -68,6 +76,7 @@ export function resolveAutomaticDirectionPolicy(
 	const connectedClicks = { ...DEFAULT_CONNECTED_CLICK_POLICY, ...overrides.connectedClicks };
 	connectedClicks.requestedScale = capScale(connectedClicks.requestedScale);
 	return {
+		maximumScreenScale,
 		screen,
 		connectedClicks,
 		typing: { ...DEFAULT_TYPING_DIRECTION_POLICY, ...overrides.typing },
@@ -80,6 +89,42 @@ export function resolveAutomaticDirectionPolicy(
 }
 
 export const DEFAULT_AUTOMATIC_DIRECTION_POLICY = resolveAutomaticDirectionPolicy();
+
+/**
+ * Apply Max Zoom without destroying deeper values stored in a preset. If the
+ * user raises the ceiling later, the original detector preferences return.
+ */
+export function resolveAutomaticDirectionPlanningPolicy(
+	policy: AutomaticDirectionPolicy,
+): AutomaticDirectionPolicy {
+	const cap = Math.min(AUTOMATIC_DIRECTION_MAX_SCALE, Math.max(1.05, policy.maximumScreenScale));
+	const profile = (value: number) => {
+		const normalized = (value - 1) / Math.max(0.001, DEFAULT_AUTOMATIC_DIRECTION_MAX_SCALE - 1);
+		return Math.min(cap, Math.max(1, 1 + normalized * (cap - 1)));
+	};
+	return {
+		...policy,
+		maximumScreenScale: cap,
+		screen: {
+			...policy.screen,
+			clickMinimumScale: Math.min(policy.screen.clickMinimumScale, cap),
+			clickMaximumScale: profile(policy.screen.clickMaximumScale),
+			clickEnvelopeFallbackScale: profile(policy.screen.clickEnvelopeFallbackScale),
+			clickEnvelopeScaleSteps: policy.screen.clickEnvelopeScaleSteps.map((step) => ({
+				...step,
+				scale: profile(step.scale),
+			})),
+			traceShortScale: profile(policy.screen.traceShortScale),
+			traceMediumScale: profile(policy.screen.traceMediumScale),
+			traceLongScale: profile(policy.screen.traceLongScale),
+		},
+		connectedClicks: {
+			...policy.connectedClicks,
+			requestedScale: profile(policy.connectedClicks.requestedScale),
+			passageMinimumStableScale: Math.min(policy.connectedClicks.passageMinimumStableScale, cap),
+		},
+	};
+}
 
 export interface RecordedDirectionObservation {
 	assetId: string;
@@ -125,7 +170,9 @@ export function buildAutomaticDirectionPlan(options: {
 	phases?: Partial<AutomaticDirectionPhases>;
 	policy?: AutomaticDirectionPolicy;
 }): AutomaticDirectionPlan {
-	const policy = options.policy ?? DEFAULT_AUTOMATIC_DIRECTION_POLICY;
+	const policy = resolveAutomaticDirectionPlanningPolicy(
+		options.policy ?? DEFAULT_AUTOMATIC_DIRECTION_POLICY,
+	);
 	const phases: AutomaticDirectionPhases = {
 		screen: options.phases?.screen ?? true,
 		camera: options.phases?.camera ?? true,
@@ -205,6 +252,19 @@ function effectPrefix(plan: AutomaticDirectionPlan, effect: AutomaticDirectionEf
 	return `auto-direction:${plan.id}:${effect.id}:`;
 }
 
+/** Namespace a local detector sequence so it stays stable and unique in the project. */
+export function materializeAutomaticDirectionEffect(
+	plan: AutomaticDirectionPlan,
+	effect: AutomaticDirectionEffect,
+): AutomaticDirectionEffect {
+	const localGroup = effect.suggestion.directionGroupId ?? effect.id;
+	const directionGroupId = `auto-direction:${plan.id}:${effect.kind}:${localGroup}`;
+	if (effect.kind === "screen-zoom") {
+		return { ...effect, suggestion: { ...effect.suggestion, directionGroupId } };
+	}
+	return { ...effect, suggestion: { ...effect.suggestion, directionGroupId } };
+}
+
 function hasEffect(document: AxcutDocument, prefix: string) {
 	if (document.zoomRanges.some((region) => region.id.startsWith(prefix))) return true;
 	return automaticCameraRegions(document).some(
@@ -223,10 +283,11 @@ export function applyAutomaticDirectionPlan(
 		if (hasEffect(next, prefix)) continue;
 		let fragment = 0;
 		const createRegionId = () => `${prefix}${fragment++}`;
+		const materialized = materializeAutomaticDirectionEffect(plan, effect);
 		next =
-			effect.kind === "screen-zoom"
-				? appendAutoZoomSuggestions(next, [effect.suggestion], createRegionId)
-				: appendAutoCameraEmphasisSuggestions(next, [effect.suggestion], createRegionId);
+			materialized.kind === "screen-zoom"
+				? appendAutoZoomSuggestions(next, [materialized.suggestion], createRegionId)
+				: appendAutoCameraEmphasisSuggestions(next, [materialized.suggestion], createRegionId);
 	}
 	return next;
 }

@@ -207,6 +207,7 @@ struct TypingTarget {
 	let focus: CGPoint
 	let bounds: CGRect
 	let focusSource: String
+	let processId: pid_t
 }
 
 func emit(_ fields: [String: Any?]) {
@@ -519,7 +520,12 @@ func typingTarget(startingAt focused: AXUIElement) -> TypingTarget? {
 	}
 	let focus = caret.map { CGPoint(x: $0.midX, y: $0.midY) }
 		?? CGPoint(x: bounds.midX, y: bounds.midY)
-	return TypingTarget(focus: focus, bounds: bounds, focusSource: caret == nil ? "target" : "caret")
+	return TypingTarget(
+		focus: focus,
+		bounds: bounds,
+		focusSource: caret == nil ? "target" : "caret",
+		processId: pid
+	)
 }
 
 func isPointerRole(_ role: String?, _ subrole: String?, _ description: String?) -> Bool {
@@ -725,6 +731,7 @@ while true {
 					"focusX": activity.target.focus.x,
 					"focusY": activity.target.focus.y,
 					"focusSource": activity.target.focusSource,
+					"targetProcessId": activity.target.processId,
 					"targetX": activity.target.bounds.origin.x,
 					"targetY": activity.target.bounds.origin.y,
 					"targetWidth": activity.target.bounds.width,

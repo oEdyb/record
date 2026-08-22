@@ -4,6 +4,7 @@ import { accessSync, constants as fsConstants, statSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
+import { waveformPeakBlockCount } from "../../src/lib/audio/waveformPeaks";
 
 /**
  * Waveform peaks for the timeline, computed in the main process with ffmpeg.
@@ -35,7 +36,8 @@ export interface AudioPeaksResult {
 	message?: string;
 }
 
-export type AudioTrackSelection = "mixed" | "microphone";
+export type AudioTrackSelection = "mixed" | "microphone" | "system";
+export type AudioPeakProfile = "waveform" | "analysis";
 
 /**
  * Native Mac clips tag the isolated microphone track with the private ISO-639
@@ -48,18 +50,15 @@ export function audioTrackMapArgs(track: AudioTrackSelection): string[] {
 	// Keep this map required. An optional metadata map falls back to FFmpeg's
 	// automatic default-stream selection when qac is absent, which can mistake
 	// mixed or system audio for microphone activity.
-	return track === "microphone" ? ["-map", "0:m:language:qac"] : [];
+	if (track === "microphone") return ["-map", "0:m:language:qac"];
+	if (track === "system") return ["-map", "0:m:language:qab"];
+	return [];
 }
 
 /** PCM the peaks are computed from. Mono (ffmpeg downmixes) so channels are
  *  already averaged, and 16 kHz because peak buckets are at most 200/s: that
  *  still leaves 80 samples per bucket, far more than a min/max needs. */
 const PCM_RATE = 16_000;
-
-/** Matches `audioPeaksWorker.ts` and `streamingAudioPeaks.ts` so all three
- *  render identically — a clip must not change shape with the pipeline. */
-const MAX_PEAK_BLOCKS = 24_000;
-const PEAK_BLOCKS_PER_SEC = 200;
 
 /** A recording whose audio takes longer than this to decode is not a recording,
  *  it is a wedged ffmpeg. ~30x the worst measured case. */
@@ -177,8 +176,24 @@ export function resolveFfmpeg(here?: string): string | null {
 }
 
 /** Number of min/max blocks for a clip of `durationSec`. */
-export function peakBlockCount(durationSec: number): number {
-	return Math.min(MAX_PEAK_BLOCKS, Math.max(1, Math.ceil(durationSec * PEAK_BLOCKS_PER_SEC)));
+export function peakBlockCount(
+	durationSec: number,
+	profile: AudioPeakProfile = "waveform",
+): number {
+	// Cut analysis keeps a 20 ms source clock even on long recordings. Visible
+	// waveforms keep a denser 5 ms source clock for up to one hour; the Canvas
+	// renderer then resamples that envelope to the pixels available at each zoom.
+	return profile === "analysis"
+		? Math.max(1, Math.ceil(durationSec * 50))
+		: waveformPeakBlockCount(durationSec);
+}
+
+export function isAudioPeaksCacheCompatible(
+	byteLength: number,
+	durationSec: number,
+	profile: AudioPeakProfile,
+): boolean {
+	return byteLength === peakBlockCount(durationSec, profile) * 2 * Float32Array.BYTES_PER_ELEMENT;
 }
 
 /**
@@ -239,8 +254,9 @@ async function decodePeaks(
 	filePath: string,
 	durationSec: number,
 	track: AudioTrackSelection,
+	profile: AudioPeakProfile,
 ): Promise<Float32Array> {
-	const blocks = peakBlockCount(durationSec);
+	const blocks = peakBlockCount(durationSec, profile);
 	const folder = new PeakFolder(blocks, durationSec * PCM_RATE);
 	const child = spawn(
 		ffmpeg,
@@ -265,7 +281,7 @@ async function decodePeaks(
 
 	return new Promise<Float32Array>((resolve, reject) => {
 		let stderr = "";
-		const timeoutMs = track === "microphone" ? MICROPHONE_DECODE_TIMEOUT_MS : DECODE_TIMEOUT_MS;
+		const timeoutMs = track === "mixed" ? DECODE_TIMEOUT_MS : MICROPHONE_DECODE_TIMEOUT_MS;
 		const timer = setTimeout(() => {
 			child.kill("SIGKILL");
 			reject(new Error(`ffmpeg timed out after ${timeoutMs}ms on ${filePath}`));
@@ -330,15 +346,23 @@ export async function getAudioPeaks(
 	filePath: string,
 	durationSec: number,
 	track: AudioTrackSelection = "mixed",
+	profile: AudioPeakProfile = "waveform",
 ): Promise<Float32Array | null> {
 	const ffmpeg = resolveFfmpeg();
 	if (!ffmpeg || !durationSec || durationSec <= 0) return null;
 
 	const dir = cacheDir();
-	const cachePath = dir ? path.join(dir, `${await cacheKey(filePath)}-${track}.f32`) : null;
+	// Preserve the original waveform filename so existing projects do not pay a
+	// one-time decode after the analysis profile is introduced. Only the denser
+	// pause-analysis cache needs a profile suffix.
+	const cacheSuffix = profile === "waveform" ? `${track}.f32` : `${track}-${profile}.f32`;
+	const cachePath = dir ? path.join(dir, `${await cacheKey(filePath)}-${cacheSuffix}`) : null;
 	if (cachePath) {
 		try {
 			const cached = await readFile(cachePath);
+			if (!isAudioPeaksCacheCompatible(cached.byteLength, durationSec, profile)) {
+				throw new Error("Cached waveform resolution is stale");
+			}
 			// A Buffer's memory may not be 4-byte aligned and its byteOffset is
 			// almost never 0 — copy rather than viewing it in place.
 			return new Float32Array(
@@ -349,7 +373,7 @@ export async function getAudioPeaks(
 		}
 	}
 
-	const peaks = await decodePeaks(ffmpeg, filePath, durationSec, track);
+	const peaks = await decodePeaks(ffmpeg, filePath, durationSec, track, profile);
 	if (cachePath && dir) {
 		try {
 			await mkdir(dir, { recursive: true });

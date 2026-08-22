@@ -21,7 +21,7 @@ export default defineConfig({
 		react(),
 		electron({
 			main: {
-				entry: "electron/main.ts",
+				entry: "electron/bootstrap.ts",
 				onstart({ startup }) {
 					if (process.env.NO_ELECTRON) {
 						console.log("NO_ELECTRON is set, skipping Electron startup.");

@@ -51,6 +51,28 @@ interface WebcamOverlayProps {
 	clockRef?: PlaybackClockRef;
 }
 
+export function getWebcamCropStyle(
+	zoom: number,
+	focalPoint: { cx: number; cy: number },
+	mirrored = false,
+): React.CSSProperties {
+	const safeZoom = Number.isFinite(zoom) ? Math.min(3, Math.max(1, zoom)) : 1;
+	const visibleFraction = 1 / safeZoom;
+	const maxStart = 1 - visibleFraction;
+	const visualCx = Math.min(1, Math.max(0, focalPoint.cx));
+	const cx = mirrored ? 1 - visualCx : visualCx;
+	const cy = Math.min(1, Math.max(0, focalPoint.cy));
+	const startX = Math.min(maxStart, Math.max(0, cx - visibleFraction / 2));
+	const startY = Math.min(maxStart, Math.max(0, cy - visibleFraction / 2));
+	return {
+		position: "absolute",
+		width: `${safeZoom * 100}%`,
+		height: `${safeZoom * 100}%`,
+		left: `${-startX * safeZoom * 100}%`,
+		top: `${-startY * safeZoom * 100}%`,
+	};
+}
+
 export function WebcamOverlay(props: WebcamOverlayProps) {
 	const { settings } = useEditorSettings();
 	const assets = useProjectStore((s) => s.document?.assets ?? null);
@@ -161,13 +183,20 @@ export function WebcamOverlay(props: WebcamOverlayProps) {
 	}
 
 	const showError = hasError;
+	const cropStyle = getWebcamCropStyle(
+		settings.webcamZoom,
+		settings.webcamFocalPoint,
+		settings.webcamMirrored,
+	);
 	// ponytail: the layout computes the final borderRadius (preset fraction
 	// for dual-frame/overlay, 0 for stack, half-circle for circle PiP, etc.).
 	// Push it onto the <video> itself so it actually clips the camera
 	// content; the container stays a transparent, overflow:hidden wrapper.
 	const style: React.CSSProperties = {
+		...cropStyle,
 		display: showError ? "none" : "block",
 		transform: settings.webcamMirrored ? "scaleX(-1)" : undefined,
+		transformOrigin: "center",
 		clipPath: getCssClipPath(props.webcamMaskShape) ?? undefined,
 		borderRadius: `${props.borderRadius}px`,
 	};

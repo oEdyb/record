@@ -1,4 +1,4 @@
-// Hidden-window runner for `openscreen record`. Reuses the full recording
+// Hidden-window runner for `klippt record`. Reuses the full recording
 // pipeline via useScreenRecorder (native macOS/Windows helpers with browser
 // fallback), driven by the CLI controller instead of the HUD.
 
@@ -77,8 +77,8 @@ async function resolveMicDeviceId(deviceNameFilter: string | null): Promise<{
 	}
 }
 
-/** A minimal .openscreen project referencing the finished recording, with all
- * editor settings at their defaults — ready for `openscreen export` or the GUI. */
+/** A minimal .klippt project referencing the finished recording, with all
+ * editor settings at their defaults — ready for `klippt export` or the GUI. */
 function buildDefaultProject(session: {
 	screenVideoPath: string;
 	webcamVideoPath?: string;

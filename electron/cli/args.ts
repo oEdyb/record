@@ -1,8 +1,9 @@
-// Pure argv parser for the OpenScreen CLI. No Electron imports so it can be
+// Pure argv parser for the Klippt CLI. No Electron imports so it can be
 // unit-tested under plain vitest.
 
 import path from "node:path";
 import type { CliExportRequest, CliRecordRequest, CliRequest } from "../../src/lib/cliContracts";
+import { hasCanonicalProjectExtension } from "../../src/lib/projectFileFormat";
 
 export interface CliInfoCommand {
 	kind: "info";
@@ -41,17 +42,17 @@ const SUBCOMMANDS = new Set([
 	"-h",
 ]);
 
-export const CLI_USAGE = `OpenScreen CLI
+export const CLI_USAGE = `Klippt CLI
 
 Usage:
-  openscreen export <project.openscreen> [options]   Render a project to MP4/GIF
-  openscreen record [options]                        Record the screen headlessly
-  openscreen sources [--json]                        List displays, windows and microphones
-  openscreen pack <project.openscreen> --out <dir>   Copy project + media into one portable folder
-  openscreen captions <project.openscreen>           Add auto-captions (on-device Whisper) to a project
+  klippt export <project.klippt> [options]   Render a project to MP4/GIF
+  klippt record [options]                    Record the screen headlessly
+  klippt sources [--json]                    List displays, windows and microphones
+  klippt pack <project.klippt> --out <dir>   Copy project + media into one portable folder
+  klippt captions <project.klippt>           Add auto-captions (on-device Whisper) to a project
                      [--min-words <n>] [--max-words <n>]
-  openscreen info <project.openscreen> [--json]      Inspect a project file
-  openscreen help                                    Show this help
+  klippt info <project.klippt> [--json]      Inspect a project file
+  klippt help                                Show this help
 
 Export options:
   -o, --out <path>          Output file (.mp4 or .gif). Default: next to the project file
@@ -77,7 +78,7 @@ Record options (recording is saved into the app's recordings directory):
   --cursor <editable-overlay|system>
                             Cursor capture mode (default editable-overlay)
   --duration <seconds>      Stop automatically after this long
-  --project <out.openscreen>
+  --project <out.klippt>
                             Write a ready-to-export project file when done
   --json                    NDJSON events on stdout
 
@@ -110,7 +111,7 @@ export function parseCliArgs(
 	const rawArgs = argv.slice(firstArgIndex).filter((a) => !a.startsWith("--inspect"));
 
 	// Skip *leading* Chromium/Electron switches (e.g. the AppImage's required
-	// `--no-sandbox`) so `Openscreen --no-sandbox export demo.openscreen` still
+	// `--no-sandbox`) so `Klippt --no-sandbox export demo.klippt` still
 	// enters CLI mode. Only leading dash-tokens are skipped — everything after
 	// the subcommand belongs to the subcommand parser. `--help`/`-h` are ours.
 	let subIndex = 0;
@@ -242,7 +243,7 @@ function parseExport(args: string[], cwd: string): CliCommand {
 		}
 	}
 
-	if (!request.projectPath) throw new Error("export requires a <project.openscreen> path");
+	if (!request.projectPath) throw new Error("export requires a <project.klippt> path");
 	if (request.outPath) {
 		const ext = path.extname(request.outPath).toLowerCase();
 		if (ext !== ".mp4" && ext !== ".gif") {
@@ -327,8 +328,8 @@ function parseRecord(args: string[], cwd: string): CliCommand {
 			}
 			case "--project": {
 				const [value, next] = takeValue(args, i, arg);
-				if (!value.endsWith(".openscreen")) {
-					throw new Error(`--project must end in .openscreen, got "${value}"`);
+				if (!hasCanonicalProjectExtension(value)) {
+					throw new Error(`--project must end in .klippt, got "${value}"`);
 				}
 				request.projectOut = resolvePath(value, cwd);
 				i = next;
@@ -382,7 +383,7 @@ function parsePack(args: string[], cwd: string): CliCommand {
 			projectPath = resolvePath(arg, cwd);
 		}
 	}
-	if (!projectPath) throw new Error("pack requires a <project.openscreen> path");
+	if (!projectPath) throw new Error("pack requires a <project.klippt> path");
 	if (!outDir) throw new Error("pack requires --out <directory>");
 	return { kind: "pack", projectPath, outDir, json };
 }
@@ -413,7 +414,7 @@ function parseCaptions(args: string[], cwd: string): CliCommand {
 			projectPath = resolvePath(arg, cwd);
 		}
 	}
-	if (!projectPath) throw new Error("captions requires a <project.openscreen> path");
+	if (!projectPath) throw new Error("captions requires a <project.klippt> path");
 	if (minWordsPerCaption > maxWordsPerCaption) {
 		throw new Error("--min-words cannot exceed --max-words");
 	}
@@ -434,6 +435,6 @@ function parseInfo(args: string[], cwd: string): CliCommand {
 			projectPath = resolvePath(arg, cwd);
 		}
 	}
-	if (!projectPath) throw new Error("info requires a <project.openscreen> path");
+	if (!projectPath) throw new Error("info requires a <project.klippt> path");
 	return { kind: "info", projectPath, json };
 }

@@ -353,8 +353,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("get-readable-file-info", filePath);
 	},
 	/** Native waveform peaks, disk-cached. See electron/media/audioPeaks.ts. */
-	getAudioPeaks: (filePath: string, durationSec: number, track?: "mixed" | "microphone") => {
-		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec, track);
+	getAudioPeaks: (
+		filePath: string,
+		durationSec: number,
+		track?: "mixed" | "microphone" | "system",
+		profile?: "waveform" | "analysis",
+	) => {
+		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec, track, profile);
+	},
+	/** Local Silero speech probabilities for the isolated microphone track. */
+	getSpeechActivity: (filePath: string) => {
+		return ipcRenderer.invoke("get-speech-activity", filePath);
 	},
 	readFileChunk: (filePath: string, offset: number, length: number) => {
 		return ipcRenderer.invoke("read-file-chunk", filePath, offset, length);

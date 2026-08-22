@@ -207,7 +207,7 @@ describe("computeCompositeLayout", () => {
 		});
 	});
 
-	// ─── block layouts: geometry shared by both presets ────────────────────────
+	// ─── block layouts ─────────────────────────────────────────────────────────
 
 	// The three constraints, asserted directly: screen keeps its ratio, the couple
 	// is contained in the scene, and the camera tends toward square.
@@ -230,7 +230,7 @@ describe("computeCompositeLayout", () => {
 	// camera's own aspect ratio.
 	const CAM = { width: 960, height: 720 };
 
-	for (const preset of ["dual-frame", "vertical-stack"] as const) {
+	for (const preset of ["dual-frame"] as const) {
 		for (const capture of CAPTURES) {
 			for (const scene of SCENES) {
 				it(`${preset}: capture ${capture.label} in scene ${scene.label} — screen ratio kept, block contained, camera near square`, () => {
@@ -278,41 +278,40 @@ describe("computeCompositeLayout", () => {
 		}
 	}
 
-	it("fills the scene exactly (block aspect == scene aspect) when a near-square camera allows it", () => {
-		// A 16:9 screen stacked top/bottom in a portrait-ish scene: the square-ish
-		// camera that fills the scene is reachable inside the band, so the block
-		// touches all four edges and the camera lands close to square.
-		const scene = { width: 1000, height: 1587 };
+	it("makes a 50/50 portrait stack fill the padded frame", () => {
+		const scene = { width: 1080, height: 1920 };
 		const layout = computeCompositeLayout({
 			canvasSize: scene,
 			maxContentSize: scene,
 			screenSize: { width: 1920, height: 1080 },
 			webcamSize: { width: 960, height: 720 },
 			layoutPreset: "vertical-stack",
+			webcamBlockCameraShare: 50,
 		})!;
 		const screen = layout.screenRect;
 		const cam = layout.webcamRect!;
-		const blockW = Math.max(screen.x + screen.width, cam.x + cam.width) - Math.min(screen.x, cam.x);
-		const blockH =
-			Math.max(screen.y + screen.height, cam.y + cam.height) - Math.min(screen.y, cam.y);
-		// Block matches the scene aspect → contains with (near) zero bars.
-		expect(blockW / blockH).toBeCloseTo(scene.width / scene.height, 1);
-		expect(cam.width / cam.height).toBeCloseTo(1, 1); // ~square
+		expect(screen.x).toBe(0);
+		expect(cam.x).toBe(0);
+		expect(screen.width).toBe(scene.width);
+		expect(cam.width).toBe(scene.width);
+		expect(screen.height).toBeCloseTo(cam.height, 0);
+		expect(cam.y + cam.height).toBeCloseTo(scene.height, 0);
+		expect(layout.screenCover).toBe(true);
 	});
 
-	it("makes the camera squarer for a landscape capture top/bottom than the old fixed 50/50 did", () => {
-		// Regression guard for the reported issue: a 16:9 capture used to give a
-		// 1.78:1 camera strip in Top / bottom. It must now be markedly squarer.
+	it("changes only the camera share when a stacked split is adjusted", () => {
 		const layout = computeCompositeLayout({
-			canvasSize: { width: 1920, height: 1080 },
-			maxContentSize: { width: 1920, height: 1080 },
+			canvasSize: { width: 1080, height: 1920 },
+			maxContentSize: { width: 1080, height: 1920 },
 			screenSize: { width: 1920, height: 1080 },
 			webcamSize: { width: 960, height: 720 },
 			layoutPreset: "vertical-stack",
+			webcamBlockCameraShare: 35,
 		})!;
 		const cam = layout.webcamRect!;
-		expect(cam.width).toBeCloseTo(layout.screenRect.width, 0); // still full width
-		expect(cam.width / cam.height).toBeLessThan(1.3); // was 1.78
+		const usableHeight = cam.height + layout.screenRect.height;
+		expect(cam.height / usableHeight).toBeCloseTo(0.35, 2);
+		expect(cam.width).toBe(layout.screenRect.width);
 	});
 
 	it("keeps both block presets' frames sharing one corner radius", () => {
@@ -327,6 +326,22 @@ describe("computeCompositeLayout", () => {
 			expect(layout.screenBorderRadius).toBe(layout.webcamRect!.borderRadius);
 			expect(layout.screenBorderRadius).toBeGreaterThan(0);
 		}
+	});
+
+	it.each([
+		["vertical-stack", "y"],
+		["dual-frame", "x"],
+	] as const)("can place the camera first in %s", (layoutPreset, axis) => {
+		const layout = computeCompositeLayout({
+			canvasSize: { width: 1920, height: 1080 },
+			maxContentSize: { width: 1920, height: 1080 },
+			screenSize: { width: 1920, height: 1080 },
+			webcamSize: { width: 960, height: 720 },
+			layoutPreset,
+			webcamBlockOrder: "camera-first",
+		})!;
+
+		expect(layout.webcamRect![axis]).toBeLessThan(layout.screenRect[axis]);
 	});
 
 	// ─── block layouts: padding & fallback ─────────────────────────────────────
@@ -390,9 +405,14 @@ describe("computeCompositeLayout", () => {
 			expect(rect.x + rect.width).toBeLessThanOrEqual(1080);
 			expect(rect.y + rect.height).toBeLessThanOrEqual(1920);
 		}
-		// The screen still carries the capture's own ratio in a scene whose
-		// ratio is nothing like it.
-		expect(layout.screenRect.width / layout.screenRect.height).toBeCloseTo(1920 / 1080, 2);
+		if (layoutPreset === "dual-frame") {
+			// Side by side preserves the source shape.
+			expect(layout.screenRect.width / layout.screenRect.height).toBeCloseTo(1920 / 1080, 2);
+		} else {
+			// Top / bottom fills its cell and asks the renderer to cover-crop the source.
+			expect(layout.screenCover).toBe(true);
+			expect(layout.screenRect.width).toBe(1080);
+		}
 	});
 
 	it.each([

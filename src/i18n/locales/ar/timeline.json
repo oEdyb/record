@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "التركيز التلقائي مفعّل لجميع التكبيرات — انقر للتبديل إلى يدوي للجميع",
 		"autoFocusAllOff": "تفعيل التركيز التلقائي لجميع التكبيرات (الكاميرا تتبع المؤشر)",
 		"addTrim": "إضافة قص (T)",
+		"splitClip": "تقسيم المقطع عند مؤشر التشغيل",
 		"addAnnotation": "إضافة شرح (A)",
 		"addSpeed": "إضافة سرعة (S)",
 		"addCameraFullscreen": "إضافة كاميرا كاملة الشاشة (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "اضغط C لإضافة مقطع كاميرا كاملة الشاشة"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "تحريك",
 		"zoom": "تكبير",
 		"trim": "قص",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "تحسين تلقائي",
 		"automaticZooms": "تكبيرات تلقائية",
+		"automaticDirection": "توجيه تلقائي",
 		"automaticZoomsHint": "من حركة المؤشر المسجلة",
 		"smartZoomsAndCuts": "قصات ذكية",
 		"smartZoomsAndCutsHint": "باستخدام الذكاء الاصطناعي",

@@ -8,8 +8,8 @@
 
 .indicator {
 	position: absolute;
-	border: 1px solid rgba(52, 178, 123, 0.8);
-	background: rgba(52, 178, 123, 0.2);
+	border: 1px solid var(--editor-accent-border);
+	background: var(--editor-accent-soft);
 	border-radius: 6px;
 	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
 }

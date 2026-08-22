@@ -37,6 +37,8 @@ export interface AutoZoomSuggestion {
 	customScale: number;
 	motionSpeed?: MotionSpeed;
 	source: "auto";
+	/** Local sequence identity. A plan namespaces it before persistence. */
+	directionGroupId?: string;
 }
 
 /**
@@ -86,6 +88,7 @@ export function buildAutoZoomSuggestions(options: {
 		customScale: zoom.customScale,
 		motionSpeed: zoom.motionSpeed,
 		source: "auto",
+		...(zoom.sequenceId ? { directionGroupId: zoom.sequenceId } : {}),
 	}));
 }
 
@@ -114,6 +117,7 @@ export function appendAutoZoomSuggestions(
 					source: suggestion.source,
 					motionStyle: NEW_ZOOM_MOTION_STYLE,
 					motionSpeed: suggestion.motionSpeed ?? DEFAULT_MOTION_SPEED,
+					...(suggestion.directionGroupId ? { directionGroupId: suggestion.directionGroupId } : {}),
 				},
 			],
 			document.timeline.clips,
@@ -369,6 +373,7 @@ export function buildAutoZoomSuggestionsForTimeline(options: {
 		customScale: zoom.customScale,
 		motionSpeed: zoom.motionSpeed,
 		source: "auto",
+		...(zoom.sequenceId ? { directionGroupId: zoom.sequenceId } : {}),
 	}));
 }
 

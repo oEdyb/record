@@ -3,12 +3,23 @@ import {
 	calculateEffectiveExportDuration,
 	calculateEffectiveSourceDimensions,
 	calculateMp4ExportSettings,
+	calculateMp4ExportSettingsForResolution,
 	estimateMp4FileSizeBytes,
 	formatBitrate,
 	wouldUpscale,
 } from "./mp4ExportSettings";
 
 describe("calculateMp4ExportSettings", () => {
+	it("uses an exact custom canvas while keeping encoder-safe dimensions", () => {
+		expect(
+			calculateMp4ExportSettingsForResolution({
+				quality: "source",
+				width: 1081,
+				height: 1921,
+			}),
+		).toEqual({ width: 1080, height: 1920, bitrate: 30_000_000 });
+	});
+
 	it("keeps 2K explicit even when it upscales short native captures", () => {
 		const aspectRatioValue = 1920 / 1032;
 

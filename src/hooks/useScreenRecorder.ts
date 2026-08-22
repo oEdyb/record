@@ -1056,7 +1056,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				void finalizeNativeWindowsRecordingRef.current(true);
 			}
 			if (nativeMacRecording.current) {
-				void finalizeNativeMacRecordingRef.current(true);
+				// Keep an interrupted recording recoverable. A renderer reload or app
+				// shutdown must not turn window cleanup into an explicit media discard.
+				void finalizeNativeMacRecordingRef.current(false);
 			}
 			if (nativeLinuxRecording.current) {
 				void finalizeNativeLinuxRecordingRef.current(true);

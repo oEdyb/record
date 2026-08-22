@@ -11,20 +11,76 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { LOCALE_STORAGE_KEY } from "@/i18n/config";
+import type { AxcutDocument } from "@/lib/ai-edition/schema";
+import { axcutSchemaVersion } from "@/lib/ai-edition/schema";
+import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { BackgroundPane, CursorPane, LayoutPane, VideoEffectsPane } from "./RightPanes";
 
 function renderIn(locale: string, ui: ReactElement) {
-	localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+	window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
 	return render(<I18nProvider>{ui}</I18nProvider>);
 }
 
+function makeStackedCameraDocument(): AxcutDocument {
+	return {
+		schemaVersion: axcutSchemaVersion,
+		project: {
+			id: "project-stacked",
+			title: "Stacked",
+			createdAt: "2026-08-21T00:00:00.000Z",
+			updatedAt: "2026-08-21T00:00:00.000Z",
+			primaryAssetId: "asset-stacked",
+		},
+		assets: [
+			{
+				id: "asset-stacked",
+				kind: "video",
+				label: "Recording",
+				originalPath: "/screen.mp4",
+				cameraTrack: { sourcePath: "/camera.mp4", startMs: 0, offsetMs: 0, visible: true },
+			},
+		],
+		transcript: null,
+		transcripts: [],
+		timeline: {
+			clips: [
+				{
+					id: "clip-stacked",
+					assetId: "asset-stacked",
+					sourceStartSec: 0,
+					sourceEndSec: 10,
+					timelineStartSec: 0,
+					timelineEndSec: 10,
+					wordRefs: [],
+					origin: "system",
+					reason: "",
+				},
+			],
+			gaps: [],
+			trimRanges: [],
+			muteRanges: [],
+			speedRanges: [],
+			captionRanges: [],
+		},
+		annotations: [],
+		zoomRanges: [],
+		legacyEditor: {
+			aspectRatio: "9:16",
+			webcamLayoutPreset: "vertical-stack",
+			webcamBlockCameraShare: 50,
+		},
+	};
+}
+
 beforeEach(() => {
-	localStorage.clear();
+	window.localStorage.clear();
+	useProjectStore.getState().clear();
 });
 
 afterEach(() => {
 	cleanup();
-	localStorage.clear();
+	window.localStorage.clear();
+	useProjectStore.getState().clear();
 });
 
 describe("right-rail panes are localized", () => {
@@ -53,6 +109,26 @@ describe("right-rail panes are localized", () => {
 		expect(heading.closest('[data-inspector-layout="flat"]')).toBeInTheDocument();
 		// the preset <option> labels come from the shared layout.* catalog
 		expect(screen.getByRole("option", { name: "ピクチャーインピクチャ" })).toBeInTheDocument();
+		expect(screen.getByRole("option", { name: "9:16" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "9:16" })).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "カスタム" })).toBeInTheDocument();
+		expect(screen.getByText("カメラのズーム")).toBeInTheDocument();
+		expect(screen.getByText("カメラの位置")).toBeInTheDocument();
+	});
+
+	it("shows the saved camera share for the top and bottom layout", () => {
+		const document = makeStackedCameraDocument();
+		useProjectStore.setState({
+			projectId: document.project.id,
+			document,
+			status: "ready",
+		});
+		renderIn("en", <LayoutPane />);
+
+		const slider = screen.getByRole("slider", { name: "Camera share" });
+		expect(slider).toHaveValue("50");
+		expect(slider).toHaveAttribute("min", "20");
+		expect(slider).toHaveAttribute("max", "80");
 	});
 
 	it("renders the cursor pane in French", () => {
@@ -70,9 +146,9 @@ describe("right-rail panes are localized", () => {
 		expect(screen.getByText("Blur BG")).toBeInTheDocument();
 	});
 
-	it("keeps the Background pane on its existing card layout", () => {
+	it("keeps the Background pane on the shared continuous inspector layout", () => {
 		renderIn("en", <BackgroundPane />);
 		const heading = screen.getByRole("heading", { name: "Background" });
-		expect(heading.closest('[data-inspector-layout="flat"]')).not.toBeInTheDocument();
+		expect(heading.closest('[data-inspector-layout="flat"]')).toBeInTheDocument();
 	});
 });

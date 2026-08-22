@@ -3,7 +3,7 @@
 // Mirrors the legacy `EditorEmptyState` (import video + load project + drag
 // drop) but on top of the project store: a "no project" branch offers
 // `createProject` + `loadProject`, and a "has project, no asset" branch offers
-// the file picker + load (for the rare user who already has a .openscreen
+// the file picker + load (for the rare user who already has a project
 // project without media attached).
 //
 // ponytail: keeps the existing copy from the legacy component and the same
@@ -15,6 +15,7 @@
 
 import { AlertCircle, Film, FolderOpen, Upload, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { KlipptMark } from "@/components/brand/KlipptMark";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
@@ -23,6 +24,7 @@ import {
 } from "@/lib/ai-edition/document/migrate";
 import { documentSchema } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { isSupportedProjectFile } from "@/lib/projectFileFormat";
 import { nativeBridgeClient } from "@/native";
 import styles from "./NewEditorShell.module.css";
 
@@ -126,7 +128,7 @@ export function EditorEmptyState({
 			setIsDraggingOver(false);
 			const files = Array.from(e.dataTransfer.files);
 			if (files.length === 0) return;
-			const projectFile = files.find((f) => f.name.endsWith(".openscreen"));
+			const projectFile = files.find((file) => isSupportedProjectFile(file.name));
 			if (!projectFile) {
 				setDropError("unsupported-format");
 				return;
@@ -176,12 +178,7 @@ export function EditorEmptyState({
 				<DialogContent className={styles.previewEmptyDialog}>
 					<DialogHeader className={styles.previewEmptyDialogHeader}>
 						<div className={styles.previewEmptyDialogHeaderInner}>
-							<img
-								src="./openscreen.png"
-								alt=""
-								aria-hidden="true"
-								className={styles.previewEmptyDialogLogo}
-							/>
+							<KlipptMark className={styles.previewEmptyDialogLogo} />
 							<DialogTitle className={styles.previewEmptyDialogTitle}>
 								{lastDropErrorRef.current === "unsupported-format"
 									? t("emptyState.dropErrors.unsupportedFormatTitle")
@@ -211,7 +208,7 @@ export function EditorEmptyState({
 			</Dialog>
 
 			<div className={styles.previewEmptyInner}>
-				<img src="./openscreen.png" alt="" aria-hidden="true" className={styles.previewEmptyLogo} />
+				<KlipptMark className={styles.previewEmptyLogo} />
 				<div className={styles.previewEmptyHeading}>
 					<h2 className={styles.previewEmptyTitle}>
 						{hasProject ? t("emptyState.titleHasAsset") : t("emptyState.title")}

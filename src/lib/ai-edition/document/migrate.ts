@@ -196,6 +196,7 @@ export function migrateProjectDataToAxcutDocument(
 			...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
 			...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 			...(region.source === "auto" || region.source === "manual" ? { source: region.source } : {}),
+			...(region.directionGroupId ? { directionGroupId: region.directionGroupId } : {}),
 		}));
 
 	const migratedAnnotations: AxcutAnnotationRegion[] = annotationRegions
@@ -303,10 +304,14 @@ export function migrateAxcutDocumentToProjectData(input: AxcutDocument): EditorP
 		annotationRegions: [],
 		aspectRatio: "16:9",
 		webcamLayoutPreset: "picture-in-picture",
+		webcamBlockOrder: "screen-first",
+		webcamBlockCameraShare: 50,
 		webcamMaskShape: "rectangle",
 		webcamMirrored: false,
 		webcamReactiveZoom: true,
 		webcamSizePreset: 25,
+		webcamZoom: 1,
+		webcamFocalPoint: { cx: 0.5, cy: 0.5 },
 		webcamPosition: null,
 		exportQuality: "good",
 		exportFormat: "mp4",
@@ -333,6 +338,7 @@ export function migrateAxcutDocumentToProjectData(input: AxcutDocument): EditorP
 		...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
 		...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 		...(region.source ? { source: region.source } : {}),
+		...(region.directionGroupId ? { directionGroupId: region.directionGroupId } : {}),
 	}));
 	editor.zoomRegions = reverseZoomRegions;
 

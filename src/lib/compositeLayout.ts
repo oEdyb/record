@@ -113,9 +113,15 @@ export type WebcamLayoutPreset =
 	| "vertical-stack"
 	| "dual-frame"
 	| "no-webcam";
+export type WebcamBlockOrder = "screen-first" | "camera-first";
+/** Camera share of a top/bottom block, as a percentage of its usable height. */
+export type WebcamBlockCameraShare = number;
 /** Webcam size as a percentage of the canvas reference dimension (10–80). */
 export type WebcamSizePreset = number;
 
+export const MIN_WEBCAM_BLOCK_CAMERA_SHARE = 20;
+export const MAX_WEBCAM_BLOCK_CAMERA_SHARE = 80;
+export const DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE: WebcamBlockCameraShare = 50;
 export const MIN_WEBCAM_SIZE_PERCENT = 10;
 export const MAX_WEBCAM_SIZE_PERCENT = 80;
 
@@ -320,6 +326,8 @@ export function computeCompositeLayout(params: {
 	webcamSizePreset?: WebcamSizePreset;
 	webcamPosition?: { cx: number; cy: number } | null;
 	webcamMaskShape?: import("@/components/video-editor/types").WebcamMaskShape;
+	webcamBlockOrder?: WebcamBlockOrder;
+	webcamBlockCameraShare?: WebcamBlockCameraShare;
 }): WebcamCompositeLayout | null {
 	const {
 		canvasSize,
@@ -330,6 +338,8 @@ export function computeCompositeLayout(params: {
 		webcamSizePreset = 25,
 		webcamPosition,
 		webcamMaskShape = "rectangle",
+		webcamBlockOrder = "screen-first",
+		webcamBlockCameraShare = DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE,
 	} = params;
 	const { width: canvasWidth, height: canvasHeight } = canvasSize;
 	const { width: screenWidth, height: screenHeight } = screenSize;
@@ -363,6 +373,61 @@ export function computeCompositeLayout(params: {
 			return {
 				screenRect: centerRect({ canvasSize, size: screenSize, maxSize: maxContentSize }),
 				webcamRect: null,
+			};
+		}
+
+		// Top / bottom is a social-video split, not two source-sized tiles floating
+		// inside the frame. Divide the complete padded content box, then cover-crop
+		// each source into its own cell. This makes 50/50 mean a real 50/50 frame in
+		// 9:16 and keeps the split directly editable without baking any crop into the
+		// recording. Side by side keeps the aspect-preserving block behaviour below.
+		if (block.direction === "column") {
+			const contentWidth = Math.min(canvasWidth, Math.max(1, maxContentSize.width));
+			const contentHeight = Math.min(canvasHeight, Math.max(1, maxContentSize.height));
+			const originX = (canvasWidth - contentWidth) / 2;
+			const originY = (canvasHeight - contentHeight) / 2;
+			const gap = Math.min(
+				Math.max(0, contentHeight - 2),
+				Math.max(0, contentWidth * block.gapFraction),
+			);
+			const availableHeight = Math.max(2, contentHeight - gap);
+			const cameraShare =
+				Math.min(
+					MAX_WEBCAM_BLOCK_CAMERA_SHARE,
+					Math.max(MIN_WEBCAM_BLOCK_CAMERA_SHARE, webcamBlockCameraShare),
+				) / 100;
+			const cameraHeight = availableHeight * cameraShare;
+			const screenHeight = availableHeight - cameraHeight;
+			const cameraFirst = webcamBlockOrder === "camera-first";
+			const screenRect = snapRect(
+				originX,
+				cameraFirst ? originY + cameraHeight + gap : originY,
+				contentWidth,
+				screenHeight,
+			);
+			const cameraRect = snapRect(
+				originX,
+				cameraFirst ? originY : originY + screenHeight + gap,
+				contentWidth,
+				cameraHeight,
+			);
+			const webcamBorderRadius = Math.min(
+				preset.borderRadius.max,
+				Math.max(
+					preset.borderRadius.min,
+					Math.round(Math.min(cameraRect.width, cameraRect.height) * preset.borderRadius.fraction),
+				),
+			);
+
+			return {
+				screenRect,
+				screenBorderRadius: webcamBorderRadius,
+				webcamRect: {
+					...cameraRect,
+					borderRadius: webcamBorderRadius,
+					maskShape: "rectangle",
+				},
+				screenCover: true,
 			};
 		}
 
@@ -417,10 +482,16 @@ export function computeCompositeLayout(params: {
 		const originX = (canvasWidth - blockWidth * scale) / 2;
 		const originY = (canvasHeight - blockHeight * scale) / 2;
 
-		const screenRect = snapRect(originX, originY, scale, unitScreenHeight * scale);
+		const cameraFirst = webcamBlockOrder === "camera-first";
+		const screenRect = snapRect(
+			isRow && cameraFirst ? originX + (cameraAlong + gap) * scale : originX,
+			!isRow && cameraFirst ? originY + (cameraAlong + gap) * scale : originY,
+			scale,
+			unitScreenHeight * scale,
+		);
 		const cameraRect = snapRect(
-			isRow ? originX + (1 + gap) * scale : originX,
-			isRow ? originY : originY + (unitScreenHeight + gap) * scale,
+			isRow && !cameraFirst ? originX + (1 + gap) * scale : originX,
+			!isRow && !cameraFirst ? originY + (unitScreenHeight + gap) * scale : originY,
 			unitCameraWidth * scale,
 			unitCameraHeight * scale,
 		);

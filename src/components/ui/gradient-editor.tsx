@@ -204,7 +204,10 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 	const canvasRef = useRef<HTMLDivElement>(null);
 	const trackRef = useRef<HTMLDivElement>(null);
 	const draggingMain = useRef(false);
-	const mountedRef = useRef(false);
+	// The panel can mount without the user choosing a gradient. Keep that read-only:
+	// React StrictMode runs mount effects twice in development, so a "skip first effect"
+	// flag still emitted the editor defaults and replaced the current wallpaper.
+	const userEditedRef = useRef(false);
 	const dragCleanup = useRef<(() => void) | null>(null);
 
 	useEffect(() => {
@@ -240,11 +243,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 
 	useEffect(() => {
 		const cb = onChangeRef.current;
-		if (!cb) return;
-		if (!mountedRef.current) {
-			mountedRef.current = true;
-			return;
-		}
+		if (!cb || !userEditedRef.current) return;
 
 		cb({
 			points: allPoints.map((p) => ({ id: p.id, x: p.x, y: p.y, color: p.color })),
@@ -269,6 +268,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 		const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
 		const radius = clamp((Math.hypot(dx, dy) / (rect.width / 2)) * 50, 0, MAIN_MAX_RADIUS);
 
+		userEditedRef.current = true;
 		setMainAngle(angle);
 		setMainRadius(radius);
 	}, []);
@@ -301,12 +301,14 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 	/* ---------- add / remove / harmony ---------- */
 	const addPoint = () => {
 		if (totalColors >= MAX_COLORS) return;
+		userEditedRef.current = true;
 		const id = `o${idCounter.current++}`;
 		setOrbitPoints((prev) => [...prev, { id }]);
 	};
 
 	const removePoint = () => {
 		if (totalColors <= 1) return;
+		userEditedRef.current = true;
 		setOrbitPoints((prev) => prev.slice(0, -1));
 	};
 
@@ -314,6 +316,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 
 	const cycleHarmony = () => {
 		if (eligibleHarmonies.length <= 1) return;
+		userEditedRef.current = true;
 		const idx = eligibleHarmonies.findIndex((h) => h.type === harmonyType);
 		const next = eligibleHarmonies[(idx + 1) % eligibleHarmonies.length];
 		setHarmonyType(next.type);
@@ -325,6 +328,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 		if (!el) return;
 		const rect = el.getBoundingClientRect();
 		const pct = clamp(((clientX - rect.left) / rect.width) * 100, 0, 100);
+		userEditedRef.current = true;
 		setBrightness(pct);
 	};
 
@@ -361,6 +365,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 		const cy = rect.top + rect.height / 2;
 		let a = (Math.atan2(-(clientY - cy), clientX - cx) * 180) / Math.PI;
 		if (a < 0) a += 360;
+		userEditedRef.current = true;
 		setAngle(Math.round(a));
 	};
 	const onAngleKnobPointerDown = (e: ReactPointerEvent) => {
@@ -391,9 +396,11 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 		const step = e.shiftKey ? 10 : 5;
 		if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
 			e.preventDefault();
+			userEditedRef.current = true;
 			setMainAngle((a) => a - step);
 		} else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
 			e.preventDefault();
+			userEditedRef.current = true;
 			setMainAngle((a) => a + step);
 		}
 	}, []);
@@ -402,9 +409,11 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 		const step = e.shiftKey ? 10 : 2;
 		if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
 			e.preventDefault();
+			userEditedRef.current = true;
 			setBrightness((b) => clamp(b - step, 0, 100));
 		} else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
 			e.preventDefault();
+			userEditedRef.current = true;
 			setBrightness((b) => clamp(b + step, 0, 100));
 		}
 	}, []);
@@ -413,20 +422,21 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 		const step = e.shiftKey ? 15 : 5;
 		if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
 			e.preventDefault();
+			userEditedRef.current = true;
 			setAngle((a) => (a - step + 360) % 360);
 		} else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
 			e.preventDefault();
+			userEditedRef.current = true;
 			setAngle((a) => (a + step) % 360);
 		}
 	}, []);
 
 	return (
-		<div className="w-[240px] max-w-full mx-auto rounded-[18px] p-[10px] box-border font-sans text-[#f2f2f2] select-none">
+		<div className="w-full max-w-full p-0 box-border font-sans text-[var(--fg)] select-none">
 			{/* Color Wheel Canvas */}
 			<div
 				ref={canvasRef}
-				className="relative w-full aspect-square rounded-[18px] overflow-hidden bg-[#141414]
-                   [background-image:radial-gradient(#ffffff0c_1px,transparent_1px)] bg-[16px_16px]"
+				className="relative w-full aspect-square rounded-[10px] overflow-hidden bg-[var(--surface-2)]"
 			>
 				{/* Center marker */}
 				<div className="absolute left-1/2 top-1/2 w-1 h-1 rounded-full bg-white/25 -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
@@ -462,7 +472,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 						aria-valuemin={0}
 						aria-valuemax={360}
 						aria-valuenow={Math.round(((mainAngle % 360) + 360) % 360)}
-						className="absolute w-11 h-11 rounded-full cursor-grab shadow-[0_0_0_4px_#f5f5f5,0_4px_14px_rgba(0,0,0,0.35)] transition-shadow z-10 active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-[#34B27B]"
+						className="absolute w-11 h-11 rounded-full cursor-grab shadow-[0_0_0_3px_var(--fg),0_4px_14px_rgba(0,0,0,0.35)] transition-shadow z-10 active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-[var(--editor-accent-border)]"
 						style={{
 							left: `${mainX}%`,
 							top: `${mainY}%`,
@@ -531,7 +541,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 					aria-valuemin={0}
 					aria-valuemax={100}
 					aria-valuenow={Math.round(brightness)}
-					className="relative flex-1 h-10 flex items-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#34B27B] rounded"
+					className="relative flex-1 h-10 flex items-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--editor-accent-border)] rounded"
 				>
 					<svg
 						width="100%"
@@ -543,7 +553,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 						<path
 							d={wavePath}
 							fill="none"
-							stroke="rgba(255,255,255,0.22)"
+							stroke="var(--border-hi)"
 							strokeWidth="6"
 							strokeLinecap="round"
 							strokeLinejoin="round"
@@ -551,7 +561,7 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 					</svg>
 
 					<div
-						className="absolute w-3 h-[30px] rounded-[7px] bg-[#f5f5f5] shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-all"
+						className="absolute w-3 h-[30px] rounded-[7px] bg-[var(--fg)] shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-all"
 						style={{
 							left: `${clampedBrightness}%`,
 							top: "50%",
@@ -571,11 +581,11 @@ export default function GradientEditor({ onChange }: GradientEditorProps) {
 					aria-valuemin={0}
 					aria-valuemax={360}
 					aria-valuenow={angle}
-					className="relative w-[42px] h-[42px] rounded-full bg-[radial-gradient(circle_at_35%_30%,#2b2b2b,#0c0c0c)] shadow-[0_3px_10px_rgba(0,0,0,0.4)] cursor-grab flex-shrink-0 active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-[#34B27B]"
+					className="relative w-[42px] h-[42px] rounded-full bg-[var(--surface-3)] border border-[var(--border-hi)] shadow-[0_2px_8px_rgba(0,0,0,0.25)] cursor-grab flex-shrink-0 active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-[var(--editor-accent-border)]"
 					title="Gradient angle"
 				>
 					<div className="absolute inset-0" style={{ transform: `rotate(${angleKnobAngle}deg)` }}>
-						<div className="absolute top-[5px] left-1/2 w-[2px] h-[9px] bg-[#e8e8e8] translate-x-[-50%] rounded" />
+						<div className="absolute top-[5px] left-1/2 w-[2px] h-[9px] bg-[var(--fg)] translate-x-[-50%] rounded" />
 					</div>
 				</div>
 			</div>

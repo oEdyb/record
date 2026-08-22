@@ -296,6 +296,20 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(view.result.current.elapsedSeconds).toBe(1);
 	});
 
+	it("finalizes without discarding when the recording window closes", async () => {
+		stubNativeMac();
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		const stopNativeMacRecording = vi.mocked(window.electronAPI.stopNativeMacRecording);
+		stopNativeMacRecording.mockClear();
+
+		view.unmount();
+		await settle();
+
+		expect(stopNativeMacRecording).toHaveBeenCalledWith(false);
+		expect(stopNativeMacRecording).not.toHaveBeenCalledWith(true);
+	});
+
 	it("rolls the HUD back to recording when Pause fails before the helper pauses", async () => {
 		const pause = vi.fn(async () => ({
 			success: false,

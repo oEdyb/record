@@ -17,20 +17,34 @@ import {
 	DEFAULT_CURSOR_MOTION_BLUR,
 	DEFAULT_CURSOR_SIZE,
 	DEFAULT_CURSOR_SMOOTHING,
+	DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE,
+	DEFAULT_WEBCAM_FOCAL_POINT,
 	DEFAULT_WEBCAM_LAYOUT_PRESET,
 	DEFAULT_WEBCAM_MASK_SHAPE,
 	DEFAULT_WEBCAM_MIRRORED,
 	DEFAULT_WEBCAM_POSITION,
 	DEFAULT_WEBCAM_REACTIVE_ZOOM,
 	DEFAULT_WEBCAM_SIZE_PRESET,
+	DEFAULT_WEBCAM_ZOOM,
+	MAX_WEBCAM_ZOOM,
+	MIN_WEBCAM_ZOOM,
+	type WebcamBlockCameraShare,
+	type WebcamBlockOrder,
+	type WebcamFocalPoint,
 	type WebcamLayoutPreset,
 	type WebcamMaskShape,
 	type WebcamPosition,
 	type WebcamSizePreset,
+	type WebcamZoom,
 } from "@/components/video-editor/types";
+import {
+	MAX_WEBCAM_BLOCK_CAMERA_SHARE,
+	MIN_WEBCAM_BLOCK_CAMERA_SHARE,
+} from "@/lib/compositeLayout";
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
 import { DEFAULT_WALLPAPER } from "@/lib/wallpaper";
 import type { AspectRatio } from "@/utils/aspectRatioUtils";
+import { normalizeOutputResolution, type OutputResolution } from "../document/outputFormat";
 import type { AxcutDocument } from "../schema";
 
 // ponytail: avoid dragging in lib/exporter full surface here — we only
@@ -41,6 +55,7 @@ import type { AxcutDocument } from "../schema";
 export interface EditorSettingsSnapshot {
 	wallpaper: string;
 	aspectRatio: AspectRatio;
+	outputResolution: OutputResolution | null;
 	shadowIntensity: number;
 	showBlur: boolean;
 	motionBlurAmount: number;
@@ -48,10 +63,14 @@ export interface EditorSettingsSnapshot {
 	padding: number;
 	cropRegion: CropRegion;
 	webcamLayoutPreset: WebcamLayoutPreset;
+	webcamBlockOrder: WebcamBlockOrder;
+	webcamBlockCameraShare: WebcamBlockCameraShare;
 	webcamMaskShape: WebcamMaskShape;
 	webcamMirrored: boolean;
 	webcamReactiveZoom: boolean;
 	webcamSizePreset: WebcamSizePreset;
+	webcamZoom: WebcamZoom;
+	webcamFocalPoint: WebcamFocalPoint;
 	webcamPosition: WebcamPosition | null;
 	cursor: CursorVisualSettings;
 	cursorShow: boolean;
@@ -62,6 +81,7 @@ export interface EditorSettingsSnapshot {
 export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 	wallpaper: DEFAULT_WALLPAPER,
 	aspectRatio: "16:9",
+	outputResolution: null,
 	// Opinionated by default: the wallpaper and the padding were already on, but
 	// with square corners and no shadow the recording read as a rectangle pasted
 	// onto the background rather than a window floating above it (#271 reported
@@ -74,10 +94,14 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 	padding: 50,
 	cropRegion: DEFAULT_CROP_REGION,
 	webcamLayoutPreset: DEFAULT_WEBCAM_LAYOUT_PRESET,
+	webcamBlockOrder: "screen-first",
+	webcamBlockCameraShare: DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE,
 	webcamMaskShape: DEFAULT_WEBCAM_MASK_SHAPE,
 	webcamMirrored: DEFAULT_WEBCAM_MIRRORED,
 	webcamReactiveZoom: DEFAULT_WEBCAM_REACTIVE_ZOOM,
 	webcamSizePreset: DEFAULT_WEBCAM_SIZE_PRESET,
+	webcamZoom: DEFAULT_WEBCAM_ZOOM,
+	webcamFocalPoint: DEFAULT_WEBCAM_FOCAL_POINT,
 	webcamPosition: DEFAULT_WEBCAM_POSITION,
 	cursor: {
 		size: DEFAULT_CURSOR_SIZE,
@@ -94,6 +118,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 interface LegacyShape {
 	wallpaper?: string;
 	aspectRatio?: AspectRatio;
+	outputResolution?: OutputResolution | null;
 	shadowIntensity?: number;
 	showBlur?: boolean;
 	motionBlurAmount?: number;
@@ -101,10 +126,14 @@ interface LegacyShape {
 	padding?: number;
 	cropRegion?: CropRegion;
 	webcamLayoutPreset?: WebcamLayoutPreset;
+	webcamBlockOrder?: WebcamBlockOrder;
+	webcamBlockCameraShare?: WebcamBlockCameraShare;
 	webcamMaskShape?: WebcamMaskShape;
 	webcamMirrored?: boolean;
 	webcamReactiveZoom?: boolean;
 	webcamSizePreset?: WebcamSizePreset;
+	webcamZoom?: WebcamZoom;
+	webcamFocalPoint?: WebcamFocalPoint;
 	webcamPosition?: WebcamPosition | null;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -145,6 +174,7 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 	return {
 		wallpaper: str(legacy?.wallpaper, DEFAULT_EDITOR_SETTINGS.wallpaper),
 		aspectRatio: legacy?.aspectRatio ?? DEFAULT_EDITOR_SETTINGS.aspectRatio,
+		outputResolution: normalizeOutputResolution(legacy?.outputResolution),
 		shadowIntensity: num(legacy?.shadowIntensity, DEFAULT_EDITOR_SETTINGS.shadowIntensity),
 		showBlur: bool(legacy?.showBlur, DEFAULT_EDITOR_SETTINGS.showBlur),
 		motionBlurAmount: num(legacy?.motionBlurAmount, DEFAULT_EDITOR_SETTINGS.motionBlurAmount),
@@ -152,6 +182,14 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		padding: num(legacy?.padding, DEFAULT_EDITOR_SETTINGS.padding),
 		cropRegion: legacy?.cropRegion ?? DEFAULT_EDITOR_SETTINGS.cropRegion,
 		webcamLayoutPreset: legacy?.webcamLayoutPreset ?? DEFAULT_EDITOR_SETTINGS.webcamLayoutPreset,
+		webcamBlockOrder: legacy?.webcamBlockOrder === "camera-first" ? "camera-first" : "screen-first",
+		webcamBlockCameraShare: Math.min(
+			MAX_WEBCAM_BLOCK_CAMERA_SHARE,
+			Math.max(
+				MIN_WEBCAM_BLOCK_CAMERA_SHARE,
+				num(legacy?.webcamBlockCameraShare, DEFAULT_EDITOR_SETTINGS.webcamBlockCameraShare),
+			),
+		),
 		webcamMaskShape: legacy?.webcamMaskShape ?? DEFAULT_EDITOR_SETTINGS.webcamMaskShape,
 		webcamMirrored: bool(legacy?.webcamMirrored, DEFAULT_EDITOR_SETTINGS.webcamMirrored),
 		webcamReactiveZoom: bool(
@@ -159,6 +197,11 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 			DEFAULT_EDITOR_SETTINGS.webcamReactiveZoom,
 		),
 		webcamSizePreset: num(legacy?.webcamSizePreset, DEFAULT_EDITOR_SETTINGS.webcamSizePreset),
+		webcamZoom: Math.min(
+			MAX_WEBCAM_ZOOM,
+			Math.max(MIN_WEBCAM_ZOOM, num(legacy?.webcamZoom, DEFAULT_EDITOR_SETTINGS.webcamZoom)),
+		),
+		webcamFocalPoint: normaliseWebcamFocalPoint(legacy?.webcamFocalPoint),
 		webcamPosition: normaliseWebcamPosition(legacy?.webcamPosition),
 		cursor,
 		cursorShow: bool(legacy?.cursorShow, DEFAULT_EDITOR_SETTINGS.cursorShow),
@@ -169,6 +212,7 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 export interface EditorSettingsPatch {
 	wallpaper?: string;
 	aspectRatio?: AspectRatio;
+	outputResolution?: OutputResolution | null;
 	shadowIntensity?: number;
 	showBlur?: boolean;
 	motionBlurAmount?: number;
@@ -176,10 +220,14 @@ export interface EditorSettingsPatch {
 	padding?: number;
 	cropRegion?: CropRegion;
 	webcamLayoutPreset?: WebcamLayoutPreset;
+	webcamBlockOrder?: WebcamBlockOrder;
+	webcamBlockCameraShare?: WebcamBlockCameraShare;
 	webcamMaskShape?: WebcamMaskShape;
 	webcamMirrored?: boolean;
 	webcamReactiveZoom?: boolean;
 	webcamSizePreset?: WebcamSizePreset;
+	webcamZoom?: WebcamZoom;
+	webcamFocalPoint?: WebcamFocalPoint;
 	webcamPosition?: WebcamPosition | null;
 	cursor?: Partial<CursorVisualSettings> & { theme?: string; show?: boolean };
 	autoFocusAll?: boolean;
@@ -232,4 +280,12 @@ function normaliseWebcamPosition(value: unknown): WebcamPosition | null {
 		cx: Math.min(1, Math.max(0, cxRaw)),
 		cy: Math.min(1, Math.max(0, cyRaw)),
 	};
+}
+
+function normaliseWebcamFocalPoint(value: unknown): WebcamFocalPoint {
+	if (!value || typeof value !== "object") return DEFAULT_WEBCAM_FOCAL_POINT;
+	const candidate = value as Record<string, unknown>;
+	const cx = typeof candidate.cx === "number" && Number.isFinite(candidate.cx) ? candidate.cx : 0.5;
+	const cy = typeof candidate.cy === "number" && Number.isFinite(candidate.cy) ? candidate.cy : 0.5;
+	return { cx: Math.min(1, Math.max(0, cx)), cy: Math.min(1, Math.max(0, cy)) };
 }

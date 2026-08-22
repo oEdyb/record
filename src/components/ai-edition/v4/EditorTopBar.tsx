@@ -1,7 +1,9 @@
 import {
+	Check,
 	ChevronDown,
 	Circle,
 	Download,
+	Film,
 	FolderOpen,
 	FolderPlus,
 	Languages,
@@ -14,10 +16,12 @@ import {
 	Sun,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import logoMark from "@/assets/openscreen-mark.png";
+import { KlipptMark } from "@/components/brand/KlipptMark";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useTheme } from "@/hooks/useTheme";
 import { getAvailableLocales, getLocaleName, getLocaleShort } from "@/i18n/loader";
+import { APP_DISPLAY_NAME } from "@/lib/brand";
+import { PRODUCT_SURFACE } from "@/lib/productSurface";
 import styles from "./EditorShellV4.module.css";
 
 export type EditorMode = "media" | "edit";
@@ -25,6 +29,7 @@ export type EditorMode = "media" | "edit";
 export interface TopBarActions {
 	openProject: () => void;
 	newProject: () => void;
+	importMedia: () => void;
 	save: () => void;
 	export: () => void;
 	openSettings: () => void;
@@ -40,16 +45,22 @@ interface EditorTopBarProps {
 	projectTitle: string | null;
 	dirty: boolean;
 	canExport: boolean;
+	canImportMedia: boolean;
 	canRegenerateAutomaticEdits: boolean;
 	regeneratingAutomaticEdits: boolean;
+	importingMedia: boolean;
 	chatOpen: boolean;
 	actions: TopBarActions;
 }
 
-const MODES: Array<{ id: EditorMode; labelKey: string }> = [
+const ALL_MODES: Array<{ id: EditorMode; labelKey: string }> = [
 	{ id: "media", labelKey: "topbar.modes.media" },
 	{ id: "edit", labelKey: "topbar.modes.edit" },
 ];
+
+const MODES = PRODUCT_SURFACE.mediaWorkspace
+	? ALL_MODES
+	: ALL_MODES.filter((mode) => mode.id === "edit");
 
 export function EditorTopBar({
 	mode,
@@ -57,8 +68,10 @@ export function EditorTopBar({
 	projectTitle,
 	dirty,
 	canExport,
+	canImportMedia,
 	canRegenerateAutomaticEdits,
 	regeneratingAutomaticEdits,
+	importingMedia,
 	chatOpen,
 	actions,
 }: EditorTopBarProps) {
@@ -68,7 +81,7 @@ export function EditorTopBar({
 	// ponytail: the left side panel only renders in "edit" mode (see
 	// NewEditorShell body), so its toggle is meaningless in Media/Rec —
 	// hide the button (and its separator) there to keep the topbar honest.
-	const showChatToggle = mode === "edit";
+	const showChatToggle = PRODUCT_SURFACE.agentEditor && mode === "edit";
 	return (
 		<header className={styles.topbar}>
 			{/* Fixed-width slot: the toggle is Edit-only, and .topbarLead holds its
@@ -91,9 +104,10 @@ export function EditorTopBar({
 				) : null}
 			</span>
 			<span className={styles.brand}>
-				{/* Decorative: the wordmark right beside it already names the app. */}
-				<img src={logoMark} alt="" draggable={false} />
-				<span className={styles.name}>OpenScreen</span>
+				<KlipptMark className={styles.brandMark} />
+				<span className={styles.name} translate="no">
+					{APP_DISPLAY_NAME}
+				</span>
 			</span>
 			<span className={styles.sep} aria-hidden />
 			<ProjectNameField title={projectTitle} onRename={actions.renameProject} />
@@ -115,6 +129,20 @@ export function EditorTopBar({
 				onClick={actions.newProject}
 			>
 				<FolderPlus size={16} />
+			</button>
+			<button
+				type="button"
+				className={styles.iconBtn}
+				title={t("mediaStage.importMedia")}
+				aria-label={t("mediaStage.importMedia")}
+				onClick={actions.importMedia}
+				disabled={!canImportMedia || importingMedia}
+			>
+				{importingMedia ? (
+					<LoaderCircle size={16} className={styles.spin} aria-hidden />
+				) : (
+					<Film size={16} aria-hidden />
+				)}
 			</button>
 			<button
 				type="button"
@@ -164,51 +192,36 @@ export function EditorTopBar({
 			</button>
 			<span className={styles.sep} aria-hidden />
 			<LangButton />
-			{/* Both states are always rendered, stacked in one grid cell, so the slot
-			    keeps the width of the longer label and the bar doesn't twitch every
-			    time the document goes dirty. The inactive one is visibility:hidden,
-			    which also takes it out of the accessibility tree. */}
-			<span className={styles.saved}>
+			<span className={styles.saved} role="status" aria-live="polite" aria-atomic="true">
 				<span className={styles.savedState} data-on={!dirty}>
-					<span className={styles.dot} aria-hidden />
+					<Check size={12} strokeWidth={2} aria-hidden />
 					{t("topbar.saved")}
 				</span>
-				<span className={styles.savedState} data-on={dirty}>
-					<span
-						className={styles.dot}
-						aria-hidden
-						style={{ background: "var(--warn)", boxShadow: "0 0 0 3px var(--warn-soft)" }}
-					/>
+				<span className={styles.savedState} data-on={dirty} data-dirty="true">
+					<Circle size={7} fill="currentColor" strokeWidth={0} aria-hidden />
 					{t("topbar.unsaved")}
 				</span>
 			</span>
 
-			<div className={styles.workspaceNav}>
-				<div className={styles.modeSwitch} role="tablist" aria-label={t("topbar.editorMode")}>
-					{MODES.map((m) => (
-						<button
-							key={m.id}
-							type="button"
-							role="tab"
-							aria-selected={mode === m.id}
-							data-label={t(m.labelKey)}
-							onClick={() => onModeChange(m.id)}
-						>
-							<span className={styles.modeLabel}>{t(m.labelKey)}</span>
-						</button>
-					))}
+			<span className={styles.topbarSpacer} aria-hidden />
+			{MODES.length > 1 ? (
+				<div className={styles.workspaceNav}>
+					<div className={styles.modeSwitch} role="tablist" aria-label={t("topbar.editorMode")}>
+						{MODES.map((m) => (
+							<button
+								key={m.id}
+								type="button"
+								role="tab"
+								aria-selected={mode === m.id}
+								data-label={t(m.labelKey)}
+								onClick={() => onModeChange(m.id)}
+							>
+								<span className={styles.modeLabel}>{t(m.labelKey)}</span>
+							</button>
+						))}
+					</div>
 				</div>
-				<button
-					type="button"
-					className={styles.recordBtn}
-					title={t("rec.startRecording")}
-					aria-label={t("rec.startRecording")}
-					onClick={actions.record}
-				>
-					<Circle size={10} fill="currentColor" strokeWidth={0} aria-hidden />
-					{t("topbar.modes.rec")}
-				</button>
-			</div>
+			) : null}
 
 			<button
 				type="button"
@@ -228,17 +241,29 @@ export function EditorTopBar({
 			>
 				<Settings size={16} />
 			</button>
-			<button
-				type="button"
-				className={styles.exportBtn}
-				title={t("topbar.export")}
-				aria-label={t("topbar.export")}
-				onClick={actions.export}
-				disabled={!canExport}
-			>
-				<Download size={15} />
-				{t("topbar.export")}
-			</button>
+			<div className={styles.primaryActions}>
+				<button
+					type="button"
+					className={styles.recordBtn}
+					title={t("rec.startRecording")}
+					aria-label={t("rec.startRecording")}
+					onClick={actions.record}
+				>
+					<Circle size={10} fill="currentColor" strokeWidth={0} aria-hidden />
+					{t("topbar.modes.rec")}
+				</button>
+				<button
+					type="button"
+					className={styles.exportBtn}
+					title={t("topbar.export")}
+					aria-label={t("topbar.export")}
+					onClick={actions.export}
+					disabled={!canExport}
+				>
+					<Download size={15} />
+					{t("topbar.export")}
+				</button>
+			</div>
 		</header>
 	);
 }

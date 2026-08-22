@@ -13,7 +13,13 @@ import type {
 	RecordingSession,
 	RecordingSessionClip,
 } from "../../src/lib/recordingSession";
+import { writeJsonDurably } from "../filesystem/durableJson";
 import { NativeMacHelperClient, NativeMacPauseError } from "./nativeMacHelperClient";
+import {
+	clearNativeMacRecoveryJournal,
+	persistNativeMacRecoveryJournal,
+	restoreNativeMacRecoverySession,
+} from "./nativeMacRecoveryJournal";
 
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
@@ -93,6 +99,7 @@ export class NativeMacRecordingService {
 	private pauseRanges: Array<{ startMs: number; endMs: number }> = [];
 	private paused = false;
 	private clips: RecordingSessionClip[] = [];
+	private activeClipIndex: number | null = null;
 	private fatalError: NativeMacRecordingFailure | null = null;
 	private commandChain: Promise<void> = Promise.resolve();
 	private lastDiagnosticOutput = "";
@@ -153,6 +160,7 @@ export class NativeMacRecordingService {
 					this.deps.clearCursor();
 				}
 				this.initializeSession(recordingId, outputPath, config, cursorCaptureMode);
+				await this.persistRecoverySession();
 				this.cursorRecordingStartMs = cursorStartTimeMs;
 				this.cursorTelemetryStarted = cursorCaptureMode === "editable-overlay";
 
@@ -169,6 +177,7 @@ export class NativeMacRecordingService {
 				this.deps.onRecordingStateChange(true);
 				return { success: true, recordingId, path: outputPath, helperPath };
 			} catch (error) {
+				const failedRecordingId = this.recordingId;
 				await this.deps.stopCursor();
 				if (this.helper) {
 					try {
@@ -179,6 +188,11 @@ export class NativeMacRecordingService {
 							error: `${this.errorMessage(error)} ${this.errorMessage(terminationError)}`,
 						};
 					}
+				}
+				if (failedRecordingId !== null) {
+					await clearNativeMacRecoveryJournal(this.deps.recordingsDir, failedRecordingId).catch(
+						() => undefined,
+					);
 				}
 				this.reset();
 				return { success: false, error: this.errorMessage(error) };
@@ -206,6 +220,7 @@ export class NativeMacRecordingService {
 						this.clips.sort((a, b) => a.index - b.index);
 					}
 				}
+				this.activeClipIndex = null;
 				await this.persistLiveSession();
 				return { success: true, clip: finalizedClip, paused: true };
 			} catch (error) {
@@ -219,6 +234,7 @@ export class NativeMacRecordingService {
 						this.clips.push(finalizedClip);
 						this.clips.sort((a, b) => a.index - b.index);
 					}
+					this.activeClipIndex = null;
 					await this.persistLiveSession();
 				}
 				if (helperPaused) this.paused = true;
@@ -265,7 +281,9 @@ export class NativeMacRecordingService {
 				const clipIndex = await helper.resume();
 				this.completeCursorPauseRange();
 				this.paused = false;
+				this.activeClipIndex = clipIndex;
 				this.clipCursorModes.set(clipIndex, this.cursorCaptureMode);
+				await this.persistRecoverySessionBestEffort();
 				return { success: true, clipIndex };
 			} catch (error) {
 				return { success: false, error: this.errorMessage(error) };
@@ -278,8 +296,17 @@ export class NativeMacRecordingService {
 			this.requireHelper();
 			const removal = removePreviousNativeMacClip(this.clips);
 			if (!removal.removed) return { success: true };
+			const previousClips = this.clips;
 			this.clips = removal.clips;
-			await this.persistLiveSession();
+			try {
+				// The recovery journal is the crash-time authority. Commit it before
+				// reporting success so a stale journal can never resurrect this clip.
+				await this.persistRecoverySession();
+			} catch (error) {
+				this.clips = previousClips;
+				throw error;
+			}
+			await this.persistManifestBestEffort();
 			return { success: true, clip: removal.removed };
 		});
 	}
@@ -306,15 +333,24 @@ export class NativeMacRecordingService {
 					stoppedPaths = [stopped.screenPath, ...stopped.clips.map((clip) => clip.screenVideoPath)];
 				} catch (error) {
 					await helper.kill();
-					if (!discard && this.clips.length === 0) throw error;
+					const recoveredSession = discard
+						? null
+						: await restoreNativeMacRecoverySession(this.deps.recordingsDir, recordingId);
+					const recoveredClips = recoveredSession?.clips ?? this.clips;
+					if (!discard && !recoveredClips.some((clip) => !clip.removed)) throw error;
+					const recoveredActiveClip = recoveredClips.some(
+						(clip) => !clip.removed && clip.provisionalDuration,
+					);
 					stopped = {
-						screenPath: preferredPath ?? "",
-						clips: this.clips,
+						screenPath: recoveredSession?.screenVideoPath ?? preferredPath ?? "",
+						clips: recoveredClips,
 						...(!discard
 							? {
 									warning: {
 										code: "capture-stop-failed",
-										message: `The active clip could not be recovered: ${this.errorMessage(error)}`,
+										message: recoveredActiveClip
+											? `The active clip was recovered from fragmented MP4 after capture stopped unexpectedly: ${this.errorMessage(error)}`
+											: `The active clip could not be recovered: ${this.errorMessage(error)}`,
 									},
 								}
 							: {}),
@@ -327,6 +363,32 @@ export class NativeMacRecordingService {
 						this.clipCursorModes.get(clip.index) ??
 						this.cursorCaptureMode,
 				}));
+				if (!discard) {
+					const recovery = await restoreNativeMacRecoverySession(
+						this.deps.recordingsDir,
+						recordingId,
+					);
+					const recoveredTail = recovery?.clips?.find(
+						(clip) =>
+							!clip.removed &&
+							clip.provisionalDuration &&
+							!this.clips.some((known) => known.index === clip.index),
+					);
+					if (recoveredTail) {
+						this.clips.push(recoveredTail);
+						this.clips.sort((left, right) => left.index - right.index);
+						const recoveryMessage =
+							"The unfinished active clip was recovered from its fragmented MP4.";
+						stopped = {
+							...stopped,
+							screenPath: recovery?.screenVideoPath ?? stopped.screenPath,
+							warning: {
+								code: stopped.warning?.code ?? "fragmented-clip-recovered",
+								message: [stopped.warning?.message, recoveryMessage].filter(Boolean).join(" "),
+							},
+						};
+					}
+				}
 				if (this.cursorTelemetryStarted) await this.deps.stopCursor();
 				else this.deps.clearCursor();
 				if (discard) {
@@ -338,6 +400,7 @@ export class NativeMacRecordingService {
 						...this.clips.map((clip) => clip.screenVideoPath),
 						...discoveredPaths,
 					]);
+					await clearNativeMacRecoveryJournal(this.deps.recordingsDir, recordingId);
 					return { success: true, discarded: true };
 				}
 
@@ -360,11 +423,10 @@ export class NativeMacRecordingService {
 					schemaVersion: 2,
 					clips: this.clips,
 				};
-				await fs.writeFile(
-					this.manifestPath(recordingId),
-					JSON.stringify(session, null, 2),
-					"utf-8",
-				);
+				await writeJsonDurably(this.manifestPath(recordingId), session);
+				await persistNativeMacRecoveryJournal(this.deps.recordingsDir, session).catch((error) => {
+					console.warn("[capture-mac] could not update recovery journal after Stop:", error);
+				});
 				this.deps.onSessionStored(session);
 				let cursorWarning: string | undefined;
 				if (this.cursorTelemetryStarted) {
@@ -428,6 +490,7 @@ export class NativeMacRecordingService {
 		this.pauseRanges = [];
 		this.paused = false;
 		this.clips = [];
+		this.activeClipIndex = 0;
 		this.fatalError = null;
 		this.lastDiagnosticOutput = "";
 	}
@@ -448,6 +511,7 @@ export class NativeMacRecordingService {
 		this.pauseRanges = [];
 		this.paused = false;
 		this.clips = [];
+		this.activeClipIndex = null;
 		this.fatalError = null;
 	}
 
@@ -461,23 +525,83 @@ export class NativeMacRecordingService {
 	}
 
 	private async persistLiveSession(): Promise<void> {
-		if (this.recordingId === null || !this.targetPath) return;
+		const session = this.manifestSession();
+		if (!session) return;
+		await writeJsonDurably(this.manifestPath(session.createdAt), session);
+		await this.persistRecoverySessionBestEffort();
+	}
+
+	private async persistManifestBestEffort(): Promise<void> {
+		const session = this.manifestSession();
+		if (!session) return;
+		try {
+			await writeJsonDurably(this.manifestPath(session.createdAt), session);
+		} catch (error) {
+			console.warn("[capture-mac] could not update recording manifest:", error);
+		}
+	}
+
+	private manifestSession(): RecordingSession | null {
+		if (this.recordingId === null || !this.targetPath) return null;
 		const screenVideoPath =
 			this.clips.find((clip) => !clip.removed)?.screenVideoPath ??
 			this.clips[0]?.screenVideoPath ??
 			this.targetPath;
-		const session: RecordingSession = {
+		return {
 			schemaVersion: 2,
 			createdAt: this.recordingId,
 			screenVideoPath,
 			cursorCaptureMode: this.cursorCaptureMode,
 			clips: this.clips,
 		};
-		await fs.writeFile(
-			this.manifestPath(this.recordingId),
-			JSON.stringify(session, null, 2),
-			"utf-8",
-		);
+	}
+
+	private async persistRecoverySession(): Promise<void> {
+		const session = this.recoverySession();
+		if (session) await persistNativeMacRecoveryJournal(this.deps.recordingsDir, session);
+	}
+
+	private async persistRecoverySessionBestEffort(): Promise<void> {
+		try {
+			await this.persistRecoverySession();
+		} catch (error) {
+			console.warn("[capture-mac] could not update recovery journal:", error);
+		}
+	}
+
+	private recoverySession(): RecordingSession | null {
+		if (this.recordingId === null || !this.targetPath) return null;
+		const recoveryClips = [...this.clips];
+		if (
+			this.activeClipIndex !== null &&
+			!recoveryClips.some((clip) => clip.index === this.activeClipIndex)
+		) {
+			recoveryClips.push({
+				index: this.activeClipIndex,
+				screenVideoPath: this.clipPath(this.activeClipIndex),
+				durationMs: 60_000,
+				provisionalDuration: true,
+				cursorCaptureMode: this.clipCursorModes.get(this.activeClipIndex) ?? this.cursorCaptureMode,
+			});
+		}
+		recoveryClips.sort((left, right) => left.index - right.index);
+		const screenVideoPath =
+			recoveryClips.find((clip) => !clip.removed)?.screenVideoPath ?? this.targetPath;
+		return {
+			schemaVersion: 2,
+			createdAt: this.recordingId,
+			screenVideoPath,
+			cursorCaptureMode: this.cursorCaptureMode,
+			clips: recoveryClips,
+		};
+	}
+
+	private clipPath(index: number): string {
+		if (!this.targetPath) return "";
+		const parsed = path.parse(this.targetPath);
+		const suffix = "-clip-0001";
+		const base = parsed.name.endsWith(suffix) ? parsed.name.slice(0, -suffix.length) : parsed.name;
+		return path.join(parsed.dir, `${base}-clip-${String(index + 1).padStart(4, "0")}${parsed.ext}`);
 	}
 
 	private manifestPath(recordingId: number): string {

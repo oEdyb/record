@@ -14,6 +14,7 @@ import {
 	systemPreferences,
 	Tray,
 } from "electron";
+import { APP_DISPLAY_NAME } from "../src/lib/brand";
 import { ShortcutBinding } from "../src/lib/shortcuts";
 import {
 	blockedFromInstalling,
@@ -100,7 +101,7 @@ async function ensureRecordingsDir() {
 // │ │ └── index.html
 // │ │
 // │ ├─┬ dist-electron
-// │ │ ├── main.js
+// │ │ ├── bootstrap.js
 // │ │ └── preload.mjs
 // │
 process.env.APP_ROOT = path.join(__dirname, "..");
@@ -125,7 +126,12 @@ const isMac = process.platform === "darwin";
 const trayIconSize = isMac ? 16 : 24;
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon("openscreen.png", trayIconSize);
+const defaultTrayIcon = isMac
+	? nativeImage.createFromPath(
+			path.join(process.env.VITE_PUBLIC || RENDERER_DIST, "klippt-trayTemplate.png"),
+		)
+	: getTrayIcon("klippt-tray.png", trayIconSize);
+if (isMac) defaultTrayIcon.setTemplateImage(true);
 const recordingTrayIcon = getTrayIcon("rec-button.png", trayIconSize);
 
 function createWindow() {
@@ -198,7 +204,7 @@ function setupApplicationMenu() {
 			submenu: [
 				{
 					role: "about",
-					label: mainT("common", "actions.about") || "About OpenScreen",
+					label: mainT("common", "actions.about") || `About ${APP_DISPLAY_NAME}`,
 				},
 				{ type: "separator" },
 				{
@@ -208,7 +214,7 @@ function setupApplicationMenu() {
 				{ type: "separator" },
 				{
 					role: "hide",
-					label: mainT("common", "actions.hide") || "Hide OpenScreen",
+					label: mainT("common", "actions.hide") || `Hide ${APP_DISPLAY_NAME}`,
 				},
 				{
 					role: "hideOthers",
@@ -504,7 +510,7 @@ function updateTrayMenu(recording: boolean = false) {
 		? mainT("common", "actions.recordingStatus", {
 				source: selectedSourceName,
 			}) || `Recording: ${selectedSourceName}`
-		: "OpenScreen";
+		: APP_DISPLAY_NAME;
 	const menuTemplate = recording
 		? [
 				{
@@ -871,7 +877,7 @@ appReady?.then(async () => {
 		});
 	}
 
-	registerIpcHandlers(
+	const recoveredInterruptedRecording = await registerIpcHandlers(
 		createEditorWindowWrapper,
 		createSourceSelectorWindowWrapper,
 		createCountdownOverlayWindowWrapper,
@@ -918,5 +924,9 @@ appReady?.then(async () => {
 		return;
 	}
 
-	createWindow();
+	if (recoveredInterruptedRecording) {
+		createEditorWindowWrapper();
+	} else {
+		createWindow();
+	}
 });

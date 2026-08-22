@@ -31,7 +31,7 @@ import {
 	type ZoomFocus,
 } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
-import { resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
+import { resolveOutputAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
 import type {
 	AxcutAnnotationRegion,
 	AxcutClip,
@@ -193,7 +193,11 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	// with "native" over portrait footage framed the preview 16:9 while `pickOutputDims` handed
 	// the compositor a portrait `output` — preview and export disagreed on the frame's shape.
 	const frameSize = useMemo(() => {
-		const ratio = resolveAspectRatioValue(document, settings.aspectRatio);
+		const ratio = resolveOutputAspectRatioValue(
+			document,
+			settings.aspectRatio,
+			settings.outputResolution,
+		);
 		const { width: containerWidth, height: containerHeight } = containerSize;
 		if (containerWidth <= 0 || containerHeight <= 0)
 			return { width: containerWidth, height: containerHeight };
@@ -203,7 +207,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		}
 		const width = containerWidth;
 		return { width: Math.round(width), height: Math.round(width / ratio) };
-	}, [containerSize, settings.aspectRatio, document]);
+	}, [containerSize, settings.aspectRatio, settings.outputResolution, document]);
 
 	// Crop is per-clip (see clipSchema.cropRegion) — resolve it from whichever
 	// clip the playhead is currently inside, the same lookup VirtualPreview
@@ -231,11 +235,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			activeClipHasCamera ? settings.webcamLayoutPreset : "no-webcam"
 		) as WebcamLayoutPreset;
 		const mask = settings.webcamMaskShape as WebcamMaskShape;
-		// ponytail: padding shrinks the available content area for ALL layouts
-		// (PiP/dual/stack) so the screen doesn't fill the canvas edge-to-edge.
-		// In vertical-stack this caps the camera strip height: at padding=0 the
-		// camera reaches 40% of canvas; at padding=50 it falls to ~32%;
-		// at padding=100 the screen takes even more.
+		// Padding shrinks the available content area for all layouts. The stacked
+		// split then divides that complete area by the saved camera-share value.
 		const paddingFit = clamp(1 - (clamp(settings.padding, 0, 100) / 100) * 0.4, 0.4, 1);
 		const maxContentSize = {
 			width: Math.round(frameSize.width * paddingFit),
@@ -263,6 +264,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			// it (their preset definitions hardcode their own placement).
 			webcamPosition: preset === "picture-in-picture" ? settings.webcamPosition : null,
 			webcamMaskShape: mask,
+			webcamBlockOrder: settings.webcamBlockOrder,
+			webcamBlockCameraShare: settings.webcamBlockCameraShare,
 		});
 	}, [
 		frameSize,
@@ -270,6 +273,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		cropRegion,
 		activeClipHasCamera,
 		settings.webcamLayoutPreset,
+		settings.webcamBlockOrder,
+		settings.webcamBlockCameraShare,
 		settings.webcamMaskShape,
 		settings.webcamSizePreset,
 		settings.webcamPosition,

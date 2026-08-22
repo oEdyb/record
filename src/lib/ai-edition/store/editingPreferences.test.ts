@@ -64,10 +64,14 @@ describe("editing preferences", () => {
 			...DEFAULT_EDITOR_SETTINGS,
 			wallpaper: "linear-gradient(red, blue)",
 			aspectRatio: "4:5" as const,
+			outputResolution: { width: 1080, height: 1350 },
 			padding: 23,
 			showBlur: true,
 			webcamLayoutPreset: "picture-in-picture" as const,
+			webcamBlockOrder: "camera-first" as const,
+			webcamBlockCameraShare: 62,
 			webcamMaskShape: "circle" as const,
+			webcamFocalPoint: { cx: 0.15, cy: 0.7 },
 			webcamPosition: { cx: 0.2, cy: 0.8 },
 			cursor: { ...DEFAULT_EDITOR_SETTINGS.cursor, size: 4.2, smoothing: 0.9 },
 			cropRegion: { x: 0.25, y: 0.1, width: 0.5, height: 0.7 },
@@ -79,9 +83,13 @@ describe("editing preferences", () => {
 		expect(saved).toMatchObject({
 			wallpaper: "linear-gradient(red, blue)",
 			aspectRatio: "4:5",
+			outputResolution: { width: 1080, height: 1350 },
 			padding: 23,
 			showBlur: true,
 			webcamMaskShape: "circle",
+			webcamBlockOrder: "camera-first",
+			webcamBlockCameraShare: 62,
+			webcamFocalPoint: { cx: 0.15, cy: 0.7 },
 			webcamPosition: { cx: 0.2, cy: 0.8 },
 			cursor: { size: 4.2, smoothing: 0.9 },
 		});
@@ -127,11 +135,21 @@ describe("editing preferences", () => {
 		);
 	});
 
-	it("remembers a large webcam size for the next project", () => {
+	it("remembers camera size, zoom, and focal point for the next project", () => {
 		const storage = memoryStorage();
-		saveEditorDefaultPreferences({ ...DEFAULT_EDITOR_SETTINGS, webcamSizePreset: 70 }, storage);
+		saveEditorDefaultPreferences(
+			{
+				...DEFAULT_EDITOR_SETTINGS,
+				webcamSizePreset: 70,
+				webcamZoom: 1.85,
+				webcamFocalPoint: { cx: 0.25, cy: 0.75 },
+			},
+			storage,
+		);
 
 		expect(loadEditingPreferences(storage).editor.webcamSizePreset).toBe(70);
+		expect(loadEditingPreferences(storage).editor.webcamZoom).toBe(1.85);
+		expect(loadEditingPreferences(storage).editor.webcamFocalPoint).toEqual({ cx: 0.25, cy: 0.75 });
 	});
 
 	it("rejects malformed values one field at a time", () => {
@@ -144,6 +162,8 @@ describe("editing preferences", () => {
 					padding: 400,
 					aspectRatio: "wide",
 					webcamSizePreset: "huge",
+					webcamZoom: 9,
+					webcamFocalPoint: { cx: -2, cy: 4 },
 					cursor: { size: -2, smoothing: 0.75 },
 				},
 				export: { fps: 120, codec: "vp9", gifFrameRate: 120 },
@@ -155,6 +175,8 @@ describe("editing preferences", () => {
 		expect(preferences.editor.padding).toBe(DEFAULT_EDITOR_SETTINGS.padding);
 		expect(preferences.editor.aspectRatio).toBe(DEFAULT_EDITOR_SETTINGS.aspectRatio);
 		expect(preferences.editor.webcamSizePreset).toBe(DEFAULT_EDITOR_SETTINGS.webcamSizePreset);
+		expect(preferences.editor.webcamZoom).toBe(DEFAULT_EDITOR_SETTINGS.webcamZoom);
+		expect(preferences.editor.webcamFocalPoint).toEqual({ cx: 0, cy: 1 });
 		expect(preferences.editor.cursor.size).toBe(DEFAULT_EDITOR_SETTINGS.cursor.size);
 		expect(preferences.editor.cursor.smoothing).toBe(0.75);
 		expect(preferences.export.fps).toBe(60);

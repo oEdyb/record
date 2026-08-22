@@ -39,10 +39,15 @@ describe("getEditorSettings", () => {
 		const snap = getEditorSettings(baseDoc);
 		expect(snap.wallpaper).toBe(DEFAULT_EDITOR_SETTINGS.wallpaper);
 		expect(snap.aspectRatio).toBe("16:9");
+		expect(snap.outputResolution).toBeNull();
 		expect(snap.shadowIntensity).toBe(DEFAULT_EDITOR_SETTINGS.shadowIntensity);
 		expect(snap.showBlur).toBe(false);
 		expect(snap.webcamLayoutPreset).toBe(DEFAULT_WEBCAM_LAYOUT_PRESET);
+		expect(snap.webcamBlockOrder).toBe("screen-first");
+		expect(snap.webcamBlockCameraShare).toBe(50);
 		expect(snap.webcamMaskShape).toBe(DEFAULT_WEBCAM_MASK_SHAPE);
+		expect(snap.webcamZoom).toBe(1);
+		expect(snap.webcamFocalPoint).toEqual({ cx: 0.5, cy: 0.5 });
 		expect(snap.cursor.size).toBe(DEFAULT_CURSOR_SIZE);
 	});
 
@@ -57,10 +62,15 @@ describe("getEditorSettings", () => {
 			legacyEditor: {
 				wallpaper: "linear-gradient(red, blue)",
 				aspectRatio: "9:16",
+				outputResolution: { width: 1440, height: 2560 },
 				shadowIntensity: 0.5,
 				showBlur: true,
 				webcamLayoutPreset: "side-by-side",
+				webcamBlockOrder: "camera-first",
+				webcamBlockCameraShare: 65,
 				webcamMaskShape: "circle",
+				webcamZoom: 1.75,
+				webcamFocalPoint: { cx: 0.2, cy: 0.8 },
 				cursorSize: 5,
 				cursorSmoothing: 0.8,
 			},
@@ -68,12 +78,41 @@ describe("getEditorSettings", () => {
 		const snap = getEditorSettings(doc);
 		expect(snap.wallpaper).toBe("linear-gradient(red, blue)");
 		expect(snap.aspectRatio).toBe("9:16");
+		expect(snap.outputResolution).toEqual({ width: 1440, height: 2560 });
 		expect(snap.shadowIntensity).toBe(0.5);
 		expect(snap.showBlur).toBe(true);
 		expect(snap.webcamLayoutPreset).toBe("side-by-side");
+		expect(snap.webcamBlockOrder).toBe("camera-first");
+		expect(snap.webcamBlockCameraShare).toBe(65);
 		expect(snap.webcamMaskShape).toBe("circle");
+		expect(snap.webcamZoom).toBe(1.75);
+		expect(snap.webcamFocalPoint).toEqual({ cx: 0.2, cy: 0.8 });
 		expect(snap.cursor.size).toBe(5);
 		expect(snap.cursor.smoothing).toBe(0.8);
+	});
+
+	it("clamps camera zoom from saved projects", () => {
+		expect(getEditorSettings({ ...baseDoc, legacyEditor: { webcamZoom: 0.2 } }).webcamZoom).toBe(1);
+		expect(getEditorSettings({ ...baseDoc, legacyEditor: { webcamZoom: 8 } }).webcamZoom).toBe(3);
+	});
+
+	it("clamps the stacked camera share from saved projects", () => {
+		expect(
+			getEditorSettings({ ...baseDoc, legacyEditor: { webcamBlockCameraShare: 5 } })
+				.webcamBlockCameraShare,
+		).toBe(20);
+		expect(
+			getEditorSettings({ ...baseDoc, legacyEditor: { webcamBlockCameraShare: 95 } })
+				.webcamBlockCameraShare,
+		).toBe(80);
+	});
+
+	it("clamps the saved camera focal point", () => {
+		const snap = getEditorSettings({
+			...baseDoc,
+			legacyEditor: { webcamFocalPoint: { cx: 1.7, cy: -0.4 } },
+		});
+		expect(snap.webcamFocalPoint).toEqual({ cx: 1, cy: 0 });
 	});
 
 	it("falls back to defaults for unknown or wrong-type values", () => {

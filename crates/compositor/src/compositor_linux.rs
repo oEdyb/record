@@ -1230,17 +1230,19 @@ impl Compositor {
             // `cover_crop_uv` est la primitive partagee que macOS et Windows
             // utilisent ; elle rend le rect inchange quand il a deja le bon
             // ratio, donc aucun placement correct ne bouge.
-            let (cu0, cv0, cu1, cv1) = crate::frame_geometry::cover_crop_uv(
+            let (u0, cv0, u1, cv1) = crate::frame_geometry::webcam_crop_uv(
                 [wcw, wch],
                 [wtw as f32, wth as f32],
                 g.w_px[0] / g.w_px[1].max(0.0001),
+                lp.webcam_zoom,
+                lp.webcam_focus,
+                lp.webcam_mirror,
             );
             // MIROIR : on inverse l'intervalle u. Le VS interpole `src`
             // lineairement et `fs_main` ne re-clampe pas `i.uv`, donc un
             // intervalle a l'envers suffit -- aucune retouche du WGSL. Apres le
             // cover-crop les deux bornes sont strictement a l'interieur de la
             // texture, donc le sampler ClampToEdge ne bave pas sur les bords.
-            let (u0, u1) = if lp.webcam_mirror { (cu1, cu0) } else { (cu0, cu1) };
             // `src_prev` doit valoir EXACTEMENT le `src` de ce draw, miroir
             // compris : le shader s'en sert pour reconstruire l'UV de la frame
             // precedente, et un rect source qui ne correspond pas au calque

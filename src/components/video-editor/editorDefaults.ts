@@ -10,14 +10,21 @@ import {
 	DEFAULT_CURSOR_MOTION_BLUR,
 	DEFAULT_CURSOR_SIZE,
 	DEFAULT_CURSOR_SMOOTHING,
+	DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE,
+	DEFAULT_WEBCAM_FOCAL_POINT,
 	DEFAULT_WEBCAM_LAYOUT_PRESET,
 	DEFAULT_WEBCAM_MASK_SHAPE,
 	DEFAULT_WEBCAM_POSITION,
 	DEFAULT_WEBCAM_SIZE_PRESET,
+	DEFAULT_WEBCAM_ZOOM,
+	type WebcamBlockCameraShare,
+	type WebcamBlockOrder,
+	type WebcamFocalPoint,
 	type WebcamLayoutPreset,
 	type WebcamMaskShape,
 	type WebcamPosition,
 	type WebcamSizePreset,
+	type WebcamZoom,
 } from "./types";
 
 export const DEFAULT_SOURCE_DIMENSIONS = {
@@ -58,13 +65,21 @@ export const DEFAULT_EDITOR_LAYOUT_SETTINGS: {
 
 export const DEFAULT_WEBCAM_SETTINGS = {
 	layoutPreset: DEFAULT_WEBCAM_LAYOUT_PRESET,
+	blockOrder: "screen-first",
+	blockCameraShare: DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE,
 	maskShape: DEFAULT_WEBCAM_MASK_SHAPE,
 	sizePreset: DEFAULT_WEBCAM_SIZE_PRESET,
+	zoom: DEFAULT_WEBCAM_ZOOM,
+	focalPoint: DEFAULT_WEBCAM_FOCAL_POINT,
 	position: DEFAULT_WEBCAM_POSITION,
 } as const satisfies {
 	layoutPreset: WebcamLayoutPreset;
+	blockOrder: WebcamBlockOrder;
+	blockCameraShare: WebcamBlockCameraShare;
 	maskShape: WebcamMaskShape;
 	sizePreset: WebcamSizePreset;
+	zoom: WebcamZoom;
+	focalPoint: WebcamFocalPoint;
 	position: WebcamPosition | null;
 };
 

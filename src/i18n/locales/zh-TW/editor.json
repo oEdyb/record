@@ -43,7 +43,7 @@
 		"permissionDenied": "錄影權限被拒絕。請允許螢幕錄製。",
 		"cameraDisconnected": "網路攝影機已中斷連線。",
 		"cameraNotFound": "找不到攝影機。",
-		"accessibilityAllowAndRetry": "允許 OpenScreen 使用輔助使用權限，然後再次按下錄製以開始倒數。",
+		"accessibilityAllowAndRetry": "允許 Klippt 使用輔助使用權限，然後再次按下錄製以開始倒數。",
 		"selectSource": "請選擇要錄製的來源"
 	},
 	"emptyState": {
@@ -55,11 +55,11 @@
 		"importVideoButton": "匯入影片",
 		"loadProjectButton": "開啟專案",
 		"supportedFormats": "支援的格式：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
-		"dragDropHint": "或將 .openscreen 專案檔案拖放至此",
+		"dragDropHint": "或將 .klippt 專案檔案拖放至此",
 		"dropOverlay": "將專案檔案拖放至此以開啟",
 		"dropErrors": {
 			"unsupportedFormatTitle": "不支援的格式",
-			"unsupportedFormatMessage": "此處只能拖放 .openscreen 專案檔案。要匯入影片，請使用「匯入影片檔案...」按鈕。",
+			"unsupportedFormatMessage": "此處只能拖放 .klippt 專案檔案。要匯入影片，請使用「匯入影片檔案...」按鈕。",
 			"couldNotOpenTitle": "無法開啟檔案",
 			"couldNotOpenMessage": "無法開啟專案檔案。它所參照的影片可能已被移動或刪除。"
 		}
@@ -274,7 +274,7 @@
 			"disclaimer": "你影片的轉錄文字會送到你選擇的提供者。在你連接之前不會分享任何內容。"
 		},
 		"authorUser": "你",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Klippt",
 		"rewindToMessage": "倒轉至此訊息",
 		"copyMessage": "複製訊息",
 		"copiedToClipboard": "已複製到剪貼簿",

@@ -5,6 +5,22 @@ export interface MacMouseButtonTransition {
 	y: number;
 }
 
+export function resolveMacKeyboardDirectionExcluded(options: {
+	focusPointExcluded: boolean;
+	focusSource?: "caret" | "target";
+	hostProcessId: number;
+	targetProcessId?: number;
+}): boolean {
+	if (Number.isFinite(options.targetProcessId)) {
+		return options.targetProcessId === options.hostProcessId;
+	}
+
+	// Old helpers did not report the focused process. A real caret is a precise
+	// screen point; the centre of a broad target is only a framing fallback and
+	// must not inherit privacy from an unrelated overlay above it.
+	return options.focusSource === "caret" && options.focusPointExcluded;
+}
+
 /** Keep ordered press/release transitions even when both arrive in one helper sample. */
 export function normalizeMacMouseButtonTransitions(value: unknown): MacMouseButtonTransition[] {
 	if (!Array.isArray(value)) return [];

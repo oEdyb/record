@@ -16,6 +16,11 @@
 //                                          with the previous CT2 client)
 //   GET  /             200 "ok" once the model is loaded — readiness probe.
 //
+// A second, process-shaped path is used by Shorten Pauses:
+//   --vad-model <ggml-silero.bin> --vad-file <16-kHz-mono.wav>
+// It prints one JSON speech-probability envelope and exits. Keeping this path
+// independent means the sub-megabyte VAD never loads the 264 MB caption model.
+//
 // Response shape (verbose_json, preserved from the previous helper contract):
 //   {
 //     "language":          "en",
@@ -218,10 +223,60 @@ struct Word {
 	std::string text;
 };
 
+int analyze_vad_file(const std::string& model_path,
+                     const std::string& wav_path,
+                     int threads) {
+	std::vector<float> pcm;
+	int sample_rate = 0, channels = 0;
+	if (!read_wav_pcm16(wav_path, pcm, sample_rate, channels)) {
+		std::cerr << "FATAL: failed to parse VAD WAV" << std::endl;
+		return 6;
+	}
+	if (sample_rate != 16000 || channels != 1) {
+		std::cerr << "FATAL: VAD expects 16 kHz mono PCM16 WAV" << std::endl;
+		return 6;
+	}
+
+	whisper_vad_context_params params = whisper_vad_default_context_params();
+	params.n_threads = std::max(1, threads);
+	// The model is only 0.88 MB and runs far faster than real time on CPU. The
+	// standalone v1.9.1 VAD graph aborts in ggml's Metal scheduler on Apple M5
+	// because a preallocated leaf tensor lands on an unsupported backend. CPU is
+	// both the stable and lower-overhead path here; normal Whisper transcription
+	// and the compositor keep their existing GPU acceleration.
+	params.use_gpu = false;
+	whisper_vad_context* context =
+		whisper_vad_init_from_file_with_params(model_path.c_str(), params);
+	if (!context) {
+		std::cerr << "FATAL: failed to load VAD model " << model_path << std::endl;
+		return 7;
+	}
+	if (!whisper_vad_detect_speech(context, pcm.data(), static_cast<int>(pcm.size()))) {
+		whisper_vad_free(context);
+		std::cerr << "FATAL: Silero VAD inference failed" << std::endl;
+		return 8;
+	}
+
+	const int count = whisper_vad_n_probs(context);
+	const float* raw = whisper_vad_probs(context);
+	std::vector<float> probabilities;
+	if (count > 0 && raw != nullptr) probabilities.assign(raw, raw + count);
+	nlohmann::json reply;
+	reply["sampleRate"] = sample_rate;
+	reply["frameSamples"] = 512;
+	reply["durationSec"] = pcm.size() / 16000.0;
+	reply["probabilities"] = probabilities;
+	std::cout << reply.dump() << std::endl;
+	whisper_vad_free(context);
+	return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
 	std::string model_path;
+	std::string vad_model_path;
+	std::string vad_file_path;
 	std::string host = "127.0.0.1";
 	bool host_from_flag = false;
 	int port = 0;
@@ -230,6 +285,8 @@ int main(int argc, char** argv) {
 	for (int i = 1; i < argc; ++i) {
 		const std::string a = argv[i];
 		if (a == "--model"   && i + 1 < argc) model_path = argv[++i];
+		else if (a == "--vad-model" && i + 1 < argc) vad_model_path = argv[++i];
+		else if (a == "--vad-file" && i + 1 < argc) vad_file_path = argv[++i];
 		else if (a == "--host" && i + 1 < argc) { host = argv[++i]; host_from_flag = true; }
 		else if (a == "--port" && i + 1 < argc) port = std::atoi(argv[++i]);
 		else if (a == "--threads" && i + 1 < argc) threads = std::atoi(argv[++i]);
@@ -243,6 +300,13 @@ int main(int argc, char** argv) {
 		if (const char* p = std::getenv("OPENSCREEN_WHISPER_PORT")) port = std::atoi(p);
 	}
 	if (const char* p = std::getenv("OPENSCREEN_WHISPER_THREADS")) threads = std::atoi(p);
+	if (!vad_file_path.empty()) {
+		if (vad_model_path.empty()) {
+			std::cerr << "FATAL: --vad-file requires --vad-model" << std::endl;
+			return 2;
+		}
+		return analyze_vad_file(vad_model_path, vad_file_path, threads);
+	}
 	// Only a fallback, never an override: the app always passes --host 127.0.0.1,
 	// and an env var that can widen a shipped binary's bind address behind an
 	// explicit flag is a hole, not a knob. Anything but loopback is refused

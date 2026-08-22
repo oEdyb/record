@@ -36,6 +36,9 @@ const ADDON_KEYS = [
 	"motionBlur",
 	"padding",
 	"webcamSize",
+	"webcamZoom",
+	"webcamFocusX",
+	"webcamFocusY",
 	"cursorSize",
 	"cursorClickBounce",
 	"cursorSmoothing",
@@ -92,11 +95,16 @@ describe("pushAllNativeParams", () => {
 			padding: 50,
 			borderRadius: 48,
 			webcamSizePreset: 33.4,
+			webcamZoom: 1.75,
+			webcamFocalPoint: { cx: 0.2, cy: 0.8 },
 		});
 		expect(pushed.get("padding")).toBeCloseTo(0.5, 5);
 		// NATIVE_SCREEN_BASE_RADIUS_PX = 24, NATIVE_WEBCAM_BASE_PCT = 16.7.
 		expect(pushed.get("roundness")).toBeCloseTo(2, 5);
 		expect(pushed.get("webcamSize")).toBeCloseTo(2, 5);
+		expect(pushed.get("webcamZoom")).toBeCloseTo(1.75, 5);
+		expect(pushed.get("webcamFocusX")).toBeCloseTo(0.2, 5);
+		expect(pushed.get("webcamFocusY")).toBeCloseTo(0.8, 5);
 	});
 
 	it("omits backgroundColor when the wallpaper is not a literal colour", async () => {

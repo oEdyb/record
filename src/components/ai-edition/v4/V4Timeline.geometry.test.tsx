@@ -76,6 +76,7 @@ function renderTimeline(
 		mode: "emphasis";
 		cameraScale: number;
 		source: "auto";
+		directionGroupId?: string;
 	}> = [],
 	zoomRegions: Array<{
 		id: string;
@@ -85,7 +86,10 @@ function renderTimeline(
 		focus: { cx: number; cy: number };
 		customScale: number;
 		motionSpeed?: 2;
+		source?: "auto" | "manual";
+		directionGroupId?: string;
 	}> = [],
+	selection: { kind: "zoom" | "cameraFullscreen"; id: string } | null = null,
 ) {
 	const tl = {
 		clips,
@@ -95,7 +99,7 @@ function renderTimeline(
 		cameraFullscreenRegions,
 		zoomRegions,
 		trimRanges: [],
-		selection: null,
+		selection,
 		multiSelection: [],
 		clipSelection,
 		clearSelection: vi.fn(),
@@ -110,6 +114,7 @@ function renderTimeline(
 		addZoom: vi.fn(async () => {
 			/* the toolbar only awaits it */
 		}),
+		splitClipAtPlayhead: vi.fn(async () => true),
 	};
 	render(
 		<V4Timeline
@@ -174,7 +179,7 @@ describe("V4Timeline lane pills", () => {
 		expect(document.querySelector("[data-zoom-motion-envelope]")).toBeNull();
 	});
 
-	it("shows automatic camera emphasis as a normal editable timeline pill", () => {
+	it("shows automatic camera emphasis as its editable real region", () => {
 		const { tl } = renderTimeline([clip(0, 20)], undefined, null, [
 			{
 				id: "camera-emphasis-1",
@@ -183,18 +188,92 @@ describe("V4Timeline lane pills", () => {
 				mode: "emphasis",
 				cameraScale: 1.35,
 				source: "auto",
+				directionGroupId: "camera-passage",
 			},
 		]);
 
 		const pill = screen.getByTitle("labels.cameraEmphasis");
 		expect(pill.style.left).toBe("10%");
 		expect(pill.style.width).toBe("20%");
+		expect(pill.querySelectorAll("[class*=lanePillHandle]")).toHaveLength(2);
 
 		fireEvent.pointerDown(pill, { clientX: 180 });
 		window.dispatchEvent(new MouseEvent("pointerup", { clientX: 180 }));
 		expect(tl.selectRegion).toHaveBeenCalledWith("cameraFullscreen", "camera-emphasis-1", {
 			additive: false,
 		});
+	});
+
+	it("shows each automatic Zoom target as a real editable pill", () => {
+		const { tl } = renderTimeline(
+			[clip(0, 20)],
+			undefined,
+			null,
+			[],
+			[
+				{
+					id: "zoom-a",
+					startMs: 2_000,
+					endMs: 5_000,
+					depth: 3,
+					focus: { cx: 0.25, cy: 0.5 },
+					customScale: 1.65,
+					source: "auto",
+					directionGroupId: "screen-passage",
+				},
+				{
+					id: "zoom-b",
+					startMs: 5_500,
+					endMs: 8_000,
+					depth: 3,
+					focus: { cx: 0.75, cy: 0.5 },
+					customScale: 1.65,
+					source: "auto",
+					directionGroupId: "screen-passage",
+				},
+			],
+		);
+
+		expect(screen.queryByTitle("toolbar.automaticDirection")).toBeNull();
+		expect(screen.getAllByTitle("1.65×")).toHaveLength(2);
+		fireEvent.pointerDown(screen.getAllByTitle("1.65×")[0]);
+		window.dispatchEvent(new MouseEvent("pointerup"));
+		expect(tl.selectRegion).toHaveBeenCalledWith("zoom", "zoom-a", { additive: false });
+	});
+
+	it("keeps every automatic Zoom visible when one target is selected", () => {
+		renderTimeline(
+			[clip(0, 20)],
+			undefined,
+			null,
+			[],
+			[
+				{
+					id: "zoom-a",
+					startMs: 2_000,
+					endMs: 5_000,
+					depth: 3,
+					focus: { cx: 0.25, cy: 0.5 },
+					customScale: 1.65,
+					source: "auto",
+					directionGroupId: "screen-passage",
+				},
+				{
+					id: "zoom-b",
+					startMs: 5_500,
+					endMs: 8_000,
+					depth: 3,
+					focus: { cx: 0.75, cy: 0.5 },
+					customScale: 1.65,
+					source: "auto",
+					directionGroupId: "screen-passage",
+				},
+			],
+			{ kind: "zoom", id: "zoom-a" },
+		);
+
+		expect(screen.queryByTitle("toolbar.automaticDirection")).toBeNull();
+		expect(screen.getAllByTitle("1.65×")).toHaveLength(2);
 	});
 
 	it("draws a pill exactly as wide as its region, at any zoom", () => {
@@ -285,6 +364,12 @@ describe("V4Timeline create-from-toolbar", () => {
 		zoomIn(40);
 		fireEvent.click(screen.getByTitle("buttons.addZoom"));
 		expect(durationOf(tl)).toBeCloseTo(0.25, 3);
+	});
+
+	it("exposes the normal Split action through the timeline toolbar", () => {
+		const { tl } = renderTimeline([clip(0, 10)]);
+		fireEvent.click(screen.getByTitle("buttons.splitClip"));
+		expect(tl.splitClipAtPlayhead).toHaveBeenCalledTimes(1);
 	});
 });
 

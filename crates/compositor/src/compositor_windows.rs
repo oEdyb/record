@@ -9,7 +9,7 @@ use crate::config::Cfg;
 pub use crate::frame_geometry::{live_params_from_scene, webcam_shape_code, LayerCB,
     LiveParams, FIXTURE_FRAMES, HALF_H, HALF_W, OUT_H, OUT_W};
 use crate::frame_geometry::{
-    cover_crop_uv, cover_uv_rect, cursor_sprite_dst, decode_data_uri, ease_in_out_cubic, lerp,
+    cover_uv_rect, cursor_sprite_dst, decode_data_uri, ease_in_out_cubic, lerp,
     lerp4, parse_hex, preset_placements, remap_box, screen_source_rect, timeline, CursorPlacement,
     FrameParams, Placement, CURSOR_BASE_SIZE_FRAC, FPS, SCREEN_SHADOW_OFFSET_FRAC,
     SCREEN_SHADOW_SPREAD_FRAC, SHADOW_TUNING_REF_PX, WEBCAM_SHADOW_OFFSET_FRAC,
@@ -1517,13 +1517,14 @@ impl Compositor {
         //
         // Le center-crop carré de square/circle en est un cas particulier (boîte 1:1) — il n'a
         // plus besoin d'être traité à part.
-        let (su0, sv0, su1, sv1) = cover_crop_uv(
+        let (u0, sv0, u1, sv1) = crate::frame_geometry::webcam_crop_uv(
             [wcw, wch],
             [wtw as f32, wth as f32],
             w_px[0] / w_px[1].max(0.0001),
+            lp.webcam_zoom,
+            lp.webcam_focus,
+            lp.webcam_mirror,
         );
-        // miroir = échanger les bornes u du rect source (flip horizontal).
-        let (u0, u1) = if lp.webcam_mirror { (su1, su0) } else { (su0, su1) };
         if lp.has_webcam {
             // L'ombre portée appartient à la bulle flottante PiP : elle se retire avec elle
             // (`shape_fade`), pour qu'au plein écran plus rien n'encadre la caméra. C'est une

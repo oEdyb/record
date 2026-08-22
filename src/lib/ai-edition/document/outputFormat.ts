@@ -28,6 +28,11 @@ export interface Dims {
 	height: number;
 }
 
+export type OutputResolution = Dims;
+
+export const MIN_OUTPUT_DIMENSION = 256;
+export const MAX_OUTPUT_DIMENSION = 7680;
+
 /** Output frame used when a document has no usable asset dimensions at all. */
 const FALLBACK_OUTPUT_DIMS: Dims = { width: 1920, height: 1080 };
 
@@ -44,6 +49,25 @@ const FALLBACK_OUTPUT_DIMS: Dims = { width: 1920, height: 1080 };
  * reference gives 3840/(683/384) = 2158.946, which bare rounding turns into an odd 3840x2159.
  */
 const toEvenPx = (value: number): number => Math.max(2, Math.round(value / 2) * 2);
+
+/** Validate persisted or user-authored output pixels and make them encoder-safe. */
+export function normalizeOutputResolution(value: unknown): OutputResolution | null {
+	if (!value || typeof value !== "object") return null;
+	const { width, height } = value as Partial<OutputResolution>;
+	if (
+		typeof width !== "number" ||
+		typeof height !== "number" ||
+		!Number.isFinite(width) ||
+		!Number.isFinite(height) ||
+		width < MIN_OUTPUT_DIMENSION ||
+		height < MIN_OUTPUT_DIMENSION ||
+		width > MAX_OUTPUT_DIMENSION ||
+		height > MAX_OUTPUT_DIMENSION
+	) {
+		return null;
+	}
+	return { width: toEvenPx(width), height: toEvenPx(height) };
+}
 
 /** One distinct native shape present on the timeline — an entry in the "Original" section. */
 export interface NativeFormat {
@@ -240,6 +264,19 @@ export function resolveAspectRatioValue(
 	return getNativeAspectRatioValue(reference.width, reference.height);
 }
 
+/** Canvas shape with a custom pixel size taking precedence over the ratio preset. */
+export function resolveOutputAspectRatioValue(
+	document: AxcutDocument | null | undefined,
+	aspectRatio: AspectRatio,
+	outputResolution: OutputResolution | null,
+	probedAssetDims: Record<string, Dims> = {},
+): number {
+	const custom = normalizeOutputResolution(outputResolution);
+	return custom
+		? custom.width / custom.height
+		: resolveAspectRatioValue(document, aspectRatio, probedAssetDims);
+}
+
 /**
  * The output frame's dimensions, honoring the timeline's chosen aspect ratio.
  *
@@ -259,7 +296,10 @@ export function pickOutputDims(
 	document: AxcutDocument,
 	aspectRatio: AspectRatio,
 	probedAssetDims: Record<string, Dims> = {},
+	outputResolution: OutputResolution | null = null,
 ): Dims {
+	const custom = normalizeOutputResolution(outputResolution);
+	if (custom) return custom;
 	const reference = referenceClipDims(document, probedAssetDims);
 	const ratio = resolveAspectRatioValue(document, aspectRatio, probedAssetDims);
 	const longSide = toEvenPx(Math.max(reference.width, reference.height));

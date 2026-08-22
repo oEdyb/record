@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "Автофокус включён для всех зумов — нажмите, чтобы переключить все в ручной режим",
 		"autoFocusAllOff": "Включить автофокус для всех зумов (камера следует за курсором)",
 		"addTrim": "Добавить обрезку (T)",
+		"splitClip": "Разделить клип в позиции курсора",
 		"addAnnotation": "Добавить аннотацию (A)",
 		"addSpeed": "Изменить скорость (S)",
 		"addCameraFullscreen": "Добавить камеру на весь экран (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "Нажмите C, чтобы добавить сегмент камеры на весь экран"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "Панорамирование",
 		"zoom": "Масштабирование",
 		"trim": "Обрезка",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "Авто-улучшение",
 		"automaticZooms": "Автоматические зумы",
+		"automaticDirection": "Автоматическая режиссура",
 		"automaticZoomsHint": "На основе записанного движения курсора",
 		"smartZoomsAndCuts": "Умные вырезки",
 		"smartZoomsAndCutsHint": "С помощью ИИ",

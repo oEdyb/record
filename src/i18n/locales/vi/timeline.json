@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "Lấy nét tự động đang bật cho tất cả các thu phóng — nhấp để chuyển tất cả sang thủ công",
 		"autoFocusAllOff": "Bật lấy nét tự động cho tất cả các thu phóng (máy ảnh theo dõi con trỏ)",
 		"addTrim": "Thêm Cắt (T)",
+		"splitClip": "Tách clip tại đầu phát",
 		"addAnnotation": "Thêm Chú thích (A)",
 		"addSpeed": "Thêm Tốc độ (S)",
 		"addCameraFullscreen": "Thêm Camera Toàn màn hình (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "Nhấn C để thêm một đoạn Camera Toàn màn hình"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "Xoay",
 		"zoom": "Thu phóng",
 		"trim": "Cắt",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "Tự động nâng cao",
 		"automaticZooms": "Thu phóng tự động",
+		"automaticDirection": "Điều hướng tự động",
 		"automaticZoomsHint": "Từ chuyển động con trỏ đã ghi",
 		"smartZoomsAndCuts": "Cắt thông minh",
 		"smartZoomsAndCutsHint": "Với AI",

@@ -1,6 +1,11 @@
 import { normalizeTextAnimation } from "@/lib/annotationTextAnimation";
 import { normalizeBlurColor, normalizeBlurType } from "@/lib/blurEffects";
-import { MAX_WEBCAM_SIZE_PERCENT, MIN_WEBCAM_SIZE_PERCENT } from "@/lib/compositeLayout";
+import {
+	MAX_WEBCAM_BLOCK_CAMERA_SHARE,
+	MAX_WEBCAM_SIZE_PERCENT,
+	MIN_WEBCAM_BLOCK_CAMERA_SHARE,
+	MIN_WEBCAM_SIZE_PERCENT,
+} from "@/lib/compositeLayout";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
 import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
 import type { ProjectMedia } from "@/lib/recordingSession";
@@ -30,22 +35,30 @@ import {
 	DEFAULT_BLUR_INTENSITY,
 	DEFAULT_FIGURE_DATA,
 	DEFAULT_PLAYBACK_SPEED,
+	DEFAULT_WEBCAM_FOCAL_POINT,
 	DEFAULT_WEBCAM_MIRRORED,
 	DEFAULT_WEBCAM_REACTIVE_ZOOM,
+	DEFAULT_WEBCAM_ZOOM,
 	DEFAULT_ZOOM_DEPTH,
 	DEFAULT_ZOOM_MOTION_BLUR,
 	MAX_BLUR_BLOCK_SIZE,
 	MAX_BLUR_INTENSITY,
 	MAX_PLAYBACK_SPEED,
+	MAX_WEBCAM_ZOOM,
 	MIN_BLUR_BLOCK_SIZE,
 	MIN_BLUR_INTENSITY,
 	MIN_PLAYBACK_SPEED,
+	MIN_WEBCAM_ZOOM,
 	type SpeedRegion,
 	type TrimRegion,
+	type WebcamBlockCameraShare,
+	type WebcamBlockOrder,
+	type WebcamFocalPoint,
 	type WebcamLayoutPreset,
 	type WebcamMaskShape,
 	type WebcamPosition,
 	type WebcamSizePreset,
+	type WebcamZoom,
 	type ZoomRegion,
 } from "./types";
 
@@ -85,10 +98,14 @@ export interface ProjectEditorState {
 	annotationRegions: AnnotationRegion[];
 	aspectRatio: AspectRatio;
 	webcamLayoutPreset: WebcamLayoutPreset;
+	webcamBlockOrder: WebcamBlockOrder;
+	webcamBlockCameraShare: WebcamBlockCameraShare;
 	webcamMaskShape: WebcamMaskShape;
 	webcamMirrored: boolean;
 	webcamReactiveZoom: boolean;
 	webcamSizePreset: WebcamSizePreset;
+	webcamZoom: WebcamZoom;
+	webcamFocalPoint: WebcamFocalPoint;
 	webcamPosition: WebcamPosition | null;
 	exportQuality: ExportQuality;
 	exportFormat: ExportFormat;
@@ -245,6 +262,16 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 					cy: clamp((editor.webcamPosition as WebcamPosition).cy, 0, 1),
 				}
 			: DEFAULT_WEBCAM_SETTINGS.position;
+	const normalizedWebcamFocalPoint: WebcamFocalPoint =
+		editor.webcamFocalPoint &&
+		typeof editor.webcamFocalPoint === "object" &&
+		isFiniteNumber(editor.webcamFocalPoint.cx) &&
+		isFiniteNumber(editor.webcamFocalPoint.cy)
+			? {
+					cx: clamp(editor.webcamFocalPoint.cx, 0, 1),
+					cy: clamp(editor.webcamFocalPoint.cy, 0, 1),
+				}
+			: DEFAULT_WEBCAM_FOCAL_POINT;
 
 	const normalizedZoomRegions: ZoomRegion[] = Array.isArray(editor.zoomRegions)
 		? editor.zoomRegions
@@ -272,9 +299,15 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						},
 						focusMode: region.focusMode === "auto" ? "auto" : "manual",
 						source: region.source === "auto" ? "auto" : "manual",
+						...(isFiniteNumber(region.customScale)
+							? { customScale: clamp(region.customScale, 1, 5) }
+							: {}),
 						...(isMotionStyle(region.motionStyle) ? { motionStyle: region.motionStyle } : {}),
 						...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 						...(validPreset ? { rotationPreset: validPreset } : {}),
+						...(typeof region.directionGroupId === "string" && region.directionGroupId.length > 0
+							? { directionGroupId: region.directionGroupId }
+							: {}),
 					};
 				})
 		: [];
@@ -302,6 +335,9 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						...(isMotionStyle(region.motionStyle) ? { motionStyle: region.motionStyle } : {}),
 						...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 						...(region.source === "auto" ? { source: "auto" as const } : {}),
+						...(typeof region.directionGroupId === "string" && region.directionGroupId.length > 0
+							? { directionGroupId: region.directionGroupId }
+							: {}),
 					};
 				})
 		: [];
@@ -525,6 +561,18 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		annotationRegions: normalizedAnnotationRegions,
 		aspectRatio: normalizedAspectRatio,
 		webcamLayoutPreset: normalizedWebcamLayoutPreset,
+		webcamBlockOrder:
+			editor.webcamBlockOrder === "camera-first"
+				? "camera-first"
+				: DEFAULT_WEBCAM_SETTINGS.blockOrder,
+		webcamBlockCameraShare:
+			typeof editor.webcamBlockCameraShare === "number" &&
+			isFiniteNumber(editor.webcamBlockCameraShare)
+				? Math.max(
+						MIN_WEBCAM_BLOCK_CAMERA_SHARE,
+						Math.min(MAX_WEBCAM_BLOCK_CAMERA_SHARE, editor.webcamBlockCameraShare),
+					)
+				: DEFAULT_WEBCAM_SETTINGS.blockCameraShare,
 		webcamMaskShape:
 			editor.webcamMaskShape === "rectangle" ||
 			editor.webcamMaskShape === "circle" ||
@@ -545,6 +593,11 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						Math.min(MAX_WEBCAM_SIZE_PERCENT, editor.webcamSizePreset),
 					)
 				: DEFAULT_WEBCAM_SETTINGS.sizePreset,
+		webcamZoom:
+			typeof editor.webcamZoom === "number" && isFiniteNumber(editor.webcamZoom)
+				? Math.max(MIN_WEBCAM_ZOOM, Math.min(MAX_WEBCAM_ZOOM, editor.webcamZoom))
+				: DEFAULT_WEBCAM_ZOOM,
+		webcamFocalPoint: normalizedWebcamFocalPoint,
 		webcamPosition: normalizedWebcamPosition,
 		exportQuality:
 			editor.exportQuality === "medium" || editor.exportQuality === "source"

@@ -7,6 +7,7 @@
 		"autoFocusAllOn": "Auto-Focus on for all zooms — click to switch all to manual",
 		"autoFocusAllOff": "Auto-Focus all zooms (camera follows the cursor)",
 		"addTrim": "Add Trim (T)",
+		"splitClip": "Split clip at playhead",
 		"addAnnotation": "Add Annotation (A)",
 		"addSpeed": "Add Speed (S)",
 		"addCameraFullscreen": "Add Full Camera (C)"
@@ -19,6 +20,7 @@
 		"pressCameraFullscreen": "Press C to add a Full Camera segment"
 	},
 	"labels": {
+		"pauseSuggestion": "Shorten {{duration}}",
 		"pan": "Pan",
 		"zoom": "Zoom",
 		"trim": "Trim",
@@ -63,6 +65,7 @@
 	"toolbar": {
 		"autoEnhance": "Auto-enhance",
 		"automaticZooms": "Automatic zooms",
+		"automaticDirection": "Automatic direction",
 		"automaticZoomsHint": "From recorded cursor movement",
 		"smartZoomsAndCuts": "Smart cuts",
 		"smartZoomsAndCutsHint": "With AI",

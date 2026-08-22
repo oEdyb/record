@@ -6,6 +6,7 @@ use crate::ffi::*;
 use crate::regions::SpeedSegment;
 use anyhow::{bail, Result};
 use ebur128::{EbuR128, Mode};
+use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::ffi::CString;
 use std::ptr;
@@ -13,12 +14,19 @@ use std::ptr;
 pub const AUDIO_OUTPUT_SAMPLE_RATE: i32 = 48_000;
 pub const AUDIO_OUTPUT_CHANNELS: usize = 2;
 pub const AUDIO_BITRATE: i64 = 384_000;
-pub const AUDIO_BOUNDARY_FADE_SAMPLES: usize = 240;
+// Ten milliseconds at 48 kHz. This short equal-power fade removes clicks at
+// structural cuts without making speech boundaries sound softened.
+pub const AUDIO_BOUNDARY_FADE_SAMPLES: usize = 480;
 pub const DEFAULT_TARGET_LUFS: f64 = -14.0;
 pub const DEFAULT_TRUE_PEAK_LIMIT_DBTP: f64 = -1.0;
 const MAX_AUTOMATIC_GAIN_DB: f64 = 12.0;
 const MAX_CLIP_DIALOGUE_GAIN_DB: f64 = 6.0;
 const MIN_DIALOGUE_LUFS: f64 = -50.0;
+const LIMITER_CEILING_DBFS: f64 = -2.0;
+const PRE_ENCODE_TRUE_PEAK_LIMIT_DBTP: f64 = -1.5;
+const LIMITER_LOOKAHEAD_MS: f64 = 5.0;
+const LIMITER_ATTACK_MS: f64 = 1.0;
+const LIMITER_RELEASE_MS: f64 = 120.0;
 const PREVIEW_MIX_TRACK_TITLE: &str = "screenrec.mix.v1";
 const SYSTEM_TRACK_TITLE: &str = "screenrec.system.v1";
 const MICROPHONE_TRACK_TITLE: &str = "screenrec.microphone.v1";
@@ -167,6 +175,106 @@ fn measure_program_audio(pcm: &PlanarPcm) -> std::result::Result<AudioMeasuremen
     })
 }
 
+fn required_limiter_gain(pcm: &PlanarPcm, frame: usize, ceiling: f32) -> f32 {
+    let peak = pcm
+        .iter()
+        .take(AUDIO_OUTPUT_CHANNELS)
+        .map(|plane| plane[frame].abs())
+        .fold(0.0_f32, f32::max);
+    if peak > ceiling {
+        ceiling / peak
+    } else {
+        1.0
+    }
+}
+
+fn enqueue_limiter_gain(queue: &mut VecDeque<(usize, f32)>, frame: usize, gain: f32) {
+    while queue.back().is_some_and(|(_, queued)| *queued >= gain) {
+        queue.pop_back();
+    }
+    queue.push_back((frame, gain));
+}
+
+/// Applies a stereo-linked offline peak limiter with bounded look-ahead memory. The shared gain
+/// envelope preserves channel balance and releases slowly enough to avoid a hard clip. A final
+/// EBU R128 true-peak measurement still guards inter-sample peaks.
+fn apply_peak_limiter(pcm: &mut PlanarPcm) -> bool {
+    let frame_count = pcm
+        .iter()
+        .take(AUDIO_OUTPUT_CHANNELS)
+        .map(Vec::len)
+        .min()
+        .unwrap_or(0);
+    if pcm.len() < AUDIO_OUTPUT_CHANNELS || frame_count == 0 {
+        return false;
+    }
+
+    let ceiling = 10.0_f32.powf((LIMITER_CEILING_DBFS / 20.0) as f32);
+    let lookahead_frames = (LIMITER_LOOKAHEAD_MS * 0.001 * AUDIO_OUTPUT_SAMPLE_RATE as f64)
+        .round()
+        .max(1.0) as usize;
+    let attack_coefficient =
+        1.0 - (-1.0 / (LIMITER_ATTACK_MS * 0.001 * AUDIO_OUTPUT_SAMPLE_RATE as f64)).exp();
+    let release_coefficient =
+        1.0 - (-1.0 / (LIMITER_RELEASE_MS * 0.001 * AUDIO_OUTPUT_SAMPLE_RATE as f64)).exp();
+    let mut lookahead_minima = VecDeque::with_capacity(lookahead_frames + 1);
+    let initial_end = frame_count.min(lookahead_frames + 1);
+    let mut engaged = false;
+    for frame in 0..initial_end {
+        let gain = required_limiter_gain(pcm, frame, ceiling);
+        engaged |= gain < 1.0;
+        enqueue_limiter_gain(&mut lookahead_minima, frame, gain);
+    }
+
+    let mut applied_gain = lookahead_minima
+        .front()
+        .map(|(_, gain)| *gain)
+        .unwrap_or(1.0);
+    for frame in 0..frame_count {
+        while lookahead_minima
+            .front()
+            .is_some_and(|(queued_frame, _)| *queued_frame < frame)
+        {
+            lookahead_minima.pop_front();
+        }
+        let required_gain = lookahead_minima
+            .front()
+            .map(|(_, gain)| *gain)
+            .unwrap_or(1.0);
+        applied_gain = if required_gain < applied_gain - f32::EPSILON {
+            applied_gain + ((required_gain - applied_gain) * attack_coefficient as f32)
+        } else if required_gain > applied_gain + f32::EPSILON {
+            applied_gain + ((1.0 - applied_gain) * release_coefficient as f32)
+        } else {
+            applied_gain
+        };
+        for plane in pcm.iter_mut().take(AUDIO_OUTPUT_CHANNELS) {
+            plane[frame] *= applied_gain;
+        }
+
+        let next_frame = frame + lookahead_frames + 1;
+        if next_frame < frame_count {
+            let gain = required_limiter_gain(pcm, next_frame, ceiling);
+            engaged |= gain < 1.0;
+            enqueue_limiter_gain(&mut lookahead_minima, next_frame, gain);
+        }
+    }
+
+    engaged
+}
+
+fn apply_uniform_gain(pcm: &mut PlanarPcm, gain_db: f64) {
+    if gain_db.abs() < 0.01 {
+        return;
+    }
+    let gain = 10.0_f32.powf((gain_db / 20.0) as f32);
+    for plane in pcm.iter_mut().take(AUDIO_OUTPUT_CHANNELS) {
+        for sample in plane {
+            *sample *= gain;
+        }
+    }
+}
+
 /// Matches speech-bearing microphone stems to the median clip level. This is
 /// not per-clip target normalization: the recording stays at its natural
 /// overall level, while only large clip-to-clip voice jumps are reduced.
@@ -239,8 +347,9 @@ pub fn match_clip_dialogue_levels(
     adjustments
 }
 
-/// Measures and masters the fully edited program. Capture files stay unchanged. A single gain
-/// preserves dynamics; the gain is capped before it can cross the true-peak ceiling.
+/// Measures and masters the fully edited program. Capture files stay unchanged. A bounded
+/// make-up gain raises normal dialogue, an offline linked limiter controls short peaks, and a
+/// final true-peak trim protects the output ceiling.
 pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasteringStats {
     if !enabled {
         return AudioMasteringStats::disabled();
@@ -251,31 +360,44 @@ pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasterin
     };
 
     let requested_gain_db = DEFAULT_TARGET_LUFS - input.integrated_lufs;
-    let true_peak_headroom_db = DEFAULT_TRUE_PEAK_LIMIT_DBTP - input.true_peak_dbtp;
-    let applied_gain_db = requested_gain_db
-        .min(true_peak_headroom_db)
-        .min(MAX_AUTOMATIC_GAIN_DB);
-    let limited_by_true_peak =
-        true_peak_headroom_db < requested_gain_db.min(MAX_AUTOMATIC_GAIN_DB) - 0.01;
-    let limited_by_gain_cap = MAX_AUTOMATIC_GAIN_DB < requested_gain_db - 0.01
-        && MAX_AUTOMATIC_GAIN_DB <= true_peak_headroom_db + 0.01;
-    if applied_gain_db.abs() >= 0.01 {
-        let gain = 10.0_f32.powf((applied_gain_db / 20.0) as f32);
-        for plane in pcm.iter_mut().take(AUDIO_OUTPUT_CHANNELS) {
-            for sample in plane {
-                *sample = (*sample * gain).clamp(-1.0, 1.0);
-            }
+    let mut applied_gain_db = requested_gain_db.min(MAX_AUTOMATIC_GAIN_DB);
+    apply_uniform_gain(pcm, applied_gain_db);
+
+    let mut limiter_engaged = apply_peak_limiter(pcm);
+    let mut after_limiter = measure_program_audio(pcm).unwrap_or(input);
+    for _ in 0..2 {
+        let remaining_gain_db = MAX_AUTOMATIC_GAIN_DB - applied_gain_db;
+        let residual_gain_db = (DEFAULT_TARGET_LUFS - after_limiter.integrated_lufs)
+            .max(0.0)
+            .min(remaining_gain_db);
+        if residual_gain_db < 0.05 {
+            break;
         }
+        apply_uniform_gain(pcm, residual_gain_db);
+        applied_gain_db += residual_gain_db;
+        limiter_engaged |= apply_peak_limiter(pcm);
+        after_limiter = measure_program_audio(pcm).unwrap_or(after_limiter);
+    }
+    let true_peak_trim_db = if after_limiter.true_peak_dbtp > PRE_ENCODE_TRUE_PEAK_LIMIT_DBTP {
+        PRE_ENCODE_TRUE_PEAK_LIMIT_DBTP - after_limiter.true_peak_dbtp
+    } else {
+        0.0
+    };
+    if true_peak_trim_db < -0.01 {
+        apply_uniform_gain(pcm, true_peak_trim_db);
     }
 
     let output = measure_program_audio(pcm).unwrap_or(input);
-    let warning = if limited_by_true_peak {
-        Some(format!(
-            "Normalization stopped below {DEFAULT_TARGET_LUFS:.0} LUFS to keep true peaks at or below {DEFAULT_TRUE_PEAK_LIMIT_DBTP:.0} dBTP."
-        ))
-    } else if limited_by_gain_cap {
+    let limited_by_true_peak = limiter_engaged || true_peak_trim_db < -0.01;
+    let missed_target = output.integrated_lufs < DEFAULT_TARGET_LUFS - 0.5;
+    let limited_by_gain_cap = missed_target && applied_gain_db >= MAX_AUTOMATIC_GAIN_DB - 0.01;
+    let warning = if limited_by_gain_cap && missed_target {
         Some(format!(
             "Normalization stopped at the {MAX_AUTOMATIC_GAIN_DB:.0} dB automatic gain limit."
+        ))
+    } else if limited_by_true_peak && missed_target {
+        Some(format!(
+            "Normalization stopped below {DEFAULT_TARGET_LUFS:.0} LUFS to keep true peaks at or below {DEFAULT_TRUE_PEAK_LIMIT_DBTP:.0} dBTP."
         ))
     } else {
         None
@@ -439,8 +561,8 @@ impl AudioResampler {
             }
             let out_capacity =
                 (((delay * AUDIO_OUTPUT_SAMPLE_RATE as i64) + self.input_rate as i64 - 1)
-                / self.input_rate as i64
-                + 32) as usize;
+                    / self.input_rate as i64
+                    + 32) as usize;
             let mut planes = vec![vec![0.0f32; out_capacity]; AUDIO_OUTPUT_CHANNELS];
             let mut output_ptrs: Vec<*mut u8> = planes
                 .iter_mut()
@@ -1400,6 +1522,14 @@ mod tests {
     }
 
     #[test]
+    fn structural_cut_fade_is_ten_milliseconds() {
+        assert_eq!(
+            AUDIO_BOUNDARY_FADE_SAMPLES,
+            AUDIO_OUTPUT_SAMPLE_RATE as usize / 100
+        );
+    }
+
+    #[test]
     fn single_track_is_not_clamped() {
         // Promesse de non-régression : une source mono-piste ressort telle quelle, y compris
         // hors pleine échelle. Seul le mixage multipiste écrête.
@@ -1564,6 +1694,21 @@ mod tests {
         assert!((stats.output_lufs.unwrap() - DEFAULT_TARGET_LUFS).abs() < 0.1);
         assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_LIMIT_DBTP + 0.01);
         assert!(!stats.limited_by_true_peak);
+    }
+
+    #[test]
+    fn program_mastering_raises_quiet_dialogue_with_isolated_loud_transients() {
+        let mut pcm = stereo_sine(0.06, 4);
+        for sample_index in [0, 24_000, 96_000, 168_000] {
+            pcm[0][sample_index] = 0.95;
+            pcm[1][sample_index] = 0.95;
+        }
+
+        let stats = master_program_audio(&mut pcm, true);
+
+        assert!(stats.limited_by_true_peak);
+        assert!((stats.output_lufs.unwrap() - DEFAULT_TARGET_LUFS).abs() < 0.5);
+        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_LIMIT_DBTP + 0.01);
     }
 
     #[test]

@@ -952,6 +952,127 @@ export function moveClip(
 	return rederiveRegionMs(next, newClips);
 }
 
+/**
+ * Split one placed clip at a raw-timeline position without changing the visible media.
+ *
+ * The left half keeps the original clip id. The right half gets a new id. Trims and every
+ * clip-anchored modifier follow their source-time content to the correct half; a region that
+ * crosses the split becomes two touching fragments with the same presentation identity. Raw
+ * timeline ranges do not move because the operation adds no duration.
+ *
+ * A split at or within one millisecond of either edge is a no-op. The caller can therefore use
+ * the playhead directly without creating zero-length clips from display rounding.
+ */
+export function splitClipAt(
+	document: AxcutDocument,
+	clipId: string,
+	timelineTimeSec: number,
+): AxcutDocument {
+	const clipIndex = document.timeline.clips.findIndex((clip) => clip.id === clipId);
+	if (clipIndex < 0 || !Number.isFinite(timelineTimeSec)) return document;
+	const clip = document.timeline.clips[clipIndex];
+	const asset = document.assets.find((candidate) => candidate.id === clip.assetId);
+	if (asset?.durationSec === undefined && clipAwaitsProbedDuration(clip, clip.assetId)) {
+		return document;
+	}
+	const timelineDurationSec = clip.timelineEndSec - clip.timelineStartSec;
+	const offsetSec = timelineTimeSec - clip.timelineStartSec;
+	if (
+		timelineDurationSec <= REGION_WINDOW_EPSILON_SEC * 2 ||
+		offsetSec <= REGION_WINDOW_EPSILON_SEC ||
+		timelineDurationSec - offsetSec <= REGION_WINDOW_EPSILON_SEC
+	) {
+		return document;
+	}
+
+	const sourceEndSec = clip.sourceEndSec;
+	if (sourceEndSec === undefined) return document;
+	const sourceDurationSec = sourceEndSec - clip.sourceStartSec;
+	if (sourceDurationSec <= REGION_WINDOW_EPSILON_SEC * 2) return document;
+	const sourceSplitSec =
+		clip.sourceStartSec + sourceDurationSec * (offsetSec / timelineDurationSec);
+	if (
+		sourceSplitSec - clip.sourceStartSec <= REGION_WINDOW_EPSILON_SEC ||
+		sourceEndSec - sourceSplitSec <= REGION_WINDOW_EPSILON_SEC
+	) {
+		return document;
+	}
+
+	const rightClipId = createId("clip");
+	const transcript =
+		document.transcripts.find((candidate) => candidate.assetId === clip.assetId) ??
+		(document.transcript?.assetId === clip.assetId ? document.transcript : null);
+	const refsForWindow = (startSec: number, endSec: number) => {
+		if (!transcript) return [...clip.wordRefs];
+		const originalRefs = new Set(clip.wordRefs);
+		const refs = collectWordRefs(transcript, startSec, endSec);
+		return originalRefs.size > 0 ? refs.filter((id) => originalRefs.has(id)) : refs;
+	};
+	const leftClip: AxcutClip = {
+		...clip,
+		sourceEndSec: sourceSplitSec,
+		timelineEndSec: timelineTimeSec,
+		wordRefs: refsForWindow(clip.sourceStartSec, sourceSplitSec),
+	};
+	const rightClip: AxcutClip = {
+		...clip,
+		id: rightClipId,
+		sourceStartSec: sourceSplitSec,
+		sourceEndSec,
+		timelineStartSec: timelineTimeSec,
+		wordRefs: refsForWindow(sourceSplitSec, sourceEndSec),
+	};
+	const nextClips = resequenceClips([
+		...document.timeline.clips.slice(0, clipIndex),
+		leftClip,
+		rightClip,
+		...document.timeline.clips.slice(clipIndex + 1),
+	]);
+
+	const splitTrims = document.timeline.trimRanges.flatMap((trim) => {
+		if (trim.clipId !== clipId) return [trim];
+		if (trim.endSec <= sourceSplitSec) return [trim];
+		if (trim.startSec >= sourceSplitSec) return [{ ...trim, clipId: rightClipId }];
+		return [
+			{ ...trim, endSec: sourceSplitSec },
+			{
+				...trim,
+				id: createId("trim"),
+				clipId: rightClipId,
+				startSec: sourceSplitSec,
+			},
+		];
+	});
+
+	const withSplitClip: AxcutDocument = {
+		...document,
+		timeline: {
+			...document.timeline,
+			clips: nextClips,
+			trimRanges: splitTrims,
+		},
+	};
+	const withSplitRegions = mapAllRegionCollections(withSplitClip, (regions, prefix) =>
+		regions.flatMap((region) => {
+			if (!isAnchored(region) || region.clipId !== clipId) return [region];
+			if (region.sourceEndSec <= sourceSplitSec) return [region];
+			if (region.sourceStartSec >= sourceSplitSec) {
+				return [{ ...region, clipId: rightClipId }];
+			}
+			return [
+				{ ...region, sourceEndSec: sourceSplitSec },
+				{
+					...region,
+					id: createId(prefix),
+					clipId: rightClipId,
+					sourceStartSec: sourceSplitSec,
+				},
+			];
+		}),
+	);
+	return rederiveRegionMs(withSplitRegions, nextClips);
+}
+
 // ponytail: duplicate a clip (preserves the original). Used for "split this
 // clip into two" or "make a copy". Mirrors axcut's
 // apps/server/src/lib/timeline.ts#duplicateClip.

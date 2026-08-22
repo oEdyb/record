@@ -5,6 +5,7 @@ import { type ProjectState, useProjectStore } from "@/lib/ai-edition/store/proje
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
 
 const getRecordingData = vi.hoisted(() => vi.fn());
+const probeVideoDuration = vi.hoisted(() => vi.fn());
 
 // The store's own bridge calls are never reached — every project action the
 // import uses is stubbed below. Cursor recording data is read directly because
@@ -12,6 +13,7 @@ const getRecordingData = vi.hoisted(() => vi.fn());
 vi.mock("@/native/client", () => ({
 	nativeBridgeClient: { aiEdition: {}, cursor: { getRecordingData } },
 }));
+vi.mock("@/lib/ai-edition/timeline/duration", () => ({ probeVideoDuration }));
 
 const createProject = vi.fn<ProjectState["createProject"]>(async (title) => {
 	const document = createEmptyDocument({ title, projectId: "test-project" });
@@ -59,6 +61,7 @@ function stubElectronApi(screenVideoPath: string | null) {
 describe("importPendingRecording", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		probeVideoDuration.mockResolvedValue(null);
 		getRecordingData.mockResolvedValue({ version: 2, provider: "native", samples: [], assets: [] });
 		saveDocumentAsEdit.mockImplementation(async (document) => {
 			useProjectStore.setState({ document });
@@ -230,6 +233,109 @@ describe("importPendingRecording", () => {
 		expect(saved.assets.find((asset) => asset.id === "asset_3")?.cameraTrack?.offsetMs).toBe(
 			-2_550,
 		);
+	});
+
+	it("probes a crash-recovered clip before it writes the timeline", async () => {
+		const screenVideoPath = "/recordings/recording-9-clip-0001.mp4";
+		let session = {
+			screenVideoPath,
+			createdAt: 9,
+			schemaVersion: 2 as const,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath,
+					durationMs: 60_000,
+					provisionalDuration: true,
+				},
+			],
+		};
+		setElectronApi({
+			getCurrentRecordingSession: vi.fn(async () => ({ success: true, session })),
+			setCurrentRecordingSession: vi.fn(async (next) => {
+				session = next as typeof session;
+				return { success: true };
+			}),
+		});
+		probeVideoDuration.mockResolvedValueOnce(2.75);
+		addAsset.mockImplementationOnce(async () => {
+			const document = useProjectStore.getState().document;
+			if (!document) throw new Error("Expected a recording import project");
+			const asset: AxcutAsset = {
+				id: "recovered-asset",
+				kind: "video",
+				label: "Recovered clip",
+				originalPath: screenVideoPath,
+				cameraTrack: null,
+			};
+			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			return asset;
+		});
+
+		await expect(importPendingRecording()).resolves.toBe(true);
+
+		expect(probeVideoDuration).toHaveBeenCalledWith(
+			"file:///recordings/recording-9-clip-0001.mp4",
+			5_000,
+		);
+		const document = useProjectStore.getState().document;
+		expect(document?.timeline.clips).toMatchObject([
+			{ sourceEndSec: 2.75, timelineStartSec: 0, timelineEndSec: 2.75 },
+		]);
+		expect(document?.assets[0]?.durationSec).toBe(2.75);
+		expect(getRecordingData).not.toHaveBeenCalled();
+	});
+
+	it("keeps a crash recovery handoff when its real duration cannot be read", async () => {
+		const screenVideoPath = "/recordings/recording-10-clip-0001.mp4";
+		let session = {
+			screenVideoPath,
+			createdAt: 10,
+			schemaVersion: 2 as const,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath,
+					durationMs: 60_000,
+					provisionalDuration: true,
+				},
+			],
+		};
+		const setCurrentRecordingSession = vi.fn(async (next) => {
+			session = next as typeof session;
+			return { success: true };
+		});
+		setElectronApi({
+			getCurrentRecordingSession: vi.fn(async () => ({ success: true, session })),
+			setCurrentRecordingSession,
+		});
+
+		await expect(importPendingRecording()).rejects.toThrow(
+			"Could not read the recovered clip duration",
+		);
+		expect(setCurrentRecordingSession).not.toHaveBeenCalledWith(null);
+	});
+
+	it("keeps the handoff when durable journal cleanup fails", async () => {
+		let session = { screenVideoPath: "/recordings/recording-11.mp4", createdAt: 11 };
+		const setCurrentRecordingSession = vi.fn(async (next: typeof session | null) => {
+			if (next === null) return { success: false, error: "journal unlink failed" };
+			session = next;
+			return { success: true };
+		});
+		setElectronApi({
+			getCurrentRecordingSession: vi.fn(async () => ({ success: true, session })),
+			setCurrentRecordingSession,
+		});
+
+		await expect(importPendingRecording()).rejects.toThrow(
+			"Could not consume the recording recovery handoff: journal unlink failed",
+		);
+		expect(session).toEqual({
+			screenVideoPath: "/recordings/recording-11.mp4",
+			createdAt: 11,
+			importProjectId: "test-project",
+		});
 	});
 
 	it("adds sparse automatic direction as normal regions during recording import", async () => {

@@ -185,6 +185,26 @@ export function formatBitrate(bitrate: number): string {
 	return `${Number((bitrate / 1_000_000).toFixed(1))} Mbps`;
 }
 
+/** Export an exact, user-selected canvas size with the same bitrate policy as the presets. */
+export function calculateMp4ExportSettingsForResolution({
+	quality,
+	width,
+	height,
+}: {
+	quality: ExportQuality;
+	width: number;
+	height: number;
+}): Mp4ExportSettings {
+	const dimensions = {
+		width: atLeastEven(width),
+		height: atLeastEven(height),
+	};
+	return {
+		...dimensions,
+		bitrate: calculateBitrate(dimensions.width, dimensions.height, quality),
+	};
+}
+
 export function calculateMp4ExportSettings({
 	quality,
 	sourceWidth,

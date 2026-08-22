@@ -1,4 +1,5 @@
 import {
+	AudioLines,
 	Captions as CaptionsIcon,
 	ChevronRight,
 	FileText,
@@ -9,6 +10,7 @@ import {
 	Pencil,
 	Scissors,
 	SlidersHorizontal,
+	Sparkles,
 	Trash2,
 	X,
 	ZoomIn,
@@ -18,9 +20,11 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { parseCustomPlaybackSpeedInput } from "@/components/video-editor/customPlaybackSpeed";
 import {
+	effectiveZoomScale,
 	MAX_PLAYBACK_SPEED,
+	MAX_ZOOM_SCALE,
+	MIN_ZOOM_SCALE,
 	SPEED_OPTIONS,
-	ZOOM_DEPTH_SCALES,
 } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
@@ -39,6 +43,7 @@ import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
+import { isOptionalEditorFacetVisible } from "@/lib/productSurface";
 import {
 	DEFAULT_CAMERA_MOTION_STYLE,
 	DEFAULT_ZOOM_MOTION_STYLE,
@@ -47,8 +52,10 @@ import {
 	type MotionStyle,
 	normalizeMotionSpeed,
 } from "@/lib/zoomMath/motionCurve";
+import { AutomaticDirectionPane } from "../AutomaticDirectionPane";
 import { CaptionsPane } from "../CaptionsPane";
 import { ColorField } from "../ColorField";
+import { PausesPane, type SelectablePauseSuggestion } from "../PausesPane";
 import {
 	BackgroundPane,
 	CursorPane,
@@ -62,16 +69,32 @@ import styles from "./EditorShellV4.module.css";
 
 type TimelineApi = ReturnType<typeof useTimeline>;
 
-export type Facet = "background" | "effects" | "layout" | "cursor" | "captions" | "transcript";
+export type Facet =
+	| "background"
+	| "effects"
+	| "layout"
+	| "cursor"
+	| "pauses"
+	| "automatic"
+	| "captions"
+	| "transcript";
 
-const FACETS: Array<{ id: Facet; labelKey: string; icon: typeof ImageIcon }> = [
+const ALL_FACETS: Array<{ id: Facet; labelKey: string; icon: typeof ImageIcon }> = [
 	{ id: "background", labelKey: "background.title", icon: ImageIcon },
 	{ id: "effects", labelKey: "effects.title", icon: SlidersHorizontal },
 	{ id: "layout", labelKey: "layout.title", icon: LayoutIcon },
 	{ id: "cursor", labelKey: "cursor.title", icon: MousePointer2 },
+	{ id: "pauses", labelKey: "pauses.title", icon: AudioLines },
+	{ id: "automatic", labelKey: "automatic.title", icon: Sparkles },
 	{ id: "captions", labelKey: "facets.captions", icon: CaptionsIcon },
 	{ id: "transcript", labelKey: "facets.transcript", icon: FileText },
 ];
+
+const FACETS = ALL_FACETS.filter(
+	(facet) =>
+		(facet.id !== "captions" && facet.id !== "transcript") ||
+		isOptionalEditorFacetVisible(facet.id),
+);
 
 type TranscriptProps = ComponentProps<typeof TranscriptPane>;
 
@@ -87,6 +110,9 @@ interface FloatingInspectorProps {
 	clips: AxcutClip[];
 	onEditClip: (clip: AxcutClip) => void;
 	transcriptProps: TranscriptProps;
+	pauseSuggestions?: SelectablePauseSuggestion[];
+	onPauseSuggestionsChange?: (suggestions: SelectablePauseSuggestion[]) => void;
+	onPausePreview?: (suggestions: SelectablePauseSuggestion[] | null) => void;
 	/** Drives the selected-element settings pane (zoom/speed/annotation/trim) —
 	 * takes over the inspector, forcing it open, whenever a timeline region is
 	 * selected. Clicking elsewhere on the timeline clears the selection
@@ -102,6 +128,9 @@ export function FloatingInspector({
 	clips,
 	onEditClip,
 	transcriptProps,
+	pauseSuggestions = [],
+	onPauseSuggestionsChange = () => undefined,
+	onPausePreview = () => undefined,
 	tl,
 }: FloatingInspectorProps) {
 	const ts = useScopedT("settings");
@@ -109,6 +138,7 @@ export function FloatingInspector({
 	const [clipPickerOpen, setClipPickerOpen] = useState(false);
 	const selection = tl.selection;
 	const effectiveOpen = open || selection !== null;
+	const visibleFacet = FACETS.some((candidate) => candidate.id === facet) ? facet : "effects";
 	return (
 		<div className={styles.inspectorWrap}>
 			{effectiveOpen ? (
@@ -116,7 +146,14 @@ export function FloatingInspector({
 					{selection ? (
 						<SelectionPane tl={tl} onClose={() => tl.clearSelection()} />
 					) : (
-						<FacetBody facet={facet} onCollapse={onToggleOpen} transcriptProps={transcriptProps} />
+						<FacetBody
+							facet={visibleFacet}
+							onCollapse={onToggleOpen}
+							transcriptProps={transcriptProps}
+							pauseSuggestions={pauseSuggestions}
+							onPauseSuggestionsChange={onPauseSuggestionsChange}
+							onPausePreview={onPausePreview}
+						/>
 					)}
 				</div>
 			) : null}
@@ -127,7 +164,7 @@ export function FloatingInspector({
 						type="button"
 						title={ts(labelKey)}
 						aria-label={ts(labelKey)}
-						aria-pressed={!selection && open && facet === id}
+						aria-pressed={!selection && open && visibleFacet === id}
 						onClick={() => {
 							// Switching facets while an element is selected should show
 							// the facet, not leave the selection pane on top of it.
@@ -352,7 +389,6 @@ function convertAnnotationKind(
 	return { ...parked, type: next, content: restored };
 }
 
-const ZOOM_DEPTHS = [1, 2, 3, 4, 5, 6] as const;
 // The ladder the shared editor already ships (`SPEED_OPTIONS`), plus 1× so the select can
 // express "back to normal". It stops at 5×; the free field in `SpeedControl` is what reaches
 // `MAX_PLAYBACK_SPEED`.
@@ -437,6 +473,61 @@ export function SpeedControl({
 	);
 }
 
+export function ZoomScaleControl({
+	region,
+	tl,
+}: {
+	region: { id: string; depth: 1 | 2 | 3 | 4 | 5 | 6; customScale?: number };
+	tl: Pick<TimelineApi, "updateZoomScaleLive" | "commitZoomScale">;
+}) {
+	const ts = useScopedT("settings");
+	return (
+		<SliderCell
+			label={ts("zoom.customScale")}
+			value={effectiveZoomScale(region)}
+			min={MIN_ZOOM_SCALE}
+			max={MAX_ZOOM_SCALE}
+			step={0.05}
+			decimals={2}
+			suffix="×"
+			onChange={(next) => tl.updateZoomScaleLive(region.id, next)}
+			onCommit={() => void tl.commitZoomScale()}
+			flat
+		/>
+	);
+}
+
+function RegionDurationControl({
+	startMs,
+	endMs,
+	maximumEndMs,
+	onCommit,
+}: {
+	startMs: number;
+	endMs: number;
+	maximumEndMs: number;
+	onCommit: (nextEndMs: number) => void;
+}) {
+	const te = useScopedT("editor");
+	const initialDurationSec = Math.max(0.1, (endMs - startMs) / 1_000);
+	const maximumDurationSec = Math.max(initialDurationSec, (maximumEndMs - startMs) / 1_000);
+	const [durationSec, setDurationSec] = useState(initialDurationSec);
+	return (
+		<SliderCell
+			label={te("editClipDialog.duration")}
+			value={durationSec}
+			min={0.1}
+			max={maximumDurationSec}
+			step={0.1}
+			decimals={1}
+			suffix="s"
+			onChange={setDurationSec}
+			onCommit={() => onCommit(startMs + Math.round(durationSec * 1_000))}
+			flat
+		/>
+	);
+}
+
 function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }) {
 	const ts = useScopedT("settings");
 	const tt = useScopedT("timeline");
@@ -493,66 +584,40 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		scrollbarColor: "var(--border) transparent",
 	};
 	const deleteBtnStyle: React.CSSProperties = {
+		alignSelf: "flex-start",
 		display: "inline-flex",
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 7,
-		padding: "9px 14px",
-		borderRadius: 10,
-		border: "1px solid var(--danger)",
-		background: "var(--danger-soft)",
+		padding: "8px 11px",
+		borderRadius: 8,
+		border: "1px solid var(--border-soft)",
+		background: "transparent",
 		color: "var(--danger)",
-		font: "600 13px var(--font-display)",
+		font: "500 12px var(--font-body)",
 		cursor: "pointer",
+		marginTop: 2,
 	};
 
 	if (selection.kind === "zoom") {
 		const region = tl.zoomRegions.find((z) => z.id === selection.id);
 		if (!region) return null;
+		const timelineEndMs = Math.max(
+			region.endMs,
+			...tl.clips.map((clip) => clip.timelineEndSec * 1_000),
+		);
 		return (
 			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 				{paneHeader(<ZoomIn size={15} />, tt("labels.zoom"), onClose, tc("actions.close"))}
 				<div style={bodyStyle}>
-					{paneRow(
-						ts("zoom.level"),
-						<select
-							value={region.depth}
-							onChange={(e) =>
-								void tl.updateZoomDepth(region.id, Number(e.target.value) as 1 | 2 | 3 | 4 | 5 | 6)
-							}
-							style={selectStyle}
-						>
-							{ZOOM_DEPTHS.map((d) => (
-								<option key={d} value={d}>
-									{/* La table, pas une formule : ce libellé annonçait « 2.0× » là où la pastille de la
-									    timeline affiche « 1.80× » et où le rendu applique 1.8. */}
-									{ZOOM_DEPTH_SCALES[d]}×
-								</option>
-							))}
-						</select>,
-					)}
-					{paneRow(
-						ts("zoom.threeD.title"),
-						<select
-							value={region.rotationPreset ?? "none"}
-							onChange={(e) =>
-								void tl.updateZoomRotation(
-									region.id,
-									// "none" is the absence of a preset, not a fourth preset — the schema field
-									// is optional and `migrate.ts` drops it when falsy.
-									e.target.value === "none"
-										? undefined
-										: (e.target.value as "iso" | "left" | "right"),
-								)
-							}
-							style={selectStyle}
-						>
-							<option value="none">{ts("zoom.threeD.none")}</option>
-							<option value="iso">{ts("zoom.threeD.preset.iso")}</option>
-							<option value="left">{ts("zoom.threeD.preset.left")}</option>
-							<option value="right">{ts("zoom.threeD.preset.right")}</option>
-						</select>,
-					)}
+					<ZoomScaleControl region={region} tl={tl} />
+					<RegionDurationControl
+						key={`${region.id}:${region.startMs}:${region.endMs}`}
+						startMs={region.startMs}
+						endMs={region.endMs}
+						maximumEndMs={timelineEndMs}
+						onCommit={(nextEndMs) => void tl.updateZoomSpan(region.id, region.startMs, nextEndMs)}
+					/>
 					{paneRow(
 						ts("zoom.focusMode.title"),
 						// While the global toggle is on it OVERRIDES every region, so the control shows
@@ -572,41 +637,6 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						>
 							<option value="manual">{ts("zoom.focusMode.manual")}</option>
 							<option value="auto">{ts("zoom.focusMode.auto")}</option>
-						</select>,
-					)}
-					{paneRow(
-						ts("motion.title"),
-						<select
-							value={region.motionStyle ?? DEFAULT_ZOOM_MOTION_STYLE}
-							onChange={(e) =>
-								void tl.updateZoomMotionStyle(region.id, e.target.value as MotionStyle)
-							}
-							style={selectStyle}
-						>
-							{MOTION_STYLE_VALUES.map((style) => (
-								<option key={style} value={style}>
-									{ts(`motion.${style}`)}
-								</option>
-							))}
-						</select>,
-					)}
-					{paneRow(
-						ts("motion.speed"),
-						<select
-							value={normalizeMotionSpeed(region.motionSpeed)}
-							disabled={region.motionStyle === "instant"}
-							onChange={(e) => void tl.updateZoomMotionSpeed(region.id, Number(e.target.value))}
-							style={
-								region.motionStyle === "instant"
-									? { ...selectStyle, opacity: 0.5, cursor: "not-allowed" }
-									: selectStyle
-							}
-						>
-							{MOTION_SPEED_VALUES.map((speed) => (
-								<option key={speed} value={speed}>
-									{speed}×
-								</option>
-							))}
 						</select>,
 					)}
 					{autoFocusAll || region.focusMode === "auto" ? (
@@ -631,6 +661,66 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							{te("inspector.resetFocusPoint")}
 						</button>
 					)}
+					<details style={advancedStyle}>
+						<summary style={advancedSummaryStyle}>{ts("zoom.advanced")}</summary>
+						<div style={advancedBodyStyle}>
+							{paneRow(
+								ts("zoom.threeD.title"),
+								<select
+									value={region.rotationPreset ?? "none"}
+									onChange={(e) =>
+										void tl.updateZoomRotation(
+											region.id,
+											e.target.value === "none"
+												? undefined
+												: (e.target.value as "iso" | "left" | "right"),
+										)
+									}
+									style={selectStyle}
+								>
+									<option value="none">{ts("zoom.threeD.none")}</option>
+									<option value="iso">{ts("zoom.threeD.preset.iso")}</option>
+									<option value="left">{ts("zoom.threeD.preset.left")}</option>
+									<option value="right">{ts("zoom.threeD.preset.right")}</option>
+								</select>,
+							)}
+							{paneRow(
+								ts("motion.title"),
+								<select
+									value={region.motionStyle ?? DEFAULT_ZOOM_MOTION_STYLE}
+									onChange={(e) =>
+										void tl.updateZoomMotionStyle(region.id, e.target.value as MotionStyle)
+									}
+									style={selectStyle}
+								>
+									{MOTION_STYLE_VALUES.map((style) => (
+										<option key={style} value={style}>
+											{ts(`motion.${style}`)}
+										</option>
+									))}
+								</select>,
+							)}
+							{paneRow(
+								ts("motion.speed"),
+								<select
+									value={normalizeMotionSpeed(region.motionSpeed)}
+									disabled={region.motionStyle === "instant"}
+									onChange={(e) => void tl.updateZoomMotionSpeed(region.id, Number(e.target.value))}
+									style={
+										region.motionStyle === "instant"
+											? { ...selectStyle, opacity: 0.5, cursor: "not-allowed" }
+											: selectStyle
+									}
+								>
+									{MOTION_SPEED_VALUES.map((speed) => (
+										<option key={speed} value={speed}>
+											{speed}×
+										</option>
+									))}
+								</select>,
+							)}
+						</div>
+					</details>
 					<button type="button" onClick={deleteAndClose} style={deleteBtnStyle}>
 						<Trash2 size={14} />
 						{ts("zoom.deleteZoom")}
@@ -811,6 +901,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 								onCommit={() => void tl.commitAnnotationChange()}
 								// Le libellé i18n interpole déjà « : 11px » ; sans ça on lisait « 11px11 ».
 								showValue={false}
+								flat
 							/>
 						</>
 					) : null}
@@ -1077,33 +1168,58 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 }
 
 const selectStyle: React.CSSProperties = {
-	height: 32,
-	padding: "0 8px",
+	height: 34,
+	padding: "0 9px",
 	borderRadius: 8,
-	border: "1px solid var(--border)",
-	background: "var(--surface)",
+	border: "1px solid transparent",
+	background: "var(--surface-2)",
 	color: "var(--fg)",
-	font: "500 12.5px var(--font-display)",
+	font: "500 12px var(--font-body)",
 };
 
 const secondaryBtnStyle: React.CSSProperties = {
-	padding: "9px 14px",
-	borderRadius: 10,
-	border: "1px solid var(--border-hi)",
+	alignSelf: "flex-start",
+	padding: "7px 10px",
+	borderRadius: 8,
+	border: "1px solid var(--border-soft)",
 	background: "var(--surface-2)",
 	color: "var(--fg-2)",
-	font: "600 13px var(--font-display)",
+	font: "500 12px var(--font-body)",
 	cursor: "pointer",
+};
+
+const advancedStyle: React.CSSProperties = {
+	borderTop: "1px solid var(--border-soft)",
+	paddingTop: 12,
+};
+
+const advancedSummaryStyle: React.CSSProperties = {
+	cursor: "pointer",
+	font: "600 12px var(--font-display)",
+	color: "var(--fg-2)",
+};
+
+const advancedBodyStyle: React.CSSProperties = {
+	display: "flex",
+	flexDirection: "column",
+	gap: 14,
+	paddingTop: 14,
 };
 
 function FacetBody({
 	facet,
 	onCollapse,
 	transcriptProps,
+	pauseSuggestions,
+	onPauseSuggestionsChange,
+	onPausePreview,
 }: {
 	facet: Facet;
 	onCollapse: () => void;
 	transcriptProps: TranscriptProps;
+	pauseSuggestions: SelectablePauseSuggestion[];
+	onPauseSuggestionsChange: (suggestions: SelectablePauseSuggestion[]) => void;
+	onPausePreview: (suggestions: SelectablePauseSuggestion[] | null) => void;
 }) {
 	const te = useScopedT("editor");
 	// A small collapse affordance floated over the reused pane header.
@@ -1137,6 +1253,17 @@ function FacetBody({
 	if (facet === "effects") return wrap(collapse, <VideoEffectsPane />);
 	if (facet === "layout") return wrap(collapse, <LayoutPane />);
 	if (facet === "cursor") return wrap(collapse, <CursorPane />);
+	if (facet === "pauses") {
+		return wrap(
+			collapse,
+			<PausesPane
+				suggestions={pauseSuggestions}
+				onSuggestionsChange={onPauseSuggestionsChange}
+				onPreview={onPausePreview}
+			/>,
+		);
+	}
+	if (facet === "automatic") return wrap(collapse, <AutomaticDirectionPane />);
 	if (facet === "transcript") return wrap(collapse, <TranscriptPane {...transcriptProps} />);
 	return wrap(collapse, <CaptionsPane />);
 }

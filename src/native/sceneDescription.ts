@@ -198,9 +198,13 @@ export interface SceneLayout {
 	 * size-multiplier.
 	 */
 	webcamSize: number;
+	/** Centered crop scale inside the webcam rect. 1 keeps the current cover crop. */
+	webcamZoom: number;
+	/** Visual focus point inside the webcam crop. It does not move the webcam rect. */
+	webcamFocalPoint: { cx: number; cy: number };
 	/**
 	 * The mask shape the layout actually RESOLVED to, not the raw `webcamMaskShape`
-	 * setting. Only picture-in-picture honours the setting; the block layouts cut a
+	 * setting. Only picture-in-picture honors the setting; the block layouts cut a
 	 * rectangle out of the welded block whatever the user last picked in the shape
 	 * picker (which the UI hides there). Shipping the raw setting is what let a circle
 	 * chosen in PiP follow the user into "Side by side" and round the camera off into a
@@ -231,8 +235,8 @@ export interface SceneLayout {
 	 */
 	screenRect?: SceneRect | null;
 	/**
-	 * Should the screen FILL its box, cropping the overflow (`object-fit: cover`), rather
-	 * than fit inside it? True for the block layouts, whose screen box is an arbitrary-ratio
+	 * Should the screen fill its box, cropping the overflow (`object-fit: cover`), rather
+	 * than fit inside it? True for stacked layouts, whose screen box is an arbitrary-ratio
 	 * slot. This is `computeCompositeLayout(...).screenCover`, which `frameRenderer` already
 	 * honours on the web path; shipping it here is what lets the native compositor agree.
 	 * Without it native stretched the source to fill the slot — most visible on a cropped
@@ -536,14 +540,11 @@ export function buildSceneDescription(
 		() => createId("speed"),
 	);
 
-	// Webcam rect, single source of truth between preview & native :
-	// on résout le rect AVEC LA MÊME maths que `PreviewCanvas.computeCompositeLayout` et on
-	// l'envoie au natif dans `layout.webcamRect` (fractions du cadre de sortie). Le natif le
-	// consomme tel quel (voir `compositor.rs::preset_placements` bypass). La résolution ici se
-	// fait sur la résolution de sortie (= taille du canvas rendu) avec les unités sources du
-	// premier asset visible — la même convention que `pickOutputDims` + SCREEN_SOURCE_SIZE /
-	// WEBCAM_SOURCE_SIZE dans PreviewCanvas — ce qui garde preview/export/natif alignés.
-	const outputDims = pickOutputDims(document, settings.aspectRatio);
+	// Webcam rect is the single source of truth for the preview and native compositor.
+	// Resolve it with the same `computeCompositeLayout` math used by PreviewCanvas, then
+	// send normalized output-frame coordinates through `layout.webcamRect`. The native
+	// compositor consumes the resolved rect directly.
+	const outputDims = pickOutputDims(document, settings.aspectRatio, {}, settings.outputResolution);
 	// ponytail: when the active camera has been probed (real webcam dims cached by
 	// WebcamOverlay's loadedmetadata handler), use them so the box matches the actual
 	// camera aspect. Without this the box defaults to a hardcoded 4:3 (960x720) and the
@@ -552,8 +553,8 @@ export function buildSceneDescription(
 	// shipped to a 4:3 box). The probed size is keyed by sourcePath and survives across
 	// re-mounts of the same camera — `webcamSourceSize` is the dimension snapshot the
 	// caller (NativeCompositorOverlay) currently knows about.
-	// The block layouts (side-by-side / top-bottom) inset the welded screen+camera
-	// block by the padding, so the rect we ship must be resolved against the same
+	// Block layouts inset the combined screen and camera area by the padding. Resolve
+	// the exported rect against the same
 	// padded content area the preview uses — `compositor.rs` consumes an app-provided
 	// `webcamRect` verbatim (it only scale_frame's the SCREEN by padding), so an
 	// unpadded rect here would leave the camera behind while the screen moved.
@@ -610,6 +611,8 @@ export function buildSceneDescription(
 			webcamSizePreset: settings.webcamSizePreset,
 			webcamPosition: preset === "picture-in-picture" ? settings.webcamPosition : null,
 			webcamMaskShape: settings.webcamMaskShape,
+			webcamBlockOrder: settings.webcamBlockOrder,
+			webcamBlockCameraShare: settings.webcamBlockCameraShare,
 		});
 	};
 	const toFrameFractions = (r: RenderRect) => ({
@@ -660,6 +663,8 @@ export function buildSceneDescription(
 			// web-consistent 0..1 fraction of the canvas reference dimension
 			// (see `SceneLayout.webcamSize` for the consumer-facing semantics).
 			webcamSize: webcamSizeToFraction(settings.webcamSizePreset),
+			webcamZoom: settings.webcamZoom,
+			webcamFocalPoint: settings.webcamFocalPoint,
 			// The RESOLVED shape, not the raw setting — the block layouts always cut a
 			// rectangle, whatever shape the user last picked under picture-in-picture.
 			webcamShape: computedLayout?.webcamRect?.maskShape ?? settings.webcamMaskShape,
@@ -835,6 +840,9 @@ export function buildSceneDescription(
 			clipIndex: region.clipIndex,
 		})),
 		cropByClip,
-		output: { ...pickOutputDims(document, settings.aspectRatio), fps: null },
+		output: {
+			...pickOutputDims(document, settings.aspectRatio, {}, settings.outputResolution),
+			fps: null,
+		},
 	};
 }

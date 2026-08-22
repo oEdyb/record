@@ -74,7 +74,7 @@ export function SourceSelector() {
 				style={{ minHeight: "100vh" }}
 			>
 				<div className="text-center">
-					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#10b981] mx-auto mb-2" />
+					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[var(--accent)] mx-auto mb-2" />
 					<p className="text-xs text-[#828c99]">{t("sourceSelector.loading")}</p>
 				</div>
 			</div>
@@ -96,7 +96,7 @@ export function SourceSelector() {
 					</p>
 					<Button
 						onClick={() => void fetchSources()}
-						className="mt-4 h-8 rounded-[9px] bg-[#10b981] px-5 text-[11px] font-semibold text-[#08090d] transition-transform duration-150 hover:bg-[#10b981]/85 active:scale-95"
+						className="mt-4 h-8 rounded-[9px] bg-[var(--accent)] px-5 text-[11px] font-semibold text-[var(--accent-on)] transition-[background-color,transform] duration-150 hover:bg-[var(--brand-lo)] active:scale-95"
 					>
 						{tc("actions.reload")}
 					</Button>
@@ -149,13 +149,13 @@ export function SourceSelector() {
 				<TabsList className="flex items-center gap-1.5 h-auto p-3.5 rounded-none bg-transparent border-b border-[#191d24] flex-shrink-0">
 					<TabsTrigger
 						value="screens"
-						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-all data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
+						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-[background-color,border-color,color] data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
 					>
 						{t("sourceSelector.screens", { count: String(screenSources.length) })}
 					</TabsTrigger>
 					<TabsTrigger
 						value="windows"
-						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-all data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
+						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-[background-color,border-color,color] data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
 					>
 						{t("sourceSelector.windows", { count: String(windowSources.length) })}
 					</TabsTrigger>
@@ -190,7 +190,7 @@ export function SourceSelector() {
 					data-testid="source-selector-share-button"
 					onClick={handleShare}
 					disabled={!selectedSource}
-					className="h-9 rounded-[9px] bg-[#10b981] px-5 text-[13px] font-semibold text-[#08090d] transition-transform duration-150 hover:bg-[#10b981]/85 active:scale-95 disabled:bg-[#232830] disabled:border disabled:border-[#242932] disabled:text-[#565f6b] disabled:opacity-100"
+					className="h-9 rounded-[9px] bg-[var(--accent)] px-5 text-[13px] font-semibold text-[var(--accent-on)] transition-[background-color,transform] duration-150 hover:bg-[var(--brand-lo)] active:scale-95 disabled:bg-[#232830] disabled:border disabled:border-[#242932] disabled:text-[#565f6b] disabled:opacity-100"
 				>
 					{tc("actions.share")}
 				</Button>

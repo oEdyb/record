@@ -460,6 +460,7 @@ export const zoomRegionSchema = endGteStart(
 		motionStyle: z.enum(["smooth", "snappy", "linear", "instant"]).optional(),
 		motionSpeed: z.custom<MotionSpeed>(isMotionSpeed, "Invalid motion speed").optional(),
 		source: z.enum(["auto", "manual"]).optional(),
+		directionGroupId: z.string().min(1).optional(),
 	}),
 	"endMs",
 	"startMs",

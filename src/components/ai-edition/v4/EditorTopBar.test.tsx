@@ -23,6 +23,7 @@ function renderTopBar(projectTitle: string | null) {
 	const onRename = vi.fn();
 	const onRecord = vi.fn();
 	const onRegenerate = vi.fn();
+	const onImportMedia = vi.fn();
 	render(
 		<EditorTopBar
 			mode="edit"
@@ -30,12 +31,15 @@ function renderTopBar(projectTitle: string | null) {
 			projectTitle={projectTitle}
 			dirty={false}
 			canExport={false}
+			canImportMedia={projectTitle != null}
 			canRegenerateAutomaticEdits={projectTitle != null}
 			regeneratingAutomaticEdits={false}
+			importingMedia={false}
 			chatOpen={false}
 			actions={{
 				openProject: noop,
 				newProject: noop,
+				importMedia: onImportMedia,
 				save: noop,
 				export: noop,
 				openSettings: noop,
@@ -46,17 +50,43 @@ function renderTopBar(projectTitle: string | null) {
 			}}
 		/>,
 	);
-	return { onRename, onRecord, onRegenerate };
+	return { onRename, onRecord, onRegenerate, onImportMedia };
 }
 
 describe("editor workspace navigation", () => {
-	it("keeps recording as an action instead of a third editor tab", () => {
+	it("shows recording as the one workspace action while the inherited Media workspace is hidden", () => {
 		const { onRecord } = renderTopBar("Demo Project");
 
-		expect(screen.getAllByRole("tab")).toHaveLength(2);
+		expect(screen.queryByRole("tab")).not.toBeInTheDocument();
 		expect(screen.queryByRole("tab", { name: "topbar.modes.rec" })).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "topbar.toggleChatPanel" }),
+		).not.toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "rec.startRecording" }));
 		expect(onRecord).toHaveBeenCalledOnce();
+	});
+
+	it("groups Record with Export instead of leaving it loose in the title bar", () => {
+		renderTopBar("Demo Project");
+		const record = screen.getByRole("button", { name: "rec.startRecording" });
+		const exportButton = screen.getByRole("button", { name: "topbar.export" });
+
+		expect(record.parentElement).toBe(exportButton.parentElement);
+	});
+
+	it("keeps a compact media import action in the editor", () => {
+		const { onImportMedia } = renderTopBar("Demo Project");
+
+		fireEvent.click(screen.getByRole("button", { name: "mediaStage.importMedia" }));
+		expect(onImportMedia).toHaveBeenCalledOnce();
+	});
+
+	it("announces save state as quiet status text", () => {
+		renderTopBar("Demo Project");
+
+		expect(screen.getByRole("status")).toBeInTheDocument();
+		expect(screen.getByText("topbar.saved")).toHaveAttribute("data-on", "true");
+		expect(screen.getByText("topbar.unsaved")).toHaveAttribute("data-on", "false");
 	});
 
 	it("exposes automatic-edit regeneration as one editor action", () => {

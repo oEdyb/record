@@ -162,8 +162,8 @@ service stores exactly what `JSON.stringify(document, null, 2)` produces.
 | Code | `src/lib/ai-edition/store/projectStore.ts` | `electron/ai-edition/document-service.ts` |
 | Role | Live editor state, transport (`playing`, `currentTimeSec`, `sourceDurationSec`), `dirty`/`lastSavedAt` | Read, write, list, add asset, remove asset |
 | Transport | `nativeBridgeClient.aiEdition.*` IPC | — |
-| On disk | — | `userData/projects/<id>.openscreen` (one JSON per project) |
-| Extension | — | **`.openscreen`**. Older builds wrote the same v3/v4 documents under `.axcut`; the service renames them to `.openscreen` on first access (`migrateLegacyExtensions`, lines 119-145). The file content is unchanged — the extension migration is a pure rename keyed off the schema version in the JSON, not the file name. |
+| On disk | — | `userData/projects/<id>.klippt` (one JSON per project) |
+| Extension | — | **`.klippt`**. Klippt still reads legacy `.openscreen` and `.axcut` projects. After validation, the service writes an equivalent `.klippt` copy and keeps the legacy file as a rollback copy. The JSON schema, not the file extension, determines compatibility. |
 | Atomicity | — | Temp + rename per save (`writeProjectNow`, lines 354-394), with a per-project write queue (`writeQueues`, line 106) so two concurrent saves serialise and an interrupted write cannot leave a half-written document behind. |
 
 Both layers run every read through `migrateRawDocumentToCurrent` then

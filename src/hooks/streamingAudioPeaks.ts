@@ -1,4 +1,5 @@
 import { WebDemuxer } from "web-demuxer";
+import { waveformPeakBlockCount } from "@/lib/audio/waveformPeaks";
 import { audioDataFrameToMono } from "@/lib/captioning/extractMono16kWebDemuxer";
 
 /**
@@ -9,20 +10,18 @@ import { audioDataFrameToMono } from "@/lib/captioning/extractMono16kWebDemuxer"
  * This module demuxes the audio track with web-demuxer (which reads the File
  * on demand), decodes it chunk by chunk with WebCodecs `AudioDecoder`, and
  * folds every decoded frame straight into min/max peak buckets, closing the
- * frame immediately. Peak memory is the buckets array (≤ 24k blocks ≈ 192 kB)
- * plus a handful of in-flight frames, regardless of recording length.
+ * frame immediately. Peak memory is the bounded min/max envelope (about
+ * 5.5 MiB at its one-hour detail cap) plus a handful of in-flight frames,
+ * regardless of recording length.
  *
  * Output matches `audioPeaksWorker.ts` exactly: Float32Array of length 2*N,
- * `[min0, max0, min1, max1, ...]`, N = min(24000, ceil(duration * 200)), with
- * min/max starting from 0 (silence baseline) and channels averaged per sample.
+ * `[min0, max0, min1, max1, ...]`, with five-millisecond source blocks for up
+ * to one hour. Min/max start from 0 and channels are averaged per sample.
  */
 
 const DECODE_QUEUE_BACKPRESSURE = 20;
 const LOAD_TIMEOUT_MS = 60_000;
 const READ_END_PADDING_SEC = 0.5;
-// Keep in sync with audioPeaksWorker.ts so both paths render identically.
-const MAX_PEAK_BLOCKS = 24_000;
-const PEAK_BLOCKS_PER_SEC = 200;
 // Upper bound for the duration fallback scan when container metadata is
 // unreliable (MediaRecorder WebM often reports 0/Infinity — see
 // streamingDecoder's validateDuration). Same ceiling as the export scan.
@@ -118,7 +117,7 @@ export async function computePeaksFromFileStreaming(
 			throw new Error("Unknown duration; cannot bucket waveform peaks.");
 		}
 
-		const blocks = Math.min(MAX_PEAK_BLOCKS, Math.ceil(durationSec * PEAK_BLOCKS_PER_SEC));
+		const blocks = waveformPeakBlockCount(durationSec);
 		const totalSamples = Math.max(1, Math.ceil(durationSec * sampleRate));
 		const peaks = new Float32Array(blocks * 2); // [min0, max0, min1, max1, ...]
 

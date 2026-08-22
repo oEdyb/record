@@ -800,10 +800,7 @@ function solveStablePassageGroups(
 ): Array<{ detectorChains: ConnectedClickSample[][]; solved: SolvedVisualPassage }> {
 	const whole = solveVisualPassage(detectorChains.flat(), samples, durationMs, policy);
 	if (!whole) return [];
-	const renewable = detectorChains
-		.flat()
-		.some((sample) => sample.directionActivityId?.startsWith("typing-"));
-	if (renewable || detectorChains.length === 1 || whole.scale >= policy.passageMinimumStableScale) {
+	if (detectorChains.length === 1 || whole.scale >= policy.passageMinimumStableScale) {
 		return [{ detectorChains, solved: whole }];
 	}
 
@@ -886,13 +883,68 @@ function solveStablePassageGroups(
 		if (index === 0) return false;
 		return groups[index - 1].solved.zooms.at(-1)!.span.end > group.solved.zooms[0].span.start;
 	});
+	const containsTyping = detectorChains
+		.flat()
+		.some((sample) => sample.directionActivityId?.startsWith("typing-"));
+	let hasUnresolvedUnsafeHandoff = false;
+	if (!hasUnresolvedOverlap && containsTyping) {
+		for (let index = 1; index < groups.length; index += 1) {
+			const previous = groups[index - 1];
+			const current = groups[index];
+			const pairSafety = safetyForZooms(
+				[...previous.solved.zooms, ...current.solved.zooms],
+				samples,
+				[...previous.detectorChains.flat(), ...current.detectorChains.flat()],
+				policy,
+			);
+			if (pairSafety.croppedFrames === 0) continue;
+
+			// A connected pan that would crop the real cursor is not a valid handoff.
+			// Keep both locally safe groups and insert the smallest renderer-level
+			// disconnect instead of flattening the complete visual passage.
+			const previousZoom = previous.solved.zooms.at(-1)!;
+			const currentZoom = current.solved.zooms[0];
+			let missingGapMs = Math.max(
+				0,
+				CHAINED_ZOOM_PAN_GAP_MS + 1 - (currentZoom.span.start - previousZoom.span.end),
+			);
+			const currentIntentMs = current.detectorChains[0][0].timeMs;
+			const latestCurrentStart = Math.min(
+				currentIntentMs,
+				currentZoom.span.end - policy.minimumTargetHoldMs,
+			);
+			const delayedStartMs = Math.min(
+				missingGapMs,
+				Math.max(0, latestCurrentStart - currentZoom.span.start),
+			);
+			currentZoom.span.start += delayedStartMs;
+			missingGapMs -= delayedStartMs;
+
+			const previousIntentMs = previous.detectorChains.at(-1)!.at(-1)!.timeMs;
+			const earliestPreviousEnd = Math.max(
+				previousIntentMs + policy.minimumTargetHoldMs,
+				previousZoom.span.start + policy.minimumTargetHoldMs,
+			);
+			const shortenedEndMs = Math.min(
+				missingGapMs,
+				Math.max(0, previousZoom.span.end - earliestPreviousEnd),
+			);
+			previousZoom.span.end -= shortenedEndMs;
+			missingGapMs -= shortenedEndMs;
+
+			if (missingGapMs > 0) {
+				hasUnresolvedUnsafeHandoff = true;
+				break;
+			}
+		}
+	}
 	const combinedSafety = safetyForZooms(
 		groups.flatMap((group) => group.solved.zooms),
 		samples,
 		detectorChains.flat(),
 		policy,
 	);
-	if (hasUnresolvedOverlap || combinedSafety.croppedFrames > 0) {
+	if (hasUnresolvedOverlap || hasUnresolvedUnsafeHandoff || combinedSafety.croppedFrames > 0) {
 		return whole.croppedFrames === 0 ? [{ detectorChains, solved: whole }] : [];
 	}
 	return groups;
