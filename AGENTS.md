@@ -646,7 +646,7 @@ not prove the helper contains the current source.
 
 ## Code and test rules
 
-- Do not use TestSprite for Klippt unless Olle explicitly asks for it.
+- Never use TestSprite for Klippt. Do not install it, run it, or mention it in progress or completion reports.
 - TypeScript is strict. Do not add explicit `any`.
 - Match the surrounding module's architecture. Do not refactor unrelated code.
 - React uses functional components and top-level hooks.

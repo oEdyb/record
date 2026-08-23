@@ -311,7 +311,7 @@ Evidence on 2026-08-19:
   [`test-results/gate2-macos-soak-2026-08-19T16-36-19-300Z.json`](test-results/gate2-macos-soak-2026-08-19T16-36-19-300Z.json).
 - Automated verification passed 191 test files with 2,210 tests and one skip, both TypeScript
   targets, production web/Electron builds, all 12 locale checks, docs, Biome, diff checks, and an
-  independent review with no Critical or Important finding. TestSprite was not used.
+  independent review with no Critical or Important finding.
 - A real existing two-clip project exported 96.483 seconds at 2560×1440 and 60 fps. The first
   export exposed a normal-use audio defect: fixed-gain normalization stayed at −19.83 LUFS because
   short peaks exhausted its headroom. Export mastering now uses bounded make-up gain, a
