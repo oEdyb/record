@@ -405,6 +405,37 @@
 		"save": "Guardar",
 		"saveAndUse": "Guardar y usar"
 	},
+	"entitlement": {
+		"status": {
+			"trialNotStarted": "Prueba de 14 días",
+			"trialDay": "Prueba · {{count}} día",
+			"trialDays": "Prueba · {{count}} días",
+			"offline": "Klippt Pro · Sin conexión",
+			"readOnly": "Solo lectura"
+		},
+		"eyebrowReadOnly": "Acceso de solo lectura",
+		"eyebrowPro": "Klippt Pro",
+		"titleExpired": "Tus proyectos están seguros.",
+		"titleTrial": "Deja cada grabación lista para publicar.",
+		"descriptionExpired": "Klippt está ahora en modo de solo lectura. Continúa con Pro para {{capability}}.",
+		"descriptionTrial": "Tu prueba incluye la grabadora, el editor, la dirección automática y las exportaciones finales.",
+		"capability": {
+			"record": "grabar nuevos clips",
+			"edit": "editar este proyecto",
+			"import": "importar contenido nuevo",
+			"export": "exportar un vídeo terminado",
+			"automatic-editing": "usar la edición automática",
+			"default": "grabar, editar y exportar"
+		},
+		"benefitClips": "Grabación por clips con Pausa, Continuar y Eliminar clip anterior",
+		"benefitAutomatic": "Zooms automáticos editables, énfasis de cámara y eliminación de silencios",
+		"benefitExport": "Vista previa y exportación local de alta calidad",
+		"getPro": "Obtener Klippt Pro",
+		"licenseKey": "Clave de licencia",
+		"activate": "Activar",
+		"filesSafe": "Ningún proyecto ni archivo de origen se elimina cuando termina el acceso.",
+		"manage": "Gestionar"
+	},
 	"cpuCompositor": {
 		"notice": "Sin GPU compatible: el renderizado se hace en la CPU, por lo que la reproducción es más lenta.",
 		"exportWarning": "Sin GPU compatible: esta exportación se ejecuta en la CPU y tardará mucho más de lo normal."

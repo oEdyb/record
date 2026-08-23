@@ -45,6 +45,7 @@ interface PreviewProps {
 	// the parent shell — Preview only needs `playing` to report it on the
 	// data-is-playing test attribute.
 	playing: boolean;
+	screenFramingEnabled?: boolean;
 }
 
 export function Preview({
@@ -72,6 +73,7 @@ export function Preview({
 	onLoadedMetadata,
 	onVideoElement,
 	playing,
+	screenFramingEnabled = false,
 }: PreviewProps) {
 	const te = useScopedT("editor");
 	// Subscribed HERE rather than passed down from NewEditorShell: the playhead is
@@ -162,6 +164,7 @@ export function Preview({
 					onVideoElement={onVideoElement}
 					currentTimeSec={currentTimeSec}
 					onVideoError={handleVideoError}
+					screenFramingEnabled={screenFramingEnabled}
 				/>
 			) : (
 				<EditorEmptyState hasProject={hasProject} />

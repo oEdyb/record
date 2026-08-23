@@ -575,15 +575,21 @@ Klippt is Mac-first, not Mac-only.
 This is a private proprietary product intended to make money.
 
 - The first commercial release is a subscription-first paid private alpha. Keep one simple Klippt
-  Pro entitlement. Monthly and annual prices can map to the same product capability.
+  Pro entitlement. The founding price is $19 per month or $99 per year; both prices unlock the same
+  product capability.
 - Keep billing behind a small provider adapter. Do not embed a provider API secret in the desktop
   app. Store local license state with Electron `safeStorage`, allow a bounded offline grace period,
   and validate again when the network returns.
+- Use Lemon Squeezy as the first provider and its subscription-linked license keys for activation.
+  The provider adapter, local entitlement service, and UI are implemented. Commercial enforcement
+  stays off until the public store, product, variant, and checkout identifiers are configured.
+- Start one 14-day no-card trial only after the first successful recording is durable. Before that
+  recording, the complete product remains available so setup is not part of the trial clock.
+- When the trial or subscription expires, keep existing projects available as a read-only viewer.
+  Allow playback and untouched source recovery. Block recording, imports, document edits,
+  automatic editing, regeneration, and finished exports. Never delete or hide project media.
 - An entitlement failure must never delete, corrupt, or hide the user's local recordings and
   projects. Do not interrupt an active recording or export because a validation request fails.
-- Lemon Squeezy is the current fastest provider candidate because it can be the merchant of record
-  and connect subscription status to license keys. It is not selected until Olle creates the store,
-  chooses prices and trial behavior, and provides the public product identifiers.
 - The pinned OpenScreen base is MIT licensed and permits commercial proprietary use.
 - Preserve the exact upstream copyright and MIT permission notice in source and every
   distribution.

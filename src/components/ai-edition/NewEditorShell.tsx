@@ -26,6 +26,7 @@ import { useUndoRedoShortcuts } from "@/lib/ai-edition/store/undo";
 import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTimelineOps";
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
+import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
 import { AUTOMATIC_TRANSCRIPTION_ENABLED, PRODUCT_SURFACE } from "@/lib/productSurface";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
@@ -79,6 +80,27 @@ export function NewEditorShell() {
 	// to know or drive playback reads/writes this store field now, not a component-local copy.
 	const playing = useProjectStore((s) => s.playing);
 	const setPlaying = useProjectStore((s) => s.setPlaying);
+	const entitlement = useEntitlementStore((s) => s.snapshot);
+	const openEntitlement = useEntitlementStore((s) => s.openDialog);
+	const entitlementLabel = (() => {
+		switch (entitlement.status) {
+			case "trial-not-started":
+				return te("entitlement.status.trialNotStarted");
+			case "trial-active":
+				return te(
+					entitlement.trialDaysRemaining === 1
+						? "entitlement.status.trialDay"
+						: "entitlement.status.trialDays",
+					{ count: entitlement.trialDaysRemaining ?? 0 },
+				);
+			case "offline-grace":
+				return te("entitlement.status.offline");
+			case "expired":
+				return te("entitlement.status.readOnly");
+			default:
+				return null;
+		}
+	})();
 
 	const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
 	const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
@@ -699,6 +721,7 @@ export function NewEditorShell() {
 
 	const handleRenameProject = useCallback(
 		async (title: string) => {
+			if (!requireEntitlement("edit")) return;
 			const doc = useProjectStore.getState().document;
 			if (!doc) return;
 			if (title === doc.project.title) return;
@@ -743,9 +766,14 @@ export function NewEditorShell() {
 	);
 
 	const handleImportMedia = useCallback(async () => {
+		if (!requireEntitlement("import")) return;
 		if (!useProjectStore.getState().projectId || importingMedia) return;
 		const picker = await window.electronAPI?.openVideoFilePicker?.();
-		if (!picker?.success || picker.canceled || !picker.path) return;
+		if (!picker?.success) {
+			if (picker?.code === "ENTITLEMENT_REQUIRED") openEntitlement("import");
+			return;
+		}
+		if (picker.canceled || !picker.path) return;
 
 		setImportingMedia(true);
 		try {
@@ -762,9 +790,10 @@ export function NewEditorShell() {
 		} finally {
 			setImportingMedia(false);
 		}
-	}, [addAsset, importingMedia, te, tl]);
+	}, [addAsset, importingMedia, openEntitlement, te, tl]);
 
 	const handleNewRecording = useCallback(async () => {
+		if (!requireEntitlement("record")) return;
 		const api = window.electronAPI;
 		if (!api?.startNewRecording) return;
 		try {
@@ -797,15 +826,22 @@ export function NewEditorShell() {
 						}
 					: undefined;
 			const result = await api.startNewRecording(context);
-			if (!result.success) throw new Error(result.error ?? "Could not open recording controls");
+			if (!result.success) {
+				if (result.code === "ENTITLEMENT_REQUIRED") {
+					openEntitlement("record");
+					return;
+				}
+				throw new Error(result.error ?? "Could not open recording controls");
+			}
 		} catch (err) {
 			toast.error("Could not open recording controls", {
 				description: err instanceof Error ? err.message : String(err),
 			});
 		}
-	}, [facet, inspectorOpen, mode, saveDocument, setPlaying]);
+	}, [facet, inspectorOpen, mode, openEntitlement, saveDocument, setPlaying]);
 
 	const handleExport = useCallback(() => {
+		if (!requireEntitlement("export")) return;
 		if (!hasAsset) {
 			toast.info("Add a video to the project before exporting.");
 			return;
@@ -814,6 +850,7 @@ export function NewEditorShell() {
 	}, [hasAsset]);
 
 	const handleRegenerateAutomaticEdits = useCallback(async () => {
+		if (!requireEntitlement("automatic-editing")) return;
 		const activeProjectId = useProjectStore.getState().projectId;
 		if (!activeProjectId || regeneratingAutomaticEdits) return;
 		setPlaying(false);
@@ -1252,11 +1289,14 @@ export function NewEditorShell() {
 				regeneratingAutomaticEdits={regeneratingAutomaticEdits}
 				importingMedia={importingMedia}
 				chatOpen={chatOpen}
+				readOnly={entitlement.access === "read-only"}
+				entitlementLabel={entitlementLabel}
+				onEntitlement={() => openEntitlement()}
 				actions={{
 					openProject: () => setOpenProjectOpen(true),
-					newProject: () => setNewProjectOpen(true),
+					newProject: () => requireEntitlement("edit") && setNewProjectOpen(true),
 					importMedia: () => void handleImportMedia(),
-					save: () => void handleSave(),
+					save: () => requireEntitlement("edit") && void handleSave(),
 					export: handleExport,
 					openSettings: handleOpenSettings,
 					renameProject: handleRenameProject,
@@ -1346,6 +1386,9 @@ export function NewEditorShell() {
 									onLoadedMetadata={handleLoadedMetadata}
 									onVideoElement={setVideoElement}
 									playing={playing}
+									screenFramingEnabled={
+										inspectorOpen && facet === "layout" && tl.selection === null
+									}
 								/>
 							</div>
 							<FloatingInspector

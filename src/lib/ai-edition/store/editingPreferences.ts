@@ -14,6 +14,7 @@ import type {
 	GifFrameRate,
 	GifSizePreset,
 } from "@/lib/exporter";
+import { normalizeScreenFramingByVariant } from "@/lib/screenFraming";
 import { isAspectRatio } from "@/utils/aspectRatioUtils";
 import {
 	type CaptionSettings,
@@ -75,6 +76,7 @@ function cloneEditorDefaults(): EditorDefaultPreferences {
 	return {
 		...defaults,
 		outputResolution: defaults.outputResolution ? { ...defaults.outputResolution } : null,
+		screenFramingByVariant: normalizeScreenFramingByVariant(defaults.screenFramingByVariant),
 		webcamPosition: defaults.webcamPosition ? { ...defaults.webcamPosition } : null,
 		webcamFocalPoint: { ...defaults.webcamFocalPoint },
 		cursor: { ...defaults.cursor },
@@ -145,6 +147,7 @@ function normalizeEditorDefaults(
 		wallpaper: isReusableWallpaper(raw?.wallpaper) ? raw.wallpaper : defaults.wallpaper,
 		aspectRatio: isAspectRatio(raw?.aspectRatio) ? raw.aspectRatio : legacyAspect,
 		outputResolution: normalizeOutputResolution(raw?.outputResolution),
+		screenFramingByVariant: normalizeScreenFramingByVariant(raw?.screenFramingByVariant),
 		shadowIntensity: numberInRange(raw?.shadowIntensity, defaults.shadowIntensity, 0, 1),
 		showBlur: booleanOr(raw?.showBlur, defaults.showBlur),
 		motionBlurAmount: numberInRange(raw?.motionBlurAmount, defaults.motionBlurAmount, 0, 1),
@@ -359,6 +362,7 @@ export function editorDefaultPreferencesToPatch(
 		wallpaper: preferences.wallpaper,
 		aspectRatio: preferences.aspectRatio,
 		outputResolution: preferences.outputResolution,
+		screenFramingByVariant: preferences.screenFramingByVariant,
 		shadowIntensity: preferences.shadowIntensity,
 		showBlur: preferences.showBlur,
 		motionBlurAmount: preferences.motionBlurAmount,

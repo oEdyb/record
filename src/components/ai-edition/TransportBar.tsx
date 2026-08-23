@@ -1,5 +1,6 @@
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { memo, useCallback, useEffect, useRef } from "react";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
@@ -142,34 +143,41 @@ export const TransportBar = memo(function TransportBar({
 
 	return (
 		<div className={styles.transport} role="toolbar" aria-label={te("transport.playbackControls")}>
-			<button
-				type="button"
-				className={`${styles.tbtn} ${styles.play}`}
-				title={te("transport.playPauseTitle")}
-				aria-label={te("transport.playPause")}
-				data-playing={playing}
-				onClick={onTogglePlay}
-			>
-				{playing ? <Pause size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
-			</button>
-			<button
-				type="button"
-				className={styles.tbtn}
-				title={te("transport.previousClip")}
-				aria-label={te("transport.previousClip")}
-				onClick={onPrevClip}
-			>
-				<SkipBack size={13} />
-			</button>
-			<button
-				type="button"
-				className={styles.tbtn}
-				title={te("transport.nextClip")}
-				aria-label={te("transport.nextClip")}
-				onClick={onNextClip}
-			>
-				<SkipForward size={13} />
-			</button>
+			<Tooltip content={te("transport.playPauseTitle")} side="top">
+				<button
+					type="button"
+					className={`${styles.tbtn} ${styles.play}`}
+					aria-label={te("transport.playPause")}
+					data-playing={playing}
+					onClick={onTogglePlay}
+				>
+					{playing ? (
+						<Pause size={13} fill="currentColor" />
+					) : (
+						<Play size={13} fill="currentColor" />
+					)}
+				</button>
+			</Tooltip>
+			<Tooltip content={te("transport.previousClip")} side="top">
+				<button
+					type="button"
+					className={styles.tbtn}
+					aria-label={te("transport.previousClip")}
+					onClick={onPrevClip}
+				>
+					<SkipBack size={13} />
+				</button>
+			</Tooltip>
+			<Tooltip content={te("transport.nextClip")} side="top">
+				<button
+					type="button"
+					className={styles.tbtn}
+					aria-label={te("transport.nextClip")}
+					onClick={onNextClip}
+				>
+					<SkipForward size={13} />
+				</button>
+			</Tooltip>
 			<span className={styles.time}>
 				<span>{formatSec(currentTimeSec)}</span>
 				<span className={styles.sep}>/</span>

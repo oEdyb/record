@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 // The regression under test is geometric, so the environment has to have a size:
 // jsdom reports 0 for every box, which would leave `pxPerSec` at 0 (the
@@ -117,17 +118,19 @@ function renderTimeline(
 		splitClipAtPlayhead: vi.fn(async () => true),
 	};
 	render(
-		<V4Timeline
-			// Only the members the lanes and the clip row read are mocked; the prop
-			// stays typed as the real API rather than widened to `any` (AGENTS.md).
-			tl={tl as unknown as ReturnType<typeof useTimeline>}
-			setCurrentTime={vi.fn()}
-			playing={false}
-			onTogglePlay={vi.fn()}
-			onPrevClip={vi.fn()}
-			onNextClip={vi.fn()}
-			onEditClip={vi.fn()}
-		/>,
+		<TooltipProvider delayDuration={0}>
+			<V4Timeline
+				// Only the members the lanes and the clip row read are mocked; the prop
+				// stays typed as the real API rather than widened to `any` (AGENTS.md).
+				tl={tl as unknown as ReturnType<typeof useTimeline>}
+				setCurrentTime={vi.fn()}
+				playing={false}
+				onTogglePlay={vi.fn()}
+				onPrevClip={vi.fn()}
+				onNextClip={vi.fn()}
+				onEditClip={vi.fn()}
+			/>
+		</TooltipProvider>,
 	);
 	return {
 		pill: screen.getByTitle("toolbar.newAnnotation"),
@@ -344,16 +347,35 @@ describe("V4Timeline create-from-toolbar", () => {
 	const durationOf = (tl: { addZoom: ReturnType<typeof vi.fn> }) =>
 		tl.addZoom.mock.calls.at(-1)?.[0] as number;
 
+	it("shows the tool name on keyboard focus without a native title", async () => {
+		renderTimeline();
+		const button = screen.getByRole("button", { name: "buttons.addZoom" });
+		expect(button).not.toHaveAttribute("title");
+
+		fireEvent.focus(button);
+		await waitFor(() => {
+			expect(document.querySelector('[data-slot="tooltip-content"]')).toHaveTextContent(
+				"buttons.addZoom",
+			);
+		});
+	});
+
+	it("keeps the automatic-actions popover working through its tooltip trigger", () => {
+		renderTimeline();
+		fireEvent.click(screen.getByRole("button", { name: "toolbar.autoEnhance" }));
+		expect(screen.getByText("toolbar.automaticZooms")).toBeVisible();
+	});
+
 	it("scales the new region's duration with the zoom", () => {
 		const { tl } = renderTimeline();
-		fireEvent.click(screen.getByTitle("buttons.addZoom"));
+		fireEvent.click(screen.getByRole("button", { name: "buttons.addZoom" }));
 		// 900px viewport / 1800 s = 0.5 px per second, so a 96px pill is 192 s.
 		expect(durationOf(tl)).toBeCloseTo(192, 3);
 
 		// Zoomed to the 50x ceiling the same 96px is worth 3.84 s: same pill on
 		// screen, a region 50x shorter.
 		zoomIn(40);
-		fireEvent.click(screen.getByTitle("buttons.addZoom"));
+		fireEvent.click(screen.getByRole("button", { name: "buttons.addZoom" }));
 		expect(durationOf(tl)).toBeCloseTo(3.84, 3);
 	});
 
@@ -362,13 +384,13 @@ describe("V4Timeline create-from-toolbar", () => {
 		// second; the region would be born unusable, so the duration floors.
 		const { tl } = renderTimeline([clip(0, 3)]);
 		zoomIn(40);
-		fireEvent.click(screen.getByTitle("buttons.addZoom"));
+		fireEvent.click(screen.getByRole("button", { name: "buttons.addZoom" }));
 		expect(durationOf(tl)).toBeCloseTo(0.25, 3);
 	});
 
 	it("exposes the normal Split action through the timeline toolbar", () => {
 		const { tl } = renderTimeline([clip(0, 10)]);
-		fireEvent.click(screen.getByTitle("buttons.splitClip"));
+		fireEvent.click(screen.getByRole("button", { name: "buttons.splitClip" }));
 		expect(tl.splitClipAtPlayhead).toHaveBeenCalledTimes(1);
 	});
 });

@@ -12,7 +12,8 @@
 // the patch through `patchEditorSettings`, and persists via the store. No
 // extra state, no caches — the document is the single source of truth.
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import type { AxcutDocument } from "../schema";
 import { saveEditorDefaultPreferences } from "./editingPreferences";
 import {
 	type EditorSettingsPatch,
@@ -37,7 +38,10 @@ export interface UseEditorSettingsResult {
 export function useEditorSettings(): UseEditorSettingsResult {
 	const document = useProjectStore((s) => s.document);
 	const setDocument = useProjectStore((s) => s.setDocument);
+	const setDocumentLive = useProjectStore((s) => s.setDocumentLive);
 	const saveDocument = useProjectStore((s) => s.saveDocument);
+	const saveDocumentAsEdit = useProjectStore((s) => s.saveDocumentAsEdit);
+	const liveGestureBaseRef = useRef<AxcutDocument | null>(null);
 
 	const hasDocument = document !== null;
 
@@ -60,18 +64,30 @@ export function useEditorSettings(): UseEditorSettingsResult {
 		(patch: EditorSettingsPatch) => {
 			const doc = useProjectStore.getState().document;
 			if (!doc) return;
-			setDocument(patchEditorSettings(doc, patch));
+			liveGestureBaseRef.current ??= doc;
+			setDocumentLive(patchEditorSettings(doc, patch));
 		},
-		[setDocument],
+		[setDocumentLive],
 	);
 
 	const commit = useCallback(async () => {
 		const doc = useProjectStore.getState().document;
 		if (!doc) return;
-		if (await saveDocument(doc)) {
+		const liveGestureBase = liveGestureBaseRef.current;
+		liveGestureBaseRef.current = null;
+		try {
+			const saved = liveGestureBase
+				? await saveDocumentAsEdit(doc, liveGestureBase)
+				: await saveDocument(doc);
+			if (!saved) return;
 			saveEditorDefaultPreferences(getEditorSettings(doc));
+		} catch (error) {
+			// Keep the gesture base so a later commit can save the same live change as
+			// one Undo step. Do not replace a newer gesture that started meanwhile.
+			liveGestureBaseRef.current ??= liveGestureBase;
+			throw error;
 		}
-	}, [saveDocument]);
+	}, [saveDocument, saveDocumentAsEdit]);
 
 	return { settings, hasDocument, set, setLive, commit };
 }

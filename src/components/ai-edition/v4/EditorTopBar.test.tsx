@@ -19,11 +19,15 @@ import { EditorTopBar } from "./EditorTopBar";
 
 const noop = () => undefined;
 
-function renderTopBar(projectTitle: string | null) {
+function renderTopBar(
+	projectTitle: string | null,
+	options: { readOnly?: boolean; entitlementLabel?: string | null } = {},
+) {
 	const onRename = vi.fn();
 	const onRecord = vi.fn();
 	const onRegenerate = vi.fn();
 	const onImportMedia = vi.fn();
+	const onEntitlement = vi.fn();
 	render(
 		<EditorTopBar
 			mode="edit"
@@ -36,6 +40,9 @@ function renderTopBar(projectTitle: string | null) {
 			regeneratingAutomaticEdits={false}
 			importingMedia={false}
 			chatOpen={false}
+			readOnly={options.readOnly ?? false}
+			entitlementLabel={options.entitlementLabel ?? null}
+			onEntitlement={onEntitlement}
 			actions={{
 				openProject: noop,
 				newProject: noop,
@@ -50,10 +57,23 @@ function renderTopBar(projectTitle: string | null) {
 			}}
 		/>,
 	);
-	return { onRename, onRecord, onRegenerate, onImportMedia };
+	return { onRename, onRecord, onRegenerate, onImportMedia, onEntitlement };
 }
 
 describe("editor workspace navigation", () => {
+	it("shows read-only access without letting the project name enter edit mode", () => {
+		const { onEntitlement, onRename } = renderTopBar("Demo Project", {
+			readOnly: true,
+			entitlementLabel: "Read only",
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "topbar.renameProject" }));
+		expect(onEntitlement).toHaveBeenCalledOnce();
+		expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+		expect(onRename).not.toHaveBeenCalled();
+		expect(screen.getByRole("button", { name: /Read only/ })).toBeInTheDocument();
+	});
+
 	it("shows recording as the one workspace action while the inherited Media workspace is hidden", () => {
 		const { onRecord } = renderTopBar("Demo Project");
 

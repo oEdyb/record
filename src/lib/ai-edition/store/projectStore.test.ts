@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEntitlementStore } from "@/lib/entitlements/store";
 import type { AxcutDocument } from "../schema";
 import { saveEditorDefaultPreferences } from "./editingPreferences";
 import { DEFAULT_EDITOR_SETTINGS, getEditorSettings } from "./editorSettings";
@@ -74,11 +75,24 @@ const sampleDoc = {
 
 describe("useProjectStore", () => {
 	beforeEach(() => {
+		useEntitlementStore.setState({
+			snapshot: {
+				version: 1,
+				provider: null,
+				status: "development",
+				access: "full",
+				commerceConfigured: false,
+				checkoutAvailable: false,
+				managementAvailable: false,
+			},
+			dialogOpen: false,
+			blockedCapability: null,
+		});
 		useProjectStore.getState().clear();
 		for (const mock of Object.values(bridgeMocks)) {
 			mock.mockReset();
 		}
-		localStorage.clear();
+		window.localStorage.clear();
 		bridgeMocks.save.mockImplementation(async (document) => ({ success: true, document }));
 		toastMocks.error.mockReset();
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the legacy contextBridge surface
@@ -103,6 +117,37 @@ describe("useProjectStore", () => {
 		expect(state.revision).toBe(1);
 		expect(state.status).toBe("ready");
 		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps an expired project read only and opens the access dialog", async () => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+		});
+		useEntitlementStore.setState({
+			snapshot: {
+				version: 1,
+				provider: "lemon-squeezy",
+				status: "expired",
+				access: "read-only",
+				commerceConfigured: true,
+				checkoutAvailable: true,
+				managementAvailable: false,
+			},
+		});
+		const edited = { ...sampleDoc, project: { ...sampleDoc.project, title: "Changed" } };
+
+		expect(await useProjectStore.getState().saveDocument(edited)).toBe(false);
+		useProjectStore.getState().setDocument(edited);
+
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+		expect(useProjectStore.getState().document?.project.title).toBe("Test");
+		expect(useEntitlementStore.getState()).toMatchObject({
+			dialogOpen: true,
+			blockedCapability: "edit",
+		});
 	});
 
 	it("seeds a new project from the last committed editor settings", async () => {

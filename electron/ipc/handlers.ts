@@ -71,6 +71,8 @@ import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
+import { createEntitlementService } from "../entitlements/createService";
+import { registerEntitlementIpc } from "../entitlements/ipc";
 import { writeJsonDurably } from "../filesystem/durableJson";
 import { mainT } from "../i18n";
 import { RECORDINGS_DIR } from "../main";
@@ -1584,6 +1586,30 @@ export function registerIpcHandlers(
 	options: { restoreInterruptedRecording?: boolean } = {},
 ): Promise<boolean> {
 	isDirectionExcludedPoint = isPrivateRecordingUiPoint ?? (() => false);
+	const { config: entitlementConfig, service: entitlementService } = createEntitlementService({
+		userDataPath: app.getPath("userData"),
+		isPackaged: app.isPackaged,
+	});
+	registerEntitlementIpc(entitlementService, entitlementConfig);
+	const rejectWithoutEntitlement = async (
+		capability: import("../../src/lib/entitlements/contracts").EntitlementCapability,
+	) => {
+		try {
+			await entitlementService.assertCapability(capability);
+			return null;
+		} catch (error) {
+			return {
+				success: false as const,
+				code: "ENTITLEMENT_REQUIRED" as const,
+				error: error instanceof Error ? error.message : "Klippt Pro is required.",
+			};
+		}
+	};
+	const markSuccessfulRecording = () => {
+		void entitlementService.noteSuccessfulRecording().catch((error) => {
+			console.error("Could not start the Klippt trial after recording:", error);
+		});
+	};
 	async function requestScreenAccess() {
 		if (process.platform !== "darwin") {
 			return { success: true, granted: true, status: "granted" };
@@ -1755,6 +1781,8 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("open-source-selector", async () => {
+		const rejection = await rejectWithoutEntitlement("record");
+		if (rejection) return { opened: false, reason: rejection.code, ...rejection };
 		// Nothing to open on Linux WHEN THE NATIVE HELPER IS THERE. The selector's
 		// own `desktopCapturer.getSources()` raises a portal dialog — a SECOND
 		// one, for a session that is thrown away — and whatever it returns cannot
@@ -1829,7 +1857,9 @@ export function registerIpcHandlers(
 		return { success: true };
 	});
 
-	ipcMain.handle("start-new-recording", (_event, context?: RecordingWorkspaceContext) => {
+	ipcMain.handle("start-new-recording", async (_event, context?: RecordingWorkspaceContext) => {
+		const rejection = await rejectWithoutEntitlement("record");
+		if (rejection) return rejection;
 		currentRecordingWorkspaceContext = normalizeRecordingWorkspaceContext(context);
 		_switchToHud?.();
 		return { success: true };
@@ -1935,6 +1965,8 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"prepare-native-linux-recording",
 		async (_, request: NativeLinuxRecordingRequest) => {
+			const rejection = await rejectWithoutEntitlement("record");
+			if (rejection) return rejection;
 			if (process.platform !== "linux") {
 				return { success: false, reason: "unsupported-platform" };
 			}
@@ -2014,6 +2046,8 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"start-native-linux-recording",
 		async (_, request: NativeLinuxRecordingRequest) => {
+			const rejection = await rejectWithoutEntitlement("record");
+			if (rejection) return rejection;
 			try {
 				if (process.platform !== "linux") {
 					return { success: false, error: "Native Linux capture requires Linux." };
@@ -2175,6 +2209,7 @@ export function registerIpcHandlers(
 				videoEncoder: result.videoEncoder,
 				cursorSamples: result.cursor.samples.length,
 			});
+			markSuccessfulRecording();
 
 			return {
 				success: true,
@@ -2200,6 +2235,8 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"start-native-windows-recording",
 		async (_, request: NativeWindowsRecordingRequest) => {
+			const rejection = await rejectWithoutEntitlement("record");
+			if (rejection) return rejection;
 			try {
 				if (!isWindowsGraphicsCaptureOsSupported()) {
 					return {
@@ -2537,9 +2574,11 @@ export function registerIpcHandlers(
 		}
 	};
 
-	ipcMain.handle("start-native-mac-recording", (_, request: NativeMacRecordingRequest) =>
-		invokeNativeMac(() => getNativeMacRecordingService().start(request)),
-	);
+	ipcMain.handle("start-native-mac-recording", async (_, request: NativeMacRecordingRequest) => {
+		const rejection = await rejectWithoutEntitlement("record");
+		if (rejection) return rejection;
+		return invokeNativeMac(() => getNativeMacRecordingService().start(request));
+	});
 	ipcMain.handle("pause-native-mac-recording", () =>
 		invokeNativeMac(() => getNativeMacRecordingService().pause()),
 	);
@@ -2751,6 +2790,7 @@ export function registerIpcHandlers(
 			);
 			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
 			await registerRecordingMediaLinks(screenVideoPath, { webcamVideoPath, cursorCaptureMode });
+			markSuccessfulRecording();
 
 			return {
 				success: true,
@@ -2774,9 +2814,11 @@ export function registerIpcHandlers(
 		}
 	});
 
-	ipcMain.handle("stop-native-mac-recording", (_, discard?: boolean) =>
-		invokeNativeMac(() => getNativeMacRecordingService().stop(discard)),
-	);
+	ipcMain.handle("stop-native-mac-recording", async (_, discard?: boolean) => {
+		const result = await invokeNativeMac(() => getNativeMacRecordingService().stop(discard));
+		if (!discard && "success" in result && result.success) markSuccessfulRecording();
+		return result;
+	});
 
 	// On-disk write streams for in-progress recordings, keyed by output file name.
 	// Chunks append as they arrive so the renderer never buffers the full video (#616).
@@ -3148,6 +3190,7 @@ export function registerIpcHandlers(
 			webcamOffsetMs,
 			cursorCaptureMode,
 		});
+		markSuccessfulRecording();
 
 		return {
 			success: true,
@@ -3255,6 +3298,8 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("pick-export-save-path", async (_, fileName: string, exportFolder?: string) => {
+		const rejection = await rejectWithoutEntitlement("export");
+		if (rejection) return rejection;
 		try {
 			const isGif = fileName.toLowerCase().endsWith(".gif");
 			const filters = isGif
@@ -3337,6 +3382,8 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("open-video-file-picker", async () => {
+		const rejection = await rejectWithoutEntitlement("import");
+		if (rejection) return rejection;
 		try {
 			const dialogOptions = buildDialogOptions(
 				{
@@ -3576,6 +3623,8 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"save-project-file",
 		async (_, projectData: unknown, suggestedName?: string, existingProjectPath?: string) => {
+			const rejection = await rejectWithoutEntitlement("edit");
+			if (rejection) return rejection;
 			return saveProjectFile(projectData, suggestedName, existingProjectPath);
 		},
 	);
@@ -4027,6 +4076,7 @@ export function registerIpcHandlers(
 	};
 
 	registerNativeBridgeHandlers({
+		assertEntitlement: (capability) => entitlementService.assertCapability(capability),
 		getPlatform: () => process.platform,
 		getCurrentProjectPath: () => currentProjectPath,
 		getCurrentVideoPath: () => currentVideoPath,

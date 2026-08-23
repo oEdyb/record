@@ -80,6 +80,14 @@ import {
 import { supportsCursorClickEffects } from "@/lib/cursor/cursorCapabilities";
 import { CURSOR_THEMES, DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
 import { buildGradientFromEditor } from "@/lib/gradientBuilder";
+import {
+	MAX_SCREEN_FRAMING_SCALE,
+	MIN_SCREEN_FRAMING_SCALE,
+	resolveScreenFraming,
+	type ScreenFocalPoint,
+	screenFramingVariantKey,
+	setScreenFramingForVariant,
+} from "@/lib/screenFraming";
 import { resolveImageWallpaperUrl, WALLPAPER_PATHS, WALLPAPER_THUMB_PATHS } from "@/lib/wallpaper";
 import { isNativeCompositorActive, setNativeParam } from "@/native";
 import {
@@ -1515,18 +1523,20 @@ const CAMERA_SHAPES: Array<{
 	},
 ];
 
-function CameraPositionPad({
+function PositionPad({
 	value,
 	disabled,
 	onChange,
 	onCommit,
+	onReset,
 	label,
 	centerLabel,
 }: {
-	value: WebcamFocalPoint;
+	value: WebcamFocalPoint | ScreenFocalPoint;
 	disabled: boolean;
-	onChange: (next: WebcamFocalPoint) => void;
+	onChange: (next: WebcamFocalPoint | ScreenFocalPoint) => void;
 	onCommit: () => void;
+	onReset?: () => void;
 	label: string;
 	centerLabel: string;
 }) {
@@ -1560,7 +1570,8 @@ function CameraPositionPad({
 					type="button"
 					disabled={disabled}
 					onClick={() => {
-						onChange({ cx: 0.5, cy: 0.5 });
+						if (onReset) onReset();
+						else onChange({ cx: 0.5, cy: 0.5 });
 						onCommit();
 					}}
 				>
@@ -1635,6 +1646,20 @@ export function LayoutPane() {
 		[document, settings.aspectRatio],
 	);
 	const activeResolution = settings.outputResolution ?? automaticResolution;
+	const screenFramingKey = screenFramingVariantKey(settings.aspectRatio, settings.outputResolution);
+	const screenFraming = resolveScreenFraming(settings.screenFramingByVariant, screenFramingKey);
+	const updateScreenFramingLive = useCallback(
+		(next: typeof screenFraming) => {
+			setLive({
+				screenFramingByVariant: setScreenFramingForVariant(
+					settings.screenFramingByVariant,
+					screenFramingKey,
+					next,
+				),
+			});
+		},
+		[screenFramingKey, setLive, settings.screenFramingByVariant],
+	);
 	const [draftWidth, setDraftWidth] = useState(String(activeResolution.width));
 	const [draftHeight, setDraftHeight] = useState(String(activeResolution.height));
 
@@ -1832,6 +1857,34 @@ export function LayoutPane() {
 			</section>
 
 			<section className={styles.inspectorSection}>
+				<div className={styles.inspectorSectionTitle}>{ts("layout.screenFraming")}</div>
+				<p className={styles.inspectorSectionHint}>{ts("layout.screenFramingHint")}</p>
+				<div className={styles.sliderGrid}>
+					<SliderCell
+						label={ts("layout.screenScale")}
+						value={screenFraming.scale}
+						min={MIN_SCREEN_FRAMING_SCALE}
+						max={MAX_SCREEN_FRAMING_SCALE}
+						step={0.05}
+						decimals={2}
+						suffix="×"
+						disabled={!hasDocument}
+						onChange={(scale) => updateScreenFramingLive({ ...screenFraming, scale })}
+						onCommit={() => void commit()}
+					/>
+				</div>
+				<PositionPad
+					value={screenFraming.focalPoint}
+					disabled={!hasDocument}
+					label={ts("layout.screenPosition")}
+					centerLabel={ts("layout.resetScreenFraming")}
+					onChange={(focalPoint) => updateScreenFramingLive({ ...screenFraming, focalPoint })}
+					onReset={() => updateScreenFramingLive({ scale: 1, focalPoint: { cx: 0.5, cy: 0.5 } })}
+					onCommit={() => void commit()}
+				/>
+			</section>
+
+			<section className={styles.inspectorSection}>
 				<div className={styles.inspectorSectionTitle}>{ts("layout.cameraLayout")}</div>
 				<div className={styles.layoutSelectRow}>
 					<select
@@ -1985,7 +2038,7 @@ export function LayoutPane() {
 								onCommit={() => void commit()}
 							/>
 						</div>
-						<CameraPositionPad
+						<PositionPad
 							value={settings.webcamFocalPoint}
 							disabled={layoutControlsDisabled}
 							label={ts("layout.webcamPosition")}

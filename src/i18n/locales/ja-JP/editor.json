@@ -405,6 +405,37 @@
 		"save": "保存",
 		"saveAndUse": "保存して使用"
 	},
+	"entitlement": {
+		"status": {
+			"trialNotStarted": "14日間のトライアル",
+			"trialDay": "トライアル · 残り{{count}}日",
+			"trialDays": "トライアル · 残り{{count}}日",
+			"offline": "Klippt Pro · オフライン",
+			"readOnly": "読み取り専用"
+		},
+		"eyebrowReadOnly": "読み取り専用アクセス",
+		"eyebrowPro": "Klippt Pro",
+		"titleExpired": "プロジェクトは安全です。",
+		"titleTrial": "すべての録画を公開できる状態に。",
+		"descriptionExpired": "Klippt は現在、読み取り専用です。{{capability}}には Pro をご利用ください。",
+		"descriptionTrial": "トライアルには、レコーダー、エディター、自動ディレクション、完成動画の書き出しがすべて含まれます。",
+		"capability": {
+			"record": "新しいクリップを録画する",
+			"edit": "このプロジェクトを編集する",
+			"import": "新しいメディアを読み込む",
+			"export": "完成した動画を書き出す",
+			"automatic-editing": "自動編集を実行する",
+			"default": "録画、編集、書き出しを行う"
+		},
+		"benefitClips": "一時停止、続行、前のクリップを削除できるクリップ単位の録画",
+		"benefitAutomatic": "編集可能な自動ズーム、カメラ強調、無音部分の削除",
+		"benefitExport": "高品質なローカルプレビューと書き出し",
+		"getPro": "Klippt Pro を入手",
+		"licenseKey": "ライセンスキー",
+		"activate": "有効化",
+		"filesSafe": "アクセス終了時もプロジェクトやソースファイルは削除されません。",
+		"manage": "管理"
+	},
 	"cpuCompositor": {
 		"notice": "対応 GPU がないため CPU で描画しています。再生が遅くなります。",
 		"exportWarning": "対応 GPU がありません。この書き出しは CPU で実行されるため、通常よりはるかに時間がかかります。"

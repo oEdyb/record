@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { requireEntitlement } from "@/lib/entitlements/store";
 import { nativeBridgeClient } from "@/native/client";
 import {
 	type Interval,
@@ -210,6 +211,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async createProject(title) {
+		if (!requireEntitlement("edit")) throw new Error("Klippt Pro is required to create a project.");
 		const currentProjectId = get().projectId;
 		const currentMutation = currentProjectId
 			? beginTrackedProjectMutation(currentProjectId)
@@ -266,6 +268,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async addAsset(path, label, options) {
+		if (!requireEntitlement("import")) return null;
 		const { projectId } = get();
 		if (!projectId) throw new Error("No project loaded");
 		const mutation = beginTrackedProjectMutation(projectId);
@@ -364,6 +367,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async removeAsset(assetId) {
+		if (!requireEntitlement("edit")) return;
 		const { projectId } = get();
 		if (!projectId) throw new Error("No project loaded");
 		const mutation = beginTrackedProjectMutation(projectId);
@@ -382,6 +386,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async saveDocument(document) {
+		if (!requireEntitlement("edit")) return false;
 		const startingRevision = get().revision;
 		const mutation = beginSave(document);
 		try {
@@ -406,6 +411,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async saveDocumentIfCurrent(document, guard) {
+		if (!requireEntitlement("edit")) return false;
 		const state = get();
 		if (
 			state.projectId !== document.project.id ||
@@ -420,6 +426,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async saveDocumentAsEdit(document, historySnapshot) {
+		if (!requireEntitlement("edit")) return false;
 		const startingRevision = get().revision;
 		const mutation = beginSave(document);
 		const previous = historySnapshot ?? get().document;
@@ -450,6 +457,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async applyDocumentPatch(projectId, patch, options) {
+		if (!requireEntitlement("edit")) return "conflict";
 		const maximumAttempts = Math.max(1, Math.floor(options?.maximumAttempts ?? 5));
 		for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
 			await waitForProjectMutations(projectId);
@@ -481,6 +489,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	setDocument(document) {
+		if (!requireEntitlement("edit")) return;
 		const prev = get().document;
 		if (prev && prev !== document) {
 			recordDocumentSnapshot(prev);
@@ -493,6 +502,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	setDocumentLive(document) {
+		if (!requireEntitlement("edit")) return;
 		set({
 			document,
 			revision: get().revision + 1,
@@ -501,6 +511,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	restoreDocumentFromHistory(document) {
+		if (!requireEntitlement("edit")) return;
 		set({
 			document,
 			revision: get().revision + 1,
@@ -509,6 +520,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async replaceTimeline(intervals, reason) {
+		if (!requireEntitlement("edit")) return;
 		const doc = get().document;
 		if (!doc) throw new Error("No project loaded");
 		const next = replaceTimelineOp(doc, intervals, reason);
@@ -516,6 +528,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async restoreFullTimeline() {
+		if (!requireEntitlement("edit")) return;
 		const doc = get().document;
 		if (!doc) throw new Error("No project loaded");
 		const next = restoreFullTimelineOp(doc);

@@ -13,9 +13,12 @@ OpenScreen distribution, a generic AI editor, or a cross-platform project for th
 release.
 
 The first commercial release is a subscription-first paid private alpha. One Klippt Pro
-entitlement covers the full product, with monthly and annual prices. Keep payment and license logic
-behind a small provider adapter. Lemon Squeezy is the current fastest candidate, but the provider is
-not selected until the store, prices, trial behavior, and public product identifiers exist.
+entitlement covers the full product at a founding price of $19 per month or $99 per year. Lemon
+Squeezy is the selected first merchant of record and license provider. A 14-day no-card trial starts
+after the first successful recording. Expired access becomes a read-only viewer: projects and
+untouched source recovery remain available, while recording, importing, editing, automatic editing,
+regeneration, and finished export are blocked. Public Lemon Squeezy identifiers are still required
+before commercial enforcement turns on.
 
 The core workflow is:
 
@@ -210,6 +213,18 @@ Advanced controls:
 Camera Emphasis keeps its own camera size, duration, motion style, and speed. Screen Zoom and
 Camera Emphasis never share a hidden motion value.
 
+Later inspector-space refinement:
+
+- Make Layout, Audio/Pauses, Background, Effects, Cursor, Captions, and Automatic use one efficient
+  side workspace instead of small floating panes surrounded by blank space.
+- Let the active inspector extend farther toward the preview and down to the bottom workspace when
+  that space is available, as Screen Studio does. Use the available width and height for the active
+  task without covering the content the user must inspect.
+- Keep one consistent pane frame, section rhythm, and responsive minimum/maximum width. Do not solve
+  the space problem with nested cards, permanent extra columns, or more visual clutter.
+- Preserve the preview, timeline, direct manipulation, and keyboard flow. The larger inspector must
+  make controls easier to scan and use, not make the editor feel smaller or busier.
+
 Exit criteria for Slice 1:
 
 - The editor never displays a Zoom value that differs from preview or export.
@@ -361,9 +376,12 @@ Exit criteria:
    distribution: [Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 6. Add a private alpha update channel and crash-report export that does not upload project content
    without consent.
-7. Add one Klippt Pro entitlement behind a provider adapter. Store the local activation with
-   `safeStorage`. Allow a bounded offline grace period. Never put a provider secret in the app,
-   and never let a network failure interrupt active capture or export.
+7. The first Klippt Pro entitlement slice is implemented behind a provider adapter. It includes a
+   Lemon Squeezy License API adapter, OS-backed encrypted license storage, a seven-day offline grace
+   period, a trial that starts after the first durable recording, main-process capability checks,
+   renderer read-only guards, localized access UI, and safe project/source retention. Add the public
+   store, product, variant, checkout, and management identifiers before the paid alpha. Never put a
+   provider secret in the app, and never let a validation request interrupt active capture or export.
 8. Publish short privacy, terms/EULA, refund, and support pages before accepting payment. Review
    the generated production dependency inventory and every bundled asset at the same release gate.
 
@@ -448,6 +466,14 @@ mirrored-camera direction. The controls work in PiP and block layouts without ch
 camera track. Per-delivery-variant focal overrides remain part of the editable vertical-layout work
 below.
 
+**Screen framing foundation complete on 2026-08-23:** Layout now stores one base Screen Scale and
+Position for each output shape. While Layout is open and playback is paused, the user can drag the
+screen in the preview, use wheel or trackpad input to change scale, or use precise Scale, Position,
+and Reset controls. Cover remains the minimum scale. Saved projects, remembered defaults, live
+native preview, normal export, and CLI export use the same framing. Timeline Zoom regions compose
+inside this base frame. The versioned multi-deliverable model and automatic vertical focus paths
+remain future work.
+
 Add delivery variants to one project:
 
 - YouTube 16:9;
@@ -486,8 +512,8 @@ change:
 - caption and platform-safe areas without covering the important screen or face region;
 - automatic screen reframing inside the screen pane, with direct manual correction.
 
-The next vertical slice is **variant-specific Screen framing**. Store one base screen scale and
-two-dimensional focal point for each delivery variant. In a stacked 9:16 layout, `1.0×` means the
+The manual Screen framing foundation stores one base screen scale and two-dimensional focal point
+for each output shape in the current global canvas. In a stacked 9:16 layout, `1.0×` means the
 minimum cover crop that fills the screen pane; the user cannot zoom out far enough to expose empty
 space or make the captured screen smaller than its pane. Keep the pane geometry fixed while the
 content moves inside it.
@@ -523,8 +549,9 @@ Implementation order:
 1. Add a versioned `deliverables` model with one active variant and shared edit references.
 2. Move the current output shape, Vertical Stack, pane order, and camera share into the active
    variant without changing their visible behavior.
-3. Add base Screen framing with saved Scale, Position, and Reset controls, plus direct preview drag
-   and wheel or pinch adjustment. Give it preview, native export, CLI, Undo, Redo, and reopen parity.
+3. **Complete on 2026-08-23:** Add base Screen framing with saved Scale, Position, and Reset controls,
+   plus direct preview drag and wheel or trackpad adjustment. Give it preview, native export, CLI,
+   Undo, Redo, and reopen parity.
 4. Add the on-canvas divider drag without resetting either pane's framing.
 5. Re-run the same direction observations through an aspect-aware framing policy.
 6. Store automatic reframe results as normal variant-specific framing regions and let direct

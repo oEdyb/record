@@ -24,6 +24,21 @@ declare namespace NodeJS {
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
 	electronAPI: {
+		getEntitlement: () => Promise<import("../src/lib/entitlements/contracts").EntitlementSnapshot>;
+		activateEntitlement: (
+			licenseKey: string,
+		) => Promise<import("../src/lib/entitlements/contracts").EntitlementSnapshot>;
+		refreshEntitlement: () => Promise<
+			import("../src/lib/entitlements/contracts").EntitlementSnapshot
+		>;
+		deactivateEntitlement: () => Promise<
+			import("../src/lib/entitlements/contracts").EntitlementSnapshot
+		>;
+		openEntitlementCheckout: () => Promise<{ opened: boolean }>;
+		openEntitlementManagement: () => Promise<{ opened: boolean }>;
+		onEntitlementChanged: (
+			callback: (snapshot: import("../src/lib/entitlements/contracts").EntitlementSnapshot) => void,
+		) => () => void;
 		invokeNativeBridge: <TData = unknown>(
 			request: import("../src/native/contracts").NativeBridgeRequest,
 		) => Promise<import("../src/native/contracts").NativeBridgeResponse<TData>>;
@@ -38,7 +53,7 @@ interface Window {
 		switchToHud: () => Promise<void>;
 		startNewRecording: (
 			context?: import("../src/lib/recordingSession").RecordingWorkspaceContext,
-		) => Promise<{ success: boolean; error?: string }>;
+		) => Promise<{ success: boolean; code?: "ENTITLEMENT_REQUIRED"; error?: string }>;
 		getRecordingWorkspaceContext: () => Promise<{
 			success: boolean;
 			context?: import("../src/lib/recordingSession").RecordingWorkspaceContext | null;
@@ -316,6 +331,8 @@ interface Window {
 		}>;
 		openVideoFilePicker: () => Promise<{
 			success: boolean;
+			code?: "ENTITLEMENT_REQUIRED";
+			error?: string;
 			path?: string;
 			// Browser-mode shim only: a blob: URL has no meaningful basename, so
 			// the shim carries the picked File's real name here for the label.

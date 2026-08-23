@@ -182,4 +182,17 @@ describe("patchEditorSettings", () => {
 		const snap = getEditorSettings(doc);
 		expect(snap.webcamPosition).toEqual({ cx: 1, cy: 0 });
 	});
+
+	it("round-trips and normalizes output-specific screen framing", () => {
+		const patched = patchEditorSettings(baseDoc, {
+			screenFramingByVariant: {
+				"16:9": { scale: 1.25, focalPoint: { cx: 0.2, cy: 0.7 } },
+				"9:16": { scale: 9, focalPoint: { cx: -1, cy: 2 } },
+			},
+		});
+		expect(getEditorSettings(patched).screenFramingByVariant).toEqual({
+			"16:9": { scale: 1.25, focalPoint: { cx: 0.2, cy: 0.7 } },
+			"9:16": { scale: 4, focalPoint: { cx: 0, cy: 1 } },
+		});
+	});
 });

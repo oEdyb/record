@@ -5,6 +5,7 @@
 
 import { PROVIDER_DEFINITIONS } from "../../electron/ai-edition/provider-registry";
 import { axcutSchemaVersion, migrateRawDocumentToCurrent } from "../lib/ai-edition/schema";
+import type { EntitlementSnapshot } from "../lib/entitlements/contracts";
 import { nativeBridgeClient as realClient } from "./client";
 
 function detectBrowserMode(): boolean {
@@ -107,8 +108,24 @@ function pickVideoFileViaInput(): Promise<PickVideoResult> {
 }
 
 function createShimElectronAPI() {
+	const entitlement: EntitlementSnapshot = {
+		version: 1,
+		provider: null,
+		status: "development",
+		access: "full",
+		commerceConfigured: false,
+		checkoutAvailable: false,
+		managementAvailable: false,
+	};
 	return {
 		assetBaseUrl: "",
+		getEntitlement: () => Promise.resolve(entitlement),
+		activateEntitlement: () => Promise.resolve(entitlement),
+		refreshEntitlement: () => Promise.resolve(entitlement),
+		deactivateEntitlement: () => Promise.resolve(entitlement),
+		openEntitlementCheckout: () => Promise.resolve({ opened: false }),
+		openEntitlementManagement: () => Promise.resolve({ opened: false }),
+		onEntitlementChanged: () => () => undefined,
 		openVideoFilePicker: pickVideoFileViaInput,
 		openProjectFile: () => Promise.resolve({ success: false, canceled: true }),
 		pickExportSavePath: () => Promise.resolve({ success: false, canceled: true }),

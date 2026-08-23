@@ -8,6 +8,7 @@ import {
 	FolderPlus,
 	Languages,
 	LoaderCircle,
+	LockKeyhole,
 	Moon,
 	PanelLeft,
 	Save,
@@ -50,6 +51,9 @@ interface EditorTopBarProps {
 	regeneratingAutomaticEdits: boolean;
 	importingMedia: boolean;
 	chatOpen: boolean;
+	readOnly: boolean;
+	entitlementLabel: string | null;
+	onEntitlement: () => void;
 	actions: TopBarActions;
 }
 
@@ -73,6 +77,9 @@ export function EditorTopBar({
 	regeneratingAutomaticEdits,
 	importingMedia,
 	chatOpen,
+	readOnly,
+	entitlementLabel,
+	onEntitlement,
 	actions,
 }: EditorTopBarProps) {
 	const { theme, toggle: toggleTheme } = useTheme();
@@ -110,7 +117,12 @@ export function EditorTopBar({
 				</span>
 			</span>
 			<span className={styles.sep} aria-hidden />
-			<ProjectNameField title={projectTitle} onRename={actions.renameProject} />
+			<ProjectNameField
+				title={projectTitle}
+				onRename={actions.renameProject}
+				readOnly={readOnly}
+				onReadOnly={onEntitlement}
+			/>
 			<span className={styles.sep} aria-hidden />
 			<button
 				type="button"
@@ -204,6 +216,17 @@ export function EditorTopBar({
 			</span>
 
 			<span className={styles.topbarSpacer} aria-hidden />
+			{entitlementLabel ? (
+				<button
+					type="button"
+					className={styles.entitlementStatus}
+					onClick={onEntitlement}
+					aria-label={entitlementLabel}
+				>
+					{readOnly ? <LockKeyhole size={12} aria-hidden /> : null}
+					{entitlementLabel}
+				</button>
+			) : null}
 			{MODES.length > 1 ? (
 				<div className={styles.workspaceNav}>
 					<div className={styles.modeSwitch} role="tablist" aria-label={t("topbar.editorMode")}>
@@ -271,15 +294,23 @@ export function EditorTopBar({
 function ProjectNameField({
 	title,
 	onRename,
+	readOnly,
+	onReadOnly,
 }: {
 	title: string | null;
 	onRename: (title: string) => void;
+	readOnly: boolean;
+	onReadOnly: () => void;
 }) {
 	const t = useScopedT("editor");
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState(title ?? "");
 
 	const startEditing = () => {
+		if (readOnly) {
+			onReadOnly();
+			return;
+		}
 		setDraft(title ?? "");
 		setEditing(true);
 	};

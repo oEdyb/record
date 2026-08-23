@@ -257,6 +257,27 @@
 	flex: 1 1 auto;
 	min-width: 12px;
 }
+.entitlementStatus {
+	display: inline-flex;
+	height: 28px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 9px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: transparent;
+	color: var(--muted);
+	font: 600 10.5px/1 var(--font-body);
+	letter-spacing: 0.01em;
+	cursor: pointer;
+	white-space: nowrap;
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+.entitlementStatus:hover {
+	background: var(--surface-hover);
+	color: var(--fg-2);
+}
 .primaryActions {
 	display: inline-flex;
 	align-items: center;
@@ -1172,6 +1193,12 @@
 	transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 .tlToolBtn:hover {
+	background: var(--surface-3);
+	color: var(--fg);
+}
+.tlToolBtn:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 1px;
 	background: var(--surface-3);
 	color: var(--fg);
 }

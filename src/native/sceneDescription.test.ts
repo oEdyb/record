@@ -916,6 +916,22 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(scene.layout.webcamPosition).toEqual({ cx: 0.2, cy: 0.8 });
 	});
 
+	it("selects screen framing for the active output shape", () => {
+		const scene = buildSceneDescription(
+			makeDoc({
+				legacyEditor: {
+					aspectRatio: "9:16",
+					screenFramingByVariant: {
+						"16:9": { scale: 1.2, focalPoint: { cx: 0.1, cy: 0.2 } },
+						"9:16": { scale: 2.4, focalPoint: { cx: 0.8, cy: 0.35 } },
+					},
+				},
+			}),
+		);
+		expect(scene.layout.screenZoom).toBe(2.4);
+		expect(scene.layout.screenFocalPoint).toEqual({ cx: 0.8, cy: 0.35 });
+	});
+
 	it("maps the cursor sub-settings", () => {
 		const doc = makeDoc({
 			legacyEditor: {

@@ -1,3 +1,4 @@
+import { useEntitlementStore } from "@/lib/entitlements/store";
 import {
 	type AiEditionAssetResult,
 	type AiEditionCaptionTranslateResult,
@@ -17,6 +18,7 @@ import {
 	type CursorRecordingData,
 	type CursorTelemetryPoint,
 	NATIVE_BRIDGE_CHANNEL,
+	type NativeBridgeErrorCode,
 	type NativeBridgeRequest,
 	type NativeBridgeResponse,
 	type NativePlatform,
@@ -25,6 +27,16 @@ import {
 	type ProjectPathResult,
 	type SystemCapabilities,
 } from "./contracts";
+
+export class NativeBridgeClientError extends Error {
+	constructor(
+		message: string,
+		readonly code: NativeBridgeErrorCode,
+	) {
+		super(message);
+		this.name = "NativeBridgeClientError";
+	}
+}
 
 function createRequestId() {
 	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -57,7 +69,10 @@ export async function invokeNativeBridge<TData = unknown>(
 export async function requireNativeBridgeData<TData>(request: NativeBridgeRequest): Promise<TData> {
 	const response = await invokeNativeBridge<TData>(request);
 	if (!response.ok) {
-		throw new Error(response.error.message);
+		if (response.error.code === "ENTITLEMENT_REQUIRED") {
+			useEntitlementStore.getState().openDialog();
+		}
+		throw new NativeBridgeClientError(response.error.message, response.error.code);
 	}
 
 	return response.data;

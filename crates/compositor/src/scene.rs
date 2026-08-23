@@ -42,6 +42,12 @@ pub struct SceneLayout {
     /// Visual focus point inside the webcam crop. It does not move the destination rect.
     #[serde(default = "default_webcam_focal_point")]
     pub webcam_focal_point: WebcamPosition,
+    /// Base screen crop for the selected output shape. Timeline zooms compose inside it.
+    #[serde(default = "default_screen_zoom")]
+    pub screen_zoom: f32,
+    /// Base screen focal point in normalized source coordinates.
+    #[serde(default = "default_screen_focal_point")]
+    pub screen_focal_point: WebcamPosition,
     /// "rectangle" | "circle" | "square" | "rounded" — la forme RÉSOLUE par le layout, pas le
     /// réglage brut de l'utilisateur : seul le PiP honore le sélecteur de forme, les layouts en
     /// bloc découpent toujours un rectangle (côté app, cf. `computeCompositeLayout`).
@@ -116,6 +122,14 @@ fn default_webcam_zoom() -> f32 {
 }
 
 fn default_webcam_focal_point() -> WebcamPosition {
+    WebcamPosition { cx: 0.5, cy: 0.5 }
+}
+
+fn default_screen_zoom() -> f32 {
+    1.0
+}
+
+fn default_screen_focal_point() -> WebcamPosition {
     WebcamPosition { cx: 0.5, cy: 0.5 }
 }
 
@@ -527,6 +541,9 @@ mod tests {
         assert_eq!(scene.layout.webcam_zoom, 1.0);
         assert_eq!(scene.layout.webcam_focal_point.cx, 0.5);
         assert_eq!(scene.layout.webcam_focal_point.cy, 0.5);
+        assert_eq!(scene.layout.screen_zoom, 1.0);
+        assert_eq!(scene.layout.screen_focal_point.cx, 0.5);
+        assert_eq!(scene.layout.screen_focal_point.cy, 0.5);
         assert!((scene.effects.roundness_frac - 0.0222).abs() < 1e-6);
         match scene.background {
             SceneBackground::Gradient { angle_deg, ref stops } => {

@@ -12,7 +12,9 @@ import {
 	ZoomIn,
 } from "lucide-react";
 import {
+	type ButtonHTMLAttributes,
 	memo,
+	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
 	useEffect,
@@ -22,6 +24,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip } from "@/components/ui/tooltip";
 import { fromFileUrl } from "@/components/video-editor/projectPersistence";
 import { effectiveZoomScale } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
@@ -79,6 +82,29 @@ type TimelineApi = ReturnType<typeof useTimeline>;
 const ASSET_MIME = "application/x-axcut-asset";
 
 type ToolId = "cut" | "comment" | "speed";
+
+type TimelineToolButtonProps = Omit<
+	ButtonHTMLAttributes<HTMLButtonElement>,
+	"aria-label" | "title"
+> & {
+	label: string;
+	children: ReactNode;
+};
+
+function TimelineToolButton({ label, children, className, ...props }: TimelineToolButtonProps) {
+	return (
+		<Tooltip content={label} side="top">
+			<button
+				type="button"
+				className={`${styles.tlToolBtn}${className ? ` ${className}` : ""}`}
+				aria-label={label}
+				{...props}
+			>
+				{children}
+			</button>
+		</Tooltip>
+	);
+}
 
 // "Nice" ruler steps, from a 20th of a second up to an hour. The one that gets
 // used depends on the zoom (see rulerTicks), so the ladder has to cover both a
@@ -1205,17 +1231,22 @@ export function V4Timeline({
 				{showLanes ? (
 					<div className={styles.tlTools} role="toolbar" aria-label={t("toolbar.timelineTools")}>
 						<Popover open={autoEnhanceOpen} onOpenChange={setAutoEnhanceOpen}>
-							<PopoverTrigger asChild>
-								<button
-									type="button"
-									className={styles.tlToolBtn}
-									title={t("toolbar.autoEnhance")}
-									aria-label={t("toolbar.autoEnhance")}
-									disabled={autoBusy}
-								>
-									{autoBusy ? <Loader2 className="animate-spin" size={15} /> : <Wand2 size={15} />}
-								</button>
-							</PopoverTrigger>
+							<Tooltip content={t("toolbar.autoEnhance")} side="top">
+								<PopoverTrigger asChild>
+									<button
+										type="button"
+										className={styles.tlToolBtn}
+										aria-label={t("toolbar.autoEnhance")}
+										disabled={autoBusy}
+									>
+										{autoBusy ? (
+											<Loader2 className="animate-spin" size={15} />
+										) : (
+											<Wand2 size={15} />
+										)}
+									</button>
+								</PopoverTrigger>
+							</Tooltip>
 							<PopoverContent
 								align="start"
 								sideOffset={6}
@@ -1262,12 +1293,9 @@ export function V4Timeline({
 						</Popover>
 						<span className={styles.tlToolSep} aria-hidden />
 						{tools.map((tool) => (
-							<button
-								type="button"
+							<TimelineToolButton
 								key={tool.id}
-								className={styles.tlToolBtn}
-								title={tool.label}
-								aria-label={tool.label}
+								label={tool.label}
 								onClick={() => {
 									// Read at CLICK time: a render-time value would be one zoom
 									// notch stale when the user zooms and immediately creates.
@@ -1278,49 +1306,35 @@ export function V4Timeline({
 								}}
 							>
 								{tool.icon}
-							</button>
+							</TimelineToolButton>
 						))}
-						<button
-							type="button"
-							className={styles.tlToolBtn}
-							title={t("buttons.splitClip")}
-							aria-label={t("buttons.splitClip")}
+						<TimelineToolButton
+							label={t("buttons.splitClip")}
 							onClick={() => void tl.splitClipAtPlayhead()}
 						>
 							<Scissors size={15} />
-						</button>
-						<button
-							type="button"
-							className={styles.tlToolBtn}
-							title={t("buttons.addZoom")}
-							aria-label={t("buttons.addZoom")}
+						</TimelineToolButton>
+						<TimelineToolButton
+							label={t("buttons.addZoom")}
 							onClick={() => void tl.addZoom(newRegionDurationSec())}
 						>
 							<ZoomIn size={15} />
-						</button>
-						<button
-							type="button"
-							className={styles.tlToolBtn}
+						</TimelineToolButton>
+						<TimelineToolButton
+							label={t(
+								settings.autoFocusAll ? "buttons.autoFocusAllOn" : "buttons.autoFocusAllOff",
+							)}
 							aria-pressed={settings.autoFocusAll}
-							title={t(
-								settings.autoFocusAll ? "buttons.autoFocusAllOn" : "buttons.autoFocusAllOff",
-							)}
-							aria-label={t(
-								settings.autoFocusAll ? "buttons.autoFocusAllOn" : "buttons.autoFocusAllOff",
-							)}
 							onClick={() => void setSettings({ autoFocusAll: !settings.autoFocusAll })}
 						>
 							<Crosshair size={15} />
-						</button>
-						<button
-							type="button"
-							className={styles.tlToolBtn}
-							title={t("buttons.addCameraFullscreen")}
-							aria-label={t("buttons.addCameraFullscreen")}
+						</TimelineToolButton>
+						<TimelineToolButton
+							label={t("buttons.addCameraFullscreen")}
 							onClick={() => void tl.addCameraFullscreen(newRegionDurationSec())}
 						>
 							<Maximize2 size={15} />
-						</button>
+						</TimelineToolButton>
 					</div>
 				) : (
 					// Media is an ARRANGING surface: add, remove, reorder. Nothing here

@@ -412,6 +412,7 @@ export type NativeBridgeErrorCode =
 	| "UNSUPPORTED_ACTION"
 	| "NOT_FOUND"
 	| "UNAVAILABLE"
+	| "ENTITLEMENT_REQUIRED"
 	| "INTERNAL_ERROR";
 
 export interface NativeBridgeError {

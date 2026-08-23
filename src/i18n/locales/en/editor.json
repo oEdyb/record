@@ -405,6 +405,37 @@
 		"save": "Save",
 		"saveAndUse": "Save & use"
 	},
+	"entitlement": {
+		"status": {
+			"trialNotStarted": "14-day trial",
+			"trialDay": "Trial · {{count}} day",
+			"trialDays": "Trial · {{count}} days",
+			"offline": "Klippt Pro · Offline",
+			"readOnly": "Read only"
+		},
+		"eyebrowReadOnly": "Read-only access",
+		"eyebrowPro": "Klippt Pro",
+		"titleExpired": "Your projects are safe.",
+		"titleTrial": "Make every recording ready to publish.",
+		"descriptionExpired": "Klippt is now read only. Continue with Pro to {{capability}}.",
+		"descriptionTrial": "Your trial includes the complete recorder, editor, automatic direction, and finished exports.",
+		"capability": {
+			"record": "record new clips",
+			"edit": "edit this project",
+			"import": "import new media",
+			"export": "export a finished video",
+			"automatic-editing": "run automatic editing",
+			"default": "record, edit, and export"
+		},
+		"benefitClips": "Clip-native recording with Pause, Continue, and Remove Previous Clip",
+		"benefitAutomatic": "Editable automatic zooms, Camera Emphasis, and silence removal",
+		"benefitExport": "High-quality local preview and export",
+		"getPro": "Get Klippt Pro",
+		"licenseKey": "License key",
+		"activate": "Activate",
+		"filesSafe": "No project or source file is removed when access ends.",
+		"manage": "Manage"
+	},
 	"cpuCompositor": {
 		"notice": "Running without a compatible GPU — rendering on CPU, so playback is slower.",
 		"exportWarning": "No compatible GPU: this export runs on CPU and will take much longer than usual."

@@ -405,6 +405,37 @@
 		"save": "Kaydet",
 		"saveAndUse": "Kaydet ve kullan"
 	},
+	"entitlement": {
+		"status": {
+			"trialNotStarted": "14 günlük deneme",
+			"trialDay": "Deneme · {{count}} gün",
+			"trialDays": "Deneme · {{count}} gün",
+			"offline": "Klippt Pro · Çevrimdışı",
+			"readOnly": "Salt okunur"
+		},
+		"eyebrowReadOnly": "Salt okunur erişim",
+		"eyebrowPro": "Klippt Pro",
+		"titleExpired": "Projelerin güvende.",
+		"titleTrial": "Her kaydı yayınlanmaya hazırla.",
+		"descriptionExpired": "Klippt artık salt okunur. {{capability}} için Pro ile devam et.",
+		"descriptionTrial": "Deneme süren kaydedicinin, editörün, otomatik yönlendirmenin ve son dışa aktarımların tamamını içerir.",
+		"capability": {
+			"record": "yeni klipler kaydetmek",
+			"edit": "bu projeyi düzenlemek",
+			"import": "yeni medya içe aktarmak",
+			"export": "bitmiş bir videoyu dışa aktarmak",
+			"automatic-editing": "otomatik düzenlemeyi çalıştırmak",
+			"default": "kaydetmek, düzenlemek ve dışa aktarmak"
+		},
+		"benefitClips": "Duraklat, Devam Et ve Önceki Klibi Kaldır ile klip tabanlı kayıt",
+		"benefitAutomatic": "Düzenlenebilir otomatik yakınlaştırmalar, Kamera Vurgusu ve sessizlik kaldırma",
+		"benefitExport": "Yüksek kaliteli yerel önizleme ve dışa aktarma",
+		"getPro": "Klippt Pro'yu al",
+		"licenseKey": "Lisans anahtarı",
+		"activate": "Etkinleştir",
+		"filesSafe": "Erişim sona erdiğinde hiçbir proje veya kaynak dosya silinmez.",
+		"manage": "Yönet"
+	},
 	"cpuCompositor": {
 		"notice": "Uyumlu GPU yok — işleme CPU üzerinde yapılıyor, bu yüzden oynatma daha yavaş.",
 		"exportWarning": "Uyumlu GPU yok: bu dışa aktarma CPU üzerinde çalışır ve normalden çok daha uzun sürer."

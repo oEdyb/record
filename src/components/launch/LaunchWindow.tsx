@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
+import { requireEntitlement } from "@/lib/entitlements/store";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import { type CameraDevice, useCameraDevices } from "../../hooks/useCameraDevices";
@@ -589,6 +590,7 @@ export function LaunchWindow() {
 			if (saving) {
 				return;
 			}
+			if (!recording && !requireEntitlement("record")) return;
 			// Linux never detours through the in-app picker: there is nothing for
 			// it to select, and waiting for a selection that can never arrive left
 			// the record button opening a modal instead of recording.

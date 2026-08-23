@@ -20,8 +20,8 @@
 // size (via ResizeObserver), so the camera + screen both resize correctly
 // as the user resizes the workbench.
 
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	type CameraFullscreenRegion,
 	type CropRegion,
@@ -38,6 +38,7 @@ import type {
 	AxcutTrimRange,
 	AxcutZoomRegion,
 } from "@/lib/ai-edition/schema";
+import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import { resolveActiveCameraTrack } from "@/lib/ai-edition/timeline/camera";
@@ -50,6 +51,16 @@ import {
 	computeCompositeLayout,
 	type WebcamCompositeLayout,
 } from "@/lib/compositeLayout";
+import {
+	dragScreenFocalPoint,
+	MAX_SCREEN_FRAMING_SCALE,
+	MIN_SCREEN_FRAMING_SCALE,
+	resolveScreenFraming,
+	type ScreenFraming,
+	screenFramingVariantKey,
+	screenVisibleFractions,
+	setScreenFramingForVariant,
+} from "@/lib/screenFraming";
 import { classifyWallpaper, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
 import { computeCameraLayoutState } from "@/lib/zoomMath/cameraFullscreenUtils";
@@ -89,6 +100,8 @@ interface PreviewCanvasProps {
 	/** Receives the id of the asset whose <video> failed — the caller decides per
 	 *  source whether anything is left to render (see Preview.tsx). */
 	onVideoError?: (assetId: string) => void;
+	/** Enables direct screen framing while the Layout inspector is visible. */
+	screenFramingEnabled?: boolean;
 }
 
 // ponytail: fallback only — used until the active source's <video> reports
@@ -108,6 +121,7 @@ const WEBCAM_SOURCE_SIZE = { width: 960, height: 720 };
 
 export function PreviewCanvas(props: PreviewCanvasProps) {
 	const te = useScopedT("editor");
+	const ts = useScopedT("settings");
 	const { settings, setLive, commit } = useEditorSettings();
 	// Captions are derived from the transcript, not passed down as regions — the
 	// preview reads them from the same façade the inspector writes to.
@@ -115,6 +129,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	const assets = document?.assets ?? [];
 	const frameRef = useRef<HTMLDivElement | null>(null);
 	const webcamSlotRef = useRef<HTMLDivElement | null>(null);
+	const screenSlotRef = useRef<HTMLDivElement | null>(null);
+	const wheelCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// One clock per mounted canvas, shared between the screen preview (writer)
 	// and the webcam overlay (reader) — see playback-clock.ts.
 	const clockRefHolder = useRef<ReturnType<typeof createPlaybackClockRef>>();
@@ -280,6 +296,22 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		settings.webcamPosition,
 		settings.padding,
 	]);
+	const screenFramingKey = screenFramingVariantKey(settings.aspectRatio, settings.outputResolution);
+	const screenFraming = resolveScreenFraming(settings.screenFramingByVariant, screenFramingKey);
+	const updateScreenFramingLive = useCallback(
+		(next: ScreenFraming) => {
+			const currentDocument = useProjectStore.getState().document;
+			const currentSettings = currentDocument ? getEditorSettings(currentDocument) : settings;
+			setLive({
+				screenFramingByVariant: setScreenFramingForVariant(
+					currentSettings.screenFramingByVariant,
+					screenFramingKey,
+					next,
+				),
+			});
+		},
+		[screenFramingKey, setLive, settings],
+	);
 
 	// Full Camera: during a cameraFullscreen region the webcam takes the whole
 	// frame and eases back. Same `computeCameraFullscreenRect` call as both
@@ -322,6 +354,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	// camera-less clip, so this is belt-and-braces rather than the only guard.
 	const showWebcamSlot = Boolean(layout?.webcamRect && activeClipHasCamera);
 	const [isPlaying, setIsPlaying] = useState(false);
+	const [isScreenDragging, setIsScreenDragging] = useState(false);
 	const handleVideoElement = useMemo(() => props.onVideoElement, [props.onVideoElement]);
 	// L'élément `<video>` lui-même n'est plus retenu : il ne servait qu'à échantillonner des pixels
 	// pour la mosaïque dessinée en DOM, que le compositeur natif rend désormais.
@@ -389,6 +422,82 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		slot.addEventListener("pointercancel", handleUp);
 	};
 
+	const handleScreenPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+		if (!props.screenFramingEnabled || isPlaying || !layout?.screenRect) return;
+		const slot = screenSlotRef.current;
+		if (!slot) return;
+		const slotRect = slot.getBoundingClientRect();
+		const source = screenNativeSize ?? SCREEN_SOURCE_SIZE;
+		const start = screenFraming;
+		const visible = screenVisibleFractions({
+			sourceWidth: source.width * cropRegion.width,
+			sourceHeight: source.height * cropRegion.height,
+			boxWidth: layout.screenRect.width,
+			boxHeight: layout.screenRect.height,
+			cover: layout.screenCover ?? false,
+			scale: start.scale,
+		});
+		event.preventDefault();
+		event.stopPropagation();
+		slot.setPointerCapture(event.pointerId);
+		setIsScreenDragging(true);
+		const startX = event.clientX;
+		const startY = event.clientY;
+
+		const handleMove = (nextEvent: PointerEvent) => {
+			updateScreenFramingLive({
+				...start,
+				focalPoint: dragScreenFocalPoint({
+					start: start.focalPoint,
+					deltaX: nextEvent.clientX - startX,
+					deltaY: nextEvent.clientY - startY,
+					boxWidth: slotRect.width,
+					boxHeight: slotRect.height,
+					visible,
+				}),
+			});
+		};
+		const handleUp = () => {
+			slot.removeEventListener("pointermove", handleMove);
+			slot.removeEventListener("pointerup", handleUp);
+			slot.removeEventListener("pointercancel", handleUp);
+			try {
+				slot.releasePointerCapture(event.pointerId);
+			} catch {
+				// The browser can release capture before pointercancel arrives.
+			}
+			setIsScreenDragging(false);
+			void commit();
+		};
+		slot.addEventListener("pointermove", handleMove);
+		slot.addEventListener("pointerup", handleUp);
+		slot.addEventListener("pointercancel", handleUp);
+	};
+
+	const handleScreenWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+		if (!props.screenFramingEnabled || isPlaying) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const scale = clamp(
+			screenFraming.scale * Math.exp(-event.deltaY * 0.002),
+			MIN_SCREEN_FRAMING_SCALE,
+			MAX_SCREEN_FRAMING_SCALE,
+		);
+		updateScreenFramingLive({ ...screenFraming, scale });
+		if (wheelCommitTimerRef.current) clearTimeout(wheelCommitTimerRef.current);
+		wheelCommitTimerRef.current = setTimeout(() => {
+			wheelCommitTimerRef.current = null;
+			void commit();
+		}, 180);
+	};
+
+	useEffect(
+		() => () => {
+			if (wheelCommitTimerRef.current) clearTimeout(wheelCommitTimerRef.current);
+		},
+		[],
+	);
+
 	const isPipGrab = settings.webcamLayoutPreset === "picture-in-picture";
 
 	const selectedZoomRegion = props.selectedZoomRegionId
@@ -410,7 +519,79 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			    dual preview path. */}
 			<NativeCompositorOverlay />
 			{layout?.screenRect ? (
-				<div className={styles.screenStage} style={screenStyle}>
+				<div
+					ref={screenSlotRef}
+					className={styles.screenStage}
+					style={{
+						...screenStyle,
+						cursor:
+							props.screenFramingEnabled && !isPlaying
+								? isScreenDragging
+									? "grabbing"
+									: "grab"
+								: "default",
+						touchAction: props.screenFramingEnabled ? "none" : "auto",
+					}}
+					tabIndex={props.screenFramingEnabled && !isPlaying ? 0 : -1}
+					aria-label={props.screenFramingEnabled ? ts("layout.screenFramingPreview") : undefined}
+					onPointerDown={handleScreenPointerDown}
+					onWheel={handleScreenWheel}
+					onKeyDown={(event) => {
+						if (!props.screenFramingEnabled || isPlaying) return;
+						const point = screenFraming.focalPoint;
+						const step = event.shiftKey ? 0.1 : 0.02;
+						let next: ScreenFraming | null = null;
+						if (event.key === "ArrowLeft")
+							next = { ...screenFraming, focalPoint: { ...point, cx: clamp01(point.cx - step) } };
+						else if (event.key === "ArrowRight")
+							next = { ...screenFraming, focalPoint: { ...point, cx: clamp01(point.cx + step) } };
+						else if (event.key === "ArrowUp")
+							next = { ...screenFraming, focalPoint: { ...point, cy: clamp01(point.cy - step) } };
+						else if (event.key === "ArrowDown")
+							next = { ...screenFraming, focalPoint: { ...point, cy: clamp01(point.cy + step) } };
+						else if (event.key === "+" || event.key === "=")
+							next = {
+								...screenFraming,
+								scale: clamp(
+									screenFraming.scale + 0.05,
+									MIN_SCREEN_FRAMING_SCALE,
+									MAX_SCREEN_FRAMING_SCALE,
+								),
+							};
+						else if (event.key === "-" || event.key === "_")
+							next = {
+								...screenFraming,
+								scale: clamp(
+									screenFraming.scale - 0.05,
+									MIN_SCREEN_FRAMING_SCALE,
+									MAX_SCREEN_FRAMING_SCALE,
+								),
+							};
+						else if (event.key === "Home" || event.key === "0")
+							next = { scale: 1, focalPoint: { cx: 0.5, cy: 0.5 } };
+						if (!next) return;
+						event.preventDefault();
+						updateScreenFramingLive(next);
+					}}
+					onKeyUp={(event) => {
+						if (
+							[
+								"ArrowLeft",
+								"ArrowRight",
+								"ArrowUp",
+								"ArrowDown",
+								"+",
+								"=",
+								"-",
+								"_",
+								"Home",
+								"0",
+							].includes(event.key)
+						) {
+							void commit();
+						}
+					}}
+				>
 					{(() => {
 						// ponytail: PreviewCompositor (Pixi v8) regressed the screen
 						// preview — the `<video>` is `visibility: hidden` while it's

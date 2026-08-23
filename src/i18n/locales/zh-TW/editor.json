@@ -405,6 +405,37 @@
 		"save": "儲存",
 		"saveAndUse": "儲存並使用"
 	},
+	"entitlement": {
+		"status": {
+			"trialNotStarted": "14 天試用",
+			"trialDay": "試用 · {{count}} 天",
+			"trialDays": "試用 · {{count}} 天",
+			"offline": "Klippt Pro · 離線",
+			"readOnly": "唯讀"
+		},
+		"eyebrowReadOnly": "唯讀存取",
+		"eyebrowPro": "Klippt Pro",
+		"titleExpired": "你的專案很安全。",
+		"titleTrial": "讓每段錄製都能直接發佈。",
+		"descriptionExpired": "Klippt 現在處於唯讀模式。升級到 Pro 即可{{capability}}。",
+		"descriptionTrial": "試用包含完整的錄製器、編輯器、自動導向和成片匯出。",
+		"capability": {
+			"record": "錄製新片段",
+			"edit": "編輯此專案",
+			"import": "匯入新媒體",
+			"export": "匯出成片",
+			"automatic-editing": "執行自動編輯",
+			"default": "錄製、編輯和匯出"
+		},
+		"benefitClips": "支援暫停、繼續和移除上一片段的片段式錄製",
+		"benefitAutomatic": "可編輯的自動縮放、攝影機強調和靜音移除",
+		"benefitExport": "高品質本機預覽和匯出",
+		"getPro": "取得 Klippt Pro",
+		"licenseKey": "授權金鑰",
+		"activate": "啟用",
+		"filesSafe": "存取結束時不會刪除任何專案或來源檔案。",
+		"manage": "管理"
+	},
 	"cpuCompositor": {
 		"notice": "沒有相容的 GPU，正在使用 CPU 算繪，因此播放較慢。",
 		"exportWarning": "沒有相容的 GPU：這次匯出將在 CPU 上執行，耗時會比平常長很多。"

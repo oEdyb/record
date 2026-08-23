@@ -405,6 +405,37 @@
 		"save": "Lưu",
 		"saveAndUse": "Lưu và dùng"
 	},
+	"entitlement": {
+		"status": {
+			"trialNotStarted": "Dùng thử 14 ngày",
+			"trialDay": "Dùng thử · {{count}} ngày",
+			"trialDays": "Dùng thử · {{count}} ngày",
+			"offline": "Klippt Pro · Ngoại tuyến",
+			"readOnly": "Chỉ đọc"
+		},
+		"eyebrowReadOnly": "Quyền truy cập chỉ đọc",
+		"eyebrowPro": "Klippt Pro",
+		"titleExpired": "Các dự án của bạn vẫn an toàn.",
+		"titleTrial": "Chuẩn bị mọi bản ghi để xuất bản.",
+		"descriptionExpired": "Klippt hiện ở chế độ chỉ đọc. Tiếp tục với Pro để {{capability}}.",
+		"descriptionTrial": "Bản dùng thử gồm đầy đủ trình ghi, trình chỉnh sửa, điều hướng tự động và xuất video hoàn chỉnh.",
+		"capability": {
+			"record": "ghi các clip mới",
+			"edit": "chỉnh sửa dự án này",
+			"import": "nhập nội dung mới",
+			"export": "xuất video hoàn chỉnh",
+			"automatic-editing": "chạy chỉnh sửa tự động",
+			"default": "ghi, chỉnh sửa và xuất"
+		},
+		"benefitClips": "Ghi theo clip với Tạm dừng, Tiếp tục và Xóa clip trước",
+		"benefitAutomatic": "Thu phóng tự động có thể chỉnh sửa, Nhấn mạnh camera và xóa khoảng lặng",
+		"benefitExport": "Xem trước và xuất cục bộ chất lượng cao",
+		"getPro": "Nhận Klippt Pro",
+		"licenseKey": "Mã giấy phép",
+		"activate": "Kích hoạt",
+		"filesSafe": "Không dự án hay tệp nguồn nào bị xóa khi quyền truy cập kết thúc.",
+		"manage": "Quản lý"
+	},
 	"cpuCompositor": {
 		"notice": "Không có GPU tương thích — kết xuất trên CPU nên phát lại chậm hơn.",
 		"exportWarning": "Không có GPU tương thích: lần xuất này chạy trên CPU và sẽ lâu hơn bình thường rất nhiều."

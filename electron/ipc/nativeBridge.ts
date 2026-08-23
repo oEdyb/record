@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import type { EntitlementCapability } from "../../src/lib/entitlements/contracts";
 import type { AiEditionChatEvent } from "../../src/native/contracts";
 import {
 	NATIVE_BRIDGE_CHANNEL,
@@ -12,6 +13,7 @@ import {
 } from "../../src/native/contracts";
 import type { ChatEventSink } from "../ai-edition/chat-service";
 import type { DocumentService } from "../ai-edition/document-service";
+import { EntitlementRequiredError } from "../entitlements/service";
 import {
 	type CursorTelemetryLoadResult,
 	TelemetryCursorAdapter,
@@ -24,6 +26,7 @@ import { SystemService } from "../native-bridge/services/systemService";
 import { createNativeBridgeState } from "../native-bridge/store";
 
 export interface NativeBridgeContext {
+	assertEntitlement: (capability: EntitlementCapability) => Promise<void>;
 	getPlatform: () => NodeJS.Platform;
 	getCurrentProjectPath: () => string | null;
 	getCurrentVideoPath: () => string | null;
@@ -272,6 +275,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 						case "getCurrentContext":
 							return createSuccessResponse(requestId, projectService.getCurrentContext());
 						case "saveProjectFile":
+							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await projectService.saveProjectFile(
@@ -411,6 +415,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							compositorViewService.destroyView(request.payload.id);
 							return createSuccessResponse(requestId, { ok: true });
 						case "exportMulti": {
+							await context.assertEntitlement("export");
 							const sender = event.sender;
 							const stats = await compositorViewService.exportMulti(
 								request.payload.clips,
@@ -433,6 +438,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							return createSuccessResponse(requestId, stats);
 						}
 						case "exportGif": {
+							await context.assertEntitlement("export");
 							const sender = event.sender;
 							const stats = await compositorViewService.exportGif(
 								request.payload.clips,
@@ -474,21 +480,25 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								await aiEditionService.get(request.payload.projectId),
 							);
 						case "document.create":
+							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.create(request.payload?.title),
 							);
 						case "document.save":
+							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.save(request.payload.document),
 							);
 						case "document.delete":
+							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.deleteProject(request.payload.projectId),
 							);
 						case "document.addAsset":
+							await context.assertEntitlement("import");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.addAsset(
@@ -499,6 +509,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								),
 							);
 						case "document.removeAsset":
+							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.removeAsset(
@@ -537,6 +548,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								await aiEditionService.llmListProviderModels(request.payload.providerId),
 							);
 						case "chat.run": {
+							await context.assertEntitlement("automatic-editing");
 							const sessionId = request.payload.sessionId;
 							const sink = buildChatEventSink(event.sender, sessionId);
 							return createSuccessResponse(
@@ -551,6 +563,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							);
 						}
 						case "chat.undoLastBatch":
+							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								aiEditionService.chatUndoLastBatch(
@@ -610,6 +623,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								),
 							);
 						case "chat.rewind":
+							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								aiEditionService.chatRewindToMessage(
@@ -635,6 +649,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								),
 							);
 						case "captions.translate":
+							await context.assertEntitlement("automatic-editing");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.captionsTranslate({
@@ -667,7 +682,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 			console.error(`native bridge ${domain}.${request.action} failed:`, error);
 			return createErrorResponse(
 				requestId,
-				"INTERNAL_ERROR",
+				error instanceof EntitlementRequiredError ? "ENTITLEMENT_REQUIRED" : "INTERNAL_ERROR",
 				redactPaths(error instanceof Error ? error.message : "Unknown native bridge error."),
 			);
 		}

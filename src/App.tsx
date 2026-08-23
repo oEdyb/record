@@ -5,6 +5,7 @@ import { installBrowserShims } from "./native/browserShim";
 
 installBrowserShims();
 
+import { EntitlementDialog } from "./components/entitlements/EntitlementDialog";
 import { CameraPreviewWindow } from "./components/launch/CameraPreviewWindow";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
@@ -16,6 +17,7 @@ import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { APP_DISPLAY_NAME } from "./lib/brand";
 import { loadAllCustomFonts } from "./lib/customFonts";
+import { initializeEntitlements } from "./lib/entitlements/store";
 
 const VideoEditorEntry = lazy(() =>
 	import("./components/ai-edition/AiEditionShell").then((module) => ({
@@ -77,6 +79,21 @@ export default function App() {
 		loadAllCustomFonts().catch((error) => {
 			console.error("Failed to load custom fonts:", error);
 		});
+	}, []);
+
+	useEffect(() => {
+		let disposed = false;
+		let dispose: () => void = () => undefined;
+		void initializeEntitlements()
+			.then((cleanup) => {
+				if (disposed) cleanup();
+				else dispose = cleanup;
+			})
+			.catch((error) => console.warn("Could not load Klippt entitlement:", error));
+		return () => {
+			disposed = true;
+			dispose();
+		};
 	}, []);
 
 	const content = (() => {
@@ -164,6 +181,7 @@ export default function App() {
 	return (
 		<TooltipProvider>
 			{showNotes ? <NotesWindow /> : content}
+			<EntitlementDialog />
 			<Toaster theme="dark" />
 		</TooltipProvider>
 	);

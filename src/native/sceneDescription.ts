@@ -39,6 +39,7 @@ import {
 	webcamSizeToFraction,
 } from "@/lib/compositeLayout";
 import { parseCssGradient, resolveLinearGradientAngle } from "@/lib/exporter/gradientParser";
+import { resolveScreenFraming, screenFramingVariantKey } from "@/lib/screenFraming";
 import {
 	type MotionSpeed,
 	type MotionStyle,
@@ -202,6 +203,10 @@ export interface SceneLayout {
 	webcamZoom: number;
 	/** Visual focus point inside the webcam crop. It does not move the webcam rect. */
 	webcamFocalPoint: { cx: number; cy: number };
+	/** Base screen crop for the selected output shape. Timeline Zooms compose inside it. */
+	screenZoom: number;
+	/** Base focal point for the screen crop, in normalized source coordinates. */
+	screenFocalPoint: { cx: number; cy: number };
 	/**
 	 * The mask shape the layout actually RESOLVED to, not the raw `webcamMaskShape`
 	 * setting. Only picture-in-picture honors the setting; the block layouts cut a
@@ -545,6 +550,10 @@ export function buildSceneDescription(
 	// send normalized output-frame coordinates through `layout.webcamRect`. The native
 	// compositor consumes the resolved rect directly.
 	const outputDims = pickOutputDims(document, settings.aspectRatio, {}, settings.outputResolution);
+	const screenFraming = resolveScreenFraming(
+		settings.screenFramingByVariant,
+		screenFramingVariantKey(settings.aspectRatio, settings.outputResolution),
+	);
 	// ponytail: when the active camera has been probed (real webcam dims cached by
 	// WebcamOverlay's loadedmetadata handler), use them so the box matches the actual
 	// camera aspect. Without this the box defaults to a hardcoded 4:3 (960x720) and the
@@ -665,6 +674,8 @@ export function buildSceneDescription(
 			webcamSize: webcamSizeToFraction(settings.webcamSizePreset),
 			webcamZoom: settings.webcamZoom,
 			webcamFocalPoint: settings.webcamFocalPoint,
+			screenZoom: screenFraming.scale,
+			screenFocalPoint: screenFraming.focalPoint,
 			// The RESOLVED shape, not the raw setting — the block layouts always cut a
 			// rectangle, whatever shape the user last picked under picture-in-picture.
 			webcamShape: computedLayout?.webcamRect?.maskShape ?? settings.webcamMaskShape,

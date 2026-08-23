@@ -42,6 +42,7 @@ import {
 	MIN_WEBCAM_BLOCK_CAMERA_SHARE,
 } from "@/lib/compositeLayout";
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
+import { normalizeScreenFramingByVariant, type ScreenFramingByVariant } from "@/lib/screenFraming";
 import { DEFAULT_WALLPAPER } from "@/lib/wallpaper";
 import type { AspectRatio } from "@/utils/aspectRatioUtils";
 import { normalizeOutputResolution, type OutputResolution } from "../document/outputFormat";
@@ -56,6 +57,7 @@ export interface EditorSettingsSnapshot {
 	wallpaper: string;
 	aspectRatio: AspectRatio;
 	outputResolution: OutputResolution | null;
+	screenFramingByVariant: ScreenFramingByVariant;
 	shadowIntensity: number;
 	showBlur: boolean;
 	motionBlurAmount: number;
@@ -82,6 +84,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 	wallpaper: DEFAULT_WALLPAPER,
 	aspectRatio: "16:9",
 	outputResolution: null,
+	screenFramingByVariant: {},
 	// Opinionated by default: the wallpaper and the padding were already on, but
 	// with square corners and no shadow the recording read as a rectangle pasted
 	// onto the background rather than a window floating above it (#271 reported
@@ -119,6 +122,7 @@ interface LegacyShape {
 	wallpaper?: string;
 	aspectRatio?: AspectRatio;
 	outputResolution?: OutputResolution | null;
+	screenFramingByVariant?: ScreenFramingByVariant;
 	shadowIntensity?: number;
 	showBlur?: boolean;
 	motionBlurAmount?: number;
@@ -175,6 +179,7 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		wallpaper: str(legacy?.wallpaper, DEFAULT_EDITOR_SETTINGS.wallpaper),
 		aspectRatio: legacy?.aspectRatio ?? DEFAULT_EDITOR_SETTINGS.aspectRatio,
 		outputResolution: normalizeOutputResolution(legacy?.outputResolution),
+		screenFramingByVariant: normalizeScreenFramingByVariant(legacy?.screenFramingByVariant),
 		shadowIntensity: num(legacy?.shadowIntensity, DEFAULT_EDITOR_SETTINGS.shadowIntensity),
 		showBlur: bool(legacy?.showBlur, DEFAULT_EDITOR_SETTINGS.showBlur),
 		motionBlurAmount: num(legacy?.motionBlurAmount, DEFAULT_EDITOR_SETTINGS.motionBlurAmount),
@@ -213,6 +218,7 @@ export interface EditorSettingsPatch {
 	wallpaper?: string;
 	aspectRatio?: AspectRatio;
 	outputResolution?: OutputResolution | null;
+	screenFramingByVariant?: ScreenFramingByVariant;
 	shadowIntensity?: number;
 	showBlur?: boolean;
 	motionBlurAmount?: number;

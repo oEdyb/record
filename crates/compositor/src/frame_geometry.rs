@@ -357,6 +357,60 @@ pub(crate) fn cover_uv_rect(uv: [f32; 4], tex: [f32; 2], box_ar: f32) -> [f32; 4
     let (cx, cy) = (uv[0] + w_uv * 0.5, uv[1] + h_uv * 0.5);
     [cx - new_w * 0.5, cy - new_h * 0.5, cx + new_w * 0.5, cy + new_h * 0.5]
 }
+/// Resolve the saved base framing for one output shape. Cover establishes the
+/// smallest crop that fills the destination slot. The saved scale can only
+/// shrink that window, and the focal point moves it inside the user's clip crop.
+pub(crate) fn framed_screen_source_rect(
+    u_max: f32,
+    v_max: f32,
+    crop: Option<SceneCrop>,
+    tex: [f32; 2],
+    cover_box_ar: Option<f32>,
+    scale: f32,
+    focus: [f32; 2],
+) -> [f32; 4] {
+    let crop_uv = screen_source_rect(u_max, v_max, crop, 1.0, [0.5, 0.5]);
+    let cover_uv = cover_box_ar
+        .map(|aspect| cover_uv_rect(crop_uv, tex, aspect))
+        .unwrap_or(crop_uv);
+    let scale = if scale.is_finite() { scale.clamp(1.0, 4.0) } else { 1.0 };
+    let width = (cover_uv[2] - cover_uv[0]) / scale;
+    let height = (cover_uv[3] - cover_uv[1]) / scale;
+    let available_x = (crop_uv[2] - crop_uv[0] - width).max(0.0);
+    let available_y = (crop_uv[3] - crop_uv[1] - height).max(0.0);
+    let fx = if focus[0].is_finite() { focus[0].clamp(0.0, 1.0) } else { 0.5 };
+    let fy = if focus[1].is_finite() { focus[1].clamp(0.0, 1.0) } else { 0.5 };
+    let x0 = crop_uv[0] + available_x * fx;
+    let y0 = crop_uv[1] + available_y * fy;
+    [x0, y0, x0 + width, y0 + height]
+}
+
+/// Apply a timeline zoom inside the saved base frame. The timeline focus is
+/// stored in full-crop coordinates, so remap it into the base window first.
+fn zoom_inside_base_frame(
+    base: [f32; 4],
+    full_crop: [f32; 4],
+    zoom: f32,
+    focus: [f32; 2],
+) -> [f32; 4] {
+    let full_w = (full_crop[2] - full_crop[0]).max(1e-6);
+    let full_h = (full_crop[3] - full_crop[1]).max(1e-6);
+    let base_w = (base[2] - base[0]).max(1e-6);
+    let base_h = (base[3] - base[1]).max(1e-6);
+    let full_fx = if focus[0].is_finite() { focus[0].clamp(0.0, 1.0) } else { 0.5 };
+    let full_fy = if focus[1].is_finite() { focus[1].clamp(0.0, 1.0) } else { 0.5 };
+    let fx = ((full_crop[0] + full_fx * full_w - base[0]) / base_w).clamp(0.0, 1.0);
+    let fy = ((full_crop[1] + full_fy * full_h - base[1]) / base_h).clamp(0.0, 1.0);
+    let zoom = if zoom.is_finite() && zoom >= 1.0 { zoom } else { 1.0 };
+    let width = base_w / zoom;
+    let height = base_h / zoom;
+    let x0 = (base[0] + fx * base_w - width * 0.5)
+        .clamp(base[0], (base[2] - width).max(base[0]));
+    let y0 = (base[1] + fy * base_h - height * 0.5)
+        .clamp(base[1], (base[3] - height).max(base[1]));
+    [x0, y0, x0 + width, y0 + height]
+}
+
 pub const HALF_W: u32 = OUT_W / 2;
 pub const HALF_H: u32 = OUT_H / 2;
 pub const FIXTURE_FRAMES: u32 = 360;
@@ -1019,29 +1073,33 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // il étirait la source pour remplir le slot — visible dès que le clip est recadré,
         // puisque le crop éloigne encore le ratio de la source de celui du slot.
         //
-        // Le cover s'applique APRÈS le crop et le zoom, sur leur rect résultant : le crop
-        // décide quoi montrer, le zoom où regarder, le cover comment habiller la boîte. Son
-        // ratio de boîte se lit sur `s_base` : `remap_box` met les deux axes à la même
-        // échelle, donc la boîte finale a le même ratio et le cover ne dépend pas d'elle
-        // (ce qui casserait la circularité coupe → boîte → coupe).
+        // Cover establishes the minimum base window before the saved framing scale and the
+        // timeline Zoom are applied. Its aspect comes from `s_base`; `remap_box` scales both
+        // axes together, so the final destination keeps that aspect without circular math.
         let cover_box_ar = scene.and_then(|s| {
             s.layout
                 .screen_cover
                 .then_some((s_base[2] * rw) / (s_base[3] * rh).max(0.0001))
         });
-        let cover = |uv: [f32; 4]| -> [f32; 4] {
-            match cover_box_ar {
-                Some(ar) => cover_uv_rect(uv, [stw as f32, sth as f32], ar),
-                None => uv,
-            }
-        };
-        // La coupe RÉFÉRENCE (zoom entier) est celle qui remplissait la boîte paddée avant
-        // ce correctif ; la coupe DESSINÉE ne porte plus que le crop. `remap_box` reporte la
-        // seconde à travers le mapping de la première, ce qui conserve le cadrage exact.
-        // Le focus courant reste volontairement utilisé pour la frame précédente, comme avant.
-        let cut_ref = cover(screen_source_rect(u_max, v_max, active_crop, p.zoom, p.focus));
-        let cut_ref_prev = cover(screen_source_rect(u_max, v_max, active_crop, pp.zoom, p.focus));
-        let cut = cover(screen_source_rect(u_max, v_max, active_crop, 1.0, p.focus));
+        // Base framing belongs to the selected output shape. Timeline Zooms then compose
+        // inside that saved window instead of replacing it. This keeps a 9:16 crop independent
+        // from 16:9 while preserving one edit model for preview and export.
+        let full_crop = screen_source_rect(u_max, v_max, active_crop, 1.0, [0.5, 0.5]);
+        let screen_zoom = scene.map(|s| s.layout.screen_zoom).unwrap_or(1.0);
+        let screen_focus = scene
+            .map(|s| [s.layout.screen_focal_point.cx, s.layout.screen_focal_point.cy])
+            .unwrap_or([0.5, 0.5]);
+        let cut = framed_screen_source_rect(
+            u_max,
+            v_max,
+            active_crop,
+            [stw as f32, sth as f32],
+            cover_box_ar,
+            screen_zoom,
+            screen_focus,
+        );
+        let cut_ref = zoom_inside_base_frame(cut, full_crop, p.zoom, p.focus);
+        let cut_ref_prev = zoom_inside_base_frame(cut, full_crop, pp.zoom, p.focus);
         let s_dst = remap_box(s_base, cut_ref, cut);
         let s_dst_prev = remap_box(s_base_prev, cut_ref_prev, cut);
         // le padding n'affecte QUE l'écran (la quantité de fond révélée). La webcam reste ancrée
@@ -1672,6 +1730,32 @@ mod tests {
         let crop = SceneCrop { x: 0.25, y: 0.1, width: 0.5, height: 0.6 };
         assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 2.0, [0.5, 0.5]), [0.3, 0.225, 0.5, 0.495]);
         assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 2.0, [1.0, 1.0]), [0.4, 0.36, 0.6, 0.63]);
+    }
+
+    #[test]
+    fn base_screen_framing_starts_at_cover_and_moves_inside_the_crop() {
+        // 16:9 source in a square slot: cover keeps 9/16 of the source width.
+        let centered = framed_screen_source_rect(
+            1.0,
+            1.0,
+            None,
+            [1920.0, 1080.0],
+            Some(1.0),
+            1.0,
+            [0.5, 0.5],
+        );
+        assert_rect(centered, [0.21875, 0.0, 0.78125, 1.0]);
+
+        let left = framed_screen_source_rect(
+            1.0,
+            1.0,
+            None,
+            [1920.0, 1080.0],
+            Some(1.0),
+            2.0,
+            [0.0, 0.5],
+        );
+        assert_rect(left, [0.0, 0.25, 0.28125, 0.75]);
     }
 
     // --- le zoom rendu à la boîte (issue #179) ------------------------------

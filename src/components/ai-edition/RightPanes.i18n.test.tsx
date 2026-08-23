@@ -66,6 +66,9 @@ function makeStackedCameraDocument(): AxcutDocument {
 		zoomRanges: [],
 		legacyEditor: {
 			aspectRatio: "9:16",
+			screenFramingByVariant: {
+				"9:16": { scale: 2.2, focalPoint: { cx: 0.75, cy: 0.25 } },
+			},
 			webcamLayoutPreset: "vertical-stack",
 			webcamBlockCameraShare: 50,
 		},
@@ -129,6 +132,12 @@ describe("right-rail panes are localized", () => {
 		expect(slider).toHaveValue("50");
 		expect(slider).toHaveAttribute("min", "20");
 		expect(slider).toHaveAttribute("max", "80");
+		expect(screen.getByRole("slider", { name: "Scale" })).toHaveValue("2.2");
+		expect(screen.getByRole("slider", { name: "Position" })).toHaveAttribute(
+			"aria-valuetext",
+			"75%, 25%",
+		);
+		expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
 	});
 
 	it("renders the cursor pane in French", () => {

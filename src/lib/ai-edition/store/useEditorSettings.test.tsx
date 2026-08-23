@@ -5,6 +5,7 @@ import { createEmptyDocument } from "../schema";
 import { loadEditingPreferences } from "./editingPreferences";
 import { getEditorSettings } from "./editorSettings";
 import { useProjectStore } from "./projectStore";
+import { clearHistory, undo } from "./undo";
 import { useEditorSettings } from "./useEditorSettings";
 
 const bridgeMocks = vi.hoisted(() => ({ save: vi.fn() }));
@@ -20,6 +21,7 @@ vi.mock("@/native/client", () => ({
 describe("useEditorSettings preferences", () => {
 	beforeEach(() => {
 		localStorage.clear();
+		clearHistory();
 		bridgeMocks.save.mockReset();
 		bridgeMocks.save.mockImplementation(async (document) => ({ success: true, document }));
 		const document = createEmptyDocument({ projectId: "project", title: "Project" });
@@ -55,6 +57,21 @@ describe("useEditorSettings preferences", () => {
 		});
 
 		expect(loadEditingPreferences().editor.shadowIntensity).toBe(0.72);
+	});
+
+	it("records one Undo step for a complete live gesture", async () => {
+		const view = renderHook(() => useEditorSettings());
+
+		act(() => view.result.current.setLive({ padding: 12 }));
+		act(() => view.result.current.setLive({ padding: 26 }));
+		await act(async () => {
+			await view.result.current.commit();
+		});
+
+		expect(getEditorSettings(useProjectStore.getState().document).padding).toBe(26);
+		act(() => expect(undo()).toBe(true));
+		expect(getEditorSettings(useProjectStore.getState().document).padding).toBe(50);
+		expect(undo()).toBe(false);
 	});
 
 	it("does not remember a setting when the project save fails", async () => {
