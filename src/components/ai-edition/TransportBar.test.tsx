@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { TransportBar } from "./TransportBar";
@@ -25,6 +27,14 @@ const clips = [
 ];
 
 const noop = vi.fn();
+
+function TestShell({ children }: { children: ReactNode }) {
+	return (
+		<I18nProvider>
+			<TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+		</I18nProvider>
+	);
+}
 
 describe("TransportBar reads the playhead from the store", () => {
 	beforeEach(() => {
@@ -58,9 +68,9 @@ describe("TransportBar reads the playhead from the store", () => {
 		}
 
 		render(
-			<I18nProvider>
+			<TestShell>
 				<Parent />
-			</I18nProvider>,
+			</TestShell>,
 		);
 		const rendersAfterMount = parentRenders;
 		expect(screen.getByText("0:00.0")).toBeInTheDocument();
@@ -78,7 +88,7 @@ describe("TransportBar reads the playhead from the store", () => {
 	it("prefers the live scrub override over the store value", () => {
 		useProjectStore.setState({ currentTimeSec: 12.3 });
 		render(
-			<I18nProvider>
+			<TestShell>
 				<TransportBar
 					playing={false}
 					overrideTimeSec={4.5}
@@ -88,7 +98,7 @@ describe("TransportBar reads the playhead from the store", () => {
 					onNextClip={noop}
 					onSeek={noop}
 				/>
-			</I18nProvider>,
+			</TestShell>,
 		);
 		expect(screen.getByText("0:04.5")).toBeInTheDocument();
 	});
@@ -131,7 +141,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 		const flush = stubRaf();
 		const onSeek = vi.fn();
 		render(
-			<I18nProvider>
+			<TestShell>
 				<TransportBar
 					playing={false}
 					overrideTimeSec={null}
@@ -141,7 +151,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 					onNextClip={noop}
 					onSeek={onSeek}
 				/>
-			</I18nProvider>,
+			</TestShell>,
 		);
 		const input = screen.getByLabelText(/seek/i) as HTMLInputElement;
 
@@ -168,7 +178,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 		stubRaf();
 		const onSeek = vi.fn();
 		render(
-			<I18nProvider>
+			<TestShell>
 				<TransportBar
 					playing={false}
 					overrideTimeSec={null}
@@ -178,7 +188,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 					onNextClip={noop}
 					onSeek={onSeek}
 				/>
-			</I18nProvider>,
+			</TestShell>,
 		);
 		const input = screen.getByLabelText(/seek/i) as HTMLInputElement;
 
@@ -196,7 +206,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 		stubRaf();
 		const onSeek = vi.fn();
 		render(
-			<I18nProvider>
+			<TestShell>
 				<TransportBar
 					playing={false}
 					overrideTimeSec={null}
@@ -206,7 +216,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 					onNextClip={noop}
 					onSeek={onSeek}
 				/>
-			</I18nProvider>,
+			</TestShell>,
 		);
 		const input = screen.getByLabelText(/seek/i) as HTMLInputElement;
 
@@ -225,7 +235,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 		stubRaf();
 		const onSeek = vi.fn();
 		const { container } = render(
-			<I18nProvider>
+			<TestShell>
 				<TransportBar
 					playing={false}
 					overrideTimeSec={null}
@@ -235,7 +245,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 					onNextClip={noop}
 					onSeek={onSeek}
 				/>
-			</I18nProvider>,
+			</TestShell>,
 		);
 		const input = screen.getByLabelText(/seek/i) as HTMLInputElement;
 		// Les deux éléments décorés : le remplissage (largeur) et le curseur (position).

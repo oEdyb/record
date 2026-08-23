@@ -366,6 +366,29 @@ describe("V4Timeline create-from-toolbar", () => {
 		expect(screen.getByText("toolbar.automaticZooms")).toBeVisible();
 	});
 
+	it("moves scroll help out of the toolbar and into the timeline overview tooltip", async () => {
+		renderTimeline();
+		expect(screen.queryByText("Shift+Scroll")).not.toBeInTheDocument();
+		expect(screen.queryByText("Ctrl+Scroll")).not.toBeInTheDocument();
+
+		fireEvent.focus(screen.getByRole("slider", { name: "labels.pan" }));
+		await waitFor(() => {
+			expect(document.querySelector('[data-slot="tooltip-content"]')).toHaveTextContent(
+				"Shift+Scroll labels.pan",
+			);
+		});
+	});
+
+	it("lets the keyboard pan the timeline overview", () => {
+		renderTimeline();
+		zoomIn(1);
+		const overview = screen.getByRole("slider", { name: "labels.pan" });
+		expect(Number.parseFloat(overview.style.left)).toBe(0);
+
+		fireEvent.keyDown(overview, { key: "ArrowRight" });
+		expect(Number.parseFloat(overview.style.left)).toBeGreaterThan(0);
+	});
+
 	it("scales the new region's duration with the zoom", () => {
 		const { tl } = renderTimeline();
 		fireEvent.click(screen.getByRole("button", { name: "buttons.addZoom" }));
@@ -465,5 +488,13 @@ describe("V4Timeline clip row", () => {
 		renderTimeline(CLIPS, undefined, "c@600");
 
 		expect(screen.queryByRole("button", { name: "toolbar.deleteClip" })).not.toBeInTheDocument();
+	});
+
+	it("keeps clip editing on the normal double-click action instead of a pencil control", () => {
+		const { clipEls } = renderTimeline(CLIPS);
+
+		expect(screen.getAllByRole("button", { name: "rec" })).toHaveLength(CLIPS.length);
+		expect(screen.queryByTitle("toolbar.editInOutPoints")).not.toBeInTheDocument();
+		expect(clipEls[0].querySelector("[data-no-clip-drag]")).not.toBeInTheDocument();
 	});
 });

@@ -4,7 +4,6 @@ import {
 	Loader2,
 	Maximize2,
 	MessageSquare,
-	Pencil,
 	Scissors,
 	Sparkles,
 	SplitSquareHorizontal,
@@ -14,6 +13,7 @@ import {
 import {
 	type ButtonHTMLAttributes,
 	memo,
+	type KeyboardEvent as ReactKeyboardEvent,
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
@@ -81,7 +81,7 @@ type TimelineApi = ReturnType<typeof useTimeline>;
 
 const ASSET_MIME = "application/x-axcut-asset";
 
-type ToolId = "cut" | "comment" | "speed";
+type ToolId = "comment" | "speed";
 
 type TimelineToolButtonProps = Omit<
 	ButtonHTMLAttributes<HTMLButtonElement>,
@@ -779,6 +779,33 @@ export function V4Timeline({
 		[nav],
 	);
 
+	const adjustNavFromKeyboard = useCallback(
+		(mode: "left" | "right" | "pan", e: ReactKeyboardEvent<HTMLDivElement>) => {
+			const direction = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+			if (direction === 0) return;
+			e.preventDefault();
+			setNav((prev) => {
+				const width = prev.end - prev.start;
+				const step = Math.max(0.002, width * (e.shiftKey ? 0.1 : 0.025)) * direction;
+				if (mode === "pan") {
+					const start = Math.max(0, Math.min(1 - width, prev.start + step));
+					return { start, end: start + width };
+				}
+				if (mode === "left") {
+					return {
+						start: Math.max(0, Math.min(prev.end - 0.05, prev.start + step)),
+						end: prev.end,
+					};
+				}
+				return {
+					start: prev.start,
+					end: Math.max(prev.start + 0.05, Math.min(1, prev.end + step)),
+				};
+			});
+		},
+		[],
+	);
+
 	// Plain scroll = vertical scroll (the panel can be too short to show every
 	// lane + the main track). Shift+scroll = horizontal pan. Ctrl+scroll = zoom
 	// around the cursor's timeline position. Shift is tested first, so it wins
@@ -972,7 +999,6 @@ export function V4Timeline({
 	);
 
 	const tools: Array<{ id: ToolId; label: string; icon: React.ReactNode }> = [
-		{ id: "cut", label: t("buttons.addTrim"), icon: <SplitSquareHorizontal size={15} /> },
 		{ id: "comment", label: t("toolbar.comment"), icon: <MessageSquare size={15} /> },
 		{ id: "speed", label: t("buttons.addSpeed"), icon: <Clock size={15} /> },
 	];
@@ -1292,6 +1318,19 @@ export function V4Timeline({
 							</PopoverContent>
 						</Popover>
 						<span className={styles.tlToolSep} aria-hidden />
+						<TimelineToolButton
+							label={t("buttons.addTrim")}
+							onClick={() => void tl.addTrim(newRegionDurationSec())}
+						>
+							<SplitSquareHorizontal size={15} />
+						</TimelineToolButton>
+						<TimelineToolButton
+							label={t("buttons.splitClip")}
+							onClick={() => void tl.splitClipAtPlayhead()}
+						>
+							<Scissors size={15} />
+						</TimelineToolButton>
+						<span className={styles.tlToolSep} aria-hidden />
 						{tools.map((tool) => (
 							<TimelineToolButton
 								key={tool.id}
@@ -1302,18 +1341,12 @@ export function V4Timeline({
 									const dur = newRegionDurationSec();
 									if (tool.id === "speed") void tl.addSpeed(dur);
 									if (tool.id === "comment") void tl.addAnnotation(dur);
-									if (tool.id === "cut") void tl.addTrim(dur);
 								}}
 							>
 								{tool.icon}
 							</TimelineToolButton>
 						))}
-						<TimelineToolButton
-							label={t("buttons.splitClip")}
-							onClick={() => void tl.splitClipAtPlayhead()}
-						>
-							<Scissors size={15} />
-						</TimelineToolButton>
+						<span className={styles.tlToolSep} aria-hidden />
 						<TimelineToolButton
 							label={t("buttons.addZoom")}
 							onClick={() => void tl.addZoom(newRegionDurationSec())}
@@ -1369,14 +1402,6 @@ export function V4Timeline({
 							onNextClip={onNextClip}
 							onSeek={setCurrentTime}
 						/>
-						<div className={styles.tlHints}>
-							<span className={styles.tlHint}>
-								<span className={styles.tlKbd}>Shift+Scroll</span> {t("labels.pan")}
-							</span>
-							<span className={styles.tlHint}>
-								<span className={styles.tlKbd}>Ctrl+Scroll</span> {t("labels.zoom")}
-							</span>
-						</div>
 					</>
 				) : null}
 			</div>
@@ -1495,7 +1520,8 @@ export function V4Timeline({
 										clipTransform = `translateX(${shiftPx}px)`;
 								}
 								return (
-									<div
+									<button
+										type="button"
 										key={c.id}
 										data-clip-id={c.id}
 										className={`${styles.tlClip}${selected ? ` ${styles.tlClipSel}` : ""}${
@@ -1534,22 +1560,11 @@ export function V4Timeline({
 											sourceEndSec={c.sourceEndSec ?? c.sourceStartSec + dur}
 										/>
 										<div className={styles.tlClipLabel}>
-											<span
-												className={styles.tlClipIcon}
-												data-no-clip-drag
-												title={t("toolbar.editInOutPoints")}
-												onClick={(e) => {
-													e.stopPropagation();
-													onEditClip(c);
-												}}
-											>
-												<Pencil size={9} />
-											</span>
 											<span className={styles.tlClipName}>
 												{tl.assets.find((a) => a.id === c.assetId)?.label ?? c.assetId}
 											</span>
 										</div>
-									</div>
+									</button>
 								);
 							})}
 							{dragOver ? (
@@ -1580,30 +1595,70 @@ export function V4Timeline({
 			{/* Zoom/pan window. Edit only: arranging clips needs the whole timeline
 			    on screen at once, and there is nothing to zoom INTO without lanes. */}
 			{showLanes ? (
-				<div ref={navRef} className={styles.tlNav}>
+				<div ref={navRef} className={styles.tlNav} role="group" aria-label={t("labels.zoom")}>
 					<div className={styles.tlNavTrack} />
-					<div
-						className={styles.tlNavWindow}
-						style={{
-							left: `${(nav.start * 100).toFixed(2)}%`,
-							width: `${((nav.end - nav.start) * 100).toFixed(2)}%`,
-						}}
-						onPointerDown={(e) => startNavDrag("pan", e)}
-					/>
-					<div
-						className={styles.tlNavHandle}
-						style={{ left: `calc(${(nav.start * 100).toFixed(2)}% - 6px)` }}
-						onPointerDown={(e) => startNavDrag("left", e)}
+					<Tooltip
+						content={
+							<span className={styles.tlNavTooltip}>
+								<span>
+									<kbd>Shift+Scroll</kbd> {t("labels.pan")}
+								</span>
+								<span>
+									<kbd>Ctrl+Scroll</kbd> {t("labels.zoom")}
+								</span>
+							</span>
+						}
+						side="top"
 					>
-						<span />
-					</div>
-					<div
-						className={styles.tlNavHandle}
-						style={{ left: `calc(${(nav.end * 100).toFixed(2)}% - 6px)` }}
-						onPointerDown={(e) => startNavDrag("right", e)}
-					>
-						<span />
-					</div>
+						<div
+							className={styles.tlNavWindow}
+							style={{
+								left: `${(nav.start * 100).toFixed(2)}%`,
+								width: `${((nav.end - nav.start) * 100).toFixed(2)}%`,
+							}}
+							role="slider"
+							tabIndex={0}
+							aria-label={t("labels.pan")}
+							aria-valuemin={0}
+							aria-valuemax={Math.round(total)}
+							aria-valuenow={Math.round(((nav.start + nav.end) / 2) * total)}
+							aria-valuetext={`${formatSec(nav.start * total)}–${formatSec(nav.end * total)}`}
+							onPointerDown={(e) => startNavDrag("pan", e)}
+							onKeyDown={(e) => adjustNavFromKeyboard("pan", e)}
+						/>
+					</Tooltip>
+					<Tooltip content={`${t("labels.zoom")} · ${formatSec(nav.start * total)}`} side="top">
+						<div
+							className={styles.tlNavHandle}
+							style={{ left: `calc(${(nav.start * 100).toFixed(2)}% - 6px)` }}
+							role="slider"
+							tabIndex={0}
+							aria-label={`${t("labels.zoom")} · ${formatSec(nav.start * total)}`}
+							aria-valuemin={0}
+							aria-valuemax={Math.round(nav.end * total)}
+							aria-valuenow={Math.round(nav.start * total)}
+							onPointerDown={(e) => startNavDrag("left", e)}
+							onKeyDown={(e) => adjustNavFromKeyboard("left", e)}
+						>
+							<span aria-hidden />
+						</div>
+					</Tooltip>
+					<Tooltip content={`${t("labels.zoom")} · ${formatSec(nav.end * total)}`} side="top">
+						<div
+							className={styles.tlNavHandle}
+							style={{ left: `calc(${(nav.end * 100).toFixed(2)}% - 6px)` }}
+							role="slider"
+							tabIndex={0}
+							aria-label={`${t("labels.zoom")} · ${formatSec(nav.end * total)}`}
+							aria-valuemin={Math.round(nav.start * total)}
+							aria-valuemax={Math.round(total)}
+							aria-valuenow={Math.round(nav.end * total)}
+							onPointerDown={(e) => startNavDrag("right", e)}
+							onKeyDown={(e) => adjustNavFromKeyboard("right", e)}
+						>
+							<span aria-hidden />
+						</div>
+					</Tooltip>
 				</div>
 			) : null}
 		</div>

@@ -1145,18 +1145,12 @@
 	min-height: 0;
 	height: 100%;
 	overflow: hidden;
-	/* The playhead's head sits ENTIRELY above the ruler, its tip landing on the
-	   line's top edge — that's what keeps it clear of the tick labels below. It
-	   deliberately overshoots the timeline body by --playhead-head-overshoot, so
-	   it breaks past the toolbar's bottom rule and reads as floating OVER the
-	   timeline rather than as a shape cut off by it. What's left of its height is
-	   the gap the ruler needs below the body's top edge (--playhead-head-clear),
-	   which .tlRulerRow pads by; .tlPlayheadLayer pads by the full height and is
-	   pulled up by the overshoot, so both content boxes still start on the same
-	   line. Derive, don't hand-tune: only -w/-h/-overshoot should ever change. */
-	--playhead-head-w: 16px;
-	--playhead-head-h: 18px;
-	--playhead-head-overshoot: 4px;
+	/* The compact playhead cap sits above the ruler and lands directly on its
+	   hairline. Derive the ruler clearance from these three values so the cap,
+	   ticks, clips and effect regions keep one exact horizontal coordinate. */
+	--playhead-head-w: 10px;
+	--playhead-head-h: 7px;
+	--playhead-head-overshoot: 2px;
 	--playhead-head-clear: calc(var(--playhead-head-h) - var(--playhead-head-overshoot));
 	/* The pan/zoom bar's band, kept here (not just on .tlNav) because the playhead
 	   layer stretches by exactly this much to run behind it, down to the panel's
@@ -1169,7 +1163,7 @@
 .tlToolbar {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 10px;
 	padding: 0 16px;
 	height: 40px;
 	flex-shrink: 0;
@@ -1178,7 +1172,7 @@
 .tlTools {
 	display: flex;
 	align-items: center;
-	gap: 1px;
+	gap: 2px;
 }
 .tlToolBtn {
 	width: 28px;
@@ -1207,31 +1201,6 @@
 .tlToolBtn[aria-pressed="true"] {
 	background: var(--editor-accent-soft, var(--surface-3));
 	color: var(--editor-accent-strong, var(--fg));
-}
-.tlHints {
-	margin-left: auto;
-	display: flex;
-	align-items: center;
-	gap: 10px;
-}
-.tlHint {
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-	height: 26px;
-	padding: 0 10px;
-	background: var(--surface-1);
-	border: 1px solid var(--border);
-	border-radius: 7px;
-	font-size: 11px;
-	font-weight: 500;
-	color: var(--muted);
-}
-.tlKbd {
-	font-family: var(--font-mono);
-	font-size: 10.5px;
-	font-weight: 600;
-	color: var(--fg-2);
 }
 /* Ruler + tracks live in one relative wrapper (between the toolbar and the zoom
    bar) so a single playhead overlay can span both. */
@@ -1328,20 +1297,12 @@
 	position: absolute;
 	top: 0;
 	bottom: 0;
-	width: 2px;
+	width: 1px;
 	background: var(--playhead);
-	border-radius: 1px;
-	/* Wide, soft halo: the line is only 2px, and this is what keeps it findable
-	   as it crosses dark lanes and pale clip cards alike. */
-	box-shadow: 0 0 18px var(--playhead-glow);
 	pointer-events: none;
 }
-/* Map-pin head: a rounded rectangle that tapers to a point at the bottom, the
-   point landing exactly on the top of the line (translate -100%). It therefore
-   sits wholly ABOVE the ruler and can't cover the tick labels.
-   The shape is border-radius ∩ clip-path: the polygon cuts the bottom into a
-   point while the radius keeps the two TOP corners round — a polygon alone
-   would give four hard corners, a radius alone no point. */
+/* A short cap marks the draggable origin without turning the playhead into a
+   second timeline object. It sits wholly above the ruler labels. */
 .tlPlayheadHead {
 	position: absolute;
 	top: 0;
@@ -1351,11 +1312,8 @@
 	height: var(--playhead-head-h);
 	box-sizing: border-box;
 	background: var(--playhead);
-	border-radius: 4px;
-	/* 67% keeps the point ~6px tall whatever --playhead-head-h is; the extra
-	   height all goes to the rectangular top. */
-	clip-path: polygon(0% 0%, 100% 0%, 100% 67%, 50% 100%, 0% 67%);
-	filter: drop-shadow(0 1px 3px var(--playhead-shadow));
+	border-radius: 2px;
+	box-shadow: 0 1px 2px var(--playhead-shadow);
 }
 /* Ruler ticks are positioned absolutely at their real time, not spread evenly
    by a flex row — that's what keeps a label under the frame it names once the
@@ -1571,21 +1529,33 @@
 	/* px, like .lanePill's: the gutter is subtracted from the clip's width, so a
 	   clip narrower than 6px would otherwise compute to nothing. */
 	min-width: 1px;
-	border-radius: 11px;
-	border: 1.5px solid var(--border);
-	background: var(--surface-1);
+	border-radius: 9px;
+	border: 1px solid var(--border);
+	background: color-mix(in srgb, var(--surface-1) 88%, var(--surface-2));
 	overflow: hidden;
+	padding: 0;
+	color: inherit;
+	font: inherit;
+	text-align: left;
 	cursor: grab;
 	box-sizing: border-box;
-	box-shadow: inset 0 1px 8px rgba(255, 255, 255, 0.06);
 	/* pointer-driven reorder: suppress native touch scroll + text selection */
 	touch-action: none;
 	user-select: none;
 	transition: box-shadow var(--motion-fast) var(--ease), opacity var(--motion-fast) var(--ease),
 		transform 150ms var(--ease);
 }
+.tlClip:hover {
+	border-color: var(--border-hi);
+	background: var(--surface-2);
+}
 .tlClipSel {
 	border-color: var(--editor-accent);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--editor-accent) 56%, transparent);
+}
+.tlClip:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
 }
 /* The clip being carried during a reorder drag — follows the pointer 1:1
    (no transition lag) while its siblings slide out of the way with the
@@ -1595,48 +1565,41 @@
 	opacity: 0.9;
 	z-index: 5;
 	border-color: var(--editor-accent);
-	box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), inset 0 1px 8px rgba(255, 255, 255, 0.06);
+	box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
 	transition: box-shadow var(--motion-fast) var(--ease), opacity var(--motion-fast) var(--ease);
 }
 .tlWave {
 	position: absolute;
-	inset: 3px 2px;
+	inset: 4px 3px;
 	display: block;
-	width: calc(100% - 4px);
-	height: calc(100% - 6px);
-	color: color-mix(in srgb, var(--editor-accent) 66%, var(--muted));
+	width: calc(100% - 6px);
+	height: calc(100% - 8px);
+	color: color-mix(in srgb, var(--editor-accent) 72%, var(--muted));
+	opacity: 0.9;
 	pointer-events: none;
 }
 .tlClipLabel {
 	position: absolute;
-	left: 10px;
-	top: 8px;
+	left: 8px;
+	top: 6px;
 	z-index: 2;
 	display: inline-flex;
 	align-items: center;
-	gap: 8px;
-	max-width: calc(100% - 50px);
-	padding: 3px 9px 3px 6px;
-	border-radius: 8px;
-	background: color-mix(in srgb, #080a0d 55%, transparent);
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
-}
-.tlClipIcon {
-	width: 16px;
-	height: 16px;
-	display: grid;
-	place-items: center;
+	max-width: calc(100% - 16px);
+	padding: 2px 6px;
 	border-radius: 5px;
-	background: var(--surface);
-	color: var(--fg);
-	flex-shrink: 0;
+	background: color-mix(in srgb, var(--surface) 74%, transparent);
+	opacity: 0.78;
+	transition: opacity var(--motion-fast) var(--ease);
+}
+.tlClip:hover .tlClipLabel,
+.tlClipSel .tlClipLabel {
+	opacity: 1;
 }
 .tlClipName {
-	font-size: 11px;
-	font-weight: 500;
-	color: #fff;
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--fg);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1664,28 +1627,40 @@
 	/* Above .tlPlayheadLayer's z-index: the playhead line now runs the full height
 	   of the panel, and this bar is meant to sit ON TOP of it, not be crossed. */
 	z-index: 7;
+	-webkit-tap-highlight-color: transparent;
 }
 .tlNavTrack {
 	position: absolute;
-	top: 7px;
+	top: 9px;
 	left: 0;
 	right: 0;
-	height: 6px;
-	border-radius: 3px;
-	background: var(--surface-3);
+	height: 2px;
+	border-radius: 999px;
+	background: var(--border-hi);
 }
 .tlNavWindow {
 	position: absolute;
-	top: 5px;
-	height: 10px;
-	border-radius: 5px;
-	background: var(--surface-hi);
-	border: 1px solid var(--border-hi);
+	top: 7px;
+	height: 6px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--fg-2) 36%, var(--surface-3));
+	border: 1px solid color-mix(in srgb, var(--fg-2) 34%, var(--border));
 	box-sizing: border-box;
 	cursor: grab;
+	touch-action: none;
+	transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease);
+}
+.tlNavWindow:hover {
+	background: color-mix(in srgb, var(--fg-2) 52%, var(--surface-3));
+	border-color: color-mix(in srgb, var(--fg-2) 50%, var(--border));
 }
 .tlNavWindow:active {
 	cursor: grabbing;
+}
+.tlNavWindow:focus-visible,
+.tlNavHandle:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
 }
 .tlNavHandle {
 	position: absolute;
@@ -1697,13 +1672,38 @@
 	justify-content: center;
 	cursor: ew-resize;
 	z-index: 3;
+	touch-action: none;
+	opacity: 0;
+	transform: scaleY(0.72);
+	transition: opacity var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+.tlNav:hover .tlNavHandle,
+.tlNav:focus-within .tlNavHandle {
+	opacity: 1;
+	transform: scaleY(1);
 }
 .tlNavHandle span {
-	width: 4px;
-	height: 14px;
-	border-radius: 2px;
+	width: 2px;
+	height: 11px;
+	border-radius: 999px;
 	background: var(--fg-2);
-	box-shadow: 0 0 0 2px var(--surface);
+}
+.tlNavTooltip {
+	display: grid;
+	gap: 4px;
+	line-height: 1.2;
+}
+.tlNavTooltip span {
+	display: grid;
+	grid-template-columns: 82px auto;
+	align-items: center;
+	gap: 8px;
+}
+.tlNavTooltip kbd {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 600;
+	color: var(--fg-2);
 }
 
 /* V4Timeline — region resize handles, toolbar aspect control */
@@ -1717,9 +1717,19 @@
 }
 .tlToolSep {
 	width: 1px;
-	height: 20px;
-	background: var(--border);
-	margin: 0 4px;
+	height: 16px;
+	background: var(--border-soft);
+	margin: 0 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tlClip,
+	.tlClipDragging,
+	.tlClipLabel,
+	.tlNavWindow,
+	.tlNavHandle {
+		transition: none;
+	}
 }
 .tlAspect {
 	display: inline-flex;
