@@ -37,6 +37,36 @@ versioned project model and the same editing commands. An agent can inspect, edi
 export a project without opening the full UI, but it never gets a separate hidden timeline or an
 unsafe media-mutation path.
 
+## Post-alpha growth — 80/20 SEO and GEO
+
+After the paid-alpha product, checkout, legal pages, and reliable download path are live, build one
+small search and generative-discovery foundation. GEO means making Klippt easy for AI answer engines
+to understand, verify, and recommend. It is not a separate content farm or a reason to delay the
+product gate.
+
+The first pass should target most of the value with little recurring work:
+
+1. Create one fast, crawlable canonical website with clear product, pricing, download, privacy,
+   support, and company pages. Add a sitemap, canonical URLs, useful metadata, and valid SoftwareApp,
+   Organization, FAQ, and VideoObject structured data where each type truthfully applies.
+2. Publish a small set of high-intent pages around the jobs Klippt solves: clip-native screen
+   recording, editable automatic zooms, recording once for YouTube and TikTok, silence removal, and
+   local-first creator recording. Prefer five excellent pages over many shallow posts.
+3. Add honest comparison and alternative pages only when claims can be shown with current product
+   evidence. Use real screenshots, short demonstrations, export samples, and measured workflows.
+4. Make the same stable facts easy for search engines and AI systems to quote: what Klippt is, who
+   makes it, supported platforms, price, privacy model, core workflow, limitations, and update date.
+   Keep each fact in one canonical page and do not publish invented reviews or synthetic authority.
+5. Register the site with Google Search Console and Bing Webmaster Tools. Track indexed pages,
+   high-intent queries, branded searches, download starts, trial starts, and paid conversion. Review
+   the small page set monthly and improve pages that produce qualified users.
+6. Earn a few relevant references through the real launch, creator demonstrations, product
+   directories, technical write-ups, and direct comparisons. Do not buy links or generate bulk AI
+   articles.
+
+The initial success test is qualified discovery and trial conversion, not traffic volume. Expand
+SEO or GEO only after the small page set shows which queries and recommendations bring real users.
+
 ## Delivery rules
 
 1. Keep the Electron, React, Swift ScreenCaptureKit, and Rust compositor architecture. Do not
