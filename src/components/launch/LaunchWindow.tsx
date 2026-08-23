@@ -1060,7 +1060,8 @@ export function LaunchWindow() {
 
 						{/* Right sidebar controls */}
 						<div
-							className={`flex items-center gap-[5px] ${hudIsVertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
+							data-testid="hud-right-controls"
+							className={`flex items-center gap-[5px] ${hudIsVertical ? "flex-col" : "ml-auto"} ${styles.electronNoDrag}`}
 						>
 							<HudLanguageButton
 								buttonRef={languageTriggerRef}

@@ -492,6 +492,13 @@ describe("LaunchWindow record button", () => {
 		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
 	});
 
+	it("anchors the horizontal window controls to the right edge", async () => {
+		renderLaunchWindow();
+
+		const controls = await screen.findByTestId("hud-right-controls");
+		expect(controls).toHaveClass("ml-auto");
+	});
+
 	it("returns to the editor from the idle HUD with Escape or the close button", async () => {
 		stubElectronAPI(vi.fn(async () => displayOneSource));
 		window.electronAPI.getRecordingWorkspaceContext = vi.fn(async () => ({
