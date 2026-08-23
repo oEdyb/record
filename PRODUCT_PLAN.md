@@ -68,7 +68,7 @@ unsafe media-mutation path.
 | Presets | Recording and editing preferences persist | Named, reusable recording/style/delivery presets |
 | Agent workflow | Record, Sources, Info, Pack, Captions, and legacy/current project Export CLI paths exist | Complete inspect/edit/validate command surface with UI parity, dry runs, revisions, and agent-safe transactions |
 | Project format | `.klippt` is canonical across storage, dialogs, drag-and-drop, and CLI; legacy `.openscreen` and `.axcut` files remain readable and are copied forward without deletion | File-association handoff and broader real-project migration testing |
-| Distribution | Klippt name, icons, package display name, `.klippt` format, Developer ID certificate, privacy-safe diagnostics, and the owned `updates.dyberg.co` R2 update channel are implemented while current bundle and user-data identities stay compatible | Finish Apple app-password notarization proof, entitlement activation, legal/support pages, and later test the bundle-ID migration separately |
+| Distribution | Klippt name, icons, package display name, `.klippt` format, Developer ID certificate, validated notarization credentials, privacy-safe diagnostics, and the owned `updates.dyberg.co` R2 update channel are implemented while current bundle and user-data identities stay compatible | Finish the current Apple notarization and stapling proof, entitlement activation, legal/support pages, and later test the bundle-ID migration separately |
 
 ## Gate 0 — protect the product before more code
 
@@ -749,11 +749,12 @@ After Gate 0:
 4. **Done on the development Mac:** Build the packaged Klippt app and verify current projects,
    preferences, capture permission, and the legacy user-data location. Clean-Mac verification
    remains part of the signed alpha test.
-5. **Developer ID signing ready; notarization credential pending:** Dyberg & Co AB's paid Apple
+5. **Developer ID signing and notarization credentials ready; first proof processing:** Dyberg & Co AB's paid Apple
    Developer membership is active. A Developer ID Application certificate is installed, backed up,
-   and accepted by a real signed Klippt build. The release workflow uses Hardened Runtime,
-   `notarytool`, stapling, and Gatekeeper validation. Create the Klippt app-specific Apple password,
-   store it in GitHub Actions and the local notary profile, then notarize one release candidate.
+   and accepted by a real signed Klippt build. A separate Klippt app-specific password is validated
+   in the local `klippt-notary` Keychain profile and stored as a private GitHub Actions secret. The
+   first signed Apple Silicon DMG is submission `ce41d670-4071-4e1a-b1b7-8939cc74aa4c`; Apple still
+   reports it as `In Progress`. When Apple accepts it, staple the ticket and verify Gatekeeper.
 6. **Done:** Use a private-alpha update channel that does not require a GitHub repository token in
    customer installs. Stable builds publish immutable artifacts first and mutable manifests last to
    the private `klippt-updates` R2 bucket at `updates.dyberg.co/klippt`. The generated macOS app
