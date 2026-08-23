@@ -6,6 +6,8 @@
 		"cancelRecording": "Hủy ghi hình",
 		"pauseRecording": "Tạm dừng ghi hình",
 		"resumeRecording": "Tiếp tục ghi hình",
+		"showRecordingControls": "Hiện điều khiển ghi hình",
+		"hideRecordingControls": "Ẩn điều khiển ghi hình",
 		"openVideoFile": "Mở tệp video",
 		"openProject": "Mở dự án",
 		"useVerticalTray": "Dùng khay dọc",

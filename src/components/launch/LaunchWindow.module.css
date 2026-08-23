@@ -71,12 +71,28 @@
 
 .hudBarRecording {
 	width: var(--hud-horizontal-width, 832px);
+	height: 80px;
 	box-sizing: border-box;
 	flex-direction: column;
 	align-items: stretch;
 	gap: 0;
 	padding: 0;
 	overflow: hidden;
+	transform-origin: center bottom;
+	transition:
+		width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+		height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+		border-radius 240ms cubic-bezier(0.22, 1, 0.36, 1),
+		box-shadow 240ms ease;
+}
+
+.hudBarCompact {
+	width: 224px;
+	height: 50px;
+	border-radius: 25px;
+	box-shadow:
+		0 8px 24px -12px rgba(0, 0, 0, 0.68),
+		0 2px 6px -2px rgba(0, 0, 0, 0.38);
 }
 
 .hudPrimaryRow {
@@ -84,6 +100,31 @@
 	align-items: center;
 	gap: 5px;
 	padding: 7px 9px;
+}
+
+.hudCompactRow {
+	display: flex;
+	height: 48px;
+	box-sizing: border-box;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	padding: 7px 9px;
+}
+
+.hudContentEnter {
+	animation: hud-content-enter 180ms 70ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes hud-content-enter {
+	from {
+		opacity: 0;
+		transform: scale(0.975);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
 }
 
 .hudPrimaryRowContents {
@@ -153,6 +194,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.hudBarRecording {
+		transition: none;
+	}
+
+	.hudContentEnter {
+		animation: none;
+	}
+
 	.recordingHistorySegment {
 		transition: none;
 	}

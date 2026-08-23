@@ -16,6 +16,7 @@
 	"registrationFailed": "Không thể đăng ký phím tắt. Có thể đang được sử dụng bởi ứng dụng khác. Hãy thử phím khác.",
 	"actions": {
 		"openApp": "Mở ứng dụng",
+		"toggleRecordingPause": "Tạm dừng / tiếp tục ghi hình",
 		"addZoom": "Thêm Thu phóng",
 		"addTrim": "Thêm Cắt",
 		"addSpeed": "Thêm Tốc độ",

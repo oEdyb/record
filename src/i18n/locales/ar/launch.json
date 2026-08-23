@@ -6,6 +6,8 @@
 		"cancelRecording": "إلغاء التسجيل",
 		"pauseRecording": "إيقاف التسجيل مؤقتاً",
 		"resumeRecording": "استئناف التسجيل",
+		"showRecordingControls": "إظهار عناصر تحكم التسجيل",
+		"hideRecordingControls": "إخفاء عناصر تحكم التسجيل",
 		"openVideoFile": "فتح ملف فيديو",
 		"openProject": "فتح مشروع",
 		"useVerticalTray": "استخدام الشريط العمودي",

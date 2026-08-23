@@ -1,4 +1,12 @@
-import { Check, Delete, Languages, NotepadText, Settings } from "lucide-react";
+import {
+	Check,
+	ChevronsLeftRight,
+	ChevronsRightLeft,
+	Delete,
+	Languages,
+	NotepadText,
+	Settings,
+} from "lucide-react";
 import { memo } from "react";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { Button } from "../ui/button";
@@ -471,6 +479,59 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 				</button>
 			</Tooltip>
 		</div>
+	);
+});
+
+export const HudCompactPauseButton = memo(function HudCompactPauseButton({
+	paused,
+	disabled,
+	label,
+	onClick,
+}: {
+	paused: boolean;
+	disabled: boolean;
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<Tooltip content={label}>
+			<button
+				type="button"
+				data-testid="hud-compact-pause-button"
+				className={hudAuxIconBtnClasses}
+				onClick={onClick}
+				disabled={disabled}
+				aria-label={label}
+			>
+				{getIcon(paused ? "resume" : "pause", paused ? "text-amber-400" : "text-white/70")}
+			</button>
+		</Tooltip>
+	);
+});
+
+export const HudRecordingSizeButton = memo(function HudRecordingSizeButton({
+	expanded,
+	label,
+	onClick,
+}: {
+	expanded: boolean;
+	label: string;
+	onClick: () => void;
+}) {
+	const Icon = expanded ? ChevronsRightLeft : ChevronsLeftRight;
+	return (
+		<Tooltip content={label}>
+			<button
+				type="button"
+				data-testid="hud-recording-size-button"
+				className={hudAuxIconBtnClasses}
+				onClick={onClick}
+				aria-label={label}
+				aria-expanded={expanded}
+			>
+				<Icon size={16} aria-hidden />
+			</button>
+		</Tooltip>
 	);
 });
 

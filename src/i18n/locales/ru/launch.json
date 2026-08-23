@@ -6,6 +6,8 @@
 		"cancelRecording": "Отменить запись",
 		"pauseRecording": "Приостановить запись",
 		"resumeRecording": "Возобновить запись",
+		"showRecordingControls": "Показать элементы записи",
+		"hideRecordingControls": "Скрыть элементы записи",
 		"openVideoFile": "Открыть видеофайл",
 		"openProject": "Открыть проект",
 		"useVerticalTray": "Использовать вертикальную панель",

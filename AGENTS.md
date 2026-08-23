@@ -76,7 +76,7 @@ path works with real capture:
 
 1. The user selects a real screen/window and audio settings.
 2. Record starts after the countdown.
-3. The active two-row floating panel appears.
+3. The floating panel contracts into the compact active-recording HUD.
 4. Pause finalizes the current clip without stopping ScreenCaptureKit when settings stay
    unchanged.
 5. Paused setup changes apply to the next clip without ending the logical recording.
@@ -154,14 +154,18 @@ Use a quick, restrained transition between the workspaces. Preserve timeline sel
 insertion boundary, preview time, inspector state, and window geometry. Do not show a setup
 page, dashboard, mode chooser, or navigation stack between Edit and Record.
 
-Keep OpenScreen's existing floating bar as the first row during recording. Add clip history
-as a second row inside the same surface. The rows share one background, border, radius,
-shadow, and material. Do not replace the first row or create a detached timeline pill.
+Keep the full floating bar and clip-history row while idle, paused, or explicitly expanded.
+During active recording, contract that same surface into one compact pill with Stop, total time,
+Pause, and Expand. Do not create a second panel or a detached timeline pill. Restore the full
+surface on Pause without moving the native backing window.
 
-The current real Mac render is approximately 829 CSS px wide and 84 px tall on a
-1710 px-wide work area. Preserve the familiar setup-to-recording transition. If future
-display or accessibility testing needs a compact layout, adapt this same surface instead of
-switching to a different recording panel.
+Provide a configurable global Pause/Continue shortcut. Default to `Command-Shift-Space` on
+macOS because `Command-Space` belongs to Spotlight. The renderer recording state is the final
+guard: ignore the shortcut while idle, saving, or finalizing.
+
+The full Mac render is approximately 829 CSS px wide and 84 px tall on a 1710 px-wide work
+area. The compact active state is approximately 224 CSS px wide and 50 px tall. Preserve one
+surface and one anchored position through the transition.
 
 ### First row
 
@@ -198,10 +202,9 @@ Do **not** show a clip-count label. The segments already communicate clip count.
 text such as `6 clips`. The main timer already communicates duration, so the lower row can
 remain a clean visual history rather than a second status readout.
 
-Keep the lower row present whenever the horizontal recording panel is visible, including the
-idle state before capture. Show an empty rail while idle. Fill the first active segment without
-changing the panel's outer geometry. Keep that same geometry in active, finalizing, paused,
-empty-history, and many-clip states.
+Keep the lower row present in the full horizontal panel, including the idle state before capture.
+Show an empty rail while idle. Hide the row only in the compact active state; keep its clip state
+mounted so Pause or Expand can reveal it immediately.
 
 The HUD uses a native transparent backing window that is much larger than the painted panel so
 menus can open without resizing the window. On macOS, make that window click-through before its

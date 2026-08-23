@@ -16,6 +16,7 @@
 	"registrationFailed": "Falha ao registrar o atalho. Ele pode já estar em uso por outro aplicativo. Tente uma tecla diferente.",
 	"actions": {
 		"openApp": "Abrir Aplicativo",
+		"toggleRecordingPause": "Pausar / continuar gravação",
 		"addZoom": "Adicionar Zoom",
 		"addTrim": "Adicionar Recorte",
 		"addSpeed": "Adicionar Velocidade",

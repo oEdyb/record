@@ -757,19 +757,18 @@ After Gate 0:
 6. Add the private alpha update channel and a privacy-safe crash-report export when distribution
    becomes the active gate.
 
-## Planned recording-HUD refinement
+## Recording-HUD refinement — implemented
 
-After the current editor slice is stable, test a lean active-recording state on the existing HUD.
-This is a design hypothesis, not a release gate yet.
+The recording workspace now uses one HUD surface that changes density with the recording state.
 
 1. Keep the full two-row surface while idle and paused, when source controls and clip history matter.
-2. During active recording, let the same surface collapse into one compact pill with the recording
+2. During active recording, the same surface collapses into one compact pill with the recording
    indicator, total time, Pause, and Stop.
 3. Keep the pill visible, readable, draggable, and slightly translucent. Do not make it fully
    transparent or let the backing window block input outside the painted pill.
-4. Restore the full surface on Pause or explicit expansion without moving the panel unexpectedly.
-5. Add a configurable global Pause/Continue shortcut. Do not use `Command-Space`, because macOS
-   reserves it for Spotlight. `Command-Shift-Space` is the first candidate, subject to registration
-   and conflict testing.
-6. Measure click interception, startup lag, focus stealing, and recording stability before making
-   the collapsed state the default.
+4. The full surface returns on Pause or explicit expansion without moving the native window.
+5. The configurable global Pause/Continue shortcut defaults to `Command-Shift-Space` on macOS.
+   Do not use `Command-Space`, because macOS reserves it for Spotlight.
+6. The 240–280 ms state transition uses a short ease-out curve and honors reduced-motion settings.
+   Continue to measure click interception, startup lag, focus stealing, and recording stability in
+   long real recordings.

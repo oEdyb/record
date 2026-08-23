@@ -6,6 +6,8 @@
 		"cancelRecording": "Annuler l'enregistrement",
 		"pauseRecording": "Mettre en pause l'enregistrement",
 		"resumeRecording": "Reprendre l'enregistrement",
+		"showRecordingControls": "Afficher les commandes d'enregistrement",
+		"hideRecordingControls": "Masquer les commandes d'enregistrement",
 		"openVideoFile": "Ouvrir un fichier vidéo",
 		"openProject": "Ouvrir un projet",
 		"useVerticalTray": "Utiliser la barre verticale",

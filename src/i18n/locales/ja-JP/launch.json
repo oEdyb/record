@@ -6,6 +6,8 @@
 		"cancelRecording": "録画をキャンセル",
 		"pauseRecording": "録画を一時停止",
 		"resumeRecording": "録画を再開",
+		"showRecordingControls": "録画コントロールを表示",
+		"hideRecordingControls": "録画コントロールを非表示",
 		"openVideoFile": "動画ファイルを開く",
 		"openProject": "プロジェクトを開く",
 		"useVerticalTray": "縦型トレイを使用",

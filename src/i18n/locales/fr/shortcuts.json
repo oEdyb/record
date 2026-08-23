@@ -16,6 +16,7 @@
 	"registrationFailed": "Échec de l'enregistrement du raccourci. Il est peut-être utilisé par une autre application. Essayez une autre touche.",
 	"actions": {
 		"openApp": "Ouvrir l'application",
+		"toggleRecordingPause": "Pause / reprise de l'enregistrement",
 		"addZoom": "Ajouter un zoom",
 		"addTrim": "Ajouter une coupe",
 		"addSpeed": "Ajouter une vitesse",

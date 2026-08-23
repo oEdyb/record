@@ -16,6 +16,7 @@
 	"registrationFailed": "Impossibile registrare la scorciatoia. Potrebbe essere in uso da un'altra applicazione. Prova un altro tasto.",
 	"actions": {
 		"openApp": "Apri applicazione",
+		"toggleRecordingPause": "Pausa / riprendi registrazione",
 		"addZoom": "Aggiungi zoom",
 		"addTrim": "Aggiungi taglio",
 		"addSpeed": "Aggiungi velocità",

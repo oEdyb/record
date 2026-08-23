@@ -54,10 +54,18 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 	const persistShortcuts = useCallback(
 		async (config?: ShortcutsConfig) => {
 			const configToSave = config ?? shortcuts;
-			await window.electronAPI.saveShortcuts?.(configToSave);
+			const registration = await window.electronAPI.updateGlobalShortcuts?.(configToSave);
+			if (registration && !registration.success) return false;
 
-			const result = await window.electronAPI.updateGlobalShortcut?.(configToSave.openApp);
-			return result ? result.success : true;
+			const saved = await window.electronAPI.saveShortcuts?.(configToSave);
+			if (saved && !saved.success) {
+				// Keep the runtime and persisted configuration in sync if disk writing
+				// fails after Electron accepted the new accelerators.
+				await window.electronAPI.updateGlobalShortcuts?.(shortcuts);
+				return false;
+			}
+
+			return true;
 		},
 		[shortcuts],
 	);

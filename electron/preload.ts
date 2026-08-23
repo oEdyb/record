@@ -8,7 +8,7 @@ import type {
 	RecordingWorkspaceContext,
 	StoreRecordedSessionInput,
 } from "../src/lib/recordingSession";
-import type { ShortcutBinding } from "../src/lib/shortcuts";
+import type { ShortcutsConfig } from "../src/lib/shortcuts";
 import type { AiEditionChatEvent } from "../src/native/contracts";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
 import type { RecordingPrefs } from "./ipc/handlers";
@@ -451,8 +451,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	saveShortcuts: (shortcuts: unknown) => {
 		return ipcRenderer.invoke("save-shortcuts", shortcuts);
 	},
-	updateGlobalShortcut: (binding: ShortcutBinding) => {
-		return ipcRenderer.invoke("update-global-shortcut", binding);
+	updateGlobalShortcuts: (shortcuts: ShortcutsConfig) => {
+		return ipcRenderer.invoke("update-global-shortcuts", shortcuts);
+	},
+	onHudToggleRecordingPause: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("hud-toggle-recording-pause", listener);
+		return () => ipcRenderer.removeListener("hud-toggle-recording-pause", listener);
 	},
 	setLocale: (locale: string) => {
 		return ipcRenderer.invoke("set-locale", locale);

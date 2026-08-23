@@ -1,5 +1,6 @@
 export const SHORTCUT_ACTIONS = [
 	"openApp",
+	"toggleRecordingPause",
 	"addZoom",
 	"addTrim",
 	"addSpeed",
@@ -108,6 +109,7 @@ export function findConflict(
 
 export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	openApp: { key: "o", ctrl: true, shift: true },
+	toggleRecordingPause: { key: " ", ctrl: true, shift: true },
 	addZoom: { key: "z" },
 	addTrim: { key: "t" },
 	addSpeed: { key: "s" },
@@ -121,6 +123,7 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	openApp: "Open App",
+	toggleRecordingPause: "Pause / Continue Recording",
 	addZoom: "Add Zoom",
 	addTrim: "Add Trim",
 	addSpeed: "Add Speed",

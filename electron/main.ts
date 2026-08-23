@@ -15,7 +15,7 @@ import {
 	Tray,
 } from "electron";
 import { APP_DISPLAY_NAME } from "../src/lib/brand";
-import { ShortcutBinding } from "../src/lib/shortcuts";
+import type { ShortcutsConfig } from "../src/lib/shortcuts";
 import {
 	blockedFromInstalling,
 	checkForSelfUpdate,
@@ -26,8 +26,8 @@ import { parseCliArgs } from "./cli/args";
 import { runCli } from "./cli/cliMain";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "./diagnostics/main-log-buffer";
 import {
-	loadAndRegisterGlobalShortcut,
-	registerOpenAppShortcut,
+	loadAndRegisterGlobalShortcuts,
+	registerGlobalShortcuts,
 	unregisterAllGlobalShortcuts,
 } from "./globalShortcut";
 import { mainT, setMainLocale } from "./i18n";
@@ -380,6 +380,16 @@ function getInstallChannel(): InstallChannel {
  *  and on Windows it physically cannot, because the capture helpers spawn from inside the
  *  install directory and NSIS cannot overwrite a running .exe. */
 let isRecording = false;
+
+function toggleRecordingPauseFromShortcut() {
+	if (!mainWindow || mainWindow.isDestroyed()) return;
+	mainWindow.webContents.send("hud-toggle-recording-pause");
+}
+
+const globalShortcutHandlers = {
+	openApp: showMainWindow,
+	toggleRecordingPause: toggleRecordingPauseFromShortcut,
+};
 
 async function downloadAndInstall(latestVersion: string) {
 	const downloaded = await downloadSelfUpdate();
@@ -833,8 +843,8 @@ appReady?.then(async () => {
 		updateTrayMenu();
 	});
 
-	ipcMain.handle("update-global-shortcut", (_, binding: ShortcutBinding) => {
-		const success = registerOpenAppShortcut(binding, showMainWindow);
+	ipcMain.handle("update-global-shortcuts", (_, shortcuts: ShortcutsConfig) => {
+		const success = registerGlobalShortcuts(shortcuts, globalShortcutHandlers);
 		return { success };
 	});
 
@@ -908,7 +918,7 @@ appReady?.then(async () => {
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.
 	registerSttIpc(ipcMain);
 
-	await loadAndRegisterGlobalShortcut(showMainWindow);
+	await loadAndRegisterGlobalShortcuts(globalShortcutHandlers);
 
 	// --bench=<query>: run the export bench instead of the app. Opens the real
 	// editor window (same webPreferences, same preload) pointed at the bench

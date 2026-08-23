@@ -76,6 +76,7 @@ const recorderState = vi.hoisted(() => ({
 
 let selectedSourceChangedListeners: SelectedSourceChangedListener[] = [];
 let sourceSelectorClosedListeners: Array<() => void> = [];
+let toggleRecordingPauseListeners: Array<() => void> = [];
 
 vi.mock("../../hooks/useScreenRecorder", () => ({
 	useScreenRecorder: () => recorderState.value,
@@ -280,6 +281,14 @@ function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSo
 				);
 			};
 		}),
+		onHudToggleRecordingPause: vi.fn((callback) => {
+			toggleRecordingPauseListeners.push(callback);
+			return () => {
+				toggleRecordingPauseListeners = toggleRecordingPauseListeners.filter(
+					(listener) => listener !== callback,
+				);
+			};
+		}),
 	} as typeof window.electronAPI;
 }
 
@@ -337,6 +346,7 @@ function resetLaunchMocks() {
 	cameraDevicesState.value = [];
 	selectedSourceChangedListeners = [];
 	sourceSelectorClosedListeners = [];
+	toggleRecordingPauseListeners = [];
 	i18nState.value.systemLocaleSuggestion = null;
 	i18nState.value.acceptSystemLocaleSuggestion.mockClear();
 	i18nState.value.dismissSystemLocaleSuggestion.mockClear();
@@ -625,17 +635,19 @@ describe("LaunchWindow record button", () => {
 		});
 	});
 
-	it("keeps the original recording controls on Linux", async () => {
+	it("uses the same compact recording transport on Linux", async () => {
 		platformState.value = "linux";
 		recorderState.value.recording = true;
+		recorderState.value.canPauseRecording = true;
 
 		renderLaunchWindow();
 
 		expect(await screen.findByTestId("launch-record-button")).toBeEnabled();
+		expect(screen.getByTestId("hud-compact-pause-button")).toBeEnabled();
 		expect(screen.queryByTestId("launch-source-selector-button")).not.toBeInTheDocument();
 	});
 
-	it("keeps one clip-history surface before and during recording", async () => {
+	it("shows clip history for setup and Pause, but keeps active recording compact", async () => {
 		recorderState.value.recording = false;
 		recorderState.value.recordedClips = [];
 
@@ -644,8 +656,6 @@ describe("LaunchWindow record button", () => {
 		const history = await screen.findByRole("img", { name: /Clip history: 0 completed clips/ });
 		expect(history).toBeVisible();
 		expect(history.firstElementChild?.children).toHaveLength(1);
-		const surface = history.parentElement;
-
 		recorderState.value.recording = true;
 		view.rerender(
 			<TooltipProvider>
@@ -653,13 +663,18 @@ describe("LaunchWindow record button", () => {
 			</TooltipProvider>,
 		);
 
-		const activeHistory = screen.getByRole("img", {
-			name: /Clip history: 0 completed clips, active clip/,
-		});
-		expect(activeHistory.parentElement).toBe(surface);
+		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
+
+		recorderState.value.paused = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByRole("img", { name: /Clip history: 0 completed clips/ })).toBeVisible();
 	});
 
-	it("morphs the active history segment into the finalized clip without an empty frame", async () => {
+	it("restores the full panel with the finalized clip when Pause completes", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.paused = false;
 		recorderState.value.clipFinalizing = false;
@@ -667,10 +682,7 @@ describe("LaunchWindow record button", () => {
 		recorderState.value.recordedClips = [];
 
 		const view = renderLaunchWindow();
-		const activeHistory = await screen.findByRole("img", {
-			name: /Clip history: 0 completed clips, active clip/,
-		});
-		const activeSegment = activeHistory.firstElementChild?.firstElementChild;
+		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
 
 		recorderState.value.paused = true;
 		recorderState.value.recordedClips = [
@@ -686,10 +698,9 @@ describe("LaunchWindow record button", () => {
 			name: /Clip history: 1 completed clip$/,
 		});
 		expect(finalizedHistory.firstElementChild?.children).toHaveLength(1);
-		expect(finalizedHistory.firstElementChild?.firstElementChild).toBe(activeSegment);
 	});
 
-	it("keeps the existing HUD row and adds proportional clip history below it", async () => {
+	it("expands active recording into the full controls and proportional clip history", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.canPauseRecording = true;
 		recorderState.value.canRemovePreviousClip = true;
@@ -703,6 +714,8 @@ describe("LaunchWindow record button", () => {
 		];
 
 		renderLaunchWindow();
+		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 
 		expect(screen.getByRole("button", { name: "tooltips.pauseRecording" })).toBeEnabled();
 		expect(screen.getByRole("button", { name: "Remove previous clip" })).toBeEnabled();
@@ -719,6 +732,9 @@ describe("LaunchWindow record button", () => {
 		expect(
 			screen.getByTestId("launch-record-button").querySelector('rect[x="6.5"][y="6.5"]'),
 		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
+		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
 	});
 
 	it("unlocks the existing setup controls only after a completed macOS Pause", async () => {
@@ -756,6 +772,25 @@ describe("LaunchWindow record button", () => {
 		expect(screen.getByRole("button", { name: "tooltips.resumeRecording" })).toBeDisabled();
 	});
 
+	it("handles the global Pause shortcut only while the recorder can transition", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.canPauseRecording = true;
+
+		const view = renderLaunchWindow();
+		await waitFor(() => expect(toggleRecordingPauseListeners).toHaveLength(1));
+		act(() => toggleRecordingPauseListeners[0]?.());
+		expect(recorderState.value.togglePaused).toHaveBeenCalledTimes(1);
+
+		recorderState.value.clipFinalizing = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		act(() => toggleRecordingPauseListeners[0]?.());
+		expect(recorderState.value.togglePaused).toHaveBeenCalledTimes(1);
+	});
+
 	it("removes the previous clip from the button and Backspace key", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.canRemovePreviousClip = true;
@@ -764,6 +799,7 @@ describe("LaunchWindow record button", () => {
 		];
 
 		renderLaunchWindow();
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 		fireEvent.click(screen.getByRole("button", { name: "Remove previous clip" }));
 		fireEvent.keyDown(window, { key: "Backspace" });
 
@@ -853,7 +889,9 @@ describe("LaunchWindow overlay sizing", () => {
 		await flushResizeObservers();
 
 		const [width, height] = lastRequestedHudSize();
-		expect(width).toBeLessThan(inflatedWidth);
+		// Horizontal HUDs keep one stable backing width so the compact animation
+		// cannot move or resize the native window frame by frame.
+		expect(width).toBe(inflatedWidth);
 		expect(height).toBeLessThan(inflatedHeight);
 	});
 
@@ -1103,12 +1141,13 @@ describe("LaunchWindow device settings", () => {
 		});
 	});
 
-	it("stays visible but disabled while recording", async () => {
+	it("stays available but disabled in the expanded recording panel", async () => {
 		recorderState.value.recording = true;
 
 		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("hud-recording-size-button"));
 
-		expect(await screen.findByTestId("launch-device-settings-button")).toBeDisabled();
+		expect(screen.getByTestId("launch-device-settings-button")).toBeDisabled();
 	});
 });
 
@@ -1158,7 +1197,7 @@ describe("LaunchWindow HUD drag", () => {
 		// A bar wide enough that it genuinely outgrows the reserved window width, so a
 		// measurement would produce a `setHudOverlaySize` call if it weren't suppressed.
 		const bar = dragHandle.closest("[data-tray-layout]") as HTMLElement;
-		stubBox(bar, 900, 56);
+		stubBox(bar, 900, 900);
 
 		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {
 			mockClear: () => void;
