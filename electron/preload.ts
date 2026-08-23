@@ -462,12 +462,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setLocale: (locale: string) => {
 		return ipcRenderer.invoke("set-locale", locale);
 	},
-	saveDiagnostic: (payload: {
-		error: string;
-		stack?: string;
-		projectState: unknown;
-		logs: string[];
-	}) => {
+	saveDiagnostic: (payload: { error: string; stack?: string; logs?: string[] }) => {
 		return ipcRenderer.invoke("save-diagnostic", payload);
 	},
 	setMicrophoneExpanded: (expanded: boolean) => {

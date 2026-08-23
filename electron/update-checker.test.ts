@@ -9,6 +9,18 @@ function releaseResponse(payload: unknown, status = 200) {
 	};
 }
 
+const downloads = {
+	"darwin-arm64": "https://updates.dyberg.co/klippt/Klippt-macOS-Apple-Silicon-1.10.0.dmg",
+	"darwin-x64": "https://updates.dyberg.co/klippt/Klippt-macOS-Intel-1.10.0.dmg",
+	"win32-x64": "https://updates.dyberg.co/klippt/Klippt.Setup.1.10.0.exe",
+	"linux-x64": "https://updates.dyberg.co/klippt/Klippt-Linux-1.10.0.AppImage",
+};
+
+const options = {
+	platform: "darwin" as const,
+	arch: "arm64",
+};
+
 describe("compareVersions", () => {
 	it("implements semantic version ordering for stable and prerelease builds", () => {
 		expect(compareVersions("v2.0.0", "1.9.9")).toBeGreaterThan(0);
@@ -32,46 +44,57 @@ describe("compareVersions", () => {
 });
 
 describe("checkLatestRelease", () => {
-	it("reports a newer official stable release", async () => {
+	it("reports a newer release from Klippt's owned feed", async () => {
 		const fetchLatest = vi.fn().mockResolvedValue(
 			releaseResponse({
-				tag_name: "v1.10.0",
-				html_url: "https://github.com/oEdyb/record/releases/tag/v1.10.0",
-				draft: false,
-				prerelease: false,
+				version: "1.10.0",
+				downloads,
 			}),
 		);
 
-		await expect(checkLatestRelease({ currentVersion: "1.9.0", fetchLatest })).resolves.toEqual({
+		await expect(
+			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest, ...options }),
+		).resolves.toEqual({
 			kind: "available",
 			currentVersion: "1.9.0",
 			latestVersion: "1.10.0",
-			releaseUrl: "https://github.com/oEdyb/record/releases/tag/v1.10.0",
+			releaseUrl: downloads["darwin-arm64"],
 		});
 		expect(fetchLatest).toHaveBeenCalledWith(
-			"https://api.github.com/repos/oEdyb/record/releases/latest",
+			"https://updates.dyberg.co/klippt/latest.json",
 			expect.objectContaining({
-				headers: expect.objectContaining({ Accept: "application/vnd.github+json" }),
+				headers: expect.objectContaining({ Accept: "application/json" }),
 			}),
 		);
 	});
 
-	it("reports current when the installed version is equal or newer", async () => {
-		const fetchLatest = vi.fn().mockResolvedValue(
-			releaseResponse({
-				tag_name: "v1.9.0",
-				html_url: "https://github.com/oEdyb/record/releases/tag/v1.9.0",
-				draft: false,
-				prerelease: false,
+	it("selects the download for the current platform and architecture", async () => {
+		const fetchLatest = vi
+			.fn()
+			.mockResolvedValue(releaseResponse({ version: "1.10.0", downloads }));
+		await expect(
+			checkLatestRelease({
+				currentVersion: "1.9.0",
+				platform: "win32",
+				arch: "x64",
+				fetchLatest,
 			}),
-		);
+		).resolves.toMatchObject({ releaseUrl: downloads["win32-x64"] });
+	});
 
-		await expect(checkLatestRelease({ currentVersion: "1.9.1", fetchLatest })).resolves.toEqual({
+	it("reports current when the installed version is equal or newer", async () => {
+		const fetchLatest = vi.fn().mockResolvedValue(releaseResponse({ version: "1.9.0", downloads }));
+
+		await expect(
+			checkLatestRelease({ currentVersion: "1.9.1", fetchLatest, ...options }),
+		).resolves.toEqual({
 			kind: "current",
 			currentVersion: "1.9.1",
 			latestVersion: "1.9.0",
 		});
-		await expect(checkLatestRelease({ currentVersion: "1.9.0", fetchLatest })).resolves.toEqual({
+		await expect(
+			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest, ...options }),
+		).resolves.toEqual({
 			kind: "current",
 			currentVersion: "1.9.0",
 			latestVersion: "1.9.0",
@@ -79,90 +102,74 @@ describe("checkLatestRelease", () => {
 	});
 
 	it("forwards the cancellation signal", async () => {
-		const fetchLatest = vi.fn().mockResolvedValue(
-			releaseResponse({
-				tag_name: "v1.9.0",
-				html_url: "https://github.com/oEdyb/record/releases/tag/v1.9.0",
-				draft: false,
-				prerelease: false,
-			}),
-		);
+		const fetchLatest = vi.fn().mockResolvedValue(releaseResponse({ version: "1.9.0", downloads }));
 		const controller = new AbortController();
 
 		await checkLatestRelease({
 			currentVersion: "1.9.0",
 			fetchLatest,
 			signal: controller.signal,
+			...options,
 		});
 
 		expect(fetchLatest).toHaveBeenCalledWith(
-			"https://api.github.com/repos/oEdyb/record/releases/latest",
+			"https://updates.dyberg.co/klippt/latest.json",
 			expect.objectContaining({ signal: controller.signal }),
 		);
 	});
 
-	it.each([
-		{ draft: true, prerelease: false },
-		{ draft: false, prerelease: true },
-	])("rejects draft and prerelease payloads: %o", async ({ draft, prerelease }) => {
+	it("rejects a download URL outside the owned update host", async () => {
 		const fetchLatest = vi.fn().mockResolvedValue(
 			releaseResponse({
-				tag_name: "v2.0.0",
-				html_url: "https://github.com/oEdyb/record/releases/tag/v2.0.0",
-				draft,
-				prerelease,
+				version: "9.9.9",
+				downloads: { ...downloads, "darwin-arm64": "https://example.com/Klippt.dmg" },
 			}),
 		);
 
-		await expect(checkLatestRelease({ currentVersion: "1.9.0", fetchLatest })).rejects.toThrow(
-			"invalid GitHub release response",
-		);
-	});
-
-	it("rejects a release URL outside the official repository", async () => {
-		const fetchLatest = vi.fn().mockResolvedValue(
-			releaseResponse({
-				tag_name: "v9.9.9",
-				html_url: "https://example.com/openscreen-9.9.9.exe",
-				draft: false,
-				prerelease: false,
-			}),
-		);
-
-		await expect(checkLatestRelease({ currentVersion: "1.9.0", fetchLatest })).rejects.toThrow(
-			"untrusted release URL",
-		);
+		await expect(
+			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest, ...options }),
+		).rejects.toThrow("untrusted release URL");
 	});
 
 	it.each([
-		"https://github.com/oEdyb/record/releases/download/v9.9.9/app.zip",
-		"https://github.com/oEdyb/record/releases/tag/v9.9.8",
-		"https://github.com/oEdyb/record/releases/tag/v9.9.9?download=1",
-		"https://github.com/oEdyb/record/releases/tag/v9.9.9#notes",
-	])("rejects an invalid official-repository URL: %s", async (htmlUrl) => {
+		"http://updates.dyberg.co/klippt/Klippt.dmg",
+		"https://updates.dyberg.co/other/Klippt.dmg",
+		"https://updates.dyberg.co/klippt/Klippt.dmg?token=secret",
+		"https://updates.dyberg.co/klippt/Klippt.dmg#download",
+	])("rejects an invalid owned-feed URL: %s", async (downloadUrl) => {
 		const fetchLatest = vi.fn().mockResolvedValue(
 			releaseResponse({
-				tag_name: "v9.9.9",
-				html_url: htmlUrl,
-				draft: false,
-				prerelease: false,
+				version: "9.9.9",
+				downloads: { ...downloads, "darwin-arm64": downloadUrl },
 			}),
 		);
 
-		await expect(checkLatestRelease({ currentVersion: "1.9.0", fetchLatest })).rejects.toThrow(
-			"untrusted release URL",
-		);
+		await expect(
+			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest, ...options }),
+		).rejects.toThrow("untrusted release URL");
 	});
 
-	it("rejects unsuccessful or malformed GitHub responses", async () => {
+	it("rejects unavailable, malformed, and incomplete feeds", async () => {
 		const unavailable = vi.fn().mockResolvedValue(releaseResponse({}, 503));
 		await expect(
-			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest: unavailable }),
-		).rejects.toThrow("GitHub release check failed (503)");
+			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest: unavailable, ...options }),
+		).rejects.toThrow("Klippt release check failed (503)");
 
-		const malformed = vi.fn().mockResolvedValue(releaseResponse({ tag_name: "v2.0.0" }));
+		const malformed = vi.fn().mockResolvedValue(releaseResponse({ version: "2.0.0" }));
 		await expect(
-			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest: malformed }),
-		).rejects.toThrow("invalid GitHub release response");
+			checkLatestRelease({ currentVersion: "1.9.0", fetchLatest: malformed, ...options }),
+		).rejects.toThrow("invalid Klippt release response");
+
+		const missingPlatform = vi
+			.fn()
+			.mockResolvedValue(releaseResponse({ version: "2.0.0", downloads }));
+		await expect(
+			checkLatestRelease({
+				currentVersion: "1.9.0",
+				platform: "freebsd",
+				arch: "x64",
+				fetchLatest: missingPlatform,
+			}),
+		).rejects.toThrow("no download for freebsd-x64");
 	});
 });

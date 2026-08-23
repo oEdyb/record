@@ -16,19 +16,17 @@
   // differential downloads, `app-update.yml` inside resources, and the `package-type` marker
   // in deb/rpm/pacman that tells electron-updater which installer to run.
   //
-  // Some of that was already being produced, because app-builder-lib falls back to inferring
-  // the provider from `.git/config`'s origin when no publish config is declared — which works
-  // in CI and silently stops working for anyone building from a source tarball. Declaring it
-  // (plus `repository` in package.json) makes it deterministic instead of incidental.
+  // The repository is private. A GitHub provider would require a repository credential in
+  // every customer install, so Klippt serves public update metadata and installers from its
+  // own R2 custom domain. CI uploads immutable artifacts before the mutable latest manifests.
   //
   // The Store (appx) target deliberately gets NO publish config: `isSuitableWindowsTarget()`
   // only writes `app-update.yml` for nsis, so the MSIX build cannot arm an updater that its
   // read-only container could never run. Do not add `appx.electronUpdaterAware`.
   "publish": [
     {
-      "provider": "github",
-      "owner": "oEdyb",
-      "repo": "record"
+      "provider": "generic",
+      "url": "https://updates.dyberg.co/klippt"
     }
   ],
   // Fails the build when compositor_view.node is older than the crates/ Rust sources. Plain
@@ -36,6 +34,10 @@
   // (unknown scene fields are #[serde(default)]) rather than erroring. See the script header
   // and technical-documentation/engineering/build-and-packaging.md.
   "beforePack": "scripts/before-pack.cjs",
+  // `electron-builder --dir` omits app-update.yml even with a publish provider. The macOS
+  // release job uses --dir so it can create its signed ZIP and branded DMG from one app bundle.
+  // Write the feed config in afterPack, before electron-builder signs the bundle.
+  "afterPack": "scripts/after-pack.cjs",
   "npmRebuild": true,
   // sharp ships ABI-stable (napi) prebuilt binaries with bundled libvips. Building it from source
   // needs a system libvips we don't provide and breaks on CI/local ("vips-cpp.42 not found"), so we

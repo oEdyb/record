@@ -155,7 +155,7 @@ jobs:
           RUN_ID: ${{ steps.run.outputs.id }}
         run: |
           mkdir -p artifacts/store
-          gh run download "$RUN_ID" --name openscreen-windows-store --dir artifacts/store
+          gh run download "$RUN_ID" --name klippt-windows-store --dir artifacts/store
 
       - name: Configure Microsoft Store CLI
         uses: microsoft/microsoft-store-apppublisher@v1.1

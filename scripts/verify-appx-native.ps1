@@ -38,7 +38,7 @@ The .appx to verify.
 Leave the package registered afterwards, to click through the app by hand.
 
 .EXAMPLE
-powershell -File scripts/verify-appx-native.ps1 -Appx release/1.9.1/Openscreen.Setup.1.9.1.appx
+powershell -File scripts/verify-appx-native.ps1 -Appx release/1.9.1/Klippt.Setup.1.9.1.appx
 
 .NOTES
 Loose registration needs Developer Mode (Settings > System > For developers).

@@ -70,6 +70,7 @@ import {
 import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
+import { createDiagnosticReport, type DiagnosticRequest } from "../diagnostics/diagnostic-report";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
 import { createEntitlementService } from "../entitlements/createService";
 import { registerEntitlementIpc } from "../entitlements/ipc";
@@ -3999,25 +4000,18 @@ export function registerIpcHandlers(
 		}
 	});
 
-	ipcMain.handle(
-		"save-diagnostic",
-		async (
-			_,
-			payload: { error: string; stack?: string; projectState: unknown; logs: string[] },
-		) => {
-			const { filePath, canceled } = await dialog.showSaveDialog({
-				title: "Save Diagnostic File",
-				defaultPath: `openscreen-diagnostic-${Date.now()}.json`,
-				filters: [{ name: "JSON", extensions: ["json"] }],
-			});
+	ipcMain.handle("save-diagnostic", async (_, payload: DiagnosticRequest) => {
+		const { filePath, canceled } = await dialog.showSaveDialog({
+			title: "Save Diagnostic File",
+			defaultPath: `klippt-diagnostic-${Date.now()}.json`,
+			filters: [{ name: "JSON", extensions: ["json"] }],
+		});
 
-			if (canceled || !filePath) return { success: false, canceled: true };
+		if (canceled || !filePath) return { success: false, canceled: true };
 
-			const HELPER_OUTPUT_MAX_BYTES = 64 * 1024;
-			const tail = (s: string, max: number) => (s.length <= max ? s : s.slice(s.length - max));
-
-			const diagnostic = {
-				timestamp: new Date().toISOString(),
+		const diagnostic = createDiagnosticReport({
+			request: payload,
+			environment: {
 				appVersion: app.getVersion(),
 				platform: process.platform,
 				arch: process.arch,
@@ -4027,26 +4021,22 @@ export function registerIpcHandlers(
 				nodeVersion: process.versions.node,
 				electronVersion: process.versions.electron,
 				chromeVersion: process.versions.chrome,
-				error: payload.error,
-				stack: payload.stack,
-				projectState: payload.projectState,
-				recentLogs: payload.logs,
-				helperOutput: {
-					windows: tail(nativeWindowsCaptureOutput, HELPER_OUTPUT_MAX_BYTES),
-					mac: tail(nativeMacRecordingService?.diagnosticOutput ?? "", HELPER_OUTPUT_MAX_BYTES),
-				},
-				mainProcessLogs: mainLogBuffer.snapshot(),
-			};
+			},
+			helperOutput: {
+				windows: nativeWindowsCaptureOutput,
+				mac: nativeMacRecordingService?.diagnosticOutput ?? "",
+			},
+			mainProcessLogs: mainLogBuffer.snapshot(),
+		});
 
-			try {
-				await fs.writeFile(filePath, JSON.stringify(diagnostic, null, 2), "utf-8");
-				return { success: true, path: filePath };
-			} catch (error) {
-				console.error("Failed to write diagnostic file:", error);
-				return { success: false, error: String(error) };
-			}
-		},
-	);
+		try {
+			await fs.writeFile(filePath, JSON.stringify(diagnostic, null, 2), "utf-8");
+			return { success: true, path: filePath };
+		} catch (error) {
+			console.error("Failed to write diagnostic file:", error);
+			return { success: false, error: String(error) };
+		}
+	});
 
 	// One instance each, not one per call. DocumentService serialises saves of a
 	// project through a per-INSTANCE queue (see its writeProject comment — this

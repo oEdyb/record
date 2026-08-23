@@ -446,6 +446,8 @@ async function checkForUpdates() {
 	try {
 		const result = await checkLatestRelease({
 			currentVersion: app.getVersion(),
+			platform: process.platform,
+			arch: process.arch,
 			fetchLatest: (url, init) => net.fetch(url, init),
 			signal,
 		});

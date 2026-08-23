@@ -501,8 +501,7 @@ interface Window {
 		saveDiagnostic: (payload: {
 			error: string;
 			stack?: string;
-			projectState: unknown;
-			logs: string[];
+			logs?: string[];
 		}) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
 	};
 }

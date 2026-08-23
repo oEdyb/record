@@ -55,13 +55,13 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v7
         with:
-          name: openscreen-windows
+          name: klippt-windows
           # latest.yml is the update feed electron-updater reads; the .blockmap is what lets it
           # download a delta instead of the full ~243 MB installer. Both were already produced
           # by every build and thrown away here, because this glob only matched the .exe.
           path: |
-            release/**/Openscreen.Setup.*.exe
-            release/**/Openscreen.Setup.*.exe.blockmap
+            release/**/Klippt.Setup.*.exe
+            release/**/Klippt.Setup.*.exe.blockmap
             release/**/latest.yml
           if-no-files-found: error
           retention-days: 30
@@ -74,7 +74,7 @@ jobs:
         run: |
           test -f "$(find release -name latest.yml | head -1)" \
             || { echo "::error::latest.yml missing — electron-updater has no feed to read"; exit 1; }
-          test -f "$(find release -name 'Openscreen.Setup.*.exe.blockmap' | head -1)" \
+          test -f "$(find release -name 'Klippt.Setup.*.exe.blockmap' | head -1)" \
             || { echo "::error::blockmap missing — differential updates would silently degrade"; exit 1; }
 
   build-windows-store:
@@ -200,8 +200,8 @@ jobs:
       - name: Upload Windows Store package
         uses: actions/upload-artifact@v7
         with:
-          name: openscreen-windows-store
-          path: release/**/Openscreen.Setup.*.appx
+          name: klippt-windows-store
+          path: release/**/Klippt.Setup.*.appx
           if-no-files-found: error
           retention-days: 30
 
@@ -717,7 +717,7 @@ jobs:
       - name: Upload Linux packages
         uses: actions/upload-artifact@v7
         with:
-          name: openscreen-linux
+          name: klippt-linux
           path: |
             release/**/*.AppImage
             release/**/*.deb
@@ -851,7 +851,7 @@ jobs:
       - name: Download Windows installer
         uses: actions/download-artifact@v8
         with:
-          name: openscreen-windows
+          name: klippt-windows
           path: artifacts/windows
 
       - name: Download macOS arm64 DMG
@@ -869,7 +869,7 @@ jobs:
       - name: Download Linux packages
         uses: actions/download-artifact@v8
         with:
-          name: openscreen-linux
+          name: klippt-linux
           path: artifacts/linux
 
       # The two arches are built on different runners, so neither macOS job can write the feed:
@@ -891,6 +891,68 @@ jobs:
             || { echo "::error::latest-mac.yml lists ${ENTRIES} builds, expected 2 (one per arch)"; exit 1; }
           grep -q 'arm64' artifacts/latest-mac.yml \
             || { echo "::error::latest-mac.yml has no arm64 entry — Apple Silicon would update onto the Intel build"; exit 1; }
+
+      - name: Stage the owned update feed
+        if: ${{ steps.release.outputs.is_prerelease == 'false' }}
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: node scripts/stage-update-release.mjs artifacts "$VERSION" update-release
+
+      # The repository is private, so customer apps cannot use GitHub Releases as an update
+      # server without receiving a repository token. Stable releases go to a public R2 custom
+      # domain instead. Upload immutable versioned files first and the small mutable manifests
+      # last, so a client never sees a feed that points at an artifact which is not present yet.
+      - name: Publish the owned update feed
+        if: ${{ steps.release.outputs.is_prerelease == 'false' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_UPDATE_BUCKET || 'klippt-updates' }}
+        run: |
+          missing=()
+          [[ -n "$AWS_ACCESS_KEY_ID" ]] || missing+=(R2_ACCESS_KEY_ID)
+          [[ -n "$AWS_SECRET_ACCESS_KEY" ]] || missing+=(R2_SECRET_ACCESS_KEY)
+          [[ -n "$R2_ACCOUNT_ID" ]] || missing+=(R2_ACCOUNT_ID)
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Owned update feed is not configured; missing: ${missing[*]}"
+            exit 1
+          fi
+
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          while IFS= read -r -d '' file; do
+            name="$(basename "$file")"
+            aws s3 cp "$file" "s3://${R2_BUCKET}/klippt/${name}" \
+              --endpoint-url "$ENDPOINT" \
+              --cache-control 'public,max-age=31536000,immutable' \
+              --no-progress
+          done < <(find update-release -type f \
+            ! -name 'latest.yml' \
+            ! -name 'latest-mac.yml' \
+            ! -name 'latest-linux.yml' \
+            ! -name 'latest.json' \
+            -print0)
+
+          for manifest in latest.yml latest-mac.yml latest-linux.yml latest.json; do
+            aws s3 cp "update-release/${manifest}" "s3://${R2_BUCKET}/klippt/${manifest}" \
+              --endpoint-url "$ENDPOINT" \
+              --cache-control 'no-cache, no-store, must-revalidate' \
+              --content-type "$([[ "$manifest" == *.json ]] && echo application/json || echo text/yaml)" \
+              --no-progress
+          done
+
+      - name: Verify the public update feed
+        if: ${{ steps.release.outputs.is_prerelease == 'false' }}
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-all-errors \
+            "https://updates.dyberg.co/klippt/latest.json?release=${VERSION}" \
+            -o "${RUNNER_TEMP}/public-latest.json"
+          ACTUAL="$(jq -r '.version' "${RUNNER_TEMP}/public-latest.json")"
+          [[ "$ACTUAL" == "$VERSION" ]] \
+            || { echo "::error::Public update feed reports ${ACTUAL}, expected ${VERSION}"; exit 1; }
 
       - name: Publish release assets
         env:
@@ -1120,7 +1182,7 @@ jobs:
         if: steps.store.outputs.enabled == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: openscreen-windows-store
+          name: klippt-windows-store
           path: artifacts/store
 
       - name: Configure Microsoft Store CLI
@@ -1151,7 +1213,7 @@ jobs:
           # The positional argument is the project root, NOT the package — passing
           # the .appx there is what failed the first real run of this job on
           # v1.9.5: "We could not find a project publisher for the project at
-          # ...Openscreen.Setup.1.9.5.appx". The package goes through the option
+          # ...Klippt.Setup.1.9.5.appx". The package goes through the option
           # below, which takes the DIRECTORY holding it — the CLI's own usage
           # says `-i, --inputDirectory`, and rejects the `--inputFile` that
           # Microsoft Learn documents. The binary wins.

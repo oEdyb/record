@@ -1,5 +1,5 @@
-const LATEST_RELEASE_API = "https://api.github.com/repos/oEdyb/record/releases/latest";
-const OFFICIAL_RELEASE_PREFIX = "/oEdyb/record/releases/tag/";
+const RELEASE_BASE_URL = "https://updates.dyberg.co/klippt/";
+const LATEST_RELEASE_API = `${RELEASE_BASE_URL}latest.json`;
 
 interface ReleaseResponse {
 	ok: boolean;
@@ -77,26 +77,18 @@ export function compareVersions(left: string, right: string): number {
 	return comparePrerelease(a.prerelease, b.prerelease);
 }
 
-function officialReleaseUrl(value: string, tag: string): string {
+function officialReleaseUrl(value: string): string {
 	let url: URL;
 	try {
 		url = new URL(value);
 	} catch {
 		throw new Error("untrusted release URL");
 	}
-	const encodedTag = url.pathname.slice(OFFICIAL_RELEASE_PREFIX.length);
-	let decodedTag = "";
-	try {
-		decodedTag = decodeURIComponent(encodedTag);
-	} catch {
-		throw new Error("untrusted release URL");
-	}
 	if (
 		url.protocol !== "https:" ||
-		url.hostname !== "github.com" ||
+		url.hostname !== "updates.dyberg.co" ||
 		url.port !== "" ||
-		!url.pathname.startsWith(OFFICIAL_RELEASE_PREFIX) ||
-		decodedTag !== tag ||
+		!url.pathname.startsWith("/klippt/") ||
 		url.search !== "" ||
 		url.hash !== ""
 	) {
@@ -120,32 +112,38 @@ export type UpdateCheckResult =
 
 export async function checkLatestRelease(options: {
 	currentVersion: string;
+	platform: NodeJS.Platform;
+	arch: string;
 	fetchLatest: FetchLatestRelease;
 	signal?: AbortSignal;
 }): Promise<UpdateCheckResult> {
 	const response = await options.fetchLatest(LATEST_RELEASE_API, {
 		headers: {
-			Accept: "application/vnd.github+json",
-			"X-GitHub-Api-Version": "2022-11-28",
+			Accept: "application/json",
 		},
 		...(options.signal ? { signal: options.signal } : {}),
 	});
-	if (!response.ok) throw new Error(`GitHub release check failed (${response.status})`);
+	if (!response.ok) throw new Error(`Klippt release check failed (${response.status})`);
 
 	const payload = await response.json();
-	if (
-		typeof payload !== "object" ||
-		payload === null ||
-		typeof (payload as Record<string, unknown>).tag_name !== "string" ||
-		typeof (payload as Record<string, unknown>).html_url !== "string" ||
-		(payload as Record<string, unknown>).draft !== false ||
-		(payload as Record<string, unknown>).prerelease !== false
-	) {
-		throw new Error("invalid GitHub release response");
+	if (typeof payload !== "object" || payload === null) {
+		throw new Error("invalid Klippt release response");
 	}
-	const release = payload as { tag_name: string; html_url: string };
+	const release = payload as { version?: unknown; downloads?: unknown };
+	if (
+		typeof release.version !== "string" ||
+		typeof release.downloads !== "object" ||
+		release.downloads === null
+	) {
+		throw new Error("invalid Klippt release response");
+	}
+	const downloadKey = `${options.platform}-${options.arch}`;
+	const downloadUrl = (release.downloads as Record<string, unknown>)[downloadKey];
+	if (typeof downloadUrl !== "string") {
+		throw new Error(`Klippt has no download for ${downloadKey}`);
+	}
 	const current = parseVersion(options.currentVersion);
-	const latest = parseVersion(release.tag_name);
+	const latest = parseVersion(release.version);
 	const comparison = compareVersions(latest.normalized, current.normalized);
 	if (comparison <= 0) {
 		return {
@@ -159,6 +157,6 @@ export async function checkLatestRelease(options: {
 		kind: "available",
 		currentVersion: current.normalized,
 		latestVersion: latest.normalized,
-		releaseUrl: officialReleaseUrl(release.html_url, release.tag_name),
+		releaseUrl: officialReleaseUrl(downloadUrl),
 	};
 }
