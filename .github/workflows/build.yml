@@ -545,7 +545,9 @@ jobs:
       # deliberately. Notarizing each RC turns every candidate into a rehearsal.
       #
       # The trade is a few minutes per macOS job and a dependency on Apple's
-      # notary service being reachable — `--wait` is capped at 15 minutes below.
+      # notary service being reachable. A live first-team submission exceeded 15 minutes while
+      # remaining healthy, so notarytool owns a 30-minute bound below and gets time to report its
+      # own result before the GitHub step is stopped.
       # If that ever becomes flaky enough to block RCs, the fix is
       # `continue-on-error` on pre-releases, not going back to skipping them.
       - name: Sign DMG
@@ -563,8 +565,9 @@ jobs:
             --apple-id "${{ secrets.APPLE_ID }}" \
             --team-id "${{ secrets.APPLE_TEAM_ID }}" \
             --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
-            --wait
-        timeout-minutes: 15
+            --wait \
+            --timeout 30m
+        timeout-minutes: 35
 
       - name: Staple notarization ticket
         if: steps.signing.outputs.enabled == 'true'
