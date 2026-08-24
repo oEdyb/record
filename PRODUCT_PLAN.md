@@ -786,7 +786,9 @@ After Gate 0:
    first signed Apple Silicon DMG is accepted under submission
    `ce41d670-4071-4e1a-b1b7-8939cc74aa4c`. Apple's ticket is stapled, `stapler validate` passes,
    and Gatekeeper reports `source=Notarized Developer ID`. A one-submission local monitor completed
-   the final steps and then unloaded and disabled itself.
+   the final steps and then unloaded and disabled itself. The exact accepted app is installed at
+   `/Applications/Klippt.app`; the prior Apple Development-signed bundle remains in a recoverable
+   local backup. The notarized app was not auto-launched.
 6. **Done:** Use a private-alpha update channel that does not require a GitHub repository token in
    customer installs. Stable builds publish immutable artifacts first and mutable manifests last to
    the private `klippt-updates` R2 bucket at `updates.dyberg.co/klippt`. The generated macOS app
