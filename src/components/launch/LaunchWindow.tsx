@@ -1011,7 +1011,7 @@ export function LaunchWindow() {
 
 								<HudDivider vertical={hudIsVertical} />
 
-								{recording && !paused ? (
+								{recording ? (
 									<HudRecordingSizeButton
 										expanded
 										label={t("tooltips.hideRecordingControls")}
