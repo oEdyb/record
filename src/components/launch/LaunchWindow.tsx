@@ -155,7 +155,10 @@ export function LaunchWindow() {
 	// Recording always keeps the established horizontal HUD as its first row.
 	// The saved tray preference still applies again when recording ends.
 	const hudIsVertical = isVertical && !recording;
-	const compactRecordingHud = recording && !paused && !activeHudExpanded;
+	// Pause is a transport-state change, not a layout change. Keep the compact
+	// HUD mounted so Pause becomes Continue in the same physical slot. The user
+	// can still open the full setup and clip-history panel with the size control.
+	const compactRecordingHud = recording && !activeHudExpanded;
 	const isPopoverOpen = isLanguageMenuOpen || isDeviceSettingsOpen;
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
@@ -973,7 +976,7 @@ export function LaunchWindow() {
 							<HudDivider vertical={false} />
 							<HudRecordButton
 								recording
-								paused={false}
+								paused={paused}
 								saving={saving}
 								disabled={saving || clipFinalizing}
 								elapsedSeconds={elapsedSeconds}
@@ -982,9 +985,9 @@ export function LaunchWindow() {
 								onClick={handleRecordClick}
 							/>
 							<HudCompactPauseButton
-								paused={false}
+								paused={paused}
 								disabled={saving || clipFinalizing || !canPauseRecording}
-								label={t("tooltips.pauseRecording")}
+								label={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
 								onClick={togglePaused}
 							/>
 							<HudRecordingSizeButton

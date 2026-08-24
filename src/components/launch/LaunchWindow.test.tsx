@@ -647,7 +647,7 @@ describe("LaunchWindow record button", () => {
 		expect(screen.queryByTestId("launch-source-selector-button")).not.toBeInTheDocument();
 	});
 
-	it("shows clip history for setup and Pause, but keeps active recording compact", async () => {
+	it("keeps the compact transport in place through Pause until the user expands it", async () => {
 		recorderState.value.recording = false;
 		recorderState.value.recordedClips = [];
 
@@ -671,7 +671,14 @@ describe("LaunchWindow record button", () => {
 				<LaunchWindow />
 			</TooltipProvider>,
 		);
+		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
+		expect(screen.getByTestId("hud-compact-pause-button")).toHaveAccessibleName(
+			"tooltips.resumeRecording",
+		);
+
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 		expect(screen.getByRole("img", { name: /Clip history: 0 completed clips/ })).toBeVisible();
+		expect(screen.queryByTestId("hud-compact-pause-button")).not.toBeInTheDocument();
 	});
 
 	it("restores the full panel with the finalized clip when Pause completes", async () => {
@@ -683,6 +690,8 @@ describe("LaunchWindow record button", () => {
 
 		const view = renderLaunchWindow();
 		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
+		expect(screen.getByRole("img", { name: /Clip history/ })).toBeVisible();
 
 		recorderState.value.paused = true;
 		recorderState.value.recordedClips = [
@@ -744,6 +753,7 @@ describe("LaunchWindow record button", () => {
 		recorderState.value.canReconfigureWhilePaused = true;
 
 		renderLaunchWindow();
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 		const cursorModeButton = await screen.findByTestId("launch-cursor-mode-button");
 
 		expect(screen.getByTestId("launch-source-selector-button")).toBeEnabled();
