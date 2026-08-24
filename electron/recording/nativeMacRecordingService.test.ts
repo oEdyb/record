@@ -206,6 +206,53 @@ describe("NativeMacRecordingService", () => {
 		});
 	});
 
+	it("restores a removed clip durably before reporting Undo success", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+			durationMs: 500,
+		};
+		helper.pauseResult = Promise.resolve(clip);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		await service.removePreviousClip();
+
+		await expect(service.restoreRemovedClip(clip.index)).resolves.toMatchObject({
+			success: true,
+			clip,
+		});
+		const journal = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf-8"),
+		);
+		expect(journal.session.clips).toEqual([
+			expect.objectContaining({ index: clip.index, durationMs: clip.durationMs }),
+		]);
+		expect(journal.session.clips[0]).not.toHaveProperty("removed");
+	});
+
+	it("keeps the clip removed when durable Undo persistence fails", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+			durationMs: 500,
+		};
+		helper.pauseResult = Promise.resolve(clip);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		await service.removePreviousClip();
+
+		const open = vi.spyOn(fs, "open").mockRejectedValueOnce(new Error("ENOSPC: disk full"));
+		await expect(service.restoreRemovedClip(clip.index)).rejects.toThrow("ENOSPC");
+		open.mockRestore();
+
+		await expect(service.restoreRemovedClip(clip.index)).resolves.toMatchObject({
+			success: true,
+			clip,
+		});
+	});
+
 	it("recovers a later clip even when Continue could not update the journal", async () => {
 		const firstClip = {
 			index: 0,

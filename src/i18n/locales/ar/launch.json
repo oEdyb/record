@@ -69,7 +69,10 @@
 		"selectSource": "يرجى تحديد مصدر للتسجيل",
 		"systemPicker": "سيسألك النظام عمّا تريد مشاركته",
 		"inProgress": "جارٍ التسجيل",
-		"saving": "جاري الحفظ..."
+		"saving": "جاري الحفظ...",
+		"removePreviousClip": "إزالة المقطع السابق",
+		"removePreviousClipWithDuration": "إزالة المقطع السابق · {{duration}}",
+		"clipRemoved": "تمت الإزالة"
 	},
 	"language": "اللغة",
 	"systemLanguagePrompt": {

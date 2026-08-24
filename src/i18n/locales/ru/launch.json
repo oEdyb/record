@@ -69,7 +69,10 @@
 		"selectSource": "Пожалуйста, выберите источник для записи",
 		"systemPicker": "Система спросит, чем поделиться",
 		"inProgress": "Идёт запись",
-		"saving": "Сохранение..."
+		"saving": "Сохранение...",
+		"removePreviousClip": "Удалить предыдущий клип",
+		"removePreviousClipWithDuration": "Удалить предыдущий клип · {{duration}}",
+		"clipRemoved": "Удалено"
 	},
 	"language": "Язык",
 	"systemLanguagePrompt": {

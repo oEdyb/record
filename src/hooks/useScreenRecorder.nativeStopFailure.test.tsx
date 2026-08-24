@@ -12,6 +12,7 @@ vi.mock("sonner", () => ({
 }));
 
 import { toast } from "sonner";
+import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { useScreenRecorder } from "./useScreenRecorder";
 
 type ElectronAPI = Window["electronAPI"];
@@ -247,6 +248,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 			pauseNativeMacRecording: vi.fn(async () => ({ success: true, paused: true })),
 			resumeNativeMacRecording: vi.fn(async () => ({ success: true, clipIndex: 1 })),
 			removePreviousNativeMacClip: vi.fn(async () => ({ success: true })),
+			restoreRemovedNativeMacClip: vi.fn(async () => ({ success: true })),
 			stopNativeMacRecording: vi.fn(async () => ({
 				success: true,
 				path: "/tmp/recording-7-clip-0001.mp4",
@@ -267,7 +269,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		});
 	}
 
-	it("shows kept clip time plus the live clip and removes deleted time", async () => {
+	it("updates the kept duration when a removed clip is restored", async () => {
 		const clip = {
 			index: 0,
 			screenVideoPath: "/tmp/recording-7-clip-0001.mp4",
@@ -276,6 +278,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		stubNativeMac({
 			pauseNativeMacRecording: vi.fn(async () => ({ success: true, paused: true, clip })),
 			removePreviousNativeMacClip: vi.fn(async () => ({ success: true, clip })),
+			restoreRemovedNativeMacClip: vi.fn(async () => ({ success: true, clip })),
 		});
 
 		const view = renderHook(() => useScreenRecorder());
@@ -287,13 +290,23 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		await settle();
 		expect(view.result.current.elapsedSeconds).toBe(2);
 
-		await act(async () => view.result.current.removePreviousClip());
+		let removedClip: RecordingSessionClip | null = null;
+		await act(async () => {
+			removedClip = await view.result.current.removePreviousClip();
+		});
 		await settle();
+		expect(removedClip).toEqual(clip);
 		expect(view.result.current.elapsedSeconds).toBe(0);
+
+		await act(async () => {
+			await view.result.current.restoreRemovedClip(clip.index);
+		});
+		await settle();
+		expect(view.result.current.elapsedSeconds).toBe(2);
 
 		await act(async () => view.result.current.togglePaused());
 		await settle(1_000);
-		expect(view.result.current.elapsedSeconds).toBe(1);
+		expect(view.result.current.elapsedSeconds).toBe(3);
 	});
 
 	it("finalizes without discarding when the recording window closes", async () => {

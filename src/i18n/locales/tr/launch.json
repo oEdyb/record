@@ -73,7 +73,10 @@
 		"selectSource": "Lütfen kayıt için bir kaynak seçin",
 		"systemPicker": "Sisteminiz neyi paylaşacağınızı soracak",
 		"inProgress": "Kaydediliyor",
-		"saving": "Kaydediliyor..."
+		"saving": "Kaydediliyor...",
+		"removePreviousClip": "Önceki klibi kaldır",
+		"removePreviousClipWithDuration": "Önceki klibi kaldır · {{duration}}",
+		"clipRemoved": "Kaldırıldı"
 	},
 	"language": "Dil",
 	"systemLanguagePrompt": {

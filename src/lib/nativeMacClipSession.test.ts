@@ -6,6 +6,7 @@ import {
 	getNativeMacRecordingIdFromClipPath,
 	mergeNativeMacStoppedClips,
 	removePreviousNativeMacClip,
+	restoreRemovedNativeMacClip,
 	shiftCursorRecordingToVideoStart,
 	splitCursorRecordingForClips,
 } from "./nativeMacClipSession";
@@ -40,6 +41,18 @@ describe("native macOS clip session", () => {
 		const second = removePreviousNativeMacClip(first.clips);
 		expect(second.removed).toMatchObject({ index: 0, removed: true });
 		expect(removePreviousNativeMacClip(second.clips).removed).toBeUndefined();
+	});
+
+	it("restores one removed clip without changing the rest of the clip stack", () => {
+		const removed = [
+			{ ...clips[0], removed: true as const },
+			{ ...clips[1], removed: true as const },
+		];
+		const result = restoreRemovedNativeMacClip(removed, clips[0].index);
+
+		expect(result.restored).toEqual(clips[0]);
+		expect(result.clips).toEqual([clips[0], removed[1]]);
+		expect(restoreRemovedNativeMacClip(result.clips, clips[0].index).restored).toBeUndefined();
 	});
 
 	it("preserves removal state when Stop reports the helper's authoritative clip list", () => {

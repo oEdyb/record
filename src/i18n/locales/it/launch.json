@@ -73,7 +73,10 @@
 		"selectSource": "Seleziona una sorgente da registrare",
 		"systemPicker": "Il sistema ti chiederà cosa condividere",
 		"inProgress": "Registrazione in corso",
-		"saving": "Salvataggio..."
+		"saving": "Salvataggio...",
+		"removePreviousClip": "Rimuovi clip precedente",
+		"removePreviousClipWithDuration": "Rimuovi clip precedente · {{duration}}",
+		"clipRemoved": "Rimosso"
 	},
 	"language": "Lingua",
 	"systemLanguagePrompt": {

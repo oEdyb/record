@@ -2,8 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
 import { requireEntitlement } from "@/lib/entitlements/store";
+import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
+import { formatTimePadded } from "@/utils/timeUtils";
 import { type CameraDevice, useCameraDevices } from "../../hooks/useCameraDevices";
 import { useCameraPreviewFrameBridge } from "../../hooks/useCameraPreviewFrameBridge";
 import { type MicrophoneDevice, useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
@@ -57,6 +59,11 @@ const FALLBACK_SCREEN_HEIGHT = 1080;
 const FALLBACK_SCREEN_WIDTH = 1920;
 const HORIZONTAL_HUD_WIDTH = 832;
 const HORIZONTAL_HUD_HEIGHT = 80;
+const REMOVED_CLIP_FEEDBACK_MS = 4_000;
+
+function formatClipDuration(durationMs: number): string {
+	return formatTimePadded(Math.max(1, Math.round(durationMs / 1_000)));
+}
 
 /**
  * Work-area height of the display, which is what the HUD's vertical budget is
@@ -77,6 +84,7 @@ function getAvailableScreenWidth(): number {
 /** Launches the floating recording HUD and its recorder controls. */
 export function LaunchWindow() {
 	const t = useScopedT("launch");
+	const commonT = useScopedT("common");
 	const {
 		locale,
 		setLocale,
@@ -106,6 +114,7 @@ export function LaunchWindow() {
 		canReconfigureWhilePaused,
 		canRemovePreviousClip,
 		removePreviousClip,
+		restoreRemovedClip,
 		restartRecording,
 		cancelRecording,
 		microphoneEnabled,
@@ -145,6 +154,10 @@ export function LaunchWindow() {
 	const [isLinuxHud, setIsLinuxHud] = useState(false);
 	const [openedFromEditor, setOpenedFromEditor] = useState(false);
 	const [activeHudExpanded, setActiveHudExpanded] = useState(false);
+	const [removedClipFeedback, setRemovedClipFeedback] = useState<RecordingSessionClip | null>(null);
+	const removedClipFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const removedClipFeedbackGenerationRef = useRef(0);
+	const restoringRemovedClipRef = useRef(false);
 	/**
 	 * Narrower than [`isLinuxHud`] on purpose: without the helper the recorder
 	 * falls back to Chromium's capture, which DOES take a source id, so the
@@ -660,17 +673,70 @@ export function LaunchWindow() {
 		closePopovers();
 		handleRecordButtonClick();
 	}, [closePopovers, handleRecordButtonClick]);
+	const showRemovedClipFeedback = useCallback((clip: RecordingSessionClip) => {
+		removedClipFeedbackGenerationRef.current += 1;
+		const generation = removedClipFeedbackGenerationRef.current;
+		if (removedClipFeedbackTimerRef.current) {
+			clearTimeout(removedClipFeedbackTimerRef.current);
+		}
+		setRemovedClipFeedback(clip);
+		removedClipFeedbackTimerRef.current = setTimeout(() => {
+			if (removedClipFeedbackGenerationRef.current !== generation) return;
+			setRemovedClipFeedback(null);
+			removedClipFeedbackTimerRef.current = null;
+		}, REMOVED_CLIP_FEEDBACK_MS);
+	}, []);
+	const handleRemovePreviousClip = useCallback(async () => {
+		const removedClip = await removePreviousClip();
+		if (removedClip) showRemovedClipFeedback(removedClip);
+	}, [removePreviousClip, showRemovedClipFeedback]);
+	const handleUndoRemovedClip = useCallback(async () => {
+		const clip = removedClipFeedback;
+		if (!clip || restoringRemovedClipRef.current) return;
+		const generation = removedClipFeedbackGenerationRef.current;
+		restoringRemovedClipRef.current = true;
+		try {
+			const restoredClip = await restoreRemovedClip(clip.index);
+			if (!restoredClip || removedClipFeedbackGenerationRef.current !== generation) return;
+			if (removedClipFeedbackTimerRef.current) {
+				clearTimeout(removedClipFeedbackTimerRef.current);
+				removedClipFeedbackTimerRef.current = null;
+			}
+			setRemovedClipFeedback(null);
+		} finally {
+			restoringRemovedClipRef.current = false;
+		}
+	}, [removedClipFeedback, restoreRemovedClip]);
+
+	useEffect(() => {
+		if (recording) return;
+		removedClipFeedbackGenerationRef.current += 1;
+		if (removedClipFeedbackTimerRef.current) {
+			clearTimeout(removedClipFeedbackTimerRef.current);
+			removedClipFeedbackTimerRef.current = null;
+		}
+		setRemovedClipFeedback(null);
+	}, [recording]);
+
+	useEffect(
+		() => () => {
+			if (removedClipFeedbackTimerRef.current) {
+				clearTimeout(removedClipFeedbackTimerRef.current);
+			}
+		},
+		[],
+	);
 
 	useEffect(() => {
 		if (!recording) return;
 		const handleRecordingKeyDown = (event: KeyboardEvent) => {
 			if (event.key !== "Backspace" || event.repeat || !canRemovePreviousClip) return;
 			event.preventDefault();
-			removePreviousClip();
+			void handleRemovePreviousClip();
 		};
 		window.addEventListener("keydown", handleRecordingKeyDown);
 		return () => window.removeEventListener("keydown", handleRecordingKeyDown);
-	}, [canRemovePreviousClip, recording, removePreviousClip]);
+	}, [canRemovePreviousClip, handleRemovePreviousClip, recording]);
 
 	useEffect(() => {
 		return window.electronAPI?.onHudToggleRecordingPause?.(() => {
@@ -934,6 +1000,13 @@ export function LaunchWindow() {
 	);
 
 	const hasNotices = Boolean(systemLocaleSuggestion) || softwareEncoderFallbackNoticeVisible;
+	const previousClip = [...recordedClips].reverse().find((clip) => !clip.removed) ?? null;
+	const removePreviousLabel = t("recording.removePreviousClip");
+	const removePreviousTooltip = previousClip
+		? t("recording.removePreviousClipWithDuration", {
+				duration: formatClipDuration(previousClip.durationMs),
+			})
+		: removePreviousLabel;
 
 	return (
 		// Avoid w-screen/h-screen: 100vw can exceed the inner layout width when scrollbars
@@ -993,8 +1066,9 @@ export function LaunchWindow() {
 							/>
 							<HudRemovePreviousClipButton
 								disabled={saving || clipFinalizing || !canRemovePreviousClip}
-								label="Remove previous clip"
-								onClick={removePreviousClip}
+								label={removePreviousLabel}
+								tooltip={removePreviousTooltip}
+								onClick={handleRemovePreviousClip}
 							/>
 							<HudRecordingSizeButton
 								expanded={false}
@@ -1133,11 +1207,12 @@ export function LaunchWindow() {
 										pauseLabel={
 											paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")
 										}
-										removePreviousLabel="Remove previous clip"
+										removePreviousLabel={removePreviousLabel}
+										removePreviousTooltip={removePreviousTooltip}
 										restartLabel={t("tooltips.restartRecording")}
 										cancelLabel={t("tooltips.cancelRecording")}
 										onTogglePause={togglePaused}
-										onRemovePreviousClip={removePreviousClip}
+										onRemovePreviousClip={handleRemovePreviousClip}
 										onRestart={restartRecording}
 										onCancel={cancelRecording}
 									/>
@@ -1204,7 +1279,7 @@ export function LaunchWindow() {
 					)}
 				</div>
 
-				{(isPopoverOpen || hasNotices) && (
+				{(isPopoverOpen || hasNotices || removedClipFeedback) && (
 					// column-reverse: first child sits closest to the bar.
 					<div className={styles.hudAbove}>
 						{isDeviceSettingsOpen && (
@@ -1238,12 +1313,34 @@ export function LaunchWindow() {
 							/>
 						)}
 
-						{hasNotices && (
+						{(removedClipFeedback || hasNotices) && (
 							<div
 								ref={setHudNoticesEl}
 								data-testid="hud-notice-column"
 								className={styles.hudNoticeColumn}
 							>
+								{removedClipFeedback && (
+									<div
+										data-hud-interactive="true"
+										data-testid="clip-removal-feedback"
+										className={`${styles.clipUndoNotice} ${styles.electronNoDrag}`}
+										onPointerEnter={enableHudMouseEvents}
+										role="status"
+									>
+										<span>{t("recording.clipRemoved")}</span>
+										<span className={styles.clipUndoDuration}>
+											{formatClipDuration(removedClipFeedback.durationMs)}
+										</span>
+										<button
+											type="button"
+											className={styles.clipUndoButton}
+											onClick={handleUndoRemovedClip}
+										>
+											{commonT("actions.undo")}
+										</button>
+									</div>
+								)}
+
 								{systemLocaleSuggestion && (
 									<HudNotice
 										title={t("systemLanguagePrompt.title")}

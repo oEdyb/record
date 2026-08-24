@@ -3,6 +3,7 @@ import path from "node:path";
 import {
 	mergeNativeMacStoppedClips,
 	removePreviousNativeMacClip,
+	restoreRemovedNativeMacClip,
 } from "../../src/lib/nativeMacClipSession";
 import type {
 	NativeMacRecordingFailure,
@@ -308,6 +309,29 @@ export class NativeMacRecordingService {
 			}
 			await this.persistManifestBestEffort();
 			return { success: true, clip: removal.removed };
+		});
+	}
+
+	restoreRemovedClip(clipIndex: number) {
+		return this.enqueue(async () => {
+			this.requireHelper();
+			if (!Number.isSafeInteger(clipIndex) || clipIndex < 0) {
+				throw new Error("The clip to restore is invalid.");
+			}
+			const restoration = restoreRemovedNativeMacClip(this.clips, clipIndex);
+			if (!restoration.restored) {
+				throw new Error("The removed clip is no longer available to restore.");
+			}
+			const previousClips = this.clips;
+			this.clips = restoration.clips;
+			try {
+				await this.persistRecoverySession();
+			} catch (error) {
+				this.clips = previousClips;
+				throw error;
+			}
+			await this.persistManifestBestEffort();
+			return { success: true, clip: restoration.restored };
 		});
 	}
 

@@ -202,6 +202,11 @@ interface Window {
 			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
 			error?: string;
 		}>;
+		restoreRemovedNativeMacClip: (clipIndex: number) => Promise<{
+			success: boolean;
+			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
+			error?: string;
+		}>;
 		onNativeMacRecordingError: (
 			callback: (
 				failure: import("../src/lib/nativeMacRecording").NativeMacRecordingFailure,

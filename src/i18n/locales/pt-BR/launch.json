@@ -73,7 +73,10 @@
 		"selectSource": "Por favor, selecione uma fonte para gravar",
 		"systemPicker": "O sistema perguntará o que compartilhar",
 		"inProgress": "Gravando",
-		"saving": "Salvando..."
+		"saving": "Salvando...",
+		"removePreviousClip": "Remover clipe anterior",
+		"removePreviousClipWithDuration": "Remover clipe anterior · {{duration}}",
+		"clipRemoved": "Removido"
 	},
 	"language": "Idioma",
 	"systemLanguagePrompt": {

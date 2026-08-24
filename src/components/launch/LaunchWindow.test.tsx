@@ -49,7 +49,8 @@ const recorderState = vi.hoisted(() => ({
 		canPauseRecording: false,
 		canReconfigureWhilePaused: false,
 		canRemovePreviousClip: false,
-		removePreviousClip: vi.fn(),
+		removePreviousClip: vi.fn(async (): Promise<RecordingSessionClip | null> => null),
+		restoreRemovedClip: vi.fn(async (): Promise<RecordingSessionClip | null> => null),
 		restartRecording: vi.fn(),
 		cancelRecording: vi.fn(),
 		microphoneEnabled: false,
@@ -153,12 +154,16 @@ vi.mock("@/i18n/loader", () => ({
 
 vi.mock("@/contexts/I18nContext", () => ({
 	useI18n: () => i18nState.value,
-	useScopedT: () => (key: string) => {
+	useScopedT: () => (key: string, vars?: Record<string, string | number>) => {
 		const translations: Record<string, string> = {
 			"sourceSelector.defaultSourceName": "Screen",
 			"recording.selectSource": "Please select a source to record",
 			"recording.systemPicker": "Your system will ask what to share",
 			"recording.inProgress": "Recording",
+			"recording.removePreviousClip": "Remove previous clip",
+			"recording.removePreviousClipWithDuration": "Remove previous clip · {{duration}}",
+			"recording.clipRemoved": "Removed",
+			"actions.undo": "Undo",
 			"tooltips.useVerticalTray": "Use vertical tray",
 			"tooltips.useHorizontalTray": "Use horizontal tray",
 			"audio.enableSystemAudio": "Enable system audio",
@@ -199,7 +204,9 @@ vi.mock("@/contexts/I18nContext", () => ({
 			"softwareEncoderFallback.dismiss": "Got it",
 			"softwareEncoderFallback.dontShowAgain": "Don't show again",
 		};
-		return translations[key] ?? key;
+		return (translations[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+			String(vars?.[name] ?? `{{${name}}}`),
+		);
 	},
 }));
 
@@ -333,7 +340,10 @@ function resetLaunchMocks() {
 	recorderState.value.canPauseRecording = false;
 	recorderState.value.canReconfigureWhilePaused = false;
 	recorderState.value.canRemovePreviousClip = false;
-	recorderState.value.removePreviousClip.mockClear();
+	recorderState.value.removePreviousClip.mockReset();
+	recorderState.value.removePreviousClip.mockResolvedValue(null);
+	recorderState.value.restoreRemovedClip.mockReset();
+	recorderState.value.restoreRemovedClip.mockResolvedValue(null);
 	recorderState.value.togglePaused.mockClear();
 	recorderState.value.microphoneEnabled = false;
 	recorderState.value.setMicrophoneEnabled.mockClear();
@@ -824,6 +834,72 @@ describe("LaunchWindow record button", () => {
 		fireEvent.keyDown(window, { key: "Backspace" });
 
 		expect(recorderState.value.removePreviousClip).toHaveBeenCalledTimes(2);
+	});
+
+	it("shows the removed clip duration and restores that exact clip from Undo", async () => {
+		const removedClip: RecordingSessionClip = {
+			index: 1,
+			screenVideoPath: "/recordings/clip-2.mp4",
+			durationMs: 12_400,
+			removed: true,
+		};
+		recorderState.value.recording = true;
+		recorderState.value.canRemovePreviousClip = true;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2200 },
+			{ ...removedClip, removed: undefined },
+		];
+		recorderState.value.removePreviousClip.mockResolvedValueOnce(removedClip);
+		recorderState.value.restoreRemovedClip.mockResolvedValueOnce({
+			...removedClip,
+			removed: undefined,
+		});
+
+		renderLaunchWindow();
+		const removeButton = screen.getByRole("button", { name: "Remove previous clip" });
+		fireEvent.focus(removeButton);
+		expect(await screen.findByRole("tooltip")).toHaveTextContent("Remove previous clip · 00:12");
+
+		fireEvent.click(removeButton);
+		const feedback = await screen.findByTestId("clip-removal-feedback");
+		expect(feedback).toHaveTextContent("Removed");
+		expect(feedback).toHaveTextContent("00:12");
+		fireEvent.click(within(feedback).getByRole("button", { name: "Undo" }));
+
+		await waitFor(() => {
+			expect(recorderState.value.restoreRemovedClip).toHaveBeenCalledWith(1);
+			expect(screen.queryByTestId("clip-removal-feedback")).not.toBeInTheDocument();
+		});
+	});
+
+	it("hides the clip removal Undo after four seconds", async () => {
+		vi.useFakeTimers();
+		try {
+			const removedClip: RecordingSessionClip = {
+				index: 0,
+				screenVideoPath: "/recordings/clip-1.mp4",
+				durationMs: 5200,
+				removed: true,
+			};
+			recorderState.value.recording = true;
+			recorderState.value.canRemovePreviousClip = true;
+			recorderState.value.recordedClips = [{ ...removedClip, removed: undefined }];
+			recorderState.value.removePreviousClip.mockResolvedValueOnce(removedClip);
+
+			renderLaunchWindow();
+			await act(async () => {
+				fireEvent.click(screen.getByRole("button", { name: "Remove previous clip" }));
+				await Promise.resolve();
+			});
+			expect(screen.getByTestId("clip-removal-feedback")).toBeInTheDocument();
+
+			act(() => vi.advanceTimersByTime(3999));
+			expect(screen.getByTestId("clip-removal-feedback")).toBeInTheDocument();
+			act(() => vi.advanceTimersByTime(1));
+			expect(screen.queryByTestId("clip-removal-feedback")).not.toBeInTheDocument();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 

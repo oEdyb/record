@@ -73,7 +73,10 @@
 		"selectSource": "Veuillez sélectionner une source à enregistrer",
 		"systemPicker": "Le système vous demandera quoi partager",
 		"inProgress": "Enregistrement en cours",
-		"saving": "Sauvegarde..."
+		"saving": "Sauvegarde...",
+		"removePreviousClip": "Supprimer le clip précédent",
+		"removePreviousClipWithDuration": "Supprimer le clip précédent · {{duration}}",
+		"clipRemoved": "Supprimé"
 	},
 	"language": "Langue",
 	"systemLanguagePrompt": {

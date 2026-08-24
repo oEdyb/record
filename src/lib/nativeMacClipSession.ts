@@ -106,6 +106,22 @@ export function removePreviousNativeMacClip(clips: RecordingSessionClip[]): {
 	};
 }
 
+export function restoreRemovedNativeMacClip(
+	clips: RecordingSessionClip[],
+	clipIndex: number,
+): {
+	clips: RecordingSessionClip[];
+	restored?: RecordingSessionClip;
+} {
+	const target = clips.find((clip) => clip.index === clipIndex && clip.removed);
+	if (!target) return { clips };
+	const { removed: _removed, ...restored } = target;
+	return {
+		clips: clips.map((clip) => (clip.index === clipIndex ? restored : clip)),
+		restored,
+	};
+}
+
 export function splitCursorRecordingForClips(
 	recording: CursorRecordingData,
 	clips: RecordingSessionClip[],

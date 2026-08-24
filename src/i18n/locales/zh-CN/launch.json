@@ -73,7 +73,10 @@
 		"selectSource": "请选择要录制的源",
 		"systemPicker": "系统将询问要共享的内容",
 		"inProgress": "正在录制",
-		"saving": "正在保存..."
+		"saving": "正在保存...",
+		"removePreviousClip": "移除上一个片段",
+		"removePreviousClipWithDuration": "移除上一个片段 · {{duration}}",
+		"clipRemoved": "已移除"
 	},
 	"language": "语言",
 	"systemLanguagePrompt": {

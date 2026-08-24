@@ -402,14 +402,16 @@ export const HudNotesButton = memo(function HudNotesButton({
 export const HudRemovePreviousClipButton = memo(function HudRemovePreviousClipButton({
 	disabled,
 	label,
+	tooltip,
 	onClick,
 }: {
 	disabled: boolean;
 	label: string;
+	tooltip?: string;
 	onClick: () => void;
 }) {
 	return (
-		<Tooltip content={label}>
+		<Tooltip content={tooltip ?? label}>
 			<button
 				type="button"
 				data-testid="hud-remove-previous-clip-button"
@@ -432,6 +434,7 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 	canRemovePreviousClip,
 	pauseLabel,
 	removePreviousLabel,
+	removePreviousTooltip,
 	restartLabel,
 	cancelLabel,
 	onTogglePause,
@@ -446,6 +449,7 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 	canRemovePreviousClip: boolean;
 	pauseLabel: string;
 	removePreviousLabel: string;
+	removePreviousTooltip: string;
 	restartLabel: string;
 	cancelLabel: string;
 	onTogglePause: () => void;
@@ -460,6 +464,7 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 			<HudRemovePreviousClipButton
 				disabled={saving || !canRemovePreviousClip}
 				label={removePreviousLabel}
+				tooltip={removePreviousTooltip}
 				onClick={onRemovePreviousClip}
 			/>
 			{(canPause || paused) && (

@@ -90,7 +90,8 @@ type UseScreenRecorderReturn = {
 	canPauseRecording: boolean;
 	canReconfigureWhilePaused: boolean;
 	canRemovePreviousClip: boolean;
-	removePreviousClip: () => void;
+	removePreviousClip: () => Promise<RecordingSessionClip | null>;
+	restoreRemovedClip: (clipIndex: number) => Promise<RecordingSessionClip | null>;
 	restartRecording: () => void;
 	cancelRecording: () => void;
 	microphoneEnabled: boolean;
@@ -2312,23 +2313,48 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
-	const removePreviousClip = () => {
+	const removePreviousClip = async (): Promise<RecordingSessionClip | null> => {
 		const activeNativeMacRecording = nativeMacRecording.current;
-		if (!activeNativeMacRecording || clipFinalizing) return;
-		void (async () => {
-			try {
-				const result = await window.electronAPI.removePreviousNativeMacClip();
-				if (!result.success) {
-					throw new Error(result.error ?? "Failed to remove the previous clip");
-				}
-				if (result.clip) {
-					setRecordedClips((clips) => clips.filter((clip) => clip.index !== result.clip?.index));
-				}
-			} catch (error) {
-				console.error("Failed to remove the previous clip:", error);
-				toast.error(error instanceof Error ? error.message : "Failed to remove the previous clip");
+		if (!activeNativeMacRecording || clipFinalizing) return null;
+		try {
+			const result = await window.electronAPI.removePreviousNativeMacClip();
+			if (!result.success) {
+				throw new Error(result.error ?? "Failed to remove the previous clip");
 			}
-		})();
+			const removedClip = result.clip;
+			if (removedClip) {
+				setRecordedClips((clips) => clips.filter((clip) => clip.index !== removedClip.index));
+			}
+			return removedClip ?? null;
+		} catch (error) {
+			console.error("Failed to remove the previous clip:", error);
+			toast.error(error instanceof Error ? error.message : "Failed to remove the previous clip");
+			return null;
+		}
+	};
+
+	const restoreRemovedClip = async (clipIndex: number): Promise<RecordingSessionClip | null> => {
+		if (!nativeMacRecording.current || clipFinalizing) return null;
+		try {
+			const result = await window.electronAPI.restoreRemovedNativeMacClip(clipIndex);
+			if (!result.success) {
+				throw new Error(result.error ?? "Failed to restore the removed clip");
+			}
+			const restoredClip = result.clip;
+			if (restoredClip) {
+				setRecordedClips((clips) => {
+					const withoutDuplicate = clips.filter((clip) => clip.index !== restoredClip.index);
+					return [...withoutDuplicate, restoredClip].sort(
+						(left, right) => left.index - right.index,
+					);
+				});
+			}
+			return restoredClip ?? null;
+		} catch (error) {
+			console.error("Failed to restore the removed clip:", error);
+			toast.error(error instanceof Error ? error.message : "Failed to restore the removed clip");
+			return null;
+		}
 	};
 
 	const toggleRecording = () => {
@@ -2517,6 +2543,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		canReconfigureWhilePaused,
 		canRemovePreviousClip,
 		removePreviousClip,
+		restoreRemovedClip,
 		restartRecording,
 		cancelRecording,
 		microphoneEnabled,

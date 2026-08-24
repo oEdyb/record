@@ -2589,6 +2589,9 @@ export function registerIpcHandlers(
 	ipcMain.handle("remove-previous-native-mac-clip", () =>
 		invokeNativeMac(() => getNativeMacRecordingService().removePreviousClip()),
 	);
+	ipcMain.handle("restore-removed-native-mac-clip", (_, clipIndex: number) =>
+		invokeNativeMac(() => getNativeMacRecordingService().restoreRemovedClip(clipIndex)),
+	);
 
 	ipcMain.handle("pause-native-windows-recording", async () => {
 		const proc = nativeWindowsCaptureProcess;
