@@ -733,6 +733,7 @@ describe("LaunchWindow record button", () => {
 
 		renderLaunchWindow();
 		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Remove previous clip" })).toBeEnabled();
 		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 
 		expect(screen.getByRole("button", { name: "tooltips.pauseRecording" })).toBeEnabled();

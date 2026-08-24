@@ -25,6 +25,7 @@ import {
 	HudRecordButton,
 	HudRecordingControls,
 	HudRecordingSizeButton,
+	HudRemovePreviousClipButton,
 	HudSettingsButton,
 	HudSourceButton,
 	HudStudioButton,
@@ -989,6 +990,11 @@ export function LaunchWindow() {
 								disabled={saving || clipFinalizing || !canPauseRecording}
 								label={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
 								onClick={togglePaused}
+							/>
+							<HudRemovePreviousClipButton
+								disabled={saving || clipFinalizing || !canRemovePreviousClip}
+								label="Remove previous clip"
+								onClick={removePreviousClip}
 							/>
 							<HudRecordingSizeButton
 								expanded={false}

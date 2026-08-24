@@ -399,6 +399,31 @@ export const HudNotesButton = memo(function HudNotesButton({
 	);
 });
 
+export const HudRemovePreviousClipButton = memo(function HudRemovePreviousClipButton({
+	disabled,
+	label,
+	onClick,
+}: {
+	disabled: boolean;
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<Tooltip content={label}>
+			<button
+				type="button"
+				data-testid="hud-remove-previous-clip-button"
+				className={hudAuxIconBtnClasses}
+				onClick={onClick}
+				disabled={disabled}
+				aria-label={label}
+			>
+				<Delete size={18} aria-hidden />
+			</button>
+		</Tooltip>
+	);
+});
+
 export const HudRecordingControls = memo(function HudRecordingControls({
 	vertical,
 	paused,
@@ -432,17 +457,11 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 		<div
 			className={`flex items-center gap-0.5 ${vertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
 		>
-			<Tooltip content={removePreviousLabel}>
-				<button
-					type="button"
-					className={hudAuxIconBtnClasses}
-					onClick={onRemovePreviousClip}
-					disabled={saving || !canRemovePreviousClip}
-					aria-label={removePreviousLabel}
-				>
-					<Delete size={18} aria-hidden />
-				</button>
-			</Tooltip>
+			<HudRemovePreviousClipButton
+				disabled={saving || !canRemovePreviousClip}
+				label={removePreviousLabel}
+				onClick={onRemovePreviousClip}
+			/>
 			{(canPause || paused) && (
 				<Tooltip content={pauseLabel}>
 					<button
