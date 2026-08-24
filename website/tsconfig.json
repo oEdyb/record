@@ -1,6 +1,7 @@
 {
 	"extends": "@docusaurus/tsconfig",
 	"compilerOptions": {
-		"baseUrl": "."
+		"baseUrl": ".",
+		"types": ["@docusaurus/module-type-aliases", "@docusaurus/theme-classic"]
 	}
 }

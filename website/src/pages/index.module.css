@@ -1,857 +1,900 @@
-/* Marketing landing page — always dark, styled after the OpenScreen Design System hero. */
-
 .hero,
-.visualSection,
+.workflow,
 .features,
-.quickStart {
-	background: var(--os-bg);
-	color: var(--os-fg);
+.pricing,
+.closing {
+	position: relative;
+	background: var(--k-bg);
+	color: var(--k-text);
 }
 
 .hero {
-	padding: 88px 28px 0;
-	text-align: center;
-	background: radial-gradient(ellipse 60% 40% at 50% 0%, var(--os-accent-wash), transparent 60%), var(--os-bg);
-}
-
-.heroInner {
-	max-width: 720px;
-	margin: 0 auto;
-}
-
-.badge {
-	display: inline-flex;
-	align-items: center;
-	padding: 0.3rem 0.85rem;
-	border-radius: 999px;
-	background: var(--os-accent-soft);
-	border: 1px solid var(--os-accent-border);
-	color: var(--os-accent);
-	font-size: 0.8rem;
-	font-weight: 600;
-	margin-bottom: 22px;
-}
-
-.title {
-	margin: 20px 0 0;
-	font-size: clamp(42px, 6vw, 68px);
-	font-weight: 700;
-	letter-spacing: -0.03em;
-	line-height: 1.05;
-	color: var(--os-fg-emphasis);
-}
-
-/* Second line of the h1. Block-level at the tagline's own size so the heading
-   reads as wordmark-over-descriptor and not as one oversized sentence. */
-.titleTagline {
-	display: block;
-	margin: 20px auto 0;
-	max-width: 560px;
-	font-size: 19px;
-	font-weight: 400;
-	letter-spacing: normal;
-	line-height: 1.55;
-	color: var(--os-fg-2);
-}
-
-/* Zero top margin: this paragraph now continues the line the h1's descriptor
-   started, so it has to sit at line-box distance, not block distance. */
-.tagline {
-	font-size: 19px;
-	line-height: 1.55;
-	color: var(--os-fg-2);
-	margin: 0 auto;
-	max-width: 560px;
-}
-
-.actions {
-	display: flex;
-	gap: 12px;
-	justify-content: center;
-	flex-wrap: wrap;
-	margin: 30px 0 0;
-}
-
-.primaryCta,
-.secondaryCta {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.5rem;
-	padding: 0.65rem 1.35rem;
-	border-radius: 9px;
-	font-weight: 600;
-	font-size: 0.95rem;
-	text-decoration: none;
-	transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.primaryCta {
-	background: var(--os-accent);
-	color: #fff;
-	box-shadow: 0 8px 24px rgba(16, 185, 129, 0.25);
-}
-
-.primaryCta:hover {
-	transform: translateY(-2px);
-	color: #fff;
-}
-
-.secondaryCta {
-	background: transparent;
-	color: var(--os-fg-2);
-	border: 1px solid var(--os-border);
-}
-
-.secondaryCta:hover {
-	transform: translateY(-2px);
-	border-color: var(--os-fg-2);
-	color: var(--os-fg-2);
-}
-
-.note {
-	margin: 22px auto 0;
-	max-width: 460px;
-	font-size: 12.5px;
-	color: var(--os-meta);
-	line-height: 1.5;
-}
-
-.note strong {
-	color: var(--os-muted);
-}
-
-/* ---- product visual ---- */
-
-.visualSection {
-	padding: 48px 28px 100px;
-	display: flex;
-	justify-content: center;
-}
-
-.visual {
-	width: 100%;
-	max-width: 1040px;
-	border-radius: 16px;
-	background: var(--os-surface-1);
-	border: 1px solid var(--os-border);
-	box-shadow: var(--os-elev-pop);
+	min-height: calc(100vh - 58px);
+	padding: clamp(5rem, 10vw, 8.5rem) 1.5rem 6rem;
 	overflow: hidden;
 }
 
-.visualTopbar {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	height: 44px;
-	padding: 0 1rem;
-	border-bottom: 1px solid var(--os-border-soft);
-	background: var(--os-surface);
+.hero::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background:
+		linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+	background-size: 54px 54px;
+	mask-image: linear-gradient(to bottom, black, transparent 72%);
 }
 
-.dots {
-	display: flex;
-	gap: 6px;
+.heroCopy {
+	position: relative;
+	z-index: 2;
+	width: min(900px, 100%);
+	margin: 0 auto;
+	text-align: center;
 }
 
-.dot {
-	width: 9px;
-	height: 9px;
-	border-radius: 50%;
-	background: var(--os-surface-3);
-}
-
-.divider {
-	width: 1px;
-	height: 16px;
-	background: var(--os-border);
-}
-
-.segmented {
-	display: flex;
-	gap: 2px;
-	padding: 2px;
-	border-radius: 8px;
-	background: var(--os-surface-2);
-	font-size: 11px;
-	color: var(--os-muted);
-}
-
-.segmented span {
-	padding: 3px 10px;
-	border-radius: 6px;
-}
-
-.segmentedActive {
-	background: var(--os-surface-hi, var(--os-surface-3));
-	color: var(--os-fg-emphasis);
-}
-
-.savedIndicator {
-	margin-left: auto;
+.eyebrow {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	font-family: var(--ifm-font-family-monospace);
-	font-size: 10.5px;
-	color: var(--os-muted);
+	gap: 0.55rem;
+	margin-bottom: 1.6rem;
+	font: 600 0.72rem/1 var(--k-utility);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--k-muted);
 }
 
-.savedDot {
-	width: 6px;
-	height: 6px;
+.liveDot {
+	width: 7px;
+	height: 7px;
 	border-radius: 50%;
-	background: var(--os-accent);
-	box-shadow: 0 0 0 3px var(--os-accent-soft);
+	background: var(--k-record);
+	box-shadow: 0 0 0 4px rgba(255, 82, 74, 0.11);
 }
 
-.visualBody {
-	display: grid;
-	grid-template-columns: 260px 1fr;
-	min-height: 340px;
+.heroTitle {
+	margin: 0;
+	font-size: clamp(3rem, 7.2vw, 6.9rem);
+	font-weight: 650;
+	line-height: 0.94;
+	letter-spacing: -0.068em;
+	color: var(--k-white);
 }
 
-/* Stacked, the mock has to read top-down: the editor is the product and the
-   agent panel is the sub-plot, so the stage goes first and the panel's right
-   border becomes the rule between them. Ordered in CSS rather than in the
-   markup so the desktop grid keeps its natural sidebar-then-stage source order. */
-@media (max-width: 780px) {
-	.visualBody {
-		grid-template-columns: 1fr;
-		min-height: 0;
-	}
-
-	.stage {
-		order: 1;
-	}
-
-	.agentPanel {
-		order: 2;
-		border-right: none;
-		border-top: 1px solid var(--os-border);
-	}
+.heroTitle span {
+	display: block;
+	color: var(--k-soft);
 }
 
-.agentPanel {
-	border-right: 1px solid var(--os-border);
-	background: var(--os-surface);
-	padding: 16px 16px 14px;
+.heroBody {
+	max-width: 690px;
+	margin: 1.8rem auto 0;
+	font-size: clamp(1.02rem, 1.8vw, 1.22rem);
+	line-height: 1.65;
+	letter-spacing: -0.016em;
+	color: var(--k-muted);
+}
+
+.heroActions {
 	display: flex;
-	flex-direction: column;
-	gap: 14px;
-}
-
-.agentHeader {
-	display: flex;
+	justify-content: center;
 	align-items: center;
-	gap: 8px;
-	font-size: 12.5px;
-	font-weight: 600;
-	color: var(--os-fg-emphasis);
+	gap: 1rem;
+	margin-top: 2rem;
 }
 
-.contextBadge {
-	font-size: 10.5px;
-	font-weight: 500;
-	color: var(--os-muted);
-	padding: 2px 7px;
-	border-radius: 999px;
-	background: var(--os-surface-2);
-}
-
-.chatBubbleUser,
-.chatBubbleAssistant {
-	border-radius: 11px;
-	padding: 9px 11px;
-	font-size: 12.5px;
-	line-height: 1.5;
-}
-
-.chatBubbleUser {
-	background: var(--os-surface-2);
-	color: var(--os-fg-2);
-}
-
-.chatBubbleAssistant {
-	background: var(--os-accent-wash);
-	border: 1px solid var(--os-accent-border);
-	color: var(--os-fg-2);
-}
-
-.chatMeta {
-	font-size: 10px;
-	color: var(--os-muted);
-	margin-bottom: 3px;
-}
-
-.chipRow {
-	margin-top: auto;
-	display: flex;
-	gap: 6px;
-	flex-wrap: wrap;
-}
-
-.chip {
-	padding: 5px 10px;
-	border-radius: 999px;
-	background: var(--os-surface-2);
-	border: 1px solid var(--os-border);
-	font-size: 11.5px;
-	color: var(--os-fg-2);
-}
-
-.stage {
-	display: flex;
-	flex-direction: column;
-	min-width: 0;
-}
-
-.stageFrame {
-	flex: 1;
-	position: relative;
-	background: radial-gradient(ellipse 68% 60% at 50% 38%, var(--os-surface-2) 0%, var(--os-bg) 70%);
-	display: flex;
+.primaryAction,
+.secondaryAction,
+.textAction {
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	padding: 28px;
-	min-height: 220px;
+	gap: 0.55rem;
+	font-size: 0.88rem;
+	font-weight: 620;
+	text-decoration: none;
+	transition:
+		transform 150ms ease,
+		background-color 150ms ease,
+		border-color 150ms ease;
 }
 
-.stagePreview {
+.primaryAction {
+	min-height: 44px;
+	padding: 0.7rem 1rem 0.7rem 1.15rem;
+	border-radius: 11px;
+	background: var(--k-white);
+	color: #0b0b0d;
+}
+
+.primaryAction:hover {
+	transform: translateY(-1px);
+	background: #fff;
+	color: #0b0b0d;
+	text-decoration: none;
+}
+
+.textAction {
+	padding: 0.7rem 0.3rem;
+	color: var(--k-muted);
+}
+
+.textAction:hover {
+	color: var(--k-white);
+	text-decoration: none;
+}
+
+.heroNote {
+	margin: 1rem 0 0;
+	font: 500 0.72rem/1.4 var(--k-utility);
+	color: var(--k-dim);
+}
+
+.productStage {
 	position: relative;
-	width: 100%;
-	max-width: 420px;
-	aspect-ratio: 16 / 9;
-	border-radius: 12px;
-	background: radial-gradient(ellipse at 50% 34%, #e6e8ea 0%, #b7bbc2 34%, #676d78 68%, #14161c 100%);
-	box-shadow: 0 30px 70px -24px rgba(0, 0, 0, 0.7);
+	z-index: 1;
+	width: min(1180px, calc(100vw - 2rem));
+	margin: clamp(5rem, 9vw, 7.5rem) auto 0;
+	padding-top: 20px;
 }
 
-.timeBadge {
+.productStage::after {
+	content: "";
 	position: absolute;
-	top: 10px;
-	left: 10px;
-	padding: 3px 7px;
-	border-radius: 7px;
-	background: rgba(8, 10, 13, 0.5);
-	color: #fff;
-	font-family: var(--ifm-font-family-monospace);
-	font-size: 10px;
+	z-index: -1;
+	left: 12%;
+	right: 12%;
+	bottom: -10%;
+	height: 42%;
+	background: rgba(121, 145, 171, 0.14);
+	filter: blur(100px);
+	border-radius: 50%;
 }
 
-.transport {
-	position: absolute;
-	left: 50%;
-	bottom: 14px;
-	transform: translateX(-50%);
+.recordingHud {
+	position: relative;
+	z-index: 3;
+	display: flex;
+	align-items: center;
+	gap: 0.7rem;
+	width: min(640px, calc(100% - 1.5rem));
+	min-height: 72px;
+	margin: 0 auto -28px;
+	padding: 0.7rem 0.85rem 1.7rem;
+	border: 1px solid var(--k-border-strong);
+	border-radius: 16px;
+	background: rgba(23, 23, 27, 0.94);
+	box-shadow: 0 26px 70px rgba(0, 0, 0, 0.52);
+	backdrop-filter: blur(24px) saturate(130%);
+	font: 550 0.72rem/1 var(--k-utility);
+	color: var(--k-muted);
+}
+
+.dragDots {
+	display: grid;
+	grid-template-columns: repeat(2, 3px);
+	gap: 3px;
+	width: 9px;
+}
+
+.dragDots span {
+	width: 3px;
+	height: 3px;
+	border-radius: 50%;
+	background: var(--k-dim);
+}
+
+.sourceControl,
+.pauseControl,
+.removeControl {
 	display: inline-flex;
 	align-items: center;
-	gap: 8px;
-	padding: 7px 10px;
-	border-radius: 13px;
-	background: var(--os-surface-1);
-	border: 1px solid var(--os-border);
-	box-shadow: var(--os-elev-card);
-	color: var(--os-muted);
+	gap: 0.42rem;
+	height: 30px;
+	padding: 0 0.65rem;
+	border-radius: 9px;
+	background: var(--k-panel-2);
+	color: var(--k-soft);
 }
 
-.playButton {
+.pauseControl,
+.removeControl {
+	justify-content: center;
 	width: 30px;
-	height: 30px;
+	padding: 0;
+}
+
+.hudDivider {
+	width: 1px;
+	height: 22px;
+	background: var(--k-border);
+}
+
+.hudStatus {
+	margin-left: auto;
+	font-variant-numeric: tabular-nums;
+	color: var(--k-soft);
+}
+
+.recordDot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--k-record);
+	box-shadow: 0 0 0 4px rgba(255, 82, 74, 0.1);
+}
+
+.clipRail {
+	position: absolute;
+	left: 0.85rem;
+	right: 0.85rem;
+	bottom: 0.55rem;
+	display: flex;
+	gap: 4px;
+	height: 7px;
+}
+
+.clipRail span {
+	min-width: 16px;
+	border-radius: 999px;
+	background: #34343b;
+}
+
+.clipRail span[data-current] {
+	background: #6d727b;
+}
+
+.editorWindow {
+	position: relative;
+	overflow: hidden;
+	border: 1px solid var(--k-border-strong);
+	border-radius: 18px;
+	background: #0c0c0e;
+	box-shadow: 0 50px 130px rgba(0, 0, 0, 0.64);
+}
+
+.editorTopbar {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	height: 50px;
+	padding: 0 0.9rem;
+	border-bottom: 1px solid var(--k-border);
+	background: #0e0e10;
+	font: 550 0.72rem/1 var(--k-utility);
+	color: var(--k-muted);
+}
+
+.windowDots {
+	display: flex;
+	gap: 6px;
+}
+
+.windowDots span {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #3a3a3f;
+}
+
+.wordmark {
+	font-weight: 680;
+	color: var(--k-white);
+}
+
+.projectName {
+	padding-left: 1rem;
+	border-left: 1px solid var(--k-border);
+}
+
+.savedState {
+	margin-left: auto;
+	color: var(--k-dim);
+}
+
+.recordButton,
+.exportButton {
+	padding: 0.5rem 0.75rem;
+	border-radius: 8px;
+}
+
+.recordButton {
+	border: 1px solid rgba(255, 82, 74, 0.32);
+	background: rgba(255, 82, 74, 0.08);
+	color: #ff837d;
+}
+
+.exportButton {
+	background: var(--k-white);
+	color: #101012;
+}
+
+.editorBody {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 210px;
+	min-height: 390px;
+}
+
+.previewArea {
 	display: grid;
 	place-items: center;
-	border-radius: 10px;
-	background: var(--os-accent);
-	color: #fff;
+	padding: 3rem;
+	background: #09090b;
 }
 
-/* nowrap: the transport floats over the preview, and a wrapped timecode
-   doubles its height into a slab covering half the frame on a phone. */
-.transportTime {
-	font-family: var(--ifm-font-family-monospace);
-	font-size: 11px;
-	color: var(--os-fg);
-	margin-left: 4px;
-	white-space: nowrap;
+.previewCanvas {
+	position: relative;
+	width: min(680px, 100%);
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	border-radius: 13px;
+	background: linear-gradient(150deg, #99aebd 0%, #5f788e 48%, #313b46 100%);
+	box-shadow: 0 32px 80px rgba(0, 0, 0, 0.5);
 }
 
-.meta {
-	color: var(--os-meta);
+.fakeWindow {
+	position: absolute;
+	inset: 10% 9%;
+	display: grid;
+	grid-template-columns: 22% 1fr;
+	overflow: hidden;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 9px;
+	background: rgba(12, 13, 15, 0.93);
 }
 
-.muted {
-	color: var(--os-muted);
+.fakeSidebar {
+	border-right: 1px solid rgba(255, 255, 255, 0.07);
+	background: rgba(255, 255, 255, 0.025);
+}
+
+.fakeContent {
+	display: flex;
+	flex-direction: column;
+	gap: 9%;
+	padding: 10%;
+}
+
+.fakeContent span {
+	display: block;
+	height: 4px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.13);
+}
+
+.fakeContent span:nth-child(1) {
+	width: 54%;
+}
+
+.fakeContent span:nth-child(2) {
+	width: 88%;
+}
+
+.fakeContent span:nth-child(3) {
+	width: 71%;
+}
+
+.fakeContent span:nth-child(4) {
+	width: 43%;
+}
+
+.cameraPreview {
+	position: absolute;
+	right: 5%;
+	bottom: 8%;
+	display: grid;
+	place-items: center;
+	width: 24%;
+	aspect-ratio: 16 / 10;
+	border: 1px solid rgba(255, 255, 255, 0.18);
+	border-radius: 18px;
+	background: linear-gradient(145deg, #2d3036, #111216);
+	color: rgba(255, 255, 255, 0.42);
+	box-shadow: 0 18px 45px rgba(0, 0, 0, 0.38);
+}
+
+.inspector {
+	padding: 1.1rem;
+	border-left: 1px solid var(--k-border);
+	background: #111114;
+	font: 500 0.67rem/1.4 var(--k-utility);
+	color: var(--k-muted);
+}
+
+.inspectorTitle {
+	margin-bottom: 1.25rem;
+	font-size: 0.77rem;
+	font-weight: 650;
+	color: var(--k-soft);
+}
+
+.inspectorRow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	padding: 0.65rem 0;
+	border-bottom: 1px solid var(--k-border);
+}
+
+.inspectorRow strong {
+	font-variant-numeric: tabular-nums;
+	color: var(--k-soft);
+}
+
+.slider {
+	height: 3px;
+	margin: 0.25rem 0 0.65rem;
+	border-radius: 999px;
+	background: #303138;
+}
+
+.slider span {
+	display: block;
+	width: 48%;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--k-accent);
+}
+
+.toggle {
+	position: relative;
+	width: 24px;
+	height: 14px;
+	border-radius: 999px;
+	background: #4e5865;
+}
+
+.toggle::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #e8e8ea;
 }
 
 .timeline {
-	border-top: 1px solid var(--os-border);
-	background: var(--os-surface);
-	padding: 12px 16px 14px;
+	position: relative;
+	padding: 0.8rem 1rem 1rem;
+	border-top: 1px solid var(--k-border);
+	background: #101012;
 }
 
 .timelineRuler {
 	display: flex;
 	justify-content: space-between;
-	margin-bottom: 6px;
-	font-family: var(--ifm-font-family-monospace);
-	font-size: 9.5px;
-	color: var(--os-meta);
+	padding-bottom: 0.42rem;
+	font: 500 0.55rem/1 var(--k-utility);
+	font-variant-numeric: tabular-nums;
+	color: var(--k-dim);
 }
 
-.timelineTrack {
+.effectLane {
 	position: relative;
-	height: 20px;
+	height: 27px;
 	margin-bottom: 5px;
-	border-radius: 6px;
-	background: var(--os-surface-1);
-}
-
-.pill {
-	position: absolute;
-	top: 1px;
-	bottom: 1px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	border-radius: 5px;
-	font-family: var(--ifm-font-family-monospace);
-	font-size: 9.5px;
-	font-weight: 600;
-	white-space: nowrap;
-	padding: 0 6px;
-}
-
-.pillAccent {
-	background: var(--os-accent-soft);
-	color: var(--os-accent);
-	border: 1px solid var(--os-accent-border);
-}
-
-.pillAnnotation {
-	background: var(--os-annotation-wash);
-	color: var(--os-annotation);
-	border: 1px solid rgba(251, 191, 36, 0.3);
-}
-
-.pillDanger {
-	background: var(--os-danger-soft);
-	color: var(--os-danger);
-	border: 1px solid rgba(248, 113, 113, 0.3);
-}
-
-.pillSpeed {
-	background: var(--os-speed-wash);
-	color: var(--os-speed);
-	border: 1px solid rgba(251, 146, 60, 0.3);
-}
-
-.clipRow {
-	display: flex;
-	gap: 6px;
-	height: 40px;
-}
-
-.clipActive {
-	flex: 1;
-	border-radius: 9px;
-	border: 1.5px solid var(--os-accent);
-	background: var(--os-surface-1);
-}
-
-.clip {
-	flex: 1;
-	border-radius: 9px;
-	border: 1px solid var(--os-border);
-	background: var(--os-surface-1);
-}
-
-/* ---- shared section chrome ---- */
-
-.sectionKicker {
-	font-family: var(--ifm-font-family-monospace);
-	font-size: 11px;
-	letter-spacing: 0.08em;
-	color: var(--os-accent);
-	text-transform: uppercase;
-}
-
-.sectionTitle {
-	margin: 10px 0 0 !important;
-	font-size: clamp(26px, 3vw, 32px);
-	font-weight: 700 !important;
-	letter-spacing: -0.02em;
-	color: var(--os-fg-emphasis) !important;
-}
-
-.sectionTitleSm {
-	composes: sectionTitle;
-	font-size: clamp(24px, 2.6vw, 28px);
-}
-
-/* ---- features / bento ---- */
-
-.features {
-	padding: 0 28px 96px;
-}
-
-.featuresInner {
-	max-width: 1040px;
-	margin: 0 auto;
-	text-align: center;
-}
-
-.bento {
-	margin-top: 2.5rem;
-	display: grid;
-	grid-template-columns: repeat(6, 1fr);
-	grid-template-areas:
-		"large large large large ai ai"
-		"large large large large native native"
-		"free free captions captions captions captions";
-	gap: 0.875rem;
-	text-align: left;
-}
-
-@media (max-width: 900px) {
-	.bento {
-		grid-template-columns: 1fr;
-		grid-template-areas: none;
-	}
-
-	.card {
-		grid-area: auto !important;
-	}
-}
-
-.card {
-	border-radius: 14px;
-	border: 1px solid var(--os-border);
-	background: var(--os-surface-1);
-	box-shadow: var(--os-elev-card);
-	padding: 22px;
-}
-
-.card h3 {
-	margin: 0;
-	font-size: 15px;
-	font-weight: 600;
-	color: var(--os-fg-emphasis);
-	letter-spacing: -0.01em;
-}
-
-.card p {
-	margin: 0;
-	font-size: 12.5px;
-	line-height: 1.55;
-	color: var(--os-fg-2);
-}
-
-.bentoLarge {
-	grid-area: large;
-	display: flex;
-	flex-direction: column;
-	gap: 16px;
-	padding: 26px;
-}
-
-.bentoLarge h3 {
-	font-size: 16px;
-}
-
-.bentoLarge p {
-	font-size: 13.5px;
-	max-width: 480px;
-}
-
-.miniTimeline {
-	flex: 1;
-	min-height: 64px;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	gap: 10px;
-}
-
-.miniClipsRow {
-	display: flex;
-	gap: 3px;
-	height: 40px;
-}
-
-.miniClip {
-	position: relative;
-	min-width: 0;
-	border-radius: 10px;
-	border: 1.5px solid var(--os-border);
-	background: var(--os-surface-1);
-	overflow: hidden;
-	box-shadow: inset 0 1px 6px rgba(255, 255, 255, 0.06);
-}
-
-.miniWaveform {
-	position: absolute;
-	inset: 0;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 1.5px;
-	padding: 0 7px;
-}
-
-.miniWaveform span {
-	flex: 1 1 0;
-	min-width: 1px;
-	max-width: 2.5px;
-	background: var(--os-accent);
-	opacity: 0.7;
-	border-radius: 2px;
-}
-
-.miniTrack {
-	position: relative;
-	height: 22px;
 	border-radius: 7px;
-	background: var(--os-surface-2);
+	background: #17171b;
 }
 
-.miniRegion {
+.effectLane span {
 	position: absolute;
 	top: 3px;
 	bottom: 3px;
-	border-radius: 4px;
-}
-
-.cardHeader {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-}
-
-.cardHeader h3 {
-	margin: 0;
-}
-
-.cardPills {
-	display: flex;
-	gap: 6px;
-	margin-top: auto;
-}
-
-.pillStatic {
-	padding: 3px 9px;
-	border-radius: 999px;
-	font-size: 11px;
-	font-weight: 600;
-}
-
-.bentoAi {
-	grid-area: ai;
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-}
-
-.bentoNative {
-	grid-area: native;
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-}
-
-.bentoFree {
-	grid-area: free;
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-}
-
-.bentoCaptions {
-	grid-area: captions;
-	display: flex;
-	align-items: center;
-	gap: 16px;
-}
-
-.bentoCaptions h3 {
-	margin: 0 0 4px;
-}
-
-.iconBadge {
-	width: 34px;
-	height: 34px;
-	flex-shrink: 0;
-	border-radius: 9px;
-	background: var(--os-accent-soft);
 	display: grid;
 	place-items: center;
-	color: var(--os-accent);
+	overflow: hidden;
+	border: 1px solid rgba(143, 162, 183, 0.62);
+	border-radius: 6px;
+	background: rgba(143, 162, 183, 0.12);
+	font: 600 0.55rem/1 var(--k-utility);
+	white-space: nowrap;
+	color: #c9d4df;
 }
 
-/* ---- quick start ---- */
-
-.quickStart {
-	padding: 0 28px 100px;
+.clipLane {
 	display: flex;
-	justify-content: center;
+	gap: 4px;
+	height: 36px;
 }
 
-.quickStartInner {
+.clipLane span {
+	border: 1px solid rgba(255, 255, 255, 0.11);
+	border-radius: 7px;
+	background:
+		repeating-linear-gradient(
+			90deg,
+			rgba(255, 255, 255, 0.11) 0 1px,
+			transparent 1px 4px
+		),
+		#18181c;
+	background-size: auto 14px;
+	background-position: center;
+	background-repeat: repeat-x;
+}
+
+.playhead {
+	position: absolute;
+	top: 0.7rem;
+	bottom: 0.8rem;
+	left: 62%;
+	width: 1px;
+	background: var(--k-accent);
+	box-shadow: 0 0 0 1px rgba(143, 162, 183, 0.12);
+}
+
+.playhead::before {
+	content: "";
+	position: absolute;
+	top: -1px;
+	left: -4px;
+	width: 9px;
+	height: 7px;
+	border-radius: 4px 4px 2px 2px;
+	background: var(--k-accent);
+}
+
+.workflow,
+.features,
+.pricing,
+.closing {
+	padding: clamp(5rem, 9vw, 8rem) 1.5rem;
+}
+
+.sectionHeading,
+.workflowRail,
+.featureGrid,
+.pricing {
+	width: min(1100px, 100%);
+	margin-right: auto;
+	margin-left: auto;
+}
+
+.sectionHeading {
+	display: grid;
+	grid-template-columns: 0.65fr 1.35fr;
+	gap: 3rem;
+	align-items: start;
+	margin-bottom: 3rem;
+}
+
+.sectionHeading > span,
+.pricingLabel {
+	padding-top: 0.55rem;
+	font: 600 0.69rem/1.3 var(--k-utility);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--k-dim);
+}
+
+.sectionHeading h2,
+.pricingCopy h2,
+.closing h2 {
+	margin: 0;
+	font-size: clamp(2rem, 4.2vw, 3.7rem);
+	font-weight: 620;
+	line-height: 1.03;
+	letter-spacing: -0.052em;
+	color: var(--k-white);
+}
+
+.workflow {
+	border-top: 1px solid var(--k-border);
+}
+
+.workflowRail {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	border-top: 1px solid var(--k-border-strong);
+}
+
+.workflowRail article {
+	position: relative;
+	min-height: 230px;
+	padding: 1.4rem 2rem 0 0;
+	border-right: 1px solid var(--k-border);
+}
+
+.workflowRail article:not(:first-child) {
+	padding-left: 2rem;
+}
+
+.workflowRail article:last-child {
+	border-right: 0;
+}
+
+.stepNumber {
+	margin-bottom: 3rem;
+	font: 500 0.67rem/1 var(--k-utility);
+	color: var(--k-dim);
+}
+
+.workflowRail h3,
+.feature h3 {
+	margin: 0 0 0.65rem;
+	font-size: 1rem;
+	font-weight: 620;
+	letter-spacing: -0.02em;
+	color: var(--k-soft);
+}
+
+.workflowRail p,
+.feature p,
+.pricingCopy p,
+.closing p {
+	margin: 0;
+	font-size: 0.88rem;
+	line-height: 1.65;
+	color: var(--k-muted);
+}
+
+.features {
+	border-top: 1px solid var(--k-border);
+	background: #0e0e10;
+}
+
+.featureGrid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	border-top: 1px solid var(--k-border-strong);
+	border-left: 1px solid var(--k-border-strong);
+}
+
+.feature {
+	min-height: 220px;
+	padding: 1.5rem;
+	border-right: 1px solid var(--k-border-strong);
+	border-bottom: 1px solid var(--k-border-strong);
+}
+
+.feature > svg {
+	margin-bottom: 3.7rem;
+	color: var(--k-accent);
+}
+
+.pricing {
+	display: grid;
+	grid-template-columns: 1fr minmax(360px, 0.8fr);
+	gap: clamp(3rem, 8vw, 8rem);
+	align-items: center;
+}
+
+.pricingCopy {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 1.4rem;
+}
+
+.pricingCopy p {
+	max-width: 520px;
+}
+
+.priceCard {
+	padding: 1.7rem;
+	border: 1px solid var(--k-border-strong);
+	border-radius: 17px;
+	background: #121215;
+	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+}
+
+.priceRow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-bottom: 1.3rem;
+	border-bottom: 1px solid var(--k-border);
+}
+
+.priceRow div {
+	display: flex;
+	align-items: baseline;
+	gap: 0.35rem;
+}
+
+.priceRow strong {
+	font-size: 2.1rem;
+	font-weight: 620;
+	letter-spacing: -0.045em;
+	color: var(--k-white);
+}
+
+.priceRow span {
+	font: 500 0.67rem/1 var(--k-utility);
+	color: var(--k-dim);
+}
+
+.or {
+	font-style: italic !important;
+}
+
+.priceCard ul {
+	display: grid;
+	gap: 0.7rem;
+	margin: 1.3rem 0;
+	padding: 0;
+	list-style: none;
+}
+
+.priceCard li {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	font-size: 0.78rem;
+	color: var(--k-muted);
+}
+
+.priceCard li svg {
+	color: var(--k-accent);
+}
+
+.priceCard .primaryAction {
 	width: 100%;
-	max-width: 1040px;
+}
+
+.priceFoot {
+	margin: 0.8rem 0 0;
+	text-align: center;
+	font: 500 0.65rem/1.4 var(--k-utility);
+	color: var(--k-dim);
+}
+
+.closing {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1.25rem;
+	border-top: 1px solid var(--k-border);
 	text-align: center;
 }
 
-/* Same three-column rhythm as .platformStripInner below, so the two sections
-   line up. Grid items stretch, which is what keeps the three panes equal
-   height even though only two of them carry a command. */
-.installGrid {
-	margin-top: 26px;
-	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	gap: 0.875rem;
-	text-align: left;
+.closing > svg {
+	color: var(--k-accent);
 }
 
-@media (max-width: 700px) {
-	.installGrid {
+.closing h2 {
+	max-width: 780px;
+}
+
+.secondaryAction {
+	min-height: 42px;
+	margin-top: 0.5rem;
+	padding: 0.65rem 0.9rem 0.65rem 1rem;
+	border: 1px solid var(--k-border-strong);
+	border-radius: 10px;
+	color: var(--k-soft);
+}
+
+.secondaryAction:hover {
+	transform: translateY(-1px);
+	border-color: rgba(255, 255, 255, 0.24);
+	color: var(--k-white);
+	text-decoration: none;
+}
+
+@media (max-width: 900px) {
+	.editorBody {
+		grid-template-columns: 1fr;
+	}
+
+	.inspector {
+		display: none;
+	}
+
+	.previewArea {
+		padding: 2rem;
+	}
+
+	.featureGrid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+
+	.pricing {
 		grid-template-columns: 1fr;
 	}
 }
 
-.artifactChip {
-	margin-left: auto;
-	padding: 1px 7px;
-	border-radius: 999px;
-	border: 1px solid var(--os-border-soft);
-	font-family: var(--ifm-font-family-monospace);
-	font-size: 10.5px;
-	color: var(--os-meta);
-}
-
-/* Windows has no command to run. Styling the line as prose rather than as
-   accented code keeps the pane the same size without implying it's typed. */
-.plainAction {
-	color: var(--os-fg-2);
-	font-family: var(--ifm-font-family-base);
-	font-style: italic;
-}
-
-/* Flex column so .terminalBody can absorb the slack: the install commands are
-   1–3 lines depending on platform, and without this the foot rule would sit at
-   a different height in each of the three panes. */
-.terminal {
-	display: flex;
-	flex-direction: column;
-	border-radius: 14px;
-	border: 1px solid var(--os-border);
-	background: var(--os-surface-1);
-	box-shadow: var(--os-elev-card);
-	overflow: hidden;
-	text-align: left;
-}
-
-.terminalHeader {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px 16px;
-	border-bottom: 1px solid var(--os-border-soft);
-	font-size: 12px;
-	font-weight: 500;
-	color: var(--os-fg-2);
-}
-
-.terminalBody {
-	flex: 1;
-	margin: 0;
-	padding: 1rem;
-	font-size: 12.5px;
-	line-height: 1.7;
-	color: var(--os-fg-2);
-	overflow-x: auto;
-	white-space: pre-wrap;
-}
-
-/* Second half of each pane: what the platform actually gives you. Was its own
-   three-card strip below; folded in here so the page has one row, not two. */
-.paneFoot {
-	margin: 0;
-	padding: 0.875rem 1rem;
-	border-top: 1px solid var(--os-border-soft);
-	font-size: 12px;
-	line-height: 1.55;
-	color: var(--os-muted);
-}
-
-.accentText {
-	color: var(--os-accent);
-}
-
-.quickStartNote {
-	margin: 22px 0 0;
-	font-size: 12.5px;
-	color: var(--os-meta);
-}
-
-.quickStartNote a {
-	color: var(--os-accent);
-}
-
-.quickStartNote code {
-	margin: 0 2px;
-	padding: 1px 5px;
-	border-radius: 5px;
-	border: 1px solid var(--os-border-soft);
-	background: var(--os-surface-1);
-	font-size: 11.5px;
-	color: var(--os-fg-2);
-}
-
-/* ---- phone ----
-   The 28px section gutter is a third of the width of a small phone; every
-   inner padding here is scaled to give the mock and the cards room to breathe
-   rather than to change their design. */
-
-@media (max-width: 600px) {
+@media (max-width: 700px) {
 	.hero {
-		padding: 64px 20px 0;
+		padding-right: 1rem;
+		padding-left: 1rem;
 	}
 
-	.visualSection {
-		padding: 32px 16px 72px;
+	.heroTitle {
+		font-size: clamp(2.8rem, 14vw, 4.5rem);
 	}
 
-	.features {
-		padding: 0 20px 72px;
+	.heroActions {
+		flex-direction: column;
 	}
 
-	.quickStart {
-		padding: 0 20px 76px;
+	.primaryAction {
+		width: 100%;
 	}
 
-	.agentPanel {
-		padding: 14px;
-		gap: 12px;
+	.productStage {
+		width: calc(100vw - 1rem);
 	}
 
-	.stageFrame {
-		padding: 16px;
-		min-height: 0;
+	.recordingHud {
+		gap: 0.45rem;
 	}
 
-	.transport {
-		gap: 6px;
-		bottom: 10px;
-		padding: 6px 8px;
+	.dragDots,
+	.sourceControl,
+	.removeControl,
+	.recordingHud .hudDivider:first-of-type {
+		display: none;
+	}
+
+	.editorTopbar {
+		gap: 0.55rem;
+	}
+
+	.projectName,
+	.savedState,
+	.recordButton {
+		display: none;
+	}
+
+	.exportButton {
+		margin-left: auto;
+	}
+
+	.editorBody {
+		min-height: 260px;
+	}
+
+	.previewArea {
+		padding: 1rem;
 	}
 
 	.timeline {
-		padding: 10px 12px 12px;
+		padding-right: 0.65rem;
+		padding-left: 0.65rem;
 	}
 
-	/* The icon is centred against a three-line paragraph on desktop; on a phone
-	   the same text runs to seven lines and leaves the badge stranded mid-card. */
-	.bentoCaptions {
+	.sectionHeading {
+		grid-template-columns: 1fr;
+		gap: 1rem;
+	}
+
+	.workflowRail,
+	.featureGrid {
+		grid-template-columns: 1fr;
+	}
+
+	.workflowRail article,
+	.workflowRail article:not(:first-child) {
+		min-height: 0;
+		padding: 1.3rem 0 1.5rem;
+		border-right: 0;
+		border-bottom: 1px solid var(--k-border);
+	}
+
+	.stepNumber,
+	.feature > svg {
+		margin-bottom: 1.6rem;
+	}
+
+	.priceRow {
 		align-items: flex-start;
+	}
+
+	.priceRow div {
+		flex-direction: column;
 	}
 }
 
+@media (prefers-reduced-motion: reduce) {
+	.primaryAction,
+	.secondaryAction,
+	.textAction {
+		transition: none;
+	}
+}

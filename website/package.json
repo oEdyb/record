@@ -1,8 +1,8 @@
 {
-	"name": "openscreen-website",
+	"name": "klippt-website",
 	"version": "0.0.0",
 	"private": true,
-	"description": "OpenScreen docs site (Docusaurus)",
+	"description": "Klippt product site",
 	"scripts": {
 		"dev": "docusaurus start",
 		"build": "docusaurus build",

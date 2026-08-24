@@ -1,344 +1,308 @@
 import Head from "@docusaurus/Head";
-import Link from "@docusaurus/Link";
 import Heading from "@theme/Heading";
 import Layout from "@theme/Layout";
 import {
-	Apple,
-	AppWindow,
-	Captions,
-	Cpu,
-	Download,
-	HeartHandshake,
-	Monitor,
+	ArrowRight,
+	AudioLines,
+	Camera,
+	Check,
+	Command,
+	MonitorUp,
+	MousePointer2,
 	Pause,
+	RotateCcw,
 	Scissors,
-	SkipBack,
-	SkipForward,
-	TerminalSquare,
+	ShieldCheck,
+	Sparkles,
 } from "lucide-react";
 
-import { jsonLd, softwareApplicationLd } from "../lib/structured-data";
+import { jsonLd, SOFTWARE_APPLICATION_LD } from "../lib/structured-data";
 import styles from "./index.module.css";
 
-// Static decorative waveform bars for the "multi-track editor" bento card —
-// mirrors the real editor's per-clip waveform rendering (thin accent bars
-// of varying height inside a rounded, bordered clip block).
-const MINI_WAVEFORM_A = [30, 55, 80, 45, 65, 90, 50, 35, 70, 60, 40, 75, 55, 30];
-const MINI_WAVEFORM_B = [45, 65, 35, 85, 55, 40, 70, 90, 50, 30, 60, 75, 45, 65, 35, 55];
+const CLIP_WIDTHS = [18, 28, 14, 32];
+
+function ProductStage() {
+	return (
+		<div className={styles.productStage} aria-label="Klippt recording and editing workflow">
+			<div className={styles.recordingHud}>
+				<span className={styles.dragDots} aria-hidden="true">
+					<span />
+					<span />
+					<span />
+				</span>
+				<span className={styles.sourceControl}>
+					<MonitorUp size={14} /> Screen
+				</span>
+				<span className={styles.hudDivider} />
+				<span className={styles.hudStatus}>00:38</span>
+				<span className={styles.recordDot} />
+				<span className={styles.pauseControl}>
+					<Pause size={13} fill="currentColor" />
+				</span>
+				<span className={styles.hudDivider} />
+				<span className={styles.removeControl}>
+					<RotateCcw size={13} />
+				</span>
+				<div className={styles.clipRail} aria-hidden="true">
+					{CLIP_WIDTHS.map((width, index) => (
+						<span key={width} style={{ flex: width }} data-current={index === 3 || undefined} />
+					))}
+				</div>
+			</div>
+
+			<div className={styles.editorWindow}>
+				<div className={styles.editorTopbar}>
+					<div className={styles.windowDots} aria-hidden="true">
+						<span />
+						<span />
+						<span />
+					</div>
+					<span className={styles.wordmark}>Klippt</span>
+					<span className={styles.projectName}>Product walkthrough</span>
+					<span className={styles.savedState}>Saved</span>
+					<span className={styles.recordButton}>Record</span>
+					<span className={styles.exportButton}>Export</span>
+				</div>
+
+				<div className={styles.editorBody}>
+					<div className={styles.previewArea}>
+						<div className={styles.previewCanvas}>
+							<div className={styles.fakeWindow}>
+								<div className={styles.fakeSidebar} />
+								<div className={styles.fakeContent}>
+									<span />
+									<span />
+									<span />
+									<span />
+								</div>
+							</div>
+							<div className={styles.cameraPreview}>
+								<Camera size={18} />
+							</div>
+						</div>
+					</div>
+
+					<aside className={styles.inspector}>
+						<div className={styles.inspectorTitle}>Automatic</div>
+						<div className={styles.inspectorRow}>
+							<span>Max zoom</span>
+							<strong>1.65×</strong>
+						</div>
+						<div className={styles.slider}>
+							<span />
+						</div>
+						<div className={styles.inspectorRow}>
+							<span>Camera emphasis</span>
+							<span className={styles.toggle} />
+						</div>
+						<div className={styles.inspectorRow}>
+							<span>Protect screen activity</span>
+							<span className={styles.toggle} />
+						</div>
+					</aside>
+				</div>
+
+				<div className={styles.timeline}>
+					<div className={styles.timelineRuler}>
+						<span>0:00</span>
+						<span>0:10</span>
+						<span>0:20</span>
+						<span>0:30</span>
+					</div>
+					<div className={styles.effectLane}>
+						<span style={{ left: "7%", width: "23%" }}>1.50×</span>
+						<span style={{ left: "37%", width: "30%" }}>Follow pointer</span>
+						<span style={{ left: "74%", width: "18%" }}>Camera</span>
+					</div>
+					<div className={styles.clipLane}>
+						<span style={{ flex: 3 }} />
+						<span style={{ flex: 2 }} />
+						<span style={{ flex: 4 }} />
+					</div>
+					<div className={styles.playhead} />
+				</div>
+			</div>
+		</div>
+	);
+}
+
+const FEATURES = [
+	{
+		icon: MousePointer2,
+		title: "Direction you can edit",
+		body: "Clicks, drags, typing, and speech become normal Zoom and Camera Emphasis regions. Move them, resize them, or remove them.",
+	},
+	{
+		icon: Scissors,
+		title: "Fix the mistake, not the session",
+		body: "Pause into clean MP4 clips. Remove the previous clip immediately, or insert a new clip between existing sections later.",
+	},
+	{
+		icon: AudioLines,
+		title: "Quicker spoken-word edits",
+		body: "Shorten pauses with speech-aware analysis while protecting clicks, typing, cursor movement, and system audio.",
+	},
+	{
+		icon: MonitorUp,
+		title: "One recording, every frame",
+		body: "Build 16:9, 9:16, 1:1, split-screen, and custom layouts from the same untouched source recording.",
+	},
+	{
+		icon: ShieldCheck,
+		title: "Local by default",
+		body: "Recordings and projects stay on your Mac. Capture, preview, and export use the machine you already own.",
+	},
+	{
+		icon: Command,
+		title: "Built for precise control",
+		body: "Every automatic change remains visible on the timeline, undoable, and available to the same command model used by the editor.",
+	},
+];
 
 export default function Home() {
 	return (
 		<Layout
-			title="Free open-source screen recorder & video editor"
-			description="OpenScreen is a free, open-source screen recorder and video editor for Windows, macOS, and Linux — native capture, on-device captions, no watermarks."
+			title="Clip-native screen recorder and editor for Mac"
+			description="Record clean clips, remove mistakes while recording, and return to an editable first cut with local automatic direction."
 		>
 			<Head>
-				{/* The product entity, distinct from the Organization/WebSite pair
-				    emitted site-wide from docusaurus.config.ts. */}
-				<script type="application/ld+json">{jsonLd(softwareApplicationLd())}</script>
+				<script type="application/ld+json">{jsonLd(SOFTWARE_APPLICATION_LD)}</script>
 			</Head>
-			<header className={styles.hero}>
-				<div className={styles.heroInner}>
-					<span className={styles.badge}>Pre-release · work in progress</span>
-					{/* The descriptor sits inside the h1 rather than in the paragraph
-					    below it: the brand name alone gave the page's only h1 no
-					    subject. Rendered as a block at the old tagline's size, so the
-					    visual hierarchy is unchanged — big wordmark, descriptor under it. */}
-					<Heading as="h1" className={styles.title}>
-						OpenScreen
-						<span className={styles.titleTagline}>
-							A free, open-source screen recorder and video editor
-						</span>
-					</Heading>
-					<p className={styles.tagline}>Native capture, local AI, no paywall.</p>
-					<div className={styles.actions}>
-						<Link className={styles.primaryCta} to="/download">
-							<Download size={16} />
-							Download
-						</Link>
-						<Link className={styles.secondaryCta} to="/docs/intro">
-							Read the docs
-						</Link>
-					</div>
-					<p className={styles.note}>
-						OpenScreen is <strong>not production-grade</strong>. Expect rough edges while we build
-						in the open.
-					</p>
-				</div>
-			</header>
 
-			<section className={styles.visualSection}>
-				<div className={styles.visual}>
-					<div className={styles.visualTopbar}>
-						<span className={styles.dots}>
-							<span className={styles.dot} />
-							<span className={styles.dot} />
-							<span className={styles.dot} />
-						</span>
-						<span className={styles.divider} />
-						<span className={styles.segmented}>
-							<span>Media</span>
-							<span className={styles.segmentedActive}>Edit</span>
-							<span>Rec</span>
-						</span>
-						<span className={styles.savedIndicator}>
-							<span className={styles.savedDot} />
-							Saved
-						</span>
-					</div>
-
-					<div className={styles.visualBody}>
-						<aside className={styles.agentPanel}>
-							<div className={styles.agentHeader}>
-								<span>OpenScreen Agent</span>
-								<span className={styles.contextBadge}>0% context</span>
-							</div>
-							<div className={styles.chatBubbleUser}>
-								Clean up the intro — there&apos;s dead air while I read my notes.
-							</div>
-							<div className={styles.chatBubbleAssistant}>
-								<div className={styles.chatMeta}>OpenScreen · 10:41</div>
-								On it — scanning track 1 for silences now. I&apos;ll flag anything over 600ms.
-							</div>
-							<div className={styles.chipRow}>
-								<span className={styles.chip}>Remove silences</span>
-								<span className={styles.chip}>Add captions</span>
-							</div>
-						</aside>
-
-						<div className={styles.stage}>
-							<div className={styles.stageFrame}>
-								<div className={styles.stagePreview}>
-									<span className={styles.timeBadge}>00:00:12.4</span>
-								</div>
-								<div className={styles.transport}>
-									<SkipBack size={13} />
-									<span className={styles.playButton}>
-										<Pause size={13} />
-									</span>
-									<SkipForward size={13} />
-									<span className={styles.transportTime}>
-										0:12.4<span className={styles.meta}> / </span>
-										<span className={styles.muted}>7:03.6</span>
-									</span>
-								</div>
-							</div>
-							<div className={styles.timeline}>
-								<div className={styles.timelineRuler}>
-									<span>0:00</span>
-									<span>1:00</span>
-									<span>2:00</span>
-								</div>
-								<div className={styles.timelineTrack}>
-									<span
-										className={`${styles.pill} ${styles.pillAccent}`}
-										style={{ left: "12%", width: "9%" }}
-									>
-										1.8×
-									</span>
-									<span
-										className={`${styles.pill} ${styles.pillAnnotation}`}
-										style={{ left: "55%", width: "10%" }}
-									>
-										Note
-									</span>
-								</div>
-								<div className={styles.timelineTrack}>
-									<span
-										className={`${styles.pill} ${styles.pillDanger}`}
-										style={{ left: "30%", width: "14%" }}
-									>
-										0:12.0
-									</span>
-								</div>
-								<div className={styles.clipRow}>
-									<div className={styles.clipActive} />
-									<div className={styles.clip} />
-								</div>
-							</div>
+			<main>
+				<section className={styles.hero}>
+					<div className={styles.heroCopy}>
+						<div className={styles.eyebrow}>
+							<span className={styles.liveDot} /> Private alpha · macOS
 						</div>
+						<Heading as="h1" className={styles.heroTitle}>
+							Record clean clips.
+							<span>Come back to a polished first edit.</span>
+						</Heading>
+						<p className={styles.heroBody}>
+							Klippt lets you pause, remove the last section, and continue without ending the
+							recording. When you stop, your clips, zooms, camera emphasis, and pauses are ready to
+							adjust.
+						</p>
+						<div className={styles.heroActions}>
+							<a
+								className={styles.primaryAction}
+								href="mailto:support@klippt.app?subject=Klippt%20private%20alpha"
+							>
+								Join the private alpha <ArrowRight size={15} />
+							</a>
+							<a className={styles.textAction} href="#workflow">
+								See the workflow
+							</a>
+						</div>
+						<p className={styles.heroNote}>
+							Apple Silicon · local recording · editable automatic direction
+						</p>
 					</div>
-				</div>
-			</section>
 
-			<section className={styles.features}>
-				<div className={styles.featuresInner}>
-					<div className={styles.sectionKicker}>Why OpenScreen</div>
-					<Heading as="h2" className={styles.sectionTitle}>
-						Recorder-first. AI, if you want it.
-					</Heading>
+					<ProductStage />
+				</section>
 
-					<div className={styles.bento}>
-						<article className={`${styles.card} ${styles.bentoLarge}`}>
-							<div className={styles.cardHeader}>
-								<span className={styles.iconBadge}>
-									<Scissors size={17} />
-								</span>
-								<h3>A real multi-track editor</h3>
-							</div>
-							<p>
-								Trim, split, and layer clips on a proper timeline. Captions, cursor smoothing,
-								zooms, and webcam picture-in-picture.
-							</p>
-							<div className={styles.miniTimeline}>
-								<div className={styles.miniClipsRow}>
-									<div className={styles.miniClip} style={{ flex: 5 }}>
-										<div className={styles.miniWaveform}>
-											{MINI_WAVEFORM_A.map((h, i) => (
-												<span key={i} style={{ height: `${h}%` }} />
-											))}
-										</div>
-									</div>
-									<div className={styles.miniClip} style={{ flex: 6 }}>
-										<div className={styles.miniWaveform}>
-											{MINI_WAVEFORM_B.map((h, i) => (
-												<span key={i} style={{ height: `${h}%` }} />
-											))}
-										</div>
-									</div>
-								</div>
-								<div className={styles.miniTrack}>
-									<span
-										className={`${styles.miniRegion} ${styles.pillAccent}`}
-										style={{ left: "10%", width: "16%" }}
-									/>
-									<span
-										className={`${styles.miniRegion} ${styles.pillSpeed}`}
-										style={{ left: "32%", width: "12%" }}
-									/>
-									<span
-										className={`${styles.miniRegion} ${styles.pillAnnotation}`}
-										style={{ left: "58%", width: "20%" }}
-									/>
-								</div>
-							</div>
-							<div className={styles.cardPills}>
-								<span className={`${styles.pillStatic} ${styles.pillAccent}`}>Zoom</span>
-								<span className={`${styles.pillStatic} ${styles.pillSpeed}`}>1.5×</span>
-								<span className={`${styles.pillStatic} ${styles.pillAnnotation}`}>Caption</span>
-							</div>
+				<section className={styles.workflow}>
+					<div className={styles.sectionHeading}>
+						<span>One recording session</span>
+						<Heading as="h2" id="workflow">
+							The editor and recorder work as one.
+						</Heading>
+					</div>
+					<div className={styles.workflowRail}>
+						<article>
+							<div className={styles.stepNumber}>01</div>
+							<h3>Record</h3>
+							<p>Choose your sources once. Pause whenever a spoken section ends.</p>
 						</article>
-
-						<article className={`${styles.card} ${styles.bentoAi}`}>
-							<span className={styles.iconBadge}>
-								<Cpu size={17} />
-							</span>
-							<h3>AI, opt-in</h3>
-							<p>
-								Whisper runs locally for captions — no upload, no cloud. Chat-based editing with
-								your own LLM key is there if you want it, off unless you connect a provider.
-							</p>
+						<article>
+							<div className={styles.stepNumber}>02</div>
+							<h3>Keep moving</h3>
+							<p>Remove the previous clip with one key, or continue into the next clean clip.</p>
 						</article>
-
-						<article className={`${styles.card} ${styles.bentoNative}`}>
-							<span className={styles.iconBadge}>
-								<Monitor size={17} />
-							</span>
-							<h3>Native capture</h3>
-							<p>
-								ScreenCaptureKit on macOS, Windows Graphics Capture on Windows. No Electron
-								screen-grab hacks.
-							</p>
+						<article>
+							<div className={styles.stepNumber}>03</div>
+							<h3>Finish the edit</h3>
+							<p>Stop into one timeline. Adjust every cut, zoom, pause, frame, and camera move.</p>
 						</article>
+					</div>
+				</section>
 
-						<article className={`${styles.card} ${styles.bentoFree}`}>
-							<span className={styles.iconBadge}>
-								<HeartHandshake size={17} />
-							</span>
-							<h3>MIT, free forever</h3>
-							<p>
-								No paywalls, no premium tier, no usage caps. Every feature ships free for personal
-								and commercial use.
-							</p>
-						</article>
+				<section className={styles.features}>
+					<div className={styles.sectionHeading}>
+						<span>Automatic, not mysterious</span>
+						<Heading as="h2" id="features">
+							A strong first edit that still belongs to you.
+						</Heading>
+					</div>
+					<div className={styles.featureGrid}>
+						{FEATURES.map(({ icon: Icon, title, body }) => (
+							<article key={title} className={styles.feature}>
+								<Icon size={17} />
+								<h3>{title}</h3>
+								<p>{body}</p>
+							</article>
+						))}
+					</div>
+				</section>
 
-						<article className={`${styles.card} ${styles.bentoCaptions}`}>
-							<span className={styles.iconBadge}>
-								<Captions size={17} />
-							</span>
+				<section className={styles.pricing}>
+					<div className={styles.pricingCopy}>
+						<span className={styles.pricingLabel}>Founding alpha</span>
+						<Heading as="h2" id="pricing">
+							One product. No feature maze.
+						</Heading>
+						<p>
+							The private alpha will use one Klippt Pro subscription. Monthly and yearly plans
+							unlock the same recorder, editor, automatic direction, and export controls.
+						</p>
+					</div>
+					<div className={styles.priceCard}>
+						<div className={styles.priceRow}>
 							<div>
-								<h3>Captions in 13 languages, on-device</h3>
-								<p>
-									Automatic transcription with local Whisper — no upload, works offline. Arabic,
-									English, Spanish, French, Italian, Japanese, Korean, Portuguese, Russian, Turkish,
-									Vietnamese, and both Chinese scripts.
-								</p>
+								<strong>$19</strong>
+								<span>/ month</span>
 							</div>
-						</article>
+							<span className={styles.or}>or</span>
+							<div>
+								<strong>$99</strong>
+								<span>/ year</span>
+							</div>
+						</div>
+						<ul>
+							<li>
+								<Check size={14} /> 14-day trial after your first recording
+							</li>
+							<li>
+								<Check size={14} /> Existing projects stay viewable if access ends
+							</li>
+							<li>
+								<Check size={14} /> Cancel before the next billing period
+							</li>
+						</ul>
+						<a
+							className={styles.primaryAction}
+							href="mailto:support@klippt.app?subject=Klippt%20private%20alpha"
+						>
+							Request alpha access <ArrowRight size={15} />
+						</a>
+						<p className={styles.priceFoot}>Checkout opens after the private alpha is ready.</p>
 					</div>
-				</div>
-			</section>
+				</section>
 
-			<section className={styles.quickStart}>
-				<div className={styles.quickStartInner}>
-					<div className={styles.sectionKicker}>Quick start</div>
-					<Heading as="h2" className={styles.sectionTitleSm}>
-						Download and install
-					</Heading>
-
-					{/* One pane per platform, same chrome and same weight. An earlier
-					    version showed only the Linux command with the other two in a
-					    footnote, which read at a glance as "Linux only". */}
-					<div className={styles.installGrid}>
-						<div className={styles.terminal}>
-							<div className={styles.terminalHeader}>
-								<Apple size={14} />
-								<span>macOS</span>
-								<span className={styles.artifactChip}>.dmg</span>
-							</div>
-							<pre className={styles.terminalBody}>
-								<span className={styles.meta}># drag OpenScreen to Applications, then</span>
-								{"\n"}
-								<span className={styles.accentText}>xattr</span> -rd com.apple.quarantine
-								/Applications/Openscreen.app
-							</pre>
-							<p className={styles.paneFoot}>
-								ScreenCaptureKit native capture, real cursor + click effects, native webcam.
-							</p>
-						</div>
-
-						<div className={styles.terminal}>
-							<div className={styles.terminalHeader}>
-								<AppWindow size={14} />
-								<span>Windows</span>
-								<span className={styles.artifactChip}>.exe</span>
-							</div>
-							<pre className={styles.terminalBody}>
-								<span className={styles.meta}># run the installer</span>
-								{"\n"}
-								<span className={styles.plainAction}>Nothing to type — double-click and go.</span>
-							</pre>
-							<p className={styles.paneFoot}>
-								Windows Graphics Capture, system audio out of the box, native webcam.
-							</p>
-						</div>
-
-						<div className={styles.terminal}>
-							<div className={styles.terminalHeader}>
-								<TerminalSquare size={14} />
-								<span>Linux</span>
-								<span className={styles.artifactChip}>.deb</span>
-							</div>
-							<pre className={styles.terminalBody}>
-								<span className={styles.meta}># download the .deb from Releases, then</span>
-								{"\n"}
-								<span className={styles.accentText}>sudo</span> apt install ./Openscreen-Linux-*.deb
-							</pre>
-							<p className={styles.paneFoot}>
-								Browser-pipeline capture; needs PipeWire for system audio.
-							</p>
-						</div>
-					</div>
-
-					<p className={styles.quickStartNote}>
-						The macOS line is only needed if Gatekeeper blocks the app. Linux also ships{" "}
-						<code>.rpm</code>, <code>.pacman</code>, an AppImage, and a Nix flake — every artifact
-						is on the{" "}
-						<a href="https://github.com/getopenscreen/openscreen/releases">Releases page</a>, and{" "}
-						<Link to="/docs/installation">Installation</Link> has the full steps.
-					</p>
-				</div>
-			</section>
+				<section className={styles.closing}>
+					<Sparkles size={18} />
+					<Heading as="h2">Record without planning every correction.</Heading>
+					<p>Your source stays clean. The first edit stays flexible.</p>
+					<a
+						className={styles.secondaryAction}
+						href="mailto:support@klippt.app?subject=Klippt%20private%20alpha"
+					>
+						Join the private alpha <ArrowRight size={15} />
+					</a>
+				</section>
+			</main>
 		</Layout>
 	);
 }
