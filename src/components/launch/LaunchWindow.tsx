@@ -1011,13 +1011,7 @@ export function LaunchWindow() {
 
 								<HudDivider vertical={hudIsVertical} />
 
-								{recording ? (
-									<HudRecordingSizeButton
-										expanded
-										label={t("tooltips.hideRecordingControls")}
-										onClick={() => setActiveHudExpanded(false)}
-									/>
-								) : (
+								{!recording && (
 									<HudTrayLayoutButton
 										vertical={hudIsVertical}
 										label={
@@ -1158,6 +1152,13 @@ export function LaunchWindow() {
 									data-testid="hud-right-controls"
 									className={`flex items-center gap-[5px] ${hudIsVertical ? "flex-col" : "ml-auto"} ${styles.electronNoDrag}`}
 								>
+									{recording && (
+										<HudRecordingSizeButton
+											expanded
+											label={t("tooltips.hideRecordingControls")}
+											onClick={() => setActiveHudExpanded(false)}
+										/>
+									)}
 									<HudLanguageButton
 										buttonRef={languageTriggerRef}
 										vertical={hudIsVertical}

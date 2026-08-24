@@ -679,11 +679,11 @@ describe("LaunchWindow record button", () => {
 		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 		expect(screen.getByRole("img", { name: /Clip history: 0 completed clips/ })).toBeVisible();
 		expect(screen.queryByTestId("hud-compact-pause-button")).not.toBeInTheDocument();
-		expect(screen.getByTestId("hud-recording-size-button")).toHaveAccessibleName(
-			"tooltips.hideRecordingControls",
-		);
+		const collapseButton = screen.getByTestId("hud-recording-size-button");
+		expect(collapseButton).toHaveAccessibleName("tooltips.hideRecordingControls");
+		expect(screen.getByTestId("hud-right-controls")).toContainElement(collapseButton);
 
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
+		fireEvent.click(collapseButton);
 		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
 		expect(screen.getByTestId("hud-compact-pause-button")).toHaveAccessibleName(
 			"tooltips.resumeRecording",
