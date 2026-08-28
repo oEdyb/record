@@ -148,6 +148,12 @@ change unless noted.
 - Label: **AUTO**
 - Priority: P0
 - Depends on: nothing
+- Status: **COMPLETE — 2026-08-28**
+- Evidence: private branch `checkpoint/klippt-pre-wave0-2026-08-28`, verified commit
+  `270d06815cb3b58c43666502a0e3180d2331e92b`, and annotated tag
+  `product-checkpoint-2026-08-28`. The exact remote state passed a fresh-clone install, test, native
+  helper, pinned FFmpeg, native compositor, and production Vite build with Node `22.22.1` and npm
+  `10.9.4`. See [[technical-documentation/engineering/build-and-packaging#Known-good product checkpoint — 2026-08-28]].
 
 Work:
 
@@ -164,10 +170,10 @@ Work:
 
 Acceptance:
 
-- The private remote contains the complete product source.
-- The tag identifies one known-good state.
-- A fresh checkout builds without hidden local files.
-- No personal recording, secret, model cache, or generated package entered Git.
+- [x] The private remote contains the complete product source.
+- [x] The tag identifies one known-good state.
+- [x] A fresh checkout builds without hidden local files.
+- [x] No personal recording, secret, model cache, or generated package entered Git.
 
 ### W0.2 — Make dependency checks permanent
 

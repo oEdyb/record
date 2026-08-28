@@ -2,6 +2,43 @@
 
 OpenScreen builds its renderer, Electron main process, preload bridge, native helpers, and installers from the root npm scripts, `vite.config.ts`, `electron-builder.json5`, and platform-native projects under `electron/native/`. Nix provides a separate Linux package and development shell.
 
+## Known-good product checkpoint — 2026-08-28
+
+The private `oEdyb/record` remote contains the pre-Wave-0 Klippt checkpoint on branch
+`checkpoint/klippt-pre-wave0-2026-08-28`. Annotated tag `product-checkpoint-2026-08-28` resolves to
+commit `270d06815cb3b58c43666502a0e3180d2331e92b`.
+
+The checkpoint was split into eight product commits: brand, automatic direction, Parakeet
+transcription, reversible creator audio, native export, editor integration, native packaging, and
+documentation. Generated SwiftPM builds, Rust targets, native staging directories, the local
+Parakeet model cache, recordings, credentials, and three preserved design screenshots under
+`tmp/` were not committed. A staged-content scan found no high-confidence secret, recording,
+model, or package payload.
+
+The exact remote commit was cloned into a new disposable directory. With Node `22.22.1` and npm
+`10.9.4`, it passed:
+
+- `npm ci` with zero reported npm vulnerabilities;
+- Biome, both TypeScript projects, the workbench typecheck, localization parity, and documentation
+  checks;
+- all 214 Vitest files with 2,384 tests passed and three platform-dependent tests skipped in the
+  clean checkout;
+- the macOS ScreenCaptureKit/cursor helper build and the Apple Silicon Parakeet helper build;
+- the full Clean Voice test, including exact tails, silence transitions, deterministic output,
+  atomic publication, and the 60-second fixture;
+- the pinned LGPL FFmpeg 8.1.2 source fetch/build, the Metal compositor addon build, and
+  `npm run build-vite`.
+
+The Rust workspace test run in the source checkout passed 156 unit tests and all export, output
+geometry, and remux integration tests. The workspace still has old formatting and strict-Clippy
+debt in untouched platform code and generated FFmpeg bindings. Changed Rust files pass `rustfmt`,
+and the Clean Voice crate passes strict Clippy. Wave W0.2 owns the permanent policy and the staged
+cleanup of the remaining baseline warnings; this checkpoint does not hide them.
+
+Two environment requirements were confirmed by the clean clone. Use the pinned Node/npm versions,
+not the machine's default Node 26/npm 12. Before a direct compositor build in a clean checkout, run
+`npm run fetch:ffmpeg:mac`; the official `npm run build:mac` command already does this.
+
 ## Commands
 
 | Command | What it does |
