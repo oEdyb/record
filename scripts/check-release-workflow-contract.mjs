@@ -123,6 +123,11 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 	const publish = build.jobs?.["publish-release"];
 	requireValue(publish?.environment === "release", "Publishing must use the release environment");
 	requireValue(
+		publish?.concurrency?.group === "klippt-production-release-publish" &&
+			publish?.concurrency?.["cancel-in-progress"] === false,
+		"Production releases must use one shared non-cancelling publisher",
+	);
+	requireValue(
 		publish?.permissions?.contents === "write" && publish?.permissions?.actions === "write",
 		"Only publishing may receive release write permissions",
 	);
@@ -139,11 +144,19 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 		"Publisher checkout must not persist its write-capable workflow token",
 	);
 	const stageFeed = findStep(publish, "Stage the owned update feed");
+	const releaseOrder = findStep(publish, "Confirm this release is newest");
+	const draft = findStep(publish, "Create or resume the draft release");
 	requireValue(
 		stageFeed?.env?.KLIPPT_SOURCE_SHA === EXACT_SOURCE,
 		"The public feed must record the resolved source SHA",
 	);
-	const draft = findStep(publish, "Create or resume the draft release");
+	requireValue(
+		releaseOrder?.env?.KLIPPT_SOURCE_SHA === EXACT_SOURCE &&
+			releaseOrder?.env?.KLIPPT_RELEASE_VERSION === "${{ steps.release.outputs.version }}" &&
+			String(releaseOrder?.run).includes("check-update-release-order.mjs") &&
+			steps(publish).indexOf(releaseOrder) < steps(publish).indexOf(draft),
+		"The publisher must reject an older public release before it mutates release state",
+	);
 	const immutableFeed = findStep(publish, "Publish immutable update artifacts");
 	const publishDraft = findStep(publish, "Publish the verified GitHub draft");
 	const mutableFeed = findStep(publish, "Publish mutable update manifests");

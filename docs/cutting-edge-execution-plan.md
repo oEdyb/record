@@ -214,6 +214,15 @@ Acceptance:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W0.1
+- Status: **CODE COMPLETE — external activation pending, 2026-08-28**
+- Evidence: private commits `8134c662` plus the release-order follow-up on
+  `checkpoint/klippt-pre-wave0-2026-08-28`; 15 supply-chain suites pass 61 tests. Exact signed
+  source resolution, helper provenance, immutable GitHub releases, protected `v*` tags, staged and
+  fetched feed integrity, one serialized publisher, and monotonic stable versions are implemented.
+  Activation waits for this branch to reach `main`; Apple/R2 secrets can then move from repository
+  scope to `release`, and repository action-SHA enforcement can be enabled without breaking the old
+  workflow. The private personal-repository plan cannot add an environment reviewer, so Olle's
+  offline SSH-signed release tag remains the human approval boundary.
 
 Work:
 
@@ -232,9 +241,12 @@ Work:
 
 Acceptance:
 
-- A release cannot package a helper built from another commit.
-- A manually dispatched build cannot name a different tag than its checked-out source.
-- Public feeds cannot reference a missing or mismatched artifact.
+- [x] A release cannot package a helper built from another commit.
+- [x] A manually dispatched build cannot name a different tag than its checked-out source.
+- [x] Public feeds cannot reference a missing or mismatched artifact.
+- [x] An older concurrent release cannot replace the newest public update feed.
+- [ ] Move Apple and R2 secrets to `release` after this workflow reaches `main`.
+- [ ] Enable repository action-SHA enforcement after the pinned workflows reach `main`.
 
 ### W0.4 — Close licence and notice gaps
 

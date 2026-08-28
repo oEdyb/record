@@ -903,6 +903,9 @@ jobs:
     name: Publish GitHub release
     runs-on: ubuntu-latest
     environment: release
+    concurrency:
+      group: klippt-production-release-publish
+      cancel-in-progress: false
     permissions:
       actions: write
       contents: write
@@ -1061,6 +1064,14 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: node scripts/stage-update-release.mjs artifacts "$VERSION" update-release
+
+      - name: Confirm this release is newest
+        if: ${{ steps.release.outputs.is_prerelease == 'false' }}
+        env:
+          KLIPPT_RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
+          KLIPPT_UPDATE_BASE_URL: https://updates.dyberg.co/klippt
+        run: node scripts/check-update-release-order.mjs
 
       - name: Create or resume the draft release
         env:

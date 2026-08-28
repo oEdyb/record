@@ -28,6 +28,14 @@ The workflow verifies the RC signature against the external release key. It also
 
 `build.yml` checks out one resolved SHA everywhere. It runs the supply-chain gates and source-bound Whisper build before platform packaging. The release creates a private GitHub draft first. It then publishes and verifies immutable update artifacts, validates and publishes the mutable feeds, fetches every public file to compare size and SHA-512, and publishes the draft last. A stable `release: published` event closes the milestone, announces Discord, and starts Homebrew, WinGet, Nix, and AUR.
 
+All production publishers share the `klippt-production-release-publish` concurrency group. GitHub
+runs only one job in that group at a time. Before the first external write, a stable publisher fetches
+the public `latest.json` without cache. It rejects an older version. A same-version retry is allowed
+only when the published source commit is identical. Network errors, invalid JSON, an unknown source,
+or an oversized manifest stop publication. This keeps a slower old build from replacing a newer
+update feed. The rule follows GitHub's official
+[deployment concurrency contract](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
 ### Release branches (the contract)
 
 Every released version has **exactly one frozen branch**, named for the stable version, living from the first RC cut onward:
