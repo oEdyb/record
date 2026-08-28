@@ -162,6 +162,16 @@
 	--handle-h: 6px;
 	--bottom-h: 224px;
 
+	/* v4 editor geometry. Keep the shell, preview, and inspector on one measured
+	   system instead of repeating near-matching literals across components. */
+	--editor-topbar-h: 56px;
+	--editor-stage-inset: 16px;
+	--editor-inspector-pane-w: 344px;
+	--editor-inspector-rail-w: 48px;
+	--editor-inspector-w: calc(var(--editor-inspector-pane-w) + var(--editor-inspector-rail-w));
+	--editor-pane-header-h: 48px;
+	--editor-section-space: 16px;
+
 	/* elevation */
 	--elev-card: 0 1px 2px rgba(15, 23, 42, 0.03), 0 2px 8px -2px rgba(15, 23, 42, 0.05);
 	--elev-card-soft: 0 1px 2px rgba(15, 23, 42, 0.03);
