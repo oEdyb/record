@@ -18,7 +18,15 @@ const baseDoc: AxcutDocument = {
 		updatedAt: "2026-06-25T10:00:00.000Z",
 		primaryAssetId: "a1",
 	},
-	assets: [{ id: "a1", kind: "video", label: "clip", originalPath: "/x.mp4", cameraTrack: null }],
+	assets: [
+		{
+			id: "a1",
+			kind: "video",
+			label: "clip",
+			originalPath: "/x.mp4",
+			cameraTrack: null,
+		},
+	],
 	timeline: {
 		clips: [],
 		gaps: [],
@@ -49,6 +57,15 @@ describe("getEditorSettings", () => {
 		expect(snap.webcamZoom).toBe(1);
 		expect(snap.webcamFocalPoint).toEqual({ cx: 0.5, cy: 0.5 });
 		expect(snap.cursor.size).toBe(DEFAULT_CURSOR_SIZE);
+		expect(snap.microphoneVolume).toBe(1);
+		expect(snap.microphoneMuted).toBe(false);
+		expect(snap.systemAudioVolume).toBe(1);
+		expect(snap.systemAudioMuted).toBe(false);
+		expect(snap.evenVolume).toBe(true);
+		expect(snap.normalizeVolume).toBe(true);
+		expect(snap.audioDeliveryPreset).toBe("youtube");
+		expect(snap.audioTargetLufs).toBe(-14.5);
+		expect(snap.audioPeakCeilingDbtp).toBe(-2);
 	});
 
 	it("returns the defaults when the document is null", () => {
@@ -73,6 +90,15 @@ describe("getEditorSettings", () => {
 				webcamFocalPoint: { cx: 0.2, cy: 0.8 },
 				cursorSize: 5,
 				cursorSmoothing: 0.8,
+				microphoneVolume: 0.75,
+				microphoneMuted: true,
+				systemAudioVolume: 0.35,
+				systemAudioMuted: false,
+				evenVolume: false,
+				normalizeVolume: false,
+				audioDeliveryPreset: "custom",
+				audioTargetLufs: -18,
+				audioPeakCeilingDbtp: -3,
 			},
 		};
 		const snap = getEditorSettings(doc);
@@ -89,6 +115,15 @@ describe("getEditorSettings", () => {
 		expect(snap.webcamFocalPoint).toEqual({ cx: 0.2, cy: 0.8 });
 		expect(snap.cursor.size).toBe(5);
 		expect(snap.cursor.smoothing).toBe(0.8);
+		expect(snap.microphoneVolume).toBe(0.75);
+		expect(snap.microphoneMuted).toBe(true);
+		expect(snap.systemAudioVolume).toBe(0.35);
+		expect(snap.systemAudioMuted).toBe(false);
+		expect(snap.evenVolume).toBe(false);
+		expect(snap.normalizeVolume).toBe(false);
+		expect(snap.audioDeliveryPreset).toBe("custom");
+		expect(snap.audioTargetLufs).toBe(-18);
+		expect(snap.audioPeakCeilingDbtp).toBe(-3);
 	});
 
 	it("clamps camera zoom from saved projects", () => {
@@ -98,12 +133,16 @@ describe("getEditorSettings", () => {
 
 	it("clamps the stacked camera share from saved projects", () => {
 		expect(
-			getEditorSettings({ ...baseDoc, legacyEditor: { webcamBlockCameraShare: 5 } })
-				.webcamBlockCameraShare,
+			getEditorSettings({
+				...baseDoc,
+				legacyEditor: { webcamBlockCameraShare: 5 },
+			}).webcamBlockCameraShare,
 		).toBe(20);
 		expect(
-			getEditorSettings({ ...baseDoc, legacyEditor: { webcamBlockCameraShare: 95 } })
-				.webcamBlockCameraShare,
+			getEditorSettings({
+				...baseDoc,
+				legacyEditor: { webcamBlockCameraShare: 95 },
+			}).webcamBlockCameraShare,
 		).toBe(80);
 	});
 
@@ -122,6 +161,34 @@ describe("getEditorSettings", () => {
 		};
 		const snap = getEditorSettings(doc);
 		expect(snap.showBlur).toBe(false);
+	});
+
+	it("keeps the YouTube preset on its fixed mastering targets", () => {
+		const snap = getEditorSettings({
+			...baseDoc,
+			legacyEditor: {
+				audioDeliveryPreset: "youtube",
+				audioTargetLufs: -18,
+				audioPeakCeilingDbtp: -3,
+			},
+		});
+		expect(snap.audioDeliveryPreset).toBe("youtube");
+		expect(snap.audioTargetLufs).toBe(-14.5);
+		expect(snap.audioPeakCeilingDbtp).toBe(-2);
+	});
+
+	it("rejects custom delivery targets outside the supported mastering range", () => {
+		const snap = getEditorSettings({
+			...baseDoc,
+			legacyEditor: {
+				audioDeliveryPreset: "custom",
+				audioTargetLufs: -4,
+				audioPeakCeilingDbtp: 0,
+			},
+		});
+		expect(snap.audioDeliveryPreset).toBe("custom");
+		expect(snap.audioTargetLufs).toBe(-14.5);
+		expect(snap.audioPeakCeilingDbtp).toBe(-2);
 	});
 });
 
@@ -143,8 +210,14 @@ describe("patchEditorSettings", () => {
 	});
 
 	it("treats an explicitly undefined key as absent, not as a clear", () => {
-		const seed = patchEditorSettings(baseDoc, { showBlur: true, shadowIntensity: 0.7 });
-		const next = patchEditorSettings(seed, { showBlur: undefined, padding: 12 });
+		const seed = patchEditorSettings(baseDoc, {
+			showBlur: true,
+			shadowIntensity: 0.7,
+		});
+		const next = patchEditorSettings(seed, {
+			showBlur: undefined,
+			padding: 12,
+		});
 		const snap = getEditorSettings(next);
 		expect(snap.showBlur).toBe(true);
 		expect(snap.shadowIntensity).toBe(0.7);
@@ -157,6 +230,40 @@ describe("patchEditorSettings", () => {
 		const snap = getEditorSettings(next);
 		expect(snap.cursor.size).toBe(4);
 		expect(snap.cursor.smoothing).toBe(0.9);
+	});
+
+	it("round-trips independent audio delivery settings", () => {
+		const next = patchEditorSettings(baseDoc, {
+			microphoneVolume: 0.8,
+			microphoneMuted: false,
+			systemAudioVolume: 0.25,
+			systemAudioMuted: true,
+			evenVolume: false,
+			normalizeVolume: true,
+			audioDeliveryPreset: "custom",
+			audioTargetLufs: -16,
+			audioPeakCeilingDbtp: -1.5,
+		});
+		expect(getEditorSettings(next)).toMatchObject({
+			microphoneVolume: 0.8,
+			microphoneMuted: false,
+			systemAudioVolume: 0.25,
+			systemAudioMuted: true,
+			evenVolume: false,
+			normalizeVolume: true,
+			audioDeliveryPreset: "custom",
+			audioTargetLufs: -16,
+			audioPeakCeilingDbtp: -1.5,
+		});
+	});
+
+	it("rejects source volumes outside the supported range", () => {
+		const snap = getEditorSettings({
+			...baseDoc,
+			legacyEditor: { microphoneVolume: 1.2, systemAudioVolume: -0.1 },
+		});
+		expect(snap.microphoneVolume).toBe(1);
+		expect(snap.systemAudioVolume).toBe(1);
 	});
 
 	it("does not mutate the source document", () => {

@@ -30,6 +30,8 @@ export interface VideoSource {
 	id: string;
 	src: string;
 	label: string;
+	/** Browser-ready mix of the verified Clean Voice microphone and untouched system audio. */
+	audioSrc?: string;
 }
 
 /** First clip (by timeline order) starting strictly after `afterTimelineStartSec` —
@@ -118,6 +120,7 @@ export function VirtualPreview({
 				top: `${(-region.y * 100) / region.height}%`,
 			};
 	const videoRef = useRef<HTMLVideoElement | null>(null);
+	const routedAudioRef = useRef<HTMLAudioElement | null>(null);
 	const videoFrameRef = useRef<HTMLDivElement | null>(null);
 
 	const isProgrammaticSeekRef = useRef(false);
@@ -136,6 +139,17 @@ export function VirtualPreview({
 
 	const virtualDurationSec = useMemo(() => totalVirtualDuration(clips), [clips]);
 	const activeSource = videoSources[sourceIndex] ?? null;
+	const requestedAudioKey = activeSource?.audioSrc
+		? `${activeSource.id}\0${activeSource.audioSrc}`
+		: null;
+	const [failedAudioKey, setFailedAudioKey] = useState<string | null>(null);
+	const [readyAudioKey, setReadyAudioKey] = useState<string | null>(null);
+	const routedAudioRequested = requestedAudioKey !== null && failedAudioKey !== requestedAudioKey;
+	const routedAudioActive = routedAudioRequested && readyAudioKey === requestedAudioKey;
+	useEffect(() => {
+		const audio = routedAudioRef.current;
+		if (!routedAudioActive && audio && !audio.paused) audio.pause();
+	}, [routedAudioActive]);
 
 	// ponytail: the cursor overlay wants source-media time (the recorded
 	// cursor samples live on the original mp4 timeline, not the edited
@@ -216,6 +230,20 @@ export function VirtualPreview({
 			const v = videoRef.current;
 			if (!v || !Number.isFinite(v.currentTime)) {
 				return;
+			}
+			const routedAudio = routedAudioRef.current;
+			if (routedAudioActive && routedAudio && Number.isFinite(routedAudio.duration)) {
+				if (routedAudio.playbackRate !== v.playbackRate) {
+					routedAudio.playbackRate = v.playbackRate;
+				}
+				if (Math.abs(routedAudio.currentTime - v.currentTime) > 0.04) {
+					routedAudio.currentTime = v.currentTime;
+				}
+				if (v.paused) {
+					routedAudio.pause();
+				} else if (routedAudio.paused) {
+					void routedAudio.play().catch(() => undefined);
+				}
 			}
 			// Publish this frame's live position/rate for other media elements
 			// (webcam) to read directly — see playback-clock.ts for why this
@@ -369,7 +397,7 @@ export function VirtualPreview({
 		return () => window.cancelAnimationFrame(raf);
 		// re-create the rAF when the active source swaps (by asset id, not src —
 		// two clips can point at distinct assets that resolve to the same URL).
-	}, [activeSource?.id]);
+	}, [activeSource?.id, routedAudioActive]);
 
 	// report the video element up; re-notify (and clear) whenever the active
 	// source changes so the parent doesn't keep a stale node after the keyed
@@ -544,6 +572,7 @@ export function VirtualPreview({
 							}}
 							preload="metadata"
 							playsInline
+							muted={routedAudioActive}
 							onLoadedMetadata={(e) => {
 								setLoadState("ready");
 								// ponytail: forward the raw duration (possibly NaN for
@@ -633,6 +662,18 @@ export function VirtualPreview({
 							// handles clip-end advancement, so dropping the event
 							// handler here is safe.
 						/>
+						{routedAudioRequested && activeSource.audioSrc ? (
+							<audio
+								key={requestedAudioKey ?? activeSource.id}
+								ref={routedAudioRef}
+								src={activeSource.audioSrc}
+								preload="auto"
+								onCanPlay={() => setReadyAudioKey(requestedAudioKey)}
+								onError={() => {
+									setFailedAudioKey(requestedAudioKey);
+								}}
+							/>
+						) : null}
 						{/* Plus d'overlay « Loading preview… » : il reflétait l'état du <video>
 						    CACHÉ (source horloge/audio), pas la preview RÉELLE — le canvas natif,
 						    qui montre déjà une image valide pendant que le <video> re-seek. Il

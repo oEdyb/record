@@ -27,6 +27,17 @@ describe("editing preferences", () => {
 		expect(preferences.version).toBe(1);
 		expect(preferences.editor.padding).toBe(DEFAULT_EDITOR_SETTINGS.padding);
 		expect(preferences.editor.cursor).toEqual(DEFAULT_EDITOR_SETTINGS.cursor);
+		expect(preferences.editor).toMatchObject({
+			microphoneVolume: 1,
+			microphoneMuted: false,
+			systemAudioVolume: 1,
+			systemAudioMuted: false,
+			evenVolume: true,
+			normalizeVolume: true,
+			audioDeliveryPreset: "youtube",
+			audioTargetLufs: -14.5,
+			audioPeakCeilingDbtp: -2,
+		});
 		expect(preferences.export).toMatchObject({
 			format: "mp4",
 			quality: "good",
@@ -56,6 +67,7 @@ describe("editing preferences", () => {
 		expect(preferences.export.format).toBe("gif");
 		expect(preferences.export.quality).toBe("source");
 		expect(preferences.export.normalizeVolume).toBe(false);
+		expect(preferences.editor.normalizeVolume).toBe(false);
 	});
 
 	it("round-trips reusable editor controls without carrying a source crop", () => {
@@ -72,6 +84,15 @@ describe("editing preferences", () => {
 			webcamBlockCameraShare: 62,
 			webcamMaskShape: "circle" as const,
 			webcamFocalPoint: { cx: 0.15, cy: 0.7 },
+			microphoneVolume: 0.8,
+			microphoneMuted: false,
+			systemAudioVolume: 0.35,
+			systemAudioMuted: true,
+			evenVolume: false,
+			normalizeVolume: false,
+			audioDeliveryPreset: "custom" as const,
+			audioTargetLufs: -18,
+			audioPeakCeilingDbtp: -3,
 			webcamPosition: { cx: 0.2, cy: 0.8 },
 			cursor: { ...DEFAULT_EDITOR_SETTINGS.cursor, size: 4.2, smoothing: 0.9 },
 			cropRegion: { x: 0.25, y: 0.1, width: 0.5, height: 0.7 },
@@ -92,6 +113,15 @@ describe("editing preferences", () => {
 			webcamFocalPoint: { cx: 0.15, cy: 0.7 },
 			webcamPosition: { cx: 0.2, cy: 0.8 },
 			cursor: { size: 4.2, smoothing: 0.9 },
+			microphoneVolume: 0.8,
+			microphoneMuted: false,
+			systemAudioVolume: 0.35,
+			systemAudioMuted: true,
+			evenVolume: false,
+			normalizeVolume: false,
+			audioDeliveryPreset: "custom",
+			audioTargetLufs: -18,
+			audioPeakCeilingDbtp: -3,
 		});
 		expect(saved).not.toHaveProperty("cropRegion");
 	});
@@ -106,7 +136,11 @@ describe("editing preferences", () => {
 
 		expect(
 			saveEditorDefaultPreferences(
-				{ ...DEFAULT_EDITOR_SETTINGS, wallpaper: uploadedWallpaper, padding: 29 },
+				{
+					...DEFAULT_EDITOR_SETTINGS,
+					wallpaper: uploadedWallpaper,
+					padding: 29,
+				},
 				storage,
 			),
 		).toBe(true);
@@ -149,7 +183,10 @@ describe("editing preferences", () => {
 
 		expect(loadEditingPreferences(storage).editor.webcamSizePreset).toBe(70);
 		expect(loadEditingPreferences(storage).editor.webcamZoom).toBe(1.85);
-		expect(loadEditingPreferences(storage).editor.webcamFocalPoint).toEqual({ cx: 0.25, cy: 0.75 });
+		expect(loadEditingPreferences(storage).editor.webcamFocalPoint).toEqual({
+			cx: 0.25,
+			cy: 0.75,
+		});
 	});
 
 	it("rejects malformed values one field at a time", () => {
@@ -164,6 +201,11 @@ describe("editing preferences", () => {
 					webcamSizePreset: "huge",
 					webcamZoom: 9,
 					webcamFocalPoint: { cx: -2, cy: 4 },
+					audioDeliveryPreset: "broadcast",
+					audioTargetLufs: -3,
+					audioPeakCeilingDbtp: 0,
+					microphoneVolume: 2,
+					systemAudioVolume: -1,
 					cursor: { size: -2, smoothing: 0.75 },
 				},
 				export: { fps: 120, codec: "vp9", gifFrameRate: 120 },
@@ -179,6 +221,11 @@ describe("editing preferences", () => {
 		expect(preferences.editor.webcamFocalPoint).toEqual({ cx: 0, cy: 1 });
 		expect(preferences.editor.cursor.size).toBe(DEFAULT_EDITOR_SETTINGS.cursor.size);
 		expect(preferences.editor.cursor.smoothing).toBe(0.75);
+		expect(preferences.editor.audioDeliveryPreset).toBe("youtube");
+		expect(preferences.editor.audioTargetLufs).toBe(-14.5);
+		expect(preferences.editor.audioPeakCeilingDbtp).toBe(-2);
+		expect(preferences.editor.microphoneVolume).toBe(1);
+		expect(preferences.editor.systemAudioVolume).toBe(1);
 		expect(preferences.export.fps).toBe(60);
 		expect(preferences.export.codec).toBe("h264");
 		expect(preferences.export.gifFrameRate).toBe(15);
@@ -189,7 +236,13 @@ describe("editing preferences", () => {
 		saveEditorDefaultPreferences({ ...DEFAULT_EDITOR_SETTINGS, padding: 31 }, storage);
 
 		saveExportPreferences(
-			{ format: "gif", fps: 24, codec: "h265", gifFrameRate: 30, gifLoop: false },
+			{
+				format: "gif",
+				fps: 24,
+				codec: "h265",
+				gifFrameRate: 30,
+				gifLoop: false,
+			},
 			storage,
 		);
 
@@ -227,7 +280,10 @@ describe("editing preferences", () => {
 		});
 		expect(preferences.captions).not.toHaveProperty("language");
 
-		const empty = createEmptyDocument({ projectId: "captions", title: "Captions" });
+		const empty = createEmptyDocument({
+			projectId: "captions",
+			title: "Captions",
+		});
 		const seeded = applyEditingDefaultPreferences(empty, preferences);
 		expect(getCaptionSettings(seeded)).toMatchObject({
 			enabled: true,
@@ -249,7 +305,10 @@ describe("editing preferences", () => {
 			},
 			storage,
 		);
-		const empty = createEmptyDocument({ projectId: "project", title: "Project" });
+		const empty = createEmptyDocument({
+			projectId: "project",
+			title: "Project",
+		});
 
 		const seeded = applyEditorDefaultPreferences(empty, loadEditingPreferences(storage).editor);
 		const settings = getEditorSettings(seeded);

@@ -53,6 +53,18 @@ import type { AxcutDocument } from "../schema";
 // for the same reason (their canonical types live in lib/wallpaper and
 // lib/cursor/cursorThemes as the source of truth).
 
+export type AudioDeliveryPreset = "youtube" | "custom";
+
+export const DEFAULT_AUDIO_TARGET_LUFS = -14.5;
+export const MIN_AUDIO_TARGET_LUFS = -30;
+export const MAX_AUDIO_TARGET_LUFS = -9;
+export const DEFAULT_AUDIO_PEAK_CEILING_DBTP = -2;
+export const MIN_AUDIO_PEAK_CEILING_DBTP = -6;
+export const MAX_AUDIO_PEAK_CEILING_DBTP = -1;
+export const DEFAULT_SOURCE_VOLUME = 1;
+export const MIN_SOURCE_VOLUME = 0;
+export const MAX_SOURCE_VOLUME = 1;
+
 export interface EditorSettingsSnapshot {
 	wallpaper: string;
 	aspectRatio: AspectRatio;
@@ -78,6 +90,15 @@ export interface EditorSettingsSnapshot {
 	cursorShow: boolean;
 	cursorTheme: string;
 	autoFocusAll: boolean;
+	microphoneVolume: number;
+	microphoneMuted: boolean;
+	systemAudioVolume: number;
+	systemAudioMuted: boolean;
+	evenVolume: boolean;
+	normalizeVolume: boolean;
+	audioDeliveryPreset: AudioDeliveryPreset;
+	audioTargetLufs: number;
+	audioPeakCeilingDbtp: number;
 }
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
@@ -116,6 +137,15 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 	cursorShow: true,
 	cursorTheme: DEFAULT_CURSOR_THEME_ID,
 	autoFocusAll: false,
+	microphoneVolume: DEFAULT_SOURCE_VOLUME,
+	microphoneMuted: false,
+	systemAudioVolume: DEFAULT_SOURCE_VOLUME,
+	systemAudioMuted: false,
+	evenVolume: true,
+	normalizeVolume: true,
+	audioDeliveryPreset: "youtube",
+	audioTargetLufs: DEFAULT_AUDIO_TARGET_LUFS,
+	audioPeakCeilingDbtp: DEFAULT_AUDIO_PEAK_CEILING_DBTP,
 };
 
 interface LegacyShape {
@@ -147,6 +177,15 @@ interface LegacyShape {
 	cursorShow?: boolean;
 	cursorTheme?: string;
 	autoFocusAll?: boolean;
+	microphoneVolume?: number;
+	microphoneMuted?: boolean;
+	systemAudioVolume?: number;
+	systemAudioMuted?: boolean;
+	evenVolume?: boolean;
+	normalizeVolume?: boolean;
+	audioDeliveryPreset?: AudioDeliveryPreset;
+	audioTargetLufs?: number;
+	audioPeakCeilingDbtp?: number;
 }
 function isShape(value: unknown): value is LegacyShape {
 	return typeof value === "object" && value !== null;
@@ -162,11 +201,17 @@ function isString(v: unknown): v is string {
 	return typeof v === "string";
 }
 
+function numberInRange(value: unknown, fallback: number, min: number, max: number): number {
+	return isNumber(value) && value >= min && value <= max ? value : fallback;
+}
+
 export function getEditorSettings(doc: AxcutDocument | null | undefined): EditorSettingsSnapshot {
 	const legacy = isShape(doc?.legacyEditor) ? (doc.legacyEditor as LegacyShape) : null;
 	const num = (v: unknown, fallback: number) => (isNumber(v) ? v : fallback);
 	const bool = (v: unknown, fallback: boolean) => (isBoolean(v) ? v : fallback);
 	const str = (v: unknown, fallback: string) => (isString(v) ? v : fallback);
+	const audioDeliveryPreset: AudioDeliveryPreset =
+		legacy?.audioDeliveryPreset === "custom" ? "custom" : "youtube";
 
 	const cursor: CursorVisualSettings = {
 		size: num(legacy?.cursorSize, DEFAULT_EDITOR_SETTINGS.cursor.size),
@@ -212,6 +257,41 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		cursorShow: bool(legacy?.cursorShow, DEFAULT_EDITOR_SETTINGS.cursorShow),
 		cursorTheme: str(legacy?.cursorTheme, DEFAULT_EDITOR_SETTINGS.cursorTheme),
 		autoFocusAll: bool(legacy?.autoFocusAll, DEFAULT_EDITOR_SETTINGS.autoFocusAll),
+		microphoneVolume: numberInRange(
+			legacy?.microphoneVolume,
+			DEFAULT_EDITOR_SETTINGS.microphoneVolume,
+			MIN_SOURCE_VOLUME,
+			MAX_SOURCE_VOLUME,
+		),
+		microphoneMuted: bool(legacy?.microphoneMuted, DEFAULT_EDITOR_SETTINGS.microphoneMuted),
+		systemAudioVolume: numberInRange(
+			legacy?.systemAudioVolume,
+			DEFAULT_EDITOR_SETTINGS.systemAudioVolume,
+			MIN_SOURCE_VOLUME,
+			MAX_SOURCE_VOLUME,
+		),
+		systemAudioMuted: bool(legacy?.systemAudioMuted, DEFAULT_EDITOR_SETTINGS.systemAudioMuted),
+		evenVolume: bool(legacy?.evenVolume, DEFAULT_EDITOR_SETTINGS.evenVolume),
+		normalizeVolume: bool(legacy?.normalizeVolume, DEFAULT_EDITOR_SETTINGS.normalizeVolume),
+		audioDeliveryPreset,
+		audioTargetLufs:
+			audioDeliveryPreset === "youtube"
+				? DEFAULT_AUDIO_TARGET_LUFS
+				: numberInRange(
+						legacy?.audioTargetLufs,
+						DEFAULT_EDITOR_SETTINGS.audioTargetLufs,
+						MIN_AUDIO_TARGET_LUFS,
+						MAX_AUDIO_TARGET_LUFS,
+					),
+		audioPeakCeilingDbtp:
+			audioDeliveryPreset === "youtube"
+				? DEFAULT_AUDIO_PEAK_CEILING_DBTP
+				: numberInRange(
+						legacy?.audioPeakCeilingDbtp,
+						DEFAULT_EDITOR_SETTINGS.audioPeakCeilingDbtp,
+						MIN_AUDIO_PEAK_CEILING_DBTP,
+						MAX_AUDIO_PEAK_CEILING_DBTP,
+					),
 	};
 }
 export interface EditorSettingsPatch {
@@ -237,6 +317,15 @@ export interface EditorSettingsPatch {
 	webcamPosition?: WebcamPosition | null;
 	cursor?: Partial<CursorVisualSettings> & { theme?: string; show?: boolean };
 	autoFocusAll?: boolean;
+	microphoneVolume?: number;
+	microphoneMuted?: boolean;
+	systemAudioVolume?: number;
+	systemAudioMuted?: boolean;
+	evenVolume?: boolean;
+	normalizeVolume?: boolean;
+	audioDeliveryPreset?: AudioDeliveryPreset;
+	audioTargetLufs?: number;
+	audioPeakCeilingDbtp?: number;
 }
 
 function nextLegacy(current: LegacyShape | null, patch: EditorSettingsPatch): LegacyShape {

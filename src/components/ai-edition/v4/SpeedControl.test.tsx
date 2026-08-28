@@ -13,7 +13,9 @@ vi.mock("@/contexts/I18nContext", () => ({
 }));
 
 const toastError = vi.fn();
-vi.mock("sonner", () => ({ toast: { error: (message: string) => toastError(message) } }));
+vi.mock("sonner", () => ({
+	toast: { error: (message: string) => toastError(message) },
+}));
 
 import { SpeedControl } from "./FloatingInspector";
 
@@ -73,11 +75,12 @@ describe("SpeedControl", () => {
 	});
 
 	it("surfaces a custom speed as its own option instead of misreporting a preset", () => {
-		// 25× matches no preset. Without an injected <option> the select would fall back to
+		// 25× matches no preset. Without an injected option the menu would fall back to
 		// rendering its first entry, telling the user the region runs at 0.25×.
 		renderControl(25);
-		const select = screen.getByRole("combobox") as HTMLSelectElement;
-		expect(select.value).toBe("25");
-		expect(Array.from(select.options).map((o) => o.value)).toContain("25");
+		const select = screen.getByRole("combobox");
+		expect(select).toHaveTextContent("25×");
+		fireEvent.keyDown(select, { key: "ArrowDown" });
+		expect(screen.getByRole("option", { name: "25×" })).toBeInTheDocument();
 	});
 });

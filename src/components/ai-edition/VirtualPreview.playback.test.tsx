@@ -93,6 +93,32 @@ function driveVideo(element: HTMLVideoElement) {
 	};
 }
 
+function driveAudio(element: HTMLAudioElement) {
+	let currentTime = 0;
+	let paused = true;
+	Object.defineProperty(element, "currentTime", {
+		configurable: true,
+		get: () => currentTime,
+		set: (next: number) => {
+			currentTime = next;
+		},
+	});
+	Object.defineProperty(element, "paused", { configurable: true, get: () => paused });
+	Object.defineProperty(element, "duration", { configurable: true, get: () => 10 });
+	element.play = vi.fn(() => {
+		paused = false;
+		return Promise.resolve();
+	});
+	element.pause = vi.fn(() => {
+		paused = true;
+	});
+	return {
+		get currentTime() {
+			return currentTime;
+		},
+	};
+}
+
 function mount(clips: AxcutClip[], trimRanges: AxcutTrimRange[] = []) {
 	const onTimeChange = vi.fn();
 	const sources: VideoSource[] = [{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" }];
@@ -119,6 +145,38 @@ const reportedTimes = (onTimeChange: ReturnType<typeof vi.fn>) =>
 	onTimeChange.mock.calls.map((call) => call[0] as number);
 
 describe("VirtualPreview playback across a clip boundary", () => {
+	it("uses the ready Clean Voice mix as one synced audio route and falls back as a whole", () => {
+		const sources: VideoSource[] = [
+			{
+				id: "a1",
+				src: "file:///tmp/a1.mp4",
+				audioSrc: "file:///tmp/a1-clean.m4a",
+				label: "a1",
+			},
+		];
+		const { container } = render(
+			<VirtualPreview videoSources={sources} clips={[clip("clip_1", "a1", 0, 10, 0)]} />,
+		);
+		const videoElement = container.querySelector("video") as HTMLVideoElement;
+		const audioElement = container.querySelector("audio") as HTMLAudioElement;
+		const video = driveVideo(videoElement);
+		const audio = driveAudio(audioElement);
+		act(() => {
+			fireEvent.loadedMetadata(videoElement);
+			fireEvent.canPlay(audioElement);
+		});
+
+		video.play();
+		video.seekTo(5);
+		tick();
+		expect(videoElement.muted).toBe(true);
+		expect(audio.currentTime).toBe(5);
+		expect(audioElement.play).toHaveBeenCalled();
+
+		act(() => fireEvent.error(audioElement));
+		expect(videoElement.muted).toBe(false);
+	});
+
 	// The reported bug: with two clips over ONE recording, playback stopped on reaching
 	// the second clip and the playhead landed at the end of the timeline.
 	it("crosses into the second clip of the same recording instead of stopping", () => {

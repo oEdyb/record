@@ -18,6 +18,7 @@ import {
 import type { ComponentProps } from "react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { AppSelect } from "@/components/ui/app-select";
 import { parseCustomPlaybackSpeedInput } from "@/components/video-editor/customPlaybackSpeed";
 import {
 	effectiveZoomScale,
@@ -52,10 +53,10 @@ import {
 	type MotionStyle,
 	normalizeMotionSpeed,
 } from "@/lib/zoomMath/motionCurve";
+import { AudioPane, type SelectablePauseSuggestion } from "../AudioPane";
 import { AutomaticDirectionPane } from "../AutomaticDirectionPane";
 import { CaptionsPane } from "../CaptionsPane";
 import { ColorField } from "../ColorField";
-import { PausesPane, type SelectablePauseSuggestion } from "../PausesPane";
 import {
 	BackgroundPane,
 	CursorPane,
@@ -74,17 +75,21 @@ export type Facet =
 	| "effects"
 	| "layout"
 	| "cursor"
-	| "pauses"
+	| "audio"
 	| "automatic"
 	| "captions"
 	| "transcript";
 
-const ALL_FACETS: Array<{ id: Facet; labelKey: string; icon: typeof ImageIcon }> = [
+const ALL_FACETS: Array<{
+	id: Facet;
+	labelKey: string;
+	icon: typeof ImageIcon;
+}> = [
 	{ id: "background", labelKey: "background.title", icon: ImageIcon },
 	{ id: "effects", labelKey: "effects.title", icon: SlidersHorizontal },
 	{ id: "layout", labelKey: "layout.title", icon: LayoutIcon },
 	{ id: "cursor", labelKey: "cursor.title", icon: MousePointer2 },
-	{ id: "pauses", labelKey: "pauses.title", icon: AudioLines },
+	{ id: "audio", labelKey: "audio.title", icon: AudioLines },
 	{ id: "automatic", labelKey: "automatic.title", icon: Sparkles },
 	{ id: "captions", labelKey: "facets.captions", icon: CaptionsIcon },
 	{ id: "transcript", labelKey: "facets.transcript", icon: FileText },
@@ -141,128 +146,137 @@ export function FloatingInspector({
 	const visibleFacet = FACETS.some((candidate) => candidate.id === facet) ? facet : "effects";
 	return (
 		<div className={styles.inspectorWrap}>
-			{effectiveOpen ? (
-				<div className={styles.inspector}>
-					{selection ? (
-						<SelectionPane tl={tl} onClose={() => tl.clearSelection()} />
-					) : (
-						<FacetBody
-							facet={visibleFacet}
-							onCollapse={onToggleOpen}
-							transcriptProps={transcriptProps}
-							pauseSuggestions={pauseSuggestions}
-							onPauseSuggestionsChange={onPauseSuggestionsChange}
-							onPausePreview={onPausePreview}
-						/>
-					)}
-				</div>
-			) : null}
-			<div className={styles.facetRail}>
-				{FACETS.map(({ id, labelKey, icon: Icon }) => (
-					<button
-						key={id}
-						type="button"
-						title={ts(labelKey)}
-						aria-label={ts(labelKey)}
-						aria-pressed={!selection && open && visibleFacet === id}
-						onClick={() => {
-							// Switching facets while an element is selected should show
-							// the facet, not leave the selection pane on top of it.
-							if (selection) tl.clearSelection();
-							if (facet === id && open) {
-								onToggleOpen();
-							} else {
-								onFacetChange(id);
-							}
-						}}
-					>
-						<Icon size={17} />
-					</button>
-				))}
-				<div style={{ position: "relative" }}>
-					<button
-						type="button"
-						title={te("editClipDialog.title")}
-						aria-label={te("editClipDialog.title")}
-						aria-haspopup={clips.length > 1 ? "menu" : undefined}
-						aria-expanded={clips.length > 1 ? clipPickerOpen : undefined}
-						onClick={() => {
-							if (selection) tl.clearSelection();
-							if (clips.length === 0) return;
-							if (clips.length === 1) {
-								onEditClip(clips[0]);
-								return;
-							}
-							setClipPickerOpen((v) => !v);
-						}}
-					>
-						<Pencil size={17} />
-					</button>
-					{clipPickerOpen && clips.length > 1 ? (
-						<div
-							role="menu"
-							aria-label={te("editClipDialog.pickClipTitle")}
-							style={{
-								position: "absolute",
-								top: 0,
-								right: "calc(100% + 8px)",
-								minWidth: 200,
-								maxHeight: 320,
-								overflowY: "auto",
-								background: "var(--surface-1)",
-								border: "1px solid var(--border)",
-								borderRadius: 12,
-								boxShadow: "var(--elev-pop)",
-								backdropFilter: "blur(18px)",
-								padding: 6,
-								zIndex: 30,
-							}}
-						>
-							<p
-								style={{
-									margin: "4px 8px 6px",
-									fontSize: 11,
-									fontWeight: 600,
-									textTransform: "uppercase",
-									letterSpacing: "0.04em",
-									color: "var(--muted)",
+			<div className={styles.inspectorWorkspace} data-open={effectiveOpen}>
+				{effectiveOpen ? (
+					<div className={styles.inspector}>
+						{selection ? (
+							<SelectionPane tl={tl} onClose={() => tl.clearSelection()} />
+						) : (
+							<FacetBody
+								facet={visibleFacet}
+								onCollapse={onToggleOpen}
+								transcriptProps={transcriptProps}
+								pauseSuggestions={pauseSuggestions}
+								onPauseSuggestionsChange={onPauseSuggestionsChange}
+								onPausePreview={onPausePreview}
+							/>
+						)}
+					</div>
+				) : null}
+				<div className={styles.facetRail}>
+					<div className={styles.facetRailScroll}>
+						{FACETS.map(({ id, labelKey, icon: Icon }) => (
+							<button
+								key={id}
+								type="button"
+								title={ts(labelKey)}
+								aria-label={ts(labelKey)}
+								aria-pressed={!selection && open && visibleFacet === id}
+								onClick={() => {
+									// Switching facets while an element is selected should show
+									// the facet, not leave the selection pane on top of it.
+									if (selection) tl.clearSelection();
+									if (facet === id && open) {
+										onToggleOpen();
+									} else {
+										onFacetChange(id);
+									}
 								}}
 							>
-								{te("editClipDialog.pickClipTitle")}
-							</p>
-							{clips.map((clip, index) => (
-								<button
-									key={clip.id}
-									type="button"
-									role="menuitem"
-									onClick={() => {
-										setClipPickerOpen(false);
-										onEditClip(clip);
-									}}
+								<Icon size={17} />
+							</button>
+						))}
+					</div>
+					<div className={styles.facetRailUtility}>
+						<button
+							type="button"
+							title={te("editClipDialog.title")}
+							aria-label={te("editClipDialog.title")}
+							aria-haspopup={clips.length > 1 ? "menu" : undefined}
+							aria-expanded={clips.length > 1 ? clipPickerOpen : undefined}
+							onClick={() => {
+								if (selection) tl.clearSelection();
+								if (clips.length === 0) return;
+								if (clips.length === 1) {
+									onEditClip(clips[0]);
+									return;
+								}
+								setClipPickerOpen((v) => !v);
+							}}
+						>
+							<Pencil size={17} />
+						</button>
+						{clipPickerOpen && clips.length > 1 ? (
+							<div
+								role="menu"
+								aria-label={te("editClipDialog.pickClipTitle")}
+								style={{
+									position: "absolute",
+									top: 0,
+									right: "calc(100% + 8px)",
+									minWidth: 200,
+									maxHeight: 320,
+									overflowY: "auto",
+									background: "var(--surface-1)",
+									border: "1px solid var(--border)",
+									borderRadius: 12,
+									boxShadow: "var(--elev-pop)",
+									backdropFilter: "blur(18px)",
+									padding: 6,
+									zIndex: 30,
+								}}
+							>
+								<p
 									style={{
-										display: "flex",
-										flexDirection: "column",
-										alignItems: "flex-start",
-										width: "100%",
-										padding: "7px 8px",
-										border: "none",
-										borderRadius: 8,
-										background: "transparent",
-										color: "var(--fg)",
-										cursor: "pointer",
-										textAlign: "left",
+										margin: "4px 8px 6px",
+										fontSize: 11,
+										fontWeight: 600,
+										textTransform: "uppercase",
+										letterSpacing: "0.04em",
+										color: "var(--muted)",
 									}}
 								>
-									<span style={{ font: "600 12.5px var(--font-display)" }}>
-										{te("editClipDialog.clipLabel", { index: index + 1 })}
-									</span>
-									<span style={{ font: "500 11px var(--font-mono)", color: "var(--muted)" }}>
-										{formatSeconds(clip.timelineStartSec)}–{formatSeconds(clip.timelineEndSec)}
-									</span>
-								</button>
-							))}
-						</div>
-					) : null}
+									{te("editClipDialog.pickClipTitle")}
+								</p>
+								{clips.map((clip, index) => (
+									<button
+										key={clip.id}
+										type="button"
+										role="menuitem"
+										onClick={() => {
+											setClipPickerOpen(false);
+											onEditClip(clip);
+										}}
+										style={{
+											display: "flex",
+											flexDirection: "column",
+											alignItems: "flex-start",
+											width: "100%",
+											padding: "7px 8px",
+											border: "none",
+											borderRadius: 8,
+											background: "transparent",
+											color: "var(--fg)",
+											cursor: "pointer",
+											textAlign: "left",
+										}}
+									>
+										<span style={{ font: "600 12.5px var(--font-display)" }}>
+											{te("editClipDialog.clipLabel", { index: index + 1 })}
+										</span>
+										<span
+											style={{
+												font: "500 11px var(--font-mono)",
+												color: "var(--muted)",
+											}}
+										>
+											{formatSeconds(clip.timelineStartSec)}–{formatSeconds(clip.timelineEndSec)}
+										</span>
+									</button>
+								))}
+							</div>
+						) : null}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -271,46 +285,15 @@ export function FloatingInspector({
 
 function paneHeader(icon: React.ReactNode, title: string, onClose: () => void, closeLabel: string) {
 	return (
-		<header
-			style={{
-				display: "flex",
-				alignItems: "center",
-				gap: 8,
-				padding: "14px 16px 12px",
-				borderBottom: "1px solid var(--border-soft)",
-				// Le corps défile sous l'en-tête : sans ça, l'en-tête se comprime avec lui.
-				flexShrink: 0,
-			}}
-		>
-			<span style={{ display: "grid", placeItems: "center", color: "var(--muted)" }}>{icon}</span>
-			<h2
-				style={{
-					margin: 0,
-					flex: 1,
-					fontSize: 14,
-					fontWeight: 600,
-					color: "var(--fg-emphasis)",
-					letterSpacing: "-0.01em",
-				}}
-			>
-				{title}
-			</h2>
+		<header className={styles.selectionPaneHeader}>
+			<span className={styles.selectionPaneHeaderIcon}>{icon}</span>
+			<h2>{title}</h2>
 			<button
 				type="button"
 				title={closeLabel}
 				aria-label={closeLabel}
 				onClick={onClose}
-				style={{
-					width: 26,
-					height: 26,
-					display: "grid",
-					placeItems: "center",
-					borderRadius: 8,
-					color: "var(--muted)",
-					background: "transparent",
-					border: 0,
-					cursor: "pointer",
-				}}
+				className={styles.inspectorHeaderButton}
 			>
 				<X size={15} />
 			</button>
@@ -398,7 +381,7 @@ const SPEED_PRESETS = [1, ...SPEED_OPTIONS.map((option) => option.speed)].sort((
  * Preset select + free numeric field, the speed UX this editor already had translations for
  * (`settings.speed.customPlaybackSpeed` / `maxSpeedError` / `previewFrameSteppingHint`, shipped
  * in all 13 locales) but no longer any control for: the V4 shell replaced the panel that hosted
- * it with a preset-only `<select>` capped at 3×, while the underlying capability goes to
+ * it with a preset-only `<AppSelect>` capped at 3×, while the underlying capability goes to
  * `MAX_PLAYBACK_SPEED` (100×). Only the control was missing, so this rewires it rather than
  * adding anything new.
  */
@@ -436,7 +419,7 @@ export function SpeedControl({
 		<>
 			{paneRow(
 				ts("speed.playbackSpeed"),
-				<select
+				<AppSelect
 					value={region.speed}
 					onChange={(e) => void tl.updateSpeedValue(region.id, Number(e.target.value))}
 					style={selectStyle}
@@ -446,7 +429,7 @@ export function SpeedControl({
 							{speed}×
 						</option>
 					))}
-				</select>,
+				</AppSelect>,
 			)}
 			{paneRow(
 				ts("speed.customPlaybackSpeed"),
@@ -625,7 +608,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						// per-region value that currently has no effect. The region's own `focusMode` is
 						// never written by the toggle — that is what makes each zoom snap back to its
 						// previous value the moment the toggle goes off.
-						<select
+						<AppSelect
 							value={autoFocusAll ? "auto" : (region.focusMode ?? "manual")}
 							disabled={autoFocusAll}
 							onChange={(e) =>
@@ -637,14 +620,20 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						>
 							<option value="manual">{ts("zoom.focusMode.manual")}</option>
 							<option value="auto">{ts("zoom.focusMode.auto")}</option>
-						</select>,
+						</AppSelect>,
 					)}
 					{autoFocusAll || region.focusMode === "auto" ? (
 						// Auto resamples the focus from cursor telemetry every frame, so there is no fixed
 						// point to reset and no gimbal on the canvas (ZoomFocusOverlay bows out) — the
 						// reset button would be a no-op. When the global toggle is what forced auto, say
 						// so, and say where to turn it off.
-						<p style={{ margin: 0, font: "400 11px/1.45 var(--font-sans)", color: "var(--fg-2)" }}>
+						<p
+							style={{
+								margin: 0,
+								font: "400 11px/1.45 var(--font-sans)",
+								color: "var(--fg-2)",
+							}}
+						>
 							{ts(
 								autoFocusAll ? "zoom.focusMode.lockedDisclaimer" : "zoom.focusMode.autoDescription",
 							)}
@@ -666,7 +655,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						<div style={advancedBodyStyle}>
 							{paneRow(
 								ts("zoom.threeD.title"),
-								<select
+								<AppSelect
 									value={region.rotationPreset ?? "none"}
 									onChange={(e) =>
 										void tl.updateZoomRotation(
@@ -682,11 +671,11 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									<option value="iso">{ts("zoom.threeD.preset.iso")}</option>
 									<option value="left">{ts("zoom.threeD.preset.left")}</option>
 									<option value="right">{ts("zoom.threeD.preset.right")}</option>
-								</select>,
+								</AppSelect>,
 							)}
 							{paneRow(
 								ts("motion.title"),
-								<select
+								<AppSelect
 									value={region.motionStyle ?? DEFAULT_ZOOM_MOTION_STYLE}
 									onChange={(e) =>
 										void tl.updateZoomMotionStyle(region.id, e.target.value as MotionStyle)
@@ -698,11 +687,11 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 											{ts(`motion.${style}`)}
 										</option>
 									))}
-								</select>,
+								</AppSelect>,
 							)}
 							{paneRow(
 								ts("motion.speed"),
-								<select
+								<AppSelect
 									value={normalizeMotionSpeed(region.motionSpeed)}
 									disabled={region.motionStyle === "instant"}
 									onChange={(e) => void tl.updateZoomMotionSpeed(region.id, Number(e.target.value))}
@@ -717,7 +706,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 											{speed}×
 										</option>
 									))}
-								</select>,
+								</AppSelect>,
 							)}
 						</div>
 					</details>
@@ -766,7 +755,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 					    a mistake costs one more click rather than redrawing the region. */}
 					{paneRow(
 						ts("annotation.type"),
-						<select
+						<AppSelect
 							value={region.type}
 							onChange={(e) => {
 								tl.updateAnnotationLive(
@@ -781,17 +770,27 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							<option value="image">{ts("annotation.typeImage")}</option>
 							<option value="figure">{ts("annotation.typeArrow")}</option>
 							<option value="blur">{ts("annotation.typeBlur")}</option>
-						</select>,
+						</AppSelect>,
 					)}
 					{region.type === "text" ? (
 						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-							<span style={{ fontSize: 12.5, color: "var(--fg-2)", fontWeight: 500 }}>
+							<span
+								style={{
+									fontSize: 12.5,
+									color: "var(--fg-2)",
+									fontWeight: 500,
+								}}
+							>
 								{ts("annotation.textContent")}
 							</span>
 							<textarea
 								value={region.content ?? ""}
 								placeholder={ts("annotation.textPlaceholder")}
-								onChange={(e) => tl.updateAnnotationLive(region.id, { content: e.target.value })}
+								onChange={(e) =>
+									tl.updateAnnotationLive(region.id, {
+										content: e.target.value,
+									})
+								}
 								onBlur={commitAnnotation}
 								rows={2}
 								style={{
@@ -812,7 +811,11 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							    "Separate storage for image data URL" (types.ts) and both the preview
 							    overlay and the compositor read it from there. */}
 							<label
-								style={{ ...secondaryBtnStyle, textAlign: "center", cursor: "pointer" }}
+								style={{
+									...secondaryBtnStyle,
+									textAlign: "center",
+									cursor: "pointer",
+								}}
 								htmlFor={`ann-img-${region.id}`}
 							>
 								{ts("annotation.uploadImage")}
@@ -831,14 +834,21 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									}
 									const reader = new FileReader();
 									reader.onload = () => {
-										tl.updateAnnotationLive(region.id, { content: String(reader.result) });
+										tl.updateAnnotationLive(region.id, {
+											content: String(reader.result),
+										});
 										void tl.commitAnnotationChange();
 										toast.success(ts("annotation.imageUploadSuccess"));
 									};
 									reader.readAsDataURL(file);
 								}}
 							/>
-							<span style={{ font: "400 11px/1.4 var(--font-sans)", color: "var(--fg-2)" }}>
+							<span
+								style={{
+									font: "400 11px/1.4 var(--font-sans)",
+									color: "var(--fg-2)",
+								}}
+							>
 								{ts("annotation.supportedFormats")}
 							</span>
 						</div>
@@ -847,12 +857,15 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						<>
 							{paneRow(
 								ts("annotation.arrowDirection"),
-								<select
+								<AppSelect
 									value={region.figureData?.arrowDirection ?? "right"}
 									onChange={(e) => {
 										tl.updateAnnotationLive(region.id, {
 											figureData: {
-												...(region.figureData ?? { color: "#34B27B", strokeWidth: 4 }),
+												...(region.figureData ?? {
+													color: "#34B27B",
+													strokeWidth: 4,
+												}),
 												arrowDirection: e.target.value as ArrowDirectionKind,
 											},
 										});
@@ -865,7 +878,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 											{d}
 										</option>
 									))}
-								</select>,
+								</AppSelect>,
 							)}
 							{paneRow(
 								ts("annotation.arrowColor"),
@@ -875,7 +888,10 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									onChange={(next) =>
 										liveUpdate(region.id, {
 											figureData: {
-												...(region.figureData ?? { arrowDirection: "right", strokeWidth: 4 }),
+												...(region.figureData ?? {
+													arrowDirection: "right",
+													strokeWidth: 4,
+												}),
 												color: next,
 											},
 										})
@@ -893,7 +909,10 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 								onChange={(next) =>
 									tl.updateAnnotationLive(region.id, {
 										figureData: {
-											...(region.figureData ?? { arrowDirection: "right", color: "#34B27B" }),
+											...(region.figureData ?? {
+												arrowDirection: "right",
+												color: "#34B27B",
+											}),
 											strokeWidth: next,
 										},
 									})
@@ -909,7 +928,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						<>
 							{paneRow(
 								ts("annotation.blurType"),
-								<select
+								<AppSelect
 									value={region.blurData?.type ?? "mosaic"}
 									onChange={(e) => {
 										tl.updateAnnotationLive(region.id, {
@@ -924,11 +943,11 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 								>
 									<option value="blur">{ts("annotation.blurTypeBlur")}</option>
 									<option value="mosaic">{ts("annotation.blurTypeMosaic")}</option>
-								</select>,
+								</AppSelect>,
 							)}
 							{paneRow(
 								ts("annotation.blurShape"),
-								<select
+								<AppSelect
 									value={region.blurData?.shape ?? "rectangle"}
 									onChange={(e) => {
 										tl.updateAnnotationLive(region.id, {
@@ -952,7 +971,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									{region.blurData?.shape === "freehand" ? (
 										<option value="freehand">{ts("annotation.blurShapeFreehand")}</option>
 									) : null}
-								</select>,
+								</AppSelect>,
 							)}
 							{region.blurData?.shape === "freehand" ? (
 								// Say it rather than let the user discover it: the compositor masks the
@@ -984,7 +1003,10 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									value={region.style?.fontSize ?? 32}
 									onChange={(e) =>
 										tl.updateAnnotationLive(region.id, {
-											style: { ...region.style, fontSize: Number(e.target.value) },
+											style: {
+												...region.style,
+												fontSize: Number(e.target.value),
+											},
 										})
 									}
 									onBlur={commitAnnotation}
@@ -1029,7 +1051,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 								// Les sept animations existaient : nommées dans le schéma, traduites dans les
 								// treize langues, transportées jusqu'au compositeur — et injouables, faute de
 								// ce sélecteur.
-								<select
+								<AppSelect
 									aria-label={ts("textAnimation.selectAnimation")}
 									value={region.style?.textAnimation ?? "none"}
 									onChange={(e) => {
@@ -1048,7 +1070,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 											{ts(`textAnimation.${value === "slide-left" ? "slideLeft" : value}`)}
 										</option>
 									))}
-								</select>,
+								</AppSelect>,
 							)
 						: null}
 					{region.type === "text"
@@ -1088,14 +1110,21 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 					tc("actions.close"),
 				)}
 				<div style={bodyStyle}>
-					<p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--muted)" }}>
+					<p
+						style={{
+							margin: 0,
+							fontSize: 12,
+							lineHeight: 1.5,
+							color: "var(--muted)",
+						}}
+					>
 						{isEmphasis
 							? te("inspector.cameraEmphasisDescription")
 							: te("inspector.cameraFullscreenDescription")}
 					</p>
 					{paneRow(
 						ts("motion.title"),
-						<select
+						<AppSelect
 							value={region.motionStyle ?? DEFAULT_CAMERA_MOTION_STYLE}
 							onChange={(e) =>
 								void tl.updateCameraMotionStyle(region.id, e.target.value as MotionStyle)
@@ -1107,11 +1136,11 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									{ts(`motion.${style}`)}
 								</option>
 							))}
-						</select>,
+						</AppSelect>,
 					)}
 					{paneRow(
 						ts("motion.speed"),
-						<select
+						<AppSelect
 							value={normalizeMotionSpeed(region.motionSpeed)}
 							disabled={region.motionStyle === "instant"}
 							onChange={(e) => void tl.updateCameraMotionSpeed(region.id, Number(e.target.value))}
@@ -1126,7 +1155,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									{speed}×
 								</option>
 							))}
-						</select>,
+						</AppSelect>,
 					)}
 					<button type="button" onClick={deleteAndClose} style={deleteBtnStyle}>
 						<Trash2 size={14} />
@@ -1155,8 +1184,17 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 			{paneHeader(<Scissors size={15} />, tt("labels.trim"), onClose, tc("actions.close"))}
 			<div style={bodyStyle}>
-				<p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--muted)" }}>
-					{te("inspector.trimHiddenDuration", { duration: durationSec.toFixed(1) })}
+				<p
+					style={{
+						margin: 0,
+						fontSize: 12,
+						lineHeight: 1.5,
+						color: "var(--muted)",
+					}}
+				>
+					{te("inspector.trimHiddenDuration", {
+						duration: durationSec.toFixed(1),
+					})}
 				</p>
 				<button type="button" onClick={deleteTrimGroup} style={deleteBtnStyle}>
 					<Trash2 size={14} />
@@ -1229,21 +1267,7 @@ function FacetBody({
 			title={te("inspector.collapseInspector")}
 			aria-label={te("inspector.collapseInspector")}
 			onClick={onCollapse}
-			style={{
-				position: "absolute",
-				top: 12,
-				right: 12,
-				width: 26,
-				height: 26,
-				display: "grid",
-				placeItems: "center",
-				borderRadius: 8,
-				color: "var(--muted)",
-				background: "var(--surface-1)",
-				border: 0,
-				cursor: "pointer",
-				zIndex: 5,
-			}}
+			className={styles.inspectorCollapseButton}
 		>
 			<ChevronRight size={15} />
 		</button>
@@ -1253,10 +1277,10 @@ function FacetBody({
 	if (facet === "effects") return wrap(collapse, <VideoEffectsPane />);
 	if (facet === "layout") return wrap(collapse, <LayoutPane />);
 	if (facet === "cursor") return wrap(collapse, <CursorPane />);
-	if (facet === "pauses") {
+	if (facet === "audio") {
 		return wrap(
 			collapse,
-			<PausesPane
+			<AudioPane
 				suggestions={pauseSuggestions}
 				onSuggestionsChange={onPauseSuggestionsChange}
 				onPreview={onPausePreview}
@@ -1270,7 +1294,7 @@ function FacetBody({
 
 function wrap(collapse: React.ReactNode, body: React.ReactNode) {
 	return (
-		<div style={{ position: "relative", display: "flex", flexDirection: "column", minHeight: 0 }}>
+		<div className={styles.inspectorPaneHost}>
 			{collapse}
 			{body}
 		</div>

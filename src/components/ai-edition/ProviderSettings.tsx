@@ -19,6 +19,7 @@
 import { AlertCircle, Check, Loader2, Unplug, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AppSelect } from "@/components/ui/app-select";
 import { useScopedT } from "@/contexts/I18nContext";
 import { nativeBridgeClient } from "@/native/client";
 import type { AiEditionLlmConfig, AiEditionLlmSnapshot } from "@/native/contracts";
@@ -372,7 +373,7 @@ function ProviderForm({
 				}
 			>
 				{modelSelectable ? (
-					<select
+					<AppSelect
 						value={config?.model ?? def.defaultModel}
 						onChange={(e) =>
 							setConfig({
@@ -394,7 +395,7 @@ function ProviderForm({
 								{modelSlug}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				) : (
 					<input
 						type="text"
@@ -450,7 +451,7 @@ function ProviderForm({
 
 			{def.supportsReasoningEffort ? (
 				<Field label={te("providerSettings.reasoningEffortLabel")}>
-					<select
+					<AppSelect
 						value={config?.reasoningEffort ?? "none"}
 						onChange={(e) =>
 							setConfig({
@@ -465,7 +466,7 @@ function ProviderForm({
 								{getReasoningEffortLabel(def.id, r)}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				</Field>
 			) : null}
 

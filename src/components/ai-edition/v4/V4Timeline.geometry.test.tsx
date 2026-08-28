@@ -15,6 +15,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 
+import type { AxcutTrimRange } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { V4Timeline } from "./V4Timeline";
@@ -91,7 +92,9 @@ function renderTimeline(
 		directionGroupId?: string;
 	}> = [],
 	selection: { kind: "zoom" | "cameraFullscreen"; id: string } | null = null,
+	trimRanges: AxcutTrimRange[] = [],
 ) {
+	const setCurrentTime = vi.fn();
 	const tl = {
 		clips,
 		assets: [{ id: "a1", label: "rec", durationSec: TOTAL_SEC }],
@@ -99,13 +102,16 @@ function renderTimeline(
 		speedRegions: [],
 		cameraFullscreenRegions,
 		zoomRegions,
-		trimRanges: [],
+		trimRanges,
 		selection,
 		multiSelection: [],
 		clipSelection,
 		clearSelection: vi.fn(),
 		selectRegion: vi.fn(),
 		selectClip: vi.fn(),
+		removeRegion: vi.fn(async () => {
+			/* the restore action only awaits it */
+		}),
 		updateAnnotationSpan: vi.fn(async () => {
 			/* the drag only awaits it */
 		}),
@@ -123,7 +129,7 @@ function renderTimeline(
 				// Only the members the lanes and the clip row read are mocked; the prop
 				// stays typed as the real API rather than widened to `any` (AGENTS.md).
 				tl={tl as unknown as ReturnType<typeof useTimeline>}
-				setCurrentTime={vi.fn()}
+				setCurrentTime={setCurrentTime}
 				playing={false}
 				onTogglePlay={vi.fn()}
 				onPrevClip={vi.fn()}
@@ -133,8 +139,11 @@ function renderTimeline(
 		</TooltipProvider>,
 	);
 	return {
-		pill: screen.getByTitle("toolbar.newAnnotation"),
+		// Some geometry fixtures intentionally use a clip shorter than the default
+		// 10 s annotation. In that case the compressed timeline correctly hides it.
+		pill: screen.queryByTitle("toolbar.newAnnotation") as HTMLElement,
 		clipEls: Array.from(document.querySelectorAll<HTMLElement>("[data-clip-id]")),
+		setCurrentTime,
 		tl,
 	};
 }
@@ -447,20 +456,14 @@ describe("V4Timeline clip row", () => {
 		expect(pill.style.left).toBe(clipEls[1].style.left);
 	});
 
-	it("takes the card gutter out of each clip's own width", () => {
-		// The 6px is what separates two cards. Taken off the clip's width it stays
-		// local to that clip; inserted between them (a flex gap) it displaced every
-		// clip that followed. The 1px floor keeps a clip shorter than the gutter
-		// from collapsing to nothing on a long timeline.
+	it("keeps exact clip widths while painting separators inside them", () => {
+		// A fixed pixel subtraction changes the time geometry. The compressed row
+		// keeps each clip at its exact share of playback time and paints its visual
+		// separator inside that box instead.
 		const { clipEls } = renderTimeline(CLIPS);
 		const widths = clipEls.map((el) => el.style.width);
-		// (jsdom re-serialises the percentage to 4 decimals, hence the numeric read)
-		expect(widths.map((w) => w.endsWith("- 6px)"))).toEqual([true, true, true]);
 		for (const [i, durSec] of [600, 300, 900].entries()) {
-			expect(Number.parseFloat(widths[i].slice("calc(".length))).toBeCloseTo(
-				(durSec / TOTAL_SEC) * 100,
-				3,
-			);
+			expect(Number.parseFloat(widths[i])).toBeCloseTo((durSec / TOTAL_SEC) * 100, 3);
 		}
 	});
 
@@ -496,5 +499,64 @@ describe("V4Timeline clip row", () => {
 		expect(screen.getAllByRole("button", { name: "rec" })).toHaveLength(CLIPS.length);
 		expect(screen.queryByTitle("toolbar.editInOutPoints")).not.toBeInTheDocument();
 		expect(clipEls[0].querySelector("[data-no-clip-drag]")).not.toBeInTheDocument();
+	});
+
+	it("compresses a removed section into a restorable seam inside the clip row", () => {
+		const { tl } = renderTimeline([clip(0, 10)], undefined, null, [], [], null, [
+			{
+				id: "trim-1",
+				assetId: "a1",
+				clipId: "c@0",
+				startSec: 2,
+				endSec: 4,
+				reason: "pause",
+				origin: "user",
+			},
+		]);
+
+		const cut = screen.getByTestId("timeline-cut-trim-1");
+		expect(cut.parentElement?.className).toContain("tlClips");
+		// Raw 2..4 is gone, so the seam is 2 s into the 8 s visible timeline.
+		expect(cut.style.left).toBe("25%");
+		expect(cut.style.width).toBe("");
+		const sections = document.querySelectorAll<HTMLElement>("[class*=tlClipSection]");
+		expect(sections).toHaveLength(2);
+		expect(sections[0].className).toContain("tlClipSectionBeforeCut");
+		expect(sections[0].className).not.toContain("tlClipSectionAfterCut");
+		expect(sections[1].className).toContain("tlClipSectionAfterCut");
+		expect(sections[1].className).not.toContain("tlClipSectionBeforeCut");
+		expect(sections[0].style.width).toBe("25%");
+		expect(sections[1].style.left).toBe("25%");
+		expect(sections[1].style.width).toBe("75%");
+		expect(document.querySelector("[class*=laneTrim]")).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: /inspector\.restoreDeleteTrim/ }));
+		expect(tl.removeRegion).toHaveBeenCalledWith("trim", "trim-1");
+	});
+
+	it("maps the compressed playhead and scrub position back to raw document time", () => {
+		act(() => useProjectStore.getState().setCurrentTime(6));
+		const { setCurrentTime } = renderTimeline([clip(0, 10)], undefined, null, [], [], null, [
+			{
+				id: "trim-1",
+				assetId: "a1",
+				clipId: "c@0",
+				startSec: 2,
+				endSec: 4,
+				reason: "pause",
+				origin: "user",
+			},
+		]);
+
+		const playhead = Array.from(document.querySelectorAll<HTMLElement>("[class*=tlPlayhead]")).find(
+			(element) => element.style.left !== "",
+		);
+		// Raw 6 s is 4 s into the 8 s kept playback timeline.
+		expect(playhead?.style.left).toBe("50%");
+
+		const ruler = document.querySelector<HTMLElement>("[class*=tlRulerRow]");
+		expect(ruler).not.toBeNull();
+		fireEvent.pointerDown(ruler as HTMLElement, { button: 0, clientX: 450 });
+		expect(setCurrentTime).toHaveBeenCalledWith(6);
 	});
 });

@@ -13,6 +13,8 @@ interface TransportBarProps {
 	/** Live scrub position while a timeline drag is in flight; null = follow the store. */
 	overrideTimeSec: number | null;
 	clips: AxcutClip[];
+	/** Maps the raw project clock to the trim-compressed time shown here. */
+	toDisplayTime?: (rawSec: number) => number;
 	onTogglePlay: () => void;
 	onPrevClip: () => void;
 	onNextClip: () => void;
@@ -25,6 +27,7 @@ export const TransportBar = memo(function TransportBar({
 	playing,
 	overrideTimeSec,
 	clips,
+	toDisplayTime = (timeSec) => timeSec,
 	onTogglePlay,
 	onPrevClip,
 	onNextClip,
@@ -36,7 +39,7 @@ export const TransportBar = memo(function TransportBar({
 	// directly instead of forcing V4Timeline — and the whole editor shell above it —
 	// to re-render once per frame to hand it down as a prop.
 	const storeTimeSec = useProjectStore((s) => s.currentTimeSec);
-	const currentTimeSec = overrideTimeSec ?? storeTimeSec;
+	const currentTimeSec = overrideTimeSec ?? toDisplayTime(storeTimeSec);
 	const virtualDurationSec = clips.reduce(
 		(acc, c) => acc + (c.timelineEndSec - c.timelineStartSec),
 		0,

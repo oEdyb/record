@@ -1,14 +1,14 @@
 // The single place that maps between the timeline's three coordinate systems.
 // See technical-documentation/architecture/timeline-model.md.
 //
-//   RAW virtual   — the ruler the user manipulates; trims still occupy their
-//                   space. `currentTimeSec`, the playhead, region authoring, and
+//   RAW virtual   — the stable document clock; trims still occupy their space.
+//                   `currentTimeSec`, region authoring, and
 //                   `document.timeline.clips[].timelineStartSec` all live here.
 //   source        — a clip's own media time (assetId + sourceSec); what the
 //                   decoders, the native compositor, and trims are expressed in.
-//   compressed     — the trim-narrowed playback sequence (`resolvePlaybackSegments`),
-//                   laid out back-to-back from 0; what the native free-run stream
-//                   and the export frame count advance through.
+//   compressed    — the trim-narrowed playback sequence (`resolvePlaybackSegments`),
+//                   laid out back-to-back from 0; what the visible editor ruler,
+//                   playhead, native free-run stream, and export frame count use.
 //
 // A raw clip is identity between source-time and raw-virtual-time (its timeline
 // length equals its source length — no speed baked into the geometry), so raw↔
@@ -405,6 +405,110 @@ export function segmentRawSpanSec(
 	const startSec = getRawVirtualStartTime(segment, rawClips);
 	const lenSec = (segment.sourceEndSec ?? segment.sourceStartSec) - segment.sourceStartSec;
 	return { startSec, endSec: startSec + lenSec };
+}
+
+/**
+ * One kept piece of media expressed in both editor coordinate systems.
+ *
+ * The document and preview clock stay in raw time so clip anchors remain stable.
+ * The visible timeline uses playback time so removed media occupies no width.
+ * Keeping the pair in one object prevents views from rebuilding this mapping with
+ * slightly different edge rules.
+ */
+export interface TimelinePlaybackProjectionSegment {
+	segment: AxcutClip;
+	rawClipId: string;
+	rawStartSec: number;
+	rawEndSec: number;
+	playbackStartSec: number;
+	playbackEndSec: number;
+}
+
+export function buildTimelinePlaybackProjection(
+	visibleSegments: AxcutClip[],
+	rawClips: AxcutClip[],
+): TimelinePlaybackProjectionSegment[] {
+	return visibleSegments.flatMap((segment) => {
+		const rawClip = findRawClipForSegment(segment, rawClips);
+		if (!rawClip) return [];
+		const rawSpan = segmentRawSpanSec(segment, rawClips);
+		return [
+			{
+				segment,
+				rawClipId: rawClip.id,
+				rawStartSec: rawSpan.startSec,
+				rawEndSec: rawSpan.endSec,
+				playbackStartSec: segment.timelineStartSec,
+				playbackEndSec: segment.timelineEndSec,
+			},
+		];
+	});
+}
+
+/**
+ * Map the raw document clock onto the trim-compressed ruler. A raw time inside
+ * removed media resolves to the single seam where the kept content joins.
+ */
+export function rawTimeToPlaybackTime(
+	rawSec: number,
+	projection: TimelinePlaybackProjectionSegment[],
+): number {
+	if (!Number.isFinite(rawSec) || projection.length === 0) return 0;
+	for (const part of projection) {
+		if (rawSec < part.rawStartSec) return part.playbackStartSec;
+		if (rawSec <= part.rawEndSec) {
+			return part.playbackStartSec + Math.max(0, rawSec - part.rawStartSec);
+		}
+	}
+	return projection[projection.length - 1].playbackEndSec;
+}
+
+/**
+ * Map a point on the trim-compressed ruler back to the raw document clock.
+ * A cut seam has two valid raw answers. Start edges and seeks use `after`; end
+ * edges use `before`, so resizing an effect to a seam never silently crosses the
+ * removed source range.
+ */
+export function playbackTimeToRawTime(
+	playbackSec: number,
+	projection: TimelinePlaybackProjectionSegment[],
+	affinity: "before" | "after" = "after",
+): number {
+	if (!Number.isFinite(playbackSec) || projection.length === 0) return 0;
+	const first = projection[0];
+	if (playbackSec <= first.playbackStartSec) return first.rawStartSec;
+	for (let index = 0; index < projection.length; index += 1) {
+		const part = projection[index];
+		const next = projection[index + 1];
+		if (playbackSec < part.playbackEndSec) {
+			return part.rawStartSec + (playbackSec - part.playbackStartSec);
+		}
+		if (Math.abs(playbackSec - part.playbackEndSec) <= 0.000_001) {
+			if (affinity === "after" && next) return next.rawStartSec;
+			return part.rawEndSec;
+		}
+	}
+	return projection[projection.length - 1].rawEndSec;
+}
+
+/** Project one raw range onto the visible ruler, clipping removed media. */
+export function projectRawSpanToPlaybackSpan(
+	rawStartSec: number,
+	rawEndSec: number,
+	projection: TimelinePlaybackProjectionSegment[],
+): { startSec: number; endSec: number } | null {
+	const lo = Math.min(rawStartSec, rawEndSec);
+	const hi = Math.max(rawStartSec, rawEndSec);
+	let startSec = Number.POSITIVE_INFINITY;
+	let endSec = Number.NEGATIVE_INFINITY;
+	for (const part of projection) {
+		const overlapStart = Math.max(lo, part.rawStartSec);
+		const overlapEnd = Math.min(hi, part.rawEndSec);
+		if (overlapEnd <= overlapStart) continue;
+		startSec = Math.min(startSec, part.playbackStartSec + (overlapStart - part.rawStartSec));
+		endSec = Math.max(endSec, part.playbackStartSec + (overlapEnd - part.rawStartSec));
+	}
+	return Number.isFinite(startSec) && Number.isFinite(endSec) ? { startSec, endSec } : null;
 }
 
 /** The clip anchor a region may carry: WHERE IN THE SOURCE MEDIA it lives. Optional

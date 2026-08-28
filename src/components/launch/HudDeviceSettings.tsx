@@ -1,5 +1,6 @@
 import { Check, X } from "lucide-react";
 import { memo, useEffect, useRef } from "react";
+import { AppSelect } from "@/components/ui/app-select";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import type { CameraDevice } from "../../hooks/useCameraDevices";
 import { useCameraPreviewStream } from "../../hooks/useCameraPreviewStream";
@@ -232,7 +233,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					<label className={styles.hudModalMeterLabel} htmlFor="hud-webcam-format">
 						{labels.cameraQuality}
 					</label>
-					<select
+					<AppSelect
 						id="hud-webcam-format"
 						data-testid="hud-webcam-format"
 						className={styles.hudModalSelect}
@@ -250,7 +251,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 								{formatWebcamFormat(format)}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				</div>
 			) : null}
 			{hasCamera ? (

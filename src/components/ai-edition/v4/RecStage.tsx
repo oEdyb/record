@@ -11,6 +11,7 @@ import {
 	VolumeX,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppSelect } from "@/components/ui/app-select";
 import { AudioLevelMeter } from "@/components/ui/audio-level-meter";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useAudioLevelMeter } from "@/hooks/useAudioLevelMeter";
@@ -155,7 +156,10 @@ export function RecStage({
 		) {
 			return;
 		}
-		setPrefsState((previous) => ({ ...previous, camFormat: activeWebcamFormat }));
+		setPrefsState((previous) => ({
+			...previous,
+			camFormat: activeWebcamFormat,
+		}));
 		void window.electronAPI?.setRecordingPrefs?.({ camFormat: activeWebcamFormat }).catch((err) => {
 			console.warn("[rec-stage] failed to persist the resolved webcam format:", err);
 		});
@@ -311,7 +315,7 @@ export function RecStage({
 							) : null}
 						</div>
 						<div className={styles.recRowControl}>
-							<select
+							<AppSelect
 								className={styles.recSelect}
 								aria-label={t("rec.microphone")}
 								disabled={micDevices.isLoading}
@@ -334,7 +338,7 @@ export function RecStage({
 										{device.label}
 									</option>
 								))}
-							</select>
+							</AppSelect>
 						</div>
 					</div>
 
@@ -344,7 +348,7 @@ export function RecStage({
 							{t("rec.camera")}
 						</div>
 						<div className={styles.recRowControl}>
-							<select
+							<AppSelect
 								className={styles.recSelect}
 								aria-label={t("rec.camera")}
 								disabled={camDevices.isLoading}
@@ -369,7 +373,7 @@ export function RecStage({
 										{device.label}
 									</option>
 								))}
-							</select>
+							</AppSelect>
 						</div>
 					</div>
 
@@ -379,7 +383,7 @@ export function RecStage({
 								<Camera size={15} />
 								{t("exportDialog.quality")}
 							</div>
-							<select
+							<AppSelect
 								className={styles.recSelect}
 								aria-label={`${t("rec.camera")} ${t("exportDialog.quality")}`}
 								value={webcamFormatKey(prefs.camFormat)}
@@ -396,7 +400,7 @@ export function RecStage({
 										{formatWebcamFormat(format)}
 									</option>
 								))}
-							</select>
+							</AppSelect>
 						</div>
 					) : null}
 

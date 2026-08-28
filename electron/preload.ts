@@ -385,6 +385,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSpeechActivity: (filePath: string) => {
 		return ipcRenderer.invoke("get-speech-activity", filePath);
 	},
+	getCleanVoiceRuntime: (projectId: string, assetIds: string[]) => {
+		return ipcRenderer.invoke("clean-voice:get-runtime", projectId, assetIds);
+	},
+	onCleanVoiceStatus: (
+		callback: (status: import("../src/lib/cleanVoiceRuntime").CleanVoiceRuntimeAsset) => void,
+	) => {
+		const listener = (
+			_event: unknown,
+			status: import("../src/lib/cleanVoiceRuntime").CleanVoiceRuntimeAsset,
+		) => callback(status);
+		ipcRenderer.on("clean-voice:status", listener);
+		return () => ipcRenderer.removeListener("clean-voice:status", listener);
+	},
 	readFileChunk: (filePath: string, offset: number, length: number) => {
 		return ipcRenderer.invoke("read-file-chunk", filePath, offset, length);
 	},
@@ -464,6 +477,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	setLocale: (locale: string) => {
 		return ipcRenderer.invoke("set-locale", locale);
+	},
+	writeClipboardText: (text: string) => {
+		return ipcRenderer.invoke("clipboard:write-text", text) as Promise<void>;
 	},
 	saveDiagnostic: (payload: { error: string; stack?: string; logs?: string[] }) => {
 		return ipcRenderer.invoke("save-diagnostic", payload);

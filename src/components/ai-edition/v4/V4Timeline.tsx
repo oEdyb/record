@@ -28,8 +28,10 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { fromFileUrl } from "@/components/video-editor/projectPersistence";
 import { effectiveZoomScale } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
-import { createId } from "@/lib/ai-edition/document/ids";
-import { resolveClipInsertionBoundary } from "@/lib/ai-edition/document/timeline";
+import {
+	resolveClipInsertionBoundary,
+	resolvePlaybackSegments,
+} from "@/lib/ai-edition/document/timeline";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -41,20 +43,23 @@ import {
 	buildAutomaticDirectionPlan,
 	materializeAutomaticDirectionEffect,
 } from "@/lib/ai-edition/timeline/automatic-direction";
+import { readAutomaticDirectionSettings } from "@/lib/ai-edition/timeline/automatic-direction-settings";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
 	newRegionDurationSec,
 	setTimelineScale,
 } from "@/lib/ai-edition/timeline/newRegionDuration";
 import { ventilateSpanAcrossClips } from "@/lib/ai-edition/timeline/region-ventilation";
-import { coalesceRegionsForRuler } from "@/lib/ai-edition/timeline/timelineMap";
 import {
-	coalescedTrimGroups,
-	resolveTimelineSpanToTrim,
-	ventilateTimelineSpanToTrims,
-} from "@/lib/ai-edition/timeline/trim-mapping";
+	buildTimelinePlaybackProjection,
+	coalesceRegionsForRuler,
+	playbackTimeToRawTime,
+	projectRawSpanToPlaybackSpan,
+	rawTimeToPlaybackTime,
+} from "@/lib/ai-edition/timeline/timelineMap";
+import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
 import { nativeBridgeClient } from "@/native/client";
-import type { SelectablePauseSuggestion } from "../PausesPane";
+import type { SelectablePauseSuggestion } from "../AudioPane";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
 import { ClipWaveform } from "./ClipWaveform";
@@ -157,9 +162,9 @@ const PILL_SNAP_PX = 8;
 // The size a newly created pill aims for (PILL_CREATE_PX) lives in
 // timeline/newRegionDuration, because the keyboard shortcuts create regions too
 // and they are handled in NewEditorShell, outside this component.
-/** Visual separation between two clip cards. Taken off each clip's own width
- *  (see .tlClip) rather than inserted between them, so it cannot displace the
- *  clips that follow — which is what a flex `gap` did, once per junction. */
+/** Visual recording-clip separator painted inside the preceding card. The card
+ *  keeps its exact time width; this value only centres the insertion marker in
+ *  the quiet separator. */
 const CLIP_GUTTER_PX = 6;
 /**
  * Shortest region a resize may leave behind — the storage grid itself (regions
@@ -228,10 +233,11 @@ interface RulerTick {
 }
 
 interface PlayheadOverlayProps {
-	/** Full timeline length in seconds — the denominator for the playhead's percentage. */
+	/** Full visible playback length in seconds — the denominator for the playhead's percentage. */
 	totalSec: number;
-	/** Live scrub position, when a drag is in flight. Takes precedence over the store. */
+	/** Live playback position, when a drag is in flight. Takes precedence over the store. */
 	overrideTimeSec: number | null;
+	toPlaybackTime: (rawSec: number) => number;
 	canvasStyle: React.CSSProperties;
 	onPointerDown: (e: ReactPointerEvent) => void;
 	playheadRef?: React.MutableRefObject<HTMLDivElement | null>;
@@ -256,12 +262,14 @@ interface PlayheadOverlayProps {
 const PlayheadOverlay = memo(function PlayheadOverlay({
 	totalSec,
 	overrideTimeSec,
+	toPlaybackTime,
 	canvasStyle,
 	onPointerDown,
 	playheadRef,
 }: PlayheadOverlayProps) {
 	const storeTimeSec = useProjectStore((s) => s.currentTimeSec);
-	const pct = ((overrideTimeSec ?? storeTimeSec) / totalSec) * 100;
+	const visibleTimeSec = overrideTimeSec ?? toPlaybackTime(storeTimeSec);
+	const pct = (visibleTimeSec / totalSec) * 100;
 	return (
 		<div className={styles.tlPlayheadLayer} aria-hidden>
 			<div className={styles.tlCanvas} style={canvasStyle}>
@@ -291,14 +299,17 @@ const PlayheadOverlay = memo(function PlayheadOverlay({
 const InsertionBoundaryMarker = memo(function InsertionBoundaryMarker({
 	clips,
 	totalSec,
+	toPlaybackTime,
 }: {
 	clips: AxcutClip[];
 	totalSec: number;
+	toPlaybackTime: (rawSec: number) => number;
 }) {
-	const boundarySec = useProjectStore((state) =>
+	const rawBoundarySec = useProjectStore((state) =>
 		state.playing ? null : resolveClipInsertionBoundary(clips, state.currentTimeSec),
 	);
-	if (boundarySec === null || clips.length === 0 || totalSec <= 0) return null;
+	if (rawBoundarySec === null || clips.length === 0 || totalSec <= 0) return null;
+	const boundarySec = toPlaybackTime(rawBoundarySec);
 	const isTimelineStart = boundarySec <= 0.001;
 	const boundaryPct = (boundarySec / totalSec) * 100;
 	return (
@@ -318,12 +329,14 @@ const InsertionBoundaryMarker = memo(function InsertionBoundaryMarker({
 
 interface LanePill {
 	id: string;
-	kind: "annotation" | "speed" | "trim" | "zoom" | "cameraFullscreen";
+	kind: "annotation" | "speed" | "zoom" | "cameraFullscreen";
+	/** Trim-compressed ruler span. */
 	start: number;
 	end: number;
+	/** Authoritative raw document span used for edits and clip-drag ownership. */
+	rawStart: number;
+	rawEnd: number;
 	label: string;
-	/** Underlying row ids this pill represents — >1 for a coalesced trim group. */
-	sourceIds: string[];
 }
 
 export function V4Timeline({
@@ -422,13 +435,48 @@ export function V4Timeline({
 							: t("toolbar.smartCutsNeedsTranscript");
 
 	const clips = tl.clips;
-	const timelineEndSec = useMemo(
-		() => clips.reduce((m, c) => Math.max(m, c.timelineEndSec), 0),
-		[clips],
-	);
-	const total = Math.max(1, timelineEndSec);
-	const pctOf = useCallback((sec: number) => (sec / total) * 100, [total]);
 	const showLanes = variant === "edit";
+	const visibleSegments = useMemo(
+		() => resolvePlaybackSegments(clips, showLanes ? tl.trimRanges : []),
+		[clips, showLanes, tl.trimRanges],
+	);
+	const projection = useMemo(
+		() => buildTimelinePlaybackProjection(visibleSegments, clips),
+		[visibleSegments, clips],
+	);
+	const playbackDurationSec = projection.at(-1)?.playbackEndSec ?? 0;
+	const total = Math.max(1, playbackDurationSec);
+	const pctOf = useCallback((sec: number) => (sec / total) * 100, [total]);
+	const toPlaybackTime = useCallback(
+		(rawSec: number) => rawTimeToPlaybackTime(rawSec, projection),
+		[projection],
+	);
+	const toRawTime = useCallback(
+		(playbackSec: number, affinity: "before" | "after" = "after") =>
+			playbackTimeToRawTime(playbackSec, projection, affinity),
+		[projection],
+	);
+	const seekPlaybackTime = useCallback(
+		(playbackSec: number) => setCurrentTime(toRawTime(playbackSec, "after")),
+		[setCurrentTime, toRawTime],
+	);
+	const clipTracks = useMemo(
+		() =>
+			clips.flatMap((clip, rawIndex) => {
+				const parts = projection.filter((part) => part.rawClipId === clip.id);
+				if (parts.length === 0) return [];
+				return [
+					{
+						clip,
+						rawIndex,
+						parts,
+						startSec: parts[0].playbackStartSec,
+						endSec: parts[parts.length - 1].playbackEndSec,
+					},
+				];
+			}),
+		[clips, projection],
+	);
 
 	// The visible fraction of the timeline, and what one second is worth on screen
 	// at that zoom. Every screen-space rule below — ruler step, pill affordances,
@@ -451,58 +499,62 @@ export function V4Timeline({
 	// Pills follow the universal merge rule (timelineMap): regions of the same kind whose
 	// PROPERTIES are equal and whose spans touch render as ONE pill, however they came to be
 	// adjacent. Different properties never merge (and cannot overlap — they repel on edit).
-	// Trims obey the same rule with an empty property set, so they always merge.
-	const annPills: LanePill[] = coalesceRegionsForRuler(tl.annotationRegions).map((p) => ({
-		id: p.ids[0],
-		kind: "annotation",
-		start: p.start,
-		end: p.end,
-		label: t("toolbar.newAnnotation"),
-		sourceIds: p.ids,
-	}));
-	const speedPills: LanePill[] = coalesceRegionsForRuler(tl.speedRegions).map((p) => ({
-		id: p.ids[0],
-		kind: "speed",
-		start: p.start,
-		end: p.end,
-		label: `${(p.member as { speed?: number }).speed ?? 1.5}×`,
-		sourceIds: p.ids,
-	}));
-	const cameraPills: LanePill[] = coalesceRegionsForRuler(tl.cameraFullscreenRegions).map((p) => ({
-		id: p.ids[0],
-		kind: "cameraFullscreen",
-		start: p.start,
-		end: p.end,
-		label:
-			(p.member as { mode?: string }).mode === "emphasis"
+	const projectPills = (
+		pills: Array<{ ids: string[]; start: number; end: number; member: unknown }>,
+		kind: LanePill["kind"],
+		label: (member: unknown) => string,
+	): LanePill[] =>
+		pills.flatMap((pill) => {
+			const visible = projectRawSpanToPlaybackSpan(pill.start, pill.end, projection);
+			if (!visible) return [];
+			return [
+				{
+					id: pill.ids[0],
+					kind,
+					start: visible.startSec,
+					end: visible.endSec,
+					rawStart: pill.start,
+					rawEnd: pill.end,
+					label: label(pill.member),
+				},
+			];
+		});
+	const annPills = projectPills(coalesceRegionsForRuler(tl.annotationRegions), "annotation", () =>
+		t("toolbar.newAnnotation"),
+	);
+	const speedPills = projectPills(
+		coalesceRegionsForRuler(tl.speedRegions),
+		"speed",
+		(member) => `${(member as { speed?: number }).speed ?? 1.5}×`,
+	);
+	const cameraPills = projectPills(
+		coalesceRegionsForRuler(tl.cameraFullscreenRegions),
+		"cameraFullscreen",
+		(member) =>
+			(member as { mode?: string }).mode === "emphasis"
 				? t("labels.cameraEmphasis")
 				: t("labels.cameraFullscreen"),
-		sourceIds: p.ids,
-	}));
-	const zoomPills: LanePill[] = coalesceRegionsForRuler(tl.zoomRegions).map((p) => ({
-		id: p.ids[0],
-		kind: "zoom",
-		start: p.start,
-		end: p.end,
+	);
+	const zoomPills = projectPills(
+		coalesceRegionsForRuler(tl.zoomRegions),
+		"zoom",
 		// Matches RightPanelStack's effectiveZoomScale: a custom scale (from the
-		// slider) overrides the depth preset; otherwise show the depth's actual
-		// preset value, not a fabricated linear approximation of it.
-		label: `${effectiveZoomScale(p.member).toFixed(2)}×`,
-		sourceIds: p.ids,
+		// slider) overrides the depth preset; otherwise show the depth's actual value.
+		(member) =>
+			`${effectiveZoomScale(member as Parameters<typeof effectiveZoomScale>[0]).toFixed(2)}×`,
+	);
+	const cuts = coalescedTrimGroups(tl.trimRanges, clips).map((cut) => ({
+		...cut,
+		playbackSec: toPlaybackTime(cut.start),
 	}));
-	// trims: content-free (no per-instance text/settings), so touching rows —
-	// inevitable once a trim is ventilated across a clip boundary — are
-	// coalesced into one pill. This is what makes growing a trim across a
-	// junction look like one continuously-growing pill instead of visibly
-	// splitting, aligning trims with how zoom/speed/annotation already behave.
-	const trimPills: LanePill[] = coalescedTrimGroups(tl.trimRanges, clips).map((g) => ({
-		id: g.ids[0],
-		kind: "trim",
-		start: g.start,
-		end: g.end,
-		label: formatSec(g.end - g.start),
-		sourceIds: g.ids,
-	}));
+	const visiblePauseSuggestions = pauseSuggestions.flatMap((suggestion) => {
+		const visible = projectRawSpanToPlaybackSpan(
+			suggestion.timelineStartSec,
+			suggestion.timelineEndSec,
+			projection,
+		);
+		return visible ? [{ suggestion, visible }] : [];
+	});
 
 	// Ruler ticks are chosen from what is actually ON SCREEN, not from the clip
 	// length: the canvas is widened by 1/navSpan, so the same recording shows one
@@ -527,9 +579,9 @@ export function V4Timeline({
 		return { step, ticks };
 	}, [total, nav.start, nav.end, pxPerSec]);
 
-	// Live scrub position. The store write behind it is rAF-throttled (see
+	// Live trim-compressed scrub position. The store write behind it is rAF-throttled (see
 	// seekToClientX), so this keeps the playhead and the timecode pinned to the
-	// pointer for the frame the store hasn't caught up on yet. Handed down as an
+	// pointer for the frame the raw document clock has not caught up on yet. Handed down as an
 	// override to the two components that read the playhead from the store.
 	const [scrubbingTimeSec, setScrubbingTimeSec] = useState<number | null>(null);
 	const rafSeekRef = useRef<number>(0);
@@ -548,7 +600,8 @@ export function V4Timeline({
 			if (!el) return;
 			const r = el.getBoundingClientRect();
 			const pct = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-			const targetTime = pct * total;
+			const playbackTime = pct * total;
+			const rawTime = toRawTime(playbackTime, "after");
 
 			// Direct DOM playhead update (0ms latency, zero React re-render overhead)
 			if (playheadElRef.current) {
@@ -556,15 +609,15 @@ export function V4Timeline({
 			}
 
 			// Optimistic local UI state update
-			setScrubbingTimeSec(targetTime);
-			pendingSeekTimeRef.current = targetTime;
+			setScrubbingTimeSec(playbackTime);
+			pendingSeekTimeRef.current = rawTime;
 
 			if (isImmediate) {
 				if (rafSeekRef.current !== 0) {
 					cancelAnimationFrame(rafSeekRef.current);
 					rafSeekRef.current = 0;
 				}
-				setCurrentTime(targetTime);
+				setCurrentTime(rawTime);
 				return;
 			}
 
@@ -578,7 +631,7 @@ export function V4Timeline({
 				});
 			}
 		},
-		[setCurrentTime, total],
+		[setCurrentTime, total, toRawTime],
 	);
 
 	// Mousedown anywhere on the empty timeline (ruler, lanes background, or
@@ -625,9 +678,7 @@ export function V4Timeline({
 		[seekToClientX, tl, setCurrentTime, showLanes],
 	);
 
-	// Drag a lane pill to move it (mode "move", keeps duration) or resize one
-	// edge (mode "l"/"r"). Zoom/speed/annotation are timeline-ms; trims map
-	// back to source-seconds through their carrying clip.
+	// Drag a lane pill to move it (mode "move", keeps duration) or resize one edge.
 	const startPillDrag = useCallback(
 		(e: ReactPointerEvent, pill: LanePill, dragMode: "move" | "l" | "r") => {
 			e.preventDefault();
@@ -640,14 +691,6 @@ export function V4Timeline({
 			const r = el.getBoundingClientRect();
 			const startX = e.clientX;
 			const dur = pill.end - pill.start;
-			// A trim can span several clips; it's stored as one source-time entry per
-			// covered clip. `trimOwned` are the entry ids this drag controls — seeded
-			// from every row the grabbed (possibly already-coalesced) pill represents,
-			// then grows as the span reaches into more clips (fresh ids appended).
-			// `trimOwned` only grows; ids past the current fragment count are handed
-			// to `setTrimEntries` as `dropIds` so a shrinking span deletes the entries
-			// it no longer needs.
-			const trimOwned: string[] = [...pill.sourceIds];
 			// Snap targets: clip boundaries + timeline ends. Within PILL_SNAP_PX of
 			// one on screen, an edge snaps and a vertical guide is shown.
 			// The radius is in PIXELS: as a fraction of total (it was 1.2%) it was a
@@ -656,8 +699,8 @@ export function V4Timeline({
 			const snapTargets = [
 				0,
 				total,
-				...clips.map((c) => c.timelineStartSec),
-				...clips.map((c) => c.timelineEndSec),
+				...projection.map((part) => part.playbackStartSec),
+				...projection.map((part) => part.playbackEndSec),
 			];
 			// 0 = no snapping at all while the panel is unmeasured (first paint):
 			// better to drop the edge exactly where it was released than to move it
@@ -679,32 +722,15 @@ export function V4Timeline({
 			const apply = async (start: number, end: number): Promise<void> => {
 				const s = Math.max(0, Math.min(end - MIN_REGION_SEC, start));
 				const en = Math.min(total, Math.max(s + MIN_REGION_SEC, end));
-				if (pill.kind === "zoom") await tl.updateZoomSpan(pill.id, s * 1000, en * 1000);
-				else if (pill.kind === "speed") await tl.updateSpeedSpan(pill.id, s * 1000, en * 1000);
+				const rawStart = toRawTime(s, "after");
+				const rawEnd = toRawTime(en, "before");
+				if (rawEnd <= rawStart) return;
+				if (pill.kind === "zoom") await tl.updateZoomSpan(pill.id, rawStart * 1000, rawEnd * 1000);
+				else if (pill.kind === "speed")
+					await tl.updateSpeedSpan(pill.id, rawStart * 1000, rawEnd * 1000);
 				else if (pill.kind === "annotation")
-					await tl.updateAnnotationSpan(pill.id, s * 1000, en * 1000);
-				else if (pill.kind === "cameraFullscreen")
-					await tl.updateCameraFullscreenSpan(pill.id, s * 1000, en * 1000);
-				else {
-					// Trims are stored in source-time per asset but manipulated on the
-					// timeline like every other pill. Ventilate the new span across the
-					// clips it covers (one source range per clip) — the same primitive
-					// zoom/speed/annotation use on reorder, so trims can now be grown
-					// across a clip boundary just like a zoom.
-					let ranges = ventilateTimelineSpanToTrims(s, en, clips);
-					if (ranges.length === 0) {
-						// Span sits in a gap / past the end: fall back to the nearest clip.
-						const resolved = resolveTimelineSpanToTrim(s, en, clips);
-						if (!resolved) return;
-						ranges = [resolved];
-					}
-					// Grow the owned-id list to cover every fragment, keeping ids stable
-					// across frames; ids past the current fragment count are dropped.
-					while (trimOwned.length < ranges.length) trimOwned.push(createId("trim"));
-					const entries = ranges.map((rng, i) => ({ id: trimOwned[i], ...rng }));
-					const dropIds = trimOwned.slice(ranges.length);
-					await tl.setTrimEntries(entries, dropIds);
-				}
+					await tl.updateAnnotationSpan(pill.id, rawStart * 1000, rawEnd * 1000);
+				else await tl.updateCameraFullscreenSpan(pill.id, rawStart * 1000, rawEnd * 1000);
 			};
 			const move = (ev: PointerEvent) => {
 				const dxSec = ((ev.clientX - startX) / r.width) * total;
@@ -744,7 +770,7 @@ export function V4Timeline({
 			window.addEventListener("pointermove", move);
 			window.addEventListener("pointerup", up);
 		},
-		[tl, total, clips, pxPerSec],
+		[tl, total, projection, pxPerSec, toRawTime],
 	);
 
 	const startNavDrag = useCallback(
@@ -884,18 +910,14 @@ export function V4Timeline({
 			? styles.laneAnnotation
 			: kind === "speed"
 				? styles.laneSpeed
-				: kind === "trim"
-					? styles.laneTrim
-					: kind === "cameraFullscreen"
-						? styles.laneCameraFullscreen
-						: styles.laneZoom;
+				: kind === "cameraFullscreen"
+					? styles.laneCameraFullscreen
+					: styles.laneZoom;
 	const pillIcon = (kind: LanePill["kind"]) =>
 		kind === "annotation" ? (
 			<MessageSquare size={11} />
 		) : kind === "speed" ? (
 			<Clock size={11} />
-		) : kind === "trim" ? (
-			<Scissors size={11} />
 		) : kind === "cameraFullscreen" ? (
 			<Maximize2 size={11} />
 		) : (
@@ -925,18 +947,22 @@ export function V4Timeline({
 			if (from < 0) return;
 			didClipDragRef.current = false;
 			let dragging = false;
-			// Width + gap the dragged clip displaces its neighbours by — measured
+			// Exact visible-time width the dragged clip displaces its neighbours by — measured
 			// once at drag start (only its position changes during the drag, not
 			// its size).
-			const shiftAmount = clipEl.getBoundingClientRect().width + CLIP_GUTTER_PX;
+			const shiftAmount = clipEl.getBoundingClientRect().width;
 
 			// Boundaries are captured once, before any transform is applied —
 			// re-querying live rects mid-drag would pick up the dragged clip's own
 			// translated (pointer-following) position and corrupt the math, since
 			// its rect no longer reflects its untouched slot.
-			const originalRects = Array.from(
+			const visibleClipElements = Array.from(
 				container.querySelectorAll<HTMLElement>("[data-clip-id]"),
-			).map((el) => el.getBoundingClientRect());
+			);
+			const visibleClipIds = visibleClipElements.flatMap((element) =>
+				element.dataset.clipId ? [element.dataset.clipId] : [],
+			);
+			const originalRects = visibleClipElements.map((element) => element.getBoundingClientRect());
 			const boundaries =
 				originalRects.length === 0
 					? [0]
@@ -945,8 +971,8 @@ export function V4Timeline({
 							...originalRects.slice(1).map((r, i) => (originalRects[i].right + r.left) / 2),
 							originalRects[originalRects.length - 1].right,
 						];
-			// Nearest clip boundary to `clientX`, as an insertion index into the
-			// *full* clip array (0..n).
+			// Nearest visible boundary to `clientX`. A fully removed clip has no width,
+			// so convert the chosen visible neighbour back to the authoritative raw array.
 			const computeInsertFull = (clientX: number) => {
 				let bi = 0;
 				let bd = Number.POSITIVE_INFINITY;
@@ -957,7 +983,9 @@ export function V4Timeline({
 						bi = i;
 					}
 				}
-				return bi;
+				if (bi >= visibleClipIds.length) return clips.length;
+				const rawIndex = clips.findIndex((candidate) => candidate.id === visibleClipIds[bi]);
+				return rawIndex >= 0 ? rawIndex : clips.length;
 			};
 			// insertFull indexes the full array; moveClip (and our own preview
 			// math) target the array with the dragged clip already removed, so
@@ -1039,6 +1067,7 @@ export function V4Timeline({
 				document: currentDocument,
 				recordings,
 				phases: { screen: true, camera: false },
+				policy: readAutomaticDirectionSettings(currentDocument).policy,
 			});
 			const suggestions = plan.effects.flatMap((effect) => {
 				const materialized = materializeAutomaticDirectionEffect(plan, effect);
@@ -1196,7 +1225,7 @@ export function V4Timeline({
 					// start. Only fork into fragments when they'd actually move
 					// differently — a pill unaffected by this drag stays one DOM node.
 					if (clipDrag) {
-						const frags = ventilateSpanAcrossClips(p.start, p.end, clips);
+						const frags = ventilateSpanAcrossClips(p.rawStart, p.rawEnd, clips);
 						if (frags.length >= 2) {
 							const clipById = new Map(clips.map((c) => [c.id, c]));
 							const shifts = frags.map((f) => {
@@ -1213,12 +1242,16 @@ export function V4Timeline({
 								return frags.flatMap((f, i) => {
 									const c = clipById.get(f.clipId);
 									if (!c) return [];
+									const rawStart = c.timelineStartSec + f.localStartSec;
+									const rawEnd = c.timelineStartSec + f.localEndSec;
+									const visible = projectRawSpanToPlaybackSpan(rawStart, rawEnd, projection);
+									if (!visible) return [];
 									return [
 										renderOnePill({
 											pill: p,
 											key: `${p.id}__f${i}`,
-											segStart: c.timelineStartSec + f.localStartSec,
-											segEnd: c.timelineStartSec + f.localEndSec,
+											segStart: visible.startSec,
+											segEnd: visible.endSec,
 											shiftPx: shifts[i].px,
 											immediate: shifts[i].immediate,
 											showContent: i === 0,
@@ -1231,7 +1264,7 @@ export function V4Timeline({
 							}
 						}
 					}
-					const shift = regionPreviewShift(p.start);
+					const shift = regionPreviewShift(p.rawStart);
 					return [
 						renderOnePill({
 							pill: p,
@@ -1396,11 +1429,12 @@ export function V4Timeline({
 						<TransportBar
 							playing={playing}
 							overrideTimeSec={scrubbingTimeSec}
-							clips={clips}
+							clips={visibleSegments}
+							toDisplayTime={toPlaybackTime}
 							onTogglePlay={onTogglePlay}
 							onPrevClip={onPrevClip}
 							onNextClip={onNextClip}
-							onSeek={setCurrentTime}
+							onSeek={seekPlaybackTime}
 						/>
 					</>
 				) : null}
@@ -1446,9 +1480,6 @@ export function V4Timeline({
 								{speedPills.length > 0 ? (
 									<div className={styles.tlLane}>{renderPills(speedPills)}</div>
 								) : null}
-								{trimPills.length > 0 ? (
-									<div className={styles.tlLane}>{renderPills(trimPills)}</div>
-								) : null}
 								{cameraPills.length > 0 ? (
 									<div className={styles.tlLane}>{renderPills(cameraPills)}</div>
 								) : null}
@@ -1474,17 +1505,23 @@ export function V4Timeline({
 								if (id && onDropAsset) onDropAsset(id);
 							}}
 						>
-							{showLanes ? <InsertionBoundaryMarker clips={clips} totalSec={total} /> : null}
-							{showLanes && pauseSuggestions.length > 0 ? (
+							{showLanes ? (
+								<InsertionBoundaryMarker
+									clips={clips}
+									totalSec={total}
+									toPlaybackTime={toPlaybackTime}
+								/>
+							) : null}
+							{showLanes && visiblePauseSuggestions.length > 0 ? (
 								<div className={styles.pauseCandidateOverlay}>
-									{pauseSuggestions.map((suggestion) => (
+									{visiblePauseSuggestions.map(({ suggestion, visible }) => (
 										<button
 											key={suggestion.id}
 											type="button"
 											className={`${styles.pauseCandidatePill}${suggestion.selected ? ` ${styles.pauseCandidateSelected}` : ""}`}
 											style={{
-												left: `${pctOf(suggestion.timelineStartSec)}%`,
-												width: `${Math.max(0, pctOf(suggestion.timelineEndSec - suggestion.timelineStartSec))}%`,
+												left: `${pctOf(visible.startSec)}%`,
+												width: `${Math.max(0, pctOf(visible.endSec - visible.startSec))}%`,
 											}}
 											title={t("labels.pauseSuggestion", {
 												duration: formatSec(suggestion.savedSec),
@@ -1498,8 +1535,9 @@ export function V4Timeline({
 									))}
 								</div>
 							) : null}
-							{clips.map((c, i) => {
-								const dur = c.timelineEndSec - c.timelineStartSec;
+							{clipTracks.map((track) => {
+								const { clip: c, rawIndex: i } = track;
+								const dur = track.endSec - track.startSec;
 								const asset = tl.assets.find((a) => a.id === c.assetId);
 								const clipVideoUrl = videoSources.find((v) => v.id === c.assetId)?.src;
 								const selected = tl.clipSelection === c.id;
@@ -1528,12 +1566,10 @@ export function V4Timeline({
 											dragging ? ` ${styles.tlClipDragging}` : ""
 										}`}
 										style={{
-											left: `${pctOf(c.timelineStartSec)}%`,
-											// Minus the gutter that separates two cards (it used to be the
-											// flex row's `gap`). A clip shorter than the gutter lands on
-											// .tlClip's 1px min-width instead of collapsing — same rule as
-											// the lane pills above.
-											width: `calc(${pctOf(dur)}% - ${CLIP_GUTTER_PX}px)`,
+											left: `${pctOf(track.startSec)}%`,
+											// Keep exact time geometry. The clip separator is painted inside
+											// this box, so no fixed pixel gap can shift a cut seam or waveform.
+											width: `${pctOf(dur)}%`,
 											transform: clipTransform,
 										}}
 										onPointerDown={(e) => startClipDrag(e, c)}
@@ -1553,12 +1589,35 @@ export function V4Timeline({
 										}}
 										title={t("toolbar.dragToReorderHint")}
 									>
-										<ClipWaveform
-											videoUrl={clipVideoUrl}
-											assetDurationSec={asset?.durationSec}
-											sourceStartSec={c.sourceStartSec}
-											sourceEndSec={c.sourceEndSec ?? c.sourceStartSec + dur}
-										/>
+										{track.parts.map((part, partIndex) => {
+											const segmentDuration = part.playbackEndSec - part.playbackStartSec;
+											const hasCutBefore = partIndex > 0;
+											const hasCutAfter = partIndex < track.parts.length - 1;
+											return (
+												<div
+													key={part.segment.id}
+													className={`${styles.tlClipSection}${hasCutBefore ? ` ${styles.tlClipSectionAfterCut}` : ""}${hasCutAfter ? ` ${styles.tlClipSectionBeforeCut}` : ""}`}
+													style={{
+														left: `${((part.playbackStartSec - track.startSec) / dur) * 100}%`,
+														width: `${(segmentDuration / dur) * 100}%`,
+													}}
+												>
+													<ClipWaveform
+														videoUrl={clipVideoUrl}
+														assetDurationSec={asset?.durationSec}
+														clipTimelineStartSec={part.playbackStartSec}
+														clipTimelineEndSec={part.playbackEndSec}
+														visibleTimelineStartSec={nav.start * total}
+														visibleTimelineEndSec={(nav.start + navSpan) * total}
+														sourceStartSec={part.segment.sourceStartSec}
+														sourceEndSec={
+															part.segment.sourceEndSec ??
+															part.segment.sourceStartSec + segmentDuration
+														}
+													/>
+												</div>
+											);
+										})}
 										<div className={styles.tlClipLabel}>
 											<span className={styles.tlClipName}>
 												{tl.assets.find((a) => a.id === c.assetId)?.label ?? c.assetId}
@@ -1567,6 +1626,44 @@ export function V4Timeline({
 									</button>
 								);
 							})}
+							{showLanes
+								? cuts.map((cut) => {
+										const durationSec = cut.end - cut.start;
+										const restoreLabel = `${t("inspector.restoreDeleteTrim")} · ${formatSec(durationSec)}`;
+										const edgeClass =
+											cut.playbackSec <= 0.001
+												? styles.tlCutAtStart
+												: cut.playbackSec >= playbackDurationSec - 0.001
+													? styles.tlCutAtEnd
+													: "";
+										return (
+											<div
+												key={cut.ids.join(":")}
+												data-testid={`timeline-cut-${cut.ids[0]}`}
+												className={`${styles.tlCut}${edgeClass ? ` ${edgeClass}` : ""}`}
+												style={{
+													left: `${pctOf(cut.playbackSec)}%`,
+												}}
+											>
+												<Tooltip content={restoreLabel} side="top">
+													<button
+														type="button"
+														className={styles.tlCutRestore}
+														data-no-clip-drag
+														aria-label={restoreLabel}
+														onPointerDown={(event) => event.stopPropagation()}
+														onClick={(event) => {
+															event.stopPropagation();
+															void tl.removeRegion("trim", cut.ids[0]);
+														}}
+													>
+														<Scissors size={11} aria-hidden />
+													</button>
+												</Tooltip>
+											</div>
+										);
+									})
+								: null}
 							{dragOver ? (
 								<div aria-hidden className={styles.tlDropHint}>
 									{t("toolbar.dropToAdd")}
@@ -1585,6 +1682,7 @@ export function V4Timeline({
 					<PlayheadOverlay
 						totalSec={total}
 						overrideTimeSec={scrubbingTimeSec}
+						toPlaybackTime={toPlaybackTime}
 						canvasStyle={canvasStyle}
 						onPointerDown={startScrub}
 						playheadRef={playheadElRef}

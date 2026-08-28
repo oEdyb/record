@@ -1,7 +1,8 @@
 import { ArrowDown, Film, Plus, RotateCw, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useScopedT } from "@/contexts/I18nContext";
+import { AppSelect } from "@/components/ui/app-select";
+import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import type { AxcutAsset } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import {
@@ -13,6 +14,12 @@ import type {
 	AssetTranscriptionStatus,
 	AssetTranscriptionView,
 } from "@/lib/ai-edition/transcription/status";
+import {
+	isTranscriptLanguage,
+	TRANSCRIPT_LANGUAGE_CODES,
+	type TranscriptLanguage,
+	transcriptLanguageLabel,
+} from "@/lib/captioning/transcriptLanguages";
 import { formatBytes } from "@/utils/formatBytes";
 import {
 	TranscriptionProgressBar,
@@ -35,6 +42,7 @@ function basename(path: string): string {
 
 export function MediaStage() {
 	const t = useScopedT("editor");
+	const { locale } = useI18n();
 	const projectId = useProjectStore((s) => s.projectId);
 	const document = useProjectStore((s) => s.document);
 	const addAsset = useProjectStore((s) => s.addAsset);
@@ -48,7 +56,7 @@ export function MediaStage() {
 	const [busy, setBusy] = useState(false);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [detailOpen, setDetailOpen] = useState(false);
-	const [lang, setLang] = useState("auto");
+	const [lang, setLang] = useState<TranscriptLanguage>("auto");
 
 	const assets = document?.assets ?? [];
 	const filtered = useMemo(
@@ -68,6 +76,10 @@ export function MediaStage() {
 		: { assetId: "", status: "idle" };
 	const selectedBusy =
 		selectedTranscription.status === "running" || selectedTranscription.status === "queued";
+	useEffect(() => {
+		const storedLanguage = transcript?.language ?? "auto";
+		setLang(isTranscriptLanguage(storedLanguage) ? storedLanguage : "auto");
+	}, [transcript?.language]);
 
 	const handleImport = async () => {
 		if (!projectId) {
@@ -110,7 +122,9 @@ export function MediaStage() {
 					<div className={styles.mediaListCol}>
 						<div
 							className={styles.mediaGrid}
-							style={{ gridTemplateColumns: detailOpen ? "repeat(2,1fr)" : "repeat(3,1fr)" }}
+							style={{
+								gridTemplateColumns: detailOpen ? "repeat(2,1fr)" : "repeat(3,1fr)",
+							}}
 						>
 							{filtered.map((asset, i) => {
 								const transcription = transcriptions[asset.id] ?? {
@@ -134,7 +148,9 @@ export function MediaStage() {
 									>
 										<div
 											className={styles.mediaThumb}
-											style={{ background: THUMB_GRADIENTS[i % THUMB_GRADIENTS.length] }}
+											style={{
+												background: THUMB_GRADIENTS[i % THUMB_GRADIENTS.length],
+											}}
 										>
 											<Film size={30} strokeWidth={1.8} />
 										</div>
@@ -292,7 +308,9 @@ export function MediaStage() {
 											fontWeight: 600,
 										}}
 									>
-										{t("mediaStage.detectedLanguage", { language: transcript.language })}
+										{t("mediaStage.detectedLanguage", {
+											language: transcript.language,
+										})}
 									</span>
 								) : null}
 							</div>
@@ -327,9 +345,10 @@ export function MediaStage() {
 									{t("mediaStage.regenerateAs")}
 								</div>
 								<div style={{ display: "flex", gap: 8 }}>
-									<select
+									<AppSelect
+										aria-label={t("mediaStage.regenerateAs")}
 										value={lang}
-										onChange={(e) => setLang(e.target.value)}
+										onChange={(e) => setLang(e.target.value as TranscriptLanguage)}
 										style={{
 											flex: 1,
 											minWidth: 0,
@@ -344,11 +363,12 @@ export function MediaStage() {
 											outline: "none",
 										}}
 									>
-										<option value="auto">{t("mediaStage.auto")}</option>
-										<option value="en">English</option>
-										<option value="fr">Français</option>
-										<option value="es">Español</option>
-									</select>
+										{TRANSCRIPT_LANGUAGE_CODES.map((language) => (
+											<option key={language} value={language}>
+												{transcriptLanguageLabel(language, locale, t("mediaStage.auto"))}
+											</option>
+										))}
+									</AppSelect>
 									<button
 										type="button"
 										title={t("mediaStage.regenerate")}

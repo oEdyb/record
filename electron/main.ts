@@ -748,6 +748,12 @@ appReady?.then(async () => {
 	// otherwise classify us as an accessory app.
 	if (process.platform === "darwin") {
 		app.dock?.show();
+		if (!app.isPackaged) {
+			const developmentIcon = nativeImage.createFromPath(
+				path.join(process.env.APP_ROOT, "icons", "icons", "png", "512x512.png"),
+			);
+			if (!developmentIcon.isEmpty()) app.dock?.setIcon(developmentIcon);
+		}
 	}
 
 	session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {

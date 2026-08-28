@@ -39,7 +39,11 @@ import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
 //      made them AMBIGUOUS the moment two clips drew from the same asset (a
 //      duplicated clip): every reader either matched both clips or picked the
 //      first. See `upgradeV6DocumentToV7`.
-export const axcutSchemaVersion = 7;
+//   8. v8 — assets can carry an explicit, versioned Clean Voice recipe. The
+//      derived stem and its processing status remain in the app-owned cache;
+//      neither is project data. An absent recipe means Original, which keeps
+//      every v7 project non-destructive and opt-in after migration.
+export const axcutSchemaVersion = 8;
 
 // ponytail: every region schema shares the same monotonicity rule
 // (end >= start) with the same error shape. Factor the refine so the
@@ -106,6 +110,20 @@ export const assetAudioSchema = z.object({
 	channels: z.number().int().nonnegative().default(0),
 });
 
+export const cleanVoiceRecipeSchema = z.discriminatedUnion("mode", [
+	z.object({
+		version: z.literal(1),
+		mode: z.literal("original"),
+	}),
+	z.object({
+		version: z.literal(1),
+		mode: z.literal("natural"),
+		engine: z.literal("deepfilternet3"),
+		attenuationLimitDb: z.number().finite().gt(0).max(30).default(6),
+		postFilter: z.literal(false).default(false),
+	}),
+]);
+
 // ponytail: the webcam is a derived stream — it is NOT edited. Cut / zoom /
 // speed live on the main timeline and apply to the camera as a render of the
 // same source-time progression. Source path comes from the recording
@@ -152,6 +170,12 @@ export const assetSchema = z.object({
 	sizeBytes: z.number().int().nonnegative().optional(),
 	video: assetVideoSchema.optional(),
 	audio: assetAudioSchema.optional(),
+	/**
+	 * Optional user intent only. Missing or `original` selects the immutable raw
+	 * microphone. Cleaned media, cache paths, progress, and failures never enter
+	 * the project file because they can always be rebuilt.
+	 */
+	cleanVoice: cleanVoiceRecipeSchema.optional(),
 	// Absent on every document written before auto-transcription; additive, so
 	// no schema-version bump (an older build simply drops the key on save).
 	transcriptionFailure: assetTranscriptionFailureSchema.nullish(),
@@ -767,6 +791,17 @@ export function upgradeV6DocumentToV7(raw: unknown): unknown {
 }
 
 /**
+ * v7 → v8 — reserve a typed asset-level Clean Voice recipe without changing
+ * existing sound. Missing is the canonical Original setting, so the migration
+ * changes only the version marker and cannot start background work.
+ */
+export function upgradeV7DocumentToV8(raw: unknown): unknown {
+	if (!raw || typeof raw !== "object") return raw;
+	const doc = raw as Record<string, unknown>;
+	return doc.schemaVersion === 7 ? { ...doc, schemaVersion: 8 } : raw;
+}
+
+/**
  * Runs the whole upgrade chain on a raw, untrusted value. Idempotent: each step
  * is gated on an exact `schemaVersion`, so an already-current document passes
  * through untouched.
@@ -777,18 +812,18 @@ export function upgradeV6DocumentToV7(raw: unknown): unknown {
  * not configure for the main bundle. Keep this module alias-free.
  */
 export function migrateRawDocumentToCurrent(raw: unknown): unknown {
-	return upgradeV6DocumentToV7(
-		upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw))),
+	return upgradeV7DocumentToV8(
+		upgradeV6DocumentToV7(upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw)))),
 	);
 }
 
-// PURE v7 validation. Callers that read a document from disk (or any other
+// PURE v8 validation. Callers that read a document from disk (or any other
 // source that might carry an older `schemaVersion`) MUST run
 // `migrateRawDocumentToCurrent` on the raw value first. The previous
 // implementation wrapped this schema in a `z.preprocess` that re-ran the whole
-// v3→…→v7 chain on EVERY parse, including in-memory parses of documents that
+// v3→…→v8 chain on EVERY parse, including in-memory parses of documents that
 // were already current. Hoisting it to load time makes the in-memory parse a
-// single `z.literal(7)` + shape check.
+// single `z.literal(8)` + shape check.
 export const documentSchema = documentSchemaShape;
 
 export const createProjectInputSchema = z.object({
@@ -825,6 +860,7 @@ export type AxcutWord = z.infer<typeof wordSchema>;
 export type AxcutTranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
 export type AxcutTranscript = z.infer<typeof transcriptSchema>;
 export type AxcutAsset = z.infer<typeof assetSchema>;
+export type CleanVoiceRecipe = z.infer<typeof cleanVoiceRecipeSchema>;
 export type AxcutAssetTranscriptionFailure = z.infer<typeof assetTranscriptionFailureSchema>;
 export type AxcutClip = z.infer<typeof clipSchema>;
 export type AxcutClipCropRegion = z.infer<typeof clipCropRegionSchema>;

@@ -61,6 +61,16 @@ function renderTopBar(
 }
 
 describe("editor workspace navigation", () => {
+	it("uses the canonical mark without a redundant product wordmark", () => {
+		renderTopBar("Demo Project");
+		const topbar = screen.getByRole("banner");
+
+		expect(topbar).not.toHaveTextContent("Klippt");
+		const mark = topbar.querySelector('[data-klippt-mark="canonical"]');
+		expect(mark).toBeInTheDocument();
+		expect(mark?.querySelector("svg")).toBeInTheDocument();
+	});
+
 	it("shows read-only access without letting the project name enter edit mode", () => {
 		const { onEntitlement, onRename } = renderTopBar("Demo Project", {
 			readOnly: true,

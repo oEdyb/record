@@ -46,6 +46,14 @@ export interface AddAssetInput {
 	recordingImportId?: string;
 }
 
+export interface DocumentServiceOptions {
+	/**
+	 * Called only after a project is readable from disk. Derived-media services
+	 * can schedule work here without delaying or weakening the project save.
+	 */
+	onDocumentReady?: (document: AxcutDocument) => void | Promise<void>;
+}
+
 export class DocumentNotFoundError extends Error {
 	constructor(public readonly projectId: string) {
 		super(`Project not found: ${projectId}`);
@@ -147,9 +155,23 @@ export class DocumentService {
 	// `mediaRegistryDir` is where the media-links registry file lives
 	// (RECORDINGS_DIR in production) — see getProject. Injected for the same
 	// reason as `projectsRoot`: this module stays free of any `electron` import.
-	constructor(projectsRoot: string, mediaRegistryDir: string) {
+	constructor(
+		projectsRoot: string,
+		mediaRegistryDir: string,
+		private readonly options: DocumentServiceOptions = {},
+	) {
 		this.projectsRoot = projectsRoot;
 		this.mediaRegistryDir = mediaRegistryDir;
+	}
+
+	private notifyDocumentReady(document: AxcutDocument): void {
+		try {
+			void Promise.resolve(this.options.onDocumentReady?.(document)).catch((error) => {
+				console.warn("[ai-edition] post-save media scheduling failed:", error);
+			});
+		} catch (error) {
+			console.warn("[ai-edition] post-save media scheduling failed:", error);
+		}
 	}
 
 	async ensureProjectsDir(): Promise<void> {
@@ -260,7 +282,11 @@ export class DocumentService {
 		// back, and it is not persisted from here: the renderer saves the document
 		// it was given, as it does for any other load-time repair.
 		const migrated = migrateRawDocumentToCurrent(JSON.parse(raw));
-		return documentSchema.parse(await relinkProjectMedia(migrated, this.mediaRegistryDir));
+		const document = documentSchema.parse(
+			await relinkProjectMedia(migrated, this.mediaRegistryDir),
+		);
+		this.notifyDocumentReady(document);
+		return document;
 	}
 
 	async createProject(title: string): Promise<AxcutDocument> {
@@ -415,6 +441,7 @@ export class DocumentService {
 		const json = JSON.stringify(doc, null, 2);
 		try {
 			await writeFileAtomically(filePath, json);
+			this.notifyDocumentReady(doc);
 		} catch (error) {
 			throw new ProjectFileError(
 				`Failed to save project ${doc.project.id}: ${error instanceof Error ? error.message : String(error)}`,

@@ -8,9 +8,11 @@ import type { DesktopCapturerSource } from "electron";
 import {
 	app,
 	BrowserWindow,
+	clipboard,
 	desktopCapturer,
 	dialog,
 	ipcMain,
+	powerMonitor,
 	screen,
 	shell,
 	systemPreferences,
@@ -82,7 +84,14 @@ import {
 	type AudioPeaksResult,
 	type AudioTrackSelection,
 	getAudioPeaks,
+	resolveFfmpeg,
 } from "../media/audioPeaks";
+import { CleanVoiceService, type CleanVoiceThermalState } from "../media/cleanVoiceService";
+import {
+	cleanVoiceHelperCandidates,
+	createLocalCleanVoiceProcessor,
+	resolveCleanVoiceHelper,
+} from "../media/cleanVoiceWorker";
 import {
 	readCursorRecordingFile as readCursorRecordingFileFrom,
 	readCursorSidecar,
@@ -1584,7 +1593,7 @@ export function registerIpcHandlers(
 	onRecordingStateChange?: (recording: boolean, sourceName: string) => void,
 	_switchToHud?: () => void,
 	isPrivateRecordingUiPoint?: (point: { x: number; y: number }) => boolean,
-	options: { restoreInterruptedRecording?: boolean } = {},
+	options: { restoreInterruptedRecording?: boolean; enableCleanVoiceJobs?: boolean } = {},
 ): Promise<boolean> {
 	isDirectionExcludedPoint = isPrivateRecordingUiPoint ?? (() => false);
 	const { config: entitlementConfig, service: entitlementService } = createEntitlementService({
@@ -1592,6 +1601,78 @@ export function registerIpcHandlers(
 		isPackaged: app.isPackaged,
 	});
 	registerEntitlementIpc(entitlementService, entitlementConfig);
+
+	let cleanVoiceService: CleanVoiceService | null = null;
+	let recordingActive = false;
+	let thermalState: CleanVoiceThermalState = "unknown";
+	let cleanVoiceShuttingDown = false;
+	const cleanVoiceServiceReady =
+		options.enableCleanVoiceJobs === false || process.platform !== "darwin"
+			? Promise.resolve(null)
+			: (async () => {
+					const ffmpegPath = resolveFfmpeg();
+					const helperPath = await resolveCleanVoiceHelper(
+						cleanVoiceHelperCandidates(app.getAppPath(), process.resourcesPath),
+					);
+					if (!ffmpegPath || !helperPath || cleanVoiceShuttingDown) return null;
+					const service = new CleanVoiceService({
+						cacheRoot: path.join(app.getPath("userData"), "derived-media", "clean-voice-v1"),
+						processor: createLocalCleanVoiceProcessor({ ffmpegPath, helperPath }),
+						onStatus: (status) => {
+							const editor = getMainWindow();
+							if (editor && !editor.isDestroyed()) {
+								editor.webContents.send("clean-voice:status", status);
+							}
+						},
+					});
+					service.setRecordingActive(recordingActive);
+					service.setThermalState(thermalState);
+					cleanVoiceService = service;
+					return service;
+				})().catch((error) => {
+					console.warn("[clean-voice] background service is unavailable:", error);
+					return null;
+				});
+	const notifyRecordingStateChange = (recording: boolean, sourceName: string) => {
+		recordingActive = recording;
+		cleanVoiceService?.setRecordingActive(recording);
+		onRecordingStateChange?.(recording, sourceName);
+	};
+	const handleThermalStateChange = (details: { state: CleanVoiceThermalState }) => {
+		thermalState = details.state;
+		cleanVoiceService?.setThermalState(details.state);
+	};
+	if (options.enableCleanVoiceJobs !== false && process.platform === "darwin") {
+		thermalState = powerMonitor.getCurrentThermalState();
+		powerMonitor.on("thermal-state-change", handleThermalStateChange);
+		app.once("before-quit", () => {
+			cleanVoiceShuttingDown = true;
+			powerMonitor.off("thermal-state-change", handleThermalStateChange);
+			cleanVoiceService?.dispose();
+		});
+	}
+	ipcMain.handle(
+		"clean-voice:get-runtime",
+		async (_event, projectId: string, assetIds: string[]) => {
+			if (
+				typeof projectId !== "string" ||
+				projectId.length === 0 ||
+				projectId.length > 256 ||
+				!Array.isArray(assetIds) ||
+				assetIds.length > 1_000 ||
+				assetIds.some(
+					(assetId) => typeof assetId !== "string" || assetId.length === 0 || assetId.length > 256,
+				)
+			) {
+				return { available: false, assets: [] };
+			}
+			const service = await cleanVoiceServiceReady;
+			return {
+				available: service !== null,
+				assets: service?.getStatuses(projectId, assetIds) ?? [],
+			} satisfies import("../../src/lib/cleanVoiceRuntime").CleanVoiceRuntimeSnapshot;
+		},
+	);
 	const rejectWithoutEntitlement = async (
 		capability: import("../../src/lib/entitlements/contracts").EntitlementCapability,
 	) => {
@@ -1647,6 +1728,13 @@ export function registerIpcHandlers(
 			return { success: false, granted: false, status: "unknown", error: String(error) };
 		}
 	}
+
+	ipcMain.handle("clipboard:write-text", (_event, text: unknown) => {
+		if (typeof text !== "string") {
+			throw new TypeError("Clipboard text must be a string.");
+		}
+		clipboard.writeText(text);
+	});
 
 	ipcMain.handle("get-sources", async (_, opts) => {
 		const sources = await desktopCapturer.getSources(opts);
@@ -2123,9 +2211,7 @@ export function registerIpcHandlers(
 				// "Screen" }`, so the tray confidently displayed the name of a
 				// window the capture had never been told about.
 				linuxNativeCaptureSourceLabel = linuxSourceLabel(session.grantedSourceKind);
-				if (onRecordingStateChange) {
-					onRecordingStateChange(true, linuxNativeCaptureSourceLabel);
-				}
+				notifyRecordingStateChange(true, linuxNativeCaptureSourceLabel);
 
 				return { success: true, recordingId, path: outputPath };
 			} catch (error) {
@@ -2227,9 +2313,7 @@ export function registerIpcHandlers(
 			linuxNativeCaptureCursorMode = "editable-overlay";
 			const stoppedLabel = linuxNativeCaptureSourceLabel ?? linuxSourceLabel();
 			linuxNativeCaptureSourceLabel = null;
-			if (onRecordingStateChange) {
-				onRecordingStateChange(false, stoppedLabel);
-			}
+			notifyRecordingStateChange(false, stoppedLabel);
 		}
 	});
 
@@ -2415,9 +2499,7 @@ export function registerIpcHandlers(
 				});
 
 				const source = selectedSource || { name: "Screen" };
-				if (onRecordingStateChange) {
-					onRecordingStateChange(true, source.name);
-				}
+				notifyRecordingStateChange(true, source.name);
 
 				return {
 					success: true,
@@ -2547,7 +2629,7 @@ export function registerIpcHandlers(
 		},
 		onRecordingStateChange: (recording) => {
 			const source = selectedSource || { name: "Screen" };
-			onRecordingStateChange?.(recording, source.name);
+			notifyRecordingStateChange(recording, source.name);
 		},
 		onFatalError: (failure) => {
 			const hudWindow = getMainWindow();
@@ -2670,9 +2752,7 @@ export function registerIpcHandlers(
 				// leaving the handle set would make every later recording fail
 				// with "already running" against a process nobody can stop.
 				resetNativeWindowsCaptureState();
-				if (onRecordingStateChange) {
-					onRecordingStateChange(false, (selectedSource || { name: "Screen" }).name);
-				}
+				notifyRecordingStateChange(false, (selectedSource || { name: "Screen" }).name);
 			}
 		}
 
@@ -2812,9 +2892,7 @@ export function registerIpcHandlers(
 		} finally {
 			resetNativeWindowsCaptureState();
 			const source = selectedSource || { name: "Screen" };
-			if (onRecordingStateChange) {
-				onRecordingStateChange(false, source.name);
-			}
+			notifyRecordingStateChange(false, source.name);
 		}
 	});
 
@@ -3257,9 +3335,7 @@ export function registerIpcHandlers(
 			}
 
 			const source = selectedSource || { name: "Screen" };
-			if (onRecordingStateChange) {
-				onRecordingStateChange(recording, source.name);
-			}
+			notifyRecordingStateChange(recording, source.name);
 		},
 	);
 
@@ -4049,6 +4125,10 @@ export function registerIpcHandlers(
 	const aiEditionDocuments = new DocumentService(
 		path.join(app.getPath("userData"), "projects"),
 		RECORDINGS_DIR,
+		{
+			onDocumentReady: (document) =>
+				cleanVoiceServiceReady.then((service) => service?.syncDocument(document)),
+		},
 	);
 
 	// LlmConfigStore is single-instance for a duller reason — its constructor does

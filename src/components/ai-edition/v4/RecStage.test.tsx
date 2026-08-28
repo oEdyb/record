@@ -111,20 +111,24 @@ describe("RecStage", () => {
 	it("uses one device menu per microphone and camera, including Off", async () => {
 		renderStage();
 
-		const microphone = await screen.findByRole("combobox", { name: "Microphone" });
+		const microphone = await screen.findByRole("combobox", {
+			name: "Microphone",
+		});
 		const camera = screen.getByRole("combobox", { name: "Camera" });
-		expect(microphone).toHaveValue("mic-1");
-		expect(camera).toHaveValue("cam-1");
-		expect(screen.getAllByRole("option", { name: "Off" })).toHaveLength(2);
+		expect(microphone).toHaveTextContent("Studio microphone");
+		expect(camera).toHaveTextContent("Desk camera");
 
-		fireEvent.change(microphone, { target: { value: "__off__" } });
+		fireEvent.keyDown(microphone, { key: "ArrowDown" });
+		fireEvent.click(screen.getByRole("option", { name: "Off" }));
 		await waitFor(() => {
 			expect(setRecordingPrefs).toHaveBeenCalledWith({ micEnabled: false });
 		});
 
-		fireEvent.change(camera, { target: { value: "cam-1" } });
+		fireEvent.keyDown(camera, { key: "ArrowDown" });
+		expect(screen.getByRole("option", { name: "Off" })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("option", { name: "Off" }));
 		await waitFor(() => {
-			expect(setCameraDevice).toHaveBeenCalledWith("cam-1");
+			expect(setRecordingPrefs).toHaveBeenCalledWith({ camEnabled: false });
 		});
 	});
 
@@ -133,7 +137,7 @@ describe("RecStage", () => {
 		renderStage();
 
 		const camera = await screen.findByRole("combobox", { name: "Camera" });
-		await waitFor(() => expect(camera).toHaveValue("__off__"));
+		await waitFor(() => expect(camera).toHaveTextContent("Off"));
 		expect(camera).toBeEnabled();
 		await waitFor(() => {
 			expect(setRecordingPrefs).toHaveBeenCalledWith({ camEnabled: false });
@@ -145,7 +149,9 @@ describe("RecStage", () => {
 		renderStage();
 
 		expect(
-			await screen.findByRole("button", { name: "Please select a source to record" }),
+			await screen.findByRole("button", {
+				name: "Please select a source to record",
+			}),
 		).toBeInTheDocument();
 	});
 });

@@ -34,7 +34,7 @@ export interface RecordingWorkspaceContext {
 		| "effects"
 		| "layout"
 		| "cursor"
-		| "pauses"
+		| "audio"
 		| "automatic"
 		| "captions"
 		| "transcript";
@@ -103,7 +103,8 @@ export function normalizeRecordingWorkspaceContext(
 	const projectId = typeof raw.projectId === "string" ? raw.projectId.trim() : "";
 	const finiteNonnegative = (value: unknown): value is number =>
 		typeof value === "number" && Number.isFinite(value) && value >= 0;
-	const facet = raw.facet;
+	const facet = (raw as { facet?: unknown }).facet;
+	const normalizedFacet = facet === "pauses" ? "audio" : facet;
 	if (
 		raw.origin !== "editor" ||
 		!projectId ||
@@ -111,14 +112,14 @@ export function normalizeRecordingWorkspaceContext(
 		!finiteNonnegative(raw.currentTimeSec) ||
 		(raw.mode !== "media" && raw.mode !== "edit") ||
 		typeof raw.inspectorOpen !== "boolean" ||
-		(facet !== "background" &&
-			facet !== "effects" &&
-			facet !== "layout" &&
-			facet !== "cursor" &&
-			facet !== "pauses" &&
-			facet !== "automatic" &&
-			facet !== "captions" &&
-			facet !== "transcript")
+		(normalizedFacet !== "background" &&
+			normalizedFacet !== "effects" &&
+			normalizedFacet !== "layout" &&
+			normalizedFacet !== "cursor" &&
+			normalizedFacet !== "audio" &&
+			normalizedFacet !== "automatic" &&
+			normalizedFacet !== "captions" &&
+			normalizedFacet !== "transcript")
 	) {
 		return null;
 	}
@@ -130,7 +131,7 @@ export function normalizeRecordingWorkspaceContext(
 		currentTimeSec: raw.currentTimeSec,
 		mode: raw.mode,
 		inspectorOpen: raw.inspectorOpen,
-		facet,
+		facet: normalizedFacet,
 	};
 }
 

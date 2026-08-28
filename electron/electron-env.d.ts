@@ -388,6 +388,13 @@ interface Window {
 		getSpeechActivity: (
 			filePath: string,
 		) => Promise<import("./media/speechActivity").SpeechActivityIpcResult>;
+		getCleanVoiceRuntime: (
+			projectId: string,
+			assetIds: string[],
+		) => Promise<import("../src/lib/cleanVoiceRuntime").CleanVoiceRuntimeSnapshot>;
+		onCleanVoiceStatus: (
+			callback: (status: import("../src/lib/cleanVoiceRuntime").CleanVoiceRuntimeAsset) => void,
+		) => () => void;
 		readFileChunk: (
 			filePath: string,
 			offset: number,
@@ -459,6 +466,7 @@ interface Window {
 			shortcuts: import("../src/lib/shortcuts").ShortcutsConfig,
 		) => Promise<{ success: boolean }>;
 		onHudToggleRecordingPause: (callback: () => void) => () => void;
+		writeClipboardText: (text: string) => Promise<void>;
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;
 		setHudOverlayIgnoreMouseEvents: (ignore: boolean) => void;

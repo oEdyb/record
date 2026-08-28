@@ -125,7 +125,11 @@ vi.mock("../../hooks/useCameraPreviewStream", () => ({
 }));
 
 vi.mock("../../lib/requestCameraAccess", () => ({
-	requestCameraAccess: vi.fn(async () => ({ success: true, granted: true, status: "granted" })),
+	requestCameraAccess: vi.fn(async () => ({
+		success: true,
+		granted: true,
+		status: "granted",
+	})),
 }));
 
 vi.mock("@/native", () => ({
@@ -269,9 +273,17 @@ function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSo
 		hudOverlayClose: vi.fn(),
 		openNotes: vi.fn(),
 		switchToEditor: vi.fn(async () => undefined),
-		getRecordingWorkspaceContext: vi.fn(async () => ({ success: false, context: null })),
-		setRecordingWorkspaceContext: vi.fn(async () => ({ success: true, context: null })),
-		returnToEditorIfRecordingWorkspace: vi.fn(async () => ({ returned: false })),
+		getRecordingWorkspaceContext: vi.fn(async () => ({
+			success: false,
+			context: null,
+		})),
+		setRecordingWorkspaceContext: vi.fn(async () => ({
+			success: true,
+			context: null,
+		})),
+		returnToEditorIfRecordingWorkspace: vi.fn(async () => ({
+			returned: false,
+		})),
 		onSelectedSourceChanged: vi.fn((callback) => {
 			selectedSourceChangedListeners.push(callback);
 			return () => {
@@ -663,7 +675,9 @@ describe("LaunchWindow record button", () => {
 
 		const view = renderLaunchWindow();
 
-		const history = await screen.findByRole("img", { name: /Clip history: 0 completed clips/ });
+		const history = await screen.findByRole("img", {
+			name: /Clip history: 0 completed clips/,
+		});
 		expect(history).toBeVisible();
 		expect(history.firstElementChild?.children).toHaveLength(1);
 		recorderState.value.recording = true;
@@ -714,7 +728,11 @@ describe("LaunchWindow record button", () => {
 
 		recorderState.value.paused = true;
 		recorderState.value.recordedClips = [
-			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 1_200 },
+			{
+				index: 0,
+				screenVideoPath: "/recordings/clip-1.mp4",
+				durationMs: 1_200,
+			},
 		];
 		view.rerender(
 			<TooltipProvider>
@@ -748,7 +766,9 @@ describe("LaunchWindow record button", () => {
 
 		expect(screen.getByRole("button", { name: "tooltips.pauseRecording" })).toBeEnabled();
 		expect(screen.getByRole("button", { name: "Remove previous clip" })).toBeEnabled();
-		const history = screen.getByRole("img", { name: /Clip history: 2 completed clips/ });
+		const history = screen.getByRole("img", {
+			name: /Clip history: 2 completed clips/,
+		});
 		expect(history).toBeVisible();
 		const segments = history.firstElementChild?.children;
 		expect((segments?.[0] as HTMLElement).style.flexGrow).toBe("2200");
@@ -856,7 +876,9 @@ describe("LaunchWindow record button", () => {
 		});
 
 		renderLaunchWindow();
-		const removeButton = screen.getByRole("button", { name: "Remove previous clip" });
+		const removeButton = screen.getByRole("button", {
+			name: "Remove previous clip",
+		});
 		fireEvent.focus(removeButton);
 		expect(await screen.findByRole("tooltip")).toHaveTextContent("Remove previous clip · 00:12");
 
@@ -916,8 +938,14 @@ function stubBox(element: HTMLElement, width: number, height: number) {
 		y: 0,
 		toJSON: () => ({}),
 	});
-	Object.defineProperty(element, "scrollWidth", { value: width, configurable: true });
-	Object.defineProperty(element, "scrollHeight", { value: height, configurable: true });
+	Object.defineProperty(element, "scrollWidth", {
+		value: width,
+		configurable: true,
+	});
+	Object.defineProperty(element, "scrollHeight", {
+		value: height,
+		configurable: true,
+	});
 }
 
 async function flushResizeObservers() {
@@ -1165,8 +1193,12 @@ describe("LaunchWindow device buttons", () => {
 			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
 				systemAudioEnabled: true,
 			});
-			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ micEnabled: true });
-			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ camEnabled: true });
+			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+				micEnabled: true,
+			});
+			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+				camEnabled: true,
+			});
 		});
 	});
 });
@@ -1225,7 +1257,8 @@ describe("LaunchWindow device settings", () => {
 		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
 		const formatSelect = await screen.findByTestId("hud-webcam-format");
 
-		fireEvent.change(formatSelect, { target: { value: "3840x2160@30" } });
+		fireEvent.keyDown(formatSelect, { key: "ArrowDown" });
+		fireEvent.click(screen.getByRole("option", { name: "4K · 30 FPS" }));
 
 		expect(recorderState.value.setWebcamFormat).toHaveBeenCalledWith({
 			width: 3840,

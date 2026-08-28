@@ -24,9 +24,17 @@ import {
 } from "../captions";
 import type { AxcutDocument } from "../schema";
 import {
+	DEFAULT_AUDIO_PEAK_CEILING_DBTP,
+	DEFAULT_AUDIO_TARGET_LUFS,
 	DEFAULT_EDITOR_SETTINGS,
 	type EditorSettingsPatch,
 	type EditorSettingsSnapshot,
+	MAX_AUDIO_PEAK_CEILING_DBTP,
+	MAX_AUDIO_TARGET_LUFS,
+	MAX_SOURCE_VOLUME,
+	MIN_AUDIO_PEAK_CEILING_DBTP,
+	MIN_AUDIO_TARGET_LUFS,
+	MIN_SOURCE_VOLUME,
 	patchEditorSettings,
 } from "./editorSettings";
 
@@ -130,6 +138,7 @@ function isReusableWallpaper(value: unknown): value is string {
 function normalizeEditorDefaults(
 	value: unknown,
 	legacy: Record<string, unknown> | null,
+	legacyNormalizeVolume = DEFAULT_EDITOR_SETTINGS.normalizeVolume,
 ): EditorDefaultPreferences {
 	const raw = record(value);
 	const defaults = cloneEditorDefaults();
@@ -143,6 +152,7 @@ function normalizeEditorDefaults(
 
 	const layout = raw?.webcamLayoutPreset;
 	const mask = raw?.webcamMaskShape;
+	const audioDeliveryPreset = raw?.audioDeliveryPreset === "custom" ? "custom" : "youtube";
 	return {
 		wallpaper: isReusableWallpaper(raw?.wallpaper) ? raw.wallpaper : defaults.wallpaper,
 		aspectRatio: isAspectRatio(raw?.aspectRatio) ? raw.aspectRatio : legacyAspect,
@@ -216,6 +226,41 @@ function normalizeEditorDefaults(
 		cursorShow: booleanOr(raw?.cursorShow, defaults.cursorShow),
 		cursorTheme: normalizeCursorThemeId(raw?.cursorTheme),
 		autoFocusAll: booleanOr(raw?.autoFocusAll, defaults.autoFocusAll),
+		microphoneVolume: numberInRange(
+			raw?.microphoneVolume,
+			defaults.microphoneVolume,
+			MIN_SOURCE_VOLUME,
+			MAX_SOURCE_VOLUME,
+		),
+		microphoneMuted: booleanOr(raw?.microphoneMuted, defaults.microphoneMuted),
+		systemAudioVolume: numberInRange(
+			raw?.systemAudioVolume,
+			defaults.systemAudioVolume,
+			MIN_SOURCE_VOLUME,
+			MAX_SOURCE_VOLUME,
+		),
+		systemAudioMuted: booleanOr(raw?.systemAudioMuted, defaults.systemAudioMuted),
+		evenVolume: booleanOr(raw?.evenVolume, defaults.evenVolume),
+		normalizeVolume: booleanOr(raw?.normalizeVolume, legacyNormalizeVolume),
+		audioDeliveryPreset,
+		audioTargetLufs:
+			audioDeliveryPreset === "youtube"
+				? DEFAULT_AUDIO_TARGET_LUFS
+				: numberInRange(
+						raw?.audioTargetLufs,
+						DEFAULT_AUDIO_TARGET_LUFS,
+						MIN_AUDIO_TARGET_LUFS,
+						MAX_AUDIO_TARGET_LUFS,
+					),
+		audioPeakCeilingDbtp:
+			audioDeliveryPreset === "youtube"
+				? DEFAULT_AUDIO_PEAK_CEILING_DBTP
+				: numberInRange(
+						raw?.audioPeakCeilingDbtp,
+						DEFAULT_AUDIO_PEAK_CEILING_DBTP,
+						MIN_AUDIO_PEAK_CEILING_DBTP,
+						MAX_AUDIO_PEAK_CEILING_DBTP,
+					),
 	};
 }
 
@@ -275,15 +320,20 @@ export function loadEditingPreferences(
 	const saved = readRecord(storage, STORAGE_KEY);
 	const legacy = readRecord(storage, LEGACY_USER_PREFERENCES_KEY);
 	const isCurrent = saved?.version === 1;
+	const exportPreferences = normalizeExportPreferences(
+		isCurrent ? saved.export : null,
+		legacy,
+		readLegacyNormalizeVolume(storage),
+	);
 	return {
 		version: 1,
-		editor: normalizeEditorDefaults(isCurrent ? saved.editor : null, legacy),
-		captions: normalizeCaptionDefaults(isCurrent ? saved.captions : null),
-		export: normalizeExportPreferences(
-			isCurrent ? saved.export : null,
+		editor: normalizeEditorDefaults(
+			isCurrent ? saved.editor : null,
 			legacy,
-			readLegacyNormalizeVolume(storage),
+			exportPreferences.normalizeVolume,
 		),
+		captions: normalizeCaptionDefaults(isCurrent ? saved.captions : null),
+		export: exportPreferences,
 	};
 }
 
@@ -384,6 +434,15 @@ export function editorDefaultPreferencesToPatch(
 			theme: preferences.cursorTheme,
 		},
 		autoFocusAll: preferences.autoFocusAll,
+		microphoneVolume: preferences.microphoneVolume,
+		microphoneMuted: preferences.microphoneMuted,
+		systemAudioVolume: preferences.systemAudioVolume,
+		systemAudioMuted: preferences.systemAudioMuted,
+		evenVolume: preferences.evenVolume,
+		normalizeVolume: preferences.normalizeVolume,
+		audioDeliveryPreset: preferences.audioDeliveryPreset,
+		audioTargetLufs: preferences.audioTargetLufs,
+		audioPeakCeilingDbtp: preferences.audioPeakCeilingDbtp,
 	};
 }
 

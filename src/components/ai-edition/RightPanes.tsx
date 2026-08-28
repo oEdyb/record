@@ -6,12 +6,16 @@
 // self-sufficient).
 
 import {
+	Check,
+	Copy,
 	FileText,
 	HelpCircle,
+	Info,
 	Layout as LayoutIcon,
 	Loader2,
 	MousePointerClick,
 	Palette,
+	RotateCw,
 	Sliders,
 	Trash2,
 	Upload,
@@ -33,13 +37,15 @@ import {
 } from "react";
 import { toast } from "sonner";
 import defaultCursorPreviewUrl from "@/assets/cursors/Cursor=Default.svg";
+import { AppSelect } from "@/components/ui/app-select";
 import GradientEditor, { type GradientEditorState } from "@/components/ui/gradient-editor";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
 	MAX_WEBCAM_ZOOM,
 	MIN_WEBCAM_ZOOM,
 	type WebcamFocalPoint,
 } from "@/components/video-editor/types";
-import { useScopedT } from "@/contexts/I18nContext";
+import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import {
 	collectNativeFormats,
 	MAX_OUTPUT_DIMENSION,
@@ -60,6 +66,7 @@ import {
 	buildAggregatedSections,
 	type ClipSection,
 	type ClipWord,
+	copyableTranscriptText,
 	findCueWordId,
 	isSilenceWord,
 	type TrimRun,
@@ -69,6 +76,13 @@ import { formatMs } from "@/lib/ai-edition/timeline/format";
 import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview";
 import type { TranscriptGateReason } from "@/lib/ai-edition/transcription/status";
 import { getAssetPath } from "@/lib/assetPath";
+import {
+	isTranscriptLanguage,
+	TRANSCRIPT_LANGUAGE_CODES,
+	type TranscriptLanguage,
+	transcriptLanguageLabel,
+} from "@/lib/captioning/transcriptLanguages";
+import { writeClipboardText } from "@/lib/clipboard";
 import {
 	isWebcamBlockLayout,
 	MAX_WEBCAM_BLOCK_CAMERA_SHARE,
@@ -372,7 +386,9 @@ export function BackgroundPane() {
 									type="button"
 									key={path}
 									className={`${styles.bgThumb} ${isSelected(path) ? styles.isActive : ""}`}
-									style={{ background: `center/cover no-repeat url(${previewUrl})` }}
+									style={{
+										background: `center/cover no-repeat url(${previewUrl})`,
+									}}
 									aria-label={ts("background.imageLabel", { index: i + 1 })}
 									disabled={!hasDocument}
 									onClick={() => void set({ wallpaper: path })}
@@ -555,6 +571,7 @@ export function TranscriptPane({
 	canTranscribe,
 	isTranscribing,
 	blocked,
+	readOnly = false,
 }: {
 	clips: AxcutClip[];
 	transcripts: AxcutTranscript[];
@@ -569,15 +586,36 @@ export function TranscriptPane({
 	onSeek: (sec: number) => void;
 	onAddTrimRange: (target: TrimTarget, startSec: number, endSec: number, reason: string) => void;
 	onRemoveTrimRange: (trimId: string) => void;
-	onTranscribe: () => void;
+	onTranscribe: (language?: TranscriptLanguage) => void;
 	canTranscribe: boolean;
 	isTranscribing: boolean;
 	/** Why no transcript can be had right now, resolved over the timeline's assets
 	 *  (`resolveTranscriptGate`). Silent media disable the button; anything else
 	 *  leaves it clickable. */
 	blocked?: { reason: TranscriptGateReason; message?: string };
+	/** The calm product surface. It supports selection, copy, and click-to-seek
+	 *  without exposing transcript-driven cuts before that workflow is ready. */
+	readOnly?: boolean;
 }) {
 	const ts = useScopedT("settings");
+	const tc = useScopedT("common");
+	const te = useScopedT("editor");
+	const { locale } = useI18n();
+	const [copied, setCopied] = useState(false);
+	const relevantAssetIds = useMemo(() => new Set(clips.map((clip) => clip.assetId)), [clips]);
+	const transcriptLanguage = useMemo<TranscriptLanguage>(() => {
+		const languages = new Set(
+			transcripts
+				.filter((transcript) => relevantAssetIds.has(transcript.assetId))
+				.map((transcript) => transcript.language),
+		);
+		if (languages.size !== 1) return "auto";
+		const [language] = languages;
+		return language && isTranscriptLanguage(language) ? language : "auto";
+	}, [relevantAssetIds, transcripts]);
+	const transcriptBusy = busyAssetIds.some((assetId) => relevantAssetIds.has(assetId));
+	const [selectedLanguage, setSelectedLanguage] = useState<TranscriptLanguage>(transcriptLanguage);
+	useEffect(() => setSelectedLanguage(transcriptLanguage), [transcriptLanguage]);
 	// Subscribed here, not passed down: the playhead is rewritten every animation
 	// frame during playback, and reading it in NewEditorShell re-rendered the whole
 	// editor (timeline included) once per frame — see NativePlaybackSync there. Only
@@ -589,6 +627,18 @@ export function TranscriptPane({
 		() => buildAggregatedSections(clips, transcripts, assets, trimRanges),
 		[clips, transcripts, assets, trimRanges],
 	);
+	const copyText = useMemo(() => copyableTranscriptText(sections), [sections]);
+	useEffect(() => {
+		if (!copied) return;
+		const timer = globalThis.setTimeout(() => setCopied(false), 1_500);
+		return () => globalThis.clearTimeout(timer);
+	}, [copied]);
+	const copyTranscript = useCallback(() => {
+		if (!copyText) return;
+		void writeClipboardText(copyText)
+			.then(() => setCopied(true))
+			.catch(() => toast.error(te("chat.copyFailed")));
+	}, [copyText, te]);
 
 	// the cue position is the playback head's location in the current clip's source time.
 	// `currentTimeSec` is the RAW/document timeline (same referential as the ruler, see
@@ -619,7 +669,7 @@ export function TranscriptPane({
 			<Pane
 				title={ts("transcript.title")}
 				icon={<FileText size={14} />}
-				helpText={ts("transcript.help")}
+				helpText={ts("transcript.whisperHint")}
 				flat
 			>
 				<div
@@ -644,7 +694,13 @@ export function TranscriptPane({
 									? ts("transcript.noAudio")
 									: ts("transcript.noTranscript")}
 					</p>
-					<p style={{ font: "400 12px var(--font-body)", color: "var(--muted)", maxWidth: 260 }}>
+					<p
+						style={{
+							font: "400 12px var(--font-body)",
+							color: "var(--muted)",
+							maxWidth: 260,
+						}}
+					>
 						{blocked?.reason === "failed" && blocked.message
 							? blocked.message
 							: ts("transcript.whisperHint")}
@@ -652,7 +708,7 @@ export function TranscriptPane({
 					<button
 						type="button"
 						className={`${styles.btn} ${styles.btnPrimary}`}
-						onClick={onTranscribe}
+						onClick={() => onTranscribe()}
 						// Nothing to retry on a media with no audio track: the run would
 						// fail on the same missing track every time.
 						disabled={!canTranscribe || isTranscribing || silentMedia}
@@ -670,7 +726,49 @@ export function TranscriptPane({
 			data-inspector-layout="flat"
 		>
 			<header className={styles.paneHead}>
-				<h2>{ts("transcript.title")}</h2>
+				<h2>{ts("facets.transcript")}</h2>
+				<div
+					style={{
+						marginLeft: "auto",
+						display: "flex",
+						alignItems: "center",
+						gap: 6,
+					}}
+				>
+					<AppSelect
+						aria-label={ts("language.title")}
+						value={selectedLanguage}
+						disabled={transcriptBusy}
+						onChange={(event) => setSelectedLanguage(event.target.value as TranscriptLanguage)}
+						style={{ width: 100, height: 28, padding: "0 8px" }}
+					>
+						{TRANSCRIPT_LANGUAGE_CODES.map((language) => (
+							<option key={language} value={language}>
+								{transcriptLanguageLabel(language, locale, te("mediaStage.auto"))}
+							</option>
+						))}
+					</AppSelect>
+					<button
+						type="button"
+						className={styles.iconBtn}
+						onClick={() => onTranscribe(selectedLanguage)}
+						disabled={transcriptBusy}
+						title={te("mediaStage.regenerate")}
+						aria-label={te("mediaStage.regenerate")}
+					>
+						<RotateCw size={14} className={transcriptBusy ? "animate-spin" : undefined} />
+					</button>
+					<button
+						type="button"
+						className={styles.iconBtn}
+						onClick={copyTranscript}
+						disabled={!copyText}
+						title={tc("actions.copy")}
+						aria-label={tc("actions.copy")}
+					>
+						{copied ? <Check size={14} /> : <Copy size={14} />}
+					</button>
+				</div>
 			</header>
 			<div className={styles.paneBody}>
 				{sections.map((section, idx) => (
@@ -679,6 +777,7 @@ export function TranscriptPane({
 						index={idx}
 						section={section}
 						busy={busyAssetIds.includes(section.clip.assetId)}
+						readOnly={readOnly}
 						cueWordId={cueWordId}
 						onSeek={onSeek}
 						onAddTrimRange={onAddTrimRange}
@@ -706,6 +805,7 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 	index,
 	section,
 	busy,
+	readOnly,
 	cueWordId,
 	onSeek,
 	onAddTrimRange,
@@ -714,6 +814,7 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 	index: number;
 	section: ClipSection;
 	busy: boolean;
+	readOnly: boolean;
 	cueWordId: string | null;
 	onSeek: (sec: number) => void;
 	onAddTrimRange: (target: TrimTarget, startSec: number, endSec: number, reason: string) => void;
@@ -721,6 +822,9 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 }) {
 	const ts = useScopedT("settings");
 	const { clip, asset, words } = section;
+	const visibleWords = readOnly
+		? words.filter(({ kept, word }) => kept && !isSilenceWord(word))
+		: words;
 	// Memoised: `TranscriptWord` renders once per word, so a fresh object literal here
 	// would break referential equality for the whole stream on every parent render.
 	const trimTarget = useMemo<TrimTarget>(
@@ -1002,7 +1106,7 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 					</span>
 				) : null}
 			</span>
-			{words.length === 0 ? (
+			{visibleWords.length === 0 ? (
 				<p
 					style={{
 						margin: 0,
@@ -1017,18 +1121,18 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 			) : (
 				<div
 					ref={editorRef}
-					role="textbox"
+					role={readOnly ? "document" : "textbox"}
 					tabIndex={0}
-					contentEditable={!busy}
+					contentEditable={!busy && !readOnly}
 					aria-busy={busy}
-					aria-readonly={busy}
+					aria-readonly={busy || readOnly}
 					suppressContentEditableWarning
 					spellCheck={false}
 					aria-label={ts("transcript.editorAria", { filename })}
-					aria-multiline="true"
-					onBeforeInput={handleBeforeInput}
-					onKeyDown={handleKeyDown}
-					onPaste={handlePaste}
+					aria-multiline={readOnly ? undefined : "true"}
+					onBeforeInput={readOnly ? undefined : handleBeforeInput}
+					onKeyDown={readOnly ? undefined : handleKeyDown}
+					onPaste={readOnly ? undefined : handlePaste}
 					onPointerUp={handlePointerUp}
 					style={{
 						padding: "4px 4px",
@@ -1048,7 +1152,7 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 						// scrollbar that breaks the cue auto-scroll UX.
 					}}
 				>
-					{words.map((cw) => (
+					{visibleWords.map((cw) => (
 						<TranscriptWord
 							key={cw.id}
 							cw={cw}
@@ -1510,7 +1614,11 @@ const CAMERA_SHAPES: Array<{
 		labelKey: "layout.shapes.rectangle",
 		icon: <rect x="3" y="6" width="18" height="12" rx="1" />,
 	},
-	{ value: "circle", labelKey: "layout.shapes.circle", icon: <circle cx="12" cy="12" r="9" /> },
+	{
+		value: "circle",
+		labelKey: "layout.shapes.circle",
+		icon: <circle cx="12" cy="12" r="9" />,
+	},
 	{
 		value: "square",
 		labelKey: "layout.shapes.square",
@@ -1751,7 +1859,7 @@ export function LayoutPane() {
 			<section className={styles.inspectorSection}>
 				<div className={styles.inspectorSectionTitle}>{tt("toolbar.aspectRatio")}</div>
 				<div className={styles.layoutSelectRow}>
-					<select
+					<AppSelect
 						value={selectedFormatValue}
 						disabled={!hasDocument}
 						onChange={(event) => {
@@ -1785,7 +1893,7 @@ export function LayoutPane() {
 								))}
 							</optgroup>
 						) : null}
-					</select>
+					</AppSelect>
 				</div>
 
 				<div className={styles.resolutionControlRow}>
@@ -1879,7 +1987,12 @@ export function LayoutPane() {
 					label={ts("layout.screenPosition")}
 					centerLabel={ts("layout.resetScreenFraming")}
 					onChange={(focalPoint) => updateScreenFramingLive({ ...screenFraming, focalPoint })}
-					onReset={() => updateScreenFramingLive({ scale: 1, focalPoint: { cx: 0.5, cy: 0.5 } })}
+					onReset={() =>
+						updateScreenFramingLive({
+							scale: 1,
+							focalPoint: { cx: 0.5, cy: 0.5 },
+						})
+					}
 					onCommit={() => void commit()}
 				/>
 			</section>
@@ -1887,11 +2000,13 @@ export function LayoutPane() {
 			<section className={styles.inspectorSection}>
 				<div className={styles.inspectorSectionTitle}>{ts("layout.cameraLayout")}</div>
 				<div className={styles.layoutSelectRow}>
-					<select
+					<AppSelect
 						value={settings.webcamLayoutPreset}
 						disabled={layoutControlsDisabled}
 						onChange={(e) =>
-							void set({ webcamLayoutPreset: e.target.value as typeof settings.webcamLayoutPreset })
+							void set({
+								webcamLayoutPreset: e.target.value as typeof settings.webcamLayoutPreset,
+							})
 						}
 					>
 						{WEBCAM_PRESETS.map((p) => (
@@ -1899,7 +2014,7 @@ export function LayoutPane() {
 								{ts(p.labelKey)}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				</div>
 				{isWebcamBlockLayout(settings.webcamLayoutPreset) ? (
 					<div className={styles.inspectorFieldGroup}>
@@ -2233,15 +2348,16 @@ export function CursorPane() {
 
 // ─── primitives ───────────────────────────────────────────────────
 
-/** La pilule on/off des panneaux — exportée pour que l'inspecteur V4 l'emploie au lieu d'une
- *  case à cocher système, qui jurait avec tout le reste. */
+/** Shared on/off pill for inspector panes. */
 export function Toggle({
 	checked,
 	disabled,
+	label,
 	onChange,
 }: {
 	checked: boolean;
 	disabled?: boolean;
+	label?: string;
 	onChange: (next: boolean) => void;
 }) {
 	return (
@@ -2249,6 +2365,7 @@ export function Toggle({
 			type="button"
 			className={`${styles.toggle} ${checked ? styles.isOn : ""}`}
 			aria-pressed={checked}
+			aria-label={label}
 			disabled={disabled}
 			onClick={() => onChange(!checked)}
 		/>
@@ -2269,6 +2386,7 @@ export function SliderCell({
 	onCommit,
 	showValue = true,
 	flat = false,
+	helpText,
 }: {
 	label: string;
 	value: number;
@@ -2284,11 +2402,30 @@ export function SliderCell({
 	showValue?: boolean;
 	/** Use the continuous inspector treatment when the cell is outside a flat Pane. */
 	flat?: boolean;
+	/** Optional detail shown on hover or keyboard focus, not as permanent menu copy. */
+	helpText?: string;
 }) {
 	return (
 		<div className={`${styles.sliderCell} ${flat ? styles.isFlat : ""}`}>
 			<div className="head">
-				<span className="label">{label}</span>
+				<span className="label">
+					{label}
+					{helpText ? (
+						<Tooltip
+							content={helpText}
+							side="left"
+							className="max-w-56 whitespace-normal px-2.5 py-2 text-left leading-[1.4]"
+						>
+							<button
+								type="button"
+								className={styles.controlInfoButton}
+								aria-label={`${label}: ${helpText}`}
+							>
+								<Info size={11} />
+							</button>
+						</Tooltip>
+					) : null}
+				</span>
 				{showValue ? (
 					<span className="val">
 						{value.toFixed(decimals)}

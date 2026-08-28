@@ -102,6 +102,27 @@ describe("TransportBar reads the playhead from the store", () => {
 		);
 		expect(screen.getByText("0:04.5")).toBeInTheDocument();
 	});
+
+	it("shows compressed playback time while the store keeps raw document time", () => {
+		useProjectStore.setState({ currentTimeSec: 6 });
+		render(
+			<TestShell>
+				<TransportBar
+					playing={false}
+					overrideTimeSec={null}
+					clips={[{ ...clips[0], sourceEndSec: 8, timelineEndSec: 8 }]}
+					toDisplayTime={(rawSec) => rawSec - 2}
+					onTogglePlay={noop}
+					onPrevClip={noop}
+					onNextClip={noop}
+					onSeek={noop}
+				/>
+			</TestShell>,
+		);
+
+		expect(screen.getByText("0:04.0")).toBeInTheDocument();
+		expect(screen.getByText("0:08.0")).toBeInTheDocument();
+	});
 });
 
 describe("le drag de la barre de progression est coalescé en rAF", () => {

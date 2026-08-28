@@ -4,6 +4,7 @@ import type { EditorProjectData } from "@/components/video-editor/projectPersist
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
+import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
 import {
 	migrateProjectDataToAxcutDocument,
 	migrateRawDocumentToCurrent,
@@ -26,6 +27,8 @@ import { useUndoRedoShortcuts } from "@/lib/ai-edition/store/undo";
 import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTimelineOps";
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
+import { transcriptRelevantAssetIds } from "@/lib/ai-edition/transcription/status";
+import type { TranscriptLanguage } from "@/lib/captioning/transcriptLanguages";
 import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
 import { AUTOMATIC_TRANSCRIPTION_ENABLED, PRODUCT_SURFACE } from "@/lib/productSurface";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
@@ -33,6 +36,7 @@ import { matchesShortcut } from "@/lib/shortcuts";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
+import type { SelectablePauseSuggestion } from "./AudioPane";
 import { ExportDialog } from "./ExportDialog";
 import { LeftPanel } from "./LeftPanel";
 import {
@@ -43,7 +47,6 @@ import {
 	UnsavedChangesModal,
 	type UnsavedChoice,
 } from "./Modals";
-import type { SelectablePauseSuggestion } from "./PausesPane";
 import { Preview } from "./Preview";
 import type { TrimTarget } from "./RightPanes";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
@@ -81,6 +84,7 @@ export function NewEditorShell() {
 	const playing = useProjectStore((s) => s.playing);
 	const setPlaying = useProjectStore((s) => s.setPlaying);
 	const entitlement = useEntitlementStore((s) => s.snapshot);
+	const { routes: cleanVoiceRoutes } = useCleanVoiceRuntime(document);
 	const openEntitlement = useEntitlementStore((s) => s.openDialog);
 	const entitlementLabel = (() => {
 		switch (entitlement.status) {
@@ -166,6 +170,7 @@ export function NewEditorShell() {
 	// the ONLY place the background pass is driven from — see transcriptionStore.
 	useAutoTranscription(AUTOMATIC_TRANSCRIPTION_ENABLED);
 	const requestTimelineTranscripts = useTranscriptionStore((s) => s.requestTimelineTranscripts);
+	const requestTranscription = useTranscriptionStore((s) => s.request);
 	// Resolved over the assets the TIMELINE plays, not over the primary asset: in
 	// a recording project the primary asset is the screen capture, which is
 	// routinely silent, and keying the transcript pane off it made the pane claim
@@ -380,18 +385,22 @@ export function NewEditorShell() {
 
 	const videoSources = useMemo(() => {
 		if (!document) return [];
-		return document.assets.map((asset) => ({
-			id: asset.id,
-			// Real Electron assets are filesystem paths and go through toFileUrl.
-			// In the browser preview an asset can already point at an http(s)/
-			// blob/data URL served by Vite; toFileUrl would mangle those into a
-			// broken file:// URL, so pass web URLs through untouched.
-			src: /^(https?|blob|data):/.test(asset.originalPath)
-				? asset.originalPath
-				: toFileUrl(asset.originalPath),
-			label: asset.label,
-		}));
-	}, [document]);
+		return document.assets.map((asset) => {
+			const cleanVoice = cleanVoiceRoutes.get(asset.id);
+			return {
+				id: asset.id,
+				// Real Electron assets are filesystem paths and go through toFileUrl.
+				// In the browser preview an asset can already point at an http(s)/
+				// blob/data URL served by Vite; toFileUrl would mangle those into a
+				// broken file:// URL, so pass web URLs through untouched.
+				src: /^(https?|blob|data):/.test(asset.originalPath)
+					? asset.originalPath
+					: toFileUrl(asset.originalPath),
+				label: asset.label,
+				...(cleanVoice ? { audioSrc: toFileUrl(cleanVoice.previewAudioPath) } : {}),
+			};
+		});
+	}, [cleanVoiceRoutes, document]);
 
 	const handleLoadedMetadata = useCallback(
 		(durationSec: number, assetId: string) => {
@@ -551,15 +560,27 @@ export function NewEditorShell() {
 	// transcription store (it owns the queue, the toasts and the failure
 	// bookkeeping) — all the shell adds is bringing the transcript into view
 	// once it lands.
-	const handleTranscribe = useCallback(async () => {
-		const before = useProjectStore.getState().document?.transcripts.length ?? 0;
-		await requestTimelineTranscripts();
-		if ((useProjectStore.getState().document?.transcripts.length ?? 0) > before) {
-			setMode("edit");
-			setFacet("transcript");
-			setInspectorOpen(true);
-		}
-	}, [requestTimelineTranscripts]);
+	const handleTranscribe = useCallback(
+		async (language?: TranscriptLanguage) => {
+			const before = useProjectStore.getState().document?.transcripts.length ?? 0;
+			if (language) {
+				const currentDocument = useProjectStore.getState().document;
+				await Promise.all(
+					transcriptRelevantAssetIds(currentDocument).map((assetId) =>
+						requestTranscription(assetId, language),
+					),
+				);
+			} else {
+				await requestTimelineTranscripts();
+			}
+			if ((useProjectStore.getState().document?.transcripts.length ?? 0) > before) {
+				setMode("edit");
+				setFacet("transcript");
+				setInspectorOpen(true);
+			}
+		},
+		[requestTimelineTranscripts, requestTranscription],
+	);
 
 	const handleBrowseProject = useCallback(async () => {
 		try {
@@ -1264,6 +1285,7 @@ export function NewEditorShell() {
 		onTranscribe: handleTranscribe,
 		canTranscribe: hasAsset,
 		isTranscribing: transcriptGate.state === "pending",
+		readOnly: true,
 		blocked:
 			transcriptGate.state === "blocked" && transcriptGate.reason
 				? { reason: transcriptGate.reason, message: transcriptGate.message }
@@ -1272,11 +1294,14 @@ export function NewEditorShell() {
 	const previewTrimRanges = pausePreviewSuggestions
 		? [...tl.trimRanges, ...pauseSuggestionsAsTrims(pausePreviewSuggestions)]
 		: tl.trimRanges;
+	const inspectorExpanded = inspectorOpen || tl.selection !== null;
 
 	return (
 		<div
 			className={v4.app}
-			style={{ gridTemplateRows: `58px 1fr ${showTimeline ? timelineRow : "0px"}` }}
+			style={{
+				gridTemplateRows: `var(--editor-topbar-h) 1fr ${showTimeline ? timelineRow : "0px"}`,
+			}}
 		>
 			<EditorTopBar
 				mode={visibleMode}
@@ -1326,30 +1351,7 @@ export function NewEditorShell() {
 				<section className={v4.stage} aria-label={te("shell.previewStage")}>
 					{visibleMode === "edit" ? (
 						<>
-							<div
-								style={{
-									position: "absolute",
-									inset: 0,
-									// Right padding reserves just enough room for the floating
-									// inspector (facet rail ~74px, or the full panel ~320px when
-									// open) so the video resizes into the remaining space instead
-									// of sitting underneath it. Nothing floats over the other
-									// edges — playback transport lives in the timeline header
-									// (TransportBar, rendered from V4Timeline) instead of
-									// overlaying the preview — so top/bottom/left only need a
-									// thin margin off the stage's rounded corners, not a large
-									// fixed chunk that dwarfs the card on smaller windows.
-									//
-									// Native compositor: the D3D overlay is an opaque, always-on-top
-									// design lets the translucent panel float over the video, but the
-									// preview is now a plain in-DOM <canvas> (no OS window/airspace
-									// issue) — still reserve the inspector's real footprint (right:20 +
-									// rail:50 + gap:10 + panel:300 ≈ 380, +a small gap) so it doesn't
-									// draw its own translucent panel flush against the canvas edge.
-									padding: `16px ${inspectorOpen ? 432 : 74}px 16px 16px`,
-									boxSizing: "border-box",
-								}}
-							>
+							<div className={v4.previewWorkspace} data-inspector-open={inspectorExpanded}>
 								<Preview
 									hasProject={hasProject}
 									hasAsset={hasAsset}

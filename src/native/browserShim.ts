@@ -126,6 +126,7 @@ function createShimElectronAPI() {
 		openEntitlementCheckout: () => Promise.resolve({ opened: false }),
 		openEntitlementManagement: () => Promise.resolve({ opened: false }),
 		onEntitlementChanged: () => () => undefined,
+		writeClipboardText: (text: string) => navigator.clipboard.writeText(text),
 		openVideoFilePicker: pickVideoFileViaInput,
 		openProjectFile: () => Promise.resolve({ success: false, canceled: true }),
 		pickExportSavePath: () => Promise.resolve({ success: false, canceled: true }),

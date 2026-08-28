@@ -12,6 +12,7 @@ import {
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { splitRoundedTime } from "@/lib/ai-edition/timeline/format";
 import type { AssetTranscriptionView } from "@/lib/ai-edition/transcription/status";
+import { writeClipboardText } from "@/lib/clipboard";
 import { nativeBridgeClient } from "@/native/client";
 import type {
 	AiEditionChatEvent,
@@ -1615,7 +1616,7 @@ function ChatStripPanel() {
 										title={t("chat.copyMessage")}
 										aria-label={t("chat.copyMessage")}
 										onClick={() => {
-											void navigator.clipboard.writeText(m.content).then(
+											void writeClipboardText(m.content).then(
 												() => toast.success(t("chat.copiedToClipboard")),
 												() => toast.error(t("chat.copyFailed")),
 											);

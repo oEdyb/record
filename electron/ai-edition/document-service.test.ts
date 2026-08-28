@@ -29,9 +29,9 @@ describe("DocumentService", () => {
 	});
 
 	describe("createProject", () => {
-		it("creates a v7 doc with the given title and writes it to disk", async () => {
+		it("creates a v8 doc with the given title and writes it to disk", async () => {
 			const doc = await service.createProject("Demo Project");
-			expect(doc.schemaVersion).toBe(7);
+			expect(doc.schemaVersion).toBe(8);
 			expect(doc.project.title).toBe("Demo Project");
 			expect(doc.project.id).toMatch(/^proj_/);
 			expect(doc.assets).toEqual([]);
@@ -47,6 +47,46 @@ describe("DocumentService", () => {
 		it("falls back to 'Untitled Project' for empty titles", async () => {
 			const doc = await service.createProject("   ");
 			expect(doc.project.title).toBe("Untitled Project");
+		});
+
+		it("schedules derived media only after the project is readable from disk", async () => {
+			let resolveNotification!: () => void;
+			const notification = new Promise<void>((resolve) => {
+				resolveNotification = resolve;
+			});
+			const scheduled: AxcutDocument[] = [];
+			service = new DocumentService(tempDir, mediaDir, {
+				onDocumentReady: async (document) => {
+					const filePath = path.join(tempDir, `${document.project.id}.klippt`);
+					const persisted = JSON.parse(await fs.readFile(filePath, "utf8")) as AxcutDocument;
+					expect(persisted.project.id).toBe(document.project.id);
+					scheduled.push(document);
+					resolveNotification();
+				},
+			});
+
+			const document = await service.createProject("Durable first");
+			await notification;
+
+			expect(scheduled.map((item) => item.project.id)).toEqual([document.project.id]);
+		});
+
+		it("does not fail a project save when optional derived-media scheduling fails", async () => {
+			const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+			service = new DocumentService(tempDir, mediaDir, {
+				onDocumentReady: () => {
+					throw new Error("worker unavailable");
+				},
+			});
+
+			await expect(service.createProject("Raw stays safe")).resolves.toMatchObject({
+				project: { title: "Raw stays safe" },
+			});
+			expect(warning).toHaveBeenCalledWith(
+				"[ai-edition] post-save media scheduling failed:",
+				expect.any(Error),
+			);
+			warning.mockRestore();
 		});
 	});
 

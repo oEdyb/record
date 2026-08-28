@@ -37,7 +37,12 @@ function makeStackedCameraDocument(): AxcutDocument {
 				kind: "video",
 				label: "Recording",
 				originalPath: "/screen.mp4",
-				cameraTrack: { sourcePath: "/camera.mp4", startMs: 0, offsetMs: 0, visible: true },
+				cameraTrack: {
+					sourcePath: "/camera.mp4",
+					startMs: 0,
+					offsetMs: 0,
+					visible: true,
+				},
 			},
 		],
 		transcript: null,
@@ -106,13 +111,23 @@ describe("right-rail panes are localized", () => {
 	});
 
 	it("renders the layout pane in Japanese", () => {
+		const document = makeStackedCameraDocument();
+		document.legacyEditor = {
+			...document.legacyEditor,
+			webcamLayoutPreset: "picture-in-picture",
+		};
+		useProjectStore.setState({
+			projectId: document.project.id,
+			document,
+			status: "ready",
+		});
 		renderIn("ja-JP", <LayoutPane />);
 		const heading = screen.getByRole("heading", { name: "レイアウト" });
 		expect(heading).toBeInTheDocument();
 		expect(heading.closest('[data-inspector-layout="flat"]')).toBeInTheDocument();
-		// the preset <option> labels come from the shared layout.* catalog
-		expect(screen.getByRole("option", { name: "ピクチャーインピクチャ" })).toBeInTheDocument();
-		expect(screen.getByRole("option", { name: "9:16" })).toBeInTheDocument();
+		const [aspectRatio, cameraLayout] = screen.getAllByRole("combobox");
+		expect(aspectRatio).toHaveTextContent("9:16");
+		expect(cameraLayout).toHaveTextContent("ピクチャーインピクチャ");
 		expect(screen.queryByRole("button", { name: "9:16" })).not.toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "カスタム" })).toBeInTheDocument();
 		expect(screen.getByText("カメラのズーム")).toBeInTheDocument();

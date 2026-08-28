@@ -21,7 +21,6 @@ import { KlipptMark } from "@/components/brand/KlipptMark";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useTheme } from "@/hooks/useTheme";
 import { getAvailableLocales, getLocaleName, getLocaleShort } from "@/i18n/loader";
-import { APP_DISPLAY_NAME } from "@/lib/brand";
 import { PRODUCT_SURFACE } from "@/lib/productSurface";
 import styles from "./EditorShellV4.module.css";
 
@@ -112,9 +111,6 @@ export function EditorTopBar({
 			</span>
 			<span className={styles.brand}>
 				<KlipptMark className={styles.brandMark} />
-				<span className={styles.name} translate="no">
-					{APP_DISPLAY_NAME}
-				</span>
 			</span>
 			<span className={styles.sep} aria-hidden />
 			<ProjectNameField

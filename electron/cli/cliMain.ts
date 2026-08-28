@@ -13,6 +13,7 @@ import type {
 	CliRequest,
 	CliSourcesResult,
 } from "../../src/lib/cliContracts";
+import { formatExportEta } from "../../src/lib/exporter/mp4ExportSettings";
 import {
 	consumeCurrentRecordingSession,
 	getSelectedDesktopSource,
@@ -87,7 +88,7 @@ function createOutput(json: boolean): CliOutput {
 					: "";
 			const eta =
 				p.estimatedTimeRemaining !== undefined && Number.isFinite(p.estimatedTimeRemaining)
-					? ` ETA ${Math.max(0, Math.round(p.estimatedTimeRemaining))}s`
+					? ` ETA ${formatExportEta(p.estimatedTimeRemaining)}`
 					: "";
 			const phase = p.phase ? ` [${p.phase}]` : "";
 			const text = `Exporting ${Math.round(p.percentage)}%${frames}${eta}${phase}`;
@@ -157,7 +158,7 @@ async function registerAppHandlersForCli(cliWindowRef: () => BrowserWindow | nul
 		undefined,
 		// A CLI invocation must not claim or replace an interrupted GUI session.
 		// The GUI will restore that journal on its next normal launch.
-		{ restoreInterruptedRecording: false },
+		{ restoreInterruptedRecording: false, enableCleanVoiceJobs: false },
 	);
 }
 

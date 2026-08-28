@@ -9,10 +9,14 @@ import type { AxcutClip, AxcutTrimRange } from "../schema";
 import {
 	anchorRawRegionsToClips,
 	anchorRegionsWithDerivedMs,
+	buildTimelinePlaybackProjection,
 	clampSpanAgainstNeighbours,
 	coalesceByIdentity,
 	coalesceRegionsForRuler,
+	playbackTimeToRawTime,
+	projectRawSpanToPlaybackSpan,
 	projectRegionsToSource,
+	rawTimeToPlaybackTime,
 	regionIdentityKey,
 	replacePillSpan,
 	resolveNativePosition,
@@ -44,6 +48,42 @@ const region = (id: string, startSec: number, endSec: number, payload?: string):
 	startMs: startSec * 1000,
 	endMs: endSec * 1000,
 	...(payload ? { payload } : {}),
+});
+
+describe("timeline playback projection", () => {
+	const rawClip = clip({
+		id: "c1",
+		assetId: "a",
+		sourceStartSec: 0,
+		sourceEndSec: 10,
+		timelineStartSec: 0,
+		timelineEndSec: 10,
+	});
+	const visible = resolvePlaybackSegments([rawClip], [trim("a", 2, 4)]);
+	const projection = buildTimelinePlaybackProjection(visible, [rawClip]);
+
+	it("collapses removed media to one playback seam", () => {
+		expect(projection).toMatchObject([
+			{ rawStartSec: 0, rawEndSec: 2, playbackStartSec: 0, playbackEndSec: 2 },
+			{ rawStartSec: 4, rawEndSec: 10, playbackStartSec: 2, playbackEndSec: 8 },
+		]);
+		expect(rawTimeToPlaybackTime(3, projection)).toBe(2);
+		expect(rawTimeToPlaybackTime(6, projection)).toBe(4);
+	});
+
+	it("resolves both sides of an ambiguous cut seam", () => {
+		expect(playbackTimeToRawTime(2, projection, "before")).toBe(2);
+		expect(playbackTimeToRawTime(2, projection, "after")).toBe(4);
+		expect(playbackTimeToRawTime(4.5, projection)).toBe(6.5);
+	});
+
+	it("projects effects through cuts and hides effects fully inside removed media", () => {
+		expect(projectRawSpanToPlaybackSpan(1, 6, projection)).toEqual({
+			startSec: 1,
+			endSec: 4,
+		});
+		expect(projectRawSpanToPlaybackSpan(2.5, 3.5, projection)).toBeNull();
+	});
 });
 
 describe("projectRegionsToSource", () => {

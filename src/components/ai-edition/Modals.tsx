@@ -20,47 +20,21 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { AppSelect } from "@/components/ui/app-select";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type { CropRegion } from "@/components/video-editor/types";
-import { useScopedT } from "@/contexts/I18nContext";
+import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { toAxcutTranscriptDsl } from "@/lib/ai-edition/document/transcribe";
 import type { AxcutClip, AxcutTranscript } from "@/lib/ai-edition/schema";
 import { formatSec, formatSeconds } from "@/lib/ai-edition/timeline/format";
+import {
+	isTranscriptLanguage,
+	TRANSCRIPT_LANGUAGE_CODES,
+	type TranscriptLanguage,
+	transcriptLanguageLabel,
+} from "@/lib/captioning/transcriptLanguages";
 import styles from "./NewEditorShell.module.css";
 import type { VideoSource } from "./VirtualPreview";
-
-// ponytail: keep the UI's language list literal in one place. Mirrors
-// `transcriptLanguageSchema` in schema/index.ts; if the schema gains a
-// language, add it here too.
-const REGEN_LANGUAGES = [
-	"auto",
-	"en",
-	"fr",
-	"de",
-	"es",
-	"it",
-	"pt",
-	"nl",
-	"ja",
-	"ko",
-	"zh",
-] as const;
-
-type TranscriptLanguage = (typeof REGEN_LANGUAGES)[number];
-
-const LANGUAGE_LABELS: Record<TranscriptLanguage, string> = {
-	auto: "Auto",
-	en: "EN",
-	fr: "FR",
-	de: "DE",
-	es: "ES",
-	it: "IT",
-	pt: "PT",
-	nl: "NL",
-	ja: "JA",
-	ko: "KO",
-	zh: "ZH",
-};
 
 interface BaseModalProps {
 	open: boolean;
@@ -166,7 +140,14 @@ export function OpenProjectModal({
 			subtitle={t("openProjectDialog.subtitle")}
 			wide
 		>
-			<div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					marginBottom: 12,
+				}}
+			>
 				<FolderOpen size={14} style={{ color: "var(--muted)" }} />
 				<input
 					type="search"
@@ -202,7 +183,14 @@ export function OpenProjectModal({
 				}}
 			>
 				{filtered.length === 0 ? (
-					<p style={{ color: "var(--muted)", fontSize: 12, padding: 16, textAlign: "center" }}>
+					<p
+						style={{
+							color: "var(--muted)",
+							fontSize: 12,
+							padding: 16,
+							textAlign: "center",
+						}}
+					>
 						{t("openProjectDialog.noMatches", { query })}
 					</p>
 				) : (
@@ -572,7 +560,11 @@ function TemplateCell({
 
 // `ratio` is width/height (matches the label directly: "16:9" → 16/9 means
 // a region 16 units wide for every 9 tall).
-const CROP_RATIOS: Array<{ value: string; label: string; ratio: number | null }> = [
+const CROP_RATIOS: Array<{
+	value: string;
+	label: string;
+	ratio: number | null;
+}> = [
 	{ value: "free", label: "Free", ratio: null },
 	{ value: "16:9", label: "16:9", ratio: 16 / 9 },
 	{ value: "9:16", label: "9:16", ratio: 9 / 16 },
@@ -603,7 +595,12 @@ function detectRatio(r: CropRegion, videoAspectRatio: number): string {
 // is `fr` (= width/height, already converted from the visual ratio through the
 // source's pixel aspect ratio), centered on whichever axis has slack. One
 // dimension fills the frame; the other is derived so the result never overflows.
-function centeredFitPct(fr: number): { x: number; y: number; w: number; h: number } {
+function centeredFitPct(fr: number): {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+} {
 	if (!(fr > 0)) return { x: 0, y: 0, w: 100, h: 100 };
 	if (fr >= 1) {
 		const h = 100 / fr;
@@ -616,7 +613,12 @@ function centeredFitPct(fr: number): { x: number; y: number; w: number; h: numbe
 const MIN_PCT = 4;
 const clampPct = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-type ResizeEdges = { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean };
+type ResizeEdges = {
+	left?: boolean;
+	right?: boolean;
+	top?: boolean;
+	bottom?: boolean;
+};
 
 function CropField({
 	label,
@@ -1052,23 +1054,44 @@ export function EditClipModal({
 				>
 					<div
 						onPointerDown={startCropResize({ left: true, top: true })}
-						style={cropHandleStyle({ left: -5, top: -5, cursor: "nwse-resize" })}
+						style={cropHandleStyle({
+							left: -5,
+							top: -5,
+							cursor: "nwse-resize",
+						})}
 					/>
 					<div
 						onPointerDown={startCropResize({ right: true, top: true })}
-						style={cropHandleStyle({ right: -5, top: -5, cursor: "nesw-resize" })}
+						style={cropHandleStyle({
+							right: -5,
+							top: -5,
+							cursor: "nesw-resize",
+						})}
 					/>
 					<div
 						onPointerDown={startCropResize({ left: true, bottom: true })}
-						style={cropHandleStyle({ left: -5, bottom: -5, cursor: "nesw-resize" })}
+						style={cropHandleStyle({
+							left: -5,
+							bottom: -5,
+							cursor: "nesw-resize",
+						})}
 					/>
 					<div
 						onPointerDown={startCropResize({ right: true, bottom: true })}
-						style={cropHandleStyle({ right: -5, bottom: -5, cursor: "nwse-resize" })}
+						style={cropHandleStyle({
+							right: -5,
+							bottom: -5,
+							cursor: "nwse-resize",
+						})}
 					/>
 					<div
 						onPointerDown={startCropResize({ top: true })}
-						style={cropHandleStyle({ left: "50%", top: -5, marginLeft: -5, cursor: "ns-resize" })}
+						style={cropHandleStyle({
+							left: "50%",
+							top: -5,
+							marginLeft: -5,
+							cursor: "ns-resize",
+						})}
 					/>
 					<div
 						onPointerDown={startCropResize({ bottom: true })}
@@ -1081,7 +1104,12 @@ export function EditClipModal({
 					/>
 					<div
 						onPointerDown={startCropResize({ left: true })}
-						style={cropHandleStyle({ top: "50%", left: -5, marginTop: -5, cursor: "ew-resize" })}
+						style={cropHandleStyle({
+							top: "50%",
+							left: -5,
+							marginTop: -5,
+							cursor: "ew-resize",
+						})}
 					/>
 					<div
 						onPointerDown={startCropResize({ right: true })}
@@ -1230,7 +1258,14 @@ export function EditClipModal({
 					<CropField label={t("cropDialog.fieldY")} value={cropYPct} onChange={applyCropY} />
 					<CropField label={t("cropDialog.fieldW")} value={cropWPct} onChange={applyCropW} />
 					<CropField label={t("cropDialog.fieldH")} value={cropHPct} onChange={applyCropH} />
-					<div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 110 }}>
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: 4,
+							minWidth: 110,
+						}}
+					>
 						<label
 							style={{
 								font: "600 10px/1 var(--font-mono)",
@@ -1241,7 +1276,7 @@ export function EditClipModal({
 						>
 							{ts("crop.ratio")}
 						</label>
-						<select
+						<AppSelect
 							value={cropRatio}
 							onChange={(e) => handleCropRatioChange(e.target.value)}
 							style={{
@@ -1260,7 +1295,7 @@ export function EditClipModal({
 									{r.value === "free" ? ts("crop.free") : r.label}
 								</option>
 							))}
-						</select>
+						</AppSelect>
 					</div>
 					<span
 						style={{
@@ -1357,7 +1392,14 @@ export function UnsavedChangesModal({
 	};
 	return (
 		<ModalShell open={open} onClose={onClose} title={copy.title} subtitle={copy.body}>
-			<div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 10,
+					marginBottom: 4,
+				}}
+			>
 				<span
 					style={{
 						display: "grid",
@@ -1542,19 +1584,28 @@ export function SourceTranscriptModal({
 }: SourceTranscriptModalProps) {
 	const t = useScopedT("editor");
 	const tc = useScopedT("common");
+	const { locale } = useI18n();
 	const videoRef = useRef<HTMLVideoElement | null>(null);
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [playTime, setPlayTime] = useState(0);
 	const [duration, setDuration] = useState<number | null>(null);
 	const [regenLang, setRegenLang] = useState<TranscriptLanguage>(
-		(transcript?.language as TranscriptLanguage) ?? "auto",
+		transcript?.language && isTranscriptLanguage(transcript.language)
+			? transcript.language
+			: "auto",
 	);
 
 	// ponytail: sync the language picker to whatever the stored transcript was
 	// generated with. Avoids surprising the user with a different selection on
 	// every open after a regenerate.
 	useEffect(() => {
-		if (open) setRegenLang((transcript?.language as TranscriptLanguage) ?? "auto");
+		if (open) {
+			setRegenLang(
+				transcript?.language && isTranscriptLanguage(transcript.language)
+					? transcript.language
+					: "auto",
+			);
+		}
 	}, [open, transcript?.language]);
 
 	useEffect(() => {
@@ -1810,7 +1861,14 @@ export function SourceTranscriptModal({
 						)}
 					</div>
 				</div>
-				<div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						gap: 12,
+						minWidth: 0,
+					}}
+				>
 					<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
 						<span
 							style={{
@@ -1852,7 +1910,9 @@ export function SourceTranscriptModal({
 									border: "1px solid color-mix(in srgb, var(--success) 22%, transparent)",
 								}}
 							>
-								{t("mediaStage.detectedLanguage", { language: detectedLanguage })}
+								{t("mediaStage.detectedLanguage", {
+									language: detectedLanguage,
+								})}
 							</span>
 						) : null}
 					</div>
@@ -1873,7 +1933,7 @@ export function SourceTranscriptModal({
 								alignItems: "center",
 							}}
 						>
-							<select
+							<AppSelect
 								aria-label={t("mediaStage.regenerateAs")}
 								value={regenLang}
 								disabled={isTranscribing}
@@ -1888,12 +1948,12 @@ export function SourceTranscriptModal({
 									font: "500 13px var(--font-body)",
 								}}
 							>
-								{REGEN_LANGUAGES.map((code) => (
+								{TRANSCRIPT_LANGUAGE_CODES.map((code) => (
 									<option key={code} value={code}>
-										{code === "auto" ? t("mediaStage.auto") : LANGUAGE_LABELS[code]}
+										{transcriptLanguageLabel(code, locale, t("mediaStage.auto"))}
 									</option>
 								))}
-							</select>
+							</AppSelect>
 							<button
 								type="button"
 								title={t("mediaStage.regenerate")}
@@ -1964,7 +2024,12 @@ export function SourceTranscriptModal({
 }
 
 export interface ChatHistoryModalProps extends BaseModalProps {
-	sessions: Array<{ id: string; title: string; messageCount: number; createdAt: string }>;
+	sessions: Array<{
+		id: string;
+		title: string;
+		messageCount: number;
+		createdAt: string;
+	}>;
 	activeSessionId: string | null;
 	onSelect: (id: string) => void;
 	onNew: () => void;
@@ -2027,7 +2092,12 @@ export function ChatHistoryModal({
 								}}
 							>
 								<span style={{ fontWeight: isActive ? 600 : 500 }}>{s.title}</span>
-								<span style={{ font: "500 11px/1 var(--font-mono)", color: "var(--muted)" }}>
+								<span
+									style={{
+										font: "500 11px/1 var(--font-mono)",
+										color: "var(--muted)",
+									}}
+								>
 									{t("chat.historyDialog.msgsCount", {
 										count: s.messageCount,
 										date: new Date(s.createdAt).toLocaleDateString(),
