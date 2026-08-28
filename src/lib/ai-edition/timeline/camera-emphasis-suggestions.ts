@@ -55,7 +55,12 @@ export const DEFAULT_CAMERA_EMPHASIS_POLICY: CameraEmphasisPolicy = {
 	cameraScale: 1.35,
 };
 
-type Span = { start: number; end: number };
+type Span = {
+	start: number;
+	end: number;
+	directionGroupId?: string;
+	directionKind?: "screen" | "camera";
+};
 
 type PlaybackTimeSegment = {
 	rawStart: number;
@@ -92,6 +97,11 @@ function detectCursorActivity(
 	const pathByBucket = new Float32Array(bucketCount);
 	const clicked = new Uint8Array(bucketCount);
 	for (const sample of cursor) {
+		if (sample.directionContextChanged) {
+			const bucket = Math.min(bucketCount - 1, Math.floor(sample.timeMs / policy.motionBucketMs));
+			clicked[bucket] = 1;
+			continue;
+		}
 		if (sample.directionExcluded) continue;
 		if (!sample.interactionType || sample.interactionType === "move") continue;
 		const bucket = Math.min(bucketCount - 1, Math.floor(sample.timeMs / policy.motionBucketMs));
@@ -157,21 +167,30 @@ function projectSpanToPlayback(span: Span, segments: PlaybackTimeSegment[]): Pla
 				start: segment.playbackStart + rawStart - segment.rawStart,
 				end: segment.playbackStart + rawEnd - segment.rawStart,
 				segmentKey: segment.segmentKey,
+				directionGroupId: span.directionGroupId,
+				directionKind: span.directionKind,
 			},
 		];
 	});
 }
 
 function countSequences(spans: Span[]) {
-	return sequenceCenters(spans).length;
+	return sequenceEntrances(spans).length;
 }
 
 function mergeConnectedSpans(spans: PlaybackSpan[], maximumGapMs: number) {
 	const merged: PlaybackSpan[] = [];
 	for (const span of [...spans].sort((left, right) => left.start - right.start)) {
 		const previous = merged.at(-1);
+		const groupsCanConnect =
+			previous &&
+			previous.directionKind === span.directionKind &&
+			((previous.directionGroupId === undefined && span.directionGroupId === undefined) ||
+				(previous.directionGroupId !== undefined &&
+					previous.directionGroupId === span.directionGroupId));
 		if (
 			previous &&
+			groupsCanConnect &&
 			previous.segmentKey === span.segmentKey &&
 			span.start <= previous.end + maximumGapMs
 		) {
@@ -183,28 +202,42 @@ function mergeConnectedSpans(spans: PlaybackSpan[], maximumGapMs: number) {
 	return merged;
 }
 
-function sequenceCenters(spans: Array<Span & { segmentKey?: string }>) {
-	const centers: number[] = [];
+function sequenceEntrances(spans: Array<Span & { segmentKey?: string }>) {
+	const entrances: number[] = [];
 	let occupiedFrom = Number.NEGATIVE_INFINITY;
 	let occupiedUntil = Number.NEGATIVE_INFINITY;
 	let occupiedSegmentKey: string | undefined;
+	let occupiedGroupId: string | undefined;
+	let occupiedKind: Span["directionKind"];
 	for (const span of [...spans].sort((a, b) => a.start - b.start)) {
-		if (span.segmentKey !== occupiedSegmentKey || span.start > occupiedUntil + 1) {
-			if (Number.isFinite(occupiedFrom)) centers.push((occupiedFrom + occupiedUntil) / 2);
+		const groupsCanConnect =
+			occupiedKind === span.directionKind &&
+			((occupiedGroupId === undefined && span.directionGroupId === undefined) ||
+				(occupiedGroupId !== undefined && occupiedGroupId === span.directionGroupId));
+		if (
+			span.segmentKey !== occupiedSegmentKey ||
+			!groupsCanConnect ||
+			span.start > occupiedUntil + 1
+		) {
+			if (Number.isFinite(occupiedFrom)) entrances.push(occupiedFrom);
 			occupiedFrom = span.start;
+			occupiedUntil = span.end;
 			occupiedSegmentKey = span.segmentKey;
+			occupiedGroupId = span.directionGroupId;
+			occupiedKind = span.directionKind;
+			continue;
 		}
 		occupiedUntil = Math.max(occupiedUntil, span.end);
 	}
-	if (Number.isFinite(occupiedFrom)) centers.push((occupiedFrom + occupiedUntil) / 2);
-	return centers;
+	if (Number.isFinite(occupiedFrom)) entrances.push(occupiedFrom);
+	return entrances;
 }
 
 function staysWithinRollingBudget(spans: Span[], maximumPerMinute: number) {
-	const centers = sequenceCenters(spans);
+	const entrances = sequenceEntrances(spans);
 	let left = 0;
-	for (let right = 0; right < centers.length; right += 1) {
-		while (centers[right] - centers[left] >= 60_000) left += 1;
+	for (let right = 0; right < entrances.length; right += 1) {
+		while (entrances[right] - entrances[left] >= 60_000) left += 1;
 		if (right - left + 1 > maximumPerMinute) return false;
 	}
 	return true;
@@ -226,7 +259,11 @@ export function buildAutoCameraEmphasisSuggestionsForTimeline(options: {
 	clips: AxcutClip[];
 	trimRanges?: AxcutTrimRange[];
 	occupiedScreenDirections?: Span[];
-	existingCameraRegions?: { startMs: number; endMs: number }[];
+	existingCameraRegions?: {
+		startMs: number;
+		endMs: number;
+		directionGroupId?: string;
+	}[];
 	policy?: CameraEmphasisPolicy;
 }): AutoCameraEmphasisSuggestion[] {
 	const policy = options.policy ?? DEFAULT_CAMERA_EMPHASIS_POLICY;
@@ -235,6 +272,7 @@ export function buildAutoCameraEmphasisSuggestionsForTimeline(options: {
 	const existingCamera = (options.existingCameraRegions ?? []).map((region) => ({
 		start: region.startMs,
 		end: region.endMs,
+		directionGroupId: region.directionGroupId,
 	}));
 	let visibleDurationMs = 0;
 	const playbackTimeSegments: PlaybackTimeSegment[] = [];
@@ -332,16 +370,11 @@ export function buildAutoCameraEmphasisSuggestionsForTimeline(options: {
 		}
 	}
 
-	const cameraLimit = Math.max(1, Math.ceil((visibleDurationMs / 60_000) * policy.maxPerMinute));
-	const totalLimit = Math.max(
-		1,
-		Math.ceil((visibleDurationMs / 60_000) * policy.maxTotalDirectionPerMinute),
-	);
 	const visibleExistingCamera = existingCamera.flatMap((span) =>
-		projectSpanToPlayback(span, playbackTimeSegments),
+		projectSpanToPlayback({ ...span, directionKind: "camera" }, playbackTimeSegments),
 	);
 	const visibleOccupiedScreen = occupiedScreen.flatMap((span) =>
-		projectSpanToPlayback(span, playbackTimeSegments),
+		projectSpanToPlayback({ ...span, directionKind: "screen" }, playbackTimeSegments),
 	);
 	const visibleScreenSequences = mergeConnectedSpans(
 		visibleOccupiedScreen,
@@ -352,9 +385,16 @@ export function buildAutoCameraEmphasisSuggestionsForTimeline(options: {
 		...visibleScreenSequences,
 		...visibleExistingCamera,
 	]);
+	const shortProjectLimit = (perMinute: number) =>
+		visibleDurationMs < 60_000
+			? Math.max(1, Math.ceil((visibleDurationMs / 60_000) * perMinute))
+			: Number.POSITIVE_INFINITY;
 	const available = Math.max(
 		0,
-		Math.min(cameraLimit - existingCameraCount, totalLimit - existingDirectionCount),
+		Math.min(
+			shortProjectLimit(policy.maxPerMinute) - existingCameraCount,
+			shortProjectLimit(policy.maxTotalDirectionPerMinute) - existingDirectionCount,
+		),
 	);
 	if (available === 0) return [];
 	const selected: typeof candidates = [];
@@ -366,9 +406,12 @@ export function buildAutoCameraEmphasisSuggestionsForTimeline(options: {
 		if (hardBlockers.some((span) => overlaps(span, candidate.span))) continue;
 		if (selected.some((other) => overlaps(other.span, candidate.span))) continue;
 		const selectedPlayback = selected.flatMap((item) =>
-			projectSpanToPlayback(item.span, playbackTimeSegments),
+			projectSpanToPlayback({ ...item.span, directionKind: "camera" }, playbackTimeSegments),
 		);
-		const candidatePlayback = projectSpanToPlayback(candidate.span, playbackTimeSegments);
+		const candidatePlayback = projectSpanToPlayback(
+			{ ...candidate.span, directionKind: "camera" },
+			playbackTimeSegments,
+		);
 		if (candidatePlayback.length === 0) continue;
 		// Repeated camera emphasis needs more breathing room than a return from
 		// screen focus. Cursor quiet is already required before this shorter

@@ -175,7 +175,7 @@ describe("automatic direction", () => {
 		expect(zoom.customScale).toBeLessThan(1.8);
 	});
 
-	it("ignores a fast cursor fly-by after a click", () => {
+	it("ends a fixed click zoom before a later fast cursor fly-by", () => {
 		const candidates = detectClickDirectionCandidates({
 			cursor: [
 				point(1_000, 0.5, 0.5, "click"),
@@ -188,12 +188,11 @@ describe("automatic direction", () => {
 		});
 
 		expect(candidates).toHaveLength(1);
-		expect(candidates[0].focus.cx).toBeCloseTo(0.5, 2);
-		expect(candidates[0].focus.cy).toBeCloseTo(0.5, 2);
-		expect(candidates[0].customScale).toBe(1.65);
+		expect(candidates[0].customScale).toBeGreaterThanOrEqual(1.35);
+		expect(candidates[0].span.end).toBeLessThan(1_950);
 	});
 
-	it("keeps a click zoom when the pointer quickly moves away and parks there", () => {
+	it("rejects a fixed click zoom when the pointer moves outside its crop and parks there", () => {
 		const candidates = detectClickDirectionCandidates({
 			cursor: [
 				point(1_000, 0.18, 0.5, "click"),
@@ -208,37 +207,64 @@ describe("automatic direction", () => {
 			preferredZoomDurationMs: 2_000,
 		});
 
-		expect(candidates).toHaveLength(1);
-		const zoom = candidates[0];
-		const halfViewport = 0.5 / zoom.customScale;
-		expect(zoom.focus.cx - halfViewport).toBeLessThanOrEqual(0.18);
-		expect(zoom.focus.cx + halfViewport).toBeLessThan(0.75);
+		expect(candidates).toEqual([]);
 	});
 
-	it("does not absorb the settled target of the next separate click", () => {
+	it("ends the real 25:43 bottom crop before the cursor leaves it", () => {
 		const candidates = detectClickDirectionCandidates({
 			cursor: [
-				point(1_000, 0.2, 0.5, "click"),
-				...Array.from({ length: 8 }, (_, index) => point(1_100 + index * 100, 0.2, 0.5)),
-				point(1_900, 0.35, 0.5),
-				point(2_000, 0.5, 0.5),
-				point(2_100, 0.72, 0.5),
-				point(2_200, 0.75, 0.5),
-				point(2_300, 0.75, 0.5),
-				point(2_400, 0.75, 0.5),
-				point(2_500, 0.75, 0.5, "click"),
-				point(2_800, 0.75, 0.5),
+				point(0, 0.314, 0.979, "click"),
+				...Array.from({ length: 22 }, (_, index) => point(100 + index * 60, 0.314, 0.979)),
+				point(1_350, 0.613, 0.883),
+				point(1_450, 0.683, 0.835),
+				point(1_550, 0.758, 0.796),
+				...Array.from({ length: 7 }, (_, index) => point(1_650 + index * 100, 0.782, 0.79)),
+				point(2_450, 0.607, 0.419),
+				point(2_650, 0.588, 0.02),
+				point(3_500, 0.592, 0.019),
 			],
+			durationMs: 6_000,
+			preferredZoomDurationMs: 3_000,
+		});
+
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0].customScale).toBe(1.65);
+		expect(candidates[0].span.end).toBeLessThan(1_350);
+	});
+
+	it("ends an earlier fixed crop safely without absorbing the next separate click", () => {
+		const cursor = [
+			point(1_000, 0.2, 0.5, "click"),
+			...Array.from({ length: 8 }, (_, index) => point(1_100 + index * 100, 0.2, 0.5)),
+			point(1_900, 0.35, 0.5),
+			point(2_000, 0.5, 0.5),
+			point(2_100, 0.72, 0.5),
+			point(2_200, 0.75, 0.5),
+			point(2_300, 0.75, 0.5),
+			point(2_400, 0.75, 0.5),
+			point(2_500, 0.75, 0.5, "click"),
+			point(2_800, 0.75, 0.5),
+		];
+		const candidates = detectClickDirectionCandidates({
+			cursor,
 			durationMs: 6_000,
 			preferredZoomDurationMs: 2_000,
 		});
 
 		expect(candidates).toHaveLength(2);
-		const firstHalfViewport = 0.5 / candidates[0].customScale;
-		expect(candidates[0].focus.cx + firstHalfViewport).toBeLessThan(0.7);
-		const secondHalfViewport = 0.5 / candidates[1].customScale;
-		expect(candidates[1].focus.cx - secondHalfViewport).toBeLessThanOrEqual(0.75);
-		expect(candidates[1].focus.cx + secondHalfViewport).toBeGreaterThanOrEqual(0.75);
+		expect(candidates[0].customScale).toBeGreaterThanOrEqual(1.35);
+		expect(candidates[0].span.end).toBeLessThan(candidates[1].span.start);
+		const halfViewport = 0.5 / candidates[1].customScale;
+		expect(candidates[1].focus.cx - halfViewport).toBeLessThanOrEqual(0.75);
+		expect(candidates[1].focus.cx + halfViewport).toBeGreaterThanOrEqual(0.75);
+
+		const connected = detectDirectionCandidates({
+			cursor,
+			durationMs: 6_000,
+			preferredZoomDurationMs: 2_000,
+		});
+		expect(connected).toHaveLength(2);
+		expect(new Set(connected.map((candidate) => candidate.sequenceId)).size).toBe(1);
 	});
 
 	it("does not use clicks on private recording UI for automatic direction", () => {
@@ -600,6 +626,155 @@ describe("automatic direction", () => {
 		expect(selected).toHaveLength(3);
 	});
 
+	it("enforces the minimum duration after every detector adjustment", () => {
+		const selected = selectDirectionCandidates({
+			candidates: [
+				{
+					signal: "click",
+					span: { start: 1_000, end: 3_000 },
+					focus: { cx: 0.5, cy: 0.5 },
+					focusMode: "manual",
+					customScale: 1.5,
+					score: 5,
+				},
+			],
+			durationMs: 10_000,
+		});
+
+		expect(selected).toEqual([]);
+	});
+
+	it("uses a rolling minute budget instead of a whole-project average", () => {
+		const candidates = [5_000, 15_000, 25_000, 35_000, 45_000, 75_000].map((start, index) => ({
+			signal: "click" as const,
+			span: { start, end: start + 3_000 },
+			focus: { cx: 0.2 + (index % 3) * 0.25, cy: 0.5 },
+			focusMode: "manual" as const,
+			customScale: 1.5,
+			score: 20 - index,
+		}));
+
+		const selected = selectDirectionCandidates({
+			candidates,
+			durationMs: 120_000,
+			policy: { ...DEFAULT_DIRECTION_POLICY, maxZoomsPerMinute: 4 },
+		});
+
+		expect(selected.map((candidate) => candidate.span.start)).toEqual([
+			5_000, 15_000, 25_000, 35_000, 75_000,
+		]);
+	});
+
+	it("counts internal pans as one rolling editorial entrance", () => {
+		const connected = [
+			{
+				signal: "click" as const,
+				span: { start: 1_000, end: 2_200 },
+				focus: { cx: 0.2, cy: 0.5 },
+				focusMode: "manual" as const,
+				customScale: 1.5,
+				score: 5,
+				sequenceId: "one-passage",
+				sequenceSpan: { start: 1_000, end: 5_000 },
+			},
+			{
+				signal: "click" as const,
+				span: { start: 3_000, end: 5_000 },
+				focus: { cx: 0.8, cy: 0.5 },
+				focusMode: "manual" as const,
+				customScale: 1.5,
+				score: 5,
+				sequenceId: "one-passage",
+				sequenceSpan: { start: 1_000, end: 5_000 },
+			},
+		];
+		const selected = selectDirectionCandidates({
+			candidates: [
+				...connected,
+				{
+					signal: "click",
+					span: { start: 20_000, end: 23_000 },
+					focus: { cx: 0.5, cy: 0.5 },
+					focusMode: "manual",
+					customScale: 1.5,
+					score: 1,
+				},
+			],
+			durationMs: 60_000,
+			policy: { ...DEFAULT_DIRECTION_POLICY, maxZoomsPerMinute: 1 },
+		});
+
+		expect(selected).toEqual(connected);
+	});
+
+	it("counts nearby independent passages as separate entrances", () => {
+		const selected = selectDirectionCandidates({
+			candidates: [
+				{
+					signal: "click",
+					span: { start: 1_000, end: 4_000 },
+					focus: { cx: 0.2, cy: 0.5 },
+					focusMode: "manual",
+					customScale: 1.5,
+					score: 10,
+				},
+				{
+					signal: "click",
+					span: { start: 4_800, end: 7_800 },
+					focus: { cx: 0.8, cy: 0.5 },
+					focusMode: "manual",
+					customScale: 1.5,
+					score: 5,
+				},
+			],
+			durationMs: 60_000,
+			policy: { ...DEFAULT_DIRECTION_POLICY, maxZoomsPerMinute: 1 },
+		});
+
+		expect(selected).toHaveLength(1);
+		expect(selected[0].span).toEqual({ start: 1_000, end: 4_000 });
+	});
+
+	it("keeps the final selection deterministic under a dense technical passage", () => {
+		const candidates = Array.from({ length: 24 }, (_, index) => ({
+			signal: "click" as const,
+			span: { start: index * 5_000, end: index * 5_000 + 3_000 },
+			focus: { cx: 0.2 + (index % 4) * 0.2, cy: 0.5 },
+			focusMode: "manual" as const,
+			customScale: 1.5,
+			score: 100 - index,
+		}));
+		const options = {
+			candidates,
+			durationMs: 120_000,
+			policy: { ...DEFAULT_DIRECTION_POLICY, maxZoomsPerMinute: 6 },
+		};
+
+		const first = selectDirectionCandidates(options);
+		const second = selectDirectionCandidates(options);
+		expect(second).toEqual(first);
+		for (const start of first.map((candidate) => candidate.span.start)) {
+			expect(
+				first.filter(
+					(candidate) => candidate.span.start >= start && candidate.span.start < start + 60_000,
+				).length,
+			).toBeLessThanOrEqual(6);
+		}
+	});
+
+	it("treats a context change as a hard direction boundary", () => {
+		const plan = buildDirectionPlan({
+			cursor: [
+				point(0, 0.2, 0.5),
+				{ ...point(1_000, 0.8, 0.5, "click"), directionContextChanged: true },
+				point(3_500, 0.8, 0.5),
+			],
+			durationMs: 4_000,
+		});
+
+		expect(plan.zooms).toEqual([]);
+	});
+
 	it("counts adjacent screen and camera effects as separate total-budget directions", () => {
 		const selected = selectDirectionCandidates({
 			candidates: [
@@ -657,6 +832,65 @@ describe("automatic direction", () => {
 				{ start: 35_000, end: 38_000 },
 			],
 			maximumTotalDirectionsPerMinute: 5,
+		});
+
+		expect(selected).toEqual([]);
+	});
+
+	it("keeps touching camera groups separate in the total rolling budget", () => {
+		const selected = selectDirectionCandidates({
+			candidates: [
+				{
+					signal: "click",
+					span: { start: 40_000, end: 43_000 },
+					focus: { cx: 0.75, cy: 0.5 },
+					focusMode: "manual",
+					customScale: 1.5,
+					score: 5,
+				},
+			],
+			durationMs: 60_000,
+			occupiedDirections: [
+				{ start: 1_000, end: 4_000, directionGroupId: "camera-a" },
+				{ start: 4_000, end: 8_000, directionGroupId: "camera-b" },
+				{ start: 15_000, end: 18_000, directionGroupId: "camera-c" },
+				{ start: 25_000, end: 28_000, directionGroupId: "camera-d" },
+				{ start: 35_000, end: 38_000, directionGroupId: "camera-e" },
+			],
+			maximumTotalDirectionsPerMinute: 5,
+		});
+
+		expect(selected).toEqual([]);
+	});
+
+	it("keeps the same direction group separate across a removed segment", () => {
+		const selected = selectDirectionCandidates({
+			candidates: [
+				{
+					signal: "click",
+					span: { start: 20_000, end: 23_000 },
+					focus: { cx: 0.75, cy: 0.5 },
+					focusMode: "manual",
+					customScale: 1.5,
+					score: 5,
+				},
+			],
+			durationMs: 60_000,
+			occupiedZooms: [
+				{
+					start: 1_000,
+					end: 4_000,
+					directionGroupId: "screen-a",
+					segmentId: "clip-a:0",
+				},
+				{
+					start: 4_000,
+					end: 8_000,
+					directionGroupId: "screen-a",
+					segmentId: "clip-a:1",
+				},
+			],
+			policy: { ...DEFAULT_DIRECTION_POLICY, maxZoomsPerMinute: 2 },
 		});
 
 		expect(selected).toEqual([]);

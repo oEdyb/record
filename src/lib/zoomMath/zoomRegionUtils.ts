@@ -125,8 +125,18 @@ function getConnectedRegionPairs(regions: ZoomRegion[]) {
 		const currentRegion = sortedRegions[index];
 		const nextRegion = sortedRegions[index + 1];
 		const gapMs = nextRegion.startMs - currentRegion.endMs;
+		const currentGroup = currentRegion.directionGroupId;
+		const nextGroup = nextRegion.directionGroupId;
+		const groupsCanConnect =
+			currentGroup === undefined && nextGroup === undefined
+				? true
+				: currentGroup !== undefined && currentGroup === nextGroup;
 
-		if (gapMs > CHAINED_ZOOM_PAN_GAP_MS || nextRegion.endMs <= currentRegion.endMs) {
+		if (
+			!groupsCanConnect ||
+			gapMs > CHAINED_ZOOM_PAN_GAP_MS ||
+			nextRegion.endMs <= currentRegion.endMs
+		) {
 			continue;
 		}
 

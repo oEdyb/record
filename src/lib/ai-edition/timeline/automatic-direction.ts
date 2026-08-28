@@ -151,17 +151,15 @@ export interface AutomaticDirectionPhases {
 function automaticCameraRegions(document: AxcutDocument) {
 	return (
 		((document.legacyEditor as Record<string, unknown> | null)?.cameraFullscreenRegions as
-			| Array<{ startMs: number; endMs: number }>
+			| Array<{ startMs: number; endMs: number; directionGroupId?: string }>
 			| undefined) ?? []
 	);
 }
 
 /**
- * Build one coherent plan from all currently available observations. A quiet,
- * sustained speech moment reserves camera attention before lower-confidence
- * click candidates fill the shared motion budget. Screen direction then ranks
- * against those reserved camera spans. Asynchronous signals can still run one
- * phase against the latest document without changing this contract.
+ * Build one coherent plan from all currently available observations. Screen
+ * intent owns the first pass. Camera Emphasis can then fill quiet, unoccupied
+ * moments without displacing a useful on-screen action.
  */
 export function buildAutomaticDirectionPlan(options: {
 	id: string;
@@ -179,6 +177,46 @@ export function buildAutomaticDirectionPlan(options: {
 	};
 	const effects: AutomaticDirectionEffect[] = [];
 	let workingDocument = options.document;
+
+	if (phases.screen) {
+		const occupiedCamera = automaticCameraRegions(workingDocument).map((region) => ({
+			start: region.startMs,
+			end: region.endMs,
+			directionGroupId: region.directionGroupId,
+		}));
+		const screenSuggestions = buildAutoZoomSuggestionsForTimeline({
+			recordings: options.recordings.map((recording) => ({
+				assetId: recording.assetId,
+				cursorTelemetry: recording.cursorTelemetry,
+				keyboardActivity: recording.keyboardActivity,
+			})),
+			clips: workingDocument.timeline.clips,
+			trimRanges: workingDocument.timeline.trimRanges,
+			existingRegions: workingDocument.zoomRanges.map((region) => ({
+				startMs: region.startMs,
+				endMs: region.endMs,
+				directionGroupId: region.directionGroupId,
+			})),
+			occupiedDirections: occupiedCamera.map((region) => ({
+				startMs: region.start,
+				endMs: region.end,
+				directionGroupId: region.directionGroupId,
+			})),
+			maximumTotalDirectionsPerMinute: policy.camera.maxTotalDirectionPerMinute,
+			defaultDurationMs: policy.screen.defaultZoomDurationMs,
+			directionPolicy: policy.screen,
+			connectedClickPolicy: policy.connectedClicks,
+			typingDirectionPolicy: policy.typing,
+		});
+		effects.push(
+			...screenSuggestions.map((suggestion, index) => ({
+				id: `screen-${index}`,
+				kind: "screen-zoom" as const,
+				suggestion,
+			})),
+		);
+		workingDocument = appendAutoZoomSuggestions(workingDocument, screenSuggestions);
+	}
 
 	if (phases.camera) {
 		const cameraSuggestions = buildAutoCameraEmphasisSuggestionsForTimeline({
@@ -198,6 +236,7 @@ export function buildAutomaticDirectionPlan(options: {
 			occupiedScreenDirections: workingDocument.zoomRanges.map((region) => ({
 				start: region.startMs,
 				end: region.endMs,
+				directionGroupId: region.directionGroupId,
 			})),
 			existingCameraRegions: automaticCameraRegions(workingDocument),
 			policy: policy.camera,
@@ -210,39 +249,6 @@ export function buildAutomaticDirectionPlan(options: {
 			})),
 		);
 		workingDocument = appendAutoCameraEmphasisSuggestions(workingDocument, cameraSuggestions);
-	}
-
-	if (phases.screen) {
-		const occupiedCamera = automaticCameraRegions(workingDocument).map((region) => ({
-			start: region.startMs,
-			end: region.endMs,
-		}));
-		const screenSuggestions = buildAutoZoomSuggestionsForTimeline({
-			recordings: options.recordings,
-			clips: workingDocument.timeline.clips,
-			trimRanges: workingDocument.timeline.trimRanges,
-			existingRegions: workingDocument.zoomRanges.map((region) => ({
-				startMs: region.startMs,
-				endMs: region.endMs,
-			})),
-			occupiedDirections: occupiedCamera.map((region) => ({
-				startMs: region.start,
-				endMs: region.end,
-			})),
-			maximumTotalDirectionsPerMinute: policy.camera.maxTotalDirectionPerMinute,
-			defaultDurationMs: policy.screen.defaultZoomDurationMs,
-			directionPolicy: policy.screen,
-			connectedClickPolicy: policy.connectedClicks,
-			typingDirectionPolicy: policy.typing,
-		});
-		effects.push(
-			...screenSuggestions.map((suggestion, index) => ({
-				id: `screen-${index}`,
-				kind: "screen-zoom" as const,
-				suggestion,
-			})),
-		);
-		workingDocument = appendAutoZoomSuggestions(workingDocument, screenSuggestions);
 	}
 
 	return { schemaVersion: 1, id: options.id, effects };

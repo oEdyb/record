@@ -23,7 +23,7 @@ export const DEFAULT_TYPING_DIRECTION_POLICY: TypingDirectionPolicy = Object.fre
 	minimumBurstDurationMs: 250,
 	typingIdleGapMs: 1_250,
 	maximumTargetCenterDistance: 0.3,
-	clickFallbackMaximumAgeMs: 4_000,
+	clickFallbackMaximumAgeMs: 2_000,
 	clickFallbackTargetPaddingRatio: 0.01,
 	maximumFallbackTargetWidthRatio: 0.25,
 	maximumFallbackTargetHeightRatio: 0.2,
@@ -93,6 +93,13 @@ function lastClickBefore(
 	}
 	const click = clicks[low - 1];
 	if (!click || sample.timeMs - click.timeMs > policy.clickFallbackMaximumAgeMs) return null;
+	if (
+		sample.directionContextId &&
+		click.directionContextId &&
+		sample.directionContextId !== click.directionContextId
+	) {
+		return null;
+	}
 	return sample.targetRect &&
 		pointInsideTarget(click, sample.targetRect, policy.clickFallbackTargetPaddingRatio)
 		? click
@@ -132,6 +139,20 @@ function sameTarget(
 	right: KeyboardActivitySample,
 	policy: TypingDirectionPolicy,
 ) {
+	if (
+		left.directionContextId &&
+		right.directionContextId &&
+		left.directionContextId !== right.directionContextId
+	) {
+		return false;
+	}
+	if (
+		left.directionTargetId &&
+		right.directionTargetId &&
+		left.directionTargetId !== right.directionTargetId
+	) {
+		return false;
+	}
 	if (left.targetRect && right.targetRect) {
 		const overlapX =
 			left.targetRect.x < right.targetRect.x + right.targetRect.width &&

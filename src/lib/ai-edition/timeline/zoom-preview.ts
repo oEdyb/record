@@ -123,6 +123,7 @@ function toLegacyZoomRegion(region: AxcutZoomRegion): LegacyZoomRegion {
 		motionStyle: region.motionStyle,
 		motionSpeed: region.motionSpeed,
 		source: region.source,
+		directionGroupId: region.directionGroupId,
 	};
 }
 

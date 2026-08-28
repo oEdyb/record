@@ -51,6 +51,54 @@ describe("zoom region motion profiles", () => {
 		]);
 	});
 
+	it("does not connect different authored direction passages only because they are close", () => {
+		const first = {
+			...region,
+			id: "first",
+			startMs: 1_000,
+			endMs: 3_000,
+			focus: { cx: 0.68, cy: 0.5 },
+			directionGroupId: "passage-a",
+		};
+		const second = {
+			...region,
+			id: "second",
+			startMs: 3_706,
+			endMs: 5_500,
+			focus: { cx: 0.5, cy: 0.5 },
+			directionGroupId: "passage-b",
+		};
+
+		expect(buildZoomVisualEnvelopes([first, second])).toHaveLength(2);
+		expect(
+			findDominantRegion([first, second], 3_800, { connectZooms: true }).transition,
+		).toBeNull();
+		expect(
+			buildZoomVisualEnvelopes([first, { ...second, directionGroupId: undefined }]),
+		).toHaveLength(2);
+	});
+
+	it("keeps connected pans inside one authored direction passage", () => {
+		const first = {
+			...region,
+			id: "first",
+			startMs: 1_000,
+			endMs: 3_000,
+			directionGroupId: "passage-a",
+		};
+		const second = {
+			...region,
+			id: "second",
+			startMs: 3_500,
+			endMs: 5_500,
+			directionGroupId: "passage-a",
+		};
+
+		expect(buildZoomVisualEnvelopes([first, second])).toEqual([
+			expect.objectContaining({ regionIds: ["first", "second"] }),
+		]);
+	});
+
 	it("uses the same inclusive 1500 ms connection boundary as the renderer", () => {
 		const first = { ...region, id: "first", startMs: 0, endMs: 1_000 };
 		const atBoundary = { ...region, id: "at-boundary", startMs: 2_500, endMs: 4_000 };

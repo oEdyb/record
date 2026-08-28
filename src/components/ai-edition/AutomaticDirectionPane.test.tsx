@@ -33,7 +33,10 @@ const presetStorage = (() => {
 })();
 
 function recordedProject() {
-	const base = createEmptyDocument({ title: "Direction", projectId: "project-1" });
+	const base = createEmptyDocument({
+		title: "Direction",
+		projectId: "project-1",
+	});
 	return {
 		...base,
 		assets: [
@@ -69,7 +72,11 @@ function recordedProject() {
 beforeEach(() => {
 	vi.useFakeTimers();
 	regenerate.mockReset();
-	regenerate.mockResolvedValue({ screenZooms: 1, cameraEmphasis: 0, recordings: 1 });
+	regenerate.mockResolvedValue({
+		screenZooms: 1,
+		cameraEmphasis: 0,
+		recordings: 1,
+	});
 	Object.defineProperty(window, "localStorage", {
 		configurable: true,
 		value: presetStorage,
@@ -118,7 +125,9 @@ describe("AutomaticDirectionPane", () => {
 			target: { value: "My tutorials" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Save" }));
-		expect(screen.getByRole("option", { name: "My tutorials" })).toBeInTheDocument();
+		expect(screen.getByRole("combobox", { name: "Automatic editing preset" })).toHaveTextContent(
+			"My tutorials",
+		);
 	});
 
 	it("records one history snapshot for consecutive changes in one tuning session", async () => {

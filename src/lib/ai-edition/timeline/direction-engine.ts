@@ -6,7 +6,7 @@
 
 import type { MotionSpeed } from "@/lib/zoomMath/motionCurve";
 import { CHAINED_ZOOM_PAN_GAP_MS } from "@/lib/zoomMath/zoomRegionUtils";
-import { planConnectedClickChains } from "./connected-click-chain";
+import { planConnectedClickChains, resolveCursorSafeFixedZoom } from "./connected-click-chain";
 import {
 	AUTOMATIC_DIRECTION_MAX_SCALE,
 	type ConnectedClickPolicy,
@@ -28,6 +28,10 @@ export interface DirectionCursorSample {
 	directionWeight?: number;
 	/** Groups one renewable derived activity without changing its score. */
 	directionActivityId?: string;
+	/** Opaque capture context; no app name, window title, or content. */
+	directionContextId?: string;
+	/** A hard editorial boundary caused by an app-context change. */
+	directionContextChanged?: boolean;
 	/** Optional bounded area for a derived focus activity such as typing. */
 	framingRect?: { x: number; y: number; width: number; height: number };
 }
@@ -35,6 +39,10 @@ export interface DirectionCursorSample {
 export interface DirectionSpan {
 	start: number;
 	end: number;
+	/** Renderer passage identity. Different non-empty groups never share one entrance. */
+	directionGroupId?: string;
+	/** Kept playback segment. A cut is always a hard passage boundary. */
+	segmentId?: string;
 }
 
 export interface DirectionZoomCandidate {
@@ -53,6 +61,8 @@ export interface DirectionZoomCandidate {
 	intentSpan?: DirectionSpan;
 	/** Renewable typing can stay connected without the click-only duration cap. */
 	connectionMode?: "bounded" | "renewable";
+	/** Connected gestures include transition time outside their short authored target bodies. */
+	minimumDurationExempt?: boolean;
 }
 
 export interface DirectionPlan {
@@ -199,6 +209,7 @@ export function normalizeDirectionCursor(
 			...sample,
 			cx: clamp(sample.cx, 0, 1),
 			cy: clamp(sample.cy, 0, 1),
+			...(sample.directionContextChanged ? { directionExcluded: true } : {}),
 		}))
 		.sort((a, b) => a.timeMs - b.timeMs);
 }
@@ -321,6 +332,7 @@ export function detectClickDirectionCandidates(options: {
 	durationMs: number;
 	preferredZoomDurationMs: number;
 	policy?: DirectionPolicy;
+	cursorSafetyPolicy?: ConnectedClickPolicy;
 }): DirectionZoomCandidate[] {
 	const { cursor, durationMs, preferredZoomDurationMs } = options;
 	const policy = options.policy ?? DEFAULT_DIRECTION_POLICY;
@@ -395,22 +407,34 @@ export function detectClickDirectionCandidates(options: {
 		});
 		if (!envelope) return [];
 		const attentionMs = Math.max(0, observedUntilMs - last.timeMs);
+		const span = fitSpan(
+			first.timeMs - policy.clickPreRollMs,
+			Math.max(
+				last.timeMs + policy.clickPostRollMs,
+				observedUntilMs + policy.clickObservationTailMs,
+			),
+			durationMs,
+			preferredZoomDurationMs,
+			policy,
+		);
+		const safeZoom = resolveCursorSafeFixedZoom({
+			span,
+			minimumEndMs:
+				last.timeMs +
+				(options.cursorSafetyPolicy ?? DEFAULT_CONNECTED_CLICK_POLICY).minimumTargetHoldMs,
+			focus: envelope.focus,
+			requestedScale: automaticScale(envelope.scale),
+			cursor,
+			policy: options.cursorSafetyPolicy,
+		});
+		if (safeZoom.scale < policy.clickMinimumScale) return [];
 		return [
 			{
 				signal: "click" as const,
-				span: fitSpan(
-					first.timeMs - policy.clickPreRollMs,
-					Math.max(
-						last.timeMs + policy.clickPostRollMs,
-						observedUntilMs + policy.clickObservationTailMs,
-					),
-					durationMs,
-					preferredZoomDurationMs,
-					policy,
-				),
+				span: safeZoom.zooms[0].span,
 				focus: envelope.focus,
 				focusMode: "manual" as const,
-				customScale: automaticScale(envelope.scale),
+				customScale: safeZoom.scale,
 				score:
 					group.length * policy.clickScorePerInteraction +
 					Math.min(
@@ -607,6 +631,7 @@ export function detectDirectionCandidates(options: {
 			sequenceSpan: sequence.span,
 			intentSpan: sequence.intentSpan,
 			connectionMode: sequence.renewable ? ("renewable" as const) : ("bounded" as const),
+			minimumDurationExempt: true,
 		}));
 	});
 	const consumedSpans = usableConnectedSequences.map((sequence) => sequence.intentSpan);
@@ -624,6 +649,7 @@ export function detectDirectionCandidates(options: {
 			durationMs: options.durationMs,
 			preferredZoomDurationMs: options.preferredZoomDurationMs,
 			policy,
+			cursorSafetyPolicy: connectedClickPolicy,
 		}),
 		...detectTraceDirectionCandidates({
 			cursor: options.cursor,
@@ -638,25 +664,56 @@ function spansOverlap(a: DirectionSpan, b: DirectionSpan) {
 	return a.end > b.start && a.start < b.end;
 }
 
-function countOccupiedSequences(
+function mergeOccupiedSequences(
 	spans: DirectionSpan[],
 	durationMs: number,
 	connectionGapMs: number,
-) {
+): DirectionSpan[] {
 	const ordered = spans
 		.map((span) => ({
 			start: Math.max(0, span.start),
 			end: Math.min(durationMs, span.end),
+			directionGroupId: span.directionGroupId,
+			segmentId: span.segmentId,
 		}))
 		.filter((span) => span.end > span.start)
 		.sort((a, b) => a.start - b.start);
-	let count = 0;
-	let occupiedUntil = Number.NEGATIVE_INFINITY;
+	const merged: DirectionSpan[] = [];
 	for (const span of ordered) {
-		if (span.start > occupiedUntil + connectionGapMs) count += 1;
-		occupiedUntil = Math.max(occupiedUntil, span.end);
+		const previous = merged.at(-1);
+		const groupsCanConnect =
+			previous &&
+			previous.segmentId === span.segmentId &&
+			((previous.directionGroupId === undefined && span.directionGroupId === undefined) ||
+				(previous.directionGroupId !== undefined &&
+					previous.directionGroupId === span.directionGroupId));
+		if (!previous || !groupsCanConnect || span.start > previous.end + connectionGapMs) {
+			merged.push({ ...span });
+		} else {
+			previous.end = Math.max(previous.end, span.end);
+		}
 	}
-	return count;
+	return merged;
+}
+
+function staysWithinRollingSequenceBudget(
+	sequences: DirectionSpan[],
+	perMinute: number,
+	budgetDurationMs: number,
+) {
+	const starts = sequences.map((span) => span.start).sort((left, right) => left - right);
+	const limit = Math.max(
+		1,
+		budgetDurationMs < 60_000
+			? Math.ceil((budgetDurationMs / 60_000) * perMinute)
+			: Math.floor(perMinute),
+	);
+	let first = 0;
+	for (let last = 0; last < starts.length; last += 1) {
+		while (starts[last] - starts[first] >= 60_000) first += 1;
+		if (last - first + 1 > limit) return false;
+	}
+	return true;
 }
 
 export function selectDirectionCandidates(options: {
@@ -676,37 +733,18 @@ export function selectDirectionCandidates(options: {
 	const occupiedZooms = options.occupiedZooms ?? [];
 	const occupiedDirections = options.occupiedDirections ?? [];
 	const allOccupiedDirections = [...occupiedZooms, ...occupiedDirections];
-	const countTotalDirectionSequences = (screenSpans: DirectionSpan[]) =>
-		countOccupiedSequences(screenSpans, options.durationMs, policy.sequenceConnectionGapMs) +
-		// Non-screen effects do not use the connected screen-pan renderer. Only
-		// touching fragments of one camera effect can share a budget slot.
-		countOccupiedSequences(occupiedDirections, options.durationMs, 0);
 	const budgetDurationMs = options.budgetDurationMs ?? options.durationMs;
-	const screenLimit = Math.max(
-		1,
-		Math.ceil((budgetDurationMs / 60_000) * policy.maxZoomsPerMinute),
-	);
-	const totalLimit = Math.max(
-		1,
-		Math.ceil(
-			(budgetDurationMs / 60_000) *
-				(options.maximumTotalDirectionsPerMinute ?? policy.maxZoomsPerMinute),
-		),
-	);
-	if (
-		countOccupiedSequences(occupiedZooms, options.durationMs, policy.sequenceConnectionGapMs) >=
-			screenLimit ||
-		countTotalDirectionSequences(occupiedZooms) >= totalLimit
-	) {
-		return [];
-	}
+	const totalDirectionsPerMinute =
+		options.maximumTotalDirectionsPerMinute ?? policy.maxZoomsPerMinute;
 	const groups = new Map<
 		string,
 		{
+			id: string;
 			candidates: DirectionZoomCandidate[];
 			span: DirectionSpan;
 			intentSpan: DirectionSpan;
 			connectionMode: "bounded" | "renewable";
+			minimumDurationExempt: boolean;
 			score: number;
 		}
 	>();
@@ -729,20 +767,24 @@ export function selectDirectionCandidates(options: {
 				candidate.intentSpan?.end ?? candidate.span.end,
 			);
 			if (candidate.connectionMode === "renewable") group.connectionMode = "renewable";
+			if (candidate.minimumDurationExempt) group.minimumDurationExempt = true;
 			group.score += candidate.score;
 		} else {
 			const intentSpan = candidate.intentSpan ?? candidate.sequenceSpan ?? candidate.span;
 			groups.set(key, {
+				id: key,
 				candidates: [candidate],
 				span: { ...(candidate.sequenceSpan ?? candidate.span) },
 				intentSpan: { ...intentSpan },
 				connectionMode: candidate.connectionMode ?? "bounded",
+				minimumDurationExempt: candidate.minimumDurationExempt === true,
 				score: candidate.score,
 			});
 		}
 	}
 
 	const selected: Array<{
+		id: string;
 		candidates: DirectionZoomCandidate[];
 		span: DirectionSpan;
 		intentSpan: DirectionSpan;
@@ -751,6 +793,12 @@ export function selectDirectionCandidates(options: {
 	for (const group of [...groups.values()].sort(
 		(left, right) => right.score - left.score || left.span.start - right.span.start,
 	)) {
+		if (
+			!group.minimumDurationExempt &&
+			group.span.end - group.span.start < policy.minimumZoomDurationMs
+		) {
+			continue;
+		}
 		if (allOccupiedDirections.some((span) => spansOverlap(span, group.span))) continue;
 		if (occupiedZooms.some((span) => gapBetween(span, group.span) < policy.minimumSpacingMs)) {
 			continue;
@@ -764,18 +812,37 @@ export function selectDirectionCandidates(options: {
 		) {
 			continue;
 		}
-		const nextScreenCount = countOccupiedSequences(
-			[...occupiedZooms, ...selected.map((item) => item.span), group.span],
+		const nextScreenSequences = mergeOccupiedSequences(
+			[
+				...occupiedZooms,
+				...selected.map((item) => ({ ...item.span, directionGroupId: item.id })),
+				{ ...group.span, directionGroupId: group.id },
+			],
 			options.durationMs,
 			policy.sequenceConnectionGapMs,
 		);
-		if (nextScreenCount > screenLimit) continue;
-		const nextTotalCount = countTotalDirectionSequences([
-			...occupiedZooms,
-			...selected.map((item) => item.span),
-			group.span,
-		]);
-		if (nextTotalCount > totalLimit) continue;
+		if (
+			!staysWithinRollingSequenceBudget(
+				nextScreenSequences,
+				policy.maxZoomsPerMinute,
+				budgetDurationMs,
+			)
+		) {
+			continue;
+		}
+		const nextTotalSequences = [
+			...nextScreenSequences,
+			...mergeOccupiedSequences(occupiedDirections, options.durationMs, 0),
+		];
+		if (
+			!staysWithinRollingSequenceBudget(
+				nextTotalSequences,
+				totalDirectionsPerMinute,
+				budgetDurationMs,
+			)
+		) {
+			continue;
+		}
 		selected.push(group);
 	}
 	return selected

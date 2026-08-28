@@ -47,6 +47,8 @@ interface MacKeyboardActivityEvent {
 	targetWidth: number;
 	targetHeight: number;
 	targetProcessId?: number;
+	contextIdentity?: string;
+	targetIdentity?: string;
 }
 
 type MacCursorEvent =
@@ -75,6 +77,8 @@ type MacCursorEvent =
 			typingTargetY?: number;
 			typingTargetWidth?: number;
 			typingTargetHeight?: number;
+			targetProcessId?: number;
+			contextIdentity?: string;
 	  };
 
 const HELPER_NAME = "openscreen-macos-cursor-helper";
@@ -221,6 +225,7 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 	private readyTimer: NodeJS.Timeout | null = null;
 	private previousLeftButtonDown = false;
 	private consecutiveOutsideSamples = 0;
+	private previousDirectionContextId: string | null = null;
 	// Hide only after this many consecutive out-of-bounds samples (~100ms at 33ms interval).
 	// Fast swipes that briefly exit the display are clipped by clip-path instead of disappearing.
 	private static readonly OUTSIDE_HIDE_THRESHOLD = 3;
@@ -235,6 +240,7 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		this.startTimeMs = this.options.startTimeMs ?? Date.now();
 		this.previousLeftButtonDown = false;
 		this.consecutiveOutsideSamples = 0;
+		this.previousDirectionContextId = null;
 
 		try {
 			systemPreferences.isTrustedAccessibilityClient(true);
@@ -307,7 +313,7 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		}
 
 		return {
-			version: 4,
+			version: 5,
 			provider: this.assets.size > 0 ? "native" : "none",
 			samples: this.samples,
 			assets: [...this.assets.values()],
@@ -378,14 +384,30 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 			this.rememberAsset(payload.asset);
 			const cursorType = normalizeCursorType(payload.cursorType);
 			const assetId = payload.assetId ?? null;
+			const directionContextId =
+				typeof payload.contextIdentity === "string" && payload.contextIdentity
+					? payload.contextIdentity
+					: typeof payload.targetProcessId === "number" && Number.isFinite(payload.targetProcessId)
+						? `process-${Math.round(payload.targetProcessId)}`
+						: undefined;
 			const transitions = normalizeMacMouseButtonTransitions(payload.mouseButtonTransitions);
 			if (transitions.length > 0) {
 				for (const transition of transitions) {
 					const isDown = transition.kind === "down";
-					this.captureSample(transition.timestampMs, cursorType, assetId, isDown, isDown, !isDown, {
-						x: transition.x,
-						y: transition.y,
-					});
+					this.captureSample(
+						transition.timestampMs,
+						cursorType,
+						assetId,
+						isDown,
+						isDown,
+						!isDown,
+						{
+							x: transition.x,
+							y: transition.y,
+						},
+						true,
+						directionContextId,
+					);
 				}
 				this.captureSample(
 					payload.timestampMs,
@@ -396,6 +418,7 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 					false,
 					undefined,
 					false,
+					directionContextId,
 				);
 			} else {
 				this.captureSample(
@@ -405,6 +428,9 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 					payload.leftButtonDown === true,
 					payload.leftButtonPressed === true,
 					payload.leftButtonReleased === true,
+					undefined,
+					true,
+					directionContextId,
 				);
 			}
 			if (Array.isArray(payload.keyboardActivityEvents)) {
@@ -477,6 +503,12 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 			hostProcessId: process.pid,
 			targetProcessId: payload.targetProcessId,
 		});
+		const directionContextId =
+			typeof payload.contextIdentity === "string" && payload.contextIdentity
+				? payload.contextIdentity
+				: typeof payload.targetProcessId === "number" && Number.isFinite(payload.targetProcessId)
+					? `process-${Math.round(payload.targetProcessId)}`
+					: undefined;
 		this.keyboardActivity.push({
 			timeMs: Math.max(0, payload.timestampMs - this.startTimeMs),
 			cx: normalizedX,
@@ -492,6 +524,10 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 				height: Math.max(0, targetBottom - targetTop),
 			},
 			...(directionExcluded ? { directionExcluded: true } : {}),
+			...(directionContextId ? { directionContextId } : {}),
+			...(typeof payload.targetIdentity === "string" && payload.targetIdentity
+				? { directionTargetId: payload.targetIdentity }
+				: {}),
 		});
 
 		if (this.keyboardActivity.length > this.options.maxSamples) {
@@ -508,6 +544,7 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		leftButtonReleased: boolean,
 		cursorPoint?: { x: number; y: number },
 		inferStateTransition = true,
+		directionContextId?: string,
 	) {
 		const cursor = cursorPoint ?? screen.getCursorScreenPoint();
 		const bounds = this.options.getDisplayBounds() ?? screen.getDisplayNearestPoint(cursor).bounds;
@@ -537,6 +574,11 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 		this.previousLeftButtonDown = leftButtonDown;
 
 		const directionExcluded = this.options.isDirectionExcludedPoint?.(cursor) === true;
+		const directionContextChanged =
+			Boolean(directionContextId) &&
+			Boolean(this.previousDirectionContextId) &&
+			directionContextId !== this.previousDirectionContextId;
+		if (directionContextId) this.previousDirectionContextId = directionContextId;
 		this.samples.push({
 			timeMs: Math.max(0, timestampMs - this.startTimeMs),
 			cx: clamp(normalizedX, 0, 1),
@@ -546,6 +588,8 @@ export class MacNativeCursorRecordingSession implements CursorRecordingSession {
 			...(directionExcluded ? { directionExcluded: true } : {}),
 			...(assetId ? { assetId } : {}),
 			...(cursorType ? { cursorType } : {}),
+			...(directionContextId ? { directionContextId } : {}),
+			...(directionContextChanged ? { directionContextChanged: true } : {}),
 		});
 
 		if (this.samples.length > this.options.maxSamples) {

@@ -1,6 +1,7 @@
 import { RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { AppSelect } from "@/components/ui/app-select";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { DEFAULT_AUTOMATIC_DIRECTION_POLICY } from "@/lib/ai-edition/timeline/automatic-direction";
 import {
@@ -114,7 +115,10 @@ export function AutomaticDirectionPane() {
 	const runningRef = useRef(false);
 	const pendingRef = useRef<PendingUpdate | null>(null);
 	const mountedRef = useRef(true);
-	const sessionRef = useRef<{ projectId: string; lastAppliedRevision: number } | null>(null);
+	const sessionRef = useRef<{
+		projectId: string;
+		lastAppliedRevision: number;
+	} | null>(null);
 
 	useEffect(() => {
 		mountedRef.current = true;
@@ -258,7 +262,7 @@ export function AutomaticDirectionPane() {
 		>
 			<section className={styles.inspectorSection}>
 				<div className={styles.automaticPresetHead}>
-					<select
+					<AppSelect
 						aria-label="Automatic editing preset"
 						value={presetId ?? "custom"}
 						disabled={!canRegenerate || status === "updating"}
@@ -271,7 +275,7 @@ export function AutomaticDirectionPane() {
 							</option>
 						))}
 						{presetId === null ? <option value="custom">Custom</option> : null}
-					</select>
+					</AppSelect>
 					<button type="button" onClick={() => setSaveOpen((open) => !open)} title="Save preset">
 						<Save size={14} />
 					</button>

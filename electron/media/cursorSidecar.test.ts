@@ -170,6 +170,8 @@ describe("readCursorRecordingFileAt", () => {
 						count: 2,
 						focusSource: "caret",
 						targetRect: { x: 0.3, y: 0.2, width: 0.5, height: 0.4 },
+						directionContextId: "process-12",
+						directionTargetId: "target-0123456789abcdef01234567",
 						keyCode: 0,
 						text: "secret",
 					},
@@ -190,9 +192,44 @@ describe("readCursorRecordingFileAt", () => {
 			count: 2,
 			focusSource: "caret",
 			targetRect: { x: 0.3, y: 0.2, width: 0.5, height: 0.4 },
+			directionContextId: "process-12",
+			directionTargetId: "target-0123456789abcdef01234567",
 		});
 		expect(data.keyboardActivity?.[1]).not.toHaveProperty("keyCode");
 		expect(data.keyboardActivity?.[1]).not.toHaveProperty("text");
+	});
+
+	it("preserves only opaque pointer context and its boundary marker", async () => {
+		const file = path.join(dir, "context.cursor.json");
+		await fs.writeFile(
+			file,
+			JSON.stringify({
+				version: 5,
+				provider: "native",
+				samples: [
+					{
+						timeMs: 100,
+						cx: 0.5,
+						cy: 0.5,
+						directionContextId: "process-12",
+						directionContextChanged: true,
+						appName: "must not survive",
+						windowTitle: "must not survive",
+					},
+				],
+				assets: [],
+			}),
+			"utf-8",
+		);
+
+		const data = await readCursorRecordingFileAt(file);
+
+		expect(data.samples[0]).toMatchObject({
+			directionContextId: "process-12",
+			directionContextChanged: true,
+		});
+		expect(data.samples[0]).not.toHaveProperty("appName");
+		expect(data.samples[0]).not.toHaveProperty("windowTitle");
 	});
 });
 

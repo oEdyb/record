@@ -53,6 +53,22 @@ function clickPath() {
 }
 
 describe("connected click chain planner", () => {
+	it("does not bridge focus activities from different opaque app contexts", () => {
+		const focusActivities = [
+			sample(1_000, 0.25, 0.5, "click", { directionContextId: "context-a" }),
+			sample(1_300, 0.25, 0.5, "click", { directionContextId: "context-a" }),
+			sample(1_600, 0.75, 0.5, "click", { directionContextId: "context-b" }),
+			sample(1_900, 0.75, 0.5, "click", { directionContextId: "context-b" }),
+		];
+		const plan = planConnectedClickChains({
+			cursor: focusActivities,
+			durationMs: 5_000,
+		});
+
+		expect(plan.sequences).toHaveLength(2);
+		expect(plan.sequences.map((sequence) => sequence.clickCount)).toEqual([2, 2]);
+	});
+
 	it("keeps the six-second detector split internal to one visual passage", () => {
 		const clicks = [1_000, 2_700, 4_400, 6_100, 7_800, 9_500].map((timeMs, index) =>
 			sample(timeMs, index % 2 === 0 ? 0.48 : 0.6, 0.5, "click"),
@@ -360,6 +376,80 @@ describe("connected click chain planner", () => {
 		expect(plan.sequences[0].resolvedScale).toBeCloseTo(1.65);
 	});
 
+	it("keeps a deep compact click passage by exiting before the pointer leaves", () => {
+		const clicks = [
+			{ timeMs: 3_913, cx: 0.643, cy: 0.07 },
+			{ timeMs: 4_854, cx: 0.695, cy: 0.076 },
+			{ timeMs: 5_665, cx: 0.748, cy: 0.072 },
+			{ timeMs: 6_529, cx: 0.594, cy: 0.071 },
+		];
+		const cursor = pathThrough([
+			{ timeMs: 0, cx: 0.605, cy: 0.444 },
+			{ timeMs: 3_400, cx: 0.647, cy: 0.055 },
+			...clicks,
+			{ timeMs: 6_800, cx: 0.594, cy: 0.071 },
+			{ timeMs: 7_200, cx: 0.687, cy: 0.533 },
+			{ timeMs: 7_600, cx: 0.754, cy: 0.93 },
+			{ timeMs: 9_000, cx: 0.754, cy: 0.93 },
+		]);
+		for (const click of clicks) {
+			cursor.find((entry) => entry.timeMs === click.timeMs)!.interactionType = "click";
+		}
+
+		const plan = planConnectedClickChains({ cursor, durationMs: 10_000 });
+		const sequence = plan.sequences[0];
+
+		expect(sequence.clickCount).toBe(4);
+		expect(sequence.resolvedScale).toBeCloseTo(1.65);
+		expect(sequence.croppedFrames).toBe(0);
+		expect(sequence.span.end).toBeGreaterThan(clicks.at(-1)!.timeMs);
+		expect(sequence.span.end).toBeLessThan(
+			clicks.at(-1)!.timeMs + DEFAULT_CONNECTED_CLICK_POLICY.holdAfterLastClickMs,
+		);
+		expect(
+			buildDirectionPlan({ cursor, durationMs: 10_000 }).zooms.some(
+				(zoom) => zoom.customScale === 1.65 && zoom.focus.cy < 0.4,
+			),
+		).toBe(true);
+	});
+
+	it("keeps a stationary click-to-typing handoff in one continuous Zoom passage", () => {
+		const cursor = pathThrough([
+			{ timeMs: 0, cx: 0.815, cy: 0.873 },
+			{ timeMs: 1_000, cx: 0.818, cy: 0.854 },
+			{ timeMs: 1_978, cx: 0.815, cy: 0.873 },
+			{ timeMs: 5_900, cx: 0.814, cy: 0.873 },
+			{ timeMs: 8_000, cx: 0.814, cy: 0.873 },
+		]);
+		for (const timeMs of [1_000, 1_978]) {
+			cursor.find((entry) => entry.timeMs === timeMs)!.interactionType = "click";
+		}
+		const framingRect = { x: 0.541, y: 0.589, width: 0.459, height: 0.36 };
+		const focusActivities = [5_766, 6_069, 6_350].map((timeMs, index) =>
+			sample(timeMs, 0.77, 0.769, "typing", {
+				directionActivityId: "typing-5766",
+				directionWeight: index === 0 ? 1 : 0,
+				framingRect,
+			}),
+		);
+
+		const plan = planConnectedClickChains({
+			cursor,
+			focusActivities,
+			durationMs: 9_000,
+		});
+
+		expect(plan.sequences).toHaveLength(1);
+		expect(plan.sequences[0].detectorChainCount).toBe(2);
+		expect(plan.sequences[0].resolvedScale).toBeCloseTo(1.65);
+		expect(plan.sequences[0].croppedFrames).toBe(0);
+		for (let index = 1; index < plan.sequences[0].zooms.length; index += 1) {
+			expect(
+				plan.sequences[0].zooms[index].span.start - plan.sequences[0].zooms[index - 1].span.end,
+			).toBeLessThanOrEqual(1_500);
+		}
+	});
+
 	it("leaves separate clicks to the normal single-click detector", () => {
 		const plan = planConnectedClickChains({
 			cursor: [sample(1_000, 0.2, 0.5, "click"), sample(3_000, 0.8, 0.5, "click")],
@@ -367,6 +457,47 @@ describe("connected click chain planner", () => {
 		});
 
 		expect(plan).toEqual({ sequences: [], consumedSpans: [] });
+	});
+
+	it("keeps every explicit click when a close visual passage relocates across the screen", () => {
+		const clicks = [
+			{ timeMs: 974, cx: 0.313, cy: 0.967 },
+			{ timeMs: 3_687, cx: 0.598, cy: 0.076 },
+			{ timeMs: 5_024, cx: 0.447, cy: 0.999 },
+		];
+		const cursor = pathThrough([
+			{ timeMs: 0, cx: 0.346, cy: 0.957 },
+			clicks[0],
+			{ timeMs: 1_801, cx: 0.313, cy: 0.967 },
+			{ timeMs: 2_030, cx: 0.544, cy: 0.761 },
+			{ timeMs: 2_603, cx: 0.689, cy: 0.56 },
+			{ timeMs: 2_830, cx: 0.644, cy: 0.16 },
+			{ timeMs: 3_606, cx: 0.598, cy: 0.076 },
+			clicks[1],
+			{ timeMs: 4_003, cx: 0.598, cy: 0.076 },
+			{ timeMs: 4_205, cx: 0.491, cy: 0.28 },
+			{ timeMs: 4_403, cx: 0.399, cy: 0.648 },
+			{ timeMs: 4_614, cx: 0.388, cy: 0.772 },
+			{ timeMs: 4_821, cx: 0.447, cy: 0.999 },
+			clicks[2],
+			{ timeMs: 6_400, cx: 0.447, cy: 0.999 },
+		]);
+		for (const click of clicks) {
+			cursor.find((entry) => entry.timeMs === click.timeMs)!.interactionType = "click";
+		}
+
+		const connected = planConnectedClickChains({ cursor, durationMs: 60_000 });
+		const direction = buildDirectionPlan({ cursor, durationMs: 60_000 });
+
+		expect(connected.sequences.reduce((score, sequence) => score + sequence.scoreWeight, 0)).toBe(
+			3,
+		);
+		expect(connected.sequences.every((sequence) => sequence.resolvedScale >= 1.35)).toBe(true);
+		expect(connected.sequences.every((sequence) => sequence.croppedFrames === 0)).toBe(true);
+		const zooms = connected.sequences.flatMap((sequence) => sequence.zooms);
+		expect(zooms.some((zoom) => zoom.focus.cy < 0.4)).toBe(true);
+		expect(zooms.some((zoom) => zoom.focus.cy > 0.6)).toBe(true);
+		expect(direction.zooms.reduce((score, zoom) => score + zoom.score, 0)).toBeCloseTo(15);
 	});
 
 	it("keeps the deepest hard-visible scale when edge padding is impossible", () => {

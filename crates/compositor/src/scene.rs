@@ -193,13 +193,17 @@ pub struct SceneEffects {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum SceneBackground {
-    Color { color: String },
+    Color {
+        color: String,
+    },
     Gradient {
         #[serde(rename = "angleDeg")]
         angle_deg: f32,
         stops: Vec<String>,
     },
-    Image { path: String },
+    Image {
+        path: String,
+    },
 }
 
 /// Une annotation de la timeline (temps en secondes, source du clip).
@@ -298,6 +302,10 @@ pub struct SceneZoomRegion {
     /// `#[serde(default)]` : champ ajouté après coup.
     #[serde(default)]
     pub id: String,
+    /// Stable automatic-direction passage identity. Regions from different authored passages
+    /// must not become one connected pan only because their timestamps are close.
+    #[serde(default)]
+    pub direction_group_id: Option<String>,
     /// Index du clip dont les temps source portent cette région. `None` garde la compatibilité
     /// avec les payloads antérieurs et déclenche le repli par chevauchement de fenêtre source.
     #[serde(default)]
@@ -485,17 +493,21 @@ impl Scene {
             overlaps_window && region_clip_index.map(|i| i == clip_index).unwrap_or(true)
         };
         let mut scene = self.clone();
-        scene.zoom_regions.retain(|region| {
-            belongs(region.clip_index, region.start_sec, region.end_sec)
-        });
-        scene.speed_regions.retain(|region| {
-            belongs(region.clip_index, region.start_sec, region.end_sec)
-        });
-        scene.camera_fullscreen_regions.retain(|region| {
-            belongs(region.clip_index, region.start_sec, region.end_sec)
-        });
+        scene
+            .zoom_regions
+            .retain(|region| belongs(region.clip_index, region.start_sec, region.end_sec));
+        scene
+            .speed_regions
+            .retain(|region| belongs(region.clip_index, region.start_sec, region.end_sec));
+        scene
+            .camera_fullscreen_regions
+            .retain(|region| belongs(region.clip_index, region.start_sec, region.end_sec));
         scene.annotations.retain(|annotation| {
-            belongs(annotation.clip_index, annotation.start_sec, annotation.end_sec)
+            belongs(
+                annotation.clip_index,
+                annotation.start_sec,
+                annotation.end_sec,
+            )
         });
         // Le layout dépend de la FORME de la source du clip (dimensions natives × crop), qui
         // varie d'un clip à l'autre. On installe donc celui du clip composé dans les champs
@@ -546,7 +558,10 @@ mod tests {
         assert_eq!(scene.layout.screen_focal_point.cy, 0.5);
         assert!((scene.effects.roundness_frac - 0.0222).abs() < 1e-6);
         match scene.background {
-            SceneBackground::Gradient { angle_deg, ref stops } => {
+            SceneBackground::Gradient {
+                angle_deg,
+                ref stops,
+            } => {
                 assert_eq!(angle_deg, 135.0);
                 assert_eq!(stops.len(), 2);
             }
@@ -661,7 +676,10 @@ mod annotation_tests {
                  {"id":"b","startSec":0.0,"endSec":1.0,"kind":"blur","x":0.0,"y":0.0,"w":0.5,"h":0.5,"zIndex":1,"blur":{"style":"mosaic","shape":"freehand","color":"black","intensity":8,"blockSize":16,"freehandPoints":[{"x":0.1,"y":0.2},{"x":0.3,"y":0.4}]}}]"##,
         );
         let scene = Scene::from_json(&json).expect("parse figure+blur");
-        let figure = scene.annotations[0].figure.as_ref().expect("payload figure");
+        let figure = scene.annotations[0]
+            .figure
+            .as_ref()
+            .expect("payload figure");
         assert_eq!(figure.direction, "up-left");
         assert!((figure.stroke_width - 6.0).abs() < 1e-6);
         let blur = scene.annotations[1].blur.as_ref().expect("payload blur");
@@ -682,7 +700,11 @@ mod annotation_tests {
         let scene = Scene::from_json(&json).expect("parse");
         let filtered = scene.for_clip_window(0, 0.0, 10.0);
         assert_eq!(
-            filtered.annotations.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            filtered
+                .annotations
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["keep"]
         );
     }

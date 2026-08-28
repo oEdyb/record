@@ -31,6 +31,16 @@ describe("zoom preview motion", () => {
 		expect(middle.translateXPercent).toBeGreaterThan(end.translateXPercent);
 	});
 
+	it("does not connect nearby regions from different authored passages", () => {
+		const left = { ...zoom("left-group", 1_000, 3_000, 0.2), directionGroupId: "passage-a" };
+		const right = { ...zoom("right-group", 4_000, 6_000, 0.8), directionGroupId: "passage-b" };
+		const grouped = computeZoomPreviewTransform([left, right], 3_500);
+
+		// Separate passages can overlap while one eases out and the other eases
+		// in, but they must not hold full scale and pan as one connected passage.
+		expect(grouped.scale).toBeLessThan(1.5);
+	});
+
 	it("uses the incoming region's speed for a connected pan", () => {
 		const left = { ...zoom("left-speed", 1_000, 3_000, 0.2), motionStyle: "linear" as const };
 		const right = { ...zoom("right-speed", 4_000, 6_000, 0.8), motionStyle: "linear" as const };

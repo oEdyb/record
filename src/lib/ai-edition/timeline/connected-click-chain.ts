@@ -26,6 +26,7 @@ const FOCUS_ACTIVITY_TYPES = new Set([
 	"drag-start",
 	"drag-end",
 ]);
+const CLICK_ACTIVITY_TYPES = new Set(["click", "double-click", "right-click", "middle-click"]);
 const UNIT_STAGE = { width: 1, height: 1 };
 const UNIT_MASK = { x: 0, y: 0, width: 1, height: 1 };
 
@@ -40,6 +41,10 @@ export interface ConnectedClickSample {
 	directionWeight?: number;
 	/** Stable identity for one renewable derived activity such as uninterrupted typing. */
 	directionActivityId?: string;
+	/** Opaque capture-session context used only to prevent cross-app carry. */
+	directionContextId?: string;
+	/** Hard boundary set when the active capture context changes. */
+	directionContextChanged?: boolean;
 	/** Bounded writing area that must drive framing instead of a parked pointer. */
 	framingRect?: { x: number; y: number; width: number; height: number };
 	/** Highlights center their full gesture bounds; typing only moves enough to keep its area visible. */
@@ -122,6 +127,14 @@ function samplesAroundInterval(samples: ConnectedClickSample[], startMs: number,
 	return samples.slice(first, afterLast);
 }
 
+function sharesDirectionContext(left: ConnectedClickSample, right: ConnectedClickSample) {
+	return !(
+		left.directionContextId &&
+		right.directionContextId &&
+		left.directionContextId !== right.directionContextId
+	);
+}
+
 function collapseClicks(samples: ConnectedClickSample[], policy: ConnectedClickPolicy) {
 	const collapsed: ConnectedClickSample[] = [];
 	for (const click of samples.filter(
@@ -142,6 +155,7 @@ function collapseClicks(samples: ConnectedClickSample[], policy: ConnectedClickP
 		);
 		if (
 			previous &&
+			sharesDirectionContext(previous, click) &&
 			!crossesDerivedActivity &&
 			!followsCompletedDrag &&
 			click.timeMs - previous.timeMs <= policy.clickDedupeMs &&
@@ -190,6 +204,7 @@ function makeChains(
 				click.directionActivityId &&
 				currentActivityId !== click.directionActivityId,
 		);
+		const crossesContextBoundary = !sharesDirectionContext(previous, click);
 		const renewsDerivedActivity = Boolean(
 			(click.directionActivityId && click.directionActivityId === currentActivityId) ||
 				(previous.interactionType === "typing" && click.interactionType !== "typing"),
@@ -202,6 +217,7 @@ function makeChains(
 		if (
 			!crossesBlockedInterval &&
 			!crossesActivityBoundary &&
+			!crossesContextBoundary &&
 			(gap <= policy.chainGapMs || continuesDrag) &&
 			(renewsDerivedActivity || duration <= policy.clickChainMaximumDurationMs)
 		) {
@@ -266,6 +282,41 @@ function mergeTargets(clicks: ConnectedClickSample[], policy: ConnectedClickPoli
 	return targets;
 }
 
+function alignClickTargetsToPointerArrival(
+	targets: FocusTarget[],
+	samples: ConnectedClickSample[],
+	policy: ConnectedClickPolicy,
+) {
+	return targets.map((target, targetIndex) => {
+		if (!target.interactionType || !CLICK_ACTIVITY_TYPES.has(target.interactionType)) return target;
+
+		const minimumTimeMs = Math.max(
+			target.timeMs - Math.max(0, policy.targetArrivalLookbackMs),
+			targets[targetIndex - 1]?.timeMs ?? 0,
+		);
+		let sampleIndex = lowerBoundSampleTime(samples, target.timeMs);
+		if (sampleIndex >= samples.length || samples[sampleIndex].timeMs > target.timeMs) {
+			sampleIndex -= 1;
+		}
+		if (sampleIndex < 0) return target;
+
+		let arrivalTimeMs = target.timeMs;
+		for (; sampleIndex >= 0; sampleIndex -= 1) {
+			const sample = samples[sampleIndex];
+			if (sample.timeMs < minimumTimeMs) break;
+			if (
+				sample.visible === false ||
+				sample.directionExcluded ||
+				distance(sample, target) > policy.targetArrivalRadius
+			) {
+				break;
+			}
+			arrivalTimeMs = sample.timeMs;
+		}
+		return arrivalTimeMs < target.timeMs ? { ...target, timeMs: arrivalTimeMs } : target;
+	});
+}
+
 function clampFocus(focus: { cx: number; cy: number }, scale: number) {
 	const half = 0.5 / Math.max(1, scale);
 	return {
@@ -297,13 +348,15 @@ function focusContainingRect(
 
 function makeFocusTargets(
 	clicks: ConnectedClickSample[],
+	samples: ConnectedClickSample[],
 	scale: number,
 	policy: ConnectedClickPolicy,
 	initialFocus?: { cx: number; cy: number },
 ) {
 	let focus = clampFocus(initialFocus ?? { cx: 0.5, cy: 0.5 }, scale);
 	const targets: FocusTarget[] = [];
-	for (const target of mergeTargets(clicks, policy)) {
+	const mergedTargets = mergeTargets(clicks, policy);
+	for (const target of alignClickTargetsToPointerArrival(mergedTargets, samples, policy)) {
 		if (target.framingRect) {
 			const framed =
 				target.framingMode === "center"
@@ -401,12 +454,13 @@ function makeTransitions(
 
 function makeZooms(
 	clicks: ConnectedClickSample[],
+	samples: ConnectedClickSample[],
 	durationMs: number,
 	scale: number,
 	policy: ConnectedClickPolicy,
 	initialFocus?: { cx: number; cy: number },
 ): ConnectedClickZoom[] | null {
-	const targets = makeFocusTargets(clicks, scale, policy, initialFocus);
+	const targets = makeFocusTargets(clicks, samples, scale, policy, initialFocus);
 	if (targets.length === 0) return null;
 	const activeStartMs = Math.max(0, clicks[0].timeMs - policy.leadBeforeFirstClickMs);
 	const transitions = makeTransitions(targets, activeStartMs, policy);
@@ -560,6 +614,107 @@ function safetyForZooms(
 	return { croppedFrames, paddedBreaches };
 }
 
+function evaluateWithLatestSafeExit(options: {
+	zooms: ConnectedClickZoom[];
+	scale: number;
+	minimumEndMs: number;
+	samples: ConnectedClickSample[];
+	focusActivities: ConnectedClickSample[];
+	policy: ConnectedClickPolicy;
+}) {
+	const evaluate = (endMs: number) => {
+		const zooms = options.zooms.map((zoom, index) =>
+			index === options.zooms.length - 1
+				? { ...zoom, span: { ...zoom.span, end: Math.round(endMs) } }
+				: zoom,
+		);
+		return {
+			scale: options.scale,
+			zooms,
+			...safetyForZooms(zooms, options.samples, options.focusActivities, options.policy),
+		};
+	};
+	const requestedEndMs = options.zooms.at(-1)!.span.end;
+	const requested = evaluate(requestedEndMs);
+	if (requested.croppedFrames === 0) return requested;
+
+	const minimumEndMs = Math.min(requestedEndMs, Math.max(0, options.minimumEndMs));
+	if (minimumEndMs >= requestedEndMs) return requested;
+	let safest = evaluate(minimumEndMs);
+	if (safest.croppedFrames > 0) return requested;
+
+	let safeEndMs = minimumEndMs;
+	let unsafeEndMs = requestedEndMs;
+	for (
+		let iteration = 0;
+		iteration < Math.max(0, options.policy.scaleSearchIterations);
+		iteration += 1
+	) {
+		const candidate = evaluate((safeEndMs + unsafeEndMs) / 2);
+		if (candidate.croppedFrames === 0) {
+			safeEndMs = candidate.zooms.at(-1)!.span.end;
+			safest = candidate;
+		} else {
+			unsafeEndMs = candidate.zooms.at(-1)!.span.end;
+		}
+		if (unsafeEndMs - safeEndMs <= 1) break;
+	}
+	return safest;
+}
+
+/**
+ * Resolve the deepest fixed Zoom that keeps every real cursor frame visible
+ * through entry, hold, and exit. Single-click direction uses this same safety
+ * gate as connected passages instead of trusting an activity envelope alone.
+ */
+export function resolveCursorSafeFixedZoom(options: {
+	span: { start: number; end: number };
+	minimumEndMs?: number;
+	focus: { cx: number; cy: number };
+	requestedScale: number;
+	cursor: ConnectedClickSample[];
+	motionSpeed?: MotionSpeed;
+	policy?: ConnectedClickPolicy;
+}) {
+	const policy = options.policy ?? DEFAULT_CONNECTED_CLICK_POLICY;
+	const evaluate = (scale: number) => {
+		const zoom: ConnectedClickZoom = {
+			span: options.span,
+			focus: options.focus,
+			customScale: scale,
+			motionSpeed: options.motionSpeed ?? 1,
+		};
+		return evaluateWithLatestSafeExit({
+			zooms: [zoom],
+			scale,
+			minimumEndMs: Math.max(
+				zoom.span.start + policy.minimumTargetHoldMs,
+				options.minimumEndMs ?? zoom.span.end,
+			),
+			samples: options.cursor,
+			focusActivities: [],
+			policy,
+		});
+	};
+	const requestedScale = clamp(options.requestedScale, 1, AUTOMATIC_DIRECTION_MAX_SCALE);
+	const requested = evaluate(requestedScale);
+	if (requested.croppedFrames === 0) return requested;
+
+	let safeScale = 1;
+	let unsafeScale = requestedScale;
+	let safest = evaluate(safeScale);
+	for (let iteration = 0; iteration < Math.max(0, policy.scaleSearchIterations); iteration += 1) {
+		const candidate = evaluate((safeScale + unsafeScale) / 2);
+		if (candidate.croppedFrames === 0) {
+			safeScale = candidate.scale;
+			safest = candidate;
+		} else {
+			unsafeScale = candidate.scale;
+		}
+	}
+	return safest;
+}
+
 function solveSequence(
 	clicks: ConnectedClickSample[],
 	samples: ConnectedClickSample[],
@@ -568,8 +723,22 @@ function solveSequence(
 	initialFocus?: { cx: number; cy: number },
 ) {
 	const evaluate = (scale: number) => {
-		const zooms = makeZooms(clicks, durationMs, scale, policy, initialFocus);
-		return zooms ? { scale, zooms, ...safetyForZooms(zooms, samples, clicks, policy) } : null;
+		const zooms = makeZooms(clicks, samples, durationMs, scale, policy, initialFocus);
+		return zooms && clicks.every((click) => CLICK_ACTIVITY_TYPES.has(click.interactionType ?? ""))
+			? evaluateWithLatestSafeExit({
+					zooms,
+					scale,
+					minimumEndMs: Math.max(
+						zooms.at(-1)!.span.start + policy.minimumTargetHoldMs,
+						clicks.at(-1)!.timeMs + policy.minimumTargetHoldMs,
+					),
+					samples,
+					focusActivities: clicks,
+					policy,
+				})
+			: zooms
+				? { scale, zooms, ...safetyForZooms(zooms, samples, clicks, policy) }
+				: null;
 	};
 	const requestedScale = clamp(policy.requestedScale, 1, AUTOMATIC_DIRECTION_MAX_SCALE);
 	const requested = evaluate(requestedScale);
@@ -597,6 +766,7 @@ function solveSequence(
 
 function makeVisualPassages(
 	chains: ConnectedClickSample[][],
+	samples: ConnectedClickSample[],
 	durationMs: number,
 	policy: ConnectedClickPolicy,
 ) {
@@ -613,7 +783,32 @@ function makeVisualPassages(
 			previous.at(-1)!.timeMs + policy.holdAfterLastClickMs,
 		);
 		const currentStartMs = Math.max(0, chain[0].timeMs - policy.leadBeforeFirstClickMs);
-		if (currentStartMs - previousEndMs <= policy.passageConnectionGapMs) {
+		const previousIntent = previous.at(-1)!;
+		const currentIntent = chain[0];
+		const intentGapMs = currentIntent.timeMs - previousIntent.timeMs;
+		const firstCursor = samples.length > 0 ? cursorAt(samples, previousIntent.timeMs) : null;
+		const stationaryBridge =
+			sharesDirectionContext(previousIntent, currentIntent) &&
+			CLICK_ACTIVITY_TYPES.has(previousIntent.interactionType ?? "") &&
+			currentIntent.interactionType === "typing" &&
+			intentGapMs <= policy.stationaryBridgeMaximumGapMs &&
+			distance(previousIntent, currentIntent) <= policy.stationaryBridgeMaximumFocusDistance &&
+			Boolean(firstCursor) &&
+			samples
+				.filter(
+					(sample) =>
+						sample.timeMs >= previousIntent.timeMs && sample.timeMs <= currentIntent.timeMs,
+				)
+				.every(
+					(sample) =>
+						sample.visible !== false &&
+						!sample.directionExcluded &&
+						distance(firstCursor!, sample) <= policy.stationaryBridgeMaximumMovement,
+				);
+		if (
+			sharesDirectionContext(previousIntent, currentIntent) &&
+			(currentStartMs - previousEndMs <= policy.passageConnectionGapMs || stationaryBridge)
+		) {
 			passage!.push(chain);
 		} else {
 			passages.push([chain]);
@@ -696,8 +891,23 @@ function solveVisualPassage(
 ) {
 	const solveLayout = (activities: ConnectedClickSample[]) => {
 		const evaluate = (scale: number) => {
-			const zooms = makeZooms(activities, durationMs, scale, policy, initialFocus);
-			return zooms ? { scale, zooms, ...safetyForZooms(zooms, samples, activities, policy) } : null;
+			const zooms = makeZooms(activities, samples, durationMs, scale, policy, initialFocus);
+			return zooms &&
+				activities.every((activity) => CLICK_ACTIVITY_TYPES.has(activity.interactionType ?? ""))
+				? evaluateWithLatestSafeExit({
+						zooms,
+						scale,
+						minimumEndMs: Math.max(
+							zooms.at(-1)!.span.start + policy.minimumTargetHoldMs,
+							activities.at(-1)!.timeMs + policy.minimumTargetHoldMs,
+						),
+						samples,
+						focusActivities: activities,
+						policy,
+					})
+				: zooms
+					? { scale, zooms, ...safetyForZooms(zooms, samples, activities, policy) }
+					: null;
 		};
 		const fullFrame = evaluate(1);
 		if (!fullFrame) return null;
@@ -800,7 +1010,7 @@ function solveStablePassageGroups(
 ): Array<{ detectorChains: ConnectedClickSample[][]; solved: SolvedVisualPassage }> {
 	const whole = solveVisualPassage(detectorChains.flat(), samples, durationMs, policy);
 	if (!whole) return [];
-	if (detectorChains.length === 1 || whole.scale >= policy.passageMinimumStableScale) {
+	if (whole.scale >= policy.passageMinimumStableScale) {
 		return [{ detectorChains, solved: whole }];
 	}
 
@@ -820,6 +1030,7 @@ function solveStablePassageGroups(
 	) {
 		return [{ detectorChains, solved: followed }];
 	}
+	if (detectorChains.length === 1) return [{ detectorChains, solved: whole }];
 
 	const groups: Array<{
 		detectorChains: ConnectedClickSample[][];
@@ -883,11 +1094,11 @@ function solveStablePassageGroups(
 		if (index === 0) return false;
 		return groups[index - 1].solved.zooms.at(-1)!.span.end > group.solved.zooms[0].span.start;
 	});
-	const containsTyping = detectorChains
+	const containsDrag = detectorChains
 		.flat()
-		.some((sample) => sample.directionActivityId?.startsWith("typing-"));
+		.some((sample) => sample.directionActivityId?.startsWith("drag-"));
 	let hasUnresolvedUnsafeHandoff = false;
-	if (!hasUnresolvedOverlap && containsTyping) {
+	if (!hasUnresolvedOverlap && !containsDrag) {
 		for (let index = 1; index < groups.length; index += 1) {
 			const previous = groups[index - 1];
 			const current = groups[index];
@@ -983,7 +1194,7 @@ export function planConnectedClickChains(options: {
 		...focusActivities,
 	].sort((left, right) => left.timeMs - right.timeMs);
 	const detectorChains = makeChains(collapseClicks(focusSamples, policy), samples, policy);
-	const passages = makeVisualPassages(detectorChains, options.durationMs, policy).filter(
+	const passages = makeVisualPassages(detectorChains, samples, options.durationMs, policy).filter(
 		(passage) => passage.some((chain) => chain.length >= 2),
 	);
 	const consumedChains = passages.flat();

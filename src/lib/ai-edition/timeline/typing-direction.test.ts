@@ -121,6 +121,59 @@ describe("typing direction", () => {
 		).toEqual([]);
 	});
 
+	it("does not reuse a low-confidence broad-target click after it becomes stale", () => {
+		const targetRect = { x: 0.57, y: 0.08, width: 0.43, height: 0.84 };
+		expect(
+			buildTypingFocusAnchors({
+				keyboardActivity: [
+					key(4_700, 0.785, 0.5, { focusSource: "target", targetRect }),
+					key(5_000, 0.785, 0.5, { focusSource: "target", targetRect }),
+					key(5_300, 0.785, 0.5, { focusSource: "target", targetRect }),
+				],
+				cursorTelemetry: [
+					{ timeMs: 1_000, cx: 0.78, cy: 0.86, visible: true, interactionType: "click" },
+				],
+				durationMs: 6_000,
+			}),
+		).toEqual([]);
+	});
+
+	it("does not reuse a click from another opaque app context", () => {
+		const targetRect = { x: 0.57, y: 0.08, width: 0.43, height: 0.84 };
+		expect(
+			buildTypingFocusAnchors({
+				keyboardActivity: [
+					key(1_000, 0.785, 0.5, {
+						focusSource: "target",
+						targetRect,
+						directionContextId: "app-b",
+					}),
+					key(1_300, 0.785, 0.5, {
+						focusSource: "target",
+						targetRect,
+						directionContextId: "app-b",
+					}),
+					key(1_600, 0.785, 0.5, {
+						focusSource: "target",
+						targetRect,
+						directionContextId: "app-b",
+					}),
+				],
+				cursorTelemetry: [
+					{
+						timeMs: 900,
+						cx: 0.78,
+						cy: 0.86,
+						visible: true,
+						interactionType: "click",
+						directionContextId: "app-a",
+					},
+				],
+				durationMs: 3_000,
+			}),
+		).toEqual([]);
+	});
+
 	it("can use a compact target center when no caret or click exists", () => {
 		const targetRect = { x: 0.42, y: 0.43, width: 0.16, height: 0.08 };
 		const anchors = buildTypingFocusAnchors({
@@ -188,5 +241,22 @@ describe("typing direction", () => {
 
 		expect(new Set(anchors.map((anchor) => anchor.directionActivityId)).size).toBe(2);
 		expect(anchors.reduce((total, anchor) => total + (anchor.directionWeight ?? 1), 0)).toBe(2);
+	});
+
+	it("splits nearby typing when the private target identity changes", () => {
+		const targetRect = { x: 0.2, y: 0.2, width: 0.6, height: 0.6 };
+		const anchors = buildTypingFocusAnchors({
+			keyboardActivity: [
+				key(1_000, 0.45, 0.5, { targetRect, directionTargetId: "field-a" }),
+				key(1_150, 0.45, 0.5, { targetRect, directionTargetId: "field-a" }),
+				key(1_300, 0.45, 0.5, { targetRect, directionTargetId: "field-a" }),
+				key(1_400, 0.46, 0.5, { targetRect, directionTargetId: "field-b" }),
+				key(1_550, 0.46, 0.5, { targetRect, directionTargetId: "field-b" }),
+				key(1_700, 0.46, 0.5, { targetRect, directionTargetId: "field-b" }),
+			],
+			durationMs: 3_000,
+		});
+
+		expect(new Set(anchors.map((anchor) => anchor.directionActivityId)).size).toBe(2);
 	});
 });

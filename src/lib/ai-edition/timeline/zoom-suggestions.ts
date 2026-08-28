@@ -50,7 +50,7 @@ export function buildAutoZoomSuggestions(options: {
 	cursorTelemetry: DirectionCursorSample[];
 	keyboardActivity?: KeyboardActivitySample[];
 	totalMs: number;
-	existingRegions: { startMs: number; endMs: number }[];
+	existingRegions: { startMs: number; endMs: number; directionGroupId?: string }[];
 	defaultDurationMs: number;
 	connectedClickPolicy?: ConnectedClickPolicy;
 	typingDirectionPolicy?: TypingDirectionPolicy;
@@ -77,6 +77,7 @@ export function buildAutoZoomSuggestions(options: {
 		occupiedZooms: existingRegions.map((region) => ({
 			start: region.startMs,
 			end: region.endMs,
+			directionGroupId: region.directionGroupId,
 		})),
 		preferredZoomDurationMs: defaultDurationMs,
 		...(options.directionPolicy ? { policy: options.directionPolicy } : {}),
@@ -173,6 +174,7 @@ type PlaybackTimeSegment = {
 	rawStart: number;
 	rawEnd: number;
 	playbackStart: number;
+	segmentId: string;
 };
 
 function projectSpanToPlayback(
@@ -187,6 +189,7 @@ function projectSpanToPlayback(
 			{
 				start: segment.playbackStart + rawStart - segment.rawStart,
 				end: segment.playbackStart + rawEnd - segment.rawStart,
+				segmentId: segment.segmentId,
 			},
 		];
 	});
@@ -206,9 +209,9 @@ export function buildAutoZoomSuggestionsForTimeline(options: {
 	clips: AxcutClip[];
 	trimRanges?: AxcutTrimRange[];
 	/** Already-placed zoom spans, in raw timeline ms. */
-	existingRegions: { startMs: number; endMs: number }[];
+	existingRegions: { startMs: number; endMs: number; directionGroupId?: string }[];
 	/** Other direction effects that reserve attention but not the screen-Zoom budget. */
-	occupiedDirections?: { startMs: number; endMs: number }[];
+	occupiedDirections?: { startMs: number; endMs: number; directionGroupId?: string }[];
 	maximumTotalDirectionsPerMinute?: number;
 	defaultDurationMs: number;
 	connectedClickPolicy?: ConnectedClickPolicy;
@@ -225,7 +228,7 @@ export function buildAutoZoomSuggestionsForTimeline(options: {
 	for (const clip of [...clips].sort((a, b) => a.timelineStartSec - b.timelineStartSec)) {
 		const keptSegments = resolvePlaybackSegments([clip], trimRanges);
 		keptSegmentsByClip.set(clip.id, keptSegments);
-		for (const segment of keptSegments) {
+		for (const [segmentIndex, segment] of keptSegments.entries()) {
 			const durationMs =
 				((segment.sourceEndSec ?? segment.sourceStartSec) - segment.sourceStartSec) * 1_000;
 			const rawStartMs =
@@ -234,6 +237,7 @@ export function buildAutoZoomSuggestionsForTimeline(options: {
 				rawStart: rawStartMs,
 				rawEnd: rawStartMs + durationMs,
 				playbackStart: visibleDurationMs,
+				segmentId: `${clip.id}:${segmentIndex}`,
 			});
 			visibleDurationMs += Math.max(0, durationMs);
 		}
@@ -354,10 +358,14 @@ export function buildAutoZoomSuggestionsForTimeline(options: {
 		candidates: playbackCandidates,
 		durationMs: visibleDurationMs,
 		occupiedZooms: existingRegions.flatMap((region) =>
-			projectSpanToPlayback({ start: region.startMs, end: region.endMs }, playbackTimeSegments),
+			projectSpanToPlayback({ start: region.startMs, end: region.endMs }, playbackTimeSegments).map(
+				(span) => ({ ...span, directionGroupId: region.directionGroupId }),
+			),
 		),
 		occupiedDirections: (options.occupiedDirections ?? []).flatMap((region) =>
-			projectSpanToPlayback({ start: region.startMs, end: region.endMs }, playbackTimeSegments),
+			projectSpanToPlayback({ start: region.startMs, end: region.endMs }, playbackTimeSegments).map(
+				(span) => ({ ...span, directionGroupId: region.directionGroupId }),
+			),
 		),
 		maximumTotalDirectionsPerMinute: options.maximumTotalDirectionsPerMinute,
 		policy: directionPolicy,
@@ -384,7 +392,7 @@ export function buildAutoZoomSuggestionsForClips(options: {
 	assetId: string;
 	clips: AxcutClip[];
 	trimRanges?: AxcutTrimRange[];
-	existingRegions: { startMs: number; endMs: number }[];
+	existingRegions: { startMs: number; endMs: number; directionGroupId?: string }[];
 	defaultDurationMs: number;
 	connectedClickPolicy?: ConnectedClickPolicy;
 	typingDirectionPolicy?: TypingDirectionPolicy;

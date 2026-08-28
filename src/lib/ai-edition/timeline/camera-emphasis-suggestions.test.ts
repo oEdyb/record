@@ -148,6 +148,26 @@ describe("automatic camera emphasis", () => {
 		expect(result[0].span.start).toBeGreaterThanOrEqual(5_000);
 	});
 
+	it("treats an opaque app-context change as screen activity", () => {
+		const cursorTelemetry = stationaryCursor().map((sample) =>
+			sample.timeMs === 3_000
+				? { ...sample, directionContextChanged: true, directionExcluded: true }
+				: sample,
+		);
+		const result = build({
+			recordings: [
+				{
+					assetId: "asset-1",
+					microphoneActivity: [{ startMs: 0, endMs: 10_000 }],
+					cursorTelemetry,
+				},
+			],
+		});
+
+		expect(result).toHaveLength(1);
+		expect(result[0].span.start).toBeGreaterThanOrEqual(4_750);
+	});
+
 	it("treats typing as screen activity before Camera Emphasis", () => {
 		const result = build({
 			recordings: [
@@ -302,8 +322,8 @@ describe("automatic camera emphasis", () => {
 				},
 			],
 			occupiedScreenDirections: [
-				{ start: 0, end: 4_000 },
-				{ start: 4_500, end: 8_000 },
+				{ start: 0, end: 4_000, directionGroupId: "one-screen-passage" },
+				{ start: 4_500, end: 8_000, directionGroupId: "one-screen-passage" },
 			],
 			policy: {
 				...DEFAULT_CAMERA_EMPHASIS_POLICY,
@@ -313,6 +333,91 @@ describe("automatic camera emphasis", () => {
 
 		expect(result).toHaveLength(1);
 		expect(result[0].span).toEqual({ start: 19_750, end: 30_000 });
+	});
+
+	it("counts nearby different screen passages as separate total directions", () => {
+		const longClip = { ...clip, sourceEndSec: 60, timelineEndSec: 60 };
+		const cursorTelemetry = Array.from({ length: 241 }, (_, index) => ({
+			timeMs: index * 250,
+			cx: 0.8,
+			cy: 0.7,
+			interactionType: "move" as const,
+		}));
+		const result = build({
+			clips: [longClip],
+			recordings: [
+				{
+					assetId: "asset-1",
+					cursorTelemetry,
+					microphoneActivity: [{ startMs: 20_000, endMs: 30_000 }],
+				},
+			],
+			occupiedScreenDirections: [
+				{ start: 0, end: 4_000, directionGroupId: "screen-a" },
+				{ start: 4_500, end: 8_000, directionGroupId: "screen-b" },
+			],
+			policy: {
+				...DEFAULT_CAMERA_EMPHASIS_POLICY,
+				maxTotalDirectionPerMinute: 2,
+			},
+		});
+
+		expect(result).toEqual([]);
+	});
+
+	it("counts touching screen and camera effects as separate modalities", () => {
+		const longClip = { ...clip, sourceEndSec: 60, timelineEndSec: 60 };
+		const cursorTelemetry = Array.from({ length: 241 }, (_, index) => ({
+			timeMs: index * 250,
+			cx: 0.8,
+			cy: 0.7,
+			interactionType: "move" as const,
+		}));
+		const result = build({
+			clips: [longClip],
+			recordings: [
+				{
+					assetId: "asset-1",
+					cursorTelemetry,
+					microphoneActivity: [{ startMs: 20_000, endMs: 30_000 }],
+				},
+			],
+			occupiedScreenDirections: [{ start: 0, end: 4_000, directionGroupId: "screen-a" }],
+			existingCameraRegions: [{ startMs: 4_000, endMs: 8_000, directionGroupId: "camera-a" }],
+			policy: {
+				...DEFAULT_CAMERA_EMPHASIS_POLICY,
+				maxTotalDirectionPerMinute: 2,
+			},
+		});
+
+		expect(result).toEqual([]);
+	});
+
+	it("uses effect entrances for the rolling density window", () => {
+		const longClip = { ...clip, sourceEndSec: 120, timelineEndSec: 120 };
+		const result = build({
+			clips: [longClip],
+			recordings: [
+				{
+					assetId: "asset-1",
+					cursorTelemetry: Array.from({ length: 481 }, (_, index) => ({
+						timeMs: index * 250,
+						cx: 0.8,
+						cy: 0.7,
+						interactionType: "move" as const,
+					})),
+					microphoneActivity: [{ startMs: 70_000, endMs: 80_000 }],
+				},
+			],
+			existingCameraRegions: [{ startMs: 0, endMs: 50_000, directionGroupId: "camera-a" }],
+			policy: {
+				...DEFAULT_CAMERA_EMPHASIS_POLICY,
+				maxTotalDirectionPerMinute: 1,
+			},
+		});
+
+		expect(result).toHaveLength(1);
+		expect(result[0].span).toEqual({ start: 69_750, end: 80_000 });
 	});
 
 	it("counts screen directions on opposite sides of a trim as separate sequences", () => {

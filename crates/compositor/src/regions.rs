@@ -85,7 +85,10 @@ pub fn speed_segments_for_window(
 /// région seulement si `clip_index` est absent (vieux payload) OU vaut `active_clip_index`.
 pub fn speed_at(regions: &[SceneSpeedRegion], active_clip_index: usize, t: f64) -> f64 {
     for region in regions {
-        let belongs = region.clip_index.map(|i| i == active_clip_index).unwrap_or(true);
+        let belongs = region
+            .clip_index
+            .map(|i| i == active_clip_index)
+            .unwrap_or(true);
         if belongs && t >= region.start_sec && t < region.end_sec {
             if region.speed.is_finite() && region.speed > 0.0 {
                 return region.speed;
@@ -110,7 +113,12 @@ fn push_speed_segment(
     let frames = (((duration - SPEED_FRAME_EPSILON_SEC) / speed) * fps)
         .ceil()
         .max(0.0) as u64;
-    spans.push(SpeedSegment { start_sec, end_sec, speed, frame_count: frames });
+    spans.push(SpeedSegment {
+        start_sec,
+        end_sec,
+        speed,
+        frame_count: frames,
+    });
 }
 
 // mêmes fenêtres de transition que le web (TRANSITION_WINDOW_MS etc., converties en secondes).
@@ -235,7 +243,11 @@ pub struct ZoomState {
     pub rotation: [f32; 3],
 }
 
-const IDENTITY_ZOOM: ZoomState = ZoomState { scale: 1.0, focus: [0.5, 0.5], rotation: [0.0, 0.0, 0.0] };
+const IDENTITY_ZOOM: ZoomState = ZoomState {
+    scale: 1.0,
+    focus: [0.5, 0.5],
+    rotation: [0.0, 0.0, 0.0],
+};
 
 /// Port de `easeConnectedPan` (TS) : cubic-bezier(0.1, 0, 0.2, 1).
 fn ease_connected_pan(style: SceneMotionStyle, t: f32) -> f32 {
@@ -269,7 +281,11 @@ fn rotation3d_for(rotation: &Option<String>) -> [f32; 3] {
 }
 
 fn lerp_rotation3d(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+    [
+        lerp(a[0], b[0], t),
+        lerp(a[1], b[1], t),
+        lerp(a[2], b[2], t),
+    ]
 }
 
 /// Les trois segments d'une flèche d'annotation, en unités du viewBox SVG (0..100), repris
@@ -278,19 +294,47 @@ fn lerp_rotation3d(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
 /// flèche — inutile de réinventer une géométrie « équivalente ».
 pub fn arrow_segments_viewbox(direction: &str) -> [[f32; 4]; 3] {
     match direction {
-        "up" => [[50.0, 20.0, 50.0, 80.0], [50.0, 20.0, 35.0, 35.0], [50.0, 20.0, 65.0, 35.0]],
-        "down" => [[50.0, 20.0, 50.0, 80.0], [50.0, 80.0, 35.0, 65.0], [50.0, 80.0, 65.0, 65.0]],
-        "left" => [[80.0, 50.0, 20.0, 50.0], [20.0, 50.0, 35.0, 35.0], [20.0, 50.0, 35.0, 65.0]],
-        "up-right" => [[25.0, 75.0, 75.0, 25.0], [75.0, 25.0, 53.8, 25.0], [75.0, 25.0, 75.0, 46.2]],
-        "up-left" => [[75.0, 75.0, 25.0, 25.0], [25.0, 25.0, 25.0, 46.2], [25.0, 25.0, 46.2, 25.0]],
-        "down-right" => {
-            [[25.0, 25.0, 75.0, 75.0], [75.0, 75.0, 75.0, 53.8], [75.0, 75.0, 53.8, 75.0]]
-        }
-        "down-left" => {
-            [[75.0, 25.0, 25.0, 75.0], [25.0, 75.0, 46.2, 75.0], [25.0, 75.0, 25.0, 53.8]]
-        }
+        "up" => [
+            [50.0, 20.0, 50.0, 80.0],
+            [50.0, 20.0, 35.0, 35.0],
+            [50.0, 20.0, 65.0, 35.0],
+        ],
+        "down" => [
+            [50.0, 20.0, 50.0, 80.0],
+            [50.0, 80.0, 35.0, 65.0],
+            [50.0, 80.0, 65.0, 65.0],
+        ],
+        "left" => [
+            [80.0, 50.0, 20.0, 50.0],
+            [20.0, 50.0, 35.0, 35.0],
+            [20.0, 50.0, 35.0, 65.0],
+        ],
+        "up-right" => [
+            [25.0, 75.0, 75.0, 25.0],
+            [75.0, 25.0, 53.8, 25.0],
+            [75.0, 25.0, 75.0, 46.2],
+        ],
+        "up-left" => [
+            [75.0, 75.0, 25.0, 25.0],
+            [25.0, 25.0, 25.0, 46.2],
+            [25.0, 25.0, 46.2, 25.0],
+        ],
+        "down-right" => [
+            [25.0, 25.0, 75.0, 75.0],
+            [75.0, 75.0, 75.0, 53.8],
+            [75.0, 75.0, 53.8, 75.0],
+        ],
+        "down-left" => [
+            [75.0, 25.0, 25.0, 75.0],
+            [25.0, 75.0, 46.2, 75.0],
+            [25.0, 75.0, 25.0, 53.8],
+        ],
         // "right" et tout ce qui n'est pas reconnu — même défaut que le schéma côté app.
-        _ => [[20.0, 50.0, 80.0, 50.0], [80.0, 50.0, 65.0, 35.0], [80.0, 50.0, 65.0, 65.0]],
+        _ => [
+            [20.0, 50.0, 80.0, 50.0],
+            [80.0, 50.0, 65.0, 35.0],
+            [80.0, 50.0, 65.0, 65.0],
+        ],
     }
 }
 
@@ -307,7 +351,10 @@ pub fn arrow_local_geometry(
     quad_px: [f32; 2],
 ) -> ([[f32; 4]; 3], f32) {
     let scale = quad_px[0].min(quad_px[1]) / 100.0;
-    let off = [(quad_px[0] - 100.0 * scale) * 0.5, (quad_px[1] - 100.0 * scale) * 0.5];
+    let off = [
+        (quad_px[0] - 100.0 * scale) * 0.5,
+        (quad_px[1] - 100.0 * scale) * 0.5,
+    ];
     let to_local = |v: [f32; 4]| {
         [
             off[0] + v[0] * scale,
@@ -318,7 +365,14 @@ pub fn arrow_local_geometry(
     };
     let segments = arrow_segments_viewbox(direction);
     let half_stroke = (stroke_width_viewbox.max(0.0) * scale) * 0.5;
-    ([to_local(segments[0]), to_local(segments[1]), to_local(segments[2])], half_stroke)
+    (
+        [
+            to_local(segments[0]),
+            to_local(segments[1]),
+            to_local(segments[2]),
+        ],
+        half_stroke,
+    )
 }
 
 /// Focus effectif d'une région à `t` : sa position fixe, sauf en mode "auto" où elle suit la
@@ -345,12 +399,28 @@ fn resolve_focus(region: &SceneZoomRegion, t: f32, cursor: Option<&CursorTrack>)
 /// même slice donc les positions suffisent).
 fn connected_pairs(regions: &[SceneZoomRegion]) -> Vec<(usize, usize, f32, f32)> {
     let mut order: Vec<usize> = (0..regions.len()).collect();
-    order.sort_by(|&a, &b| regions[a].start_sec.partial_cmp(&regions[b].start_sec).unwrap());
+    order.sort_by(|&a, &b| {
+        regions[a]
+            .start_sec
+            .partial_cmp(&regions[b].start_sec)
+            .unwrap()
+    });
     let mut pairs = Vec::new();
     for w in order.windows(2) {
         let (ci, ni) = (w[0], w[1]);
         let gap = regions[ni].start_sec as f32 - regions[ci].end_sec as f32;
-        if gap <= CHAINED_ZOOM_PAN_GAP_S && regions[ni].end_sec > regions[ci].end_sec {
+        let groups_can_connect = match (
+            regions[ci].direction_group_id.as_deref(),
+            regions[ni].direction_group_id.as_deref(),
+        ) {
+            (None, None) => true,
+            (Some(current), Some(next)) => current == next,
+            _ => false,
+        };
+        if groups_can_connect
+            && gap <= CHAINED_ZOOM_PAN_GAP_S
+            && regions[ni].end_sec > regions[ci].end_sec
+        {
             let transition_start = regions[ci].end_sec as f32;
             let duration =
                 CONNECTED_ZOOM_PAN_DURATION_S / normalized_motion_speed(regions[ni].motion_speed);
@@ -365,7 +435,11 @@ fn connected_pairs(regions: &[SceneZoomRegion]) -> Vec<(usize, usize, f32, f32)>
 /// `findDominantRegion` (TS) : régions chaînées d'abord (transition puis
 /// hold), sinon la région "dominante" indépendante la plus forte (ties → la plus récente).
 /// Hors de toute région → identité (échelle 1, focus centre, tilt nul).
-pub fn zoom_state_at(regions: &[SceneZoomRegion], t: f32, cursor: Option<&CursorTrack>) -> ZoomState {
+pub fn zoom_state_at(
+    regions: &[SceneZoomRegion],
+    t: f32,
+    cursor: Option<&CursorTrack>,
+) -> ZoomState {
     if regions.is_empty() {
         return IDENTITY_ZOOM;
     }
@@ -385,8 +459,15 @@ pub fn zoom_state_at(regions: &[SceneZoomRegion], t: f32, cursor: Option<&Cursor
         let next_focus = resolve_focus(next, t, cursor);
         return ZoomState {
             scale: lerp(cur.scale, next.scale, progress),
-            focus: [lerp(cur_focus[0], next_focus[0], progress), lerp(cur_focus[1], next_focus[1], progress)],
-            rotation: lerp_rotation3d(rotation3d_for(&cur.rotation), rotation3d_for(&next.rotation), progress),
+            focus: [
+                lerp(cur_focus[0], next_focus[0], progress),
+                lerp(cur_focus[1], next_focus[1], progress),
+            ],
+            rotation: lerp_rotation3d(
+                rotation3d_for(&cur.rotation),
+                rotation3d_for(&next.rotation),
+                progress,
+            ),
         };
     }
 
@@ -407,9 +488,11 @@ pub fn zoom_state_at(regions: &[SceneZoomRegion], t: f32, cursor: Option<&Cursor
     // chaîné ci-dessus (sinon leur propre ease-in/out "percerait" à travers la fenêtre chaînée).
     let mut best: Option<(usize, f32)> = None;
     for (i, r) in regions.iter().enumerate() {
-        let outgoing_past_end =
-            pairs.iter().any(|&(ci, _, _, _)| ci == i && t > regions[i].end_sec as f32);
-        let incoming_before_transition_end = pairs.iter().any(|&(_, ni, _, t_end)| ni == i && t < t_end);
+        let outgoing_past_end = pairs
+            .iter()
+            .any(|&(ci, _, _, _)| ci == i && t > regions[i].end_sec as f32);
+        let incoming_before_transition_end =
+            pairs.iter().any(|&(_, ni, _, t_end)| ni == i && t < t_end);
         if outgoing_past_end || incoming_before_transition_end {
             continue;
         }
@@ -467,13 +550,21 @@ fn camera_fullscreen_region_strength(region: &SceneCameraFullscreenRegion, t: f3
     let lead_in_end = start + lead_in;
     let lead_out_start = end - lead_out;
     if t < lead_in_end {
-        let progress = if lead_in > 0.0 { (t - start) / lead_in } else { 1.0 };
+        let progress = if lead_in > 0.0 {
+            (t - start) / lead_in
+        } else {
+            1.0
+        };
         return apply_motion_curve(region.motion_style, progress);
     }
     if t <= lead_out_start {
         return 1.0;
     }
-    let progress = if lead_out > 0.0 { (end - t) / lead_out } else { 0.0 };
+    let progress = if lead_out > 0.0 {
+        (end - t) / lead_out
+    } else {
+        0.0
+    };
     apply_motion_curve(region.motion_style, progress)
 }
 
@@ -612,7 +703,11 @@ pub fn is_identity_rotation(r: [f32; 3]) -> bool {
 /// perspective `perspective` (distance en px ; <=0 = orthographique). `None` si le point
 /// passe derrière le plan de projection (cas pathologique, comme le `return 1` du TS).
 fn project_corner(x0: f32, y0: f32, rot: [f32; 3], perspective: f32) -> Option<(f32, f32)> {
-    let (a, b, g) = (rot[0].to_radians(), rot[1].to_radians(), rot[2].to_radians());
+    let (a, b, g) = (
+        rot[0].to_radians(),
+        rot[1].to_radians(),
+        rot[2].to_radians(),
+    );
     let (ca, sa) = (a.cos(), a.sin());
     let (cb, sb) = (b.cos(), b.sin());
     let (cg, sg) = (g.cos(), g.sin());
@@ -661,7 +756,9 @@ fn project_scaled_corners(
 
 /// Demi-étendue des coins projetés sur chaque axe.
 fn projected_extents(corners: &[(f32, f32); 4]) -> (f32, f32) {
-    corners.iter().fold((0.0f32, 0.0f32), |(mx, my), &(x, y)| (mx.max(x.abs()), my.max(y.abs())))
+    corners.iter().fold((0.0f32, 0.0f32), |(mx, my), &(x, y)| {
+        (mx.max(x.abs()), my.max(y.abs()))
+    })
 }
 
 /// Un écran incliné : ses 4 coins projetés, et la réduction qu'il a fallu pour qu'ils tiennent.
@@ -748,7 +845,10 @@ impl TiltedQuad {
         let [tl, tr, br, bl] = self.corners;
         let top = (tl.0 + (tr.0 - tl.0) * fx, tl.1 + (tr.1 - tl.1) * fx);
         let bottom = (bl.0 + (br.0 - bl.0) * fx, bl.1 + (br.1 - bl.1) * fx);
-        (top.0 + (bottom.0 - top.0) * fy, top.1 + (bottom.1 - top.1) * fy)
+        (
+            top.0 + (bottom.0 - top.0) * fy,
+            top.1 + (bottom.1 - top.1) * fy,
+        )
     }
 
     /// Demi-largeur / demi-hauteur de la bounding box des coins projetés, en px.
@@ -765,6 +865,7 @@ mod zoom_focus_tests {
     fn region(scale: f32, focus_x: f32) -> SceneZoomRegion {
         SceneZoomRegion {
             id: "z1".into(),
+            direction_group_id: None,
             clip_index: None,
             start_sec: 2.0,
             end_sec: 8.0,
@@ -813,7 +914,11 @@ mod zoom_focus_tests {
         let f = 0.8;
         let regions = [region(2.5, f)];
         let state = zoom_state_at(&regions, 5.0, None);
-        assert!((state.scale - 2.5).abs() < 1e-4, "plein régime attendu, scale={}", state.scale);
+        assert!(
+            (state.scale - 2.5).abs() < 1e-4,
+            "plein régime attendu, scale={}",
+            state.scale
+        );
         assert!((screen_x(&state, f) - 0.5).abs() < 1e-4);
         assert!((state.focus[0] - f).abs() < 1e-4);
     }
@@ -871,6 +976,25 @@ mod zoom_focus_tests {
         assert!(fast.focus[0] > normal.focus[0]);
         assert!((normal.focus[0] - 0.35).abs() < 1e-4);
         assert!((fast.focus[0] - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn different_authored_passages_do_not_connect_only_because_they_are_close() {
+        let mut first = region(1.5, 0.68);
+        first.start_sec = 1.0;
+        first.end_sec = 3.0;
+        first.direction_group_id = Some("passage-a".into());
+        let mut second = region(1.5, 0.5);
+        second.start_sec = 3.706;
+        second.end_sec = 5.5;
+        second.direction_group_id = Some("passage-b".into());
+
+        assert!(connected_pairs(&[first.clone(), second.clone()]).is_empty());
+        let mut legacy_second = second.clone();
+        legacy_second.direction_group_id = None;
+        assert!(connected_pairs(&[first.clone(), legacy_second]).is_empty());
+        second.direction_group_id = Some("passage-a".into());
+        assert_eq!(connected_pairs(&[first, second]).len(), 1);
     }
 
     #[test]
@@ -951,8 +1075,16 @@ mod arrow_tests {
         // ~25° du fût quand les cardinales ouvrent à 45°, ce qui donnait une pointe étroite,
         // avalée par le fût dès que le trait épaississait. Corriger la longueur seule ne suffisait
         // pas — ce test verrouille l'angle, qui est le paramètre réellement visible.
-        for dir in ["up", "down", "left", "right", "up-right", "up-left", "down-right", "down-left"]
-        {
+        for dir in [
+            "up",
+            "down",
+            "left",
+            "right",
+            "up-right",
+            "up-left",
+            "down-right",
+            "down-left",
+        ] {
             for barb in 1..=2 {
                 let deg = barb_opening_deg(dir, barb);
                 assert!(
@@ -968,7 +1100,8 @@ mod arrow_tests {
         // Les barbes diagonales faisaient 15,8 unités contre 21,2 pour les cardinales : une
         // flèche en diagonale avait une tête ~25 % plus petite que sa voisine horizontale, ce
         // qui se lisait comme une déformation. Ce test interdit la divergence de revenir.
-        let barb_len = |seg: [f32; 4]| ((seg[2] - seg[0]).powi(2) + (seg[3] - seg[1]).powi(2)).sqrt();
+        let barb_len =
+            |seg: [f32; 4]| ((seg[2] - seg[0]).powi(2) + (seg[3] - seg[1]).powi(2)).sqrt();
         let cardinal = barb_len(arrow_segments_viewbox("up")[1]);
         for dir in ["up-right", "up-left", "down-right", "down-left"] {
             for barb in 1..=2 {
@@ -987,11 +1120,19 @@ mod arrow_tests {
         // dessinent deux flèches différentes.
         assert_eq!(
             arrow_segments_viewbox("right"),
-            [[20.0, 50.0, 80.0, 50.0], [80.0, 50.0, 65.0, 35.0], [80.0, 50.0, 65.0, 65.0]]
+            [
+                [20.0, 50.0, 80.0, 50.0],
+                [80.0, 50.0, 65.0, 35.0],
+                [80.0, 50.0, 65.0, 65.0]
+            ]
         );
         assert_eq!(
             arrow_segments_viewbox("up"),
-            [[50.0, 20.0, 50.0, 80.0], [50.0, 20.0, 35.0, 35.0], [50.0, 20.0, 65.0, 35.0]]
+            [
+                [50.0, 20.0, 50.0, 80.0],
+                [50.0, 20.0, 35.0, 35.0],
+                [50.0, 20.0, 65.0, 35.0]
+            ]
         );
     }
 
@@ -999,7 +1140,10 @@ mod arrow_tests {
     fn an_unknown_direction_falls_back_to_right() {
         // Même défaut que le schéma côté app, pour qu'une donnée abîmée dessine quelque chose
         // de sensé plutôt que rien.
-        assert_eq!(arrow_segments_viewbox("sideways"), arrow_segments_viewbox("right"));
+        assert_eq!(
+            arrow_segments_viewbox("sideways"),
+            arrow_segments_viewbox("right")
+        );
     }
 
     #[test]
@@ -1044,11 +1188,16 @@ mod tilt_tests {
     #[test]
     fn the_plane_corners_map_to_the_projected_corners() {
         let quad = rotated_quad_corners_px(1920.0, 1080.0, rotation3d_for(&Some("iso".into())));
-        for (i, (fx, fy)) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].into_iter().enumerate()
+        for (i, (fx, fy)) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+            .into_iter()
+            .enumerate()
         {
             let (x, y) = quad.point_px(fx, fy);
             let (ex, ey) = quad.corners[i];
-            assert!((x - ex).abs() < 1e-3 && (y - ey).abs() < 1e-3, "coin {i}: {x},{y} != {ex},{ey}");
+            assert!(
+                (x - ex).abs() < 1e-3 && (y - ey).abs() < 1e-3,
+                "coin {i}: {x},{y} != {ex},{ey}"
+            );
         }
     }
 
@@ -1077,7 +1226,10 @@ mod tilt_tests {
             let (ux, uy) = ((fx - 0.5) * w, (fy - 0.5) * h);
             worst = worst.max((x - ux).hypot(y - uy));
         }
-        assert!(worst > 20.0, "ecart max au rect droit trop faible: {worst}px");
+        assert!(
+            worst > 20.0,
+            "ecart max au rect droit trop faible: {worst}px"
+        );
     }
 
     /// Le contrat du containment : après projection, aucun coin ne sort du rect d'origine.
@@ -1145,9 +1297,13 @@ mod tilt_tests {
     fn the_tilt_actually_tilts() {
         // Garde-fou contre un containment trop zélé qui aplatirait l'effet : les quatre coins
         // d'un quad incliné ne peuvent pas rester alignés deux à deux comme un rectangle droit.
-        let corners = rotated_quad_corners_px(1920.0, 1080.0, rotation3d_for(&Some("iso".into()))).corners;
+        let corners =
+            rotated_quad_corners_px(1920.0, 1080.0, rotation3d_for(&Some("iso".into()))).corners;
         let top_edge_slope = (corners[1].1 - corners[0].1).abs();
-        assert!(top_edge_slope > 1.0, "arête supérieure horizontale : le tilt a disparu");
+        assert!(
+            top_edge_slope > 1.0,
+            "arête supérieure horizontale : le tilt a disparu"
+        );
     }
 
     // ---- Mapping inverse du mode 8, reproduit à l'identique -------------------------------
@@ -1171,7 +1327,10 @@ mod tilt_tests {
         let e = sub(c10, c00);
         let f = sub(c01, c00);
         let g = (c00.0 - c10.0 - c01.0 + c11.0, c00.1 - c10.1 - c01.1 + c11.1);
-        (c00.0 + e.0 * s + f.0 * t + g.0 * s * t, c00.1 + e.1 * s + f.1 * t + g.1 * s * t)
+        (
+            c00.0 + e.0 * s + f.0 * t + g.0 * s * t,
+            c00.1 + e.1 * s + f.1 * t + g.1 * s * t,
+        )
     }
 
     /// `None` = le shader rend ce pixel TRANSPARENT (donc un trou dans l'écran incliné).

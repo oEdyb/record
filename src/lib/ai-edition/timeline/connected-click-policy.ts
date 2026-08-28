@@ -14,6 +14,9 @@ export interface ConnectedClickPolicy {
 	chainGapMs: number;
 	clickChainMaximumDurationMs: number;
 	passageConnectionGapMs: number;
+	stationaryBridgeMaximumGapMs: number;
+	stationaryBridgeMaximumMovement: number;
+	stationaryBridgeMaximumFocusDistance: number;
 	passageMinimumStableScale: number;
 	passageScaleSearchSteps: number;
 	dragMinimumDurationMs: number;
@@ -24,6 +27,8 @@ export interface ConnectedClickPolicy {
 	shortDragDestinationDelayMs: number;
 	targetMergeMs: number;
 	targetMergeDistance: number;
+	targetArrivalLookbackMs: number;
+	targetArrivalRadius: number;
 	requestedScale: number;
 	safeInset: number;
 	deadZoneWidthRatio: number;
@@ -55,6 +60,9 @@ export const DEFAULT_CONNECTED_CLICK_POLICY: ConnectedClickPolicy = Object.freez
 	chainGapMs: 1_800,
 	clickChainMaximumDurationMs: 6_000,
 	passageConnectionGapMs: CHAINED_ZOOM_PAN_GAP_MS,
+	stationaryBridgeMaximumGapMs: 4_000,
+	stationaryBridgeMaximumMovement: 0.025,
+	stationaryBridgeMaximumFocusDistance: 0.18,
 	passageMinimumStableScale: 1.35,
 	passageScaleSearchSteps: 12,
 	dragMinimumDurationMs: 180,
@@ -65,6 +73,8 @@ export const DEFAULT_CONNECTED_CLICK_POLICY: ConnectedClickPolicy = Object.freez
 	shortDragDestinationDelayMs: 0,
 	targetMergeMs: 1_600,
 	targetMergeDistance: 0.08,
+	targetArrivalLookbackMs: 450,
+	targetArrivalRadius: 0.04,
 	requestedScale: DEFAULT_AUTOMATIC_DIRECTION_MAX_SCALE,
 	safeInset: 0.18,
 	deadZoneWidthRatio: 0.5,

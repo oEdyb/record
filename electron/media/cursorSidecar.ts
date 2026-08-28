@@ -26,7 +26,9 @@ import type {
 } from "../../src/native/contracts";
 import { findMediaLinksByFingerprint } from "./mediaLinksRegistry";
 
-export const CURSOR_TELEMETRY_VERSION = 4;
+export const CURSOR_TELEMETRY_VERSION = 5;
+const OPAQUE_CONTEXT_ID = /^(?:context-[a-f0-9]{24}|process-\d+)$/;
+const OPAQUE_TARGET_ID = /^target-[a-f0-9]{24}$/;
 
 /** Where a sidecar was found, or why it was not. `"none"` means we LOOKED and
  * there was nothing — distinct from never having looked, which this module
@@ -103,6 +105,14 @@ export function normalizeKeyboardActivitySample(sample: unknown): KeyboardActivi
 			: {}),
 		...(targetRect ? { targetRect } : {}),
 		...(point.directionExcluded === true ? { directionExcluded: true } : {}),
+		...(typeof point.directionContextId === "string" &&
+		OPAQUE_CONTEXT_ID.test(point.directionContextId)
+			? { directionContextId: point.directionContextId }
+			: {}),
+		...(typeof point.directionTargetId === "string" &&
+		OPAQUE_TARGET_ID.test(point.directionTargetId)
+			? { directionTargetId: point.directionTargetId }
+			: {}),
 	};
 }
 
@@ -130,6 +140,11 @@ export function normalizeCursorSample(sample: unknown): CursorRecordingSample | 
 		cursorType: typeof point.cursorType === "string" ? point.cursorType : null,
 		interactionType,
 		directionExcluded: point.directionExcluded === true,
+		...(typeof point.directionContextId === "string" &&
+		OPAQUE_CONTEXT_ID.test(point.directionContextId)
+			? { directionContextId: point.directionContextId }
+			: {}),
+		...(point.directionContextChanged === true ? { directionContextChanged: true } : {}),
 	};
 }
 

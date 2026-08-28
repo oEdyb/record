@@ -239,7 +239,7 @@ describe("automatic direction plan", () => {
 		);
 	});
 
-	it("reserves a quiet speech moment before later screen activity fills the shared budget", () => {
+	it("ranks screen intent first and uses camera emphasis only for remaining attention", () => {
 		const document = {
 			...recordingDocument(),
 			assets: [
@@ -286,8 +286,8 @@ describe("automatic direction plan", () => {
 			}),
 		});
 
-		expect(plan.effects.filter((effect) => effect.kind === "camera-emphasis")).toHaveLength(1);
-		expect(plan.effects.filter((effect) => effect.kind === "screen-zoom")).toHaveLength(4);
+		expect(plan.effects.filter((effect) => effect.kind === "screen-zoom")).toHaveLength(5);
+		expect(plan.effects.filter((effect) => effect.kind === "camera-emphasis")).toHaveLength(0);
 	});
 
 	it("does not let a new screen direction overlap an existing camera direction", () => {

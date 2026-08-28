@@ -208,6 +208,69 @@ struct TypingTarget {
 	let bounds: CGRect
 	let focusSource: String
 	let processId: pid_t
+	let contextId: String
+	let targetId: String
+}
+
+final class OpaqueElementRegistry {
+	private struct Entry {
+		let prefix: String
+		let processId: pid_t
+		let element: CFTypeRef
+		let id: String
+	}
+
+	private let lock = NSLock()
+	private let seed = UUID().uuidString
+	private var nextId = 0
+	private var entries: [Entry] = []
+	private var processContexts: [pid_t: String] = [:]
+
+	private func makeId(prefix: String) -> String {
+		defer { nextId += 1 }
+		let data = Data("\(seed):\(prefix):\(nextId)".utf8)
+		let digest = SHA256.hash(data: data).prefix(12).map { String(format: "%02x", $0) }.joined()
+		return "\(prefix)-\(digest)"
+	}
+
+	func identity(prefix: String, processId: pid_t, element: CFTypeRef) -> String {
+		lock.lock()
+		defer { lock.unlock() }
+		if let entry = entries.first(where: {
+			$0.prefix == prefix && $0.processId == processId && CFEqual($0.element, element)
+		}) {
+			return entry.id
+		}
+		let id = makeId(prefix: prefix)
+		entries.append(Entry(prefix: prefix, processId: processId, element: element, id: id))
+		return id
+	}
+
+	func processContext(processId: pid_t) -> String {
+		lock.lock()
+		defer { lock.unlock() }
+		if let id = processContexts[processId] {
+			return id
+		}
+		let id = makeId(prefix: "context")
+		processContexts[processId] = id
+		return id
+	}
+}
+
+let opaqueElementRegistry = OpaqueElementRegistry()
+
+func contextIdentity(for element: AXUIElement, processId: pid_t) -> String {
+	var value: CFTypeRef?
+	let result = AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &value)
+	if result == .success, let window = value, CFGetTypeID(window) == AXUIElementGetTypeID() {
+		return opaqueElementRegistry.identity(
+			prefix: "context",
+			processId: processId,
+			element: window
+		)
+	}
+	return opaqueElementRegistry.processContext(processId: processId)
 }
 
 func emit(_ fields: [String: Any?]) {
@@ -524,7 +587,13 @@ func typingTarget(startingAt focused: AXUIElement) -> TypingTarget? {
 		focus: focus,
 		bounds: bounds,
 		focusSource: caret == nil ? "target" : "caret",
-		processId: pid
+		processId: pid,
+		contextId: contextIdentity(for: editableTarget, processId: pid),
+		targetId: opaqueElementRegistry.identity(
+			prefix: "target",
+			processId: pid,
+			element: editableTarget
+		)
 	)
 }
 
@@ -579,9 +648,19 @@ func accessibilityPointForMouse() -> CGPoint {
 	return CGPoint(x: mouse.x, y: primaryHeight - mouse.y)
 }
 
-func currentCursorType() -> String? {
+struct CursorObservation {
+	let cursorType: String?
+	let processId: pid_t?
+	let contextId: String?
+}
+
+func currentCursorObservation(
+	cachedProcessId: pid_t?,
+	cachedContextId: String?,
+	refreshContext: Bool
+) -> CursorObservation {
 	guard AXIsProcessTrusted() else {
-		return nil
+		return CursorObservation(cursorType: nil, processId: nil, contextId: nil)
 	}
 
 	let point = accessibilityPointForMouse()
@@ -595,13 +674,25 @@ func currentCursorType() -> String? {
 	)
 
 	guard result == .success, let element else {
-		return nil
+		return CursorObservation(cursorType: nil, processId: nil, contextId: nil)
 	}
+	var processId: pid_t = 0
+	let processResult = AXUIElementGetPid(element, &processId)
 
 	// Returns nil for anything that is not a text/pointer affordance so the
 	// renderer falls through to the natively captured cursor bitmap (this is
 	// what makes default and custom cursors render as their real images).
-	return cursorTypeForElement(element)
+	let canReuseContext =
+		!refreshContext && cachedProcessId == processId && cachedContextId != nil
+	return CursorObservation(
+		cursorType: cursorTypeForElement(element),
+		processId: processResult == .success && processId > 0 ? processId : nil,
+		contextId: processResult == .success && processId > 0
+			? (canReuseContext
+				? cachedContextId
+				: contextIdentity(for: element, processId: processId))
+			: nil
+	)
 }
 
 func currentCursorAsset() -> CapturedCursorAsset? {
@@ -689,6 +780,9 @@ emit([
 // Process-wide set so each unique cursor shape is serialised at most once,
 // even if the user alternates between shapes (e.g. arrow → text → arrow).
 var emittedAssetIds = Set<String>()
+var cachedContextProcessId: pid_t?
+var cachedContextId: String?
+var lastContextLookupMs = 0
 while true {
 	autoreleasepool {
 		mouseTracker.pump()
@@ -696,6 +790,20 @@ while true {
 		let keyboardActivities = keyboardTracker.consume()
 		let nowMs = timestampMs()
 		let asset = currentCursorAsset()
+		let refreshContext = nowMs - lastContextLookupMs >= 200
+		let cursorObservation = currentCursorObservation(
+			cachedProcessId: cachedContextProcessId,
+			cachedContextId: cachedContextId,
+			refreshContext: refreshContext
+		)
+		if let processId = cursorObservation.processId, let contextId = cursorObservation.contextId {
+			let processChanged = processId != cachedContextProcessId
+			cachedContextProcessId = processId
+			cachedContextId = contextId
+			if refreshContext || processChanged {
+				lastContextLookupMs = nowMs
+			}
+		}
 		// Only ship the (large) base64 payload the first time a cursor shape is seen;
 		// subsequent samples reference it by assetId so stdout stays small.
 		var assetPayload: [String: Any]?
@@ -713,7 +821,9 @@ while true {
 		let fields: [String: Any?] = [
 			"type": "sample",
 			"timestampMs": nowMs,
-			"cursorType": currentCursorType(),
+			"cursorType": cursorObservation.cursorType,
+			"targetProcessId": cursorObservation.processId,
+			"contextIdentity": cursorObservation.contextId,
 			"assetId": asset?.id,
 			"asset": assetPayload,
 			"leftButtonDown": mouseBatch.isLeftButtonDown,
@@ -732,6 +842,8 @@ while true {
 					"focusY": activity.target.focus.y,
 					"focusSource": activity.target.focusSource,
 					"targetProcessId": activity.target.processId,
+					"contextIdentity": activity.target.contextId,
+					"targetIdentity": activity.target.targetId,
 					"targetX": activity.target.bounds.origin.x,
 					"targetY": activity.target.bounds.origin.y,
 					"targetWidth": activity.target.bounds.width,
