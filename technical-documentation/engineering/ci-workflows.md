@@ -18,20 +18,23 @@ flowchart TD
     end
 
     subgraph T2["Tier 2 — native and release builds"]
-        Whisper["build-whisper-stt.yml<br/>native source changes or dispatch"] --> WhisperArtifacts["four platform STT archives"]
+        Whisper["build-whisper-stt.yml<br/>reusable exact-source build or dispatch"] --> WhisperArtifacts["source-bound helper archives"]
         ReleaseBuild["build.yml<br/>v* tag or dispatch"] --> Win[Windows NSIS]
         ReleaseBuild --> Store[Windows AppX]
         ReleaseBuild --> Mac["macOS arm64 and x64 DMGs"]
         ReleaseBuild --> Linux["AppImage, deb, pacman, rpm"]
         SupplyReport -->|required before every platform job| ReleaseBuild
+        WhisperArtifacts -->|manifest verified before packaging| ReleaseBuild
         Win --> Publish[GitHub release]
         Mac --> Publish
         Linux --> Publish
     end
 
     subgraph T25["Tier 2.5 — release management"]
-        RC["prerelease.yml<br/>workflow_dispatch"] -->|dispatch build at RC tag| ReleaseBuild
-        Promote["promote.yml<br/>workflow_dispatch"] -->|dispatch build at stable tag| ReleaseBuild
+        RC["prerelease.yml<br/>prepare frozen RC SHA"] --> SignedRC["local signed RC tag"]
+        Promote["promote.yml<br/>prepare stable SHA"] --> SignedStable["local signed stable tag"]
+        SignedRC --> ReleaseBuild
+        SignedStable --> ReleaseBuild
     end
 
     subgraph T3["Tier 3 — stable package distribution"]
@@ -119,19 +122,17 @@ A `v*` tag or manual dispatch starts platform builds. Dispatch accepts `arch` (`
 - `build-windows-store` runs `npm run build:win:store` and uploads `openscreen-windows-store` for 30 days.
 - `build-macos` is an `arm64`/`x64` matrix. It builds Vite/Electron and native helpers, packages and optionally signs the app, creates DMGs, notarizes every signed build including pre-releases, and uploads one artifact per architecture for 30 days.
 - `build-linux` produces AppImage, deb, pacman, and rpm files and uploads `openscreen-linux` for 30 days. It asserts one artifact per format before uploading, because `if-no-files-found: error` evaluates the union of the upload globs and so cannot catch a single format that stopped being produced. No zsync: that is electron-updater's delta format, this repo ships no updater, and app-builder-lib 26.x embeds a block map in the AppImage instead.
-- `publish-release` waits for Windows NSIS, macOS, and Linux jobs; the Store job is not a dependency. It checks the tag against `package.json`, downloads the NSIS/macOS/Linux artifacts, and creates or updates a GitHub release with `OPENSCREEN_RELEASE_TOKEN`.
+- `publish-release` waits for Windows NSIS, macOS, and Linux jobs; the Store job is not a dependency. It publishes only after the signed tag resolves to the exact source used by every job. It creates or resumes an exact private draft, verifies immutable update artifacts and every Electron feed reference, and publishes the draft only after the public feed is complete. It uses `KLIPPT_RELEASE_TOKEN` from the `release` environment.
 
 The build comments and package behavior refer to the local Whisper architecture documented in [transcription and captions](../architecture/transcription-and-captions.md). The STT model downloads to user data at runtime and is not a release-build asset.
 
 ### `build-whisper-stt.yml`
 
-This matrix builds `whisper-stt-server` and its ggml backend sidecars for macOS arm64, macOS x64, Linux x64, and Windows x64. It uploads four 30-day archives named `whisper-stt-<platform>-<arch>`. The workflow installs the platform compiler dependencies and Vulkan SDK where configured. See [transcription and captions](../architecture/transcription-and-captions.md) for the runtime role of these binaries.
+This matrix builds `whisper-stt-server` and its ggml backend sidecars for macOS arm64, macOS x64, Linux x64, and Windows x64. Release builds call it with the resolved source SHA. Each archive contains a provenance manifest with that SHA, the caller run, target, toolchains, pinned upstream revisions, and every helper-file hash. Platform jobs download only the archive from their own release run and verify its manifest before packaging. The workflow also supports standalone 30-day diagnostic archives. See [transcription and captions](../architecture/transcription-and-captions.md) for the runtime role of these binaries.
 
 ## Tier 2.5: release management
 
-`prerelease.yml` and `promote.yml` orchestrate the frozen release branch, version tags, milestones, build dispatch, and Discord announcements. The full procedure, fallback, branch freeze, and credential requirements live in [release and secrets](release-and-secrets.md).
-
-At a high level, the RC workflow creates or reuses `release/vX.Y.Z`, tags its tip, and dispatches `build.yml` at that tag. Promotion creates the stable version and tag from the same release branch, syncs it back through a PR, and dispatches the stable build at the tag.
+`prerelease.yml` and `promote.yml` prepare exact frozen commits. They never create tags or dispatch release builds. Their summaries show one local command that creates an annotated SSH-signed tag with Olle's offline key. The personal tag push starts `build.yml`; unsigned or mismatched tags fail before packaging. The full procedure, fallback, branch freeze, and credential requirements live in [release and secrets](release-and-secrets.md).
 
 ## Tier 3: package registries
 
@@ -156,4 +157,4 @@ Each workflow needs variables or credentials, and where it checks for them decid
 
 Release platform artifacts have 30-day Actions retention. `publish-release` copies the NSIS installer, two architecture-specific DMGs when present, and Linux packages into the GitHub release. It intentionally does not download the independently uploaded Store artifact. A stable published release then fans out to Homebrew, WinGet, Nix, and AUR.
 
-Diagnostic artifacts remain Actions-only for 14 days. Whisper archives remain Actions-only for 30 days and are used as a binary-refresh output rather than being downloaded by the release workflow. The website build artifact flows only into GitHub Pages deployment.
+Diagnostic artifacts remain Actions-only for 14 days. Standalone Whisper archives remain Actions-only for 30 days; release-scoped Whisper archives flow directly into the matching platform packages after provenance verification. The website build artifact flows only into GitHub Pages deployment.

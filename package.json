@@ -42,7 +42,7 @@
 		"docs:check": "node scripts/check-docs.mjs",
 		"supply-chain:inventory": "node scripts/generate-release-inventory.mjs --output-dir release/supply-chain",
 		"supply-chain:audit-website": "node scripts/check-website-audit.mjs",
-		"test:supply-chain": "vitest --run scripts/check-approved-dependencies.test.mjs scripts/check-cargo-graphs.test.mjs scripts/check-website-audit.test.mjs scripts/generate-release-inventory.test.mjs scripts/fetch-ffmpeg.test.mjs scripts/prepare-semgrep-cpp-rules.test.mjs",
+		"test:supply-chain": "vitest --run scripts/check-approved-dependencies.test.mjs scripts/check-cargo-graphs.test.mjs scripts/check-website-audit.test.mjs scripts/check-workflow-action-pins.test.mjs scripts/check-release-workflow-contract.test.mjs scripts/generate-release-inventory.test.mjs scripts/helper-provenance.test.mjs scripts/stage-whisper-stt.test.mjs scripts/stage-update-release.test.mjs scripts/update-feed-integrity.test.mjs scripts/verify-published-release.test.mjs scripts/fetch-ffmpeg.test.mjs scripts/prepare-semgrep-cpp-rules.test.mjs scripts/resolve-release-source.test.mjs",
 		"assets:brand": "node scripts/generate-brand-assets.mjs",
 		"assets:appx": "node scripts/generate-appx-assets.mjs",
 		"preview": "vite preview",

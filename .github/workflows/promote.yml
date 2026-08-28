@@ -1,4 +1,4 @@
-name: Promote RC to stable release
+name: Prepare RC promotion to stable
 
 on:
   workflow_dispatch:
@@ -7,11 +7,6 @@ on:
         description: "RC tag to promote (e.g. v1.5.0-rc.2)"
         required: true
         type: string
-      release_notes_extra:
-        description: "Optional message to prepend to auto-generated release notes"
-        required: false
-        type: string
-        default: ""
 
 permissions:
   contents: write
@@ -24,11 +19,11 @@ concurrency:
 
 jobs:
   promote:
-    name: Promote RC to stable
+    name: Prepare stable release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -48,84 +43,65 @@ jobs:
           fi
           STABLE_VERSION="${BASH_REMATCH[1]}"
           STABLE_TAG="v${STABLE_VERSION}"
-          echo "rc_tag=$TAG"                  >> "$GITHUB_OUTPUT"
-          echo "stable_version=$STABLE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "stable_tag=$STABLE_TAG"       >> "$GITHUB_OUTPUT"
+          {
+            echo "rc_tag=$TAG"
+            echo "stable_version=$STABLE_VERSION"
+            echo "stable_tag=$STABLE_TAG"
+          } >> "$GITHUB_OUTPUT"
           echo "Promoting ${TAG} -> ${STABLE_TAG}"
 
-      - name: Close versioned milestone
+      - name: Verify the signed RC source
+        id: rc_source
         env:
-          TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
-          STABLE_VERSION: ${{ steps.version.outputs.stable_version }}
-        run: node .github/scripts/release-milestone-close.mjs
+          RC_TAG: ${{ steps.version.outputs.rc_tag }}
+          KLIPPT_RELEASE_PUBLIC_KEY: ${{ vars.KLIPPT_RELEASE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/${RC_TAG}:refs/tags/${RC_TAG}"
+          RC_SHA=$(git rev-parse "${RC_TAG}^{commit}")
+          GITHUB_EVENT_NAME=push \
+          GITHUB_SHA="$RC_SHA" \
+          GITHUB_REF_TYPE=tag \
+          GITHUB_REF_NAME="$RC_TAG" \
+            node scripts/resolve-release-source.mjs
+          echo "source_sha=${RC_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Bump the version to stable on the release branch
+        id: prepare
         env:
-          TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
           STABLE_VERSION: ${{ steps.version.outputs.stable_version }}
+          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
+          RC_SHA: ${{ steps.rc_source.outputs.source_sha }}
         run: |
           set -euo pipefail
           # Promote checks out the FROZEN release branch (created by prerelease.yml) and
           # rewrites the version there. This guarantees the stable tag points at the
           # same code that was tested as the RC plus any cherry-picked bugfixes.
           BRANCH="release/v${STABLE_VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${STABLE_TAG}" >/dev/null 2>&1; then
+            echo "::error::Release tag ${STABLE_TAG} already exists and must never be replaced."
+            exit 1
+          fi
           git fetch origin "$BRANCH"
           git checkout "$BRANCH"
           git reset --hard "origin/${BRANCH}"
+          BRANCH_SHA=$(git rev-parse HEAD)
+          if [[ "$BRANCH_SHA" != "$RC_SHA" ]]; then
+            echo "::error::${BRANCH} moved after the tested RC (${RC_SHA} -> ${BRANCH_SHA}). Cut and test a new RC before promotion."
+            exit 1
+          fi
           # Writes package-lock.json too. A sed over package.json alone left the
           # lockfile behind on every release up to 1.9.0; see the script header.
           node .github/scripts/set-release-version.mjs "${STABLE_VERSION}"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
-          git commit --allow-empty -m "chore(release): bump to ${STABLE_VERSION} [skip ci]" || true
-          git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
-
-      - name: Push stable tag on the release branch tip
-        env:
-          # Use GITHUB_TOKEN for the tag push: a tag is a ref, not a file change, so
-          # the workflows:write permission isn't needed.
-          # Note: GITHUB_TOKEN tag pushes do NOT trigger build.yml in this org's setup,
-          # so we explicitly trigger it via gh workflow run right after.
-          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
-          STABLE_VERSION: ${{ steps.version.outputs.stable_version }}
-        run: |
-          set -euo pipefail
-          BRANCH="release/v${STABLE_VERSION}"
-          git fetch origin "$BRANCH"
-          git checkout "$BRANCH"
-          git reset --hard "origin/${BRANCH}"
-          # Delete remote tag first (idempotent on rerun) and any local tag.
-          git push origin ":${STABLE_TAG}" 2>/dev/null || true
-          git tag -d "$STABLE_TAG" 2>/dev/null || true
-          git tag "$STABLE_TAG"
-          git push origin "$STABLE_TAG"
-
-      # ORDER MATTERS. Everything that actually publishes the release runs before the
-      # main-sync below. The stable tag is already pushed at this point, so the build
-      # and the announcement depend on nothing the sync produces — while the sync is a
-      # PR round-trip against a remote that fails for reasons of its own. It used to
-      # run first, and every one of its failures silently skipped both steps under it:
-      # v1.7.0, v1.8.0 and v1.9.0 all shipped without an automated build (dispatched by
-      # hand minutes later) and without a #releases announcement.
-      - name: Trigger build workflow
-        env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
-          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
-        run: |
-          set -euo pipefail
-          # GITHUB_TOKEN tag pushes don't fire build.yml in this setup, dispatch it.
-          #
-          # --ref pins the build to the stable tag (the frozen release-branch tip), which
-          # is also what makes running this before the main-sync correct: the tag already
-          # points at the released snapshot, so checkout gets the matching package.json +
-          # code whatever main looks like, and signing/notarization is enabled (tag has
-          # no '-').
-          gh workflow run build.yml \
-            --ref "${STABLE_TAG}" \
-            -f release_tag="${STABLE_TAG}" \
-            -f arch=both \
-            --repo "$GITHUB_REPOSITORY"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): bump to ${STABLE_VERSION} [skip ci]"
+          fi
+          git push origin "$BRANCH"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # No announcement step here any more. It moved to announce-release.yml, which
       # runs on `release: published` — the one event every release path shares,
@@ -133,23 +109,19 @@ jobs:
       # step could only ever announce what THIS workflow did, and it announced it
       # from here, before build.yml had produced a single asset.
       #
-      # `release_notes_extra` consequently no longer reaches Discord from this
-      # workflow. Pass it to the announce dispatch instead when there is something
-      # to prepend; the automatic run posts the standard message.
-
-      # Bookkeeping, not publishing: the release is already out by now. Allowed to fail
-      # so a stuck PR never masks a successful release — the summary reports it and it
-      # is trivially redone by hand.
+      # Bookkeeping only. The stable tag is still created locally after this job, so a
+      # sync failure cannot publish an unreviewed or unsigned release.
       - name: Merge release branch into main
         id: sync_main
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           STABLE_VERSION: ${{ steps.version.outputs.stable_version }}
         run: |
           set -euo pipefail
-          # After the stable tag is published, sync main with the released snapshot via
-          # a rebase PR (PAT is a ruleset bypass actor so no approval is needed).
+          # Sync main with the prepared stable snapshot through a normal rebase PR.
+          # The repository permits this workflow's explicitly write-scoped token
+          # to create PRs; it receives no branch-protection bypass.
           BRANCH="release/v${STABLE_VERSION}"
           # If main already contains the release branch (clean fast-forward), there's
           # nothing to merge — just make sure the branch is tracked locally.
@@ -165,7 +137,7 @@ jobs:
             --base main \
             --head "${BRANCH}-sync" \
             --title "chore(release): release v${STABLE_VERSION} into main" \
-            --body "Sync main with the released snapshot (RC + cherry-picked bugfixes + version bump). Rebase-merged via PAT; bypass applies because EtienneLescot is a ruleset bypass actor." \
+            --body "Sync main with the released snapshot (RC + cherry-picked bugfixes + version bump)." \
             --repo "$GITHUB_REPOSITORY" || echo "(PR already exists — skipping)"
           PR_NUMBER=$(gh pr list --head "${BRANCH}-sync" --state open --json number -q '.[0].number' --repo "$GITHUB_REPOSITORY")
           if [[ -z "$PR_NUMBER" ]]; then
@@ -200,7 +172,7 @@ jobs:
           # failures and reports a merge that never happened.
           MERGED=0
           for _ in $(seq 1 5); do
-            if gh pr merge "$PR_NUMBER" --rebase --delete-branch --admin \
+            if gh pr merge "$PR_NUMBER" --rebase --delete-branch \
               --repo "$GITHUB_REPOSITORY"; then
               MERGED=1
               break
@@ -208,26 +180,35 @@ jobs:
             sleep 15
           done
           if [[ "$MERGED" -ne 1 ]]; then
-            echo "::error::Could not rebase-merge sync PR #${PR_NUMBER} into main after 5 attempts. The release itself is published; merge it by hand."
+            echo "::error::Could not rebase-merge sync PR #${PR_NUMBER} into main after 5 attempts. No stable tag was created; merge it by hand before signing."
             exit 1
           fi
-          # The release branch itself was already used to publish and contains frozen
-          # history — leave it in place for forensics. A v1.6.0 release branch should
-          # never be deleted until the next major cuts over.
+          # The release branch contains the prepared frozen history. Leave it in place
+          # for forensics. A v1.6.0 branch should never be deleted until a future major
+          # supersedes that release line.
 
       - name: Workflow summary
         run: |
           {
-            echo "## Release promoted"
+            echo "## Stable release prepared"
             echo ""
             echo "- Stable tag: \`${{ steps.version.outputs.stable_tag }}\`"
             echo "- Promoted from: \`${{ steps.version.outputs.rc_tag }}\`"
-            echo "- Tier 3 (homebrew/winget/nix/aur) will fire on the published release via OPENSCREEN_RELEASE_TOKEN."
+            echo "- Exact source: \`${{ steps.prepare.outputs.source_sha }}\`"
+            echo ""
+            echo "The stable release is not published yet. Sign the exact source on your Mac:"
+            echo ""
+            echo '~~~bash'
+            echo "git fetch origin ${{ steps.prepare.outputs.branch }}"
+            echo "git -c user.name='Olle Dyberg' -c user.email='131144165+oEdyb@users.noreply.github.com' -c gpg.format=ssh -c user.signingkey=\"\$HOME/.ssh/klippt_dependency_approval\" tag -s -m 'Klippt ${{ steps.version.outputs.stable_tag }}' '${{ steps.version.outputs.stable_tag }}' '${{ steps.prepare.outputs.source_sha }}'"
+            echo "git push origin 'refs/tags/${{ steps.version.outputs.stable_tag }}'"
+            echo '~~~'
+            echo ""
+            echo "The signed tag push starts the verified build. Tier 3 starts only after the GitHub release exists."
             if [[ "${{ steps.sync_main.outcome }}" != "success" ]]; then
               echo ""
               echo "> [!WARNING]"
-              echo "> **main was not synced.** The release is published and the build was"
-              echo "> dispatched; only the \`release/v${{ steps.version.outputs.stable_version }}-sync\` → main PR is"
-              echo "> outstanding. Merge it by hand, then main is back in line."
+              echo "> **main was not synced.** Do not sign the stable tag yet. Merge the"
+              echo "> \`release/v${{ steps.version.outputs.stable_version }}-sync\` → main PR first."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

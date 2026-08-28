@@ -81,9 +81,11 @@ before the next release.
 
 GitHub's current private-repository plan does not support required environment reviewers. Olle is
 also the only maintainer, so pull-request self-review cannot form an independent approval boundary.
-Until W0.3 adds signed release-source verification, no other account can receive write, tag, or
-release authority. W0.3 will require an Olle-signed release tag so the release authenticates this
-in-repository verifier and public key.
+Release workflows therefore prepare commits but never create tags. Olle signs each exact release
+commit locally with the private Ed25519 key. The matching public key lives outside the source tree
+in `KLIPPT_RELEASE_PUBLIC_KEY`, and `build.yml` verifies the annotated tag before any package job.
+The `release` environment accepts only `v*` tag deployments. No other account can receive write,
+tag, or release authority while this is the approval boundary.
 
 The Rust advisory exceptions are exact advisory IDs. The two tract-related exceptions belong to the
 development-only Clean Voice graph. Release packaging still excludes that helper. A new advisory,

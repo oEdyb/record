@@ -25,12 +25,14 @@ import {
 	FFMPEG_RELEASE_TAG,
 	FFMPEG_SHARED_ARCHIVES,
 } from "./ffmpeg-pins.mjs";
+import { HELPER_MANIFEST_NAME, verifyHelperManifest } from "./helper-provenance.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, "..");
 const INVENTORY_FILE = "klippt-release-inventory.json";
 const SBOM_FILE = "klippt-release-sbom.cdx.json";
 const SHA256_RE = /^[0-9a-f]{64}$/i;
+const SOURCE_SHA_RE = /^[0-9a-f]{40}$/i;
 
 function sha256(value) {
 	return createHash("sha256").update(value).digest("hex");
@@ -414,6 +416,52 @@ async function packagedComponents({ packageDir, platform, arch, version }) {
 	return components;
 }
 
+async function helperManifestComponents({ packageDir, platform, arch, sourceSha }) {
+	if (!packageDir) return [];
+	const expectedTarget = platformDirectory(platform, arch);
+	const packagedFiles = await walkFiles(packageDir);
+	const helperBinaries = packagedFiles.filter(({ filePath }) =>
+		/^whisper-stt-server(?:-cuda)?(?:\.exe)?$/.test(path.basename(filePath)),
+	);
+	const manifestPaths = packagedFiles
+		.map(({ filePath }) => filePath)
+		.filter((filePath) => path.basename(filePath) === HELPER_MANIFEST_NAME);
+	for (const { filePath } of helperBinaries) {
+		if (!manifestPaths.includes(path.join(path.dirname(filePath), HELPER_MANIFEST_NAME))) {
+			throw new Error(`Packaged Whisper helper has no provenance manifest: ${filePath}`);
+		}
+	}
+	const components = [];
+	for (const manifestPath of manifestPaths) {
+		const directory = path.dirname(manifestPath);
+		const manifest = await verifyHelperManifest({
+			directory,
+			expectedSourceSha: sourceSha,
+			expectedTarget,
+			allowAdditionalFiles: true,
+		});
+		const info = await stat(manifestPath);
+		components.push({
+			id: `helper-manifest:${expectedTarget}:${manifest.helper}`,
+			ecosystem: "native-helper",
+			kind: "file",
+			name: `${manifest.helper} provenance manifest`,
+			version: manifest.source.commit.slice(0, 12),
+			scope: "required",
+			path: `package/${path.relative(packageDir, manifestPath).split(path.sep).join("/")}`,
+			size: info.size,
+			hash: { algorithm: "SHA-256", value: await sha256File(manifestPath) },
+			target: expectedTarget,
+			role: "native-helper-manifest",
+			sourceCommit: manifest.source.commit,
+			workflowRunId: manifest.source.workflowRunId,
+			upstream: manifest.upstream,
+			toolchains: manifest.toolchains,
+		});
+	}
+	return components;
+}
+
 async function artifactComponents({ artifacts = [], root, platform, arch, version }) {
 	if (!artifacts.length) return [];
 	if (!platform || !arch) throw new Error("--artifact requires both --platform and --arch");
@@ -522,6 +570,18 @@ function toCycloneDxComponent(component) {
 			: undefined,
 		component.target ? { name: "app.klippt:target", value: component.target } : undefined,
 		component.license ? { name: "app.klippt:license-claim", value: component.license } : undefined,
+		component.sourceCommit
+			? { name: "app.klippt:source-commit", value: component.sourceCommit }
+			: undefined,
+		component.workflowRunId
+			? { name: "app.klippt:workflow-run-id", value: component.workflowRunId }
+			: undefined,
+		component.upstream
+			? { name: "app.klippt:upstream", value: JSON.stringify(component.upstream) }
+			: undefined,
+		component.toolchains
+			? { name: "app.klippt:toolchains", value: JSON.stringify(component.toolchains) }
+			: undefined,
 	].filter(Boolean);
 	const reference = externalReference(component);
 	return {
@@ -551,6 +611,10 @@ export async function buildReleaseInventory({
 	verifyApprovedDependencies(root);
 	const packageJson = readJson(path.join(root, "package.json"));
 	const npm = readNpmComponents(root);
+	const resolvedSourceSha = sourceSha ?? process.env.KLIPPT_SOURCE_SHA ?? gitSha(root);
+	if (!SOURCE_SHA_RE.test(resolvedSourceSha)) {
+		throw new Error("Release inventory source commit must be 40 hex digits");
+	}
 	const components = uniqueComponents([
 		...npm,
 		...readCargoComponents(root),
@@ -565,6 +629,12 @@ export async function buildReleaseInventory({
 			arch,
 			version: packageJson.version,
 		})),
+		...(await helperManifestComponents({
+			packageDir,
+			platform,
+			arch,
+			sourceSha: resolvedSourceSha,
+		})),
 		...(await artifactComponents({
 			artifacts,
 			root,
@@ -576,7 +646,7 @@ export async function buildReleaseInventory({
 	return {
 		schemaVersion: 1,
 		product: { name: packageJson.name, version: packageJson.version },
-		source: { commit: sourceSha ?? process.env.KLIPPT_SOURCE_SHA ?? gitSha(root) },
+		source: { commit: resolvedSourceSha },
 		target: platform && arch ? { platform, arch } : null,
 		components,
 	};

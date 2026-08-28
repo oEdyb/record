@@ -11,6 +11,7 @@ import {
 	readNpmComponents,
 	validateCycloneDx,
 } from "./generate-release-inventory.mjs";
+import { createHelperManifest } from "./helper-provenance.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const FIXED_SOURCE_SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -31,6 +32,12 @@ afterEach(async () => {
 });
 
 describe("release inventory", () => {
+	it("rejects a source label that is not an exact commit", async () => {
+		await expect(buildReleaseInventory({ root: REPO_ROOT, sourceSha: "main" })).rejects.toThrow(
+			/source commit must be 40 hex digits/,
+		);
+	});
+
 	it("derives npm dependencies from the lockfile and ignores stale node_modules", async () => {
 		const root = await temporaryDirectory("klippt-inventory-npm-");
 		await mkdir(path.join(root, "node_modules", "stale-local-package"), { recursive: true });
@@ -192,5 +199,61 @@ describe("release inventory", () => {
 			role: "release-artifact",
 			hash: { algorithm: "SHA-256" },
 		});
+	});
+
+	it("verifies and inventories the source-bound native helper manifest", async () => {
+		const packageRoot = await temporaryDirectory("klippt-inventory-helper-");
+		const helperRoot = path.join(
+			packageRoot,
+			"Contents",
+			"Resources",
+			"electron",
+			"native",
+			"bin",
+			"darwin-arm64",
+		);
+		await mkdir(helperRoot, { recursive: true });
+		await writeFile(path.join(helperRoot, "whisper-stt-server"), "helper", { mode: 0o755 });
+		await createHelperManifest({
+			directory: helperRoot,
+			helper: "whisper-stt",
+			sourceSha: FIXED_SOURCE_SHA,
+			workflowRunId: "7788",
+			target: "darwin-arm64",
+			upstream: [
+				{
+					name: "whisper.cpp",
+					repository: "https://github.com/ggml-org/whisper.cpp.git",
+					revision: "f049fff95a089aa9969deb009cdd4892b3e74916",
+				},
+			],
+			toolchains: { cmake: "4.1.1" },
+		});
+
+		const inventory = await buildReleaseInventory({
+			root: REPO_ROOT,
+			packageDir: packageRoot,
+			platform: "darwin",
+			arch: "arm64",
+			sourceSha: FIXED_SOURCE_SHA,
+		});
+		expect(
+			inventory.components.find((component) => component.role === "native-helper-manifest"),
+		).toMatchObject({
+			sourceCommit: FIXED_SOURCE_SHA,
+			workflowRunId: "7788",
+			target: "darwin-arm64",
+		});
+
+		await writeFile(path.join(helperRoot, "whisper-stt-server"), "tampered");
+		await expect(
+			buildReleaseInventory({
+				root: REPO_ROOT,
+				packageDir: packageRoot,
+				platform: "darwin",
+				arch: "arm64",
+				sourceSha: FIXED_SOURCE_SHA,
+			}),
+		).rejects.toThrow(/Helper file size mismatch/);
 	});
 });

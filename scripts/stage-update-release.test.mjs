@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { stringify } from "yaml";
 import { buildReleaseManifest, stageUpdateRelease } from "./stage-update-release.mjs";
 
 const version = "2.0.0";
@@ -10,7 +12,36 @@ const files = [
 	`Klippt-macOS-Intel-${version}.dmg`,
 	`Klippt.Setup.${version}.exe`,
 	`Klippt-Linux-${version}.AppImage`,
+	`Klippt-Mac-arm64-${version}.zip`,
+	`Klippt-Mac-x64-${version}.zip`,
 ];
+
+function descriptor(fileName) {
+	return {
+		url: fileName,
+		size: Buffer.byteLength(fileName),
+		sha512: createHash("sha512").update(fileName).digest("base64"),
+	};
+}
+
+function writeFeeds(source) {
+	writeFileSync(
+		path.join(source, "latest.yml"),
+		stringify({
+			files: [descriptor(files[2])],
+			path: files[2],
+			sha512: descriptor(files[2]).sha512,
+		}),
+	);
+	writeFileSync(
+		path.join(source, "latest-mac.yml"),
+		stringify({ files: [descriptor(files[4]), descriptor(files[5])] }),
+	);
+	writeFileSync(
+		path.join(source, "latest-linux.yml"),
+		stringify({ files: [descriptor(files[3])] }),
+	);
+}
 
 describe("owned update release", () => {
 	it("builds a platform-aware manifest on the owned host", () => {
@@ -39,13 +70,14 @@ describe("owned update release", () => {
 			mkdirSync(folder, { recursive: true });
 			writeFileSync(path.join(folder, fileName), fileName);
 		}
-		for (const feed of ["latest.yml", "latest-mac.yml", "latest-linux.yml"]) {
-			writeFileSync(path.join(source, feed), `${feed}\n`);
-		}
+		writeFeeds(source);
 
-		stageUpdateRelease(source, version, output);
+		stageUpdateRelease(source, version, output, "0123456789abcdef0123456789abcdef01234567");
 		const manifest = JSON.parse(readFileSync(path.join(output, "latest.json"), "utf8"));
 		expect(manifest.version).toBe(version);
+		expect(manifest.source.commit).toBe("0123456789abcdef0123456789abcdef01234567");
+		expect(manifest.artifacts[files[0]]).toMatchObject({ size: files[0].length });
+		expect(Buffer.from(manifest.artifacts[files[0]].sha512, "base64")).toHaveLength(64);
 		expect(readFileSync(path.join(output, files[0]), "utf8")).toBe(files[0]);
 	});
 

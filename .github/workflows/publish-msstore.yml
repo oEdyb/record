@@ -92,7 +92,7 @@ jobs:
           fi
 
       - name: Check out the tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # `msstore publish` takes a project root and detects the app type
           # there; it is not given a package to introspect. Checking out the tag
@@ -158,7 +158,7 @@ jobs:
           gh run download "$RUN_ID" --name klippt-windows-store --dir artifacts/store
 
       - name: Configure Microsoft Store CLI
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        uses: microsoft/microsoft-store-apppublisher@15abd1c50fcc164b19cb240fb04ef3c49bf715a2 # v1.1
 
       - name: Submit the package to the Store
         id: submit

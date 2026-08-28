@@ -16,14 +16,23 @@
 #
 # Usage: bash scripts/stage-whisper-stt.sh <tag>
 #   tag: darwin-arm64 | darwin-x64 | linux-x64 | win32-x64
-# Requires: gh (preinstalled on GitHub runners), GH_TOKEN in the environment.
+# Release CI also requires KLIPPT_HELPER_RUN_ID and KLIPPT_SOURCE_SHA. Local
+# development can omit them and use a local binary or the latest helper run.
 
 set -euo pipefail
 
 TAG="${1:?usage: stage-whisper-stt.sh <platform-arch tag>}"
 ARTIFACT="whisper-stt-${TAG}"
 DEST="electron/native/bin/${TAG}"
-REPO="${GITHUB_REPOSITORY:-getopenscreen/openscreen}"
+REPO="${GITHUB_REPOSITORY:-oEdyb/record}"
+RUN_ID="${KLIPPT_HELPER_RUN_ID:-}"
+SOURCE_SHA="${KLIPPT_SOURCE_SHA:-}"
+
+if [[ "${CI:-}" == "true" ]]; then
+  [[ -n "${RUN_ID}" ]] || { echo "FATAL: CI helper staging needs KLIPPT_HELPER_RUN_ID" >&2; exit 1; }
+  [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] \
+    || { echo "FATAL: CI helper staging needs an exact KLIPPT_SOURCE_SHA" >&2; exit 1; }
+fi
 
 # Asserts that GCC's OpenMP runtime travelled with the binaries, on Linux only.
 #
@@ -68,6 +77,11 @@ EOF
 # A locally built binary wins: `npm run build:whisper-binaries` puts one here,
 # and a developer testing a change should not have it silently replaced by CI's.
 if compgen -G "${DEST}/whisper-stt-server*" > /dev/null; then
+  if [[ -n "${RUN_ID}" || "${CI:-}" == "true" ]]; then
+    echo "FATAL: release staging found an unverified local helper in ${DEST}" >&2
+    echo "       Release packages must use the source-bound same-run artifact." >&2
+    exit 1
+  fi
   echo "whisper-stt-server already present in ${DEST} — leaving it alone."
   # Checked on this path too: it is the one a developer takes, and a local
   # whisper build predating the staging change would otherwise package an
@@ -79,11 +93,25 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 
-echo "Fetching ${ARTIFACT} from the latest successful build-whisper-stt run..."
-# No run id: gh resolves the most recent run that published this artifact.
+if [[ -n "${RUN_ID}" ]]; then
+  echo "Fetching ${ARTIFACT} from workflow run ${RUN_ID}..."
+  RUN_HEAD_SHA="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.head_sha')"
+  if [[ "${RUN_HEAD_SHA}" != "${SOURCE_SHA}" ]]; then
+    echo "FATAL: helper workflow source ${RUN_HEAD_SHA} does not match release ${SOURCE_SHA}" >&2
+    exit 1
+  fi
+else
+  echo "Fetching ${ARTIFACT} from the latest successful build-whisper-stt run for local use..."
+fi
+
 # Artifacts expire (retention-days in build-whisper-stt.yml), so a stale branch
 # can legitimately find nothing — say so in terms someone can act on.
-if ! gh run download --repo "${REPO}" --name "${ARTIFACT}" --dir "${TMP}" 2>"${TMP}/err"; then
+if [[ -n "${RUN_ID}" ]]; then
+  DOWNLOAD_COMMAND=(gh run download "${RUN_ID}" --repo "${REPO}" --name "${ARTIFACT}" --dir "${TMP}")
+else
+  DOWNLOAD_COMMAND=(gh run download --repo "${REPO}" --name "${ARTIFACT}" --dir "${TMP}")
+fi
+if ! "${DOWNLOAD_COMMAND[@]}" 2>"${TMP}/err"; then
   cat "${TMP}/err" >&2
   cat >&2 <<EOF
 
@@ -105,8 +133,29 @@ ARCHIVE="$(find "${TMP}" -name "${ARTIFACT}.tar.gz" -print -quit)"
 [ -n "${ARCHIVE}" ] || { echo "FATAL: ${ARTIFACT}.tar.gz not in the artifact" >&2; exit 1; }
 
 tar -xzf "${ARCHIVE}" -C "${TMP}"
+VERIFY_ARGS=(
+  verify
+  --directory "${TMP}/${ARTIFACT}"
+  --target "${TAG}"
+)
+if [[ -n "${RUN_ID}" ]]; then
+  VERIFY_ARGS+=(--source-sha "${SOURCE_SHA}" --workflow-run-id "${RUN_ID}")
+fi
+node scripts/helper-provenance.mjs "${VERIFY_ARGS[@]}"
 mkdir -p "${DEST}"
 cp -v "${TMP}/${ARTIFACT}"/* "${DEST}/"
+# The portable copy intentionally dereferences helper symlinks on platforms
+# where the package format cannot preserve them. Rebuild the manifest now so it
+# describes the exact staged topology that electron-builder will package.
+node scripts/helper-provenance.mjs refresh --directory "${DEST}"
+STAGED_VERIFY_ARGS=(verify --directory "${DEST}" --target "${TAG}")
+if [[ -n "${SOURCE_SHA}" ]]; then
+  STAGED_VERIFY_ARGS+=(--source-sha "${SOURCE_SHA}")
+fi
+if [[ -n "${RUN_ID}" ]]; then
+  STAGED_VERIFY_ARGS+=(--workflow-run-id "${RUN_ID}")
+fi
+node scripts/helper-provenance.mjs "${STAGED_VERIFY_ARGS[@]}"
 
 # Verify what we actually staged rather than trusting the copy: this is the
 # check whose absence is the whole reason for this script.

@@ -49,9 +49,9 @@ afterEach(async () => {
 });
 
 describe("approved dependency inputs", () => {
-	it("matches every current npm, Cargo, Swift, FFmpeg, and model input", () => {
+	it("matches every current npm, Cargo, CMake, Swift, FFmpeg, and model input", () => {
 		expect(verifyApprovedDependencies(REPO_ROOT)).toEqual({
-			count: 16,
+			count: 18,
 			reviewedAt: "2026-08-28",
 		});
 	});
@@ -63,6 +63,7 @@ describe("approved dependency inputs", () => {
 			"crates",
 			"electron/native/parakeet-stt",
 			"electron/native/screencapturekit",
+			"electron/native/whisper-stt",
 			"electron/stt",
 			"scripts",
 			"supply-chain",
@@ -79,6 +80,7 @@ describe("approved dependency inputs", () => {
 			"electron/native/parakeet-stt/Package.resolved": "resolved",
 			"electron/native/parakeet-stt/Package.swift": "swift",
 			"electron/native/screencapturekit/Package.swift": "capture",
+			"electron/native/whisper-stt/CMakeLists.txt": "cmake",
 			"electron/stt/modelManager.ts": "models",
 			"package-lock.json": "desktop",
 			"scripts/ffmpeg-pins.mjs": "ffmpeg",

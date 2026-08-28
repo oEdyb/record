@@ -15,6 +15,12 @@ name: Build whisper-stt binaries
 # NVIDIA cards.
 
 on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source commit required by the packaging workflow
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       enable_cuda:
@@ -76,7 +82,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: ./.github/actions/setup
@@ -96,7 +105,7 @@ jobs:
 
       - name: Setup MSVC (Windows)
         if: matrix.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
 
@@ -109,7 +118,7 @@ jobs:
         # both the Linux and Windows legs. jakoch/install-vulkan-sdk-action
         # downloads LunarG's official prebuilt SDK (glslc included, no
         # compilation), which is both more reliable and much faster.
-        uses: jakoch/install-vulkan-sdk-action@v1
+        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1
         with:
           vulkan_version: 1.4.304.1
           install_runtime: false
@@ -150,26 +159,23 @@ jobs:
           echo "CMAKE_PREFIX_PATH=${VCPKG_ROOT_DIR}/installed/x64-windows" >> "$GITHUB_ENV"
 
       - name: Cache whisper.cpp build tree
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           # Matches scripts/build-whisper-stt.sh's own BUILD_ROOT default for
           # each OS (short `C:/wstbuild` on Windows to dodge the vulkan-shaders-gen
           # MAX_PATH issue; `.cache/whisper-stt-build` elsewhere) — cache the
           # FetchContent checkout + object files directly, no env override needed.
           path: ${{ runner.os == 'Windows' && 'C:/wstbuild' || '.cache/whisper-stt-build' }}
-          # Keyed on the pinned WHISPER_REF/backend flags in CMakeLists.txt so a
-          # bump there invalidates the cache instead of silently reusing a stale
-          # FetchContent checkout; falls back to the newest cache for the same
-          # platform + runner image on a miss so incremental compilation still
-          # helps. The runner image version ($ImageOS/$ImageVersion) is part of
-          # the key AND the restore-keys prefix because CMake bakes absolute
+          # Keyed on the complete CMake input. Do not restore a broader older
+          # tree on a miss: FetchContent state can otherwise keep an old upstream
+          # checkout while the new source declares and attests a different pin.
+          # The runner image version ($ImageOS/$ImageVersion) is part of
+          # the key because CMake bakes absolute
           # toolchain paths (e.g. the Xcode SDK's libz.tbd) into the cached build
           # tree — when GitHub rolls the image's Xcode/SDK, those paths vanish and
           # a restored tree fails with "No rule to make target …libz.tbd". Scoping
           # the cache to the image version auto-busts it on every toolchain roll.
           key: whisper-stt-build-${{ matrix.tag }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ hashFiles('electron/native/whisper-stt/CMakeLists.txt') }}
-          restore-keys: |
-            whisper-stt-build-${{ matrix.tag }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-
 
       - name: Run whisper-stt build script
         env:
@@ -203,11 +209,32 @@ jobs:
           # but deb/pacman go through fpm, whose behaviour here is unverified, so
           # that step needs a real package inspection rather than a guess.
           cp -av "electron/native/bin/${{ matrix.tag }}/." "$BAG/"
+          COMPILER_VERSION="$(
+            if command -v cl >/dev/null 2>&1; then
+              cl 2>&1 | sed -n '1p'
+            elif command -v c++ >/dev/null 2>&1; then
+              c++ --version 2>&1 | sed -n '1p'
+            else
+              printf '%s' 'unknown compiler'
+            fi
+          )"
+          node scripts/helper-provenance.mjs create \
+            --directory "$BAG" \
+            --helper whisper-stt \
+            --source-sha "${{ inputs.source_sha || github.sha }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --target "${{ matrix.tag }}" \
+            --dependency-source electron/native/whisper-stt/CMakeLists.txt \
+            --build-root "${{ runner.os == 'Windows' && 'C:/wstbuild' || '.cache/whisper-stt-build' }}" \
+            --toolchain "node=$(node --version)" \
+            --toolchain "cmake=$(cmake --version | sed -n '1p')" \
+            --toolchain "compiler=${COMPILER_VERSION}" \
+            --toolchain "runner=${RUNNER_OS}/${ImageOS}/${ImageVersion}"
           tar -czf "${BAG}.tar.gz" "$BAG"
           echo "Staged ${BAG}.tar.gz"
 
       - name: Upload binaries
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: whisper-stt-${{ matrix.tag }}
           path: whisper-stt-${{ matrix.tag }}.tar.gz

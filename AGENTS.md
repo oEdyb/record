@@ -18,6 +18,18 @@ or export. Preserve these decisions across context compaction and future agent s
 Use [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md) for delivery order and release gates. This file remains
 the source of truth for product behavior and engineering constraints.
 
+## Research before implementation
+
+Before each feature slice, inspect at least one current primary source that can falsify the planned
+implementation. Prefer official platform documentation, the exact dependency's source or API
+reference, a maintained reference implementation, or a relevant paper. Confirm version-specific
+behavior before editing code. Use secondary articles only to find primary sources.
+
+Keep this step proportional. A small UI fix can use the platform or component reference. Capture,
+media, security, billing, release, and architecture changes require the relevant official contracts
+and reference code. Record the sources and the decision in the implementation note or technical
+documentation after the code works. Do not replace implementation time with long research prose.
+
 ## Product goal
 
 Build a recorder with Screen Studio-level refinement and a faster speaking workflow:

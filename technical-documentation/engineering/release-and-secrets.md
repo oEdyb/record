@@ -1,36 +1,32 @@
 # Release and secrets
 
-Klippt's release machinery lives in `.github/workflows/prerelease.yml`, `promote.yml`, and `build.yml`; its credentials are repository secrets and variables consumed by those workflows and the downstream package automations. Legacy secret names stay stable until a separate credential migration. This page is the operational reference for cutting releases and maintaining those credentials.
+Klippt's release machinery lives in `.github/workflows/prerelease.yml`, `promote.yml`, and `build.yml`. Signing, notarization, public-feed, and publication credentials live only in the `release` environment. Repository variables hold non-secret configuration. This page is the operational reference for cutting releases and maintaining those credentials.
 
 ## Release flow
 
-### Cut a release candidate
+### Prepare and sign a release candidate
 
-Run the `Cut a release candidate` workflow (`prerelease.yml`) with:
+Run the `Prepare a release candidate` workflow (`prerelease.yml`) with:
 
 - `bump`: `patch`, `minor`, or `major`; default `minor`.
 - `rc_number`: the numeric `rc.N` counter; default `1`.
 - `target_version`: optional stable-version override such as `2.0.0`.
 
-The workflow computes `X.Y.Z-rc.N`, migrates items from `Next Release` to the `vX.Y.Z` milestone, creates or reuses `release/vX.Y.Z`, commits the prerelease version there, tags the frozen branch tip, explicitly dispatches `build.yml` at the RC tag, and announces the pre-release in the configured RC Discord channel.
+The workflow computes `X.Y.Z-rc.N`, migrates items from `Next Release` to the `vX.Y.Z` milestone, creates or reuses `release/vX.Y.Z`, and commits the prerelease version. It does not create a tag or start a release build. The workflow summary shows the exact frozen SHA and a local SSH-signing command.
 
-`build.yml` does have a `push:` trigger on `v*` tags, but the release workflows do not rely on it. The dispatch is explicit *and* pinned to the tag, for two separate reasons:
-
-- **Explicit**, because a tag pushed with `GITHUB_TOKEN` does not fire `build.yml`'s `push:` trigger in this org's setup — GitHub withholds that to stop workflows triggering each other in a loop. `promote.yml` does push the stable tag that way, so without the dispatch nothing would build.
-- **Pinned with `--ref`**, because the build must check out the **tag**, not the default branch. The version bump lives only on the release branch; `main` still carries the previous stable version, and `build.yml`'s publish step would fail its guard (`package.json version X does not match <tag>`).
-
-The two workflows push their tags with different credentials, which is deliberate: `promote.yml` uses `GITHUB_TOKEN` (a tag is a ref, not a file change), while `prerelease.yml` pushes the RC tag with `OPENSCREEN_RELEASE_TOKEN`. A `GITHUB_TOKEN` tag push is answered with `remote: Internal Server Error` — a 500, not a 403 — by a tag ruleset that rejects the Actions token, and that failure took down the whole `v1.8.0-rc.1` cut, skipping the build trigger and the Discord announce with it.
+Run that command on Olle's Mac. The private release key stays at `~/.ssh/klippt_dependency_approval`; it never enters GitHub Actions. The annotated signed tag push starts `build.yml`. The source resolver accepts only the exact Ed25519 public key stored in the external repository variable `KLIPPT_RELEASE_PUBLIC_KEY`, the signer identity `131144165+oEdyb@users.noreply.github.com`, and the commit resolved from the tag. An unsigned, lightweight, mismatched, or replaced tag fails before any package job starts.
 
 RC tags are signed and notarized exactly like stable ones. That keeps testers out of `xattr -rd com.apple.quarantine`, and exercises the whole credential path on every candidate instead of first proving it on the promotion build.
 
 ### Promote to stable
 
-Run `Promote RC to stable release` (`promote.yml`) with:
+Run `Prepare RC promotion to stable` (`promote.yml`) with:
 
 - `rc_tag`: required tag matching `vX.Y.Z-(rc|beta|alpha).N`.
-- `release_notes_extra`: optional text prepended to the stable Discord announcement.
 
-The workflow validates the tag, closes the version milestone, checks out `release/vX.Y.Z`, changes `package.json` to the stable version, tags that branch tip, opens and rebase-merges a release-sync PR into `main`, explicitly dispatches `build.yml` at the stable tag, and announces the stable release. The build publishes signed/notarized artifacts when Apple credentials are complete; publication with `OPENSCREEN_RELEASE_TOKEN` emits the event that starts stable Homebrew, WinGet, Nix, and AUR workflows.
+The workflow verifies the RC signature against the external release key. It also requires the frozen release branch tip to equal the tested RC commit. If the branch moved, cut and test a new RC. The workflow changes `package.json` and `package-lock.json` to the stable version, pushes that exact commit, and syncs it to `main`. It does not create the stable tag. Sign the exact SHA from the workflow summary on Olle's Mac. The signed tag starts `build.yml`.
+
+`build.yml` checks out one resolved SHA everywhere. It runs the supply-chain gates and source-bound Whisper build before platform packaging. The release creates a private GitHub draft first. It then publishes and verifies immutable update artifacts, validates and publishes the mutable feeds, fetches every public file to compare size and SHA-512, and publishes the draft last. A stable `release: published` event closes the milestone, announces Discord, and starts Homebrew, WinGet, Nix, and AUR.
 
 ### Release branches (the contract)
 
@@ -44,7 +40,7 @@ release/vX.Y.Z-sync    ephemeral, created by promote to merge into main
 The name carries **no `-rc.N` suffix**. `prerelease.yml` and `promote.yml` must resolve the same ref, and every RC of a version re-cuts from this one branch.
 
 1. **`prerelease.yml` creates the branch at rc.1 and reuses it for later RCs.** It must never delete or recreate it: that would drop the cherry-picks and silently re-cut from `main`, defeating the freeze this contract exists to guarantee.
-2. **`promote.yml` is the only automated writer** that turns `-rc.N` into the stable version on the branch. A maintainer doing that by hand means the dispatch failed — see [Manual fallback](#manual-fallback).
+2. **`promote.yml` is the only automated writer** that turns `-rc.N` into the stable version on the branch. Only Olle's local release key can turn that prepared commit into a release tag.
 3. **`main` is never frozen.** Development continues as usual; the release branch is the freeze.
 4. **Cherry-picks during the RC window** are committed manually by a maintainer (`git checkout release/vX.Y.Z && git cherry-pick <sha>`), then rerun `prerelease.yml` with the next `rc_number` to re-tag the branch tip.
 
@@ -68,14 +64,24 @@ git checkout -b release/v1.5.0 main    # rc.2+: git checkout release/v1.5.0 inst
 node .github/scripts/set-release-version.mjs "$RC"
 git commit -am "chore(release): bump to $RC [skip ci]"
 git push origin release/v1.5.0
-git tag "v$RC" && git push origin "v$RC"
+git -c user.name='Olle Dyberg' \
+  -c user.email='131144165+oEdyb@users.noreply.github.com' \
+  -c gpg.format=ssh \
+  -c user.signingkey="$HOME/.ssh/klippt_dependency_approval" \
+  tag -s -m "Klippt v$RC" "v$RC" HEAD
+git push origin "refs/tags/v$RC"
 
 # Promote (skips milestone close and Discord announce)
 git checkout release/v1.5.0
 node .github/scripts/set-release-version.mjs 1.5.0
 git commit -am "chore(release): bump to 1.5.0 [skip ci]"
 git push origin release/v1.5.0
-git tag v1.5.0 && git push origin v1.5.0
+git -c user.name='Olle Dyberg' \
+  -c user.email='131144165+oEdyb@users.noreply.github.com' \
+  -c gpg.format=ssh \
+  -c user.signingkey="$HOME/.ssh/klippt_dependency_approval" \
+  tag -s -m "Klippt v1.5.0" v1.5.0 HEAD
+git push origin refs/tags/v1.5.0
 ```
 
 A tag pushed with your own credentials **does** fire `build.yml`'s `push:` trigger, so the release publishes on its own and no explicit dispatch is needed — that restriction only applies to `GITHUB_TOKEN`. Either way the same `build.yml` builds and publishes.
@@ -88,7 +94,7 @@ For a `v1.4.2` while `v1.5.0` is in flight:
 
 1. Branch `release/1.4.x` from the `v1.4.0` (or `v1.4.1`) tag.
 2. Cherry-pick the fix commits.
-3. Push the branch, then `git tag v1.4.2-rc.1` on the branch tip.
+3. Push the branch, then create a signed annotated `v1.4.2-rc.1` tag on the branch tip with the release key.
 4. `git push origin release/1.4.x v1.4.2-rc.1` — `build.yml` works from any branch.
 
 No new workflow code is needed; the tag-pushed trigger is branch-agnostic.
@@ -98,32 +104,31 @@ No new workflow code is needed; the tag-pushed trigger is branch-agnostic.
 - **Daily state**: issues/PRs accumulate in the rolling `Next Release` milestone. `merged-pr-bookkeeping.yml` adds them automatically on PR merge; maintainers can also drag issues in by hand.
 - **At RC cut**: `prerelease.yml` snapshots `Next Release` into a versioned `vX.Y.Z` milestone. The rolling milestone is left open and empty for new work.
 - **Between RC cut and promote**: any PR that merges during the RC window lands back in the empty `Next Release`. It is **not** retroactively added to `vX.Y.Z`. If a critical fix lands, cut `vX.Y.Z-rc.(N+1)` instead of promoting.
-- **At promote**: `promote.yml` closes the `vX.Y.Z` milestone and uses its closed issues to populate the Discord release announcement.
+- **After stable publication**: `announce-release.yml` closes the `vX.Y.Z` milestone and uses its issues to populate the Discord release announcement.
 
 ## Required release credential
 
-### `OPENSCREEN_RELEASE_TOKEN`
+### `KLIPPT_RELEASE_TOKEN`
 
-This fine-grained personal access token is used by `prerelease.yml`, `promote.yml`, and `build.yml`. It migrates and closes issues/milestones, pushes release branches, creates and merges the release-sync PR, dispatches `build.yml`, and creates GitHub releases so `release: published` can start downstream workflows. The automatic `GITHUB_TOKEN` cannot reliably trigger those subsequent workflows.
+This fine-grained personal access token creates and publishes GitHub releases, closes the release milestone, and lets the release event start downstream automation. It cannot sign release tags. Preparation workflows use their explicitly scoped `GITHUB_TOKEN`; they do not receive this token.
 
-Grant the token access only to the OpenScreen repository with:
+Grant the token access only to `oEdyb/record` with:
 
 - Contents: read and write.
 - Issues: read and write.
 - Pull requests: read and write.
 - Actions: read and write, for explicit build dispatch.
-- Workflows: read and write, because the pushed release branch contains `.github/workflows/`.
 - Metadata: read-only.
 
-Create a fine-grained token from GitHub settings, set a finite expiry, and save it as the repository secret `OPENSCREEN_RELEASE_TOKEN`:
+Create a fine-grained token, set a finite expiry, and save it as an environment secret:
 
 ```bash
-gh secret set OPENSCREEN_RELEASE_TOKEN --body "<token>" --repo getopenscreen/openscreen
+gh secret set KLIPPT_RELEASE_TOKEN --env release --body "<token>" --repo oEdyb/record
 ```
 
 Rotate it by creating the replacement with the same repository and scopes, updating the secret, verifying a non-destructive workflow/API operation, then revoking the old token. Do not revoke the previous token until the replacement is installed.
 
-The repository's main-branch ruleset must also permit the configured maintainer/PAT flow to rebase-merge the release-sync PR with `--admin`; that bypass is repository configuration rather than a secret.
+The repository permits the explicitly write-scoped promotion workflow to create its release-sync PR. The workflow uses a normal rebase merge and has no branch-protection bypass.
 
 ## Apple signing and notarization
 
@@ -131,7 +136,7 @@ Run `npm run release:check:mac` before a local public build. The command require
 `Developer ID Application` identity. An `Apple Development` identity is valid for development,
 but Gatekeeper rejects it for public distribution.
 
-`build.yml` enables signing only when all of these secrets are present:
+`build.yml` enables signing only when all of these `release` environment secrets are present:
 
 | Secret | Purpose |
 |---|---|
@@ -142,7 +147,9 @@ but Gatekeeper rejects it for public distribution.
 | `APPLE_TEAM_ID` | Apple Developer team identifier. |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password used by `notarytool`. |
 
-The certificate account needs Developer ID signing capability, and the Apple account/app-specific password must be able to submit notarization requests for the team. Every tag signs the DMG, notarizes, staples, and validates it, pre-releases included — that keeps RC testers out of `xattr -rd com.apple.quarantine`, and exercises the whole credential path on each candidate instead of first proving it on the promotion build. If any value is missing, the macOS job falls back to an ad-hoc signature and still creates a DMG.
+The certificate account needs Developer ID signing capability, and the Apple account/app-specific password must be able to submit notarization requests for the team. Every release tag signs the DMG, notarizes, staples, and validates it, pre-releases included. A release fails if any value is missing. An artifact-only build uses the separate `artifact-build` environment and can produce an ad-hoc development DMG without receiving release secrets.
+
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ACCOUNT_ID` also belong in the `release` environment. Before the first W0.3 release, recreate the Apple and R2 secrets there, verify their names with `gh secret list --env release --repo oEdyb/record`, then delete the repository-level copies. Do not delete the old copies before the W0.3 workflow is on the release branch.
 
 Rotate the certificate by exporting a replacement P12, base64-encoding it without line-wrap changes, updating the P12/password/name secrets together, testing a stable-format manual build, then revoking the old certificate if required. Rotate the app-specific password in Apple ID settings, replace `APPLE_APP_SPECIFIC_PASSWORD`, verify notarization, and revoke the old password. `APPLE_ID` and `APPLE_TEAM_ID` normally change only when the owning account or team changes.
 
@@ -183,7 +190,7 @@ That failure was visible only because the same release carried the fix that repo
 
 `publish-msstore.yml` submits an already-built appx on demand: `workflow_dispatch` with a stable `release_tag`, optionally a `run_id` (defaults to the most recent `build.yml` run for that tag), and a **`dry_run`** flag.
 
-It exists because `build.yml`'s own job has no usable retry. Re-running the failed job replays the workflow definition frozen into the original run, so a fix landed afterwards is never picked up; and re-dispatching `build.yml` rebuilds every platform and re-uploads the release assets with `--clobber`, rewriting a published release to correct a Store submission — and, if dispatched from `main` rather than the tag, rewriting it with binaries built from code that release never contained. v1.9.5 hit both walls.
+It exists because `build.yml`'s own job has no usable retry. Re-running the failed job replays the workflow definition frozen into the original run, so a fix landed afterwards is never picked up. The release workflow now refuses to replace an existing GitHub release or immutable R2 object, which makes a full rebuild the wrong recovery path for a Store-only failure. Before the W0.3 gate, re-dispatching could use `--clobber` and even build from a different source; v1.9.5 hit that older design.
 
 **`dry_run: true` is the only safe way to test this path.** It passes `-nc, --noCommit`, which creates the submission and leaves it in draft instead of sending it to certification. Without it — and this is what `build.yml` does — `msstore publish` commits, so a dispatch fired "just to see whether the `.appx` is accepted" puts a build in front of users. Validate with the dry run first; submit for real only once it comes back clean.
 
@@ -223,7 +230,7 @@ The bot token comes from a Discord application authorized with the `bot` scope. 
 
 **Homebrew publishing does not complete yet, and now says so.** `update-homebrew-cask.yml` has never published a cask — not once since it was written for the v1.5.0 pipeline. Neither `HOMEBREW_TAP_OWNER` nor `HOMEBREW_TAP_REPO` has ever existed on this repository, both sat in the job-level `if`, and an unconfigured job resolves to `skipped`, which is green: every release run reads as a success. The same failure as WinGet below, found the same way and fixed the same way — the configuration test now lives in a step that names what is missing (#335). Three things are needed, and the third is the one a variable cannot supply: `HOMEBREW_TAP_OWNER` and `HOMEBREW_TAP_REPO`; the `HOMEBREW_TAP_TOKEN` secret with contents write on that repository; and the tap repository itself, which **must** be named `homebrew-<something>` — that prefix is how `brew tap` resolves a repository at all, so `getopenscreen/openscreen-tap` would be checked out and pushed to successfully and still be untappable. With `getopenscreen/homebrew-openscreen`, the install command is `brew install --cask getopenscreen/openscreen/openscreen`.
 
-Note what it would publish before turning it on: the two DMGs attached to the release — signed, notarized and stapled when the Apple credentials above are complete, ad-hoc-signed and un-notarized when they are not. A cask does not change either state, because `brew install --cask` runs the same Gatekeeper path as a manual download: on the ad-hoc artifact users still need to strip the quarantine flag by hand (`xattr -rd com.apple.quarantine`). The README no longer documents that step, because every build since 1.9.0 is notarized and does not need it — so an ad-hoc release would strand users with no written way out. What the tap buys is discovery and `brew upgrade`, not trust.
+The two DMGs attached to a release are always signed, notarized, and stapled. A cask does not add trust; it adds discovery and `brew upgrade`. An artifact-only ad-hoc DMG is never eligible for release publication.
 
 **WinGet publishing does not complete yet, and now says so.** `publish-winget.yml` starts on every stable release; whether it publishes depends on four prerequisites, and it names the missing ones in a `::warning::` instead of passing quietly. It used to pass quietly: the configuration test sat in the job-level `if`, an unconfigured job resolved to `skipped`, and a skipped job is green — so eight releases in a row reported success while publishing nothing, which is how #148 stayed open without anyone noticing. The four are: `WINGET_IDENTIFIER` (set, `OpenScreen.OpenScreen`); `WINGET_ACC_TOKEN` (absent — it must be a *classic* PAT with `public_repo`, since `winget-releaser` does not support fine-grained ones); a fork of `microsoft/winget-pkgs` under `getopenscreen`, which is where the action pushes its branch; and at least one version of the package already merged into `winget-pkgs`, because the action writes each manifest from the previous one and refuses to author the first. That first submission is manual, via `wingetcreate new`.
 

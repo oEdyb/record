@@ -2,6 +2,11 @@ name: Supply chain
 
 on:
   workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source commit required by a release caller
+        required: false
+        type: string
   pull_request:
   push:
     branches:
@@ -29,6 +34,9 @@ jobs:
     steps:
       - name: Check out the proposed source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
       - name: Reject high-risk dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
@@ -41,6 +49,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Use the locked Node release
@@ -54,8 +63,12 @@ jobs:
           test "$(npm --version)" = "${NPM_VERSION}"
       - name: Require explicit approval for every dependency input
         run: node scripts/check-approved-dependencies.mjs
+      - name: Require immutable GitHub Action references
+        run: node scripts/check-workflow-action-pins.mjs
       - name: Restore the exact npm graph
         run: npm ci --ignore-scripts
+      - name: Verify the exact-source release contract
+        run: node scripts/check-release-workflow-contract.mjs
       - name: Reject high or critical npm advisories
         run: npm audit --audit-level=high
       - name: Verify npm registry signatures and attestations
@@ -69,12 +82,12 @@ jobs:
         run: npm run supply-chain:audit-website
       - name: Generate and validate the release inventory
         env:
-          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+          KLIPPT_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
         run: node scripts/generate-release-inventory.mjs --output-dir "$RUNNER_TEMP/klippt-supply-chain"
       - name: Upload the inventory and CycloneDX SBOM
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: klippt-supply-chain-${{ github.sha }}
+          name: klippt-supply-chain-${{ inputs.source_sha || github.sha }}
           path: ${{ runner.temp }}/klippt-supply-chain
           if-no-files-found: error
           retention-days: 30
@@ -86,6 +99,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - name: Use the reviewed Rust toolchain
         run: |
@@ -131,6 +145,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Check out the reviewed Semgrep rules
@@ -206,6 +221,7 @@ jobs:
       - name: Check out complete history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Install the verified Gitleaks release

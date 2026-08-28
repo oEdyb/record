@@ -18,6 +18,7 @@ permissions:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    environment: release
     if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     steps:
       - name: Resolve tag and version
@@ -39,13 +40,13 @@ jobs:
           echo "branch=$BRANCH"   >> "$GITHUB_OUTPUT"
 
       - name: Checkout main
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v27
+        uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
@@ -85,7 +86,7 @@ jobs:
           # — it did exactly that on v1.7.0, after pushing the branch, and #136
           # had to be opened by hand. The PAT every other release workflow
           # already uses has no such restriction, and its PRs trigger CI.
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.KLIPPT_RELEASE_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
           HASH: ${{ steps.hash.outputs.hash }}
           BRANCH: ${{ steps.meta.outputs.branch }}

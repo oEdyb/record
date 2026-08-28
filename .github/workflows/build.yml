@@ -16,29 +16,64 @@ on:
           - x64
           - both
       release_tag:
-        description: "Optional release tag to create or update, e.g. v1.5.0"
+        description: "Existing signed release tag; select the same tag as the workflow ref"
         required: false
         type: string
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
 
 concurrency:
   group: build-${{ github.ref_name }}-${{ github.event.inputs.release_tag || 'artifacts' }}
   cancel-in-progress: false
 
 jobs:
+  resolve-source:
+    name: Resolve exact source
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      release_tag: ${{ steps.source.outputs.release_tag }}
+      is_release: ${{ steps.source.outputs.is_release }}
+    steps:
+      - name: Check out the selected source and complete tag history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the selected commit and signed release tag
+        id: source
+        env:
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          KLIPPT_RELEASE_PUBLIC_KEY: ${{ vars.KLIPPT_RELEASE_PUBLIC_KEY }}
+        run: node scripts/resolve-release-source.mjs
+
   supply-chain:
     name: Verify release inputs
+    needs: resolve-source
     uses: ./.github/workflows/supply-chain.yml
+    with:
+      source_sha: ${{ needs.resolve-source.outputs.source_sha }}
+
+  build-whisper-stt:
+    name: Build source-bound speech helper
+    needs: resolve-source
+    uses: ./.github/workflows/build-whisper-stt.yml
+    with:
+      source_sha: ${{ needs.resolve-source.outputs.source_sha }}
 
   build-windows:
     name: Windows installer
-    needs: supply-chain
+    needs: [resolve-source, supply-chain, build-whisper-stt]
     runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: ./.github/actions/setup
@@ -52,6 +87,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KLIPPT_HELPER_RUN_ID: ${{ github.run_id }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: bash scripts/stage-whisper-stt.sh win32-x64
 
       - name: Build Windows app
@@ -60,7 +97,7 @@ jobs:
       - name: Generate the Windows release inventory
         shell: bash
         env:
-          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: |
           PACKAGE_DIR="$(find release -type d -name 'win-unpacked' -print -quit)"
           INSTALLER="$(find release -type f -name 'Klippt.Setup.*.exe' -print -quit)"
@@ -73,7 +110,7 @@ jobs:
             --artifact "$INSTALLER"
 
       - name: Upload Windows installer
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: klippt-windows
           # latest.yml is the update feed electron-updater reads; the .blockmap is what lets it
@@ -100,11 +137,14 @@ jobs:
 
   build-windows-store:
     name: Windows Store package
-    needs: supply-chain
+    needs: [resolve-source, supply-chain, build-whisper-stt]
     runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: ./.github/actions/setup
@@ -113,6 +153,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KLIPPT_HELPER_RUN_ID: ${{ github.run_id }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: bash scripts/stage-whisper-stt.sh win32-x64
 
       - name: Build Windows Store package
@@ -121,7 +163,7 @@ jobs:
       - name: Generate the Windows Store release inventory
         shell: bash
         env:
-          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: |
           PACKAGE_DIR="$(find release -type d -name 'win-unpacked' -print -quit)"
           APPX="$(find release -type f -name '*.appx' -print -quit)"
@@ -235,7 +277,7 @@ jobs:
           }
 
       - name: Upload Windows Store package
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: klippt-windows-store
           path: |
@@ -246,7 +288,9 @@ jobs:
 
   build-macos:
     name: macOS ${{ matrix.arch }} DMG
-    needs: supply-chain
+    needs: [resolve-source, supply-chain, build-whisper-stt]
+    environment:
+      name: ${{ needs.resolve-source.outputs.is_release == 'true' && 'release' || 'artifact-build' }}
     # Build each arch NATIVELY. `macos-latest` is Apple Silicon, and everything the
     # 1.8.0 macOS path added keys off the HOST arch: fetch-ffmpeg-macos.mjs configures
     # with `--arch=${process.arch}`, and build-macos-compositor-addon.mjs installs into
@@ -266,13 +310,16 @@ jobs:
         arch: ${{ fromJSON((github.event_name == 'workflow_dispatch' && github.event.inputs.arch != 'both') && format('["{0}"]', github.event.inputs.arch) || '["arm64", "x64"]') }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: ./.github/actions/setup
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
 
@@ -285,6 +332,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KLIPPT_HELPER_RUN_ID: ${{ github.run_id }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: bash scripts/stage-whisper-stt.sh darwin-${{ matrix.arch }}
 
       - name: Resolve macOS signing
@@ -296,8 +345,15 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          IS_RELEASE: ${{ needs.resolve-source.outputs.is_release }}
         run: |
-          if [[ -n "$MAC_CERTIFICATE_P12" && -n "$MAC_CERTIFICATE_PASSWORD" && -n "$MAC_CSC_NAME" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+          set -euo pipefail
+          required=(MAC_CERTIFICATE_P12 MAC_CERTIFICATE_PASSWORD MAC_CSC_NAME APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if [[ ${#missing[@]} -eq 0 ]]; then
             # `CSC_NAME` must name the identity WITHOUT its certificate type.
             # electron-builder picks the type itself and rejects a qualified name
             # outright:
@@ -322,8 +378,15 @@ jobs:
                 ;;
             esac
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
+          elif [[ "$IS_RELEASE" == "true" ]]; then
+            echo "::error::A signed release cannot publish an ad-hoc Mac build. Missing: ${missing[*]}"
+            exit 1
+          elif [[ ${#missing[@]} -eq ${#required[@]} ]]; then
+            echo "::notice::Apple signing is not configured; producing an ad-hoc artifact-only build."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Apple signing is partially configured. Missing: ${missing[*]}"
+            exit 1
           fi
 
       - name: Import code signing certificate
@@ -379,7 +442,7 @@ jobs:
       # installed app, silently. `scripts/before-pack.cjs` now refuses to package
       # that, so this is also what keeps the job from failing at the pack step.
       - name: Cache LGPL ffmpeg tree
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           # fetch-ffmpeg-macos.mjs BUILDS ffmpeg from source (~5 min): BtbN ships no
           # macOS target and every circulating macOS build is GPL, which would
@@ -392,7 +455,7 @@ jobs:
         run: npm run fetch:ffmpeg:mac
 
       - name: Cache cargo + compositor build tree
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -633,7 +696,7 @@ jobs:
 
       - name: Generate the macOS release inventory
         env:
-          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: >-
           node scripts/generate-release-inventory.mjs
           --output-dir release/supply-chain
@@ -644,7 +707,7 @@ jobs:
           --artifact "${{ steps.update_zip.outputs.zip_path }}"
 
       - name: Upload macOS DMG
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: klippt-mac-${{ matrix.arch }}
           # The DMG is what a new user downloads; the ZIP is what an existing install updates
@@ -664,7 +727,7 @@ jobs:
 
   build-linux:
     name: Linux packages
-    needs: supply-chain
+    needs: [resolve-source, supply-chain, build-whisper-stt]
     # PINNED, and not to `ubuntu-latest`. The linker binds every symbol to the newest
     # version its BUILD machine offers, so the runner image silently decides the oldest
     # distro these packages can run on — nothing in the source asks for any of it.
@@ -686,7 +749,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: ./.github/actions/setup
@@ -721,6 +787,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KLIPPT_HELPER_RUN_ID: ${{ github.run_id }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: bash scripts/stage-whisper-stt.sh linux-x64
 
       - name: Build Linux app
@@ -728,7 +796,7 @@ jobs:
 
       - name: Generate the Linux release inventory
         env:
-          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: |
           PACKAGE_DIR="$(find release -type d -name 'linux-unpacked' -print -quit)"
           test -n "$PACKAGE_DIR"
@@ -804,7 +872,7 @@ jobs:
           done
 
       - name: Upload Linux packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: klippt-linux
           path: |
@@ -834,29 +902,32 @@ jobs:
   publish-release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: write
+      contents: write
     needs:
+      - resolve-source
       - build-windows
       - build-macos
       - build-linux
-    if: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '') }}
+    if: ${{ needs.resolve-source.outputs.is_release == 'true' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
           # Full history + tags: the RC notes below are built from `git log` over the
           # range since the previous RC tag, and resolving that tag needs the tags.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve release tag
         id: release
         env:
-          INPUT_TAG: ${{ github.event.inputs.release_tag }}
+          RESOLVED_TAG: ${{ needs.resolve-source.outputs.release_tag }}
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME}"
-          else
-            TAG="${INPUT_TAG}"
-          fi
+          TAG="${RESOLVED_TAG}"
 
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta|alpha)\.[0-9]+)?$ ]]; then
             echo "::error::Release tag must look like v1.5.0 or v1.5.0-rc.1; got '${TAG}'"
@@ -941,25 +1012,25 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Download Windows installer
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: klippt-windows
           path: artifacts/windows
 
       - name: Download macOS arm64 DMG
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: klippt-mac-arm64
           path: artifacts/mac-arm64
 
       - name: Download macOS x64 DMG
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: klippt-mac-x64
           path: artifacts/mac-x64
 
       - name: Download Linux packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: klippt-linux
           path: artifacts/linux
@@ -988,13 +1059,104 @@ jobs:
         if: ${{ steps.release.outputs.is_prerelease == 'false' }}
         env:
           VERSION: ${{ steps.release.outputs.version }}
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: node scripts/stage-update-release.mjs artifacts "$VERSION" update-release
+
+      - name: Create or resume the draft release
+        env:
+          GH_TOKEN: ${{ secrets.KLIPPT_RELEASE_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+          PRERELEASE_FLAG: ${{ steps.release.outputs.prerelease_flag }}
+          NOTES_START_TAG: ${{ steps.release.outputs.notes_start_tag }}
+          SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$GH_TOKEN" ]] || { echo "::error::KLIPPT_RELEASE_TOKEN is missing from the release environment"; exit 1; }
+          mapfile -t FILES < <(find artifacts -type f | sort)
+          if [[ "${#FILES[@]}" -eq 0 ]]; then
+            echo "::error::No installer artifacts were downloaded"
+            exit 1
+          fi
+
+          declare -A LOCAL_BY_NAME=()
+          for file in "${FILES[@]}"; do
+            name="$(basename "$file")"
+            if [[ -n "${LOCAL_BY_NAME[$name]:-}" ]]; then
+              echo "::error::Two release assets have the same basename: ${name}"
+              exit 1
+            fi
+            LOCAL_BY_NAME[$name]="$file"
+          done
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+            [[ "$IS_DRAFT" == "true" ]] \
+              || { echo "::error::Release ${TAG} is already public and immutable"; exit 1; }
+
+            EXISTING_DIR="${RUNNER_TEMP}/existing-draft-assets"
+            mkdir -p "$EXISTING_DIR"
+            gh release download "$TAG" --dir "$EXISTING_DIR"
+            for existing in "$EXISTING_DIR"/*; do
+              [[ -e "$existing" ]] || continue
+              name="$(basename "$existing")"
+              local_file="${LOCAL_BY_NAME[$name]:-}"
+              [[ -n "$local_file" ]] \
+                || { echo "::error::Draft ${TAG} contains an unexpected asset: ${name}"; exit 1; }
+              [[ "$(sha512sum "$existing" | cut -d' ' -f1)" == "$(sha512sum "$local_file" | cut -d' ' -f1)" ]] \
+                || { echo "::error::Draft asset differs from this run: ${name}"; exit 1; }
+            done
+
+            MISSING=()
+            for file in "${FILES[@]}"; do
+              [[ -f "$EXISTING_DIR/$(basename "$file")" ]] || MISSING+=("$file")
+            done
+            if [[ "${#MISSING[@]}" -gt 0 ]]; then
+              gh release upload "$TAG" "${MISSING[@]}"
+            fi
+            echo "Resumed exact draft ${TAG}."
+            exit 0
+          fi
+
+          if [[ -n "$PRERELEASE_FLAG" ]]; then
+            if [[ -n "$NOTES_START_TAG" ]]; then
+              RC_RANGE="${NOTES_START_TAG}..${TAG}"
+              RC_HEADING="## Changes since ${NOTES_START_TAG}"
+              RC_LINK="**Full Changelog**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${NOTES_START_TAG}...${TAG}"
+            else
+              RC_RANGE="$TAG"
+              RC_HEADING="## Changes"
+              RC_LINK="**Full Changelog**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commits/${TAG}"
+            fi
+            {
+              echo "$RC_HEADING"
+              echo
+              git log --no-merges --reverse --pretty='- %s' \
+                --invert-grep --grep='^chore(release): bump to' \
+                "$RC_RANGE"
+              echo
+              echo "$RC_LINK"
+            } > "${RUNNER_TEMP}/rc-notes.md"
+            NOTES_ARGS=(--notes-file "${RUNNER_TEMP}/rc-notes.md")
+          elif [[ -n "$NOTES_START_TAG" ]]; then
+            NOTES_ARGS=(--generate-notes --notes-start-tag "$NOTES_START_TAG")
+          else
+            NOTES_ARGS=(--generate-notes)
+          fi
+
+          # shellcheck disable=SC2086
+          gh release create "$TAG" "${FILES[@]}" \
+            --draft \
+            --verify-tag \
+            --target "$SOURCE_SHA" \
+            --title "$TAG" \
+            "${NOTES_ARGS[@]}" \
+            $PRERELEASE_FLAG
 
       # The repository is private, so customer apps cannot use GitHub Releases as an update
       # server without receiving a repository token. Stable releases go to a public R2 custom
       # domain instead. Upload immutable versioned files first and the small mutable manifests
       # last, so a client never sees a feed that points at an artifact which is not present yet.
-      - name: Publish the owned update feed
+      - name: Publish immutable update artifacts
         if: ${{ steps.release.outputs.is_prerelease == 'false' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -1013,12 +1175,21 @@ jobs:
           fi
 
           ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          upload_failed=0
           while IFS= read -r -d '' file; do
             name="$(basename "$file")"
-            aws s3 cp "$file" "s3://${R2_BUCKET}/klippt/${name}" \
+            if ! aws s3api put-object \
+              --bucket "$R2_BUCKET" \
+              --key "klippt/${name}" \
+              --body "$file" \
+              --if-none-match '*' \
               --endpoint-url "$ENDPOINT" \
               --cache-control 'public,max-age=31536000,immutable' \
-              --no-progress
+              >/dev/null; then
+              # A retry can find an object created by the earlier attempt. The
+              # exact public fetch verification below decides whether it is safe.
+              upload_failed=1
+            fi
           done < <(find update-release -type f \
             ! -name 'latest.yml' \
             ! -name 'latest-mac.yml' \
@@ -1026,6 +1197,24 @@ jobs:
             ! -name 'latest.json' \
             -print0)
 
+          node scripts/verify-published-release.mjs \
+            --root update-release \
+            --base-url https://updates.dyberg.co/klippt \
+            --immutable-only
+
+          [[ "$upload_failed" -eq 0 ]] || echo "Existing immutable objects were accepted only after exact public verification."
+
+      - name: Publish mutable update manifests
+        if: ${{ steps.release.outputs.is_prerelease == 'false' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_UPDATE_BUCKET || 'klippt-updates' }}
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           for manifest in latest.yml latest-mac.yml latest-linux.yml latest.json; do
             aws s3 cp "update-release/${manifest}" "s3://${R2_BUCKET}/klippt/${manifest}" \
               --endpoint-url "$ENDPOINT" \
@@ -1037,98 +1226,26 @@ jobs:
       - name: Verify the public update feed
         if: ${{ steps.release.outputs.is_prerelease == 'false' }}
         env:
-          VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          curl --fail --silent --show-error --retry 10 --retry-all-errors \
-            "https://updates.dyberg.co/klippt/latest.json?release=${VERSION}" \
-            -o "${RUNNER_TEMP}/public-latest.json"
-          ACTUAL="$(jq -r '.version' "${RUNNER_TEMP}/public-latest.json")"
-          [[ "$ACTUAL" == "$VERSION" ]] \
-            || { echo "::error::Public update feed reports ${ACTUAL}, expected ${VERSION}"; exit 1; }
+          KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
+        run: >-
+          node scripts/verify-published-release.mjs
+          --root update-release
+          --base-url https://updates.dyberg.co/klippt
+          --source-sha "$KLIPPT_SOURCE_SHA"
 
-      - name: Publish release assets
+      - name: Publish the verified GitHub draft
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.KLIPPT_RELEASE_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
           PRERELEASE_FLAG: ${{ steps.release.outputs.prerelease_flag }}
-          NOTES_START_TAG: ${{ steps.release.outputs.notes_start_tag }}
         run: |
-          mapfile -t FILES < <(find artifacts -type f | sort)
-          if [[ "${#FILES[@]}" -eq 0 ]]; then
-            echo "::error::No installer artifacts were downloaded"
-            exit 1
-          fi
-
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${FILES[@]}" --clobber
-          else
-            if [[ -n "$PRERELEASE_FLAG" ]]; then
-              # RC notes come from `git log`, not --generate-notes. GitHub's generator
-              # lists only the PRs it manages to associate, and on this repo it silently
-              # drops real ones — #254 and #261 were merged into the release branch and
-              # never appeared in v1.9.0-rc.2's body — so an RC could omit the very fix
-              # the re-cut was for. The commit range is the actual diff and can't lie.
-              # Stable releases keep --generate-notes below: they're the public-facing
-              # ones and want the PR links and the New Contributors section.
-              # With no previous tag at all, the range is the whole history and
-              # there is nothing to compare against, so say so rather than
-              # emitting "since " with a blank where a tag should be.
-              if [[ -n "$NOTES_START_TAG" ]]; then
-                RC_RANGE="${NOTES_START_TAG}..${TAG}"
-                RC_HEADING="## Changes since ${NOTES_START_TAG}"
-                RC_LINK="**Full Changelog**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${NOTES_START_TAG}...${TAG}"
-              else
-                RC_RANGE="$TAG"
-                RC_HEADING="## Changes"
-                RC_LINK="**Full Changelog**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commits/${TAG}"
-              fi
-              {
-                echo "$RC_HEADING"
-                echo
-                git log --no-merges --reverse --pretty='- %s' \
-                  --invert-grep --grep='^chore(release): bump to' \
-                  "$RC_RANGE"
-                echo
-                echo "$RC_LINK"
-              } > "${RUNNER_TEMP}/rc-notes.md"
-              cat "${RUNNER_TEMP}/rc-notes.md"
-              NOTES_ARGS=(--notes-file "${RUNNER_TEMP}/rc-notes.md")
-            else
-              # --notes-start-tag controls which previous tag GitHub compares against
-              # when auto-generating the release notes. Default behaviour (most recent
-              # prior release by date) doesn't work for this fork because the v1.4.0
-              # release in the fork was re-published after v1.5.0, which makes GitHub
-              # pick v1.4.0 as the "previous" for any v1.5.x release.
-              #
-              # Omitted entirely when there is no previous tag: this maps to the
-              # API's previous_tag_name, which takes a tag NAME. Passing an empty
-              # string or a commit SHA is an invalid argument, not a graceful
-              # degradation. Without it GitHub falls back to its own choice of
-              # previous release, which is exactly right when there isn't one.
-              if [[ -n "$NOTES_START_TAG" ]]; then
-                NOTES_ARGS=(--generate-notes --notes-start-tag "$NOTES_START_TAG")
-              else
-                NOTES_ARGS=(--generate-notes)
-              fi
-            fi
-            # shellcheck disable=SC2086
-            gh release create "$TAG" "${FILES[@]}" \
-              --target "$GITHUB_SHA" \
-              --title "$TAG" \
-              "${NOTES_ARGS[@]}" \
-              $PRERELEASE_FLAG
-          fi
-
+          set -euo pipefail
+          [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" == "true" ]] \
+            || { echo "::error::${TAG} is not the expected draft"; exit 1; }
           if [[ -n "$PRERELEASE_FLAG" ]]; then
-            gh release edit "$TAG" \
-              --draft=false \
-              --latest=false \
-              --title "$TAG"
+            gh release edit "$TAG" --draft=false --latest=false --title "$TAG"
           else
-            gh release edit "$TAG" \
-              --draft=false \
-              --latest \
-              --title "$TAG"
+            gh release edit "$TAG" --draft=false --latest --title "$TAG"
           fi
 
       - name: Refresh the docs /download page
@@ -1141,7 +1258,7 @@ jobs:
         if: ${{ steps.release.outputs.is_prerelease == 'false' }}
         timeout-minutes: 20
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.KLIPPT_RELEASE_TOKEN }}
         run: |
           latest_dispatch() {
             gh run list \
@@ -1204,13 +1321,13 @@ jobs:
   publish-msstore:
     name: Publish to Microsoft Store
     runs-on: windows-latest
-    # The workflow-wide token is `contents: write` because publish-release needs
-    # it. This job only reads: it checks the tree out so the CLI can identify the
-    # project, downloads a same-run artifact (which uses the runtime token, not
-    # this one), and talks to Partner Center with its own Entra credentials.
+    # This job only reads source. It checks the tree out so the CLI can identify
+    # the project, downloads a same-run artifact, and talks to Partner Center with
+    # its own Entra credentials.
     permissions:
       contents: read
     needs:
+      - resolve-source
       - build-windows-store
       - publish-release
     # Stable tags only, and never a fork: an RC reaching the Store would go through
@@ -1218,8 +1335,8 @@ jobs:
     # `!contains(…, '-')` is what separates v1.9.1 from v1.9.1-rc.2.
     if: >-
       ${{ vars.MSSTORE_PRODUCT_ID != ''
-       && ((github.event_name == 'push' && github.ref_type == 'tag' && !contains(github.ref_name, '-'))
-        || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && !contains(github.event.inputs.release_tag, '-'))) }}
+       && needs.resolve-source.outputs.is_release == 'true'
+       && !contains(needs.resolve-source.outputs.release_tag, '-') }}
     steps:
       # Same all-or-nothing gate as the macOS signing job: a half-configured
       # publisher is a misnamed secret, and the quiet failure mode — shipping
@@ -1260,11 +1377,12 @@ jobs:
       # delete the package if it ran after.
       - name: Check out the project
         if: steps.store.outputs.enabled == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
           # Nothing here pushes; the tree is only read so the CLI can see it is
           # an Electron project. Left at the default, checkout writes the
-          # workflow's `contents: write` token into .git/config, where every
+          # workflow token into .git/config, where every
           # later step can read it — including a third-party CLI action and the
           # Store submission. See the job-level `permissions` above: same reason,
           # other half.
@@ -1272,14 +1390,14 @@ jobs:
 
       - name: Download Store package
         if: steps.store.outputs.enabled == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: klippt-windows-store
           path: artifacts/store
 
       - name: Configure Microsoft Store CLI
         if: steps.store.outputs.enabled == 'true'
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        uses: microsoft/microsoft-store-apppublisher@15abd1c50fcc164b19cb240fb04ef3c49bf715a2 # v1.1
 
       - name: Submit the package to the Store
         id: submit

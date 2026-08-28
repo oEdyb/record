@@ -15,8 +15,9 @@ endif()
 # whisper.cpp source pin (mirrored in stt-whispercpp-migration-plan.md §1.1
 # and the POC REPORT.md §1 — keep all three in lockstep).
 # ---------------------------------------------------------------------------
-set(WHISPER_REPO "https://github.com/ggml-org/whisper.cpp.git" CACHE STRING "")
-set(WHISPER_REF  "v1.9.1"  CACHE STRING "")
+set(WHISPER_REPO "https://github.com/ggml-org/whisper.cpp.git" CACHE STRING "" FORCE)
+# whisper.cpp v1.9.1. Use the immutable commit, not the movable tag.
+set(WHISPER_REF  "f049fff95a089aa9969deb009cdd4892b3e74916" CACHE STRING "" FORCE)
 
 # ---------------------------------------------------------------------------
 # Adaptive GPU backend selection (plan §1.2). The build script flips these
@@ -100,17 +101,16 @@ endif()
 FetchContent_Declare(whisper
   GIT_REPOSITORY ${WHISPER_REPO}
   GIT_TAG        ${WHISPER_REF}
-  GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(httplib
   GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-  GIT_TAG        v0.18.1
-  GIT_SHALLOW    TRUE
+  # cpp-httplib v0.18.1
+  GIT_TAG        5c1a34e766817cf0865ca8bc5af5edeb0f9b2df4
 )
 FetchContent_Declare(json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG        v3.11.3
-  GIT_SHALLOW    TRUE
+  # nlohmann/json v3.11.3
+  GIT_TAG        9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03
 )
 # cpp-httplib auto-detects OpenSSL, zlib and Brotli and links whatever it finds:
 # all three HTTPLIB_USE_*_IF_AVAILABLE options default to ON. That makes the

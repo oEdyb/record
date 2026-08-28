@@ -58,7 +58,13 @@ export function discoverDependencyInputs(root) {
 		...discoverCargoLockfiles(root),
 		...discoverNamedFiles(
 			root,
-			new Set(["Cargo.toml", "package-lock.json", "Package.resolved", "Package.swift"]),
+			new Set([
+				"Cargo.toml",
+				"CMakeLists.txt",
+				"package-lock.json",
+				"Package.resolved",
+				"Package.swift",
+			]),
 		),
 	].sort();
 }
