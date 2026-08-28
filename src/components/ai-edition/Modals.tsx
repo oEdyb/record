@@ -1850,7 +1850,7 @@ export function SourceTranscriptModal({
 									width: 8,
 									height: 8,
 									borderRadius: "50%",
-									background: isFailed ? "var(--danger)" : "var(--danger)",
+									background: "var(--danger)",
 									boxShadow: isFailed
 										? "0 0 0 3px var(--danger-soft)"
 										: "0 0 0 3px rgba(239, 68, 68, 0.2)",

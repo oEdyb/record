@@ -23,14 +23,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { FFMPEG_MAC_SOURCE } from "./ffmpeg-pins.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const CRATES_DIR = path.join(ROOT, "crates");
 
 /** Pinned release. The directory name is what build.rs looks for. */
-const VERSION = "8.1.2";
-const TARBALL_SHA256 = "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c";
+const VERSION = FFMPEG_MAC_SOURCE.version;
+const TARBALL_SHA256 = FFMPEG_MAC_SOURCE.sha256;
 const DEST = path.join(CRATES_DIR, "thirdparty", `ffmpeg-n${VERSION}-macos64-lgpl-shared`);
 
 function run(cmd, args, opts = {}) {
@@ -64,10 +65,7 @@ function run(cmd, args, opts = {}) {
  * its retries — a few seconds, once per pin bump. Narrowing that would mean
  * giving up the retry on connection resets, which is the whole point.)
  */
-const TARBALL_URLS = [
-	`https://ffmpeg.org/releases/ffmpeg-${VERSION}.tar.xz`,
-	`https://deb.debian.org/debian/pool/main/f/ffmpeg/ffmpeg_${VERSION}.orig.tar.xz`,
-];
+const TARBALL_URLS = FFMPEG_MAC_SOURCE.urls;
 
 /**
  * Fetches the pinned tarball to `dest`, trying each source until one both
@@ -180,10 +178,6 @@ run(
 	"./configure",
 	[
 		`--prefix=${DEST}`,
-		"--enable-shared",
-		"--disable-static",
-		"--disable-doc",
-		"--disable-debug",
 		// ffmpeg's configure AUTO-DETECTS these from whatever the build machine happens
 		// to have installed, and a GitHub macOS runner has a large Homebrew prefix. That
 		// is how libavformat came to link /opt/homebrew/opt/libx11/lib/libX11.6.dylib and
@@ -193,13 +187,7 @@ run(
 		// the source tarball and the SDK, never on the runner's incidental packages.
 		// None is used here: xlib/libxcb are X11 capture, sdl2 is only ffplay, and lzma
 		// only reaches decoders we do not ship (we decode mp4/webm).
-		"--disable-xlib",
-		"--disable-libxcb",
-		"--disable-sdl2",
-		"--disable-lzma",
-		"--enable-videotoolbox",
-		"--enable-audiotoolbox",
-		"--disable-x86asm",
+		...FFMPEG_MAC_SOURCE.configureFlags,
 		`--arch=${process.arch === "arm64" ? "arm64" : "x86_64"}`,
 		"--cc=clang",
 	],

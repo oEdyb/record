@@ -28,8 +28,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  supply-chain:
+    name: Verify release inputs
+    uses: ./.github/workflows/supply-chain.yml
+
   build-windows:
     name: Windows installer
+    needs: supply-chain
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -52,6 +57,21 @@ jobs:
       - name: Build Windows app
         run: npm run build:win -- --publish never
 
+      - name: Generate the Windows release inventory
+        shell: bash
+        env:
+          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          PACKAGE_DIR="$(find release -type d -name 'win-unpacked' -print -quit)"
+          INSTALLER="$(find release -type f -name 'Klippt.Setup.*.exe' -print -quit)"
+          test -n "$PACKAGE_DIR" && test -n "$INSTALLER"
+          node scripts/generate-release-inventory.mjs \
+            --output-dir release/supply-chain \
+            --platform win32 \
+            --arch x64 \
+            --package-dir "$PACKAGE_DIR" \
+            --artifact "$INSTALLER"
+
       - name: Upload Windows installer
         uses: actions/upload-artifact@v7
         with:
@@ -63,6 +83,7 @@ jobs:
             release/**/Klippt.Setup.*.exe
             release/**/Klippt.Setup.*.exe.blockmap
             release/**/latest.yml
+            release/supply-chain/*.json
           if-no-files-found: error
           retention-days: 30
 
@@ -79,6 +100,7 @@ jobs:
 
   build-windows-store:
     name: Windows Store package
+    needs: supply-chain
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -95,6 +117,21 @@ jobs:
 
       - name: Build Windows Store package
         run: npm run build:win:store -- --publish never
+
+      - name: Generate the Windows Store release inventory
+        shell: bash
+        env:
+          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          PACKAGE_DIR="$(find release -type d -name 'win-unpacked' -print -quit)"
+          APPX="$(find release -type f -name '*.appx' -print -quit)"
+          test -n "$PACKAGE_DIR" && test -n "$APPX"
+          node scripts/generate-release-inventory.mjs \
+            --output-dir release/supply-chain \
+            --platform win32 \
+            --arch x64 \
+            --package-dir "$PACKAGE_DIR" \
+            --artifact "$APPX"
 
       # Store certification rejected 1.9.0 under 10.1.1.11 "On Device Tiles" because
       # the package carried electron-builder's vendored placeholder tiles: it reads
@@ -201,12 +238,15 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: klippt-windows-store
-          path: release/**/Klippt.Setup.*.appx
+          path: |
+            release/**/Klippt.Setup.*.appx
+            release/supply-chain/*.json
           if-no-files-found: error
           retention-days: 30
 
   build-macos:
     name: macOS ${{ matrix.arch }} DMG
+    needs: supply-chain
     # Build each arch NATIVELY. `macos-latest` is Apple Silicon, and everything the
     # 1.8.0 macOS path added keys off the HOST arch: fetch-ffmpeg-macos.mjs configures
     # with `--arch=${process.arch}`, and build-macos-compositor-addon.mjs installs into
@@ -307,7 +347,13 @@ jobs:
             -T /usr/bin/security
 
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            keychain="${keychain#\"}"
+            keychain="${keychain%\"}"
+            existing_keychains+=("$keychain")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${existing_keychains[@]}"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
           rm -f "$RUNNER_TEMP/certificate.p12"
 
@@ -340,7 +386,7 @@ jobs:
           # relicense this MIT app. The script pins the release and checksums it, so
           # keying on the script itself busts the cache when the pin moves.
           path: crates/thirdparty
-          key: ffmpeg-macos-${{ matrix.arch }}-${{ hashFiles('scripts/fetch-ffmpeg-macos.mjs') }}
+          key: ffmpeg-macos-${{ matrix.arch }}-${{ hashFiles('scripts/fetch-ffmpeg-macos.mjs', 'scripts/ffmpeg-pins.mjs') }}
 
       - name: Vendor LGPL ffmpeg
         run: npm run fetch:ffmpeg:mac
@@ -585,6 +631,18 @@ jobs:
           xcrun stapler validate "${{ steps.dmg.outputs.dmg_path }}"
           spctl -a -vv -t install "${{ steps.dmg.outputs.dmg_path }}"
 
+      - name: Generate the macOS release inventory
+        env:
+          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+        run: >-
+          node scripts/generate-release-inventory.mjs
+          --output-dir release/supply-chain
+          --platform darwin
+          --arch ${{ matrix.arch }}
+          --package-dir "${{ steps.find_app.outputs.app_bundle }}"
+          --artifact "${{ steps.dmg.outputs.dmg_path }}"
+          --artifact "${{ steps.update_zip.outputs.zip_path }}"
+
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v7
         with:
@@ -596,6 +654,7 @@ jobs:
             ${{ steps.dmg.outputs.dmg_path }}
             ${{ steps.update_zip.outputs.zip_path }}
             ${{ steps.update_zip.outputs.info_path }}
+            release/supply-chain/*.json
           if-no-files-found: error
           retention-days: 30
 
@@ -605,6 +664,7 @@ jobs:
 
   build-linux:
     name: Linux packages
+    needs: supply-chain
     # PINNED, and not to `ubuntu-latest`. The linker binds every symbol to the newest
     # version its BUILD machine offers, so the runner image silently decides the oldest
     # distro these packages can run on — nothing in the source asks for any of it.
@@ -665,6 +725,26 @@ jobs:
 
       - name: Build Linux app
         run: npm run build:linux -- --publish never
+
+      - name: Generate the Linux release inventory
+        env:
+          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          PACKAGE_DIR="$(find release -type d -name 'linux-unpacked' -print -quit)"
+          test -n "$PACKAGE_DIR"
+          args=(
+            node scripts/generate-release-inventory.mjs
+            --output-dir release/supply-chain
+            --platform linux
+            --arch x64
+            --package-dir "$PACKAGE_DIR"
+          )
+          for extension in AppImage deb pacman rpm; do
+            artifact="$(find release -type f -name "*.${extension}" -print -quit)"
+            test -n "$artifact"
+            args+=(--artifact "$artifact")
+          done
+          "${args[@]}"
 
       # The guard for the trap documented on the upload step below: `if-no-files-found`
       # evaluates the union of the globs, so a format that stops being produced is
@@ -733,6 +813,7 @@ jobs:
             release/**/*.pacman
             release/**/*.rpm
             release/**/latest-linux.yml
+            release/supply-chain/*.json
           # Still no *.zsync, and there never will be: zsync was electron-updater's old delta
           # format and app-builder-lib 26.x dropped it in favour of the block map it embeds
           # directly in the AppImage. That glob had matched nothing since the dependency bump,
@@ -850,12 +931,14 @@ jobs:
           fi
           echo "Computed notes_start_tag=${NOTES_START_TAG} for tag=${TAG}"
 
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "stable_version=$STABLE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "prerelease_flag=$PRERELEASE_FLAG" >> "$GITHUB_OUTPUT"
-          echo "notes_start_tag=$NOTES_START_TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "stable_version=$STABLE_VERSION"
+            echo "is_prerelease=$IS_PRERELEASE"
+            echo "prerelease_flag=$PRERELEASE_FLAG"
+            echo "notes_start_tag=$NOTES_START_TAG"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download Windows installer
         uses: actions/download-artifact@v8

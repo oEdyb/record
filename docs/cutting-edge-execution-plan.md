@@ -180,6 +180,14 @@ Acceptance:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W0.1
+- Status: **COMPLETE — 2026-08-28**
+- Evidence: the reusable supply-chain gate blocks every platform build; six focused policy suites
+  pass 22 tests; full Semgrep covers tracked JavaScript, TypeScript, Rust, Swift, C, and all 10 C++
+  implementations; Gitleaks passes the current tree and complete history; every Cargo graph passes
+  its scoped audit and deny policy; and a real signed Mac payload produced a strict CycloneDX 1.7
+  SBOM with 393 packaged files and 52 executable-role paths. Dependency approval now discovers
+  nested npm, Cargo, and Swift graphs, rejects `npm-shrinkwrap.json`, and verifies Olle's detached
+  Ed25519 signature before dependency restore, build, or inventory generation.
 
 Work:
 
@@ -196,10 +204,10 @@ Work:
 
 Acceptance:
 
-- A vulnerable or unapproved new dependency blocks release.
-- Every shipped executable, model, and WebAssembly artifact appears in the inventory.
-- The audit is reproducible from the lockfiles.
-- Local stale `node_modules` cannot be mistaken for the locked release dependency set.
+- [x] A vulnerable or unapproved new dependency blocks release.
+- [x] Every shipped executable, model, and WebAssembly artifact appears in the inventory.
+- [x] The audit is reproducible from the lockfiles.
+- [x] Local stale `node_modules` cannot be mistaken for the locked release dependency set.
 
 ### W0.3 — Bind release artifacts to source
 

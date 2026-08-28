@@ -205,25 +205,43 @@ function rebuildPanels() {
 	panels = comparison.variants.map((variant) => {
 		const section = document.createElement("section");
 		section.className = "variant";
-		const statusClass = variant.croppedFrames === 0 ? "status" : "status warn";
-		const statusText =
+		const heading = document.createElement("div");
+		heading.className = "variant-heading";
+		const titleRow = document.createElement("div");
+		titleRow.className = "variant-title-row";
+		const title = document.createElement("h2");
+		title.textContent = variant.label;
+		const status = document.createElement("span");
+		status.className = variant.croppedFrames === 0 ? "status" : "status warn";
+		status.textContent =
 			variant.croppedFrames === 0 ? "Cursor visible" : `${variant.croppedFrames} cropped frames`;
-		section.innerHTML = `
-			<div class="variant-heading">
-				<div class="variant-title-row"><h2></h2><span class="${statusClass}">${statusText}</span></div>
-				<p></p>
-			</div>
-			<div class="canvas-wrap"><canvas></canvas></div>
-			<div class="metrics">
-				<span>Zoom <strong>${variant.resolvedScale.toFixed(2)}×</strong></span>
-				<span>Targets <strong>${variant.targetCount}</strong></span>
-				<span>Travel <strong>${variant.travel.toFixed(2)}</strong></span>
-				<span>Margin misses <strong>${variant.paddedBreaches}</strong></span>
-			</div>`;
-		section.querySelector("h2").textContent = variant.label;
-		section.querySelector("p").textContent = variant.description;
+		titleRow.append(title, status);
+		const description = document.createElement("p");
+		description.textContent = variant.description;
+		heading.append(titleRow, description);
+
+		const canvasWrap = document.createElement("div");
+		canvasWrap.className = "canvas-wrap";
+		const canvas = document.createElement("canvas");
+		canvasWrap.append(canvas);
+
+		const metrics = document.createElement("div");
+		metrics.className = "metrics";
+		for (const [label, value] of [
+			["Zoom", `${variant.resolvedScale.toFixed(2)}×`],
+			["Targets", variant.targetCount],
+			["Travel", variant.travel.toFixed(2)],
+			["Margin misses", variant.paddedBreaches],
+		]) {
+			const metric = document.createElement("span");
+			metric.append(`${label} `);
+			const strong = document.createElement("strong");
+			strong.textContent = String(value);
+			metric.append(strong);
+			metrics.append(metric);
+		}
+		section.append(heading, canvasWrap, metrics);
 		comparisonElement.append(section);
-		const canvas = section.querySelector("canvas");
 		const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
 		return { section, canvas, context };
 	});

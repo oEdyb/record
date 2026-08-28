@@ -1,1 +1,15 @@
 * @EtienneLescot
+
+# Dependency changes need an explicit Klippt approval-baseline update. These
+# narrower matches take precedence over the inherited repository fallback.
+/**/package-lock.json @oEdyb
+/**/npm-shrinkwrap.json @oEdyb
+/**/Cargo.lock @oEdyb
+/**/Cargo.toml @oEdyb
+/**/Package.resolved @oEdyb
+/**/Package.swift @oEdyb
+/electron/stt/modelManager.ts @oEdyb
+/scripts/ffmpeg-pins.mjs @oEdyb
+/supply-chain/approved-dependency-inputs.json @oEdyb
+/supply-chain/approved-dependency-inputs.json.sig @oEdyb
+/supply-chain/dependency-approval-key.pub @oEdyb

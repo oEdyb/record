@@ -1,0 +1,4 @@
+# Inherited OpenScreen history. The current tree does not contain or use this
+# old Figma token. Keep the exception bound to this exact commit, path, rule,
+# and line; never replace it with a path or rule allowlist.
+6e6ecba1722d2d03da7eec6e8a40a1f10ad64c3f:.kiro/settings/mcp.json:generic-api-key:7

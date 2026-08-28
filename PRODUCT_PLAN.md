@@ -143,6 +143,12 @@ The next commercial gate is a trust gate. Complete these items before broad feat
 13. Bind each packaged helper to the exact release source SHA. Close the recorded FFmpeg WebAssembly
     LGPL source, configuration, notice, and relinking obligation before Klippt charges users.
 
+Trust-gate progress on 2026-08-28: W0.1 and W0.2 are complete. The full product is protected by a
+verified private checkpoint. Every release platform build now waits for one permanent dependency,
+static-analysis, secret-scan, inventory, and CycloneDX gate. New dependency inputs require an exact
+reviewed hash and Olle's detached Ed25519 approval signature. The private approval key stays outside
+GitHub. Release-source provenance and signed-tag binding are the next slice.
+
 The next high-value product prototypes, in order, are:
 
 1. Native AVFoundation camera capture with explicit resolution/FPS and a shared host-time clock.

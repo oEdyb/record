@@ -1,0 +1,241 @@
+name: Supply chain
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/ai-edition
+      - "checkpoint/**"
+      - "release/**"
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22.22.1
+  NPM_VERSION: 10.9.4
+  RUST_VERSION: 1.97.1
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the proposed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reject high-risk dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
+  npm-security:
+    name: npm audit, signatures, and release inventory
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Use the locked Node release
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Verify the locked toolchain
+        run: |
+          test "$(node --version)" = "v${NODE_VERSION}"
+          test "$(npm --version)" = "${NPM_VERSION}"
+      - name: Require explicit approval for every dependency input
+        run: node scripts/check-approved-dependencies.mjs
+      - name: Restore the exact npm graph
+        run: npm ci --ignore-scripts
+      - name: Reject high or critical npm advisories
+        run: npm audit --audit-level=high
+      - name: Verify npm registry signatures and attestations
+        run: npm audit signatures
+      - name: Restore and verify the locked website graph
+        working-directory: website
+        run: |
+          npm ci --ignore-scripts
+          npm audit signatures
+      - name: Reject new high-risk website advisories
+        run: npm run supply-chain:audit-website
+      - name: Generate and validate the release inventory
+        env:
+          KLIPPT_SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/generate-release-inventory.mjs --output-dir "$RUNNER_TEMP/klippt-supply-chain"
+      - name: Upload the inventory and CycloneDX SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: klippt-supply-chain-${{ github.sha }}
+          path: ${{ runner.temp }}/klippt-supply-chain
+          if-no-files-found: error
+          retention-days: 30
+
+  rust-security:
+    name: Rust advisories, licences, sources, and duplicates
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use the reviewed Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          test "$(rustc --version | awk '{print $2}')" = "$RUST_VERSION"
+      - name: Install the locked audit tools
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
+          test "$(cargo audit --version | awk '{print $2}')" = "0.22.2"
+          test "$(cargo deny --version | awk '{print $2}')" = "0.20.2"
+      - name: Verify every Cargo graph has an explicit policy
+        run: node scripts/check-cargo-graphs.mjs > "$RUNNER_TEMP/cargo-graphs.tsv"
+      - name: Audit every Cargo lockfile
+        run: |
+          set -euo pipefail
+          while IFS=$'\t' read -r lock _manifest ignore_csv; do
+            args=(--file "$lock" --deny warnings)
+            if [[ -n "$ignore_csv" ]]; then
+              IFS=',' read -ra ignores <<< "$ignore_csv"
+              for advisory in "${ignores[@]}"; do args+=(--ignore "$advisory"); done
+            fi
+            cargo audit "${args[@]}"
+          done < "$RUNNER_TEMP/cargo-graphs.tsv"
+      - name: Enforce Cargo dependency policy
+        run: |
+          set -euo pipefail
+          index=0
+          while IFS=$'\t' read -r lock manifest _ignore_csv; do
+            config="$RUNNER_TEMP/cargo-deny-${index}.toml"
+            node scripts/check-cargo-graphs.mjs \
+              --render-deny-config "$lock" \
+              --output "$config"
+            cargo deny --manifest-path "$manifest" --config "$config" --locked check
+            index=$((index + 1))
+          done < "$RUNNER_TEMP/cargo-graphs.tsv"
+
+  static-analysis:
+    name: Semgrep static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out the reviewed Semgrep rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: semgrep/semgrep-rules
+          ref: 40b8c63f75dc7c22c8a77482d73bfb864b146f7e
+          path: .semgrep-rules
+          persist-credentials: false
+      - name: Use Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install the reviewed Semgrep release
+        run: |
+          python -m pip install semgrep==1.175.0
+          test "$(semgrep --version)" = "1.175.0"
+      - name: Prepare the pinned C rules for the C++ parser
+        run: >-
+          node scripts/prepare-semgrep-cpp-rules.mjs
+          .semgrep-rules/c
+          "$RUNNER_TEMP/semgrep-cpp"
+      - name: Scan source changes
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          args=(
+            scan
+            --config .semgrep-rules/javascript
+            --config .semgrep-rules/typescript
+            --config .semgrep-rules/c
+            --config "$RUNNER_TEMP/semgrep-cpp"
+            --config .semgrep-rules/rust
+            --config .semgrep-rules/swift
+            --metrics=off
+            --error
+            --severity ERROR
+            --exclude .semgrep-rules
+            --exclude node_modules
+            --exclude website
+            --exclude dist
+            --exclude dist-electron
+            --exclude release
+            --exclude .cache
+            --exclude crates/target
+            --exclude electron/native/clean-voice/target
+            --json-output "$RUNNER_TEMP/semgrep-report.json"
+          )
+          # Semgrep 1.175 reports PartialParsing warnings for valid TypeScript
+          # import types and Vitest generic mocks. Keep scanning those files, but
+          # do not turn the parser limitation itself into a failed workflow.
+          baseline=""
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            baseline="$PR_BASE_SHA"
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "$PUSH_BASE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            baseline="$PUSH_BASE_SHA"
+          fi
+          if [[ -n "$baseline" ]]; then
+            args+=(--severity WARNING --baseline-commit "$baseline")
+          fi
+          semgrep "${args[@]}" .
+          if [[ -z "$baseline" ]]; then
+            node scripts/prepare-semgrep-cpp-rules.mjs \
+              --verify-report "$RUNNER_TEMP/semgrep-report.json"
+          fi
+
+  secret-history:
+    name: Full-history secret scan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the verified Gitleaks release
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$archive"
+          printf '%s  %s\n' "$GITLEAKS_LINUX_X64_SHA256" "$RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          test "$("$RUNNER_TEMP/gitleaks" version)" = "$GITLEAKS_VERSION"
+      - name: Scan every product commit
+        run: |
+          "$RUNNER_TEMP/gitleaks" git \
+            --config .gitleaks.toml \
+            --no-banner \
+            --redact \
+            --report-format json \
+            --report-path "$RUNNER_TEMP/gitleaks-report.json" \
+            --log-opts="--all" \
+            .
+      - name: Upload the redacted report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitleaks-${{ github.sha }}
+          path: ${{ runner.temp }}/gitleaks-report.json
+          if-no-files-found: ignore
+          retention-days: 14

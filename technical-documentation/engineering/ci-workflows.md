@@ -1,6 +1,6 @@
 # GitHub Actions workflows
 
-The repository's 15 workflow files under `.github/workflows/` cover application CI, release builds and management, package registries, native STT binaries, documentation deployment, and repository automation. This reference describes their verified triggers, dependencies, and artifact flow.
+The workflows under `.github/workflows/` cover application CI, supply-chain checks, release builds and management, package registries, native STT binaries, documentation deployment, and repository automation. This reference describes their verified triggers, dependencies, and artifact flow.
 
 ## Workflow dependency graph
 
@@ -14,6 +14,7 @@ flowchart TD
         CI --> Semantic[semantic PR title]
         Docs["docs.yml<br/>website changes or dispatch"] --> DocsBuild[website build artifact]
         DocsBuild --> DocsDeploy[GitHub Pages deploy on main]
+        Supply["supply-chain.yml<br/>push, PR, weekly, dispatch,<br/>or reusable release call"] --> SupplyReport["dependency gates, secret scan,<br/>inventory and CycloneDX SBOM"]
     end
 
     subgraph T2["Tier 2 — native and release builds"]
@@ -22,6 +23,7 @@ flowchart TD
         ReleaseBuild --> Store[Windows AppX]
         ReleaseBuild --> Mac["macOS arm64 and x64 DMGs"]
         ReleaseBuild --> Linux["AppImage, deb, pacman, rpm"]
+        SupplyReport -->|required before every platform job| ReleaseBuild
         Win --> Publish[GitHub release]
         Mac --> Publish
         Linux --> Publish
@@ -62,6 +64,7 @@ The STT workflow uploads standalone archives for binary refresh and does not cur
 |---|---|---|
 | 1 | `ci.yml` | Push to `main`; pull request to `main` |
 | 1 | `docs.yml` | Website/workflow changes on `main` or a PR; manual dispatch |
+| 1 | `supply-chain.yml` | Pull request; selected product/release branches; weekly schedule; manual dispatch; required reusable call from `build.yml` |
 | 2 | `build.yml` | Any `v*` tag; manual dispatch |
 | 2 | `build-whisper-stt.yml` | Native STT/build-script changes; manual dispatch |
 | 2.5 | `prerelease.yml` | Manual dispatch |
@@ -93,7 +96,18 @@ The STT workflow uploads standalone archives for binary refresh and does not cur
 
 Jobs that need the root dependencies use `.github/actions/setup`, which requests Node 22 and runs `npm ci`; callers perform checkout themselves.
 
-`docs.yml` is separate from the technical-documentation checker. It installs dependencies in `website/`, type-checks and builds the site, uploads a Pages artifact, and deploys only after a push to `main`.
+`docs.yml` is separate from the technical-documentation checker. It verifies the same locked Node
+`22.22.1` and npm `10.9.4` baseline, installs dependencies in `website/`, type-checks and builds the
+site, uploads a Pages artifact, and deploys only after a push to `main`.
+
+`supply-chain.yml` runs the locked npm and Rust advisory policies, pull-request dependency review,
+Semgrep, full-history Gitleaks, and a source-derived release inventory. The workflow uploads the
+validated CycloneDX 1.7 SBOM with that inventory. Platform jobs in `build.yml` generate a second,
+target-specific pair from the final unpacked payload and distribution artifacts, so every packaged
+file and final installer appears by path, size, and SHA-256. `build.yml` also calls the complete
+workflow before any platform build, so release tags and manual release jobs cannot bypass the gates.
+See [dependency and release supply chain](supply-chain.md)
+for the policy and local commands.
 
 ## Tier 2: native and release builds
 

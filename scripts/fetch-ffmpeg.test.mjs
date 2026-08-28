@@ -9,23 +9,12 @@
 // n8.1.2-32-gcfa62de001 while every sibling had already moved to
 // n8.1.2-34-g9b6c8969e0. This test is the guard that was missing.
 //
-// Read as source text rather than imported: fetch-ffmpeg.mjs calls main() at import
-// and would start downloading. The property under test is a property of the literal
-// table anyway.
-
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { FFMPEG_ARCHIVES, FFMPEG_SHARED_ARCHIVES } from "./ffmpeg-pins.mjs";
 
-const source = fs.readFileSync(
-	path.join(path.dirname(fileURLToPath(import.meta.url)), "fetch-ffmpeg.mjs"),
-	"utf8",
-);
-
-// Anchored at the property so prose in the file's (extensive) comments cannot match.
-const assets = [...source.matchAll(/^\s*asset:\s*"([^"]+)"/gm)].map((m) => m[1]);
-const digests = [...source.matchAll(/^\s*sha256:\s*"([^"]+)"/gm)].map((m) => m[1]);
+const pins = [...Object.values(FFMPEG_ARCHIVES), ...Object.values(FFMPEG_SHARED_ARCHIVES)];
+const assets = pins.map((pin) => pin.asset);
+const digests = pins.map((pin) => pin.sha256);
 
 /** `ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-lgpl-shared-8.1.tar.xz` -> `n8.1.2-34-g9b6c8969e0`. */
 const buildId = (asset) => asset.match(/-(n\d+(?:\.\d+)+-\d+-g[0-9a-f]+)-/)?.[1];

@@ -61,6 +61,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { FFMPEG_ARCHIVES, FFMPEG_RELEASE_TAG, FFMPEG_SHARED_ARCHIVES } from "./ffmpeg-pins.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -80,32 +81,11 @@ const ROOT = path.join(__dirname, "..");
  * '.[].tag_name'` — anything older than ~15 days that is still listed is a
  * month-end build, and only those are safe.
  */
-const RELEASE_TAG = "autobuild-2026-07-31-14-10";
+const RELEASE_TAG = FFMPEG_RELEASE_TAG;
 const BASE = `https://github.com/BtbN/FFmpeg-Builds/releases/download/${RELEASE_TAG}`;
 
 /** Tag, asset and digest move together. Re-pin all three or none. */
-const PINNED = {
-	"win32-x64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-8.1.zip",
-		sha256: "089e4169e93b2b3f3acbfced3c0704d24276a225641bdda04d796d28b07a2a38",
-		exe: "ffmpeg.exe",
-	},
-	"win32-arm64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-winarm64-lgpl-8.1.zip",
-		sha256: "5b55ac00360811ef08513c76240c93e52a369cd29040d21799e7758fc7e9eaea",
-		exe: "ffmpeg.exe",
-	},
-	"linux-x64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-lgpl-8.1.tar.xz",
-		sha256: "8c8b2897f2a8093ae2d985f7f1867d218451d4c567c1b2437f86a7c73a950b9f",
-		exe: "ffmpeg",
-	},
-	"linux-arm64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-lgpl-8.1.tar.xz",
-		sha256: "0c8716a94ac1fe22eb56e7a0cedd0f00c1d8fae712ec19973d679a7a87916743",
-		exe: "ffmpeg",
-	},
-};
+const PINNED = FFMPEG_ARCHIVES;
 
 /**
  * The "-shared" sibling of PINNED, from the *same* release tag and source
@@ -120,24 +100,7 @@ const PINNED = {
  * darwin has no entry because BtbN publishes no macOS build; that path compiles
  * ffmpeg from source (scripts/fetch-ffmpeg-macos.mjs).
  */
-const SHARED_PINNED = {
-	"linux-x64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-lgpl-shared-8.1.tar.xz",
-		sha256: "c882a80f06617149198a98a07a0880a7e881953ae9f9cb931f5be09a4f93caae",
-	},
-	"linux-arm64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-lgpl-shared-8.1.tar.xz",
-		sha256: "eec386482ac6799bb547b5f507dedd19ef6354eee0ca4ddb04bdd053d03c3cfb",
-	},
-	"win32-x64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-shared-8.1.zip",
-		sha256: "c222a490dde4e7059f45495deef6bfb98dbcacc2b43df5b607546252037aa95c",
-	},
-	"win32-arm64": {
-		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-winarm64-lgpl-shared-8.1.zip",
-		sha256: "4abab52904037ecad91b54811d69005a0b2e1f591242fd1517d32b299246ece0",
-	},
-};
+const SHARED_PINNED = FFMPEG_SHARED_ARCHIVES;
 
 /** Enabling any of these makes the whole binary GPL. Source: ffmpeg.org/legal.html. */
 const GPL_LIBS = [

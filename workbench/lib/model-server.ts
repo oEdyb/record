@@ -115,7 +115,7 @@ export async function startScriptedModel(script: ScriptedTurn[]): Promise<ModelS
 				});
 				res.write(sse(chunk(responseId, {}, "tool_calls")));
 			} else {
-				const text = turn.kind === "text" ? turn.text : turn.text;
+				const text = turn.text;
 				for (const piece of text.match(/.{1,24}/g) ?? [text]) {
 					res.write(sse(chunk(responseId, { content: piece }, null)));
 				}

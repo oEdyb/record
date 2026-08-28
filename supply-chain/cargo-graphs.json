@@ -1,0 +1,42 @@
+[
+	{
+		"lockfile": "crates/Cargo.lock",
+		"manifest": "crates/Cargo.toml",
+		"scope": "required",
+		"advisoryIgnores": [
+			{
+				"id": "RUSTSEC-2024-0436",
+				"reason": "paste is transitively required by the current Metal stack; no vulnerability is reported and no compatible maintained replacement is available yet"
+			},
+			{
+				"id": "RUSTSEC-2026-0192",
+				"reason": "ttf-parser is transitively required by the current text renderer; its replacement needs a measured font-rendering migration"
+			}
+		]
+	},
+	{
+		"lockfile": "electron/native/clean-voice/Cargo.lock",
+		"manifest": "electron/native/clean-voice/Cargo.toml",
+		"scope": "excluded",
+		"advisoryIgnores": [
+			{
+				"id": "RUSTSEC-2024-0436",
+				"reason": "paste is transitively required by the development-only DeepFilterNet graph; no vulnerability is reported"
+			},
+			{
+				"id": "RUSTSEC-2026-0186",
+				"reason": "memmap2 0.5 is pinned through tract in the development-only Clean Voice helper; the helper remains excluded from release packages"
+			},
+			{
+				"id": "RUSTSEC-2026-0217",
+				"reason": "the affected tract parser is confined to the development-only Clean Voice helper, which release packaging excludes"
+			}
+		]
+	},
+	{
+		"lockfile": "electron/native/pipewire-capture/Cargo.lock",
+		"manifest": "electron/native/pipewire-capture/Cargo.toml",
+		"scope": "required",
+		"advisoryIgnores": []
+	}
+]

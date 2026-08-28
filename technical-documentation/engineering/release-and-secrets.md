@@ -240,3 +240,6 @@ GitHub supplies `GITHUB_TOKEN` per run. Workflows use it for semantic PR validat
 - Scope tokens to the single repository or external package destination they need.
 - Rotate before expiry and verify the replacement before revoking the previous credential.
 - Treat workflow logs and manual shell commands as public: pass values through secret inputs/environment variables and never echo them.
+
+The full-history scanner, its exact-fingerprint exception policy, and the response procedure for a
+new finding are documented in [dependency and release supply chain](supply-chain.md#secret-findings-and-false-positives).
