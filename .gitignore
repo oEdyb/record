@@ -24,6 +24,13 @@ dist-ssr
 /electron/native/bin/
 /electron/native/pipewire-capture/build/
 /electron/native/pipewire-capture/target/
+/electron/native/clean-voice/target/
+/electron/native/clean-voice/build/
+/electron/native/parakeet-stt/build/
+
+# Product-owned Parakeet model cache. The release model is fetched and verified
+# from its pinned manifest; compiled model weights never enter Git.
+/parakeet-tdt-0.6b-v3/
 
 # Native macOS generated files
 DerivedData/

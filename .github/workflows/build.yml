@@ -319,6 +319,12 @@ jobs:
         env:
           OPENSCREEN_MAC_HELPER_ARCHS: ${{ matrix.arch }}
 
+      - name: Build Apple Silicon Parakeet transcription helper
+        if: matrix.arch == 'arm64'
+        run: npm run build:native:parakeet:mac
+        env:
+          KLIPPT_PARAKEET_ARCHS: arm64
+
       # The two steps below are what `npm run build:mac` does and this job did not.
       # Windows gets them for free because its job just runs `npm run build:win`,
       # which chains fetch:ffmpeg + build:native:compositor; macOS spells its steps

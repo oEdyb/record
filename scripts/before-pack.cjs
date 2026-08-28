@@ -55,6 +55,13 @@ const HELPER_SOURCE_PATHS = [
 	"electron/native/pipewire-capture/Cargo.toml",
 ].map((p) => path.join(ROOT, p));
 
+const PARAKEET_SOURCE_PATHS = [
+	"electron/native/parakeet-stt/Package.swift",
+	"electron/native/parakeet-stt/Package.resolved",
+	"electron/native/parakeet-stt/Sources/KlipptParakeetSTT/main.swift",
+	"scripts/build-parakeet-stt-helper.mjs",
+].map((p) => path.join(ROOT, p));
+
 /**
  * Everything that has to be inside `electron/native/bin/darwin-<arch>/` for the .app to
  * work, keyed by what breaks when it is absent.
@@ -419,9 +426,18 @@ function checkWinNativePayload() {
 }
 
 function checkMacNativePayload(context) {
+	const required = [...MAC_REQUIRED];
+	if (archTagFor(context) === "arm64") {
+		required.push({
+			match: (name) => name === "klippt-parakeet-stt",
+			what: "the local Parakeet Core ML transcription helper",
+			breaks: "the primary multilingual Transcript engine falls back to Whisper",
+			fix: "Build it with:\n\n    npm run build:native:parakeet:mac",
+		});
+	}
 	checkNativePayload({
 		dir: path.join(ROOT, "electron", "native", "bin", `darwin-${archTagFor(context)}`),
-		required: MAC_REQUIRED,
+		required,
 		osLabel: "macOS",
 		bundleNoun: "the .app",
 		emptyDirFix: `${FIX_MAC}\n\nThe STT helper and the capture helper are separate builds — see\ntechnical-documentation/engineering/build-and-packaging.md.`,
@@ -898,6 +914,14 @@ exports.default = async function beforePack(context) {
 		const shipped = path.join(ROOT, "electron", "native", "bin", tag, "compositor_view.node");
 		checkMacNativePayload(context);
 		checkCompositorAddonFreshness(shipped, FIX_MAC, "Metal compositor addon");
+		if (archTagFor(context) === "arm64") {
+			checkCompositorAddonFreshness(
+				path.join(ROOT, "electron", "native", "bin", tag, "klippt-parakeet-stt"),
+				"Build it with:\n\n    npm run build:native:parakeet:mac",
+				"Parakeet Core ML transcription helper",
+				PARAKEET_SOURCE_PATHS,
+			);
+		}
 		return;
 	}
 	if (platform === "linux") {
