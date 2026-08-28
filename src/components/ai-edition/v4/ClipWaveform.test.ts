@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildWaveformColumns, computeReferenceWaveformGain } from "./ClipWaveform";
+import {
+	buildWaveformColumns,
+	computeReferenceWaveformGain,
+	computeWaveformRenderWindow,
+} from "./ClipWaveform";
 
 function expectColumns(actual: ReturnType<typeof buildWaveformColumns>, expected: typeof actual) {
 	expect(actual).toHaveLength(expected.length);
@@ -10,6 +14,42 @@ function expectColumns(actual: ReturnType<typeof buildWaveformColumns>, expected
 }
 
 describe("ClipWaveform", () => {
+	it("bounds a long clip canvas to the visible timeline window at maximum zoom", () => {
+		const durationSec = 4_831.305;
+		const viewportWidthPx = 1_200;
+		const fullClipWidthPx = viewportWidthPx / 0.02;
+		const visibleStartSec = 2_400;
+		const visibleEndSec = visibleStartSec + durationSec * 0.02;
+		const window = computeWaveformRenderWindow({
+			clipTimelineStartSec: 0,
+			clipTimelineEndSec: durationSec,
+			visibleTimelineStartSec: visibleStartSec,
+			visibleTimelineEndSec: visibleEndSec,
+			sourceStartSec: 0,
+			sourceEndSec: durationSec,
+		});
+
+		expect(window).not.toBeNull();
+		expect((window?.widthFraction ?? 0) * fullClipWidthPx).toBeLessThanOrEqual(
+			viewportWidthPx * 1.21,
+		);
+		expect(window?.sourceStartSec).toBeLessThan(visibleStartSec);
+		expect(window?.sourceEndSec).toBeGreaterThan(visibleEndSec);
+	});
+
+	it("does not mount a waveform canvas for a clip outside the visible window", () => {
+		expect(
+			computeWaveformRenderWindow({
+				clipTimelineStartSec: 0,
+				clipTimelineEndSec: 10,
+				visibleTimelineStartSec: 20,
+				visibleTimelineEndSec: 30,
+				sourceStartSec: 5,
+				sourceEndSec: 15,
+			}),
+		).toBeNull();
+	});
+
 	it("preserves every source peak while fitting the waveform to visible columns", () => {
 		const peaks = new Float32Array([-0.1, 0.2, -0.4, 0.3, 0, 0, -0.2, 0.1]);
 

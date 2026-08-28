@@ -51,6 +51,48 @@ distributed components that need extra release attention.
 - The speech model (`ggml-*.bin`) is **not** bundled — it is downloaded into the
   user's data directory on first use by `electron/stt/modelManager.ts`.
 
+## FluidAudio and NVIDIA Parakeet TDT 0.6B v3
+
+- **Component**: `klippt-parakeet-stt`, the primary local multilingual
+  transcription helper on Apple Silicon.
+- **FluidAudio**: version 0.15.6, Apache License 2.0 —
+  <https://github.com/FluidInference/FluidAudio>.
+- **Speech model**: `FluidInference/parakeet-tdt-0.6b-v3-coreml`, derived from
+  NVIDIA Parakeet TDT 0.6B v3 and distributed under Creative Commons
+  Attribution 4.0 — <https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml>.
+- The model is not bundled. Klippt downloads only the INT8 runtime graph into
+  the user's data directory. Every file URL is pinned to commit
+  `7dd20fe6b1797d35f5e3307e8b1732d9a178edfe` and verified by SHA-256 in
+  `electron/stt/modelManager.ts` before publication to the live cache.
+
+## DeepFilterNet and libDF
+
+- **Component**: the development-only `klippt-clean-voice` evaluation helper and its embedded
+  DeepFilterNet 3 model. The helper is not part of the release payload until the creator-corpus,
+  timing, preview/export parity, and long-session gates pass.
+- **Upstream**: <https://github.com/Rikorose/DeepFilterNet>, based on v0.5.6 commit
+  `978576aa8400552a4ce9730838c635aa30db5e61`. Klippt pins
+  <https://github.com/oEdyb/DeepFilterNet/commit/b0fa238a331fb5cc39c5555d3538008dd88c0aef>,
+  which adds only upstream commits `9524a0f` and `be00f46` so three zero hops can flush the
+  standard model delay without an audible state clock. The embedded model SHA-256 is
+  `c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616`.
+- **License selected for Klippt**: MIT. Copyright (c) 2021 Hendrik Schröter.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## Microsoft OpenMP runtime — `vcomp140.dll` (Windows only)
 
 - **Component**: `resources/electron/native/bin/win32-x64/vcomp140.dll`.

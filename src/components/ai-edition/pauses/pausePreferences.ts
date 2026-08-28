@@ -49,6 +49,16 @@ function normalizePolicy(value: unknown): PauseAnalysisPolicy {
 		sensitivity: number(raw.sensitivity, DEFAULT_PAUSE_POLICY.sensitivity, 0, 1),
 		manualThresholdDb:
 			raw.manualThresholdDb === null ? null : number(raw.manualThresholdDb, -38, -70, -10),
+		includeNonSpeechEvents:
+			typeof raw.includeNonSpeechEvents === "boolean"
+				? raw.includeNonSpeechEvents
+				: DEFAULT_PAUSE_POLICY.includeNonSpeechEvents,
+		nonSpeechMaximumProbability: number(
+			raw.nonSpeechMaximumProbability,
+			DEFAULT_PAUSE_POLICY.nonSpeechMaximumProbability,
+			0.05,
+			0.4,
+		),
 		protectSystemAudio:
 			typeof raw.protectSystemAudio === "boolean"
 				? raw.protectSystemAudio

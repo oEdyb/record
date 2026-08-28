@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { useAudioPeaks } from "@/hooks/useAudioPeaks";
 import styles from "./EditorShellV4.module.css";
 
@@ -8,6 +8,7 @@ const REFERENCE_QUANTILE = 0.985;
 const REFERENCE_HEIGHT = 0.88;
 const MAX_REFERENCE_GAIN = 12;
 const HISTOGRAM_BINS = 1_024;
+const VIEWPORT_OVERSCAN_RATIO = 0.1;
 
 export interface WaveformColumn {
 	min: number;
@@ -19,8 +20,76 @@ interface WaveformRange {
 	endBlock: number;
 }
 
+export interface WaveformRenderWindow {
+	leftFraction: number;
+	widthFraction: number;
+	sourceStartSec: number;
+	sourceEndSec: number;
+}
+
 function clamp(value: number, minimum: number, maximum: number): number {
 	return Math.min(maximum, Math.max(minimum, value));
+}
+
+/**
+ * Keep the actual Canvas close to viewport width instead of stretching one
+ * bitmap across the complete clip. Long recordings can make the timeline tens
+ * of thousands of CSS pixels wide at maximum zoom; a single capped bitmap then
+ * rasterizes sub-pixel strokes until the waveform appears to vanish.
+ */
+export function computeWaveformRenderWindow({
+	clipTimelineStartSec,
+	clipTimelineEndSec,
+	visibleTimelineStartSec,
+	visibleTimelineEndSec,
+	sourceStartSec,
+	sourceEndSec,
+}: {
+	clipTimelineStartSec: number;
+	clipTimelineEndSec: number;
+	visibleTimelineStartSec: number;
+	visibleTimelineEndSec: number;
+	sourceStartSec: number;
+	sourceEndSec: number;
+}): WaveformRenderWindow | null {
+	const values = [
+		clipTimelineStartSec,
+		clipTimelineEndSec,
+		visibleTimelineStartSec,
+		visibleTimelineEndSec,
+		sourceStartSec,
+		sourceEndSec,
+	];
+	if (values.some((value) => !Number.isFinite(value))) return null;
+	const clipDurationSec = clipTimelineEndSec - clipTimelineStartSec;
+	const sourceDurationSec = sourceEndSec - sourceStartSec;
+	const visibleDurationSec = visibleTimelineEndSec - visibleTimelineStartSec;
+	if (clipDurationSec <= 0 || sourceDurationSec <= 0 || visibleDurationSec <= 0) return null;
+
+	const overscanSec = visibleDurationSec * VIEWPORT_OVERSCAN_RATIO;
+	const renderTimelineStartSec = Math.max(
+		clipTimelineStartSec,
+		visibleTimelineStartSec - overscanSec,
+	);
+	const renderTimelineEndSec = Math.min(clipTimelineEndSec, visibleTimelineEndSec + overscanSec);
+	if (renderTimelineEndSec <= renderTimelineStartSec) return null;
+
+	const leftFraction = clamp(
+		(renderTimelineStartSec - clipTimelineStartSec) / clipDurationSec,
+		0,
+		1,
+	);
+	const endFraction = clamp(
+		(renderTimelineEndSec - clipTimelineStartSec) / clipDurationSec,
+		leftFraction,
+		1,
+	);
+	return {
+		leftFraction,
+		widthFraction: endFraction - leftFraction,
+		sourceStartSec: sourceStartSec + leftFraction * sourceDurationSec,
+		sourceEndSec: sourceStartSec + endFraction * sourceDurationSec,
+	};
 }
 
 function sourceBlockRange(
@@ -187,16 +256,43 @@ function drawWaveform(
 export const ClipWaveform = memo(function ClipWaveform({
 	videoUrl,
 	assetDurationSec,
+	clipTimelineStartSec,
+	clipTimelineEndSec,
+	visibleTimelineStartSec,
+	visibleTimelineEndSec,
 	sourceStartSec,
 	sourceEndSec,
 }: {
 	videoUrl: string | undefined;
 	assetDurationSec: number | undefined;
+	clipTimelineStartSec: number;
+	clipTimelineEndSec: number;
+	visibleTimelineStartSec: number;
+	visibleTimelineEndSec: number;
 	sourceStartSec: number;
 	sourceEndSec: number;
 }) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const peaks = useAudioPeaks(videoUrl, assetDurationSec);
+	const renderWindow = useMemo(
+		() =>
+			computeWaveformRenderWindow({
+				clipTimelineStartSec,
+				clipTimelineEndSec,
+				visibleTimelineStartSec,
+				visibleTimelineEndSec,
+				sourceStartSec,
+				sourceEndSec,
+			}),
+		[
+			clipTimelineStartSec,
+			clipTimelineEndSec,
+			visibleTimelineStartSec,
+			visibleTimelineEndSec,
+			sourceStartSec,
+			sourceEndSec,
+		],
+	);
 	const referenceGain = useMemo(
 		() =>
 			peaks && assetDurationSec
@@ -205,15 +301,22 @@ export const ClipWaveform = memo(function ClipWaveform({
 		[peaks, assetDurationSec, sourceStartSec, sourceEndSec],
 	);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const canvas = canvasRef.current;
-		if (!canvas || !peaks || !assetDurationSec) return;
+		if (!canvas || !peaks || !assetDurationSec || !renderWindow) return;
 		let frame = 0;
+		const draw = () =>
+			drawWaveform(
+				canvas,
+				peaks,
+				assetDurationSec,
+				renderWindow.sourceStartSec,
+				renderWindow.sourceEndSec,
+				referenceGain,
+			);
 		const scheduleDraw = () => {
 			cancelAnimationFrame(frame);
-			frame = requestAnimationFrame(() =>
-				drawWaveform(canvas, peaks, assetDurationSec, sourceStartSec, sourceEndSec, referenceGain),
-			);
+			frame = requestAnimationFrame(draw);
 		};
 		const resizeObserver = new ResizeObserver(scheduleDraw);
 		resizeObserver.observe(canvas);
@@ -222,13 +325,28 @@ export const ClipWaveform = memo(function ClipWaveform({
 			attributes: true,
 			attributeFilter: ["class", "data-theme"],
 		});
-		scheduleDraw();
+		// Navigation changes reposition the viewport Canvas. Draw before paint so
+		// a pan cannot show the prior source window for one frame.
+		draw();
 		return () => {
 			cancelAnimationFrame(frame);
 			resizeObserver.disconnect();
 			themeObserver.disconnect();
 		};
-	}, [peaks, assetDurationSec, sourceStartSec, sourceEndSec, referenceGain]);
+	}, [peaks, assetDurationSec, renderWindow, referenceGain]);
 
-	return <canvas ref={canvasRef} aria-hidden className={styles.tlWave} />;
+	if (!renderWindow) return null;
+	const leftInsetPx = renderWindow.leftFraction === 0 ? 3 : 0;
+	const rightInsetPx = renderWindow.leftFraction + renderWindow.widthFraction >= 1 - 1e-9 ? 3 : 0;
+	return (
+		<canvas
+			ref={canvasRef}
+			aria-hidden
+			className={styles.tlWave}
+			style={{
+				left: `calc(${renderWindow.leftFraction * 100}% + ${leftInsetPx}px)`,
+				width: `calc(${renderWindow.widthFraction * 100}% - ${leftInsetPx + rightInsetPx}px)`,
+			}}
+		/>
+	);
 });

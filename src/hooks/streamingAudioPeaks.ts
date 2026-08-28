@@ -1,6 +1,7 @@
-import { WebDemuxer } from "web-demuxer";
+import type { WebDemuxer } from "web-demuxer";
 import { waveformPeakBlockCount } from "@/lib/audio/waveformPeaks";
 import { audioDataFrameToMono } from "@/lib/captioning/extractMono16kWebDemuxer";
+import { createWebDemuxer } from "@/lib/exporter/webDemuxerAsset";
 
 /**
  * Streaming trim-waveform peaks for recordings too large to load into memory.
@@ -77,8 +78,7 @@ export async function computePeaksFromFileStreaming(
 	file: File,
 	signal?: AbortSignal,
 ): Promise<Float32Array> {
-	const wasmUrl = new URL("./wasm/web-demuxer.wasm", window.location.href).href;
-	const demuxer = new WebDemuxer({ wasmFilePath: wasmUrl });
+	const demuxer = createWebDemuxer();
 	try {
 		await withTimeout(
 			demuxer.load(file),

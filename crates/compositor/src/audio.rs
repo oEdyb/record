@@ -1,6 +1,6 @@
-//! Piste audio native de l'export multiclip : ffmpeg décode les sources écran, swresample
-//! normalise tout en f32 planaire 48 kHz stéréo, WSOLA applique les speed regions, puis un
-//! unique encodeur AAC alimente le même muxer que la vidéo.
+//! Native multi-clip export audio: FFmpeg decodes source tracks, swresample converts them to
+//! planar 48 kHz stereo f32, WSOLA applies speed regions, and one AAC encoder feeds the video
+//! muxer.
 
 use crate::ffi::*;
 use crate::regions::SpeedSegment;
@@ -17,13 +17,16 @@ pub const AUDIO_BITRATE: i64 = 384_000;
 // Ten milliseconds at 48 kHz. This short equal-power fade removes clicks at
 // structural cuts without making speech boundaries sound softened.
 pub const AUDIO_BOUNDARY_FADE_SAMPLES: usize = 480;
-pub const DEFAULT_TARGET_LUFS: f64 = -14.0;
-pub const DEFAULT_TRUE_PEAK_LIMIT_DBTP: f64 = -1.0;
+pub const DEFAULT_TARGET_LUFS: f64 = -14.5;
+pub const MIN_TARGET_LUFS: f64 = -30.0;
+pub const MAX_TARGET_LUFS: f64 = -9.0;
+pub const DEFAULT_TRUE_PEAK_CEILING_DBTP: f64 = -2.0;
+pub const MIN_TRUE_PEAK_CEILING_DBTP: f64 = -6.0;
+pub const MAX_TRUE_PEAK_CEILING_DBTP: f64 = -1.0;
 const MAX_AUTOMATIC_GAIN_DB: f64 = 12.0;
 const MAX_CLIP_DIALOGUE_GAIN_DB: f64 = 6.0;
 const MIN_DIALOGUE_LUFS: f64 = -50.0;
-const LIMITER_CEILING_DBFS: f64 = -2.0;
-const PRE_ENCODE_TRUE_PEAK_LIMIT_DBTP: f64 = -1.5;
+const CLIP_DIALOGUE_TRUE_PEAK_HEADROOM_DBTP: f64 = -1.0;
 const LIMITER_LOOKAHEAD_MS: f64 = 5.0;
 const LIMITER_ATTACK_MS: f64 = 1.0;
 const LIMITER_RELEASE_MS: f64 = 120.0;
@@ -45,6 +48,39 @@ const TARGET_GRAINS: usize = 8;
 const PASSTHROUGH_EPSILON: f64 = 1e-3;
 
 pub type PlanarPcm = Vec<Vec<f32>>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AudioMasteringSettings {
+    enabled: bool,
+    target_lufs: f64,
+    true_peak_ceiling_dbtp: f64,
+}
+
+impl AudioMasteringSettings {
+    pub fn new(enabled: bool, target_lufs: f64, true_peak_ceiling_dbtp: f64) -> Self {
+        let target_lufs = if target_lufs.is_finite() {
+            target_lufs.clamp(MIN_TARGET_LUFS, MAX_TARGET_LUFS)
+        } else {
+            DEFAULT_TARGET_LUFS
+        };
+        let true_peak_ceiling_dbtp = if true_peak_ceiling_dbtp.is_finite() {
+            true_peak_ceiling_dbtp.clamp(MIN_TRUE_PEAK_CEILING_DBTP, MAX_TRUE_PEAK_CEILING_DBTP)
+        } else {
+            DEFAULT_TRUE_PEAK_CEILING_DBTP
+        };
+        Self {
+            enabled,
+            target_lufs,
+            true_peak_ceiling_dbtp,
+        }
+    }
+}
+
+impl Default for AudioMasteringSettings {
+    fn default() -> Self {
+        Self::new(true, DEFAULT_TARGET_LUFS, DEFAULT_TRUE_PEAK_CEILING_DBTP)
+    }
+}
 
 /// Source stems kept separate until clip-level dialogue matching is complete.
 /// Old recordings have only `bed`; tagged ScreenRec recordings put the mic in
@@ -70,6 +106,16 @@ impl DecodedClipAudio {
             (None, Some(microphone)) => microphone,
             (None, None) => vec![Vec::new(); AUDIO_OUTPUT_CHANNELS],
         }
+    }
+}
+
+fn replace_microphone(raw: &mut DecodedClipAudio, clean: DecodedClipAudio) -> bool {
+    let replacement = clean.microphone.or(clean.bed);
+    if let Some(replacement) = replacement {
+        raw.microphone = Some(replacement);
+        true
+    } else {
+        false
     }
 }
 
@@ -198,7 +244,7 @@ fn enqueue_limiter_gain(queue: &mut VecDeque<(usize, f32)>, frame: usize, gain: 
 /// Applies a stereo-linked offline peak limiter with bounded look-ahead memory. The shared gain
 /// envelope preserves channel balance and releases slowly enough to avoid a hard clip. A final
 /// EBU R128 true-peak measurement still guards inter-sample peaks.
-fn apply_peak_limiter(pcm: &mut PlanarPcm) -> bool {
+fn apply_peak_limiter(pcm: &mut PlanarPcm, ceiling_dbtp: f64) -> bool {
     let frame_count = pcm
         .iter()
         .take(AUDIO_OUTPUT_CHANNELS)
@@ -209,7 +255,7 @@ fn apply_peak_limiter(pcm: &mut PlanarPcm) -> bool {
         return false;
     }
 
-    let ceiling = 10.0_f32.powf((LIMITER_CEILING_DBFS / 20.0) as f32);
+    let ceiling = 10.0_f32.powf((ceiling_dbtp / 20.0) as f32);
     let lookahead_frames = (LIMITER_LOOKAHEAD_MS * 0.001 * AUDIO_OUTPUT_SAMPLE_RATE as f64)
         .round()
         .max(1.0) as usize;
@@ -317,7 +363,7 @@ pub fn match_clip_dialogue_levels(
         let capped_gain_db =
             requested_gain_db.clamp(-MAX_CLIP_DIALOGUE_GAIN_DB, MAX_CLIP_DIALOGUE_GAIN_DB);
         let true_peak_headroom_db =
-            (DEFAULT_TRUE_PEAK_LIMIT_DBTP - measurement.true_peak_dbtp).max(0.0);
+            (CLIP_DIALOGUE_TRUE_PEAK_HEADROOM_DBTP - measurement.true_peak_dbtp).max(0.0);
         let applied_gain_db = if capped_gain_db > 0.0 {
             capped_gain_db.min(true_peak_headroom_db)
         } else {
@@ -350,8 +396,11 @@ pub fn match_clip_dialogue_levels(
 /// Measures and masters the fully edited program. Capture files stay unchanged. A bounded
 /// make-up gain raises normal dialogue, an offline linked limiter controls short peaks, and a
 /// final true-peak trim protects the output ceiling.
-pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasteringStats {
-    if !enabled {
+pub fn master_program_audio(
+    pcm: &mut PlanarPcm,
+    settings: AudioMasteringSettings,
+) -> AudioMasteringStats {
+    if !settings.enabled {
         return AudioMasteringStats::disabled();
     }
     let input = match measure_program_audio(pcm) {
@@ -359,15 +408,15 @@ pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasterin
         Err(warning) => return AudioMasteringStats::skipped(warning),
     };
 
-    let requested_gain_db = DEFAULT_TARGET_LUFS - input.integrated_lufs;
+    let requested_gain_db = settings.target_lufs - input.integrated_lufs;
     let mut applied_gain_db = requested_gain_db.min(MAX_AUTOMATIC_GAIN_DB);
     apply_uniform_gain(pcm, applied_gain_db);
 
-    let mut limiter_engaged = apply_peak_limiter(pcm);
+    let mut limiter_engaged = apply_peak_limiter(pcm, settings.true_peak_ceiling_dbtp);
     let mut after_limiter = measure_program_audio(pcm).unwrap_or(input);
     for _ in 0..2 {
         let remaining_gain_db = MAX_AUTOMATIC_GAIN_DB - applied_gain_db;
-        let residual_gain_db = (DEFAULT_TARGET_LUFS - after_limiter.integrated_lufs)
+        let residual_gain_db = (settings.target_lufs - after_limiter.integrated_lufs)
             .max(0.0)
             .min(remaining_gain_db);
         if residual_gain_db < 0.05 {
@@ -375,11 +424,11 @@ pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasterin
         }
         apply_uniform_gain(pcm, residual_gain_db);
         applied_gain_db += residual_gain_db;
-        limiter_engaged |= apply_peak_limiter(pcm);
+        limiter_engaged |= apply_peak_limiter(pcm, settings.true_peak_ceiling_dbtp);
         after_limiter = measure_program_audio(pcm).unwrap_or(after_limiter);
     }
-    let true_peak_trim_db = if after_limiter.true_peak_dbtp > PRE_ENCODE_TRUE_PEAK_LIMIT_DBTP {
-        PRE_ENCODE_TRUE_PEAK_LIMIT_DBTP - after_limiter.true_peak_dbtp
+    let true_peak_trim_db = if after_limiter.true_peak_dbtp > settings.true_peak_ceiling_dbtp {
+        settings.true_peak_ceiling_dbtp - after_limiter.true_peak_dbtp
     } else {
         0.0
     };
@@ -389,7 +438,7 @@ pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasterin
 
     let output = measure_program_audio(pcm).unwrap_or(input);
     let limited_by_true_peak = limiter_engaged || true_peak_trim_db < -0.01;
-    let missed_target = output.integrated_lufs < DEFAULT_TARGET_LUFS - 0.5;
+    let missed_target = output.integrated_lufs < settings.target_lufs - 0.5;
     let limited_by_gain_cap = missed_target && applied_gain_db >= MAX_AUTOMATIC_GAIN_DB - 0.01;
     let warning = if limited_by_gain_cap && missed_target {
         Some(format!(
@@ -397,7 +446,8 @@ pub fn master_program_audio(pcm: &mut PlanarPcm, enabled: bool) -> AudioMasterin
         ))
     } else if limited_by_true_peak && missed_target {
         Some(format!(
-            "Normalization stopped below {DEFAULT_TARGET_LUFS:.0} LUFS to keep true peaks at or below {DEFAULT_TRUE_PEAK_LIMIT_DBTP:.0} dBTP."
+            "Normalization stopped below {:.1} LUFS to keep pre-encode true peaks at or below {:.1} dBTP.",
+            settings.target_lufs, settings.true_peak_ceiling_dbtp
         ))
     } else {
         None
@@ -629,6 +679,40 @@ pub fn decode_clip_audio(
     source_end_sec: f64,
 ) -> Result<Option<DecodedClipAudio>> {
     unsafe { decode_clip_audio_inner(path, source_start_sec, source_end_sec) }
+}
+
+/// Decode the untouched bed from the recording and replace only its tagged microphone.
+/// A missing or unreadable derived stem falls back to the complete raw clip. This keeps
+/// preview/export activation reversible and prevents a partial clean route from dropping
+/// system audio or silencing dialogue.
+pub fn decode_clip_audio_with_clean_microphone(
+    path: &str,
+    clean_microphone_path: Option<&str>,
+    source_start_sec: f64,
+    source_end_sec: f64,
+) -> Result<Option<DecodedClipAudio>> {
+    let Some(mut raw) = decode_clip_audio(path, source_start_sec, source_end_sec)? else {
+        return Ok(None);
+    };
+    let Some(clean_path) = clean_microphone_path else {
+        return Ok(Some(raw));
+    };
+    match decode_clip_audio(clean_path, source_start_sec, source_end_sec) {
+        Ok(Some(clean)) => {
+            if !replace_microphone(&mut raw, clean) {
+                eprintln!(
+                    "[audio] Clean Voice stem has no decodable audio; raw microphone retained"
+                );
+            }
+        }
+        Ok(None) => {
+            eprintln!("[audio] Clean Voice stem has no audio stream; raw microphone retained")
+        }
+        Err(error) => eprintln!(
+            "[audio] Clean Voice stem failed validation ({error:#}); raw microphone retained"
+        ),
+    }
+    Ok(Some(raw))
 }
 
 unsafe fn decode_clip_audio_inner(
@@ -1550,6 +1634,24 @@ mod tests {
     }
 
     #[test]
+    fn clean_voice_replaces_only_the_microphone() {
+        let bed = planar(&[0.1, 0.1]);
+        let raw_microphone = planar(&[0.2, 0.2]);
+        let clean_microphone = planar(&[0.3, 0.3]);
+        let mut raw = DecodedClipAudio {
+            bed: Some(bed),
+            microphone: Some(raw_microphone),
+        };
+        let clean = DecodedClipAudio {
+            bed: Some(clean_microphone),
+            microphone: None,
+        };
+
+        assert!(replace_microphone(&mut raw, clean));
+        assert_eq!(raw.into_mixed()[0], vec![0.4, 0.4]);
+    }
+
+    #[test]
     fn tagged_source_tracks_replace_the_preview_mix_during_export() {
         assert!(!should_decode_audio_track(
             Some(PREVIEW_MIX_TRACK_TITLE),
@@ -1689,11 +1791,35 @@ mod tests {
     #[test]
     fn program_mastering_reaches_the_loudness_target_without_crossing_true_peak() {
         let mut pcm = stereo_sine(0.1, 1);
-        let stats = master_program_audio(&mut pcm, true);
+        let stats = master_program_audio(&mut pcm, AudioMasteringSettings::default());
         assert!(stats.analyzed);
         assert!((stats.output_lufs.unwrap() - DEFAULT_TARGET_LUFS).abs() < 0.1);
-        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_LIMIT_DBTP + 0.01);
+        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_CEILING_DBTP + 0.01);
         assert!(!stats.limited_by_true_peak);
+    }
+
+    #[test]
+    fn youtube_delivery_preset_uses_the_conservative_loudness_and_peak_targets() {
+        assert_eq!(DEFAULT_TARGET_LUFS, -14.5);
+        assert_eq!(DEFAULT_TRUE_PEAK_CEILING_DBTP, -2.0);
+    }
+
+    #[test]
+    fn program_mastering_uses_a_custom_loudness_and_peak_target() {
+        let mut pcm = stereo_sine(0.04, 2);
+        let settings = AudioMasteringSettings::new(true, -18.0, -3.0);
+
+        let stats = master_program_audio(&mut pcm, settings);
+
+        assert!((stats.output_lufs.unwrap() - -18.0).abs() < 0.1);
+        assert!(stats.output_true_peak_dbtp.unwrap() <= -3.0 + 0.01);
+    }
+
+    #[test]
+    fn audio_mastering_settings_replace_non_finite_values_with_defaults() {
+        let settings = AudioMasteringSettings::new(true, f64::NAN, f64::INFINITY);
+
+        assert_eq!(settings, AudioMasteringSettings::default());
     }
 
     #[test]
@@ -1704,11 +1830,11 @@ mod tests {
             pcm[1][sample_index] = 0.95;
         }
 
-        let stats = master_program_audio(&mut pcm, true);
+        let stats = master_program_audio(&mut pcm, AudioMasteringSettings::default());
 
         assert!(stats.limited_by_true_peak);
         assert!((stats.output_lufs.unwrap() - DEFAULT_TARGET_LUFS).abs() < 0.5);
-        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_LIMIT_DBTP + 0.01);
+        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_CEILING_DBTP + 0.01);
     }
 
     #[test]
@@ -1716,9 +1842,9 @@ mod tests {
         let mut pcm = stereo_sine(0.001, 1);
         pcm[0][24_000] = 0.95;
         pcm[1][24_000] = 0.95;
-        let stats = master_program_audio(&mut pcm, true);
+        let stats = master_program_audio(&mut pcm, AudioMasteringSettings::default());
         assert!(stats.limited_by_true_peak);
-        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_LIMIT_DBTP + 0.01);
+        assert!(stats.output_true_peak_dbtp.unwrap() <= DEFAULT_TRUE_PEAK_CEILING_DBTP + 0.01);
         assert!(stats.output_lufs.unwrap() < DEFAULT_TARGET_LUFS);
         assert!(stats.warning.is_some());
     }
@@ -1726,7 +1852,7 @@ mod tests {
     #[test]
     fn program_mastering_reports_the_gain_cap_when_it_is_the_active_limit() {
         let mut pcm = stereo_sine(0.001, 1);
-        let stats = master_program_audio(&mut pcm, true);
+        let stats = master_program_audio(&mut pcm, AudioMasteringSettings::default());
 
         assert!(stats.limited_by_gain_cap);
         assert!(!stats.limited_by_true_peak);
@@ -1740,7 +1866,7 @@ mod tests {
     #[test]
     fn program_mastering_leaves_silence_unchanged() {
         let mut pcm = vec![vec![0.0; 48_000], vec![0.0; 48_000]];
-        let stats = master_program_audio(&mut pcm, true);
+        let stats = master_program_audio(&mut pcm, AudioMasteringSettings::default());
         assert!(!stats.analyzed);
         assert_eq!(stats.applied_gain_db, 0.0);
         assert!(stats.warning.unwrap().contains("silent"));

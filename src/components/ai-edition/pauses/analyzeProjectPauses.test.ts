@@ -76,6 +76,7 @@ describe("analyzeProjectPauses", () => {
 				getSpeechActivity: vi.fn(async () => ({
 					success: true,
 					probabilities: new Float32Array([0.9, 0.02]),
+					cleanedProbabilities: new Float32Array([0.95, 0.01]),
 					frameSec: 0.032,
 				})),
 			},

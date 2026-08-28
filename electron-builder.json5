@@ -119,7 +119,7 @@
       {
         "from": "electron/native/bin",
         "to": "electron/native/bin",
-        "filter": ["darwin-*/*"]
+        "filter": ["darwin-*/*", "!darwin-*/klippt-clean-voice"]
       }
     ],
     "extendInfo": {

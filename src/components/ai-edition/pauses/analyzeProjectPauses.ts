@@ -27,14 +27,20 @@ async function loadPeaks(
 	return result.success && result.peaks ? result.peaks : null;
 }
 
-async function loadSpeechActivity(
-	path: string,
-): Promise<{ probabilities: Float32Array; frameSec: number } | null> {
+async function loadSpeechActivity(path: string): Promise<{
+	probabilities: Float32Array;
+	cleanedProbabilities: Float32Array | null;
+	frameSec: number;
+} | null> {
 	const api = window.electronAPI?.getSpeechActivity;
 	if (!api) return null;
 	const result = await api(path);
 	return result.success && result.probabilities && result.frameSec
-		? { probabilities: result.probabilities, frameSec: result.frameSec }
+		? {
+				probabilities: result.probabilities,
+				cleanedProbabilities: result.cleanedProbabilities ?? null,
+				frameSec: result.frameSec,
+			}
 		: null;
 }
 
@@ -69,6 +75,7 @@ export async function analyzeProjectPauses(
 		{
 			microphonePeaks: Float32Array;
 			speechProbabilities: Float32Array | null;
+			cleanedSpeechProbabilities: Float32Array | null;
 			speechFrameSec: number | undefined;
 			systemPeaks: Float32Array | null;
 			screenActivity: ReturnType<typeof buildScreenActivitySpans>;
@@ -118,6 +125,7 @@ export async function analyzeProjectPauses(
 			observation = {
 				microphonePeaks,
 				speechProbabilities: speechActivity?.probabilities ?? null,
+				cleanedSpeechProbabilities: speechActivity?.cleanedProbabilities ?? null,
 				speechFrameSec: speechActivity?.frameSec,
 				systemPeaks,
 				screenActivity: buildScreenActivitySpans(cursorData, durationSec),
@@ -132,6 +140,7 @@ export async function analyzeProjectPauses(
 					durationSec,
 					microphonePeaks: observation.microphonePeaks,
 					speechProbabilities: observation.speechProbabilities,
+					cleanedSpeechProbabilities: observation.cleanedSpeechProbabilities,
 					speechFrameSec: observation.speechFrameSec,
 					systemPeaks: observation.systemPeaks,
 					transcript,

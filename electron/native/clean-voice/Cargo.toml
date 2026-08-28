@@ -1,0 +1,20 @@
+[package]
+name = "klippt-clean-voice"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1"
+hound = "3.5"
+ndarray = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+deep_filter = { git = "https://github.com/oEdyb/DeepFilterNet.git", rev = "b0fa238a331fb5cc39c5555d3538008dd88c0aef", default-features = false, features = ["default-model", "tract", "wav-utils", "transforms"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

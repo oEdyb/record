@@ -31,6 +31,19 @@ function peaks(activeRanges: Array<[number, number]>): Float32Array {
 	return value;
 }
 
+function peaksAboveFloor(floor: number, activeRanges: Array<[number, number]>): Float32Array {
+	const value = new Float32Array(6 * 200 * 2);
+	for (let block = 0; block < value.length / 2; block += 1) {
+		const time = block / 200;
+		const amplitude = activeRanges.some(([start, end]) => time >= start && time < end)
+			? 0.2
+			: floor;
+		value[block * 2] = -amplitude;
+		value[block * 2 + 1] = amplitude;
+	}
+	return value;
+}
+
 function speechProbabilities(activeRanges: Array<[number, number]>): Float32Array {
 	const value = new Float32Array(Math.ceil(6 / 0.032));
 	for (let index = 0; index < value.length; index += 1) {
@@ -104,6 +117,226 @@ describe("pause analysis", () => {
 			policy(),
 		);
 		expect(suggestions.some((suggestion) => suggestion.savedSec > 3)).toBe(true);
+	});
+
+	it("includes a confident isolated non-speech burst inside one pause suggestion", () => {
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[2.7, 3.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				cleanedSpeechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript,
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+
+		const middle = suggestions.find((suggestion) => suggestion.silenceStartSec > 1);
+		expect(middle?.silenceStartSec).toBeLessThan(2);
+		expect(middle?.silenceEndSec).toBeGreaterThan(4);
+		expect(middle?.savedSec).toBeGreaterThan(3);
+	});
+
+	it("keeps a changing noise floor and a non-speech burst inside the removable pause", () => {
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaksAboveFloor(0.025, [
+					[0.2, 1.1],
+					[2.7, 3.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				cleanedSpeechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript,
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+
+		expect(
+			suggestions.some(
+				(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
+			),
+		).toBe(true);
+	});
+
+	it("protects the burst when cleaned analysis is absent or the option is disabled", () => {
+		const input = {
+			clip,
+			durationSec: 6,
+			microphonePeaks: peaks([
+				[0.2, 1.1],
+				[2.7, 3.1],
+				[4.8, 5.6],
+			]),
+			speechProbabilities: speechProbabilities([
+				[0.2, 1.1],
+				[4.8, 5.6],
+			]),
+			speechFrameSec: 0.032,
+			transcript,
+		};
+		const withoutCleaned = analyzeClipPauses(input, policy({ includeNonSpeechEvents: true }));
+		const disabled = analyzeClipPauses(
+			{
+				...input,
+				cleanedSpeechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+			},
+			policy({ includeNonSpeechEvents: false }),
+		);
+
+		for (const suggestions of [withoutCleaned, disabled]) {
+			expect(
+				suggestions.some(
+					(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
+				),
+			).toBe(false);
+		}
+	});
+
+	it("protects an energy event that falls outside a truncated speech envelope", () => {
+		const truncated = speechProbabilities([
+			[0.2, 1.1],
+			[4.8, 5.6],
+		]).slice(0, 50);
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[2.7, 3.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: truncated,
+				cleanedSpeechProbabilities: truncated,
+				speechFrameSec: 0.032,
+				transcript,
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+
+		expect(
+			suggestions.some(
+				(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
+			),
+		).toBe(false);
+	});
+
+	it("does not cut an otherwise quiet tail outside a truncated speech envelope", () => {
+		const truncated = speechProbabilities([[0.2, 1.1]]).slice(0, 50);
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([[0.2, 1.1]]),
+				speechProbabilities: truncated,
+				cleanedSpeechProbabilities: truncated,
+				speechFrameSec: 0.032,
+			},
+			policy(),
+		);
+
+		expect(suggestions).toEqual([]);
+	});
+
+	it("keeps screen activity protected when both speech views classify a burst as non-speech", () => {
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[2.7, 3.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				cleanedSpeechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript,
+				screenActivity: [{ startSec: 1.1, endSec: 4.8 }],
+			},
+			policy({ includeNonSpeechEvents: true, protectScreenActivity: true }),
+		);
+
+		expect(suggestions).toHaveLength(0);
+	});
+
+	it("uses cleaned speech as protection and keeps an uncertain raw burst", () => {
+		const baseProbabilities = speechProbabilities([
+			[0.2, 1.1],
+			[4.8, 5.6],
+		]);
+		const cleaned = speechProbabilities([
+			[0.2, 1.1],
+			[2.7, 3.1],
+			[4.8, 5.6],
+		]);
+		const input = {
+			clip,
+			durationSec: 6,
+			microphonePeaks: peaks([
+				[0.2, 1.1],
+				[2.7, 3.1],
+				[4.8, 5.6],
+			]),
+			speechProbabilities: baseProbabilities,
+			cleanedSpeechProbabilities: cleaned,
+			speechFrameSec: 0.032,
+			transcript,
+		};
+		const protectedByCleaned = analyzeClipPauses(input, policy({ includeNonSpeechEvents: true }));
+
+		const uncertainRaw = baseProbabilities.slice();
+		for (let index = 0; index < uncertainRaw.length; index += 1) {
+			const time = index * 0.032;
+			if (time >= 2.7 && time < 3.1) uncertainRaw[index] = 0.25;
+		}
+		const protectedByUncertainty = analyzeClipPauses(
+			{
+				...input,
+				speechProbabilities: uncertainRaw,
+				cleanedSpeechProbabilities: baseProbabilities,
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+
+		for (const suggestions of [protectedByCleaned, protectedByUncertainty]) {
+			expect(
+				suggestions.some(
+					(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
+				),
+			).toBe(false);
+		}
 	});
 
 	it("lets audio-level mode work without a transcript", () => {

@@ -12,6 +12,8 @@ export interface PauseAnalysisPolicy {
 	minimumKeptFragmentSec: number;
 	sensitivity: number;
 	manualThresholdDb: number | null;
+	includeNonSpeechEvents: boolean;
+	nonSpeechMaximumProbability: number;
 	protectSystemAudio: boolean;
 	protectScreenActivity: boolean;
 	transitionMs: number;
@@ -27,6 +29,7 @@ export interface PauseAnalysisInput {
 	durationSec: number;
 	microphonePeaks: Float32Array;
 	speechProbabilities?: Float32Array | null;
+	cleanedSpeechProbabilities?: Float32Array | null;
 	speechFrameSec?: number;
 	systemPeaks?: Float32Array | null;
 	transcript?: AxcutTranscript | null;
@@ -72,6 +75,8 @@ export const DEFAULT_PAUSE_POLICY: PauseAnalysisPolicy = {
 	minimumKeptFragmentSec: 0.35,
 	sensitivity: 0.5,
 	manualThresholdDb: null,
+	includeNonSpeechEvents: false,
+	nonSpeechMaximumProbability: 0.18,
 	protectSystemAudio: true,
 	protectScreenActivity: true,
 	transitionMs: 10,
@@ -183,6 +188,20 @@ function speechProbabilityProtection(
 	return mergeSpans(raw, 0.12).filter((span) => span.endSec - span.startSec >= 0.08);
 }
 
+function speechEnvelopeCoversDuration(
+	probabilities: Float32Array | null | undefined,
+	frameSec: number | undefined,
+	durationSec: number,
+): boolean {
+	return Boolean(
+		probabilities &&
+			probabilities.length > 0 &&
+			frameSec &&
+			frameSec > 0 &&
+			probabilities.length * frameSec + frameSec >= durationSec,
+	);
+}
+
 function transcriptProtection(
 	transcript: AxcutTranscript | null | undefined,
 	clip: AxcutClip,
@@ -241,6 +260,56 @@ function peakProtection(
 	);
 }
 
+function maximumProbabilityInSpan(
+	probabilities: Float32Array,
+	frameSec: number,
+	span: PauseProtectionSpan,
+): number | null {
+	const paddedStartSec = Math.max(0, span.startSec - 0.08);
+	const paddedEndSec = span.endSec + 0.08;
+	const coverageEndSec = probabilities.length * frameSec;
+	if (paddedEndSec > coverageEndSec + 0.000_001) return null;
+	const startIndex = Math.max(0, Math.floor(paddedStartSec / frameSec));
+	const endIndex = Math.min(probabilities.length, Math.ceil(paddedEndSec / frameSec));
+	if (endIndex <= startIndex) return null;
+	let maximum = 0;
+	for (let index = startIndex; index < endIndex; index += 1) {
+		maximum = Math.max(maximum, probabilities[index] ?? 0);
+	}
+	return maximum;
+}
+
+function microphoneProtection(
+	input: PauseAnalysisInput,
+	policy: PauseAnalysisPolicy,
+	speechProtection: PauseProtectionSpan[],
+	wordProtection: PauseProtectionSpan[],
+): PauseProtectionSpan[] {
+	const activity = peakProtection(input.microphonePeaks, input.durationSec, policy.sensitivity);
+	const raw = input.speechProbabilities;
+	const cleaned = input.cleanedSpeechProbabilities;
+	const frameSec = input.speechFrameSec;
+	if (!policy.includeNonSpeechEvents || !raw || !cleaned || !frameSec || frameSec <= 0) {
+		return activity;
+	}
+	const knownSpeech = [...speechProtection, ...wordProtection];
+	return activity.filter((span) => {
+		if (frameIsProtected(span, knownSpeech)) return true;
+		// A raw energy spike is removable only when two views of the same mic
+		// agree with high confidence that it is not speech. This admits common
+		// isolated non-speech sounds into the surrounding pause without treating the
+		// denoised signal as a standalone cut authority.
+		const rawMaximum = maximumProbabilityInSpan(raw, frameSec, span);
+		const cleanedMaximum = maximumProbabilityInSpan(cleaned, frameSec, span);
+		return (
+			rawMaximum === null ||
+			cleanedMaximum === null ||
+			rawMaximum > policy.nonSpeechMaximumProbability ||
+			cleanedMaximum > policy.nonSpeechMaximumProbability
+		);
+	});
+}
+
 function stableSuggestionId(clipId: string, startSec: number, endSec: number): string {
 	return `pause_${clipId}_${Math.round(startSec * 1_000)}_${Math.round(endSec * 1_000)}`;
 }
@@ -259,7 +328,13 @@ export function analyzeClipPauses(
 	if (clipSourceEndSec <= clip.sourceStartSec || input.microphonePeaks.length === 0) return [];
 	if (
 		policy.mode === "speech" &&
-		(!input.speechProbabilities || input.speechProbabilities.length === 0)
+		(!speechEnvelopeCoversDuration(input.speechProbabilities, input.speechFrameSec, durationSec) ||
+			(input.cleanedSpeechProbabilities &&
+				!speechEnvelopeCoversDuration(
+					input.cleanedSpeechProbabilities,
+					input.speechFrameSec,
+					durationSec,
+				)))
 	)
 		return [];
 
@@ -269,18 +344,32 @@ export function analyzeClipPauses(
 	if (frames.length === 0) return [];
 	const thresholdDb =
 		policy.manualThresholdDb ?? adaptiveSilenceThresholdDb(frames, policy.sensitivity);
-	const blockers = mergeSpans([
-		...(policy.mode === "speech"
+	const rawSpeechProtection =
+		policy.mode === "speech"
 			? speechProbabilityProtection(
 					input.speechProbabilities,
 					input.speechFrameSec,
 					durationSec,
 					policy.sensitivity,
 				)
-			: []),
-		...(policy.mode === "speech" ? transcriptProtection(input.transcript, clip) : []),
+			: [];
+	const cleanedSpeechProtection =
+		policy.mode === "speech"
+			? speechProbabilityProtection(
+					input.cleanedSpeechProbabilities,
+					input.speechFrameSec,
+					durationSec,
+					policy.sensitivity,
+				)
+			: [];
+	const speechProtection = mergeSpans([...rawSpeechProtection, ...cleanedSpeechProtection]);
+	const wordProtection =
+		policy.mode === "speech" ? transcriptProtection(input.transcript, clip) : [];
+	const blockers = mergeSpans([
+		...speechProtection,
+		...wordProtection,
 		...(policy.mode === "speech"
-			? peakProtection(input.microphonePeaks, durationSec, policy.sensitivity)
+			? microphoneProtection(input, policy, speechProtection, wordProtection)
 			: []),
 		...(policy.protectSystemAudio
 			? peakProtection(input.systemPeaks, durationSec, policy.sensitivity)
