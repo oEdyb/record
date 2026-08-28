@@ -11,22 +11,22 @@ introduced the clip anchor is documented in
 [document-model.md](document-model.md); this file is about the model in force and the
 contract of `timelineMap`.
 
-## Two time reference frames
+## Three time reference frames
 
 The document carries three coordinate systems. A raw clip is identity between
 source-time and raw-virtual-time (no speed is baked into its geometry), so within a
 clip raw↔source is a plain shift by the clip's own start offset. The interesting
-boundary is between the **RAW** ruler and the **COMPRESSED** playback sequence:
+boundary is between the stable **RAW** document clock and the **COMPRESSED** playback ruler:
 
 | Frame | Definition | Who works in it |
 |---|---|---|
-| **RAW virtual** (`currentTimeSec`, the ruler, the playhead, `document.timeline.clips[].timelineStartSec`/`timelineEndSec`) | The ruler the user manipulates. **Trims still occupy their space.** Region authoring, clip drag/resize/reorder, and the timeline ruler all happen here. | `NewEditorShell` (transport, seek), `V4Timeline` (drag/resize of clips and pills), `useTimeline` (every region mutation), `document.timeline` ops |
+| **RAW virtual** (`currentTimeSec`, `document.timeline.clips[].timelineStartSec`/`timelineEndSec`) | The stable document and authoring clock. **Trims still occupy their space.** Region mutations, clip structure, preview sync, and persisted anchors use this frame. | `NewEditorShell`, `useTimeline`, `document.timeline` ops, native playback sync |
 | **SOURCE** (a clip's own media time: `assetId` + `sourceStartSec`/`sourceEndSec`) | What the decoders and the native compositor actually advance. Region anchors (`clipId` + `sourceStartSec` + `sourceEndSec`) live here. | `NativeCompositorOverlay`, `useNativePlaybackSync`, `sceneDescription` (→ native preview), `documentExporter` (multi-clip export) |
-| **COMPRESSED** (the trim-narrowed `resolvePlaybackSegments` laid out back-to-back from 0) | What the native free-run stream and the export frame counter walk through. Indexed by `clipIndex` into `SceneDescription.clips`. | `buildSceneDescription` (`sceneDescription.ts`), the native compositor's `clip_index` field, `exportMultiNative` |
+| **COMPRESSED** (the trim-narrowed `resolvePlaybackSegments` laid out back-to-back from 0) | The visible editor ruler and playhead. Removed media has zero width. Pointer input converts back to RAW before a store mutation. The native free-run stream and export frame counter use the same kept sequence. | `V4Timeline`, `TransportBar`, `buildSceneDescription`, the native compositor's `clip_index` field, `exportMultiNative` |
 
 The model splits the two so each consumer can read what it cares about without having
 to translate. Mixing them desyncs preview from render on zoom and trim: a region
-authored against the RAW ruler but projected against the COMPRESSED segment layout
+authored against the RAW document clock but projected against the COMPRESSED segment layout
 slips by exactly the trimmed duration, fires on the wrong clip, and pairs with the
 wrong camera. `timelineMap` is the single line that keeps that line of code from
 existing.
@@ -71,6 +71,9 @@ Every public export of
 | `dropPillById` / `dropPillsByIds` (`:290` / `:299`) | Delete every region under a pill (resolved from the merge rule) | regions → regions |
 | `replacePillSpan` (`:316`) | Move/resize a pill: clamp against different-identity neighbours, then re-anchor to the clamped span | pill + clip layout → re-anchored fragments |
 | `segmentRawSpanSec` (`:401`) | One kept playback segment → its RAW-virtual extent | segment → RAW span |
+| `buildTimelinePlaybackProjection` | Kept playback segments → paired RAW and COMPRESSED spans for the visible editor | kept segments → display projection |
+| `rawTimeToPlaybackTime` / `playbackTimeToRawTime` | Store playhead or authored edge ↔ compressed ruler position; seam affinity selects the kept side | RAW ↔ COMPRESSED |
+| `projectRawSpanToPlaybackSpan` | One authored RAW span → its visible kept span, or null when fully cut | RAW → COMPRESSED |
 | `projectRegionsToSource` (`:452`) | Region array → source-ms entries with `clipIndex` for native (anchored path uses anchor; unanchored path falls back to RAW mapping through each segment's own raw extent — never drops an un-anchorable region onto an unrelated clip) | RAW/anchored → source + `clipIndex` |
 | `resolveNativePosition` (`:556`) | RAW-virtual playhead → `{clip, clipIndex, sourceTimeSec}` for the active native decoder + paired camera (snaps to the next kept segment when the playhead sits over a trimmed-out stretch) | RAW-virtual → source + `clipIndex` |
 
@@ -256,12 +259,12 @@ in the same commit, or the project round-trips into an inconsistent state:
 |---|---|---|
 | **Document layer (ops)** | `src/lib/ai-edition/document/timeline.ts` | Region CRUD; calls `rederiveRegionMs` (cache-only) and `reanchorRegions` (rebuilds identities); routes every mutation through `timelineMap`. |
 | **Schema v4→v5 preprocess** | `src/lib/ai-edition/schema/index.ts` (`documentSchema` v4→v5 preprocess, `:555-595`) | Re-anchors `zoomRanges`, `annotations`, `legacyEditor.speedRegions`, `legacyEditor.cameraFullscreenRegions` on every parse. The single disk-load site. |
-| **Timeline UI** | `src/components/ai-edition/v4/V4Timeline.tsx` | Reads lanes through `coalesceRegionsForRuler` (`:321, :329, :337, :347`) and `coalescedTrimGroups` (`:363`); pill edit hits the pill resolved by `resolvePillIds` via the store. |
+| **Timeline UI** | `src/components/ai-edition/v4/V4Timeline.tsx` | Builds one compressed display projection, removes cut duration from clip geometry, maps the raw playhead and effect spans into it, and maps scrubs or drag edges back to RAW before store writes. A cut is one restorable seam marker, not a stored clip split. |
 | **Inspector selection pane** | `src/components/ai-edition/v4/FloatingInspector.tsx` (`SelectionPane`, `:444`) | Edits a selected region by pill id; routes through `useTimeline` and therefore through `replacePillSpan`. |
 | **Store / authoring (UI)** | `src/lib/ai-edition/store/useTimeline.ts` | Every `add*`, `update*Span`, `removeRegion` goes through `anchorRegionsWithDerivedMs` (`:134, :163, :278, :305, :329`) and `replacePillSpan` / `dropPillsByIds` / `resolvePillIds`. |
 | **Native preview scene** | `src/native/sceneDescription.ts` (`:489, :508, :517, :531`) | Calls `projectRegionsToSource` for every region kind before serialising to the native compositor. |
 | **Native playback sync** | `src/native/useNativePlaybackSync.ts` (`:22, :39`) | Resolves the RAW playhead through `resolveNativePosition` to feed `setActiveClip` / `presentTime`. |
-| **Native compositor overlay** | `src/components/ai-edition/NativeCompositorOverlay.tsx` (`:3, :70`) | Same — `resolveNativePosition(currentTimeSec, nativeClips, document.timeline.clips)` — to keep preview in sync with the timeline ruler. |
+| **Native compositor overlay** | `src/components/ai-edition/NativeCompositorOverlay.tsx` (`:3, :70`) | Same — `resolveNativePosition(currentTimeSec, nativeClips, document.timeline.clips)` — to keep preview in sync with the raw store clock while the visible ruler projects that clock to compressed time. |
 | **Multi-clip export** | `src/lib/ai-edition/exporter/documentExporter.ts` | Projects regions to source per-clip through `region-ventilation`'s `projectRegionsToSourceTime`; identity single-clip projects are unchanged. |
 | **Captions layer** | `src/lib/ai-edition/captions/cues.ts` (`:14-15` and `captionCuesToTextRegions`) | Caption cues are a derived view of the transcript; the projection to source at export goes through `projectRegionsToSourceTime` from `region-ventilation`, matching the multi-clip export path so preview and file agree. |
 | **Agent LLM tools** | `electron/ai-edition/agent-tools.ts` (`:22-26, :80-95, :560-575, :772-820, :835-880, :952, :1025`) | Writes the same shape via `anchorRegionsWithDerivedMs` / `replacePillSpan` / `resolvePillIds`; reads it through `coalesceRegionsForRuler` (`coalesceForAgent`, `:77-86`) so the model reasons in virtual seconds over whole pills. |

@@ -1,11 +1,12 @@
 # Transcription and captions
 
-OpenScreen turns recorded audio into on-device text, and renders that text as
+Klippt turns recorded audio into on-device text, and can render that text as
 captions over both the preview and the export. The recogniser runs natively on
 the desktop — no network calls, no Python — and feeds a single transcript per
 asset into a caption layer that derives its cues on every render. Code lives
-in `electron/stt/` (main-process STT pipeline), `electron/native/whisper-stt/`
-(the C++ helper that links whisper.cpp directly), and
+in `electron/stt/` (main-process STT pipeline),
+`electron/native/parakeet-stt/` (the primary Apple Silicon helper),
+`electron/native/whisper-stt/` (the compatibility helper), and
 `src/lib/ai-edition/captions/` (the caption layer that derives its cues from
 the transcript).
 
@@ -17,8 +18,11 @@ flowchart LR
     Y -- "one job at a time" --> A["Recorded audio"]
     A -- "extract mono 16 kHz" --> B["transcribeAsset<br/>(src/lib/ai-edition/document/transcribe.ts)"]
     B -- "IPC: Float32Array + language" --> C["SttManager<br/>(electron/stt/index.ts)"]
-    C -- "POST /inference (WAV)" --> D["whisper-stt-server<br/>(electron/native/whisper-stt/)"]
-    D -- "whisper_full() + DTW" --> E["SttTranscribeResponse<br/>(segments + wordSegments)"]
+    C --> D{"Engine adapter"}
+    D -- "macOS 14+ arm64" --> P["klippt-parakeet-stt<br/>FluidAudio + Core ML"]
+    D -- "compatibility fallback" --> W["whisper-stt-server<br/>whisper.cpp"]
+    P --> E["SttTranscribeResponse<br/>(segments + wordSegments)"]
+    W --> E
     E --> C
     C -- "IPC return" --> B
     B --> F["AxcutTranscript<br/>on document.transcripts[]"]
@@ -35,19 +39,15 @@ result is mapped back onto the `AxcutTranscript` shape the rest of the editor
 reads. From the moment that transcript is persisted, captions and the words
 they show cannot drift — captions are a derived view, not a parallel store.
 
-## Auto-transcription
+## Transcription jobs
 
-Recognition is local and free, so the editor does not wait to be asked: every
-asset in the document gets a transcript on its own. The queue lives in
+The first calm product surface starts transcription when the user presses
+**Transcribe**. This avoids a surprise 482 MB first-use download and keeps
+project opening independent from speech recognition. The reusable queue lives in
 [`src/lib/ai-edition/store/transcriptionStore.ts`](../../src/lib/ai-edition/store/transcriptionStore.ts),
-mounted once by the shell through `useAutoTranscription()`, and it is the only
-thing that calls `transcribeAsset`.
-
-Why it exists at all: "Smart cuts with AI" (and captions, and the transcript
-pane) need a transcript, but nothing produced one until the user found the
-Media tab or the transcript pane and pressed a button. The obvious first click
-was therefore also the one that could not work. Now the button is either ready,
-or it says what it is waiting for.
+and it is the only renderer service that calls `transcribeAsset`. The existing
+`useAutoTranscription()` hook remains available for a later opt-in workflow but
+`PRODUCT_SURFACE.automaticTranscription` keeps it off today.
 
 What the store owns and what it does not:
 
@@ -71,7 +71,7 @@ What the store owns and what it does not:
   the panes' one button: every timeline asset that still lacks a transcript,
   skipping the ones already known to be silent and waiting on (rather than
   duplicating) a run the background pass already has in flight.
-- **One run at a time.** whisper-server is a single process and the audio
+- **One run at a time.** Each native recognizer is a single process and the audio
   extraction path holds decoded frames in renderer memory, so the pump is a
   sequential loop, not a fan-out.
 - **The auto pass never loops.** `sync` enqueues an asset only when it has no
@@ -96,9 +96,20 @@ running, the media-card dot green (ready) / amber (silent or no speech) / red
 and — the point of the whole thing — a disabled "Smart cuts" entry whose
 subtitle is the reason rather than "With AI".
 
+The Transcript header keeps language correction beside the text. Its compact
+picker starts from the language stored on the relevant timeline transcripts.
+The refresh action re-runs every relevant asset with the selected language;
+changing the picker alone does not start expensive work. Automatic runs replace
+`"auto"` with the language reported by the recognizer when one is available.
+The Copy action uses the project model and writes through a narrow preload IPC
+bridge to Electron's native clipboard. It does not depend on browser clipboard
+permission or copy hidden/removed words from the DOM.
+
 ### One phase, including the first-run model download
 
-On a fresh install the GGML model (~253 MB) is not on disk. It is fetched by
+On Apple Silicon with macOS 14 or newer, the verified Parakeet v3 INT8 runtime
+is about 482 MB. Other supported systems use the ~253 MB Whisper fallback. The
+selected model is fetched by
 `SttManager.prepare()` **inside** the `stt:transcribe` IPC call — i.e. inside a
 run this store has already marked `running` — so the user sees one single busy
 phase that simply takes longer the first time. That is deliberate: no separate
@@ -107,7 +118,7 @@ clickable in the meantime (`phase: "model"` is emitted by the main process but
 deliberately not forwarded to the renderer by `transcribeAsset`). Nothing in the
 renderer imposes a timeout that a slow download could trip: the preload does a
 bare `ipcRenderer.invoke`, `fetchWithRetry` has no per-request deadline, and
-whisper-server's 30 s readiness budget only starts once the download resolved.
+the native helper's readiness budget only starts once the download resolved.
 
 Three edges make that promise hold, and each is load-bearing:
 
@@ -125,6 +136,14 @@ Three edges make that promise hold, and each is load-bearing:
   clip's word stream swallow Backspace and hover-bin clicks in silence for the
   whole background pass.
 
+Large recordings use `web-demuxer` when Chromium cannot decode the full media
+file directly. All caption, waveform and export users create it through
+[`webDemuxerAsset.ts`](../../src/lib/exporter/webDemuxerAsset.ts). The resolver
+uses `/wasm/web-demuxer.wasm` under Vite's HTTP development server and the file
+beside `dist/index.html` in a packaged `file://` build. Keep this rule shared:
+a missing Vite public asset falls back to `index.html`, whose `<!doctype` bytes
+surface only as WebAssembly's misleading "expected magic word" compile error.
+
 Still synchronous, and still on the main thread: `mixToMono`
 ([`src/lib/captioning/extractMono16k.ts`](../../src/lib/captioning/extractMono16k.ts))
 now hoists its channel arrays out of the sample loop (it was making one WebIDL
@@ -132,9 +151,38 @@ call per sample per channel), but a long recording will still block the renderer
 for a moment during "extracting-audio". Moving the mixdown to a worker is the
 next step if it shows up in practice.
 
-## The STT engine
+## The STT engines
 
-The recogniser is **whisper.cpp**, embedded as a static library inside one
+### Parakeet v3 on Apple Silicon
+
+Klippt prefers Parakeet TDT 0.6B v3 on arm64 Macs running macOS 14 or newer.
+The Swift helper keeps FluidAudio 0.15.6 and the Core ML graph loaded across
+requests. It receives the same 16 kHz mono WAV chunks as the Whisper adapter and
+returns the same typed `SttTranscribeResponse`; Transcript and Captions do not
+import FluidAudio or know which helper ran.
+
+Parakeet's audio sample rate is 16 kHz, but its encoder emits one timing frame
+per 1,280 samples: **80 ms**. That is the recognizer's native timestamp grid,
+not a user quality setting. FluidAudio removes the measured one-frame emission
+delay. Klippt then searches only ±40 ms around each boundary for the quietest
+10 ms frame in the same microphone samples. This can refine a real acoustic
+boundary without inventing a second fixed offset. Caption grouping and visual
+animation remain separate from transcript timing.
+
+The model supports 25 languages. An explicit ISO language hint is forwarded to
+FluidAudio. Parakeet v3 does not expose a language token, so Klippt runs Apple's
+on-device `NLLanguageRecognizer` over the completed transcript and reports the
+dominant language only when it maps to a language supported by FluidAudio.
+Otherwise the response remains `"auto"`. A forced language always wins.
+
+The cache contains only the 21 files needed by the INT8 runtime graph. Every URL
+uses immutable model commit `7dd20fe6b1797d35f5e3307e8b1732d9a178edfe`.
+`modelManager.ts` verifies every SHA-256 before atomically publishing the file.
+The full Hugging Face repository is not downloaded.
+
+### Whisper compatibility engine
+
+The compatibility recogniser is **whisper.cpp**, embedded as a static library inside one
 helper executable per desktop platform. whisper.cpp picks the actual compute
 backend at runtime — Metal on Apple Silicon, Vulkan on Windows and Linux, CPU
 fallback when no usable GPU or driver is present — so the renderer only knows
@@ -180,7 +228,7 @@ it verbatim in the response.
 > `ggml_backend_dev_type()` being GPU/IGPU, which also drops ggml-blas
 > (Accelerate on macOS, device type ACCEL) from consideration.
 
-### Word-level alignment (DTW token timestamps)
+### Whisper word-level alignment (DTW token timestamps)
 
 1. **Decode** — `whisper_full()` runs with the default sampling parameters
    (`WHISPER_SAMPLING_GREEDY`), returning phrase segments plus a per-token
@@ -224,11 +272,13 @@ so no second pass is needed.
 
 ### Long-form recordings
 
-`whisper_full()` handles recordings longer than 30 s internally; OpenScreen
-implements no chunking of its own. The validation set exercises 130 s at WER
-0.076 with full per-word coverage (see the validation report linked above).
+`SttManager` plans bounded, contiguous source-audio chunks for both engines,
+runs them sequentially, and rebases every phrase and word onto absolute source
+time. Progress and cancellation happen at chunk boundaries. The engine chosen
+for the first chunk stays fixed for the full request, so one durable transcript
+never mixes Parakeet and Whisper timing.
 
-### Model
+### Whisper fallback model
 
 The single shipped artifact is `ggml-small-q8_0.bin` from
 `ggerganov/whisper.cpp` on HuggingFace: Whisper `small`, multilingual (~99
@@ -372,7 +422,7 @@ export interface SttTranscribeResponse {
   segments: SttPhraseSegment[];
   wordSegments: SttWordSegment[];
   detectedLanguage: string;
-  backend: SttBackend; // "whispercpp-metal" | "whispercpp-vulkan"
+  backend: SttBackend; // "parakeet-coreml" | "whispercpp-metal" | "whispercpp-vulkan"
                        // | "whispercpp-cuda" | "whispercpp-cpu"
 }
 ```
@@ -383,7 +433,8 @@ to surface the backend in the UI reads it directly out of this field; the
 contract is the source of truth.
 
 The request takes a raw `Float32Array` of mono 16 kHz PCM and an optional
-ISO 639-1 `language` code; `"auto"` or absent leaves detection to Whisper.
+ISO 639-1 `language` code; `"auto"` or absent leaves language handling to the
+selected recognizer.
 Status events fan out on a separate channel
 (`SttStatusEvent`, `phase: "model" | "transcribe"`) so the renderer can
 drive a "downloading model" / "transcribing" indicator without holding open

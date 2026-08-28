@@ -9,11 +9,12 @@ OpenScreen builds its renderer, Electron main process, preload bridge, native he
 | `npm run dev` | Starts Vite with the Electron plugin; builds and launches main/preload unless `NO_ELECTRON` is set. |
 | `npm run build-vite` | Runs TypeScript checking and Vite only. It produces `dist/` and `dist-electron/` but no installer. |
 | `npm run build` | Runs TypeScript checking, Vite, then unrestricted `electron-builder`. This is the full generic packaging command, but it does not proactively build platform helpers. **On Windows, prefer `build:win`** — see [Stale native artifacts](#stale-native-artifacts). |
-| `npm run build:mac` | Builds the ScreenCaptureKit and cursor helpers, checks TypeScript, runs Vite, and packages the macOS target. |
+| `npm run build:mac` | Builds the ScreenCaptureKit, cursor, and Apple Silicon Parakeet helpers, checks TypeScript, runs Vite, and packages the macOS target. |
 | `npm run build:win` | Builds WGC/cursor helpers and the D3D11 compositor addon, fetches FFmpeg, checks TypeScript, runs Vite, and packages the Windows NSIS target without npm rebuild. |
 | `npm run build:win:store` | Performs the Windows native and renderer build, then asks electron-builder for the configured AppX Store package. |
 | `npm run build:linux` | Checks TypeScript, runs Vite, then packages AppImage, Debian, pacman, and RPM artifacts without npm rebuild. Its explicit `--linux` target list overrides `linux.target` in `electron-builder.json5`, so a target added to the config alone is never built. |
 | `npm run build:native:mac` | Uses SwiftPM to build requested single-architecture ScreenCaptureKit and macOS cursor helpers and stages them under `electron/native/bin/darwin-*`. |
+| `npm run build:native:parakeet:mac` | Uses SwiftPM and pinned FluidAudio 0.15.6 to build the Apple Silicon Core ML transcription helper. |
 | `npm run build:native:win` | Uses CMake/Ninja in an MSVC environment to build WGC capture and cursor-sampler executables and stage x64 binaries. |
 | `npm run build:native:compositor` | Uses Cargo/MSVC and the pinned shared FFmpeg SDK to build `compositor_view.node`. |
 | `npm run build:whisper-binaries` | Runs the whisper.cpp CMake build and stages the speech-to-text executable plus ggml backend sidecars for the host. |
@@ -32,6 +33,7 @@ A usable full package depends on generated artifacts that are not committed:
 | Windows WGC capture helper and cursor sampler | `electron/native/bin/win32-x64/` from `electron/native/wgc-capture/build/` | Visual Studio C++ Build Tools, Windows SDK, CMake, Ninja |
 | macOS ScreenCaptureKit capture helper and cursor helper | `electron/native/bin/darwin-arm64/` or `darwin-x64/` | Full Xcode, Swift, SwiftPM; Command Line Tools alone may be insufficient |
 | Whisper STT server and ggml/whisper backend libraries | `electron/native/bin/<platform>-<arch>/` | CMake plus host compiler; Metal on Apple Silicon, Vulkan SDK on supported Windows/Linux builds, CPU fallback, optional CUDA |
+| Parakeet v3 Core ML STT helper | `electron/native/bin/darwin-arm64/klippt-parakeet-stt` | SwiftPM, FluidAudio 0.15.6, macOS 14+; model files are downloaded and verified at runtime |
 | Native D3D11 compositor addon | `electron/native/compositor-view/build/compositor_view.node` | Rust MSVC toolchain, Visual Studio/Windows SDK, LLVM/libclang, and the exact pinned shared FFmpeg SDK |
 | Native Metal compositor addon | `electron/native/bin/darwin-<arch>/compositor_view.node` (plus a dev copy under `electron/native/compositor-view/build/`) | Rust, Xcode, and the LGPL FFmpeg tree from `fetch:ffmpeg:mac` |
 | FFmpeg runtime files | matching `electron/native/bin/<platform>-<arch>/` directory | Downloaded by `fetch:ffmpeg` on Windows; **built from source** by `fetch:ffmpeg:mac` on macOS (~5 min) — BtbN publishes no macOS target and every circulating macOS build is GPL, which would relicense this MIT app |

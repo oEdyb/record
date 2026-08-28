@@ -1,9 +1,10 @@
 # Klippt product plan
 
 - Status: active
-- Date: 2026-08-24
+- Date: 2026-08-28
 - Product source of truth: [`AGENTS.md`](AGENTS.md)
 - Upstream historical roadmap: [`ROADMAP.md`](ROADMAP.md)
+- Full agent-first execution plan: [`docs/cutting-edge-execution-plan.md`](docs/cutting-edge-execution-plan.md)
 
 ## Product decision
 
@@ -86,19 +87,83 @@ SEO or GEO only after the small page set shows which queries and recommendations
 
 ## Current baseline
 
-| Capability | Current state | Main gap |
-| --- | --- | --- |
-| Clip-native recording | Working on Mac: Pause, Continue, Remove previous clip, Stop, editor insertion, Undo, and Redo | Long-session and failure recovery gates |
-| Editable source capture | Screen and camera are separate. Mac clips contain a mixed preview track plus tagged system-audio and microphone tracks. Cursor and safe keyboard telemetry are sidecars | First-class source-track model, raw export, recovery inventory |
-| Automatic direction | Deterministic click, drag, typing, cursor, and Camera Emphasis engine; exact Scale control; protected user corrections; direct editable timeline regions; simplified inspector | Tune only from labelled real-use failures; do not add detectors now |
-| Preview and export | Shared native scene contract and hardware paths on Mac | Full long-video delivery validation |
-| Export quality | MP4/GIF, H.264/H.265, 24/30/60 FPS, 1080p/2K/source tiers, estimated size, and audio normalization exist | Capability-based advanced controls, manual/CQ rate control, ProRes/AV1 decisions |
-| Output shapes | One Layout pane controls presets, original shapes, custom pixels, camera composition, and block order across preview and export | One-project delivery variants, editable pane proportions, and automatic vertical reframing |
-| Transcript editing | Large inherited feature set exists | Product focus, custom vocabulary, and a simple spoken-word workflow |
-| Presets | Recording and editing preferences persist | Named, reusable recording/style/delivery presets |
-| Agent workflow | Record, Sources, Info, Pack, Captions, and legacy/current project Export CLI paths exist | Complete inspect/edit/validate command surface with UI parity, dry runs, revisions, and agent-safe transactions |
-| Project format | `.klippt` is canonical across storage, dialogs, drag-and-drop, and CLI; legacy `.openscreen` and `.axcut` files remain readable and are copied forward without deletion | File-association handoff and broader real-project migration testing |
-| Distribution | Klippt name, icons, package display name, `.klippt` format, Developer ID signing, Apple notarization and stapling proof, Gatekeeper acceptance, privacy-safe diagnostics, and the owned `updates.dyberg.co` R2 update channel are implemented while current bundle and user-data identities stay compatible | Finish entitlement activation, legal/support pages, dependency notices, clean-Mac alpha validation, and later test the bundle-ID migration separately |
+| Capability              | Current state                                                                                                                                                                                                                                                                                               | Main gap                                                                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clip-native recording   | Working on Mac: Pause, Continue, Remove previous clip, Stop, editor insertion, Undo, and Redo                                                                                                                                                                                                               | Long-session and failure recovery gates                                                                                                               |
+| Editable source capture | Screen and camera are separate. Mac clips contain a mixed preview track plus tagged system-audio and microphone tracks. Cursor and safe keyboard telemetry are sidecars                                                                                                                                     | First-class source-track model, raw export, recovery inventory                                                                                        |
+| Automatic direction     | Deterministic click, drag, typing, cursor, and Camera Emphasis engine; exact Scale control; protected user corrections; direct editable timeline regions; simplified inspector                                                                                                                              | Tune only from labelled real-use failures; do not add detectors now                                                                                   |
+| Preview and export      | Shared native scene contract and hardware paths on Mac                                                                                                                                                                                                                                                      | Full long-video delivery validation                                                                                                                   |
+| Export quality          | MP4/GIF, H.264/H.265, 24/30/60 FPS, 1080p/2K/source tiers, estimated size, and audio normalization exist                                                                                                                                                                                                    | Capability-based advanced controls, manual/CQ rate control, ProRes/AV1 decisions                                                                      |
+| Creator audio           | Isolated microphone/system stems, dialogue leveling, a -14.5 LUFS/-2 dBTP pre-encode delivery target, Silero pause analysis, and reversible pause trims exist                                                                                                                                               | Decoded-delivery verification, a product-routed Clean Voice stem, preview/export parity, and the creator-corpus engine gate                           |
+| Output shapes           | One Layout pane controls presets, original shapes, custom pixels, camera composition, and block order across preview and export                                                                                                                                                                             | One-project delivery variants, editable pane proportions, and automatic vertical reframing                                                            |
+| Transcript editing      | A calm local Transcript facet provides clip-scoped word timing, click-to-seek, native Copy, detected language, and explicit language reruns                                                                                                                                                                                            | Long-project bounded-memory transcription, custom vocabulary, and safe text-based editing are parked until after the core audio and paid-alpha work   |
+| Presets                 | Recording and editing preferences persist                                                                                                                                                                                                                                                                   | Named, reusable recording/style/delivery presets                                                                                                      |
+| Agent workflow          | Record, Sources, Info, Pack, Captions, and legacy/current project Export CLI paths exist                                                                                                                                                                                                                    | Complete inspect/edit/validate command surface with UI parity, dry runs, revisions, and agent-safe transactions                                       |
+| Project format          | `.klippt` is canonical across storage, dialogs, drag-and-drop, and CLI; legacy `.openscreen` and `.axcut` files remain readable and are copied forward without deletion                                                                                                                                     | File-association handoff and broader real-project migration testing                                                                                   |
+| Distribution            | Klippt name, icons, package display name, `.klippt` format, Developer ID signing, Apple notarization and stapling proof, Gatekeeper acceptance, privacy-safe diagnostics, and the owned `updates.dyberg.co` R2 update channel are implemented while current bundle and user-data identities stay compatible | Finish entitlement activation, legal/support pages, dependency notices, clean-Mac alpha validation, the Dyberg-owned bundle-ID migration, and the exact FFmpeg WebAssembly LGPL release obligation before paid distribution |
+
+## 2026-08-28 cutting-edge audit lock
+
+The current architecture remains the product architecture: Electron and React for the shell,
+Swift ScreenCaptureKit for capture, Rust and Metal for composition, and VideoToolbox for hardware
+export. Do not rewrite Klippt in Swift and do not add automatic-editing detectors only because a new
+model or paper exists.
+
+The next commercial gate is a trust gate. Complete these items before broad feature expansion:
+
+1. Create and push a reviewed known-good checkpoint of the current product. The private remote now
+   exists, but the live product is far ahead of the last pushed checkpoint.
+2. Transcribe the tagged microphone role directly. Keep microphone, system audio, and preview mix
+   explicit through transcription, pause analysis, preview, export, and source bundles.
+3. Qualify FluidAudio's corrected Parakeet Core ML encoder against a locked Swedish, English,
+   code-switching, technical-term, long-session, memory, and thermal corpus. Keep Whisper as an
+   independent fallback until the candidate passes.
+4. Make every export durable: same-directory staging file, stream and duration verification,
+   synchronization, then atomic rename. A failed export must not replace an existing good file.
+5. Move the desktop shell to a supported Electron line in an isolated migration lane. Replace
+   `webSecurity: false` with an allowlisted, range-capable project-media protocol, strict CSP,
+   navigation and window guards, centralized IPC sender validation, and reviewed production fuses.
+6. Declare one exact BT.709 SDR and pixel-range contract. Preserve the selected or source frame rate.
+   Report the encoder that was selected and whether hardware encoding was actually used.
+7. Replace whole-program PCM export with a bounded block-based audio graph. Long-project memory must
+   plateau instead of growing with duration.
+8. Validate the decoded AAC deliverable for loudness, true peak, duration, priming, tail, clipping,
+   and discontinuities. Describe `-14.5 LUFS` as the **Klippt Creator** preset, not a YouTube rule.
+9. Add one media workload monitor for disk capacity and latency, thermal and power state, camera
+   pressure, queue depth, dropped frames, memory, hardware encoder state, drift, and export speed.
+10. Tune automatic direction only against a versioned labelled corpus. Measure unchanged rate,
+    correction time, delete rate, scale and framing corrections, cursor containment, privacy
+    boundaries, and preview/export parity.
+11. Freeze a Dyberg-owned bundle identifier before paid distribution. Migrate and test existing
+    user data, TCC permissions, Keychain data, file associations, updates, recovery, rollback, and
+    side-by-side installation.
+12. Give each window the smallest preload surface it needs. Validate exact origin, top-level frame,
+    window role, sender identity, and payload schema for every privileged IPC method. Restrict
+    capture permissions, export destinations, and reveal-in-folder to explicit app-owned capabilities.
+13. Bind each packaged helper to the exact release source SHA. Close the recorded FFmpeg WebAssembly
+    LGPL source, configuration, notice, and relinking obligation before Klippt charges users.
+
+The next high-value product prototypes, in order, are:
+
+1. Native AVFoundation camera capture with explicit resolution/FPS and a shared host-time clock.
+2. Phrase-level microphone leveling with bounded smooth gain and preview/export parity.
+3. First-class editable reframe keyframes for 16:9, 9:16, and 1:1 delivery variants.
+4. ProRes 422 LT/422 MOV and an optional source bundle with isolated lossless audio roles.
+5. One typed command service shared by the UI, CLI, and future agent bridge. Commands use stable IDs,
+   expected revisions, dry runs, idempotent operation IDs, validation, and atomic one-Undo batches.
+
+Keep these items in a lab until their evidence gates pass: native-layer preview, ScreenCaptureKit
+NV12 capture, FFmpeg 9, VideoToolbox beta quality controls, DPDFNet, FireRedVAD, custom vocabulary,
+local Vision/OCR support signals, automatic multi-output render fanout, resumable segmented export,
+and HDR.
+
+Do not build AV1 software export as the normal Mac path, LLM-selected pixel coordinates, continuous
+cursor chasing, a zoom for every click, automatic generated B-roll, generative voice replacement,
+a separate AI timeline, or automatic publishing. Keep React, Vite, `wgpu`, N-API, FFmpeg, and
+Electron major migrations in separate measured lanes.
+
+The full evidence, dependency audit, research links, contradictions, and release measurements live
+in the vault research note `2026-08-28 Finding cutting-edge upgrades for Klippt`.
 
 ## Gate 0 — protect the product before more code
 
@@ -263,6 +328,17 @@ Exit criteria for Slice 1:
 - A user can correct scale, framing, tracking, and duration without opening Advanced.
 - The existing automatic-direction regression suite stays green. Add interaction coverage for all
   ownership paths.
+
+**Correctness gate completed on 2026-08-25:** web preview and native preview/export now preserve
+the same `directionGroupId`, context boundaries, and kept-segment boundaries. The shared selector
+counts real screen and camera entrances by group, effect kind, and playback segment inside a local
+rolling 60-second window. It no longer joins different modalities or opposite sides of a cut only
+because their times are close. Final standalone Zooms obey minimum duration, while intentional
+internal pan fragments remain one visual passage. The typed policy is shared by import,
+regeneration, the editor action, and CLI. Verification passed 297 focused Automatic Direction
+tests, both TypeScript targets, the complete 2,340-test suite with one skip, the production macOS
+native-helper build, 28 Rust compositor region tests, and independent Critical/Important review.
+Freeze new detectors and tune only from labelled real-use evidence.
 
 ## Gate 2 — complete: prove the recording-to-upload path
 
@@ -470,12 +546,111 @@ come from each device's supported formats and frame-rate ranges:
 - audio: 48 kHz AAC-LC for normal MP4, with format and bitrate details under Advanced;
 - estimated dimensions, bitrate or quality level, duration, and file size before export;
 - no silent upscaling;
-- dialogue mastering with a measured loudness and true-peak report. Do not claim that YouTube
-  requires one exact LUFS number.
+- dialogue mastering that aims for -14.5 LUFS integrated without exceeding -14 LUFS, uses a
+  -2 dBTP pre-AAC ceiling, verifies the decoded delivery file stays at or below -1 dBTP, and reports
+  measured loudness and true peak. Preserve dynamics when those targets conflict. Do not claim that
+  YouTube requires one exact LUFS number.
 
 Use a runtime capability matrix. Do not show a codec or rate-control mode that the active encoder
 cannot produce. Do not use AV1 or ProRes for normal real-time capture only because they exist as
 export formats.
+
+### Clean Voice
+
+Add local microphone cleanup without changing the raw source or the recording path. Full evidence
+and architecture are in the vault note `2026-08-24 Making Klippt audio clean in noisy creator
+recordings`.
+
+1. Keep raw microphone audio permanent. Build a versioned recipe and sample-exact lossless derived
+   stem in a restartable Rust worker after recording.
+2. Keep the editor usable on raw audio while cleanup runs. Use the same completed derived stem for
+   preview and export. Any failure falls back to raw.
+3. Use raw and cleaned Silero as a union for speech protection. Cleaned analysis alone may veto a
+   cut but may never create one. Under the explicit **Ignore non-speech sounds** policy, an
+   isolated raw-energy event can stop blocking a pause only when raw Silero, cleaned Silero, and the
+   transcript all classify it as non-speech. Keep system audio, screen activity, trims, and failure
+   fallback as independent protection.
+4. Keep **Clean Voice**, **Amount**, and **Original** separate from **Even volume** and final program
+   mastering. Process microphone audio only.
+5. Start with DeepFilterNet 3 as the mature reference implementation. Compare it with raw and the
+   pinned DPDFNet-2 48 kHz checkpoint in a development-only bake-off. Ship one engine. If results
+   are tied or mixed, ship DeepFilterNet 3. On failure, use raw rather than a hidden engine switch.
+6. Require exact timing, no semantic or identity damage, safe clean-mic bypass, M5 system
+   performance, and 30-60 minute stability before enabling it by default.
+7. Do not make generative speech reconstruction the normal engine. Preserve every word before
+   optimizing how impressive one noisy demo sounds.
+
+### Audio pane
+
+Use one right-side **Audio** pane rather than separate top-level tools for cleanup, pause shortening,
+and delivery loudness. Keep the surface visually flat and use the same section rhythm as the other
+editor inspectors.
+
+1. **Voice:** optional **Clean Voice**, **Amount** with a Natural default, loudness-matched
+   **Original**, and optional **Even volume**. Clean Voice and Even volume process only the
+   microphone and stay independent.
+2. **Pacing:** the current **Shorten pauses** controls, preview, protection options, and one-batch
+   Apply/Undo flow.
+3. **Delivery:** optional **Normalize volume**, on by default for the YouTube preset. Show
+   **YouTube · -14.5 LUFS** as the simple target. Offer **Custom** with direct target-loudness and
+   true-peak controls. Custom values range from -30 to -9 LUFS and -6 to -1 dBTP. Measure the
+   complete edited program after cuts, speed, gain, and system-audio mixing. Preserve dynamics or
+   return a quieter result when safe normalization cannot reach the target.
+
+Keep the pane quiet. Show short names and values in the normal layout. Put definitions, safety
+details, and the Clean Voice trust model behind accessible hover and keyboard-focus info controls.
+
+The YouTube label describes Klippt's delivery preset. It does not claim that YouTube mandates one
+LUFS value. Preview and export must use the same enabled audio recipe, while the final delivery
+measurement and decoded AAC verification happen against the complete rendered program.
+
+**Foundation implemented on 2026-08-25:** a development-only, engine-neutral Rust worker now runs
+the pinned DeepFilterNet 3 `libDF` backend on mono 48 kHz microphone WAV files. It keeps bounded
+memory, uses fresh model state for each file, flushes the tail, removes the fixed model delay,
+produces an atomic Float32 WAV with the exact source sample count, and writes deterministic engine
+and model identity into the lab manifest. The derived mono WAV carries an explicit front-center
+channel layout so macOS cannot route it to one speaker. Natural starts at a conservative 6 dB attenuation cap;
+stronger cleanup remains a lab input. The worker is not in the release build, preview, export, or
+normal UI until the fixed creator corpus proves semantic safety and identity preservation. Klippt
+pins a narrow v0.5.6 fork with only upstream's two silence-grace commits. This lets the three-hop
+tail flush advance the model without injecting a synthetic high-frequency state clock.
+
+The pinned fork is `oEdyb/DeepFilterNet` commit
+`b0fa238a331fb5cc39c5555d3538008dd88c0aef`, based on upstream v0.5.6 commit
+`978576aa8400552a4ce9730838c635aa30db5e61`. The hardened lab verifies the exact 1,440-sample model
+delay, zero residual lag, exact digital silence, EOF signals at four hop offsets, signal/silence
+transitions, fresh-state determinism, and a 60-second bounded run. Raw-only fallback analysis is
+not cached as a completed clean result, and an uncovered speech-probability span fails closed.
+**Optional processing foundation implemented on 2026-08-26:** schema v8 stores only an explicit
+asset-level recipe. Missing or **Original** performs no work. Electron schedules work only after the
+project is durable, runs one below-normal-priority job at a time, cancels for recording or serious
+thermal pressure, resumes after cancellation, removes crash staging on relaunch, and publishes a
+validated content-addressed stem plus manifest. Cache identity binds the isolated microphone
+content, source clock, recipe, extraction contract, helper, model, and engine. Corrupt entries are
+rejected and rebuilt. The raw recording remains authoritative and every failure still resolves to
+raw.
+
+**Development activation implemented on 2026-08-27:** the optional Audio control now schedules the
+existing one-job background service for every original recording asset. Preview and native export
+use one main-owned runtime resolver. Preview switches atomically from the original clip audio to a
+browser-ready mix of the clean microphone and untouched system audio only after the complete cache
+entry is ready. Native export replaces only the microphone with the lossless clean stem. Missing,
+cancelled, stale, or corrupt routes use the complete original clip. No cache path enters the project,
+and recording still cancels optional processing.
+
+The next gate is the labelled Swedish/English creator corpus, decoded delivery verification,
+explicit commercial model-license confirmation, and real 30-60+ minute creator-session evidence.
+Do not package the helper in the normal release or enable Clean Voice by default before this gate.
+
+**Audio pane implemented on 2026-08-25:** the old Pauses facet is now one flat **Audio** pane with
+**Voice**, **Pacing**, and **Delivery** sections. **Even volume** and **Normalize volume** are
+independent project settings, are remembered for the next project, and control separate native
+export stages. The export dialog no longer owns a second normalization switch. Delivery now offers
+a fixed **YouTube · -14.5 LUFS / -2 dBTP** preset and custom target-loudness and peak controls. The
+project, reusable defaults, GUI export, CLI export, and native mastering path share the same values.
+Detailed help appears only on hover or keyboard focus. **Clean Voice** is optional in development,
+shows its background state beside the control, and is connected to preview and native export through
+the shared runtime resolver. It remains excluded from normal release packaging and defaults to off.
 
 ## Phase 6 — record once, publish everywhere
 
@@ -603,12 +778,20 @@ precise editing instrument, not a toolbar stacked above several unrelated cards.
   bubble only while scrubbing or dragging.
 - Keep clip cards low-radius and waveform-first. Remove the embedded pencil button; selection and
   the inspector own clip editing.
+- Compress applied cuts out of the main waveform and join the kept sections at one quiet seam, not a
+  floating effect lane or a deleted-width gap. Put one small scissors marker on each seam and show
+  the removed duration on hover or keyboard focus. Restoring a coalesced cut remains one normal
+  Undoable edit. At rest, show only a tiny notch and reveal the full control on hover or focus. These
+  visible sections are a projection, not new stored clips.
 - Keep ordinary Zoom and Camera Emphasis regions directly editable, but use quieter fills, one
   selection outline, and consistent resize handles.
 - Make the bottom navigation range a restrained overview rail. Reveal its handles on hover or focus
   instead of making all parts equally prominent.
 - Use the existing graphite, soft-white, and muted steel-blue tokens. Do not add glass, gradients,
   colored glow, or decorative animation.
+- **Done on 2026-08-25:** Replace production native HTML option menus with one keyboard-accessible
+  `AppSelect` primitive. Its trigger and popup use the shared graphite and muted steel-blue tokens,
+  so the host macOS accent cannot turn menus green. Keep green semantic-only.
 - Keep hover and selection transitions within 80–180 ms, with no bounce. Scrubbing, trimming,
   reordering, and region dragging must remain immediate and respect Reduce Motion.
 
@@ -658,17 +841,73 @@ The agent must return a concise change report that the user can inspect and undo
 
 Keep this behind the stable recorder and editor path.
 
-1. Generate the transcript locally after the editor opens. Never delay Pause or Stop for it.
-2. Add a versioned custom vocabulary for names such as Claude Code, MCP, and Anthropic.
-3. Remove a selected text range through the same normal timeline trim operation.
-4. Detect repeated phrases and false starts as review suggestions. Never call them “takes”.
-5. Add silence suggestions with preview and Undo. Do not remove silence without confirmation.
-6. Keep transcript, captions, and timeline edits on one source-time mapping.
+1. Use multilingual Parakeet TDT 0.6B v3 through pinned FluidAudio `0.15.6` as the primary Apple
+   Silicon Mac engine. Keep Parakeet v2 as an internal English benchmark and Whisper as the product
+   fallback. All engines stay behind the existing typed STT contract.
+2. Klippt owns the verified 482 MB INT8 v3 cache. It downloads only the 21 runtime files from one
+   immutable model commit and checks every SHA-256 before atomic publication. A clean install never
+   requires Koett. FluidAudio is Apache 2.0 and the Parakeet Core ML model is CC BY 4.0; both notices
+   ship with the app.
+3. The calm right-side **Transcript** facet is implemented. It starts only when the user presses
+   **Transcribe**, so model download and inference never delay Record, Pause, Stop, project opening,
+   or basic editing.
+4. Put one visible **Copy** action in the pane header. Copy the current edit as plain text in
+   timeline order. Exclude removed clips, applied trimmed words, and internal silence markers. Keep
+   punctuation and separate clips with paragraph breaks.
+5. The first exposed slice stays read-only apart from click-to-seek, Transcribe/Retry, and Copy. It
+   does not expose the inherited content-editable deletion surface unchanged.
+6. Keep **Captions** separate: Transcript is text for reading, copying, and future text editing;
+   Captions are text rendered in the video. Both derive from the same clip-scoped source-time words.
+7. Add a versioned custom vocabulary for names such as Claude Code, MCP, and Anthropic.
+8. Remove a selected text range through the same normal timeline trim operation and one Undo step.
+9. Detect repeated phrases and false starts as review suggestions. Never call them “takes”.
+10. Keep transcript, captions, pause protection, and timeline edits on one source-time mapping.
+
+### Next small creator slice — Transcript and Copy
+
+This is a small utility slice, not the full text editor:
+
+- reveal one Transcript icon in the existing right rail;
+- replace only the recognizer adapter, not the queue or project model: route Parakeet v3 through
+  the current local transcription queue and clip-scoped timing contract;
+- replace the inherited content-editable presentation with a calm, selectable reading view;
+- show transcription progress per clip without blocking the editor;
+- let a word click seek the preview;
+- copy the complete current edit with one button and temporary neutral check feedback;
+- compute copied text from project data rather than the rendered DOM;
+- keep **Copy with timestamps**, speaker labels, find/replace, and text-based removal for later.
+
+Acceptance checks:
+
+- a multi-clip project copies words in timeline order with one paragraph per clip;
+- removed clips and words inside applied trims do not enter the copied text;
+- Split, reorder, Undo, Redo, save, and reopen preserve copy order and word ownership;
+- a missing or failed transcript shows one clear Transcribe or Retry action;
+- a 90-minute project remains responsive while the pane is open;
+- captions and copied text still resolve from the same word timing;
+- Parakeet word starts and ends stay aligned through long-file chunk seams, Split, trim, speed,
+  reorder, save, reopen, preview seeking, and native export;
+- this Mac has Klippt's verified 482 MB Parakeet v3 cache, while a clean install downloads and
+  verifies its own model without Koett;
+- model load and transcription run after editor entry, cancel for a new recording, and never make
+  the 90-minute project UI unresponsive;
+- the shipped app includes the FluidAudio and Parakeet model license notices.
+
+### Parked transcript hardening
+
+The first Transcript slice is complete. Do not make transcript work the next product slice.
+The real 80-minute project transcribed successfully, but its accumulated renderer-side decode path
+briefly used about 2.4 GB of memory. Before Transcript becomes a release-critical long-project
+workflow, replace that path with bounded streaming, preserve exact word timing across chunk seams,
+and prove cancellation and responsiveness on a 90-minute project. Keep this in the backlog until
+the core creator-audio path and paid-alpha requirements are complete, unless normal use exposes a
+data-loss or app-stability defect.
 
 Implementation status on 2026-08-22:
 
-- **Implemented:** a dedicated right-side **Pauses** pane with Natural, Balanced, and Tight pacing;
-  live policy tuning; reusable presets; selected-range preview; and one-step batch Apply.
+- **Implemented:** the **Pacing** section of the right-side **Audio** pane has Natural, Balanced,
+  and Tight pacing; live policy tuning; reusable presets; selected-range preview; and one-step
+  batch Apply.
 - **Implemented:** Speech mode uses verified Silero v6.2 probabilities from the isolated microphone
   as its primary signal, with isolated-microphone energy and local word timing as extra protection.
   The 0.9 MB model downloads independently and runs through the existing whisper.cpp helper without
@@ -713,6 +952,20 @@ Only after the Mac product is dependable:
   no-overlap, and cursor-safety rules remain locked invariants. Max Zoom defaults to 1.65× and can
   expand the automatic depth profile up to the shared 5× renderer limit;
 - more direction detectors based on labelled failures, not guesses;
+- **Automatic pacing:** treat slow camera growth during sustained speaker-led moments and a faster
+  return when meaningful screen interaction resumes as a measurable editing hypothesis, not a
+  universal retention rule. Build it from existing camera, microphone, cursor, and screen-activity
+  observations. Keep the result sparse, deterministic, non-overlapping, and stored as ordinary
+  editable camera regions. Put timing, growth, exit speed, motion style, and density in a versioned
+  typed policy so presets can tune them without a new analyzer;
+- **Supporting media:** let the creator add or drag selected images, video, diagrams, and B-roll at
+  a timeline point. Klippt can fit the asset, add a restrained entrance/exit, adapt it to delivery
+  shapes, and make every choice editable. It must not fetch, invent, publish, or license media
+  without the creator's clear action;
+- **Optional sound and music direction:** suggest licensed or user-owned music and sound effects,
+  with audition, timing, gain, ducking, and removal controls. Keep suggestions off by default and
+  never create surprise copyright exposure. Motion, sound, and extra media must serve the idea or
+  clarify a change; they must not become constant activity added only to chase retention;
 - cloud sharing;
 - direct upload;
 - Windows and Linux product work;

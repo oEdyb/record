@@ -80,10 +80,19 @@ and **one** encoder + muxer pair:
   drift from the compositor). `ExportDialog`'s `tierOutputDims` feeds the
   crop-aware **smallest** clip on the timeline to
   [`calculateMp4ExportSettings`](../../src/lib/exporter/mp4ExportSettings.ts),
-  which maps quality + source dims + aspect ratio to the encoder
-  width / height / bitrate, and passes `width` / `height` to `exportMulti`.
+  which maps quality + source dims + aspect ratio + frame rate + codec to the
+  encoder width / height / bitrate, and passes those resolved values to
+  `exportMulti`. The H.264 anchors follow YouTube's current SDR upload guidance;
+  higher frame rates raise the target and HEVC uses a lower target for the same
+  output shape. The estimated size includes the resolved video target, 384 kbps
+  AAC audio, and a small container allowance. It stays approximate because the
+  native average-bitrate setting is a long-term target, not a hard file-size cap.
   Only "Source" quality targets those source dims; 720p / 1080p target a
   fixed short side regardless.
+
+- **Progress** starts timing after the native encoder reports its first frame, so
+  encoder startup does not distort the estimate. The UI formats remaining time as
+  `m:ss` or `h:mm:ss` and keeps the existing frame progress bar.
 
 ## Output formats and codecs
 
@@ -96,9 +105,49 @@ encoder (software VP9 was measured too slow and removed — see
 [native-compositor.md](native-compositor.md#known-gaps)). GIF is a
 separate path through `GifExporter` and does not use the native addon.
 
+## Optional Clean Voice route
+
+The local worker in `electron/native/clean-voice` processes only an isolated mono 48 kHz microphone
+WAV and writes a sample-exact Float32 derived stem. The raw microphone stays permanent. A failed,
+missing, stale, incomplete, or cancelled route resolves to the complete raw clip.
+
+The derived WAV uses the WAVEFORMATEXTENSIBLE mono layout with `SPEAKER_FRONT_CENTER`. Hound's
+default one-channel mask is `SPEAKER_FRONT_LEFT`, which makes macOS route the derived voice toward
+the left speaker even though the samples are mono. The helper validates the generated format before
+changing the mask, and the lab suite rejects any derived file that is not centered mono.
+
+The worker pins `oEdyb/DeepFilterNet` commit
+`b0fa238a331fb5cc39c5555d3538008dd88c0aef`. This is the exact upstream v0.5.6 base plus two
+upstream silence-grace commits. They let the required three zero hops advance model state and flush
+DeepFilterNet's 1,440-sample delay without adding a synthetic 24 kHz signal. The lab suite verifies
+exact sample count, exact digital silence, EOF tails at different hop offsets, zero residual lag,
+signal/silence transitions, deterministic fresh state, and a 60-second run. `npm run
+clean-voice:lab` rebuilds the native helper before use so a stale binary cannot hide a source
+regression.
+
+The development app now uses one versioned runtime resolver for preview, GUI export, and CLI export.
+Its cache identity includes source identity, engine commit, model hash, recipe version, extraction
+contract, and relevant settings. The worker runs one below-normal-priority job at a time after a
+durable project save. Recording and serious thermal pressure cancel optional work; relaunch resumes
+from the raw source or a verified cache entry. Preview uses a derived AAC mix for browser playback.
+Native export decodes the same lossless clean microphone stem and replaces only the tagged `qac`
+track, while the tagged `qab` system-audio bed stays raw. Cache paths never enter the project.
+
+Release activation remains blocked on the labelled creator corpus, decoded delivery verification,
+commercial model redistribution confirmation, and long-session evidence. The helper remains outside
+normal release resources and Clean Voice remains off by default.
+
+The editor's right-side **Audio** pane now owns the two shipping export controls. **Even volume**
+matches dialogue between clips. **Normalize volume** masters the complete final mix. The values are
+project data and the native export receives them as separate parameters. The fixed YouTube preset
+uses -14.5 LUFS and -2 dBTP. Custom projects can select -30 to -9 LUFS and -6 to -1 dBTP; the same
+validated values cross the GUI and CLI N-API export contracts. The development Audio pane exposes
+Clean Voice as an optional control with **Preparing**, **Ready**, and **Using original** states.
+
 ## Licensing
 
-The app is MIT and stays MIT. Any bundled ffmpeg must be built **without**
+Klippt is proprietary. Its third-party dependencies keep their own licenses and notices. Any
+bundled ffmpeg must be built **without**
 `--enable-gpl` and without `--enable-nonfree` — those flags pull
 x264/x265/xvid and fdk-aac, and licensing is all-or-nothing. The same
 rule applies to the BtbN build the addon links against (see

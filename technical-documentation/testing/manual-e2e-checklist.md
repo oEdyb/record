@@ -181,6 +181,8 @@ Zoom, speed, annotation, and full-camera regions are stored against a clip in th
 - [ ] With no transcript, confirm the pane offers a transcribe action instead of showing an empty editor.
 - [ ] Start transcription for the loaded asset and confirm a visible in-progress state appears.
 - [ ] Confirm a completed transcription displays words in timeline clip order.
+- [ ] Copy the transcript and confirm the macOS clipboard receives kept plain text in timeline order, without removed words or internal silence markers.
+- [ ] Confirm the Transcript language picker shows the stored detected language; choose another language, press Regenerate, and confirm the replacement transcript stores that language.
 - [ ] Click a transcript word and confirm the playhead seeks to that word's start.
 - [ ] Play the project and confirm the current word receives the cue highlight as playback advances.
 - [ ] Place the caret in the transcript and press `Backspace` or `Delete`; confirm the affected word becomes marked as skipped rather than disappearing from the transcript.

@@ -11,17 +11,17 @@ the contract.
 
 ## `schemaVersion` and top-level shape
 
-`axcutSchemaVersion` is **7** — exported as a literal at the top of
+`axcutSchemaVersion` is **8** — exported as a literal at the top of
 `src/lib/ai-edition/schema/index.ts`. Every document on disk carries
-`schemaVersion: 7`; anything older is upgraded on parse (see [Migrations](#migrations))
+`schemaVersion: 8`; anything older is upgraded on parse (see [Migrations](#migrations))
 and anything unknown is rejected by the `z.literal(axcutSchemaVersion)` check in
 `documentSchemaShape`.
 
 | Field | Holds | Notes |
 |---|---|---|
-| `schemaVersion` | `7` | Bumping requires a migration; see the chain below. |
+| `schemaVersion` | `8` | Bumping requires a migration; see the chain below. |
 | `project` | `{ id, title, createdAt, updatedAt, primaryAssetId? }` | One project per file. |
-| `assets[]` | `AxcutAsset` (one per recorded/imported media file) | Carries `originalPath`, `cameraTrack`, `durationSec` (renderer probes). |
+| `assets[]` | `AxcutAsset` (one per recorded/imported media file) | Carries `originalPath`, `cameraTrack`, `durationSec` (renderer probes), and optional derived-media intent such as `cleanVoice`. |
 | `transcript` | `AxcutTranscript \| null` | Legacy primary transcript; left for back-compat, no longer the source of truth. |
 | `transcripts[]` | `AxcutTranscript[]` | Per-asset transcripts; what the captions layer actually reads. |
 | `timeline` | `{ clips[], gaps[], trimRanges[], muteRanges[], speedRanges[], captionRanges[] }` | Clips carry their own in/out (`sourceStartSec`/`sourceEndSec`); trims are anchored to a clip (`clipId?`) since v7. See [timeline-model.md](timeline-model.md). |
@@ -39,14 +39,14 @@ Migrations are **one-way and forward-only**. There is no version downgrade path:
 newer document that lands on an older build is rejected by the `schemaVersion`
 literal, not silently truncated. The chain runs **at load time** through
 `migrateRawDocumentToCurrent` (`src/lib/ai-edition/document/migrate.ts`) — the
-upgraders compose the chain and `documentSchema.parse` is a pure v7 validator.
+upgraders compose the chain and `documentSchema.parse` is a pure v8 validator.
 Every JSON-read site (`DocumentService`, the browser shim, the renderer's
 `handleBrowseProject` / `openLoadedProject` disk-load paths) must call the
 helper before `documentSchema.parse`. The pre-hoist implementation wrapped this
 chain in a `z.preprocess`, so it ran on every `setDocument` / `saveDocument` /
 `loadProject` parse — measurable per-parse overhead on documents that were
 already current. Hoisting it to load time makes the in-memory parse a single
-`z.literal(7)` + shape check on already-upgraded data.
+`z.literal(8)` + shape check on already-upgraded data.
 
 ### v3 → v4 (`upgradeV3DocumentToV4`, `schema/index.ts`)
 
@@ -119,6 +119,22 @@ intervals, outside every clip by construction), and an unprobed clip has no real
 window to clamp against so its trims stay un-anchored. Un-anchored trims keep the
 pre-v7 asset-wide meaning, which is what makes the fallback lossless.
 
+### v7 → v8 (`upgradeV7DocumentToV8`, `schema/index.ts`)
+
+v8 adds an optional, versioned `asset.cleanVoice` recipe. The project stores only user intent.
+Generated stems, cache paths, progress, and failures stay outside the document because they are
+disposable and can be rebuilt from the permanent raw microphone. A missing recipe is the canonical
+**Original** setting, so upgrading a v7 project cannot start processing or change its sound.
+
+`DocumentService` notifies derived-media services only after a project save is durable, or after an
+existing project has been read successfully. The current Clean Voice service uses that boundary to
+schedule one low-priority local job. It cancels optional work while recording or under serious
+thermal pressure. It validates the lossless output before publishing a content-addressed cache
+entry. The project keeps only the recipe. Preview and native export ask the main process for a
+verified runtime route and never persist cache paths. Preview uses a browser-ready mix made from the
+clean microphone and untouched system audio. Native export replaces only the microphone with the
+lossless clean stem. Either path uses the complete raw clip until a complete route is ready.
+
 ### Legacy v2 → current (`migrateProjectDataToAxcutDocument`, `document/migrate.ts`)
 
 OpenScreen's pre-merge editor stored projects as `EditorProjectData` (an envelope
@@ -146,7 +162,7 @@ field into the equivalent current slot:
 
 The function returns the current result by emitting a v4-shaped draft and running
 it through `migrateRawDocumentToCurrent` (the whole `upgradeV3DocumentToV4` →
-`upgradeV6DocumentToV7` chain) before `documentSchema.parse`. That is why the
+`upgradeV7DocumentToV8` chain) before `documentSchema.parse`. That is why the
 draft is labelled `schemaVersion: 4` and not `axcutSchemaVersion`: labelling it
 already-current would make the v4→v5 upgrader skip the anchoring and leave the
 imported regions without clip anchors.

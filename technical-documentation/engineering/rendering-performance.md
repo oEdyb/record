@@ -4,6 +4,22 @@ This is the measurement record for preview fluidity and export speed, and the ev
 
 The reference machine for every number in this document is an AMD Ryzen 5 7520U laptop with the integrated Radeon GPU, running Windows 11 — deliberately the weak case, and the only fully-measured machine. A discrete-GPU and Intel QSV run is owed (see [Known gaps](#known-gaps)).
 
+## Apple Silicon screen-only export diagnosis — 2026-08-27
+
+A real 32:10 Klippt project on the Apple M5 took 26:24 to export at 1080p24 H.264 and produced a
+3,488,814,501-byte file. Process samples showed that the video stage waited on VideoToolbox decode,
+not Metal composition or VideoToolbox encode. Each screen-only clip opened its screen recording a
+second time as an unused webcam fallback, so the exporter decoded the same H.264 source twice.
+
+The Mac timeline walker now opens a webcam decoder only when the clip has a real webcam. A
+screen-only clip passes its screen frame through the unused webcam input without another seek or
+decode. On the same 20-second project slice and 1080p60 H.264 settings, wall time fell from 22.21 to
+17.39 seconds, a 21.7% reduction. Both outputs were 27,561,481 bytes, and decoded frame hashes were
+identical (`0e8329312fedd047c93d0985a8f0deea26a014480f4acbcfd654a9dcda4056a3`). This is a
+targeted diagnostic comparison, not a thermally gated release benchmark. The next measured Mac
+export opportunity is the final audio stage, which still performs loudness and true-peak analysis
+after video completes.
+
 ## Where it landed
 
 **The shipped path is the D3D11 compositor in [`crates/compositor/`](../../crates/compositor/), at ~126 fps for 1080p60 with every effect on.** One `ID3D11Device`, no CPU readback between any stage:

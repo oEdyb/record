@@ -213,6 +213,15 @@ the timeline, and applies a short equal-power fade (`cos` on the tail,
 the click where two recordings meet butt-joined — without shifting timing,
 so A/V stays locked to the independently retimed video.
 
+Two independent project settings control the final audio stages. **Even volume** runs dialogue
+matching between clips before their microphone and system-audio stems are mixed. **Normalize
+volume** then measures and masters the complete assembled program to Klippt's delivery target.
+Disabling final normalization does not disable dialogue matching, and disabling dialogue matching
+does not disable final normalization. Both settings cross the N-API export contract separately.
+The contract also carries validated target loudness and true-peak ceiling values. The default is
+-14.5 LUFS and -2 dBTP. Rust clamps custom values to -30 through -9 LUFS and -6 through -1 dBTP,
+so malformed renderer or CLI data cannot bypass the native safety range.
+
 The live preview does not use this path. `live.rs`
 ([`crates/compositor/src/live.rs`](../../crates/compositor/src/live.rs)) only handles video;
 audio is decoded and mixed by `audio.rs` for the export run and not for the

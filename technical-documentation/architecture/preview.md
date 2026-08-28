@@ -237,14 +237,18 @@ the decoder swap, awaits `setActiveClip`, and re-reads the live transport *now*
 (not from a captured `isPlaying`) before resuming — so a user pause that lands
 in the middle of a clip transition is honoured, not silently undone.
 
+## Audio clock and routing
+
+`crates/compositor/src/live.rs` remains video-only. The hidden HTML video is the source-time clock
+and plays the original recording audio by default. When the main process publishes a complete Clean
+Voice route, `VirtualPreview` loads one disposable AAC mix containing the validated clean microphone
+and untouched system-audio bed. It then mutes the hidden video's audio and keeps the replacement
+element on the same source time and playback rate. A load or decode failure disables the complete
+route and restores the original video audio; Klippt never mixes raw and clean microphones together.
+Final delivery normalization remains an export-only operation.
+
 ## Known gaps
 
-- **Live preview is video-only.** `crates/compositor/src/live.rs` (1628 lines) handles only
-  the video packet stream; audio is decoded and mixed in
-  [`audio.rs::decode_clip_audio`](../../crates/compositor/src/audio.rs) for the export
-  path and not for the live view. Editing playback is therefore silent against
-  the exported file; users hear audio only when the export runs. There is no
-  flag in this branch that re-routes live audio.
 - **Long-recording scrub drift.** `useNativePlaybackSync:18` documents the
   accepted-at-fixture-time drift between the app's rAF playhead and the addon's
   free-run clock as a known limitation; a pause re-aligns them. A scrub further

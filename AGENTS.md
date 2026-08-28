@@ -255,6 +255,12 @@ if a device disappeared. These preferences are not project content.
   the same project, reached through the normal Record action and Stop or Cancel.
 - Every Pause becomes a visible cut boundary between adjacent clips.
 - Adjacent clips play without an artificial gap.
+- Remove applied `trimRanges` from the visible timeline width. Draw the kept waveform sections
+  directly beside each other and put one small scissors marker on the resulting seam. Do not render
+  cuts in a detached lane or create new stored clips for each kept section. The marker restores the
+  complete coalesced trim as one normal Undoable edit and shows the removed duration in its tooltip.
+  Keep the idle marker to a tiny seam notch; expand it into the scissors control on hover or focus so
+  a project with many shortened pauses does not become a row of badges.
 - The editor has one normal Record action and keybind.
 - The timeline has an insertion cursor between clips.
 - Record inserts new clips at the selected boundary and moves later clips forward.
@@ -287,8 +293,8 @@ small last-clip review feature then. Do not build it before that evidence exists
 
 ## Pause shortening
 
-- Put pause shortening in one right-side **Pauses** pane. Do not hide it in Automatic direction,
-  captions, or the recording HUD.
+- Put pause shortening in the **Pacing** section of the right-side **Audio** pane. Do not add a
+  separate Pauses facet or hide it in Automatic direction, captions, or the recording HUD.
 - Call the action **Shorten Pauses**. Do not promise destructive “silence removal.”
 - Analyze cached source observations without changing the project. Show temporary candidates over
   the clip waveform. Let the user preview, select, clear, and apply them.
@@ -310,6 +316,97 @@ small last-clip review feature then. Do not build it before that evidence exists
 - Use the lightweight capped envelope for the visible waveform and a disk-cached 20 ms envelope for
   cut analysis. Keep source media unchanged. Render structural boundaries with the shared 10 ms
   equal-power audio fade.
+
+## Clean voice and noise reduction
+
+- Keep the isolated raw microphone permanent and authoritative. Never replace, rewrite, or delete
+  it when cleanup is enabled. System audio is a separate source and never receives speech cleanup.
+- Treat **Clean Voice** as a reversible microphone effect. Store a versioned processing recipe and
+  disposable derived stem. Keep **Even volume** as a separate dialogue-leveling control.
+- Run the main enhancer after recording in a cancelable, restartable background worker. Never run a
+  neural enhancer on the ScreenCaptureKit callback, an audio render callback, or the UI thread.
+  Pause or cancel optional work when a new recording starts.
+- Process each complete original microphone clip in chronological order before timeline trims.
+  Preserve model state across the clip. Pad and flush the tail, compensate measured delay, and
+  require the result to have the exact source sample count.
+- Preview and native export must resolve from the same validated lossless derived microphone stem.
+  Preview may build a disposable browser-ready mix from that stem and the untouched system-audio
+  bed. Until both required artifacts are ready, the editor remains usable with raw audio. A worker
+  crash, model error, bad length, invalid sample, corrupt cache, or thermal cancellation falls back
+  to the complete raw clip. Never combine a clean microphone with an unverified partial route.
+- Run the pinned Silero detector on raw microphone audio and, when available, the cleaned analysis
+  stem. Take the union as speech protection. Either speech envelope can veto a Shorten Pauses cut
+  or extend its protected edge. Cleaned analysis alone can never authorize a new cut.
+- The explicit **Ignore non-speech sounds** policy may stop an isolated raw microphone-energy
+  event from blocking a pause only when raw Silero, cleaned Silero, and the transcript all classify
+  the event as non-speech. If cleaned analysis is unavailable, keep the event protected. System
+  audio, screen activity, existing trims, and the remaining pause policy stay independent blockers.
+- Keep the default conservative and adaptive. Bypass or make a near-null change on a clean source.
+  Reduce strength or bypass on overlapping speakers, singing, music bleed, whispers, clipping, and
+  intended laughter, applause, keyboard examples, UI demonstrations, or ambience.
+- Use one right-side **Audio** pane for the complete creator-audio workflow. Do not add separate
+  top-level panes for cleanup, loudness, and pauses. The pane contains three calm sections:
+  **Voice** with optional **Clean Voice**, a disclosed **Amount** with a **Natural** default,
+  **Even volume**, and a loudness-matched **Original** comparison; **Pacing** with the existing
+  **Shorten pauses** workflow; and **Delivery** with optional **Normalize volume**. Keep the
+  sections visually flat instead of nesting cards inside cards.
+- Keep visible Audio copy short. Put precise definitions and trust details behind accessible
+  hover and keyboard-focus info controls. Do not use permanent explanatory paragraphs in the pane.
+- Label the default delivery choice **YouTube · -14.5 LUFS** and show the -2 dBTP pre-AAC ceiling
+  in its details. This is Klippt's safe YouTube preset, not a claim that YouTube requires one exact
+  LUFS value. Offer a **Custom** preset with direct target-loudness and true-peak controls. Keep
+  custom loudness between -30 and -9 LUFS and the ceiling between -6 and -1 dBTP. Normalization is
+  on by default for the YouTube delivery preset and can be disabled.
+  It measures the complete edited program. Clean Voice and Even volume process the microphone and
+  remain separate switches. Explain the cleanup trust model with
+  `Local · microphone only · original kept`. Do not expose model names or a wall of DSP controls.
+- Use DeepFilterNet 3 as the mature reference engine for the first local bake-off. Compare it with
+  raw and qualified newer causal 48 kHz candidates on the fixed Swedish/English creator corpus.
+  Do not ship an engine until it passes semantic, identity, timing, clean-mic, M5 performance, and
+  long-session gates. A newer model does not win by default.
+- The development app may expose Clean Voice for explicit user testing through one optional Audio
+  control. Its Natural candidate uses a 6 dB attenuation cap. Keep the helper outside normal release
+  packages and keep Clean Voice off by default until the labelled creator corpus, commercial model
+  licence, decoded-delivery, and long-session gates pass. Keep stronger values in the lab instead of
+  silently making the normal voice less faithful.
+- Do not use generative speech reconstruction as the normal engine. A cleanup result must never add
+  a word, delete a critical word, change the speaker, or make Shorten Pauses less safe.
+
+## Transcript and captions
+
+- **Transcript** is the spoken text of the current edit. **Captions** are text rendered on the
+  video. Keep these as separate jobs even when both derive from the same clip-scoped word timing.
+- Use Parakeet TDT 0.6B v3 through pinned FluidAudio `0.15.6` as the primary Transcript engine on
+  Apple Silicon with macOS 14 or newer. It supports 25 languages and exposes 80 ms token timing.
+  Refine each boundary only inside half of that timestamp cell against the real 10 ms microphone
+  envelope. Do not expose model sampling or timing-grid controls in the UI; caption grouping and
+  animation are separate presentation settings.
+- Keep the recognizer behind Klippt's existing typed STT contract. Do not let Transcript or
+  Captions depend directly on FluidAudio, a Swift helper, or Koett. Klippt may adopt a verified copy
+  of the model already present in FluidAudio's shared cache on this Mac, but the product must own
+  its versioned model manifest, background job, cancellation, and recovery. A clean Klippt install
+  must work without Koett installed. Never trust or mutate another app's cache without validating
+  the pinned model identity.
+- Keep raw source-time words as the one transcript source of truth. Do not run Parakeet and Whisper
+  into two durable transcript copies. Keep Whisper only as a temporary compatibility or measured
+  fallback until Parakeet passes word-timing, long-project, packaging, and clean-install gates.
+- Preserve the engine boundary and keep Whisper as the compatibility fallback on Intel Mac,
+  macOS 13, Windows, Linux, or when Parakeet cannot start. Never mix engines inside one durable
+  transcript. Parakeet v2 remains an internal English benchmark, not a second product mode.
+- Expose one calm right-side **Transcript** facet before the larger spoken-word editor. Generate its
+  data locally after the editor opens or when the user presses **Transcribe**. Never delay Record,
+  Pause, Stop, project opening, or basic editing for transcription.
+- Put one clear **Copy** action in the Transcript header. It copies plain text in current timeline
+  order, excludes removed clips and words inside applied trims, omits internal silence markers, and
+  keeps natural punctuation and paragraph breaks between clips. Do not make the user select every
+  word or copy from the DOM.
+- Keep the first exposed Transcript slice read-only apart from click-to-seek, Transcribe/Retry, and
+  Copy. Add text-based removal later through the same normal trim operation and one Undo step. Do
+  not expose the inherited content-editable behavior before its interaction is simplified.
+- Keep copied text, on-video captions, pause protection, and future text editing on one source-time
+  transcript model. Do not create separate transcript copies that can drift.
+- Keep Copy feedback quiet and temporary. Add timestamps or copy-format choices only behind a small
+  secondary menu after real use proves they are needed.
 
 ## Automatic direction
 
@@ -499,10 +596,9 @@ Klippt must export a file that Olle can upload without a separate audio-masterin
 Keep capture media recoverable and non-destructive; do not permanently bake loudness changes
 into the raw clips.
 
-- Preserve microphone and system audio as separate source tracks or stems. The current Mac
-  helper mixes them into one AAC track, which prevents independent dialogue leveling, system
-  audio ducking, and later mix correction. Replace that limitation before calling automatic
-  audio mastering complete.
+- Preserve microphone and system audio as separate source tracks or stems. Current Mac clips keep
+  a mixed preview track plus tagged isolated microphone and system tracks. Use the isolated tracks
+  for cleanup, dialogue leveling, system-audio ducking, and later mix correction.
 - After a clip finalizes, analyze its spoken dialogue asynchronously. This work must never block
   Pause or Continue. Use ITU-R BS.1770 loudness and true-peak measurement, ignore silence and
   room tone, cap automatic gain changes, and store the result as editable project metadata.
@@ -511,13 +607,16 @@ into the raw clips.
   into audible jumps at every cut.
 - After cuts, speed changes, voiceovers, microphone gain, and system-audio mixing are applied,
   measure and master the complete edited program. `Normalize volume` is one simple export option
-  and is on by default. Use -14 LUFS integrated and no more than -1 dBTP as the practical default
-  for online video. This is a Klippt mastering default, not an official YouTube upload rule.
-  Use a transparent true-peak limiter only where needed. Let the user disable normalization.
+  and is on by default. The YouTube preset aims for -14.5 LUFS integrated with a -2 dBTP ceiling
+  before AAC. This is a Klippt mastering default, not an official YouTube upload rule. **Custom**
+  can use -30 to -9 LUFS and -6 to -1 dBTP. Preserve dynamics and accept a quieter result when the
+  selected target would need more than 3 dB of limiting or more than 12 dB of gain. Use a
+  transparent true-peak limiter only where needed. Let the user disable normalization.
 - Automatic system-audio ducking under speech can follow the first mastering slice. Keep it
   subtle and reversible.
 - Export normal YouTube audio as 48 kHz stereo AAC-LC at 384 kbps. Show measured input loudness,
-  output loudness, true peak, and any warning that prevented safe normalization.
+  output loudness, true peak, decoded AAC true peak, and any warning that prevented safe
+  normalization.
 - Export a standard MP4 with Fast Start, H.264 progressive 4:2:0 video, the recorded frame rate,
   explicit BT.709 SDR color metadata, and the selected real output bitrate. Verify High Profile,
   GOP, B-frame, and container metadata from the saved file instead of assuming encoder defaults.
@@ -531,14 +630,19 @@ into the raw clips.
 
 Aim for Screen Studio-level refinement, not a pixel copy.
 
+- The production logo is the **A2 mark**: three separate tapered arms with broad rounded heads
+  and sharper inner tails in exact rotational balance around one open center. Build it as original
+  controlled vector geometry, not a raw generated-pixel trace. Keep the silhouette calm and fluid,
+  preserve clear gaps at 16/24/32 px, and do not add an enclosing ring, thin blades, or a generic
+  spinner treatment. `design/assets/klippt-mark.svg` is the single source of truth. Run
+  `npm run assets:brand` after any geometry change instead of editing raster icon files by hand.
 - Use Screen Studio's broad professional-editor structure and calm density as a quality
   reference.
 - Create original tokens, colors, icons, motion, copy, assets, empty states, and branding.
-- Use the free-standing Klippt K on a transparent canvas for in-app and system icons. Keep its thin
-  graphite outline so the light strokes work on light and dark surfaces. Do not restore a white,
-  surface-colored, or rounded-square plate behind it. Keep the macOS menu-bar mark as a monochrome
-  16 px template image with a transparent 32 px `@2x` companion; an opaque background becomes a
-  solid status-item square.
+- Use the free-standing Klippt mark without a plate for in-app identity and the macOS menu bar. The
+  Dock icon is the deliberate exception: put the graphite mark on one calm `#f2f1ee` squircle so it
+  reads as a native app icon. Keep the macOS menu-bar mark as a monochrome 16 px template image with
+  a transparent 32 px `@2x` companion; an opaque background becomes a solid status-item square.
 - Klippt's product chrome is monochrome: graphite surfaces, soft-white text and controls,
   and neutral grays for hierarchy. Keep red for recording and destructive actions. Keep green
   for transient success and live audio state. Do not use a green glowing dot for passive state such
@@ -553,6 +657,10 @@ Aim for Screen Studio-level refinement, not a pixel copy.
 - Keep canvas, inspector, and editor timeline mostly opaque for contrast and performance.
 - Use one icon family and one token system for spacing, type, radii, color, shadows, and
   motion.
+- Use `AppSelect` for production option menus. Do not add raw HTML `select` controls to the React
+  app: macOS renders their popup outside Klippt's theme and can leak the system accent color. The
+  shared trigger and popup use graphite surface tokens and the muted steel-blue editor selection
+  tokens. Green remains only for transient success and live audio state.
 - Use one continuous surface for dense inspector settings. Ordinary toggle rows and sliders
   must not become cards inside the inspector. Keep bordered tiles only when the tile is the
   actual option, such as a cursor theme or camera shape.
