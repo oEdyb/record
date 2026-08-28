@@ -34,6 +34,10 @@ export interface CursorRecordingSample extends CursorTelemetryPoint {
 	interactionType?: "move" | "click" | "mouseup";
 	/** Pointer was over private recorder UI that is excluded from captured pixels. */
 	directionExcluded?: boolean;
+	/** Opaque capture-session context. It contains no app name, title, or text. */
+	directionContextId?: string;
+	/** True on the first sample after the active app context changes. */
+	directionContextChanged?: boolean;
 }
 
 export interface KeyboardActivitySample extends CursorTelemetryPoint {
@@ -45,6 +49,10 @@ export interface KeyboardActivitySample extends CursorTelemetryPoint {
 	targetRect?: { x: number; y: number; width: number; height: number };
 	/** Focused target belongs to private recorder UI that is absent from captured pixels. */
 	directionExcluded?: boolean;
+	/** Opaque capture-session app context. It contains no app name, title, or text. */
+	directionContextId?: string;
+	/** Opaque focused editable identity used only to split typing activities. */
+	directionTargetId?: string;
 }
 
 export interface NativeCursorAsset {
@@ -195,6 +203,8 @@ export interface CompositorClipInput {
 	 *  convention). Populated by `buildSceneDescription` and `buildNativeClipList`;
 	 *  see the comment on the producer side for the exact rule. */
 	hasAudio: boolean;
+	/** Verified lossless microphone replacement. Missing means decode the raw embedded mic. */
+	cleanMicrophonePath?: string;
 }
 
 /** Bilan d'un export natif (mesure enveloppante §10 : frames, durée, fps). */
@@ -229,6 +239,12 @@ export interface CompositorExportParams {
 	bitrate?: number;
 	/** Full-program EBU R128 normalization. Omitted defaults to enabled. */
 	normalizeAudio?: boolean;
+	/** Integrated loudness target for full-program normalization. */
+	targetLufs?: number;
+	/** Maximum pre-encode true peak in dBTP. */
+	peakCeilingDbtp?: number;
+	/** Match dialogue loudness between adjacent clips. Omitted defaults to enabled. */
+	evenVolume?: boolean;
 	/** "h264" | "h265" — pas de vp9 (aucun équivalent matériel AMF côté natif). */
 	codec?: string;
 }
@@ -577,7 +593,12 @@ export type NativeBridgeRequest =
 	| {
 			domain: "aiEdition";
 			action: "document.addAsset";
-			payload: { projectId: string; path: string; label?: string; recordingImportId?: string };
+			payload: {
+				projectId: string;
+				path: string;
+				label?: string;
+				recordingImportId?: string;
+			};
 			requestId?: string;
 	  }
 	| {
@@ -847,7 +868,13 @@ export type AiEditionChatEvent =
 	| { kind: "text"; sessionId: string; delta: string }
 	| { kind: "thinking"; sessionId: string; delta: string }
 	| { kind: "toolStart"; sessionId: string; name: string; args: unknown }
-	| { kind: "toolEnd"; sessionId: string; name: string; ok: boolean; summary?: string }
+	| {
+			kind: "toolEnd";
+			sessionId: string;
+			name: string;
+			ok: boolean;
+			summary?: string;
+	  }
 	| { kind: "error"; sessionId: string; message: string };
 
 export interface NativeBridgeEvent<TPayload = unknown> {

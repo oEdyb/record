@@ -416,6 +416,8 @@ pub struct ClipInput {
     pub webcam_offset_sec: f64,
     /// `false` évite une ouverture ffmpeg vouée à échouer et réserve du silence à ce clip.
     pub has_audio: bool,
+    /// Verified lossless microphone stem. `None` keeps the embedded raw microphone.
+    pub clean_microphone_path: Option<String>,
 }
 
 /// Taille/cadence/codec de sortie voulus par l'app (modale d'export). Tous optionnels :
@@ -430,6 +432,12 @@ pub struct ExportParamsInput {
     pub bitrate: Option<u32>,
     /// Full-program EBU R128 normalization. Omitted defaults to enabled.
     pub normalize_audio: Option<bool>,
+    /// Integrated loudness target for full-program normalization.
+    pub target_lufs: Option<f64>,
+    /// Maximum pre-encode true peak in dBTP.
+    pub peak_ceiling_dbtp: Option<f64>,
+    /// Match dialogue loudness between adjacent clips. Omitted defaults to enabled.
+    pub even_volume: Option<bool>,
     /// "h264" | "h265". Toute autre valeur (ex. "vp9", pas d'équivalent matériel AMF) fait
     /// échouer l'export avec un message clair plutôt que de silencieusement retomber sur h264.
     pub codec: Option<String>,
@@ -497,6 +505,13 @@ impl Task for ExportMultiTask {
             }
             export_params.fps = p.fps;
             export_params.normalize_audio = p.normalize_audio.unwrap_or(true);
+            export_params.even_volume = p.even_volume.unwrap_or(true);
+            if let Some(target_lufs) = p.target_lufs {
+                export_params.target_lufs = target_lufs;
+            }
+            if let Some(peak_ceiling_dbtp) = p.peak_ceiling_dbtp {
+                export_params.peak_ceiling_dbtp = peak_ceiling_dbtp;
+            }
             if let Some(bitrate) = p.bitrate {
                 export_params.bitrate = Some(
                     openscreen_compositor::export_settings::validate_video_bitrate(bitrate)
@@ -586,6 +601,7 @@ pub fn export_multi(
             source_end_sec: c.source_end_sec,
             webcam_offset_sec: c.webcam_offset_sec,
             has_audio: c.has_audio,
+            clean_microphone: c.clean_microphone_path,
         })
         .collect();
     Ok(AsyncTask::new(ExportMultiTask {
@@ -746,6 +762,7 @@ pub fn export_gif(
             source_end_sec: c.source_end_sec,
             webcam_offset_sec: c.webcam_offset_sec,
             has_audio: c.has_audio,
+            clean_microphone: c.clean_microphone_path,
         })
         .collect();
     let gif_params = params

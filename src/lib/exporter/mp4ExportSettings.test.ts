@@ -6,6 +6,7 @@ import {
 	calculateMp4ExportSettingsForResolution,
 	estimateMp4FileSizeBytes,
 	formatBitrate,
+	formatExportEta,
 	wouldUpscale,
 } from "./mp4ExportSettings";
 
@@ -17,7 +18,7 @@ describe("calculateMp4ExportSettings", () => {
 				width: 1081,
 				height: 1921,
 			}),
-		).toEqual({ width: 1080, height: 1920, bitrate: 30_000_000 });
+		).toEqual({ width: 1080, height: 1920, bitrate: 10_000_000 });
 	});
 
 	it("keeps 2K explicit even when it upscales short native captures", () => {
@@ -33,7 +34,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 2678,
 			height: 1440,
-			bitrate: 30_000_000,
+			bitrate: 17_100_000,
 		});
 
 		expect(
@@ -46,7 +47,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 1920,
 			height: 1032,
-			bitrate: 30_000_000,
+			bitrate: 9_700_000,
 		});
 	});
 
@@ -61,7 +62,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 1920,
 			height: 1080,
-			bitrate: 20_000_000,
+			bitrate: 8_000_000,
 		});
 	});
 
@@ -76,7 +77,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 2560,
 			height: 1440,
-			bitrate: 30_000_000,
+			bitrate: 16_000_000,
 		});
 	});
 
@@ -91,7 +92,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 1920,
 			height: 1080,
-			bitrate: 30_000_000,
+			bitrate: 10_000_000,
 		});
 
 		expect(
@@ -104,7 +105,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 3840,
 			height: 2160,
-			bitrate: 80_000_000,
+			bitrate: 56_300_000,
 		});
 	});
 
@@ -125,7 +126,7 @@ describe("calculateMp4ExportSettings", () => {
 				sourceHeight: 2214,
 				aspectRatioValue: 16 / 9,
 			}),
-		).toMatchObject({ width: 3936, height: 2214, bitrate: 80_000_000 });
+		).toMatchObject({ width: 3936, height: 2214, bitrate: 58_700_000 });
 	});
 
 	it("keeps portrait presets on the short side", () => {
@@ -139,7 +140,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 1440,
 			height: 2560,
-			bitrate: 30_000_000,
+			bitrate: 16_000_000,
 		});
 	});
 
@@ -156,7 +157,7 @@ describe("calculateMp4ExportSettings", () => {
 		// Medium and Highest resolve to the same 1920x1080 canvas here. The extra rows are
 		// letterbox content, so neither tier stretches the source pixels.
 		expect(tier("medium")).toMatchObject({ width: 1920, height: 1080 });
-		expect(tier("medium")).toMatchObject({ bitrate: 20_000_000 });
+		expect(tier("medium")).toMatchObject({ bitrate: 8_000_000 });
 		expect(tier("source")).toMatchObject({ width: 1920, height: 1080 });
 		expect(wouldUpscale(tier("source"), source)).toBe(false);
 		expect(wouldUpscale(tier("medium"), source)).toBe(false);
@@ -199,7 +200,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 854,
 			height: 480,
-			bitrate: 30_000_000,
+			bitrate: 3_100_000,
 		});
 
 		expect(
@@ -212,12 +213,43 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 2562,
 			height: 1440,
-			bitrate: 30_000_000,
+			bitrate: 16_000_000,
 		});
 	});
 });
 
 describe("MP4 export estimates", () => {
+	it("uses frame rate and codec to model the target bitrate", () => {
+		const settings = (fps: number, codec: "h264" | "h265") =>
+			calculateMp4ExportSettings({
+				quality: "medium",
+				sourceWidth: 3840,
+				sourceHeight: 2160,
+				aspectRatioValue: 16 / 9,
+				fps,
+				codec,
+			});
+
+		expect(settings(24, "h264").bitrate).toBe(8_000_000);
+		expect(settings(30, "h264").bitrate).toBe(8_000_000);
+		expect(settings(45, "h264").bitrate).toBe(10_000_000);
+		expect(settings(60, "h264").bitrate).toBe(12_000_000);
+		expect(settings(24, "h265").bitrate).toBe(4_800_000);
+	});
+
+	it("gives Highest extra bitrate when its source canvas matches Medium", () => {
+		const common = {
+			sourceWidth: 1920,
+			sourceHeight: 1080,
+			aspectRatioValue: 16 / 9,
+			fps: 30,
+			codec: "h264" as const,
+		};
+
+		expect(calculateMp4ExportSettings({ ...common, quality: "medium" }).bitrate).toBe(8_000_000);
+		expect(calculateMp4ExportSettings({ ...common, quality: "source" }).bitrate).toBe(10_000_000);
+	});
+
 	it("estimates the encoded duration after clip-specific speed regions", () => {
 		expect(
 			calculateEffectiveExportDuration(
@@ -246,5 +278,11 @@ describe("MP4 export estimates", () => {
 	it("formats preset bitrates for the export summary", () => {
 		expect(formatBitrate(20_000_000)).toBe("20 Mbps");
 		expect(formatBitrate(2_500_000)).toBe("2.5 Mbps");
+	});
+
+	it("formats the remaining export time as a clock", () => {
+		expect(formatExportEta(272)).toBe("4:32");
+		expect(formatExportEta(3_902)).toBe("1:05:02");
+		expect(formatExportEta(Number.NaN)).toBe("0:00");
 	});
 });

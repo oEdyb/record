@@ -34,9 +34,9 @@ import {
 	applyAutomaticDirectionPlan,
 	buildAutomaticDirectionPlan,
 } from "@/lib/ai-edition/timeline/automatic-direction";
-import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
-import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
+import { readAutomaticDirectionSettings } from "@/lib/ai-edition/timeline/automatic-direction-settings";
 import type { DirectionCursorSample } from "@/lib/ai-edition/timeline/direction-engine";
+import { type CleanVoiceRuntimeSnapshot, cleanVoiceRoutes } from "@/lib/cleanVoiceRuntime";
 import type { CliDoneResult, CliExportRequest } from "@/lib/cliContracts";
 import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
 import {
@@ -45,8 +45,11 @@ import {
 } from "@/lib/exporter/mp4ExportSettings";
 import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
 import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native";
-import type { CompositorClipInput } from "@/native/contracts";
-import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
+import {
+	buildCompositorClipInputs,
+	buildSceneDescription,
+	resolveVisibleClips,
+} from "@/native/sceneDescription";
 
 const MP4_EXPORT_FPS = 60;
 
@@ -86,31 +89,6 @@ function replaceExtension(filePath: string, newExtension: string): string {
 	return filePath.replace(/\.(klippt|openscreen|axcut|json)$/i, "") + newExtension;
 }
 
-/** Mirrors ExportDialog.buildNativeClipList: trim-narrowed visible clips mapped
- * onto the native multiclip contract. Kept in lock-step with
- * buildSceneDescription so export and scene agree on the clip stream. */
-function buildNativeClipList(axcutDocument: AxcutDocument): CompositorClipInput[] {
-	const assetById = new Map(axcutDocument.assets.map((asset) => [asset.id, asset]));
-	return resolveVisibleClips(axcutDocument).flatMap((clip) => {
-		const asset = assetById.get(clip.assetId);
-		if (!asset?.originalPath) {
-			return [];
-		}
-		const camera = assetCameraSource(asset);
-		const sourceEndSec = resolveClipSourceEndSec(clip, asset);
-		return [
-			{
-				screenPath: asset.originalPath,
-				webcamPath: camera.path,
-				sourceStartSec: clip.sourceStartSec,
-				sourceEndSec,
-				webcamOffsetSec: camera.offsetSec,
-				hasAudio: true,
-			},
-		];
-	});
-}
-
 /** Mirrors ExportDialog.gifOutputDims: cap height at the preset, keep even. */
 function gifOutputDims(
 	preset: GifSizePreset,
@@ -136,6 +114,7 @@ function appendAutoZoomRanges(
 		document: axcutDocument,
 		recordings: [{ assetId, cursorTelemetry }],
 		phases: { screen: true, camera: false },
+		policy: readAutomaticDirectionSettings(axcutDocument).policy,
 	});
 	const directed = applyAutomaticDirectionPlan(axcutDocument, plan);
 	axcutDocument.zoomRanges = directed.zoomRanges;
@@ -199,7 +178,11 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 		storedGifFrameRate = editor.gifFrameRate;
 		storedGifSizePreset = editor.gifSizePreset;
 		storedGifLoop = editor.gifLoop;
-		axcutDocument = migrateProjectDataToAxcutDocument({ ...project, media, editor });
+		axcutDocument = migrateProjectDataToAxcutDocument({
+			...project,
+			media,
+			editor,
+		});
 	}
 
 	const format = request.format ?? storedFormat;
@@ -276,15 +259,27 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 			? calculateMp4ExportSettingsForResolution({
 					quality,
 					...editorSettings.outputResolution,
+					fps: MP4_EXPORT_FPS,
+					codec: "h264",
 				})
 			: calculateMp4ExportSettings({
 					quality,
 					sourceWidth: smallestSource.width,
 					sourceHeight: smallestSource.height,
 					aspectRatioValue,
+					fps: MP4_EXPORT_FPS,
+					codec: "h264",
 				});
 
-	const clips = buildNativeClipList(axcutDocument);
+	const cleanVoiceRuntime: CleanVoiceRuntimeSnapshot = window.electronAPI.getCleanVoiceRuntime
+		? await window.electronAPI
+				.getCleanVoiceRuntime(
+					axcutDocument.project.id,
+					axcutDocument.assets.map((asset) => asset.id),
+				)
+				.catch((): CleanVoiceRuntimeSnapshot => ({ available: false, assets: [] }))
+		: { available: false, assets: [] };
+	const clips = buildCompositorClipInputs(axcutDocument, cleanVoiceRoutes(cleanVoiceRuntime));
 	if (clips.length === 0) {
 		throw new Error("The project's timeline has no visible clips to export");
 	}
@@ -300,15 +295,18 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 				outFps,
 		),
 	);
-	const exportStartedAt = Date.now();
+	let firstProgress: { frame: number; timeMs: number } | null = null;
 	const unsubscribeProgress = window.electronAPI.onNativeExportProgress?.((frames: number) => {
-		const elapsedSec = (Date.now() - exportStartedAt) / 1000;
-		const rate = frames > 0 ? frames / Math.max(elapsedSec, 0.001) : 0;
+		const now = Date.now();
+		firstProgress ??= { frame: frames, timeMs: now };
+		const elapsedSec = (now - firstProgress.timeMs) / 1000;
+		const measuredFrames = frames - firstProgress.frame;
+		const rate = measuredFrames > 0 ? measuredFrames / Math.max(elapsedSec, 0.001) : 0;
 		window.electronAPI.cliProgress({
 			percentage: Math.min(100, (frames / totalFrames) * 100),
 			currentFrame: frames,
 			totalFrames,
-			estimatedTimeRemaining: rate > 0 ? Math.max(0, (totalFrames - frames) / rate) : 0,
+			...(rate > 0 ? { estimatedTimeRemaining: Math.max(0, (totalFrames - frames) / rate) } : {}),
 		});
 	});
 
@@ -338,10 +336,17 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 			fps: MP4_EXPORT_FPS,
 			codec: "h264",
 			bitrate: outDims.bitrate,
+			evenVolume: editorSettings.evenVolume,
+			normalizeAudio: editorSettings.normalizeVolume,
+			targetLufs: editorSettings.audioTargetLufs,
+			peakCeilingDbtp: editorSettings.audioPeakCeilingDbtp,
 		});
 
 		if (request.audioPath) {
-			window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });
+			window.electronAPI.cliProgress({
+				percentage: 100,
+				phase: "mixing-voiceover",
+			});
 			const [videoResponse, audioResponse] = await Promise.all([
 				fetch(toFileUrl(outPath)),
 				fetch(toFileUrl(request.audioPath)),

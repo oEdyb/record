@@ -1,4 +1,4 @@
-import type { ExportQuality } from "./types";
+import type { ExportQuality, ExportVideoCodec } from "./types";
 
 export interface Mp4ExportSettings {
 	width: number;
@@ -20,6 +20,20 @@ interface ExportSpeedRegion {
 
 const AAC_AUDIO_BITRATE = 384_000;
 const MP4_CONTAINER_OVERHEAD = 1.02;
+const SOURCE_QUALITY_HEADROOM = 1.25;
+const HIGH_FRAME_RATE_HEADROOM = 1.5;
+const H265_BITRATE_FACTOR = 0.6;
+
+// YouTube's SDR H.264 upload recommendations at 24–30 FPS. Interpolation keeps
+// custom and portrait canvases from jumping between coarse resolution buckets.
+const H264_BITRATE_ANCHORS = [
+	{ pixels: 854 * 480, bitrate: 2_500_000 },
+	{ pixels: 1280 * 720, bitrate: 5_000_000 },
+	{ pixels: 1920 * 1080, bitrate: 8_000_000 },
+	{ pixels: 2560 * 1440, bitrate: 16_000_000 },
+	{ pixels: 3840 * 2160, bitrate: 45_000_000 },
+	{ pixels: 7680 * 4320, bitrate: 160_000_000 },
+] as const;
 
 interface SourceCropRegion {
 	width: number;
@@ -114,16 +128,44 @@ function calculateSourceDimensions(
 	};
 }
 
-function calculateBitrate(width: number, height: number, quality: ExportQuality) {
-	const totalPixels = width * height;
-
-	if (quality === "source") {
-		if (totalPixels > 2560 * 1440) return 80_000_000;
-		if (totalPixels > 1920 * 1080) return 50_000_000;
-		return 30_000_000;
+function interpolateH264Bitrate(totalPixels: number): number {
+	const first = H264_BITRATE_ANCHORS[0];
+	if (totalPixels <= first.pixels) {
+		return first.bitrate * Math.max(0.4, totalPixels / first.pixels);
 	}
 
-	return quality === "medium" ? 20_000_000 : 30_000_000;
+	for (let index = 1; index < H264_BITRATE_ANCHORS.length; index += 1) {
+		const lower = H264_BITRATE_ANCHORS[index - 1];
+		const upper = H264_BITRATE_ANCHORS[index];
+		if (totalPixels <= upper.pixels) {
+			const position = (totalPixels - lower.pixels) / (upper.pixels - lower.pixels);
+			return lower.bitrate + (upper.bitrate - lower.bitrate) * position;
+		}
+	}
+
+	const last = H264_BITRATE_ANCHORS.at(-1)!;
+	return last.bitrate * (totalPixels / last.pixels);
+}
+
+function calculateBitrate(
+	width: number,
+	height: number,
+	quality: ExportQuality,
+	fps: number,
+	codec: ExportVideoCodec,
+) {
+	const safeFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
+	const frameRateFactor =
+		safeFps > 30 ? 1 + ((safeFps - 30) / 30) * (HIGH_FRAME_RATE_HEADROOM - 1) : 1;
+	const qualityFactor = quality === "source" ? SOURCE_QUALITY_HEADROOM : 1;
+	const codecFactor = codec === "h265" ? H265_BITRATE_FACTOR : 1;
+	const bitrate =
+		interpolateH264Bitrate(Math.max(1, width * height)) *
+		frameRateFactor *
+		qualityFactor *
+		codecFactor;
+
+	return Math.min(200_000_000, Math.max(1_000_000, Math.round(bitrate / 100_000) * 100_000));
 }
 
 /**
@@ -185,15 +227,33 @@ export function formatBitrate(bitrate: number): string {
 	return `${Number((bitrate / 1_000_000).toFixed(1))} Mbps`;
 }
 
+/** A compact clock for a remaining-time label: m:ss below one hour, then h:mm:ss. */
+export function formatExportEta(totalSeconds: number): string {
+	const seconds = Number.isFinite(totalSeconds) ? Math.max(0, Math.ceil(totalSeconds)) : 0;
+	const hours = Math.floor(seconds / 3600);
+	const minutes = Math.floor((seconds % 3600) / 60);
+	const remainder = seconds % 60;
+	if (hours > 0) {
+		return `${hours}:${minutes.toString().padStart(2, "0")}:${remainder
+			.toString()
+			.padStart(2, "0")}`;
+	}
+	return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+}
+
 /** Export an exact, user-selected canvas size with the same bitrate policy as the presets. */
 export function calculateMp4ExportSettingsForResolution({
 	quality,
 	width,
 	height,
+	fps = 30,
+	codec = "h264",
 }: {
 	quality: ExportQuality;
 	width: number;
 	height: number;
+	fps?: number;
+	codec?: ExportVideoCodec;
 }): Mp4ExportSettings {
 	const dimensions = {
 		width: atLeastEven(width),
@@ -201,7 +261,7 @@ export function calculateMp4ExportSettingsForResolution({
 	};
 	return {
 		...dimensions,
-		bitrate: calculateBitrate(dimensions.width, dimensions.height, quality),
+		bitrate: calculateBitrate(dimensions.width, dimensions.height, quality, fps, codec),
 	};
 }
 
@@ -210,17 +270,21 @@ export function calculateMp4ExportSettings({
 	sourceWidth,
 	sourceHeight,
 	aspectRatioValue,
+	fps = 30,
+	codec = "h264",
 }: {
 	quality: ExportQuality;
 	sourceWidth: number;
 	sourceHeight: number;
 	aspectRatioValue: number;
+	fps?: number;
+	codec?: ExportVideoCodec;
 }): Mp4ExportSettings {
 	if (quality === "medium") {
 		const dimensions = calculateDimensionsForShortSide(MEDIUM_SHORT_SIDE, aspectRatioValue);
 		return {
 			...dimensions,
-			bitrate: calculateBitrate(dimensions.width, dimensions.height, quality),
+			bitrate: calculateBitrate(dimensions.width, dimensions.height, quality, fps, codec),
 		};
 	}
 
@@ -228,13 +292,13 @@ export function calculateMp4ExportSettings({
 		const dimensions = calculateDimensionsForShortSide(HIGH_SHORT_SIDE, aspectRatioValue);
 		return {
 			...dimensions,
-			bitrate: calculateBitrate(dimensions.width, dimensions.height, quality),
+			bitrate: calculateBitrate(dimensions.width, dimensions.height, quality, fps, codec),
 		};
 	}
 
 	const sourceDimensions = calculateSourceDimensions(sourceWidth, sourceHeight, aspectRatioValue);
 	return {
 		...sourceDimensions,
-		bitrate: calculateBitrate(sourceDimensions.width, sourceDimensions.height, quality),
+		bitrate: calculateBitrate(sourceDimensions.width, sourceDimensions.height, quality, fps, codec),
 	};
 }

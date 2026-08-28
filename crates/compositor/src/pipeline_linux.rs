@@ -21,9 +21,10 @@ use std::ffi::CString;
 use std::ptr;
 
 use crate::audio::{
-    assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio,
+    assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio_with_clean_microphone,
     finalize_decoded_clip_audio, master_program_audio, stretch_decoded_clip_audio_by_speed,
-    AacEncoder, AudioMasteringStats, DecodedClipAudio,
+    AacEncoder, AudioMasteringSettings, AudioMasteringStats, DecodedClipAudio, DEFAULT_TARGET_LUFS,
+    DEFAULT_TRUE_PEAK_CEILING_DBTP,
 };
 use crate::config::Cfg;
 use crate::d3d::Gpu;
@@ -53,6 +54,7 @@ pub struct ClipSource {
     pub source_end_sec: f64,
     pub webcam_offset_sec: f64,
     pub has_audio: bool,
+    pub clean_microphone: Option<String>,
 }
 
 /// Codec cible. Memes variantes que `pipeline_macos::ExportCodec`.
@@ -70,6 +72,9 @@ pub struct ExportParams {
     pub codec: ExportCodec,
     pub bitrate: Option<u32>,
     pub normalize_audio: bool,
+    pub even_volume: bool,
+    pub target_lufs: f64,
+    pub peak_ceiling_dbtp: f64,
 }
 
 impl Default for ExportParams {
@@ -81,6 +86,9 @@ impl Default for ExportParams {
             codec: ExportCodec::H264,
             bitrate: None,
             normalize_audio: true,
+            even_volume: true,
+            target_lufs: DEFAULT_TARGET_LUFS,
+            peak_ceiling_dbtp: DEFAULT_TRUE_PEAK_CEILING_DBTP,
         }
     }
 }
@@ -543,7 +551,12 @@ pub fn run_composited_multi(
                 clip_frame_counts[clip_index] = frames_in_clip;
                 let clip = &clips[clip_index];
                 if clip.has_audio && frames_in_clip > 0 {
-                    match decode_clip_audio(&clip.screen, clip.source_start_sec, source_end_sec) {
+                    match decode_clip_audio_with_clean_microphone(
+                        &clip.screen,
+                        clip.clean_microphone.as_deref(),
+                        clip.source_start_sec,
+                        source_end_sec,
+                    ) {
                         Ok(Some(audio)) => {
                             clip_audio[clip_index] = Some(stretch_decoded_clip_audio_by_speed(
                                 audio,
@@ -583,9 +596,16 @@ pub fn run_composited_multi(
         // raccourci voit son audio raccourci d'autant), puis un seul encode AAC.
         let declared_audio: Vec<bool> = clips.iter().map(|c| c.has_audio).collect();
         let plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
-        let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.normalize_audio);
+        let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.even_volume);
         let mut assembled_audio = assemble_concatenated_pcm(&clip_pcm, &plan);
-        audio_mastering = master_program_audio(&mut assembled_audio, params.normalize_audio);
+        audio_mastering = master_program_audio(
+            &mut assembled_audio,
+            AudioMasteringSettings::new(
+                params.normalize_audio,
+                params.target_lufs,
+                params.peak_ceiling_dbtp,
+            ),
+        );
         audio_encoder.encode(&assembled_audio, octx)?;
         crate::ffi::averr(crate::ffi::av_write_trailer(octx), "write_trailer")?;
         crate::ffi::avio_closep(&mut pb);

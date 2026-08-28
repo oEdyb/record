@@ -104,6 +104,12 @@ export interface ExportParamsInput {
 	bitrate?: number;
 	/** Full-program EBU R128 normalization. Omitted defaults to enabled. */
 	normalizeAudio?: boolean;
+	/** Integrated loudness target for full-program normalization. */
+	targetLufs?: number;
+	/** Maximum pre-encode true peak in dBTP. */
+	peakCeilingDbtp?: number;
+	/** Match dialogue loudness between adjacent clips. Omitted defaults to enabled. */
+	evenVolume?: boolean;
 	/** "h264" | "h265". Anything else (e.g. "vp9", no AMF hardware equivalent) fails the export
 	 *  with a clear error instead of silently falling back to h264. */
 	codec?: string;
@@ -117,6 +123,8 @@ export interface ClipInput {
 	sourceEndSec: number;
 	/** webcam source time = screen source time − this. */
 	webcamOffsetSec: number;
+	hasAudio: boolean;
+	cleanMicrophonePath?: string;
 }
 
 /** Which backend the compositor will run on. `"cpu"` = WARP rasterisation + software

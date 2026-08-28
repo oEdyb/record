@@ -1,4 +1,4 @@
-import { WebDemuxer } from "web-demuxer";
+import type { WebDemuxer } from "web-demuxer";
 import type { SpeedRegion, TrimRegion } from "@/components/video-editor/types";
 import {
 	type MaterializeProgress,
@@ -7,6 +7,7 @@ import {
 } from "./localSourceFile";
 import { MAX_IN_MEMORY_SOURCE_BYTES } from "./sourceFileLimits";
 import { computeKeepSegments, splitBySpeed } from "./timelineSegments";
+import { createWebDemuxer } from "./webDemuxerAsset";
 
 const SOURCE_LOAD_TIMEOUT_MS = 60_000;
 // Large local recordings are streamed into OPFS before demuxing, which is
@@ -257,9 +258,7 @@ export class StreamingVideoDecoder {
 		// by materialize and released in destroy(). No-op key for small/remote.
 		this.sourceCacheName = file.name;
 
-		// Relative URL so it resolves in both dev (http) and packaged (file://) builds
-		const wasmUrl = new URL("./wasm/web-demuxer.wasm", window.location.href).href;
-		this.demuxer = new WebDemuxer({ wasmFilePath: wasmUrl });
+		this.demuxer = createWebDemuxer();
 		await this.withTimeout(
 			this.demuxer.load(file),
 			SOURCE_LOAD_TIMEOUT_MS,

@@ -381,8 +381,14 @@ fn compose_linux_curseur_sur_ecran_tilte() {
          incline=({tx:.1},{ty:.1}) n={tn} deplacement={shift:.1}px"
     );
 
-    assert!(un > 50, "curseur droit absent (n={un}) — la scene de reference est cassee");
-    assert!(tn > 50, "curseur absent sous rotation (n={tn}) — mode 13 pas dessine");
+    assert!(
+        un > 50,
+        "curseur droit absent (n={un}) — la scene de reference est cassee"
+    );
+    assert!(
+        tn > 50,
+        "curseur absent sous rotation (n={tn}) — mode 13 pas dessine"
+    );
     assert!(
         shift >= 12.0,
         "curseur deplace de {shift:.1}px seulement — il est reste sur le rect droit (mode 7 ?)"
@@ -453,7 +459,10 @@ fn compose_linux_dessine_le_curseur() {
     }
     println!("wrote {ppm}");
 
-    assert!(green > 50, "sprite curseur vert absent (verts={green}) — mode 7 ?");
+    assert!(
+        green > 50,
+        "sprite curseur vert absent (verts={green}) — mode 7 ?"
+    );
 }
 
 /// Fond image (mode 6 wallpaper) : un PNG orange en data URI remplit le fond
@@ -508,7 +517,10 @@ fn compose_linux_fond_image() {
         }
         f.write_all(&rgb).unwrap();
     }
-    assert!(orange > 2000, "fond image absent (orange={orange}) — mode 6 ?");
+    assert!(
+        orange > 2000,
+        "fond image absent (orange={orange}) — mode 6 ?"
+    );
 }
 
 /// Flou de mouvement par VELOCITE du calque ecran (mode 0 du shader).
@@ -673,7 +685,9 @@ fn compose_linux_flou_de_velocite_camera() {
     // bords adoucis. Le coin haut-gauche, lui, ne montre que l'ecran.
     let inside = mean_diff(420, 920, 245, 505);
     let outside = mean_diff(0, 300, 0, 150);
-    println!("compose_linux flou de velocite camera : dans la boite={inside:.2} hors boite={outside:.4}");
+    println!(
+        "compose_linux flou de velocite camera : dans la boite={inside:.2} hors boite={outside:.4}"
+    );
 
     assert!(
         inside > 4.0,
@@ -827,6 +841,7 @@ fn export_linux_mp4() {
         source_end_sec: 1.0,
         webcam_offset_sec: 0.0,
         has_audio: true,
+        clean_microphone: None,
     }];
     let params = ExportParams {
         width: 640,
@@ -835,6 +850,9 @@ fn export_linux_mp4() {
         codec: ExportCodec::H264,
         bitrate: None,
         normalize_audio: true,
+        even_volume: true,
+        target_lufs: openscreen_compositor::audio::DEFAULT_TARGET_LUFS,
+        peak_ceiling_dbtp: openscreen_compositor::audio::DEFAULT_TRUE_PEAK_CEILING_DBTP,
     };
 
     let mut last = 0u64;

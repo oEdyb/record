@@ -12,7 +12,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 fn arg(args: &[String], k: &str, d: &str) -> String {
-    args.iter().position(|a| a == k).and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| d.to_string())
+    args.iter()
+        .position(|a| a == k)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(|| d.to_string())
 }
 
 // Trois modes :
@@ -110,10 +114,15 @@ fn run_bench(args: &[String]) -> Result<()> {
         "d3d11 device ok — backend {:?}, feature_level 0x{:X}{}",
         backend,
         gpu.feature_level.0 as u32,
-        if preview_only { ", mode preview (décode+compose+readback, sans encodeur)" } else { "" }
+        if preview_only {
+            ", mode preview (décode+compose+readback, sans encodeur)"
+        } else {
+            ""
+        }
     );
     let mut comp = Compositor::new(&gpu)?;
-    let track = cursor::CursorTrack::load(&format!("{fixture}/screen.cursor.json"), 100_000.0, 6.0)?;
+    let track =
+        cursor::CursorTrack::load(&format!("{fixture}/screen.cursor.json"), 100_000.0, 6.0)?;
     comp.set_cursor(track);
 
     // The GIF bench is a different shape (single clip, no encoder chain,
@@ -121,8 +130,13 @@ fn run_bench(args: &[String]) -> Result<()> {
     // `--cfg C0..C8,GIF` invocation still works. Routed AFTER device setup
     // because `export_gif` now takes the same `(gpu, comp, cfg)` triple as
     // `run_composited_multi` (slice-2 alignment, see PR #189's macOS port).
-    if cfg_arg.split(',').any(|n| n.trim().eq_ignore_ascii_case("gif")) {
-        let cfg = config::Cfg::by_name("C1").or_else(|| config::all().into_iter().next()).unwrap();
+    if cfg_arg
+        .split(',')
+        .any(|n| n.trim().eq_ignore_ascii_case("gif"))
+    {
+        let cfg = config::Cfg::by_name("C1")
+            .or_else(|| config::all().into_iter().next())
+            .unwrap();
         return run_gif_bench(args, &fixture, &out, repeat, &gpu, &comp, &cfg);
     }
 
@@ -150,14 +164,26 @@ fn run_bench(args: &[String]) -> Result<()> {
                 source_end_sec: 6.0, // la fixture entière (§ fixture.json : 6 s, 360 frames)
                 webcam_offset_sec: 0.0,
                 has_audio: false,
+                clean_microphone: None,
             };
             let path = format!("{out}/{}_{:?}.mp4", cfg.name, backend).to_lowercase();
             let s = pipeline::run_composited_multi(
-                &[clip], &path, &gpu, &comp, cfg, &params, &mut |_| {},
+                &[clip],
+                &path,
+                &gpu,
+                &comp,
+                cfg,
+                &params,
+                &mut |_| {},
             )?;
             println!(
                 "{:<4} {:>4}f  {:>8.3}s  {:>7.2} fps  {:>7.2} ms/f  → {}",
-                cfg.name, s.frames, s.wall_s, s.fps, 1000.0 / s.fps, path
+                cfg.name,
+                s.frames,
+                s.wall_s,
+                s.fps,
+                1000.0 / s.fps,
+                path
             );
         }
         return Ok(());
@@ -172,8 +198,14 @@ fn run_bench(args: &[String]) -> Result<()> {
         for r in 0..repeat {
             let path = format!("{out}/{}.mp4", cfg.name);
             let s = if preview_only {
-                let (stats, (fw, fh, rgba)) =
-                    pipeline::run_preview_bench(&screen, &webcam, &gpu, &comp, cfg, preview_frames)?;
+                let (stats, (fw, fh, rgba)) = pipeline::run_preview_bench(
+                    &screen,
+                    &webcam,
+                    &gpu,
+                    &comp,
+                    cfg,
+                    preview_frames,
+                )?;
                 // Preuve visuelle, et surtout comparable : un backend qui compose du noir
                 // afficherait un fps flatteur. Le PPM est nommé par backend pour qu'un
                 // diff hardware/cpu soit direct.
@@ -197,14 +229,25 @@ fn run_bench(args: &[String]) -> Result<()> {
         }
         let best = fps_runs.iter().cloned().fold(f64::MIN, f64::max);
         let worst = fps_runs.iter().cloned().fold(f64::MAX, f64::min);
-        let spread = if worst > 0.0 { 100.0 * (best - worst) / worst } else { 0.0 };
+        let spread = if worst > 0.0 {
+            100.0 * (best - worst) / worst
+        } else {
+            0.0
+        };
         let wall = frames as f64 / best;
         let msf = 1000.0 / best;
         println!(
             "{:<4} {:>4}f  {:>7.3}s  {:>7.1} fps  {:>6.2} ms/f  spread {:.1}%   {}",
             cfg.name, frames, wall, best, msf, spread, cfg.desc
         );
-        rows.push((cfg.name.to_string(), frames, wall, best, msf, format!("{spread:.1}%")));
+        rows.push((
+            cfg.name.to_string(),
+            frames,
+            wall,
+            best,
+            msf,
+            format!("{spread:.1}%"),
+        ));
         let _ = write!(
             json,
             "    {{ \"cfg\": \"{}\", \"frames\": {}, \"fps\": {:.2}, \"ms_per_frame\": {:.3}, \"spread_pct\": {:.1}, \"repeat\": {}, \"desc\": \"{}\" }}{}\n",
@@ -292,21 +335,14 @@ fn run_gif_bench(
         source_end_sec: f64::MAX,
         webcam_offset_sec: 0.0,
         has_audio: false,
+        clean_microphone: None,
     }];
     for r in 0..repeat {
         // Each run writes to the same path — the last frame wins. The
         // encoder itself is `Drop`-flushed, so re-running is safe and
         // produces a fresh file (the `gif` crate writes the trailer
         // on drop, not on each frame).
-        let s = gif_export::export_gif(
-            &clips,
-            &out_path,
-            &gpu,
-            &comp,
-            cfg,
-            &params,
-            &mut |_| {},
-        )?;
+        let s = gif_export::export_gif(&clips, &out_path, &gpu, &comp, cfg, &params, &mut |_| {})?;
         // Snapshot the fields we still need before `s` is moved into
         // `last_stats` for the JSON dump at the end of the bench.
         let run_frames = s.frames;
@@ -333,11 +369,18 @@ fn run_gif_bench(
     // "best of fps" idiom — best wall is the minimum, worst is the max.
     let best_wall = wall_runs.iter().cloned().fold(f64::INFINITY, f64::min);
     let worst_wall = wall_runs.iter().cloned().fold(0.0_f64, f64::max);
-    let spread = if best_wall > 0.0 { 100.0 * (worst_wall - best_wall) / best_wall } else { 0.0 };
-    let avg_fps = last_stats
-        .as_ref()
-        .map(|s| s.fps)
-        .unwrap_or_else(|| if best_wall > 0.0 { frames as f64 / best_wall } else { 0.0 });
+    let spread = if best_wall > 0.0 {
+        100.0 * (worst_wall - best_wall) / best_wall
+    } else {
+        0.0
+    };
+    let avg_fps = last_stats.as_ref().map(|s| s.fps).unwrap_or_else(|| {
+        if best_wall > 0.0 {
+            frames as f64 / best_wall
+        } else {
+            0.0
+        }
+    });
 
     // JSON output (parity with the C0..C8 bench's `report.json`).
     let json = format!(
@@ -388,9 +431,15 @@ fn extract_pngs(mp4: &str, out: &str, cfg: &str) {
     for f in [60u32, 180, 300] {
         let _ = std::process::Command::new("ffmpeg")
             .args([
-                "-v", "error", "-y", "-i", mp4,
-                "-vf", &format!("select=eq(n\\,{f})"),
-                "-frames:v", "1",
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                mp4,
+                "-vf",
+                &format!("select=eq(n\\,{f})"),
+                "-frames:v",
+                "1",
                 &format!("{out}/{cfg}_f{f}.png"),
             ])
             .status();

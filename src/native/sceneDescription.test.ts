@@ -19,7 +19,7 @@ import type {
 } from "@/lib/ai-edition/schema";
 import { axcutSchemaVersion } from "@/lib/ai-edition/schema";
 import { getFocusBoundsForScale } from "@/lib/zoomMath/focusUtils";
-import { buildSceneDescription } from "./sceneDescription";
+import { buildCompositorClipInputs, buildSceneDescription } from "./sceneDescription";
 
 // --- Fixture helpers --------------------------------------------------------
 // Keep fixtures minimal & deterministic — every field the serializer consults is filled in;
@@ -392,11 +392,56 @@ describe("buildSceneDescription.clips", () => {
 		expect(clips).toHaveLength(2);
 		expect(clips.every((c) => c.hasAudio === true)).toBe(true);
 	});
+
+	it("routes one verified clean microphone path without storing it in the scene", () => {
+		const asset = makeAsset({ id: "a", originalPath: "/screen.mp4" });
+		const clip = makeClip({
+			id: "c1",
+			assetId: "a",
+			sourceStartSec: 2,
+			sourceEndSec: 6,
+			timelineStartSec: 0,
+			timelineEndSec: 4,
+		});
+		const doc = makeDoc({ assets: [asset], clips: [clip] });
+		const routes = new Map([
+			[
+				"a",
+				{
+					cleanMicrophonePath: "/cache/clean.wav",
+					previewAudioPath: "/cache/preview.m4a",
+					cacheKey: "cache-key",
+				},
+			],
+		]);
+
+		expect(buildCompositorClipInputs(doc, routes)[0]).toMatchObject({
+			cleanMicrophonePath: "/cache/clean.wav",
+			sourceStartSec: 2,
+			sourceEndSec: 6,
+		});
+		expect(buildSceneDescription(doc).clips[0]).not.toHaveProperty("cleanMicrophonePath");
+	});
 });
 
 // --- zoomRegions -----------------------------------------------------------
 
 describe("buildSceneDescription.zoomRegions", () => {
+	it("preserves automatic direction passage ownership for native pan matching", () => {
+		const zoom = makeZoom({
+			id: "z-passage",
+			startMs: 1_000,
+			endMs: 4_000,
+			depth: 2,
+			focus: { cx: 0.5, cy: 0.5 },
+			directionGroupId: "screen-passage",
+		});
+
+		expect(buildSceneDescription(makeDoc({ zoomRanges: [zoom] })).zoomRegions[0]).toMatchObject({
+			directionGroupId: "screen-passage",
+		});
+	});
+
 	it("preserves the authored motion style for native preview and export", () => {
 		const zoom = makeZoom({
 			id: "z-motion",

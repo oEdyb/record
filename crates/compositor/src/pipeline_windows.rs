@@ -3,9 +3,10 @@
 //! tout le run, deux lectures seulement. Rien dans la boucle ne peut fausser le fps.
 
 use crate::audio::{
-    assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio,
+    assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio_with_clean_microphone,
     finalize_decoded_clip_audio, master_program_audio, stretch_decoded_clip_audio_by_speed,
-    AacEncoder, AudioMasteringStats, DecodedClipAudio,
+    AacEncoder, AudioMasteringSettings, AudioMasteringStats, DecodedClipAudio, DEFAULT_TARGET_LUFS,
+    DEFAULT_TRUE_PEAK_CEILING_DBTP,
 };
 use crate::compositor::{Compositor, OUT_H, OUT_W};
 use crate::config::Cfg;
@@ -914,9 +915,9 @@ unsafe fn make_enc_frames(
     (*fc).width = w;
     (*fc).height = h;
     (*fc).initial_pool_size = 32; // l'encodeur AMF garde plusieurs frames en vol
-    // NV12 array + RENDER_TARGET refusé par ce driver ; NV12 array sans bind aussi.
-    // Le combo array qui marche (prouvé par C0) = DECODER|SHADER_RESOURCE. On rend dans
-    // notre propre NV12 simple (RT) puis CopySubresourceRegion vers ce pool. GPU->GPU.
+                                  // NV12 array + RENDER_TARGET refusé par ce driver ; NV12 array sans bind aussi.
+                                  // Le combo array qui marche (prouvé par C0) = DECODER|SHADER_RESOURCE. On rend dans
+                                  // notre propre NV12 simple (RT) puis CopySubresourceRegion vers ce pool. GPU->GPU.
     let d3dfc = (*fc).hwctx as *mut AVD3D11VAFramesContext;
     (*d3dfc).BindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE;
     averr(av_hwframe_ctx_init(frames), "enc frames init")?;
@@ -1050,6 +1051,7 @@ pub struct ClipSource {
     pub source_end_sec: f64,
     pub webcam_offset_sec: f64,
     pub has_audio: bool,
+    pub clean_microphone: Option<String>,
 }
 
 /// Export **multiclip** : rend la timeline (clips ordonnés, avec trims) en un seul MP4.
@@ -1198,7 +1200,11 @@ impl VideoEncoder {
             // Journalisé sans condition : un rapport de support doit dire qui a encodé.
             eprintln!(
                 "[pipeline] encodeur vidéo : {name} ({}){}",
-                if encoder.sw.is_null() { "textures D3D11, zéro-copie" } else { "frames système" },
+                if encoder.sw.is_null() {
+                    "textures D3D11, zéro-copie"
+                } else {
+                    "frames système"
+                },
                 if refused.is_empty() {
                     String::new()
                 } else {
@@ -1414,6 +1420,9 @@ pub struct ExportParams {
     pub codec: ExportCodec,
     pub bitrate: Option<u32>,
     pub normalize_audio: bool,
+    pub even_volume: bool,
+    pub target_lufs: f64,
+    pub peak_ceiling_dbtp: f64,
 }
 
 impl Default for ExportParams {
@@ -1425,6 +1434,9 @@ impl Default for ExportParams {
             codec: ExportCodec::H264,
             bitrate: None,
             normalize_audio: true,
+            even_volume: true,
+            target_lufs: DEFAULT_TARGET_LUFS,
+            peak_ceiling_dbtp: DEFAULT_TRUE_PEAK_CEILING_DBTP,
         }
     }
 }
@@ -1560,7 +1572,12 @@ unsafe fn run_multi_inner(
             clip_frame_counts[clip_index] = frames_in_clip;
             let clip = &clips[clip_index];
             if clip.has_audio && frames_in_clip > 0 {
-                match decode_clip_audio(&clip.screen, clip.source_start_sec, source_end_sec) {
+                match decode_clip_audio_with_clean_microphone(
+                    &clip.screen,
+                    clip.clean_microphone.as_deref(),
+                    clip.source_start_sec,
+                    source_end_sec,
+                ) {
                     Ok(Some(audio)) => {
                         clip_audio[clip_index] = Some(stretch_decoded_clip_audio_by_speed(
                             audio,
@@ -1591,9 +1608,16 @@ unsafe fn run_multi_inner(
 
     let declared_audio: Vec<bool> = clips.iter().map(|clip| clip.has_audio).collect();
     let audio_plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
-    let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.normalize_audio);
+    let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.even_volume);
     let mut assembled_audio = assemble_concatenated_pcm(&clip_pcm, &audio_plan);
-    let audio_mastering = master_program_audio(&mut assembled_audio, params.normalize_audio);
+    let audio_mastering = master_program_audio(
+        &mut assembled_audio,
+        AudioMasteringSettings::new(
+            params.normalize_audio,
+            params.target_lufs,
+            params.peak_ceiling_dbtp,
+        ),
+    );
     audio_encoder.encode(&assembled_audio, octx)?;
 
     averr(av_write_trailer(octx), "write_trailer")?;
@@ -1643,7 +1667,10 @@ mod tests {
                 .iter()
                 .position(|&(_, fmt)| fmt != AVPixelFormat::AV_PIX_FMT_D3D11)
                 .expect("au moins un candidat en mémoire système");
-            assert!(last_d3d11 < first_sw, "candidats mal ordonnés : {candidates:?}");
+            assert!(
+                last_d3d11 < first_sw,
+                "candidats mal ordonnés : {candidates:?}"
+            );
         }
     }
 

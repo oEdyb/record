@@ -13,6 +13,7 @@ import { Download, FileVideo, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
+import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
 import {
 	collectEffectiveClipDims,
 	type Dims,
@@ -25,8 +26,6 @@ import {
 	saveExportPreferences,
 } from "@/lib/ai-edition/store/editingPreferences";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
-import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
-import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
 import { APP_DISPLAY_NAME } from "@/lib/brand";
 import {
 	type ExportFormat,
@@ -44,11 +43,12 @@ import {
 	calculateMp4ExportSettingsForResolution,
 	estimateMp4FileSizeBytes,
 	formatBitrate,
+	formatExportEta,
 	wouldUpscale,
 } from "@/lib/exporter/mp4ExportSettings";
 import { exportGifNative, exportMultiNative, useIsCpuCompositor } from "@/native";
-import type { CompositorAudioMasteringResult, CompositorClipInput } from "@/native/contracts";
-import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
+import type { CompositorAudioMasteringResult } from "@/native/contracts";
+import { buildCompositorClipInputs, buildSceneDescription } from "@/native/sceneDescription";
 import { formatBytes } from "@/utils/formatBytes";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
@@ -63,39 +63,6 @@ function formatHms(totalSeconds: number): string {
 	const m = Math.floor((s % 3600) / 60);
 	const sec = s % 60;
 	return [h, m, sec].map((v) => v.toString().padStart(2, "0")).join(":");
-}
-
-/** Maps the document's timeline to the native multiclip export contract: ordered,
- *  trim-narrowed clips (`resolveVisibleClips` — shared with `buildSceneDescription` and
- *  `NativeCompositorOverlay`, so export/preview/scene all see the exact same clip stream),
- *  each with its asset's screen file + camera file (falls back to the screen when a clip has
- *  no camera — the no-webcam layout is a later step) and its source trim. */
-function buildNativeClipList(document: AxcutDocument): CompositorClipInput[] {
-	const assetById = new Map(document.assets.map((a) => [a.id, a]));
-	return resolveVisibleClips(document).flatMap((clip) => {
-		const asset = assetById.get(clip.assetId);
-		if (!asset?.originalPath) {
-			return [];
-		}
-		const camera = assetCameraSource(asset);
-		// sourceEndSec is optional in the schema (unknown until probed) — fall back through
-		// the single canonical precedence used by every consumer (clip.probe → asset.duration
-		// → timeline-length guess). See `resolveClipSourceEndSec` for the full order.
-		const sourceEndSec = resolveClipSourceEndSec(clip, asset);
-		// ponytail: `hasAudio` stays optimistic for the same reason as in
-		// `buildSceneDescription` — nothing populates `asset.audio` yet, and the
-		// native side degrades cleanly on a stream-less file.
-		return [
-			{
-				screenPath: asset.originalPath,
-				webcamPath: camera.path,
-				sourceStartSec: clip.sourceStartSec,
-				sourceEndSec,
-				webcamOffsetSec: camera.offsetSec,
-				hasAudio: true,
-			},
-		];
-	});
 }
 
 const QUALITY_OPTIONS: Array<{
@@ -116,6 +83,7 @@ interface ExportDialogProps {
 export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const t = useScopedT("editor");
 	const ts = useScopedT("settings");
+	const { routes: cleanVoiceRoutes } = useCleanVoiceRuntime(document);
 	// No usable GPU: the export still applies every effect (output is identical), it
 	// just runs on the software encoder and takes minutes instead of seconds.
 	const cpuCompositor = useIsCpuCompositor();
@@ -124,7 +92,6 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const [quality, setQuality] = useState<ExportQuality>(initialPreferences.quality);
 	const [fps, setFps] = useState<24 | 30 | 60>(initialPreferences.fps);
 	const [codec, setCodec] = useState<ExportVideoCodec>(initialPreferences.codec);
-	const [normalizeVolume, setNormalizeVolume] = useState(initialPreferences.normalizeVolume);
 	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(initialPreferences.gifFrameRate);
 	const [gifSize, setGifSize] = useState<GifSizePreset>(initialPreferences.gifSize);
 	const [gifLoop, setGifLoop] = useState(initialPreferences.gifLoop);
@@ -220,6 +187,8 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			return calculateMp4ExportSettingsForResolution({
 				quality: value,
 				...editorSettings.outputResolution,
+				fps,
+				codec,
 			});
 		}
 		return smallestSource
@@ -228,13 +197,15 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					sourceWidth: smallestSource.width,
 					sourceHeight: smallestSource.height,
 					aspectRatioValue: EXPORT_ASPECT,
+					fps,
+					codec,
 				})
 			: null;
 	};
 
 	const nativeClips = useMemo(
-		() => (open && document ? buildNativeClipList(document) : []),
-		[open, document],
+		() => (open && document ? buildCompositorClipInputs(document, cleanVoiceRoutes) : []),
+		[cleanVoiceRoutes, open, document],
 	);
 	const nativeScene = useMemo(
 		() => (open && document ? buildSceneDescription(document) : null),
@@ -270,12 +241,11 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			quality,
 			fps,
 			codec: codec === "h265" ? "h265" : "h264",
-			normalizeVolume,
 			gifFrameRate,
 			gifSize,
 			gifLoop,
 		});
-	}, [codec, format, fps, gifFrameRate, gifLoop, gifSize, normalizeVolume, quality]);
+	}, [codec, format, fps, gifFrameRate, gifLoop, gifSize, quality]);
 
 	const handleClose = () => {
 		if (phase === "rendering" || phase === "writing") return;
@@ -336,11 +306,16 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			// this is computed here to turn that raw count into a percentage.
 			const totalDurationSec = effectiveDurationSec;
 			const totalFrames = Math.max(1, Math.round(totalDurationSec * outFps));
-			const startedAt = Date.now();
+			let firstProgress: { frame: number; timeMs: number } | null = null;
 			const unsubscribeProgress = window.electronAPI?.onNativeExportProgress?.((frames) => {
-				const elapsedS = (Date.now() - startedAt) / 1000;
+				const now = Date.now();
+				firstProgress ??= { frame: frames, timeMs: now };
+				const elapsedS = (now - firstProgress.timeMs) / 1000;
+				const measuredFrames = frames - firstProgress.frame;
 				const fractionDone = Math.min(1, frames / totalFrames);
-				const estimatedTimeRemaining = fractionDone > 0 ? elapsedS / fractionDone - elapsedS : 0;
+				const renderRate = measuredFrames > 0 ? measuredFrames / Math.max(elapsedS, 0.001) : 0;
+				const estimatedTimeRemaining =
+					renderRate > 0 ? Math.max(0, (totalFrames - frames) / renderRate) : 0;
 				setProgress({
 					currentFrame: frames,
 					totalFrames,
@@ -370,7 +345,10 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								fps,
 								codec,
 								bitrate: outDims?.bitrate,
-								normalizeAudio: normalizeVolume,
+								evenVolume: editorSettings.evenVolume,
+								normalizeAudio: editorSettings.normalizeVolume,
+								targetLufs: editorSettings.audioTargetLufs,
+								peakCeilingDbtp: editorSettings.audioPeakCeilingDbtp,
 							});
 				setAudioMastering("audioMastering" in stats ? stats.audioMastering : null);
 				setSavedPath(pickedPath);
@@ -450,7 +428,13 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 						>
 							{t("exportDialog.quality")}
 						</div>
-						<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+						<div
+							style={{
+								display: "grid",
+								gridTemplateColumns: "repeat(3, 1fr)",
+								gap: 8,
+							}}
+						>
 							{QUALITY_OPTIONS.map((q) => (
 								<button
 									type="button"
@@ -527,7 +511,13 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								>
 									{t("exportDialog.frameRate")}
 								</div>
-								<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+								<div
+									style={{
+										display: "grid",
+										gridTemplateColumns: "repeat(3, 1fr)",
+										gap: 6,
+									}}
+								>
 									{([24, 30, 60] as const).map((r) => (
 										<button
 											type="button"
@@ -635,22 +625,6 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								</strong>
 							</div>
 						)}
-						<div className={styles.paneRow} style={{ margin: "12px 0 0" }}>
-							<div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-								<span className="label">{t("exportDialog.normalizeVolume")}</span>
-								<span style={{ font: "500 11px/1.35 var(--font-body)", color: "var(--muted)" }}>
-									{t("exportDialog.normalizeVolumeHint")}
-								</span>
-							</div>
-							<button
-								type="button"
-								data-testid="normalize-volume-toggle"
-								className={`${styles.toggle} ${normalizeVolume ? styles.isOn : ""}`}
-								aria-pressed={normalizeVolume}
-								disabled={isBusy}
-								onClick={() => setNormalizeVolume((value) => !value)}
-							/>
-						</div>
 					</section>
 				) : (
 					<section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -666,7 +640,13 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 							>
 								{t("exportDialog.frameRate")}
 							</div>
-							<div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+							<div
+								style={{
+									display: "grid",
+									gridTemplateColumns: "repeat(4, 1fr)",
+									gap: 6,
+								}}
+							>
 								{GIF_FRAME_RATES.map((r) => (
 									<button
 										type="button"
@@ -692,7 +672,13 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 							>
 								{t("exportDialog.size")}
 							</div>
-							<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+							<div
+								style={{
+									display: "grid",
+									gridTemplateColumns: "repeat(3, 1fr)",
+									gap: 6,
+								}}
+							>
 								{(Object.keys(GIF_SIZE_PRESETS) as GifSizePreset[]).map((s) => (
 									<button
 										type="button"
@@ -982,8 +968,12 @@ function ProgressBlock({
 					letterSpacing: "0.04em",
 				}}
 			>
-				{total > 0
-					? t("exportDialog.framesEta", { current, total, eta: Math.max(0, Math.round(eta)) })
+				{total > 0 && current > 1
+					? t("exportDialog.framesEta", {
+							current,
+							total,
+							eta: formatExportEta(eta),
+						})
 					: t("exportDialog.preparingEncoder")}
 			</div>
 		</div>

@@ -117,6 +117,7 @@ fn whole_clip(dir: &PathBuf) -> ClipSource {
         source_end_sec: SOURCE_SEC,
         webcam_offset_sec: 0.0,
         has_audio: false,
+        clean_microphone: None,
     }
 }
 
@@ -138,6 +139,9 @@ fn mp4_export_frame_count_follows_output_fps() {
         codec: ExportCodec::H264,
         bitrate: None,
         normalize_audio: true,
+        even_volume: true,
+        target_lufs: openscreen_compositor::audio::DEFAULT_TARGET_LUFS,
+        peak_ceiling_dbtp: openscreen_compositor::audio::DEFAULT_TRUE_PEAK_CEILING_DBTP,
     };
     let comp = Compositor::new_sized(&gpu, params.width, params.height).expect("compositor");
     let out = dir.join("out_timing.mp4");

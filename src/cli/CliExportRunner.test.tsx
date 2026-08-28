@@ -27,7 +27,10 @@ vi.mock("@/native", () => ({
 import { runExport } from "./CliExportRunner";
 
 function currentMultiAssetProject() {
-	const document = createEmptyDocument({ title: "CLI integration", projectId: "project-cli" });
+	const document = createEmptyDocument({
+		title: "CLI integration",
+		projectId: "project-cli",
+	});
 	return {
 		...document,
 		project: { ...document.project, primaryAssetId: "asset-one" },
@@ -120,6 +123,11 @@ function currentMultiAssetProject() {
 			gifFrameRate: 25,
 			gifSizePreset: "large",
 			gifLoop: false,
+			evenVolume: false,
+			normalizeVolume: false,
+			audioDeliveryPreset: "custom",
+			audioTargetLufs: -18,
+			audioPeakCeilingDbtp: -3,
 			webcamLayoutPreset: "picture-in-picture",
 			cameraFullscreenRegions: [
 				{ id: "camera-emphasis", startMs: 500, endMs: 1_500, mode: "emphasis" },
@@ -179,7 +187,11 @@ describe("runExport", () => {
 			audioOffsetSec: 0,
 		});
 
-		expect(result).toMatchObject({ success: true, format: "mp4", outputPath: "/exports/demo.mp4" });
+		expect(result).toMatchObject({
+			success: true,
+			format: "mp4",
+			outputPath: "/exports/demo.mp4",
+		});
 		expect(nativeMocks.exportMultiNative).toHaveBeenCalledOnce();
 		const [clips, outputPath, sceneJson, settings] = nativeMocks.exportMultiNative.mock.calls[0];
 		const nativeClips = clips as Array<{
@@ -198,10 +210,22 @@ describe("runExport", () => {
 			webcamOffsetSec: 0.12,
 		});
 		// Source quality still respects the smallest effective crop on the timeline.
-		expect(settings).toMatchObject({ width: 1536, height: 864 });
+		expect(settings).toMatchObject({
+			width: 1536,
+			height: 864,
+			evenVolume: false,
+			normalizeAudio: false,
+			targetLufs: -18,
+			peakCeilingDbtp: -3,
+		});
 
 		const scene = JSON.parse(sceneJson);
-		expect(scene.cropByClip[0]).toEqual({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
+		expect(scene.cropByClip[0]).toEqual({
+			x: 0.1,
+			y: 0.1,
+			width: 0.8,
+			height: 0.8,
+		});
 		expect(scene.zoomRegions).toHaveLength(1);
 		expect(scene.speedRegions).toHaveLength(1);
 		expect(scene.cameraFullscreenRegions).toHaveLength(1);

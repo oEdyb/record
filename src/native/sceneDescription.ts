@@ -32,6 +32,7 @@ import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
 import { projectRegionsToSource } from "@/lib/ai-edition/timeline/timelineMap";
+import type { CleanVoiceRoute } from "@/lib/cleanVoiceRuntime";
 import {
 	computeCompositeLayout,
 	type RenderRect,
@@ -57,6 +58,8 @@ export type SceneBackground =
 export interface SceneZoomRegion {
 	/** Stable id — native uses it to pair adjacent regions for connected zoom-pan. */
 	id: string;
+	/** Only regions in the same authored passage may use one connected pan. */
+	directionGroupId?: string;
 	startSec: number;
 	endSec: number;
 	/** Target scale (>1 zooms in). Derived from `depth` (or `customScale` when present). */
@@ -426,6 +429,30 @@ export function resolveVisibleClips(document: AxcutDocument): AxcutClip[] {
 		.filter((clip) => assetById.get(clip.assetId)?.originalPath);
 }
 
+export function buildCompositorClipInputs(
+	document: AxcutDocument,
+	cleanVoiceRoutes: ReadonlyMap<string, CleanVoiceRoute> = new Map(),
+): CompositorClipInput[] {
+	const assetById = new Map(document.assets.map((asset) => [asset.id, asset]));
+	return resolveVisibleClips(document).flatMap((clip) => {
+		const asset = assetById.get(clip.assetId);
+		if (!asset?.originalPath) return [];
+		const camera = assetCameraSource(asset);
+		const cleanVoice = cleanVoiceRoutes.get(asset.id);
+		return [
+			{
+				screenPath: asset.originalPath,
+				webcamPath: camera.path,
+				sourceStartSec: clip.sourceStartSec,
+				sourceEndSec: resolveClipSourceEndSec(clip, asset),
+				webcamOffsetSec: camera.offsetSec,
+				hasAudio: true,
+				...(cleanVoice ? { cleanMicrophonePath: cleanVoice.cleanMicrophonePath } : {}),
+			},
+		];
+	});
+}
+
 /** Serialize a document into a {@link SceneDescription}. Pure — no per-frame math. */
 export function buildSceneDescription(
 	document: AxcutDocument,
@@ -435,28 +462,7 @@ export function buildSceneDescription(
 
 	const assetById = new Map(document.assets.map((a) => [a.id, a]));
 	const visibleClips = resolveVisibleClips(document);
-	const clips: CompositorClipInput[] = visibleClips.flatMap((clip) => {
-		const asset = assetById.get(clip.assetId);
-		if (!asset?.originalPath) return [];
-		const camera = assetCameraSource(asset);
-		// ponytail: `asset.audio` exists in the schema but the probe pipeline never
-		// populates it, so there is no per-asset "is there a track?" signal to read
-		// yet. Every consumer downstream degrades on a stream-less file (audio.rs
-		// returns Ok(None)), so this stays optimistic. NOT "recordings always carry
-		// audio" — a capture made with no mic and no system audio has no audio
-		// stream at all (issue #348). Swap to `Boolean(asset.audio)` the day the
-		// probe fills it in.
-		return [
-			{
-				screenPath: asset.originalPath,
-				webcamPath: camera.path,
-				sourceStartSec: clip.sourceStartSec,
-				sourceEndSec: resolveClipSourceEndSec(clip, asset),
-				webcamOffsetSec: camera.offsetSec,
-				hasAudio: true,
-			},
-		];
-	});
+	const clips = buildCompositorClipInputs(document);
 	const cropByClip = visibleClips.map(
 		(clip): { x: number; y: number; width: number; height: number } | null => {
 			const cropRegion = clip.cropRegion;
@@ -722,6 +728,7 @@ export function buildSceneDescription(
 		background: parseWallpaper(settings.wallpaper),
 		zoomRegions: projectedZoomRegions.map((region) => ({
 			id: region.id,
+			...(region.directionGroupId ? { directionGroupId: region.directionGroupId } : {}),
 			startSec: region.startMs / 1000,
 			endSec: region.endMs / 1000,
 			// `ZOOM_DEPTH_SCALES` et rien d'autre. Cette ligne portait sa propre formule,

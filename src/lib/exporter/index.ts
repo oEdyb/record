@@ -1,6 +1,7 @@
 export {
 	calculateEffectiveSourceDimensions,
 	calculateMp4ExportSettings,
+	formatExportEta,
 	type Mp4ExportSettings,
 } from "./mp4ExportSettings";
 export { StreamingVideoDecoder } from "./streamingDecoder";

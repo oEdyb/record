@@ -165,45 +165,25 @@ pub(crate) unsafe fn walk_composited_timeline(
     let mut frames: u64 = 0;
 
     for (clip_index, clip) in clips.iter().enumerate() {
-        // Le preset de layout est GLOBAL (un seul panneau pour toute la timeline) mais la
-        // caméra est PAR CLIP : un projet mélange sans problème un enregistrement avec webcam
-        // et un import qui n'en a pas. Le preset ne doit donc s'appliquer qu'aux clips qui ont
-        // vraiment une caméra — sinon la boîte PiP est dessinée avec, derrière, le décodeur de
-        // repli, c'est-à-dire l'écran lui-même recopié dans son propre coin (issue #248).
-        // La preview vive fait exactement ça dans `live.rs` ; c'est ici l'équivalent export.
-        // Source webcam, clé de cache et dessin de la PiP sont décidés ENSEMBLE, sinon
-        // ils divergent :
-        //
-        //  - Un clip SANS caméra arrive avec un chemin webcam vide, que `Decoder::open`
-        //    refuse. Le décodeur n'existe que parce que `compose_frame` échantillonne
-        //    deux flux inconditionnellement, donc on lui redonne l'écran (même repli que
-        //    `live.rs::open_and_seek_clip`) et la PiP n'est pas dessinée. Sans ça,
-        //    exporter un projet sans caméra échouerait net — le cas le plus courant
-        //    (issue #348).
-        //  - La clé DOIT être le fichier réellement ouvert. Tous les clips sans caméra
-        //    portent le même chemin vide : indexer dessus faisait que le deuxième
-        //    récupérait le décodeur du premier, donc l'écran d'un AUTRE clip. Pas
-        //    anodin même sans PiP, `webcam_available_duration` plus bas borne
-        //    `source_end_sec` — un clip de 60s derrière un clip de 41s finissait à 41s.
-        //  - Un chemin NON vide qui refuse de s'ouvrir n'est pas un repli : c'est une
-        //    caméra que le document réclame et qu'on ne peut pas fournir. L'erreur
-        //    remonte, comme avant l'ajout du repli. La rattraper par l'écran donnerait
-        //    exactement #265 — `webcam_is_real` reste vrai pour ce chemin, donc l'écran
-        //    serait recopié dans sa propre vignette.
         let has_camera = webcam_is_real(&clip.webcam, &clip.screen);
         comp.set_has_webcam(has_camera);
-        let webcam_key = if has_camera { &clip.webcam } else { &clip.screen };
         if !screen_decs.contains_key(&clip.screen) {
             screen_decs.insert(clip.screen.clone(), Decoder::open(&clip.screen, gpu)?);
         }
-        if !webcam_decs.contains_key(webcam_key) {
-            webcam_decs.insert(webcam_key.clone(), Decoder::open(webcam_key, gpu)?);
+        if has_camera && !webcam_decs.contains_key(&clip.webcam) {
+            webcam_decs.insert(clip.webcam.clone(), Decoder::open(&clip.webcam, gpu)?);
         }
-        let sdec = screen_decs.get_mut(&clip.screen).unwrap();
-        let wdec = webcam_decs.get_mut(webcam_key).unwrap();
 
-        let screen_available_duration = sdec.available_duration_sec();
-        let webcam_available_duration = wdec.available_duration_sec();
+        let screen_available_duration = screen_decs
+            .get(&clip.screen)
+            .and_then(|decoder| decoder.available_duration_sec());
+        let webcam_available_duration = if has_camera {
+            webcam_decs
+                .get(&clip.webcam)
+                .and_then(|decoder| decoder.available_duration_sec())
+        } else {
+            screen_available_duration
+        };
         if screen_available_duration.is_none() || webcam_available_duration.is_none() {
             eprintln!(
                 "[pipeline] warning: clip #{}: durée de flux indéterminée (screen={}, webcam={}); la borne demandée {:.3}s ne peut pas être entièrement validée",
@@ -217,10 +197,11 @@ pub(crate) unsafe fn walk_composited_timeline(
                 clip.source_end_sec,
             );
         }
-        // Les bornes de clip sont en temps écran. La disponibilité webcam est donc translatée
-        // par le même offset que le seek (`webcam_time = screen_time - offset`).
-        let webcam_available_screen_end =
-            webcam_available_duration.map(|duration| duration + clip.webcam_offset_sec);
+        let webcam_available_screen_end = if has_camera {
+            webcam_available_duration.map(|duration| duration + clip.webcam_offset_sec)
+        } else {
+            None
+        };
         let mut source_end_sec = clip.source_end_sec;
         if let Some(duration) = screen_available_duration {
             source_end_sec = source_end_sec.min(duration);
@@ -259,16 +240,25 @@ pub(crate) unsafe fn walk_composited_timeline(
             comp.set_scene(clip_scene);
         }
 
-        // un seul seek keyframe, puis chaque décodeur avance selon son propre pts jusqu'aux
-        // temps source demandés par les spans de vitesse.
+        let sdec = screen_decs.get_mut(&clip.screen).unwrap();
+        let mut wdec = if has_camera {
+            Some(webcam_decs.get_mut(&clip.webcam).unwrap())
+        } else {
+            None
+        };
+
+        // A screen-only clip reuses the screen frame as the compositor's unused webcam
+        // input. Opening a second decoder for the same H.264 file doubled VideoToolbox work.
         if sdec.seek_to(clip.source_start_sec)?.is_null() {
             continue; // clip vide / au-delà de la source
         }
-        if wdec
-            .seek_to((clip.source_start_sec - clip.webcam_offset_sec).max(0.0))?
-            .is_null()
-        {
-            continue;
+        if let Some(decoder) = wdec.as_deref_mut() {
+            if decoder
+                .seek_to((clip.source_start_sec - clip.webcam_offset_sec).max(0.0))?
+                .is_null()
+            {
+                continue;
+            }
         }
 
         if cursor_enabled {
@@ -300,11 +290,13 @@ pub(crate) unsafe fn walk_composited_timeline(
                 if !advance_decoder_to(sdec, target_source_time, 0.0)? {
                     break 'clip_frames;
                 }
-                if !advance_decoder_to(wdec, target_source_time, clip.webcam_offset_sec)? {
-                    break 'clip_frames;
+                if let Some(decoder) = wdec.as_deref_mut() {
+                    if !advance_decoder_to(decoder, target_source_time, clip.webcam_offset_sec)? {
+                        break 'clip_frames;
+                    }
                 }
                 let sf = sdec.cur_frame();
-                let wf = wdec.cur_frame();
+                let wf = wdec.as_deref().map_or(sf, |decoder| decoder.cur_frame());
                 if sf.is_null() || wf.is_null() {
                     break 'clip_frames;
                 }
@@ -382,28 +374,46 @@ mod tests {
 
     #[test]
     fn holds_a_frame_that_is_not_due_yet() {
-        assert_eq!(frame_step(NextFrameTime::At(0.5), 0.0, 0.4), FrameStep::Hold);
+        assert_eq!(
+            frame_step(NextFrameTime::At(0.5), 0.0, 0.4),
+            FrameStep::Hold
+        );
     }
 
     #[test]
     fn adopts_a_frame_whose_pts_is_exactly_the_target() {
         // « la DERNIÈRE frame dont le pts est ≤ t » : l'égalité est due.
-        assert_eq!(frame_step(NextFrameTime::At(0.4), 0.0, 0.4), FrameStep::Commit);
+        assert_eq!(
+            frame_step(NextFrameTime::At(0.4), 0.0, 0.4),
+            FrameStep::Commit
+        );
     }
 
     #[test]
     fn a_sparse_source_holds_across_its_gap() {
         // ScreenCaptureKit ne livre rien tant que l'écran ne bouge pas : la frame suivante
         // peut être 10 s plus loin. Elle ne doit surtout pas être adoptée à la seconde 1.
-        assert_eq!(frame_step(NextFrameTime::At(10.0), 0.0, 1.0), FrameStep::Hold);
-        assert_eq!(frame_step(NextFrameTime::At(10.0), 0.0, 10.0), FrameStep::Commit);
+        assert_eq!(
+            frame_step(NextFrameTime::At(10.0), 0.0, 1.0),
+            FrameStep::Hold
+        );
+        assert_eq!(
+            frame_step(NextFrameTime::At(10.0), 0.0, 10.0),
+            FrameStep::Commit
+        );
     }
 
     #[test]
     fn offset_moves_the_webcam_into_the_screen_clock() {
         // webcam + offset = écran : à offset 2 s, une frame webcam à 0.5 s vaut 2.5 s écran.
-        assert_eq!(frame_step(NextFrameTime::At(0.5), 2.0, 2.4), FrameStep::Hold);
-        assert_eq!(frame_step(NextFrameTime::At(0.5), 2.0, 2.5), FrameStep::Commit);
+        assert_eq!(
+            frame_step(NextFrameTime::At(0.5), 2.0, 2.4),
+            FrameStep::Hold
+        );
+        assert_eq!(
+            frame_step(NextFrameTime::At(0.5), 2.0, 2.5),
+            FrameStep::Commit
+        );
     }
 
     #[test]
@@ -411,14 +421,20 @@ mod tests {
         // Le changement de comportement à l'export, verrouillé : un clip dont la fenêtre
         // déclarée dépasse le dernier pts réel occupe toute sa fenêtre en tenant sa
         // dernière image, au lieu de s'arrêter net et de décaler l'audio du clip suivant.
-        assert_eq!(frame_step(NextFrameTime::Eof, 0.0, 1_000.0), FrameStep::Hold);
+        assert_eq!(
+            frame_step(NextFrameTime::Eof, 0.0, 1_000.0),
+            FrameStep::Hold
+        );
     }
 
     #[test]
     fn an_unusable_pts_advances_exactly_one_frame() {
         // Régression : `peek_next_time_sec` renvoyait `0.0` pour un pts inexploitable, et
         // `0.0` est toujours ≤ à la cible — le flux se vidait jusqu'à l'EOF d'un seul coup.
-        assert_eq!(frame_step(NextFrameTime::Unknown, 0.0, 0.0), FrameStep::CommitAndStop);
+        assert_eq!(
+            frame_step(NextFrameTime::Unknown, 0.0, 0.0),
+            FrameStep::CommitAndStop
+        );
         assert_eq!(
             frame_step(NextFrameTime::Unknown, 0.0, 1_000.0),
             FrameStep::CommitAndStop
