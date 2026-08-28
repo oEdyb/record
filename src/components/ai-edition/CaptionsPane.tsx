@@ -11,6 +11,7 @@
 
 import { Captions as CaptionsIcon, Languages, Loader2, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { AppSelect } from "@/components/ui/app-select";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { CaptionTextAlign, CaptionVerticalPosition } from "@/lib/ai-edition/captions";
 import { untranslatedUnits } from "@/lib/ai-edition/captions";
@@ -179,7 +180,14 @@ export function CaptionsPane() {
 		>
 			<header className={styles.paneHead}>
 				<h2>{t("facets.captions")}</h2>
-				<span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+				<span
+					style={{
+						marginLeft: "auto",
+						display: "inline-flex",
+						alignItems: "center",
+						gap: 6,
+					}}
+				>
 					<CaptionsIcon size={14} style={{ color: "var(--muted)" }} />
 				</span>
 			</header>
@@ -195,7 +203,13 @@ export function CaptionsPane() {
 
 				{!hasTranscript ? (
 					<div className={styles.captionStatus}>
-						<p style={{ margin: 0, font: "400 12px/1.5 var(--font-body)", color: "var(--muted)" }}>
+						<p
+							style={{
+								margin: 0,
+								font: "400 12px/1.5 var(--font-body)",
+								color: "var(--muted)",
+							}}
+						>
 							{silentMedia ? te("mediaStage.noAudioTrackHint") : t("captions.noTranscript")}
 						</p>
 						{engineError ? (
@@ -234,8 +248,16 @@ export function CaptionsPane() {
 
 				{legacyCaptionAnnotations.length > 0 ? (
 					<div className={styles.captionLegacyNotice}>
-						<p style={{ margin: 0, font: "400 11.5px/1.5 var(--font-body)", color: "var(--fg-2)" }}>
-							{t("captions.legacyAnnotations", { count: legacyCaptionAnnotations.length })}
+						<p
+							style={{
+								margin: 0,
+								font: "400 11.5px/1.5 var(--font-body)",
+								color: "var(--fg-2)",
+							}}
+						>
+							{t("captions.legacyAnnotations", {
+								count: legacyCaptionAnnotations.length,
+							})}
 						</p>
 						<button
 							type="button"
@@ -252,7 +274,7 @@ export function CaptionsPane() {
 				<div className={styles.sectionLabel}>{t("captions.language")}</div>
 				<div className={styles.paneRow}>
 					<span className="label">{t("captions.displayLanguage")}</span>
-					<select
+					<AppSelect
 						value={settings.language ?? ""}
 						disabled={disabled}
 						onChange={(e) => void set({ language: e.target.value || null })}
@@ -264,11 +286,11 @@ export function CaptionsPane() {
 								{entry.label}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				</div>
 
 				<div className={styles.captionTranslationRow}>
-					<select
+					<AppSelect
 						value={target}
 						disabled={disabled || translating}
 						onChange={(e) => setTarget(e.target.value)}
@@ -279,7 +301,7 @@ export function CaptionsPane() {
 								{language.label}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 					<button
 						type="button"
 						className={`${styles.btn} ${styles.btnSecondary}`}
@@ -310,7 +332,7 @@ export function CaptionsPane() {
 				<div className={styles.sectionLabel}>{t("captions.text")}</div>
 				<div className={styles.paneRow}>
 					<span className="label">{t("captions.font")}</span>
-					<select
+					<AppSelect
 						value={settings.fontFamily}
 						disabled={disabled}
 						onChange={(e) => void set({ fontFamily: e.target.value })}
@@ -321,7 +343,7 @@ export function CaptionsPane() {
 								{font}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				</div>
 				<div className={styles.paneRow}>
 					<span className="label">{t("captions.bold")}</span>
@@ -440,7 +462,7 @@ export function CaptionsPane() {
 				<div className={styles.sectionLabel}>{t("captions.lineLength")}</div>
 				<div className={styles.paneRow}>
 					<span className="label">{t("captions.minWords")}</span>
-					<select
+					<AppSelect
 						value={settings.minWordsPerLine}
 						disabled={disabled}
 						onChange={(e) => void set({ minWordsPerLine: Number(e.target.value) })}
@@ -451,11 +473,11 @@ export function CaptionsPane() {
 								{n}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				</div>
 				<div className={styles.paneRow}>
 					<span className="label">{t("captions.maxWords")}</span>
-					<select
+					<AppSelect
 						value={settings.maxWordsPerLine}
 						disabled={disabled}
 						onChange={(e) => void set({ maxWordsPerLine: Number(e.target.value) })}
@@ -466,7 +488,7 @@ export function CaptionsPane() {
 								{n}
 							</option>
 						))}
-					</select>
+					</AppSelect>
 				</div>
 			</div>
 		</div>

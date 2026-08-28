@@ -3,7 +3,9 @@ import { app, type IpcMain } from "electron";
 import { planChunks } from "./chunking";
 import { resolveBinaryPath } from "./gpuDetector";
 import { ensureModels, modelPaths } from "./modelManager";
+import { ParakeetHelperManager, resolveParakeetBinaryPath } from "./parakeetHelper";
 import type {
+	SttBackend,
 	SttPhraseSegment,
 	SttStatusEvent,
 	SttTranscribeRequest,
@@ -16,14 +18,11 @@ import { WhisperServerManager } from "./whisperServer";
  * Owner of the long-lived STT pipeline. One instance per Electron app.
  *
  * Workflow:
- *   1. `init()` spawns `whisper-stt-server` (or queues the call if it's busy).
+ *   1. `init()` starts Parakeet/Core ML on supported Apple Silicon Macs, or the
+ *      whisper.cpp compatibility helper elsewhere.
  *   2. `transcribe()` splits the renderer's `Float32Array` into chunks
- *      (`chunking.ts`) and runs each through whisper-stt-server's HTTP
- *      `/inference`, which returns both phrase- and word-level segments in one
- *      pass (see whisperServer.ts). Word timestamps come from whisper.cpp's
- *      native DTW token timestamps (`t_dtw`, SMALL aheads preset,
- *      `flash_attn = false`), see
- *      technical-documentation/architecture/transcription-and-captions.md § Decision rationale.
+ *      (`chunking.ts`) and runs each through the selected helper. Both helpers
+ *      return the same phrase- and word-level contract in one pass.
  *   3. `shutdown()` tears down on app quit.
  *
  * Status events fan out to every attached sink so the renderer can drive its
@@ -70,11 +69,14 @@ export interface SttManagerInitOptions {
 
 export class SttManager {
 	private readonly server = new WhisperServerManager();
+	private readonly parakeet = new ParakeetHelperManager();
+	private activeEngine: "parakeet" | "whisper" | null = null;
 	private modelsBaseDir: string | null = null;
 	private readonly statusSinks = new Set<(event: SttStatusEvent) => void>();
 	private initPromise: Promise<void> | null = null;
 	/** Kept from `prepare()` so a chunk retry can respawn a helper that died mid-run. */
 	private modelPath: string | null = null;
+	private parakeetModelDir: string | null = null;
 	/**
 	 * Bumped by `cancel()`. The chunk loop compares it against the value it
 	 * captured on entry, so a cancel that lands after a new run started cannot
@@ -123,7 +125,7 @@ export class SttManager {
 		if (options.statusSink) this.addStatusSink(options.statusSink);
 		if (options.modelsBaseDir) this.modelsBaseDir = options.modelsBaseDir;
 		if (!this.initPromise) {
-			// A REJECTED init must not be cached. `prepare()` downloads a 253 MB
+			// A REJECTED init must not be cached. `prepare()` downloads the selected
 			// model on first run, and caching its rejection meant one dropped
 			// connection poisoned the whole app session: every later transcription
 			// — including the retry the UI offers, and every remaining asset in the
@@ -147,6 +149,41 @@ export class SttManager {
 
 	private async prepare(): Promise<void> {
 		const modelsDir = this.getModelsDir();
+		const parakeetBinary = resolveParakeetBinaryPath();
+		if (parakeetBinary) {
+			try {
+				this.emit({ phase: "model", model: "parakeet", downloadedBytes: 0, totalBytes: 0 });
+				await ensureModels({
+					baseDir: modelsDir,
+					only: ["parakeet-v3"],
+					onProgress: (event) => {
+						this.emit({
+							phase: "model",
+							model: "parakeet",
+							downloadedBytes: event.downloadedBytes,
+							totalBytes: event.totalBytes,
+						});
+					},
+				});
+				const paths = modelPaths(modelsDir);
+				this.parakeetModelDir = paths["parakeet-v3"];
+				await this.parakeet.start({
+					modelDir: this.parakeetModelDir,
+					binaryPath: parakeetBinary,
+				});
+				this.activeEngine = "parakeet";
+				this.emit({ phase: "transcribe" });
+				return;
+			} catch (error) {
+				console.warn(
+					`[stt] Parakeet unavailable; using Whisper fallback: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				);
+				await this.parakeet.stop().catch(() => undefined);
+			}
+		}
+
 		this.emit({ phase: "model", model: "whisper", downloadedBytes: 0, totalBytes: 0 });
 		await ensureModels({
 			baseDir: modelsDir,
@@ -164,15 +201,23 @@ export class SttManager {
 		const paths = modelPaths(modelsDir);
 		this.modelPath = paths.whisper;
 		await this.server.start({ modelPath: paths.whisper });
+		this.activeEngine = "whisper";
 		this.emit({ phase: "transcribe" });
+	}
+
+	private async restartActiveEngine(): Promise<void> {
+		if (this.activeEngine === "parakeet") {
+			await this.parakeet.restart();
+			return;
+		}
+		if (this.modelPath) await this.server.start({ modelPath: this.modelPath });
 	}
 
 	/**
 	 * Run one chunk, retrying a few times before giving up on the whole request.
 	 *
 	 * A failure here is usually the helper process dying (OOM, driver reset)
-	 * rather than a bad chunk, so each retry first re-runs `server.start()` —
-	 * idempotent when the helper is alive, a respawn when it isn't. That is what
+	 * rather than a bad chunk, so each retry restarts the selected helper. That is what
 	 * makes a 30-minute transcription survive a helper that dies once mid-run.
 	 *
 	 * What it does NOT do is salvage a chunk that fails all three attempts: the
@@ -185,17 +230,18 @@ export class SttManager {
 	private async transcribeChunk(
 		samples: Float32Array,
 		language: string | undefined,
-	): Promise<Awaited<ReturnType<WhisperServerManager["transcribe"]>>> {
+	): Promise<SttTranscribeResponse> {
 		let lastError: unknown;
 		for (let attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
 			try {
+				if (this.activeEngine === "parakeet") {
+					return await this.parakeet.transcribe({ samples, language });
+				}
 				return await this.server.transcribe({ samples, language });
 			} catch (error) {
 				lastError = error;
 				if (attempt === CHUNK_ATTEMPTS) break;
-				if (this.modelPath) {
-					await this.server.start({ modelPath: this.modelPath }).catch(() => undefined);
-				}
+				await this.restartActiveEngine().catch(() => undefined);
 				await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
 			}
 		}
@@ -214,9 +260,12 @@ export class SttManager {
 		const segments: SttPhraseSegment[] = [];
 		const wordSegments: SttWordSegment[] = [];
 		let detectedLanguage: string | null = null;
-		let backend = this.server.status.backend ?? "whispercpp-cpu";
-		// Only the first chunk auto-detects; every later chunk is forced onto the
-		// language it resolved, so whisper cannot flip mid-recording on a chunk
+		let backend: SttBackend =
+			this.activeEngine === "parakeet"
+				? "parakeet-coreml"
+				: (this.server.status.backend ?? "whispercpp-cpu");
+		// Only the first chunk auto-detects when the engine reports a language;
+		// later chunks use that result, so Whisper cannot flip mid-recording on a chunk
 		// that opens with a proper noun or a silence and "transcribe" the rest as
 		// another language.
 		//
@@ -239,7 +288,7 @@ export class SttManager {
 
 		for (const [index, chunk] of chunks.entries()) {
 			// Between chunks is the only place this loop can be interrupted, and it
-			// is enough: a chunk is bounded by `whisperServer`'s own request ceiling.
+			// is enough: every native helper request has a bounded duration and timeout.
 			if (this.cancelEpoch !== epoch) throw cancelledError();
 			const offsetSec = chunk.startSample / SAMPLE_RATE;
 			const result = await this.transcribeChunk(
@@ -300,7 +349,7 @@ export class SttManager {
 
 	/** Best-effort shutdown; safe to call from `before-quit` hooks. */
 	async shutdown(): Promise<void> {
-		await this.server.stop();
+		await Promise.all([this.parakeet.stop(), this.server.stop()]);
 	}
 }
 
@@ -326,7 +375,9 @@ export function _resetSttManagerForTests(): void {
  */
 export function registerSttIpc(ipcMain: IpcMain): void {
 	const manager = getSttManager();
-	ipcMain.handle("stt:is-available", async () => Boolean((await resolveBinaryPath()).path));
+	ipcMain.handle("stt:is-available", async () =>
+		Boolean(resolveParakeetBinaryPath() || (await resolveBinaryPath()).path),
+	);
 	ipcMain.handle(
 		"stt:transcribe",
 		async (event, req: SttTranscribeRequest): Promise<SttTranscribeResponse> => {

@@ -48,6 +48,16 @@ describe("snapWordBoundariesToAudio", () => {
 		expect(snapped.startSec).toBeGreaterThanOrEqual(2.0 - 0.15);
 	});
 
+	it("can refine a compensated timestamp on either side without adding a fixed delay", () => {
+		const samples = audioWithSilences(3, [[1.0, 1.09]]);
+		const [snapped] = snapWordBoundariesToAudio([word({ startSec: 1.05, endSec: 1.8 })], samples, {
+			lookbackSec: 0.04,
+			lookaheadSec: 0.04,
+		});
+		expect(snapped.startSec).toBeGreaterThanOrEqual(1.01);
+		expect(snapped.startSec).toBeLessThanOrEqual(1.09);
+	});
+
 	it("keeps a boundary shared by two words shared", () => {
 		const samples = audioWithSilences(3, [[1.0, 1.2]]);
 		const [first, second] = snapWordBoundariesToAudio(

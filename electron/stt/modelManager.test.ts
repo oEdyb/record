@@ -41,8 +41,28 @@ describe("modelManager", () => {
 		expect(vad.files[0].url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
 	});
 
+	it("pins only the Parakeet v3 INT8 runtime graph at one immutable revision", () => {
+		const parakeet = STT_MODELS["parakeet-v3"];
+		expect(parakeet.repoId).toBe("FluidInference/parakeet-tdt-0.6b-v3-coreml");
+		expect(parakeet.files.map((file) => file.name)).toEqual(
+			expect.arrayContaining([
+				"Preprocessor.mlmodelc/model.mil",
+				"Encoder.mlmodelc/weights/weight.bin",
+				"Decoder.mlmodelc/weights/weight.bin",
+				"JointDecisionv3.mlmodelc/weights/weight.bin",
+				"parakeet_vocab.json",
+			]),
+		);
+		expect(parakeet.files.length).toBe(21);
+		for (const file of parakeet.files) {
+			expect(file.expectedSha256).toMatch(/^[0-9a-f]{64}$/);
+			expect(file.url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
+		}
+	});
+
 	it("modelPaths places the GGML file under the cache directory", () => {
 		const paths = modelPaths(dir);
+		expect(paths["parakeet-v3"]).toBe(path.join(dir, "parakeet-tdt-0.6b-v3"));
 		expect(paths.whisper).toBe(path.join(dir, "whisper-ggml", "ggml-small-q8_0.bin"));
 		expect(paths["silero-vad"]).toBe(path.join(dir, "silero-vad", "ggml-silero-v6.2.0.bin"));
 	});

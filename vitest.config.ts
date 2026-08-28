@@ -1,6 +1,18 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 
+// Node 25+ enables its process-wide Web Storage API by default. Without a
+// --localstorage-file it shadows jsdom's localStorage with an unusable value in
+// fork workers. Disable only Node's implementation so DOM tests receive the
+// origin-scoped jsdom implementation. The flag also works on the pinned Node 22.
+const disableNodeWebStorage = "--no-experimental-webstorage";
+const inheritedNodeOptions = process.env.NODE_OPTIONS?.trim();
+if (!inheritedNodeOptions?.split(/\s+/).includes(disableNodeWebStorage)) {
+	process.env.NODE_OPTIONS = [inheritedNodeOptions, disableNodeWebStorage]
+		.filter(Boolean)
+		.join(" ");
+}
+
 export default defineConfig({
 	test: {
 		globals: true,

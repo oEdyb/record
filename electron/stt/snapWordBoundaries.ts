@@ -1,4 +1,4 @@
-// Pulls whisper.cpp's DTW word boundaries back onto the audio they describe.
+// Refines recognizer word boundaries against the audio they describe.
 //
 // whisper.cpp reports one time per token and derives word spans from it, so a
 // word's `start` is the point where the decoder *emitted* the token, not where
@@ -37,6 +37,13 @@ const LOOKBACK_SEC = 0.15;
 /** Keep degenerate words (whisper sometimes reports end <= start) non-empty. */
 const MIN_WORD_SEC = 0.02;
 
+export interface WordBoundaryRefinementOptions {
+	/** Maximum distance a boundary can move earlier. */
+	lookbackSec?: number;
+	/** Maximum distance a boundary can move later. */
+	lookaheadSec?: number;
+}
+
 /** Per-frame RMS of the mono signal — the cheapest usable "is this speech" proxy. */
 function rmsEnvelope(samples: Float32Array): Float32Array {
 	const frameLength = Math.round(SAMPLE_RATE * FRAME_SEC);
@@ -55,35 +62,44 @@ function rmsEnvelope(samples: Float32Array): Float32Array {
 }
 
 /**
- * Move every word boundary back to the quietest frame in the `LOOKBACK_SEC`
- * preceding it. Boundaries shared by two words snap identically (same input
- * time), so the transcript stays gap-free where whisper made it gap-free.
+ * Move every word boundary to the quietest frame in its configured search
+ * window. Whisper uses only the measured lookback correction. Recognizers with
+ * an already compensated timestamp grid can use a small symmetric window.
+ * Boundaries shared by two words snap identically (same input time), so the
+ * transcript stays gap-free where the recognizer made it gap-free.
  * Returns the words unchanged when there is no audio to measure against.
  */
 export function snapWordBoundariesToAudio(
 	words: SttWordSegment[],
 	samples: Float32Array,
+	options: WordBoundaryRefinementOptions = {},
 ): SttWordSegment[] {
 	const envelope = rmsEnvelope(samples);
 	if (envelope.length === 0) return words;
 
-	const lookbackFrames = Math.round(LOOKBACK_SEC / FRAME_SEC);
+	const lookbackSec = options.lookbackSec ?? LOOKBACK_SEC;
+	const lookaheadSec = options.lookaheadSec ?? 0;
+	const lookbackFrames = Math.max(0, Math.round(lookbackSec / FRAME_SEC));
+	const lookaheadFrames = Math.max(0, Math.round(lookaheadSec / FRAME_SEC));
 	const snap = (timeSec: number): number => {
-		const hi = Math.round(timeSec / FRAME_SEC);
+		const reportedFrame = Math.round(timeSec / FRAME_SEC);
 		// A boundary outside the audio we can measure (whisper occasionally reports
 		// times past the end of the samples) has nothing to snap to — clamping it
 		// into range would drag it to the end of the buffer instead.
-		if (hi <= 0 || hi >= envelope.length) return timeSec;
-		const lo = Math.max(0, hi - lookbackFrames);
-		let bestFrame = hi;
-		let bestRms = envelope[hi];
-		// Strict `<` while walking backwards keeps the frame CLOSEST to the
-		// reported boundary when a whole stretch is equally quiet, so digital
-		// silence can't drag a boundary the full window.
-		for (let f = hi - 1; f >= lo; f--) {
-			if (envelope[f] < bestRms) {
-				bestRms = envelope[f];
-				bestFrame = f;
+		if (reportedFrame <= 0 || reportedFrame >= envelope.length) return timeSec;
+		const lo = Math.max(0, reportedFrame - lookbackFrames);
+		const hi = Math.min(envelope.length - 1, reportedFrame + lookaheadFrames);
+		let bestFrame = reportedFrame;
+		let bestRms = envelope[reportedFrame];
+		// Walk from the reported frame outward. Strict `<` keeps the nearest frame
+		// when a stretch is equally quiet, so digital silence cannot drag a
+		// boundary to the edge of the search window.
+		const furthest = Math.max(reportedFrame - lo, hi - reportedFrame);
+		for (let distance = 1; distance <= furthest; distance++) {
+			for (const frame of [reportedFrame - distance, reportedFrame + distance]) {
+				if (frame < lo || frame > hi || envelope[frame] >= bestRms) continue;
+				bestRms = envelope[frame];
+				bestFrame = frame;
 			}
 		}
 		return bestFrame * FRAME_SEC;

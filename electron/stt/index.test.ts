@@ -20,6 +20,26 @@ const fakeWhisperServer = {
 	stop: vi.fn(),
 };
 
+const { fakeParakeetHelper, resolveParakeetBinaryPath } = vi.hoisted(() => ({
+	fakeParakeetHelper: {
+		start: vi.fn(),
+		transcribe: vi.fn(),
+		restart: vi.fn(),
+		stop: vi.fn(),
+	},
+	resolveParakeetBinaryPath: vi.fn<() => string | null>(() => null),
+}));
+
+vi.mock("./parakeetHelper", () => {
+	class FakeParakeetHelperManager {
+		start = fakeParakeetHelper.start;
+		transcribe = fakeParakeetHelper.transcribe;
+		restart = fakeParakeetHelper.restart;
+		stop = fakeParakeetHelper.stop;
+	}
+	return { ParakeetHelperManager: FakeParakeetHelperManager, resolveParakeetBinaryPath };
+});
+
 vi.mock("./whisperServer", () => {
 	class FakeWhisperServerManager {
 		start = fakeWhisperServer.start;
@@ -33,7 +53,9 @@ vi.mock("./whisperServer", () => {
 vi.mock("./modelManager", () => ({
 	ensureModels: vi.fn(async () => undefined),
 	modelPaths: (base: string) => ({
+		"parakeet-v3": `${base}/parakeet-tdt-0.6b-v3`,
 		whisper: `${base}/whisper-ggml/ggml-small-q8_0.bin`,
+		"silero-vad": `${base}/silero-vad/ggml-silero-v6.2.0.bin`,
 	}),
 }));
 
@@ -49,6 +71,15 @@ vi.mock("./gpuDetector", () => ({
 
 describe("SttManager", () => {
 	beforeEach(() => {
+		resolveParakeetBinaryPath.mockReset();
+		resolveParakeetBinaryPath.mockReturnValue(null);
+		fakeParakeetHelper.start.mockReset();
+		fakeParakeetHelper.transcribe.mockReset();
+		fakeParakeetHelper.restart.mockReset();
+		fakeParakeetHelper.stop.mockReset();
+		fakeParakeetHelper.start.mockResolvedValue(undefined);
+		fakeParakeetHelper.restart.mockResolvedValue(undefined);
+		fakeParakeetHelper.stop.mockResolvedValue(undefined);
 		fakeWhisperServer.start.mockClear();
 		fakeWhisperServer.transcribe.mockClear();
 		fakeWhisperServer.stop.mockClear();
@@ -60,6 +91,30 @@ describe("SttManager", () => {
 			backend: "whispercpp-cpu",
 		});
 		_resetSttManagerForTests();
+	});
+
+	it("prefers the local Parakeet helper on supported Apple Silicon Macs", async () => {
+		resolveParakeetBinaryPath.mockReturnValue("/fake/klippt-parakeet-stt");
+		fakeParakeetHelper.transcribe.mockResolvedValue({
+			segments: [{ text: "hej", startSec: 0, endSec: 0.4 }],
+			wordSegments: [{ word: "hej", startSec: 0, endSec: 0.4 }],
+			detectedLanguage: "sv",
+			backend: "parakeet-coreml",
+		});
+		const mgr = new SttManager();
+		await mgr.init({ modelsBaseDir: "/tmp/fake-stt-models" });
+		const result = await mgr.transcribe({ samples: new Float32Array(16_000) });
+		expect(result.backend).toBe("parakeet-coreml");
+		expect(fakeParakeetHelper.transcribe).toHaveBeenCalledOnce();
+		expect(fakeWhisperServer.start).not.toHaveBeenCalled();
+	});
+
+	it("falls back to Whisper when Parakeet cannot start", async () => {
+		resolveParakeetBinaryPath.mockReturnValue("/fake/klippt-parakeet-stt");
+		fakeParakeetHelper.start.mockRejectedValueOnce(new Error("Core ML unavailable"));
+		const mgr = new SttManager();
+		await mgr.init({ modelsBaseDir: "/tmp/fake-stt-models" });
+		expect(fakeWhisperServer.start).toHaveBeenCalledOnce();
 	});
 
 	afterEach(() => {

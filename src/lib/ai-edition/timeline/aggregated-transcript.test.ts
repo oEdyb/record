@@ -4,9 +4,36 @@ import {
 	buildAggregatedSections,
 	buildClipSection,
 	clipWordId,
+	copyableTranscriptText,
 	findCueWordId,
 	isSilenceWord,
 } from "./aggregated-transcript";
+
+describe("copyableTranscriptText", () => {
+	it("copies kept words in timeline order without silence markers or punctuation gaps", () => {
+		const first = buildClipSection(
+			makeClip({ id: "clip_1", sourceEndSec: 3 }),
+			makeTranscript([
+				{ id: "w1", segmentId: "s1", startSec: 0.2, endSec: 0.6, text: "Hello" },
+				{ id: "w2", segmentId: "s1", startSec: 1, endSec: 1.4, text: "," },
+				{ id: "w3", segmentId: "s1", startSec: 2, endSec: 2.4, text: "world" },
+			]),
+			makeAsset(),
+			[makeTrim({ startSec: 1.8, endSec: 2.6 })],
+		);
+		const second = buildClipSection(
+			makeClip({ id: "clip_2", sourceStartSec: 3, sourceEndSec: 5 }),
+			makeTranscript([
+				{ id: "w4", segmentId: "s2", startSec: 3.2, endSec: 3.6, text: "Next" },
+				{ id: "w5", segmentId: "s2", startSec: 3.7, endSec: 4.1, text: "clip." },
+			]),
+			makeAsset(),
+			[],
+		);
+
+		expect(copyableTranscriptText([first, second])).toBe("Hello,\n\nNext clip.");
+	});
+});
 
 function makeClip(overrides: Partial<AxcutClip> = {}): AxcutClip {
 	return {

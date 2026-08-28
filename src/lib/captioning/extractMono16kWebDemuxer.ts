@@ -1,14 +1,9 @@
-import { WebDemuxer } from "web-demuxer";
-
+import { createWebDemuxer } from "@/lib/exporter/webDemuxerAsset";
 import { MAX_CAPTION_AUDIO_SEC } from "./captionConstants";
 
 const DECODE_QUEUE_BACKPRESSURE = 20;
 const SOURCE_LOAD_TIMEOUT_MS = 60_000;
 const READ_END_PADDING_SEC = 0.5;
-
-function webDemuxerWasmUrl(): string {
-	return new URL("../exporter/wasm/web-demuxer.wasm", window.location.href).href;
-}
 
 /** Mixes one WebCodecs AudioData frame down to mono (averaged across channels). */
 export function audioDataFrameToMono(frame: AudioData): Float32Array {
@@ -103,7 +98,7 @@ export async function extractMonoPcmViaWebDemuxer(
 	signal?: AbortSignal,
 	maxReadSec?: number,
 ): Promise<{ mono: Float32Array; sampleRate: number; durationSec: number; capped: boolean }> {
-	const demuxer = new WebDemuxer({ wasmFilePath: webDemuxerWasmUrl() });
+	const demuxer = createWebDemuxer();
 	await withTimeout(
 		demuxer.load(file),
 		SOURCE_LOAD_TIMEOUT_MS,

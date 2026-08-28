@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 // The transcript pane's empty state is what a user meets before any transcript
-// exists — and, since transcription now runs by itself in the background, it is
-// also where they wait for one. These assertions pin the three answers it has
+// exists. These assertions pin the three answers it has
 // to give: "it's coming", "here's the button", and "this media has no audio, so
 // there is nothing to press".
 
 import "@testing-library/jest-dom";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
 import type { AxcutAsset, AxcutClip } from "@/lib/ai-edition/schema";
@@ -91,5 +90,64 @@ describe("transcript pane gating", () => {
 		renderPane({ blocked: { reason: "failed", message: "whisper-server exited" } });
 		expect(screen.getByRole("button", { name: "Transcribe now" })).toBeEnabled();
 		expect(screen.getByText("whisper-server exited")).toBeInTheDocument();
+	});
+
+	it("shows a calm read-only transcript and copies only kept words", async () => {
+		const writeClipboardText = vi.fn(async () => undefined);
+		const onTranscribe = vi.fn();
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { writeClipboardText },
+		});
+		render(
+			<I18nProvider>
+				<TranscriptPane
+					clips={CLIPS}
+					transcripts={[
+						{
+							assetId: "asset_1",
+							language: "en",
+							segments: [],
+							words: [
+								{ id: "w1", segmentId: "s1", startSec: 0, endSec: 0.4, text: "Hello" },
+								{ id: "w2", segmentId: "s1", startSec: 0.4, endSec: 0.8, text: "world." },
+							],
+						},
+					]}
+					assets={[ASSET]}
+					trimRanges={[
+						{
+							id: "trim_1",
+							assetId: "asset_1",
+							clipId: "clip_1",
+							startSec: 0.4,
+							endSec: 0.8,
+							origin: "user",
+							reason: "remove",
+						},
+					]}
+					busyAssetIds={[]}
+					onSeek={vi.fn()}
+					onAddTrimRange={vi.fn()}
+					onRemoveTrimRange={vi.fn()}
+					onTranscribe={onTranscribe}
+					canTranscribe
+					isTranscribing={false}
+					readOnly
+				/>
+			</I18nProvider>,
+		);
+
+		expect(screen.getByRole("document")).toHaveAttribute("contenteditable", "false");
+		expect(screen.getByText("Hello")).toBeInTheDocument();
+		expect(screen.queryByText("world.")).not.toBeInTheDocument();
+		const language = screen.getByRole("combobox", { name: "Language" });
+		expect(language).toHaveTextContent("English");
+		fireEvent.keyDown(language, { key: "ArrowDown" });
+		fireEvent.click(screen.getByRole("option", { name: "Swedish" }));
+		fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+		expect(onTranscribe).toHaveBeenCalledWith("sv");
+		fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+		await waitFor(() => expect(writeClipboardText).toHaveBeenCalledWith("Hello"));
 	});
 });

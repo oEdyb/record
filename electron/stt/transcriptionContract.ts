@@ -10,10 +10,9 @@
  * contract and don't need to move.
  */
 
-/** A word-level segment with timestamps from whisper.cpp's native DTW token
- *  timestamps (`t_dtw`, computed with the SMALL aheads preset — see
- *  technical-documentation/architecture/transcription-and-captions.md § Decision rationale). Absolute seconds
- *  in the source recording. */
+/** A word-level segment with recognizer-native timestamps. Absolute seconds in
+ *  the source recording. The backend adapter owns any acoustic boundary
+ *  refinement before these cross the shared contract. */
 export interface SttWordSegment {
 	word: string;
 	startSec: number;
@@ -29,10 +28,10 @@ export interface SttPhraseSegment {
 	endSec: number;
 }
 
-/** GPU/backend tag reported by the whisper.cpp helper (read from the device it
- *  actually bound at runtime). `gpuDetector` only picks the binary; the real
- *  backend is corrected from the helper response. */
+/** Native recognizer/backend tag. Whisper reports the device it bound at
+ * runtime; Parakeet reports the pinned Core ML adapter. */
 export type SttBackend =
+	| "parakeet-coreml"
 	| "whispercpp-metal"
 	| "whispercpp-vulkan"
 	| "whispercpp-cuda"
@@ -49,7 +48,7 @@ export interface SttStatusEvent {
 	/** Total bytes for the in-flight download. */
 	totalBytes?: number;
 	/** Which model is downloading. */
-	model?: "whisper";
+	model?: "parakeet" | "whisper";
 	/**
 	 * Seconds of audio transcribed so far, and the total for this request. Only
 	 * when `phase === "transcribe"`. Progress is reported per CHUNK (see

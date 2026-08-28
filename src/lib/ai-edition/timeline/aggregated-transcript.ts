@@ -232,6 +232,27 @@ export function buildAggregatedSections(
 	);
 }
 
+/**
+ * Plain text for the clipboard. It follows timeline order, omits removed media
+ * and synthetic silence markers, and keeps one paragraph per clip. The project
+ * model is the source; this never copies hidden DOM text or UI labels.
+ */
+export function copyableTranscriptText(sections: ClipSection[]): string {
+	return sections
+		.map((section) =>
+			section.words
+				.filter(({ kept, word }) => kept && !isSilenceWord(word))
+				.map(({ word }) => word.text.trim())
+				.filter(Boolean)
+				.join(" ")
+				.replace(/\s+([,.;:!?…%)}\]])/gu, "$1")
+				.replace(/([({[])\s+/gu, "$1")
+				.trim(),
+		)
+		.filter(Boolean)
+		.join("\n\n");
+}
+
 /** Where the playback head currently is, in source time. */
 export interface CuePosition {
 	assetId: string;
