@@ -116,6 +116,7 @@ export function MediaStage() {
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder={t("mediaStage.searchPlaceholder")}
+						aria-label={t("mediaStage.searchPlaceholder")}
 					/>
 				</div>
 				<div className={styles.mediaCols}>

@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppSelect } from "@/components/ui/app-select";
 import { AudioLevelMeter } from "@/components/ui/audio-level-meter";
+import { useDialogFocus } from "@/components/ui/use-dialog-focus";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useAudioLevelMeter } from "@/hooks/useAudioLevelMeter";
 import { useCameraDevices } from "@/hooks/useCameraDevices";
@@ -477,13 +478,24 @@ function SourceModal({
 	onClose: () => void;
 }) {
 	const t = useScopedT("editor");
+	const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
 	return (
 		<div className={styles.sourceModalOverlay} onClick={onClose}>
-			<div className={styles.sourceModalCard} onClick={(e) => e.stopPropagation()}>
+			<div
+				ref={dialogRef}
+				className={styles.sourceModalCard}
+				role="dialog"
+				aria-modal="true"
+				aria-label={t("rec.source")}
+				tabIndex={-1}
+				onClick={(e) => e.stopPropagation()}
+			>
 				<div className={styles.sourceModalTabs}>
 					<button
 						type="button"
+						data-dialog-initial-focus
 						className={`${styles.sourceModalTab}${tab === "screen" ? ` ${styles.active}` : ""}`}
+						aria-pressed={tab === "screen"}
 						onClick={() => onTabChange("screen")}
 					>
 						{t("rec.sourceModal.screens", { count: screenCount })}
@@ -491,6 +503,7 @@ function SourceModal({
 					<button
 						type="button"
 						className={`${styles.sourceModalTab}${tab === "window" ? ` ${styles.active}` : ""}`}
+						aria-pressed={tab === "window"}
 						onClick={() => onTabChange("window")}
 					>
 						{t("rec.sourceModal.windows", { count: windowCount })}

@@ -57,6 +57,13 @@
   "files": [
     "dist",
     "dist-electron",
+    "!dist/wasm/web-demuxer.wasm",
+    "!node_modules/web-demuxer/dist/wasm-files{,/**/*}",
+    "!dist/cursors{,/**/*}",
+    "!dist/demo.gif",
+    "!dist/openscreen.png",
+    "!dist/preview*.png",
+    "!dist/vite.svg",
     "!*.png",
     "!preview*.png",
     "!*.md",
@@ -87,12 +94,28 @@
       "to": "LICENSE"
     },
     {
+      "from": "THIRD-PARTY-INVENTORY.json",
+      "to": "THIRD-PARTY-INVENTORY.json"
+    },
+    {
+      "from": "third-party-licenses",
+      "to": "third-party-licenses"
+    },
+    {
+      "from": "node_modules/electron/dist/LICENSES.chromium.html",
+      "to": "LICENSES.chromium.html"
+    },
+    {
+      "from": "public/wasm/web-demuxer.wasm",
+      "to": "web-demuxer.wasm"
+    },
+    {
       "from": "public/wallpapers",
       "to": "wallpapers"
     },
     {
-      "from": "public/cursors",
-      "to": "cursors"
+      "from": "public/cursors/default",
+      "to": "cursors/default"
     }
   ],
 

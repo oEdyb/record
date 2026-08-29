@@ -4,16 +4,21 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import {
+	copyFile,
 	lstat,
 	mkdir,
+	mkdtemp,
+	open,
 	readdir,
 	readFile,
 	readlink,
 	realpath,
 	rename,
+	rm,
 	stat,
 	writeFile,
 } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -41,11 +46,59 @@ async function sha256File(filePath) {
 	return hash.digest("hex");
 }
 
+const MACH_O_MAGICS = new Set([
+	0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca,
+]);
+
+async function isMachO(filePath) {
+	const handle = await open(filePath, "r");
+	try {
+		const magic = Buffer.alloc(4);
+		const { bytesRead } = await handle.read(magic, 0, magic.length, 0);
+		return bytesRead === 4 && MACH_O_MAGICS.has(magic.readUInt32BE(0));
+	} finally {
+		await handle.close();
+	}
+}
+
+async function fileIdentity(filePath, target) {
+	if (!target.startsWith("darwin-") || !(await isMachO(filePath))) {
+		const info = await stat(filePath);
+		return {
+			contentIdentity: "exact-bytes",
+			contentSize: info.size,
+			contentSha256: await sha256File(filePath),
+		};
+	}
+	if (process.platform !== "darwin") {
+		throw new Error(`Darwin helper provenance needs macOS codesign: ${filePath}`);
+	}
+	const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "klippt-helper-identity-"));
+	const temporaryFile = path.join(temporaryDirectory, path.basename(filePath));
+	try {
+		await copyFile(filePath, temporaryFile);
+		execFileSync("/usr/bin/codesign", ["--remove-signature", temporaryFile], {
+			stdio: ["ignore", "ignore", "pipe"],
+		});
+		const info = await stat(temporaryFile);
+		return {
+			contentIdentity: "mach-o-without-code-signature",
+			contentSize: info.size,
+			contentSha256: await sha256File(temporaryFile),
+		};
+	} catch (error) {
+		const detail = String(error.stderr ?? error.message).trim();
+		throw new Error(`Could not normalize signed Mach-O helper ${filePath}: ${detail}`);
+	} finally {
+		await rm(temporaryDirectory, { recursive: true, force: true });
+	}
+}
+
 function inside(root, candidate) {
 	return candidate === root || candidate.startsWith(`${root}${path.sep}`);
 }
 
-async function listHelperFiles(root, current = root) {
+async function listHelperFiles(root, target, current = root) {
 	const realRoot = await realpath(root);
 	const files = [];
 	for (const entry of await readdir(current, { withFileTypes: true })) {
@@ -54,7 +107,7 @@ async function listHelperFiles(root, current = root) {
 		if (relativePath === HELPER_MANIFEST_NAME) continue;
 		const info = await lstat(filePath);
 		if (info.isDirectory()) {
-			files.push(...(await listHelperFiles(root, filePath)));
+			files.push(...(await listHelperFiles(root, target, filePath)));
 			continue;
 		}
 		let contentPath = filePath;
@@ -70,8 +123,7 @@ async function listHelperFiles(root, current = root) {
 		if (!contentInfo.isFile()) throw new Error(`Helper entry is not a file: ${relativePath}`);
 		files.push({
 			path: relativePath,
-			size: contentInfo.size,
-			sha256: await sha256File(contentPath),
+			...(await fileIdentity(contentPath, target)),
 			...(symlinkTarget ? { symlinkTarget } : {}),
 		});
 	}
@@ -225,10 +277,10 @@ export async function createHelperManifest({
 	toolchains,
 }) {
 	validateMetadata({ helper, sourceSha, workflowRunId, target, upstream, toolchains });
-	const files = await listHelperFiles(directory);
+	const files = await listHelperFiles(directory, target);
 	if (files.length === 0) throw new Error("Helper artifact has no files");
 	const manifest = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		kind: "klippt-native-helper",
 		helper,
 		source: { commit: sourceSha.toLowerCase(), workflowRunId: String(workflowRunId) },
@@ -276,7 +328,7 @@ export async function verifyHelperManifest({
 	} catch (error) {
 		throw new Error(`Could not read helper manifest: ${error.message}`);
 	}
-	if (manifest.schemaVersion !== 1 || manifest.kind !== "klippt-native-helper") {
+	if (manifest.schemaVersion !== 2 || manifest.kind !== "klippt-native-helper") {
 		throw new Error("Unsupported helper manifest schema");
 	}
 	validateMetadata({
@@ -308,7 +360,12 @@ export async function verifyHelperManifest({
 		const relativePath = safeManifestPath(file?.path);
 		if (expectedPaths.has(relativePath)) throw new Error(`Duplicate helper file: ${relativePath}`);
 		expectedPaths.add(relativePath);
-		if (!Number.isSafeInteger(file.size) || file.size < 0 || !SHA256.test(file.sha256 ?? "")) {
+		if (
+			!Number.isSafeInteger(file.contentSize) ||
+			file.contentSize < 0 ||
+			!SHA256.test(file.contentSha256 ?? "") ||
+			!["exact-bytes", "mach-o-without-code-signature"].includes(file.contentIdentity)
+		) {
 			throw new Error(`Invalid helper file metadata: ${relativePath}`);
 		}
 		const filePath = path.join(directory, ...relativePath.split("/"));
@@ -335,14 +392,22 @@ export async function verifyHelperManifest({
 			throw new Error(`Missing or escaping helper file: ${relativePath}`);
 		}
 		const info = await stat(resolved);
-		if (!info.isFile() || info.size !== file.size) {
+		if (!info.isFile()) throw new Error(`Helper entry is not a file: ${relativePath}`);
+		const identity = await fileIdentity(resolved, manifest.target);
+		if (identity.contentIdentity !== file.contentIdentity) {
+			throw new Error(`Helper file identity mismatch: ${relativePath}`);
+		}
+		if (identity.contentSize !== file.contentSize) {
 			throw new Error(`Helper file size mismatch: ${relativePath}`);
 		}
-		const actualHash = await sha256File(resolved);
-		if (actualHash !== file.sha256) throw new Error(`Helper file hash mismatch: ${relativePath}`);
+		if (identity.contentSha256 !== file.contentSha256) {
+			throw new Error(`Helper file hash mismatch: ${relativePath}`);
+		}
 	}
 	if (!allowAdditionalFiles) {
-		const actualPaths = new Set((await listHelperFiles(directory)).map((file) => file.path));
+		const actualPaths = new Set(
+			(await listHelperFiles(directory, manifest.target)).map((file) => file.path),
+		);
 		if (
 			actualPaths.size !== expectedPaths.size ||
 			[...actualPaths].some((relativePath) => !expectedPaths.has(relativePath))

@@ -1,0 +1,280 @@
+{
+	"schemaVersion": 1,
+	"licenseTexts": {
+		"Apache-2.0": {
+			"path": "third-party-licenses/Standard-Apache-2.0.txt",
+			"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+		},
+		"CC0-1.0": {
+			"path": "third-party-licenses/Standard-CC0-1.0.txt",
+			"sha256": "06db624cd68858bc60b9526220d77b5e2d8e684835bb2b777d47fd73b41aee1b"
+		},
+		"LGPL-2.1-or-later": {
+			"path": "third-party-licenses/LGPL-2.1.txt",
+			"sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+		},
+		"MIT": {
+			"path": "third-party-licenses/Standard-MIT.txt",
+			"sha256": "38e37f20201ee62ef63b082fa6cf6dcde19e7090ef0a2729148bd4dcf370e4ac"
+		}
+	},
+	"registryChecksums": {
+		"block@0.1.6": "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a",
+		"codespan-reporting@0.11.1": "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e",
+		"dasp_frame@0.11.0": "b2a3937f5fe2135702897535c8d4a5553f8b116f76c1529088797f2eee7c5cd6",
+		"dasp_sample@0.11.0": "0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f",
+		"gl_generator@0.14.0": "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d",
+		"gpu-alloc-types@0.3.1": "b2bbed164dd10ed526c2e4fe3e721ca4a71c61730e5aafac6844b417b3227058",
+		"gpu-alloc@0.6.2": "45cf04b2726f02df5508c6de726acdc90cdf97ac771a9a0ffd8ba10a6e696bf9",
+		"gpu-descriptor-types@0.2.0": "fdf242682df893b86f33a73828fb09ca4b2d3bb6cc95249707fc684d27484b91",
+		"gpu-descriptor@0.3.2": "b89c83349105e3732062a895becfc71a8f921bb71ecbbdd8ff99263e3b53a0ca",
+		"harfrust@0.5.2": "9da2e5ae821f6e96664977bf974d6d6a2d6682f9ccee23e62ec1d134246845f9",
+		"hexf-parse@0.2.1": "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df",
+		"jni-sys-macros@0.4.1": "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264",
+		"khronos_api@3.1.0": "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc",
+		"malloc_buf@0.0.6": "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb",
+		"naga@24.0.0": "e380993072e52eef724eddfcde0ed013b0c023c3f0417336ed041aa9f076994e",
+		"napi-build@2.3.2": "c9c366d2c8c60b86fa632df75f745509b52f9128f91a6bad4c796e44abb505e1",
+		"napi-derive-backend@1.0.75": "1639aaa9eeb76e91c6ae66da8ce3e89e921cd3885e99ec85f4abacae72fc91bf",
+		"napi-derive@2.16.13": "7cbe2585d8ac223f7d34f13701434b9d5f4eb9c332cccce8dee57ea18ab8ab0c",
+		"napi-sys@2.4.0": "427802e8ec3a734331fec1035594a210ce1ff4dc5bc1950530920ab717964ea3",
+		"napi@2.16.17": "55740c4ae1d8696773c78fdafd5d0e5fe9bc9f1b071c7ba493ba5c413a9184f3",
+		"ndk-sys@0.5.0+25.2.9519653": "8c196769dd60fd4f363e11d948139556a344e79d451aeb2fa2fd040738ef7691",
+		"profiling@1.0.18": "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5",
+		"r-efi@6.0.0": "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf",
+		"realfft@3.5.0": "f821338fddb99d089116342c46e9f1fbf3828dba077674613e734e01d6ea8677",
+		"spirv@0.3.0+sdk-1.3.268.0": "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844",
+		"wgpu-hal@24.0.4": "f112f464674ca69f3533248508ee30cb84c67cf06c25ff6800685f5e0294e259"
+	},
+	"packages": [
+		{
+			"name": "block",
+			"version": "0.1.6",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "http://github.com/SSheldon/rust-block",
+			"upstreamRevision": "47178790cfc9d4a8b092051d8b413b78bd31254a",
+			"copyright": "Steven Sheldon"
+		},
+		{
+			"name": "codespan-reporting",
+			"version": "0.11.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0",
+			"repository": "https://github.com/brendanzab/codespan",
+			"upstreamRevision": "fd389a13f5bb6d625b71e2e4694b26e127f393f9"
+		},
+		{
+			"name": "dasp_frame",
+			"version": "0.11.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/rustaudio/dasp.git",
+			"upstreamRevision": "221b81038c528bf3fc364a8ab5cc4b2e52f7dbfc",
+			"copyright": "2016 RustAudio Developers"
+		},
+		{
+			"name": "dasp_sample",
+			"version": "0.11.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/rustaudio/sample.git",
+			"upstreamRevision": "97c3bb9b2363c0b46ac1633858bf1054fd02a980",
+			"copyright": "2016 RustAudio Developers"
+		},
+		{
+			"name": "gl_generator",
+			"version": "0.14.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0",
+			"repository": "https://github.com/brendanzab/gl-rs/",
+			"upstreamRevision": "ea503e8d5fb6d73c6030e6191ce738cd3bf3433e"
+		},
+		{
+			"name": "gpu-alloc-types",
+			"version": "0.3.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/zakarumych/gpu-alloc",
+			"upstreamRevision": "7ddd1fe576fcfc503347eb97e476a47581479f22",
+			"copyright": "gpu-alloc Project Developers"
+		},
+		{
+			"name": "gpu-alloc",
+			"version": "0.6.2",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/zakarumych/gpu-alloc",
+			"upstreamRevision": "61020bdcb4eb04fca6bbf748aeb9570e859236e0",
+			"copyright": "gpu-alloc Project Developers"
+		},
+		{
+			"name": "gpu-descriptor-types",
+			"version": "0.2.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/zakarumych/gpu-descriptor",
+			"upstreamRevision": "9f2fb9546591322e7b77ee1e79385e01effd85e4",
+			"copyright": "gpu-descriptor Project Developers"
+		},
+		{
+			"name": "gpu-descriptor",
+			"version": "0.3.2",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/zakarumych/gpu-descriptor",
+			"upstreamRevision": "bb28b4e55b742e0ea3e7a0968e7ee6287ba0e06a",
+			"copyright": "gpu-descriptor Project Developers"
+		},
+		{
+			"name": "harfrust",
+			"version": "0.5.2",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/harfbuzz/harfrust",
+			"upstreamRevision": "efdae3142ab76a2f1524d72cff9e3dfdc5afd7ca",
+			"copyright": "HarfBuzz developers and 2020 Yevhenii Reizner"
+		},
+		{
+			"name": "hexf-parse",
+			"version": "0.2.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "CC0-1.0",
+			"repository": "https://github.com/lifthrasiir/hexf",
+			"upstreamRevision": "4225763d744183d720f575ae96d04161b4d08ea0"
+		},
+		{
+			"name": "jni-sys-macros",
+			"version": "0.4.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/jni-rs/jni-sys",
+			"upstreamRevision": "64d77b7a5f119d7b55b4e2c169a4668067ff59e6",
+			"copyright": "2015 rust-jni-sys Developers"
+		},
+		{
+			"name": "khronos_api",
+			"version": "3.1.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0",
+			"repository": "https://github.com/brendanzab/gl-rs/",
+			"upstreamRevision": "f150967b1c44ae888e6676f93f639ebc82771bdc"
+		},
+		{
+			"name": "malloc_buf",
+			"version": "0.0.6",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/SSheldon/malloc_buf",
+			"upstreamRevision": "a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9",
+			"copyright": "Steven Sheldon"
+		},
+		{
+			"name": "naga",
+			"version": "24.0.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/gfx-rs/wgpu/tree/trunk/naga",
+			"upstreamRevision": "dc1e50e08cd4a5c8d6c3e8a180e93535d40bec4a",
+			"copyright": "2021 gfx-rs developers"
+		},
+		{
+			"name": "napi-build",
+			"version": "2.3.2",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/napi-rs/napi-rs",
+			"upstreamRevision": "e9c50bb430b7d34659c0541f600e1e323d37432a",
+			"copyright": "2020-present LongYinan and napi-rs contributors"
+		},
+		{
+			"name": "napi-derive-backend",
+			"version": "1.0.75",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/napi-rs/napi-rs",
+			"upstreamRevision": "a312b7eb4e12d3e0a3e9770429ee05c333947a39",
+			"copyright": "2020-present LongYinan and napi-rs contributors"
+		},
+		{
+			"name": "napi-derive",
+			"version": "2.16.13",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/napi-rs/napi-rs",
+			"upstreamRevision": "a312b7eb4e12d3e0a3e9770429ee05c333947a39",
+			"copyright": "2020-present LongYinan and napi-rs contributors"
+		},
+		{
+			"name": "napi-sys",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/napi-rs/napi-rs",
+			"upstreamRevision": "f1b8ab5e645e674df33c796ef75aa278cd1b4a31",
+			"copyright": "2020-present LongYinan and napi-rs contributors"
+		},
+		{
+			"name": "napi",
+			"version": "2.16.17",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/napi-rs/napi-rs",
+			"upstreamRevision": "f2178312d0e3e07beecc19836b91716a229107d3",
+			"copyright": "2020-present LongYinan and napi-rs contributors"
+		},
+		{
+			"name": "ndk-sys",
+			"version": "0.5.0+25.2.9519653",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/rust-mobile/ndk",
+			"upstreamRevision": "f414cabc12211ebcba4edb3da90950967d4a1933",
+			"copyright": "The Rust Windowing contributors"
+		},
+		{
+			"name": "profiling",
+			"version": "1.0.18",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/aclysma/profiling",
+			"upstreamRevision": "8271551172eb6fa4cba47369aedd93790c623df9",
+			"copyright": "2020 Philip Degarmo and contributors"
+		},
+		{
+			"name": "r-efi",
+			"version": "6.0.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+			"repository": "https://github.com/r-efi/r-efi",
+			"upstreamRevision": "7e1b0322d31d625f81a5656096330934f9cd835d",
+			"copyright": "2017-2023 Red Hat, Inc.; 2019-2023 Microsoft Corporation; 2022-2023 David Rheinsberg"
+		},
+		{
+			"name": "realfft",
+			"version": "3.5.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"repository": "https://github.com/HEnquist/realfft",
+			"upstreamRevision": "d0d4eee0525fd27c96c8a046d6d107acd5ed84a6",
+			"copyright": "HEnquist"
+		},
+		{
+			"name": "spirv",
+			"version": "0.3.0+sdk-1.3.268.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0",
+			"repository": "https://github.com/gfx-rs/rspirv",
+			"upstreamRevision": "e91a5debc10c395b36db7721dfff6326d697a1e2"
+		},
+		{
+			"name": "wgpu-hal",
+			"version": "24.0.4",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"repository": "https://github.com/gfx-rs/wgpu",
+			"upstreamRevision": "993fc39b07e8a4418a15043265298d7bc016d059",
+			"copyright": "2021 The gfx-rs developers"
+		}
+	]
+}

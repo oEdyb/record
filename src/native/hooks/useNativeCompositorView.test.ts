@@ -20,12 +20,14 @@ const mocks = vi.hoisted(() => ({
 	createCompositorView: vi.fn(),
 	readCompositorFrame: vi.fn(),
 	destroyCompositorView: vi.fn(),
+	reportCompositorPreviewTiming: vi.fn(),
 }));
 
 vi.mock("../compositorViewClient", () => ({
 	createCompositorView: mocks.createCompositorView,
 	readCompositorFrame: mocks.readCompositorFrame,
 	destroyCompositorView: mocks.destroyCompositorView,
+	reportCompositorPreviewTiming: mocks.reportCompositorPreviewTiming,
 	setCompositorParam: vi.fn(),
 	setCompositorPlaying: vi.fn(),
 	setCompositorRect: vi.fn(),
@@ -64,6 +66,8 @@ describe("useNativeCompositorView", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.unstubAllGlobals();
+		mocks.reportCompositorPreviewTiming.mockResolvedValue({ ok: true });
+		mocks.destroyCompositorView.mockResolvedValue({ ok: true });
 	});
 
 	it("reports the exact native frame timing after validating the packet", async () => {
@@ -87,6 +91,7 @@ describe("useNativeCompositorView", () => {
 			sourceTimeSec: 1.25,
 			clipIndex: 2,
 			transportGeneration: 9,
+			readbackMs: 0.4,
 		});
 		mocks.readCompositorFrame.mockResolvedValue(null);
 		const onFrame = vi.fn();

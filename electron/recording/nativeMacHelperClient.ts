@@ -2,6 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type { Rectangle } from "electron";
 import {
+	type NativeMacCaptureTelemetry,
 	type NativeMacRecordingFailure,
 	type NativeMacRecordingRequest,
 	parseNativeMacRecordingClip,
@@ -12,6 +13,7 @@ export type NativeMacStopResult = {
 	screenPath: string;
 	clips: RecordingSessionClip[];
 	warning?: { code: string; message: string };
+	telemetry?: NativeMacCaptureTelemetry;
 };
 
 type NativeMacHelperClientOptions = {
@@ -347,6 +349,110 @@ export class NativeMacHelperClient {
 		};
 	}
 
+	private parseMetricSummary(value: unknown): NativeMacCaptureTelemetry["systemAudioDriftMs"] {
+		if (!value || typeof value !== "object") return undefined;
+		const summary = value as Record<string, unknown>;
+		const fields = ["min", "max", "mean", "p50", "p95", "p99"] as const;
+		if (
+			typeof summary.count !== "number" ||
+			!Number.isInteger(summary.count) ||
+			summary.count < 1 ||
+			fields.some((field) => typeof summary[field] !== "number" || !Number.isFinite(summary[field]))
+		) {
+			return undefined;
+		}
+		return {
+			count: summary.count,
+			min: summary.min as number,
+			max: summary.max as number,
+			mean: summary.mean as number,
+			p50: summary.p50 as number,
+			p95: summary.p95 as number,
+			p99: summary.p99 as number,
+		};
+	}
+
+	private parseCaptureTelemetry(value: unknown): NativeMacCaptureTelemetry | undefined {
+		if (!value || typeof value !== "object") return undefined;
+		const telemetry = value as Record<string, unknown>;
+		const numericFields = [
+			"requestedVideoFps",
+			"deliveredVideoFps",
+			"screenSamples",
+			"completeScreenSamples",
+			"idleScreenSamples",
+			"blankScreenSamples",
+			"suspendedScreenSamples",
+			"startedScreenSamples",
+			"stoppedScreenSamples",
+			"otherScreenSamples",
+			"appendedVideoFrames",
+			"pendingVideoFrames",
+			"appendFailures",
+			"droppedVideoFrames",
+			"systemAudioSamples",
+			"microphoneAudioSamples",
+		] as const;
+		if (
+			numericFields.some(
+				(field) =>
+					typeof telemetry[field] !== "number" ||
+					!Number.isFinite(telemetry[field]) ||
+					(telemetry[field] as number) < 0,
+			) ||
+			(telemetry.audioMaxQueueBytes !== undefined &&
+				(typeof telemetry.audioMaxQueueBytes !== "number" ||
+					!Number.isFinite(telemetry.audioMaxQueueBytes) ||
+					telemetry.audioMaxQueueBytes < 0)) ||
+			(telemetry.writerMaxQueueDepth !== undefined &&
+				(typeof telemetry.writerMaxQueueDepth !== "number" ||
+					!Number.isFinite(telemetry.writerMaxQueueDepth) ||
+					telemetry.writerMaxQueueDepth < 0)) ||
+			typeof telemetry.lowPowerMode !== "boolean" ||
+			!["unknown", "nominal", "fair", "serious", "critical"].includes(
+				String(telemetry.thermalState),
+			)
+		) {
+			return undefined;
+		}
+		const systemAudioDriftMs = this.parseMetricSummary(telemetry.systemAudioDriftMs);
+		const screenTimestampDriftMs = this.parseMetricSummary(telemetry.screenTimestampDriftMs);
+		const microphoneDriftMs = this.parseMetricSummary(telemetry.microphoneDriftMs);
+		const fragmentFinalizeMs = this.parseMetricSummary(telemetry.fragmentFinalizeMs);
+		const audioBlockMs = this.parseMetricSummary(telemetry.audioBlockMs);
+		return {
+			requestedVideoFps: telemetry.requestedVideoFps as number,
+			deliveredVideoFps: telemetry.deliveredVideoFps as number,
+			screenSamples: telemetry.screenSamples as number,
+			completeScreenSamples: telemetry.completeScreenSamples as number,
+			idleScreenSamples: telemetry.idleScreenSamples as number,
+			blankScreenSamples: telemetry.blankScreenSamples as number,
+			suspendedScreenSamples: telemetry.suspendedScreenSamples as number,
+			startedScreenSamples: telemetry.startedScreenSamples as number,
+			stoppedScreenSamples: telemetry.stoppedScreenSamples as number,
+			otherScreenSamples: telemetry.otherScreenSamples as number,
+			appendedVideoFrames: telemetry.appendedVideoFrames as number,
+			pendingVideoFrames: telemetry.pendingVideoFrames as number,
+			appendFailures: telemetry.appendFailures as number,
+			droppedVideoFrames: telemetry.droppedVideoFrames as number,
+			systemAudioSamples: telemetry.systemAudioSamples as number,
+			microphoneAudioSamples: telemetry.microphoneAudioSamples as number,
+			...(typeof telemetry.audioMaxQueueBytes === "number"
+				? { audioMaxQueueBytes: telemetry.audioMaxQueueBytes }
+				: {}),
+			...(typeof telemetry.writerMaxQueueDepth === "number"
+				? { writerMaxQueueDepth: telemetry.writerMaxQueueDepth }
+				: {}),
+			lowPowerMode: telemetry.lowPowerMode as boolean,
+			thermalState: telemetry.thermalState as NativeMacCaptureTelemetry["thermalState"],
+			...(systemAudioDriftMs ? { systemAudioDriftMs } : {}),
+			...(screenTimestampDriftMs ? { screenTimestampDriftMs } : {}),
+			...(microphoneDriftMs ? { microphoneDriftMs } : {}),
+			...(fragmentFinalizeMs ? { fragmentFinalizeMs } : {}),
+			...(audioBlockMs ? { audioBlockMs } : {}),
+		};
+	}
+
 	private stoppedResultFromEvent(
 		event: Record<string, unknown>,
 		fallbackScreenPath: string,
@@ -357,10 +463,12 @@ export class NativeMacHelperClient {
 					.filter((clip): clip is RecordingSessionClip => clip !== null)
 			: [];
 		const warning = this.parseWarning(event.warning);
+		const telemetry = this.parseCaptureTelemetry(event.telemetry);
 		return {
 			screenPath: String(event.screenPath ?? fallbackScreenPath),
 			clips,
 			...(warning ? { warning } : {}),
+			...(telemetry ? { telemetry } : {}),
 		};
 	}
 

@@ -9,10 +9,26 @@ const nativeMocks = vi.hoisted(() => ({
 	loadProjectFileFromPath: vi.fn(),
 	getRecordingData: vi.fn(async () => ({ samples: [] })),
 	exportMultiNative: vi.fn(
-		async (_clips: unknown[], _outputPath: string, _sceneJson: string, _settings: unknown) =>
-			undefined,
+		async (
+			_clips: unknown[],
+			_outputPath: string,
+			_sceneJson: string,
+			_settings: unknown,
+			_transaction?: unknown,
+		) => ({
+			videoDurationS: 8,
+		}),
 	),
-	exportGifNative: vi.fn(async () => undefined),
+	exportGifNative: vi.fn(
+		async (
+			_clips: unknown[],
+			_outputPath: string,
+			_sceneJson: string,
+			_settings: unknown,
+			_transaction?: unknown,
+		) => ({ videoDurationS: 8, wallS: 1 }),
+	),
+	mixVoiceoverIntoVideo: vi.fn(async () => new Blob([new Uint8Array([1, 2, 3, 4])])),
 }));
 
 vi.mock("@/native", () => ({
@@ -22,6 +38,10 @@ vi.mock("@/native", () => ({
 	},
 	exportMultiNative: nativeMocks.exportMultiNative,
 	exportGifNative: nativeMocks.exportGifNative,
+}));
+
+vi.mock("@/lib/exporter/voiceoverMix", () => ({
+	mixVoiceoverIntoVideo: nativeMocks.mixVoiceoverIntoVideo,
 }));
 
 import { runExport } from "./CliExportRunner";
@@ -163,6 +183,12 @@ beforeEach(() => {
 		cliLog: vi.fn(),
 		cliProgress: vi.fn(),
 		onNativeExportProgress: vi.fn(() => vi.fn()),
+		onNativeExportPhase: vi.fn(() => vi.fn()),
+		createTemporaryExportPath: vi.fn(async () => "/tmp/.klippt-voiceover-test.mp4"),
+		removeTemporaryExportPath: vi.fn(async () => ({ success: true })),
+		writeExportToPath: vi.fn(async () => ({ success: true })),
+		cancelWriteExport: vi.fn(async () => ({ cancelled: true })),
+		onCliCancelExport: vi.fn(() => vi.fn()),
 	} as unknown as ElectronAPI;
 });
 
@@ -193,7 +219,8 @@ describe("runExport", () => {
 			outputPath: "/exports/demo.mp4",
 		});
 		expect(nativeMocks.exportMultiNative).toHaveBeenCalledOnce();
-		const [clips, outputPath, sceneJson, settings] = nativeMocks.exportMultiNative.mock.calls[0];
+		const [clips, outputPath, sceneJson, settings, transaction] =
+			nativeMocks.exportMultiNative.mock.calls[0];
 		const nativeClips = clips as Array<{
 			screenPath: string;
 			webcamPath?: string;
@@ -229,5 +256,127 @@ describe("runExport", () => {
 		expect(scene.zoomRegions).toHaveLength(1);
 		expect(scene.speedRegions).toHaveLength(1);
 		expect(scene.cameraFullscreenRegions).toHaveLength(1);
+		expect(transaction).toMatchObject({
+			expectedBytes: expect.any(Number),
+		});
+		expect((transaction as { expectedBytes: number }).expectedBytes).toBeGreaterThan(0);
+	});
+
+	it("keeps a voiceover export temporary until the mixed MP4 is atomically published", async () => {
+		nativeMocks.loadProjectFileFromPath.mockResolvedValue({
+			success: true,
+			project: currentMultiAssetProject(),
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({
+				ok: true,
+				blob: async () => new Blob([new Uint8Array([5, 6, 7])]),
+				arrayBuffer: async () => new Uint8Array([8, 9]).buffer,
+			})),
+		);
+
+		const result = await runExport({
+			kind: "export",
+			projectPath: "/projects/demo.klippt",
+			outPath: "/exports/demo.mp4",
+			format: "mp4",
+			quality: null,
+			gifFrameRate: null,
+			gifSizePreset: null,
+			autoZoom: false,
+			audioPath: "/media/voiceover.wav",
+			audioMode: "mix",
+			audioOffsetSec: 0.25,
+		});
+
+		expect(result.success).toBe(true);
+		expect(nativeMocks.exportMultiNative).toHaveBeenCalledWith(
+			expect.any(Array),
+			"/tmp/.klippt-voiceover-test.mp4",
+			expect.any(String),
+			expect.any(Object),
+			expect.objectContaining({ signal: undefined, expectedBytes: expect.any(Number) }),
+		);
+		expect(nativeMocks.mixVoiceoverIntoVideo).toHaveBeenCalledWith(expect.any(Blob), {
+			voiceoverData: expect.any(ArrayBuffer),
+			mode: "mix",
+			offsetSec: 0.25,
+		});
+		expect(window.electronAPI.writeExportToPath).toHaveBeenCalledWith(
+			expect.any(ArrayBuffer),
+			"/exports/demo.mp4",
+			expect.objectContaining({
+				width: 1536,
+				height: 864,
+				fps: 60,
+				durationS: 8,
+				codec: "h264",
+			}),
+			expect.any(String),
+		);
+		expect(window.electronAPI.removeTemporaryExportPath).toHaveBeenCalledWith(
+			"/tmp/.klippt-voiceover-test.mp4",
+		);
+	});
+
+	it("uses speed-adjusted duration for GIF progress and capacity", async () => {
+		nativeMocks.loadProjectFileFromPath.mockResolvedValue({
+			success: true,
+			project: currentMultiAssetProject(),
+		});
+
+		const result = await runExport({
+			kind: "export",
+			projectPath: "/projects/demo.klippt",
+			outPath: "/exports/demo.gif",
+			format: "gif",
+			quality: null,
+			gifFrameRate: 25,
+			gifSizePreset: "large",
+			autoZoom: false,
+			audioPath: null,
+			audioMode: "mix",
+			audioOffsetSec: 0,
+		});
+
+		expect(result).toMatchObject({ success: true, format: "gif" });
+		expect(nativeMocks.exportGifNative).toHaveBeenCalledOnce();
+		const transaction = nativeMocks.exportGifNative.mock.calls[0]?.[4] as
+			| { expectedBytes?: number }
+			| undefined;
+		expect(transaction?.expectedBytes).toBeGreaterThan(0);
+	});
+
+	it("does not start a CLI export when cancellation already arrived", async () => {
+		nativeMocks.loadProjectFileFromPath.mockResolvedValue({
+			success: true,
+			project: currentMultiAssetProject(),
+		});
+		const controller = new AbortController();
+		controller.abort();
+
+		await expect(
+			runExport(
+				{
+					kind: "export",
+					projectPath: "/projects/demo.klippt",
+					outPath: "/exports/demo.mp4",
+					format: "mp4",
+					quality: null,
+					gifFrameRate: null,
+					gifSizePreset: null,
+					autoZoom: false,
+					audioPath: null,
+					audioMode: "mix",
+					audioOffsetSec: 0,
+				},
+				controller.signal,
+			),
+		).rejects.toMatchObject({
+			exportPhase: "preflight",
+			exportCode: "CANCELLED",
+		});
+		expect(nativeMocks.exportMultiNative).not.toHaveBeenCalled();
 	});
 });

@@ -1018,6 +1018,7 @@ unsafe fn run_c1_inner(
 
     enc.send(ptr::null_mut())?;
     drain_encoder(ectx, octx, ostream, opkt)?;
+    progress(frames);
     averr(av_write_trailer(octx), "write_trailer")?;
 
     let wall_s = t0.elapsed().as_secs_f64();
@@ -1065,7 +1066,7 @@ pub fn run_composited_multi(
     comp: &Compositor,
     cfg: &Cfg,
     params: &ExportParams,
-    progress: &mut dyn FnMut(u64),
+    progress: &mut dyn FnMut(crate::ExportProgress) -> Result<()>,
 ) -> Result<Stats> {
     discard_partial_output(out, unsafe {
         run_multi_inner(clips, out, gpu, comp, cfg, params, progress)
@@ -1448,7 +1449,7 @@ unsafe fn run_multi_inner(
     comp: &Compositor,
     cfg: &Cfg,
     params: &ExportParams,
-    progress: &mut dyn FnMut(u64),
+    progress: &mut dyn FnMut(crate::ExportProgress) -> Result<()>,
 ) -> Result<Stats> {
     if clips.is_empty() {
         bail!("aucun clip à exporter");
@@ -1500,12 +1501,16 @@ unsafe fn run_multi_inner(
     )?;
     let ectx = enc.ctx;
 
-    let mut octx: *mut AVFormatContext = ptr::null_mut();
+    let mut mux = crate::export_settings::MuxOutputGuard::new();
     let outc = CString::new(out)?;
     averr(
-        avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), outc.as_ptr()),
+        avformat_alloc_output_context2(mux.context_mut(), ptr::null(), ptr::null(), outc.as_ptr()),
         "alloc_output_context2",
     )?;
+    let octx = mux.context();
+    if octx.is_null() {
+        bail!("avformat_alloc_output_context2 returned null");
+    }
     let ostream = avformat_new_stream(octx, ptr::null());
     if ostream.is_null() {
         bail!("video avformat_new_stream");
@@ -1518,15 +1523,18 @@ unsafe fn run_multi_inner(
     // Les deux streams doivent exister avant le header MP4 ; l'AAC reste ouvert pendant le
     // rendu puis reçoit le PCM assemblé à partir des comptes de frames réellement produits.
     let mut audio_encoder = AacEncoder::open(octx)?;
-    let mut pb: *mut AVIOContext = ptr::null_mut();
     averr(
-        avio_open(&mut pb, outc.as_ptr(), AVIO_FLAG_WRITE as i32),
+        avio_open(mux.io_mut(), outc.as_ptr(), AVIO_FLAG_WRITE as i32),
         "avio_open",
     )?;
-    sn_fmt_set_pb(octx, pb);
+    mux.bind_io();
     averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
 
-    let opkt = av_packet_alloc();
+    *mux.packet_mut() = av_packet_alloc();
+    let opkt = mux.packet();
+    if opkt.is_null() {
+        bail!("av_packet_alloc (export packet)");
+    }
     let mut clip_frame_counts = vec![0u64; clips.len()];
     let mut clip_audio: Vec<Option<DecodedClipAudio>> =
         std::iter::repeat_with(|| None).take(clips.len()).collect();
@@ -1565,7 +1573,7 @@ unsafe fn run_multi_inner(
                 drain_encoder(ectx, octx, ostream, opkt)?;
                 av_frame_free(&mut (outf as *mut _));
             }
-            progress(frame_index + 1);
+            progress(crate::ExportProgress::Frame(frame_index + 1))?;
             Ok(())
         },
         &mut |clip_index, source_end_sec, frames_in_clip, speed_segments| {
@@ -1605,6 +1613,7 @@ unsafe fn run_multi_inner(
 
     enc.send(ptr::null_mut())?;
     drain_encoder(ectx, octx, ostream, opkt)?;
+    progress(crate::ExportProgress::VideoFlushed(frames))?;
 
     let declared_audio: Vec<bool> = clips.iter().map(|clip| clip.has_audio).collect();
     let audio_plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
@@ -1618,19 +1627,16 @@ unsafe fn run_multi_inner(
             params.peak_ceiling_dbtp,
         ),
     );
+    progress(crate::ExportProgress::AudioEncoding(frames))?;
     audio_encoder.encode(&assembled_audio, octx)?;
+    progress(crate::ExportProgress::AudioFlushed(frames))?;
 
+    progress(crate::ExportProgress::Trailer(frames))?;
     averr(av_write_trailer(octx), "write_trailer")?;
     let wall_s = t0.elapsed().as_secs_f64();
 
-    // teardown (les décodeurs du cache sont droppés en fin de scope).
-    av_packet_free(&mut (opkt as *mut _));
-    let mut pb2 = sn_fmt_get_pb(octx);
-    if !pb2.is_null() {
-        avio_closep(&mut pb2);
-        sn_fmt_set_pb(octx, ptr::null_mut());
-    }
-    avformat_free_context(octx);
+    // Le muxer, son paquet et son descripteur sont fermés par `MuxOutputGuard`,
+    // y compris sur chaque retour anticipé de cancellation.
     // `enc` (donc le contexte encodeur) est libéré par son Drop en fin de portée — après
     // ces unref, ce qui est l'ordre voulu : il garde sa propre référence sur le pool.
     av_buffer_unref(&mut enc_frames);

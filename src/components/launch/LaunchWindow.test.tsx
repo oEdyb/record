@@ -555,7 +555,7 @@ describe("LaunchWindow record button", () => {
 		});
 
 		renderLaunchWindow();
-		const close = await screen.findByRole("button", { name: "Open Studio" });
+		const close = await screen.findByTitle("Open Studio");
 		fireEvent.keyDown(window, { key: "Escape" });
 		fireEvent.click(close);
 
@@ -711,6 +711,14 @@ describe("LaunchWindow record button", () => {
 		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
 		expect(screen.getByTestId("hud-compact-pause-button")).toHaveAccessibleName(
 			"tooltips.resumeRecording",
+		);
+	});
+
+	it("gives tooltip-only HUD controls a stable accessible name", async () => {
+		renderLaunchWindow();
+
+		expect(await screen.findByTestId("launch-open-studio-button")).toHaveAccessibleName(
+			"Open Studio",
 		);
 	});
 

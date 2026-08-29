@@ -13,7 +13,7 @@ const WEB_DEMUXER_WASM_PATH = "wasm/web-demuxer.wasm";
 export function webDemuxerWasmUrl(pageUrl: string = window.location.href): string {
 	const page = new URL(pageUrl);
 	return page.protocol === "file:"
-		? new URL(`./${WEB_DEMUXER_WASM_PATH}`, page).href
+		? new URL("../../web-demuxer.wasm", page).href
 		: new URL(`/${WEB_DEMUXER_WASM_PATH}`, page).href;
 }
 

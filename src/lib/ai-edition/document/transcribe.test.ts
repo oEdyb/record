@@ -1,21 +1,50 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AxcutDocument, type AxcutTranscript, axcutSchemaVersion } from "../schema";
 import { toAxcutTranscriptDsl, transcribeAsset } from "./transcribe";
 
-vi.mock("@/components/video-editor/projectPersistence", () => ({
-	toFileUrl: (path: string) => `file://${path}`,
-}));
+const transcribeSourceMock = vi.fn();
+const cancelMock = vi.fn();
 
-vi.mock("@/lib/captioning", () => ({
-	extractMono16kFromVideoUrl: vi.fn(async () => ({
-		samples: new Float32Array([0, 0, 0]),
-		sampleRate: 16_000,
-	})),
-	transcribeMono16kToSegments: vi.fn(),
-}));
+function sourceResult(language: string | null, text = "hello") {
+	return {
+		segments: [{ startSec: 0, endSec: 1, text, sourceRole: "you" as const }],
+		wordSegments: [{ startSec: 0, endSec: 1, word: text, sourceRole: "you" as const }],
+		detectedLanguage: language ?? "auto",
+		backend: "parakeet-coreml" as const,
+		sources: [
+			{
+				sourceRole: "you" as const,
+				trackLanguageCode: "qac" as const,
+				sourceContentSha256: "a".repeat(64),
+				backend: "parakeet-coreml" as const,
+				model: {
+					id: "parakeet-v3" as const,
+					revision: "revision",
+					artifactSha256: ["b".repeat(64)],
+				},
+				language: { requested: "auto", detected: language ?? "auto" },
+				extraction: { version: 1 as const, sampleRate: 16_000 as const, channels: 1 as const },
+				alignment: {
+					version: 1 as const,
+					method: "recognizer-native-acoustic-snap" as const,
+				},
+			},
+		],
+	};
+}
 
-const { transcribeMono16kToSegments } = await import("@/lib/captioning");
-const transcribeMock = vi.mocked(transcribeMono16kToSegments);
+beforeEach(() => {
+	transcribeSourceMock.mockReset();
+	cancelMock.mockReset();
+	vi.stubGlobal("window", {
+		electronAPI: {
+			stt: {
+				transcribeSource: transcribeSourceMock,
+				cancel: cancelMock,
+			},
+		},
+	});
+});
 
 function makeDoc(): AxcutDocument {
 	return {
@@ -125,64 +154,95 @@ describe("toAxcutTranscriptDsl", () => {
 });
 
 describe("transcribeAsset language handling", () => {
+	it("does not start source transcription for an already-cancelled job", async () => {
+		const controller = new AbortController();
+		controller.abort();
+
+		await expect(
+			transcribeAsset(makeDoc(), "asset_1", { signal: controller.signal }),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(transcribeSourceMock).not.toHaveBeenCalled();
+	});
+
+	it("drops a result that arrives after cancellation", async () => {
+		let finish: ((value: ReturnType<typeof sourceResult>) => void) | undefined;
+		transcribeSourceMock.mockImplementationOnce(
+			async () =>
+				await new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const controller = new AbortController();
+		const run = transcribeAsset(makeDoc(), "asset_1", { signal: controller.signal });
+		await vi.waitFor(() => expect(transcribeSourceMock).toHaveBeenCalledOnce());
+		controller.abort();
+		finish?.(sourceResult("en"));
+
+		await expect(run).rejects.toMatchObject({ name: "AbortError" });
+		expect(cancelMock).toHaveBeenCalledOnce();
+	});
+
 	it("forwards a forced language to the worker and stores it on the transcript", async () => {
-		transcribeMock.mockResolvedValueOnce({
-			segments: [{ startSec: 0, endSec: 1, text: "bonjour" }],
-			granularity: "phrase",
-			detectedLanguage: "fr",
-		});
+		transcribeSourceMock.mockResolvedValueOnce(sourceResult("fr", "bonjour"));
 
 		const doc = makeDoc();
 		const t = await transcribeAsset(doc, "asset_1", { language: "fr" });
 
 		// The forced ISO code reaches the underlying worker call.
-		expect(transcribeMock).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ language: "fr" }),
+		expect(transcribeSourceMock).toHaveBeenCalledWith(
+			expect.objectContaining({ language: "fr", sourceKind: "import" }),
 		);
 		// The stored transcript reports the model-confirmed language.
 		expect(t.language).toBe("fr");
 	});
 
 	it("omits the language option from the worker call when 'auto' so Whisper detects", async () => {
-		transcribeMock.mockResolvedValueOnce({
-			segments: [{ startSec: 0, endSec: 1, text: "hello" }],
-			granularity: "phrase",
-			detectedLanguage: "en",
-		});
+		transcribeSourceMock.mockResolvedValueOnce(sourceResult("en"));
 
 		const doc = makeDoc();
 		const t = await transcribeAsset(doc, "asset_1", { language: "auto" });
 
-		expect(transcribeMock).toHaveBeenCalledWith(
-			expect.anything(),
+		expect(transcribeSourceMock).toHaveBeenCalledWith(
 			expect.objectContaining({ language: undefined }),
 		);
 		expect(t.language).toBe("en");
 	});
 
 	it("captures Whisper's auto-detected language when no option was passed", async () => {
-		transcribeMock.mockResolvedValueOnce({
-			segments: [{ startSec: 0, endSec: 1, text: "hola" }],
-			granularity: "phrase",
-			detectedLanguage: "es",
-		});
+		transcribeSourceMock.mockResolvedValueOnce(sourceResult("es", "hola"));
 
 		const doc = makeDoc();
 		const t = await transcribeAsset(doc, "asset_1");
 
-		expect(transcribeMock).toHaveBeenCalledWith(
-			expect.anything(),
+		expect(transcribeSourceMock).toHaveBeenCalledWith(
 			expect.objectContaining({ language: undefined }),
 		);
 		expect(t.language).toBe("es");
 	});
 
+	it("keeps phrase-only system speech when microphone words have timing", async () => {
+		transcribeSourceMock.mockResolvedValueOnce({
+			...sourceResult("en"),
+			segments: [
+				{ text: "hello", startSec: 0, endSec: 0.5, sourceRole: "you" },
+				{ text: "system reply", startSec: 1, endSec: 2, sourceRole: "system" },
+			],
+			wordSegments: [{ word: "hello", startSec: 0, endSec: 0.5, sourceRole: "you" }],
+		});
+
+		const transcript = await transcribeAsset(makeDoc(), "asset_1");
+		expect(transcript.words.map((word) => [word.text, word.sourceRole])).toEqual([
+			["hello", "you"],
+			["system", "system"],
+			["reply", "system"],
+		]);
+	});
+
 	it("falls back to 'auto' when the model reports no language token", async () => {
-		transcribeMock.mockResolvedValueOnce({
+		transcribeSourceMock.mockResolvedValueOnce({
+			...sourceResult(null),
 			segments: [],
-			granularity: "phrase",
-			detectedLanguage: null,
+			wordSegments: [],
 		});
 
 		const doc = makeDoc();

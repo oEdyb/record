@@ -90,12 +90,13 @@ describe("useCameraPreviewFrameBridge", () => {
 	it("relays one backpressured 2x Retina frame with high-quality downsampling", async () => {
 		const port = new PreviewPort();
 		const requestCameraPreviewConnection = vi.fn();
+		const reportCapturePerformance = vi.fn();
 		Object.defineProperty(window, "electronAPI", {
 			configurable: true,
-			value: { requestCameraPreviewConnection },
+			value: { requestCameraPreviewConnection, reportCapturePerformance },
 		});
 		const stream = {
-			getVideoTracks: () => [{ id: "camera-track" }],
+			getVideoTracks: () => [{ id: "camera-track", getSettings: () => ({ frameRate: 30 }) }],
 		} as unknown as MediaStream;
 		const view = renderHook(() => useCameraPreviewFrameBridge(stream));
 		expect(requestCameraPreviewConnection).toHaveBeenCalledOnce();
@@ -110,7 +111,9 @@ describe("useCameraPreviewFrameBridge", () => {
 		});
 		await waitFor(() => expect(frameCallback).not.toBeNull());
 
-		act(() => frameCallback?.(100, {} as VideoFrameCallbackMetadata));
+		const metadata = (mediaTime: number, presentedFrames: number) =>
+			({ mediaTime, presentedFrames }) as VideoFrameCallbackMetadata;
+		act(() => frameCallback?.(100, metadata(0, 1)));
 		expect(context.imageSmoothingEnabled).toBe(true);
 		expect(context.imageSmoothingQuality).toBe("high");
 		expect(context.drawImage).toHaveBeenCalledWith(
@@ -126,16 +129,21 @@ describe("useCameraPreviewFrameBridge", () => {
 		);
 		expect(port.postMessage).toHaveBeenCalledWith({ type: "frame", bitmap }, [bitmap]);
 
-		act(() => frameCallback?.(200, {} as VideoFrameCallbackMetadata));
+		act(() => frameCallback?.(200, metadata(1 / 30, 2)));
 		expect(transferToImageBitmap).toHaveBeenCalledTimes(1);
 		act(() => port.dispatchEvent(new MessageEvent("message", { data: { type: "consumed" } })));
-		act(() => frameCallback?.(230, {} as VideoFrameCallbackMetadata));
+		act(() => frameCallback?.(230, metadata(2 / 30, 3)));
 		expect(transferToImageBitmap).toHaveBeenCalledTimes(2);
 		act(() => port.dispatchEvent(new MessageEvent("message", { data: { type: "consumed" } })));
-		act(() => frameCallback?.(250, {} as VideoFrameCallbackMetadata));
+		act(() => frameCallback?.(250, metadata(3 / 30, 4)));
 		expect(transferToImageBitmap).toHaveBeenCalledTimes(2);
-		act(() => frameCallback?.(280, {} as VideoFrameCallbackMetadata));
+		act(() => frameCallback?.(280, metadata(4 / 30, 5)));
 		expect(transferToImageBitmap).toHaveBeenCalledTimes(3);
+		act(() => frameCallback?.(5_100, metadata(5, 151)));
+		expect(reportCapturePerformance).toHaveBeenCalledWith({
+			cameraDeliveredFps: (5 * 1_000) / 5_000,
+			cameraTimestampDriftMs: 0,
+		});
 
 		view.unmount();
 		expect(cancelVideoFrameCallback).toHaveBeenCalledWith(7);

@@ -7,7 +7,7 @@ import {
 	clampCameraPreviewPosition,
 	defaultCameraPreviewPosition,
 } from "./cameraPreviewGeometry";
-import { shouldStartHudClickThrough } from "./hudInputPolicy";
+import { shouldShowHudInactive, shouldStartHudClickThrough } from "./hudInputPolicy";
 import {
 	localRectanglesContainScreenPoint,
 	normalizePrivateUiRectangles,
@@ -455,7 +455,9 @@ export function createHudOverlayWindow(): BrowserWindow {
 	// window is shown before its first paint.
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "HUD");
-		if (!HEADLESS) win.show();
+		if (HEADLESS) return;
+		if (shouldShowHudInactive(process.platform)) win.showInactive();
+		else win.show();
 	});
 
 	win.webContents.on("did-finish-load", () => {

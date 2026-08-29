@@ -1,0 +1,127 @@
+{
+	"schemaVersion": 1,
+	"included": [
+		{
+			"id": "klippt-brand",
+			"paths": [
+				"icons/icons/**",
+				"build/appx/**",
+				"public/klippt-tray.png",
+				"public/klippt-trayTemplate.png",
+				"public/klippt-trayTemplate@2x.png"
+			],
+			"packagedOutputPatterns": [
+				"^dist/klippt-tray\\.png$",
+				"^dist/klippt-trayTemplate\\.png$",
+				"^dist/klippt-trayTemplate@2x\\.png$"
+			],
+			"license": "LicenseRef-Klippt-Proprietary",
+			"source": "Original Klippt mark introduced in repository commit 272293b08db37f8d1f9868ba887dded1267e05fe"
+		},
+		{
+			"id": "openscreen-ui-assets",
+			"paths": [
+				"public/rec-button.png",
+				"public/wallpapers/**",
+				"public/cursors/default/**",
+				"src/assets/cursors/**"
+			],
+			"packagedOutputPatterns": [
+				"^dist/rec-button\\.png$",
+				"^dist/wallpapers/(?:thumbs/)?wallpaper(?:[1-9]|1[0-8])\\.jpg$"
+			],
+			"license": "MIT",
+			"source": "OpenScreen repository contributions covered by the preserved upstream LICENSE"
+		},
+		{
+			"id": "geist-fonts",
+			"paths": [
+				"src/assets/fonts/Geist-Variable.woff2",
+				"src/assets/fonts/GeistMono-Variable.woff2",
+				"src/assets/fonts/OFL.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/Geist-Variable-[A-Za-z0-9_-]{8}\\.woff2$",
+				"^dist/assets/GeistMono-Variable-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/vercel/geist-font"
+		}
+	],
+	"applicationBuild": {
+		"requiredEntrypoints": [
+			"dist/index.html",
+			"dist-electron/bootstrap.js",
+			"dist-electron/preload.mjs"
+		],
+		"compiledOutputPatterns": [
+			"^dist/index\\.html$",
+			"^dist/assets/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\\.(?:js|css)$",
+			"^dist-electron/(?:bootstrap\\.js|preload\\.mjs|[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\\.js)$"
+		],
+		"excludedOutputs": [
+			{
+				"pattern": "^dist/wasm/web-demuxer\\.wasm$",
+				"builderPattern": "!dist/wasm/web-demuxer.wasm"
+			},
+			{
+				"pattern": "^dist/cursors(?:/.*)?$",
+				"builderPattern": "!dist/cursors{,/**/*}"
+			},
+			{
+				"pattern": "^dist/demo\\.gif$",
+				"builderPattern": "!dist/demo.gif"
+			},
+			{
+				"pattern": "^dist/openscreen\\.png$",
+				"builderPattern": "!dist/openscreen.png"
+			},
+			{
+				"pattern": "^dist/preview[^/]*\\.png$",
+				"builderPattern": "!dist/preview*.png"
+			},
+			{
+				"pattern": "^dist/vite\\.svg$",
+				"builderPattern": "!dist/vite.svg"
+			}
+		]
+	},
+	"excluded": [
+		{
+			"id": "legacy-sweezy-cursor-packs",
+			"paths": [
+				"public/cursors/among-us-sus-knife-and-red-animated/**",
+				"public/cursors/black-and-rainbow-stroke-gradient-animated/**",
+				"public/cursors/black-pixel/**",
+				"public/cursors/christmas-miles-morales/**",
+				"public/cursors/hello-kitty-watermelon/**",
+				"public/cursors/hollow-knight-and-game-arrow/**",
+				"public/cursors/hollow-knight-nail-sword-and-mask/**",
+				"public/cursors/mickey-mouse-black-hand-inflated-glove/**",
+				"public/cursors/naruto-akatsuki-cloud-arrow/**",
+				"public/cursors/old-roblox/**",
+				"public/cursors/pink-glossy-arrow-and-hand-3d/**",
+				"public/cursors/pinky-pixel/**",
+				"public/cursors/pokemon-neon-gengar/**",
+				"public/cursors/sanrio-gudetama-and-arrow-kawaii/**",
+				"public/cursors/sanrio-kuromi-skull-arrow/**",
+				"public/cursors/solo-leveling-sung-jinwoo-dark-flames/**",
+				"public/cursors/spring-gradient/**"
+			],
+			"license": "LicenseRef-Redistribution-Unconfirmed",
+			"reason": "No commercial redistribution grant was recorded. The paid package exposes no theme and copies only public/cursors/default."
+		},
+		{
+			"id": "legacy-marketing-assets",
+			"paths": [
+				"public/demo.gif",
+				"public/openscreen.png",
+				"public/preview3.png",
+				"public/preview4.png",
+				"public/vite.svg"
+			],
+			"license": "LicenseRef-Not-Part-Of-Product",
+			"reason": "Repository and documentation assets are explicitly excluded from paid application packages."
+		}
+	]
+}

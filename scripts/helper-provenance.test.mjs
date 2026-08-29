@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -156,6 +156,83 @@ describe("native helper provenance", () => {
 		expect(manifest.files.find((file) => file.path === "libwhisper.1.dylib")).not.toHaveProperty(
 			"symlinkTarget",
 		);
+	});
+
+	it("keeps the same Darwin content identity when only the code signature changes", async () => {
+		if (process.platform !== "darwin") return;
+		const directory = await mkdtemp(path.join(os.tmpdir(), "klippt-helper-signature-"));
+		temporaryDirectories.push(directory);
+		const helper = path.join(directory, "whisper-stt-server");
+		await copyFile("/bin/echo", helper);
+		execFileSync("/usr/bin/codesign", [
+			"--force",
+			"--sign",
+			"-",
+			"--identifier",
+			"app.klippt.first",
+			helper,
+		]);
+		await createHelperManifest({
+			directory,
+			helper: "whisper-stt",
+			sourceSha,
+			workflowRunId: "12345",
+			target: "darwin-arm64",
+			upstream: [
+				{
+					name: "whisper.cpp",
+					repository: "https://github.com/ggml-org/whisper.cpp.git",
+					revision: upstreamSha,
+				},
+			],
+			toolchains: { cmake: "cmake version 4.1.1" },
+		});
+		execFileSync("/usr/bin/codesign", [
+			"--force",
+			"--sign",
+			"-",
+			"--identifier",
+			"app.klippt.second",
+			helper,
+		]);
+		await expect(verifyHelperManifest({ directory })).resolves.toBeDefined();
+		const manifest = JSON.parse(await readFile(path.join(directory, HELPER_MANIFEST_NAME), "utf8"));
+		expect(manifest.files[0]).toMatchObject({
+			contentIdentity: "mach-o-without-code-signature",
+			contentSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+		});
+	});
+
+	it("rejects a Darwin helper whose code changed before it was re-signed", async () => {
+		if (process.platform !== "darwin") return;
+		const directory = await mkdtemp(path.join(os.tmpdir(), "klippt-helper-code-tamper-"));
+		temporaryDirectories.push(directory);
+		const helper = path.join(directory, "whisper-stt-server");
+		await copyFile("/bin/echo", helper);
+		execFileSync("/usr/bin/codesign", ["--force", "--sign", "-", helper]);
+		await createHelperManifest({
+			directory,
+			helper: "whisper-stt",
+			sourceSha,
+			workflowRunId: "12345",
+			target: "darwin-arm64",
+			upstream: [
+				{
+					name: "whisper.cpp",
+					repository: "https://github.com/ggml-org/whisper.cpp.git",
+					revision: upstreamSha,
+				},
+			],
+			toolchains: { cmake: "cmake version 4.1.1" },
+		});
+		const bytes = await readFile(helper);
+		const marker = Buffer.from("POSIXLY_CORRECT");
+		const markerOffset = bytes.indexOf(marker);
+		expect(markerOffset).toBeGreaterThan(0);
+		bytes[markerOffset] = "Q".charCodeAt(0);
+		await writeFile(helper, bytes);
+		execFileSync("/usr/bin/codesign", ["--force", "--sign", "-", helper]);
+		await expect(verifyHelperManifest({ directory })).rejects.toThrow(/hash mismatch/);
 	});
 
 	it("attests the actual FetchContent checkout instead of only its declaration", async () => {

@@ -36,6 +36,7 @@ export interface NativeFramePacket {
 	sourceTimeSec: number;
 	clipIndex: number;
 	transportGeneration: number;
+	readbackMs: number;
 	data: Buffer;
 }
 
@@ -46,6 +47,12 @@ export interface ExportStats {
 	/** Duration of the exported video (seconds) — distinct from `wallS` (real render time). */
 	videoDurationS: number;
 	audioMastering: AudioMasteringStats;
+	/** Exact FFmpeg encoder that opened for this run. */
+	encoderName: string;
+	encoderHardware: boolean;
+	encoderFallback: boolean;
+	decoderPath: string;
+	compositorBackend: string;
 }
 
 export interface AudioMasteringStats {
@@ -71,6 +78,38 @@ export interface GifExportStats {
 	/** Size of the final `.gif` file in bytes, measured after the encoder
 	 *  drops (i.e. after the GIF89a trailer flush). */
 	fileBytes: number;
+}
+
+export interface VideoExportVerifyInput {
+	width: number;
+	height: number;
+	fps: number;
+	durationS: number;
+	codec: "h264" | "h265";
+}
+
+export interface VideoExportVerificationOutput {
+	durationS: number;
+	fps: number;
+	videoStreams: number;
+	audioStreams: number;
+	firstVideoFrameS: number;
+	tailVideoFrameS: number;
+}
+
+export interface GifExportVerifyInput {
+	width: number;
+	height: number;
+	fps: number;
+	durationS: number;
+}
+
+export interface GifExportVerificationOutput {
+	durationS: number;
+	fps: number;
+	videoStreams: number;
+	firstFrameS: number;
+	tailFrameS: number;
 }
 
 /** Outcome of a container-only remux — see `remuxSeekable`. */
@@ -206,6 +245,7 @@ export interface CompositorViewAddon {
 		sceneJson?: string,
 		params?: ExportParamsInput,
 		onProgress?: (frames: number) => void,
+		exportId?: string,
 	): Promise<ExportStats>;
 	/** Native GIF export. Identical inputs to `exportMulti` — same clips, same
 	 *  scene — because it is the same render: both drive `walk_composited_timeline`
@@ -220,7 +260,22 @@ export interface CompositorViewAddon {
 		sceneJson?: string,
 		params?: GifParamsInput,
 		onProgress?: (frames: number) => void,
+		exportId?: string,
 	): Promise<GifExportStats>;
+	/** Requests cooperative cancellation at the next encoded frame. */
+	cancelExport?(exportId: string): boolean;
+	/** Reopens a staged MP4 with linked FFmpeg and decodes its start and tail. */
+	verifyVideoExport?(
+		path: string,
+		input: VideoExportVerifyInput,
+		exportId?: string,
+	): Promise<VideoExportVerificationOutput>;
+	/** Reopens a staged GIF with linked FFmpeg and decodes its start and tail. */
+	verifyGifExport?(
+		path: string,
+		input: GifExportVerifyInput,
+		exportId?: string,
+	): Promise<GifExportVerificationOutput>;
 
 	/** Stream-copy `inputPath` to `outputPath` through the matroska muxer, rebuilding the
 	 *  container (real `Duration` computed from the packet timestamps, plus `Cues` and

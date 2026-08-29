@@ -4,6 +4,7 @@ import {
 	calculateEffectiveSourceDimensions,
 	calculateMp4ExportSettings,
 	calculateMp4ExportSettingsForResolution,
+	estimateGifFileSizeBytes,
 	estimateMp4FileSizeBytes,
 	formatBitrate,
 	formatExportEta,
@@ -273,6 +274,17 @@ describe("MP4 export estimates", () => {
 				hasAudio: true,
 			}),
 		).toBe(155_937_600);
+	});
+
+	it("estimates GIF bytes from the speed-adjusted output duration", () => {
+		expect(
+			estimateGifFileSizeBytes({
+				durationSec: 20,
+				width: 320,
+				height: 240,
+				fps: 15,
+			}),
+		).toBe(8_064_000);
 	});
 
 	it("formats preset bitrates for the export summary", () => {

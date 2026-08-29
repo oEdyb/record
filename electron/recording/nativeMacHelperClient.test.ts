@@ -149,4 +149,75 @@ describe("NativeMacHelperClient", () => {
 		});
 		expect(write).not.toHaveBeenCalledWith("stop\n");
 	});
+
+	it("parses bounded capture telemetry from the stopped event", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const stopped = client.stop({ screenPath: "/tmp/fallback.mp4", clips: [] });
+		const summary = { count: 3, min: -2, max: 4, mean: 1, p50: 1, p95: 3, p99: 4 };
+
+		emit(process, {
+			event: "recording-stopped",
+			screenPath: "/tmp/clip.mp4",
+			clips: [],
+			telemetry: {
+				requestedVideoFps: 60,
+				deliveredVideoFps: 59.7,
+				screenSamples: 600,
+				completeScreenSamples: 594,
+				idleScreenSamples: 2,
+				blankScreenSamples: 1,
+				suspendedScreenSamples: 1,
+				startedScreenSamples: 1,
+				stoppedScreenSamples: 0,
+				otherScreenSamples: 1,
+				appendedVideoFrames: 593,
+				pendingVideoFrames: 3,
+				appendFailures: 1,
+				droppedVideoFrames: 7,
+				systemAudioSamples: 500,
+				microphoneAudioSamples: 480,
+				audioMaxQueueBytes: 3_840,
+				writerMaxQueueDepth: 4,
+				lowPowerMode: false,
+				thermalState: "nominal",
+				systemAudioDriftMs: summary,
+				screenTimestampDriftMs: summary,
+				microphoneDriftMs: summary,
+				fragmentFinalizeMs: summary,
+				audioBlockMs: summary,
+			},
+		});
+
+		await expect(stopped).resolves.toMatchObject({
+			telemetry: {
+				requestedVideoFps: 60,
+				deliveredVideoFps: 59.7,
+				droppedVideoFrames: 7,
+				audioMaxQueueBytes: 3_840,
+				writerMaxQueueDepth: 4,
+				thermalState: "nominal",
+				systemAudioDriftMs: summary,
+				screenTimestampDriftMs: summary,
+			},
+		});
+	});
+
+	it("ignores malformed capture telemetry instead of trusting partial data", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const stopped = client.stop({ screenPath: "/tmp/fallback.mp4", clips: [] });
+
+		emit(process, {
+			event: "recording-stopped",
+			screenPath: "/tmp/clip.mp4",
+			clips: [],
+			telemetry: {
+				requestedVideoFps: 60,
+				deliveredVideoFps: Number.NaN,
+			},
+		});
+
+		await expect(stopped).resolves.not.toHaveProperty("telemetry");
+	});
 });

@@ -2,8 +2,8 @@
 
 Klippt turns recorded audio into on-device text, and can render that text as
 captions over both the preview and the export. The recogniser runs natively on
-the desktop — no network calls, no Python — and feeds a single transcript per
-asset into a caption layer that derives its cues on every render. Code lives
+the desktop — no network calls, no Python — and feeds one role-aware transcript
+per asset into a caption layer that derives its cues on every render. Code lives
 in `electron/stt/` (main-process STT pipeline),
 `electron/native/parakeet-stt/` (the primary Apple Silicon helper),
 `electron/native/whisper-stt/` (the compatibility helper), and
@@ -15,29 +15,36 @@ the transcript).
 ```mermaid
 flowchart LR
     Z["Asset added<br/>(import or recording)"] -- "sync()" --> Y["transcriptionStore queue<br/>(src/lib/ai-edition/store/transcriptionStore.ts)"]
-    Y -- "one job at a time" --> A["Recorded audio"]
-    A -- "extract mono 16 kHz" --> B["transcribeAsset<br/>(src/lib/ai-edition/document/transcribe.ts)"]
-    B -- "IPC: Float32Array + language" --> C["SttManager<br/>(electron/stt/index.ts)"]
-    C --> D{"Engine adapter"}
+    Y -- "one job at a time" --> B["transcribeAsset<br/>(src/lib/ai-edition/document/transcribe.ts)"]
+    B -- "IPC: approved path + source kind + language" --> C["SttManager<br/>(electron/stt/index.ts)"]
+    C --> R{"Source roles"}
+    R -- "native qac" --> U["You"]
+    R -- "native qab" --> S["System"]
+    R -- "import" --> M["unknown-mixed"]
+    U --> X["FFmpeg 8.1.2<br/>bounded mono 16 kHz windows"]
+    S --> X
+    M --> X
+    X --> D{"Engine adapter"}
     D -- "macOS 14+ arm64" --> P["klippt-parakeet-stt<br/>FluidAudio + Core ML"]
     D -- "compatibility fallback" --> W["whisper-stt-server<br/>whisper.cpp"]
-    P --> E["SttTranscribeResponse<br/>(segments + wordSegments)"]
+    P --> E["Seam merge + exact cache"]
     W --> E
     E --> C
-    C -- "IPC return" --> B
+    C -- "role/evidence response" --> B
     B --> F["AxcutTranscript<br/>on document.transcripts[]"]
     F --> G["deriveCaptionCues<br/>(src/lib/ai-edition/captions/cues.ts)"]
     G -- "CaptionCue[]<br/>(virtual ms)" --> H["captionCuesToTextRegions<br/>(synthetic text regions)"]
     H -- "annotation path<br/>(scene description)" --> I["Native compositor<br/>(preview AND export)"]
 ```
 
-The renderer pieces — `transcribeMono16kToSegments`
-(`src/lib/captioning/transcribe.ts`) called from `transcribeAsset`
-(`src/lib/ai-edition/document/transcribe.ts`) — are a thin IPC adapter: the
-audio crosses to the main process, the helper does the recognition, and the
-result is mapped back onto the `AxcutTranscript` shape the rest of the editor
-reads. From the moment that transcript is persisted, captions and the words
-they show cannot drift — captions are a derived view, not a parallel store.
+The normal renderer path is a thin source adapter. `transcribeAsset`
+(`src/lib/ai-edition/document/transcribe.ts`) sends only the approved media
+path, source kind, duration hint, and language. Main-process FFmpeg extraction,
+recognition, seam handling, and caching return absolute word timing plus source
+evidence. The legacy `transcribeMono16kToSegments` entry point remains for
+callers that already own short PCM. From the moment a transcript is persisted,
+captions and the words they show cannot drift — captions are a derived view,
+not a parallel store.
 
 ## Transcription jobs
 
@@ -71,9 +78,9 @@ What the store owns and what it does not:
   the panes' one button: every timeline asset that still lacks a transcript,
   skipping the ones already known to be silent and waiting on (rather than
   duplicating) a run the background pass already has in flight.
-- **One run at a time.** Each native recognizer is a single process and the audio
-  extraction path holds decoded frames in renderer memory, so the pump is a
-  sequential loop, not a fan-out.
+- **One run at a time.** Each native recognizer owns one model process. The
+  main-process source path decodes and recognizes one bounded window at a time,
+  so the pump is a sequential loop, not a fan-out.
 - **The auto pass never loops.** `sync` enqueues an asset only when it has no
   transcript, no job entry (queued / running / failed alike) and no persisted
   failure, and a job is deleted only after the save that carries its transcript
@@ -110,15 +117,13 @@ permission or copy hidden/removed words from the DOM.
 On Apple Silicon with macOS 14 or newer, the verified Parakeet v3 INT8 runtime
 is about 482 MB. Other supported systems use the ~253 MB Whisper fallback. The
 selected model is fetched by
-`SttManager.prepare()` **inside** the `stt:transcribe` IPC call — i.e. inside a
+`SttManager.prepare()` **inside** the transcription IPC call — i.e. inside a
 run this store has already marked `running` — so the user sees one single busy
-phase that simply takes longer the first time. That is deliberate: no separate
-"downloading" step, no progress bar to stare at, and nothing that looks
-clickable in the meantime (`phase: "model"` is emitted by the main process but
-deliberately not forwarded to the renderer by `transcribeAsset`). Nothing in the
-renderer imposes a timeout that a slow download could trip: the preload does a
-bare `ipcRenderer.invoke`, `fetchWithRetry` has no per-request deadline, and
-the native helper's readiness budget only starts once the download resolved.
+phase that simply takes longer the first time. Status reports model setup and
+chunk progress through the same job. Nothing in the renderer imposes a timeout
+that a slow download could trip: the preload does a bare `ipcRenderer.invoke`,
+model download retries have no per-request renderer deadline, and the native
+helper's readiness budget starts only after the download resolves.
 
 Three edges make that promise hold, and each is load-bearing:
 
@@ -136,20 +141,11 @@ Three edges make that promise hold, and each is load-bearing:
   clip's word stream swallow Backspace and hover-bin clicks in silence for the
   whole background pass.
 
-Large recordings use `web-demuxer` when Chromium cannot decode the full media
-file directly. All caption, waveform and export users create it through
-[`webDemuxerAsset.ts`](../../src/lib/exporter/webDemuxerAsset.ts). The resolver
-uses `/wasm/web-demuxer.wasm` under Vite's HTTP development server and the file
-beside `dist/index.html` in a packaged `file://` build. Keep this rule shared:
-a missing Vite public asset falls back to `index.html`, whose `<!doctype` bytes
-surface only as WebAssembly's misleading "expected magic word" compile error.
-
-Still synchronous, and still on the main thread: `mixToMono`
-([`src/lib/captioning/extractMono16k.ts`](../../src/lib/captioning/extractMono16k.ts))
-now hoists its channel arrays out of the sample loop (it was making one WebIDL
-call per sample per channel), but a long recording will still block the renderer
-for a moment during "extracting-audio". Moving the mixdown to a worker is the
-next step if it shows up in practice.
+Long recordings do not use Chromium decode or renderer-side full-session PCM.
+`sourceAudio.ts` invokes the pinned FFmpeg 8.1.2 binary for one requested
+window. `aresample=16000:async=1:first_pts=0` pads timestamp gaps, so late or
+sparse audio stays at its source time instead of moving to the start of a
+window.
 
 ## The STT engines
 
@@ -193,10 +189,9 @@ per-platform binary name only, and the real backend is corrected from the
 helper's `/inference` JSON.
 
 Why whisper.cpp, in one paragraph: a single C++ dependency with native DTW
-token timestamps for word-level timing, a portable runtime device selection
-that covers Metal, Vulkan and CPU in one binary, and self-contained long-form
-chunking (`whisper_full()` over recordings longer than 30 s) without manual
-windowing on our side. Validation data — backend-by-backend WER and real-time
+token timestamps for word-level timing and portable runtime device selection
+that covers Metal, Vulkan and CPU in one binary. Klippt supplies bounded source
+windows; `whisper_full()` handles only the current window. Validation data — backend-by-backend WER and real-time
 factors — lives in
 [`tools/stt-eval/whispercpp-dtw-poc/REPORT.md`](../../tools/stt-eval/whispercpp-dtw-poc/REPORT.md).
 
@@ -272,11 +267,28 @@ so no second pass is needed.
 
 ### Long-form recordings
 
-`SttManager` plans bounded, contiguous source-audio chunks for both engines,
-runs them sequentially, and rebases every phrase and word onto absolute source
-time. Progress and cancellation happen at chunk boundaries. The engine chosen
-for the first chunk stays fixed for the full request, so one durable transcript
-never mixes Parakeet and Whisper timing.
+`SttManager` uses 75-second core windows with 1.5 seconds of decode context on
+each available side. It probes the source duration and native track tags first,
+then hashes the source. Native `qac` (**You**) and optional `qab` (**System**)
+are decoded and recognized independently. The mixed preview `qaa` is never a
+normal native source. Imported media is one explicit `unknown-mixed` role.
+
+Each decoded window is released before the next starts. Results are clamped to
+the PCM that FFmpeg actually produced, rebased to absolute source time, and
+merged with bounded LCS matching inside the overlap. A word seen by only one
+window remains. A duplicated word is removed only when recognizer-native timing
+and normalized text identify the same occurrence. Speech text without required
+word timing retries and then fails; Klippt does not guess token timing across a
+seam.
+
+Cancellation reaches hashing, FFmpeg, native inference, helper restart, and
+retry backoff. The model process unloads when the project closes, on explicit
+release, or after two idle minutes. Cache writes happen only after every role
+finishes and a second source hash confirms the media did not change. Cache
+identity includes source hash and duration, role, extraction/chunk/seam/alignment
+versions, runtime backend, model revision and artifact hashes, requested
+language, and vocabulary version. Cache files publish through atomic rename;
+malformed, partial, mismatched, and out-of-range results are rejected.
 
 ### Whisper fallback model
 
@@ -310,6 +322,10 @@ and the digest together.
 
 | Module | Role |
 |---|---|
+| `electron/stt/sourceAudio.ts` | Probes role tags and decodes bounded FFmpeg windows with timestamp-gap padding. |
+| `electron/stt/seamMerge.ts` | Validates native phrase/word coverage and reconciles adjacent overlap windows. |
+| `electron/stt/transcriptionCache.ts` | Exact content-addressed transcript cache with atomic publication and semantic validation. |
+| `electron/stt/parakeetHelper.ts` | Core ML helper lifecycle, request cancellation, and response adapter. |
 | `electron/stt/whisperServer.ts` | Server lifecycle; `POST /inference` client; verbose_json parser. |
 | `electron/stt/snapWordBoundaries.ts` | Re-anchors DTW word boundaries on the audio's RMS envelope (see step 5 above). |
 | `electron/stt/wav.ts` | WAV write + temp-file cleanup helpers. |
@@ -432,9 +448,11 @@ platform default `gpuDetector` would have guessed. Any consumer that wants
 to surface the backend in the UI reads it directly out of this field; the
 contract is the source of truth.
 
-The request takes a raw `Float32Array` of mono 16 kHz PCM and an optional
-ISO 639-1 `language` code; `"auto"` or absent leaves language handling to the
-selected recognizer.
+The normal request takes an approved source path, `klippt-recording` or
+`import`, an optional duration hint, and an optional ISO 639-1 language code.
+The duration probe remains authoritative. `"auto"` or an absent language leaves
+language handling to the selected recognizer. A legacy request still accepts a
+raw `Float32Array` of mono 16 kHz PCM for short internal callers.
 Status events fan out on a separate channel
 (`SttStatusEvent`, `phase: "model" | "transcribe"`) so the renderer can
 drive a "downloading model" / "transcribing" indicator without holding open
@@ -616,19 +634,10 @@ it deletes data
 
 ## Known gaps
 
-- **No language selector in the UI.** The renderer always sends
-  `language: "auto"`. Forcing a language would skip detection on the
-  first window and slightly improve WER. Needs a UI control wired
-  through `setTranscript` and a mapping from the UI string to a
-  whisper.cpp language token.
-
-  Note that `"auto"` is a *request* value only. The helper used to echo the
-  request straight back into `detected_language`, so with no selector the field
-  was permanently the literal string `"auto"`: the media stage's "detected
-  language" line ([`src/components/ai-edition/Modals.tsx:1763`](../../src/components/ai-edition/Modals.tsx:1763))
-  displayed it verbatim, and `transcribe.ts` wrote it onto
-  `AxcutTranscript.language`. It now reports `whisper_full_lang_id()` — the
-  detected language under `"auto"`, the forced one otherwise.
+- **No diarization for mixed imports.** Native Klippt recordings already have
+  deterministic You/System roles. Imported mixed media remains
+  `unknown-mixed`; speaker labels require a separately qualified diarization
+  path rather than a guess from the ASR text.
 - **No CUDA build.** Vulkan already accelerates NVIDIA on Windows and
   Linux, but a dedicated CUDA build can be added later via
   `OSC_ENABLE_CUDA=ON`; the build script and CMake already accept the

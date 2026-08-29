@@ -24,8 +24,8 @@ use windows::Win32::Graphics::Direct3D::{
 };
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11VideoDevice,
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_FLAG, D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+    D3D11_SDK_VERSION,
 };
 
 fn create(
@@ -61,7 +61,11 @@ fn warp_rejects_the_video_support_flag_gpu_create_requires() {
         D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
     )
     .expect_err("WARP a accepté VIDEO_SUPPORT — le repli WARP redevient envisageable");
-    assert_eq!(err.code().0 as u32, 0x887A_0004, "attendu DXGI_ERROR_UNSUPPORTED, eu {err}");
+    assert_eq!(
+        err.code().0 as u32,
+        0x887A_0004,
+        "attendu DXGI_ERROR_UNSUPPORTED, eu {err}"
+    );
 }
 
 /// Et laisser tomber le flag ne sauve rien : le device se crée bien à FL 11_1, mais

@@ -82,7 +82,7 @@ interface TranscriptionState {
 /** The local engine is only reachable through the preload bridge. */
 function hasLocalSttEngine(): boolean {
 	if (typeof window === "undefined") return false;
-	return typeof window.electronAPI?.stt?.transcribe === "function";
+	return typeof window.electronAPI?.stt?.transcribeSource === "function";
 }
 
 /**
@@ -491,7 +491,7 @@ export function useAutoTranscription(enabled = true): void {
 			return;
 		}
 		const stt = window.electronAPI?.stt;
-		if (typeof stt?.transcribe !== "function") {
+		if (typeof stt?.transcribeSource !== "function") {
 			setLocalEngineAvailable(false);
 			return;
 		}

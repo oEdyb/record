@@ -19,7 +19,9 @@
 // file next to the `.node` if branch-switching makes the noise annoying.
 
 const fs = require("node:fs");
+const { execFileSync } = require("node:child_process");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const ROOT = path.join(__dirname, "..");
 const ADDON = path.join(ROOT, "electron/native/compositor-view/build/compositor_view.node");
@@ -46,6 +48,27 @@ const FIX_LINUX =
 
 const FIX_LINUX_HELPER =
 	"Rebuild it with:\n\n    npm run build:native:linux\n\nor use `npm run build:linux`, which does that for you.";
+
+async function verifyWhisperProvenance(directory, target) {
+	const sourceSha =
+		process.env.KLIPPT_SOURCE_SHA ??
+		execFileSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
+	const { verifyHelperManifest } = await import(
+		pathToFileURL(path.join(ROOT, "scripts", "helper-provenance.mjs")).href
+	);
+	try {
+		await verifyHelperManifest({
+			directory,
+			expectedSourceSha: sourceSha,
+			expectedTarget: target,
+			allowAdditionalFiles: true,
+		});
+	} catch (error) {
+		throw new Error(
+			`Refusing to package Whisper without exact source provenance in ${path.relative(ROOT, directory)}.\n\n${error.message}`,
+		);
+	}
+}
 
 /** Everything the PipeWire capture helper is compiled from. */
 const HELPER_SOURCE_PATHS = [
@@ -903,6 +926,7 @@ exports.default = async function beforePack(context) {
 			"compositor_view.node",
 		);
 		checkWinNativePayload();
+		await verifyWhisperProvenance(path.dirname(shipped), "win32-x64");
 		checkCompositorAddonFreshness(shipped, FIX, "D3D11");
 		return;
 	}
@@ -913,6 +937,7 @@ exports.default = async function beforePack(context) {
 		const tag = `darwin-${archTagFor(context)}`;
 		const shipped = path.join(ROOT, "electron", "native", "bin", tag, "compositor_view.node");
 		checkMacNativePayload(context);
+		await verifyWhisperProvenance(path.dirname(shipped), tag);
 		checkCompositorAddonFreshness(shipped, FIX_MAC, "Metal compositor addon");
 		if (archTagFor(context) === "arm64") {
 			checkCompositorAddonFreshness(
@@ -928,6 +953,7 @@ exports.default = async function beforePack(context) {
 		const tag = `linux-${archTagFor(context)}`;
 		const dir = path.join(ROOT, "electron", "native", "bin", tag);
 		checkLinuxNativePayload(context);
+		await verifyWhisperProvenance(dir, tag);
 		checkCompositorAddonFreshness(
 			path.join(dir, "compositor_view.node"),
 			FIX_LINUX,

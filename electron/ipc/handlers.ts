@@ -29,6 +29,7 @@ import {
 	splitCursorRecordingForClips,
 } from "../../src/lib/nativeMacClipSession";
 import type {
+	NativeMacCaptureTelemetry,
 	NativeMacClipWebcamInput,
 	NativeMacRecordingRequest,
 } from "../../src/lib/nativeMacRecording";
@@ -73,9 +74,21 @@ import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { createDiagnosticReport, type DiagnosticRequest } from "../diagnostics/diagnostic-report";
+import { createElectronWorkloadResourceSampler } from "../diagnostics/electronWorkloadResources";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
+import {
+	type WorkloadFailureCode,
+	type WorkloadOperation,
+	WorkloadTelemetryService,
+} from "../diagnostics/workloadTelemetry";
 import { createEntitlementService } from "../entitlements/createService";
 import { registerEntitlementIpc } from "../entitlements/ipc";
+import { ExportTransactionError } from "../export/atomicExport";
+import {
+	cleanupOrphanedVoiceoverTemps,
+	createVoiceoverTempPath,
+	isVoiceoverTempPath,
+} from "../export/voiceoverTemp";
 import { writeJsonDurably } from "../filesystem/durableJson";
 import { mainT } from "../i18n";
 import { RECORDINGS_DIR } from "../main";
@@ -113,6 +126,10 @@ import { requestMacCursorAccessibilityAccess } from "../native-bridge/cursor/rec
 import { findPipeWireCursorHelperPath } from "../native-bridge/cursor/recording/pipeWireCursorRecordingSession";
 import type { CursorRecordingSession } from "../native-bridge/cursor/recording/session";
 import { toHelperRect } from "../native-bridge/helperCoordinates";
+import {
+	CompositorViewService,
+	type VideoBufferPublishSpec,
+} from "../native-bridge/services/compositorViewService";
 import { addNativeMacDisplayPrivacyExclusions } from "../recording/nativeMacCapturePrivacy";
 import { NativeMacHelperClient } from "../recording/nativeMacHelperClient";
 import { NativeMacRecordingService } from "../recording/nativeMacRecordingService";
@@ -127,6 +144,7 @@ import {
 	terminateNativeWindowsCapture,
 	waitForNativeWindowsCaptureStop,
 } from "../recording/nativeWindowsCaptureStop";
+import { parseNativeWindowsCaptureTelemetry } from "../recording/nativeWindowsCaptureTelemetry";
 import { type RecordingPrefs, RecordingPrefsStore } from "../recording/recordingPrefsStore";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
@@ -175,7 +193,7 @@ function isPathAllowed(filePath: string): boolean {
 	return getAllowedReadDirs().some((dir) => isPathWithinDir(resolved, dir));
 }
 
-function resolveApprovedVideoPath(videoPath?: string | null): string | null {
+export function resolveApprovedVideoPath(videoPath?: string | null): string | null {
 	const normalizedPath = normalizeVideoSourcePath(videoPath);
 	if (!normalizedPath) {
 		return null;
@@ -300,7 +318,7 @@ async function prepareSupplementalPreviewAudioTrack(videoPath: string) {
 	return { success: true, path: pathToFileURL(outputPath).toString() };
 }
 
-async function approveReadableVideoPath(
+export async function approveReadableVideoPath(
 	filePath?: string | null,
 	trustedDirs?: string[],
 ): Promise<string | null> {
@@ -1601,10 +1619,149 @@ export function registerIpcHandlers(
 		isPackaged: app.isPackaged,
 	});
 	registerEntitlementIpc(entitlementService, entitlementConfig);
+	const exportBufferService = new CompositorViewService({
+		exportJournalPath: path.join(app.getPath("userData"), "buffer-export-transactions.json"),
+	});
+	const exportTempDirectory = app.getPath("temp");
+	const exportRecovery = Promise.all([
+		exportBufferService.initializeExportRecovery(),
+		cleanupOrphanedVoiceoverTemps(exportTempDirectory),
+	]).catch((error) => {
+		console.warn("[export] startup recovery failed:", error);
+	});
 
-	let cleanVoiceService: CleanVoiceService | null = null;
 	let recordingActive = false;
 	let thermalState: CleanVoiceThermalState = "unknown";
+	let cpuSpeedLimitPercent: number | undefined;
+	const workloadTelemetry = new WorkloadTelemetryService({
+		rootDirectory: path.join(app.getPath("userData"), "diagnostics", "workloads"),
+		sampleResources: createElectronWorkloadResourceSampler({
+			getThermalState: () => thermalState,
+			getCpuSpeedLimitPercent: () => cpuSpeedLimitPercent,
+		}),
+	});
+	void workloadTelemetry.initialize();
+	let activeCaptureWorkloadId: string | null = null;
+	let activeCaptureFailure: WorkloadFailureCode | undefined;
+	const captureOperation = (): WorkloadOperation => {
+		if (process.platform === "darwin") return "screen-capturekit";
+		if (process.platform === "win32") return "windows-graphics-capture";
+		if (process.platform === "linux") return "linux-pipewire";
+		return "browser-media-recorder";
+	};
+	const finishCaptureWorkload = (
+		outcome: "succeeded" | "failed" | "cancelled" | "discarded" | "recovered",
+		failureCode?: WorkloadFailureCode,
+	) => {
+		if (!activeCaptureWorkloadId) return;
+		workloadTelemetry.finish(activeCaptureWorkloadId, outcome, failureCode);
+		activeCaptureWorkloadId = null;
+		activeCaptureFailure = undefined;
+	};
+	const recordNativeMacCaptureTelemetry = (telemetry: NativeMacCaptureTelemetry) => {
+		const workloadId = activeCaptureWorkloadId;
+		if (!workloadId) return;
+		workloadTelemetry.observe(workloadId, "capture.requested_fps", telemetry.requestedVideoFps);
+		workloadTelemetry.observe(workloadId, "capture.delivered_fps", telemetry.deliveredVideoFps);
+		workloadTelemetry.observe(workloadId, "capture.pending_frames", telemetry.pendingVideoFrames);
+		workloadTelemetry.observe(workloadId, "capture.dropped_frames", telemetry.droppedVideoFrames);
+		if (telemetry.systemAudioDriftMs) {
+			workloadTelemetry.setMetricSummary(
+				workloadId,
+				"system_audio.timestamp_drift_ms",
+				telemetry.systemAudioDriftMs,
+			);
+		}
+		if (telemetry.screenTimestampDriftMs) {
+			workloadTelemetry.setMetricSummary(
+				workloadId,
+				"capture.timestamp_drift_ms",
+				telemetry.screenTimestampDriftMs,
+			);
+		}
+		if (telemetry.microphoneDriftMs) {
+			workloadTelemetry.setMetricSummary(
+				workloadId,
+				"microphone.timestamp_drift_ms",
+				telemetry.microphoneDriftMs,
+			);
+		}
+		if (telemetry.fragmentFinalizeMs) {
+			workloadTelemetry.setMetricSummary(
+				workloadId,
+				"writer.fragment_finalize_ms",
+				telemetry.fragmentFinalizeMs,
+			);
+		}
+		if (telemetry.audioMaxQueueBytes !== undefined) {
+			workloadTelemetry.observe(workloadId, "audio.queue_bytes", telemetry.audioMaxQueueBytes);
+		}
+		if (telemetry.writerMaxQueueDepth !== undefined) {
+			workloadTelemetry.observe(workloadId, "writer.queue_depth", telemetry.writerMaxQueueDepth);
+		}
+		if (telemetry.audioBlockMs) {
+			workloadTelemetry.setMetricSummary(workloadId, "audio.block_ms", telemetry.audioBlockMs);
+		}
+		workloadTelemetry.recordResourceSnapshot(workloadId, {
+			lowPowerMode: telemetry.lowPowerMode,
+			thermalState: telemetry.thermalState,
+		});
+	};
+	const recordNativeWindowsCaptureTelemetry = () => {
+		const workloadId = activeCaptureWorkloadId;
+		if (!workloadId) return;
+		const telemetry = parseNativeWindowsCaptureTelemetry(nativeWindowsCaptureOutput);
+		if (telemetry.deliveredFps !== undefined) {
+			workloadTelemetry.observe(workloadId, "capture.delivered_fps", telemetry.deliveredFps);
+		}
+		if (telemetry.gpuBridgeContendedFrames !== undefined) {
+			workloadTelemetry.observe(
+				workloadId,
+				"capture.dropped_frames",
+				telemetry.gpuBridgeContendedFrames,
+			);
+		}
+		if (telemetry.encoderFinalizeMs !== undefined) {
+			workloadTelemetry.observe(
+				workloadId,
+				"writer.fragment_finalize_ms",
+				telemetry.encoderFinalizeMs,
+			);
+		}
+		if (telemetry.stopTotalMs !== undefined) {
+			workloadTelemetry.observe(workloadId, "writer.stop_total_ms", telemetry.stopTotalMs);
+		}
+	};
+	ipcMain.removeAllListeners("workload-capture-performance");
+	ipcMain.on("workload-capture-performance", (_event, value: unknown) => {
+		if (!activeCaptureWorkloadId || !value || typeof value !== "object") return;
+		const sample = value as {
+			cameraDeliveredFps?: unknown;
+			cameraTimestampDriftMs?: unknown;
+		};
+		const cameraDeliveredFps = sample.cameraDeliveredFps;
+		if (
+			typeof cameraDeliveredFps !== "number" ||
+			!Number.isFinite(cameraDeliveredFps) ||
+			cameraDeliveredFps < 0 ||
+			cameraDeliveredFps > 240
+		) {
+			return;
+		}
+		workloadTelemetry.observe(activeCaptureWorkloadId, "camera.delivered_fps", cameraDeliveredFps);
+		if (
+			typeof sample.cameraTimestampDriftMs === "number" &&
+			Number.isFinite(sample.cameraTimestampDriftMs) &&
+			Math.abs(sample.cameraTimestampDriftMs) <= 60_000
+		) {
+			workloadTelemetry.observe(
+				activeCaptureWorkloadId,
+				"camera.timestamp_drift_ms",
+				sample.cameraTimestampDriftMs,
+			);
+		}
+	});
+	let cleanVoiceService: CleanVoiceService | null = null;
 	let cleanVoiceShuttingDown = false;
 	const cleanVoiceServiceReady =
 		options.enableCleanVoiceJobs === false || process.platform !== "darwin"
@@ -1636,12 +1793,32 @@ export function registerIpcHandlers(
 	const notifyRecordingStateChange = (recording: boolean, sourceName: string) => {
 		recordingActive = recording;
 		cleanVoiceService?.setRecordingActive(recording);
+		if (recording && !activeCaptureWorkloadId) {
+			activeCaptureWorkloadId = workloadTelemetry.begin({
+				kind: "capture",
+				operation: captureOperation(),
+				platform: process.platform,
+				diskDirectory: RECORDINGS_DIR,
+			});
+			workloadTelemetry.startPhase(activeCaptureWorkloadId, "capture-active");
+			workloadTelemetry.event(activeCaptureWorkloadId, "capture-started");
+		}
 		onRecordingStateChange?.(recording, sourceName);
 	};
 	const handleThermalStateChange = (details: { state: CleanVoiceThermalState }) => {
 		thermalState = details.state;
 		cleanVoiceService?.setThermalState(details.state);
 	};
+	const handleCpuSpeedLimitChange = (details: { limit: number }) => {
+		cpuSpeedLimitPercent = details.limit;
+	};
+	if (process.platform === "darwin" || process.platform === "win32") {
+		powerMonitor.on("speed-limit-change", handleCpuSpeedLimitChange);
+	}
+	app.once("before-quit", () => {
+		powerMonitor.off("speed-limit-change", handleCpuSpeedLimitChange);
+		workloadTelemetry.dispose();
+	});
 	if (options.enableCleanVoiceJobs !== false && process.platform === "darwin") {
 		thermalState = powerMonitor.getCurrentThermalState();
 		powerMonitor.on("thermal-state-change", handleThermalStateChange);
@@ -2212,6 +2389,16 @@ export function registerIpcHandlers(
 				// window the capture had never been told about.
 				linuxNativeCaptureSourceLabel = linuxSourceLabel(session.grantedSourceKind);
 				notifyRecordingStateChange(true, linuxNativeCaptureSourceLabel);
+				if (activeCaptureWorkloadId) {
+					workloadTelemetry.configure(activeCaptureWorkloadId, {
+						requestedVideoFps: request.video.fps,
+					});
+					workloadTelemetry.observe(
+						activeCaptureWorkloadId,
+						"capture.requested_fps",
+						request.video.fps,
+					);
+				}
 
 				return { success: true, recordingId, path: outputPath };
 			} catch (error) {
@@ -2257,6 +2444,7 @@ export function registerIpcHandlers(
 					fs.rm(discarded, { force: true }),
 					fs.rm(`${discarded}.cursor.json`, { force: true }),
 				]);
+				finishCaptureWorkload("discarded");
 				return { success: true, discarded: true };
 			}
 
@@ -2296,6 +2484,24 @@ export function registerIpcHandlers(
 				videoEncoder: result.videoEncoder,
 				cursorSamples: result.cursor.samples.length,
 			});
+			if (activeCaptureWorkloadId) {
+				workloadTelemetry.observe(
+					activeCaptureWorkloadId,
+					"capture.delivered_fps",
+					result.durationMs > 0 ? (result.frames * 1_000) / result.durationMs : 0,
+				);
+				workloadTelemetry.observe(
+					activeCaptureWorkloadId,
+					"capture.dropped_frames",
+					result.droppedFrames,
+				);
+				if (result.videoEncoder === "software") {
+					workloadTelemetry.addMediaPath(activeCaptureWorkloadId, "ffmpeg-software");
+				} else {
+					workloadTelemetry.addMediaPath(activeCaptureWorkloadId, "ffmpeg-hardware");
+				}
+			}
+			finishCaptureWorkload("succeeded");
 			markSuccessfulRecording();
 
 			return {
@@ -2306,6 +2512,7 @@ export function registerIpcHandlers(
 			};
 		} catch (error) {
 			console.error("Failed to stop native Linux recording:", error);
+			finishCaptureWorkload("failed", "capture-stop-failed");
 			return { success: false, error: String(error) };
 		} finally {
 			linuxNativeCaptureSession = null;
@@ -2500,6 +2707,39 @@ export function registerIpcHandlers(
 
 				const source = selectedSource || { name: "Screen" };
 				notifyRecordingStateChange(true, source.name);
+				if (activeCaptureWorkloadId) {
+					workloadTelemetry.configure(activeCaptureWorkloadId, {
+						requestedVideoFps: request.video.fps,
+						requestedCameraFps: request.webcam.enabled ? request.webcam.fps : undefined,
+					});
+					workloadTelemetry.observe(
+						activeCaptureWorkloadId,
+						"capture.requested_fps",
+						request.video.fps,
+					);
+					if (request.webcam.enabled) {
+						workloadTelemetry.observe(
+							activeCaptureWorkloadId,
+							"camera.requested_fps",
+							request.webcam.fps,
+						);
+					}
+					const encoder = encoderSelection?.video ?? "";
+					if (encoder) {
+						workloadTelemetry.addMediaPath(
+							activeCaptureWorkloadId,
+							encoder.includes("software")
+								? "media-foundation-software"
+								: "media-foundation-hardware",
+						);
+					}
+					if (encoder.includes("fallback")) {
+						workloadTelemetry.addFallback(activeCaptureWorkloadId, "encoder-hardware-to-software");
+					}
+					if (encoderSelection?.container === "mp4") {
+						workloadTelemetry.addFallback(activeCaptureWorkloadId, "container-fragmented-to-plain");
+					}
+				}
 
 				return {
 					success: true,
@@ -2632,6 +2872,10 @@ export function registerIpcHandlers(
 			notifyRecordingStateChange(recording, source.name);
 		},
 		onFatalError: (failure) => {
+			activeCaptureFailure =
+				failure.code === "writer-failed-during-capture"
+					? "writer-failed"
+					: "capture-runtime-failed";
 			const hudWindow = getMainWindow();
 			if (hudWindow && !hudWindow.isDestroyed()) {
 				hudWindow.webContents.send("native-mac-recording-error", failure);
@@ -2660,14 +2904,75 @@ export function registerIpcHandlers(
 	ipcMain.handle("start-native-mac-recording", async (_, request: NativeMacRecordingRequest) => {
 		const rejection = await rejectWithoutEntitlement("record");
 		if (rejection) return rejection;
-		return invokeNativeMac(() => getNativeMacRecordingService().start(request));
+		const result = await invokeNativeMac(() => getNativeMacRecordingService().start(request));
+		if ("success" in result && result.success && activeCaptureWorkloadId) {
+			workloadTelemetry.configure(activeCaptureWorkloadId, {
+				requestedVideoFps: request.video.fps,
+				requestedCameraFps: request.webcam.enabled ? request.webcam.fps : undefined,
+			});
+			workloadTelemetry.observe(
+				activeCaptureWorkloadId,
+				"capture.requested_fps",
+				request.video.fps,
+			);
+			if (request.webcam.enabled) {
+				workloadTelemetry.recordResourceSnapshot(activeCaptureWorkloadId, {
+					cameraPressure: "unknown",
+				});
+				workloadTelemetry.observe(
+					activeCaptureWorkloadId,
+					"camera.requested_fps",
+					request.webcam.fps,
+				);
+			}
+		}
+		return result;
 	});
-	ipcMain.handle("pause-native-mac-recording", () =>
-		invokeNativeMac(() => getNativeMacRecordingService().pause()),
-	);
-	ipcMain.handle("resume-native-mac-recording", (_, request?: NativeMacRecordingRequest) =>
-		invokeNativeMac(() => getNativeMacRecordingService().resume(request)),
-	);
+	ipcMain.handle("pause-native-mac-recording", async () => {
+		const workloadId = activeCaptureWorkloadId;
+		if (workloadId) workloadTelemetry.startPhase(workloadId, "clip-finalization");
+		const startedAt = Date.now();
+		const result = await invokeNativeMac(() => getNativeMacRecordingService().pause());
+		if (workloadId) {
+			workloadTelemetry.endPhase(workloadId, "clip-finalization");
+			workloadTelemetry.observe(workloadId, "writer.fragment_finalize_ms", Date.now() - startedAt);
+			if ("success" in result && result.success) {
+				workloadTelemetry.event(workloadId, "capture-paused");
+				workloadTelemetry.event(workloadId, "clip-finalized");
+			} else {
+				activeCaptureFailure = "writer-failed";
+			}
+		}
+		return result;
+	});
+	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
+		const result = await invokeNativeMac(() => getNativeMacRecordingService().resume(request));
+		if (activeCaptureWorkloadId && "success" in result && result.success) {
+			if (request) {
+				workloadTelemetry.configure(activeCaptureWorkloadId, {
+					requestedVideoFps: request.video.fps,
+					requestedCameraFps: request.webcam.enabled ? request.webcam.fps : undefined,
+				});
+				workloadTelemetry.observe(
+					activeCaptureWorkloadId,
+					"capture.requested_fps",
+					request.video.fps,
+				);
+				if (request.webcam.enabled) {
+					workloadTelemetry.recordResourceSnapshot(activeCaptureWorkloadId, {
+						cameraPressure: "unknown",
+					});
+					workloadTelemetry.observe(
+						activeCaptureWorkloadId,
+						"camera.requested_fps",
+						request.webcam.fps,
+					);
+				}
+			}
+			workloadTelemetry.event(activeCaptureWorkloadId, "capture-resumed");
+		}
+		return result;
+	});
 	ipcMain.handle("remove-previous-native-mac-clip", () =>
 		invokeNativeMac(() => getNativeMacRecordingService().removePreviousClip()),
 	);
@@ -2746,6 +3051,7 @@ export function registerIpcHandlers(
 					detachNativeWindowsCaptureOutputDrain();
 				}
 				await removeNativeWindowsCaptureOutputs(preferredPath, preferredWebcamPath);
+				finishCaptureWorkload("discarded");
 				return { success: true, discarded: true };
 			} finally {
 				// Unconditional. Killing a wedged helper can itself throw, and
@@ -2763,6 +3069,9 @@ export function registerIpcHandlers(
 
 		try {
 			completeNativeWindowsCursorPauseRange();
+			if (activeCaptureWorkloadId) {
+				workloadTelemetry.startPhase(activeCaptureWorkloadId, "capture-stop");
+			}
 			const stopPromise = waitForNativeWindowsCaptureStop({
 				proc,
 				targetPath: preferredPath,
@@ -2772,6 +3081,10 @@ export function registerIpcHandlers(
 				console.warn("[native-wgc] stop command channel was already closed");
 			}
 			const stopResult = await stopPromise;
+			recordNativeWindowsCaptureTelemetry();
+			if (activeCaptureWorkloadId) {
+				workloadTelemetry.endPhase(activeCaptureWorkloadId, "capture-stop");
+			}
 			if (!stopResult.ok) {
 				console.error("[native-wgc] stop failed", {
 					reason: stopResult.reason,
@@ -2820,6 +3133,7 @@ export function registerIpcHandlers(
 					await removeNativeWindowsCaptureOutputs(preferredPath, preferredWebcamPath, {
 						onlyIfUnusable: true,
 					});
+					finishCaptureWorkload("failed", "capture-stop-failed");
 					// The helper log goes to console/diagnostics above, not into this
 					// string: it ends up in a toast, and pasting an entire capture log
 					// into the HUD tells the user nothing they can act on.
@@ -2874,6 +3188,13 @@ export function registerIpcHandlers(
 			);
 			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
 			await registerRecordingMediaLinks(screenVideoPath, { webcamVideoPath, cursorCaptureMode });
+			if (recovered && activeCaptureWorkloadId) {
+				workloadTelemetry.addFallback(
+					activeCaptureWorkloadId,
+					"capture-recovered-fragmented-output",
+				);
+			}
+			finishCaptureWorkload(recovered ? "recovered" : "succeeded");
 			markSuccessfulRecording();
 
 			return {
@@ -2888,6 +3209,7 @@ export function registerIpcHandlers(
 		} catch (error) {
 			console.error("Failed to stop native Windows recording:", error);
 			await stopCursorRecording();
+			finishCaptureWorkload("failed", "capture-stop-failed");
 			return { success: false, error: String(error) };
 		} finally {
 			resetNativeWindowsCaptureState();
@@ -2898,7 +3220,15 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("stop-native-mac-recording", async (_, discard?: boolean) => {
 		const result = await invokeNativeMac(() => getNativeMacRecordingService().stop(discard));
-		if (!discard && "success" in result && result.success) markSuccessfulRecording();
+		if ("telemetry" in result && result.telemetry) {
+			recordNativeMacCaptureTelemetry(result.telemetry);
+		}
+		if ("success" in result && result.success) {
+			finishCaptureWorkload(discard ? "discarded" : "succeeded");
+			if (!discard) markSuccessfulRecording();
+		} else {
+			finishCaptureWorkload("failed", activeCaptureFailure ?? "capture-stop-failed");
+		}
 		return result;
 	});
 
@@ -2907,7 +3237,20 @@ export function registerIpcHandlers(
 	// Declared here because both the webcam attach below and store-recorded-session
 	// finalize through the same registry.
 	const recordingStreams = new RecordingStreamRegistry();
-	registerRecordingStreamHandlers(ipcMain, recordingStreams, resolveRecordingOutputPath);
+	registerRecordingStreamHandlers(ipcMain, recordingStreams, resolveRecordingOutputPath, {
+		onAppendLatencyMs: (latencyMs) => {
+			if (activeCaptureWorkloadId) {
+				workloadTelemetry.observe(activeCaptureWorkloadId, "disk.write_latency_ms", latencyMs);
+			}
+		},
+		onWriteError: (error) => {
+			if (!activeCaptureWorkloadId) return;
+			if ((error as NodeJS.ErrnoException)?.code === "ENOSPC") {
+				activeCaptureFailure = "disk-full";
+				workloadTelemetry.event(activeCaptureWorkloadId, "disk-full");
+			}
+		},
+	});
 
 	/**
 	 * Writes a browser-recorded webcam clip next to a natively-recorded screen
@@ -3163,9 +3506,16 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("store-recorded-session", async (_, payload: StoreRecordedSessionInput) => {
 		try {
-			return await storeRecordedSessionFiles(payload);
+			const result = await storeRecordedSessionFiles(payload);
+			if (result.success) {
+				finishCaptureWorkload("succeeded");
+			} else {
+				finishCaptureWorkload("failed", "capture-stop-failed");
+			}
+			return result;
 		} catch (error) {
 			console.error("Failed to store recording session:", error);
+			finishCaptureWorkload("failed", "capture-stop-failed");
 			return {
 				success: false,
 				message: "Failed to store recording session",
@@ -3284,12 +3634,19 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("store-recorded-video", async (_, videoData: ArrayBuffer, fileName: string) => {
 		try {
-			return await storeRecordedSessionFiles({
+			const result = await storeRecordedSessionFiles({
 				screen: { videoData, fileName },
 				createdAt: Date.now(),
 			});
+			if (result.success) {
+				finishCaptureWorkload("succeeded");
+			} else {
+				finishCaptureWorkload("failed", "capture-stop-failed");
+			}
+			return result;
 		} catch (error) {
 			console.error("Failed to store recorded video:", error);
+			finishCaptureWorkload("failed", "capture-stop-failed");
 			return {
 				success: false,
 				message: "Failed to store recorded video",
@@ -3430,36 +3787,90 @@ export function registerIpcHandlers(
 		}
 	});
 
-	ipcMain.handle("write-export-to-path", async (_, videoData: ArrayBuffer, filePath: string) => {
-		try {
-			// Sanity-check the path: the renderer is trusted (contextIsolation on), but a
-			// stale-state bug shouldn't be able to clobber arbitrary files.
-			if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
-				return { success: false, message: "Invalid path" };
-			}
-			const lower = filePath.toLowerCase();
-			if (!lower.endsWith(".mp4") && !lower.endsWith(".gif")) {
-				return { success: false, message: "Invalid file type" };
-			}
+	ipcMain.handle("create-temporary-export-path", () =>
+		createVoiceoverTempPath(exportTempDirectory),
+	);
 
-			const normalizedPath = path.normalize(filePath);
-			await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
-			await fs.writeFile(normalizedPath, Buffer.from(videoData));
-
-			return {
-				success: true,
-				path: normalizedPath,
-				message: "Video exported successfully",
-			};
-		} catch (error) {
-			console.error("Failed to write exported video:", error);
-			return {
-				success: false,
-				message: "Failed to save exported video",
-				error: String(error),
-			};
+	ipcMain.handle("remove-temporary-export-path", async (_, filePath: string) => {
+		if (!isVoiceoverTempPath(exportTempDirectory, filePath)) {
+			return { success: false, message: "Invalid temporary export path" };
 		}
+		await fs.rm(path.resolve(filePath), { force: true });
+		return { success: true };
 	});
+
+	ipcMain.handle(
+		"write-export-to-path",
+		async (
+			event,
+			videoData: ArrayBuffer,
+			filePath: string,
+			spec: VideoBufferPublishSpec,
+			exportId?: string,
+		) => {
+			try {
+				// Sanity-check the path: the renderer is trusted (contextIsolation on), but a
+				// stale-state bug shouldn't be able to clobber arbitrary files.
+				if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
+					return { success: false, message: "Invalid path" };
+				}
+				const lower = filePath.toLowerCase();
+				if (!lower.endsWith(".mp4")) {
+					return { success: false, message: "Invalid file type" };
+				}
+				if (
+					!spec ||
+					!Number.isFinite(spec.width) ||
+					!Number.isFinite(spec.height) ||
+					!Number.isFinite(spec.fps) ||
+					!Number.isFinite(spec.durationS) ||
+					!Number.isFinite(spec.expectedBytes) ||
+					!(["h264", "h265"] as string[]).includes(spec.codec)
+				) {
+					return { success: false, message: "Invalid export verification contract" };
+				}
+
+				const normalizedPath = path.normalize(filePath);
+				const exportWarning = await exportBufferService.publishVideoBuffer(
+					videoData,
+					normalizedPath,
+					spec,
+					{
+						exportId,
+						onPhase: (phase) => {
+							if (!event.sender.isDestroyed()) event.sender.send("export:native-phase", phase);
+						},
+					},
+				);
+
+				return {
+					success: true,
+					path: normalizedPath,
+					message: "Video exported successfully",
+					exportWarning,
+				};
+			} catch (error) {
+				console.error("Failed to write exported video:", error);
+				const transactionError = error instanceof ExportTransactionError ? error : undefined;
+				return {
+					success: false,
+					message: "Failed to save exported video",
+					error: String(error),
+					...(transactionError
+						? {
+								phase: transactionError.phase,
+								code: transactionError.code,
+								retryable: transactionError.retryable,
+							}
+						: {}),
+				};
+			}
+		},
+	);
+
+	ipcMain.handle("cancel-write-export", (_event, exportId: string) => ({
+		cancelled: typeof exportId === "string" && exportBufferService.cancelExport(exportId),
+	}));
 
 	ipcMain.handle("open-video-file-picker", async () => {
 		const rejection = await rejectWithoutEntitlement("import");
@@ -4106,6 +4517,7 @@ export function registerIpcHandlers(
 				mac: nativeMacRecordingService?.diagnosticOutput ?? "",
 			},
 			mainProcessLogs: mainLogBuffer.snapshot(),
+			workloadReports: await workloadTelemetry.listRecent(20),
 		});
 
 		try {
@@ -4149,6 +4561,7 @@ export function registerIpcHandlers(
 	};
 
 	registerNativeBridgeHandlers({
+		workloadTelemetry,
 		assertEntitlement: (capability) => entitlementService.assertCapability(capability),
 		getPlatform: () => process.platform,
 		getCurrentProjectPath: () => currentProjectPath,
@@ -4206,6 +4619,7 @@ export function registerIpcHandlers(
 	});
 
 	return (async () => {
+		await exportRecovery;
 		if (process.platform !== "darwin" || options.restoreInterruptedRecording === false) {
 			return false;
 		}

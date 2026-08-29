@@ -43,7 +43,10 @@ import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
 //      derived stem and its processing status remain in the app-owned cache;
 //      neither is project data. An absent recipe means Original, which keeps
 //      every v7 project non-destructive and opt-in after migration.
-export const axcutSchemaVersion = 8;
+//   9. v9 — transcript words/segments preserve captured source roles and each
+//      source keeps reproducibility evidence. Legacy transcripts become
+//      explicit `unknown-mixed` data; no speaker identity is guessed.
+export const axcutSchemaVersion = 9;
 
 // ponytail: every region schema shares the same monotonicity rule
 // (end >= start) with the same error shape. Factor the refine so the
@@ -61,6 +64,8 @@ const endGteStart = <T extends z.ZodObject<z.ZodRawShape>>(
 
 export const isoDateSchema = z.string().datetime({ offset: true });
 
+export const transcriptSourceRoleSchema = z.enum(["you", "system", "unknown-mixed"]);
+
 export const wordSchema = z
 	.object({
 		id: z.string().min(1),
@@ -68,6 +73,8 @@ export const wordSchema = z
 		startSec: z.number().nonnegative(),
 		endSec: z.number().nonnegative(),
 		text: z.string(),
+		sourceRole: transcriptSourceRoleSchema.optional(),
+		confidence: z.number().min(0).max(1).optional(),
 	})
 	.refine((data) => data.endSec >= data.startSec, {
 		message: "endSec must be greater than or equal to startSec",
@@ -82,20 +89,148 @@ export const transcriptSegmentSchema = z
 		endSec: z.number().nonnegative(),
 		text: z.string(),
 		wordIds: z.array(z.string().min(1)).default([]),
+		sourceRole: transcriptSourceRoleSchema.optional(),
 	})
 	.refine((data) => data.endSec >= data.startSec, {
 		message: "endSec must be greater than or equal to startSec",
 		path: ["endSec"],
 	});
 
-export const transcriptSchema = z.object({
-	assetId: z.string().min(1),
-	language: z.string().min(1),
-	sourceDslPath: z.string().optional(),
-	sourceJsonPath: z.string().optional(),
-	segments: z.array(transcriptSegmentSchema).default([]),
-	words: z.array(wordSchema).default([]),
+export const transcriptSourceEvidenceSchema = z.object({
+	sourceRole: transcriptSourceRoleSchema,
+	trackLanguageCode: z.enum(["qac", "qab"]).nullable(),
+	sourceContentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+	backend: z.enum([
+		"parakeet-coreml",
+		"whispercpp-metal",
+		"whispercpp-vulkan",
+		"whispercpp-cuda",
+		"whispercpp-cpu",
+	]),
+	model: z.object({
+		id: z.enum(["parakeet-v3", "whisper"]),
+		revision: z.string().min(1),
+		artifactSha256: z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1),
+	}),
+	language: z.object({
+		requested: z.string().min(1),
+		detected: z.string().min(1),
+	}),
+	extraction: z.object({
+		version: z.literal(1),
+		sampleRate: z.literal(16_000),
+		channels: z.literal(1),
+	}),
+	alignment: z.object({
+		version: z.literal(1),
+		method: z.literal("recognizer-native-acoustic-snap"),
+	}),
 });
+
+export const transcriptSchema = z
+	.object({
+		assetId: z.string().min(1),
+		language: z.string().min(1),
+		sourceDslPath: z.string().optional(),
+		sourceJsonPath: z.string().optional(),
+		segments: z.array(transcriptSegmentSchema).default([]),
+		words: z.array(wordSchema).default([]),
+		/** Verified is reproducible. Legacy-unverified is set only by the v8 migration. */
+		evidenceStatus: z.enum(["verified", "legacy-unverified"]).optional(),
+		sources: z.array(transcriptSourceEvidenceSchema).default([]),
+	})
+	.superRefine((transcript, context) => {
+		if (!transcript.evidenceStatus) {
+			context.addIssue({
+				code: "custom",
+				path: ["evidenceStatus"],
+				message: "Transcript evidence status is required.",
+			});
+		}
+		const evidenceRoles = new Set(transcript.sources.map((source) => source.sourceRole));
+		if (evidenceRoles.size !== transcript.sources.length) {
+			context.addIssue({
+				code: "custom",
+				path: ["sources"],
+				message: "Transcript source roles must be unique.",
+			});
+		}
+		if (transcript.evidenceStatus === "verified" && transcript.sources.length === 0) {
+			context.addIssue({
+				code: "custom",
+				path: ["sources"],
+				message: "A verified transcript requires source evidence.",
+			});
+		}
+		if (transcript.evidenceStatus === "legacy-unverified" && transcript.sources.length > 0) {
+			context.addIssue({
+				code: "custom",
+				path: ["sources"],
+				message: "A legacy-unverified transcript cannot claim verified source evidence.",
+			});
+		}
+
+		const segmentsById = new Map(transcript.segments.map((segment) => [segment.id, segment]));
+		for (const [index, segment] of transcript.segments.entries()) {
+			if (!segment.sourceRole) {
+				context.addIssue({
+					code: "custom",
+					path: ["segments", index, "sourceRole"],
+					message: "Transcript segment source role is required.",
+				});
+			} else if (
+				transcript.evidenceStatus === "verified" &&
+				!evidenceRoles.has(segment.sourceRole)
+			) {
+				context.addIssue({
+					code: "custom",
+					path: ["segments", index, "sourceRole"],
+					message: "Transcript segment role has no source evidence.",
+				});
+			} else if (
+				transcript.evidenceStatus === "legacy-unverified" &&
+				segment.sourceRole !== "unknown-mixed"
+			) {
+				context.addIssue({
+					code: "custom",
+					path: ["segments", index, "sourceRole"],
+					message: "Legacy transcript content must stay unknown-mixed.",
+				});
+			}
+		}
+
+		for (const [index, word] of transcript.words.entries()) {
+			const segment = segmentsById.get(word.segmentId);
+			if (!word.sourceRole) {
+				context.addIssue({
+					code: "custom",
+					path: ["words", index, "sourceRole"],
+					message: "Transcript word source role is required.",
+				});
+			} else if (segment?.sourceRole && word.sourceRole !== segment.sourceRole) {
+				context.addIssue({
+					code: "custom",
+					path: ["words", index, "sourceRole"],
+					message: "Transcript word role must match its segment role.",
+				});
+			} else if (transcript.evidenceStatus === "verified" && !evidenceRoles.has(word.sourceRole)) {
+				context.addIssue({
+					code: "custom",
+					path: ["words", index, "sourceRole"],
+					message: "Transcript word role has no source evidence.",
+				});
+			} else if (
+				transcript.evidenceStatus === "legacy-unverified" &&
+				word.sourceRole !== "unknown-mixed"
+			) {
+				context.addIssue({
+					code: "custom",
+					path: ["words", index, "sourceRole"],
+					message: "Legacy transcript content must stay unknown-mixed.",
+				});
+			}
+		}
+	});
 
 export const assetVideoSchema = z.object({
 	codec: z.string().default("unknown"),
@@ -801,6 +936,44 @@ export function upgradeV7DocumentToV8(raw: unknown): unknown {
 	return doc.schemaVersion === 7 ? { ...doc, schemaVersion: 8 } : raw;
 }
 
+/** v8 → v9 — label legacy transcript content without inventing a speaker. */
+export function upgradeV8DocumentToV9(raw: unknown): unknown {
+	if (!raw || typeof raw !== "object") return raw;
+	const doc = raw as Record<string, unknown>;
+	if (doc.schemaVersion !== 8) return raw;
+	const upgradeTranscript = (value: unknown) => {
+		if (!value || typeof value !== "object") return value;
+		const transcript = value as Record<string, unknown>;
+		const words = Array.isArray(transcript.words)
+			? transcript.words.map((word) =>
+					word && typeof word === "object"
+						? { sourceRole: "unknown-mixed", ...(word as Record<string, unknown>) }
+						: word,
+				)
+			: [];
+		const segments = Array.isArray(transcript.segments)
+			? transcript.segments.map((segment) =>
+					segment && typeof segment === "object"
+						? { sourceRole: "unknown-mixed", ...(segment as Record<string, unknown>) }
+						: segment,
+				)
+			: [];
+		return {
+			...transcript,
+			words,
+			segments,
+			evidenceStatus: "legacy-unverified",
+			sources: [],
+		};
+	};
+	return {
+		...doc,
+		schemaVersion: 9,
+		transcript: upgradeTranscript(doc.transcript),
+		transcripts: Array.isArray(doc.transcripts) ? doc.transcripts.map(upgradeTranscript) : [],
+	};
+}
+
 /**
  * Runs the whole upgrade chain on a raw, untrusted value. Idempotent: each step
  * is gated on an exact `schemaVersion`, so an already-current document passes
@@ -812,8 +985,12 @@ export function upgradeV7DocumentToV8(raw: unknown): unknown {
  * not configure for the main bundle. Keep this module alias-free.
  */
 export function migrateRawDocumentToCurrent(raw: unknown): unknown {
-	return upgradeV7DocumentToV8(
-		upgradeV6DocumentToV7(upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw)))),
+	return upgradeV8DocumentToV9(
+		upgradeV7DocumentToV8(
+			upgradeV6DocumentToV7(
+				upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw))),
+			),
+		),
 	);
 }
 
@@ -856,6 +1033,8 @@ export const transcriptLanguageSchema = z.enum([
 	"zh",
 ]);
 
+export type AxcutTranscriptSourceRole = z.infer<typeof transcriptSourceRoleSchema>;
+export type AxcutTranscriptSourceEvidence = z.infer<typeof transcriptSourceEvidenceSchema>;
 export type AxcutWord = z.infer<typeof wordSchema>;
 export type AxcutTranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
 export type AxcutTranscript = z.infer<typeof transcriptSchema>;

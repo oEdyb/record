@@ -91,6 +91,9 @@ export interface CliProgressEvent {
 export interface CliDoneResult {
 	success: boolean;
 	error?: string;
+	exportPhase?: import("@/native/contracts").ExportTransactionPhase;
+	exportCode?: string;
+	retryable?: boolean;
 	warnings?: string[];
 	/** Export: the written output file. */
 	outputPath?: string;

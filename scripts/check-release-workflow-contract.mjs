@@ -61,6 +61,17 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 	const build = workflow(root, "build.yml");
 	const helper = workflow(root, "build-whisper-stt.yml");
 	const supply = workflow(root, "supply-chain.yml");
+	const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+	requireValue(
+		String(manifest.scripts?.["build-vite"]).startsWith("npm run clean:compiled &&"),
+		"Production Vite builds must begin from clean compiled output",
+	);
+	for (const scriptName of ["build:mac", "build:win", "build:win:store", "build:linux"]) {
+		requireValue(
+			String(manifest.scripts?.[scriptName]).includes("npm run build-vite"),
+			`${scriptName} must use the clean production Vite build`,
+		);
+	}
 	requireValue(
 		build.permissions?.contents === "read" && build.permissions?.actions === "read",
 		"Build workflow must default to read-only contents and Actions access",
@@ -107,6 +118,37 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 				stage?.env?.KLIPPT_SOURCE_SHA === EXACT_SOURCE,
 			`${jobName} must stage a source-bound helper from the caller run`,
 		);
+		const ffmpegEvidence = findStep(job, "Generate native FFmpeg source evidence");
+		const inventory = steps(job).find((step) =>
+			/Generate the .* release inventory/.test(step.name),
+		);
+		const upload = steps(job).find((step) =>
+			String(step.uses ?? "").startsWith("actions/upload-artifact@"),
+		);
+		requireValue(
+			String(ffmpegEvidence?.run).includes("native-ffmpeg-source.mjs") &&
+				String(ffmpegEvidence?.run).includes("--package-dir") &&
+				String(ffmpegEvidence?.run).includes("--target") &&
+				steps(job).indexOf(ffmpegEvidence) < steps(job).indexOf(inventory),
+			`${jobName} must generate packaged native FFmpeg evidence before its inventory`,
+		);
+		if (jobName === "build-macos") {
+			const applicationBuild = findStep(job, "Build Vite + Electron from a clean output tree");
+			requireValue(
+				String(applicationBuild?.run) === "npm run build-vite",
+				"macOS release builds must clean compiled output before Vite",
+			);
+			const signatureVerification = findStep(job, "Verify .app code signature");
+			requireValue(
+				steps(job).indexOf(signatureVerification) < steps(job).indexOf(ffmpegEvidence),
+				"macOS native FFmpeg evidence must describe the final signed app",
+			);
+		}
+		requireValue(
+			String(upload?.with?.path).includes("release/supply-chain/*.json") &&
+				String(upload?.with?.path).includes("release/supply-chain/*.txt"),
+			`${jobName} must upload every source manifest and relinking recipe`,
+		);
 	}
 	const signing = findStep(build.jobs?.["build-macos"], "Resolve macOS signing");
 	requireValue(
@@ -144,11 +186,18 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 		"Publisher checkout must not persist its write-capable workflow token",
 	);
 	const stageFeed = findStep(publish, "Stage the owned update feed");
+	const sourceOffer = findStep(publish, "Download the LGPL corresponding-source offer");
 	const releaseOrder = findStep(publish, "Confirm this release is newest");
 	const draft = findStep(publish, "Create or resume the draft release");
 	requireValue(
 		stageFeed?.env?.KLIPPT_SOURCE_SHA === EXACT_SOURCE,
 		"The public feed must record the resolved source SHA",
+	);
+	requireValue(
+		sourceOffer?.with?.name ===
+			"klippt-lgpl-source-${{ needs.resolve-source.outputs.source_sha }}" &&
+			steps(publish).indexOf(sourceOffer) < steps(publish).indexOf(stageFeed),
+		"Every release must download its source-bound LGPL corresponding-source offer",
 	);
 	requireValue(
 		releaseOrder?.env?.KLIPPT_SOURCE_SHA === EXACT_SOURCE &&

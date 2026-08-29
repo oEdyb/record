@@ -1018,9 +1018,8 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						? paneRow(
 								ts("annotation.background"),
 								<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-									{/* La pastille montre la couleur mémorisée même fond éteint : c'est celle que
-									    le rallumage rendra, et un noir affiché à la place mentirait. Choisir une
-									    couleur allume le fond, sinon le sélecteur n'aurait aucun effet visible. */}
+									{/* Keep the stored color visible while the background is off. That is the
+									    color which returns when the user turns the background on again. */}
 									<ColorField
 										label={ts("annotation.background")}
 										value={textBackgroundColor(region.style)}
@@ -1031,10 +1030,9 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 										}
 										onCommit={commitAnnotation}
 									/>
-									{/* Une bascule plutôt qu'un bouton « effacer » : avoir un fond ou non est un
-									    état, pas une action. La pilule des panneaux, pas une case système. */}
 									<Toggle
 										checked={hasBackground}
+										label={ts("annotation.background")}
 										onChange={(next) => {
 											tl.updateAnnotationLive(region.id, {
 												style: toggleTextBackground(region.style, next),

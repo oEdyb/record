@@ -856,9 +856,18 @@ fn export_linux_mp4() {
     };
 
     let mut last = 0u64;
-    let stats = run_composited_multi(&clips, &out, &gpu, &comp, &Cfg::c8(), &params, &mut |n| {
-        last = n
-    })
+    let stats = run_composited_multi(
+        &clips,
+        &out,
+        &gpu,
+        &comp,
+        &Cfg::c8(),
+        &params,
+        &mut |event| {
+            last = event.frames();
+            Ok(())
+        },
+    )
     .expect("run_composited_multi");
     println!(
         "export_linux : {} frames, {:.1} fps encode, {:.2}s video, progress={last} -> {out}",

@@ -1,11 +1,18 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CURSOR_THEMES, DEFAULT_CURSOR_SPRITES } from "../../../src/lib/cursor/cursorThemes";
+import { AtomicExportPublisher } from "../../export/atomicExport";
+import type {
+	CompositorViewAddon,
+	ExportStats,
+	GifExportStats,
+} from "../../native/compositor-view/addon";
 import {
 	buildCandidatePaths,
 	CompositorViewService,
+	calculateSceneExportDuration,
 	ffmpegSharedBinCandidates,
 	resolveSceneAssetPaths,
 } from "./compositorViewService";
@@ -98,6 +105,339 @@ describe("ffmpegSharedBinCandidates", () => {
 		} finally {
 			Object.defineProperty(process, "resourcesPath", { value: original, configurable: true });
 		}
+	});
+});
+
+describe("CompositorViewService export transaction", () => {
+	let root: string;
+
+	beforeEach(() => {
+		root = fs.mkdtempSync(path.join(os.tmpdir(), "klippt-compositor-export-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(root, { recursive: true, force: true });
+	});
+
+	const stats: ExportStats = {
+		frames: 60,
+		wallS: 1,
+		fps: 60,
+		videoDurationS: 2,
+		audioMastering: {
+			enabled: true,
+			analyzed: true,
+			appliedGainDb: 0,
+			limitedByTruePeak: false,
+			limitedByGainCap: false,
+		},
+		encoderName: "test",
+		encoderHardware: false,
+		encoderFallback: false,
+		decoderPath: "test",
+		compositorBackend: "test",
+	};
+
+	const clips = [
+		{
+			screenPath: "/recording/screen.mp4",
+			webcamPath: "/recording/camera.mp4",
+			sourceStartSec: 0,
+			sourceEndSec: 2,
+			webcamOffsetSec: 0,
+			hasAudio: true,
+		},
+	];
+
+	it("uses speed-adjusted output duration for fallback capacity estimates", () => {
+		expect(
+			calculateSceneExportDuration(
+				clips,
+				JSON.stringify({
+					speedRegions: [{ clipIndex: 0, startSec: 0, endSec: 2, speed: 0.25 }],
+				}),
+			),
+		).toBe(8);
+	});
+
+	it("renders and verifies a sibling before it publishes the requested MP4", async () => {
+		const finalPath = path.join(root, "video.mp4");
+		let nativePath = "";
+		const verifyVideoExport = vi.fn(async () => ({
+			durationS: 2,
+			fps: 30,
+			videoStreams: 1,
+			audioStreams: 1,
+			firstVideoFrameS: 0,
+			tailVideoFrameS: 1,
+		}));
+		const addon = {
+			exportMulti: vi.fn(async (_clips, outPath: string) => {
+				nativePath = outPath;
+				await fs.promises.writeFile(outPath, "verified export");
+				return stats;
+			}),
+			verifyVideoExport,
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await service.exportMulti(clips, finalPath, undefined, {
+			width: 320,
+			height: 240,
+			fps: 30,
+			codec: "h264",
+		});
+
+		expect(nativePath).not.toBe(finalPath);
+		expect(path.dirname(nativePath)).toBe(root);
+		expect(verifyVideoExport).toHaveBeenCalledWith(
+			nativePath,
+			{
+				width: 320,
+				height: 240,
+				fps: 30,
+				durationS: 2,
+				codec: "h264",
+			},
+			expect.any(String),
+		);
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("verified export");
+		expect(fs.existsSync(nativePath)).toBe(false);
+	});
+
+	it("returns a structured warning when post-commit directory durability is unconfirmed", async () => {
+		const finalPath = path.join(root, "warning.mp4");
+		const addon = {
+			exportMulti: vi.fn(async (_clips, outPath: string) => {
+				await fs.promises.writeFile(outPath, "verified export");
+				return stats;
+			}),
+			verifyVideoExport: vi.fn(async () => ({
+				durationS: 2,
+				fps: 30,
+				videoStreams: 1,
+				audioStreams: 1,
+				firstVideoFrameS: 0,
+				tailVideoFrameS: 1,
+			})),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const exportPublisher = new AtomicExportPublisher({
+			journalPath: path.join(root, "warning-journal.json"),
+			safetyBytes: 0n,
+			getAvailableBytes: async () => 1024n ** 4n,
+			syncDirectory: async () => {
+				throw Object.assign(new Error("device did not sync"), { code: "EIO" });
+			},
+		});
+		const service = new CompositorViewService({ addon, appRoot: root, exportPublisher });
+
+		const result = await service.exportMulti(clips, finalPath, undefined, {
+			width: 320,
+			height: 240,
+			fps: 30,
+			codec: "h264",
+		});
+
+		expect(result?.exportWarning).toMatchObject({
+			phase: "publishing",
+			code: "DURABILITY_UNCONFIRMED",
+			retryable: false,
+		});
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("verified export");
+	});
+
+	it("verifies GIF dimensions, frame rate, duration, and decoded tail before publishing", async () => {
+		const finalPath = path.join(root, "animation.gif");
+		const gifStats: GifExportStats = {
+			frames: 24,
+			wallS: 0.5,
+			fps: 48,
+			videoDurationS: 2,
+			fileBytes: 42,
+		};
+		const verifyGifExport = vi.fn(async () => ({
+			durationS: 2,
+			fps: 12,
+			videoStreams: 1,
+			firstFrameS: 0,
+			tailFrameS: 1.92,
+		}));
+		const addon = {
+			exportGif: vi.fn(async (_clips, outPath: string) => {
+				await fs.promises.writeFile(outPath, "verified GIF");
+				return gifStats;
+			}),
+			verifyGifExport,
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await service.exportGif(clips, finalPath, undefined, {
+			width: 320,
+			height: 240,
+			fps: 12,
+		});
+
+		expect(verifyGifExport).toHaveBeenCalledWith(
+			expect.stringContaining(".klippt-export-"),
+			{
+				width: 320,
+				height: 240,
+				fps: 12,
+				durationS: 2,
+			},
+			expect.any(String),
+		);
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("verified GIF");
+	});
+
+	it("stops the native loop and preserves the old final file when cancelled", async () => {
+		const finalPath = path.join(root, "video.mp4");
+		fs.writeFileSync(finalPath, "old export");
+		let rejectRender: ((error: Error) => void) | null = null;
+		const exportMulti = vi.fn(async (_clips, outPath: string) => {
+			await fs.promises.writeFile(outPath, "partial export");
+			return await new Promise<ExportStats>((_resolve, reject) => {
+				rejectRender = reject;
+			});
+		});
+		const addon = {
+			exportMulti,
+			verifyVideoExport: vi.fn(),
+			cancelExport: vi.fn(() => {
+				rejectRender?.(new Error("export cancelled"));
+				return true;
+			}),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+		const operation = service.exportMulti(clips, finalPath, undefined, undefined, undefined, {
+			exportId: "cancel-me",
+		});
+
+		await vi.waitFor(() => expect(exportMulti).toHaveBeenCalledOnce());
+		expect(service.cancelExport("cancel-me")).toBe(true);
+		await expect(operation).rejects.toMatchObject({ code: "CANCELLED", phase: "rendering" });
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
+		expect(fs.readdirSync(root).some((entry) => entry.includes(".klippt-export-"))).toBe(false);
+	});
+
+	it("cancels native verification and preserves the old final file", async () => {
+		const finalPath = path.join(root, "video.mp4");
+		fs.writeFileSync(finalPath, "old export");
+		let rejectVerification: ((error: Error) => void) | null = null;
+		const verifyVideoExport = vi.fn(
+			async (_path: string, _input: unknown, exportId?: string) =>
+				await new Promise<never>((_resolve, reject) => {
+					expect(exportId).toBe("cancel-verification");
+					rejectVerification = reject;
+				}),
+		);
+		const addon = {
+			exportMulti: vi.fn(async (_clips, outPath: string) => {
+				await fs.promises.writeFile(outPath, "complete export");
+				return stats;
+			}),
+			verifyVideoExport,
+			cancelExport: vi.fn(() => {
+				rejectVerification?.(new Error("verification cancelled"));
+				return true;
+			}),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+		const operation = service.exportMulti(clips, finalPath, undefined, undefined, undefined, {
+			exportId: "cancel-verification",
+		});
+
+		await vi.waitFor(() => expect(verifyVideoExport).toHaveBeenCalledOnce());
+		expect(service.cancelExport("cancel-verification")).toBe(true);
+		await expect(operation).rejects.toMatchObject({ code: "CANCELLED", phase: "verification" });
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
+	});
+
+	it("cancels voiceover-buffer verification before atomic publication", async () => {
+		const finalPath = path.join(root, "voiceover.mp4");
+		fs.writeFileSync(finalPath, "old export");
+		let rejectVerification: ((error: Error) => void) | null = null;
+		const addon = {
+			verifyVideoExport: vi.fn(
+				async (_path: string, _input: unknown, exportId?: string) =>
+					await new Promise<never>((_resolve, reject) => {
+						expect(exportId).toBe("buffer-cancel");
+						rejectVerification = reject;
+					}),
+			),
+			cancelExport: vi.fn(() => {
+				rejectVerification?.(new Error("verification cancelled"));
+				return true;
+			}),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+		const operation = service.publishVideoBuffer(
+			new Uint8Array([1, 2, 3]).buffer,
+			finalPath,
+			{
+				width: 320,
+				height: 240,
+				fps: 30,
+				durationS: 2,
+				codec: "h264",
+				expectedBytes: 3,
+			},
+			{ exportId: "buffer-cancel" },
+		);
+
+		await vi.waitFor(() => expect(addon.verifyVideoExport).toHaveBeenCalledOnce());
+		expect(service.cancelExport("buffer-cancel")).toBe(true);
+		await expect(operation).rejects.toMatchObject({ code: "CANCELLED", phase: "verification" });
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
+	});
+
+	it("remembers a cancellation that arrives before the export is registered", async () => {
+		const finalPath = path.join(root, "video.mp4");
+		fs.writeFileSync(finalPath, "old export");
+		const exportMulti = vi.fn(async () => stats);
+		const addon = {
+			exportMulti,
+			verifyVideoExport: vi.fn(),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		expect(service.cancelExport("cancel-before-start")).toBe(true);
+		await expect(
+			service.exportMulti(clips, finalPath, undefined, undefined, undefined, {
+				exportId: "cancel-before-start",
+			}),
+		).rejects.toMatchObject({ code: "CANCELLED", phase: "preflight" });
+
+		expect(exportMulti).not.toHaveBeenCalled();
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
 	});
 });
 

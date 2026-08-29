@@ -40,11 +40,20 @@ import { type CleanVoiceRuntimeSnapshot, cleanVoiceRoutes } from "@/lib/cleanVoi
 import type { CliDoneResult, CliExportRequest } from "@/lib/cliContracts";
 import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
 import {
+	calculateEffectiveExportDuration,
 	calculateMp4ExportSettings,
 	calculateMp4ExportSettingsForResolution,
+	estimateGifFileSizeBytes,
+	estimateMp4FileSizeBytes,
 } from "@/lib/exporter/mp4ExportSettings";
 import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
-import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native";
+import {
+	exportGifNative,
+	exportMultiNative,
+	NativeBridgeClientError,
+	nativeBridgeClient,
+} from "@/native";
+import type { ExportTransactionPhase } from "@/native/contracts";
 import {
 	buildCompositorClipInputs,
 	buildSceneDescription,
@@ -52,6 +61,56 @@ import {
 } from "@/native/sceneDescription";
 
 const MP4_EXPORT_FPS = 60;
+
+class CliExportTransactionError extends Error {
+	constructor(
+		message: string,
+		readonly exportPhase: ExportTransactionPhase,
+		readonly exportCode: string,
+		readonly retryable = false,
+	) {
+		super(message);
+		this.name = "CliExportTransactionError";
+	}
+}
+
+function throwIfCancelled(signal: AbortSignal | undefined, phase: ExportTransactionPhase): void {
+	if (signal?.aborted) {
+		throw new CliExportTransactionError("Export cancelled.", phase, "CANCELLED");
+	}
+}
+
+function cliExportFailure(error: unknown): CliDoneResult {
+	const message = error instanceof Error ? error.message : String(error);
+	if (error instanceof CliExportTransactionError) {
+		return {
+			success: false,
+			error: message,
+			exportPhase: error.exportPhase,
+			exportCode: error.exportCode,
+			retryable: error.retryable,
+		};
+	}
+	if (error instanceof NativeBridgeClientError) {
+		return {
+			success: false,
+			error: message,
+			...(error.details?.exportPhase ? { exportPhase: error.details.exportPhase } : {}),
+			...(error.details?.exportCode ? { exportCode: error.details.exportCode } : {}),
+			retryable: error.retryable,
+		};
+	}
+	if (error instanceof DOMException && error.name === "AbortError") {
+		return {
+			success: false,
+			error: "Export cancelled.",
+			exportPhase: "preflight",
+			exportCode: "CANCELLED",
+			retryable: false,
+		};
+	}
+	return { success: false, error: message };
+}
 
 function probeVideoDimensions(
 	url: string,
@@ -92,9 +151,8 @@ function replaceExtension(filePath: string, newExtension: string): string {
 /** Mirrors ExportDialog.gifOutputDims: cap height at the preset, keep even. */
 function gifOutputDims(
 	preset: GifSizePreset,
-	tierDims: { width: number; height: number } | null,
-): { width?: number; height?: number } {
-	if (!tierDims) return {};
+	tierDims: { width: number; height: number },
+): { width: number; height: number } {
 	const maxHeight = GIF_SIZE_PRESETS[preset].maxHeight;
 	if (!Number.isFinite(maxHeight) || tierDims.height <= maxHeight) {
 		return { width: tierDims.width, height: tierDims.height };
@@ -121,7 +179,11 @@ function appendAutoZoomRanges(
 	return plan.effects.filter((effect) => effect.kind === "screen-zoom").length;
 }
 
-export async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
+export async function runExport(
+	request: CliExportRequest,
+	signal?: AbortSignal,
+): Promise<CliDoneResult> {
+	throwIfCancelled(signal, "preflight");
 	const loaded = await nativeBridgeClient.project.loadProjectFileFromPath(request.projectPath);
 	if (!loaded.success || loaded.project === undefined) {
 		throw new Error(loaded.error ?? loaded.message ?? "Failed to load project file");
@@ -283,18 +345,14 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 	if (clips.length === 0) {
 		throw new Error("The project's timeline has no visible clips to export");
 	}
-	const sceneJson = JSON.stringify(buildSceneDescription(axcutDocument));
+	const scene = buildSceneDescription(axcutDocument);
+	const sceneJson = JSON.stringify(scene);
+	const effectiveDurationSec = calculateEffectiveExportDuration(clips, scene.speedRegions);
 
 	// Progress: native pushes raw encoded-frame counts; totals and pacing are
 	// computed here, mirroring the ExportDialog.
 	const outFps = format === "gif" ? gifFrameRate : MP4_EXPORT_FPS;
-	const totalFrames = Math.max(
-		1,
-		Math.round(
-			clips.reduce((sum, clip) => sum + Math.max(0, clip.sourceEndSec - clip.sourceStartSec), 0) *
-				outFps,
-		),
-	);
+	const totalFrames = Math.max(1, Math.round(effectiveDurationSec * outFps));
 	let firstProgress: { frame: number; timeMs: number } | null = null;
 	const unsubscribeProgress = window.electronAPI.onNativeExportProgress?.((frames: number) => {
 		const now = Date.now();
@@ -309,46 +367,86 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 			...(rate > 0 ? { estimatedTimeRemaining: Math.max(0, (totalFrames - frames) / rate) } : {}),
 		});
 	});
+	const unsubscribePhase = window.electronAPI.onNativeExportPhase?.((phase) => {
+		window.electronAPI.cliProgress({
+			percentage: phase === "preflight" || phase === "rendering" ? 0 : 100,
+			phase,
+		});
+	});
+	let intermediatePath: string | null = null;
 
 	try {
 		if (format === "gif") {
 			const dims = gifOutputDims(gifSizePreset, outDims);
-			await exportGifNative(clips, outPath, sceneJson, {
-				...dims,
-				fps: gifFrameRate,
-				loopCount: storedGifLoop ? 0 : 1,
-			});
+			const stats = await exportGifNative(
+				clips,
+				outPath,
+				sceneJson,
+				{
+					...dims,
+					fps: gifFrameRate,
+					loopCount: storedGifLoop ? 0 : 1,
+				},
+				{
+					signal,
+					expectedBytes: estimateGifFileSizeBytes({
+						durationSec: effectiveDurationSec,
+						...dims,
+						fps: gifFrameRate,
+					}),
+				},
+			);
 			return {
 				success: true,
 				outputPath: outPath,
 				format,
 				width: dims.width,
 				height: dims.height,
+				...(stats.exportWarning ? { warnings: [stats.exportWarning.message] } : {}),
 			};
 		}
 
-		// MP4: native writes outPath directly. When a voiceover is requested, mix
-		// it afterwards (the native pipeline has no extra-audio-track concept) and
-		// overwrite the same file.
-		await exportMultiNative(clips, outPath, sceneJson, {
-			width: outDims.width,
-			height: outDims.height,
-			fps: MP4_EXPORT_FPS,
-			codec: "h264",
-			bitrate: outDims.bitrate,
-			evenVolume: editorSettings.evenVolume,
-			normalizeAudio: editorSettings.normalizeVolume,
-			targetLufs: editorSettings.audioTargetLufs,
-			peakCeilingDbtp: editorSettings.audioPeakCeilingDbtp,
-		});
+		// A voiceover export keeps the requested destination untouched until the
+		// mixed file is complete and verified. The native render first goes to an
+		// app-owned temporary path; the final buffer then uses the same atomic
+		// publisher as normal exports.
+		if (request.audioPath) {
+			intermediatePath = await window.electronAPI.createTemporaryExportPath();
+		}
+		const nativeOutputPath = intermediatePath ?? outPath;
+		const exportStats = await exportMultiNative(
+			clips,
+			nativeOutputPath,
+			sceneJson,
+			{
+				width: outDims.width,
+				height: outDims.height,
+				fps: MP4_EXPORT_FPS,
+				codec: "h264",
+				bitrate: outDims.bitrate,
+				evenVolume: editorSettings.evenVolume,
+				normalizeAudio: editorSettings.normalizeVolume,
+				targetLufs: editorSettings.audioTargetLufs,
+				peakCeilingDbtp: editorSettings.audioPeakCeilingDbtp,
+			},
+			{
+				signal,
+				expectedBytes: estimateMp4FileSizeBytes({
+					durationSec: effectiveDurationSec,
+					videoBitrate: outDims.bitrate,
+					hasAudio: clips.some((clip) => clip.hasAudio),
+				}),
+			},
+		);
 
 		if (request.audioPath) {
+			throwIfCancelled(signal, "rendering");
 			window.electronAPI.cliProgress({
 				percentage: 100,
 				phase: "mixing-voiceover",
 			});
 			const [videoResponse, audioResponse] = await Promise.all([
-				fetch(toFileUrl(outPath)),
+				fetch(toFileUrl(nativeOutputPath)),
 				fetch(toFileUrl(request.audioPath)),
 			]);
 			if (!videoResponse.ok) {
@@ -362,13 +460,44 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 				mode: request.audioMode,
 				offsetSec: request.audioOffsetSec,
 			});
-			const saveResult = await window.electronAPI.writeExportToPath(
-				await mixed.arrayBuffer(),
-				outPath,
-			);
-			if (!saveResult.success) {
-				throw new Error(saveResult.message ?? `Failed to write mixed output to ${outPath}`);
+			throwIfCancelled(signal, "rendering");
+			const mixedBuffer = await mixed.arrayBuffer();
+			const bufferExportId = crypto.randomUUID();
+			const cancelBufferExport = () => {
+				void window.electronAPI.cancelWriteExport(bufferExportId).catch(() => undefined);
+			};
+			signal?.addEventListener("abort", cancelBufferExport, { once: true });
+			let saveResult: Awaited<ReturnType<typeof window.electronAPI.writeExportToPath>>;
+			try {
+				if (signal?.aborted) cancelBufferExport();
+				saveResult = await window.electronAPI.writeExportToPath(
+					mixedBuffer,
+					outPath,
+					{
+						width: outDims.width,
+						height: outDims.height,
+						fps: MP4_EXPORT_FPS,
+						durationS: exportStats.videoDurationS,
+						codec: "h264",
+						expectedBytes: mixedBuffer.byteLength,
+					},
+					bufferExportId,
+				);
+			} finally {
+				signal?.removeEventListener("abort", cancelBufferExport);
 			}
+			if (!saveResult.success) {
+				const failure = saveResult.message ?? `Failed to write mixed output to ${outPath}`;
+				throw new CliExportTransactionError(
+					failure,
+					saveResult.phase ?? "publishing",
+					saveResult.code ?? "PUBLISH_FAILED",
+					saveResult.retryable,
+				);
+			}
+			// Only the final voiceover publication controls the user-facing
+			// durability state. The intermediate render is app-owned scratch media.
+			exportStats.exportWarning = saveResult.exportWarning;
 		}
 
 		return {
@@ -377,9 +506,14 @@ export async function runExport(request: CliExportRequest): Promise<CliDoneResul
 			format,
 			width: outDims.width,
 			height: outDims.height,
+			...(exportStats.exportWarning ? { warnings: [exportStats.exportWarning.message] } : {}),
 		};
 	} finally {
 		unsubscribeProgress?.();
+		unsubscribePhase?.();
+		if (intermediatePath) {
+			await window.electronAPI.removeTemporaryExportPath(intermediatePath).catch(() => undefined);
+		}
 	}
 }
 
@@ -392,17 +526,20 @@ export function CliExportRunner() {
 		startedRef.current = true;
 
 		void (async () => {
+			const controller = new AbortController();
+			const unsubscribeCancel = window.electronAPI.onCliCancelExport(() => controller.abort());
 			try {
 				const request = (await window.electronAPI.cliGetRequest()) as CliExportRequest;
 				if (request.kind !== "export") {
 					throw new Error(`cli-export window received a ${request.kind} request`);
 				}
 				setStatus(`Exporting ${request.projectPath}…`);
-				const result = await runExport(request);
+				const result = await runExport(request, controller.signal);
 				await window.electronAPI.cliDone(result);
 			} catch (error) {
-				const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-				await window.electronAPI.cliDone({ success: false, error: message });
+				await window.electronAPI.cliDone(cliExportFailure(error));
+			} finally {
+				unsubscribeCancel();
 			}
 		})();
 	}, []);

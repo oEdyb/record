@@ -59,6 +59,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var outputWidth = 1920
 	private var outputHeight = 1080
 	private var captureFrame = CGRect.zero
+	private let captureTelemetry: CaptureTelemetry
 	private let unexpectedStopHandler: (ScreenCaptureRecorder, Error) -> Void
 
 	init(
@@ -66,6 +67,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		unexpectedStopHandler: @escaping (ScreenCaptureRecorder, Error) -> Void
 	) {
 		self.request = request
+		captureTelemetry = CaptureTelemetry(requestedVideoFps: request.video.fps)
 		self.unexpectedStopHandler = unexpectedStopHandler
 	}
 
@@ -209,7 +211,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 		var finalClipWarning: [String: String]?
 		do {
+			let finalizeStartedAt = Date()
 			if let clip = try await finishCurrentClip() {
+				captureTelemetry.recordFinalizedClip(
+					durationMs: clip.durationMs,
+					finalizeMs: Date().timeIntervalSince(finalizeStartedAt) * 1_000
+				)
 				finalizedClips.append(clip)
 				emit(["event": "clip-finalized", "clip": clip.payload])
 			}
@@ -229,6 +236,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			"event": "recording-stopped",
 			"screenPath": finalizedClips.first?.path ?? request.outputs.screenPath,
 			"clips": finalizedClips.map(\.payload),
+			"telemetry": captureTelemetry.payload(),
 		]
 		if let finalClipWarning {
 			stoppedPayload["warning"] = finalClipWarning
@@ -249,7 +257,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard didPause else { return }
 		emit(["event": "clip-finalizing"])
 		do {
+			let finalizeStartedAt = Date()
 			if let clip = try await finishCurrentClip() {
+				captureTelemetry.recordFinalizedClip(
+					durationMs: clip.durationMs,
+					finalizeMs: Date().timeIntervalSince(finalizeStartedAt) * 1_000
+				)
 				finalizedClips.append(clip)
 				emit(["event": "clip-finalized", "clip": clip.payload])
 			}
@@ -311,11 +324,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 
 		if type == .audio {
+			captureTelemetry.recordAudioSample(sampleBuffer, microphone: false)
 			audioMixer?.ingest(sampleBuffer, from: .system)
 			return
 		}
 
 		if type.rawValue == screenCaptureKitMicrophoneOutputTypeRawValue {
+			captureTelemetry.recordAudioSample(sampleBuffer, microphone: true)
 			audioMixer?.ingest(sampleBuffer, from: .microphone)
 			return
 		}
@@ -323,7 +338,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard type == .screen else {
 			return
 		}
-		guard isCompleteFrame(sampleBuffer) else {
+		guard captureTelemetry.recordScreenSample(sampleBuffer) else {
 			return
 		}
 		guard let videoInput, let writer else {
@@ -341,6 +356,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		if videoInput.isReadyForMoreMediaData {
 			let appended = videoInput.append(sampleBuffer)
 			if appended {
+				captureTelemetry.recordVideoAppend(at: presentationTime)
 				clipLastTime = presentationTime
 				let duration = CMSampleBufferGetDuration(sampleBuffer)
 				clipLastFrameDuration = duration.isValid && duration > .zero
@@ -357,8 +373,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					"captureBounds": captureBoundsPayload(),
 				])
 			} else if !appended {
+				captureTelemetry.recordVideoAppendFailure()
 				reportWriterFailure("video append")
 			}
+		} else {
+			captureTelemetry.recordVideoBackpressure()
 		}
 	}
 
@@ -550,12 +569,19 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				microphoneGain: request.audio.microphone.gain
 			)
 		}
+		captureTelemetry.beginClip()
 	}
 
 	private func detachCurrentWriter() -> DetachedWriter? {
 		sampleQueue.sync {
 			guard let writer, let currentClipPath else { return nil }
-			audioMixer?.finish()
+			if let audioTelemetry = audioMixer?.finish() {
+				captureTelemetry.recordAudioWriter(
+					maxQueueBytes: audioTelemetry.maxPendingBytes,
+					maxQueueDepth: audioTelemetry.maxPendingChunks,
+					blockedMs: audioTelemetry.blockedMs
+				)
+			}
 			videoInput?.markAsFinished()
 			audioInputs.forEach { $0.markAsFinished() }
 
@@ -668,21 +694,6 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 		writer.add(input)
 		return input
-	}
-
-	private func isCompleteFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
-		guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
-			sampleBuffer,
-			createIfNecessary: false
-		) as? [[SCStreamFrameInfo: Any]],
-			let attachment = attachments.first,
-			let statusRawValue = attachment[SCStreamFrameInfo.status] as? Int,
-			let status = SCFrameStatus(rawValue: statusRawValue)
-		else {
-			return true
-		}
-
-		return status == .complete
 	}
 
 }

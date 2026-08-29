@@ -119,6 +119,46 @@ describe("pause analysis", () => {
 		expect(suggestions.some((suggestion) => suggestion.savedSec > 3)).toBe(true);
 	});
 
+	it("does not let system-audio words protect silence on the microphone track", () => {
+		const withSystemWord: AxcutTranscript = {
+			...transcript,
+			words: [
+				...transcript.words.map((word) => ({ ...word, sourceRole: "you" as const })),
+				{
+					id: "system_word",
+					segmentId: "system_segment",
+					startSec: 2.5,
+					endSec: 3.5,
+					text: "system",
+					sourceRole: "system",
+				},
+			],
+		};
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript: withSystemWord,
+			},
+			policy(),
+		);
+
+		expect(
+			suggestions.some(
+				(suggestion) => suggestion.sourceStartSec < 2.5 && suggestion.sourceEndSec > 3.5,
+			),
+		).toBe(true);
+	});
+
 	it("includes a confident isolated non-speech burst inside one pause suggestion", () => {
 		const suggestions = analyzeClipPauses(
 			{
@@ -351,6 +391,41 @@ describe("pause analysis", () => {
 			},
 			policy({ mode: "audio-level" }),
 		);
+		expect(suggestions.some((suggestion) => suggestion.savedSec > 3)).toBe(true);
+	});
+
+	it("does not treat unknown mixed speech as verified microphone evidence", () => {
+		const mixedTranscript: AxcutTranscript = {
+			...transcript,
+			words: [
+				{
+					id: "mixed_word",
+					segmentId: "mixed_segment",
+					startSec: 2.5,
+					endSec: 3.5,
+					text: "mixed",
+					sourceRole: "unknown-mixed",
+				},
+			],
+		};
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript: mixedTranscript,
+			},
+			policy(),
+		);
+
 		expect(suggestions.some((suggestion) => suggestion.savedSec > 3)).toBe(true);
 	});
 

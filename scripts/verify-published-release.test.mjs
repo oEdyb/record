@@ -5,8 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
+import { nativeFfmpegEvidenceFileNames } from "./native-ffmpeg-source.mjs";
 import { stageUpdateRelease } from "./stage-update-release.mjs";
 import { verifyPublishedRelease } from "./verify-published-release.mjs";
+import { loadWebDemuxerPolicy, sourceOfferFileNames } from "./web-demuxer-source.mjs";
 
 const version = "2.0.0";
 const fileNames = [
@@ -19,6 +21,12 @@ const fileNames = [
 ];
 const temporaryDirectories = [];
 const servers = [];
+const sourceEvidence = [
+	...sourceOfferFileNames(loadWebDemuxerPolicy()),
+	...["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"].flatMap(
+		nativeFfmpegEvidenceFileNames,
+	),
+];
 
 async function fixture() {
 	const root = await mkdtemp(path.join(os.tmpdir(), "klippt-public-release-"));
@@ -27,6 +35,7 @@ async function fixture() {
 	const staged = path.join(root, "staged");
 	await mkdir(source);
 	for (const fileName of fileNames) await writeFile(path.join(source, fileName), fileName);
+	for (const fileName of sourceEvidence) await writeFile(path.join(source, fileName), fileName);
 	const descriptor = (fileName) => ({
 		url: fileName,
 		size: Buffer.byteLength(fileName),

@@ -56,6 +56,45 @@ describe("diagnostic report", () => {
 		expect(report.privacy.excluded).toContain("project document");
 	});
 
+	it("includes only the main-owned local workload reports", () => {
+		const workloadReport = {
+			format: "klippt-workload-v1" as const,
+			id: "safe-id",
+			kind: "export" as const,
+			operation: "native-video-export" as const,
+			platform: "darwin" as const,
+			status: "succeeded" as const,
+			startedAtEpochMs: 1,
+			updatedAtEpochMs: 2,
+			configuration: {},
+			phases: [],
+			events: [],
+			fallbacks: [],
+			mediaPaths: [],
+			metrics: {},
+			resources: [],
+			privacy: {
+				localOnly: true as const,
+				excluded: [
+					"filenames and paths",
+					"URLs",
+					"project and window names",
+					"transcripts",
+					"cursor and keyboard events",
+					"audio and video",
+				] as const,
+			},
+		};
+		const report = createDiagnosticReport({
+			request: { error: "failed" },
+			environment,
+			helperOutput: { windows: "", mac: "" },
+			mainProcessLogs: [],
+			workloadReports: [workloadReport],
+		});
+		expect(report.workloadReports).toEqual([workloadReport]);
+	});
+
 	it("bounds log volume and keeps the newest entries", () => {
 		const report = createDiagnosticReport({
 			request: { error: "failed", logs: Array.from({ length: 300 }, (_, i) => `log-${i}`) },

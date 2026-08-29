@@ -48,6 +48,9 @@ interface Window {
 		 *  `compositor.export`/`compositor.exportMulti` runs. Distinct from `exportOnFrameAck`,
 		 *  the OLD web/CPU pipeline's per-frame ack, not a progress signal. */
 		onNativeExportProgress?: (callback: (frames: number) => void) => () => void;
+		onNativeExportPhase?: (
+			callback: (phase: import("../src/native/contracts").ExportTransactionPhase) => void,
+		) => () => void;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
 		switchToHud: () => Promise<void>;
@@ -142,6 +145,10 @@ interface Window {
 			path?: string;
 			message?: string;
 			error?: string;
+			phase?: import("../src/native/contracts").ExportTransactionPhase;
+			code?: string;
+			retryable?: boolean;
+			exportWarning?: import("./export/atomicExport").ExportTransactionWarning;
 		}>;
 		setRecordingState: (
 			recording: boolean,
@@ -328,12 +335,23 @@ interface Window {
 		writeExportToPath: (
 			videoData: ArrayBuffer,
 			filePath: string,
+			spec: import("./native-bridge/services/compositorViewService").VideoBufferPublishSpec,
+			exportId?: string,
 		) => Promise<{
 			success: boolean;
 			path?: string;
 			message?: string;
 			error?: string;
+			phase?: import("./export/atomicExport").ExportTransactionPhase;
+			code?: import("./export/atomicExport").ExportTransactionErrorCode;
+			retryable?: boolean;
+			exportWarning?: import("./export/atomicExport").ExportTransactionWarning;
 		}>;
+		cancelWriteExport: (exportId: string) => Promise<{ cancelled: boolean }>;
+		createTemporaryExportPath: () => Promise<string>;
+		removeTemporaryExportPath: (
+			filePath: string,
+		) => Promise<{ success: boolean; message?: string }>;
 		openVideoFilePicker: () => Promise<{
 			success: boolean;
 			code?: "ENTITLEMENT_REQUIRED";
@@ -481,6 +499,10 @@ interface Window {
 		) => void;
 		setCameraPreviewVisible: (visible: boolean) => void;
 		requestCameraPreviewConnection: () => void;
+		reportCapturePerformance: (sample: {
+			cameraDeliveredFps: number;
+			cameraTimestampDriftMs?: number;
+		}) => void;
 		setCameraPreviewPosition: (position: { x: number; y: number }) => void;
 		onCameraPreviewPositionChanged: (
 			callback: (position: { x: number; y: number }) => void,
@@ -499,7 +521,11 @@ interface Window {
 			transcribe: (
 				request: import("./stt/transcriptionContract").SttTranscribeRequest,
 			) => Promise<import("./stt/transcriptionContract").SttTranscribeResponse>;
+			transcribeSource: (
+				request: import("./stt/transcriptionContract").SttTranscribeSourceRequest,
+			) => Promise<import("./stt/transcriptionContract").SttTranscribeSourceResponse>;
 			cancel: () => Promise<void>;
+			release: () => Promise<void>;
 			onStatus: (
 				callback: (event: import("./stt/transcriptionContract").SttStatusEvent) => void,
 			) => () => void;
@@ -510,6 +536,7 @@ interface Window {
 		cliLog: (level: "info" | "error", message: string) => void;
 		cliDone: (result: import("../src/lib/cliContracts").CliDoneResult) => Promise<void>;
 		onCliStopRecording: (callback: () => void) => () => void;
+		onCliCancelExport: (callback: () => void) => () => void;
 		setLocale: (locale: string) => Promise<void>;
 		saveDiagnostic: (payload: {
 			error: string;

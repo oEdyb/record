@@ -79,6 +79,7 @@ describe("WhisperServerManager", () => {
 		expect(status.pid).toBeNull();
 		expect(status.port).toBeNull();
 		expect(status.backend).toBeNull();
+		expect(status.backendVerified).toBe(false);
 		expect(status.startedAtMs).toBeNull();
 	});
 
@@ -125,6 +126,38 @@ describe("WhisperServerManager", () => {
 				{ word: "Hello", startSec: 0, endSec: 0.8, confidence: 0.95 },
 				{ word: "world.", startSec: 0.8, endSec: 1.5, confidence: 0.91 },
 			]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("stops native inference when the caller cancels", async () => {
+		const fetcher = vi.fn(
+			async (_url: string, init: RequestInit) =>
+				await new Promise<Response>((_resolve, reject) => {
+					init.signal?.addEventListener(
+						"abort",
+						() => reject(new DOMException("Aborted", "AbortError")),
+						{ once: true },
+					);
+				}),
+		);
+		vi.stubGlobal("fetch", fetcher);
+		try {
+			const manager = new WhisperServerManager();
+			(manager as unknown as { process: unknown; port: number }).process = {};
+			(manager as unknown as { process: unknown; port: number }).port = 9999;
+			const stop = vi.spyOn(manager, "stop").mockResolvedValue();
+			const controller = new AbortController();
+			const run = manager.transcribe({
+				samples: new Float32Array(1600),
+				signal: controller.signal,
+			});
+			await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+			controller.abort();
+
+			await expect(run).rejects.toMatchObject({ name: "AbortError" });
+			expect(stop).toHaveBeenCalledOnce();
 		} finally {
 			vi.unstubAllGlobals();
 		}
@@ -250,15 +283,23 @@ describe("WhisperServerManager", () => {
 			vi.mocked(spawn).mockReturnValue(fakeChild as never);
 			vi.stubGlobal(
 				"fetch",
-				vi.fn(async () => new Response("ok", { status: 200 })),
+				vi.fn(
+					async () =>
+						new Response(JSON.stringify({ status: "ok", backend: "whispercpp-cpu" }), {
+							status: 200,
+						}),
+				),
 			);
 			try {
 				const mgr = new WhisperServerManager();
-				await mgr.start({
+				const started = await mgr.start({
 					modelPath,
 					binaryPath: fakeBinaryPath,
-					backend: "whispercpp-cpu",
+					backend: "whispercpp-vulkan",
 				});
+				expect(started.backend).toBe("whispercpp-cpu");
+				expect(mgr.status.backend).toBe("whispercpp-cpu");
+				expect(mgr.status.backendVerified).toBe(true);
 				const args = vi.mocked(spawn).mock.calls[0]?.[1] as string[];
 				const modelIdx = args.indexOf("--model");
 				expect(modelIdx).toBeGreaterThan(-1);

@@ -1,8 +1,8 @@
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RecordingStreamRegistry } from "./recordingStream";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
 describe("RecordingStreamRegistry", () => {
 	let dir: string;
@@ -80,5 +80,50 @@ describe("RecordingStreamRegistry", () => {
 		await registry.finalize("rec.webm");
 
 		expect(await readFile(pathFor("rec.webm"), "utf8")).toBe("second");
+	});
+
+	it("reports append callback latency and write failures without changing the IPC result", async () => {
+		type AppendHandler = (
+			event: unknown,
+			fileName: string,
+			chunk: ArrayBuffer,
+		) => Promise<{ success: boolean; error?: string }>;
+		const handlers = new Map<string, AppendHandler>();
+		const ipcMain = {
+			handle: vi.fn((channel: string, handler: AppendHandler) => handlers.set(channel, handler)),
+		};
+		const registry = new RecordingStreamRegistry();
+		const append = vi
+			.spyOn(registry, "append")
+			.mockResolvedValueOnce()
+			.mockRejectedValueOnce(Object.assign(new Error("disk full"), { code: "ENOSPC" }));
+		const onAppendLatencyMs = vi.fn();
+		const onWriteError = vi.fn();
+		const clock = [100, 112.5, 200];
+
+		registerRecordingStreamHandlers(
+			ipcMain as unknown as Parameters<typeof registerRecordingStreamHandlers>[0],
+			registry,
+			pathFor,
+			{
+				now: () => clock.shift() ?? 200,
+				onAppendLatencyMs,
+				onWriteError,
+			},
+		);
+		const handler = handlers.get("append-recording-chunk");
+		expect(handler).toBeDefined();
+		const chunk = Uint8Array.from([1, 2, 3]).buffer;
+
+		await expect(handler?.({}, "rec.webm", chunk)).resolves.toEqual({ success: true });
+		expect(onAppendLatencyMs).toHaveBeenCalledWith(12.5);
+		expect(onWriteError).not.toHaveBeenCalled();
+
+		await expect(handler?.({}, "rec.webm", chunk)).resolves.toEqual({
+			success: false,
+			error: "Error: disk full",
+		});
+		expect(onWriteError).toHaveBeenCalledWith(expect.objectContaining({ code: "ENOSPC" }));
+		expect(append).toHaveBeenCalledTimes(2);
 	});
 });

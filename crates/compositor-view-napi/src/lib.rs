@@ -11,13 +11,17 @@ use napi::{Env, JsFunction, Task};
 use napi_derive::napi;
 use openscreen_compositor::compositor::{live_params_from_scene, Compositor};
 use openscreen_compositor::d3d::{Backend, Gpu};
+use openscreen_compositor::export_verify::{
+    self, ExpectedVideoCodec, GifExportSpec, VideoExportSpec,
+};
 use openscreen_compositor::gif_export::{GifExportParams, GifStats};
 use openscreen_compositor::live::{LiveView, PausedPreviews};
 use openscreen_compositor::scene::Scene;
 use openscreen_compositor::{config, pipeline};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Résolution cible du preview en pixels device (largeur/hauteur du `<canvas>`
 /// Electron affichant la preview). `x`/`y` ne sont plus utilisés (Option B :
@@ -34,9 +38,52 @@ pub struct CompositorViewRect {
 
 static REGISTRY: OnceLock<Mutex<HashMap<i32, LiveView>>> = OnceLock::new();
 static NEXT_ID: Mutex<i32> = Mutex::new(1);
+static EXPORT_CANCELLATIONS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
 
 fn registry() -> &'static Mutex<HashMap<i32, LiveView>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn export_cancellations() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    EXPORT_CANCELLATIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+struct ActiveExportCancellation {
+    export_id: Option<String>,
+}
+
+impl Drop for ActiveExportCancellation {
+    fn drop(&mut self) {
+        if let Some(export_id) = &self.export_id {
+            export_cancellations().lock().unwrap().remove(export_id);
+        }
+    }
+}
+
+fn register_export_cancellation(export_id: Option<&String>) -> Arc<AtomicBool> {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    if let Some(export_id) = export_id {
+        export_cancellations()
+            .lock()
+            .unwrap()
+            .insert(export_id.clone(), Arc::clone(&cancelled));
+    }
+    cancelled
+}
+
+#[napi]
+pub fn cancel_export(export_id: String) -> bool {
+    let cancellation = export_cancellations()
+        .lock()
+        .unwrap()
+        .get(&export_id)
+        .cloned();
+    if let Some(cancellation) = cancellation {
+        cancellation.store(true, Ordering::Release);
+        true
+    } else {
+        false
+    }
 }
 
 /// Crée une vue **offscreen** (pas de HWND, pas de fenêtre native). Démarre juste
@@ -132,6 +179,8 @@ pub struct FramePacket {
     pub source_time_sec: f64,
     pub clip_index: u32,
     pub transport_generation: f64,
+    /// GPU render-target readback and CPU copy time on the render thread.
+    pub readback_ms: f64,
     /// R,G,B,A tightly-packed, `width * height * 4` octets — ce que `putImageData` /
     /// `ImageData` attendent côté JS (canvas 2D, format natif RGBA8).
     pub data: Buffer,
@@ -175,7 +224,7 @@ pub fn read_frame(id: i32, since_gen: f64) -> Result<Option<FramePacket>> {
         }
     };
     Ok(slot.map(
-        |(gen, w, h, source_time_sec, clip_index, transport_generation, pixels)| {
+        |(gen, w, h, source_time_sec, clip_index, transport_generation, readback_ms, pixels)| {
             debug_assert_eq!(pixels.len(), (w as usize) * (h as usize) * 4);
             FramePacket {
                 gen: gen as f64,
@@ -184,6 +233,7 @@ pub fn read_frame(id: i32, since_gen: f64) -> Result<Option<FramePacket>> {
                 source_time_sec,
                 clip_index: clip_index as u32,
                 transport_generation: transport_generation as f64,
+                readback_ms,
                 data: Buffer::from(pixels),
             }
         },
@@ -324,6 +374,11 @@ pub struct ExportStats {
     /// Durée de la vidéo exportée (secondes) — distincte de `wall_s` (temps de rendu réel).
     pub video_duration_s: f64,
     pub audio_mastering: AudioMasteringStatsOutput,
+    pub encoder_name: String,
+    pub encoder_hardware: bool,
+    pub encoder_fallback: bool,
+    pub decoder_path: String,
+    pub compositor_backend: String,
 }
 
 /// Bilan d'un export GIF natif. Mêmes champs que `ExportStats` (frames /
@@ -455,6 +510,8 @@ pub struct ExportMultiTask {
     scene_json: Option<String>,
     params: Option<ExportParamsInput>,
     on_progress: Option<ThreadsafeFunction<u32, ErrorStrategy::Fatal>>,
+    export_id: Option<String>,
+    cancelled: Arc<AtomicBool>,
 }
 
 pub struct ExportMultiOutput {
@@ -463,6 +520,11 @@ pub struct ExportMultiOutput {
     fps: f64,
     video_duration_s: f64,
     audio_mastering: openscreen_compositor::audio::AudioMasteringStats,
+    encoder_name: String,
+    encoder_hardware: bool,
+    encoder_fallback: bool,
+    decoder_path: String,
+    compositor_backend: String,
 }
 
 impl Task for ExportMultiTask {
@@ -470,6 +532,9 @@ impl Task for ExportMultiTask {
     type JsValue = ExportStats;
 
     fn compute(&mut self) -> Result<Self::Output> {
+        let _active = ActiveExportCancellation {
+            export_id: self.export_id.clone(),
+        };
         // Previews paused for the whole render (GPU 3D engine freed) and restored
         // exactly as found when this guard drops, including on the error paths.
         let _previews = PreviewPause::begin();
@@ -548,7 +613,15 @@ impl Task for ExportMultiTask {
         }
         comp.set_scene(scene);
 
-        let mut progress = throttled_progress(self.on_progress.take());
+        let mut report_progress = throttled_progress(self.on_progress.take());
+        let cancelled = Arc::clone(&self.cancelled);
+        let mut progress = move |event: openscreen_compositor::ExportProgress| {
+            if cancelled.load(Ordering::Acquire) {
+                return Err(anyhow::anyhow!("export cancelled"));
+            }
+            report_progress(event.frames());
+            Ok(())
+        };
         let s = pipeline::run_composited_multi(
             &self.clips,
             &self.out_path,
@@ -559,12 +632,33 @@ impl Task for ExportMultiTask {
             &mut progress,
         )
         .map_err(|e| Error::from_reason(format!("{e:#}")))?;
+        #[cfg(target_os = "windows")]
+        let path_stats = (
+            "unknown".to_owned(),
+            false,
+            false,
+            "d3d11va".to_owned(),
+            "d3d11".to_owned(),
+        );
+        #[cfg(not(target_os = "windows"))]
+        let path_stats = (
+            s.encoder_name,
+            s.encoder_hardware,
+            s.encoder_fallback,
+            s.decoder_path,
+            s.compositor_backend,
+        );
         Ok(ExportMultiOutput {
             frames: s.frames as u32,
             wall_s: s.wall_s,
             fps: s.fps,
             video_duration_s: s.video_duration_s,
             audio_mastering: s.audio_mastering,
+            encoder_name: path_stats.0,
+            encoder_hardware: path_stats.1,
+            encoder_fallback: path_stats.2,
+            decoder_path: path_stats.3,
+            compositor_backend: path_stats.4,
         })
     }
 
@@ -575,6 +669,11 @@ impl Task for ExportMultiTask {
             fps: out.fps,
             video_duration_s: out.video_duration_s,
             audio_mastering: out.audio_mastering.into(),
+            encoder_name: out.encoder_name,
+            encoder_hardware: out.encoder_hardware,
+            encoder_fallback: out.encoder_fallback,
+            decoder_path: out.decoder_path,
+            compositor_backend: out.compositor_backend,
         })
     }
 }
@@ -591,7 +690,10 @@ pub fn export_multi(
     scene_json: Option<String>,
     params: Option<ExportParamsInput>,
     on_progress: Option<JsFunction>,
+    export_id: Option<String>,
 ) -> Result<AsyncTask<ExportMultiTask>> {
+    let on_progress = make_progress_tsfn(on_progress)?;
+    let cancelled = register_export_cancellation(export_id.as_ref());
     let clips = clips
         .into_iter()
         .map(|c| pipeline::ClipSource {
@@ -609,7 +711,9 @@ pub fn export_multi(
         clips,
         scene_json,
         params,
-        on_progress: make_progress_tsfn(on_progress)?,
+        on_progress,
+        export_id,
+        cancelled,
     }))
 }
 
@@ -657,6 +761,8 @@ pub struct ExportGifTask {
     out_path: PathBuf,
     params: GifExportParams,
     on_progress: Option<ThreadsafeFunction<u32, ErrorStrategy::Fatal>>,
+    export_id: Option<String>,
+    cancelled: Arc<AtomicBool>,
 }
 
 impl Task for ExportGifTask {
@@ -664,6 +770,9 @@ impl Task for ExportGifTask {
     type JsValue = GifExportStats;
 
     fn compute(&mut self) -> Result<Self::Output> {
+        let _active = ActiveExportCancellation {
+            export_id: self.export_id.clone(),
+        };
         // Mêmes garanties que `ExportMultiTask` : previews paused for the
         // whole render et restored exactement comme trouvées, y compris
         // sur les chemins d'erreur. L'export GPU+CPU ne partage pas le
@@ -709,7 +818,15 @@ impl Task for ExportGifTask {
         }
         comp.set_scene(scene);
 
-        let mut progress = throttled_progress(self.on_progress.take());
+        let mut report_progress = throttled_progress(self.on_progress.take());
+        let cancelled = Arc::clone(&self.cancelled);
+        let mut progress = move |event: openscreen_compositor::ExportProgress| {
+            if cancelled.load(Ordering::Acquire) {
+                return Err(anyhow::anyhow!("export cancelled"));
+            }
+            report_progress(event.frames());
+            Ok(())
+        };
         openscreen_compositor::gif_export::export_gif(
             &self.clips,
             &self.out_path,
@@ -749,7 +866,10 @@ pub fn export_gif(
     scene_json: Option<String>,
     params: Option<GifParamsInput>,
     on_progress: Option<JsFunction>,
+    export_id: Option<String>,
 ) -> Result<AsyncTask<ExportGifTask>> {
+    let on_progress = make_progress_tsfn(on_progress)?;
+    let cancelled = register_export_cancellation(export_id.as_ref());
     // Deliberately the same argument shape as `export_multi`: the caller builds
     // one clip list and one scene, and picks the container. Cursor comes from
     // the scene like every other effect — there is no GIF-specific input left.
@@ -779,7 +899,160 @@ pub fn export_gif(
         scene_json,
         out_path: PathBuf::from(out_path),
         params: gif_params,
-        on_progress: make_progress_tsfn(on_progress)?,
+        on_progress,
+        export_id,
+        cancelled,
+    }))
+}
+
+#[napi(object)]
+pub struct VideoExportVerifyInput {
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub duration_s: f64,
+    pub codec: String,
+}
+
+#[napi(object)]
+pub struct VideoExportVerificationOutput {
+    pub duration_s: f64,
+    pub fps: f64,
+    pub video_streams: u32,
+    pub audio_streams: u32,
+    pub first_video_frame_s: f64,
+    pub tail_video_frame_s: f64,
+}
+
+pub struct VerifyVideoExportTask {
+    path: String,
+    spec: VideoExportSpec,
+    export_id: Option<String>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Task for VerifyVideoExportTask {
+    type Output = export_verify::VideoExportVerification;
+    type JsValue = VideoExportVerificationOutput;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let _active = ActiveExportCancellation {
+            export_id: self.export_id.clone(),
+        };
+        export_verify::verify_video_export_with_cancel(&self.path, self.spec, &|| {
+            self.cancelled.load(Ordering::Acquire)
+        })
+        .map_err(|error| Error::from_reason(format!("{error:#}")))
+    }
+
+    fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
+        Ok(VideoExportVerificationOutput {
+            duration_s: out.duration_s,
+            fps: out.fps,
+            video_streams: out.video_streams,
+            audio_streams: out.audio_streams,
+            first_video_frame_s: out.first_video_frame_s,
+            tail_video_frame_s: out.tail_video_frame_s,
+        })
+    }
+}
+
+#[napi]
+pub fn verify_video_export(
+    path: String,
+    input: VideoExportVerifyInput,
+    export_id: Option<String>,
+) -> Result<AsyncTask<VerifyVideoExportTask>> {
+    let codec = match input.codec.as_str() {
+        "h264" => ExpectedVideoCodec::H264,
+        "h265" => ExpectedVideoCodec::H265,
+        other => {
+            return Err(Error::from_reason(format!(
+                "unsupported verification codec: {other}"
+            )))
+        }
+    };
+    let cancelled = register_export_cancellation(export_id.as_ref());
+    Ok(AsyncTask::new(VerifyVideoExportTask {
+        path,
+        spec: VideoExportSpec {
+            width: input.width,
+            height: input.height,
+            fps: input.fps,
+            duration_s: input.duration_s,
+            codec,
+        },
+        export_id,
+        cancelled,
+    }))
+}
+
+#[napi(object)]
+pub struct GifExportVerifyInput {
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub duration_s: f64,
+}
+
+#[napi(object)]
+pub struct GifExportVerificationOutput {
+    pub duration_s: f64,
+    pub fps: f64,
+    pub video_streams: u32,
+    pub first_frame_s: f64,
+    pub tail_frame_s: f64,
+}
+
+pub struct VerifyGifExportTask {
+    path: String,
+    spec: GifExportSpec,
+    export_id: Option<String>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Task for VerifyGifExportTask {
+    type Output = export_verify::GifExportVerification;
+    type JsValue = GifExportVerificationOutput;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let _active = ActiveExportCancellation {
+            export_id: self.export_id.clone(),
+        };
+        export_verify::verify_gif_export_with_cancel(&self.path, self.spec, &|| {
+            self.cancelled.load(Ordering::Acquire)
+        })
+        .map_err(|error| Error::from_reason(format!("{error:#}")))
+    }
+
+    fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
+        Ok(GifExportVerificationOutput {
+            duration_s: out.duration_s,
+            fps: out.fps,
+            video_streams: out.video_streams,
+            first_frame_s: out.first_frame_s,
+            tail_frame_s: out.tail_frame_s,
+        })
+    }
+}
+
+#[napi]
+pub fn verify_gif_export(
+    path: String,
+    input: GifExportVerifyInput,
+    export_id: Option<String>,
+) -> Result<AsyncTask<VerifyGifExportTask>> {
+    let cancelled = register_export_cancellation(export_id.as_ref());
+    Ok(AsyncTask::new(VerifyGifExportTask {
+        path,
+        spec: GifExportSpec {
+            width: input.width,
+            height: input.height,
+            fps: input.fps,
+            duration_s: input.duration_s,
+        },
+        export_id,
+        cancelled,
     }))
 }
 

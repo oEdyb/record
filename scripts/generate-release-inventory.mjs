@@ -25,7 +25,13 @@ import {
 	FFMPEG_RELEASE_TAG,
 	FFMPEG_SHARED_ARCHIVES,
 } from "./ffmpeg-pins.mjs";
+import {
+	cargoLicenseRecordFor,
+	readCargoLicenseInventory,
+} from "./generate-cargo-license-inventory.mjs";
 import { HELPER_MANIFEST_NAME, verifyHelperManifest } from "./helper-provenance.mjs";
+import { verifyPackagedDistribution } from "./verify-packaged-distribution.mjs";
+import { loadWebDemuxerPolicy } from "./web-demuxer-source.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -79,6 +85,10 @@ function integrityHash(integrity) {
 
 export function readNpmComponents(root) {
 	const lock = readJson(path.join(root, "package-lock.json"));
+	const webDemuxerPolicyPath = path.join(root, "supply-chain", "web-demuxer.json");
+	const webDemuxerPolicy = fs.existsSync(webDemuxerPolicyPath)
+		? loadWebDemuxerPolicy(webDemuxerPolicyPath)
+		: null;
 	const components = [];
 	for (const [lockPath, entry] of Object.entries(lock.packages ?? {})) {
 		if (!lockPath || !lockPath.includes("node_modules/")) continue;
@@ -94,7 +104,13 @@ export function readNpmComponents(root) {
 			version: entry.version,
 			scope: "required",
 			purl: npmPurl(name, entry.version),
-			license: typeof entry.license === "string" ? entry.license : undefined,
+			license:
+				typeof entry.license === "string"
+					? entry.license
+					: name === webDemuxerPolicy?.package.name &&
+							entry.version === webDemuxerPolicy.package.version
+						? webDemuxerPolicy.package.license
+						: undefined,
 			source: entry.resolved,
 			hash,
 			role: name === "electron" ? "packaged-runtime" : undefined,
@@ -117,6 +133,7 @@ function cargoString(block, key) {
 
 export function readCargoComponents(root) {
 	const components = [];
+	const licenses = readCargoLicenseInventory(root);
 	for (const graph of loadCargoGraphs(root)) {
 		const relativeLock = graph.lockfile;
 		const lock = fs.readFileSync(path.join(root, relativeLock), "utf8");
@@ -126,6 +143,15 @@ export function readCargoComponents(root) {
 			if (!name || !version) continue;
 			const source = cargoString(block, "source") ?? "workspace";
 			const checksum = cargoString(block, "checksum");
+			const licenseRecord =
+				source === "workspace"
+					? undefined
+					: cargoLicenseRecordFor(licenses, { name, version, source });
+			const license =
+				source === "workspace" ? "LicenseRef-Klippt-Proprietary" : licenseRecord?.license;
+			if (!license) {
+				throw new Error(`Cargo licence inventory does not cover ${name}@${version} from ${source}`);
+			}
 			components.push({
 				id: `cargo:${relativeLock}:${name}@${version}:${source}`,
 				ecosystem: "cargo",
@@ -135,6 +161,8 @@ export function readCargoComponents(root) {
 				scope: graph.scope,
 				purl: `pkg:cargo/${encodeURIComponent(name)}@${encodeURIComponent(version)}`,
 				source,
+				license,
+				licenseEvidence: licenseRecord?.licenseEvidence,
 				hash:
 					checksum && SHA256_RE.test(checksum)
 						? { algorithm: "SHA-256", value: checksum }
@@ -158,6 +186,7 @@ export function readSwiftComponents(root) {
 		scope: "required",
 		source: pin.location,
 		revision: pin.state?.revision,
+		license: pin.identity === "fluidaudio" ? "Apache-2.0" : undefined,
 		lockfile: relativeLock,
 	}));
 }
@@ -186,8 +215,12 @@ function exactConstant(source, pattern, name) {
 
 async function readModelComponents(root) {
 	const models = await loadSttModels(root);
+	const modelRights = readJson(path.join(root, "supply-chain", "model-rights.json"));
+	if (modelRights.schemaVersion !== 1) throw new Error("Unsupported model-rights schema");
 	const components = [];
 	for (const [modelId, model] of Object.entries(models)) {
+		const rights = modelRights.models?.[modelId];
+		if (!rights) throw new Error(`Model rights policy does not cover ${modelId}`);
 		for (const file of model.files ?? []) {
 			if (!file.expectedSha256 || !SHA256_RE.test(file.expectedSha256)) {
 				throw new Error(`${modelId}/${file.name} does not have a pinned SHA-256`);
@@ -195,6 +228,10 @@ async function readModelComponents(root) {
 			const revision = new URL(file.url).pathname.match(/\/resolve\/([^/]+)\//)?.[1];
 			if (!revision || !/^[0-9a-f]{40}$/i.test(revision)) {
 				throw new Error(`${modelId}/${file.name} is not pinned to an immutable revision`);
+			}
+			const repository = new URL(file.url).pathname.split("/").slice(1, 3).join("/");
+			if (repository !== rights.repository || revision !== rights.revision) {
+				throw new Error(`${modelId}/${file.name} differs from its reviewed rights policy`);
 			}
 			components.push({
 				id: `model:${modelId}:${file.name}@${revision}`,
@@ -206,6 +243,9 @@ async function readModelComponents(root) {
 				source: file.url,
 				hash: { algorithm: "SHA-256", value: file.expectedSha256.toLowerCase() },
 				approximateBytes: file.approximateBytes,
+				license: rights.license,
+				distributionStatus: rights.distributionStatus,
+				licenseEvidence: rights.evidence,
 			});
 		}
 	}
@@ -230,6 +270,14 @@ async function readModelComponents(root) {
 	);
 	if (buildHash !== rustHash)
 		throw new Error("Clean Voice model SHA-256 differs between build and worker sources");
+	const deepFilterRights = modelRights.models?.["deepfilternet3-onnx"];
+	if (
+		!deepFilterRights ||
+		deepFilterRights.revision !== "b0fa238a331fb5cc39c5555d3538008dd88c0aef" ||
+		deepFilterRights.distributionStatus !== "excluded-from-release"
+	) {
+		throw new Error("DeepFilterNet model rights must remain explicitly excluded");
+	}
 	components.push({
 		id: `model:deepfilternet3-onnx@${buildHash}`,
 		ecosystem: "model",
@@ -240,6 +288,9 @@ async function readModelComponents(root) {
 		source:
 			"git+https://github.com/oEdyb/DeepFilterNet.git#b0fa238a331fb5cc39c5555d3538008dd88c0aef",
 		hash: { algorithm: "SHA-256", value: buildHash },
+		license: deepFilterRights.license,
+		distributionStatus: deepFilterRights.distributionStatus,
+		licenseEvidence: deepFilterRights.evidence,
 	});
 	return components;
 }
@@ -258,6 +309,7 @@ function ffmpegComponents() {
 			hash: { algorithm: "SHA-256", value: pin.sha256 },
 			target,
 			role: "build-input",
+			license: "LGPL-2.1-or-later",
 		});
 	}
 	for (const [target, pin] of Object.entries(FFMPEG_SHARED_ARCHIVES)) {
@@ -272,6 +324,7 @@ function ffmpegComponents() {
 			hash: { algorithm: "SHA-256", value: pin.sha256 },
 			target,
 			role: "build-input",
+			license: "LGPL-2.1-or-later",
 		});
 	}
 	components.push({
@@ -287,17 +340,26 @@ function ffmpegComponents() {
 		target: "darwin",
 		role: "build-input",
 		configureFlags: [...FFMPEG_MAC_SOURCE.configureFlags],
+		license: "LGPL-2.1-or-later",
 	});
 	return components;
 }
 
 async function webAssemblyComponent(root, npmComponents) {
+	const policy = loadWebDemuxerPolicy(path.join(root, "supply-chain", "web-demuxer.json"));
 	const relativePath = "public/wasm/web-demuxer.wasm";
 	const filePath = path.join(root, relativePath);
 	const info = await stat(filePath);
 	const packageComponent = npmComponents.find((item) => item.name === "web-demuxer");
 	if (!packageComponent)
 		throw new Error("web-demuxer is missing from the production npm lock graph");
+	if (packageComponent.version !== policy.package.version) {
+		throw new Error("web-demuxer policy does not match the production npm version");
+	}
+	const hash = await sha256File(filePath);
+	if (info.size !== policy.binary.size || hash !== policy.binary.sha256) {
+		throw new Error("web-demuxer.wasm does not match its reviewed source policy");
+	}
 	return {
 		id: `wasm:web-demuxer@${packageComponent.version}`,
 		ecosystem: "webassembly",
@@ -307,8 +369,15 @@ async function webAssemblyComponent(root, npmComponents) {
 		scope: "required",
 		path: relativePath,
 		size: info.size,
-		hash: { algorithm: "SHA-256", value: await sha256File(filePath) },
-		source: packageComponent.source,
+		hash: { algorithm: "SHA-256", value: hash },
+		source: `${policy.package.repository}/commit/${policy.package.commit}`,
+		license: `${policy.package.license} AND ${policy.ffmpeg.license}`,
+		configureFlags: [...policy.build.configureFlags],
+		correspondingSource: policy.sourceArchives.map((archive) => ({
+			fileName: archive.fileName,
+			url: archive.url,
+			hash: { algorithm: "SHA-256", value: archive.sha256 },
+		})),
 	};
 }
 
@@ -582,6 +651,27 @@ function toCycloneDxComponent(component) {
 		component.toolchains
 			? { name: "app.klippt:toolchains", value: JSON.stringify(component.toolchains) }
 			: undefined,
+		component.distributionStatus
+			? { name: "app.klippt:distribution-status", value: component.distributionStatus }
+			: undefined,
+		component.licenseEvidence
+			? {
+					name: "app.klippt:license-evidence",
+					value:
+						typeof component.licenseEvidence === "string"
+							? component.licenseEvidence
+							: JSON.stringify(component.licenseEvidence),
+				}
+			: undefined,
+		component.configureFlags
+			? { name: "app.klippt:configure-flags", value: JSON.stringify(component.configureFlags) }
+			: undefined,
+		component.correspondingSource
+			? {
+					name: "app.klippt:corresponding-source",
+					value: JSON.stringify(component.correspondingSource),
+				}
+			: undefined,
 	].filter(Boolean);
 	const reference = externalReference(component);
 	return {
@@ -607,6 +697,7 @@ export async function buildReleaseInventory({
 	platform,
 	arch,
 	sourceSha,
+	buildOutputRoots,
 } = {}) {
 	verifyApprovedDependencies(root);
 	const packageJson = readJson(path.join(root, "package.json"));
@@ -614,6 +705,16 @@ export async function buildReleaseInventory({
 	const resolvedSourceSha = sourceSha ?? process.env.KLIPPT_SOURCE_SHA ?? gitSha(root);
 	if (!SOURCE_SHA_RE.test(resolvedSourceSha)) {
 		throw new Error("Release inventory source commit must be 40 hex digits");
+	}
+	if (packageDir) {
+		await verifyPackagedDistribution({
+			root,
+			packageDir,
+			platform,
+			arch,
+			sourceSha: resolvedSourceSha,
+			buildOutputRoots,
+		});
 	}
 	const components = uniqueComponents([
 		...npm,

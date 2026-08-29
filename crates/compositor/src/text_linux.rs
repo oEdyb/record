@@ -439,15 +439,30 @@ mod tests {
         // bord de la texture et perdrait ses coins arrondis.
         let raster = TextRasterizer::new().expect("rasterizer");
         let (pad_x, _) = crate::text_plate::padding(40.0);
-        let left = raster.build_atlas(&spec("hi", "left")).expect("atlas").plate;
-        let centre = raster.build_atlas(&spec("hi", "center")).expect("atlas").plate;
-        let right = raster.build_atlas(&spec("hi", "right")).expect("atlas").plate;
+        let left = raster
+            .build_atlas(&spec("hi", "left"))
+            .expect("atlas")
+            .plate;
+        let centre = raster
+            .build_atlas(&spec("hi", "center"))
+            .expect("atlas")
+            .plate;
+        let right = raster
+            .build_atlas(&spec("hi", "right"))
+            .expect("atlas")
+            .plate;
 
         for p in [left, centre, right] {
-            assert!(p[0] >= 0.0 && p[0] + p[2] <= 400.0 + 0.01, "plaque hors boite : {p:?}");
+            assert!(
+                p[0] >= 0.0 && p[0] + p[2] <= 400.0 + 0.01,
+                "plaque hors boite : {p:?}"
+            );
             assert!(p[2] < 400.0, "plaque large comme la boite : {p:?}");
         }
-        assert!(left[0] < pad_x + 0.01, "la plaque ferree a gauche devrait toucher le bord");
+        assert!(
+            left[0] < pad_x + 0.01,
+            "la plaque ferree a gauche devrait toucher le bord"
+        );
         assert!(
             centre[0] > left[0] + 20.0 && right[0] > centre[0] + 20.0,
             "les trois alignements posent la plaque au meme endroit : {left:?} {centre:?} {right:?}"
@@ -465,11 +480,17 @@ mod tests {
         // de base) et celui d'un 'x' (idem). S'ils partagent une ligne de base,
         // leurs dernieres rangees d'encre coincident a l'antialiasing pres.
         let raster = TextRasterizer::new().expect("rasterizer");
-        let atlas = raster.build_atlas(&spec("Hx", "left")).expect("atlas").pixels;
+        let atlas = raster
+            .build_atlas(&spec("Hx", "left"))
+            .expect("atlas")
+            .pixels;
         let w = 400usize;
 
         let cols = ink_cols(&atlas, w);
-        assert!(!cols.is_empty(), "aucune encre : le texte n'a pas ete rasterise");
+        assert!(
+            !cols.is_empty(),
+            "aucune encre : le texte n'a pas ete rasterise"
+        );
         // Coupe entre les deux glyphes : le plus grand trou horizontal.
         let split = cols
             .windows(2)
@@ -479,7 +500,10 @@ mod tests {
 
         let left = ink_rows(&atlas, w, cols[0], split);
         let right = ink_rows(&atlas, w, split, *cols.last().unwrap() + 1);
-        assert!(!left.is_empty() && !right.is_empty(), "un des deux glyphes est vide");
+        assert!(
+            !left.is_empty() && !right.is_empty(),
+            "un des deux glyphes est vide"
+        );
 
         let (h_bottom, x_bottom) = (*left.last().unwrap(), *right.last().unwrap());
         assert!(
@@ -495,7 +519,10 @@ mod tests {
         // la droite. Ici elle doit etre strictement plus bas, et commencer a peu
         // pres a la meme abscisse.
         let raster = TextRasterizer::new().expect("rasterizer");
-        let atlas = raster.build_atlas(&spec("ab\ncd", "left")).expect("atlas").pixels;
+        let atlas = raster
+            .build_atlas(&spec("ab\ncd", "left"))
+            .expect("atlas")
+            .pixels;
         let w = 400usize;
 
         let rows = ink_rows(&atlas, w, 0, w);
@@ -525,14 +552,26 @@ mod tests {
     fn the_localised_default_texts_render_on_this_machine() {
         let raster = TextRasterizer::new().expect("rasterizer");
         let samples = [
-            ("en", "Hello"), ("fr", "Bonjour"), ("es", "Hola"), ("it", "Ciao"),
-            ("pt-BR", "Olá"), ("ru", "Привет"), ("tr", "Merhaba"), ("vi", "Xin chào"),
-            ("ar", "مرحبا"), ("ja-JP", "こんにちは"), ("ko-KR", "안녕하세요"),
-            ("zh-CN", "你好"), ("zh-TW", "你好"),
+            ("en", "Hello"),
+            ("fr", "Bonjour"),
+            ("es", "Hola"),
+            ("it", "Ciao"),
+            ("pt-BR", "Olá"),
+            ("ru", "Привет"),
+            ("tr", "Merhaba"),
+            ("vi", "Xin chào"),
+            ("ar", "مرحبا"),
+            ("ja-JP", "こんにちは"),
+            ("ko-KR", "안녕하세요"),
+            ("zh-CN", "你好"),
+            ("zh-TW", "你好"),
         ];
         let mut blank = Vec::new();
         for (locale, text) in samples {
-            let atlas = raster.build_atlas(&spec(text, "center")).expect("atlas").pixels;
+            let atlas = raster
+                .build_atlas(&spec(text, "center"))
+                .expect("atlas")
+                .pixels;
             let ink = atlas.iter().filter(|byte| **byte > 16).count();
             println!("  {locale:6} {text:12} -> {ink} px d'encre");
             if ink == 0 {
@@ -552,7 +591,10 @@ mod tests {
         // copie macOS. Une ligne de 40px dans une boite de 200px doit laisser a
         // peu pres autant de vide au-dessus qu'en dessous.
         let raster = TextRasterizer::new().expect("rasterizer");
-        let atlas = raster.build_atlas(&spec("Hx", "center")).expect("atlas").pixels;
+        let atlas = raster
+            .build_atlas(&spec("Hx", "center"))
+            .expect("atlas")
+            .pixels;
         let (w, h) = (400usize, 200usize);
         let rows = ink_rows(&atlas, w, 0, w);
         assert!(!rows.is_empty(), "aucune encre");
@@ -572,8 +614,20 @@ mod tests {
         // alors que le defaut de l'editeur est « center ».
         let raster = TextRasterizer::new().expect("rasterizer");
         let w = 400usize;
-        let left = ink_cols(&raster.build_atlas(&spec("hi", "left")).expect("atlas").pixels, w);
-        let centered = ink_cols(&raster.build_atlas(&spec("hi", "center")).expect("atlas").pixels, w);
+        let left = ink_cols(
+            &raster
+                .build_atlas(&spec("hi", "left"))
+                .expect("atlas")
+                .pixels,
+            w,
+        );
+        let centered = ink_cols(
+            &raster
+                .build_atlas(&spec("hi", "center"))
+                .expect("atlas")
+                .pixels,
+            w,
+        );
 
         assert!(!left.is_empty() && !centered.is_empty());
         assert!(
@@ -591,11 +645,17 @@ mod tests {
         // precedente en release, et paniquait en debug. Ce test tourne en debug
         // sous `cargo test`, donc il attrape la panique directement.
         let raster = TextRasterizer::new().expect("rasterizer");
-        let atlas = raster.build_atlas(&spec("jazz", "left")).expect("pas de panique").pixels;
+        let atlas = raster
+            .build_atlas(&spec("jazz", "left"))
+            .expect("pas de panique")
+            .pixels;
         let w = 400usize;
         // Rien ne doit avoir atterri contre le bord droit d'une rangee.
         let h = atlas.len() / w;
         let right_edge_ink = (0..h).filter(|y| atlas[y * w + (w - 1)] > 16).count();
-        assert_eq!(right_edge_ink, 0, "de l'encre a enroule jusqu'au bord droit");
+        assert_eq!(
+            right_edge_ink, 0,
+            "de l'encre a enroule jusqu'au bord droit"
+        );
     }
 }

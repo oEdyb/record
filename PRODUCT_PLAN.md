@@ -1,7 +1,7 @@
 # Klippt product plan
 
 - Status: active
-- Date: 2026-08-28
+- Date: 2026-08-29
 - Product source of truth: [`AGENTS.md`](AGENTS.md)
 - Upstream historical roadmap: [`ROADMAP.md`](ROADMAP.md)
 - Full agent-first execution plan: [`docs/cutting-edge-execution-plan.md`](docs/cutting-edge-execution-plan.md)
@@ -96,11 +96,11 @@ SEO or GEO only after the small page set shows which queries and recommendations
 | Export quality          | MP4/GIF, H.264/H.265, 24/30/60 FPS, 1080p/2K/source tiers, estimated size, and audio normalization exist                                                                                                                                                                                                    | Capability-based advanced controls, manual/CQ rate control, ProRes/AV1 decisions                                                                      |
 | Creator audio           | Isolated microphone/system stems, dialogue leveling, a -14.5 LUFS/-2 dBTP pre-encode delivery target, Silero pause analysis, and reversible pause trims exist                                                                                                                                               | Decoded-delivery verification, a product-routed Clean Voice stem, preview/export parity, and the creator-corpus engine gate                           |
 | Output shapes           | One Layout pane controls presets, original shapes, custom pixels, camera composition, and block order across preview and export                                                                                                                                                                             | One-project delivery variants, editable pane proportions, and automatic vertical reframing                                                            |
-| Transcript editing      | A calm local Transcript facet provides clip-scoped word timing, click-to-seek, native Copy, detected language, and explicit language reruns                                                                                                                                                                                            | Long-project bounded-memory transcription, custom vocabulary, and safe text-based editing are parked until after the core audio and paid-alpha work   |
+| Transcript editing      | A calm local Transcript facet provides clip-scoped word timing, click-to-seek, native Copy, detected language, explicit language reruns, isolated You/System roles, and bounded long-project transcription                                                                                                                                       | Custom vocabulary, mixed-import diarization, and safe text-based editing remain parked until after the core audio and paid-alpha work                  |
 | Presets                 | Recording and editing preferences persist                                                                                                                                                                                                                                                                   | Named, reusable recording/style/delivery presets                                                                                                      |
 | Agent workflow          | Record, Sources, Info, Pack, Captions, and legacy/current project Export CLI paths exist                                                                                                                                                                                                                    | Complete inspect/edit/validate command surface with UI parity, dry runs, revisions, and agent-safe transactions                                       |
 | Project format          | `.klippt` is canonical across storage, dialogs, drag-and-drop, and CLI; legacy `.openscreen` and `.axcut` files remain readable and are copied forward without deletion                                                                                                                                     | File-association handoff and broader real-project migration testing                                                                                   |
-| Distribution            | Klippt name, icons, package display name, `.klippt` format, Developer ID signing, Apple notarization and stapling proof, Gatekeeper acceptance, privacy-safe diagnostics, and the owned `updates.dyberg.co` R2 update channel are implemented while current bundle and user-data identities stay compatible | Finish entitlement activation, legal/support pages, dependency notices, clean-Mac alpha validation, the Dyberg-owned bundle-ID migration, and the exact FFmpeg WebAssembly LGPL release obligation before paid distribution |
+| Distribution            | Klippt name, icons, package display name, `.klippt` format, Developer ID signing, Apple notarization and stapling proof, Gatekeeper acceptance, privacy-safe diagnostics, the owned `updates.dyberg.co` R2 update channel, exact WebAssembly source/relinking offer, and generated package notice inventory are implemented while current bundle and user-data identities stay compatible | Finish entitlement activation, legal/support pages, clean-Mac alpha validation, and the Dyberg-owned bundle-ID migration before paid distribution |
 
 ## 2026-08-28 cutting-edge audit lock
 
@@ -140,14 +140,45 @@ The next commercial gate is a trust gate. Complete these items before broad feat
 12. Give each window the smallest preload surface it needs. Validate exact origin, top-level frame,
     window role, sender identity, and payload schema for every privileged IPC method. Restrict
     capture permissions, export destinations, and reveal-in-folder to explicit app-owned capabilities.
-13. Bind each packaged helper to the exact release source SHA. Close the recorded FFmpeg WebAssembly
-    LGPL source, configuration, notice, and relinking obligation before Klippt charges users.
+13. Bind each packaged helper to the exact release source SHA. Keep the completed FFmpeg WebAssembly
+    source, configuration, notice, relinking, model-rights, and generated package-inventory gates
+    intact before Klippt charges users.
 
-Trust-gate progress on 2026-08-28: W0.1 and W0.2 are complete. The full product is protected by a
-verified private checkpoint. Every release platform build now waits for one permanent dependency,
-static-analysis, secret-scan, inventory, and CycloneDX gate. New dependency inputs require an exact
-reviewed hash and Olle's detached Ed25519 approval signature. The private approval key stays outside
-GitHub. Release-source provenance and signed-tag binding are the next slice.
+Trust-gate progress on 2026-08-28: W0.1 and W0.2 are complete. W0.3 is code-complete and waits
+for its protected-environment activation after the workflow reaches `main`. The full product is
+protected by a verified private checkpoint. Every release platform build now waits for permanent
+dependency, static-analysis, secret-scan, inventory, notice, and CycloneDX gates. New dependency
+inputs require an exact reviewed hash and Olle's detached Ed25519 approval signature. The private
+approval key stays outside GitHub. The exact WebAssembly source offer, Cargo licence inventory,
+model and asset rights, and generated paid-package notice inventory now travel through the same
+release contract. W0.4 is complete: the clean, signed Apple Silicon package passed exact physical
+resource, ASAR build-output, helper-provenance, notice, WebAssembly, model-exclusion, and inventory
+checks. Its release inventory and CycloneDX SBOM each contain 1,214 components.
+W0.5 infrastructure is complete. `creator-corpus/` now defines one strict, versioned manifest and
+split lock for Development, Tuning, and Holdout. Raw creator media stays outside Git by default;
+exact hashes bind it to reviewed metadata and consent. Reproducible extraction uses a pinned FFmpeg
+binary and never overwrites changed output. Privacy-safe result records cover capture, export,
+audio, ASR, automatic direction, and UI performance, and bind the exact source, tool, policy, and
+applicable model. CI validates the primary contract before the full test suite. The tracked manifest
+starts empty; real Swedish/English creator fixtures still need consent, labels, and locked splits.
+W0.6 local workload telemetry is complete. Bounded `klippt-workload-v1` reports now measure capture,
+camera, preview, export, process, GPU-process, audio-queue, disk, thermal, power, hardware-path,
+fallback, and failure evidence without storing media context. The support diagnostic ZIP includes
+the newest reports. Unsupported platform facts remain explicit: browser-owned camera pressure and
+AVAssetWriter's private encoder selection are `unknown`, not inferred. Telemetry never changes
+recording quality or waits on the media path.
+W0.7 accessibility and HUD interaction smoke is complete. W1.1 atomic export is also complete.
+MP4 and GIF exports keep the old destination until a staged result passes native decode, timing,
+stream, format, capacity, and durability checks. Cancellation now reaches native video flush, audio
+work, audio flush, trailer, verification, sync, and publish. Interrupted or failed attempts remain
+recoverable and never appear as finished exports.
+W1.2 and W1.3 are complete. Native recordings transcribe microphone and system roles independently,
+never use the mixed preview by default, and persist reproducible role, model, and alignment evidence.
+The UI and CLI share one main-process source path that decodes bounded FFmpeg windows, preserves
+timestamp gaps, reconciles overlap seams, cancels decode, inference, and restart work, unloads
+models on project close, and publishes only exact atomic cache entries. The 90-minute automated
+source case holds one short PCM window at a time. A real RSS plateau and long acoustic holdout remain
+part of the creator-corpus release gate, not a claim inferred from the unit test.
 
 The next high-value product prototypes, in order, are:
 
@@ -901,13 +932,13 @@ Acceptance checks:
 
 ### Parked transcript hardening
 
-The first Transcript slice is complete. Do not make transcript work the next product slice.
-The real 80-minute project transcribed successfully, but its accumulated renderer-side decode path
-briefly used about 2.4 GB of memory. Before Transcript becomes a release-critical long-project
-workflow, replace that path with bounded streaming, preserve exact word timing across chunk seams,
-and prove cancellation and responsiveness on a 90-minute project. Keep this in the backlog until
-the core creator-audio path and paid-alpha requirements are complete, unless normal use exposes a
-data-loss or app-stability defect.
+The first Transcript slice and its bounded source pipeline are complete. Do not make more transcript
+features the next product slice. A real 80-minute project exposed the old renderer-side full decode,
+which briefly used about 2.4 GB of memory; the replacement keeps extraction and recognition in the
+main process and holds one short PCM window at a time. Keep custom vocabulary, mixed-import
+diarization, safe text-based editing, and subjective ASR tuning in the backlog until the creator
+corpus and paid-alpha gates need them. The release gate still requires a real 90-minute RSS,
+responsiveness, seam, and cancellation run on the signed app.
 
 Implementation status on 2026-08-22:
 
@@ -1071,3 +1102,15 @@ The recording workspace now uses one HUD surface that changes density with the r
 6. The 240–280 ms state transition uses a short ease-out curve and honors reduced-motion settings.
    Continue to measure click interception, startup lag, focus stealing, and recording stability in
    long real recordings.
+7. **Done on 2026-08-28:** the idle HUD first appears without activating itself on macOS. The user
+   can click another application immediately. A deliberate HUD click still makes its controls
+   interactive, and the HUD keeps its always-on-top behavior.
+
+## Accessibility and keyboard interaction — implemented
+
+The recording HUD, editor, project dialogs, timeline splitters, and export dialog now share a
+tested keyboard and focus contract. Visible controls have accessible names and focus indicators.
+Dialogs contain and restore focus. Tooltips also open from keyboard focus. The editor leaves Tab to
+normal navigation and uses Alt-Up or Alt-Down for annotation cycling. Reduced Motion removes
+decorative HUD, timeline, pane, and dialog animation without removing state feedback. A real-browser
+smoke protects these paths, while a native policy test protects the macOS non-activating HUD show.

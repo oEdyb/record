@@ -100,6 +100,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("export:native-progress", handler);
 		return () => ipcRenderer.off("export:native-progress", handler);
 	},
+	onNativeExportPhase: (
+		cb: (phase: import("../src/native/contracts").ExportTransactionPhase) => void,
+	) => {
+		const handler = (
+			_e: unknown,
+			phase: import("../src/native/contracts").ExportTransactionPhase,
+		) => cb(phase);
+		ipcRenderer.on("export:native-phase", handler);
+		return () => ipcRenderer.off("export:native-phase", handler);
+	},
 	invokeNativeBridge: <TData>(request: NativeBridgeRequest) => {
 		return ipcRenderer.invoke(NATIVE_BRIDGE_CHANNEL, request) as Promise<TData>;
 	},
@@ -134,6 +144,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	requestCameraPreviewConnection: () => {
 		ipcRenderer.send("camera-preview-request-connection");
+	},
+	reportCapturePerformance: (sample: {
+		cameraDeliveredFps: number;
+		cameraTimestampDriftMs?: number;
+	}) => {
+		ipcRenderer.send("workload-capture-performance", sample);
 	},
 	setCameraPreviewPosition: (position: { x: number; y: number }) => {
 		ipcRenderer.send("camera-preview-set-position", position);
@@ -345,8 +361,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	pickExportSavePath: (fileName: string, exportFolder?: string) => {
 		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
 	},
-	writeExportToPath: (videoData: ArrayBuffer, filePath: string) => {
-		return ipcRenderer.invoke("write-export-to-path", videoData, filePath);
+	createTemporaryExportPath: () => {
+		return ipcRenderer.invoke("create-temporary-export-path") as Promise<string>;
+	},
+	removeTemporaryExportPath: (filePath: string) => {
+		return ipcRenderer.invoke("remove-temporary-export-path", filePath) as Promise<{
+			success: boolean;
+			message?: string;
+		}>;
+	},
+	writeExportToPath: (
+		videoData: ArrayBuffer,
+		filePath: string,
+		spec: import("./native-bridge/services/compositorViewService").VideoBufferPublishSpec,
+		exportId?: string,
+	) => {
+		return ipcRenderer.invoke("write-export-to-path", videoData, filePath, spec, exportId);
+	},
+	cancelWriteExport: (exportId: string) => {
+		return ipcRenderer.invoke("cancel-write-export", exportId) as Promise<{ cancelled: boolean }>;
 	},
 	openVideoFilePicker: () => {
 		return ipcRenderer.invoke("open-video-file-picker");
@@ -540,8 +573,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		transcribe: (request: SttTranscribeRequest): Promise<SttTranscribeResponse> => {
 			return ipcRenderer.invoke("stt:transcribe", request) as Promise<SttTranscribeResponse>;
 		},
+		transcribeSource: (
+			request: import("./stt/transcriptionContract").SttTranscribeSourceRequest,
+		): Promise<import("./stt/transcriptionContract").SttTranscribeSourceResponse> => {
+			return ipcRenderer.invoke("stt:transcribe-source", request) as Promise<
+				import("./stt/transcriptionContract").SttTranscribeSourceResponse
+			>;
+		},
 		/** Stop the running transcription at its next chunk boundary. */
 		cancel: (): Promise<void> => ipcRenderer.invoke("stt:cancel") as Promise<void>,
+		/** Stop helpers and release model memory. A later request starts them again. */
+		release: (): Promise<void> => ipcRenderer.invoke("stt:release") as Promise<void>,
 		onStatus: (callback: (event: SttStatusEvent) => void) => {
 			const listener = (_event: unknown, payload: SttStatusEvent) => callback(payload);
 			ipcRenderer.on("stt:status", listener);
@@ -565,5 +607,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = () => callback();
 		ipcRenderer.on("cli-stop-recording", listener);
 		return () => ipcRenderer.removeListener("cli-stop-recording", listener);
+	},
+	onCliCancelExport: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("cli-cancel-export", listener);
+		return () => ipcRenderer.removeListener("cli-cancel-export", listener);
 	},
 });

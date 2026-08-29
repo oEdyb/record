@@ -96,7 +96,13 @@ export function registerRecordingStreamHandlers(
 	ipcMain: IpcMain,
 	registry: RecordingStreamRegistry,
 	resolveRecordingOutputPath: (fileName: string) => string,
+	options: {
+		now?: () => number;
+		onAppendLatencyMs?: (latencyMs: number) => void;
+		onWriteError?: (error: unknown) => void;
+	} = {},
 ): void {
+	const now = options.now ?? performance.now.bind(performance);
 	ipcMain.handle(
 		"open-recording-stream",
 		async (_, fileName: string): Promise<{ success: boolean; error?: string }> => {
@@ -116,10 +122,13 @@ export function registerRecordingStreamHandlers(
 			fileName: string,
 			chunk: ArrayBuffer,
 		): Promise<{ success: boolean; error?: string }> => {
+			const startedAt = now();
 			try {
 				await registry.append(fileName, Buffer.from(chunk));
+				options.onAppendLatencyMs?.(Math.max(0, now() - startedAt));
 				return { success: true };
 			} catch (error) {
+				options.onWriteError?.(error);
 				return { success: false, error: String(error) };
 			}
 		},

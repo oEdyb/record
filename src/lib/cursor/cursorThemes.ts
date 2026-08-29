@@ -90,7 +90,10 @@ export const DEFAULT_CURSOR_SPRITES: Record<NativeCursorType, CursorSprite> = {
  * public/cursors/<id>/ and add an entry here with hotspots normalized to the
  * 32-logical reference (divide a 128px-pack hotspot by 4). No renderer changes needed.
  */
-export const CURSOR_THEMES: readonly CursorTheme[] = [
+// These legacy packs came from sweezy-cursors.com without a commercial redistribution
+// licence. Keep the source records for audit history, but do not expose or package them in Klippt.
+// A future bundled theme must enter supply-chain/bundled-assets.json with reviewed rights first.
+const UNREVIEWED_CURSOR_THEMES: readonly CursorTheme[] = [
 	{
 		id: "hello-kitty-watermelon",
 		name: "Hello Kitty & Watermelon",
@@ -453,6 +456,11 @@ export const CURSOR_THEMES: readonly CursorTheme[] = [
 		},
 	},
 ];
+
+export const CURSOR_THEMES: readonly CursorTheme[] = [];
+
+// Keep the historical records type-checked until they can be replaced with original artwork.
+void UNREVIEWED_CURSOR_THEMES;
 
 /** All selectable theme ids, including the built-in default. */
 export const CURSOR_THEME_IDS: ReadonlySet<string> = new Set([

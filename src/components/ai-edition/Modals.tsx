@@ -17,10 +17,12 @@ import {
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
 	useEffect,
+	useId,
 	useRef,
 	useState,
 } from "react";
 import { AppSelect } from "@/components/ui/app-select";
+import { useDialogFocus } from "@/components/ui/use-dialog-focus";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type { CropRegion } from "@/components/video-editor/types";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
@@ -41,17 +43,6 @@ interface BaseModalProps {
 	onClose: () => void;
 }
 
-function useEscape(open: boolean, onClose: () => void) {
-	useEffect(() => {
-		if (!open) return;
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
-	}, [open, onClose]);
-}
-
 export function ModalShell({
 	open,
 	onClose,
@@ -66,21 +57,26 @@ export function ModalShell({
 	children: ReactNode;
 }) {
 	const tc = useScopedT("common");
-	useEscape(open, onClose);
+	const dialogRef = useDialogFocus<HTMLDivElement>(open, onClose);
+	const titleId = useId();
+	const subtitleId = useId();
 	if (!open) return null;
 	return (
-		<div
-			className={`${styles.modal} ${open ? styles.isOpen : ""}`}
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="modal-title"
-		>
+		<div className={`${styles.modal} ${open ? styles.isOpen : ""}`}>
 			<div className={styles.modalBackdrop} aria-hidden onClick={onClose} />
-			<div className={`${styles.modalCard} ${wide ? styles.wide : ""}`}>
+			<div
+				ref={dialogRef}
+				className={`${styles.modalCard} ${wide ? styles.wide : ""}`}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby={titleId}
+				aria-describedby={subtitle ? subtitleId : undefined}
+				tabIndex={-1}
+			>
 				<header className={styles.modalHead}>
 					<div>
-						<h2 id="modal-title">{title}</h2>
-						{subtitle ? <p>{subtitle}</p> : null}
+						<h2 id={titleId}>{title}</h2>
+						{subtitle ? <p id={subtitleId}>{subtitle}</p> : null}
 					</div>
 					<button
 						type="button"
@@ -151,6 +147,9 @@ export function OpenProjectModal({
 				<FolderOpen size={14} style={{ color: "var(--muted)" }} />
 				<input
 					type="search"
+					className={styles.modalSearchInput}
+					aria-label={t("openProjectDialog.searchPlaceholder")}
+					data-dialog-initial-focus
 					placeholder={t("openProjectDialog.searchPlaceholder")}
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
@@ -424,6 +423,7 @@ export function NewProjectModal({ open, onClose, onCreate }: NewProjectModalProp
 					<input
 						id="np-name"
 						type="text"
+						data-dialog-initial-focus
 						value={title}
 						onChange={(e) => setTitle(e.target.value)}
 						style={{

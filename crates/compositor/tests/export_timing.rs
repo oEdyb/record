@@ -36,6 +36,7 @@ use openscreen_compositor::config::Cfg;
 use openscreen_compositor::d3d::Gpu;
 use openscreen_compositor::gif_export::{self, GifExportParams};
 use openscreen_compositor::pipeline::{self, ClipSource, ExportCodec, ExportParams};
+use openscreen_compositor::ExportProgress;
 use std::path::PathBuf;
 
 const SOURCE_SEC: f64 = 4.0;
@@ -121,6 +122,64 @@ fn whole_clip(dir: &PathBuf) -> ClipSource {
     }
 }
 
+fn assert_mp4_cancels_at_checkpoint(dir: &PathBuf, checkpoint: ExportProgress) {
+    let gpu = Gpu::create(false).expect("gpu");
+    let params = ExportParams {
+        width: 320,
+        height: 180,
+        fps: Some(30),
+        codec: ExportCodec::H264,
+        bitrate: None,
+        normalize_audio: true,
+        even_volume: true,
+        target_lufs: openscreen_compositor::audio::DEFAULT_TARGET_LUFS,
+        peak_ceiling_dbtp: openscreen_compositor::audio::DEFAULT_TRUE_PEAK_CEILING_DBTP,
+    };
+    let comp = Compositor::new_sized(&gpu, params.width, params.height).expect("compositor");
+    let mut clip = whole_clip(dir);
+    clip.has_audio = true;
+    let suffix = match checkpoint {
+        ExportProgress::AudioFlushed(_) => "audio-flush",
+        ExportProgress::Trailer(_) => "trailer",
+        _ => panic!("unsupported finalization checkpoint"),
+    };
+    let out = dir.join(format!("out_cancel_{suffix}.mp4"));
+    let result = pipeline::run_composited_multi(
+        &[clip],
+        &out.to_string_lossy(),
+        &gpu,
+        &comp,
+        &Cfg::c8(),
+        &params,
+        &mut |event| {
+            if std::mem::discriminant(&event) == std::mem::discriminant(&checkpoint) {
+                anyhow::bail!("cancelled at {suffix}");
+            }
+            Ok(())
+        },
+    );
+    let error = match result {
+        Ok(_) => panic!("checkpoint must stop the export"),
+        Err(error) => error,
+    };
+    assert!(
+        error.to_string().contains(suffix),
+        "wrong cancellation error: {error:#}"
+    );
+    std::fs::remove_file(&out).expect("cancelled staging file must be closed and removable");
+}
+
+#[test]
+fn mp4_export_honors_cancellation_at_audio_flush_and_trailer() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let frames = (SOURCE_SEC * 30.0) as u64;
+    assert_mp4_cancels_at_checkpoint(&dir, ExportProgress::AudioFlushed(frames));
+    assert_mp4_cancels_at_checkpoint(&dir, ExportProgress::Trailer(frames));
+}
+
 /// MP4 at 30 fps over a 4 s source must emit 120 frames — i.e. the walk is
 /// driven by OUTPUT time, not by "one source frame per output frame" (which
 /// would still emit 120 frames but cover only 2 s of the recording; the GIF
@@ -152,7 +211,7 @@ fn mp4_export_frame_count_follows_output_fps() {
         &comp,
         &Cfg::c8(),
         &params,
-        &mut |_| {},
+        &mut |_| Ok(()),
     )
     .expect("mp4 export");
 
@@ -197,7 +256,7 @@ fn gif_export_spans_the_whole_timeline() {
         &comp,
         &Cfg::c8(),
         &params,
-        &mut |_| {},
+        &mut |_| Ok(()),
     )
     .expect("gif export");
 

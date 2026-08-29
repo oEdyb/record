@@ -4,41 +4,52 @@ Klippt contains code derived from OpenScreen. OpenScreen is MIT licensed. The
 upstream copyright and permission notice are preserved in [LICENSE](LICENSE),
 which ships inside the application resources.
 
-Packaged Electron applications also redistribute production npm dependencies.
-Their license texts remain in the packaged dependency tree where supplied. The
-release process must generate and review the complete dependency inventory from
-`package-lock.json`. The sections below call out native, copyleft, and separately
+Each package also ships `THIRD-PARTY-INVENTORY.json`. The release gate regenerates
+that file from the locked npm, Cargo, Swift, model, FFmpeg, WebAssembly, and bundled
+asset inputs. A stale inventory or a third-party component without a licence claim
+stops the build. Reviewed full licence texts are in `third-party-licenses/`. The
+content-addressed `third-party-licenses/Cargo-Evidence.json` catalog preserves the exact
+licence, notice, and declaration evidence for every locked third-party Cargo package. If a
+published crate omits its full licence text, the catalog includes a reviewed, source-bound
+supplement with the complete standard terms and copyright notice.
+Electron's complete, version-matched Chromium notice ships as `LICENSES.chromium.html`. The
+sections below call out native, copyleft, and separately
 distributed components that need extra release attention.
 
 ---
 
-## FFmpeg — shared libraries (Windows only)
+## FFmpeg — shared libraries and tools
 
-- **Components**: `avcodec-*.dll`, `avformat-*.dll`, `avutil-*.dll`,
-  `swresample-*.dll`, `swscale-*.dll` and their siblings, under
-  `resources/electron/native/bin/win32-*/`.
-- **Used by**: the native D3D11 compositor addon, which links against them at
-  load time.
+- **Components**: the FFmpeg command-line tool and shared `avcodec`, `avformat`, `avutil`,
+  `avfilter`, `avdevice`, `swresample`, and `swscale` libraries under
+  `resources/electron/native/bin/<platform>-<arch>/`. The exact set depends on the target.
+- **Used by**: the native D3D11, Metal, and Vulkan compositor paths and native capture paths.
 - **License**: **GNU Lesser General Public License v2.1 or later**
   (<https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html>). FFmpeg's own
   licensing page: <https://ffmpeg.org/legal.html>.
-- **This is an LGPL build, not a GPL one.** It is configured without
+- **These are LGPL builds, not GPL builds.** Each target is configured without
   `--enable-gpl` and without `--enable-nonfree`, and links no GPL-only library
   (x264, x265, xvid, vidstab, rubberband, frei0r, …). `scripts/fetch-ffmpeg.mjs`
   verifies this before vendoring — it reads `ffmpeg -L`, `-buildconf` and
   `-encoders` and refuses any binary that reports otherwise.
-- **Upstream binaries**: BtbN/FFmpeg-Builds, release
+- **Windows and Linux upstream binaries**: BtbN/FFmpeg-Builds, release
   `autobuild-2026-07-31-14-10`, the `*-lgpl-shared-8.1` assets. Pinned by
   SHA-256 in `scripts/fetch-ffmpeg.mjs`; the digests there identify the exact
   artifacts we ship.
   <https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-07-31-14-10>
-- **Corresponding source**: FFmpeg n8.1.2, commit `9b6c8969e0`, from
-  <https://github.com/FFmpeg/FFmpeg>. The build configuration and scripts that
-  produced these exact binaries are published at
-  <https://github.com/BtbN/FFmpeg-Builds>.
+- **macOS build**: Klippt builds FFmpeg 8.1.2 from the official release source. The package
+  records the exact configuration reported by its own `libavutil` binary.
+- **Corresponding source**: every release publishes the official FFmpeg 8.1.2 source, the
+  exact FFmpeg commit `9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b` used by BtbN, and
+  BtbN build scripts commit `a99e8230eae00d1cee38f23076a7a1f55cd984e2`.
+- **Target evidence**: each shipped target includes a source manifest, its exact embedded
+  configure string and build command, hashes for every packaged FFmpeg file, and replacement
+  instructions. A release fails if these files are absent or if the packaged build reports
+  `--enable-gpl`, `--enable-nonfree`, a static build, or inconsistent configurations.
 - **Relinking**: as required by the LGPL, these are dynamic libraries. You may
   replace them with your own build of the same FFmpeg version by overwriting the
-  DLLs in `resources/electron/native/bin/win32-*/`.
+  matching files in `resources/electron/native/bin/<platform>-<arch>/`. Re-sign the outer
+  application package after a local modification when the platform requires it.
 
 ## whisper.cpp and ggml
 
@@ -76,7 +87,10 @@ distributed components that need extra release attention.
   which adds only upstream commits `9524a0f` and `be00f46` so three zero hops can flush the
   standard model delay without an audible state clock. The embedded model SHA-256 is
   `c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616`.
-- **License selected for Klippt**: MIT. Copyright (c) 2021 Hendrik Schröter.
+- **Engine source licence selected for evaluation**: MIT. Copyright (c) 2021 Hendrik Schröter.
+- **Distribution status**: excluded. The exact embedded model artifact does not enter a paid
+  package until its commercial redistribution right is confirmed in writing. Klippt's helper
+  glue code remains proprietary; the engine's MIT option does not relicense that code.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -137,12 +151,52 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 ## web-demuxer and FFmpeg WebAssembly
 
 - **Components**: the `web-demuxer` 4.0.0 JavaScript package and
-  `web-demuxer.wasm`, used for streaming media demuxing.
-- **Wrapper license**: MIT — <https://github.com/bilibili/web-demuxer>.
-- **FFmpeg-derived WebAssembly**: LGPL-covered code. Confirm the exact FFmpeg
-  configuration, corresponding source, notices, and relinking method before a
-  paid distribution. Do not treat the npm wrapper license as covering the
-  bundled FFmpeg-derived binary.
+  standalone `resources/web-demuxer.wasm`, used for streaming media demuxing.
+- **Binary**: 3,150,317 bytes; SHA-256
+  `f33a4d44f60dc2e6ca63b06063ae6de575b2b86cd45d92378e21bd8a01ff12d7`.
+  The release gate requires it to be byte-for-byte identical to the full-build
+  WebAssembly file in the locked `web-demuxer@4.0.0` npm package.
+- **Wrapper source and licence**: MIT, commit
+  `91721712b063bd65ac5963aa4e03e7eda4b17eff` —
+  <https://github.com/bilibili/web-demuxer/commit/91721712b063bd65ac5963aa4e03e7eda4b17eff>.
+- **FFmpeg source and licence**: GNU LGPL 2.1 or later, commit
+  `e38092ef9395d7049f871ef4d5411eb410e283e0` —
+  <https://github.com/FFmpeg/FFmpeg/commit/e38092ef9395d7049f871ef4d5411eb410e283e0>.
+- **Toolchain**: Emscripten 3.1.60, Linux amd64 image
+  `emscripten/emsdk@sha256:4a26506945f16291db0dbe5831bcd2748548f2f09c56bdc7de9a3ab2370ec127`.
+- **Exact FFmpeg configuration**:
+  `--target-os=none --arch=x86_32 --cc=emcc --ranlib=emranlib --disable-all`
+  `--disable-asm --enable-avcodec --enable-avformat --enable-protocol=file`
+  `--enable-decoder=h264,hevc,vp9,vp8`
+  `--enable-demuxer=mov,mp4,m4a,3gp,3g2,mj2,avi,flv,matroska,webm,m4v,mpeg,asf,mpegts`.
+- **Corresponding source**: every release publishes these immutable files beside
+  the installers on both the Klippt update host and its GitHub release:
+  `web-demuxer-4.0.0-source.tar.gz`, `ffmpeg-e38092ef9395-source.tar.gz`,
+  `web-demuxer-4.0.0-source-manifest.json`, and
+  `web-demuxer-4.0.0-relinking.txt`. The release manifest records their sizes and
+  SHA-512 hashes. `supply-chain/web-demuxer.json` records their upstream SHA-256 hashes.
+  The same offer contains the three native FFmpeg and build-script archives listed above;
+  target-specific manifests select the applicable archives.
+- **Relinking**: the WebAssembly file is outside `app.asar`. A recipient can rebuild
+  it from the published wrapper and FFmpeg source with the exact manifest, then replace
+  `resources/web-demuxer.wasm`. A locally modified macOS app must be re-signed after
+  replacement. Klippt's terms must not prohibit reverse engineering needed to debug an
+  LGPL-covered modification.
+
+## Other reviewed runtime and asset rights
+
+- **Electron and electron-updater**: MIT. Their exact versions and transitive npm graph come
+  from `package-lock.json` and appear in `THIRD-PARTY-INVENTORY.json`. The exact
+  `LICENSES.chromium.html` from the locked Electron runtime is copied outside `app.asar` and
+  hash-checked after packaging.
+- **Geist and Geist Mono**: SIL Open Font License 1.1. The complete `OFL.txt` is
+  preserved beside the source font files and the asset group is recorded in the inventory.
+- **Klippt icon and product mark**: original proprietary Klippt artwork, introduced
+  in repository commit `272293b08db37f8d1f9868ba887dded1267e05fe`.
+- **Default cursor sprites and bundled wallpapers**: OpenScreen repository contributions
+  covered by the preserved upstream MIT licence.
+- **Legacy Sweezy cursor packs**: not distributed or selectable. No commercial
+  redistribution grant was recorded, so paid builds copy only the reviewed default sprites.
 
 ## OpenScreen-derived native helpers
 

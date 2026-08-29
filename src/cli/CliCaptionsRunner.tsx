@@ -1,24 +1,18 @@
 // Hidden-window runner for `klippt captions`: transcribes the project's
-// audio with the on-device Whisper worker and writes the resulting caption
+// audio with the local speech model and writes the resulting caption
 // annotations back into the project. Mirrors VideoEditor.generateAutoCaptions.
 
 import { useEffect, useRef, useState } from "react";
 import {
 	normalizeProjectEditor,
 	resolveProjectMedia,
-	toFileUrl,
 	validateProjectData,
 } from "@/components/video-editor/projectPersistence";
-import type { AnnotationRegion, TrimRegion } from "@/components/video-editor/types";
-import { extractMono16kFromVideoUrl } from "@/lib/captioning/extractMono16k";
-import { type SttRendererStatus, transcribeMono16kToSegments } from "@/lib/captioning/transcribe";
+import type { AnnotationRegion } from "@/components/video-editor/types";
+import { captionSegmentsFromTranscript, type SttRendererStatus } from "@/lib/captioning/transcribe";
 import type { CliCaptionsRequest, CliDoneResult } from "@/lib/cliContracts";
 import { nativeBridgeClient } from "@/native";
 import { captionSegmentsToAnnotationRegions } from "./captionAnnotations";
-import {
-	shiftTrimRegionsMsForCaptionBuffer,
-	trimLeadingSilenceMono16k,
-} from "./vendor/leadingSilence";
 
 /** Highest trailing number across existing region ids, so new ids never collide. */
 function nextNumericIdFrom(regions: { id: string }[]): number {
@@ -44,62 +38,30 @@ async function runCaptions(request: CliCaptionsRequest): Promise<CliDoneResult> 
 		throw new Error("Project file does not reference any recorded media");
 	}
 	const editor = normalizeProjectEditor(project.editor ?? {});
-	const trimRegions: TrimRegion[] = editor.trimRegions;
 
-	window.electronAPI.cliLog("info", "Extracting audio…");
-	const videoUrl = toFileUrl(media.screenVideoPath);
-	const { samples, durationSec } = await extractMono16kFromVideoUrl(videoUrl);
-	if (!Number.isFinite(durationSec) || durationSec <= 0 || samples.length < 800) {
-		throw new Error("The project's video has no usable audio track to transcribe");
-	}
-
-	const { samples: speechSamples, trimSec } = trimLeadingSilenceMono16k(samples);
-	if (speechSamples.length < 800) {
-		throw new Error("No speech detected in the project's audio");
-	}
-
-	const trimMs = Math.round(trimSec * 1000);
-	const trimRegionsForTranscribe = shiftTrimRegionsMsForCaptionBuffer(trimRegions, trimMs);
-
-	// `onStatus` now fires once per transcribed chunk, not once per phase, so log
+	// Status fires once per transcribed chunk, not once per phase, so log
 	// only on a phase change — otherwise a long transcription spams the CLI with
 	// one identical line per chunk.
 	let loggedPhase: SttRendererStatus["phase"] | null = null;
-	const transcribeOptions = {
-		onStatus: ({ phase }: SttRendererStatus) => {
-			if (phase === loggedPhase) return;
-			loggedPhase = phase;
-			window.electronAPI.cliLog(
-				"info",
-				phase === "model" ? "Loading caption model…" : "Transcribing…",
-			);
-		},
-	};
-
-	let { segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(speechSamples, {
-		trimRegions: trimRegionsForTranscribe,
-		...transcribeOptions,
+	const unsubscribe = window.electronAPI.stt.onStatus?.(({ phase }: SttRendererStatus) => {
+		if (phase === loggedPhase) return;
+		loggedPhase = phase;
+		window.electronAPI.cliLog(
+			"info",
+			phase === "model" ? "Loading caption model…" : "Transcribing…",
+		);
 	});
-	let transcribedFromTrimmedBuffer = true;
-
-	// Leading-silence trimming can return empty even when the full source has
-	// speech. Retry once against the untrimmed buffer before giving up.
-	if (segmentsRaw.length === 0 && trimSec > 0) {
-		({ segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(samples, {
-			trimRegions,
-			...transcribeOptions,
-		}));
-		transcribedFromTrimmedBuffer = false;
+	window.electronAPI.cliLog("info", "Inspecting audio…");
+	let transcript;
+	try {
+		transcript = await window.electronAPI.stt.transcribeSource({
+			sourcePath: media.screenVideoPath,
+			sourceKind: "import",
+		});
+	} finally {
+		unsubscribe?.();
 	}
-
-	const segments =
-		transcribedFromTrimmedBuffer && trimSec > 0
-			? segmentsRaw.map((segment) => ({
-					...segment,
-					startSec: segment.startSec + trimSec,
-					endSec: segment.endSec + trimSec,
-				}))
-			: segmentsRaw;
+	const { segments, granularity } = captionSegmentsFromTranscript(transcript);
 
 	// Re-running the command replaces earlier auto-captions instead of stacking
 	// duplicates; manually added annotations are preserved.

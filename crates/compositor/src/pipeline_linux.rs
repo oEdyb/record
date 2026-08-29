@@ -44,6 +44,11 @@ pub struct Stats {
     pub fps: f64,
     pub video_duration_s: f64,
     pub audio_mastering: AudioMasteringStats,
+    pub encoder_name: String,
+    pub encoder_hardware: bool,
+    pub encoder_fallback: bool,
+    pub decoder_path: String,
+    pub compositor_backend: String,
 }
 
 /// Un clip de la timeline. Memes champs que `pipeline_macos::ClipSource`.
@@ -214,6 +219,9 @@ pub struct VideoEncoder {
     sws: *mut crate::ffi::SwsContext,
     w: i32,
     h: i32,
+    name: String,
+    hardware: bool,
+    fallback: bool,
 }
 
 // SAFETY : pointeurs FFI sans affinite thread ; caller mono-thread (idem Decoder).
@@ -250,7 +258,8 @@ impl VideoEncoder {
                 continue;
             }
             match unsafe { Self::try_open(name, w, h, fps, bit_rate) } {
-                Ok(enc) => {
+                Ok(mut enc) => {
+                    enc.fallback = !refused.is_empty();
                     eprintln!("[pipeline] encodeur video : {name} (software YUV420P)");
                     return Ok(enc);
                 }
@@ -305,6 +314,9 @@ impl VideoEncoder {
                 sws: ptr::null_mut(),
                 w,
                 h,
+                name: name.to_owned(),
+                hardware: !matches!(name, "libopenh264" | "libkvazaar"),
+                fallback: false,
             }),
             Err(e) => {
                 avcodec_free_context(&mut ctx);
@@ -446,7 +458,7 @@ pub fn run_composited_multi(
     comp: &crate::compositor::Compositor,
     cfg: &Cfg,
     params: &ExportParams,
-    progress: &mut dyn FnMut(u64),
+    progress: &mut dyn FnMut(crate::ExportProgress) -> Result<()>,
 ) -> Result<Stats> {
     if clips.is_empty() {
         bail!("run_composited_multi: aucun clip a exporter");
@@ -468,22 +480,24 @@ pub fn run_composited_multi(
 
     // ---- muxer MP4 (flux video + flux AAC) ----
     let outc = CString::new(out)?;
-    let mut octx: *mut crate::ffi::AVFormatContext = ptr::null_mut();
-    let mut pb: *mut crate::ffi::AVIOContext = ptr::null_mut();
+    let mut mux = crate::export_settings::MuxOutputGuard::new();
     let ostream;
-    let opkt;
     let mut audio_encoder;
     let audio_mastering;
     unsafe {
         crate::ffi::averr(
             crate::ffi::avformat_alloc_output_context2(
-                &mut octx,
+                mux.context_mut(),
                 ptr::null(),
                 ptr::null(),
                 outc.as_ptr(),
             ),
             "alloc_output_context2",
         )?;
+        let octx = mux.context();
+        if octx.is_null() {
+            bail!("avformat_alloc_output_context2 returned null");
+        }
         ostream = crate::ffi::avformat_new_stream(octx, ptr::null());
         if ostream.is_null() {
             bail!("avformat_new_stream");
@@ -494,16 +508,25 @@ pub fn run_composited_multi(
         )?;
         (*ostream).time_base = (*ectx).time_base;
         crate::ffi::averr(
-            crate::ffi::avio_open(&mut pb, outc.as_ptr(), crate::ffi::AVIO_FLAG_WRITE as i32),
+            crate::ffi::avio_open(
+                mux.io_mut(),
+                outc.as_ptr(),
+                crate::ffi::AVIO_FLAG_WRITE as i32,
+            ),
             "avio_open",
         )?;
-        crate::ffi::sn_fmt_set_pb(octx, pb);
+        mux.bind_io();
         // Le flux AAC doit exister AVANT l'en-tete (le muxer y fige sa table de flux).
         // Meme si aucun clip n'a d'audio, on ecrit une piste silencieuse -- parite
         // avec Windows/macOS, qui muxent toujours l'AAC.
         audio_encoder = AacEncoder::open(octx)?;
         crate::export_settings::write_mp4_header(octx)?;
-        opkt = crate::ffi::av_packet_alloc();
+        *mux.packet_mut() = crate::ffi::av_packet_alloc();
+    }
+    let octx = mux.context();
+    let opkt = mux.packet();
+    if opkt.is_null() {
+        bail!("av_packet_alloc (export packet)");
     }
 
     // Un PCM par clip, assemble apres la marche video (elle seule dit combien de
@@ -544,7 +567,7 @@ pub fn run_composited_multi(
                 // Progression = frames COMPOSEES (inchangee) : la barre ne doit
                 // pas reculer d'une frame parce que l'encodage a un tour de
                 // retard.
-                progress(n + 1);
+                progress(crate::ExportProgress::Frame(n + 1))?;
                 Ok(())
             },
             &mut |clip_index, source_end_sec, frames_in_clip, speed_segments| {
@@ -592,6 +615,7 @@ pub fn run_composited_multi(
         comp.set_readback_depth(1)?;
         enc.flush()?;
         drain_encoder(ectx, octx, ostream, opkt)?;
+        progress(crate::ExportProgress::VideoFlushed(frames))?;
         // Audio : le plan part des frames REELLEMENT produites par clip (un clip
         // raccourci voit son audio raccourci d'autant), puis un seul encode AAC.
         let declared_audio: Vec<bool> = clips.iter().map(|c| c.has_audio).collect();
@@ -606,12 +630,11 @@ pub fn run_composited_multi(
                 params.peak_ceiling_dbtp,
             ),
         );
+        progress(crate::ExportProgress::AudioEncoding(frames))?;
         audio_encoder.encode(&assembled_audio, octx)?;
+        progress(crate::ExportProgress::AudioFlushed(frames))?;
+        progress(crate::ExportProgress::Trailer(frames))?;
         crate::ffi::averr(crate::ffi::av_write_trailer(octx), "write_trailer")?;
-        crate::ffi::avio_closep(&mut pb);
-        crate::ffi::avformat_free_context(octx);
-        let mut opkt = opkt;
-        crate::ffi::av_packet_free(&mut opkt);
     }
 
     let wall_s = t0.elapsed().as_secs_f64();
@@ -625,5 +648,10 @@ pub fn run_composited_multi(
         },
         video_duration_s: frames as f64 / out_fps as f64,
         audio_mastering,
+        encoder_name: enc.name.clone(),
+        encoder_hardware: enc.hardware,
+        encoder_fallback: enc.fallback,
+        decoder_path: "software".to_owned(),
+        compositor_backend: "vulkan".to_owned(),
     })
 }

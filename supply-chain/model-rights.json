@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"models": {
+		"parakeet-v3": {
+			"repository": "FluidInference/parakeet-tdt-0.6b-v3-coreml",
+			"revision": "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe",
+			"license": "CC-BY-4.0",
+			"distributionStatus": "downloaded-on-demand",
+			"evidence": "https://huggingface.co/api/models/FluidInference/parakeet-tdt-0.6b-v3-coreml"
+		},
+		"whisper": {
+			"repository": "ggerganov/whisper.cpp",
+			"revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+			"license": "MIT",
+			"distributionStatus": "downloaded-on-demand",
+			"evidence": "https://huggingface.co/api/models/ggerganov/whisper.cpp"
+		},
+		"silero-vad": {
+			"repository": "ggml-org/whisper-vad",
+			"revision": "9ffd54a1e1ee413ddf265af9913beaf518d1639b",
+			"license": "MIT",
+			"distributionStatus": "downloaded-on-demand",
+			"evidence": "https://huggingface.co/api/models/ggml-org/whisper-vad"
+		},
+		"deepfilternet3-onnx": {
+			"repository": "oEdyb/DeepFilterNet",
+			"revision": "b0fa238a331fb5cc39c5555d3538008dd88c0aef",
+			"license": "LicenseRef-Distribution-Unconfirmed",
+			"distributionStatus": "excluded-from-release",
+			"evidence": "Written commercial redistribution confirmation for the embedded model artifact is still required"
+		}
+	}
+}

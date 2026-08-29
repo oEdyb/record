@@ -34,6 +34,7 @@ required reusable job before it starts any release platform build:
 | Static analysis | Pull requests and pushes reject new Warning or Error Semgrep findings. Scheduled and manual full scans reject Error findings across the tracked source baseline. |
 | Secrets | Gitleaks scans the complete product history and uploads only a redacted report. |
 | Inventory | The source inventory and CycloneDX document must generate and pass strict CycloneDX 1.7 validation. |
+| Licence inventory | Every external Cargo package, shipped model, WebAssembly artifact, and reviewed bundled asset must have a source-backed distribution status and licence expression. Generated notice files must match those inputs exactly. |
 
 Every platform package job depends on the complete reusable result. A tag or manual release cannot
 bypass the dependency, static-analysis, or secret gates.
@@ -136,6 +137,89 @@ klippt-release-sbom-<platform>-<arch>.cdx.json
 The SBOM uses CycloneDX 1.7 and is validated against the official schema before publication. The
 inventory is the richer Klippt record; it keeps source roles, targets, lockfile paths, hashes,
 configure flags, and release-exclusion state that a generic SBOM cannot always express.
+
+## Licences, models, and bundled assets
+
+The paid-package notice set has four reviewed input families:
+
+- `supply-chain/cargo-license-inventory.json` is generated from every discovered locked Cargo graph
+  with `cargo metadata --locked`. It records 410 unique external package identities and fails when
+  a locked package has no SPDX licence expression or complete licence evidence. A `LICENSE*` or
+  `COPYING*` filename is not sufficient: relative-path pointers, short stubs, and files without
+  substantive licence terms do not count as full text. If a crate omits the terms, the signed
+  `supply-chain/cargo-license-supplements.json` policy must bind its exact name, version, source,
+  repository, declared licence, crates.io checksum, and published source revision to complete
+  reviewed standard terms and a copyright notice. An absent, stale, mismatched, or unused supplement
+  fails.
+  The deterministic `third-party-licenses/Cargo-Evidence.json` catalog stores each exact evidence
+  document once and maps every package to its content hash, size, source filename, and catalogue path.
+- `supply-chain/model-rights.json` records the exact source revision, licence evidence, and release
+  status for each speech or audio model. The DeepFilterNet engine can use MIT code, but its embedded
+  model artifact remains excluded until the artifact's commercial distribution right is confirmed.
+- `supply-chain/bundled-assets.json` records reviewed shipped and excluded asset groups. Paid builds
+  ship only Klippt-owned icons, Geist under OFL-1.1, and the reviewed default cursor sprites. The
+  inherited third-party cursor packs and legacy OpenScreen marketing images stay out of the app.
+- `supply-chain/web-demuxer.json` binds the checked-in WebAssembly bytes to their exact source,
+  FFmpeg configuration, Emscripten image, hashes, and relinking instructions.
+
+`npm run supply-chain:notices` regenerates `THIRD-PARTY-INVENTORY.json` from the release inventory
+and these reviewed policies. The generated file includes the shipped components, excluded-only
+components, asset groups, and hashes for the complete texts under `third-party-licenses/`. Do not
+hand-edit either generated inventory.
+
+## `web-demuxer.wasm` corresponding source
+
+The shipped `web-demuxer.wasm` has SHA-256
+`f33a4d44f60dc2e6ca63b06063ae6de575b2b86cd45d92378e21bd8a01ff12d7`. It is byte-identical to the
+full build in `web-demuxer@4.0.0`. The source lock binds wrapper commit
+`91721712b063bd65ac5963aa4e03e7eda4b17eff` to FFmpeg commit
+`e38092ef9395d7049f871ef4d5411eb410e283e0` and Emscripten `3.1.60`.
+
+Run this command to verify the installed npm package and checked-in binary, or to generate the
+matching source offer:
+
+```bash
+npm run supply-chain:web-demuxer
+node scripts/web-demuxer-source.mjs --write --output-dir <empty-directory>
+```
+
+The source offer contains the verified wrapper archive, FFmpeg archive, source manifest, and exact
+relinking instructions. A clean x86 Emscripten rebuild produced the same SHA-256 on 2026-08-28.
+Release CI generates this source offer from the approved lock. The seven global files contain the
+two WebAssembly source archives, the native macOS FFmpeg source, the BtbN FFmpeg source and build
+source, one manifest, and one relinking guide. Each platform build also emits its packaged FFmpeg
+file hashes after the final application signature, embedded configuration, source mapping, and
+target-specific relinking guide. The
+publisher requires all release-target evidence before it stages a stable release. The WebAssembly
+file ships outside ASAR as
+`Contents/Resources/web-demuxer.wasm`, so a recipient can replace it with a compatible relinked
+build without modifying the signed ASAR payload.
+
+## Final package policy
+
+`scripts/verify-packaged-distribution.mjs` inspects physical package files and every ASAR entry
+before release inventory generation. It accepts only exact per-target native paths and exact
+reviewed visual/font bytes. It rejects unknown native helpers, wrong-target native files, unreviewed
+models, excluded cursor or legacy asset packs, Clean Voice artifacts, changed notice bytes, and
+every extra WebAssembly file. Whisper and its sidecars must have a source-bound helper manifest.
+On macOS, that manifest hashes the complete Mach-O content after removing only the replaceable code
+signature blob, so Developer ID signing cannot invalidate provenance and a code/data change still
+fails. The app-owned `resources` directory is a fail-closed boundary: every physical path must be
+reviewed, and executable or image magic is checked without trusting its name or extension. Electron
+framework resources are outside this app-owned boundary, but the release inventory still records
+and hashes every framework file. The signed `supply-chain/bundled-assets.json` policy separates
+reviewed assets, generated application code, required entrypoints, and exact Electron Builder
+exclusions. Every packaged first-party file under `dist/` and `dist-electron/` must have the same
+portable path, size, and full SHA-256 as an approved file in the clean build output. Every approved
+non-excluded build output must also appear in ASAR. Generated JavaScript and CSS must parse as their
+claimed type. This rule does not trust an extension, a generated-looking filename, or file-header
+classification by itself. ASAR policy checks use the normalized archive path stored by the archive
+reader; the human-readable `app.asar!/path` value is never parsed back into a security decision.
+This keeps valid `!` characters in archive directory names from changing the policy path. Archived
+command scripts are also limited to exact reviewed paths, sizes,
+and SHA-256 hashes. An approved package contains exactly one standalone
+`resources/web-demuxer.wasm`, the version-matched Electron `LICENSES.chromium.html`, and exact
+copies of the generated Klippt notice, inventory, and licence evidence.
 
 ## Secret findings and false positives
 

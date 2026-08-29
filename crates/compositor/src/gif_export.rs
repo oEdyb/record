@@ -170,7 +170,7 @@ pub fn export_gif(
 	comp: &Compositor,
 	cfg: &Cfg,
 	params: &GifExportParams,
-	progress: &mut dyn FnMut(u64),
+	progress: &mut dyn FnMut(crate::ExportProgress) -> Result<()>,
 ) -> Result<GifStats> {
 	let result = export_gif_inner(clips, out_path, gpu, comp, cfg, params, progress);
 	if result.is_err() {
@@ -186,7 +186,7 @@ fn export_gif_inner(
 	comp: &Compositor,
 	cfg: &Cfg,
 	params: &GifExportParams,
-	progress: &mut dyn FnMut(u64),
+	progress: &mut dyn FnMut(crate::ExportProgress) -> Result<()>,
 ) -> Result<GifStats> {
 	if clips.is_empty() {
 		bail!("export_gif: aucun clip à exporter");
@@ -196,7 +196,10 @@ fn export_gif_inner(
 	// `readback_direct` hands back — asserted per frame below.
 	let width = params.width.unwrap_or(DEFAULT_GIF_WIDTH);
 	let height = params.height.unwrap_or(DEFAULT_GIF_HEIGHT);
-	let fps = params.fps.unwrap_or(DEFAULT_GIF_FPS).max(1);
+	let fps = params.fps.unwrap_or(DEFAULT_GIF_FPS);
+	if !(1..=100).contains(&fps) {
+		bail!("export_gif: fps must be between 1 and 100 (got {fps})");
+	}
 	let dither = params.dither;
 
 	// Set up the GIF writer up front: file + global header. We use a
@@ -211,18 +214,6 @@ fn export_gif_inner(
 	let file = File::create(out_path)
 		.with_context(|| format!("export_gif: create {}", out_path.display()))?;
 	let mut writer = BufWriter::new(file);
-
-	// GIF frame delay in centiseconds (= 1/100 s). `fps` →
-	// `100 / fps` cs per frame, rounded to the nearest unit the
-	// GIF spec supports. u16 caps at 65535 — 10.9 minutes per
-	// frame, plenty.
-	//
-	// ponytail: integer centiseconds can't express every fps exactly
-	// (12 → 8 cs → 12.5 fps). `video_duration_s` below is computed
-	// from the delays actually written, so the reported duration never
-	// disagrees with the file. Fractional accumulation if a viewer ever
-	// cares about the ~4% drift.
-	let delay_cs: u16 = (100_u32 / fps).max(1) as u16;
 
 	// Pre-allocate the per-frame index buffer. Reused across
 	// frames so we don't hit the allocator in the hot loop.
@@ -239,6 +230,7 @@ fn export_gif_inner(
 
 	let t0 = Instant::now();
 	let scene = comp.scene_snapshot();
+	let mut total_delay_cs = 0_u64;
 	let frames = {
 		let mut gw = GifWriter::new(&mut writer, width as u16, height as u16)?;
 		gw.write_header()?;
@@ -271,9 +263,9 @@ fn export_gif_inner(
 					// CPU readback of the staged RT (RGBA8 tightly-packed,
 					// `width * height * 4` bytes). The dominant per-frame cost,
 					// and the reason GIF can't use the MP4 zero-copy sink.
-					let (rw, rh, rgba) = comp
-						.readback_direct()
-						.map_err(|e| anyhow!("export_gif: readback @ frame {frame_index}: {e:#}"))?;
+					let (rw, rh, rgba) = comp.readback_direct().map_err(|e| {
+						anyhow!("export_gif: readback @ frame {frame_index}: {e:#}")
+					})?;
 					debug_assert_eq!(rw, width);
 					debug_assert_eq!(rh, height);
 
@@ -301,9 +293,13 @@ fn export_gif_inner(
 						map_to_indices(&palette_rgb, &rgba, &mut indices);
 					}
 
-					// Per-frame palette (GIF local palette, written by `write_frame`).
+					// GIF stores delay in whole centiseconds. Distribute the
+					// fractional remainder across frames so 12/15/30 fps keep
+					// the requested timeline speed instead of drifting.
+					let delay_cs = frame_delay_cs(frame_index, fps);
+					total_delay_cs += u64::from(delay_cs);
 					gw.write_frame(&indices, &palette_rgb, delay_cs, fps)?;
-					progress(frame_index + 1);
+					progress(crate::ExportProgress::Frame(frame_index + 1))?;
 					Ok(())
 				},
 				// GIF has no audio track, so clip boundaries need no work.
@@ -311,6 +307,7 @@ fn export_gif_inner(
 			)?
 		};
 
+		progress(crate::ExportProgress::Trailer(frames))?;
 		gw.finish()?;
 		frames
 	};
@@ -319,15 +316,29 @@ fn export_gif_inner(
 	drop(writer);
 
 	let wall_s = t0.elapsed().as_secs_f64();
-	let fps_actual = if wall_s > 0.0 { frames as f64 / wall_s } else { 0.0 };
-	// From the delays actually written, not from the requested fps — see the
-	// `delay_cs` note above.
-	let video_duration_s = frames as f64 * (delay_cs as f64 / 100.0);
+	let fps_actual = if wall_s > 0.0 {
+		frames as f64 / wall_s
+	} else {
+		0.0
+	};
+	let video_duration_s = total_delay_cs as f64 / 100.0;
 	let file_bytes = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
 
-	Ok(GifStats { frames, wall_s, fps: fps_actual, video_duration_s, file_bytes })
+	Ok(GifStats {
+		frames,
+		wall_s,
+		fps: fps_actual,
+		video_duration_s,
+		file_bytes,
+	})
 }
 
+fn frame_delay_cs(frame_index: u64, fps: u32) -> u16 {
+	let fps = u64::from(fps);
+	let start = (frame_index * 100 + fps / 2) / fps;
+	let end = ((frame_index + 1) * 100 + fps / 2) / fps;
+	(end.saturating_sub(start).max(1)) as u16
+}
 
 // =====================================================================
 // GIF89a format writer (pure std::io::Write).
@@ -406,7 +417,10 @@ impl<W: Write> GifWriter<W> {
 		delay_cs: u16,
 		_fps: u32,
 	) -> Result<()> {
-		debug_assert_eq!(indices.len(), (self.width as usize) * (self.height as usize));
+		debug_assert_eq!(
+			indices.len(),
+			(self.width as usize) * (self.height as usize)
+		);
 		debug_assert_eq!(palette_rgb.len(), PALETTE_COLORS * 3);
 
 		// Graphics Control Extension: delay only. The disposal
@@ -997,6 +1011,17 @@ mod tests {
 	}
 
 	#[test]
+	fn fractional_frame_delays_preserve_requested_timeline_speed() {
+		for fps in [12, 15, 20, 25, 30] {
+			let frame_count = u64::from(fps) * 10;
+			let total_cs: u64 = (0..frame_count)
+				.map(|frame| u64::from(frame_delay_cs(frame, fps)))
+				.sum();
+			assert_eq!(total_cs, 1_000, "{fps} fps must encode as exactly 10 s");
+		}
+	}
+
+	#[test]
 	fn gif_writer_drop_still_terminates_without_finish() {
 		// The bail-out paths never call `finish`; `Drop` must still close the file.
 		let mut buf = Vec::new();
@@ -1242,7 +1267,10 @@ mod tests {
 
 		// Walk to the image descriptor (0x2C), skip its 9-byte body and the
 		// 256-entry local table, then reassemble the sub-block chain.
-		let img = buf.iter().position(|&b| b == 0x2C).expect("image descriptor");
+		let img = buf
+			.iter()
+			.position(|&b| b == 0x2C)
+			.expect("image descriptor");
 		let mut p = img + 10 + PALETTE_COLORS * 3;
 		assert_eq!(buf[p], 8, "LZW minimum code size");
 		p += 1;
@@ -1260,15 +1288,25 @@ mod tests {
 	#[test]
 	fn median_cut_handles_two_color_image() {
 		let rgba: Vec<u8> = (0..100)
-			.flat_map(|i| if i % 2 == 0 { [255, 0, 0, 255] } else { [0, 0, 255, 255] })
+			.flat_map(|i| {
+				if i % 2 == 0 {
+					[255, 0, 0, 255]
+				} else {
+					[0, 0, 255, 255]
+				}
+			})
 			.collect();
 		let mut palette = vec![0u8; 256 * 3];
 		build_palette_median_cut(&rgba, 256, &mut palette);
 		// The first entries should be near pure red and pure blue;
 		// the rest pad to the bucket average (whichever the
 		// algorithm picked first).
-		let has_red = palette.chunks_exact(3).any(|c| c[0] > 200 && c[1] < 50 && c[2] < 50);
-		let has_blue = palette.chunks_exact(3).any(|c| c[2] > 200 && c[0] < 50 && c[1] < 50);
+		let has_red = palette
+			.chunks_exact(3)
+			.any(|c| c[0] > 200 && c[1] < 50 && c[2] < 50);
+		let has_blue = palette
+			.chunks_exact(3)
+			.any(|c| c[2] > 200 && c[0] < 50 && c[1] < 50);
 		assert!(has_red, "median-cut dropped red");
 		assert!(has_blue, "median-cut dropped blue");
 	}
@@ -1361,8 +1399,8 @@ mod tests {
 		assert_eq!(buf[0], 255);
 		assert_eq!(buf[256], 255); // start of the second block
 		assert_eq!(buf[512], 90); // start of the third block
-		// No terminator in `write_sub_blocks` itself — the
-		// last byte is the last data byte of the third block.
+							// No terminator in `write_sub_blocks` itself — the
+							// last byte is the last data byte of the third block.
 		assert_eq!(*buf.last().unwrap(), 0xAA);
 	}
 }

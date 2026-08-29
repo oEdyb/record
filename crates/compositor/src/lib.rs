@@ -31,6 +31,7 @@ pub mod audio;
 pub mod config;
 pub mod cursor;
 pub mod export_settings;
+pub mod export_verify;
 pub mod ffi;
 pub mod frame_geometry;
 pub mod gif_export;
@@ -44,6 +45,29 @@ pub mod scene;
 pub mod text_anim;
 pub mod text_plate;
 pub(crate) mod timeline_walk;
+
+/// Native export checkpoints. Frame events drive visible progress. The
+/// finalization events let cancellation stop before a staged file is published.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExportProgress {
+    Frame(u64),
+    VideoFlushed(u64),
+    AudioEncoding(u64),
+    AudioFlushed(u64),
+    Trailer(u64),
+}
+
+impl ExportProgress {
+    pub fn frames(self) -> u64 {
+        match self {
+            Self::Frame(frames)
+            | Self::VideoFlushed(frames)
+            | Self::AudioEncoding(frames)
+            | Self::AudioFlushed(frames)
+            | Self::Trailer(frames) => frames,
+        }
+    }
+}
 
 // GPU backend : Windows → d3d_windows, macOS → d3d_macos. Ré-exporté sous le nom `d3d`
 // pour que `crate::d3d::Gpu`/`Backend` reste portable. Le module sous-jacent est

@@ -174,7 +174,7 @@ fn run_bench(args: &[String]) -> Result<()> {
                 &comp,
                 cfg,
                 &params,
-                &mut |_| {},
+                &mut |_| Ok(()),
             )?;
             println!(
                 "{:<4} {:>4}f  {:>8.3}s  {:>7.2} fps  {:>7.2} ms/f  → {}",
@@ -342,7 +342,16 @@ fn run_gif_bench(
         // encoder itself is `Drop`-flushed, so re-running is safe and
         // produces a fresh file (the `gif` crate writes the trailer
         // on drop, not on each frame).
-        let s = gif_export::export_gif(&clips, &out_path, &gpu, &comp, cfg, &params, &mut |_| {})?;
+        let s =
+            gif_export::export_gif(
+                &clips,
+                &out_path,
+                &gpu,
+                &comp,
+                cfg,
+                &params,
+                &mut |_| Ok(()),
+            )?;
         // Snapshot the fields we still need before `s` is moved into
         // `last_stats` for the JSON dump at the end of the bench.
         let run_frames = s.frames;

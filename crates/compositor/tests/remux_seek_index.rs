@@ -37,12 +37,8 @@ fn write_live_matroska(path: &str, packets: i64) -> i64 {
     unsafe {
         let mut octx: *mut AVFormatContext = ptr::null_mut();
         assert!(
-            avformat_alloc_output_context2(
-                &mut octx,
-                ptr::null(),
-                cfmt.as_ptr(),
-                cpath.as_ptr()
-            ) >= 0,
+            avformat_alloc_output_context2(&mut octx, ptr::null(), cfmt.as_ptr(), cpath.as_ptr())
+                >= 0,
             "alloc_output_context2"
         );
 
@@ -79,7 +75,10 @@ fn write_live_matroska(path: &str, packets: i64) -> i64 {
         let payload = vec![0x42u8; 256];
         let mut pkt = av_packet_alloc();
         for i in 0..packets {
-            assert!(av_new_packet(pkt, payload.len() as i32) >= 0, "av_new_packet");
+            assert!(
+                av_new_packet(pkt, payload.len() as i32) >= 0,
+                "av_new_packet"
+            );
             ptr::copy_nonoverlapping(payload.as_ptr(), (*pkt).data, payload.len());
             (*pkt).stream_index = 0;
             (*pkt).pts = i * 40; // 25 fps en timebase 1/1000
@@ -129,7 +128,10 @@ fn remux_adds_cues_to_a_live_matroska() {
     let stats = remux_to_seekable_matroska(&input_s, &output_s).expect("remux");
 
     let after = std::fs::read(&output).unwrap();
-    assert!(contains(&after, CUES_ID), "la sortie doit contenir des Cues");
+    assert!(
+        contains(&after, CUES_ID),
+        "la sortie doit contenir des Cues"
+    );
     assert!(
         contains(&after, SEEKHEAD_ID),
         "la sortie doit contenir un SeekHead"
@@ -160,5 +162,8 @@ fn remux_reports_an_error_for_a_missing_input() {
         out.to_str().unwrap(),
     )
     .expect_err("doit échouer sur une entrée absente");
-    assert!(err.to_string().contains("avformat_open_input"), "message: {err}");
+    assert!(
+        err.to_string().contains("avformat_open_input"),
+        "message: {err}"
+    );
 }

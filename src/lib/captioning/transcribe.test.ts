@@ -122,6 +122,25 @@ describe("transcribeMono16kToSegments", () => {
 		expect(result.segments).toEqual([{ text: "hello world", startSec: 0, endSec: 0.65 }]);
 	});
 
+	it("keeps a phrase-only source role when another role has word timing", async () => {
+		mockApi.transcribe.mockResolvedValueOnce({
+			segments: [
+				{ text: "hello", startSec: 0, endSec: 0.4, sourceRole: "you" },
+				{ text: "system reply", startSec: 1, endSec: 2, sourceRole: "system" },
+			],
+			wordSegments: [{ word: "hello", startSec: 0, endSec: 0.4, sourceRole: "you" }],
+			detectedLanguage: "en",
+			backend: "whisper-cpu",
+		});
+
+		const result = await transcribeMono16kToSegments(new Float32Array(1600));
+		expect(result.granularity).toBe("word");
+		expect(result.segments).toEqual([
+			{ text: "hello", startSec: 0, endSec: 0.4 },
+			{ text: "system reply", startSec: 1, endSec: 2 },
+		]);
+	});
+
 	it("forwards the whole status event to onStatus and tears the listener down", async () => {
 		const onStatus = vi.fn();
 		mockApi.transcribe.mockImplementationOnce(async () => {

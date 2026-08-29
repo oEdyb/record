@@ -6,3 +6,11 @@
 export function shouldStartHudClickThrough(platform: NodeJS.Platform): boolean {
 	return platform === "darwin";
 }
+
+/**
+ * A macOS recording panel must not activate Klippt when it first appears. The
+ * user can still activate its controls with a deliberate click.
+ */
+export function shouldShowHudInactive(platform: NodeJS.Platform): boolean {
+	return platform === "darwin";
+}

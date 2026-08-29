@@ -1,12 +1,9 @@
-// Adapter: wraps OpenScreen's existing local Whisper pipeline (transformers.js,
-// src/lib/captioning/) as a transcribeAsset function that returns an
-// AxcutTranscript and persists it into the document.
-//
-// ponytail: reuses extractMono16kFromVideoUrl + transcribeMono16kToSegments
-// verbatim. No Python, no faster-whisper, no network calls. Privacy-safe.
-
-import { toFileUrl } from "@/components/video-editor/projectPersistence";
-import { extractMono16kFromVideoUrl, transcribeMono16kToSegments } from "@/lib/captioning";
+import type {
+	SttSourceRole,
+	SttTranscribeSourceRequest,
+	SttTranscribeSourceResponse,
+} from "../../../../electron/stt/transcriptionContract";
+import { phrasesWithoutTimedWords } from "../../captioning/transcribe";
 import type { AxcutDocument, AxcutTranscript, AxcutTranscriptSegment, AxcutWord } from "../schema";
 
 /**
@@ -26,81 +23,182 @@ export interface TranscribeAssetOptions {
 	signal?: AbortSignal;
 }
 
+interface SourceSttApi {
+	transcribeSource: (request: SttTranscribeSourceRequest) => Promise<SttTranscribeSourceResponse>;
+	cancel?: () => Promise<void>;
+	onStatus?: (
+		callback: (event: {
+			phase: "model" | "transcribe";
+			completedSec?: number;
+			totalSec?: number;
+		}) => void,
+	) => () => void;
+}
+
+function stableHash(value: string): string {
+	let hash = 0x811c9dc5;
+	for (let index = 0; index < value.length; index++) {
+		hash ^= value.charCodeAt(index);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(36);
+}
+
+function stableTimedId(
+	prefix: "seg" | "word",
+	role: SttSourceRole,
+	startSec: number,
+	endSec: number,
+	text: string,
+): string {
+	return `${prefix}_${role.replace("unknown-mixed", "mixed")}_${Math.round(startSec * 1_000)}_${Math.round(
+		endSec * 1_000,
+	)}_${stableHash(text)}`;
+}
+
+function transcriptContent(result: SttTranscribeSourceResponse): {
+	segments: AxcutTranscriptSegment[];
+	words: AxcutWord[];
+} {
+	const rolePriority: Record<SttSourceRole, number> = {
+		you: 0,
+		system: 1,
+		"unknown-mixed": 2,
+	};
+	const sourceWords = [
+		...result.wordSegments,
+		...phrasesWithoutTimedWords(result).flatMap((segment) => {
+			const tokens = segment.text.trim().split(/\s+/).filter(Boolean);
+			const duration = Math.max(0, segment.endSec - segment.startSec);
+			return tokens.map((word, index) => ({
+				word,
+				startSec: segment.startSec + (duration * index) / Math.max(1, tokens.length),
+				endSec: segment.startSec + (duration * (index + 1)) / Math.max(1, tokens.length),
+				sourceRole: segment.sourceRole,
+				confidence: undefined,
+			}));
+		}),
+	];
+	const ordered = [...sourceWords].sort(
+		(a, b) =>
+			a.startSec - b.startSec ||
+			rolePriority[a.sourceRole ?? "unknown-mixed"] -
+				rolePriority[b.sourceRole ?? "unknown-mixed"] ||
+			a.endSec - b.endSec,
+	);
+
+	const groups: Array<{
+		role: SttSourceRole;
+		startSec: number;
+		endSec: number;
+		items: typeof ordered;
+	}> = [];
+	for (const item of ordered) {
+		const role = item.sourceRole ?? "unknown-mixed";
+		const previous = groups.at(-1);
+		if (
+			!previous ||
+			previous.role !== role ||
+			item.startSec - previous.endSec > 0.8 ||
+			item.endSec - previous.startSec > 15
+		) {
+			groups.push({
+				role,
+				startSec: item.startSec,
+				endSec: item.endSec,
+				items: [item],
+			});
+		} else {
+			previous.items.push(item);
+			previous.endSec = Math.max(previous.endSec, item.endSec);
+		}
+	}
+
+	const words: AxcutWord[] = [];
+	const segments: AxcutTranscriptSegment[] = [];
+	const usedIds = new Map<string, number>();
+	const uniqueId = (base: string) => {
+		const occurrence = usedIds.get(base) ?? 0;
+		usedIds.set(base, occurrence + 1);
+		return occurrence === 0 ? base : `${base}_${occurrence + 1}`;
+	};
+	for (const group of groups) {
+		const text = group.items.map((item) => item.word).join(" ");
+		const segmentId = uniqueId(
+			stableTimedId("seg", group.role, group.startSec, group.endSec, text),
+		);
+		const wordIds = group.items.map((item) => {
+			const wordId = uniqueId(
+				stableTimedId("word", group.role, item.startSec, item.endSec, item.word),
+			);
+			words.push({
+				id: wordId,
+				segmentId,
+				startSec: item.startSec,
+				endSec: item.endSec,
+				text: item.word,
+				sourceRole: group.role,
+				confidence: item.confidence,
+			});
+			return wordId;
+		});
+		segments.push({
+			id: segmentId,
+			kind: "speech",
+			startSec: group.startSec,
+			endSec: group.endSec,
+			text,
+			wordIds,
+			sourceRole: group.role,
+		});
+	}
+	return { segments, words };
+}
+
 export async function transcribeAsset(
 	document: AxcutDocument,
 	assetId: string,
 	options: TranscribeAssetOptions = {},
 ): Promise<AxcutTranscript> {
+	if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
 	const asset = document.assets.find((a) => a.id === assetId);
 	if (!asset) {
 		throw new Error(`Asset ${assetId} not found in document.`);
 	}
 
-	const videoUrl = toFileUrl(asset.originalPath);
-
-	options.onStatus?.({ phase: "extracting-audio" });
-	const audioResult = await extractMono16kFromVideoUrl(videoUrl, {
-		signal: options.signal,
-	});
-
-	options.onStatus?.({ phase: "transcribing" });
-	// Only pass `language` to the worker when the caller forced a specific
-	// code. `"auto"` (or any falsy value) leaves Whisper to detect from
-	// the audio. The pipeline tags every chunk with the language it used
-	// (forced or detected) and we read it back via `result.detectedLanguage`
-	// so the stored transcript reflects reality, not the input option.
-	const forcedLanguage =
-		options.language && options.language !== "auto" ? options.language : undefined;
-	const result = await transcribeMono16kToSegments(audioResult.samples, {
-		trimRegions: [],
-		signal: options.signal,
-		language: forcedLanguage,
-		// Forward the main process's per-chunk progress. Without this the status
-		// callback only ever fired the two coarse phases above, so a 30-minute
-		// recording showed one static "transcribing" for ten minutes.
-		onStatus: (status) =>
-			options.onStatus?.({
-				phase: status.phase === "model" ? "loading-model" : "transcribing",
-				completedSec: status.completedSec,
-				totalSec: status.totalSec,
-			}),
-	});
-
-	const segments: AxcutTranscriptSegment[] = [];
-	const words: AxcutWord[] = [];
-
-	for (let segIndex = 0; segIndex < result.segments.length; segIndex++) {
-		const seg = result.segments[segIndex];
-		const segId = `seg_${segIndex + 1}`;
-		const wordIds: string[] = [];
-
-		const tokens = seg.text.trim().split(/\s+/).filter(Boolean);
-		if (tokens.length === 0) continue;
-
-		const wordDuration = (seg.endSec - seg.startSec) / tokens.length;
-		for (let w = 0; w < tokens.length; w++) {
-			const wordId = `word_${words.length + 1}`;
-			const startSec = seg.startSec + w * wordDuration;
-			const endSec = startSec + wordDuration;
-			words.push({
-				id: wordId,
-				segmentId: segId,
-				startSec,
-				endSec,
-				text: tokens[w],
-			});
-			wordIds.push(wordId);
-		}
-
-		segments.push({
-			id: segId,
-			kind: "speech" as const,
-			startSec: seg.startSec,
-			endSec: seg.endSec,
-			text: seg.text,
-			wordIds,
-		});
+	const api = (window as Window & { electronAPI?: { stt?: SourceSttApi } }).electronAPI?.stt;
+	if (!api?.transcribeSource) {
+		throw new Error("Local source transcription is unavailable.");
 	}
+	options.onStatus?.({ phase: "extracting-audio" });
+	const unsubscribe = api.onStatus?.((status) =>
+		options.onStatus?.({
+			phase: status.phase === "model" ? "loading-model" : "transcribing",
+			completedSec: status.completedSec,
+			totalSec: status.totalSec,
+		}),
+	);
+	const onAbort = () => void api.cancel?.();
+	options.signal?.addEventListener("abort", onAbort, { once: true });
+	if (options.signal?.aborted) onAbort();
+	let result: SttTranscribeSourceResponse;
+	try {
+		if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+		result = await api.transcribeSource({
+			sourcePath: asset.originalPath,
+			sourceKind: asset.recordingImportId ? "klippt-recording" : "import",
+			durationSec: asset.durationSec,
+			language: options.language && options.language !== "auto" ? options.language : undefined,
+		});
+		if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+	} catch (error) {
+		if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+		throw error;
+	} finally {
+		options.signal?.removeEventListener("abort", onAbort);
+		unsubscribe?.();
+	}
+	const { segments, words } = transcriptContent(result);
 
 	return {
 		assetId,
@@ -110,6 +208,8 @@ export async function transcribeAsset(
 		language: result.detectedLanguage ?? options.language ?? "auto",
 		segments,
 		words,
+		evidenceStatus: "verified",
+		sources: result.sources,
 	};
 }
 

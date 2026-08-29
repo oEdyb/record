@@ -32,12 +32,12 @@ use crate::d3d::Gpu;
 use crate::ffi::AVFrame;
 // Re-exports que le code partage (live.rs, compositor-view-napi) consomme via
 // `crate::compositor::…`, a l'identique de `compositor_macos`.
-pub use crate::frame_geometry::{
-    live_params_from_scene, webcam_shape_code, FIXTURE_FRAMES, LayerCB, LiveParams, OUT_H, OUT_W,
-};
 use crate::frame_geometry::{
     cursor_sprite_dst, parse_hex, plan_cursor, plan_frame, CursorPlacement, CursorPlanInput,
     FrameGeometryInput,
+};
+pub use crate::frame_geometry::{
+    live_params_from_scene, webcam_shape_code, LayerCB, LiveParams, FIXTURE_FRAMES, OUT_H, OUT_W,
 };
 use crate::scene::{Scene, SceneBackground};
 
@@ -188,10 +188,12 @@ impl Compositor {
             feature_level: gpu.feature_level,
         };
 
-        let module = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("layer.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(LAYER_WGSL.into()),
-        });
+        let module = gpu
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("layer.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(LAYER_WGSL.into()),
+            });
         let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("layer"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -217,64 +219,68 @@ impl Compositor {
             count: None,
         };
         let bind_group_layout =
-            gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("layer"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(128),
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("layer"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: wgpu::BufferSize::new(128),
+                            },
+                            count: None,
                         },
-                        count: None,
-                    },
-                    tex_entry(1),
-                    tex_entry(2),
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
+                        tex_entry(1),
+                        tex_entry(2),
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3,
+                            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                });
+        let pipeline_layout = gpu
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("layer"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
             });
-        let pipeline_layout = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("layer"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
         // Deux pipelines pour le MEME shader de calque : seul le blend change.
         let mk_layer = |label: &str, blend: wgpu::BlendState| {
-            gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some("vs_main"),
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some("fs_main"),
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        blend: Some(blend),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleStrip,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            })
+            gpu.device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &module,
+                        entry_point: Some("vs_main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        buffers: &[],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &module,
+                        entry_point: Some("fs_main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            blend: Some(blend),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleStrip,
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                })
         };
         let pipeline = mk_layer("layer", wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
         // SOMME pondere : `src * constante + dst`. La constante (posee par pass
@@ -290,68 +296,115 @@ impl Compositor {
         };
         let pipeline_add = mk_layer(
             "layer-add",
-            wgpu::BlendState { color: add, alpha: add },
+            wgpu::BlendState {
+                color: add,
+                alpha: add,
+            },
         );
 
         // --- Chaine de blur Kawase du fond (`blur.wgsl`) ---
-        let blur_module = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("blur.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(BLUR_WGSL.into()),
-        });
+        let blur_module = gpu
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("blur.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(BLUR_WGSL.into()),
+            });
         // Layout blur : 0 = uniform, 1 = texture, 2 = sampler (blur.wgsl).
-        let blur_bgl = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("blur"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(128),
+        let blur_bgl = gpu
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("blur"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(128),
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let blur_pl = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("blur"),
-            bind_group_layouts: &[&blur_bgl],
-            push_constant_ranges: &[],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let blur_pl = gpu
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blur"),
+                bind_group_layouts: &[&blur_bgl],
+                push_constant_ranges: &[],
+            });
         let mk_blur = |entry: &str| {
-            gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(entry),
+            gpu.device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(entry),
+                    layout: Some(&blur_pl),
+                    vertex: wgpu::VertexState {
+                        module: &blur_module,
+                        entry_point: Some("vs_main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        buffers: &[],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &blur_module,
+                        entry_point: Some(entry),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                })
+        };
+        let blur_down = mk_blur("fs_kawase_down");
+        let blur_up = mk_blur("fs_kawase_up");
+        // Composition d'`accum` sur le RT : meme layout que le blur (uniform +
+        // 1 texture + sampler) et blend « over » premultiplie. Son VS est
+        // `vs_fullscreen` et non le `vs_main` du Kawase -- une passe UNIQUE ne
+        // pardonne pas une erreur d'orientation, cf. le commentaire la-bas.
+        let pipeline_copy = gpu
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("accum-copy"),
                 layout: Some(&blur_pl),
                 vertex: wgpu::VertexState {
                     module: &blur_module,
-                    entry_point: Some("vs_main"),
+                    entry_point: Some("vs_fullscreen"),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &blur_module,
-                    entry_point: Some(entry),
+                    entry_point: Some("fs_copy"),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba8Unorm,
-                        blend: None,
+                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -363,42 +416,7 @@ impl Compositor {
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
                 cache: None,
-            })
-        };
-        let blur_down = mk_blur("fs_kawase_down");
-        let blur_up = mk_blur("fs_kawase_up");
-        // Composition d'`accum` sur le RT : meme layout que le blur (uniform +
-        // 1 texture + sampler) et blend « over » premultiplie. Son VS est
-        // `vs_fullscreen` et non le `vs_main` du Kawase -- une passe UNIQUE ne
-        // pardonne pas une erreur d'orientation, cf. le commentaire la-bas.
-        let pipeline_copy = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("accum-copy"),
-            layout: Some(&blur_pl),
-            vertex: wgpu::VertexState {
-                module: &blur_module,
-                entry_point: Some("vs_fullscreen"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &blur_module,
-                entry_point: Some("fs_copy"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+            });
         let mk_pyr = |dw: u32, dh: u32, label: &str| {
             gpu.device
                 .create_texture(&wgpu::TextureDescriptor {
@@ -479,7 +497,13 @@ impl Compositor {
         gpu: &Gpu,
         w: u32,
         h: u32,
-    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::Texture, wgpu::TextureView, u32) {
+    ) -> (
+        wgpu::Texture,
+        wgpu::TextureView,
+        wgpu::Texture,
+        wgpu::TextureView,
+        u32,
+    ) {
         let mk = |label: &str, extra: wgpu::TextureUsages| {
             gpu.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -526,7 +550,11 @@ impl Compositor {
         let levels = 32 - w.max(h).max(1).leading_zeros();
         let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ann-copy"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -574,29 +602,38 @@ impl Compositor {
         // Les bind groups doivent survivre a leur passe : on les garde tous ici.
         let mut keep: Vec<(wgpu::Buffer, wgpu::BindGroup)> = Vec::new();
         for level in 1..self.ann_copy_mips.len() {
-            let uniform = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("ann-mip-uniform"),
-                // `fs_copy` ne lit pas l'uniforme, mais le layout du blur l'exige.
-                contents: layer_bytes(&LayerCB::default()),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-            let bind = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("ann-mip"),
-                layout: &self.blur_bgl,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(
-                            &self.ann_copy_mips[level - 1],
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                ],
-            });
+            let uniform = self
+                .gpu
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("ann-mip-uniform"),
+                    // `fs_copy` ne lit pas l'uniforme, mais le layout du blur l'exige.
+                    contents: layer_bytes(&LayerCB::default()),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+            let bind = self
+                .gpu
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("ann-mip"),
+                    layout: &self.blur_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: uniform.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.ann_copy_mips[level - 1],
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                });
             keep.push((uniform, bind));
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ann-mip-pass"),
@@ -656,29 +693,35 @@ impl Compositor {
             fx: [2.0, 0.0, 0.0, 0.0], // texel offset Kawase
             ..Default::default()
         };
-        let uniform = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("blur-uniform"),
-            contents: layer_bytes(&cb),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let bind = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("blur"),
-            layout: &self.blur_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(src),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        let uniform = self
+            .gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("blur-uniform"),
+                contents: layer_bytes(&cb),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind = self
+            .gpu
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("blur"),
+                layout: &self.blur_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(src),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("blur-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -705,12 +748,48 @@ impl Compositor {
         let (hw, hh) = (rw * 0.5, rh * 0.5);
         let (qw, qh) = (rw * 0.25, rh * 0.25);
         let (ow, oh) = (rw * 0.125, rh * 0.125);
-        self.blur_pass(encoder, &self.blur_down, &self.rt_view, &self.blur_half, [rw, rh]);
-        self.blur_pass(encoder, &self.blur_down, &self.blur_half, &self.blur_qtr, [hw, hh]);
-        self.blur_pass(encoder, &self.blur_down, &self.blur_qtr, &self.blur_oct, [qw, qh]);
-        self.blur_pass(encoder, &self.blur_up, &self.blur_oct, &self.blur_qtr, [ow, oh]);
-        self.blur_pass(encoder, &self.blur_up, &self.blur_qtr, &self.blur_half, [qw, qh]);
-        self.blur_pass(encoder, &self.blur_up, &self.blur_half, &self.rt_view, [hw, hh]);
+        self.blur_pass(
+            encoder,
+            &self.blur_down,
+            &self.rt_view,
+            &self.blur_half,
+            [rw, rh],
+        );
+        self.blur_pass(
+            encoder,
+            &self.blur_down,
+            &self.blur_half,
+            &self.blur_qtr,
+            [hw, hh],
+        );
+        self.blur_pass(
+            encoder,
+            &self.blur_down,
+            &self.blur_qtr,
+            &self.blur_oct,
+            [qw, qh],
+        );
+        self.blur_pass(
+            encoder,
+            &self.blur_up,
+            &self.blur_oct,
+            &self.blur_qtr,
+            [ow, oh],
+        );
+        self.blur_pass(
+            encoder,
+            &self.blur_up,
+            &self.blur_qtr,
+            &self.blur_half,
+            [qw, qh],
+        );
+        self.blur_pass(
+            encoder,
+            &self.blur_up,
+            &self.blur_half,
+            &self.rt_view,
+            [hw, hh],
+        );
     }
 
     /// Dimensions paires (NV12 4:2:0), min 2x2. Symetrie avec les autres backends.
@@ -810,7 +889,12 @@ impl Compositor {
         let (sx, sy) = (spread / rw, spread / rh);
         let (ox, oy) = (offset_px[0] / rw, offset_px[1] / rh);
         LayerCB {
-            dst: [dst[0] - sx + ox, dst[1] - sy + oy, dst[2] + 2.0 * sx, dst[3] + 2.0 * sy],
+            dst: [
+                dst[0] - sx + ox,
+                dst[1] - sy + oy,
+                dst[2] + 2.0 * sx,
+                dst[3] + 2.0 * sy,
+            ],
             quad_px: [size_px[0] + 2.0 * spread, size_px[1] + 2.0 * spread],
             radius_px: radius,
             mode: 2.0,
@@ -834,10 +918,16 @@ impl Compositor {
         opacity: f32,
     ) -> LayerCB {
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
-        let (min_x, max_x) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-        let (min_y, max_y) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+        let (min_x, max_x) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                (mn.min(x), mx.max(x))
+            });
+        let (min_y, max_y) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                (mn.min(y), mx.max(y))
+            });
         // La boite doit contenir la penombre entiere, sinon elle se coupe net.
         let box_w = (max_x - min_x) + 2.0 * spread;
         let box_h = (max_y - min_y) + 2.0 * spread;
@@ -883,10 +973,16 @@ impl Compositor {
         // le rayon, pour qu'il reste constant le long du bord au lieu de s'etirer
         // avec la perspective.
         let plane_px = [s_px[0] * quad.scale, s_px[1] * quad.scale];
-        let (min_x, max_x) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-        let (min_y, max_y) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+        let (min_x, max_x) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                (mn.min(x), mx.max(x))
+            });
+        let (min_y, max_y) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                (mn.min(y), mx.max(y))
+            });
         let bbox_w = (max_x - min_x).max(1.0);
         let bbox_h = (max_y - min_y).max(1.0);
         // Coins en px LOCAUX a la bbox, pour matcher `i.local` du shader.
@@ -919,34 +1015,40 @@ impl Compositor {
         planes: Option<(&wgpu::TextureView, &wgpu::TextureView)>,
         dummy: &wgpu::TextureView,
     ) -> (wgpu::Buffer, wgpu::BindGroup) {
-        let uniform = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("layer-uniform"),
-            contents: layer_bytes(cb),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform = self
+            .gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("layer-uniform"),
+                contents: layer_bytes(cb),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
         let (y, uv) = planes.unwrap_or((dummy, dummy));
-        let bind = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("layer"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(y),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(uv),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        let bind = self
+            .gpu
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("layer"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(y),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(uv),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
         (uniform, bind)
     }
 
@@ -967,7 +1069,11 @@ impl Compositor {
         let pixels = img.into_raw();
         let tex = self.gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sprite"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -988,7 +1094,11 @@ impl Compositor {
                 bytes_per_row: Some(w * 4),
                 rows_per_image: Some(h),
             },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
         Ok((tex, w, h))
     }
@@ -1051,7 +1161,10 @@ impl Compositor {
                 (parse_hex(&color).unwrap_or(lp.bg_color), None)
             }
             Some(SceneBackground::Gradient { angle_deg, stops }) => {
-                let c0 = stops.first().and_then(|s| parse_hex(s)).unwrap_or(lp.bg_color);
+                let c0 = stops
+                    .first()
+                    .and_then(|s| parse_hex(s))
+                    .unwrap_or(lp.bg_color);
                 let c1 = stops.last().and_then(|s| parse_hex(s)).unwrap_or(c0);
                 let a = angle_deg.to_radians();
                 let cb = LayerCB {
@@ -1137,7 +1250,10 @@ impl Compositor {
         // quand l'ecran est droit, quadrilatere projete (mode 12) quand il penche.
         let screen_shadow = cfg.shadow.then(|| {
             let spread = crate::frame_geometry::SCREEN_SHADOW_SPREAD_FRAC * g.frame_min_px;
-            let offset = [0.0, crate::frame_geometry::SCREEN_SHADOW_OFFSET_FRAC * g.frame_min_px];
+            let offset = [
+                0.0,
+                crate::frame_geometry::SCREEN_SHADOW_OFFSET_FRAC * g.frame_min_px,
+            ];
             let opacity = 0.45 * lp.shadow_scale;
             let cb = match tilt.as_ref() {
                 None => self.shadow_cb(g.s_dst, s_px, g.s_radius, spread, offset, opacity),
@@ -1164,7 +1280,12 @@ impl Compositor {
         let bg_draw = bg_layer.and_then(|bl| match bl {
             BgLayer::Gradient(cb) => {
                 let (buf, bind) = self.make_bind(&cb, None, &dummy);
-                Some(BgDraw { _buf: buf, _tex: None, _view: None, bind })
+                Some(BgDraw {
+                    _buf: buf,
+                    _tex: None,
+                    _view: None,
+                    bind,
+                })
             }
             BgLayer::Image(path) => {
                 // Charge (ou recupere du cache) le wallpaper. Emprunt isole AVANT
@@ -1201,7 +1322,12 @@ impl Compositor {
                 };
                 let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
                 let (buf, bind) = self.make_bind(&cb, Some((&view, &view)), &dummy);
-                Some(BgDraw { _buf: buf, _tex: Some(tex), _view: Some(view), bind })
+                Some(BgDraw {
+                    _buf: buf,
+                    _tex: Some(tex),
+                    _view: Some(view),
+                    bind,
+                })
             }
         });
 
@@ -1280,7 +1406,10 @@ impl Compositor {
                 g.w_px,
                 g.w_radius,
                 crate::frame_geometry::WEBCAM_SHADOW_SPREAD_FRAC * g.frame_min_px,
-                [0.0, crate::frame_geometry::WEBCAM_SHADOW_OFFSET_FRAC * g.frame_min_px],
+                [
+                    0.0,
+                    crate::frame_geometry::WEBCAM_SHADOW_OFFSET_FRAC * g.frame_min_px,
+                ],
                 crate::frame_geometry::WEBCAM_SHADOW_OPACITY * g.shape_fade,
             );
             self.make_bind(&cb, None, &dummy)
@@ -1301,7 +1430,12 @@ impl Compositor {
         }
         impl AnnDraw {
             fn plain(buf: wgpu::Buffer, bind: wgpu::BindGroup) -> AnnDraw {
-                AnnDraw { _buf: buf, _glyphs: None, _tex: None, bind }
+                AnnDraw {
+                    _buf: buf,
+                    _glyphs: None,
+                    _tex: None,
+                    bind,
+                }
             }
         }
         // FENETRE TEMPORELLE. Sans ce test, TOUTES les annotations du projet sont
@@ -1340,7 +1474,9 @@ impl Compositor {
                 }
                 match a.kind.as_str() {
                     "figure" => {
-                        let Some(figure) = a.figure.as_ref() else { continue };
+                        let Some(figure) = a.figure.as_ref() else {
+                            continue;
+                        };
                         let (segments, half_stroke) = crate::regions::arrow_local_geometry(
                             &figure.direction,
                             figure.stroke_width,
@@ -1361,7 +1497,9 @@ impl Compositor {
                         ann_draws.push(AnnDraw::plain(buf, bind));
                     }
                     "blur" => {
-                        let Some(blur) = a.blur.as_ref() else { continue };
+                        let Some(blur) = a.blur.as_ref() else {
+                            continue;
+                        };
                         // Le masque en trace libre demanderait une liste de points
                         // cote GPU : on masque la BOITE ENGLOBANTE. Choix
                         // deliberement asymetrique -- ne rien dessiner laisserait
@@ -1370,12 +1508,19 @@ impl Compositor {
                         // tort.
                         let freehand = blur.shape == "freehand";
                         let is_blur = if blur.style == "blur" { 1.0 } else { 0.0 };
-                        let amount =
-                            if is_blur > 0.5 { blur.intensity } else { blur.block_size };
+                        let amount = if is_blur > 0.5 {
+                            blur.intensity
+                        } else {
+                            blur.block_size
+                        };
                         // Le repli passe par le rectangle, pas l'ovale : un ovale
                         // inscrit retirerait les coins, donc une partie de ce qui
                         // est couvert.
-                        let is_oval = if blur.shape == "oval" && !freehand { 1.0 } else { 0.0 };
+                        let is_oval = if blur.shape == "oval" && !freehand {
+                            1.0
+                        } else {
+                            0.0
+                        };
                         // La teinte n'a de sens qu'en mosaique : un flou teinte ne
                         // ressemble plus a un flou.
                         let tinted = if is_blur > 0.5 { 0.0 } else { 1.0 };
@@ -1407,10 +1552,12 @@ impl Compositor {
                         };
                         let cached = {
                             let c = self.ann_img_cache.borrow();
-                            c.get(&a.id).filter(|(_, _, _, len)| *len == src.len()).cloned()
+                            c.get(&a.id)
+                                .filter(|(_, _, _, len)| *len == src.len())
+                                .cloned()
                         };
-                        let Some((tex, iw, ih, _)) = cached.or_else(|| {
-                            match self.load_image_texture(src) {
+                        let Some((tex, iw, ih, _)) =
+                            cached.or_else(|| match self.load_image_texture(src) {
                                 Ok((tex, w, h)) => {
                                     let e = (tex, w, h, src.len());
                                     self.ann_img_cache
@@ -1422,8 +1569,8 @@ impl Compositor {
                                     eprintln!("[annotation image] {}: {e:#}", a.id);
                                     None
                                 }
-                            }
-                        }) else {
+                            })
+                        else {
                             continue;
                         };
                         if iw == 0 || ih == 0 {
@@ -1465,8 +1612,12 @@ impl Compositor {
                         });
                     }
                     "text" => {
-                        let Some(raster) = self.text_raster.as_ref() else { continue };
-                        let Some(text) = a.text.as_ref() else { continue };
+                        let Some(raster) = self.text_raster.as_ref() else {
+                            continue;
+                        };
+                        let Some(text) = a.text.as_ref() else {
+                            continue;
+                        };
                         if text.content.trim().is_empty() {
                             continue;
                         }
@@ -1559,9 +1710,8 @@ impl Compositor {
                             // Machine a ecrire : la plaque se decouvre avec le
                             // texte, comme sur les backends qui la bakent dans la
                             // texture — sinon l'aplat entier precede les glyphes.
-                            let pw = (((glyphs.plate[2] / box_w) * aw) + px)
-                                .min(ax + aw * reveal)
-                                - px;
+                            let pw =
+                                (((glyphs.plate[2] / box_w) * aw) + px).min(ax + aw * reveal) - px;
                             if pw > 0.0 && ph > 0.0 {
                                 let (pw_px, ph_px) = (pw * rw, ph * rh);
                                 let plate = LayerCB {
@@ -1665,7 +1815,9 @@ impl Compositor {
                 Some(v) => v,
                 None => match self.load_image_texture(&sprite.path) {
                     Ok(v) => {
-                        self.img_cache.borrow_mut().insert(sprite.path.clone(), v.clone());
+                        self.img_cache
+                            .borrow_mut()
+                            .insert(sprite.path.clone(), v.clone());
                         v
                     }
                     Err(e) => {
@@ -1715,69 +1867,86 @@ impl Compositor {
                         fx: plan.clip,
                         ..Default::default()
                     },
-                CursorPlacement::Tilted { plane_pt, quad, center_px, screen_px, .. } => {
-                    // Le sprite est pose DANS le plan : sa taille devient une fraction
-                    // du plan et ses quatre coins traversent la meme projection que la
-                    // video. La reduction due au tilt vient donc de la projection --
-                    // rien a multiplier a la main.
-                    let (wf, hf) = (pw / screen_px[0], ph / screen_px[1]);
-                    let x0 = plane_pt[0] - hotspot[0] * wf;
-                    let y0 = plane_pt[1] - hotspot[1] * hf;
-                    let corners = [(x0, y0), (x0 + wf, y0), (x0 + wf, y0 + hf), (x0, y0 + hf)]
-                        .map(|(fx, fy)| {
-                            let (px, py) = quad.point_px(fx, fy);
-                            (center_px[0] + px, center_px[1] + py)
-                        });
-                    let (min_x, max_x) = corners
-                        .iter()
-                        .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-                    let (min_y, max_y) = corners
-                        .iter()
-                        .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
-                    // Le quad projete d'un sprite peut etre tres fin de biais : une bbox
-                    // d'un pixel de large ferait diverger le warp inverse, d'ou le
-                    // plancher a 1 px.
-                    let (bw, bh) = ((max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
-                    let local = |(x, y): (f32, f32)| [x - min_x, y - min_y];
-                    let [tl0, tl1] = local(corners[0]);
-                    let [tr0, tr1] = local(corners[1]);
-                    let [br0, br1] = local(corners[2]);
-                    let [bl0, bl1] = local(corners[3]);
-                    LayerCB {
-                        dst: [min_x / rw, min_y / rh, bw / rw, bh / rh],
-                        quad_px: [bw, bh],
-                        mode: 13.0,
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        fx: [tl0, tl1, tr0, tr1],
-                        src_prev: [br0, br1, bl0, bl1],
-                        // Le clip vit ici et NON dans `fx` (mode 7) : `fx` porte les coins.
-                        dst_prev: plan.clip,
-                        ..Default::default()
+                    CursorPlacement::Tilted {
+                        plane_pt,
+                        quad,
+                        center_px,
+                        screen_px,
+                        ..
+                    } => {
+                        // Le sprite est pose DANS le plan : sa taille devient une fraction
+                        // du plan et ses quatre coins traversent la meme projection que la
+                        // video. La reduction due au tilt vient donc de la projection --
+                        // rien a multiplier a la main.
+                        let (wf, hf) = (pw / screen_px[0], ph / screen_px[1]);
+                        let x0 = plane_pt[0] - hotspot[0] * wf;
+                        let y0 = plane_pt[1] - hotspot[1] * hf;
+                        let corners = [(x0, y0), (x0 + wf, y0), (x0 + wf, y0 + hf), (x0, y0 + hf)]
+                            .map(|(fx, fy)| {
+                                let (px, py) = quad.point_px(fx, fy);
+                                (center_px[0] + px, center_px[1] + py)
+                            });
+                        let (min_x, max_x) = corners
+                            .iter()
+                            .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                                (mn.min(x), mx.max(x))
+                            });
+                        let (min_y, max_y) = corners
+                            .iter()
+                            .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                                (mn.min(y), mx.max(y))
+                            });
+                        // Le quad projete d'un sprite peut etre tres fin de biais : une bbox
+                        // d'un pixel de large ferait diverger le warp inverse, d'ou le
+                        // plancher a 1 px.
+                        let (bw, bh) = ((max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+                        let local = |(x, y): (f32, f32)| [x - min_x, y - min_y];
+                        let [tl0, tl1] = local(corners[0]);
+                        let [tr0, tr1] = local(corners[1]);
+                        let [br0, br1] = local(corners[2]);
+                        let [bl0, bl1] = local(corners[3]);
+                        LayerCB {
+                            dst: [min_x / rw, min_y / rh, bw / rw, bh / rh],
+                            quad_px: [bw, bh],
+                            mode: 13.0,
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            fx: [tl0, tl1, tr0, tr1],
+                            src_prev: [br0, br1, bl0, bl1],
+                            // Le clip vit ici et NON dans `fx` (mode 7) : `fx` porte les coins.
+                            dst_prev: plan.clip,
+                            ..Default::default()
+                        }
                     }
-                }
                 };
                 // Sprite RGBA au binding 1 (texY) que le mode 7 echantillonne.
                 let (buf, bind) = self.make_bind(&cb, Some((&view, &view)), &dummy);
                 bufs.push(buf);
                 binds.push(bind);
             }
-            Some(CursorDraw { _bufs: bufs, _tex: tex, _view: view, binds })
+            Some(CursorDraw {
+                _bufs: bufs,
+                _tex: tex,
+                _view: view,
+                binds,
+            })
         })();
         // Bind group de la passe de composition d'`accum` (layout du blur :
         // uniform + texture + sampler). Construit hors de la pass, comme les
         // autres. L'uniforme n'est pas lu par `fs_copy` mais le layout l'exige.
-        let accum_bind = cursor_draw
-            .as_ref()
-            .filter(|c| c.binds.len() > 1)
-            .map(|_| {
-                let cb = LayerCB::default();
-                let uniform =
-                    self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("accum-copy-uniform"),
-                        contents: layer_bytes(&cb),
-                        usage: wgpu::BufferUsages::UNIFORM,
-                    });
-                let bind = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let accum_bind = cursor_draw.as_ref().filter(|c| c.binds.len() > 1).map(|_| {
+            let cb = LayerCB::default();
+            let uniform = self
+                .gpu
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("accum-copy-uniform"),
+                    contents: layer_bytes(&cb),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+            let bind = self
+                .gpu
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("accum-copy"),
                     layout: &self.blur_bgl,
                     entries: &[
@@ -1795,12 +1964,15 @@ impl Compositor {
                         },
                     ],
                 });
-                (uniform, bind)
-            });
-
-        let mut encoder = self.gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("compose"),
+            (uniform, bind)
         });
+
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("compose"),
+            });
         // Passe 1 : fond (clear a `bg_clear` + gradient mode 5 eventuel).
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1945,7 +2117,12 @@ impl Compositor {
                 });
                 rpass.set_pipeline(&self.pipeline_add);
                 let w = 1.0 / c.binds.len() as f64;
-                rpass.set_blend_constant(wgpu::Color { r: w, g: w, b: w, a: w });
+                rpass.set_blend_constant(wgpu::Color {
+                    r: w,
+                    g: w,
+                    b: w,
+                    a: w,
+                });
                 for bind in &c.binds {
                     rpass.set_bind_group(0, bind, &[]);
                     rpass.draw(0..4, 0..1);
@@ -1976,9 +2153,12 @@ impl Compositor {
     /// Clear le RT a la couleur de fond (ecran absent).
     fn clear_rt(&self) -> Result<()> {
         let bg = self.live_params.borrow().bg_color;
-        let mut encoder = self.gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("clear"),
-        });
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("clear"),
+            });
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2081,9 +2261,12 @@ impl Compositor {
             .pop()
             .ok_or_else(|| anyhow::anyhow!("staging ring saturee (aucun buffer libre)"))?;
 
-        let mut encoder = self.gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("readback"),
-        });
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("readback"),
+            });
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.rt,
@@ -2118,7 +2301,14 @@ impl Compositor {
         });
         {
             let mut ring = self.readback.borrow_mut();
-            ring.pending.push_back(PendingCopy { buf, idx, rx, w, h, bpr });
+            ring.pending.push_back(PendingCopy {
+                buf,
+                idx,
+                rx,
+                w,
+                h,
+                bpr,
+            });
             if ring.pending.len() < ring.depth {
                 return Ok(None); // amorcage
             }
@@ -2136,9 +2326,10 @@ impl Compositor {
         // N'attend QUE la soumission de cette copie. A profondeur >= 2 elle est
         // terminee depuis longtemps (l'encodage de la frame precedente lui a
         // laisse ~19 ms de CPU) et l'appel rend la main immediatement.
-        self.gpu.device.poll(wgpu::Maintain::WaitForSubmissionIndex(p.idx));
-        p.rx
-            .recv()
+        self.gpu
+            .device
+            .poll(wgpu::Maintain::WaitForSubmissionIndex(p.idx));
+        p.rx.recv()
             .map_err(|_| anyhow::anyhow!("map_async channel"))?
             .map_err(|e| anyhow::anyhow!("map_async: {e:?}"))?;
         let slice = p.buf.slice(..);

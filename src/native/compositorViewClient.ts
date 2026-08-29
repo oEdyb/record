@@ -16,6 +16,7 @@ import type {
 	CompositorExportGifResult,
 	CompositorExportParams,
 	CompositorExportResult,
+	CompositorExportTransactionOptions,
 	CompositorFramePacket,
 	CompositorParamValue,
 	CompositorTransportCommand,
@@ -73,6 +74,17 @@ export function readCompositorFrame(
 		domain: "compositor",
 		action: "readFrame",
 		payload: { id, sinceGen },
+	});
+}
+
+export function reportCompositorPreviewTiming(
+	id: number,
+	timing: { ipcMs: number[]; drawMs: number[]; browserMainThreadMs: number[] },
+): Promise<{ ok: true }> {
+	return requireNativeBridgeData<{ ok: true }>({
+		domain: "compositor",
+		action: "reportPreviewTiming",
+		payload: { id, ...timing },
 	});
 }
 
@@ -150,12 +162,22 @@ export function exportMultiNative(
 	outPath?: string,
 	sceneJson?: string,
 	params?: CompositorExportParams,
+	transaction?: CompositorExportTransactionOptions,
 ): Promise<CompositorExportResult> {
-	return requireNativeBridgeData<CompositorExportResult>({
-		domain: "compositor",
-		action: "exportMulti",
-		payload: { clips, outPath, sceneJson, params },
-	});
+	return runCancellableExport(transaction?.signal, (exportId) =>
+		requireNativeBridgeData<CompositorExportResult>({
+			domain: "compositor",
+			action: "exportMulti",
+			payload: {
+				clips,
+				outPath,
+				sceneJson,
+				params,
+				expectedBytes: transaction?.expectedBytes,
+				exportId,
+			},
+		}),
+	);
 }
 
 /** Same clips and scene as `exportMultiNative` — the render is identical, only
@@ -165,10 +187,39 @@ export function exportGifNative(
 	outPath?: string,
 	sceneJson?: string,
 	params?: CompositorExportGifParams,
+	transaction?: CompositorExportTransactionOptions,
 ): Promise<CompositorExportGifResult> {
-	return requireNativeBridgeData<CompositorExportGifResult>({
-		domain: "compositor",
-		action: "exportGif",
-		payload: { clips, outPath, sceneJson, params },
-	});
+	return runCancellableExport(transaction?.signal, (exportId) =>
+		requireNativeBridgeData<CompositorExportGifResult>({
+			domain: "compositor",
+			action: "exportGif",
+			payload: {
+				clips,
+				outPath,
+				sceneJson,
+				params,
+				expectedBytes: transaction?.expectedBytes,
+				exportId,
+			},
+		}),
+	);
+}
+
+function runCancellableExport<T>(
+	signal: AbortSignal | undefined,
+	start: (exportId: string) => Promise<T>,
+): Promise<T> {
+	if (signal?.aborted) {
+		return Promise.reject(new DOMException("Export cancelled.", "AbortError"));
+	}
+	const exportId = crypto.randomUUID();
+	const cancel = () => {
+		void requireNativeBridgeData<{ cancelled: boolean }>({
+			domain: "compositor",
+			action: "cancelExport",
+			payload: { exportId },
+		}).catch(() => undefined);
+	};
+	signal?.addEventListener("abort", cancel, { once: true });
+	return start(exportId).finally(() => signal?.removeEventListener("abort", cancel));
 }

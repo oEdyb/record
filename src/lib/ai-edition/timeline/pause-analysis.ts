@@ -207,10 +207,12 @@ function transcriptProtection(
 	clip: AxcutClip,
 ): PauseProtectionSpan[] {
 	if (!transcript || transcript.assetId !== clip.assetId) return [];
-	return transcript.words.map((word) => ({
-		startSec: Math.max(clip.sourceStartSec, word.startSec - 0.08),
-		endSec: Math.min(clip.sourceEndSec ?? word.endSec, word.endSec + 0.12),
-	}));
+	return transcript.words
+		.filter((word) => word.sourceRole === "you")
+		.map((word) => ({
+			startSec: Math.max(clip.sourceStartSec, word.startSec - 0.08),
+			endSec: Math.min(clip.sourceEndSec ?? word.endSec, word.endSec + 0.12),
+		}));
 }
 
 function existingTrimProtection(trims: AxcutTrimRange[], clip: AxcutClip): PauseProtectionSpan[] {

@@ -25,8 +25,13 @@ pub struct TextAnimationState {
 
 impl TextAnimationState {
     /// L'état « rien à animer » — aussi celui d'une animation inconnue ou absente.
-    pub const IDLE: TextAnimationState =
-        TextAnimationState { opacity: 1.0, scale: 1.0, translate_x: 0.0, translate_y: 0.0, reveal: 1.0 };
+    pub const IDLE: TextAnimationState = TextAnimationState {
+        opacity: 1.0,
+        scale: 1.0,
+        translate_x: 0.0,
+        translate_y: 0.0,
+        reveal: 1.0,
+    };
 }
 
 fn clamp01(v: f32) -> f32 {
@@ -54,7 +59,10 @@ pub fn text_animation_state(animation: Option<&str>, elapsed_ms: f32) -> TextAni
     let progress = clamp01(elapsed_ms.max(0.0) / TEXT_ANIMATION_DURATION_MS);
     let eased = ease_out_cubic(progress);
     match name {
-        "fade" => TextAnimationState { opacity: eased, ..TextAnimationState::IDLE },
+        "fade" => TextAnimationState {
+            opacity: eased,
+            ..TextAnimationState::IDLE
+        },
         "rise" => TextAnimationState {
             opacity: eased,
             translate_y: (1.0 - eased) * 18.0,
@@ -70,7 +78,10 @@ pub fn text_animation_state(animation: Option<&str>, elapsed_ms: f32) -> TextAni
             translate_x: (1.0 - eased) * -28.0,
             ..TextAnimationState::IDLE
         },
-        "typewriter" => TextAnimationState { reveal: progress, ..TextAnimationState::IDLE },
+        "typewriter" => TextAnimationState {
+            reveal: progress,
+            ..TextAnimationState::IDLE
+        },
         "pulse" => TextAnimationState {
             scale: 1.0 + (progress * std::f32::consts::PI).sin() * 0.06,
             ..TextAnimationState::IDLE
@@ -89,14 +100,20 @@ mod tests {
     fn no_animation_shows_the_text_as_is() {
         for at in [0.0, 350.0, 5000.0] {
             assert_eq!(text_animation_state(None, at), TextAnimationState::IDLE);
-            assert_eq!(text_animation_state(Some("none"), at), TextAnimationState::IDLE);
+            assert_eq!(
+                text_animation_state(Some("none"), at),
+                TextAnimationState::IDLE
+            );
         }
     }
 
     #[test]
     fn an_unknown_name_shows_the_text_rather_than_hiding_it() {
         // Le pire comportement serait une opacité 0 : l'annotation disparaîtrait sans explication.
-        assert_eq!(text_animation_state(Some("kenburns"), 0.0), TextAnimationState::IDLE);
+        assert_eq!(
+            text_animation_state(Some("kenburns"), 0.0),
+            TextAnimationState::IDLE
+        );
     }
 
     #[test]
@@ -104,10 +121,25 @@ mod tests {
         // Propriété qui compte le plus : passée la durée, aucune animation ne laisse de trace.
         for name in ["fade", "rise", "pop", "slide-left", "typewriter", "pulse"] {
             let end = text_animation_state(Some(name), TEXT_ANIMATION_DURATION_MS + 1.0);
-            assert!((end.opacity - 1.0).abs() < 1e-3, "{name} : opacité {}", end.opacity);
-            assert!((end.scale - 1.0).abs() < 1e-3, "{name} : échelle {}", end.scale);
-            assert!(end.translate_x.abs() < 1e-3 && end.translate_y.abs() < 1e-3, "{name} : décalé");
-            assert!((end.reveal - 1.0).abs() < 1e-3, "{name} : révélation {}", end.reveal);
+            assert!(
+                (end.opacity - 1.0).abs() < 1e-3,
+                "{name} : opacité {}",
+                end.opacity
+            );
+            assert!(
+                (end.scale - 1.0).abs() < 1e-3,
+                "{name} : échelle {}",
+                end.scale
+            );
+            assert!(
+                end.translate_x.abs() < 1e-3 && end.translate_y.abs() < 1e-3,
+                "{name} : décalé"
+            );
+            assert!(
+                (end.reveal - 1.0).abs() < 1e-3,
+                "{name} : révélation {}",
+                end.reveal
+            );
         }
     }
 
@@ -117,14 +149,21 @@ mod tests {
         assert_eq!(fade.opacity, 0.0);
         let rise = text_animation_state(Some("rise"), 0.0);
         assert_eq!(rise.opacity, 0.0);
-        assert!((rise.translate_y - 18.0).abs() < 1e-3, "part de 18px plus bas");
+        assert!(
+            (rise.translate_y - 18.0).abs() < 1e-3,
+            "part de 18px plus bas"
+        );
     }
 
     #[test]
     fn slide_left_enters_from_the_right() {
         // Signe négatif = le texte commence décalé vers la gauche et revient, comme le TS.
         let s = text_animation_state(Some("slide-left"), 0.0);
-        assert!((s.translate_x + 28.0).abs() < 1e-3, "translate_x = {}", s.translate_x);
+        assert!(
+            (s.translate_x + 28.0).abs() < 1e-3,
+            "translate_x = {}",
+            s.translate_x
+        );
     }
 
     #[test]
@@ -134,7 +173,10 @@ mod tests {
             .map(|i| text_animation_state(Some("pop"), i as f32 * 7.0).scale)
             .fold(0.0f32, f32::max);
         assert!(mid > 1.0, "aucun dépassement : échelle max {mid}");
-        assert!(text_animation_state(Some("pop"), 0.0).scale >= 0.72, "plancher du TS respecté");
+        assert!(
+            text_animation_state(Some("pop"), 0.0).scale >= 0.72,
+            "plancher du TS respecté"
+        );
     }
 
     #[test]
@@ -149,7 +191,11 @@ mod tests {
     fn typewriter_reveals_linearly_and_only_from_the_left() {
         for (at, expected) in [(0.0, 0.0), (175.0, 0.25), (350.0, 0.5), (700.0, 1.0)] {
             let s = text_animation_state(Some("typewriter"), at);
-            assert!((s.reveal - expected).abs() < 1e-3, "à {at}ms : {}", s.reveal);
+            assert!(
+                (s.reveal - expected).abs() < 1e-3,
+                "à {at}ms : {}",
+                s.reveal
+            );
             // Le texte reste opaque : c'est la largeur qui se dévoile, pas l'alpha (l'aperçu DOM
             // faisait exactement ça avec un `inset()`).
             assert_eq!(s.opacity, 1.0);

@@ -1,11 +1,79 @@
 //! Shared export settings used by the macOS, Windows, and Linux encoder pipelines.
 
-use crate::ffi::{av_dict_free, av_dict_set, avformat_write_header, AVFormatContext};
+use crate::ffi::{
+    av_dict_free, av_dict_set, av_packet_free, avformat_free_context, avformat_write_header,
+    avio_closep, sn_fmt_set_pb, AVFormatContext, AVIOContext, AVPacket,
+};
 use std::ffi::CString;
 use std::ptr;
 
 pub const MIN_VIDEO_BITRATE: u32 = 1_000_000;
 pub const MAX_VIDEO_BITRATE: u32 = 200_000_000;
+
+/// Owns the raw FFmpeg output resources used by every MP4 pipeline.
+///
+/// Native cancellation returns through `?` from frame and finalization
+/// checkpoints. Keeping these pointers in one guard makes every such return
+/// close the staging file and free the muxer and packet.
+pub(crate) struct MuxOutputGuard {
+    context: *mut AVFormatContext,
+    io: *mut AVIOContext,
+    packet: *mut AVPacket,
+}
+
+impl MuxOutputGuard {
+    pub(crate) fn new() -> Self {
+        Self {
+            context: ptr::null_mut(),
+            io: ptr::null_mut(),
+            packet: ptr::null_mut(),
+        }
+    }
+
+    pub(crate) fn context(&self) -> *mut AVFormatContext {
+        self.context
+    }
+
+    pub(crate) fn context_mut(&mut self) -> *mut *mut AVFormatContext {
+        &mut self.context
+    }
+
+    pub(crate) fn io_mut(&mut self) -> *mut *mut AVIOContext {
+        &mut self.io
+    }
+
+    pub(crate) fn packet(&self) -> *mut AVPacket {
+        self.packet
+    }
+
+    pub(crate) fn packet_mut(&mut self) -> *mut *mut AVPacket {
+        &mut self.packet
+    }
+
+    pub(crate) unsafe fn bind_io(&self) {
+        sn_fmt_set_pb(self.context, self.io);
+    }
+}
+
+impl Drop for MuxOutputGuard {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.packet.is_null() {
+                av_packet_free(&mut self.packet);
+            }
+            if !self.io.is_null() {
+                if !self.context.is_null() {
+                    sn_fmt_set_pb(self.context, ptr::null_mut());
+                }
+                avio_closep(&mut self.io);
+            }
+            if !self.context.is_null() {
+                avformat_free_context(self.context);
+                self.context = ptr::null_mut();
+            }
+        }
+    }
+}
 
 /// Uses the app's requested bitrate when present. Older callers keep the historical
 /// resolution-scaled fallback so the native API remains backwards compatible.

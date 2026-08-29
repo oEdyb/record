@@ -1,0 +1,353 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://klippt.app/schemas/creator-corpus/manifest-v1.json",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schemaVersion", "corpusId", "version", "description", "assets", "fixtures"],
+	"properties": {
+		"schemaVersion": { "const": 1 },
+		"corpusId": { "$ref": "#/$defs/id" },
+		"version": { "$ref": "#/$defs/semver" },
+		"description": { "type": "string", "minLength": 1, "maxLength": 300 },
+		"assets": {
+			"type": "array",
+			"items": { "$ref": "#/$defs/asset" }
+		},
+		"fixtures": {
+			"type": "array",
+			"items": { "$ref": "#/$defs/fixture" }
+		}
+	},
+	"$defs": {
+		"id": {
+			"type": "string",
+			"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+			"maxLength": 80
+		},
+		"semver": {
+			"type": "string",
+			"pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+		},
+		"sha256": {
+			"type": "string",
+			"pattern": "^[a-f0-9]{64}$"
+		},
+		"relativePath": {
+			"type": "string",
+			"minLength": 1,
+			"maxLength": 240,
+			"pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+		},
+		"consent": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["basis", "use"],
+			"properties": {
+				"basis": {
+					"enum": ["synthetic", "creator-consent", "licensed"]
+				},
+				"use": { "enum": ["internal", "redistributable"] },
+				"recordedAt": {
+					"type": "string",
+					"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+				},
+				"evidenceSha256": { "$ref": "#/$defs/sha256" }
+			},
+			"allOf": [
+				{
+					"if": {
+						"type": "object",
+						"properties": { "basis": { "enum": ["creator-consent", "licensed"] } },
+						"required": ["basis"]
+					},
+					"then": {
+						"type": "object",
+						"properties": {
+							"recordedAt": {
+								"type": "string",
+								"pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+							},
+							"evidenceSha256": { "$ref": "#/$defs/sha256" }
+						},
+						"required": ["recordedAt", "evidenceSha256"]
+					}
+				}
+			]
+		},
+		"storage": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["kind", "relativePath"],
+			"properties": {
+				"kind": { "enum": ["external", "committed"] },
+				"relativePath": { "$ref": "#/$defs/relativePath" }
+			}
+		},
+		"device": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["class"],
+			"properties": {
+				"class": {
+					"enum": [
+						"display",
+						"laptop-microphone",
+						"external-microphone",
+						"camera",
+						"system-audio",
+						"synthetic"
+					]
+				},
+				"model": { "type": "string", "minLength": 1, "maxLength": 100 }
+			}
+		},
+		"video": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["width", "height", "fps", "aspectRatio"],
+			"properties": {
+				"width": { "type": "integer", "minimum": 1, "maximum": 16384 },
+				"height": { "type": "integer", "minimum": 1, "maximum": 16384 },
+				"fps": { "type": "string", "pattern": "^[1-9][0-9]*/[1-9][0-9]*$" },
+				"aspectRatio": { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" }
+			}
+		},
+		"audio": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["sampleRate", "channels"],
+			"properties": {
+				"sampleRate": { "type": "integer", "minimum": 8000, "maximum": 384000 },
+				"channels": { "type": "integer", "minimum": 1, "maximum": 16 }
+			}
+		},
+		"derivation": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"sourceAssetId",
+				"startMs",
+				"durationMs",
+				"streamMaps",
+				"mode",
+				"ffmpegVersion",
+				"ffmpegSha256"
+			],
+			"properties": {
+				"sourceAssetId": { "$ref": "#/$defs/id" },
+				"startMs": { "type": "integer", "minimum": 0 },
+				"durationMs": { "type": "integer", "minimum": 1 },
+				"streamMaps": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": {
+						"type": "string",
+						"pattern": "^0(?::[A-Za-z0-9_?.-]+)+$"
+					}
+				},
+				"mode": { "const": "packet-copy" },
+				"ffmpegVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+				"ffmpegSha256": { "$ref": "#/$defs/sha256" }
+			}
+		},
+		"asset": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "role", "storage", "sha256", "bytes", "mediaType", "consent", "device"],
+			"properties": {
+				"id": { "$ref": "#/$defs/id" },
+				"role": {
+					"enum": [
+						"screen",
+						"camera",
+						"microphone",
+						"system-audio",
+						"mixed-audio",
+						"cursor",
+						"keyboard",
+						"project",
+						"reference-labels"
+					]
+				},
+				"storage": { "$ref": "#/$defs/storage" },
+				"sha256": { "$ref": "#/$defs/sha256" },
+				"bytes": { "type": "integer", "minimum": 1 },
+				"mediaType": {
+					"type": "string",
+					"maxLength": 100,
+					"pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$"
+				},
+				"consent": { "$ref": "#/$defs/consent" },
+				"device": { "$ref": "#/$defs/device" },
+				"video": { "$ref": "#/$defs/video" },
+				"audio": { "$ref": "#/$defs/audio" },
+				"derivation": { "$ref": "#/$defs/derivation" }
+			},
+			"allOf": [
+				{
+					"if": {
+						"type": "object",
+						"properties": { "role": { "enum": ["screen", "camera"] } },
+						"required": ["role"]
+					},
+					"then": {
+						"type": "object",
+						"properties": { "video": { "$ref": "#/$defs/video" } },
+						"required": ["video"]
+					}
+				},
+				{
+					"if": {
+						"type": "object",
+						"properties": {
+							"role": { "enum": ["microphone", "system-audio", "mixed-audio"] }
+						},
+						"required": ["role"]
+					},
+					"then": {
+						"type": "object",
+						"properties": { "audio": { "$ref": "#/$defs/audio" } },
+						"required": ["audio"]
+					}
+				},
+				{
+					"if": {
+						"type": "object",
+						"properties": {
+							"storage": {
+								"type": "object",
+								"properties": { "kind": { "const": "committed" } },
+								"required": ["kind"]
+							}
+						},
+						"required": ["storage"]
+					},
+					"then": {
+						"type": "object",
+						"properties": {
+							"storage": {
+								"type": "object",
+								"properties": {
+									"relativePath": {
+										"type": "string",
+										"pattern": "^creator-corpus/fixtures/.+"
+									}
+								}
+							},
+							"consent": {
+								"type": "object",
+								"properties": { "use": { "const": "redistributable" } },
+								"required": ["use"]
+							}
+						}
+					}
+				}
+			]
+		},
+		"invariant": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "domain", "description", "severity", "metric", "operator", "value"],
+			"properties": {
+				"id": { "$ref": "#/$defs/id" },
+				"domain": {
+					"enum": ["capture", "export", "audio", "asr", "automatic-direction", "ui-performance"]
+				},
+				"description": { "type": "string", "minLength": 1, "maxLength": 240 },
+				"severity": { "enum": ["required", "informational"] },
+				"metric": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9.]*$" },
+				"operator": { "enum": ["eq", "lte", "gte", "between", "contains"] },
+				"value": {
+					"oneOf": [
+						{ "type": "number" },
+						{ "type": "string", "maxLength": 120 },
+						{ "type": "boolean" },
+						{
+							"type": "array",
+							"minItems": 2,
+							"maxItems": 2,
+							"items": { "type": "number" }
+						}
+					]
+				}
+			}
+		},
+		"fixture": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"id",
+				"revision",
+				"title",
+				"durationMs",
+				"assetIds",
+				"languages",
+				"contexts",
+				"noiseConditions",
+				"expectedInvariants"
+			],
+			"properties": {
+				"id": { "$ref": "#/$defs/id" },
+				"revision": { "type": "integer", "minimum": 1 },
+				"title": { "type": "string", "minLength": 1, "maxLength": 120 },
+				"durationMs": { "type": "integer", "minimum": 1 },
+				"assetIds": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "$ref": "#/$defs/id" }
+				},
+				"languages": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": {
+						"type": "string",
+						"pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+					}
+				},
+				"contexts": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": {
+						"enum": [
+							"terminal",
+							"ide",
+							"browser",
+							"spreadsheet",
+							"camera",
+							"scrolling",
+							"drag-selection",
+							"typing",
+							"app-change",
+							"device-disconnect",
+							"synthetic"
+						]
+					}
+				},
+				"noiseConditions": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": {
+						"enum": [
+							"none",
+							"quiet-room",
+							"room-tone",
+							"noisy-room",
+							"speaker-bleed",
+							"low-level-speech",
+							"system-only"
+						]
+					}
+				},
+				"expectedInvariants": {
+					"type": "array",
+					"items": { "$ref": "#/$defs/invariant" }
+				}
+			}
+		}
+	}
+}

@@ -222,6 +222,24 @@ export function estimateMp4FileSizeBytes({
 	return Math.ceil((totalBitrate * durationSec * MP4_CONTAINER_OVERHEAD) / 8);
 }
 
+/** Conservative indexed-colour GIF estimate used by GUI, CLI, and main-process preflight. */
+export function estimateGifFileSizeBytes({
+	durationSec,
+	width,
+	height,
+	fps,
+}: {
+	durationSec: number;
+	width: number;
+	height: number;
+	fps: number;
+}): number {
+	if (![durationSec, width, height, fps].every((value) => Number.isFinite(value) && value > 0)) {
+		return 0;
+	}
+	return Math.ceil(durationSec * width * height * fps * 0.35);
+}
+
 export function formatBitrate(bitrate: number): string {
 	if (!Number.isFinite(bitrate) || bitrate <= 0) return "—";
 	return `${Number((bitrate / 1_000_000).toFixed(1))} Mbps`;

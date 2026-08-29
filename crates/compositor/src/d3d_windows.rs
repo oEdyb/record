@@ -93,7 +93,9 @@ fn try_create(
     // qu'un `unwrap` pour que l'impossible reste une erreur, pas un panic.
     match (device, context) {
         (Some(device), Some(context)) => Ok((device, context, got)),
-        _ => Err(windows::core::Error::from(windows::Win32::Foundation::E_UNEXPECTED)),
+        _ => Err(windows::core::Error::from(
+            windows::Win32::Foundation::E_UNEXPECTED,
+        )),
     }
 }
 
@@ -215,6 +217,11 @@ impl Gpu {
             }
         }
 
-        Ok(Gpu { device, context, feature_level: got, backend })
+        Ok(Gpu {
+            device,
+            context,
+            feature_level: got,
+            backend,
+        })
     }
 }

@@ -154,4 +154,18 @@ describe("RecStage", () => {
 			}),
 		).toBeInTheDocument();
 	});
+
+	it("opens the source picker as a keyboard-contained dialog and restores focus", async () => {
+		renderStage();
+		const source = await screen.findByRole("button", { name: "Entire screen" });
+		source.focus();
+		fireEvent.click(source);
+
+		const dialog = await screen.findByRole("dialog", { name: "Source" });
+		expect(dialog).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /Screens/ })).toHaveFocus();
+		fireEvent.keyDown(document, { key: "Escape" });
+		await waitFor(() => expect(dialog).not.toBeInTheDocument());
+		expect(source).toHaveFocus();
+	});
 });

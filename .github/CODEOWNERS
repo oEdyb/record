@@ -10,6 +10,7 @@
 /**/Package.swift @oEdyb
 /electron/stt/modelManager.ts @oEdyb
 /scripts/ffmpeg-pins.mjs @oEdyb
+/supply-chain/cargo-license-supplements.json @oEdyb
 /supply-chain/approved-dependency-inputs.json @oEdyb
 /supply-chain/approved-dependency-inputs.json.sig @oEdyb
 /supply-chain/dependency-approval-key.pub @oEdyb

@@ -52,9 +52,16 @@ export function discoverDependencyInputs(root) {
 			`npm-shrinkwrap.json is not allowed because npm gives it precedence over the approved package-lock.json: ${npmShrinkwraps.join(", ")}`,
 		);
 	}
+	const reviewedPolicies = [
+		"supply-chain/bundled-assets.json",
+		"supply-chain/cargo-license-supplements.json",
+		"supply-chain/model-rights.json",
+		"supply-chain/web-demuxer.json",
+	].filter((relativePath) => fs.existsSync(path.join(root, relativePath)));
 	return [
 		"electron/stt/modelManager.ts",
 		"scripts/ffmpeg-pins.mjs",
+		...reviewedPolicies,
 		...discoverCargoLockfiles(root),
 		...discoverNamedFiles(
 			root,

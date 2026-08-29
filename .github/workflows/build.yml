@@ -94,6 +94,16 @@ jobs:
       - name: Build Windows app
         run: npm run build:win -- --publish never
 
+      - name: Generate native FFmpeg source evidence
+        shell: bash
+        run: |
+          PACKAGE_DIR="$(find release -type d -name 'win-unpacked' -print -quit)"
+          test -n "$PACKAGE_DIR"
+          node scripts/native-ffmpeg-source.mjs \
+            --package-dir "$PACKAGE_DIR" \
+            --target win32-x64 \
+            --output-dir release/supply-chain
+
       - name: Generate the Windows release inventory
         shell: bash
         env:
@@ -121,6 +131,7 @@ jobs:
             release/**/Klippt.Setup.*.exe.blockmap
             release/**/latest.yml
             release/supply-chain/*.json
+            release/supply-chain/*.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -159,6 +170,16 @@ jobs:
 
       - name: Build Windows Store package
         run: npm run build:win:store -- --publish never
+
+      - name: Generate native FFmpeg source evidence
+        shell: bash
+        run: |
+          PACKAGE_DIR="$(find release -type d -name 'win-unpacked' -print -quit)"
+          test -n "$PACKAGE_DIR"
+          node scripts/native-ffmpeg-source.mjs \
+            --package-dir "$PACKAGE_DIR" \
+            --target win32-x64 \
+            --output-dir release/supply-chain
 
       - name: Generate the Windows Store release inventory
         shell: bash
@@ -283,6 +304,7 @@ jobs:
           path: |
             release/**/Klippt.Setup.*.appx
             release/supply-chain/*.json
+            release/supply-chain/*.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -420,8 +442,8 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
           rm -f "$RUNNER_TEMP/certificate.p12"
 
-      - name: Build Vite + Electron
-        run: npx tsc && npx vite build
+      - name: Build Vite + Electron from a clean output tree
+        run: npm run build-vite
 
       - name: Build native macOS helpers
         run: npm run build:native:mac
@@ -496,7 +518,7 @@ jobs:
           fi
           echo "app_bundle=$APP_BUNDLE" >> "$GITHUB_OUTPUT"
 
-      # The guard for the above: refuse to build a DMG whose name would not
+      # Refuse to build a DMG whose name would not
       # match its contents. An Intel bundle on an Apple Silicon Mac runs under
       # Rosetta 2 — compositor, encoder and whisper all translated — which is
       # slow enough to be unusable, so a mislabelled DMG is a real user harm.
@@ -559,6 +581,17 @@ jobs:
             echo "::error::The .app is signed as '${ACTUAL}', not '${EXPECTED}' — macOS cannot attach Accessibility or Screen Recording permissions to a bundle whose signature does not carry its own identifier"
             exit 1
           fi
+
+      # Hash the bytes that actually enter the ZIP and DMG. Both electron-builder's
+      # Developer ID pass and the fallback deep ad-hoc pass can rewrite Mach-O code
+      # signature blobs, so evidence created before this point does not describe the
+      # distributed files.
+      - name: Generate native FFmpeg source evidence
+        run: >-
+          node scripts/native-ffmpeg-source.mjs
+          --package-dir "${{ steps.find_app.outputs.app_bundle }}"
+          --target darwin-${{ matrix.arch }}
+          --output-dir release/supply-chain
 
       # Squirrel.Mac installs from a ZIP and nothing else — `MacUpdater` looks for one and
       # throws ERR_UPDATER_ZIP_FILE_NOT_FOUND when the feed offers only a DMG. Built here, from
@@ -718,6 +751,7 @@ jobs:
             ${{ steps.update_zip.outputs.zip_path }}
             ${{ steps.update_zip.outputs.info_path }}
             release/supply-chain/*.json
+            release/supply-chain/*.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -793,6 +827,15 @@ jobs:
 
       - name: Build Linux app
         run: npm run build:linux -- --publish never
+
+      - name: Generate native FFmpeg source evidence
+        run: |
+          PACKAGE_DIR="$(find release -type d -name 'linux-unpacked' -print -quit)"
+          test -n "$PACKAGE_DIR"
+          node scripts/native-ffmpeg-source.mjs \
+            --package-dir "$PACKAGE_DIR" \
+            --target linux-x64 \
+            --output-dir release/supply-chain
 
       - name: Generate the Linux release inventory
         env:
@@ -882,6 +925,7 @@ jobs:
             release/**/*.rpm
             release/**/latest-linux.yml
             release/supply-chain/*.json
+            release/supply-chain/*.txt
           # Still no *.zsync, and there never will be: zsync was electron-updater's old delta
           # format and app-builder-lib 26.x dropped it in favour of the block map it embeds
           # directly in the AppImage. That glob had matched nothing since the dependency bump,
@@ -1037,6 +1081,12 @@ jobs:
         with:
           name: klippt-linux
           path: artifacts/linux
+
+      - name: Download the LGPL corresponding-source offer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: klippt-lgpl-source-${{ needs.resolve-source.outputs.source_sha }}
+          path: artifacts/source-offer
 
       # The two arches are built on different runners, so neither macOS job can write the feed:
       # electron-builder would have each emit its own latest-mac.yml and the second upload would

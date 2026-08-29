@@ -386,7 +386,10 @@ impl TextRasterizer {
     /// alors que le `metal::Texture` local était droppé au `return`, soit un
     /// `id<MTLTexture>` déjà relâché.
     pub unsafe fn rasterize(&self, gpu: &Gpu, spec: &TextSpec) -> Result<metal::Texture> {
-        let (w, h) = (spec.box_px[0].max(1) as usize, spec.box_px[1].max(1) as usize);
+        let (w, h) = (
+            spec.box_px[0].max(1) as usize,
+            spec.box_px[1].max(1) as usize,
+        );
         if spec.content.is_empty() {
             bail!("text_macos::rasterize: texte vide");
         }
@@ -591,8 +594,7 @@ impl TextRasterizer {
             block_layout(box_w, box_h, text_w, text_h, alignment, font_px);
 
         // --- plaque de fond, sous le texte ---
-        if spec.background[3] > 0.0 && plate_rect.size.width > 0.0 && plate_rect.size.height > 0.0
-        {
+        if spec.background[3] > 0.0 && plate_rect.size.width > 0.0 && plate_rect.size.height > 0.0 {
             let radius = crate::text_plate::radius(
                 font_px as f32,
                 plate_rect.size.width as f32,
@@ -689,7 +691,10 @@ mod tests {
                 }
             }
         }
-        assert!(x0 <= x1 && y0 <= y1, "aucune encre : rien n'a été rastérisé");
+        assert!(
+            x0 <= x1 && y0 <= y1,
+            "aucune encre : rien n'a été rastérisé"
+        );
         (x0, y0, x1, y1)
     }
 
@@ -748,7 +753,10 @@ mod tests {
             "bloc non centré horizontalement : {left} px à gauche, {right} px à droite"
         );
         // Et le vide restant est réparti, pas empilé en bas comme avant le correctif.
-        assert!(top > 20, "la boîte fait {h} px de haut : le bloc devrait flotter dedans");
+        assert!(
+            top > 20,
+            "la boîte fait {h} px de haut : le bloc devrait flotter dedans"
+        );
     }
 
     /// La plaque de fond épouse le bloc de texte au lieu de remplir la boîte. Sans ça, une
@@ -827,7 +835,10 @@ mod tests {
         // Cadre centré : autant de vide au-dessus qu'en dessous (repère CG, y vers le haut).
         let above = 238.0 - (frame.origin.y + frame.size.height);
         let below = frame.origin.y;
-        assert!((above - below).abs() <= 1.5, "cadre décentré : {above} / {below}");
+        assert!(
+            (above - below).abs() <= 1.5,
+            "cadre décentré : {above} / {below}"
+        );
         // Plaque = bloc + 0.2em/0.1em, centrée elle aussi.
         assert!((plate.size.width - (500.0 + 2.0 * 9.6)).abs() < 0.01);
         assert!((plate.size.height - (56.0 + 2.0 * 4.8)).abs() < 0.01);
@@ -839,10 +850,24 @@ mod tests {
         for align in [0u8, 1, 2] {
             // Bloc plus large et plus haut que la boîte : la plaque doit se contenter d'elle.
             let (_, plate) = block_layout(200.0, 60.0, 400.0, 200.0, align, 48.0);
-            assert!(plate.origin.x >= 0.0, "align={align} : x={}", plate.origin.x);
-            assert!(plate.origin.y >= 0.0, "align={align} : y={}", plate.origin.y);
-            assert!(plate.origin.x + plate.size.width <= 200.0 + 0.01, "align={align}");
-            assert!(plate.origin.y + plate.size.height <= 60.0 + 0.01, "align={align}");
+            assert!(
+                plate.origin.x >= 0.0,
+                "align={align} : x={}",
+                plate.origin.x
+            );
+            assert!(
+                plate.origin.y >= 0.0,
+                "align={align} : y={}",
+                plate.origin.y
+            );
+            assert!(
+                plate.origin.x + plate.size.width <= 200.0 + 0.01,
+                "align={align}"
+            );
+            assert!(
+                plate.origin.y + plate.size.height <= 60.0 + 0.01,
+                "align={align}"
+            );
         }
     }
 }

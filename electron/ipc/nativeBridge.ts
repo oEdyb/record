@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { ipcMain } from "electron";
 import type { EntitlementCapability } from "../../src/lib/entitlements/contracts";
 import type { AiEditionChatEvent } from "../../src/native/contracts";
@@ -13,7 +15,9 @@ import {
 } from "../../src/native/contracts";
 import type { ChatEventSink } from "../ai-edition/chat-service";
 import type { DocumentService } from "../ai-edition/document-service";
+import type { WorkloadMediaPath, WorkloadTelemetryService } from "../diagnostics/workloadTelemetry";
 import { EntitlementRequiredError } from "../entitlements/service";
+import { ExportTransactionError } from "../export/atomicExport";
 import {
 	type CursorTelemetryLoadResult,
 	TelemetryCursorAdapter,
@@ -26,6 +30,7 @@ import { SystemService } from "../native-bridge/services/systemService";
 import { createNativeBridgeState } from "../native-bridge/store";
 
 export interface NativeBridgeContext {
+	workloadTelemetry?: WorkloadTelemetryService;
 	assertEntitlement: (capability: EntitlementCapability) => Promise<void>;
 	getPlatform: () => NodeJS.Platform;
 	getCurrentProjectPath: () => string | null;
@@ -136,6 +141,7 @@ function createErrorResponse(
 	code: NativeBridgeErrorCode,
 	message: string,
 	retryable = false,
+	details?: import("../../src/native/contracts").NativeBridgeError["details"],
 ) {
 	return {
 		ok: false,
@@ -143,6 +149,7 @@ function createErrorResponse(
 			code,
 			message,
 			retryable,
+			details,
 		},
 		meta: createMeta(requestId),
 	} satisfies NativeBridgeResponse;
@@ -168,6 +175,56 @@ function isBridgeRequest(value: unknown): value is NativeBridgeRequest {
 
 	const candidate = value as Partial<NativeBridgeRequest>;
 	return typeof candidate.domain === "string" && typeof candidate.action === "string";
+}
+
+function nativeEncoderPath(name: string, hardware: boolean): WorkloadMediaPath {
+	if (name.endsWith("_videotoolbox")) {
+		return hardware ? "videotoolbox-hardware" : "videotoolbox-software";
+	}
+	if (name === "libopenh264") return "libopenh264-software";
+	if (name === "libkvazaar") return "libkvazaar-software";
+	if (name.endsWith("_amf")) return "amf-hardware";
+	if (name.endsWith("_nvenc")) return "nvenc-hardware";
+	if (name.endsWith("_qsv")) return "qsv-hardware";
+	if (name.endsWith("_mf")) {
+		return hardware ? "media-foundation-hardware" : "media-foundation-software";
+	}
+	return hardware ? "ffmpeg-hardware" : "ffmpeg-software";
+}
+
+function nativeDecoderPath(name: string): WorkloadMediaPath {
+	if (name === "videotoolbox") return "videotoolbox-decoder";
+	if (name === "d3d11va") return "d3d11va-decoder";
+	if (name === "software") return "software-decoder";
+	if (name === "mixed") return "mixed-decoder";
+	return "unknown";
+}
+
+function nativeCompositorPath(name: string): WorkloadMediaPath {
+	if (name === "metal") return "metal";
+	if (name === "d3d11") return "d3d11";
+	if (name === "vulkan") return "vulkan";
+	if (name === "software") return "software";
+	return "unknown";
+}
+
+function addNativeExportPaths(
+	telemetry: WorkloadTelemetryService,
+	workloadId: string,
+	stats: {
+		encoderName: string;
+		encoderHardware: boolean;
+		encoderFallback: boolean;
+		decoderPath: string;
+		compositorBackend: string;
+	},
+): void {
+	telemetry.addMediaPath(workloadId, nativeEncoderPath(stats.encoderName, stats.encoderHardware));
+	telemetry.addMediaPath(workloadId, nativeDecoderPath(stats.decoderPath));
+	telemetry.addMediaPath(workloadId, nativeCompositorPath(stats.compositorBackend));
+	if (stats.encoderFallback) {
+		telemetry.addFallback(workloadId, "encoder-hardware-to-software");
+	}
 }
 
 // build a ChatEventSink that broadcasts each event to the renderer
@@ -224,6 +281,22 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		getCursorCapabilities: () => cursorService.getCapabilities(),
 	});
 	const compositorViewService = new CompositorViewService();
+	void compositorViewService.initializeExportRecovery().catch((error) => {
+		console.warn("[export] startup recovery failed:", error);
+	});
+	const previewWorkloads = new Map<number, { workloadId: string; senderId: number }>();
+	const previewSamples = (value: unknown): number[] =>
+		Array.isArray(value)
+			? value
+					.slice(0, 300)
+					.filter(
+						(sample): sample is number =>
+							typeof sample === "number" &&
+							Number.isFinite(sample) &&
+							sample >= 0 &&
+							sample <= 60_000,
+					)
+			: [];
 	const aiEditionService = new AiEditionService({
 		documents: context.getAiEditionDocuments(),
 		// Passed uncalled on purpose — invoking it here would build the store (and
@@ -350,6 +423,33 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								webcamPath: request.payload.webcamPath,
 								cursorPath: request.payload.cursorPath,
 							});
+							if (context.workloadTelemetry) {
+								const workloadId = context.workloadTelemetry.begin({
+									kind: "preview",
+									operation: "native-preview",
+									platform: context.getPlatform(),
+									configuration: {
+										previewWidthPx: request.payload.rect.width,
+										previewHeightPx: request.payload.rect.height,
+									},
+								});
+								previewWorkloads.set(id, { workloadId, senderId: event.sender.id });
+								context.workloadTelemetry.startPhase(workloadId, "preview-active");
+								context.workloadTelemetry.event(workloadId, "preview-started");
+								const backend = compositorViewService.probeBackend();
+								context.workloadTelemetry.addMediaPath(
+									workloadId,
+									backend === "cpu"
+										? "software"
+										: backend === "none"
+											? "unknown"
+											: context.getPlatform() === "darwin"
+												? "metal"
+												: context.getPlatform() === "win32"
+													? "d3d11"
+													: "vulkan",
+								);
+							}
 							return createSuccessResponse(requestId, { id });
 						}
 						case "probeBackend":
@@ -367,11 +467,53 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							// returns `{ gen, width, height, data }`. The response wrapper does NOT
 							// JSON-stringify — `ipcMain.handle` round-trips via structured clone,
 							// which preserves the nested `Buffer` in `.data` as binary.
-							const frame = compositorViewService.readFrame(
-								request.payload.id,
-								request.payload.sinceGen,
-							);
-							return createSuccessResponse(requestId, frame);
+							const preview = previewWorkloads.get(request.payload.id);
+							const startedAt = performance.now();
+							try {
+								const frame = compositorViewService.readFrame(
+									request.payload.id,
+									request.payload.sinceGen,
+								);
+								if (frame && preview?.senderId === event.sender.id && context.workloadTelemetry) {
+									context.workloadTelemetry.observe(
+										preview.workloadId,
+										"preview.native_boundary_ms",
+										performance.now() - startedAt,
+									);
+									context.workloadTelemetry.observe(
+										preview.workloadId,
+										"preview.gpu_readback_ms",
+										frame.readbackMs,
+									);
+								}
+								return createSuccessResponse(requestId, frame);
+							} catch (error) {
+								if (preview?.senderId === event.sender.id && context.workloadTelemetry) {
+									context.workloadTelemetry.finish(preview.workloadId, "failed", "preview-failed");
+									previewWorkloads.delete(request.payload.id);
+								}
+								throw error;
+							}
+						}
+						case "reportPreviewTiming": {
+							const preview = previewWorkloads.get(request.payload.id);
+							if (preview?.senderId !== event.sender.id || !context.workloadTelemetry) {
+								return createSuccessResponse(requestId, { ok: true });
+							}
+							for (const sample of previewSamples(request.payload.ipcMs)) {
+								context.workloadTelemetry.observe(preview.workloadId, "preview.ipc_ms", sample);
+							}
+							for (const sample of previewSamples(request.payload.drawMs)) {
+								context.workloadTelemetry.observe(preview.workloadId, "preview.draw_ms", sample);
+							}
+							for (const sample of previewSamples(request.payload.browserMainThreadMs)) {
+								context.workloadTelemetry.observe(
+									preview.workloadId,
+									"preview.browser_main_thread_ms",
+									sample,
+								);
+							}
+							return createSuccessResponse(requestId, { ok: true });
 						}
 						case "setParam":
 							compositorViewService.setParam(
@@ -411,52 +553,188 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								request.payload.sourceTimeSec,
 							);
 							return createSuccessResponse(requestId, { ok: true });
-						case "destroyView":
-							compositorViewService.destroyView(request.payload.id);
-							return createSuccessResponse(requestId, { ok: true });
+						case "destroyView": {
+							const preview = previewWorkloads.get(request.payload.id);
+							try {
+								compositorViewService.destroyView(request.payload.id);
+								if (preview?.senderId === event.sender.id && context.workloadTelemetry) {
+									context.workloadTelemetry.event(preview.workloadId, "preview-completed");
+									context.workloadTelemetry.finish(preview.workloadId, "succeeded");
+								}
+								return createSuccessResponse(requestId, { ok: true });
+							} catch (error) {
+								if (preview?.senderId === event.sender.id && context.workloadTelemetry) {
+									context.workloadTelemetry.finish(preview.workloadId, "failed", "preview-failed");
+								}
+								throw error;
+							} finally {
+								if (preview?.senderId === event.sender.id) {
+									previewWorkloads.delete(request.payload.id);
+								}
+							}
+						}
+						case "cancelExport":
+							return createSuccessResponse(requestId, {
+								cancelled: compositorViewService.cancelExport(request.payload.exportId),
+							});
 						case "exportMulti": {
 							await context.assertEntitlement("export");
 							const sender = event.sender;
-							const stats = await compositorViewService.exportMulti(
-								request.payload.clips,
-								request.payload.outPath,
-								request.payload.sceneJson,
-								request.payload.params,
-								(frames) => {
-									if (!sender.isDestroyed()) {
-										sender.send("export:native-progress", frames);
-									}
+							const telemetryId = context.workloadTelemetry?.begin({
+								kind: "export",
+								operation: "native-video-export",
+								platform: context.getPlatform(),
+								configuration: {
+									format: "mp4",
+									outputFps: request.payload.params?.fps,
+									outputWidthPx: request.payload.params?.width,
+									outputHeightPx: request.payload.params?.height,
 								},
-							);
+								diskDirectory: request.payload.outPath
+									? path.dirname(request.payload.outPath)
+									: undefined,
+							});
+							if (telemetryId) {
+								context.workloadTelemetry?.startPhase(telemetryId, "export-compose");
+								context.workloadTelemetry?.event(telemetryId, "export-started");
+							}
+							let stats: Awaited<ReturnType<typeof compositorViewService.exportMulti>>;
+							try {
+								stats = await compositorViewService.exportMulti(
+									request.payload.clips,
+									request.payload.outPath,
+									request.payload.sceneJson,
+									request.payload.params,
+									(frames) => {
+										if (!sender.isDestroyed()) {
+											sender.send("export:native-progress", frames);
+										}
+									},
+									{
+										expectedBytes: request.payload.expectedBytes,
+										exportId: request.payload.exportId,
+										onPhase: (phase) => {
+											if (!sender.isDestroyed()) sender.send("export:native-phase", phase);
+										},
+									},
+								);
+							} catch (error) {
+								if (telemetryId) {
+									context.workloadTelemetry?.finish(telemetryId, "failed", "export-failed");
+								}
+								throw error;
+							}
 							if (!stats) {
+								if (telemetryId) {
+									context.workloadTelemetry?.finish(telemetryId, "failed", "export-failed");
+								}
 								return createErrorResponse(
 									requestId,
 									"UNAVAILABLE",
 									"Native compositor addon not present.",
 								);
 							}
+							if (telemetryId) {
+								context.workloadTelemetry?.endPhase(telemetryId, "export-compose");
+								context.workloadTelemetry?.observe(telemetryId, "export.frames", stats.frames);
+								context.workloadTelemetry?.observe(
+									telemetryId,
+									"export.media_duration_s",
+									stats.videoDurationS,
+								);
+								context.workloadTelemetry?.observe(telemetryId, "export.throughput_fps", stats.fps);
+								if (request.payload.outPath) {
+									const output = await fs.stat(request.payload.outPath).catch(() => null);
+									if (output) {
+										context.workloadTelemetry?.observe(
+											telemetryId,
+											"export.output_bytes",
+											output.size,
+										);
+									}
+								}
+								if (context.workloadTelemetry) {
+									addNativeExportPaths(context.workloadTelemetry, telemetryId, stats);
+								}
+								context.workloadTelemetry?.event(telemetryId, "export-completed");
+								context.workloadTelemetry?.finish(telemetryId, "succeeded");
+							}
 							return createSuccessResponse(requestId, stats);
 						}
 						case "exportGif": {
 							await context.assertEntitlement("export");
 							const sender = event.sender;
-							const stats = await compositorViewService.exportGif(
-								request.payload.clips,
-								request.payload.outPath,
-								request.payload.sceneJson,
-								request.payload.params,
-								(frames) => {
-									if (!sender.isDestroyed()) {
-										sender.send("export:native-progress", frames);
-									}
+							const telemetryId = context.workloadTelemetry?.begin({
+								kind: "export",
+								operation: "native-gif-export",
+								platform: context.getPlatform(),
+								configuration: {
+									format: "gif",
+									outputFps: request.payload.params?.fps,
+									outputWidthPx: request.payload.params?.width,
+									outputHeightPx: request.payload.params?.height,
 								},
-							);
+								diskDirectory: request.payload.outPath
+									? path.dirname(request.payload.outPath)
+									: undefined,
+							});
+							if (telemetryId) {
+								context.workloadTelemetry?.startPhase(telemetryId, "export-compose");
+								context.workloadTelemetry?.event(telemetryId, "export-started");
+							}
+							let stats: Awaited<ReturnType<typeof compositorViewService.exportGif>>;
+							try {
+								stats = await compositorViewService.exportGif(
+									request.payload.clips,
+									request.payload.outPath,
+									request.payload.sceneJson,
+									request.payload.params,
+									(frames) => {
+										if (!sender.isDestroyed()) {
+											sender.send("export:native-progress", frames);
+										}
+									},
+									{
+										expectedBytes: request.payload.expectedBytes,
+										exportId: request.payload.exportId,
+										onPhase: (phase) => {
+											if (!sender.isDestroyed()) sender.send("export:native-phase", phase);
+										},
+									},
+								);
+							} catch (error) {
+								if (telemetryId) {
+									context.workloadTelemetry?.finish(telemetryId, "failed", "export-failed");
+								}
+								throw error;
+							}
 							if (!stats) {
+								if (telemetryId) {
+									context.workloadTelemetry?.finish(telemetryId, "failed", "export-failed");
+								}
 								return createErrorResponse(
 									requestId,
 									"UNAVAILABLE",
 									"Native compositor addon not present.",
 								);
+							}
+							if (telemetryId) {
+								context.workloadTelemetry?.endPhase(telemetryId, "export-compose");
+								context.workloadTelemetry?.observe(telemetryId, "export.frames", stats.frames);
+								context.workloadTelemetry?.observe(
+									telemetryId,
+									"export.media_duration_s",
+									stats.videoDurationS,
+								);
+								context.workloadTelemetry?.observe(telemetryId, "export.throughput_fps", stats.fps);
+								context.workloadTelemetry?.observe(
+									telemetryId,
+									"export.output_bytes",
+									stats.fileBytes,
+								);
+								context.workloadTelemetry?.addMediaPath(telemetryId, "software");
+								context.workloadTelemetry?.event(telemetryId, "export-completed");
+								context.workloadTelemetry?.finish(telemetryId, "succeeded");
 							}
 							return createSuccessResponse(requestId, stats);
 						}
@@ -680,6 +958,15 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 			// the client to spin on them. The message keeps the reason but drops any
 			// absolute path — it crosses to the renderer and ends up in UI strings.
 			console.error(`native bridge ${domain}.${request.action} failed:`, error);
+			if (error instanceof ExportTransactionError) {
+				return createErrorResponse(
+					requestId,
+					"EXPORT_FAILED",
+					redactPaths(error.message),
+					error.retryable,
+					{ exportPhase: error.phase, exportCode: error.code },
+				);
+			}
 			return createErrorResponse(
 				requestId,
 				error instanceof EntitlementRequiredError ? "ENTITLEMENT_REQUIRED" : "INTERNAL_ERROR",

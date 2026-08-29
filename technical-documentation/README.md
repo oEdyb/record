@@ -36,6 +36,7 @@ who reads and writes the project document.
 | Doc | Topic |
 |---|---|
 | [rendering-performance.md](engineering/rendering-performance.md) | The measurement record for preview fluidity and export speed |
+| [workload-telemetry.md](engineering/workload-telemetry.md) | Local privacy-safe capture, preview, export, resource, fallback, and failure reports |
 | [build-and-packaging.md](engineering/build-and-packaging.md) | Build commands, native artifacts, per-platform packaging |
 | [ci-workflows.md](engineering/ci-workflows.md) | The GitHub Actions tiers and how artifacts flow between them |
 | [release-and-secrets.md](engineering/release-and-secrets.md) | Cutting and promoting a release; the secrets it needs |
@@ -46,6 +47,7 @@ who reads and writes the project document.
 | Doc | Topic |
 |---|---|
 | [writing-tests.md](testing/writing-tests.md) | Unit, browser and end-to-end tests: which to write, where, how to run them |
+| [accessibility-smoke.md](testing/accessibility-smoke.md) | Keyboard, focus, dialog, tooltip, reduced-motion, and HUD activation contracts |
 | [manual-e2e-checklist.md](testing/manual-e2e-checklist.md) | What automated tests cannot reach — real capture, a real webcam, the tray, export |
 | [native-cursor-diagnostics.md](testing/native-cursor-diagnostics.md) | Windows and macOS cursor sampler tools and how to read their reports |
 

@@ -25,6 +25,7 @@ import {
 	createCompositorView,
 	destroyCompositorView,
 	readCompositorFrame,
+	reportCompositorPreviewTiming,
 	setCompositorParam,
 	setCompositorPlaying,
 	setCompositorRect,
@@ -118,6 +119,47 @@ export function useNativeCompositorView(
 		let pullTick = 0;
 		let lastRect: CompositorViewRect | null = null;
 		let disposed = false;
+		let nativeViewId: number | null = null;
+		let timingFlushHandle = 0;
+		let longTaskObserver: PerformanceObserver | null = null;
+		let timingBatch = {
+			ipcMs: [] as number[],
+			drawMs: [] as number[],
+			browserMainThreadMs: [] as number[],
+		};
+		const recordTiming = (key: keyof typeof timingBatch, value: number) => {
+			if (!Number.isFinite(value) || value < 0 || value > 60_000) return;
+			const samples = timingBatch[key];
+			if (samples.length >= 300) samples.shift();
+			samples.push(value);
+		};
+		const flushTiming = async (id = nativeViewId) => {
+			if (id == null) return;
+			const batch = timingBatch;
+			if (
+				batch.ipcMs.length === 0 &&
+				batch.drawMs.length === 0 &&
+				batch.browserMainThreadMs.length === 0
+			) {
+				return;
+			}
+			timingBatch = { ipcMs: [], drawMs: [], browserMainThreadMs: [] };
+			await reportCompositorPreviewTiming(id, batch);
+		};
+		if (
+			typeof PerformanceObserver !== "undefined" &&
+			PerformanceObserver.supportedEntryTypes?.includes("longtask")
+		) {
+			longTaskObserver = new PerformanceObserver((list) => {
+				for (const entry of list.getEntries()) {
+					recordTiming("browserMainThreadMs", entry.duration);
+				}
+			});
+			longTaskObserver.observe({ type: "longtask" });
+		}
+		timingFlushHandle = window.setInterval(() => {
+			safelyCall("reportPreviewTiming", () => flushTiming());
+		}, 5_000);
 		// Fresh view (source or enablement changed) → the previous view's fatal error
 		// says nothing about this one.
 		setError(null);
@@ -200,9 +242,11 @@ export function useNativeCompositorView(
 				return;
 			}
 			inFlight = true;
+			const readStartedAt = performance.now();
 			readCompositorFrame(id, lastGen)
 				.then((frame) => {
 					inFlight = false;
+					recordTiming("ipcMs", performance.now() - readStartedAt);
 					// `null` = nothing newer than `lastGen` (idle path — no pixels
 					// crossed IPC) OR no frame yet. Either way, leave the canvas as-is.
 					if (disposed || !frame) {
@@ -227,6 +271,7 @@ export function useNativeCompositorView(
 					// so a view over it is valid for the lifetime of this paint, and nothing
 					// mutates it. Cast to `ArrayBuffer` because `ImageData` rejects
 					// `SharedArrayBuffer`-backed arrays (IPC binary is never shared).
+					const drawStartedAt = performance.now();
 					const pixels = new Uint8ClampedArray(
 						data.buffer as ArrayBuffer,
 						data.byteOffset,
@@ -240,12 +285,14 @@ export function useNativeCompositorView(
 						.then((bitmap) => {
 							if (!disposed && ctx) {
 								ctx.drawImage(bitmap, 0, 0);
+								recordTiming("drawMs", performance.now() - drawStartedAt);
 							}
 							bitmap.close();
 						})
 						.catch(() => {
 							if (!disposed && ctx) {
 								ctx.putImageData(image, 0, 0);
+								recordTiming("drawMs", performance.now() - drawStartedAt);
 							}
 						});
 					// Advance only after a successful, validated frame — so a dropped/
@@ -293,6 +340,7 @@ export function useNativeCompositorView(
 				return;
 			}
 			viewIdRef.current = result.id;
+			nativeViewId = result.id;
 			setViewId(result.id);
 		});
 
@@ -319,11 +367,16 @@ export function useNativeCompositorView(
 				cancelAnimationFrame(pullRafHandle);
 			}
 			observer.disconnect();
+			longTaskObserver?.disconnect();
+			window.clearInterval(timingFlushHandle);
 			window.removeEventListener("resize", scheduleRectUpdate);
 			window.removeEventListener("scroll", scheduleRectUpdate, true);
 			const id = viewIdRef.current;
 			if (id != null) {
-				safelyCall("destroyView", () => destroyCompositorView(id));
+				safelyCall("destroyView", async () => {
+					await flushTiming(id);
+					await destroyCompositorView(id);
+				});
 			}
 		};
 		// `canvasRef` is a stable RefObject; we re-run (destroy + re-create the view) when the

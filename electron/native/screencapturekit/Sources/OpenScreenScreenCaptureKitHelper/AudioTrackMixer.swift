@@ -27,6 +27,12 @@ import Foundation
 /// which is also the queue ScreenCaptureKit delivers both audio outputs on.
 @available(macOS 13.0, *)
 final class AudioTrackMixer {
+	struct Telemetry {
+		let maxPendingBytes: Int
+		let maxPendingChunks: Int
+		let blockedMs: Double
+	}
+
 	enum Source: Int, CaseIterable {
 		case system = 0
 		case microphone = 1
@@ -60,6 +66,11 @@ final class AudioTrackMixer {
 		let input: AVAssetWriterInput
 		let label: String
 		private var pending: [CMSampleBuffer] = []
+		private var pendingBytes = 0
+		private var maxPendingBytes = 0
+		private var maxPendingChunks = 0
+		private var blockedStartedAt: Date?
+		private var blockedSeconds = 0.0
 		private var didWarnAboutBacklog = false
 
 		init(input: AVAssetWriterInput, label: String) {
@@ -69,17 +80,30 @@ final class AudioTrackMixer {
 
 		func enqueue(_ sampleBuffer: CMSampleBuffer) {
 			pending.append(sampleBuffer)
+			pendingBytes += CMSampleBufferGetTotalSampleSize(sampleBuffer)
+			maxPendingBytes = max(maxPendingBytes, pendingBytes)
+			maxPendingChunks = max(maxPendingChunks, pending.count)
 			flush(until: nil)
+		}
+
+		var telemetry: Telemetry {
+			Telemetry(
+				maxPendingBytes: maxPendingBytes,
+				maxPendingChunks: maxPendingChunks,
+				blockedMs: (blockedSeconds + currentBlockedSeconds()) * 1_000
+			)
 		}
 
 		func flush(until deadline: Date?) {
 			while !pending.isEmpty && input.isReadyForMoreMediaData {
-				input.append(pending.removeFirst())
+				appendFirstPending()
 			}
+			updateBlockedState()
 			if let deadline {
 				while !pending.isEmpty {
 					if input.isReadyForMoreMediaData {
-						input.append(pending.removeFirst())
+						appendFirstPending()
+						updateBlockedState()
 						continue
 					}
 					if Date() >= deadline {
@@ -89,6 +113,8 @@ final class AudioTrackMixer {
 								"message": "The \(label) AAC input never drained; \(pending.count) chunk(s) were dropped.",
 						])
 						pending.removeAll()
+						pendingBytes = 0
+						updateBlockedState()
 						break
 					}
 					Thread.sleep(forTimeInterval: 0.002)
@@ -99,7 +125,10 @@ final class AudioTrackMixer {
 				return
 			}
 
-			pending.removeFirst(pending.count - MixFormat.maxPendingChunks)
+			let removeCount = pending.count - MixFormat.maxPendingChunks
+			for _ in 0 ..< removeCount {
+				removeFirstPending()
+			}
 			if !didWarnAboutBacklog {
 				didWarnAboutBacklog = true
 				emit([
@@ -108,6 +137,34 @@ final class AudioTrackMixer {
 					"message": "The \(label) AAC input stalled for seconds; its oldest audio was dropped.",
 				])
 			}
+		}
+
+		private func appendFirstPending() {
+			guard !pending.isEmpty else { return }
+			let sample = pending.removeFirst()
+			pendingBytes = max(0, pendingBytes - CMSampleBufferGetTotalSampleSize(sample))
+			input.append(sample)
+		}
+
+		private func removeFirstPending() {
+			guard !pending.isEmpty else { return }
+			let sample = pending.removeFirst()
+			pendingBytes = max(0, pendingBytes - CMSampleBufferGetTotalSampleSize(sample))
+		}
+
+		private func updateBlockedState() {
+			if pending.isEmpty {
+				if let blockedStartedAt {
+					blockedSeconds += Date().timeIntervalSince(blockedStartedAt)
+					self.blockedStartedAt = nil
+				}
+			} else if blockedStartedAt == nil {
+				blockedStartedAt = Date()
+			}
+		}
+
+		private func currentBlockedSeconds() -> Double {
+			blockedStartedAt.map { Date().timeIntervalSince($0) } ?? 0
 		}
 	}
 
@@ -196,12 +253,18 @@ final class AudioTrackMixer {
 
 	/// Writes out everything still buffered. Call once, on the sample queue, before the
 	/// writer input is marked as finished.
-	func finish() {
+	func finish() -> Telemetry {
 		drain(flushing: true)
 		let deadline = Date().addingTimeInterval(MixFormat.finalFlushTimeout)
 		mixedOutput.flush(until: deadline)
 		systemOutput?.flush(until: deadline)
 		microphoneOutput?.flush(until: deadline)
+		let outputs = [mixedOutput, systemOutput, microphoneOutput].compactMap { $0 }
+		return Telemetry(
+			maxPendingBytes: outputs.map(\.telemetry.maxPendingBytes).max() ?? 0,
+			maxPendingChunks: outputs.map(\.telemetry.maxPendingChunks).max() ?? 0,
+			blockedMs: outputs.map(\.telemetry.blockedMs).reduce(0, +)
+		)
 	}
 
 	private func warnAboutDecodeFailure(_ source: Source, _ sampleBuffer: CMSampleBuffer) {

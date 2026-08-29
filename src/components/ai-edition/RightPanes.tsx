@@ -1515,6 +1515,7 @@ export function VideoEffectsPane() {
 				<Toggle
 					checked={settings.showBlur}
 					disabled={!hasDocument}
+					label={ts("effects.blurBg")}
 					onChange={(v) => {
 						void set({ showBlur: v });
 						if (isNativeCompositorActive()) {
@@ -2058,6 +2059,7 @@ export function LayoutPane() {
 					<Toggle
 						checked={settings.webcamMirrored}
 						disabled={layoutControlsDisabled}
+						label={ts("layout.mirrorWebcam")}
 						onChange={(v) => {
 							void set({ webcamMirrored: v });
 							if (isNativeCompositorActive()) {
@@ -2072,6 +2074,7 @@ export function LayoutPane() {
 						<Toggle
 							checked={settings.webcamReactiveZoom}
 							disabled={layoutControlsDisabled}
+							label={ts("layout.reactiveWebcam")}
 							onChange={(v) => void set({ webcamReactiveZoom: v })}
 						/>
 					</div>
@@ -2226,6 +2229,7 @@ export function CursorPane() {
 				<Toggle
 					checked={settings.cursorShow}
 					disabled={!hasDocument}
+					label={ts("cursor.show")}
 					onChange={(v) => {
 						void set({ cursor: { show: v } });
 						if (isNativeCompositorActive()) {
@@ -2239,6 +2243,7 @@ export function CursorPane() {
 				<Toggle
 					checked={settings.cursor.clipToBounds}
 					disabled={!hasDocument}
+					label={ts("cursor.clipToBounds")}
 					onChange={(v) => void set({ cursor: { clipToBounds: v } })}
 				/>
 			</div>
@@ -2357,7 +2362,7 @@ export function Toggle({
 }: {
 	checked: boolean;
 	disabled?: boolean;
-	label?: string;
+	label: string;
 	onChange: (next: boolean) => void;
 }) {
 	return (

@@ -45,14 +45,14 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
 	{
 		i18nKey: "cycleAnnotationsForward",
 		label: "Cycle Annotations Forward",
-		display: "Tab",
-		bindings: [{ key: "tab" }],
+		display: "Alt + ↓",
+		bindings: [{ key: "arrowdown", alt: true }],
 	},
 	{
 		i18nKey: "cycleAnnotationsBackward",
 		label: "Cycle Annotations Backward",
-		display: "Shift + Tab",
-		bindings: [{ key: "tab", shift: true }],
+		display: "Alt + ↑",
+		bindings: [{ key: "arrowup", alt: true }],
 	},
 	{
 		i18nKey: "deleteSelectedAlt",

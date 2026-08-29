@@ -548,6 +548,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	clear() {
+		void window.electronAPI?.stt?.release?.();
 		clearDocumentHistory();
 		set({
 			projectId: null,

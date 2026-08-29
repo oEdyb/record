@@ -46,7 +46,11 @@ fn sample_at(samples: &[(f32, f32, f32)], t: f32) -> Option<(f32, f32)> {
     let i = samples.partition_point(|s| s.0 <= t);
     let a = samples[i - 1];
     let b = samples[i];
-    let f = if b.0 > a.0 { (t - a.0) / (b.0 - a.0) } else { 0.0 };
+    let f = if b.0 > a.0 {
+        (t - a.0) / (b.0 - a.0)
+    } else {
+        0.0
+    };
     Some((a.1 + (b.1 - a.1) * f, a.2 + (b.2 - a.2) * f))
 }
 
@@ -79,7 +83,8 @@ fn smooth_follow_samples(samples: &[(f32, f32, f32)]) -> Vec<(f32, f32, f32)> {
         let (dx, dy) = (x - px, y - py);
         let distance = (dx * dx + dy * dy).sqrt();
         let ramp = (distance / AUTO_FOLLOW_RAMP_DISTANCE).min(1.0);
-        let base = AUTO_FOLLOW_MIN_FACTOR + (AUTO_FOLLOW_MAX_FACTOR - AUTO_FOLLOW_MIN_FACTOR) * ramp;
+        let base =
+            AUTO_FOLLOW_MIN_FACTOR + (AUTO_FOLLOW_MAX_FACTOR - AUTO_FOLLOW_MIN_FACTOR) * ramp;
         let factor = 1.0 - (1.0 - base).powf(dt_ms / AUTO_FOLLOW_REFERENCE_MS);
         let (nx, ny) = (px + dx * factor, py + dy * factor);
         smoothed.push((t, nx, ny));
@@ -92,9 +97,18 @@ impl CursorTrack {
     /// Seul point de construction : garantit que `follow_samples` est toujours dérivé des
     /// échantillons courants. Une piste re-lissée (`smoothed`) recalcule donc aussi son suivi,
     /// pour que la caméra suive la trajectoire que l'utilisateur voit réellement.
-    fn new(samples: Vec<(f32, f32, f32)>, clicks: Vec<f32>, types: Vec<(f32, String)>) -> CursorTrack {
+    fn new(
+        samples: Vec<(f32, f32, f32)>,
+        clicks: Vec<f32>,
+        types: Vec<(f32, String)>,
+    ) -> CursorTrack {
         let follow_samples = smooth_follow_samples(&samples);
-        CursorTrack { samples, follow_samples, clicks, types }
+        CursorTrack {
+            samples,
+            follow_samples,
+            clicks,
+            types,
+        }
     }
 
     /// État du curseur au temps `t` : la dernière transition à `t` ou avant. `None` avant la
@@ -183,7 +197,8 @@ impl CursorTrack {
             let press = (elapsed / PRESS_FRAC * std::f32::consts::PI).sin();
             1.0 - press * 0.24
         } else {
-            let rebound = ((elapsed - PRESS_FRAC) / (1.0 - PRESS_FRAC) * std::f32::consts::PI).sin();
+            let rebound =
+                ((elapsed - PRESS_FRAC) / (1.0 - PRESS_FRAC) * std::f32::consts::PI).sin();
             1.0 + rebound * 0.16
         }
     }
@@ -194,7 +209,11 @@ impl CursorTrack {
     /// bruts (le bounce est temporel, pas positionnel — ne doit pas suivre le lissage).
     pub fn smoothed(&self, factor: f32) -> CursorTrack {
         if self.samples.len() < 2 || factor <= 0.0 {
-            return CursorTrack::new(self.samples.clone(), self.clicks.clone(), self.types.clone());
+            return CursorTrack::new(
+                self.samples.clone(),
+                self.clicks.clone(),
+                self.types.clone(),
+            );
         }
         const STEP_S: f32 = 1.0 / 240.0;
         let start = self.samples[0].0;
@@ -205,7 +224,11 @@ impl CursorTrack {
         let mut raw_x = Vec::with_capacity(n);
         let mut raw_y = Vec::with_capacity(n);
         for i in 0..n {
-            let t = if i == n - 1 { end } else { start + i as f32 * STEP_S };
+            let t = if i == n - 1 {
+                end
+            } else {
+                start + i as f32 * STEP_S
+            };
             let (cx, cy) = self.at(t).unwrap_or((0.0, 0.0));
             times.push(t);
             raw_x.push(cx);
@@ -214,7 +237,12 @@ impl CursorTrack {
         let (stiffness, damping, mass) = cursor_spring_config(factor);
         let xs = spring_smooth(&raw_x, stiffness, damping, mass, STEP_S);
         let ys = spring_smooth(&raw_y, stiffness, damping, mass, STEP_S);
-        let samples = times.into_iter().zip(xs).zip(ys).map(|((t, x), y)| (t, x, y)).collect();
+        let samples = times
+            .into_iter()
+            .zip(xs)
+            .zip(ys)
+            .map(|((t, x), y)| (t, x, y))
+            .collect();
         // Comme les clics, les changements d'état gardent leurs instants bruts : le lissage
         // déplace la trajectoire, pas la chronologie de ce que faisait l'utilisateur.
         CursorTrack::new(samples, self.clicks.clone(), self.types.clone())
@@ -223,7 +251,13 @@ impl CursorTrack {
 
 /// Ressort-amortisseur, intégration semi-implicite (symplectique) d'Euler — stable pour ces
 /// raideurs à la grille 240 Hz (port direct de `springSmooth` en TS).
-fn spring_smooth(targets: &[f32], stiffness: f32, damping: f32, mass: f32, step_s: f32) -> Vec<f32> {
+fn spring_smooth(
+    targets: &[f32],
+    stiffness: f32,
+    damping: f32,
+    mass: f32,
+    step_s: f32,
+) -> Vec<f32> {
     let mut out = vec![0.0f32; targets.len()];
     if targets.is_empty() {
         return out;
@@ -267,14 +301,30 @@ mod tests {
         let track = CursorTrack::new(
             vec![(0.0, 0.0, 0.0), (2.0, 1.0, 1.0)],
             vec![],
-            vec![(0.5, "arrow".into()), (1.0, "text".into()), (1.5, "pointer".into())],
+            vec![
+                (0.5, "arrow".into()),
+                (1.0, "text".into()),
+                (1.5, "pointer".into()),
+            ],
         );
 
         assert_eq!(track.type_at(0.0), None, "avant la première transition");
-        assert_eq!(track.type_at(0.5), Some("arrow"), "à l'instant même de la transition");
-        assert_eq!(track.type_at(0.9), Some("arrow"), "tient jusqu'à la suivante");
+        assert_eq!(
+            track.type_at(0.5),
+            Some("arrow"),
+            "à l'instant même de la transition"
+        );
+        assert_eq!(
+            track.type_at(0.9),
+            Some("arrow"),
+            "tient jusqu'à la suivante"
+        );
         assert_eq!(track.type_at(1.2), Some("text"));
-        assert_eq!(track.type_at(99.0), Some("pointer"), "la dernière tient jusqu'à la fin");
+        assert_eq!(
+            track.type_at(99.0),
+            Some("pointer"),
+            "la dernière tient jusqu'à la fin"
+        );
     }
 
     /// Le lissage déplace la trajectoire, pas la chronologie : les états doivent survivre

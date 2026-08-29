@@ -6,6 +6,7 @@ import {
 	restoreRemovedNativeMacClip,
 } from "../../src/lib/nativeMacClipSession";
 import type {
+	NativeMacCaptureTelemetry,
 	NativeMacRecordingFailure,
 	NativeMacRecordingRequest,
 } from "../../src/lib/nativeMacRecording";
@@ -83,6 +84,7 @@ export type NativeMacRecordingStopResult = {
 	warning?: string;
 	discarded?: boolean;
 	error?: string;
+	telemetry?: NativeMacCaptureTelemetry;
 };
 
 /** Owns one native macOS recording and serializes its lifecycle commands. */
@@ -425,7 +427,11 @@ export class NativeMacRecordingService {
 						...discoveredPaths,
 					]);
 					await clearNativeMacRecoveryJournal(this.deps.recordingsDir, recordingId);
-					return { success: true, discarded: true };
+					return {
+						success: true,
+						discarded: true,
+						...(stopped.telemetry ? { telemetry: stopped.telemetry } : {}),
+					};
 				}
 
 				const keptClips = this.clips.filter((clip) => !clip.removed);
@@ -484,6 +490,7 @@ export class NativeMacRecordingService {
 						? "Native macOS recording recovered without the failed final clip"
 						: "Native macOS recording session stored successfully",
 					...(warnings.length > 0 ? { warning: warnings.join(" ") } : {}),
+					...(stopped.telemetry ? { telemetry: stopped.telemetry } : {}),
 				};
 			} catch (error) {
 				await this.deps.stopCursor().catch(() => undefined);

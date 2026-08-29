@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-async function resolveFinalSymlink(filePath: string): Promise<string> {
+export async function resolveFinalSymlink(filePath: string): Promise<string> {
 	let resolved = filePath;
 	const visited = new Set<string>();
 	for (;;) {

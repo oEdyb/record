@@ -18,12 +18,14 @@ import {
 	consumeCurrentRecordingSession,
 	getSelectedDesktopSource,
 	registerIpcHandlers,
+	resolveApprovedVideoPath,
 } from "../ipc/handlers";
-import { registerSttIpc } from "../stt";
+import { getSttManager, registerSttIpc } from "../stt";
 import { ASSET_BASE_URL_ARG } from "../windows";
 import { CLI_USAGE, type CliCommand } from "./args";
 import { finalizeCliResult } from "./cliCompletion";
 import { runInfoCommand, runPackCommand } from "./projectCommands";
+import { createCliSttSourceResolver } from "./sttSourceApproval";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -215,6 +217,11 @@ function setupRecordStopSignals(stop: (reason: string) => void): void {
 	}
 }
 
+function setupExportCancelSignals(cancel: (reason: string) => void): void {
+	process.on("SIGINT", () => cancel("SIGINT"));
+	process.on("SIGTERM", () => cancel("SIGTERM"));
+}
+
 /** Both file-only commands write through the same EPIPE-safe stdout writer. */
 const writeStdout = (text: string) => safeWrite(process.stdout, text);
 
@@ -231,6 +238,16 @@ export function runCli(command: CliCommand): void {
 	}
 
 	const output = createOutput(command.json === true);
+	const exitAfterSpeechShutdown = (code: number) => {
+		if (command.kind !== "captions") {
+			app.exit(code);
+			return;
+		}
+		void getSttManager()
+			.shutdown()
+			.catch((error) => output.error(`Could not release speech model: ${String(error)}`))
+			.finally(() => app.exit(code));
+	};
 
 	// stdout belongs to the CLI protocol (NDJSON / progress); reroute the app's
 	// own console chatter (e.g. "[native-sck] starting…") to stderr.
@@ -259,14 +276,14 @@ export function runCli(command: CliCommand): void {
 	process.stderr.on("error", ignoreStreamError);
 	process.on("uncaughtException", (error) => {
 		safeWrite(process.stderr, `Fatal: ${error?.stack ?? String(error)}\n`);
-		app.exit(1);
+		exitAfterSpeechShutdown(1);
 	});
 	process.on("unhandledRejection", (reason) => {
 		safeWrite(
 			process.stderr,
 			`Fatal (unhandled rejection): ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`,
 		);
-		app.exit(1);
+		exitAfterSpeechShutdown(1);
 	});
 
 	// Set once cli-done has been received; suppresses the window-all-closed
@@ -287,7 +304,7 @@ export function runCli(command: CliCommand): void {
 		// only while the run is still in flight.
 		if (finished) return;
 		output.error("Renderer window closed unexpectedly");
-		app.exit(1);
+		exitAfterSpeechShutdown(1);
 	});
 
 	void app
@@ -357,11 +374,18 @@ export function runCli(command: CliCommand): void {
 			}
 
 			let cliWindow: BrowserWindow | null = null;
+			let exportCancellationPending = false;
 			await registerAppHandlersForCli(() => cliWindow);
 
 			// Speech-to-text backs the captions command; registered by the GUI boot
 			// path (main.ts) rather than registerIpcHandlers.
-			registerSttIpc(ipcMain);
+			registerSttIpc(
+				ipcMain,
+				createCliSttSourceResolver(
+					path.join(app.getPath("userData"), "recordings"),
+					resolveApprovedVideoPath,
+				),
+			);
 
 			// Registered by the GUI boot path (main.ts) rather than registerIpcHandlers;
 			// the renderer's i18n init invokes it unconditionally.
@@ -371,7 +395,15 @@ export function runCli(command: CliCommand): void {
 			ipcMain.handle("update-global-shortcuts", () => ({ success: false }));
 
 			const request: CliRequest = command;
-			ipcMain.handle("cli-get-request", () => request);
+			ipcMain.handle("cli-get-request", (event) => {
+				// The renderer subscribes before it asks for the request. Re-send a
+				// startup cancellation here because did-finish-load can occur before
+				// React mounts the runner and attaches its listener.
+				if (command.kind === "export" && exportCancellationPending) {
+					event.sender.send("cli-cancel-export");
+				}
+				return request;
+			});
 			ipcMain.on("cli-log", (_event, level: string, message: string) => {
 				if (level === "error") {
 					output.error(message);
@@ -412,7 +444,12 @@ export function runCli(command: CliCommand): void {
 					output.event("done", { ...result });
 				} else {
 					output.error(result.error ?? "Unknown failure");
-					output.event("done", { success: false, error: result.error });
+					output.event("done", { ...result });
+				}
+				if (command.kind === "captions") {
+					await getSttManager()
+						.shutdown()
+						.catch((error) => output.error(`Could not release speech model: ${String(error)}`));
 				}
 
 				// Give the renderer a beat to resolve the invoke before exiting.
@@ -426,6 +463,31 @@ export function runCli(command: CliCommand): void {
 					cliWindow?.webContents.send("cli-stop-recording");
 				};
 				setupRecordStopSignals(stop);
+			} else if (command.kind === "export") {
+				setupExportCancelSignals((reason) => {
+					output.info(`Cancelling export (${reason})…`);
+					output.event("cancelling", { reason });
+					exportCancellationPending = true;
+					if (cliWindow && !cliWindow.isDestroyed()) {
+						cliWindow.webContents.send("cli-cancel-export");
+					}
+				});
+			} else if (command.kind === "captions") {
+				let stopping = false;
+				const stopCaptions = (signal: "SIGINT" | "SIGTERM", exitCode: number) => {
+					if (stopping) return;
+					stopping = true;
+					output.info(`Cancelling captions (${signal})…`);
+					output.event("cancelling", { reason: signal });
+					const manager = getSttManager();
+					manager.cancel();
+					void manager
+						.shutdown()
+						.catch((error) => output.error(`Could not release speech model: ${String(error)}`))
+						.finally(() => app.exit(exitCode));
+				};
+				process.on("SIGINT", () => stopCaptions("SIGINT", 130));
+				process.on("SIGTERM", () => stopCaptions("SIGTERM", 143));
 			}
 
 			const windowType = {
@@ -435,6 +497,13 @@ export function runCli(command: CliCommand): void {
 				captions: "cli-captions",
 			}[command.kind];
 			cliWindow = loadRunnerWindow(windowType);
+			if (command.kind === "export") {
+				cliWindow.webContents.once("did-finish-load", () => {
+					if (exportCancellationPending && cliWindow && !cliWindow.isDestroyed()) {
+						cliWindow.webContents.send("cli-cancel-export");
+					}
+				});
+			}
 
 			// Surface renderer console errors/warnings on stderr — the hidden window
 			// has no other way to show what went wrong (toasts are invisible).
@@ -457,6 +526,6 @@ export function runCli(command: CliCommand): void {
 		})
 		.catch((error) => {
 			output.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
-			app.exit(1);
+			exitAfterSpeechShutdown(1);
 		});
 }

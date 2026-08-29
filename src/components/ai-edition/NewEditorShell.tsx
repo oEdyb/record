@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type KeyboardEvent as ReactKeyboardEvent,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import type { EditorProjectData } from "@/components/video-editor/projectPersistence";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
@@ -1008,8 +1015,29 @@ export function NewEditorShell() {
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
+			if (e.defaultPrevented) return;
 			if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
 			if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
+			if (
+				e.target instanceof HTMLElement &&
+				e.target.closest(
+					"button, a[href], select, [role='button'], [role='checkbox'], [role='combobox'], [role='menuitem'], [role='menuitemradio'], [role='radio'], [role='separator'], [role='slider'], [role='switch'], [role='tab']",
+				) &&
+				[
+					"Enter",
+					" ",
+					"Tab",
+					"ArrowLeft",
+					"ArrowRight",
+					"ArrowUp",
+					"ArrowDown",
+					"Home",
+					"End",
+					"Escape",
+				].includes(e.key)
+			) {
+				return;
+			}
 			const ctrl = e.ctrlKey || e.metaKey;
 			if (ctrl && e.key === "s") {
 				e.preventDefault();
@@ -1170,12 +1198,14 @@ export function NewEditorShell() {
 				return;
 			}
 
-			// Fixed (non-configurable) shortcuts advertised in the shortcuts dialog.
-			if (e.key === "Tab") {
+			// Keep Tab and Shift+Tab for normal focus navigation. Annotation cycling
+			// uses arrow keys with Alt, which follows the platform convention that
+			// arrows move inside a composite control while Tab moves between controls.
+			if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
 				const annotations = [...tl.annotationRegions].sort((a, b) => a.startMs - b.startMs);
 				if (annotations.length > 0) {
 					e.preventDefault();
-					const direction = e.shiftKey ? -1 : 1;
+					const direction = e.key === "ArrowUp" ? -1 : 1;
 					const currentId = tl.selection?.kind === "annotation" ? tl.selection.id : null;
 					const currentIndex = currentId ? annotations.findIndex((a) => a.id === currentId) : -1;
 					const nextIndex =
@@ -1273,6 +1303,38 @@ export function NewEditorShell() {
 		[timelineHeightPx],
 	);
 
+	const resizeChatFromKeyboard = useCallback(
+		(e: ReactKeyboardEvent<HTMLDivElement>) => {
+			let next = chatWidthPx;
+			if (e.key === "ArrowLeft") next -= 16;
+			else if (e.key === "ArrowRight") next += 16;
+			else if (e.key === "Home") next = 280;
+			else if (e.key === "End") next = 560;
+			else return;
+			e.preventDefault();
+			next = Math.min(560, Math.max(280, next));
+			setChatWidthPx(next);
+			localStorage.setItem("os-editor-chat-width", String(next));
+		},
+		[chatWidthPx],
+	);
+
+	const resizeTimelineFromKeyboard = useCallback(
+		(e: ReactKeyboardEvent<HTMLDivElement>) => {
+			let next = timelineHeightPx;
+			if (e.key === "ArrowUp") next += 16;
+			else if (e.key === "ArrowDown") next -= 16;
+			else if (e.key === "Home") next = 160;
+			else if (e.key === "End") next = 480;
+			else return;
+			e.preventDefault();
+			next = Math.min(480, Math.max(160, next));
+			setTimelineHeightPx(next);
+			localStorage.setItem("os-editor-timeline-height", String(next));
+		},
+		[timelineHeightPx],
+	);
+
 	const transcriptProps = {
 		clips,
 		transcripts: document?.transcripts ?? [],
@@ -1341,9 +1403,14 @@ export function NewEditorShell() {
 							className={v4.chatResizeHandle}
 							style={{ left: chatWidthPx }}
 							role="separator"
+							tabIndex={0}
 							aria-orientation="vertical"
 							aria-label={te("shell.resizeChatPanel")}
+							aria-valuemin={280}
+							aria-valuemax={560}
+							aria-valuenow={chatWidthPx}
 							onPointerDown={startChatResize}
+							onKeyDown={resizeChatFromKeyboard}
 						/>
 					</>
 				) : null}
@@ -1431,9 +1498,14 @@ export function NewEditorShell() {
 						<div
 							className={v4.timelineResizeHandle}
 							role="separator"
+							tabIndex={0}
 							aria-orientation="horizontal"
 							aria-label={te("shell.resizeTimeline")}
+							aria-valuemin={160}
+							aria-valuemax={480}
+							aria-valuenow={timelineHeightPx}
 							onPointerDown={startTimelineResize}
+							onKeyDown={resizeTimelineFromKeyboard}
 						/>
 					) : null}
 					<V4Timeline

@@ -194,6 +194,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.hudAnchor *,
+	.hudAnchor *::before,
+	.hudAnchor *::after {
+		animation: none !important;
+		transition: none !important;
+	}
+
 	.hudBarRecording {
 		transition: none;
 	}
@@ -466,7 +473,11 @@
 .clipUndoButton:focus-visible {
 	background: rgba(255, 255, 255, 0.15);
 	color: #ffffff;
+}
+
+.clipUndoButton:focus-visible {
 	outline: none;
+	box-shadow: 0 0 0 2px rgba(142, 165, 191, 0.72);
 }
 
 @keyframes clip-undo-enter {
@@ -499,7 +510,11 @@
 .languageMenuItem:focus-visible {
 	background: rgba(255, 255, 255, 0.075);
 	color: #ffffff;
+}
+
+.languageMenuItem:focus-visible {
 	outline: none;
+	box-shadow: inset 0 0 0 1px rgba(142, 165, 191, 0.72);
 }
 
 .languageMenuItemActive {

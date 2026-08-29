@@ -1,5 +1,5 @@
 import type { TrimRegion } from "@/components/video-editor/types";
-import type { SttWordSegment } from "../../../electron/stt/transcriptionContract";
+import type { SttPhraseSegment, SttWordSegment } from "../../../electron/stt/transcriptionContract";
 
 export interface CaptionSegment {
 	startSec: number;
@@ -24,6 +24,57 @@ export interface TranscribeMono16kResult {
 	 * Null when the model produced no language token.
 	 */
 	detectedLanguage?: string | null;
+}
+
+export function phrasesWithoutTimedWords(result: {
+	segments: SttPhraseSegment[];
+	wordSegments: SttWordSegment[];
+}): SttPhraseSegment[] {
+	return result.segments.filter((segment) => {
+		const role = segment.sourceRole ?? "unknown-mixed";
+		return !result.wordSegments.some(
+			(word) =>
+				(word.sourceRole ?? "unknown-mixed") === role &&
+				word.startSec < segment.endSec &&
+				word.endSec > segment.startSec,
+		);
+	});
+}
+
+export function captionSegmentsFromTranscript(result: {
+	segments: SttPhraseSegment[];
+	wordSegments: SttWordSegment[];
+	detectedLanguage?: string | null;
+}): TranscribeMono16kResult {
+	const words = result.wordSegments ?? [];
+	if (words.length > 0) {
+		const fallbackPhrases = phrasesWithoutTimedWords(result);
+		return {
+			segments: [
+				...words.map((word) => ({
+					startSec: word.startSec,
+					endSec: word.endSec,
+					text: word.word,
+				})),
+				...fallbackPhrases.map((segment) => ({
+					startSec: segment.startSec,
+					endSec: segment.endSec,
+					text: segment.text,
+				})),
+			].sort((a, b) => a.startSec - b.startSec || a.endSec - b.endSec),
+			granularity: "word",
+			detectedLanguage: result.detectedLanguage,
+		};
+	}
+	return {
+		segments: (result.segments ?? []).map((segment) => ({
+			startSec: segment.startSec,
+			endSec: segment.endSec,
+			text: segment.text,
+		})),
+		granularity: "phrase",
+		detectedLanguage: result.detectedLanguage,
+	};
 }
 
 export type SttRendererStatusPhase = "model" | "transcribe";
@@ -99,28 +150,8 @@ export function transcribeMono16kToSegments(
 	return api
 		.transcribe({ samples, language: forcedLanguage })
 		.then((result) => {
-			const words = result.wordSegments ?? [];
-			let segments: CaptionSegment[];
-			let granularity: CaptionTimestampGranularity;
-			if (words.length > 0) {
-				segments = words.map((w) => ({
-					startSec: w.startSec,
-					endSec: w.endSec,
-					text: w.word,
-				}));
-				granularity = "word";
-			} else {
-				// ponytail: whisper dropped every word for a segment (e.g. OOV
-				// heavy); fall back to raw phrase spans so the user still gets
-				// captions to edit.
-				segments = (result.segments ?? []).map((s) => ({
-					startSec: s.startSec,
-					endSec: s.endSec,
-					text: s.text,
-				}));
-				granularity = "phrase";
-			}
-			return { segments, granularity, detectedLanguage: result.detectedLanguage };
+			if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+			return captionSegmentsFromTranscript(result);
 		})
 		.catch((error: unknown) => {
 			// A run the caller cancelled surfaces as an abort, not as an engine

@@ -6,19 +6,21 @@ use crate::config::Cfg;
 // pour le pourquoi. `pub use` sur les constantes : `pipeline_windows.rs`, `live.rs` et
 // `crates/poc-d3d/src/app.rs` les lisent via `crate::compositor::…`, et ce chemin doit
 // rester valable.
-pub use crate::frame_geometry::{live_params_from_scene, webcam_shape_code, LayerCB,
-    LiveParams, FIXTURE_FRAMES, HALF_H, HALF_W, OUT_H, OUT_W};
-use crate::frame_geometry::{
-    cover_uv_rect, cursor_sprite_dst, decode_data_uri, ease_in_out_cubic, lerp,
-    lerp4, parse_hex, preset_placements, remap_box, screen_source_rect, timeline, CursorPlacement,
-    FrameParams, Placement, CURSOR_BASE_SIZE_FRAC, FPS, SCREEN_SHADOW_OFFSET_FRAC,
-    SCREEN_SHADOW_SPREAD_FRAC, SHADOW_TUNING_REF_PX, WEBCAM_SHADOW_OFFSET_FRAC,
-    WEBCAM_SHADOW_OPACITY, WEBCAM_SHADOW_SPREAD_FRAC,
-};
 use crate::cursor::CursorTrack;
-use crate::scene::{Scene, SceneBackground, SceneCrop, SceneCursorSprite};
 use crate::d3d::Gpu;
 use crate::ffi::AVFrame;
+use crate::frame_geometry::{
+    cover_uv_rect, cursor_sprite_dst, decode_data_uri, ease_in_out_cubic, lerp, lerp4, parse_hex,
+    preset_placements, remap_box, screen_source_rect, timeline, CursorPlacement, FrameParams,
+    Placement, CURSOR_BASE_SIZE_FRAC, FPS, SCREEN_SHADOW_OFFSET_FRAC, SCREEN_SHADOW_SPREAD_FRAC,
+    SHADOW_TUNING_REF_PX, WEBCAM_SHADOW_OFFSET_FRAC, WEBCAM_SHADOW_OPACITY,
+    WEBCAM_SHADOW_SPREAD_FRAC,
+};
+pub use crate::frame_geometry::{
+    live_params_from_scene, webcam_shape_code, LayerCB, LiveParams, FIXTURE_FRAMES, HALF_H, HALF_W,
+    OUT_H, OUT_W,
+};
+use crate::scene::{Scene, SceneBackground, SceneCrop, SceneCursorSprite};
 use anyhow::{bail, Result};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -30,21 +32,6 @@ use windows::Win32::Graphics::Direct3D::{
 };
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 pub struct Compositor {
     dev: ID3D11Device,
@@ -170,17 +157,6 @@ struct ResizeTarget {
     nv12_rtv_uv: ID3D11RenderTargetView,
 }
 
-
-
-
-
-
-
-
-
-
-
-
 unsafe fn compile(src: &[u8], entry: &[u8], target: &[u8]) -> Result<ID3DBlob> {
     let mut code: Option<ID3DBlob> = None;
     let mut err: Option<ID3DBlob> = None;
@@ -199,11 +175,13 @@ unsafe fn compile(src: &[u8], entry: &[u8], target: &[u8]) -> Result<ID3DBlob> {
     );
     if r.is_err() {
         if let Some(e) = err {
-            let msg = std::slice::from_raw_parts(
-                e.GetBufferPointer() as *const u8,
-                e.GetBufferSize(),
+            let msg =
+                std::slice::from_raw_parts(e.GetBufferPointer() as *const u8, e.GetBufferSize());
+            bail!(
+                "D3DCompile {}: {}",
+                String::from_utf8_lossy(entry),
+                String::from_utf8_lossy(msg)
             );
-            bail!("D3DCompile {}: {}", String::from_utf8_lossy(entry), String::from_utf8_lossy(msg));
         }
         bail!("D3DCompile a échoué");
     }
@@ -260,7 +238,10 @@ impl Compositor {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
@@ -364,7 +345,10 @@ impl Compositor {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_NV12,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
@@ -393,7 +377,10 @@ impl Compositor {
         let texb = compile(hlsl, b"ps_tex\0", b"ps_5_0\0")?;
         let mut ps_blur: Option<ID3D11PixelShader> = None;
         dev.CreatePixelShader(
-            std::slice::from_raw_parts(blurb.GetBufferPointer() as *const u8, blurb.GetBufferSize()),
+            std::slice::from_raw_parts(
+                blurb.GetBufferPointer() as *const u8,
+                blurb.GetBufferSize(),
+            ),
             None,
             Some(&mut ps_blur),
         )?;
@@ -421,28 +408,32 @@ impl Compositor {
         )?;
 
         // textures RGBA RT+SRV à une taille donnée (chaîne de flou)
-        let mk_rgba = |w: u32, h: u32| -> Result<(ID3D11RenderTargetView, ID3D11ShaderResourceView)> {
-            let hd = D3D11_TEXTURE2D_DESC {
-                Width: w,
-                Height: h,
-                MipLevels: 1,
-                ArraySize: 1,
-                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                Usage: D3D11_USAGE_DEFAULT,
-                BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
-                CPUAccessFlags: 0,
-                MiscFlags: 0,
+        let mk_rgba =
+            |w: u32, h: u32| -> Result<(ID3D11RenderTargetView, ID3D11ShaderResourceView)> {
+                let hd = D3D11_TEXTURE2D_DESC {
+                    Width: w,
+                    Height: h,
+                    MipLevels: 1,
+                    ArraySize: 1,
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
+                    },
+                    Usage: D3D11_USAGE_DEFAULT,
+                    BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
+                    CPUAccessFlags: 0,
+                    MiscFlags: 0,
+                };
+                let mut t: Option<ID3D11Texture2D> = None;
+                dev.CreateTexture2D(&hd, None, Some(&mut t))?;
+                let t = t.unwrap();
+                let mut rtv: Option<ID3D11RenderTargetView> = None;
+                dev.CreateRenderTargetView(&t, None, Some(&mut rtv))?;
+                let mut srv: Option<ID3D11ShaderResourceView> = None;
+                dev.CreateShaderResourceView(&t, None, Some(&mut srv))?;
+                Ok((rtv.unwrap(), srv.unwrap()))
             };
-            let mut t: Option<ID3D11Texture2D> = None;
-            dev.CreateTexture2D(&hd, None, Some(&mut t))?;
-            let t = t.unwrap();
-            let mut rtv: Option<ID3D11RenderTargetView> = None;
-            dev.CreateRenderTargetView(&t, None, Some(&mut rtv))?;
-            let mut srv: Option<ID3D11ShaderResourceView> = None;
-            dev.CreateShaderResourceView(&t, None, Some(&mut srv))?;
-            Ok((rtv.unwrap(), srv.unwrap()))
-        };
         // Pyramide dual-Kawase derivee de la taille de rendu (et non d'un demi de
         // 1080 fige) : sinon le rayon effectif du flou de fond changerait d'un format
         // a l'autre. `.max(1)` protege les tres petites tailles de preview.
@@ -459,7 +450,10 @@ impl Compositor {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
@@ -639,12 +633,15 @@ impl Compositor {
                 ArraySize: 1,
             };
             let mut srv: Option<ID3D11ShaderResourceView> = None;
-            self.dev.CreateShaderResourceView(&tex, Some(&d), Some(&mut srv))?;
+            self.dev
+                .CreateShaderResourceView(&tex, Some(&d), Some(&mut srv))?;
             Ok(srv.unwrap())
         };
         let y = mk(DXGI_FORMAT_R8_UNORM)?;
         let uv = mk(DXGI_FORMAT_R8G8_UNORM)?;
-        self.srv_cache.borrow_mut().insert(key, (y.clone(), uv.clone()));
+        self.srv_cache
+            .borrow_mut()
+            .insert(key, (y.clone(), uv.clone()));
         Ok((y, uv))
     }
 
@@ -660,16 +657,23 @@ impl Compositor {
     /// État de composition : RT principal, viewport plein, shaders de calque, blend prémultiplié.
     /// (Sans clear — sert à reprendre après les passes de flou.)
     pub unsafe fn bind_compose_state(&self) {
-        self.ctx.OMSetRenderTargets(Some(&[Some(self.rtv.clone())]), None);
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(self.rtv.clone())]), None);
         let vp = D3D11_VIEWPORT {
-            TopLeftX: 0.0, TopLeftY: 0.0,
-            Width: self.rw(), Height: self.rh(), MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: self.rw(),
+            Height: self.rh(),
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp]));
         self.ctx.VSSetShader(&self.vs, None);
         self.ctx.PSSetShader(&self.ps, None);
-        self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
-        self.ctx.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+        self.ctx
+            .PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+        self.ctx
+            .IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         self.ctx.OMSetBlendState(&self.blend, None, 0xffffffff);
     }
 
@@ -690,17 +694,26 @@ impl Compositor {
         fx: [f32; 4],
     ) {
         self.ctx.OMSetBlendState(&self.blend_none, None, 0xffffffff);
-        self.ctx.OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
         self.ctx.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
         self.ctx.VSSetShader(&self.vs_fs, None);
         self.ctx.PSSetShader(ps, None);
-        self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+        self.ctx
+            .PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
         let vp = D3D11_VIEWPORT {
-            TopLeftX: 0.0, TopLeftY: 0.0,
-            Width: w as f32, Height: h as f32, MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: w as f32,
+            Height: h as f32,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp]));
-        self.upload_cb(&LayerCB { fx, ..Default::default() });
+        self.upload_cb(&LayerCB {
+            fx,
+            ..Default::default()
+        });
         self.ctx.Draw(3, 0);
         self.ctx.PSSetShaderResources(0, Some(&[None]));
     }
@@ -710,28 +723,64 @@ impl Compositor {
     /// à résolution décroissante, vs 2 passes gaussiennes 49-tap. Le RT devient le fond.
     pub unsafe fn blur_bg(&self, _sigma: f32) {
         let off = 2.2; // spread par passe
-        // La pyramide se dérive de la taille de rendu, pas d'une constante : sinon
-        // le rayon effectif du flou changerait avec la résolution de sortie (un
-        // demi de 1080 n'est pas un demi de 2160), et le fond flouté ne serait plus
-        // le même effet d'un format à l'autre.
+                       // La pyramide se dérive de la taille de rendu, pas d'une constante : sinon
+                       // le rayon effectif du flou changerait avec la résolution de sortie (un
+                       // demi de 1080 n'est pas un demi de 2160), et le fond flouté ne serait plus
+                       // le même effet d'un format à l'autre.
         let (rw_i, rh_i) = self.render_dims();
         let (half_w, half_h) = (rw_i / 2, rh_i / 2);
         let hw = half_w as f32;
         let hh = half_h as f32;
         // DOWN : texel = 1/(dims de la SOURCE échantillonnée)
-        self.fs_pass(&self.half_a_rtv, &self.rt_srv, &self.ps_kdown, half_w, half_h,
-            [1.0 / self.rw(), 1.0 / self.rh(), off, 0.0]);
-        self.fs_pass(&self.q_rtv, &self.half_a_srv, &self.ps_kdown, half_w / 2, half_h / 2,
-            [1.0 / hw, 1.0 / hh, off, 0.0]);
-        self.fs_pass(&self.e_rtv, &self.q_srv, &self.ps_kdown, half_w / 4, half_h / 4,
-            [2.0 / hw, 2.0 / hh, off, 0.0]);
+        self.fs_pass(
+            &self.half_a_rtv,
+            &self.rt_srv,
+            &self.ps_kdown,
+            half_w,
+            half_h,
+            [1.0 / self.rw(), 1.0 / self.rh(), off, 0.0],
+        );
+        self.fs_pass(
+            &self.q_rtv,
+            &self.half_a_srv,
+            &self.ps_kdown,
+            half_w / 2,
+            half_h / 2,
+            [1.0 / hw, 1.0 / hh, off, 0.0],
+        );
+        self.fs_pass(
+            &self.e_rtv,
+            &self.q_srv,
+            &self.ps_kdown,
+            half_w / 4,
+            half_h / 4,
+            [2.0 / hw, 2.0 / hh, off, 0.0],
+        );
         // UP
-        self.fs_pass(&self.q_rtv, &self.e_srv, &self.ps_kup, half_w / 2, half_h / 2,
-            [4.0 / hw, 4.0 / hh, off, 0.0]);
-        self.fs_pass(&self.half_a_rtv, &self.q_srv, &self.ps_kup, half_w, half_h,
-            [2.0 / hw, 2.0 / hh, off, 0.0]);
-        self.fs_pass(&self.rtv, &self.half_a_srv, &self.ps_kup, rw_i, rh_i,
-            [1.0 / hw, 1.0 / hh, off, 0.0]);
+        self.fs_pass(
+            &self.q_rtv,
+            &self.e_srv,
+            &self.ps_kup,
+            half_w / 2,
+            half_h / 2,
+            [4.0 / hw, 4.0 / hh, off, 0.0],
+        );
+        self.fs_pass(
+            &self.half_a_rtv,
+            &self.q_srv,
+            &self.ps_kup,
+            half_w,
+            half_h,
+            [2.0 / hw, 2.0 / hh, off, 0.0],
+        );
+        self.fs_pass(
+            &self.rtv,
+            &self.half_a_srv,
+            &self.ps_kup,
+            rw_i,
+            rh_i,
+            [1.0 / hw, 1.0 / hh, off, 0.0],
+        );
     }
 
     unsafe fn upload_cb(&self, cb: &LayerCB) {
@@ -739,10 +788,16 @@ impl Compositor {
         self.ctx
             .Map(&self.cbuf, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut m))
             .unwrap();
-        std::ptr::copy_nonoverlapping(cb as *const LayerCB as *const u8, m.pData as *mut u8, std::mem::size_of::<LayerCB>());
+        std::ptr::copy_nonoverlapping(
+            cb as *const LayerCB as *const u8,
+            m.pData as *mut u8,
+            std::mem::size_of::<LayerCB>(),
+        );
         self.ctx.Unmap(&self.cbuf, 0);
-        self.ctx.VSSetConstantBuffers(0, Some(&[Some(self.cbuf.clone())]));
-        self.ctx.PSSetConstantBuffers(0, Some(&[Some(self.cbuf.clone())]));
+        self.ctx
+            .VSSetConstantBuffers(0, Some(&[Some(self.cbuf.clone())]));
+        self.ctx
+            .PSSetConstantBuffers(0, Some(&[Some(self.cbuf.clone())]));
     }
 
     /// Calque vidéo NV12.
@@ -775,7 +830,9 @@ impl Compositor {
             Some(v) => v,
             None => {
                 let loaded = self.load_image_srv(path)?;
-                self.img_cache.borrow_mut().insert(path.to_string(), loaded.clone());
+                self.img_cache
+                    .borrow_mut()
+                    .insert(path.to_string(), loaded.clone());
                 loaded
             }
         };
@@ -827,7 +884,10 @@ impl Compositor {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_IMMUTABLE,
             BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
             CPUAccessFlags: 0,
@@ -842,7 +902,8 @@ impl Compositor {
         self.dev.CreateTexture2D(&td, Some(&init), Some(&mut tex))?;
         let tex = tex.unwrap();
         let mut srv: Option<ID3D11ShaderResourceView> = None;
-        self.dev.CreateShaderResourceView(&tex, None, Some(&mut srv))?;
+        self.dev
+            .CreateShaderResourceView(&tex, None, Some(&mut srv))?;
         Ok((srv.unwrap(), w, h))
     }
 
@@ -904,12 +965,18 @@ impl Compositor {
             Some(v) => v,
             None => {
                 let loaded = self.load_image_srv(path)?;
-                self.img_cache.borrow_mut().insert(path.to_string(), loaded.clone());
+                self.img_cache
+                    .borrow_mut()
+                    .insert(path.to_string(), loaded.clone());
                 loaded
             }
         };
         let ar = iw as f32 / ih as f32;
-        let (pw, ph) = if ar >= 1.0 { (size_px, size_px / ar) } else { (size_px * ar, size_px) };
+        let (pw, ph) = if ar >= 1.0 {
+            (size_px, size_px / ar)
+        } else {
+            (size_px * ar, size_px)
+        };
         let hotspot = [sprite.hotspot_x, sprite.hotspot_y];
 
         let cb = match placement {
@@ -921,7 +988,13 @@ impl Compositor {
                 fx: clip,
                 ..Default::default()
             },
-            CursorPlacement::Tilted { plane_pt, quad, center_px, screen_px, .. } => {
+            CursorPlacement::Tilted {
+                plane_pt,
+                quad,
+                center_px,
+                screen_px,
+                ..
+            } => {
                 // Le sprite est posé DANS le plan : sa taille devient une fraction du plan
                 // (l'unité de `size_px` est le rect d'écran non incliné), et ses 4 coins
                 // traversent la même projection que la vidéo. La réduction due au tilt vient
@@ -929,17 +1002,21 @@ impl Compositor {
                 let (wf, hf) = (pw / screen_px[0], ph / screen_px[1]);
                 let x0 = plane_pt[0] - hotspot[0] * wf;
                 let y0 = plane_pt[1] - hotspot[1] * hf;
-                let corners = [(x0, y0), (x0 + wf, y0), (x0 + wf, y0 + hf), (x0, y0 + hf)]
-                    .map(|(fx, fy)| {
+                let corners =
+                    [(x0, y0), (x0 + wf, y0), (x0 + wf, y0 + hf), (x0, y0 + hf)].map(|(fx, fy)| {
                         let (px, py) = quad.point_px(fx, fy);
                         (center_px[0] + px, center_px[1] + py)
                     });
                 let (min_x, max_x) = corners
                     .iter()
-                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
+                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                        (mn.min(x), mx.max(x))
+                    });
                 let (min_y, max_y) = corners
                     .iter()
-                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                        (mn.min(y), mx.max(y))
+                    });
                 // Le quad projeté d'un sprite peut être très fin de biais : une bbox d'un pixel
                 // de large ferait diverger le warp inverse, donc plancher à 1 px.
                 let (bw, bh) = ((max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
@@ -949,7 +1026,12 @@ impl Compositor {
                 let [br0, br1] = local(corners[2]);
                 let [bl0, bl1] = local(corners[3]);
                 LayerCB {
-                    dst: [min_x / self.rw(), min_y / self.rh(), bw / self.rw(), bh / self.rh()],
+                    dst: [
+                        min_x / self.rw(),
+                        min_y / self.rh(),
+                        bw / self.rw(),
+                        bh / self.rh(),
+                    ],
                     quad_px: [bw, bh],
                     mode: 13.0,
                     color: [1.0, 1.0, 1.0, a],
@@ -982,9 +1064,14 @@ impl Compositor {
         a: f32,
         clip: [f32; 4],
     ) {
-        let sprite = cursor_type.and_then(|t| sprites.get(t)).or_else(|| sprites.get("arrow"));
+        let sprite = cursor_type
+            .and_then(|t| sprites.get(t))
+            .or_else(|| sprites.get("arrow"));
         if let Some(sprite) = sprite {
-            if self.draw_cursor_sprite(placement, size_px, a, sprite, clip).is_ok() {
+            if self
+                .draw_cursor_sprite(placement, size_px, a, sprite, clip)
+                .is_ok()
+            {
                 return;
             }
         }
@@ -1020,7 +1107,12 @@ impl Compositor {
         let ox = offset_px[0] / self.rw();
         let oy = offset_px[1] / self.rh();
         let cb = LayerCB {
-            dst: [dst[0] - sx + ox, dst[1] - sy + oy, dst[2] + 2.0 * sx, dst[3] + 2.0 * sy],
+            dst: [
+                dst[0] - sx + ox,
+                dst[1] - sy + oy,
+                dst[2] + 2.0 * sx,
+                dst[3] + 2.0 * sy,
+            ],
             quad_px: [size_px[0] + 2.0 * spread, size_px[1] + 2.0 * spread],
             radius_px: radius,
             mode: 2.0,
@@ -1048,10 +1140,16 @@ impl Compositor {
         offset_px: [f32; 2],
         opacity: f32,
     ) {
-        let (min_x, max_x) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-        let (min_y, max_y) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+        let (min_x, max_x) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                (mn.min(x), mx.max(x))
+            });
+        let (min_y, max_y) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                (mn.min(y), mx.max(y))
+            });
         // La boîte de rendu doit contenir la pénombre entière, sinon elle se coupe net — le
         // quadrilatère seul ne suffit pas.
         let box_w = (max_x - min_x) + 2.0 * spread;
@@ -1107,8 +1205,21 @@ impl Compositor {
         // appel GPU, partagées avec le backend Metal. Ce qui suit ce destructure est
         // inchangé, à l'octet près.
         let crate::frame_geometry::FrameGeometry {
-            scene_preset, mb_taps, source_t, zoom_rotation, padding_scale, cut, s_dst,
-            s_dst_prev, s_ann, s_radius, frame_min_px, w_dst, w_dst_prev, w_px, w_radius,
+            scene_preset,
+            mb_taps,
+            source_t,
+            zoom_rotation,
+            padding_scale,
+            cut,
+            s_dst,
+            s_dst_prev,
+            s_ann,
+            s_radius,
+            frame_min_px,
+            w_dst,
+            w_dst_prev,
+            w_px,
+            w_radius,
             shape_fade,
         } = crate::frame_geometry::plan_frame(&crate::frame_geometry::FrameGeometryInput {
             render_px: [self.rw(), self.rh()],
@@ -1125,7 +1236,6 @@ impl Compositor {
             timeline_t_override: *self.timeline_t_override.borrow(),
         });
 
-
         self.begin([0.0, 0.0, 0.0, 1.0]);
 
         // --- fond ---
@@ -1135,7 +1245,11 @@ impl Compositor {
         // donc le wallpaper (couleur pour l'instant ; gradient/image rendus depuis la scène
         // ensuite ; pour une couleur plate le flou est un no-op visuel). Côté fixture/bench
         // (pas de scène) on garde le fond screen-flouté, dont le coût est mesuré (C4).
-        let scene_bg = self.scene.borrow().as_ref().map(|s| (s.background.clone(), s.effects.blur));
+        let scene_bg = self
+            .scene
+            .borrow()
+            .as_ref()
+            .map(|s| (s.background.clone(), s.effects.blur));
         if let Some((bg, blur_wallpaper)) = scene_bg {
             match bg {
                 SceneBackground::Color { color } => {
@@ -1148,7 +1262,10 @@ impl Compositor {
                     });
                 }
                 SceneBackground::Gradient { angle_deg, stops } => {
-                    let c0 = stops.first().and_then(|s| parse_hex(s)).unwrap_or(lp.bg_color);
+                    let c0 = stops
+                        .first()
+                        .and_then(|s| parse_hex(s))
+                        .unwrap_or(lp.bg_color);
                     let c1 = stops.last().and_then(|s| parse_hex(s)).unwrap_or(c0);
                     // angle CSS → direction unitaire (espace sortie, y vers le bas) :
                     // 0° = vers le haut, 90° = vers la droite.
@@ -1233,8 +1350,10 @@ impl Compositor {
         // deux change.
         let tilt = (!crate::regions::is_identity_rotation(zoom_rotation))
             .then(|| crate::regions::rotated_quad_corners_px(s_px[0], s_px[1], zoom_rotation));
-        let quad_center_px =
-            [(s_dst[0] + s_dst[2] * 0.5) * self.rw(), (s_dst[1] + s_dst[3] * 0.5) * self.rh()];
+        let quad_center_px = [
+            (s_dst[0] + s_dst[2] * 0.5) * self.rw(),
+            (s_dst[1] + s_dst[3] * 0.5) * self.rh(),
+        ];
         // L'ombre suit la silhouette réellement affichée : le rect arrondi quand l'écran est
         // droit, le quadrilatère projeté quand il est incliné. Un rect droit derrière un écran
         // penché ne se lisait pas comme son ombre mais comme une seconde surface. Elle suit
@@ -1290,12 +1409,16 @@ impl Compositor {
             // la perspective.
             let plane_px = [s_px[0] * quad.scale, s_px[1] * quad.scale];
             let (cx_px, cy_px) = (quad_center_px[0], quad_center_px[1]);
-            let (min_x, max_x) = corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
-                (mn.min(x), mx.max(x))
-            });
-            let (min_y, max_y) = corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
-                (mn.min(y), mx.max(y))
-            });
+            let (min_x, max_x) = corners
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                    (mn.min(x), mx.max(x))
+                });
+            let (min_y, max_y) = corners
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                    (mn.min(y), mx.max(y))
+                });
             let bbox_w = (max_x - min_x).max(1.0);
             let bbox_h = (max_y - min_y).max(1.0);
             let bbox_dst = [
@@ -1466,10 +1589,13 @@ impl Compositor {
                         // écran de `compose_frame_mb`), la somme reste correctement normalisée
                         // (alpha final ~1 si les échantillons se recouvrent), puis on la composite
                         // sur la scène par un blend "over" classique — correct quel que soit le fond.
-                        self.ctx.ClearRenderTargetView(&self.accum_rtv, &[0.0, 0.0, 0.0, 0.0]);
-                        self.ctx.OMSetRenderTargets(Some(&[Some(self.accum_rtv.clone())]), None);
+                        self.ctx
+                            .ClearRenderTargetView(&self.accum_rtv, &[0.0, 0.0, 0.0, 0.0]);
+                        self.ctx
+                            .OMSetRenderTargets(Some(&[Some(self.accum_rtv.clone())]), None);
                         let w = 1.0 / taps as f32;
-                        self.ctx.OMSetBlendState(&self.blend_add, Some(&[w, w, w, w]), 0xffffffff);
+                        self.ctx
+                            .OMSetBlendState(&self.blend_add, Some(&[w, w, w, w]), 0xffffffff);
                         for k in 0..taps {
                             let f = k as f32 / (taps - 1) as f32;
                             self.draw_cur_themed(
@@ -1482,14 +1608,21 @@ impl Compositor {
                             );
                         }
                         // composite le buffer accumulé sur la scène (blend "over" normal, prémultiplié).
-                        self.ctx.OMSetRenderTargets(Some(&[Some(self.rtv.clone())]), None);
-                        self.ctx.PSSetShaderResources(0, Some(&[Some(self.accum_srv.clone())]));
+                        self.ctx
+                            .OMSetRenderTargets(Some(&[Some(self.rtv.clone())]), None);
+                        self.ctx
+                            .PSSetShaderResources(0, Some(&[Some(self.accum_srv.clone())]));
                         self.ctx.VSSetShader(&self.vs_fs, None);
                         self.ctx.PSSetShader(&self.ps_tex, None);
-                        self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+                        self.ctx
+                            .PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
                         let vp = D3D11_VIEWPORT {
-                            TopLeftX: 0.0, TopLeftY: 0.0,
-                            Width: self.rw(), Height: self.rh(), MinDepth: 0.0, MaxDepth: 1.0,
+                            TopLeftX: 0.0,
+                            TopLeftY: 0.0,
+                            Width: self.rw(),
+                            Height: self.rh(),
+                            MinDepth: 0.0,
+                            MaxDepth: 1.0,
                         };
                         self.ctx.RSSetViewports(Some(&[vp]));
                         self.ctx.OMSetBlendState(&self.blend, None, 0xffffffff);
@@ -1589,9 +1722,8 @@ impl Compositor {
         if scene.annotations.is_empty() {
             return;
         }
-        let visible = |a: &crate::scene::SceneAnnotation| {
-            t >= a.start_sec as f32 && t < a.end_sec as f32
-        };
+        let visible =
+            |a: &crate::scene::SceneAnnotation| t >= a.start_sec as f32 && t < a.end_sec as f32;
         // Une seule recopie du render target pour TOUTES les annotations flou de la frame — leur
         // lecture doit voir l'image composée sans les flous eux-mêmes, sinon deux zones qui se
         // recouvrent s'échantillonneraient l'une l'autre selon l'ordre de dessin.
@@ -1602,7 +1734,8 @@ impl Compositor {
         if needs_copy {
             // `CopySubresourceRegion` et non `CopyResource` : les deux textures n'ont pas le même
             // nombre de niveaux, on ne remplit que le mip 0 puis on laisse le GPU dériver le reste.
-            self.ctx.CopySubresourceRegion(&self.ann_copy, 0, 0, 0, 0, &self.rt, 0, None);
+            self.ctx
+                .CopySubresourceRegion(&self.ann_copy, 0, 0, 0, 0, &self.rt, 0, None);
             self.ctx.GenerateMips(&self.ann_copy_srv);
         }
         // La liste arrive déjà triée par zIndex croissant côté app, donc l'ordre d'itération EST
@@ -1623,7 +1756,9 @@ impl Compositor {
             }
             match annotation.kind.as_str() {
                 "figure" => {
-                    let Some(figure) = annotation.figure.as_ref() else { continue };
+                    let Some(figure) = annotation.figure.as_ref() else {
+                        continue;
+                    };
                     let (segments, half_stroke) = crate::regions::arrow_local_geometry(
                         &figure.direction,
                         figure.stroke_width,
@@ -1643,7 +1778,9 @@ impl Compositor {
                     });
                 }
                 "blur" => {
-                    let Some(blur) = annotation.blur.as_ref() else { continue };
+                    let Some(blur) = annotation.blur.as_ref() else {
+                        continue;
+                    };
                     // Le masque en tracé libre demande une liste de points côté GPU (buffer
                     // structuré), pas encore faite : on masque alors la BOÎTE ENGLOBANTE.
                     //
@@ -1656,11 +1793,19 @@ impl Compositor {
                     let is_blur = if blur.style == "blur" { 1.0 } else { 0.0 };
                     // `intensity` pilote le rayon du flou, `block_size` la grille de mosaïque —
                     // deux réglages distincts côté app, un seul paramètre ici selon le style.
-                    let amount = if is_blur > 0.5 { blur.intensity } else { blur.block_size };
+                    let amount = if is_blur > 0.5 {
+                        blur.intensity
+                    } else {
+                        blur.block_size
+                    };
                     // Le repli du tracé libre passe par le rectangle, pas l'ovale : un ovale
                     // inscrit dans la boîte englobante en retirerait les coins, donc une partie de
                     // ce que l'utilisateur a couvert.
-                    let is_oval = if blur.shape == "oval" && !freehand_fallback { 1.0 } else { 0.0 };
+                    let is_oval = if blur.shape == "oval" && !freehand_fallback {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     // La teinte n'a de sens qu'en mosaïque : elle sert à marquer visiblement une
                     // zone caviardée. Un flou teinté ne ressemblerait plus à un flou.
                     let tinted = if is_blur > 0.5 { 0.0 } else { 1.0 };
@@ -1669,7 +1814,8 @@ impl Compositor {
                     } else {
                         [1.0, 1.0, 1.0, 1.0]
                     };
-                    self.ctx.PSSetShaderResources(2, Some(&[Some(self.ann_copy_srv.clone())]));
+                    self.ctx
+                        .PSSetShaderResources(2, Some(&[Some(self.ann_copy_srv.clone())]));
                     self.draw_solid(&LayerCB {
                         dst,
                         quad_px,
@@ -1680,7 +1826,9 @@ impl Compositor {
                     });
                 }
                 "image" => {
-                    let Some(src) = annotation.image_path.as_ref() else { continue };
+                    let Some(src) = annotation.image_path.as_ref() else {
+                        continue;
+                    };
                     if src.is_empty() {
                         continue;
                     }
@@ -1692,10 +1840,13 @@ impl Compositor {
                     let key = annotation.id.clone();
                     let cached = {
                         let cache = self.ann_img_cache.borrow();
-                        cache.get(&key).filter(|(_, _, _, len)| *len == src.len()).cloned()
+                        cache
+                            .get(&key)
+                            .filter(|(_, _, _, len)| *len == src.len())
+                            .cloned()
                     };
-                    let Some((srv, iw, ih, _)) = cached.or_else(|| {
-                        match self.load_image_srv(src) {
+                    let Some((srv, iw, ih, _)) =
+                        cached.or_else(|| match self.load_image_srv(src) {
                             Ok((srv, w, h)) => {
                                 let entry = (srv, w, h, src.len());
                                 self.ann_img_cache.borrow_mut().insert(key, entry.clone());
@@ -1705,8 +1856,8 @@ impl Compositor {
                                 eprintln!("[annotation image] {}: {e}", annotation.id);
                                 None
                             }
-                        }
-                    }) else {
+                        })
+                    else {
                         continue;
                     };
                     if iw == 0 || ih == 0 {
@@ -1743,8 +1894,12 @@ impl Compositor {
                     });
                 }
                 "text" => {
-                    let Some(text) = annotation.text.as_ref() else { continue };
-                    let Some(raster) = self.text_raster.as_ref() else { continue };
+                    let Some(text) = annotation.text.as_ref() else {
+                        continue;
+                    };
+                    let Some(raster) = self.text_raster.as_ref() else {
+                        continue;
+                    };
                     if text.content.trim().is_empty() {
                         continue;
                     }
@@ -1757,7 +1912,8 @@ impl Compositor {
                         color: parse_hex(&text.color).unwrap_or([1.0, 1.0, 1.0, 1.0]),
                         // "transparent" ne parse pas en hex : alpha 0 => pas de fond, ce qui est
                         // exactement la sémantique CSS.
-                        background: parse_hex(&text.background_color).unwrap_or([0.0, 0.0, 0.0, 0.0]),
+                        background: parse_hex(&text.background_color)
+                            .unwrap_or([0.0, 0.0, 0.0, 0.0]),
                         font_size_px: text.font_size_rel * screen_h_px,
                         font_family: text.font_family.clone(),
                         bold: text.font_weight == "bold",
@@ -1769,7 +1925,10 @@ impl Compositor {
                     let key = spec.cache_key();
                     let cached = {
                         let cache = self.text_cache.borrow();
-                        cache.get(&annotation.id).filter(|(_, k)| *k == key).map(|(srv, _)| srv.clone())
+                        cache
+                            .get(&annotation.id)
+                            .filter(|(_, k)| *k == key)
+                            .map(|(srv, _)| srv.clone())
                     };
                     let Some(srv) = cached.or_else(|| match raster.rasterize(&self.dev, &spec) {
                         Ok(srv) => {
@@ -1850,23 +2009,32 @@ impl Compositor {
             return self.compose_frame(screen, webcam, frame as f32, cfg);
         }
         // accumulateur à zéro
-        self.ctx.ClearRenderTargetView(&self.accum_rtv, &[0.0, 0.0, 0.0, 0.0]);
+        self.ctx
+            .ClearRenderTargetView(&self.accum_rtv, &[0.0, 0.0, 0.0, 0.0]);
         let w = 1.0 / n as f32;
         for k in 0..n {
             let tf = frame as f32 + (k as f32 + 0.5) / n as f32 - 0.5;
             self.compose_frame(screen, webcam, tf, cfg)?; // -> self.rt
-            // accum += rt * (1/n)  (blend factor = 1/n, dest = ONE)
-            self.ctx.OMSetRenderTargets(Some(&[Some(self.accum_rtv.clone())]), None);
-            self.ctx.PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
+                                                          // accum += rt * (1/n)  (blend factor = 1/n, dest = ONE)
+            self.ctx
+                .OMSetRenderTargets(Some(&[Some(self.accum_rtv.clone())]), None);
+            self.ctx
+                .PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
             self.ctx.VSSetShader(&self.vs_fs, None);
             self.ctx.PSSetShader(&self.ps_tex, None);
-            self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+            self.ctx
+                .PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
             let vp = D3D11_VIEWPORT {
-                TopLeftX: 0.0, TopLeftY: 0.0,
-                Width: self.rw(), Height: self.rh(), MinDepth: 0.0, MaxDepth: 1.0,
+                TopLeftX: 0.0,
+                TopLeftY: 0.0,
+                Width: self.rw(),
+                Height: self.rh(),
+                MinDepth: 0.0,
+                MaxDepth: 1.0,
             };
             self.ctx.RSSetViewports(Some(&[vp]));
-            self.ctx.OMSetBlendState(&self.blend_add, Some(&[w, w, w, w]), 0xffffffff);
+            self.ctx
+                .OMSetBlendState(&self.blend_add, Some(&[w, w, w, w]), 0xffffffff);
             self.upload_cb(&LayerCB::default());
             self.ctx.Draw(3, 0);
             self.ctx.PSSetShaderResources(0, Some(&[None]));
@@ -1882,9 +2050,12 @@ impl Compositor {
     pub unsafe fn rgb_to_nv12(&self, out_tex: *mut c_void, slice: u32) -> Result<()> {
         self.render_nv12();
         let src: ID3D11Resource = self.nv12.cast()?;
-        let dst_tex = ID3D11Texture2D::from_raw_borrowed(&out_tex).unwrap().clone();
+        let dst_tex = ID3D11Texture2D::from_raw_borrowed(&out_tex)
+            .unwrap()
+            .clone();
         let dst: ID3D11Resource = dst_tex.cast()?;
-        self.ctx.CopySubresourceRegion(&dst, slice, 0, 0, 0, &src, 0, None);
+        self.ctx
+            .CopySubresourceRegion(&dst, slice, 0, 0, 0, &src, 0, None);
         Ok(())
     }
 
@@ -1903,7 +2074,10 @@ impl Compositor {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
@@ -1913,9 +2087,11 @@ impl Compositor {
         self.dev.CreateTexture2D(&rd, None, Some(&mut rgba))?;
         let rgba = rgba.unwrap();
         let mut rgba_rtv: Option<ID3D11RenderTargetView> = None;
-        self.dev.CreateRenderTargetView(&rgba, None, Some(&mut rgba_rtv))?;
+        self.dev
+            .CreateRenderTargetView(&rgba, None, Some(&mut rgba_rtv))?;
         let mut rgba_srv: Option<ID3D11ShaderResourceView> = None;
-        self.dev.CreateShaderResourceView(&rgba, None, Some(&mut rgba_srv))?;
+        self.dev
+            .CreateShaderResourceView(&rgba, None, Some(&mut rgba_srv))?;
 
         // NV12 non-array à la taille cible (même contrainte que le NV12 principal).
         let nvd = D3D11_TEXTURE2D_DESC {
@@ -1924,7 +2100,10 @@ impl Compositor {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_NV12,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
@@ -1937,10 +2116,13 @@ impl Compositor {
             let d = D3D11_RENDER_TARGET_VIEW_DESC {
                 Format: fmt,
                 ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
-                Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 } },
+                Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                    Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 },
+                },
             };
             let mut rtv: Option<ID3D11RenderTargetView> = None;
-            self.dev.CreateRenderTargetView(&nv12, Some(&d), Some(&mut rtv))?;
+            self.dev
+                .CreateRenderTargetView(&nv12, Some(&d), Some(&mut rtv))?;
             Ok(rtv.unwrap())
         };
         let nv12_rtv_y = mk_rtv(DXGI_FORMAT_R8_UNORM)?;
@@ -1974,14 +2156,21 @@ impl Compositor {
         let cache = self.resize_target.borrow();
         let t = cache.as_ref().unwrap();
         self.ctx.OMSetBlendState(&self.blend_none, None, 0xffffffff);
-        self.ctx.OMSetRenderTargets(Some(&[Some(t.rgba_rtv.clone())]), None);
-        self.ctx.PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(t.rgba_rtv.clone())]), None);
+        self.ctx
+            .PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
         self.ctx.VSSetShader(&self.vs_fs, None);
         self.ctx.PSSetShader(&self.ps_tex, None);
-        self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+        self.ctx
+            .PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
         let vp = D3D11_VIEWPORT {
-            TopLeftX: 0.0, TopLeftY: 0.0,
-            Width: target_w as f32, Height: target_h as f32, MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: target_w as f32,
+            Height: target_h as f32,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp]));
         self.ctx.Draw(3, 0);
@@ -2005,11 +2194,7 @@ impl Compositor {
     /// Pré-requis : `target_w`/`target_h` ≥ 1. Aucun effet sur le pipeline d'export
     /// (les sites d'appel de `rgb_to_nv12_scaled` et `blit_resized` ne sont pas touchés
     /// — ce helper réutilise `blit_resized` mais n'est pas sur le chemin d'export).
-    pub unsafe fn readback_resized(
-        &self,
-        target_w: u32,
-        target_h: u32,
-    ) -> Result<Vec<u8>> {
+    pub unsafe fn readback_resized(&self, target_w: u32, target_h: u32) -> Result<Vec<u8>> {
         // `ensure_resize_target` (partagé avec l'export) crée INCONDITIONNELLEMENT une
         // texture NV12 en plus de la RGBA, même si ce chemin RGBA-only ne s'en sert jamais —
         // et NV12 (4:2:0, chroma sous-échantillonnée 2×2) exige des dimensions PAIRES.
@@ -2060,7 +2245,10 @@ impl Compositor {
                         // `ensure_resize_target` (R8G8B8A8_UNORM) — la `CopyResource`
                         // est valide sans conversion GPU.
                         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
                         Usage: D3D11_USAGE_STAGING,
                         BindFlags: 0,
                         CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
@@ -2115,7 +2303,8 @@ impl Compositor {
         let (rw, rh) = self.render_dims();
         self.ctx.CopyResource(&self.staging, &self.rt);
         let mut m = D3D11_MAPPED_SUBRESOURCE::default();
-        self.ctx.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
+        self.ctx
+            .Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
         // Copie ligne par ligne qui respecte `RowPitch` (la staging peut être paddée par le
         // driver) — même idiome que `dump_raw`/`readback_resized`.
         let row = (rw * 4) as usize;
@@ -2150,9 +2339,12 @@ impl Compositor {
         // vers le pool de l'encodeur matériel — la seule partie qui lui soit propre.
         let src_tex = self.nv12_source(target_w, target_h)?;
         let src: ID3D11Resource = src_tex.cast()?;
-        let dst_tex = ID3D11Texture2D::from_raw_borrowed(&out_tex).unwrap().clone();
+        let dst_tex = ID3D11Texture2D::from_raw_borrowed(&out_tex)
+            .unwrap()
+            .clone();
         let dst: ID3D11Resource = dst_tex.cast()?;
-        self.ctx.CopySubresourceRegion(&dst, slice, 0, 0, 0, &src, 0, None);
+        self.ctx
+            .CopySubresourceRegion(&dst, slice, 0, 0, 0, &src, 0, None);
         Ok(())
     }
 
@@ -2172,20 +2364,31 @@ impl Compositor {
         self.blit_resized(target_w, target_h)?;
         let cache = self.resize_target.borrow();
         let t = cache.as_ref().unwrap();
-        self.ctx.OMSetRenderTargets(Some(&[Some(t.nv12_rtv_y.clone())]), None);
-        self.ctx.PSSetShaderResources(0, Some(&[Some(t.rgba_srv.clone())]));
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(t.nv12_rtv_y.clone())]), None);
+        self.ctx
+            .PSSetShaderResources(0, Some(&[Some(t.rgba_srv.clone())]));
         let vp_y = D3D11_VIEWPORT {
-            TopLeftX: 0.0, TopLeftY: 0.0,
-            Width: target_w as f32, Height: target_h as f32, MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: target_w as f32,
+            Height: target_h as f32,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp_y]));
         self.ctx.PSSetShader(&self.ps_y, None);
         self.ctx.Draw(3, 0);
 
-        self.ctx.OMSetRenderTargets(Some(&[Some(t.nv12_rtv_uv.clone())]), None);
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(t.nv12_rtv_uv.clone())]), None);
         let vp_uv = D3D11_VIEWPORT {
-            TopLeftX: 0.0, TopLeftY: 0.0,
-            Width: (target_w / 2) as f32, Height: (target_h / 2) as f32, MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: (target_w / 2) as f32,
+            Height: (target_h / 2) as f32,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp_uv]));
         self.ctx.PSSetShader(&self.ps_uv, None);
@@ -2225,7 +2428,10 @@ impl Compositor {
                 MipLevels: 1,
                 ArraySize: 1,
                 Format: DXGI_FORMAT_NV12,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
                 Usage: D3D11_USAGE_STAGING,
                 BindFlags: 0,
                 CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
@@ -2265,25 +2471,37 @@ impl Compositor {
     pub unsafe fn render_nv12(&self) {
         self.ctx.OMSetBlendState(&self.blend_none, None, 0xffffffff);
         self.ctx.VSSetShader(&self.vs_fs, None);
-        self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+        self.ctx
+            .PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
 
         // passe Y : basculer le RT AVANT de binder le SRV (le RGBA RT était encore RTV via
         // begin() ; D3D11 rejetterait le SRV d'une ressource encore liée en RTV).
-        self.ctx.OMSetRenderTargets(Some(&[Some(self.rtv_y.clone())]), None);
-        self.ctx.PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(self.rtv_y.clone())]), None);
+        self.ctx
+            .PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
         let vp_y = D3D11_VIEWPORT {
-            TopLeftX: 0.0, TopLeftY: 0.0,
-            Width: self.rw(), Height: self.rh(), MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: self.rw(),
+            Height: self.rh(),
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp_y]));
         self.ctx.PSSetShader(&self.ps_y, None);
         self.ctx.Draw(3, 0);
 
         // passe UV (demi-résolution)
-        self.ctx.OMSetRenderTargets(Some(&[Some(self.rtv_uv.clone())]), None);
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(self.rtv_uv.clone())]), None);
         let vp_uv = D3D11_VIEWPORT {
-            TopLeftX: 0.0, TopLeftY: 0.0,
-            Width: self.rw() / 2.0, Height: self.rh() / 2.0, MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: self.rw() / 2.0,
+            Height: self.rh() / 2.0,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp_uv]));
         self.ctx.PSSetShader(&self.ps_uv, None);
@@ -2301,7 +2519,10 @@ impl Compositor {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_NV12,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: D3D11_USAGE_STAGING,
             BindFlags: 0,
             CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
@@ -2337,7 +2558,8 @@ impl Compositor {
     pub unsafe fn dump_raw(&self, path: &str) -> Result<()> {
         self.ctx.CopyResource(&self.staging, &self.rt);
         let mut m = D3D11_MAPPED_SUBRESOURCE::default();
-        self.ctx.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
+        self.ctx
+            .Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
         let (rw_i, rh_i) = self.render_dims();
         let mut out = vec![0u8; (rw_i * rh_i * 4) as usize];
         for y in 0..rh_i as usize {
@@ -2356,14 +2578,23 @@ impl Compositor {
     /// Le caller a déjà clear le RTV (barres letterbox) avant l'appel.
     pub unsafe fn blit_to(&self, rtv: &ID3D11RenderTargetView, x: f32, y: f32, w: f32, h: f32) {
         self.ctx.OMSetBlendState(&self.blend_none, None, 0xffffffff);
-        self.ctx.OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
-        self.ctx.PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
+        self.ctx
+            .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
+        self.ctx
+            .PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
         self.ctx.VSSetShader(&self.vs_fs, None);
         self.ctx.PSSetShader(&self.ps_tex, None);
-        self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
-        self.ctx.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+        self.ctx
+            .PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+        self.ctx
+            .IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         let vp = D3D11_VIEWPORT {
-            TopLeftX: x, TopLeftY: y, Width: w, Height: h, MinDepth: 0.0, MaxDepth: 1.0,
+            TopLeftX: x,
+            TopLeftY: y,
+            Width: w,
+            Height: h,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         };
         self.ctx.RSSetViewports(Some(&[vp]));
         self.upload_cb(&LayerCB::default());
@@ -2381,7 +2612,6 @@ impl Compositor {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     /// Le HLSL est compilé au démarrage du compositeur : jusqu'ici une faute dedans ne se voyait
     /// qu'à l'exécution, donc après un rebuild du natif ET un relancement de l'app. `D3DCompile`
@@ -2406,5 +2636,4 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{name} ne compile pas : {e}"));
         }
     }
-
 }

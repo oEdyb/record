@@ -33,19 +33,21 @@ import styles from "./LaunchWindow.module.css";
 
 const hudDisabledClasses =
 	"disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none";
+const hudFocusClasses =
+	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ea5bf] focus-visible:ring-offset-2 focus-visible:ring-offset-[#101318]";
 
 // Exact values from the design's renderVals() (comfortable density, rounded
 // shape) — btnSize 34 / btnRadius 10 / containerRadius 17
 // (btnRadius + padY) / dividerLen 22. Every control is its own standalone
 // transparent icon button (no shared "group" pill background) — grouping
 // reads purely from proximity + the divider spans between logical sections.
-const hudIconBtnClasses = `flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-all duration-150 hover:bg-[#1a1e25] hover:text-[#f5f7fa] active:scale-95 ${hudDisabledClasses} ${styles.electronNoDrag}`;
+const hudIconBtnClasses = `flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-all duration-150 hover:bg-[#1a1e25] hover:text-[#f5f7fa] active:scale-95 ${hudFocusClasses} ${hudDisabledClasses} ${styles.electronNoDrag}`;
 
-const hudAuxIconBtnClasses = `flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-colors duration-150 hover:bg-[#1a1e25] hover:text-[#f5f7fa] ${hudDisabledClasses}`;
+const hudAuxIconBtnClasses = `flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-colors duration-150 hover:bg-[#1a1e25] hover:text-[#f5f7fa] ${hudFocusClasses} ${hudDisabledClasses}`;
 
-const windowBtnClasses = `flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-all duration-150 hover:bg-[#1a1e25] hover:text-[#e9edf3] ${hudDisabledClasses}`;
+const windowBtnClasses = `flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-all duration-150 hover:bg-[#1a1e25] hover:text-[#e9edf3] ${hudFocusClasses} ${hudDisabledClasses}`;
 
-const closeBtnClasses = `flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-all duration-150 hover:bg-[rgba(248,113,113,0.16)] hover:text-[#f87171] ${hudDisabledClasses}`;
+const closeBtnClasses = `flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] border-0 bg-transparent cursor-pointer text-[#828c99] transition-all duration-150 hover:bg-[rgba(248,113,113,0.16)] hover:text-[#f87171] ${hudFocusClasses} ${hudDisabledClasses}`;
 
 export const HudDivider = memo(function HudDivider({ vertical }: { vertical: boolean }) {
 	return (
@@ -136,8 +138,9 @@ export const HudSourceButton = memo(function HudSourceButton({
 }) {
 	return (
 		<button
+			type="button"
 			data-testid="launch-source-selector-button"
-			className={`flex h-[34px] shrink-0 items-center gap-[7px] rounded-[10px] border-0 bg-transparent text-[#f5f7fa] transition-all duration-150 hover:bg-[#1a1e25] active:scale-[0.97] ${hudDisabledClasses} ${
+			className={`flex h-[34px] shrink-0 items-center gap-[7px] rounded-[10px] border-0 bg-transparent text-[#f5f7fa] transition-all duration-150 hover:bg-[#1a1e25] active:scale-[0.97] ${hudFocusClasses} ${hudDisabledClasses} ${
 				vertical ? "w-[34px] justify-center px-0" : "pr-3 pl-2.5"
 			} ${styles.electronNoDrag}`}
 			onClick={onClick}
@@ -166,8 +169,10 @@ export const HudSystemAudioButton = memo(function HudSystemAudioButton({
 }) {
 	return (
 		<button
+			type="button"
 			data-testid="launch-system-audio-button"
 			className={hudIconBtnClasses}
+			aria-pressed={enabled}
 			onClick={onClick}
 			disabled={disabled}
 			title={label}
@@ -190,6 +195,7 @@ export const HudMicButton = memo(function HudMicButton({
 }) {
 	return (
 		<button
+			type="button"
 			data-testid="launch-microphone-button"
 			className={hudIconBtnClasses}
 			aria-pressed={enabled}
@@ -215,6 +221,7 @@ export const HudCameraButton = memo(function HudCameraButton({
 }) {
 	return (
 		<button
+			type="button"
 			data-testid="launch-webcam-button"
 			className={hudIconBtnClasses}
 			aria-pressed={enabled}
@@ -274,12 +281,14 @@ export const HudCursorButton = memo(function HudCursorButton({
 }) {
 	return (
 		<button
+			type="button"
 			data-testid="launch-cursor-mode-button"
-			className={`flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border-0 cursor-pointer transition-all duration-150 active:scale-95 ${hudDisabledClasses} ${styles.electronNoDrag} ${
+			className={`flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border-0 cursor-pointer transition-all duration-150 active:scale-95 ${hudFocusClasses} ${hudDisabledClasses} ${styles.electronNoDrag} ${
 				editableOverlay
 					? "bg-[var(--accent)] text-[var(--accent-on)] hover:bg-[var(--brand-lo)]"
 					: "bg-transparent text-[#828c99] hover:bg-[#1a1e25] hover:text-[#f5f7fa]"
 			}`}
+			aria-pressed={editableOverlay}
 			onClick={onClick}
 			disabled={disabled}
 			title={label}
@@ -311,9 +320,10 @@ export const HudRecordButton = memo(function HudRecordButton({
 	return (
 		<Tooltip content={label}>
 			<button
+				type="button"
 				data-testid="launch-record-button"
 				disabled={disabled}
-				className={`flex h-[34px] shrink-0 items-center justify-center rounded-[17px] border-0 transition-all duration-150 ${recording || saving ? "min-w-[86px] px-3" : "w-[34px]"} ${styles.electronNoDrag} ${
+				className={`flex h-[34px] shrink-0 items-center justify-center rounded-[17px] border-0 transition-all duration-150 ${recording || saving ? "min-w-[86px] px-3" : "w-[34px]"} ${hudFocusClasses} ${styles.electronNoDrag} ${
 					saving
 						? "bg-transparent opacity-60 cursor-not-allowed"
 						: recording
@@ -365,6 +375,8 @@ export const HudStudioButton = memo(function HudStudioButton({
 		<Tooltip content={label}>
 			<button
 				data-testid="launch-open-studio-button"
+				type="button"
+				aria-label={label}
 				disabled={disabled}
 				className={`${hudIconBtnClasses} ${disabled ? "opacity-30 cursor-not-allowed pointer-events-none" : ""}`}
 				onClick={onClick}
@@ -588,7 +600,7 @@ export const HudLanguageButton = memo(function HudLanguageButton({
 			title={label}
 			className={`flex h-[34px] items-center rounded-[10px] border-0 bg-transparent text-[#828c99] transition-all duration-150 hover:bg-[#1a1e25] hover:text-[#e9edf3] ${
 				vertical ? "w-[34px] justify-center px-0" : "gap-1.5 px-2.5"
-			} ${styles.electronNoDrag} ${disabled ? "opacity-30 cursor-not-allowed pointer-events-none" : ""}`}
+			} ${hudFocusClasses} ${styles.electronNoDrag} ${disabled ? "opacity-30 cursor-not-allowed pointer-events-none" : ""}`}
 		>
 			<Languages size={16} className="shrink-0" />
 			<span
@@ -617,10 +629,24 @@ export const HudWindowControls = memo(function HudWindowControls({
 }) {
 	return (
 		<div className={`flex items-center gap-[5px] ${vertical ? "flex-col" : ""}`}>
-			<button className={windowBtnClasses} title={hideLabel} onClick={onHide} disabled={disabled}>
+			<button
+				type="button"
+				className={windowBtnClasses}
+				title={hideLabel}
+				aria-label={hideLabel}
+				onClick={onHide}
+				disabled={disabled}
+			>
 				{getIcon("minimize")}
 			</button>
-			<button className={closeBtnClasses} title={closeLabel} onClick={onClose} disabled={disabled}>
+			<button
+				type="button"
+				className={closeBtnClasses}
+				title={closeLabel}
+				aria-label={closeLabel}
+				onClick={onClose}
+				disabled={disabled}
+			>
 				{getIcon("close")}
 			</button>
 		</div>

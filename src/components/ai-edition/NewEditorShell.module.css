@@ -453,6 +453,9 @@
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
+.titlebar .projectInput:focus-visible {
+	box-shadow: var(--focus-ring);
+}
 .titlebar .saved {
 	display: inline-flex;
 	align-items: center;
@@ -2741,6 +2744,10 @@
 	margin: 4px 0 0;
 	font: 400 var(--fs-app)/1.5 var(--font-body);
 	color: var(--muted);
+}
+.modalSearchInput:focus-visible {
+	border-color: var(--editor-accent-border) !important;
+	box-shadow: 0 0 0 2px var(--editor-accent-ring);
 }
 .modalHead .closeBtn {
 	width: 28px;

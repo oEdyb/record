@@ -1,0 +1,120 @@
+{
+	"schemaVersion": 1,
+	"package": {
+		"name": "web-demuxer",
+		"version": "4.0.0",
+		"npmTarball": "https://registry.npmjs.org/web-demuxer/-/web-demuxer-4.0.0.tgz",
+		"npmIntegrity": "sha512-QFsKe8SNjP6MDtAw2lWfyVmX2wXIpDUT+9p2KHXJb5OPWdhVbjBHcV06tDMXzuU1T6Y1P9TRm9bkeVXEwy0dVw==",
+		"repository": "https://github.com/bilibili/web-demuxer",
+		"tag": "4.0.0",
+		"commit": "91721712b063bd65ac5963aa4e03e7eda4b17eff",
+		"license": "MIT"
+	},
+	"ffmpeg": {
+		"repository": "https://github.com/FFmpeg/FFmpeg",
+		"commit": "e38092ef9395d7049f871ef4d5411eb410e283e0",
+		"license": "LGPL-2.1-or-later"
+	},
+	"toolchain": {
+		"emscriptenVersion": "3.1.60",
+		"linuxAmd64Image": "emscripten/emsdk@sha256:4a26506945f16291db0dbe5831bcd2748548f2f09c56bdc7de9a3ab2370ec127"
+	},
+	"binary": {
+		"path": "public/wasm/web-demuxer.wasm",
+		"npmPath": "node_modules/web-demuxer/dist/wasm-files/web-demuxer.wasm",
+		"size": 3150317,
+		"sha256": "f33a4d44f60dc2e6ca63b06063ae6de575b2b86cd45d92378e21bd8a01ff12d7"
+	},
+	"build": {
+		"configureFlags": [
+			"--target-os=none",
+			"--arch=x86_32",
+			"--cc=emcc",
+			"--ranlib=emranlib",
+			"--disable-all",
+			"--disable-asm",
+			"--enable-avcodec",
+			"--enable-avformat",
+			"--enable-protocol=file",
+			"--enable-decoder=h264,hevc,vp9,vp8",
+			"--enable-demuxer=mov,mp4,m4a,3gp,3g2,mj2,avi,flv,matroska,webm,m4v,mpeg,asf,mpegts"
+		],
+		"linkFlags": [
+			"-lembind",
+			"-I./lib/FFmpeg",
+			"-L./lib/FFmpeg/libavformat",
+			"-lavformat",
+			"-L./lib/FFmpeg/libavutil",
+			"-lavutil",
+			"-L./lib/FFmpeg/libavcodec",
+			"-lavcodec",
+			"--post-js",
+			"./lib/web-demuxer/post.js",
+			"-lworkerfs.js",
+			"-O3",
+			"-s",
+			"EXPORT_ES6=1",
+			"-s",
+			"INVOKE_RUN=0",
+			"-s",
+			"ENVIRONMENT=worker",
+			"-s",
+			"ALLOW_MEMORY_GROWTH=1"
+		]
+	},
+	"sourceArchives": [
+		{
+			"fileName": "web-demuxer-4.0.0-source.tar.gz",
+			"url": "https://github.com/bilibili/web-demuxer/archive/91721712b063bd65ac5963aa4e03e7eda4b17eff.tar.gz",
+			"size": 9250007,
+			"sha256": "06afd73d7e49df0d95b9dfe20e12ac842acad646a8cb0041215b36e4eaf0d5a4"
+		},
+		{
+			"fileName": "ffmpeg-e38092ef9395-source.tar.gz",
+			"url": "https://github.com/FFmpeg/FFmpeg/archive/e38092ef9395d7049f871ef4d5411eb410e283e0.tar.gz",
+			"size": 15113045,
+			"sha256": "7578feb5284b22e6172c6f4020ddc43d746eb3ca44363756d1b47a96fd2d68f5"
+		}
+	],
+	"nativeFfmpeg": {
+		"license": "LGPL-2.1-or-later",
+		"macos": {
+			"version": "8.1.2",
+			"buildCommand": "./configure <the exact target configuration in the target manifest> && make && make install"
+		},
+		"btbn": {
+			"releaseTag": "autobuild-2026-07-31-14-10",
+			"buildCommit": "a99e8230eae00d1cee38f23076a7a1f55cd984e2",
+			"ffmpegCommit": "9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b",
+			"buildCommands": {
+				"win32-x64": "./makeimage.sh win64 lgpl-shared 8.1 && ./build.sh win64 lgpl-shared 8.1",
+				"win32-arm64": "./makeimage.sh winarm64 lgpl-shared 8.1 && ./build.sh winarm64 lgpl-shared 8.1",
+				"linux-x64": "./makeimage.sh linux64 lgpl-shared 8.1 && ./build.sh linux64 lgpl-shared 8.1",
+				"linux-arm64": "./makeimage.sh linuxarm64 lgpl-shared 8.1 && ./build.sh linuxarm64 lgpl-shared 8.1"
+			}
+		},
+		"sourceArchives": [
+			{
+				"fileName": "ffmpeg-8.1.2-macos-source.tar.xz",
+				"url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
+				"size": 11710924,
+				"sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c",
+				"targets": ["darwin-arm64", "darwin-x64"]
+			},
+			{
+				"fileName": "ffmpeg-9b6c8969e05b-source.tar.gz",
+				"url": "https://github.com/FFmpeg/FFmpeg/archive/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b.tar.gz",
+				"size": 16903934,
+				"sha256": "7e779215eae16ad7e93ddad59bd82822bd3d34e4dc61f9996f9481b2c0605bc3",
+				"targets": ["win32-x64", "win32-arm64", "linux-x64", "linux-arm64"]
+			},
+			{
+				"fileName": "btbn-ffmpeg-builds-a99e8230eae0-source.tar.gz",
+				"url": "https://github.com/BtbN/FFmpeg-Builds/archive/a99e8230eae00d1cee38f23076a7a1f55cd984e2.tar.gz",
+				"size": 101671,
+				"sha256": "7deac4a5190b2be84d4d548db2885d05152f9e3d77069d0e34841a46efd95e2b",
+				"targets": ["win32-x64", "win32-arm64", "linux-x64", "linux-arm64"]
+			}
+		]
+	}
+}

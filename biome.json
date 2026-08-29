@@ -3,7 +3,14 @@
 	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
 	"files": {
 		"ignoreUnknown": false,
-		"includes": ["**", "!**/*.css", "!**/design/**", "!**/.worktrees/**"]
+		"includes": [
+			"**",
+			"!**/*.css",
+			"!**/design/**",
+			"!**/.worktrees/**",
+			"!THIRD-PARTY-INVENTORY.json",
+			"!supply-chain/cargo-license-inventory.json"
+		]
 	},
 	"formatter": {
 		"enabled": true,
@@ -101,7 +108,9 @@
 			"**/.eslintrc.cjs",
 			"!**/*.css",
 			"!**/design/**",
-			"!**/.worktrees/**"
+			"!**/.worktrees/**",
+			"!THIRD-PARTY-INVENTORY.json",
+			"!supply-chain/cargo-license-inventory.json"
 		]
 	},
 	"javascript": { "formatter": { "quoteStyle": "double" } },

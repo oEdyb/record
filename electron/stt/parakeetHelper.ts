@@ -17,6 +17,8 @@ interface PendingRequest {
 	reject: (reason: Error) => void;
 	timer: ReturnType<typeof setTimeout>;
 	samples: Float32Array;
+	removeAbortListener: () => void;
+	child: ChildProcessWithoutNullStreams;
 }
 
 interface HelperMessage {
@@ -32,6 +34,12 @@ interface HelperMessage {
 export interface ParakeetStartOptions {
 	modelDir: string;
 	binaryPath?: string | null;
+}
+
+function cancelledError(): Error {
+	const error = new Error("Transcription cancelled");
+	error.name = "AbortError";
+	return error;
 }
 
 function readAppPath(): string | null {
@@ -82,17 +90,18 @@ export class ParakeetHelperManager {
 		return this.child !== null && this.child.exitCode === null;
 	}
 
-	start(options: ParakeetStartOptions): Promise<void> {
+	start(options: ParakeetStartOptions, signal?: AbortSignal): Promise<void> {
+		if (signal?.aborted) return Promise.reject(cancelledError());
 		if (this.running) return Promise.resolve();
 		if (this.startPromise) return this.startPromise;
 		this.lastOptions = options;
-		this.startPromise = this.spawnHelper(options).finally(() => {
+		this.startPromise = this.spawnHelper(options, signal).finally(() => {
 			this.startPromise = null;
 		});
 		return this.startPromise;
 	}
 
-	private spawnHelper(options: ParakeetStartOptions): Promise<void> {
+	private spawnHelper(options: ParakeetStartOptions, signal?: AbortSignal): Promise<void> {
 		const binaryPath = options.binaryPath ?? resolveParakeetBinaryPath();
 		if (!binaryPath) return Promise.reject(new Error("Parakeet STT helper is not available."));
 
@@ -102,12 +111,28 @@ export class ParakeetHelperManager {
 				stdio: ["pipe", "pipe", "pipe"],
 			});
 			this.child = child;
+			const removeAbortListener = () => signal?.removeEventListener("abort", onAbort);
+			const onAbort = () => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				removeAbortListener();
+				if (this.child === child) this.child = null;
+				child.kill("SIGKILL");
+				reject(cancelledError());
+			};
 			const timer = setTimeout(() => {
 				if (settled) return;
 				settled = true;
+				removeAbortListener();
 				child.kill("SIGKILL");
 				reject(new Error("Parakeet STT helper did not become ready."));
 			}, START_TIMEOUT_MS);
+			signal?.addEventListener("abort", onAbort, { once: true });
+			if (signal?.aborted) {
+				onAbort();
+				return;
+			}
 
 			const lines = createInterface({ input: child.stdout });
 			lines.on("line", (line) => {
@@ -120,16 +145,18 @@ export class ParakeetHelperManager {
 				if (!settled && message.type === "ready") {
 					settled = true;
 					clearTimeout(timer);
+					removeAbortListener();
 					resolve();
 					return;
 				}
 				if (!settled && message.type === "error" && !message.id) {
 					settled = true;
 					clearTimeout(timer);
+					removeAbortListener();
 					reject(new Error(message.error ?? "Parakeet STT helper failed to start."));
 					return;
 				}
-				this.handleMessage(message);
+				this.handleMessage(message, child);
 			});
 
 			child.stderr.on("data", (chunk: Buffer) => {
@@ -140,9 +167,10 @@ export class ParakeetHelperManager {
 				if (!settled) {
 					settled = true;
 					clearTimeout(timer);
+					removeAbortListener();
 					reject(error);
 				}
-				this.failPending(error);
+				this.failPending(error, child);
 			});
 			child.once("exit", (code, signal) => {
 				if (this.child === child) this.child = null;
@@ -150,19 +178,21 @@ export class ParakeetHelperManager {
 				if (!settled) {
 					settled = true;
 					clearTimeout(timer);
+					removeAbortListener();
 					reject(error);
 				}
-				this.failPending(error);
+				this.failPending(error, child);
 			});
 		});
 	}
 
-	private handleMessage(message: HelperMessage): void {
+	private handleMessage(message: HelperMessage, child: ChildProcessWithoutNullStreams): void {
 		if (!message.id) return;
 		const pending = this.pending.get(message.id);
-		if (!pending) return;
+		if (!pending || pending.child !== child) return;
 		this.pending.delete(message.id);
 		clearTimeout(pending.timer);
+		pending.removeAbortListener();
 
 		if (message.type === "error") {
 			pending.reject(new Error(message.error ?? "Parakeet transcription failed."));
@@ -188,21 +218,26 @@ export class ParakeetHelperManager {
 		});
 	}
 
-	private failPending(error: Error): void {
-		for (const pending of this.pending.values()) {
+	private failPending(error: Error, child?: ChildProcessWithoutNullStreams): void {
+		for (const [id, pending] of this.pending) {
+			if (child && pending.child !== child) continue;
+			this.pending.delete(id);
 			clearTimeout(pending.timer);
+			pending.removeAbortListener();
 			pending.reject(error);
 		}
-		this.pending.clear();
 	}
 
 	async transcribe(request: {
 		samples: Float32Array;
 		language?: string;
+		signal?: AbortSignal;
 	}): Promise<SttTranscribeResponse> {
+		if (request.signal?.aborted) throw cancelledError();
 		if (!this.running) {
 			if (!this.lastOptions) throw new Error("Parakeet STT helper is not initialized.");
-			await this.start(this.lastOptions);
+			await this.start(this.lastOptions, request.signal);
+			if (request.signal?.aborted) throw cancelledError();
 		}
 		const child = this.child;
 		if (!child) throw new Error("Parakeet STT helper is not running.");
@@ -210,9 +245,29 @@ export class ParakeetHelperManager {
 		const wavPath = await writeSamplesAsWav(request.samples);
 		const id = randomUUID();
 		try {
+			if (request.signal?.aborted) throw cancelledError();
 			return await new Promise<SttTranscribeResponse>((resolve, reject) => {
-				const timer = setTimeout(() => {
+				const onAbort = () => {
+					const pending = this.pending.get(id);
+					if (!pending) return;
 					this.pending.delete(id);
+					clearTimeout(pending.timer);
+					pending.removeAbortListener();
+					// The helper protocol has no per-request cancellation. Stop the
+					// process so Core ML cannot keep an abandoned chunk in flight.
+					if (this.child === child) {
+						this.child = null;
+						child.kill("SIGKILL");
+					}
+					reject(cancelledError());
+				};
+				request.signal?.addEventListener("abort", onAbort, { once: true });
+				const removeAbortListener = () => request.signal?.removeEventListener("abort", onAbort);
+				const timer = setTimeout(() => {
+					const pending = this.pending.get(id);
+					if (!pending) return;
+					this.pending.delete(id);
+					pending.removeAbortListener();
 					// The helper may still have the temporary WAV open. Kill it before
 					// `finally` removes that file; the retry starts a clean process.
 					if (this.child === child) {
@@ -221,7 +276,18 @@ export class ParakeetHelperManager {
 					}
 					reject(new Error("Parakeet transcription timed out."));
 				}, REQUEST_TIMEOUT_MS);
-				this.pending.set(id, { resolve, reject, timer, samples: request.samples });
+				this.pending.set(id, {
+					resolve,
+					reject,
+					timer,
+					samples: request.samples,
+					removeAbortListener,
+					child,
+				});
+				if (request.signal?.aborted) {
+					onAbort();
+					return;
+				}
 				child.stdin.write(
 					`${JSON.stringify({ id, audioPath: wavPath, language: request.language })}\n`,
 					(error) => {
@@ -230,6 +296,7 @@ export class ParakeetHelperManager {
 						if (!pending) return;
 						this.pending.delete(id);
 						clearTimeout(pending.timer);
+						pending.removeAbortListener();
 						reject(error);
 					},
 				);
@@ -239,10 +306,11 @@ export class ParakeetHelperManager {
 		}
 	}
 
-	async restart(): Promise<void> {
+	async restart(signal?: AbortSignal): Promise<void> {
 		const options = this.lastOptions;
 		await this.stop();
-		if (options) await this.start(options);
+		if (signal?.aborted) throw cancelledError();
+		if (options) await this.start(options, signal);
 	}
 
 	async stop(): Promise<void> {

@@ -17,6 +17,8 @@ export interface SttWordSegment {
 	word: string;
 	startSec: number;
 	endSec: number;
+	/** Which isolated source produced this word. Always set for source-file transcription. */
+	sourceRole?: SttSourceRole;
 	/** Confidence in `[0, 1]` when the recognizer exposes one; otherwise `undefined`. */
 	confidence?: number;
 }
@@ -26,6 +28,38 @@ export interface SttPhraseSegment {
 	text: string;
 	startSec: number;
 	endSec: number;
+	/** Which isolated source produced this phrase. Always set for source-file transcription. */
+	sourceRole?: SttSourceRole;
+}
+
+/** Stable product roles. They describe the captured source, not a guessed person. */
+export type SttSourceRole = "you" | "system" | "unknown-mixed";
+
+/** Evidence required to reproduce or invalidate one source transcript. */
+export interface SttSourceEvidence {
+	sourceRole: SttSourceRole;
+	/** Private ISO-639 track tag for native recordings; null for imported mixed media. */
+	trackLanguageCode: "qac" | "qab" | null;
+	sourceContentSha256: string;
+	backend: SttBackend;
+	model: {
+		id: "parakeet-v3" | "whisper";
+		revision: string;
+		artifactSha256: string[];
+	};
+	language: {
+		requested: string;
+		detected: string;
+	};
+	extraction: {
+		version: 1;
+		sampleRate: 16_000;
+		channels: 1;
+	};
+	alignment: {
+		version: 1;
+		method: "recognizer-native-acoustic-snap";
+	};
 }
 
 /** Native recognizer/backend tag. Whisper reports the device it bound at
@@ -69,12 +103,27 @@ export interface SttTranscribeRequest {
 	language?: string;
 }
 
+/** IPC request for the normal product path: transcribe an approved media source. */
+export interface SttTranscribeSourceRequest {
+	sourcePath: string;
+	/** Recorder assets must carry qac/qab. Imports have one explicitly mixed source. */
+	sourceKind: "klippt-recording" | "import";
+	/** Progress hint only. Extraction still continues to EOF when this is stale or absent. */
+	durationSec?: number;
+	language?: string;
+}
+
 /** IPC response: main → renderer. */
 export interface SttTranscribeResponse {
 	segments: SttPhraseSegment[];
 	wordSegments: SttWordSegment[];
 	detectedLanguage: string;
 	backend: SttBackend;
+}
+
+/** Timestamp-merged response for all independently recognized source tracks. */
+export interface SttTranscribeSourceResponse extends SttTranscribeResponse {
+	sources: SttSourceEvidence[];
 }
 
 /** IPC success envelope; thrown errors cross as a rejection. */

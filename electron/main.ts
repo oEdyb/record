@@ -37,9 +37,13 @@ import {
 	platformOwnsUpdates,
 	probeInstall,
 } from "./install-channel";
-import { getSelectedDesktopSource, registerIpcHandlers } from "./ipc/handlers";
+import {
+	getSelectedDesktopSource,
+	registerIpcHandlers,
+	resolveApprovedVideoPath,
+} from "./ipc/handlers";
 import { installMainProcessErrorGuards } from "./main-process-errors";
-import { registerSttIpc } from "./stt";
+import { getSttManager, registerSttIpc } from "./stt";
 import { checkLatestRelease } from "./update-checker";
 import {
 	createCameraPreviewWindow,
@@ -628,6 +632,9 @@ function createEditorWindowWrapper() {
 	});
 	editorWindow.once("closed", () => {
 		if (workspaceTransition?.window === editorWindow) workspaceTransition = null;
+		void getSttManager()
+			.shutdown()
+			.catch((error) => console.warn("[stt] Could not release the speech model:", error));
 	});
 
 	editorWindow.on("close", (event) => {
@@ -924,7 +931,15 @@ appReady?.then(async () => {
 	);
 
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.
-	registerSttIpc(ipcMain);
+	registerSttIpc(ipcMain, async (sourcePath) => {
+		const approvedPath = resolveApprovedVideoPath(sourcePath);
+		return approvedPath
+			? {
+					sourcePath: approvedPath,
+					forceNative: approvedPath.startsWith(`${path.resolve(RECORDINGS_DIR)}${path.sep}`),
+				}
+			: null;
+	});
 
 	await loadAndRegisterGlobalShortcuts(globalShortcutHandlers);
 

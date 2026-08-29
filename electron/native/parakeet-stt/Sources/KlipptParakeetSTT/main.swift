@@ -46,6 +46,7 @@ private struct ErrorMessage: Encodable {
 private enum HelperError: LocalizedError {
     case missingModelsArgument
     case invalidRequest
+    case missingWordTimings
 
     var errorDescription: String? {
         switch self {
@@ -53,6 +54,8 @@ private enum HelperError: LocalizedError {
             return "Usage: klippt-parakeet-stt --models <parakeet-v3-directory>"
         case .invalidRequest:
             return "The request is not valid JSON."
+        case .missingWordTimings:
+            return "The recognizer returned speech without required word timestamps."
         }
     }
 }
@@ -149,13 +152,17 @@ private func transcribe(
         accumulator.append(timing)
     }
     let words = accumulator.finish()
+	let transcriptText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+	if !transcriptText.isEmpty && words.isEmpty {
+		throw HelperError.missingWordTimings
+	}
     let phraseStart = words.first?.startSec ?? 0
     let phraseEnd = words.last?.endSec ?? max(0, result.duration)
-    let phrases = result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let phrases = transcriptText.isEmpty
         ? []
         : [
             TimedPhrase(
-                text: result.text,
+                text: transcriptText,
                 startSec: phraseStart,
                 endSec: max(phraseEnd, phraseStart + 0.001)
             )

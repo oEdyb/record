@@ -10,13 +10,13 @@
 //!  - un modèle mono-thread coopératif : WM_TIMER cadence la playback à 60 fps ;
 //!    l'export tourne sur le thread UI et rafraîchit la barre entre frames.
 
+use anyhow::Result;
 use openscreen_compositor::compositor::{Compositor, FIXTURE_FRAMES, OUT_H, OUT_W};
 use openscreen_compositor::config::{self, Cfg};
 use openscreen_compositor::cursor::CursorTrack;
 use openscreen_compositor::d3d::Gpu;
 use openscreen_compositor::live::Player;
 use openscreen_compositor::pipeline;
-use anyhow::Result;
 use std::ffi::c_void;
 use std::time::Instant;
 use windows::core::{Interface, PCWSTR};
@@ -26,19 +26,18 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    IDXGIAdapter, IDXGIDevice, IDXGIFactory2, IDXGISwapChain1, DXGI_PRESENT,
-    DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGIAdapter, IDXGIDevice, IDXGIFactory2, IDXGISwapChain1, DXGI_PRESENT, DXGI_SCALING_STRETCH,
+    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::{
     CreateFontW, GetSysColorBrush, UpdateWindow, COLOR_BTNFACE, HFONT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::Controls::{
     InitCommonControlsEx, ICC_PROGRESS_CLASS, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX,
     PBM_SETPOS, PBM_SETRANGE32,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const PREVIEW_W: i32 = 1280;
@@ -164,7 +163,9 @@ impl App {
         let cw = (rc.right - rc.left).max(1) as f32;
         let ch = (rc.bottom - rc.top).max(1) as f32;
         let (x, y, w, h) = letterbox(cw, ch);
-        self.gpu.context.ClearRenderTargetView(rtv, &[0.02, 0.02, 0.03, 1.0]);
+        self.gpu
+            .context
+            .ClearRenderTargetView(rtv, &[0.02, 0.02, 0.03, 1.0]);
         self.comp.blit_to(rtv, x, y, w, h);
         let _ = swap.Present(1, DXGI_PRESENT(0));
         Ok(())
@@ -216,7 +217,12 @@ impl App {
         let _ = EnableWindow(self.play_btn, false);
         let _ = EnableWindow(self.combo, false);
 
-        SendMessageW(self.progress, PBM_SETRANGE32, WPARAM(0), LPARAM(self.total_frames as isize));
+        SendMessageW(
+            self.progress,
+            PBM_SETRANGE32,
+            WPARAM(0),
+            LPARAM(self.total_frames as isize),
+        );
         SendMessageW(self.progress, PBM_SETPOS, WPARAM(0), LPARAM(0));
 
         let cfg = self.cfgs[self.cur].clone();
@@ -238,7 +244,13 @@ impl App {
             }
         };
         let r = pipeline::run_composited(
-            &self.screen, &self.webcam, &self.out, &self.gpu, &self.comp, &cfg, &mut cb,
+            &self.screen,
+            &self.webcam,
+            &self.out,
+            &self.gpu,
+            &self.comp,
+            &cfg,
+            &mut cb,
         );
         self.comp.clear_srv_cache();
 
@@ -249,7 +261,12 @@ impl App {
 
         match r {
             Ok(st) => {
-                SendMessageW(self.progress, PBM_SETPOS, WPARAM(st.frames as usize), LPARAM(0));
+                SendMessageW(
+                    self.progress,
+                    PBM_SETPOS,
+                    WPARAM(st.frames as usize),
+                    LPARAM(0),
+                );
                 let msg = format!(
                     "Done — {}  ·  {} frames  ·  {:.2}s  ·  {:.1} fps  ->  {}",
                     cfg.name, st.frames, st.wall_s, st.fps, self.out
@@ -293,7 +310,22 @@ impl App {
 unsafe fn ui_font() -> HFONT {
     let face = wide("Segoe UI");
     // (height=-12 ≈ 9pt @96dpi, weight=400, charset=DEFAULT(1), quality=CLEARTYPE(5))
-    CreateFontW(-12, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, PCWSTR(face.as_ptr()))
+    CreateFontW(
+        -12,
+        0,
+        0,
+        0,
+        400,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        5,
+        0,
+        PCWSTR(face.as_ptr()),
+    )
 }
 
 /// Crée l'enfant preview + les contrôles natifs. Renvoie leurs HWND.
@@ -313,7 +345,10 @@ unsafe fn create_children(
         PCWSTR(prev_cls.as_ptr()),
         PCWSTR::null(),
         WS_CHILD | WS_VISIBLE,
-        0, 0, PREVIEW_W, PREVIEW_H,
+        0,
+        0,
+        PREVIEW_W,
+        PREVIEW_H,
         parent,
         HMENU::default(),
         hinst,
@@ -321,14 +356,20 @@ unsafe fn create_children(
     )?;
 
     let y = PREVIEW_H + 18;
-    let combo_style =
-        WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0 | (CBS_DROPDOWNLIST as u32) | (CBS_HASSTRINGS as u32);
+    let combo_style = WS_CHILD.0
+        | WS_VISIBLE.0
+        | WS_VSCROLL.0
+        | (CBS_DROPDOWNLIST as u32)
+        | (CBS_HASSTRINGS as u32);
     let combo = CreateWindowExW(
         WINDOW_EX_STYLE(0),
         PCWSTR(combo_cls.as_ptr()),
         PCWSTR::null(),
         WINDOW_STYLE(combo_style),
-        14, y - 3, 250, 340,
+        14,
+        y - 3,
+        250,
+        340,
         parent,
         HMENU(ID_COMBO as *mut c_void),
         hinst,
@@ -336,7 +377,12 @@ unsafe fn create_children(
     )?;
     for c in cfgs {
         let item = wide(&format!("{} — {}", c.name, c.desc));
-        SendMessageW(combo, CB_ADDSTRING, WPARAM(0), LPARAM(item.as_ptr() as isize));
+        SendMessageW(
+            combo,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(item.as_ptr() as isize),
+        );
     }
     SendMessageW(combo, CB_SETCURSEL, WPARAM(cfgs.len() - 1), LPARAM(0));
 
@@ -346,7 +392,10 @@ unsafe fn create_children(
         PCWSTR(btn_cls.as_ptr()),
         PCWSTR(pl.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | (BS_PUSHBUTTON as u32)),
-        278, y, 96, 30,
+        278,
+        y,
+        96,
+        30,
         parent,
         HMENU(ID_PLAY as *mut c_void),
         hinst,
@@ -359,7 +408,10 @@ unsafe fn create_children(
         PCWSTR(btn_cls.as_ptr()),
         PCWSTR(ex.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | (BS_PUSHBUTTON as u32)),
-        382, y, 96, 30,
+        382,
+        y,
+        96,
+        30,
         parent,
         HMENU(ID_EXPORT as *mut c_void),
         hinst,
@@ -371,7 +423,10 @@ unsafe fn create_children(
         PCWSTR(prog_cls.as_ptr()),
         PCWSTR::null(),
         WS_CHILD | WS_VISIBLE,
-        494, y + 4, 300, 22,
+        494,
+        y + 4,
+        300,
+        22,
         parent,
         HMENU(ID_PROGRESS as *mut c_void),
         hinst,
@@ -384,7 +439,10 @@ unsafe fn create_children(
         PCWSTR(static_cls.as_ptr()),
         PCWSTR(st.as_ptr()),
         WS_CHILD | WS_VISIBLE,
-        808, y + 6, 458, 40,
+        808,
+        y + 6,
+        458,
+        40,
         parent,
         HMENU(ID_STATUS as *mut c_void),
         hinst,
@@ -410,7 +468,10 @@ unsafe fn create_swapchain(
         Width: PREVIEW_W as u32,
         Height: PREVIEW_H as u32,
         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            Quality: 0,
+        },
         BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
         BufferCount: 2,
         SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
@@ -460,12 +521,20 @@ pub fn run_gui(screen: &str, webcam: &str, cursor_json: &str, out_dir: &str) -> 
     unsafe { run_gui_inner(screen, webcam, cursor_json, out_dir) }
 }
 
-unsafe fn run_gui_inner(screen: &str, webcam: &str, cursor_json: &str, out_dir: &str) -> Result<()> {
+unsafe fn run_gui_inner(
+    screen: &str,
+    webcam: &str,
+    cursor_json: &str,
+    out_dir: &str,
+) -> Result<()> {
     std::fs::create_dir_all(out_dir).ok();
     let out = format!("{out_dir}/export.mp4");
 
     let gpu = Gpu::create(false)?;
-    println!("d3d11 device ok (feature_level 0x{:X})", gpu.feature_level.0 as u32);
+    println!(
+        "d3d11 device ok (feature_level 0x{:X})",
+        gpu.feature_level.0 as u32
+    );
     let mut comp = Compositor::new(&gpu)?;
     if let Ok(track) = CursorTrack::load(cursor_json, 100_000.0, 6.0) {
         comp.set_cursor(track);
@@ -508,7 +577,12 @@ unsafe fn run_gui_inner(screen: &str, webcam: &str, cursor_json: &str, out_dir: 
     RegisterClassW(&wc_prev);
 
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    let mut rc = RECT { left: 0, top: 0, right: CLIENT_W, bottom: CLIENT_H };
+    let mut rc = RECT {
+        left: 0,
+        top: 0,
+        right: CLIENT_W,
+        bottom: CLIENT_H,
+    };
     let _ = AdjustWindowRectEx(&mut rc, style, false, WINDOW_EX_STYLE(0));
     let ww = rc.right - rc.left;
     let wh = rc.bottom - rc.top;
@@ -519,7 +593,10 @@ unsafe fn run_gui_inner(screen: &str, webcam: &str, cursor_json: &str, out_dir: 
         PCWSTR(main_cls.as_ptr()),
         PCWSTR(title.as_ptr()),
         style,
-        CW_USEDEFAULT, CW_USEDEFAULT, ww, wh,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        ww,
+        wh,
         HWND::default(),
         HMENU::default(),
         hinst,

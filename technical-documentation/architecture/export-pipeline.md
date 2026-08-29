@@ -1,20 +1,15 @@
 # Export pipeline
 
-The MP4 export drives the same Rust + Direct3D 11 compositor that powers the
-live preview ([preview.md](preview.md) /
-[native-compositor.md](native-compositor.md)), one segment at a time. The
+MP4 and GIF export drive the same Rust native compositor that powers the live preview
+([preview.md](preview.md) / [native-compositor.md](native-compositor.md)), one segment at a time. The
 Electron renderer turns the project document into the same `SceneDescription`
 the live preview uses plus an ordered clip list, hands both to the napi addon
-through the `compositor` IPC domain, and the addon drives `openscreen-compositor`'s
-`Player` + `Compositor::compose_frame` + AMF encoder + muxer to write one
-`.mp4`. The renderer only watches progress; the actual rendering does not
+through the `compositor` IPC domain, and the addon drives the platform compositor,
+hardware encoder where available, audio encoder, and muxer. Electron publishes the result through
+one atomic export transaction. The renderer only watches progress; the actual rendering does not
 leave the native process. Performance numbers, the bench, and the rejected
 alternatives that drove the design live in
 [engineering/rendering-performance.md](../engineering/rendering-performance.md).
-
-GIF is out of scope here: it has no native encoder yet, so it keeps its own
-dedicated code path in `src/lib/exporter/gifExporter.ts` — the one format
-the document adapter still renders in the renderer.
 
 ```mermaid
 flowchart LR
@@ -22,10 +17,33 @@ flowchart LR
     TSD["src/native/sceneDescription.ts<br/>resolveVisibleClips / buildSceneDescription"]
     RP["clips + SceneDescription JSON<br/>layout + effects + background + zoom + cursor + webcam"]
     ADDON["compositor_view.node addon<br/>exportMulti (Electron IPC)"]
-    NATIVE["openscreen_compositor::live::Player<br/>Compositor::compose_frame<br/>h264_amf encoder + mux"]
-    FILE["output.mp4"]
-    DOC --> TSD --> RP --> ADDON --> NATIVE --> FILE
+    NATIVE["native compositor<br/>video/audio encoder + muxer"]
+    STAGE["same-directory staging file"]
+    VERIFY["native reopen + decode verification"]
+    FILE["atomic final output"]
+    DOC --> TSD --> RP --> ADDON --> NATIVE --> STAGE --> VERIFY --> FILE
 ```
+
+## Atomic publication
+
+`AtomicExportPublisher` resolves the final destination and creates a unique hidden staging file in
+the same directory. It checks available capacity before rendering and during long renders. The old
+destination remains untouched while native rendering, stream finalization, native reopen/decode
+verification, and file synchronization run against staging. Only then does one same-directory
+rename publish the new file. Directory synchronization follows where the operating system supports
+it. A post-commit sync failure returns a structured durability warning because the new name already
+exists and rollback would be less safe than reporting that state.
+
+Every native export reports typed checkpoints for each frame, video flush, audio work, audio flush,
+and trailer. The same cancellation token crosses GUI, CLI, N-API, verification, synchronization,
+and rename retries. A process-owned recovery journal identifies abandoned staging files without
+letting a second live GUI or CLI process remove active work. Failures use structured phase and code
+fields in both the export dialog and CLI.
+
+MP4 verification requires the requested video and audio streams, codec, dimensions, duration,
+frame rate, timestamps, stereo AAC at 48 kHz, and decodable head and tail frames. GIF verification
+checks its dimensions, frame count, complete timing, trailer, and decodable content. Variable GIF
+centisecond delays preserve 12, 15, 20, 25, and 30 fps timeline speed.
 
 ## Segment loop
 
@@ -97,13 +115,13 @@ and **one** encoder + muxer pair:
 ## Output formats and codecs
 
 The native MP4 export takes `width`, `height`, `frameRate`, and `codec` as
-parameters on `exportMulti` and writes H.264 (AMF) by default. The
+parameters on `exportMulti` and writes H.264 by default. The
 user-facing codec choice crosses as the plain `ExportVideoCodec` string
 (`"h264"` / `"h265"` / `"vp9"`) in those params; VP9
 falls back to the same H.264 path on machines without a hardware VP9
 encoder (software VP9 was measured too slow and removed — see
-[native-compositor.md](native-compositor.md#known-gaps)). GIF is a
-separate path through `GifExporter` and does not use the native addon.
+[native-compositor.md](native-compositor.md#known-gaps)). GIF uses the native compositor and Rust
+GIF89a writer through the same addon and atomic publisher.
 
 ## Optional Clean Voice route
 

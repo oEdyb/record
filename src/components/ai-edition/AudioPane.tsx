@@ -463,6 +463,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 										<span>{ts("pauses.includeNonSpeechEvents")}</span>
 										<Toggle
 											checked={policy.includeNonSpeechEvents}
+											label={ts("pauses.includeNonSpeechEvents")}
 											onChange={(includeNonSpeechEvents) =>
 												updatePolicy({ includeNonSpeechEvents })
 											}
@@ -473,6 +474,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 									<span>{ts("pauses.protectScreen")}</span>
 									<Toggle
 										checked={policy.protectScreenActivity}
+										label={ts("pauses.protectScreen")}
 										onChange={(protectScreenActivity) => updatePolicy({ protectScreenActivity })}
 									/>
 								</label>
@@ -480,6 +482,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 									<span>{ts("pauses.protectSystemAudio")}</span>
 									<Toggle
 										checked={policy.protectSystemAudio}
+										label={ts("pauses.protectSystemAudio")}
 										onChange={(protectSystemAudio) => updatePolicy({ protectSystemAudio })}
 									/>
 								</label>

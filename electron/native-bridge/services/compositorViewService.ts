@@ -1,9 +1,20 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
 import { resolveCursorSprites } from "../../../src/lib/cursor/cursorThemes";
+import {
+	calculateEffectiveExportDuration,
+	estimateGifFileSizeBytes,
+	estimateMp4FileSizeBytes,
+} from "../../../src/lib/exporter/mp4ExportSettings";
+import {
+	AtomicExportPublisher,
+	type ExportTransactionPhase,
+	type ExportTransactionWarning,
+} from "../../export/atomicExport";
 import type {
 	ClipInput,
 	CompositorBackend,
@@ -16,6 +27,7 @@ import type {
 	GifParamsInput,
 	NativeFramePacket,
 	RemuxStats,
+	VideoExportVerifyInput,
 } from "../../native/compositor-view/addon";
 
 /**
@@ -158,6 +170,56 @@ export interface CompositorViewServiceOptions {
 	 */
 	appRoot?: string;
 	isPackaged?: boolean;
+	exportPublisher?: AtomicExportPublisher;
+	exportJournalPath?: string;
+	/** Test-only/preloaded addon. Skips dynamic filesystem discovery when supplied. */
+	addon?: CompositorViewAddon;
+}
+
+export interface ExportTransactionOptions {
+	expectedBytes?: number;
+	signal?: AbortSignal;
+	onPhase?: (phase: ExportTransactionPhase) => void;
+	exportId?: string;
+}
+
+export type PublishedExportStats<T> = T & { exportWarning?: ExportTransactionWarning };
+
+interface SceneSpeedRegion {
+	startSec: number;
+	endSec: number;
+	speed: number;
+	clipIndex?: number | null;
+}
+
+function sceneSpeedRegions(sceneJson?: string): SceneSpeedRegion[] {
+	if (!sceneJson) return [];
+	try {
+		const parsed = JSON.parse(sceneJson) as { speedRegions?: unknown };
+		if (!Array.isArray(parsed.speedRegions)) return [];
+		return parsed.speedRegions.flatMap((value): SceneSpeedRegion[] => {
+			if (!value || typeof value !== "object") return [];
+			const region = value as Partial<SceneSpeedRegion>;
+			if (
+				!Number.isFinite(region.startSec) ||
+				!Number.isFinite(region.endSec) ||
+				!Number.isFinite(region.speed)
+			) {
+				return [];
+			}
+			return [region as SceneSpeedRegion];
+		});
+	} catch {
+		return [];
+	}
+}
+
+export function calculateSceneExportDuration(clips: ClipInput[], sceneJson?: string): number {
+	return calculateEffectiveExportDuration(clips, sceneSpeedRegions(sceneJson));
+}
+
+export interface VideoBufferPublishSpec extends VideoExportVerifyInput {
+	expectedBytes: number;
 }
 
 function defaultAppRoot(): string {
@@ -360,14 +422,77 @@ function tryLoadAddon(candidates: string[]): CompositorViewAddon | null {
 }
 
 export class CompositorViewService {
+	private static readonly PENDING_CANCELLATION_TTL_MS = 60_000;
+	private static readonly MAX_PENDING_CANCELLATIONS = 256;
 	private readonly options: CompositorViewServiceOptions;
+	private readonly exportPublisher: AtomicExportPublisher;
 	private readonly rects = new Map<number, CompositorViewRect>();
+	private readonly activeExports = new Map<string, AbortController>();
+	private readonly pendingExportCancellations = new Map<string, number>();
 	private addon: CompositorViewAddon | null = null;
 	private loadAttempted = false;
 	private syntheticIdCounter = 0;
 
 	constructor(options: CompositorViewServiceOptions = {}) {
 		this.options = options;
+		if (options.addon) {
+			this.addon = options.addon;
+			this.loadAttempted = true;
+		}
+		const appRoot = options.appRoot ?? defaultAppRoot();
+		let journalRoot = appRoot;
+		try {
+			journalRoot = app.getPath("userData");
+		} catch {
+			// Bare-node tests have no initialized Electron app.
+		}
+		this.exportPublisher =
+			options.exportPublisher ??
+			new AtomicExportPublisher({
+				journalPath:
+					options.exportJournalPath ?? path.join(journalRoot, "export-transactions.json"),
+			});
+	}
+
+	initializeExportRecovery(): Promise<void> {
+		return this.exportPublisher.initialize();
+	}
+
+	cancelExport(exportId: string): boolean {
+		this.prunePendingExportCancellations();
+		const controller = this.activeExports.get(exportId);
+		if (controller) {
+			controller.abort(new Error("Export cancelled."));
+			this.addon?.cancelExport?.(exportId);
+			return true;
+		}
+
+		// A separate cancel IPC can overtake an export while that export still
+		// awaits entitlement or preflight work. Keep a short-lived tombstone so
+		// the matching export cannot start after its Cancel was acknowledged.
+		this.pendingExportCancellations.set(exportId, Date.now());
+		while (this.pendingExportCancellations.size > CompositorViewService.MAX_PENDING_CANCELLATIONS) {
+			const oldest = this.pendingExportCancellations.keys().next().value;
+			if (oldest === undefined) break;
+			this.pendingExportCancellations.delete(oldest);
+		}
+		return true;
+	}
+
+	private registerActiveExport(exportId: string, controller: AbortController): void {
+		this.prunePendingExportCancellations();
+		this.activeExports.set(exportId, controller);
+		if (this.pendingExportCancellations.delete(exportId)) {
+			controller.abort(new Error("Export cancelled."));
+		}
+	}
+
+	private prunePendingExportCancellations(): void {
+		const cutoff = Date.now() - CompositorViewService.PENDING_CANCELLATION_TTL_MS;
+		for (const [exportId, createdAt] of this.pendingExportCancellations) {
+			if (createdAt >= cutoff) break;
+			this.pendingExportCancellations.delete(exportId);
+		}
 	}
 
 	private ensureAddon(): CompositorViewAddon | null {
@@ -560,19 +685,86 @@ export class CompositorViewService {
 		sceneJson?: string,
 		params?: ExportParamsInput,
 		onProgress?: (frames: number) => void,
-	): Promise<ExportStats | null> {
+		transaction?: ExportTransactionOptions,
+	): Promise<PublishedExportStats<ExportStats> | null> {
 		const addon = this.ensureAddon();
 		if (!addon) {
 			return null;
 		}
 		const target = outPath ?? path.join(app.getPath("temp"), "openscreen-native-export.mp4");
-		return addon.exportMulti(
-			clips,
-			target,
-			sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
-			params,
-			onProgress,
-		);
+		if (!addon.verifyVideoExport || !addon.cancelExport) {
+			throw new Error("Native export verification is unavailable. Rebuild the compositor addon.");
+		}
+		const exportId = transaction?.exportId ?? randomUUID();
+		const controller = new AbortController();
+		const forwardAbort = () => controller.abort(transaction?.signal?.reason);
+		if (transaction?.signal?.aborted) forwardAbort();
+		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
+		this.registerActiveExport(exportId, controller);
+		const width = Math.max(2, params?.width ?? 1920) & ~1;
+		const height = Math.max(2, params?.height ?? 1080) & ~1;
+		const durationEstimate = calculateSceneExportDuration(clips, sceneJson);
+		const bitrate = params?.bitrate ?? 8_000_000;
+		const expectedBytes =
+			transaction?.expectedBytes ??
+			estimateMp4FileSizeBytes({
+				durationSec: durationEstimate,
+				videoBitrate: bitrate,
+				hasAudio: clips.some((clip) => clip.hasAudio),
+			});
+		try {
+			let exportWarning: ExportTransactionWarning | undefined;
+			const stats = await this.exportPublisher.publish({
+				finalPath: target,
+				expectedBytes,
+				signal: controller.signal,
+				onPhase: transaction?.onPhase,
+				onWarning: (warning) => {
+					exportWarning = warning;
+				},
+				render: async (stagingPath, signal) => {
+					const cancelNative = () => addon.cancelExport?.(exportId);
+					signal.addEventListener("abort", cancelNative, { once: true });
+					try {
+						const operation = addon.exportMulti(
+							clips,
+							stagingPath,
+							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
+							params,
+							onProgress,
+							exportId,
+						);
+						if (signal.aborted) cancelNative();
+						return await operation;
+					} finally {
+						signal.removeEventListener("abort", cancelNative);
+					}
+				},
+				verify: async (stagingPath, stats, signal) => {
+					const cancelNative = () => addon.cancelExport?.(exportId);
+					signal.addEventListener("abort", cancelNative, { once: true });
+					const outputFps = stats.frames / stats.videoDurationS;
+					const verifyInput: VideoExportVerifyInput = {
+						width,
+						height,
+						fps: outputFps,
+						durationS: stats.videoDurationS,
+						codec: params?.codec === "h265" ? "h265" : "h264",
+					};
+					try {
+						const operation = addon.verifyVideoExport?.(stagingPath, verifyInput, exportId);
+						if (signal.aborted) cancelNative();
+						await operation;
+					} finally {
+						signal.removeEventListener("abort", cancelNative);
+					}
+				},
+			});
+			return exportWarning ? { ...stats, exportWarning } : stats;
+		} finally {
+			this.activeExports.delete(exportId);
+			transaction?.signal?.removeEventListener("abort", forwardAbort);
+		}
 	}
 
 	/** Native GIF export. Same inputs as `exportMulti` — one clip list, one scene —
@@ -588,19 +780,133 @@ export class CompositorViewService {
 		sceneJson?: string,
 		params?: GifParamsInput,
 		onProgress?: (frames: number) => void,
-	): Promise<GifExportStats | null> {
+		transaction?: ExportTransactionOptions,
+	): Promise<PublishedExportStats<GifExportStats> | null> {
 		const addon = this.ensureAddon();
 		if (!addon) {
 			return null;
 		}
 		const target = outPath ?? path.join(app.getPath("temp"), "openscreen-native-export.gif");
-		return addon.exportGif(
-			clips,
-			target,
-			sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
-			params,
-			onProgress,
-		);
+		if (!addon.verifyGifExport || !addon.cancelExport) {
+			throw new Error("Native GIF verification is unavailable. Rebuild the compositor addon.");
+		}
+		const exportId = transaction?.exportId ?? randomUUID();
+		const controller = new AbortController();
+		const forwardAbort = () => controller.abort(transaction?.signal?.reason);
+		if (transaction?.signal?.aborted) forwardAbort();
+		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
+		this.registerActiveExport(exportId, controller);
+		const width = params?.width ?? 854;
+		const height = params?.height ?? 480;
+		const durationEstimate = calculateSceneExportDuration(clips, sceneJson);
+		const fps = params?.fps ?? 12;
+		const expectedBytes =
+			transaction?.expectedBytes ??
+			estimateGifFileSizeBytes({ durationSec: durationEstimate, width, height, fps });
+		try {
+			let exportWarning: ExportTransactionWarning | undefined;
+			const stats = await this.exportPublisher.publish({
+				finalPath: target,
+				expectedBytes,
+				signal: controller.signal,
+				onPhase: transaction?.onPhase,
+				onWarning: (warning) => {
+					exportWarning = warning;
+				},
+				render: async (stagingPath, signal) => {
+					const cancelNative = () => addon.cancelExport?.(exportId);
+					signal.addEventListener("abort", cancelNative, { once: true });
+					try {
+						const operation = addon.exportGif(
+							clips,
+							stagingPath,
+							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
+							params,
+							onProgress,
+							exportId,
+						);
+						if (signal.aborted) cancelNative();
+						return await operation;
+					} finally {
+						signal.removeEventListener("abort", cancelNative);
+					}
+				},
+				verify: async (stagingPath, stats, signal) => {
+					const cancelNative = () => addon.cancelExport?.(exportId);
+					signal.addEventListener("abort", cancelNative, { once: true });
+					try {
+						const operation = addon.verifyGifExport?.(
+							stagingPath,
+							{
+								width,
+								height,
+								fps,
+								durationS: stats.frames / fps,
+							},
+							exportId,
+						);
+						if (signal.aborted) cancelNative();
+						await operation;
+					} finally {
+						signal.removeEventListener("abort", cancelNative);
+					}
+				},
+			});
+			return exportWarning ? { ...stats, exportWarning } : stats;
+		} finally {
+			this.activeExports.delete(exportId);
+			transaction?.signal?.removeEventListener("abort", forwardAbort);
+		}
+	}
+
+	async publishVideoBuffer(
+		videoData: ArrayBuffer,
+		outPath: string,
+		spec: VideoBufferPublishSpec,
+		transaction?: ExportTransactionOptions,
+	): Promise<ExportTransactionWarning | undefined> {
+		const addon = this.ensureAddon();
+		if (!addon?.verifyVideoExport || !addon.cancelExport) {
+			throw new Error("Native export verification is unavailable. Rebuild the compositor addon.");
+		}
+		const bytes = Buffer.from(videoData);
+		const exportId = transaction?.exportId ?? randomUUID();
+		const controller = new AbortController();
+		const forwardAbort = () => controller.abort(transaction?.signal?.reason);
+		if (transaction?.signal?.aborted) forwardAbort();
+		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
+		this.registerActiveExport(exportId, controller);
+		try {
+			let exportWarning: ExportTransactionWarning | undefined;
+			await this.exportPublisher.publish({
+				finalPath: outPath,
+				expectedBytes: spec.expectedBytes,
+				signal: controller.signal,
+				onPhase: transaction?.onPhase,
+				onWarning: (warning) => {
+					exportWarning = warning;
+				},
+				render: async (stagingPath, signal) => {
+					if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+					await fs.promises.writeFile(stagingPath, bytes);
+				},
+				verify: async (stagingPath, _result, signal) => {
+					const cancelNative = () => addon.cancelExport?.(exportId);
+					signal.addEventListener("abort", cancelNative, { once: true });
+					try {
+						const operation = addon.verifyVideoExport?.(stagingPath, spec, exportId);
+						if (signal.aborted) cancelNative();
+						await operation;
+					} finally {
+						signal.removeEventListener("abort", cancelNative);
+					}
+				},
+			});
+			return exportWarning;
+		} finally {
+			this.activeExports.delete(exportId);
+			transaction?.signal?.removeEventListener("abort", forwardAbort);
+		}
 	}
 
 	/** Stream-copy `inputPath` to `outputPath` through libavformat's matroska muxer.

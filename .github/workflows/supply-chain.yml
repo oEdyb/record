@@ -67,6 +67,10 @@ jobs:
         run: node scripts/check-workflow-action-pins.mjs
       - name: Restore the exact npm graph
         run: npm ci --ignore-scripts
+      - name: Verify the reviewed FFmpeg WebAssembly source
+        run: npm run supply-chain:web-demuxer
+      - name: Verify the packaged third-party notice inventory
+        run: npm run supply-chain:notices
       - name: Verify the exact-source release contract
         run: node scripts/check-release-workflow-contract.mjs
       - name: Reject high or critical npm advisories
@@ -89,6 +93,19 @@ jobs:
         with:
           name: klippt-supply-chain-${{ inputs.source_sha || github.sha }}
           path: ${{ runner.temp }}/klippt-supply-chain
+          if-no-files-found: error
+          retention-days: 30
+      - name: Build the LGPL corresponding-source offer
+        if: ${{ inputs.source_sha != '' }}
+        run: >-
+          node scripts/web-demuxer-source.mjs
+          --output-dir "$RUNNER_TEMP/web-demuxer-source-offer"
+      - name: Upload the LGPL corresponding-source offer
+        if: ${{ inputs.source_sha != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: klippt-lgpl-source-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/web-demuxer-source-offer
           if-no-files-found: error
           retention-days: 30
 
@@ -114,6 +131,8 @@ jobs:
           test "$(cargo deny --version | awk '{print $2}')" = "0.20.2"
       - name: Verify every Cargo graph has an explicit policy
         run: node scripts/check-cargo-graphs.mjs > "$RUNNER_TEMP/cargo-graphs.tsv"
+      - name: Verify the complete transitive Cargo licence inventory
+        run: npm run supply-chain:cargo-licenses
       - name: Audit every Cargo lockfile
         run: |
           set -euo pipefail

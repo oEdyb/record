@@ -44,6 +44,8 @@ export interface SttModelDescriptor {
 	cacheDir: string;
 	/** HuggingFace repo identifier (e.g. "ggerganov/whisper.cpp"). */
 	repoId: string;
+	/** Immutable upstream revision used by every artifact URL. */
+	revision: string;
 	/** List of model files to download (currently a single GGML file). */
 	files: SttModelFile[];
 }
@@ -86,6 +88,7 @@ export const STT_MODELS: Record<SttModelId, SttModelDescriptor> = {
 	"parakeet-v3": {
 		cacheDir: "parakeet-tdt-0.6b-v3",
 		repoId: PARAKEET_REPO,
+		revision: PARAKEET_REVISION,
 		// Only the INT8 runtime files FluidAudio 0.15.6 loads. The upstream
 		// snapshot also contains INT4, source mlpackages, and older joint graphs;
 		// downloading those would add more than 2 GB that Klippt never opens.
@@ -200,6 +203,7 @@ export const STT_MODELS: Record<SttModelId, SttModelDescriptor> = {
 	whisper: {
 		cacheDir: "whisper-ggml",
 		repoId: MODEL_REPO,
+		revision: MODEL_REVISION,
 		files: [
 			{
 				name: MODEL_FILE,
@@ -212,6 +216,7 @@ export const STT_MODELS: Record<SttModelId, SttModelDescriptor> = {
 	"silero-vad": {
 		cacheDir: "silero-vad",
 		repoId: VAD_REPO,
+		revision: VAD_REVISION,
 		files: [
 			{
 				name: VAD_FILE,
@@ -244,11 +249,27 @@ export async function areModelsPresent(baseDir: string): Promise<boolean> {
 	}
 }
 
-/** Verify SHA-256 of a file in 64 KiB chunks; resolves to the lowercase hex digest. */
-export async function sha256OfFile(filePath: string): Promise<string> {
-	const hash = createHash("sha256");
-	await pipeline(createReadStream(filePath), hash);
-	return hash.digest("hex");
+/** Hash a file as a bounded stream. Cancellation destroys the read immediately. */
+export async function sha256OfFile(filePath: string, signal?: AbortSignal): Promise<string> {
+	if (signal?.aborted) throw signal.reason;
+	return await new Promise<string>((resolve, reject) => {
+		const hash = createHash("sha256");
+		const input = createReadStream(filePath, { highWaterMark: 1024 * 1024 });
+		let settled = false;
+		const finish = (fn: () => void) => {
+			if (settled) return;
+			settled = true;
+			signal?.removeEventListener("abort", onAbort);
+			fn();
+		};
+		const onAbort = () => input.destroy(signal?.reason);
+		signal?.addEventListener("abort", onAbort, { once: true });
+		input.on("data", (chunk) => {
+			hash.update(chunk);
+		});
+		input.once("error", (error) => finish(() => reject(error)));
+		input.once("end", () => finish(() => resolve(hash.digest("hex"))));
+	});
 }
 
 const MAX_ATTEMPTS = 6;

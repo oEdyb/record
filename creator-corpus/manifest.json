@@ -1,0 +1,8 @@
+{
+	"schemaVersion": 1,
+	"corpusId": "klippt-creator-corpus",
+	"version": "1.0.0",
+	"description": "Versioned creator recordings and labels for Klippt quality and reliability gates.",
+	"assets": [],
+	"fixtures": []
+}

@@ -354,8 +354,11 @@ int main(int argc, char** argv) {
 	// GET / — readiness probe. The Node wrapper polls this until 200 to know
 	// the model is loaded and the GPU is bound (a Vulkan/D3D driver bug can
 	// make whisper_init succeed but the first /inference still segfault).
-	svr.Get("/", [](const httplib::Request&, httplib::Response& res) {
-		res.set_content("ok", "text/plain");
+	svr.Get("/", [&active_backend](const httplib::Request&, httplib::Response& res) {
+		nlohmann::json reply;
+		reply["status"] = "ok";
+		reply["backend"] = active_backend;
+		res.set_content(reply.dump(), "application/json");
 	});
 
 	// POST /inference — multipart form with `file` (WAV) + `language` + `response_format`.

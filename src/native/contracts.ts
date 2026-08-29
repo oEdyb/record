@@ -168,6 +168,8 @@ export interface CompositorFramePacket {
 	/** Atomic transport command that produced this frame. Old frames can arrive
 	 * after a seek; their lower generation keeps them out of drift decisions. */
 	transportGeneration: number;
+	/** GPU render-target readback and CPU copy time on the native render thread. */
+	readbackMs: number;
 }
 
 export type CompositorFrameTiming = Pick<
@@ -215,6 +217,20 @@ export interface CompositorExportResult {
 	/** Durée de la vidéo exportée (secondes) — distincte de `wallS` (temps de rendu réel). */
 	videoDurationS: number;
 	audioMastering: CompositorAudioMasteringResult;
+	/** Actual native paths selected after probing this machine. */
+	encoderName: string;
+	encoderHardware: boolean;
+	encoderFallback: boolean;
+	decoderPath: string;
+	compositorBackend: string;
+	exportWarning?: CompositorExportWarning;
+}
+
+export interface CompositorExportWarning {
+	phase: "publishing";
+	code: "DURABILITY_UNCONFIRMED";
+	message: string;
+	retryable: false;
 }
 
 export interface CompositorAudioMasteringResult {
@@ -249,6 +265,20 @@ export interface CompositorExportParams {
 	codec?: string;
 }
 
+export type ExportTransactionPhase =
+	| "preflight"
+	| "rendering"
+	| "verification"
+	| "syncing"
+	| "publishing"
+	| "cleanup";
+
+export interface CompositorExportTransactionOptions {
+	/** Estimated final bytes. Main uses this only for free-space protection. */
+	expectedBytes?: number;
+	signal?: AbortSignal;
+}
+
 /** Sortie GIF native (le seul chemin GIF de l'app).
  *  Tout omis → 854×480, 12 fps, boucle infinie, pas de dithering —
  *  défauts choisis pour un GIF 8-bit-indexed lisible : 12 fps est la
@@ -279,6 +309,7 @@ export interface CompositorExportGifResult {
 	/** Taille du fichier `.gif` final sur disque (octets), mesurée après
 	 *  le drop de l'encodeur (donc après le flush du trailer GIF89a). */
 	fileBytes: number;
+	exportWarning?: CompositorExportWarning;
 }
 
 // ---- AI Edition domain (Phase 1+) -----------------------------------------
@@ -429,12 +460,17 @@ export type NativeBridgeErrorCode =
 	| "NOT_FOUND"
 	| "UNAVAILABLE"
 	| "ENTITLEMENT_REQUIRED"
+	| "EXPORT_FAILED"
 	| "INTERNAL_ERROR";
 
 export interface NativeBridgeError {
 	code: NativeBridgeErrorCode;
 	message: string;
 	retryable: boolean;
+	details?: {
+		exportPhase?: ExportTransactionPhase;
+		exportCode?: string;
+	};
 }
 
 export interface NativeBridgeMeta {
@@ -777,6 +813,18 @@ export type NativeBridgeRequest =
 	  }
 	| {
 			domain: "compositor";
+			action: "reportPreviewTiming";
+			/** Bounded numeric batches only. No DOM, media, project, or path data. */
+			payload: {
+				id: number;
+				ipcMs: number[];
+				drawMs: number[];
+				browserMainThreadMs: number[];
+			};
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
 			action: "setParam";
 			payload: { id: number; key: string; value: CompositorParamValue };
 			requestId?: string;
@@ -807,6 +855,8 @@ export type NativeBridgeRequest =
 				outPath?: string;
 				sceneJson?: string;
 				params?: CompositorExportParams;
+				expectedBytes?: number;
+				exportId: string;
 			};
 			requestId?: string;
 	  }
@@ -849,7 +899,15 @@ export type NativeBridgeRequest =
 				outPath?: string;
 				sceneJson?: string;
 				params?: CompositorExportGifParams;
+				expectedBytes?: number;
+				exportId: string;
 			};
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
+			action: "cancelExport";
+			payload: { exportId: string };
 			requestId?: string;
 	  };
 

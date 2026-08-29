@@ -752,7 +752,7 @@ fn scene_for_clip(scene: &Scene, clip_index: usize) -> Scene {
 /// est l'IDENTITÉ de la frame : le consommateur (`read_frame`) ne repaie le clone + l'IPC
 /// que lorsqu'elle change. `None` = "aucune frame composée pour l'instant" (toutes les
 /// lectures avant la 1re frame composée retournent `None` côté napi, jamais un buffer vide).
-pub type LatestFrame = (u64, u32, u32, f64, usize, u64, Vec<u8>);
+pub type LatestFrame = (u64, u32, u32, f64, usize, u64, f64, Vec<u8>);
 
 /// État partagé thread appelant → thread de rendu (commandes sans blocage).
 struct Shared {
@@ -1819,8 +1819,10 @@ unsafe fn render_thread(
                 // On lit ce RT DIRECTEMENT à sa résolution de rendu (`readback_direct` : copy
                 // rt → staging → Map/Unmap), sans le resize `blit_resized` qui, depuis la
                 // refonte ratio, n'était plus qu'une copie identité + une alloc NV12 inutile.
+                let readback_started = Instant::now();
                 match comp.readback_direct() {
                     Ok((rw, rh, rgba)) => {
+                        let readback_ms = readback_started.elapsed().as_secs_f64() * 1_000.0;
                         // Publie dans `latest_frame` : on remplace le buffer précédent
                         // (le canvas ne montre que la dernière frame, peu importe combien
                         // le renderer en a raté entre deux lectures napi). On incrémente
@@ -1845,6 +1847,7 @@ unsafe fn render_thread(
                                 source_time_sec,
                                 active_clip_index,
                                 applied_transport_generation,
+                                readback_ms,
                                 rgba,
                             ));
                         }
@@ -1942,7 +1945,7 @@ pub mod standalone_harness {
 
             // état des paramètres pilotés au clavier (le MÊME set_param que l'addon napi appelle)
             let mut blur = false;
-        let mut playing = false;
+            let mut playing = false;
             let set_title = |b: bool, p: bool| unsafe {
                 let t = wide(&format!(
                     "poc-d3d — live embed  ·  flou: {}  ·  {}   (B / Espace)",
@@ -1996,8 +1999,16 @@ pub mod standalone_harness {
                 // standalone n'affiche pas réellement les pixels ici (l'embed Electron est
                 // le consumer réel). On imprime juste une frame de temps en temps pour
                 // confirmer que la chaîne fonctionne.
-                if let Some((_gen, fw, fh, _source_time, _clip_index, _transport_gen, _pixels)) =
-                    view.latest_frame()
+                if let Some((
+                    _gen,
+                    fw,
+                    fh,
+                    _source_time,
+                    _clip_index,
+                    _transport_gen,
+                    _readback_ms,
+                    _pixels,
+                )) = view.latest_frame()
                 {
                     if (fw, fh) != (w, h) {
                         // garde-fou : la staging de readback suit `set_rect` côté thread

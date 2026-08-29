@@ -102,9 +102,45 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 		let stopped = false;
 		let callbackId = 0;
 		let lastFrameAt = -Infinity;
+		let deliveryStartedAt = 0;
+		let deliveredFrames = 0;
+		let clockOrigin: { mediaTime: number; presentedFrames: number } | null = null;
+		let latestTimestampDriftMs: number | undefined;
+		const sourceFrameRate = track.getSettings().frameRate;
 		const frameIntervalMs = 1_000 / MAX_PREVIEW_FPS;
-		const sendFrame: VideoFrameRequestCallback = (now) => {
+		const sendFrame: VideoFrameRequestCallback = (now, metadata) => {
 			if (stopped) return;
+			if (
+				typeof sourceFrameRate === "number" &&
+				sourceFrameRate > 0 &&
+				Number.isFinite(metadata.mediaTime) &&
+				Number.isFinite(metadata.presentedFrames)
+			) {
+				if (!clockOrigin) {
+					clockOrigin = {
+						mediaTime: metadata.mediaTime,
+						presentedFrames: metadata.presentedFrames,
+					};
+				} else {
+					const mediaElapsed = metadata.mediaTime - clockOrigin.mediaTime;
+					const expectedElapsed =
+						(metadata.presentedFrames - clockOrigin.presentedFrames) / sourceFrameRate;
+					latestTimestampDriftMs = (mediaElapsed - expectedElapsed) * 1_000;
+				}
+			}
+			if (deliveryStartedAt === 0) deliveryStartedAt = now;
+			deliveredFrames += 1;
+			const deliveryWindowMs = now - deliveryStartedAt;
+			if (deliveryWindowMs >= 5_000 && deliveredFrames > 1) {
+				window.electronAPI?.reportCapturePerformance?.({
+					cameraDeliveredFps: ((deliveredFrames - 1) * 1_000) / deliveryWindowMs,
+					...(latestTimestampDriftMs !== undefined
+						? { cameraTimestampDriftMs: latestTimestampDriftMs }
+						: {}),
+				});
+				deliveryStartedAt = now;
+				deliveredFrames = 1;
+			}
 			if (
 				!frameInFlight.current &&
 				now - lastFrameAt >= frameIntervalMs &&

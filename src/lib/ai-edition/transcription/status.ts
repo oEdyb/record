@@ -61,7 +61,11 @@ export type PersistableFailureKind = Exclude<TranscriptionFailureKind, "error">;
  */
 export function classifyTranscriptionError(error: unknown): TranscriptionFailure {
 	const message = error instanceof Error ? error.message : String(error);
-	if (/no audio track/i.test(message) || /zero audio frames/i.test(message)) {
+	if (
+		/no audio track/i.test(message) ||
+		/no isolated .*audio track/i.test(message) ||
+		/zero audio frames/i.test(message)
+	) {
 		return { kind: "no-audio", message };
 	}
 	if (/audio codec not supported/i.test(message)) {

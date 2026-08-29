@@ -1,0 +1,33 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://klippt.app/schemas/creator-corpus/split-lock-v1.json",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schemaVersion", "corpusId", "assignments"],
+	"properties": {
+		"schemaVersion": { "const": 1 },
+		"corpusId": {
+			"type": "string",
+			"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+			"maxLength": 80
+		},
+		"assignments": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["fixtureId", "fixtureRevision", "fixtureSha256", "split"],
+				"properties": {
+					"fixtureId": {
+						"type": "string",
+						"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+						"maxLength": 80
+					},
+					"fixtureRevision": { "type": "integer", "minimum": 1 },
+					"fixtureSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+					"split": { "enum": ["development", "tuning", "holdout"] }
+				}
+			}
+		}
+	}
+}

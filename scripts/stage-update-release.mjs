@@ -13,11 +13,22 @@ import fs, {
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+	isNativeFfmpegEvidenceFileName,
+	nativeFfmpegEvidenceFileNames,
+} from "./native-ffmpeg-source.mjs";
 import { ELECTRON_FEED_FILES, validateElectronUpdateFeeds } from "./update-feed-integrity.mjs";
+import { loadWebDemuxerPolicy, sourceOfferFileNames } from "./web-demuxer-source.mjs";
 
 const UPDATE_BASE_URL = "https://updates.dyberg.co/klippt";
 const FEED_FILES = new Set(ELECTRON_FEED_FILES);
 const SOURCE_SHA = /^[0-9a-f]{40}$/;
+const WEB_DEMUXER_POLICY = loadWebDemuxerPolicy();
+const SOURCE_OFFER_FILES = new Set(sourceOfferFileNames(WEB_DEMUXER_POLICY));
+const RELEASE_FFMPEG_TARGETS = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
+const NATIVE_FFMPEG_EVIDENCE_FILES = new Set(
+	RELEASE_FFMPEG_TARGETS.flatMap(nativeFfmpegEvidenceFileNames),
+);
 
 function listFiles(root) {
 	return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
@@ -91,7 +102,10 @@ export function buildReleaseManifest(fileNames, version, baseUrl = UPDATE_BASE_U
 
 function isUpdateArtifact(fileName) {
 	return (
-		FEED_FILES.has(fileName) || /\.(?:dmg|zip|exe|blockmap|AppImage|deb|rpm|pacman)$/.test(fileName)
+		FEED_FILES.has(fileName) ||
+		SOURCE_OFFER_FILES.has(fileName) ||
+		isNativeFfmpegEvidenceFileName(fileName) ||
+		/\.(?:dmg|zip|exe|blockmap|AppImage|deb|rpm|pacman)$/.test(fileName)
 	);
 }
 
@@ -109,6 +123,9 @@ export function stageUpdateRelease(sourceRoot, version, outputRoot, sourceSha) {
 
 	for (const feedFile of FEED_FILES) {
 		if (!seen.has(feedFile)) throw new Error(`missing update feed: ${feedFile}`);
+	}
+	for (const fileName of [...SOURCE_OFFER_FILES, ...NATIVE_FFMPEG_EVIDENCE_FILES]) {
+		if (!seen.has(fileName)) throw new Error(`missing LGPL release evidence: ${fileName}`);
 	}
 
 	const manifest = buildReleaseManifest([...seen], version);

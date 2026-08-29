@@ -51,7 +51,7 @@ afterEach(async () => {
 describe("approved dependency inputs", () => {
 	it("matches every current npm, Cargo, CMake, Swift, FFmpeg, and model input", () => {
 		expect(verifyApprovedDependencies(REPO_ROOT)).toEqual({
-			count: 18,
+			count: 22,
 			reviewedAt: "2026-08-28",
 		});
 	});

@@ -47,13 +47,20 @@ import {
 	wouldUpscale,
 } from "@/lib/exporter/mp4ExportSettings";
 import { exportGifNative, exportMultiNative, useIsCpuCompositor } from "@/native";
-import type { CompositorAudioMasteringResult } from "@/native/contracts";
+import { NativeBridgeClientError } from "@/native/client";
+import type { CompositorAudioMasteringResult, ExportTransactionPhase } from "@/native/contracts";
 import { buildCompositorClipInputs, buildSceneDescription } from "@/native/sceneDescription";
 import { formatBytes } from "@/utils/formatBytes";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
 
 type Phase = "idle" | "configuring" | "rendering" | "writing" | "done" | "error";
+
+interface ExportFailureDetails {
+	phase?: ExportTransactionPhase;
+	code?: string;
+	retryable: boolean;
+}
 
 /** hh:mm:ss (always shows hours, unlike the shared mm:ss `formatTimePadded`) — exports can run
  *  past an hour on either axis (video duration or render wall-time). */
@@ -98,6 +105,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [progress, setProgress] = useState<ExportProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [errorDetails, setErrorDetails] = useState<ExportFailureDetails | null>(null);
 	const [savedPath, setSavedPath] = useState<string | null>(null);
 	const [audioMastering, setAudioMastering] = useState<CompositorAudioMasteringResult | null>(null);
 	const cancelRef = useRef<{ cancel: () => void } | null>(null);
@@ -229,6 +237,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			setPhase("idle");
 			setProgress(null);
 			setError(null);
+			setErrorDetails(null);
 			setSavedPath(null);
 			setAudioMastering(null);
 			cancelRef.current = null;
@@ -248,7 +257,10 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	}, [codec, format, fps, gifFrameRate, gifLoop, gifSize, quality]);
 
 	const handleClose = () => {
-		if (phase === "rendering" || phase === "writing") return;
+		if (phase === "rendering" || phase === "writing") {
+			cancelRef.current?.cancel();
+			return;
+		}
 		onClose();
 	};
 
@@ -269,6 +281,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 
 		setPhase("configuring");
 		setError(null);
+		setErrorDetails(null);
 		setProgress(null);
 		setSavedPath(null);
 		setAudioMastering(null);
@@ -296,6 +309,8 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		// user previewed.
 		{
 			setPhase("rendering");
+			const exportController = new AbortController();
+			cancelRef.current = { cancel: () => exportController.abort() };
 			// Render the real timeline when there are clips; else fall back to the fixture.
 			const clips = nativeClips;
 			// GIF runs at its own frame rate, so the progress total has to use it.
@@ -323,6 +338,11 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					estimatedTimeRemaining,
 				});
 			});
+			const unsubscribePhase = window.electronAPI?.onNativeExportPhase?.((nativePhase) => {
+				setPhase(
+					nativePhase === "preflight" || nativePhase === "rendering" ? "rendering" : "writing",
+				);
+			});
 			try {
 				const sceneJson = JSON.stringify(nativeScene ?? buildSceneDescription(document));
 				const outDims = tierOutputDims(quality);
@@ -331,30 +351,48 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				}
 				const stats =
 					format === "gif"
-						? await exportGifNative(clips, pickedPath, sceneJson, {
-								// GIF is 256-colour and grows fast; cap the long edge at the
-								// chosen preset rather than exporting at source size.
-								...gifOutputDims(gifSize, outDims),
-								fps: gifFrameRate,
-								// 0 = infinite, the historical GIF default; 1 = play once.
-								loopCount: gifLoop ? 0 : 1,
-							})
-						: await exportMultiNative(clips, pickedPath, sceneJson, {
-								width: outDims?.width,
-								height: outDims?.height,
-								fps,
-								codec,
-								bitrate: outDims?.bitrate,
-								evenVolume: editorSettings.evenVolume,
-								normalizeAudio: editorSettings.normalizeVolume,
-								targetLufs: editorSettings.audioTargetLufs,
-								peakCeilingDbtp: editorSettings.audioPeakCeilingDbtp,
-							});
+						? await exportGifNative(
+								clips,
+								pickedPath,
+								sceneJson,
+								{
+									// GIF is 256-colour and grows fast; cap the long edge at the
+									// chosen preset rather than exporting at source size.
+									...gifOutputDims(gifSize, outDims),
+									fps: gifFrameRate,
+									// 0 = infinite, the historical GIF default; 1 = play once.
+									loopCount: gifLoop ? 0 : 1,
+								},
+								{ signal: exportController.signal },
+							)
+						: await exportMultiNative(
+								clips,
+								pickedPath,
+								sceneJson,
+								{
+									width: outDims?.width,
+									height: outDims?.height,
+									fps,
+									codec,
+									bitrate: outDims?.bitrate,
+									evenVolume: editorSettings.evenVolume,
+									normalizeAudio: editorSettings.normalizeVolume,
+									targetLufs: editorSettings.audioTargetLufs,
+									peakCeilingDbtp: editorSettings.audioPeakCeilingDbtp,
+								},
+								{
+									expectedBytes: estimatedMp4Bytes,
+									signal: exportController.signal,
+								},
+							);
 				setAudioMastering("audioMastering" in stats ? stats.audioMastering : null);
 				setSavedPath(pickedPath);
 				setPhase("done");
-				toast.success(t("exportDialog.exportedVideo"), {
-					description: `${pickedPath} · ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
+				const exportToast = stats.exportWarning ? toast.warning : toast.success;
+				exportToast(t("exportDialog.exportedVideo"), {
+					description:
+						stats.exportWarning?.message ??
+						`${pickedPath} · ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
 					action: {
 						label: t("exportDialog.showInFolder"),
 						onClick: () => {
@@ -368,13 +406,30 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					},
 				});
 			} catch (err) {
-				setError(err instanceof Error ? err.message : String(err));
+				if (exportController.signal.aborted) {
+					setPhase("idle");
+					setProgress(null);
+					return;
+				}
+				const message = err instanceof Error ? err.message : String(err);
+				const details =
+					err instanceof NativeBridgeClientError
+						? {
+								phase: err.details?.exportPhase,
+								code: err.details?.exportCode,
+								retryable: err.retryable,
+							}
+						: null;
+				setError(message);
+				setErrorDetails(details);
 				setPhase("error");
 				toast.error(t("exportDialog.exportFailed"), {
-					description: err instanceof Error ? err.message : String(err),
+					description: message,
 				});
 			} finally {
 				unsubscribeProgress?.();
+				unsubscribePhase?.();
+				cancelRef.current = null;
 			}
 			return;
 		}
@@ -697,6 +752,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 							<button
 								type="button"
 								className={`${styles.toggle} ${gifLoop ? styles.isOn : ""}`}
+								aria-label={t("exportDialog.loopGif")}
 								aria-pressed={gifLoop}
 								disabled={isBusy}
 								onClick={() => setGifLoop((v) => !v)}
@@ -719,6 +775,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					phase={phase}
 					progress={progress}
 					error={error}
+					errorDetails={errorDetails}
 					pct={pct}
 					savedPath={savedPath}
 					audioMastering={audioMastering}
@@ -755,7 +812,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 						type="button"
 						className={`${styles.btn} ${styles.btnSecondary}`}
 						onClick={handleClose}
-						disabled={isBusy}
+						disabled={phase === "configuring"}
 					>
 						{phase === "done" ? t("exportDialog.close") : t("exportDialog.cancel")}
 					</button>
@@ -833,6 +890,7 @@ function ProgressBlock({
 	phase,
 	progress,
 	error,
+	errorDetails,
 	pct,
 	savedPath,
 	audioMastering,
@@ -840,6 +898,7 @@ function ProgressBlock({
 	phase: Phase;
 	progress: ExportProgress | null;
 	error: string | null;
+	errorDetails: ExportFailureDetails | null;
 	pct: number;
 	savedPath: string | null;
 	audioMastering: CompositorAudioMasteringResult | null;
@@ -895,6 +954,13 @@ function ProgressBlock({
 	if (phase === "error") {
 		return (
 			<div
+				data-export-phase={errorDetails?.phase}
+				data-export-code={errorDetails?.code}
+				title={
+					errorDetails?.code
+						? `${errorDetails.phase ?? "export"} · ${errorDetails.code}${errorDetails.retryable ? " · retryable" : ""}`
+						: undefined
+				}
 				style={{
 					padding: "16px",
 					border: "1px solid var(--danger)",

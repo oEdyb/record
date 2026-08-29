@@ -197,6 +197,7 @@ export function CaptionsPane() {
 					<Toggle
 						checked={settings.enabled}
 						disabled={disabled || !hasTranscript}
+						label={t("captions.show")}
 						onChange={(next) => void set({ enabled: next })}
 					/>
 				</div>
@@ -350,6 +351,7 @@ export function CaptionsPane() {
 					<Toggle
 						checked={settings.fontWeight === "bold"}
 						disabled={disabled}
+						label={t("captions.bold")}
 						onChange={(next) => void set({ fontWeight: next ? "bold" : "normal" })}
 					/>
 				</div>
@@ -394,6 +396,7 @@ export function CaptionsPane() {
 						<Toggle
 							checked={settings.backgroundEnabled}
 							disabled={disabled}
+							label={t("captions.background")}
 							onChange={(next) => void set({ backgroundEnabled: next })}
 						/>
 					</div>

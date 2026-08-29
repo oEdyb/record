@@ -162,7 +162,10 @@ impl CpuFrames {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_NV12,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Usage: d3d11::D3D11_USAGE_DYNAMIC,
             BindFlags: d3d11::D3D11_BIND_SHADER_RESOURCE.0 as u32,
             CPUAccessFlags: d3d11::D3D11_CPU_ACCESS_WRITE.0 as u32,
@@ -184,7 +187,13 @@ impl CpuFrames {
         let resource: d3d11::ID3D11Resource = tex.cast()?;
 
         let mut mapped = d3d11::D3D11_MAPPED_SUBRESOURCE::default();
-        self.ctx.Map(&resource, 0, d3d11::D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))?;
+        self.ctx.Map(
+            &resource,
+            0,
+            d3d11::D3D11_MAP_WRITE_DISCARD,
+            0,
+            Some(&mut mapped),
+        )?;
 
         let dst = mapped.pData as *mut u8;
         let pitch = mapped.RowPitch as usize;

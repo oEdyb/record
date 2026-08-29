@@ -32,6 +32,8 @@ export class NativeBridgeClientError extends Error {
 	constructor(
 		message: string,
 		readonly code: NativeBridgeErrorCode,
+		readonly details?: import("./contracts").NativeBridgeError["details"],
+		readonly retryable = false,
 	) {
 		super(message);
 		this.name = "NativeBridgeClientError";
@@ -72,7 +74,12 @@ export async function requireNativeBridgeData<TData>(request: NativeBridgeReques
 		if (response.error.code === "ENTITLEMENT_REQUIRED") {
 			useEntitlementStore.getState().openDialog();
 		}
-		throw new NativeBridgeClientError(response.error.message, response.error.code);
+		throw new NativeBridgeClientError(
+			response.error.message,
+			response.error.code,
+			response.error.details,
+			response.error.retryable,
+		);
 	}
 
 	return response.data;

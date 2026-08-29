@@ -31,10 +31,10 @@
 #![cfg(not(target_os = "linux"))]
 
 use openscreen_compositor::compositor::Compositor;
+use openscreen_compositor::config;
 use openscreen_compositor::d3d::Gpu;
 use openscreen_compositor::live::Player;
 use openscreen_compositor::scene::Scene;
-use openscreen_compositor::config;
 
 /// Instant fixe dans la source. Un seek explicite (`present_frame`) plutôt que
 /// la lecture libre : le golden doit être reproductible à l'octet près.
@@ -145,7 +145,10 @@ fn golden_frames_per_output_format() {
 
     let gpu = Gpu::create(false).expect("device d3d11");
 
-    println!("\n{:<18} {:>11}  {:>18}  {:>9} {:>9}", "format", "sortie", "hash", "grad_x", "grad_y");
+    println!(
+        "\n{:<18} {:>11}  {:>18}  {:>9} {:>9}",
+        "format", "sortie", "hash", "grad_x", "grad_y"
+    );
     println!("{}", "-".repeat(72));
 
     for &(name, w, h) in FORMATS {
@@ -162,7 +165,9 @@ fn golden_frames_per_output_format() {
         // image source d'un format à l'autre.
         let rgba = unsafe {
             let mut player = Player::open(&screen, &webcam, &gpu).expect("ouvrir les sources");
-            player.present_frame(&comp, &cfg, AT_SEC).expect("composer la frame");
+            player
+                .present_frame(&comp, &cfg, AT_SEC)
+                .expect("composer la frame");
             comp.readback_resized(w, h).expect("readback")
         };
 
@@ -176,7 +181,10 @@ fn golden_frames_per_output_format() {
         let hash = fnv1a(&rgba);
         write_ppm(&out_dir.join(format!("{name}.ppm")), &rgba, w, h).expect("ecrire le ppm");
 
-        println!("{name:<18} {:>5}x{:<5} {hash:>18x}  {gx:>9.3} {gy:>9.3}", w, h);
+        println!(
+            "{name:<18} {:>5}x{:<5} {hash:>18x}  {gx:>9.3} {gy:>9.3}",
+            w, h
+        );
     }
 
     println!("\nFrames ecrites dans {}", out_dir.display());
@@ -278,7 +286,7 @@ fn golden_cropped_clip_is_not_stretched() {
     // Crop du rapport utilisateur : bande verticale 30% x 89% d'une source 16:9.
     let (crop_w, crop_h) = (0.30f32, 0.89f32);
     let crop_ar = (1920.0 * crop_w) / (1080.0 * crop_h); // ≈ 0.599
-    // Le rect que l'app DOIT produire : contain de ce ratio dans le cadre de sortie.
+                                                         // Le rect que l'app DOIT produire : contain de ce ratio dans le cadre de sortie.
     let rect_h = 0.94f32;
     let rect_w = rect_h * crop_ar * (h as f32 / w as f32);
     let scene_json = format!(
@@ -313,5 +321,8 @@ fn golden_cropped_clip_is_not_stretched() {
     };
     let path = out_dir.join("cropped-clip.ppm");
     write_ppm(&path, &rgba, w, h).expect("ecrire le ppm");
-    println!("crop ar={crop_ar:.3} rect={rect_w:.3}x{rect_h:.3} -> {}", path.display());
+    println!(
+        "crop ar={crop_ar:.3} rect={rect_w:.3}x{rect_h:.3} -> {}",
+        path.display()
+    );
 }

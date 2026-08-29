@@ -46,11 +46,11 @@ use std::ptr;
 
 use crate::ffi::{
     av_interleaved_write_frame, av_packet_alloc, av_packet_free, av_packet_rescale_ts,
-    av_packet_unref, av_read_frame, av_write_trailer, avcodec_parameters_copy,
+    av_packet_unref, av_read_frame, av_write_trailer, avcodec_parameters_copy, averr,
     avformat_alloc_output_context2, avformat_close_input, avformat_find_stream_info,
     avformat_free_context, avformat_new_stream, avformat_open_input, avformat_write_header,
-    averr, avio_closep, avio_open, sn_fmt_nb_streams, sn_fmt_set_pb, sn_fmt_stream, AVIOContext,
-    AVFormatContext, AVMediaType, AVPacket, AVIO_FLAG_WRITE,
+    avio_closep, avio_open, sn_fmt_nb_streams, sn_fmt_set_pb, sn_fmt_stream, AVFormatContext,
+    AVIOContext, AVMediaType, AVPacket, AVIO_FLAG_WRITE,
 };
 
 /// Bilan d'un remux, remonté jusqu'à la glue TS pour la journalisation.
@@ -127,7 +127,12 @@ pub fn remux_to_seekable_matroska(input: &str, output: &str) -> Result<RemuxStat
 
     unsafe {
         averr(
-            avformat_open_input(&mut guard.ictx, cin.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+            avformat_open_input(
+                &mut guard.ictx,
+                cin.as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ),
             "avformat_open_input",
         )?;
         averr(
@@ -210,10 +215,7 @@ pub fn remux_to_seekable_matroska(input: &str, output: &str) -> Result<RemuxStat
                 break;
             }
             let in_idx = (*guard.pkt).stream_index;
-            let out_idx = stream_map
-                .get(in_idx as usize)
-                .copied()
-                .unwrap_or(-1);
+            let out_idx = stream_map.get(in_idx as usize).copied().unwrap_or(-1);
             if out_idx < 0 {
                 av_packet_unref(guard.pkt);
                 continue;

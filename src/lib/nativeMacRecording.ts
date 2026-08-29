@@ -95,6 +95,45 @@ export type NativeMacHelperRecordingStoppedEvent = {
 		code: string;
 		message: string;
 	};
+	telemetry?: NativeMacCaptureTelemetry;
+};
+
+export type NativeMacMetricSummary = {
+	count: number;
+	min: number;
+	max: number;
+	mean: number;
+	p50: number;
+	p95: number;
+	p99: number;
+};
+
+export type NativeMacCaptureTelemetry = {
+	requestedVideoFps: number;
+	deliveredVideoFps: number;
+	screenSamples: number;
+	completeScreenSamples: number;
+	idleScreenSamples: number;
+	blankScreenSamples: number;
+	suspendedScreenSamples: number;
+	startedScreenSamples: number;
+	stoppedScreenSamples: number;
+	otherScreenSamples: number;
+	appendedVideoFrames: number;
+	pendingVideoFrames: number;
+	appendFailures: number;
+	droppedVideoFrames: number;
+	systemAudioSamples: number;
+	microphoneAudioSamples: number;
+	audioMaxQueueBytes?: number;
+	writerMaxQueueDepth?: number;
+	lowPowerMode: boolean;
+	thermalState: "unknown" | "nominal" | "fair" | "serious" | "critical";
+	systemAudioDriftMs?: NativeMacMetricSummary;
+	screenTimestampDriftMs?: NativeMacMetricSummary;
+	microphoneDriftMs?: NativeMacMetricSummary;
+	fragmentFinalizeMs?: NativeMacMetricSummary;
+	audioBlockMs?: NativeMacMetricSummary;
 };
 
 export type NativeMacHelperWarningEvent = {

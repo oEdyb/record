@@ -113,8 +113,7 @@ pub(crate) fn parse_hex(s: &str) -> Option<[f32; 4]> {
     // composantes. On les traite donc par le même chemin plutôt que d'imposer une arité par
     // nom — refuser `rgba(0, 0, 0)` ne « signalerait » rien d'utile, ça retomberait sur le
     // fallback de l'appelant, c'est-à-dire une plaque invisible : exactement le bug #178.
-    if let Some(inner) =
-        strip_color_fn(trimmed, "rgba").or_else(|| strip_color_fn(trimmed, "rgb"))
+    if let Some(inner) = strip_color_fn(trimmed, "rgba").or_else(|| strip_color_fn(trimmed, "rgb"))
     {
         return parse_rgb_components(inner);
     }
@@ -199,8 +198,10 @@ pub(crate) fn screen_source_rect(
     focus: [f32; 2],
 ) -> [f32; 4] {
     let normalized_crop = crop.and_then(|crop| {
-        if !crop.x.is_finite() || !crop.y.is_finite()
-            || !crop.width.is_finite() || !crop.height.is_finite()
+        if !crop.x.is_finite()
+            || !crop.y.is_finite()
+            || !crop.width.is_finite()
+            || !crop.height.is_finite()
         {
             return None;
         }
@@ -213,9 +214,21 @@ pub(crate) fn screen_source_rect(
     let [x0, y0, x1, y1] = normalized_crop.unwrap_or([0.0, 0.0, 1.0, 1.0]);
     let (cu0, cv0, cu1, cv1) = (x0 * u_max, y0 * v_max, x1 * u_max, y1 * v_max);
     let (cw, ch) = (cu1 - cu0, cv1 - cv0);
-    let zoom = if zoom.is_finite() && zoom >= 1.0 { zoom } else { 1.0 };
-    let fx = if focus[0].is_finite() { focus[0].clamp(0.0, 1.0) } else { 0.5 };
-    let fy = if focus[1].is_finite() { focus[1].clamp(0.0, 1.0) } else { 0.5 };
+    let zoom = if zoom.is_finite() && zoom >= 1.0 {
+        zoom
+    } else {
+        1.0
+    };
+    let fx = if focus[0].is_finite() {
+        focus[0].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let fy = if focus[1].is_finite() {
+        focus[1].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
     let (hu, hv) = (cw / (2.0 * zoom), ch / (2.0 * zoom));
     // `.max(cu0/cv0)` absorbs the tiny float inversion possible at zoom=1.
     let su0 = (cu0 + fx * cw - hu).clamp(cu0, (cu1 - 2.0 * hu).max(cu0));
@@ -293,11 +306,23 @@ pub(crate) fn zoom_crop_uv(
     zoom: f32,
     focus: [f32; 2],
 ) -> (f32, f32, f32, f32) {
-    let zoom = if zoom.is_finite() { zoom.clamp(1.0, 3.0) } else { 1.0 };
+    let zoom = if zoom.is_finite() {
+        zoom.clamp(1.0, 3.0)
+    } else {
+        1.0
+    };
     let (u0, v0, u1, v1) = uv;
     let (half_w, half_h) = ((u1 - u0) * 0.5 / zoom, (v1 - v0) * 0.5 / zoom);
-    let focus_x = if focus[0].is_finite() { focus[0].clamp(0.0, 1.0) } else { 0.5 };
-    let focus_y = if focus[1].is_finite() { focus[1].clamp(0.0, 1.0) } else { 0.5 };
+    let focus_x = if focus[0].is_finite() {
+        focus[0].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let focus_y = if focus[1].is_finite() {
+        focus[1].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
     let cx = (u0 + (u1 - u0) * focus_x).clamp(u0 + half_w, u1 - half_w);
     let cy = (v0 + (v1 - v0) * focus_y).clamp(v0 + half_h, v1 - half_h);
     (cx - half_w, cy - half_h, cx + half_w, cy + half_h)
@@ -320,7 +345,11 @@ pub(crate) fn webcam_crop_uv(
         zoom,
         [source_focus_x, focus[1]],
     );
-    if mirror { (u1, v0, u0, v1) } else { (u0, v0, u1, v1) }
+    if mirror {
+        (u1, v0, u0, v1)
+    } else {
+        (u0, v0, u1, v1)
+    }
 }
 /// Rétrécit un rect SOURCE déjà exprimé en UV (`[u0, v0, u1, v1]`) autour de son
 /// centre pour qu'il porte le ratio `box_ar` une fois rapporté aux pixels de la
@@ -347,7 +376,11 @@ pub(crate) fn cover_uv_rect(uv: [f32; 4], tex: [f32; 2], box_ar: f32) -> [f32; 4
     // texture n'est pas carrée — d'où le passage par `tex`).
     let (w_px, h_px) = (w_uv * tex_w, h_uv * tex_h);
     let cur_ar = w_px / h_px;
-    let box_ar = if box_ar.is_finite() && box_ar > 0.0 { box_ar } else { cur_ar };
+    let box_ar = if box_ar.is_finite() && box_ar > 0.0 {
+        box_ar
+    } else {
+        cur_ar
+    };
     let (new_w_px, new_h_px) = if box_ar >= cur_ar {
         (w_px, w_px / box_ar) // boîte plus large → pleine largeur, on rogne en hauteur
     } else {
@@ -355,7 +388,12 @@ pub(crate) fn cover_uv_rect(uv: [f32; 4], tex: [f32; 2], box_ar: f32) -> [f32; 4
     };
     let (new_w, new_h) = (new_w_px / tex_w, new_h_px / tex_h);
     let (cx, cy) = (uv[0] + w_uv * 0.5, uv[1] + h_uv * 0.5);
-    [cx - new_w * 0.5, cy - new_h * 0.5, cx + new_w * 0.5, cy + new_h * 0.5]
+    [
+        cx - new_w * 0.5,
+        cy - new_h * 0.5,
+        cx + new_w * 0.5,
+        cy + new_h * 0.5,
+    ]
 }
 /// Resolve the saved base framing for one output shape. Cover establishes the
 /// smallest crop that fills the destination slot. The saved scale can only
@@ -373,13 +411,25 @@ pub(crate) fn framed_screen_source_rect(
     let cover_uv = cover_box_ar
         .map(|aspect| cover_uv_rect(crop_uv, tex, aspect))
         .unwrap_or(crop_uv);
-    let scale = if scale.is_finite() { scale.clamp(1.0, 4.0) } else { 1.0 };
+    let scale = if scale.is_finite() {
+        scale.clamp(1.0, 4.0)
+    } else {
+        1.0
+    };
     let width = (cover_uv[2] - cover_uv[0]) / scale;
     let height = (cover_uv[3] - cover_uv[1]) / scale;
     let available_x = (crop_uv[2] - crop_uv[0] - width).max(0.0);
     let available_y = (crop_uv[3] - crop_uv[1] - height).max(0.0);
-    let fx = if focus[0].is_finite() { focus[0].clamp(0.0, 1.0) } else { 0.5 };
-    let fy = if focus[1].is_finite() { focus[1].clamp(0.0, 1.0) } else { 0.5 };
+    let fx = if focus[0].is_finite() {
+        focus[0].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let fy = if focus[1].is_finite() {
+        focus[1].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
     let x0 = crop_uv[0] + available_x * fx;
     let y0 = crop_uv[1] + available_y * fy;
     [x0, y0, x0 + width, y0 + height]
@@ -397,17 +447,27 @@ fn zoom_inside_base_frame(
     let full_h = (full_crop[3] - full_crop[1]).max(1e-6);
     let base_w = (base[2] - base[0]).max(1e-6);
     let base_h = (base[3] - base[1]).max(1e-6);
-    let full_fx = if focus[0].is_finite() { focus[0].clamp(0.0, 1.0) } else { 0.5 };
-    let full_fy = if focus[1].is_finite() { focus[1].clamp(0.0, 1.0) } else { 0.5 };
+    let full_fx = if focus[0].is_finite() {
+        focus[0].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let full_fy = if focus[1].is_finite() {
+        focus[1].clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
     let fx = ((full_crop[0] + full_fx * full_w - base[0]) / base_w).clamp(0.0, 1.0);
     let fy = ((full_crop[1] + full_fy * full_h - base[1]) / base_h).clamp(0.0, 1.0);
-    let zoom = if zoom.is_finite() && zoom >= 1.0 { zoom } else { 1.0 };
+    let zoom = if zoom.is_finite() && zoom >= 1.0 {
+        zoom
+    } else {
+        1.0
+    };
     let width = base_w / zoom;
     let height = base_h / zoom;
-    let x0 = (base[0] + fx * base_w - width * 0.5)
-        .clamp(base[0], (base[2] - width).max(base[0]));
-    let y0 = (base[1] + fy * base_h - height * 0.5)
-        .clamp(base[1], (base[3] - height).max(base[1]));
+    let x0 = (base[0] + fx * base_w - width * 0.5).clamp(base[0], (base[2] - width).max(base[0]));
+    let y0 = (base[1] + fy * base_h - height * 0.5).clamp(base[1], (base[3] - height).max(base[1]));
     [x0, y0, x0 + width, y0 + height]
 }
 
@@ -478,7 +538,13 @@ impl CursorPlacement {
     pub(crate) fn lerp(self, other: CursorPlacement, f: f32) -> CursorPlacement {
         match (self, other) {
             (
-                CursorPlacement::Tilted { plane_pt: a, quad, center_px, screen_px, render_px },
+                CursorPlacement::Tilted {
+                    plane_pt: a,
+                    quad,
+                    center_px,
+                    screen_px,
+                    render_px,
+                },
                 CursorPlacement::Tilted { plane_pt: b, .. },
             ) => CursorPlacement::Tilted {
                 plane_pt: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f],
@@ -501,9 +567,18 @@ impl CursorPlacement {
     pub(crate) fn upright_center(self) -> [f32; 2] {
         match self {
             CursorPlacement::Upright { center } => center,
-            CursorPlacement::Tilted { plane_pt, quad, center_px, render_px, .. } => {
+            CursorPlacement::Tilted {
+                plane_pt,
+                quad,
+                center_px,
+                render_px,
+                ..
+            } => {
                 let (px, py) = quad.point_px(plane_pt[0], plane_pt[1]);
-                [(center_px[0] + px) / render_px[0], (center_px[1] + py) / render_px[1]]
+                [
+                    (center_px[0] + px) / render_px[0],
+                    (center_px[1] + py) / render_px[1],
+                ]
             }
         }
     }
@@ -520,7 +595,12 @@ pub(crate) fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 pub(crate) fn lerp4(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
-    [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t), lerp(a[3], b[3], t)]
+    [
+        lerp(a[0], b[0], t),
+        lerp(a[1], b[1], t),
+        lerp(a[2], b[2], t),
+        lerp(a[3], b[3], t),
+    ]
 }
 /// Un calque vidéo animé (rect sortie, taille px, rayon) — screen ou webcam.
 #[derive(Clone, Copy)]
@@ -544,7 +624,11 @@ pub(crate) fn timeline(frame: f32, cfg: &Cfg) -> FrameParams {
 
     // zoom : montée [0,3s] puis descente [3s,6s], easeInOutCubic
     let zoom = if cfg.zoom {
-        let zt = if t < 3.0 { ease_in_out_cubic(t / 3.0) } else { ease_in_out_cubic((6.0 - t) / 3.0) };
+        let zt = if t < 3.0 {
+            ease_in_out_cubic(t / 3.0)
+        } else {
+            ease_in_out_cubic((6.0 - t) / 3.0)
+        };
         1.0 + 0.8 * zt
     } else {
         1.0
@@ -566,7 +650,10 @@ pub(crate) fn timeline(frame: f32, cfg: &Cfg) -> FrameParams {
     };
 
     // Layout A (PIP)
-    let a_screen = Placement { dst: [0.05, 0.05, 0.90, 0.90], radius: 24.0 };
+    let a_screen = Placement {
+        dst: [0.05, 0.05, 0.90, 0.90],
+        radius: 24.0,
+    };
     let a_side = 320.0_f32;
     let a_webcam = Placement {
         dst: [
@@ -578,7 +665,10 @@ pub(crate) fn timeline(frame: f32, cfg: &Cfg) -> FrameParams {
         radius: 40.0,
     };
     // Layout B (côte à côte) : screen à gauche (16:9), webcam carré à droite
-    let b_screen = Placement { dst: [0.035, 0.22, 0.60, 0.5625], radius: 20.0 };
+    let b_screen = Placement {
+        dst: [0.035, 0.22, 0.60, 0.5625],
+        radius: 20.0,
+    };
     let b_side = 520.0_f32;
     let b_webcam = Placement {
         dst: [
@@ -593,8 +683,14 @@ pub(crate) fn timeline(frame: f32, cfg: &Cfg) -> FrameParams {
     FrameParams {
         zoom,
         focus: [0.5, 0.32],
-        screen: Placement { dst: lerp4(a_screen.dst, b_screen.dst, lf), radius: lerp(a_screen.radius, b_screen.radius, lf) },
-        webcam: Placement { dst: lerp4(a_webcam.dst, b_webcam.dst, lf), radius: lerp(a_webcam.radius, b_webcam.radius, lf) },
+        screen: Placement {
+            dst: lerp4(a_screen.dst, b_screen.dst, lf),
+            radius: lerp(a_screen.radius, b_screen.radius, lf),
+        },
+        webcam: Placement {
+            dst: lerp4(a_webcam.dst, b_webcam.dst, lf),
+            radius: lerp(a_webcam.radius, b_webcam.radius, lf),
+        },
     }
 }
 /// Placements statiques screen+webcam pour un preset de layout de l'app (contrat de scène) —
@@ -602,7 +698,10 @@ pub(crate) fn timeline(frame: f32, cfg: &Cfg) -> FrameParams {
 /// La taille/forme/miroir webcam restent appliqués par-dessus via `LiveParams`.
 pub(crate) fn preset_placements(preset: &str) -> FrameParams {
     // plein cadre : le padding l'insère ensuite (padding 0 → bord à bord).
-    let full_screen = Placement { dst: [0.0, 0.0, 1.0, 1.0], radius: 24.0 };
+    let full_screen = Placement {
+        dst: [0.0, 0.0, 1.0, 1.0],
+        radius: 24.0,
+    };
     // PiP bas-droite (≈ layout A fixture).
     let a_side = 320.0_f32;
     let pip_webcam = Placement {
@@ -615,14 +714,20 @@ pub(crate) fn preset_placements(preset: &str) -> FrameParams {
         radius: 40.0,
     };
     // webcam hors écran (no-webcam) : quad de taille nulle, jamais visible.
-    let off_webcam = Placement { dst: [2.0, 2.0, 0.0, 0.0], radius: 0.0 };
+    let off_webcam = Placement {
+        dst: [2.0, 2.0, 0.0, 0.0],
+        radius: 0.0,
+    };
 
     let (screen, webcam) = match preset {
         "dual-frame" => {
             // côte à côte : screen 16:9 à gauche, webcam carré à droite (≈ layout B fixture).
             let b_side = 520.0_f32;
             (
-                Placement { dst: [0.035, 0.22, 0.60, 0.5625], radius: 20.0 },
+                Placement {
+                    dst: [0.035, 0.22, 0.60, 0.5625],
+                    radius: 20.0,
+                },
                 Placement {
                     dst: [
                         0.70,
@@ -638,7 +743,10 @@ pub(crate) fn preset_placements(preset: &str) -> FrameParams {
             // haut/bas : screen en haut, webcam carré centré en bas.
             let w_side = 360.0_f32;
             (
-                Placement { dst: [0.13, 0.04, 0.74, 0.52], radius: 20.0 },
+                Placement {
+                    dst: [0.13, 0.04, 0.74, 0.52],
+                    radius: 20.0,
+                },
                 Placement {
                     dst: [
                         0.5 - (w_side * 0.5) / OUT_W as f32,
@@ -654,7 +762,12 @@ pub(crate) fn preset_placements(preset: &str) -> FrameParams {
         _ => (full_screen, pip_webcam), // "picture-in-picture" (défaut)
     };
 
-    FrameParams { zoom: 1.0, focus: [0.5, 0.5], screen, webcam }
+    FrameParams {
+        zoom: 1.0,
+        focus: [0.5, 0.5],
+        screen,
+        webcam,
+    }
 }
 
 // Les quatre items qui suivent existaient en DOUBLE, un exemplaire par backend, et les
@@ -861,389 +974,429 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     let scene = input.scene;
     let cursor = input.cursor;
 
-        // Scène de l'app présente → placements du layout preset (ou, mieux, le rect résolu par
-        // l'app dans `layout.webcam_rect`) ; sinon planning fixture (bench).
-        let scene_preset: Option<String> =
-            scene.map(|s| s.layout.preset.clone());
-        // Webcam rect résolu par l'app (= `computeCompositeLayout`, source de vérité unique
-        // entre preview et natif) : quand il est présent ET que la scène est posée, on l'utilise
-        // COMME placement de base. Sinon, fallback sur `preset_placements` historique (PiP
-        // codé en dur à 320 px + 40 px de marge — l'arrangement qui dérivait de la preview).
-        let app_webcam_rect: Option<[f32; 4]> = scene
-            .and_then(|s| s.layout.webcam_rect)
-            .map(|r| [r.x, r.y, r.width, r.height]);
-        // Idem pour l'écran. Les deux rects viennent du MÊME appel `computeCompositeLayout`, donc
-        // les consommer ensemble est la seule façon de garder le bloc écran+caméra cohérent :
-        // n'en prendre qu'un revenait à mélanger la géométrie de l'app et un placement fixture.
-        let app_screen_rect: Option<[f32; 4]> = scene
-            .and_then(|s| s.layout.screen_rect)
-            .map(|r| [r.x, r.y, r.width, r.height]);
-        let (mut p, mut pp) = match &scene_preset {
-            Some(preset) => {
-                // Chaque rect résolu par l'app remplace INDÉPENDAMMENT sa contrepartie du
-                // preset ; sinon celle du preset reste (le padding slider l'insèrera ensuite
-                // dans `scale_frame`).
-                //
-                // Avant, ce match portait sur `app_webcam_rect` et le rect ÉCRAN n'était donc
-                // honoré que si un rect webcam arrivait aussi. Un layout sans caméra gardait
-                // l'écran plein cadre du preset — pendant que `fit_screen` (plus bas) coupait
-                // quand même son fit au ratio du crop, puisqu'un `app_screen_rect` était bien
-                // présent. Résultat : un clip recadré sans caméra était étiré, et aucune des
-                // deux voies ne le rattrapait. Coupler l'écran à la présence de la caméra
-                // n'avait aucune raison d'être — ce sont deux calques indépendants.
-                let mut fp = preset_placements(preset);
-                if let Some(wr) = app_webcam_rect {
-                    fp.webcam.dst = wr;
-                }
-                if let Some(sr) = app_screen_rect {
-                    fp.screen.dst = sr;
-                }
-                (fp, fp) // layout statique → vélocité nulle
+    // Scène de l'app présente → placements du layout preset (ou, mieux, le rect résolu par
+    // l'app dans `layout.webcam_rect`) ; sinon planning fixture (bench).
+    let scene_preset: Option<String> = scene.map(|s| s.layout.preset.clone());
+    // Webcam rect résolu par l'app (= `computeCompositeLayout`, source de vérité unique
+    // entre preview et natif) : quand il est présent ET que la scène est posée, on l'utilise
+    // COMME placement de base. Sinon, fallback sur `preset_placements` historique (PiP
+    // codé en dur à 320 px + 40 px de marge — l'arrangement qui dérivait de la preview).
+    let app_webcam_rect: Option<[f32; 4]> = scene
+        .and_then(|s| s.layout.webcam_rect)
+        .map(|r| [r.x, r.y, r.width, r.height]);
+    // Idem pour l'écran. Les deux rects viennent du MÊME appel `computeCompositeLayout`, donc
+    // les consommer ensemble est la seule façon de garder le bloc écran+caméra cohérent :
+    // n'en prendre qu'un revenait à mélanger la géométrie de l'app et un placement fixture.
+    let app_screen_rect: Option<[f32; 4]> = scene
+        .and_then(|s| s.layout.screen_rect)
+        .map(|r| [r.x, r.y, r.width, r.height]);
+    let (mut p, mut pp) = match &scene_preset {
+        Some(preset) => {
+            // Chaque rect résolu par l'app remplace INDÉPENDAMMENT sa contrepartie du
+            // preset ; sinon celle du preset reste (le padding slider l'insèrera ensuite
+            // dans `scale_frame`).
+            //
+            // Avant, ce match portait sur `app_webcam_rect` et le rect ÉCRAN n'était donc
+            // honoré que si un rect webcam arrivait aussi. Un layout sans caméra gardait
+            // l'écran plein cadre du preset — pendant que `fit_screen` (plus bas) coupait
+            // quand même son fit au ratio du crop, puisqu'un `app_screen_rect` était bien
+            // présent. Résultat : un clip recadré sans caméra était étiré, et aucune des
+            // deux voies ne le rattrapait. Coupler l'écran à la présence de la caméra
+            // n'avait aucune raison d'être — ce sont deux calques indépendants.
+            let mut fp = preset_placements(preset);
+            if let Some(wr) = app_webcam_rect {
+                fp.webcam.dst = wr;
             }
-            None => (timeline(frame, cfg), timeline(frame - 1.0, cfg)),
-        };
-        // Motion blur écran : quand la scène (contrat de l'app) est posée, c'est elle qui pilote
-        // (parité inspector : 1.0 + motion_blur*15 taps), sinon on retombe sur `cfg.mblur_n`
-        // (le bench fixture continue d'utiliser ses taps explicites).
-        let mb_taps = scene
-            .map(|s| 1.0 + s.effects.motion_blur.clamp(0.0, 1.0) * 15.0)
-            .unwrap_or(cfg.mblur_n as f32);
-
-        // Zoom regions + Full Camera : filtrées en amont pour le clip actif et échantillonnées
-        // dans le même référentiel source que le PTS du décodeur écran.
-        let empty_zoom: Vec<crate::scene::SceneZoomRegion> = Vec::new();
-        let empty_cam: Vec<crate::scene::SceneCameraFullscreenRegion> = Vec::new();
-        let zoom_regions = scene.map(|s| &s.zoom_regions).unwrap_or(&empty_zoom);
-        let cam_regions =
-            scene.map(|s| &s.camera_fullscreen_regions).unwrap_or(&empty_cam);
-        let webcam_reactive = scene.map(|s| s.layout.webcam_reactive_zoom).unwrap_or(false);
-        let source_t = input.timeline_t_override.unwrap_or(frame / FPS);
-        let source_t_prev = source_t - 1.0 / FPS;
-        // le focus "auto" (suivi curseur) réutilise la même piste que le rendu du curseur.
-        let cursor_for_zoom = cursor;
-        // La rotation 3D (mode 8, pas de motion blur dans ce chemin — cf. le commentaire au
-        // point d'appel) n'est calculée QUE pour la frame courante ; `pp` ne sert qu'au zoom
-        // écran normal (vélocité pour le motion blur du chemin non-tilté).
-        let mut zoom_rotation = [0.0f32; 3];
-        if !zoom_regions.is_empty() {
-            let zs = crate::regions::zoom_state_at(zoom_regions, source_t, cursor_for_zoom);
-            p.zoom = zs.scale;
-            p.focus = zs.focus;
-            zoom_rotation = zs.rotation;
-            let zs_p = crate::regions::zoom_state_at(zoom_regions, source_t_prev, cursor_for_zoom);
-            pp.zoom = zs_p.scale;
-            pp.focus = zs_p.focus;
+            if let Some(sr) = app_screen_rect {
+                fp.screen.dst = sr;
+            }
+            (fp, fp) // layout statique → vélocité nulle
         }
-        // Resolve the active camera layout once so preview and export use the same motion state.
-        let cam_layout = crate::regions::camera_layout_state_at(cam_regions, source_t);
-        let cam_layout_prev = crate::regions::camera_layout_state_at(cam_regions, source_t_prev);
-        let cam_progress = cam_layout.progress;
-        let cam_progress_prev = cam_layout_prev.progress;
-        // rétrécissement réactif : la webcam rétrécit pendant un zoom actif (1/zoom, plancher
-        // 0.35 — parité `reactiveWebcamScale`, TS). Ignoré pendant Full Camera (voir ci-dessus).
-        let reactive_scale = |zoom: f32, progress: f32| -> f32 {
-            if webcam_reactive && progress <= 0.0 && zoom.is_finite() && zoom > 0.0 {
-                (1.0 / zoom).clamp(0.35, 1.0)
-            } else {
-                1.0
-            }
-        };
-        // `lp.webcam_size_scale` vient de `scene.layout.webcamSize` (voir `live_params_from_scene`)
-        // — le MÊME nombre que le fraction webcamSizePreset déjà pris en compte côté app pour
-        // calculer `wr` (`computeCompositeLayout`, TS). Quand l'app fournit un `webcam_rect`
-        // explicite, la taille y est donc déjà cuite : réappliquer `lp.webcam_size_scale` ici
-        // double-échelonnerait la boîte (ex. un preset 34% → webcam rendue à ~34%×34% ≈ 12% au
-        // lieu de 34%, la webcam apparaissant bien plus petite que ce que montre l'aperçu web).
-        // Seul `reactive_scale` (rétrécissement pendant un zoom, une valeur ANIMÉE par frame que
-        // le rect statique de l'app ne capture pas) doit encore s'appliquer dans ce cas.
-        let base_size_scale = if app_webcam_rect.is_some() { 1.0 } else { lp.webcam_size_scale };
-        let webcam_size_scale = base_size_scale * reactive_scale(p.zoom, cam_progress);
-        let webcam_size_scale_prev = base_size_scale * reactive_scale(pp.zoom, cam_progress_prev);
+        None => (timeline(frame, cfg), timeline(frame - 1.0, cfg)),
+    };
+    // Motion blur écran : quand la scène (contrat de l'app) est posée, c'est elle qui pilote
+    // (parité inspector : 1.0 + motion_blur*15 taps), sinon on retombe sur `cfg.mblur_n`
+    // (le bench fixture continue d'utiliser ses taps explicites).
+    let mb_taps = scene
+        .map(|s| 1.0 + s.effects.motion_blur.clamp(0.0, 1.0) * 15.0)
+        .unwrap_or(cfg.mblur_n as f32);
 
-        // padding : échelle globale du layout autour du centre du cadre (parité web frameRenderer :
-        // paddingScale = 1 - padding*0.4 → padding 0 = plein cadre). S'applique à TOUS les presets :
-        // côté web, side-by-side et top/bottom soudent écran+caméra en un bloc unique et c'est ce
-        // bloc que le padding rétrécit (cf. `compositeLayout.ts`, branche `block`). Vertical-stack
-        // en était exempté tant qu'il était full-bleed ; il ne l'est plus.
-        let padding_scale = 1.0 - lp.padding * 0.4;
-        let scale_frame = |dst: [f32; 4], s: f32| -> [f32; 4] {
-            [0.5 + (dst[0] - 0.5) * s, 0.5 + (dst[1] - 0.5) * s, dst[2] * s, dst[3] * s]
-        };
-        // webcam : ancrée à son coin bas-droite (grandit vers le haut-gauche, pas depuis le centre).
-        let scale_corner_br = |dst: [f32; 4], s: f32| -> [f32; 4] {
-            let (brx, bry) = (dst[0] + dst[2], dst[1] + dst[3]);
-            let (nw, nh) = (dst[2] * s, dst[3] * s);
-            [brx - nw, bry - nh, nw, nh]
-        };
-        // parité web (compositeLayout) : rectangle/rounded gardent le ratio natif de la webcam ;
-        // square/circle forcent un carré (side = min). Le placement de base est carré → on ajuste
-        // ici, en gardant le coin bas-droite fixe (cohérent avec le size-scale).
-        let is_square_shape = matches!(lp.webcam_shape, 1 | 2); // circle | square
-        let cam_ar = if is_square_shape { 1.0 } else { (wcw / wch).max(0.01) };
-        let fit_cam_aspect = |dst: [f32; 4]| -> [f32; 4] {
-            let s = (dst[2] * rw).min(dst[3] * rh); // côté carré de base (px)
-            let (pw, ph) = if cam_ar >= 1.0 { (s, s / cam_ar) } else { (s * cam_ar, s) };
-            let (nw, nh) = (pw / rw, ph / rh);
-            let (brx, bry) = (dst[0] + dst[2], dst[1] + dst[3]);
-            [brx - nw, bry - nh, nw, nh]
-        };
-        // Variantes ancrées au CENTRE (au lieu du coin bas-droite) de `dst`, pour le cas où
-        // `dst` vient de `app_webcam_rect` : ce rect est déjà la position que l'utilisateur a
-        // choisie/déplacée (résolue côté app via `computeCompositeLayout`, même convention
-        // centre-fraction que `cx`/`cy` dans `compositeLayout.ts`) — l'ancrer au coin bas-droite
-        // comme le fait `fit_cam_aspect` (pensé pour le placement par DÉFAUT, ancré à ce coin
-        // avec une marge fixe) réancre silencieusement la webcam glissée n'importe où d'autre à
-        // ce coin, ignorant la position réelle choisie par l'utilisateur — le bug rapporté
-        // (webcam glissée au coin bas-gauche, DOM/JSON envoyé au natif confirmant une position
-        // flush, mais rendu natif visiblement décalé). Le centre est le point fixe qui a un sens
-        // pour un rect DÉJÀ positionné par l'app ; le coin bas-droite n'a de sens que pour le
-        // placement par défaut, qui grandit depuis ce coin faute de position explicite.
-        let scale_center = |dst: [f32; 4], s: f32| -> [f32; 4] {
-            let (cx, cy) = (dst[0] + dst[2] * 0.5, dst[1] + dst[3] * 0.5);
-            let (nw, nh) = (dst[2] * s, dst[3] * s);
-            [cx - nw * 0.5, cy - nh * 0.5, nw, nh]
-        };
-        // Le ratio de sortie réel (peut différer du canvas interne 16:9 fixe) et le facteur
-        // d'étirement non uniforme que `blit_resized` appliquera en fin de pipeline — nécessaires
-        // ici (avant `undistort`, plus bas) pour que le fit ci-dessous cible le ratio de boîte tel
-        // qu'il apparaîtra APRÈS cet étirement, pas tel qu'il est dans l'espace canvas pré-étirement
-        // (sinon le fit et l'undistort composent deux corrections indépendantes et sur-rétrécissent
-        // le contenu — cf. rapport utilisateur : crop 9:16 + sortie 9:16 + padding 0% laissait
-        // quand même une grosse marge, alors que le crop correspond déjà exactement au cadre).
-        // Le crop de l'utilisateur (dialogue "Edit clip") a son PROPRE ratio (ex. une bande
-        // verticale 9:16 recadrée dans une source 16:9) — le zoom appliqué ensuite (§
-        // `screen_source_rect`) le préserve (mêmes facteurs sur les deux axes), donc c'est bien
-        // le ratio du CROP qui doit dimensionner le quad de destination, pas celui (fixe, issu
-        // du preset de layout) de `p.screen.dst`. Sans ça, le rect recadré (dont le ratio propre
-        // diffère de la boîte du preset) se retrouve étiré pour remplir cette boîte — parité web
-        // cassée : `computeCompositeLayout`/`centerRectInBounds` (TS) contiennent déjà le crop
-        // dans sa boîte en respectant son ratio, le natif ne le faisait pas (rapport utilisateur).
-        let active_crop = scene.and_then(|scene| {
-            scene.crop_by_clip.get(scene.active_clip_index).copied().flatten()
-        });
-        let crop_aspect = match active_crop {
-            Some(c) if c.width > 0.0001 && c.height > 0.0001 => {
-                (c.width * scw) / (c.height * sch).max(0.0001)
-            }
-            _ => scw / sch.max(0.0001),
-        };
-        // Contain (parité `centerRectInBounds`) : rétrécit `dst` (centré) pour que son ratio
-        // devienne `aspect`, sans jamais dépasser sa boîte d'origine — mais la boîte de référence
-        // doit être mesurée telle qu'elle apparaîtra APRÈS l'étirement de sortie (`dst` * ratio de
-        // sortie), pas dans l'espace canvas 16:9 pré-étirement : sinon le fit cible le mauvais
-        // ratio de boîte dès que la sortie n'est pas 16:9. `undistort` (plus bas) annule ensuite
-        // exactement ce même facteur, donc convertir le résultat en fraction canvas se fait par
-        // `/ uniform_stretch` (propriété de `undistort` : le ratio final ne dépend que de la
-        // taille de `dst` en PIXELS CANVAS, jamais du ratio de sortie choisi).
-        let fit_dst_to_aspect = |dst: [f32; 4], aspect: f32| -> [f32; 4] {
-            let box_w_px = dst[2] * rw;
-            let box_h_px = dst[3] * rh;
-            let box_ar = box_w_px / box_h_px.max(0.0001);
-            let (nw_px, nh_px) = if aspect > box_ar {
-                (box_w_px, box_w_px / aspect.max(0.0001))
-            } else {
-                (box_h_px * aspect, box_h_px)
-            };
-            let (nw, nh) = (nw_px / rw, nh_px / rh);
-            let (cx, cy) = (dst[0] + dst[2] * 0.5, dst[1] + dst[3] * 0.5);
-            [cx - nw * 0.5, cy - nh * 0.5, nw, nh]
-        };
-        // Quand l'app a résolu la boîte écran, elle a DÉJÀ appliqué le padding (le rect est
-        // calculé contre `maxContentSize`) et l'a DÉJÀ mise au ratio du crop
-        // (`computeCompositeLayout` reçoit la taille de la source recadrée) : rejouer
-        // `scale_frame` + `fit_dst_to_aspect` par-dessus appliquerait le padding deux fois et
-        // re-contiendrait une boîte déjà au bon ratio. Même raisonnement que pour la webcam.
-        let fit_screen = |dst: [f32; 4]| {
-            if app_screen_rect.is_some() {
-                dst
-            } else {
-                fit_dst_to_aspect(scale_frame(dst, padding_scale), crop_aspect)
-            }
-        };
-        // Issue #179 : le zoom se jouait entièrement dans la coupe source, donc la boîte
-        // écran restait au rect paddé et le zoom butait sur cette frontière au lieu
-        // d'atteindre les bords du cadre. On rend le zoom à la BOÎTE (cf. `remap_box`) :
-        // la coupe dessinée redevient le crop nu, la boîte porte le grossissement et
-        // déborde le padding — c'est la géométrie de `applyZoomTransform` (TS).
-        let s_base = fit_screen(p.screen.dst);
-        let s_base_prev = fit_screen(pp.screen.dst);
-        // Layouts "bloc" (side-by-side / top-bottom) : la boîte écran est un SLOT au ratio
-        // arbitraire, et le web y fait tenir l'image en `cover` (`computeCompositeLayout`
-        // renvoie `screenCover: true`, honoré par `frameRenderer`). Le natif l'ignorait, donc
-        // il étirait la source pour remplir le slot — visible dès que le clip est recadré,
-        // puisque le crop éloigne encore le ratio de la source de celui du slot.
-        //
-        // Cover establishes the minimum base window before the saved framing scale and the
-        // timeline Zoom are applied. Its aspect comes from `s_base`; `remap_box` scales both
-        // axes together, so the final destination keeps that aspect without circular math.
-        let cover_box_ar = scene.and_then(|s| {
-            s.layout
-                .screen_cover
-                .then_some((s_base[2] * rw) / (s_base[3] * rh).max(0.0001))
-        });
-        // Base framing belongs to the selected output shape. Timeline Zooms then compose
-        // inside that saved window instead of replacing it. This keeps a 9:16 crop independent
-        // from 16:9 while preserving one edit model for preview and export.
-        let full_crop = screen_source_rect(u_max, v_max, active_crop, 1.0, [0.5, 0.5]);
-        let screen_zoom = scene.map(|s| s.layout.screen_zoom).unwrap_or(1.0);
-        let screen_focus = scene
-            .map(|s| [s.layout.screen_focal_point.cx, s.layout.screen_focal_point.cy])
-            .unwrap_or([0.5, 0.5]);
-        let cut = framed_screen_source_rect(
-            u_max,
-            v_max,
-            active_crop,
-            [stw as f32, sth as f32],
-            cover_box_ar,
-            screen_zoom,
-            screen_focus,
-        );
-        let cut_ref = zoom_inside_base_frame(cut, full_crop, p.zoom, p.focus);
-        let cut_ref_prev = zoom_inside_base_frame(cut, full_crop, pp.zoom, p.focus);
-        let s_dst = remap_box(s_base, cut_ref, cut);
-        let s_dst_prev = remap_box(s_base_prev, cut_ref_prev, cut);
-        // le padding n'affecte QUE l'écran (la quantité de fond révélée). La webcam reste ancrée
-        // en bas-droite à sa marge fixe, quelle que soit la valeur de padding (pas de scale_frame)
-        // — SAUF quand l'app a résolu un placement explicite (`app_webcam_rect`, drag-to-reposition
-        // compris). Ce rect est déjà exprimé en fraction du VRAI output (calculé côté web par
-        // `computeCompositeLayout` avec les vraies dimensions de sortie), position ET aspect déjà
-        // corrects — `fit_cam_aspect`/`scale_corner_br` (chemin preset par défaut) sont donc
-        // doublement inadaptés ici : ils réancrent au coin bas-droite (ignorant la position
-        // choisie par l'utilisateur) ET recalculent l'aspect en pixels du canvas fixe 16:9
-        // (`OUT_W`×`OUT_H`), une référence différente du vrai output dès que la sortie n'est pas
-        // 16:9 (rapport utilisateur : webcam glissée au coin bas-gauche en 9:16, JSON envoyé au
-        // natif confirmant une position flush, mais rendu native visiblement décalé ET trop
-        // petit). On garde seulement `scale_center` (zoom réactif, préserve position+aspect) puis
-        // on pré-compense par `inverse_undistort` pour annuler le `undistort()` générique
-        // appliqué plus bas à tous les calques (écran compris) — sans quoi ce rect déjà correct
-        // se ferait déformer une seconde fois par cet undistort partagé.
-        let mut w_dst = if app_webcam_rect.is_some() {
-            scale_center(p.webcam.dst, webcam_size_scale)
+    // Zoom regions + Full Camera : filtrées en amont pour le clip actif et échantillonnées
+    // dans le même référentiel source que le PTS du décodeur écran.
+    let empty_zoom: Vec<crate::scene::SceneZoomRegion> = Vec::new();
+    let empty_cam: Vec<crate::scene::SceneCameraFullscreenRegion> = Vec::new();
+    let zoom_regions = scene.map(|s| &s.zoom_regions).unwrap_or(&empty_zoom);
+    let cam_regions = scene
+        .map(|s| &s.camera_fullscreen_regions)
+        .unwrap_or(&empty_cam);
+    let webcam_reactive = scene
+        .map(|s| s.layout.webcam_reactive_zoom)
+        .unwrap_or(false);
+    let source_t = input.timeline_t_override.unwrap_or(frame / FPS);
+    let source_t_prev = source_t - 1.0 / FPS;
+    // le focus "auto" (suivi curseur) réutilise la même piste que le rendu du curseur.
+    let cursor_for_zoom = cursor;
+    // La rotation 3D (mode 8, pas de motion blur dans ce chemin — cf. le commentaire au
+    // point d'appel) n'est calculée QUE pour la frame courante ; `pp` ne sert qu'au zoom
+    // écran normal (vélocité pour le motion blur du chemin non-tilté).
+    let mut zoom_rotation = [0.0f32; 3];
+    if !zoom_regions.is_empty() {
+        let zs = crate::regions::zoom_state_at(zoom_regions, source_t, cursor_for_zoom);
+        p.zoom = zs.scale;
+        p.focus = zs.focus;
+        zoom_rotation = zs.rotation;
+        let zs_p = crate::regions::zoom_state_at(zoom_regions, source_t_prev, cursor_for_zoom);
+        pp.zoom = zs_p.scale;
+        pp.focus = zs_p.focus;
+    }
+    // Resolve the active camera layout once so preview and export use the same motion state.
+    let cam_layout = crate::regions::camera_layout_state_at(cam_regions, source_t);
+    let cam_layout_prev = crate::regions::camera_layout_state_at(cam_regions, source_t_prev);
+    let cam_progress = cam_layout.progress;
+    let cam_progress_prev = cam_layout_prev.progress;
+    // rétrécissement réactif : la webcam rétrécit pendant un zoom actif (1/zoom, plancher
+    // 0.35 — parité `reactiveWebcamScale`, TS). Ignoré pendant Full Camera (voir ci-dessus).
+    let reactive_scale = |zoom: f32, progress: f32| -> f32 {
+        if webcam_reactive && progress <= 0.0 && zoom.is_finite() && zoom > 0.0 {
+            (1.0 / zoom).clamp(0.35, 1.0)
         } else {
-            fit_cam_aspect(scale_corner_br(p.webcam.dst, webcam_size_scale))
-        };
-        let mut w_dst_prev = if app_webcam_rect.is_some() {
-            scale_center(pp.webcam.dst, webcam_size_scale_prev)
-        } else {
-            fit_cam_aspect(scale_corner_br(pp.webcam.dst, webcam_size_scale_prev))
-        };
+            1.0
+        }
+    };
+    // `lp.webcam_size_scale` vient de `scene.layout.webcamSize` (voir `live_params_from_scene`)
+    // — le MÊME nombre que le fraction webcamSizePreset déjà pris en compte côté app pour
+    // calculer `wr` (`computeCompositeLayout`, TS). Quand l'app fournit un `webcam_rect`
+    // explicite, la taille y est donc déjà cuite : réappliquer `lp.webcam_size_scale` ici
+    // double-échelonnerait la boîte (ex. un preset 34% → webcam rendue à ~34%×34% ≈ 12% au
+    // lieu de 34%, la webcam apparaissant bien plus petite que ce que montre l'aperçu web).
+    // Seul `reactive_scale` (rétrécissement pendant un zoom, une valeur ANIMÉE par frame que
+    // le rect statique de l'app ne capture pas) doit encore s'appliquer dans ce cas.
+    let base_size_scale = if app_webcam_rect.is_some() {
+        1.0
+    } else {
+        lp.webcam_size_scale
+    };
+    let webcam_size_scale = base_size_scale * reactive_scale(p.zoom, cam_progress);
+    let webcam_size_scale_prev = base_size_scale * reactive_scale(pp.zoom, cam_progress_prev);
 
-        // Fullscreen fills the frame. Emphasis grows the camera in place while it keeps the
-        // closest horizontal and vertical margins, so the screen remains visible.
-        let camera_layout_dst = |
-            dst: [f32; 4],
-            progress: f32,
-            mode: SceneCameraLayoutMode,
-            emphasis_scale: f32,
-        | -> [f32; 4] {
-            if progress <= 0.0 {
-                return dst;
-            }
-            let target = match mode {
-                SceneCameraLayoutMode::Fullscreen => [0.0, 0.0, 1.0, 1.0],
-                SceneCameraLayoutMode::Emphasis => {
-                    let scale = emphasis_scale.clamp(1.0, 1.6);
-                    let width = (dst[2] * scale).min(1.0);
-                    let height = (dst[3] * scale).min(1.0);
-                    let right_anchored = dst[0] + dst[2] * 0.5 > 0.5;
-                    let bottom_anchored = dst[1] + dst[3] * 0.5 > 0.5;
-                    let x = if right_anchored { dst[0] + dst[2] - width } else { dst[0] };
-                    let y = if bottom_anchored { dst[1] + dst[3] - height } else { dst[1] };
-                    [x.clamp(0.0, 1.0 - width), y.clamp(0.0, 1.0 - height), width, height]
-                }
-            };
-            let lerp = |a: f32, b: f32| a + (b - a) * progress;
+    // padding : échelle globale du layout autour du centre du cadre (parité web frameRenderer :
+    // paddingScale = 1 - padding*0.4 → padding 0 = plein cadre). S'applique à TOUS les presets :
+    // côté web, side-by-side et top/bottom soudent écran+caméra en un bloc unique et c'est ce
+    // bloc que le padding rétrécit (cf. `compositeLayout.ts`, branche `block`). Vertical-stack
+    // en était exempté tant qu'il était full-bleed ; il ne l'est plus.
+    let padding_scale = 1.0 - lp.padding * 0.4;
+    let scale_frame = |dst: [f32; 4], s: f32| -> [f32; 4] {
+        [
+            0.5 + (dst[0] - 0.5) * s,
+            0.5 + (dst[1] - 0.5) * s,
+            dst[2] * s,
+            dst[3] * s,
+        ]
+    };
+    // webcam : ancrée à son coin bas-droite (grandit vers le haut-gauche, pas depuis le centre).
+    let scale_corner_br = |dst: [f32; 4], s: f32| -> [f32; 4] {
+        let (brx, bry) = (dst[0] + dst[2], dst[1] + dst[3]);
+        let (nw, nh) = (dst[2] * s, dst[3] * s);
+        [brx - nw, bry - nh, nw, nh]
+    };
+    // parité web (compositeLayout) : rectangle/rounded gardent le ratio natif de la webcam ;
+    // square/circle forcent un carré (side = min). Le placement de base est carré → on ajuste
+    // ici, en gardant le coin bas-droite fixe (cohérent avec le size-scale).
+    let is_square_shape = matches!(lp.webcam_shape, 1 | 2); // circle | square
+    let cam_ar = if is_square_shape {
+        1.0
+    } else {
+        (wcw / wch).max(0.01)
+    };
+    let fit_cam_aspect = |dst: [f32; 4]| -> [f32; 4] {
+        let s = (dst[2] * rw).min(dst[3] * rh); // côté carré de base (px)
+        let (pw, ph) = if cam_ar >= 1.0 {
+            (s, s / cam_ar)
+        } else {
+            (s * cam_ar, s)
+        };
+        let (nw, nh) = (pw / rw, ph / rh);
+        let (brx, bry) = (dst[0] + dst[2], dst[1] + dst[3]);
+        [brx - nw, bry - nh, nw, nh]
+    };
+    // Variantes ancrées au CENTRE (au lieu du coin bas-droite) de `dst`, pour le cas où
+    // `dst` vient de `app_webcam_rect` : ce rect est déjà la position que l'utilisateur a
+    // choisie/déplacée (résolue côté app via `computeCompositeLayout`, même convention
+    // centre-fraction que `cx`/`cy` dans `compositeLayout.ts`) — l'ancrer au coin bas-droite
+    // comme le fait `fit_cam_aspect` (pensé pour le placement par DÉFAUT, ancré à ce coin
+    // avec une marge fixe) réancre silencieusement la webcam glissée n'importe où d'autre à
+    // ce coin, ignorant la position réelle choisie par l'utilisateur — le bug rapporté
+    // (webcam glissée au coin bas-gauche, DOM/JSON envoyé au natif confirmant une position
+    // flush, mais rendu natif visiblement décalé). Le centre est le point fixe qui a un sens
+    // pour un rect DÉJÀ positionné par l'app ; le coin bas-droite n'a de sens que pour le
+    // placement par défaut, qui grandit depuis ce coin faute de position explicite.
+    let scale_center = |dst: [f32; 4], s: f32| -> [f32; 4] {
+        let (cx, cy) = (dst[0] + dst[2] * 0.5, dst[1] + dst[3] * 0.5);
+        let (nw, nh) = (dst[2] * s, dst[3] * s);
+        [cx - nw * 0.5, cy - nh * 0.5, nw, nh]
+    };
+    // Le ratio de sortie réel (peut différer du canvas interne 16:9 fixe) et le facteur
+    // d'étirement non uniforme que `blit_resized` appliquera en fin de pipeline — nécessaires
+    // ici (avant `undistort`, plus bas) pour que le fit ci-dessous cible le ratio de boîte tel
+    // qu'il apparaîtra APRÈS cet étirement, pas tel qu'il est dans l'espace canvas pré-étirement
+    // (sinon le fit et l'undistort composent deux corrections indépendantes et sur-rétrécissent
+    // le contenu — cf. rapport utilisateur : crop 9:16 + sortie 9:16 + padding 0% laissait
+    // quand même une grosse marge, alors que le crop correspond déjà exactement au cadre).
+    // Le crop de l'utilisateur (dialogue "Edit clip") a son PROPRE ratio (ex. une bande
+    // verticale 9:16 recadrée dans une source 16:9) — le zoom appliqué ensuite (§
+    // `screen_source_rect`) le préserve (mêmes facteurs sur les deux axes), donc c'est bien
+    // le ratio du CROP qui doit dimensionner le quad de destination, pas celui (fixe, issu
+    // du preset de layout) de `p.screen.dst`. Sans ça, le rect recadré (dont le ratio propre
+    // diffère de la boîte du preset) se retrouve étiré pour remplir cette boîte — parité web
+    // cassée : `computeCompositeLayout`/`centerRectInBounds` (TS) contiennent déjà le crop
+    // dans sa boîte en respectant son ratio, le natif ne le faisait pas (rapport utilisateur).
+    let active_crop = scene.and_then(|scene| {
+        scene
+            .crop_by_clip
+            .get(scene.active_clip_index)
+            .copied()
+            .flatten()
+    });
+    let crop_aspect = match active_crop {
+        Some(c) if c.width > 0.0001 && c.height > 0.0001 => {
+            (c.width * scw) / (c.height * sch).max(0.0001)
+        }
+        _ => scw / sch.max(0.0001),
+    };
+    // Contain (parité `centerRectInBounds`) : rétrécit `dst` (centré) pour que son ratio
+    // devienne `aspect`, sans jamais dépasser sa boîte d'origine — mais la boîte de référence
+    // doit être mesurée telle qu'elle apparaîtra APRÈS l'étirement de sortie (`dst` * ratio de
+    // sortie), pas dans l'espace canvas 16:9 pré-étirement : sinon le fit cible le mauvais
+    // ratio de boîte dès que la sortie n'est pas 16:9. `undistort` (plus bas) annule ensuite
+    // exactement ce même facteur, donc convertir le résultat en fraction canvas se fait par
+    // `/ uniform_stretch` (propriété de `undistort` : le ratio final ne dépend que de la
+    // taille de `dst` en PIXELS CANVAS, jamais du ratio de sortie choisi).
+    let fit_dst_to_aspect = |dst: [f32; 4], aspect: f32| -> [f32; 4] {
+        let box_w_px = dst[2] * rw;
+        let box_h_px = dst[3] * rh;
+        let box_ar = box_w_px / box_h_px.max(0.0001);
+        let (nw_px, nh_px) = if aspect > box_ar {
+            (box_w_px, box_w_px / aspect.max(0.0001))
+        } else {
+            (box_h_px * aspect, box_h_px)
+        };
+        let (nw, nh) = (nw_px / rw, nh_px / rh);
+        let (cx, cy) = (dst[0] + dst[2] * 0.5, dst[1] + dst[3] * 0.5);
+        [cx - nw * 0.5, cy - nh * 0.5, nw, nh]
+    };
+    // Quand l'app a résolu la boîte écran, elle a DÉJÀ appliqué le padding (le rect est
+    // calculé contre `maxContentSize`) et l'a DÉJÀ mise au ratio du crop
+    // (`computeCompositeLayout` reçoit la taille de la source recadrée) : rejouer
+    // `scale_frame` + `fit_dst_to_aspect` par-dessus appliquerait le padding deux fois et
+    // re-contiendrait une boîte déjà au bon ratio. Même raisonnement que pour la webcam.
+    let fit_screen = |dst: [f32; 4]| {
+        if app_screen_rect.is_some() {
+            dst
+        } else {
+            fit_dst_to_aspect(scale_frame(dst, padding_scale), crop_aspect)
+        }
+    };
+    // Issue #179 : le zoom se jouait entièrement dans la coupe source, donc la boîte
+    // écran restait au rect paddé et le zoom butait sur cette frontière au lieu
+    // d'atteindre les bords du cadre. On rend le zoom à la BOÎTE (cf. `remap_box`) :
+    // la coupe dessinée redevient le crop nu, la boîte porte le grossissement et
+    // déborde le padding — c'est la géométrie de `applyZoomTransform` (TS).
+    let s_base = fit_screen(p.screen.dst);
+    let s_base_prev = fit_screen(pp.screen.dst);
+    // Layouts "bloc" (side-by-side / top-bottom) : la boîte écran est un SLOT au ratio
+    // arbitraire, et le web y fait tenir l'image en `cover` (`computeCompositeLayout`
+    // renvoie `screenCover: true`, honoré par `frameRenderer`). Le natif l'ignorait, donc
+    // il étirait la source pour remplir le slot — visible dès que le clip est recadré,
+    // puisque le crop éloigne encore le ratio de la source de celui du slot.
+    //
+    // Cover establishes the minimum base window before the saved framing scale and the
+    // timeline Zoom are applied. Its aspect comes from `s_base`; `remap_box` scales both
+    // axes together, so the final destination keeps that aspect without circular math.
+    let cover_box_ar = scene.and_then(|s| {
+        s.layout
+            .screen_cover
+            .then_some((s_base[2] * rw) / (s_base[3] * rh).max(0.0001))
+    });
+    // Base framing belongs to the selected output shape. Timeline Zooms then compose
+    // inside that saved window instead of replacing it. This keeps a 9:16 crop independent
+    // from 16:9 while preserving one edit model for preview and export.
+    let full_crop = screen_source_rect(u_max, v_max, active_crop, 1.0, [0.5, 0.5]);
+    let screen_zoom = scene.map(|s| s.layout.screen_zoom).unwrap_or(1.0);
+    let screen_focus = scene
+        .map(|s| {
             [
-                lerp(dst[0], target[0]),
-                lerp(dst[1], target[1]),
-                lerp(dst[2], target[2]),
-                lerp(dst[3], target[3]),
+                s.layout.screen_focal_point.cx,
+                s.layout.screen_focal_point.cy,
             ]
-        };
-        // Petit côté de la boîte caméra AVANT que Full Camera ne la fasse grandir. C'est la
-        // référence du rayon de coin : le zoom réactif est déjà dedans (il rétrécit la boîte,
-        // donc l'arrondi suit tout seul — parité `borderRadius * reactiveFactor` côté TS), alors
-        // que Full Camera ne fait pas grossir l'arrondi, il le DISSOUT (cf. `shape_fade`).
-        let w_nominal_min = (w_dst[2] * rw).min(w_dst[3] * rh);
-        w_dst = camera_layout_dst(
-            w_dst,
-            cam_progress,
-            cam_layout.mode,
-            cam_layout.camera_scale,
-        );
-        w_dst_prev = camera_layout_dst(
-            w_dst_prev,
-            cam_progress_prev,
-            cam_layout_prev.mode,
-            cam_layout_prev.camera_scale,
-        );
+        })
+        .unwrap_or([0.5, 0.5]);
+    let cut = framed_screen_source_rect(
+        u_max,
+        v_max,
+        active_crop,
+        [stw as f32, sth as f32],
+        cover_box_ar,
+        screen_zoom,
+        screen_focus,
+    );
+    let cut_ref = zoom_inside_base_frame(cut, full_crop, p.zoom, p.focus);
+    let cut_ref_prev = zoom_inside_base_frame(cut, full_crop, pp.zoom, p.focus);
+    let s_dst = remap_box(s_base, cut_ref, cut);
+    let s_dst_prev = remap_box(s_base_prev, cut_ref_prev, cut);
+    // le padding n'affecte QUE l'écran (la quantité de fond révélée). La webcam reste ancrée
+    // en bas-droite à sa marge fixe, quelle que soit la valeur de padding (pas de scale_frame)
+    // — SAUF quand l'app a résolu un placement explicite (`app_webcam_rect`, drag-to-reposition
+    // compris). Ce rect est déjà exprimé en fraction du VRAI output (calculé côté web par
+    // `computeCompositeLayout` avec les vraies dimensions de sortie), position ET aspect déjà
+    // corrects — `fit_cam_aspect`/`scale_corner_br` (chemin preset par défaut) sont donc
+    // doublement inadaptés ici : ils réancrent au coin bas-droite (ignorant la position
+    // choisie par l'utilisateur) ET recalculent l'aspect en pixels du canvas fixe 16:9
+    // (`OUT_W`×`OUT_H`), une référence différente du vrai output dès que la sortie n'est pas
+    // 16:9 (rapport utilisateur : webcam glissée au coin bas-gauche en 9:16, JSON envoyé au
+    // natif confirmant une position flush, mais rendu native visiblement décalé ET trop
+    // petit). On garde seulement `scale_center` (zoom réactif, préserve position+aspect) puis
+    // on pré-compense par `inverse_undistort` pour annuler le `undistort()` générique
+    // appliqué plus bas à tous les calques (écran compris) — sans quoi ce rect déjà correct
+    // se ferait déformer une seconde fois par cet undistort partagé.
+    let mut w_dst = if app_webcam_rect.is_some() {
+        scale_center(p.webcam.dst, webcam_size_scale)
+    } else {
+        fit_cam_aspect(scale_corner_br(p.webcam.dst, webcam_size_scale))
+    };
+    let mut w_dst_prev = if app_webcam_rect.is_some() {
+        scale_center(pp.webcam.dst, webcam_size_scale_prev)
+    } else {
+        fit_cam_aspect(scale_corner_br(pp.webcam.dst, webcam_size_scale_prev))
+    };
 
-        // Contre-étirement "fit" : le canvas interne compose TOUJOURS en OUT_W×OUT_H (16:9),
-        // puis `blit_resized` étire tout, de façon non uniforme si besoin, vers la résolution
-        // de sortie demandée — voulu pour que le FOND (dessiné plus bas en dst=[0,0,1,1])
-        // remplisse tout le cadre quel que soit le ratio choisi. Mais l'écran et la webcam ne
-        // doivent PAS être déformés par cet étirement : on rétrécit ici leur rect de
-        // destination (centré, dans cet espace 16:9 PRÉ-étirement) par l'inverse du plus fort
-        // des deux facteurs d'étirement, pour qu'après l'étirement final leur ratio d'origine
-        // reste préservé (letterboxé/pillarboxé sur le fond, qui lui reste plein cadre) — mode
-        // "fit"/contain. Si l'utilisateur veut un rendu "fill" (remplir sans bandes), il ajuste
-        // le crop lui-même ; le natif ne fait plus ce choix à sa place en étirant l'image.
-        // Le dessin du coin (SDF, shaders.hlsl) compare le rayon à `quad_px`, exprimé en px du
-        // RENDER TARGET : c'est donc dans cet espace-là qu'il faut le lui donner.
-        //
-        // Toutes les longueurs de la scène sont des FRACTIONS ; on les multiplie ici par ce
-        // qu'elles mesurent, dans l'espace du render target. C'est ce qui rend preview et export
-        // identiques : « un pixel » n'y désigne pas la même chose (la preview rastérise dans un
-        // cadre contain-fitté plus petit, cf. `preview_render_size`), alors qu'une fraction, si.
-        // `frame_min_px` est la référence des quantités relatives au CADRE ; un rayon de coin,
-        // lui, se mesure contre sa propre boîte — il doit rester en place quand on redimensionne
-        // la boîte, pas suivre le cadre.
-        let frame_min_px = rw.min(rh);
-        let s_min_px = (s_dst[2] * rw).min(s_dst[3] * rh);
-        let app_screen_radius_frac = scene.and_then(|s| s.layout.screen_radius_frac);
-        let scene_roundness_frac = scene.map(|s| s.effects.roundness_frac);
-        // Le rayon suit la boîte : quand le zoom l'agrandit (issue #179), les coins grandissent
-        // avec elle puis sortent du cadre — comme le masque de la référence, qui porte le même
-        // `br: maskBorderRadius * camS` et quitte l'étage au même moment.
-        let s_radius = match (cfg.rounded, app_screen_radius_frac, scene_roundness_frac) {
-            (false, _, _) => 0.0,
-            // Preset en bloc : le rayon appartient à la boîte écran (parité exacte avec la caméra).
-            (true, Some(f), _) => f * s_min_px,
-            // Scène sans rayon imposé : slider Roundness, relatif au cadre.
-            (true, None, Some(f)) => f * frame_min_px,
-            // Fixture/bench (pas de scène) : chemin inspector historique, inchangé.
-            (true, None, None) => p.screen.radius * lp.radius_scale,
+    // Fullscreen fills the frame. Emphasis grows the camera in place while it keeps the
+    // closest horizontal and vertical margins, so the screen remains visible.
+    let camera_layout_dst = |dst: [f32; 4],
+                             progress: f32,
+                             mode: SceneCameraLayoutMode,
+                             emphasis_scale: f32|
+     -> [f32; 4] {
+        if progress <= 0.0 {
+            return dst;
+        }
+        let target = match mode {
+            SceneCameraLayoutMode::Fullscreen => [0.0, 0.0, 1.0, 1.0],
+            SceneCameraLayoutMode::Emphasis => {
+                let scale = emphasis_scale.clamp(1.0, 1.6);
+                let width = (dst[2] * scale).min(1.0);
+                let height = (dst[3] * scale).min(1.0);
+                let right_anchored = dst[0] + dst[2] * 0.5 > 0.5;
+                let bottom_anchored = dst[1] + dst[3] * 0.5 > 0.5;
+                let x = if right_anchored {
+                    dst[0] + dst[2] - width
+                } else {
+                    dst[0]
+                };
+                let y = if bottom_anchored {
+                    dst[1] + dst[3] - height
+                } else {
+                    dst[1]
+                };
+                [
+                    x.clamp(0.0, 1.0 - width),
+                    y.clamp(0.0, 1.0 - height),
+                    width,
+                    height,
+                ]
+            }
         };
-        let w_px = [w_dst[2] * rw, w_dst[3] * rh];
-        // Rayon caméra. Le slider Roundness ne s'y applique jamais (il ne vaut que pour l'ÉCRAN).
-        // Quand l'app le résout (`computeCompositeLayout`, source unique), on le prend : c'est la
-        // seule façon que les deux moitiés d'un layout en bloc soient encadrées à l'identique,
-        // l'écran consommant déjà `screen_radius_frac` du même calcul. La table ci-dessous en
-        // était une SECONDE, indépendante — fraction différente (0.12 vs 0.06 côté web) et sans
-        // bornes — donc écran et caméra ne pouvaient pas s'accorder.
-        let app_webcam_radius_frac = scene.and_then(|s| s.layout.webcam_radius_frac);
-        // Full Camera dissout la forme en même temps qu'elle prend le cadre : le rayon fond
-        // vers 0 avec `cam_progress`, donc le cercle devient un rect à coins de plus en plus
-        // francs puis un plein cadre net — aucun masque ne survit au plein écran (parité
-        // `computeCameraFullscreenRect`, qui ramène `maskShape` à "rectangle" et lerpe le
-        // rayon vers 0 pour exactement la même raison).
-        let shape_fade = match cam_layout.mode {
-            SceneCameraLayoutMode::Fullscreen => (1.0 - cam_progress).clamp(0.0, 1.0),
-            SceneCameraLayoutMode::Emphasis => 1.0,
+        let lerp = |a: f32, b: f32| a + (b - a) * progress;
+        [
+            lerp(dst[0], target[0]),
+            lerp(dst[1], target[1]),
+            lerp(dst[2], target[2]),
+            lerp(dst[3], target[3]),
+        ]
+    };
+    // Petit côté de la boîte caméra AVANT que Full Camera ne la fasse grandir. C'est la
+    // référence du rayon de coin : le zoom réactif est déjà dedans (il rétrécit la boîte,
+    // donc l'arrondi suit tout seul — parité `borderRadius * reactiveFactor` côté TS), alors
+    // que Full Camera ne fait pas grossir l'arrondi, il le DISSOUT (cf. `shape_fade`).
+    let w_nominal_min = (w_dst[2] * rw).min(w_dst[3] * rh);
+    w_dst = camera_layout_dst(
+        w_dst,
+        cam_progress,
+        cam_layout.mode,
+        cam_layout.camera_scale,
+    );
+    w_dst_prev = camera_layout_dst(
+        w_dst_prev,
+        cam_progress_prev,
+        cam_layout_prev.mode,
+        cam_layout_prev.camera_scale,
+    );
+
+    // Contre-étirement "fit" : le canvas interne compose TOUJOURS en OUT_W×OUT_H (16:9),
+    // puis `blit_resized` étire tout, de façon non uniforme si besoin, vers la résolution
+    // de sortie demandée — voulu pour que le FOND (dessiné plus bas en dst=[0,0,1,1])
+    // remplisse tout le cadre quel que soit le ratio choisi. Mais l'écran et la webcam ne
+    // doivent PAS être déformés par cet étirement : on rétrécit ici leur rect de
+    // destination (centré, dans cet espace 16:9 PRÉ-étirement) par l'inverse du plus fort
+    // des deux facteurs d'étirement, pour qu'après l'étirement final leur ratio d'origine
+    // reste préservé (letterboxé/pillarboxé sur le fond, qui lui reste plein cadre) — mode
+    // "fit"/contain. Si l'utilisateur veut un rendu "fill" (remplir sans bandes), il ajuste
+    // le crop lui-même ; le natif ne fait plus ce choix à sa place en étirant l'image.
+    // Le dessin du coin (SDF, shaders.hlsl) compare le rayon à `quad_px`, exprimé en px du
+    // RENDER TARGET : c'est donc dans cet espace-là qu'il faut le lui donner.
+    //
+    // Toutes les longueurs de la scène sont des FRACTIONS ; on les multiplie ici par ce
+    // qu'elles mesurent, dans l'espace du render target. C'est ce qui rend preview et export
+    // identiques : « un pixel » n'y désigne pas la même chose (la preview rastérise dans un
+    // cadre contain-fitté plus petit, cf. `preview_render_size`), alors qu'une fraction, si.
+    // `frame_min_px` est la référence des quantités relatives au CADRE ; un rayon de coin,
+    // lui, se mesure contre sa propre boîte — il doit rester en place quand on redimensionne
+    // la boîte, pas suivre le cadre.
+    let frame_min_px = rw.min(rh);
+    let s_min_px = (s_dst[2] * rw).min(s_dst[3] * rh);
+    let app_screen_radius_frac = scene.and_then(|s| s.layout.screen_radius_frac);
+    let scene_roundness_frac = scene.map(|s| s.effects.roundness_frac);
+    // Le rayon suit la boîte : quand le zoom l'agrandit (issue #179), les coins grandissent
+    // avec elle puis sortent du cadre — comme le masque de la référence, qui porte le même
+    // `br: maskBorderRadius * camS` et quitte l'étage au même moment.
+    let s_radius = match (cfg.rounded, app_screen_radius_frac, scene_roundness_frac) {
+        (false, _, _) => 0.0,
+        // Preset en bloc : le rayon appartient à la boîte écran (parité exacte avec la caméra).
+        (true, Some(f), _) => f * s_min_px,
+        // Scène sans rayon imposé : slider Roundness, relatif au cadre.
+        (true, None, Some(f)) => f * frame_min_px,
+        // Fixture/bench (pas de scène) : chemin inspector historique, inchangé.
+        (true, None, None) => p.screen.radius * lp.radius_scale,
+    };
+    let w_px = [w_dst[2] * rw, w_dst[3] * rh];
+    // Rayon caméra. Le slider Roundness ne s'y applique jamais (il ne vaut que pour l'ÉCRAN).
+    // Quand l'app le résout (`computeCompositeLayout`, source unique), on le prend : c'est la
+    // seule façon que les deux moitiés d'un layout en bloc soient encadrées à l'identique,
+    // l'écran consommant déjà `screen_radius_frac` du même calcul. La table ci-dessous en
+    // était une SECONDE, indépendante — fraction différente (0.12 vs 0.06 côté web) et sans
+    // bornes — donc écran et caméra ne pouvaient pas s'accorder.
+    let app_webcam_radius_frac = scene.and_then(|s| s.layout.webcam_radius_frac);
+    // Full Camera dissout la forme en même temps qu'elle prend le cadre : le rayon fond
+    // vers 0 avec `cam_progress`, donc le cercle devient un rect à coins de plus en plus
+    // francs puis un plein cadre net — aucun masque ne survit au plein écran (parité
+    // `computeCameraFullscreenRect`, qui ramène `maskShape` à "rectangle" et lerpe le
+    // rayon vers 0 pour exactement la même raison).
+    let shape_fade = match cam_layout.mode {
+        SceneCameraLayoutMode::Fullscreen => (1.0 - cam_progress).clamp(0.0, 1.0),
+        SceneCameraLayoutMode::Emphasis => 1.0,
+    };
+    let w_radius = shape_fade
+        * w_nominal_min
+        * match app_webcam_radius_frac {
+            Some(f) => f,
+            // Fallback (payload sans fraction, fixture/bench) : l'ancienne table, keyée sur la
+            // forme. Rectangle ET square n'ont qu'un léger arrondi (0.12) et ne diffèrent que
+            // par le ratio ; rounded est nettement plus arrondi (0.3) ; circle = demi-côté.
+            None => match lp.webcam_shape {
+                1 => 0.5,
+                3 => 0.3,
+                _ => 0.12,
+            },
         };
-        let w_radius = shape_fade
-            * w_nominal_min
-            * match app_webcam_radius_frac {
-                Some(f) => f,
-                // Fallback (payload sans fraction, fixture/bench) : l'ancienne table, keyée sur la
-                // forme. Rectangle ET square n'ont qu'un léger arrondi (0.12) et ne diffèrent que
-                // par le ratio ; rounded est nettement plus arrondi (0.3) ; circle = demi-côté.
-                None => match lp.webcam_shape {
-                    1 => 0.5,
-                    3 => 0.3,
-                    _ => 0.12,
-                },
-            };
 
     FrameGeometry {
         scene_preset,
@@ -1303,7 +1456,10 @@ pub struct CursorPlanInput<'a> {
 /// courant (zoom serré, hors écran) — un état normal en lecture, pas une erreur.
 pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorPlan> {
     let (rw, rh) = (input.render_px[0], input.render_px[1]);
-    let show = input.scene.map(|s| s.cursor.show).unwrap_or(input.cfg.cursor);
+    let show = input
+        .scene
+        .map(|s| s.cursor.show)
+        .unwrap_or(input.cfg.cursor);
     if !show {
         return None;
     }
@@ -1435,19 +1591,24 @@ mod tests {
         let cfg = crate::config::all().pop().expect("at least one config");
         let plain = golden_scene();
         let mut emphasized = golden_scene();
-        emphasized.camera_fullscreen_regions.push(SceneCameraFullscreenRegion {
-            clip_index: Some(0),
-            start_sec: 0.0,
-            end_sec: 5.0,
-            mode: SceneCameraLayoutMode::Emphasis,
-            camera_scale: 1.35,
-            motion_style: crate::scene::SceneMotionStyle::Smooth,
-            motion_speed: 1.0,
-        });
+        emphasized
+            .camera_fullscreen_regions
+            .push(SceneCameraFullscreenRegion {
+                clip_index: Some(0),
+                start_sec: 0.0,
+                end_sec: 5.0,
+                mode: SceneCameraLayoutMode::Emphasis,
+                camera_scale: 1.35,
+                motion_style: crate::scene::SceneMotionStyle::Smooth,
+                motion_speed: 1.0,
+            });
         let base = plan_frame(&golden_input(&plain, &cfg));
         let grown = plan_frame(&golden_input(&emphasized, &cfg));
 
-        assert_eq!(grown.s_dst, base.s_dst, "emphasis must not replace the screen");
+        assert_eq!(
+            grown.s_dst, base.s_dst,
+            "emphasis must not replace the screen"
+        );
         assert!((grown.w_dst[2] / base.w_dst[2] - 1.35).abs() < 1e-5);
         assert!((grown.w_dst[3] / base.w_dst[3] - 1.35).abs() < 1e-5);
         let base_right = 1.0 - base.w_dst[0] - base.w_dst[2];
@@ -1456,7 +1617,10 @@ mod tests {
         let grown_bottom = 1.0 - grown.w_dst[1] - grown.w_dst[3];
         assert!((grown_right - base_right).abs() < 1e-5);
         assert!((grown_bottom - base_bottom).abs() < 1e-5);
-        assert_eq!(grown.shape_fade, 1.0, "emphasis must preserve the camera mask");
+        assert_eq!(
+            grown.shape_fade, 1.0,
+            "emphasis must preserve the camera mask"
+        );
         assert_eq!(grown.w_radius, base.w_radius);
     }
 
@@ -1505,7 +1669,10 @@ mod tests {
         );
         // Et sans zoom, l'ancre EST la boîte écran : `s_ann` ne doit pas devenir un rect
         // parallèle qui dériverait de `s_dst` pour d'autres raisons (padding, cover, crop).
-        assert_eq!(a.s_ann, a.s_dst, "sans zoom, ancre et boîte écran coïncident");
+        assert_eq!(
+            a.s_ann, a.s_dst,
+            "sans zoom, ancre et boîte écran coïncident"
+        );
     }
 
     /// **Le golden iso-render.**
@@ -1529,11 +1696,27 @@ mod tests {
         let cfg = crate::config::all().pop().expect("au moins une config");
         let g = plan_frame(&golden_input(&scene, &cfg));
         let got = [
-            g.s_dst[0], g.s_dst[1], g.s_dst[2], g.s_dst[3],
-            g.w_dst[0], g.w_dst[1], g.w_dst[2], g.w_dst[3],
-            g.cut[0], g.cut[1], g.cut[2], g.cut[3],
-            g.s_radius, g.w_radius, g.w_px[0], g.w_px[1],
-            g.frame_min_px, g.padding_scale, g.shape_fade, g.mb_taps, g.source_t,
+            g.s_dst[0],
+            g.s_dst[1],
+            g.s_dst[2],
+            g.s_dst[3],
+            g.w_dst[0],
+            g.w_dst[1],
+            g.w_dst[2],
+            g.w_dst[3],
+            g.cut[0],
+            g.cut[1],
+            g.cut[2],
+            g.cut[3],
+            g.s_radius,
+            g.w_radius,
+            g.w_px[0],
+            g.w_px[1],
+            g.frame_min_px,
+            g.padding_scale,
+            g.shape_fade,
+            g.mb_taps,
+            g.source_t,
         ];
         // Valeurs mesurées, pas devinées : toute dérive est une divergence à expliquer,
         // pas un seuil à relâcher.
@@ -1541,11 +1724,8 @@ mod tests {
         // pas un seuil à relâcher. Ordre : s_dst[4], w_dst[4], cut[4], s_radius, w_radius,
         // w_px[2], frame_min_px, padding_scale, shape_fade, mb_taps, source_t.
         let want: [f32; 21] = [
-            0.10207555, 0.102, 0.7958489, 0.796,
-            0.9058473, 0.8325926, 0.0733194, 0.13037036,
-            0.0, 0.0, 0.61, 0.6055147,
-            16.779, 42.89185, 85.7837, 85.7837,
-            658.0, 0.796, 1.0, 6.25, 1.5,
+            0.10207555, 0.102, 0.7958489, 0.796, 0.9058473, 0.8325926, 0.0733194, 0.13037036, 0.0,
+            0.0, 0.61, 0.6055147, 16.779, 42.89185, 85.7837, 85.7837, 658.0, 0.796, 1.0, 6.25, 1.5,
         ];
         for (i, (a, b)) in got.iter().zip(want.iter()).enumerate() {
             assert_eq!(
@@ -1591,25 +1771,40 @@ mod tests {
         for (w, h) in [(0.02, 0.04), (0.08, 0.16)] {
             let dst = cursor_sprite_dst(center, w, h, hotspot);
             let pivot = [dst[0] + dst[2] * hotspot[0], dst[1] + dst[3] * hotspot[1]];
-            assert!((pivot[0] - center[0]).abs() < 1e-6, "x drifted at {w}x{h}: {pivot:?}");
-            assert!((pivot[1] - center[1]).abs() < 1e-6, "y drifted at {w}x{h}: {pivot:?}");
+            assert!(
+                (pivot[0] - center[0]).abs() < 1e-6,
+                "x drifted at {w}x{h}: {pivot:?}"
+            );
+            assert!(
+                (pivot[1] - center[1]).abs() < 1e-6,
+                "y drifted at {w}x{h}: {pivot:?}"
+            );
             assert_eq!([dst[2], dst[3]], [w, h], "taille altérée");
         }
 
         // Et un pivot centré reste bien l'ancien comportement, pour les sprites qui le veulent
         // (viseur, I-beam, poignées de redimensionnement).
-        assert_eq!(cursor_sprite_dst([0.5, 0.5], 0.2, 0.2, [0.5, 0.5]), [0.4, 0.4, 0.2, 0.2]);
+        assert_eq!(
+            cursor_sprite_dst([0.5, 0.5], 0.2, 0.2, [0.5, 0.5]),
+            [0.4, 0.4, 0.2, 0.2]
+        );
     }
     fn assert_rect(actual: [f32; 4], expected: [f32; 4]) {
         for (actual, expected) in actual.into_iter().zip(expected) {
-            assert!((actual - expected).abs() < 1e-6, "actual={actual}, expected={expected}");
+            assert!(
+                (actual - expected).abs() < 1e-6,
+                "actual={actual}, expected={expected}"
+            );
         }
     }
 
     #[test]
     fn decodes_a_base64_data_uri() {
         // "Hi!" -> SGkh
-        assert_eq!(decode_data_uri("data:image/png;base64,SGkh").unwrap(), b"Hi!".to_vec());
+        assert_eq!(
+            decode_data_uri("data:image/png;base64,SGkh").unwrap(),
+            b"Hi!".to_vec()
+        );
     }
 
     /// L'inspector stocke les couleurs de caption comme `couleur_hex` + `opacité` puis la
@@ -1619,7 +1814,10 @@ mod tests {
     #[test]
     fn parse_hex_understands_rgba_caption_backgrounds() {
         let parsed = parse_hex("rgba(0, 0, 0, 0.55)").expect("rgba doit parser");
-        assert!((parsed[3] - 0.55).abs() < 1e-6, "alpha 0.55 transmise, pas tombée à 0");
+        assert!(
+            (parsed[3] - 0.55).abs() < 1e-6,
+            "alpha 0.55 transmise, pas tombée à 0"
+        );
         assert_eq!([parsed[0], parsed[1], parsed[2]], [0.0, 0.0, 0.0]);
     }
 
@@ -1650,10 +1848,7 @@ mod tests {
     fn parse_hex_still_understands_hex_colours() {
         assert_eq!(parse_hex("#fff"), Some([1.0, 1.0, 1.0, 1.0]));
         assert_eq!(parse_hex("#000000"), Some([0.0, 0.0, 0.0, 1.0]));
-        assert_eq!(
-            parse_hex("ff8800"),
-            Some([1.0, 136.0 / 255.0, 0.0, 1.0])
-        );
+        assert_eq!(parse_hex("ff8800"), Some([1.0, 136.0 / 255.0, 0.0, 1.0]));
     }
 
     /// Hors-format (channel > 255, chaîne vide, named color) → None → l'appelant retombe sur
@@ -1720,41 +1915,49 @@ mod tests {
 
     #[test]
     fn crop_maps_visible_frame_fractions_to_texture_uvs() {
-        let crop = SceneCrop { x: 0.25, y: 0.1, width: 0.5, height: 0.6 };
-        assert_rect(screen_source_rect(0.8, 0.9, None, 1.0, [0.2, 0.7]), [0.0, 0.0, 0.8, 0.9]);
-        assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 1.0, [0.5, 0.5]), [0.2, 0.09, 0.6, 0.63]);
+        let crop = SceneCrop {
+            x: 0.25,
+            y: 0.1,
+            width: 0.5,
+            height: 0.6,
+        };
+        assert_rect(
+            screen_source_rect(0.8, 0.9, None, 1.0, [0.2, 0.7]),
+            [0.0, 0.0, 0.8, 0.9],
+        );
+        assert_rect(
+            screen_source_rect(0.8, 0.9, Some(crop), 1.0, [0.5, 0.5]),
+            [0.2, 0.09, 0.6, 0.63],
+        );
     }
 
     #[test]
     fn zoom_focus_is_applied_inside_the_crop() {
-        let crop = SceneCrop { x: 0.25, y: 0.1, width: 0.5, height: 0.6 };
-        assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 2.0, [0.5, 0.5]), [0.3, 0.225, 0.5, 0.495]);
-        assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 2.0, [1.0, 1.0]), [0.4, 0.36, 0.6, 0.63]);
+        let crop = SceneCrop {
+            x: 0.25,
+            y: 0.1,
+            width: 0.5,
+            height: 0.6,
+        };
+        assert_rect(
+            screen_source_rect(0.8, 0.9, Some(crop), 2.0, [0.5, 0.5]),
+            [0.3, 0.225, 0.5, 0.495],
+        );
+        assert_rect(
+            screen_source_rect(0.8, 0.9, Some(crop), 2.0, [1.0, 1.0]),
+            [0.4, 0.36, 0.6, 0.63],
+        );
     }
 
     #[test]
     fn base_screen_framing_starts_at_cover_and_moves_inside_the_crop() {
         // 16:9 source in a square slot: cover keeps 9/16 of the source width.
-        let centered = framed_screen_source_rect(
-            1.0,
-            1.0,
-            None,
-            [1920.0, 1080.0],
-            Some(1.0),
-            1.0,
-            [0.5, 0.5],
-        );
+        let centered =
+            framed_screen_source_rect(1.0, 1.0, None, [1920.0, 1080.0], Some(1.0), 1.0, [0.5, 0.5]);
         assert_rect(centered, [0.21875, 0.0, 0.78125, 1.0]);
 
-        let left = framed_screen_source_rect(
-            1.0,
-            1.0,
-            None,
-            [1920.0, 1080.0],
-            Some(1.0),
-            2.0,
-            [0.0, 0.5],
-        );
+        let left =
+            framed_screen_source_rect(1.0, 1.0, None, [1920.0, 1080.0], Some(1.0), 2.0, [0.0, 0.5]);
         assert_rect(left, [0.0, 0.25, 0.28125, 0.75]);
     }
 
@@ -1894,8 +2097,14 @@ mod tests {
         for &box_ar in &[0.35, 1.0, 2.4] {
             let (u0, v0, u1, v1) = cover_crop_uv(cam, tex, box_ar);
             assert!(u0 >= 0.0 && v0 >= 0.0, "coupe hors image: {u0},{v0}");
-            assert!(u1 <= cam[0] / tex[0] + 1e-6, "u1 {u1} deborde la largeur visible");
-            assert!(v1 <= cam[1] / tex[1] + 1e-6, "v1 {v1} deborde la hauteur visible");
+            assert!(
+                u1 <= cam[0] / tex[0] + 1e-6,
+                "u1 {u1} deborde la largeur visible"
+            );
+            assert!(
+                v1 <= cam[1] / tex[1] + 1e-6,
+                "v1 {v1} deborde la hauteur visible"
+            );
             let (mx, my) = (u0 + u1, v0 + v1);
             assert!((mx - cam[0] / tex[0]).abs() < 1e-6, "pas centre en x");
             assert!((my - cam[1] / tex[1]).abs() < 1e-6, "pas centre en y");
@@ -1968,8 +2177,14 @@ mod tests {
                     "uv {uv:?} boite {box_ar} -> ratio {got}",
                 );
                 // le cover RÉDUIT : il ne va jamais chercher des pixels hors du rect source
-                assert!(out[0] >= uv[0] - 1e-6 && out[1] >= uv[1] - 1e-6, "deborde en haut/gauche");
-                assert!(out[2] <= uv[2] + 1e-6 && out[3] <= uv[3] + 1e-6, "deborde en bas/droite");
+                assert!(
+                    out[0] >= uv[0] - 1e-6 && out[1] >= uv[1] - 1e-6,
+                    "deborde en haut/gauche"
+                );
+                assert!(
+                    out[2] <= uv[2] + 1e-6 && out[3] <= uv[3] + 1e-6,
+                    "deborde en bas/droite"
+                );
             }
         }
     }

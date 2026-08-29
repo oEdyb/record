@@ -19,6 +19,10 @@
 		"electron/native/wgc-capture/CMakeLists.txt": "4b91454a84f166399caf97949f30c03fb88c4d1523a4a16adfa6ac5f2e4d0230",
 		"electron/native/whisper-stt/CMakeLists.txt": "26f955915de272fc13bc4ae9a0366d28605472f9deeaf23b0017c330b315b959",
 		"electron/stt/modelManager.ts": "8d7e37b775bd65aa4f8ead199057af54cf6b297bd65f09b53d683d45aab1e7c8",
-		"scripts/ffmpeg-pins.mjs": "85225f1eb8abc9374bb4cdfe36b30dc0c236d8f93757cab773c02cd1b1984e60"
+		"scripts/ffmpeg-pins.mjs": "85225f1eb8abc9374bb4cdfe36b30dc0c236d8f93757cab773c02cd1b1984e60",
+		"supply-chain/bundled-assets.json": "7211ab9415d00062e725acb0cd7cbb3071170f49f3af36b54629e701b6f3f8e0",
+		"supply-chain/cargo-license-supplements.json": "ae44078c43ef8d5f31bbc3d79afdab8b2d407465f905b986ed70bf7f8e9762da",
+		"supply-chain/model-rights.json": "ca13433b8e977e46eed130b895ba2d1e6877871cdabf62e0a19a1f359766f8be",
+		"supply-chain/web-demuxer.json": "9e4f26d92c3104f0691b5ec1cc781fbb0924d2c48d0b455ee4f30d3e0477c855"
 	}
 }

@@ -46,7 +46,7 @@ function asset(id: string, extra: Record<string, unknown> = {}) {
 
 function makeDoc(assetIds: string[], projectId = "proj_1"): AxcutDocument {
 	return {
-		schemaVersion: 8,
+		schemaVersion: 9,
 		project: {
 			id: projectId,
 			title: "Test",
@@ -75,10 +75,29 @@ function transcriptFor(assetId: string): AxcutTranscript {
 	return {
 		assetId,
 		language: "en",
+		evidenceStatus: "legacy-unverified",
 		segments: [
-			{ id: "seg_1", kind: "speech", startSec: 0, endSec: 1, text: "hello", wordIds: ["word_1"] },
+			{
+				id: "seg_1",
+				kind: "speech",
+				startSec: 0,
+				endSec: 1,
+				text: "hello",
+				wordIds: ["word_1"],
+				sourceRole: "unknown-mixed",
+			},
 		],
-		words: [{ id: "word_1", segmentId: "seg_1", startSec: 0, endSec: 1, text: "hello" }],
+		words: [
+			{
+				id: "word_1",
+				segmentId: "seg_1",
+				startSec: 0,
+				endSec: 1,
+				text: "hello",
+				sourceRole: "unknown-mixed",
+			},
+		],
+		sources: [],
 	};
 }
 
@@ -118,7 +137,7 @@ describe("useTranscriptionStore", () => {
 		toastMocks.success.mockReset();
 		toastMocks.error.mockReset();
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge
-		(window as any).electronAPI = { stt: { transcribe: vi.fn() } };
+		(window as any).electronAPI = { stt: { transcribeSource: vi.fn() } };
 	});
 
 	afterEach(() => {
@@ -323,7 +342,7 @@ describe("useTranscriptionStore", () => {
 	it("does not start the background pass when the preload bridge exists but its helper is missing", async () => {
 		const isAvailable = vi.fn(async () => false);
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge
-		(window as any).electronAPI = { stt: { transcribe: vi.fn(), isAvailable } };
+		(window as any).electronAPI = { stt: { transcribeSource: vi.fn(), isAvailable } };
 		loadDocument(makeDoc(["asset_1"]));
 
 		const view = renderHook(() => useAutoTranscription());
@@ -339,7 +358,7 @@ describe("useTranscriptionStore", () => {
 	it("does not probe or queue STT when automatic transcription is hidden from the product surface", async () => {
 		const isAvailable = vi.fn(async () => true);
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge
-		(window as any).electronAPI = { stt: { transcribe: vi.fn(), isAvailable } };
+		(window as any).electronAPI = { stt: { transcribeSource: vi.fn(), isAvailable } };
 		loadDocument(makeDoc(["asset_1"]));
 
 		const view = renderHook(() => useAutoTranscription(false));
@@ -355,7 +374,7 @@ describe("useTranscriptionStore", () => {
 	it("starts the background pass after the native helper reports that it is available", async () => {
 		const isAvailable = vi.fn(async () => true);
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the preload bridge
-		(window as any).electronAPI = { stt: { transcribe: vi.fn(), isAvailable } };
+		(window as any).electronAPI = { stt: { transcribeSource: vi.fn(), isAvailable } };
 		transcribeMocks.transcribeAsset.mockImplementation(
 			async (_doc: AxcutDocument, assetId: string) => transcriptFor(assetId),
 		);

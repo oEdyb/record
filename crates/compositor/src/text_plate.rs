@@ -64,7 +64,10 @@ mod tests {
         let (pad_x, pad_y) = padding(48.0);
         assert!((pad_x - 9.6).abs() < 1e-4, "0.2em de 48 px");
         assert!((pad_y - 4.8).abs() < 1e-4, "0.1em de 48 px");
-        assert!((radius(48.0, 400.0, 60.0) - 4.0).abs() < 1e-4, "4 px à 48 px de police");
+        assert!(
+            (radius(48.0, 400.0, 60.0) - 4.0).abs() < 1e-4,
+            "4 px à 48 px de police"
+        );
     }
 
     /// Les marges suivent la police, donc la résolution de sortie : le même bloc rendu deux

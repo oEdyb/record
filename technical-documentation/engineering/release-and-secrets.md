@@ -28,6 +28,12 @@ The workflow verifies the RC signature against the external release key. It also
 
 `build.yml` checks out one resolved SHA everywhere. It runs the supply-chain gates and source-bound Whisper build before platform packaging. The release creates a private GitHub draft first. It then publishes and verifies immutable update artifacts, validates and publishes the mutable feeds, fetches every public file to compare size and SHA-512, and publishes the draft last. A stable `release: published` event closes the milestone, announces Discord, and starts Homebrew, WinGet, Nix, and AUR.
 
+The supply-chain job also creates the exact `web-demuxer.wasm` corresponding-source offer from the
+approved source lock. The publisher downloads that source-bound artifact before staging a release.
+The wrapper archive, FFmpeg archive, source manifest, and relinking instructions are uploaded to the
+private GitHub draft and the immutable public artifact path before any mutable update manifest is
+published. The release contract tests fail if the source offer is missing or staged too late.
+
 All production publishers share the `klippt-production-release-publish` concurrency group. GitHub
 runs only one job in that group at a time. Before the first external write, a stable publisher fetches
 the public `latest.json` without cache. It rejects an older version. A same-version retry is allowed

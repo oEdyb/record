@@ -32,6 +32,28 @@ type WhisperChild = ChildProcessByStdio<null, Readable, Readable>;
  */
 const REQUEST_TIMEOUT_MS = 280_000;
 
+function cancelledError(): Error {
+	const error = new Error("Transcription cancelled");
+	error.name = "AbortError";
+	return error;
+}
+
+function abortableDelay(durationMs: number, signal?: AbortSignal): Promise<void> {
+	if (signal?.aborted) return Promise.reject(cancelledError());
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, durationMs);
+		const onAbort = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			reject(cancelledError());
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
 /**
  * Owns the long-lived `whisper-stt-server` process used to recognize speech.
  *
@@ -65,6 +87,7 @@ export interface WhisperServerStatus {
 	pid: number | null;
 	port: number | null;
 	backend: SttBackend | null;
+	backendVerified: boolean;
 	startedAtMs: number | null;
 	lastError: string | null;
 }
@@ -99,6 +122,7 @@ export class WhisperServerManager {
 	private process: WhisperChild | null = null;
 	private port: number | null = null;
 	private backend: SttBackend | null = null;
+	private backendVerified = false;
 	private lastError: string | null = null;
 	private startedAtMs: number | null = null;
 	private inFlight: Promise<unknown> = Promise.resolve();
@@ -127,16 +151,32 @@ export class WhisperServerManager {
 	}
 
 	/** Check the server's HTTP root for a 200; resolves once responsive. */
-	private static async pollUntilReady(baseUrl: string, timeoutMs = 30_000): Promise<void> {
+	private static async pollUntilReady(
+		baseUrl: string,
+		timeoutMs = 30_000,
+		signal?: AbortSignal,
+	): Promise<string | null> {
 		const deadline = Date.now() + timeoutMs;
 		while (Date.now() < deadline) {
+			if (signal?.aborted) throw cancelledError();
 			try {
-				const res = await fetch(baseUrl, { method: "GET" });
-				if (res.ok) return;
+				const res = await fetch(baseUrl, { method: "GET", signal });
+				if (res.ok) {
+					const body = await res.text();
+					try {
+						const parsed = JSON.parse(body) as { backend?: unknown };
+						return typeof parsed.backend === "string" ? parsed.backend : null;
+					} catch {
+						// Older helpers returned plain "ok". They remain usable, but their
+						// launch backend is not trusted for transcript cache reads.
+						return null;
+					}
+				}
 			} catch {
+				if (signal?.aborted) throw cancelledError();
 				// not up yet
 			}
-			await new Promise((resolve) => setTimeout(resolve, 250));
+			await abortableDelay(250, signal);
 		}
 		throw new Error(`whisper-stt-server at ${baseUrl} did not respond within ${timeoutMs}ms`);
 	}
@@ -152,6 +192,7 @@ export class WhisperServerManager {
 			pid: this.process?.pid ?? null,
 			port: this.port,
 			backend: this.backend,
+			backendVerified: this.backendVerified,
 			startedAtMs: this.startedAtMs,
 			lastError: this.lastError,
 		};
@@ -162,7 +203,11 @@ export class WhisperServerManager {
 	 * if a server is already up we just return its port so the caller never pays
 	 * the cold-start cost twice.
 	 */
-	async start(options: WhisperServerStartOptions): Promise<{ port: number; backend: SttBackend }> {
+	async start(
+		options: WhisperServerStartOptions,
+		signal?: AbortSignal,
+	): Promise<{ port: number; backend: SttBackend }> {
+		if (signal?.aborted) throw cancelledError();
 		if (this.process && this.port) {
 			return { port: this.port, backend: this.backend ?? options.backend ?? "whispercpp-cpu" };
 		}
@@ -210,9 +255,14 @@ export class WhisperServerManager {
 		this.process = child;
 		this.port = port;
 		this.backend = resolved.backend;
+		this.backendVerified = false;
 		this.startedAtMs = Date.now();
 		this.stderrTail = "";
 		this.lastError = null;
+		const stopWithParent = () => {
+			if (child.exitCode === null) child.kill("SIGKILL");
+		};
+		process.once("exit", stopWithParent);
 
 		child.stdout?.on("data", (chunk: Buffer) => {
 			process.stdout.write(`[whisper-stt-server] ${chunk.toString()}`);
@@ -224,6 +274,7 @@ export class WhisperServerManager {
 			this.stderrTail = (this.stderrTail + text).slice(-this.stderrTailMax);
 		});
 		child.once("exit", (code) => {
+			process.removeListener("exit", stopWithParent);
 			if (this.process === child) {
 				const reason =
 					code === null
@@ -233,33 +284,41 @@ export class WhisperServerManager {
 				this.process = null;
 				this.port = null;
 				this.startedAtMs = null;
+				this.backend = null;
+				this.backendVerified = false;
 			}
 		});
 		child.once("error", (err) => {
-			this.recordError(`spawn error: ${err.message}`);
+			if (this.process === child) this.recordError(`spawn error: ${err.message}`);
 		});
 
 		const baseUrl = `http://127.0.0.1:${port}`;
 		try {
-			await WhisperServerManager.pollUntilReady(baseUrl);
+			const runtimeBackend = await WhisperServerManager.pollUntilReady(baseUrl, 30_000, signal);
+			if (this.process === child && runtimeBackend) {
+				this.backend = this.toBackend(runtimeBackend);
+				this.backendVerified = true;
+			}
 		} catch (err) {
-			await this.stop();
+			await this.stopChild(child);
 			throw err instanceof Error ? err : new Error(String(err));
 		}
-		return { port, backend: resolved.backend };
+		if (this.process !== child) {
+			await this.stopChild(child);
+			throw new Error("Whisper helper startup was superseded.");
+		}
+		return { port, backend: this.backend ?? resolved.backend };
 	}
 
-	/** Send SIGTERM and wait for the helper to exit. Resolves even if it was already down. */
-	async stop(): Promise<void> {
-		if (!this.process) {
+	private async stopChild(child: WhisperChild): Promise<void> {
+		if (this.process === child) {
+			this.process = null;
 			this.port = null;
 			this.startedAtMs = null;
-			return;
+			this.backend = null;
+			this.backendVerified = false;
 		}
-		const child = this.process;
-		this.process = null;
-		this.port = null;
-		this.startedAtMs = null;
+		if (child.exitCode !== null) return;
 		const exited = new Promise<void>((resolve) => {
 			child.once("exit", () => resolve());
 		});
@@ -272,6 +331,19 @@ export class WhisperServerManager {
 		} catch {
 			child.kill("SIGKILL");
 		}
+	}
+
+	/** Send SIGTERM and wait for the helper to exit. Resolves even if it was already down. */
+	async stop(): Promise<void> {
+		const child = this.process;
+		if (!child) {
+			this.port = null;
+			this.startedAtMs = null;
+			this.backend = null;
+			this.backendVerified = false;
+			return;
+		}
+		await this.stopChild(child);
 	}
 
 	private baseUrl(): string {
@@ -300,6 +372,7 @@ export class WhisperServerManager {
 	private async runMultipartInfer(opts: {
 		wavPath: string;
 		language?: string;
+		signal?: AbortSignal;
 	}): Promise<WhisperJsonResponse> {
 		await this.ensureReady();
 		const url = `${this.baseUrl()}/inference`;
@@ -309,14 +382,42 @@ export class WhisperServerManager {
 		form.set("file", blob, path.basename(opts.wavPath));
 		form.set("response_format", "verbose_json");
 		form.set("language", opts.language && opts.language !== "auto" ? opts.language : "auto");
-		let res: Response;
+		if (opts.signal?.aborted) {
+			const error = new Error("Transcription cancelled");
+			error.name = "AbortError";
+			throw error;
+		}
+		const controller = new AbortController();
+		let timedOut = false;
+		const timeout = setTimeout(() => {
+			timedOut = true;
+			controller.abort();
+			// Fetch cancellation does not stop whisper.cpp's native inference.
+			void this.stop();
+		}, REQUEST_TIMEOUT_MS);
+		const onAbort = () => {
+			controller.abort();
+			void this.stop();
+		};
+		opts.signal?.addEventListener("abort", onAbort, { once: true });
+		if (opts.signal?.aborted) onAbort();
 		try {
-			res = await fetch(url, {
+			const res = await fetch(url, {
 				method: "POST",
 				body: form,
-				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+				signal: controller.signal,
 			});
+			if (!res.ok) {
+				const text = await res.text().catch(() => "");
+				throw new Error(`whisper-stt-server /inference HTTP ${res.status}: ${text.slice(0, 512)}`);
+			}
+			return (await res.json()) as WhisperJsonResponse;
 		} catch (error) {
+			if (opts.signal?.aborted) {
+				const cancelled = new Error("Transcription cancelled");
+				cancelled.name = "AbortError";
+				throw cancelled;
+			}
 			// Name the failure. Node's global fetch reports BOTH a real transport
 			// error and its own header timeout as a bare "fetch failed", which is
 			// how a too-long request used to reach the user as an unactionable
@@ -331,7 +432,7 @@ export class WhisperServerManager {
 			// project targets ES2020, where that overload does not exist.
 			throw Object.assign(
 				new Error(
-					error instanceof Error && error.name === "TimeoutError"
+					timedOut
 						? `whisper-stt-server /inference timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s ` +
 								`(audio chunk too long for this machine, or the helper is wedged); ` +
 								`stderr=${this.stderrTail.slice(-256)}`
@@ -341,23 +442,10 @@ export class WhisperServerManager {
 				),
 				{ cause: error },
 			);
+		} finally {
+			clearTimeout(timeout);
+			opts.signal?.removeEventListener("abort", onAbort);
 		}
-		if (!res.ok) {
-			const text = await res.text().catch(() => "");
-			throw new Error(`whisper-stt-server /inference HTTP ${res.status}: ${text.slice(0, 512)}`);
-		}
-		// The same timeout still covers the body: it can fire between the headers
-		// and the last byte, and an unnamed `AbortError` here would read exactly
-		// like the "fetch failed" this whole block exists to replace.
-		return (await res.json().catch((error: unknown) => {
-			throw Object.assign(
-				new Error(
-					`whisper-stt-server /inference response was unreadable: ` +
-						`${error instanceof Error ? error.message : String(error)}`,
-				),
-				{ cause: error },
-			);
-		})) as WhisperJsonResponse;
 	}
 
 	/** Defensive number parse for `verbose_json` values that may arrive as strings. */
@@ -368,7 +456,11 @@ export class WhisperServerManager {
 	}
 
 	/** Run one transcription; serializes concurrent callers. */
-	async transcribe(opts: { samples: Float32Array; language?: string }): Promise<{
+	async transcribe(opts: {
+		samples: Float32Array;
+		language?: string;
+		signal?: AbortSignal;
+	}): Promise<{
 		segments: SttPhraseSegment[];
 		wordSegments: SttWordSegment[];
 		detectedLanguage: string;
@@ -379,15 +471,33 @@ export class WhisperServerManager {
 		return task;
 	}
 
-	private async transcribeImpl(opts: { samples: Float32Array; language?: string }): Promise<{
+	private async transcribeImpl(opts: {
+		samples: Float32Array;
+		language?: string;
+		signal?: AbortSignal;
+	}): Promise<{
 		segments: SttPhraseSegment[];
 		wordSegments: SttWordSegment[];
 		detectedLanguage: string;
 		backend: SttBackend;
 	}> {
+		if (opts.signal?.aborted) {
+			const error = new Error("Transcription cancelled");
+			error.name = "AbortError";
+			throw error;
+		}
 		const wavPath = await writeSamplesAsWav(opts.samples);
 		try {
-			const json = await this.runMultipartInfer({ wavPath, language: opts.language });
+			if (opts.signal?.aborted) {
+				const error = new Error("Transcription cancelled");
+				error.name = "AbortError";
+				throw error;
+			}
+			const json = await this.runMultipartInfer({
+				wavPath,
+				language: opts.language,
+				signal: opts.signal,
+			});
 			const raw = json.segments ?? [];
 			const segments: SttPhraseSegment[] = raw
 				.map((seg) => {
@@ -416,6 +526,10 @@ export class WhisperServerManager {
 			);
 			const detectedLanguage = json.detected_language ?? json.language ?? "auto";
 			const backend = this.toBackend(json.backend);
+			if (json.backend) {
+				this.backend = backend;
+				this.backendVerified = true;
+			}
 			return { segments, wordSegments, detectedLanguage, backend };
 		} finally {
 			await cleanupWav(wavPath);

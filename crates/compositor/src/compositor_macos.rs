@@ -32,11 +32,12 @@ use crate::ffi::AVFrame;
 // les deux backends — cf. `frame_geometry`, qui documente les divergences que
 // l'unification a corrigées.
 pub use crate::frame_geometry::{
-    live_params_from_scene, webcam_shape_code, FIXTURE_FRAMES, LayerCB, LiveParams, OUT_H, OUT_W,
+    live_params_from_scene, webcam_shape_code, LayerCB, LiveParams, FIXTURE_FRAMES, OUT_H, OUT_W,
 };
-use crate::frame_geometry::{parse_hex, FrameGeometryInput, SCREEN_SHADOW_OFFSET_FRAC,
-    SCREEN_SHADOW_SPREAD_FRAC, WEBCAM_SHADOW_OFFSET_FRAC, WEBCAM_SHADOW_OPACITY,
-    WEBCAM_SHADOW_SPREAD_FRAC};
+use crate::frame_geometry::{
+    parse_hex, FrameGeometryInput, SCREEN_SHADOW_OFFSET_FRAC, SCREEN_SHADOW_SPREAD_FRAC,
+    WEBCAM_SHADOW_OFFSET_FRAC, WEBCAM_SHADOW_OPACITY, WEBCAM_SHADOW_SPREAD_FRAC,
+};
 use crate::scene::{Scene, SceneBackground};
 use anyhow::{anyhow, Result};
 use metal::foreign_types::ForeignType;
@@ -346,8 +347,14 @@ fn make_pipeline(
         ca.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
         ca.set_alpha_blend_operation(metal::MTLBlendOperation::Add);
         let (src, dst) = match blend {
-            Blend::Over => (metal::MTLBlendFactor::One, metal::MTLBlendFactor::OneMinusSourceAlpha),
-            Blend::Add => (metal::MTLBlendFactor::BlendColor, metal::MTLBlendFactor::One),
+            Blend::Over => (
+                metal::MTLBlendFactor::One,
+                metal::MTLBlendFactor::OneMinusSourceAlpha,
+            ),
+            Blend::Add => (
+                metal::MTLBlendFactor::BlendColor,
+                metal::MTLBlendFactor::One,
+            ),
             Blend::Replace => unreachable!(),
         };
         ca.set_source_rgb_blend_factor(src);
@@ -500,12 +507,20 @@ impl Compositor {
         let blur_quarter = pyramid[1].clone();
         let blur_half = std::mem::replace(&mut pyramid[0], blur_quarter.clone());
         let pipeline_kdown = make_pipeline(
-            device, &library, "vs_fs", "ps_kawase_down",
-            metal::MTLPixelFormat::RGBA8Unorm, Blend::Replace,
+            device,
+            &library,
+            "vs_fs",
+            "ps_kawase_down",
+            metal::MTLPixelFormat::RGBA8Unorm,
+            Blend::Replace,
         )?;
         let pipeline_kup = make_pipeline(
-            device, &library, "vs_fs", "ps_kawase_up",
-            metal::MTLPixelFormat::RGBA8Unorm, Blend::Replace,
+            device,
+            &library,
+            "vs_fs",
+            "ps_kawase_up",
+            metal::MTLPixelFormat::RGBA8Unorm,
+            Blend::Replace,
         )?;
         let ann_copy = {
             let d = metal::TextureDescriptor::new();
@@ -516,9 +531,7 @@ impl Compositor {
             d.set_storage_mode(metal::MTLStorageMode::Private);
             d.set_usage(rt_usage);
             // Assez de niveaux pour que `log2(rayon)` du mode 10 en trouve toujours un.
-            d.set_mipmap_level_count(
-                (32 - rw.max(rh).max(1).leading_zeros()).max(1) as u64,
-            );
+            d.set_mipmap_level_count((32 - rw.max(rh).max(1).leading_zeros()).max(1) as u64);
             device.new_texture(&d)
         };
 
@@ -734,7 +747,12 @@ impl Compositor {
         let (sx, sy) = (spread / rw, spread / rh);
         let (ox, oy) = (offset_px[0] / rw, offset_px[1] / rh);
         let cb = LayerCB {
-            dst: [dst[0] - sx + ox, dst[1] - sy + oy, dst[2] + 2.0 * sx, dst[3] + 2.0 * sy],
+            dst: [
+                dst[0] - sx + ox,
+                dst[1] - sy + oy,
+                dst[2] + 2.0 * sx,
+                dst[3] + 2.0 * sy,
+            ],
             quad_px: [size_px[0] + 2.0 * spread, size_px[1] + 2.0 * spread],
             radius_px: radius,
             mode: 2.0,
@@ -745,7 +763,6 @@ impl Compositor {
         };
         self.draw_solid(enc, &cb);
     }
-
 
     /// Décode un fichier image (jpg/png) — ou une data-URI — en `MTLTexture` RGBA8.
     ///
@@ -774,7 +791,11 @@ impl Compositor {
         tex.replace_region(
             metal::MTLRegion {
                 origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                size: metal::MTLSize { width: w as u64, height: h as u64, depth: 1 },
+                size: metal::MTLSize {
+                    width: w as u64,
+                    height: h as u64,
+                    depth: 1,
+                },
             },
             0,
             pixels.as_ptr() as *const std::ffi::c_void,
@@ -800,7 +821,9 @@ impl Compositor {
             Some(v) => v,
             None => {
                 let loaded = self.load_image_texture(path)?;
-                self.img_cache.borrow_mut().insert(path.to_string(), loaded.clone());
+                self.img_cache
+                    .borrow_mut()
+                    .insert(path.to_string(), loaded.clone());
                 loaded
             }
         };
@@ -826,8 +849,6 @@ impl Compositor {
         Ok(())
     }
 
-
-
     /// Une passe plein écran : `source` -> `target` avec `pipeline`, `fx` dans le LayerCB.
     /// Le viewport découle de la taille de l'attachement, donc pas de `RSSetViewports`.
     unsafe fn fs_pass(
@@ -844,7 +865,10 @@ impl Compositor {
             Some(metal::MTLClearColor::new(0.0, 0.0, 0.0, 0.0)),
             pipeline,
         )?;
-        let cb = LayerCB { fx, ..Default::default() };
+        let cb = LayerCB {
+            fx,
+            ..Default::default()
+        };
         e.set_fragment_bytes(
             0,
             std::mem::size_of::<LayerCB>() as u64,
@@ -864,16 +888,51 @@ impl Compositor {
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
         let (hw, hh) = (rw * 0.5, rh * 0.5);
         // DOWN : texel = 1/(dims de la SOURCE échantillonnée)
-        self.fs_pass(cmd, &self.blur_half, &self.rt, &self.pipeline_kdown, [1.0 / rw, 1.0 / rh, off, 0.0])?;
-        self.fs_pass(cmd, &self.blur_quarter, &self.blur_half, &self.pipeline_kdown, [1.0 / hw, 1.0 / hh, off, 0.0])?;
-        self.fs_pass(cmd, &self.blur_eighth, &self.blur_quarter, &self.pipeline_kdown, [2.0 / hw, 2.0 / hh, off, 0.0])?;
+        self.fs_pass(
+            cmd,
+            &self.blur_half,
+            &self.rt,
+            &self.pipeline_kdown,
+            [1.0 / rw, 1.0 / rh, off, 0.0],
+        )?;
+        self.fs_pass(
+            cmd,
+            &self.blur_quarter,
+            &self.blur_half,
+            &self.pipeline_kdown,
+            [1.0 / hw, 1.0 / hh, off, 0.0],
+        )?;
+        self.fs_pass(
+            cmd,
+            &self.blur_eighth,
+            &self.blur_quarter,
+            &self.pipeline_kdown,
+            [2.0 / hw, 2.0 / hh, off, 0.0],
+        )?;
         // UP
-        self.fs_pass(cmd, &self.blur_quarter, &self.blur_eighth, &self.pipeline_kup, [4.0 / hw, 4.0 / hh, off, 0.0])?;
-        self.fs_pass(cmd, &self.blur_half, &self.blur_quarter, &self.pipeline_kup, [2.0 / hw, 2.0 / hh, off, 0.0])?;
-        self.fs_pass(cmd, &self.rt, &self.blur_half, &self.pipeline_kup, [1.0 / hw, 1.0 / hh, off, 0.0])?;
+        self.fs_pass(
+            cmd,
+            &self.blur_quarter,
+            &self.blur_eighth,
+            &self.pipeline_kup,
+            [4.0 / hw, 4.0 / hh, off, 0.0],
+        )?;
+        self.fs_pass(
+            cmd,
+            &self.blur_half,
+            &self.blur_quarter,
+            &self.pipeline_kup,
+            [2.0 / hw, 2.0 / hh, off, 0.0],
+        )?;
+        self.fs_pass(
+            cmd,
+            &self.rt,
+            &self.blur_half,
+            &self.pipeline_kup,
+            [1.0 / hw, 1.0 / hh, off, 0.0],
+        )?;
         Ok(())
     }
-
 
     /// Ombre d'un écran incliné en 3D : la pénombre suit le QUADRILATÈRE projeté (mode 12),
     /// pas son rect englobant. Port de `compositor_windows::draw_quad_shadow`.
@@ -889,10 +948,16 @@ impl Compositor {
         opacity: f32,
     ) {
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
-        let (min_x, max_x) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-        let (min_y, max_y) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+        let (min_x, max_x) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                (mn.min(x), mx.max(x))
+            });
+        let (min_y, max_y) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                (mn.min(y), mx.max(y))
+            });
         // La boîte doit contenir la pénombre entière, sinon elle se coupe net.
         let box_w = (max_x - min_x) + 2.0 * spread;
         let box_h = (max_y - min_y) + 2.0 * spread;
@@ -940,10 +1005,16 @@ impl Compositor {
         // Taille du plan dans son propre repère, avant projection : c'est là que vit le rayon,
         // pour qu'il reste constant le long du bord au lieu de s'étirer avec la perspective.
         let plane_px = [s_px[0] * quad.scale, s_px[1] * quad.scale];
-        let (min_x, max_x) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-        let (min_y, max_y) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+        let (min_x, max_x) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                (mn.min(x), mx.max(x))
+            });
+        let (min_y, max_y) = corners
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                (mn.min(y), mx.max(y))
+            });
         let bbox_w = (max_x - min_x).max(1.0);
         let bbox_h = (max_y - min_y).max(1.0);
         // coins en px LOCAUX à la bbox, pour matcher `i.local` du shader.
@@ -975,7 +1046,6 @@ impl Compositor {
         );
     }
 
-
     /// Annotations : calque le plus haut, ancré sur `screen_dst` — le conteneur que reçoit
     /// l'overlay web. Port de `compositor_windows::draw_annotations`.
     unsafe fn draw_annotations(
@@ -990,19 +1060,30 @@ impl Compositor {
             return Ok(());
         }
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
-        let visible = |a: &crate::scene::SceneAnnotation| {
-            t >= a.start_sec as f32 && t < a.end_sec as f32
-        };
+        let visible =
+            |a: &crate::scene::SceneAnnotation| t >= a.start_sec as f32 && t < a.end_sec as f32;
         // UNE seule recopie pour toutes les annotations flou de la frame : leur lecture doit
         // voir l'image composée SANS les flous eux-mêmes, sinon deux zones qui se recouvrent
         // s'échantillonneraient l'une l'autre selon l'ordre de dessin.
-        if scene.annotations.iter().any(|a| a.kind == "blur" && visible(a)) {
+        if scene
+            .annotations
+            .iter()
+            .any(|a| a.kind == "blur" && visible(a))
+        {
             let blit = cmd.new_blit_command_encoder();
             blit.copy_from_texture(
-                &self.rt, 0, 0,
+                &self.rt,
+                0,
+                0,
                 metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                metal::MTLSize { width: rw as u64, height: rh as u64, depth: 1 },
-                &self.ann_copy, 0, 0,
+                metal::MTLSize {
+                    width: rw as u64,
+                    height: rh as u64,
+                    depth: 1,
+                },
+                &self.ann_copy,
+                0,
+                0,
                 metal::MTLOrigin { x: 0, y: 0, z: 0 },
             );
             // Seul le mip 0 est rempli ; le GPU dérive le reste.
@@ -1029,36 +1110,51 @@ impl Compositor {
             }
             match a.kind.as_str() {
                 "figure" => {
-                    let Some(figure) = a.figure.as_ref() else { continue };
+                    let Some(figure) = a.figure.as_ref() else {
+                        continue;
+                    };
                     let (segments, half_stroke) = crate::regions::arrow_local_geometry(
                         &figure.direction,
                         figure.stroke_width,
                         quad_px,
                     );
-                    self.draw_solid(enc, &LayerCB {
-                        dst,
-                        quad_px,
-                        mode: 9.0,
-                        color: parse_hex(&figure.color).unwrap_or([1.0, 1.0, 1.0, 1.0]),
-                        fx: segments[0],
-                        src_prev: segments[1],
-                        dst_prev: segments[2],
-                        mb: [1.0, half_stroke, 0.0, 0.0],
-                        ..Default::default()
-                    });
+                    self.draw_solid(
+                        enc,
+                        &LayerCB {
+                            dst,
+                            quad_px,
+                            mode: 9.0,
+                            color: parse_hex(&figure.color).unwrap_or([1.0, 1.0, 1.0, 1.0]),
+                            fx: segments[0],
+                            src_prev: segments[1],
+                            dst_prev: segments[2],
+                            mb: [1.0, half_stroke, 0.0, 0.0],
+                            ..Default::default()
+                        },
+                    );
                 }
                 "blur" => {
-                    let Some(blur) = a.blur.as_ref() else { continue };
+                    let Some(blur) = a.blur.as_ref() else {
+                        continue;
+                    };
                     // Le masque en tracé libre demanderait une liste de points côté GPU : on
                     // masque la BOÎTE ENGLOBANTE. Choix délibérément asymétrique — ne rien
                     // dessiner laisserait passer en clair ce que l'utilisateur a désigné comme
                     // à cacher, et un masque qui ne masque pas donne confiance à tort.
                     let freehand = blur.shape == "freehand";
                     let is_blur = if blur.style == "blur" { 1.0 } else { 0.0 };
-                    let amount = if is_blur > 0.5 { blur.intensity } else { blur.block_size };
+                    let amount = if is_blur > 0.5 {
+                        blur.intensity
+                    } else {
+                        blur.block_size
+                    };
                     // Le repli passe par le rectangle, pas l'ovale : un ovale inscrit
                     // retirerait les coins, donc une partie de ce qui est couvert.
-                    let is_oval = if blur.shape == "oval" && !freehand { 1.0 } else { 0.0 };
+                    let is_oval = if blur.shape == "oval" && !freehand {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     // La teinte n'a de sens qu'en mosaïque : un flou teinté ne ressemble plus
                     // à un flou.
                     let tinted = if is_blur > 0.5 { 0.0 } else { 1.0 };
@@ -1068,14 +1164,17 @@ impl Compositor {
                         [1.0, 1.0, 1.0, 1.0]
                     };
                     enc.set_fragment_texture(2, Some(&self.ann_copy));
-                    self.draw_solid(enc, &LayerCB {
-                        dst,
-                        quad_px,
-                        mode: 10.0,
-                        color: tint,
-                        fx: [is_blur, amount.max(1.0), is_oval, tinted],
-                        ..Default::default()
-                    });
+                    self.draw_solid(
+                        enc,
+                        &LayerCB {
+                            dst,
+                            quad_px,
+                            mode: 10.0,
+                            color: tint,
+                            fx: [is_blur, amount.max(1.0), is_oval, tinted],
+                            ..Default::default()
+                        },
+                    );
                 }
                 "image" => {
                     let Some(src) = a.image_path.as_ref().filter(|s| !s.is_empty()) else {
@@ -1083,21 +1182,25 @@ impl Compositor {
                     };
                     let cached = {
                         let c = self.ann_img_cache.borrow();
-                        c.get(&a.id).filter(|(_, _, _, len)| *len == src.len()).cloned()
+                        c.get(&a.id)
+                            .filter(|(_, _, _, len)| *len == src.len())
+                            .cloned()
                     };
-                    let Some((tex, iw, ih, _)) = cached.or_else(|| {
-                        match self.load_image_texture(src) {
+                    let Some((tex, iw, ih, _)) =
+                        cached.or_else(|| match self.load_image_texture(src) {
                             Ok((tex, w, h)) => {
                                 let e = (tex, w, h, src.len());
-                                self.ann_img_cache.borrow_mut().insert(a.id.clone(), e.clone());
+                                self.ann_img_cache
+                                    .borrow_mut()
+                                    .insert(a.id.clone(), e.clone());
                                 Some(e)
                             }
                             Err(e) => {
                                 eprintln!("[annotation image] {}: {e:#}", a.id);
                                 None
                             }
-                        }
-                    }) else {
+                        })
+                    else {
                         continue;
                     };
                     if iw == 0 || ih == 0 {
@@ -1111,24 +1214,31 @@ impl Compositor {
                         (dst[2] * (img_aspect / box_aspect), dst[3])
                     };
                     enc.set_fragment_texture(2, Some(&tex));
-                    self.draw_solid(enc, &LayerCB {
-                        dst: [
-                            dst[0] + (dst[2] - fit_w) * 0.5,
-                            dst[1] + (dst[3] - fit_h) * 0.5,
-                            fit_w,
-                            fit_h,
-                        ],
-                        src: [0.0, 0.0, 1.0, 1.0],
-                        quad_px: [fit_w * rw, fit_h * rh],
-                        mode: 7.0,
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        fx: [0.0, 0.0, 1.0, 1.0],
-                        ..Default::default()
-                    });
+                    self.draw_solid(
+                        enc,
+                        &LayerCB {
+                            dst: [
+                                dst[0] + (dst[2] - fit_w) * 0.5,
+                                dst[1] + (dst[3] - fit_h) * 0.5,
+                                fit_w,
+                                fit_h,
+                            ],
+                            src: [0.0, 0.0, 1.0, 1.0],
+                            quad_px: [fit_w * rw, fit_h * rh],
+                            mode: 7.0,
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            fx: [0.0, 0.0, 1.0, 1.0],
+                            ..Default::default()
+                        },
+                    );
                 }
                 "text" => {
-                    let Some(text) = a.text.as_ref() else { continue };
-                    let Some(raster) = self.text_raster.as_ref() else { continue };
+                    let Some(text) = a.text.as_ref() else {
+                        continue;
+                    };
+                    let Some(raster) = self.text_raster.as_ref() else {
+                        continue;
+                    };
                     if text.content.trim().is_empty() {
                         continue;
                     }
@@ -1148,11 +1258,15 @@ impl Compositor {
                     let key = spec.cache_key();
                     let cached = {
                         let c = self.text_cache.borrow();
-                        c.get(&a.id).filter(|(_, k)| *k == key).map(|(tex, _)| tex.clone())
+                        c.get(&a.id)
+                            .filter(|(_, k)| *k == key)
+                            .map(|(tex, _)| tex.clone())
                     };
                     let Some(tex) = cached.or_else(|| match raster.rasterize(&self.gpu, &spec) {
                         Ok(tex) => {
-                            self.text_cache.borrow_mut().insert(a.id.clone(), (tex.clone(), key));
+                            self.text_cache
+                                .borrow_mut()
+                                .insert(a.id.clone(), (tex.clone(), key));
                             Some(tex)
                         }
                         Err(e) => {
@@ -1185,14 +1299,17 @@ impl Compositor {
                         continue;
                     }
                     enc.set_fragment_texture(2, Some(&tex));
-                    self.draw_solid(enc, &LayerCB {
-                        dst: [ax, ay, aw * reveal, ah],
-                        src: [0.0, 0.0, reveal, 1.0],
-                        quad_px: [aw * reveal * rw, ah * rh],
-                        mode: 11.0,
-                        color: [1.0, 1.0, 1.0, anim.opacity],
-                        ..Default::default()
-                    });
+                    self.draw_solid(
+                        enc,
+                        &LayerCB {
+                            dst: [ax, ay, aw * reveal, ah],
+                            src: [0.0, 0.0, reveal, 1.0],
+                            quad_px: [aw * reveal * rw, ah * rh],
+                            mode: 11.0,
+                            color: [1.0, 1.0, 1.0, anim.opacity],
+                            ..Default::default()
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -1200,7 +1317,6 @@ impl Compositor {
         enc.end_encoding();
         Ok(())
     }
-
 
     /// Soumet sans attendre, et retient le buffer pour `sync`.
     fn submit(&self, cmd: &metal::CommandBufferRef) {
@@ -1263,13 +1379,19 @@ impl Compositor {
             Some(v) => v,
             None => {
                 let loaded = self.load_image_texture(&sprite.path)?;
-                self.img_cache.borrow_mut().insert(sprite.path.clone(), loaded.clone());
+                self.img_cache
+                    .borrow_mut()
+                    .insert(sprite.path.clone(), loaded.clone());
                 loaded
             }
         };
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
         let ar = iw as f32 / ih.max(1) as f32;
-        let (pw, ph) = if ar >= 1.0 { (size_px, size_px / ar) } else { (size_px * ar, size_px) };
+        let (pw, ph) = if ar >= 1.0 {
+            (size_px, size_px / ar)
+        } else {
+            (size_px * ar, size_px)
+        };
         let hotspot = [sprite.hotspot_x, sprite.hotspot_y];
         let cb = match placement {
             crate::frame_geometry::CursorPlacement::Upright { center } => LayerCB {
@@ -1281,7 +1403,11 @@ impl Compositor {
                 ..Default::default()
             },
             crate::frame_geometry::CursorPlacement::Tilted {
-                plane_pt, quad, center_px, screen_px, ..
+                plane_pt,
+                quad,
+                center_px,
+                screen_px,
+                ..
             } => {
                 // Le sprite est posé DANS le plan : sa taille devient une fraction du plan et
                 // ses quatre coins traversent la même projection que la vidéo. La réduction
@@ -1289,17 +1415,21 @@ impl Compositor {
                 let (wf, hf) = (pw / screen_px[0], ph / screen_px[1]);
                 let x0 = plane_pt[0] - hotspot[0] * wf;
                 let y0 = plane_pt[1] - hotspot[1] * hf;
-                let corners = [(x0, y0), (x0 + wf, y0), (x0 + wf, y0 + hf), (x0, y0 + hf)]
-                    .map(|(fx, fy)| {
+                let corners =
+                    [(x0, y0), (x0 + wf, y0), (x0 + wf, y0 + hf), (x0, y0 + hf)].map(|(fx, fy)| {
                         let (px, py) = quad.point_px(fx, fy);
                         (center_px[0] + px, center_px[1] + py)
                     });
                 let (min_x, max_x) = corners
                     .iter()
-                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
+                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| {
+                        (mn.min(x), mx.max(x))
+                    });
                 let (min_y, max_y) = corners
                     .iter()
-                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+                    .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| {
+                        (mn.min(y), mx.max(y))
+                    });
                 // Le quad projeté d'un sprite peut être très fin de biais : une bbox d'un pixel
                 // de large ferait diverger le warp inverse, donc plancher à 1 px.
                 let (bw, bh) = ((max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
@@ -1341,7 +1471,9 @@ impl Compositor {
         a: f32,
         clip: [f32; 4],
     ) {
-        let sprite = cursor_type.and_then(|t| sprites.get(t)).or_else(|| sprites.get("arrow"));
+        let sprite = cursor_type
+            .and_then(|t| sprites.get(t))
+            .or_else(|| sprites.get("arrow"));
         if let Some(sprite) = sprite {
             if let Err(e) = self.draw_cursor_sprite(enc, placement, size_px, a, sprite, clip) {
                 eprintln!("[compositor] sprite curseur \"{}\" : {e:#}", sprite.path);
@@ -1423,11 +1555,19 @@ impl Compositor {
                 let c = parse_hex(&color).unwrap_or(lp.bg_color);
                 self.draw_solid(
                     enc,
-                    &LayerCB { dst: [0.0, 0.0, 1.0, 1.0], mode: 1.0, color: c, ..Default::default() },
+                    &LayerCB {
+                        dst: [0.0, 0.0, 1.0, 1.0],
+                        mode: 1.0,
+                        color: c,
+                        ..Default::default()
+                    },
                 );
             }
             Some(SceneBackground::Gradient { angle_deg, stops }) => {
-                let c0 = stops.first().and_then(|s| parse_hex(s)).unwrap_or(lp.bg_color);
+                let c0 = stops
+                    .first()
+                    .and_then(|s| parse_hex(s))
+                    .unwrap_or(lp.bg_color);
                 let c1 = stops.last().and_then(|s| parse_hex(s)).unwrap_or(c0);
                 let a = angle_deg.to_radians();
                 self.draw_solid(
@@ -1532,7 +1672,14 @@ impl Compositor {
                 &suv,
             ),
             Some(quad) => self.draw_tilted_screen(
-                enc, quad, s_px, quad_center_px, g.cut, g.s_radius, &sy, &suv,
+                enc,
+                quad,
+                s_px,
+                quad_center_px,
+                g.cut,
+                g.s_radius,
+                &sy,
+                &suv,
             ),
         }
 
@@ -1550,7 +1697,10 @@ impl Compositor {
                     live: lp,
                     scene: scene_ref.as_ref(),
                     track,
-                    t: self.cursor_time.borrow().unwrap_or(frame / crate::frame_geometry::FPS),
+                    t: self
+                        .cursor_time
+                        .borrow()
+                        .unwrap_or(frame / crate::frame_geometry::FPS),
                 },
             );
             if let Some(plan) = plan {
@@ -1561,7 +1711,15 @@ impl Compositor {
                 let kind = plan.cursor_type.as_deref();
                 if plan.taps <= 1 {
                     let e = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
-                    self.draw_cur_themed(e, &sprites, kind, plan.placement, plan.size_px, 1.0, plan.clip);
+                    self.draw_cur_themed(
+                        e,
+                        &sprites,
+                        kind,
+                        plan.placement,
+                        plan.size_px,
+                        1.0,
+                        plan.clip,
+                    );
                     e.end_encoding();
                 } else {
                     // Flou RÉEL, pas des copies discrètes : les N échantillons s'accumulent dans
@@ -1669,7 +1827,9 @@ impl Compositor {
         ca.set_load_action(metal::MTLLoadAction::Clear);
         ca.set_clear_color(metal::MTLClearColor::new(0.0, 0.0, 0.0, 1.0));
         ca.set_store_action(metal::MTLStoreAction::Store);
-        cmd_buf.new_render_command_encoder(&pass_desc).end_encoding();
+        cmd_buf
+            .new_render_command_encoder(&pass_desc)
+            .end_encoding();
 
         // Ni miroir RGBA ni attente ici : le miroir ne sert qu'à `readback_direct` (la
         // preview), et l'export ne lit jamais le RGBA — le blit pleine résolution était payé
@@ -1709,7 +1869,9 @@ impl Compositor {
         _frame: u32,
         _cfg: &Cfg,
     ) -> Result<()> {
-        Err(anyhow!("compositor_macos::compose_frame_mb: non implémenté"))
+        Err(anyhow!(
+            "compositor_macos::compose_frame_mb: non implémenté"
+        ))
     }
 
     /// First-pass engine : la cible est toujours le NV12 interne. L'argument `out_tex`
@@ -1730,7 +1892,8 @@ impl Compositor {
         }
         let cache = &self.metal_texture_cache;
         let y = cache.make_texture_from_pixel_buffer(out_tex, 0, metal::MTLPixelFormat::R8Unorm)?;
-        let uv = cache.make_texture_from_pixel_buffer(out_tex, 1, metal::MTLPixelFormat::RG8Unorm)?;
+        let uv =
+            cache.make_texture_from_pixel_buffer(out_tex, 1, metal::MTLPixelFormat::RG8Unorm)?;
 
         let cmd_buf = self.gpu.context.new_command_buffer();
         for (target, pipeline) in [(&y, &self.pipeline_fs_y), (&uv, &self.pipeline_fs_uv)] {
@@ -1791,7 +1954,12 @@ impl Compositor {
 
         let blit = cmd_buf.new_blit_command_encoder();
         for (src, dst, w, h) in [
-            (&self.nv12_y, &self.nv12_read_y, self.render_w, self.render_h),
+            (
+                &self.nv12_y,
+                &self.nv12_read_y,
+                self.render_w,
+                self.render_h,
+            ),
             (
                 &self.nv12_uv,
                 &self.nv12_read_uv,
@@ -1927,10 +2095,8 @@ impl Compositor {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    
 
     /// Le pendant macOS de `compositor_windows`'s `every_shader_entry_point_compiles`.
     ///
@@ -1945,10 +2111,7 @@ mod tests {
             return;
         };
         let library = device
-            .new_library_with_source(
-                include_str!("shaders.metal"),
-                &metal::CompileOptions::new(),
-            )
+            .new_library_with_source(include_str!("shaders.metal"), &metal::CompileOptions::new())
             .expect("shaders.metal doit compiler");
         for name in [
             "vs_main",

@@ -1,4 +1,5 @@
 import type { MainLogEntry } from "./main-log-buffer";
+import type { WorkloadReport } from "./workloadTelemetry";
 
 const MAX_TEXT_LENGTH = 64 * 1024;
 const MAX_LOG_TEXT_LENGTH = 4 * 1024;
@@ -27,6 +28,7 @@ export interface DiagnosticInputs {
 	environment: DiagnosticEnvironment;
 	helperOutput: { windows: string; mac: string };
 	mainProcessLogs: MainLogEntry[];
+	workloadReports?: WorkloadReport[];
 }
 
 function tail(value: string, maxLength: number): string {
@@ -76,6 +78,7 @@ export function createDiagnosticReport(inputs: DiagnosticInputs) {
 			...entry,
 			text: sanitizeBounded(entry.text, MAX_LOG_TEXT_LENGTH) ?? "",
 		})),
+		workloadReports: inputs.workloadReports?.slice(-20) ?? [],
 		privacy: {
 			excluded: [
 				"project document",

@@ -50,6 +50,13 @@ new model or paper exists.
 10. Do not combine Electron, React, Vite, TypeScript, N-API, FFmpeg, and media changes in one upgrade.
 11. Do not use TestSprite.
 12. Finish each slice with tests, an independent review, a product-plan update, and a rollback point.
+13. Freeze the acceptance contract before implementation. One scoped implementation and one
+    independent Critical/Important review are the normal limit. Put adjacent improvements and Minor
+    findings in the backlog unless they expose data loss, privacy, security, or a failure of the
+    frozen contract.
+14. Keep a normal slice inside one runtime boundary and at most three core modules. If a slice would
+    span React, Electron, native code, and several operating systems, split it before implementation.
+    Use focused tests while editing and run the full matrix once at the relevant gate.
 
 ## Execution map
 
@@ -187,7 +194,8 @@ Acceptance:
   its scoped audit and deny policy; and a real signed Mac payload produced a strict CycloneDX 1.7
   SBOM with 393 packaged files and 52 executable-role paths. Dependency approval now discovers
   nested npm, Cargo, and Swift graphs, rejects `npm-shrinkwrap.json`, and verifies Olle's detached
-  Ed25519 signature before dependency restore, build, or inventory generation.
+  Ed25519 signature before dependency restore, build, or inventory generation. Independent security
+  review found no remaining Critical or Important issue under the sole-maintainer approval boundary.
 
 Work:
 
@@ -253,6 +261,22 @@ Acceptance:
 - Label: **AUTO**, with legal confirmation in HOLD C
 - Priority: P0
 - Depends on: W0.2
+- Status: **COMPLETE — 2026-08-28**
+- Evidence: the exact x86 Emscripten rebuild reproduced the shipped WebAssembly SHA-256
+  `f33a4d44f60dc2e6ca63b06063ae6de575b2b86cd45d92378e21bd8a01ff12d7`; the verified source offer
+  contains the pinned wrapper and FFmpeg archives, configuration, manifest, and relinking method;
+  410 unique external Cargo packages have a generated licence record with exact hashed evidence;
+  packages that omit a full licence file require a signed, exact package-to-terms supplement;
+  native FFmpeg builds now have source archives, embedded configurations, file hashes, and relinking
+  recipes per release target; and the paid-package notice inventory is reproducible from signed
+  model, asset, WebAssembly, lockfile, and release inputs. A clean Vite build reduced stale Electron
+  output from 709 files to 8 and the rebuilt ASAR from about 937 MB to 257 MB. The rebuilt Apple
+  Silicon package passed the strict distribution policy with 21,211 inspected ASAR entries, 73 exact
+  first-party build outputs, exactly one approved WebAssembly resource, zero bundled models, exact
+  Chromium/Cargo/notice bytes, a verified source-bound Whisper manifest, and matching post-sign
+  native FFmpeg evidence. The final inventory and CycloneDX SBOM each contain 1,214 components.
+  Clean Voice and its model remain excluded from normal paid packages. The full supply-chain suite
+  passes 20 files and 112 tests. Independent re-review found no Critical or Important issue.
 
 Work:
 
@@ -269,15 +293,24 @@ Work:
 
 Acceptance:
 
-- `THIRD-PARTY-NOTICES.md` has no unresolved shipped-artifact placeholder.
-- The WebAssembly binary, corresponding source, configuration, and notice set match.
-- Every paid package has a generated, reviewed notice inventory.
+- [x] `THIRD-PARTY-NOTICES.md` has no unresolved shipped-artifact placeholder.
+- [x] The WebAssembly binary, corresponding source, configuration, and notice set match.
+- [x] Every paid package has a generated, reviewed notice inventory.
 
 ### W0.5 — Build one versioned creator corpus harness
 
 - Label: **AUTO** for infrastructure; later samples can enter through normal dogfood use
 - Priority: P0
 - Depends on: W0.1
+- Status: **INFRASTRUCTURE COMPLETE — 2026-08-28.** The tracked
+  [`creator-corpus/README.md`](../creator-corpus/README.md) contract now provides a strict versioned
+  manifest, immutable split lock, privacy-safe result schemas, exact media verification, and pinned
+  packet-copy fixture extraction. The primary manifest starts empty by design. Real creator media
+  remains outside Git until each sample has explicit consent and a reviewed split.
+- Evidence: 17 focused corpus tests cover schema strictness, role metadata, consent, private paths,
+  media tampering, symlink escape, split movement, fixture drift, provenance, invariant truth, and
+  non-overwriting extraction. Normal CI validates the primary corpus before the full test suite.
+  Both TypeScript checks, docs, lint, workflow validation, and the full 233-file/2,507-test suite pass.
 
 Work:
 
@@ -301,15 +334,33 @@ Initial corpus coverage:
 
 Acceptance:
 
-- Every automatic or model upgrade can run against the same locked fixtures.
-- Results can distinguish tuning improvement from holdout overfitting.
-- No private text, audio, video, or identity enters telemetry or Git without explicit consent.
+- [x] The harness locks fixture identity and split assignment and can compare Development, Tuning,
+  and Holdout results without moving a fixture through the CLI.
+- [x] Result records use exact source, tool, policy, and applicable model hashes. The validator
+  calculates each invariant outcome instead of trusting a reported pass flag.
+- [x] Private media stays outside Git by default. Committed media requires explicit redistribution
+  consent. Result schemas reject free-form transcript, path, project, and cursor-event payloads.
+- [ ] Populate and label the initial Swedish/English creator fixtures, including the long-session and
+  layout coverage below. Keep Holdout unseen during tuning.
 
 ### W0.6 — Add media workload telemetry
 
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W0.1
+- Status: **COMPLETE — 2026-08-28.** `klippt-workload-v1` stores bounded, durable, local-only
+  capture, native-preview, and native-export reports. The service records percentile summaries,
+  process and disk resources, structured phases, actual native export paths and fallbacks, and
+  interrupted runs without storing private media context. The newest reports are included in the
+  existing support diagnostic ZIP. Known platform limits stay explicit: Chromium does not expose
+  AVFoundation camera pressure, and AVAssetWriter does not expose its private VideoToolbox encoder
+  session, so those values are `unknown` rather than guessed.
+- Evidence: 59 focused TypeScript tests cover report durability, recovery, retention, privacy,
+  diagnostics, browser writes, camera delivery, native macOS parsing, Windows parsing, and preview
+  timing. Both TypeScript builds, Biome, the ScreenCaptureKit Swift build, and the native compositor
+  N-API Cargo check pass. The implementation follows Electron, Node stream, Apple AVFoundation and
+  VideoToolbox, W3C Long Tasks, and MDN PerformanceObserver contracts. See
+  [`workload-telemetry.md`](../technical-documentation/engineering/workload-telemetry.md).
 
 Measure locally:
 
@@ -335,15 +386,20 @@ Rules:
 
 Acceptance:
 
-- Every long-session failure has a phase, resource, and fallback record.
-- Performance claims use measured percentile data, not one terminal sample.
-- Normal recording remains more important than background analysis or export.
+- [x] Every long-session report keeps phase, resource, fixed failure, media-path, and fallback fields;
+  interrupted reports recover on the next launch.
+- [x] Repeated timing and resource samples use bounded P50/P95/P99 summaries instead of one terminal
+  sample.
+- [x] Sampling is asynchronous and best-effort. It performs no extra media or disk work and never
+  changes source resolution, frame rate, or quality. Recording also continues to suspend the
+  low-priority Clean Voice worker.
 
 ### W0.7 — Add an accessibility and interaction smoke lane
 
 - Label: **AUTO**
-- Priority: P1
+- Priority: P0
 - Depends on: W0.1
+- Status: **COMPLETE — 2026-08-28**
 
 Work:
 
@@ -354,13 +410,22 @@ Work:
 5. Remove `autoFocus` where it steals the user's position during editor updates.
 6. Verify Reduce Motion in the recording HUD, timeline, pane changes, and modal transitions.
 7. Test full keyboard recording and editing flow.
+8. Fix the launch-to-HUD focus handoff. Opening the idle recording panel must not leave the HUD,
+   camera preview, or an invisible window as the key/active click target. The user must be able to
+   click another application immediately, without first clicking the HUD.
 
 Acceptance:
 
-- Core tasks work without a pointer.
-- Focus is visible and stable.
-- No tooltip contains the only available explanation.
-- Motion reduction changes animation without removing state feedback.
+- [x] Core tasks work without a pointer.
+- [x] Focus is visible and stable.
+- [x] No tooltip contains the only available explanation.
+- [x] Motion reduction changes animation without removing state feedback.
+- [x] Opening the recording HUD does not intercept or delay the first click in another application.
+
+Evidence: the real-browser smoke covers named HUD/editor/export controls, native button activation,
+tooltip focus, dialog focus containment and restoration, keyboard splitters, normal Tab navigation,
+and Reduce Motion. Focused React tests cover the source and project dialogs. The macOS first-show
+policy uses Electron's non-activating `showInactive()` path and has a platform regression test.
 
 ## Wave 1 — Paid-alpha correctness
 
@@ -371,6 +436,7 @@ Start this wave after Gate A. Most work remains **AUTO**.
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W0.1, W0.6
+- Status: **COMPLETE — 2026-08-29**
 
 Implementation:
 
@@ -394,11 +460,23 @@ Tests:
 - Export to local APFS, external media, and a slow destination.
 - Verify that partial files never appear as finished exports.
 
+Completion evidence: MP4 and GIF now render to a unique sibling staging file, reopen through the
+native decoder, synchronize, and rename only after verification. Existing outputs survive failures
+and cancellation. Typed native checkpoints cover frames, video flush, audio work, audio flush, and
+trailer on macOS, Windows, and Linux. The real macOS H.264/AAC pipeline passed cancellation at audio
+flush and trailer. The fault matrix passed preflight, periodic, render, verification, sync, publish,
+and post-commit durability cases. A filled mounted APFS volume produced real `ENOSPC` without
+changing the old output; a separate mounted APFS volume passed stage, sync, rename, and reopen.
+Slow-render and slow-storage gates kept the old output visible. The final full suite passed 2,567
+tests with one skip, all TypeScript targets passed, the production app built, and the Rust workspace
+passed all-target checking.
+
 ### W1.2 — Make transcript source roles explicit
 
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W0.5
+- Status: **COMPLETE — 2026-08-30**
 
 Implementation:
 
@@ -421,11 +499,20 @@ Tests:
 - Split, trim, reorder, speed, save/reopen, and source bundle.
 - Transcript and pause-analysis agreement on the same mic samples.
 
+Completion evidence: native recordings now resolve `qac` as **You** and optional `qab` as
+**System**, transcribe each role independently, and merge only timestamped text. The preview mix
+`qaa` is not a normal transcription source. Imports remain explicit `unknown-mixed`. Schema v9
+persists source role, exact source hash, runtime backend, pinned model revision and artifact hashes,
+language, confidence, and alignment evidence. Legacy v8 transcripts migrate as unverified instead
+of acquiring invented provenance. Pause protection reads only verified microphone-role words.
+Focused role, schema, document, store, pause-analysis, caption, and project-save tests passed.
+
 ### W1.3 — Make long transcription bounded
 
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W1.2
+- Status: **COMPLETE — 2026-08-30**
 
 Implementation:
 
@@ -434,7 +521,8 @@ Implementation:
 3. Process fixed-duration chunks with explicit overlap.
 4. Preserve absolute sample time, decoder delay, and chunk-seam ownership.
 5. Stream results instead of accumulating complete-session PCM in the renderer.
-6. Support cancellation, model unload, memory pressure, and project close.
+6. Support cancellation, explicit release, project-close unload, and a bounded idle unload policy.
+   Do not invent a memory-pressure event or poll an undocumented system threshold.
 7. Make cache identity include source content, role, extraction contract, backend, model, language,
    vocabulary, and alignment version.
 
@@ -445,6 +533,26 @@ Acceptance:
 - No missing or duplicated words occur at chunk seams.
 - Cancellation stops decode and inference promptly.
 - A stale or partial cache is rejected.
+
+Completion evidence: the normal UI and CLI source path now sends an approved media path to the
+main process. FFmpeg 8.1.2 decodes one 75-second core window plus 1.5 seconds of context per side to
+mono 16 kHz PCM. Timestamp-gap padding preserves absolute source time. Recognition stays
+single-flight and holds only one decoded window at a time. Seam v2 keeps one-sided words and removes
+overlap duplicates only from recognizer-native word timing. Phrase text without required word timing
+retries and then fails instead of publishing guessed seam data. Impossible recognizer timestamps are
+bounded to the decoded PCM. Cancellation now
+reaches extraction, hashing, inference, helper startup, retry backoff, CLI signals, and model setup.
+Project close, explicit release, and two minutes of transcription idle time unload both helpers.
+Exact atomic cache entries bind source hash,
+duration, role, extraction, chunk, seam, alignment, backend, model, language, and vocabulary
+versions; changed, malformed, stale, or partial entries are rejected. The automated 90-minute
+source test proves bounded window size and monotonic completion without allocating full-session PCM;
+the delayed-track FFmpeg fixture preserves late speech at its absolute time.
+
+Implementation references: [FFmpeg input seeking and stream mapping](https://ffmpeg.org/ffmpeg.html),
+[FFmpeg `aresample` timestamp compensation](https://ffmpeg.org/ffmpeg-resampler.html),
+[Node.js 22.22.1 child-process lifecycle](https://nodejs.org/download/release/v22.22.1/docs/api/child_process.html),
+and [FluidAudio 0.15.6 source](https://github.com/FluidInference/FluidAudio/tree/0.15.6).
 
 ### W1.4 — Qualify the corrected Parakeet encoder
 

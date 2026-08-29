@@ -59,7 +59,7 @@ not the machine's default Node 26/npm 12. Before a direct compositor build in a 
 | `nix build` | Builds the flake's default Linux package with system Electron rather than electron-builder. |
 | `nix develop` | Opens the Linux Node/Electron/native-build/Playwright development shell defined by the flake. |
 
-`vite.config.ts` uses `vite-plugin-electron` to compile `electron/main.ts` and `electron/preload.ts` into `dist-electron/` while Vite emits the renderer to `dist/`. The main `tsconfig.json` is strict, covers `src` and `electron`, and has `noEmit`; TypeScript is therefore a check while Vite performs emission. `build-vite` is the renderer/Electron-bundle build used when an installer is not needed, whereas `build` continues through electron-builder.
+`vite.config.ts` uses `vite-plugin-electron` to compile `electron/main.ts` and `electron/preload.ts` into `dist-electron/` while Vite emits the renderer to `dist/`. The plugin intentionally sets `emptyOutDir: false` because its main and preload builds share one directory. `npm run build-vite` therefore removes both compiled-output directories once before TypeScript and Vite run. This prevents old hashed Electron chunks from entering a later package. The main `tsconfig.json` is strict, covers `src` and `electron`, and has `noEmit`; TypeScript is therefore a check while Vite performs emission. `build-vite` is the renderer/Electron-bundle build used when an installer is not needed, whereas `build` continues through electron-builder.
 
 ## Native artifacts
 
@@ -76,6 +76,40 @@ A usable full package depends on generated artifacts that are not committed:
 | FFmpeg runtime files | matching `electron/native/bin/<platform>-<arch>/` directory | Downloaded by `fetch:ffmpeg` on Windows; **built from source** by `fetch:ffmpeg:mac` on macOS (~5 min) — BtbN publishes no macOS target and every circulating macOS build is GPL, which would relicense this MIT app |
 
 Electron-builder copies only the matching `electron/native/bin/<platform>-<arch>/` directory into each package. On both Windows and macOS the compositor `.node` ships from inside that directory, beside the ffmpeg libraries it links against, and never travels through ASAR.
+
+### Reviewed resources outside ASAR
+
+Electron-builder also places these reviewed resources outside `app.asar`:
+
+- `web-demuxer.wasm`, whose exact corresponding source and relinking files ship with each release;
+- `THIRD-PARTY-INVENTORY.json`, `THIRD-PARTY-NOTICES.md`, and `third-party-licenses/`;
+- Electron's exact version-matched `LICENSES.chromium.html` notice bundle;
+- only the reviewed built-in cursor sprites under `cursors/default`.
+
+The renderer resolves packaged WebAssembly through `Contents/Resources/web-demuxer.wasm`. Vite's
+copied `dist/wasm` file is excluded from ASAR so the binary does not ship twice. Paid packages also
+exclude inherited third-party cursor packs and legacy demo, OpenScreen, preview, and Vite artwork.
+The source tree can keep those files for migration and audit history, but production UI must not
+offer them and the package must not contain them.
+
+After packaging, `scripts/verify-packaged-distribution.mjs` reads every physical resource and ASAR
+entry. Native files must match the exact target policy or the verified source-bound Whisper helper
+manifest. Visual assets and fonts must match their exact reviewed path and bytes. The verifier fails
+closed on an unknown helper, model, asset, Clean Voice artifact, wrong-target native file, changed
+notice, or extra WebAssembly file. Release inventory generation cannot run on an unapproved package.
+The app-owned `resources` directory has an exact path allowlist. Executable and image magic is also
+checked without trusting extensions, so a renamed helper or alternate image format cannot hide
+outside the normal native or asset directory. Inside ASAR, every first-party file under `dist/` or
+`dist-electron/` must be approved by the signed bundled-asset/build policy and match the clean build
+output at the same portable path by exact size and full SHA-256. Every approved non-excluded build
+file must also be present. This prevents a disguised image, executable, changed compiled file, or
+missing entrypoint from passing by using a harmless extension or a generated-looking filename. The
+verifier stores each normalized ASAR path as structured data, so a directory name containing the
+human-readable display delimiter cannot change the policy path.
+Electron-builder may omit only the exclusions named in both its config and the signed policy. Each
+legitimate archived command script also matches its reviewed path, size, and SHA-256.
+The macOS workflow generates FFmpeg file evidence only after the final application signature because
+both Developer ID and fallback ad-hoc signing can change Mach-O signature blobs.
 
 ### The compositor addon must sit beside its ffmpeg libraries
 

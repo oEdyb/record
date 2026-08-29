@@ -16,9 +16,7 @@ describe("webDemuxerWasmUrl", () => {
 			webDemuxerWasmUrl(
 				"file:///Applications/Klippt.app/Contents/Resources/app.asar/dist/index.html",
 			),
-		).toBe(
-			"file:///Applications/Klippt.app/Contents/Resources/app.asar/dist/wasm/web-demuxer.wasm",
-		);
+		).toBe("file:///Applications/Klippt.app/Contents/Resources/web-demuxer.wasm");
 	});
 
 	it("ships a real WebAssembly binary in the public asset directory", () => {

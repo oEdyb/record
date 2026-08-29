@@ -327,21 +327,21 @@ impl SwDecoder {
         self.has_peek = false;
         let fps = self.fps;
         let target_ts = (frame_idx as f64 / fps) * 1_000_000.0; // AV_TIME_BASE = µs
-        // `AVSEEK_FLAG_BACKWARD` vaut 1, pas 4 — 4 est `AVSEEK_FLAG_ANY`. La constante
-        // était écrite en dur à 4 avec un commentaire affirmant le contraire, et c'est
-        // le seul seek du crate à ne pas passer par `ffi::AVSEEK_FLAG_BACKWARD` (cf.
-        // pipeline_windows.rs, pipeline_macos.rs, audio.rs).
-        //
-        // Sans BACKWARD, ffmpeg se cale sur la première position indexée AU NIVEAU OU
-        // APRÈS la cible, au lieu de la keyframe qui la précède. La boucle d'avance
-        // ci-dessous s'arrête dès que `pts >= target`, condition alors satisfaite par la
-        // toute première frame décodée : elle ne fait plus rien et `decode_at` rend la
-        // keyframe SUIVANTE. L'erreur est d'un GOP entier.
-        //
-        // D'où le symptôme asymétrique signalé : l'écran porte une keyframe toutes les
-        // ~1,78 s, la webcam toutes les ~6,73 s, donc l'écart y est ~4x plus grand. Et
-        // comme `live::Player::step` rattrape la webcam par une boucle monotone vers
-        // l'avant, une fois garée dans le futur elle ne revient jamais — elle fige.
+                                                                // `AVSEEK_FLAG_BACKWARD` vaut 1, pas 4 — 4 est `AVSEEK_FLAG_ANY`. La constante
+                                                                // était écrite en dur à 4 avec un commentaire affirmant le contraire, et c'est
+                                                                // le seul seek du crate à ne pas passer par `ffi::AVSEEK_FLAG_BACKWARD` (cf.
+                                                                // pipeline_windows.rs, pipeline_macos.rs, audio.rs).
+                                                                //
+                                                                // Sans BACKWARD, ffmpeg se cale sur la première position indexée AU NIVEAU OU
+                                                                // APRÈS la cible, au lieu de la keyframe qui la précède. La boucle d'avance
+                                                                // ci-dessous s'arrête dès que `pts >= target`, condition alors satisfaite par la
+                                                                // toute première frame décodée : elle ne fait plus rien et `decode_at` rend la
+                                                                // keyframe SUIVANTE. L'erreur est d'un GOP entier.
+                                                                //
+                                                                // D'où le symptôme asymétrique signalé : l'écran porte une keyframe toutes les
+                                                                // ~1,78 s, la webcam toutes les ~6,73 s, donc l'écart y est ~4x plus grand. Et
+                                                                // comme `live::Player::step` rattrape la webcam par une boucle monotone vers
+                                                                // l'avant, une fois garée dans le futur elle ne revient jamais — elle fige.
         let seek_flags = SEEK_SET | AVSEEK_FLAG_BACKWARD;
         let r = av_seek_frame(self.fmt, -1, target_ts as i64, seek_flags);
         if r < 0 {
@@ -442,7 +442,9 @@ impl SwDecoder {
                     av_frame_unref(found);
                     av_frame_move_ref(found, frame);
                     av_frame_unref(frame);
-                    if (*found).best_effort_timestamp as f64 * self.stream_timebase >= target_ts_seconds {
+                    if (*found).best_effort_timestamp as f64 * self.stream_timebase
+                        >= target_ts_seconds
+                    {
                         break 'outer;
                     }
                 } else if recv_r == -11 {
