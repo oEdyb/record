@@ -47,9 +47,26 @@ The calm floating HUD and the precise timeline are the strongest product-specifi
 | Implementation integrity | 2/4 | The product looks coherent, but duplicated primitives and mixed styling systems make future drift likely. |
 | **Total** | **14/20** | **Good. Keep the design and repair the foundation.** |
 
+### Implementation integrity verdict
+
+**Pass, with material foundation drift.** The rendered product is coherent and specific to Klippt.
+The implementation does not yet express that result through one dependable system. Stale design
+guidance, competing token formats, and repeated local controls make regressions likely.
+
+### Executive summary
+
+- Audit health: **14/20 — Good**.
+- Findings: **9 total — 0 P0, 2 P1, 5 P2, and 2 P3**.
+- Highest-leverage action: complete UI-0 before another pane redesign.
+- Preferred migration: one installed Radix foundation, one Klippt inspector layer, one pane at a time.
+
 ## Findings
 
 ### P1 — The repository has two conflicting UI sources of truth
+
+**Category:** Theming / Implementation integrity
+
+**Suggested command:** `$impeccable document`
 
 **Evidence**
 
@@ -68,6 +85,12 @@ Make `src/styles/design-tokens.css` the only token authority. Update or clearly 
 
 ### P1 — Radix trigger wrappers do not forward refs
 
+**Category:** Accessibility / Implementation integrity
+
+**Standard:** Radix Composition
+
+**Suggested command:** `$impeccable harden`
+
 **Evidence**
 
 `src/components/ui/popover.tsx` and `src/components/ui/tooltip.tsx` wrap Radix triggers in normal function components. The timeline composes both triggers with `asChild`, and React reports that a function component cannot receive a ref.
@@ -83,6 +106,12 @@ Popover anchoring and focus restoration can become inconsistent. The warning als
 Convert all Radix leaf wrappers to `React.forwardRef`, keep prop spreading, and add one composed Tooltip + Popover regression test.
 
 ### P2 — Inspector behavior is rebuilt instead of shared
+
+**Category:** Accessibility / Implementation integrity
+
+**Standard:** WAI-ARIA control patterns through Radix Primitives
+
+**Suggested command:** `$impeccable distill`
 
 **Evidence**
 
@@ -114,6 +143,10 @@ Keep project logic in the current panes. Move only visual and interaction behavi
 
 ### P2 — Inspector geometry still drifts between panes
 
+**Category:** Theming / Implementation integrity
+
+**Suggested command:** `$impeccable layout`
+
 **Evidence**
 
 The current CSS has both flat and card-style paths. Some child elements add `var(--sp-4)` margins or padding inside a body that already has `var(--sp-4)` padding. Control heights vary between 28, 30, 32, 34, and 36 pixels without a clear role-based rule.
@@ -136,6 +169,10 @@ Do not make an ordinary slider or toggle row a card.
 
 ### P2 — Empty-project context shows irrelevant inspector controls
 
+**Category:** Implementation integrity
+
+**Suggested command:** `$impeccable clarify`
+
 **Evidence**
 
 The empty editor is visually clean, but the inspector can still show disabled effects for a project that does not exist.
@@ -149,6 +186,12 @@ The disabled controls compete with the actual first actions: Record, New project
 When no project exists, replace the inspector body with one quiet contextual message or collapse the inspector body. Keep the main empty-state actions unchanged.
 
 ### P2 — A few accessibility details remain below the Mac target
+
+**Category:** Accessibility
+
+**Standard:** Apple accessibility guidance and WAI-ARIA patterns
+
+**Suggested command:** `$impeccable harden`
 
 **Evidence**
 
@@ -165,6 +208,10 @@ Keyboard and motor-access users get less predictable controls, especially inside
 Use the installed Radix behavior and increase the invisible hit target for info controls to at least 20 by 20 pixels. Keep the icon itself small.
 
 ### P2 — Large UI modules make consistency work expensive
+
+**Category:** Implementation integrity / Performance
+
+**Suggested command:** `$impeccable distill`
 
 **Evidence**
 
@@ -184,6 +231,10 @@ Extract by stable responsibility during real UI migrations. Do not perform a fil
 
 ### P3 — Icon and tooltip treatment is not fully unified
 
+**Category:** Theming / Implementation integrity
+
+**Suggested command:** `$impeccable polish`
+
 **Evidence**
 
 Most editor controls use Lucide. `HudIcons.tsx` also imports Bootstrap, Font Awesome, Feather, Material, and Radix icon packages. Some icon buttons use the shared Tooltip, while others rely on the browser `title` attribute.
@@ -197,6 +248,12 @@ Stroke weight and tooltip timing can drift. The current HUD still looks good, so
 Add one `IconButton` primitive with size, tone, pressed state, label, and Tooltip behavior. Migrate icons only when a matching Lucide or deliberate custom glyph preserves the current silhouette.
 
 ### P3 — Motion tokens are not applied consistently
+
+**Category:** Performance / Accessibility
+
+**Standard:** Apple motion and Reduce Motion guidance
+
+**Suggested command:** `$impeccable polish`
 
 **Evidence**
 
@@ -276,6 +333,17 @@ Migrate the clip picker, pane help, icon buttons, and dialog families. Keep the 
 ### UI-4 — Final motion and accessibility pass
 
 Run keyboard, VoiceOver, Increased Contrast, larger-text, and Reduce Motion checks. Tune motion only after geometry and behavior are stable.
+
+## Recommended Impeccable passes
+
+1. **P1 — `$impeccable document`:** establish one current production design authority and retire the stale emerald guidance.
+2. **P1 — `$impeccable harden`:** fix Radix ref composition, tabs, menus, dismissal, focus, and Mac hit targets.
+3. **P2 — `$impeccable distill`:** create the thin inspector primitive layer and migrate Video Effects first.
+4. **P2 — `$impeccable layout`:** normalize inspector insets, row rhythm, and control sizes.
+5. **P3 — `$impeccable polish`:** unify icons, tooltip treatment, and the remaining motion-token details after migration.
+
+These passes can run one at a time, together, or in a different order after UI-0. Re-run the
+Impeccable audit after the fixes to measure the score again.
 
 ## Positive findings to protect
 
