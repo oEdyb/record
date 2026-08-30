@@ -191,18 +191,20 @@ clipId?, sourceStartSec?, sourceEndSec?, …payload}`), and add the array to
 
 ## Design source
 
-The v4 editor visual design lives in [`design/`](../../design/), with the
-canonical reference at [`design/DESIGN.md`](../../design/DESIGN.md). Tokens
-are split by concern in
-[`design/tokens/`](../../design/tokens/) — `colors.css`, `fonts.css`,
-`radii.css`, `spacing.css`, `typography.css`, `elevation.css`, `effects.css`,
-plus a `v4.css` roll-up that the editor imports. Components consume those
-tokens as CSS custom properties (e.g. `var(--surface)`, `var(--fg)`,
-`var(--accent)`, `var(--danger)`, `var(--r-md)`, `var(--sp-2)`) rather than
-hard-coding hex values, so theme + density changes propagate without per-file
-edits. Inline styles in the editor (e.g. `FloatingInspector.tsx`'s `clipPickerOpen`
-panel at `:172-186`) follow the same rule — they reference the tokens, not
-raw colours.
+The production token authority is
+[`src/styles/design-tokens.css`](../../src/styles/design-tokens.css).
+Tailwind maps semantic utilities to the same values in
+[`tailwind.config.cjs`](../../tailwind.config.cjs); it does not own a second
+palette. [`design/DESIGN.md`](../../design/DESIGN.md) defines the current
+Klippt rules. [`design/tokens/v4.css`](../../design/tokens/v4.css) is a
+generated specimen mirror. Run `npm run design:sync` after a production token
+change. `npm run docs:check` fails when the mirror is stale.
+
+Inspector panes use the behavior wrappers in
+[`src/components/ui/inspector/`](../../src/components/ui/inspector/), plus the
+shared select, popover, and tooltip primitives. Components use CSS custom
+properties instead of raw colors so theme and density changes propagate from
+one authority.
 
 ## Known gaps
 

@@ -9,9 +9,10 @@
 // translation is stored beside the transcript, keyed by segment id, and picking
 // "Original" goes straight back to the SSOT text.
 
-import { Captions as CaptionsIcon, Languages, Loader2, Trash2 } from "lucide-react";
+import { Languages, Loader2, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AppSelect } from "@/components/ui/app-select";
+import { InspectorPane, InspectorSegmentedControl } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { CaptionTextAlign, CaptionVerticalPosition } from "@/lib/ai-edition/captions";
 import { untranslatedUnits } from "@/lib/ai-edition/captions";
@@ -174,327 +175,313 @@ export function CaptionsPane() {
 	};
 
 	return (
-		<div
-			className={`${styles.pane} ${styles.isActive} ${styles.flatInspectorPane}`}
-			data-inspector-layout="flat"
+		<InspectorPane
+			title={t("facets.captions")}
+			helpLabel={t("panes.help")}
+			className={styles.flatInspectorPane}
 		>
-			<header className={styles.paneHead}>
-				<h2>{t("facets.captions")}</h2>
-				<span
-					style={{
-						marginLeft: "auto",
-						display: "inline-flex",
-						alignItems: "center",
-						gap: 6,
-					}}
-				>
-					<CaptionsIcon size={14} style={{ color: "var(--muted)" }} />
-				</span>
-			</header>
-			<div className={styles.paneBody}>
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.show")}</span>
-					<Toggle
-						checked={settings.enabled}
-						disabled={disabled || !hasTranscript}
-						label={t("captions.show")}
-						onChange={(next) => void set({ enabled: next })}
-					/>
-				</div>
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.show")}</span>
+				<Toggle
+					checked={settings.enabled}
+					disabled={disabled || !hasTranscript}
+					label={t("captions.show")}
+					onChange={(next) => void set({ enabled: next })}
+				/>
+			</div>
 
-				{!hasTranscript ? (
-					<div className={styles.captionStatus}>
-						<p
-							style={{
-								margin: 0,
-								font: "400 12px/1.5 var(--font-body)",
-								color: "var(--muted)",
-							}}
-						>
-							{silentMedia ? te("mediaStage.noAudioTrackHint") : t("captions.noTranscript")}
-						</p>
-						{engineError ? (
-							<p
-								style={{
-									margin: 0,
-									font: "400 11.5px/1.5 var(--font-body)",
-									color: "var(--danger)",
-								}}
-							>
-								{engineError}
-							</p>
-						) : null}
-						<button
-							type="button"
-							className={`${styles.btn} ${styles.btnPrimary}`}
-							// A media with no audio track has nothing to transcribe — the
-							// button would fail the same way every time it is pressed.
-							disabled={disabled || isTranscribing || silentMedia}
-							onClick={() => void requestTimelineTranscripts()}
-						>
-							{isTranscribing ? <Loader2 size={14} className="animate-spin" /> : null}
-							{isTranscribing ? t("captions.transcribing") : t("captions.transcribe")}
-						</button>
-					</div>
-				) : (
-					<p className={styles.captionHint}>
-						{/* The cue count is only meaningful while the layer is on — deriving
-						    cues short-circuits when it's off, so a "0 lines" reading there
-						    would say the transcript is empty when it isn't. */}
-						{settings.enabled
-							? t("captions.derivedFromTranscript", { count: cues.length })
-							: t("captions.hiddenHint")}
+			{!hasTranscript ? (
+				<div className={styles.captionStatus}>
+					<p
+						style={{
+							margin: 0,
+							font: "400 12px/1.5 var(--font-body)",
+							color: "var(--muted)",
+						}}
+					>
+						{silentMedia ? te("mediaStage.noAudioTrackHint") : t("captions.noTranscript")}
 					</p>
-				)}
-
-				{legacyCaptionAnnotations.length > 0 ? (
-					<div className={styles.captionLegacyNotice}>
+					{engineError ? (
 						<p
 							style={{
 								margin: 0,
 								font: "400 11.5px/1.5 var(--font-body)",
-								color: "var(--fg-2)",
+								color: "var(--danger)",
 							}}
 						>
-							{t("captions.legacyAnnotations", {
-								count: legacyCaptionAnnotations.length,
-							})}
+							{engineError}
 						</p>
-						<button
-							type="button"
-							className={`${styles.btn} ${styles.btnSecondary}`}
-							onClick={() => void clearLegacyCaptionAnnotations()}
-						>
-							<Trash2 size={13} />
-							{t("captions.removeLegacyAnnotations")}
-						</button>
-					</div>
-				) : null}
-
-				{/* ── Language ───────────────────────────────────────────── */}
-				<div className={styles.sectionLabel}>{t("captions.language")}</div>
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.displayLanguage")}</span>
-					<AppSelect
-						value={settings.language ?? ""}
-						disabled={disabled}
-						onChange={(e) => void set({ language: e.target.value || null })}
-						style={selectStyle}
-					>
-						<option value="">{t("captions.original")}</option>
-						{languageOptions.map((entry) => (
-							<option key={entry.language} value={entry.language}>
-								{entry.label}
-							</option>
-						))}
-					</AppSelect>
-				</div>
-
-				<div className={styles.captionTranslationRow}>
-					<AppSelect
-						value={target}
-						disabled={disabled || translating}
-						onChange={(e) => setTarget(e.target.value)}
-						style={{ ...selectStyle, flex: 1 }}
-					>
-						{TRANSLATION_LANGUAGES.map((language) => (
-							<option key={language.code} value={language.code}>
-								{language.label}
-							</option>
-						))}
-					</AppSelect>
+					) : null}
 					<button
 						type="button"
-						className={`${styles.btn} ${styles.btnSecondary}`}
-						disabled={disabled || translating || !hasTranscript}
-						onClick={() => void handleTranslate()}
-						title={t("captions.translateHint")}
+						className={`${styles.btn} ${styles.btnPrimary}`}
+						// A media with no audio track has nothing to transcribe — the
+						// button would fail the same way every time it is pressed.
+						disabled={disabled || isTranscribing || silentMedia}
+						onClick={() => void requestTimelineTranscripts()}
 					>
-						{translating ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
-						{translating ? t("captions.translating") : t("captions.translate")}
+						{isTranscribing ? <Loader2 size={14} className="animate-spin" /> : null}
+						{isTranscribing ? t("captions.transcribing") : t("captions.transcribe")}
 					</button>
 				</div>
-				{settings.language ? (
+			) : (
+				<p className={styles.captionHint}>
+					{/* The cue count is only meaningful while the layer is on — deriving
+						    cues short-circuits when it's off, so a "0 lines" reading there
+						    would say the transcript is empty when it isn't. */}
+					{settings.enabled
+						? t("captions.derivedFromTranscript", { count: cues.length })
+						: t("captions.hiddenHint")}
+				</p>
+			)}
+
+			{legacyCaptionAnnotations.length > 0 ? (
+				<div className={styles.captionLegacyNotice}>
+					<p
+						style={{
+							margin: 0,
+							font: "400 11.5px/1.5 var(--font-body)",
+							color: "var(--fg-2)",
+						}}
+					>
+						{t("captions.legacyAnnotations", {
+							count: legacyCaptionAnnotations.length,
+						})}
+					</p>
 					<button
 						type="button"
 						className={`${styles.btn} ${styles.btnSecondary}`}
-						style={{ marginBottom: 12 }}
-						disabled={disabled}
-						onClick={() => void deleteTranslation(settings.language as string)}
+						onClick={() => void clearLegacyCaptionAnnotations()}
 					>
 						<Trash2 size={13} />
-						{t("captions.deleteTranslation")}
+						{t("captions.removeLegacyAnnotations")}
 					</button>
-				) : null}
-				{translateError ? <p className={styles.captionError}>{translateError}</p> : null}
-				<p className={styles.captionFinePrint}>{t("captions.translationIsNonDestructive")}</p>
+				</div>
+			) : null}
 
-				{/* ── Text ───────────────────────────────────────────────── */}
-				<div className={styles.sectionLabel}>{t("captions.text")}</div>
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.font")}</span>
-					<AppSelect
-						value={settings.fontFamily}
-						disabled={disabled}
-						onChange={(e) => void set({ fontFamily: e.target.value })}
-						style={selectStyle}
-					>
-						{CAPTION_FONTS.map((font) => (
-							<option key={font} value={font} style={{ fontFamily: font }}>
-								{font}
-							</option>
-						))}
-					</AppSelect>
-				</div>
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.bold")}</span>
-					<Toggle
-						checked={settings.fontWeight === "bold"}
-						disabled={disabled}
-						label={t("captions.bold")}
-						onChange={(next) => void set({ fontWeight: next ? "bold" : "normal" })}
-					/>
-				</div>
-				<div className={styles.sliderGrid}>
-					<SliderCell
-						label={t("captions.fontSize")}
-						value={settings.fontSize}
-						min={16}
-						max={140}
-						suffix="px"
-						disabled={disabled}
-						onChange={(v) => setLive({ fontSize: v })}
-						onCommit={() => void commit()}
-					/>
-				</div>
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.textColor")}</span>
-					<ColorField
-						label={t("captions.textColor")}
-						value={settings.color}
-						disabled={disabled}
-						onChange={(color) => setLive({ color })}
-						onCommit={() => void commit()}
-					/>
-				</div>
+			{/* ── Language ───────────────────────────────────────────── */}
+			<div className={styles.sectionLabel}>{t("captions.language")}</div>
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.displayLanguage")}</span>
+				<AppSelect
+					value={settings.language ?? ""}
+					disabled={disabled}
+					onChange={(e) => void set({ language: e.target.value || null })}
+					style={selectStyle}
+				>
+					<option value="">{t("captions.original")}</option>
+					{languageOptions.map((entry) => (
+						<option key={entry.language} value={entry.language}>
+							{entry.label}
+						</option>
+					))}
+				</AppSelect>
+			</div>
 
-				{/* ── Background ─────────────────────────────────────────── */}
-				<div className={styles.sectionLabel}>{t("captions.background")}</div>
-				{/* Colour + switch on one row, exactly like the annotation pane's text
+			<div className={styles.captionTranslationRow}>
+				<AppSelect
+					value={target}
+					disabled={disabled || translating}
+					onChange={(e) => setTarget(e.target.value)}
+					style={{ ...selectStyle, flex: 1 }}
+				>
+					{TRANSLATION_LANGUAGES.map((language) => (
+						<option key={language.code} value={language.code}>
+							{language.label}
+						</option>
+					))}
+				</AppSelect>
+				<button
+					type="button"
+					className={`${styles.btn} ${styles.btnSecondary}`}
+					disabled={disabled || translating || !hasTranscript}
+					onClick={() => void handleTranslate()}
+					title={t("captions.translateHint")}
+				>
+					{translating ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
+					{translating ? t("captions.translating") : t("captions.translate")}
+				</button>
+			</div>
+			{settings.language ? (
+				<button
+					type="button"
+					className={`${styles.btn} ${styles.btnSecondary}`}
+					style={{ marginBottom: 12 }}
+					disabled={disabled}
+					onClick={() => void deleteTranslation(settings.language as string)}
+				>
+					<Trash2 size={13} />
+					{t("captions.deleteTranslation")}
+				</button>
+			) : null}
+			{translateError ? <p className={styles.captionError}>{translateError}</p> : null}
+			<p className={styles.captionFinePrint}>{t("captions.translationIsNonDestructive")}</p>
+
+			{/* ── Text ───────────────────────────────────────────────── */}
+			<div className={styles.sectionLabel}>{t("captions.text")}</div>
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.font")}</span>
+				<AppSelect
+					value={settings.fontFamily}
+					disabled={disabled}
+					onChange={(e) => void set({ fontFamily: e.target.value })}
+					style={selectStyle}
+				>
+					{CAPTION_FONTS.map((font) => (
+						<option key={font} value={font} style={{ fontFamily: font }}>
+							{font}
+						</option>
+					))}
+				</AppSelect>
+			</div>
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.bold")}</span>
+				<Toggle
+					checked={settings.fontWeight === "bold"}
+					disabled={disabled}
+					label={t("captions.bold")}
+					onChange={(next) => void set({ fontWeight: next ? "bold" : "normal" })}
+				/>
+			</div>
+			<div className={styles.sliderGrid}>
+				<SliderCell
+					label={t("captions.fontSize")}
+					value={settings.fontSize}
+					min={16}
+					max={140}
+					suffix="px"
+					disabled={disabled}
+					onChange={(v) => setLive({ fontSize: v })}
+					onCommit={() => void commit()}
+				/>
+			</div>
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.textColor")}</span>
+				<ColorField
+					label={t("captions.textColor")}
+					value={settings.color}
+					disabled={disabled}
+					onChange={(color) => setLive({ color })}
+					onCommit={() => void commit()}
+				/>
+			</div>
+
+			{/* ── Background ─────────────────────────────────────────── */}
+			<div className={styles.sectionLabel}>{t("captions.background")}</div>
+			{/* Colour + switch on one row, exactly like the annotation pane's text
 				    background: the swatch keeps showing the remembered colour while the
 				    plate is off, because that is what turning it back on will draw. */}
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.background")}</span>
-					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-						<ColorField
-							label={t("captions.backgroundColor")}
-							value={settings.backgroundColor}
-							disabled={disabled}
-							onChange={(backgroundColor) => setLive({ backgroundColor })}
-							onCommit={() => void commit()}
-						/>
-						<Toggle
-							checked={settings.backgroundEnabled}
-							disabled={disabled}
-							label={t("captions.background")}
-							onChange={(next) => void set({ backgroundEnabled: next })}
-						/>
-					</div>
-				</div>
-				{settings.backgroundEnabled ? (
-					<div className={styles.sliderGrid}>
-						<SliderCell
-							label={t("captions.backgroundOpacity")}
-							value={Math.round(settings.backgroundOpacity * 100)}
-							min={0}
-							max={100}
-							suffix="%"
-							disabled={disabled}
-							onChange={(v) => setLive({ backgroundOpacity: v / 100 })}
-							onCommit={() => void commit()}
-						/>
-					</div>
-				) : null}
-
-				{/* ── Placement ──────────────────────────────────────────── */}
-				<div className={styles.sectionLabel}>{t("captions.position")}</div>
-				<Segmented<CaptionVerticalPosition>
-					value={settings.verticalPosition}
-					disabled={disabled}
-					options={[
-						{ value: "top", label: t("captions.positionTop") },
-						{ value: "middle", label: t("captions.positionMiddle") },
-						{ value: "bottom", label: t("captions.positionBottom") },
-					]}
-					onChange={(verticalPosition) => void set({ verticalPosition })}
-				/>
-				<Segmented<CaptionTextAlign>
-					value={settings.textAlign}
-					disabled={disabled}
-					options={[
-						{ value: "left", label: t("captions.alignLeft") },
-						{ value: "center", label: t("captions.alignCenter") },
-						{ value: "right", label: t("captions.alignRight") },
-					]}
-					onChange={(textAlign) => void set({ textAlign })}
-				/>
-				<div className={styles.sliderGrid}>
-					<SliderCell
-						label={t("captions.verticalOffset")}
-						value={settings.offsetY}
-						min={-45}
-						max={45}
-						suffix="%"
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.background")}</span>
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<ColorField
+						label={t("captions.backgroundColor")}
+						value={settings.backgroundColor}
 						disabled={disabled}
-						onChange={(v) => setLive({ offsetY: v })}
+						onChange={(backgroundColor) => setLive({ backgroundColor })}
 						onCommit={() => void commit()}
 					/>
+					<Toggle
+						checked={settings.backgroundEnabled}
+						disabled={disabled}
+						label={t("captions.background")}
+						onChange={(next) => void set({ backgroundEnabled: next })}
+					/>
+				</div>
+			</div>
+			{settings.backgroundEnabled ? (
+				<div className={styles.sliderGrid}>
 					<SliderCell
-						label={t("captions.width")}
-						value={settings.width}
-						min={20}
+						label={t("captions.backgroundOpacity")}
+						value={Math.round(settings.backgroundOpacity * 100)}
+						min={0}
 						max={100}
 						suffix="%"
 						disabled={disabled}
-						onChange={(v) => setLive({ width: v })}
+						onChange={(v) => setLive({ backgroundOpacity: v / 100 })}
 						onCommit={() => void commit()}
 					/>
 				</div>
+			) : null}
 
-				{/* ── Line length ────────────────────────────────────────── */}
-				<div className={styles.sectionLabel}>{t("captions.lineLength")}</div>
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.minWords")}</span>
-					<AppSelect
-						value={settings.minWordsPerLine}
-						disabled={disabled}
-						onChange={(e) => void set({ minWordsPerLine: Number(e.target.value) })}
-						style={selectStyle}
-					>
-						{WORD_COUNTS.map((n) => (
-							<option key={n} value={n}>
-								{n}
-							</option>
-						))}
-					</AppSelect>
-				</div>
-				<div className={styles.paneRow}>
-					<span className="label">{t("captions.maxWords")}</span>
-					<AppSelect
-						value={settings.maxWordsPerLine}
-						disabled={disabled}
-						onChange={(e) => void set({ maxWordsPerLine: Number(e.target.value) })}
-						style={selectStyle}
-					>
-						{WORD_COUNTS.map((n) => (
-							<option key={n} value={n} disabled={n < settings.minWordsPerLine}>
-								{n}
-							</option>
-						))}
-					</AppSelect>
-				</div>
+			{/* ── Placement ──────────────────────────────────────────── */}
+			<div className={styles.sectionLabel}>{t("captions.position")}</div>
+			<Segmented<CaptionVerticalPosition>
+				value={settings.verticalPosition}
+				disabled={disabled}
+				options={[
+					{ value: "top", label: t("captions.positionTop") },
+					{ value: "middle", label: t("captions.positionMiddle") },
+					{ value: "bottom", label: t("captions.positionBottom") },
+				]}
+				onChange={(verticalPosition) => void set({ verticalPosition })}
+			/>
+			<Segmented<CaptionTextAlign>
+				value={settings.textAlign}
+				disabled={disabled}
+				options={[
+					{ value: "left", label: t("captions.alignLeft") },
+					{ value: "center", label: t("captions.alignCenter") },
+					{ value: "right", label: t("captions.alignRight") },
+				]}
+				onChange={(textAlign) => void set({ textAlign })}
+			/>
+			<div className={styles.sliderGrid}>
+				<SliderCell
+					label={t("captions.verticalOffset")}
+					value={settings.offsetY}
+					min={-45}
+					max={45}
+					suffix="%"
+					disabled={disabled}
+					onChange={(v) => setLive({ offsetY: v })}
+					onCommit={() => void commit()}
+				/>
+				<SliderCell
+					label={t("captions.width")}
+					value={settings.width}
+					min={20}
+					max={100}
+					suffix="%"
+					disabled={disabled}
+					onChange={(v) => setLive({ width: v })}
+					onCommit={() => void commit()}
+				/>
 			</div>
-		</div>
+
+			{/* ── Line length ────────────────────────────────────────── */}
+			<div className={styles.sectionLabel}>{t("captions.lineLength")}</div>
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.minWords")}</span>
+				<AppSelect
+					value={settings.minWordsPerLine}
+					disabled={disabled}
+					onChange={(e) => void set({ minWordsPerLine: Number(e.target.value) })}
+					style={selectStyle}
+				>
+					{WORD_COUNTS.map((n) => (
+						<option key={n} value={n}>
+							{n}
+						</option>
+					))}
+				</AppSelect>
+			</div>
+			<div className={styles.paneRow}>
+				<span className="label">{t("captions.maxWords")}</span>
+				<AppSelect
+					value={settings.maxWordsPerLine}
+					disabled={disabled}
+					onChange={(e) => void set({ maxWordsPerLine: Number(e.target.value) })}
+					style={selectStyle}
+				>
+					{WORD_COUNTS.map((n) => (
+						<option key={n} value={n} disabled={n < settings.minWordsPerLine}>
+							{n}
+						</option>
+					))}
+				</AppSelect>
+			</div>
+		</InspectorPane>
 	);
 }
 
@@ -532,19 +519,13 @@ function Segmented<T extends string>({
 	onChange: (next: T) => void;
 }) {
 	return (
-		<div className={styles.paneTabs}>
-			{options.map((option) => (
-				<button
-					type="button"
-					key={option.value}
-					className={value === option.value ? styles.isActive : ""}
-					aria-pressed={value === option.value}
-					disabled={disabled}
-					onClick={() => onChange(option.value)}
-				>
-					{option.label}
-				</button>
-			))}
-		</div>
+		<InspectorSegmentedControl
+			label={options.map((option) => option.label).join(", ")}
+			value={value}
+			options={options}
+			disabled={disabled}
+			className={styles.inspectorSegmented}
+			onValueChange={onChange}
+		/>
 	);
 }

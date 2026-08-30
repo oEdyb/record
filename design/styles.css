@@ -1,10 +1,10 @@
 /* ============================================================
-   OpenScreen Design System — global entry point.
+   Klippt Design System — specimen entry point.
    Consumers link THIS file. It is a manifest of @imports only;
    never add rules here. Everything reachable from these imports
    (tokens + @font-face + Google font @imports) ships to
    consumers and is indexed by the compiler.
-   Source of truth: getopenscreen/openscreen (src/index.css).
+   Production source of truth: src/styles/design-tokens.css.
    ============================================================ */
 
 @import url("./tokens/base.css");
@@ -15,8 +15,6 @@
 @import url("./tokens/radii.css");
 @import url("./tokens/elevation.css");
 @import url("./tokens/effects.css");
-/* Last on purpose: v4 is the shipped vocabulary every card and component
-   here is written against, and it has to win the handful of names that
-   colors.css / elevation.css / typography.css also declare. It defends
-   that with `:root:root` too, so the order is belt-and-braces. */
+/* Last on purpose: v4 is generated from the production token authority and
+   must win names still used by historical specimen files. */
 @import url("./tokens/v4.css");

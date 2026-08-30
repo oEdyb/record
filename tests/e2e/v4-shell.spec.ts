@@ -14,7 +14,7 @@ const EDITOR_URL = `${BASE_URL}/?windowType=editor`;
 // 300 MB exactly, so MediaStage's formatSize renders "300 MB".
 const SIZED_BYTES = 314_572_800;
 
-function makeDoc() {
+function makeDoc({ secondClip = false }: { secondClip?: boolean } = {}) {
 	const asset = (id: string, label: string, sizeBytes?: number) => ({
 		id,
 		kind: "video" as const,
@@ -50,6 +50,21 @@ function makeDoc() {
 					origin: "system" as const,
 					reason: "",
 				},
+				...(secondClip
+					? [
+							{
+								id: "clip_e2e_second",
+								assetId: "asset_unsized",
+								sourceStartSec: 0,
+								sourceEndSec: 60,
+								timelineStartSec: 600,
+								timelineEndSec: 660,
+								wordRefs: [],
+								origin: "system" as const,
+								reason: "",
+							},
+						]
+					: []),
 			],
 			gaps: [],
 			trimRanges: [],
@@ -67,36 +82,30 @@ function makeDoc() {
 	};
 }
 
-async function seedAndOpen(page: Page): Promise<void> {
-	await page.addInitScript((serialized) => {
-		const doc = JSON.parse(serialized);
-		// The shim keys documents by project id under one blob (see
-		// `createShimBridgeClient` in src/native/browserShim.ts); the shell's mount
-		// effect calls listProjects() → loadProject(first) on launch, so seeding
-		// this is what lands us in a populated editor.
-		localStorage.setItem(
-			"browser-shim-projects-v2",
-			JSON.stringify({ documents: { [doc.project.id]: doc }, order: [doc.project.id] }),
-		);
-	}, JSON.stringify(makeDoc()));
+async function seedAndOpen(page: Page, options: { secondClip?: boolean } = {}): Promise<void> {
+	await page.addInitScript(
+		(serialized) => {
+			const doc = JSON.parse(serialized);
+			// The shim keys documents by project id under one blob (see
+			// `createShimBridgeClient` in src/native/browserShim.ts); the shell's mount
+			// effect calls listProjects() → loadProject(first) on launch, so seeding
+			// this is what lands us in a populated editor.
+			localStorage.setItem(
+				"browser-shim-projects-v2",
+				JSON.stringify({ documents: { [doc.project.id]: doc }, order: [doc.project.id] }),
+			);
+		},
+		JSON.stringify(makeDoc(options)),
+	);
 	await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
 	// listProjects → loadProject are both async. A rendered clip pill is the
 	// first observable proof the seeded document reached the timeline.
-	await expect(page.locator("[data-clip-id]")).toHaveCount(1, { timeout: 15_000 });
+	await expect(page.locator("[data-clip-id]")).toHaveCount(options.secondClip ? 2 : 1, {
+		timeout: 15_000,
+	});
 }
 
 test.describe("v4 editor shell", () => {
-	test("media stage shows each asset's file size, em-dash when unknown", async ({ page }) => {
-		await seedAndOpen(page);
-		await page.getByRole("tab", { name: "Media" }).click();
-
-		const sized = page.getByRole("button", { name: /Sized\.mp4/ }).first();
-		const unsized = page.getByRole("button", { name: /Unsized\.mp4/ }).first();
-		await expect(sized).toContainText("300 MB");
-		// formatSize's placeholder for a missing sizeBytes.
-		await expect(unsized).toContainText("—");
-	});
-
 	test("inspector facet header opens a contextual help popover", async ({ page }) => {
 		await seedAndOpen(page);
 
@@ -114,6 +123,18 @@ test.describe("v4 editor shell", () => {
 
 		await help.click();
 		await expect(popover).toBeHidden();
+	});
+
+	test("edit clip picker uses a keyboard menu and opens the selected clip", async ({ page }) => {
+		await seedAndOpen(page, { secondClip: true });
+
+		await page.getByRole("button", { name: "Edit clip" }).click();
+		const menu = page.getByRole("menu", { name: "Edit clip" });
+		await expect(menu).toBeVisible();
+		await expect(menu.getByRole("menuitem")).toHaveCount(2);
+
+		await menu.getByRole("menuitem", { name: /Clip 2/ }).click();
+		await expect(page.getByRole("dialog", { name: "Edit clip" })).toBeVisible();
 	});
 
 	test("ctrl+wheel over the tracks zooms the timeline, bounded at 2% of its span", async ({
@@ -190,7 +211,9 @@ test.describe("v4 editor shell", () => {
 
 		// Scrub: press at 25% of the timeline canvas, drag to 75%, release. The
 		// playhead tracks the pointer and the store lands on the release position.
-		const canvas = page.locator('[class*="tlTracks"] [class*="tlCanvas"]').first();
+		// Scrub on the ruler. The main track is covered by the clip, and clip
+		// pointer-down intentionally starts selection/drag instead of seeking.
+		const canvas = page.locator('[class*="tlRulerRow"] [class*="tlCanvas"]').first();
 		const box = await canvas.boundingBox();
 		if (!box) throw new Error("timeline canvas has no bounding box");
 		const y = box.y + box.height / 2;

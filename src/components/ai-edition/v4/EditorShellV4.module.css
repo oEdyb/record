@@ -24,11 +24,8 @@
 /* rows set inline per mode (topbar / body / timeline) */
 
 /* ─── TOP BAR ──────────────────────────────────────────────────────── */
-/* Every slot on the left half is width-STABLE by construction: the chat toggle
-   reserves its box even in the modes that don't have one, the project name and
-   the save state are fixed-size regardless of the string inside them. Without
-   that, hiding a button, renaming a project or simply typing (saved → unsaved)
-   re-flowed the whole bar and slid the mode switch sideways. */
+/* Every slot on the left half is width-stable. The chat toggle reserves its box
+   when hidden, and the project name and locale keep fixed widths. */
 .topbar {
 	grid-row: 1;
 	display: flex;
@@ -192,31 +189,16 @@
 	border-color: var(--editor-accent-border);
 	box-shadow: 0 0 0 2px var(--editor-accent-ring);
 }
-/* Stack both labels in one cell so save-state changes never move the toolbar. */
-.saved {
-	display: inline-grid;
-	grid-template-areas: "state";
-	align-items: center;
-	justify-items: start;
-	font-family: var(--font-mono);
-	font-size: 11px;
-	color: var(--muted);
-	flex-shrink: 0;
-}
-.savedState {
-	grid-area: state;
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
+.srOnly {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
 	white-space: nowrap;
-	opacity: 0.72;
-}
-.savedState[data-dirty="true"] {
-	color: var(--warn);
-	opacity: 1;
-}
-.savedState[data-on="false"] {
-	visibility: hidden;
+	border: 0;
 }
 
 /* One box for every short locale label — see --topbar-lang-label-w. Without it
@@ -229,6 +211,17 @@
 	font-size: 11px;
 	font-weight: 600;
 	white-space: nowrap;
+}
+
+.langButton {
+	display: inline-flex;
+	gap: 6px;
+	width: auto;
+	padding: 0 8px;
+}
+
+.langChevron {
+	color: var(--muted);
 }
 
 /* mode switch (Media / Edit) */
@@ -544,6 +537,27 @@
 	position: relative;
 	flex: 0 0 36px;
 }
+
+.clipMenu {
+	width: 208px;
+	max-height: 320px;
+}
+
+.clipMenuItem {
+	align-items: flex-start;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.clipMenuTitle {
+	font: 600 12.5px/1.25 var(--font-display);
+	color: var(--fg);
+}
+
+.clipMenuTime {
+	font: 500 11px/1.25 var(--font-mono);
+	color: var(--muted);
+}
 .facetRail button {
 	flex: 0 0 36px;
 	width: 36px;
@@ -560,6 +574,14 @@
 .facetRail button:hover {
 	background: var(--surface-3);
 	color: var(--fg);
+}
+.facetRail button:disabled {
+	opacity: 0.34;
+	cursor: default;
+}
+.facetRail button:disabled:hover {
+	background: transparent;
+	color: var(--muted);
 }
 .facetRail button[aria-pressed="true"] {
 	color: var(--editor-accent-strong);
@@ -1752,10 +1774,9 @@
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: 5px;
+	width: 2px;
 	z-index: 3;
-	background: var(--surface);
-	border-left: 1px solid var(--border);
+	background: var(--border-hi);
 	pointer-events: none;
 }
 .tlClip:hover {

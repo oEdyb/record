@@ -1356,7 +1356,7 @@ export function NewEditorShell() {
 	const previewTrimRanges = pausePreviewSuggestions
 		? [...tl.trimRanges, ...pauseSuggestionsAsTrims(pausePreviewSuggestions)]
 		: tl.trimRanges;
-	const inspectorExpanded = inspectorOpen || tl.selection !== null;
+	const inspectorExpanded = hasAsset && (inspectorOpen || tl.selection !== null);
 
 	return (
 		<div
@@ -1456,13 +1456,13 @@ export function NewEditorShell() {
 									onVideoElement={setVideoElement}
 									playing={playing}
 									screenFramingEnabled={
-										inspectorOpen && facet === "layout" && tl.selection === null
+										inspectorExpanded && facet === "layout" && tl.selection === null
 									}
 								/>
 							</div>
 							<FloatingInspector
 								facet={facet}
-								open={inspectorOpen}
+								open={hasAsset && inspectorOpen}
 								tl={tl}
 								onFacetChange={(f) => {
 									setFacet(f);

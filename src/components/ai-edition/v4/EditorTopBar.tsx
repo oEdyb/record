@@ -1,5 +1,4 @@
 import {
-	Check,
 	ChevronDown,
 	Circle,
 	Download,
@@ -16,8 +15,15 @@ import {
 	Sparkles,
 	Sun,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { KlipptMark } from "@/components/brand/KlipptMark";
+import {
+	AppMenu,
+	AppMenuContent,
+	AppMenuRadioGroup,
+	AppMenuRadioItem,
+	AppMenuTrigger,
+} from "@/components/ui/app-menu";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useTheme } from "@/hooks/useTheme";
 import { getAvailableLocales, getLocaleName, getLocaleShort } from "@/i18n/loader";
@@ -200,15 +206,8 @@ export function EditorTopBar({
 			</button>
 			<span className={styles.sep} aria-hidden />
 			<LangButton />
-			<span className={styles.saved} role="status" aria-live="polite" aria-atomic="true">
-				<span className={styles.savedState} data-on={!dirty}>
-					<Check size={12} strokeWidth={2} aria-hidden />
-					{t("topbar.saved")}
-				</span>
-				<span className={styles.savedState} data-on={dirty} data-dirty="true">
-					<Circle size={7} fill="currentColor" strokeWidth={0} aria-hidden />
-					{t("topbar.unsaved")}
-				</span>
+			<span className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
+				{dirty ? t("topbar.unsaved") : t("topbar.saved")}
 			</span>
 
 			<span className={styles.topbarSpacer} aria-hidden />
@@ -357,74 +356,29 @@ function ProjectNameField({
 function LangButton() {
 	const { locale, setLocale } = useI18n();
 	const t = useScopedT("editor");
-	const [open, setOpen] = useState(false);
-	const ref = useRef<HTMLDivElement | null>(null);
-	useEffect(() => {
-		if (!open) return;
-		const onDocClick = (e: MouseEvent) => {
-			if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-		};
-		document.addEventListener("mousedown", onDocClick);
-		return () => document.removeEventListener("mousedown", onDocClick);
-	}, [open]);
 	return (
-		<div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-			<button
-				type="button"
-				className={styles.iconBtn}
-				style={{ width: "auto", padding: "0 8px", gap: 6, display: "inline-flex" }}
-				onClick={() => setOpen((v) => !v)}
-				aria-label={t("topbar.changeLanguage")}
-				aria-pressed={open}
-			>
-				<Languages size={15} />
-				{/* Fixed-width, centred: the short labels run from "EN" to "PT-BR" to
-				    the CJK "简中", and letting the button size to them moved everything
-				    to its right on each language change. */}
-				<span className={styles.langShort}>{getLocaleShort(locale)}</span>
-				<ChevronDown size={9} style={{ color: "var(--muted)" }} />
-			</button>
-			{open ? (
-				<div
-					style={{
-						position: "absolute",
-						top: "calc(100% + 4px)",
-						right: 0,
-						minWidth: 160,
-						background: "var(--surface)",
-						border: "1px solid var(--border)",
-						borderRadius: "var(--r-md)",
-						boxShadow: "var(--elev-pop)",
-						padding: 4,
-						zIndex: 60,
-					}}
+		<AppMenu>
+			<AppMenuTrigger asChild>
+				<button
+					type="button"
+					className={`${styles.iconBtn} ${styles.langButton}`}
+					aria-label={t("topbar.changeLanguage")}
 				>
+					<Languages size={15} aria-hidden />
+					{/* A fixed slot keeps the top bar still when the locale changes. */}
+					<span className={styles.langShort}>{getLocaleShort(locale)}</span>
+					<ChevronDown size={9} className={styles.langChevron} aria-hidden />
+				</button>
+			</AppMenuTrigger>
+			<AppMenuContent align="end" aria-label={t("topbar.changeLanguage")}>
+				<AppMenuRadioGroup value={locale} onValueChange={setLocale}>
 					{getAvailableLocales().map((code) => (
-						<button
-							key={code}
-							type="button"
-							style={{
-								display: "block",
-								width: "100%",
-								textAlign: "left",
-								padding: "6px 10px",
-								border: 0,
-								background: code === locale ? "var(--accent-wash)" : "transparent",
-								color: code === locale ? "var(--accent)" : "var(--fg-2)",
-								borderRadius: "var(--r-sm)",
-								cursor: "pointer",
-								font: "500 12px var(--font-body)",
-							}}
-							onClick={() => {
-								setLocale(code);
-								setOpen(false);
-							}}
-						>
+						<AppMenuRadioItem key={code} value={code}>
 							{getLocaleName(code)}
-						</button>
+						</AppMenuRadioItem>
 					))}
-				</div>
-			) : null}
-		</div>
+				</AppMenuRadioGroup>
+			</AppMenuContent>
+		</AppMenu>
 	);
 }

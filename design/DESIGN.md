@@ -1,156 +1,86 @@
-# OpenScreen Design System
+# Klippt design system
 
-> Category: Video & Productivity Tools
-> Surface: Desktop web (Electron)
-> Source: tokens extracted from `openscreen-editor-2.html` (canonical)
+Klippt must feel calm, intelligent, and powerful. It should help a creator move from recording to a publishable video without the visual load of a traditional editor.
 
-A high-fidelity, professional dark-and-light desktop application design system
-optimized for video recording, post-processing editing, and timeline
-manipulation. Mint is the single brand accent; red is reserved strictly for
-REC / cut / skip / trim / transcript-highlight states; amber covers warnings.
+## Source of truth
 
----
+[`src/styles/design-tokens.css`](../src/styles/design-tokens.css) is the only production token authority. Tailwind maps semantic utilities to these tokens in [`tailwind.config.cjs`](../tailwind.config.cjs). [`design/tokens/v4.css`](tokens/v4.css) is generated for design specimens.
 
-## Color Palette
+Run `npm run design:sync` after a token change. `npm run docs:check` fails if the mirror is stale.
 
-### Light theme (`:root`)
+## Visual direction
 
-| Role | Token | Hex | Notes |
-|---|---|---|---|
-| Canvas | `--bg` | `#fafbfc` | Off-white, never pure white; soft radial gradient |
-| Panel | `--surface` | `#ffffff` | Raised panels on canvas |
-| Card | `--surface-1` | `#f7f8fa` | Tier 1 raised |
-| Tier 2 | `--surface-2` | `#f3f5f8` | Raised on panel |
-| Hover | `--surface-3` | `#eef0f3` | Active/hover state |
-| Popover | `--surface-hi` | `#ffffff` | Highest elevation |
-| Border | `--border` | `#e7e9ee` | Soft hairline |
-| Border soft | `--border-soft` | `#f1f2f5` | Subtle dividers |
-| Border hi | `--border-hi` | `#d1d5db` | Emphasis lines |
-| Foreground | `--fg` | `#1f2937` | Slate, not pure black |
-| Foreground emphasis | `--fg-emphasis` | `#111827` | Headlines |
-| Muted | `--muted` | `#6b7280` | Body / labels |
-| Meta | `--meta` | `#9ca3af` | Timestamps, captions |
-| Brand (mint) | `--accent` | `#10b981` | Primary action, focus ring, toggle-on |
-| Brand glow | `--brand-glow` | `rgba(16,185,129,0.35)` | Focus / hover |
-| Danger | `--danger` | `#ef4444` | REC, skip, trim, transcript highlight |
-| Warning | `--warn` | `#f59e0b` | Soft amber |
-| Success | `--success` | `#10b981` | Alias of brand |
+The editor uses restrained graphite surfaces. The preview and timeline carry the visual hierarchy. The inspector stays flat and quiet.
 
-### Dark theme (`:root[data-theme="dark"]`)
+| Role | Dark value | Use |
+|---|---:|---|
+| Canvas | `#0d0d10` | App and stage background |
+| Panel | `#151519` | Inspector and primary panels |
+| Raised control | `#1c1c21` | Menus, segmented tracks, hover surfaces |
+| Primary text | `#e7e7ec` | Labels and headings |
+| Muted text | `#92929d` | Secondary detail |
+| Editor accent | `#91aac8` | Selection, playhead, slider range, automatic edits |
+| Danger | `#f87171` | Recording, destructive actions, errors |
 
-| Role | Token | Hex | Notes |
-|---|---|---|---|
-| Canvas | `--bg` | `#0a0d12` | Near-black with faint blue cast |
-| Panel | `--surface` | `#14181f` | Tier 1 panel |
-| Card | `--surface-1` | `#14181f` | Same as panel base |
-| Tier 2 | `--surface-2` | `#1c2029` | Raised |
-| Hover | `--surface-3` | `#252a35` | Hover/active |
-| Popover | `--surface-hi` | `#2e3440` | Highest |
-| Border | `--border` | `#252a35` | Reads on canvas |
-| Foreground | `--fg` | `#e6e9ef` | Off-white, never pure `#ffffff` |
-| Muted | `--muted` | `#8b95a3` | Tuned for AA on dark |
-| Brand (mint) | `--accent` | `#10b981` | Same hue, brighter tone on `--brand-lo: #34d399` |
-| Danger | `--danger` | `#f87171` | Softer red for dark bg |
-
-### Traffic lights (macOS chrome)
-
-| Token | Hex |
-|---|---|
-| `--light-red` | `#ff5f57` |
-| `--light-yellow` | `#febc2e` |
-| `--light-green` | `#28c840` |
-
----
+White and graphite are the product identity. Steel blue is a functional editor color. Green is semantic success or live audio only.
 
 ## Typography
 
-- **Display:** system-ui stack — `system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif`
-- **Body:** system-ui stack (same as display)
-- **Mono:** `ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace`
+- Geist is the interface face.
+- Geist Mono is for time, values, resolution, frame rate, and technical data.
+- The base interface size is 13 pixels.
+- Ordinary labels use sentence case.
+- Keep values truthful and visible next to their controls.
+- Do not use text below 11 pixels.
 
-### Type scale (desktop editor, base 13px)
+## Editor geometry
 
-| Token | Size | Use |
-|---|---|---|
-| `--fs-app` | 13px | Base UI |
-| `--fs-app-sm` | 12px | Secondary |
-| `--fs-app-lg` | 14px | Primary UI |
-| `--fs-title` | 16px | Panel titles |
-| `--fs-section` | 11px | Section headers (uppercase, tracked) |
-| `--fs-display` | 24px | Hero numerals |
+- Top bar: 56 pixels.
+- Inspector pane: 344 pixels.
+- Inspector rail: 48 pixels.
+- Inspector header: 48 pixels.
+- Stage inset: 16 pixels.
+- Inspector controls follow a 4-pixel spacing base.
+- The preview remains dominant at 1024 pixels and above.
+- The timeline is a precise work surface, not a decorative footer.
 
-Nothing below 11px.
+## Inspector rules
 
----
+- Use one flat surface. Do not place ordinary settings in cards.
+- Separate groups with space and a hairline divider.
+- Keep one control geometry for each control type.
+- Use `InspectorPane`, `InspectorRow`, `InspectorSlider`, `InspectorSwitch`, `InspectorSegmentedControl`, and `InspectorDisclosure` from [`src/components/ui/inspector/`](../src/components/ui/inspector/).
+- Put short explanations in tooltips or the pane help popover. Do not keep long help text open in the normal layout.
+- Hide controls that cannot affect the selected media. Disable controls only when the disabled state explains useful context.
+- Use direct manipulation in the preview for framing and position when possible. Keep numeric controls as the precise alternative.
 
-## Layout
+## Interaction
 
-- **Radius:** 8px standard; `--r-xs: 4px`, `--r-sm: 6px`, `--r-md: 8px`, `--r-lg: 12px`, `--r-pill: 9999px`
-- **Border weight:** 1px
-- **Spacing:** 4px baseline grid (`--sp-1` through `--sp-6`)
-- **Editor wireframe:**
-  - Titlebar: 34px
-  - Left utility rail: 48px
-  - Left panel: 320px
-  - Right properties: 320px
-  - Resize handle: 6px
-  - Bottom timeline/toolbar: 224px
-
-### Posture rules
-
-- **One accent, used at most twice per screen.** Default budget is eyebrow + primary CTA.
-- **Red is reserved** for REC, cut, skip, trim, and transcript highlight only. It is not a brand color.
-- **Mint is the single brand color** for active state, focus ring, toggle-on, and brand mark.
-- **Off-white canvas, tiered surfaces.** Never use pure `#000` or pure `#fff` for editorial chrome.
-- **Soft elevation, slate-based shadows.** Two `--elev-card` and `--elev-pop` are enough.
-- **System-ui type, mono numerics.** No web fonts loaded; ships the declared fallback stack.
-
----
+- Hover: change one surface step and increase text contrast.
+- Focus: use the editor-accent focus ring.
+- Press: use a small contrast change. Do not bounce the chrome.
+- Pointer slider changes commit on release.
+- Keyboard slider changes commit as one short burst after idle or blur.
+- Popovers, selects, switches, sliders, and toggle groups use the installed Radix primitives through Klippt wrappers.
+- Custom trigger leaves must spread props and forward refs when used with `asChild`.
 
 ## Motion
 
-- `--motion-fast: 120ms` — hover, focus ring
-- `--motion-base: 180ms` — state transitions
-- `--ease: cubic-bezier(0.2, 0, 0, 1)` — standard easing
+- Fast chrome response: 120 milliseconds.
+- Normal state transition: 180 milliseconds.
+- Standard easing: `cubic-bezier(0.2, 0, 0, 1)`.
+- Animate opacity and transform when possible.
+- Use motion to explain state or continuity. Do not add decorative motion.
+- Disable non-essential transitions under `prefers-reduced-motion: reduce`.
 
----
+## Iconography and copy
 
-## Voice & Tone
+- Use Lucide line icons for ordinary actions.
+- Use the Klippt mark from `design/assets/logo-icon.png`; do not redraw it in components.
+- Use short action labels: Record, Pause, Continue, Remove, Export.
+- Do not use emoji or generic AI marketing language in product chrome.
+- Do not show persistent “Saved” chrome. Show a short confirmation only when the user needs it.
 
-- **Adjectives:** high-fidelity, professional, calm, restrained.
-- **Tone:** a confident dark-themed tool. Marketing prose is sparse; product UI carries the work.
-- **Messaging pillar:** video recording, post-processing editing, and timeline manipulation — same three jobs the editor does.
+## Product signature
 
-### Vocabulary
-
-- **Use:** Record, Trim, Cut, Skip, Timeline, Clip, Track, Transcript.
-- **Avoid:** playful emoji feature labels (✨ 🚀 🎯), "AI-powered" in product chrome, generic SaaS copy ("supercharge your workflow").
-
----
-
-## Imagery
-
-- **Style:** schematic, palette-derived. Scene illustration in preview is grayscale made from the same neutrals — not literal artwork.
-- **Treatment:** replace placeholder scenes with real project footage when shipping.
-- **Avoid:** stock photography, decorative illustration in tool chrome, hand-drawn mascots.
-
----
-
-## Files in this directory
-
-| File | Role |
-|---|---|
-| `openscreen-editor-2.html` | Latest editor (light + dark themes in one file). Canonical source of tokens. |
-| `openscreen-editor.html` | First editor pass. Light-only. |
-| `editor.html` | Earlier experimental editor with red REC accent. |
-| `openscreen-landing.html` | Marketing landing page. |
-| `index.html` | Launcher / overview. |
-| `DESIGN.md` | This document. |
-
----
-
-## Open questions / follow-ups
-
-- `editor.html` uses a different red-dominant accent and predates the mint brand color. Keep as historical reference; do not import its tokens into new work.
-- Landing page (`openscreen-landing.html`) is light-only; consider a dark variant once product photography is sourced.
-- No logo asset is committed yet. Brand mark should be a simple wordmark or geometric mark in mint on the dark canvas.
+The signature flow is the calm recording HUD becoming the exact editor timeline. Recording, clips, automatic direction, and manual correction must feel like one continuous tool.

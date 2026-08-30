@@ -1,16 +1,23 @@
 ---
-name: openscreen-design
-description: Use this skill to generate well-branded interfaces and assets for OpenScreen (an AI-native screen-recording studio & video editor), either for production or throwaway prototypes/mocks/etc. Contains essential design guidelines, colors, type, fonts, assets, and UI kit components for prototyping.
+name: klippt-design
+description: Use this skill to design or review Klippt interfaces. Klippt is a calm, intelligent, powerful recording and editing tool for creators. This file routes agents to the current production tokens and product rules.
 user-invocable: true
 ---
 
-Read the README.md file within this skill, and explore the other available files.
-If creating visual artifacts (slides, mocks, throwaway prototypes, etc), copy assets out and create static HTML files for the user to view. If working on production code, you can copy assets and read the rules here to become an expert in designing with this brand.
-If the user invokes this skill without any other guidance, ask them what they want to build or design, ask some questions, and act as an expert designer who outputs HTML artifacts _or_ production code, depending on the need.
+Read `DESIGN.md` and `readme.md` before visual work.
 
-Quick orientation:
-- `styles.css` is the single CSS entry point — link it and use the CSS custom properties (never hard-code hex). Dark is the default; add `data-theme="light"` on a wrapper for the light palette.
-- Type: Geist (UI) + Geist Mono (numbers/technical). Base 13px.
-- One brand hue: emerald `--accent`. Ration it. Timeline lanes add amber/orange/red semantic accents.
-- Components live in `components/` (forms, display, editor); full-screen recreations in `ui_kits/editor/`. Icons are Lucide.
-- No emoji, no gradients-as-decoration, no photographic backgrounds. Dense pro-tool density, glassy floating panels, hairline borders.
+Production code must use `src/styles/design-tokens.css`. Do not create a second palette. Run `npm run design:sync` after a token change; `design/tokens/v4.css` is a generated specimen mirror.
+
+Core direction:
+
+- Dark graphite canvas with quiet white chrome.
+- Muted steel blue only for editor selection, time, and automatic-edit state.
+- Red only for recording, destructive actions, and errors.
+- Green only for semantic success or live audio state. It is not a brand color.
+- Geist for UI. Geist Mono for time, values, and technical data.
+- One flat 344-pixel inspector next to a 48-pixel facet rail.
+- No cards inside ordinary inspector sections.
+- Short, purposeful motion. Respect reduced motion.
+- Lucide icons only, except the Klippt logo and purpose-built media glyphs.
+
+Use the shared primitives in `src/components/ui/inspector/`, `app-select.tsx`, `popover.tsx`, and `tooltip.tsx`. Do not add another component library for controls already covered by these files.

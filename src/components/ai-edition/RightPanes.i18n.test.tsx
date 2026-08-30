@@ -144,10 +144,10 @@ describe("right-rail panes are localized", () => {
 		renderIn("en", <LayoutPane />);
 
 		const slider = screen.getByRole("slider", { name: "Camera share" });
-		expect(slider).toHaveValue("50");
-		expect(slider).toHaveAttribute("min", "20");
-		expect(slider).toHaveAttribute("max", "80");
-		expect(screen.getByRole("slider", { name: "Scale" })).toHaveValue("2.2");
+		expect(slider).toHaveValue(50);
+		expect(slider).toHaveAttribute("aria-valuemin", "20");
+		expect(slider).toHaveAttribute("aria-valuemax", "80");
+		expect(screen.getByRole("slider", { name: "Scale" })).toHaveValue(2.2);
 		expect(screen.getByRole("slider", { name: "Position" })).toHaveAttribute(
 			"aria-valuetext",
 			"75%, 25%",

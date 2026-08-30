@@ -97,10 +97,11 @@ afterEach(() => {
 describe("AutomaticDirectionPane", () => {
 	it("replans from Max Zoom after a short debounce", async () => {
 		const { container } = render(<AutomaticDirectionPane />);
-		const maxZoom = screen.getByText("Max Zoom").closest("div")?.parentElement;
-		const slider = maxZoom?.querySelector<HTMLInputElement>('input[type="range"]');
-		expect(slider).not.toBeNull();
-		fireEvent.change(slider!, { target: { value: "1.4" } });
+		const slider = screen.getByRole("slider", { name: "Max Zoom" });
+		slider.focus();
+		for (let index = 0; index < 5; index += 1) {
+			fireEvent.keyDown(slider, { key: "ArrowLeft" });
+		}
 		expect(regenerate).not.toHaveBeenCalled();
 
 		await act(async () => {
@@ -136,12 +137,15 @@ describe("AutomaticDirectionPane", () => {
 			return { screenZooms: 1, cameraEmphasis: 0, recordings: 1 };
 		});
 		render(<AutomaticDirectionPane />);
-		const maxZoom = screen.getByText("Max Zoom").closest("div")?.parentElement;
-		const slider = maxZoom?.querySelector<HTMLInputElement>('input[type="range"]');
-
-		fireEvent.change(slider!, { target: { value: "2" } });
+		const slider = screen.getByRole("slider", { name: "Max Zoom" });
+		slider.focus();
+		for (let index = 0; index < 7; index += 1) {
+			fireEvent.keyDown(slider, { key: "ArrowRight" });
+		}
 		await act(async () => vi.advanceTimersByTimeAsync(180));
-		fireEvent.change(slider!, { target: { value: "2.5" } });
+		for (let index = 0; index < 10; index += 1) {
+			fireEvent.keyDown(slider, { key: "ArrowRight" });
+		}
 		await act(async () => vi.advanceTimersByTimeAsync(180));
 
 		expect(regenerate).toHaveBeenNthCalledWith(

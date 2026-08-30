@@ -3,14 +3,9 @@
  * Monochrome contrast is the product accent. Red is reserved for recording
  * and destructive actions. Green is semantic success only. */
 
-/* :root:root (doubled pseudo-class) deliberately outranks a plain `:root` —
- * src/index.css's shadcn/Tailwind base ALSO declares --accent/--border/
- * --muted (as space-separated HSL triples, a different convention than
- * this file's hex values) in a plain `:root` block. Both are equal-weight
- * declarations otherwise, so whichever stylesheet the bundler happens to
- * emit last silently wins the collision — pin it here instead of
- * depending on import order. */
-:root:root {
+/* This file owns every production design token. Tailwind maps its semantic
+ * colors to these values instead of declaring a second palette. */
+:root {
 	color-scheme: light;
 
 	/* canvas */

@@ -9,14 +9,11 @@ import {
 	Check,
 	Copy,
 	FileText,
-	HelpCircle,
-	Info,
 	Layout as LayoutIcon,
 	Loader2,
 	MousePointerClick,
 	Palette,
 	RotateCw,
-	Sliders,
 	Trash2,
 	Upload,
 } from "lucide-react";
@@ -39,7 +36,13 @@ import { toast } from "sonner";
 import defaultCursorPreviewUrl from "@/assets/cursors/Cursor=Default.svg";
 import { AppSelect } from "@/components/ui/app-select";
 import GradientEditor, { type GradientEditorState } from "@/components/ui/gradient-editor";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+	InspectorPane,
+	InspectorRow,
+	InspectorSegmentedControl,
+	InspectorSlider,
+	InspectorSwitch,
+} from "@/components/ui/inspector";
 import {
 	MAX_WEBCAM_ZOOM,
 	MIN_WEBCAM_ZOOM,
@@ -121,55 +124,17 @@ export interface PaneProps {
 	flat?: boolean;
 }
 
-export function Pane({ title, icon, helpText, children, flat = false }: PaneProps) {
+export function Pane({ title, helpText, children, flat = false }: PaneProps) {
 	const ts = useScopedT("settings");
-	const helpLabel = ts("panes.help");
-	const [helpOpen, setHelpOpen] = useState(false);
 	return (
-		<div
-			className={`${styles.pane} ${styles.isActive}${flat ? ` ${styles.flatInspectorPane}` : ""}`}
-			data-inspector-layout={flat ? "flat" : undefined}
+		<InspectorPane
+			title={title}
+			helpLabel={ts("panes.help")}
+			helpText={helpText}
+			className={flat ? styles.flatInspectorPane : ""}
 		>
-			<header className={styles.paneHead} style={{ position: "relative" }}>
-				<h2>{title}</h2>
-				<span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
-					<button
-						type="button"
-						className={styles.iconBtn}
-						title={helpLabel}
-						aria-label={helpLabel}
-						aria-expanded={helpOpen}
-						onClick={() => setHelpOpen((v) => !v)}
-					>
-						<HelpCircle size={14} />
-					</button>
-				</span>
-				<span style={{ display: "none" }}>{icon}</span>
-				{helpOpen ? (
-					<div
-						role="note"
-						style={{
-							position: "absolute",
-							top: "calc(100% + 4px)",
-							right: 8,
-							zIndex: 60,
-							maxWidth: 240,
-							padding: "10px 12px",
-							background: "var(--surface)",
-							border: "1px solid var(--border)",
-							borderRadius: "var(--r-md)",
-							boxShadow: "var(--elev-pop)",
-							color: "var(--fg-2)",
-							font: "400 12px/1.5 var(--font-body)",
-						}}
-						onClick={() => setHelpOpen(false)}
-					>
-						{helpText}
-					</div>
-				) : null}
-			</header>
-			<div className={styles.paneBody}>{children}</div>
-		</div>
+			{children}
+		</InspectorPane>
 	);
 }
 
@@ -286,10 +251,6 @@ export function BackgroundPane() {
 
 	const isSelected = (value: string) => settings.wallpaper === value;
 
-	const handleTabChange = (next: "image" | "color" | "gradient") => {
-		setTab(next);
-	};
-
 	const handlePickFile = () => {
 		if (!hasDocument) return;
 		fileInputRef.current?.click();
@@ -323,29 +284,17 @@ export function BackgroundPane() {
 			helpText={ts("background.help")}
 			flat
 		>
-			<div className={styles.paneTabs} role="tablist">
-				<button
-					type="button"
-					className={tab === "image" ? styles.isActive : ""}
-					onClick={() => handleTabChange("image")}
-				>
-					{ts("background.image")}
-				</button>
-				<button
-					type="button"
-					className={tab === "color" ? styles.isActive : ""}
-					onClick={() => handleTabChange("color")}
-				>
-					{ts("background.color")}
-				</button>
-				<button
-					type="button"
-					className={tab === "gradient" ? styles.isActive : ""}
-					onClick={() => handleTabChange("gradient")}
-				>
-					{ts("background.gradient")}
-				</button>
-			</div>
+			<InspectorSegmentedControl
+				label={ts("background.title")}
+				value={tab}
+				className={styles.inspectorSegmented}
+				options={[
+					{ value: "image", label: ts("background.image") },
+					{ value: "color", label: ts("background.color") },
+					{ value: "gradient", label: ts("background.gradient") },
+				]}
+				onValueChange={setTab}
+			/>
 			{tab === "image" ? (
 				<>
 					<button
@@ -1504,28 +1453,26 @@ export function VideoEffectsPane() {
 	// NativeCompositorOverlay owns the initial sync. The handlers below still push live changes.
 
 	return (
-		<Pane
+		<InspectorPane
 			title={ts("effects.title")}
-			icon={<Sliders size={14} />}
+			helpLabel={ts("panes.help")}
 			helpText={ts("effects.help")}
-			flat
 		>
-			<div className={styles.paneRow}>
-				<span className="label">{ts("effects.blurBg")}</span>
-				<Toggle
+			<InspectorRow label={ts("effects.blurBg")}>
+				<InspectorSwitch
 					checked={settings.showBlur}
 					disabled={!hasDocument}
 					label={ts("effects.blurBg")}
-					onChange={(v) => {
+					onCheckedChange={(v) => {
 						void set({ showBlur: v });
 						if (isNativeCompositorActive()) {
 							setNativeParam("backgroundBlur", v);
 						}
 					}}
 				/>
-			</div>
-			<div className={styles.sliderGrid}>
-				<SliderCell
+			</InspectorRow>
+			<div>
+				<InspectorSlider
 					label={ts("effects.motionBlur")}
 					value={settings.motionBlurAmount * 100}
 					min={0}
@@ -1540,7 +1487,7 @@ export function VideoEffectsPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
-				<SliderCell
+				<InspectorSlider
 					label={ts("effects.shadow")}
 					value={settings.shadowIntensity * 100}
 					min={0}
@@ -1555,7 +1502,7 @@ export function VideoEffectsPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
-				<SliderCell
+				<InspectorSlider
 					label={ts("effects.roundness")}
 					value={settings.borderRadius}
 					min={0}
@@ -1571,7 +1518,7 @@ export function VideoEffectsPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
-				<SliderCell
+				<InspectorSlider
 					label={ts("effects.padding")}
 					value={settings.padding}
 					min={0}
@@ -1587,7 +1534,7 @@ export function VideoEffectsPane() {
 					onCommit={() => void commit()}
 				/>
 			</div>
-		</Pane>
+		</InspectorPane>
 	);
 }
 
@@ -2366,13 +2313,11 @@ export function Toggle({
 	onChange: (next: boolean) => void;
 }) {
 	return (
-		<button
-			type="button"
-			className={`${styles.toggle} ${checked ? styles.isOn : ""}`}
-			aria-pressed={checked}
-			aria-label={label}
+		<InspectorSwitch
+			checked={checked}
 			disabled={disabled}
-			onClick={() => onChange(!checked)}
+			label={label}
+			onCheckedChange={onChange}
 		/>
 	);
 }
@@ -2390,7 +2335,6 @@ export function SliderCell({
 	onChange,
 	onCommit,
 	showValue = true,
-	flat = false,
 	helpText,
 }: {
 	label: string;
@@ -2411,47 +2355,20 @@ export function SliderCell({
 	helpText?: string;
 }) {
 	return (
-		<div className={`${styles.sliderCell} ${flat ? styles.isFlat : ""}`}>
-			<div className="head">
-				<span className="label">
-					{label}
-					{helpText ? (
-						<Tooltip
-							content={helpText}
-							side="left"
-							className="max-w-56 whitespace-normal px-2.5 py-2 text-left leading-[1.4]"
-						>
-							<button
-								type="button"
-								className={styles.controlInfoButton}
-								aria-label={`${label}: ${helpText}`}
-							>
-								<Info size={11} />
-							</button>
-						</Tooltip>
-					) : null}
-				</span>
-				{showValue ? (
-					<span className="val">
-						{value.toFixed(decimals)}
-						{suffix}
-					</span>
-				) : null}
-			</div>
-			<input
-				type="range"
-				aria-label={label}
-				min={min}
-				max={max}
-				step={step}
-				value={value}
-				disabled={disabled}
-				onChange={(e) => onChange(Number(e.target.value))}
-				onMouseUp={onCommit}
-				onTouchEnd={onCommit}
-				onKeyUp={onCommit}
-			/>
-		</div>
+		<InspectorSlider
+			label={label}
+			value={value}
+			min={min}
+			max={max}
+			step={step}
+			decimals={decimals}
+			suffix={suffix}
+			disabled={disabled}
+			onChange={onChange}
+			onCommit={onCommit}
+			showValue={showValue}
+			helpText={helpText}
+		/>
 	);
 }
 

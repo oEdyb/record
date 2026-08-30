@@ -131,7 +131,7 @@ describe("AudioPane", () => {
 	it("keeps the audio workflow clear and saves independent project controls", async () => {
 		render(<Harness onPreview={vi.fn()} />);
 
-		const cleanVoice = screen.getByRole("button", { name: "audio.cleanVoice" });
+		const cleanVoice = screen.getByRole("switch", { name: "audio.cleanVoice" });
 		expect(cleanVoice).toBeDisabled();
 		expect(screen.getByText("audio.youtubeTarget")).toBeInTheDocument();
 		expect(screen.queryByText("audio.voiceDescription")).not.toBeInTheDocument();
@@ -141,12 +141,12 @@ describe("AudioPane", () => {
 			}),
 		).toBeInTheDocument();
 
-		const evenVolume = screen.getByRole("button", { name: "audio.evenVolume" });
-		const normalizeVolume = screen.getByRole("button", {
+		const evenVolume = screen.getByRole("switch", { name: "audio.evenVolume" });
+		const normalizeVolume = screen.getByRole("switch", {
 			name: "audio.normalizeVolume",
 		});
-		expect(evenVolume).toHaveAttribute("aria-pressed", "true");
-		expect(normalizeVolume).toHaveAttribute("aria-pressed", "true");
+		expect(evenVolume).toHaveAttribute("aria-checked", "true");
+		expect(normalizeVolume).toHaveAttribute("aria-checked", "true");
 
 		fireEvent.click(evenVolume);
 		fireEvent.click(normalizeVolume);
@@ -176,7 +176,7 @@ describe("AudioPane", () => {
 		render(<Harness onPreview={vi.fn()} />);
 
 		await act(async () => undefined);
-		const cleanVoice = screen.getByRole("button", { name: "audio.cleanVoice" });
+		const cleanVoice = screen.getByRole("switch", { name: "audio.cleanVoice" });
 		expect(cleanVoice).toBeEnabled();
 		fireEvent.click(cleanVoice);
 		await act(async () => undefined);
@@ -203,10 +203,14 @@ describe("AudioPane", () => {
 			name: "audio.targetLoudness",
 		});
 		const peak = screen.getByRole("slider", { name: "audio.peakCeiling" });
-		fireEvent.change(loudness, { target: { value: "-18" } });
-		fireEvent.mouseUp(loudness);
-		fireEvent.change(peak, { target: { value: "-3" } });
-		fireEvent.mouseUp(peak);
+		for (let index = 0; index < 7; index += 1) {
+			fireEvent.keyDown(loudness, { key: "ArrowLeft" });
+		}
+		fireEvent.keyUp(loudness, { key: "ArrowLeft" });
+		for (let index = 0; index < 2; index += 1) {
+			fireEvent.keyDown(peak, { key: "ArrowLeft" });
+		}
+		fireEvent.keyUp(peak, { key: "ArrowLeft" });
 		await act(async () => undefined);
 
 		expect(getEditorSettings(useProjectStore.getState().document)).toMatchObject({

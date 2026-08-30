@@ -169,17 +169,7 @@
 	color: var(--fg);
 	font: 500 12px var(--font-body);
 }
-.pausePresetRow {
-	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	gap: 4px;
-	padding: 3px;
-	border-radius: 9px;
-	background: var(--surface-2);
-}
-.pausePresetRow button,
 .pauseResultHeader button,
-.pauseAdvancedButton,
 .pauseActions button,
 .pausePresetSave button,
 .pauseSuggestionList button {
@@ -188,24 +178,6 @@
 	background: transparent;
 	font: 500 12px var(--font-body);
 	cursor: pointer;
-}
-.pausePresetRow button {
-	height: 28px;
-	border-radius: 7px;
-}
-.pausePresetRow button:hover,
-.pausePresetRow .pausePresetActive {
-	background: var(--surface);
-	color: var(--fg-emphasis);
-	box-shadow: 0 1px 2px color-mix(in srgb, black 8%, transparent);
-}
-.pauseAdvancedButton {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	width: 100%;
-	padding: 10px 0 2px;
-	border-top: 1px solid var(--border-soft);
 }
 .pauseAdvanced {
 	display: flex;
@@ -1263,6 +1235,9 @@
 	font: 500 12.5px/1.25 var(--font-body);
 }
 .flatInspectorPane .paneTabs {
+	margin: var(--sp-3) 0 var(--editor-section-space);
+}
+.flatInspectorPane .inspectorSegmented {
 	margin: var(--sp-3) 0 var(--editor-section-space);
 }
 .flatInspectorPane .bgGrid,

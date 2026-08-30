@@ -32,8 +32,21 @@ test("editor boots into the empty state with no project, and logs no console err
 
 	// Timeline mounts even with nothing on it (V4Timeline's tools toolbar).
 	await expect(page.getByRole("toolbar", { name: "Timeline tools" })).toBeVisible();
-	// Top bar mounted, defaulting to Edit mode.
-	await expect(page.getByRole("tab", { name: "Edit" })).toHaveAttribute("aria-selected", "true");
+	// The focused Klippt surface opens directly in the editor. The inherited
+	// Media/Edit workspace switch stays hidden, while Record remains available.
+	await expect(page.getByRole("tab")).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Start recording" })).toBeVisible();
+
+	// Shared menus use real menu semantics and stay keyboard-dismissible.
+	await page.getByRole("button", { name: "Change language" }).click();
+	await expect(page.getByRole("menu", { name: "Change language" })).toBeVisible();
+	await expect(page.getByRole("menuitemradio")).toHaveCount(13);
+	await page.keyboard.press("Escape");
+	await expect(page.getByRole("menu")).toHaveCount(0);
+	// Keep the empty state calm: the rail remains visible for orientation, but
+	// the full inspector and its irrelevant disabled settings stay collapsed.
+	await expect(page.getByRole("region", { name: "Video Effects" })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Video Effects" })).toBeDisabled();
 
 	expect(consoleErrors, `console errors:\n${consoleErrors.join("\n")}`).toEqual([]);
 });

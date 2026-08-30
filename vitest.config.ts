@@ -16,6 +16,7 @@ if (!inheritedNodeOptions?.split(/\s+/).includes(disableNodeWebStorage)) {
 export default defineConfig({
 	test: {
 		globals: true,
+		setupFiles: ["./src/test/vitest-setup.ts"],
 		// `node`, not `jsdom`. Building a jsdom for every test file was the single
 		// most expensive thing this suite did — 719s of cumulative environment setup
 		// against 89s of actual test time — and only 37 of the 140 files need a DOM

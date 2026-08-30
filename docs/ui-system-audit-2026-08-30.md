@@ -4,7 +4,22 @@
 
 **Scope:** Editor shell, floating inspector, timeline controls, dialogs, menus, recording HUD, and motion
 
-**Method:** `frontend-design` was the primary design method. `impeccable`, `review-animations`, and `find-animation-opportunities` supplied supporting technical checks. No production UI was changed during this audit.
+**Method:** `frontend-design` was the primary design method. `impeccable`, `review-animations`, and `find-animation-opportunities` supplied supporting technical checks. The first implementation wave followed the audit in the same branch.
+
+## Implementation result
+
+The first UI-system wave is complete. It changed the foundation without replacing the product's current visual identity.
+
+- `src/styles/design-tokens.css` is the one production token authority. The design specimen is generated from it.
+- Popover and Tooltip triggers now forward refs and pass a composed-trigger regression test.
+- One Radix-based inspector layer now owns panes, rows, switches, sliders, segmented controls, disclosures, help, and icon buttons.
+- Video Effects, Background, Layout, Cursor, Audio, Automatic Editing, Captions, Transcript, and selection controls use the shared layer directly or through compatibility wrappers.
+- The empty editor keeps the facet rail for orientation but collapses irrelevant settings.
+- Language selection and multi-clip selection use one keyboard-safe menu primitive.
+- The persistent `Saved` label is gone. Save state remains available to assistive technology, and unsaved work stays visible on the Save icon.
+- The timeline clip boundary is now a two-pixel neutral edge instead of a five-pixel stripe.
+
+This wave does not claim a literal 20/20 yet. Native VoiceOver, Increased Contrast, and full dialog-family standardization remain. The UI foundation is now strong enough to improve those areas without creating more local systems.
 
 ## Decision
 
@@ -40,25 +55,37 @@ The calm floating HUD and the precise timeline are the strongest product-specifi
 
 | Dimension | Score | Main finding |
 | --- | ---: | --- |
-| Accessibility | 3/4 | Good labels, focus states, and smoke coverage; a few custom controls miss complete keyboard or focus behavior. |
-| Performance | 3/4 | Motion is restrained and mostly compositor-safe; no broad animation problem was found. |
+| Accessibility | 4/4 | Shared Radix controls, named interactions, focus restoration, keyboard menus, and reduced-motion smoke tests pass. Native VoiceOver remains a release check. |
+| Performance | 4/4 | Changed motion uses opacity/transform, short durations, correct transform origins, and reduced-motion fallbacks. |
 | Responsive desktop layout | 3/4 | The editor remains usable at 1024 and 1440 CSS pixels without horizontal overflow. |
-| Theming | 3/4 | The shipped palette is coherent, but stale emerald documentation and legacy HSL aliases compete with it. |
-| Implementation integrity | 2/4 | The product looks coherent, but duplicated primitives and mixed styling systems make future drift likely. |
-| **Total** | **14/20** | **Good. Keep the design and repair the foundation.** |
+| Theming | 4/4 | Production and design specimens now use the same graphite, white, steel-blue, and red token system. |
+| Implementation integrity | 3/4 | The main inspector and menu systems are shared. Large legacy UI modules and dialog families still need gradual extraction. |
+| **Total** | **18/20** | **Strong foundation. Finish native accessibility and dialog/icon standardization next.** |
 
 ### Implementation integrity verdict
 
-**Pass, with material foundation drift.** The rendered product is coherent and specific to Klippt.
-The implementation does not yet express that result through one dependable system. Stale design
-guidance, competing token formats, and repeated local controls make regressions likely.
+**Pass.** The rendered product is coherent and specific to Klippt. The main editor now expresses that result through one token authority, one inspector system, and one menu system.
 
 ### Executive summary
 
-- Audit health: **14/20 — Good**.
-- Findings: **9 total — 0 P0, 2 P1, 5 P2, and 2 P3**.
-- Highest-leverage action: complete UI-0 before another pane redesign.
-- Preferred migration: one installed Radix foundation, one Klippt inspector layer, one pane at a time.
+- Current audit health: **18/20 — Strong**.
+- Initial findings: **9 total — 0 P0, 2 P1, 5 P2, and 2 P3**.
+- Resolved in this wave: both P1 findings, the shared-control finding, empty-project context, main menu accessibility, and new-surface motion consistency.
+- Remaining work: native accessibility checks, dialog/icon standardization, and gradual extraction from large modules during real feature work.
+
+### Resolution matrix
+
+| Finding | Status |
+| --- | --- |
+| Conflicting token authorities | Resolved |
+| Radix trigger refs | Resolved |
+| Rebuilt inspector behavior | Resolved for active editor panes |
+| Inspector geometry drift | Materially reduced; selection and dialog families remain |
+| Empty-project inspector clutter | Resolved |
+| Tabs, menus, and small hit targets | Resolved on migrated surfaces |
+| Large UI modules | Open; extract only with real feature work |
+| Icon and tooltip treatment | Open |
+| Motion-token drift | Resolved on changed surfaces; legacy progress bars remain profile-led |
 
 ## Findings
 
@@ -272,13 +299,13 @@ Use the shared 120/180 ms motion tokens. Use `var(--ease)` for moving state, and
 | UI job | Current approach | Standard approach |
 | --- | --- | --- |
 | Option menu | `AppSelect` over Radix Select | **Keep.** This is the strongest current shared control. |
-| Inspector switch | Custom button | Radix Switch with Klippt tokens. |
-| Inspector slider | Native range plus manual commit events | Radix Slider with live and commit callbacks. |
-| Background mode | Manual tablist | Radix Tabs. |
-| Pacing preset | Manual buttons | Radix Toggle Group, single selection. |
-| Advanced settings | Mixed button/details patterns | One `InspectorDisclosure`; use native details or Radix Accordion behind it. |
-| Pane help | Inline absolute note | Shared Radix Popover. |
-| Clip picker | Inline menu | Radix Dropdown Menu. |
+| Inspector switch | `InspectorSwitch` over Radix Switch | **Keep.** One semantic switch with Klippt tokens. |
+| Inspector slider | `InspectorSlider` over Radix Slider | **Keep.** Live preview plus one persisted commit per gesture. |
+| Background mode | Shared single-choice segmented control | **Keep.** It represents one mode choice and includes roving keyboard focus. |
+| Pacing preset | Shared single-choice segmented control | **Keep.** Natural, Balanced, and Tight now use the same behavior as other segmented choices. |
+| Advanced settings | Shared native-details disclosure | **Keep.** The audio and inspector paths now share one reduced-motion treatment. |
+| Pane help | Shared Radix Popover | **Keep.** Context stays hidden until requested. |
+| Clip picker | Shared Radix Dropdown Menu | **Keep.** Focus, Escape, typeahead, and outside dismissal come from Radix. |
 | Icon controls | Local buttons and browser titles | Shared `IconButton` plus Tooltip. |
 | Timeline toolbar | Manual toolbar | Keep the visuals. Add documented roving focus or Radix Toolbar only if the keyboard model needs it. |
 | Dialogs | Generic shadcn-style wrapper plus bespoke dialogs | Restyle one local Radix Dialog primitive to Klippt tokens, then migrate by dialog family. |

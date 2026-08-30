@@ -1,7 +1,8 @@
-import { AudioLines, Check, ChevronDown, Info, Loader2, Play, Save, Scissors } from "lucide-react";
+import { AudioLines, Check, Info, Loader2, Play, Save, Scissors } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppSelect } from "@/components/ui/app-select";
+import { InspectorDisclosure, InspectorSegmentedControl } from "@/components/ui/inspector";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
@@ -94,7 +95,6 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 	const [policy, setPolicy] = useState<PauseAnalysisPolicy>(loadPausePolicy);
 	const [status, setStatus] = useState<"idle" | "analyzing" | "applying" | "error">("idle");
 	const [analysis, setAnalysis] = useState<ProjectPauseAnalysisResult | null>(null);
-	const [advancedOpen, setAdvancedOpen] = useState(false);
 	const [previewing, setPreviewing] = useState(false);
 	const [savedPresets, setSavedPresets] = useState<SavedPausePreset[]>(loadSavedPausePresets);
 	const [presetName, setPresetName] = useState("");
@@ -246,6 +246,14 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 				: { audioDeliveryPreset },
 		);
 	};
+	const activePausePreset =
+		BUILT_IN_PRESETS.find((preset) => {
+			const candidate = policyForBuiltInPausePreset(preset.id, policy);
+			return (
+				Math.abs(policy.minimumPauseSec - candidate.minimumPauseSec) < 0.001 &&
+				Math.abs(policy.shortenedPauseSec - candidate.shortenedPauseSec) < 0.001
+			);
+		})?.id ?? "";
 
 	return (
 		<Pane
@@ -319,29 +327,17 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 							</AppSelect>
 						</label>
 
-						<div className={styles.pausePresetRow}>
-							{BUILT_IN_PRESETS.map((preset) => (
-								<button
-									key={preset.id}
-									type="button"
-									onClick={() => updatePolicy(policyForBuiltInPausePreset(preset.id, policy))}
-									className={
-										Math.abs(
-											policy.minimumPauseSec -
-												policyForBuiltInPausePreset(preset.id, policy).minimumPauseSec,
-										) < 0.001 &&
-										Math.abs(
-											policy.shortenedPauseSec -
-												policyForBuiltInPausePreset(preset.id, policy).shortenedPauseSec,
-										) < 0.001
-											? styles.pausePresetActive
-											: undefined
-									}
-								>
-									{ts(`pauses.${preset.key}`)}
-								</button>
-							))}
-						</div>
+						<InspectorSegmentedControl
+							label={ts("audio.preset")}
+							value={activePausePreset}
+							options={BUILT_IN_PRESETS.map((preset) => ({
+								value: preset.id,
+								label: ts(`pauses.${preset.key}`),
+							}))}
+							onValueChange={(presetId) => {
+								if (presetId) updatePolicy(policyForBuiltInPausePreset(presetId, policy));
+							}}
+						/>
 
 						<SliderCell
 							label={ts("pauses.longerThan")}
@@ -368,17 +364,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 							flat
 						/>
 
-						<button
-							type="button"
-							className={styles.pauseAdvancedButton}
-							onClick={() => setAdvancedOpen((open) => !open)}
-							aria-expanded={advancedOpen}
-						>
-							{ts("pauses.advanced")}
-							<ChevronDown size={14} style={{ rotate: advancedOpen ? "180deg" : undefined }} />
-						</button>
-
-						{advancedOpen ? (
+						<InspectorDisclosure label={ts("pauses.advanced")}>
 							<div className={styles.pauseAdvanced}>
 								<SliderCell
 									label={ts("pauses.sensitivity")}
@@ -487,7 +473,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 									/>
 								</label>
 							</div>
-						) : null}
+						</InspectorDisclosure>
 
 						<div className={styles.pauseResultHeader}>
 							<div>

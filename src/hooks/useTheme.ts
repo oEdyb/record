@@ -19,11 +19,9 @@ function applyTheme(theme: Theme) {
 	} else {
 		document.documentElement.removeAttribute("data-theme");
 	}
-	// Keep the legacy shadcn/Tailwind `.dark` class (index.css's `--accent`/
-	// `--border`/`--muted` HSL-triplet tokens) in sync with the ai-edition
-	// `data-theme` attribute — these are two separate token systems that
-	// happen to share property names, so leaving `.dark` stuck on regardless
-	// of the real theme silently overrides design-tokens.css's light values.
+	// Keep Tailwind's dark selector in sync with the canonical token theme.
+	// Tailwind no longer owns a parallel color palette; this class remains for
+	// component-level `dark:` variants.
 	document.documentElement.classList.toggle("dark", theme === "dark");
 
 	// Repaint the native Windows/Linux window controls in the new theme, so the

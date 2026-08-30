@@ -111,12 +111,11 @@ describe("editor workspace navigation", () => {
 		expect(onImportMedia).toHaveBeenCalledOnce();
 	});
 
-	it("announces save state as quiet status text", () => {
+	it("announces save state without persistent toolbar chrome", () => {
 		renderTopBar("Demo Project");
 
-		expect(screen.getByRole("status")).toBeInTheDocument();
-		expect(screen.getByText("topbar.saved")).toHaveAttribute("data-on", "true");
-		expect(screen.getByText("topbar.unsaved")).toHaveAttribute("data-on", "false");
+		expect(screen.getByRole("status")).toHaveTextContent("topbar.saved");
+		expect(screen.queryByText("topbar.unsaved")).not.toBeInTheDocument();
 	});
 
 	it("exposes automatic-edit regeneration as one editor action", () => {

@@ -18,6 +18,13 @@ import {
 import type { ComponentProps } from "react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+	AppMenu,
+	AppMenuContent,
+	AppMenuItem,
+	AppMenuLabel,
+	AppMenuTrigger,
+} from "@/components/ui/app-menu";
 import { AppSelect } from "@/components/ui/app-select";
 import { parseCustomPlaybackSpeedInput } from "@/components/video-editor/customPlaybackSpeed";
 import {
@@ -140,9 +147,9 @@ export function FloatingInspector({
 }: FloatingInspectorProps) {
 	const ts = useScopedT("settings");
 	const te = useScopedT("editor");
-	const [clipPickerOpen, setClipPickerOpen] = useState(false);
 	const selection = tl.selection;
-	const effectiveOpen = open || selection !== null;
+	const hasEditableMedia = clips.length > 0;
+	const effectiveOpen = hasEditableMedia && (open || selection !== null);
 	const visibleFacet = FACETS.some((candidate) => candidate.id === facet) ? facet : "effects";
 	return (
 		<div className={styles.inspectorWrap}>
@@ -172,6 +179,7 @@ export function FloatingInspector({
 								title={ts(labelKey)}
 								aria-label={ts(labelKey)}
 								aria-pressed={!selection && open && visibleFacet === id}
+								disabled={!hasEditableMedia}
 								onClick={() => {
 									// Switching facets while an element is selected should show
 									// the facet, not leave the selection pane on top of it.
@@ -188,94 +196,56 @@ export function FloatingInspector({
 						))}
 					</div>
 					<div className={styles.facetRailUtility}>
-						<button
-							type="button"
-							title={te("editClipDialog.title")}
-							aria-label={te("editClipDialog.title")}
-							aria-haspopup={clips.length > 1 ? "menu" : undefined}
-							aria-expanded={clips.length > 1 ? clipPickerOpen : undefined}
-							onClick={() => {
-								if (selection) tl.clearSelection();
-								if (clips.length === 0) return;
-								if (clips.length === 1) {
-									onEditClip(clips[0]);
-									return;
-								}
-								setClipPickerOpen((v) => !v);
-							}}
-						>
-							<Pencil size={17} />
-						</button>
-						{clipPickerOpen && clips.length > 1 ? (
-							<div
-								role="menu"
-								aria-label={te("editClipDialog.pickClipTitle")}
-								style={{
-									position: "absolute",
-									top: 0,
-									right: "calc(100% + 8px)",
-									minWidth: 200,
-									maxHeight: 320,
-									overflowY: "auto",
-									background: "var(--surface-1)",
-									border: "1px solid var(--border)",
-									borderRadius: 12,
-									boxShadow: "var(--elev-pop)",
-									backdropFilter: "blur(18px)",
-									padding: 6,
-									zIndex: 30,
+						{clips.length > 1 ? (
+							<AppMenu>
+								<AppMenuTrigger asChild>
+									<button
+										type="button"
+										title={te("editClipDialog.title")}
+										aria-label={te("editClipDialog.title")}
+										onClick={() => selection && tl.clearSelection()}
+									>
+										<Pencil size={17} aria-hidden />
+									</button>
+								</AppMenuTrigger>
+								<AppMenuContent
+									side="left"
+									align="end"
+									sideOffset={8}
+									className={styles.clipMenu}
+									aria-label={te("editClipDialog.pickClipTitle")}
+								>
+									<AppMenuLabel>{te("editClipDialog.pickClipTitle")}</AppMenuLabel>
+									{clips.map((clip, index) => (
+										<AppMenuItem
+											key={clip.id}
+											className={styles.clipMenuItem}
+											onSelect={() => onEditClip(clip)}
+										>
+											<span className={styles.clipMenuTitle}>
+												{te("editClipDialog.clipLabel", { index: index + 1 })}
+											</span>
+											<span className={styles.clipMenuTime}>
+												{formatSeconds(clip.timelineStartSec)}–{formatSeconds(clip.timelineEndSec)}
+											</span>
+										</AppMenuItem>
+									))}
+								</AppMenuContent>
+							</AppMenu>
+						) : (
+							<button
+								type="button"
+								title={te("editClipDialog.title")}
+								aria-label={te("editClipDialog.title")}
+								disabled={!hasEditableMedia}
+								onClick={() => {
+									if (selection) tl.clearSelection();
+									if (clips[0]) onEditClip(clips[0]);
 								}}
 							>
-								<p
-									style={{
-										margin: "4px 8px 6px",
-										fontSize: 11,
-										fontWeight: 600,
-										textTransform: "uppercase",
-										letterSpacing: "0.04em",
-										color: "var(--muted)",
-									}}
-								>
-									{te("editClipDialog.pickClipTitle")}
-								</p>
-								{clips.map((clip, index) => (
-									<button
-										key={clip.id}
-										type="button"
-										role="menuitem"
-										onClick={() => {
-											setClipPickerOpen(false);
-											onEditClip(clip);
-										}}
-										style={{
-											display: "flex",
-											flexDirection: "column",
-											alignItems: "flex-start",
-											width: "100%",
-											padding: "7px 8px",
-											border: "none",
-											borderRadius: 8,
-											background: "transparent",
-											color: "var(--fg)",
-											cursor: "pointer",
-											textAlign: "left",
-										}}
-									>
-										<span style={{ font: "600 12.5px var(--font-display)" }}>
-											{te("editClipDialog.clipLabel", { index: index + 1 })}
-										</span>
-										<span
-											style={{
-												font: "500 11px var(--font-mono)",
-												color: "var(--muted)",
-											}}
-										>
-											{formatSeconds(clip.timelineStartSec)}–{formatSeconds(clip.timelineEndSec)}
-										</span>
-									</button>
-								))}
-							</div>
-						) : null}
+								<Pencil size={17} aria-hidden />
+							</button>
+						)}
 					</div>
 				</div>
 			</div>
