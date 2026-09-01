@@ -176,6 +176,8 @@ export interface CompositorViewAddon {
 	/** What this machine offers, asked without allocating a view — the export dialog
 	 *  needs the answer before any preview exists. Cached native-side. */
 	probeBackend(): CompositorBackend;
+	/** Reads the source container's playable video duration through linked FFmpeg. */
+	probeMediaDuration(path: string): Promise<number>;
 
 	/** Allocates an offscreen compositor view sized to `rect.width`x`rect.height` (the
 	 *  target preview resolution; `rect.x` / `rect.y` are vestigial and ignored native-side).

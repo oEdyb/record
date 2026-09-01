@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "../..");
 const MAIN_JS = path.join(ROOT, "dist-electron/bootstrap.js");
 const TEST_VIDEO = path.join(__dirname, "../fixtures/sample.webm");
+const require = createRequire(import.meta.url);
+const platformTag = `${
+	process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux"
+}-${process.arch}`;
+const compositorAddon = require(
+	path.join(ROOT, `electron/native/bin/${platformTag}/compositor_view.node`),
+) as { probeMediaDuration(path: string): Promise<number> };
 
 type ElectronApplication = Awaited<ReturnType<typeof electron.launch>>;
 
@@ -70,7 +78,9 @@ async function closeApp(app: ElectronApplication) {
  * no `write-export-to-path` round-trip through the renderer any more, so the test
  * reads the finished file off disk instead of intercepting a buffer.
  */
-async function exportFromLoadedVideo(format: "gif" | "mp4"): Promise<Buffer> {
+async function exportFromLoadedVideo(
+	format: "gif" | "mp4",
+): Promise<{ bytes: Buffer; durationSec: number }> {
 	const outputPath = path.join(os.tmpdir(), `test-${format}-export-${Date.now()}.${format}`);
 	const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-e2e-export-"));
 	const appTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-e2e-tmp-"));
@@ -152,7 +162,10 @@ async function exportFromLoadedVideo(format: "gif" | "mp4"): Promise<Buffer> {
 			true,
 		);
 		expect(fs.statSync(outputPath).size).toBeGreaterThan(1024);
-		return fs.readFileSync(outputPath);
+		return {
+			bytes: fs.readFileSync(outputPath),
+			durationSec: await compositorAddon.probeMediaDuration(outputPath),
+		};
 	} finally {
 		await closeApp(app);
 		if (fs.existsSync(outputPath)) {
@@ -167,11 +180,13 @@ async function exportFromLoadedVideo(format: "gif" | "mp4"): Promise<Buffer> {
 test("exports an MP4 from a loaded video", async () => {
 	const exported = await exportFromLoadedVideo("mp4");
 
-	expect(exported.subarray(4, 8).toString("ascii")).toBe("ftyp");
+	expect(exported.bytes.subarray(4, 8).toString("ascii")).toBe("ftyp");
+	expect(exported.durationSec).toBeCloseTo(2, 1);
 });
 
 test("exports a GIF from a loaded video", async () => {
 	const exported = await exportFromLoadedVideo("gif");
 
-	expect(exported.subarray(0, 6).toString("ascii")).toMatch(/^GIF8[79]a/);
+	expect(exported.bytes.subarray(0, 6).toString("ascii")).toMatch(/^GIF8[79]a/);
+	expect(exported.durationSec).toBeCloseTo(2, 1);
 });

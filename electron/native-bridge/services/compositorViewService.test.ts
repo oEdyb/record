@@ -14,6 +14,7 @@ import {
 	CompositorViewService,
 	calculateSceneExportDuration,
 	ffmpegSharedBinCandidates,
+	resolveClipSourceDurations,
 	resolveSceneAssetPaths,
 } from "./compositorViewService";
 
@@ -160,6 +161,89 @@ describe("CompositorViewService export transaction", () => {
 		).toBe(8);
 	});
 
+	it("fills missing ends, clamps provisional ends, and probes each source once", async () => {
+		const probeMediaDuration = vi.fn(async () => 2);
+		const resolved = await resolveClipSourceDurations(
+			[
+				{ ...clips[0]!, sourceEndSec: 0 },
+				{ ...clips[0]!, sourceStartSec: 0.5, sourceEndSec: 60 },
+			],
+			probeMediaDuration,
+		);
+
+		expect(probeMediaDuration).toHaveBeenCalledOnce();
+		expect(resolved.map((clip) => clip.sourceEndSec)).toEqual([2, 2]);
+	});
+
+	it("keeps an explicit trim shorter than the probed source", async () => {
+		const resolved = await resolveClipSourceDurations(
+			[{ ...clips[0]!, sourceStartSec: 0.25, sourceEndSec: 1.25 }],
+			async () => 2,
+		);
+
+		expect(resolved[0]?.sourceEndSec).toBe(1.25);
+	});
+
+	it("fails before rendering when a source duration cannot be probed", async () => {
+		const addon = {
+			probeMediaDuration: vi.fn(async () => {
+				throw new Error("unsupported container");
+			}),
+			exportMulti: vi.fn(),
+			verifyVideoExport: vi.fn(),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await expect(
+			service.exportMulti(
+				[{ ...clips[0]!, sourceEndSec: 0 }],
+				path.join(root, "unreadable.mp4"),
+			),
+		).rejects.toThrow(/Unable to read media duration.*unsupported container/);
+		expect(addon.exportMulti).not.toHaveBeenCalled();
+	});
+
+	it("renders MP4 with the resolved clip extent and a positive capacity estimate", async () => {
+		const finalPath = path.join(root, "resolved.mp4");
+		const exportMulti = vi.fn(async (_clips: unknown, outPath: string) => {
+			await fs.promises.writeFile(outPath, "verified export");
+			return stats;
+		});
+		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
+			exportMulti,
+			verifyVideoExport: vi.fn(async () => ({
+				durationS: 2,
+				fps: 30,
+				videoStreams: 1,
+				audioStreams: 1,
+				firstVideoFrameS: 0,
+				tailVideoFrameS: 1,
+			})),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await service.exportMulti([{ ...clips[0]!, sourceEndSec: 0 }], finalPath, undefined, {
+			width: 320,
+			height: 240,
+			fps: 30,
+			codec: "h264",
+		});
+
+		expect(exportMulti.mock.calls[0]?.[0]).toMatchObject([{ sourceEndSec: 2 }]);
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("verified export");
+	});
+
 	it("renders and verifies a sibling before it publishes the requested MP4", async () => {
 		const finalPath = path.join(root, "video.mp4");
 		let nativePath = "";
@@ -172,6 +256,7 @@ describe("CompositorViewService export transaction", () => {
 			tailVideoFrameS: 1,
 		}));
 		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
 			exportMulti: vi.fn(async (_clips, outPath: string) => {
 				nativePath = outPath;
 				await fs.promises.writeFile(outPath, "verified export");
@@ -213,6 +298,7 @@ describe("CompositorViewService export transaction", () => {
 	it("returns a structured warning when post-commit directory durability is unconfirmed", async () => {
 		const finalPath = path.join(root, "warning.mp4");
 		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
 			exportMulti: vi.fn(async (_clips, outPath: string) => {
 				await fs.promises.writeFile(outPath, "verified export");
 				return stats;
@@ -269,6 +355,7 @@ describe("CompositorViewService export transaction", () => {
 			tailFrameS: 1.92,
 		}));
 		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
 			exportGif: vi.fn(async (_clips, outPath: string) => {
 				await fs.promises.writeFile(outPath, "verified GIF");
 				return gifStats;
@@ -312,6 +399,7 @@ describe("CompositorViewService export transaction", () => {
 			});
 		});
 		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
 			exportMulti,
 			verifyVideoExport: vi.fn(),
 			cancelExport: vi.fn(() => {
@@ -347,6 +435,7 @@ describe("CompositorViewService export transaction", () => {
 				}),
 		);
 		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
 			exportMulti: vi.fn(async (_clips, outPath: string) => {
 				await fs.promises.writeFile(outPath, "complete export");
 				return stats;
@@ -419,6 +508,7 @@ describe("CompositorViewService export transaction", () => {
 		fs.writeFileSync(finalPath, "old export");
 		const exportMulti = vi.fn(async () => stats);
 		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
 			exportMulti,
 			verifyVideoExport: vi.fn(),
 			cancelExport: vi.fn(() => true),

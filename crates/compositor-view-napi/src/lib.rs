@@ -117,6 +117,30 @@ pub fn probe_backend() -> String {
     .to_string()
 }
 
+pub struct ProbeMediaDurationTask {
+    path: String,
+}
+
+impl Task for ProbeMediaDurationTask {
+    type Output = f64;
+    type JsValue = f64;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        export_verify::probe_media_duration(&self.path)
+            .map_err(|error| Error::from_reason(format!("{error:#}")))
+    }
+
+    fn resolve(&mut self, _env: Env, duration_s: Self::Output) -> Result<Self::JsValue> {
+        Ok(duration_s)
+    }
+}
+
+/// Reads the playable video duration with the linked FFmpeg demuxer.
+#[napi]
+pub fn probe_media_duration(path: String) -> AsyncTask<ProbeMediaDurationTask> {
+    AsyncTask::new(ProbeMediaDurationTask { path })
+}
+
 #[napi]
 pub fn create_view(
     rect: CompositorViewRect,

@@ -149,6 +149,28 @@ fn open_input(path: &str) -> Result<InputGuard> {
     }
 }
 
+/// Reads the playable video duration from a media container.
+///
+/// The container duration is preferred. When a demuxer cannot provide it, the
+/// function falls back to the first video stream's duration and time base.
+pub fn probe_media_duration(path: &str) -> Result<f64> {
+    let input = open_input(path)?;
+    unsafe {
+        let duration_s = if (*input.format).duration > 0 {
+            (*input.format).duration as f64 / AV_TIME_BASE
+        } else {
+            let (_, video_stream) = find_stream(input.format, AVMediaType::AVMEDIA_TYPE_VIDEO)?;
+            let time_base = rational_value((*video_stream).time_base)
+                .context("media video stream has an invalid time base")?;
+            (*video_stream).duration as f64 * time_base
+        };
+        if !duration_s.is_finite() || duration_s <= 0.0 {
+            bail!("media has no finite positive duration");
+        }
+        Ok(duration_s)
+    }
+}
+
 unsafe fn find_stream(
     format: *mut AVFormatContext,
     media_type: AVMediaType::Type,

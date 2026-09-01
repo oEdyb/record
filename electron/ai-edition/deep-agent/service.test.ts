@@ -123,8 +123,18 @@ function fixtureDocument(): AxcutDocument {
 			{
 				assetId: "asset_1",
 				language: "en",
+				evidenceStatus: "legacy-unverified",
+				sources: [],
 				segments: [
-					{ id: "seg_1", kind: "speech", startSec: 0, endSec: 5, text: "Hello", wordIds: [] },
+					{
+						id: "seg_1",
+						kind: "speech",
+						startSec: 0,
+						endSec: 5,
+						text: "Hello",
+						wordIds: [],
+						sourceRole: "unknown-mixed",
+					},
 				],
 				words: [],
 			},

@@ -218,6 +218,53 @@ export function calculateSceneExportDuration(clips: ClipInput[], sceneJson?: str
 	return calculateEffectiveExportDuration(clips, sceneSpeedRegions(sceneJson));
 }
 
+type MediaDurationProbe = (path: string) => Promise<number>;
+
+/** Resolves imported and legacy clip extents from the source container.
+ * Explicit trims stay intact. Missing, provisional, and oversized ends are
+ * bounded by the duration reported by the linked FFmpeg build. */
+export async function resolveClipSourceDurations(
+	clips: ClipInput[],
+	probeMediaDuration: MediaDurationProbe,
+): Promise<ClipInput[]> {
+	const durationByPath = new Map<string, Promise<number>>();
+	const probeOnce = (sourcePath: string): Promise<number> => {
+		let duration = durationByPath.get(sourcePath);
+		if (!duration) {
+			duration = probeMediaDuration(sourcePath).catch((error: unknown) => {
+				const detail = error instanceof Error ? error.message : String(error);
+				throw new Error(`Unable to read media duration for ${sourcePath}: ${detail}`);
+			});
+			durationByPath.set(sourcePath, duration);
+		}
+		return duration;
+	};
+
+	return Promise.all(
+		clips.map(async (clip) => {
+			const sourceDurationSec = await probeOnce(clip.screenPath);
+			if (!Number.isFinite(sourceDurationSec) || sourceDurationSec <= 0) {
+				throw new Error(`Unable to read media duration for ${clip.screenPath}.`);
+			}
+			if (
+				!Number.isFinite(clip.sourceStartSec) ||
+				clip.sourceStartSec < 0 ||
+				clip.sourceStartSec >= sourceDurationSec
+			) {
+				throw new Error(`Clip starts outside its source media: ${clip.screenPath}.`);
+			}
+			const hasExplicitEnd =
+				Number.isFinite(clip.sourceEndSec) && clip.sourceEndSec > clip.sourceStartSec;
+			return {
+				...clip,
+				sourceEndSec: hasExplicitEnd
+					? Math.min(clip.sourceEndSec, sourceDurationSec)
+					: sourceDurationSec,
+			};
+		}),
+	);
+}
+
 export interface VideoBufferPublishSpec extends VideoExportVerifyInput {
 	expectedBytes: number;
 }
@@ -692,7 +739,7 @@ export class CompositorViewService {
 			return null;
 		}
 		const target = outPath ?? path.join(app.getPath("temp"), "openscreen-native-export.mp4");
-		if (!addon.verifyVideoExport || !addon.cancelExport) {
+		if (!addon.verifyVideoExport || !addon.cancelExport || !addon.probeMediaDuration) {
 			throw new Error("Native export verification is unavailable. Rebuild the compositor addon.");
 		}
 		const exportId = transaction?.exportId ?? randomUUID();
@@ -703,15 +750,17 @@ export class CompositorViewService {
 		this.registerActiveExport(exportId, controller);
 		const width = Math.max(2, params?.width ?? 1920) & ~1;
 		const height = Math.max(2, params?.height ?? 1080) & ~1;
-		const durationEstimate = calculateSceneExportDuration(clips, sceneJson);
+		const resolvedClips = await resolveClipSourceDurations(
+			clips,
+			addon.probeMediaDuration.bind(addon),
+		);
+		const durationEstimate = calculateSceneExportDuration(resolvedClips, sceneJson);
 		const bitrate = params?.bitrate ?? 8_000_000;
-		const expectedBytes =
-			transaction?.expectedBytes ??
-			estimateMp4FileSizeBytes({
-				durationSec: durationEstimate,
-				videoBitrate: bitrate,
-				hasAudio: clips.some((clip) => clip.hasAudio),
-			});
+		const expectedBytes = estimateMp4FileSizeBytes({
+			durationSec: durationEstimate,
+			videoBitrate: bitrate,
+			hasAudio: resolvedClips.some((clip) => clip.hasAudio),
+		});
 		try {
 			let exportWarning: ExportTransactionWarning | undefined;
 			const stats = await this.exportPublisher.publish({
@@ -727,7 +776,7 @@ export class CompositorViewService {
 					signal.addEventListener("abort", cancelNative, { once: true });
 					try {
 						const operation = addon.exportMulti(
-							clips,
+							resolvedClips,
 							stagingPath,
 							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
 							params,
@@ -787,7 +836,7 @@ export class CompositorViewService {
 			return null;
 		}
 		const target = outPath ?? path.join(app.getPath("temp"), "openscreen-native-export.gif");
-		if (!addon.verifyGifExport || !addon.cancelExport) {
+		if (!addon.verifyGifExport || !addon.cancelExport || !addon.probeMediaDuration) {
 			throw new Error("Native GIF verification is unavailable. Rebuild the compositor addon.");
 		}
 		const exportId = transaction?.exportId ?? randomUUID();
@@ -798,11 +847,18 @@ export class CompositorViewService {
 		this.registerActiveExport(exportId, controller);
 		const width = params?.width ?? 854;
 		const height = params?.height ?? 480;
-		const durationEstimate = calculateSceneExportDuration(clips, sceneJson);
+		const resolvedClips = await resolveClipSourceDurations(
+			clips,
+			addon.probeMediaDuration.bind(addon),
+		);
+		const durationEstimate = calculateSceneExportDuration(resolvedClips, sceneJson);
 		const fps = params?.fps ?? 12;
-		const expectedBytes =
-			transaction?.expectedBytes ??
-			estimateGifFileSizeBytes({ durationSec: durationEstimate, width, height, fps });
+		const expectedBytes = estimateGifFileSizeBytes({
+			durationSec: durationEstimate,
+			width,
+			height,
+			fps,
+		});
 		try {
 			let exportWarning: ExportTransactionWarning | undefined;
 			const stats = await this.exportPublisher.publish({
@@ -818,7 +874,7 @@ export class CompositorViewService {
 					signal.addEventListener("abort", cancelNative, { once: true });
 					try {
 						const operation = addon.exportGif(
-							clips,
+							resolvedClips,
 							stagingPath,
 							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
 							params,

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { materializeLocalSourceFile, releaseLocalSourceFile } from "./localSourceFile";
+import {
+	clearStaleSourceCache,
+	materializeLocalSourceFile,
+	releaseLocalSourceFile,
+} from "./localSourceFile";
 
 function stubElectronAPI(api: Record<string, unknown>) {
 	vi.stubGlobal("window", { ...globalThis.window, electronAPI: api } as unknown);
@@ -86,8 +90,8 @@ class FakeWritable {
 	// The merged buffer is freshly allocated, so it is ArrayBuffer-backed (not
 	// SharedArrayBuffer) — say so, or it can't be handed to `new File([...])`.
 	constructor(private readonly onClose: (bytes: Uint8Array<ArrayBuffer>) => void) {}
-	async write(data: ArrayBuffer | Uint8Array) {
-		this.parts.push(new Uint8Array(data));
+	async write(data: ArrayBuffer | Uint8Array | string) {
+		this.parts.push(typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data));
 	}
 	async close() {
 		const total = this.parts.reduce((n, p) => n + p.byteLength, 0);
@@ -118,6 +122,7 @@ class FakeFileHandle {
 }
 
 class FakeDir {
+	readonly kind = "directory";
 	files = new Map<string, FakeFileHandle>();
 	subdirs = new Map<string, FakeDir>();
 	async getDirectoryHandle(name: string, opts?: { create?: boolean }) {
@@ -141,8 +146,13 @@ class FakeDir {
 	async *keys() {
 		yield* this.files.keys();
 	}
-	async removeEntry(name: string) {
+	async *entries() {
+		for (const [name, file] of this.files) yield [name, { ...file, kind: "file" }] as const;
+		for (const [name, dir] of this.subdirs) yield [name, dir] as const;
+	}
+	async removeEntry(name: string, opts?: { recursive?: boolean }) {
 		this.files.delete(name);
+		if (opts?.recursive) this.subdirs.delete(name);
 	}
 }
 
@@ -151,8 +161,37 @@ function stubOpfs(root: FakeDir) {
 }
 
 function cacheDir(root: FakeDir): FakeDir | undefined {
-	return root.subdirs.get("openscreen-source-cache");
+	return root.subdirs.get("openscreen-source-cache")?.subdirs.values().next().value;
 }
+
+function cachedSourceCount(root: FakeDir): number {
+	return [...(cacheDir(root)?.files.keys() ?? [])].filter((name) => name !== ".heartbeat").length;
+}
+
+describe("clearStaleSourceCache", () => {
+	it("removes legacy files and abandoned runs without touching a live run", async () => {
+		const root = new FakeDir();
+		const parent = new FakeDir();
+		root.subdirs.set("openscreen-source-cache", parent);
+		parent.files.set("legacy-source.bin", new FakeFileHandle("legacy-source.bin"));
+		const stale = new FakeDir();
+		const staleHeartbeat = new FakeFileHandle(".heartbeat");
+		staleHeartbeat.bytes = new TextEncoder().encode(String(Date.now() - 10 * 60_000));
+		stale.files.set(".heartbeat", staleHeartbeat);
+		parent.subdirs.set("run-stale", stale);
+		const live = new FakeDir();
+		const liveHeartbeat = new FakeFileHandle(".heartbeat");
+		liveHeartbeat.bytes = new TextEncoder().encode(String(Date.now()));
+		live.files.set(".heartbeat", liveHeartbeat);
+		parent.subdirs.set("run-live", live);
+		stubOpfs(root);
+
+		const result = await clearStaleSourceCache();
+
+		expect(result).toEqual({ removedEntries: 2, failedEntries: 0 });
+		expect(parent.subdirs.has("run-live")).toBe(true);
+	});
+});
 
 /**
  * The real `electronAPI.readFileChunk` contract (electron/electron-env.d.ts):
@@ -233,7 +272,7 @@ describe("materializeLocalSourceFile (large file OPFS path)", () => {
 		const b = await materializeLocalSourceFile("/rec/b.mp4", "b.mp4", OPTS); // prunes, A active
 
 		// A must NOT have been pruned while still in use.
-		expect(cacheDir(root)?.files.size).toBe(2);
+		expect(cachedSourceCount(root)).toBe(2);
 
 		releaseLocalSourceFile(a.name);
 		releaseLocalSourceFile(b.name);
@@ -255,7 +294,7 @@ describe("materializeLocalSourceFile (large file OPFS path)", () => {
 		const c = await materializeLocalSourceFile("/rec/c.mp4", "c.mp4", OPTS); // prunes A, keeps B+C
 
 		// A pruned; B (still active) and C remain.
-		expect(cacheDir(root)?.files.size).toBe(2);
+		expect(cachedSourceCount(root)).toBe(2);
 
 		releaseLocalSourceFile(b.name);
 		releaseLocalSourceFile(c.name);
@@ -284,7 +323,7 @@ describe("materializeLocalSourceFile (large file OPFS path)", () => {
 		);
 
 		// The partial copy is cleaned up and holds no live reference.
-		expect(cacheDir(root)?.files.size ?? 0).toBe(0);
+		expect(cachedSourceCount(root)).toBe(0);
 	});
 
 	it("does not prune an entry that is still being written by a concurrent copy", async () => {
@@ -331,7 +370,7 @@ describe("materializeLocalSourceFile (large file OPFS path)", () => {
 
 		const b = await materializeLocalSourceFile("/rec/b.mp4", "b.mp4", OPTS);
 		// B's prune must have kept A's in-progress entry alive.
-		expect(cacheDir(root)?.files.size).toBe(2);
+		expect(cachedSourceCount(root)).toBe(2);
 
 		releaseFirstChunk();
 		const a = await aPromise;
@@ -369,7 +408,7 @@ describe("materializeLocalSourceFile (in-flight dedup & abort)", () => {
 		releaseLocalSourceFile(b.name);
 		stubElectronAPI(largeSourceApi("/rec/other.mp4", new Uint8Array([9, 9, 9, 9, 9])));
 		const other = await materializeLocalSourceFile("/rec/other.mp4", "other.mp4", OPTS);
-		expect(cacheDir(root)?.files.size).toBe(1);
+		expect(cachedSourceCount(root)).toBe(1);
 		releaseLocalSourceFile(other.name);
 	});
 
@@ -407,7 +446,7 @@ describe("materializeLocalSourceFile (in-flight dedup & abort)", () => {
 		await expect(promise).rejects.toThrow(/abort/i);
 		// Give the shared flight's cleanup a tick to settle.
 		await new Promise((r) => setTimeout(r, 0));
-		expect(cacheDir(root)?.files.size ?? 0).toBe(0);
+		expect(cachedSourceCount(root)).toBe(0);
 
 		// A retry after abort works from scratch.
 		const retry = await materializeLocalSourceFile("/rec/ab.mp4", "ab.mp4", OPTS);

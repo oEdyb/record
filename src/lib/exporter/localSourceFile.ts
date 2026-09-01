@@ -33,6 +33,10 @@ import { MAX_IN_MEMORY_SOURCE_BYTES } from "./sourceFileLimits";
 const COPY_CHUNK_BYTES = 32 * 1024 * 1024;
 
 const OPFS_CACHE_DIR = "openscreen-source-cache";
+const CACHE_RUN_ID = `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const HEARTBEAT_FILE = ".heartbeat";
+const HEARTBEAT_INTERVAL_MS = 60_000;
+const STALE_RUN_MS = 5 * 60_000;
 
 export interface MaterializeProgress {
 	copiedBytes: number;
@@ -69,6 +73,46 @@ interface InflightCopy {
 }
 
 const inflightCopies = new Map<string, InflightCopy>();
+let cachedRoot: FileSystemDirectoryHandle | null = null;
+let cachedRunDirectory: FileSystemDirectoryHandle | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+export interface SourceCacheCleanupResult {
+	removedEntries: number;
+	failedEntries: number;
+}
+
+async function writeHeartbeat(dir: FileSystemDirectoryHandle): Promise<void> {
+	const handle = await dir.getFileHandle(HEARTBEAT_FILE, { create: true });
+	const writable = await handle.createWritable();
+	await writable.write(String(Date.now()));
+	await writable.close();
+}
+
+function startHeartbeat(dir: FileSystemDirectoryHandle): void {
+	if (heartbeatTimer) return;
+	heartbeatTimer = setInterval(() => {
+		void writeHeartbeat(dir).catch((error) => {
+			console.warn("Could not update the source-cache heartbeat.", error);
+		});
+	}, HEARTBEAT_INTERVAL_MS);
+}
+
+async function getRunDirectory(): Promise<FileSystemDirectoryHandle> {
+	const getDirectory = navigator.storage?.getDirectory?.bind(navigator.storage);
+	if (!getDirectory) throw new Error("Origin-private storage is unavailable.");
+	const root = await getDirectory();
+	if (cachedRoot !== root || !cachedRunDirectory) {
+		if (heartbeatTimer) clearInterval(heartbeatTimer);
+		heartbeatTimer = null;
+		const parent = await root.getDirectoryHandle(OPFS_CACHE_DIR, { create: true });
+		cachedRoot = root;
+		cachedRunDirectory = await parent.getDirectoryHandle(CACHE_RUN_ID, { create: true });
+		await writeHeartbeat(cachedRunDirectory);
+		startHeartbeat(cachedRunDirectory);
+	}
+	return cachedRunDirectory;
+}
 
 function retainCache(cacheName: string): void {
 	activeCacheRefs.set(cacheName, (activeCacheRefs.get(cacheName) ?? 0) + 1);
@@ -88,7 +132,7 @@ export function releaseLocalSourceFile(cacheName: string): void {
 
 /** Names that must survive pruning: referenced by a demuxer or mid-copy. */
 function keepSet(): Set<string> {
-	const keep = new Set(activeCacheRefs.keys());
+	const keep = new Set<string>([HEARTBEAT_FILE, ...activeCacheRefs.keys()]);
 	for (const name of inflightCopies.keys()) keep.add(name);
 	return keep;
 }
@@ -98,15 +142,46 @@ function keepSet(): Set<string> {
  * source was never materialized again). Call once at app startup: nothing is
  * referenced or mid-copy at that point, so everything stale is reclaimed.
  */
-export async function clearStaleSourceCache(): Promise<void> {
+export async function clearStaleSourceCache(): Promise<SourceCacheCleanupResult> {
+	const result: SourceCacheCleanupResult = { removedEntries: 0, failedEntries: 0 };
 	const getDirectory = navigator.storage?.getDirectory?.bind(navigator.storage);
-	if (!getDirectory) return;
+	if (!getDirectory) return result;
 	try {
 		const root = await getDirectory();
-		const dir = await root.getDirectoryHandle(OPFS_CACHE_DIR);
-		await pruneStaleEntries(dir, keepSet());
-	} catch {
-		// No cache directory yet — nothing to clean.
+		const parent = await root.getDirectoryHandle(OPFS_CACHE_DIR);
+		const entries = (
+			parent as unknown as {
+				entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+			}
+		).entries?.();
+		if (!entries) return result;
+		const staleBefore = Date.now() - STALE_RUN_MS;
+		for await (const [name, handle] of entries) {
+			if (name === CACHE_RUN_ID) continue;
+			let shouldRemove = handle.kind === "file";
+			if (handle.kind === "directory" && name.startsWith("run-")) {
+				try {
+					const heartbeat = await (handle as FileSystemDirectoryHandle).getFileHandle(
+						HEARTBEAT_FILE,
+					);
+					const timestamp = Number(await (await heartbeat.getFile()).text());
+					shouldRemove = !Number.isFinite(timestamp) || timestamp < staleBefore;
+				} catch {
+					shouldRemove = true;
+				}
+			}
+			if (!shouldRemove) continue;
+			try {
+				await parent.removeEntry(name, { recursive: handle.kind === "directory" });
+				result.removedEntries += 1;
+			} catch {
+				result.failedEntries += 1;
+			}
+		}
+		return result;
+	} catch (error) {
+		if (error instanceof DOMException && error.name === "NotFoundError") return result;
+		throw error;
 	}
 }
 
@@ -198,8 +273,7 @@ async function copyToOpfsFile(
 		);
 	}
 
-	const root = await getDirectory();
-	const dir = await root.getDirectoryHandle(OPFS_CACHE_DIR, { create: true });
+	const dir = await getRunDirectory();
 
 	// Cache key ties the copy to this exact file revision so repeated exports of
 	// the same recording reuse the cached copy instead of re-streaming gigabytes.
