@@ -31,7 +31,7 @@ import {
 	setCompositorRect,
 } from "../compositorViewClient";
 import type { CompositorFrameTiming, CompositorParamValue, CompositorViewRect } from "../contracts";
-import { computeDeviceRect, rectsEqual } from "../nativeViewRect";
+import { computePreviewRect, rectsEqual } from "../nativeViewRect";
 
 export interface UseNativeCompositorViewOptions {
 	/** When false, the hook does nothing on mount and destroys nothing on
@@ -195,10 +195,10 @@ export function useNativeCompositorView(
 			if (disposed) {
 				return;
 			}
-			// `getBoundingClientRect` on the canvas reflects its CSS layout box;
-			// scaled to device pixels for the native offscreen target.
+			// `getBoundingClientRect` gives the visible CSS size. Keep the native
+			// offscreen target at that size; export has its own full-resolution path.
 			const domRect = canvas.getBoundingClientRect();
-			const next = computeDeviceRect(domRect, window.devicePixelRatio);
+			const next = computePreviewRect(domRect);
 			// `x` / `y` are vestigial in the new contract (ignored native-side),
 			// but `rectsEqual` still compares them — harmless: scrolling will just
 			// re-push the rect, and the native side ignores x/y.
@@ -338,7 +338,7 @@ export function useNativeCompositorView(
 		// the moment the effect ran. The async id will be used on subsequent
 		// resize/scroll updates. Without the bridge, this is a swallowed
 		// warning — the rest of the hook stays inert.
-		const initialRect = computeDeviceRect(canvas.getBoundingClientRect(), window.devicePixelRatio);
+		const initialRect = computePreviewRect(canvas.getBoundingClientRect());
 		lastRect = initialRect;
 		// Prime the canvas drawing buffer to the resolution we expect the
 		// first pulled frame to have; avoids a 300x150 flash before the

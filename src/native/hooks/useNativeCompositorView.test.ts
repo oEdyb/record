@@ -113,6 +113,33 @@ describe("useNativeCompositorView", () => {
 		);
 	});
 
+	it("creates a Retina preview at the visible CSS size", async () => {
+		vi.stubGlobal("devicePixelRatio", 2);
+		mocks.createCompositorView.mockResolvedValue({ id: 7 });
+		mocks.readCompositorFrame.mockResolvedValue(null);
+		const ref = stubCanvasRef();
+		ref.current.getBoundingClientRect = vi.fn(() => ({
+			x: 0,
+			y: 0,
+			left: 0,
+			top: 0,
+			right: 1280,
+			bottom: 720,
+			width: 1280,
+			height: 720,
+			toJSON: vi.fn(),
+		}));
+
+		renderHook(() => useNativeCompositorView(ref, { sources: { screenPath: "rec.mp4" } }));
+
+		await waitFor(() =>
+			expect(mocks.createCompositorView).toHaveBeenCalledWith(
+				{ x: 0, y: 0, width: 1280, height: 720 },
+				{ screenPath: "rec.mp4" },
+			),
+		);
+	});
+
 	it("surfaces the native message when the render thread dies", async () => {
 		mocks.createCompositorView.mockResolvedValue({ id: 7 });
 		mocks.readCompositorFrame.mockRejectedValue(new Error(DEVICE_FAILURE));

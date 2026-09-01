@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeDeviceRect, rectsEqual } from "./nativeViewRect";
+import { computeDeviceRect, computePreviewRect, rectsEqual } from "./nativeViewRect";
 
 describe("computeDeviceRect", () => {
 	it("returns identity with Math.round at dpr=1", () => {
@@ -61,6 +61,17 @@ describe("computeDeviceRect", () => {
 		for (const field of ["x", "y", "width", "height"] as const) {
 			expect(Number.isInteger(rect[field])).toBe(true);
 		}
+	});
+});
+
+describe("computePreviewRect", () => {
+	it("keeps the native preview at its visible CSS size on Retina displays", () => {
+		expect(computePreviewRect({ left: 100, top: 50, width: 1280, height: 720 })).toEqual({
+			x: 100,
+			y: 50,
+			width: 1280,
+			height: 720,
+		});
 	});
 });
 

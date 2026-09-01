@@ -26,6 +26,24 @@ export function computeDeviceRect(
 }
 
 /**
+ * Size the offscreen editor preview in CSS pixels.
+ *
+ * The preview frame crosses the native/renderer boundary as uncompressed RGBA.
+ * Applying the display scale here makes a 1280x720 preview on a Retina display
+ * become a 2560x1440 frame, which quadruples Metal readback, IPC, and canvas
+ * paint work without adding useful detail at the editor's normal size. Export
+ * resolution is resolved separately and is not affected by this helper.
+ */
+export function computePreviewRect(domRect: {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}): CompositorViewRect {
+	return computeDeviceRect(domRect, 1);
+}
+
+/**
  * Cheap structural equality check for two device rects. Used by the React
  * hook to skip re-sending `setRect` when nothing has changed (which would
  * otherwise churn the native window needlessly).
