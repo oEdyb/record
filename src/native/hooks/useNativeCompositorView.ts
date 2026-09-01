@@ -90,6 +90,9 @@ export function useNativeCompositorView(
 	opts: UseNativeCompositorViewOptions = {},
 ): UseNativeCompositorViewResult {
 	const enabled = opts.enabled !== false;
+	const [documentVisible, setDocumentVisible] = useState(
+		() => typeof document === "undefined" || document.visibilityState !== "hidden",
+	);
 	// Re-create the native view when the screen source changes (e.g. loading a different
 	// project) so it never keeps showing a stale clip.
 	const screenPath = opts.sources?.screenPath;
@@ -102,11 +105,21 @@ export function useNativeCompositorView(
 	const viewIdRef = useRef<number | null>(null);
 	viewIdRef.current = viewId;
 
+	useEffect(() => {
+		if (typeof document === "undefined") return;
+		const handleVisibilityChange = () => setDocumentVisible(document.visibilityState !== "hidden");
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+	}, []);
+
+	const active = enabled && documentVisible;
+
 	// Recreate only when the screen decoder identity changes. Camera and cursor changes
 	// travel through the active transport/scene paths and must not destroy the view.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: screenPath is the intentional source identity
 	useEffect(() => {
-		if (!enabled) {
+		if (!active) {
+			setViewId(null);
 			return;
 		}
 		const canvas = canvasRef.current;
@@ -381,7 +394,7 @@ export function useNativeCompositorView(
 		};
 		// `canvasRef` is a stable RefObject; we re-run (destroy + re-create the view) when the
 		// enabled flag flips or the screen source changes.
-	}, [enabled, canvasRef, screenPath]);
+	}, [active, canvasRef, screenPath]);
 
 	const setParam = useCallback((key: string, value: CompositorParamValue) => {
 		const id = viewIdRef.current;

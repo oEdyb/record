@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useCallback, useState } from "react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createEmptyDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import type { PauseSuggestion } from "@/lib/ai-edition/timeline/pause-analysis";
+import type { ProjectPauseAnalysisResult } from "./pauses/analyzeProjectPauses";
+import {
+	resetPauseAnalysisStoreForTests,
+	usePauseAnalysisStore,
+} from "./pauses/pauseAnalysisStore";
 
 const analyze = vi.fn();
 
@@ -20,7 +25,7 @@ vi.mock("./pauses/analyzeProjectPauses", () => ({
 	analyzeProjectPauses: (...args: unknown[]) => analyze(...args),
 }));
 
-import { AudioPane, type SelectablePauseSuggestion } from "./AudioPane";
+import { AudioPane } from "./AudioPane";
 
 const candidates: PauseSuggestion[] = [
 	{
@@ -76,22 +81,17 @@ function documentFixture() {
 	return document;
 }
 
-function Harness({
-	onPreview,
-}: {
-	onPreview: (value: SelectablePauseSuggestion[] | null) => void;
-}) {
-	const [suggestions, setSuggestions] = useState<SelectablePauseSuggestion[]>([]);
-	const change = useCallback((next: SelectablePauseSuggestion[]) => setSuggestions(next), []);
+function Harness({ onPreview }: { onPreview: ComponentProps<typeof AudioPane>["onPreview"] }) {
 	return (
 		<TooltipProvider delayDuration={0}>
-			<AudioPane suggestions={suggestions} onSuggestionsChange={change} onPreview={onPreview} />
+			<AudioPane onPreview={onPreview} />
 		</TooltipProvider>
 	);
 }
 
 beforeEach(() => {
 	vi.useFakeTimers();
+	resetPauseAnalysisStoreForTests();
 	analyze.mockReset();
 	analyze.mockResolvedValue({
 		suggestions: candidates,
@@ -220,13 +220,17 @@ describe("AudioPane", () => {
 		});
 	});
 
-	it("shows live candidates, previews selected trims, and applies one batch edit", async () => {
+	it("waits for an explicit scan, then previews candidates and applies one batch edit", async () => {
 		const preview = vi.fn();
 		const applyPatch = vi.fn(async (..._arguments: unknown[]) => "applied" as const);
 		useProjectStore.setState({ applyDocumentPatch: applyPatch });
 		render(<Harness onPreview={preview} />);
 
-		await act(async () => vi.advanceTimersByTimeAsync(220));
+		await act(async () => vi.advanceTimersByTimeAsync(500));
+		expect(analyze).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByRole("button", { name: "pauses.analyze" }));
+		await act(async () => undefined);
 		expect(screen.getByText(/pauses.resultCount 2/)).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: /pauses.preview/ }));
@@ -241,5 +245,56 @@ describe("AudioPane", () => {
 		expect(applyCall?.[2]).toEqual(
 			expect.objectContaining({ createHistorySnapshot: expect.any(Function) }),
 		);
+	});
+
+	it("keeps an explicit scan running when the Audio pane unmounts", async () => {
+		let finishAnalysis: ((value: ProjectPauseAnalysisResult) => void) | undefined;
+		analyze.mockImplementationOnce(
+			() =>
+				new Promise<ProjectPauseAnalysisResult>((resolve) => {
+					finishAnalysis = resolve;
+				}),
+		);
+		const { unmount } = render(<Harness onPreview={vi.fn()} />);
+
+		fireEvent.click(screen.getByRole("button", { name: "pauses.analyze" }));
+		expect(usePauseAnalysisStore.getState().status).toBe("analyzing");
+		unmount();
+
+		await act(async () => {
+			finishAnalysis?.({
+				suggestions: candidates,
+				analyzedClipCount: 1,
+				missingTranscript: false,
+				missingMicrophone: false,
+				missingSpeechActivity: false,
+				usedMixedAudio: false,
+			});
+			await Promise.resolve();
+		});
+
+		expect(usePauseAnalysisStore.getState()).toMatchObject({
+			projectId: "project-1",
+			status: "ready",
+		});
+		expect(usePauseAnalysisStore.getState().suggestions).toHaveLength(2);
+	});
+
+	it("invalidates finished suggestions when the project revision changes", async () => {
+		render(<Harness onPreview={vi.fn()} />);
+		fireEvent.click(screen.getByRole("button", { name: "pauses.analyze" }));
+		await act(async () => undefined);
+		expect(usePauseAnalysisStore.getState().suggestions).toHaveLength(2);
+
+		act(() => {
+			usePauseAnalysisStore.getState().syncDocument("project-1", 2);
+		});
+
+		expect(usePauseAnalysisStore.getState()).toMatchObject({
+			projectId: "project-1",
+			revision: 2,
+			status: "idle",
+			suggestions: [],
+		});
 	});
 });

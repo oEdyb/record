@@ -43,7 +43,6 @@ import { matchesShortcut } from "@/lib/shortcuts";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
-import type { SelectablePauseSuggestion } from "./AudioPane";
 import { ExportDialog } from "./ExportDialog";
 import { LeftPanel } from "./LeftPanel";
 import {
@@ -55,6 +54,7 @@ import {
 	type UnsavedChoice,
 } from "./Modals";
 import { Preview } from "./Preview";
+import { type SelectablePauseSuggestion, usePauseAnalysisStore } from "./pauses/pauseAnalysisStore";
 import type { TrimTarget } from "./RightPanes";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
 import {
@@ -77,6 +77,7 @@ export function NewEditorShell() {
 	const te = useScopedT("editor");
 	const document = useProjectStore((s) => s.document);
 	const projectId = useProjectStore((s) => s.projectId);
+	const projectRevision = useProjectStore((s) => s.revision);
 	const dirty = useProjectStore((s) => s.dirty);
 	const createProject = useProjectStore((s) => s.createProject);
 	const addAsset = useProjectStore((s) => s.addAsset);
@@ -84,6 +85,11 @@ export function NewEditorShell() {
 	const setSourceDuration = useProjectStore((s) => s.setSourceDuration);
 	const loadProject = useProjectStore((s) => s.loadProject);
 	const saveDocument = useProjectStore((s) => s.saveDocument);
+	const pauseAnalysisProjectId = usePauseAnalysisStore((s) => s.projectId);
+	const storedPauseSuggestions = usePauseAnalysisStore((s) => s.suggestions);
+	const togglePauseSuggestion = usePauseAnalysisStore((s) => s.toggleSuggestion);
+	const syncPauseAnalysisDocument = usePauseAnalysisStore((s) => s.syncDocument);
+	const pauseSuggestions = pauseAnalysisProjectId === projectId ? storedPauseSuggestions : [];
 	// Single source of truth for transport state (was local useState here AND, separately
 	// and unused, in VirtualPreview — two copies independently wired to the same <video>
 	// events could disagree, see the "stops at clip end" fix history). Anything that needs
@@ -140,7 +146,6 @@ export function NewEditorShell() {
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
 	const [exportOpen, setExportOpen] = useState(false);
 	const [regeneratingAutomaticEdits, setRegeneratingAutomaticEdits] = useState(false);
-	const [pauseSuggestions, setPauseSuggestions] = useState<SelectablePauseSuggestion[]>([]);
 	const [pausePreviewSuggestions, setPausePreviewSuggestions] = useState<
 		SelectablePauseSuggestion[] | null
 	>(null);
@@ -156,10 +161,6 @@ export function NewEditorShell() {
 			return next;
 		});
 	}, []);
-	const handlePauseSuggestionsChange = useCallback(
-		(suggestions: SelectablePauseSuggestion[]) => setPauseSuggestions(suggestions),
-		[],
-	);
 	const handlePausePreview = useCallback(
 		(suggestions: SelectablePauseSuggestion[] | null) => {
 			setPausePreviewSuggestions(suggestions);
@@ -170,6 +171,10 @@ export function NewEditorShell() {
 		},
 		[setCurrentTime, setPlaying],
 	);
+	useEffect(() => {
+		syncPauseAnalysisDocument(projectId, projectRevision);
+		setPausePreviewSuggestions(null);
+	}, [projectId, projectRevision, syncPauseAnalysisDocument]);
 	const { shortcuts, isMac, openConfig: openShortcutsConfig } = useShortcuts();
 	// Transcription is local and every transcript-driven feature (Smart cuts,
 	// captions, the transcript pane) needs one, so the editor produces them by
@@ -206,6 +211,7 @@ export function NewEditorShell() {
 	const [projectSummaries, setProjectSummaries] = useState<AiEditionProjectSummary[]>([]);
 	const seekSeqRef = useRef(0);
 	const initRef = useRef(false);
+	const recordingResumeRef = useRef<Promise<boolean> | null>(null);
 
 	// Dev-only: expose the project store so the browser preview harness can
 	// seed a populated document for design QA. Tree-shaken out of prod builds.
@@ -260,12 +266,11 @@ export function NewEditorShell() {
 		})();
 	}, [openProjectOpen]);
 
-	// Auto-load project recording session on mount
-	useEffect(() => {
-		if (initRef.current) return;
-		initRef.current = true;
-		void (async () => {
-			if (!window.electronAPI) return;
+	const resumeRecordingWorkspace = useCallback(() => {
+		if (recordingResumeRef.current) return recordingResumeRef.current;
+
+		const resume = (async () => {
+			if (!window.electronAPI) return false;
 			const workspaceResult = await window.electronAPI.getRecordingWorkspaceContext?.();
 			const workspace = workspaceResult?.success ? workspaceResult.context : null;
 			const restoreWorkspace = (context: RecordingWorkspaceContext, afterRecording: boolean) => {
@@ -278,13 +283,13 @@ export function NewEditorShell() {
 				if (await importPendingRecording()) {
 					if (workspace) restoreWorkspace(workspace, true);
 					toast.success(workspace ? "Recording added" : "Recording added to a new project");
-					return;
+					return true;
 				}
 			} catch (err) {
 				toast.error("Could not auto-create project from recording", {
 					description: err instanceof Error ? err.message : String(err),
 				});
-				return;
+				return true;
 			}
 			if (workspace) {
 				try {
@@ -300,8 +305,40 @@ export function NewEditorShell() {
 						description: err instanceof Error ? err.message : String(err),
 					});
 				}
-				return;
+				return true;
 			}
+			return false;
+		})();
+
+		recordingResumeRef.current = resume;
+		const clearResume = () => {
+			if (recordingResumeRef.current === resume) recordingResumeRef.current = null;
+		};
+		void resume.then(clearResume, clearResume);
+		return resume;
+	}, [loadProject, setCurrentTime]);
+
+	// A cold editor consumes a pending recording on mount. A warm editor is hidden
+	// while the HUD records, then consumes the hand-off when Electron shows it again.
+	useEffect(() => {
+		const handleVisibilityChange = () => {
+			if (globalThis.document.visibilityState === "visible") {
+				void resumeRecordingWorkspace().catch((error) =>
+					console.warn("[editor] could not resume recording workspace:", error),
+				);
+			}
+		};
+		globalThis.document.addEventListener("visibilitychange", handleVisibilityChange);
+		return () =>
+			globalThis.document.removeEventListener("visibilitychange", handleVisibilityChange);
+	}, [resumeRecordingWorkspace]);
+
+	// Auto-load project recording session on mount.
+	useEffect(() => {
+		if (initRef.current) return;
+		initRef.current = true;
+		void (async () => {
+			if (await resumeRecordingWorkspace()) return;
 			// ponytail: no recording waiting — restore the user's most recent
 			// project. The browser-shim's listProjects returns the seeded
 			// `browser-shim-projects` entries, so e2e tests can land directly in a
@@ -330,7 +367,7 @@ export function NewEditorShell() {
 				console.warn("[editor] auto-load failed", e);
 			}
 		})();
-	}, [loadProject, setCurrentTime]);
+	}, [loadProject, resumeRecordingWorkspace]);
 
 	// Warn on close when dirty
 	useEffect(() => {
@@ -1472,8 +1509,6 @@ export function NewEditorShell() {
 								clips={tl.clips}
 								onEditClip={setEditClipTarget}
 								transcriptProps={transcriptProps}
-								pauseSuggestions={pauseSuggestions}
-								onPauseSuggestionsChange={handlePauseSuggestionsChange}
 								onPausePreview={handlePausePreview}
 							/>
 						</>
@@ -1515,15 +1550,7 @@ export function NewEditorShell() {
 						onDropAsset={handleDropAsset}
 						videoSources={videoSources}
 						pauseSuggestions={pauseSuggestions}
-						onPauseSuggestionToggle={(id) =>
-							setPauseSuggestions((current) =>
-								current.map((suggestion) =>
-									suggestion.id === id
-										? { ...suggestion, selected: !suggestion.selected }
-										: suggestion,
-								),
-							)
-						}
+						onPauseSuggestionToggle={togglePauseSuggestion}
 						playing={playing}
 						onTogglePlay={togglePlay}
 						onPrevClip={handlePrevClip}

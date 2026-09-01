@@ -1,8 +1,12 @@
-import { AudioLines, Check, Info, Loader2, Play, Save, Scissors } from "lucide-react";
+import { AudioLines, Check, Info, Loader2, Play, Save, ScanSearch, Scissors } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppSelect } from "@/components/ui/app-select";
-import { InspectorDisclosure, InspectorSegmentedControl } from "@/components/ui/inspector";
+import {
+	InspectorActionButton,
+	InspectorDisclosure,
+	InspectorSegmentedControl,
+} from "@/components/ui/inspector";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
@@ -21,13 +25,9 @@ import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import {
 	type PauseAnalysisPolicy,
 	type PausePresetId,
-	type PauseSuggestion,
 } from "@/lib/ai-edition/timeline/pause-analysis";
 import styles from "./NewEditorShell.module.css";
-import {
-	analyzeProjectPauses,
-	type ProjectPauseAnalysisResult,
-} from "./pauses/analyzeProjectPauses";
+import { type SelectablePauseSuggestion, usePauseAnalysisStore } from "./pauses/pauseAnalysisStore";
 import {
 	loadPausePolicy,
 	loadSavedPausePresets,
@@ -38,13 +38,9 @@ import {
 } from "./pauses/pausePreferences";
 import { Pane, SliderCell, Toggle } from "./RightPanes";
 
-export interface SelectablePauseSuggestion extends PauseSuggestion {
-	selected: boolean;
-}
+export type { SelectablePauseSuggestion } from "./pauses/pauseAnalysisStore";
 
 interface AudioPaneProps {
-	suggestions: SelectablePauseSuggestion[];
-	onSuggestionsChange: (suggestions: SelectablePauseSuggestion[]) => void;
 	onPreview: (suggestions: SelectablePauseSuggestion[] | null) => void;
 }
 
@@ -79,7 +75,7 @@ function InfoTip({ label, content }: { label: string; content: string }) {
 	);
 }
 
-export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: AudioPaneProps) {
+export function AudioPane({ onPreview }: AudioPaneProps) {
 	const ts = useScopedT("settings");
 	const {
 		settings,
@@ -90,11 +86,19 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 	} = useEditorSettings();
 	const document = useProjectStore((state) => state.document);
 	const projectId = useProjectStore((state) => state.projectId);
+	const projectRevision = useProjectStore((state) => state.revision);
 	const applyDocumentPatch = useProjectStore((state) => state.applyDocumentPatch);
+	const analysisProjectId = usePauseAnalysisStore((state) => state.projectId);
+	const analysisStatus = usePauseAnalysisStore((state) => state.status);
+	const analysis = usePauseAnalysisStore((state) => state.analysis);
+	const storedSuggestions = usePauseAnalysisStore((state) => state.suggestions);
+	const runPauseAnalysis = usePauseAnalysisStore((state) => state.analyze);
+	const setPauseSuggestions = usePauseAnalysisStore((state) => state.setSuggestions);
+	const invalidatePauseAnalysis = usePauseAnalysisStore((state) => state.invalidate);
+	const suggestions = analysisProjectId === projectId ? storedSuggestions : [];
 	const { snapshot: cleanVoiceRuntime } = useCleanVoiceRuntime(document);
 	const [policy, setPolicy] = useState<PauseAnalysisPolicy>(loadPausePolicy);
-	const [status, setStatus] = useState<"idle" | "analyzing" | "applying" | "error">("idle");
-	const [analysis, setAnalysis] = useState<ProjectPauseAnalysisResult | null>(null);
+	const [applyStatus, setApplyStatus] = useState<"idle" | "applying" | "error">("idle");
 	const [previewing, setPreviewing] = useState(false);
 	const [savedPresets, setSavedPresets] = useState<SavedPausePreset[]>(loadSavedPausePresets);
 	const [presetName, setPresetName] = useState("");
@@ -144,54 +148,32 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 		[applyDocumentPatch, cleanVoiceAssets.length, projectId, ts],
 	);
 
-	const updatePolicy = useCallback((patch: Partial<PauseAnalysisPolicy>) => {
-		setPolicy((current) => {
-			const next = { ...current, ...patch };
-			savePausePolicy(next);
-			return next;
-		});
-	}, []);
+	const updatePolicy = useCallback(
+		(patch: Partial<PauseAnalysisPolicy>) => {
+			invalidatePauseAnalysis();
+			setPreviewing(false);
+			onPreview(null);
+			setPolicy((current) => {
+				const next = { ...current, ...patch };
+				savePausePolicy(next);
+				return next;
+			});
+		},
+		[invalidatePauseAnalysis, onPreview],
+	);
 
-	useEffect(() => {
-		if (!document || !projectId) {
-			onSuggestionsChange([]);
-			return;
-		}
+	const analyzePauses = useCallback(() => {
+		if (!document || !projectId || analysisStatus === "analyzing") return;
 		setPreviewing(false);
 		onPreview(null);
-		const controller = new AbortController();
-		const timer = window.setTimeout(() => {
-			setStatus("analyzing");
-			void analyzeProjectPauses(document, policy, controller.signal)
-				.then((next) => {
-					if (controller.signal.aborted) return;
-					setAnalysis(next);
-					onSuggestionsChange(
-						next.suggestions.map((suggestion) => ({
-							...suggestion,
-							selected: true,
-						})),
-					);
-					setStatus("idle");
-				})
-				.catch((error: unknown) => {
-					if (controller.signal.aborted) return;
-					console.error("Pause analysis failed", error);
-					setStatus("error");
-				});
-		}, 220);
-		return () => {
-			window.clearTimeout(timer);
-			controller.abort();
-		};
-	}, [document, onPreview, onSuggestionsChange, policy, projectId]);
+		void runPauseAnalysis(document, projectRevision, policy);
+	}, [analysisStatus, document, onPreview, policy, projectId, projectRevision, runPauseAnalysis]);
 
 	useEffect(
 		() => () => {
 			onPreview(null);
-			onSuggestionsChange([]);
 		},
-		[onPreview, onSuggestionsChange],
+		[onPreview],
 	);
 
 	const selected = useMemo(
@@ -205,7 +187,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 
 	const applySelected = useCallback(async () => {
 		if (!projectId || selected.length === 0) return;
-		setStatus("applying");
+		setApplyStatus("applying");
 		onPreview(null);
 		setPreviewing(false);
 		const result = await applyDocumentPatch(
@@ -215,17 +197,19 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 		);
 		if (result === "applied") {
 			toast.success(ts("pauses.applied", { count: selected.length }));
-			setStatus("idle");
+			invalidatePauseAnalysis();
+			setApplyStatus("idle");
 			return;
 		}
 		if (result === "unchanged") {
 			toast.info(ts("pauses.nothingToApply"));
-			setStatus("idle");
+			invalidatePauseAnalysis();
+			setApplyStatus("idle");
 			return;
 		}
 		toast.error(ts("pauses.applyFailed"));
-		setStatus("error");
-	}, [applyDocumentPatch, onPreview, projectId, selected, ts]);
+		setApplyStatus("error");
+	}, [applyDocumentPatch, invalidatePauseAnalysis, onPreview, projectId, selected, ts]);
 
 	const togglePreview = () => {
 		const next = !previewing;
@@ -233,7 +217,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 		onPreview(next ? selected : null);
 	};
 
-	const busy = status === "analyzing" || status === "applying";
+	const busy = analysisStatus === "analyzing" || applyStatus === "applying";
 	const allSelected = suggestions.length > 0 && selected.length === suggestions.length;
 	const setDeliveryPreset = (audioDeliveryPreset: AudioDeliveryPreset) => {
 		void setEditorSettings(
@@ -475,33 +459,47 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 							</div>
 						</InspectorDisclosure>
 
-						<div className={styles.pauseResultHeader}>
-							<div>
-								<strong>
-									{busy
-										? ts("pauses.analyzing")
-										: ts("pauses.resultCount", { count: suggestions.length })}
-								</strong>
-								<span>{ts("pauses.timeSaved", { duration: seconds(savedSec) })}</span>
-							</div>
-							{busy ? (
-								<Loader2 className="animate-spin" size={15} />
+						<InspectorActionButton
+							className={styles.pauseScanButton}
+							tone={analysisStatus === "ready" ? "secondary" : "primary"}
+							disabled={!document || analysisStatus === "analyzing" || applyStatus === "applying"}
+							onClick={analyzePauses}
+						>
+							{analysisStatus === "analyzing" ? (
+								<Loader2 className="animate-spin" size={14} aria-hidden />
 							) : (
-								<button
-									type="button"
-									onClick={() =>
-										onSuggestionsChange(
-											suggestions.map((suggestion) => ({
-												...suggestion,
-												selected: !allSelected,
-											})),
-										)
-									}
-								>
-									{allSelected ? ts("pauses.clearAll") : ts("pauses.selectAll")}
-								</button>
+								<ScanSearch size={14} aria-hidden />
 							)}
-						</div>
+							{analysisStatus === "analyzing"
+								? ts("pauses.analyzing")
+								: analysisStatus === "ready"
+									? ts("pauses.analyzeAgain")
+									: ts("pauses.analyze")}
+						</InspectorActionButton>
+
+						{analysisStatus === "ready" ? (
+							<div className={styles.pauseResultHeader}>
+								<div>
+									<strong>{ts("pauses.resultCount", { count: suggestions.length })}</strong>
+									<span>{ts("pauses.timeSaved", { duration: seconds(savedSec) })}</span>
+								</div>
+								{suggestions.length > 0 ? (
+									<button
+										type="button"
+										onClick={() =>
+											setPauseSuggestions(
+												suggestions.map((suggestion) => ({
+													...suggestion,
+													selected: !allSelected,
+												})),
+											)
+										}
+									>
+										{allSelected ? ts("pauses.clearAll") : ts("pauses.selectAll")}
+									</button>
+								) : null}
+							</div>
+						) : null}
 
 						{analysis?.missingTranscript && policy.mode === "speech" ? (
 							<p className={styles.pauseNotice}>{ts("pauses.needsTranscript")}</p>
@@ -515,7 +513,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 						{analysis?.usedMixedAudio ? (
 							<p className={styles.pauseNotice}>{ts("pauses.usingMixedAudio")}</p>
 						) : null}
-						{status === "error" ? (
+						{analysisStatus === "error" || applyStatus === "error" ? (
 							<p className={styles.pauseNotice}>{ts("pauses.analysisFailed")}</p>
 						) : null}
 
@@ -527,7 +525,7 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 										type="button"
 										className={suggestion.selected ? styles.pauseSuggestionSelected : undefined}
 										onClick={() =>
-											onSuggestionsChange(
+											setPauseSuggestions(
 												suggestions.map((candidate) =>
 													candidate.id === suggestion.id
 														? { ...candidate, selected: !candidate.selected }
@@ -546,25 +544,27 @@ export function AudioPane({ suggestions, onSuggestionsChange, onPreview }: Audio
 							</div>
 						) : null}
 
-						<div className={styles.pauseActions}>
-							<button
-								type="button"
-								onClick={togglePreview}
-								disabled={selected.length === 0 || busy}
-							>
-								<Play size={14} fill={previewing ? "currentColor" : "none"} />
-								{previewing ? ts("pauses.stopPreview") : ts("pauses.preview")}
-							</button>
-							<button
-								type="button"
-								className={styles.pauseApplyButton}
-								onClick={() => void applySelected()}
-								disabled={selected.length === 0 || busy}
-							>
-								<Scissors size={14} />
-								{ts("pauses.applySelected", { count: selected.length })}
-							</button>
-						</div>
+						{analysisStatus === "ready" && suggestions.length > 0 ? (
+							<div className={styles.pauseActions}>
+								<button
+									type="button"
+									onClick={togglePreview}
+									disabled={selected.length === 0 || busy}
+								>
+									<Play size={14} fill={previewing ? "currentColor" : "none"} />
+									{previewing ? ts("pauses.stopPreview") : ts("pauses.preview")}
+								</button>
+								<button
+									type="button"
+									className={styles.pauseApplyButton}
+									onClick={() => void applySelected()}
+									disabled={selected.length === 0 || busy}
+								>
+									<Scissors size={14} />
+									{ts("pauses.applySelected", { count: selected.length })}
+								</button>
+							</div>
+						) : null}
 
 						<div className={styles.pausePresetSave}>
 							<button type="button" onClick={() => setSaveOpen((open) => !open)}>

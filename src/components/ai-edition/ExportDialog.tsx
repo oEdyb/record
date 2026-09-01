@@ -445,6 +445,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			onClose={handleClose}
 			title={t("exportDialog.title")}
 			subtitle={t("exportDialog.subtitle")}
+			size="xl"
 		>
 			<div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 				<div

@@ -5,6 +5,7 @@ import {
 	FileText,
 	Image as ImageIcon,
 	Layout as LayoutIcon,
+	Loader2,
 	Maximize2,
 	MousePointer2,
 	Pencil,
@@ -60,10 +61,14 @@ import {
 	type MotionStyle,
 	normalizeMotionSpeed,
 } from "@/lib/zoomMath/motionCurve";
-import { AudioPane, type SelectablePauseSuggestion } from "../AudioPane";
+import { AudioPane } from "../AudioPane";
 import { AutomaticDirectionPane } from "../AutomaticDirectionPane";
 import { CaptionsPane } from "../CaptionsPane";
 import { ColorField } from "../ColorField";
+import {
+	type SelectablePauseSuggestion,
+	usePauseAnalysisStore,
+} from "../pauses/pauseAnalysisStore";
 import {
 	BackgroundPane,
 	CursorPane,
@@ -122,8 +127,6 @@ interface FloatingInspectorProps {
 	clips: AxcutClip[];
 	onEditClip: (clip: AxcutClip) => void;
 	transcriptProps: TranscriptProps;
-	pauseSuggestions?: SelectablePauseSuggestion[];
-	onPauseSuggestionsChange?: (suggestions: SelectablePauseSuggestion[]) => void;
 	onPausePreview?: (suggestions: SelectablePauseSuggestion[] | null) => void;
 	/** Drives the selected-element settings pane (zoom/speed/annotation/trim) —
 	 * takes over the inspector, forcing it open, whenever a timeline region is
@@ -140,8 +143,6 @@ export function FloatingInspector({
 	clips,
 	onEditClip,
 	transcriptProps,
-	pauseSuggestions = [],
-	onPauseSuggestionsChange = () => undefined,
 	onPausePreview = () => undefined,
 	tl,
 }: FloatingInspectorProps) {
@@ -151,6 +152,7 @@ export function FloatingInspector({
 	const hasEditableMedia = clips.length > 0;
 	const effectiveOpen = hasEditableMedia && (open || selection !== null);
 	const visibleFacet = FACETS.some((candidate) => candidate.id === facet) ? facet : "effects";
+	const pauseAnalysisRunning = usePauseAnalysisStore((state) => state.status === "analyzing");
 	return (
 		<div className={styles.inspectorWrap}>
 			<div className={styles.inspectorWorkspace} data-open={effectiveOpen}>
@@ -163,8 +165,6 @@ export function FloatingInspector({
 								facet={visibleFacet}
 								onCollapse={onToggleOpen}
 								transcriptProps={transcriptProps}
-								pauseSuggestions={pauseSuggestions}
-								onPauseSuggestionsChange={onPauseSuggestionsChange}
 								onPausePreview={onPausePreview}
 							/>
 						)}
@@ -172,28 +172,36 @@ export function FloatingInspector({
 				) : null}
 				<div className={styles.facetRail}>
 					<div className={styles.facetRailScroll}>
-						{FACETS.map(({ id, labelKey, icon: Icon }) => (
-							<button
-								key={id}
-								type="button"
-								title={ts(labelKey)}
-								aria-label={ts(labelKey)}
-								aria-pressed={!selection && open && visibleFacet === id}
-								disabled={!hasEditableMedia}
-								onClick={() => {
-									// Switching facets while an element is selected should show
-									// the facet, not leave the selection pane on top of it.
-									if (selection) tl.clearSelection();
-									if (facet === id && open) {
-										onToggleOpen();
-									} else {
-										onFacetChange(id);
-									}
-								}}
-							>
-								<Icon size={17} />
-							</button>
-						))}
+						{FACETS.map(({ id, labelKey, icon: Icon }) => {
+							const busy = id === "audio" && pauseAnalysisRunning;
+							const label = busy ? `${ts(labelKey)} — ${ts("pauses.analyzing")}` : ts(labelKey);
+							return (
+								<button
+									key={id}
+									type="button"
+									title={label}
+									aria-label={label}
+									aria-pressed={!selection && open && visibleFacet === id}
+									disabled={!hasEditableMedia}
+									onClick={() => {
+										// Switching facets while an element is selected should show
+										// the facet, not leave the selection pane on top of it.
+										if (selection) tl.clearSelection();
+										if (facet === id && open) onToggleOpen();
+										else onFacetChange(id);
+									}}
+								>
+									<Icon size={17} />
+									{busy ? (
+										<Loader2
+											className={`${styles.facetBusyIndicator} animate-spin`}
+											size={10}
+											aria-hidden
+										/>
+									) : null}
+								</button>
+							);
+						})}
 					</div>
 					<div className={styles.facetRailUtility}>
 						{clips.length > 1 ? (
@@ -290,7 +298,7 @@ function paneRow(label: string, control: React.ReactNode) {
 type AnnotationKind = AxcutAnnotationRegion["type"];
 type ArrowDirectionKind = NonNullable<AxcutAnnotationRegion["figureData"]>["arrowDirection"];
 
-/** Les huit directions de `ArrowSvgs.tsx`, dans l'ordre où elles y sont définies. */
+/** The eight directions from `ArrowSvgs.tsx`, in its declared order. */
 const ARROW_DIRECTIONS: ArrowDirectionKind[] = [
 	"up",
 	"down",
@@ -302,7 +310,7 @@ const ARROW_DIRECTIONS: ArrowDirectionKind[] = [
 	"down-left",
 ];
 
-/** Défauts du schéma, pour compléter un `blurData` absent sans écraser ce qui existe. */
+/** Schema defaults used to fill missing `blurData` without replacing stored values. */
 const BLUR_DEFAULTS = {
 	type: "mosaic",
 	shape: "rectangle",
@@ -312,13 +320,11 @@ const BLUR_DEFAULTS = {
 } as const;
 
 /**
- * Patch à appliquer quand l'utilisateur change le type d'une annotation.
+ * Build the patch used when the user changes an annotation type.
  *
- * `content` est un slot UNIQUE partagé par le texte et l'image : la zone de saisie y écrit, et le
- * rendu d'image y lit une data URL. Changer de type sans déplacer la valeur déversait donc le
- * base64 de l'image, souvent plusieurs mégaoctets, dans le champ texte. Chaque contenu est rangé
- * dans son slot typé (`textContent` / `imageContent`) en sortant et restauré en entrant, si bien
- * qu'un aller-retour entre deux types ne perd rien.
+ * `content` is shared by text and image annotations. The text field writes plain text to it, while
+ * image rendering reads a data URL from it. Park each value in its typed slot when changing types
+ * so image base64 never enters the text field and switching back does not lose content.
  */
 function convertAnnotationKind(
 	region: AxcutAnnotationRegion,
@@ -331,8 +337,7 @@ function convertAnnotationKind(
 			: region.type === "image"
 				? { imageContent: region.content ?? "" }
 				: {};
-	// Flèche et flou n'ont pas de contenu : on vide `content` plutôt que d'y laisser traîner le
-	// texte ou le base64 du type précédent.
+	// Arrow and blur annotations have no content, so do not retain text or image base64.
 	const restored =
 		next === "text"
 			? (region.textContent ?? "")
@@ -490,12 +495,10 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 	// toggle that writes it lives in the timeline toolbar, not on this component's path.
 	const { settings } = useEditorSettings();
 	const autoFocusAll = settings.autoFocusAll;
-	// Mise à jour en direct regroupée à une par frame. `updateAnnotationLive` remplace le document
-	// dans le store, donc chaque appel fait reconstruire et re-sérialiser toute la scène avant de
-	// la pousser au natif : c'est le juste prix une fois par image, mais un `<input type="color">`
-	// émet un événement par pixel de glissement et saturait le thread. La référence garde la
-	// dernière fonction du store sans recréer le coalesceur, dont l'état en attente doit survivre
-	// aux rendus.
+	// Coalesce live updates to one per frame. `updateAnnotationLive` replaces the document in the
+	// store, so every call rebuilds and serializes the scene before sending it to the native layer.
+	// A color input can emit an event for every pointer pixel, which can otherwise saturate the
+	// renderer thread. The ref keeps the latest store function without recreating the coalescer.
 	const liveUpdateRef = useRef(tl.updateAnnotationLive);
 	liveUpdateRef.current = tl.updateAnnotationLive;
 	const liveUpdate = useMemo(
@@ -505,8 +508,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 			),
 		[],
 	);
-	/** Fin de geste : on applique la dernière valeur en attente AVANT d'enregistrer, sinon la
-	 *  frame en vol serait perdue et le disque garderait l'avant-dernière couleur. */
+	/** Flush the final pending value before saving so the disk does not keep the previous frame. */
 	const commitAnnotation = () => {
 		liveUpdate.flush();
 		void tl.commitAnnotationChange();
@@ -519,10 +521,8 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		onClose();
 	};
 
-	// Le panneau découpe son contenu (coins arrondis + flou), donc un corps sans ascenseur perd
-	// silencieusement ce qui dépasse — c'est ce qui arrivait au pane d'annotation, le plus haut de
-	// tous, dès qu'on réduisait la fenêtre. L'en-tête reste fixe, le corps défile, comme les
-	// panneaux de facette (cf. `.paneBody` de NewEditorShell).
+	// The panel clips its rounded, blurred surface. Keep the header fixed and scroll the body so
+	// tall selection controls remain available when the window gets shorter.
 	const bodyStyle: React.CSSProperties = {
 		padding: "16px",
 		display: "flex",
@@ -888,7 +888,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									})
 								}
 								onCommit={() => void tl.commitAnnotationChange()}
-								// Le libellé i18n interpole déjà « : 11px » ; sans ça on lisait « 11px11 ».
+								// The translated label already includes the value, so do not repeat it.
 								showValue={false}
 								flat
 							/>
@@ -932,12 +932,9 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 								>
 									<option value="rectangle">{ts("annotation.blurShapeRectangle")}</option>
 									<option value="oval">{ts("annotation.blurShapeOval")}</option>
-									{/* Le tracé libre n'est plus proposé à la création : sa saisie était cassée et
-									    le rendu ne couvrait que la boîte englobante. Un outil de confidentialité
-									    à moitié fiable vaut moins que pas d'outil, parce qu'on lui fait confiance.
-									    L'option reste visible pour une annotation qui l'utilise déjà, avec la
-									    phrase qui dit ce que le rendu en fait — plutôt que de la faire disparaître
-									    d'un projet existant. */}
+									{/* New freehand regions are disabled because the compositor covers only their
+									    bounding box. Keep the option visible for existing projects and explain the
+									    export behavior instead of silently changing stored annotations. */}
 									{region.blurData?.shape === "freehand" ? (
 										<option value="freehand">{ts("annotation.blurShapeFreehand")}</option>
 									) : null}
@@ -967,9 +964,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									min={8}
 									max={200}
 									step={1}
-									// Le nombre saisi vaut « pixels à 1080 » (cf. annotationScale.ts) : preview et
-									// rendu le multiplient tous deux par la hauteur de leur boîte, donc ce champ
-									// veut dire la même chose des deux côtés.
+									// The value is pixels at 1080p. Preview and export both scale it by frame height.
 									value={region.style?.fontSize ?? 32}
 									onChange={(e) =>
 										tl.updateAnnotationLive(region.id, {
@@ -1016,9 +1011,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 					{region.type === "text"
 						? paneRow(
 								ts("textAnimation.title"),
-								// Les sept animations existaient : nommées dans le schéma, traduites dans les
-								// treize langues, transportées jusqu'au compositeur — et injouables, faute de
-								// ce sélecteur.
+								// The schema, translations, and compositor already support all seven animations.
 								<AppSelect
 									aria-label={ts("textAnimation.selectAnimation")}
 									value={region.style?.textAnimation ?? "none"}
@@ -1216,15 +1209,11 @@ function FacetBody({
 	facet,
 	onCollapse,
 	transcriptProps,
-	pauseSuggestions,
-	onPauseSuggestionsChange,
 	onPausePreview,
 }: {
 	facet: Facet;
 	onCollapse: () => void;
 	transcriptProps: TranscriptProps;
-	pauseSuggestions: SelectablePauseSuggestion[];
-	onPauseSuggestionsChange: (suggestions: SelectablePauseSuggestion[]) => void;
 	onPausePreview: (suggestions: SelectablePauseSuggestion[] | null) => void;
 }) {
 	const te = useScopedT("editor");
@@ -1246,14 +1235,7 @@ function FacetBody({
 	if (facet === "layout") return wrap(collapse, <LayoutPane />);
 	if (facet === "cursor") return wrap(collapse, <CursorPane />);
 	if (facet === "audio") {
-		return wrap(
-			collapse,
-			<AudioPane
-				suggestions={pauseSuggestions}
-				onSuggestionsChange={onPauseSuggestionsChange}
-				onPreview={onPausePreview}
-			/>,
-		);
+		return wrap(collapse, <AudioPane onPreview={onPausePreview} />);
 	}
 	if (facet === "automatic") return wrap(collapse, <AutomaticDirectionPane />);
 	if (facet === "transcript") return wrap(collapse, <TranscriptPane {...transcriptProps} />);

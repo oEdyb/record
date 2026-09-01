@@ -12,7 +12,7 @@
  * normal no-op, not a failure. Neither may raise the banner.
  */
 
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { RefObject } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -166,5 +166,28 @@ describe("useNativeCompositorView", () => {
 		await new Promise((resolve) => setTimeout(resolve, 120));
 		expect(mocks.readCompositorFrame).not.toHaveBeenCalled();
 		expect(result.current.error).toBeNull();
+	});
+
+	it("releases the native view while the editor window is hidden", async () => {
+		mocks.createCompositorView.mockResolvedValueOnce({ id: 7 }).mockResolvedValueOnce({ id: 8 });
+		mocks.readCompositorFrame.mockResolvedValue(null);
+		const ref = stubCanvasRef();
+
+		renderHook(() => useNativeCompositorView(ref, { sources: { screenPath: "rec.mp4" } }));
+		await waitFor(() => expect(mocks.createCompositorView).toHaveBeenCalledTimes(1));
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "hidden",
+		});
+		act(() => document.dispatchEvent(new Event("visibilitychange")));
+		await waitFor(() => expect(mocks.destroyCompositorView).toHaveBeenCalledWith(7));
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "visible",
+		});
+		act(() => document.dispatchEvent(new Event("visibilitychange")));
+		await waitFor(() => expect(mocks.createCompositorView).toHaveBeenCalledTimes(2));
 	});
 });

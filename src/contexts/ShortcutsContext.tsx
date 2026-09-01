@@ -15,17 +15,22 @@ interface ShortcutsContextValue {
 	isMac: boolean;
 	setShortcuts: (config: ShortcutsConfig) => void;
 	persistShortcuts: (config?: ShortcutsConfig) => Promise<boolean>;
-	isConfigOpen: boolean;
 	openConfig: () => void;
 	closeConfig: () => void;
 }
 
 const ShortcutsContext = createContext<ShortcutsContextValue | null>(null);
+const ShortcutsDialogStateContext = createContext(false);
 
 export function useShortcuts(): ShortcutsContextValue {
 	const ctx = useContext(ShortcutsContext);
 	if (!ctx) throw new Error("useShortcuts must be used within <ShortcutsProvider>");
 	return ctx;
+}
+
+/** Subscribe only the dialog to its open state, not the complete editor tree. */
+export function useShortcutsDialogState(): boolean {
+	return useContext(ShortcutsDialogStateContext);
 }
 
 export function ShortcutsProvider({ children }: { children: ReactNode }) {
@@ -79,12 +84,17 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 			isMac,
 			setShortcuts,
 			persistShortcuts,
-			isConfigOpen,
 			openConfig,
 			closeConfig,
 		}),
-		[shortcuts, isMac, persistShortcuts, isConfigOpen, openConfig, closeConfig],
+		[shortcuts, isMac, persistShortcuts, openConfig, closeConfig],
 	);
 
-	return <ShortcutsContext.Provider value={value}>{children}</ShortcutsContext.Provider>;
+	return (
+		<ShortcutsContext.Provider value={value}>
+			<ShortcutsDialogStateContext.Provider value={isConfigOpen}>
+				{children}
+			</ShortcutsDialogStateContext.Provider>
+		</ShortcutsContext.Provider>
+	);
 }

@@ -7,11 +7,13 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
+	InspectorActionButton,
 	InspectorPane,
 	InspectorRow,
 	InspectorSegmentedControl,
 	InspectorSlider,
 	InspectorSwitch,
+	InspectorToolbar,
 } from ".";
 
 function Fixture() {
@@ -20,7 +22,17 @@ function Fixture() {
 	const [mode, setMode] = useState<"fixed" | "follow">("fixed");
 	return (
 		<TooltipProvider delayDuration={0}>
-			<InspectorPane title="Video effects" helpLabel="Help" helpText="Style the screen track.">
+			<InspectorPane
+				title="Video effects"
+				helpLabel="Help"
+				helpText="Style the screen track."
+				toolbar={
+					<InspectorToolbar label="Effect presets">
+						<span>Natural</span>
+						<InspectorActionButton tone="quiet">Reset</InspectorActionButton>
+					</InspectorToolbar>
+				}
+			>
 				<InspectorRow label="Blur background">
 					<InspectorSwitch label="Blur background" checked={enabled} onCheckedChange={setEnabled} />
 				</InspectorRow>
@@ -90,6 +102,15 @@ describe("inspector primitives", () => {
 		expect(screen.queryByText("Style the screen track.")).not.toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "Help" }));
 		expect(screen.getByText("Style the screen track.")).toBeInTheDocument();
+	});
+
+	it("keeps compact pane actions in a separate labelled toolbar row", () => {
+		render(<Fixture />);
+		const pane = screen.getByRole("region", { name: "Video effects" });
+		expect(pane).toHaveAttribute("data-has-toolbar", "true");
+		expect(screen.getByRole("toolbar", { name: "Effect presets" })).toContainElement(
+			screen.getByRole("button", { name: "Reset" }),
+		);
 	});
 
 	it("commits a keyboard edit once when the timer and blur both run", () => {

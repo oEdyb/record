@@ -49,17 +49,16 @@
 .audioInspector {
 	display: flex;
 	flex-direction: column;
-	padding-top: 2px;
 }
 .audioSection {
 	display: flex;
 	flex-direction: column;
-	gap: 13px;
-	padding: 17px 0;
+	gap: 12px;
+	padding: var(--editor-section-space) 0;
 	border-bottom: 1px solid var(--border-soft);
 }
 .audioSection:first-child {
-	padding-top: 12px;
+	padding-top: var(--editor-section-space);
 }
 .audioSection:last-child {
 	border-bottom: 0;
@@ -72,14 +71,15 @@
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	font: 600 12.5px/1.2 var(--font-display);
-	color: var(--fg-emphasis);
+	font: 500 12.5px/1.25 var(--font-body);
+	color: var(--fg-2);
 }
 .audioSettingRow {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
+	min-height: var(--editor-inspector-control-h);
 }
 .audioSettingDisabled {
 	opacity: 0.66;
@@ -146,7 +146,7 @@
 .pauseInspector {
 	display: flex;
 	flex-direction: column;
-	gap: 14px;
+	gap: 12px;
 }
 .inspectorSelectField {
 	display: grid;
@@ -161,10 +161,10 @@
 .pausePresetSave :global([data-klippt-select-trigger]),
 .pausePresetSave input {
 	min-width: 118px;
-	height: 30px;
+	height: var(--editor-inspector-control-h);
 	padding: 0 9px;
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: var(--editor-inspector-control-radius);
 	background: var(--surface);
 	color: var(--fg);
 	font: 500 12px var(--font-body);
@@ -198,6 +198,9 @@
 	margin: 0;
 	font: 400 11.5px/1.45 var(--font-body);
 	color: var(--muted);
+}
+.pauseScanButton {
+	width: 100%;
 }
 .pauseResultHeader {
 	display: flex;
@@ -1167,7 +1170,7 @@
 	align-items: center;
 	gap: var(--sp-2);
 	box-sizing: border-box;
-	padding: 0 var(--sp-4);
+	padding: 0 var(--editor-inspector-gutter);
 	/* Every pane wearing this header is rendered inside FloatingInspector, which
 	   floats its "Collapse inspector" button (right: 12, 26px wide) over the
 	   header's right edge — landing squarely on whatever sits there and
@@ -1188,7 +1191,7 @@
 .paneBody {
 	overflow-y: auto;
 	overflow-x: hidden;
-	padding: 0 var(--sp-4) var(--sp-4);
+	padding: 0 var(--editor-inspector-gutter) var(--editor-inspector-gutter);
 	scrollbar-width: thin;
 	scrollbar-color: var(--border) transparent;
 	min-height: 0;
@@ -1197,7 +1200,7 @@
 /* Dense inspectors use one continuous surface. Controls still keep their own
    shape, but ordinary settings rows do not become cards inside the inspector. */
 .flatInspectorPane .paneBody {
-	padding: 0 var(--sp-4) var(--sp-4);
+	padding: 0 var(--editor-inspector-gutter) var(--editor-inspector-gutter);
 }
 .flatInspectorPane .paneHead .iconBtn {
 	opacity: 0.28;
@@ -1212,7 +1215,9 @@
 }
 .flatInspectorPane .paneRow {
 	margin: 0;
-	padding: 12px 0;
+	box-sizing: border-box;
+	min-height: var(--editor-inspector-row-h);
+	padding: 6px 0;
 	border: 0;
 	border-bottom: 1px solid var(--border-soft);
 	border-radius: 0;
@@ -1243,6 +1248,9 @@
 .flatInspectorPane .bgGrid,
 .flatInspectorPane .cursorGrid {
 	padding: 0 0 16px;
+}
+.inspectorSection .cursorGrid {
+	padding: 0;
 }
 .flatInspectorPane .uploadBtn {
 	margin: 0 0 14px;
@@ -1284,10 +1292,10 @@
 .automaticPresetHead :global([data-klippt-select-trigger]),
 .automaticPresetSave input {
 	min-width: 0;
-	height: 32px;
+	height: var(--editor-inspector-control-h);
 	padding: 0 9px;
 	border: 1px solid transparent;
-	border-radius: 8px;
+	border-radius: var(--editor-inspector-control-radius);
 	background: var(--surface-2);
 	color: var(--fg);
 	font: 500 12px/1 var(--font-body);
@@ -1300,14 +1308,14 @@
 }
 .automaticPresetHead button,
 .automaticStatus button {
-	height: 32px;
+	height: var(--editor-inspector-control-h);
 	padding: 0 8px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	gap: 5px;
 	border: 0;
-	border-radius: 8px;
+	border-radius: var(--editor-inspector-control-radius);
 	background: transparent;
 	color: var(--muted);
 	font: 500 11px/1 var(--font-body);
@@ -1407,10 +1415,10 @@
 }
 .layoutSelectRow :global([data-klippt-select-trigger]) {
 	width: 100%;
-	height: 36px;
+	height: var(--editor-inspector-control-h);
 	padding: 0 10px;
 	border: 1px solid transparent;
-	border-radius: 8px;
+	border-radius: var(--editor-inspector-control-radius);
 	background: var(--surface-2);
 	color: var(--fg);
 	font: 450 12px/1 var(--font-body);
@@ -1653,6 +1661,19 @@
 	padding: 14px 0;
 	border-bottom: 1px solid var(--border-soft);
 }
+.captionStatus p,
+.captionLegacyNotice p {
+	margin: 0;
+	font: 400 11.5px/1.5 var(--font-body);
+	color: var(--fg-2);
+}
+.captionStatus p {
+	font-size: 12px;
+	color: var(--muted);
+}
+.captionStatus .captionStatusError {
+	color: var(--danger);
+}
 .captionLegacyNotice {
 	gap: 8px;
 }
@@ -1676,6 +1697,27 @@
 	align-items: center;
 	gap: 8px;
 	padding: 8px 0 12px;
+}
+.inspectorCompactSelect {
+	width: min(160px, 100%);
+	height: var(--editor-inspector-control-h);
+	padding: 0 8px;
+	border-color: var(--border);
+	border-radius: var(--editor-inspector-control-radius);
+	background: var(--surface);
+	font: 500 12.5px/1 var(--font-body);
+}
+.inspectorGrowSelect {
+	flex: 1 1 auto;
+	width: auto;
+}
+.captionDeleteTranslation {
+	margin-bottom: 12px;
+}
+.captionBackgroundControls {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 }
 
 /* ─── pane tabs (sub-nav inside a pane) ───────────────────────── */
@@ -1744,10 +1786,10 @@
 	justify-content: center;
 	gap: 8px;
 	margin: 0 var(--sp-4) 12px;
-	height: 36px;
+	height: var(--editor-inspector-control-h);
 	padding: 0 11px;
 	border: 1px solid transparent;
-	border-radius: 8px;
+	border-radius: var(--editor-inspector-control-radius);
 	background: var(--surface-2);
 	color: var(--muted);
 	font: 500 var(--fs-app-sm) var(--font-body);
@@ -2271,6 +2313,12 @@
 	border-bottom: 1px solid var(--border-soft);
 	margin-bottom: 8px;
 }
+
+.transcriptLanguageSelect {
+	width: 100%;
+	height: var(--editor-inspector-control-h);
+	padding: 0 9px;
+}
 .transcriptClipHead .badge {
 	width: 22px;
 	height: 22px;
@@ -2669,62 +2717,12 @@
 	box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 22%, transparent);
 }
 
-/* ─── modals ───────────────────────────────────────────────────── */
-.modal {
-	position: fixed;
-	inset: 0;
-	display: none;
-	z-index: 100;
-}
-.modal.isOpen {
-	display: block;
-}
-.modalBackdrop {
-	position: absolute;
-	inset: 0;
-	background: var(--overlay-dark);
-	backdrop-filter: blur(4px);
-	-webkit-backdrop-filter: blur(4px);
-}
-.modalCard {
-	position: relative;
-	width: min(960px, 92vw);
-	max-height: 88vh;
-	margin: 6vh auto 0;
-	background: var(--bg);
-	border: 1px solid var(--border);
-	border-radius: var(--r-lg);
-	box-shadow: 0 24px 60px rgba(22, 23, 29, 0.5);
-	display: flex;
-	flex-direction: column;
-	overflow: hidden;
-	color: var(--fg);
-}
-.modalCard.wide {
-	width: min(720px, 92vw);
-}
-.modalHead {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	padding: 20px 24px 12px;
-	gap: 16px;
-}
-.modalHead h2 {
-	margin: 0;
-	font: 600 20px/1.3 var(--font-display);
-	color: var(--fg);
-}
-.modalHead p {
-	margin: 4px 0 0;
-	font: 400 var(--fs-app)/1.5 var(--font-body);
-	color: var(--muted);
-}
+/* ─── dialogs ──────────────────────────────────────────────────── */
 .modalSearchInput:focus-visible {
 	border-color: var(--editor-accent-border) !important;
 	box-shadow: 0 0 0 2px var(--editor-accent-ring);
 }
-.modalHead .closeBtn {
+.closeBtn {
 	width: 28px;
 	height: 28px;
 	display: grid;
@@ -2735,16 +2733,15 @@
 	border: 0;
 	cursor: pointer;
 }
-.modalHead .closeBtn:hover {
+.closeBtn:hover {
 	background: var(--surface-3);
 	color: var(--fg);
 }
 .modalBody {
-	padding: 8px 24px 24px;
+	padding-top: 2px;
 	display: flex;
 	flex-direction: column;
 	gap: 20px;
-	overflow: auto;
 }
 
 .btn {

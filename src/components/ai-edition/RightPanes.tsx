@@ -37,11 +37,16 @@ import defaultCursorPreviewUrl from "@/assets/cursors/Cursor=Default.svg";
 import { AppSelect } from "@/components/ui/app-select";
 import GradientEditor, { type GradientEditorState } from "@/components/ui/gradient-editor";
 import {
+	InspectorActionButton,
+	InspectorEmptyState,
+	InspectorIconButton,
 	InspectorPane,
 	InspectorRow,
+	InspectorSection,
 	InspectorSegmentedControl,
 	InspectorSlider,
 	InspectorSwitch,
+	InspectorToolbar,
 } from "@/components/ui/inspector";
 import {
 	MAX_WEBCAM_ZOOM,
@@ -614,6 +619,14 @@ export function TranscriptPane({
 	const silentMedia = blocked?.reason === "no-audio";
 
 	if (clips.length === 0 || !hasAnyTranscript) {
+		const emptyTitle =
+			clips.length === 0
+				? ts("transcript.noClips")
+				: isTranscribing
+					? ts("transcript.transcribing")
+					: silentMedia
+						? ts("transcript.noAudio")
+						: ts("transcript.noTranscript");
 		return (
 			<Pane
 				title={ts("transcript.title")}
@@ -621,75 +634,44 @@ export function TranscriptPane({
 				helpText={ts("transcript.whisperHint")}
 				flat
 			>
-				<div
-					style={{
-						display: "flex",
-						flexDirection: "column",
-						alignItems: "center",
-						justifyContent: "center",
-						padding: 32,
-						gap: 12,
-						color: "var(--muted)",
-						textAlign: "center",
-					}}
-				>
-					<FileText size={28} style={{ color: "var(--dim)" }} />
-					<p style={{ font: "500 13px var(--font-body)", color: "var(--fg-2)" }}>
-						{clips.length === 0
-							? ts("transcript.noClips")
-							: isTranscribing
-								? ts("transcript.transcribing")
-								: silentMedia
-									? ts("transcript.noAudio")
-									: ts("transcript.noTranscript")}
-					</p>
-					<p
-						style={{
-							font: "400 12px var(--font-body)",
-							color: "var(--muted)",
-							maxWidth: 260,
-						}}
-					>
-						{blocked?.reason === "failed" && blocked.message
+				<InspectorEmptyState
+					icon={<FileText size={18} aria-hidden />}
+					title={emptyTitle}
+					description={
+						blocked?.reason === "failed" && blocked.message
 							? blocked.message
-							: ts("transcript.whisperHint")}
-					</p>
-					<button
-						type="button"
-						className={`${styles.btn} ${styles.btnPrimary}`}
-						onClick={() => onTranscribe()}
-						// Nothing to retry on a media with no audio track: the run would
-						// fail on the same missing track every time.
-						disabled={!canTranscribe || isTranscribing || silentMedia}
-					>
-						{isTranscribing ? ts("transcript.transcribing") : ts("transcript.transcribeNow")}
-					</button>
-				</div>
+							: ts("transcript.whisperHint")
+					}
+					action={
+						<InspectorActionButton
+							tone="primary"
+							onClick={() => onTranscribe()}
+							// Nothing to retry on media with no audio track: the run would
+							// fail on the same missing track every time.
+							disabled={!canTranscribe || isTranscribing || silentMedia}
+						>
+							{isTranscribing ? ts("transcript.transcribing") : ts("transcript.transcribeNow")}
+						</InspectorActionButton>
+					}
+				/>
 			</Pane>
 		);
 	}
 
 	return (
-		<div
-			className={`${styles.pane} ${styles.isActive} ${styles.flatInspectorPane}`}
-			data-inspector-layout="flat"
-		>
-			<header className={styles.paneHead}>
-				<h2>{ts("facets.transcript")}</h2>
-				<div
-					style={{
-						marginLeft: "auto",
-						display: "flex",
-						alignItems: "center",
-						gap: 6,
-					}}
-				>
+		<InspectorPane
+			title={ts("facets.transcript")}
+			helpLabel={ts("panes.help")}
+			helpText={ts("transcript.whisperHint")}
+			className={styles.flatInspectorPane}
+			toolbar={
+				<InspectorToolbar label={ts("facets.transcript")}>
 					<AppSelect
 						aria-label={ts("language.title")}
 						value={selectedLanguage}
 						disabled={transcriptBusy}
+						className={styles.transcriptLanguageSelect}
 						onChange={(event) => setSelectedLanguage(event.target.value as TranscriptLanguage)}
-						style={{ width: 100, height: 28, padding: "0 8px" }}
 					>
 						{TRANSCRIPT_LANGUAGE_CODES.map((language) => (
 							<option key={language} value={language}>
@@ -697,44 +679,37 @@ export function TranscriptPane({
 							</option>
 						))}
 					</AppSelect>
-					<button
-						type="button"
-						className={styles.iconBtn}
+					<InspectorIconButton
+						label={te("mediaStage.regenerate")}
 						onClick={() => onTranscribe(selectedLanguage)}
 						disabled={transcriptBusy}
-						title={te("mediaStage.regenerate")}
-						aria-label={te("mediaStage.regenerate")}
 					>
 						<RotateCw size={14} className={transcriptBusy ? "animate-spin" : undefined} />
-					</button>
-					<button
-						type="button"
-						className={styles.iconBtn}
+					</InspectorIconButton>
+					<InspectorIconButton
+						label={tc("actions.copy")}
 						onClick={copyTranscript}
 						disabled={!copyText}
-						title={tc("actions.copy")}
-						aria-label={tc("actions.copy")}
 					>
 						{copied ? <Check size={14} /> : <Copy size={14} />}
-					</button>
-				</div>
-			</header>
-			<div className={styles.paneBody}>
-				{sections.map((section, idx) => (
-					<TranscriptClipBlock
-						key={section.clip.id}
-						index={idx}
-						section={section}
-						busy={busyAssetIds.includes(section.clip.assetId)}
-						readOnly={readOnly}
-						cueWordId={cueWordId}
-						onSeek={onSeek}
-						onAddTrimRange={onAddTrimRange}
-						onRemoveTrimRange={onRemoveTrimRange}
-					/>
-				))}
-			</div>
-		</div>
+					</InspectorIconButton>
+				</InspectorToolbar>
+			}
+		>
+			{sections.map((section, idx) => (
+				<TranscriptClipBlock
+					key={section.clip.id}
+					index={idx}
+					section={section}
+					busy={busyAssetIds.includes(section.clip.assetId)}
+					readOnly={readOnly}
+					cueWordId={cueWordId}
+					onSeek={onSeek}
+					onAddTrimRange={onAddTrimRange}
+					onRemoveTrimRange={onRemoveTrimRange}
+				/>
+			))}
+		</InspectorPane>
 	);
 }
 
@@ -2140,7 +2115,7 @@ export function CursorPane() {
 
 	// Push cursor settings into the native compositor (initial + on view activation); the
 	// handlers below push diffs live. Sizes are sent as direct scales (1 = fixture default).
-	// Synchro initiale : cf. NativeCompositorOverlay (`pushAllNativeParams`).
+	// NativeCompositorOverlay performs the initial sync through `pushAllNativeParams`.
 
 	// Built-in "Default" plus each bundled theme. Thumbnails use the theme's
 	// arrow asset; the persisted value is the theme id. Same shape as the
@@ -2171,58 +2146,59 @@ export function CursorPane() {
 			helpText={ts("cursor.help")}
 			flat
 		>
-			<div className={styles.paneRow}>
-				<span className="label">{ts("cursor.show")}</span>
-				<Toggle
-					checked={settings.cursorShow}
-					disabled={!hasDocument}
-					label={ts("cursor.show")}
-					onChange={(v) => {
-						void set({ cursor: { show: v } });
-						if (isNativeCompositorActive()) {
-							setNativeParam("cursorShow", v);
-						}
-					}}
-				/>
-			</div>
-			<div className={styles.paneRow}>
-				<span className="label">{ts("cursor.clipToBounds")}</span>
-				<Toggle
-					checked={settings.cursor.clipToBounds}
-					disabled={!hasDocument}
-					label={ts("cursor.clipToBounds")}
-					onChange={(v) => void set({ cursor: { clipToBounds: v } })}
-				/>
-			</div>
-			<div className={styles.sectionLabel}>{ts("cursor.theme")}</div>
-			<div className={styles.cursorGrid}>
-				{cursorThemeOptions.map((option) => {
-					const isActive = settings.cursorTheme === option.id;
-					return (
-						<button
-							type="button"
-							key={option.id}
-							className={`${styles.cursorCell} ${isActive ? styles.isActive : ""}`}
-							title={option.name}
-							aria-label={option.name}
-							aria-pressed={isActive}
-							disabled={!hasDocument}
-							onClick={() => void set({ cursor: { theme: option.id } })}
-						>
-							<img
-								src={option.previewUrl}
-								alt=""
-								width={20}
-								height={20}
-								draggable={false}
-								style={{ objectFit: "contain", pointerEvents: "none" }}
-							/>
-						</button>
-					);
-				})}
-			</div>
-			<div className={styles.sliderGrid}>
-				<SliderCell
+			<InspectorSection>
+				<InspectorRow label={ts("cursor.show")}>
+					<Toggle
+						checked={settings.cursorShow}
+						disabled={!hasDocument}
+						label={ts("cursor.show")}
+						onChange={(v) => {
+							void set({ cursor: { show: v } });
+							if (isNativeCompositorActive()) setNativeParam("cursorShow", v);
+						}}
+					/>
+				</InspectorRow>
+				<InspectorRow label={ts("cursor.clipToBounds")}>
+					<Toggle
+						checked={settings.cursor.clipToBounds}
+						disabled={!hasDocument}
+						label={ts("cursor.clipToBounds")}
+						onChange={(v) => void set({ cursor: { clipToBounds: v } })}
+					/>
+				</InspectorRow>
+			</InspectorSection>
+
+			<InspectorSection title={ts("cursor.theme")}>
+				<div className={styles.cursorGrid}>
+					{cursorThemeOptions.map((option) => {
+						const isActive = settings.cursorTheme === option.id;
+						return (
+							<button
+								type="button"
+								key={option.id}
+								className={`${styles.cursorCell} ${isActive ? styles.isActive : ""}`}
+								title={option.name}
+								aria-label={option.name}
+								aria-pressed={isActive}
+								disabled={!hasDocument}
+								onClick={() => void set({ cursor: { theme: option.id } })}
+							>
+								<img
+									src={option.previewUrl}
+									alt=""
+									width={20}
+									height={20}
+									draggable={false}
+									style={{ objectFit: "contain", pointerEvents: "none" }}
+								/>
+							</button>
+						);
+					})}
+				</div>
+			</InspectorSection>
+
+			<InspectorSection>
+				<InspectorSlider
 					label={ts("cursor.size")}
 					value={settings.cursor.size * 10}
 					min={5}
@@ -2238,7 +2214,7 @@ export function CursorPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
-				<SliderCell
+				<InspectorSlider
 					label={ts("cursor.smoothing")}
 					value={settings.cursor.smoothing * 100}
 					min={0}
@@ -2253,7 +2229,7 @@ export function CursorPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
-				<SliderCell
+				<InspectorSlider
 					label={ts("cursor.motionBlur")}
 					value={settings.cursor.motionBlur * 100}
 					min={0}
@@ -2274,7 +2250,7 @@ export function CursorPane() {
 				    than shown as a control that does nothing, exactly as
 				    "Shrink on zoom" is above. */}
 				{supportsCursorClickEffects() ? (
-					<SliderCell
+					<InspectorSlider
 						label={ts("cursor.clickBounce")}
 						value={settings.cursor.clickBounce * 10}
 						min={0}
@@ -2291,7 +2267,7 @@ export function CursorPane() {
 						onCommit={() => void commit()}
 					/>
 				) : null}
-			</div>
+			</InspectorSection>
 		</Pane>
 	);
 }

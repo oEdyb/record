@@ -2,6 +2,7 @@ import { RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppSelect } from "@/components/ui/app-select";
+import { InspectorSection, InspectorSlider } from "@/components/ui/inspector";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { DEFAULT_AUTOMATIC_DIRECTION_POLICY } from "@/lib/ai-edition/timeline/automatic-direction";
 import {
@@ -18,7 +19,7 @@ import {
 	setAutomaticDirectionPolicyValue,
 } from "@/lib/ai-edition/timeline/automatic-direction-settings";
 import styles from "./NewEditorShell.module.css";
-import { Pane, SliderCell } from "./RightPanes";
+import { Pane } from "./RightPanes";
 import {
 	canRegenerateAutomaticDirection,
 	regenerateProjectAutomaticDirection,
@@ -66,21 +67,19 @@ function PolicySlider({
 }) {
 	const display = displayedControl(control);
 	return (
-		<div title={control.description}>
-			<SliderCell
-				label={control.label}
-				value={display.toDisplay(automaticDirectionPolicyValue(policy, control.path))}
-				min={display.min}
-				max={display.max}
-				step={display.step}
-				decimals={display.decimals}
-				suffix={display.suffix}
-				disabled={disabled}
-				onChange={(value) => onChange(control.path, display.fromDisplay(value))}
-				onCommit={onCommit}
-				flat
-			/>
-		</div>
+		<InspectorSlider
+			label={control.label}
+			helpText={control.description}
+			value={display.toDisplay(automaticDirectionPolicyValue(policy, control.path))}
+			min={display.min}
+			max={display.max}
+			step={display.step}
+			decimals={display.decimals}
+			suffix={display.suffix}
+			disabled={disabled}
+			onChange={(value) => onChange(control.path, display.fromDisplay(value))}
+			onCommit={onCommit}
+		/>
 	);
 }
 
@@ -211,6 +210,12 @@ export function AutomaticDirectionPane() {
 
 	const controls = useMemo(() => automaticDirectionNumberControls(policy), [policy]);
 	const primaryControls = controls.filter((control) => control.primary);
+	const primaryScreenControls = primaryControls.filter(
+		(control) => !control.path.startsWith("camera."),
+	);
+	const primaryCameraControls = primaryControls.filter((control) =>
+		control.path.startsWith("camera."),
+	);
 	const advancedGroups = useMemo(() => {
 		const groups = new Map<string, typeof controls>();
 		for (const control of controls) {
@@ -331,16 +336,31 @@ export function AutomaticDirectionPane() {
 				</div>
 			</section>
 
-			{primaryControls.map((control) => (
-				<PolicySlider
-					key={control.path}
-					control={control}
-					policy={policy}
-					disabled={!canRegenerate}
-					onChange={setValue}
-					onCommit={commitPending}
-				/>
-			))}
+			<InspectorSection title="Screen direction">
+				{primaryScreenControls.map((control) => (
+					<PolicySlider
+						key={control.path}
+						control={control}
+						policy={policy}
+						disabled={!canRegenerate}
+						onChange={setValue}
+						onCommit={commitPending}
+					/>
+				))}
+			</InspectorSection>
+
+			<InspectorSection title="Camera emphasis">
+				{primaryCameraControls.map((control) => (
+					<PolicySlider
+						key={control.path}
+						control={control}
+						policy={policy}
+						disabled={!canRegenerate}
+						onChange={setValue}
+						onCommit={commitPending}
+					/>
+				))}
+			</InspectorSection>
 
 			<details
 				className={styles.automaticAdvanced}

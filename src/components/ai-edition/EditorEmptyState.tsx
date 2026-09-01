@@ -16,7 +16,13 @@
 import { AlertCircle, Film, FolderOpen, Upload, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { KlipptMark } from "@/components/brand/KlipptMark";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
 	migrateProjectDataToAxcutDocument,
@@ -190,11 +196,11 @@ export function EditorEmptyState({
 						<div className={styles.previewEmptyDialogIcon}>
 							<AlertCircle className={styles.previewEmptyDialogAlertIcon} />
 						</div>
-						<p className={styles.previewEmptyDialogMessage}>
+						<DialogDescription className={styles.previewEmptyDialogMessage}>
 							{lastDropErrorRef.current === "unsupported-format"
 								? t("emptyState.dropErrors.unsupportedFormatMessage")
 								: t("emptyState.dropErrors.couldNotOpenMessage")}
-						</p>
+						</DialogDescription>
 					</div>
 					<button
 						type="button"

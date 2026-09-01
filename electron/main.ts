@@ -121,6 +121,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 
 // Window references
 let mainWindow: BrowserWindow | null = null;
+const readyEditorWindows = new WeakSet<BrowserWindow>();
 let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
 let notesWindow: BrowserWindow | null = null;
@@ -188,10 +189,14 @@ function sendEditorMenuAction(
 		targetWindow = mainWindow;
 		if (!targetWindow || targetWindow.isDestroyed()) return;
 
-		targetWindow.webContents.once("did-finish-load", () => {
-			if (!targetWindow || targetWindow.isDestroyed()) return;
+		if (!readyEditorWindows.has(targetWindow)) {
+			targetWindow.webContents.once("did-finish-load", () => {
+				if (!targetWindow || targetWindow.isDestroyed()) return;
+				targetWindow.webContents.send(channel);
+			});
+		} else {
 			targetWindow.webContents.send(channel);
-		});
+		}
 		return;
 	}
 
@@ -579,6 +584,7 @@ let editorHasUnsavedChanges = false;
 let isForceClosing = false;
 let isCloseConfirmInFlight = false;
 let workspaceTransition: { target: "editor" | "hud"; window: BrowserWindow } | null = null;
+let editorWindow: BrowserWindow | null = null;
 
 ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
 	editorHasUnsavedChanges = hasChanges;
@@ -609,41 +615,52 @@ function createEditorWindowWrapper() {
 	if (workspaceTransition?.target === "editor" && !workspaceTransition.window.isDestroyed()) {
 		return;
 	}
-	if (mainWindow && !mainWindow.isDestroyed() && isEditorWindow(mainWindow)) {
-		mainWindow.show();
-		mainWindow.focus();
+	if (editorWindow && !editorWindow.isDestroyed()) {
+		const previousWindow = mainWindow;
+		mainWindow = editorWindow;
+		editorWindow.show();
+		editorWindow.focus();
+		if (previousWindow && previousWindow !== editorWindow && !previousWindow.isDestroyed()) {
+			isForceClosing = true;
+			previousWindow.close();
+			isForceClosing = false;
+		}
 		return;
 	}
 	const previousWindow = mainWindow;
-	const editorWindow = createEditorWindow();
-	workspaceTransition = { target: "editor", window: editorWindow };
-	mainWindow = editorWindow;
+	const nextEditorWindow = createEditorWindow();
+	editorWindow = nextEditorWindow;
+	nextEditorWindow.webContents.once("did-finish-load", () => {
+		readyEditorWindows.add(nextEditorWindow);
+	});
+	workspaceTransition = { target: "editor", window: nextEditorWindow };
+	mainWindow = nextEditorWindow;
 	editorHasUnsavedChanges = false;
 
-	// Keep the old workspace visible until the editor has painted its first
-	// frame. This removes the desktop flash between Stop and the editor without
-	// keeping two renderer states alive after the hand-off.
-	editorWindow.once("ready-to-show", () => {
-		if (workspaceTransition?.window === editorWindow) workspaceTransition = null;
+	// Keep the old workspace visible until a cold editor has painted its first
+	// frame. Later recording round-trips reuse this editor and skip the cold path.
+	nextEditorWindow.once("ready-to-show", () => {
+		if (workspaceTransition?.window === nextEditorWindow) workspaceTransition = null;
 		if (!previousWindow || previousWindow.isDestroyed()) return;
 		isForceClosing = true;
 		previousWindow.close();
 		isForceClosing = false;
 	});
-	editorWindow.once("closed", () => {
-		if (workspaceTransition?.window === editorWindow) workspaceTransition = null;
+	nextEditorWindow.once("closed", () => {
+		if (workspaceTransition?.window === nextEditorWindow) workspaceTransition = null;
+		if (editorWindow === nextEditorWindow) editorWindow = null;
 		void getSttManager()
 			.shutdown()
 			.catch((error) => console.warn("[stt] Could not release the speech model:", error));
 	});
 
-	editorWindow.on("close", (event) => {
+	nextEditorWindow.on("close", (event) => {
 		if (isForceClosing || !editorHasUnsavedChanges || isCloseConfirmInFlight) return;
 
 		event.preventDefault();
 		isCloseConfirmInFlight = true;
 
-		const windowToClose = editorWindow;
+		const windowToClose = nextEditorWindow;
 		if (!windowToClose || windowToClose.isDestroyed()) return;
 
 		// Ask renderer to show the in-app close dialog.
@@ -893,9 +910,13 @@ appReady?.then(async () => {
 		hudWindow.once("ready-to-show", () => {
 			if (workspaceTransition?.window === hudWindow) workspaceTransition = null;
 			if (previousWindow.isDestroyed()) return;
-			isForceClosing = true;
-			previousWindow.close();
-			isForceClosing = false;
+			if (previousWindow === editorWindow) {
+				previousWindow.hide();
+			} else {
+				isForceClosing = true;
+				previousWindow.close();
+				isForceClosing = false;
+			}
 		});
 		hudWindow.once("closed", () => {
 			if (workspaceTransition?.window === hudWindow) workspaceTransition = null;

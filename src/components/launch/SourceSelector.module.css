@@ -50,6 +50,15 @@
 	overflow: hidden;
 }
 
+.thumbFallback {
+	display: grid;
+	width: 100%;
+	height: 100%;
+	place-items: center;
+	color: #565f6b;
+	background: linear-gradient(145deg, #11151b, #0b0e12);
+}
+
 .icon {
 	width: 15px;
 	height: 15px;

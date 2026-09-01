@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Monitor } from "lucide-react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { Button } from "../ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
@@ -36,7 +37,7 @@ export function SourceSelector() {
 						source.id.startsWith("window:") && source.name.includes(" — ")
 							? source.name.split(" — ")[1] || source.name
 							: source.name,
-					thumbnail: source.thumbnail,
+					thumbnail: source.thumbnail || null,
 					display_id: source.display_id,
 					appIcon: source.appIcon,
 				})),
@@ -118,11 +119,21 @@ export function SourceSelector() {
 				onClick={() => handleSourceSelect(source)}
 			>
 				<div className={styles.thumb}>
-					<img
-						src={source.thumbnail || ""}
-						alt={source.name}
-						className="w-full h-full object-cover"
-					/>
+					{source.thumbnail ? (
+						<img
+							src={source.thumbnail}
+							alt={source.name}
+							className="w-full h-full object-cover"
+						/>
+					) : (
+						<div
+							className={styles.thumbFallback}
+							data-testid="source-thumbnail-placeholder"
+							aria-hidden="true"
+						>
+							<Monitor size={28} strokeWidth={1.5} />
+						</div>
+					)}
 				</div>
 				<div className="flex items-center gap-[7px] px-[11px] py-[9px]">
 					{source.appIcon ? (

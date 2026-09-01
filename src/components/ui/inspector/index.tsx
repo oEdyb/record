@@ -38,12 +38,14 @@ export function InspectorPane({
 	title,
 	helpLabel,
 	helpText,
+	toolbar,
 	className = "",
 	children,
 }: {
 	title: string;
 	helpLabel: string;
 	helpText?: string;
+	toolbar?: ReactNode;
 	className?: string;
 	children: ReactNode;
 }) {
@@ -53,6 +55,7 @@ export function InspectorPane({
 				className={`${styles.pane} ${className}`}
 				aria-label={title}
 				data-inspector-layout="flat"
+				data-has-toolbar={toolbar ? "true" : "false"}
 			>
 				<header className={styles.paneHeader}>
 					<h2>{title}</h2>
@@ -71,9 +74,58 @@ export function InspectorPane({
 						</Popover>
 					) : null}
 				</header>
+				{toolbar}
 				<div className={styles.paneBody}>{children}</div>
 			</section>
 		</TooltipProvider>
+	);
+}
+
+export function InspectorToolbar({ label, children }: { label: string; children: ReactNode }) {
+	return (
+		<div className={styles.toolbar} role="toolbar" aria-label={label}>
+			{children}
+		</div>
+	);
+}
+
+export function InspectorActionButton({
+	tone = "secondary",
+	className = "",
+	children,
+	...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+	tone?: "primary" | "secondary" | "quiet";
+}) {
+	return (
+		<button
+			type="button"
+			className={`${styles.actionButton} ${styles[tone]} ${className}`}
+			{...props}
+		>
+			{children}
+		</button>
+	);
+}
+
+export function InspectorEmptyState({
+	icon,
+	title,
+	description,
+	action,
+}: {
+	icon?: ReactNode;
+	title: string;
+	description?: string;
+	action?: ReactNode;
+}) {
+	return (
+		<div className={styles.emptyState}>
+			{icon ? <div className={styles.emptyStateIcon}>{icon}</div> : null}
+			<strong>{title}</strong>
+			{description ? <p>{description}</p> : null}
+			{action}
+		</div>
 	);
 }
 

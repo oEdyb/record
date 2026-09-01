@@ -3,9 +3,8 @@
 // The HUD parks the recording it just finished in ONE main-process slot
 // (`set/getCurrentRecordingSession`) and opens the editor, which imports it into
 // a project on mount. The slot has to be emptied once that project owns the
-// file, because opening the editor destroys and recreates its window
-// (`createEditorWindowWrapper` in electron/main.ts) — so a session left in place
-// is imported AGAIN on the next open: a second project on the same recording,
+// file. The editor can mount again after a cold start or renderer recovery, so a
+// session left in place is imported AGAIN on the next mount: a second project on the same recording,
 // back at the default padding / roundness / wallpaper, while everything the user
 // set and saved stays behind in the first project, which is no longer the one on
 // screen. That reads exactly like "the editor forgot my settings" (#364).

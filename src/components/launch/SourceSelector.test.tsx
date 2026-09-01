@@ -76,4 +76,26 @@ describe("SourceSelector", () => {
 		});
 		expect(getSources).toHaveBeenCalledTimes(2);
 	});
+
+	it("shows a screen placeholder instead of a broken image when a thumbnail is unavailable", async () => {
+		window.electronAPI = {
+			...window.electronAPI,
+			getSources: vi.fn().mockResolvedValue([
+				{
+					id: "screen:1:0",
+					name: "Entire Screen",
+					thumbnail: null,
+					display_id: "1",
+					appIcon: null,
+				},
+			]),
+			selectSource: vi.fn(),
+		} as typeof window.electronAPI;
+
+		render(<SourceSelector />);
+
+		await screen.findByText("Entire Screen");
+		expect(screen.getByTestId("source-thumbnail-placeholder")).toBeInTheDocument();
+		expect(screen.queryByRole("img", { name: "Entire Screen" })).not.toBeInTheDocument();
+	});
 });

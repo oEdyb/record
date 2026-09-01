@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
@@ -44,7 +45,8 @@ describe("NewProjectModal starting points", () => {
 		expect(onCreate).toHaveBeenCalledWith("Untitled project", "screen-recording");
 	});
 
-	it("contains keyboard focus and restores it when the dialog closes", () => {
+	it("contains keyboard focus and restores it when the dialog closes", async () => {
+		const user = userEvent.setup();
 		const trigger = document.createElement("button");
 		document.body.append(trigger);
 		trigger.focus();
@@ -56,7 +58,7 @@ describe("NewProjectModal starting points", () => {
 		expect(screen.getByRole("textbox", { name: /name/i })).toHaveFocus();
 		const create = screen.getByRole("button", { name: /create project/i });
 		create.focus();
-		fireEvent.keyDown(document, { key: "Tab" });
+		await user.tab();
 		expect(screen.getByRole("button", { name: /close/i })).toHaveFocus();
 
 		fireEvent.keyDown(document, { key: "Escape" });
@@ -66,7 +68,7 @@ describe("NewProjectModal starting points", () => {
 				<NewProjectModal open={false} onClose={onClose} onCreate={vi.fn()} />
 			</I18nProvider>,
 		);
-		expect(trigger).toHaveFocus();
+		await waitFor(() => expect(trigger).toHaveFocus());
 		trigger.remove();
 	});
 });

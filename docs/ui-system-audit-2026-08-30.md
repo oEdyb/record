@@ -19,7 +19,42 @@ The first UI-system wave is complete. It changed the foundation without replacin
 - The persistent `Saved` label is gone. Save state remains available to assistive technology, and unsaved work stays visible on the Save icon.
 - The timeline clip boundary is now a two-pixel neutral edge instead of a five-pixel stripe.
 
-This wave does not claim a literal 20/20 yet. Native VoiceOver, Increased Contrast, and full dialog-family standardization remain. The UI foundation is now strong enough to improve those areas without creating more local systems.
+### Right inspector refinement
+
+The second implementation pass standardized the active right inspector with one measured layout:
+
+- 344-pixel pane width and 48-pixel facet rail;
+- 48-pixel fixed header and optional 48-pixel action toolbar;
+- 16-pixel content gutter and section rhythm;
+- 44-pixel standard rows;
+- 32-pixel standard controls with an 8-pixel radius.
+
+The pass used screenshots of the live Background, Effects, Layout, Cursor, Audio, Automatic Editing, and Transcript panes at 1710 by 1107 logical pixels. It compared each pane against the same alignment grid after implementation.
+
+The Audio pane now waits for an explicit **Analyze pauses** action. The analysis job lives in a project-scoped Zustand store instead of the pane component, so switching inspector tabs does not cancel active work. Results from an old project revision are discarded.
+
+Transcript actions now have their own toolbar instead of competing with the title. Automatic Editing groups screen direction and camera emphasis separately. Cursor uses the same section, row, switch, and slider primitives as the other panes. Captions now uses the shared geometry tokens for its fields and status controls.
+
+This pass adds no UI dependency. It adapts the field anatomy from shadcn/ui and the behavior-based grouping model from coss to the existing Radix foundation.
+
+### Dialog system refinement
+
+The editor's duplicate custom modal shell now uses the existing Radix Dialog foundation. One
+Klippt layer owns the overlay, 12-pixel radius, 24-pixel inset, header, body-only scrolling,
+footer, close control, motion, and four task-based widths. The old reversed `wide` flag is gone:
+normal forms no longer open at 960 pixels while nominally wide dialogs open at 720 pixels.
+
+New/Open Project, Edit Clip, Insert Source, Source Transcript, Chat History, Provider Settings,
+Export, unsaved confirmations, entitlement, empty-state errors, and Keyboard Shortcuts now share
+the same behavior foundation. Keyboard Shortcuts also moved from hard-coded slate and green
+classes to the Klippt token system. Browser checks at 1512×982, 1100×700, 1024×700, and 900×620
+confirmed initial focus, trapped keyboard navigation, Escape restoration, visible compact-dialog
+actions, named controls, and reduced motion. The normal New Project dialog is 720 pixels; only the
+media-heavy Export dialog keeps the 960-pixel size.
+
+This wave does not claim a literal 20/20 yet. Native VoiceOver, Increased Contrast, and the
+remaining icon and tooltip audit remain. The UI foundation is now strong enough to improve those
+areas without creating more local systems.
 
 ## Decision
 
@@ -57,10 +92,10 @@ The calm floating HUD and the precise timeline are the strongest product-specifi
 | --- | ---: | --- |
 | Accessibility | 4/4 | Shared Radix controls, named interactions, focus restoration, keyboard menus, and reduced-motion smoke tests pass. Native VoiceOver remains a release check. |
 | Performance | 4/4 | Changed motion uses opacity/transform, short durations, correct transform origins, and reduced-motion fallbacks. |
-| Responsive desktop layout | 3/4 | The editor remains usable at 1024 and 1440 CSS pixels without horizontal overflow. |
+| Responsive desktop layout | 4/4 | The editor and migrated dialogs remain usable from 900 through 1512 CSS pixels without horizontal overflow or hidden actions. |
 | Theming | 4/4 | Production and design specimens now use the same graphite, white, steel-blue, and red token system. |
 | Implementation integrity | 3/4 | The main inspector and menu systems are shared. Large legacy UI modules and dialog families still need gradual extraction. |
-| **Total** | **18/20** | **Strong foundation. Finish native accessibility and dialog/icon standardization next.** |
+| **Total** | **19/20** | **Strong foundation. Finish native accessibility and icon/tooltip standardization next.** |
 
 ### Implementation integrity verdict
 
@@ -68,10 +103,10 @@ The calm floating HUD and the precise timeline are the strongest product-specifi
 
 ### Executive summary
 
-- Current audit health: **18/20 — Strong**.
+- Current audit health: **19/20 — Strong**.
 - Initial findings: **9 total — 0 P0, 2 P1, 5 P2, and 2 P3**.
 - Resolved in this wave: both P1 findings, the shared-control finding, empty-project context, main menu accessibility, and new-surface motion consistency.
-- Remaining work: native accessibility checks, dialog/icon standardization, and gradual extraction from large modules during real feature work.
+- Remaining work: native accessibility checks, icon/tooltip standardization, and gradual extraction from large modules during real feature work.
 
 ### Resolution matrix
 
@@ -80,7 +115,7 @@ The calm floating HUD and the precise timeline are the strongest product-specifi
 | Conflicting token authorities | Resolved |
 | Radix trigger refs | Resolved |
 | Rebuilt inspector behavior | Resolved for active editor panes |
-| Inspector geometry drift | Materially reduced; selection and dialog families remain |
+| Inspector geometry drift | Resolved for active facet panes and the dialog family |
 | Empty-project inspector clutter | Resolved |
 | Tabs, menus, and small hit targets | Resolved on migrated surfaces |
 | Large UI modules | Open; extract only with real feature work |
@@ -389,6 +424,25 @@ Impeccable audit after the fixes to measure the score again.
 - Keep the timeline clip-edge marker. It communicates a real edit boundary rather than adding decorative structure.
 - Do not replace progress bars only because they transition width. Treat that as a profiling-led polish task.
 
+## Dialog and workspace latency follow-up
+
+The shared Radix dialog shell now owns all editor modal geometry. Keyboard Shortcuts uses the same
+shell, spacing, focus behavior, and neutral palette as the other dialogs. The settings open state is
+isolated from the shortcut-data context, so opening the cog no longer rerenders the full editor.
+The frequent dialog entrance is 120 ms with four pixels of travel. On the populated long-timeline
+project, the dialog was fully visible in a screenshot taken 150 ms after the real click.
+
+The editor window now stays warm while the recording HUD is active. Electron hides the editor
+instead of destroying its Chromium renderer, enables background throttling for the hidden editor,
+and destroys the native preview view until the editor becomes visible again. A real HUD-to-editor
+round trip measured 143.5 ms from the native menu event to an on-screen maximized editor. Cold
+startup still waits for `ready-to-show`. Warm and cold native File commands both deliver after the
+main frame is ready.
+
+The focused performance regression set has 77 passing tests. TypeScript, scoped Biome, and the
+production renderer, Electron main, and preload bundles pass. The production build still reports
+the existing large renderer chunk and Electron circular-chunk warnings.
+
 ## Current references
 
 - [Radix composition](https://www.radix-ui.com/primitives/docs/guides/composition)
@@ -406,3 +460,10 @@ Impeccable audit after the fixes to measure the score again.
 - [Screen Studio changelog](https://screen.studio/changelog)
 - [coss Group reference](https://coss.com/ui/docs/components/group)
 - [coss Field reference](https://coss.com/ui/docs/components/field)
+- [shadcn/ui Field reference](https://ui.shadcn.com/docs/components/field)
+- [Zustand documentation and source](https://github.com/pmndrs/zustand)
+- [Vercel Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines)
+- [Electron performance guidance](https://www.electronjs.org/docs/latest/tutorial/performance)
+- [Electron BrowserWindow lifecycle and background throttling](https://www.electronjs.org/docs/latest/api/browser-window)
+- [Electron WebContents loading state](https://www.electronjs.org/docs/latest/api/web-contents#contentsisloadingmainframe)
+- [React context update behavior](https://react.dev/reference/react/useContext)

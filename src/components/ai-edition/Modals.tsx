@@ -17,12 +17,20 @@ import {
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
 	useEffect,
-	useId,
 	useRef,
 	useState,
 } from "react";
 import { AppSelect } from "@/components/ui/app-select";
-import { useDialogFocus } from "@/components/ui/use-dialog-focus";
+import {
+	Dialog,
+	DialogBody,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogHeading,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type { CropRegion } from "@/components/video-editor/types";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
@@ -48,49 +56,50 @@ export function ModalShell({
 	onClose,
 	title,
 	subtitle,
-	wide,
+	size = "md",
 	children,
 }: BaseModalProps & {
 	title: string;
 	subtitle?: string;
-	wide?: boolean;
+	size?: "sm" | "md" | "lg" | "xl";
 	children: ReactNode;
 }) {
 	const tc = useScopedT("common");
-	const dialogRef = useDialogFocus<HTMLDivElement>(open, onClose);
-	const titleId = useId();
-	const subtitleId = useId();
-	if (!open) return null;
+	const openerRef = useRef<HTMLElement | null>(null);
 	return (
-		<div className={`${styles.modal} ${open ? styles.isOpen : ""}`}>
-			<div className={styles.modalBackdrop} aria-hidden onClick={onClose} />
-			<div
-				ref={dialogRef}
-				className={`${styles.modalCard} ${wide ? styles.wide : ""}`}
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby={titleId}
-				aria-describedby={subtitle ? subtitleId : undefined}
-				tabIndex={-1}
+		<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+			<DialogContent
+				size={size}
+				showCloseButton={false}
+				onOpenAutoFocus={() => {
+					openerRef.current =
+						document.activeElement instanceof HTMLElement ? document.activeElement : null;
+				}}
+				onCloseAutoFocus={(event) => {
+					if (!openerRef.current?.isConnected) return;
+					event.preventDefault();
+					openerRef.current.focus({ preventScroll: true });
+				}}
 			>
-				<header className={styles.modalHead}>
-					<div>
-						<h2 id={titleId}>{title}</h2>
-						{subtitle ? <p id={subtitleId}>{subtitle}</p> : null}
-					</div>
-					<button
-						type="button"
-						className={styles.closeBtn}
-						onClick={onClose}
-						title={tc("actions.close")}
-						aria-label={tc("actions.close")}
-					>
-						<X size={18} />
-					</button>
-				</header>
-				<div className={styles.modalBody}>{children}</div>
-			</div>
-		</div>
+				<DialogHeader>
+					<DialogHeading>
+						<DialogTitle>{title}</DialogTitle>
+						{subtitle ? <DialogDescription>{subtitle}</DialogDescription> : null}
+					</DialogHeading>
+					<DialogClose asChild>
+						<button
+							type="button"
+							className={styles.closeBtn}
+							title={tc("actions.close")}
+							aria-label={tc("actions.close")}
+						>
+							<X size={16} />
+						</button>
+					</DialogClose>
+				</DialogHeader>
+				<DialogBody className={styles.modalBody}>{children}</DialogBody>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -134,7 +143,7 @@ export function OpenProjectModal({
 			onClose={onClose}
 			title={t("openProjectDialog.title")}
 			subtitle={t("openProjectDialog.subtitle")}
-			wide
+			size="lg"
 		>
 			<div
 				style={{
@@ -406,6 +415,7 @@ export function NewProjectModal({ open, onClose, onCreate }: NewProjectModalProp
 			onClose={onClose}
 			title={t("newProjectDialog.title")}
 			subtitle={t("newProjectDialog.subtitle")}
+			size="lg"
 		>
 			<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 				<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1005,7 +1015,7 @@ export function EditClipModal({
 			onClose={onClose}
 			title={t("editClipDialog.title")}
 			subtitle={assetMeta?.label ?? undefined}
-			wide
+			size="lg"
 		>
 			<div
 				ref={cropFrameRef}
@@ -1391,7 +1401,7 @@ export function UnsavedChangesModal({
 		body: action === "close" ? td("modal.closeBody") : td("modal.sharedBody"),
 	};
 	return (
-		<ModalShell open={open} onClose={onClose} title={copy.title} subtitle={copy.body}>
+		<ModalShell open={open} onClose={onClose} title={copy.title} subtitle={copy.body} size="md">
 			<div
 				style={{
 					display: "flex",
@@ -1488,6 +1498,7 @@ export function InsertSourceModal({
 			onClose={onClose}
 			title={t("insertSourceDialog.title")}
 			subtitle={t("insertSourceDialog.subtitle", { assetLabel })}
+			size="md"
 		>
 			<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 				<button
@@ -1677,7 +1688,7 @@ export function SourceTranscriptModal({
 			onClose={onClose}
 			title={t("mediaStage.sourceTranscript")}
 			subtitle={assetLabel}
-			wide
+			size="lg"
 		>
 			<div
 				style={{
@@ -2052,6 +2063,7 @@ export function ChatHistoryModal({
 			onClose={onClose}
 			title={t("chat.historyDialog.title")}
 			subtitle={t("chat.historyDialog.subtitle")}
+			size="lg"
 		>
 			{sessions.length === 0 ? (
 				<div

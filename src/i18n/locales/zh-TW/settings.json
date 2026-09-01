@@ -297,6 +297,8 @@
 		"protectScreen": "Protect screen activity",
 		"protectSystemAudio": "Protect system audio",
 		"transition": "Rendered cuts use {{duration}} ms audio smoothing.",
+		"analyze": "Analyze pauses",
+		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
 		"resultCount": "{{count}} pause suggestions",
 		"timeSaved": "{{duration}} shorter",

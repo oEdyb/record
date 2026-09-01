@@ -192,26 +192,8 @@ export function CaptionsPane() {
 
 			{!hasTranscript ? (
 				<div className={styles.captionStatus}>
-					<p
-						style={{
-							margin: 0,
-							font: "400 12px/1.5 var(--font-body)",
-							color: "var(--muted)",
-						}}
-					>
-						{silentMedia ? te("mediaStage.noAudioTrackHint") : t("captions.noTranscript")}
-					</p>
-					{engineError ? (
-						<p
-							style={{
-								margin: 0,
-								font: "400 11.5px/1.5 var(--font-body)",
-								color: "var(--danger)",
-							}}
-						>
-							{engineError}
-						</p>
-					) : null}
+					<p>{silentMedia ? te("mediaStage.noAudioTrackHint") : t("captions.noTranscript")}</p>
+					{engineError ? <p className={styles.captionStatusError}>{engineError}</p> : null}
 					<button
 						type="button"
 						className={`${styles.btn} ${styles.btnPrimary}`}
@@ -237,13 +219,7 @@ export function CaptionsPane() {
 
 			{legacyCaptionAnnotations.length > 0 ? (
 				<div className={styles.captionLegacyNotice}>
-					<p
-						style={{
-							margin: 0,
-							font: "400 11.5px/1.5 var(--font-body)",
-							color: "var(--fg-2)",
-						}}
-					>
+					<p>
 						{t("captions.legacyAnnotations", {
 							count: legacyCaptionAnnotations.length,
 						})}
@@ -267,7 +243,7 @@ export function CaptionsPane() {
 					value={settings.language ?? ""}
 					disabled={disabled}
 					onChange={(e) => void set({ language: e.target.value || null })}
-					style={selectStyle}
+					className={styles.inspectorCompactSelect}
 				>
 					<option value="">{t("captions.original")}</option>
 					{languageOptions.map((entry) => (
@@ -283,7 +259,7 @@ export function CaptionsPane() {
 					value={target}
 					disabled={disabled || translating}
 					onChange={(e) => setTarget(e.target.value)}
-					style={{ ...selectStyle, flex: 1 }}
+					className={`${styles.inspectorCompactSelect} ${styles.inspectorGrowSelect}`}
 				>
 					{TRANSLATION_LANGUAGES.map((language) => (
 						<option key={language.code} value={language.code}>
@@ -305,8 +281,7 @@ export function CaptionsPane() {
 			{settings.language ? (
 				<button
 					type="button"
-					className={`${styles.btn} ${styles.btnSecondary}`}
-					style={{ marginBottom: 12 }}
+					className={`${styles.btn} ${styles.btnSecondary} ${styles.captionDeleteTranslation}`}
 					disabled={disabled}
 					onClick={() => void deleteTranslation(settings.language as string)}
 				>
@@ -325,7 +300,7 @@ export function CaptionsPane() {
 					value={settings.fontFamily}
 					disabled={disabled}
 					onChange={(e) => void set({ fontFamily: e.target.value })}
-					style={selectStyle}
+					className={styles.inspectorCompactSelect}
 				>
 					{CAPTION_FONTS.map((font) => (
 						<option key={font} value={font} style={{ fontFamily: font }}>
@@ -373,7 +348,7 @@ export function CaptionsPane() {
 				    plate is off, because that is what turning it back on will draw. */}
 			<div className={styles.paneRow}>
 				<span className="label">{t("captions.background")}</span>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+				<div className={styles.captionBackgroundControls}>
 					<ColorField
 						label={t("captions.backgroundColor")}
 						value={settings.backgroundColor}
@@ -457,7 +432,7 @@ export function CaptionsPane() {
 					value={settings.minWordsPerLine}
 					disabled={disabled}
 					onChange={(e) => void set({ minWordsPerLine: Number(e.target.value) })}
-					style={selectStyle}
+					className={styles.inspectorCompactSelect}
 				>
 					{WORD_COUNTS.map((n) => (
 						<option key={n} value={n}>
@@ -472,7 +447,7 @@ export function CaptionsPane() {
 					value={settings.maxWordsPerLine}
 					disabled={disabled}
 					onChange={(e) => void set({ maxWordsPerLine: Number(e.target.value) })}
-					style={selectStyle}
+					className={styles.inspectorCompactSelect}
 				>
 					{WORD_COUNTS.map((n) => (
 						<option key={n} value={n} disabled={n < settings.minWordsPerLine}>
@@ -486,17 +461,6 @@ export function CaptionsPane() {
 }
 
 const WORD_COUNTS = Array.from({ length: 12 }, (_, i) => i + 1);
-
-const selectStyle: React.CSSProperties = {
-	height: 32,
-	padding: "0 8px",
-	borderRadius: 8,
-	border: "1px solid var(--border)",
-	background: "var(--surface)",
-	color: "var(--fg)",
-	font: "500 12.5px var(--font-body)",
-	maxWidth: 160,
-};
 
 /**
  * One "label + swatch" row that opens the app's standard `ColorPicker` (wheel /

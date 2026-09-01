@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_SHORTCUTS,
@@ -43,5 +45,21 @@ describe("shortcut registry", () => {
 		const merged = mergeWithDefaults(stored as Partial<ShortcutsConfig>);
 		expect(merged.addZoom).toEqual({ key: "q" });
 		expect(merged).not.toHaveProperty("addBlur");
+	});
+
+	it("keeps the shortcuts dialog on Klippt tokens without the old green theme", () => {
+		const component = readFileSync(
+			join(process.cwd(), "src", "components", "video-editor", "ShortcutsConfigDialog.tsx"),
+			"utf8",
+		);
+		const styles = readFileSync(
+			join(process.cwd(), "src", "components", "video-editor", "ShortcutsConfigDialog.module.css"),
+			"utf8",
+		);
+		const source = `${component}\n${styles}`;
+
+		expect(source).toContain("var(--editor-accent-strong)");
+		expect(source).toContain("var(--accent-on)");
+		expect(source).not.toMatch(/(?:green|emerald|lime|#10b981|#22c55e|#34b27b|#2d9e6c)/i);
 	});
 });

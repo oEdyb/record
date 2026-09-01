@@ -615,10 +615,10 @@ export function closeCameraPreviewWindow() {
  * Main editor window. Starts maximised with a hidden title bar on macOS; not
  * always-on-top and appears in the taskbar/dock.
  *
- * `query` overrides the renderer's routing params. The export bench passes
- * windowType=bench so it runs under THIS window's webPreferences — same
- * preload, same sandbox, same backgroundThrottling:false — because a bench that
- * configures its own window measures a different app than the one we ship.
+ * `query` overrides the renderer's routing params. The export bench disables
+ * background throttling because it must keep rendering while headless. The normal
+ * editor keeps Electron's throttling enabled so its warm, hidden window does not
+ * compete with recording work.
  */
 export function createEditorWindow(query: Record<string, string> = {}): BrowserWindow {
 	const isMac = process.platform === "darwin";
@@ -651,7 +651,7 @@ export function createEditorWindow(query: Record<string, string> = {}): BrowserW
 			nodeIntegration: false,
 			contextIsolation: true,
 			webSecurity: false,
-			backgroundThrottling: false,
+			backgroundThrottling: query.windowType === "bench" ? false : true,
 		},
 	});
 

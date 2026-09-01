@@ -172,7 +172,7 @@ export function ProviderSettings({
 			onClose={close}
 			title={te("providerSettings.title")}
 			subtitle={te("providerSettings.subtitle")}
-			wide
+			size="lg"
 		>
 			{mode === "list" ? (
 				<ProviderList

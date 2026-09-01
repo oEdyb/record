@@ -165,6 +165,12 @@
 	--editor-inspector-rail-w: 48px;
 	--editor-inspector-w: calc(var(--editor-inspector-pane-w) + var(--editor-inspector-rail-w));
 	--editor-pane-header-h: 48px;
+	/* Inspector geometry uses an 8px grid with 4px half-steps. Keep these
+	   measurements here so every right-side pane aligns to the same column. */
+	--editor-inspector-gutter: 16px;
+	--editor-inspector-row-h: 44px;
+	--editor-inspector-control-h: 32px;
+	--editor-inspector-control-radius: 8px;
 	--editor-section-space: 16px;
 
 	/* elevation */

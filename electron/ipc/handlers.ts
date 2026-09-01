@@ -1920,8 +1920,9 @@ export function registerIpcHandlers(
 			id: source.id,
 			name: source.name,
 			display_id: source.display_id,
-			thumbnail: source.thumbnail ? source.thumbnail.toDataURL() : null,
-			appIcon: source.appIcon ? source.appIcon.toDataURL() : null,
+			thumbnail: source.thumbnail.isEmpty() ? null : source.thumbnail.toDataURL(),
+			appIcon:
+				source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
 		}));
 	});
 
@@ -2112,9 +2113,8 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("switch-to-editor", () => {
-		// createEditorWindow already closes the current mainWindow (the HUD) before
-		// opening the editor. Closing it here too double-closes, leaving ghost
-		// transparent windows and compounding the HUD shadow each cycle.
+		// The main-process wrapper owns the HUD/editor hand-off. Closing either
+		// window here would race that lifecycle and can leave a ghost overlay.
 		createEditorWindow();
 	});
 
