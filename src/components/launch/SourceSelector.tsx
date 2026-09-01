@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
 import { Monitor } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { Button } from "../ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
@@ -120,11 +120,7 @@ export function SourceSelector() {
 			>
 				<div className={styles.thumb}>
 					{source.thumbnail ? (
-						<img
-							src={source.thumbnail}
-							alt={source.name}
-							className="w-full h-full object-cover"
-						/>
+						<img src={source.thumbnail} alt={source.name} className="w-full h-full object-cover" />
 					) : (
 						<div
 							className={styles.thumbFallback}

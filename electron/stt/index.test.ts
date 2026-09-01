@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { planChunks } from "./chunking";
 import { _resetSttManagerForTests, SttManager } from "./index";
 import { ensureModels } from "./modelManager";
+import type { CachedSourceTranscript, TranscriptCacheIdentity } from "./transcriptionCache";
 import type { SttStatusEvent, SttTranscribeResponse } from "./transcriptionContract";
 
 // We swap the long-lived modules for fakes so the manager's `init()` and
@@ -43,14 +44,33 @@ const sourceFakes = vi.hoisted(() => {
 		extractSourceAudioChunk: vi.fn(),
 		inspectSourceAudioLayout: vi.fn(),
 		MissingSourceTrackError,
-		sha256OfFile: vi.fn(async () => "a".repeat(64)),
+		sha256OfFile: vi.fn<(_path: string, _signal?: AbortSignal) => Promise<string>>(async () =>
+			"a".repeat(64),
+		),
 	};
 });
 
 const cacheFakes = vi.hoisted(() => ({
-	read: vi.fn(async () => null),
-	write: vi.fn(async () => undefined),
+	read: vi.fn<
+		(
+			_identity: TranscriptCacheIdentity,
+			_signal?: AbortSignal,
+		) => Promise<CachedSourceTranscript | null>
+	>(async () => null),
+	write: vi.fn<
+		(
+			_identity: TranscriptCacheIdentity,
+			_result: CachedSourceTranscript,
+			_signal?: AbortSignal,
+		) => Promise<void>
+	>(async () => undefined),
 }));
+
+function sparseAudioSamples(logicalLength: number, firstValue = 0): Float32Array {
+	const samples = new Float32Array([firstValue]);
+	Object.defineProperty(samples, "length", { value: logicalLength });
+	return samples;
+}
 
 vi.mock("./parakeetHelper", () => {
 	class FakeParakeetHelperManager {
@@ -565,10 +585,7 @@ describe("SttManager", () => {
 			async ({ startSec, durationSec, sourceRole }) => {
 				const availableSec = Math.max(0, totalSec - startSec);
 				const decodedSec = Math.min(durationSec, availableSec);
-				return {
-					0: sourceRole === "you" ? 1 : 2,
-					length: Math.round(decodedSec * 16_000),
-				} as Float32Array;
+				return sparseAudioSamples(Math.round(decodedSec * 16_000), sourceRole === "you" ? 1 : 2);
 			},
 		);
 		fakeWhisperServer.transcribe.mockImplementation(async ({ samples }) => ({
@@ -602,7 +619,7 @@ describe("SttManager", () => {
 		});
 		sourceFakes.extractSourceAudioChunk
 			.mockResolvedValueOnce(new Float32Array())
-			.mockResolvedValueOnce({ length: Math.round(46.5 * 16_000), 0: 1 } as Float32Array);
+			.mockResolvedValueOnce(sparseAudioSamples(Math.round(46.5 * 16_000), 1));
 		fakeWhisperServer.transcribe.mockResolvedValue({
 			segments: [],
 			wordSegments: [{ word: "late", startSec: 26.5, endSec: 27 }],
@@ -631,8 +648,8 @@ describe("SttManager", () => {
 			durationSec: 80,
 		});
 		sourceFakes.extractSourceAudioChunk
-			.mockResolvedValueOnce({ length: Math.round(76.5 * 16_000), 0: 1 } as Float32Array)
-			.mockResolvedValueOnce({ length: Math.round(6.5 * 16_000), 0: 1 } as Float32Array);
+			.mockResolvedValueOnce(sparseAudioSamples(Math.round(76.5 * 16_000), 1))
+			.mockResolvedValueOnce(sparseAudioSamples(Math.round(6.5 * 16_000), 1));
 		fakeWhisperServer.transcribe
 			.mockResolvedValueOnce({
 				segments: [],
@@ -669,8 +686,8 @@ describe("SttManager", () => {
 			durationSec: 80,
 		});
 		sourceFakes.extractSourceAudioChunk
-			.mockResolvedValueOnce({ length: Math.round(76.5 * 16_000), 0: 1 } as Float32Array)
-			.mockResolvedValueOnce({ length: Math.round(6.5 * 16_000), 0: 1 } as Float32Array);
+			.mockResolvedValueOnce(sparseAudioSamples(Math.round(76.5 * 16_000), 1))
+			.mockResolvedValueOnce(sparseAudioSamples(Math.round(6.5 * 16_000), 1));
 		fakeWhisperServer.transcribe
 			.mockResolvedValueOnce({
 				segments: [{ text: "impossible", startSec: 80, endSec: 81 }],
@@ -868,10 +885,10 @@ describe("SttManager", () => {
 			hashStarted = resolve;
 		});
 		sourceFakes.sha256OfFile.mockImplementation(
-			async (_path: string, signal: AbortSignal) =>
+			async (_path: string, signal?: AbortSignal) =>
 				await new Promise<string>((_resolve, reject) => {
 					hashStarted?.();
-					signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+					signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
 				}),
 		);
 		const manager = new SttManager();

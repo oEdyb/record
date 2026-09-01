@@ -40,6 +40,7 @@ function fixture() {
 	document.transcripts.push({
 		assetId: "asset-1",
 		language: "en",
+		sources: [],
 		segments: [],
 		words: [
 			{ id: "w1", segmentId: "s1", startSec: 0, endSec: 1, text: "hello" },

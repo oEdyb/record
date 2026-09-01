@@ -52,7 +52,7 @@ describe("approved dependency inputs", () => {
 	it("matches every current npm, Cargo, CMake, Swift, FFmpeg, and model input", () => {
 		expect(verifyApprovedDependencies(REPO_ROOT)).toEqual({
 			count: 22,
-			reviewedAt: "2026-08-28",
+			reviewedAt: "2026-09-01",
 		});
 	});
 

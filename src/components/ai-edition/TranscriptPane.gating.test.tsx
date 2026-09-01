@@ -107,6 +107,7 @@ describe("transcript pane gating", () => {
 						{
 							assetId: "asset_1",
 							language: "en",
+							sources: [],
 							segments: [],
 							words: [
 								{ id: "w1", segmentId: "s1", startSec: 0, endSec: 0.4, text: "Hello" },

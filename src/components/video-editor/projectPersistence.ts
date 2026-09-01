@@ -8,6 +8,7 @@ import {
 } from "@/lib/compositeLayout";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
 import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
+import { fromKlipptMediaUrl, toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { ProjectMedia } from "@/lib/recordingSession";
 import { normalizeProjectMedia } from "@/lib/recordingSession";
 import { DEFAULT_WALLPAPER, WALLPAPER_PATHS } from "@/lib/wallpaper";
@@ -147,42 +148,20 @@ function computeNormalizedWebcamLayoutPreset(
 	}
 }
 
-function encodePathSegments(pathname: string, keepWindowsDrive = false): string {
-	return pathname
-		.split("/")
-		.map((segment, index) => {
-			if (!segment) {
-				return segment;
-			}
-			if (keepWindowsDrive && index === 0 && /^[a-zA-Z]:$/.test(segment)) {
-				return segment;
-			}
-			return encodeURIComponent(segment);
-		})
-		.join("/");
-}
-
 export function toFileUrl(filePath: string): string {
-	// Browser-mode assets (blob:/http(s):/data: URLs from an <input type=file>
-	// or Vite-served asset) are already valid URLs — passing them through the
-	// file:// encoder below would mangle them (e.g. "file:///blob:...").
-	if (/^(https?|blob|data):/.test(filePath)) {
+	// Browser-mode assets are already usable. Local paths use the main-process
+	// allowlist instead of exposing Chromium's unrestricted file:// loader.
+	if (/^(https?|blob|data|klippt):/.test(filePath)) {
 		return filePath;
 	}
-	const normalized = filePath.replace(/\\/g, "/");
-	if (normalized.match(/^[a-zA-Z]:/)) {
-		return `file:///${encodePathSegments(normalized, true)}`;
-	}
-	if (normalized.startsWith("//")) {
-		const withoutPrefix = normalized.slice(2);
-		const [host = "", ...segments] = withoutPrefix.split("/");
-		return `file://${host}/${encodePathSegments(segments.join("/"))}`;
-	}
-	const absolutePath = normalized.startsWith("/") ? normalized : `/${normalized}`;
-	return `file://${encodePathSegments(absolutePath)}`;
+	return toKlipptMediaUrl(fromFileUrl(filePath));
 }
 
 export function fromFileUrl(fileUrl: string): string {
+	const protocolPath = fromKlipptMediaUrl(fileUrl);
+	if (protocolPath !== null) {
+		return protocolPath;
+	}
 	if (!fileUrl.startsWith("file://")) {
 		return fileUrl;
 	}

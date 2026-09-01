@@ -34,11 +34,17 @@ type Listener = (event: {
 
 type RendererSttApi = {
 	transcribe: (request: { samples: Float32Array; language?: string }) => Promise<{
-		segments: Array<{ text: string; startSec: number; endSec: number }>;
+		segments: Array<{
+			text: string;
+			startSec: number;
+			endSec: number;
+			sourceRole?: "you" | "system" | "unknown-mixed";
+		}>;
 		wordSegments: Array<{
 			word: string;
 			startSec: number;
 			endSec: number;
+			sourceRole?: "you" | "system" | "unknown-mixed";
 			confidence?: number;
 		}>;
 		detectedLanguage: string;

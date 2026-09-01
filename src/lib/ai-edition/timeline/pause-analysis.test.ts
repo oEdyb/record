@@ -56,6 +56,7 @@ function speechProbabilities(activeRanges: Array<[number, number]>): Float32Arra
 const transcript: AxcutTranscript = {
 	assetId: "asset_1",
 	language: "en",
+	sources: [],
 	segments: [],
 	words: [
 		{ id: "w1", segmentId: "s1", startSec: 0.2, endSec: 1.1, text: "hello" },

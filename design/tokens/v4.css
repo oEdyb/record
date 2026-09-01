@@ -33,9 +33,10 @@
 	--fg: #1b1b20;
 	--fg-2: #34343c;
 	--fg-emphasis: #101014;
-	--muted: #6f6f7b;
+	--muted: #5f5f6b;
 	--muted-soft: #9797a3;
-	--meta: #858590;
+	/* Small helper text must remain readable on surface-2 (WCAG 2.2 AA, 4.5:1). */
+	--meta: #666672;
 	--dim: #bdbdc7;
 
 	/* Klippt accent */
@@ -211,7 +212,7 @@
 	--fg-2: #f5f5f7;
 	--muted: #92929d;
 	--muted-soft: #71717c;
-	--meta: #666671;
+	--meta: #8b8b97;
 	--dim: #24242a;
 
 	--brand: #f1f1f3;

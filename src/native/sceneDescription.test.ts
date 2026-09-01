@@ -1791,6 +1791,7 @@ describe("buildSceneDescription.captions", () => {
 				{
 					assetId: "a1",
 					language: "en",
+					sources: [],
 					segments: [
 						{
 							id: "seg_1",

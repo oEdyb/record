@@ -200,10 +200,7 @@ describe("CompositorViewService export transaction", () => {
 		});
 
 		await expect(
-			service.exportMulti(
-				[{ ...clips[0]!, sourceEndSec: 0 }],
-				path.join(root, "unreadable.mp4"),
-			),
+			service.exportMulti([{ ...clips[0]!, sourceEndSec: 0 }], path.join(root, "unreadable.mp4")),
 		).rejects.toThrow(/Unable to read media duration.*unsupported container/);
 		expect(addon.exportMulti).not.toHaveBeenCalled();
 	});

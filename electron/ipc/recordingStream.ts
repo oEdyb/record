@@ -1,6 +1,6 @@
 import { createWriteStream, type WriteStream } from "node:fs";
 import { unlink } from "node:fs/promises";
-import type { IpcMain } from "electron";
+import type { RendererIpcMain } from "./trustedRendererIpc";
 
 /**
  * Owns write streams for in-progress recordings, keyed by output file name.
@@ -93,7 +93,7 @@ export class RecordingStreamRegistry {
  * renderer expects.
  */
 export function registerRecordingStreamHandlers(
-	ipcMain: IpcMain,
+	ipcMain: Pick<RendererIpcMain, "handle">,
 	registry: RecordingStreamRegistry,
 	resolveRecordingOutputPath: (fileName: string) => string,
 	options: {

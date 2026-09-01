@@ -58,6 +58,7 @@ const CLIPS: AxcutClip[] = [
 const TRANSCRIPT: AxcutTranscript = {
 	assetId: "asset_1",
 	language: "fr",
+	sources: [],
 	segments: [],
 	words: [
 		{ id: "w1", segmentId: "s", startSec: 0, endSec: 2, text: "Salut" },

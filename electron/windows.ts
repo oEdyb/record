@@ -1,6 +1,6 @@
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { BrowserWindow, ipcMain, MessageChannelMain, screen } from "electron";
+import { fileURLToPath } from "node:url";
+import { BrowserWindow, ipcMain as electronIpcMain, MessageChannelMain, screen } from "electron";
 import { APP_DISPLAY_NAME } from "../src/lib/brand";
 import {
 	type CameraPreviewPoint,
@@ -8,6 +8,7 @@ import {
 	defaultCameraPreviewPosition,
 } from "./cameraPreviewGeometry";
 import { shouldShowHudInactive, shouldStartHudClickThrough } from "./hudInputPolicy";
+import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import {
 	localRectanglesContainScreenPoint,
 	normalizePrivateUiRectangles,
@@ -19,10 +20,11 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const APP_ROOT = path.join(__dirname, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-const RENDERER_DIST = path.join(APP_ROOT, "dist");
 const HEADLESS = process.env["HEADLESS"] === "true";
+const ipcMain = createTrustedRendererIpcMain(electronIpcMain, {
+	devServerUrl: VITE_DEV_SERVER_URL,
+});
 
 // The HUD and Notes windows are excluded from every screen/window capture (WGC on Windows uses
 // the same SetWindowDisplayAffinity this sets), so the recording controls never end up baked into
@@ -100,10 +102,10 @@ function applyContentProtection(win: BrowserWindow, label: string) {
 
 // Asset base URL for renderer (wallpapers, etc.). Packaged: extraResources copies
 // public/wallpapers to resources/wallpapers. Unpackaged: <appRoot>/public/.
-const ASSET_BASE_DIR = process.defaultApp
+export const ASSET_BASE_DIR = process.defaultApp
 	? path.join(__dirname, "..", "public")
 	: process.resourcesPath;
-export const ASSET_BASE_URL_ARG = `--asset-base-url=${pathToFileURL(`${ASSET_BASE_DIR}${path.sep}`).toString()}`;
+export const ASSET_BASE_URL_ARG = "--asset-base-url=klippt://app/__resources__/";
 
 let hudOverlayWindow: BrowserWindow | null = null;
 let cameraPreviewWindow: BrowserWindow | null = null;
@@ -482,9 +484,7 @@ export function createHudOverlayWindow(): BrowserWindow {
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=hud-overlay");
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { windowType: "hud-overlay" },
-		});
+		win.loadURL("klippt://app/index.html?windowType=hud-overlay");
 	}
 
 	return win;
@@ -593,9 +593,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=camera-preview");
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { windowType: "camera-preview" },
-		});
+		win.loadURL("klippt://app/index.html?windowType=camera-preview");
 	}
 
 	return win;
@@ -650,7 +648,6 @@ export function createEditorWindow(query: Record<string, string> = {}): BrowserW
 			additionalArguments: [ASSET_BASE_URL_ARG],
 			nodeIntegration: false,
 			contextIsolation: true,
-			webSecurity: false,
 			backgroundThrottling: query.windowType === "bench" ? false : true,
 		},
 	});
@@ -692,7 +689,7 @@ export function createEditorWindow(query: Record<string, string> = {}): BrowserW
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(`${VITE_DEV_SERVER_URL}?${new URLSearchParams(routing).toString()}`);
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), { query: routing });
+		win.loadURL(`klippt://app/index.html?${new URLSearchParams(routing).toString()}`);
 	}
 
 	return win;
@@ -734,9 +731,7 @@ export function createSourceSelectorWindow(): BrowserWindow {
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=source-selector");
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { windowType: "source-selector" },
-		});
+		win.loadURL("klippt://app/index.html?windowType=source-selector");
 	}
 
 	return win;
@@ -787,9 +782,7 @@ export function createCountdownOverlayWindow(): BrowserWindow {
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=countdown-overlay");
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { windowType: "countdown-overlay" },
-		});
+		win.loadURL("klippt://app/index.html?windowType=countdown-overlay");
 	}
 
 	return win;
@@ -833,9 +826,7 @@ export function createNotesWindow(): BrowserWindow {
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?showNotes=true");
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { showNotes: "true" },
-		});
+		win.loadURL("klippt://app/index.html?showNotes=true");
 	}
 
 	return win;

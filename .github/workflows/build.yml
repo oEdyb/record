@@ -361,13 +361,16 @@ jobs:
       - name: Resolve macOS signing
         id: signing
         env:
-          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
-          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-          MAC_CSC_NAME: ${{ secrets.MAC_CSC_NAME }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           IS_RELEASE: ${{ needs.resolve-source.outputs.is_release }}
+          # Repository secrets remain visible in every environment. Return an empty value before
+          # GitHub creates the artifact-only step environment, even while migration to the release
+          # environment is pending. Release jobs still fail closed below when any value is absent.
+          MAC_CERTIFICATE_P12: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.MAC_CERTIFICATE_P12 || '' }}
+          MAC_CERTIFICATE_PASSWORD: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          MAC_CSC_NAME: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.MAC_CSC_NAME || '' }}
+          APPLE_ID: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_TEAM_ID: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
         run: |
           set -euo pipefail
           required=(MAC_CERTIFICATE_P12 MAC_CERTIFICATE_PASSWORD MAC_CSC_NAME APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD)
@@ -493,7 +496,7 @@ jobs:
       - name: Package .app bundle
         run: npx electron-builder --mac --${{ matrix.arch }} --dir --publish never
         env:
-          CSC_NAME: ${{ secrets.MAC_CSC_NAME }}
+          CSC_NAME: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.MAC_CSC_NAME || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.enabled == 'true' && 'true' || 'false' }}
 
       - name: Get version
@@ -593,50 +596,6 @@ jobs:
           --target darwin-${{ matrix.arch }}
           --output-dir release/supply-chain
 
-      # Squirrel.Mac installs from a ZIP and nothing else — `MacUpdater` looks for one and
-      # throws ERR_UPDATER_ZIP_FILE_NOT_FOUND when the feed offers only a DMG. Built here, from
-      # the same signed bundle the DMG is about to be built from, so the two can never diverge.
-      #
-      # `ditto`, never `zip`: `zip` flattens the symlinks inside Contents/Frameworks and drops
-      # extended attributes, producing an archive whose .app fails signature validation on
-      # arrival — and Squirrel validates the downloaded bundle against the INSTALLED app's
-      # designated requirement before swapping it.
-      #
-      # ponytail: the .app inside this ZIP is signed but not stapled — only the DMG is notarized
-      # today. Squirrel does not check notarization, and a ZIP fetched by the app's own process
-      # carries no com.apple.quarantine, so Gatekeeper never re-scans the swapped bundle.
-      # Notarizing the .app as well would cost a second notarytool round trip per arch; revisit
-      # if Apple ever tightens this.
-      - name: Create update ZIP
-        id: update_zip
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          APP="${{ steps.find_app.outputs.app_bundle }}"
-          RELEASE_DIR="release/${VERSION}"
-          # The instruction set, NOT the marketing name used for the DMG: electron-updater picks
-          # the file for an Apple Silicon client by matching the literal substring "arm64".
-          ZIP="${RELEASE_DIR}/Klippt-Mac-${{ matrix.arch }}-${VERSION}.zip"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
-          node scripts/mac-update-feed.mjs describe "$ZIP" "$VERSION" \
-            "${RELEASE_DIR}/update-info-${{ matrix.arch }}.json"
-          echo "zip_path=${ZIP}" >> "$GITHUB_OUTPUT"
-          echo "info_path=${RELEASE_DIR}/update-info-${{ matrix.arch }}.json" >> "$GITHUB_OUTPUT"
-
-      # A ZIP whose .app is unreadable, or which lost the bundle root, downloads fine and then
-      # fails at install time on a user's machine. Nothing else in CI can catch that.
-      - name: Verify update ZIP
-        run: |
-          ZIP="${{ steps.update_zip.outputs.zip_path }}"
-          APP_NAME="$(basename "${{ steps.find_app.outputs.app_bundle }}")"
-          unzip -Z1 "$ZIP" | grep -Fq "${APP_NAME}/Contents/MacOS/" \
-            || { echo "::error::${ZIP} does not contain ${APP_NAME}/Contents/MacOS — ditto lost the bundle root"; exit 1; }
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            case "$ZIP" in
-              *arm64*) ;;
-              *) echo "::error::the arm64 ZIP must carry 'arm64' in its name or Apple Silicon clients silently receive the Intel build"; exit 1 ;;
-            esac
-          fi
-
       - name: Create DMG
         id: dmg
         run: |
@@ -670,6 +629,7 @@ jobs:
             -fsargs "-c c=64,a=16,e=16" \
             -format UDBZ \
             "$DMG_OUTPUT"
+          hdiutil verify "$DMG_OUTPUT"
 
           rm -rf "$STAGING"
           echo "dmg_path=$DMG_OUTPUT" >> "$GITHUB_OUTPUT"
@@ -706,26 +666,93 @@ jobs:
             --timestamp \
             "${{ steps.dmg.outputs.dmg_path }}"
 
-      - name: Notarize DMG
+      - name: Notarize DMG and inspect the result
         if: steps.signing.outputs.enabled == 'true'
         run: |
+          RESULT="$RUNNER_TEMP/notary-${{ matrix.arch }}.json"
+          LOG="$RUNNER_TEMP/notary-${{ matrix.arch }}-log.json"
+          set +e
           xcrun notarytool submit "${{ steps.dmg.outputs.dmg_path }}" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --team-id "${{ secrets.APPLE_TEAM_ID }}" \
             --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
             --wait \
-            --timeout 30m
+            --timeout 30m \
+            --output-format json > "$RESULT"
+          SUBMIT_EXIT=$?
+          set -e
+          cat "$RESULT"
+          SUBMISSION_ID="$(node -e '
+            const fs = require("node:fs");
+            const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            process.stdout.write(result.id ?? "");
+          ' "$RESULT")"
+          if [[ -n "$SUBMISSION_ID" ]]; then
+            xcrun notarytool log "$SUBMISSION_ID" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            "$LOG"
+            cat "$LOG"
+          else
+            echo "::error::notarytool returned no submission ID"
+          fi
+          [[ "$SUBMIT_EXIT" -eq 0 ]] || exit "$SUBMIT_EXIT"
+          node -e '
+            const fs = require("node:fs");
+            const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (result.status !== "Accepted") process.exit(1);
+          ' "$RESULT"
         timeout-minutes: 35
 
       - name: Staple notarization ticket
         if: steps.signing.outputs.enabled == 'true'
-        run: xcrun stapler staple "${{ steps.dmg.outputs.dmg_path }}"
+        run: |
+          # A DMG submission creates tickets for the disk image and every nested signed app.
+          # Staple both. The update ZIP is built below from this offline-verifiable app.
+          xcrun stapler staple "${{ steps.dmg.outputs.dmg_path }}"
+          xcrun stapler staple "${{ steps.find_app.outputs.app_bundle }}"
 
       - name: Validate stapled DMG
         if: steps.signing.outputs.enabled == 'true'
         run: |
           xcrun stapler validate "${{ steps.dmg.outputs.dmg_path }}"
+          xcrun stapler validate "${{ steps.find_app.outputs.app_bundle }}"
+          codesign --verify --deep --strict "${{ steps.find_app.outputs.app_bundle }}"
           spctl -a -vv -t install "${{ steps.dmg.outputs.dmg_path }}"
+          spctl -a -vv -t exec "${{ steps.find_app.outputs.app_bundle }}"
+
+      # Squirrel.Mac installs from a ZIP and nothing else. Build it only after the nested .app
+      # has its notarization ticket, because ZIP archives cannot be stapled themselves.
+      # `ditto`, never `zip`: `zip` flattens framework symlinks and drops extended attributes.
+      - name: Create update ZIP
+        id: update_zip
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          APP="${{ steps.find_app.outputs.app_bundle }}"
+          RELEASE_DIR="release/${VERSION}"
+          # electron-updater selects Apple Silicon by the literal substring "arm64".
+          ZIP="${RELEASE_DIR}/Klippt-Mac-${{ matrix.arch }}-${VERSION}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+          node scripts/mac-update-feed.mjs describe "$ZIP" "$VERSION" \
+            "${RELEASE_DIR}/update-info-${{ matrix.arch }}.json"
+          echo "zip_path=${ZIP}" >> "$GITHUB_OUTPUT"
+          echo "info_path=${RELEASE_DIR}/update-info-${{ matrix.arch }}.json" >> "$GITHUB_OUTPUT"
+
+      # A ZIP whose .app is unreadable, or which lost the bundle root, downloads fine and then
+      # fails at install time on a user's machine. Nothing else in CI can catch that.
+      - name: Verify update ZIP
+        run: |
+          ZIP="${{ steps.update_zip.outputs.zip_path }}"
+          APP_NAME="$(basename "${{ steps.find_app.outputs.app_bundle }}")"
+          unzip -Z1 "$ZIP" | grep -Fq "${APP_NAME}/Contents/MacOS/" \
+            || { echo "::error::${ZIP} does not contain ${APP_NAME}/Contents/MacOS — ditto lost the bundle root"; exit 1; }
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            case "$ZIP" in
+              *arm64*) ;;
+              *) echo "::error::the arm64 ZIP must carry 'arm64' in its name or Apple Silicon clients silently receive the Intel build"; exit 1 ;;
+            esac
+          fi
 
       - name: Generate the macOS release inventory
         env:

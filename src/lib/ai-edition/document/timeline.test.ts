@@ -893,12 +893,14 @@ describe("splitClipAt / duplicateClip / moveClip", () => {
 		const primaryTranscript = {
 			assetId: "asset_1",
 			language: "en",
+			sources: [],
 			segments: [],
 			words: [{ id: "primary", segmentId: "primary-segment", startSec: 1, endSec: 2, text: "old" }],
 		};
 		const secondaryTranscript = {
 			assetId: "asset_2",
 			language: "en",
+			sources: [],
 			segments: [],
 			words: [
 				{ id: "left", segmentId: "secondary-segment", startSec: 1, endSec: 2, text: "left" },

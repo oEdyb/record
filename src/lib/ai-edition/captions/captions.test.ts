@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AxcutDocument, AxcutTranscript } from "../schema";
+import { type AxcutDocument, type AxcutTranscript, axcutSchemaVersion } from "../schema";
 import { captionCuesToTextRegions, deriveCaptionCues } from "./cues";
 import {
 	captionBackgroundCss,
@@ -21,6 +21,7 @@ function transcript(): AxcutTranscript {
 	return {
 		assetId: "asset-1",
 		language: "en",
+		sources: [],
 		segments: [
 			{
 				id: "seg_1",
@@ -51,7 +52,7 @@ function transcript(): AxcutTranscript {
 
 function doc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
 	return {
-		schemaVersion: 5,
+		schemaVersion: axcutSchemaVersion,
 		project: {
 			id: "p1",
 			title: "Test",
@@ -348,7 +349,7 @@ function wordPerSegmentTranscript(): AxcutTranscript {
 		});
 		t += 0.45;
 	});
-	return { assetId: "asset-1", language: "fr", segments, words };
+	return { assetId: "asset-1", language: "fr", sources: [], segments, words };
 }
 
 function wordPerSegmentDoc(): AxcutDocument {

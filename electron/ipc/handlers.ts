@@ -1,9 +1,9 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import type { DesktopCapturerSource } from "electron";
 import {
 	app,
@@ -11,13 +11,19 @@ import {
 	clipboard,
 	desktopCapturer,
 	dialog,
-	ipcMain,
+	ipcMain as electronIpcMain,
 	powerMonitor,
 	screen,
 	shell,
 	systemPreferences,
 } from "electron";
 import { APP_DISPLAY_NAME } from "../../src/lib/brand";
+import {
+	fromKlipptMediaUrl,
+	KLIPPT_APP_ORIGIN,
+	KLIPPT_RESOURCE_PATH_PREFIX,
+	toKlipptMediaUrl,
+} from "../../src/lib/localMediaUrl";
 import {
 	type NativeLinuxRecordingRequest,
 	portalCursorMode,
@@ -150,6 +156,7 @@ import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
+import type { RendererIpcMain } from "./trustedRendererIpc";
 
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
 const RECORDING_PREFS_FILE = path.join(app.getPath("userData"), "recording-preferences.json");
@@ -168,13 +175,23 @@ const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
 	".ts",
 ]);
 const PREVIEW_AUDIO_DIR = path.join(app.getPath("userData"), "preview-audio");
+const CLEAN_VOICE_MEDIA_DIR = path.join(app.getPath("userData"), "derived-media", "clean-voice-v1");
+const RENDERER_EXPORT_TEMP_DIR = app.getPath("temp");
 let nativeMacRecordingService: NativeMacRecordingService | null = null;
 
 // Paths the user approved via file picker or project load (i.e. outside the default dirs).
 const approvedPaths = new Set<string>();
 
+function canonicalPath(filePath: string): string {
+	try {
+		return realpathSync.native(filePath);
+	} catch {
+		return path.resolve(filePath);
+	}
+}
+
 function approveFilePath(filePath: string): void {
-	approvedPaths.add(path.resolve(filePath));
+	approvedPaths.add(canonicalPath(filePath));
 }
 
 function getAllowedReadDirs(): string[] {
@@ -182,13 +199,13 @@ function getAllowedReadDirs(): string[] {
 }
 
 function isPathWithinDir(filePath: string, dirPath: string): boolean {
-	const resolved = path.resolve(filePath);
-	const resolvedDir = path.resolve(dirPath);
+	const resolved = canonicalPath(filePath);
+	const resolvedDir = canonicalPath(dirPath);
 	return resolved === resolvedDir || resolved.startsWith(resolvedDir + path.sep);
 }
 
 function isPathAllowed(filePath: string): boolean {
-	const resolved = path.resolve(filePath);
+	const resolved = canonicalPath(filePath);
 	if (approvedPaths.has(resolved)) return true;
 	return getAllowedReadDirs().some((dir) => isPathWithinDir(resolved, dir));
 }
@@ -203,6 +220,57 @@ export function resolveApprovedVideoPath(videoPath?: string | null): string | nu
 		return null;
 	}
 
+	return normalizedPath;
+}
+
+const ALLOWED_RENDERER_MEDIA_EXTENSIONS = new Set([
+	...ALLOWED_IMPORT_VIDEO_EXTENSIONS,
+	".aac",
+	".flac",
+	".m4a",
+	".mp3",
+	".ogg",
+	".wav",
+]);
+
+/** Resolves only media the renderer already has authority to preview. */
+export function resolveApprovedRendererMediaPath(mediaPath?: string | null): string | null {
+	const normalizedPath = normalizeVideoSourcePath(mediaPath);
+	if (
+		!normalizedPath ||
+		!ALLOWED_RENDERER_MEDIA_EXTENSIONS.has(path.extname(normalizedPath).toLowerCase())
+	) {
+		return null;
+	}
+	const appOwned = [RECORDINGS_DIR, PREVIEW_AUDIO_DIR, CLEAN_VOICE_MEDIA_DIR].some((directory) =>
+		isPathWithinDir(normalizedPath, directory),
+	);
+	const appOwnedExport = isVoiceoverTempPath(
+		canonicalPath(RENDERER_EXPORT_TEMP_DIR),
+		canonicalPath(normalizedPath),
+	);
+	return appOwned || appOwnedExport || approvedPaths.has(canonicalPath(normalizedPath))
+		? normalizedPath
+		: null;
+}
+
+/** Grants renderer preview access to one existing media file selected by a trusted main flow. */
+export async function approveReadableRendererMediaPath(
+	filePath?: string | null,
+): Promise<string | null> {
+	const normalizedPath = normalizeVideoSourcePath(filePath);
+	if (
+		!normalizedPath ||
+		!ALLOWED_RENDERER_MEDIA_EXTENSIONS.has(path.extname(normalizedPath).toLowerCase())
+	) {
+		return null;
+	}
+	try {
+		if (!(await fs.stat(normalizedPath)).isFile()) return null;
+	} catch {
+		return null;
+	}
+	approveFilePath(normalizedPath);
 	return normalizedPath;
 }
 
@@ -252,7 +320,7 @@ function parseAfinfoAudioTrackBitrates(output: string): number[] {
 }
 
 async function prepareSupplementalPreviewAudioTrack(videoPath: string) {
-	const normalizedPath = await approveReadableVideoPath(videoPath);
+	const normalizedPath = resolveApprovedVideoPath(videoPath);
 	if (!normalizedPath) {
 		return {
 			success: false,
@@ -292,7 +360,7 @@ async function prepareSupplementalPreviewAudioTrack(videoPath: string) {
 	try {
 		const outputStat = await fs.stat(outputPath);
 		if (outputStat.mtimeMs >= sourceStat.mtimeMs) {
-			return { success: true, path: pathToFileURL(outputPath).toString() };
+			return { success: true, path: toKlipptMediaUrl(outputPath) };
 		}
 	} catch {
 		// Generate below.
@@ -315,7 +383,7 @@ async function prepareSupplementalPreviewAudioTrack(videoPath: string) {
 		};
 	}
 
-	return { success: true, path: pathToFileURL(outputPath).toString() };
+	return { success: true, path: toKlipptMediaUrl(outputPath) };
 }
 
 export async function approveReadableVideoPath(
@@ -335,14 +403,16 @@ export async function approveReadableVideoPath(
 		return null;
 	}
 
-	// With trustedDirs (e.g. project load), only auto-approve paths inside them so a
-	// malicious project file can't approve reads to arbitrary locations.
-	if (trustedDirs) {
-		const resolved = path.resolve(normalizedPath);
-		const withinTrusted = trustedDirs.some((dir) => isPathWithinDir(resolved, dir));
-		if (!withinTrusted) {
-			return null;
-		}
+	// Only a main-process file picker can approve an arbitrary new path. Project
+	// loading can approve media inside the project directory or recordings folder.
+	// A renderer-supplied path without either authority must stay rejected.
+	if (!trustedDirs) {
+		return null;
+	}
+	const resolved = path.resolve(normalizedPath);
+	const withinTrusted = trustedDirs.some((dir) => isPathWithinDir(resolved, dir));
+	if (!withinTrusted) {
+		return null;
 	}
 
 	try {
@@ -354,6 +424,18 @@ export async function approveReadableVideoPath(
 		return null;
 	}
 
+	approveFilePath(normalizedPath);
+	return normalizedPath;
+}
+
+async function approveUserSelectedVideoPath(filePath?: string | null): Promise<string | null> {
+	const normalizedPath = normalizeVideoSourcePath(filePath);
+	if (!normalizedPath || !hasAllowedImportVideoExtension(normalizedPath)) return null;
+	try {
+		if (!(await fs.stat(normalizedPath)).isFile()) return null;
+	} catch {
+		return null;
+	}
 	approveFilePath(normalizedPath);
 	return normalizedPath;
 }
@@ -564,6 +646,11 @@ function normalizeVideoSourcePath(videoPath?: string | null): string | null {
 	const trimmed = videoPath.trim();
 	if (!trimmed) {
 		return null;
+	}
+
+	const protocolPath = fromKlipptMediaUrl(trimmed);
+	if (protocolPath) {
+		return protocolPath;
 	}
 
 	if (/^file:\/\//i.test(trimmed)) {
@@ -866,17 +953,7 @@ const agentCursorTelemetryReader: CursorTelemetryReader = {
 };
 
 function resolveAssetBasePath() {
-	try {
-		if (app.isPackaged) {
-			const assetPath = path.join(process.resourcesPath, "assets");
-			return pathToFileURL(`${assetPath}${path.sep}`).toString();
-		}
-		const assetPath = path.join(app.getAppPath(), "public", "assets");
-		return pathToFileURL(`${assetPath}${path.sep}`).toString();
-	} catch (err) {
-		console.error("Failed to resolve asset base path:", err);
-		return null;
-	}
+	return `${KLIPPT_APP_ORIGIN}${KLIPPT_RESOURCE_PATH_PREFIX}assets/`;
 }
 
 function getSelectedSourceBounds() {
@@ -1611,14 +1688,19 @@ export function registerIpcHandlers(
 	onRecordingStateChange?: (recording: boolean, sourceName: string) => void,
 	_switchToHud?: () => void,
 	isPrivateRecordingUiPoint?: (point: { x: number; y: number }) => boolean,
-	options: { restoreInterruptedRecording?: boolean; enableCleanVoiceJobs?: boolean } = {},
+	options: {
+		restoreInterruptedRecording?: boolean;
+		enableCleanVoiceJobs?: boolean;
+		ipcMain?: RendererIpcMain;
+	} = {},
 ): Promise<boolean> {
+	const ipcMain = options.ipcMain ?? electronIpcMain;
 	isDirectionExcludedPoint = isPrivateRecordingUiPoint ?? (() => false);
 	const { config: entitlementConfig, service: entitlementService } = createEntitlementService({
 		userDataPath: app.getPath("userData"),
 		isPackaged: app.isPackaged,
 	});
-	registerEntitlementIpc(entitlementService, entitlementConfig);
+	registerEntitlementIpc(entitlementService, entitlementConfig, ipcMain);
 	const exportBufferService = new CompositorViewService({
 		exportJournalPath: path.join(app.getPath("userData"), "buffer-export-transactions.json"),
 	});
@@ -1906,11 +1988,11 @@ export function registerIpcHandlers(
 		}
 	}
 
-	ipcMain.handle("clipboard:write-text", (_event, text: unknown) => {
+	ipcMain.handle("clipboard:write-text", async (_event, text: unknown) => {
 		if (typeof text !== "string") {
 			throw new TypeError("Clipboard text must be a string.");
 		}
-		clipboard.writeText(text);
+		await clipboard.writeText(text);
 	});
 
 	ipcMain.handle("get-sources", async (_, opts) => {
@@ -1921,8 +2003,7 @@ export function registerIpcHandlers(
 			name: source.name,
 			display_id: source.display_id,
 			thumbnail: source.thumbnail.isEmpty() ? null : source.thumbnail.toDataURL(),
-			appIcon:
-				source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
+			appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
 		}));
 	});
 
@@ -3709,8 +3790,8 @@ export function registerIpcHandlers(
 
 	// Protocol allowlist. `shell.openExternal` hands the string to the OS handler,
 	// so `file:`, `ms-msdt:`, a UNC path, or any registered custom scheme is a
-	// launch primitive — the renderer runs with webSecurity:false and now renders
-	// model-generated content, so "the renderer is trusted" is not a strong enough
+	// launch primitive. The renderer also renders model-generated content, so
+	// "the renderer is trusted" is not a strong enough
 	// premise to skip this. http/https/mailto is everything the app actually opens.
 	const EXTERNAL_URL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
@@ -3729,7 +3810,7 @@ export function registerIpcHandlers(
 		}
 	});
 
-	// Return base path for assets so renderer can resolve file:// paths in production
+	// Return the restricted resource root for native-bridge clients that still ask for it.
 	ipcMain.handle("get-asset-base-path", () => {
 		return resolveAssetBasePath();
 	});
@@ -3897,7 +3978,7 @@ export function registerIpcHandlers(
 				return { success: false, canceled: true };
 			}
 
-			const normalizedPath = await approveReadableVideoPath(result.filePaths[0]);
+			const normalizedPath = await approveUserSelectedVideoPath(result.filePaths[0]);
 			if (!normalizedPath) {
 				return {
 					success: false,
@@ -3945,7 +4026,7 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("read-binary-file", async (_, filePath: string) => {
 		try {
-			const normalizedPath = await approveReadableVideoPath(filePath);
+			const normalizedPath = resolveApprovedVideoPath(filePath);
 			if (!normalizedPath) {
 				return {
 					success: false,
@@ -3975,7 +4056,7 @@ export function registerIpcHandlers(
 	// recording above that can never be loaded whole — see read-file-chunk).
 	ipcMain.handle("get-readable-file-info", async (_, filePath: string) => {
 		try {
-			const normalizedPath = await approveReadableVideoPath(filePath);
+			const normalizedPath = resolveApprovedVideoPath(filePath);
 			if (!normalizedPath) {
 				return {
 					success: false,
@@ -4017,7 +4098,7 @@ export function registerIpcHandlers(
 		): Promise<AudioPeaksResult> => {
 			try {
 				// Same approval gate as every other read of a renderer-supplied path.
-				const normalizedPath = await approveReadableVideoPath(filePath);
+				const normalizedPath = resolveApprovedVideoPath(filePath);
 				if (!normalizedPath) {
 					return { success: false, message: "File path is not approved" };
 				}
@@ -4042,7 +4123,7 @@ export function registerIpcHandlers(
 		"get-speech-activity",
 		async (_, filePath: string): Promise<SpeechActivityIpcResult> => {
 			try {
-				const normalizedPath = await approveReadableVideoPath(filePath);
+				const normalizedPath = resolveApprovedVideoPath(filePath);
 				if (!normalizedPath) return { success: false, message: "File path is not approved" };
 				const result = await getSpeechActivity(normalizedPath);
 				return { success: true, ...result };
@@ -4062,7 +4143,7 @@ export function registerIpcHandlers(
 	// do (2 GiB cap) and a 16 GB machine cannot hold for multi-GB recordings.
 	ipcMain.handle("read-file-chunk", async (_, filePath: string, offset: number, length: number) => {
 		try {
-			const normalizedPath = await approveReadableVideoPath(filePath);
+			const normalizedPath = resolveApprovedVideoPath(filePath);
 			if (!normalizedPath) {
 				return {
 					success: false,
@@ -4560,63 +4641,66 @@ export function registerIpcHandlers(
 		return aiEditionLlmConfigInstance;
 	};
 
-	registerNativeBridgeHandlers({
-		workloadTelemetry,
-		assertEntitlement: (capability) => entitlementService.assertCapability(capability),
-		getPlatform: () => process.platform,
-		getCurrentProjectPath: () => currentProjectPath,
-		getCurrentVideoPath: () => currentVideoPath,
-		saveProjectFile,
-		loadProjectFile,
-		loadCurrentProjectFile,
-		loadProjectFileFromPath,
-		setCurrentVideoPath,
-		getCurrentVideoPathResult,
-		clearCurrentVideoPath,
-		resolveAssetBasePath,
-		resolveVideoPath: (videoPath?: string | null) =>
-			normalizeVideoSourcePath(videoPath ?? currentVideoPath),
-		loadCursorRecordingData: readCursorRecordingFile,
-		loadCursorTelemetry: readCursorTelemetryFile,
-		// compositor view's createView needs the renderer-owning
-		// BrowserWindow's native handle (HWND on Windows, NSView* on macOS).
-		// Same ownership rules as desktopCapturer: `BrowserWindow.fromWebContents`
-		// gives us the window that hosts this sender; `getNativeWindowHandle`
-		// is the platform-native parent handle the D3D11 addon parents its
-		// child window to.
-		getNativeWindowHandle: (sender) => {
-			const window = BrowserWindow.fromWebContents(sender);
-			if (!window || window.isDestroyed()) {
-				return null;
-			}
-			try {
-				return window.getNativeWindowHandle();
-			} catch {
-				return null;
-			}
-		},
-		getAiEditionDocuments: () => aiEditionDocuments,
-		getAiEditionLlmConfig,
-		runAiEditionChat: (projectId, sessionId, message, document, sink) =>
-			runChat(projectId, sessionId, message, getAiEditionLlmConfig(), document, sink, {
-				cursor: agentCursorTelemetryReader,
+	registerNativeBridgeHandlers(
+		{
+			workloadTelemetry,
+			assertEntitlement: (capability) => entitlementService.assertCapability(capability),
+			getPlatform: () => process.platform,
+			getCurrentProjectPath: () => currentProjectPath,
+			getCurrentVideoPath: () => currentVideoPath,
+			saveProjectFile,
+			loadProjectFile,
+			loadCurrentProjectFile,
+			loadProjectFileFromPath,
+			setCurrentVideoPath,
+			getCurrentVideoPathResult,
+			clearCurrentVideoPath,
+			resolveAssetBasePath,
+			resolveVideoPath: (videoPath?: string | null) =>
+				normalizeVideoSourcePath(videoPath ?? currentVideoPath),
+			loadCursorRecordingData: readCursorRecordingFile,
+			loadCursorTelemetry: readCursorTelemetryFile,
+			// compositor view's createView needs the renderer-owning
+			// BrowserWindow's native handle (HWND on Windows, NSView* on macOS).
+			// Same ownership rules as desktopCapturer: `BrowserWindow.fromWebContents`
+			// gives us the window that hosts this sender; `getNativeWindowHandle`
+			// is the platform-native parent handle the D3D11 addon parents its
+			// child window to.
+			getNativeWindowHandle: (sender) => {
+				const window = BrowserWindow.fromWebContents(sender);
+				if (!window || window.isDestroyed()) {
+					return null;
+				}
+				try {
+					return window.getNativeWindowHandle();
+				} catch {
+					return null;
+				}
+			},
+			getAiEditionDocuments: () => aiEditionDocuments,
+			getAiEditionLlmConfig,
+			runAiEditionChat: (projectId, sessionId, message, document, sink) =>
+				runChat(projectId, sessionId, message, getAiEditionLlmConfig(), document, sink, {
+					cursor: agentCursorTelemetryReader,
+				}),
+			undoAiEditionToolBatch: (_projectId, _sessionId) => ({
+				success: false,
+				error: "Per-tool-batch undo retired in favor of per-message rewind.",
 			}),
-		undoAiEditionToolBatch: (_projectId, _sessionId) => ({
-			success: false,
-			error: "Per-tool-batch undo retired in favor of per-message rewind.",
-		}),
-		rewindToMessage: (projectId, sessionId, messageId) =>
-			rewindToMessage(projectId, sessionId, messageId),
-		compactNow: (projectId, sessionId) =>
-			compactSessionNow(projectId, sessionId, getAiEditionLlmConfig()),
-		getContextUsage: getSessionContextUsage,
-		listAiEditionChatSessions: (projectId) => listSessions(projectId),
-		createAiEditionChatSession: (projectId, title) => createSession(projectId, title),
-		selectAiEditionChatSession: (projectId, sessionId) => selectSession(projectId, sessionId),
-		renameAiEditionChatSession: (projectId, sessionId, title) =>
-			renameSession(projectId, sessionId, title),
-		deleteAiEditionChatSession: (projectId, sessionId) => deleteSession(projectId, sessionId),
-	});
+			rewindToMessage: (projectId, sessionId, messageId) =>
+				rewindToMessage(projectId, sessionId, messageId),
+			compactNow: (projectId, sessionId) =>
+				compactSessionNow(projectId, sessionId, getAiEditionLlmConfig()),
+			getContextUsage: getSessionContextUsage,
+			listAiEditionChatSessions: (projectId) => listSessions(projectId),
+			createAiEditionChatSession: (projectId, title) => createSession(projectId, title),
+			selectAiEditionChatSession: (projectId, sessionId) => selectSession(projectId, sessionId),
+			renameAiEditionChatSession: (projectId, sessionId, title) =>
+				renameSession(projectId, sessionId, title),
+			deleteAiEditionChatSession: (projectId, sessionId) => deleteSession(projectId, sessionId),
+		},
+		ipcMain,
+	);
 
 	return (async () => {
 		await exportRecovery;

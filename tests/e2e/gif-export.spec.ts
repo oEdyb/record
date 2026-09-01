@@ -20,6 +20,20 @@ const compositorAddon = require(
 
 type ElectronApplication = Awaited<ReturnType<typeof electron.launch>>;
 
+async function waitForWindow(app: ElectronApplication, windowType: string) {
+	await expect
+		.poll(
+			async () =>
+				app
+					.windows()
+					.find((window) => window.url().includes(`windowType=${windowType}`))
+					?.url(),
+			{ timeout: 60_000 },
+		)
+		.toContain(`windowType=${windowType}`);
+	return app.windows().find((window) => window.url().includes(`windowType=${windowType}`))!;
+}
+
 async function launchApp(userDataDir: string, tmpDir: string) {
 	const app = await electron.launch({
 		args: [
@@ -87,7 +101,7 @@ async function exportFromLoadedVideo(
 	const app = await launchApp(userDataDir, appTmpDir);
 
 	try {
-		const hudWindow = await app.firstWindow({ timeout: 60_000 });
+		const hudWindow = await waitForWindow(app, "hud-overlay");
 		await hudWindow.waitForLoadState("domcontentloaded");
 
 		await app.evaluate(({ ipcMain }, targetPath: string) => {
@@ -122,10 +136,7 @@ async function exportFromLoadedVideo(
 			}
 		}
 
-		const editorWindow = await app.waitForEvent("window", {
-			predicate: (w) => w.url().includes("windowType=editor"),
-			timeout: 15_000,
-		});
+		const editorWindow = await waitForWindow(app, "editor");
 
 		// WebCodecs may not be registered in the renderer on first load.
 		await editorWindow.reload();

@@ -43,6 +43,7 @@ function doc(): AxcutDocument {
 			{
 				assetId: asset.id,
 				language: "fr",
+				sources: [],
 				segments: [],
 				words: [
 					{ id: "w1", segmentId: "s", startSec: 1.3, endSec: 3.0, text: "Salut, comment ça va ?" },

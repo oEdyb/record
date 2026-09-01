@@ -1,6 +1,9 @@
 import path from "node:path";
 import { app } from "electron";
 import { APP_DISPLAY_NAME } from "../src/lib/brand";
+import { registerKlipptScheme } from "./localMediaProtocol";
+
+registerKlipptScheme();
 
 // The package can adopt the Klippt display name without making existing projects,
 // recordings, permissions, and preferences appear to disappear. Keep the current

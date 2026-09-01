@@ -91,7 +91,9 @@ class FakeWritable {
 	// SharedArrayBuffer) — say so, or it can't be handed to `new File([...])`.
 	constructor(private readonly onClose: (bytes: Uint8Array<ArrayBuffer>) => void) {}
 	async write(data: ArrayBuffer | Uint8Array | string) {
-		this.parts.push(typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data));
+		this.parts.push(
+			typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data),
+		);
 	}
 	async close() {
 		const total = this.parts.reduce((n, p) => n + p.byteLength, 0);

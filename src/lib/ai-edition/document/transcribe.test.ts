@@ -87,6 +87,7 @@ describe("toAxcutTranscriptDsl", () => {
 		const transcript: AxcutTranscript = {
 			assetId: "asset_1",
 			language: "en",
+			sources: [],
 			segments: [
 				{
 					id: "seg_1",
@@ -122,6 +123,7 @@ describe("toAxcutTranscriptDsl", () => {
 		const transcript: AxcutTranscript = {
 			assetId: "asset_1",
 			language: "auto",
+			sources: [],
 			segments: [
 				{
 					id: "seg_1",
@@ -144,6 +146,7 @@ describe("toAxcutTranscriptDsl", () => {
 		const transcript: AxcutTranscript = {
 			assetId: "asset_1",
 			language: "fr",
+			sources: [],
 			segments: [],
 			words: [],
 		};

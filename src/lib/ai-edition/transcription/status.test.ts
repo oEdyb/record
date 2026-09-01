@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AxcutDocument, AxcutTranscript } from "../schema";
+import { type AxcutDocument, type AxcutTranscript, axcutSchemaVersion } from "../schema";
 import {
 	type AssetTranscriptionView,
 	classifyTranscriptionError,
@@ -15,6 +15,7 @@ function transcript(assetId: string, words: string[]): AxcutTranscript {
 	return {
 		assetId,
 		language: "en",
+		sources: [],
 		segments: words.map((text, i) => ({
 			id: `seg_${i}`,
 			kind: "speech" as const,
@@ -229,8 +230,17 @@ describe("resolveTranscriptGate", () => {
 });
 
 describe("transcriptRelevantAssetIds", () => {
-	const base = {
-		schemaVersion: 8 as const,
+	const base: Pick<
+		AxcutDocument,
+		| "schemaVersion"
+		| "project"
+		| "transcript"
+		| "transcripts"
+		| "annotations"
+		| "zoomRanges"
+		| "legacyEditor"
+	> = {
+		schemaVersion: axcutSchemaVersion,
 		project: {
 			id: "proj_1",
 			title: "T",
@@ -272,7 +282,7 @@ describe("transcriptRelevantAssetIds", () => {
 				speedRanges: [],
 				captionRanges: [],
 			},
-		} as AxcutDocument;
+		};
 	}
 
 	it("only counts the assets the timeline plays", () => {

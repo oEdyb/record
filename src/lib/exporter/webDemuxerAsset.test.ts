@@ -19,6 +19,12 @@ describe("webDemuxerWasmUrl", () => {
 		).toBe("file:///Applications/Klippt.app/Contents/Resources/web-demuxer.wasm");
 	});
 
+	it("resolves from the packaged protocol resource root", () => {
+		expect(webDemuxerWasmUrl("klippt://app/index.html?windowType=editor")).toBe(
+			"klippt://app/__resources__/web-demuxer.wasm",
+		);
+	});
+
 	it("ships a real WebAssembly binary in the public asset directory", () => {
 		const bytes = readFileSync(path.resolve("public/wasm/web-demuxer.wasm"));
 		expect([...bytes.subarray(0, 4)]).toEqual([0x00, 0x61, 0x73, 0x6d]);

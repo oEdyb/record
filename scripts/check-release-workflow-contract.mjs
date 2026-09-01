@@ -139,9 +139,43 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 				"macOS release builds must clean compiled output before Vite",
 			);
 			const signatureVerification = findStep(job, "Verify .app code signature");
+			const createDmg = findStep(job, "Create DMG");
+			const signDmg = findStep(job, "Sign DMG");
+			const notarizeDmg = findStep(job, "Notarize DMG and inspect the result");
+			const stapleTicket = findStep(job, "Staple notarization ticket");
+			const validateDmg = findStep(job, "Validate stapled DMG");
+			const createUpdateZip = findStep(job, "Create update ZIP");
 			requireValue(
 				steps(job).indexOf(signatureVerification) < steps(job).indexOf(ffmpegEvidence),
 				"macOS native FFmpeg evidence must describe the final signed app",
+			);
+			requireValue(
+				steps(job).indexOf(createDmg) < steps(job).indexOf(notarizeDmg) &&
+					steps(job).indexOf(notarizeDmg) < steps(job).indexOf(stapleTicket) &&
+					steps(job).indexOf(stapleTicket) < steps(job).indexOf(validateDmg) &&
+					steps(job).indexOf(validateDmg) < steps(job).indexOf(createUpdateZip),
+				"macOS update ZIP must be created from the app after its nested notarization ticket is stapled and validated",
+			);
+			requireValue(
+				String(createDmg?.run).includes('hdiutil verify "$DMG_OUTPUT"') &&
+					String(signDmg?.run).includes("codesign --force") &&
+					String(signDmg?.run).includes("steps.dmg.outputs.dmg_path") &&
+					stapleTicket?.if === "steps.signing.outputs.enabled == 'true'" &&
+					validateDmg?.if === "steps.signing.outputs.enabled == 'true'" &&
+					String(stapleTicket?.run).includes("steps.find_app.outputs.app_bundle") &&
+					String(stapleTicket?.run).includes("steps.dmg.outputs.dmg_path") &&
+					String(validateDmg?.run).includes("stapler validate") &&
+					String(validateDmg?.run).includes("steps.find_app.outputs.app_bundle") &&
+					String(validateDmg?.run).includes("spctl -a -vv -t install") &&
+					String(validateDmg?.run).includes("spctl -a -vv -t exec"),
+				"macOS release must verify the DMG, inspect notarization, and staple and validate the nested app",
+			);
+			const notarizeRun = String(notarizeDmg?.run);
+			requireValue(
+				notarizeRun.includes("notarytool log") &&
+					notarizeRun.indexOf("notarytool log") <
+						notarizeRun.indexOf('result.status !== "Accepted"'),
+				"macOS release must inspect Apple's notarization log before rejecting the result",
 			);
 		}
 		requireValue(
@@ -151,11 +185,54 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 		);
 	}
 	const signing = findStep(build.jobs?.["build-macos"], "Resolve macOS signing");
+	const releaseOnlySecret = (name) =>
+		"${{ needs.resolve-source.outputs.is_release == 'true' && secrets." + name + " || '' }}";
+	const appleSecretNames = [
+		"MAC_CERTIFICATE_P12",
+		"MAC_CERTIFICATE_PASSWORD",
+		"MAC_CSC_NAME",
+		"APPLE_ID",
+		"APPLE_TEAM_ID",
+		"APPLE_APP_SPECIFIC_PASSWORD",
+	];
 	requireValue(
 		build.jobs?.["build-macos"]?.environment?.name ===
 			"${{ needs.resolve-source.outputs.is_release == 'true' && 'release' || 'artifact-build' }}",
 		"Mac release signing secrets must be isolated from artifact-only builds",
 	);
+	for (const name of appleSecretNames) {
+		requireValue(
+			signing?.env?.[name] === releaseOnlySecret(name),
+			`Artifact-only macOS builds must not receive ${name}`,
+		);
+	}
+	const packageApp = findStep(build.jobs?.["build-macos"], "Package .app bundle");
+	requireValue(
+		packageApp?.env?.CSC_NAME === releaseOnlySecret("MAC_CSC_NAME"),
+		"Artifact-only macOS packaging must not receive MAC_CSC_NAME",
+	);
+	for (const step of steps(build.jobs?.["build-macos"])) {
+		const directRun = String(step.run ?? "");
+		const environmentValues = Object.values(step.env ?? {}).map(String);
+		for (const name of appleSecretNames) {
+			const reference = `secrets.${name}`;
+			if (
+				!directRun.includes(reference) &&
+				!environmentValues.some((value) => value.includes(reference))
+			) {
+				continue;
+			}
+			const releaseOnlyEnvironment =
+				!directRun.includes(reference) &&
+				environmentValues
+					.filter((value) => value.includes(reference))
+					.every((value) => value === releaseOnlySecret(name));
+			requireValue(
+				step.if === "steps.signing.outputs.enabled == 'true'" || releaseOnlyEnvironment,
+				`macOS step '${step.name}' exposes ${name} outside a verified release`,
+			);
+		}
+	}
 	requireValue(
 		signing?.env?.IS_RELEASE === "${{ needs.resolve-source.outputs.is_release }}" &&
 			String(signing?.run).includes("A signed release cannot publish an ad-hoc Mac build"),

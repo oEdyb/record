@@ -5,7 +5,7 @@ import {
 	app,
 	BrowserWindow,
 	dialog,
-	ipcMain,
+	ipcMain as electronIpcMain,
 	Menu,
 	nativeImage,
 	net,
@@ -40,12 +40,22 @@ import {
 import {
 	getSelectedDesktopSource,
 	registerIpcHandlers,
+	resolveApprovedRendererMediaPath,
 	resolveApprovedVideoPath,
 } from "./ipc/handlers";
+import {
+	createTrustedRendererIpcMain,
+	isTrustedDisplayMediaRequest,
+	isTrustedPermissionCheck,
+	isTrustedPermissionRequest,
+} from "./ipc/trustedRendererIpc";
+import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
+import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
 import { getSttManager, registerSttIpc } from "./stt";
 import { checkLatestRelease } from "./update-checker";
 import {
+	ASSET_BASE_DIR,
 	createCameraPreviewWindow,
 	createCountdownOverlayWindow,
 	createEditorWindow,
@@ -114,6 +124,13 @@ process.env.APP_ROOT = path.join(__dirname, "..");
 export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
+
+const trustedRendererConfig: TrustedRendererConfig = {
+	devServerUrl: VITE_DEV_SERVER_URL,
+};
+const ipcMain = createTrustedRendererIpcMain(electronIpcMain, trustedRendererConfig);
+app.enableSandbox();
+installWebContentsSecurityGuards(app, trustedRendererConfig);
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 	? path.join(process.env.APP_ROOT, "public")
@@ -762,6 +779,12 @@ app.on("will-quit", () => {
 const appReady = !cliCommand && hasSingleInstanceLock ? app.whenReady() : null;
 
 appReady?.then(async () => {
+	installKlipptProtocol({
+		rendererDist: RENDERER_DIST,
+		resourceRoot: ASSET_BASE_DIR,
+		resolveMediaPath: resolveApprovedRendererMediaPath,
+		allowedCorsOrigins: VITE_DEV_SERVER_URL ? [new URL(VITE_DEV_SERVER_URL).origin] : [],
+	});
 	if (isDiagnosticModeEnabled()) {
 		mainLogBuffer.install();
 		console.info("[diagnostic] OPENSCREEN_DIAGNOSTIC=1, capturing console.* into ring buffer");
@@ -780,31 +803,41 @@ appReady?.then(async () => {
 		}
 	}
 
-	session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-		const allowed = [
-			"media",
-			"audioCapture",
-			"microphone",
-			"videoCapture",
-			"camera",
-			"screen",
-			"display-capture",
-		];
-		return allowed.includes(permission);
-	});
+	session.defaultSession.setPermissionCheckHandler(
+		(webContents, permission, requestingOrigin, details) => {
+			const allowed = [
+				"media",
+				"audioCapture",
+				"microphone",
+				"videoCapture",
+				"camera",
+				"screen",
+				"display-capture",
+			];
+			return (
+				allowed.includes(permission) &&
+				isTrustedPermissionCheck(webContents, requestingOrigin, details, trustedRendererConfig)
+			);
+		},
+	);
 
-	session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-		const allowed = [
-			"media",
-			"audioCapture",
-			"microphone",
-			"videoCapture",
-			"camera",
-			"screen",
-			"display-capture",
-		];
-		callback(allowed.includes(permission));
-	});
+	session.defaultSession.setPermissionRequestHandler(
+		(webContents, permission, callback, details) => {
+			const allowed = [
+				"media",
+				"audioCapture",
+				"microphone",
+				"videoCapture",
+				"camera",
+				"screen",
+				"display-capture",
+			];
+			callback(
+				allowed.includes(permission) &&
+					isTrustedPermissionRequest(webContents, details, trustedRendererConfig),
+			);
+		},
+	);
 
 	session.defaultSession.setDisplayMediaRequestHandler(
 		(request, callback) => {
@@ -817,7 +850,11 @@ appReady?.then(async () => {
 					`audioRequested=${request.audioRequested} ` +
 					`source=${source ? `${source.id} (${source.name})` : "(none)"}`,
 			);
-			if (!request.videoRequested || !source) {
+			if (
+				!isTrustedDisplayMediaRequest(request, trustedRendererConfig) ||
+				!request.videoRequested ||
+				!source
+			) {
 				callback({});
 				return;
 			}
@@ -949,6 +986,7 @@ appReady?.then(async () => {
 					(window): window is BrowserWindow => Boolean(window),
 				),
 			),
+		{ ipcMain },
 	);
 
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.

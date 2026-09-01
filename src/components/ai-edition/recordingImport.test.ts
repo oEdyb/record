@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AxcutAsset, type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { type ProjectState, useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
 
 const getRecordingData = vi.hoisted(() => vi.fn());
@@ -275,7 +276,7 @@ describe("importPendingRecording", () => {
 		await expect(importPendingRecording()).resolves.toBe(true);
 
 		expect(probeVideoDuration).toHaveBeenCalledWith(
-			"file:///recordings/recording-9-clip-0001.mp4",
+			toKlipptMediaUrl("/recordings/recording-9-clip-0001.mp4"),
 			5_000,
 		);
 		const document = useProjectStore.getState().document;

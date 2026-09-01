@@ -50,7 +50,11 @@ describe("useCompositorBackend", () => {
 	});
 
 	it("starts silent, before the probe resolves", () => {
-		mocks.probeCompositorBackend.mockReturnValue(new Promise(() => {}));
+		mocks.probeCompositorBackend.mockReturnValue(
+			new Promise(() => {
+				// Intentionally pending to verify the unresolved probe state.
+			}),
+		);
 		const { result } = renderHook(() => useIsCpuCompositor());
 		// No flash of "no compatible GPU" on a machine that turns out to have one.
 		expect(result.current).toBe(false);

@@ -11,7 +11,9 @@ describe("rafCoalesce", () => {
 			return frames.length;
 		});
 		vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
-			frames[handle - 1] = () => {};
+			frames[handle - 1] = () => {
+				// Keep the cancelled slot inert so frame handles stay stable in the test.
+			};
 		});
 	});
 

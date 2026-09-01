@@ -22,7 +22,9 @@ vi.mock("./streamingAudioPeaks", () => ({
 
 vi.mock("@/lib/exporter/localSourceFile", () => ({
 	materializeLocalSourceFile: async (_url: string, name: string) => ({ name }),
-	releaseLocalSourceFile: () => {},
+	releaseLocalSourceFile: () => {
+		// The test materializes an in-memory file, so there is nothing to release.
+	},
 }));
 
 vi.mock("@/lib/exporter/streamingDecoder", () => ({

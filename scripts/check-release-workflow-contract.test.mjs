@@ -84,6 +84,87 @@ describe("release workflow contract", () => {
 		expect(() => checkReleaseWorkflowContract(root)).toThrow(/final signed app/);
 	});
 
+	it("rejects a macOS update ZIP created before the nested app ticket is validated", async () => {
+		const root = await copyWorkflows();
+		const file = path.join(root, ".github", "workflows", "build.yml");
+		const source = await readFile(file, "utf8");
+		const createName = "      - name: Create update ZIP";
+		const validateName = "      - name: Validate stapled DMG";
+		const createStart = source.indexOf(createName);
+		const createEnd = source.indexOf("\n      - name:", createStart + createName.length);
+		const validateStart = source.indexOf(validateName);
+		expect(createStart).toBeGreaterThan(validateStart);
+		const createBlock = source.slice(createStart, createEnd);
+		const changed = `${source.slice(0, validateStart)}${createBlock}\n${source.slice(
+			validateStart,
+			createStart,
+		)}${source.slice(createEnd + 1)}`;
+		await writeFile(file, changed);
+		expect(() => checkReleaseWorkflowContract(root)).toThrow(/nested notarization ticket/);
+	});
+
+	it("rejects Apple credentials exposed to an artifact-only macOS build", async () => {
+		const root = await copyWorkflows();
+		const file = path.join(root, ".github", "workflows", "build.yml");
+		const source = await readFile(file, "utf8");
+		await writeFile(
+			file,
+			source.replace(
+				"${{ needs.resolve-source.outputs.is_release == 'true' && secrets.APPLE_ID || '' }}",
+				"${{ secrets.APPLE_ID }}",
+			),
+		);
+		expect(() => checkReleaseWorkflowContract(root)).toThrow(
+			/Artifact-only macOS builds must not receive APPLE_ID/,
+		);
+	});
+
+	it("rejects a package step that exposes the signing identity to artifact builds", async () => {
+		const root = await copyWorkflows();
+		const file = path.join(root, ".github", "workflows", "build.yml");
+		const source = await readFile(file, "utf8");
+		await writeFile(
+			file,
+			source.replace(
+				"\n          CSC_NAME: ${{ needs.resolve-source.outputs.is_release == 'true' && secrets.MAC_CSC_NAME || '' }}",
+				"\n          CSC_NAME: ${{ secrets.MAC_CSC_NAME }}",
+			),
+		);
+		expect(() => checkReleaseWorkflowContract(root)).toThrow(
+			/Artifact-only macOS packaging must not receive MAC_CSC_NAME/,
+		);
+	});
+
+	it("rejects notarization status handling that exits before fetching Apple's log", async () => {
+		const root = await copyWorkflows();
+		const file = path.join(root, ".github", "workflows", "build.yml");
+		const source = await readFile(file, "utf8");
+		await writeFile(
+			file,
+			source.replace(
+				'process.stdout.write(result.id ?? "");',
+				'if (result.status !== "Accepted") process.exit(1); process.stdout.write(result.id ?? "");',
+			),
+		);
+		expect(() => checkReleaseWorkflowContract(root)).toThrow(/before rejecting the result/);
+	});
+
+	it("rejects any Apple credential step without the verified-release guard", async () => {
+		const root = await copyWorkflows();
+		const file = path.join(root, ".github", "workflows", "build.yml");
+		const source = await readFile(file, "utf8");
+		await writeFile(
+			file,
+			source.replace(
+				"      - name: Notarize DMG and inspect the result\n        if: steps.signing.outputs.enabled == 'true'",
+				"      - name: Notarize DMG and inspect the result",
+			),
+		);
+		expect(() => checkReleaseWorkflowContract(root)).toThrow(
+			/macOS step 'Notarize DMG and inspect the result' exposes APPLE_ID outside a verified release/,
+		);
+	});
+
 	it("rejects release preparation that creates an unsigned automated tag", async () => {
 		const root = await copyWorkflows();
 		const file = path.join(root, ".github", "workflows", "prerelease.yml");

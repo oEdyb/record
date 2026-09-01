@@ -161,7 +161,7 @@ but Gatekeeper rejects it for public distribution.
 | `APPLE_TEAM_ID` | Apple Developer team identifier. |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password used by `notarytool`. |
 
-The certificate account needs Developer ID signing capability, and the Apple account/app-specific password must be able to submit notarization requests for the team. Every release tag signs the DMG, notarizes, staples, and validates it, pre-releases included. A release fails if any value is missing. An artifact-only build uses the separate `artifact-build` environment and can produce an ad-hoc development DMG without receiving release secrets.
+The certificate account needs Developer ID signing capability, and the Apple account/app-specific password must be able to submit notarization requests for the team. Every release tag signs the DMG, notarizes it, inspects Apple's result log, and staples and validates both the DMG and its nested app, pre-releases included. The auto-update ZIP is then built from that stapled app because ZIP archives cannot carry a stapled ticket themselves. A release fails if any value is missing. An artifact-only build uses the separate `artifact-build` environment and can produce an ad-hoc development DMG without receiving release secrets.
 
 `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ACCOUNT_ID` also belong in the `release` environment. Before the first W0.3 release, recreate the Apple and R2 secrets there, verify their names with `gh secret list --env release --repo oEdyb/record`, then delete the repository-level copies. Do not delete the old copies before the W0.3 workflow is on the release branch.
 

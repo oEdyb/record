@@ -120,6 +120,7 @@
   ],
 
   "mac": {
+	"minimumSystemVersion": "13.0",
     "notarize": false,
     "hardenedRuntime": true,
     "entitlements": "macos.entitlements",

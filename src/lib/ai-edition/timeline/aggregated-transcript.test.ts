@@ -63,7 +63,7 @@ function makeAsset(overrides: Partial<AxcutAsset> = {}): AxcutAsset {
 }
 
 function makeTranscript(words: AxcutTranscript["words"]): AxcutTranscript {
-	return { assetId: "asset_1", language: "en", segments: [], words };
+	return { assetId: "asset_1", language: "en", sources: [], segments: [], words };
 }
 
 function makeTrim(overrides: Partial<AxcutTrimRange>): AxcutTrimRange {
@@ -316,6 +316,7 @@ describe("buildAggregatedSections", () => {
 			{
 				assetId: "asset_2",
 				language: "en",
+				sources: [],
 				segments: [],
 				words: [
 					{ id: "w3", segmentId: "s1", startSec: 0, endSec: 1, text: "bye" },

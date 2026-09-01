@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { axcutSchemaVersion } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import { getWebcamCropStyle, WebcamOverlay } from "./WebcamOverlay";
 
 // P4 regression test: a project can hold multiple assets, each with its own
@@ -112,7 +113,7 @@ describe("WebcamOverlay (per-clip camera resolution)", () => {
 		const { container } = render(<WebcamOverlay {...baseProps(2)} />);
 		const video = container.querySelector("video");
 		expect(video).toBeTruthy();
-		expect(video?.getAttribute("src")).toContain("cam-1.mp4");
+		expect(video?.getAttribute("src")).toBe(toKlipptMediaUrl("/cam-1.mp4"));
 	});
 
 	it("renders nothing while the playhead is on a clip whose asset has no camera", () => {

@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ipcMain } from "electron";
 import type { EntitlementCapability } from "../../src/lib/entitlements/contracts";
 import type { AiEditionChatEvent } from "../../src/native/contracts";
 import {
@@ -28,6 +27,7 @@ import { CursorService } from "../native-bridge/services/cursorService";
 import { ProjectService } from "../native-bridge/services/projectService";
 import { SystemService } from "../native-bridge/services/systemService";
 import { createNativeBridgeState } from "../native-bridge/store";
+import type { RendererIpcMain } from "./trustedRendererIpc";
 
 export interface NativeBridgeContext {
 	workloadTelemetry?: WorkloadTelemetryService;
@@ -249,7 +249,10 @@ function buildChatEventSink(sender: Electron.WebContents, sessionId: string): Ch
 	};
 }
 
-export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
+export function registerNativeBridgeHandlers(
+	context: NativeBridgeContext,
+	ipcMain: RendererIpcMain,
+) {
 	ipcMain.removeHandler(NATIVE_BRIDGE_CHANNEL);
 
 	const platform = normalizePlatform(context.getPlatform());

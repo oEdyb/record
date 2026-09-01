@@ -1,5 +1,6 @@
 import path from "node:path";
-import { app, type IpcMain } from "electron";
+import { app } from "electron";
+import type { RendererIpcMain } from "../ipc/trustedRendererIpc";
 import { planChunks } from "./chunking";
 import { resolveBinaryPath } from "./gpuDetector";
 import { ensureModels, modelPaths, STT_MODELS, sha256OfFile } from "./modelManager";
@@ -927,7 +928,7 @@ export function _resetSttManagerForTests(): void {
  * `webContents` so two windows don't cross-talk.
  */
 export function registerSttIpc(
-	ipcMain: IpcMain,
+	ipcMain: Pick<RendererIpcMain, "handle">,
 	resolveSourcePath?: (
 		sourcePath: string,
 	) => Promise<{ sourcePath: string; forceNative: boolean } | null>,

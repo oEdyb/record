@@ -6,7 +6,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, session, systemPreferences } from "electron";
+import {
+	app,
+	BrowserWindow,
+	ipcMain as electronIpcMain,
+	session,
+	systemPreferences,
+} from "electron";
 import type {
 	CliDoneResult,
 	CliProgressEvent,
@@ -15,13 +21,22 @@ import type {
 } from "../../src/lib/cliContracts";
 import { formatExportEta } from "../../src/lib/exporter/mp4ExportSettings";
 import {
+	approveReadableRendererMediaPath,
 	consumeCurrentRecordingSession,
 	getSelectedDesktopSource,
 	registerIpcHandlers,
+	resolveApprovedRendererMediaPath,
 	resolveApprovedVideoPath,
 } from "../ipc/handlers";
+import {
+	createTrustedRendererIpcMain,
+	isTrustedDisplayMediaRequest,
+	isTrustedPermissionCheck,
+	isTrustedPermissionRequest,
+} from "../ipc/trustedRendererIpc";
+import { installKlipptProtocol } from "../localMediaProtocol";
 import { getSttManager, registerSttIpc } from "../stt";
-import { ASSET_BASE_URL_ARG } from "../windows";
+import { ASSET_BASE_DIR, ASSET_BASE_URL_ARG } from "../windows";
 import { CLI_USAGE, type CliCommand } from "./args";
 import { finalizeCliResult } from "./cliCompletion";
 import { runInfoCommand, runPackCommand } from "./projectCommands";
@@ -30,6 +45,10 @@ import { createCliSttSourceResolver } from "./sttSourceApproval";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 const RENDERER_DIST = path.join(__dirname, "..", "dist");
+const TRUSTED_RENDERER_CONFIG = {
+	devServerUrl: VITE_DEV_SERVER_URL,
+};
+const ipcMain = createTrustedRendererIpcMain(electronIpcMain, TRUSTED_RENDERER_CONFIG);
 
 interface CliOutput {
 	json: boolean;
@@ -120,9 +139,6 @@ function loadRunnerWindow(windowType: string): BrowserWindow {
 			additionalArguments: [ASSET_BASE_URL_ARG],
 			nodeIntegration: false,
 			contextIsolation: true,
-			// Same relaxation as the editor window: exporters load recording media
-			// via file:// URLs.
-			webSecurity: false,
 			backgroundThrottling: false,
 		},
 	});
@@ -130,7 +146,7 @@ function loadRunnerWindow(windowType: string): BrowserWindow {
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(`${VITE_DEV_SERVER_URL}?windowType=${windowType}`);
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), { query: { windowType } });
+		win.loadURL(`klippt://app/index.html?windowType=${encodeURIComponent(windowType)}`);
 	}
 	return win;
 }
@@ -160,7 +176,7 @@ async function registerAppHandlersForCli(cliWindowRef: () => BrowserWindow | nul
 		undefined,
 		// A CLI invocation must not claim or replace an interrupted GUI session.
 		// The GUI will restore that journal on its next normal launch.
-		{ restoreInterruptedRecording: false, enableCleanVoiceJobs: false },
+		{ restoreInterruptedRecording: false, enableCleanVoiceJobs: false, ipcMain },
 	);
 }
 
@@ -310,6 +326,12 @@ export function runCli(command: CliCommand): void {
 	void app
 		.whenReady()
 		.then(async () => {
+			installKlipptProtocol({
+				rendererDist: RENDERER_DIST,
+				resourceRoot: ASSET_BASE_DIR,
+				resolveMediaPath: resolveApprovedRendererMediaPath,
+				allowedCorsOrigins: VITE_DEV_SERVER_URL ? [new URL(VITE_DEV_SERVER_URL).origin] : [],
+			});
 			if (command.kind === "info") {
 				const code = await runInfoCommand(command.projectPath, command.json === true, writeStdout);
 				app.exit(code);
@@ -340,11 +362,17 @@ export function runCli(command: CliCommand): void {
 				"screen",
 				"display-capture",
 			];
-			session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
-				allowed.includes(permission),
+			session.defaultSession.setPermissionCheckHandler(
+				(webContents, permission, requestingOrigin, details) =>
+					allowed.includes(permission) &&
+					isTrustedPermissionCheck(webContents, requestingOrigin, details, TRUSTED_RENDERER_CONFIG),
 			);
-			session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
-				callback(allowed.includes(permission)),
+			session.defaultSession.setPermissionRequestHandler(
+				(webContents, permission, callback, details) =>
+					callback(
+						allowed.includes(permission) &&
+							isTrustedPermissionRequest(webContents, details, TRUSTED_RENDERER_CONFIG),
+					),
 			);
 
 			// Browser-pipeline recording fallback (e.g. Linux, missing native helper)
@@ -352,7 +380,11 @@ export function runCli(command: CliCommand): void {
 			session.defaultSession.setDisplayMediaRequestHandler(
 				(request, callback) => {
 					const source = getSelectedDesktopSource();
-					if (!request.videoRequested || !source) {
+					if (
+						!isTrustedDisplayMediaRequest(request, TRUSTED_RENDERER_CONFIG) ||
+						!request.videoRequested ||
+						!source
+					) {
 						callback({});
 						return;
 					}
@@ -376,6 +408,13 @@ export function runCli(command: CliCommand): void {
 			let cliWindow: BrowserWindow | null = null;
 			let exportCancellationPending = false;
 			await registerAppHandlersForCli(() => cliWindow);
+			if (
+				command.kind === "export" &&
+				command.audioPath &&
+				!(await approveReadableRendererMediaPath(command.audioPath))
+			) {
+				throw new Error(`Voiceover file is missing or unsupported: ${command.audioPath}`);
+			}
 
 			// Speech-to-text backs the captions command; registered by the GUI boot
 			// path (main.ts) rather than registerIpcHandlers.
