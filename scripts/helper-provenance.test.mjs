@@ -203,6 +203,48 @@ describe("native helper provenance", () => {
 		});
 	});
 
+	it("ignores hardened-signing growth in the Mach-O link-edit segment", async () => {
+		if (process.platform !== "darwin") return;
+		const directory = await mkdtemp(path.join(os.tmpdir(), "klippt-helper-linkedit-"));
+		temporaryDirectories.push(directory);
+		const helper = path.join(directory, "whisper-stt-server");
+		const entitlements = path.join(directory, "distribution.entitlements");
+		await copyFile("/bin/echo", helper);
+		execFileSync("/usr/bin/codesign", ["--force", "--sign", "-", helper]);
+		await writeFile(
+			entitlements,
+			`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>`,
+		);
+		await createHelperManifest({
+			directory,
+			helper: "whisper-stt",
+			sourceSha,
+			workflowRunId: "12345",
+			target: "darwin-arm64",
+			upstream: [
+				{
+					name: "whisper.cpp",
+					repository: "https://github.com/ggml-org/whisper.cpp.git",
+					revision: upstreamSha,
+				},
+			],
+			toolchains: { cmake: "cmake version 4.1.1" },
+		});
+		execFileSync("/usr/bin/codesign", [
+			"--force",
+			"--sign",
+			"-",
+			"--options",
+			"runtime",
+			"--entitlements",
+			entitlements,
+			helper,
+		]);
+		await expect(verifyHelperManifest({ directory })).resolves.toBeDefined();
+	});
+
 	it("rejects a Darwin helper whose code changed before it was re-signed", async () => {
 		if (process.platform !== "darwin") return;
 		const directory = await mkdtemp(path.join(os.tmpdir(), "klippt-helper-code-tamper-"));

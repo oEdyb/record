@@ -80,6 +80,15 @@ async function fileIdentity(filePath, target) {
 		execFileSync("/usr/bin/codesign", ["--remove-signature", temporaryFile], {
 			stdio: ["ignore", "ignore", "pipe"],
 		});
+		// A hardened-runtime signature can enlarge __LINKEDIT. `codesign
+		// --remove-signature` removes the signature bytes but leaves that segment's
+		// virtual size behind, so the same executable hashes differently before and
+		// after distribution signing. Apple's strip tool rewrites the temporary
+		// link-edit metadata deterministically. `-S` also removes debug symbols,
+		// which do not affect executable behavior and are not shipped as provenance.
+		execFileSync("/usr/bin/strip", ["-S", temporaryFile], {
+			stdio: ["ignore", "ignore", "pipe"],
+		});
 		const info = await stat(temporaryFile);
 		return {
 			contentIdentity: "mach-o-without-code-signature",
