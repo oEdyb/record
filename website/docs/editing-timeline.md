@@ -1,5 +1,6 @@
 ---
 id: editing-timeline
+draft: true
 title: Editing & timeline
 sidebar_position: 6
 description: "Edit in OpenScreen's timeline: zoom, trim, and speed regions, Full Camera segments, annotations, cursor styling, and the floating inspector."

@@ -20,7 +20,7 @@ The HUD starts and controls a recording. The source selector chooses a display o
 
 `LaunchWindow` is the recording controller. Its control row exposes recording, pause, source, microphone, system-audio, webcam, cursor, settings, and stop/restart actions through the HUD controls. The overlay is click-through (`setIgnoreMouseEvents(true, { forward: true })` in `electron/windows.ts`), so it does not intercept the application being recorded; the HUD's own controls temporarily opt into pointer handling through the overlay IPC path.
 
-Electron applies `setContentProtection(true)` to the HUD window (`electron/windows.ts:31`). This keeps the controller out of captures and also makes it invisible in screenshots. For a testing session only, `OPENSCREEN_DISABLE_CONTENT_PROTECTION=1` disables the protection; the code warns that the HUD then appears in captures. The tray icon is the reliable way to refocus OpenScreen or stop a recording when the click-through HUD is not convenient or is not visible.
+Electron applies `setContentProtection(true)` to the HUD window (`electron/windows.ts:31`). This keeps the controller out of captures and also makes it invisible in screenshots. For a testing session only, `OPENSCREEN_DISABLE_CONTENT_PROTECTION=1` disables the protection; the code warns that the HUD then appears in captures. The tray icon is the reliable way to refocus Klippt or stop a recording when the click-through HUD is not convenient or is not visible.
 
 ## Capture backends
 
@@ -68,6 +68,12 @@ A session writes a screen video and a `.session.json` manifest. Windows normally
 Cursor samples are persisted as cursor telemetry rather than baked into editable-overlay recordings. The loader resolves the sidecar at `<videoPath>.cursor.json` or through the recording links; see [cursor.md](cursor.md) for the telemetry format and rendering path.
 
 ## Known gaps
+
+- The macOS package still uses the legacy bundle identifier `com.etiennelescot.openscreen`. When
+  differently signed old builds with that ID remain registered, System Settings can show one
+  enabled Screen Recording row while the running app receives `denied`. Keep only the intended
+  `/Applications/Klippt.app` registered during tests. The Dyberg-owned identity migration must reset
+  and retest TCC once; it must not delete legacy user data.
 
 - A window with odd client dimensions can produce black video: H.264 encoding requires even dimensions (`electron/native/wgc-capture/src/wgc_session.cpp:38`).
 - The Windows helper's frame lock (`electron/native/wgc-capture/src/main.cpp`) is still held across blocking, uninterruptible D3D11 work: the WGC callback's `CopyResource`, and whatever the video writer does with the frame. A driver that stalls inside either one still costs the recording. What no longer happens is a hang: stop detection runs on `CaptureControl::stopMutex`, which no frame thread ever touches, and a shutdown watchdog force-exits the helper when a step overruns its budget, naming the step it died in. Each step gets `OPENSCREEN_WGC_STEP_BUDGET_MS` (8s by default) and that is the bound which normally fires; the whole shutdown is capped by `OPENSCREEN_WGC_STOP_BUDGET_MS` (50s by default), which the encoder-finalize step alone is allowed to spend in full because a long software-encoder finalize legitimately takes seconds (issue #34). Picking the D3D adapter that actually drives the captured monitor instead of adapter 0 is still outstanding.

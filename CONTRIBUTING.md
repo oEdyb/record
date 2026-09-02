@@ -1,83 +1,50 @@
- # Contribution Guidelines
+# Contributing to Klippt
 
-Thank you for considering contributing to this project! By contributing, you help make this project better for everyone. Please take a moment to review these guidelines to ensure a smooth contribution process.
+Klippt is a private proprietary product. Do not open upstream OpenScreen issues or pull requests for
+Klippt product work.
 
-## How to Contribute
+## Before a change
 
-1. **Fork the Repository**
-   - Click the "Fork" button at the top right of this repository to create your own copy.
+1. Read [`HANDOFF.md`](HANDOFF.md), [`AGENTS.md`](AGENTS.md), and the relevant technical document.
+2. Inspect the current code, tests, lockfiles, and pinned versions.
+3. For a new feature or substantial change, read current official documentation and maintained
+   reference code before you choose an API or implementation pattern.
+4. Keep the change inside one clear product or runtime boundary.
 
-2. **Clone Your Fork**
-   - Clone your forked repository to your local machine:
-     ```bash
-     git clone https://github.com/your-username/openscreen.git
-     ```
+## Development rules
 
-3. **Create a New Branch**
-   - Create a branch for your feature or bug fix:
-     ```bash
-     git checkout -b feature/your-feature-name
-     ```
+- Use Node `22.22.1`, npm `10.9.4`, and npm only.
+- Keep TypeScript strict. Do not add explicit `any`.
+- Preserve unrelated changes in a dirty worktree.
+- Keep source media non-destructive and project writes atomic.
+- Add focused tests beside the changed behavior.
+- Do not use TestSprite.
+- Rebuild native helpers before you trust native capture, preview, or export behavior.
+- Use Conventional Commit messages for repository commits.
 
-4. **Make Changes**
-   - Make your changes.
+## Verification
 
-5. **Test Your Changes**
-   - Test your changes thoroughly to ensure they work as expected and do not break existing functionality.
+Run focused checks while you work. Run the complete relevant gate before handoff.
 
-6. **Commit Your Changes**
-   - Commit your changes with a clear and concise commit message:
-     ```bash
-     git add .
-     git commit -m "Add a brief description of your changes"
-     ```
-
-7. **Push Your Changes**
-   - Push your branch to your forked repository:
-     ```bash
-     git push origin feature/your-feature-name
-     ```
-
-8. **Open a Pull Request**
-   - Go to the original repository and open a pull request from your branch. Provide a clear description of your changes and the problem they solve.
-
-## Reporting Issues
-
-If you encounter a bug or have a feature request, please open an issue in the [Issues](https://github.com/EtienneLescot/openscreen/issues) section of this repository. Provide as much detail as possible to help us address the issue effectively.
-
-## Issue lifecycle
-
-Issues are closed when the corresponding fix or feature is merged into `main`.
-
-For desktop users, this does not always mean the change is already available in the latest downloadable release. When relevant, closed issues are marked as `status: fixed in main` and `status: pending release`.
-
-Once a GitHub Release containing the change is published, the issue can be marked as `status: released`.
-
-The next version number is not always known when a PR is merged. In that case, issues are assigned to the `Next Release` milestone. When preparing a release, this milestone can be renamed to the actual version, such as `v1.6.0` or `v2.0.0`, and a new `Next Release` milestone can be created.
-
-When a PR fully resolves an issue, link it with a GitHub closing keyword:
-
-```txt
-Fixes #123
-Closes #123
-Resolves #123
+```bash
+npx tsc --noEmit
+npx tsc -p tsconfig.test.json --noEmit
+npx vitest --run path/to/test.ts
+npm run lint
+npm run i18n:check
+npm run docs:check
+npm run build-vite
 ```
 
-If a PR only partially addresses an issue, use a non-closing reference instead:
+Use `npm run test` once for a completed code slice. Native capture, preview, export, and packaging
+changes also need the real Mac checks in
+[`technical-documentation/testing/manual-e2e-checklist.md`](technical-documentation/testing/manual-e2e-checklist.md).
 
-```txt
-Refs #123
-Part of #123
-Related to #123
-```
+## Branches and releases
 
-## Style Guide
+The private remote is `origin`. The OpenScreen remote is fetch-only `upstream`; never push Klippt
+work there. Stable release branches use `release/vX.Y.Z`. Do not publish an artifact until its
+source commit, helper provenance, signature, notarization, notices, and update metadata all pass the
+release contract.
 
-- Write clear, concise, and descriptive commit messages.
-- Include comments where necessary to explain complex code.
-
-## License
-
-By contributing to this project, you agree that your contributions will be licensed under the [MIT License](./LICENSE).
-
-Thank you for your contributions!
+Current status and remaining release work live in [`HANDOFF.md`](HANDOFF.md).

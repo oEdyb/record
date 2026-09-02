@@ -4,7 +4,7 @@ event: post-commit
 type: reminder
 ---
 
-# Post-commit reminder for OpenScreen
+# Post-commit reminder for Klippt
 
 Runs after every successful `git commit`. Goal: nudge the dev toward the next step without blocking.
 

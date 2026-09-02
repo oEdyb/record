@@ -1,10 +1,10 @@
 # AI agent
 
-The optional AI editing layer lives in `electron/ai-edition/` and `src/components/ai-edition/`. It connects the editor's chat UI to configured language models and exposes a fixed set of validated operations over the shared project document.
+The optional legacy AI editing layer lives in `electron/ai-edition/` and `src/components/ai-edition/`. It connects the editor's chat UI to configured language models and exposes a fixed set of validated operations over the shared project document. Klippt's normal paid-alpha surface hides this layer through `productSurface.ts`; it is retained for later agent-native work and upstream compatibility.
 
 ## What it is and what gates it
 
-The AI surface is always mounted. Without an API key configured the chat panel is a "no provider connected" welcome view, so the practical effect matches the old `AI_FEATURES_ENABLED = false` path: nothing agentic runs. (The chat rail entry itself stays — opening it shows the welcome view.) Configuring a provider (or signing in via OAuth) re-enables everything.
+When the legacy surface is explicitly enabled, a missing API key produces a "no provider connected" welcome view and nothing agentic runs. Configuring a provider or OAuth connection enables the legacy chat path. This is not part of the normal Klippt alpha navigation.
 
 The boundary is intentionally narrow: only the LLM and agent UI are gated. The editing model, project panel, timeline, transcript and export surfaces ship to every user. Local Whisper transcription is privacy-preserving and is not gated.
 

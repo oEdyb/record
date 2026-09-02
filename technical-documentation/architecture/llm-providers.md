@@ -1,5 +1,9 @@
 # LLM providers
 
+> **Current product status:** the normal Klippt alpha hides the inherited agent editor through
+> `PRODUCT_SURFACE.agentEditor`. This page documents compatible dormant code. It is not part of the
+> current beta gate.
+
 The provider layer defines model metadata, protects credentials, discovers models, and builds the chat model every AI feature runs on. It lives in:
 
 | File | Role |

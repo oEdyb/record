@@ -1,5 +1,6 @@
 ---
 id: intro
+draft: true
 title: Introduction
 sidebar_position: 1
 description: "OpenScreen is a free, open-source screen recorder and video editor for Windows, macOS, and Linux. Native capture, GPU compositing, MIT licensed."

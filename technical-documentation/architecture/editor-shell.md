@@ -1,219 +1,103 @@
-# Editor shell — v4 layout
+# Editor shell
 
-The desktop editor is one component,
-[`src/components/ai-edition/NewEditorShell.tsx`](../../src/components/ai-edition/NewEditorShell.tsx),
-that mounts a top bar, a body split between an optional agent chat column and a
-stage, and a bottom timeline. The import list at the top of `NewEditorShell.tsx`
-is the authoritative answer to "what is mounted" — anything not imported there is
-not part of this shell. The v4 design and its tokens live under
-[`design/`](../../design/) (see [Design source](#design-source)); the shell
-consumes the tokens through CSS custom properties rather than hard-coding
-colours.
+The current Klippt alpha uses
+[`NewEditorShell.tsx`](../../src/components/ai-edition/NewEditorShell.tsx) as the owner of the
+editor surface. The shell mounts the top bar, preview stage, floating inspector, timeline, project
+modals, and export dialog.
 
-Production option menus use
-[`AppSelect`](../../src/components/ui/app-select.tsx), a shared Radix-based primitive that accepts
-normal `option` and `optgroup` children while rendering both the trigger and popup inside Klippt's
-theme. This prevents the host macOS accent from styling native popup menus. Its CSS uses the shared
-graphite surface tokens and muted steel-blue editor selection tokens. A source regression rejects
-raw HTML `select` controls under `src/components`.
+[`productSurface.ts`](../../src/lib/productSurface.ts) is the release-surface switchboard. The
+current alpha keeps the inherited media workspace, AI chat, and captions hidden. Transcript is the
+only optional inherited facet that is visible. Hidden code keeps document compatibility, but it is
+not part of the normal user flow.
 
-## Component tree
+## Current component tree
 
 ```mermaid
 flowchart TD
-    Shell["NewEditorShell<br/>(NewEditorShell.tsx)"]
-    TopBar["EditorTopBar<br/>(v4/EditorTopBar.tsx)"]
-    Chat["LeftPanel (active=chat)<br/>(LeftPanel.tsx)"]
-    Stage{{"Stage — picks one by mode"}}
-    Preview["Preview<br/>(Preview.tsx)"]
-    Inspector["FloatingInspector<br/>(v4/FloatingInspector.tsx)"]
-    Media["MediaStage<br/>(v4/MediaStage.tsx)"]
-    Rec["RecStage<br/>(v4/RecStage.tsx)"]
-    Timeline["V4Timeline<br/>(v4/V4Timeline.tsx)"]
-    Modals["OpenProjectModal / NewProjectModal /<br/>EditClipModal / UnsavedChangesModal<br/>(Modals.tsx)"]
-    Export["ExportDialog<br/>(ExportDialog.tsx)"]
+    Shell[NewEditorShell]
+    Top[EditorTopBar]
+    Stage[Preview]
+    Inspector[FloatingInspector]
+    Timeline[V4Timeline]
+    Modals[Project and clip modals]
+    Export[ExportDialog]
 
-    Shell --> TopBar
-    Shell --> Chat
+    Shell --> Top
     Shell --> Stage
     Shell --> Inspector
     Shell --> Timeline
     Shell --> Modals
     Shell --> Export
-
-    Stage -- "mode === 'edit'" --> Preview
-    Stage -- "mode === 'media'" --> Media
-    Stage -- "mode === 'rec'" --> Rec
-
-    Inspector -- "FacetBody" --> RightPanes["BackgroundPane / VideoEffectsPane /<br/>LayoutPane / CursorPane /<br/>TranscriptPane / CaptionsPane<br/>(RightPanes.tsx · CaptionsPane.tsx)"]
 ```
 
-The shell is the single owner of mode, transport (`playing`/`currentTimeSec` come
-from `useProjectStore`), the inspector's `facet` and `open` flags, the
-modal-stack, and the timeline's `showTimeline` switch (`rec` mode hides it). All
-of those are local React state, with the document itself read through
-`useProjectStore` and region mutations through
-[`useTimeline`](../../src/lib/ai-edition/store/useTimeline.ts).
+The top bar exposes one visible workspace: **Edit**. Recording starts from its Record action and
+then moves to the separate recorder HUD and camera-preview windows. Recording is not a third editor
+mode.
 
-## Surfaces
+The inherited `MediaStage` path remains in code behind `PRODUCT_SURFACE.mediaWorkspace`. The
+inherited `LeftPanel` chat remains behind `PRODUCT_SURFACE.agentEditor`. Keep these paths hidden
+unless a planned product slice explicitly restores them.
 
-| Surface                | Component file                                                                    | What the user does there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Top bar**            | `src/components/ai-edition/v4/EditorTopBar.tsx`                                   | Toggles the chat column; chooses the editor mode; opens / saves / renames the project; exports; switches theme and language. (`EditorTopBar` props in `NewEditorShell.tsx` `:1114-1130`.)                                                                                                                                                                                                                                                                                                                 |
-| **Stage — Edit mode**  | `src/components/ai-edition/Preview.tsx` (mounted at `NewEditorShell.tsx` `:1180`) | Plays the timeline through the in-DOM preview; live drag of zoom focus and annotation position/size calls back into `useTimeline`; selection of an annotation id routes through `useTimeline.selectRegion`.                                                                                                                                                                                                                                                                                               |
-| **Stage — Media mode** | `src/components/ai-edition/v4/MediaStage.tsx`                                     | Searches, adds, regenerates transcripts for the assets in the project. The variant that the timeline shows in this mode is "media" (timeline height, no lanes).                                                                                                                                                                                                                                                                                                                                           |
-| **Stage — Rec mode**   | `src/components/ai-edition/v4/RecStage.tsx`                                       | Pre-flight config for a new recording — mic / camera / system audio / cursor capture mode — then hands off to the standalone recorder HUD window when the user hits record.                                                                                                                                                                                                                                                                                                                               |
-| **Bottom timeline**    | `src/components/ai-edition/v4/V4Timeline.tsx`                                     | Renders the clips, the ruler, and the five lanes (`annPills`, `speedPills`, `trimPills`, `zoomPills`, `cameraFullscreenPills`, computed at `:321-363`). Owns transport (play / prev / next / loop), zoom/pan, scrub, drag-and-drop of asset cards, the "smart zooms + cuts" AI prompt, and resize/move/delete of every pill. Pills render through `coalesceRegionsForRuler` and `coalescedTrimGroups` so what the user sees is exactly what the rules in [timeline-model.md](timeline-model.md) describe. |
-| **Floating inspector** | `src/components/ai-edition/v4/FloatingInspector.tsx`                              | Floating facet rail over the stage; the open panel either shows the `FacetBody` for the current facet (`background` / `effects` / `layout` / `cursor` / `captions` / `transcript`) or, when a region is selected, a `SelectionPane` (`:444`) that edits the selected pill by id. The "pencil" rail button opens `EditClipModal` for crop + trim.                                                                                                                                                          |
-| **Left chat column**   | `src/components/ai-edition/LeftPanel.tsx`                                         | Only mounted when `mode === "edit"` and `chatOpen` is true (`NewEditorShell.tsx` `:1133-1151`). Sends user messages to the LLM via IPC. Resize handle is `v4.chatResizeHandle`; width persists in `localStorage` as `os-editor-chat-width`.                                                                                                                                                                                                                                                               |
-| **Modals**             | `src/components/ai-edition/Modals.tsx`                                            | `OpenProjectModal`, `NewProjectModal`, `EditClipModal` (per-clip crop + in/out), `UnsavedChangesModal`. Mounted at the shell level (`:1286-1332`) so every trigger site reuses the same instance.                                                                                                                                                                                                                                                                                                         |
-| **Export dialog**      | `src/components/ai-edition/ExportDialog.tsx`                                      | Format / quality / frame-rate / codec / size; calls `exportAxcutDocument` (GIF path, WebCodecs) or `exportMultiNative` (MP4 path, native D3D compositor). The MP4 path is the one that goes through `src/lib/ai-edition/exporter/documentExporter.ts`'s `projectRegionsToSourceTime` and the multi-clip native bridge.                                                                                                                                                                                    |
-| **Captions pane**      | `src/components/ai-edition/CaptionsPane.tsx`                                      | Mounted as a facet body from `FloatingInspector.tsx` (`:1077`). Controls caption appearance + translations; the cues themselves are a derived view over `document.transcripts` (see [`src/lib/ai-edition/captions/`](../../src/lib/ai-edition/captions/)).                                                                                                                                                                                                                                                |
+## State ownership
 
-## Modes and facets
+`NewEditorShell` owns the active workspace, transport state, inspector state, modal state, preview
+seek target, and timeline height. [`useProjectStore`](../../src/lib/ai-edition/store/projectStore.ts)
+owns the loaded document and project persistence. [`useTimeline`](../../src/lib/ai-edition/store/useTimeline.ts)
+owns clip and timeline-region mutations.
 
-`mode` is local React state in `NewEditorShell` (`:75`); `facet` is local React
-state at `:84`. Both are exported as string unions from the components that
-introduce them.
+The preview receives the document sources plus zoom, speed, camera-emphasis, annotation, and trim
+regions. Preview framing changes use live state during a drag and commit once when the gesture ends.
+This keeps interaction smooth and keeps undo history useful.
 
-### EditorMode (`v4/EditorTopBar.tsx:20`)
+## Inspector facets
 
-```ts
-export type EditorMode = "media" | "edit" | "rec";
-```
+[`FloatingInspector.tsx`](../../src/components/ai-edition/v4/FloatingInspector.tsx) defines these
+facets:
 
-| Mode      | What it shows                                                                                                                                                                                                        |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"media"` | `MediaStage` over a "media" variant of the timeline (no lanes). The user searches transcripts, re-runs Whisper for an asset, picks a language, etc.                                                                  |
-| `"edit"`  | `Preview` over the floating inspector with the standard five-lane timeline. The agent chat column can be opened. This is the mode the document is actually mutated in.                                               |
-| `"rec"`   | `RecStage` pre-flight config (mic, camera, system audio, cursor mode). The bottom timeline is hidden. Hitting record hands off to the standalone recorder HUD window; closing `RecStage` returns the user to `edit`. |
+| Facet | Purpose | Current alpha |
+| --- | --- | --- |
+| Background | Canvas color, image, blur, padding, and presentation | Visible |
+| Effects | Screen presentation and motion controls | Visible |
+| Layout | Aspect ratio, screen framing, and camera layout | Visible |
+| Cursor | Cursor appearance and motion | Visible |
+| Audio | Clean Voice, loudness, and pause analysis | Visible |
+| Automatic | Automatic-direction settings and presets | Visible |
+| Captions | Caption appearance and translation | Hidden |
+| Transcript | Transcript review, language, and copy actions | Visible |
 
-### Facet (`v4/FloatingInspector.tsx:57`)
+When the user selects a timeline region, the selection pane replaces the facet body. The selection
+pane edits the real region value. User changes must promote an automatic region to manual ownership
+so regeneration does not remove the correction.
 
-```ts
-export type Facet =
-	"background" | "effects" | "layout" | "cursor" | "captions" | "transcript";
-```
+## Timeline
 
-| Facet          | Body component                                                    | Purpose                                                                                                                                                           |
-| -------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"background"` | `BackgroundPane` (`src/components/ai-edition/RightPanes.tsx:178`) | Wallpaper, shadow intensity, blur, motion blur, corner radius, padding — all read out of `document.legacyEditor`.                                                 |
-| `"effects"`    | `VideoEffectsPane` (`RightPanes.tsx:1218`)                        | Per-clip / per-document video effects that aren't zoom / speed / annotation (cursor zoom, etc.).                                                                  |
-| `"layout"`     | `LayoutPane` (`RightPanes.tsx:1376`)                              | Webcam layout (PiP / side / full / off), mask shape, mirroring — all also from `legacyEditor`.                                                                    |
-| `"cursor"`     | `CursorPane` (`RightPanes.tsx:1544`)                              | Cursor smoothing, theme, click ring, halo.                                                                                                                        |
-| `"captions"`   | `CaptionsPane` (`CaptionsPane.tsx`)                               | Caption appearance (font, size, background, animation) and translations. The pane owns the `transcribe` action — it's the only place that runs it from the shell. |
-| `"transcript"` | `TranscriptPane` (`RightPanes.tsx:475`)                           | Editable view of the transcript words / segments. Writes back to the document.                                                                                    |
+[`V4Timeline.tsx`](../../src/components/ai-edition/v4/V4Timeline.tsx) renders clips, the ruler,
+playhead, audio waveform, and visible edit regions. Timeline positions use project-time seconds.
+Fixed visual affordances use pixels and convert to time through the current pixels-per-second value.
+This rule keeps clip edges, pills, and the playhead aligned on long recordings and at every zoom
+level.
 
-Selecting a region on the timeline supersedes the current facet body: the
-inspector opens (if it was closed) and renders the `SelectionPane` for that
-region's kind. Clicking the empty area clears the selection and closes the
-selection pane.
+The timeline remains mounted below the editor preview. Background analysis can continue when the
+user switches inspector facets. The app must not start pause analysis only because the Audio facet
+opened.
 
-## Adding a region kind
+## Preview and export
 
-An ordered checklist of every file that must move when a new modifier
-(`"blur"`, `"captionHighlight"`, …) joins the existing five. The kind is added
-to `RegionKind` in `src/lib/ai-edition/document/timeline.ts` (`"zoom" |
-"trim" | "annotation" | "speed" | "cameraFullscreen"`, `:18`); every site that
-switches on it is checked below. Each path has been verified on this branch.
+Preview and export consume the same document intent, but they use separate output budgets. Preview
+renders at the visible CSS size. Export renders at the selected output resolution and quality. Do
+not make export resolution depend on the preview viewport.
 
-1. **Schema** — `src/lib/ai-edition/schema/index.ts`. Add a `xxxRegionSchema`
-   Zod object that extends the modifier base (`{id, startMs, endMs,
-clipId?, sourceStartSec?, sourceEndSec?, …payload}`), and add the array to
-   `documentSchemaShape` next to `zoomRanges` and `annotations` (`:496-497`).
-   The v4→v5 preprocess at `:555-595` re-anchors every region kind — add the
-   new array to the `anchor(...)` block so freshly-loaded v4 documents convert
-   on parse.
-2. **Identity** — `timelineMap.regionIdentityKey` already does the right thing:
-   `NON_IDENTITY_FIELDS` (`:122`) lists only position + provenance, so every
-   property of the new kind participates in identity automatically. Confirm
-   with a test in `src/lib/ai-edition/timeline/timelineMap.test.ts`.
-3. **Store action in `useTimeline`** — `src/lib/ai-edition/store/useTimeline.ts`.
-   Add `addXxx`, `updateXxxSpan`, `removeXxx` that route through
-   `anchorRegionsWithDerivedMs` (`:134, :163, :278, :305, :329`),
-   `replacePillSpan`, and `dropPillsByIds` (imports at `:23-28`); expose the
-   array as `tl.xxxRegions` on the returned object. Add the new kind to
-   `RegionKind` (`document/timeline.ts:18`); add a `removeRegion` case
-   (`document/timeline.ts:591`) for batch / single deletes.
-4. **Lane in `V4Timeline`** — `src/components/ai-edition/v4/V4Timeline.tsx`.
-   Compute the pills at the same call site as the four existing lanes
-   (`coalesceRegionsForRuler(tl.xxxRegions).map(...)` near `:463-511`), render
-   them through `renderPills` inside a `<div className={styles.tlLane}>`
-   block (`:1504-1512`), and extend the `kind` union at `:334` so drag,
-   resize, and delete handler switches route correctly.
+MP4 and GIF export use the native compositor through
+[`ExportDialog.tsx`](../../src/components/ai-edition/ExportDialog.tsx) and
+[`compositorViewClient.ts`](../../src/native/compositorViewClient.ts). Multi-clip export projects
+project-time regions into each clip's source-time span.
 
-   **Coordinates on the timeline canvas obey one rule**: position and size are
-   `pctOf(sec)` percentages of the whole timeline — pills, ruler ticks, playhead,
-   snap guide and clips all use it, which is what keeps them aligned when the
-   canvas is scaled by `1/navSpan` for zoom. Anything that must be a fixed
-   _screen_ size (a minimum width, a grab handle, a snap radius, the gutter
-   between two clip cards) is expressed in **px**, converted through `pxPerSec`
-   where it needs to reach time. A percentage used as a screen constant is a
-   duration in disguise: it scales with the recording, so a `1.5%` minimum pill
-   width was a 27-second pill on a 30-minute project, and a flex `gap` used as a
-   clip separator displaced every clip after it. See `pillAffordance`,
-   `PILL_SNAP_PX` and `CLIP_GUTTER_PX`, and the invariants in
-   `V4Timeline.geometry.test.tsx`.
+## UI authorities
 
-5. **Inspector selection pane** — `src/components/ai-edition/v4/FloatingInspector.tsx`.
-   The `SelectionPane` (`:444`) is the kind-switch site, not the facets; add
-   an `if (selection.kind === "xxx") { ... }` branch alongside `:513, :612,
-:629, :956` that reads `tl.xxxRegions`, calls the store's `updateXxx*`
-   methods, and renders a delete button matching the existing style.
-6. **Preview path** — `src/components/ai-edition/Preview.tsx` mounts only
-   zoom, annotation, speed, camera-fullscreen, and trim regions (see
-   `NewEditorShell.tsx` `:1185-1189`). Add the new array to `Preview`'s
-   props, pass it through, and have the renderer consume it from
-   `tl.xxxRegions`.
-7. **Native preview scene** —
-   `src/native/sceneDescription.ts`. Add a `projectedXxxRegions = projectRegionsToSource(...)`
-   call next to the existing four (`:489, :508, :517, :531`) and serialize
-   the result into `SceneDescription`.
-8. **Native playback sync** — only needed if the new region affects the
-   active clip selection. `src/native/useNativePlaybackSync.ts` already calls
-   `resolveNativePosition` (`:22, :39`) which is region-agnostic; add a region
-   query here only if the modifier gates a transition.
-9. **Multi-clip export** —
-   `src/lib/ai-edition/exporter/documentExporter.ts`. Add a
-   `xxxRegions = projectRegionsToSourceTime(...)` line alongside `:223, :238,
-:260, :265` and pass the result to the render plan / `exportAxcutDocument`.
-   Identity single-clip projects need no change (source == virtual).
-10. **Captions layer** — only if the kind affects cue placement. Captions are
-    a derived view over `document.transcripts`; if the new region must
-    intersect captions, add the projection in
-    `src/lib/ai-edition/captions/cues.ts` (`captionCuesToTextRegions`,
-    `sourceSpanToTimelineSpans`) so preview and export agree.
-11. **Agent LLM tools** —
-    `electron/ai-edition/agent-tools.ts`. Add a write tool that routes
-    through `anchorForAgent` (`:89-95`) and `replacePillSpan` (imports `:22-26`),
-    and include the new array in `coalesceForAgent(...)` (`:77-86`) inside
-    the `getCurrentDocument` snapshot (see `:527-575`).
+[`src/styles/design-tokens.css`](../../src/styles/design-tokens.css) is the production token
+authority. Shared selects, menus, popovers, tooltips, and inspector wrappers live under
+[`src/components/ui/`](../../src/components/ui/). Do not add raw HTML selects or local accent colors
+to editor surfaces.
 
-## Design source
-
-The production token authority is
-[`src/styles/design-tokens.css`](../../src/styles/design-tokens.css).
-Tailwind maps semantic utilities to the same values in
-[`tailwind.config.cjs`](../../tailwind.config.cjs); it does not own a second
-palette. [`design/DESIGN.md`](../../design/DESIGN.md) defines the current
-Klippt rules. [`design/tokens/v4.css`](../../design/tokens/v4.css) is a
-generated specimen mirror. Run `npm run design:sync` after a production token
-change. `npm run docs:check` fails when the mirror is stale.
-
-Inspector panes use the behavior wrappers in
-[`src/components/ui/inspector/`](../../src/components/ui/inspector/), plus the
-shared select, popover, and tooltip primitives. Components use CSS custom
-properties instead of raw colors so theme and density changes propagate from
-one authority.
-
-## Known gaps
-
-- `rec` mode hides the bottom timeline row (`NewEditorShell.tsx` `:1112`
-  grid template, `:1247` `showTimeline`). Switching back to `edit` keeps the
-  previous `timelineHeightPx` and `chatWidthPx` because they are persisted to
-  `localStorage`; nothing wires those numbers to a settings pane.
-- The chat column is only rendered when `mode === "edit"` and `chatOpen` is
-  true; in `media` and `rec` modes the chat button on the top bar still
-  toggles `chatOpen`, but the column will not appear until the user returns
-  to `edit`. This is intentional (the AI-edition chat reads from the
-  in-edit document state), not a bug.
+The current project state, verification evidence, and remaining beta gates live in
+[`HANDOFF.md`](../../HANDOFF.md).

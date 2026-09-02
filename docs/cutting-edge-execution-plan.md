@@ -1,6 +1,7 @@
 # Klippt cutting-edge execution plan
 
-- Status: active
+- Status: active — Waves 0, the implemented Wave 1 slices, and W2.1–W2.6 are complete on the
+  2026-09-01 hardening checkpoint. Use [`../HANDOFF.md`](../HANDOFF.md) for the current queue.
 - Created: 2026-08-28
 - Product source of truth: [`../AGENTS.md`](../AGENTS.md)
 - Product roadmap: [`../PRODUCT_PLAN.md`](../PRODUCT_PLAN.md)
@@ -732,6 +733,9 @@ prepared and tested in isolation.
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W0.1
+- Status: **COMPLETE — 2026-09-01.** Production uses the standard secure `klippt://app` origin and
+  opaque, canonical, range-capable project-media grants. Unknown origins, methods, paths, and stale
+  grants fail closed.
 
 Implementation:
 
@@ -757,6 +761,8 @@ Acceptance:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W2.1
+- Status: **COMPLETE — 2026-09-01.** `webSecurity` and explicit sandboxing are enabled. CSP,
+  navigation, child-window, and external-link guards cover development and packaged origins.
 
 Implementation:
 
@@ -780,6 +786,9 @@ Tests:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W2.2
+- Status: **COMPLETE — 2026-09-01.** Central trusted-renderer validation checks origin, top-level
+  frame, sender lifecycle, window role, and payload for privileged IPC. File access uses bounded
+  app-owned grants.
 
 Implementation:
 
@@ -805,6 +814,8 @@ Acceptance:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W2.3
+- Status: **COMPLETE — 2026-09-01.** Screen, camera, and microphone requests are restricted to the
+  trusted recording/setup role. Normal source selection and the packaged macOS permission path pass.
 
 Implementation:
 
@@ -825,6 +836,8 @@ Acceptance:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W2.1–W2.4
+- Status: **COMPLETE — 2026-09-01.** The checkpoint runs Electron `44.1.0`; TypeScript, unit,
+  browser, Electron export, native Rust, supply-chain, and signed-package gates passed.
 
 Sequence:
 
@@ -849,6 +862,9 @@ Gate each major on:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W2.5
+- Status: **COMPLETE — 2026-09-01.** Production fuses disable RunAsNode, production Node options,
+  and CLI inspect; application code loads from ASAR with integrity enforcement. The signed package
+  passed the fuse, signature, and hardened-runtime checks.
 
 Entitlements:
 
@@ -877,6 +893,9 @@ Acceptance:
 - Label: **AUTO** until HOLD A
 - Priority: P0
 - Depends on: W0.1, W2.5
+- Status: **PENDING HOLD A.** The current package still uses `com.etiennelescot.openscreen`. The
+  2026-09-01 TCC repair proved why the migration must cover signatures, permissions, duplicate
+  registrations, data, Keychain, updates, associations, and rollback as one slice.
 
 Prepare:
 
@@ -905,6 +924,9 @@ After approval:
 - Label: **AUTO**
 - Priority: P0
 - Depends on: W2.5–W2.7
+- Status: **CODE COMPLETE; LIVE UPDATE PROOF PENDING — 2026-09-01.** Release CI now validates
+  Apple's notarization log, staples and validates the app and DMG, and creates the update ZIP from
+  the stapled app. The first published manifests and a quarantined N-to-N+1 update are still open.
 
 Work:
 
@@ -1144,6 +1166,10 @@ Agents can generate blind A/B sets and measurements. Olle is needed only after a
 - Label: **AUTO**
 - Priority: P1
 - Depends on: W0.6
+- Status: **IMPLEMENTED; LIVE MEASUREMENT PENDING — 2026-09-01.** Commit `5e7bc7e9` caps the
+  offscreen native preview at its visible CSS size while export stays full resolution. The Retina
+  regression, 18 focused tests, scoped lint, production build, and signed package check pass. A
+  post-fix workload report and Olle's play/seek/scrub feel check remain.
 
 1. Render preview at the visible CSS size, not export resolution.
 2. Default preview to 24 or 30 fps unless a higher rate is visible and useful.
@@ -1674,30 +1700,20 @@ If Olle is unavailable, agents stop at the hold point and continue with the next
 workstream. They do not guess an irreversible identity, legal statement, payment action, or subjective
 audio preference.
 
-## First agent queue
+## Current agent queue
 
-This is the recommended immediate order. It contains no required Olle action.
+The earlier Wave 0 and desktop-hardening queue is complete. Use this order now:
 
-1. W0.1 — Current checkpoint inventory and clean-clone proof.
-2. W0.2 — Permanent npm/Rust/dependency gates.
-3. W0.3 — Release SHA and helper provenance.
-4. W0.4 — FFmpeg WebAssembly and generated licence inventory.
-5. W0.5 — Versioned creator corpus harness.
-6. W0.6 — Local media workload telemetry.
-7. W1.1 — Atomic export.
-8. W1.2 — Explicit transcript source roles.
-9. W1.3 — Bounded long transcription.
-10. W1.5 — BT.709 SDR contract.
-11. W1.6 — Exact frame-rate propagation.
-12. W1.7 — Truthful encoder selection.
-13. W1.8 — Decoded AAC validation.
-14. W1.9 — Bounded streaming audio export.
-15. W2.1 — Secure app/media protocol.
-16. W2.2 — `webSecurity`, CSP, and navigation/window guards.
-17. W2.3 — Narrow IPC and per-window preload surfaces.
-18. W2.4 — Origin- and role-bound capture permissions.
-19. W2.5 — Supported Electron migration.
-20. W2.6 — Entitlement and fuse hardening.
+1. Finish W5.1 with a post-fix workload report and real long-timeline play, seek, scrub, and resize.
+2. Run W3.1's packaged 30–90 minute creator flow and the highest-risk fault cases.
+3. Finish W2.8 with a current notarized artifact, first feed manifests, and quarantined N-to-N+1
+   update proof.
+4. Complete W2.7 after Olle freezes the Dyberg-owned bundle identifier.
+5. Complete the paid-beta entitlement, website, legal, support, and clean/second-Mac gates.
+6. Add consented creator-corpus media, then tune automatic direction and creator audio from evidence.
+
+[`../HANDOFF.md`](../HANDOFF.md) contains the current machine state, verification evidence, risks,
+and exact next slice.
 
 Parallel work is allowed only where files and contracts do not overlap. The checkpoint, export
 contract, source-role contract, secure protocol, and command service each need one owner and one

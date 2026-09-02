@@ -1,5 +1,9 @@
 # Workbench — banc d'essai headless de l'agent d'édition
 
+> Legacy agent-evaluation workbench. Klippt hides the inherited AI chat from the normal paid-alpha
+> surface. Keep this harness for later agent-native evaluation; do not treat it as the current
+> product workflow. Current status is in [`../HANDOFF.md`](../HANDOFF.md).
+
 Fait tourner l'agent LLM d'OpenScreen **sans interface graphique**, pour itérer vite sur les
 prompts et sur le contexte fourni au modèle.
 

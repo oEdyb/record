@@ -1,4 +1,4 @@
-# OpenScreen — Shared Team Memory
+# Klippt — shared team memory
 
 This file is the shared memory across all Mavis reins in this repo. Add durable facts here that the team should remember across sessions: build quirks, gotchas, environment-specific notes.
 
@@ -9,6 +9,13 @@ Format:
 ```
 
 ---
+
+## Current handoff is authoritative (2026-09-02)
+
+Read `HANDOFF.md` before taking work from this chronological memory. The current checkpoint uses
+Electron 44.1.0, the contained `klippt://app` origin, trusted renderer IPC, hardened package fuses,
+atomic export, and a CSS-size Retina preview. The old `openscreen-*` rein names and `OPENSCREEN_*`
+environment variables remain compatibility identifiers only.
 
 ## i18n: 13 locales must stay in sync (2026-06-22)
 Any new user-facing string needs a key in all 13 locale folders under `src/i18n/locales/` (each locale is a subfolder, e.g. `src/i18n/locales/en/settings.json`). The `npm run i18n:check` script validates structural consistency. Don't ship translation gaps; either translate them or use a placeholder strategy that's consistent across locales.

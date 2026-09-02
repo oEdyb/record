@@ -1,6 +1,7 @@
-# Git Workflow for OpenScreen
+# Git workflow for Klippt
 
-Conventions for the Mavis reins when working in this repo.
+Conventions for the Mavis reins when working in this private repo. Read `HANDOFF.md` before choosing
+work from an older plan.
 
 ## Branches
 

@@ -2,7 +2,23 @@
 
 This is the measurement record for preview fluidity and export speed, and the evidence that chose the current stack. The GPU-resident native compositor this record motivated is described in [../architecture/native-compositor.md](../architecture/native-compositor.md); the export architecture that consumes these measurements is in [../architecture/export-pipeline.md](../architecture/export-pipeline.md). The product surface the measurements describe is in [../architecture/overview.md](../architecture/overview.md); the decision narrative is in [../architecture/decisions.md](../architecture/decisions.md).
 
-The reference machine for every number in this document is an AMD Ryzen 5 7520U laptop with the integrated Radeon GPU, running Windows 11 — deliberately the weak case, and the only fully-measured machine. A discrete-GPU and Intel QSV run is owed (see [Known gaps](#known-gaps)).
+The older full export benchmark series uses an AMD Ryzen 5 7520U laptop with the integrated Radeon
+GPU on Windows 11. Newer dated sections name their own reference machine. Do not compare numbers
+across machines or workload definitions without a fresh matched run.
+
+## Apple Silicon editor preview diagnosis — 2026-09-01
+
+A 1280×720 visible editor preview was allocated as 2560×1440 on a Retina display because the
+offscreen preview multiplied its size by `window.devicePixelRatio`. Each RGBA frame was about
+14.7 MB. Local `klippt-workload-v1` telemetry measured Metal readback at about 19.1 ms mean,
+42.5 ms p95, 58.8 ms p99, and 151.0 ms maximum. Native-boundary p95 was about 4.7 ms; rare IPC and
+browser main-thread spikes also occurred. The machine had 36.3 GB of swap in use, so system pressure
+was a separate amplifier, not the complete root cause.
+
+Commit `5e7bc7e9` makes the offscreen native preview use its visible CSS size. Export resolution and
+quality remain independent. A red-green Retina regression, 18 focused tests, scoped lint, the
+production build, and signed-package verification pass. A new workload report must still prove the
+30 FPS p95 target and the real long-timeline interaction quality before this gate is complete.
 
 ## Apple Silicon screen-only export diagnosis — 2026-08-27
 

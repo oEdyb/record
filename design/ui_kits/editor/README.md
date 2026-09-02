@@ -1,5 +1,8 @@
 # OpenScreen Editor — UI kit
 
+> Historical design specimen only. It is not the current Klippt editor or token source. Use
+> [`../../DESIGN.md`](../../DESIGN.md) and the production components in `src/components/ui/`.
+
 A high-fidelity recreation of the OpenScreen Editor's **Edit** view, composed from the design
 system primitives. It is a visual + light-interaction recreation, not production code.
 

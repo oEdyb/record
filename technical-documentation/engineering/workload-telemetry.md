@@ -5,6 +5,11 @@ export. The reports show which media path ran, where time was spent, what resour
 and which fallback or failure occurred. Telemetry observes the workload. It never changes capture
 resolution, source frame rate, export quality, or product behavior.
 
+The current preview-performance comparison must record the native preview width and height. The
+2026-09-01 baseline used 2560×1440 for a 1280×720 visible Retina panel and measured Metal readback at
+about 42.5 ms p95. The fixed build uses the visible CSS size. Keep the old and new reports as a
+matched before/after pair; do not infer the result from the unit test alone.
+
 ## Storage and lifecycle
 
 The main process owns `WorkloadTelemetryService` in

@@ -2,7 +2,7 @@
 
 ## macOS
 
-macOS native recording will use a ScreenCaptureKit helper with the same process boundary as the Windows WGC helper:
+macOS native recording uses a ScreenCaptureKit helper with the same process boundary as the Windows WGC helper:
 
 1. Electron resolves the selected source, output paths, and user-selected devices.
 2. The helper receives one structured JSON request.

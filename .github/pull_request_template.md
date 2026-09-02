@@ -1,6 +1,9 @@
 ## Summary
 <!-- Briefly describe the change. -->
 
+## Handoff impact
+<!-- Update HANDOFF.md or another current reference when this changes status, risk, commands, or the next gate. -->
+
 ## Related issue
 <!-- Use "Fixes #123", "Closes #123", or "Resolves #123" only when this PR fully resolves the issue. -->
 <!-- Use "Refs #123", "Related to #123", or "Part of #123" when this PR is partial and should not close the issue. -->
@@ -34,3 +37,7 @@ Fixes #
 
 ## Testing
 <!-- Describe how this was tested. Include commands, steps, or environment setup. -->
+
+- [ ] I used current official documentation or maintained reference code for a new feature or substantial change.
+- [ ] I rebuilt the affected native helper before trusting a native result.
+- [ ] I ran the real-platform check required for capture, preview, export, or packaging changes.

@@ -1,5 +1,9 @@
 # whisper.cpp DTW word-timestamp POC
 
+> Dated evaluation evidence. Klippt's current Mac transcript path and fallback rules live in
+> [`technical-documentation/architecture/transcription-and-captions.md`](../../../technical-documentation/architecture/transcription-and-captions.md),
+> and current work is in [`HANDOFF.md`](../../../HANDOFF.md).
+
 Standalone evaluation harness, decoupled from the Electron app build — it
 never touches `electron/`, `src/`, or any app build step. Its only dependency
 on the rest of the repo is reading the already-built CTranslate2 server

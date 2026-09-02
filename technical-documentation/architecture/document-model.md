@@ -1,234 +1,126 @@
 # Document model
 
-The single source of truth for an OpenScreen project is `AxcutDocument`, a Zod-typed
-JSON object defined in `src/lib/ai-edition/schema/index.ts` and persisted as one file
-per project on disk. The renderer holds one instance in a Zustand store
-(`src/lib/ai-edition/store/projectStore.ts`); the main process owns persistence
-(`electron/ai-edition/document-service.ts`); and every editor surface — timeline,
-preview, floating inspector, captions, LLM agent — reads and writes that one
-document. The model is the contract the rest of the editor hangs off; this page is
-the contract.
+`AxcutDocument` is Klippt's internal project source of truth. The historical type name remains for
+compatibility. New files use `.klippt`. The Zod schema lives in
+`src/lib/ai-edition/schema/index.ts`; the renderer store lives in
+`src/lib/ai-edition/store/projectStore.ts`; the main-process persistence service lives in
+`electron/ai-edition/document-service.ts`.
 
-## `schemaVersion` and top-level shape
+## Current schema
 
-`axcutSchemaVersion` is **8** — exported as a literal at the top of
-`src/lib/ai-edition/schema/index.ts`. Every document on disk carries
-`schemaVersion: 8`; anything older is upgraded on parse (see [Migrations](#migrations))
-and anything unknown is rejected by the `z.literal(axcutSchemaVersion)` check in
-`documentSchemaShape`.
+`axcutSchemaVersion` is **9**. Every supported on-disk document is migrated before it reaches the
+pure current-schema parser. A future unknown version fails the literal version check instead of
+silently dropping data.
 
-| Field | Holds | Notes |
-|---|---|---|
-| `schemaVersion` | `8` | Bumping requires a migration; see the chain below. |
-| `project` | `{ id, title, createdAt, updatedAt, primaryAssetId? }` | One project per file. |
-| `assets[]` | `AxcutAsset` (one per recorded/imported media file) | Carries `originalPath`, `cameraTrack`, `durationSec` (renderer probes), and optional derived-media intent such as `cleanVoice`. |
-| `transcript` | `AxcutTranscript \| null` | Legacy primary transcript; left for back-compat, no longer the source of truth. |
-| `transcripts[]` | `AxcutTranscript[]` | Per-asset transcripts; what the captions layer actually reads. |
-| `timeline` | `{ clips[], gaps[], trimRanges[], muteRanges[], speedRanges[], captionRanges[] }` | Clips carry their own in/out (`sourceStartSec`/`sourceEndSec`); trims are anchored to a clip (`clipId?`) since v7. See [timeline-model.md](timeline-model.md). |
-| `annotations[]` | `AxcutAnnotationRegion[]` | Text/image/figure/blur overlays, anchored to a clip (`clipId?`). |
-| `zoomRanges[]` | `AxcutZoomRegion[]` | Zoom-in effects, depth 1–6, anchored to a clip (`clipId?`). |
-| `legacyEditor` | OpenScreen v2 `ProjectEditorState` passthrough | Appearance/cursor settings not yet first-class in the AI-edition schema. |
-| `agent` | `{ baseIntent?, pendingQuestions[], suggestions[], lastAppliedOperations[], lastReasoningSummary? }` | LLM agent state. |
-| `preview` | `{ strategy: "seek" \| "mse-proxy", revision: number }` | `revision` is the bump used to invalidate cached frames after an edit. |
-| `export` | `{ preset, lastJobId }` | The last export run. |
-| `history` | `{ revisions: AxcutRevision[] }` | Append-only revision log; declared by the schema (line 506) and currently populated only by tests. Undo/redo in the editor uses the in-memory `pushHistory` snapshot stack in `src/lib/ai-edition/store/undo.ts` rather than the persisted revision list — see [Undo / history](#undo--history). |
+| Field | Purpose |
+| --- | --- |
+| `schemaVersion` | Current literal version, `9`. |
+| `project` | Stable project ID, title, timestamps, and optional primary asset. |
+| `assets[]` | Recorded or imported media, source path, camera track, duration, and reversible derived-media intent. |
+| `transcript` | Legacy primary transcript retained for compatibility. |
+| `transcripts[]` | Current per-asset, source-role-aware transcript records. |
+| `timeline` | Clips, gaps, clip-anchored trims, mute ranges, speed ranges, and caption ranges. |
+| `annotations[]` | Clip-anchored text, image, figure, and blur regions. |
+| `zoomRanges[]` | Clip-anchored Screen Zoom regions, including manual/automatic ownership and direction groups. |
+| `legacyEditor` | Validated passthrough for editor settings that have not moved to first-class fields. |
 
-## Migrations
+Camera Emphasis remains in the compatible editor envelope. The current schema does not store
+runtime cache paths, worker progress, file grants, window state, or derived-media failures. Those
+values are disposable runtime state.
 
-Migrations are **one-way and forward-only**. There is no version downgrade path: a
-newer document that lands on an older build is rejected by the `schemaVersion`
-literal, not silently truncated. The chain runs **at load time** through
-`migrateRawDocumentToCurrent` (`src/lib/ai-edition/document/migrate.ts`) — the
-upgraders compose the chain and `documentSchema.parse` is a pure v8 validator.
-Every JSON-read site (`DocumentService`, the browser shim, the renderer's
-`handleBrowseProject` / `openLoadedProject` disk-load paths) must call the
-helper before `documentSchema.parse`. The pre-hoist implementation wrapped this
-chain in a `z.preprocess`, so it ran on every `setDocument` / `saveDocument` /
-`loadProject` parse — measurable per-parse overhead on documents that were
-already current. Hoisting it to load time makes the in-memory parse a single
-`z.literal(8)` + shape check on already-upgraded data.
+## Migration chain
 
-### v3 → v4 (`upgradeV3DocumentToV4`, `schema/index.ts`)
+Migrations are one-way and forward-only. `migrateRawDocumentToCurrent` composes the complete chain;
+`documentSchema.parse` validates only the current shape.
 
-v3 documents carried a single project-level `cameraTrack`; v4 moves it onto the
-owning asset. The upgrader pulls the legacy `cameraTrack` field off the
-document root and copies it onto the asset identified by `project.primaryAssetId`
-(or the first asset if that is unset), then strips the root field and rewrites
-`schemaVersion: 4`. v2 documents are not touched by this upgrader — they are
-handled by the separate `migrateProjectDataToAxcutDocument` pure function
-described below — and unknown versions pass through unchanged so the caller's
-`documentSchema.parse` can reject them via the `schemaVersion` literal.
+### v3 to v4
 
-### v4 → v5 (`upgradeV4DocumentToV5`, `schema/index.ts`)
+Moves the project-level camera track onto its owning asset. It chooses the primary asset, or the
+first asset when the old project had no primary ID.
 
-v5 makes modifiers (zoom, annotation, speed, camera-fullscreen) clip-anchored:
-each region is split into one fragment per covered clip, with the source-time
-window (`clipId`, `sourceStartSec`, `sourceEndSec`) as the source of truth and
-`startMs`/`endMs` re-derived as a transition cache. The upgrader reads the RAW
-clip layout out of `timeline.clips` and runs every region array through
-`anchorRegionsWithDerivedMs` (`src/lib/ai-edition/timeline/timelineMap.ts:376`):
+### v4 to v5
 
-- `document.zoomRanges`
-- `document.annotations`
-- `document.legacyEditor.speedRegions`
-- `document.legacyEditor.cameraFullscreenRegions`
+Converts zoom, annotation, speed, and camera regions from ruler-only spans into clip-anchored
+fragments. It derives the display milliseconds from the clip/source anchor.
 
-A region that covers no clip — zero-length, or off the end of the timeline — is
-dropped, because it could never play. A document with no clips has nothing to
-anchor to, so its regions pass through untouched (the anchor is optional during
-the transition). The v4→v5 migration lives **only** in this upgrader —
-`document/migrate.ts` deliberately emits a v4 draft (see the v2→current
-section below) so the same code path is reused for the legacy import.
+### v5 to v6
 
-### v5 → v6 (`upgradeV5DocumentToV6`, `schema/index.ts`)
+Replaces the old runtime-only `native` aspect-ratio sentinel with a concrete ratio when source
+dimensions are known. It keeps the sentinel when migration cannot resolve a safe value.
 
-v6 retires the `"native"` AspectRatio, a runtime-only sentinel that resolved to
-the timeline's largest clip. The upgrader bakes the concrete `"W:H"` token into
-`legacyEditor.aspectRatio` so the resolution is permanent, matching the answer
-the runtime gave yesterday. It is **opportunistic**: baking needs real source
-dimensions, and a project imported from v1.7 has none until the renderer probes
-its media, so when they are unknown the sentinel is left in place (it keeps
-resolving dynamically) and converts on a later load. Guessing `"16:9"` there
-would permanently reframe every portrait v1.7 project on its first open.
+### v6 to v7
 
-### v6 → v7 (`upgradeV6DocumentToV7`, `schema/index.ts`)
+Anchors trim ranges to clips. When one asset appears more than once, the migration creates one
+clamped trim per affected clip instead of guessing which clip the old asset-wide trim meant.
 
-v7 finishes what v5 started: **trims** become clip-anchored too. They were the
-last ruler region addressed by `assetId` alone. `AxcutTrimRange.startSec` /
-`endSec` already *are* a source-time window, so the only missing piece was
-`clipId` — no `sourceStartSec`/`sourceEndSec` pair is added, which would only
-create two fields that can drift.
+### v7 to v8
 
-Source time is per **asset**, so a v6 trim is unambiguous exactly while one asset
-backs one clip. Duplicate a clip (or place the same recording twice) and the two
-clips share a coordinate space: a cut authored on the second was indistinguishable
-from one on the first, and each reader guessed differently — the transcript pane
-showed the cut on **both** clips, the ruler drew it on the **first**, and
-playback/export removed the span from **both**. `trimAppliesToClip`
-(`src/lib/ai-edition/timeline/trim-mapping.ts`) is now the single definition every
-reader routes through.
+Adds the optional versioned Clean Voice recipe. Missing remains the canonical Original setting, so
+opening an old project cannot start processing or change its sound.
 
-The upgrader **ventilates** rather than picks: a stored trim is replaced by one
-anchored row per clip it covers, each clamped to that clip's source window, the
-first keeping the original id. A v6 trim genuinely did cut every clip of its
-asset, so this restates the document without moving its output — but the rows are
-now separately addressable, which is what lets a user delete the copy on the clip
-they did not mean. A trim covering no clip is kept **unchanged** rather than
-dropped (`replaceTimeline` mints exactly those: the complement of the kept
-intervals, outside every clip by construction), and an unprobed clip has no real
-window to clamp against so its trims stay un-anchored. Un-anchored trims keep the
-pre-v7 asset-wide meaning, which is what makes the fallback lossless.
+### v8 to v9
 
-### v7 → v8 (`upgradeV7DocumentToV8`, `schema/index.ts`)
+Adds explicit transcript source roles and evidence. Legacy words and segments become
+`unknown-mixed` with `legacy-unverified` evidence. The migration does not invent a speaker.
 
-v8 adds an optional, versioned `asset.cleanVoice` recipe. The project stores only user intent.
-Generated stems, cache paths, progress, and failures stay outside the document because they are
-disposable and can be rebuilt from the permanent raw microphone. A missing recipe is the canonical
-**Original** setting, so upgrading a v7 project cannot start processing or change its sound.
+### Legacy editor v2 to current
 
-`DocumentService` notifies derived-media services only after a project save is durable, or after an
-existing project has been read successfully. The current Clean Voice service uses that boundary to
-schedule one low-priority local job. It cancels optional work while recording or under serious
-thermal pressure. It validates the lossless output before publishing a content-addressed cache
-entry. The project keeps only the recipe. Preview and native export ask the main process for a
-verified runtime route and never persist cache paths. Preview uses a browser-ready mix made from the
-clean microphone and untouched system audio. Native export replaces only the microphone with the
-lossless clean stem. Either path uses the complete raw clip until a complete route is ready.
-
-### Legacy v2 → current (`migrateProjectDataToAxcutDocument`, `document/migrate.ts`)
-
-OpenScreen's pre-merge editor stored projects as `EditorProjectData` (an envelope
-versioned `PROJECT_VERSION = 2`, defined at
-`src/components/video-editor/projectPersistence.ts:66`). On first open in the new
-editor, the renderer calls this function to produce a current-shape document. The
-migration is **pure** — no DOM, no fs, no network — and maps each `EditorProjectData`
-field into the equivalent current slot:
-
-- The single recorded screen video becomes one asset plus one clip spanning its
-  source, with the webcam path lifted into `asset.cameraTrack`.
-- `editor.trimRegions` (kept ranges) invert into `timeline.trimRanges` (kept ranges
-  in source seconds). v2 semantics matched here — both are "kept", not "cut". The
-  trims are anchored to the single minted clip right in this function rather than
-  left to `upgradeV6DocumentToV7`: a v2 project has exactly one clip so the answer
-  is unambiguous, and the upgrader could not do it anyway — the clip it mints has
-  no source extent until the renderer probes the media.
-- `editor.speedRegions`, `editor.zoomRegions`, and `editor.annotationRegions` carry
-  over into `legacyEditor.speedRegions`, `document.zoomRanges`, and
-  `document.annotations` respectively (with v4→v5 anchoring applied during the
-  parse at the end).
-- The full `editor` blob — wallpaper, cursor theme, webcam layout, blur settings,
-  and the other ~20 fields without a first-class home — round-trips through
-  `legacyEditor` so toggling AI-edition off then back on is lossless.
-
-The function returns the current result by emitting a v4-shaped draft and running
-it through `migrateRawDocumentToCurrent` (the whole `upgradeV3DocumentToV4` →
-`upgradeV7DocumentToV8` chain) before `documentSchema.parse`. That is why the
-draft is labelled `schemaVersion: 4` and not `axcutSchemaVersion`: labelling it
-already-current would make the v4→v5 upgrader skip the anchoring and leave the
-imported regions without clip anchors.
+`migrateProjectDataToAxcutDocument` converts the inherited `EditorProjectData` envelope. It creates
+one asset and clip, carries the camera link and editor settings forward, converts the old region
+shapes, then runs the normal migration chain. The function is pure: no filesystem, DOM, network, or
+media probe.
 
 ## Persistence
 
-There are exactly two owners of the document bytes: the renderer store and the
-main-process service. They never duplicate fields and never diverge on shape — the
-service stores exactly what `JSON.stringify(document, null, 2)` produces.
+The renderer holds one live document. The main process owns the bytes on disk.
 
-| | Renderer | Main process |
-|---|---|---|
-| Code | `src/lib/ai-edition/store/projectStore.ts` | `electron/ai-edition/document-service.ts` |
-| Role | Live editor state, transport (`playing`, `currentTimeSec`, `sourceDurationSec`), `dirty`/`lastSavedAt` | Read, write, list, add asset, remove asset |
-| Transport | `nativeBridgeClient.aiEdition.*` IPC | — |
-| On disk | — | `userData/projects/<id>.klippt` (one JSON per project) |
-| Extension | — | **`.klippt`**. Klippt still reads legacy `.openscreen` and `.axcut` projects. After validation, the service writes an equivalent `.klippt` copy and keeps the legacy file as a rollback copy. The JSON schema, not the file extension, determines compatibility. |
-| Atomicity | — | Temp + rename per save (`writeProjectNow`, lines 354-394), with a per-project write queue (`writeQueues`, line 106) so two concurrent saves serialise and an interrupted write cannot leave a half-written document behind. |
+| Concern | Contract |
+| --- | --- |
+| Location | `userData/projects/<id>.klippt` |
+| Format | UTF-8 JSON with an explicit schema version |
+| Current extension | `.klippt` |
+| Legacy extensions | `.openscreen` and `.axcut` remain readable |
+| Legacy migration | Validate, write an equivalent `.klippt` copy, and keep the original |
+| Publication | Write a temporary file, synchronize it, then rename atomically |
+| Concurrency | Serialize writes per project so two saves cannot interleave |
 
-Both layers run every read through `migrateRawDocumentToCurrent` then
-`documentSchema.parse` so an on-disk document of any supported version comes out
-as the current `AxcutDocument` shape; the renderer never holds a stale
-`schemaVersion: 3` snapshot.
+Every read of untrusted or on-disk project data must run the migration chain and then the current
+schema parser. Do not call the current parser directly on an old file.
 
-## Undo / history
+## Timeline and source-time invariants
 
-The schema declares a `history.revisions[]` field (`schema/index.ts:506-510`) for
-an append-only revision log, populated by tests today and reserved for future
-revision browsing. The interactive undo/redo in the editor uses a different,
-lighter mechanism so the user can undo any edit, including one made by the LLM,
-without growing the persisted document.
+Clips define timeline order and source in/out ranges. Modifiers remain attached to a clip and source
+time. UI lanes project those anchors into playback time after trims. Preview, export, transcript
+copy, pause shortening, and automatic direction must use the shared mapping helpers instead of
+reimplementing time conversion.
 
-The mechanism lives in `src/lib/ai-edition/store/undo.ts`:
+Automatic regions use `source: "auto"` and can share a `directionGroupId`. Any direct user change to
+a connected automatic region promotes the complete edited ownership group to manual before save.
+Regeneration can replace only still-automatic regions.
 
-- A bounded snapshot stack (`past[]`, `future[]`, `MAX_HISTORY = 50`) holds the
-  previous document JSON per project.
-- Every call to `setDocument` in the project store (`projectStore.ts:218-232`)
-  pushes the outgoing document onto `past` before swapping in the new one
-  (`pushHistory`, `undo.ts:18-25`). The push is deferred via a dynamic
-  `import("./undo")` so the store does not load the undo module at module-init
-  time.
-- `undo()` and `redo()` (`undo.ts:30-66`) swap snapshots back through
-  `setDocument`, with an `enabled` flag that suppresses a recursive push during
-  the swap itself.
-- `useUndoRedoShortcuts` (`undo.ts:68-103`) wires Cmd+Z / Cmd+Shift+Z / Ctrl+Y to
-  the snapshot stack, ignoring key events whose target is a text input or
-  contenteditable so typing in the transcript or rename field does not get
-  intercepted.
+## Derived media
 
-A whole LLM agent batch undoes as one unit because every tool mutation goes
-through `setDocument`. The chat service applies each tool call by computing the
-next document and calling `saveDocument`; the snapshot is taken at the
-`setDocument` boundary of each call, so undoing a batch of N tool calls means N
-Cmd+Z presses, and each one unwinds one tool's effect in reverse order. The
-batch atomicity a single undo button would need lives in the chat UI's "undo last
-agent turn" affordance (not yet wired — see [Known gaps](#known-gaps)).
+The project stores a recipe and immutable source identity, not a cache path. A Clean Voice stem,
+preview mix, waveform envelope, transcript cache, or other derived file can be rebuilt. Runtime
+services publish a derived result only after identity, length, timing, and integrity checks pass.
+Failure falls back to the complete raw source.
+
+## Undo and revisions
+
+Interactive Undo/Redo uses the bounded renderer snapshot stack in
+`src/lib/ai-edition/store/undo.ts`. Normal multi-field operations must enter history as one document
+edit. Disk persistence remains atomic but does not yet provide a durable user-facing revision
+browser across app restarts.
+
+Agent-native work must not write JSON directly. UI, CLI, and future agent bridges should call the
+same typed project commands with stable IDs, an expected project revision, a dry run, validation,
+and one Undo step.
 
 ## Known gaps
 
-- `history.revisions` is declared by the schema but only the renderer snapshot
-  stack is populated today. A persisted revision log would let "undo" survive
-  app restarts and give users a history view; both are deferred.
-- The chat-service undo of a full agent turn is not implemented. The undo button
-  undoes one tool call at a time; a per-turn undo would require checkpointing
-  the document at the start of each chat turn (one push per turn, not per tool
-  call).
-- The `agent.baseIntent` field is persisted but not yet populated by the chat
-  runtime; the LLM tool loop fills `lastReasoningSummary` only after the v6
-  compaction step lands.
+- Some compatible editor settings still live in `legacyEditor` instead of first-class fields.
+- Persisted revision browsing and cross-relaunch Undo are not implemented.
+- The shared typed command service does not yet cover the complete UI edit surface.
+- Broader migration tests are still required before the Dyberg-owned bundle and data identity ship.
+
+See [`../../HANDOFF.md`](../../HANDOFF.md) for the current release gate.

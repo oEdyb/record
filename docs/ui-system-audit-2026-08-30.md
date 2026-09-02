@@ -1,5 +1,8 @@
 # Klippt UI system audit
 
+> This is dated implementation evidence, not the current task queue. Use
+> [`../HANDOFF.md`](../HANDOFF.md) for current status and next work.
+
 **As of:** 2026-08-30
 
 **Scope:** Editor shell, floating inspector, timeline controls, dialogs, menus, recording HUD, and motion

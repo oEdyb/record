@@ -1,7 +1,7 @@
 # Preview
 
 The preview is the editor's frame-at-the-playhead surface. It is composited by the same
-Rust + Direct3D 11 native crate that drives MP4 export — `crates/compositor/` reached via the
+Rust native compositor that drives MP4 export — `crates/compositor/` reached via the
 `compositor_view.node` napi-rs addon — and pulled into the renderer as an RGBA8
 bitmap that paints onto an HTML `<canvas>`. The DOM around the canvas hosts the
 interactive-only layers (zoom gimbal, annotation selection, PiP webcam drag) that
@@ -22,12 +22,12 @@ One compositor exists in the source tree, and it is the live one. A Pixi/WebGL
 single-canvas screen compositor was tried alongside it and removed once it was
 established that nothing mounted it.
 
-### Native D3D compositor overlay (live)
+### Native compositor overlay (live)
 
 Mounted as the first child of `.previewFrame` by
 [`NativeCompositorOverlay.tsx`](../../src/components/ai-edition/NativeCompositorOverlay.tsx).
 It owns the `<canvas>`, drives a `useNativeCompositorView` hook that allocates an
-offscreen `compositor_view` view sized to the canvas's device-pixel rect
+offscreen `compositor_view` view sized to the canvas's visible CSS rect
 ([`useNativeCompositorView.ts:73`](../../src/native/hooks/useNativeCompositorView.ts:73)),
 and pushes a `SceneDescription` JSON every time the document or the editor
 settings change. Wallpaper, screen video, webcam, cursor, zoom regions, annotations
@@ -213,10 +213,11 @@ a new clip). The mapping sits in
 The overlay's rect is kept aligned with the DOM via the same primitives used
 elsewhere in the renderer:
 
-- `computeDeviceRect` (`src/native/nativeViewRect.ts`) turns
-  `getBoundingClientRect()` into a device-pixel `CompositorViewRect`,
-  rounding every axis to dodge the truncated / off-by-one windows the addon
-  produces on non-integer inputs.
+- `computePreviewRect` (`src/native/nativeViewRect.ts`) turns
+  `getBoundingClientRect()` into a CSS-pixel `CompositorViewRect` for the offscreen preview.
+  It deliberately does not multiply width or height by `devicePixelRatio`: a 1280×720 visible
+  preview remains 1280×720 on a Retina display instead of producing a 2560×1440 RGBA transfer.
+  Export resolution is resolved separately and is unchanged.
 - `rectsEqual` skips the `setRect` push when nothing has changed
   ([`nativeViewRect.ts:33`](../../src/native/nativeViewRect.ts:33)) — the
   the ResizeObserver (`useNativeCompositorView.ts:259`) and a coalesced rAF
@@ -248,6 +249,11 @@ route and restores the original video audio; Klippt never mixes raw and clean mi
 Final delivery normalization remains an export-only operation.
 
 ## Known gaps
+
+- **Post-fix workload gate.** The Retina CSS-size cap landed in `5e7bc7e9`. Before the fix, a
+  2560×1440 preview measured about 42.5 ms p95 Metal readback, above the 33 ms 30 FPS budget. The
+  fixed path still needs a fresh workload report and a real long-timeline play, seek, scrub, and
+  resize check.
 
 - **Long-recording scrub drift.** `useNativePlaybackSync:18` documents the
   accepted-at-fixture-time drift between the app's rAF playhead and the addon's

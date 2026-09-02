@@ -1,7 +1,8 @@
 # Technical documentation
 
 Reference documentation for how Klippt is built. It describes the system **as it is on this
-branch** — not how it got here. Product direction lives in [`../ROADMAP.md`](../ROADMAP.md),
+branch** — not how it got here. Current work starts in [`../HANDOFF.md`](../HANDOFF.md), product
+direction lives in [`../PRODUCT_PLAN.md`](../PRODUCT_PLAN.md),
 day-to-day contributor rules in [`../AGENTS.md`](../AGENTS.md) and
 [`../CONTRIBUTING.md`](../CONTRIBUTING.md), and end-user documentation in
 [`../website/docs/`](../website/docs/).

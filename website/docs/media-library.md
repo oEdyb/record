@@ -1,5 +1,6 @@
 ---
 id: media-library
+draft: true
 title: Media library & clips
 sidebar_position: 5
 description: "Manage sources and clips in OpenScreen: import media, then trim, crop, split, and reorder clips on one timeline, and set the project output size."

@@ -1,7 +1,10 @@
 # whisper.cpp DTW word-timestamp POC — REPORT
 
+> Historical benchmark result. Do not treat this report as the current Klippt transcript-engine
+> decision. Use [`HANDOFF.md`](../../../HANDOFF.md) and the current transcription architecture.
+
 **Branch:** `feat/native-stt-whispercpp`
-**Plan:** [`technical-documentation/architecture/transcription-and-captions.md`](../../../../technical-documentation/architecture/transcription-and-captions.md)
+**Plan:** [`technical-documentation/architecture/transcription-and-captions.md`](../../../technical-documentation/architecture/transcription-and-captions.md)
 **POC dir:** `tools/stt-eval/whispercpp-dtw-poc/`
 **Status:** all 7 fixtures scored for all available backends; §4.1 guardrail PASS on every run; three verdicts below.
 

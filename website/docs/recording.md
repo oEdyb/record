@@ -1,5 +1,6 @@
 ---
 id: recording
+draft: true
 title: Screen recording
 sidebar_position: 4
 sidebar_label: Recording

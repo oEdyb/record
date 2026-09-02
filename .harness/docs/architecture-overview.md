@@ -1,41 +1,59 @@
-# OpenScreen Architecture Notes
+# Klippt architecture notes
 
-Quick map of how the app fits together, for the Mavis reins. For deeper details, see `../technical-documentation/architecture/native-bridge.md` and `../technical-documentation/engineering/`.
+This is the short map for repository agents. Read [`../../HANDOFF.md`](../../HANDOFF.md) for current
+state and [`../../AGENTS.md`](../../AGENTS.md) for product rules. Use
+[`../../technical-documentation/architecture/overview.md`](../../technical-documentation/architecture/overview.md)
+for the complete process model.
 
 ## Process layout
 
-OpenScreen is a three-process Electron app:
+Klippt has four main runtime boundaries:
 
-1. **Main process** (`electron/main.ts` + siblings) — owns window lifecycle, IPC handlers, the recording orchestrator, and child-process management for the native helpers.
-2. **Renderer** (`src/`) — React 18 + Vite app. The UI, the editor, the timeline, the Pixi.js composition surface, and the i18n layer. Runs with `contextIsolation: true`.
-3. **Native capture helpers** — small, privileged child processes that own the platform-specific screen/audio/webcam capture APIs:
-   - macOS: Swift binary using ScreenCaptureKit (`electron/macos-helper/`)
-   - Windows: C++/Win32 binary using Windows Graphics Capture (`electron/windows-helper/`)
-   - Linux: falls back to a browser MediaStream pipeline (no native helper)
+1. **Electron main process** in `electron/` owns windows, trusted IPC, project/media grants,
+   recording orchestration, native helpers, entitlements, updates, and export publication.
+2. **React renderer** in `src/` owns the editor, HUD, source selector, timeline, inspector, and
+   project interactions. Production pages load from `klippt://app` with sandboxing and
+   `webSecurity` enabled.
+3. **Native capture helpers** under `electron/native/` own platform capture and media writing:
+   ScreenCaptureKit/AVFoundation on macOS, WGC/Media Foundation on Windows, and PipeWire/portal on
+   Linux.
+4. **Native compositor** under `crates/` owns preview composition and export rendering through the
+   `compositor_view.node` N-API boundary. Platform GPU backends include Metal, D3D11, and WGSL.
 
-## Data flow during a recording
+## Recording flow
 
+```text
+HUD -> source and device setup -> countdown -> native capture helper
+    -> fragmented clip files + role metadata + sidecars
+    -> project document -> editor timeline
 ```
-[User clicks record]
-        |
-        v
-Renderer (React)  --IPC-->  Main process  --spawn-->  Native helper
-        ^                                                  |
-        |                                                  v
-        +--<-- frame chunks / audio chunks / metadata --<--+
-```
 
-The native helper writes raw chunks; the main process multiplexes them with the timeline metadata; the renderer pulls the composed stream onto the Pixi.js canvas for live preview and final export.
+Pause finalizes one clip while the logical recording session stays active. Continue creates the next
+clip. Remove previous clip changes project state without deleting recoverable media. Stop opens the
+same project in the editor.
 
-## Why the split
+## Preview and export
 
-- Native helpers are tiny, single-purpose, and have a narrow IPC surface. That keeps the privileged code reviewable.
-- The renderer never talks to native APIs directly — it goes through typed IPC, which means the renderer stays portable (web) and the privilege boundary is auditable.
-- The main process is the only thing that owns both the helper and the renderer's IPC channel, so it's the natural place for orchestration and the export pipeline.
+The project document maps into one native scene contract. The editor preview pulls RGBA frames from
+an offscreen native compositor view. Export uses the same scene semantics at the chosen output
+resolution. Preview size is capped to the visible CSS panel; export resolution stays independent.
+The export publisher writes to a same-directory stage, verifies the result, synchronizes it, and
+atomically replaces the destination.
 
-## What this means for changes
+## Security boundary
 
-- Touching recording behavior = main process + native helper + (usually) renderer UI. Three places to keep in sync.
-- Touching the editor = renderer only. Cheap to iterate with `npm run build-vite`.
-- Touching export = main process + renderer (preview matches export). Run a full recording → export loop to verify.
-- Native code cannot be unit-tested in CI. Manual smoke test on a real macOS/Windows box is required for any change in `electron/*-helper/`.
+Renderer resources and approved media use `klippt://app`. Local media URLs represent opaque grants,
+not arbitrary paths. Privileged IPC validates the exact origin, top-level frame, sender, role, and
+payload before it reaches application logic. Navigation, webviews, unexpected windows, and unrelated
+permission requests fail closed. Production fuses require the integrity-checked ASAR.
+
+## Change impact
+
+- Recording changes usually cross React, Electron, and one native helper. Split broad work before
+  implementation.
+- Editor-only changes stay in the renderer when they do not change the project or scene contract.
+- Preview or export changes need parity tests and a real Mac check.
+- Native helper changes need a rebuilt helper. A Vite/Electron build can run stale native code.
+- New privileged actions must use the central trusted IPC wrapper and the narrowest preload surface.
+
+Current gaps and the next slice are in [`../../HANDOFF.md`](../../HANDOFF.md).

@@ -15,8 +15,9 @@ global rename.
 Read this file before changing product behavior, UI, recording, project storage, preview,
 or export. Preserve these decisions across context compaction and future agent sessions.
 
-Use [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md) for delivery order and release gates. This file remains
-the source of truth for product behavior and engineering constraints.
+Use [`HANDOFF.md`](HANDOFF.md) for the current branch, completed work, evidence, and next action.
+Use [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md) for delivery order and release gates. This file remains the
+source of truth for product behavior and engineering constraints.
 
 ## Research before implementation
 

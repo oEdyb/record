@@ -1,5 +1,6 @@
 ---
 id: installation
+draft: true
 title: Installation
 sidebar_position: 2
 description: "Install OpenScreen on macOS, Windows, or Linux — .dmg, .exe, .deb, .rpm, .pacman, AppImage, and a Nix flake, including the macOS Gatekeeper step."

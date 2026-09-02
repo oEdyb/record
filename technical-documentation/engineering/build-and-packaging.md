@@ -1,6 +1,14 @@
 # Build and packaging
 
-OpenScreen builds its renderer, Electron main process, preload bridge, native helpers, and installers from the root npm scripts, `vite.config.ts`, `electron-builder.json5`, and platform-native projects under `electron/native/`. Nix provides a separate Linux package and development shell.
+Klippt builds its renderer, Electron main process, preload bridge, native helpers, and installers from the root npm scripts, `vite.config.ts`, `electron-builder.json5`, and platform-native projects under `electron/native/`. Nix provides a separate Linux package and development shell.
+
+## Current beta-hardening checkpoint — 2026-09-01
+
+Branch `checkpoint/klippt-beta-hardening-2026-09-01` is pushed to the private remote. Commit
+`5e7bc7e9f6f2d2bfefc72597138bd467ad810c82` includes the Electron 44.1.0 runtime hardening,
+contained app/media protocol, release pipeline fixes, signed-helper provenance normalization, and
+Retina preview-size cap. The complete verification evidence and remaining external release work are
+in [`../../HANDOFF.md`](../../HANDOFF.md).
 
 ## Known-good product checkpoint — 2026-08-28
 
@@ -294,7 +302,7 @@ Diagnosing a suspected stale addon: serde embeds its field-name literals in the 
 
 ### Windows
 
-The default electron-builder target is NSIS, with an assisted installer that allows users to change the installation directory. `npm run build:win:store` explicitly selects the configured `appx` target for Microsoft Store packaging. The AppX identity, publisher, capabilities, and Store languages come from `electron-builder.json5`. Release CI builds and retains both the NSIS installer and AppX package, although the GitHub release publisher currently downloads only the `openscreen-windows` NSIS artifact.
+The default electron-builder target is NSIS, with an assisted installer that allows users to change the installation directory. `npm run build:win:store` explicitly selects the configured `appx` target for Microsoft Store packaging. The AppX identity, publisher, capabilities, and Store languages come from `electron-builder.json5`. Release CI builds and retains both the NSIS installer and AppX package; current artifact names use the `klippt-*` prefix.
 
 #### Store tile assets
 
@@ -321,7 +329,8 @@ Buying a certificate is the fix for the `.exe`, and it stays a live option (roug
 
 ### macOS
 
-> **The macOS job is currently disabled** (`if: false` in `build.yml`) because 1.8.0 ships Windows-only. That flag is release-branch-only and must not reach `main` when promoting, or every later release becomes Windows-only too. Until it is lifted, the macOS packaging path — including the compositor and ffmpeg steps described above — is exercised only by `npm run build:mac` locally.
+The macOS job is active as an arm64/x64 matrix. Each architecture builds on its matching native
+runner so FFmpeg, Cargo, helper staging, and package architecture agree.
 
 Electron-builder targets DMG for both `arm64` and `x64`, enables hardened runtime, and applies `macos.entitlements` to the app and inherited code. The entitlements allow Electron JIT/native library loading and audio, camera, and screen capture. The configuration itself sets `notarize: false`; release CI packages the `.app`, creates and signs the DMG manually, submits it to `notarytool`, staples the ticket, and validates Gatekeeper. Pre-release tags go through the same path as stable ones — signing alone leaves Gatekeeper at `rejected, source=Unnotarized Developer ID`, so an RC that is signed but not notarized still forces testers to clear the quarantine attribute. Missing Apple credentials produce an ad-hoc-signed artifact.
 
@@ -333,4 +342,4 @@ Electron-builder produces AppImage, `.deb`, `.pacman`, and `.rpm` targets. Each 
 
 `package.json#engines` and `.nvmrc` both pin Node.js `22.22.1`. The package manifest pins npm `10.9.4` through both `packageManager` and `engines.npm`. The Nix shell supplies Node 22, while the shared GitHub Actions setup currently requests the Node 22 release line rather than the exact patch.
 
-TypeScript is `5.9.3`, Vite is `7.3.2`, Electron is `41.2.1`, and electron-builder is `26.8.1` in `package.json`. Native versions are controlled by their platform tools and project files rather than a single repository-wide compiler version.
+TypeScript is `5.9.3`, Vite is `7.3.2`, Electron is `44.1.0`, and electron-builder is `26.8.1` in `package.json`. Native versions are controlled by their platform tools and project files rather than a single repository-wide compiler version.

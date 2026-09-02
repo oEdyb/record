@@ -1,5 +1,6 @@
 ---
 id: ai-editing
+draft: true
 title: AI editing
 sidebar_position: 8
 description: "Connect your own LLM key to edit OpenScreen projects from a chat panel. Entirely optional and off by default — nothing leaves your machine until you opt in."

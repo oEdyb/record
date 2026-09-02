@@ -1,13 +1,14 @@
-# OpenScreen Roadmap
+# Inherited OpenScreen roadmap
 
 > [!IMPORTANT]
-> This file is the inherited OpenScreen roadmap and is not the product plan for screenrec.
-> The active proprietary product sequence is in [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md), and the
-> durable behavior rules are in [`AGENTS.md`](AGENTS.md).
+> This file is historical evidence. It is not the Klippt roadmap and must not be used as a current
+> task queue. Start with [`HANDOFF.md`](HANDOFF.md). The active product sequence is in
+> [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md), and the durable behavior rules are in
+> [`AGENTS.md`](AGENTS.md).
 The recorder you love, with an optional AI sidekick. Same sleek, low-friction recorder UX. An opt-in AI editing layer is on the way for users who want it — never required, never snuck in.
 
 For the upstream OpenScreen project, this was the source of truth for planned work. It is retained
-here for history and upstream comparison; it does not set screenrec priorities.
+here for history and upstream comparison; it does not set Klippt priorities.
 
 ## 🧭 North Star
 **Record → Edit → Export.** (with an optional AI shortcut for users who want one)
@@ -46,7 +47,7 @@ That engine ran on Direct3D 11 only until 1.8.0, which made this the largest gap
 
 - [x] **MP4 export on macOS** — Metal render pipeline with VideoToolbox decode and encode, a CoreText text rasterizer, and audio muxed into the output. All nine shader entry points are ported to MSL, so annotations, the cursor and its trail, the 3D tilt zoom and the dual-Kawase blur all render there.
 - [x] **MP4 export on Linux** — wgpu/WGSL pipeline with software H.264 encode, MP4 mux and AAC audio.
-- [x] **Feature:** software fallback when no GPU encoder is available — [#18](../../issues/18). A CPU backend (software render + decode) is selected automatically and surfaced in the UI, and reaches the export encoder like any other backend. Direct3D 11 now fails legibly rather than silently degrading to WARP.
+- [x] **Feature:** software fallback when no GPU encoder is available — [upstream #18](https://github.com/getopenscreen/openscreen/issues/18). A CPU backend (software render + decode) is selected automatically and surfaced in the UI, and reaches the export encoder like any other backend. Direct3D 11 now fails legibly rather than silently degrading to WARP.
 
 Still open on this axis:
 
@@ -56,13 +57,13 @@ Still open on this axis:
 ## 🛠️ Stability & quality (what we're actually shipping)
 Pulled from real user bug reports on getopenscreen/openscreen. This is the queue for the next release window.
 
-- [ ] **Fix:** video disappears from editor after export — [#8](../../issues/8) (Linux, Manjaro). Renderer regression after export.
-- [ ] **Fix:** crash after stopping macOS recording — [#21](../../issues/21) (macOS 26.4.1, Apple Silicon). Crash is in the Electron / Node async fs shutdown path; recording artifacts are written correctly.
-- [ ] **Fix:** macOS cursor offset in single-window capture — [#22](../../issues/22).
-- [ ] **Fix:** recover preview from WebGL context loss on Linux / Wayland — [#19](../../issues/19).
-- [x] **Feature:** copy / paste attributes in the timeline — [#24](../../issues/24). `Ctrl/Cmd + C` / `Ctrl/Cmd + V` copy a selected region's attributes onto another region of the same kind.
-- [ ] **Feature:** right-click context menu for the copy / paste above — the other half of [#24](../../issues/24), still open.
-- [x] **Feature:** restore blur regions — [#76](../../issues/76). Shipped as an annotation **type** rather than its own region kind: Gaussian or mosaic, rectangle or oval, composited natively in both preview and export. Freehand is deliberately not offered when creating one — its input was broken and the renderer only ever masked the bounding box, and a half-reliable privacy tool is worse than no tool, because people trust it. Existing freehand shapes still render as their bounding box, with the inspector saying so.
+- [ ] **Fix:** video disappears from editor after export — [upstream #8](https://github.com/getopenscreen/openscreen/issues/8) (Linux, Manjaro). Renderer regression after export.
+- [ ] **Fix:** crash after stopping macOS recording — [upstream #21](https://github.com/getopenscreen/openscreen/issues/21) (macOS 26.4.1, Apple Silicon). Crash is in the Electron / Node async fs shutdown path; recording artifacts are written correctly.
+- [ ] **Fix:** macOS cursor offset in single-window capture — [upstream #22](https://github.com/getopenscreen/openscreen/issues/22).
+- [ ] **Fix:** recover preview from WebGL context loss on Linux / Wayland — [upstream #19](https://github.com/getopenscreen/openscreen/issues/19).
+- [x] **Feature:** copy / paste attributes in the timeline — [upstream #24](https://github.com/getopenscreen/openscreen/issues/24). `Ctrl/Cmd + C` / `Ctrl/Cmd + V` copy a selected region's attributes onto another region of the same kind.
+- [ ] **Feature:** right-click context menu for the copy / paste above — the other half of [upstream #24](https://github.com/getopenscreen/openscreen/issues/24), still open.
+- [x] **Feature:** restore blur regions — [upstream #76](https://github.com/getopenscreen/openscreen/issues/76). Shipped as an annotation **type** rather than its own region kind: Gaussian or mosaic, rectangle or oval, composited natively in both preview and export. Freehand is deliberately not offered when creating one — its input was broken and the renderer only ever masked the bounding box, and a half-reliable privacy tool is worse than no tool, because people trust it. Existing freehand shapes still render as their bounding box, with the inspector saying so.
 
 ## 📚 Site & documentation
 - [x] **Feature:** Docusaurus site — landing + docs, live at [getopenscreen.github.io/openscreen](https://getopenscreen.github.io/openscreen/), built from `website/` and deployed to GitHub Pages by `.github/workflows/docs.yml` on every push to `main`. Landing page plus a Features section covering recording, the media library, the timeline, captions, AI editing and export. MIT, no tracking, no paywall — same posture as the app.

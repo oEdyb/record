@@ -1,4 +1,9 @@
-# crates/ — le compositeur natif D3D11 (le fast-path natif retenu)
+# `crates/` — native compositor
+
+> The opening section below is an older French record of the Windows D3D11 proof. The production
+> Rust compositor now supports the platform backends described in
+> [`native-compositor.md`](../technical-documentation/architecture/native-compositor.md). Use
+> [`../HANDOFF.md`](../HANDOFF.md) for current status.
 
 | Crate | Rôle |
 |---|---|
@@ -14,8 +19,8 @@ en un mot : sur Windows, packager avec `npm run build:win`, jamais `npm run buil
 
 Le reste de ce document est l'historique du POC qui a produit ce compositeur.
 
-Troisième POC de rendu d'OpenScreen, à côté de [`poc/`](../poc) (web, WebCodecs + WebGPU)
-et [`poc-native/`](../poc-native) (Rust + wgpu/Vulkan). Voir la spec :
+Troisième POC de rendu d'OpenScreen, à côté des anciens POC `poc/` (web, WebCodecs + WebGPU)
+et `poc-native/` (Rust + wgpu/Vulkan), maintenant retirés. Voir la spec :
 [`technical-documentation/engineering/rendering-performance.md`](../technical-documentation/engineering/rendering-performance.md),
 annexe D (D.6 en particulier).
 

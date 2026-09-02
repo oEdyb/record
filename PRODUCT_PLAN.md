@@ -1,7 +1,8 @@
 # Klippt product plan
 
 - Status: active
-- Date: 2026-08-29
+- Updated: 2026-09-02
+- Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Product source of truth: [`AGENTS.md`](AGENTS.md)
 - Upstream historical roadmap: [`ROADMAP.md`](ROADMAP.md)
 - Full agent-first execution plan: [`docs/cutting-edge-execution-plan.md`](docs/cutting-edge-execution-plan.md)
@@ -92,7 +93,7 @@ SEO or GEO only after the small page set shows which queries and recommendations
 | Clip-native recording   | Working on Mac: Pause, Continue, Remove previous clip, Stop, editor insertion, Undo, and Redo                                                                                                                                                                                                               | Long-session and failure recovery gates                                                                                                               |
 | Editable source capture | Screen and camera are separate. Mac clips contain a mixed preview track plus tagged system-audio and microphone tracks. Cursor and safe keyboard telemetry are sidecars                                                                                                                                     | First-class source-track model, raw export, recovery inventory                                                                                        |
 | Automatic direction     | Deterministic click, drag, typing, cursor, and Camera Emphasis engine; exact Scale control; protected user corrections; direct editable timeline regions; simplified inspector                                                                                                                              | Tune only from labelled real-use failures; do not add detectors now                                                                                   |
-| Preview and export      | Shared native scene contract and hardware paths on Mac                                                                                                                                                                                                                                                      | Full long-video delivery validation                                                                                                                   |
+| Preview and export      | Shared native scene contract and hardware paths on Mac. The native editor preview now renders at visible CSS size on Retina displays while export keeps its full independent resolution                                                                                                                        | Fresh post-fix workload measurement and full packaged long-video delivery validation                                                                 |
 | Export quality          | MP4/GIF, H.264/H.265, 24/30/60 FPS, 1080p/2K/source tiers, estimated size, and audio normalization exist                                                                                                                                                                                                    | Capability-based advanced controls, manual/CQ rate control, ProRes/AV1 decisions                                                                      |
 | Creator audio           | Isolated microphone/system stems, dialogue leveling, a -14.5 LUFS/-2 dBTP pre-encode delivery target, Silero pause analysis, and reversible pause trims exist                                                                                                                                               | Decoded-delivery verification, a product-routed Clean Voice stem, preview/export parity, and the creator-corpus engine gate                           |
 | Output shapes           | One Layout pane controls presets, original shapes, custom pixels, camera composition, and block order across preview and export                                                                                                                                                                             | One-project delivery variants, editable pane proportions, and automatic vertical reframing                                                            |
@@ -100,7 +101,24 @@ SEO or GEO only after the small page set shows which queries and recommendations
 | Presets                 | Recording and editing preferences persist                                                                                                                                                                                                                                                                   | Named, reusable recording/style/delivery presets                                                                                                      |
 | Agent workflow          | Record, Sources, Info, Pack, Captions, and legacy/current project Export CLI paths exist                                                                                                                                                                                                                    | Complete inspect/edit/validate command surface with UI parity, dry runs, revisions, and agent-safe transactions                                       |
 | Project format          | `.klippt` is canonical across storage, dialogs, drag-and-drop, and CLI; legacy `.openscreen` and `.axcut` files remain readable and are copied forward without deletion                                                                                                                                     | File-association handoff and broader real-project migration testing                                                                                   |
-| Distribution            | Klippt name, icons, package display name, `.klippt` format, Developer ID signing, Apple notarization and stapling proof, Gatekeeper acceptance, privacy-safe diagnostics, the owned `updates.dyberg.co` R2 update channel, exact WebAssembly source/relinking offer, and generated package notice inventory are implemented while current bundle and user-data identities stay compatible | Finish entitlement activation, legal/support pages, clean-Mac alpha validation, and the Dyberg-owned bundle-ID migration before paid distribution |
+| Distribution            | Klippt name, icons, package display name, `.klippt` format, Developer ID signing, prior notarization/stapling proof, privacy-safe diagnostics, the owned `updates.dyberg.co` R2 channel, exact WebAssembly source/relinking offer, and generated package notices exist. Electron 44.1.0, the contained app/media protocol, IPC sender checks, fuses, and ASAR integrity are implemented on the current checkpoint | Build a fresh notarized current artifact, prove N-to-N+1 update, finish entitlement activation and legal/support pages, validate on a clean or second Mac, and migrate to a Dyberg-owned bundle ID |
+
+## 2026-09-02 current gate
+
+The beta-hardening checkpoint is pushed on `checkpoint/klippt-beta-hardening-2026-09-01` through
+commit `5e7bc7e9`. Unknown-duration export, stale OPFS source caches, Electron support, contained
+media loading, renderer security, privileged IPC validation, production fuses, release ordering,
+signed-helper provenance, and the Retina preview-size bug are fixed.
+
+Do not restart the old queue below. Finish these gates in order:
+
+1. Measure the fixed CSS-size preview and confirm long-timeline play, seek, scrub, and resize feel.
+2. Prove the complete packaged 30–90 minute creator flow and high-risk recovery cases.
+3. Build a fresh notarized artifact and prove the first quarantined N-to-N+1 update.
+4. Freeze and migrate to a Dyberg-owned bundle identifier.
+5. Finish Lemon Squeezy activation, legal/support pages, `klippt.app`, and clean/second-Mac proof.
+
+[`HANDOFF.md`](HANDOFF.md) contains the evidence, local permission state, risks, and exact next slice.
 
 ## 2026-08-28 cutting-edge audit lock
 
@@ -437,21 +455,21 @@ Evidence on 2026-08-19:
 - Native export produced a 2.75 GB, 30-minute progressive H.264 MP4 in 17 minutes 37 seconds, or
   0.587× real time. The result had 48 kHz stereo AAC, 16.7 ms A/V duration drift, Fast Start, and
   successful start, middle, and end decode checks. The machine-readable report is
-  [`test-results/gate2-macos-soak-2026-08-19T15-21-26-841Z.json`](test-results/gate2-macos-soak-2026-08-19T15-21-26-841Z.json).
+  local report `test-results/gate2-macos-soak-2026-08-19T15-21-26-841Z.json`.
 - A forced SIGKILL left a readable 29-second fragmented MP4 with both isolated audio tracks. The
   next normal launch found the journal, restored one exact-duration clip into a current project,
   removed the journal only after import, and exported that recovered project successfully.
 - A fresh post-fix built-app smoke passed the same capture and export validation. The report is
-  [`test-results/gate2-macos-soak-2026-08-19T16-15-01-691Z.json`](test-results/gate2-macos-soak-2026-08-19T16-15-01-691Z.json).
+  local report `test-results/gate2-macos-soak-2026-08-19T16-15-01-691Z.json`.
 - A forced exporter SIGKILL at 5.6% left an incomplete 48-byte output but did not change the
   project or source. A clean retry to the same path replaced it with a validated 20.166-second
   Fast Start MP4 with 16 ms A/V drift. The report is
-  [`test-results/gate2-macos-soak-2026-08-19T16-19-01-989Z.json`](test-results/gate2-macos-soak-2026-08-19T16-19-01-989Z.json).
+  local report `test-results/gate2-macos-soak-2026-08-19T16-19-01-989Z.json`.
 - Injected `ENOSPC` tests prove that capture does not start without its recovery anchor and that a
   failed Remove state write does not delete the clip from the session. Recovery tests cover stale
   journals, short nonempty fragments, all-removed sessions, planted symlinks, and durable cleanup.
   A fresh built-app capture/export passed after these changes. Its report is
-  [`test-results/gate2-macos-soak-2026-08-19T16-36-19-300Z.json`](test-results/gate2-macos-soak-2026-08-19T16-36-19-300Z.json).
+  local report `test-results/gate2-macos-soak-2026-08-19T16-36-19-300Z.json`.
 - Automated verification passed 191 test files with 2,210 tests and one skip, both TypeScript
   targets, production web/Electron builds, all 12 locale checks, docs, Biome, diff checks, and an
   independent review with no Critical or Important finding.

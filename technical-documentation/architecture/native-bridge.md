@@ -19,6 +19,23 @@ flowchart LR
 
 The boundary is deliberately narrow: adapters know how to talk to an operating system or native addon; services translate that capability into app-domain operations; IPC carries typed data; the renderer consumes promises.
 
+## Trusted renderer boundary
+
+Production renderer pages load from the standard secure `klippt://app` origin. Development accepts
+only the configured Vite origin. `electron/ipc/trustedRendererIpc.ts` wraps privileged `ipcMain`
+registration and rejects a sender unless it is the trusted top-level frame of the expected
+`webContents`. Permission checks also validate the requesting origin and main-frame state.
+
+`electron/localMediaProtocol.ts` serves renderer resources and approved project media. Media URLs
+carry opaque grants instead of arbitrary filesystem paths. The handler resolves canonical paths,
+contains resources inside their approved root, supports one HTTP byte range for media seeking, and
+allows CORS only for listed app origins. Navigation away from the app origin, webviews, and child
+windows are denied by `electron/security.ts`.
+
+The Electron window defaults keep `webSecurity`, context isolation, and sandboxing enabled. The
+packaged app also uses fuses that disable RunAsNode, production Node options, and CLI inspect; it
+loads application code only from an integrity-checked ASAR.
+
 ## The invoke contract
 
 The transport channel and protocol version are constants in `src/native/contracts.ts`:
@@ -88,4 +105,4 @@ A new bridge operation must have a browser-shim entry when renderer code can cal
 
 ## Known gaps
 
-The legacy `window.electronAPI` surface still exists in `electron/preload.ts:22` and remains broader than the unified native bridge. It is retained for compatibility with existing recording, project-window, and file operations. New native-facing operations should not extend that ad hoc surface: they should add a contract request, a service dispatch, a renderer client method, and a browser-shim entry.
+The legacy `window.electronAPI` surface still exists in `electron/preload.ts:22` and remains broader than the unified native bridge. Central sender checks now protect its privileged handlers, but the surface is retained for compatibility with existing recording, project-window, and file operations. New native-facing operations should not extend that ad hoc surface: they should add a contract request, a service dispatch, a renderer client method, and a browser-shim entry.

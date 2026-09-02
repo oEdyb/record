@@ -1,17 +1,19 @@
 # Native compositor
 
-`crates/compositor/` is the Rust + Direct3D 11 crate behind both the live preview and the MP4
-export. It exposes its compositor and pipeline to Electron through a small
+`crates/compositor/` is the cross-platform Rust crate behind the native live preview and MP4
+export. It uses Metal and VideoToolbox on macOS, Direct3D 11 and AMF on Windows, and a Linux
+backend where supported. It exposes its compositor and pipeline to Electron through a small
 napi-rs addon (`compositor-view-napi/`) loaded by
 [`compositorViewService`](../../electron/native-bridge/services/compositorViewService.ts).
-The whole GPU-resident path lives here — `demux → decode → composite → encode → mux`,
-zero CPU readback between stages — and is shared, with the same scene contract, by
-[preview.md](preview.md) (frame-by-frame RGBA8 pull) and
+The export path keeps decode, composition, encode, and mux work in native code. Preview and export
+share one scene contract, but the Electron preview currently pulls composed RGBA8 frames into the
+renderer. These paths are documented in [preview.md](preview.md) and
 [export-pipeline.md](export-pipeline.md) (multiclip MP4 write). The performance
 numbers and the rejected alternatives that drove the design live in
 [engineering/rendering-performance.md](../engineering/rendering-performance.md).
 
-A single `ID3D11Device` ([`crates/compositor/src/d3d.rs`](../../crates/compositor/src/d3d_windows.rs))
+On Windows, a single `ID3D11Device`
+([`crates/compositor/src/d3d_windows.rs`](../../crates/compositor/src/d3d_windows.rs))
 is shared by every consumer on the path: the ffmpeg `D3D11VA` decoder, the HLSL
 compositor, the `h264_amf` encoder, and the live swapchain. It is created with
 feature level **11_1**, the flags `VIDEO_SUPPORT | BGRA_SUPPORT` (`VIDEO_SUPPORT`

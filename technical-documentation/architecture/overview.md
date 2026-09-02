@@ -1,125 +1,98 @@
 # Architecture overview
 
-OpenScreen is an Electron + React + TypeScript screen recorder and video editor. The
-main process lives in `electron/`; the renderer is a single Vite-built SPA whose entry
-point is `src/App.tsx`. `App.tsx` reads `?windowType=` from the URL and lazy-loads one
-window component. The four real window types — verified against `src/App.tsx:71-125`
-and `electron/windows.ts` — are:
+Klippt is an Electron, React, and TypeScript recorder and editor with native media helpers. The main
+process lives in `electron/`. The Vite renderer starts at `src/App.tsx` and selects a window surface
+from `?windowType=`.
 
-- `editor` — the main studio (`AiEditionShell`, `createEditorWindow`).
-- `hud-overlay` — the floating record bar (`LaunchWindow`, `createHudOverlayWindow`).
-- `source-selector` — the screen/window picker (`SourceSelector`, `createSourceSelectorWindow`).
-- `countdown-overlay` — the pre-roll overlay (`CountdownOverlay`, `createCountdownOverlayWindow`).
+## Runtime surfaces
 
-A fifth, frameless `NotesWindow` is reached via a separate `showNotes=true` query,
-not `windowType`.
+- `editor` — the main studio and project timeline.
+- `hud-overlay` — the floating recording controller.
+- `camera-preview` — the preview-only confidence monitor.
+- `source-selector` — the screen and window picker.
+- `countdown-overlay` — the recording pre-roll.
+- `showNotes=true` — the separate notes surface.
 
-The studio is built on a single source of truth — the `AxcutDocument` v5 Zod schema
-described in [document-model.md](document-model.md). Every pane in the editor is a
-view over the same in-memory document held in a Zustand store
-(`src/lib/ai-edition/store/projectStore.ts`); the main process persists it as JSON in
-the OS-standard user data directory via `electron/ai-edition/document-service.ts`.
-What reads or writes the document, and how the user-facing surfaces hang off it, is
-the subject of the rest of this page.
+Production surfaces load from `klippt://app/index.html`. Development uses the configured Vite
+origin. Every BrowserWindow keeps context isolation, sandboxing, and `webSecurity` enabled. The
+main process denies unexpected navigation, webviews, and child windows.
 
-## Authoring levels
-
-The editor presents three overlapping levels to the user, with one extra layer —
-the document itself — sitting underneath them as the single source of truth:
+## Process and media boundaries
 
 ```mermaid
 flowchart LR
-    subgraph levels["Authoring levels"]
-        direction TB
-        M["<b>Edits / Modifiers level</b><br/>zooms, speeds, trims, …"]
-        T["<b>Timeline level</b><br/>clip order (1, 2, …)"]
-        C["<b>Clip level</b><br/>attached media: screen · camera · mic · system audio<br/>crop + in/out timestamps"]
-    end
-    DSL[["<b>DSL — AxcutDocument</b><br/>single source of truth"]]
-    P["Preview"]
-    R["Render / Export"]
-
-    M -- "authored above the timeline,<br/>stored down on the clip" --> C
-    T --> DSL
-    C --> DSL
-    DSL --> P
-    DSL --> R
+    UI[React windows] -->|validated IPC| Main[Electron main]
+    Main --> Capture[Native capture helper]
+    Main --> Project[(.klippt document)]
+    Main --> Compositor[Native compositor addon]
+    Capture --> Media[(screen, camera, mic, system, sidecars)]
+    Media --> Project
+    Project --> UI
+    Project --> Compositor
+    Compositor --> Preview[CSS-size preview frames]
+    Compositor --> Export[full-resolution export]
 ```
 
-The load-bearing point is that **modifiers are presented above the timeline in the
-UX but stored down on the clip in the data**. A zoom the user draws over clip 2 lives
-in `document.zoomRanges[]` but is anchored to that clip's `clipId` in source time; the
-pill on the ruler is then projected back from the clip, not authored in ruler space.
-That is exactly the invariant [timeline-model.md](timeline-model.md) exists to
-protect, and the reason a second authoring layer was added on top of the clip
-geometry instead of competing with it.
+The main process owns window lifecycle, trusted IPC, opaque media grants, recording orchestration,
+project persistence, entitlement state, update state, and atomic export publication. Renderer code
+does not receive arbitrary filesystem access.
 
-## Who reads and writes the document
+Native capture helpers own the time-sensitive platform work:
 
-The renderer holds one in-memory `AxcutDocument` and zero parallel "preview state"
-or "timeline state" copies. Every pane reads from that document; every user action
-goes back through it.
+- macOS uses Swift, ScreenCaptureKit, AVFoundation, and AVAssetWriter.
+- Windows uses C++, Windows Graphics Capture, WASAPI, and Media Foundation.
+- Linux uses Rust plus a C PipeWire shim and the desktop portal.
 
-```mermaid
-flowchart TD
-    User(("User"))
-    Chat["LeftPanel.tsx<br/>(chat + media list)"]
-    LLM["LLM provider<br/>electron/ai-edition/deep-agent/chat-model.ts<br/>provider-registry.ts"]
-    DSL[["AxcutDocument<br/>src/lib/ai-edition/schema/index.ts<br/>— SSOT —"]]
-    Store["useProjectStore<br/>(Zustand, in renderer)"]
-    Disk[(".openscreen JSON<br/>userData/projects/<id>.openscreen<br/>document-service.ts")]
+The Rust compositor owns preview composition and export rendering through the
+`compositor_view.node` N-API boundary. It uses platform GPU paths such as Metal and D3D11. The
+preview pulls bounded RGBA frames at the visible CSS size. Export resolves its own output size and
+does not inherit the preview cap.
 
-    MT1["Media transcript<br/>(local Whisper)"]
-    MT2["Media transcript<br/>(2nd asset / mic)"]
+## Project source of truth
 
-    Timeline["Timeline<br/>v4/V4Timeline.tsx"]
-    VPreview["Preview<br/>Preview.tsx → PreviewCanvas.tsx<br/>→ NativeCompositorOverlay.tsx"]
-    VTranscript["Transcript<br/>CaptionsPane.tsx + src/lib/ai-edition/captions/"]
+`AxcutDocument` is the internal schema name. Schema version 9 is the current project source of
+truth. New projects use `.klippt`. Legacy `.openscreen` and `.axcut` files remain readable and are
+copied forward after validation without deleting the original.
 
-    User <--> Chat
-    Chat <--> LLM
-    LLM -- "tool calls<br/>agent-tools.ts:<br/>addZoom, setClipRange,<br/>replaceTimeline, …" --> DSL
+The renderer holds one current document in the Zustand project store. Timeline clips, trim ranges,
+Screen Zoom, Camera Emphasis, transcript words, layout, audio policy, captions, and export settings
+are projections or edits of that document. Project writes go through the main-process document
+service, use revision checks where supported, and publish atomically.
 
-    MT1 -- "ingest on<br/>transcribe/import" --> DSL
-    MT2 -- "ingest on<br/>transcribe/import" --> DSL
+Modifiers stay clip-anchored in source time. The timeline projects them into playback time after
+cuts. Preview and export consume the same scene mapping so trim, clip reorder, focus, camera layout,
+and automatic direction do not need parallel render models.
 
-    User -- "direct edits<br/>(drag, resize, …)" --> Timeline
-    User -- "direct edits<br/>(cue edits, settings)" --> VTranscript
+## Recording flow
 
-    DSL <==> Store
-    Store <==> Disk
-
-    DSL <-.->|"read/write<br/>(store actions)"| Timeline
-    DSL <-.->|"read/write<br/>(store actions)"| VPreview
-    DSL <-.->|"read/write<br/>(store actions)"| VTranscript
+```text
+idle HUD -> setup -> countdown -> clip 1 -> Pause -> clip 2 -> Stop -> same project editor
 ```
 
-Read this diagram as two loops:
+Pause finalizes the current fragmented MP4 clip while the logical session stays active. Continue
+starts a new writer. Remove previous clip updates project state without deleting recoverable media.
+Stop persists the kept clips and returns to the editor at the saved insertion boundary.
 
-1. **Human loop.** The user edits the Timeline directly (clip reorder, region resize,
-   skip placement) or talks to the Chat panel, which drives the LLM, which edits the
-   document through the fixed tool schema — never raw JSON patches. Both paths
-   converge on the same `AxcutDocument`.
-2. **Machine loop.** Media assets get transcribed locally (Whisper via the renderer
-   worker) and merged into `document.transcripts[]`. Preview and Timeline are pure
-   projections of the document at a given time/zoom — there is no independent
-   "preview state" to desync from the DSL.
+Microphone and system audio roles remain explicit. The mixed audio track exists for compatibility,
+not as the preferred analysis source. Cursor and privacy-safe interaction timing remain sidecars so
+automatic direction can create reversible timeline regions after capture.
 
-Persistence (`useProjectStore` ↔ `.openscreen` file on disk) is a straight
-serialize/deserialize of the same shape, not a separate model — see
-[document-model.md](document-model.md#persistence).
+## Security boundary
+
+`electron/ipc/trustedRendererIpc.ts` rejects privileged IPC unless it comes from the trusted
+top-level frame and expected `webContents`. `electron/localMediaProtocol.ts` maps opaque grants to
+canonical approved paths and supports bounded byte-range media reads. Permission handlers validate
+the trusted origin and recording/setup role. Production fuses disable RunAsNode, production Node
+options, and CLI inspect, and require the integrity-checked ASAR.
 
 ## Where to go next
 
-The four pages that explain the editing model itself, in the order they build on each
-other:
+1. [document-model.md](document-model.md) — schema, migration, and persistence.
+2. [timeline-model.md](timeline-model.md) — time systems and clip-anchored regions.
+3. [recording.md](recording.md) — HUD and native capture lifecycle.
+4. [preview.md](preview.md) — native frame delivery and playback sync.
+5. [export-pipeline.md](export-pipeline.md) — scene rendering and atomic publication.
+6. [native-bridge.md](native-bridge.md) — typed renderer/main boundary.
+7. [decisions.md](decisions.md) — settled and rejected architecture choices.
 
-1. [document-model.md](document-model.md) — the document every surface projects.
-2. [timeline-model.md](timeline-model.md) — how time and modifiers are addressed inside it.
-3. [editor-shell.md](editor-shell.md) — the surfaces the user drives.
-4. [preview.md](preview.md) and [export-pipeline.md](export-pipeline.md) — the two consumers
-   that turn the document back into pixels.
-
-[decisions.md](decisions.md) records what is settled and what was tried and rejected —
-read it before proposing a structural change. The full index of every architecture,
-engineering and testing page is in [the tree README](../README.md).
+Use [`../../HANDOFF.md`](../../HANDOFF.md) for the live branch, evidence, risks, and next action.

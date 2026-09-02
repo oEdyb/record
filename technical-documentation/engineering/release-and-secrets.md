@@ -1,6 +1,6 @@
 # Release and secrets
 
-Klippt's release machinery lives in `.github/workflows/prerelease.yml`, `promote.yml`, and `build.yml`. Signing, notarization, public-feed, and publication credentials live only in the `release` environment. Repository variables hold non-secret configuration. This page is the operational reference for cutting releases and maintaining those credentials.
+Klippt's release machinery lives in `.github/workflows/prerelease.yml`, `promote.yml`, and `build.yml`. The workflow requires signing, notarization, public-feed, and publication credentials from the `release` environment. Repository variables hold non-secret configuration. The hardened workflow is implemented, but the current external setup still needs the Apple and R2 secrets moved to that environment before the first current release. This page is the operational reference for cutting releases and maintaining those credentials; [`../../HANDOFF.md`](../../HANDOFF.md) tracks the live release gate.
 
 ## Release flow
 
