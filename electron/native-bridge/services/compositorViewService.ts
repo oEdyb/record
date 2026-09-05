@@ -4,7 +4,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
-import { resolveCursorSprites } from "../../../src/lib/cursor/cursorThemes";
+import {
+	CURSOR_THEMES,
+	DEFAULT_CURSOR_SPRITES,
+	resolveCursorSprites,
+} from "../../../src/lib/cursor/cursorThemes";
 import {
 	calculateEffectiveExportDuration,
 	estimateGifFileSizeBytes,
@@ -90,12 +94,35 @@ function sceneAssetBaseDirs(): string[] {
 	);
 }
 
+// Only trusted, bundled cursor artwork is cached. User media paths still pass
+// through normal validation and probes; dev public files are not cached. The
+// finite catalogue bounds this cache, and a resource-root change invalidates it.
+const bundledCursorPaths = new Set([
+	...Object.values(DEFAULT_CURSOR_SPRITES).map((sprite) => sprite.assetPath),
+	...CURSOR_THEMES.flatMap((theme) =>
+		Object.values(theme.assets).map((sprite) => sprite.assetPath),
+	),
+]);
+let sceneAssetRootsKey = "";
+const packagedCursorPaths = new Map<string, string>();
+
 /** First base under which `relativePath` actually exists, joined; null when none does (leave the
  *  scene's own value alone rather than hand the addon a path we know is not there). */
 export function resolveSceneAssetPath(relativePath: string): string | null {
-	for (const base of sceneAssetBaseDirs()) {
+	const bases = sceneAssetBaseDirs();
+	const rootsKey = JSON.stringify(bases);
+	if (sceneAssetRootsKey !== rootsKey) {
+		sceneAssetRootsKey = rootsKey;
+		packagedCursorPaths.clear();
+	}
+	const cached = packagedCursorPaths.get(relativePath);
+	if (cached) return cached;
+	for (const base of bases) {
 		const candidate = path.join(base, relativePath);
 		if (realExistsSync(candidate)) {
+			if (base === process.resourcesPath && bundledCursorPaths.has(relativePath)) {
+				packagedCursorPaths.set(relativePath, candidate);
+			}
 			return candidate;
 		}
 	}

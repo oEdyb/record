@@ -30,10 +30,8 @@
 //! décodeurs, symétrique.
 
 use crate::audio::{
-    assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio_with_clean_microphone,
-    finalize_decoded_clip_audio, master_program_audio, stretch_decoded_clip_audio_by_speed,
-    AacEncoder, AudioMasteringSettings, AudioMasteringStats, DecodedClipAudio, DEFAULT_TARGET_LUFS,
-    DEFAULT_TRUE_PEAK_CEILING_DBTP,
+    build_audio_concat_plan, spool, AacEncoder, AudioMasteringSettings, AudioMasteringStats,
+    DEFAULT_TARGET_LUFS, DEFAULT_TRUE_PEAK_CEILING_DBTP,
 };
 use crate::compositor::Compositor;
 use crate::d3d::Gpu;
@@ -105,6 +103,10 @@ pub struct Decoder {
 }
 
 impl Decoder {
+    pub(crate) fn uses_hardware(&self) -> bool {
+        self.cpu.is_none()
+    }
+
     pub fn open(path: &str, gpu: &Gpu) -> Result<Decoder> {
         unsafe {
             let mut fmt: *mut crate::ffi::AVFormatContext = ptr::null_mut();
@@ -281,9 +283,8 @@ impl Decoder {
                     if !f.is_null() {
                         return Ok(f);
                     }
-                    // EOF atteint avant la cible (décodeur réactivé depuis le pool, laissé en fin
-                    // de flux) : on retombe sur le seek keyframe complet au lieu de rendre `null`
-                    // — qui forçait une réouverture complète. Voir `pipeline_windows::seek_to`.
+                    // No valid current frame survived this decoder state. Retry a full
+                    // keyframe seek before allowing the caller to reopen the source.
                 }
             }
         }
@@ -309,7 +310,14 @@ impl Decoder {
         loop {
             let f = self.next()?;
             if f.is_null() {
-                return Ok(ptr::null_mut());
+                // The requested time can lie after the final PTS but inside that frame's
+                // display interval. Hold only a frame decoded in this seek; a full seek
+                // clears cur_pts first, so empty media cannot reuse an old frame.
+                return Ok(if self.cur_pts.is_some() {
+                    self.cur_frame()
+                } else {
+                    ptr::null_mut()
+                });
             }
             let pts = (*f).best_effort_timestamp;
             if pts == i64::MIN || tb_sec <= 0.0 {
@@ -331,7 +339,14 @@ impl Decoder {
         loop {
             let f = self.next()?;
             if f.is_null() {
-                return Ok(ptr::null_mut());
+                // The requested time can lie after the final PTS but inside that frame's
+                // display interval. Hold only a frame decoded in this seek; a full seek
+                // clears cur_pts first, so empty media cannot reuse an old frame.
+                return Ok(if self.cur_pts.is_some() {
+                    self.cur_frame()
+                } else {
+                    ptr::null_mut()
+                });
             }
             let pts = (*f).best_effort_timestamp;
             if pts == i64::MIN {
@@ -349,22 +364,16 @@ impl Decoder {
     /// Windows, juste sans le dispatch D3D11VA (le GPU hand-off est déjà fait par
     /// `av_hwdevice_ctx_create`).
     pub unsafe fn next(&mut self) -> Result<*mut crate::ffi::AVFrame> {
-        // Un peek déjà décodé en attente : l'appelant n'est pas passé par `commit_peek`
-        // (chemins qui ne raisonnent pas en hold, ex. `seek_to`/`decode_forward_to` après
-        // qu'aucun peek n'ait été posé) — le promouvoir reste correct dans tous les cas :
-        // c'est bien la prochaine frame du flux.
-        if self.has_peek {
-            return self.commit_peek();
+        // receive_frame unrefs its destination even on EOF. Decode into lookahead,
+        // then promote only success, so the current frame keeps owning its GPU buffers.
+        // FFmpeg 8.x avcodec.h: avcodec_receive_frame destination lifetime contract.
+        if !self.has_peek {
+            if !self.receive_into(self.peek_frame)? {
+                return Ok(ptr::null_mut());
+            }
+            self.has_peek = true;
         }
-        if !self.receive_into(self.frame)? {
-            return Ok(ptr::null_mut());
-        }
-        let pts = (*self.frame).best_effort_timestamp;
-        self.cur_pts = if pts == i64::MIN { None } else { Some(pts) };
-        match &mut self.cpu {
-            Some(cpu) => cpu.present(self.frame),
-            None => Ok(self.frame),
-        }
+        self.commit_peek()
     }
 
     /// Décode dans `into` (buffer courant ou de lookahead) jusqu'à obtenir une frame ou
@@ -1062,7 +1071,7 @@ pub fn run_composited_multi(
         out_w, out_h, out_fps, bit_rate
     );
 
-    // ---- decodeurs : un par chemin, réutilisés entre clips (screen ≠ webcam → 2 maps) ----
+    // One current decoder per role; the shared walker evicts inactive sources.
     let mut screen_decs: std::collections::HashMap<String, Decoder> =
         std::collections::HashMap::new();
     let mut webcam_decs: std::collections::HashMap<String, Decoder> =
@@ -1129,9 +1138,9 @@ pub fn run_composited_multi(
     unsafe {
         crate::export_settings::write_mp4_header(octx)?;
     }
-    // Un PCM par clip, assemblé après la marche vidéo : c'est elle qui dit combien de
-    // frames chaque clip a réellement produit, donc combien d'audio lui revient.
-    let mut clip_audio: Vec<Option<DecodedClipAudio>> = (0..clips.len()).map(|_| None).collect();
+    // Save only source windows during video. Decode audio into bounded spools afterward,
+    // using the actual video frame counts for exact clip lengths.
+    let mut audio_windows = vec![None; clips.len()];
     let mut clip_frame_counts: Vec<u64> = vec![0; clips.len()];
 
     unsafe {
@@ -1149,7 +1158,7 @@ pub fn run_composited_multi(
     // exactement le bug de troncature en slow-motion que la doc de `walk_composited_timeline`
     // raconte avoir déjà coûté une fois.
     let scene = comp.scene_snapshot();
-    frames = unsafe {
+    let walk = unsafe {
         crate::timeline_walk::walk_composited_timeline(
             clips,
             gpu,
@@ -1169,31 +1178,14 @@ pub fn run_composited_multi(
                 clip_frame_counts[clip_index] = frames_in_clip;
                 let clip = &clips[clip_index];
                 if clip.has_audio && frames_in_clip > 0 {
-                    match decode_clip_audio_with_clean_microphone(
-                        &clip.screen,
-                        clip.clean_microphone.as_deref(),
-                        clip.source_start_sec,
-                        source_end_sec,
-                    ) {
-                        Ok(Some(audio)) => {
-                            clip_audio[clip_index] = Some(stretch_decoded_clip_audio_by_speed(
-                                audio,
-                                speed_segments,
-                                out_fps as f64,
-                            ));
-                        }
-                        Ok(None) => eprintln!(
-                            "[pipeline] warning: clip #{clip_index} déclaré audio mais sans flux décodable; silence conservé",
-                        ),
-                        Err(error) => eprintln!(
-                            "[pipeline] warning: décodage audio du clip #{clip_index} échoué ({error:#}); silence conservé",
-                        ),
-                    }
+                    audio_windows[clip_index] = Some((source_end_sec, speed_segments.to_vec()));
                 }
                 Ok(())
             },
         )?
     };
+
+    frames = walk.frames;
 
     // Flush : un null frame à l'encodeur finalise son bitstream.
     unsafe {
@@ -1209,18 +1201,35 @@ pub fn run_composited_multi(
         // d'autant, sinon la piste dérive pour tous les suivants.
         let declared_audio: Vec<bool> = clips.iter().map(|clip| clip.has_audio).collect();
         let plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
-        let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.even_volume);
-        let mut assembled_audio = assemble_concatenated_pcm(&clip_pcm, &plan);
-        audio_mastering = master_program_audio(
+        let mut check = || progress(crate::ExportProgress::AudioEncoding(frames));
+        let mut clip_audio = Vec::with_capacity(clips.len());
+        for (clip, window) in clips.iter().zip(audio_windows) {
+            check()?;
+            clip_audio.push(match window {
+                Some((end, segments)) => spool::decode(
+                    &clip.screen,
+                    clip.clean_microphone.as_deref(),
+                    clip.source_start_sec,
+                    end,
+                    &segments,
+                    out_fps as f64,
+                    &mut check,
+                )?,
+                None => None,
+            });
+        }
+        let mut assembled_audio =
+            spool::assemble(clip_audio, &plan, params.even_volume, &mut check)?;
+        audio_mastering = spool::master(
             &mut assembled_audio,
             AudioMasteringSettings::new(
                 params.normalize_audio,
                 params.target_lufs,
                 params.peak_ceiling_dbtp,
             ),
-        );
-        progress(crate::ExportProgress::AudioEncoding(frames))?;
-        audio_encoder.encode(&assembled_audio, octx)?;
+            &mut check,
+        )?;
+        spool::encode(&mut assembled_audio, &mut audio_encoder, octx, &mut check)?;
         progress(crate::ExportProgress::AudioFlushed(frames))?;
 
         progress(crate::ExportProgress::Trailer(frames))?;
@@ -1228,15 +1237,7 @@ pub fn run_composited_multi(
     }
 
     let wall_s = t0.elapsed().as_secs_f64();
-    let has_software_decoder = screen_decs
-        .values()
-        .chain(webcam_decs.values())
-        .any(|decoder| decoder.cpu.is_some());
-    let has_hardware_decoder = screen_decs
-        .values()
-        .chain(webcam_decs.values())
-        .any(|decoder| decoder.cpu.is_none());
-    let decoder_path = match (has_hardware_decoder, has_software_decoder) {
+    let decoder_path = match (walk.hardware_decoder, walk.software_decoder) {
         (true, true) => "mixed",
         (true, false) => "videotoolbox",
         (false, true) => "software",
@@ -1287,15 +1288,16 @@ unsafe fn drain_encoder(
     }
 }
 
-/// Compte le nombre de frames d'un fichier (utilisé pour la barre de progression).
-/// Le comptage est purement ffmpeg-side, donc portable.
-pub fn probe_frame_count(_path: &str) -> Result<u64> {
-    Err(anyhow!("pipeline_macos::probe_frame_count: non implémenté"))
+/// Count actual decoded video frames. Duration times average FPS is not reliable
+/// for sparse screen recordings; Decoder owns all native resources on error too.
+pub fn probe_frame_count(path: &str) -> Result<u64> {
+    let gpu = Gpu::create_auto(false)?;
+    let mut decoder = Decoder::open(path, &gpu)?;
+    let mut frames = 0;
+    unsafe {
+        while !decoder.next()?.is_null() {
+            frames += 1;
+        }
+    }
+    Ok(frames)
 }
-
-// Marqueur pour préserver la signature `fn run_composited(_: &Compositor, ...)`
-// quand on câblera l'implémentation ; actuellement `Compositor` est utilisé via la
-// cfg-re-export `crate::compositor::Compositor`, et cette fonction helper garantit
-// que le type reste référencé.
-#[allow(dead_code)]
-fn _typecheck_compositor(_c: &Compositor, _g: &Gpu) {}

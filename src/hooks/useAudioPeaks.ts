@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { materializeLocalSourceFile, releaseLocalSourceFile } from "@/lib/exporter/localSourceFile";
 import { MAX_IN_MEMORY_SOURCE_BYTES } from "@/lib/exporter/sourceFileLimits";
 import { loadFileAsArrayBuffer } from "@/lib/exporter/streamingDecoder";
+import { AudioPeaksCache } from "./audioPeaksCache";
 import { computePeaksFromFileStreaming } from "./streamingAudioPeaks";
 
 let _audioCtx: AudioContext | null = null;
@@ -158,14 +159,15 @@ async function computePeaksForUrl(
  * `inFlight` is the other half: N clips of one asset mounting together must
  * share a single decode instead of racing N of them.
  *
- * FAILURE IS CACHED TOO (`null`), which is why the value type is nullable and
- * why lookups go through `has()` rather than truthiness. A file with no audio
+ * Failures (`null`) share the bounded idle cache. Mounted readers pin their
+ * results; unused entries leave in LRU order. Lookups use `has()` so a cached
+ * failure is distinct from an entry that has not been computed. A file with no audio
  * fails deterministically, so retrying it is pure cost — and on a host with no
  * native ffmpeg that retry is the whole-file browser decode. Caching only
  * successes meant a recording WITH a mic paid for its waveform once while one
  * WITHOUT paid, and threw away, the same work on every mount (issue #348).
  */
-const peaksCache = new Map<string, Float32Array | null>();
+const peaksCache = new AudioPeaksCache();
 const peaksInFlight = new Map<string, Promise<Float32Array>>();
 
 function loadPeaks(videoUrl: string, durationSec: number): Promise<Float32Array> {
@@ -215,13 +217,14 @@ export function useAudioPeaks(videoUrl?: string, durationSec?: number): Float32A
 			return;
 		}
 
+		const release = peaksCache.retain(videoUrl);
 		if (peaksCache.has(videoUrl)) {
 			setPeaks(peaksCache.get(videoUrl) ?? null);
-			return;
+			return release;
 		}
 
 		setPeaks(null);
-		if (!durationSec) return;
+		if (!durationSec) return release;
 		let cancelled = false;
 
 		loadPeaks(videoUrl, durationSec)
@@ -238,6 +241,7 @@ export function useAudioPeaks(videoUrl?: string, durationSec?: number): Float32A
 
 		return () => {
 			cancelled = true;
+			release();
 		};
 	}, [videoUrl, durationSec]);
 

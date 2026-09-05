@@ -71,6 +71,8 @@ export default defineConfig({
 		},
 	},
 	build: {
+		// Retain the emitted static import graph so per-window startup can be checked.
+		manifest: true,
 		target: "esnext",
 		minify: "terser",
 		terserOptions: {
@@ -83,13 +85,11 @@ export default defineConfig({
 		rollupOptions: {
 			output: {
 				manualChunks(id) {
-					if (id.includes("react-dom") || id.includes("/react/")) return "react-vendor";
-					if (
-						id.includes("mediabunny") ||
-						id.includes("mp4box") ||
-						id.includes("fix-webm-duration")
-					)
-						return "video-processing";
+					// Match package boundaries: @tiptap/react and @floating-ui/react-dom
+					// must not join every window's React runtime. Let Rollup split media
+					// normally; forcing it into a chunk also pulled shared tslib helpers
+					// there and made the entire media chunk an eager shell dependency.
+					if (/\/node_modules\/(react|react-dom)\//.test(id)) return "react-vendor";
 				},
 			},
 		},

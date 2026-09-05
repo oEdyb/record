@@ -12,10 +12,7 @@ import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
-import {
-	migrateProjectDataToAxcutDocument,
-	migrateRawDocumentToCurrent,
-} from "@/lib/ai-edition/document/migrate";
+import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
 import { pauseSuggestionsAsTrims } from "@/lib/ai-edition/document/pause-edits";
 import {
 	applyProbedDuration,
@@ -45,6 +42,7 @@ import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
 import { ExportDialog } from "./ExportDialog";
 import { LeftPanel } from "./LeftPanel";
+import { prepareLegacyProjectForOpen } from "./legacyProjectOpen";
 import {
 	EditClipModal,
 	NewProjectModal,
@@ -640,7 +638,7 @@ export function NewEditorShell() {
 				typeof raw === "object" && raw !== null && "schemaVersion" in raw && "timeline" in raw;
 			const doc = isAxcutDocument
 				? documentSchema.parse(migrateRawDocumentToCurrent(raw)) // disk-load: upgrade v3/v4 → v5, then validate
-				: migrateProjectDataToAxcutDocument(raw as EditorProjectData);
+				: await prepareLegacyProjectForOpen(raw as EditorProjectData);
 			const saved = await nativeBridgeClient.aiEdition.save(doc);
 			if (saved.success && saved.document) {
 				await loadProject(doc.project.id);

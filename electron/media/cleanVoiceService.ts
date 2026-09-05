@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AxcutDocument, CleanVoiceRecipe } from "../../src/lib/ai-edition/schema";
+import { pruneCleanVoiceCacheAtStartup } from "./cleanVoiceCacheRetention";
 import {
 	CleanVoiceCancelledError,
 	type CleanVoiceEngineIdentity,
@@ -107,6 +108,8 @@ interface CacheManifest {
 
 export interface CleanVoiceServiceOptions {
 	cacheRoot: string;
+	/** Only the GUI startup caller holding the single-instance lock may enable this. */
+	pruneCompletedEntriesOnStartup?: boolean;
 	processor: CleanVoiceProcessor;
 	onStatus?: (status: CleanVoiceJobStatus) => void;
 }
@@ -349,6 +352,11 @@ export class CleanVoiceService {
 			fs.mkdir(this.linksDir, { recursive: true }),
 			fs.mkdir(this.stagingDir, { recursive: true }),
 		]);
+		if (this.options.pruneCompletedEntriesOnStartup) {
+			await pruneCleanVoiceCacheAtStartup(this.options.cacheRoot).catch((error) => {
+				console.warn("[clean-voice] startup cache retention failed:", error);
+			});
+		}
 		const orphaned = await fs.readdir(this.stagingDir).catch(() => []);
 		await Promise.all(
 			orphaned.map((name) =>

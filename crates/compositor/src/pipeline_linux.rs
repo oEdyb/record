@@ -21,10 +21,8 @@ use std::ffi::CString;
 use std::ptr;
 
 use crate::audio::{
-    assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio_with_clean_microphone,
-    finalize_decoded_clip_audio, master_program_audio, stretch_decoded_clip_audio_by_speed,
-    AacEncoder, AudioMasteringSettings, AudioMasteringStats, DecodedClipAudio, DEFAULT_TARGET_LUFS,
-    DEFAULT_TRUE_PEAK_CEILING_DBTP,
+    build_audio_concat_plan, spool, AacEncoder, AudioMasteringSettings, AudioMasteringStats,
+    DEFAULT_TARGET_LUFS, DEFAULT_TRUE_PEAK_CEILING_DBTP,
 };
 use crate::config::Cfg;
 use crate::d3d::Gpu;
@@ -116,6 +114,10 @@ pub struct Decoder {
 unsafe impl Send for Decoder {}
 
 impl Decoder {
+    pub(crate) fn uses_hardware(&self) -> bool {
+        false
+    }
+
     pub fn open(path: &str, gpu: &Gpu) -> Result<Decoder> {
         let sw = SwDecoder::open(path)?;
         let fps = sw.fps();
@@ -531,7 +533,7 @@ pub fn run_composited_multi(
 
     // Un PCM par clip, assemble apres la marche video (elle seule dit combien de
     // frames chaque clip a produit, donc combien d'audio lui revient).
-    let mut clip_audio: Vec<Option<DecodedClipAudio>> = (0..clips.len()).map(|_| None).collect();
+    let mut audio_windows = vec![None; clips.len()];
     let mut clip_frame_counts: Vec<u64> = vec![0; clips.len()];
 
     let scene = comp.scene_snapshot();
@@ -574,30 +576,12 @@ pub fn run_composited_multi(
                 clip_frame_counts[clip_index] = frames_in_clip;
                 let clip = &clips[clip_index];
                 if clip.has_audio && frames_in_clip > 0 {
-                    match decode_clip_audio_with_clean_microphone(
-                        &clip.screen,
-                        clip.clean_microphone.as_deref(),
-                        clip.source_start_sec,
-                        source_end_sec,
-                    ) {
-                        Ok(Some(audio)) => {
-                            clip_audio[clip_index] = Some(stretch_decoded_clip_audio_by_speed(
-                                audio,
-                                speed_segments,
-                                out_fps as f64,
-                            ));
-                        }
-                        Ok(None) => eprintln!(
-                            "[pipeline] warning: clip #{clip_index} declare audio mais sans flux decodable; silence",
-                        ),
-                        Err(error) => eprintln!(
-                            "[pipeline] warning: decodage audio clip #{clip_index} echoue ({error:#}); silence",
-                        ),
-                    }
+                    audio_windows[clip_index] = Some((source_end_sec, speed_segments.to_vec()));
                 }
                 Ok(())
             },
         )?
+        .frames
     };
 
     unsafe {
@@ -620,18 +604,35 @@ pub fn run_composited_multi(
         // raccourci voit son audio raccourci d'autant), puis un seul encode AAC.
         let declared_audio: Vec<bool> = clips.iter().map(|c| c.has_audio).collect();
         let plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
-        let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.even_volume);
-        let mut assembled_audio = assemble_concatenated_pcm(&clip_pcm, &plan);
-        audio_mastering = master_program_audio(
+        let mut check = || progress(crate::ExportProgress::AudioEncoding(frames));
+        let mut clip_audio = Vec::with_capacity(clips.len());
+        for (clip, window) in clips.iter().zip(audio_windows) {
+            check()?;
+            clip_audio.push(match window {
+                Some((end, segments)) => spool::decode(
+                    &clip.screen,
+                    clip.clean_microphone.as_deref(),
+                    clip.source_start_sec,
+                    end,
+                    &segments,
+                    out_fps as f64,
+                    &mut check,
+                )?,
+                None => None,
+            });
+        }
+        let mut assembled_audio =
+            spool::assemble(clip_audio, &plan, params.even_volume, &mut check)?;
+        audio_mastering = spool::master(
             &mut assembled_audio,
             AudioMasteringSettings::new(
                 params.normalize_audio,
                 params.target_lufs,
                 params.peak_ceiling_dbtp,
             ),
-        );
-        progress(crate::ExportProgress::AudioEncoding(frames))?;
-        audio_encoder.encode(&assembled_audio, octx)?;
+            &mut check,
+        )?;
+        spool::encode(&mut assembled_audio, &mut audio_encoder, octx, &mut check)?;
         progress(crate::ExportProgress::AudioFlushed(frames))?;
         progress(crate::ExportProgress::Trailer(frames))?;
         crate::ffi::averr(crate::ffi::av_write_trailer(octx), "write_trailer")?;

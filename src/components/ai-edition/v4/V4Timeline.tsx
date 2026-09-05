@@ -460,22 +460,34 @@ export function V4Timeline({
 		(playbackSec: number) => setCurrentTime(toRawTime(playbackSec, "after")),
 		[setCurrentTime, toRawTime],
 	);
-	const clipTracks = useMemo(
-		() =>
-			clips.flatMap((clip, rawIndex) => {
-				const parts = projection.filter((part) => part.rawClipId === clip.id);
-				if (parts.length === 0) return [];
-				return [
-					{
-						clip,
-						rawIndex,
-						parts,
-						startSec: parts[0].playbackStartSec,
-						endSec: parts[parts.length - 1].playbackEndSec,
-					},
-				];
-			}),
-		[clips, projection],
+	const clipTracks = useMemo(() => {
+		const partsByClip = new Map<string, typeof projection>();
+		for (const part of projection) {
+			const parts = partsByClip.get(part.rawClipId);
+			if (parts) parts.push(part);
+			else partsByClip.set(part.rawClipId, [part]);
+		}
+		return clips.flatMap((clip, rawIndex) => {
+			const parts = partsByClip.get(clip.id);
+			if (!parts?.length) return [];
+			return [
+				{
+					clip,
+					rawIndex,
+					parts,
+					startSec: parts[0].playbackStartSec,
+					endSec: parts[parts.length - 1].playbackEndSec,
+				},
+			];
+		});
+	}, [clips, projection]);
+	const assetsById = useMemo(
+		() => new Map(tl.assets.map((asset) => [asset.id, asset])),
+		[tl.assets],
+	);
+	const videoSourcesById = useMemo(
+		() => new Map(videoSources.map((source) => [source.id, source])),
+		[videoSources],
 	);
 
 	// The visible fraction of the timeline, and what one second is worth on screen
@@ -1041,7 +1053,8 @@ export function V4Timeline({
 	const runAutoZooms = useCallback(async () => {
 		setAutoEnhanceOpen(false);
 		const requestedProjectId = useProjectStore.getState().document?.project.id;
-		const sources = videoSources.filter((source) => clips.some((c) => c.assetId === source.id));
+		const usedAssetIds = new Set(clips.map((clip) => clip.assetId));
+		const sources = videoSources.filter((source) => usedAssetIds.has(source.id));
 		if (!requestedProjectId || sources.length === 0) {
 			toast.error(t("toolbar.importRecordingFirst"));
 			return;
@@ -1538,8 +1551,8 @@ export function V4Timeline({
 							{clipTracks.map((track) => {
 								const { clip: c, rawIndex: i } = track;
 								const dur = track.endSec - track.startSec;
-								const asset = tl.assets.find((a) => a.id === c.assetId);
-								const clipVideoUrl = videoSources.find((v) => v.id === c.assetId)?.src;
+								const asset = assetsById.get(c.assetId);
+								const clipVideoUrl = videoSourcesById.get(c.assetId)?.src;
 								const selected = tl.clipSelection === c.id;
 								const dragging = clipDrag?.id === c.id;
 								// Siblings between the dragged clip's origin and its live
@@ -1620,7 +1633,7 @@ export function V4Timeline({
 										})}
 										<div className={styles.tlClipLabel}>
 											<span className={styles.tlClipName}>
-												{tl.assets.find((a) => a.id === c.assetId)?.label ?? c.assetId}
+												{assetsById.get(c.assetId)?.label ?? c.assetId}
 											</span>
 										</div>
 									</button>

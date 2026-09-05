@@ -304,7 +304,7 @@ fn export_gif_inner(
 				},
 				// GIF has no audio track, so clip boundaries need no work.
 				&mut |_, _, _, _| Ok(()),
-			)?
+			)?.frames
 		};
 
 		progress(crate::ExportProgress::Trailer(frames))?;

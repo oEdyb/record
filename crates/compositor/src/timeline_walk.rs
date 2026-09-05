@@ -130,6 +130,17 @@ pub(crate) unsafe fn advance_decoder_to(
     }
 }
 
+#[derive(Default)]
+pub(crate) struct WalkResult {
+    pub frames: u64,
+    pub software_decoder: bool,
+    pub hardware_decoder: bool,
+}
+
+fn retain_current<T>(cache: &mut HashMap<String, T>, path: Option<&str>) {
+    cache.retain(|key, _| Some(key.as_str()) == path);
+}
+
 /// The format-agnostic half of a multiclip export: clip iteration, decoder
 /// reuse, availability clamping, per-clip scene windowing, keyframe seeks,
 /// cursor binding, speed segments, and — the part that matters — advancing the
@@ -156,16 +167,22 @@ pub(crate) unsafe fn walk_composited_timeline(
     webcam_decs: &mut HashMap<String, Decoder>,
     on_frame: &mut dyn FnMut(u64) -> Result<()>,
     on_clip_end: &mut dyn FnMut(usize, f64, u64, &[SpeedSegment]) -> Result<()>,
-) -> Result<u64> {
+) -> Result<WalkResult> {
     let cursor_enabled = scene.as_ref().map(|s| s.cursor.show).unwrap_or(false);
     let cursor_smoothing = scene.as_ref().map(|s| s.cursor.smoothing).unwrap_or(0.0);
     let mut cursor_tracks: HashMap<String, CursorTrack> = HashMap::new();
     let mut cursor_active_path: Option<String> = None;
 
     let mut frames: u64 = 0;
+    let mut result = WalkResult::default();
 
     for (clip_index, clip) in clips.iter().enumerate() {
         let has_camera = webcam_is_real(&clip.webcam, &clip.screen);
+        // Adjacent references reuse one decoder; reordered references reopen safely.
+        // Evict before opening so live native resources never grow with source count.
+        retain_current(screen_decs, Some(&clip.screen));
+        retain_current(webcam_decs, has_camera.then_some(clip.webcam.as_str()));
+        retain_current(&mut cursor_tracks, Some(&clip.screen));
         comp.set_has_webcam(has_camera);
         if !screen_decs.contains_key(&clip.screen) {
             screen_decs.insert(clip.screen.clone(), Decoder::open(&clip.screen, gpu)?);
@@ -174,6 +191,10 @@ pub(crate) unsafe fn walk_composited_timeline(
             webcam_decs.insert(clip.webcam.clone(), Decoder::open(&clip.webcam, gpu)?);
         }
 
+        for decoder in screen_decs.values().chain(webcam_decs.values()) {
+            result.software_decoder |= !decoder.uses_hardware();
+            result.hardware_decoder |= decoder.uses_hardware();
+        }
         let screen_available_duration = screen_decs
             .get(&clip.screen)
             .and_then(|decoder| decoder.available_duration_sec());
@@ -321,7 +342,10 @@ pub(crate) unsafe fn walk_composited_timeline(
 
     comp.set_cursor_time(None);
     comp.set_timeline_time(None);
-    Ok(frames)
+    screen_decs.clear();
+    webcam_decs.clear();
+    result.frames = frames;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -353,6 +377,20 @@ mod tests {
             }
         }
         committed
+    }
+
+    #[test]
+    fn decoder_cache_is_bounded_for_many_reordered_sources() {
+        let mut cache = std::collections::HashMap::new();
+        for index in (0..500).chain((0..500).rev()).chain([0, 0, 499]) {
+            let path = index.to_string();
+            super::retain_current(&mut cache, Some(&path));
+            let resource = cache.entry(path.clone()).or_insert(index);
+            assert_eq!(*resource, index);
+            assert_eq!(cache.len(), 1);
+        }
+        super::retain_current(&mut cache, None);
+        assert!(cache.is_empty());
     }
 
     #[test]

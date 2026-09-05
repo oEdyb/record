@@ -49,6 +49,9 @@ const PASSTHROUGH_EPSILON: f64 = 1e-3;
 
 pub type PlanarPcm = Vec<Vec<f32>>;
 
+#[path = "audio_spool.rs"]
+pub(crate) mod spool;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AudioMasteringSettings {
     enabled: bool,
@@ -652,7 +655,7 @@ struct AudioTrackDecoder {
     dctx: *mut AVCodecContext,
     tb_sec: f64,
     resampler: Option<AudioResampler>,
-    decoded: PlanarPcm,
+    decoded: spool::PcmSpool,
     origin_sec: Option<f64>,
     reached_end: bool,
     decoder_eof: bool,
@@ -678,7 +681,11 @@ pub fn decode_clip_audio(
     source_start_sec: f64,
     source_end_sec: f64,
 ) -> Result<Option<DecodedClipAudio>> {
-    unsafe { decode_clip_audio_inner(path, source_start_sec, source_end_sec) }
+    unsafe {
+        decode_clip_audio_inner(path, source_start_sec, source_end_sec, &mut || Ok(()))?
+            .map(spool::SpoolClip::into_memory)
+            .transpose()
+    }
 }
 
 /// Decode the untouched bed from the recording and replace only its tagged microphone.
@@ -715,17 +722,41 @@ pub fn decode_clip_audio_with_clean_microphone(
     Ok(Some(raw))
 }
 
+#[derive(Default)]
+struct AudioDecodeResources {
+    fmt: *mut AVFormatContext,
+    packet: *mut AVPacket,
+    frame: *mut AVFrame,
+}
+
+impl Drop for AudioDecodeResources {
+    fn drop(&mut self) {
+        unsafe {
+            av_frame_free(&mut self.frame);
+            av_packet_free(&mut self.packet);
+            avformat_close_input(&mut self.fmt);
+        }
+    }
+}
+
 unsafe fn decode_clip_audio_inner(
     path: &str,
     source_start_sec: f64,
     source_end_sec: f64,
-) -> Result<Option<DecodedClipAudio>> {
-    let mut fmt: *mut AVFormatContext = ptr::null_mut();
+    check: &mut dyn FnMut() -> Result<()>,
+) -> Result<Option<spool::SpoolClip>> {
+    let mut resources = AudioDecodeResources::default();
     let cpath = CString::new(path)?;
     averr(
-        avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+        avformat_open_input(
+            &mut resources.fmt,
+            cpath.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        ),
         "audio open_input",
     )?;
+    let fmt = resources.fmt;
     averr(
         avformat_find_stream_info(fmt, ptr::null_mut()),
         "audio find_stream_info",
@@ -761,9 +792,9 @@ unsafe fn decode_clip_audio_inner(
         if decoder.is_null() {
             continue;
         }
+        let decoded = spool::PcmSpool::new()?;
         let mut dctx = avcodec_alloc_context3(decoder);
         if dctx.is_null() {
-            avformat_close_input(&mut fmt);
             bail!("audio avcodec_alloc_context3");
         }
         if avcodec_parameters_to_context(dctx, codecpar) < 0
@@ -782,7 +813,7 @@ unsafe fn decode_clip_audio_inner(
                 0.0
             },
             resampler: None,
-            decoded: vec![Vec::<f32>::new(); AUDIO_OUTPUT_CHANNELS],
+            decoded,
             origin_sec: None,
             reached_end: false,
             decoder_eof: false,
@@ -790,7 +821,6 @@ unsafe fn decode_clip_audio_inner(
         });
     }
     if tracks.is_empty() {
-        avformat_close_input(&mut fmt);
         if audio_stream_count > 0 {
             bail!("audio : {audio_stream_count} piste(s) présentes, aucune décodable");
         }
@@ -812,14 +842,21 @@ unsafe fn decode_clip_audio_inner(
         }
     }
 
-    let mut packet = av_packet_alloc();
-    let mut frame = av_frame_alloc();
+    resources.packet = av_packet_alloc();
+    resources.frame = av_frame_alloc();
+    let packet = resources.packet;
+    let frame = resources.frame;
+    anyhow::ensure!(
+        !packet.is_null() && !frame.is_null(),
+        "audio packet/frame allocation failed"
+    );
     let mut input_eof = false;
 
     // Une seule passe de démux alimente tous les décodeurs : chaque paquet est routé vers la
     // piste dont il porte l'index. On continue tant qu'AU MOINS une piste a encore quelque
     // chose à produire.
     while tracks.iter().any(|t| !t.reached_end && !t.decoder_eof) {
+        check()?;
         if !input_eof {
             let read = av_read_frame(fmt, packet);
             if read == AVERROR_EOF {
@@ -875,11 +912,9 @@ unsafe fn decode_clip_audio_inner(
                 if track.resampler.is_none() {
                     track.resampler = Some(AudioResampler::from_frame(frame, track.dctx)?);
                 }
-                track
-                    .resampler
-                    .as_mut()
-                    .unwrap()
-                    .push(frame, &mut track.decoded)?;
+                let mut block = vec![Vec::new(); AUDIO_OUTPUT_CHANNELS];
+                track.resampler.as_mut().unwrap().push(frame, &mut block)?;
+                track.decoded.append(&block)?;
                 av_frame_unref(frame);
             }
         }
@@ -887,33 +922,16 @@ unsafe fn decode_clip_audio_inner(
 
     for track in tracks.iter_mut() {
         if let Some(r) = track.resampler.as_mut() {
-            r.flush(&mut track.decoded)?;
+            let mut block = vec![Vec::new(); AUDIO_OUTPUT_CHANNELS];
+            r.flush(&mut block)?;
+            track.decoded.append(&block)?;
         }
     }
-
-    av_frame_free(&mut frame);
-    av_packet_free(&mut packet);
-    avformat_close_input(&mut fmt);
 
     let target_samples = (((source_end_sec - source_start_sec).max(0.0)
         * AUDIO_OUTPUT_SAMPLE_RATE as f64)
         .round()) as usize;
-    let microphone_tracks: Vec<(f64, &PlanarPcm)> = tracks
-        .iter()
-        .filter(|track| track.microphone)
-        .map(|track| (track.origin_sec.unwrap_or(source_start_sec), &track.decoded))
-        .collect();
-    let bed_tracks: Vec<(f64, &PlanarPcm)> = tracks
-        .iter()
-        .filter(|track| !track.microphone)
-        .map(|track| (track.origin_sec.unwrap_or(source_start_sec), &track.decoded))
-        .collect();
-    Ok(Some(DecodedClipAudio {
-        bed: (!bed_tracks.is_empty())
-            .then(|| mix_aligned_tracks(&bed_tracks, source_start_sec, target_samples)),
-        microphone: (!microphone_tracks.is_empty())
-            .then(|| mix_aligned_tracks(&microphone_tracks, source_start_sec, target_samples)),
-    }))
+    spool::align_tracks(&mut tracks, source_start_sec, target_samples, check).map(Some)
 }
 
 /// Recadre chaque piste sur la MÊME fenêtre (`target_samples` échantillons à partir de
@@ -1459,6 +1477,7 @@ pub(crate) struct AacEncoder {
     context: *mut AVCodecContext,
     stream: *mut AVStream,
     packet: *mut AVPacket,
+    sample_offset: usize,
 }
 
 impl AacEncoder {
@@ -1502,10 +1521,11 @@ impl AacEncoder {
             context,
             stream,
             packet,
+            sample_offset: 0,
         })
     }
 
-    pub(crate) unsafe fn encode(
+    pub(crate) unsafe fn encode_block(
         &mut self,
         pcm: &[Vec<f32>],
         output: *mut AVFormatContext,
@@ -1546,12 +1566,17 @@ impl AacEncoder {
                     }
                 }
             }
-            (*frame).pts = offset as i64;
+            (*frame).pts = (self.sample_offset + offset) as i64;
             averr(avcodec_send_frame(self.context, frame), "aac send_frame")?;
             self.drain(output)?;
             av_frame_free(&mut frame);
             offset += sample_count;
         }
+        self.sample_offset += total_samples;
+        Ok(())
+    }
+
+    pub(crate) unsafe fn finish(&mut self, output: *mut AVFormatContext) -> Result<()> {
         averr(avcodec_send_frame(self.context, ptr::null()), "aac flush")?;
         self.drain(output)
     }

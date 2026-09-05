@@ -8391,30 +8391,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "@radix-ui/react-accordion",
-			"version": "1.2.12",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@radix-ui/react-accordion/-/react-accordion-1.2.12.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "@radix-ui/react-arrow",
 			"version": "1.1.7",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/@radix-ui/react-arrow/-/react-arrow-1.1.7.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@radix-ui/react-collapsible",
-			"version": "1.1.12",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@radix-ui/react-collapsible/-/react-collapsible-1.1.12.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9021,16 +9001,6 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "@tiptap/extension-text-style",
-			"version": "3.27.3",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@tiptap/extension-text-style/-/extension-text-style-3.27.3.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "@tiptap/extension-text",
 			"version": "3.27.3",
 			"license": "MIT",
@@ -9162,16 +9132,6 @@
 		{
 			"ecosystem": "npm",
 			"name": "@uiw/color-convert",
-			"version": "2.10.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/color-convert/-/color-convert-2.10.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/color-convert",
 			"version": "2.9.6",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/@uiw/color-convert/-/color-convert-2.9.6.tgz",
@@ -9191,30 +9151,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "@uiw/react-color-block",
-			"version": "2.10.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-color-block/-/react-color-block-2.10.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "@uiw/react-color-colorful",
 			"version": "2.9.6",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/@uiw/react-color-colorful/-/react-color-colorful-2.9.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/react-color-editable-input",
-			"version": "2.10.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-color-editable-input/-/react-color-editable-input-2.10.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9235,16 +9175,6 @@
 			"version": "2.9.6",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/@uiw/react-color-saturation/-/react-color-saturation-2.9.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/react-color-swatch",
-			"version": "2.10.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-color-swatch/-/react-color-swatch-2.10.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9472,9 +9402,9 @@
 		{
 			"ecosystem": "npm",
 			"name": "electron",
-			"version": "41.10.7",
+			"version": "44.1.0",
 			"license": "MIT",
-			"source": "https://registry.npmjs.org/electron/-/electron-41.10.7.tgz",
+			"source": "https://registry.npmjs.org/electron/-/electron-44.1.0.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9955,16 +9885,6 @@
 			"version": "12.38.0",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/motion/-/motion-12.38.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "mp4box",
-			"version": "2.3.0",
-			"license": "BSD-3-Clause",
-			"source": "https://registry.npmjs.org/mp4box/-/mp4box-2.3.0.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10471,16 +10391,6 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "react-resizable-panels",
-			"version": "3.0.6",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-3.0.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "react-rnd",
 			"version": "10.5.3",
 			"license": "MIT",
@@ -10949,8 +10859,8 @@
 		{
 			"path": "LICENSES.chromium.html",
 			"sourcePath": "node_modules/electron/dist/LICENSES.chromium.html",
-			"size": 19132085,
-			"sha256": "7f7b7dbc738503773824915bc87f754fd9f4c5f8f1d9ac22ed971f55f36e8f29"
+			"size": 20111206,
+			"sha256": "4cbde8e3e7b29f451c78a44491fb32e2202884826fef47786a9cda5a36110525"
 		},
 		{
 			"path": "third-party-licenses/Cargo-Evidence.json",
@@ -10961,8 +10871,8 @@
 		{
 			"path": "third-party-licenses/Creative-Commons-BY-4.0.txt",
 			"sourcePath": "third-party-licenses/Creative-Commons-BY-4.0.txt",
-			"size": 18657,
-			"sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+			"size": 18656,
+			"sha256": "9e5f1b3c610b9c2da5c313bf81d577a7d1acec686bdb0384edefa6df0f90cd94"
 		},
 		{
 			"path": "third-party-licenses/Electron-MIT.txt",
@@ -10973,8 +10883,8 @@
 		{
 			"path": "third-party-licenses/Electron-Updater-MIT.txt",
 			"sourcePath": "third-party-licenses/Electron-Updater-MIT.txt",
-			"size": 1084,
-			"sha256": "bed8d0ab3e6031817f775a641ff37313b0f5591bc8ba0ed79b978dafbd4231ce"
+			"size": 1083,
+			"sha256": "3f13dd7700ec33a0af7df671aa19452b3a3d9034f16621d72544d6a2821624a1"
 		},
 		{
 			"path": "third-party-licenses/FluidAudio-Apache-2.0.txt",
@@ -10985,8 +10895,8 @@
 		{
 			"path": "third-party-licenses/Geist-OFL-1.1.txt",
 			"sourcePath": "third-party-licenses/Geist-OFL-1.1.txt",
-			"size": 4384,
-			"sha256": "2b2da563e79400b61818402ca9f26a73d52468268b7fc715e92143c1e799737e"
+			"size": 4383,
+			"sha256": "942560b236adfa83745b2c64e5fc09ebaf91cb331751b1157eb92187e5d6e930"
 		},
 		{
 			"path": "third-party-licenses/LGPL-2.1.txt",

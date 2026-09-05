@@ -51,6 +51,7 @@ import {
 } from "./ipc/trustedRendererIpc";
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
+import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
 import { getSttManager, registerSttIpc } from "./stt";
 import { checkLatestRelease } from "./update-checker";
@@ -97,7 +98,7 @@ if (process.platform === "linux") {
 
 installMainProcessErrorGuards();
 
-export const RECORDINGS_DIR = path.join(app.getPath("userData"), "recordings");
+export const RECORDINGS_DIR = recordingsDirectory(app.getPath("userData"));
 
 async function ensureRecordingsDir() {
 	try {

@@ -59,12 +59,18 @@ describe("migrateProjectDataToAxcutDocument", () => {
 		expect(asset.kind).toBe("video");
 		expect(asset.originalPath).toBe("/recordings/screen.webm");
 		expect(doc.project.primaryAssetId).toBe(asset.id);
+		expect(doc.project.title).toBe("screen");
 
 		expect(doc.timeline.clips).toHaveLength(1);
 		const clip = doc.timeline.clips[0];
 		expect(clip.assetId).toBe(asset.id);
 		expect(clip.sourceStartSec).toBe(0);
 		expect(clip.sourceEndSec).toBeUndefined();
+	});
+
+	it("preserves an explicit migration title instead of using the wallpaper", () => {
+		const doc = migrateProjectDataToAxcutDocument(makeV2Project(), { title: "My project" });
+		expect(doc.project.title).toBe("My project");
 	});
 
 	it("converts trimRegions to trimRanges on the primary asset (1.5s cut)", () => {

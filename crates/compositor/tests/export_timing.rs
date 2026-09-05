@@ -282,3 +282,57 @@ fn gif_export_spans_the_whole_timeline() {
          the opening red second (first {first:.1}, last {last:.1})"
     );
 }
+
+/// Exercise the bounded audio path and decoder eviction with real native capture media.
+/// The same source returns after another source, and adjacent references must reuse it.
+#[test]
+fn mp4_audio_export_reopens_reordered_sources_and_keeps_exact_duration() {
+    let Some(dir) = media_dir() else {
+        return;
+    };
+    let gpu = Gpu::create(false).expect("gpu");
+    let params = ExportParams {
+        width: 320,
+        height: 180,
+        fps: Some(30),
+        codec: ExportCodec::H264,
+        bitrate: None,
+        normalize_audio: true,
+        even_volume: true,
+        target_lufs: openscreen_compositor::audio::DEFAULT_TARGET_LUFS,
+        peak_ceiling_dbtp: openscreen_compositor::audio::DEFAULT_TRUE_PEAK_CEILING_DBTP,
+    };
+    let comp = Compositor::new_sized(&gpu, 320, 180).expect("compositor");
+    let audio = || {
+        let mut clip = whole_clip(&dir);
+        clip.webcam = clip.screen.clone();
+        clip.has_audio = true;
+        clip.source_end_sec = 1.0;
+        clip
+    };
+    let mut silent = audio();
+    silent.screen = dir.join("webcam_gray.mp4").to_string_lossy().into_owned();
+    silent.webcam = silent.screen.clone();
+    silent.has_audio = false;
+    let mut later = audio();
+    later.source_start_sec = 2.0;
+    later.source_end_sec = 3.0;
+    let out = dir.join("out_bounded_audio.mp4");
+    let stats = pipeline::run_composited_multi(
+        &[audio(), silent, later, audio()],
+        &out.to_string_lossy(),
+        &gpu,
+        &comp,
+        &Cfg::c8(),
+        &params,
+        &mut |_| Ok(()),
+    )
+    .expect("bounded audio export");
+    assert_eq!(stats.frames, 120);
+    assert_eq!(stats.video_duration_s, 4.0);
+    #[cfg(target_os = "macos")]
+    assert_ne!(
+        stats.decoder_path, "unknown",
+        "eviction must preserve aggregate decoder telemetry"
+    );
+}

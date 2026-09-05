@@ -6,6 +6,13 @@ import { clearStaleSourceCache } from "./lib/exporter/localSourceFile";
 import "./hooks/rendererConsoleForwarder";
 import "./index.css";
 
+// Install browser-only schema and IPC shims before React mounts. Electron already
+// supplies its bridge; its auxiliary windows never need this module graph.
+if (!window.electronAPI) {
+	const { installBrowserShims } = await import("./native/browserShim");
+	installBrowserShims();
+}
+
 const windowType = new URLSearchParams(window.location.search).get("windowType") || "";
 
 // The editor owns cache maintenance. Other windows, including CLI runners, can

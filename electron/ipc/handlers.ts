@@ -97,7 +97,6 @@ import {
 } from "../export/voiceoverTemp";
 import { writeJsonDurably } from "../filesystem/durableJson";
 import { mainT } from "../i18n";
-import { RECORDINGS_DIR } from "../main";
 import {
 	type AudioPeakProfile,
 	type AudioPeaksResult,
@@ -154,6 +153,7 @@ import { parseNativeWindowsCaptureTelemetry } from "../recording/nativeWindowsCa
 import { type RecordingPrefs, RecordingPrefsStore } from "../recording/recordingPrefsStore";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
+import { recordingsDirectory } from "../recordingPaths";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 import type { RendererIpcMain } from "./trustedRendererIpc";
@@ -175,6 +175,7 @@ const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
 	".ts",
 ]);
 const PREVIEW_AUDIO_DIR = path.join(app.getPath("userData"), "preview-audio");
+const RECORDINGS_DIR = recordingsDirectory(app.getPath("userData"));
 const CLEAN_VOICE_MEDIA_DIR = path.join(app.getPath("userData"), "derived-media", "clean-voice-v1");
 const RENDERER_EXPORT_TEMP_DIR = app.getPath("temp");
 let nativeMacRecordingService: NativeMacRecordingService | null = null;
@@ -899,19 +900,8 @@ function linuxSourceLabel(kind?: LinuxCaptureSourceKind): string {
  * Answering the picker each time is the cost of being able to choose at all.
  */
 
-// ponytail: the sidecar readers used to live here, ~150 lines of parsing wedged
-// between the capture state machine and the asset-path helpers, reachable only
-// through IPC. They now live in `electron/media/cursorSidecar.ts` — Node-pure,
-// injectable, testable — because the agent needed to read the same file and
-// could not import an IPC handler. What is left here is the binding of
-// `RECORDINGS_DIR` (an `app.getPath` at main-module scope) to those readers.
-//
-// ponytail: a FUNCTION, not a captured object. `main.ts` imports this module and
-// this module imports `RECORDINGS_DIR` back from it, so at the moment this file
-// is evaluated that binding is still in its temporal dead zone — reading it here
-// threw `Cannot access 'RECORDINGS_DIR' before initialization` and the app died
-// before its first window. Every call site is already inside a handler, i.e.
-// long after both modules finished loading.
+// Sidecar readers stay independent of Electron. The shared pure path policy
+// resolves the same recordings directory after bootstrap has selected userData.
 const cursorSidecarOptions = () => ({ recordingsDir: RECORDINGS_DIR });
 
 const readCursorRecordingFile = (targetVideoPath: string) =>
@@ -1856,6 +1846,8 @@ export function registerIpcHandlers(
 					if (!ffmpegPath || !helperPath || cleanVoiceShuttingDown) return null;
 					const service = new CleanVoiceService({
 						cacheRoot: path.join(app.getPath("userData"), "derived-media", "clean-voice-v1"),
+						// GUI startup owns the single-instance lock. CLI disables this service.
+						pruneCompletedEntriesOnStartup: true,
 						processor: createLocalCleanVoiceProcessor({ ffmpegPath, helperPath }),
 						onStatus: (status) => {
 							const editor = getMainWindow();

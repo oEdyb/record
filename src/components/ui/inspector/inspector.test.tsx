@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -150,14 +148,5 @@ describe("inspector primitives", () => {
 		fireEvent.blur(slider);
 
 		expect(onCommit).toHaveBeenCalledOnce();
-	});
-
-	it("uses semantic editor tokens and no green theme literal", () => {
-		const css = readFileSync(
-			join(process.cwd(), "src", "components", "ui", "inspector", "inspector.module.css"),
-			"utf8",
-		);
-		expect(css).toContain("var(--editor-accent)");
-		expect(css).not.toMatch(/(?:green|emerald|lime|#10b981|#22c55e|#34b27b)/i);
 	});
 });

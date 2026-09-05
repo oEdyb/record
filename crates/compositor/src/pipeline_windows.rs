@@ -3,10 +3,8 @@
 //! tout le run, deux lectures seulement. Rien dans la boucle ne peut fausser le fps.
 
 use crate::audio::{
-    assemble_concatenated_pcm, build_audio_concat_plan, decode_clip_audio_with_clean_microphone,
-    finalize_decoded_clip_audio, master_program_audio, stretch_decoded_clip_audio_by_speed,
-    AacEncoder, AudioMasteringSettings, AudioMasteringStats, DecodedClipAudio, DEFAULT_TARGET_LUFS,
-    DEFAULT_TRUE_PEAK_CEILING_DBTP,
+    build_audio_concat_plan, spool, AacEncoder, AudioMasteringSettings, AudioMasteringStats,
+    DEFAULT_TARGET_LUFS, DEFAULT_TRUE_PEAK_CEILING_DBTP,
 };
 use crate::compositor::{Compositor, OUT_H, OUT_W};
 use crate::config::Cfg;
@@ -531,6 +529,10 @@ pub(crate) struct Decoder {
 unsafe impl Send for Decoder {}
 
 impl Decoder {
+    pub(crate) fn uses_hardware(&self) -> bool {
+        self.cpu.is_none()
+    }
+
     pub(crate) unsafe fn open(path: &str, gpu: &Gpu) -> Result<Decoder> {
         let mut fmt: *mut AVFormatContext = ptr::null_mut();
         let cpath = CString::new(path)?;
@@ -687,14 +689,8 @@ impl Decoder {
                     if !f.is_null() {
                         return Ok(f);
                     }
-                    // `decode_forward_to` a atteint l'EOF avant la cible — typiquement un
-                    // décodeur réactivé depuis le pool (`live::swap_clip_pooled`), laissé en fin
-                    // de flux (`sent_eof`), qui ne peut plus avancer. On NE rend PAS `null` : ça
-                    // forçait l'appelant à tout ROUVRIR (~190 ms mesurés), le pire à-coup ressenti
-                    // au franchissement. On retombe sur le seek keyframe complet ci-dessous, qui
-                    // rembobine + réarme le décodeur et repart proprement. Si la cible est
-                    // réellement au-delà de l'EOF, ce seek complet rendra `null` lui aussi :
-                    // comportement inchangé pour ce cas.
+                    // No valid current frame survived this decoder state. Retry a full
+                    // keyframe seek before allowing the caller to reopen the source.
                 }
             }
         }
@@ -715,7 +711,14 @@ impl Decoder {
         loop {
             let f = self.next()?;
             if f.is_null() {
-                return Ok(ptr::null_mut());
+                // The requested time can lie after the final PTS but inside that frame's
+                // display interval. Hold only a frame decoded in this seek; a full seek
+                // clears cur_pts first, so empty media cannot reuse an old frame.
+                return Ok(if self.cur_pts.is_some() {
+                    self.cur_frame()
+                } else {
+                    ptr::null_mut()
+                });
             }
             let pts = (*f).best_effort_timestamp;
             // pas de pts fiable ou pas de time_base → on prend la 1re frame après la keyframe.
@@ -735,7 +738,14 @@ impl Decoder {
         loop {
             let f = self.next()?;
             if f.is_null() {
-                return Ok(ptr::null_mut());
+                // The requested time can lie after the final PTS but inside that frame's
+                // display interval. Hold only a frame decoded in this seek; a full seek
+                // clears cur_pts first, so empty media cannot reuse an old frame.
+                return Ok(if self.cur_pts.is_some() {
+                    self.cur_frame()
+                } else {
+                    ptr::null_mut()
+                });
             }
             let pts = (*f).best_effort_timestamp;
             if pts == i64::MIN {
@@ -790,18 +800,16 @@ impl Decoder {
 
     /// Rend la prochaine frame (valide jusqu'au prochain appel), ou null à EOF.
     pub(crate) unsafe fn next(&mut self) -> Result<*mut AVFrame> {
-        if self.has_peek {
-            return self.commit_peek();
+        // receive_frame unrefs its destination even on EOF. Decode into lookahead,
+        // then promote only success, so the current frame keeps owning its GPU buffers.
+        // FFmpeg 8.x avcodec.h: avcodec_receive_frame destination lifetime contract.
+        if !self.has_peek {
+            if !self.receive_into(self.peek_frame)? {
+                return Ok(ptr::null_mut());
+            }
+            self.has_peek = true;
         }
-        if !self.receive_into(self.frame)? {
-            return Ok(ptr::null_mut());
-        }
-        let pts = (*self.frame).best_effort_timestamp;
-        self.cur_pts = if pts == i64::MIN { None } else { Some(pts) };
-        match &mut self.cpu {
-            Some(cpu) => cpu.present(self.frame),
-            None => Ok(self.frame),
-        }
+        self.commit_peek()
     }
 
     /// Décode dans `into` (buffer courant ou de lookahead) jusqu'à obtenir une frame ou
@@ -1536,8 +1544,7 @@ unsafe fn run_multi_inner(
         bail!("av_packet_alloc (export packet)");
     }
     let mut clip_frame_counts = vec![0u64; clips.len()];
-    let mut clip_audio: Vec<Option<DecodedClipAudio>> =
-        std::iter::repeat_with(|| None).take(clips.len()).collect();
+    let mut audio_windows = vec![None; clips.len()];
     let t0 = Instant::now();
 
     let frames = walk_composited_timeline(
@@ -1580,32 +1587,12 @@ unsafe fn run_multi_inner(
             clip_frame_counts[clip_index] = frames_in_clip;
             let clip = &clips[clip_index];
             if clip.has_audio && frames_in_clip > 0 {
-                match decode_clip_audio_with_clean_microphone(
-                    &clip.screen,
-                    clip.clean_microphone.as_deref(),
-                    clip.source_start_sec,
-                    source_end_sec,
-                ) {
-                    Ok(Some(audio)) => {
-                        clip_audio[clip_index] = Some(stretch_decoded_clip_audio_by_speed(
-                            audio,
-                            speed_segments,
-                            out_fps as f64,
-                        ));
-                    }
-                    Ok(None) => eprintln!(
-                        "[pipeline] warning: clip #{} déclaré audio mais sans flux décodable; silence conservé",
-                        clip_index,
-                    ),
-                    Err(error) => eprintln!(
-                        "[pipeline] warning: décodage audio du clip #{} échoué ({error:#}); silence conservé",
-                        clip_index,
-                    ),
-                }
+                audio_windows[clip_index] = Some((source_end_sec, speed_segments.to_vec()));
             }
             Ok(())
         },
-    )?;
+    )?
+    .frames;
 
     comp.set_cursor_time(None);
     comp.set_timeline_time(None);
@@ -1617,18 +1604,35 @@ unsafe fn run_multi_inner(
 
     let declared_audio: Vec<bool> = clips.iter().map(|clip| clip.has_audio).collect();
     let audio_plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
-    let clip_pcm = finalize_decoded_clip_audio(clip_audio, params.even_volume);
-    let mut assembled_audio = assemble_concatenated_pcm(&clip_pcm, &audio_plan);
-    let audio_mastering = master_program_audio(
+    let mut check = || progress(crate::ExportProgress::AudioEncoding(frames));
+    let mut clip_audio = Vec::with_capacity(clips.len());
+    for (clip, window) in clips.iter().zip(audio_windows) {
+        check()?;
+        clip_audio.push(match window {
+            Some((end, segments)) => spool::decode(
+                &clip.screen,
+                clip.clean_microphone.as_deref(),
+                clip.source_start_sec,
+                end,
+                &segments,
+                out_fps as f64,
+                &mut check,
+            )?,
+            None => None,
+        });
+    }
+    let mut assembled_audio =
+        spool::assemble(clip_audio, &audio_plan, params.even_volume, &mut check)?;
+    let audio_mastering = spool::master(
         &mut assembled_audio,
         AudioMasteringSettings::new(
             params.normalize_audio,
             params.target_lufs,
             params.peak_ceiling_dbtp,
         ),
-    );
-    progress(crate::ExportProgress::AudioEncoding(frames))?;
-    audio_encoder.encode(&assembled_audio, octx)?;
+        &mut check,
+    )?;
+    spool::encode(&mut assembled_audio, &mut audio_encoder, octx, &mut check)?;
     progress(crate::ExportProgress::AudioFlushed(frames))?;
 
     progress(crate::ExportProgress::Trailer(frames))?;

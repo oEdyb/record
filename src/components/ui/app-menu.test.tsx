@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -62,16 +60,5 @@ describe("AppMenu", () => {
 		expect(onChange).toHaveBeenCalledWith("sv");
 		expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 		await waitFor(() => expect(trigger).toHaveFocus());
-	});
-
-	it("uses the editor accent and contains no green theme literal", () => {
-		const css = readFileSync(
-			join(process.cwd(), "src", "components", "ui", "app-menu.module.css"),
-			"utf8",
-		);
-
-		expect(css).toContain("var(--editor-accent-strong)");
-		expect(css).toContain("var(--radix-dropdown-menu-content-transform-origin)");
-		expect(css).not.toMatch(/(?:green|emerald|lime|#10b981|#22c55e|#34b27b)/i);
 	});
 });

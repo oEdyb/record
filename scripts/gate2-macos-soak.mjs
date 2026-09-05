@@ -444,7 +444,7 @@ async function main() {
 		[CHROME, "Google Chrome"],
 		[FFPROBE, "ffprobe"],
 		[FFMPEG, "ffmpeg"],
-		[path.join(ROOT, "dist-electron", "main.js"), "production Electron build"],
+		[path.join(ROOT, "dist-electron", "bootstrap.js"), "production Electron build"],
 	]) {
 		requireExecutable(filePath, label);
 	}
@@ -454,7 +454,12 @@ async function main() {
 		: await createOwnedRunRoot();
 	const userData = path.join(runRoot, "user-data");
 	const fixtureProfile = path.join(runRoot, "fixture-profile");
-	const projectPath = path.join(runRoot, "gate2-soak.openscreen");
+	const currentProjectPath = path.join(runRoot, "gate2-soak.klippt");
+	const legacyProjectPath = path.join(runRoot, "gate2-soak.openscreen");
+	const projectPath =
+		options.resumeRoot && !fs.existsSync(currentProjectPath) && fs.existsSync(legacyProjectPath)
+			? legacyProjectPath
+			: currentProjectPath;
 	const outputPath = path.join(runRoot, "gate2-soak-export.mp4");
 	const fixtureTitle = `record Gate 2 Fixture ${process.pid}`;
 	const reportPath =
@@ -521,9 +526,16 @@ async function main() {
 				{
 					timeoutMs: options.durationSec * 1_000 + 120_000,
 					ignoreProgressEvents: true,
-					env: { LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", LANGUAGE: "en_US" },
+					env: {
+						ELECTRON_USER_DATA_DIR: userData,
+						LANG: "en_US.UTF-8",
+						LC_ALL: "en_US.UTF-8",
+						LANGUAGE: "en_US",
+					},
 				},
 			);
+			await fsp.writeFile(path.join(runRoot, "record.stdout.log"), record.stdout);
+			await fsp.writeFile(path.join(runRoot, "record.stderr.log"), record.stderr);
 			const recordDone = parseDoneEvent(record.stdout);
 			if (record.code !== 0 || !recordDone.success) {
 				throw new Error(recordDone.error ?? `Record failed with code ${record.code}`);
@@ -574,6 +586,7 @@ async function main() {
 			"--json",
 		];
 		const exportEnvironment = {
+			ELECTRON_USER_DATA_DIR: userData,
 			LANG: "en_US.UTF-8",
 			LC_ALL: "en_US.UTF-8",
 			LANGUAGE: "en_US",
@@ -605,6 +618,8 @@ async function main() {
 			ignoreProgressEvents: true,
 			env: exportEnvironment,
 		});
+		await fsp.writeFile(path.join(runRoot, "export.stdout.log"), exportRun.stdout);
+		await fsp.writeFile(path.join(runRoot, "export.stderr.log"), exportRun.stderr);
 		const exportDone = parseDoneEvent(exportRun.stdout);
 		if (exportRun.code !== 0 || !exportDone.success) {
 			throw new Error(exportDone.error ?? `Export failed with code ${exportRun.code}`);

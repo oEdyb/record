@@ -24,14 +24,12 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useScopedT } from "@/contexts/I18nContext";
-import {
-	migrateProjectDataToAxcutDocument,
-	migrateRawDocumentToCurrent,
-} from "@/lib/ai-edition/document/migrate";
+import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
 import { documentSchema } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { isSupportedProjectFile } from "@/lib/projectFileFormat";
 import { nativeBridgeClient } from "@/native";
+import { prepareLegacyProjectForOpen } from "./legacyProjectOpen";
 import styles from "./NewEditorShell.module.css";
 
 type DropError = "unsupported-format" | "load-failed" | null;
@@ -94,7 +92,7 @@ export function EditorEmptyState({
 				typeof raw === "object" && raw !== null && "schemaVersion" in raw && "timeline" in raw;
 			const doc = isAxcutDocument
 				? documentSchema.parse(migrateRawDocumentToCurrent(raw)) // disk-load: upgrade v3/v4 → v5, then validate
-				: migrateProjectDataToAxcutDocument(raw as never);
+				: await prepareLegacyProjectForOpen(raw as never);
 			const saved = await nativeBridgeClient.aiEdition.save(doc);
 			if (!saved.success || !saved.document) return false;
 			await loadProject(doc.project.id);

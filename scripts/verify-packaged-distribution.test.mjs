@@ -1,9 +1,10 @@
+import { constants } from "node:fs";
 import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPackage } from "@electron/asar";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
 	normalizeAsarEntryPath,
 	verifyPackagedDistribution as verifyDistribution,
@@ -12,6 +13,61 @@ import {
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectories = [];
 const buildOutputsByPackage = new Map();
+const fixtureBases = new Map();
+const baseDirectories = [];
+const cloneOptions = { recursive: true, mode: constants.COPYFILE_FICLONE };
+
+// Copy-on-write where supported, ordinary independent copies otherwise. Never use
+// hard links: negative cases overwrite their files and must not change the base.
+async function packageFixture(
+	asarFiles = {},
+	{ stagingFiles = {}, omitAsarFiles = [], realAssets = false } = {},
+) {
+	if (!fixtureBases.has(realAssets)) {
+		const firstDirectory = temporaryDirectories.length;
+		const base = await buildPackageFixture(realAssets);
+		baseDirectories.push(...temporaryDirectories.splice(firstDirectory));
+		await verifyPackagedDistribution({
+			root: REPO_ROOT,
+			packageDir: base.packageRoot,
+			platform: "darwin",
+			arch: "arm64",
+		});
+		fixtureBases.set(realAssets, base);
+	}
+	const base = fixtureBases.get(realAssets);
+	const packageRoot = await temporaryDirectory("klippt-package-policy-");
+	await cp(base.packageRoot, packageRoot, cloneOptions);
+	const buildOutputs = new Map(base.buildOutputs);
+	buildOutputsByPackage.set(packageRoot, buildOutputs);
+	if (Object.keys(asarFiles).length || Object.keys(stagingFiles).length || omitAsarFiles.length) {
+		const appSource = await temporaryDirectory("klippt-package-policy-asar-");
+		await cp(base.appSource, appSource, cloneOptions);
+		if (Object.keys(stagingFiles).length) {
+			for (const [namespace, directory] of base.buildOutputs) {
+				const reviewed = await temporaryDirectory("klippt-package-policy-reviewed-");
+				await cp(directory, reviewed, cloneOptions);
+				buildOutputs.set(namespace, reviewed);
+			}
+			for (const [relativePath, contents] of Object.entries(stagingFiles)) {
+				const [namespace, ...parts] = relativePath.split("/");
+				const reviewed = path.join(buildOutputs.get(namespace), ...parts);
+				await mkdir(path.dirname(reviewed), { recursive: true });
+				await writeFile(reviewed, contents);
+			}
+		}
+		for (const [relativePath, contents] of Object.entries({ ...stagingFiles, ...asarFiles })) {
+			const destination = path.join(appSource, relativePath);
+			await mkdir(path.dirname(destination), { recursive: true });
+			await writeFile(destination, contents);
+		}
+		for (const relativePath of omitAsarFiles) {
+			await rm(path.join(appSource, relativePath), { recursive: true, force: true });
+		}
+		await createPackage(appSource, path.join(packageRoot, "Contents", "Resources", "app.asar"));
+	}
+	return packageRoot;
+}
 
 function verifyPackagedDistribution(options) {
 	return verifyDistribution({
@@ -26,7 +82,7 @@ async function temporaryDirectory(prefix) {
 	return directory;
 }
 
-async function packageFixture(asarFiles = {}, { stagingFiles = {}, omitAsarFiles = [] } = {}) {
+async function buildPackageFixture(realAssets) {
 	const packageRoot = await temporaryDirectory("klippt-package-policy-");
 	const resources = path.join(packageRoot, "Contents", "Resources");
 	const appSource = await temporaryDirectory("klippt-package-policy-asar-");
@@ -65,16 +121,22 @@ async function packageFixture(asarFiles = {}, { stagingFiles = {}, omitAsarFiles
 		path.join(REPO_ROOT, "src", "assets", "fonts", "GeistMono-Variable.woff2"),
 		path.join(appSource, "dist", "assets", "GeistMono-Variable-fixture1.woff2"),
 	);
-	await cp(
-		path.join(REPO_ROOT, "public", "wallpapers"),
+	// One real reviewed thumbnail is sufficient for focused negative policy cases.
+	// The real-assets integration case retains the complete wallpaper tree.
+	for (const destination of [
 		path.join(appSource, "dist", "wallpapers"),
-		{
-			recursive: true,
-		},
-	);
-	await cp(path.join(REPO_ROOT, "public", "wallpapers"), path.join(resources, "wallpapers"), {
-		recursive: true,
-	});
+		path.join(resources, "wallpapers"),
+	]) {
+		if (realAssets) {
+			await cp(path.join(REPO_ROOT, "public", "wallpapers"), destination, cloneOptions);
+		} else {
+			await mkdir(path.join(destination, "thumbs"), { recursive: true });
+			await copyFile(
+				path.join(REPO_ROOT, "public", "wallpapers", "thumbs", "wallpaper1.jpg"),
+				path.join(destination, "thumbs", "wallpaper1.jpg"),
+			);
+		}
+	}
 	await cp(
 		path.join(REPO_ROOT, "public", "cursors", "default"),
 		path.join(resources, "cursors", "default"),
@@ -91,7 +153,6 @@ async function packageFixture(asarFiles = {}, { stagingFiles = {}, omitAsarFiles
 		"dist/openscreen.png": "excluded brand",
 		"dist/preview3.png": "excluded preview",
 		"dist/vite.svg": "excluded template asset",
-		...stagingFiles,
 	})) {
 		const destination = path.join(appSource, relativePath);
 		await mkdir(path.dirname(destination), { recursive: true });
@@ -113,14 +174,8 @@ async function packageFixture(asarFiles = {}, { stagingFiles = {}, omitAsarFiles
 		"dist/openscreen.png",
 		"dist/preview3.png",
 		"dist/vite.svg",
-		...omitAsarFiles,
 	]) {
 		await rm(path.join(appSource, relativePath), { recursive: true, force: true });
-	}
-	for (const [relativePath, contents] of Object.entries(asarFiles)) {
-		const destination = path.join(appSource, relativePath);
-		await mkdir(path.dirname(destination), { recursive: true });
-		await writeFile(destination, contents);
 	}
 	await createPackage(appSource, path.join(resources, "app.asar"));
 	await copyFile(
@@ -141,8 +196,14 @@ async function packageFixture(asarFiles = {}, { stagingFiles = {}, omitAsarFiles
 			recursive: true,
 		},
 	);
-	return packageRoot;
+	return { packageRoot, appSource, buildOutputs: buildOutputsByPackage.get(packageRoot) };
 }
+
+afterAll(async () => {
+	await Promise.all(
+		baseDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
+	);
+});
 
 afterEach(async () => {
 	buildOutputsByPackage.clear();
@@ -154,6 +215,23 @@ afterEach(async () => {
 });
 
 describe("packaged distribution policy", { timeout: 30_000 }, () => {
+	it("isolates changed resources from other variants and the validated base", async () => {
+		const changed = await packageFixture();
+		await writeFile(
+			path.join(changed, "Contents", "Resources", "LICENSES.chromium.html"),
+			"changed",
+		);
+		const untouched = await packageFixture();
+		await expect(
+			verifyPackagedDistribution({
+				root: REPO_ROOT,
+				packageDir: untouched,
+				platform: "darwin",
+				arch: "arm64",
+			}),
+		).resolves.toMatchObject({ webAssemblyFiles: 1 });
+	});
+
 	it("keeps the host lookup path and normalizes Windows ASAR paths for policy", () => {
 		expect(normalizeAsarEntryPath("\\dist\\assets\\image.data")).toEqual({
 			lookupPath: "dist\\assets\\image.data",
@@ -162,7 +240,7 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 	});
 
 	it("accepts one reviewed standalone WebAssembly file and the exact Electron notice", async () => {
-		const packageDir = await packageFixture();
+		const packageDir = await packageFixture({}, { realAssets: true });
 		await expect(
 			verifyPackagedDistribution({
 				root: REPO_ROOT,

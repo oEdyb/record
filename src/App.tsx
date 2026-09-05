@@ -1,23 +1,36 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import "./styles/fonts.css";
 import "./styles/design-tokens.css";
-import { installBrowserShims } from "./native/browserShim";
-
-installBrowserShims();
-
 import { EntitlementDialog } from "./components/entitlements/EntitlementDialog";
-import { CameraPreviewWindow } from "./components/launch/CameraPreviewWindow";
+// Keep the countdown listener eager: ready-to-show can precede a lazy component
+// mounting, which would lose the first countdown IPC value.
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
-import { LaunchWindow } from "./components/launch/LaunchWindow";
-import { NotesWindow } from "./components/launch/NotesWindow.tsx";
-import { SourceSelector } from "./components/launch/SourceSelector";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { APP_DISPLAY_NAME } from "./lib/brand";
-import { loadAllCustomFonts } from "./lib/customFonts";
 import { initializeEntitlements } from "./lib/entitlements/store";
+
+const CameraPreviewWindow = lazy(() =>
+	import("./components/launch/CameraPreviewWindow").then((module) => ({
+		default: module.CameraPreviewWindow,
+	})),
+);
+
+const LaunchWindow = lazy(() =>
+	import("./components/launch/LaunchWindow").then((module) => ({ default: module.LaunchWindow })),
+);
+
+const NotesWindow = lazy(() =>
+	import("./components/launch/NotesWindow").then((module) => ({ default: module.NotesWindow })),
+);
+
+const SourceSelector = lazy(() =>
+	import("./components/launch/SourceSelector").then((module) => ({
+		default: module.SourceSelector,
+	})),
+);
 
 const VideoEditorEntry = lazy(() =>
 	import("./components/ai-edition/AiEditionShell").then((module) => ({
@@ -33,6 +46,8 @@ const ShortcutsConfigDialog = lazy(() =>
 		default: module.ShortcutsConfigDialog,
 	})),
 );
+
+let customFontsInitialization: Promise<unknown> | undefined;
 
 export default function App() {
 	const [windowType, setWindowType] = useState(
@@ -75,11 +90,16 @@ export default function App() {
 	}, [windowType]);
 
 	useEffect(() => {
-		// Load custom fonts on app initialization
-		loadAllCustomFonts().catch((error) => {
+		// Only caption-rendering windows need user fonts. Auxiliary windows must not
+		// repeat font requests or initialize caption storage.
+		if (showNotes || (windowType !== "editor" && windowType !== "cli-export")) return;
+		customFontsInitialization ??= import("./lib/customFonts").then(({ loadAllCustomFonts }) =>
+			loadAllCustomFonts(),
+		);
+		customFontsInitialization.catch((error) => {
 			console.error("Failed to load custom fonts:", error);
 		});
-	}, []);
+	}, [windowType, showNotes]);
 
 	useEffect(() => {
 		let disposed = false;
@@ -180,7 +200,7 @@ export default function App() {
 
 	return (
 		<TooltipProvider>
-			{showNotes ? <NotesWindow /> : content}
+			<Suspense fallback={null}>{showNotes ? <NotesWindow /> : content}</Suspense>
 			<EntitlementDialog />
 			<Toaster theme="dark" />
 		</TooltipProvider>

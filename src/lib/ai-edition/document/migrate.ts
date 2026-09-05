@@ -86,7 +86,6 @@ export function migrateProjectDataToAxcutDocument(
 ): AxcutDocument {
 	const now = options.createdAt ?? new Date().toISOString();
 	const projectId = options.projectId ?? createId("proj");
-	const title = options.title ?? (input.editor?.wallpaper?.trim() || "Untitled Project");
 
 	const screenPath =
 		typeof input.media?.screenVideoPath === "string" && input.media.screenVideoPath
@@ -94,6 +93,13 @@ export function migrateProjectDataToAxcutDocument(
 			: typeof input.videoPath === "string" && input.videoPath
 				? input.videoPath
 				: null;
+	const title =
+		options.title ??
+		(screenPath
+			?.split(/[\\/]/)
+			.pop()
+			?.replace(/\.[^.]+$/, "") ||
+			"Untitled Project");
 
 	const webcamVideoPath = input.media?.webcamVideoPath;
 	// Rounded for the same reason as the auto-link in `projectStore.addAsset`:

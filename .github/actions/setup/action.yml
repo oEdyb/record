@@ -1,5 +1,10 @@
 name: Setup Node.js
-description: Install Node 22, restore npm cache, run npm ci
+description: Install locked Node and npm dependencies, with an optional Electron runtime
+inputs:
+  electron:
+    description: Install the Electron runtime for app execution or package-asset checks
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -15,5 +20,6 @@ runs:
     - run: npm ci
       shell: bash
     - name: Install the pinned Electron binary
+      if: inputs.electron == 'true'
       run: npx install-electron --no
       shell: bash

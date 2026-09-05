@@ -5,7 +5,7 @@
 // `data-clip-id`), plus `[class*="…"]` for the two CSS-module elements that have
 // no accessible name (the timeline's tracks + nav window).
 //
-// Needs a dev server: `npm run dev` (default 5173, override with E2E_BASE_URL).
+// Runs against dev or built preview servers (default 5173; override with E2E_BASE_URL).
 import { expect, type Page, test } from "@playwright/test";
 
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:5173";
@@ -170,12 +170,12 @@ test.describe("v4 editor shell", () => {
 		await expect.poll(widthPct).toBe(2);
 	});
 
-	// The playhead reads `currentTimeSec` off the project store itself rather than
-	// receiving it as a prop from the editor shell, so that playback (which rewrites
-	// it ~60×/s) no longer re-renders the whole editor to move one line — see
-	// PlayheadOverlay in V4Timeline.tsx. This covers both directions of that: a bare
-	// store write must move it, and a scrub drag must still drive it and the store.
-	test("the playhead follows both a store write and a scrub drag", async ({ page }) => {
+	// Exercise normal transport input and ruler scrubbing against the same visible
+	// playhead/time readout in both development and production builds. The direct
+	// store-subscription regression lives in V4Timeline.geometry.test.tsx.
+	test("the playhead stays synchronized with transport seeking and a scrub drag", async ({
+		page,
+	}) => {
 		await seedAndOpen(page);
 
 		// `left` is a percentage of the 600 s fixture timeline. Addressed by position
@@ -184,33 +184,21 @@ test.describe("v4 editor shell", () => {
 		const playhead = page.locator('[class*="tlPlayheadLayer"] > [class*="tlCanvas"] > div');
 		const leftPct = () =>
 			playhead.evaluate((el) => Number.parseFloat((el as HTMLElement).style.left));
-		const storeTimeSec = () =>
-			page.evaluate(
-				() =>
-					(
-						window as unknown as {
-							__osProjectStore: { getState: () => { currentTimeSec: number } };
-						}
-					).__osProjectStore.getState().currentTimeSec,
-			);
-
+		const transport = page.getByRole("toolbar", { name: /playback/i });
+		const seek = transport.getByRole("slider", { name: /seek/i });
 		expect(await leftPct()).toBe(0);
 
-		// Nothing re-renders the shell here — the store write alone has to move it.
-		await page.evaluate(() =>
-			(
-				window as unknown as {
-					__osProjectStore: { getState: () => { setCurrentTime: (s: number) => void } };
-				}
-			).__osProjectStore
-				.getState()
-				.setCurrentTime(300),
-		);
-		await expect.poll(leftPct).toBeCloseTo(50, 1);
-		await expect(page.getByRole("toolbar", { name: /playback/i })).toContainText("5:00.0");
+		// Keyboard seeking through the normal slider drives the shared transport.
+		await seek.press("End");
+		await expect(seek).toHaveValue("600");
+		await expect.poll(leftPct).toBeCloseTo(100, 1);
+		await expect(transport).toContainText("10:00.0");
+		await seek.press("Home");
+		await expect(seek).toHaveValue("0");
+		await expect.poll(leftPct).toBe(0);
 
 		// Scrub: press at 25% of the timeline canvas, drag to 75%, release. The
-		// playhead tracks the pointer and the store lands on the release position.
+		// playhead tracks the pointer and the transport confirms the release position.
 		// Scrub on the ruler. The main track is covered by the clip, and clip
 		// pointer-down intentionally starts selection/drag instead of seeking.
 		const canvas = page.locator('[class*="tlRulerRow"] [class*="tlCanvas"]').first();
@@ -223,6 +211,7 @@ test.describe("v4 editor shell", () => {
 		await page.mouse.move(box.x + box.width * 0.75, y, { steps: 8 });
 		await page.mouse.up();
 		await expect.poll(leftPct).toBeCloseTo(75, 0);
-		expect(await storeTimeSec()).toBeGreaterThan(400);
+		await expect.poll(async () => Number(await seek.inputValue())).toBeCloseTo(450, 0);
+		await expect(transport).toContainText("7:30.0");
 	});
 });

@@ -14,6 +14,12 @@ on:
   push:
     branches: [main, feat/ai-edition, "release/**"]
 
+# PR updates supersede prior checks. Every push has a unique group, so neither
+# running nor pending release-branch checks are cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: Lint
@@ -21,7 +27,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
+        with:
+          electron: "false"
       - run: npm run lint
+      - run: npm run design:check
 
   typecheck:
     name: Type Check
@@ -29,6 +38,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
+        with:
+          electron: "false"
       - run: npx tsc --noEmit
 
   typecheck-tests:
@@ -50,6 +61,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
+        with:
+          electron: "false"
       - name: Typecheck tests
         run: npx tsc -p tsconfig.test.json --noEmit
 
@@ -156,6 +169,24 @@ jobs:
           ls /opt/homebrew/opt/ffmpeg/include | head -5
           ls /opt/homebrew/opt/ffmpeg/lib | head -5
           /opt/homebrew/opt/ffmpeg/bin/ffmpeg -hide_banner -version | head -1
+      - name: Fingerprint the native build inputs
+        id: native-cache
+        shell: bash
+        run: |
+          rustc --version --verbose > "$RUNNER_TEMP/klippt-rust-toolchain.txt"
+          brew list --versions ffmpeg > "$RUNNER_TEMP/klippt-ffmpeg-sdk.txt"
+          echo "toolchain=$(git hash-object "$RUNNER_TEMP/klippt-rust-toolchain.txt")" >> "$GITHUB_OUTPUT"
+          echo "sdk=$(git hash-object "$RUNNER_TEMP/klippt-ffmpeg-sdk.txt")" >> "$GITHUB_OUTPUT"
+      - name: Cache Cargo registry and native targets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            crates/target
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.toolchain }}-${{ steps.native-cache.outputs.sdk }}-${{ hashFiles('crates/Cargo.lock', 'crates/**/Cargo.toml', 'crates/.cargo/config.toml', 'scripts/ffmpeg-pins.mjs') }}-${{ hashFiles('crates/**/*.rs', 'crates/**/*.c', 'crates/**/*.h', 'crates/**/*.metal', 'crates/**/*.wgsl', 'crates/**/*.hlsl') }}
+          restore-keys: |
+            native-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.toolchain }}-${{ steps.native-cache.outputs.sdk }}-${{ hashFiles('crates/Cargo.lock', 'crates/**/Cargo.toml', 'crates/.cargo/config.toml', 'scripts/ffmpeg-pins.mjs') }}-
       # MAC_FFMPEG_DIR only reaches build.rs because it now takes precedence over
       # FFMPEG_DIR on macOS. crates/.cargo/config.toml sets FFMPEG_DIR in a GLOBAL
       # [env] block (cargo has no [target.<cfg>.env] — the macOS section in that file
@@ -206,6 +237,24 @@ jobs:
       # from there and links the import libs.
       - name: Vendor the pinned ffmpeg
         run: npm run fetch:ffmpeg
+      - name: Fingerprint the native build inputs
+        id: native-cache
+        shell: bash
+        run: |
+          rustc --version --verbose > "$RUNNER_TEMP/klippt-rust-toolchain.txt"
+          git hash-object scripts/ffmpeg-pins.mjs > "$RUNNER_TEMP/klippt-ffmpeg-sdk.txt"
+          echo "toolchain=$(git hash-object "$RUNNER_TEMP/klippt-rust-toolchain.txt")" >> "$GITHUB_OUTPUT"
+          echo "sdk=$(git hash-object "$RUNNER_TEMP/klippt-ffmpeg-sdk.txt")" >> "$GITHUB_OUTPUT"
+      - name: Cache Cargo registry and native targets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            crates/target
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.toolchain }}-${{ steps.native-cache.outputs.sdk }}-${{ hashFiles('crates/Cargo.lock', 'crates/**/Cargo.toml', 'crates/.cargo/config.toml', 'scripts/ffmpeg-pins.mjs') }}-${{ hashFiles('crates/**/*.rs', 'crates/**/*.c', 'crates/**/*.h', 'crates/**/*.metal', 'crates/**/*.wgsl', 'crates/**/*.hlsl') }}
+          restore-keys: |
+            native-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.toolchain }}-${{ steps.native-cache.outputs.sdk }}-${{ hashFiles('crates/Cargo.lock', 'crates/**/Cargo.toml', 'crates/.cargo/config.toml', 'scripts/ffmpeg-pins.mjs') }}-
       - name: cargo check (compositor + napi addon)
         shell: bash
         run: |
@@ -268,6 +317,24 @@ jobs:
           # et rendre une erreur qui ne designe pas la cause non plus.
           test -n "$libclang" || { echo "libclang introuvable apres l'installation"; exit 1; }
           echo "LIBCLANG_PATH=$(dirname "$libclang")" >> "$GITHUB_ENV"
+      - name: Fingerprint the native build inputs
+        id: native-cache
+        shell: bash
+        run: |
+          rustc --version --verbose > "$RUNNER_TEMP/klippt-rust-toolchain.txt"
+          git hash-object scripts/ffmpeg-pins.mjs > "$RUNNER_TEMP/klippt-ffmpeg-sdk.txt"
+          echo "toolchain=$(git hash-object "$RUNNER_TEMP/klippt-rust-toolchain.txt")" >> "$GITHUB_OUTPUT"
+          echo "sdk=$(git hash-object "$RUNNER_TEMP/klippt-ffmpeg-sdk.txt")" >> "$GITHUB_OUTPUT"
+      - name: Cache Cargo registry and native targets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            crates/target
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.toolchain }}-${{ steps.native-cache.outputs.sdk }}-${{ hashFiles('crates/Cargo.lock', 'crates/**/Cargo.toml', 'crates/.cargo/config.toml', 'scripts/ffmpeg-pins.mjs') }}-${{ hashFiles('crates/**/*.rs', 'crates/**/*.c', 'crates/**/*.h', 'crates/**/*.metal', 'crates/**/*.wgsl', 'crates/**/*.hlsl') }}
+          restore-keys: |
+            native-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.toolchain }}-${{ steps.native-cache.outputs.sdk }}-${{ hashFiles('crates/Cargo.lock', 'crates/**/Cargo.toml', 'crates/.cargo/config.toml', 'scripts/ffmpeg-pins.mjs') }}-
       - name: cargo test (compositor)
         env:
           # Les .so ffmpeg vendorises ne sont dans aucun chemin systeme : sans ca

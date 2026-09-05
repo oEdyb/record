@@ -534,6 +534,18 @@ describe("V4Timeline clip row", () => {
 		expect(tl.removeRegion).toHaveBeenCalledWith("trim", "trim-1");
 	});
 
+	it("moves the playhead after a direct store write without receiving new props", () => {
+		act(() => useProjectStore.getState().setCurrentTime(0));
+		renderTimeline();
+		const playhead = document.querySelector<HTMLElement>(
+			'[class*="tlPlayheadLayer"] > [class*="tlCanvas"] > div',
+		);
+		expect(playhead?.style.left).toBe("0%");
+		act(() => useProjectStore.getState().setCurrentTime(TOTAL_SEC / 2));
+		expect(playhead?.style.left).toBe("50%");
+		act(() => useProjectStore.getState().setCurrentTime(0));
+	});
+
 	it("maps the compressed playhead and scrub position back to raw document time", () => {
 		act(() => useProjectStore.getState().setCurrentTime(6));
 		const { setCurrentTime } = renderTimeline([clip(0, 10)], undefined, null, [], [], null, [

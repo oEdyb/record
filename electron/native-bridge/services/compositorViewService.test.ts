@@ -15,6 +15,7 @@ import {
 	calculateSceneExportDuration,
 	ffmpegSharedBinCandidates,
 	resolveClipSourceDurations,
+	resolveSceneAssetPath,
 	resolveSceneAssetPaths,
 } from "./compositorViewService";
 
@@ -784,6 +785,39 @@ describe("resolveSceneAssetPaths", () => {
 
 		expect(sprites.arrow.path).toBe(path.join(resources, "cursors", "default", "arrow.png"));
 		expect(fs.existsSync(sprites.arrow.path)).toBe(true);
+	});
+
+	it("reuses successful packaged cursor probes across changed scenes", () => {
+		resolved({ cursor: { theme: "default", size: 1 } });
+		const exists = vi.spyOn(fs, "existsSync");
+		resolved({ cursor: { theme: "default", size: 2 } });
+		expect(exists).not.toHaveBeenCalled();
+		exists.mockRestore();
+	});
+
+	it("does not cache missing artwork or arbitrary source files", () => {
+		const cursor = path.join(resources, "cursors", "default", "arrow.png");
+		fs.unlinkSync(cursor);
+		expect(resolveSceneAssetPath("cursors/default/arrow.png")).toBeNull();
+		fs.writeFileSync(cursor, "png");
+		expect(resolveSceneAssetPath("cursors/default/arrow.png")).toBe(cursor);
+		const source = path.join(resources, "recording.mp4");
+		fs.writeFileSync(source, "source");
+		expect(resolveSceneAssetPath("recording.mp4")).toBe(source);
+		fs.unlinkSync(source);
+		expect(resolveSceneAssetPath("recording.mp4")).toBeNull();
+	});
+
+	it("keeps development artwork probes live", () => {
+		process.env.VITE_PUBLIC = resources;
+		Object.defineProperty(process, "resourcesPath", {
+			value: path.join(resources, "runtime"),
+			configurable: true,
+		});
+		const cursor = path.join(resources, "cursors", "default", "arrow.png");
+		expect(resolveSceneAssetPath("cursors/default/arrow.png")).toBe(cursor);
+		fs.unlinkSync(cursor);
+		expect(resolveSceneAssetPath("cursors/default/arrow.png")).toBeNull();
 	});
 
 	it("leaves the scene alone when no base dir holds the asset", () => {

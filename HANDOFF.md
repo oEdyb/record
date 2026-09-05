@@ -1,6 +1,6 @@
 # Klippt handoff
 
-- **As of:** 2026-09-02
+- **As of:** 2026-09-05
 - **Repository:** `github.com/oEdyb/record` (private)
 - **Working branch:** `checkpoint/klippt-beta-hardening-2026-09-01`
 - **Verified code checkpoint:** `5e7bc7e9f6f2d2bfefc72597138bd467ad810c82`
@@ -249,6 +249,22 @@ npm run build-vite
 
 The normal Vite/Electron build does not prove that the native helper is current. Rebuild and stage
 the native Mac helpers before a package or real capture check.
+
+## Performance implementation — 2026-09-05
+
+The [audit](docs/performance-audit-2026-09-04.md) was followed by an authorized
+[implementation and verification pass](docs/performance-implementation-2026-09-05.md).
+The performance commit builds on `8635cda9`; the older committed checkpoint above
+remains historical. Export audio and decoder memory are bounded, preview presentation is
+serialized and rate-limited, auxiliary windows load less JavaScript, history shares immutable
+data, caches have retention rules, and confirmed retired code/dependencies were removed.
+Packaging fixtures and CI setup were simplified without dropping the release gates.
+
+The implementation note records unit/build/type/lint results, independent review, a real
+60-second 2560 × 1440 capture/export, GUI clip editing, and measured 5/30-minute and 500-source
+native memory probes. Test typecheck now passes. Real GUI testing also exposed an existing
+terminal-seek defect and legacy opening defects. The rebuilt GUI verifies the fixes;
+the implementation note records the final runtime evidence and review.
 
 ## Next recommended slice
 

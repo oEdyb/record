@@ -16,6 +16,9 @@ import type { CompositorParamValue } from "./contracts";
 import { NATIVE_SCREEN_BASE_RADIUS_PX, NATIVE_WEBCAM_BASE_PCT } from "./paramUnits";
 
 let currentViewId: number | null = null;
+// Cache only the last submitted scene for this view. Each record owns its failure
+// handler so a rejected older send cannot clear a newer scene's duplicate gate.
+let submittedScene: { json: string } | null = null;
 const listeners = new Set<() => void>();
 /** Derniers params poussés, par clé — rejoués à l'activation d'une vue (voir plus bas). */
 const lastParams = new Map<string, CompositorParamValue>();
@@ -26,6 +29,7 @@ export function setCurrentNativeViewId(id: number | null): void {
 		return;
 	}
 	currentViewId = id;
+	submittedScene = null;
 	// Rejoue les params connus sur la vue qui vient de s'activer. Rend la synchro
 	// indépendante de l'ordre de montage : une valeur poussée avant l'existence de la vue
 	// (memoïsée par setNativeParam) est appliquée ici, pas seulement les changements futurs.
@@ -80,7 +84,11 @@ export function setNativeScene(sceneJson: string): void {
 	if (currentViewId === null) {
 		return;
 	}
+	if (submittedScene?.json === sceneJson) return;
+	const submission = { json: sceneJson };
+	submittedScene = submission;
 	setCompositorScene(currentViewId, sceneJson).catch((error: unknown) => {
+		if (submittedScene === submission) submittedScene = null;
 		console.warn("[compositor-view] setNativeScene failed:", error);
 	});
 }
