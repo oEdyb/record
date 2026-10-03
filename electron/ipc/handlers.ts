@@ -2970,10 +2970,8 @@ export function registerIpcHandlers(
 					...request.video,
 					hideSystemCursor: cursorCaptureMode === "editable-overlay",
 				},
-				// The renderer owns one camera file per clip. Keep camera-only changes
-				// out of the ScreenCaptureKit config key so they do not reconfigure the
-				// screen stream before Continue.
-				webcam: { enabled: false, width: 0, height: 0, fps: 0 },
+				// Native camera originals are MOV files owned by the helper per clip.
+				webcam: request.webcam,
 				cursor: { mode: cursorCaptureMode },
 				outputs: {
 					screenPath: outputPath,
@@ -2990,12 +2988,12 @@ export function registerIpcHandlers(
 		recordingsDir: RECORDINGS_DIR,
 		now: Date.now,
 		findHelperPath: findNativeMacCaptureHelperPath,
-		createHelper: (helperPath, config, onFatalError) => {
+		createHelper: (helperPath, config, onFatalError, onOriginalStarted) => {
 			const process = spawn(helperPath, [JSON.stringify(config)], {
 				cwd: RECORDINGS_DIR,
 				stdio: ["pipe", "pipe", "pipe"],
 			});
-			return new NativeMacHelperClient(process, { onFatalError });
+			return new NativeMacHelperClient(process, { onFatalError, onOriginalStarted });
 		},
 		resolveCapture: resolveNativeMacCaptureConfig,
 		prepareCapturePermissions: (request) =>

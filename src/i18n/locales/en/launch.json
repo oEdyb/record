@@ -105,6 +105,10 @@
 		"noMicrophones": "No microphone found",
 		"cameraQuality": "Camera quality",
 		"preview": "Preview",
-		"previewUnavailable": "Preview unavailable"
+		"previewUnavailable": "Preview unavailable",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }

@@ -3,15 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createEmptyDocument } from "../../src/lib/ai-edition/schema";
-import { inspectSourceAudioLayout } from "../stt/sourceAudio";
 import { exportSourceHandoff } from "./sourceHandoff";
+import { inspectHandoffSourceMedia } from "./sourceHandoffMedia";
 
-vi.mock("../stt/sourceAudio", () => ({ inspectSourceAudioLayout: vi.fn() }));
+vi.mock("./sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
 vi.mock("../media/audioPeaks", () => ({ resolveFfmpeg: () => null, audioTrackMapArgs: () => [] }));
 let root: string;
 beforeEach(async () => {
 	root = await fs.mkdtemp(path.join(os.tmpdir(), "source-handoff-test-"));
-	vi.mocked(inspectSourceAudioLayout)
+	vi.mocked(inspectHandoffSourceMedia)
 		.mockReset()
 		.mockResolvedValue({ hasAudio: false, hasKlipptMetadata: false, roles: [], durationSec: 10 });
 });
@@ -68,6 +68,22 @@ async function fixture() {
 	return doc;
 }
 
+async function exportedClips(timelinePath: string) {
+	const timeline = JSON.parse(await fs.readFile(timelinePath, "utf8"));
+	return timeline.tracks.children[0].children.map(
+		(clip: {
+			metadata: {
+				klippt: {
+					sourceStartSec: number;
+					sourceEndSec: number;
+					timelineStartSec: number;
+					timelineEndSec: number;
+				};
+			};
+		}) => clip.metadata.klippt,
+	);
+}
+
 it("copies kept sources once, preserves originals and hidden camera, and writes trimmed take timing", async () => {
 	const doc = await fixture();
 	const approved = vi.fn((file: string) => file);
@@ -81,14 +97,16 @@ it("copies kept sources once, preserves originals and hidden camera, and writes 
 	);
 	expect(await fs.readFile(doc.assets[0].originalPath, "utf8")).toBe("screen-original");
 	expect(manifest.sources[0].camera).toMatchObject({
-		offsetMs: -775,
 		visibleInKlippt: false,
 		file: "001-camera.mp4",
 	});
-	expect(manifest.clips).toMatchObject([
+	expect(await exportedClips(result.timelinePath)).toMatchObject([
 		{ sourceStartSec: 0, sourceEndSec: 2, timelineStartSec: 0, timelineEndSec: 2 },
 		{ sourceStartSec: 4, sourceEndSec: 10, timelineStartSec: 2, timelineEndSec: 8 },
 	]);
+	expect(manifest).not.toHaveProperty("clips");
+	expect(manifest.sources[0].camera).not.toHaveProperty("offsetMs");
+	expect(manifest.sources[0].camera).not.toHaveProperty("startMs");
 	expect(manifest.sources).toHaveLength(1);
 	expect(manifest.timeline).toEqual({ file: "timeline.otio", frameRate: 60 });
 	const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
@@ -126,7 +144,7 @@ it("does not validate removed spans that share a kept source", async () => {
 
 it("cleans up a failed timeline when a camera duration is unreadable", async () => {
 	const doc = await fixture();
-	vi.mocked(inspectSourceAudioLayout)
+	vi.mocked(inspectHandoffSourceMedia)
 		.mockResolvedValueOnce({
 			hasAudio: false,
 			hasKlipptMetadata: false,
@@ -158,7 +176,7 @@ it("rejects unapproved and symlinked sources before creating output", async () =
 
 it("removes only its incomplete output when media preparation fails", async () => {
 	const doc = await fixture();
-	vi.mocked(inspectSourceAudioLayout).mockRejectedValueOnce(new Error("Unreadable recording"));
+	vi.mocked(inspectHandoffSourceMedia).mockRejectedValueOnce(new Error("Unreadable recording"));
 	await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow("Unreadable");
 	expect((await fs.readdir(root)).sort()).toEqual(["camera.mp4", "screen.mp4"]);
 });
@@ -167,7 +185,7 @@ it("omits fully removed takes and rejects an empty handoff", async () => {
 	const doc = await fixture();
 	doc.timeline.trimRanges[0].startSec = 0;
 	doc.timeline.trimRanges[0].endSec = 10;
-	await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow("no kept takes");
+	await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow("no kept clips");
 });
 
 it("bounds provisional durations to the actual media length", async () => {
@@ -175,9 +193,9 @@ it("bounds provisional durations to the actual media length", async () => {
 	doc.timeline.clips[0].sourceEndSec = 60;
 	doc.timeline.clips[0].timelineEndSec = 60;
 	const result = await exportSourceHandoff(doc, root, (file) => file);
-	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
-	expect(manifest.clips.at(-1).sourceEndSec).toBe(10);
-	expect(manifest.clips.at(-1).timelineEndSec).toBe(8);
+	const clips = await exportedClips(result.timelinePath);
+	expect(clips.at(-1).sourceEndSec).toBe(10);
+	expect(clips.at(-1).timelineEndSec).toBe(8);
 });
 
 it("bounds provisional media before applying cuts that extend past its end", async () => {
@@ -187,9 +205,9 @@ it("bounds provisional media before applying cuts that extend past its end", asy
 	doc.timeline.trimRanges[0].startSec = 5;
 	doc.timeline.trimRanges[0].endSec = 20;
 	const result = await exportSourceHandoff(doc, root, (file) => file);
-	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
-	expect(manifest.clips).toMatchObject([{ sourceStartSec: 0, sourceEndSec: 5, timelineEndSec: 5 }]);
-	expect(manifest.clips).toHaveLength(1);
+	const clips = await exportedClips(result.timelinePath);
+	expect(clips).toMatchObject([{ sourceStartSec: 0, sourceEndSec: 5, timelineEndSec: 5 }]);
+	expect(clips).toHaveLength(1);
 });
 
 it("reports an actionable destination failure without changing source media", async () => {
@@ -198,4 +216,139 @@ it("reports an actionable destination failure without changing source media", as
 		exportSourceHandoff(doc, path.join(root, "missing"), (file) => file),
 	).rejects.toThrow("Choose a writable folder");
 	expect(await fs.readFile(doc.assets[0].originalPath, "utf8")).toBe("screen-original");
+});
+
+it("byte-copies all four complete sources and stores their cuts and offsets only in OTIO", async () => {
+	const doc = await fixture();
+	const microphone = path.join(root, "microphone.m4a");
+	const system = path.join(root, "system.m4a");
+	await fs.writeFile(microphone, Buffer.from([0, 1, 2, 3, 255]));
+	await fs.writeFile(system, Buffer.from([128, 32, 64, 16]));
+	Object.assign(doc.assets[0], {
+		microphoneAudioPath: microphone,
+		systemAudioPath: system,
+		microphoneAudioOffsetMs: 200,
+		systemAudioOffsetMs: 100,
+	});
+	vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+		hasAudio: file.endsWith(".m4a") || file.endsWith("screen.mp4"),
+		hasKlipptMetadata: file.endsWith("screen.mp4"),
+		roles: file.endsWith("screen.mp4") ? ["you", "system"] : [],
+		durationSec: 10,
+		...(file.endsWith(".mp4")
+			? { video: { codec: "h264", width: 1920, height: 1080, fps: 60 } }
+			: {}),
+	}));
+	const result = await exportSourceHandoff(doc, root, (file) => file);
+	for (const [original, exported] of [
+		[doc.assets[0].originalPath, "001-screen.mp4"],
+		[doc.assets[0].cameraTrack!.sourcePath, "001-camera.mp4"],
+		[microphone, "001-microphone.m4a"],
+		[system, "001-system.m4a"],
+	]) {
+		expect(await fs.readFile(path.join(result.directory, exported))).toEqual(
+			await fs.readFile(original),
+		);
+	}
+	expect(result.sourceCount).toBe(4);
+	expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(4);
+	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
+	expect(manifest).toMatchObject({
+		version: 2,
+		mediaBytes: "unchanged",
+		audioEncoding: "unchanged",
+	});
+	expect(manifest.sources[0].screen.audio).toEqual([
+		{ role: "microphone", file: "001-microphone.m4a", durationSec: 10 },
+		{ role: "system", file: "001-system.m4a", durationSec: 10 },
+	]);
+	expect(JSON.stringify(manifest)).not.toMatch(
+		/Offset|offset|sourceStartSec|sourceEndSec|timelineStartSec/,
+	);
+	const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
+	expect(timeline.tracks.children).toHaveLength(4);
+	expect(timeline.tracks.children[2].children[0]).toMatchObject({
+		OTIO_SCHEMA: "Gap.1",
+		source_range: { duration: { value: 12 } },
+	});
+	expect(timeline.tracks.children[2].children[1]).toMatchObject({
+		name: "001-microphone.m4a",
+		metadata: { klippt: { sourceOffsetSec: 0.2 } },
+	});
+	expect(timeline.tracks.children[3].children[0]).toMatchObject({
+		OTIO_SCHEMA: "Gap.1",
+		source_range: { duration: { value: 6 } },
+	});
+});
+
+it("retains original MKV and WebM containers even when their video could be remuxed", async () => {
+	const doc = await fixture();
+	const screen = path.join(root, "screen.mkv");
+	const camera = path.join(root, "camera.webm");
+	await fs.rename(doc.assets[0].originalPath, screen);
+	await fs.rename(doc.assets[0].cameraTrack!.sourcePath, camera);
+	doc.assets[0].originalPath = screen;
+	doc.assets[0].cameraTrack!.sourcePath = camera;
+	vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+		hasAudio: false,
+		hasKlipptMetadata: false,
+		roles: [],
+		durationSec: 10,
+		video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
+	});
+	const result = await exportSourceHandoff(doc, root, (file) => file);
+	expect(await fs.readFile(path.join(result.directory, "001-screen.mkv"))).toEqual(
+		await fs.readFile(screen),
+	);
+	expect(await fs.readFile(path.join(result.directory, "001-camera.webm"))).toEqual(
+		await fs.readFile(camera),
+	);
+	expect(
+		result.warnings.filter((warning) => warning.includes("original container retained")),
+	).toHaveLength(2);
+	expect((await fs.readdir(result.directory)).some((file) => file.endsWith(".mov"))).toBe(false);
+});
+
+it("keeps legacy embedded audio raw and discloses its unavailable standalone originals", async () => {
+	const doc = await fixture();
+	vi.mocked(inspectHandoffSourceMedia).mockResolvedValueOnce({
+		hasAudio: true,
+		hasKlipptMetadata: true,
+		roles: ["you", "system"],
+		durationSec: 10,
+	});
+	const result = await exportSourceHandoff(doc, root, (file) => file);
+	expect(result.sourceCount).toBe(2);
+	expect((await fs.readdir(result.directory)).filter((file) => /\.(wav|m4a)$/.test(file))).toEqual(
+		[],
+	);
+	expect(result.warnings.join(" ")).toContain("it was not extracted");
+	const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
+	expect(timeline.tracks.children[2].children[0].OTIO_SCHEMA).toBe("Gap.1");
+	expect(timeline.tracks.children[4].children[0].name).toBe("001-screen.mp4");
+});
+
+it("rejects a missing original audio file before publishing any source folder", async () => {
+	const doc = await fixture();
+	doc.assets[0].microphoneAudioPath = path.join(root, "missing.m4a");
+	await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow(
+		"Source file unavailable",
+	);
+	expect((await fs.readdir(root)).filter((file) => file.includes("-sources-"))).toEqual([]);
+});
+
+it("checks standalone audio isolation even when its path aliases an already copied video", async () => {
+	const doc = await fixture();
+	doc.assets[0].microphoneAudioPath = doc.assets[0].originalPath;
+	vi.mocked(inspectHandoffSourceMedia).mockResolvedValueOnce({
+		hasAudio: true,
+		hasKlipptMetadata: true,
+		roles: ["you"],
+		durationSec: 10,
+		video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
+	});
+	await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow(
+		"not standalone audio",
+	);
+	expect((await fs.readdir(root)).sort()).toEqual(["camera.mp4", "screen.mp4"]);
 });

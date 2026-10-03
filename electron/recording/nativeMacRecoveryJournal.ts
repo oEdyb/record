@@ -6,7 +6,16 @@ import {
 	type RecordingSession,
 	type RecordingSessionClip,
 } from "../../src/lib/recordingSession";
+import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
 import { writeJsonDurably } from "../filesystem/durableJson";
+
+export type NativeMacRecoveredSession = RecordingSession & { recoveryWarnings?: string[] };
+
+const ORIGINAL_FIELDS = [
+	["webcamVideoPath", "webcamOffsetMs", "webcam", "video"],
+	["microphoneAudioPath", "microphoneAudioOffsetMs", "microphone", "audio"],
+	["systemAudioPath", "systemAudioOffsetMs", "system", "audio"],
+] as const;
 
 const JOURNAL_SCHEMA_VERSION = 1;
 const JOURNAL_SUFFIX = ".recovery.json";
@@ -116,8 +125,9 @@ async function discoverUnjournaledClips(
 async function recoverSession(
 	recordingsDir: string,
 	session: RecordingSession,
-): Promise<RecordingSession | null> {
+): Promise<NativeMacRecoveredSession | null> {
 	const recoveredClips: RecordingSessionClip[] = [];
+	const recoveryWarnings: string[] = [];
 	const candidates = [
 		...(session.clips ?? []),
 		...(await discoverUnjournaledClips(recordingsDir, session)),
@@ -129,7 +139,53 @@ async function recoverSession(
 		}
 		const size = await readableSize(clip.screenVideoPath);
 		const readable = size !== null && size > 0;
-		recoveredClips.push(readable ? clip : { ...clip, removed: true });
+		if (!readable) {
+			recoveredClips.push({ ...clip, removed: true });
+			continue;
+		}
+		const recovered = { ...clip };
+		for (const [field, offsetField, suffix, mediaType] of ORIGINAL_FIELDS) {
+			const originalPath = clip[field];
+			if (!originalPath) continue;
+			delete recovered[field];
+			delete recovered[offsetField];
+			try {
+				const stem = path.join(
+					recordingsDir,
+					`recording-${session.createdAt}-clip-${String(clip.index + 1).padStart(4, "0")}`,
+				);
+				const extension = path.extname(originalPath);
+				if (
+					!(
+						(mediaType === "video" && extension === ".mov") ||
+						(mediaType === "audio" && [".mov", ".m4a", ".mp4"].includes(extension))
+					) ||
+					path.resolve(originalPath) !== `${stem}-${suffix}${extension}`
+				)
+					throw new Error("unowned source path");
+				const stats = await fs.lstat(originalPath);
+				if (!stats.isFile() || stats.isSymbolicLink() || stats.size <= 0)
+					throw new Error("empty or missing source");
+				const offsetMs = clip[offsetField];
+				if (typeof offsetMs !== "number" || !Number.isFinite(offsetMs) || offsetMs < 0)
+					throw new Error("missing captured source timing");
+				const media = await inspectHandoffSourceMedia(originalPath);
+				if (
+					!media.durationSec ||
+					!Number.isFinite(media.durationSec) ||
+					media.durationSec <= 0 ||
+					(mediaType === "video" ? !media.video : !media.hasAudio)
+				)
+					throw new Error("unreadable source media");
+				recovered[field] = originalPath;
+				recovered[offsetField] = offsetMs;
+			} catch (error) {
+				recoveryWarnings.push(
+					`The ${suffix} original for clip ${clip.index + 1} could not be recovered: ${error instanceof Error ? error.message : String(error)}.`,
+				);
+			}
+		}
+		recoveredClips.push(recovered);
 	}
 
 	const firstKept = recoveredClips.find((clip) => !clip.removed);
@@ -139,6 +195,7 @@ async function recoverSession(
 			screenVideoPath: firstKept.screenVideoPath,
 			clips: recoveredClips,
 			schemaVersion: 2,
+			...(recoveryWarnings.length > 0 ? { recoveryWarnings } : {}),
 		};
 	}
 
@@ -169,7 +226,7 @@ async function readRecoverySession(filePath: string): Promise<RecordingSession |
 export async function restoreNativeMacRecoverySession(
 	recordingsDir: string,
 	recordingId: number,
-): Promise<RecordingSession | null> {
+): Promise<NativeMacRecoveredSession | null> {
 	const session = await readRecoverySession(
 		nativeMacRecoveryJournalPath(recordingsDir, recordingId),
 	);
@@ -178,7 +235,7 @@ export async function restoreNativeMacRecoverySession(
 
 export async function restoreLatestNativeMacRecoverySession(
 	recordingsDir: string,
-): Promise<RecordingSession | null> {
+): Promise<NativeMacRecoveredSession | null> {
 	let entries: string[];
 	try {
 		entries = await fs.readdir(recordingsDir);

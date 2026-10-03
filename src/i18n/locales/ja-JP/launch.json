@@ -105,6 +105,10 @@
 		"noMicrophones": "マイクが見つかりません",
 		"cameraQuality": "カメラ画質",
 		"preview": "プレビュー",
-		"previewUnavailable": "プレビューを利用できません"
+		"previewUnavailable": "プレビューを利用できません",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }

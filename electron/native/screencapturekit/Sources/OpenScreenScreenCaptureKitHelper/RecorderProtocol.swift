@@ -38,6 +38,7 @@ struct RecordingRequest: Decodable {
 	}
 
 	struct Video: Decodable {
+		let quality: String?
 		let fps: Int
 		let width: Int
 		let height: Int

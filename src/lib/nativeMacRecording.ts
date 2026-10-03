@@ -1,10 +1,11 @@
 import type { Rectangle } from "electron";
+import type { RecordingQuality } from "./recording/recordingQuality";
 import type {
 	CursorCaptureMode,
 	RecordedVideoAssetInput,
 	RecordingSessionClip,
 } from "./recordingSession";
-import { normalizeCursorCaptureMode } from "./recordingSession";
+import { normalizeCursorCaptureMode, normalizeRecordingOriginals } from "./recordingSession";
 
 export type NativeMacSourceType = "display" | "window";
 
@@ -21,6 +22,7 @@ export type NativeMacRecordingRequest = {
 		bounds?: Rectangle;
 	};
 	video: {
+		quality?: RecordingQuality;
 		fps: number;
 		width: number;
 		height: number;
@@ -59,6 +61,33 @@ export type NativeMacHelperReadyEvent = {
 	event: "ready";
 	schemaVersion: 1;
 };
+
+export type NativeMacOriginalStarted = {
+	clipIndex: number;
+	key: "webcamVideoPath" | "microphoneAudioPath" | "systemAudioPath";
+	path: string;
+	offsetMs: number;
+};
+
+export function parseNativeMacOriginalStarted(value: unknown): NativeMacOriginalStarted | null {
+	if (!value || typeof value !== "object") return null;
+	const raw = value as Record<string, unknown>;
+	if (
+		typeof raw.clipIndex !== "number" ||
+		!Number.isSafeInteger(raw.clipIndex) ||
+		raw.clipIndex < 0 ||
+		(raw.key !== "webcamVideoPath" &&
+			raw.key !== "microphoneAudioPath" &&
+			raw.key !== "systemAudioPath") ||
+		typeof raw.path !== "string" ||
+		!raw.path.trim() ||
+		typeof raw.offsetMs !== "number" ||
+		!Number.isFinite(raw.offsetMs) ||
+		raw.offsetMs < 0
+	)
+		return null;
+	return { clipIndex: raw.clipIndex, key: raw.key, path: raw.path, offsetMs: raw.offsetMs };
+}
 
 export type NativeMacHelperRecordingStartedEvent = {
 	event: "recording-started";
@@ -109,6 +138,16 @@ export type NativeMacMetricSummary = {
 };
 
 export type NativeMacCaptureTelemetry = {
+	writerBackpressureEvents?: number;
+	repeatedVideoFrames?: number;
+	completeSourceVideoFps?: number;
+	appendedCameraFrames?: number;
+	originalBackpressureEvents?: number;
+	originalMaxQueueDepth?: number;
+	completeSourceCameraFps?: number;
+	cameraSamples?: number;
+	cameraDroppedFrames?: number;
+	deliveredCameraFps?: number;
 	requestedVideoFps: number;
 	deliveredVideoFps: number;
 	screenSamples: number;
@@ -203,6 +242,7 @@ export function parseNativeMacRecordingClip(value: unknown): RecordingSessionCli
 	}
 	const cursorCaptureMode = normalizeCursorCaptureMode(clip.cursorCaptureMode);
 	return {
+		...normalizeRecordingOriginals(clip),
 		index: clip.index,
 		screenVideoPath: clip.screenVideoPath,
 		durationMs: clip.durationMs,

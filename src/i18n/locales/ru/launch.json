@@ -105,6 +105,10 @@
 		"noMicrophones": "Микрофон не найден",
 		"cameraQuality": "Качество камеры",
 		"preview": "Предпросмотр",
-		"previewUnavailable": "Предпросмотр недоступен"
+		"previewUnavailable": "Предпросмотр недоступен",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }

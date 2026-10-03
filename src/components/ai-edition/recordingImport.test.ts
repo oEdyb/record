@@ -62,6 +62,51 @@ function stubElectronApi(screenVideoPath: string | null) {
 }
 
 describe("importPendingRecording", () => {
+	it("persists native originals and their actual per-source offsets on imported assets", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: "/screen.mp4",
+			durationMs: 1000,
+			webcamVideoPath: "/camera.mov",
+			webcamOffsetMs: 0,
+			microphoneAudioPath: "/mic.m4a",
+			microphoneAudioOffsetMs: 23.5,
+			systemAudioPath: "/system.m4a",
+			systemAudioOffsetMs: 4,
+		};
+		setElectronApi({
+			getCurrentRecordingSession: vi.fn(async () => ({
+				success: true,
+				session: {
+					screenVideoPath: clip.screenVideoPath,
+					createdAt: 7,
+					schemaVersion: 2,
+					clips: [clip],
+				},
+			})),
+			setCurrentRecordingSession: vi.fn(async () => ({ success: true })),
+		});
+		addAsset.mockImplementationOnce(async () => {
+			const asset: AxcutAsset = {
+				id: "asset_native",
+				kind: "video",
+				label: "Recorded",
+				originalPath: clip.screenVideoPath,
+				cameraTrack: null,
+			};
+			const document = useProjectStore.getState().document!;
+			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			return asset;
+		});
+		await importPendingRecording();
+		expect(useProjectStore.getState().document?.assets[0]).toMatchObject({
+			cameraTrack: { sourcePath: clip.webcamVideoPath, offsetMs: 0 },
+			microphoneAudioPath: clip.microphoneAudioPath,
+			microphoneAudioOffsetMs: 23.5,
+			systemAudioPath: clip.systemAudioPath,
+			systemAudioOffsetMs: 4,
+		});
+	});
 	beforeEach(() => {
 		vi.clearAllMocks();
 		probeVideoDuration.mockResolvedValue(null);

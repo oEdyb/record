@@ -1,5 +1,5 @@
 import { FolderOpen, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { nativeBridgeClient } from "@/native/client";
 import type { SourceHandoffResult } from "@/native/contracts";
@@ -16,25 +16,38 @@ export function SourceExportPanel({
 }) {
 	const [result, setResult] = useState<SourceHandoffResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const activeRequest = useRef(false);
+	const currentDocument = useRef(document);
+	useLayoutEffect(() => {
+		currentDocument.current = document;
+		setResult(null);
+		setError(null);
+		return () => {
+			if (currentDocument.current === document) currentDocument.current = null;
+		};
+	}, [document]);
 	async function start() {
-		if (!document || busy) return;
+		if (!document || busy || activeRequest.current) return;
+		activeRequest.current = true;
 		onBusy(true);
 		setError(null);
 		setResult(null);
 		try {
 			const next = await nativeBridgeClient.aiEdition.exportSources(structuredClone(document));
-			if (!next.canceled) setResult(next);
+			if (currentDocument.current === document && !next.canceled) setResult(next);
 		} catch (error) {
-			setError(error instanceof Error ? error.message : String(error));
+			if (currentDocument.current === document)
+				setError(error instanceof Error ? error.message : String(error));
 		} finally {
+			activeRequest.current = false;
 			onBusy(false);
 		}
 	}
 	return (
 		<section style={{ display: "flex", flexDirection: "column", gap: 16, color: "var(--fg-2)" }}>
 			<p style={{ margin: 0 }}>
-				Each Pause/Resume take gets its own screen, camera, and audio files. A recording without
-				pauses stays one take. Video keeps its original quality.
+				Each Pause/Continue clip gets its original screen, camera, microphone, and system audio
+				files. A recording without pauses stays one clip. Files keep their complete original bytes.
 			</p>
 			<p style={{ margin: 0, fontSize: 12, color: "var(--muted)" }}>
 				Includes complete source recordings and an importable timeline with cuts and camera sync.
@@ -84,7 +97,7 @@ export function SourceExportPanel({
 				</button>
 			</div>
 			<div role="status" aria-live="polite">
-				{busy ? "Copying video and preparing separate audio…" : ""}
+				{busy ? "Copying original files…" : ""}
 			</div>
 		</section>
 	);

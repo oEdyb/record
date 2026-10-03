@@ -22,6 +22,30 @@ function memoryStorage() {
 }
 
 describe("editing preferences", () => {
+	it("defaults to Separate takes and preserves an explicit output choice through other preference writes", () => {
+		const storage = memoryStorage();
+		expect(loadEditingPreferences(storage).export.output).toBe("sources");
+		expect(saveExportPreferences({ output: "video" }, storage)).toBe(true);
+		expect(saveExportPreferences({ fps: 30 }, storage)).toBe(true);
+		expect(loadEditingPreferences(storage).export.output).toBe("video");
+		expect(saveExportPreferences({ output: "sources" }, storage)).toBe(true);
+		expect(loadEditingPreferences(storage).export.output).toBe("sources");
+	});
+	it("ignores an invalid remembered output while preserving valid older export preferences", () => {
+		const storage = memoryStorage();
+		storage.setItem(
+			"screenrec.editing-preferences:v1",
+			JSON.stringify({
+				version: 1,
+				export: { output: "raw", fps: 24, format: "gif" },
+			}),
+		);
+		expect(loadEditingPreferences(storage).export).toMatchObject({
+			output: "sources",
+			fps: 24,
+			format: "gif",
+		});
+	});
 	it("starts plain even when remembered effects and captions are enabled", () => {
 		const preferences = loadEditingPreferences(memoryStorage());
 		preferences.captions.enabled = true;

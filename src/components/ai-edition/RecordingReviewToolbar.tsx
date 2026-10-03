@@ -27,7 +27,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 			aria-label={t("recordingReview.controls")}
 			aria-busy={props.preparing}
 		>
-			<button type="button" disabled={props.preparing} onClick={props.onRecordings}>
+			<button type="button" disabled={props.preparing || props.busy} onClick={props.onRecordings}>
 				<FolderOpen size={16} aria-hidden="true" /> {t("recordingReview.recordings")}
 			</button>
 			<span className={styles.title} title={props.title ?? undefined}>

@@ -25,7 +25,7 @@ function span(start = 0, end = 2, timelineStart = 0): HandoffSpan {
 	};
 }
 
-it("places only isolated WAVs on audio tracks and preserves cuts on all four tracks", () => {
+it("places original standalone audio on audio tracks and preserves cuts on all four tracks", () => {
 	const { timeline, warnings } = buildSourceTimeline("Test", [source], [span(), span(4, 10, 2)]);
 	const tracks = timeline.tracks.children;
 	expect(tracks.map((track) => [track.name, track.kind])).toEqual([
@@ -49,6 +49,57 @@ it("places only isolated WAVs on audio tracks and preserves cuts on all four tra
 			}
 		}
 	}
+});
+
+it("applies each original audio start delay once and preserves later cuts and short tails", () => {
+	const delayed: HandoffSource = {
+		...source,
+		screen: {
+			...source.screen,
+			audio: [
+				{ role: "microphone", file: "mic.m4a", durationSec: 2, offsetSec: 0.2 },
+				{ role: "system", file: "system.m4a", durationSec: 0.5, offsetSec: 0.1 },
+			],
+		},
+	};
+	const tracks = buildSourceTimeline("Delayed", [delayed], [span(0, 1), span(2, 3, 1)]).timeline
+		.tracks.children;
+	expect(
+		tracks[2].children.map((child) => [
+			child.OTIO_SCHEMA,
+			child.source_range.start_time.value,
+			child.source_range.duration.value,
+		]),
+	).toEqual([
+		["Gap.1", 0, 12],
+		["Clip.2", 0, 48],
+		["Clip.2", 108, 12],
+		["Gap.1", 0, 48],
+	]);
+	expect(
+		tracks[3].children.map((child) => [
+			child.OTIO_SCHEMA,
+			child.source_range.start_time.value,
+			child.source_range.duration.value,
+		]),
+	).toEqual([
+		["Gap.1", 0, 6],
+		["Clip.2", 0, 30],
+		["Gap.1", 0, 24],
+		["Gap.1", 0, 60],
+	]);
+	const kept = tracks[2].children[2];
+	expect(kept).toMatchObject({
+		metadata: {
+			klippt: {
+				sourceStartSec: 2,
+				sourceEndSec: 3,
+				timelineStartSec: 1,
+				timelineEndSec: 2,
+				sourceOffsetSec: 0.2,
+			},
+		},
+	});
 });
 
 it("keeps late camera starts, short camera tails, and missing takes as gaps", () => {

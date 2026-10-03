@@ -105,6 +105,10 @@
 		"noMicrophones": "Không tìm thấy micrô",
 		"cameraQuality": "Chất lượng camera",
 		"preview": "Xem trước",
-		"previewUnavailable": "Không thể xem trước"
+		"previewUnavailable": "Không thể xem trước",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }

@@ -5,6 +5,7 @@ import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import type { CameraDevice } from "../../hooks/useCameraDevices";
 import { useCameraPreviewStream } from "../../hooks/useCameraPreviewStream";
 import type { MicrophoneDevice } from "../../hooks/useMicrophoneDevices";
+import type { RecordingQuality } from "../../lib/recording/recordingQuality";
 import {
 	formatWebcamFormat,
 	sameWebcamFormat,
@@ -18,6 +19,10 @@ const LEVEL_SEGMENT_KEYS = Array.from({ length: LEVEL_SEGMENTS }, (_, i) => `seg
 
 export interface HudDeviceSettingsLabels {
 	title: string;
+	recordingQuality?: string;
+	qualityHigh?: string;
+	qualityStandard?: string;
+	nativeCamera?: string;
 	done: string;
 	microphone: string;
 	camera: string;
@@ -96,6 +101,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	activeCameraId,
 	cameraEnabled,
 	cameraStream,
+	recordingQuality = "high",
+	onSelectRecordingQuality,
 	webcamFormat,
 	cameraLoading,
 	cameraError,
@@ -112,6 +119,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	activeCameraId: string | undefined;
 	cameraEnabled: boolean;
 	cameraStream: MediaStream | null;
+	recordingQuality?: RecordingQuality;
+	onSelectRecordingQuality?: (quality: RecordingQuality) => void;
 	webcamFormat: WebcamFormat;
 	cameraLoading: boolean;
 	cameraError: string | null;
@@ -139,6 +148,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		// off, this panel can own one temporary verification stream.
 		enabled: hasCamera && (!cameraEnabled || cameraStream !== null),
 		deviceId: activeCameraId,
+		nativeFormat: recordingQuality === "high",
 		format: webcamFormat,
 		externalStream: cameraStream,
 	});
@@ -149,6 +159,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	// behind; syncing it back then would silently undo the user's selection.
 	useEffect(() => {
 		if (
+			recordingQuality === "standard" &&
 			supportedFormats.length > 0 &&
 			!supportedFormats.some((format) => sameWebcamFormat(format, webcamFormat)) &&
 			!sameWebcamFormat(activeFormat, webcamFormat) &&
@@ -156,7 +167,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		) {
 			onSelectWebcamFormat(activeFormat);
 		}
-	}, [activeFormat, onSelectWebcamFormat, supportedFormats, webcamFormat]);
+	}, [activeFormat, onSelectWebcamFormat, supportedFormats, webcamFormat, recordingQuality]);
 
 	return (
 		<div
@@ -180,6 +191,23 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 				</button>
 			</div>
 
+			<div className={styles.hudModalMeterRow}>
+				<label className={styles.hudModalMeterLabel} htmlFor="hud-recording-quality">
+					{labels.recordingQuality ?? "Recording quality"}
+				</label>
+				<AppSelect
+					id="hud-recording-quality"
+					data-testid="hud-recording-quality"
+					className={styles.hudModalSelect}
+					value={recordingQuality}
+					onChange={(event) =>
+						onSelectRecordingQuality?.(event.target.value === "standard" ? "standard" : "high")
+					}
+				>
+					<option value="high">{labels.qualityHigh ?? "High"}</option>
+					<option value="standard">{labels.qualityStandard ?? "Standard"}</option>
+				</AppSelect>
+			</div>
 			<div className={styles.hudMenuSectionLabel}>{labels.microphone}</div>
 			{micDevices.length === 0 ? (
 				<div className={styles.hudModalEmpty}>{labels.noMicrophones}</div>
@@ -237,25 +265,31 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					<label className={styles.hudModalMeterLabel} htmlFor="hud-webcam-format">
 						{labels.cameraQuality}
 					</label>
-					<AppSelect
-						id="hud-webcam-format"
-						data-testid="hud-webcam-format"
-						className={styles.hudModalSelect}
-						value={webcamFormatKey(webcamFormat)}
-						disabled={supportedFormats.length === 0}
-						onChange={(event) => {
-							const selected = formatOptions.find(
-								(format) => webcamFormatKey(format) === event.target.value,
-							);
-							if (selected) onSelectWebcamFormat(selected);
-						}}
-					>
-						{formatOptions.map((format) => (
-							<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
-								{formatWebcamFormat(format)}
-							</option>
-						))}
-					</AppSelect>
+					{recordingQuality === "high" ? (
+						<span className={styles.hudNativeCameraFormat} data-testid="hud-native-camera-format">
+							{labels.nativeCamera ?? "Native camera"}
+						</span>
+					) : (
+						<AppSelect
+							id="hud-webcam-format"
+							data-testid="hud-webcam-format"
+							className={styles.hudModalSelect}
+							value={webcamFormatKey(webcamFormat)}
+							disabled={supportedFormats.length === 0}
+							onChange={(event) => {
+								const selected = formatOptions.find(
+									(format) => webcamFormatKey(format) === event.target.value,
+								);
+								if (selected) onSelectWebcamFormat(selected);
+							}}
+						>
+							{formatOptions.map((format) => (
+								<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
+									{formatWebcamFormat(format)}
+								</option>
+							))}
+						</AppSelect>
+					)}
 				</div>
 			) : null}
 			{hasCamera ? (

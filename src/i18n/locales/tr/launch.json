@@ -105,6 +105,10 @@
 		"noMicrophones": "Mikrofon bulunamadı",
 		"cameraQuality": "Kamera kalitesi",
 		"preview": "Önizleme",
-		"previewUnavailable": "Önizleme kullanılamıyor"
+		"previewUnavailable": "Önizleme kullanılamıyor",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }

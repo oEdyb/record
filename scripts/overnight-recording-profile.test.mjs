@@ -5,10 +5,65 @@ import {
 	createTerminalFixture,
 	median,
 	parseProfileArgs,
+	profileRequiresSourceDirectory,
 	reviewMatchesRecording,
+	selectVideoExportChoice,
 } from "./overnight-recording-profile-utils.mjs";
 
 describe("recording performance proof", () => {
+	it("waits for a delayed choice dialog before checking and selecting One video", async () => {
+		let visible = false;
+		let selected = false;
+		const dialog = {
+			async waitFor() {
+				await Promise.resolve();
+				visible = true;
+			},
+			getByRole() {
+				return {
+					async count() {
+						return visible ? 1 : 0;
+					},
+					async click() {
+						selected = true;
+					},
+				};
+			},
+		};
+		expect(await dialog.getByRole().count()).toBe(0);
+		expect(await selectVideoExportChoice(dialog)).toBe(true);
+		expect(selected).toBe(true);
+	});
+	it("retains the legacy automatic picker when no recording choice exists", async () => {
+		const dialog = {
+			async waitFor() {
+				return undefined;
+			},
+			getByRole() {
+				return {
+					async count() {
+						return 0;
+					},
+					async click() {
+						throw new Error("No choice");
+					},
+				};
+			},
+		};
+		expect(await selectVideoExportChoice(dialog)).toBe(false);
+	});
+	it("keeps LaunchServices video fixtures inside the required private source directory", () => {
+		expect(
+			profileRequiresSourceDirectory({
+				"export-mode": "video",
+				"fixture-launch": "launchservices",
+			}),
+		).toBe(true);
+		expect(profileRequiresSourceDirectory({ "export-mode": "sources" })).toBe(true);
+		expect(
+			profileRequiresSourceDirectory({ "export-mode": "video", "fixture-launch": "direct" }),
+		).toBe(false);
+	});
 	it("generates a moving terminal whose browser script parses", () => {
 		const html = createTerminalFixture("owned fixture");
 		const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
@@ -47,6 +102,12 @@ describe("recording performance proof", () => {
 		["--durations", "NaN"],
 		["--phase", "release"],
 		["--audio", "camera"],
+		["--quality", "highest"],
+		["--fixture", "fake"],
+		["--export-mode", "render"],
+		["--kill-at-sec", "NaN"],
+		["--kill-at-sec", "0"],
+		["--closed-source", "true"],
 	])("rejects unsupported or invalid options %j", (...argv) => {
 		expect(() => parseProfileArgs(argv)).toThrow();
 	});

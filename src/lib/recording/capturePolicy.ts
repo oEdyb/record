@@ -2,6 +2,11 @@ import type { NativeMacRecordingRequest } from "../nativeMacRecording";
 import { parseMacDisplayIdFromSourceId, parseMacWindowIdFromSourceId } from "../nativeMacRecording";
 import type { CursorCaptureMode } from "../recordingSession";
 import type { WebcamFormat } from "../webcamFormats";
+import {
+	normalizeRecordingQuality,
+	type RecordingQuality,
+	recordingQualityBitrate,
+} from "./recordingQuality";
 
 export const TARGET_FRAME_RATE = 60;
 export const MIN_FRAME_RATE = 30;
@@ -27,6 +32,7 @@ export type CaptureSource = {
 };
 
 export type NativeMacCaptureSettings = {
+	recordingQuality?: RecordingQuality;
 	systemAudioEnabled: boolean;
 	microphone: {
 		enabled: boolean;
@@ -80,6 +86,7 @@ export function buildNativeMacRecordingRequest(input: {
 	const sourceType = source.id.startsWith("window:") ? "window" : "display";
 	const displayId = Number(source.display_id) || parseMacDisplayIdFromSourceId(source.id);
 	const windowId = parseMacWindowIdFromSourceId(source.id);
+	const quality = normalizeRecordingQuality(settings.recordingQuality);
 
 	return {
 		schemaVersion: 1,
@@ -94,10 +101,8 @@ export function buildNativeMacRecordingRequest(input: {
 			fps: TARGET_FRAME_RATE,
 			width: TARGET_WIDTH,
 			height: TARGET_HEIGHT,
-			bitrate: Math.min(
-				computeCaptureBitrate(TARGET_WIDTH, TARGET_HEIGHT),
-				MAC_H264_CAPTURE_BITRATE_MAX,
-			),
+			quality,
+			bitrate: recordingQualityBitrate(quality),
 			hideSystemCursor: settings.cursorCaptureMode === "editable-overlay",
 		},
 		audio: {

@@ -3,7 +3,11 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import type { NativeMacRecordingRequest } from "../../src/lib/nativeMacRecording";
-import { NativeMacHelperClient, NativeMacPauseError } from "./nativeMacHelperClient";
+import {
+	NativeMacHelperClient,
+	NativeMacPauseError,
+	NativeMacResumeRejectedError,
+} from "./nativeMacHelperClient";
 
 function fakeProcess(): ChildProcessWithoutNullStreams {
 	const process = Object.assign(new EventEmitter(), {
@@ -36,6 +40,105 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("keeps an acknowledged paused Continue rejection retryable", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const onOriginalStarted = vi.fn();
+		const client = new NativeMacHelperClient(process, { onFatalError, onOriginalStarted });
+		const camera = {
+			event: "original-started",
+			clipIndex: 1,
+			key: "webcamVideoPath",
+			path: "/tmp/camera.mov",
+			offsetMs: 23,
+		};
+		const rejected = client.resume();
+		const assertion = expect(rejected).rejects.toBeInstanceOf(NativeMacResumeRejectedError);
+		emit(process, camera);
+		emit(process, {
+			event: "error",
+			code: "clip-resume-rejected",
+			clipIndex: 1,
+			message: "Selected source disappeared; recording remains paused.",
+		});
+		await assertion;
+		expect(client.isRunning()).toBe(true);
+		expect(onFatalError).not.toHaveBeenCalled();
+		const resumed = client.resume();
+		emit(process, { ...camera, offsetMs: 80.5 });
+		emit(process, { event: "recording-resumed", clipIndex: 1 });
+		await expect(resumed).resolves.toBe(1);
+		expect(onOriginalStarted).toHaveBeenCalledTimes(2);
+		expect(onOriginalStarted).toHaveBeenLastCalledWith({
+			clipIndex: 1,
+			key: "webcamVideoPath",
+			path: "/tmp/camera.mov",
+			offsetMs: 80.5,
+		});
+	});
+
+	it.each([
+		undefined,
+		-1,
+		1.5,
+	])("rejects uncorrelated paused rejection index %s", async (clipIndex) => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const resumed = client.resume();
+		const assertion = expect(resumed).rejects.not.toBeInstanceOf(NativeMacResumeRejectedError);
+		emit(process, {
+			event: "error",
+			code: "clip-resume-rejected",
+			clipIndex,
+			message: "Bad rollback index",
+		});
+		await assertion;
+	});
+
+	it("does not classify an unacknowledged clip-start failure as safely paused", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const resumed = client.resume();
+		const assertion = expect(resumed).rejects.not.toBeInstanceOf(NativeMacResumeRejectedError);
+		emit(process, { event: "error", code: "clip-start-failed", message: "Writer failed" });
+		await assertion;
+	});
+
+	it("accepts the paused rejection code only during the Continue operation", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const changed = client.reconfigure(request);
+		const assertion = expect(changed).rejects.not.toBeInstanceOf(NativeMacResumeRejectedError);
+		emit(process, { event: "error", code: "clip-resume-rejected", message: "Wrong operation" });
+		await assertion;
+	});
+
+	it("publishes first-sample original metadata once even when startup replays buffered events", async () => {
+		const process = fakeProcess();
+		const onOriginalStarted = vi.fn();
+		const client = new NativeMacHelperClient(process, { onOriginalStarted });
+		const original = {
+			event: "original-started",
+			clipIndex: 0,
+			key: "microphoneAudioPath",
+			path: "/tmp/microphone.mov",
+			offsetMs: 23.5,
+		};
+		emit(process, original);
+		emit(process, { ...original, key: "systemAudioPath", offsetMs: -1 });
+		emit(process, { ...original, clipIndex: 1.5 });
+		emit(process, { event: "recording-started" });
+		await client.waitForStart();
+		expect(onOriginalStarted).toHaveBeenCalledOnce();
+		expect(onOriginalStarted).toHaveBeenCalledWith({
+			clipIndex: 0,
+			key: "microphoneAudioPath",
+			path: "/tmp/microphone.mov",
+			offsetMs: 23.5,
+		});
+		process.emit("close", null, "SIGKILL");
+	});
+
 	it("reports unexpected helper exit once after a confirmed recording start", async () => {
 		const process = fakeProcess();
 		const onFatalError = vi.fn();
@@ -240,6 +343,51 @@ describe("NativeMacHelperClient", () => {
 		expect(write).not.toHaveBeenCalledWith("stop\n");
 	});
 
+	it.each([
+		"writerBackpressureEvents",
+		"repeatedVideoFrames",
+		"completeSourceVideoFps",
+		"appendedCameraFrames",
+		"originalBackpressureEvents",
+		"originalMaxQueueDepth",
+		"completeSourceCameraFps",
+		"cameraSamples",
+		"cameraDroppedFrames",
+		"deliveredCameraFps",
+	])("rejects invalid optional metric %s", async (field) => {
+		for (const invalid of [-1, Number.POSITIVE_INFINITY, "60"]) {
+			const process = fakeProcess();
+			const client = new NativeMacHelperClient(process);
+			const stopped = client.stop({ screenPath: "/tmp/fallback.mp4", clips: [] });
+			const required = Object.fromEntries(
+				[
+					"requestedVideoFps",
+					"deliveredVideoFps",
+					"screenSamples",
+					"completeScreenSamples",
+					"idleScreenSamples",
+					"blankScreenSamples",
+					"suspendedScreenSamples",
+					"startedScreenSamples",
+					"stoppedScreenSamples",
+					"otherScreenSamples",
+					"appendedVideoFrames",
+					"pendingVideoFrames",
+					"appendFailures",
+					"droppedVideoFrames",
+					"systemAudioSamples",
+					"microphoneAudioSamples",
+				].map((key) => [key, 0]),
+			);
+			emit(process, {
+				event: "recording-stopped",
+				screenPath: "/tmp/clip.mp4",
+				clips: [],
+				telemetry: { ...required, lowPowerMode: false, thermalState: "nominal", [field]: invalid },
+			});
+			await expect(stopped).resolves.not.toHaveProperty("telemetry");
+		}
+	});
 	it("parses bounded capture telemetry from the stopped event", async () => {
 		const process = fakeProcess();
 		const client = new NativeMacHelperClient(process);
@@ -269,6 +417,16 @@ describe("NativeMacHelperClient", () => {
 				microphoneAudioSamples: 480,
 				audioMaxQueueBytes: 3_840,
 				writerMaxQueueDepth: 4,
+				writerBackpressureEvents: 2,
+				repeatedVideoFrames: 7,
+				completeSourceVideoFps: 58.25,
+				appendedCameraFrames: 300,
+				originalBackpressureEvents: 3,
+				originalMaxQueueDepth: 2,
+				completeSourceCameraFps: 29.94,
+				cameraSamples: 305,
+				cameraDroppedFrames: 5,
+				deliveredCameraFps: 30,
 				lowPowerMode: false,
 				thermalState: "nominal",
 				systemAudioDriftMs: summary,
@@ -286,6 +444,16 @@ describe("NativeMacHelperClient", () => {
 				droppedVideoFrames: 7,
 				audioMaxQueueBytes: 3_840,
 				writerMaxQueueDepth: 4,
+				writerBackpressureEvents: 2,
+				repeatedVideoFrames: 7,
+				completeSourceVideoFps: 58.25,
+				appendedCameraFrames: 300,
+				originalBackpressureEvents: 3,
+				originalMaxQueueDepth: 2,
+				completeSourceCameraFps: 29.94,
+				cameraSamples: 305,
+				cameraDroppedFrames: 5,
+				deliveredCameraFps: 30,
 				thermalState: "nominal",
 				systemAudioDriftMs: summary,
 				screenTimestampDriftMs: summary,

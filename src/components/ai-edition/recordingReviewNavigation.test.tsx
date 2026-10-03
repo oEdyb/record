@@ -17,7 +17,7 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
-function navigationDuringImport() {
+function navigationDuringImport(isExporting?: () => boolean) {
 	const importing = deferred<{ consumed: boolean }>();
 	let refreshPending = true;
 	let sessionPending = true;
@@ -33,6 +33,7 @@ function navigationDuringImport() {
 		});
 	const guard = createRecordingReviewNavigation({
 		isPreparing: () => refreshPending || sessionPending,
+		isExporting,
 	});
 	const openLibrary = vi.fn();
 	let openFromMenu: (() => void) | undefined;
@@ -133,6 +134,35 @@ describe("recording review navigation", () => {
 		const apply = vi.fn();
 		expect(await guard.runAfter(prepare, apply)).toBe(false);
 		expect(prepare).not.toHaveBeenCalled();
+		expect(apply).not.toHaveBeenCalled();
+	});
+
+	it("blocks library menu and shortcut during source copying and permits them after completion", async () => {
+		let exporting = false;
+		const state = navigationDuringImport(() => exporting);
+		state.importing.resolve({ consumed: true });
+		await state.importSettled;
+		exporting = true;
+		expect(state.guard.isBlocked()).toBe(true);
+		state.navigate();
+		expect(state.openLibrary).not.toHaveBeenCalled();
+		exporting = false;
+		state.navigate();
+		expect(state.openLibrary).toHaveBeenCalledTimes(2);
+	});
+
+	it("rejects a pending picker result when an export begins before project replacement", async () => {
+		let exporting = false;
+		const guard = createRecordingReviewNavigation({
+			isPreparing: () => false,
+			isExporting: () => exporting,
+		});
+		const picker = deferred<string>();
+		const apply = vi.fn();
+		const navigation = guard.runAfter(() => picker.promise, apply);
+		exporting = true;
+		picker.resolve("old-recording.mp4");
+		expect(await navigation).toBe(false);
 		expect(apply).not.toHaveBeenCalled();
 	});
 

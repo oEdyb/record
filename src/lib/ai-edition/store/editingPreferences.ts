@@ -56,6 +56,7 @@ export type EditorDefaultPreferences = Omit<EditorSettingsSnapshot, "cropRegion"
 export type CaptionDefaultPreferences = Omit<CaptionSettings, "language">;
 
 export interface ExportPreferences {
+	output: "sources" | "video";
 	format: ExportFormat;
 	quality: ExportQuality;
 	fps: 24 | 30 | 60;
@@ -74,6 +75,7 @@ export interface EditingPreferences {
 }
 
 export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
+	output: "sources",
 	format: "mp4",
 	quality: "good",
 	fps: 60,
@@ -284,6 +286,7 @@ function normalizeExportPreferences(
 	const format = raw?.format ?? legacy?.exportFormat;
 	const quality = raw?.quality ?? legacy?.exportQuality;
 	return {
+		output: raw?.output === "video" ? "video" : "sources",
 		format: format === "gif" || format === "mp4" ? format : DEFAULT_EXPORT_PREFERENCES.format,
 		quality:
 			quality === "medium" || quality === "good" || quality === "source"

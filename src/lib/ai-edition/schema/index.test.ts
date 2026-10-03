@@ -396,6 +396,22 @@ describe("axcut-schema v11", () => {
 		).not.toThrow();
 	});
 
+	it("preserves original audio paths/offsets and rejects empty or invalid timing", () => {
+		const asset = {
+			id: "original",
+			kind: "video",
+			label: "Capture",
+			originalPath: "/screen.mp4",
+			microphoneAudioPath: "/microphone.m4a",
+			microphoneAudioOffsetMs: 23.5,
+			systemAudioPath: "/system.m4a",
+			systemAudioOffsetMs: 4,
+		};
+		expect(assetSchema.parse(asset)).toMatchObject(asset);
+		expect(assetSchema.safeParse({ ...asset, microphoneAudioPath: "" }).success).toBe(false);
+		expect(assetSchema.safeParse({ ...asset, systemAudioOffsetMs: -1 }).success).toBe(false);
+	});
+
 	it("assetSchema defaults cameraTrack to null", () => {
 		const asset = assetSchema.parse({
 			id: "asset_1",

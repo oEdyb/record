@@ -77,6 +77,16 @@ export function preferredWebcamConstraints(format: WebcamFormat): MediaTrackCons
 	};
 }
 
+/** Request an actual camera mode, without imposing the saved 1080p preview ceiling. */
+export function nativeWebcamConstraints(supportsResizeMode: boolean): MediaTrackConstraints {
+	return {
+		...(supportsResizeMode ? { resizeMode: { exact: "none" } } : {}),
+		width: { ideal: 7680 },
+		height: { ideal: 4320 },
+		frameRate: { ideal: 60, max: 60 },
+	};
+}
+
 export function applyWebcamFormat(
 	track: Pick<MediaStreamTrack, "applyConstraints">,
 	format: WebcamFormat,
@@ -192,4 +202,8 @@ export async function probeWebcamFormatsCached(
 
 export function clearWebcamFormatProbeCache(): void {
 	probedFormatsByDevice.clear();
+}
+
+export function supportsNativeWebcamMode(constraints: MediaTrackSupportedConstraints): boolean {
+	return "resizeMode" in constraints && constraints.resizeMode === true;
 }

@@ -8,8 +8,8 @@ struct RecordingStartBarrier {
 		pendingClipIndex = clipIndex
 	}
 
-	mutating func acknowledgeAppend(succeeded: Bool) -> Int? {
-		guard succeeded, let clipIndex = pendingClipIndex else { return nil }
+	mutating func acknowledgeAppend(succeeded: Bool, requiredSourcesReady: Bool = true) -> Int? {
+		guard succeeded, requiredSourcesReady, let clipIndex = pendingClipIndex else { return nil }
 		pendingClipIndex = nil
 		return clipIndex
 	}
@@ -18,6 +18,9 @@ struct RecordingStartBarrier {
 struct RecordingFrameCache {
 	private var capturedFrame: CMSampleBuffer?
 	private var writtenFrame: CMSampleBuffer?
+	private(set) var writtenSourcePresentationTime: CMTime?
+
+	var capturedPresentationTime: CMTime? { capturedFrame.map { CMSampleBufferGetPresentationTimeStamp($0) } }
 
 	mutating func observe(_ sample: CMSampleBuffer) {
 		guard CMSampleBufferDataIsReady(sample), CMSampleBufferGetImageBuffer(sample) != nil else { return }
@@ -30,10 +33,27 @@ struct RecordingFrameCache {
 
 	mutating func beginClip() {
 		writtenFrame = nil
+		writtenSourcePresentationTime = nil
 	}
 
-	mutating func didAppend(_ sample: CMSampleBuffer) {
+	mutating func didAppend(_ sample: CMSampleBuffer, sourceTime: CMTime? = nil) {
 		writtenFrame = sample
+		writtenSourcePresentationTime = sourceTime ?? CMSampleBufferGetPresentationTimeStamp(sample)
+	}
+
+	/// A newly captured image cannot be moved backwards into a historical grid
+	/// slot. Reuse the previous written pixels (or the retained first image) there.
+	func scheduledFrame(at time: CMTime, fps: Int, firstFrame: CMSampleBuffer?) throws -> (sample: CMSampleBuffer, sourceTime: CMTime)? {
+		let source: CMSampleBuffer
+		let sourceTime: CMTime
+		if let capturedFrame, CMSampleBufferGetPresentationTimeStamp(capturedFrame) <= time {
+			source = capturedFrame; sourceTime = CMSampleBufferGetPresentationTimeStamp(capturedFrame)
+		} else if let writtenFrame, let writtenSourcePresentationTime {
+			source = writtenFrame; sourceTime = writtenSourcePresentationTime
+		} else if let firstFrame, CMSampleBufferGetPresentationTimeStamp(firstFrame) <= time {
+			source = firstFrame; sourceTime = CMSampleBufferGetPresentationTimeStamp(firstFrame)
+		} else { return nil }
+		return (try Self.retime(source, at: time, fps: fps), sourceTime)
 	}
 
 	func resumedFrame(at time: CMTime, fps: Int) throws -> CMSampleBuffer? {
@@ -50,12 +70,17 @@ struct RecordingFrameCache {
 		return try Self.retime(writtenFrame, at: finalTime, fps: fps)
 	}
 
-	static func retime(_ sample: CMSampleBuffer, at time: CMTime, fps: Int) throws -> CMSampleBuffer {
+	func boundaryFrame(at time: CMTime, duration: CMTime, fps: Int) throws -> CMSampleBuffer? {
+		guard let writtenFrame else { return nil }
+		return try Self.retime(writtenFrame, at: time, fps: fps, duration: duration)
+	}
+
+	static func retime(_ sample: CMSampleBuffer, at time: CMTime, fps: Int, duration: CMTime? = nil) throws -> CMSampleBuffer {
 		guard time.isValid, time.isNumeric, CMSampleBufferGetImageBuffer(sample) != nil else {
 			throw HelperError.writerSetupFailed("A complete screen frame and valid recording time are required.")
 		}
 		var timing = CMSampleTimingInfo(
-			duration: CMTime(value: 1, timescale: CMTimeScale(max(1, fps))),
+			duration: duration ?? CMTime(value: 1, timescale: CMTimeScale(max(1, fps))),
 			presentationTimeStamp: time,
 			decodeTimeStamp: .invalid
 		)

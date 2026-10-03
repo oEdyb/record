@@ -10,13 +10,16 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		let index: Int
 		let path: String
 		let durationMs: Int
+		let originals: [String: Any]
 
 		var payload: [String: Any] {
-			[
+			var value: [String: Any] = [
 				"index": index,
 				"screenVideoPath": path,
 				"durationMs": durationMs,
 			]
+			value.merge(originals) { _, next in next }
+			return value
 		}
 	}
 
@@ -28,6 +31,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		let startTime: CMTime?
 		let lastTime: CMTime?
 		let lastFrameDuration: CMTime
+		let originals: [String: OriginalTrackWriter]
+		let sourceOwners: [String: OriginalSourceWriter]
 	}
 
 	private var request: RecordingRequest
@@ -35,14 +40,29 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private let sampleQueue = DispatchQueue(label: "app.openscreen.sck-helper.samples")
 	private let stateQueue = DispatchQueue(label: "app.openscreen.sck-helper.state")
 	private var stream: SCStream?
+	private var streamRecovery = RecordingStreamRecovery()
 	private var activeFilter: SCContentFilter?
 	private var activeConfiguration: SCStreamConfiguration?
 	private var writer: AVAssetWriter?
+	private var cameraCapture: NativeCameraCapture?
+	private var cameraSample: CMSampleBuffer?
+	private var originals: [String: OriginalTrackWriter] = [:]
+	private var originalOwners: [String: OriginalSourceWriter] = [:]
+	private var readyOriginals: Set<String> = []
+	private var readyAudioTracks: Set<String> = []
+	private var startup = RecordingStartup()
+	private var startupTimer: RecordingStartupWatchdog?
+	private var firstScreenFrame: CMSampleBuffer?
+	private let diagnosticTiming = ProcessInfo.processInfo.environment["OPENSCREEN_CAPTURE_DIAGNOSTICS"] == "1"
+	private var startupTiming: [String: Double] = [:]
+	private var cadence: RecordingCadence
+	private var cadenceTimer: DispatchSourceTimer?
+	private var lastScheduledSourceTime: CMTime?
 	private var videoInput: AVAssetWriterInput?
 	// The mixed track stays first for HTML5 preview. Tagged source tracks give export clean
 	// microphone/system stems without changing the one-file-per-clip project model.
 	private var audioInputs: [AVAssetWriterInput] = []
-	private var audioMixer: AudioTrackMixer?
+	private var compatibilityAudio: CompatibilityAudioWriter?
 	private var didStartWriting = false
 	private var startBarrier = RecordingStartBarrier()
 	private var frameCache = RecordingFrameCache()
@@ -52,6 +72,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var isStopping = false
 	private var isPaused = false
 	private var hasTerminalFailure = false
+	private var terminationBoundary = RecordingTerminationBoundary()
 	private var currentClipIndex = 0
 	private var currentClipPath: String?
 	private var clipStartTime: CMTime?
@@ -70,6 +91,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		unexpectedStopHandler: @escaping (ScreenCaptureRecorder, Error) -> Void
 	) {
 		self.request = request
+		cadence = RecordingCadence(fps: request.video.fps)
 		captureTelemetry = CaptureTelemetry(requestedVideoFps: request.video.fps)
 		self.unexpectedStopHandler = unexpectedStopHandler
 	}
@@ -86,31 +108,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		outputHeight = setup.height
 		captureFrame = setup.captureFrame
 		nativeMicrophoneEnabled = setup.microphoneEnabled
-		let stream = SCStream(
-			filter: setup.filter,
-			configuration: setup.configuration,
-			delegate: self
-		)
-
-		try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
-		// Apple supports live configuration updates on one SCStream. Keep all
-		// available destinations attached for the full session; the configuration
-		// decides which sample types flow into each new clip.
-		try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
-		if #available(macOS 15.0, *),
-			let microphoneOutputType = SCStreamOutputType(
-				rawValue: screenCaptureKitMicrophoneOutputTypeRawValue
-			)
-		{
-			try stream.addStreamOutput(
-				self,
-				type: microphoneOutputType,
-				sampleHandlerQueue: sampleQueue
-			)
-		}
-		try setupWriter(for: currentClipIndex)
+		let stream = try configuredStream(filter: setup.filter, configuration: setup.configuration)
+		try await configureCamera(for: request)
+		try sampleQueue.sync { try setupWriter(for: currentClipIndex) }
 
 		self.stream = stream
+		stateQueue.sync { streamRecovery.install(stream) }
 		activeFilter = setup.filter
 		activeConfiguration = setup.configuration
 		emit([
@@ -118,6 +121,35 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			"schemaVersion": 1,
 		])
 		try await stream.startCapture()
+	}
+
+	private func configuredStream(filter: SCContentFilter, configuration: SCStreamConfiguration) throws -> SCStream {
+		let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+		try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
+		try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+		if #available(macOS 15.0, *), let type = SCStreamOutputType(rawValue: screenCaptureKitMicrophoneOutputTypeRawValue) {
+			try stream.addStreamOutput(self, type: type, sampleHandlerQueue: sampleQueue)
+		}
+		return stream
+	}
+
+	private func replaceCaptureStream(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws {
+		let replacement = try configuredStream(filter: filter, configuration: configuration)
+		let previous = stream
+		stream = replacement
+		stateQueue.sync { streamRecovery.install(replacement) }
+		sampleQueue.sync { frameCache.invalidateCapturedFrame() }
+		try? await previous?.stopCapture()
+		do {
+			try await replacement.startCapture()
+			guard !stateQueue.sync(execute: { streamRecovery.needsReplacement }) else {
+				throw HelperError.sourceNotFound("The selected capture source stopped before recording could continue. Select an available source and try again.")
+			}
+		} catch {
+			stateQueue.sync { streamRecovery.invalidate() }
+			try? await replacement.stopCapture()
+			throw error
+		}
 	}
 
 	func reconfigure(with nextRequest: RecordingRequest) async {
@@ -158,20 +190,22 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			// Await both operations before changing the writer settings. Continue stays
 			// disabled in the renderer until this acknowledgement arrives.
 			do {
-				try await stream.updateConfiguration(setup.configuration)
-				try await stream.updateContentFilter(setup.filter)
+				try await configureCamera(for: nextRequest)
+				if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
+					try await stream.updateConfiguration(setup.configuration)
+					try await stream.updateContentFilter(setup.filter)
+				}
+				if stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
+					try await replaceCaptureStream(filter: setup.filter, configuration: setup.configuration)
+				}
 			} catch {
-				var rollbackErrors: [String] = []
-				do {
-					try await stream.updateConfiguration(previousConfiguration)
-				} catch let rollbackError {
-					rollbackErrors.append("configuration: \(rollbackError)")
+				var rollback: [(String, () async throws -> Void)] = []
+				if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
+					rollback.append(("configuration", { try await stream.updateConfiguration(previousConfiguration) }))
+					rollback.append(("filter", { try await stream.updateContentFilter(previousFilter) }))
 				}
-				do {
-					try await stream.updateContentFilter(previousFilter)
-				} catch let rollbackError {
-					rollbackErrors.append("filter: \(rollbackError)")
-				}
+				rollback.append(("camera", { try await self.configureCamera(for: self.request) }))
+				let rollbackErrors = await RecordingSetupRollback.run(rollback)
 				if !rollbackErrors.isEmpty {
 					stateQueue.sync { hasTerminalFailure = true }
 					emitError(
@@ -184,6 +218,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				throw error
 			}
 			request = nextRequest
+			cadence = RecordingCadence(fps: nextRequest.video.fps)
 			activeFilter = setup.filter
 			activeConfiguration = setup.configuration
 			outputWidth = setup.width
@@ -203,20 +238,16 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func stop() async {
-		let endTime = CMClockGetTime(CMClockGetHostTimeClock())
-		let shouldStop = stateQueue.sync {
-			if isStopping {
-				return false
-			}
+		let requestedEndTime = CMClockGetTime(CMClockGetHostTimeClock())
+		let boundary = stateQueue.sync { () -> CMTime? in
+			guard !isStopping else { return nil }
 			isStopping = true
-			return true
+			return terminationBoundary.endingAt(requestedEndTime)
 		}
-		if !shouldStop {
-			return
-		}
+		guard let endTime = boundary else { return }
 
 		do {
-			try await stream?.stopCapture()
+			if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) { try await stream?.stopCapture() }
 		} catch {
 			emit([
 				"event": "warning",
@@ -225,6 +256,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			])
 		}
 
+		await cameraCapture?.stop()
 		var finalClipWarning: [String: String]?
 		do {
 			let finalizeStartedAt = Date()
@@ -314,8 +346,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 
+		let previousClipIndex = currentClipIndex
 		do {
-			let nextClipIndex = currentClipIndex + 1
+			if stateQueue.sync(execute: { streamRecovery.needsReplacement }), let activeFilter, let activeConfiguration {
+				try await replaceCaptureStream(filter: activeFilter, configuration: activeConfiguration)
+			}
+			let nextClipIndex = previousClipIndex + 1
 			var seed = try sampleQueue.sync {
 				try frameCache.resumedFrame(
 					at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps
@@ -333,7 +369,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					screenshot, at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps
 				)
 			}
-			let seededWriter = try sampleQueue.sync { () -> (AVAssetWriterInput, AVAssetWriter)? in
+			let seededWriter = try sampleQueue.sync { () -> (CMSampleBuffer, AVAssetWriterInput, AVAssetWriter)? in
 				do {
 					try setupWriter(for: nextClipIndex)
 				} catch {
@@ -341,43 +377,84 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					throw error
 				}
 				currentClipIndex = nextClipIndex
-				if let seed {
+				if let sourceSeed = seed {
+					// Writer preparation can take hundreds of ms. A resumed clip's
+					// host epoch begins after that work, at the first seeded append.
+					let seed = try RecordingFrameCache.retime(sourceSeed, at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps)
 					frameCache.observe(seed)
-					guard let videoInput, let writer, writer.startWriting() else {
+					guard let videoInput, let writer, writer.status == .writing else {
 						throw HelperError.writerSetupFailed("Unable to start the resumed clip writer.")
 					}
 					let startTime = CMSampleBufferGetPresentationTimeStamp(seed)
 					writer.startSession(atSourceTime: startTime)
 					didStartWriting = true
 					clipStartTime = startTime
-					audioMixer?.beginTimeline(at: startTime)
-					return (videoInput, writer)
+					beginStartup(at: startTime, firstFrame: seed)
+					compatibilityAudio?.begin(at: startTime)
+					beginOriginals(at: startTime)
+					return (seed, videoInput, writer)
 				}
-				stateQueue.sync { isPaused = false }
+				try stateQueue.sync {
+					guard !streamRecovery.needsReplacement, !isStopping, !hasTerminalFailure else {
+						throw HelperError.sourceNotFound("The selected capture source is unavailable. Select an available source and try again.")
+					}
+					isPaused = false
+				}
 				return nil
 			}
-			if let seed, let (input, writer) = seededWriter {
+			if let (seed, input, writer) = seededWriter {
 				// Retry encoder backpressure without waiting for the static screen
 				// to change. The same bounded append keeps readiness truthful.
 				try await ClosingFrameAppender(sample: seed, input: input, writer: writer, queue: sampleQueue).append()
-				sampleQueue.sync {
-					stateQueue.sync { isPaused = false }
+				try sampleQueue.sync {
+					try stateQueue.sync {
+						guard !streamRecovery.needsReplacement, !isStopping, !hasTerminalFailure else {
+							throw HelperError.sourceNotFound("The selected capture source is unavailable. Select an available source and try again.")
+						}
+						isPaused = false
+					}
 					recordSuccessfulVideoAppend(seed)
 				}
 			}
 		} catch {
-			sampleQueue.sync { discardCurrentWriterOnSampleQueue() }
-			stateQueue.sync { isPaused = true }
-			emitError(code: "clip-start-failed", message: "\(error)")
+			let rejected = sampleQueue.sync { () -> Bool in
+				let rejected = stateQueue.sync {
+					RecordingStreamRecovery.canRejectResume(paused: isPaused, stopping: isStopping,
+						terminalFailure: hasTerminalFailure, acknowledgedClipIndex: startup.isLive ? currentClipIndex : nil,
+						previousClipIndex: previousClipIndex)
+				}
+				guard rejected else { return false }
+				discardCurrentWriterOnSampleQueue()
+				currentClipIndex = previousClipIndex
+				stateQueue.sync { isPaused = true }
+				return true
+			}
+			if rejected { emit(RecordingStreamRecovery.rejectedResumePayload(previousClipIndex: previousClipIndex, message: "\(error)")) }
+			else { emitError(code: "clip-start-failed", message: "\(error)") }
 		}
 	}
 
 	func stream(_ stream: SCStream, didStopWithError error: Error) {
-		unexpectedStopHandler(self, error)
+		let disposition = stateQueue.sync { () -> RecordingStreamRecovery.StopDisposition in
+			let disposition = streamRecovery.stopped(stream, paused: isPaused, stopping: isStopping)
+			if disposition == .activeFailure {
+				terminationBoundary.recordFailure(at: CMClockGetTime(CMClockGetHostTimeClock()))
+				isPaused = true
+				hasTerminalFailure = true
+			}
+			return disposition
+		}
+		switch disposition {
+		case .ignored: return
+		case .pausedSourceUnavailable:
+			sampleQueue.async { self.frameCache.invalidateCapturedFrame() }
+			emit(["event": "warning", "code": "paused-source-unavailable", "message": "\(error)"])
+		case .activeFailure: unexpectedStopHandler(self, error)
+		}
 	}
 
 	func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-		guard CMSampleBufferDataIsReady(sampleBuffer) else {
+		guard stateQueue.sync(execute: { streamRecovery.acceptsSamples(from: stream) }), CMSampleBufferDataIsReady(sampleBuffer) else {
 			return
 		}
 		if type == .screen, acceptsCachedFrames {
@@ -390,13 +467,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 		if type == .audio {
 			captureTelemetry.recordAudioSample(sampleBuffer, microphone: false)
-			audioMixer?.ingest(sampleBuffer, from: .system)
+			appendOriginal(sampleBuffer, key: "systemAudioPath")
+			appendCompatibilityAudio(sampleBuffer, from: .system)
 			return
 		}
 
 		if type.rawValue == screenCaptureKitMicrophoneOutputTypeRawValue {
 			captureTelemetry.recordAudioSample(sampleBuffer, microphone: true)
-			audioMixer?.ingest(sampleBuffer, from: .microphone)
+			appendOriginal(sampleBuffer, key: "microphoneAudioPath")
+			appendCompatibilityAudio(sampleBuffer, from: .microphone)
 			return
 		}
 
@@ -406,52 +485,96 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard captureTelemetry.recordScreenSample(sampleBuffer) else {
 			return
 		}
-		appendScreenFrame(sampleBuffer)
+		if request.video.quality != "high" || cadence.anchor == nil { appendScreenFrame(sampleBuffer) }
 	}
 
 	/// Runs on sampleQueue. Readiness for each clip means an actual appended frame.
-	private func appendScreenFrame(_ sampleBuffer: CMSampleBuffer) {
+	private func appendScreenFrame(_ incoming: CMSampleBuffer, sourceTime: CMTime? = nil) {
 		guard let videoInput, let writer else {
 			return
 		}
+		// Initial backpressure cannot replace or discard the first source image.
+		let sampleBuffer = clipLastTime == nil ? (firstScreenFrame ?? incoming) : incoming
 		let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 		guard presentationTime.isValid, presentationTime.isNumeric else { return }
 		if let clipLastTime, presentationTime <= clipLastTime { return }
 		if let clipStartTime, presentationTime < clipStartTime { return }
 		if !didStartWriting {
-			guard writer.startWriting() else {
-				reportWriterFailure("start writing")
+			let initializationStarted = DispatchTime.now().uptimeNanoseconds
+			if diagnosticTiming {
+				startupTiming["firstScreenSourceAgeMs"] = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()) - presentationTime) * 1_000
+			}
+			guard writer.status == .writing else {
+				reportWriterFailure("prepared screen writer stopped")
 				return
 			}
 			writer.startSession(atSourceTime: presentationTime)
+			if diagnosticTiming { startupTiming["screenStartSessionMs"] = milliseconds(since: initializationStarted) }
 			didStartWriting = true
 			clipStartTime = presentationTime
-			audioMixer?.beginTimeline(at: presentationTime)
+			beginStartup(at: presentationTime, firstFrame: sampleBuffer)
+			compatibilityAudio?.begin(at: presentationTime)
+			let originalsStarted = DispatchTime.now().uptimeNanoseconds
+			beginOriginals(at: presentationTime)
+			if diagnosticTiming { startupTiming["beginOriginalsMs"] = milliseconds(since: originalsStarted) }
 		}
 
 		if videoInput.isReadyForMoreMediaData {
+			let firstAppend = clipLastTime == nil
+			let appendStarted = DispatchTime.now().uptimeNanoseconds
 			let appended = videoInput.append(sampleBuffer)
+			trackTiming(stage: "screenAppend", since: appendStarted)
 			if appended {
-				recordSuccessfulVideoAppend(sampleBuffer)
+				recordSuccessfulVideoAppend(sampleBuffer, sourceTime: sourceTime)
+				if diagnosticTiming && firstAppend {
+					startupTiming["firstScreenAppendMs"] = milliseconds(since: appendStarted)
+					startupTiming["firstScreenAppendSourceAgeMs"] = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()) - presentationTime) * 1_000
+					emitTiming(stage: "first-screen-append")
+				}
 			} else {
 				captureTelemetry.recordVideoAppendFailure()
 				reportWriterFailure("video append")
 			}
 		} else {
-			captureTelemetry.recordVideoBackpressure()
+			captureTelemetry.recordVideoBackpressure(retried: request.video.quality == "high")
 		}
 	}
 
-	private func recordSuccessfulVideoAppend(_ sample: CMSampleBuffer) {
+	private func recordSuccessfulVideoAppend(_ sample: CMSampleBuffer, sourceTime: CMTime? = nil) {
 		let presentationTime = CMSampleBufferGetPresentationTimeStamp(sample)
-		frameCache.didAppend(sample)
+		let pixelTime = sourceTime ?? presentationTime
+		frameCache.didAppend(sample, sourceTime: pixelTime)
+		if request.video.quality == "high", let anchor = cadence.anchor {
+			let expected = anchor + CMTime(value: cadence.nextFrame, timescale: CMTimeScale(max(1, request.video.fps)))
+			if presentationTime == expected { cadence.didAppend() }
+			if lastScheduledSourceTime == pixelTime { captureTelemetry.recordRepeatedVideoFrame() }
+			lastScheduledSourceTime = pixelTime
+		} else {
+			cadenceTimer?.cancel(); cadenceTimer = nil
+		}
+		firstScreenFrame = nil
 		captureTelemetry.recordVideoAppend(at: presentationTime)
 		clipLastTime = presentationTime
 		let duration = CMSampleBufferGetDuration(sample)
 		clipLastFrameDuration = duration.isValid && duration > .zero
 			? duration
 			: CMTime(value: 1, timescale: CMTimeScale(max(1, request.video.fps)))
+		acknowledgeClipReadiness()
+	}
+
+	private func acknowledgeClipReadiness() {
+		guard clipLastTime != nil, !stateQueue.sync(execute: { isPaused || isStopping || hasTerminalFailure }) else { return }
+		guard !startup.isLive else { return }
+		let now = CMClockGetTime(CMClockGetHostTimeClock())
+		do {
+			try startup.checkDeadline(at: now, videoAppended: true, readyOriginals: readyOriginals, readyAudio: readyAudioTracks)
+			var caughtUp = true
+			if request.video.quality == "high" { caughtUp = try cadence.dueTimes(at: now, maximumCatchUpFrames: startup.backlogLimit(fps: request.video.fps)).isEmpty }
+			guard startup.acknowledge(videoAppended: true, readyOriginals: readyOriginals, readyAudio: readyAudioTracks, gridCaughtUp: caughtUp) else { return }
+		} catch { reportWriterFailure("\(error)", detectedAt: startupDeadline.map { min($0, now) } ?? now); return }
 		if let clipIndex = startBarrier.acknowledgeAppend(succeeded: true) {
+			startupTimer?.cancel(); startupTimer = nil
+			if diagnosticTiming { emitTiming(stage: "startup-ready") }
 			emit([
 				"event": clipIndex == 0 ? "recording-started" : "recording-resumed",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
@@ -478,12 +601,14 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	/// settles and every failure becomes the "Saving..." hang instead of an error.
 	/// This event answers "when did the writer die"; that one answers "did stopping
 	/// work". Two questions, two codes.
-	private func reportWriterFailure(_ stage: String) {
+	private func reportWriterFailure(_ stage: String, detectedAt: CMTime? = nil) {
 		guard !didReportWriterFailure, let writer else {
 			return
 		}
 		didReportWriterFailure = true
+		let failureTime = detectedAt ?? CMClockGetTime(CMClockGetHostTimeClock())
 		stateQueue.sync {
+			terminationBoundary.recordFailure(at: failureTime)
 			isPaused = true
 			hasTerminalFailure = true
 		}
@@ -501,6 +626,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			if !granted {
 				throw HelperError.permissionDenied("Screen recording permission is required for ScreenCaptureKit capture.")
 			}
+		}
+
+		if request.webcam.enabled, AVCaptureDevice.authorizationStatus(for: .video) != .authorized {
+			throw HelperError.permissionDenied("Camera permission is required for native camera capture.")
 		}
 
 		if request.audio.microphone.enabled {
@@ -564,7 +693,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			AVVideoWidthKey: outputWidth,
 			AVVideoHeightKey: outputHeight,
 			AVVideoCompressionPropertiesKey: [
-				AVVideoAverageBitRateKey: request.video.bitrate ?? 18_000_000,
+				AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+				AVVideoAverageBitRateKey: RecordingQualityPolicy.bitrate(quality: request.video.quality, legacyBitrate: request.video.bitrate),
 				AVVideoExpectedSourceFrameRateKey: request.video.fps,
 				// Without this the encoder defaults to B-frames, and a reordered
 				// stream needs a composition offset per sample. AVAssetWriter emits
@@ -612,7 +742,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		clipLastTime = nil
 		clipLastFrameDuration = .zero
 		audioInputs = []
-		audioMixer = nil
+		compatibilityAudio = nil
 
 		if request.audio.system.enabled || nativeMicrophoneEnabled {
 			// Apple AAC rejects 384 kbps in this real-time AVAssetWriter configuration. Keep
@@ -642,32 +772,68 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				)
 				: nil
 			audioInputs = [mixedInput, systemInput, microphoneInput].compactMap { $0 }
-			audioMixer = AudioTrackMixer(
+			let mixer = AudioTrackMixer(
 				mixedInput: mixedInput,
 				systemInput: systemInput,
 				microphoneInput: microphoneInput,
 				includesSystemAudio: request.audio.system.enabled,
 				includesMicrophone: nativeMicrophoneEnabled,
-				microphoneGain: request.audio.microphone.gain
+				microphoneGain: request.audio.microphone.gain,
+				writer: writer
 			)
+			compatibilityAudio = CompatibilityAudioWriter(writer: writer, mixer: mixer,
+				queue: DispatchQueue(label: "app.openscreen.sck-helper.compatibility-audio"))
 		}
+		originals = [:]
+		originalOwners = [:]; readyOriginals = []
+		if request.audio.system.enabled { originals["systemAudioPath"] = try originalWriter(screenPath: outputPath, suffix: "system", type: .audio) }
+		if nativeMicrophoneEnabled { originals["microphoneAudioPath"] = try originalWriter(screenPath: outputPath, suffix: "microphone", type: .audio) }
+		if cameraCapture != nil { originals["webcamVideoPath"] = try originalWriter(screenPath: outputPath, suffix: "webcam", type: .video) }
+		for (key, original) in originals {
+			let admission = key == "webcamVideoPath"
+				? OriginalSourceAdmission(maximumSamples: OriginalSourceAdmission.cameraSamples(fps: cameraCapture!.fps), maximumBytes: OriginalSourceAdmission.maximumCameraBytes)
+				: OriginalSourceAdmission()
+			originalOwners[key] = OriginalSourceWriter(original: original, queue: DispatchQueue(label: "app.openscreen.sck-helper.original." + key), admission: admission)
+		}
+		var audioTracks = Set<String>()
+		if compatibilityAudio != nil { audioTracks.insert("mixed") }
+		if request.audio.system.enabled { audioTracks.insert("system") }
+		if nativeMicrophoneEnabled { audioTracks.insert("microphone") }
+		startup = RecordingStartup(originals: Set(originals.keys), audioTracks: audioTracks)
+		readyAudioTracks = []; firstScreenFrame = nil
+		startupTimer?.cancel(); startupTimer = nil
+		cadenceTimer?.cancel(); cadenceTimer = nil; cadence.reset(); lastScheduledSourceTime = nil
 		captureTelemetry.beginClip()
 		frameCache.beginClip()
 		startBarrier.prepare(clipIndex: index)
+		stateQueue.sync {
+			// A fatal recording cannot Continue; healthy newly prepared clips have
+			// their own boundary and must never inherit an earlier writer's epoch.
+			if !hasTerminalFailure { terminationBoundary = RecordingTerminationBoundary() }
+		}
+		startupTiming = [:]
+		// Apple separates encoder preparation from the session's source timeline.
+		// Do all expensive startWriting calls before SCStream starts or the resume
+		// seed epoch is chosen, keeping initialization out of the live lag budget.
+		let prepareStarted = DispatchTime.now().uptimeNanoseconds
+		guard writer.startWriting() else {
+			throw HelperError.writerSetupFailed(writer.error.map { "\($0)" } ?? "Unable to prepare the screen encoder.")
+		}
+		if diagnosticTiming { startupTiming["screenPrepareWritingMs"] = milliseconds(since: prepareStarted) }
+		for (key, original) in originals {
+			let originalStarted = DispatchTime.now().uptimeNanoseconds
+			if let owner = originalOwners[key] { try owner.prepare() } else { try original.prepare() }
+			if diagnosticTiming { startupTiming[key + "PrepareWritingMs"] = milliseconds(since: originalStarted) }
+		}
+		if diagnosticTiming { emitTiming(stage: "writers-prepared") }
 	}
 
-	private func detachCurrentWriter() -> DetachedWriter? {
+	private func detachCurrentWriter(endingAt endTime: CMTime) -> DetachedWriter? {
 		sampleQueue.sync {
 			guard let writer, let currentClipPath else { return nil }
-			if let audioTelemetry = audioMixer?.finish() {
-				captureTelemetry.recordAudioWriter(
-					maxQueueBytes: audioTelemetry.maxPendingBytes,
-					maxQueueDepth: audioTelemetry.maxPendingChunks,
-					blockedMs: audioTelemetry.blockedMs
-				)
-			}
-			videoInput?.markAsFinished()
-			audioInputs.forEach { $0.markAsFinished() }
+			let sessionEnd = request.video.quality == "high" && didStartWriting && clipStartTime.map { endTime > $0 } == true ? endTime : nil
+			RecordingWriterFinalization.finishInputs(writer: writer, videoInput: videoInput,
+				audioInputs: audioInputs, endingAt: sessionEnd)
 
 			let detached = DetachedWriter(
 				writer: writer,
@@ -676,12 +842,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				started: didStartWriting,
 				startTime: clipStartTime,
 				lastTime: clipLastTime,
-				lastFrameDuration: clipLastFrameDuration
+				lastFrameDuration: clipLastFrameDuration,
+				originals: originals,
+				sourceOwners: originalOwners
 			)
+			self.originals = [:]
+			self.originalOwners = [:]; self.readyOriginals = []
 			self.writer = nil
 			self.videoInput = nil
 			self.audioInputs = []
-			self.audioMixer = nil
+			self.compatibilityAudio = nil
+			self.firstScreenFrame = nil; self.readyAudioTracks = []
+			self.startupTimer?.cancel(); self.startupTimer = nil
 			self.currentClipPath = nil
 			self.didStartWriting = false
 			self.clipStartTime = nil
@@ -694,6 +866,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	/// Runs only on `sampleQueue`. It makes a failed next-writer setup retryable without
 	/// advancing the authoritative clip index or retaining a half-configured writer.
 	private func discardCurrentWriterOnSampleQueue() {
+		cadenceTimer?.cancel(); cadenceTimer = nil; cadence.reset()
+		startupTimer?.cancel(); startupTimer = nil; startup.cancel(); firstScreenFrame = nil; readyAudioTracks = []
+		compatibilityAudio?.cancel()
+		for (key, original) in originals {
+			if let owner = originalOwners[key] { owner.cancel(remove: true) } else { original.cancel(remove: true) }
+		}
+		originals = [:]; originalOwners = [:]; readyOriginals = []
 		writer?.cancelWriting()
 		if let currentClipPath {
 			try? FileManager.default.removeItem(atPath: currentClipPath)
@@ -701,7 +880,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		writer = nil
 		videoInput = nil
 		audioInputs = []
-		audioMixer = nil
+		compatibilityAudio = nil
 		currentClipPath = nil
 		didStartWriting = false
 		clipStartTime = nil
@@ -710,24 +889,68 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func finishCurrentClip(endingAt endTime: CMTime) async throws -> FinalizedClip? {
-		let closingFrame = try sampleQueue.sync { () -> (CMSampleBuffer, AVAssetWriterInput, AVAssetWriter)? in
-			guard didStartWriting, let videoInput, let writer, writer.status == .writing,
-				let sample = try frameCache.closingFrame(at: endTime, fps: request.video.fps)
-			else { return nil }
-			return (sample, videoInput, writer)
+		sampleQueue.sync { cadenceTimer?.cancel(); cadenceTimer = nil; startupTimer?.cancel(); startupTimer = nil; startup.cancel() }
+		let sourceOwners = sampleQueue.sync { Array(originalOwners.values) }
+		let (audioOwner, audioClipIndex) = sampleQueue.sync { (compatibilityAudio, currentClipIndex) }
+		if let audioOwner { await audioOwner.drain() }
+		for owner in sourceOwners { await owner.drain() }
+
+		// Each owner dispatched its metadata/failure before completing drain.
+		// Cross this queue barrier before detaching or acknowledging any clip.
+		await withCheckedContinuation { continuation in sampleQueue.async { continuation.resume() } }
+		// An owner can detect failure before Stop but deliver its callback later.
+		// Reconcile that first host timestamp after the callback barrier.
+		let effectiveEndTime = stateQueue.sync { terminationBoundary.endingAt(endTime) }
+		do {
+			let boundary = try sampleQueue.sync { () -> ([CMSampleBuffer], AVAssetWriterInput, AVAssetWriter)? in
+				guard didStartWriting, let videoInput, let writer, writer.status == .writing else { return nil }
+				let samples: [CMSampleBuffer]
+				if request.video.quality == "high" {
+					samples = try cadence.closingFrames(endingAt: effectiveEndTime).compactMap { frame in
+						try frameCache.boundaryFrame(at: frame.time, duration: frame.duration, fps: request.video.fps)
+					}
+				} else {
+					samples = try frameCache.closingFrame(at: effectiveEndTime, fps: request.video.fps).map { [$0] } ?? []
+				}
+				if diagnosticTiming {
+					startupTiming["closingGridFrames"] = Double(samples.count)
+					startupTiming["frozenBoundaryElapsedMs"] = clipStartTime.map { CMTimeGetSeconds(effectiveEndTime - $0) * 1_000 }
+					startupTiming["lastFrameBeforeClosingMs"] = clipStartTime.flatMap { start in clipLastTime.map { CMTimeGetSeconds($0 - start) * 1_000 } }
+					emitTiming(stage: "closing-boundary")
+				}
+				return (samples, videoInput, writer)
+			}
+			if let (samples, input, writer) = boundary, !samples.isEmpty {
+				try await ClosingFrameAppender(samples: samples, input: input, writer: writer, queue: sampleQueue) { [self] sample in
+					recordSuccessfulVideoAppend(sample, sourceTime: frameCache.writtenSourcePresentationTime)
+				}.append()
+			}
+		} catch {
+			// Still finish the writer and preserve every successfully committed frame.
+			let message = boundaryWarnings.record(error)
+			emit(["event": "warning", "code": "final-screen-frame-failed", "message": message])
 		}
-		if let (sample, input, writer) = closingFrame {
-			do {
-				try await ClosingFrameAppender(sample: sample, input: input, writer: writer, queue: sampleQueue).append()
-				sampleQueue.sync { recordSuccessfulVideoAppend(sample) }
-			} catch {
-				// Still finish the writer and preserve all frames already committed.
-				let message = boundaryWarnings.record(error)
-				emit(["event": "warning", "code": "final-screen-frame-failed", "message": message])
+		if let audioOwner {
+			let finished = await audioOwner.finish()
+			sampleQueue.sync {
+				guard compatibilityAudio === audioOwner,
+					audioOwner.isCurrent(writer: writer, clipIndex: audioClipIndex, currentClipIndex: currentClipIndex) else { return }
+				captureTelemetry.recordAudioWriter(maxQueueBytes: max(finished.telemetry.maxPendingBytes, audioOwner.maximumQueuedBytes),
+					maxQueueDepth: max(finished.telemetry.maxPendingChunks, audioOwner.maximumQueueDepth), blockedMs: finished.telemetry.blockedMs)
+				if let failure = finished.failure { recordCompatibilityFailure(failure.error, detectedAt: failure.hostTime) }
+				if diagnosticTiming {
+					emit(["event": "capture-timing", "stage": "compatibility-audio-queue", "maximumQueueDepth": audioOwner.maximumQueueDepth,
+						"maximumQueuedBytes": audioOwner.maximumQueuedBytes])
+				}
 			}
 		}
-		guard let detached = detachCurrentWriter() else { return nil }
+		// Every compatibility AAC append has returned on its audio owner before
+		// detach applies the frozen endSession and marks the main inputs finished.
+		guard let detached = detachCurrentWriter(endingAt: effectiveEndTime) else { return nil }
 		guard detached.started else {
+			for (key, original) in detached.originals {
+				if let owner = detached.sourceOwners[key] { owner.cancel(remove: true) } else { original.cancel(remove: true) }
+			}
 			detached.writer.cancelWriting()
 			try? FileManager.default.removeItem(atPath: detached.path)
 			return nil
@@ -738,6 +961,30 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				continuation.resume()
 			}
 		}
+		var originalPayload: [String: Any] = [:]
+		for (key, original) in detached.originals {
+			defer {
+				let owner = detached.sourceOwners[key]
+				captureTelemetry.recordOriginalWriter(cameraFrames: key == "webcamVideoPath" ? original.appendedSamples : 0, backpressureEvents: original.backpressureEvents, queueDepth: owner?.maximumQueueDepth ?? original.maximumQueueDepth)
+				if diagnosticTiming, let owner {
+					emit(["event": "capture-timing", "stage": "original-source-queue", "key": key,
+						"maximumQueueDepth": owner.maximumQueueDepth, "maximumQueuedBytes": owner.maximumQueuedBytes])
+				}
+			}
+			do {
+				let saved: Bool
+				if let owner = detached.sourceOwners[key] { saved = try await owner.finish() }
+				else { saved = try await original.finish(on: sampleQueue) }
+				if saved {
+					originalPayload[key] = original.path
+					originalPayload[key == "webcamVideoPath" ? "webcamOffsetMs" : key.replacingOccurrences(of: "Path", with: "OffsetMs")] = original.offsetMs
+				}
+			} catch {
+				let message = boundaryWarnings.record(error)
+				emit(["event": "warning", "code": "original-track-failed", "message": message])
+			}
+		}
+
 		guard detached.writer.status == .completed else {
 			throw HelperError.writerSetupFailed(
 				detached.writer.error.map { "\($0)" }
@@ -763,7 +1010,186 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		// final video frame or AAC packet because the container duration had a
 		// fractional millisecond.
 		let durationMs = max(1, Int(ceil(durationSeconds * 1000)))
-		return FinalizedClip(index: detached.index, path: detached.path, durationMs: durationMs)
+		return FinalizedClip(index: detached.index, path: detached.path, durationMs: durationMs, originals: originalPayload)
+	}
+
+	private func configureCamera(for nextRequest: RecordingRequest) async throws {
+		await cameraCapture?.stop()
+		sampleQueue.sync { cameraCapture = nil; cameraSample = nil }
+		guard nextRequest.webcam.enabled else { return }
+		let camera = try NativeCameraCapture(request: nextRequest, sampleQueue: sampleQueue, onFailure: { [weak self] error in self?.reportWriterFailure("\(error)") }, onDrop: { [weak self] in
+			guard let self, !self.stateQueue.sync(execute: { self.isPaused || self.isStopping }) else { return }
+			self.captureTelemetry.recordCameraSample(dropped: true)
+		}) { [weak self] sample in
+			guard let self else { return }
+			self.cameraSample = sample
+			guard !self.stateQueue.sync(execute: { self.isPaused || self.isStopping }) else { return }
+			if self.didStartWriting { self.captureTelemetry.recordCameraSample() }
+			self.appendOriginal(sample, key: "webcamVideoPath")
+		}
+		sampleQueue.sync { cameraCapture = camera }
+		try await camera.start()
+	}
+
+	private func originalWriter(screenPath: String, suffix: String, type: AVMediaType) throws -> OriginalTrackWriter {
+		let path = URL(fileURLWithPath: screenPath).deletingPathExtension().path + "-" + suffix + ".mov"
+		let settings = type == .audio ? OriginalTrackWriter.audioSettings : OriginalTrackWriter.videoSettings(
+			width: cameraCapture!.width, height: cameraCapture!.height, fps: max(1, Int(cameraCapture!.fps.rounded())),
+			bitrate: RecordingQualityPolicy.cameraBitrate(quality: request.video.quality, width: cameraCapture!.width, height: cameraCapture!.height, fps: max(1, Int(cameraCapture!.fps.rounded()))))
+		return try OriginalTrackWriter(path: path, mediaType: type, settings: settings)
+	}
+
+	private func beginOriginals(at time: CMTime) {
+		for (key, original) in originals {
+			if let owner = originalOwners[key] { owner.begin(at: time) } else { original.begin(at: time) }
+		}
+		if let cameraSample, let cameraCapture,
+			let seed = try? RecordingFrameCache.retime(cameraSample, at: time, fps: max(1, Int(cameraCapture.fps.rounded()))) {
+			appendOriginal(seed, key: "webcamVideoPath")
+		}
+	}
+
+	private func appendCompatibilityAudio(_ sample: CMSampleBuffer, from source: AudioTrackMixer.Source) {
+		guard didStartWriting, let owner = compatibilityAudio, CMSampleBufferGetNumSamples(sample) > 0 else { return }
+		let clipIndex = currentClipIndex
+		do {
+			try owner.append(sample, from: source) { [weak self] result, detectedAt in
+				guard let self else { return }
+				self.sampleQueue.async {
+					guard self.compatibilityAudio === owner,
+						owner.isCurrent(writer: self.writer, clipIndex: clipIndex, currentClipIndex: self.currentClipIndex) else { return }
+					switch result {
+					case .success(let completed):
+						self.readyAudioTracks = completed.readyTracks
+						self.trackTiming(stage: source == .system ? "systemIngest" : "microphoneIngest",
+							durationMs: completed.elapsedMs, hostTime: completed.hostTime)
+						self.acknowledgeClipReadiness()
+					case .failure(let error): self.recordCompatibilityFailure(error, detectedAt: detectedAt)
+					}
+				}
+			}
+		} catch { recordCompatibilityFailure(error, detectedAt: owner.failureTime ?? CMClockGetTime(CMClockGetHostTimeClock())) }
+	}
+
+	/// Called only on sampleQueue, after checking the owning main writer and clip.
+	private func recordCompatibilityFailure(_ error: Error, detectedAt: CMTime) {
+		if stateQueue.sync(execute: { isPaused || isStopping }) {
+			let message = boundaryWarnings.record(error)
+			emit(["event": "warning", "code": "compatibility-audio-failed", "message": message])
+			stateQueue.sync { terminationBoundary.recordFailure(at: detectedAt) }
+		} else { reportWriterFailure("\(error)", detectedAt: detectedAt) }
+	}
+
+	private func appendOriginal(_ sample: CMSampleBuffer, key: String) {
+		if let owner = originalOwners[key] {
+			guard didStartWriting, CMSampleBufferGetNumSamples(sample) > 0 else { return }
+			let clipIndex = currentClipIndex
+			do {
+				try owner.append(sample) { [weak self] result, detectedAt in
+					guard let self else { return }
+					self.sampleQueue.async {
+						guard owner.isCurrent(original: self.originals[key], clipIndex: clipIndex, currentClipIndex: self.currentClipIndex) else { return }
+						switch result {
+						case .success(let completed):
+							self.trackTiming(stage: key + "Append", durationMs: completed.elapsedMs, hostTime: completed.hostTime)
+							if self.diagnosticTiming && completed.firstAppend {
+								self.startupTiming[key + "FirstAppendMs"] = completed.elapsedMs
+								self.emitTiming(stage: "first-original-" + key)
+							}
+							if let metadata = completed.metadata {
+								self.readyOriginals.insert(key)
+								self.emitOriginalStart(metadata, key: key, clipIndex: clipIndex)
+								self.acknowledgeClipReadiness()
+							}
+						case .failure(let error):
+							if self.stateQueue.sync(execute: { self.isPaused || self.isStopping }) {
+								let message = self.boundaryWarnings.record(error)
+								emit(["event": "warning", "code": "original-track-failed", "message": message])
+								self.stateQueue.sync { self.terminationBoundary.recordFailure(at: detectedAt) }
+							} else { self.reportWriterFailure("\(error)", detectedAt: detectedAt) }
+						}
+					}
+				}
+			} catch { reportWriterFailure("\(error)", detectedAt: owner.failureTime) }
+			return
+		}
+	}
+	private func emitOriginalStart(_ metadata: (path: String, offsetMs: Double), key: String, clipIndex: Int) {
+		emit(["event": "original-started", "clipIndex": clipIndex, "key": key, "path": metadata.path, "offsetMs": metadata.offsetMs])
+	}
+
+	private var startupDeadline: CMTime? {
+		startup.epoch.map { $0 + CMTime(seconds: RecordingStartup.sourceDeadlineSeconds, preferredTimescale: 1_000_000) }
+	}
+	private func beginStartup(at epoch: CMTime, firstFrame: CMSampleBuffer) {
+		self.firstScreenFrame = firstFrame
+		startup.begin(at: epoch)
+		if request.video.quality == "high" { cadence.begin(at: epoch, firstFramePending: true) }
+		startCadenceTimer()
+		guard let writer else { return }
+		let writerID = ObjectIdentifier(writer), clipIndex = currentClipIndex
+		startupTimer = RecordingStartupWatchdog(epoch: epoch, queue: sampleQueue) { [weak self] deadline in
+			guard let self, self.writer.map(ObjectIdentifier.init) == writerID, self.currentClipIndex == clipIndex,
+				!self.startup.isLive, !self.stateQueue.sync(execute: { self.isPaused || self.isStopping || self.hasTerminalFailure }) else { return }
+			do {
+				try self.startup.checkDeadline(at: deadline, videoAppended: self.clipLastTime != nil,
+					readyOriginals: self.readyOriginals, readyAudio: self.readyAudioTracks)
+			} catch { self.reportWriterFailure("\(error)", detectedAt: deadline) }
+		}
+	}
+
+	private func startCadenceTimer() {
+		guard cadenceTimer == nil, let writer else { return }
+		let writerID = ObjectIdentifier(writer), clipIndex = currentClipIndex
+		let timer = DispatchSource.makeTimerSource(queue: sampleQueue)
+		timer.schedule(deadline: .now() + 1.0 / Double(max(1, request.video.fps)), repeating: 1.0 / Double(max(1, request.video.fps)), leeway: .milliseconds(1))
+		timer.setEventHandler { [weak self] in
+			guard let self, self.writer.map(ObjectIdentifier.init) == writerID, self.currentClipIndex == clipIndex else { return }
+			self.writeScheduledFrames()
+		}
+		cadenceTimer = timer
+		timer.resume()
+	}
+
+	private func writeScheduledFrames() {
+		guard !stateQueue.sync(execute: { isPaused || isStopping }), let videoInput else { return }
+		if request.video.quality != "high" {
+			if clipLastTime == nil, let firstScreenFrame { appendScreenFrame(firstScreenFrame) }
+			return
+		}
+		do {
+			for time in try cadence.dueTimes(at: CMClockGetTime(CMClockGetHostTimeClock()), maximumCatchUpFrames: startup.backlogLimit(fps: request.video.fps)) {
+				guard videoInput.isReadyForMoreMediaData else { captureTelemetry.recordVideoBackpressure(retried: request.video.quality == "high"); return }
+				guard let frame = try frameCache.scheduledFrame(at: time, fps: request.video.fps, firstFrame: firstScreenFrame) else { return }
+				let previousTime = clipLastTime
+				appendScreenFrame(frame.sample, sourceTime: frame.sourceTime)
+				guard clipLastTime != previousTime else { return }
+			}
+		} catch {
+			if diagnosticTiming {
+				if let anchor = cadence.anchor { startupTiming["cadenceLagMs"] = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()) - anchor - CMTime(value: cadence.nextFrame, timescale: CMTimeScale(max(1, request.video.fps)))) * 1_000 }
+				startupTiming["screenInputReady"] = videoInput.isReadyForMoreMediaData ? 1 : 0
+				emitTiming(stage: "cadence-failure")
+			}
+			reportWriterFailure("\(error)")
+		}
+	}
+
+	private func trackTiming(stage: String, since start: UInt64) {
+		guard diagnosticTiming else { return }
+		trackTiming(stage: stage, durationMs: milliseconds(since: start), hostTime: CMClockGetTime(CMClockGetHostTimeClock()))
+	}
+	private func trackTiming(stage: String, durationMs duration: Double, hostTime: CMTime) {
+		guard diagnosticTiming else { return }
+		startupTiming[stage + "MaxMs"] = max(startupTiming[stage + "MaxMs"] ?? 0, duration)
+		startupTiming[stage + "LastMs"] = duration
+		startupTiming[stage + "LastHostSeconds"] = CMTimeGetSeconds(hostTime)
+		if duration >= 10 { emitTiming(stage: "slow-" + stage) }
+	}
+
+	private func milliseconds(since start: UInt64) -> Double { Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000 }
+	private func emitTiming(stage: String) {
+		emit(["event": "capture-diagnostic", "stage": stage, "clipIndex": currentClipIndex, "timingMs": startupTiming])
 	}
 
 	private func addAudioInput(

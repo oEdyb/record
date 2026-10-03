@@ -18,8 +18,26 @@ import {
 	completedStopSince,
 	createTerminalFixture,
 	parseProfileArgs,
+	profileRequiresSourceDirectory,
 	reviewMatchesRecording,
+	selectVideoExportChoice,
 } from "./overnight-recording-profile-utils.mjs";
+import {
+	analyzePacketCadence,
+	assertCleanNativeStop,
+	assertKnownSystemSignal,
+	chromeLaunchServicesArgs,
+	createQualityFixture,
+	cssContrastRatio,
+	installedCaptureConfiguration,
+	installedCaptureProcesses,
+	matchSourceCopy,
+	nativeWarningEventsFromDiagnostic,
+	ownedCaptureProcessPid,
+	ownedChromeProcessPids,
+	summarizeDecodedAudioSignal,
+	summarizeVideoProbe,
+} from "./source-quality-profile-utils.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(path.join(ROOT, "package.json"));
@@ -35,7 +53,11 @@ if (appPackage.main !== "dist-electron/bootstrap.js")
 const phase = opt.phase ?? "baseline";
 const out = path.resolve(opt.out ?? path.join(ROOT, "artifacts/overnight-2026-10-03", phase));
 await fsp.mkdir(out, { recursive: true });
-const runRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "klippt-overnight-profile-"));
+const runRoot = await fsp.mkdtemp(
+	profileRequiresSourceDirectory(opt)
+		? "/tmp/klippt-source-profile-"
+		: path.join(os.tmpdir(), "klippt-overnight-profile-"),
+);
 const userData = path.join(runRoot, "user-data"),
 	tmp = path.join(runRoot, "tmp");
 await fsp.mkdir(tmp, { recursive: true });
@@ -69,10 +91,72 @@ const report = {
 	},
 	recordings: [],
 };
+function installedCaptureContext() {
+	const rows = installedCaptureProcesses(
+		execFileSync("/bin/ps", ["-axo", "pid,ppid,%cpu,rss,comm"], { encoding: "utf8" }),
+	);
+	return {
+		at: new Date().toISOString(),
+		processes: rows.map((row) => {
+			let configuration = null;
+			try {
+				configuration = installedCaptureConfiguration(
+					execFileSync("/bin/ps", ["-p", String(row.pid), "-o", "command="], {
+						encoding: "utf8",
+					}),
+				);
+			} catch {
+				// A user's recording may finish between the two read-only probes.
+			}
+			return { ...row, configuration };
+		}),
+	};
+}
+report.host.installedCaptureAtStart = installedCaptureContext();
+if (opt["export-mode"] === "sources") {
+	report.methods.export =
+		"Actual Export sources click to Sources exported; native folder picker redirected to owned output; original files copied unchanged";
+	report.methods.quality = `${opt.quality ?? "default"} capture profile; native screen pixels, configured 60fps and H.264; actual saved cadence/bitrate measured separately`;
+}
 const log = fs.createWriteStream(path.join(out, "electron.log"));
-let app, fixture, child;
+let app, fixture, child, launchServicesBrowser;
+let sampledFatal = false;
+function sampleOwnedFatalCapture() {
+	if (sampledFatal || process.env.OPENSCREEN_CAPTURE_DIAGNOSTICS !== "1") return;
+	sampledFatal = true;
+	const receipt = { at: new Date().toISOString(), helper: report.actualCaptureHelper?.path };
+	try {
+		const rows = execFileSync("/bin/ps", ["-axo", "pid,ppid,comm"], { encoding: "utf8" });
+		receipt.pid = ownedCaptureProcessPid(rows, receipt.helper, child.pid);
+		if (!receipt.pid) throw new Error("Owned native helper already exited before sampling");
+		receipt.samplePath = path.join(out, "owned-native-fatal-sample.txt");
+		receipt.output = execFileSync(
+			"/usr/bin/sample",
+			[String(receipt.pid), "1", "1", "-file", receipt.samplePath],
+			{ encoding: "utf8", timeout: 5000 },
+		);
+	} catch (error) {
+		receipt.error = String(error.message);
+	}
+	fs.writeFileSync(
+		path.join(out, "owned-native-fatal-sample.json"),
+		JSON.stringify(receipt, null, 2),
+	);
+}
 function digest(file) {
-	return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+	const hash = crypto.createHash("sha256");
+	const descriptor = fs.openSync(file, "r");
+	const buffer = Buffer.alloc(1024 * 1024);
+	try {
+		for (;;) {
+			const bytes = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+			if (bytes === 0) break;
+			hash.update(buffer.subarray(0, bytes));
+		}
+		return hash.digest("hex");
+	} finally {
+		fs.closeSync(descriptor);
+	}
 }
 for (const file of [
 	"dist-electron/bootstrap.js",
@@ -80,9 +164,15 @@ for (const file of [
 ])
 	if (fs.existsSync(path.join(APP_ROOT, file)))
 		report[file] = { sha256: digest(path.join(APP_ROOT, file)) };
-const title = `Klippt Overnight Terminal Fixture ${process.pid}`;
+const title =
+	opt.fixture === "detailed"
+		? "Klippt Deterministic Quality Fixture"
+		: `Klippt Overnight Terminal Fixture ${process.pid}`;
 const alternateTitle = `Klippt Alternate Fixture ${process.pid}`;
-const fixtureHtml = createTerminalFixture(title);
+const fixtureHtml =
+	opt.fixture === "detailed" ? createQualityFixture(title) : createTerminalFixture(title);
+if (opt.fixture === "detailed")
+	report.fixtureSha256 = crypto.createHash("sha256").update(fixtureHtml).digest("hex");
 async function windowFor(kind) {
 	await expect
 		.poll(
@@ -195,6 +285,241 @@ async function setupControls(hud) {
 	if (["system", "both"].includes(opt.audio)) {
 		await hud.getByTestId("launch-system-audio-button").click();
 	}
+	if (opt.camera === "true") {
+		const permission = await app.evaluate(({ systemPreferences }) =>
+			systemPreferences.getMediaAccessStatus("camera"),
+		);
+		if (permission !== "granted") throw new Error(`Camera permission is ${permission}`);
+		await hud.getByTestId("launch-webcam-button").click();
+		await expect(hud.getByTestId("launch-webcam-button")).toHaveAttribute("aria-pressed", "true");
+	}
+	if (opt.quality) {
+		await hud.getByTestId("launch-device-settings-button").click();
+		report.qualityBeforeSelection = await hud.getByTestId("hud-recording-quality").innerText();
+		await hud.getByTestId("hud-recording-quality").click();
+		await hud
+			.getByRole("option", { name: opt.quality === "high" ? "High" : "Standard", exact: true })
+			.click();
+		const contrast = async (element) => {
+			const colors = await element.evaluate((node) => {
+				const text = node.querySelector("span") ?? node;
+				let current = node;
+				while (current) {
+					const background = getComputedStyle(current).backgroundColor;
+					if (/^rgb\(/.test(background) || /^rgba\([^)]*,\s*1\)$/.test(background))
+						return {
+							foreground: getComputedStyle(text).color,
+							background,
+							hovered: node.matches(":hover"),
+						};
+					current = current.parentElement;
+				}
+				throw new Error("No opaque effective panel background");
+			});
+			const ratio = cssContrastRatio(colors.foreground, colors.background);
+			expect(ratio).toBeGreaterThanOrEqual(4.5);
+			return { ...colors, ratio };
+		};
+		const trigger = hud.getByTestId("hud-recording-quality");
+		await hud
+			.getByRole("button", { name: /Done|Close/, exact: true })
+			.last()
+			.hover();
+		await trigger.evaluate((node) => getComputedStyle(node).backgroundColor);
+		await expect
+			.poll(() =>
+				trigger.evaluate((node) =>
+					node.getAnimations().every((animation) => animation.playState !== "running"),
+				),
+			)
+			.toBe(true);
+		expect(await trigger.evaluate((node) => node.matches(":hover"))).toBe(false);
+		report.uiContrast = { qualityRest: await contrast(trigger) };
+		await hud.screenshot({ path: path.join(out, "quality-normal-contrast.png") });
+		await trigger.hover();
+		expect(await trigger.evaluate((node) => node.matches(":hover"))).toBe(true);
+		await trigger.evaluate((node) => getComputedStyle(node).backgroundColor);
+		await expect
+			.poll(() =>
+				trigger.evaluate((node) =>
+					node.getAnimations().every((animation) => animation.playState !== "running"),
+				),
+			)
+			.toBe(true);
+		report.uiContrast.qualityHover = await contrast(trigger);
+		const nativeLabel = hud.getByTestId("hud-native-camera-format");
+		if (await nativeLabel.count()) report.uiContrast.nativeCamera = await contrast(nativeLabel);
+		await hud.screenshot({ path: path.join(out, "quality-hover-contrast.png") });
+		await hud.screenshot({ path: path.join(out, `quality-${opt.quality}-settings.png`) });
+		await hud
+			.getByRole("button", { name: /Done|Close/, exact: true })
+			.last()
+			.click();
+	}
+}
+async function sourceMediaHashes() {
+	const directory = path.join(userData, "recordings");
+	const files = fs.readdirSync(directory).filter((name) => /\.(mp4|mov|webm|m4a|wav)$/i.test(name));
+	return files.map((name) => {
+		const file = path.join(directory, name);
+		return { path: file, file: name, bytes: fs.statSync(file).size, sha256: digest(file) };
+	});
+}
+async function exportSourcesGui(editor) {
+	const originalsBefore = await sourceMediaHashes();
+	await app.evaluate(({ dialog }, directory) => {
+		dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] });
+	}, out);
+	await editor.getByRole("button", { name: "Save video", exact: true }).click();
+	await expect(editor.getByRole("button", { name: "Separate takes", exact: true })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	const exportButton = editor.getByRole("button", { name: "Export sources…", exact: true });
+	await expect(exportButton).toBeEnabled();
+	await editor.screenshot({ path: path.join(out, "source-export-ready.png") });
+	await editor.evaluate(() => {
+		window.__sourceExportTiming = {};
+		const button = [...document.querySelectorAll("button")].find(
+			(b) => b.textContent.trim() === "Export sources…",
+		);
+		button.addEventListener(
+			"click",
+			() => {
+				window.__sourceExportTiming.clickAt = performance.now();
+			},
+			{ capture: true, once: true },
+		);
+		const observer = new MutationObserver(() => {
+			if (
+				window.__sourceExportTiming.clickAt &&
+				document.body.textContent.includes("Sources exported")
+			) {
+				window.__sourceExportTiming.finishedAt = performance.now();
+				observer.disconnect();
+			}
+		});
+		observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+	});
+	await exportButton.click();
+	await expect(editor.getByText("Sources exported", { exact: true })).toBeVisible({
+		timeout: 60000,
+	});
+	const timing = await editor.evaluate(() => window.__sourceExportTiming);
+	const native = await app.evaluate(() => globalThis.__sourceExportHistory.at(-1));
+	const result = native?.result?.data;
+	if (!result?.directory || !result.manifestPath)
+		throw new Error("No successful native source-export receipt");
+	const manifest = JSON.parse(fs.readFileSync(result.manifestPath, "utf8"));
+	const media = fs
+		.readdirSync(result.directory)
+		.filter((name) => /\.(mp4|mov|webm|m4a|wav)$/i.test(name));
+	const hashPairs = media.map((name) => {
+		const file = path.join(result.directory, name),
+			sha256 = digest(file);
+		const original = matchSourceCopy(name, sha256, manifest, native.document, originalsBefore);
+		return { exported: file, original: original.path, sha256, bytes: fs.statSync(file).size };
+	});
+	const originalsAfter = await sourceMediaHashes();
+	if (JSON.stringify(originalsBefore) !== JSON.stringify(originalsAfter))
+		throw new Error("Source export changed original media");
+	if (hashPairs.length < 4)
+		throw new Error("Four-source proof requires screen, camera, microphone and system media");
+	for (const kind of ["screen", "camera", "microphone", "system"])
+		if (!media.some((name) => new RegExp(`^\\d+-${kind}\\.`).test(name)))
+			throw new Error(`Four-source export is missing the ${kind} original`);
+	for (const pair of hashPairs) {
+		pair.probe = JSON.parse(
+			execFileSync(
+				"/opt/homebrew/bin/ffprobe",
+				["-v", "error", "-show_format", "-show_streams", "-of", "json", pair.exported],
+				{ encoding: "utf8", maxBuffer: 10_000_000 },
+			),
+		);
+		if (!(Number(pair.probe.format?.duration) > 0))
+			throw new Error(`Unreadable or empty exported original: ${pair.exported}`);
+		const isVideo = /-(screen|camera)\./.test(pair.exported);
+		if (!pair.probe.streams?.some((stream) => stream.codec_type === (isVideo ? "video" : "audio")))
+			throw new Error(`Exported original has the wrong stream type: ${pair.exported}`);
+		execFileSync(
+			"/opt/homebrew/bin/ffmpeg",
+			[
+				"-v",
+				"error",
+				"-threads",
+				"2",
+				"-ss",
+				"0.2",
+				"-i",
+				pair.exported,
+				...(isVideo
+					? ["-map", "0:v:0", "-frames:v", "1", "-an"]
+					: ["-map", "0:a:0", "-t", "0.1", "-vn"]),
+				"-f",
+				"null",
+				"-",
+			],
+			{ stdio: "pipe", timeout: 30_000 },
+		);
+		pair.decodeProbePassed = true;
+	}
+	report.sourceExport = {
+		wallMs: timing.finishedAt - timing.clickAt,
+		nativeMs: native.finishedAt - native.startedAt,
+		result,
+		manifest,
+		hashPairs,
+		originalsBefore,
+		originalsAfter,
+		method:
+			"Actual Save video and default Separate takes Export sources clicks; folder picker only redirected to an owned directory",
+	};
+	for (const pair of hashPairs.filter((value) =>
+		/^\d+-system\./.test(path.basename(value.exported)),
+	)) {
+		const pcm = execFileSync(
+			"/opt/homebrew/bin/ffmpeg",
+			[
+				"-v",
+				"error",
+				"-threads",
+				"2",
+				"-i",
+				pair.original,
+				"-map",
+				"0:a:0",
+				"-t",
+				"8",
+				"-ac",
+				"1",
+				"-ar",
+				"48000",
+				"-f",
+				"f32le",
+				"-",
+			],
+			{ maxBuffer: 4_000_000, timeout: 30_000 },
+		);
+		if (pcm.byteLength % 4) throw new Error("Decoded system PCM byte length is invalid");
+		pair.systemSignal = {
+			original: pair.original,
+			sha256: pair.sha256,
+			...summarizeDecodedAudioSignal(
+				new Float32Array(pcm.buffer, pcm.byteOffset, pcm.byteLength / 4),
+			),
+			method:
+				"Read-only first eight seconds of actual system original, FFmpeg mono 48kHz float PCM; after export timer",
+		};
+		assertKnownSystemSignal(pair);
+	}
+	await editor.screenshot({ path: path.join(out, "source-export-success.png") });
+	console.log(
+		JSON.stringify({
+			event: "sources-exported",
+			wallMs: report.sourceExport.wallMs,
+			directory: result.directory,
+		}),
+	);
 }
 async function exportGui(editor, tag) {
 	const output = path.join(out, `${tag}.mp4`);
@@ -233,6 +558,9 @@ async function exportGui(editor, tag) {
 	});
 	await open.click();
 	const dialog = editor.getByRole("dialog");
+	if (quick && (await selectVideoExportChoice(dialog))) {
+		await dialog.getByRole("button", { name: "Export MP4", exact: true }).click();
+	}
 	if (!quick) {
 		await dialog.getByRole("button", { name: "One video", exact: true }).click();
 		await dialog.getByRole("button", { name: "MP4", exact: true }).click();
@@ -337,10 +665,14 @@ async function reviewSmoke(editor) {
 		}, id);
 	}
 	await menu("recording-save");
+	if (await selectVideoExportChoice(dialog))
+		await dialog.getByRole("button", { name: "Export MP4", exact: true }).click();
 	await expect.poll(() => app.evaluate(() => globalThis.__overnightPickerCalls)).toBe(1);
 	await expect(dialog.getByText("Saved to")).not.toBeVisible();
 	await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
 	await editor.getByRole("button", { name: "Save video", exact: true }).click();
+	if (await selectVideoExportChoice(dialog))
+		await dialog.getByRole("button", { name: "Export MP4", exact: true }).click();
 	await expect.poll(() => app.evaluate(() => globalThis.__overnightPickerCalls)).toBe(2);
 	await expect(dialog.getByText("Saved to")).not.toBeVisible();
 	await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -370,6 +702,7 @@ try {
 			LANG: "en_US.UTF-8",
 			LC_ALL: "en_US.UTF-8",
 			LANGUAGE: "en_US",
+			...(opt["export-mode"] === "sources" ? { OPENSCREEN_AGENT_CLI: "1" } : {}),
 		},
 	});
 	await app.evaluate(({ app: host }) =>
@@ -396,7 +729,16 @@ try {
 		}),
 	);
 	child = app.process();
-	child.stdout?.on("data", (x) => log.write(x));
+	let stdoutLines = "";
+	child.stdout?.on("data", (x) => {
+		log.write(x);
+		if (process.env.OPENSCREEN_CAPTURE_DIAGNOSTICS !== "1") return;
+		stdoutLines += x.toString();
+		const lines = stdoutLines.split("\n");
+		stdoutLines = lines.pop();
+		if (lines.some((line) => line.startsWith("OWN_CAPTURE_FATAL_SAMPLE ")))
+			sampleOwnedFatalCapture();
+	});
 	child.stderr?.on("data", (x) => log.write(x));
 	app.on("window", (p) =>
 		p.on("console", (m) => log.write(`[renderer:${p.url()}] ${m.type()} ${m.text()}\n`)),
@@ -408,8 +750,23 @@ try {
 		await dialog.dismiss();
 	});
 	await expect(hud.getByTestId("launch-record-button")).toBeVisible({ timeout: 60000 });
-	await app.evaluate(({ ipcMain }) => {
+	await app.evaluate(({ ipcMain, BrowserWindow, app: host }) => {
 		globalThis.__overnightCapture = [];
+		globalThis.__sourceExportHistory = [];
+		globalThis.__nativeFailureHistory = [];
+		const observeFailure = (window) => {
+			const original = window.webContents.send.bind(window.webContents);
+			window.webContents.send = (channel, ...args) => {
+				if (channel === "native-mac-recording-error") {
+					globalThis.__nativeFailureHistory.push({ at: performance.now(), failure: args[0] });
+					if (process.env.OPENSCREEN_CAPTURE_DIAGNOSTICS === "1")
+						console.log("OWN_CAPTURE_FATAL_SAMPLE " + JSON.stringify(args[0]));
+				}
+				return original(channel, ...args);
+			};
+		};
+		for (const window of BrowserWindow.getAllWindows()) observeFailure(window);
+		host.on("browser-window-created", (_event, window) => observeFailure(window));
 		const handlers = ipcMain._invokeHandlers;
 		for (const name of [
 			"start-native-mac-recording",
@@ -424,6 +781,7 @@ try {
 					const result = await original(...args);
 					globalThis.__overnightCapture.push({
 						name,
+						request: args[1],
 						startedAt,
 						finishedAt: performance.now(),
 						result,
@@ -431,6 +789,20 @@ try {
 					return result;
 				});
 		}
+		const bridge = handlers?.get("native-bridge:invoke");
+		if (bridge)
+			handlers.set("native-bridge:invoke", async (...args) => {
+				if (args[1]?.action !== "document.exportSources") return bridge(...args);
+				const startedAt = performance.now(),
+					result = await bridge(...args);
+				globalThis.__sourceExportHistory.push({
+					startedAt,
+					finishedAt: performance.now(),
+					result,
+					document: args[1].payload.document,
+				});
+				return result;
+			});
 	});
 	report.launchToHudMs = performance.now() - launched;
 	const actualHelper = await hud.evaluate(() => window.electronAPI.isNativeMacCaptureAvailable());
@@ -453,19 +825,47 @@ try {
 		await exportGui(editor, `${phase}-same-source-export`);
 		if (opt["review-smoke"] === "true") await reviewSmoke(editor);
 	} else {
-		fixture = await chromium.launchPersistentContext(path.join(runRoot, "chrome-profile"), {
-			executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-			headless: false,
-			args: [
-				"--no-first-run",
-				"--disable-sync",
-				"--disable-extensions",
-				"--disable-background-networking",
-				"--window-size=1280,720",
-			],
-			viewport: { width: 1280, height: 720 },
-		});
+		if (opt["fixture-launch"] === "launchservices") {
+			const profile = path.join(runRoot, "chrome-profile");
+			execFileSync("/usr/bin/open", chromeLaunchServicesArgs(profile), { encoding: "utf8" });
+			const portFile = path.join(profile, "DevToolsActivePort");
+			const deadline = performance.now() + 15000;
+			while (!fs.existsSync(portFile) && performance.now() < deadline)
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			if (!fs.existsSync(portFile))
+				throw new Error("Owned LaunchServices Chrome did not start CDP");
+			const port = Number(fs.readFileSync(portFile, "utf8").split("\n")[0]);
+			if (!(port > 0)) throw new Error("Owned Chrome returned no valid private CDP port");
+			launchServicesBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+			fixture = launchServicesBrowser.contexts()[0];
+			report.fixtureLaunch = "LaunchServices open -n with task-owned profile; CDP observer";
+		} else {
+			fixture = await chromium.launchPersistentContext(path.join(runRoot, "chrome-profile"), {
+				executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+				headless: false,
+				args: [
+					"--no-first-run",
+					"--disable-sync",
+					"--disable-extensions",
+					"--disable-background-networking",
+					"--window-size=1280,720",
+				],
+				viewport: { width: 1280, height: 720 },
+			});
+			report.fixtureLaunch = "Playwright direct Chrome child with task-owned profile";
+		}
 		const page = fixture.pages()[0];
+		if (launchServicesBrowser) {
+			await page.setViewportSize({ width: 1280, height: 720 });
+			const session = await fixture.newCDPSession(page);
+			const { windowId } = await session.send("Browser.getWindowForTarget");
+			await session.send("Browser.setWindowBounds", {
+				windowId,
+				bounds: { width: 1282, height: 846 },
+			});
+			report.fixtureChromeCommandLine = await session.send("Browser.getBrowserCommandLine");
+			await session.detach();
+		}
 		const html =
 			opt.static === "true"
 				? fixtureHtml
@@ -478,6 +878,8 @@ try {
 						)
 				: fixtureHtml;
 		await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+		if (opt.fixture === "detailed")
+			await page.getByRole("button", { name: "Start fixture and sound", exact: true }).click();
 		if (opt["change-source"] === "true") {
 			const cdp = await fixture.newCDPSession(page);
 			const created = fixture.waitForEvent("page");
@@ -573,8 +975,34 @@ try {
 						(event) => event.name === "stop-native-mac-recording",
 					).length,
 			);
+			const failuresBefore = await app.evaluate(() => globalThis.__nativeFailureHistory.length);
 			await startTiming(hud);
+			const startsBefore = await app.evaluate(
+				() =>
+					globalThis.__overnightCapture.filter(
+						(event) => event.name === "start-native-mac-recording",
+					).length,
+			);
 			await hud.getByTestId("launch-record-button").click();
+			await expect
+				.poll(
+					() =>
+						app.evaluate(
+							() =>
+								globalThis.__overnightCapture.filter(
+									(event) => event.name === "start-native-mac-recording",
+								).length,
+						),
+					{ timeout: 60_000, intervals: [20, 20, 20] },
+				)
+				.toBe(startsBefore + 1);
+			const started = await app.evaluate(() =>
+				globalThis.__overnightCapture
+					.filter((event) => event.name === "start-native-mac-recording")
+					.at(-1),
+			);
+			if (!started.result.success)
+				throw new Error(`Actual native Record failed: ${started.result.error}`);
 			await expect
 				.poll(() => hud.evaluate(() => window.__overnightTiming), {
 					timeout: 60000,
@@ -583,6 +1011,7 @@ try {
 				.toHaveProperty("recordingAt");
 			const timing = await hud.evaluate(() => window.__overnightTiming);
 			const startMs = timing.recordingAt - timing.clickAt;
+			if (opt.fixture === "detailed") await page.evaluate(() => window.qualityFixture.reset());
 			console.log(
 				JSON.stringify({
 					event: "capture-started",
@@ -599,8 +1028,16 @@ try {
 			const pauseEvents = [];
 			let pauseCount = 0;
 			let killedHelper = false;
+			let failedDuringCapture = false;
 			while (performance.now() - elapsed < durations[i] * 1000) {
-				if (opt["kill-helper"] === "true" && performance.now() - elapsed >= 2000) {
+				if ((await app.evaluate(() => globalThis.__nativeFailureHistory.length)) > failuresBefore) {
+					failedDuringCapture = true;
+					break;
+				}
+				if (
+					opt["kill-helper"] === "true" &&
+					performance.now() - elapsed >= Number(opt["kill-at-sec"] ?? 2) * 1000
+				) {
 					const row = execFileSync("/bin/ps", ["-axo", "pid,ppid,comm"], { encoding: "utf8" })
 						.split("\n")
 						.map((line) => line.trim().split(/\s+/))
@@ -611,6 +1048,29 @@ try {
 								path.basename(command ?? "") === "openscreen-screencapturekit-helper",
 						);
 					if (!row) throw new Error("No task-owned capture child to terminate");
+					await hud.exposeFunction("__rememberNativeFailureProof", (proof) => {
+						report.helperFailureProof = proof;
+					});
+					await hud.evaluate(() => {
+						window.__nativeFailureProof = {};
+						window.electronAPI.onNativeMacRecordingError((failure) => {
+							window.__nativeFailureProof.event = failure;
+							window.__nativeFailureProof.observedAt = performance.now();
+						});
+						const observer = new MutationObserver(() => {
+							if (document.body.textContent.includes("Saving completed clips now.")) {
+								window.__nativeFailureProof.visibleRecoveryMessage = true;
+								window.__nativeFailureProof.toastAt = performance.now();
+								void window.__rememberNativeFailureProof(window.__nativeFailureProof);
+								observer.disconnect();
+							}
+						});
+						observer.observe(document.body, {
+							subtree: true,
+							childList: true,
+							characterData: true,
+						});
+					});
 					process.kill(Number(row[0]), "SIGKILL");
 					killedHelper = true;
 					report.killedHelper = { pid: Number(row[0]), atMs: performance.now() - elapsed };
@@ -642,20 +1102,61 @@ try {
 						});
 					}
 					await new Promise((r) => setTimeout(r, 1000));
+					if (opt["closed-source"] === "true" && pauseCount === 1) {
+						const alternate = fixture.pages().find((candidate) => candidate !== page);
+						if (!alternate || (await alternate.title()) !== alternateTitle)
+							throw new Error("No owned alternate source window to close");
+						await alternate.close();
+						const previousResumes = await app.evaluate(
+							() =>
+								globalThis.__overnightCapture.filter(
+									(event) => event.name === "resume-native-mac-recording",
+								).length,
+						);
+						await hud
+							.getByRole("button", { name: /^(Continue|Resume)/ })
+							.first()
+							.click();
+						await expect
+							.poll(
+								() =>
+									app.evaluate(
+										() =>
+											globalThis.__overnightCapture.filter(
+												(event) => event.name === "resume-native-mac-recording",
+											).length,
+									),
+								{ timeout: 30_000 },
+							)
+							.toBe(previousResumes + 1);
+						const failure = await app.evaluate(() =>
+							globalThis.__overnightCapture
+								.filter((event) => event.name === "resume-native-mac-recording")
+								.at(-1),
+						);
+						expect(failure.result.success).toBe(false);
+						await expect(
+							hud.getByRole("button", { name: /^(Continue|Resume)/ }).first(),
+						).toBeEnabled();
+						pauseEvents.push({ kind: "closed-owned-source-resume-failed", failure });
+						await armSource(hud, title);
+					}
 					await hud
 						.getByRole("button", { name: /^(Continue|Resume)/ })
 						.first()
 						.click();
 					pauseEvents.push({ kind: "resume", atMs: performance.now() - elapsed });
 				}
+				const allProcessRows = execFileSync("/bin/ps", ["-axo", "pid,ppid,%cpu,rss,comm"], {
+					encoding: "utf8",
+				});
 				samples.push({
 					elapsedMs: performance.now() - elapsed,
-					ps: execFileSync("/bin/ps", ["-axo", "pid,ppid,%cpu,rss,comm"], { encoding: "utf8" })
-						.split("\n")
-						.filter((line) => {
-							const [pid, parent] = line.trim().split(/\s+/);
-							return Number(pid) === child.pid || Number(parent) === child.pid;
-						}),
+					installedCaptureProcesses: installedCaptureProcesses(allProcessRows),
+					ps: allProcessRows.split("\n").filter((line) => {
+						const [pid, parent] = line.trim().split(/\s+/);
+						return Number(pid) === child.pid || Number(parent) === child.pid;
+					}),
 				});
 				await new Promise((r) =>
 					setTimeout(
@@ -665,7 +1166,9 @@ try {
 				);
 			}
 			const stopStart = performance.now();
-			if (!killedHelper) {
+			if (opt.fixture === "detailed")
+				report.fixtureStats = await page.evaluate(() => window.qualityFixture.stats());
+			if (!killedHelper && !failedDuringCapture) {
 				if (opt["pause-stop"] === "true") {
 					await hud
 						.getByRole("button", { name: /^Pause/ })
@@ -676,7 +1179,14 @@ try {
 						atMs: performance.now() - elapsed,
 					});
 				}
-				await hud.getByTestId("launch-record-button").click();
+				await hud
+					.getByTestId("launch-record-button")
+					.click()
+					.catch((error) => {
+						// The real Stop can destroy its HUD before Playwright finishes the
+						// click. Never retry; only a new native Stop receipt can validate it.
+						report.stopClickCompletionError = String(error);
+					});
 			}
 			await expect
 				.poll(
@@ -690,7 +1200,19 @@ try {
 					{ timeout: 60000, intervals: [10, 10, 10] },
 				)
 				.toBe(true);
+			const failureHistory = await app.evaluate(() => globalThis.__nativeFailureHistory);
+			if (!killedHelper && failureHistory.length > failuresBefore)
+				throw new Error(
+					`Actual capture failed after starting: ${failureHistory.at(-1).failure.message}`,
+				);
 			const editor = await windowFor("editor");
+			if (killedHelper) {
+				report.helperFailureProof ??= await hud
+					.evaluate(() => window.__nativeFailureProof)
+					.catch(() => ({}));
+				expect(report.helperFailureProof.event?.message).toBeTruthy();
+				expect(report.helperFailureProof.visibleRecoveryMessage).toBe(true);
+			}
 			await expect
 				.poll(
 					() =>
@@ -710,6 +1232,9 @@ try {
 			const current = await editor.evaluate(() => window.electronAPI.getCurrentVideoPath());
 			const nativeHistory = await app.evaluate(() => globalThis.__overnightCapture);
 			const lastStop = completedStopSince(nativeHistory, stopResponses);
+			if (!killedHelper) assertCleanNativeStop(lastStop?.result);
+			else if (lastStop?.result?.success !== true)
+				throw new Error("Expected helper-crash recovery did not return a durable native Stop");
 			let source =
 				lastStop?.result?.path ??
 				(typeof current === "string" ? current : (current?.path ?? current?.videoPath));
@@ -795,13 +1320,63 @@ try {
 						{ encoding: "utf8", maxBuffer: 10000000 },
 					),
 				);
-				if (opt.export !== "false") await exportGui(editor, `${phase}-export`);
+				if (opt["export-mode"] === "sources") await exportSourcesGui(editor);
+				else if (opt.export !== "false") await exportGui(editor, `${phase}-export`);
+				if (opt.fixture === "detailed") {
+					const countedProbe = JSON.parse(
+						execFileSync(
+							"/opt/homebrew/bin/ffprobe",
+							[
+								"-v",
+								"error",
+								"-count_packets",
+								"-show_format",
+								"-show_streams",
+								"-of",
+								"json",
+								source,
+							],
+							{ encoding: "utf8" },
+						),
+					);
+					report.qualityMetrics = summarizeVideoProbe(countedProbe);
+					const packetProbe = JSON.parse(
+						execFileSync(
+							"/opt/homebrew/bin/ffprobe",
+							[
+								"-v",
+								"error",
+								"-select_streams",
+								"v:0",
+								"-show_streams",
+								"-show_packets",
+								"-show_entries",
+								"packet=stream_index,pts_time,dts_time,duration_time",
+								"-of",
+								"json",
+								source,
+							],
+							{ encoding: "utf8", maxBuffer: 10_000_000 },
+						),
+					);
+					await fsp.writeFile(path.join(out, "screen-packets.json"), JSON.stringify(packetProbe));
+					report.packetCadence = analyzePacketCadence(packetProbe);
+					if (
+						opt["export-mode"] === "sources" &&
+						opt.quality === "high" &&
+						!report.packetCadence.lockedFrameGrid
+					)
+						throw new Error(
+							`Actual High source has ${report.packetCadence.violations.length} non-60fps packet intervals`,
+						);
+				}
 				if (opt["review-smoke"] === "true") await reviewSmoke(editor);
 			}
 		}
 	}
 	report.host.freeMemoryAtEnd = os.freemem();
 	report.host.loadAtEnd = os.loadavg();
+	report.host.installedCaptureAtEnd = installedCaptureContext();
 	report.status = "passed";
 } catch (error) {
 	report.status = error.message?.startsWith("Microphone smoke skipped:") ? "skipped" : "failed";
@@ -833,9 +1408,51 @@ try {
 		}
 	process.exitCode = 1;
 } finally {
+	if (
+		app &&
+		(process.env.OPENSCREEN_CAPTURE_DIAGNOSTICS === "1" || opt["export-mode"] === "sources")
+	) {
+		const diagnosticPath = path.join(out, "native-diagnostic.json");
+		try {
+			// Adapt only the native file picker; the app's real diagnostic serializer
+			// supplies the helper output before its recording service is destroyed.
+			await app.evaluate(({ dialog }, filePath) => {
+				dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+			}, diagnosticPath);
+			const page = app
+				.windows()
+				.find((window) => /\bwindowType=(hud-overlay|editor)\b/.test(window.url()));
+			report.nativeDiagnostic = page
+				? await page.evaluate(
+						(error) => window.electronAPI.saveDiagnostic({ error }),
+						report.error ?? "Owned all-source capture timing diagnostic",
+					)
+				: { success: false, error: "No live owned renderer for diagnostic capture" };
+			if (report.nativeDiagnostic.success && fs.existsSync(diagnosticPath)) {
+				report.nativeWarningEvents = nativeWarningEventsFromDiagnostic(
+					JSON.parse(fs.readFileSync(diagnosticPath, "utf8")),
+				);
+				report.nativeWarningAudit = {
+					method:
+						"Real diagnostic serializer after all capture/export timings; production env unchanged",
+					source: diagnosticPath,
+				};
+			}
+		} catch (error) {
+			report.nativeDiagnostic = { success: false, error: String(error) };
+		}
+	}
 	if (app)
 		report.nativeCaptureHistory = await app
 			.evaluate(() => globalThis.__overnightCapture)
+			.catch(() => []);
+	if (app)
+		report.sourceExportHistory = await app
+			.evaluate(() => globalThis.__sourceExportHistory)
+			.catch(() => []);
+	if (app)
+		report.nativeFailureHistory = await app
+			.evaluate(() => globalThis.__nativeFailureHistory)
 			.catch(() => []);
 	const workloads = path.join(userData, "diagnostics/workloads");
 	if (fs.existsSync(workloads)) {
@@ -852,9 +1469,62 @@ try {
 			log.write(`Graceful close unavailable: ${error.message}\n`),
 		);
 	if (child && child.exitCode === null) child.kill("SIGKILL");
-	if (fixture) await fixture.close();
-	log.end();
+	if (launchServicesBrowser) {
+		try {
+			await Promise.race([
+				(async () => {
+					const session = await launchServicesBrowser.newBrowserCDPSession();
+					await session.send("Browser.close");
+				})(),
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error("Owned Chrome close timed out")), 5000),
+				),
+			]);
+		} catch {
+			// Chrome may disconnect before the close response; owned PID cleanup follows.
+		}
+	}
+	if (fixture)
+		await Promise.race([
+			fixture.close(),
+			new Promise((resolve) => setTimeout(resolve, 5000)),
+		]).catch((error) => log.write(`Fixture close unavailable: ${error.message}\n`));
+	const findOwnedChrome = () =>
+		ownedChromeProcessPids(
+			execFileSync("/bin/ps", ["-axo", "pid,ppid,args"], { encoding: "utf8" }),
+			path.join(runRoot, "chrome-profile"),
+			process.pid,
+			opt["fixture-launch"] === "launchservices",
+		);
+	const cleanup = { before: findOwnedChrome(), term: [], kill: [] };
+	for (const pid of cleanup.before) {
+		try {
+			process.kill(pid, "SIGTERM");
+			cleanup.term.push(pid);
+		} catch {
+			/* Process may exit between probes. */
+		}
+	}
+	const cleanupDeadline = performance.now() + 2000;
+	while (findOwnedChrome().length && performance.now() < cleanupDeadline)
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	for (const pid of findOwnedChrome()) {
+		try {
+			process.kill(pid, "SIGKILL");
+			cleanup.kill.push(pid);
+		} catch {
+			/* Only a revalidated private profile is selected. */
+		}
+	}
+	if (cleanup.kill.length) await new Promise((resolve) => setTimeout(resolve, 300));
+	cleanup.after = findOwnedChrome();
+	await fsp.writeFile(path.join(out, "chrome-cleanup.json"), JSON.stringify(cleanup, null, 2));
+	if (cleanup.after.length) process.exitCode = 1;
+	await new Promise((resolve) => log.end(resolve));
 	console.log(
 		JSON.stringify({ event: "report", path: path.join(out, "report.json"), status: report.status }),
 	);
+	// Playwright may retain an already-disconnected inspector after a failed
+	// launch. Owned apps and durable writes are closed before ending this driver.
+	process.exit(process.exitCode ?? 0);
 }

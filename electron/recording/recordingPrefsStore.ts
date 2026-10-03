@@ -1,5 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+	DEFAULT_RECORDING_QUALITY,
+	normalizeRecordingQuality,
+	type RecordingQuality,
+} from "../../src/lib/recording/recordingQuality";
 import type { CursorCaptureMode } from "../../src/lib/recordingSession";
 import {
 	DEFAULT_WEBCAM_FORMAT,
@@ -8,6 +13,7 @@ import {
 } from "../../src/lib/webcamFormats";
 
 export interface RecordingPrefs {
+	recordingQuality: RecordingQuality;
 	micEnabled: boolean;
 	micDeviceId: string | null;
 	camEnabled: boolean;
@@ -18,6 +24,7 @@ export interface RecordingPrefs {
 }
 
 export const DEFAULT_RECORDING_PREFS: RecordingPrefs = {
+	recordingQuality: DEFAULT_RECORDING_QUALITY,
 	micEnabled: false,
 	micDeviceId: null,
 	camEnabled: false,
@@ -40,6 +47,7 @@ function nullableDeviceId(value: unknown): string | null {
 export function normalizeRecordingPrefs(raw: unknown): RecordingPrefs {
 	const candidate = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 	return {
+		recordingQuality: normalizeRecordingQuality(candidate.recordingQuality),
 		micEnabled:
 			typeof candidate.micEnabled === "boolean"
 				? candidate.micEnabled

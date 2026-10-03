@@ -10,7 +10,7 @@
 // the new shell's modal style.
 
 import { Download, FileVideo, FolderOpen, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { InspectorSwitch } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
@@ -86,11 +86,18 @@ interface ExportDialogProps {
 	open: boolean;
 	onClose: () => void;
 	document: AxcutDocument | null;
-	/** Recording review opens the save picker directly with source-quality MP4. */
+	/** Recording review uses source-quality MP4 for the One video option. */
 	quickExport?: boolean;
+	onSourceBusyChange?: (busy: boolean) => void;
 }
 
-export function ExportDialog({ open, onClose, document, quickExport = false }: ExportDialogProps) {
+export function ExportDialog({
+	open,
+	onClose,
+	document,
+	quickExport = false,
+	onSourceBusyChange,
+}: ExportDialogProps) {
 	const t = useScopedT("editor");
 	const ts = useScopedT("settings");
 	const { routes: cleanVoiceRoutes } = useCleanVoiceRuntime(document);
@@ -98,7 +105,7 @@ export function ExportDialog({ open, onClose, document, quickExport = false }: E
 	// just runs on the software encoder and takes minutes instead of seconds.
 	const cpuCompositor = useIsCpuCompositor();
 	const [initialPreferences] = useState(() => loadEditingPreferences().export);
-	const [output, setOutput] = useState<"sources" | "video">("sources");
+	const [output, setOutput] = useState<"sources" | "video">(initialPreferences.output);
 	const [sourceBusy, setSourceBusy] = useState(false);
 	const [format, setFormat] = useState<ExportFormat>(initialPreferences.format);
 	const [quality, setQuality] = useState<ExportQuality>(initialPreferences.quality);
@@ -116,7 +123,6 @@ export function ExportDialog({ open, onClose, document, quickExport = false }: E
 	const savedPath = useExportRunStore((s) => s.savedPath);
 	const audioMastering = useExportRunStore((s) => s.audioMastering);
 	const run = useExportRunStore.getState;
-	const quickStartedRef = useRef(false);
 
 	// (Old behavior: the native compositor overlay used to be a top-level OS window outside the
 	//  Chromium surface, so we'd hide it here to put this modal in front. The compositor now
@@ -260,13 +266,10 @@ export function ExportDialog({ open, onClose, document, quickExport = false }: E
 	}, [codec, format, fps, gifFrameRate, gifLoop, gifSize, quality, quickExport]);
 
 	useEffect(() => {
-		if (!open) {
-			quickStartedRef.current = false;
-			return;
-		}
+		if (!open) return;
 		if (quickExport && !isExportRunActive(useExportRunStore.getState().phase))
 			useExportRunStore.getState().reset();
-		setOutput(quickExport ? "video" : "sources");
+		setOutput(loadEditingPreferences().export.output);
 		if (quickExport) {
 			setFormat("mp4");
 			setQuality("source");
@@ -274,6 +277,14 @@ export function ExportDialog({ open, onClose, document, quickExport = false }: E
 			setCodec("h264");
 		}
 	}, [open, quickExport]);
+	const selectOutput = (next: "sources" | "video") => {
+		setOutput(next);
+		saveExportPreferences({ output: next });
+	};
+	const sourceBusyChanged = (busy: boolean) => {
+		onSourceBusyChange?.(busy);
+		setSourceBusy(busy);
+	};
 
 	// Escape, the backdrop and Close never cancel: a running export continues in the
 	// background and the top bar shows its progress. Cancel is its own button.
@@ -450,36 +461,6 @@ export function ExportDialog({ open, onClose, document, quickExport = false }: E
 		}
 	};
 
-	// Keep the picker to one invocation per opening, including StrictMode's extra
-	// effect setup and progress rerenders. Cancellation leaves normal Retry available.
-	const startRef = useRef(handleStart);
-	startRef.current = handleStart;
-	useEffect(() => {
-		if (!open || !quickExport) return;
-		if (isExportRunActive(phase)) {
-			// Reopening progress consumes this Save invocation too. Cancelling the
-			// existing run must not make an idle phase launch a replacement picker.
-			quickStartedRef.current = true;
-			return;
-		}
-		if (quickStartedRef.current || !document || !primaryAsset || nativeClips.length === 0) return;
-		if (format !== "mp4" || quality !== "source" || fps !== 60 || codec !== "h264") return;
-		if (phase === "done") return;
-		quickStartedRef.current = true;
-		void startRef.current();
-	}, [
-		open,
-		quickExport,
-		document,
-		primaryAsset,
-		nativeClips.length,
-		format,
-		quality,
-		fps,
-		codec,
-		phase,
-	]);
-
 	const isBusy = isExportRunActive(phase);
 	const pct = progress?.percentage ?? 0;
 	const gifSizeLabel = GIF_SIZE_PRESETS[gifSize].label;
@@ -513,7 +494,7 @@ export function ExportDialog({ open, onClose, document, quickExport = false }: E
 					className={styles.btn}
 					aria-pressed={output === "sources"}
 					disabled={isBusy || sourceBusy}
-					onClick={() => setOutput("sources")}
+					onClick={() => selectOutput("sources")}
 				>
 					Separate takes
 				</button>
@@ -522,14 +503,14 @@ export function ExportDialog({ open, onClose, document, quickExport = false }: E
 					className={styles.btn}
 					aria-pressed={output === "video"}
 					disabled={isBusy || sourceBusy}
-					onClick={() => setOutput("video")}
+					onClick={() => selectOutput("video")}
 				>
 					One video
 				</button>
 			</div>
 			{output === "sources" && !isBusy ? (
 				<div className={exportStyles.dialog}>
-					<SourceExportPanel document={document} busy={sourceBusy} onBusy={setSourceBusy} />
+					<SourceExportPanel document={document} busy={sourceBusy} onBusy={sourceBusyChanged} />
 				</div>
 			) : (
 				<div

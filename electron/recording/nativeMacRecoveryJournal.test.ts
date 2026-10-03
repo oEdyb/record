@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecordingSession } from "../../src/lib/recordingSession";
+import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
 import {
 	clearNativeMacRecoveryJournal,
 	nativeMacRecoveryJournalPath,
@@ -12,15 +13,156 @@ import {
 	updateNativeMacRecoveryJournalIfPresent,
 } from "./nativeMacRecoveryJournal";
 
+vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
+
 describe("native macOS recovery journal", () => {
 	let recordingsDir: string;
 
 	beforeEach(async () => {
+		vi.mocked(inspectHandoffSourceMedia).mockReset();
 		recordingsDir = await fs.mkdtemp(path.join(os.tmpdir(), "record-recovery-"));
 	});
 
 	afterEach(async () => {
 		await fs.rm(recordingsDir, { recursive: true, force: true });
+	});
+
+	it("recovers all three journaled originals after a killed helper with their captured offsets", async () => {
+		const stem = path.join(recordingsDir, "recording-61-clip-0001");
+		const screenVideoPath = `${stem}.mp4`;
+		const originals = {
+			webcamVideoPath: `${stem}-webcam.mov`,
+			webcamOffsetMs: 0,
+			microphoneAudioPath: `${stem}-microphone.mov`,
+			microphoneAudioOffsetMs: 23.5,
+			systemAudioPath: `${stem}-system.mov`,
+			systemAudioOffsetMs: 7.25,
+		};
+		for (const file of [
+			screenVideoPath,
+			originals.webcamVideoPath,
+			originals.microphoneAudioPath,
+			originals.systemAudioPath,
+		])
+			await fs.writeFile(file, "durable fragment");
+		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+			hasAudio: !file.endsWith("webcam.mov"),
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: 5.95,
+			...(file.endsWith("webcam.mov")
+				? { video: { codec: "h264", width: 1920, height: 1080, fps: 30 } }
+				: {}),
+		}));
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			createdAt: 61,
+			screenVideoPath,
+			schemaVersion: 2,
+			clips: [
+				{ index: 0, screenVideoPath, durationMs: 60_000, provisionalDuration: true, ...originals },
+			],
+		});
+		const recovered = await restoreNativeMacRecoverySession(recordingsDir, 61);
+		expect(recovered?.clips?.[0]).toMatchObject(originals);
+		expect(recovered?.recoveryWarnings).toBeUndefined();
+		expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(3);
+	});
+
+	it("keeps the screen and valid microphone when another original has no readable media duration", async () => {
+		const stem = path.join(recordingsDir, "recording-62-clip-0001");
+		const screenVideoPath = `${stem}.mp4`;
+		for (const file of [
+			screenVideoPath,
+			`${stem}-webcam.mov`,
+			`${stem}-microphone.mov`,
+			`${stem}-system.mov`,
+		])
+			await fs.writeFile(file, "fragment");
+		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+			hasAudio: true,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: file.endsWith("microphone.mov") ? 3 : null,
+		}));
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			createdAt: 62,
+			screenVideoPath,
+			schemaVersion: 2,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath,
+					durationMs: 60_000,
+					provisionalDuration: true,
+					webcamVideoPath: `${stem}-webcam.mov`,
+					webcamOffsetMs: 0,
+					microphoneAudioPath: `${stem}-microphone.mov`,
+					microphoneAudioOffsetMs: 33,
+					systemAudioPath: `${stem}-system.mov`,
+					systemAudioOffsetMs: 0,
+				},
+			],
+		});
+		const recovered = await restoreNativeMacRecoverySession(recordingsDir, 62);
+		expect(recovered?.clips?.[0]).toMatchObject({
+			screenVideoPath,
+			microphoneAudioPath: `${stem}-microphone.mov`,
+			microphoneAudioOffsetMs: 33,
+		});
+		expect(recovered?.clips?.[0]).not.toHaveProperty("webcamVideoPath");
+		expect(recovered?.clips?.[0]).not.toHaveProperty("systemAudioPath");
+		expect(recovered?.recoveryWarnings).toHaveLength(2);
+	});
+
+	it("rejects a journaled outside original or missing timing without probing or inventing sync", async () => {
+		const stem = path.join(recordingsDir, "recording-63-clip-0001");
+		const screenVideoPath = `${stem}.mp4`;
+		await fs.writeFile(screenVideoPath, "screen");
+		await fs.writeFile(`${stem}-microphone.mov`, "microphone");
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			createdAt: 63,
+			screenVideoPath,
+			schemaVersion: 2,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath,
+					durationMs: 60_000,
+					webcamVideoPath: "/tmp/unrelated-camera.mov",
+					webcamOffsetMs: 0,
+					microphoneAudioPath: `${stem}-microphone.mov`,
+				},
+			],
+		});
+		const recovered = await restoreNativeMacRecoverySession(recordingsDir, 63);
+		expect(recovered?.clips?.[0]).not.toHaveProperty("webcamVideoPath");
+		expect(recovered?.clips?.[0]).not.toHaveProperty("microphoneAudioPath");
+		expect(recovered?.recoveryWarnings).toHaveLength(2);
+		expect(inspectHandoffSourceMedia).not.toHaveBeenCalled();
+	});
+
+	it.skipIf(process.platform === "win32")("rejects an exact-name original symlink", async () => {
+		const stem = path.join(recordingsDir, "recording-64-clip-0001");
+		const screenVideoPath = `${stem}.mp4`;
+		await fs.writeFile(screenVideoPath, "screen");
+		await fs.symlink(screenVideoPath, `${stem}-webcam.mov`);
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			createdAt: 64,
+			screenVideoPath,
+			schemaVersion: 2,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath,
+					durationMs: 60_000,
+					webcamVideoPath: `${stem}-webcam.mov`,
+					webcamOffsetMs: 0,
+				},
+			],
+		});
+		const recovered = await restoreNativeMacRecoverySession(recordingsDir, 64);
+		expect(recovered?.clips?.[0]).not.toHaveProperty("webcamVideoPath");
+		expect(inspectHandoffSourceMedia).not.toHaveBeenCalled();
 	});
 
 	it("restores finalized clips and a crash-readable provisional active clip", async () => {

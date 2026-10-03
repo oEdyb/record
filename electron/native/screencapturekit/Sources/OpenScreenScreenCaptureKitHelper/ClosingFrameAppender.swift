@@ -5,7 +5,9 @@ import Foundation
 // All mutable state and AVAssetWriter access are confined to the supplied
 // sample queue. The retained screen sample is immutable across the retry.
 final class ClosingFrameAppender: @unchecked Sendable {
-	private let sample: CMSampleBuffer
+	private let samples: [CMSampleBuffer]
+	private let onAppend: (CMSampleBuffer) -> Void
+	private var nextSample = 0
 	private let input: AVAssetWriterInput
 	private let writer: AVAssetWriter
 	private let queue: DispatchQueue
@@ -14,11 +16,16 @@ final class ClosingFrameAppender: @unchecked Sendable {
 	private var deadline: DispatchTime?
 	private var finished = false
 
-	init(sample: CMSampleBuffer, input: AVAssetWriterInput, writer: AVAssetWriter, queue: DispatchQueue) {
-		self.sample = sample
+	convenience init(sample: CMSampleBuffer, input: AVAssetWriterInput, writer: AVAssetWriter, queue: DispatchQueue) {
+		self.init(samples: [sample], input: input, writer: writer, queue: queue)
+	}
+
+	init(samples: [CMSampleBuffer], input: AVAssetWriterInput, writer: AVAssetWriter, queue: DispatchQueue, onAppend: @escaping (CMSampleBuffer) -> Void = { _ in }) {
+		self.samples = samples
 		self.input = input
 		self.writer = writer
 		self.queue = queue
+		self.onAppend = onAppend
 	}
 
 	func append() async throws {
@@ -51,12 +58,21 @@ final class ClosingFrameAppender: @unchecked Sendable {
 			finish(.failure(HelperError.writerSetupFailed("Timed out writing the recording boundary frame.")))
 			return
 		}
-		guard input.isReadyForMoreMediaData else { return }
-		if input.append(sample) {
-			finish(.success(()))
-		} else {
-			finish(.failure(writer.error ?? HelperError.writerSetupFailed("Unable to write the final screen frame.")))
+		while nextSample < samples.count {
+			guard input.isReadyForMoreMediaData else { return }
+			let sample = samples[nextSample]
+			guard input.append(sample) else {
+				finish(.failure(writer.error ?? HelperError.writerSetupFailed("Unable to write the final screen frame.")))
+				return
+			}
+			nextSample += 1
+			onAppend(sample)
+			if let deadline, DispatchTime.now().uptimeNanoseconds >= deadline.uptimeNanoseconds, nextSample < samples.count {
+				finish(.failure(HelperError.writerSetupFailed("Timed out writing the recording boundary frames.")))
+				return
+			}
 		}
+		finish(.success(()))
 	}
 
 	private func finish(_ result: Result<Void, Error>) {

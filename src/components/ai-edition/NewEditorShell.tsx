@@ -186,6 +186,13 @@ export function NewEditorShell() {
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
 	const [exportOpen, setExportOpen] = useState(false);
 	const [quickExport, setQuickExport] = useState(true);
+	const [sourceExportBusy, setSourceExportBusy] = useState(false);
+	const sourceExportBusyRef = useRef(false);
+	const handleSourceExportBusyChange = useCallback((busy: boolean) => {
+		// Menu and keyboard handlers must observe the lock before React renders.
+		sourceExportBusyRef.current = busy;
+		setSourceExportBusy(busy);
+	}, []);
 	// A background export keeps rendering after its dialog closes; the top bar shows it.
 	const exportRunPhase = useExportRunStore((s) => s.phase);
 	const exportRunProgress = useExportRunStore((s) => s.progress);
@@ -274,6 +281,9 @@ export function NewEditorShell() {
 	const recordingReviewNavigation = useMemo(
 		() =>
 			createRecordingReviewNavigation({
+				isExporting: () =>
+					PRODUCT_SURFACE.recordingOnly &&
+					(sourceExportBusyRef.current || isExportRunActive(useExportRunStore.getState().phase)),
 				isPreparing: () =>
 					PRODUCT_SURFACE.recordingOnly &&
 					Boolean(
@@ -1083,7 +1093,8 @@ export function NewEditorShell() {
 	}, [addAsset, importingMedia, openEntitlement, te, tl]);
 
 	const handleNewRecording = useCallback(async () => {
-		if (isExportRunActive(useExportRunStore.getState().phase)) return;
+		if (sourceExportBusyRef.current || isExportRunActive(useExportRunStore.getState().phase))
+			return;
 		if (!requireEntitlement("record")) return;
 		const api = window.electronAPI;
 		if (!api?.startNewRecording) return;
@@ -1123,6 +1134,8 @@ export function NewEditorShell() {
 							facet,
 						}
 					: undefined;
+			// A source picker/copy can start while the workspace or dirty save awaits.
+			if (recordingReviewNavigation.isBlocked()) return;
 			const result = await api.startNewRecording(context);
 			if (!result.success) {
 				if (result.code === "ENTITLEMENT_REQUIRED") {
@@ -1141,6 +1154,7 @@ export function NewEditorShell() {
 		inspectorOpen,
 		mode,
 		openEntitlement,
+		recordingReviewNavigation,
 		resumeRecordingWorkspace,
 		saveDocument,
 		setPlaying,
@@ -1148,7 +1162,7 @@ export function NewEditorShell() {
 
 	const openRecordingExport = useCallback(
 		async (sourceRecovery: boolean) => {
-			if (recordingReviewActionRef.current) return;
+			if (sourceExportBusyRef.current || recordingReviewActionRef.current) return;
 			if (!sourceRecovery && !requireEntitlement("export")) return;
 			recordingReviewActionRef.current = true;
 			setRecordingReviewActionPending(true);
@@ -1723,7 +1737,7 @@ export function NewEditorShell() {
 					canSave={hasAsset}
 					preparing={recordingReviewPending || recordingReviewActionPending}
 					readOnly={entitlement.access === "read-only"}
-					busy={isExportRunActive(exportRunPhase)}
+					busy={sourceExportBusy || isExportRunActive(exportRunPhase)}
 					percent={exportRun?.percent ?? null}
 					entitlementLabel={entitlementLabel}
 					onEntitlement={() => openEntitlement()}
@@ -1992,6 +2006,7 @@ export function NewEditorShell() {
 				onClose={() => setExportOpen(false)}
 				document={document}
 				quickExport={PRODUCT_SURFACE.recordingOnly && quickExport}
+				onSourceBusyChange={handleSourceExportBusyChange}
 			/>
 		</div>
 	);

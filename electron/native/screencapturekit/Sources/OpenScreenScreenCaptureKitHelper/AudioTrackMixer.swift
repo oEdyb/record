@@ -23,10 +23,15 @@ import Foundation
 /// source has run `stallToleranceFrames` past it, without it, so a microphone that goes quiet
 /// or disappears mid-recording can never stall the track.
 ///
-/// Not thread-safe by design: every entry point runs on the recorder's serial sample queue,
-/// which is also the queue ScreenCaptureKit delivers both audio outputs on.
+/// Not thread-safe by design: every entry point runs on one compatibility-audio owner,
+/// independently of the recorder's screen/cadence queue.
 @available(macOS 13.0, *)
 final class AudioTrackMixer {
+	struct Failure {
+		let error: Error
+		let hostTime: CMTime
+	}
+	typealias Append = (AVAssetWriterInput, CMSampleBuffer) -> Bool
 	struct Telemetry {
 		let maxPendingBytes: Int
 		let maxPendingChunks: Int
@@ -72,13 +77,20 @@ final class AudioTrackMixer {
 		private var blockedStartedAt: Date?
 		private var blockedSeconds = 0.0
 		private var didWarnAboutBacklog = false
+		private let append: Append
+		private let writer: AVAssetWriter?
+		private(set) var failure: Failure?
+		private(set) var didAppend = false
 
-		init(input: AVAssetWriterInput, label: String) {
+		init(input: AVAssetWriterInput, label: String, writer: AVAssetWriter?, append: @escaping Append) {
 			self.input = input
 			self.label = label
+			self.writer = writer
+			self.append = append
 		}
 
 		func enqueue(_ sampleBuffer: CMSampleBuffer) {
+			guard failure == nil else { return }
 			pending.append(sampleBuffer)
 			pendingBytes += CMSampleBufferGetTotalSampleSize(sampleBuffer)
 			maxPendingBytes = max(maxPendingBytes, pendingBytes)
@@ -95,14 +107,15 @@ final class AudioTrackMixer {
 		}
 
 		func flush(until deadline: Date?) {
+			guard failure == nil else { return }
 			while !pending.isEmpty && input.isReadyForMoreMediaData {
-				appendFirstPending()
+				guard appendFirstPending() else { return }
 			}
 			updateBlockedState()
 			if let deadline {
 				while !pending.isEmpty {
 					if input.isReadyForMoreMediaData {
-						appendFirstPending()
+						guard appendFirstPending() else { return }
 						updateBlockedState()
 						continue
 					}
@@ -139,11 +152,17 @@ final class AudioTrackMixer {
 			}
 		}
 
-		private func appendFirstPending() {
-			guard !pending.isEmpty else { return }
-			let sample = pending.removeFirst()
-			pendingBytes = max(0, pendingBytes - CMSampleBufferGetTotalSampleSize(sample))
-			input.append(sample)
+		private func appendFirstPending() -> Bool {
+			guard let sample = pending.first else { return true }
+			guard append(input, sample) else {
+				failure = Failure(error: HelperError.writerSetupFailed(
+					writer?.error.map { "\($0)" } ?? "The \(label) AAC input rejected a compatibility audio sample."
+				), hostTime: CMClockGetTime(CMClockGetHostTimeClock()))
+				return false
+			}
+			removeFirstPending()
+			didAppend = true
+			return true
 		}
 
 		private func removeFirstPending() {
@@ -183,6 +202,16 @@ final class AudioTrackMixer {
 	/// Absolute frame index of the next chunk to emit.
 	private var cursor: Int64 = 0
 	private var didWarnAboutDecode: Set<Int> = []
+	var failure: Failure? {
+		[mixedOutput, systemOutput, microphoneOutput].compactMap { $0?.failure }.min { $0.hostTime < $1.hostTime }
+	}
+	var readyTracks: Set<String> {
+		var value = Set<String>()
+		if mixedOutput.didAppend { value.insert("mixed") }
+		if systemOutput?.didAppend == true { value.insert("system") }
+		if microphoneOutput?.didAppend == true { value.insert("microphone") }
+		return value
+	}
 
 	init(
 		mixedInput: AVAssetWriterInput,
@@ -190,11 +219,13 @@ final class AudioTrackMixer {
 		microphoneInput: AVAssetWriterInput?,
 		includesSystemAudio: Bool,
 		includesMicrophone: Bool,
-		microphoneGain: Double
+		microphoneGain: Double,
+		writer: AVAssetWriter? = nil,
+		append: @escaping Append = { $0.append($1) }
 	) {
-		self.mixedOutput = TrackOutput(input: mixedInput, label: "mixed preview")
-		self.systemOutput = systemInput.map { TrackOutput(input: $0, label: "system audio") }
-		self.microphoneOutput = microphoneInput.map { TrackOutput(input: $0, label: "microphone") }
+		self.mixedOutput = TrackOutput(input: mixedInput, label: "mixed preview", writer: writer, append: append)
+		self.systemOutput = systemInput.map { TrackOutput(input: $0, label: "system audio", writer: writer, append: append) }
+		self.microphoneOutput = microphoneInput.map { TrackOutput(input: $0, label: "microphone", writer: writer, append: append) }
 		self.includesSystemAudio = includesSystemAudio
 		self.includesMicrophone = includesMicrophone
 		// The request carries MIC_GAIN_BOOST (1.4); Windows applies it unconditionally and so
@@ -215,7 +246,7 @@ final class AudioTrackMixer {
 	}
 
 	func ingest(_ sampleBuffer: CMSampleBuffer, from source: Source) {
-		guard includes(source), let sessionStart else {
+		guard failure == nil, includes(source), let sessionStart else {
 			return
 		}
 		let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
@@ -251,14 +282,14 @@ final class AudioTrackMixer {
 		drain(flushing: false)
 	}
 
-	/// Writes out everything still buffered. Call once, on the sample queue, before the
+	/// Writes out everything still buffered. Call once, on the audio owner, before the
 	/// writer input is marked as finished.
 	func finish() -> Telemetry {
 		drain(flushing: true)
 		let deadline = Date().addingTimeInterval(MixFormat.finalFlushTimeout)
-		mixedOutput.flush(until: deadline)
-		systemOutput?.flush(until: deadline)
-		microphoneOutput?.flush(until: deadline)
+		if failure == nil { mixedOutput.flush(until: deadline) }
+		if failure == nil { systemOutput?.flush(until: deadline) }
+		if failure == nil { microphoneOutput?.flush(until: deadline) }
 		let outputs = [mixedOutput, systemOutput, microphoneOutput].compactMap { $0 }
 		return Telemetry(
 			maxPendingBytes: outputs.map(\.telemetry.maxPendingBytes).max() ?? 0,
@@ -312,7 +343,7 @@ final class AudioTrackMixer {
 	/// chunk goes out with silence in its place. That is what keeps a dead microphone — or a
 	/// system-audio device that stops delivering — from blocking the whole track.
 	private func drain(flushing: Bool) {
-		while true {
+		while failure == nil {
 			let delivered = sources.indices.filter { sources[$0].hasDelivered }
 			guard let furthest = delivered.map({ sources[$0].endFrame }).max(), furthest > cursor else {
 				break
@@ -371,11 +402,13 @@ final class AudioTrackMixer {
 		if let sampleBuffer = makeSampleBuffer(from: mix, at: presentationTime) {
 			mixedOutput.enqueue(sampleBuffer)
 		}
+		guard failure == nil else { return false }
 		if let systemOutput,
 			let sampleBuffer = makeSampleBuffer(from: system, at: presentationTime)
 		{
 			systemOutput.enqueue(sampleBuffer)
 		}
+		guard failure == nil else { return false }
 		if let microphoneOutput,
 			let sampleBuffer = makeSampleBuffer(from: microphone, at: presentationTime)
 		{

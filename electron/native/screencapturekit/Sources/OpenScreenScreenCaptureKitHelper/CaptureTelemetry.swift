@@ -54,7 +54,14 @@ final class CaptureTelemetry {
 	private var startedScreenSamples = 0
 	private var stoppedScreenSamples = 0
 	private var otherScreenSamples = 0
+	private var repeatedVideoFrames = 0
 	private var appendedVideoFrames = 0
+	private var writerBackpressureEvents = 0
+	private var appendedCameraFrames = 0
+	private var originalBackpressureEvents = 0
+	private var originalMaxQueueDepth = 0
+	private var cameraSamples = 0
+	private var cameraDroppedFrames = 0
 	private var pendingVideoFrames = 0
 	private var appendFailures = 0
 	private var systemAudioSamples = 0
@@ -129,8 +136,16 @@ final class CaptureTelemetry {
 		currentClipAppendedFrames += 1
 	}
 
-	func recordVideoBackpressure() {
-		lock.withLock { pendingVideoFrames += 1 }
+	func recordOriginalWriter(cameraFrames: Int, backpressureEvents: Int, queueDepth: Int) {
+		lock.withLock { appendedCameraFrames += cameraFrames; originalBackpressureEvents += backpressureEvents; originalMaxQueueDepth = max(originalMaxQueueDepth, queueDepth) }
+	}
+
+	func recordCameraSample(dropped: Bool = false) { lock.withLock { if dropped { cameraDroppedFrames += 1 } else { cameraSamples += 1 } } }
+
+	func recordRepeatedVideoFrame() { lock.withLock { repeatedVideoFrames += 1 } }
+
+	func recordVideoBackpressure(retried: Bool = false) {
+		lock.withLock { writerBackpressureEvents += 1; if !retried { pendingVideoFrames += 1 } }
 	}
 
 	func recordVideoAppendFailure() {
@@ -202,7 +217,17 @@ final class CaptureTelemetry {
 			"otherScreenSamples": otherScreenSamples,
 			"incompleteScreenSamples": incompleteFrames,
 			"appendedVideoFrames": appendedVideoFrames,
+			"repeatedVideoFrames": repeatedVideoFrames,
+			"completeSourceVideoFps": mediaDurationMs > 0 ? Double(completeScreenSamples) * 1_000 / Double(mediaDurationMs) : 0,
 			"pendingVideoFrames": pendingVideoFrames,
+			"writerBackpressureEvents": writerBackpressureEvents,
+			"cameraSamples": cameraSamples,
+			"cameraDroppedFrames": cameraDroppedFrames,
+			"appendedCameraFrames": appendedCameraFrames,
+			"originalBackpressureEvents": originalBackpressureEvents,
+			"originalMaxQueueDepth": originalMaxQueueDepth,
+			"completeSourceCameraFps": mediaDurationMs > 0 ? Double(cameraSamples) * 1_000 / Double(mediaDurationMs) : 0,
+			"deliveredCameraFps": mediaDurationMs > 0 ? Double(appendedCameraFrames) * 1_000 / Double(mediaDurationMs) : 0,
 			"appendFailures": appendFailures,
 			"droppedVideoFrames": droppedFrames,
 			"systemAudioSamples": systemAudioSamples,

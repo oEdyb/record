@@ -56,6 +56,13 @@ export interface RecordingSession extends ProjectMedia {
 }
 
 export interface RecordingSessionClip {
+	/** Untouched, per-clip native originals. Audio files start at their first sample. */
+	webcamVideoPath?: string;
+	webcamOffsetMs?: number;
+	microphoneAudioPath?: string;
+	systemAudioPath?: string;
+	microphoneAudioOffsetMs?: number;
+	systemAudioOffsetMs?: number;
 	index: number;
 	screenVideoPath: string;
 	durationMs: number;
@@ -200,6 +207,7 @@ export function normalizeRecordingSession(candidate: unknown): RecordingSession 
 						return null;
 					}
 					return {
+						...normalizeRecordingOriginals(value),
 						index: value.index,
 						screenVideoPath,
 						durationMs: value.durationMs,
@@ -227,4 +235,25 @@ export function normalizeRecordingSession(candidate: unknown): RecordingSession 
 		...(importProjectId ? { importProjectId } : {}),
 		...(clips ? { clips, schemaVersion: 2 as const } : {}),
 	};
+}
+
+export function normalizeRecordingOriginals(value: Partial<RecordingSessionClip>) {
+	const result: Pick<
+		RecordingSessionClip,
+		| "webcamVideoPath"
+		| "webcamOffsetMs"
+		| "microphoneAudioPath"
+		| "systemAudioPath"
+		| "microphoneAudioOffsetMs"
+		| "systemAudioOffsetMs"
+	> = {};
+	for (const key of ["webcamVideoPath", "microphoneAudioPath", "systemAudioPath"] as const) {
+		const filePath = normalizePath(value[key]);
+		if (filePath) result[key] = filePath;
+	}
+	for (const key of ["webcamOffsetMs", "microphoneAudioOffsetMs", "systemAudioOffsetMs"] as const) {
+		const offset = value[key];
+		if (typeof offset === "number" && Number.isFinite(offset)) result[key] = offset;
+	}
+	return result;
 }

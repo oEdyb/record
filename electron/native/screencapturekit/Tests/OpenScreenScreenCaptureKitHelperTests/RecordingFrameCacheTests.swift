@@ -5,6 +5,22 @@ import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
 final class RecordingFrameCacheTests: XCTestCase {
+	func testHistoricalGridNeverUsesFuturePixelsAndRetainsFirstImageWhileInputIsNotReady() throws {
+		let first = try makeScreenSample(at: 100), future = try makeScreenSample(at: 100.5)
+		var cache = RecordingFrameCache()
+		cache.observe(first); cache.observe(future)
+		let retained = try XCTUnwrap(cache.scheduledFrame(at: time(100), fps: 60, firstFrame: first))
+		XCTAssertTrue(CMSampleBufferGetImageBuffer(retained.sample) === CMSampleBufferGetImageBuffer(first))
+		XCTAssertEqual(retained.sourceTime, time(100))
+		cache.didAppend(try RecordingFrameCache.retime(first, at: time(100.1), fps: 60), sourceTime: time(100))
+		let historical = try XCTUnwrap(cache.scheduledFrame(at: time(100.2), fps: 60, firstFrame: nil))
+		XCTAssertTrue(CMSampleBufferGetImageBuffer(historical.sample) === CMSampleBufferGetImageBuffer(first))
+		XCTAssertEqual(historical.sourceTime, time(100), "Repeated pixels retain capture identity rather than their retimed grid PTS")
+		let current = try XCTUnwrap(cache.scheduledFrame(at: time(100.5), fps: 60, firstFrame: nil))
+		XCTAssertTrue(CMSampleBufferGetImageBuffer(current.sample) === CMSampleBufferGetImageBuffer(future))
+		XCTAssertEqual(current.sourceTime, time(100.5))
+		XCTAssertEqual(CMSampleBufferGetPresentationTimeStamp(future), time(100.5))
+	}
 	func testEveryClipAcknowledgesOnlyItsFirstSuccessfulAppend() {
 		var barrier = RecordingStartBarrier()
 		barrier.prepare(clipIndex: 0)
@@ -42,6 +58,23 @@ final class RecordingFrameCacheTests: XCTestCase {
 		XCTAssertNil(try cache.closingFrame(at: time(103), fps: 60))
 	}
 
+	func testResumeEpochFollowsEncoderPreparationInsteadOfItsStaleSeedClock() throws {
+		var cache = RecordingFrameCache()
+		let source = try makeScreenSample(at: 100)
+		cache.observe(source)
+		let prePreparationSeed = try XCTUnwrap(cache.resumedFrame(at: time(200), fps: 60))
+		let preparationCompleted = time(200.35) // Measured cold encoder preparation exceeded 243 ms.
+		let preparedSeed = try RecordingFrameCache.retime(prePreparationSeed, at: preparationCompleted, fps: 60)
+		XCTAssertEqual(CMSampleBufferGetPresentationTimeStamp(preparedSeed), preparationCompleted)
+		XCTAssertTrue(CMSampleBufferGetImageBuffer(preparedSeed) === CMSampleBufferGetImageBuffer(source))
+		var grid = RecordingCadence(fps: 60)
+		grid.begin(at: CMSampleBufferGetPresentationTimeStamp(preparedSeed))
+		XCTAssertEqual(try grid.dueTimes(at: time(200.37)).count, 1)
+		grid.begin(at: CMSampleBufferGetPresentationTimeStamp(prePreparationSeed))
+		XCTAssertThrowsError(try grid.dueTimes(at: time(200.37)), "A pre-preparation seed falsely spends the live lag budget")
+		XCTAssertEqual(CMSampleBufferGetPresentationTimeStamp(source), time(100), "Preparing the resume seed cannot mutate captured source timing")
+	}
+
 	func testSourceChangesInvalidateOldResumeFrame() throws {
 		var cache = RecordingFrameCache()
 		cache.observe(try makeScreenSample(at: 100))
@@ -66,6 +99,58 @@ final class RecordingFrameCacheTests: XCTestCase {
 		cache.observe(try makeScreenSample(at: 100))
 		let resumed = try XCTUnwrap(cache.resumedFrame(at: time(200), fps: 60))
 		try await verifyStaticClip(firstTime: 200, endTime: 201, expectedDuration: 1, firstSample: resumed)
+	}
+
+	func testEncodedHighClosingGridHasNoGapAndExcludesDelayedTeardown() async throws {
+		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: directory.path) }
+		let output = directory.appendingPathComponent("high-boundary.mp4")
+		let (writer, input) = try makeWriter(at: output)
+		let queue = DispatchQueue(label: "test.high-boundary")
+		let anchor = time(100)
+		var termination = RecordingTerminationBoundary()
+		termination.recordFailure(at: time(101.153333))
+		let frozenBoundary = termination.endingAt(time(103.153333))
+		let first = try makeScreenSample(at: 100)
+		XCTAssertTrue(writer.startWriting())
+		writer.startSession(atSourceTime: anchor)
+		var grid = RecordingCadence(fps: 60)
+		grid.begin(at: anchor)
+		var cache = RecordingFrameCache()
+		let regular = try (0...30).map { try RecordingFrameCache.retime(first, at: anchor + CMTime(value: Int64($0), timescale: 60), fps: 60) }
+		try await ClosingFrameAppender(samples: regular, input: input, writer: writer, queue: queue).append()
+		cache.didAppend(try XCTUnwrap(regular.last))
+		for _ in 1...30 { grid.didAppend() }
+		// Reproduce the missing 653 ms before Stop. Later source/teardown time is
+		// never passed back into the frozen boundary's grid or asset session.
+		let closing = try grid.closingFrames(endingAt: frozenBoundary).compactMap { frame in
+			try cache.boundaryFrame(at: frame.time, duration: frame.duration, fps: 60)
+		}
+		XCTAssertEqual(closing.count, 39)
+		try await Task.sleep(nanoseconds: 100_000_000)
+		try await ClosingFrameAppender(samples: closing, input: input, writer: writer, queue: queue).append()
+		writer.endSession(atSourceTime: frozenBoundary)
+		input.markAsFinished()
+		await withCheckedContinuation { continuation in writer.finishWriting { continuation.resume() } }
+		XCTAssertEqual(writer.status, .completed, "\(String(describing: writer.error))")
+		let asset = AVURLAsset(url: output)
+		let duration = try await asset.load(.duration)
+		XCTAssertEqual(CMTimeGetSeconds(duration), CMTimeGetSeconds(frozenBoundary - anchor), accuracy: 0.001)
+		let tracks = try await asset.loadTracks(withMediaType: .video)
+		let track = try XCTUnwrap(tracks.first)
+		let reader = try AVAssetReader(asset: asset)
+		let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+		reader.add(readerOutput)
+		XCTAssertTrue(reader.startReading())
+		var times: [CMTime] = []
+		while let sample = readerOutput.copyNextSampleBuffer() {
+			if CMSampleBufferGetImageBuffer(sample) != nil { times.append(CMSampleBufferGetPresentationTimeStamp(sample)) }
+		}
+		XCTAssertEqual(reader.status, .completed)
+		XCTAssertEqual(times.count, 70)
+		for (previous, next) in zip(times, times.dropFirst()) { XCTAssertEqual(CMTimeGetSeconds(next - previous), 1 / 60, accuracy: 0.000001) }
+		XCTAssertLessThan(CMTimeGetSeconds(duration), 1.2, "Teardown delay must not extend the saved recording")
 	}
 
 	func testClosingFrameRejectsStoppedWriterWithoutHanging() async throws {

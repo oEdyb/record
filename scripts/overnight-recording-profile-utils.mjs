@@ -15,6 +15,13 @@ const FLAGS = new Set([
 	"review-smoke",
 	"change-source",
 	"remove-zero",
+	"camera",
+	"quality",
+	"fixture",
+	"fixture-launch",
+	"export-mode",
+	"kill-at-sec",
+	"closed-source",
 ]);
 const BOOLEAN_FLAGS = new Set([
 	"warm",
@@ -27,7 +34,21 @@ const BOOLEAN_FLAGS = new Set([
 	"review-smoke",
 	"change-source",
 	"remove-zero",
+	"camera",
+	"closed-source",
 ]);
+
+export function profileRequiresSourceDirectory(options) {
+	return options["export-mode"] === "sources" || options["fixture-launch"] === "launchservices";
+}
+
+export async function selectVideoExportChoice(dialog) {
+	await dialog.waitFor({ state: "visible" });
+	const choice = dialog.getByRole("button", { name: "One video", exact: true });
+	if (!(await choice.count())) return false;
+	await choice.click();
+	return true;
+}
 
 export function parseProfileArgs(argv) {
 	const options = {};
@@ -58,6 +79,21 @@ export function parseProfileArgs(argv) {
 	if (options.audio && !["none", "microphone", "system", "both"].includes(options.audio)) {
 		throw new Error("--audio must be none, microphone, system, or both");
 	}
+	if (
+		options["kill-at-sec"] &&
+		!(Number(options["kill-at-sec"]) > 0 && Number.isFinite(Number(options["kill-at-sec"])))
+	)
+		throw new Error("--kill-at-sec must be positive finite seconds");
+	for (const [name, values] of [
+		["quality", ["standard", "high"]],
+		["fixture", ["terminal", "detailed"]],
+		["fixture-launch", ["direct", "launchservices"]],
+		["export-mode", ["video", "sources"]],
+	])
+		if (options[name] && !values.includes(options[name]))
+			throw new Error(`--${name} must be ${values.join(" or ")}`);
+	if (options["closed-source"] === "true" && options["change-source"] !== "true")
+		throw new Error("--closed-source requires --change-source true");
 	return options;
 }
 

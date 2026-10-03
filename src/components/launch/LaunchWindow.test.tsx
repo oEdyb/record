@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
+import { saveUserPreferences } from "@/lib/userPreferences";
 import { TooltipProvider } from "../ui/tooltip";
 import { HUD_BAR_BOTTOM, HUD_POPOVER_GAP, HUD_POPOVER_MAX_HEIGHT } from "./hudGeometry";
 import { LaunchWindow } from "./LaunchWindow";
@@ -66,6 +67,8 @@ const recorderState = vi.hoisted(() => ({
 		webcamDeviceId: undefined,
 		setWebcamDeviceId: vi.fn(),
 		setWebcamDeviceName: vi.fn(),
+		recordingQuality: "high" as "high" | "standard",
+		setRecordingQuality: vi.fn(),
 		webcamFormat: { width: 1920, height: 1080, fps: 30 },
 		setWebcamFormat: vi.fn(),
 		systemAudioEnabled: false,
@@ -353,6 +356,7 @@ function emitSourceSelectorClosed() {
 }
 
 function resetLaunchMocks() {
+	localStorage.clear();
 	recorderState.value.preferencesReady = true;
 	recorderState.value.starting = false;
 	recorderState.value.microphoneDeviceId = undefined;
@@ -380,6 +384,8 @@ function resetLaunchMocks() {
 	recorderState.value.setMicrophoneDeviceId.mockClear();
 	recorderState.value.webcamEnabled = false;
 	recorderState.value.setWebcamEnabled.mockClear();
+	recorderState.value.recordingQuality = "high";
+	recorderState.value.setRecordingQuality.mockClear();
 	recorderState.value.webcamFormat = { width: 1920, height: 1080, fps: 30 };
 	recorderState.value.setWebcamFormat.mockClear();
 	cameraPreviewState.value = {
@@ -937,6 +943,80 @@ describe("LaunchWindow record button", () => {
 		expect(screen.getByRole("button", { name: "tooltips.resumeRecording" })).toBeDisabled();
 	});
 
+	it("keeps one timer and the compact transport slots while saving", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.elapsedSeconds = 12;
+		recorderState.value.canPauseRecording = true;
+		const view = renderLaunchWindow();
+		recorderState.value.saving = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		const transport = screen.getByTestId("launch-record-button");
+		expect(transport).toHaveTextContent("00:12");
+		expect(transport).not.toHaveTextContent("recording.saving");
+		expect(transport).toHaveAccessibleName("recording.saving");
+		expect(transport).toHaveAttribute("aria-busy", "true");
+		expect(transport).toBeDisabled();
+		expect(screen.getByTestId("hud-compact-pause-button")).toBeDisabled();
+		expect(screen.getByTestId("hud-remove-previous-clip-button")).toBeDisabled();
+		expect(screen.getByTestId("hud-recording-size-button")).toBeDisabled();
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
+		expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull();
+	});
+
+	it.each([
+		false,
+		true,
+	])("retains the last recording presentation through async handoff (expanded: %s)", async (expanded) => {
+		saveUserPreferences({ trayLayout: "vertical" });
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.elapsedSeconds = 12;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 12000 },
+		];
+		const view = renderLaunchWindow();
+		if (expanded) fireEvent.click(screen.getByTestId("hud-recording-size-button"));
+		recorderState.value.saving = true;
+		recorderState.value.recording = false;
+		recorderState.value.paused = false;
+		recorderState.value.elapsedSeconds = 0;
+		recorderState.value.recordedClips = [];
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		expect(screen.getByTestId("launch-record-button")).toHaveTextContent("00:12");
+		expect(screen.getByRole("button", { name: "tooltips.resumeRecording" })).toBeDisabled();
+		expect(screen.queryByTestId("launch-open-studio-button")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("launch-tray-layout-button")).not.toBeInTheDocument();
+		expect(screen.getByTestId("hud-recording-size-button")).toHaveAttribute(
+			"aria-expanded",
+			String(expanded),
+		);
+		if (expanded)
+			expect(screen.getByRole("img", { name: "Clip history: 1 completed clip" })).toBeVisible();
+		else expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull();
+
+		recorderState.value.saving = false;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(await screen.findByTestId("launch-tray-layout-button")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		expect(screen.getByTestId("launch-record-button")).not.toHaveTextContent("00:12");
+	});
+
 	it("handles the global Pause shortcut only while the recorder can transition", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.canPauseRecording = true;
@@ -1155,6 +1235,38 @@ describe("LaunchWindow overlay sizing", () => {
 		expect(window.electronAPI.setHudOverlaySize).not.toHaveBeenCalled();
 	});
 
+	it("keeps the native backing allocation through expansion and a deferred save", async () => {
+		saveUserPreferences({ trayLayout: "vertical" });
+		recorderState.value.recording = true;
+		recorderState.value.elapsedSeconds = 12;
+		const view = renderLaunchWindow();
+		const bar = screen.getByTestId("hud-drag-handle").closest("[data-tray-layout]") as HTMLElement;
+		stubBox(bar, 256, 50);
+		await flushResizeObservers();
+		const resize = vi.mocked(window.electronAPI.setHudOverlaySize);
+		const initialCalls = resize.mock.calls.length;
+		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
+		for (const width of [400, 600, 832]) {
+			stubBox(bar, width, 84);
+			await flushResizeObservers();
+		}
+		recorderState.value.saving = true;
+		recorderState.value.recording = false;
+		recorderState.value.elapsedSeconds = 0;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		await flushResizeObservers();
+		expect(resize).toHaveBeenCalledTimes(initialCalls);
+		expect(screen.getByTestId("launch-record-button")).toHaveTextContent("00:12");
+		expect(screen.getByTestId("hud-recording-size-button")).toHaveAttribute(
+			"aria-expanded",
+			"true",
+		);
+	});
+
 	it("does not resize the overlay when the device-settings panel opens", async () => {
 		renderLaunchWindow();
 
@@ -1319,6 +1431,28 @@ describe("LaunchWindow device buttons", () => {
 });
 
 describe("LaunchWindow device settings", () => {
+	it("shows native camera capture without claiming the preview format is the recording format", async () => {
+		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
+		cameraPreviewState.value.activeFormat = { width: 1080, height: 1920, fps: 30 };
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const nativeFormat = await screen.findByTestId("hud-native-camera-format");
+		expect(nativeFormat).toHaveTextContent(/^deviceSettings\.nativeCamera$/);
+		expect(nativeFormat).not.toHaveTextContent(/1080|1920|FPS/);
+		expect(screen.queryByTestId("hud-webcam-format")).not.toBeInTheDocument();
+	});
+	it("shows High before recording and remembers a Standard choice", async () => {
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const quality = await screen.findByTestId("hud-recording-quality");
+		expect(quality).toHaveTextContent("High");
+		fireEvent.keyDown(quality, { key: "ArrowDown" });
+		fireEvent.click(screen.getByRole("option", { name: /qualityStandard/ }));
+		expect(recorderState.value.setRecordingQuality).toHaveBeenCalledWith("standard");
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+			recordingQuality: "standard",
+		});
+	});
 	beforeEach(() => {
 		platformState.value = "darwin";
 		resetLaunchMocks();
@@ -1366,6 +1500,7 @@ describe("LaunchWindow device settings", () => {
 	});
 
 	it("persists a tested webcam resolution and frame-rate choice", async () => {
+		recorderState.value.recordingQuality = "standard";
 		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
 
 		renderLaunchWindow();
@@ -1386,6 +1521,7 @@ describe("LaunchWindow device settings", () => {
 	});
 
 	it("keeps the panel open while choosing a webcam format from the portaled option list", async () => {
+		recorderState.value.recordingQuality = "standard";
 		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
 
 		renderLaunchWindow();
@@ -1408,6 +1544,7 @@ describe("LaunchWindow device settings", () => {
 	});
 
 	it("keeps a supported webcam format choice while the camera is still switching to it", async () => {
+		recorderState.value.recordingQuality = "standard";
 		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
 		recorderState.value.webcamFormat = { width: 3840, height: 2160, fps: 30 };
 
@@ -1422,6 +1559,7 @@ describe("LaunchWindow device settings", () => {
 	});
 
 	it("adopts the camera's resolved format when the saved choice is unsupported", async () => {
+		recorderState.value.recordingQuality = "standard";
 		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
 		recorderState.value.webcamFormat = { width: 3840, height: 2160, fps: 30 };
 		cameraPreviewState.value = {

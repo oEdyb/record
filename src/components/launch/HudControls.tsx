@@ -318,7 +318,7 @@ export const HudRecordButton = memo(function HudRecordButton({
 	onClick: () => void;
 }) {
 	return (
-		<Tooltip content={label}>
+		<Tooltip content={saving ? savingLabel : label}>
 			<button
 				type="button"
 				data-testid="launch-record-button"
@@ -331,8 +331,9 @@ export const HudRecordButton = memo(function HudRecordButton({
 							: "bg-transparent hover:bg-[rgba(248,113,113,0.16)]"
 				}`}
 				onClick={onClick}
-				title={label}
-				aria-label={label}
+				title={saving ? savingLabel : label}
+				aria-label={saving ? savingLabel : label}
+				aria-busy={saving}
 				style={{ flex: "0 0 auto" }}
 			>
 				<div className={`flex items-center justify-center ${recording || saving ? "gap-1.5" : ""}`}>
@@ -346,7 +347,7 @@ export const HudRecordButton = memo(function HudRecordButton({
 							className={paused ? "text-amber-400" : "text-[#f87171]"}
 						/>
 					)}
-					{saving && (
+					{saving && !recording && (
 						<span className="text-[#f87171] text-xs font-semibold select-none">{savingLabel}</span>
 					)}
 					{recording && (
@@ -548,10 +549,12 @@ export const HudCompactPauseButton = memo(function HudCompactPauseButton({
 export const HudRecordingSizeButton = memo(function HudRecordingSizeButton({
 	expanded,
 	label,
+	disabled = false,
 	onClick,
 }: {
 	expanded: boolean;
 	label: string;
+	disabled?: boolean;
 	onClick: () => void;
 }) {
 	const Icon = expanded ? ChevronsRightLeft : ChevronsLeftRight;
@@ -561,6 +564,7 @@ export const HudRecordingSizeButton = memo(function HudRecordingSizeButton({
 				type="button"
 				data-testid="hud-recording-size-button"
 				className={hudAuxIconBtnClasses}
+				disabled={disabled}
 				onClick={onClick}
 				aria-label={label}
 				aria-expanded={expanded}

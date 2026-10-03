@@ -11,7 +11,7 @@ import { exportSourceHandoff } from "./sourceHandoff";
 
 const ffmpeg = resolveFfmpeg();
 it.runIf(process.platform === "darwin" && ffmpeg !== null)(
-	"keeps video, delayed mic, and manifest aligned when remuxing a nonzero timestamp origin",
+	"byte-copies complete original containers and standalone audio while OTIO preserves cuts and audio delay",
 	async () => {
 		const root = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-source-media-"));
 		try {
@@ -52,9 +52,65 @@ it.runIf(process.platform === "darwin" && ffmpeg !== null)(
 				{ timeout: 15_000 },
 			);
 			expect(generated.status, generated.stderr.toString()).toBe(0);
+			const microphone = path.join(root, "microphone.m4a");
+			const system = path.join(root, "system.m4a");
+			const camera = path.join(root, "camera.mov");
+			for (const [filename, frequency, duration] of [
+				[microphone, "440", "0.8"],
+				[system, "880", "0.9"],
+			]) {
+				const audio = spawnSync(
+					ffmpeg!,
+					[
+						"-hide_banner",
+						"-nostdin",
+						"-v",
+						"error",
+						"-f",
+						"lavfi",
+						"-i",
+						`sine=frequency=${frequency}:duration=${duration}`,
+						"-c:a",
+						"aac",
+						filename,
+					],
+					{ timeout: 15_000 },
+				);
+				expect(audio.status, audio.stderr.toString()).toBe(0);
+			}
+			const cameraGenerated = spawnSync(
+				ffmpeg!,
+				[
+					"-hide_banner",
+					"-nostdin",
+					"-v",
+					"error",
+					"-f",
+					"lavfi",
+					"-i",
+					"color=c=red:s=160x90:r=30:d=1",
+					"-c:v",
+					"h264_videotoolbox",
+					"-b:v",
+					"1M",
+					camera,
+				],
+				{ timeout: 15_000 },
+			);
+			expect(cameraGenerated.status, cameraGenerated.stderr.toString()).toBe(0);
 			const doc = createEmptyDocument({ title: "Offset", projectId: "offset" });
 			doc.assets = [
-				{ id: "a", kind: "video", label: "Offset", originalPath: source, cameraTrack: null },
+				{
+					id: "a",
+					kind: "video",
+					label: "Offset",
+					originalPath: source,
+					cameraTrack: { sourcePath: camera, startMs: 0, offsetMs: 0, visible: false },
+					microphoneAudioPath: microphone,
+					systemAudioPath: system,
+					microphoneAudioOffsetMs: 200,
+					systemAudioOffsetMs: 100,
+				},
 			];
 			doc.timeline.clips = [
 				{
@@ -69,27 +125,89 @@ it.runIf(process.platform === "darwin" && ffmpeg !== null)(
 					reason: "Test",
 				},
 			];
+			doc.timeline.trimRanges = [
+				{
+					id: "cut",
+					assetId: "a",
+					clipId: "c",
+					startSec: 0.6,
+					endSec: 0.7,
+					origin: "user",
+					reason: "Keep originals complete",
+				},
+			];
 			const result = await exportSourceHandoff(doc, root, (file) => file);
 			const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
-			expect(manifest.sources[0].screen.file).toBe("001-screen.mov");
-			expect(manifest.sources[0].screen.durationSec).toBeCloseTo(1, 1);
-			expect(manifest.clips[0].sourceEndSec).toBeCloseTo(1, 1);
+			expect(manifest.sources[0].screen.file).toBe("001-screen.mkv");
+			expect((await inspectSourceAudioLayout(source)).durationSec).toBe(6);
+			expect(manifest.sources[0].screen.durationSec).toBeCloseTo(1, 6);
+			expect(manifest).not.toHaveProperty("clips");
 			expect(manifest.sources[0].screen.audio).toMatchObject([
-				{ role: "microphone", file: "001-microphone.wav" },
+				{ role: "microphone", file: "001-microphone.m4a" },
+				{ role: "system", file: "001-system.m4a" },
 			]);
-			const wav = path.join(result.directory, "001-microphone.wav");
-			expect(manifest.sources[0].screen.audio[0].durationSec).toBeCloseTo(1, 1);
+			expect(result.sourceCount).toBe(4);
+			for (const [original, name] of [
+				[source, "001-screen.mkv"],
+				[camera, "001-camera.mov"],
+				[microphone, "001-microphone.m4a"],
+				[system, "001-system.m4a"],
+			]) {
+				expect(await fs.readFile(path.join(result.directory, name))).toEqual(
+					await fs.readFile(original),
+				);
+			}
 			const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
-			expect(timeline.tracks.children[2].children[0].name).toBe("001-microphone.wav");
-			expect((await inspectSourceAudioLayout(wav)).durationSec).toBeCloseTo(1, 1);
+			expect(timeline.tracks.children).toHaveLength(4);
+			const screenClips = timeline.tracks.children[0].children;
+			expect(screenClips).toHaveLength(2);
+			expect(screenClips[0]).toMatchObject({
+				source_range: { start_time: { value: 0 }, duration: { value: 36 } },
+				media_references: {
+					DEFAULT_MEDIA: { available_range: { duration: { value: 60 } } },
+				},
+				metadata: { klippt: { sourceStartSec: 0, sourceEndSec: 0.6 } },
+			});
+			expect(screenClips[1]).toMatchObject({
+				source_range: { start_time: { value: 42 }, duration: { value: 18 } },
+				metadata: {
+					klippt: { sourceStartSec: 0.7, sourceEndSec: 1, timelineEndSec: 0.9 },
+				},
+			});
+			expect(timeline.tracks.children[2].children[0]).toMatchObject({
+				OTIO_SCHEMA: "Gap.1",
+				source_range: { duration: { value: 12 } },
+			});
+			expect(timeline.tracks.children[2].children[1].name).toBe("001-microphone.m4a");
+			expect(timeline.tracks.children[2].children[2].source_range.start_time.value).toBe(30);
+			expect(timeline.tracks.children[3].children[0]).toMatchObject({
+				OTIO_SCHEMA: "Gap.1",
+				source_range: { duration: { value: 6 } },
+			});
+			expect(
+				(await inspectSourceAudioLayout(path.join(result.directory, "001-microphone.m4a")))
+					.durationSec,
+			).toBeCloseTo(0.8, 1);
 			const pcm = spawnSync(
 				ffmpeg!,
-				["-hide_banner", "-v", "error", "-i", wav, "-f", "s16le", "-ac", "1", "-ar", "48000", "-"],
+				[
+					"-hide_banner",
+					"-v",
+					"error",
+					"-i",
+					path.join(result.directory, "001-microphone.m4a"),
+					"-f",
+					"s16le",
+					"-ac",
+					"1",
+					"-ar",
+					"48000",
+					"-",
+				],
 				{ maxBuffer: 1024 * 1024 },
 			);
 			expect(pcm.status, pcm.stderr.toString()).toBe(0);
-			expect(pcm.stdout.subarray(0, 48000 * 0.15 * 2).every((byte) => byte === 0)).toBe(true);
-			expect(pcm.stdout.subarray(48000 * 0.25 * 2).some((byte) => byte !== 0)).toBe(true);
+			expect(pcm.stdout.subarray(0, 48000 * 0.15 * 2).some((byte) => byte !== 0)).toBe(true);
 		} finally {
 			await fs.rm(root, { recursive: true, force: true });
 		}

@@ -105,6 +105,10 @@
 		"noMicrophones": "لم يتم العثور على ميكروفون",
 		"cameraQuality": "جودة الكاميرا",
 		"preview": "معاينة",
-		"previewUnavailable": "المعاينة غير متاحة"
+		"previewUnavailable": "المعاينة غير متاحة",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }

@@ -68,5 +68,9 @@ describe("recording review", () => {
 		fireEvent.click(screen.getByRole("button", { name: "recordingReview.saving" }));
 		expect(actions.onSave).toHaveBeenCalledOnce();
 		expect(screen.getByRole("button", { name: "recordingReview.record" })).toBeDisabled();
+		const recordings = screen.getByRole("button", { name: "recordingReview.recordings" });
+		expect(recordings).toBeDisabled();
+		fireEvent.click(recordings);
+		expect(actions.onRecordings).not.toHaveBeenCalled();
 	});
 });

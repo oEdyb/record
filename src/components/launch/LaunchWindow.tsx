@@ -11,6 +11,7 @@ import { useCameraPreviewFrameBridge } from "../../hooks/useCameraPreviewFrameBr
 import { type MicrophoneDevice, useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
 import { usePortalOwnsSource } from "../../hooks/usePortalOwnsSource";
 import { useScreenRecorder } from "../../hooks/useScreenRecorder";
+import type { RecordingQuality } from "../../lib/recording/recordingQuality";
 import { requestCameraAccess } from "../../lib/requestCameraAccess";
 import type { WebcamFormat } from "../../lib/webcamFormats";
 import { ensureDefaultRecordingSource } from "./defaultRecordingSource";
@@ -50,6 +51,7 @@ import {
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
 import { RecordingClipHistory } from "./RecordingHud";
+import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
 // Locale list is computed once at module load; keeping the reference stable lets
 // the language menu sit behind a memo boundary.
@@ -59,7 +61,7 @@ const AVAILABLE_LOCALES = getAvailableLocales();
 const FALLBACK_SCREEN_HEIGHT = 1080;
 const FALLBACK_SCREEN_WIDTH = 1920;
 const HORIZONTAL_HUD_WIDTH = 832;
-const HORIZONTAL_HUD_HEIGHT = 80;
+const HORIZONTAL_HUD_HEIGHT = 84;
 const REMOVED_CLIP_FEEDBACK_MS = 4_000;
 
 function formatClipDuration(durationMs: number): string {
@@ -133,6 +135,8 @@ export function LaunchWindow() {
 		webcamDeviceId,
 		setWebcamDeviceId,
 		setWebcamDeviceName,
+		recordingQuality,
+		setRecordingQuality,
 		webcamFormat,
 		setWebcamFormat,
 		cursorCaptureMode,
@@ -167,15 +171,22 @@ export function LaunchWindow() {
 	 * in-app picker has to stay for that case.
 	 */
 	const portalOwnsSource = usePortalOwnsSource();
+	const presentation = useRecordingHudPresentation(recording, saving, {
+		paused,
+		elapsedSeconds,
+		activeClipElapsedMs,
+		recordedClips,
+	});
+	const recordingHudActive = presentation.active;
 
 	const isVertical = trayLayout === "vertical";
 	// Recording always keeps the established horizontal HUD as its first row.
 	// The saved tray preference still applies again when recording ends.
-	const hudIsVertical = isVertical && !recording && !openedFromEditor;
+	const hudIsVertical = isVertical && !recordingHudActive && !openedFromEditor;
 	// Pause is a transport-state change, not a layout change. Keep the compact
 	// HUD mounted so Pause becomes Continue in the same physical slot. The user
 	// can still open the full setup and clip-history panel with the size control.
-	const compactRecordingHud = (recording || openedFromEditor) && !activeHudExpanded;
+	const compactRecordingHud = (recordingHudActive || openedFromEditor) && !activeHudExpanded;
 	const isPopoverOpen = isLanguageMenuOpen || isDeviceSettingsOpen;
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
@@ -184,8 +195,8 @@ export function LaunchWindow() {
 		starting || saving || clipFinalizing || (recording && !canReconfigureWhilePaused);
 
 	useEffect(() => {
-		if (!recording) setActiveHudExpanded(false);
-	}, [recording]);
+		if (!recordingHudActive) setActiveHudExpanded(false);
+	}, [recordingHudActive]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -889,6 +900,15 @@ export function LaunchWindow() {
 		[setSelectedCameraId, setWebcamDeviceId, setWebcamDeviceName],
 	);
 
+	const handleSelectRecordingQuality = useCallback(
+		(quality: RecordingQuality) => {
+			if (controlsLocked) return;
+			setRecordingQuality(quality);
+			void window.electronAPI?.setRecordingPrefs?.({ recordingQuality: quality });
+		},
+		[controlsLocked, setRecordingQuality],
+	);
+
 	const handleSelectWebcamFormat = useCallback(
 		(format: WebcamFormat) => {
 			setWebcamFormat(format);
@@ -1026,6 +1046,10 @@ export function LaunchWindow() {
 	const deviceSettingsLabels = useMemo<HudDeviceSettingsLabels>(
 		() => ({
 			title: t("deviceSettings.title"),
+			recordingQuality: t("deviceSettings.recordingQuality"),
+			qualityHigh: t("deviceSettings.qualityHigh"),
+			qualityStandard: t("deviceSettings.qualityStandard"),
+			nativeCamera: t("deviceSettings.nativeCamera"),
 			done: t("deviceSettings.done"),
 			microphone: t("audio.inputDevice"),
 			camera: t("webcam.cameraDevice"),
@@ -1075,7 +1099,7 @@ export function LaunchWindow() {
 					data-hud-interactive="true"
 					data-tray-layout={trayLayout}
 					data-recording-layout={compactRecordingHud ? "compact" : "full"}
-					className={`${styles.hudBar} ${hudIsVertical ? styles.hudBarVertical : styles.hudBarRecording} ${compactRecordingHud ? styles.hudBarCompact : ""}`}
+					className={`${styles.hudBar} ${hudIsVertical ? styles.hudBarVertical : styles.hudBarRecording} ${compactRecordingHud ? styles.hudBarCompact : recordingHudActive ? styles.hudBarExpanded : ""}`}
 					onPointerEnter={enableHudMouseEvents}
 					onPointerDown={enableHudMouseEvents}
 					onMouseEnter={enableHudMouseEvents}
@@ -1092,8 +1116,8 @@ export function LaunchWindow() {
 							/>
 							<HudDivider vertical={false} />
 							<HudRecordButton
-								recording={recording}
-								paused={paused}
+								recording={recordingHudActive}
+								paused={presentation.paused}
 								saving={saving}
 								disabled={
 									starting ||
@@ -1104,20 +1128,24 @@ export function LaunchWindow() {
 											!preferencesReady ||
 											(microphoneEnabled && isMicDevicesLoading)))
 								}
-								elapsedSeconds={elapsedSeconds}
+								elapsedSeconds={presentation.elapsedSeconds}
 								label={recording ? "Stop recording" : recordLabel}
 								savingLabel={t("recording.saving")}
 								onClick={handleRecordClick}
 							/>
-							{recording && (
+							{recordingHudActive && (
 								<HudCompactPauseButton
-									paused={paused}
+									paused={presentation.paused}
 									disabled={saving || clipFinalizing || !canPauseRecording}
-									label={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
+									label={
+										presentation.paused
+											? t("tooltips.resumeRecording")
+											: t("tooltips.pauseRecording")
+									}
 									onClick={togglePaused}
 								/>
 							)}
-							{recording && (
+							{recordingHudActive && (
 								<HudRemovePreviousClipButton
 									disabled={saving || clipFinalizing || !canRemovePreviousClip}
 									label={removePreviousLabel}
@@ -1125,7 +1153,7 @@ export function LaunchWindow() {
 									onClick={handleRemovePreviousClip}
 								/>
 							)}
-							{!recording && (
+							{!recordingHudActive && (
 								<HudStudioButton
 									disabled={saving}
 									label={t("recording.recordings")}
@@ -1134,15 +1162,14 @@ export function LaunchWindow() {
 							)}
 							<HudRecordingSizeButton
 								expanded={false}
+								disabled={saving || clipFinalizing}
 								label={t("tooltips.showRecordingControls")}
 								onClick={() => setActiveHudExpanded(true)}
 							/>
 						</div>
 					) : (
 						<>
-							<div
-								className={`${hudIsVertical ? styles.hudPrimaryRowContents : styles.hudPrimaryRow} ${recording ? styles.hudContentEnter : ""}`}
-							>
+							<div className={hudIsVertical ? styles.hudPrimaryRowContents : styles.hudPrimaryRow}>
 								<HudDragHandle
 									vertical={hudIsVertical}
 									nativeDrag={isLinuxHud}
@@ -1153,7 +1180,7 @@ export function LaunchWindow() {
 
 								<HudDivider vertical={hudIsVertical} />
 
-								{!recording && (
+								{!recordingHudActive && (
 									<HudTrayLayoutButton
 										vertical={hudIsVertical}
 										label={
@@ -1241,8 +1268,8 @@ export function LaunchWindow() {
 								<HudDivider vertical={hudIsVertical} />
 
 								<HudRecordButton
-									recording={recording}
-									paused={paused}
+									recording={recordingHudActive}
+									paused={presentation.paused}
 									saving={saving}
 									disabled={
 										starting ||
@@ -1253,13 +1280,13 @@ export function LaunchWindow() {
 												!preferencesReady ||
 												(microphoneEnabled && isMicDevicesLoading)))
 									}
-									elapsedSeconds={elapsedSeconds}
+									elapsedSeconds={presentation.elapsedSeconds}
 									label={recording ? "Stop recording" : recordLabel}
 									savingLabel={t("recording.saving")}
 									onClick={handleRecordClick}
 								/>
 
-								{!recording && (
+								{!recordingHudActive && (
 									<HudStudioButton
 										disabled={saving}
 										label={t("recording.recordings")}
@@ -1267,15 +1294,17 @@ export function LaunchWindow() {
 									/>
 								)}
 
-								{recording && (
+								{recordingHudActive && (
 									<HudRecordingControls
 										vertical={hudIsVertical}
-										paused={paused}
+										paused={presentation.paused}
 										saving={saving || clipFinalizing}
 										canPause={canPauseRecording}
 										canRemovePreviousClip={canRemovePreviousClip}
 										pauseLabel={
-											paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")
+											presentation.paused
+												? t("tooltips.resumeRecording")
+												: t("tooltips.pauseRecording")
 										}
 										removePreviousLabel={removePreviousLabel}
 										removePreviousTooltip={removePreviousTooltip}
@@ -1303,9 +1332,10 @@ export function LaunchWindow() {
 									data-testid="hud-right-controls"
 									className={`flex items-center gap-[5px] ${hudIsVertical ? "flex-col" : "ml-auto"} ${styles.electronNoDrag}`}
 								>
-									{(recording || openedFromEditor) && (
+									{(recordingHudActive || openedFromEditor) && (
 										<HudRecordingSizeButton
 											expanded
+											disabled={saving || clipFinalizing}
 											label={t("tooltips.hideRecordingControls")}
 											onClick={() => setActiveHudExpanded(false)}
 										/>
@@ -1338,10 +1368,10 @@ export function LaunchWindow() {
 							</div>
 							{!hudIsVertical && (
 								<RecordingClipHistory
-									clips={recordedClips}
-									active={recording}
-									activeClipElapsedMs={activeClipElapsedMs}
-									paused={paused}
+									clips={presentation.recordedClips}
+									active={recordingHudActive}
+									activeClipElapsedMs={presentation.activeClipElapsedMs}
+									paused={presentation.paused}
 									finalizing={clipFinalizing}
 								/>
 							)}
@@ -1360,6 +1390,8 @@ export function LaunchWindow() {
 								activeCameraId={webcamDeviceId || selectedCameraId}
 								cameraEnabled={webcamEnabled}
 								cameraStream={webcamPreviewStream}
+								recordingQuality={recordingQuality}
+								onSelectRecordingQuality={handleSelectRecordingQuality}
 								webcamFormat={webcamFormat}
 								cameraLoading={isCameraDevicesLoading}
 								cameraError={cameraDevicesError}

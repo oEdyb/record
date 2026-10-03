@@ -7,6 +7,7 @@ import {
 } from "../../src/lib/nativeMacClipSession";
 import type {
 	NativeMacCaptureTelemetry,
+	NativeMacOriginalStarted,
 	NativeMacRecordingFailure,
 	NativeMacRecordingRequest,
 } from "../../src/lib/nativeMacRecording";
@@ -15,8 +16,13 @@ import type {
 	RecordingSession,
 	RecordingSessionClip,
 } from "../../src/lib/recordingSession";
+import { normalizeRecordingOriginals } from "../../src/lib/recordingSession";
 import { writeJsonDurably } from "../filesystem/durableJson";
-import { NativeMacHelperClient, NativeMacPauseError } from "./nativeMacHelperClient";
+import {
+	NativeMacHelperClient,
+	NativeMacPauseError,
+	NativeMacResumeRejectedError,
+} from "./nativeMacHelperClient";
 import {
 	clearNativeMacRecoveryJournal,
 	persistNativeMacRecoveryJournal,
@@ -52,6 +58,7 @@ export type NativeMacRecordingServiceDependencies = {
 		helperPath: string,
 		config: NativeMacRecordingRequest,
 		onFatalError: (failure: NativeMacRecordingFailure) => void,
+		onOriginalStarted: (original: NativeMacOriginalStarted) => void,
 	) => NativeMacCaptureHelper;
 	resolveCapture: (
 		request: NativeMacRecordingRequest,
@@ -107,6 +114,9 @@ export class NativeMacRecordingService {
 	private commandChain: Promise<void> = Promise.resolve();
 	private lastDiagnosticOutput = "";
 	private sessionGeneration = 0;
+	private originals = new Map<number, Partial<RecordingSessionClip>>();
+	private recoveryWrites: Promise<void> = Promise.resolve();
+	private acceptsOriginalMetadata = false;
 
 	constructor(private readonly deps: NativeMacRecordingServiceDependencies) {}
 
@@ -168,14 +178,20 @@ export class NativeMacRecordingService {
 				this.cursorTelemetryStarted = cursorCaptureMode === "editable-overlay";
 
 				const generation = this.sessionGeneration;
-				const helper = this.deps.createHelper(helperPath, config, (failure) => {
-					if (generation !== this.sessionGeneration) return;
-					this.paused = true;
-					this.fatalError = failure;
-					this.deps.onFatalError(failure);
-				});
+				const helper = this.deps.createHelper(
+					helperPath,
+					config,
+					(failure) => {
+						if (generation !== this.sessionGeneration) return;
+						this.paused = true;
+						this.fatalError = failure;
+						this.deps.onFatalError(failure);
+					},
+					(original) => this.storeOriginalStarted(original, generation),
+				);
 				this.helper = helper;
 				await helper.waitForStart();
+				await this.persistRecoverySession();
 				if (!helper.isRunning() || this.fatalError) {
 					throw new Error(
 						this.fatalError?.message ?? "Native macOS capture exited during startup.",
@@ -197,10 +213,15 @@ export class NativeMacRecordingService {
 						};
 					}
 				}
-				if (failedRecordingId !== null) {
-					await clearNativeMacRecoveryJournal(this.deps.recordingsDir, failedRecordingId).catch(
-						() => undefined,
-					);
+				this.acceptsOriginalMetadata = false;
+				await this.recoveryWrites.catch(() => undefined);
+				if (
+					failedRecordingId !== null &&
+					!(await restoreNativeMacRecoverySession(this.deps.recordingsDir, failedRecordingId))
+				) {
+					await this.serializeRecoveryMutation(() =>
+						clearNativeMacRecoveryJournal(this.deps.recordingsDir, failedRecordingId),
+					).catch(() => undefined);
 				}
 				this.reset();
 				return { success: false, error: this.errorMessage(error) };
@@ -293,14 +314,44 @@ export class NativeMacRecordingService {
 				this.paused = false;
 				this.activeClipIndex = clipIndex;
 				this.clipCursorModes.set(clipIndex, this.cursorCaptureMode);
-				await this.persistRecoverySessionBestEffort();
+				await this.persistRecoverySession();
 				return { success: true, clipIndex };
 			} catch (error) {
-				if (resumeRequested && !this.fatalError) {
+				const rejectedIndex =
+					error instanceof NativeMacResumeRejectedError ? error.clipIndex : null;
+				let safelyPaused =
+					resumeRequested &&
+					rejectedIndex !== null &&
+					rejectedIndex ===
+						Math.max(this.activeClipIndex ?? -1, ...this.clips.map((clip) => clip.index)) + 1 &&
+					helper.isRunning() &&
+					!this.fatalError;
+				if (safelyPaused && rejectedIndex !== null) {
+					const metadataChanged = this.originals.delete(rejectedIndex);
+					this.clipCursorModes.delete(rejectedIndex);
+					try {
+						if (metadataChanged) await this.persistRecoverySession();
+					} catch (recoveryError) {
+						if (!this.fatalError) {
+							this.fatalError = {
+								code: "capture-recovery-failed",
+								message: `Rejected clip recovery metadata could not be cleared: ${this.errorMessage(recoveryError)}`,
+							};
+							this.deps.onFatalError(this.fatalError);
+						}
+						return { success: false, error: this.fatalError.message };
+					}
+					safelyPaused = helper.isRunning() && !this.fatalError;
+				}
+				if (resumeRequested && !this.fatalError && !safelyPaused) {
 					this.fatalError = { code: "capture-resume-failed", message: this.errorMessage(error) };
 					this.deps.onFatalError(this.fatalError);
 				}
-				return { success: false, error: this.errorMessage(error) };
+				return {
+					success: false,
+					...(safelyPaused ? { paused: true } : {}),
+					error: this.errorMessage(error),
+				};
 			}
 		});
 	}
@@ -360,6 +411,7 @@ export class NativeMacRecordingService {
 			let stoppedPaths: string[] = [];
 			try {
 				this.completeCursorPauseRange();
+				await this.recoveryWrites.catch(() => undefined);
 				let stopped: Awaited<ReturnType<NativeMacCaptureHelper["stop"]>>;
 				try {
 					if (!helper.isRunning()) throw new Error("The native capture helper exited early.");
@@ -367,9 +419,13 @@ export class NativeMacRecordingService {
 						screenPath: preferredPath ?? "",
 						clips: this.clips,
 					});
+					this.acceptsOriginalMetadata = false;
+					await this.recoveryWrites.catch(() => undefined);
 					stoppedPaths = [stopped.screenPath, ...stopped.clips.map((clip) => clip.screenVideoPath)];
 				} catch (error) {
 					await helper.kill();
+					this.acceptsOriginalMetadata = false;
+					await this.recoveryWrites.catch(() => undefined);
 					const recoveredSession = discard
 						? null
 						: await restoreNativeMacRecoverySession(this.deps.recordingsDir, recordingId);
@@ -385,9 +441,12 @@ export class NativeMacRecordingService {
 							? {
 									warning: {
 										code: "capture-stop-failed",
-										message: recoveredActiveClip
-											? `The active clip was recovered from fragmented MP4 after capture stopped unexpectedly: ${this.errorMessage(error)}`
-											: `The active clip could not be recovered: ${this.errorMessage(error)}`,
+										message: [
+											recoveredActiveClip
+												? `The active clip was recovered from fragmented MP4 after capture stopped unexpectedly: ${this.errorMessage(error)}`
+												: `The active clip could not be recovered: ${this.errorMessage(error)}`,
+											...(recoveredSession?.recoveryWarnings ?? []),
+										].join(" "),
 									},
 								}
 							: {}),
@@ -405,6 +464,16 @@ export class NativeMacRecordingService {
 						this.deps.recordingsDir,
 						recordingId,
 					);
+					// A failed original finalization can still leave readable fragments.
+					// Keep the committed screen duration; only attach explicitly timed,
+					// validated originals that its final event could not include.
+					this.clips = this.clips.map((clip) => {
+						if (clip.removed) return clip;
+						const recovered = recovery?.clips?.find(
+							(candidate) => candidate.index === clip.index && !candidate.removed,
+						);
+						return recovered ? { ...normalizeRecordingOriginals(recovered), ...clip } : clip;
+					});
 					const recoveredTail = recovery?.clips?.find(
 						(clip) =>
 							!clip.removed &&
@@ -437,7 +506,9 @@ export class NativeMacRecordingService {
 						...this.clips.map((clip) => clip.screenVideoPath),
 						...discoveredPaths,
 					]);
-					await clearNativeMacRecoveryJournal(this.deps.recordingsDir, recordingId);
+					await this.serializeRecoveryMutation(() =>
+						clearNativeMacRecoveryJournal(this.deps.recordingsDir, recordingId),
+					);
 					return {
 						success: true,
 						discarded: true,
@@ -465,7 +536,9 @@ export class NativeMacRecordingService {
 					clips: this.clips,
 				};
 				await writeJsonDurably(this.manifestPath(recordingId), session);
-				await persistNativeMacRecoveryJournal(this.deps.recordingsDir, session).catch((error) => {
+				await this.serializeRecoveryMutation(() =>
+					persistNativeMacRecoveryJournal(this.deps.recordingsDir, session),
+				).catch((error) => {
 					console.warn("[capture-mac] could not update recovery journal after Stop:", error);
 				});
 				this.deps.onSessionStored(session);
@@ -490,9 +563,11 @@ export class NativeMacRecordingService {
 						),
 					),
 				);
-				const warnings = [stopped.warning?.message, cursorWarning].filter(
-					(value): value is string => Boolean(value),
-				);
+				const warnings = [
+					stopped.warning?.message,
+					this.fatalError?.code === "capture-recovery-failed" ? this.fatalError.message : undefined,
+					cursorWarning,
+				].filter((value): value is string => Boolean(value));
 				return {
 					success: true,
 					path: screenVideoPath,
@@ -508,6 +583,8 @@ export class NativeMacRecordingService {
 				return { success: false, error: this.errorMessage(error) };
 			} finally {
 				if (helper.isRunning()) await helper.kill();
+				this.acceptsOriginalMetadata = false;
+				await this.recoveryWrites.catch(() => undefined);
 				this.reset();
 				this.deps.onRecordingStateChange(false);
 			}
@@ -521,6 +598,8 @@ export class NativeMacRecordingService {
 		cursorCaptureMode: CursorCaptureMode,
 	): void {
 		this.sessionGeneration += 1;
+		this.originals = new Map();
+		this.acceptsOriginalMetadata = true;
 		this.recordingId = recordingId;
 		this.targetPath = outputPath;
 		this.captureConfig = config;
@@ -539,6 +618,8 @@ export class NativeMacRecordingService {
 
 	private reset(): void {
 		this.sessionGeneration += 1;
+		this.originals = new Map();
+		this.acceptsOriginalMetadata = false;
 		this.lastDiagnosticOutput = this.helper?.output ?? this.lastDiagnosticOutput;
 		this.helper = null;
 		this.targetPath = null;
@@ -600,7 +681,58 @@ export class NativeMacRecordingService {
 
 	private async persistRecoverySession(): Promise<void> {
 		const session = this.recoverySession();
-		if (session) await persistNativeMacRecoveryJournal(this.deps.recordingsDir, session);
+		if (!session) return;
+		await this.serializeRecoveryMutation(() =>
+			persistNativeMacRecoveryJournal(this.deps.recordingsDir, session),
+		);
+	}
+
+	private async serializeRecoveryMutation(mutation: () => Promise<void>): Promise<void> {
+		const generation = this.sessionGeneration;
+		const write = this.recoveryWrites
+			.catch(() => undefined)
+			.then(async () => {
+				if (generation === this.sessionGeneration) await mutation();
+			});
+		this.recoveryWrites = write;
+		await write;
+	}
+
+	private storeOriginalStarted(original: NativeMacOriginalStarted, generation: number): void {
+		if (generation !== this.sessionGeneration || !this.targetPath || !this.acceptsOriginalMetadata)
+			return;
+		const maximumIndex =
+			Math.max(this.activeClipIndex ?? -1, ...this.clips.map((clip) => clip.index)) + 1;
+		if (original.clipIndex > maximumIndex || original.clipIndex < 0) return;
+		const stem = this.clipPath(original.clipIndex).slice(0, -4);
+		const suffix =
+			original.key === "webcamVideoPath"
+				? "webcam"
+				: original.key === "microphoneAudioPath"
+					? "microphone"
+					: "system";
+		if (path.resolve(original.path) !== `${stem}-${suffix}.mov`) return;
+		const originals = this.originals.get(original.clipIndex) ?? {};
+		const offsetKey =
+			original.key === "webcamVideoPath"
+				? "webcamOffsetMs"
+				: original.key === "microphoneAudioPath"
+					? "microphoneAudioOffsetMs"
+					: "systemAudioOffsetMs";
+		this.originals.set(original.clipIndex, {
+			...originals,
+			[original.key]: original.path,
+			[offsetKey]: original.offsetMs,
+		});
+		void this.persistRecoverySession().catch((error) => {
+			if (generation !== this.sessionGeneration || this.fatalError) return;
+			this.paused = true;
+			this.fatalError = {
+				code: "capture-recovery-failed",
+				message: `Original recording recovery metadata could not be saved: ${this.errorMessage(error)}`,
+			};
+			this.deps.onFatalError(this.fatalError);
+		});
 	}
 
 	private async persistRecoverySessionBestEffort(): Promise<void> {
@@ -613,17 +745,21 @@ export class NativeMacRecordingService {
 
 	private recoverySession(): RecordingSession | null {
 		if (this.recordingId === null || !this.targetPath) return null;
-		const recoveryClips = [...this.clips];
-		if (
-			this.activeClipIndex !== null &&
-			!recoveryClips.some((clip) => clip.index === this.activeClipIndex)
-		) {
+		const recoveryClips = this.clips.map((clip) => ({
+			...this.originals.get(clip.index),
+			...clip,
+		}));
+		const provisionalIndices = new Set(this.originals.keys());
+		if (this.activeClipIndex !== null) provisionalIndices.add(this.activeClipIndex);
+		for (const index of provisionalIndices) {
+			if (recoveryClips.some((clip) => clip.index === index)) continue;
 			recoveryClips.push({
-				index: this.activeClipIndex,
-				screenVideoPath: this.clipPath(this.activeClipIndex),
+				...this.originals.get(index),
+				index,
+				screenVideoPath: this.clipPath(index),
 				durationMs: 60_000,
 				provisionalDuration: true,
-				cursorCaptureMode: this.clipCursorModes.get(this.activeClipIndex) ?? this.cursorCaptureMode,
+				cursorCaptureMode: this.clipCursorModes.get(index) ?? this.cursorCaptureMode,
 			});
 		}
 		recoveryClips.sort((left, right) => left.index - right.index);

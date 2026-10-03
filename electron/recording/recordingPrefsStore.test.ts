@@ -22,10 +22,22 @@ afterEach(async () => {
 });
 
 describe("RecordingPrefsStore", () => {
+	it("remembers Standard across relaunch and defaults old/invalid profiles to High", async () => {
+		const { filePath, store } = await makeStore();
+		await store.update({ recordingQuality: "standard" });
+		await expect(new RecordingPrefsStore(filePath).get()).resolves.toMatchObject({
+			recordingQuality: "standard",
+		});
+		await fs.writeFile(filePath, JSON.stringify({ recordingQuality: "unknown" }));
+		await expect(new RecordingPrefsStore(filePath).get()).resolves.toMatchObject({
+			recordingQuality: "high",
+		});
+	});
 	it("returns safe recording defaults when no saved preferences exist", async () => {
 		const { store } = await makeStore();
 
 		await expect(store.get()).resolves.toEqual({
+			recordingQuality: "high",
 			micEnabled: false,
 			micDeviceId: null,
 			camEnabled: false,

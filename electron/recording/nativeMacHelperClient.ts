@@ -3,8 +3,10 @@ import { EventEmitter } from "node:events";
 import type { Rectangle } from "electron";
 import {
 	type NativeMacCaptureTelemetry,
+	type NativeMacOriginalStarted,
 	type NativeMacRecordingFailure,
 	type NativeMacRecordingRequest,
+	parseNativeMacOriginalStarted,
 	parseNativeMacRecordingClip,
 } from "../../src/lib/nativeMacRecording";
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
@@ -18,6 +20,7 @@ export type NativeMacStopResult = {
 
 type NativeMacHelperClientOptions = {
 	onFatalError?: (failure: NativeMacRecordingFailure) => void;
+	onOriginalStarted?: (original: NativeMacOriginalStarted) => void;
 };
 
 export class NativeMacPauseError extends Error {
@@ -32,6 +35,16 @@ export class NativeMacPauseError extends Error {
 	}
 }
 
+export class NativeMacResumeRejectedError extends Error {
+	constructor(
+		message: string,
+		readonly clipIndex: number,
+	) {
+		super(message);
+		this.name = "NativeMacResumeRejectedError";
+	}
+}
+
 /** One process-local protocol client. Late events cannot affect the next helper. */
 export class NativeMacHelperClient {
 	private readonly events = new EventEmitter();
@@ -43,6 +56,7 @@ export class NativeMacHelperClient {
 	private recordingStarted = false;
 	private terminationRequested = false;
 	private stoppedResult: NativeMacStopResult | null = null;
+	private readonly reportedOriginals = new Set<string>();
 
 	constructor(
 		private readonly process: ChildProcessWithoutNullStreams,
@@ -249,7 +263,19 @@ export class NativeMacHelperClient {
 						resolve(event);
 					} else if (event.event === "error") {
 						cleanup();
-						reject(new Error(this.eventError(event, input.fallbackError)));
+						const message = this.eventError(event, input.fallbackError);
+						if (
+							input.event === "recording-resumed" &&
+							event.code === "clip-resume-rejected" &&
+							typeof event.clipIndex === "number" &&
+							Number.isInteger(event.clipIndex) &&
+							event.clipIndex >= 0
+						) {
+							for (const id of this.reportedOriginals) {
+								if (id.startsWith(`${event.clipIndex}:`)) this.reportedOriginals.delete(id);
+							}
+							reject(new NativeMacResumeRejectedError(message, event.clipIndex));
+						} else reject(new Error(message));
 					}
 				},
 				onClose: () => reject(new Error(input.exitMessage)),
@@ -328,6 +354,14 @@ export class NativeMacHelperClient {
 		if (!event) return;
 		if (event.event === "recording-started") this.recordingStarted = true;
 		const bounds = event.captureBounds as Rectangle | undefined;
+		if (event.event === "original-started") {
+			const original = parseNativeMacOriginalStarted(event);
+			const id = original ? `${original.clipIndex}:${original.key}` : "";
+			if (original && !this.reportedOriginals.has(id)) {
+				this.reportedOriginals.add(id);
+				this.options.onOriginalStarted?.(original);
+			}
+		}
 		if (bounds && bounds.width > 0 && bounds.height > 0) this.bounds = bounds;
 		if (event.event === "recording-stopped") {
 			this.stoppedResult = this.stoppedResultFromEvent(event, "");
@@ -417,6 +451,20 @@ export class NativeMacHelperClient {
 			"systemAudioSamples",
 			"microphoneAudioSamples",
 		] as const;
+		const optionalNumericFields = [
+			"audioMaxQueueBytes",
+			"writerMaxQueueDepth",
+			"writerBackpressureEvents",
+			"repeatedVideoFrames",
+			"completeSourceVideoFps",
+			"appendedCameraFrames",
+			"originalBackpressureEvents",
+			"originalMaxQueueDepth",
+			"completeSourceCameraFps",
+			"cameraSamples",
+			"cameraDroppedFrames",
+			"deliveredCameraFps",
+		] as const;
 		if (
 			numericFields.some(
 				(field) =>
@@ -424,14 +472,13 @@ export class NativeMacHelperClient {
 					!Number.isFinite(telemetry[field]) ||
 					(telemetry[field] as number) < 0,
 			) ||
-			(telemetry.audioMaxQueueBytes !== undefined &&
-				(typeof telemetry.audioMaxQueueBytes !== "number" ||
-					!Number.isFinite(telemetry.audioMaxQueueBytes) ||
-					telemetry.audioMaxQueueBytes < 0)) ||
-			(telemetry.writerMaxQueueDepth !== undefined &&
-				(typeof telemetry.writerMaxQueueDepth !== "number" ||
-					!Number.isFinite(telemetry.writerMaxQueueDepth) ||
-					telemetry.writerMaxQueueDepth < 0)) ||
+			optionalNumericFields.some(
+				(field) =>
+					telemetry[field] !== undefined &&
+					(typeof telemetry[field] !== "number" ||
+						!Number.isFinite(telemetry[field]) ||
+						(telemetry[field] as number) < 0),
+			) ||
 			typeof telemetry.lowPowerMode !== "boolean" ||
 			!["unknown", "nominal", "fair", "serious", "critical"].includes(
 				String(telemetry.thermalState),
@@ -444,7 +491,13 @@ export class NativeMacHelperClient {
 		const microphoneDriftMs = this.parseMetricSummary(telemetry.microphoneDriftMs);
 		const fragmentFinalizeMs = this.parseMetricSummary(telemetry.fragmentFinalizeMs);
 		const audioBlockMs = this.parseMetricSummary(telemetry.audioBlockMs);
+		const optionalMetrics: Partial<NativeMacCaptureTelemetry> = {};
+		for (const field of optionalNumericFields) {
+			const value = telemetry[field];
+			if (typeof value === "number") optionalMetrics[field] = value;
+		}
 		return {
+			...optionalMetrics,
 			requestedVideoFps: telemetry.requestedVideoFps as number,
 			deliveredVideoFps: telemetry.deliveredVideoFps as number,
 			screenSamples: telemetry.screenSamples as number,

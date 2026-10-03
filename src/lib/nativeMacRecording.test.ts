@@ -1,7 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { parseMacDisplayIdFromSourceId, parseMacWindowIdFromSourceId } from "./nativeMacRecording";
+import {
+	parseMacDisplayIdFromSourceId,
+	parseMacWindowIdFromSourceId,
+	parseNativeMacRecordingClip,
+} from "./nativeMacRecording";
 
 describe("nativeMacRecording source parsing", () => {
+	it("preserves optional original paths and finite offsets in native clip acknowledgments", () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: "/screen.mp4",
+			durationMs: 1000,
+			webcamVideoPath: "/camera.mov",
+			webcamOffsetMs: 0,
+			microphoneAudioPath: "/microphone.m4a",
+			microphoneAudioOffsetMs: 23.5,
+			systemAudioPath: "/system.m4a",
+			systemAudioOffsetMs: 4,
+		};
+		expect(parseNativeMacRecordingClip(clip)).toEqual(clip);
+		expect(
+			parseNativeMacRecordingClip({
+				...clip,
+				microphoneAudioPath: "  ",
+				microphoneAudioOffsetMs: Number.NaN,
+			}),
+		).not.toHaveProperty("microphoneAudioPath");
+	});
 	it("parses Electron window source ids into ScreenCaptureKit window ids", () => {
 		expect(parseMacWindowIdFromSourceId("window:12345:0")).toBe(12345);
 		expect(parseMacWindowIdFromSourceId("window:987")).toBe(987);

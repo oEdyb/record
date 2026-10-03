@@ -310,7 +310,29 @@ export async function importPendingRecording(): Promise<boolean> {
 							const clip = clipByAssetId.get(asset.id);
 							return {
 								...asset,
-								...(asset.cameraTrack && clip
+								...(clip?.microphoneAudioPath
+									? {
+											microphoneAudioPath: clip.microphoneAudioPath,
+											microphoneAudioOffsetMs: clip.microphoneAudioOffsetMs ?? 0,
+										}
+									: {}),
+								...(clip?.systemAudioPath
+									? {
+											systemAudioPath: clip.systemAudioPath,
+											systemAudioOffsetMs: clip.systemAudioOffsetMs ?? 0,
+										}
+									: {}),
+								...(clip?.webcamVideoPath
+									? {
+											cameraTrack: {
+												sourcePath: clip.webcamVideoPath,
+												startMs: 0,
+												offsetMs: Math.round(clip.webcamOffsetMs ?? 0),
+												visible: true,
+											},
+										}
+									: {}),
+								...(asset.cameraTrack && clip && !clip.webcamVideoPath
 									? {
 											cameraTrack: {
 												...asset.cameraTrack,

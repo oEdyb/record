@@ -105,6 +105,10 @@
 		"noMicrophones": "找不到麥克風",
 		"cameraQuality": "相機畫質",
 		"preview": "預覽",
-		"previewUnavailable": "預覽無法使用"
+		"previewUnavailable": "預覽無法使用",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }

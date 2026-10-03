@@ -6,8 +6,19 @@ import {
 	nativeMacWebcamFileName,
 	selectRecorderMimeType,
 } from "./capturePolicy";
+import {
+	DEFAULT_RECORDING_QUALITY,
+	normalizeRecordingQuality,
+	recordingQualityBitrate,
+} from "./recordingQuality";
 
 describe("capture policy", () => {
+	it("keeps the historical UI bitrate in Standard and doubles it in High", () => {
+		expect(DEFAULT_RECORDING_QUALITY).toBe("high");
+		expect(normalizeRecordingQuality(undefined)).toBe("high");
+		expect(recordingQualityBitrate("standard")).toBe(68_000_000);
+		expect(recordingQualityBitrate("high")).toBe(136_000_000);
+	});
 	it("chooses the first supported live recorder format", () => {
 		expect(selectRecorderMimeType((type) => type.includes("vp8"))).toBe("video/webm;codecs=vp8");
 		expect(selectRecorderMimeType(() => false)).toBe("video/webm");
@@ -44,7 +55,7 @@ describe("capture policy", () => {
 		expect(request).toMatchObject({
 			recordingId: 123,
 			source: { type: "window", displayId: 7, windowId: 42 },
-			video: { bitrate: 68_000_000, hideSystemCursor: false },
+			video: { quality: "high", bitrate: 136_000_000, hideSystemCursor: false },
 			audio: { system: { enabled: true }, microphone: { deviceId: "mic-id" } },
 			webcam: { width: 2560, height: 1440, fps: 30 },
 			cursor: { mode: "system" },

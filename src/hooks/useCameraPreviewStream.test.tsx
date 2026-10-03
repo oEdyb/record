@@ -56,6 +56,28 @@ afterEach(() => {
 });
 
 describe("useCameraPreviewStream", () => {
+	it("keeps High native camera pixels without probing or applying smaller preview formats", async () => {
+		const owned = cameraStream();
+		const getUserMedia = vi.fn(async () => owned.stream);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: { getUserMedia, getSupportedConstraints: () => ({ resizeMode: true }) },
+		});
+		const view = renderHook(() => useCameraPreviewStream({ enabled: true, nativeFormat: true }));
+		await waitFor(() => expect(view.result.current.stream).toBe(owned.stream));
+		expect(getUserMedia).toHaveBeenCalledWith({
+			audio: false,
+			video: {
+				resizeMode: { exact: "none" },
+				width: { ideal: 7680 },
+				height: { ideal: 4320 },
+				frameRate: { ideal: 60, max: 60 },
+			},
+		});
+		expect(probeWebcamFormatsCached).not.toHaveBeenCalled();
+		expect(owned.applyConstraints).not.toHaveBeenCalled();
+		view.unmount();
+	});
 	it("reuses a recorder-owned stream without acquiring or stopping the camera", async () => {
 		const external = cameraStream();
 		const getUserMedia = vi.fn();

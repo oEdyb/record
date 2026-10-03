@@ -1,9 +1,17 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { NativeMacRecordingRequest } from "../../src/lib/nativeMacRecording";
+import type {
+	NativeMacOriginalStarted,
+	NativeMacRecordingRequest,
+} from "../../src/lib/nativeMacRecording";
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
+import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
+import { NativeMacHelperClient, NativeMacResumeRejectedError } from "./nativeMacHelperClient";
 import {
 	type NativeMacCaptureHelper,
 	NativeMacRecordingService,
@@ -13,6 +21,8 @@ import {
 	nativeMacRecoveryJournalPath,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+
+vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
 
 class FakeHelper implements NativeMacCaptureHelper {
 	captureBounds = null;
@@ -54,6 +64,7 @@ describe("NativeMacRecordingService", () => {
 	let deps: NativeMacRecordingServiceDependencies;
 
 	beforeEach(async () => {
+		vi.mocked(inspectHandoffSourceMedia).mockReset();
 		recordingsDir = await fs.mkdtemp(path.join(os.tmpdir(), "screenrec-native-mac-"));
 		helper = new FakeHelper();
 		deps = {
@@ -85,6 +96,363 @@ describe("NativeMacRecordingService", () => {
 		await fs.rm(recordingsDir, { recursive: true, force: true });
 	});
 
+	it("reattaches a readable original fragment when finalization returns only the committed screen", async () => {
+		let reportOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _fatal, callback) => {
+			reportOriginal = callback;
+			return helper;
+		});
+		const stem = path.join(recordingsDir, "recording-100-clip-0001");
+		await fs.writeFile(`${stem}.mp4`, "screen");
+		await fs.writeFile(`${stem}-microphone.mov`, "readable fragment");
+		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			hasAudio: true,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: 1,
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		reportOriginal?.({
+			clipIndex: 0,
+			key: "microphoneAudioPath",
+			path: `${stem}-microphone.mov`,
+			offsetMs: 22.5,
+		});
+		helper.stopClips = [{ index: 0, screenVideoPath: `${stem}.mp4`, durationMs: 1020 }];
+		const result = await service.stop();
+		expect(result.session?.clips?.[0]).toMatchObject({
+			durationMs: 1020,
+			microphoneAudioPath: `${stem}-microphone.mov`,
+			microphoneAudioOffsetMs: 22.5,
+		});
+	});
+
+	it.each([
+		"stop",
+		"recover",
+		"discard",
+	] as const)("drains source metadata received during %s before final recovery mutation", async (mode) => {
+		let reportOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _fatal, callback) => {
+			reportOriginal = callback;
+			return helper;
+		});
+		const stem = path.join(recordingsDir, "recording-100-clip-0001");
+		const clip = {
+			index: 0,
+			screenVideoPath: `${stem}.mp4`,
+			durationMs: 1000,
+			microphoneAudioPath: `${stem}-microphone.mov`,
+			microphoneAudioOffsetMs: 12.5,
+		};
+		await fs.writeFile(clip.screenVideoPath, "durable screen");
+		await fs.writeFile(clip.microphoneAudioPath, "durable microphone");
+		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			hasAudio: true,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: 1,
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		let completeStop:
+			| ((result: { screenPath: string; clips: RecordingSessionClip[] }) => void)
+			| undefined;
+		let failStop: ((error: Error) => void) | undefined;
+		helper.stop.mockImplementation(
+			() =>
+				new Promise((resolve, reject) => {
+					completeStop = resolve;
+					failStop = reject;
+				}),
+		);
+		const stopped = service.stop(mode === "discard");
+		await vi.waitFor(() => expect(helper.stop).toHaveBeenCalledOnce());
+		let releaseWrite: (() => void) | undefined;
+		const pendingWrite = new Promise<void>((resolve) => {
+			releaseWrite = resolve;
+		});
+		const rename = fs.rename;
+		let blockedWrite = false;
+		const renameSpy = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+			if (String(to).endsWith(".recovery.json")) {
+				blockedWrite = true;
+				await pendingWrite;
+			}
+			return rename(from, to);
+		});
+		try {
+			reportOriginal?.({
+				clipIndex: 0,
+				key: "microphoneAudioPath",
+				path: clip.microphoneAudioPath,
+				offsetMs: 12.5,
+			});
+			await vi.waitFor(() => expect(blockedWrite).toBe(true));
+			if (mode === "recover") failStop?.(new Error("SIGKILL during Stop"));
+			else completeStop?.({ screenPath: clip.screenVideoPath, clips: [clip] });
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(deps.onSessionStored).not.toHaveBeenCalled();
+			releaseWrite?.();
+			const result = await stopped;
+			expect(result.success).toBe(true);
+			if (mode === "discard") {
+				await expect(fs.access(nativeMacRecoveryJournalPath(recordingsDir, 100))).rejects.toThrow();
+				await expect(fs.access(clip.microphoneAudioPath)).rejects.toThrow();
+			} else {
+				expect(result.session?.clips?.[0]).toMatchObject({
+					microphoneAudioPath: clip.microphoneAudioPath,
+					microphoneAudioOffsetMs: 12.5,
+				});
+				const journal = JSON.parse(
+					await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8"),
+				);
+				expect(journal.session.clips).toEqual(result.session?.clips);
+				if (mode === "stop") expect(journal.session.clips[0].durationMs).toBe(1000);
+			}
+			// A late/replayed event cannot resurrect a discarded journal or replace the final one.
+			reportOriginal?.({
+				clipIndex: 0,
+				key: "systemAudioPath",
+				path: `${stem}-system.mov`,
+				offsetMs: 3,
+			});
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			if (mode === "discard")
+				await expect(fs.access(nativeMacRecoveryJournalPath(recordingsDir, 100))).rejects.toThrow();
+		} finally {
+			releaseWrite?.();
+			renameSpy.mockRestore();
+		}
+	});
+
+	it("retains source metadata written during failed startup before clearing or resetting", async () => {
+		let reportOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _fatal, callback) => {
+			reportOriginal = callback;
+			return helper;
+		});
+		const stem = path.join(recordingsDir, "recording-100-clip-0001");
+		await fs.writeFile(`${stem}.mp4`, "screen fragment");
+		await fs.writeFile(`${stem}-microphone.mov`, "audio fragment");
+		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			hasAudio: true,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: 2,
+		});
+		let failStart: ((error: Error) => void) | undefined;
+		helper.waitForStart.mockImplementation(
+			() =>
+				new Promise((_resolve, reject) => {
+					failStart = reject;
+				}),
+		);
+		const service = new NativeMacRecordingService(deps);
+		const starting = service.start(baseRequest);
+		await vi.waitFor(() => expect(helper.waitForStart).toHaveBeenCalledOnce());
+		let releaseWrite: (() => void) | undefined;
+		const pendingWrite = new Promise<void>((resolve) => {
+			releaseWrite = resolve;
+		});
+		const rename = fs.rename;
+		let blockedWrite = false;
+		const renameSpy = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+			if (String(to).endsWith(".recovery.json")) {
+				blockedWrite = true;
+				await pendingWrite;
+			}
+			return rename(from, to);
+		});
+		try {
+			reportOriginal?.({
+				clipIndex: 0,
+				key: "microphoneAudioPath",
+				path: `${stem}-microphone.mov`,
+				offsetMs: 19,
+			});
+			await vi.waitFor(() => expect(blockedWrite).toBe(true));
+			failStart?.(new Error("helper exited before camera readiness"));
+			await vi.waitFor(() => expect(helper.kill).toHaveBeenCalledOnce());
+			releaseWrite?.();
+			await expect(starting).resolves.toMatchObject({ success: false });
+			const recovered = await restoreNativeMacRecoverySession(recordingsDir, 100);
+			expect(recovered?.clips?.[0]).toMatchObject({
+				microphoneAudioPath: `${stem}-microphone.mov`,
+				microphoneAudioOffsetMs: 19,
+			});
+		} finally {
+			releaseWrite?.();
+			renameSpy.mockRestore();
+		}
+	});
+
+	it("journals all original source offsets before readiness and restores them after SIGKILL", async () => {
+		const stem = path.join(recordingsDir, "recording-100-clip-0001");
+		const originals = {
+			webcamVideoPath: `${stem}-webcam.mov`,
+			webcamOffsetMs: 0,
+			microphoneAudioPath: `${stem}-microphone.mov`,
+			microphoneAudioOffsetMs: 24.75,
+			systemAudioPath: `${stem}-system.mov`,
+			systemAudioOffsetMs: 8.5,
+		};
+		for (const file of [
+			`${stem}.mp4`,
+			originals.webcamVideoPath,
+			originals.microphoneAudioPath,
+			originals.systemAudioPath,
+		])
+			await fs.writeFile(file, "durable fragments");
+		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+			hasAudio: !file.endsWith("webcam.mov"),
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: 5,
+			...(file.endsWith("webcam.mov")
+				? { video: { codec: "h264", width: 1920, height: 1080, fps: 30 } }
+				: {}),
+		}));
+		const process = Object.assign(new EventEmitter(), {
+			stdin: new PassThrough(),
+			stdout: new PassThrough(),
+			stderr: new PassThrough(),
+			exitCode: null,
+			killed: false,
+			kill: vi.fn(() => true),
+		}) as unknown as ChildProcessWithoutNullStreams;
+		vi.mocked(deps.createHelper).mockImplementation(
+			(_path, _config, onFatalError, onOriginalStarted) => {
+				const client = new NativeMacHelperClient(process, { onFatalError, onOriginalStarted });
+				for (const [key, offsetMs] of [
+					["webcamVideoPath", 0],
+					["microphoneAudioPath", 24.75],
+					["systemAudioPath", 8.5],
+				] as const)
+					process.stdout.emit(
+						"data",
+						`${JSON.stringify({ event: "original-started", clipIndex: 0, key, path: originals[key], offsetMs })}\n`,
+					);
+				process.stdout.emit("data", `${JSON.stringify({ event: "recording-started" })}\n`);
+				return client;
+			},
+		);
+		const service = new NativeMacRecordingService(deps);
+		await expect(service.start(baseRequest)).resolves.toMatchObject({ success: true });
+		const journal = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8"),
+		);
+		expect(journal.session.clips[0]).toMatchObject(originals);
+		process.emit("close", null, "SIGKILL");
+		const stopped = await service.stop();
+		expect(stopped).toMatchObject({
+			success: true,
+			session: { clips: [expect.objectContaining(originals)] },
+		});
+		expect(stopped.warning).toContain("recovered");
+		expect(deps.onFatalError).toHaveBeenCalledWith(
+			expect.objectContaining({
+				code: "capture-helper-exited",
+				message: expect.stringContaining("SIGKILL"),
+			}),
+		);
+	});
+
+	it("journals a new Continue original before the resumed event supplies its clip index", async () => {
+		let reportOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _onFatal, callback) => {
+			reportOriginal = callback;
+			return helper;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.pauseResult = Promise.resolve({
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+			durationMs: 500,
+		});
+		await service.pause();
+		helper.resume.mockImplementation(async () => {
+			reportOriginal?.({
+				clipIndex: 1,
+				key: "microphoneAudioPath",
+				path: path.join(recordingsDir, "recording-100-clip-0002-microphone.mov"),
+				offsetMs: 31.25,
+			});
+			return 1;
+		});
+		await expect(service.resume()).resolves.toMatchObject({ success: true, clipIndex: 1 });
+		const journal = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8"),
+		);
+		expect(journal.session.clips[1]).toMatchObject({ index: 1, microphoneAudioOffsetMs: 31.25 });
+	});
+
+	it("reports a failed late original journal write loudly and preserves existing completed sources", async () => {
+		let reportOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _onFatal, callback) => {
+			reportOriginal = callback;
+			return helper;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const journalPath = nativeMacRecoveryJournalPath(recordingsDir, 100);
+		await fs.unlink(journalPath);
+		await fs.mkdir(journalPath);
+		reportOriginal?.({
+			clipIndex: 0,
+			key: "microphoneAudioPath",
+			path: path.join(recordingsDir, "recording-100-clip-0001-microphone.mov"),
+			offsetMs: 12,
+		});
+		await vi.waitFor(() =>
+			expect(deps.onFatalError).toHaveBeenCalledWith(
+				expect.objectContaining({ code: "capture-recovery-failed" }),
+			),
+		);
+		helper.stopClips = [
+			{
+				index: 0,
+				screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+				durationMs: 1000,
+			},
+		];
+		await fs.writeFile(helper.stopClips[0].screenVideoPath, "durable screen");
+		const stopped = await service.stop();
+		expect(stopped.success).toBe(true);
+		expect(stopped.warning).toContain("recovery metadata could not be saved");
+		await expect(fs.readFile(helper.stopClips[0].screenVideoPath, "utf8")).resolves.toBe(
+			"durable screen",
+		);
+	});
+
+	it("rejects late source metadata from a previous helper generation", async () => {
+		const callbacks: Array<(original: NativeMacOriginalStarted) => void> = [];
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _onFatal, callback) => {
+			callbacks.push(callback);
+			return helper;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.stop(true);
+		helper.running = true;
+		await service.start({ ...baseRequest, recordingId: 101 });
+		callbacks[0]({
+			clipIndex: 0,
+			key: "webcamVideoPath",
+			path: path.join(recordingsDir, "recording-101-clip-0001-webcam.mov"),
+			offsetMs: 0,
+		});
+		await service.pause();
+		const journal = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 101), "utf8"),
+		);
+		expect(journal.session.clips.some((clip: RecordingSessionClip) => clip.webcamVideoPath)).toBe(
+			false,
+		);
+	});
+
 	it("rejects startup if the helper dies just after its first-frame acknowledgement", async () => {
 		helper.waitForStart.mockImplementation(async () => {
 			helper.running = false;
@@ -102,6 +470,148 @@ describe("NativeMacRecordingService", () => {
 		).resolves.toMatchObject({ success: true });
 		expect(deps.startCursor).not.toHaveBeenCalled();
 		expect(deps.clearCursor).toHaveBeenCalled();
+	});
+
+	it("keeps completed clips and source bytes when a rejected Continue is safely paused", async () => {
+		const source = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		await fs.writeFile(source, "untouched committed source");
+		const clip = { index: 0, screenVideoPath: source, durationMs: 2000 };
+		helper.pauseResult = Promise.resolve(clip);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		const before = await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8");
+		helper.resume.mockRejectedValueOnce(
+			new NativeMacResumeRejectedError("Selected source closed", 1),
+		);
+		await expect(service.resume()).resolves.toEqual({
+			success: false,
+			paused: true,
+			error: "Selected source closed",
+		});
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+		expect(deps.onSessionStored).not.toHaveBeenCalled();
+		expect(deps.onRecordingStateChange).not.toHaveBeenCalledWith(false);
+		expect(await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8")).toBe(
+			before,
+		);
+		await expect(
+			service.resume({
+				...baseRequest,
+				source: { ...baseRequest.source, sourceId: "screen:2:0", displayId: 2 },
+			}),
+		).resolves.toEqual({ success: true, clipIndex: 1 });
+		expect(helper.reconfigure).toHaveBeenCalledOnce();
+		const journal = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8"),
+		);
+		expect(journal.session.clips).toEqual([
+			expect.objectContaining(clip),
+			expect.objectContaining({ index: 1, provisionalDuration: true }),
+		]);
+		expect(await fs.readFile(source, "utf8")).toBe("untouched committed source");
+	});
+
+	it.each([
+		false,
+		true,
+	])("clears rejected camera metadata before retry with webcam %s", async (webcamEnabled) => {
+		let publishOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _fatal, original) => {
+			publishOriginal = original;
+			return helper;
+		});
+		const screen = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		const camera = path.join(recordingsDir, "recording-100-clip-0002-webcam.mov");
+		await fs.writeFile(screen, "committed screen bytes");
+		const clip = { index: 0, screenVideoPath: screen, durationMs: 2000 };
+		helper.pauseResult = Promise.resolve(clip);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		const before = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8"),
+		);
+		helper.resume.mockImplementationOnce(async () => {
+			await fs.writeFile(camera, "rejected seed");
+			publishOriginal?.({ clipIndex: 1, key: "webcamVideoPath", path: camera, offsetMs: 23 });
+			await fs.unlink(camera);
+			throw new NativeMacResumeRejectedError("Screen append rejected", 1);
+		});
+		await expect(service.resume()).resolves.toMatchObject({ success: false, paused: true });
+		const rejected = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8"),
+		);
+		expect(rejected.session).toEqual(before.session);
+		await expect(fs.stat(camera)).rejects.toMatchObject({ code: "ENOENT" });
+		helper.resume.mockImplementationOnce(async () => {
+			if (webcamEnabled) {
+				await fs.writeFile(camera, "replacement seed");
+				publishOriginal?.({ clipIndex: 1, key: "webcamVideoPath", path: camera, offsetMs: 80.5 });
+			}
+			return 1;
+		});
+		await expect(
+			service.resume({ ...baseRequest, webcam: { ...baseRequest.webcam, enabled: webcamEnabled } }),
+		).resolves.toEqual({ success: true, clipIndex: 1 });
+		const resumed = JSON.parse(
+			await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 100), "utf8"),
+		);
+		expect(resumed.session.clips).toHaveLength(2);
+		expect(resumed.session.clips[0]).toEqual(expect.objectContaining(clip));
+		const active = resumed.session.clips[1];
+		if (webcamEnabled)
+			expect(active).toEqual(
+				expect.objectContaining({ webcamVideoPath: camera, webcamOffsetMs: 80.5 }),
+			);
+		else {
+			expect(active.webcamVideoPath).toBeUndefined();
+			expect(active.webcamOffsetMs).toBeUndefined();
+		}
+		expect(await fs.readFile(screen, "utf8")).toBe("committed screen bytes");
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+
+	it("still reports a dead helper as fatal after a paused Continue rejection", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		helper.resume.mockImplementationOnce(async () => {
+			helper.running = false;
+			throw new NativeMacResumeRejectedError("Helper died after rejection", 1);
+		});
+		await expect(service.resume()).resolves.toEqual({
+			success: false,
+			error: "Helper died after rejection",
+		});
+		expect(deps.onFatalError).toHaveBeenCalledWith({
+			code: "capture-resume-failed",
+			message: "Helper died after rejection",
+		});
+	});
+
+	it("does not hide an actual writer failure behind a paused Continue rejection", async () => {
+		let reportFatal: ((failure: { code: string; message: string }) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, callback) => {
+			reportFatal = callback;
+			return helper;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		helper.resume.mockImplementationOnce(async () => {
+			reportFatal?.({ code: "writer-failed-during-capture", message: "Writer failed" });
+			throw new NativeMacResumeRejectedError("Paused rollback completed", 1);
+		});
+		await expect(service.resume()).resolves.toEqual({
+			success: false,
+			error: "Paused rollback completed",
+		});
+		expect(deps.onFatalError).toHaveBeenCalledOnce();
+		expect(deps.onFatalError).toHaveBeenCalledWith({
+			code: "writer-failed-during-capture",
+			message: "Writer failed",
+		});
 	});
 
 	it("reports failed first-frame Continue so the HUD can save completed clips", async () => {
@@ -322,7 +832,13 @@ describe("NativeMacRecordingService", () => {
 		await service.pause();
 
 		const open = vi.spyOn(fs, "open").mockRejectedValueOnce(new Error("ENOSPC: disk full"));
-		await expect(service.resume(baseRequest)).resolves.toEqual({ success: true, clipIndex: 1 });
+		await expect(service.resume(baseRequest)).resolves.toMatchObject({
+			success: false,
+			error: expect.stringContaining("ENOSPC"),
+		});
+		expect(deps.onFatalError).toHaveBeenCalledWith(
+			expect.objectContaining({ code: "capture-resume-failed" }),
+		);
 		open.mockRestore();
 		await fs.writeFile(secondPath, Buffer.alloc(70 * 1024));
 
@@ -485,6 +1001,7 @@ describe("NativeMacRecordingService", () => {
 				video: expect.objectContaining({ hideSystemCursor: false }),
 				cursor: { mode: "system" },
 			}),
+			expect.any(Function),
 			expect.any(Function),
 		);
 		await service.stop(true);

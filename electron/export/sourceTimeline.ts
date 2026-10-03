@@ -1,7 +1,7 @@
 export interface HandoffMedia {
 	file: string;
 	durationSec: number | null;
-	audio: Array<{ role: string; file: string; durationSec?: number | null }>;
+	audio: Array<{ role: string; file: string; durationSec?: number | null; offsetSec?: number }>;
 }
 
 export interface HandoffSource {
@@ -40,7 +40,14 @@ function gap(duration: number) {
 	};
 }
 
-function clip(file: string, start: number, duration: number, available: number, span: HandoffSpan) {
+function clip(
+	file: string,
+	start: number,
+	duration: number,
+	available: number,
+	span: HandoffSpan,
+	offsetSec: number,
+) {
 	return {
 		OTIO_SCHEMA: "Clip.2",
 		name: file,
@@ -56,7 +63,17 @@ function clip(file: string, start: number, duration: number, available: number, 
 		active_media_reference_key: "DEFAULT_MEDIA",
 		effects: [],
 		markers: [],
-		metadata: { klippt: { clipId: span.id, assetId: span.assetId } },
+		metadata: {
+			klippt: {
+				clipId: span.id,
+				assetId: span.assetId,
+				sourceStartSec: span.sourceStartSec,
+				sourceEndSec: span.sourceEndSec,
+				timelineStartSec: span.timelineStartSec,
+				timelineEndSec: span.timelineEndSec,
+				sourceOffsetSec: offsetSec,
+			},
+		},
 	};
 }
 
@@ -101,7 +118,8 @@ export function buildSourceTimeline(title: string, sources: HandoffSource[], spa
 			const sourceStart = Math.max(0, start);
 			const length = Math.max(0, Math.min(duration - lead, available - sourceStart));
 			if (lead) children.push(gap(lead));
-			if (length) children.push(clip(media.file, sourceStart, length, available, span));
+			if (length)
+				children.push(clip(media.file, sourceStart, length, available, span, media.offsetSec));
 			if (duration > lead + length) children.push(gap(duration - lead - length));
 			if (lead || duration > lead + length)
 				warnings.add(`${media.file}: unavailable source time is left as a gap in timeline.otio.`);
@@ -124,7 +142,7 @@ export function buildSourceTimeline(title: string, sources: HandoffSource[], spa
 					file: media.file,
 					durationSec:
 						media.durationSec === undefined ? source.screen.durationSec : media.durationSec,
-					offsetSec: 0,
+					offsetSec: media.offsetSec ?? 0,
 				}
 			: undefined;
 	};

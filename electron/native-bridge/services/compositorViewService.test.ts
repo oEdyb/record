@@ -582,10 +582,10 @@ describe("CompositorViewService export transaction", () => {
 		const finalPath = path.join(root, "video.mp4");
 		fs.writeFileSync(finalPath, "old export");
 		let rejectRender: ((error: Error) => void) | null = null;
-		const exportMulti = vi.fn(async (_clips, outPath: string) => {
-			await fs.promises.writeFile(outPath, "partial export");
-			return await new Promise<ExportStats>((_resolve, reject) => {
+		const exportMulti = vi.fn((_clips, outPath: string) => {
+			return new Promise<ExportStats>((_resolve, reject) => {
 				rejectRender = reject;
+				fs.writeFileSync(outPath, "partial export");
 			});
 		});
 		const addon = {
@@ -607,6 +607,7 @@ describe("CompositorViewService export transaction", () => {
 		});
 
 		await vi.waitFor(() => expect(exportMulti).toHaveBeenCalledOnce());
+		expect(rejectRender).not.toBeNull();
 		expect(service.cancelExport("cancel-me")).toBe(true);
 		await expect(operation).rejects.toMatchObject({ code: "CANCELLED", phase: "rendering" });
 		expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");

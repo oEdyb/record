@@ -2,16 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import {
 	applyWebcamFormat,
 	DEFAULT_WEBCAM_FORMAT,
+	nativeWebcamConstraints,
 	preferredWebcamConstraints,
 	probeWebcamFormatsCached,
 	sameWebcamFormat,
 	settingsMatchFormat,
+	supportsNativeWebcamMode,
 	type WebcamFormat,
 	webcamFormatFromSettings,
 } from "../lib/webcamFormats";
 
 export interface CameraPreviewStreamOptions {
 	enabled: boolean;
+	nativeFormat?: boolean;
 	deviceId?: string;
 	format?: WebcamFormat;
 	/** Recorder-owned feed to display and probe without opening or stopping the camera again. */
@@ -24,6 +27,7 @@ export interface CameraPreviewStreamOptions {
  */
 export function useCameraPreviewStream({
 	enabled,
+	nativeFormat = false,
 	deviceId,
 	format = DEFAULT_WEBCAM_FORMAT,
 	externalStream = null,
@@ -67,6 +71,11 @@ export function useCameraPreviewStream({
 
 			const track = nextStream.getVideoTracks()[0];
 			if (!track) return;
+			if (nativeFormat) {
+				setSupportedFormats([]);
+				setActiveFormat(webcamFormatFromSettings(track.getSettings(), formatRef.current));
+				return;
+			}
 			const available = await probeWebcamFormatsCached(track, deviceId);
 			if (cancelled) return;
 
@@ -93,7 +102,13 @@ export function useCameraPreviewStream({
 					.getUserMedia({
 						video: {
 							...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-							...preferredWebcamConstraints(formatRef.current),
+							...(nativeFormat
+								? nativeWebcamConstraints(
+										supportsNativeWebcamMode(
+											navigator.mediaDevices.getSupportedConstraints?.() ?? {},
+										),
+									)
+								: preferredWebcamConstraints(formatRef.current)),
 						},
 						audio: false,
 					})
@@ -118,11 +133,15 @@ export function useCameraPreviewStream({
 				ownsStreamRef.current = false;
 			}
 		};
-	}, [enabled, deviceId, externalStream]);
+	}, [enabled, deviceId, externalStream, nativeFormat]);
 
 	useEffect(() => {
 		const track = streamRef.current?.getVideoTracks()[0];
-		if (!track || !supportedFormats.some((candidate) => sameWebcamFormat(candidate, format))) {
+		if (
+			nativeFormat ||
+			!track ||
+			!supportedFormats.some((candidate) => sameWebcamFormat(candidate, format))
+		) {
 			return;
 		}
 
@@ -144,7 +163,7 @@ export function useCameraPreviewStream({
 		return () => {
 			cancelled = true;
 		};
-	}, [format, supportedFormats]);
+	}, [format, supportedFormats, nativeFormat]);
 
 	return { stream, error, supportedFormats, activeFormat };
 }

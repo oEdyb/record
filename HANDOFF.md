@@ -1,4 +1,22 @@
-# October 3: recording focus
+# October 3 follow-up: high-quality untouched sources
+
+Active goal on `codex/overnight-2026-10-03`: Separate takes is the fresh remembered export
+choice; copy complete screen, camera, microphone and system-audio originals byte for byte,
+with cuts only in `timeline.otio`. High recording quality is the fresh remembered setup
+default, with Standard retained. No new editor features. Do not touch the installed app,
+release pipeline or Olle's Resolve projects, and do not push.
+
+Implementation and real Mac acceptance are complete in the development build. Final matched
+120-second Standard/High recordings handed off all four untouched sources in 740.8/1,491.8 ms;
+High measured 136.346 Mbps with an exact 60 Hz output grid. Current UI, recovery, full decode
+and new-owned Resolve full/cut/multi/moved-folder import/playback passed; original media and
+all existing saved Resolve projects remain byte-identical. Exact full suite: 4,095 passed,
+one existing skip; required gates and 53 native tests pass. Installed app, release pipeline
+and pushes are unchanged. The dated follow-up in
+[docs/overnight-2026-10-03.md](docs/overnight-2026-10-03.md) owns evidence, research and limits.
+Do not treat the initial-phase numbers below as the follow-up measurements.
+
+# October 3 initial phase: recording focus
 
 Working branch: `codex/overnight-2026-10-03`. Original uncommitted work was preserved unchanged
 in `fff98f36f4748d74d67cd01fd1cdd12b3c66d712` before implementation. Klippt now prioritizes

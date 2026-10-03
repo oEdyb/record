@@ -10,7 +10,8 @@
 ## Product decision
 
 Klippt is a proprietary, Mac-first, clip-native recorder. October 3 direction: strictly focus on
-fast capture, Pause/Continue, review, and saving a video; do not build editor features. Retain
+fast high-quality capture, Pause/Continue, review, and untouched separate-source handoff by default;
+do not build editor features. Retain
 existing project and export compatibility. The immediate performance work and acceptance gates
 are in [`docs/overnight-2026-10-03.md`](docs/overnight-2026-10-03.md).
 
@@ -30,16 +31,20 @@ before commercial enforcement turns on.
 
 The core workflow is:
 
-> Open → Record → Pause/Continue or remove the previous clip → Stop → Save video.
+> Open → Record → Pause/Continue or remove the previous clip → Stop → Separate takes.
 
-New recordings start plain and preserve their original media. Review offers playback and a
-seek bar. Save uses the native picker directly; Original files remains available for recovery.
+New recordings start plain and preserve their original media. Recording setup remembers High
+or Standard quality, with High as the fresh default. Review offers playback and a seek bar.
+The export dialog starts with Separate takes selected and remembers the last explicit choice;
+One video remains available. Separate takes copies complete original screen, camera, microphone
+and system-audio files without processing; cuts and synchronization travel in `timeline.otio`.
+Original files remains available for recovery.
 Keep existing project and CLI capabilities for compatibility, without adding editor features.
 Detailed behavior and limits live in [product behavior](technical-documentation/product-behavior.md).
 
 The product promise is:
 
-> Start quickly. Capture reliably. Keep every source. Save a normal video quickly.
+> Start quickly. Capture clearly. Keep every source. Hand off the originals quickly.
 
 Klippt is also agent-native. The UI, CLI, and future agent bridge must operate on the same
 versioned project model and the same editing commands. An agent can inspect, edit, validate, and
@@ -88,7 +93,8 @@ SEO or GEO only after the small page set shows which queries and recommendations
    variants of that project, not duplicate projects.
 5. Keep automatic direction deterministic, local, editable, and regenerated through one
    versioned plan.
-6. Use normal recording language. Use **clips**, never “takes” or a “redo take” workflow.
+6. Use normal recording language: **clips** for capture controls and history. Retain the explicit
+   October 3 export-choice label **Separate takes**; do not add a “redo take” workflow.
 7. Make every important edit available through one shared command service used by the UI, CLI,
    and agents. Keep commands deterministic, machine-readable, undoable, and safe for source media.
 8. Ship by evidence gates, not feature count or estimated calendar time.
@@ -98,7 +104,7 @@ SEO or GEO only after the small page set shows which queries and recommendations
 | Capability              | Current state                                                                                                                                                                                                                                                                                               | Main gap                                                                                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Clip-native recording   | Working on Mac: Pause, Continue, Remove previous clip, Stop, editor insertion, Undo, and Redo                                                                                                                                                                                                               | Long-session and failure recovery gates                                                                                                               |
-| Editable source capture | Screen and camera are separate. Mac clips contain a mixed preview track plus tagged system-audio and microphone tracks. Cursor and safe keyboard telemetry are sidecars                                                                                                                                     | First-class source-track model, raw export, recovery inventory                                                                                        |
+| Editable source capture | Mac capture preserves screen MP4, native camera MOV and standalone microphone/system AAC MOV originals with measured offsets, plus mixed/tagged screen preview audio. Separate takes byte-copies complete originals; cuts and sync live only in OTIO. Cursor and safe keyboard telemetry remain sidecars                                                                                                                                     | Packaged long-session recovery gates; development four-source quality/interchange proof passed                                                                                        |
 | Automatic direction     | Deterministic click, drag, typing, cursor, and Camera Emphasis engine; exact Scale control; protected user corrections; direct editable timeline regions; simplified inspector                                                                                                                              | Tune only from labelled real-use failures; do not add detectors now                                                                                   |
 | Preview and export      | Shared native scene contract and hardware paths on Mac. The native editor preview now renders at visible CSS size on Retina displays while export keeps its full independent resolution                                                                                                                        | Fresh post-fix workload measurement and full packaged long-video delivery validation                                                                 |
 | Export quality          | MP4/GIF, H.264/H.265, 24/30/60 FPS, 1080p/2K/source tiers, estimated size, and audio normalization exist                                                                                                                                                                                                    | Capability-based advanced controls, manual/CQ rate control, ProRes/AV1 decisions                                                                      |

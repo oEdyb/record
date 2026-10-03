@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 	export: vi.fn(),
 	pick: vi.fn(),
 	reveal: vi.fn(),
+	sources: vi.fn(),
 	phase: undefined as undefined | ((phase: string) => void),
 	progress: undefined as undefined | ((frames: number) => void),
 }));
@@ -26,6 +27,16 @@ vi.mock("@/native", () => ({
 	exportGifNative: mocks.export,
 	useIsCpuCompositor: () => false,
 }));
+vi.mock("@/native/client", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/native/client")>();
+	return {
+		...actual,
+		nativeBridgeClient: {
+			...actual.nativeBridgeClient,
+			aiEdition: { ...actual.nativeBridgeClient.aiEdition, exportSources: mocks.sources },
+		},
+	};
+});
 vi.mock("@/native/sceneDescription", () => ({
 	buildCompositorClipInputs: () => [
 		{ path: "/tmp/a.mp4", sourceStartSec: 0, sourceEndSec: 10, hasAudio: false },
@@ -94,12 +105,18 @@ function show() {
 	return onClose;
 }
 
+function startOneVideo() {
+	fireEvent.click(screen.getByRole("button", { name: "One video" }));
+	fireEvent.click(screen.getByRole("button", { name: "exportDialog.exportMp4" }));
+}
+
 beforeEach(() => {
 	localStorage.clear();
 	useExportRunStore.getState().abandon();
 	mocks.export.mockReset();
 	mocks.pick.mockReset().mockResolvedValue({ path: "/tmp/export.mp4" });
 	mocks.reveal.mockReset().mockResolvedValue(undefined);
+	mocks.sources.mockReset().mockResolvedValue({ canceled: true });
 	Object.defineProperty(window, "electronAPI", {
 		configurable: true,
 		value: {
@@ -119,6 +136,35 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ExportDialog task completion", () => {
+	it("blocks source navigation before opening its picker and releases it after failure", async () => {
+		const document = doc([asset({ id: "a1" })], [clip({ id: "c1", assetId: "a1" })]);
+		const onSourceBusyChange = vi.fn();
+		let rejectExport: ((reason: Error) => void) | undefined;
+		mocks.sources.mockImplementation(() => {
+			expect(onSourceBusyChange).toHaveBeenLastCalledWith(true);
+			return new Promise((_resolve, reject) => {
+				rejectExport = reject;
+			});
+		});
+		render(
+			<ExportDialog
+				open
+				quickExport
+				onClose={vi.fn()}
+				document={document}
+				onSourceBusyChange={onSourceBusyChange}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
+		expect(onSourceBusyChange).toHaveBeenCalledExactlyOnceWith(true);
+		expect(screen.getByRole("button", { name: "One video" })).toBeDisabled();
+		await act(async () => {
+			rejectExport?.(new Error("Disk unavailable"));
+		});
+		expect(await screen.findByRole("alert")).toHaveTextContent("Disk unavailable");
+		expect(onSourceBusyChange).toHaveBeenLastCalledWith(false);
+		expect(screen.getByRole("button", { name: "One video" })).toBeEnabled();
+	});
 	it("does not open another save picker after cancelling a reopened active quick export", async () => {
 		const document = doc(
 			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
@@ -131,6 +177,7 @@ describe("ExportDialog task completion", () => {
 				}),
 		);
 		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		startOneVideo();
 		await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce());
 		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
 		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
@@ -152,6 +199,7 @@ describe("ExportDialog task completion", () => {
 			}),
 		);
 		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		startOneVideo();
 		await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce());
 		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
 		await act(async () => {
@@ -161,11 +209,13 @@ describe("ExportDialog task completion", () => {
 		mocks.export.mockResolvedValueOnce({ videoDurationS: 10, wallS: 0.1 });
 		const next = { ...document, project: { ...document.project, title: "Next recording" } };
 		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={next} />);
+		expect(mocks.pick).toHaveBeenCalledOnce();
+		startOneVideo();
 		await waitFor(() => expect(mocks.pick).toHaveBeenCalledTimes(2));
 		await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(2));
 		expect(mocks.pick).toHaveBeenLastCalledWith("Next_recording.mp4");
 	});
-	it("opens one save picker directly for a source-quality recording, even in StrictMode", async () => {
+	it("defaults to Separate takes and saves One video only after an explicit action in StrictMode", async () => {
 		const document = doc(
 			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
 			[clip({ id: "c1", assetId: "a1" })],
@@ -177,6 +227,13 @@ describe("ExportDialog task completion", () => {
 				<ExportDialog open quickExport onClose={vi.fn()} document={document} />
 			</StrictMode>,
 		);
+		expect(screen.getByRole("button", { name: "Separate takes" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		expect(mocks.pick).not.toHaveBeenCalled();
+		expect(mocks.export).not.toHaveBeenCalled();
+		startOneVideo();
 		await screen.findByRole("button", { name: "exportDialog.showInFolder" });
 		expect(mocks.pick).toHaveBeenCalledOnce();
 		expect(mocks.export).toHaveBeenCalledOnce();
@@ -196,6 +253,7 @@ describe("ExportDialog task completion", () => {
 		document.legacyEditor = { evenVolume: true, normalizeVolume: true };
 		mocks.export.mockResolvedValue({ videoDurationS: 10, wallS: 1 });
 		render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		startOneVideo();
 		await screen.findByRole("button", { name: "exportDialog.showInFolder" });
 		expect(mocks.export.mock.calls[0]?.[3]).toMatchObject({
 			evenVolume: true,
@@ -209,6 +267,7 @@ describe("ExportDialog task completion", () => {
 		);
 		mocks.pick.mockResolvedValue(undefined);
 		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		startOneVideo();
 		await waitFor(() => expect(mocks.pick).toHaveBeenCalledOnce());
 		await waitFor(() => expect(useExportRunStore.getState().phase).toBe("idle"));
 		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={{ ...document }} />);
@@ -216,7 +275,34 @@ describe("ExportDialog task completion", () => {
 		expect(mocks.export).not.toHaveBeenCalled();
 		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
 		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		expect(mocks.pick).toHaveBeenCalledOnce();
+		startOneVideo();
 		await waitFor(() => expect(mocks.pick).toHaveBeenCalledTimes(2));
+	});
+	it("remembers the last output across reopen and a new dialog session", () => {
+		const document = doc([asset({ id: "a1" })], [clip({ id: "c1", assetId: "a1" })]);
+		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		fireEvent.click(screen.getByRole("button", { name: "One video" }));
+		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
+		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		expect(screen.getByRole("button", { name: "One video" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		view.unmount();
+		const next = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		expect(screen.getByRole("button", { name: "One video" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Separate takes" }));
+		next.unmount();
+		render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		expect(screen.getByRole("button", { name: "Separate takes" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		expect(mocks.pick).not.toHaveBeenCalled();
 	});
 	it("replaces export settings and duplicate export with the saved file action", async () => {
 		mocks.export.mockResolvedValue({ videoDurationS: 10, wallS: 1 });

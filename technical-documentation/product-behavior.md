@@ -14,7 +14,7 @@ capture workflow. Editing is no longer the focus; do not build new editor featur
    change; safely reconfigure it when they did.
 7. Remove the previous completed clip immediately with Backspace when it was bad.
 8. Stop to review the recording with playback and a simple seek bar.
-9. Save one MP4 directly through the native save picker.
+9. Export Separate takes by default; keep One video as a remembered alternative.
 10. Record again as a new capture, without creating an empty project first.
 11. Keep original clips available for recovery and outside workflows.
 
@@ -101,6 +101,8 @@ overlays and general timed layout keyframes remain planned, not implemented. See
 - Use normal words such as **Record**, **Pause**, **Continue**, **Stop**, **Remove previous
   clip**, **Split**, and **Undo**.
 - Never call clips “takes”.
+- The existing export choice **Separate takes** is the explicit October 3 exception;
+  recording controls and clip history continue to call recorded sections clips.
 - Never add a “redo take”, “replacement take”, “candidate”, “pickup”, “record here”,
   “keep”, or “retry” workflow.
 - To record something again, remove the previous completed clip while paused and Continue.
@@ -124,7 +126,8 @@ path works with real capture:
    clips.
 9. Stop finalizes the active clip, ends capture, hides the panel, and opens recording review.
 10. Every kept clip plays continuously in order; review offers playback and a seek bar.
-11. Save video opens the native save picker directly and produces a normal MP4.
+11. Save video opens export with Separate takes preselected on a fresh setup; remember the
+    explicit last choice. One video produces a normal MP4 through the native save picker.
 
 Keep this slice minimal. Do not block it on captions, transcript, paused playback,
 thumbnails, waveforms, automatic zoom, AI editing, Windows, Linux, broad rebranding, or a
@@ -139,7 +142,7 @@ Do not invent a video format.
 - Continue creates a fresh `AVAssetWriter` and starts it on the first valid sample.
 - Store clip order and state in a versioned JSON project document.
 - Stop finalizes the active writer, closes capture, and opens the project.
-- Export composes kept clips into one standard MP4.
+- Separate takes copies complete source files; One video composes kept clips into one MP4.
 - Backspace changes project state immediately. Keep removed media until normal cleanup so
   Undo and crash recovery remain possible.
 
@@ -149,16 +152,63 @@ must change before Continue. Keep all completed clips in the same logical record
 must not wait for transcription, thumbnail generation, waveforms, proxy creation, cleanup,
 concat, remux, or re-encoding.
 
+If the selected source disappears while paused, preserve the completed clips and allow
+reselection before Continue. A stopped stream needs a freshly configured replacement; a
+filter update alone does not establish restarted capture. An explicit failed Continue that
+fully rolls back to paused without acknowledging a new clip remains retryable. A timeout,
+dead helper or failed active writer still requires loud recovery. Ignore stopped callbacks
+from replaced streams and callbacks during Stop; do not suppress current active-source loss.
+
 Start immediately by default, with no countdown or duplicate source enumeration after screen
 permission is granted. A pending start disables duplicate Record and setup changes. Only the
-first successful native video append starts the HUD timer; Continue obeys the same barrier.
+first successful screen append, every enabled original-source append and every enabled
+compatibility AAC track append start the HUD timer; Continue obeys the same barrier. High
+must also catch up its output grid before confirming recording. Preserve the first screen
+epoch and pixels while writers become ready; do not move the session start to hide delay.
+Allow at most one second of pending High grid slots during startup and fail missing source
+readiness after two monotonic seconds, even if no more samples arrive. These are bounded
+local policies, not platform latency guarantees. After confirmation, retain the strict
+eight-frame live backlog limit. A historical output slot uses only pixels captured at or
+before that slot; repeated pixels retain their original source timestamp. Prepare screen
+and enabled original writers before accepting the
+first capture sample; Continue chooses its new host-clock seed after preparation completes.
 The optional countdown overlay must settle or cancel within a bounded wait.
+
+Recording setup has a remembered **Quality** choice before Record and while paused, applied
+only to the next clip. Fresh setup defaults to **High**. Standard preserves the current app's
+68 Mbps H.264 screen request; High selects 136 Mbps H.264 at source pixels and a 60 fps output clock
+where the display permits it. Report actual source cadence, output cadence, duplicated frames
+and writer drops separately. A cadence hint alone does not establish constant-rate recording.
+The native helper's legacy missing-bitrate fallback remains 18 Mbps; that fallback did not
+describe the bitrate explicitly requested by the current app.
+High requests a supported native camera format automatically; Standard retains the remembered
+explicit camera-format choice. High setup labels this “Native camera”; it does not promise
+preview dimensions as the native recording geometry. Report actual negotiated pixels in capture
+telemetry and the saved media.
+Create complete microphone and system-audio source files during capture, alongside the screen
+and camera sources. On macOS, camera video and standalone AAC audio use fragmented MOV files
+so readable fragments survive a helper crash. Persist their actual first-sample offsets and
+paths as they start; recovery validates readable, owned sources before attaching them.
+Camera and standalone audio appends run on bounded serial owners outside the video cadence
+queue. Compatibility PCM decode, mixing and AAC appends also use a separate serial owner,
+with at most 128 queued/in-flight samples and 8 MiB retained raw data. Preserve source
+timestamps and report rejected appends, including when writer status still says writing.
+Drain accepted original samples and their metadata before reporting a finalized clip.
+Finalize every source before committing the clip; failures remain visible and already-durable
+media remain recoverable.
 
 Baked system cursor is the fresh-recording default. Preserve explicitly saved editable-cursor
 preferences. While paused, retain only the latest complete frame for the current source; seed
 Continue at its new host-clock boundary, then accept newer live frames. When a static source
-produces no new frame, preserve Pause/Stop duration with a closing frame. Bounded writer
-backpressure failure is reported to the HUD and preserves committed clips.
+produces no new frame, preserve Pause/Stop duration with a closing frame. High completes the
+remaining 60 Hz grid through the frozen boundary, allowing one partial final interval. A terminal
+failure freezes that boundary before recovery Stop. Bounded writer backpressure failure is
+reported to the HUD and preserves committed clips.
+After closing video and draining original-source callbacks, close compatibility admission,
+drain its owner and flush buffered audio before ending High's writer session and marking
+its inputs finished. Delayed callbacks must match the current writer and clip; their actual
+failure time freezes the earliest terminal boundary. Finalization must
+return a clean writer completion; fragmented-file recovery remains a visible failure fallback.
 
 Target local-SSD Pause finalization at p95 below 300 ms on this Mac. Show Pause feedback
 immediately. If `AVAssetWriter.finishWriting` is still running, show a quiet saving state and
@@ -259,6 +309,11 @@ button or timer with a Saving label, and the Pause/Continue control must stay mo
 slot while it is temporarily disabled. Morph the active history segment into the finalized
 clip in place, with no empty frame or node replacement, so its color and glow can ease from
 active to completed.
+
+Stop saving must retain the last timer, history and selected compact/expanded layout until the
+review handoff finishes. Disable transport and size changes while saving. Expanded content stays
+hidden until the panel width fits it; its distinct animation must restart on each expansion,
+and reduced motion removes the delay and animation.
 
 ### Camera confidence monitor
 
@@ -819,9 +874,9 @@ second timeline model.
 Olle records terminals, code, and other interfaces with small text. Preserve fine text as a
 product requirement, not as an optional maximum-quality mode.
 
-- **Save video** is the primary recording action. It opens the native save picker directly
-  for a source-quality MP4. **Original files** retains the existing source-recovery handoff.
-  The advanced export dialog remains for compatibility; it is not an extra recording step.
+- **Save video** opens the export dialog. **Separate takes** is the fresh preselected choice;
+  remember the last explicit output choice. **One video** remains the other choice and uses
+  the source-quality MP4 preset in recording review. **Original files** retains recovery access.
 - An explicitly source-preserving, full-span, single screen clip with identity geometry, baked
   cursor, matching dimensions/codec and compatible audio may copy its encoded packets. Keep
   the original frame cadence and timestamps; do not promise conversion to a selected constant
@@ -830,19 +885,20 @@ product requirement, not as an optional maximum-quality mode.
   effects and audio mastering continue through the existing renderer.
 - Closing export leaves it running. Reopening displays active progress; a later Save after
   completion starts a fresh export instead of reusing a previous recording's success state.
-- Separate takes copies the kept takes' original screen and camera media into a new folder.
-  Number each take's screen, camera and audio files together. Omit removed takes and preserve
-  hidden camera originals. H.264/HEVC in WebM or MKV is remuxed to MOV without video encoding;
-  unsupported containers remain original with a visible compatibility warning. Extract tagged
-  microphone and system tracks as separate 24-bit WAVs with their source timing, without gain,
-  normalization or cleanup. Untagged audio is labelled audio, never guessed to be microphone.
+- Separate takes copies the kept clips' complete original screen, camera, microphone and
+  system-audio media into a new folder, byte for byte. Number each clip's files together. Omit
+  removed clips and preserve hidden camera originals. Do not remux, extract tracks, decode,
+  trim or encode during this handoff. Legacy embedded-only audio stays in its complete original
+  container with an explicit limitation warning; do not pretend it is a new isolated source.
+  Untagged audio is labelled audio, never guessed to be microphone.
 - Include `timeline.otio`, an importable 60 fps source timeline with retained spans, take order
   and camera synchronization. Use Screen V1, Camera V2, Microphone A1 and System audio A2.
-  Only separate WAVs go on audio tracks; do not duplicate embedded mixed audio. Untagged audio
+  Separate original audio files go on audio tracks; do not duplicate embedded mixed audio. Untagged audio
   gets an additional Original audio (unidentified) track. Preserve absent or short streams as
   gaps, and bound camera source time after applying its offset. Round shared cumulative cut
   boundaries to the timeline frame grid; do not accumulate a rounding error per cut. Use relative
-  media references so the folder can move. Keep exact seconds in the agent-readable `handoff.json`.
+  media references so the folder can move. Keep exact source offsets in OTIO metadata; cuts and
+  synchronization belong only in `timeline.otio`. `handoff.json` lists the unchanged media files.
   Whole source files retain material outside partial trims. Camera remains a full separate layer;
   captions, layouts, editable cursor overlays, speed changes, B-roll and audio processing are not
   transferred. Say this on the export surface and in the handoff. DaVinci Resolve is the first
@@ -851,6 +907,8 @@ product requirement, not as an optional maximum-quality mode.
   Write the completion manifest last and clean up an incomplete handoff on failure. Keep source
   recovery available without a paid entitlement; finished video rendering retains its export gate.
   Use editor-neutral UI labels; do not name an external editor as a product requirement.
+- While a source picker or source copy is pending, disable project replacement through Record,
+  library navigation, File/Open and shortcuts. Release the lock after the operation settles.
 
 - On Retina Macs, capture the best available backing-pixel resolution. Do not silently record
   the logical point size. Use ScreenCaptureKit's pixel scale and best-resolution controls, with

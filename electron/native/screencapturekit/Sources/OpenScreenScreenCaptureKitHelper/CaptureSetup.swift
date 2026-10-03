@@ -121,7 +121,7 @@ final class CaptureSetupBuilder {
 			configuration.preservesAspectRatio = true
 			configuration.captureResolution = .best
 		}
-		configuration.minimumFrameInterval = CMTime(
+		configuration.minimumFrameInterval = request.video.quality == "high" ? .zero : CMTime(
 			value: 1,
 			timescale: CMTimeScale(max(1, request.video.fps))
 		)

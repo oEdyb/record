@@ -325,6 +325,11 @@ export const assetSchema = z.object({
 	// no schema-version bump (an older build simply drops the key on save).
 	transcriptionFailure: assetTranscriptionFailureSchema.nullish(),
 	cameraTrack: cameraTrackSchema,
+	/** Captured original files, copied unchanged by Separate takes. */
+	microphoneAudioPath: z.string().min(1).optional(),
+	systemAudioPath: z.string().min(1).optional(),
+	microphoneAudioOffsetMs: z.number().finite().nonnegative().optional(),
+	systemAudioOffsetMs: z.number().finite().nonnegative().optional(),
 });
 
 // A crop is a sub-rectangle of the source video, expressed as fractions

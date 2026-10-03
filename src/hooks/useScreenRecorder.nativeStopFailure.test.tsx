@@ -329,7 +329,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(cursorAccess).not.toHaveBeenCalled();
 	});
 
-	it("discards the initial camera recorder when native startup fails", async () => {
+	it("keeps native camera ownership out of the browser when startup fails", async () => {
 		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
 		Object.defineProperty(navigator, "mediaDevices", {
 			configurable: true,
@@ -353,12 +353,11 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		act(() => view.result.current.toggleRecording());
 		await settle();
 		expect(view.result.current.recording).toBe(false);
-		expect(FakeMediaRecorder.instances).toHaveLength(1);
-		expect(FakeMediaRecorder.instances[0].state).toBe("inactive");
-		expect(close).toHaveBeenCalledOnce();
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
+		expect(close).not.toHaveBeenCalled();
 	});
 
-	it("discards the unclaimed camera when startup is cancelled before confirmation", async () => {
+	it("cancels native camera ownership when startup is cancelled before confirmation", async () => {
 		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
 		Object.defineProperty(navigator, "mediaDevices", {
 			configurable: true,
@@ -390,15 +389,15 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		act(() => view.result.current.toggleRecording());
 		await settle();
 		expect(view.result.current.starting).toBe(true);
-		expect(FakeMediaRecorder.instances[0].state).toBe("recording");
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
 		act(() => view.result.current.cancelRecording());
 		confirmStart?.({ success: true, recordingId: 7 });
 		await settle();
 		expect(stop).toHaveBeenCalledWith(true);
 		expect(view.result.current.recording).toBe(false);
 		expect(view.result.current.starting).toBe(false);
-		expect(FakeMediaRecorder.instances[0].state).toBe("inactive");
-		expect(close).toHaveBeenCalledOnce();
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
+		expect(close).not.toHaveBeenCalled();
 	});
 
 	it("updates the kept duration when a removed clip is restored", async () => {
@@ -558,11 +557,13 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 			{
 				index: 0,
 				screenVideoPath: "/tmp/recording-7-clip-0001.mp4",
+				webcamVideoPath: "/tmp/recording-7-clip-0001-webcam.mov",
 				durationMs: 1_000,
 			},
 			{
 				index: 1,
 				screenVideoPath: "/tmp/recording-7-clip-0002.mp4",
+				webcamVideoPath: "/tmp/recording-7-clip-0002-webcam.mov",
 				durationMs: 800,
 			},
 		];
@@ -614,13 +615,11 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		await settle(800);
 		await pressStop(view);
 
-		expect(FakeMediaRecorder.instances).toHaveLength(2);
-		expect(attach).toHaveBeenCalledOnce();
-		const webcams = attach.mock.calls[0]?.[0].webcams;
-		expect(webcams).toHaveLength(2);
-		expect(
-			webcams.map((camera: { webcam: { fileName: string } }) => camera.webcam.fileName),
-		).toEqual(["recording-7-clip-0001-webcam.webm", "recording-7-clip-0002-webcam.webm"]);
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
+		expect(attach).not.toHaveBeenCalled();
+		expect(window.electronAPI.setCurrentRecordingSession).toHaveBeenLastCalledWith(
+			expect.objectContaining({ clips }),
+		);
 	});
 
 	it("retries a transient camera constraint failure without turning the saved setting off", async () => {
@@ -773,7 +772,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
 	});
 
-	it("gives Stop ownership of a camera recorder while Continue IPC is pending", async () => {
+	it("gives Stop ownership of native originals while Continue IPC is pending", async () => {
 		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
 		Object.defineProperty(navigator, "mediaDevices", {
 			configurable: true,
@@ -845,7 +844,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		act(() => view.result.current.togglePaused());
 		await settle();
 		expect(resume).toHaveBeenCalledOnce();
-		expect(FakeMediaRecorder.instances).toHaveLength(2);
+		expect(FakeMediaRecorder.instances).toHaveLength(0);
 
 		act(() => view.result.current.toggleRecording());
 		await settle();
@@ -853,8 +852,10 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		await settle();
 
 		expect(view.result.current.recording).toBe(false);
-		expect(attach).toHaveBeenCalledOnce();
-		expect(attach.mock.calls[0]?.[0].webcams).toHaveLength(2);
+		expect(attach).not.toHaveBeenCalled();
+		expect(window.electronAPI.setCurrentRecordingSession).toHaveBeenLastCalledWith(
+			expect.objectContaining({ clips }),
+		);
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
 	});
 

@@ -1,4 +1,7 @@
-export function createRecordingReviewNavigation(options: { isPreparing: () => boolean }): {
+export function createRecordingReviewNavigation(options: {
+	isPreparing: () => boolean;
+	isExporting?: () => boolean;
+}): {
 	run: (action: () => void) => boolean;
 	isBlocked: () => boolean;
 	runAfter: <T>(
@@ -7,7 +10,7 @@ export function createRecordingReviewNavigation(options: { isPreparing: () => bo
 		isCurrent?: () => boolean,
 	) => Promise<boolean>;
 } {
-	const isBlocked = () => options.isPreparing();
+	const isBlocked = () => options.isPreparing() || Boolean(options.isExporting?.());
 	return {
 		isBlocked,
 		async runAfter(prepare, apply, isCurrent = () => true) {

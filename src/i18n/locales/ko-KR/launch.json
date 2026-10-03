@@ -105,6 +105,10 @@
 		"noMicrophones": "마이크를 찾을 수 없습니다",
 		"cameraQuality": "카메라 화질",
 		"preview": "미리 보기",
-		"previewUnavailable": "미리 보기를 사용할 수 없습니다"
+		"previewUnavailable": "미리 보기를 사용할 수 없습니다",
+		"recordingQuality": "Recording quality",
+		"qualityHigh": "High",
+		"qualityStandard": "Standard",
+		"nativeCamera": "Native camera"
 	}
 }
