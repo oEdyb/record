@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { clearDocumentHistory, takeRedoDocument, takeUndoDocument } from "./documentHistory";
-import { useProjectStore } from "./projectStore";
+import { isProjectTransactionBlocked, useProjectStore } from "./projectStore";
 
 export function clearHistory(): void {
 	clearDocumentHistory();
@@ -10,7 +10,7 @@ export function clearHistory(): void {
 
 export function undo(): boolean {
 	const state = useProjectStore.getState();
-	if (!state.document) return false;
+	if (!state.document || isProjectTransactionBlocked()) return false;
 	const previous = takeUndoDocument(state.document);
 	if (!previous) return false;
 	state.restoreDocumentFromHistory(previous);
@@ -19,7 +19,7 @@ export function undo(): boolean {
 
 export function redo(): boolean {
 	const state = useProjectStore.getState();
-	if (!state.document) return false;
+	if (!state.document || isProjectTransactionBlocked()) return false;
 	const next = takeRedoDocument(state.document);
 	if (!next) return false;
 	state.restoreDocumentFromHistory(next);

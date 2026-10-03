@@ -60,6 +60,8 @@ import {
 	resolveVisibleClips,
 } from "@/native/sceneDescription";
 
+import { captureAgentPreviewFrame } from "./agentPreviewFrame";
+
 const MP4_EXPORT_FPS = 60;
 
 class CliExportTransactionError extends Error {
@@ -184,6 +186,15 @@ export async function runExport(
 	signal?: AbortSignal,
 ): Promise<CliDoneResult> {
 	throwIfCancelled(signal, "preflight");
+	if (request.previewReference) {
+		if (!request.previewReference.verifiedDocumentHash)
+			throw new Error("Preview reference was not verified by main");
+		const reference = await nativeBridgeClient.project.loadProjectFileFromPath(
+			request.previewReference.projectPath,
+		);
+		if (!reference.success) throw new Error("Could not approve original preview project media");
+	}
+
 	const loaded = await nativeBridgeClient.project.loadProjectFileFromPath(request.projectPath);
 	if (!loaded.success || loaded.project === undefined) {
 		throw new Error(loaded.error ?? loaded.message ?? "Failed to load project file");
@@ -245,6 +256,28 @@ export async function runExport(
 			media,
 			editor,
 		});
+	}
+
+	if (request.previewReference) {
+		const bytes = new TextEncoder().encode(JSON.stringify(axcutDocument));
+		const digest = await crypto.subtle.digest("SHA-256", bytes);
+		const hash = Array.from(new Uint8Array(digest), (byte) =>
+			byte.toString(16).padStart(2, "0"),
+		).join("");
+		if (hash !== request.previewReference.verifiedDocumentHash)
+			throw new Error("Derived preview project changed after verification");
+	}
+
+	if (request.previewReference?.time !== undefined) {
+		return {
+			success: true,
+			format: "png",
+			previewPng: await captureAgentPreviewFrame(
+				axcutDocument,
+				request.previewReference.time,
+				signal,
+			),
+		};
 	}
 
 	const format = request.format ?? storedFormat;

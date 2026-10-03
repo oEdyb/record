@@ -19,7 +19,12 @@ import type {
 } from "@/lib/ai-edition/schema";
 import { axcutSchemaVersion } from "@/lib/ai-edition/schema";
 import { getFocusBoundsForScale } from "@/lib/zoomMath/focusUtils";
-import { buildCompositorClipInputs, buildSceneDescription } from "./sceneDescription";
+import {
+	buildCompositorClipInputs,
+	buildSceneDescription,
+	projectVideoOverlays,
+	resolveVisibleClips,
+} from "./sceneDescription";
 
 // --- Fixture helpers --------------------------------------------------------
 // Keep fixtures minimal & deterministic — every field the serializer consults is filled in;
@@ -90,6 +95,7 @@ function makeDoc(
 			...(overrides.timeline ?? {}),
 		},
 		annotations: overrides.annotations ?? [],
+		videoOverlays: overrides.videoOverlays ?? [],
 		zoomRanges: overrides.zoomRanges ?? [],
 		legacyEditor: overrides.legacyEditor ?? null,
 	};
@@ -746,8 +752,8 @@ describe("buildSceneDescription.cameraFullscreenRegions", () => {
 		});
 		const { cameraFullscreenRegions } = buildSceneDescription(doc);
 		expect(cameraFullscreenRegions).toEqual([
-			{ startSec: 103, endSec: 105, clipIndex: 0 },
-			{ startSec: 200, endSec: 202, clipIndex: 1 },
+			{ startSec: 103, endSec: 105, clipIndex: 0, envelopeStartSec: 103, envelopeEndSec: 107 },
+			{ startSec: 200, endSec: 202, clipIndex: 1, envelopeStartSec: 198, envelopeEndSec: 202 },
 		]);
 	});
 });
@@ -1166,6 +1172,22 @@ describe("buildSceneDescription.settings mapping", () => {
 		});
 	}
 
+	it("sends the same rectangular camera and independent corner radius to preview and export", () => {
+		const scene = buildSceneDescription(
+			docWithCamera({
+				webcamLayoutPreset: "picture-in-picture",
+				webcamMaskShape: "squircle",
+				webcamCornerRadius: 35,
+				webcamSizePreset: 40,
+			}),
+			{ width: 1280, height: 720 },
+		);
+		expect(scene.layout.webcamShape).toBe("squircle");
+		expect(scene.layout.webcamRadiusFrac).toBeCloseTo(0.35);
+		expect(scene.layout.webcamRect).toMatchObject({ width: 432 / 1920, height: 243 / 1080 });
+		expect(scene.layout.layoutByClip?.[0]?.webcamRadiusFrac).toBeCloseTo(0.35);
+	});
+
 	it.each([
 		"dual-frame",
 		"vertical-stack",
@@ -1183,6 +1205,7 @@ describe("buildSceneDescription.settings mapping", () => {
 		"circle",
 		"rounded",
 		"square",
+		"squircle",
 		"rectangle",
 	] as const)("ships the same camera radius for a block layout whatever the stored mask shape (%s)", (shape) => {
 		const scene = buildSceneDescription(
@@ -1626,6 +1649,30 @@ describe("buildSceneDescription.annotations", () => {
 		});
 	});
 
+	it("carries image entrance animation to the shared preview and export scene", () => {
+		const scene = buildSceneDescription(
+			docWithAnnotations([
+				{
+					id: "image1",
+					startMs: 1000,
+					endMs: 3000,
+					type: "image",
+					content: "data:image/png;base64,AA==",
+					position: { x: 10, y: 20 },
+					size: { width: 30, height: 40 },
+					style: { ...style, textAnimation: "rise" },
+					zIndex: 0,
+				},
+			]),
+		);
+		expect(scene.annotations[0]).toMatchObject({
+			kind: "image",
+			imageAnimation: "rise",
+			imagePath: "data:image/png;base64,AA==",
+			startSec: 1,
+		});
+	});
+
 	it("carries the text payload, reading the field the inspector actually writes", () => {
 		const scene = buildSceneDescription(
 			docWithAnnotations([
@@ -1847,5 +1894,252 @@ describe("buildSceneDescription.captions", () => {
 		// The text colour is independently chosen via ColorField (hex); the background is the
 		// only piece that goes through the opacity-combining path.
 		expect(text?.color).toBe("#ffffff");
+	});
+});
+
+describe("projectVideoOverlays", () => {
+	it("projects an anchored overlay onto clip source time and advances the source offset per fragment", () => {
+		const screen = makeAsset({ id: "a", originalPath: "/a.mp4", durationSec: 30 });
+		const broll = makeAsset({ id: "b", originalPath: "/broll.mp4", durationSec: 60 });
+		const doc = makeDoc({
+			assets: [screen, broll],
+			clips: [
+				makeClip({
+					id: "c1",
+					assetId: "a",
+					sourceStartSec: 10,
+					sourceEndSec: 20,
+					timelineStartSec: 0,
+					timelineEndSec: 10,
+				}),
+			],
+			timeline: {
+				trimRanges: [
+					{
+						id: "t",
+						assetId: "a",
+						clipId: "c1",
+						startSec: 13,
+						endSec: 15,
+						reason: "",
+						origin: "user",
+					},
+				],
+			},
+		});
+		doc.videoOverlays = [
+			{
+				id: "vo1",
+				startMs: 2000,
+				endMs: 8000,
+				clipId: "c1",
+				sourceStartSec: 12,
+				sourceEndSec: 18,
+				assetId: "b",
+				sourceOffsetSec: 5,
+				fit: "cover",
+				placement: { x: 25, y: 0, width: 50, height: 50 },
+				opacity: 0.8,
+			},
+		];
+		const overlays = projectVideoOverlays(doc, resolveVisibleClips(doc));
+		expect(overlays).toHaveLength(2);
+		expect(overlays[0]).toMatchObject({
+			id: "vo1",
+			clipIndex: 0,
+			startSec: 12,
+			endSec: 13,
+			path: "/broll.mp4",
+			sourceOffsetSec: 5,
+			fit: "cover",
+			rect: { x: 0.25, y: 0, w: 0.5, h: 0.5 },
+			opacity: 0.8,
+		});
+		expect(overlays[1]).toMatchObject({
+			clipIndex: 1,
+			startSec: 15,
+			endSec: 18,
+			sourceOffsetSec: 8,
+		});
+		expect(buildSceneDescription(doc).videoOverlays).toHaveLength(2);
+	});
+
+	it("skips overlays whose asset is missing", () => {
+		const screen = makeAsset({ id: "a", originalPath: "/a.mp4", durationSec: 30 });
+		const doc = makeDoc({
+			assets: [screen],
+			clips: [
+				makeClip({
+					id: "c1",
+					assetId: "a",
+					sourceStartSec: 0,
+					sourceEndSec: 10,
+					timelineStartSec: 0,
+					timelineEndSec: 10,
+				}),
+			],
+		});
+		doc.videoOverlays = [
+			{
+				id: "vo",
+				startMs: 0,
+				endMs: 1000,
+				assetId: "gone",
+				sourceOffsetSec: 0,
+				fit: "cover",
+				placement: null,
+				opacity: 1,
+			},
+		];
+		expect(projectVideoOverlays(doc, resolveVisibleClips(doc))).toEqual([]);
+		expect(buildSceneDescription(doc).videoOverlays).toBeUndefined();
+	});
+
+	it("ships both overlays when two share one interval (background + partial grid)", () => {
+		// Regression pin for the 2026-09-18 swarm-footage finding: a cover background
+		// overlay and a contain partial-size grid overlay occupied the same 6 s span and
+		// only the grid rendered. The scene contract must carry BOTH — stacking is the
+		// compositor's job, and document order is the only z signal it receives.
+		const screen = makeAsset({ id: "a", originalPath: "/a.mp4", durationSec: 30 });
+		const background = makeAsset({ id: "bg", originalPath: "/bg.mp4", durationSec: 60 });
+		const grid = makeAsset({ id: "grid", originalPath: "/grid.mp4", durationSec: 60 });
+		const doc = makeDoc({
+			assets: [screen, background, grid],
+			clips: [
+				makeClip({
+					id: "c1",
+					assetId: "a",
+					sourceStartSec: 0,
+					sourceEndSec: 30,
+					timelineStartSec: 0,
+					timelineEndSec: 30,
+				}),
+			],
+		});
+		doc.videoOverlays = [
+			{
+				id: "vo-bg",
+				startMs: 2000,
+				endMs: 8000,
+				assetId: "bg",
+				sourceOffsetSec: 0,
+				fit: "cover",
+				placement: null,
+				opacity: 1,
+			},
+			{
+				id: "vo-grid",
+				startMs: 2000,
+				endMs: 8000,
+				assetId: "grid",
+				sourceOffsetSec: 0,
+				fit: "contain",
+				placement: { x: 1, y: 7, width: 78, height: 76 },
+				opacity: 1,
+			},
+		];
+		const overlays = buildSceneDescription(doc).videoOverlays;
+		expect(overlays?.map((overlay) => overlay.id)).toEqual(["vo-bg", "vo-grid"]);
+		expect(overlays?.[0]).toMatchObject({
+			startSec: 2,
+			endSec: 8,
+			path: "/bg.mp4",
+			fit: "cover",
+			rect: null,
+		});
+		expect(overlays?.[1]).toMatchObject({
+			startSec: 2,
+			endSec: 8,
+			path: "/grid.mp4",
+			fit: "contain",
+			rect: { x: 0.01, y: 0.07, w: 0.78, h: 0.76 },
+		});
+	});
+});
+
+describe("per-clip layout overrides", () => {
+	function twoClips() {
+		return makeDoc({
+			assets: [
+				makeAsset({
+					id: "a",
+					originalPath: "/a.mp4",
+					video: { width: 1920, height: 1080, fps: 30, codec: "h264" },
+					cameraTrack: { sourcePath: "/camera.mp4", startMs: 0, offsetMs: 0, visible: true },
+				}),
+			],
+			clips: [
+				makeClip({
+					id: "one",
+					assetId: "a",
+					sourceStartSec: 0,
+					sourceEndSec: 5,
+					timelineStartSec: 0,
+					timelineEndSec: 5,
+				}),
+				makeClip({
+					id: "two",
+					assetId: "a",
+					sourceStartSec: 5,
+					sourceEndSec: 10,
+					timelineStartSec: 5,
+					timelineEndSec: 10,
+				}),
+			],
+			legacyEditor: {
+				webcamSizePreset: 20,
+				webcamPosition: { cx: 0.2, cy: 0.2 },
+				webcamMaskShape: "squircle",
+				outputResolution: { width: 1920, height: 1080 },
+			},
+		});
+	}
+	it("merges one clip's anchor and size while the other inherits", () => {
+		const doc = twoClips();
+		const baseline = buildSceneDescription(doc);
+		doc.clipLayouts = { two: { cameraAnchor: "bottom-right", cameraSize: "L" } };
+		const scene = buildSceneDescription(doc);
+		expect(scene.layout.layoutByClip?.[0]).toEqual(baseline.layout.layoutByClip?.[0]);
+		const rect = scene.layout.layoutByClip?.[1]?.webcamRect;
+		expect(rect).toBeTruthy();
+		expect(rect?.width).toBeGreaterThan(scene.layout.layoutByClip?.[0]?.webcamRect?.width ?? 0);
+		expect((rect?.x ?? 0) + (rect?.width ?? 0)).toBeCloseTo(1 - 43.2 / 1920, 3);
+		expect((rect?.y ?? 0) + (rect?.height ?? 0)).toBeCloseTo(0.96, 3);
+		expect(scene.layout.layoutByClip?.[1]?.webcamShape).toBe("squircle");
+	});
+	it("fails visibly for framing the current native contract cannot resolve", () => {
+		const doc = twoClips();
+		doc.clipLayouts = { two: { screenFraming: { scale: 2, focalPoint: { cx: 1, cy: 0 } } } };
+		expect(() => buildSceneDescription(doc)).toThrow("CLIP_LAYOUT_UNSUPPORTED");
+	});
+	it("enables or disables captions per clip independently of the project", () => {
+		const doc = twoClips();
+		doc.transcripts = [
+			{
+				assetId: "a",
+				language: "en",
+				sources: [],
+				words: [],
+				segments: [
+					{
+						id: "s",
+						kind: "speech",
+						startSec: 0,
+						endSec: 10,
+						text: "One two three four five six seven eight nine ten",
+						wordIds: [],
+					},
+				],
+			},
+		];
+		doc.clipLayouts = { two: { captions: true } };
+		let scene = buildSceneDescription(doc);
+		expect(scene.annotations.length).toBeGreaterThan(0);
+		expect(scene.annotations.every((annotation) => annotation.clipIndex === 1)).toBe(true);
+		doc.legacyEditor = { ...doc.legacyEditor, captions: { enabled: true } };
+		doc.clipLayouts = { two: { captions: false } };
+		scene = buildSceneDescription(doc);
+		expect(scene.annotations.length).toBeGreaterThan(0);
+		expect(scene.annotations.every((annotation) => annotation.clipIndex === 0)).toBe(true);
 	});
 });

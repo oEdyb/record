@@ -79,19 +79,29 @@
 			"rectangle": "Rect.",
 			"circle": "Cercle",
 			"square": "Carré",
-			"rounded": "Arrondi"
-		}
+			"rounded": "Arrondi",
+			"squircle": "Superellipse"
+		},
+		"webcamCornerRadius": "Coins de la caméra",
+		"webcamCornerRadiusDescription": "Arrondit les coins de la caméra en pourcentage de son côté le plus court.",
+		"cameraAspectRatio": "Format de la caméra",
+		"cameraSourceAspect": "Format de la source"
 	},
 	"effects": {
 		"title": "Effets vidéo",
-		"blurBg": "Flou arrière-plan",
-		"motionBlur": "Flou de mouvement",
+		"blurBg": "Flouter le fond",
+		"motionBlur": "Flou de mouvement de l’écran",
 		"off": "désactivé",
-		"shadow": "Ombre",
-		"roundness": "Arrondi",
-		"padding": "Marge",
+		"shadow": "Ombre de l’écran",
+		"roundness": "Coins de l’écran",
+		"padding": "Marge du cadre",
 		"on": "activé",
-		"help": "Mise en forme du cadre de l'enregistrement : flou d'arrière-plan, ombre portée, flou de mouvement, arrondi des coins et marge autour de la vidéo."
+		"help": "Mise en forme du cadre de l'enregistrement : flou d'arrière-plan, ombre portée, flou de mouvement, arrondi des coins et marge autour de la vidéo.",
+		"blurBgDescription": "Adoucit le fond derrière l’enregistrement.",
+		"motionBlurDescription": "Ajoute du flou pendant les animations de zoom et de déplacement de l’écran.",
+		"shadowDescription": "Règle l’ombre derrière l’enregistrement d’écran.",
+		"roundnessDescription": "Arrondit les coins de l’enregistrement d’écran. Les coins de la caméra se règlent séparément.",
+		"paddingDescription": "Ajoute de l’espace autour de l’enregistrement pour montrer davantage le fond."
 	},
 	"background": {
 		"title": "Arrière-plan",
@@ -240,7 +250,9 @@
 		"errorTimeout": "La police a mis trop de temps à charger. Vérifiez l'URL et réessayez.",
 		"errorLoadFailed": "La police n'a pas pu être chargée. Vérifiez que l'URL Google Fonts est correcte."
 	},
-	"automatic": { "title": "Automatique" },
+	"automatic": {
+		"title": "Automatique"
+	},
 	"audio": {
 		"title": "Audio",
 		"help": "Nettoyez la voix, raccourcissez les pauses et préparez le mix final.",
@@ -249,7 +261,7 @@
 		"cleanVoice": "Clean Voice",
 		"testing": "En test",
 		"cleanVoiceDescription": "Réduisez le bruit de fond en local.",
-		"cleanVoiceTrust": "Local · microphone uniquement · original conservé",
+		"cleanVoiceTrust": "Local, microphone uniquement, original conservé",
 		"cleanVoiceprocessing": "Préparation…",
 		"cleanVoiceready": "Prêt",
 		"cleanVoicefailed": "Audio d’origine utilisé",
@@ -263,7 +275,7 @@
 		"normalizeVolume": "Normaliser le volume",
 		"normalizeVolumeDescription": "Ajustez toute la vidéo à un niveau sûr.",
 		"preset": "Préréglage",
-		"youtubeTarget": "YouTube · -14.5 LUFS",
+		"youtubeTarget": "YouTube, -14.5 LUFS",
 		"custom": "Personnalisé",
 		"targetLoudness": "Sonie cible",
 		"targetLoudnessHelp": "Sonie intégrée de toute la vidéo exportée.",
@@ -299,7 +311,7 @@
 		"analyze": "Analyze pauses",
 		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
-		"resultCount": "{{count}} pause suggestions",
+		"resultCount": "{{count}} proposed cuts",
 		"timeSaved": "{{duration}} shorter",
 		"selectAll": "Select all",
 		"clearAll": "Clear all",
@@ -317,7 +329,16 @@
 		"save": "Save",
 		"applied": "Applied {{count}} pause cuts",
 		"nothingToApply": "Those pauses are already edited",
-		"applyFailed": "Could not apply pause cuts"
+		"applyFailed": "Could not apply pause cuts",
+		"acceptAll": "Accept all ({{count}})",
+		"clearLane": "Clear",
+		"rejectedEarlier": "{{count}} rejected earlier",
+		"kinds": {
+			"pause": "{{count}} pauses",
+			"blip": "{{count}} blips",
+			"agent": "{{count}} agent",
+			"fix": "{{count}} fixes"
+		}
 	},
 	"cursor": {
 		"title": "Curseur",
@@ -337,7 +358,8 @@
 	},
 	"facets": {
 		"captions": "Sous-titres",
-		"transcript": "Transcription"
+		"transcript": "Transcription",
+		"navigation": "Editing tools"
 	},
 	"panes": {
 		"help": "Aide"
@@ -397,6 +419,63 @@
 		"width": "Largeur",
 		"lineLength": "Longueur des lignes",
 		"minWords": "Mots min. par ligne",
-		"maxWords": "Mots max. par ligne"
+		"maxWords": "Mots max. par ligne",
+		"correctWords": "Correct words",
+		"correctionOriginalOnly": "Switch the display language to Original to correct transcript words.",
+		"selectToCorrect": "Select a caption in the timeline to correct its words.",
+		"correctionUnavailable": "This caption has no source word timing to correct.",
+		"correctionHint": "Keep one word per field. Corrections update every use of this recording. Audio, timing and saved translations stay unchanged.",
+		"correctionWord": "Word {{number}}",
+		"correctionInvalid": "Enter one non-empty word per field, up to 100 characters.",
+		"correctionSaveFailed": "The correction could not be saved. Try again, or select the caption again if the project changed.",
+		"saveCorrection": "Save correction",
+		"resetCorrection": "Reset"
+	},
+	"automaticReview": {
+		"title": "Review effects",
+		"hint": "Keep protects an effect from regeneration. Remove excludes matching suggestions. Manual edits stay unchanged.",
+		"regenerate": "Regenerate",
+		"keepAll": "Keep all",
+		"removeAll": "Remove all",
+		"empty": "No automatic effects to review.",
+		"camera": "Camera emphasis",
+		"zoom": "Screen zoom",
+		"jump": "Go to {{name}} at {{time}}",
+		"trimmed": "Trimmed out",
+		"reasonUnavailable": "Trigger not saved in this project.",
+		"reason": {
+			"screen-activity": "Screen interaction detected",
+			"cursor-trace": "Cursor movement to follow",
+			"typing": "Typing activity detected",
+			"speech-with-quiet-screen": "Speech while the screen is quiet"
+		},
+		"adjust": "Adjust",
+		"keep": "Keep",
+		"remove": "Remove",
+		"previous": "Previous effects",
+		"next": "Next effects",
+		"dismissed": "{{count}} effects excluded. Different timing or framing can produce new suggestions.",
+		"restore": "Allow dismissed effects again",
+		"saveFailed": "Could not save this review change. Your previous edit is preserved.",
+		"saving": "Saving review…",
+		"saved": "Review saved. Use Undo to restore the previous edit.",
+		"recordingRequired": "Automatic edits need a recording in this timeline. Imported videos and older projects may not include recording evidence.",
+		"tune": "Tune automatic edits"
+	},
+	"panels": {
+		"canvas": "Canvas",
+		"screen": "Screen",
+		"camera": "Camera",
+		"voice": "Voice",
+		"pauses": "Pauses",
+		"music": "Music",
+		"delivery": "Delivery",
+		"correctionHint": "Select a word to correct it. Timing stays unchanged.",
+		"microphoneRequired": "Clean Voice needs a separate microphone track.",
+		"cleanupUnavailable": "Voice cleanup is unavailable on this device.",
+		"fill": "Fill",
+		"clickBounceHelp": "How strongly the cursor responds to a click. Zero turns the bounce off.",
+		"transcriptRead": "Click a word to move the playhead.",
+		"transcriptEdit": "Click to seek. Select words and press Delete to cut."
 	}
 }

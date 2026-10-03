@@ -133,3 +133,16 @@ describe("captions pane gating", () => {
 		).toBeInTheDocument();
 	});
 });
+
+it("shows a saved font outside the preset list without changing the document", () => {
+	const doc = documentWith(ASSET);
+	doc.legacyEditor = { captions: { fontFamily: "Helvetica Neue" } };
+	load(doc);
+	render(
+		<I18nProvider>
+			<CaptionsPane />
+		</I18nProvider>,
+	);
+	expect(screen.getByRole("combobox", { name: "Font" })).toHaveTextContent("Helvetica Neue");
+	expect(useProjectStore.getState().document?.legacyEditor).toEqual(doc.legacyEditor);
+});

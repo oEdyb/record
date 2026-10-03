@@ -92,6 +92,7 @@ pub struct Decoder {
     /// qu'on pose dans `data[0]`). `None` quand VideoToolbox couvre le codec — le décodeur
     /// rend alors directement la frame VideoToolbox.
     cpu: Option<crate::mac_frames::CpuFrames>,
+    async_vt: Option<crate::vt_decode_macos::AsyncDecoder>,
     /// Buffer de lookahead pour `peek_next_time_sec` : une frame décodée à l'avance, pas
     /// encore promue en frame courante. Sépare "voir le pts de la frame suivante" de
     /// "l'adopter" — condition de la sémantique "hold" (cf. `timeline_walk::advance_decoder_to`
@@ -104,7 +105,17 @@ pub struct Decoder {
 
 impl Decoder {
     pub(crate) fn uses_hardware(&self) -> bool {
-        self.cpu.is_none()
+        self.async_vt
+            .as_ref()
+            .map_or(self.cpu.is_none(), |vt| vt.hardware)
+    }
+
+    pub(crate) fn decoder_path(&self) -> String {
+        match &self.async_vt {
+            Some(vt) => vt.path_label(),
+            None if self.cpu.is_none() => "ffmpeg-videotoolbox".to_owned(),
+            None => "software".to_owned(),
+        }
     }
 
     pub fn open(path: &str, gpu: &Gpu) -> Result<Decoder> {
@@ -180,9 +191,47 @@ impl Decoder {
             let forced = std::env::var("OPENSCREEN_MAC_DECODE").ok();
             let want_hw = match forced.as_deref() {
                 Some("software") => false,
-                Some("videotoolbox") => true,
+                Some("videotoolbox" | "ffmpeg-videotoolbox") => true,
                 _ => !is_baseline,
             };
+            let async_vt = if want_hw
+                && forced.as_deref() != Some("ffmpeg-videotoolbox")
+                && crate::vt_decode_macos::AsyncDecoder::eligible(fmt, dctx, codecpar)
+            {
+                match crate::vt_decode_macos::AsyncDecoder::new(codecpar, (*stream).time_base, path)
+                {
+                    Ok(vt) => Some(vt),
+                    Err(error) => {
+                        eprintln!(
+                            "[decode] async VT unavailable for {path}: {error:#}; using FFmpeg"
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            if let Some(async_vt) = async_vt {
+                let decoder = Decoder {
+                    fmt,
+                    dctx,
+                    hwdev,
+                    vidx,
+                    pkt: crate::ffi::av_packet_alloc(),
+                    frame: crate::ffi::av_frame_alloc(),
+                    peek_frame: crate::ffi::av_frame_alloc(),
+                    sent_eof: false,
+                    cur_pts: None,
+                    cpu: None,
+                    has_peek: false,
+                    async_vt: Some(async_vt),
+                };
+                if decoder.pkt.is_null() || decoder.frame.is_null() || decoder.peek_frame.is_null()
+                {
+                    bail!("could not allocate async decoder packet/frame for {path}");
+                }
+                return Ok(decoder);
+            }
             let r = if want_hw {
                 crate::ffi::av_hwdevice_ctx_create(
                     &mut hwdev,
@@ -225,6 +274,7 @@ impl Decoder {
                 sent_eof: false,
                 cur_pts: None,
                 cpu,
+                async_vt: None,
                 peek_frame: crate::ffi::av_frame_alloc(),
                 has_peek: false,
             })
@@ -241,7 +291,12 @@ impl Decoder {
             crate::ffi::av_seek_frame(self.fmt, self.vidx, 0, crate::ffi::AVSEEK_FLAG_BACKWARD),
             "rewind_seek",
         )?;
-        crate::ffi::avcodec_flush_buffers(self.dctx);
+        if let Some(vt) = &mut self.async_vt {
+            vt.reset()?;
+            self.cur_pts = None;
+        } else {
+            crate::ffi::avcodec_flush_buffers(self.dctx);
+        }
         self.sent_eof = false;
         Ok(())
     }
@@ -303,7 +358,12 @@ impl Decoder {
             ),
             "seek_to",
         )?;
-        crate::ffi::avcodec_flush_buffers(self.dctx);
+        if let Some(vt) = &mut self.async_vt {
+            vt.reset()?;
+            self.cur_pts = None;
+        } else {
+            crate::ffi::avcodec_flush_buffers(self.dctx);
+        }
         // L'état vient d'être jeté : plus aucune frame courante exploitable.
         self.cur_pts = None;
         self.sent_eof = false;
@@ -381,6 +441,9 @@ impl Decoder {
     /// cible. Factorisé pour que `next()` et `peek_next_time_sec()` partagent exactement la
     /// même mécanique de décodage, seul le buffer destinataire changeant.
     unsafe fn receive_into(&mut self, into: *mut crate::ffi::AVFrame) -> Result<bool> {
+        if let Some(vt) = &mut self.async_vt {
+            return vt.receive_into(self.fmt, self.vidx, self.pkt, into);
+        }
         loop {
             let r = crate::ffi::avcodec_receive_frame(self.dctx, into);
             if r == 0 {
@@ -513,6 +576,7 @@ unsafe impl Send for Decoder {}
 
 impl Drop for Decoder {
     fn drop(&mut self) {
+        drop(self.async_vt.take());
         unsafe {
             crate::ffi::av_frame_free(&mut self.frame);
             crate::ffi::av_frame_free(&mut self.peek_frame);
@@ -684,9 +748,32 @@ pub struct VideoEncoder {
     name: &'static str,
     hardware: bool,
     fallback: bool,
+    /// Zero-copy path only: the previous composed frame and the Metal command
+    /// buffer that converts it. It is sent to the encoder one frame late, after
+    /// that command buffer completes, so the GPU conversion of frame N overlaps
+    /// the decode and composition of frame N+1 instead of blocking the CPU.
+    pending: Option<(*mut crate::ffi::AVFrame, metal::CommandBuffer)>,
 }
 
 impl VideoEncoder {
+    /// Sends the held-back frame, if any. Must run before the encoder flush and
+    /// before the output is finalized; otherwise the last frame is lost.
+    pub fn flush_pending(&mut self) -> Result<()> {
+        let Some((frame, cmd)) = self.pending.take() else {
+            return Ok(());
+        };
+        cmd.wait_until_completed();
+        let mut frame = frame;
+        let sent = unsafe {
+            crate::ffi::averr(
+                crate::ffi::avcodec_send_frame(self.ctx, frame),
+                "send_frame_composited_vt",
+            )
+        };
+        unsafe { crate::ffi::av_frame_free(&mut frame) };
+        sent
+    }
+
     /// Ouvre l'encodeur pour `codec` sur la cible `w`x`h` à `fps` fps et `bit_rate` bits/s.
     /// Essaie chaque candidate retournée par `ExportCodec::candidates()` (honorant
     /// `OPENSCREEN_EXPORT_ENCODER=<name>`) ; la première qui ouvre gagne.
@@ -839,6 +926,7 @@ impl VideoEncoder {
             name: candidate.name,
             hardware: candidate.name.ends_with("_videotoolbox"),
             fallback: false,
+            pending: None,
         };
         if candidate.pix_fmt != crate::ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX {
             encoder.sw = alloc_sw_frame(candidate.pix_fmt, w, h)?;
@@ -928,18 +1016,36 @@ impl VideoEncoder {
                     crate::ffi::av_frame_free(&mut frame);
                     bail!("frame VT sans CVPixelBuffer dans data[3]");
                 }
-                let rendered = compositor.rgb_to_nv12(pb, 0);
-                if let Err(e) = rendered {
+                // `OPENSCREEN_EXPORT_DEFER_METAL=0` restores the synchronous wait for A/B runs.
+                if std::env::var("OPENSCREEN_EXPORT_DEFER_METAL").as_deref() == Ok("0") {
+                    if let Err(e) = compositor.rgb_to_nv12(pb, 0) {
+                        crate::ffi::av_frame_free(&mut frame);
+                        return Err(e);
+                    }
+                    (*frame).pts = pts;
+                    let sent = crate::ffi::averr(
+                        crate::ffi::avcodec_send_frame(self.ctx, frame),
+                        "send_frame_composited_vt",
+                    );
+                    crate::ffi::av_frame_free(&mut frame);
+                    return sent;
+                }
+                let cmd = match compositor.rgb_to_nv12_deferred(pb) {
+                    Ok(cmd) => cmd,
+                    Err(e) => {
+                        crate::ffi::av_frame_free(&mut frame);
+                        return Err(e);
+                    }
+                };
+                (*frame).pts = pts;
+                // Send the previous frame now that a full frame of work sits
+                // behind its conversion, then hold this one back.
+                if let Err(e) = self.flush_pending() {
                     crate::ffi::av_frame_free(&mut frame);
                     return Err(e);
                 }
-                (*frame).pts = pts;
-                let sent = crate::ffi::averr(
-                    crate::ffi::avcodec_send_frame(self.ctx, frame),
-                    "send_frame_composited_vt",
-                );
-                crate::ffi::av_frame_free(&mut frame);
-                return sent;
+                self.pending = Some((frame, cmd));
+                return Ok(());
             }
             // Rendre le RGBA composé en NV12 côté GPU, PUIS le relire dans les plans de la
             // frame. Le port appelait bien `render_nv12()` mais envoyait ensuite une frame
@@ -969,6 +1075,11 @@ impl VideoEncoder {
 
 impl Drop for VideoEncoder {
     fn drop(&mut self) {
+        if let Some((mut frame, cmd)) = self.pending.take() {
+            // A cancelled or failed export drops the held frame without sending it.
+            cmd.wait_until_completed();
+            unsafe { crate::ffi::av_frame_free(&mut frame) };
+        }
         unsafe {
             crate::ffi::avcodec_free_context(&mut self.ctx);
             if !self.sw.is_null() {
@@ -1187,7 +1298,8 @@ pub fn run_composited_multi(
 
     frames = walk.frames;
 
-    // Flush : un null frame à l'encodeur finalise son bitstream.
+    // Flush : the held-back last frame first, then a null frame finalizes the bitstream.
+    enc.flush_pending()?;
     unsafe {
         crate::ffi::averr(
             crate::ffi::avcodec_send_frame(ectx, ptr::null_mut()),
@@ -1220,6 +1332,13 @@ pub fn run_composited_multi(
         }
         let mut assembled_audio =
             spool::assemble(clip_audio, &plan, params.even_volume, &mut check)?;
+        if let Some(scene) = scene.as_ref() {
+            crate::audio::overlays::mix_into_program(
+                &mut assembled_audio,
+                &scene.audio_overlays,
+                &mut check,
+            )?;
+        }
         audio_mastering = spool::master(
             &mut assembled_audio,
             AudioMasteringSettings::new(
@@ -1237,11 +1356,10 @@ pub fn run_composited_multi(
     }
 
     let wall_s = t0.elapsed().as_secs_f64();
-    let decoder_path = match (walk.hardware_decoder, walk.software_decoder) {
-        (true, true) => "mixed",
-        (true, false) => "videotoolbox",
-        (false, true) => "software",
-        (false, false) => "unknown",
+    let decoder_path = if walk.decoder_paths.is_empty() {
+        "unknown".to_owned()
+    } else {
+        walk.decoder_paths.into_iter().collect::<Vec<_>>().join("+")
     };
     Ok(Stats {
         frames,

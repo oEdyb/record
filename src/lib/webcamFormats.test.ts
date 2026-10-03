@@ -1,19 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
 	applyWebcamFormat,
+	clearWebcamFormatProbeCache,
 	DEFAULT_WEBCAM_FORMAT,
 	formatWebcamFormat,
 	normalizeWebcamFormat,
 	probeWebcamFormats,
+	probeWebcamFormatsCached,
 	WEBCAM_FORMAT_CANDIDATES,
 } from "./webcamFormats";
+
+afterEach(() => {
+	clearWebcamFormatProbeCache();
+});
 
 describe("webcam formats", () => {
 	it("uses a practical 1080p/30 default and readable labels", () => {
 		expect(DEFAULT_WEBCAM_FORMAT).toEqual({ width: 1920, height: 1080, fps: 30 });
-		expect(formatWebcamFormat({ width: 3840, height: 2160, fps: 30 })).toBe("4K · 30 FPS");
-		expect(formatWebcamFormat({ width: 2560, height: 1440, fps: 30 })).toBe("2K · 30 FPS");
-		expect(formatWebcamFormat({ width: 1920, height: 1080, fps: 60 })).toBe("1080p · 60 FPS");
+		expect(formatWebcamFormat({ width: 3840, height: 2160, fps: 30 })).toBe("4K, 30 FPS");
+		expect(formatWebcamFormat({ width: 2560, height: 1440, fps: 30 })).toBe("2K, 30 FPS");
+		expect(formatWebcamFormat({ width: 1920, height: 1080, fps: 60 })).toBe("1080p, 60 FPS");
 	});
 
 	it("normalizes persisted values without accepting unsafe dimensions", () => {
@@ -83,5 +89,32 @@ describe("webcam formats", () => {
 			{ width: 3840, height: 2160, fps: 30 },
 			{ width: 1920, height: 1080, fps: 60 },
 		]);
+	});
+
+	it("probes each camera once per session and reuses the result for the same device", async () => {
+		const probes: string[] = [];
+		const makeTrack = (deviceId: string) => ({
+			label: `Camera ${deviceId}`,
+			getCapabilities: () => ({
+				width: { min: 640, max: 1920 },
+				height: { min: 480, max: 1080 },
+				frameRate: { min: 15, max: 30 },
+			}),
+			getConstraints: () => ({}),
+			getSettings: () => ({ deviceId, width: 1920, height: 1080, frameRate: 30 }),
+			applyConstraints: async (constraints: MediaTrackConstraints) => {
+				const width = (constraints.width as { exact?: number } | undefined)?.exact;
+				if (width !== undefined) probes.push(`${deviceId}:${width}`);
+			},
+		});
+
+		const first = await probeWebcamFormatsCached(makeTrack("cam-a"));
+		const again = await probeWebcamFormatsCached(makeTrack("cam-a"));
+		await probeWebcamFormatsCached(makeTrack("cam-b"));
+
+		expect(first).toEqual([{ width: 1920, height: 1080, fps: 30 }]);
+		expect(again).toEqual(first);
+		expect(again).not.toBe(first);
+		expect(probes).toEqual(["cam-a:1920", "cam-a:1280", "cam-b:1920", "cam-b:1280"]);
 	});
 });

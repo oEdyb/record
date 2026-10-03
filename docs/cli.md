@@ -208,6 +208,21 @@ Record emits `log` events (`Recording started`, …), `stopping`, and a final
 `projectPath` when `--project` was used. Exit code is 0 on success, 1 on
 failure, 2 on bad arguments.
 
+### `klippt agent` output is different
+
+The editing/agent commands (`klippt agent …`) have their own contract. In JSON
+mode stdout carries **exactly one terminal JSON envelope** per invocation;
+progress and `planned` envelopes are NDJSON on **stderr** unless `--stream`
+moves them onto stdout. Exit codes are 0 (completed), 2 (invalid input), 3
+(blocked by checks/confirmation), 4 (editor unavailable), 5 (revision
+conflict), 6 (timeout — query `receipt` with the original request ID before
+any retry), 7 (failed). Every error object carries `code`, `message`, `hint`,
+`retryable`, and `field_errors`. The interface includes staged footage removal
+(`pauses`/`edges`/`cutpoint` stage by default; `accept` applies), `shot`,
+`batch`, and `verify`. See
+[technical-documentation/agent-cli.md](../technical-documentation/agent-cli.md)
+and `klippt agent skill --json`.
+
 ## Example: automated product demo (for scripts/agents)
 
 ```bash

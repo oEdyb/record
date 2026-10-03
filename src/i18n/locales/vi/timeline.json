@@ -33,7 +33,18 @@
 		"emptyText": "Văn bản trống",
 		"cameraEmphasis": "Nhấn mạnh camera",
 		"cameraFullscreen": "Camera Toàn màn hình",
-		"cameraFullscreenItem": "Camera Toàn màn hình {{index}}"
+		"cameraFullscreenItem": "Camera Toàn màn hình {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "Chưa tải video",
@@ -76,7 +87,7 @@
 		"arrangeClips": "Sắp xếp clip",
 		"arrangeClipsHint": "Kéo các clip bên dưới để sắp xếp lại hoặc thả clip mới vào",
 		"newAnnotation": "Chú thích",
-		"dragToReorderHint": "Kéo để sắp xếp lại · nhấp đúp để chỉnh sửa điểm vào/ra",
+		"dragToReorderHint": "Kéo để sắp xếp lại, nhấp đúp để chỉnh sửa điểm vào/ra",
 		"editInOutPoints": "Chỉnh sửa điểm vào/ra",
 		"deleteClip": "Xóa clip",
 		"dropToAdd": "Thả để thêm vào dòng thời gian",

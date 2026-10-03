@@ -303,3 +303,43 @@ describe("patchEditorSettings", () => {
 		});
 	});
 });
+
+it("persists camera rounding without changing legacy projects that omit it", () => {
+	expect(getEditorSettings(baseDoc).webcamCornerRadius).toBeUndefined();
+	const changed = patchEditorSettings(baseDoc, {
+		webcamMaskShape: "squircle",
+		webcamCornerRadius: 35,
+		webcamAspectRatio: "4:3",
+	});
+	expect(getEditorSettings(JSON.parse(JSON.stringify(changed)))).toMatchObject({
+		webcamMaskShape: "squircle",
+		webcamCornerRadius: 35,
+		webcamAspectRatio: "4:3",
+	});
+	for (const [input, output] of [
+		[-1, 0],
+		[100, 50],
+		[NaN, undefined],
+	] as const) {
+		expect(
+			getEditorSettings(patchEditorSettings(baseDoc, { webcamCornerRadius: input }))
+				.webcamCornerRadius,
+		).toBe(output);
+	}
+});
+
+it("lets a direct camera drag replace an inherited named project anchor", () => {
+	const anchored = patchEditorSettings(baseDoc, {
+		cameraAnchor: "bottom-right",
+		webcamPosition: { cx: 0.8, cy: 0.8 },
+	});
+	const dragged = patchEditorSettings(anchored, { webcamPosition: { cx: 0.2, cy: 0.3 } });
+	expect(getEditorSettings(dragged).cameraAnchor).toBeUndefined();
+	expect(getEditorSettings(dragged).webcamPosition).toEqual({ cx: 0.2, cy: 0.3 });
+	expect(getEditorSettings(anchored).cameraAnchor).toBe("bottom-right");
+	const reset = patchEditorSettings(anchored, { webcamPosition: null });
+	expect(getEditorSettings(reset).cameraAnchor).toBeUndefined();
+	expect(
+		getEditorSettings(patchEditorSettings(anchored, { webcamSizePreset: 34 })).cameraAnchor,
+	).toBe("bottom-right");
+});

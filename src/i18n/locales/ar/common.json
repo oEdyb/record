@@ -69,5 +69,8 @@
 		"screen": "شاشة",
 		"virtual": "شاشة افتراضية",
 		"unknown": "تسجيل الشاشة"
+	},
+	"inspector": {
+		"valueRange": "Enter a number from {{min}} to {{max}}."
 	}
 }

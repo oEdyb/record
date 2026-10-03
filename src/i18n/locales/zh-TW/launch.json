@@ -31,7 +31,11 @@
 			"fontSize": "字體大小",
 			"decreaseFontSize": "縮小字體",
 			"increaseFontSize": "放大字體",
-			"mirror": "水平鏡像"
+			"mirror": "水平鏡像",
+			"more": "更多控制項",
+			"less": "更少控制項",
+			"close": "關閉筆記",
+			"move": "移動筆記"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "正在錄製",
 		"saving": "正在儲存...",
 		"removePreviousClip": "移除上一個片段",
-		"removePreviousClipWithDuration": "移除上一個片段 · {{duration}}",
+		"removePreviousClipWithDuration": "移除上一個片段 ({{duration}})",
 		"clipRemoved": "已移除"
 	},
 	"language": "語言",

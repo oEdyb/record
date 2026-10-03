@@ -173,7 +173,7 @@ export const DEFAULT_DIRECTION_POLICY: DirectionPolicy = {
 	// the prior effect or remains as a separate effect once that window ends.
 	minimumSpacingMs: CHAINED_ZOOM_PAN_GAP_MS,
 	sequenceConnectionGapMs: CHAINED_ZOOM_PAN_GAP_MS,
-	maxZoomsPerMinute: 4,
+	maxZoomsPerMinute: 12,
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));

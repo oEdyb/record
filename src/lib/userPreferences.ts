@@ -24,12 +24,18 @@ export interface UserPreferences {
 	trayLayout: "horizontal" | "vertical";
 	/** Last native screen position of the recording-mode webcam confidence monitor */
 	cameraPreviewPosition: { x: number; y: number } | null;
+	/** Private notes window frame in screen coordinates; never project content. */
+	notesWindowBounds: { x: number; y: number; width: number; height: number } | null;
 	/** Whether the AI editor sidebar was open when the user last changed it */
 	editorChatOpen: boolean;
 	/** Force the Windows native recorder to use the software H.264 encoder */
 	preferSoftwareEncoder: boolean;
 	/** Stop showing the notice that recording fell back to software encoding */
 	hideSoftwareEncoderFallbackNotice: boolean;
+	/** Editor preview listening level, 0..1; export audio ignores it */
+	previewVolume: number;
+	/** Editor preview muted; export audio ignores it */
+	previewMuted: boolean;
 }
 
 export const DEFAULT_PREFS: UserPreferences = {
@@ -41,9 +47,12 @@ export const DEFAULT_PREFS: UserPreferences = {
 	projectFolder: null,
 	trayLayout: "horizontal",
 	cameraPreviewPosition: null,
+	notesWindowBounds: null,
 	editorChatOpen: false,
 	preferSoftwareEncoder: false,
 	hideSoftwareEncoderFallbackNotice: false,
+	previewVolume: 1,
+	previewMuted: false,
 };
 
 /** Parses stored preferences without throwing on malformed JSON. */
@@ -57,6 +66,23 @@ function safeJsonParse(text: string | null): Record<string, unknown> | null {
 }
 
 /** Load preferences from localStorage, falling back to defaults for missing or invalid fields. */
+function parseNotesWindowBounds(
+	value: unknown,
+): { x: number; y: number; width: number; height: number } | null {
+	if (!value || typeof value !== "object") return null;
+	const candidate = value as Record<string, unknown>;
+	const numbers = ["x", "y", "width", "height"].map((key) => candidate[key]);
+	if (!numbers.every((entry) => typeof entry === "number" && Number.isFinite(entry))) return null;
+	const [x, y, width, height] = numbers as number[];
+	if (width <= 0 || height <= 0) return null;
+	return {
+		x: Math.round(x),
+		y: Math.round(y),
+		width: Math.round(width),
+		height: Math.round(height),
+	};
+}
+
 export function loadUserPreferences(): UserPreferences {
 	let raw: Record<string, unknown> | null = null;
 	try {
@@ -109,6 +135,7 @@ export function loadUserPreferences(): UserPreferences {
 						y: Math.round((raw.cameraPreviewPosition as Record<string, number>).y),
 					}
 				: DEFAULT_PREFS.cameraPreviewPosition,
+		notesWindowBounds: parseNotesWindowBounds(raw.notesWindowBounds),
 		editorChatOpen:
 			typeof raw.editorChatOpen === "boolean" ? raw.editorChatOpen : DEFAULT_PREFS.editorChatOpen,
 		preferSoftwareEncoder:
@@ -119,6 +146,15 @@ export function loadUserPreferences(): UserPreferences {
 			typeof raw.hideSoftwareEncoderFallbackNotice === "boolean"
 				? raw.hideSoftwareEncoderFallbackNotice
 				: DEFAULT_PREFS.hideSoftwareEncoderFallbackNotice,
+		previewVolume:
+			typeof raw.previewVolume === "number" &&
+			Number.isFinite(raw.previewVolume) &&
+			raw.previewVolume >= 0 &&
+			raw.previewVolume <= 1
+				? raw.previewVolume
+				: DEFAULT_PREFS.previewVolume,
+		previewMuted:
+			typeof raw.previewMuted === "boolean" ? raw.previewMuted : DEFAULT_PREFS.previewMuted,
 	};
 }
 

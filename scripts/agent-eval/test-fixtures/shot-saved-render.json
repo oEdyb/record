@@ -1,0 +1,88 @@
+{
+	"api_version": "1.0",
+	"request_id": "3f4a9c1e-7b2d-4e5f-9a6b-1c2d3e4f5a6b",
+	"status": "completed",
+	"snapshot": {
+		"revision": 12,
+		"fileHash": "b1c2d3e4f5a6",
+		"capturedAt": "2026-09-18T12:03:00.000Z"
+	},
+	"data": {
+		"project": {
+			"id": "proj_evalclone",
+			"title": "agent-eval observe-shot-3-50",
+			"revision": 12,
+			"dirty": false,
+			"document_hash": "aabbccdd00112233"
+		},
+		"live_editor": {
+			"current_time_sec": 41.233,
+			"busy": false,
+			"sync_pending": false
+		},
+		"instant": {
+			"edited_sec": 230,
+			"raw_sec": 236.5,
+			"source_sec": 12.5,
+			"clip_id": "clip_recording_1789653794581_10",
+			"clip_index": 3,
+			"input_seconds": 230,
+			"input_base": "edited",
+			"time_base": {
+				"edited_sec": "edited_seconds (trim-compressed playback clock)",
+				"raw_sec": "raw_virtual_seconds (document clock; trims still occupy their space)",
+				"source_sec": "source_seconds (the clip's own media time)"
+			}
+		},
+		"layers": {
+			"clip": { "id": "clip_recording_1789653794581_10", "source_sec": 12.5 },
+			"layout": null,
+			"regions": []
+		},
+		"cuts": { "previous": 228.4, "next": 232.1 },
+		"staged": {
+			"lane_count": 0,
+			"in_range": [],
+			"truncated": false,
+			"range": "edited ±5s"
+		},
+		"transcript": {
+			"source": "saved_project",
+			"status": "stored",
+			"clip_id": "clip_recording_1789653794581_10",
+			"window_sec": 5,
+			"words": [
+				{ "start": 8.1, "end": 8.4, "text": "But" },
+				{ "start": 8.4, "end": 8.7, "text": "this" },
+				{ "start": 8.7, "end": 9.2, "text": "round," }
+			],
+			"words_truncated": false,
+			"sentence": {
+				"start": 8.1,
+				"end": 14.6,
+				"text": "But this round, round one, actually was the"
+			}
+		},
+		"image": {
+			"source": "saved_render",
+			"status": "ok",
+			"path": "/Users/olle/Library/Application Support/openscreen/cache/agent-media/frame-edited-230000.png",
+			"elapsed_ms": 812
+		},
+		"evidence": {
+			"state": "live_editor",
+			"transcript": "saved_project",
+			"image": "saved_render"
+		},
+		"time_bases": {
+			"current_time_sec": "raw_virtual_seconds (document clock; trims still occupy their space)",
+			"instant.*": "resolved on all three clocks; see instant.time_base",
+			"cuts.at/distanceSec": "edited_seconds (trim-compressed playback clock)",
+			"staged.in_range.editedStartSec/editedEndSec": "edited_seconds (trim-compressed playback clock)",
+			"staged.in_range.sourceStartSec/sourceEndSec": "source_seconds (the clip's own media time)",
+			"transcript.words.start/end": "source_seconds (the clip's own media time)",
+			"image.captured.video_time_sec": "source_seconds (the clip's own media time)"
+		}
+	},
+	"warnings": []
+}

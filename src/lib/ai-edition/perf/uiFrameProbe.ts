@@ -42,6 +42,9 @@ let rafHandle = 0;
 let lastTs = 0;
 /** Frames de preview peintes depuis le dernier tick — dit si la preview travaille. */
 let previewFramesSinceTick = 0;
+let previewFramesTotal = 0;
+let probeStartedAt = 0;
+let probeStoppedAt = 0;
 /**
  * D'OÙ vient le scrub en cours.
  *
@@ -62,6 +65,7 @@ let clipSwitches = 0;
 export function noteUiProbePreviewFrame(): void {
 	if (running) {
 		previewFramesSinceTick++;
+		previewFramesTotal++;
 	}
 }
 
@@ -124,6 +128,76 @@ function tick(ts: number) {
 	}
 	lastTs = ts;
 	previewFramesSinceTick = 0;
+}
+
+export interface UiProbeStateReport {
+	state: string;
+	n: number;
+	p50: number;
+	p90: number;
+	p99: number;
+	max: number;
+	latePct: number;
+	veryLatePct: number;
+}
+
+export interface UiProbeReport {
+	states: UiProbeStateReport[];
+	clipSwitches: number;
+	videoElements: number;
+	/** Frames the preview actually painted while the probe ran, and the run length. */
+	previewFrames: number;
+	durationMs: number;
+	previewFps: number;
+	longTasks: { key: string; n: number; totalMs: number; maxMs: number }[];
+}
+
+/** The same numbers `summarize` prints, as data, for the agent transport. */
+export function collectUiProbeReport(): UiProbeReport {
+	const states: UiProbeStateReport[] = [];
+	for (const [state, b] of buckets) {
+		if (b.intervals.length < 10) continue;
+		const s = [...b.intervals].sort((a, x) => a - x);
+		const q = (p: number) => s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))];
+		states.push({
+			state,
+			n: s.length,
+			p50: Number(q(50).toFixed(1)),
+			p90: Number(q(90).toFixed(1)),
+			p99: Number(q(99).toFixed(1)),
+			max: Number(s[s.length - 1].toFixed(1)),
+			latePct: Number(((s.filter((x) => x > 25).length / s.length) * 100).toFixed(1)),
+			veryLatePct: Number(((s.filter((x) => x > 40).length / s.length) * 100).toFixed(1)),
+		});
+	}
+	const byKey = new Map<string, { n: number; totalMs: number; maxMs: number }>();
+	for (const t of longTasks) {
+		const key = `${t.name} / ${t.container}`;
+		const e = byKey.get(key) ?? { n: 0, totalMs: 0, maxMs: 0 };
+		e.n++;
+		e.totalMs += t.duration;
+		e.maxMs = Math.max(e.maxMs, t.duration);
+		byKey.set(key, e);
+	}
+	const endedAt = probeStoppedAt > 0 ? probeStoppedAt : performance.now();
+	const durationMs = probeStartedAt > 0 ? Math.round(endedAt - probeStartedAt) : 0;
+	return {
+		states,
+		clipSwitches,
+		videoElements: typeof document === "undefined" ? 0 : document.querySelectorAll("video").length,
+		previewFrames: previewFramesTotal,
+		durationMs,
+		previewFps: durationMs > 0 ? Number(((previewFramesTotal * 1000) / durationMs).toFixed(1)) : 0,
+		longTasks: [...byKey.entries()]
+			.sort((a, b) => b[1].totalMs - a[1].totalMs)
+			.slice(0, 10)
+			.map(([key, v]) => ({
+				key,
+				n: v.n,
+				totalMs: Math.round(v.totalMs),
+				maxMs: Math.round(v.maxMs),
+			})),
+	};
 }
 
 function summarize() {
@@ -255,6 +329,9 @@ export function startUiProbe(reportEverySec = 10): void {
 		return;
 	}
 	running = true;
+	previewFramesTotal = 0;
+	probeStartedAt = performance.now();
+	probeStoppedAt = 0;
 	buckets.clear();
 	longTasks.length = 0;
 	clipSwitches = 0;
@@ -292,6 +369,7 @@ export function startUiProbe(reportEverySec = 10): void {
 	}, reportEverySec * 1000);
 	stopUiProbe = () => {
 		running = false;
+		probeStoppedAt = performance.now();
 		cancelAnimationFrame(rafHandle);
 		window.clearInterval(timer);
 		longTaskObserver?.disconnect();

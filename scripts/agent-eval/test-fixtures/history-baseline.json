@@ -1,0 +1,19 @@
+{
+	"api_version": "1.0",
+	"request_id": "h1",
+	"status": "completed",
+	"data": {
+		"entries": [
+			{
+				"applyId": "0c9b3f2a-0000-4000-8000-000000000001",
+				"requestId": "setup-zoom",
+				"at": "2026-09-18T12:00:00.000Z",
+				"planSummary": "zoom add",
+				"beforeRevision": "r0",
+				"afterRevision": "r1",
+				"kind": "apply",
+				"targetIds": ["0c9b3f2a-0000-4000-8000-000000000001"]
+			}
+		]
+	}
+}

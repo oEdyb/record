@@ -6,11 +6,11 @@ import {
 	InspectorActionButton,
 	InspectorDisclosure,
 	InspectorSegmentedControl,
+	InspectorTabs,
 } from "@/components/ui/inspector";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
-import { applyPauseSuggestions } from "@/lib/ai-edition/document/pause-edits";
 import {
 	type AudioDeliveryPreset,
 	DEFAULT_AUDIO_PEAK_CEILING_DBTP,
@@ -26,6 +26,7 @@ import {
 	type PauseAnalysisPolicy,
 	type PausePresetId,
 } from "@/lib/ai-edition/timeline/pause-analysis";
+import { AudioOverlayPane } from "./AudioOverlayPane";
 import styles from "./NewEditorShell.module.css";
 import { type SelectablePauseSuggestion, usePauseAnalysisStore } from "./pauses/pauseAnalysisStore";
 import {
@@ -88,6 +89,9 @@ export function AudioPane({ onPreview }: AudioPaneProps) {
 	const projectId = useProjectStore((state) => state.projectId);
 	const projectRevision = useProjectStore((state) => state.revision);
 	const applyDocumentPatch = useProjectStore((state) => state.applyDocumentPatch);
+	const acceptAll = usePauseAnalysisStore((state) => state.acceptAll);
+	const clearCuts = usePauseAnalysisStore((state) => state.clearCuts);
+	const rejectedEarlier = usePauseAnalysisStore((state) => state.rejectedEarlier);
 	const analysisProjectId = usePauseAnalysisStore((state) => state.projectId);
 	const analysisStatus = usePauseAnalysisStore((state) => state.status);
 	const analysis = usePauseAnalysisStore((state) => state.analysis);
@@ -190,11 +194,14 @@ export function AudioPane({ onPreview }: AudioPaneProps) {
 		setApplyStatus("applying");
 		onPreview(null);
 		setPreviewing(false);
-		const result = await applyDocumentPatch(
-			projectId,
-			(current) => applyPauseSuggestions(current, selected),
-			{ createHistorySnapshot: (current) => current },
-		);
+		let result: Awaited<ReturnType<typeof acceptAll>>;
+		try {
+			result = await acceptAll();
+		} catch {
+			toast.error(ts("pauses.applyFailed"));
+			setApplyStatus("error");
+			return;
+		}
 		if (result === "applied") {
 			toast.success(ts("pauses.applied", { count: selected.length }));
 			invalidatePauseAnalysis();
@@ -209,7 +216,7 @@ export function AudioPane({ onPreview }: AudioPaneProps) {
 		}
 		toast.error(ts("pauses.applyFailed"));
 		setApplyStatus("error");
-	}, [applyDocumentPatch, invalidatePauseAnalysis, onPreview, projectId, selected, ts]);
+	}, [acceptAll, invalidatePauseAnalysis, onPreview, projectId, selected, ts]);
 
 	const togglePreview = () => {
 		const next = !previewing;
@@ -247,445 +254,530 @@ export function AudioPane({ onPreview }: AudioPaneProps) {
 			flat
 		>
 			<div className={styles.audioInspector}>
-				<section className={styles.audioSection}>
-					<div className={styles.audioSectionHeader}>
-						<strong>
-							{ts("audio.voice")}
-							<InfoTip label={ts("audio.voice")} content={ts("audio.voiceDescription")} />
-						</strong>
-					</div>
-					<div className={styles.audioSettingRow}>
-						<span className={styles.audioSettingTitle}>
-							{ts("audio.cleanVoice")}
-							{cleanVoiceStatus ? <small>{ts(`audio.cleanVoice${cleanVoiceStatus}`)}</small> : null}
-							<InfoTip
-								label={ts("audio.cleanVoice")}
-								content={`${ts("audio.cleanVoiceDescription")} ${ts("audio.cleanVoiceTrust")}`}
-							/>
-						</span>
-						<Toggle
-							checked={cleanVoiceEnabled}
-							disabled={
-								!hasDocument ||
-								cleanVoiceAssets.length === 0 ||
-								(!cleanVoiceRuntime.available && !cleanVoiceEnabled)
-							}
-							label={ts("audio.cleanVoice")}
-							onChange={(enabled) => void setCleanVoice(enabled)}
-						/>
-					</div>
-					<div className={styles.audioSettingRow}>
-						<span className={styles.audioSettingTitle}>
-							{ts("audio.evenVolume")}
-							<InfoTip label={ts("audio.evenVolume")} content={ts("audio.evenVolumeDescription")} />
-						</span>
-						<Toggle
-							checked={settings.evenVolume}
-							disabled={!hasDocument}
-							label={ts("audio.evenVolume")}
-							onChange={(evenVolume) => void setEditorSettings({ evenVolume })}
-						/>
-					</div>
-				</section>
-
-				<section className={styles.audioSection}>
-					<div className={styles.audioSectionHeader}>
-						<strong>
-							{ts("audio.pacing")}
-							<InfoTip label={ts("audio.pacing")} content={ts("audio.pacingDescription")} />
-						</strong>
-					</div>
-					<div className={styles.pauseInspector}>
-						<label className={styles.inspectorSelectField}>
-							<span>{ts("pauses.mode")}</span>
-							<AppSelect
-								value={policy.mode}
-								onChange={(event) =>
-									updatePolicy({
-										mode: event.target.value as PauseAnalysisPolicy["mode"],
-									})
-								}
-							>
-								<option value="speech">{ts("pauses.modeSpeech")}</option>
-								<option value="audio-level">{ts("pauses.modeAudioLevel")}</option>
-							</AppSelect>
-						</label>
-
-						<InspectorSegmentedControl
-							label={ts("audio.preset")}
-							value={activePausePreset}
-							options={BUILT_IN_PRESETS.map((preset) => ({
-								value: preset.id,
-								label: ts(`pauses.${preset.key}`),
-							}))}
-							onValueChange={(presetId) => {
-								if (presetId) updatePolicy(policyForBuiltInPausePreset(presetId, policy));
-							}}
-						/>
-
-						<SliderCell
-							label={ts("pauses.longerThan")}
-							value={policy.minimumPauseSec}
-							min={0.25}
-							max={5}
-							step={0.05}
-							decimals={2}
-							suffix=" s"
-							onChange={(minimumPauseSec) => updatePolicy({ minimumPauseSec })}
-							onCommit={() => undefined}
-							flat
-						/>
-						<SliderCell
-							label={ts("pauses.shortenTo")}
-							value={policy.shortenedPauseSec}
-							min={0.05}
-							max={1.5}
-							step={0.05}
-							decimals={2}
-							suffix=" s"
-							onChange={(shortenedPauseSec) => updatePolicy({ shortenedPauseSec })}
-							onCommit={() => undefined}
-							flat
-						/>
-
-						<InspectorDisclosure label={ts("pauses.advanced")}>
-							<div className={styles.pauseAdvanced}>
-								<SliderCell
-									label={ts("pauses.sensitivity")}
-									value={policy.sensitivity * 100}
-									min={0}
-									max={100}
-									step={1}
-									suffix="%"
-									onChange={(value) => updatePolicy({ sensitivity: value / 100 })}
-									onCommit={() => undefined}
-									flat
-								/>
-								<SliderCell
-									label={ts("pauses.keepBefore")}
-									value={policy.keepBeforeSec}
-									min={0}
-									max={0.75}
-									step={0.01}
-									decimals={2}
-									suffix=" s"
-									onChange={(keepBeforeSec) => updatePolicy({ keepBeforeSec })}
-									onCommit={() => undefined}
-									flat
-								/>
-								<SliderCell
-									label={ts("pauses.keepAfter")}
-									value={policy.keepAfterSec}
-									min={0}
-									max={0.75}
-									step={0.01}
-									decimals={2}
-									suffix=" s"
-									onChange={(keepAfterSec) => updatePolicy({ keepAfterSec })}
-									onCommit={() => undefined}
-									flat
-								/>
-								<SliderCell
-									label={ts("pauses.minimumKeptFragment")}
-									value={policy.minimumKeptFragmentSec}
-									min={0.1}
-									max={2}
-									step={0.05}
-									decimals={2}
-									suffix=" s"
-									onChange={(minimumKeptFragmentSec) => updatePolicy({ minimumKeptFragmentSec })}
-									onCommit={() => undefined}
-									flat
-								/>
-								{policy.mode === "audio-level" ? (
-									<>
+				<InspectorTabs
+					label={ts("audio.title")}
+					items={[
+						{
+							id: "voice",
+							label: ts("panels.voice"),
+							content: (
+								<section className={styles.audioSection}>
+									<div className={styles.audioSectionHeader}>
+										<strong>
+											{ts("audio.voice")}
+											<InfoTip label={ts("audio.voice")} content={ts("audio.voiceDescription")} />
+										</strong>
+									</div>
+									<div className={styles.audioSettingRow}>
+										<span className={styles.audioSettingTitle}>
+											{ts("audio.cleanVoice")}
+											{cleanVoiceStatus ? (
+												<small>{ts(`audio.cleanVoice${cleanVoiceStatus}`)}</small>
+											) : null}
+											<InfoTip
+												label={ts("audio.cleanVoice")}
+												content={`${ts("audio.cleanVoiceDescription")} ${ts("audio.cleanVoiceTrust")}`}
+											/>
+										</span>
+										<Toggle
+											checked={cleanVoiceEnabled}
+											disabled={
+												!hasDocument ||
+												cleanVoiceAssets.length === 0 ||
+												(!cleanVoiceRuntime.available && !cleanVoiceEnabled)
+											}
+											label={ts("audio.cleanVoice")}
+											onChange={(enabled) => void setCleanVoice(enabled)}
+										/>
+									</div>
+									{!cleanVoiceEnabled &&
+									(cleanVoiceAssets.length === 0 || !cleanVoiceRuntime.available) ? (
+										<p className={styles.inspectorSectionHint}>
+											{ts(
+												cleanVoiceAssets.length === 0
+													? "panels.microphoneRequired"
+													: "panels.cleanupUnavailable",
+											)}
+										</p>
+									) : null}
+									<div className={styles.audioSettingRow}>
+										<span className={styles.audioSettingTitle}>
+											{ts("audio.evenVolume")}
+											<InfoTip
+												label={ts("audio.evenVolume")}
+												content={ts("audio.evenVolumeDescription")}
+											/>
+										</span>
+										<Toggle
+											checked={settings.evenVolume}
+											disabled={!hasDocument}
+											label={ts("audio.evenVolume")}
+											onChange={(evenVolume) => void setEditorSettings({ evenVolume })}
+										/>
+									</div>
+								</section>
+							),
+						},
+						{
+							id: "pauses",
+							label: ts("panels.pauses"),
+							content: (
+								<section className={styles.audioSection}>
+									<div className={styles.audioSectionHeader}>
+										<strong>
+											{ts("audio.pacing")}
+											<InfoTip label={ts("audio.pacing")} content={ts("audio.pacingDescription")} />
+										</strong>
+									</div>
+									<div className={styles.pauseInspector}>
 										<label className={styles.inspectorSelectField}>
-											<span>{ts("pauses.threshold")}</span>
+											<span>{ts("pauses.mode")}</span>
 											<AppSelect
-												value={policy.manualThresholdDb === null ? "adaptive" : "manual"}
+												value={policy.mode}
 												onChange={(event) =>
 													updatePolicy({
-														manualThresholdDb: event.target.value === "manual" ? -38 : null,
+														mode: event.target.value as PauseAnalysisPolicy["mode"],
 													})
 												}
 											>
-												<option value="adaptive">{ts("pauses.thresholdAdaptive")}</option>
-												<option value="manual">{ts("pauses.thresholdManual")}</option>
+												<option value="speech">{ts("pauses.modeSpeech")}</option>
+												<option value="audio-level">{ts("pauses.modeAudioLevel")}</option>
 											</AppSelect>
 										</label>
-										{policy.manualThresholdDb !== null ? (
+
+										<InspectorSegmentedControl
+											label={ts("audio.preset")}
+											value={activePausePreset}
+											options={BUILT_IN_PRESETS.map((preset) => ({
+												value: preset.id,
+												label: ts(`pauses.${preset.key}`),
+											}))}
+											onValueChange={(presetId) => {
+												if (presetId) updatePolicy(policyForBuiltInPausePreset(presetId, policy));
+											}}
+										/>
+
+										<InspectorActionButton
+											className={styles.pauseScanButton}
+											tone={analysisStatus === "ready" ? "secondary" : "primary"}
+											disabled={
+												!document || analysisStatus === "analyzing" || applyStatus === "applying"
+											}
+											onClick={analyzePauses}
+										>
+											{analysisStatus === "analyzing" ? (
+												<Loader2 className="animate-spin" size={14} aria-hidden />
+											) : (
+												<ScanSearch size={14} aria-hidden />
+											)}
+											{analysisStatus === "analyzing"
+												? ts("pauses.analyzing")
+												: analysisStatus === "ready"
+													? ts("pauses.analyzeAgain")
+													: ts("pauses.analyze")}
+										</InspectorActionButton>
+										<SliderCell
+											label={ts("pauses.longerThan")}
+											value={policy.minimumPauseSec}
+											min={0.25}
+											max={5}
+											step={0.05}
+											decimals={2}
+											suffix=" s"
+											onChange={(minimumPauseSec) => updatePolicy({ minimumPauseSec })}
+											onCommit={() => undefined}
+											flat
+										/>
+										<SliderCell
+											label={ts("pauses.shortenTo")}
+											value={policy.shortenedPauseSec}
+											min={0.05}
+											max={1.5}
+											step={0.05}
+											decimals={2}
+											suffix=" s"
+											onChange={(shortenedPauseSec) => updatePolicy({ shortenedPauseSec })}
+											onCommit={() => undefined}
+											flat
+										/>
+
+										<InspectorDisclosure label={ts("pauses.advanced")}>
+											<div className={styles.pauseAdvanced}>
+												<SliderCell
+													label={ts("pauses.sensitivity")}
+													value={policy.sensitivity * 100}
+													min={0}
+													max={100}
+													step={1}
+													suffix="%"
+													onChange={(value) => updatePolicy({ sensitivity: value / 100 })}
+													onCommit={() => undefined}
+													flat
+												/>
+												<SliderCell
+													label={ts("pauses.keepBefore")}
+													value={policy.keepBeforeSec}
+													min={0}
+													max={0.75}
+													step={0.01}
+													decimals={2}
+													suffix=" s"
+													onChange={(keepBeforeSec) => updatePolicy({ keepBeforeSec })}
+													onCommit={() => undefined}
+													flat
+												/>
+												<SliderCell
+													label={ts("pauses.keepAfter")}
+													value={policy.keepAfterSec}
+													min={0}
+													max={0.75}
+													step={0.01}
+													decimals={2}
+													suffix=" s"
+													onChange={(keepAfterSec) => updatePolicy({ keepAfterSec })}
+													onCommit={() => undefined}
+													flat
+												/>
+												<SliderCell
+													label={ts("pauses.minimumKeptFragment")}
+													value={policy.minimumKeptFragmentSec}
+													min={0.1}
+													max={2}
+													step={0.05}
+													decimals={2}
+													suffix=" s"
+													onChange={(minimumKeptFragmentSec) =>
+														updatePolicy({ minimumKeptFragmentSec })
+													}
+													onCommit={() => undefined}
+													flat
+												/>
+												{policy.mode === "audio-level" ? (
+													<>
+														<label className={styles.inspectorSelectField}>
+															<span>{ts("pauses.threshold")}</span>
+															<AppSelect
+																value={policy.manualThresholdDb === null ? "adaptive" : "manual"}
+																onChange={(event) =>
+																	updatePolicy({
+																		manualThresholdDb: event.target.value === "manual" ? -38 : null,
+																	})
+																}
+															>
+																<option value="adaptive">{ts("pauses.thresholdAdaptive")}</option>
+																<option value="manual">{ts("pauses.thresholdManual")}</option>
+															</AppSelect>
+														</label>
+														{policy.manualThresholdDb !== null ? (
+															<SliderCell
+																label={ts("pauses.thresholdDb")}
+																value={policy.manualThresholdDb}
+																min={-70}
+																max={-10}
+																step={1}
+																suffix=" dB"
+																onChange={(manualThresholdDb) =>
+																	updatePolicy({ manualThresholdDb })
+																}
+																onCommit={() => undefined}
+																flat
+															/>
+														) : null}
+													</>
+												) : null}
+												{policy.mode === "speech" ? (
+													<label className={styles.pauseToggleRow}>
+														<span>{ts("pauses.includeNonSpeechEvents")}</span>
+														<Toggle
+															checked={policy.includeNonSpeechEvents}
+															label={ts("pauses.includeNonSpeechEvents")}
+															onChange={(includeNonSpeechEvents) =>
+																updatePolicy({ includeNonSpeechEvents })
+															}
+														/>
+													</label>
+												) : null}
+												<label className={styles.pauseToggleRow}>
+													<span>{ts("pauses.protectScreen")}</span>
+													<Toggle
+														checked={policy.protectScreenActivity}
+														label={ts("pauses.protectScreen")}
+														onChange={(protectScreenActivity) =>
+															updatePolicy({ protectScreenActivity })
+														}
+													/>
+												</label>
+												<label className={styles.pauseToggleRow}>
+													<span>{ts("pauses.protectSystemAudio")}</span>
+													<Toggle
+														checked={policy.protectSystemAudio}
+														label={ts("pauses.protectSystemAudio")}
+														onChange={(protectSystemAudio) => updatePolicy({ protectSystemAudio })}
+													/>
+												</label>
+											</div>
+										</InspectorDisclosure>
+
+										{analysisStatus === "ready" || suggestions.length > 0 ? (
+											<div className={styles.pauseResultHeader}>
+												<div>
+													<strong>{ts("pauses.resultCount", { count: suggestions.length })}</strong>
+													<span>{ts("pauses.timeSaved", { duration: seconds(savedSec) })}</span>
+												</div>
+												{suggestions.length > 0 ? (
+													<button
+														type="button"
+														onClick={() =>
+															setPauseSuggestions(
+																suggestions.map((suggestion) => ({
+																	...suggestion,
+																	selected: !allSelected,
+																})),
+															)
+														}
+													>
+														{allSelected ? ts("pauses.clearAll") : ts("pauses.selectAll")}
+													</button>
+												) : null}
+											</div>
+										) : null}
+
+										{suggestions.length > 0 ? (
+											<p
+												className={styles.pauseNotice}
+												title={[...new Set(suggestions.map((cut) => cut.origin))].join(" · ")}
+											>
+												{(["pause", "blip", "agent", "fix"] as const)
+													.flatMap((kind) => {
+														const count = suggestions.filter((cut) => cut.kind === kind).length;
+														return count ? [ts(`pauses.kinds.${kind}`, { count })] : [];
+													})
+													.join(" · ")}
+											</p>
+										) : null}
+										{rejectedEarlier > 0 ? (
+											<p className={styles.pauseNotice}>
+												{ts("pauses.rejectedEarlier", { count: rejectedEarlier })}
+											</p>
+										) : null}
+
+										{analysis?.missingTranscript && policy.mode === "speech" ? (
+											<p className={styles.pauseNotice}>{ts("pauses.needsTranscript")}</p>
+										) : null}
+										{analysis?.missingSpeechActivity && policy.mode === "speech" ? (
+											<p className={styles.pauseNotice}>{ts("pauses.speechModelUnavailable")}</p>
+										) : null}
+										{analysis?.missingMicrophone ? (
+											<p className={styles.pauseNotice}>{ts("pauses.noMicrophone")}</p>
+										) : null}
+										{analysis?.usedMixedAudio ? (
+											<p className={styles.pauseNotice}>{ts("pauses.usingMixedAudio")}</p>
+										) : null}
+										{analysisStatus === "error" || applyStatus === "error" ? (
+											<p className={styles.pauseNotice}>{ts("pauses.analysisFailed")}</p>
+										) : null}
+
+										{suggestions.length > 0 ? (
+											<div className={styles.pauseSuggestionList}>
+												{suggestions.map((suggestion) => (
+													<button
+														key={suggestion.id}
+														type="button"
+														className={
+															suggestion.selected ? styles.pauseSuggestionSelected : undefined
+														}
+														onClick={() =>
+															setPauseSuggestions(
+																suggestions.map((candidate) =>
+																	candidate.id === suggestion.id
+																		? { ...candidate, selected: !candidate.selected }
+																		: candidate,
+																),
+															)
+														}
+													>
+														<span className={styles.pauseSuggestionCheck}>
+															{suggestion.selected ? <Check size={11} /> : null}
+														</span>
+														<span>
+															{seconds(suggestion.silenceEndSec - suggestion.silenceStartSec)}
+														</span>
+														<small>−{seconds(suggestion.savedSec)}</small>
+													</button>
+												))}
+											</div>
+										) : null}
+
+										{suggestions.length > 0 ? (
+											<div className={styles.pauseActions}>
+												<button
+													type="button"
+													disabled={busy}
+													onClick={() => {
+														clearCuts();
+														setPreviewing(false);
+														onPreview(null);
+													}}
+												>
+													{ts("pauses.clearLane")}
+												</button>
+												<button
+													type="button"
+													onClick={togglePreview}
+													disabled={selected.length === 0 || busy}
+												>
+													<Play size={14} fill={previewing ? "currentColor" : "none"} />
+													{previewing ? ts("pauses.stopPreview") : ts("pauses.preview")}
+												</button>
+												<button
+													type="button"
+													className={styles.pauseApplyButton}
+													onClick={() => void applySelected()}
+													disabled={selected.length === 0 || busy}
+												>
+													<Scissors size={14} />
+													{ts("pauses.acceptAll", { count: selected.length })}
+												</button>
+											</div>
+										) : null}
+
+										<div className={styles.pausePresetSave}>
+											<button type="button" onClick={() => setSaveOpen((open) => !open)}>
+												<Save size={13} /> {ts("pauses.savePreset")}
+											</button>
+											{saveOpen ? (
+												<form
+													onSubmit={(event) => {
+														event.preventDefault();
+														setSavedPresets(savePausePreset(presetName, policy));
+														setPresetName("");
+														setSaveOpen(false);
+													}}
+												>
+													<input
+														value={presetName}
+														onChange={(event) => setPresetName(event.target.value)}
+														placeholder={ts("pauses.presetName")}
+														autoFocus
+													/>
+													<button type="submit">{ts("pauses.save")}</button>
+												</form>
+											) : null}
+											{savedPresets.length > 0 ? (
+												<AppSelect
+													aria-label={ts("pauses.savedPresets")}
+													value=""
+													onChange={(event) => {
+														const preset = savedPresets.find(
+															(candidate) => candidate.id === event.target.value,
+														);
+														if (preset) updatePolicy(preset.policy);
+													}}
+												>
+													<option value="">{ts("pauses.savedPresets")}</option>
+													{savedPresets.map((preset) => (
+														<option key={preset.id} value={preset.id}>
+															{preset.name}
+														</option>
+													))}
+												</AppSelect>
+											) : null}
+										</div>
+									</div>
+								</section>
+							),
+						},
+						{ id: "music", label: ts("panels.music"), content: <AudioOverlayPane /> },
+						{
+							id: "delivery",
+							label: ts("panels.delivery"),
+							content: (
+								<section className={styles.audioSection}>
+									<div className={styles.audioSectionHeader}>
+										<strong>
+											{ts("audio.delivery")}
+											<InfoTip
+												label={ts("audio.delivery")}
+												content={ts("audio.deliveryDescription")}
+											/>
+										</strong>
+									</div>
+									<div className={styles.audioSettingRow}>
+										<span className={styles.audioSettingTitle}>
+											{ts("audio.normalizeVolume")}
+											<InfoTip
+												label={ts("audio.normalizeVolume")}
+												content={ts("audio.normalizeVolumeDescription")}
+											/>
+										</span>
+										<Toggle
+											checked={settings.normalizeVolume}
+											disabled={!hasDocument}
+											label={ts("audio.normalizeVolume")}
+											onChange={(normalizeVolume) => void setEditorSettings({ normalizeVolume })}
+										/>
+									</div>
+									<div className={styles.inspectorSelectField}>
+										<span className={styles.audioSettingTitle}>
+											{ts("audio.preset")}
+											<InfoTip label={ts("audio.preset")} content={ts("audio.youtubeNote")} />
+										</span>
+										<AppSelect
+											aria-label={ts("audio.preset")}
+											value={settings.audioDeliveryPreset}
+											disabled={!hasDocument || !settings.normalizeVolume}
+											onChange={(event) =>
+												setDeliveryPreset(event.target.value as AudioDeliveryPreset)
+											}
+										>
+											<option value="youtube">{ts("audio.youtubeTarget")}</option>
+											<option value="custom">{ts("audio.custom")}</option>
+										</AppSelect>
+									</div>
+									{settings.audioDeliveryPreset === "custom" ? (
+										<div className={styles.audioDeliveryControls}>
 											<SliderCell
-												label={ts("pauses.thresholdDb")}
-												value={policy.manualThresholdDb}
-												min={-70}
-												max={-10}
-												step={1}
-												suffix=" dB"
-												onChange={(manualThresholdDb) => updatePolicy({ manualThresholdDb })}
-												onCommit={() => undefined}
+												label={ts("audio.targetLoudness")}
+												helpText={ts("audio.targetLoudnessHelp")}
+												value={settings.audioTargetLufs}
+												min={MIN_AUDIO_TARGET_LUFS}
+												max={MAX_AUDIO_TARGET_LUFS}
+												step={0.5}
+												decimals={1}
+												suffix=" LUFS"
+												disabled={!hasDocument || !settings.normalizeVolume}
+												onChange={(audioTargetLufs) => setEditorSettingsLive({ audioTargetLufs })}
+												onCommit={() => void commitEditorSettings()}
 												flat
 											/>
-										) : null}
-									</>
-								) : null}
-								{policy.mode === "speech" ? (
-									<label className={styles.pauseToggleRow}>
-										<span>{ts("pauses.includeNonSpeechEvents")}</span>
-										<Toggle
-											checked={policy.includeNonSpeechEvents}
-											label={ts("pauses.includeNonSpeechEvents")}
-											onChange={(includeNonSpeechEvents) =>
-												updatePolicy({ includeNonSpeechEvents })
-											}
-										/>
-									</label>
-								) : null}
-								<label className={styles.pauseToggleRow}>
-									<span>{ts("pauses.protectScreen")}</span>
-									<Toggle
-										checked={policy.protectScreenActivity}
-										label={ts("pauses.protectScreen")}
-										onChange={(protectScreenActivity) => updatePolicy({ protectScreenActivity })}
-									/>
-								</label>
-								<label className={styles.pauseToggleRow}>
-									<span>{ts("pauses.protectSystemAudio")}</span>
-									<Toggle
-										checked={policy.protectSystemAudio}
-										label={ts("pauses.protectSystemAudio")}
-										onChange={(protectSystemAudio) => updatePolicy({ protectSystemAudio })}
-									/>
-								</label>
-							</div>
-						</InspectorDisclosure>
-
-						<InspectorActionButton
-							className={styles.pauseScanButton}
-							tone={analysisStatus === "ready" ? "secondary" : "primary"}
-							disabled={!document || analysisStatus === "analyzing" || applyStatus === "applying"}
-							onClick={analyzePauses}
-						>
-							{analysisStatus === "analyzing" ? (
-								<Loader2 className="animate-spin" size={14} aria-hidden />
-							) : (
-								<ScanSearch size={14} aria-hidden />
-							)}
-							{analysisStatus === "analyzing"
-								? ts("pauses.analyzing")
-								: analysisStatus === "ready"
-									? ts("pauses.analyzeAgain")
-									: ts("pauses.analyze")}
-						</InspectorActionButton>
-
-						{analysisStatus === "ready" ? (
-							<div className={styles.pauseResultHeader}>
-								<div>
-									<strong>{ts("pauses.resultCount", { count: suggestions.length })}</strong>
-									<span>{ts("pauses.timeSaved", { duration: seconds(savedSec) })}</span>
-								</div>
-								{suggestions.length > 0 ? (
-									<button
-										type="button"
-										onClick={() =>
-											setPauseSuggestions(
-												suggestions.map((suggestion) => ({
-													...suggestion,
-													selected: !allSelected,
-												})),
-											)
-										}
-									>
-										{allSelected ? ts("pauses.clearAll") : ts("pauses.selectAll")}
-									</button>
-								) : null}
-							</div>
-						) : null}
-
-						{analysis?.missingTranscript && policy.mode === "speech" ? (
-							<p className={styles.pauseNotice}>{ts("pauses.needsTranscript")}</p>
-						) : null}
-						{analysis?.missingSpeechActivity && policy.mode === "speech" ? (
-							<p className={styles.pauseNotice}>{ts("pauses.speechModelUnavailable")}</p>
-						) : null}
-						{analysis?.missingMicrophone ? (
-							<p className={styles.pauseNotice}>{ts("pauses.noMicrophone")}</p>
-						) : null}
-						{analysis?.usedMixedAudio ? (
-							<p className={styles.pauseNotice}>{ts("pauses.usingMixedAudio")}</p>
-						) : null}
-						{analysisStatus === "error" || applyStatus === "error" ? (
-							<p className={styles.pauseNotice}>{ts("pauses.analysisFailed")}</p>
-						) : null}
-
-						{suggestions.length > 0 ? (
-							<div className={styles.pauseSuggestionList}>
-								{suggestions.map((suggestion) => (
-									<button
-										key={suggestion.id}
-										type="button"
-										className={suggestion.selected ? styles.pauseSuggestionSelected : undefined}
-										onClick={() =>
-											setPauseSuggestions(
-												suggestions.map((candidate) =>
-													candidate.id === suggestion.id
-														? { ...candidate, selected: !candidate.selected }
-														: candidate,
-												),
-											)
-										}
-									>
-										<span className={styles.pauseSuggestionCheck}>
-											{suggestion.selected ? <Check size={11} /> : null}
-										</span>
-										<span>{seconds(suggestion.silenceEndSec - suggestion.silenceStartSec)}</span>
-										<small>−{seconds(suggestion.savedSec)}</small>
-									</button>
-								))}
-							</div>
-						) : null}
-
-						{analysisStatus === "ready" && suggestions.length > 0 ? (
-							<div className={styles.pauseActions}>
-								<button
-									type="button"
-									onClick={togglePreview}
-									disabled={selected.length === 0 || busy}
-								>
-									<Play size={14} fill={previewing ? "currentColor" : "none"} />
-									{previewing ? ts("pauses.stopPreview") : ts("pauses.preview")}
-								</button>
-								<button
-									type="button"
-									className={styles.pauseApplyButton}
-									onClick={() => void applySelected()}
-									disabled={selected.length === 0 || busy}
-								>
-									<Scissors size={14} />
-									{ts("pauses.applySelected", { count: selected.length })}
-								</button>
-							</div>
-						) : null}
-
-						<div className={styles.pausePresetSave}>
-							<button type="button" onClick={() => setSaveOpen((open) => !open)}>
-								<Save size={13} /> {ts("pauses.savePreset")}
-							</button>
-							{saveOpen ? (
-								<form
-									onSubmit={(event) => {
-										event.preventDefault();
-										setSavedPresets(savePausePreset(presetName, policy));
-										setPresetName("");
-										setSaveOpen(false);
-									}}
-								>
-									<input
-										value={presetName}
-										onChange={(event) => setPresetName(event.target.value)}
-										placeholder={ts("pauses.presetName")}
-										autoFocus
-									/>
-									<button type="submit">{ts("pauses.save")}</button>
-								</form>
-							) : null}
-							{savedPresets.length > 0 ? (
-								<AppSelect
-									aria-label={ts("pauses.savedPresets")}
-									value=""
-									onChange={(event) => {
-										const preset = savedPresets.find(
-											(candidate) => candidate.id === event.target.value,
-										);
-										if (preset) updatePolicy(preset.policy);
-									}}
-								>
-									<option value="">{ts("pauses.savedPresets")}</option>
-									{savedPresets.map((preset) => (
-										<option key={preset.id} value={preset.id}>
-											{preset.name}
-										</option>
-									))}
-								</AppSelect>
-							) : null}
-						</div>
-					</div>
-				</section>
-
-				<section className={styles.audioSection}>
-					<div className={styles.audioSectionHeader}>
-						<strong>
-							{ts("audio.delivery")}
-							<InfoTip label={ts("audio.delivery")} content={ts("audio.deliveryDescription")} />
-						</strong>
-					</div>
-					<div className={styles.audioSettingRow}>
-						<span className={styles.audioSettingTitle}>
-							{ts("audio.normalizeVolume")}
-							<InfoTip
-								label={ts("audio.normalizeVolume")}
-								content={ts("audio.normalizeVolumeDescription")}
-							/>
-						</span>
-						<Toggle
-							checked={settings.normalizeVolume}
-							disabled={!hasDocument}
-							label={ts("audio.normalizeVolume")}
-							onChange={(normalizeVolume) => void setEditorSettings({ normalizeVolume })}
-						/>
-					</div>
-					<div className={styles.inspectorSelectField}>
-						<span className={styles.audioSettingTitle}>
-							{ts("audio.preset")}
-							<InfoTip label={ts("audio.preset")} content={ts("audio.youtubeNote")} />
-						</span>
-						<AppSelect
-							aria-label={ts("audio.preset")}
-							value={settings.audioDeliveryPreset}
-							disabled={!hasDocument || !settings.normalizeVolume}
-							onChange={(event) => setDeliveryPreset(event.target.value as AudioDeliveryPreset)}
-						>
-							<option value="youtube">{ts("audio.youtubeTarget")}</option>
-							<option value="custom">{ts("audio.custom")}</option>
-						</AppSelect>
-					</div>
-					{settings.audioDeliveryPreset === "custom" ? (
-						<div className={styles.audioDeliveryControls}>
-							<SliderCell
-								label={ts("audio.targetLoudness")}
-								helpText={ts("audio.targetLoudnessHelp")}
-								value={settings.audioTargetLufs}
-								min={MIN_AUDIO_TARGET_LUFS}
-								max={MAX_AUDIO_TARGET_LUFS}
-								step={0.5}
-								decimals={1}
-								suffix=" LUFS"
-								disabled={!hasDocument || !settings.normalizeVolume}
-								onChange={(audioTargetLufs) => setEditorSettingsLive({ audioTargetLufs })}
-								onCommit={() => void commitEditorSettings()}
-								flat
-							/>
-							<SliderCell
-								label={ts("audio.peakCeiling")}
-								helpText={ts("audio.peakCeilingHelp")}
-								value={settings.audioPeakCeilingDbtp}
-								min={MIN_AUDIO_PEAK_CEILING_DBTP}
-								max={MAX_AUDIO_PEAK_CEILING_DBTP}
-								step={0.5}
-								decimals={1}
-								suffix=" dBTP"
-								disabled={!hasDocument || !settings.normalizeVolume}
-								onChange={(audioPeakCeilingDbtp) => setEditorSettingsLive({ audioPeakCeilingDbtp })}
-								onCommit={() => void commitEditorSettings()}
-								flat
-							/>
-						</div>
-					) : (
-						<div className={styles.audioTargetSummary} aria-label={ts("audio.youtubeNote")}>
-							<span>{DEFAULT_AUDIO_TARGET_LUFS.toFixed(1)} LUFS</span>
-							<span>{DEFAULT_AUDIO_PEAK_CEILING_DBTP.toFixed(0)} dBTP</span>
-						</div>
-					)}
-				</section>
+											<SliderCell
+												label={ts("audio.peakCeiling")}
+												helpText={ts("audio.peakCeilingHelp")}
+												value={settings.audioPeakCeilingDbtp}
+												min={MIN_AUDIO_PEAK_CEILING_DBTP}
+												max={MAX_AUDIO_PEAK_CEILING_DBTP}
+												step={0.5}
+												decimals={1}
+												suffix=" dBTP"
+												disabled={!hasDocument || !settings.normalizeVolume}
+												onChange={(audioPeakCeilingDbtp) =>
+													setEditorSettingsLive({ audioPeakCeilingDbtp })
+												}
+												onCommit={() => void commitEditorSettings()}
+												flat
+											/>
+										</div>
+									) : (
+										<div className={styles.audioTargetSummary} aria-label={ts("audio.youtubeNote")}>
+											<span>{DEFAULT_AUDIO_TARGET_LUFS.toFixed(1)} LUFS</span>
+											<span>{DEFAULT_AUDIO_PEAK_CEILING_DBTP.toFixed(0)} dBTP</span>
+										</div>
+									)}
+								</section>
+							),
+						},
+					]}
+				/>
 			</div>
 		</Pane>
 	);

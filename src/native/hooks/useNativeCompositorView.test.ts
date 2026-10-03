@@ -1,3 +1,4 @@
+import { usePreviewPreferences } from "@/lib/ai-edition/store/previewPreferences";
 // @vitest-environment jsdom
 /**
  * The fatal-error channel (PR #162).
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 	readCompositorFrame: vi.fn(),
 	destroyCompositorView: vi.fn(),
 	reportCompositorPreviewTiming: vi.fn(),
+	setCompositorRect: vi.fn(),
 }));
 
 vi.mock("../compositorViewClient", () => ({
@@ -29,7 +31,7 @@ vi.mock("../compositorViewClient", () => ({
 	reportCompositorPreviewTiming: mocks.reportCompositorPreviewTiming,
 	setCompositorParam: vi.fn(),
 	setCompositorPlaying: vi.fn(),
-	setCompositorRect: vi.fn(),
+	setCompositorRect: mocks.setCompositorRect,
 }));
 
 import { useNativeCompositorView } from "./useNativeCompositorView";
@@ -64,6 +66,8 @@ const DEVICE_FAILURE =
 describe("useNativeCompositorView", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		usePreviewPreferences.setState({ quality: "performance" });
+		mocks.setCompositorRect.mockResolvedValue({ ok: true });
 		vi.unstubAllGlobals();
 		mocks.reportCompositorPreviewTiming.mockResolvedValue({ ok: true });
 		mocks.destroyCompositorView.mockResolvedValue({ ok: true });
@@ -87,7 +91,7 @@ describe("useNativeCompositorView", () => {
 		};
 	}
 
-	it.each([60, 120, 144])("caps preview polling at 30 Hz on a %i Hz display", async (hz) => {
+	it.each([60, 120, 144])("caps preview polling at 60 Hz on a %i Hz display", async (hz) => {
 		const frame = controlledFrames();
 		mocks.createCompositorView.mockResolvedValue({ id: 7 });
 		mocks.readCompositorFrame.mockResolvedValue(null);
@@ -95,8 +99,8 @@ describe("useNativeCompositorView", () => {
 		const view = renderHook(() => useNativeCompositorView(ref));
 		await act(async () => undefined);
 		for (let tick = 0; tick < hz; tick += 1) await frame((tick * 1000) / hz);
-		expect(mocks.readCompositorFrame.mock.calls.length).toBeGreaterThanOrEqual(29);
-		expect(mocks.readCompositorFrame.mock.calls.length).toBeLessThanOrEqual(31);
+		expect(mocks.readCompositorFrame.mock.calls.length).toBeGreaterThanOrEqual(59);
+		expect(mocks.readCompositorFrame.mock.calls.length).toBeLessThanOrEqual(61);
 		view.unmount();
 	});
 
@@ -204,6 +208,70 @@ describe("useNativeCompositorView", () => {
 		view.unmount();
 	});
 
+	it("keeps the painted frame until a resized replacement is ready", async () => {
+		const tick = controlledFrames();
+		mocks.createCompositorView.mockResolvedValue({ id: 7 });
+		const context = { drawImage: vi.fn(), putImageData: vi.fn() };
+		const ref = stubCanvasRef();
+		ref.current.getContext = vi.fn(() => context) as unknown as HTMLCanvasElement["getContext"];
+		ref.current.getBoundingClientRect = () => ({ left: 0, top: 0, width: 2, height: 2 }) as DOMRect;
+		const first = { close: vi.fn() } as unknown as ImageBitmap;
+		vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue(first));
+		mocks.readCompositorFrame.mockResolvedValue({
+			gen: 1,
+			width: 2,
+			height: 2,
+			data: new Uint8Array(16),
+			sourceTimeSec: 1,
+			clipIndex: 0,
+			transportGeneration: 1,
+		});
+		const view = renderHook(() => useNativeCompositorView(ref));
+		await act(async () => undefined);
+		await tick(0);
+		expect(context.drawImage).toHaveBeenCalledWith(first, 0, 0);
+		mocks.readCompositorFrame.mockResolvedValue(null);
+		ref.current.getBoundingClientRect = () => ({ left: 0, top: 0, width: 4, height: 4 }) as DOMRect;
+		window.dispatchEvent(new Event("resize"));
+		await tick(34);
+		expect(mocks.setCompositorRect).toHaveBeenLastCalledWith(7, {
+			x: 0,
+			y: 0,
+			width: 4,
+			height: 4,
+		});
+		// Changing these properties erases the visible canvas, even before the next frame arrives.
+		expect(ref.current.width).toBe(2);
+		expect(ref.current.height).toBe(2);
+		let ready!: (bitmap: ImageBitmap) => void;
+		vi.stubGlobal(
+			"createImageBitmap",
+			vi.fn(
+				() =>
+					new Promise<ImageBitmap>((resolve) => {
+						ready = resolve;
+					}),
+			),
+		);
+		mocks.readCompositorFrame.mockResolvedValue({
+			gen: 2,
+			width: 4,
+			height: 4,
+			data: new Uint8Array(64),
+			sourceTimeSec: 1,
+			clipIndex: 0,
+			transportGeneration: 1,
+		});
+		await tick(68);
+		expect(ref.current.width).toBe(2);
+		const replacement = { close: vi.fn() } as unknown as ImageBitmap;
+		await act(async () => ready(replacement));
+		expect(ref.current.width).toBe(4);
+		expect(ref.current.height).toBe(4);
+		expect(context.drawImage).toHaveBeenLastCalledWith(replacement, 0, 0);
+		view.unmount();
+	});
+
 	it("discards an outstanding bitmap when the preview is resized", async () => {
 		const frame = controlledFrames();
 		let finishBitmap: (bitmap: ImageBitmap) => void = () => undefined;
@@ -227,6 +295,8 @@ describe("useNativeCompositorView", () => {
 			transportGeneration: 1,
 		});
 		const ref = stubCanvasRef();
+		ref.current.getBoundingClientRect = () =>
+			({ left: 0, top: 0, width: 640, height: 360 }) as DOMRect;
 		const context = { drawImage: vi.fn(), putImageData: vi.fn() };
 		ref.current.getContext = vi.fn(() => context) as unknown as HTMLCanvasElement["getContext"];
 		const onFrame = vi.fn();
@@ -238,8 +308,8 @@ describe("useNativeCompositorView", () => {
 		await frame(34);
 		const bitmap = { close: vi.fn() } as unknown as ImageBitmap;
 		await act(async () => finishBitmap(bitmap));
-		expect(ref.current.width).toBe(800);
-		expect(ref.current.height).toBe(450);
+		expect(ref.current.width).toBe(640);
+		expect(ref.current.height).toBe(360);
 		expect(context.drawImage).not.toHaveBeenCalled();
 		expect(onFrame).not.toHaveBeenCalled();
 		expect(bitmap.close).toHaveBeenCalledOnce();
@@ -289,7 +359,7 @@ describe("useNativeCompositorView", () => {
 		);
 	});
 
-	it("creates a Retina preview at the visible CSS size", async () => {
+	it("creates a Performance preview at the visible CSS size", async () => {
 		vi.stubGlobal("devicePixelRatio", 2);
 		mocks.createCompositorView.mockResolvedValue({ id: 7 });
 		mocks.readCompositorFrame.mockResolvedValue(null);
@@ -314,6 +384,70 @@ describe("useNativeCompositorView", () => {
 				{ screenPath: "rec.mp4" },
 			),
 		);
+	});
+
+	it("changes quality on the current decoder and follows display density", async () => {
+		const frame = controlledFrames();
+		vi.stubGlobal("devicePixelRatio", 2);
+		mocks.createCompositorView.mockResolvedValue({ id: 7 });
+		mocks.readCompositorFrame.mockResolvedValue(null);
+		const ref = stubCanvasRef();
+		vi.spyOn(ref.current, "getBoundingClientRect").mockReturnValue({
+			left: 0,
+			top: 0,
+			width: 640,
+			height: 360,
+		} as DOMRect);
+		const view = renderHook(() => useNativeCompositorView(ref));
+		await act(async () => undefined);
+		act(() => usePreviewPreferences.getState().setQuality("sharp"));
+		await frame(40);
+		expect(mocks.setCompositorRect).toHaveBeenLastCalledWith(7, {
+			x: 0,
+			y: 0,
+			width: 1280,
+			height: 720,
+		});
+		expect(mocks.createCompositorView).toHaveBeenCalledTimes(1);
+		expect(mocks.destroyCompositorView).not.toHaveBeenCalled();
+		act(() => usePreviewPreferences.getState().setQuality("performance"));
+		await frame(80);
+		expect(mocks.setCompositorRect).toHaveBeenLastCalledWith(7, {
+			x: 0,
+			y: 0,
+			width: 640,
+			height: 360,
+		});
+		view.unmount();
+	});
+	it("applies a quality change made while native creation is pending", async () => {
+		const frame = controlledFrames();
+		vi.stubGlobal("devicePixelRatio", 2);
+		let resolveCreate!: (value: { id: number }) => void;
+		mocks.createCompositorView.mockReturnValue(
+			new Promise((resolve) => {
+				resolveCreate = resolve;
+			}),
+		);
+		mocks.readCompositorFrame.mockResolvedValue(null);
+		const ref = stubCanvasRef();
+		vi.spyOn(ref.current, "getBoundingClientRect").mockReturnValue({
+			left: 0,
+			top: 0,
+			width: 640,
+			height: 360,
+		} as DOMRect);
+		const view = renderHook(() => useNativeCompositorView(ref));
+		act(() => usePreviewPreferences.getState().setQuality("sharp"));
+		await frame(40);
+		await act(async () => resolveCreate({ id: 7 }));
+		expect(mocks.setCompositorRect).toHaveBeenLastCalledWith(7, {
+			x: 0,
+			y: 0,
+			width: 1280,
+			height: 720,
+		});
+		view.unmount();
 	});
 
 	it("surfaces the native message when the render thread dies", async () => {

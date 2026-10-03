@@ -402,3 +402,12 @@ describe("wallpaper legacy normalization", () => {
 		expect(normalized.wallpaper).toBe("/wallpapers/wallpaper1.jpg");
 	});
 });
+
+it("normalizes squircle camera rounding while preserving missing legacy values", () => {
+	expect(
+		normalizeProjectEditor({ webcamMaskShape: "squircle", webcamCornerRadius: 35 }),
+	).toMatchObject({ webcamMaskShape: "squircle", webcamCornerRadius: 35 });
+	expect(normalizeProjectEditor({}).webcamCornerRadius).toBeUndefined();
+	expect(normalizeProjectEditor({ webcamCornerRadius: 100 }).webcamCornerRadius).toBe(50);
+	expect(normalizeProjectEditor({ webcamCornerRadius: NaN }).webcamCornerRadius).toBeUndefined();
+});

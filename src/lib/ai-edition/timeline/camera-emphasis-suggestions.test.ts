@@ -49,6 +49,7 @@ describe("automatic camera emphasis", () => {
 		expect(build()).toEqual([
 			{
 				span: { start: 0, end: 10_000 },
+				automaticDirection: { version: 1, reason: "speech-with-quiet-screen" },
 				mode: "emphasis",
 				cameraScale: 1.35,
 				source: "auto",
@@ -267,6 +268,7 @@ describe("automatic camera emphasis", () => {
 		expect(result).toEqual([
 			{
 				span: { start: 42_250, end: 51_150 },
+				automaticDirection: { version: 1, reason: "speech-with-quiet-screen" },
 				mode: "emphasis",
 				cameraScale: 1.35,
 				source: "auto",
@@ -614,6 +616,7 @@ describe("automatic camera emphasis", () => {
 		expect(regions).toEqual([
 			{
 				id: "camera-auto",
+				automaticDirection: { version: 1, reason: "speech-with-quiet-screen" },
 				clipId: "clip-1",
 				sourceStartSec: 0,
 				sourceEndSec: 10,

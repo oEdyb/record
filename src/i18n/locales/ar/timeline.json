@@ -33,7 +33,18 @@
 		"emptyText": "نص فارغ",
 		"cameraEmphasis": "إبراز الكاميرا",
 		"cameraFullscreen": "كاميرا كاملة الشاشة",
-		"cameraFullscreenItem": "كاميرا كاملة الشاشة {{index}}"
+		"cameraFullscreenItem": "كاميرا كاملة الشاشة {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "لم يتم تحميل أي فيديو",
@@ -76,7 +87,7 @@
 		"arrangeClips": "ترتيب المقاطع",
 		"arrangeClipsHint": "اسحب المقاطع أدناه لإعادة ترتيبها أو إسقاط مقاطع جديدة",
 		"newAnnotation": "شرح",
-		"dragToReorderHint": "اسحب لإعادة الترتيب · انقر نقرًا مزدوجًا لتعديل نقطتي البداية والنهاية",
+		"dragToReorderHint": "اسحب لإعادة الترتيب, انقر نقرًا مزدوجًا لتعديل نقطتي البداية والنهاية",
 		"editInOutPoints": "تعديل نقطتي البداية والنهاية",
 		"deleteClip": "حذف المقطع",
 		"dropToAdd": "أفلت للإضافة إلى المخطط الزمني",

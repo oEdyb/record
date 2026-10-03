@@ -623,6 +623,13 @@ pub fn run_composited_multi(
         }
         let mut assembled_audio =
             spool::assemble(clip_audio, &plan, params.even_volume, &mut check)?;
+        if let Some(scene) = scene.as_ref() {
+            crate::audio::overlays::mix_into_program(
+                &mut assembled_audio,
+                &scene.audio_overlays,
+                &mut check,
+            )?;
+        }
         audio_mastering = spool::master(
             &mut assembled_audio,
             AudioMasteringSettings::new(

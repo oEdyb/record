@@ -910,6 +910,30 @@ describe("useTimeline motion history", () => {
 		expect(restoredLegacy.cameraFullscreenRegions[0].motionStyle).toBe("smooth");
 	});
 
+	it("sets how much an emphasis region grows the camera, within the shared bound", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.updateCameraScale("camera-motion", 1.75);
+		});
+		const legacy = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ cameraScale?: number }>;
+		};
+		expect(legacy.cameraFullscreenRegions[0].cameraScale).toBe(1.75);
+		await act(async () => {
+			await result.current.updateCameraScale("camera-motion", 9);
+		});
+		const clamped = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ cameraScale?: number }>;
+		};
+		expect(clamped.cameraFullscreenRegions[0].cameraScale).toBe(2);
+		act(() => expect(undo()).toBe(true));
+		act(() => expect(undo()).toBe(true));
+		const restored = useProjectStore.getState().document?.legacyEditor as {
+			cameraFullscreenRegions: Array<{ cameraScale?: number }>;
+		};
+		expect(restored.cameraFullscreenRegions[0].cameraScale).toBeUndefined();
+	});
+
 	it("undoes independent screen and camera motion-speed changes", async () => {
 		const { result } = renderTimeline();
 		await act(async () => {

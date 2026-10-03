@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { StrictMode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import type { AxcutClip, AxcutTrimRange } from "@/lib/ai-edition/schema";
 import { type VideoSource, VirtualPreview } from "./VirtualPreview";
 
@@ -309,5 +311,300 @@ describe("VirtualPreview playback across a clip boundary", () => {
 		act(() => fireEvent.loadedMetadata(element));
 
 		expect(onTimeChange).toHaveBeenLastCalledWith(4);
+	});
+});
+
+describe("VirtualPreview seek while playing", () => {
+	it("keeps playing from the new spot when the playhead is moved into another clip", () => {
+		const clips = [clip("clip_1", "a1", 0, 10, 0), clip("clip_2", "a2", 0, 10, 10)];
+		const sources: VideoSource[] = [
+			{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" },
+			{ id: "a2", src: "file:///tmp/a2.mp4", label: "a2" },
+		];
+		const onTimeChange = vi.fn();
+		const { container, rerender } = render(
+			<VirtualPreview videoSources={sources} clips={clips} onTimeChange={onTimeChange} />,
+		);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		const firstVideo = driveVideo(first);
+		act(() => fireEvent.loadedMetadata(first));
+		firstVideo.play();
+		firstVideo.seekTo(2);
+		tick();
+
+		rerender(
+			<VirtualPreview
+				videoSources={sources}
+				clips={clips}
+				seekTarget={{ timeSec: 13, requestId: 1 }}
+				onTimeChange={onTimeChange}
+			/>,
+		);
+		const second = container.querySelector("video") as HTMLVideoElement;
+		expect(second).not.toBe(first);
+		driveVideo(second);
+		act(() => fireEvent.loadedMetadata(second));
+		expect(second.currentTime).toBe(3);
+		expect(second.play).toHaveBeenCalled();
+	});
+
+	it("hands the parent the video element that is on screen after an asset switch", () => {
+		const clips = [clip("clip_1", "a1", 0, 10, 0), clip("clip_2", "a2", 0, 10, 10)];
+		const sources: VideoSource[] = [
+			{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" },
+			{ id: "a2", src: "file:///tmp/a2.mp4", label: "a2" },
+		];
+		const onVideoElement = vi.fn();
+		const { container, rerender } = render(
+			<VirtualPreview
+				videoSources={sources}
+				clips={clips}
+				onTimeChange={vi.fn()}
+				onVideoElement={onVideoElement}
+			/>,
+		);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		driveVideo(first);
+		act(() => fireEvent.loadedMetadata(first));
+		expect(onVideoElement).toHaveBeenLastCalledWith(first);
+		rerender(
+			<VirtualPreview
+				videoSources={sources}
+				clips={clips}
+				seekTarget={{ timeSec: 13, requestId: 1 }}
+				onTimeChange={vi.fn()}
+				onVideoElement={onVideoElement}
+			/>,
+		);
+		const second = container.querySelector("video") as HTMLVideoElement;
+		expect(second).not.toBe(first);
+		expect(onVideoElement).toHaveBeenLastCalledWith(second);
+		expect(second.isConnected).toBe(true);
+		expect(first.isConnected).toBe(false);
+	});
+
+	it("moves a paused preview without starting playback", () => {
+		const clips = [clip("clip_1", "a1", 0, 10, 0), clip("clip_2", "a2", 0, 10, 10)];
+		const sources: VideoSource[] = [
+			{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" },
+			{ id: "a2", src: "file:///tmp/a2.mp4", label: "a2" },
+		];
+		const { container, rerender } = render(
+			<VirtualPreview videoSources={sources} clips={clips} onTimeChange={vi.fn()} />,
+		);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		driveVideo(first);
+		act(() => fireEvent.loadedMetadata(first));
+		rerender(
+			<VirtualPreview
+				videoSources={sources}
+				clips={clips}
+				seekTarget={{ timeSec: 13, requestId: 1 }}
+				onTimeChange={vi.fn()}
+			/>,
+		);
+		const second = container.querySelector("video") as HTMLVideoElement;
+		driveVideo(second);
+		act(() => fireEvent.loadedMetadata(second));
+		expect(second.currentTime).toBe(3);
+		expect(second.play).not.toHaveBeenCalled();
+	});
+});
+
+describe("VirtualPreview prepared clock hand-off", () => {
+	it.each([
+		false,
+		true,
+	])("promotes a ready element without loading or seeking at the cut (same asset: %s)", (sameAsset) => {
+		const clips = [clip("c1", "a1", 0, 10, 0), clip("c2", sameAsset ? "a1" : "a2", 2, 10, 10)];
+		const sources = [
+			{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" },
+			{ id: "a2", src: "file:///tmp/a2.mp4", label: "a2" },
+		];
+		const onVideoElement = vi.fn();
+		const onLoadedMetadata = vi.fn();
+		const onTimeChange = vi.fn();
+		const { container } = render(
+			<VirtualPreview
+				videoSources={sources}
+				clips={clips}
+				onVideoElement={onVideoElement}
+				onLoadedMetadata={onLoadedMetadata}
+				onTimeChange={onTimeChange}
+			/>,
+		);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		const firstClock = driveVideo(first);
+		act(() => fireEvent.loadedMetadata(first));
+		firstClock.play();
+		firstClock.seekTo(8);
+		tick();
+		expect(container.querySelectorAll("video")).toHaveLength(1);
+		firstClock.seekTo(9.4);
+		tick();
+		const next = container.querySelectorAll("video")[1];
+		expect(next).toBeDefined();
+		driveVideo(next);
+		act(() => fireEvent.loadedMetadata(next));
+		expect(next.currentTime).toBe(2);
+		onLoadedMetadata.mockClear();
+		expect(next.paused).toBe(true);
+		const seek = vi.spyOn(next, "currentTime", "set");
+		firstClock.seekTo(9.96);
+		tick();
+		expect(container.querySelector("video")).toBe(next);
+		expect(onVideoElement).toHaveBeenLastCalledWith(next);
+		expect(onTimeChange).toHaveBeenLastCalledWith(10);
+		expect(next.play).toHaveBeenCalledOnce();
+		expect(onLoadedMetadata).toHaveBeenCalledWith(10, sameAsset ? "a1" : "a2", 0, 0);
+		expect(seek).not.toHaveBeenCalled();
+		expect(first.paused).toBe(true);
+		expect(container.querySelectorAll("video")).toHaveLength(1);
+	});
+
+	it("does not let a prepared forward fragment override a backward playing seek", () => {
+		const clips = [clip("c1", "a1", 0, 10, 0), clip("c2", "a2", 0, 10, 10)];
+		const sources = [
+			{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" },
+			{ id: "a2", src: "file:///tmp/a2.mp4", label: "a2" },
+		];
+		const onTimeChange = vi.fn();
+		const { container, rerender } = render(
+			<VirtualPreview videoSources={sources} clips={clips} onTimeChange={onTimeChange} />,
+		);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		const clock = driveVideo(first);
+		act(() => fireEvent.loadedMetadata(first));
+		clock.play();
+		clock.seekTo(9.4);
+		tick();
+		const next = container.querySelectorAll("video")[1];
+		driveVideo(next);
+		act(() => fireEvent.loadedMetadata(next));
+		rerender(
+			<VirtualPreview
+				videoSources={sources}
+				clips={clips}
+				onTimeChange={onTimeChange}
+				seekTarget={{ timeSec: 3, requestId: 1 }}
+			/>,
+		);
+		tick();
+		expect(container.querySelector("video")).toBe(first);
+		expect(first.currentTime).toBe(3);
+		expect(first.paused).toBe(false);
+		expect(onTimeChange).toHaveBeenLastCalledWith(3);
+	});
+});
+
+describe("VirtualPreview hand-off event and audio ownership", () => {
+	const clips = [clip("c1", "a1", 0, 10, 0), clip("c2", "a2", 2, 10, 10)];
+	const sources = [
+		{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" },
+		{ id: "a2", src: "file:///tmp/a2.mp4", label: "a2" },
+	];
+	it("detaches the outgoing pause listener before stopping its clock", () => {
+		const stopped = vi.fn();
+		function Parent() {
+			const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+			useEffect(() => {
+				video?.addEventListener("pause", stopped);
+				return () => video?.removeEventListener("pause", stopped);
+			}, [video]);
+			return <VirtualPreview clips={clips} videoSources={sources} onVideoElement={setVideo} />;
+		}
+		const { container } = render(<Parent />);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		const clock = driveVideo(first);
+		first.pause = vi.fn(() => first.dispatchEvent(new Event("pause")));
+		act(() => fireEvent.loadedMetadata(first));
+		clock.play();
+		clock.seekTo(9.4);
+		tick();
+		const next = container.querySelectorAll("video")[1];
+		driveVideo(next);
+		act(() => fireEvent.loadedMetadata(next));
+		clock.seekTo(9.96);
+		tick();
+		expect(first.pause).toHaveBeenCalledOnce();
+		expect(stopped).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		false,
+		true,
+	])("prepares Clean Voice with listening level and recovers a prior same-asset failure (%s)", (recoverFailure) => {
+		const cleanSources = sources.map((source) => ({ ...source, audioSrc: `${source.src}.m4a` }));
+		const previous = usePreviewAudio.getState();
+		usePreviewAudio.setState({ volume: 0.35, muted: false });
+		const audioClips = recoverFailure ? [clips[0], { ...clips[1], assetId: "a1" }] : clips;
+		const { container } = render(<VirtualPreview clips={audioClips} videoSources={cleanSources} />);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		const clock = driveVideo(first);
+		const oldAudio = container.querySelector("audio") as HTMLAudioElement;
+		driveAudio(oldAudio);
+		act(() => {
+			fireEvent.loadedMetadata(first);
+			fireEvent.canPlay(oldAudio);
+		});
+		if (recoverFailure) act(() => fireEvent.error(oldAudio));
+		clock.play();
+		clock.seekTo(9.4);
+		tick();
+		const next = container.querySelectorAll("video")[1];
+		const audio = container.querySelectorAll("audio")[recoverFailure ? 0 : 1];
+		driveVideo(next);
+		driveAudio(audio);
+		Object.defineProperty(audio, "readyState", { configurable: true, value: 4 });
+		act(() => {
+			fireEvent.loadedMetadata(next);
+			fireEvent.loadedMetadata(audio);
+		});
+		expect(audio.currentTime).toBe(2);
+		clock.seekTo(9.96);
+		tick();
+		expect(container.querySelector("audio")).toBe(audio);
+		expect(next.muted).toBe(true);
+		expect(audio.volume).toBe(0.35);
+		expect(audio.muted).toBe(false);
+		expect(audio.play).toHaveBeenCalledOnce();
+		if (!recoverFailure) expect(oldAudio.pause).toHaveBeenCalled();
+		usePreviewAudio.setState(previous);
+	});
+
+	it("shares one audio output across StrictMode effects and closes it on unmount", async () => {
+		const disconnect = vi.fn();
+		const close = vi.fn(() => Promise.resolve());
+		const connect = vi.fn();
+		const createMediaElementSource = vi.fn(() => ({ connect, disconnect }));
+		const contexts = vi.fn();
+		class TestAudioContext {
+			destination = {};
+			createMediaElementSource = createMediaElementSource;
+			close = close;
+			constructor() {
+				contexts();
+			}
+		}
+		vi.stubGlobal("AudioContext", TestAudioContext);
+		const { container, unmount } = render(
+			<StrictMode>
+				<VirtualPreview clips={clips} videoSources={sources} />
+			</StrictMode>,
+		);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		driveVideo(first);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(contexts).toHaveBeenCalledOnce();
+		expect(createMediaElementSource).toHaveBeenCalledOnce();
+		expect(close).not.toHaveBeenCalled();
+		unmount();
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(disconnect).toHaveBeenCalledOnce();
+		expect(close).toHaveBeenCalledOnce();
 	});
 });

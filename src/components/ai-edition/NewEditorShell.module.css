@@ -53,8 +53,8 @@
 .audioSection {
 	display: flex;
 	flex-direction: column;
-	gap: 12px;
-	padding: var(--editor-section-space) 0;
+	gap: 8px;
+	padding: 12px 0;
 	border-bottom: 1px solid var(--border-soft);
 }
 .audioSection:first-child {
@@ -75,11 +75,12 @@
 	color: var(--fg-2);
 }
 .audioSettingRow {
+	box-sizing: border-box;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
-	min-height: var(--editor-inspector-control-h);
+	min-height: var(--editor-inspector-row-h);
 }
 .audioSettingDisabled {
 	opacity: 0.66;
@@ -185,6 +186,7 @@
 	gap: 13px;
 }
 .pauseToggleRow {
+	min-height: var(--editor-inspector-row-h);
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -1148,6 +1150,23 @@
 .transport .spacer {
 	flex: 1;
 }
+.transport .volume {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	margin-right: 10px;
+	flex-shrink: 0;
+}
+.transport .volume[data-silent="true"] .tbtn {
+	color: var(--muted);
+}
+.transport .volumeInput {
+	width: 64px;
+	height: 3px;
+	margin: 0;
+	accent-color: var(--fg);
+	cursor: pointer;
+}
 
 /* ─── right panel-stack (one pane visible at a time) ──────────── */
 .rightStack {
@@ -1228,7 +1247,7 @@
 	padding: 0;
 }
 .flatInspectorPane .sliderCell {
-	padding: 12px 0 var(--sp-4);
+	padding: 8px 0 10px;
 	border: 0;
 	border-bottom: 1px solid var(--border-soft);
 	border-radius: 0;
@@ -1256,7 +1275,7 @@
 	margin: 0 0 14px;
 }
 .inspectorSection {
-	padding: var(--editor-section-space) 0;
+	padding: 12px 0;
 	border-bottom: 1px solid var(--border-soft);
 }
 .inspectorSection:last-child {
@@ -1516,7 +1535,7 @@
 }
 .cameraShapeControl {
 	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	grid-template-columns: repeat(5, minmax(0, 1fr));
 	gap: 2px;
 	padding: 3px;
 	margin-top: 9px;
@@ -1602,7 +1621,7 @@
 .cameraPositionPad {
 	position: relative;
 	width: 100%;
-	aspect-ratio: 16 / 9;
+	aspect-ratio: 2.5;
 	overflow: hidden;
 	border: 1px solid var(--border-soft);
 	border-radius: 8px;
@@ -1909,46 +1928,6 @@
 }
 .gradientEditorBody {
 	padding-bottom: 4px;
-}
-
-/* ─── toggle (switch) ──────────────────────────────────────────── */
-.toggle {
-	width: 36px;
-	height: 20px;
-	border: 0;
-	padding: 0;
-	background: var(--border-hi);
-	border-radius: 9999px;
-	position: relative;
-	cursor: pointer;
-	transition: background 150ms ease;
-	flex-shrink: 0;
-}
-.toggle::after {
-	content: "";
-	position: absolute;
-	top: 2px;
-	left: 2px;
-	width: 16px;
-	height: 16px;
-	background: var(--accent-on);
-	border-radius: 50%;
-	box-shadow: 0 1px 3px rgba(22, 23, 29, 0.2);
-	transition: transform 150ms ease;
-}
-.toggle.isOn {
-	background: var(--brand);
-}
-.toggle.isOn::after {
-	transform: translateX(16px);
-}
-.toggle:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-.toggle:focus-visible {
-	outline: 2px solid var(--editor-accent);
-	outline-offset: 2px;
 }
 
 /* ─── slider cell (effect) ─────────────────────────────────────── */
@@ -3261,3 +3240,23 @@
 	margin-top: 2px;
 	opacity: 0.8;
 }
+
+/* Captions uses the shared inspector sections; row boundaries are carried by
+   those sections rather than repeated under every control. */
+.captionInspector .paneRow { border-bottom: 0; min-height: var(--editor-inspector-row-h); gap: 12px; padding: 4px 0; }
+.captionInspector .sliderCell { border-bottom: 0; padding: 8px 0 10px; }
+.captionInspector .inspectorCompactSelect { max-width: 150px; min-width: 0; }
+.captionInspector .inspectorSegmented { margin: 8px 0; }
+.captionDisclosure { border-top: 1px solid var(--border-soft); padding: 12px 0 4px; }
+.captionDisclosure summary { cursor: pointer; color: var(--fg-2); font: 500 12px/1.5 var(--font-body); padding: 4px 0; }
+.captionDisclosure summary:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 3px; border-radius: 3px; }
+.captionDisclosure .captionFinePrint { font-size: 11px; }
+
+/* Dense inspector rows: separators mark sections, not every setting. */
+.flatInspectorPane .paneRow, .flatInspectorPane .sliderCell { border-bottom: 0; }
+.flatInspectorPane .inspectorFieldGroup { padding-top: 12px; }
+.flatInspectorPane .cameraPositionPad { max-height: 112px; }
+
+.flatInspectorPane .bgGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.flatInspectorPane .bgThumb { aspect-ratio: 4 / 3; height: auto; }
+.flatInspectorPane .uploadBtn { width: 100%; min-height: 32px; justify-content: center; background: var(--surface-2); }

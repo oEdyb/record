@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "جودة المعاينة",
+		"sharp": "واضحة",
+		"performance": "الأداء"
+	},
 	"newRecording": {
 		"title": "العودة إلى المسجل",
 		"description": "تم حفظ جلستك الحالية.",
@@ -89,6 +94,9 @@
 		"toggleTheme": "تبديل المظهر",
 		"settings": "الإعدادات",
 		"export": "تصدير",
+		"exporting": "جارٍ التصدير",
+		"exportProgressTitle": "اكتمل {{pct}}٪، متبقٍ {{eta}}. فتح التصدير",
+		"exportProgressPreparing": "جارٍ تجهيز التصدير. فتح التصدير",
 		"renameProject": "إعادة تسمية المشروع",
 		"noProject": "لا يوجد مشروع",
 		"changeLanguage": "تغيير اللغة",
@@ -97,7 +105,8 @@
 			"media": "الوسائط",
 			"edit": "تحرير",
 			"rec": "تسجيل"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "المصدر",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "فشل التصدير.",
 		"writingFile": "جارٍ كتابة الملف...",
 		"renderingFrames": "جارٍ عرض الإطارات",
-		"framesEta": "{{current}} / {{total}} إطار · متبقٍ {{eta}}",
+		"framesEta": "{{current}} / {{total}} إطار, متبقٍ {{eta}}",
 		"preparingEncoder": "جارٍ تجهيز المرمّز...",
+		"cancelExport": "إلغاء التصدير",
+		"backgroundHint": "يمكنك إغلاق هذه النافذة ومتابعة التحرير. يظهر التقدم على زر التصدير. التعديلات التي تجريها الآن ليست جزءًا من هذا التصدير.",
 		"close": "إغلاق",
 		"cancel": "إلغاء",
 		"rendering": "جارٍ العرض...",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "فشلت كتابة الملف",
 		"qualityUpscaleWarning": "تكبير الدقة",
 		"exportedVideoOf": "من الفيديو تم تصديره في",
-		"nothingToExport": "لا يوجد شيء للتصدير — المخطط الزمني فارغ."
+		"nothingToExport": "لا يوجد شيء للتصدير — المخطط الزمني فارغ.",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "إعادة تعيين نقطة التركيز",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "تكبر الكاميرا بسلاسة مع بقاء الشاشة ظاهرة، ثم تعود إلى حجمها الطبيعي.",
 		"cameraFullscreenDescription": "أثناء تشغيل هذه المنطقة تملأ الكاميرا الإطار بالكامل — بلا حدود ولا استدارة ولا خلفية — ثم تعود بسلاسة في النهاية. اسحب حواف المنطقة على المخطط الزمني لتغيير وقت بدايتها ومدتها.",
 		"deleteRegion": "حذف المنطقة",
-		"freehandRendersAsBox": "الشكل الحر يُغطى بمستطيله المحيط في التصدير — تغطية زائدة، وليست ناقصة."
+		"freehandRendersAsBox": "الشكل الحر يُغطى بمستطيله المحيط في التصدير — تغطية زائدة، وليست ناقصة.",
+		"cameraSize": "حجم الكاميرا"
 	},
 	"leftPanel": {
 		"mediaTitle": "الوسائط",
@@ -295,7 +309,7 @@
 			"title": "سجل المحادثات",
 			"subtitle": "التبديل بين الجلسات أو إنشاء جلسة جديدة",
 			"empty": "لا توجد محادثات بعد.",
-			"msgsCount": "{{count}} رسالة · {{date}}"
+			"msgsCount": "{{count}} رسالة, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "تابع مشروعًا موجودًا أو تصفح ملفاتك",
 		"searchPlaceholder": "بحث في المشاريع…",
 		"noMatches": "لا توجد مشاريع تطابق \"{{query}}\".",
-		"navigateHint": "للتنقل ·",
+		"navigateHint": "للتنقل",
 		"openHint": "للفتح",
 		"browseFiles": "تصفح الملفات…",
 		"deleteProject": "حذف المشروع",
@@ -358,7 +372,10 @@
 		"previousClip": "المقطع السابق",
 		"nextClip": "المقطع التالي",
 		"loop": "تكرار",
-		"seekVideo": "التنقل في الفيديو"
+		"seekVideo": "التنقل في الفيديو",
+		"mute": "كتم صوت المعاينة",
+		"unmute": "إلغاء كتم صوت المعاينة",
+		"previewVolume": "مستوى صوت المعاينة"
 	},
 	"shell": {
 		"aiEditor": "محرّر الذكاء الاصطناعي",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "تجربة لمدة 14 يومًا",
-			"trialDay": "التجربة · {{count}} يوم",
-			"trialDays": "التجربة · {{count}} أيام",
-			"offline": "Klippt Pro · دون اتصال",
+			"trialDay": "التجربة {{count}} يوم",
+			"trialDays": "التجربة {{count}} أيام",
+			"offline": "Klippt Pro, دون اتصال",
 			"readOnly": "للقراءة فقط"
 		},
 		"eyebrowReadOnly": "وصول للقراءة فقط",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "لا توجد بطاقة رسومات متوافقة — تتم المعالجة على المعالج، لذا يكون التشغيل أبطأ.",
 		"exportWarning": "لا توجد بطاقة رسومات متوافقة: يتم هذا التصدير على المعالج وسيستغرق وقتًا أطول بكثير من المعتاد."
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

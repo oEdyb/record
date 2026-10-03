@@ -2,6 +2,7 @@ import type { CompositorFrameTiming } from "./contracts";
 
 export interface NativeTransportTarget {
 	viewId: number;
+	sceneIdentity?: object;
 	clipId: string;
 	clipIndex: number;
 	screenPath: string;
@@ -52,6 +53,7 @@ export function needsTransportSync(
 	if (!previous) return true;
 	if (
 		previous.viewId !== next.viewId ||
+		previous.sceneIdentity !== next.sceneIdentity ||
 		previous.clipId !== next.clipId ||
 		previous.clipIndex !== next.clipIndex ||
 		previous.screenPath !== next.screenPath ||

@@ -31,7 +31,11 @@
 			"fontSize": "Размер шрифта",
 			"decreaseFontSize": "Уменьшить размер шрифта",
 			"increaseFontSize": "Увеличить размер шрифта",
-			"mirror": "Отразить по горизонтали"
+			"mirror": "Отразить по горизонтали",
+			"more": "Больше элементов управления",
+			"less": "Меньше элементов управления",
+			"close": "Закрыть заметки",
+			"move": "Переместить заметки"
 		}
 	},
 	"audio": {
@@ -71,7 +75,7 @@
 		"inProgress": "Идёт запись",
 		"saving": "Сохранение...",
 		"removePreviousClip": "Удалить предыдущий клип",
-		"removePreviousClipWithDuration": "Удалить предыдущий клип · {{duration}}",
+		"removePreviousClipWithDuration": "Удалить предыдущий клип ({{duration}})",
 		"clipRemoved": "Удалено"
 	},
 	"language": "Язык",

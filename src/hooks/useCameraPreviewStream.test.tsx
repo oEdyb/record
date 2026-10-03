@@ -3,11 +3,13 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const probeWebcamFormats = vi.hoisted(() => vi.fn(async () => []));
+const probeWebcamFormatsCached = vi.hoisted(() =>
+	vi.fn(async (): Promise<{ width: number; height: number; fps: number }[]> => []),
+);
 
 vi.mock("../lib/webcamFormats", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../lib/webcamFormats")>()),
-	probeWebcamFormats,
+	probeWebcamFormatsCached,
 }));
 
 import { useCameraPreviewStream } from "./useCameraPreviewStream";
@@ -16,9 +18,17 @@ let originalMediaDevices: PropertyDescriptor | undefined;
 
 function cameraStream() {
 	const stop = vi.fn();
+	let settings = { width: 1920, height: 1080, frameRate: 30 };
+	const applyConstraints = vi.fn(async (constraints: MediaTrackConstraints) => {
+		const width = (constraints.width as { exact?: number } | undefined)?.exact;
+		const height = (constraints.height as { exact?: number } | undefined)?.exact;
+		const fps = (constraints.frameRate as { ideal?: number } | undefined)?.ideal;
+		if (width && height && fps) settings = { width, height, frameRate: fps };
+	});
 	const track = {
 		stop,
-		getSettings: () => ({ width: 1920, height: 1080, frameRate: 30 }),
+		applyConstraints,
+		getSettings: () => settings,
 	} as unknown as MediaStreamTrack;
 	return {
 		stream: {
@@ -26,12 +36,14 @@ function cameraStream() {
 			getVideoTracks: () => [track],
 		} as unknown as MediaStream,
 		stop,
+		applyConstraints,
 	};
 }
 
 beforeEach(() => {
 	originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
-	probeWebcamFormats.mockClear();
+	probeWebcamFormatsCached.mockReset();
+	probeWebcamFormatsCached.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -76,5 +88,48 @@ describe("useCameraPreviewStream", () => {
 
 		expect(getUserMedia).toHaveBeenCalledOnce();
 		expect(owned.stop).toHaveBeenCalledOnce();
+	});
+
+	it("publishes supported formats and the active format in the same render", async () => {
+		const external = cameraStream();
+		const formats = [
+			{ width: 3840, height: 2160, fps: 30 },
+			{ width: 1920, height: 1080, fps: 30 },
+		];
+		probeWebcamFormatsCached.mockResolvedValue(formats);
+		const seen: { supported: number; active: string }[] = [];
+
+		const view = renderHook(() => {
+			const result = useCameraPreviewStream({
+				enabled: true,
+				externalStream: external.stream,
+				format: formats[0],
+			});
+			seen.push({
+				supported: result.supportedFormats.length,
+				active: `${result.activeFormat.width}@${result.activeFormat.fps}`,
+			});
+			return result;
+		});
+		await waitFor(() => expect(view.result.current.supportedFormats).toEqual(formats));
+
+		expect(view.result.current.activeFormat).toEqual(formats[0]);
+		expect(seen.some((frame) => frame.supported > 0 && frame.active !== "3840@30")).toBe(false);
+		expect(external.applyConstraints).toHaveBeenCalledOnce();
+		view.unmount();
+	});
+
+	it("does not reconfigure a track that already delivers the requested format", async () => {
+		const external = cameraStream();
+		const formats = [{ width: 1920, height: 1080, fps: 30 }];
+		probeWebcamFormatsCached.mockResolvedValue(formats);
+
+		const view = renderHook(() =>
+			useCameraPreviewStream({ enabled: true, externalStream: external.stream }),
+		);
+		await waitFor(() => expect(view.result.current.supportedFormats).toEqual(formats));
+
+		expect(external.applyConstraints).not.toHaveBeenCalled();
+		view.unmount();
 	});
 });

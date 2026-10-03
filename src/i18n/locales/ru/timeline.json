@@ -33,7 +33,18 @@
 		"emptyText": "Пустой текст",
 		"cameraEmphasis": "Акцент на камере",
 		"cameraFullscreen": "Камера на весь экран",
-		"cameraFullscreenItem": "Камера на весь экран {{index}}"
+		"cameraFullscreenItem": "Камера на весь экран {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "Видео не загружено",
@@ -76,7 +87,7 @@
 		"arrangeClips": "Упорядочить клипы",
 		"arrangeClipsHint": "Перетащите клипы ниже, чтобы изменить порядок, или добавьте новые",
 		"newAnnotation": "Аннотация",
-		"dragToReorderHint": "Перетащите для изменения порядка · дважды щёлкните для редактирования точек входа/выхода",
+		"dragToReorderHint": "Перетащите для изменения порядка, дважды щёлкните для редактирования точек входа/выхода",
 		"editInOutPoints": "Редактировать точки входа/выхода",
 		"deleteClip": "Удалить клип",
 		"dropToAdd": "Отпустите, чтобы добавить на таймлайн",

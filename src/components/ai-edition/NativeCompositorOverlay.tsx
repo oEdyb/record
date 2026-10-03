@@ -198,6 +198,7 @@ export function NativeCompositorOverlay() {
 		const camera = assetCameraSource(asset);
 		return {
 			viewId,
+			sceneIdentity: document,
 			clipId: activeClipId,
 			clipIndex: activeClipIndex,
 			screenPath: asset.originalPath,

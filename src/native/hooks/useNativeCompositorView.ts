@@ -21,6 +21,7 @@
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { noteUiProbePreviewFrame } from "@/lib/ai-edition/perf/uiFrameProbe";
+import { usePreviewPreferences } from "@/lib/ai-edition/store/previewPreferences";
 import {
 	createCompositorView,
 	destroyCompositorView,
@@ -32,6 +33,7 @@ import {
 } from "../compositorViewClient";
 import type { CompositorFrameTiming, CompositorParamValue, CompositorViewRect } from "../contracts";
 import { computePreviewRect, rectsEqual } from "../nativeViewRect";
+import { notePreviewPaintedFrame } from "../previewSettledFrames";
 
 export interface UseNativeCompositorViewOptions {
 	/** When false, the hook does nothing on mount and destroys nothing on
@@ -81,7 +83,7 @@ function safelyCall(label: string, call: () => Promise<unknown>) {
 }
 
 /** Use the rAF timestamp: displays can run at 60, 120, or 144 Hz. */
-const PREVIEW_FRAME_INTERVAL_MS = 1000 / 30;
+const PREVIEW_FRAME_INTERVAL_MS = 1000 / 60;
 
 export function useNativeCompositorView(
 	canvasRef: RefObject<HTMLCanvasElement>,
@@ -179,7 +181,7 @@ export function useNativeCompositorView(
 		/** Resize the canvas's DRAWING BUFFER to match the offscreen render
 		 *  target's pixel dimensions. Setting `canvas.width` / `canvas.height`
 		 *  is destructive (clears the bitmap), so we only do it on genuine
-		 *  rect changes — handled together with the setRect push below. */
+		 *  initial creation. Later resizes happen only when a frame is ready. */
 		const syncCanvasSize = (rect: CompositorViewRect) => {
 			if (canvas.width !== rect.width) {
 				canvas.width = rect.width;
@@ -194,10 +196,13 @@ export function useNativeCompositorView(
 			if (disposed) {
 				return;
 			}
-			// `getBoundingClientRect` gives the visible CSS size. Keep the native
-			// offscreen target at that size; export has its own full-resolution path.
+			// Apply the current viewing preference without recreating the decoder.
 			const domRect = canvas.getBoundingClientRect();
-			const next = computePreviewRect(domRect);
+			const next = computePreviewRect(
+				domRect,
+				usePreviewPreferences.getState().quality,
+				window.devicePixelRatio,
+			);
 			// `x` / `y` are vestigial in the new contract (ignored native-side),
 			// but `rectsEqual` still compares them — harmless: scrolling will just
 			// re-push the rect, and the native side ignores x/y.
@@ -210,7 +215,8 @@ export function useNativeCompositorView(
 			if (id == null) {
 				return;
 			}
-			syncCanvasSize(next);
+			// Keep the last painted frame visible while native renders the new size.
+			// The accepted-frame path resizes and paints together, without yielding.
 			safelyCall("setRect", () => setCompositorRect(id, next));
 		};
 
@@ -232,7 +238,7 @@ export function useNativeCompositorView(
 		// after IPC alone lets bitmap promises finish and paint out of order.
 		let inFlight = false;
 
-		/** rAF pull loop: throttle to ~30fps and repaint ONLY when native reports a
+		/** rAF pull loop: throttle to ~60fps and repaint ONLY when native reports a
 		 *  newer generation. The returned packet is self-describing (`gen` + dims +
 		 *  pixels), so the canvas is sized from the packet — pixels and canvas can
 		 *  never drift out of sync. Native rendering runs on its own thread. */
@@ -304,6 +310,7 @@ export function useNativeCompositorView(
 						bitmap?.close();
 					}
 					lastGen = gen;
+					notePreviewPaintedFrame({ viewId: id, sourceTimeSec, clipIndex, transportGeneration });
 					onFrameRef.current?.({ sourceTimeSec, clipIndex, transportGeneration });
 					// Sonde de fluidité : signale qu'une frame a réellement été livrée, pour
 					// que les intervalles rAF soient rangés dans l'état « preview active »
@@ -333,7 +340,11 @@ export function useNativeCompositorView(
 		// the moment the effect ran. The async id will be used on subsequent
 		// resize/scroll updates. Without the bridge, this is a swallowed
 		// warning — the rest of the hook stays inert.
-		const initialRect = computePreviewRect(canvas.getBoundingClientRect());
+		const initialRect = computePreviewRect(
+			canvas.getBoundingClientRect(),
+			usePreviewPreferences.getState().quality,
+			window.devicePixelRatio,
+		);
 		lastRect = initialRect;
 		// Prime the canvas drawing buffer to the resolution we expect the
 		// first pulled frame to have; avoids a 300x150 flash before the
@@ -350,8 +361,25 @@ export function useNativeCompositorView(
 			viewIdRef.current = result.id;
 			nativeViewId = result.id;
 			setViewId(result.id);
+			// A resize or quality change may have happened while creation was in flight.
+			lastRect = null;
+			applyRectNow();
 		});
 
+		const unsubscribeQuality = usePreviewPreferences.subscribe((next, previous) => {
+			if (next.quality !== previous.quality) scheduleRectUpdate();
+		});
+		let densityQuery: MediaQueryList | undefined;
+		const watchDensity = () => {
+			densityQuery?.removeEventListener("change", onDensityChange);
+			densityQuery = window.matchMedia?.(`(resolution: ${window.devicePixelRatio}dppx)`);
+			densityQuery?.addEventListener("change", onDensityChange);
+		};
+		const onDensityChange = () => {
+			watchDensity();
+			scheduleRectUpdate();
+		};
+		watchDensity();
 		const observer = new ResizeObserver(scheduleRectUpdate);
 		observer.observe(canvas);
 		window.addEventListener("resize", scheduleRectUpdate);
@@ -375,6 +403,8 @@ export function useNativeCompositorView(
 				cancelAnimationFrame(pullRafHandle);
 			}
 			observer.disconnect();
+			unsubscribeQuality();
+			densityQuery?.removeEventListener("change", onDensityChange);
 			longTaskObserver?.disconnect();
 			window.clearInterval(timingFlushHandle);
 			window.removeEventListener("resize", scheduleRectUpdate);

@@ -27,6 +27,8 @@ const FOCUS_ACTIVITY_TYPES = new Set([
 	"drag-end",
 ]);
 const CLICK_ACTIVITY_TYPES = new Set(["click", "double-click", "right-click", "middle-click"]);
+// Pointer intents that can keep attention inside one framed area. Typing keeps its own bridge.
+const HELD_ATTENTION_TYPES = new Set([...CLICK_ACTIVITY_TYPES, "drag-start", "drag-end"]);
 const UNIT_STAGE = { width: 1, height: 1 };
 const UNIT_MASK = { x: 0, y: 0, width: 1, height: 1 };
 
@@ -805,9 +807,29 @@ function makeVisualPassages(
 						!sample.directionExcluded &&
 						distance(firstCursor!, sample) <= policy.stationaryBridgeMaximumMovement,
 				);
+		const heldAttentionBridge =
+			sharesDirectionContext(previousIntent, currentIntent) &&
+			HELD_ATTENTION_TYPES.has(previousIntent.interactionType ?? "") &&
+			HELD_ATTENTION_TYPES.has(currentIntent.interactionType ?? "") &&
+			intentGapMs <= policy.heldAttentionMaximumGapMs &&
+			distance(previousIntent, currentIntent) <= policy.heldAttentionMaximumFocusDistance &&
+			Boolean(firstCursor) &&
+			samples
+				.filter(
+					(sample) =>
+						sample.timeMs >= previousIntent.timeMs && sample.timeMs <= currentIntent.timeMs,
+				)
+				.every(
+					(sample) =>
+						sample.visible !== false &&
+						!sample.directionExcluded &&
+						distance(firstCursor!, sample) <= policy.heldAttentionMaximumMovement,
+				);
 		if (
 			sharesDirectionContext(previousIntent, currentIntent) &&
-			(currentStartMs - previousEndMs <= policy.passageConnectionGapMs || stationaryBridge)
+			(currentStartMs - previousEndMs <= policy.passageConnectionGapMs ||
+				stationaryBridge ||
+				heldAttentionBridge)
 		) {
 			passage!.push(chain);
 		} else {

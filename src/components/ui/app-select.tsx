@@ -122,6 +122,7 @@ export function AppSelect({
 			<SelectPrimitive.Portal>
 				<SelectPrimitive.Content
 					className={styles.content}
+					data-klippt-select-content=""
 					position="popper"
 					sideOffset={4}
 					align={align}

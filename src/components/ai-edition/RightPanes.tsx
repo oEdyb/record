@@ -1,3 +1,4 @@
+import { normalizeWebcamAspectRatio, WEBCAM_ASPECT_RATIOS } from "@/components/video-editor/types";
 // Six right-rail panes matching design/openscreen-editor.html. Each control
 // reads from + writes to the project document via `useEditorSettings`, so the
 // design's UI is the canonical surface (no more "more options" link to a
@@ -20,6 +21,7 @@ import {
 import {
 	type ChangeEvent,
 	type FormEvent,
+	Fragment,
 	memo,
 	type ClipboardEvent as ReactClipboardEvent,
 	type KeyboardEvent as ReactKeyboardEvent,
@@ -31,6 +33,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 import { toast } from "sonner";
 import defaultCursorPreviewUrl from "@/assets/cursors/Cursor=Default.svg";
@@ -46,6 +49,7 @@ import {
 	InspectorSegmentedControl,
 	InspectorSlider,
 	InspectorSwitch,
+	InspectorTabs,
 	InspectorToolbar,
 } from "@/components/ui/inspector";
 import {
@@ -92,6 +96,7 @@ import {
 } from "@/lib/captioning/transcriptLanguages";
 import { writeClipboardText } from "@/lib/clipboard";
 import {
+	computeCompositeLayout,
 	isWebcamBlockLayout,
 	MAX_WEBCAM_BLOCK_CAMERA_SHARE,
 	MAX_WEBCAM_SIZE_PERCENT,
@@ -112,6 +117,11 @@ import {
 } from "@/lib/screenFraming";
 import { resolveImageWallpaperUrl, WALLPAPER_PATHS, WALLPAPER_THUMB_PATHS } from "@/lib/wallpaper";
 import { isNativeCompositorActive, setNativeParam } from "@/native";
+import {
+	getWebcamNativeSize,
+	getWebcamNativeSizeRevision,
+	subscribeWebcamNativeSize,
+} from "@/native/webcamSizeCache";
 import {
 	ASPECT_RATIO_PRESETS,
 	type AspectRatio,
@@ -326,6 +336,7 @@ export function BackgroundPane() {
 								className={`${styles.bgThumb} ${isSelected(url) ? styles.isActive : ""}`}
 								style={{ background: `center/cover no-repeat url(${url})` }}
 								aria-label={ts("background.customWallpaper")}
+								aria-pressed={isSelected(url)}
 								disabled={!hasDocument}
 								onClick={() => void set({ wallpaper: url })}
 							/>
@@ -344,6 +355,7 @@ export function BackgroundPane() {
 										background: `center/cover no-repeat url(${previewUrl})`,
 									}}
 									aria-label={ts("background.imageLabel", { index: i + 1 })}
+									aria-pressed={isSelected(path)}
 									disabled={!hasDocument}
 									onClick={() => void set({ wallpaper: path })}
 								/>
@@ -999,7 +1011,7 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 							whiteSpace: "nowrap",
 						}}
 					>
-						{filename}
+						{ts("transcript.clipLabel", { index: index + 1 })}
 					</span>
 					<span
 						style={{
@@ -1009,7 +1021,7 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 							marginTop: 2,
 						}}
 					>
-						{ts("transcript.clipLabel", { index: index + 1 })} · {sourceRangeLabel}
+						{sourceRangeLabel}
 					</span>
 				</span>
 				{/* A block whose transcript is being regenerated is read-only — say it,
@@ -1030,6 +1042,9 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 					</span>
 				) : null}
 			</span>
+			<p className={styles.inspectorSectionHint}>
+				{ts(readOnly ? "panels.transcriptRead" : "panels.transcriptEdit")}
+			</p>
 			{visibleWords.length === 0 ? (
 				<p
 					style={{
@@ -1060,7 +1075,7 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 					onPointerUp={handlePointerUp}
 					style={{
 						padding: "4px 4px",
-						font: "400 13px/1.65 var(--font-body)",
+						font: "400 14px/1.75 var(--font-body)",
 						color: "var(--fg)",
 						textWrap: "pretty",
 						// Read-only while its transcript is being regenerated: the cursor
@@ -1076,15 +1091,20 @@ const TranscriptClipBlock = memo(function TranscriptClipBlock({
 						// scrollbar that breaks the cue auto-scroll UX.
 					}}
 				>
-					{visibleWords.map((cw) => (
-						<TranscriptWord
-							key={cw.id}
-							cw={cw}
-							isCue={cw.id === cueWordId}
-							target={trimTarget}
-							onRestore={removeTrimRun}
-							onAddTrimRange={onAddTrimRange}
-						/>
+					{visibleWords.map((cw, index) => (
+						<Fragment key={cw.id}>
+							{index > 0 && cw.word.startSec - visibleWords[index - 1].word.endSec >= 0.8 ? (
+								<br />
+							) : null}
+							<TranscriptWord
+								key={cw.id}
+								cw={cw}
+								isCue={cw.id === cueWordId}
+								target={trimTarget}
+								onRestore={removeTrimRun}
+								onAddTrimRange={onAddTrimRange}
+							/>
+						</Fragment>
 					))}
 				</div>
 			)}
@@ -1433,7 +1453,7 @@ export function VideoEffectsPane() {
 			helpLabel={ts("panes.help")}
 			helpText={ts("effects.help")}
 		>
-			<InspectorRow label={ts("effects.blurBg")}>
+			<InspectorRow label={ts("effects.blurBg")} helpText={ts("effects.blurBgDescription")}>
 				<InspectorSwitch
 					checked={settings.showBlur}
 					disabled={!hasDocument}
@@ -1446,9 +1466,11 @@ export function VideoEffectsPane() {
 					}}
 				/>
 			</InspectorRow>
+
 			<div>
 				<InspectorSlider
 					label={ts("effects.motionBlur")}
+					helpText={ts("effects.motionBlurDescription")}
 					value={settings.motionBlurAmount * 100}
 					min={0}
 					max={100}
@@ -1462,8 +1484,10 @@ export function VideoEffectsPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
+
 				<InspectorSlider
 					label={ts("effects.shadow")}
+					helpText={ts("effects.shadowDescription")}
 					value={settings.shadowIntensity * 100}
 					min={0}
 					max={100}
@@ -1477,8 +1501,10 @@ export function VideoEffectsPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
+
 				<InspectorSlider
 					label={ts("effects.roundness")}
+					helpText={ts("effects.roundnessDescription")}
 					value={settings.borderRadius}
 					min={0}
 					max={64}
@@ -1493,8 +1519,10 @@ export function VideoEffectsPane() {
 					}}
 					onCommit={() => void commit()}
 				/>
+
 				<InspectorSlider
 					label={ts("effects.padding")}
+					helpText={ts("effects.paddingDescription")}
 					value={settings.padding}
 					min={0}
 					max={100}
@@ -1528,7 +1556,7 @@ const WEBCAM_PRESETS = [
 const NATIVE_WEBCAM_BASE_PCT = 16.7;
 
 const CAMERA_SHAPES: Array<{
-	value: "rectangle" | "circle" | "square" | "rounded";
+	value: "rectangle" | "circle" | "square" | "rounded" | "squircle";
 	labelKey: string;
 	icon: ReactNode;
 }> = [
@@ -1551,6 +1579,11 @@ const CAMERA_SHAPES: Array<{
 		value: "rounded",
 		labelKey: "layout.shapes.rounded",
 		icon: <rect x="3" y="6" width="18" height="12" rx="6" />,
+	},
+	{
+		value: "squircle",
+		labelKey: "layout.shapes.squircle",
+		icon: <path d="M12 3C19 3 21 5 21 12S19 21 12 21 3 19 3 12 5 3 12 3Z" />,
 	},
 ];
 
@@ -1677,6 +1710,35 @@ export function LayoutPane() {
 		[document, settings.aspectRatio],
 	);
 	const activeResolution = settings.outputResolution ?? automaticResolution;
+	const currentTimeSec = useProjectStore((s) => s.currentTimeSec);
+	useSyncExternalStore(subscribeWebcamNativeSize, getWebcamNativeSizeRevision, () => 0);
+	const activeClip = document
+		? locateVirtualPosition(document.timeline.clips, currentTimeSec)?.clip
+		: null;
+	const cameraAsset =
+		document?.assets.find((asset) => asset.id === activeClip?.assetId && asset.cameraTrack) ??
+		document?.assets.find((asset) => asset.cameraTrack);
+	const cameraSize = cameraAsset?.cameraTrack
+		? getWebcamNativeSize(cameraAsset.cameraTrack.sourcePath)
+		: null;
+	const cameraRect = computeCompositeLayout({
+		canvasSize: activeResolution,
+		screenSize: activeResolution,
+		webcamSize: cameraSize ?? { width: 960, height: 720 },
+		layoutPreset: settings.webcamLayoutPreset,
+		webcamSizePreset: settings.webcamSizePreset,
+		webcamMaskShape: settings.webcamMaskShape,
+		webcamCornerRadius: settings.webcamCornerRadius,
+		webcamAspectRatio: settings.webcamAspectRatio,
+	})?.webcamRect;
+	const cameraCornerPercent =
+		settings.webcamCornerRadius ??
+		(settings.webcamMaskShape === "rounded" || settings.webcamMaskShape === "squircle"
+			? 30
+			: cameraRect
+				? (cameraRect.borderRadius / Math.min(cameraRect.width, cameraRect.height)) * 100
+				: 12);
+
 	const screenFramingKey = screenFramingVariantKey(settings.aspectRatio, settings.outputResolution);
 	const screenFraming = resolveScreenFraming(settings.screenFramingByVariant, screenFramingKey);
 	const updateScreenFramingLive = useCallback(
@@ -1779,322 +1841,396 @@ export function LayoutPane() {
 			helpText={ts("layout.help")}
 			flat
 		>
-			<section className={styles.inspectorSection}>
-				<div className={styles.inspectorSectionTitle}>{tt("toolbar.aspectRatio")}</div>
-				<div className={styles.layoutSelectRow}>
-					<AppSelect
-						value={selectedFormatValue}
-						disabled={!hasDocument}
-						onChange={(event) => {
-							const [kind, token] = event.target.value.split(":", 2);
-							const ratio = (
-								token ? event.target.value.slice(kind.length + 1) : token
-							) as AspectRatio;
-							if (kind === "native") {
-								void set({ aspectRatio: ratio, outputResolution: null });
-								return;
-							}
-							setCanvasFormat(ratio);
-						}}
-					>
-						<optgroup label={ts("layout.preset")}>
-							{ASPECT_RATIO_PRESETS.map((ratio) => (
-								<option key={ratio} value={`preset:${ratio}`}>
-									{ratio}
-								</option>
-							))}
-							{!knownFormatTokens.has(settings.aspectRatio) ? (
-								<option value={`preset:${settings.aspectRatio}`}>{settings.aspectRatio}</option>
-							) : null}
-						</optgroup>
-						{nativeFormats.length > 0 ? (
-							<optgroup label={tt("toolbar.original")}>
-								{nativeFormats.map((format) => (
-									<option key={format.token} value={`native:${format.token}`}>
-										{format.token} · {format.width} × {format.height}
-									</option>
-								))}
-							</optgroup>
-						) : null}
-					</AppSelect>
-				</div>
+			<InspectorTabs
+				label={ts("layout.title")}
+				items={[
+					{
+						id: "canvas",
+						label: ts("panels.canvas"),
+						content: (
+							<section className={styles.inspectorSection}>
+								<div className={styles.inspectorSectionTitle}>{tt("toolbar.aspectRatio")}</div>
+								<div className={styles.layoutSelectRow}>
+									<AppSelect
+										value={selectedFormatValue}
+										disabled={!hasDocument}
+										onChange={(event) => {
+											const [kind, token] = event.target.value.split(":", 2);
+											const ratio = (
+												token ? event.target.value.slice(kind.length + 1) : token
+											) as AspectRatio;
+											if (kind === "native") {
+												void set({ aspectRatio: ratio, outputResolution: null });
+												return;
+											}
+											setCanvasFormat(ratio);
+										}}
+									>
+										<optgroup label={ts("layout.preset")}>
+											{ASPECT_RATIO_PRESETS.map((ratio) => (
+												<option key={ratio} value={`preset:${ratio}`}>
+													{ratio}
+												</option>
+											))}
+											{!knownFormatTokens.has(settings.aspectRatio) ? (
+												<option value={`preset:${settings.aspectRatio}`}>
+													{settings.aspectRatio}
+												</option>
+											) : null}
+										</optgroup>
+										{nativeFormats.length > 0 ? (
+											<optgroup label={tt("toolbar.original")}>
+												{nativeFormats.map((format) => (
+													<option key={format.token} value={`native:${format.token}`}>
+														{format.token}, {format.width} × {format.height}
+													</option>
+												))}
+											</optgroup>
+										) : null}
+									</AppSelect>
+								</div>
 
-				<div className={styles.resolutionControlRow}>
-					<div>
-						<div className={styles.inspectorFieldLabel}>{ts("layout.resolution")}</div>
-						{!settings.outputResolution ? (
-							<div className={styles.inspectorFieldMeta}>
-								{automaticResolution.width} × {automaticResolution.height}
-							</div>
-						) : null}
-					</div>
-					<div className={styles.resolutionMode}>
-						<button
-							type="button"
-							disabled={!hasDocument}
-							className={!settings.outputResolution ? styles.isActive : ""}
-							onClick={() => void set({ outputResolution: null })}
-						>
-							{ts("zoom.focusMode.auto")}
-						</button>
-						<button
-							type="button"
-							disabled={!hasDocument}
-							className={settings.outputResolution ? styles.isActive : ""}
-							onClick={() => {
-								if (settings.outputResolution) return;
-								void set({ outputResolution: automaticResolution });
-							}}
-						>
-							{ts("background.custom")}
-						</button>
-					</div>
-				</div>
-				{settings.outputResolution ? (
-					<div className={styles.resolutionFields}>
-						<label>
-							<span>W</span>
-							<input
-								type="number"
-								min={MIN_OUTPUT_DIMENSION}
-								max={MAX_OUTPUT_DIMENSION}
-								step={2}
-								value={draftWidth}
-								onChange={(event) => setDraftWidth(event.target.value)}
-								onBlur={commitCustomResolution}
-								onKeyDown={(event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-								}}
-							/>
-						</label>
-						<span aria-hidden>×</span>
-						<label>
-							<span>H</span>
-							<input
-								type="number"
-								min={MIN_OUTPUT_DIMENSION}
-								max={MAX_OUTPUT_DIMENSION}
-								step={2}
-								value={draftHeight}
-								onChange={(event) => setDraftHeight(event.target.value)}
-								onBlur={commitCustomResolution}
-								onKeyDown={(event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-								}}
-							/>
-						</label>
-					</div>
-				) : null}
-			</section>
-
-			<section className={styles.inspectorSection}>
-				<div className={styles.inspectorSectionTitle}>{ts("layout.screenFraming")}</div>
-				<p className={styles.inspectorSectionHint}>{ts("layout.screenFramingHint")}</p>
-				<div className={styles.sliderGrid}>
-					<SliderCell
-						label={ts("layout.screenScale")}
-						value={screenFraming.scale}
-						min={MIN_SCREEN_FRAMING_SCALE}
-						max={MAX_SCREEN_FRAMING_SCALE}
-						step={0.05}
-						decimals={2}
-						suffix="×"
-						disabled={!hasDocument}
-						onChange={(scale) => updateScreenFramingLive({ ...screenFraming, scale })}
-						onCommit={() => void commit()}
-					/>
-				</div>
-				<PositionPad
-					value={screenFraming.focalPoint}
-					disabled={!hasDocument}
-					label={ts("layout.screenPosition")}
-					centerLabel={ts("layout.resetScreenFraming")}
-					onChange={(focalPoint) => updateScreenFramingLive({ ...screenFraming, focalPoint })}
-					onReset={() =>
-						updateScreenFramingLive({
-							scale: 1,
-							focalPoint: { cx: 0.5, cy: 0.5 },
-						})
-					}
-					onCommit={() => void commit()}
-				/>
-			</section>
-
-			<section className={styles.inspectorSection}>
-				<div className={styles.inspectorSectionTitle}>{ts("layout.cameraLayout")}</div>
-				<div className={styles.layoutSelectRow}>
-					<AppSelect
-						value={settings.webcamLayoutPreset}
-						disabled={layoutControlsDisabled}
-						onChange={(e) =>
-							void set({
-								webcamLayoutPreset: e.target.value as typeof settings.webcamLayoutPreset,
-							})
-						}
-					>
-						{WEBCAM_PRESETS.map((p) => (
-							<option key={p.value} value={p.value}>
-								{ts(p.labelKey)}
-							</option>
-						))}
-					</AppSelect>
-				</div>
-				{isWebcamBlockLayout(settings.webcamLayoutPreset) ? (
-					<div className={styles.inspectorFieldGroup}>
-						<div className={styles.inspectorFieldLabel}>{ts("layout.order")}</div>
-						<div className={styles.resolutionMode}>
-							<button
-								type="button"
-								disabled={layoutControlsDisabled}
-								className={settings.webcamBlockOrder === "screen-first" ? styles.isActive : ""}
-								onClick={() => void set({ webcamBlockOrder: "screen-first" })}
-							>
-								{tc("recordingSource.screen")}
-							</button>
-							<button
-								type="button"
-								disabled={layoutControlsDisabled}
-								className={settings.webcamBlockOrder === "camera-first" ? styles.isActive : ""}
-								onClick={() => void set({ webcamBlockOrder: "camera-first" })}
-							>
-								{te("rec.camera")}
-							</button>
-						</div>
-					</div>
-				) : null}
-				{settings.webcamLayoutPreset === "vertical-stack" ? (
-					<div className={styles.sliderGrid}>
-						<SliderCell
-							label={ts("layout.cameraShare")}
-							value={settings.webcamBlockCameraShare}
-							min={MIN_WEBCAM_BLOCK_CAMERA_SHARE}
-							max={MAX_WEBCAM_BLOCK_CAMERA_SHARE}
-							suffix="%"
-							disabled={layoutControlsDisabled}
-							onChange={(next) => setLive({ webcamBlockCameraShare: next })}
-							onCommit={() => void commit()}
-						/>
-					</div>
-				) : null}
-				<div className={styles.paneRow}>
-					<span className="label">{ts("layout.mirrorWebcam")}</span>
-					<Toggle
-						checked={settings.webcamMirrored}
-						disabled={layoutControlsDisabled}
-						label={ts("layout.mirrorWebcam")}
-						onChange={(v) => {
-							void set({ webcamMirrored: v });
-							if (isNativeCompositorActive()) {
-								setNativeParam("webcamMirror", v);
-							}
-						}}
-					/>
-				</div>
-				{supportsReactiveZoom ? (
-					<div className={styles.paneRow}>
-						<span className="label">{ts("layout.reactiveWebcam")}</span>
-						<Toggle
-							checked={settings.webcamReactiveZoom}
-							disabled={layoutControlsDisabled}
-							label={ts("layout.reactiveWebcam")}
-							onChange={(v) => void set({ webcamReactiveZoom: v })}
-						/>
-					</div>
-				) : null}
-				{isPip ? (
-					<>
-						<div className={styles.inspectorFieldGroup}>
-							<div className={styles.inspectorFieldLabel}>{ts("layout.webcamShape")}</div>
-							<div className={styles.cameraShapeControl}>
-								{CAMERA_SHAPES.map((shape) => {
-									const isActive = settings.webcamMaskShape === shape.value;
-									return (
+								<div className={styles.resolutionControlRow}>
+									<div>
+										<div className={styles.inspectorFieldLabel}>{ts("layout.resolution")}</div>
+										{!settings.outputResolution ? (
+											<div className={styles.inspectorFieldMeta}>
+												{automaticResolution.width} × {automaticResolution.height}
+											</div>
+										) : null}
+									</div>
+									<div className={styles.resolutionMode}>
 										<button
 											type="button"
-											key={shape.value}
-											className={`${styles.cameraShapeButton} ${isActive ? styles.isActive : ""}`}
-											disabled={layoutControlsDisabled}
-											aria-pressed={isActive}
+											disabled={!hasDocument}
+											className={!settings.outputResolution ? styles.isActive : ""}
+											onClick={() => void set({ outputResolution: null })}
+										>
+											{ts("zoom.focusMode.auto")}
+										</button>
+										<button
+											type="button"
+											disabled={!hasDocument}
+											className={settings.outputResolution ? styles.isActive : ""}
 											onClick={() => {
-												void set({ webcamMaskShape: shape.value });
-												if (isNativeCompositorActive()) {
-													setNativeParam("webcamShape", shape.value);
-												}
+												if (settings.outputResolution) return;
+												void set({ outputResolution: automaticResolution });
 											}}
 										>
-											<svg
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												strokeWidth="2"
-												width={22}
-												height={22}
-											>
-												{shape.icon}
-											</svg>
-											<span>{ts(shape.labelKey)}</span>
+											{ts("background.custom")}
 										</button>
-									);
-								})}
-							</div>
-						</div>
-					</>
-				) : null}
-				{settings.webcamLayoutPreset !== "no-webcam" ? (
-					<>
-						<div className={styles.sliderGrid}>
-							{isPip ? (
-								<SliderCell
-									label={ts("layout.webcamSize")}
-									value={settings.webcamSizePreset}
-									min={MIN_WEBCAM_SIZE_PERCENT}
-									max={MAX_WEBCAM_SIZE_PERCENT}
-									suffix="%"
-									disabled={layoutControlsDisabled}
-									onChange={(next) => {
-										setLive({ webcamSizePreset: next });
-										if (isNativeCompositorActive()) {
-											setNativeParam("webcamSize", next / NATIVE_WEBCAM_BASE_PCT);
-										}
-									}}
+									</div>
+								</div>
+								{settings.outputResolution ? (
+									<div className={styles.resolutionFields}>
+										<label>
+											<span>W</span>
+											<input
+												type="number"
+												min={MIN_OUTPUT_DIMENSION}
+												max={MAX_OUTPUT_DIMENSION}
+												step={2}
+												value={draftWidth}
+												onChange={(event) => setDraftWidth(event.target.value)}
+												onBlur={commitCustomResolution}
+												onKeyDown={(event) => {
+													if (event.key === "Enter") event.currentTarget.blur();
+												}}
+											/>
+										</label>
+										<span aria-hidden>×</span>
+										<label>
+											<span>H</span>
+											<input
+												type="number"
+												min={MIN_OUTPUT_DIMENSION}
+												max={MAX_OUTPUT_DIMENSION}
+												step={2}
+												value={draftHeight}
+												onChange={(event) => setDraftHeight(event.target.value)}
+												onBlur={commitCustomResolution}
+												onKeyDown={(event) => {
+													if (event.key === "Enter") event.currentTarget.blur();
+												}}
+											/>
+										</label>
+									</div>
+								) : null}
+							</section>
+						),
+					},
+					{
+						id: "screen",
+						label: ts("panels.screen"),
+						content: (
+							<section className={styles.inspectorSection}>
+								<div className={styles.inspectorSectionTitle}>{ts("layout.screenFraming")}</div>
+								<p className={styles.inspectorSectionHint}>{ts("layout.screenFramingHint")}</p>
+								<div className={styles.sliderGrid}>
+									<SliderCell
+										label={ts("layout.screenScale")}
+										value={screenFraming.scale}
+										min={MIN_SCREEN_FRAMING_SCALE}
+										max={MAX_SCREEN_FRAMING_SCALE}
+										step={0.05}
+										decimals={2}
+										suffix="×"
+										disabled={!hasDocument}
+										onChange={(scale) => updateScreenFramingLive({ ...screenFraming, scale })}
+										onCommit={() => void commit()}
+									/>
+								</div>
+								<PositionPad
+									value={screenFraming.focalPoint}
+									disabled={!hasDocument}
+									label={ts("layout.screenPosition")}
+									centerLabel={ts("layout.resetScreenFraming")}
+									onChange={(focalPoint) =>
+										updateScreenFramingLive({ ...screenFraming, focalPoint })
+									}
+									onReset={() =>
+										updateScreenFramingLive({
+											scale: 1,
+											focalPoint: { cx: 0.5, cy: 0.5 },
+										})
+									}
 									onCommit={() => void commit()}
 								/>
-							) : null}
-							<SliderCell
-								label={ts("layout.webcamZoom")}
-								value={settings.webcamZoom}
-								min={MIN_WEBCAM_ZOOM}
-								max={MAX_WEBCAM_ZOOM}
-								step={0.05}
-								decimals={2}
-								suffix="×"
-								disabled={layoutControlsDisabled}
-								onChange={(next) => {
-									setLive({ webcamZoom: next });
-									if (isNativeCompositorActive()) {
-										setNativeParam("webcamZoom", next);
-									}
-								}}
-								onCommit={() => void commit()}
-							/>
-						</div>
-						<PositionPad
-							value={settings.webcamFocalPoint}
-							disabled={layoutControlsDisabled}
-							label={ts("layout.webcamPosition")}
-							centerLabel={ts("layout.centerCamera")}
-							onChange={(next) => {
-								setLive({ webcamFocalPoint: next });
-								if (isNativeCompositorActive()) {
-									setNativeParam("webcamFocusX", next.cx);
-									setNativeParam("webcamFocusY", next.cy);
-								}
-							}}
-							onCommit={() => void commit()}
-						/>
-					</>
-				) : null}
-			</section>
+							</section>
+						),
+					},
+					{
+						id: "camera",
+						label: ts("panels.camera"),
+						content: (
+							<section className={styles.inspectorSection}>
+								<div className={styles.inspectorSectionTitle}>{ts("layout.cameraLayout")}</div>
+								<div className={styles.layoutSelectRow}>
+									<AppSelect
+										value={settings.webcamLayoutPreset}
+										disabled={layoutControlsDisabled}
+										onChange={(e) =>
+											void set({
+												webcamLayoutPreset: e.target.value as typeof settings.webcamLayoutPreset,
+											})
+										}
+									>
+										{WEBCAM_PRESETS.map((p) => (
+											<option key={p.value} value={p.value}>
+												{ts(p.labelKey)}
+											</option>
+										))}
+									</AppSelect>
+								</div>
+								{isWebcamBlockLayout(settings.webcamLayoutPreset) ? (
+									<div className={styles.inspectorFieldGroup}>
+										<div className={styles.inspectorFieldLabel}>{ts("layout.order")}</div>
+										<div className={styles.resolutionMode}>
+											<button
+												type="button"
+												disabled={layoutControlsDisabled}
+												className={
+													settings.webcamBlockOrder === "screen-first" ? styles.isActive : ""
+												}
+												onClick={() => void set({ webcamBlockOrder: "screen-first" })}
+											>
+												{tc("recordingSource.screen")}
+											</button>
+											<button
+												type="button"
+												disabled={layoutControlsDisabled}
+												className={
+													settings.webcamBlockOrder === "camera-first" ? styles.isActive : ""
+												}
+												onClick={() => void set({ webcamBlockOrder: "camera-first" })}
+											>
+												{te("rec.camera")}
+											</button>
+										</div>
+									</div>
+								) : null}
+								{settings.webcamLayoutPreset === "vertical-stack" ? (
+									<div className={styles.sliderGrid}>
+										<SliderCell
+											label={ts("layout.cameraShare")}
+											value={settings.webcamBlockCameraShare}
+											min={MIN_WEBCAM_BLOCK_CAMERA_SHARE}
+											max={MAX_WEBCAM_BLOCK_CAMERA_SHARE}
+											suffix="%"
+											disabled={layoutControlsDisabled}
+											onChange={(next) => setLive({ webcamBlockCameraShare: next })}
+											onCommit={() => void commit()}
+										/>
+									</div>
+								) : null}
+								{settings.webcamLayoutPreset !== "no-webcam" ? (
+									<>
+										<div className={styles.sliderGrid}>
+											{isPip ? (
+												<SliderCell
+													label={ts("layout.webcamSize")}
+													value={settings.webcamSizePreset}
+													min={MIN_WEBCAM_SIZE_PERCENT}
+													max={MAX_WEBCAM_SIZE_PERCENT}
+													suffix="%"
+													disabled={layoutControlsDisabled}
+													onChange={(next) => {
+														setLive({ webcamSizePreset: next });
+														if (isNativeCompositorActive()) {
+															setNativeParam("webcamSize", next / NATIVE_WEBCAM_BASE_PCT);
+														}
+													}}
+													onCommit={() => void commit()}
+												/>
+											) : null}
+											<SliderCell
+												label={ts("layout.webcamZoom")}
+												value={settings.webcamZoom}
+												min={MIN_WEBCAM_ZOOM}
+												max={MAX_WEBCAM_ZOOM}
+												step={0.05}
+												decimals={2}
+												suffix="×"
+												disabled={layoutControlsDisabled}
+												onChange={(next) => {
+													setLive({ webcamZoom: next });
+													if (isNativeCompositorActive()) {
+														setNativeParam("webcamZoom", next);
+													}
+												}}
+												onCommit={() => void commit()}
+											/>
+										</div>
+									</>
+								) : null}
+								<div className={styles.paneRow}>
+									<span className="label">{ts("layout.mirrorWebcam")}</span>
+									<Toggle
+										checked={settings.webcamMirrored}
+										disabled={layoutControlsDisabled}
+										label={ts("layout.mirrorWebcam")}
+										onChange={(v) => {
+											void set({ webcamMirrored: v });
+											if (isNativeCompositorActive()) {
+												setNativeParam("webcamMirror", v);
+											}
+										}}
+									/>
+								</div>
+								{supportsReactiveZoom ? (
+									<div className={styles.paneRow}>
+										<span className="label">{ts("layout.reactiveWebcam")}</span>
+										<Toggle
+											checked={settings.webcamReactiveZoom}
+											disabled={layoutControlsDisabled}
+											label={ts("layout.reactiveWebcam")}
+											onChange={(v) => void set({ webcamReactiveZoom: v })}
+										/>
+									</div>
+								) : null}
+								{isPip ? (
+									<>
+										<div className={styles.inspectorFieldGroup}>
+											<div className={styles.inspectorFieldLabel}>{ts("layout.webcamShape")}</div>
+											<div className={styles.cameraShapeControl}>
+												{CAMERA_SHAPES.map((shape) => {
+													const isActive = settings.webcamMaskShape === shape.value;
+													return (
+														<button
+															type="button"
+															key={shape.value}
+															className={`${styles.cameraShapeButton} ${isActive ? styles.isActive : ""}`}
+															disabled={layoutControlsDisabled}
+															aria-pressed={isActive}
+															onClick={() => {
+																void set({ webcamMaskShape: shape.value });
+																if (isNativeCompositorActive()) {
+																	setNativeParam("webcamShape", shape.value);
+																}
+															}}
+														>
+															<svg
+																viewBox="0 0 24 24"
+																fill="none"
+																stroke="currentColor"
+																strokeWidth="2"
+																width={22}
+																height={22}
+															>
+																{shape.icon}
+															</svg>
+															<span>{ts(shape.labelKey)}</span>
+														</button>
+													);
+												})}
+											</div>
+										</div>
+										{settings.webcamMaskShape !== "circle" &&
+										settings.webcamMaskShape !== "square" ? (
+											<div className={styles.inspectorFieldGroup}>
+												<div className={styles.inspectorFieldLabel}>
+													{ts("layout.cameraAspectRatio")}
+												</div>
+												<AppSelect
+													aria-label={ts("layout.cameraAspectRatio")}
+													value={settings.webcamAspectRatio ?? "source"}
+													disabled={layoutControlsDisabled}
+													onChange={(event) =>
+														void set({
+															webcamAspectRatio: normalizeWebcamAspectRatio(event.target.value),
+														})
+													}
+												>
+													{WEBCAM_ASPECT_RATIOS.map((ratio) => (
+														<option key={ratio} value={ratio}>
+															{ratio === "source" ? ts("layout.cameraSourceAspect") : ratio}
+														</option>
+													))}
+												</AppSelect>
+											</div>
+										) : null}
+										{settings.webcamMaskShape !== "circle" ? (
+											<>
+												<InspectorSlider
+													label={ts("layout.webcamCornerRadius")}
+													value={cameraCornerPercent}
+													step={0.1}
+													decimals={1}
+													min={0}
+													max={50}
+													suffix="%"
+													disabled={layoutControlsDisabled}
+													onChange={(next) => setLive({ webcamCornerRadius: next })}
+													onCommit={() => void commit()}
+												/>
+												<p className={styles.inspectorSectionHint}>
+													{ts("layout.webcamCornerRadiusDescription")}
+												</p>
+											</>
+										) : null}
+									</>
+								) : null}
+								{settings.webcamLayoutPreset !== "no-webcam" ? (
+									<PositionPad
+										value={settings.webcamFocalPoint}
+										disabled={layoutControlsDisabled}
+										label={ts("layout.webcamPosition")}
+										centerLabel={ts("layout.centerCamera")}
+										onChange={(next) => {
+											setLive({ webcamFocalPoint: next });
+											if (isNativeCompositorActive()) {
+												setNativeParam("webcamFocusX", next.cx);
+												setNativeParam("webcamFocusY", next.cy);
+											}
+										}}
+										onCommit={() => void commit()}
+									/>
+								) : null}
+							</section>
+						),
+					},
+				]}
+			/>
 		</Pane>
 	);
 }
@@ -2168,48 +2304,51 @@ export function CursorPane() {
 				</InspectorRow>
 			</InspectorSection>
 
-			<InspectorSection title={ts("cursor.theme")}>
-				<div className={styles.cursorGrid}>
-					{cursorThemeOptions.map((option) => {
-						const isActive = settings.cursorTheme === option.id;
-						return (
-							<button
-								type="button"
-								key={option.id}
-								className={`${styles.cursorCell} ${isActive ? styles.isActive : ""}`}
-								title={option.name}
-								aria-label={option.name}
-								aria-pressed={isActive}
-								disabled={!hasDocument}
-								onClick={() => void set({ cursor: { theme: option.id } })}
-							>
-								<img
-									src={option.previewUrl}
-									alt=""
-									width={20}
-									height={20}
-									draggable={false}
-									style={{ objectFit: "contain", pointerEvents: "none" }}
-								/>
-							</button>
-						);
-					})}
-				</div>
-			</InspectorSection>
+			{cursorThemeOptions.length > 1 ? (
+				<InspectorSection title={ts("cursor.theme")}>
+					<div className={styles.cursorGrid}>
+						{cursorThemeOptions.map((option) => {
+							const isActive = settings.cursorTheme === option.id;
+							return (
+								<button
+									type="button"
+									key={option.id}
+									className={`${styles.cursorCell} ${isActive ? styles.isActive : ""}`}
+									title={option.name}
+									aria-label={option.name}
+									aria-pressed={isActive}
+									disabled={!hasDocument}
+									onClick={() => void set({ cursor: { theme: option.id } })}
+								>
+									<img
+										src={option.previewUrl}
+										alt=""
+										width={20}
+										height={20}
+										draggable={false}
+										style={{ objectFit: "contain", pointerEvents: "none" }}
+									/>
+								</button>
+							);
+						})}
+					</div>
+				</InspectorSection>
+			) : null}
 
 			<InspectorSection>
 				<InspectorSlider
 					label={ts("cursor.size")}
-					value={settings.cursor.size * 10}
-					min={5}
-					max={100}
-					step={0.1}
-					decimals={1}
+					value={settings.cursor.size}
+					min={0.5}
+					max={10}
+					step={0.01}
+					decimals={2}
+					suffix="×"
 					disabled={!hasDocument}
 					onChange={(v) => {
-						setLive({ cursor: { size: v / 10 } });
+						setLive({ cursor: { size: v } });
 						if (isNativeCompositorActive()) {
-							setNativeParam("cursorSize", v / 10);
+							setNativeParam("cursorSize", v);
 						}
 					}}
 					onCommit={() => void commit()}
@@ -2252,16 +2391,18 @@ export function CursorPane() {
 				{supportsCursorClickEffects() ? (
 					<InspectorSlider
 						label={ts("cursor.clickBounce")}
-						value={settings.cursor.clickBounce * 10}
+						suffix="%"
+						helpText={ts("panels.clickBounceHelp")}
+						value={settings.cursor.clickBounce * 20}
 						min={0}
-						max={50}
+						max={100}
 						step={0.1}
 						decimals={1}
 						disabled={!hasDocument}
 						onChange={(v) => {
-							setLive({ cursor: { clickBounce: v / 10 } });
+							setLive({ cursor: { clickBounce: v / 20 } });
 							if (isNativeCompositorActive()) {
-								setNativeParam("cursorClickBounce", v / 10);
+								setNativeParam("cursorClickBounce", v / 20);
 							}
 						}}
 						onCommit={() => void commit()}

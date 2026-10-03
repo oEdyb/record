@@ -1,0 +1,39 @@
+{
+	"api_version": "1.0",
+	"request_id": "9f0a2f6d-2f6b-4f6d-9a11-0f0f0f0f0f0f",
+	"status": "failed",
+	"data": {
+		"status": "error",
+		"revision": "unknown",
+		"result": {
+			"counts": {
+				"error": 0,
+				"warning": 0,
+				"info": 0,
+				"byRule": {
+					"cut.mid-sentence": 0
+				}
+			},
+			"total": 0,
+			"page": 1,
+			"pages": 1,
+			"page_size": 50,
+			"offset": 0,
+			"findings": [],
+			"notes": [],
+			"notesOmitted": 0,
+			"rules": []
+		},
+		"audio": {
+			"ready": 0,
+			"pending": 0
+		},
+		"timings": {
+			"elapsedMs": 0,
+			"peaksMs": 0,
+			"speechMs": 0
+		},
+		"error": "Check response unavailable",
+		"documentHash": "e98deeecfbaa25b4292a698ab05c97552af12fd5a180035a830183422afa12d1"
+	}
+}

@@ -11,6 +11,7 @@ import type {
 	CameraFullscreenRegion,
 } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import { MAX_CAMERA_EMPHASIS_SCALE } from "@/lib/zoomMath/cameraFullscreenUtils";
 import {
 	DEFAULT_MOTION_SPEED,
 	type MotionStyle,
@@ -746,6 +747,26 @@ export function useTimeline() {
 		[document, saveDocumentAsEdit],
 	);
 
+	const updateCameraScale = useCallback(
+		async (id: string, cameraScale: number) => {
+			if (!document) return;
+			const promoted = promoteAutomaticDirectionGroup(document, "cameraFullscreen", id);
+			const legacy = (promoted.legacyEditor as Record<string, unknown>) ?? {};
+			const prev = (legacy.cameraFullscreenRegions as CameraFullscreenRegion[] | undefined) ?? [];
+			const next: AxcutDocument = {
+				...promoted,
+				legacyEditor: {
+					...legacy,
+					cameraFullscreenRegions: patchPillById(prev, id, {
+						cameraScale: Math.max(1, Math.min(MAX_CAMERA_EMPHASIS_SCALE, cameraScale)),
+					}),
+				},
+			};
+			await saveDocumentAsEdit(next);
+		},
+		[document, saveDocumentAsEdit],
+	);
+
 	const updateCameraMotionSpeed = useCallback(
 		async (id: string, motionSpeed: number) => {
 			if (!document) return;
@@ -1198,6 +1219,7 @@ export function useTimeline() {
 		updateCameraFullscreenSpan,
 		updateCameraMotionStyle,
 		updateCameraMotionSpeed,
+		updateCameraScale,
 		// T19 — drives the preview video during trim-edge resize.
 		setCurrentTime: useProjectStore((s) => s.setCurrentTime),
 	};

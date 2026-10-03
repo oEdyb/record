@@ -14,6 +14,9 @@ export interface ConnectedClickPolicy {
 	chainGapMs: number;
 	clickChainMaximumDurationMs: number;
 	passageConnectionGapMs: number;
+	heldAttentionMaximumGapMs: number;
+	heldAttentionMaximumFocusDistance: number;
+	heldAttentionMaximumMovement: number;
 	stationaryBridgeMaximumGapMs: number;
 	stationaryBridgeMaximumMovement: number;
 	stationaryBridgeMaximumFocusDistance: number;
@@ -60,6 +63,9 @@ export const DEFAULT_CONNECTED_CLICK_POLICY: ConnectedClickPolicy = Object.freez
 	chainGapMs: 1_800,
 	clickChainMaximumDurationMs: 6_000,
 	passageConnectionGapMs: CHAINED_ZOOM_PAN_GAP_MS,
+	heldAttentionMaximumGapMs: 6_000,
+	heldAttentionMaximumFocusDistance: 0.25,
+	heldAttentionMaximumMovement: 0.25,
 	stationaryBridgeMaximumGapMs: 4_000,
 	stationaryBridgeMaximumMovement: 0.025,
 	stationaryBridgeMaximumFocusDistance: 0.18,

@@ -22,6 +22,31 @@ function memoryStorage() {
 }
 
 describe("automatic direction settings", () => {
+	it("exposes and normalizes held-attention controls and twelve-per-minute defaults", () => {
+		const policy = normalizeAutomaticDirectionPolicy({});
+		expect(policy.screen.maxZoomsPerMinute).toBe(12);
+		expect(policy.camera.maxTotalDirectionPerMinute).toBe(12);
+		const controls = automaticDirectionNumberControls(policy);
+		for (const [key, label, value, max] of [
+			["heldAttentionMaximumGapMs", "Held attention gap", 6_000, 60_000],
+			["heldAttentionMaximumFocusDistance", "Held attention distance", 0.25, 2],
+			["heldAttentionMaximumMovement", "Held attention movement", 0.25, 2],
+		] as const) {
+			expect(policy.connectedClicks[key]).toBe(value);
+			expect(controls.find((control) => control.path === `connectedClicks.${key}`)).toMatchObject({
+				label,
+				min: 0,
+				max,
+				primary: false,
+			});
+			const changed = setAutomaticDirectionPolicyValue(policy, `connectedClicks.${key}`, value / 2);
+			expect(changed.connectedClicks[key]).toBe(value / 2);
+		}
+		for (const path of ["screen.maxZoomsPerMinute", "camera.maxTotalDirectionPerMinute"]) {
+			expect(controls.find((control) => control.path === path)).toMatchObject({ min: 1, max: 20 });
+		}
+	});
+
 	it("validates unknown policy values and preserves the hard screen ceiling", () => {
 		const policy = normalizeAutomaticDirectionPolicy({
 			maximumScreenScale: 8,
@@ -42,7 +67,7 @@ describe("automatic direction settings", () => {
 		);
 		expect(policy.screen.minimumZoomDurationMs).toBe(2_000);
 		expect(policy.screen.defaultZoomDurationMs).toBe(2_000);
-		expect(policy.camera.cameraScale).toBe(1.6);
+		expect(policy.camera.cameraScale).toBe(2);
 		expect(policy.camera.motionBucketMs).toBe(10);
 		expect(policy.microphoneActivity.variationLowQuantile).toBe(0.2);
 	});

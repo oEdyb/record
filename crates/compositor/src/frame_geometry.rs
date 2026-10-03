@@ -51,7 +51,7 @@ pub struct LayerCB {
     pub radius_px: f32,
     pub mode: f32,
     pub color: [f32; 4],
-    pub fx: [f32; 4],
+    pub fx: [f32; 4], // fx[1] = squircle mask flag in video (0) and shadow (2) modes
     pub src_prev: [f32; 4],
     pub dst_prev: [f32; 4],
     pub mb: [f32; 4], // mb[0] = nombre de taps de motion blur
@@ -797,7 +797,7 @@ pub struct LiveParams {
     pub webcam_zoom: f32,         // crop centré dans la webcam (1 = crop cover)
     pub webcam_focus: [f32; 2],   // point focal visuel dans le crop (0..1)
     pub webcam_mirror: bool,      // miroir horizontal de la webcam
-    pub webcam_shape: u32,        // 0=rect, 1=circle, 2=square, 3=rounded (défaut)
+    pub webcam_shape: u32,        // 0=rect, 1=circle, 2=square, 3=rounded (défaut), 4=squircle
     pub cursor_size_scale: f32,   // multiplie la taille du curseur (1 = défaut)
     pub cursor_bounce_scale: f32, // multiplie l'amplitude du click-bounce (1 = défaut, 0 = off)
     /// 0..1 : flou de mouvement DU CURSEUR (indépendant du motion blur écran/`cfg.mblur_n`).
@@ -859,7 +859,7 @@ impl Default for LiveParams {
     }
 }
 
-/// "rectangle"|"circle"|"square"|"rounded" -> code webcam_shape (0/1/2/3). Partagé entre le
+/// "rectangle"|"circle"|"square"|"rounded"|"squircle" -> code (0/1/2/3/4). Partagé entre le
 /// live (`live.rs::set_param_str`) et l'export (construit `LiveParams` depuis la scène) — une
 /// seule table de vérité pour ce mapping.
 pub fn webcam_shape_code(shape: &str) -> u32 {
@@ -867,6 +867,7 @@ pub fn webcam_shape_code(shape: &str) -> u32 {
         "rectangle" => 0,
         "circle" => 1,
         "square" => 2,
+        "squircle" => 4,
         _ => 3, // "rounded" (défaut)
     }
 }
@@ -954,6 +955,8 @@ pub struct FrameGeometry {
     pub w_dst_prev: [f32; 4],
     pub w_px: [f32; 2],
     pub w_radius: f32,
+    /// Effective scene mask; block layouts can override the saved camera preference.
+    pub w_squircle: bool,
     pub shape_fade: f32,
 }
 
@@ -972,6 +975,11 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     let (frame, cfg) = (input.frame, input.cfg);
     let lp = input.live;
     let scene = input.scene;
+    // Live preferences can still say squircle after the app resolves a block camera
+    // to rectangle. Preview and export must both consume the resolved scene shape.
+    let webcam_shape = scene
+        .map(|scene| webcam_shape_code(&scene.layout.webcam_shape))
+        .unwrap_or(lp.webcam_shape);
     let cursor = input.cursor;
 
     // Scène de l'app présente → placements du layout preset (ou, mieux, le rect résolu par
@@ -1033,7 +1041,17 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         .map(|s| s.layout.webcam_reactive_zoom)
         .unwrap_or(false);
     let source_t = input.timeline_t_override.unwrap_or(frame / FPS);
-    let source_t_prev = source_t - 1.0 / FPS;
+    // The previous frame's geometry feeds the motion blur as a velocity. On the first
+    // frame of a kept fragment the previous source time belongs to footage that was cut
+    // away, where a camera or zoom region may not exist yet: a cut is a jump, not a
+    // movement, so the previous geometry is the current one there.
+    let fragment_start = scene
+        .and_then(|s| s.clips.get(s.active_clip_index))
+        .map(|clip| clip.source_start_sec as f32);
+    let source_t_prev = match fragment_start {
+        Some(start) if source_t - 1.0 / FPS < start => source_t,
+        _ => source_t - 1.0 / FPS,
+    };
     // le focus "auto" (suivi curseur) réutilise la même piste que le rendu du curseur.
     let cursor_for_zoom = cursor;
     // La rotation 3D (mode 8, pas de motion blur dans ce chemin — cf. le commentaire au
@@ -1054,10 +1072,12 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     let cam_layout_prev = crate::regions::camera_layout_state_at(cam_regions, source_t_prev);
     let cam_progress = cam_layout.progress;
     let cam_progress_prev = cam_layout_prev.progress;
-    // rétrécissement réactif : la webcam rétrécit pendant un zoom actif (1/zoom, plancher
-    // 0.35 — parité `reactiveWebcamScale`, TS). Ignoré pendant Full Camera (voir ci-dessus).
-    let reactive_scale = |zoom: f32, progress: f32| -> f32 {
-        if webcam_reactive && progress <= 0.0 && zoom.is_finite() && zoom > 0.0 {
+    // Apply camera motion to the actually displayed PiP, including reactive shrinking.
+    // Switching shrinking off at the first positive progress jumps to a different base
+    // rect on entry and back again on exit. Fullscreen still reaches the full canvas
+    // because its final rect is independent of this base.
+    let reactive_scale = |zoom: f32| -> f32 {
+        if webcam_reactive && zoom.is_finite() && zoom > 0.0 {
             (1.0 / zoom).clamp(0.35, 1.0)
         } else {
             1.0
@@ -1076,8 +1096,8 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     } else {
         lp.webcam_size_scale
     };
-    let webcam_size_scale = base_size_scale * reactive_scale(p.zoom, cam_progress);
-    let webcam_size_scale_prev = base_size_scale * reactive_scale(pp.zoom, cam_progress_prev);
+    let webcam_size_scale = base_size_scale * reactive_scale(p.zoom);
+    let webcam_size_scale_prev = base_size_scale * reactive_scale(pp.zoom);
 
     // padding : échelle globale du layout autour du centre du cadre (parité web frameRenderer :
     // paddingScale = 1 - padding*0.4 → padding 0 = plein cadre). S'applique à TOUS les presets :
@@ -1102,14 +1122,18 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     // parité web (compositeLayout) : rectangle/rounded gardent le ratio natif de la webcam ;
     // square/circle forcent un carré (side = min). Le placement de base est carré → on ajuste
     // ici, en gardant le coin bas-droite fixe (cohérent avec le size-scale).
-    let is_square_shape = matches!(lp.webcam_shape, 1 | 2); // circle | square
+    let is_square_shape = matches!(webcam_shape, 1 | 2); // circle | square; squircle keeps source aspect
     let cam_ar = if is_square_shape {
         1.0
     } else {
         (wcw / wch).max(0.01)
     };
     let fit_cam_aspect = |dst: [f32; 4]| -> [f32; 4] {
-        let s = (dst[2] * rw).min(dst[3] * rh); // côté carré de base (px)
+        let s = if webcam_shape == 4 {
+            (dst[2] * rw).max(dst[3] * rh)
+        } else {
+            (dst[2] * rw).min(dst[3] * rh)
+        }; // Squircle preserves the configured long side; legacy shapes keep their size.
         let (pw, ph) = if cam_ar >= 1.0 {
             (s, s / cam_ar)
         } else {
@@ -1330,6 +1354,8 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         cam_layout_prev.mode,
         cam_layout_prev.camera_scale,
     );
+    w_dst = scale_center(w_dst, cam_layout.drift_scale);
+    w_dst_prev = scale_center(w_dst_prev, cam_layout_prev.drift_scale);
 
     // Contre-étirement "fit" : le canvas interne compose TOUJOURS en OUT_W×OUT_H (16:9),
     // puis `blit_resized` étire tout, de façon non uniforme si besoin, vers la résolution
@@ -1391,9 +1417,9 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             // Fallback (payload sans fraction, fixture/bench) : l'ancienne table, keyée sur la
             // forme. Rectangle ET square n'ont qu'un léger arrondi (0.12) et ne diffèrent que
             // par le ratio ; rounded est nettement plus arrondi (0.3) ; circle = demi-côté.
-            None => match lp.webcam_shape {
+            None => match webcam_shape {
                 1 => 0.5,
-                3 => 0.3,
+                3 | 4 => 0.3,
                 _ => 0.12,
             },
         };
@@ -1415,6 +1441,7 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         w_dst_prev,
         w_px,
         w_radius,
+        w_squircle: webcam_shape == 4,
         shape_fade,
     }
 }
@@ -1587,6 +1614,86 @@ mod tests {
     }
 
     #[test]
+    fn squircle_preserves_source_aspect_and_configured_roundness() {
+        let cfg = crate::config::all().pop().expect("config");
+        let mut scene = golden_scene();
+        scene.layout.webcam_shape = "squircle".into();
+        assert_eq!(webcam_shape_code(&scene.layout.webcam_shape), 4);
+        let default = plan_frame(&golden_input(&scene, &cfg));
+        assert!((default.w_px[0] / default.w_px[1] - 16.0 / 9.0).abs() < 1e-4);
+        assert!(default.w_squircle);
+        for fraction in [0.0, 0.3, 0.5] {
+            scene.layout.webcam_radius_frac = Some(fraction);
+            let geometry = plan_frame(&golden_input(&scene, &cfg));
+            assert!((geometry.w_radius - default.w_radius * fraction / 0.3).abs() < 1e-4);
+        }
+        scene.camera_fullscreen_regions.push(SceneCameraFullscreenRegion {
+            clip_index: Some(0), start_sec: 0.0, end_sec: 5.0,
+            mode: SceneCameraLayoutMode::Fullscreen, camera_scale: 1.35,
+            motion_style: crate::scene::SceneMotionStyle::Smooth, motion_speed: 1.0,
+            drift: None,
+            envelope_start_sec: None,
+            envelope_end_sec: None,
+        });
+        let fullscreen = plan_frame(&golden_input(&scene, &cfg));
+        assert_eq!(fullscreen.w_radius, 0.0);
+        assert_eq!(fullscreen.shape_fade, 0.0);
+    }
+
+    #[test]
+    fn squircle_preserves_explicit_camera_aspect_ratios() {
+        let cfg = crate::config::all().pop().expect("config");
+        for aspect in [1.0, 4.0 / 3.0, 16.0 / 9.0, 9.0 / 16.0] {
+            let mut scene = golden_scene();
+            scene.layout.webcam_shape = "squircle".into();
+            let width_px = 200.0;
+            let height_px = width_px / aspect;
+            scene.layout.webcam_rect = Some(crate::scene::SceneRect {
+                x: 0.4, y: 0.2,
+                width: width_px / 1170.0,
+                height: height_px / 658.0,
+            });
+            let geometry = plan_frame(&golden_input(&scene, &cfg));
+            assert!((geometry.w_px[0] - width_px).abs() < 1e-4);
+            assert!((geometry.w_px[1] - height_px).abs() < 1e-4);
+            assert!(geometry.w_squircle);
+        }
+    }
+
+    #[test]
+    fn resolved_block_camera_shape_overrides_raw_live_squircle_preference() {
+        let cfg = crate::config::all().pop().expect("config");
+        for preset in ["dual-frame", "vertical-stack"] {
+            let mut scene = golden_scene();
+            scene.layout.preset = preset.into();
+            scene.layout.webcam_shape = "rectangle".into();
+            let mut input = golden_input(&scene, &cfg);
+            input.live.webcam_shape = 4;
+            assert!(!plan_frame(&input).w_squircle);
+        }
+        let mut scene = golden_scene();
+        scene.layout.webcam_shape = "squircle".into();
+        let mut input = golden_input(&scene, &cfg);
+        input.live.webcam_shape = 0;
+        assert!(plan_frame(&input).w_squircle);
+        input.scene = None;
+        input.live.webcam_shape = 4;
+        assert!(plan_frame(&input).w_squircle, "fixture uses live fallback");
+    }
+
+    #[test]
+    fn squircle_shaders_share_the_l4_mask_for_camera_and_shadow() {
+        // Guard the actual shader expression, not a disconnected CPU implementation.
+        for shader in [include_str!("shaders.metal"), include_str!("shaders.hlsl"),
+                       include_str!("vk_shaders/layer.wgsl")] {
+            assert!(shader.contains("sqrt(sqrt(dot(v2, v2))) + min(max(q.x, q.y), 0.0) - r"));
+            assert_eq!(shader.matches("sd_camera_rect(p, halfsz,").count(), 2);
+            assert!(shader.contains("clamp(radius, 0.0, min(halfsz.x, halfsz.y))"));
+        }
+        assert_eq!(std::mem::size_of::<LayerCB>(), 128);
+    }
+
+    #[test]
     fn camera_emphasis_grows_the_pip_without_hiding_the_screen_or_shape() {
         let cfg = crate::config::all().pop().expect("at least one config");
         let plain = golden_scene();
@@ -1601,6 +1708,9 @@ mod tests {
                 camera_scale: 1.35,
                 motion_style: crate::scene::SceneMotionStyle::Smooth,
                 motion_speed: 1.0,
+                drift: None,
+                envelope_start_sec: None,
+                envelope_end_sec: None,
             });
         let base = plan_frame(&golden_input(&plain, &cfg));
         let grown = plan_frame(&golden_input(&emphasized, &cfg));
@@ -1622,6 +1732,93 @@ mod tests {
             "emphasis must preserve the camera mask"
         );
         assert_eq!(grown.w_radius, base.w_radius);
+    }
+
+    #[test]
+    fn camera_motion_is_continuous_from_the_reactive_camera_at_both_edges() {
+        let cfg = crate::config::all().pop().expect("config");
+        for mode in [
+            SceneCameraLayoutMode::Emphasis,
+            SceneCameraLayoutMode::Fullscreen,
+        ] {
+            let mut scene = zoomed_golden_scene();
+            scene.layout.webcam_reactive_zoom = true;
+            scene.layout.webcam_rect = Some(crate::scene::SceneRect {
+                x: 0.7,
+                y: 0.12,
+                width: 0.2,
+                height: 0.2,
+            });
+            scene
+                .camera_fullscreen_regions
+                .push(SceneCameraFullscreenRegion {
+                    clip_index: Some(0),
+                    start_sec: 1.0,
+                    end_sec: 4.0,
+                    mode,
+                    camera_scale: 1.5,
+                    motion_style: crate::scene::SceneMotionStyle::Smooth,
+                    motion_speed: 1.0,
+                    drift: None,
+                    envelope_start_sec: None,
+                    envelope_end_sec: None,
+                });
+            let at = |time| {
+                let mut input = golden_input(&scene, &cfg);
+                input.timeline_t_override = Some(time);
+                plan_frame(&input)
+            };
+            let middle = at(2.5);
+            match mode {
+                SceneCameraLayoutMode::Fullscreen => {
+                    assert_eq!(middle.w_dst, [0.0, 0.0, 1.0, 1.0]);
+                    assert_eq!(middle.shape_fade, 0.0);
+                }
+                SceneCameraLayoutMode::Emphasis => {
+                    let base = at(1.0);
+                    assert!((middle.w_dst[2] / base.w_dst[2] - 1.5).abs() < 0.0001);
+                }
+            }
+            for (edge, inside) in [(1.0, 1.001), (4.0, 3.999)] {
+                let base = at(edge);
+                let nearby = at(inside);
+                for index in 0..4 {
+                    assert!(
+                        (nearby.w_dst[index] - base.w_dst[index]).abs() < 0.0001,
+                        "camera jumps at {edge}: {:?} -> {:?}",
+                        base.w_dst,
+                        nearby.w_dst
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_first_frame_of_a_fragment_has_no_motion_blur_velocity() {
+        let cfg = crate::config::all().pop().expect("config");
+        let mut scene = zoomed_golden_scene();
+        scene.clips[0].source_start_sec = 1.0;
+        scene
+            .camera_fullscreen_regions
+            .push(SceneCameraFullscreenRegion {
+                clip_index: Some(0),
+                start_sec: 1.0,
+                end_sec: 4.0,
+                mode: SceneCameraLayoutMode::Fullscreen,
+                camera_scale: 1.0,
+                motion_style: crate::scene::SceneMotionStyle::Instant,
+                motion_speed: 1.0,
+                drift: None,
+                envelope_start_sec: None,
+                envelope_end_sec: None,
+            });
+        let mut input = golden_input(&scene, &cfg);
+        input.timeline_t_override = Some(1.0);
+        let first = plan_frame(&input);
+        assert_eq!(first.w_dst, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(first.w_dst_prev, first.w_dst, "the cut frame smears the camera");
+        assert_eq!(first.s_dst_prev, first.s_dst);
     }
 
     /// La même scène, avec une région de zoom active à `t = 1.5 s`.

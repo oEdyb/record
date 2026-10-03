@@ -69,5 +69,8 @@
 		"screen": "Экран",
 		"virtual": "Виртуальный экран",
 		"unknown": "Запись экрана"
+	},
+	"inspector": {
+		"valueRange": "Enter a number from {{min}} to {{max}}."
 	}
 }

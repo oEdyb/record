@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CameraPreviewWindow } from "./CameraPreviewWindow";
 
@@ -18,6 +18,7 @@ const enabledPreferences = {
 let preferencesChanged: ((preferences: typeof enabledPreferences) => void) | null = null;
 let positionChanged: ((position: { x: number; y: number }) => void) | null = null;
 const setCameraPreviewVisible = vi.fn();
+const setCameraPreviewExpanded = vi.fn();
 const setCameraPreviewPosition = vi.fn();
 const requestCameraPreviewConnection = vi.fn();
 const transferFromImageBitmap = vi.fn();
@@ -48,6 +49,7 @@ beforeEach(() => {
 	preferencesChanged = null;
 	positionChanged = null;
 	setCameraPreviewVisible.mockClear();
+	setCameraPreviewExpanded.mockClear();
 	setCameraPreviewPosition.mockClear();
 	requestCameraPreviewConnection.mockClear();
 	transferFromImageBitmap.mockClear();
@@ -72,6 +74,7 @@ beforeEach(() => {
 				return vi.fn();
 			}),
 			setCameraPreviewVisible,
+			setCameraPreviewExpanded,
 			requestCameraPreviewConnection,
 			setCameraPreviewPosition,
 		},
@@ -139,5 +142,51 @@ describe("CameraPreviewWindow", () => {
 		expect(JSON.parse(localStorage.getItem("openscreen_user_preferences") ?? "{}")).toMatchObject({
 			cameraPreviewPosition: { x: -212, y: 105 },
 		});
+	});
+
+	it("expands through the main process and asks for a relay that matches the new window", async () => {
+		vi.stubGlobal("devicePixelRatio", 2);
+		vi.stubGlobal("innerWidth", 312);
+		vi.stubGlobal("innerHeight", 186);
+		render(<CameraPreviewWindow />);
+		await screen.findByTestId("camera-preview-loading");
+		act(() => connectPreviewPort());
+		// A compact window never requests a relay: the default 2x frame already fits.
+		expect(previewPort.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: "configure" }),
+		);
+
+		const button = screen.getByTestId("camera-preview-expand");
+		expect(button).toHaveAttribute("aria-label", "Expand camera preview");
+		fireEvent.click(button);
+
+		expect(setCameraPreviewExpanded).toHaveBeenCalledWith(true);
+		expect(button).toHaveAttribute("aria-label", "Collapse camera preview");
+		expect(screen.getByTestId("camera-preview-surface")).toHaveAttribute("data-expanded", "true");
+
+		// The main process resizes the window; the resize event drives the relay request.
+		act(() => {
+			vi.stubGlobal("innerWidth", 1_734);
+			vi.stubGlobal("innerHeight", 986);
+			window.dispatchEvent(new Event("resize"));
+		});
+		expect(previewPort.postMessage).toHaveBeenCalledWith({
+			type: "configure",
+			width: 2_560,
+			height: 1_440,
+		});
+
+		// A larger relayed bitmap resizes the canvas before it is painted.
+		const bitmap = { width: 2_560, height: 1_440, close: vi.fn() } as unknown as ImageBitmap;
+		act(() => {
+			previewPort.onmessage?.(new MessageEvent("message", { data: { type: "frame", bitmap } }));
+		});
+		expect(screen.getByTestId("camera-preview-canvas")).toHaveAttribute("width", "2560");
+		expect(screen.getByTestId("camera-preview-canvas")).toHaveAttribute("height", "1440");
+		expect(transferFromImageBitmap).toHaveBeenCalledWith(bitmap);
+
+		fireEvent.click(button);
+		expect(setCameraPreviewExpanded).toHaveBeenLastCalledWith(false);
+		expect(button).toHaveAttribute("aria-label", "Expand camera preview");
 	});
 });

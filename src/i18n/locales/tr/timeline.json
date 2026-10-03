@@ -33,7 +33,18 @@
 		"emptyText": "Boş metin",
 		"cameraEmphasis": "Kamera vurgusu",
 		"cameraFullscreen": "Tam Ekran Kamera",
-		"cameraFullscreenItem": "Tam Ekran Kamera {{index}}"
+		"cameraFullscreenItem": "Tam Ekran Kamera {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "Video Yüklenmedi",
@@ -76,7 +87,7 @@
 		"arrangeClips": "Klipleri düzenle",
 		"arrangeClipsHint": "Yeniden sıralamak için aşağıdaki klipleri sürükleyin veya yenilerini bırakın",
 		"newAnnotation": "Açıklama",
-		"dragToReorderHint": "Yeniden sıralamak için sürükleyin · giriş/çıkış noktalarını düzenlemek için çift tıklayın",
+		"dragToReorderHint": "Yeniden sıralamak için sürükleyin, giriş/çıkış noktalarını düzenlemek için çift tıklayın",
 		"editInOutPoints": "Giriş/çıkış noktalarını düzenle",
 		"deleteClip": "Klibi sil",
 		"dropToAdd": "Zaman çizelgesine eklemek için bırakın",

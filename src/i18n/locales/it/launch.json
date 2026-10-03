@@ -31,7 +31,11 @@
 			"fontSize": "Dimensione carattere",
 			"decreaseFontSize": "Riduci dimensione carattere",
 			"increaseFontSize": "Aumenta dimensione carattere",
-			"mirror": "Specchia orizzontalmente"
+			"mirror": "Specchia orizzontalmente",
+			"more": "Più controlli",
+			"less": "Meno controlli",
+			"close": "Chiudi note",
+			"move": "Sposta note"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "Registrazione in corso",
 		"saving": "Salvataggio...",
 		"removePreviousClip": "Rimuovi clip precedente",
-		"removePreviousClipWithDuration": "Rimuovi clip precedente · {{duration}}",
+		"removePreviousClipWithDuration": "Rimuovi clip precedente ({{duration}})",
 		"clipRemoved": "Rimosso"
 	},
 	"language": "Lingua",

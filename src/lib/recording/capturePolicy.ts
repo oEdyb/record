@@ -118,3 +118,19 @@ export function buildNativeMacRecordingRequest(input: {
 export function nativeMacWebcamFileName(recordingId: number, clipIndex: number): string {
 	return `recording-${recordingId}-clip-${String(clipIndex + 1).padStart(4, "0")}-webcam.webm`;
 }
+
+function fileStem(filePath: string): string {
+	const name = filePath.split(/[\\/]/).pop() ?? "";
+	const dot = name.lastIndexOf(".");
+	return dot > 0 ? name.slice(0, dot) : name;
+}
+
+/**
+ * True when the camera file was recorded for exactly this screen clip (macOS records one
+ * camera file per clip, named after the clip). Such a file starts at the clip's own start,
+ * so its offset must not be shifted by earlier clips. A camera file that spans the whole
+ * session (one continuous file shared by every clip) is named after the recording instead.
+ */
+export function isClipOwnedWebcamPath(screenVideoPath: string, webcamVideoPath: string): boolean {
+	return fileStem(webcamVideoPath) === `${fileStem(screenVideoPath)}-webcam`;
+}

@@ -538,15 +538,26 @@ pub fn zoom_state_at(
 /// moitié de la durée de la région pour que les régions courtes s'animent pleinement sans
 /// déborder.
 fn camera_fullscreen_region_strength(region: &SceneCameraFullscreenRegion, t: f32) -> f32 {
-    let start = region.start_sec as f32;
-    let end = region.end_sec as f32;
-    if t <= start || t >= end {
+    // Gate on the whole region, not on the piece: the export walk can ask for a frame a
+    // hair past a piece's end (frame quantisation at a cut), and the piece is the only
+    // region of its clip window, so the region must still hold there.
+    let (start, end) = camera_region_envelope(region);
+    if t < start || t >= end {
         return 0.0;
     }
     let half = (end - start) * 0.5;
     let motion_speed = normalized_motion_speed(region.motion_speed);
-    let lead_in = (TRANSITION_WINDOW_S / motion_speed).min(half);
-    let lead_out = (FULLSCREEN_LEAD_OUT_WINDOW_S / motion_speed).min(half);
+    let instant = region.motion_style == SceneMotionStyle::Instant;
+    let lead_in = if instant {
+        0.0
+    } else {
+        (TRANSITION_WINDOW_S / motion_speed).min(half)
+    };
+    let lead_out = if instant {
+        0.0
+    } else {
+        (FULLSCREEN_LEAD_OUT_WINDOW_S / motion_speed).min(half)
+    };
     let lead_in_end = start + lead_in;
     let lead_out_start = end - lead_out;
     if t < lead_in_end {
@@ -585,11 +596,50 @@ pub fn camera_fullscreen_progress_at(regions: &[SceneCameraFullscreenRegion], t:
     strongest
 }
 
+/// Returns the camera drift scale at source time `t`.
+/// Bornes sur lesquelles l'ease et le drift sont calculés : la région entière quand ce
+/// morceau en est une découpe, sinon le morceau lui-même.
+fn camera_region_envelope(region: &SceneCameraFullscreenRegion) -> (f32, f32) {
+    (
+        region.envelope_start_sec.unwrap_or(region.start_sec) as f32,
+        region.envelope_end_sec.unwrap_or(region.end_sec) as f32,
+    )
+}
+
+pub fn camera_drift_factor(region: &SceneCameraFullscreenRegion, t: f32) -> f32 {
+    let Some(drift) = region.drift else {
+        return 1.0;
+    };
+    let (s, e) = camera_region_envelope(region);
+    if t < s || t >= e || drift.scale_to <= 1.0 {
+        return 1.0;
+    }
+    let scale_to = drift.scale_to.clamp(1.0, 1.6);
+    let release = drift.release_sec.max(0.0).min((e - s) * 0.5);
+    let push_end = e - release;
+    if t < push_end {
+        let p = if push_end > s {
+            (t - s) / (push_end - s)
+        } else {
+            1.0
+        };
+        1.0 + (scale_to - 1.0) * (1.0 - (std::f32::consts::PI * p).cos()) / 2.0
+    } else {
+        let q = if release > 0.0 {
+            (t - push_end) / release
+        } else {
+            1.0
+        };
+        scale_to - (scale_to - 1.0) * (1.0 - (1.0 - q) * (1.0 - q))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct CameraLayoutState {
     pub progress: f32,
     pub mode: SceneCameraLayoutMode,
     pub camera_scale: f32,
+    pub drift_scale: f32,
 }
 
 /// Resolve the strongest camera layout at `t`. Legacy regions remain Full Camera.
@@ -602,6 +652,7 @@ pub fn camera_layout_state_at(
         progress: 0.0,
         mode: SceneCameraLayoutMode::Fullscreen,
         camera_scale: 1.0,
+        drift_scale: 1.0,
     };
     for region in regions {
         let progress = camera_fullscreen_region_strength(region, t);
@@ -611,8 +662,9 @@ pub fn camera_layout_state_at(
         state = CameraLayoutState {
             progress,
             mode: region.mode,
+            drift_scale: 1.0 + (camera_drift_factor(region, t) - 1.0) * progress,
             camera_scale: if region.mode == SceneCameraLayoutMode::Emphasis {
-                region.camera_scale.clamp(1.0, 1.6)
+                region.camera_scale.clamp(1.0, 2.0)
             } else {
                 1.0
             },
@@ -624,6 +676,7 @@ pub fn camera_layout_state_at(
 #[cfg(test)]
 mod camera_layout_tests {
     use super::*;
+    use crate::scene::SceneCameraDrift;
 
     fn region(mode: SceneCameraLayoutMode, camera_scale: f32) -> SceneCameraFullscreenRegion {
         SceneCameraFullscreenRegion {
@@ -634,7 +687,140 @@ mod camera_layout_tests {
             camera_scale,
             motion_style: SceneMotionStyle::Smooth,
             motion_speed: 1.0,
+            drift: None,
+            envelope_start_sec: None,
+            envelope_end_sec: None,
         }
+    }
+
+    #[test]
+    fn camera_drift_pushes_slowly_and_releases_quickly() {
+        let mut fullscreen = region(SceneCameraLayoutMode::Fullscreen, 1.35);
+        fullscreen.drift = Some(SceneCameraDrift {
+            scale_to: 1.2,
+            release_sec: 0.5,
+        });
+        for (time, expected) in [
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (3.25, 1.1),
+            (5.5, 1.2),
+            (5.75, 1.05),
+            (6.0, 1.0),
+            (7.0, 1.0),
+        ] {
+            assert!((camera_drift_factor(&fullscreen, time) - expected).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn a_piece_cut_out_of_a_region_keeps_the_whole_region_phase() {
+        // Export splits a region at every trim/clip boundary. A piece from the middle of the
+        // region must stay full frame on its first frame and keep the drift phase, so the
+        // export matches the preview instead of restarting the ease-in and the push at the cut.
+        let mut whole = region(SceneCameraLayoutMode::Fullscreen, 1.35);
+        whole.drift = Some(SceneCameraDrift {
+            scale_to: 1.2,
+            release_sec: 0.5,
+        });
+        let mut piece = whole;
+        piece.start_sec = 3.0;
+        piece.end_sec = 6.0;
+        piece.envelope_start_sec = Some(1.0);
+        piece.envelope_end_sec = Some(6.0);
+        assert_eq!(camera_layout_state_at(&[piece], 3.0).progress, 1.0);
+        assert_eq!(camera_layout_state_at(&[piece], 0.99).progress, 0.0);
+        for time in [3.0, 3.25, 5.5, 5.75] {
+            assert!(
+                (camera_drift_factor(&piece, time) - camera_drift_factor(&whole, time)).abs()
+                    < 1e-6
+            );
+        }
+        let mut leading = whole;
+        leading.end_sec = 3.0;
+        leading.envelope_start_sec = Some(1.0);
+        leading.envelope_end_sec = Some(6.0);
+        assert_eq!(camera_layout_state_at(&[leading], 2.99).progress, 1.0);
+        // The walk's last frame of a fragment can land a hair past the piece end.
+        assert_eq!(camera_layout_state_at(&[leading], 3.01).progress, 1.0);
+        assert!((camera_drift_factor(&leading, 3.01) - camera_drift_factor(&whole, 3.01)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_instant_region_is_full_frame_on_its_first_frame() {
+        let mut instant = region(SceneCameraLayoutMode::Fullscreen, 1.35);
+        instant.motion_style = SceneMotionStyle::Instant;
+        assert_eq!(camera_layout_state_at(&[instant], 0.999).progress, 0.0);
+        assert_eq!(camera_layout_state_at(&[instant], 1.0).progress, 1.0);
+        assert_eq!(camera_layout_state_at(&[instant], 5.999).progress, 1.0);
+        assert_eq!(camera_layout_state_at(&[instant], 6.0).progress, 0.0);
+    }
+
+    #[test]
+    fn camera_layout_without_drift_keeps_unit_scale() {
+        for mode in [SceneCameraLayoutMode::Fullscreen, SceneCameraLayoutMode::Emphasis] {
+            let region = region(mode, 1.35);
+            for time in [0.0, 1.0, 1.1, 3.0, 3.25, 5.5, 5.75, 6.0, 7.0] {
+                assert_eq!(camera_drift_factor(&region, time), 1.0);
+                assert_eq!(camera_layout_state_at(&[region], time).drift_scale, 1.0);
+            }
+        }
+        assert_eq!(camera_layout_state_at(&[], 3.0).drift_scale, 1.0);
+    }
+
+    #[test]
+    fn camera_drift_fades_with_the_layout_envelope() {
+        for mode in [SceneCameraLayoutMode::Fullscreen, SceneCameraLayoutMode::Emphasis] {
+            let mut region = region(mode, 1.35);
+            region.drift = Some(SceneCameraDrift {
+                scale_to: 1.2,
+                release_sec: 0.5,
+            });
+            let start = camera_layout_state_at(&[region], 1.0);
+            assert_eq!(start.progress, 0.0);
+            assert_eq!(start.drift_scale, 1.0);
+            let plateau = camera_layout_state_at(&[region], 3.0);
+            assert_eq!(plateau.progress, 1.0);
+            assert_eq!(plateau.drift_scale, camera_drift_factor(&region, 3.0));
+            let release = camera_layout_state_at(&[region], 5.75);
+            assert!(release.progress > 0.0 && release.progress < 1.0);
+            assert_eq!(
+                release.drift_scale,
+                1.0 + (camera_drift_factor(&region, 5.75) - 1.0) * release.progress
+            );
+        }
+    }
+
+    #[test]
+    fn camera_drift_bounds_scale_and_release_duration() {
+        let mut fullscreen = region(SceneCameraLayoutMode::Fullscreen, 1.35);
+        for (scale_to, release_sec, time, expected) in [
+            (0.8, 0.5, 3.25, 1.0),
+            (1.0, 0.5, 3.25, 1.0),
+            (2.0, 0.5, 5.5, 1.6),
+            (1.2, -1.0, 3.5, 1.1),
+            (1.2, 0.0, 3.5, 1.1),
+            (1.2, 10.0, 3.5, 1.2),
+            (1.2, 10.0, 4.75, 1.05),
+        ] {
+            fullscreen.drift = Some(SceneCameraDrift { scale_to, release_sec });
+            assert!((camera_drift_factor(&fullscreen, time) - expected).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn camera_drift_deserializes_optional_camel_case_fields() {
+        let legacy: SceneCameraFullscreenRegion =
+            serde_json::from_str(r#"{"startSec":1.0,"endSec":6.0}"#).unwrap();
+        assert_eq!(legacy.drift, None);
+        let drifting: SceneCameraFullscreenRegion = serde_json::from_str(
+            r#"{"startSec":1.0,"endSec":6.0,"drift":{"scaleTo":1.2,"releaseSec":0.5}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            drifting.drift,
+            Some(SceneCameraDrift { scale_to: 1.2, release_sec: 0.5 })
+        );
     }
 
     #[test]

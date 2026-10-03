@@ -593,6 +593,25 @@ export class CompositorViewService {
 		return this.addon;
 	}
 
+	/** Pure frame planning: loads the addon but creates no view, decoder or GPU context. */
+	evaluateSceneGeometry(requestJson: string): string | null {
+		const addon = this.ensureAddon() as
+			| (CompositorViewAddon & { evaluateSceneGeometry?: (request: string) => string })
+			| null;
+		return addon?.evaluateSceneGeometry?.(requestJson) ?? null;
+	}
+
+	async renderAudioOverlayStem(
+		requestJson: string,
+		outputPath: string,
+		jobId: string,
+	): Promise<string> {
+		const addon = this.ensureAddon();
+		if (!addon?.renderAudioOverlayStem)
+			throw new Error("Native audio overlay renderer unavailable");
+		return addon.renderAudioOverlayStem(requestJson, outputPath, jobId);
+	}
+
 	/** True when the native `.node` addon was successfully loaded. */
 	hasAddon(): boolean {
 		return this.ensureAddon() !== null;

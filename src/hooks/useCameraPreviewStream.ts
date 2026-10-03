@@ -3,8 +3,9 @@ import {
 	applyWebcamFormat,
 	DEFAULT_WEBCAM_FORMAT,
 	preferredWebcamConstraints,
-	probeWebcamFormats,
+	probeWebcamFormatsCached,
 	sameWebcamFormat,
+	settingsMatchFormat,
 	type WebcamFormat,
 	webcamFormatFromSettings,
 } from "../lib/webcamFormats";
@@ -66,21 +67,22 @@ export function useCameraPreviewStream({
 
 			const track = nextStream.getVideoTracks()[0];
 			if (!track) return;
-			const available = await probeWebcamFormats(track);
+			const available = await probeWebcamFormatsCached(track, deviceId);
 			if (cancelled) return;
-			setSupportedFormats(available);
 
 			const requested = formatRef.current;
 			const resolved =
 				available.find((candidate) => sameWebcamFormat(candidate, requested)) ??
 				available.find((candidate) => sameWebcamFormat(candidate, DEFAULT_WEBCAM_FORMAT)) ??
 				available[0];
-			if (resolved) {
+			if (resolved && !settingsMatchFormat(track.getSettings(), resolved)) {
 				await applyWebcamFormat(track, resolved).catch(() => undefined);
 			}
-			if (!cancelled) {
-				setActiveFormat(webcamFormatFromSettings(track.getSettings(), resolved ?? requested));
-			}
+			if (cancelled) return;
+			// Publish both together: a render with new supported formats and a stale
+			// active format would look like the camera rejected the user's choice.
+			setSupportedFormats(available);
+			setActiveFormat(webcamFormatFromSettings(track.getSettings(), resolved ?? requested));
 		};
 
 		const acquisition = externalStream
@@ -121,6 +123,11 @@ export function useCameraPreviewStream({
 	useEffect(() => {
 		const track = streamRef.current?.getVideoTracks()[0];
 		if (!track || !supportedFormats.some((candidate) => sameWebcamFormat(candidate, format))) {
+			return;
+		}
+
+		if (settingsMatchFormat(track.getSettings(), format)) {
+			setActiveFormat(webcamFormatFromSettings(track.getSettings(), format));
 			return;
 		}
 

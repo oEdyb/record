@@ -63,7 +63,7 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
 	{
 		i18nKey: "panTimeline",
 		label: "Pan Timeline",
-		display: "Scroll",
+		display: "Shift + Scroll",
 		bindings: [],
 	},
 	{ i18nKey: "zoomTimeline", label: "Zoom Timeline", display: "Ctrl + Scroll", bindings: [] },

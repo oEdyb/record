@@ -31,7 +31,11 @@
 			"fontSize": "Tamaño de fuente",
 			"decreaseFontSize": "Reducir tamaño de fuente",
 			"increaseFontSize": "Aumentar tamaño de fuente",
-			"mirror": "Reflejar horizontalmente"
+			"mirror": "Reflejar horizontalmente",
+			"more": "Más controles",
+			"less": "Menos controles",
+			"close": "Cerrar notas",
+			"move": "Mover notas"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "Grabando",
 		"saving": "Guardando...",
 		"removePreviousClip": "Eliminar clip anterior",
-		"removePreviousClipWithDuration": "Eliminar clip anterior · {{duration}}",
+		"removePreviousClipWithDuration": "Eliminar clip anterior ({{duration}})",
 		"clipRemoved": "Eliminado"
 	},
 	"language": "Idioma",

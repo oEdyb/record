@@ -1,0 +1,51 @@
+{
+	"missingTranscriptPass": {
+		"status": "pass",
+		"checks": [
+			{
+				"name": "transcript_unchanged",
+				"pass": true,
+				"expected": "unchanged",
+				"actual": "unchanged"
+			}
+		],
+		"unintendedMutations": 0,
+		"wrongTimeEdits": null
+	},
+	"noOpUndoPass": {
+		"status": "pass",
+		"checks": [
+			{
+				"name": "project_hash",
+				"pass": true,
+				"expected": "restored",
+				"actual": "identical"
+			},
+			{
+				"name": "staged_count",
+				"pass": true,
+				"expected": "0..0",
+				"actual": 0
+			},
+			{
+				"name": "new_check_errors",
+				"pass": true,
+				"expected": "<= 0 new",
+				"actual": "0 new"
+			},
+			{
+				"name": "transcript_unchanged",
+				"pass": true,
+				"expected": "unchanged",
+				"actual": "unchanged"
+			}
+		],
+		"unintendedMutations": 0,
+		"wrongTimeEdits": null
+	},
+	"nestedTranscript": null,
+	"nestedChecks": {
+		"errors": null,
+		"warnings": null
+	}
+}

@@ -31,7 +31,11 @@
 			"fontSize": "글꼴 크기",
 			"decreaseFontSize": "글꼴 크기 줄이기",
 			"increaseFontSize": "글꼴 크기 늘리기",
-			"mirror": "좌우 반전"
+			"mirror": "좌우 반전",
+			"more": "컨트롤 더 보기",
+			"less": "컨트롤 줄이기",
+			"close": "메모 닫기",
+			"move": "메모 이동"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "녹화 중",
 		"saving": "저장 중...",
 		"removePreviousClip": "이전 클립 삭제",
-		"removePreviousClipWithDuration": "이전 클립 삭제 · {{duration}}",
+		"removePreviousClipWithDuration": "이전 클립 삭제 ({{duration}})",
 		"clipRemoved": "삭제됨"
 	},
 	"language": "언어",

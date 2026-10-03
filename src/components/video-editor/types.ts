@@ -1,3 +1,4 @@
+import type { AutomaticDirectionProvenance } from "@/lib/ai-edition/schema/automatic-direction-review";
 import {
 	effectiveZoomScale,
 	type ZoomDepth,
@@ -30,7 +31,7 @@ export const DEFAULT_WEBCAM_ZOOM: WebcamZoom = 1;
 export const DEFAULT_WEBCAM_LAYOUT_PRESET: WebcamLayoutPreset = "picture-in-picture";
 export { DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE };
 
-export type WebcamMaskShape = "rectangle" | "circle" | "square" | "rounded";
+export type WebcamMaskShape = "rectangle" | "circle" | "square" | "rounded" | "squircle";
 
 export const DEFAULT_WEBCAM_MASK_SHAPE: WebcamMaskShape = "rectangle";
 
@@ -118,6 +119,7 @@ export interface ZoomRegion {
 	source?: ZoomRegionSource;
 	/** Stable ownership for one connected automatic-direction passage. */
 	directionGroupId?: string;
+	automaticDirection?: AutomaticDirectionProvenance;
 }
 
 export function getRotation3D(region: Pick<ZoomRegion, "rotationPreset">): Rotation3D {
@@ -260,6 +262,11 @@ export type CameraLayoutMode = "fullscreen" | "emphasis";
  * Automatic direction uses `emphasis`: the webcam grows moderately while the screen
  * remains visible. Both modes use the same contained ease-in/hold/ease-out envelope.
  */
+export interface CameraDrift {
+	scaleTo: number;
+	releaseSec: number;
+}
+
 export interface CameraFullscreenRegion {
 	id: string;
 	startMs: number;
@@ -271,9 +278,12 @@ export interface CameraFullscreenRegion {
 	motionStyle?: MotionStyle;
 	/** Transition speed multiplier. 1 is the authored default. */
 	motionSpeed?: MotionSpeed;
+	/** Slow push-in to `scaleTo`, then a quick return to 1 over the last `releaseSec`. */
+	drift?: CameraDrift;
 	source?: "auto" | "manual";
 	/** Stable ownership for one automatic-direction passage. */
 	directionGroupId?: string;
+	automaticDirection?: AutomaticDirectionProvenance;
 }
 
 export type AnnotationType = "text" | "image" | "figure" | "blur";
@@ -493,4 +503,17 @@ export function clampFocus(focus: ZoomFocus): ZoomFocus {
 		cx: focusOrCentre(focus.cx),
 		cy: focusOrCentre(focus.cy),
 	};
+}
+
+/** Camera corner radius as a percentage of its shorter side. Missing keeps legacy framing. */
+export function normalizeWebcamCornerRadius(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value)
+		? Math.max(0, Math.min(50, value))
+		: undefined;
+}
+
+export const WEBCAM_ASPECT_RATIOS = ["source", "1:1", "4:3", "16:9", "9:16"] as const;
+export type WebcamAspectRatio = (typeof WEBCAM_ASPECT_RATIOS)[number];
+export function normalizeWebcamAspectRatio(value: unknown): WebcamAspectRatio | undefined {
+	return WEBCAM_ASPECT_RATIOS.find((ratio) => ratio === value);
 }

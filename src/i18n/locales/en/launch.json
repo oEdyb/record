@@ -31,7 +31,11 @@
 			"fontSize": "Font size",
 			"decreaseFontSize": "Decrease font size",
 			"increaseFontSize": "Increase font size",
-			"mirror": "Mirror horizontally"
+			"mirror": "Mirror horizontally",
+			"more": "More controls",
+			"less": "Fewer controls",
+			"close": "Close notes",
+			"move": "Move notes"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "Recording",
 		"saving": "Saving...",
 		"removePreviousClip": "Remove previous clip",
-		"removePreviousClipWithDuration": "Remove previous clip · {{duration}}",
+		"removePreviousClipWithDuration": "Remove previous clip ({{duration}})",
 		"clipRemoved": "Removed"
 	},
 	"language": "Language",

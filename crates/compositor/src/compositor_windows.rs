@@ -925,6 +925,22 @@ impl Compositor {
         *self.timeline_t_override.borrow_mut() = t;
     }
 
+    pub(crate) fn has_video_overlays(&self) -> bool {
+        self.scene
+            .borrow()
+            .as_ref()
+            .is_some_and(|scene| !scene.video_overlays.is_empty())
+    }
+
+    pub(crate) unsafe fn overlay_frame_at(
+        &self,
+        decoders: &mut crate::overlay_video::OverlayDecoders,
+        source_t_sec: f64,
+        gpu: &Gpu,
+    ) -> Result<(*const AVFrame, Option<crate::overlay_video::ActiveOverlay>)> {
+        decoders.frame_at(self.scene.borrow().as_ref(), source_t_sec, gpu)
+    }
+
     /// Copie de la scène courante (si présente) — utilisé par l'export multiclip pour lire les
     /// réglages curseur (thème/lissage/show) sans dupliquer le contrat de scène côté pipeline.
     pub fn scene_snapshot(&self) -> Option<Scene> {
@@ -1101,6 +1117,7 @@ impl Compositor {
         spread: f32,
         offset_px: [f32; 2],
         opacity: f32,
+        squircle: bool,
     ) {
         let sx = spread / self.rw();
         let sy = spread / self.rh();
@@ -1117,7 +1134,7 @@ impl Compositor {
             radius_px: radius,
             mode: 2.0,
             color: [0.0, 0.0, 0.0, opacity],
-            fx: [spread, 0.0, 0.0, 0.0],
+            fx: [spread, u8::from(squircle) as f32, 0.0, 0.0],
             mb: [0.0, 1.0, 1.0, 0.0],
             ..Default::default()
         };
@@ -1188,7 +1205,10 @@ impl Compositor {
         webcam: *const AVFrame,
         frame: f32,
         cfg: &Cfg,
+        _overlay: *const AVFrame,
+        _overlay_region: Option<&crate::overlay_video::ActiveOverlay>,
     ) -> Result<()> {
+        // TODO: render video overlays on this platform (Mac-first).
         let (sy, suv) = self.nv12_srvs(screen)?;
         let (wy, wuv) = self.nv12_srvs(webcam)?;
         let (stw, sth) = self.tex_dims(screen);
@@ -1220,6 +1240,7 @@ impl Compositor {
             w_dst_prev,
             w_px,
             w_radius,
+            w_squircle,
             shape_fade,
         } = crate::frame_geometry::plan_frame(&crate::frame_geometry::FrameGeometryInput {
             render_px: [self.rw(), self.rh()],
@@ -1364,7 +1385,7 @@ impl Compositor {
             let offset = [0.0, SCREEN_SHADOW_OFFSET_FRAC * frame_min_px];
             let opacity = 0.45 * lp.shadow_scale;
             match tilt.as_ref() {
-                None => self.draw_shadow(s_dst, s_px, s_radius, spread, offset, opacity),
+                None => self.draw_shadow(s_dst, s_px, s_radius, spread, offset, opacity, false),
                 Some(quad) => self.draw_quad_shadow(
                     &quad.corners,
                     quad_center_px,
@@ -1678,6 +1699,7 @@ impl Compositor {
                     WEBCAM_SHADOW_SPREAD_FRAC * frame_min_px,
                     [0.0, WEBCAM_SHADOW_OFFSET_FRAC * frame_min_px],
                     strength,
+                    w_squircle,
                 );
             }
             self.draw_video(
@@ -1686,6 +1708,7 @@ impl Compositor {
                     src: [u0, sv0, u1, sv1],
                     quad_px: w_px,
                     radius_px: w_radius,
+                    fx: [0.0, u8::from(w_squircle) as f32, 0.0, 0.0],
                     mode: 0.0,
                     color: [0.0, 0.0, 0.0, 1.0],
                     src_prev: [u0, sv0, u1, sv1], // src fixe (pas de zoom webcam)
@@ -1879,16 +1902,25 @@ impl Compositor {
                         fit_w,
                         fit_h,
                     ];
+                    let (animated_dst, anim) = crate::text_anim::image_animation_geometry(
+                        annotation.image_animation.as_deref(),
+                        (t - annotation.start_sec as f32) * 1000.0,
+                        fit,
+                        [self.rw(), self.rh()],
+                    );
+                    if anim.reveal <= 0.0 || anim.opacity <= 0.0 {
+                        continue;
+                    }
                     self.ctx.PSSetShaderResources(2, Some(&[Some(srv)]));
                     self.draw_solid(&LayerCB {
-                        dst: fit,
-                        src: [0.0, 0.0, 1.0, 1.0],
-                        quad_px: [fit_w * self.rw(), fit_h * self.rh()],
+                        dst: animated_dst,
+                        src: [0.0, 0.0, anim.reveal, 1.0],
+                        quad_px: [animated_dst[2] * self.rw(), animated_dst[3] * self.rh()],
                         // mode 7 = sprite RGBA avec alpha, déjà utilisé par les thèmes de curseur :
                         // exactement ce qu'il faut ici, donc aucun shader de plus. `fx` est son
                         // rect de clip — plein cadre, pour ne rien découper.
                         mode: 7.0,
-                        color: [1.0, 1.0, 1.0, 1.0],
+                        color: [1.0, 1.0, 1.0, anim.opacity],
                         fx: [0.0, 0.0, 1.0, 1.0],
                         ..Default::default()
                     });
@@ -2006,7 +2038,7 @@ impl Compositor {
     ) -> Result<()> {
         let n = cfg.mblur_n;
         if n <= 1 {
-            return self.compose_frame(screen, webcam, frame as f32, cfg);
+            return self.compose_frame(screen, webcam, frame as f32, cfg, std::ptr::null(), None);
         }
         // accumulateur à zéro
         self.ctx
@@ -2014,8 +2046,8 @@ impl Compositor {
         let w = 1.0 / n as f32;
         for k in 0..n {
             let tf = frame as f32 + (k as f32 + 0.5) / n as f32 - 0.5;
-            self.compose_frame(screen, webcam, tf, cfg)?; // -> self.rt
-                                                          // accum += rt * (1/n)  (blend factor = 1/n, dest = ONE)
+            self.compose_frame(screen, webcam, tf, cfg, std::ptr::null(), None)?; // -> self.rt
+                                                                                  // accum += rt * (1/n)  (blend factor = 1/n, dest = ONE)
             self.ctx
                 .OMSetRenderTargets(Some(&[Some(self.accum_rtv.clone())]), None);
             self.ctx

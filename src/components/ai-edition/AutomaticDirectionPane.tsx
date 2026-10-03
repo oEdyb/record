@@ -3,8 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppSelect } from "@/components/ui/app-select";
 import { InspectorSection, InspectorSlider } from "@/components/ui/inspector";
+import { useScopedT } from "@/contexts/I18nContext";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { DEFAULT_AUTOMATIC_DIRECTION_POLICY } from "@/lib/ai-edition/timeline/automatic-direction";
+import {
+	type AutomaticDirectionMember,
+	automaticDirectionGroupsForDocument,
+} from "@/lib/ai-edition/timeline/automatic-direction-ownership";
 import {
 	type AutomaticDirectionNumberControl,
 	type AutomaticDirectionPreset,
@@ -17,7 +22,9 @@ import {
 	readAutomaticDirectionSettings,
 	saveAutomaticDirectionPreset,
 	setAutomaticDirectionPolicyValue,
+	writeAutomaticDirectionSettings,
 } from "@/lib/ai-edition/timeline/automatic-direction-settings";
+import { AutomaticReview } from "./AutomaticReview";
 import styles from "./NewEditorShell.module.css";
 import { Pane } from "./RightPanes";
 import {
@@ -28,7 +35,7 @@ import {
 const LIVE_REPLAN_DEBOUNCE_MS = 180;
 
 type Policy = typeof DEFAULT_AUTOMATIC_DIRECTION_POLICY;
-type PendingUpdate = { policy: Policy; presetId: string | null };
+type PendingUpdate = { policy: Policy; presetId: string | null; generate: boolean };
 
 function displayedControl(control: AutomaticDirectionNumberControl) {
 	return control.suffix === " ms"
@@ -87,7 +94,27 @@ function policiesMatch(left: Policy, right: Policy): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function AutomaticDirectionPane() {
+export function AutomaticDirectionPane({
+	onSeek,
+	onAdjust,
+}: {
+	onSeek?: (rawSec: number) => void;
+	onAdjust?: (member: AutomaticDirectionMember) => void;
+} = {}) {
+	const projectId = useProjectStore((state) => state.projectId);
+	return (
+		<AutomaticDirectionPaneBody key={projectId ?? "empty"} onSeek={onSeek} onAdjust={onAdjust} />
+	);
+}
+
+function AutomaticDirectionPaneBody({
+	onSeek,
+	onAdjust,
+}: {
+	onSeek?: (rawSec: number) => void;
+	onAdjust?: (member: AutomaticDirectionMember) => void;
+}) {
+	const t = useScopedT("settings");
 	const document = useProjectStore((state) => state.document);
 	const projectId = useProjectStore((state) => state.projectId);
 	const revision = useProjectStore((state) => state.revision);
@@ -123,6 +150,7 @@ export function AutomaticDirectionPane() {
 		mountedRef.current = true;
 		return () => {
 			mountedRef.current = false;
+			pendingRef.current = null;
 			if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
 		};
 	}, []);
@@ -151,11 +179,27 @@ export function AutomaticDirectionPane() {
 				const continuesSession =
 					currentSession?.projectId === projectId &&
 					currentSession.lastAppliedRevision === currentRevision;
-				await regenerateProjectAutomaticDirection(projectId, {
-					policy: request.policy,
-					presetId: request.presetId,
-					createHistorySnapshot: !continuesSession,
-				});
+				const current = useProjectStore.getState().document;
+				if (
+					request.generate ||
+					(current && automaticDirectionGroupsForDocument(current).length > 0)
+				) {
+					await regenerateProjectAutomaticDirection(projectId, {
+						policy: request.policy,
+						presetId: request.presetId,
+						createHistorySnapshot: !continuesSession,
+					});
+				} else {
+					const result = await useProjectStore
+						.getState()
+						.applyDocumentPatch(
+							projectId,
+							(latest) => writeAutomaticDirectionSettings(latest, request),
+							{ createHistorySnapshot: continuesSession ? undefined : (base) => base },
+						);
+					if (result === "conflict" || result === "project-changed")
+						throw new Error("The project changed before automatic settings could be saved");
+				}
 				sessionRef.current = {
 					projectId,
 					lastAppliedRevision: useProjectStore.getState().revision,
@@ -165,9 +209,10 @@ export function AutomaticDirectionPane() {
 		} catch (error) {
 			pendingRef.current = null;
 			if (mountedRef.current) setStatus("error");
-			toast.error("Could not update automatic edits", {
-				description: error instanceof Error ? error.message : String(error),
-			});
+			if (mountedRef.current)
+				toast.error("Could not update automatic edits", {
+					description: error instanceof Error ? error.message : String(error),
+				});
 		} finally {
 			runningRef.current = false;
 			if (pendingRef.current) void executePending();
@@ -175,12 +220,12 @@ export function AutomaticDirectionPane() {
 	}, [projectId]);
 
 	const queueUpdate = useCallback(
-		(nextPolicy: Policy, nextPresetId: string | null, immediate = false) => {
+		(nextPolicy: Policy, nextPresetId: string | null, immediate = false, generate = false) => {
 			policyRef.current = nextPolicy;
 			presetIdRef.current = nextPresetId;
 			setPolicy(nextPolicy);
 			setPresetId(nextPresetId);
-			pendingRef.current = { policy: nextPolicy, presetId: nextPresetId };
+			pendingRef.current = { policy: nextPolicy, presetId: nextPresetId, generate };
 			if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
 			if (immediate) {
 				debounceRef.current = null;
@@ -225,6 +270,14 @@ export function AutomaticDirectionPane() {
 		return [...groups.entries()];
 	}, [controls]);
 	const canRegenerate = canRegenerateAutomaticDirection(document);
+	const beginReviewChange = () => {
+		if (runningRef.current) return false;
+		if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+		debounceRef.current = null;
+		pendingRef.current = null;
+		sessionRef.current = null;
+		return true;
+	};
 
 	const applyPreset = (id: string) => {
 		if (id === DEFAULT_AUTOMATIC_DIRECTION_PRESET_ID) {
@@ -262,133 +315,161 @@ export function AutomaticDirectionPane() {
 		<Pane
 			title="Automatic"
 			icon={<Sparkles size={14} />}
-			helpText="Tune the deterministic first edit. Every result remains editable on the timeline."
+			helpText="Recordings start without automatic edits. Apply them when you're ready, then tune the result."
 			flat
 		>
-			<section className={styles.inspectorSection}>
-				<div className={styles.automaticPresetHead}>
-					<AppSelect
-						aria-label="Automatic editing preset"
-						value={presetId ?? "custom"}
-						disabled={!canRegenerate || status === "updating"}
-						onChange={(event) => applyPreset(event.target.value)}
-					>
-						<option value={DEFAULT_AUTOMATIC_DIRECTION_PRESET_ID}>Balanced</option>
-						{presets.map((preset) => (
-							<option key={preset.id} value={preset.id}>
-								{preset.name}
-							</option>
-						))}
-						{presetId === null ? <option value="custom">Custom</option> : null}
-					</AppSelect>
-					<button type="button" onClick={() => setSaveOpen((open) => !open)} title="Save preset">
-						<Save size={14} />
-					</button>
-					{presetId?.startsWith("custom-") ? (
-						<button type="button" onClick={removePreset} title="Remove preset">
-							<Trash2 size={14} />
-						</button>
-					) : null}
-				</div>
-				{saveOpen ? (
-					<form
-						className={styles.automaticPresetSave}
-						onSubmit={(event) => {
-							event.preventDefault();
-							savePreset();
-						}}
-					>
-						<input
-							autoFocus
-							value={presetName}
-							maxLength={64}
-							placeholder="Preset name"
-							onChange={(event) => setPresetName(event.target.value)}
-						/>
-						<button type="submit">Save</button>
-					</form>
-				) : null}
-				<div className={styles.automaticStatus} data-state={status} role="status">
-					<span>
-						{status === "updating"
-							? "Updating preview…"
-							: status === "error"
-								? "Update failed"
-								: "Live preview"}
-					</span>
-					<button
-						type="button"
-						disabled={
-							!canRegenerate ||
-							status === "updating" ||
-							policiesMatch(policy, DEFAULT_AUTOMATIC_DIRECTION_POLICY)
-						}
-						onClick={() =>
-							queueUpdate(
-								DEFAULT_AUTOMATIC_DIRECTION_POLICY,
-								DEFAULT_AUTOMATIC_DIRECTION_PRESET_ID,
-								true,
-							)
-						}
-					>
-						<RotateCcw size={12} /> Reset
-					</button>
-				</div>
-			</section>
-
-			<InspectorSection title="Screen direction">
-				{primaryScreenControls.map((control) => (
-					<PolicySlider
-						key={control.path}
-						control={control}
-						policy={policy}
-						disabled={!canRegenerate}
-						onChange={setValue}
-						onCommit={commitPending}
-					/>
-				))}
-			</InspectorSection>
-
-			<InspectorSection title="Camera emphasis">
-				{primaryCameraControls.map((control) => (
-					<PolicySlider
-						key={control.path}
-						control={control}
-						policy={policy}
-						disabled={!canRegenerate}
-						onChange={setValue}
-						onCommit={commitPending}
-					/>
-				))}
-			</InspectorSection>
-
-			<details
-				className={styles.automaticAdvanced}
-				onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-			>
-				<summary>
-					<span>All parameters</span>
-					<span>{controls.length}</span>
-				</summary>
-				<p>Max Zoom scales the automatic depth profile. Balanced stays at 1.65×.</p>
-				{advancedOpen
-					? advancedGroups.map(([group, groupControls]) => (
-							<section key={group} className={styles.automaticAdvancedGroup}>
-								<h3>{group}</h3>
-								{groupControls.map((control) => (
-									<PolicySlider
-										key={control.path}
-										control={control}
-										policy={policy}
-										disabled={!canRegenerate}
-										onChange={setValue}
-										onCommit={commitPending}
-									/>
+			{!canRegenerate && (
+				<p className={styles.inspectorSectionHint}>{t("automaticReview.recordingRequired")}</p>
+			)}
+			<AutomaticReview
+				hideEmpty
+				key={projectId ?? "empty"}
+				busy={status === "updating"}
+				canRegenerate={canRegenerate}
+				onBeforeChange={beginReviewChange}
+				onRegenerate={() => {
+					if (beginReviewChange()) queueUpdate(policyRef.current, presetIdRef.current, true, true);
+				}}
+				onSeek={onSeek}
+				onAdjust={onAdjust}
+			/>
+			{canRegenerate ? (
+				<>
+					<section className={styles.inspectorSection}>
+						<div className={styles.automaticPresetHead}>
+							<AppSelect
+								aria-label="Automatic editing preset"
+								value={presetId ?? "custom"}
+								disabled={!canRegenerate || status === "updating"}
+								onChange={(event) => applyPreset(event.target.value)}
+							>
+								<option value={DEFAULT_AUTOMATIC_DIRECTION_PRESET_ID}>Balanced</option>
+								{presets.map((preset) => (
+									<option key={preset.id} value={preset.id}>
+										{preset.name}
+									</option>
 								))}
-							</section>
-						))
-					: null}
-			</details>
+								{presetId === null ? <option value="custom">Custom</option> : null}
+							</AppSelect>
+							<button
+								type="button"
+								onClick={() => setSaveOpen((open) => !open)}
+								title="Save preset"
+							>
+								<Save size={14} />
+							</button>
+							{presetId?.startsWith("custom-") ? (
+								<button type="button" onClick={removePreset} title="Remove preset">
+									<Trash2 size={14} />
+								</button>
+							) : null}
+						</div>
+						{saveOpen ? (
+							<form
+								className={styles.automaticPresetSave}
+								onSubmit={(event) => {
+									event.preventDefault();
+									savePreset();
+								}}
+							>
+								<input
+									autoFocus
+									value={presetName}
+									maxLength={64}
+									placeholder="Preset name"
+									onChange={(event) => setPresetName(event.target.value)}
+								/>
+								<button type="submit">Save</button>
+							</form>
+						) : null}
+						<div className={styles.automaticStatus} data-state={status} role="status">
+							<span>
+								{status === "updating"
+									? "Updating preview…"
+									: status === "error"
+										? "Update failed"
+										: canRegenerate
+											? "Live preview"
+											: "Preview unavailable"}
+							</span>
+							<button
+								type="button"
+								disabled={
+									!canRegenerate ||
+									status === "updating" ||
+									policiesMatch(policy, DEFAULT_AUTOMATIC_DIRECTION_POLICY)
+								}
+								onClick={() =>
+									queueUpdate(
+										DEFAULT_AUTOMATIC_DIRECTION_POLICY,
+										DEFAULT_AUTOMATIC_DIRECTION_PRESET_ID,
+										true,
+									)
+								}
+							>
+								<RotateCcw size={12} /> Reset
+							</button>
+						</div>
+					</section>
+
+					<details className={styles.automaticAdvanced}>
+						<summary>{t("automaticReview.tune")}</summary>
+						<InspectorSection title="Screen direction">
+							{primaryScreenControls.map((control) => (
+								<PolicySlider
+									key={control.path}
+									control={control}
+									policy={policy}
+									disabled={!canRegenerate}
+									onChange={setValue}
+									onCommit={commitPending}
+								/>
+							))}
+						</InspectorSection>
+
+						<InspectorSection title="Camera emphasis">
+							{primaryCameraControls.map((control) => (
+								<PolicySlider
+									key={control.path}
+									control={control}
+									policy={policy}
+									disabled={!canRegenerate}
+									onChange={setValue}
+									onCommit={commitPending}
+								/>
+							))}
+						</InspectorSection>
+
+						<details
+							className={styles.automaticAdvanced}
+							onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+						>
+							<summary>
+								<span>All parameters</span>
+								<span>{controls.length}</span>
+							</summary>
+							<p>Max Zoom scales the automatic depth profile. Balanced stays at 1.65×.</p>
+							{advancedOpen
+								? advancedGroups.map(([group, groupControls]) => (
+										<section key={group} className={styles.automaticAdvancedGroup}>
+											<h3>{group}</h3>
+											{groupControls.map((control) => (
+												<PolicySlider
+													key={control.path}
+													control={control}
+													policy={policy}
+													disabled={!canRegenerate}
+													onChange={setValue}
+													onCommit={commitPending}
+												/>
+											))}
+										</section>
+									))
+								: null}
+						</details>
+					</details>
+				</>
+			) : null}
 		</Pane>
 	);
 }

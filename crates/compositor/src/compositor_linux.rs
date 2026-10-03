@@ -831,6 +831,22 @@ impl Compositor {
         *self.cursor.borrow_mut() = None;
     }
 
+    pub(crate) fn has_video_overlays(&self) -> bool {
+        self.scene
+            .borrow()
+            .as_ref()
+            .is_some_and(|scene| !scene.video_overlays.is_empty())
+    }
+
+    pub(crate) unsafe fn overlay_frame_at(
+        &self,
+        decoders: &mut crate::overlay_video::OverlayDecoders,
+        source_t_sec: f64,
+        gpu: &Gpu,
+    ) -> Result<(*const AVFrame, Option<crate::overlay_video::ActiveOverlay>)> {
+        decoders.frame_at(self.scene.borrow().as_ref(), source_t_sec, gpu)
+    }
+
     pub fn scene_snapshot(&self) -> Option<Scene> {
         self.scene.borrow().clone()
     }
@@ -884,6 +900,7 @@ impl Compositor {
         spread: f32,
         offset_px: [f32; 2],
         opacity: f32,
+        squircle: bool,
     ) -> LayerCB {
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
         let (sx, sy) = (spread / rw, spread / rh);
@@ -899,7 +916,7 @@ impl Compositor {
             radius_px: radius,
             mode: 2.0,
             color: [0.0, 0.0, 0.0, opacity],
-            fx: [spread, 0.0, 0.0, 0.0],
+            fx: [spread, u8::from(squircle) as f32, 0.0, 0.0],
             mb: [0.0, 1.0, 1.0, 0.0],
             ..Default::default()
         }
@@ -1112,7 +1129,10 @@ impl Compositor {
         webcam: *const AVFrame,
         frame: f32,
         cfg: &Cfg,
+        _overlay: *const AVFrame,
+        _overlay_region: Option<&crate::overlay_video::ActiveOverlay>,
     ) -> Result<()> {
+        // TODO: render video overlays on this platform (Mac-first).
         if Self::pixel_buffer_of(screen).is_none() {
             return self.clear_rt();
         }
@@ -1256,7 +1276,7 @@ impl Compositor {
             ];
             let opacity = 0.45 * lp.shadow_scale;
             let cb = match tilt.as_ref() {
-                None => self.shadow_cb(g.s_dst, s_px, g.s_radius, spread, offset, opacity),
+                None => self.shadow_cb(g.s_dst, s_px, g.s_radius, spread, offset, opacity, false),
                 Some(quad) => self.quad_shadow_cb(
                     &quad.corners,
                     quad_center_px,
@@ -1379,6 +1399,7 @@ impl Compositor {
                 src: [u0, cv0, u1, cv1],
                 quad_px: g.w_px,
                 radius_px: g.w_radius,
+                fx: [0.0, u8::from(g.w_squircle) as f32, 0.0, 0.0],
                 mode: 0.0,
                 color: [0.0, 0.0, 0.0, 1.0],
                 src_prev: [u0, cv0, u1, cv1],
@@ -1411,6 +1432,7 @@ impl Compositor {
                     crate::frame_geometry::WEBCAM_SHADOW_OFFSET_FRAC * g.frame_min_px,
                 ],
                 crate::frame_geometry::WEBCAM_SHADOW_OPACITY * g.shape_fade,
+                g.w_squircle,
             );
             self.make_bind(&cb, None, &dummy)
         });
@@ -1586,18 +1608,27 @@ impl Compositor {
                         } else {
                             (dst[2] * (img_aspect / box_aspect), dst[3])
                         };
-                        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                        let cb = LayerCB {
-                            dst: [
+                        let (animated_dst, anim) = crate::text_anim::image_animation_geometry(
+                            a.image_animation.as_deref(),
+                            (t - a.start_sec as f32) * 1000.0,
+                            [
                                 dst[0] + (dst[2] - fit_w) * 0.5,
                                 dst[1] + (dst[3] - fit_h) * 0.5,
                                 fit_w,
                                 fit_h,
                             ],
-                            src: [0.0, 0.0, 1.0, 1.0],
-                            quad_px: [fit_w * rw, fit_h * rh],
+                            [rw, rh],
+                        );
+                        if anim.reveal <= 0.0 || anim.opacity <= 0.0 {
+                            continue;
+                        }
+                        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                        let cb = LayerCB {
+                            dst: animated_dst,
+                            src: [0.0, 0.0, anim.reveal, 1.0],
+                            quad_px: [animated_dst[2] * rw, animated_dst[3] * rh],
                             mode: 7.0,
-                            color: [1.0, 1.0, 1.0, 1.0],
+                            color: [1.0, 1.0, 1.0, anim.opacity],
                             // Mode 7 clippe sur `fx` : un rect qui couvre tout le
                             // cadre = pas de clip.
                             fx: [0.0, 0.0, 1.0, 1.0],

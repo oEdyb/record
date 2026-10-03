@@ -6,6 +6,24 @@ import { applyMotionCurve, DEFAULT_CAMERA_MOTION_STYLE, normalizeMotionSpeed } f
 // lead-out window is stretched relative to the lead-in one.
 const LEAD_OUT_WINDOW_MS = TRANSITION_WINDOW_MS * 1.5;
 
+/** Shared contained phase boundaries for rendering and timeline decoration. */
+/** Largest camera growth an emphasis region may ask for; preview and export clamp to it. */
+export const MAX_CAMERA_EMPHASIS_SCALE = 2;
+
+export function cameraTransitionTiming(region: CameraFullscreenRegion) {
+	const halfDuration = Math.max(0, region.endMs - region.startMs) / 2;
+	const motionSpeed = normalizeMotionSpeed(region.motionSpeed);
+	const instant = region.motionStyle === "instant";
+	const leadInWindow = instant ? 0 : Math.min(TRANSITION_WINDOW_MS / motionSpeed, halfDuration);
+	const leadOutWindow = instant ? 0 : Math.min(LEAD_OUT_WINDOW_MS / motionSpeed, halfDuration);
+	return {
+		leadInWindow,
+		leadOutWindow,
+		leadInEnd: region.startMs + leadInWindow,
+		leadOutStart: region.endMs - leadOutWindow,
+	};
+}
+
 /**
  * Ease-in/hold/ease-out envelope for a single region. Unlike zoom's
  * `computeRegionStrength` (which anticipates the transition before `startMs`),
@@ -20,18 +38,12 @@ function computeCameraFullscreenRegionStrength(
 	region: CameraFullscreenRegion,
 	timeMs: number,
 ): number {
-	if (timeMs <= region.startMs || timeMs >= region.endMs) {
+	if (timeMs < region.startMs || timeMs >= region.endMs) {
 		return 0;
 	}
 
-	const duration = region.endMs - region.startMs;
 	const motionStyle = region.motionStyle ?? DEFAULT_CAMERA_MOTION_STYLE;
-	const motionSpeed = normalizeMotionSpeed(region.motionSpeed);
-	const halfDuration = duration / 2;
-	const leadInWindow = Math.min(TRANSITION_WINDOW_MS / motionSpeed, halfDuration);
-	const leadOutWindow = Math.min(LEAD_OUT_WINDOW_MS / motionSpeed, halfDuration);
-	const leadInEnd = region.startMs + leadInWindow;
-	const leadOutStart = region.endMs - leadOutWindow;
+	const { leadInWindow, leadOutWindow, leadInEnd, leadOutStart } = cameraTransitionTiming(region);
 
 	if (timeMs < leadInEnd) {
 		const progress = leadInWindow > 0 ? (timeMs - region.startMs) / leadInWindow : 1;
@@ -50,6 +62,31 @@ export interface CameraLayoutState {
 	progress: number;
 	mode: "fullscreen" | "emphasis";
 	cameraScale: number;
+	/** Extra scale about the camera's center from the region's drift, already faded by `progress`. */
+	driftScale: number;
+}
+
+/**
+ * Drift factor at a frame: ease-in-out push from 1 to `scaleTo` until the last `releaseSec`,
+ * then a fast ease-out return to exactly 1 at `endMs`. Shared formula with the native compositor.
+ */
+export function computeCameraDriftFactor(region: CameraFullscreenRegion, timeMs: number): number {
+	const drift = region.drift;
+	if (!drift || timeMs < region.startMs || timeMs >= region.endMs) return 1;
+	const scaleTo = Math.max(1, Math.min(1.6, drift.scaleTo));
+	if (scaleTo <= 1) return 1;
+	const releaseMs = Math.min(
+		Math.max(0, drift.releaseSec) * 1000,
+		(region.endMs - region.startMs) / 2,
+	);
+	const pushEndMs = region.endMs - releaseMs;
+	if (timeMs < pushEndMs) {
+		const p =
+			pushEndMs > region.startMs ? (timeMs - region.startMs) / (pushEndMs - region.startMs) : 1;
+		return 1 + (scaleTo - 1) * ((1 - Math.cos(Math.PI * p)) / 2);
+	}
+	const q = releaseMs > 0 ? (timeMs - pushEndMs) / releaseMs : 1;
+	return scaleTo - (scaleTo - 1) * (1 - (1 - q) * (1 - q));
 }
 
 /**
@@ -61,7 +98,7 @@ export function computeCameraLayoutState(
 	regions: CameraFullscreenRegion[],
 	timeMs: number,
 ): CameraLayoutState {
-	let state: CameraLayoutState = { progress: 0, mode: "fullscreen", cameraScale: 1 };
+	let state: CameraLayoutState = { progress: 0, mode: "fullscreen", cameraScale: 1, driftScale: 1 };
 	for (const region of regions) {
 		const progress = computeCameraFullscreenRegionStrength(region, timeMs);
 		if (progress <= state.progress) continue;
@@ -69,7 +106,10 @@ export function computeCameraLayoutState(
 			progress,
 			mode: region.mode === "emphasis" ? "emphasis" : "fullscreen",
 			cameraScale:
-				region.mode === "emphasis" ? Math.max(1, Math.min(1.6, region.cameraScale ?? 1.35)) : 1,
+				region.mode === "emphasis"
+					? Math.max(1, Math.min(MAX_CAMERA_EMPHASIS_SCALE, region.cameraScale ?? 1.35))
+					: 1,
+			driftScale: 1 + (computeCameraDriftFactor(region, timeMs) - 1) * progress,
 		};
 	}
 	return state;

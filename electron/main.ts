@@ -77,6 +77,14 @@ const cliCommand = parseCliArgs(process.argv, app.isPackaged ? 1 : 2);
 // running from a terminal/IDE during dev.
 if (process.platform === "darwin") {
 	app.commandLine.appendSwitch("disable-features", "MacCatapLoopbackAudioForScreenShare");
+	// The webcam MediaRecorder is the only Chromium-side video encoder on macOS; the screen
+	// is captured and encoded natively through VideoToolbox by the ScreenCaptureKit helper.
+	// With hardware encoding enabled, Chromium's VEA H.264 path shares that VideoToolbox
+	// engine and, once the screen encoder is busy, drops webcam frames ("Too many frames are
+	// queued up" in video_track_recorder.cc): a 4K/30 camera delivered 44-59 of 180 frames
+	// beside a live screen recording. Software H.264 kept 179-180 at about two cores.
+	// See technical-documentation/engineering/webcam-encoder-contention.md.
+	app.commandLine.appendSwitch("disable-accelerated-video-encode");
 }
 
 // Wayland support for screen capture and window management on Wayland compositors.
@@ -638,6 +646,7 @@ function createEditorWindowWrapper() {
 		mainWindow = editorWindow;
 		editorWindow.show();
 		editorWindow.focus();
+		editorWindow.webContents.send("recording-workspace-returned");
 		if (previousWindow && previousWindow !== editorWindow && !previousWindow.isDestroyed()) {
 			isForceClosing = true;
 			previousWindow.close();

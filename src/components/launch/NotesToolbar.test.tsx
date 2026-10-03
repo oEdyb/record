@@ -48,7 +48,6 @@ function createProps(overrides: Partial<NotesToolbarProps> = {}): NotesToolbarPr
 	return {
 		editor: createEditor(),
 		isPlaying: false,
-		formattingDisabled: false,
 		speed: 40,
 		fontSize: 16,
 		mirrored: false,
@@ -58,6 +57,7 @@ function createProps(overrides: Partial<NotesToolbarProps> = {}): NotesToolbarPr
 		onDecreaseFontSize: vi.fn(),
 		onIncreaseFontSize: vi.fn(),
 		onToggleMirror: vi.fn(),
+		onClose: vi.fn(),
 		...overrides,
 	};
 }
@@ -87,6 +87,14 @@ describe("NotesToolbar teleprompter controls", () => {
 		const user = userEvent.setup();
 		const props = createProps();
 		renderToolbar(props);
+
+		// Font size and mirror sit behind the chevron so the resting strip stays one row.
+		expect(screen.queryByRole("group", { name: "Font size" })).not.toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "More controls" }));
+		expect(screen.getByRole("button", { name: "Fewer controls" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
 
 		const speed = within(screen.getByRole("group", { name: "Scroll speed" })).getByRole("status");
 		const fontSize = within(screen.getByRole("group", { name: "Font size" })).getByRole("status");
@@ -118,10 +126,15 @@ describe("NotesToolbar teleprompter controls", () => {
 		expect(props.onDecreaseFontSize).toHaveBeenCalledOnce();
 		expect(props.onIncreaseFontSize).toHaveBeenCalledOnce();
 		expect(props.onToggleMirror).toHaveBeenCalledOnce();
+
+		await user.click(screen.getByRole("button", { name: "Close notes" }));
+		expect(props.onClose).toHaveBeenCalledOnce();
 	});
 
-	it("disables controls at their bounds", () => {
+	it("disables controls at their bounds", async () => {
+		const user = userEvent.setup();
 		const { rerender } = renderToolbar(createProps({ speed: 10, fontSize: 14 }));
+		await user.click(screen.getByRole("button", { name: "More controls" }));
 		expect(screen.getByRole("button", { name: "Decrease scroll speed" })).toBeDisabled();
 		expect(screen.getByRole("button", { name: "Decrease font size" })).toBeDisabled();
 
@@ -130,6 +143,7 @@ describe("NotesToolbar teleprompter controls", () => {
 				<NotesToolbar {...createProps({ speed: 100, fontSize: 48 })} />
 			</I18nProvider>,
 		);
+		await user.click(screen.getByRole("button", { name: "More controls" }));
 		expect(screen.getByRole("button", { name: "Increase scroll speed" })).toBeDisabled();
 		expect(screen.getByRole("button", { name: "Increase font size" })).toBeDisabled();
 	});
@@ -148,7 +162,7 @@ describe("NotesToolbar teleprompter controls", () => {
 
 		rerender(
 			<I18nProvider>
-				<NotesToolbar {...createProps({ isPlaying: true, formattingDisabled: true })} />
+				<NotesToolbar {...createProps({ isPlaying: true })} />
 			</I18nProvider>,
 		);
 		expect(screen.getByRole("button", { name: "Pause auto-scroll" })).not.toHaveAttribute(
@@ -156,30 +170,10 @@ describe("NotesToolbar teleprompter controls", () => {
 		);
 	});
 
-	it("locks formatting when the note is locked, keeping teleprompter controls live", () => {
-		// formattingDisabled without isPlaying is the mirrored-while-paused case.
-		renderToolbar(createProps({ formattingDisabled: true }));
-
-		// Sweep the whole row rather than a hand-written list, so a formatting button added
-		// later cannot quietly escape the lock.
-		const formatting = within(screen.getByTestId("notes-formatting-controls")).getAllByRole(
-			"button",
-		);
-		expect(formatting).toHaveLength(7);
-		for (const button of formatting) {
-			expect(button).toBeDisabled();
-		}
-
-		// Teleprompter controls stay live so the lock can always be lifted, and the play
-		// button's label keeps tracking isPlaying alone rather than the lock.
-		expect(screen.getByRole("button", { name: "Start auto-scroll" })).toBeEnabled();
-		expect(screen.getByRole("button", { name: "Mirror horizontally" })).toBeEnabled();
-		expect(screen.getByRole("button", { name: "Decrease scroll speed" })).toBeEnabled();
-		expect(screen.getByRole("button", { name: "Increase font size" })).toBeEnabled();
-	});
-
-	it("formats readout values for the active locale", () => {
+	it("formats readout values for the active locale", async () => {
+		const user = userEvent.setup();
 		renderToolbar(createProps(), "ar");
+		await user.click(screen.getByRole("button", { name: "مزيد من عناصر التحكم" }));
 		const speed = within(screen.getByRole("group", { name: "سرعة التمرير" })).getByRole("status");
 		const fontSize = within(screen.getByRole("group", { name: "حجم الخط" })).getByRole("status");
 
@@ -199,7 +193,6 @@ function ToolbarHarness() {
 			{...createProps({
 				isPlaying,
 				mirrored,
-				formattingDisabled: isPlaying || mirrored,
 				onTogglePlaying: () => setIsPlaying((current) => !current),
 				onToggleMirror: () => setMirrored((current) => !current),
 			})}
@@ -216,6 +209,7 @@ describe("NotesToolbar keyboard reachability", () => {
 			</I18nProvider>,
 		);
 
+		await user.click(screen.getByRole("button", { name: "More controls" }));
 		const row = container.querySelector<HTMLElement>('[data-testid="notes-teleprompter-controls"]');
 		const controls = Array.from(
 			container.querySelectorAll<HTMLButtonElement>("[data-teleprompter-control]"),
@@ -223,12 +217,17 @@ describe("NotesToolbar keyboard reachability", () => {
 		expect(row).not.toBeNull();
 		expect(controls).toHaveLength(6);
 
+		// The chevron and Close sit between the two rows, so the walk records only the
+		// teleprompter controls it lands on and checks their order.
 		controls[0]?.focus();
 		expect(document.activeElement).toBe(controls[0]);
-		for (let index = 1; index < controls.length; index++) {
+		const visited: Element[] = [controls[0] as Element];
+		for (let step = 0; step < 10 && visited.length < controls.length; step++) {
 			await user.tab();
-			expect(document.activeElement).toBe(controls[index]);
+			const focused = document.activeElement;
+			if (focused?.hasAttribute("data-teleprompter-control")) visited.push(focused);
 		}
+		expect(visited).toEqual(controls);
 
 		controls[0]?.focus();
 		await user.keyboard("{Enter}");

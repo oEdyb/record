@@ -79,19 +79,29 @@
 			"rectangle": "직사각형",
 			"circle": "원형",
 			"square": "정사각형",
-			"rounded": "둥근 모서리"
-		}
+			"rounded": "둥근 모서리",
+			"squircle": "스쿼클"
+		},
+		"webcamCornerRadius": "카메라 모서리",
+		"webcamCornerRadiusDescription": "카메라의 짧은 변에 대한 비율로 모서리의 둥글기를 조절합니다.",
+		"cameraAspectRatio": "카메라 화면 비율",
+		"cameraSourceAspect": "카메라 원본에 맞춤"
 	},
 	"effects": {
 		"title": "비디오 효과",
-		"blurBg": "배경 흐림",
-		"motionBlur": "모션 블러",
+		"blurBg": "배경 흐리게",
+		"motionBlur": "화면 모션 블러",
 		"off": "끄기",
 		"on": "켜기",
-		"shadow": "그림자",
-		"roundness": "모서리 둥글기",
-		"padding": "여백",
-		"help": "녹화 프레임 스타일: 배경 흐림, 그림자, 모션 블러, 모서리 둥글기, 영상 주변 여백."
+		"shadow": "화면 그림자",
+		"roundness": "화면 모서리",
+		"padding": "프레임 여백",
+		"help": "녹화 프레임 스타일: 배경 흐림, 그림자, 모션 블러, 모서리 둥글기, 영상 주변 여백.",
+		"blurBgDescription": "녹화 뒤의 배경을 흐리게 합니다.",
+		"motionBlurDescription": "화면 확대 및 이동 애니메이션에 흐림 효과를 추가합니다.",
+		"shadowDescription": "화면 녹화 뒤의 그림자를 조절합니다.",
+		"roundnessDescription": "화면 녹화의 모서리를 둥글게 합니다. 카메라 모서리는 별도로 조절합니다.",
+		"paddingDescription": "녹화 주변에 여백을 추가하여 배경을 더 보여줍니다."
 	},
 	"background": {
 		"title": "배경",
@@ -240,7 +250,9 @@
 		"errorTimeout": "폰트 로딩 시간이 초과되었습니다. URL을 확인하고 다시 시도해 주세요.",
 		"errorLoadFailed": "폰트를 불러올 수 없습니다. Google Fonts URL이 올바른지 확인해 주세요."
 	},
-	"automatic": { "title": "자동 편집" },
+	"automatic": {
+		"title": "자동 편집"
+	},
 	"audio": {
 		"title": "오디오",
 		"help": "음성을 정리하고 쉼을 줄여 최종 믹스를 준비합니다.",
@@ -249,7 +261,7 @@
 		"cleanVoice": "Clean Voice",
 		"testing": "테스트 중",
 		"cleanVoiceDescription": "기기에서 배경 소음을 줄입니다.",
-		"cleanVoiceTrust": "로컬 · 마이크만 · 원본 유지",
+		"cleanVoiceTrust": "로컬, 마이크만, 원본 유지",
 		"cleanVoiceprocessing": "준비 중…",
 		"cleanVoiceready": "준비됨",
 		"cleanVoicefailed": "원본 사용 중",
@@ -263,7 +275,7 @@
 		"normalizeVolume": "음량 정규화",
 		"normalizeVolumeDescription": "전체 영상을 안전한 업로드 음량으로 맞춥니다.",
 		"preset": "프리셋",
-		"youtubeTarget": "YouTube · -14.5 LUFS",
+		"youtubeTarget": "YouTube, -14.5 LUFS",
 		"custom": "사용자 지정",
 		"targetLoudness": "목표 음량",
 		"targetLoudnessHelp": "내보낸 전체 영상의 통합 음량입니다.",
@@ -299,7 +311,7 @@
 		"analyze": "Analyze pauses",
 		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
-		"resultCount": "{{count}} pause suggestions",
+		"resultCount": "{{count}} proposed cuts",
 		"timeSaved": "{{duration}} shorter",
 		"selectAll": "Select all",
 		"clearAll": "Clear all",
@@ -317,7 +329,16 @@
 		"save": "Save",
 		"applied": "Applied {{count}} pause cuts",
 		"nothingToApply": "Those pauses are already edited",
-		"applyFailed": "Could not apply pause cuts"
+		"applyFailed": "Could not apply pause cuts",
+		"acceptAll": "Accept all ({{count}})",
+		"clearLane": "Clear",
+		"rejectedEarlier": "{{count}} rejected earlier",
+		"kinds": {
+			"pause": "{{count}} pauses",
+			"blip": "{{count}} blips",
+			"agent": "{{count}} agent",
+			"fix": "{{count}} fixes"
+		}
 	},
 	"cursor": {
 		"title": "커서",
@@ -337,7 +358,8 @@
 	},
 	"facets": {
 		"captions": "자막",
-		"transcript": "대본"
+		"transcript": "대본",
+		"navigation": "Editing tools"
 	},
 	"panes": {
 		"help": "도움말"
@@ -397,6 +419,63 @@
 		"width": "너비",
 		"lineLength": "줄 길이",
 		"minWords": "줄당 최소 단어 수",
-		"maxWords": "줄당 최대 단어 수"
+		"maxWords": "줄당 최대 단어 수",
+		"correctWords": "Correct words",
+		"correctionOriginalOnly": "Switch the display language to Original to correct transcript words.",
+		"selectToCorrect": "Select a caption in the timeline to correct its words.",
+		"correctionUnavailable": "This caption has no source word timing to correct.",
+		"correctionHint": "Keep one word per field. Corrections update every use of this recording. Audio, timing and saved translations stay unchanged.",
+		"correctionWord": "Word {{number}}",
+		"correctionInvalid": "Enter one non-empty word per field, up to 100 characters.",
+		"correctionSaveFailed": "The correction could not be saved. Try again, or select the caption again if the project changed.",
+		"saveCorrection": "Save correction",
+		"resetCorrection": "Reset"
+	},
+	"automaticReview": {
+		"title": "Review effects",
+		"hint": "Keep protects an effect from regeneration. Remove excludes matching suggestions. Manual edits stay unchanged.",
+		"regenerate": "Regenerate",
+		"keepAll": "Keep all",
+		"removeAll": "Remove all",
+		"empty": "No automatic effects to review.",
+		"camera": "Camera emphasis",
+		"zoom": "Screen zoom",
+		"jump": "Go to {{name}} at {{time}}",
+		"trimmed": "Trimmed out",
+		"reasonUnavailable": "Trigger not saved in this project.",
+		"reason": {
+			"screen-activity": "Screen interaction detected",
+			"cursor-trace": "Cursor movement to follow",
+			"typing": "Typing activity detected",
+			"speech-with-quiet-screen": "Speech while the screen is quiet"
+		},
+		"adjust": "Adjust",
+		"keep": "Keep",
+		"remove": "Remove",
+		"previous": "Previous effects",
+		"next": "Next effects",
+		"dismissed": "{{count}} effects excluded. Different timing or framing can produce new suggestions.",
+		"restore": "Allow dismissed effects again",
+		"saveFailed": "Could not save this review change. Your previous edit is preserved.",
+		"saving": "Saving review…",
+		"saved": "Review saved. Use Undo to restore the previous edit.",
+		"recordingRequired": "Automatic edits need a recording in this timeline. Imported videos and older projects may not include recording evidence.",
+		"tune": "Tune automatic edits"
+	},
+	"panels": {
+		"canvas": "Canvas",
+		"screen": "Screen",
+		"camera": "Camera",
+		"voice": "Voice",
+		"pauses": "Pauses",
+		"music": "Music",
+		"delivery": "Delivery",
+		"correctionHint": "Select a word to correct it. Timing stays unchanged.",
+		"microphoneRequired": "Clean Voice needs a separate microphone track.",
+		"cleanupUnavailable": "Voice cleanup is unavailable on this device.",
+		"fill": "Fill",
+		"clickBounceHelp": "How strongly the cursor responds to a click. Zero turns the bounce off.",
+		"transcriptRead": "Click a word to move the playhead.",
+		"transcriptEdit": "Click to seek. Select words and press Delete to cut."
 	}
 }

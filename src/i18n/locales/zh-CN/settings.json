@@ -79,19 +79,29 @@
 			"rectangle": "矩形",
 			"circle": "圆形",
 			"square": "正方形",
-			"rounded": "圆角"
-		}
+			"rounded": "圆角",
+			"squircle": "超椭圆"
+		},
+		"webcamCornerRadius": "摄像头圆角",
+		"webcamCornerRadiusDescription": "以摄像头画面短边的百分比调整圆角。",
+		"cameraAspectRatio": "摄像头画面比例",
+		"cameraSourceAspect": "匹配摄像头源"
 	},
 	"effects": {
 		"title": "视频效果",
 		"blurBg": "模糊背景",
-		"motionBlur": "运动模糊",
+		"motionBlur": "屏幕运动模糊",
 		"off": "关",
-		"shadow": "阴影",
-		"roundness": "圆角",
-		"padding": "内边距",
+		"shadow": "屏幕阴影",
+		"roundness": "屏幕圆角",
+		"padding": "画面边距",
 		"on": "开",
-		"help": "录制画面的边框样式：背景模糊、投影、运动模糊、圆角半径以及视频四周的内边距。"
+		"help": "录制画面的边框样式：背景模糊、投影、运动模糊、圆角半径以及视频四周的内边距。",
+		"blurBgDescription": "模糊录制画面后方的背景。",
+		"motionBlurDescription": "为屏幕缩放和平移动画添加模糊效果。",
+		"shadowDescription": "调整屏幕录制画面后方的阴影。",
+		"roundnessDescription": "调整屏幕录制画面的圆角。摄像头圆角单独设置。",
+		"paddingDescription": "增加录制画面周围的留白，显示更多背景。"
 	},
 	"background": {
 		"title": "背景",
@@ -240,7 +250,9 @@
 		"errorTimeout": "字体加载时间过长。请检查 URL 并重试。",
 		"errorLoadFailed": "无法加载该字体。请确认 Google Fonts URL 是否正确。"
 	},
-	"automatic": { "title": "自动编辑" },
+	"automatic": {
+		"title": "自动编辑"
+	},
 	"audio": {
 		"title": "音频",
 		"help": "清理人声、缩短停顿并准备最终混音。",
@@ -249,7 +261,7 @@
 		"cleanVoice": "Clean Voice",
 		"testing": "测试中",
 		"cleanVoiceDescription": "在本机降低背景噪声。",
-		"cleanVoiceTrust": "本地处理 · 仅麦克风 · 保留原始音频",
+		"cleanVoiceTrust": "本地处理, 仅麦克风, 保留原始音频",
 		"cleanVoiceprocessing": "正在准备…",
 		"cleanVoiceready": "已就绪",
 		"cleanVoicefailed": "正在使用原始音频",
@@ -263,7 +275,7 @@
 		"normalizeVolume": "标准化音量",
 		"normalizeVolumeDescription": "将完整视频调整到安全的上传音量。",
 		"preset": "预设",
-		"youtubeTarget": "YouTube · -14.5 LUFS",
+		"youtubeTarget": "YouTube, -14.5 LUFS",
 		"custom": "自定义",
 		"targetLoudness": "目标响度",
 		"targetLoudnessHelp": "完整导出视频的综合响度。",
@@ -299,7 +311,7 @@
 		"analyze": "Analyze pauses",
 		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
-		"resultCount": "{{count}} pause suggestions",
+		"resultCount": "{{count}} proposed cuts",
 		"timeSaved": "{{duration}} shorter",
 		"selectAll": "Select all",
 		"clearAll": "Clear all",
@@ -317,7 +329,16 @@
 		"save": "Save",
 		"applied": "Applied {{count}} pause cuts",
 		"nothingToApply": "Those pauses are already edited",
-		"applyFailed": "Could not apply pause cuts"
+		"applyFailed": "Could not apply pause cuts",
+		"acceptAll": "Accept all ({{count}})",
+		"clearLane": "Clear",
+		"rejectedEarlier": "{{count}} rejected earlier",
+		"kinds": {
+			"pause": "{{count}} pauses",
+			"blip": "{{count}} blips",
+			"agent": "{{count}} agent",
+			"fix": "{{count}} fixes"
+		}
 	},
 	"cursor": {
 		"title": "光标",
@@ -337,7 +358,8 @@
 	},
 	"facets": {
 		"captions": "字幕",
-		"transcript": "转录文本"
+		"transcript": "转录文本",
+		"navigation": "Editing tools"
 	},
 	"panes": {
 		"help": "帮助"
@@ -397,6 +419,63 @@
 		"width": "宽度",
 		"lineLength": "行长",
 		"minWords": "每行最少词数",
-		"maxWords": "每行最多词数"
+		"maxWords": "每行最多词数",
+		"correctWords": "Correct words",
+		"correctionOriginalOnly": "Switch the display language to Original to correct transcript words.",
+		"selectToCorrect": "Select a caption in the timeline to correct its words.",
+		"correctionUnavailable": "This caption has no source word timing to correct.",
+		"correctionHint": "Keep one word per field. Corrections update every use of this recording. Audio, timing and saved translations stay unchanged.",
+		"correctionWord": "Word {{number}}",
+		"correctionInvalid": "Enter one non-empty word per field, up to 100 characters.",
+		"correctionSaveFailed": "The correction could not be saved. Try again, or select the caption again if the project changed.",
+		"saveCorrection": "Save correction",
+		"resetCorrection": "Reset"
+	},
+	"automaticReview": {
+		"title": "Review effects",
+		"hint": "Keep protects an effect from regeneration. Remove excludes matching suggestions. Manual edits stay unchanged.",
+		"regenerate": "Regenerate",
+		"keepAll": "Keep all",
+		"removeAll": "Remove all",
+		"empty": "No automatic effects to review.",
+		"camera": "Camera emphasis",
+		"zoom": "Screen zoom",
+		"jump": "Go to {{name}} at {{time}}",
+		"trimmed": "Trimmed out",
+		"reasonUnavailable": "Trigger not saved in this project.",
+		"reason": {
+			"screen-activity": "Screen interaction detected",
+			"cursor-trace": "Cursor movement to follow",
+			"typing": "Typing activity detected",
+			"speech-with-quiet-screen": "Speech while the screen is quiet"
+		},
+		"adjust": "Adjust",
+		"keep": "Keep",
+		"remove": "Remove",
+		"previous": "Previous effects",
+		"next": "Next effects",
+		"dismissed": "{{count}} effects excluded. Different timing or framing can produce new suggestions.",
+		"restore": "Allow dismissed effects again",
+		"saveFailed": "Could not save this review change. Your previous edit is preserved.",
+		"saving": "Saving review…",
+		"saved": "Review saved. Use Undo to restore the previous edit.",
+		"recordingRequired": "Automatic edits need a recording in this timeline. Imported videos and older projects may not include recording evidence.",
+		"tune": "Tune automatic edits"
+	},
+	"panels": {
+		"canvas": "Canvas",
+		"screen": "Screen",
+		"camera": "Camera",
+		"voice": "Voice",
+		"pauses": "Pauses",
+		"music": "Music",
+		"delivery": "Delivery",
+		"correctionHint": "Select a word to correct it. Timing stays unchanged.",
+		"microphoneRequired": "Clean Voice needs a separate microphone track.",
+		"cleanupUnavailable": "Voice cleanup is unavailable on this device.",
+		"fill": "Fill",
+		"clickBounceHelp": "How strongly the cursor responds to a click. Zero turns the bounce off.",
+		"transcriptRead": "Click a word to move the playhead.",
+		"transcriptEdit": "Click to seek. Select words and press Delete to cut."
 	}
 }

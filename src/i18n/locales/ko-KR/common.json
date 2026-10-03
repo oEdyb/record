@@ -69,5 +69,8 @@
 		"screen": "화면",
 		"virtual": "가상 디스플레이",
 		"unknown": "화면 녹화"
+	},
+	"inspector": {
+		"valueRange": "Enter a number from {{min}} to {{max}}."
 	}
 }

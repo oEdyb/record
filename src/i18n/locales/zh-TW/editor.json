@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "預覽畫質",
+		"sharp": "清晰",
+		"performance": "流暢"
+	},
 	"newRecording": {
 		"title": "返回錄影",
 		"description": "目前工作階段已儲存。",
@@ -89,6 +94,9 @@
 		"toggleTheme": "切換主題",
 		"settings": "設定",
 		"export": "匯出",
+		"exporting": "正在匯出",
+		"exportProgressTitle": "已完成 {{pct}}%，剩餘 {{eta}}。開啟匯出",
+		"exportProgressPreparing": "正在準備匯出。開啟匯出",
 		"renameProject": "重新命名專案",
 		"noProject": "無專案",
 		"changeLanguage": "切換語言",
@@ -97,7 +105,8 @@
 			"media": "媒體",
 			"edit": "編輯",
 			"rec": "錄製"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "來源",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "匯出失敗。",
 		"writingFile": "正在寫入檔案…",
 		"renderingFrames": "正在轉譯畫格",
-		"framesEta": "{{current}} / {{total}} 畫格 · 剩餘 {{eta}}",
+		"framesEta": "{{current}} / {{total}} 畫格, 剩餘 {{eta}}",
 		"preparingEncoder": "正在準備編碼器…",
+		"cancelExport": "取消匯出",
+		"backgroundHint": "你可以關閉此視窗並繼續編輯。進度會顯示在「匯出」按鈕上。現在所做的修改不會包含在這次匯出中。",
 		"close": "關閉",
 		"cancel": "取消",
 		"rendering": "轉譯中…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "寫入檔案失敗",
 		"qualityUpscaleWarning": "放大",
 		"exportedVideoOf": "的影片已匯出，耗時",
-		"nothingToExport": "沒有可匯出的內容 — 時間軸為空。"
+		"nothingToExport": "沒有可匯出的內容 — 時間軸為空。",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "重設焦點",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "攝影機會在螢幕保持可見時平滑放大，然後回到正常大小。",
 		"cameraFullscreenDescription": "此區間播放時，攝影機會佔滿整個畫面 — 沒有邊框、圓角與背景 — 並在結束時平順還原。在時間軸上拖曳區間邊緣，即可調整開始位置與長度。",
 		"deleteRegion": "刪除區間",
-		"freehandRendersAsBox": "匯出時，手繪形狀會以其外接矩形遮蔽——寧可多遮，絕不少遮。"
+		"freehandRendersAsBox": "匯出時，手繪形狀會以其外接矩形遮蔽——寧可多遮，絕不少遮。",
+		"cameraSize": "攝影機大小"
 	},
 	"leftPanel": {
 		"mediaTitle": "媒體",
@@ -295,7 +309,7 @@
 			"title": "對話歷史",
 			"subtitle": "切換或新增工作階段",
 			"empty": "尚無對話。",
-			"msgsCount": "{{count}} 則訊息 · {{date}}"
+			"msgsCount": "{{count}} 則訊息, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "繼續現有專案或瀏覽檔案",
 		"searchPlaceholder": "搜尋專案…",
 		"noMatches": "沒有符合 \"{{query}}\" 的專案。",
-		"navigateHint": "導覽 ·",
+		"navigateHint": "導覽",
 		"openHint": "開啟",
 		"browseFiles": "瀏覽檔案…",
 		"deleteProject": "刪除專案",
@@ -358,7 +372,10 @@
 		"previousClip": "上一個片段",
 		"nextClip": "下一個片段",
 		"loop": "循環",
-		"seekVideo": "拖曳影片進度"
+		"seekVideo": "拖曳影片進度",
+		"mute": "靜音預覽",
+		"unmute": "取消靜音預覽",
+		"previewVolume": "預覽音量"
 	},
 	"shell": {
 		"aiEditor": "AI 編輯器",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "14 天試用",
-			"trialDay": "試用 · {{count}} 天",
-			"trialDays": "試用 · {{count}} 天",
-			"offline": "Klippt Pro · 離線",
+			"trialDay": "試用 {{count}} 天",
+			"trialDays": "試用 {{count}} 天",
+			"offline": "Klippt Pro, 離線",
 			"readOnly": "唯讀"
 		},
 		"eyebrowReadOnly": "唯讀存取",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "沒有相容的 GPU，正在使用 CPU 算繪，因此播放較慢。",
 		"exportWarning": "沒有相容的 GPU：這次匯出將在 CPU 上執行，耗時會比平常長很多。"
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

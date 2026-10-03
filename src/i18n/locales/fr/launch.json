@@ -31,7 +31,11 @@
 			"fontSize": "Taille de police",
 			"decreaseFontSize": "Réduire la taille de police",
 			"increaseFontSize": "Augmenter la taille de police",
-			"mirror": "Miroir horizontal"
+			"mirror": "Miroir horizontal",
+			"more": "Plus de commandes",
+			"less": "Moins de commandes",
+			"close": "Fermer les notes",
+			"move": "Déplacer les notes"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "Enregistrement en cours",
 		"saving": "Sauvegarde...",
 		"removePreviousClip": "Supprimer le clip précédent",
-		"removePreviousClipWithDuration": "Supprimer le clip précédent · {{duration}}",
+		"removePreviousClipWithDuration": "Supprimer le clip précédent ({{duration}})",
 		"clipRemoved": "Supprimé"
 	},
 	"language": "Langue",

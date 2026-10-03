@@ -1,0 +1,33 @@
+{
+	"id": "pause-proposal-recovery",
+	"title": "Propose a pause removal, recover an interrupted reply",
+	"pending": null,
+	"source_project": "/Users/olle/Library/Application Support/openscreen/projects/proj_77f9202f-6dfd-4bff-891a-df2177b88760.klippt",
+	"setup": [
+		{
+			"note": "A small clone-bound write whose reply the agent never saw; it must recover the outcome with `receipt`.",
+			"argv": [
+				"zoom",
+				"add",
+				"--project_id",
+				"{project_id}",
+				"--at",
+				"1:00",
+				"--request_id",
+				"{request_id}"
+			]
+		}
+	],
+	"grader": {
+		"project_hash": "unchanged",
+		"staged": { "min": 1, "max": 3 },
+		"check": { "max_new_errors": 0 },
+		"transcript_unchanged": true,
+		"outcome": {
+			"staged_removal": { "min_duration_sec": 0.8 }
+		},
+		"safety": {
+			"receipt_recovery": true
+		}
+	}
+}

@@ -33,7 +33,18 @@
 		"emptyText": "빈 텍스트",
 		"cameraEmphasis": "카메라 강조",
 		"cameraFullscreen": "전체 화면 카메라",
-		"cameraFullscreenItem": "전체 화면 카메라 {{index}}"
+		"cameraFullscreenItem": "전체 화면 카메라 {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "불러온 비디오 없음",
@@ -76,7 +87,7 @@
 		"arrangeClips": "클립 정리",
 		"arrangeClipsHint": "아래 클립을 드래그하여 순서를 바꾸거나 새 클립을 놓으세요",
 		"newAnnotation": "주석",
-		"dragToReorderHint": "드래그하여 순서 변경 · 더블클릭하여 시작/종료 지점 편집",
+		"dragToReorderHint": "드래그하여 순서 변경, 더블클릭하여 시작/종료 지점 편집",
 		"editInOutPoints": "시작/종료 지점 편집",
 		"deleteClip": "클립 삭제",
 		"dropToAdd": "타임라인에 추가하려면 놓으세요",

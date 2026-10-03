@@ -33,7 +33,18 @@
 		"emptyText": "Texto vacío",
 		"cameraEmphasis": "Énfasis de cámara",
 		"cameraFullscreen": "Cámara a pantalla completa",
-		"cameraFullscreenItem": "Cámara a pantalla completa {{index}}"
+		"cameraFullscreenItem": "Cámara a pantalla completa {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "No hay video cargado",
@@ -76,7 +87,7 @@
 		"arrangeClips": "Organizar clips",
 		"arrangeClipsHint": "Arrastra los clips de abajo para reordenarlos o suelta otros nuevos",
 		"newAnnotation": "Anotación",
-		"dragToReorderHint": "Arrastra para reordenar · doble clic para editar los puntos de entrada/salida",
+		"dragToReorderHint": "Arrastra para reordenar, doble clic para editar los puntos de entrada/salida",
 		"editInOutPoints": "Editar puntos de entrada/salida",
 		"deleteClip": "Eliminar clip",
 		"dropToAdd": "Suelta para añadir a la línea de tiempo",

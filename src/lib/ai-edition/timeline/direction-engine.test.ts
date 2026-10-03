@@ -26,6 +26,18 @@ const point = (
 });
 
 describe("automatic direction", () => {
+	it("accepts eight well-spaced candidates within the default minute budget", () => {
+		const candidates = Array.from({ length: 8 }, (_, index) => ({
+			signal: "click" as const,
+			span: { start: 2_000 + index * 7_000, end: 5_000 + index * 7_000 },
+			focus: { cx: 0.5, cy: 0.5 },
+			focusMode: "manual" as const,
+			customScale: 1.65,
+			score: 10,
+		}));
+		expect(selectDirectionCandidates({ candidates, durationMs: 60_000 })).toEqual(candidates);
+	});
+
 	it("turns a click and its settled cursor into one variable zoom", () => {
 		const plan = buildDirectionPlan({
 			cursor: [
@@ -406,7 +418,7 @@ describe("automatic direction", () => {
 		expect(buildDirectionPlan({ cursor, durationMs: 4_000 }).zooms).toEqual([]);
 	});
 
-	it("prefers clicks and enforces a sparse four-per-minute motion budget", () => {
+	it("accepts eight well-spaced click zooms with the default safety budget", () => {
 		const cursor: DirectionCursorSample[] = [];
 		for (let index = 0; index < 8; index += 1) {
 			const time = 2_000 + index * 7_000;
@@ -416,7 +428,7 @@ describe("automatic direction", () => {
 
 		const plan = buildDirectionPlan({ cursor, durationMs: 60_000 });
 
-		expect(plan.zooms).toHaveLength(4);
+		expect(plan.zooms).toHaveLength(8);
 		expect(plan.zooms.every((zoom) => zoom.signal === "click")).toBe(true);
 	});
 
@@ -452,12 +464,10 @@ describe("automatic direction", () => {
 		const plan = buildDirectionPlan({
 			cursor: [point(55_000, 0.5, 0.5, "click")],
 			durationMs: 60_000,
-			occupiedZooms: [
-				{ start: 1_000, end: 3_000 },
-				{ start: 11_000, end: 13_000 },
-				{ start: 21_000, end: 23_000 },
-				{ start: 31_000, end: 33_000 },
-			],
+			occupiedZooms: Array.from({ length: 12 }, (_, index) => ({
+				start: 1_000 + index * 4_000,
+				end: 3_000 + index * 4_000,
+			})),
 		});
 		expect(plan.zooms).toEqual([]);
 	});

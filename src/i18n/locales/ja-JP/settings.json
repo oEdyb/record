@@ -79,19 +79,29 @@
 			"rectangle": "長方形",
 			"circle": "円",
 			"square": "正方形",
-			"rounded": "角丸"
-		}
+			"rounded": "角丸",
+			"squircle": "スクワークル"
+		},
+		"webcamCornerRadius": "カメラの角丸",
+		"webcamCornerRadiusDescription": "カメラの短辺に対する割合で角の丸みを調整します。",
+		"cameraAspectRatio": "カメラの縦横比",
+		"cameraSourceAspect": "カメラ素材に合わせる"
 	},
 	"effects": {
 		"title": "動画効果",
 		"blurBg": "背景をぼかす",
-		"motionBlur": "モーションブラー",
+		"motionBlur": "画面のモーションブラー",
 		"off": "オフ",
-		"shadow": "影",
-		"roundness": "丸み",
-		"padding": "余白",
+		"shadow": "画面の影",
+		"roundness": "画面の角丸",
+		"padding": "フレームの余白",
 		"on": "オン",
-		"help": "録画フレームのスタイル設定: 背景ぼかし、ドロップシャドウ、モーションブラー、角丸、動画まわりの余白。"
+		"help": "録画フレームのスタイル設定: 背景ぼかし、ドロップシャドウ、モーションブラー、角丸、動画まわりの余白。",
+		"blurBgDescription": "録画の背後にある背景をぼかします。",
+		"motionBlurDescription": "画面のズームやパンのアニメーションにぼかしを加えます。",
+		"shadowDescription": "画面録画の背後にある影を調整します。",
+		"roundnessDescription": "画面録画の角を丸めます。カメラの角は別に調整します。",
+		"paddingDescription": "録画の周囲に余白を加えて、背景を広く表示します。"
 	},
 	"background": {
 		"title": "背景",
@@ -240,7 +250,9 @@
 		"errorTimeout": "フォントの読み込みに時間がかかりすぎました。URLを確認して再試行してください。",
 		"errorLoadFailed": "フォントを読み込めませんでした。GoogleフォントのURLが正しいことを確認してください。"
 	},
-	"automatic": { "title": "自動編集" },
+	"automatic": {
+		"title": "自動編集"
+	},
 	"audio": {
 		"title": "オーディオ",
 		"help": "音声を整え、間を短くし、最終ミックスを準備します。",
@@ -249,7 +261,7 @@
 		"cleanVoice": "Clean Voice",
 		"testing": "テスト中",
 		"cleanVoiceDescription": "ローカルで背景ノイズを軽減します。",
-		"cleanVoiceTrust": "ローカル · マイクのみ · 元音声を保持",
+		"cleanVoiceTrust": "ローカル, マイクのみ, 元音声を保持",
 		"cleanVoiceprocessing": "準備中…",
 		"cleanVoiceready": "準備完了",
 		"cleanVoicefailed": "元音声を使用",
@@ -263,7 +275,7 @@
 		"normalizeVolume": "音量を正規化",
 		"normalizeVolumeDescription": "動画全体を安全なアップロード音量に調整します。",
 		"preset": "プリセット",
-		"youtubeTarget": "YouTube · -14.5 LUFS",
+		"youtubeTarget": "YouTube, -14.5 LUFS",
 		"custom": "カスタム",
 		"targetLoudness": "目標ラウドネス",
 		"targetLoudnessHelp": "書き出す動画全体の統合ラウドネスです。",
@@ -299,7 +311,7 @@
 		"analyze": "Analyze pauses",
 		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
-		"resultCount": "{{count}} pause suggestions",
+		"resultCount": "{{count}} proposed cuts",
 		"timeSaved": "{{duration}} shorter",
 		"selectAll": "Select all",
 		"clearAll": "Clear all",
@@ -317,7 +329,16 @@
 		"save": "Save",
 		"applied": "Applied {{count}} pause cuts",
 		"nothingToApply": "Those pauses are already edited",
-		"applyFailed": "Could not apply pause cuts"
+		"applyFailed": "Could not apply pause cuts",
+		"acceptAll": "Accept all ({{count}})",
+		"clearLane": "Clear",
+		"rejectedEarlier": "{{count}} rejected earlier",
+		"kinds": {
+			"pause": "{{count}} pauses",
+			"blip": "{{count}} blips",
+			"agent": "{{count}} agent",
+			"fix": "{{count}} fixes"
+		}
 	},
 	"cursor": {
 		"title": "カーソル",
@@ -337,7 +358,8 @@
 	},
 	"facets": {
 		"captions": "字幕",
-		"transcript": "文字起こし"
+		"transcript": "文字起こし",
+		"navigation": "Editing tools"
 	},
 	"panes": {
 		"help": "ヘルプ"
@@ -397,6 +419,63 @@
 		"width": "幅",
 		"lineLength": "行の長さ",
 		"minWords": "1 行の最小単語数",
-		"maxWords": "1 行の最大単語数"
+		"maxWords": "1 行の最大単語数",
+		"correctWords": "Correct words",
+		"correctionOriginalOnly": "Switch the display language to Original to correct transcript words.",
+		"selectToCorrect": "Select a caption in the timeline to correct its words.",
+		"correctionUnavailable": "This caption has no source word timing to correct.",
+		"correctionHint": "Keep one word per field. Corrections update every use of this recording. Audio, timing and saved translations stay unchanged.",
+		"correctionWord": "Word {{number}}",
+		"correctionInvalid": "Enter one non-empty word per field, up to 100 characters.",
+		"correctionSaveFailed": "The correction could not be saved. Try again, or select the caption again if the project changed.",
+		"saveCorrection": "Save correction",
+		"resetCorrection": "Reset"
+	},
+	"automaticReview": {
+		"title": "Review effects",
+		"hint": "Keep protects an effect from regeneration. Remove excludes matching suggestions. Manual edits stay unchanged.",
+		"regenerate": "Regenerate",
+		"keepAll": "Keep all",
+		"removeAll": "Remove all",
+		"empty": "No automatic effects to review.",
+		"camera": "Camera emphasis",
+		"zoom": "Screen zoom",
+		"jump": "Go to {{name}} at {{time}}",
+		"trimmed": "Trimmed out",
+		"reasonUnavailable": "Trigger not saved in this project.",
+		"reason": {
+			"screen-activity": "Screen interaction detected",
+			"cursor-trace": "Cursor movement to follow",
+			"typing": "Typing activity detected",
+			"speech-with-quiet-screen": "Speech while the screen is quiet"
+		},
+		"adjust": "Adjust",
+		"keep": "Keep",
+		"remove": "Remove",
+		"previous": "Previous effects",
+		"next": "Next effects",
+		"dismissed": "{{count}} effects excluded. Different timing or framing can produce new suggestions.",
+		"restore": "Allow dismissed effects again",
+		"saveFailed": "Could not save this review change. Your previous edit is preserved.",
+		"saving": "Saving review…",
+		"saved": "Review saved. Use Undo to restore the previous edit.",
+		"recordingRequired": "Automatic edits need a recording in this timeline. Imported videos and older projects may not include recording evidence.",
+		"tune": "Tune automatic edits"
+	},
+	"panels": {
+		"canvas": "Canvas",
+		"screen": "Screen",
+		"camera": "Camera",
+		"voice": "Voice",
+		"pauses": "Pauses",
+		"music": "Music",
+		"delivery": "Delivery",
+		"correctionHint": "Select a word to correct it. Timing stays unchanged.",
+		"microphoneRequired": "Clean Voice needs a separate microphone track.",
+		"cleanupUnavailable": "Voice cleanup is unavailable on this device.",
+		"fill": "Fill",
+		"clickBounceHelp": "How strongly the cursor responds to a click. Zero turns the bounce off.",
+		"transcriptRead": "Click a word to move the playhead.",
+		"transcriptEdit": "Click to seek. Select words and press Delete to cut."
 	}
 }

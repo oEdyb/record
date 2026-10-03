@@ -12,14 +12,16 @@ import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
+import { registerAgentTransport } from "@/lib/ai-edition/agent/agentTransport";
 import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
-import { pauseSuggestionsAsTrims } from "@/lib/ai-edition/document/pause-edits";
+import { applyPauseSuggestions } from "@/lib/ai-edition/document/pause-edits";
 import {
 	applyProbedDuration,
 	replaceTimeline as replaceTimelineOp,
 	resolveClipInsertionBoundary,
 } from "@/lib/ai-edition/document/timeline";
 import { type AxcutClip, documentSchema } from "@/lib/ai-edition/schema";
+import { exportRunPercent, useExportRunStore } from "@/lib/ai-edition/store/exportRunStore";
 import { useProjectStore, waitForProjectMutations } from "@/lib/ai-edition/store/projectStore";
 import {
 	useAssetTranscriptions,
@@ -31,15 +33,20 @@ import { useUndoRedoShortcuts } from "@/lib/ai-edition/store/undo";
 import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTimelineOps";
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
+import { resolveNativePosition } from "@/lib/ai-edition/timeline/timelineMap";
 import { transcriptRelevantAssetIds } from "@/lib/ai-edition/transcription/status";
 import type { TranscriptLanguage } from "@/lib/captioning/transcriptLanguages";
 import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
+import { formatExportEta } from "@/lib/exporter/mp4ExportSettings";
 import { AUTOMATIC_TRANSCRIPTION_ENABLED, PRODUCT_SURFACE } from "@/lib/productSurface";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
+import { getCurrentNativeViewId } from "@/native/nativeCompositorStore";
+import { getPreviewFrameEvidence, waitForPreviewSettledFrame } from "@/native/previewSettledFrames";
+import { resolveVisibleClips } from "@/native/sceneDescription";
 import { ExportDialog } from "./ExportDialog";
 import { LeftPanel } from "./LeftPanel";
 import { prepareLegacyProjectForOpen } from "./legacyProjectOpen";
@@ -52,6 +59,7 @@ import {
 	type UnsavedChoice,
 } from "./Modals";
 import { Preview } from "./Preview";
+import { PreviewQualityControl } from "./PreviewQualityControl";
 import { type SelectablePauseSuggestion, usePauseAnalysisStore } from "./pauses/pauseAnalysisStore";
 import type { TrimTarget } from "./RightPanes";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
@@ -59,6 +67,7 @@ import {
 	canRegenerateAutomaticDirection,
 	regenerateProjectAutomaticDirection,
 } from "./regenerateAutomaticDirection";
+import { TransactionRecoveryBanner } from "./TransactionRecoveryBanner";
 import v4 from "./v4/EditorShellV4.module.css";
 import { type EditorMode, EditorTopBar } from "./v4/EditorTopBar";
 import { type Facet, FloatingInspector } from "./v4/FloatingInspector";
@@ -72,6 +81,17 @@ interface SeekTarget {
 }
 
 export function NewEditorShell() {
+	useEffect(() => {
+		let dispose: (() => void) | undefined;
+		let active = true;
+		void import("@/lib/ai-edition/agent/editorSession").then(({ installAgentEditorSession }) => {
+			if (active) dispose = installAgentEditorSession();
+		});
+		return () => {
+			active = false;
+			dispose?.();
+		};
+	}, []);
 	const te = useScopedT("editor");
 	const document = useProjectStore((s) => s.document);
 	const projectId = useProjectStore((s) => s.projectId);
@@ -143,6 +163,22 @@ export function NewEditorShell() {
 	// mounted per trigger site.
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
 	const [exportOpen, setExportOpen] = useState(false);
+	// A background export keeps rendering after its dialog closes; the top bar shows it.
+	const exportRunPhase = useExportRunStore((s) => s.phase);
+	const exportRunProgress = useExportRunStore((s) => s.progress);
+	const exportRun = useMemo(() => {
+		// Only once the encoder is running: while the save sheet is open there is nothing to show.
+		if (exportRunPhase !== "rendering" && exportRunPhase !== "writing") return null;
+		const state = { phase: exportRunPhase, progress: exportRunProgress };
+		const eta = exportRunProgress?.estimatedTimeRemaining ?? 0;
+		return {
+			percent: exportRunPercent(state),
+			etaLabel:
+				exportRunPhase === "rendering" && (exportRunProgress?.currentFrame ?? 0) > 1 && eta > 0
+					? formatExportEta(eta)
+					: null,
+		};
+	}, [exportRunPhase, exportRunProgress]);
 	const [regeneratingAutomaticEdits, setRegeneratingAutomaticEdits] = useState(false);
 	const [pausePreviewSuggestions, setPausePreviewSuggestions] = useState<
 		SelectablePauseSuggestion[] | null
@@ -319,16 +355,22 @@ export function NewEditorShell() {
 	// A cold editor consumes a pending recording on mount. A warm editor is hidden
 	// while the HUD records, then consumes the hand-off when Electron shows it again.
 	useEffect(() => {
+		const resumeWorkspace = () => {
+			void resumeRecordingWorkspace().catch((error) =>
+				console.warn("[editor] could not resume recording workspace:", error),
+			);
+		};
+		const unsubscribe = window.electronAPI?.onRecordingWorkspaceReturned?.(resumeWorkspace);
 		const handleVisibilityChange = () => {
 			if (globalThis.document.visibilityState === "visible") {
-				void resumeRecordingWorkspace().catch((error) =>
-					console.warn("[editor] could not resume recording workspace:", error),
-				);
+				resumeWorkspace();
 			}
 		};
 		globalThis.document.addEventListener("visibilitychange", handleVisibilityChange);
-		return () =>
+		return () => {
+			unsubscribe?.();
 			globalThis.document.removeEventListener("visibilitychange", handleVisibilityChange);
+		};
 	}, [resumeRecordingWorkspace]);
 
 	// Auto-load project recording session on mount.
@@ -501,6 +543,104 @@ export function NewEditorShell() {
 		[setCurrentTime],
 	);
 
+	// The agent bridge drives playback through the same paths the transport bar and
+	// the timeline use, so a scripted run reproduces what a user does.
+	useEffect(() => {
+		return registerAgentTransport({
+			seek: handleSeek,
+			click: (testId, fraction) => {
+				const target = window.document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+				const canvas =
+					window.document.querySelector<HTMLElement>('[data-testid="timeline-canvas"]') ?? target;
+				if (!target || !canvas) throw new Error(`CLICK_TARGET_MISSING: ${testId}`);
+				const canvasRect = canvas.getBoundingClientRect();
+				const targetRect = target.getBoundingClientRect();
+				const init: PointerEventInit = {
+					bubbles: true,
+					cancelable: true,
+					clientX: canvasRect.left + fraction * canvasRect.width,
+					clientY: targetRect.top + targetRect.height / 2,
+					button: 0,
+					buttons: 1,
+					pointerId: 1,
+					pointerType: "mouse",
+					isPrimary: true,
+				};
+				target.dispatchEvent(new PointerEvent("pointerdown", init));
+				window.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
+			},
+			wheel: (testId, fraction, deltaX, deltaY, ctrl) => {
+				const target = window.document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+				if (!target) throw new Error(`WHEEL_TARGET_MISSING: ${testId}`);
+				const rect = target.getBoundingClientRect();
+				target.dispatchEvent(
+					new WheelEvent("wheel", {
+						bubbles: true,
+						cancelable: true,
+						clientX: rect.left + fraction * rect.width,
+						clientY: rect.top + rect.height / 2,
+						deltaX,
+						deltaY,
+						ctrlKey: ctrl,
+					}),
+				);
+			},
+			frame: () => {
+				const source = window.document.querySelector<HTMLCanvasElement>(
+					'[data-testid="native-compositor-mount"]',
+				);
+				if (!source || source.width === 0) return null;
+				const small = window.document.createElement("canvas");
+				small.width = 192;
+				small.height = Math.max(1, Math.round((192 * source.height) / source.width));
+				small.getContext("2d")?.drawImage(source, 0, 0, small.width, small.height);
+				return small.toDataURL("image/jpeg", 0.5);
+			},
+			frameEvidence: getPreviewFrameEvidence,
+			awaitFrameSettled: (budgetMs) => {
+				const state = useProjectStore.getState();
+				const viewId = getCurrentNativeViewId();
+				if (!state.document || viewId === null) return Promise.resolve(false);
+				const position = resolveNativePosition(
+					state.currentTimeSec,
+					resolveVisibleClips(state.document),
+					state.document.timeline.clips,
+				);
+				return position
+					? waitForPreviewSettledFrame(budgetMs, {
+							viewId,
+							sceneIdentity: state.document,
+							playing: state.playing,
+							clipIndex: position.clipIndex,
+							sourceTimeSec: position.sourceTimeSec,
+						})
+					: Promise.resolve(false);
+			},
+			play: () => {
+				void videoElement?.play().catch(() => {
+					// swallow: rejection just means playback never started
+				});
+			},
+			pause: () => videoElement?.pause(),
+			snapshot: () => {
+				const state = useProjectStore.getState();
+				return {
+					currentTimeSec: state.currentTimeSec,
+					playing: state.playing,
+					videoTimeSec: videoElement?.currentTime ?? null,
+					videoPaused: videoElement?.paused ?? null,
+					videoConnected: videoElement?.isConnected ?? null,
+					videos: Array.from(window.document.querySelectorAll("video")).map((video) => ({
+						src: video.currentSrc.split("/").pop() ?? "",
+						currentTimeSec: Number(video.currentTime.toFixed(3)),
+						paused: video.paused,
+						readyState: video.readyState,
+					})),
+				};
+			},
+		});
+	}, [handleSeek, videoElement]);
+
 	const handleTimeChange = useCallback(
 		(timeSec: number) => {
 			setCurrentTime(timeSec);
@@ -639,10 +779,10 @@ export function NewEditorShell() {
 			const doc = isAxcutDocument
 				? documentSchema.parse(migrateRawDocumentToCurrent(raw)) // disk-load: upgrade v3/v4 → v5, then validate
 				: await prepareLegacyProjectForOpen(raw as EditorProjectData);
-			const saved = await nativeBridgeClient.aiEdition.save(doc);
+			const saved = await nativeBridgeClient.aiEdition.importProject(doc);
 			if (saved.success && saved.document) {
-				await loadProject(doc.project.id);
-				toast.success(isAxcutDocument ? "Project opened" : "Legacy project migrated and loaded");
+				await loadProject(documentSchema.parse(saved.document).project.id);
+				toast.success(isAxcutDocument ? "Project copy opened" : "Legacy project copied and loaded");
 			} else {
 				toast.error(saved.error ?? "Failed to open project");
 			}
@@ -860,6 +1000,7 @@ export function NewEditorShell() {
 		const api = window.electronAPI;
 		if (!api?.startNewRecording) return;
 		try {
+			await recordingResumeRef.current;
 			// Stop the playback clock synchronously before any awaited save. Reading
 			// the store after this gives one authoritative playhead for both return
 			// state and insertion placement.
@@ -904,7 +1045,6 @@ export function NewEditorShell() {
 	}, [facet, inspectorOpen, mode, openEntitlement, saveDocument, setPlaying]);
 
 	const handleExport = useCallback(() => {
-		if (!requireEntitlement("export")) return;
 		if (!hasAsset) {
 			toast.info("Add a video to the project before exporting.");
 			return;
@@ -924,12 +1064,12 @@ export function NewEditorShell() {
 			if (total === 0) {
 				toast.info("No automatic edits matched the current rules");
 			} else {
-				toast.success("Automatic edits regenerated", {
+				toast.success("Automatic edits applied", {
 					description: `${result.screenZooms} Zoom${result.screenZooms === 1 ? "" : "s"} and ${result.cameraEmphasis} Camera Emphasis region${result.cameraEmphasis === 1 ? "" : "s"}.`,
 				});
 			}
 		} catch (error) {
-			toast.error("Could not regenerate automatic edits", {
+			toast.error("Could not apply automatic edits", {
 				description: error instanceof Error ? error.message : String(error),
 			});
 		} finally {
@@ -1032,6 +1172,7 @@ export function NewEditorShell() {
 			return;
 		}
 
+		if (sel.kind === "videoOverlay") return;
 		const source =
 			sel.kind === "zoom"
 				? tl.zoomRegions
@@ -1388,9 +1529,13 @@ export function NewEditorShell() {
 				? { reason: transcriptGate.reason, message: transcriptGate.message }
 				: undefined,
 	};
-	const previewTrimRanges = pausePreviewSuggestions
-		? [...tl.trimRanges, ...pauseSuggestionsAsTrims(pausePreviewSuggestions)]
-		: tl.trimRanges;
+	const previewTrimRanges =
+		pausePreviewSuggestions && document
+			? applyPauseSuggestions(
+					{ ...document, timeline: { ...document.timeline, trimRanges: tl.trimRanges } },
+					pausePreviewSuggestions,
+				).timeline.trimRanges
+			: tl.trimRanges;
 	const inspectorExpanded = hasAsset && (inspectorOpen || tl.selection !== null);
 
 	return (
@@ -1400,12 +1545,14 @@ export function NewEditorShell() {
 				gridTemplateRows: `var(--editor-topbar-h) 1fr ${showTimeline ? timelineRow : "0px"}`,
 			}}
 		>
+			<TransactionRecoveryBanner />
 			<EditorTopBar
 				mode={visibleMode}
 				onModeChange={setMode}
 				projectTitle={project?.title ?? null}
 				dirty={dirty}
 				canExport={hasAsset}
+				exportRun={exportRun}
 				canImportMedia={hasProject}
 				canRegenerateAutomaticEdits={canRegenerateAutomaticDirection(document)}
 				regeneratingAutomaticEdits={regeneratingAutomaticEdits}
@@ -1494,6 +1641,7 @@ export function NewEditorShell() {
 										inspectorExpanded && facet === "layout" && tl.selection === null
 									}
 								/>
+								{hasAsset ? <PreviewQualityControl /> : null}
 							</div>
 							<FloatingInspector
 								facet={facet}
@@ -1542,6 +1690,10 @@ export function NewEditorShell() {
 						/>
 					) : null}
 					<V4Timeline
+						onOpenCaptions={() => {
+							setFacet("captions");
+							setInspectorOpen(true);
+						}}
 						tl={tl}
 						setCurrentTime={handleSeek}
 						variant={visibleMode === "media" ? "media" : "edit"}

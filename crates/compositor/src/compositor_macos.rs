@@ -19,7 +19,7 @@
 //! Metal n'a pas d'équivalent de `ID3D11DeviceContext::Map` sur une ressource
 //! `Private`. Les cibles de rendu (`rt`, `nv12_y`, `nv12_uv`) sont donc en
 //! `StorageMode::Private`, et chaque passe se termine par un `MTLBlitCommandEncoder`
-//! vers un miroir `Shared` (`rt_read`, `nv12_read_y`, `nv12_read_uv`) sur lequel
+//! vers un buffer `Shared` RGBA ou les miroirs NV12 `Shared` sur lesquels
 //! `getBytes` est légal. Le `waitUntilCompleted` qui suit est ce qui rend
 //! `readback_direct` synchrone, comme son homologue Windows : sans lui, la preview
 //! lirait le contenu de la frame précédente (ou du noir au premier tour).
@@ -234,9 +234,9 @@ pub struct Compositor {
     /// Render target principal RGBA8. Cible de `compose_frame`. `Private` : c'est une
     /// cible de rendu pure, jamais lue par le CPU (c'est `rt_read` qui l'est).
     rt: metal::Texture,
-    /// Miroir `Shared` de `rt`, rempli par blit à la fin de `compose_frame` — la seule
-    /// façon d'atteindre `getBytes` depuis une cible `Private`.
-    rt_read: metal::Texture,
+    /// Linear preview readback; GPU blit avoids CPU texture detiling in getBytes.
+    rt_read: metal::Buffer,
+    rt_read_stride: usize,
     /// NV12 interne : plan Y `R8Unorm`, plan UV `RG8Unorm` (demi-résolution).
     nv12_y: metal::Texture,
     nv12_uv: metal::Texture,
@@ -394,13 +394,10 @@ impl Compositor {
             metal::MTLStorageMode::Private,
             rt_usage,
         );
-        let rt_read = make_texture(
-            device,
-            metal::MTLPixelFormat::RGBA8Unorm,
-            rw,
-            rh,
-            metal::MTLStorageMode::Shared,
-            metal::MTLTextureUsage::ShaderRead,
+        let rt_read_stride = (rw as usize * 4).div_ceil(256) * 256;
+        let rt_read = device.new_buffer(
+            (rt_read_stride * rh as usize) as u64,
+            metal::MTLResourceOptions::StorageModeShared,
         );
         let nv12_y = make_texture(
             device,
@@ -554,6 +551,7 @@ impl Compositor {
             img_cache: RefCell::new(std::collections::HashMap::new()),
             rt,
             rt_read,
+            rt_read_stride,
             nv12_y,
             nv12_uv,
             nv12_read_y,
@@ -614,6 +612,22 @@ impl Compositor {
 
     pub fn clear_cursor(&self) {
         *self.cursor.borrow_mut() = None;
+    }
+
+    pub(crate) fn has_video_overlays(&self) -> bool {
+        self.scene
+            .borrow()
+            .as_ref()
+            .is_some_and(|scene| !scene.video_overlays.is_empty())
+    }
+
+    pub(crate) unsafe fn overlay_frame_at(
+        &self,
+        decoders: &mut crate::overlay_video::OverlayDecoders,
+        source_t_sec: f64,
+        gpu: &Gpu,
+    ) -> Result<(*const AVFrame, Option<crate::overlay_video::ActiveOverlay>)> {
+        decoders.frame_at(self.scene.borrow().as_ref(), source_t_sec, gpu)
     }
 
     pub fn scene_snapshot(&self) -> Option<Scene> {
@@ -729,6 +743,126 @@ impl Compositor {
         self.draw_layer(enc, cb, Some((y, uv)));
     }
 
+    unsafe fn draw_video_overlay(
+        &self,
+        enc: &metal::RenderCommandEncoderRef,
+        frame: *const AVFrame,
+        region: &crate::overlay_video::ActiveOverlay,
+        screen_rect: [f32; 4],
+        screen_radius: f32,
+    ) {
+        let Ok((y, uv)) = self.nv12_srvs(frame) else {
+            return;
+        };
+        let (tw, th) = self.tex_dims(frame);
+        let (fw, fh) = ((*frame).width as f32, (*frame).height as f32);
+        let (rw, rh) = (self.render_w as f32, self.render_h as f32);
+        let dst = match region.rect {
+            Some(rect) => [
+                screen_rect[0] + rect.x * screen_rect[2],
+                screen_rect[1] + rect.y * screen_rect[3],
+                rect.w * screen_rect[2],
+                rect.h * screen_rect[3],
+            ],
+            None => screen_rect,
+        };
+        if dst[2] <= 0.0 || dst[3] <= 0.0 || fw <= 0.0 || fh <= 0.0 {
+            return;
+        }
+        let source_aspect = fw / fh;
+        let target_aspect = dst[2] * rw / (dst[3] * rh);
+        let mut src = [0.0, 0.0, fw / tw.max(1) as f32, fh / th.max(1) as f32];
+        let mut layer = LayerCB {
+            dst,
+            quad_px: [dst[2] * rw, dst[3] * rh],
+            radius_px: if region.rect.is_none() {
+                screen_radius
+            } else {
+                0.0
+            },
+            mode: 0.0,
+            color: [0.0, 0.0, 0.0, region.opacity],
+            dst_prev: dst,
+            ..Default::default()
+        };
+        if region.fit == crate::scene::VideoOverlayFit::Cover {
+            if source_aspect > target_aspect {
+                let span = src[2] * target_aspect / source_aspect;
+                src[0] = (src[2] - span) * 0.5;
+                src[2] -= src[0];
+            } else {
+                let span = src[3] * source_aspect / target_aspect;
+                src[1] = (src[3] - span) * 0.5;
+                src[3] -= src[1];
+            }
+            layer.src = src;
+            layer.src_prev = src;
+            self.draw_video(enc, &layer, &y, &uv);
+            return;
+        }
+
+        // Disjoint scissors keep letterboxes and video under one rounded mask/alpha.
+        let horizontal_bars = source_aspect > target_aspect;
+        let (axis_start, axis_size, extent) = if horizontal_bars {
+            (dst[1] * rh, dst[3] * rh, self.render_h as u64)
+        } else {
+            (dst[0] * rw, dst[2] * rw, self.render_w as u64)
+        };
+        let fraction = if horizontal_bars {
+            target_aspect / source_aspect
+        } else {
+            source_aspect / target_aspect
+        };
+        let low = (axis_start + axis_size * (1.0 - fraction) * 0.5).round();
+        let high = (axis_start + axis_size * (1.0 + fraction) * 0.5).round();
+        if high <= low {
+            return;
+        }
+        let scissor = |start: u64, end: u64| {
+            if horizontal_bars {
+                metal::MTLScissorRect {
+                    x: 0,
+                    y: start,
+                    width: self.render_w as u64,
+                    height: end - start,
+                }
+            } else {
+                metal::MTLScissorRect {
+                    x: start,
+                    y: 0,
+                    width: end - start,
+                    height: self.render_h as u64,
+                }
+            }
+        };
+        let lo = low.clamp(0.0, extent as f32) as u64;
+        let hi = high.clamp(0.0, extent as f32) as u64;
+        layer.mode = 1.0;
+        for (start, end) in [(0, lo), (hi, extent)] {
+            if end > start {
+                enc.set_scissor_rect(scissor(start, end));
+                self.draw_solid(enc, &layer);
+            }
+        }
+        if hi > lo {
+            let axis = if horizontal_bars { 1 } else { 0 };
+            let uv_max = src[axis + 2];
+            src[axis] = (axis_start - low) / (high - low) * uv_max;
+            src[axis + 2] = (axis_start + axis_size - low) / (high - low) * uv_max;
+            layer.mode = 0.0;
+            layer.src = src;
+            layer.src_prev = src;
+            enc.set_scissor_rect(scissor(lo, hi));
+            self.draw_video(enc, &layer, &y, &uv);
+        }
+        enc.set_scissor_rect(metal::MTLScissorRect {
+            x: 0,
+            y: 0,
+            width: self.render_w as u64,
+            height: self.render_h as u64,
+        });
+    }
+
     /// Ombre portée (mode 2) — port mot pour mot de `compositor_windows::draw_shadow` :
     /// le quad est élargi de `spread` de chaque côté et décalé de `offset_px`, et le
     /// shader dérive la pénombre de la SDF du rect arrondi inscrit.
@@ -742,6 +876,7 @@ impl Compositor {
         spread: f32,
         offset_px: [f32; 2],
         opacity: f32,
+        squircle: bool,
     ) {
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
         let (sx, sy) = (spread / rw, spread / rh);
@@ -757,7 +892,7 @@ impl Compositor {
             radius_px: radius,
             mode: 2.0,
             color: [0.0, 0.0, 0.0, opacity],
-            fx: [spread, 0.0, 0.0, 0.0],
+            fx: [spread, u8::from(squircle) as f32, 0.0, 0.0],
             mb: [0.0, 1.0, 1.0, 0.0],
             ..Default::default()
         };
@@ -1213,20 +1348,29 @@ impl Compositor {
                     } else {
                         (dst[2] * (img_aspect / box_aspect), dst[3])
                     };
+                    let (animated_dst, anim) = crate::text_anim::image_animation_geometry(
+                        a.image_animation.as_deref(),
+                        (t - a.start_sec as f32) * 1000.0,
+                        [
+                            dst[0] + (dst[2] - fit_w) * 0.5,
+                            dst[1] + (dst[3] - fit_h) * 0.5,
+                            fit_w,
+                            fit_h,
+                        ],
+                        [rw, rh],
+                    );
+                    if anim.reveal <= 0.0 || anim.opacity <= 0.0 {
+                        continue;
+                    }
                     enc.set_fragment_texture(2, Some(&tex));
                     self.draw_solid(
                         enc,
                         &LayerCB {
-                            dst: [
-                                dst[0] + (dst[2] - fit_w) * 0.5,
-                                dst[1] + (dst[3] - fit_h) * 0.5,
-                                fit_w,
-                                fit_h,
-                            ],
-                            src: [0.0, 0.0, 1.0, 1.0],
-                            quad_px: [fit_w * rw, fit_h * rh],
+                            dst: animated_dst,
+                            src: [0.0, 0.0, anim.reveal, 1.0],
+                            quad_px: [animated_dst[2] * rw, animated_dst[3] * rh],
                             mode: 7.0,
-                            color: [1.0, 1.0, 1.0, 1.0],
+                            color: [1.0, 1.0, 1.0, anim.opacity],
                             fx: [0.0, 0.0, 1.0, 1.0],
                             ..Default::default()
                         },
@@ -1498,6 +1642,8 @@ impl Compositor {
         webcam: *const AVFrame,
         frame: f32,
         cfg: &Cfg,
+        overlay: *const AVFrame,
+        overlay_region: Option<&crate::overlay_video::ActiveOverlay>,
     ) -> Result<()> {
         if Self::pixel_buffer_of(screen).is_none() {
             return self.clear_rt();
@@ -1640,7 +1786,7 @@ impl Compositor {
             // droit, quadrilatère projeté quand il est penché. Un rect droit derrière un écran
             // incliné se lit comme une seconde surface, pas comme son ombre.
             match tilt.as_ref() {
-                None => self.draw_shadow(enc, g.s_dst, s_px, g.s_radius, spread, offset, opacity),
+                None => self.draw_shadow(enc, g.s_dst, s_px, g.s_radius, spread, offset, opacity, false),
                 Some(quad) => self.draw_quad_shadow(
                     enc,
                     &quad.corners,
@@ -1683,6 +1829,9 @@ impl Compositor {
             ),
         }
 
+        if let Some(region) = overlay_region.filter(|_| !overlay.is_null()) {
+            self.draw_video_overlay(enc, overlay, region, g.s_ann, g.s_radius);
+        }
         enc.end_encoding();
 
         // --- curseur --- (parité `compositor_windows.rs`, section « curseur custom »)
@@ -1780,6 +1929,7 @@ impl Compositor {
                     WEBCAM_SHADOW_SPREAD_FRAC * g.frame_min_px,
                     [0.0, WEBCAM_SHADOW_OFFSET_FRAC * g.frame_min_px],
                     WEBCAM_SHADOW_OPACITY * g.shape_fade,
+                    g.w_squircle,
                 );
             }
             self.draw_video(
@@ -1789,6 +1939,7 @@ impl Compositor {
                     src: [u0, cv0, u1, cv1],
                     quad_px: g.w_px,
                     radius_px: g.w_radius,
+                    fx: [0.0, u8::from(g.w_squircle) as f32, 0.0, 0.0],
                     mode: 0.0,
                     color: [0.0, 0.0, 0.0, 1.0],
                     src_prev: [u0, cv0, u1, cv1],
@@ -1838,10 +1989,10 @@ impl Compositor {
         Ok(())
     }
 
-    /// Copie `rt` (`Private`) vers `rt_read` (`Shared`) dans le command buffer donné.
+    /// Copy into aligned linear rows; the CPU reads only after command completion.
     fn mirror_rt(&self, cmd_buf: &metal::CommandBufferRef) {
         let blit = cmd_buf.new_blit_command_encoder();
-        blit.copy_from_texture(
+        blit.copy_from_texture_to_buffer(
             &self.rt,
             0,
             0,
@@ -1853,8 +2004,9 @@ impl Compositor {
             },
             &self.rt_read,
             0,
-            0,
-            metal::MTLOrigin { x: 0, y: 0, z: 0 },
+            self.rt_read_stride as u64,
+            (self.rt_read_stride * self.render_h as usize) as u64,
+            metal::MTLBlitOption::empty(),
         );
         blit.end_encoding();
     }
@@ -1890,6 +2042,21 @@ impl Compositor {
         if out_tex.is_null() {
             return self.render_nv12();
         }
+        // Same wait as before: `avcodec_send_frame` reads this buffer right after.
+        self.rgb_to_nv12_deferred(out_tex)?.wait_until_completed();
+        Ok(())
+    }
+
+    /// Same conversion as `rgb_to_nv12`, but returns the committed command buffer
+    /// instead of waiting for it. The caller owns the wait, which lets the export
+    /// loop decode and compose frame N+1 while the GPU still converts frame N.
+    /// Safe because `MTLCommandQueue` is a serial queue (Metal SDK,
+    /// `MTLCommandQueue.h`): the next `compose_frame` that overwrites `rt` is
+    /// queued behind this conversion.
+    pub unsafe fn rgb_to_nv12_deferred(
+        &self,
+        out_tex: *mut std::ffi::c_void,
+    ) -> Result<metal::CommandBuffer> {
         let cache = &self.metal_texture_cache;
         let y = cache.make_texture_from_pixel_buffer(out_tex, 0, metal::MTLPixelFormat::R8Unorm)?;
         let uv =
@@ -1907,11 +2074,10 @@ impl Compositor {
             enc.draw_primitives(metal::MTLPrimitiveType::Triangle, 0, 3);
             enc.end_encoding();
         }
-        // Pas de miroir `Shared`, pas de `getBytes` : c'est tout l'intérêt. On attend
-        // quand même, parce que `avcodec_send_frame` va lire ce buffer juste après.
+        // Pas de miroir `Shared`, pas de `getBytes` : c'est tout l'intérêt. The wait
+        // belongs to the caller (see `rgb_to_nv12`).
         self.submit(cmd_buf);
-        self.sync();
-        Ok(())
+        Ok(cmd_buf.to_owned())
     }
 
     pub unsafe fn rgb_to_nv12_scaled(
@@ -2000,19 +2166,16 @@ impl Compositor {
         let (w, h) = (self.render_w, self.render_h);
         let bytes_per_row = (w as usize) * 4;
         let mut data = vec![0u8; bytes_per_row * h as usize];
-        self.rt_read.get_bytes(
-            data.as_mut_ptr() as *mut std::ffi::c_void,
-            bytes_per_row as u64,
-            metal::MTLRegion {
-                origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                size: metal::MTLSize {
-                    width: w as u64,
-                    height: h as u64,
-                    depth: 1,
-                },
-            },
-            0,
+        let mapped = std::slice::from_raw_parts(
+            self.rt_read.contents().cast::<u8>(),
+            self.rt_read_stride * h as usize,
         );
+        for (source, destination) in mapped
+            .chunks_exact(self.rt_read_stride)
+            .zip(data.chunks_exact_mut(bytes_per_row))
+        {
+            destination.copy_from_slice(&source[..bytes_per_row]);
+        }
         Ok((w, h, data))
     }
 
@@ -2097,6 +2260,46 @@ impl Compositor {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn preview_readback_preserves_pixels_and_removes_row_padding() {
+        let gpu = crate::d3d::Gpu::create_auto(false).unwrap();
+        for width in [64, 66] {
+            let comp = super::Compositor::new_sized(&gpu, width, 4).unwrap();
+            let source = super::make_texture(
+                &gpu.device,
+                metal::MTLPixelFormat::RGBA8Unorm,
+                width,
+                4,
+                metal::MTLStorageMode::Shared,
+                metal::MTLTextureUsage::ShaderRead,
+            );
+            let origin = metal::MTLOrigin { x: 0, y: 0, z: 0 };
+            let size = metal::MTLSize {
+                width: width as u64,
+                height: 4,
+                depth: 1,
+            };
+            for seed in [0, 71] {
+                let expected: Vec<u8> = (0..width as usize * 4 * 4)
+                    .map(|i| ((i * 17 + seed) % 251) as u8)
+                    .collect();
+                source.replace_region(
+                    metal::MTLRegion { origin, size },
+                    0,
+                    expected.as_ptr().cast(),
+                    width as u64 * 4,
+                );
+                let command = gpu.context.new_command_buffer();
+                let blit = command.new_blit_command_encoder();
+                blit.copy_from_texture(&source, 0, 0, origin, size, &comp.rt, 0, 0, origin);
+                blit.end_encoding();
+                comp.submit(command);
+                let (w, h, actual) = unsafe { comp.readback_direct().unwrap() };
+                assert_eq!((w, h), (width, 4));
+                assert_eq!(actual, expected, "width={width}, seed={seed}");
+            }
+        }
+    }
 
     /// Le pendant macOS de `compositor_windows`'s `every_shader_entry_point_compiles`.
     ///
@@ -2128,6 +2331,55 @@ mod tests {
                 .get_function(name, None)
                 .unwrap_or_else(|e| panic!("entry point {name} absent de la library : {e}"));
         }
+    }
+
+    #[test]
+    fn squircle_distance_field_preserves_continuous_corners_on_the_gpu() {
+        let Some(device) = metal::Device::system_default() else {
+            eprintln!("no Metal device — squircle GPU test skipped");
+            return;
+        };
+        // Exercise the production shader helper on the real GPU. A circle rejects
+        // (80,80), but an L4 squircle of radius 100 contains it.
+        let source = format!("{}\n{}", include_str!("shaders.metal"), r#"
+            kernel void test_squircle(device float *out [[buffer(0)]]) {
+                float2 halfsz = float2(100.0);
+                out[0] = sd_camera_rect(float2(80.0), halfsz, 100.0, 1.0);
+                out[1] = sd_camera_rect(float2(80.0), halfsz, 100.0, 0.0);
+                out[2] = sd_camera_rect(float2(84.0896415254), halfsz, 100.0, 1.0);
+                out[3] = sd_camera_rect(float2(99.0), halfsz, 0.0, 1.0);
+                out[4] = sd_camera_rect(float2(100.0, 70.0), halfsz, 30.0, 1.0);
+                out[5] = sd_camera_rect(float2(-80.0, 80.0), halfsz, 100.0, 1.0);
+                out[6] = sd_camera_rect(float2(97.0), halfsz, 30.0, 1.0);
+                out[7] = sd_camera_rect(float2(80.0), halfsz, 200.0, 1.0);
+            }
+        "#);
+        let library = device.new_library_with_source(&source, &metal::CompileOptions::new())
+            .expect("squircle test shader");
+        let function = library.get_function("test_squircle", None).expect("test kernel");
+        let pipeline = device.new_compute_pipeline_state_with_function(&function)
+            .expect("test pipeline");
+        let output = device.new_buffer(32, metal::MTLResourceOptions::StorageModeShared);
+        let queue = device.new_command_queue();
+        let command = queue.new_command_buffer();
+        let encoder = command.new_compute_command_encoder();
+        encoder.set_compute_pipeline_state(&pipeline);
+        encoder.set_buffer(0, Some(&output), 0);
+        encoder.dispatch_threads(metal::MTLSize::new(1, 1, 1), metal::MTLSize::new(1, 1, 1));
+        encoder.end_encoding();
+        command.commit();
+        command.wait_until_completed();
+        assert_eq!(command.status(), metal::MTLCommandBufferStatus::Completed);
+        // Shared buffer is CPU-readable once the command finishes; it contains 8 floats.
+        let values = unsafe { std::slice::from_raw_parts(output.contents().cast::<f32>(), 8) };
+        assert!(values[0] < 0.0, "squircle contains the diagonal point");
+        assert!(values[1] > 0.0, "legacy circle still excludes that point");
+        assert!(values[2].abs() < 0.001, "x^4+y^4=r^4 boundary");
+        assert!(values[3] < 0.0, "zero radius retains sharp corners");
+        assert!(values[4].abs() < 0.001, "corner joins the straight side");
+        assert_eq!(values[5], values[0], "mask symmetry");
+        assert!(values[6] > 0.0, "positive radius clips the corner");
+        assert_eq!(values[7], values[0], "radius clamps to half the shorter side");
     }
 
     /// Les quatre pipeline states que `new_sized` construit doivent être acceptés par

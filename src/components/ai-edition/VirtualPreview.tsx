@@ -1,20 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
 	type CropRegion,
 	DEFAULT_CROP_REGION,
 	MAX_NATIVE_PLAYBACK_RATE,
 } from "@/components/video-editor/types";
 import { resolvePlaybackSegments } from "@/lib/ai-edition/document/timeline";
+import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import type { AxcutClip, AxcutTrimRange, AxcutZoomRegion } from "@/lib/ai-edition/schema";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { PlaybackClockRef } from "@/lib/ai-edition/timeline/playback-clock";
+import { assetSwitchInFlight, playingFragment } from "@/lib/ai-edition/timeline/playbackSwitch";
 import { findActiveSpeedRegion, type SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import {
 	clampVirtualTime,
 	findNextKeptSegment,
 	findRawClipForSegment,
 	getRawVirtualStartTime,
-	locateKeptSegment,
 	locateSourcePosition,
 	locateVirtualPosition,
 	totalVirtualDuration,
@@ -48,6 +50,14 @@ function findNextClipByTimelineOrder(
 		.sort((a, b) => a.timelineStartSec - b.timelineStartSec)[0];
 }
 
+interface PreparedFragment {
+	key: string;
+	source: VideoSource;
+	clipId: string;
+	sourceTimeSec: number;
+	rawTimeSec: number;
+}
+
 interface VirtualPreviewProps {
 	videoSources: VideoSource[];
 	clips: AxcutClip[];
@@ -66,9 +76,7 @@ interface VirtualPreviewProps {
 	) => void;
 	onVideoElement?: (element: HTMLVideoElement | null) => void;
 	videoStyle?: React.CSSProperties;
-	/** Called with the id of the asset that failed, not as a bare "the preview is
-	 *  broken" signal: only ONE source is mounted at a time (`activeSource`), so
-	 *  the caller has no other way to tell which of its sources is dead. */
+	/** Reports failures of the active source; a failed preparation falls back to normal loading. */
 	onVideoError?: (assetId: string) => void;
 	/** Crop of the active clip, as fractions (0-1) of the source frame. Absent/
 	 * identity ({x:0,y:0,width:1,height:1}) renders the full frame, unchanged
@@ -121,7 +129,60 @@ export function VirtualPreview({
 			};
 	const videoRef = useRef<HTMLVideoElement | null>(null);
 	const routedAudioRef = useRef<HTMLAudioElement | null>(null);
+	const preparedVideoRef = useRef<HTMLVideoElement | null>(null);
+	const preparedAudioRef = useRef<HTMLAudioElement | null>(null);
+	const preparedRef = useRef<PreparedFragment | null>(null);
+	const [prepared, setPrepared] = useState<PreparedFragment | null>(null);
+	const [activeBufferKey, setActiveBufferKey] = useState<string | null>(null);
+	const preparationIdRef = useRef(0);
 	const videoFrameRef = useRef<HTMLDivElement | null>(null);
+	const audioOutputRef = useRef<{
+		context: AudioContext;
+		nodes: Map<HTMLMediaElement, MediaElementAudioSourceNode>;
+	} | null>(null);
+	const audioLifecycleRef = useRef(0);
+	useEffect(() => {
+		if (typeof AudioContext === "undefined") return;
+		const lifecycle = ++audioLifecycleRef.current;
+		const output = audioOutputRef.current ?? {
+			context: new AudioContext({ latencyHint: "interactive" }),
+			nodes: new Map<HTMLMediaElement, MediaElementAudioSourceNode>(),
+		};
+		audioOutputRef.current = output;
+		return () => {
+			queueMicrotask(() => {
+				if (audioLifecycleRef.current !== lifecycle) return;
+				for (const [element, node] of output.nodes) {
+					element.pause();
+					node.disconnect();
+				}
+				audioOutputRef.current = null;
+				void output.context.close();
+			});
+		};
+	}, []);
+	useEffect(() => {
+		const output = audioOutputRef.current;
+		if (!output) return;
+		const elements = [
+			videoRef.current,
+			routedAudioRef.current,
+			preparedVideoRef.current,
+			preparedAudioRef.current,
+		];
+		for (const [element, node] of output.nodes) {
+			if (!elements.includes(element)) {
+				node.disconnect();
+				output.nodes.delete(element);
+			}
+		}
+		for (const element of elements) {
+			if (!element || output.nodes.has(element)) continue;
+			const node = output.context.createMediaElementSource(element);
+			node.connect(output.context.destination);
+			output.nodes.set(element, node);
+		}
+	});
 
 	const isProgrammaticSeekRef = useRef(false);
 	const pendingSeekRef = useRef<{ sourceTimeSec: number; play: boolean } | null>(null);
@@ -136,6 +197,14 @@ export function VirtualPreview({
 	const [virtualTimeSec, setVirtualTimeSec] = useState(0);
 	const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 	const [sourceIndex, setSourceIndex] = useState(0);
+	const resumeAudioOutput = () => {
+		const context = audioOutputRef.current?.context;
+		if (!context || context.state !== "suspended") return;
+		void context.resume().catch(() => {
+			videoRef.current?.pause();
+			setLoadState("error");
+		});
+	};
 
 	const virtualDurationSec = useMemo(() => totalVirtualDuration(clips), [clips]);
 	const activeSource = videoSources[sourceIndex] ?? null;
@@ -220,7 +289,13 @@ export function VirtualPreview({
 	// nothing shows. Assigned after the callback exists, below; read through the ref here so
 	// the tick always invokes the latest closure.
 	const seekToVirtualTimeRef = useRef<
-		((nextVirtualTimeSec: number, preservePlayback?: boolean, forceResume?: boolean) => void) | null
+		| ((
+				nextVirtualTimeSec: number,
+				preservePlayback?: boolean,
+				forceResume?: boolean,
+				allowPrepared?: boolean,
+		  ) => void)
+		| null
 	>(null);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: re-create the rAF when the active source swaps.
 	useEffect(() => {
@@ -262,19 +337,58 @@ export function VirtualPreview({
 			// below (locateSourcePosition against `clipsRef.current`, unchanged) naturally
 			// jumps by the trim's exact width the instant `v.currentTime` does, so the ruler's
 			// playhead visually skips the trim marker instead of drifting through it.
+			// A seek into another asset has been requested but React has not swapped the
+			// <video> yet: this element is on its way out, so it must not steer playback.
+			if (assetSwitchInFlight(clipsRef.current, activeClipIdRef.current, activeSourceId)) {
+				return;
+			}
 			if (!v.paused) {
 				// Resolved against the segments of the clip we are ACTUALLY playing (see
 				// `locateKeptSegment`). Asking the whole segment list — all this could do
 				// before a trim named its clip — let a twin clip over the same recording
 				// answer "yes, that stretch is kept" for a cut authored on this one, so the
 				// cut was simply not skipped during playback.
-				const inKeptSegment = locateKeptSegment(
+				const inKeptSegment = playingFragment(
 					playbackClipsRef.current,
 					clipsRef.current,
 					v.currentTime,
 					activeSourceId,
-					activeClipIdRef.current ?? undefined,
+					activeClipIdRef.current,
 				);
+				if (inKeptSegment) {
+					const segments = playbackClipsRef.current;
+					const next = segments[segments.indexOf(inKeptSegment) + 1];
+					const rawClip = next && findRawClipForSegment(next, clipsRef.current);
+					const source = next && videoSourcesRef.current.find((item) => item.id === next.assetId);
+					const previous = preparedRef.current;
+					const remainingSec =
+						((inKeptSegment.sourceEndSec ?? Infinity) - v.currentTime) / v.playbackRate;
+					if (next && rawClip && source && remainingSec <= 0.75) {
+						const rawTimeSec = getRawVirtualStartTime(next, clipsRef.current);
+						if (
+							!previous ||
+							previous.clipId !== rawClip.id ||
+							previous.source.id !== source.id ||
+							previous.source.src !== source.src ||
+							previous.source.audioSrc !== source.audioSrc ||
+							previous.sourceTimeSec !== next.sourceStartSec ||
+							previous.rawTimeSec !== rawTimeSec
+						) {
+							const preparation = {
+								key: `prepared-${++preparationIdRef.current}`,
+								source,
+								clipId: rawClip.id,
+								sourceTimeSec: next.sourceStartSec,
+								rawTimeSec,
+							};
+							preparedRef.current = preparation;
+							setPrepared(preparation);
+						}
+					} else if (previous) {
+						preparedRef.current = null;
+						setPrepared(null);
+					}
+				}
 				if (!inKeptSegment) {
 					const nextKeptSegment = findNextKeptSegment(
 						playbackClipsRef.current,
@@ -294,7 +408,7 @@ export function VirtualPreview({
 							activeClipIdRef.current = rawClip.id;
 						}
 						const rawTargetTime = getRawVirtualStartTime(nextKeptSegment, clipsRef.current);
-						seekToVirtualTimeRef.current?.(rawTargetTime, true);
+						seekToVirtualTimeRef.current?.(rawTargetTime, true, false, true);
 						return;
 					}
 					v.pause();
@@ -361,7 +475,7 @@ export function VirtualPreview({
 				// ponytail: fall back to timeline order so cross-asset / reordered
 				// clips don't keep playing unmapped media.
 				const nextClip = findNextClipByTimelineOrder(clipsRef.current, virtualTimeSecRef.current);
-				if (nextClip) seekToVirtualTimeRef.current?.(nextClip.timelineStartSec, true);
+				if (nextClip) seekToVirtualTimeRef.current?.(nextClip.timelineStartSec, true, false, true);
 				else {
 					v.pause();
 					updateVirtualTime(virtualDurationSecRef.current);
@@ -388,7 +502,7 @@ export function VirtualPreview({
 					updateVirtualTime(virtualDurationSecRef.current);
 					return;
 				}
-				seekToVirtualTimeRef.current?.(nextClip.timelineStartSec, true);
+				seekToVirtualTimeRef.current?.(nextClip.timelineStartSec, true, false, true);
 				return;
 			}
 			updateVirtualTime(clampVirtualTime(clipsRef.current, position.virtualTimeSec));
@@ -399,18 +513,29 @@ export function VirtualPreview({
 		// two clips can point at distinct assets that resolve to the same URL).
 	}, [activeSource?.id, routedAudioActive]);
 
-	// report the video element up; re-notify (and clear) whenever the active
-	// source changes so the parent doesn't keep a stale node after the keyed
-	// <video> is swapped for a new asset.
+	// Promotion changes the prepared element's ref without replacing its decoded media.
+	// The parent must bind transport listeners to that element before the outgoing pause.
+	const onVideoElementRef = useRef(onVideoElement);
+	onVideoElementRef.current = onVideoElement;
+	const attachVideo = useCallback((element: HTMLVideoElement | null) => {
+		videoRef.current = element;
+		onVideoElementRef.current?.(element);
+	}, []);
+	// The screen video is silent while the Clean Voice mix carries the sound; the listening
+	// level itself belongs to the editor, not the document, so it never reaches an export.
+	const previewVolume = usePreviewAudio((s) => s.volume);
+	const previewMuted = usePreviewAudio((s) => s.muted);
 	const activeSourceKey = activeSource?.id ?? null;
-	// biome-ignore lint/correctness/useExhaustiveDependencies: re-run on source swap
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-apply on the keyed remounts
 	useEffect(() => {
-		onVideoElement?.(videoRef.current);
-		return () => onVideoElement?.(null);
-	}, [onVideoElement, activeSourceKey]);
+		const level = { volume: previewVolume, muted: previewMuted };
+		applyPreviewAudio(videoRef.current, level, routedAudioActive);
+		applyPreviewAudio(routedAudioRef.current, level);
+	}, [previewVolume, previewMuted, routedAudioActive, activeSourceKey, requestedAudioKey]);
 
 	const updateVirtualTime = useCallback(
 		(nextTimeSec: number) => {
+			virtualTimeSecRef.current = nextTimeSec;
 			setVirtualTimeSec(nextTimeSec);
 			onTimeChange?.(nextTimeSec);
 			// ponytail: mirrors main's per-frame `video.playbackRate = ...`
@@ -452,7 +577,12 @@ export function VirtualPreview({
 	}, [zoomPlaybackSegments, zoomRegions, virtualTimeSec]);
 
 	const seekToVirtualTime = useCallback(
-		(nextVirtualTimeSec: number, preservePlayback = false, forceResume = false) => {
+		(
+			nextVirtualTimeSec: number,
+			preservePlayback = false,
+			forceResume = false,
+			allowPrepared = false,
+		) => {
 			const position = locateVirtualPosition(clips, nextVirtualTimeSec);
 			if (!position) {
 				videoRef.current?.pause();
@@ -462,7 +592,7 @@ export function VirtualPreview({
 			activeClipIdRef.current = position.clip.id;
 
 			const targetIndex = videoSources.findIndex((vs) => vs.id === position.clip.assetId);
-			const isAssetSwitch = targetIndex >= 0 && targetIndex !== sourceIndex;
+			const isAssetSwitch = targetIndex >= 0 && targetIndex !== sourceIndexRef.current;
 			// Read the live paused state, not the captured `isPlaying` prop. The prop is the
 			// parent's playback state as of the last render, and a boundary advance can fire
 			// on the very frame playback starts or stops — before that state has round-tripped
@@ -484,7 +614,76 @@ export function VirtualPreview({
 			// timeline never advances — the "stops at clip end" bug.
 			const shouldContinuePlayback = preservePlayback && (forceResume || !videoRef.current?.paused);
 
+			const next = preparedRef.current;
+			const preparedVideo = preparedVideoRef.current;
+			const preparedAudio = preparedAudioRef.current;
+			const targetSource = videoSources[targetIndex];
+			const audioReady =
+				!targetSource?.audioSrc ||
+				(preparedAudio &&
+					preparedAudio.readyState >= 2 &&
+					!preparedAudio.error &&
+					!preparedAudio.seeking &&
+					Math.abs(preparedAudio.currentTime - position.sourceTimeSec) < 0.01);
+			if (
+				allowPrepared &&
+				next &&
+				preparedVideo &&
+				targetSource &&
+				next.clipId === position.clip.id &&
+				next.source.id === targetSource.id &&
+				next.source.src === targetSource.src &&
+				next.source.audioSrc === targetSource.audioSrc &&
+				Math.abs(next.rawTimeSec - position.virtualTimeSec) < 0.001 &&
+				preparedVideo.readyState >= 2 &&
+				!preparedVideo.error &&
+				!preparedVideo.seeking &&
+				Math.abs(preparedVideo.currentTime - position.sourceTimeSec) < 0.01 &&
+				audioReady
+			) {
+				const outgoing = videoRef.current;
+				const outgoingAudio = routedAudioRef.current;
+				if (outgoing) outgoing.muted = true;
+				if (outgoingAudio) outgoingAudio.muted = true;
+				flushSync(() => {
+					videoRef.current = preparedVideo;
+					routedAudioRef.current = preparedAudio;
+					sourceIndexRef.current = targetIndex;
+					pendingSeekRef.current = null;
+					preparedRef.current = null;
+					setPrepared(null);
+					setSourceIndex(targetIndex);
+					setActiveBufferKey(next.key);
+					setLoadState("ready");
+					const level = usePreviewAudio.getState();
+					applyPreviewAudio(preparedVideo, level, Boolean(targetSource.audioSrc));
+					applyPreviewAudio(preparedAudio, level);
+					if (targetSource.audioSrc) {
+						setFailedAudioKey(null);
+						setReadyAudioKey(`${targetSource.id}\0${targetSource.audioSrc}`);
+					}
+					updateVirtualTime(position.virtualTimeSec);
+					if (preparedAudio) preparedAudio.playbackRate = preparedVideo.playbackRate;
+					if (shouldContinuePlayback) {
+						void preparedVideo.play().catch(() => undefined);
+						if (preparedAudio) void preparedAudio.play().catch(() => undefined);
+					}
+				});
+				outgoing?.pause();
+				outgoingAudio?.pause();
+				onLoadedMetadata?.(
+					preparedVideo.duration,
+					targetSource.id,
+					preparedVideo.videoWidth,
+					preparedVideo.videoHeight,
+				);
+				return;
+			}
+			preparedRef.current = null;
+			setPrepared(null);
+
 			if (isAssetSwitch) {
+				setActiveBufferKey(null);
 				setSourceIndex(targetIndex);
 				setLoadState("loading");
 				updateVirtualTime(position.virtualTimeSec);
@@ -512,7 +711,7 @@ export function VirtualPreview({
 				});
 			}
 		},
-		[clips, videoSources, sourceIndex, updateVirtualTime],
+		[clips, videoSources, updateVirtualTime, onLoadedMetadata],
 	);
 
 	const seekToSourceTime = useCallback((sourceTimeSec: number) => {
@@ -545,7 +744,7 @@ export function VirtualPreview({
 		if (seekTarget.isSource) {
 			seekToSourceTimeRef.current(seekTarget.timeSec);
 		} else {
-			seekToVirtualTimeRef.current?.(seekTarget.timeSec);
+			seekToVirtualTimeRef.current?.(seekTarget.timeSec, true);
 		}
 	}, [seekTarget]);
 
@@ -554,126 +753,150 @@ export function VirtualPreview({
 			{activeSource ? (
 				<>
 					<div ref={videoFrameRef} className={styles.videoFrame}>
-						<video
-							// Key on the asset id, not the URL: distinct assets that resolve
-							// to the same file URL must still remount the <video> on switch so
-							// onLoadedMetadata refires and the pending cross-asset seek/resume
-							// runs (otherwise playback stalls at the clip boundary).
-							key={activeSource.id}
-							ref={videoRef}
-							src={activeSource.src}
-							className={`${styles.video}${isIdentityCrop ? "" : ` ${styles.videoCropped}`}`}
-							// When a synthetic cursor is being drawn on top (CursorPreviewLayer),
-							// hide the real OS pointer here so it doesn't compete with it.
-							style={{
-								...cropVideoStyle,
-								...videoStyle,
-								cursor: settings.cursorShow ? "none" : undefined,
-							}}
-							preload="metadata"
-							playsInline
-							muted={routedAudioActive}
-							onLoadedMetadata={(e) => {
-								setLoadState("ready");
-								// ponytail: forward the raw duration (possibly NaN for
-								// MediaRecorder WebMs) to the parent. handleLoadedMetadata
-								// falls back to a 60s seed when it isn't finite so the
-								// timeline gets a populated clip even before the EBML fix
-								// lands. Previously this gate skipped the callback for
-								// non-finite durations and stranded the editor on
-								// "No clips yet" until manual intervention. The assetId is
-								// forwarded so the parent only ever corrects clips that
-								// belong to the asset which actually fired this event —
-								// without it, switching between clips of different assets
-								// during multi-clip playback clobbered clip[0]'s duration
-								// with whichever asset's video happened to load last.
-								onLoadedMetadata?.(
-									e.currentTarget.duration,
-									activeSource.id,
-									e.currentTarget.videoWidth,
-									e.currentTarget.videoHeight,
-								);
-								if (pendingSeekRef.current) {
-									const { sourceTimeSec, play } = pendingSeekRef.current;
-									pendingSeekRef.current = null;
-									e.currentTarget.currentTime = sourceTimeSec;
-									if (play) {
-										// See the other video.play() catch above: a rejection means
-										// playback never started, so there's no state to reconcile.
-										void e.currentTarget.play().catch(() => {
-											// swallow: rejection just means playback never started
-										});
-									}
-								} else if (clips.length > 0) {
-									// A timeline edit can remount the source after the editor has
-									// moved the playhead to an insertion boundary. The editor value
-									// is newer than this component's local clock in that window.
-									seekToVirtualTime(currentTimeSec ?? virtualTimeSec);
-								}
-							}}
-							onWaiting={() => setLoadState("loading")}
-							onCanPlay={() => setLoadState("ready")}
-							onError={(e) => {
-								// ponytail: don't blindly advance to the next source — if
-								// the failed source owns the current virtual clip, the
-								// next sourceIndex will seekToVirtualTime right back into
-								// the same failed asset, looping. Fail the preview.
-								pendingSeekRef.current = null;
-								setLoadState("error");
-								// An 'error' doesn't itself fire 'pause', so make sure the shell's
-								// transport state (single source of truth, see NewEditorShell's
-								// own play/pause/ended listener) actually learns playback stopped.
-								e.currentTarget.pause();
-								onVideoError?.(activeSource.id);
-							}}
-							onEnded={() => {
-								// BUG corrigé : ce handler stoppait TOUJOURS la lecture dès que le
-								// <video> brut atteignait SA PROPRE fin de fichier — une course
-								// avec la boucle rAF (reachedClipEnd, plus haut) qui gère
-								// l'enchaînement multi-clip. Pour un clip NON trimé, la fin réelle
-								// du fichier coïncide avec la fin de sa fenêtre timeline, et
-								// l'événement navigateur 'ended' gagnait quasi systématiquement
-								// cette course (déclenché par le navigateur dès la dernière frame,
-								// avant le prochain tick rAF) : la lecture s'arrêtait au lieu
-								// d'enchaîner sur le clip suivant — le "ça s'arrête en fin de clip"
-								// qui persistait malgré les fixes de la boucle rAF elle-même.
-								// `forceResume` (voir seekToVirtualTime) est nécessaire ici : le
-								// navigateur a déjà mis `.paused = true` avant de déclencher
-								// 'ended', donc le check `!video.paused` habituel empêcherait
-								// toujours la reprise de la lecture sur le clip suivant. Si aucun
-								// clip suivant n'existe, on ne fait rien de plus ici : le navigateur
-								// a déjà mis la vidéo en pause, et NewEditorShell (seule source de
-								// vérité pour l'état de lecture) l'apprend via son propre listener
-								// 'ended'/'pause' sur ce même élément.
-								const current = clipsRef.current.find(
-									(clip) => clip.id === activeClipIdRef.current,
-								);
-								const nextClip = current
-									? findNextClipByTimelineOrder(clipsRef.current, current.timelineStartSec)
-									: undefined;
-								if (nextClip) {
-									seekToVirtualTime(nextClip.timelineStartSec, true, true);
-								}
-							}}
-							// ponytail: handleTimeUpdate is now driven by the rAF loop
-							// above (60 Hz) instead of the <video> onTimeUpdate event
-							// (~4 Hz) — the 4 Hz sync was too slow to keep the webcam
-							// <video> and any audio in sync. The rAF tick also
-							// handles clip-end advancement, so dropping the event
-							// handler here is safe.
-						/>
-						{routedAudioRequested && activeSource.audioSrc ? (
-							<audio
-								key={requestedAudioKey ?? activeSource.id}
-								ref={routedAudioRef}
-								src={activeSource.audioSrc}
-								preload="auto"
-								onCanPlay={() => setReadyAudioKey(requestedAudioKey)}
-								onError={() => {
-									setFailedAudioKey(requestedAudioKey);
-								}}
-							/>
-						) : null}
+						{[
+							{ key: activeBufferKey ?? activeSource.id, source: activeSource, sourceTimeSec: 0 },
+							...(prepared ? [prepared] : []),
+						].map((buffer, index) => {
+							const isActive = index === 0;
+							const source = buffer.source;
+							return (
+								<Fragment key={buffer.key}>
+									<video
+										ref={isActive ? attachVideo : preparedVideoRef}
+										src={source.src}
+										className={`${styles.video}${isIdentityCrop ? "" : ` ${styles.videoCropped}`}`}
+										// When a synthetic cursor is being drawn on top (CursorPreviewLayer),
+										// hide the real OS pointer here so it doesn't compete with it.
+										style={{
+											...cropVideoStyle,
+											...videoStyle,
+											cursor: settings.cursorShow ? "none" : undefined,
+											display: isActive ? undefined : "none",
+										}}
+										crossOrigin="anonymous"
+										onPlay={resumeAudioOutput}
+										preload="auto"
+										playsInline
+										onLoadedMetadata={(e) => {
+											if (!isActive) {
+												e.currentTarget.currentTime = buffer.sourceTimeSec;
+												return;
+											}
+											setLoadState("ready");
+											// ponytail: forward the raw duration (possibly NaN for
+											// MediaRecorder WebMs) to the parent. handleLoadedMetadata
+											// falls back to a 60s seed when it isn't finite so the
+											// timeline gets a populated clip even before the EBML fix
+											// lands. Previously this gate skipped the callback for
+											// non-finite durations and stranded the editor on
+											// "No clips yet" until manual intervention. The assetId is
+											// forwarded so the parent only ever corrects clips that
+											// belong to the asset which actually fired this event —
+											// without it, switching between clips of different assets
+											// during multi-clip playback clobbered clip[0]'s duration
+											// with whichever asset's video happened to load last.
+											onLoadedMetadata?.(
+												e.currentTarget.duration,
+												source.id,
+												e.currentTarget.videoWidth,
+												e.currentTarget.videoHeight,
+											);
+											if (pendingSeekRef.current) {
+												const { sourceTimeSec, play } = pendingSeekRef.current;
+												pendingSeekRef.current = null;
+												e.currentTarget.currentTime = sourceTimeSec;
+												if (play) {
+													// See the other video.play() catch above: a rejection means
+													// playback never started, so there's no state to reconcile.
+													void e.currentTarget.play().catch(() => {
+														// swallow: rejection just means playback never started
+													});
+												}
+											} else if (clips.length > 0) {
+												// A timeline edit can remount the source after the editor has
+												// moved the playhead to an insertion boundary. The editor value
+												// is newer than this component's local clock in that window.
+												seekToVirtualTime(currentTimeSec ?? virtualTimeSec);
+											}
+										}}
+										onWaiting={() => {
+											if (isActive) setLoadState("loading");
+										}}
+										onCanPlay={() => {
+											if (isActive) setLoadState("ready");
+										}}
+										onError={(e) => {
+											if (!isActive) return;
+											// ponytail: don't blindly advance to the next source — if
+											// the failed source owns the current virtual clip, the
+											// next sourceIndex will seekToVirtualTime right back into
+											// the same failed asset, looping. Fail the preview.
+											pendingSeekRef.current = null;
+											setLoadState("error");
+											// An 'error' doesn't itself fire 'pause', so make sure the shell's
+											// transport state (single source of truth, see NewEditorShell's
+											// own play/pause/ended listener) actually learns playback stopped.
+											e.currentTarget.pause();
+											onVideoError?.(source.id);
+										}}
+										onEnded={() => {
+											if (!isActive) return;
+											// BUG corrigé : ce handler stoppait TOUJOURS la lecture dès que le
+											// <video> brut atteignait SA PROPRE fin de fichier — une course
+											// avec la boucle rAF (reachedClipEnd, plus haut) qui gère
+											// l'enchaînement multi-clip. Pour un clip NON trimé, la fin réelle
+											// du fichier coïncide avec la fin de sa fenêtre timeline, et
+											// l'événement navigateur 'ended' gagnait quasi systématiquement
+											// cette course (déclenché par le navigateur dès la dernière frame,
+											// avant le prochain tick rAF) : la lecture s'arrêtait au lieu
+											// d'enchaîner sur le clip suivant — le "ça s'arrête en fin de clip"
+											// qui persistait malgré les fixes de la boucle rAF elle-même.
+											// `forceResume` (voir seekToVirtualTime) est nécessaire ici : le
+											// navigateur a déjà mis `.paused = true` avant de déclencher
+											// 'ended', donc le check `!video.paused` habituel empêcherait
+											// toujours la reprise de la lecture sur le clip suivant. Si aucun
+											// clip suivant n'existe, on ne fait rien de plus ici : le navigateur
+											// a déjà mis la vidéo en pause, et NewEditorShell (seule source de
+											// vérité pour l'état de lecture) l'apprend via son propre listener
+											// 'ended'/'pause' sur ce même élément.
+											const current = clipsRef.current.find(
+												(clip) => clip.id === activeClipIdRef.current,
+											);
+											const nextClip = current
+												? findNextClipByTimelineOrder(clipsRef.current, current.timelineStartSec)
+												: undefined;
+											if (nextClip) {
+												seekToVirtualTime(nextClip.timelineStartSec, true, true, true);
+											}
+										}}
+										// ponytail: handleTimeUpdate is now driven by the rAF loop
+										// above (60 Hz) instead of the <video> onTimeUpdate event
+										// (~4 Hz) — the 4 Hz sync was too slow to keep the webcam
+										// <video> and any audio in sync. The rAF tick also
+										// handles clip-end advancement, so dropping the event
+										// handler here is safe.
+									/>
+									{source.audioSrc && (!isActive || routedAudioRequested) ? (
+										<audio
+											ref={isActive ? routedAudioRef : preparedAudioRef}
+											src={source.audioSrc}
+											crossOrigin="anonymous"
+											onPlay={resumeAudioOutput}
+											preload="auto"
+											onLoadedMetadata={(e) => {
+												if (!isActive) e.currentTarget.currentTime = buffer.sourceTimeSec;
+											}}
+											onCanPlay={() => {
+												if (isActive) setReadyAudioKey(requestedAudioKey);
+											}}
+											onError={() => {
+												if (isActive) setFailedAudioKey(requestedAudioKey);
+											}}
+										/>
+									) : null}
+								</Fragment>
+							);
+						})}
 						{/* Plus d'overlay « Loading preview… » : il reflétait l'état du <video>
 						    CACHÉ (source horloge/audio), pas la preview RÉELLE — le canvas natif,
 						    qui montre déjà une image valide pendant que le <video> re-seek. Il

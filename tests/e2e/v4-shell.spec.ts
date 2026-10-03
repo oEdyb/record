@@ -215,3 +215,79 @@ test.describe("v4 editor shell", () => {
 		await expect(transport).toContainText("7:30.0");
 	});
 });
+
+// Compare real control geometry across panes. DOM-only tests cannot detect a
+// switch stretched by its surrounding layout, or a thumb hidden by theme colors.
+for (const theme of ["light", "dark"]) {
+	for (const width of [768, 1280]) {
+		test(`inspector switches stay consistent: ${theme}, ${width}px`, async ({ page }, testInfo) => {
+			await page.setViewportSize({ width, height: 900 });
+			await page.addInitScript((value) => localStorage.setItem("openscreen-theme", value), theme);
+			await seedAndOpen(page);
+			let checkedCount = 0;
+			for (const facet of ["Video Effects", "Layout", "Cursor", "Audio", "Captions"]) {
+				await page.getByRole("radio", { name: facet, exact: true }).click();
+				const tabs = page.getByRole("tab");
+				const taskNames = await tabs.allTextContents();
+				for (const task of taskNames.length ? taskNames : [""]) {
+					if (task) await page.getByRole("tab", { name: task, exact: true }).click();
+					const switches = page.getByRole("switch");
+					for (const control of await switches.all()) {
+						await control.scrollIntoViewIfNeeded();
+						const geometry = await control.evaluate((el) => {
+							const box = el.getBoundingClientRect();
+							const thumb = el.firstElementChild;
+							if (!thumb) throw new Error("Switch has no thumb");
+							const thumbBox = thumb.getBoundingClientRect();
+							return {
+								width: box.width,
+								height: box.height,
+								thumbWidth: thumbBox.width,
+								thumbHeight: thumbBox.height,
+								insetY: thumbBox.top - box.top,
+								track: getComputedStyle(el, "::before").backgroundColor,
+								thumb: getComputedStyle(thumb).backgroundColor,
+							};
+						});
+						expect(geometry).toMatchObject({
+							width: 36,
+							height: 24,
+							thumbWidth: 16,
+							thumbHeight: 16,
+							insetY: 4,
+						});
+						expect(geometry.thumb).not.toBe(geometry.track);
+						checkedCount++;
+					}
+					await page.screenshot({
+						path: testInfo.outputPath(`${facet}-${task || "settings"}.png`),
+						animations: "disabled",
+					});
+				}
+			}
+			expect(checkedCount).toBeGreaterThanOrEqual(8);
+			await page.getByRole("radio", { name: "Cursor", exact: true }).click();
+			const cursor = page.getByRole("switch", { name: "Show Cursor", exact: true });
+			const before = await cursor.isChecked();
+			await cursor.focus();
+			await page.keyboard.press("Space");
+			await expect(cursor).toBeChecked({ checked: !before });
+			await expect(cursor).toBeFocused();
+			await page.keyboard.press("Space");
+			await expect(cursor).toBeChecked({ checked: before });
+			await page.getByRole("button", { name: "Export", exact: true }).click();
+			await page.getByRole("button", { name: "GIF", exact: true }).click();
+			const loop = page.getByRole("switch", { name: "Loop GIF", exact: true });
+			await loop.scrollIntoViewIfNeeded();
+			const loopBox = await loop.boundingBox();
+			expect(loopBox).toMatchObject({ width: 36, height: 24 });
+			const loopBefore = await loop.isChecked();
+			await loop.click();
+			await expect(loop).toBeChecked({ checked: !loopBefore });
+			await page.screenshot({
+				path: testInfo.outputPath("Export-GIF.png"),
+				animations: "disabled",
+			});
+		});
+	}
+}

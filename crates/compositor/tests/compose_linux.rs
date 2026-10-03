@@ -67,7 +67,7 @@ fn compose_linux_rend_une_frame() {
         let mut cfg = Cfg::c8();
         cfg.bg_blur = true;
         // webcam = screen (mon compose coeur ne dessine que l'ecran).
-        comp.compose_frame(sf, sf, 0.0, &cfg)
+        comp.compose_frame(sf, sf, 0.0, &cfg, std::ptr::null(), None)
             .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
@@ -185,7 +185,7 @@ fn compose_linux_ecran_tilte() {
                 &scene,
             ));
             comp.set_scene(Some(scene));
-            comp.compose_frame(sf, sf, 90.0, &cfg)
+            comp.compose_frame(sf, sf, 90.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback_direct")
         };
@@ -261,7 +261,7 @@ fn compose_linux_ombre_du_quad_tilte() {
             comp.set_scene(Some(scene));
             let mut cfg = Cfg::c8();
             cfg.shadow = shadow;
-            comp.compose_frame(sf, sf, 90.0, &cfg)
+            comp.compose_frame(sf, sf, 90.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback_direct")
         };
@@ -347,7 +347,7 @@ fn compose_linux_curseur_sur_ecran_tilte() {
                 &scene,
             ));
             comp.set_scene(Some(scene));
-            comp.compose_frame(sf, sf, 90.0, &Cfg::c8())
+            comp.compose_frame(sf, sf, 90.0, &Cfg::c8(), std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback_direct")
         };
@@ -432,7 +432,7 @@ fn compose_linux_dessine_le_curseur() {
     let (w, h, rgba) = unsafe {
         let sf = dec.seek_to(1.0).expect("Decoder::seek_to");
         let cfg = Cfg::c8();
-        comp.compose_frame(sf, sf, 0.0, &cfg)
+        comp.compose_frame(sf, sf, 0.0, &cfg, std::ptr::null(), None)
             .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
@@ -494,7 +494,7 @@ fn compose_linux_fond_image() {
     let (w, h, rgba) = unsafe {
         let sf = dec.seek_to(1.0).expect("Decoder::seek_to");
         let cfg = Cfg::c8();
-        comp.compose_frame(sf, sf, 0.0, &cfg)
+        comp.compose_frame(sf, sf, 0.0, &cfg, std::ptr::null(), None)
             .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
@@ -565,7 +565,7 @@ fn compose_linux_flou_de_velocite_ecran() {
             comp.set_scene(Some(
                 Scene::from_json(&scene_of(mblur)).expect("scene json"),
             ));
-            comp.compose_frame(sf, sf, 66.0, &cfg)
+            comp.compose_frame(sf, sf, 66.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback_direct").2
         };
@@ -658,7 +658,7 @@ fn compose_linux_flou_de_velocite_camera() {
             ));
             comp.set_scene(Some(scene));
             // frame 126 = t 2,1 s : la camera est a mi-ouverture.
-            comp.compose_frame(sf, wf, 126.0, &cfg)
+            comp.compose_frame(sf, wf, 126.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback_direct").2
         };
@@ -766,7 +766,7 @@ fn compose_linux_trainee_de_curseur() {
                 &scene,
             ));
             comp.set_scene(Some(scene));
-            comp.compose_frame(sf, sf, 15.0, &cfg)
+            comp.compose_frame(sf, sf, 15.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback_direct").2
         };
@@ -922,7 +922,7 @@ fn compose_linux_ombre_webcam_ronde_et_texte() {
         let wf = cam.seek_to(1.0).expect("seek webcam");
         let mut cfg = Cfg::c8();
         cfg.shadow = true;
-        comp.compose_frame(sf, wf, 1.0, &cfg)
+        comp.compose_frame(sf, wf, 1.0, &cfg, std::ptr::null(), None)
             .expect("compose_frame");
         comp.readback_direct().expect("readback_direct")
     };
@@ -1011,7 +1011,7 @@ fn compose_linux_forme_webcam_cercle() {
             let wf = cam.seek_to(1.0).expect("seek webcam");
             let mut cfg = Cfg::c8();
             cfg.shadow = false;
-            comp.compose_frame(sf, wf, 1.0, &cfg)
+            comp.compose_frame(sf, wf, 1.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
@@ -1108,7 +1108,7 @@ fn compose_linux_sans_camera_ne_dessine_pas_de_vignette() {
             cfg.shadow = false;
             // La frame ecran passee AUSSI comme webcam : le repli exact de
             // `open_and_seek_clip` quand il n'y a pas de fichier camera.
-            comp.compose_frame(sf, sf, 1.0, &cfg)
+            comp.compose_frame(sf, sf, 1.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
@@ -1151,7 +1151,7 @@ fn compose_linux_sans_camera_ne_dessine_pas_de_vignette() {
             let sf = screen.seek_to(1.0).expect("seek screen");
             let mut cfg = Cfg::c8();
             cfg.shadow = false;
-            comp.compose_frame(sf, sf, 1.0, &cfg)
+            comp.compose_frame(sf, sf, 1.0, &cfg, std::ptr::null(), None)
                 .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
@@ -1254,8 +1254,15 @@ fn compose_linux_annotation_fleche() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
-                .expect("compose_frame");
+            comp.compose_frame(
+                sf,
+                std::ptr::null(),
+                60.0,
+                &Cfg::c8(),
+                std::ptr::null(),
+                None,
+            )
+            .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1333,8 +1340,15 @@ fn compose_linux_annotation_flou_et_mosaique() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
-                .expect("compose_frame");
+            comp.compose_frame(
+                sf,
+                std::ptr::null(),
+                60.0,
+                &Cfg::c8(),
+                std::ptr::null(),
+                None,
+            )
+            .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1444,8 +1458,15 @@ fn compose_linux_annotation_image() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
-                .expect("compose_frame");
+            comp.compose_frame(
+                sf,
+                std::ptr::null(),
+                60.0,
+                &Cfg::c8(),
+                std::ptr::null(),
+                None,
+            )
+            .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };
@@ -1519,8 +1540,15 @@ fn compose_linux_animation_texte() {
         comp.set_timeline_time(Some(1.0));
         unsafe {
             let sf = screen.seek_to(1.0).expect("seek");
-            comp.compose_frame(sf, std::ptr::null(), 60.0, &Cfg::c8())
-                .expect("compose_frame");
+            comp.compose_frame(
+                sf,
+                std::ptr::null(),
+                60.0,
+                &Cfg::c8(),
+                std::ptr::null(),
+                None,
+            )
+            .expect("compose_frame");
             comp.readback_direct().expect("readback").2
         }
     };

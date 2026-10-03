@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "Qualidade da prévia",
+		"sharp": "Nítida",
+		"performance": "Desempenho"
+	},
 	"newRecording": {
 		"title": "Voltar ao Gravador",
 		"description": "Sua sessão atual foi salva.",
@@ -89,6 +94,9 @@
 		"toggleTheme": "Alternar tema",
 		"settings": "Configurações",
 		"export": "Exportar",
+		"exporting": "Exportando",
+		"exportProgressTitle": "{{pct}}% concluído, {{eta}} restantes. Abrir exportação",
+		"exportProgressPreparing": "Preparando a exportação. Abrir exportação",
 		"renameProject": "Renomear projeto",
 		"noProject": "Nenhum projeto",
 		"changeLanguage": "Mudar idioma",
@@ -97,7 +105,8 @@
 			"media": "Mídia",
 			"edit": "Editar",
 			"rec": "Gravar"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "Fonte",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "Falha na exportação.",
 		"writingFile": "Gravando arquivo…",
 		"renderingFrames": "Renderizando quadros",
-		"framesEta": "{{current}} / {{total}} quadros · {{eta}} restantes",
+		"framesEta": "{{current}} / {{total}} quadros, {{eta}} restantes",
 		"preparingEncoder": "Preparando codificador…",
+		"cancelExport": "Cancelar exportação",
+		"backgroundHint": "Você pode fechar esta janela e continuar editando. O progresso aparece no botão Exportar. As edições feitas agora não fazem parte desta exportação.",
 		"close": "Fechar",
 		"cancel": "Cancelar",
 		"rendering": "Renderizando…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "Falha ao gravar o arquivo",
 		"qualityUpscaleWarning": "Upscaling",
 		"exportedVideoOf": "de vídeo exportado em",
-		"nothingToExport": "Nada para exportar — a linha do tempo está vazia."
+		"nothingToExport": "Nada para exportar — a linha do tempo está vazia.",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "Redefinir ponto de foco",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "A câmera aumenta suavemente enquanto a tela continua visível e depois volta ao tamanho normal.",
 		"cameraFullscreenDescription": "Enquanto esta região é reproduzida, a câmera ocupa o quadro inteiro — sem borda, sem arredondamento, sem fundo — e volta suavemente no fim. Arraste as bordas da região na linha do tempo para mudar quando ela começa e quanto dura.",
 		"deleteRegion": "Excluir região",
-		"freehandRendersAsBox": "Na exportação, uma forma livre é coberta pela sua caixa delimitadora — cobre demais, nunca de menos."
+		"freehandRendersAsBox": "Na exportação, uma forma livre é coberta pela sua caixa delimitadora — cobre demais, nunca de menos.",
+		"cameraSize": "Tamanho da câmera"
 	},
 	"leftPanel": {
 		"mediaTitle": "Mídia",
@@ -295,7 +309,7 @@
 			"title": "Histórico de conversas",
 			"subtitle": "Alternar ou criar sessões",
 			"empty": "Ainda não há conversas.",
-			"msgsCount": "{{count}} mensagens · {{date}}"
+			"msgsCount": "{{count}} mensagens, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "Retome um projeto existente ou procure seus arquivos",
 		"searchPlaceholder": "Pesquisar projetos…",
 		"noMatches": "Nenhum projeto corresponde a \"{{query}}\".",
-		"navigateHint": "para navegar ·",
+		"navigateHint": "para navegar",
 		"openHint": "para abrir",
 		"browseFiles": "Procurar arquivos…",
 		"deleteProject": "Excluir projeto",
@@ -358,7 +372,10 @@
 		"previousClip": "Clipe anterior",
 		"nextClip": "Próximo clipe",
 		"loop": "Repetir",
-		"seekVideo": "Navegar no vídeo"
+		"seekVideo": "Navegar no vídeo",
+		"mute": "Silenciar a prévia",
+		"unmute": "Reativar o som da prévia",
+		"previewVolume": "Volume da prévia"
 	},
 	"shell": {
 		"aiEditor": "Editor de IA",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "Teste de 14 dias",
-			"trialDay": "Teste · {{count}} dia",
-			"trialDays": "Teste · {{count}} dias",
-			"offline": "Klippt Pro · Offline",
+			"trialDay": "Teste {{count}} dia",
+			"trialDays": "Teste {{count}} dias",
+			"offline": "Klippt Pro, Offline",
 			"readOnly": "Somente leitura"
 		},
 		"eyebrowReadOnly": "Acesso somente leitura",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "Sem GPU compatível — a renderização ocorre na CPU, então a reprodução fica mais lenta.",
 		"exportWarning": "Sem GPU compatível: esta exportação roda na CPU e vai demorar muito mais que o normal."
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

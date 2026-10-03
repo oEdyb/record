@@ -31,7 +31,11 @@
 			"fontSize": "Cỡ chữ",
 			"decreaseFontSize": "Giảm cỡ chữ",
 			"increaseFontSize": "Tăng cỡ chữ",
-			"mirror": "Lật ngang"
+			"mirror": "Lật ngang",
+			"more": "Thêm điều khiển",
+			"less": "Bớt điều khiển",
+			"close": "Đóng ghi chú",
+			"move": "Di chuyển ghi chú"
 		}
 	},
 	"audio": {
@@ -71,7 +75,7 @@
 		"inProgress": "Đang ghi",
 		"saving": "Đang lưu...",
 		"removePreviousClip": "Xóa clip trước",
-		"removePreviousClipWithDuration": "Xóa clip trước · {{duration}}",
+		"removePreviousClipWithDuration": "Xóa clip trước ({{duration}})",
 		"clipRemoved": "Đã xóa"
 	},
 	"language": "Ngôn ngữ",

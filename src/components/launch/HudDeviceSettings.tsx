@@ -144,9 +144,13 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	});
 	const formatOptions = supportedFormats.length > 0 ? supportedFormats : [webcamFormat];
 
+	// Adopt the camera's resolved format only when the saved choice is one this camera
+	// cannot deliver. While a supported choice is still being applied, activeFormat lags
+	// behind; syncing it back then would silently undo the user's selection.
 	useEffect(() => {
 		if (
 			supportedFormats.length > 0 &&
+			!supportedFormats.some((format) => sameWebcamFormat(format, webcamFormat)) &&
 			!sameWebcamFormat(activeFormat, webcamFormat) &&
 			supportedFormats.some((format) => sameWebcamFormat(format, activeFormat))
 		) {

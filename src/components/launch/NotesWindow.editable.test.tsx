@@ -16,6 +16,11 @@ import { NotesWindow } from "./NotesWindow";
 vi.mock("@/components/ui/tooltip", () => ({
 	Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
+// The selection menu positions itself with Floating UI against a live layout, which jsdom
+// does not provide; this suite is about the note body's editability only.
+vi.mock("@tiptap/react/menus", () => ({
+	BubbleMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
 
 beforeEach(() => {
 	localStorage.clear();
@@ -38,6 +43,7 @@ describe("NotesWindow read-only wiring against the real editor", () => {
 				<NotesWindow />
 			</I18nProvider>,
 		);
+		await user.click(screen.getByRole("button", { name: "More controls" }));
 		const mirror = screen.getByRole("button", { name: "Mirror horizontally" });
 
 		expect(noteBody()).toHaveAttribute("contenteditable", "true");

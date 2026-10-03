@@ -65,6 +65,21 @@ describe("computeDeviceRect", () => {
 });
 
 describe("computePreviewRect", () => {
+	it("renders full Retina detail without moving the canvas", () => {
+		expect(
+			computePreviewRect({ left: 100, top: 50, width: 1280, height: 720 }, "sharp", 2),
+		).toEqual({ x: 100, y: 50, width: 2560, height: 1440 });
+	});
+	it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("uses safe density for %s", (density) => {
+		expect(
+			computePreviewRect({ left: 0, top: 0, width: 640, height: 360 }, "sharp", density).width,
+		).toBe(640);
+	});
+	it("keeps Performance at CSS size even on Retina", () => {
+		expect(
+			computePreviewRect({ left: 0, top: 0, width: 640, height: 360 }, "performance", 2).width,
+		).toBe(640);
+	});
 	it("keeps the native preview at its visible CSS size on Retina displays", () => {
 		expect(computePreviewRect({ left: 100, top: 50, width: 1280, height: 720 })).toEqual({
 			x: 100,

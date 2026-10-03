@@ -1,0 +1,63 @@
+{
+	"api_version": "1.0",
+	"request_id": "h2",
+	"status": "completed",
+	"data": {
+		"entries": [
+			{
+				"applyId": "0c9b3f2a-0000-4000-8000-000000000010",
+				"requestId": "undo-req",
+				"at": "2026-09-18T12:06:00.000Z",
+				"planSummary": "undo to batch-9f",
+				"beforeRevision": "r5",
+				"afterRevision": "r1",
+				"kind": "undo",
+				"targetIds": [
+					"0c9b3f2a-0000-4000-8000-000000000012",
+					"0c9b3f2a-0000-4000-8000-000000000013",
+					"0c9b3f2a-0000-4000-8000-000000000014"
+				]
+			},
+			{
+				"applyId": "0c9b3f2a-0000-4000-8000-000000000014",
+				"requestId": "batch-9f:4",
+				"at": "2026-09-18T12:05:04.000Z",
+				"planSummary": "batch addTrim",
+				"beforeRevision": "r4",
+				"afterRevision": "r5",
+				"kind": "apply",
+				"targetIds": ["0c9b3f2a-0000-4000-8000-000000000014"]
+			},
+			{
+				"applyId": "0c9b3f2a-0000-4000-8000-000000000013",
+				"requestId": "batch-9f:3",
+				"at": "2026-09-18T12:05:03.000Z",
+				"planSummary": "batch addTrim",
+				"beforeRevision": "r3",
+				"afterRevision": "r4",
+				"kind": "apply",
+				"targetIds": ["0c9b3f2a-0000-4000-8000-000000000013"]
+			},
+			{
+				"applyId": "0c9b3f2a-0000-4000-8000-000000000012",
+				"requestId": "batch-9f:2",
+				"at": "2026-09-18T12:05:02.000Z",
+				"planSummary": "batch addTrim",
+				"beforeRevision": "r2",
+				"afterRevision": "r3",
+				"kind": "apply",
+				"targetIds": ["0c9b3f2a-0000-4000-8000-000000000012"]
+			},
+			{
+				"applyId": "0c9b3f2a-0000-4000-8000-000000000001",
+				"requestId": "setup-zoom",
+				"at": "2026-09-18T12:00:00.000Z",
+				"planSummary": "zoom add",
+				"beforeRevision": "r0",
+				"afterRevision": "r1",
+				"kind": "apply",
+				"targetIds": ["0c9b3f2a-0000-4000-8000-000000000001"]
+			}
+		]
+	}
+}

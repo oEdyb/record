@@ -1,3 +1,8 @@
+import {
+	normalizeWebcamAspectRatio,
+	normalizeWebcamCornerRadius,
+	type WebcamAspectRatio,
+} from "@/components/video-editor/types";
 // Typed read/write layer over `document.legacyEditor`.
 //
 // The v3 schema keeps `legacyEditor` as a `Record<string, unknown>` envelope so
@@ -46,7 +51,10 @@ import { normalizeScreenFramingByVariant, type ScreenFramingByVariant } from "@/
 import { DEFAULT_WALLPAPER } from "@/lib/wallpaper";
 import type { AspectRatio } from "@/utils/aspectRatioUtils";
 import { normalizeOutputResolution, type OutputResolution } from "../document/outputFormat";
+import { type ClipLayoutOverride, DEFAULT_SAFE_MARGIN_PERCENT } from "../layout/schema";
 import type { AxcutDocument } from "../schema";
+
+export type { ClipLayoutOverride } from "../layout/schema";
 
 // ponytail: avoid dragging in lib/exporter full surface here — we only
 // need the type names. Wallpaper + cursor theme are stored as plain strings
@@ -66,6 +74,8 @@ export const MIN_SOURCE_VOLUME = 0;
 export const MAX_SOURCE_VOLUME = 1;
 
 export interface EditorSettingsSnapshot {
+	safeMarginPercent?: number;
+	cameraAnchor?: ClipLayoutOverride["cameraAnchor"];
 	wallpaper: string;
 	aspectRatio: AspectRatio;
 	outputResolution: OutputResolution | null;
@@ -80,6 +90,8 @@ export interface EditorSettingsSnapshot {
 	webcamBlockOrder: WebcamBlockOrder;
 	webcamBlockCameraShare: WebcamBlockCameraShare;
 	webcamMaskShape: WebcamMaskShape;
+	webcamCornerRadius?: number;
+	webcamAspectRatio?: WebcamAspectRatio;
 	webcamMirrored: boolean;
 	webcamReactiveZoom: boolean;
 	webcamSizePreset: WebcamSizePreset;
@@ -102,6 +114,7 @@ export interface EditorSettingsSnapshot {
 }
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
+	safeMarginPercent: DEFAULT_SAFE_MARGIN_PERCENT,
 	wallpaper: DEFAULT_WALLPAPER,
 	aspectRatio: "16:9",
 	outputResolution: null,
@@ -149,6 +162,8 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 };
 
 interface LegacyShape {
+	safeMarginPercent?: number;
+	cameraAnchor?: ClipLayoutOverride["cameraAnchor"];
 	wallpaper?: string;
 	aspectRatio?: AspectRatio;
 	outputResolution?: OutputResolution | null;
@@ -163,6 +178,8 @@ interface LegacyShape {
 	webcamBlockOrder?: WebcamBlockOrder;
 	webcamBlockCameraShare?: WebcamBlockCameraShare;
 	webcamMaskShape?: WebcamMaskShape;
+	webcamCornerRadius?: number;
+	webcamAspectRatio?: WebcamAspectRatio;
 	webcamMirrored?: boolean;
 	webcamReactiveZoom?: boolean;
 	webcamSizePreset?: WebcamSizePreset;
@@ -221,6 +238,8 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		clipToBounds: bool(legacy?.cursorClipToBounds, DEFAULT_EDITOR_SETTINGS.cursor.clipToBounds),
 	};
 	return {
+		safeMarginPercent: numberInRange(legacy?.safeMarginPercent, DEFAULT_SAFE_MARGIN_PERCENT, 0, 50),
+		...(legacy?.cameraAnchor !== undefined ? { cameraAnchor: legacy.cameraAnchor } : {}),
 		wallpaper: str(legacy?.wallpaper, DEFAULT_EDITOR_SETTINGS.wallpaper),
 		aspectRatio: legacy?.aspectRatio ?? DEFAULT_EDITOR_SETTINGS.aspectRatio,
 		outputResolution: normalizeOutputResolution(legacy?.outputResolution),
@@ -241,6 +260,8 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 			),
 		),
 		webcamMaskShape: legacy?.webcamMaskShape ?? DEFAULT_EDITOR_SETTINGS.webcamMaskShape,
+		webcamCornerRadius: normalizeWebcamCornerRadius(legacy?.webcamCornerRadius),
+		webcamAspectRatio: normalizeWebcamAspectRatio(legacy?.webcamAspectRatio),
 		webcamMirrored: bool(legacy?.webcamMirrored, DEFAULT_EDITOR_SETTINGS.webcamMirrored),
 		webcamReactiveZoom: bool(
 			legacy?.webcamReactiveZoom,
@@ -295,6 +316,8 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 	};
 }
 export interface EditorSettingsPatch {
+	safeMarginPercent?: number;
+	cameraAnchor?: ClipLayoutOverride["cameraAnchor"];
 	wallpaper?: string;
 	aspectRatio?: AspectRatio;
 	outputResolution?: OutputResolution | null;
@@ -309,6 +332,8 @@ export interface EditorSettingsPatch {
 	webcamBlockOrder?: WebcamBlockOrder;
 	webcamBlockCameraShare?: WebcamBlockCameraShare;
 	webcamMaskShape?: WebcamMaskShape;
+	webcamCornerRadius?: number;
+	webcamAspectRatio?: WebcamAspectRatio;
 	webcamMirrored?: boolean;
 	webcamReactiveZoom?: boolean;
 	webcamSizePreset?: WebcamSizePreset;
@@ -342,6 +367,8 @@ function nextLegacy(current: LegacyShape | null, patch: EditorSettingsPatch): Le
 		Object.entries(rest).filter(([, v]) => v !== undefined),
 	) as Partial<Pick<LegacyShape, keyof Omit<EditorSettingsPatch, "cursor">>>;
 	const next: LegacyShape = { ...base, ...defined };
+	if (patch.webcamPosition !== undefined && patch.cameraAnchor === undefined)
+		delete next.cameraAnchor;
 	if (patch.cursor) {
 		const c = patch.cursor;
 		if (c.size !== undefined) next.cursorSize = c.size;

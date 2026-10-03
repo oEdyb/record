@@ -2,6 +2,8 @@ import type { TrimRegion } from "@/components/video-editor/types";
 import type { SttPhraseSegment, SttWordSegment } from "../../../electron/stt/transcriptionContract";
 
 export interface CaptionSegment {
+	/** Source transcript provenance retained through caption grouping and timing polish. */
+	sourceWordIds?: string[];
 	startSec: number;
 	endSec: number;
 	text: string;

@@ -168,7 +168,7 @@
 	--editor-topbar-h: 56px;
 	--editor-stage-inset: 16px;
 	--editor-inspector-pane-w: 344px;
-	--editor-inspector-rail-w: 48px;
+	--editor-inspector-rail-w: 80px;
 	--editor-inspector-w: calc(var(--editor-inspector-pane-w) + var(--editor-inspector-rail-w));
 	--editor-pane-header-h: 48px;
 	/* Inspector geometry uses an 8px grid with 4px half-steps. Keep these
@@ -177,6 +177,9 @@
 	--editor-inspector-row-h: 44px;
 	--editor-inspector-control-h: 32px;
 	--editor-inspector-control-radius: 8px;
+	--editor-switch-w: 36px;
+	--editor-switch-target-h: 24px;
+	--editor-switch-thumb: 16px;
 	--editor-section-space: 16px;
 
 	/* elevation */

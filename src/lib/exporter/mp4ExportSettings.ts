@@ -173,11 +173,34 @@ function calculateBitrate(
  * and can belong to one clip. When old data omits clipIndex, the region applies to every
  * overlapping clip, which is the native compatibility rule too.
  */
-export function calculateEffectiveExportDuration(
+export interface ExportTimeSpan {
+	clipIndex: number;
+	sourceStartSec: number;
+	sourceEndSec: number;
+	outputStartSec: number;
+	outputEndSec: number;
+}
+
+/** Compile once; preview audio and export duration share the native source-speed walk. */
+export function buildExportTimeMap(
 	clips: ExportDurationClip[],
 	speedRegions: ExportSpeedRegion[] = [],
-): number {
-	return clips.reduce((total, clip, clipIndex) => {
+): ExportTimeSpan[] {
+	const spans: ExportTimeSpan[] = [];
+	let output = 0;
+	const append = (clipIndex: number, start: number, end: number, speed: number) => {
+		if (end <= start) return;
+		const duration = (end - start) / speed;
+		spans.push({
+			clipIndex,
+			sourceStartSec: start,
+			sourceEndSec: end,
+			outputStartSec: output,
+			outputEndSec: output + duration,
+		});
+		output += duration;
+	};
+	clips.forEach((clip, clipIndex) => {
 		const start = Math.max(0, clip.sourceStartSec);
 		const end = Math.max(start, clip.sourceEndSec);
 		const regions = speedRegions
@@ -188,22 +211,28 @@ export function calculateEffectiveExportDuration(
 					region.endSec > start,
 			)
 			.sort((a, b) => a.startSec - b.startSec);
-
-		let duration = 0;
 		let cursor = start;
 		for (const region of regions) {
 			const regionStart = Math.max(start, region.startSec, cursor);
 			const regionEnd = Math.min(end, region.endSec);
-			if (regionStart > cursor) duration += regionStart - cursor;
+			append(clipIndex, cursor, regionStart, 1);
 			if (regionEnd > regionStart) {
 				const speed = Number.isFinite(region.speed) && region.speed > 0 ? region.speed : 1;
-				duration += (regionEnd - regionStart) / speed;
+				append(clipIndex, regionStart, regionEnd, speed);
 				cursor = regionEnd;
 			}
 		}
-		if (cursor < end) duration += end - cursor;
-		return total + duration;
-	}, 0);
+		append(clipIndex, cursor, end, 1);
+	});
+	return spans;
+}
+
+export function calculateEffectiveExportDuration(
+	clips: ExportDurationClip[],
+	speedRegions: ExportSpeedRegion[] = [],
+): number {
+	const spans = buildExportTimeMap(clips, speedRegions);
+	return spans.length ? spans[spans.length - 1].outputEndSec : 0;
 }
 
 /** A bitrate-based estimate. The native MP4 pipeline adds 384 kbps AAC when audio exists. */

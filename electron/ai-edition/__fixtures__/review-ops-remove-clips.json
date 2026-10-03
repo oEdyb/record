@@ -1,0 +1,53 @@
+[
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_14" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_15" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_16" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_18" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_19" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_22" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_23" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_24" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_25" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_26" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_28" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_30" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_33" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_2" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_4" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_5" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_6" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_7" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_9" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_10" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_11" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_17" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789657946392_1" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_13" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_15" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789653794581_16" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789658845338_1" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789659441187_1" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_3" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_5" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_7" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_8" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_9" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_10" } },
+	{ "type": "removeClip", "args": { "clipId": "clip_recording_1789665352709_11" } },
+	{
+		"type": "setClipRange",
+		"args": {
+			"clipId": "clip_recording_1789653794581_3",
+			"sourceStartSec": 2.88,
+			"sourceEndSec": 10.88
+		}
+	},
+	{
+		"type": "setClipRange",
+		"args": {
+			"clipId": "clip_recording_1789653794581_12",
+			"sourceStartSec": 5.27,
+			"sourceEndSec": 24.538
+		}
+	}
+]

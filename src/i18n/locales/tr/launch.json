@@ -31,7 +31,11 @@
 			"fontSize": "Yazı tipi boyutu",
 			"decreaseFontSize": "Yazı tipi boyutunu küçült",
 			"increaseFontSize": "Yazı tipi boyutunu büyüt",
-			"mirror": "Yatay aynala"
+			"mirror": "Yatay aynala",
+			"more": "Daha fazla denetim",
+			"less": "Daha az denetim",
+			"close": "Notları kapat",
+			"move": "Notları taşı"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "Kaydediliyor",
 		"saving": "Kaydediliyor...",
 		"removePreviousClip": "Önceki klibi kaldır",
-		"removePreviousClipWithDuration": "Önceki klibi kaldır · {{duration}}",
+		"removePreviousClipWithDuration": "Önceki klibi kaldır ({{duration}})",
 		"clipRemoved": "Kaldırıldı"
 	},
 	"language": "Dil",

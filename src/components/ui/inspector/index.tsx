@@ -1,5 +1,6 @@
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
 import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group";
 import { ChevronRight, HelpCircle, Info } from "lucide-react";
 import {
@@ -9,10 +10,13 @@ import {
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useId,
 	useRef,
+	useState,
 } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipProvider } from "@/components/ui/tooltip";
+import { useScopedT } from "@/contexts/I18nContext";
 import styles from "./inspector.module.css";
 
 export const InspectorIconButton = forwardRef<
@@ -194,6 +198,7 @@ export function InspectorSwitch({
 }) {
 	return (
 		<SwitchPrimitive.Root
+			data-inspector-switch=""
 			className={styles.switchRoot}
 			checked={checked}
 			disabled={disabled}
@@ -203,6 +208,21 @@ export function InspectorSwitch({
 			<SwitchPrimitive.Thumb className={styles.switchThumb} />
 		</SwitchPrimitive.Root>
 	);
+}
+
+function SliderValueGuidance({ id, min, max }: { id: string; min: string; max: string }) {
+	const t = useScopedT("common");
+	return (
+		<p id={id} className={styles.sliderError} role="alert">
+			{t("inspector.valueRange", { min, max })}
+		</p>
+	);
+}
+
+function formatSliderValue(value: number, decimals: number) {
+	const fixed = value.toFixed(decimals);
+	const roundingNoise = Number.EPSILON * Math.max(1, Math.abs(value)) * 8;
+	return Math.abs(Number(fixed) - value) <= roundingNoise ? fixed : String(value);
 }
 
 export function InspectorSlider({
@@ -217,6 +237,7 @@ export function InspectorSlider({
 	onChange,
 	onCommit,
 	showValue = true,
+	readOnly = false,
 	helpText,
 }: {
 	label: string;
@@ -230,8 +251,24 @@ export function InspectorSlider({
 	onChange: (next: number) => void;
 	onCommit: () => void;
 	showValue?: boolean;
+	readOnly?: boolean;
 	helpText?: string;
 }) {
+	const [draft, setDraft] = useState<string | null>(null);
+	const [invalid, setInvalid] = useState(false);
+	const [numericCommit, setNumericCommit] = useState(0);
+	const draftDirty = useRef(false);
+	const guidanceId = useId();
+	const displayValue = formatSliderValue(value, decimals);
+	const draftValue = useRef(value);
+	useEffect(() => {
+		if (Object.is(draftValue.current, value)) return;
+		draftValue.current = value;
+		// Undo or another control supersedes an uncommitted text draft.
+		draftDirty.current = false;
+		setDraft(null);
+		setInvalid(false);
+	}, [value]);
 	const pointerInteraction = useRef(false);
 	const commitPending = useRef(false);
 	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -271,6 +308,35 @@ export function InspectorSlider({
 		[performCommit],
 	);
 
+	// Text edits do not preview. Commit after the controlled value and callback have
+	// rendered, so stores that commit from the latest React closure see this edit.
+	useEffect(() => {
+		if (numericCommit > 0) flushCommit();
+	}, [numericCommit, flushCommit]);
+
+	const commitDraft = () => {
+		if (disabled || readOnly || !draftDirty.current || draft === null) return;
+		const trimmed = draft.trim();
+		// A comma followed by three digits can also mean a thousands separator.
+		const ambiguousComma = /^[+-]?[1-9]\d{0,2},\d{3}$/.test(trimmed);
+		const normalized = trimmed.replace(",", ".");
+		const next =
+			!ambiguousComma && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)
+				? Number(normalized)
+				: Number.NaN;
+		if (!Number.isFinite(next) || next < min || next > max) {
+			setInvalid(true);
+			return;
+		}
+		draftDirty.current = false;
+		setInvalid(false);
+		setDraft(null);
+		if (next === value) return;
+		commitPending.current = true;
+		onChange(next);
+		setNumericCommit((revision) => revision + 1);
+	};
+
 	return (
 		<div className={styles.slider}>
 			<div className={styles.sliderHeader}>
@@ -279,10 +345,41 @@ export function InspectorSlider({
 					{helpText ? <InspectorHelp label={label} text={helpText} /> : null}
 				</span>
 				{showValue ? (
-					<output className={styles.sliderValue}>
-						{value.toFixed(decimals)}
-						{suffix}
-					</output>
+					<div className={styles.sliderValue}>
+						<input
+							type="text"
+							inputMode="decimal"
+							className={styles.sliderValueInput}
+							aria-label={suffix ? `${label} (${suffix.trim()})` : label}
+							aria-invalid={invalid || undefined}
+							aria-describedby={invalid ? guidanceId : undefined}
+							value={draft ?? displayValue}
+							disabled={disabled}
+							readOnly={readOnly}
+							onFocus={(event) => event.currentTarget.select()}
+							onChange={(event) => {
+								if (disabled || readOnly) return;
+								draftDirty.current = true;
+								setDraft(event.target.value);
+								setInvalid(false);
+							}}
+							onBlur={commitDraft}
+							onKeyDown={(event) => {
+								if (event.nativeEvent.isComposing) return;
+								if (event.key === "Enter") {
+									event.preventDefault();
+									commitDraft();
+								} else if (event.key === "Escape") {
+									event.preventDefault();
+									event.stopPropagation();
+									draftDirty.current = false;
+									setDraft(null);
+									setInvalid(false);
+								}
+							}}
+						/>
+						{suffix ? <span aria-hidden="true">{suffix}</span> : null}
+					</div>
 				) : null}
 			</div>
 			<SliderPrimitive.Root
@@ -291,9 +388,12 @@ export function InspectorSlider({
 				min={min}
 				max={max}
 				step={step}
-				disabled={disabled}
+				disabled={disabled || readOnly}
 				onValueChange={([next]) => {
-					if (next === undefined) return;
+					if (next === undefined || disabled || readOnly) return;
+					setDraft(null);
+					setInvalid(false);
+					draftDirty.current = false;
 					commitPending.current = true;
 					onChange(next);
 				}}
@@ -322,6 +422,9 @@ export function InspectorSlider({
 				</SliderPrimitive.Track>
 				<SliderPrimitive.Thumb className={styles.sliderThumb} aria-label={label} />
 			</SliderPrimitive.Root>
+			{invalid ? (
+				<SliderValueGuidance id={guidanceId} min={`${min}${suffix}`} max={`${max}${suffix}`} />
+			) : null}
 		</div>
 	);
 }
@@ -383,5 +486,38 @@ export function InspectorDisclosure({
 			</summary>
 			<div className={styles.disclosureBody}>{children}</div>
 		</details>
+	);
+}
+
+/** Keep drafts mounted when users switch between related inspector tasks. */
+export function InspectorTabs({
+	label,
+	items,
+}: {
+	label: string;
+	items: { id: string; label: string; content: ReactNode }[];
+}) {
+	const [active, setActive] = useState(items[0]?.id);
+	return (
+		<TabsPrimitive.Root value={active} onValueChange={setActive} className={styles.taskTabs}>
+			<TabsPrimitive.List aria-label={label} className={styles.taskTabList}>
+				{items.map((item) => (
+					<TabsPrimitive.Trigger key={item.id} value={item.id} className={styles.taskTab}>
+						{item.label}
+					</TabsPrimitive.Trigger>
+				))}
+			</TabsPrimitive.List>
+			{items.map((item) => (
+				<TabsPrimitive.Content
+					key={item.id}
+					value={item.id}
+					forceMount
+					hidden={active !== item.id}
+					className={styles.taskContent}
+				>
+					{item.content}
+				</TabsPrimitive.Content>
+			))}
+		</TabsPrimitive.Root>
 	);
 }

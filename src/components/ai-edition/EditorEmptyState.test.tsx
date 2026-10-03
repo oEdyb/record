@@ -14,7 +14,7 @@ function renderWithI18n(ui: ReactElement) {
 
 const bridgeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
-	save: vi.fn(),
+	importProject: vi.fn(),
 	addAsset: vi.fn(),
 	loadProjectFile: vi.fn(),
 	loadProjectFileFromPath: vi.fn(),
@@ -33,7 +33,7 @@ const sampleDoc = vi.hoisted(
 		// imports are initialised, so reading the constant here throws
 		// "Cannot access ... before initialization". The typecheck gate catches it
 		// if it ever falls behind the schema.
-		schemaVersion: 9,
+		schemaVersion: 11,
 		project: {
 			id: "proj_test",
 			title: "Test",
@@ -72,7 +72,7 @@ vi.mock("@/native/client", () => ({
 	nativeBridgeClient: {
 		aiEdition: {
 			create: bridgeMocks.create,
-			save: bridgeMocks.save,
+			importProject: bridgeMocks.importProject,
 			addAsset: bridgeMocks.addAsset,
 		},
 	},
@@ -96,7 +96,7 @@ describe("EditorEmptyState (new editor)", () => {
 			mock.mockReset();
 		}
 		localStorage.clear();
-		bridgeMocks.save.mockImplementation(async (document) => ({ success: true, document }));
+		bridgeMocks.importProject.mockImplementation(async (document) => ({ success: true, document }));
 	});
 
 	afterEach(() => {
@@ -216,7 +216,7 @@ describe("EditorEmptyState (new editor)", () => {
 			success: true,
 			project: { id: "loaded", title: "Loaded" },
 		});
-		bridgeMocks.save.mockResolvedValue({ success: true, document: sampleDoc });
+		bridgeMocks.importProject.mockResolvedValue({ success: true, document: sampleDoc });
 
 		renderWithI18n(<EditorEmptyState hasProject={false} />);
 
@@ -226,7 +226,7 @@ describe("EditorEmptyState (new editor)", () => {
 
 		await waitFor(() => {
 			expect(bridgeMocks.loadProjectFile).toHaveBeenCalledTimes(1);
-			expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+			expect(bridgeMocks.importProject).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -240,7 +240,7 @@ describe("EditorEmptyState (new editor)", () => {
 			success: true,
 			project: { id: "loaded", title: "Loaded" },
 		});
-		bridgeMocks.save.mockResolvedValue({ success: true, document: sampleDoc });
+		bridgeMocks.importProject.mockResolvedValue({ success: true, document: sampleDoc });
 		renderWithI18n(<EditorEmptyState hasProject={false} />);
 
 		const file = new File(["{}"], fileName, { type: "application/json" });
@@ -250,7 +250,7 @@ describe("EditorEmptyState (new editor)", () => {
 
 		await waitFor(() => {
 			expect(bridgeMocks.loadProjectFileFromPath).toHaveBeenCalledWith(`/tmp/${fileName}`);
-			expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+			expect(bridgeMocks.importProject).toHaveBeenCalledTimes(1);
 		});
 	});
 

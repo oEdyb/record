@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/contexts/I18nContext";
+import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { TransportBar } from "./TransportBar";
 
@@ -81,6 +82,29 @@ describe("TransportBar reads the playhead from the store", () => {
 
 		expect(screen.getByText("0:12.3")).toBeInTheDocument();
 		expect(parentRenders).toBe(rendersAfterMount);
+	});
+
+	it("mutes and unmutes the preview from the speaker button", () => {
+		usePreviewAudio.setState({ volume: 0.8, muted: false });
+		render(
+			<TestShell>
+				<TransportBar
+					playing={false}
+					overrideTimeSec={null}
+					clips={clips}
+					onTogglePlay={noop}
+					onPrevClip={noop}
+					onNextClip={noop}
+					onSeek={noop}
+				/>
+			</TestShell>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Mute preview" }));
+		expect(usePreviewAudio.getState().muted).toBe(true);
+		expect(screen.getByRole("slider", { name: "Preview volume" })).toHaveValue("0");
+		fireEvent.click(screen.getByRole("button", { name: "Unmute preview" }));
+		expect(usePreviewAudio.getState().muted).toBe(false);
+		expect(screen.getByRole("slider", { name: "Preview volume" })).toHaveValue("0.8");
 	});
 
 	// A timeline scrub drag writes the store on a rAF, so for the frame in between the

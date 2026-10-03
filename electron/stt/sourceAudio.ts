@@ -19,6 +19,7 @@ export interface SourceAudioLayout {
 	hasKlipptMetadata: boolean;
 	roles: SttSourceRole[];
 	durationSec: number | null;
+	video?: { codec: string; width: number; height: number; fps: number };
 }
 
 /** Raised only when the requested source track does not exist in the container. */
@@ -49,6 +50,9 @@ export function parseSourceAudioLayout(ffmpegStderr: string): SourceAudioLayout 
 	const durationSec = durationMatch
 		? Number(durationMatch[1]) * 3_600 + Number(durationMatch[2]) * 60 + Number(durationMatch[3])
 		: null;
+	const videoLine = /^\s*Stream #0:\d+[^\n]*: Video: ([^\n]+)/m.exec(inputSection)?.[1];
+	const dimensions = videoLine && /(?:^|, )([1-9]\d*)x([1-9]\d*)(?:[ ,]|$)/.exec(videoLine);
+	const fps = videoLine && /([\d.]+) fps/.exec(videoLine);
 	const streamStarts = [
 		...inputSection.matchAll(/^\s*Stream #0:\d+(?:\[[^\]]+\])?(?:\(([^)]+)\))?: Audio:/gm),
 	];
@@ -76,6 +80,16 @@ export function parseSourceAudioLayout(ffmpegStderr: string): SourceAudioLayout 
 	if (counts.has("qac")) roles.push("you");
 	if (counts.has("qab")) roles.push("system");
 	return {
+		...(dimensions
+			? {
+					video: {
+						codec: videoLine!.split(/[ ,]/)[0],
+						width: Number(dimensions[1]),
+						height: Number(dimensions[2]),
+						fps: fps ? Number(fps[1]) : 0,
+					},
+				}
+			: {}),
 		hasAudio: streamStarts.length > 0,
 		hasKlipptMetadata: counts.size > 0,
 		roles,

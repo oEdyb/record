@@ -5,6 +5,32 @@ import { useEffect, useRef, useState } from "react";
 // the same quiet physical size.
 const PREVIEW_WIDTH = 576;
 const PREVIEW_HEIGHT = 324;
+// The expanded monitor asks for a larger relay. Cap it so a 4K camera on a large
+// display never turns the private preview into a second full-resolution pipeline.
+const MAX_RELAY_WIDTH = 2_560;
+const MAX_RELAY_HEIGHT = 1_440;
+
+interface RelaySize {
+	width: number;
+	height: number;
+}
+
+function clampRelaySize(value: unknown): RelaySize | null {
+	const candidate = value as { width?: unknown; height?: unknown } | null;
+	if (
+		!candidate ||
+		typeof candidate.width !== "number" ||
+		typeof candidate.height !== "number" ||
+		!Number.isFinite(candidate.width) ||
+		!Number.isFinite(candidate.height)
+	) {
+		return null;
+	}
+	return {
+		width: Math.round(Math.min(MAX_RELAY_WIDTH, Math.max(PREVIEW_WIDTH, candidate.width))),
+		height: Math.round(Math.min(MAX_RELAY_HEIGHT, Math.max(PREVIEW_HEIGHT, candidate.height))),
+	};
+}
 // A confidence monitor does not need the recording stream's full frame rate.
 // Twenty-four frames stays fluid while bounding the private preview's GPU work.
 const MAX_PREVIEW_FPS = 24;
@@ -42,6 +68,7 @@ function drawCover(
 export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 	const [port, setPort] = useState<MessagePort | null>(null);
 	const frameInFlight = useRef(false);
+	const relaySize = useRef<RelaySize>({ width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT });
 
 	useEffect(() => {
 		const receivePort = (event: MessageEvent) => {
@@ -70,6 +97,10 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 		frameInFlight.current = false;
 		const receiveAcknowledgement = (event: MessageEvent) => {
 			if (event.data?.type === "consumed") frameInFlight.current = false;
+			if (event.data?.type === "configure") {
+				const next = clampRelaySize(event.data);
+				if (next) relaySize.current = next;
+			}
 		};
 		port.addEventListener("message", receiveAcknowledgement);
 		return () => {
@@ -90,14 +121,25 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 		video.muted = true;
 		video.playsInline = true;
 		video.srcObject = stream;
-		const canvas = new OffscreenCanvas(PREVIEW_WIDTH, PREVIEW_HEIGHT);
+		const canvas = new OffscreenCanvas(relaySize.current.width, relaySize.current.height);
 		const context = canvas.getContext("2d", { alpha: false });
 		if (!context) {
 			port.postMessage({ type: "clear" });
 			return;
 		}
-		context.imageSmoothingEnabled = true;
-		context.imageSmoothingQuality = "high";
+		const applySmoothing = () => {
+			context.imageSmoothingEnabled = true;
+			context.imageSmoothingQuality = "high";
+		};
+		applySmoothing();
+		const fitCanvasToRelaySize = () => {
+			const { width, height } = relaySize.current;
+			if (canvas.width === width && canvas.height === height) return;
+			// Resizing resets the 2D context state, so smoothing must be applied again.
+			canvas.width = width;
+			canvas.height = height;
+			applySmoothing();
+		};
 
 		let stopped = false;
 		let callbackId = 0;
@@ -141,10 +183,13 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 				deliveryStartedAt = now;
 				deliveredFrames = 1;
 			}
+			if (!frameInFlight.current && now - lastFrameAt >= frameIntervalMs) {
+				fitCanvasToRelaySize();
+			}
 			if (
 				!frameInFlight.current &&
 				now - lastFrameAt >= frameIntervalMs &&
-				drawCover(context, video, PREVIEW_WIDTH, PREVIEW_HEIGHT)
+				drawCover(context, video, canvas.width, canvas.height)
 			) {
 				lastFrameAt = now;
 				const bitmap = canvas.transferToImageBitmap();

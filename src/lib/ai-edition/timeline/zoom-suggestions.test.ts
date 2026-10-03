@@ -313,9 +313,9 @@ describe("buildAutoZoomSuggestionsForClips", () => {
 			defaultDurationMs: 3_000,
 		});
 
-		// Thirty seconds permits two sparse sequences. Replaying one source
-		// three times must not collapse all three appearances into one group.
-		expect(suggestions).toHaveLength(4);
+		// The twelve-per-minute safety budget permits all three replayed sequences.
+		// Replaying one source must not collapse its appearances into one group.
+		expect(suggestions).toHaveLength(6);
 		expect(suggestions.filter((suggestion) => suggestion.span.start < 10_000)).toHaveLength(2);
 		expect(
 			suggestions.filter(
@@ -396,7 +396,7 @@ describe("buildAutoZoomSuggestionsForClips", () => {
 		).toEqual([]);
 	});
 
-	it("applies one sparse motion budget across every short clip", () => {
+	it("accepts twelve well-spaced directions across short clips", () => {
 		const clips = Array.from({ length: 12 }, (_, index) =>
 			clip(`clip_${index}`, "a1", index * 5, index * 5 + 5, index * 5),
 		);
@@ -410,7 +410,7 @@ describe("buildAutoZoomSuggestionsForClips", () => {
 			defaultDurationMs: 2_000,
 		});
 
-		expect(suggestions).toHaveLength(4);
+		expect(suggestions).toHaveLength(12);
 	});
 
 	it("keeps exact-caret typing in the timeline path without cursor samples", () => {
@@ -542,7 +542,7 @@ describe("buildAutoZoomSuggestionsForClips", () => {
 			defaultDurationMs: 2_000,
 		});
 
-		expect(suggestions).toHaveLength(2);
+		expect(suggestions).toHaveLength(4);
 	});
 
 	it("connects nearby automatic zooms in trim-compressed playback time", () => {

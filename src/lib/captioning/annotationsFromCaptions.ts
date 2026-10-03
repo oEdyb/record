@@ -77,10 +77,15 @@ export function dedupeAdjacentCaptionRepeats(segments: CaptionSegment[]): Captio
 			if (overlap > 0.015 || gap < DEDUPE_SAME_TEXT_MAX_GAP_SEC) {
 				prev.startSec = Math.min(prev.startSec, seg.startSec);
 				prev.endSec = Math.max(prev.endSec, seg.endSec);
+				if (prev.sourceWordIds || seg.sourceWordIds) {
+					prev.sourceWordIds = [
+						...new Set([...(prev.sourceWordIds ?? []), ...(seg.sourceWordIds ?? [])]),
+					];
+				}
 				continue;
 			}
 		}
-		out.push({ startSec: seg.startSec, endSec: seg.endSec, text: t });
+		out.push({ ...seg, text: t });
 	}
 	return out;
 }
@@ -98,7 +103,7 @@ export function finalizeCaptionSegmentsForPlayback(segments: CaptionSegment[]): 
 		let e = seg.endSec + AUTO_CAPTION_END_HOLD_SEC;
 		s = Math.max(0, s);
 		if (e <= s) e = s + 0.02;
-		return { startSec: s, endSec: e, text: seg.text.trim() };
+		return { ...seg, startSec: s, endSec: e, text: seg.text.trim() };
 	});
 
 	for (let i = 1; i < a.length; i++) {
@@ -273,7 +278,9 @@ export function groupTimedCaptionWordsIntoLines(
 			const s = slice[0]!.startSec;
 			const rawEnd = slice[slice.length - 1]!.endSec;
 			const e = Math.max(s + WORD_SPLIT_MIN_SPAN_SEC, rawEnd + CAPTION_LINE_END_TAIL_SEC);
+			const sourceWordIds = slice.flatMap((word) => word.sourceWordIds ?? []);
 			out.push({
+				...(sourceWordIds.length ? { sourceWordIds } : {}),
 				startSec: s,
 				endSec: e,
 				text: slice.map((w) => w.text.trim()).join(" "),

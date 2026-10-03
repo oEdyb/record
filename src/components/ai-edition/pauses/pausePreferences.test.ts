@@ -4,11 +4,11 @@ import { loadPausePolicy } from "./pausePreferences";
 describe("pause preferences", () => {
 	afterEach(() => vi.unstubAllGlobals());
 
-	it("keeps non-speech sound handling off when older settings have no explicit choice", () => {
+	it("turns non-speech sound handling on when older settings have no explicit choice", () => {
 		vi.stubGlobal("localStorage", {
 			getItem: () => JSON.stringify({ mode: "speech" }),
 		});
 
-		expect(loadPausePolicy().includeNonSpeechEvents).toBe(false);
+		expect(loadPausePolicy().includeNonSpeechEvents).toBe(true);
 	});
 });

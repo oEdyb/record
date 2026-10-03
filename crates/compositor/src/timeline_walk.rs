@@ -135,6 +135,8 @@ pub(crate) struct WalkResult {
     pub frames: u64,
     pub software_decoder: bool,
     pub hardware_decoder: bool,
+    #[cfg(target_os = "macos")]
+    pub decoder_paths: std::collections::BTreeSet<String>,
 }
 
 fn retain_current<T>(cache: &mut HashMap<String, T>, path: Option<&str>) {
@@ -172,6 +174,7 @@ pub(crate) unsafe fn walk_composited_timeline(
     let cursor_smoothing = scene.as_ref().map(|s| s.cursor.smoothing).unwrap_or(0.0);
     let mut cursor_tracks: HashMap<String, CursorTrack> = HashMap::new();
     let mut cursor_active_path: Option<String> = None;
+    let mut overlays = crate::overlay_video::OverlayDecoders::default();
 
     let mut frames: u64 = 0;
     let mut result = WalkResult::default();
@@ -194,6 +197,8 @@ pub(crate) unsafe fn walk_composited_timeline(
         for decoder in screen_decs.values().chain(webcam_decs.values()) {
             result.software_decoder |= !decoder.uses_hardware();
             result.hardware_decoder |= decoder.uses_hardware();
+            #[cfg(target_os = "macos")]
+            result.decoder_paths.insert(decoder.decoder_path());
         }
         let screen_available_duration = screen_decs
             .get(&clip.screen)
@@ -326,7 +331,9 @@ pub(crate) unsafe fn walk_composited_timeline(
                 if cursor_enabled && cursor_active_path.is_some() {
                     comp.set_cursor_time(Some(target_source_time as f32));
                 }
-                comp.compose_frame(sf, wf, frames as f32, cfg)?;
+                let (overlay, region) =
+                    comp.overlay_frame_at(&mut overlays, target_source_time, gpu)?;
+                comp.compose_frame(sf, wf, frames as f32, cfg, overlay, region.as_ref())?;
 
                 on_frame(frames)?;
                 frames += 1;

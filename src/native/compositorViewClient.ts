@@ -223,3 +223,16 @@ function runCancellableExport<T>(
 	signal?.addEventListener("abort", cancel, { once: true });
 	return start(exportId).finally(() => signal?.removeEventListener("abort", cancel));
 }
+
+/** Generate/reuse an approved, output-time audio overlay preview stem. */
+export function prepareAudioOverlayStem(input: {
+	audioOverlays: import("./sceneDescription").SceneAudioOverlay[];
+	durationSec: number;
+}) {
+	return requireNativeBridgeData<{
+		sourcePath: string;
+		sourceUrl: string;
+		cacheKey: string;
+		durationSec: number;
+	}>({ domain: "compositor", action: "audioOverlayStem", payload: input });
+}

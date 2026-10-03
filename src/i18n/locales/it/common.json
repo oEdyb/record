@@ -69,5 +69,8 @@
 		"screen": "Schermo",
 		"virtual": "Schermo virtuale",
 		"unknown": "Registrazione schermo"
+	},
+	"inspector": {
+		"valueRange": "Enter a number from {{min}} to {{max}}."
 	}
 }

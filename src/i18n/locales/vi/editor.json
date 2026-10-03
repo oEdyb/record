@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "Chất lượng xem trước",
+		"sharp": "Sắc nét",
+		"performance": "Hiệu năng"
+	},
 	"newRecording": {
 		"title": "Quay lại Trình ghi",
 		"description": "Phiên hiện tại của bạn đã được lưu.",
@@ -89,6 +94,9 @@
 		"toggleTheme": "Đổi giao diện",
 		"settings": "Cài đặt",
 		"export": "Xuất",
+		"exporting": "Đang xuất",
+		"exportProgressTitle": "Đã xong {{pct}}%, còn {{eta}}. Mở xuất video",
+		"exportProgressPreparing": "Đang chuẩn bị xuất. Mở xuất video",
 		"renameProject": "Đổi tên dự án",
 		"noProject": "Không có dự án",
 		"changeLanguage": "Đổi ngôn ngữ",
@@ -97,7 +105,8 @@
 			"media": "Media",
 			"edit": "Chỉnh sửa",
 			"rec": "Ghi hình"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "Nguồn",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "Xuất thất bại.",
 		"writingFile": "Đang ghi tệp…",
 		"renderingFrames": "Đang kết xuất khung hình",
-		"framesEta": "{{current}} / {{total}} khung hình · còn {{eta}}",
+		"framesEta": "{{current}} / {{total}} khung hình, còn {{eta}}",
 		"preparingEncoder": "Đang chuẩn bị bộ mã hóa…",
+		"cancelExport": "Hủy xuất",
+		"backgroundHint": "Bạn có thể đóng cửa sổ này và tiếp tục chỉnh sửa. Tiến trình hiển thị trên nút Xuất. Các chỉnh sửa bạn thực hiện bây giờ không nằm trong lần xuất này.",
 		"close": "Đóng",
 		"cancel": "Hủy",
 		"rendering": "Đang kết xuất…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "Không thể ghi tệp",
 		"qualityUpscaleWarning": "Upscale",
 		"exportedVideoOf": "video đã xuất trong",
-		"nothingToExport": "Không có gì để xuất — dòng thời gian trống."
+		"nothingToExport": "Không có gì để xuất — dòng thời gian trống.",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "Đặt lại điểm lấy nét",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "Camera phóng to nhẹ nhàng trong khi màn hình vẫn hiển thị, sau đó trở về kích thước bình thường.",
 		"cameraFullscreenDescription": "Khi vùng này phát, máy quay chiếm trọn khung hình — không viền, không bo góc, không nền — rồi trở lại mượt mà ở cuối. Kéo hai mép của vùng trên dòng thời gian để thay đổi thời điểm bắt đầu và độ dài.",
 		"deleteRegion": "Xóa vùng",
-		"freehandRendersAsBox": "Khi xuất, hình vẽ tay được che bằng khung bao của nó — che dư, không bao giờ che thiếu."
+		"freehandRendersAsBox": "Khi xuất, hình vẽ tay được che bằng khung bao của nó — che dư, không bao giờ che thiếu.",
+		"cameraSize": "Kích thước camera"
 	},
 	"leftPanel": {
 		"mediaTitle": "Media",
@@ -295,7 +309,7 @@
 			"title": "Lịch sử trò chuyện",
 			"subtitle": "Chuyển đổi hoặc tạo phiên",
 			"empty": "Chưa có cuộc trò chuyện nào.",
-			"msgsCount": "{{count}} tin nhắn · {{date}}"
+			"msgsCount": "{{count}} tin nhắn, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "Tiếp tục một dự án hiện có hoặc duyệt tệp của bạn",
 		"searchPlaceholder": "Tìm kiếm dự án…",
 		"noMatches": "Không có dự án nào khớp với \"{{query}}\".",
-		"navigateHint": "để điều hướng ·",
+		"navigateHint": "để điều hướng",
 		"openHint": "để mở",
 		"browseFiles": "Duyệt tệp…",
 		"deleteProject": "Xoá dự án",
@@ -358,7 +372,10 @@
 		"previousClip": "Clip trước",
 		"nextClip": "Clip tiếp theo",
 		"loop": "Lặp lại",
-		"seekVideo": "Tua video"
+		"seekVideo": "Tua video",
+		"mute": "Tắt tiếng bản xem trước",
+		"unmute": "Bật tiếng bản xem trước",
+		"previewVolume": "Âm lượng bản xem trước"
 	},
 	"shell": {
 		"aiEditor": "Trình biên tập AI",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "Dùng thử 14 ngày",
-			"trialDay": "Dùng thử · {{count}} ngày",
-			"trialDays": "Dùng thử · {{count}} ngày",
-			"offline": "Klippt Pro · Ngoại tuyến",
+			"trialDay": "Dùng thử {{count}} ngày",
+			"trialDays": "Dùng thử {{count}} ngày",
+			"offline": "Klippt Pro, Ngoại tuyến",
 			"readOnly": "Chỉ đọc"
 		},
 		"eyebrowReadOnly": "Quyền truy cập chỉ đọc",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "Không có GPU tương thích — kết xuất trên CPU nên phát lại chậm hơn.",
 		"exportWarning": "Không có GPU tương thích: lần xuất này chạy trên CPU và sẽ lâu hơn bình thường rất nhiều."
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

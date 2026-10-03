@@ -1,4 +1,9 @@
-import { MAX_WEBCAM_ZOOM, MIN_WEBCAM_ZOOM } from "@/components/video-editor/types";
+import {
+	MAX_WEBCAM_ZOOM,
+	MIN_WEBCAM_ZOOM,
+	normalizeWebcamAspectRatio,
+	normalizeWebcamCornerRadius,
+} from "@/components/video-editor/types";
 import { normalizeOutputResolution } from "@/lib/ai-edition/document/outputFormat";
 import {
 	MAX_WEBCAM_BLOCK_CAMERA_SHARE,
@@ -178,9 +183,15 @@ function normalizeEditorDefaults(
 			MAX_WEBCAM_BLOCK_CAMERA_SHARE,
 		),
 		webcamMaskShape:
-			mask === "rectangle" || mask === "circle" || mask === "square" || mask === "rounded"
+			mask === "rectangle" ||
+			mask === "circle" ||
+			mask === "square" ||
+			mask === "rounded" ||
+			mask === "squircle"
 				? mask
 				: defaults.webcamMaskShape,
+		webcamCornerRadius: normalizeWebcamCornerRadius(raw?.webcamCornerRadius),
+		webcamAspectRatio: normalizeWebcamAspectRatio(raw?.webcamAspectRatio),
 		webcamMirrored: booleanOr(raw?.webcamMirrored, defaults.webcamMirrored),
 		webcamReactiveZoom: booleanOr(raw?.webcamReactiveZoom, defaults.webcamReactiveZoom),
 		webcamSizePreset: numberInRange(
@@ -422,6 +433,8 @@ export function editorDefaultPreferencesToPatch(
 		webcamBlockOrder: preferences.webcamBlockOrder,
 		webcamBlockCameraShare: preferences.webcamBlockCameraShare,
 		webcamMaskShape: preferences.webcamMaskShape,
+		webcamCornerRadius: preferences.webcamCornerRadius,
+		webcamAspectRatio: preferences.webcamAspectRatio,
 		webcamMirrored: preferences.webcamMirrored,
 		webcamReactiveZoom: preferences.webcamReactiveZoom,
 		webcamSizePreset: preferences.webcamSizePreset,
@@ -462,4 +475,31 @@ export function applyEditingDefaultPreferences(
 		...preferences.captions,
 		language: null,
 	});
+}
+
+export function applyNewProjectPreferences(
+	document: AxcutDocument,
+	preferences: EditingPreferences,
+): AxcutDocument {
+	const plain = patchEditorSettings(applyEditingDefaultPreferences(document, preferences), {
+		aspectRatio: DEFAULT_EDITOR_SETTINGS.aspectRatio,
+		padding: 0,
+		borderRadius: 0,
+		shadowIntensity: 0,
+		showBlur: false,
+		motionBlurAmount: 0,
+		outputResolution: null,
+		screenFramingByVariant: {},
+		autoFocusAll: false,
+		webcamReactiveZoom: false,
+		webcamZoom: 1,
+		microphoneVolume: 1,
+		microphoneMuted: false,
+		systemAudioVolume: 1,
+		systemAudioMuted: false,
+		evenVolume: false,
+		normalizeVolume: false,
+		cursor: { size: 1, smoothing: 0, motionBlur: 0, clickBounce: 0 },
+	});
+	return patchCaptionSettings(plain, { enabled: false });
 }

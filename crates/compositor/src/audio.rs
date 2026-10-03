@@ -52,6 +52,9 @@ pub type PlanarPcm = Vec<Vec<f32>>;
 #[path = "audio_spool.rs"]
 pub(crate) mod spool;
 
+#[path = "audio_overlay.rs"]
+pub mod overlays;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AudioMasteringSettings {
     enabled: bool,

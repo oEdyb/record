@@ -488,3 +488,40 @@ describe("migrateRawDocumentToCurrent", () => {
 		expect(() => documentSchema.parse(upgraded)).not.toThrow();
 	});
 });
+
+it("preserves reviewed automatic provenance through legacy editor normalization and migration", () => {
+	const project = makeV2Project();
+	project.editor.zoomRegions = [
+		{
+			id: "review-zoom",
+			startMs: 1000,
+			endMs: 3000,
+			depth: 3,
+			focus: { cx: 0.5, cy: 0.5 },
+			source: "manual",
+			directionGroupId: "review-group",
+			automaticDirection: { version: 1, reason: "typing" },
+		},
+	];
+	project.editor.cameraFullscreenRegions = [
+		{
+			id: "review-camera",
+			startMs: 4000,
+			endMs: 6000,
+			mode: "emphasis",
+			source: "auto",
+			automaticDirection: { version: 1, reason: "speech-with-quiet-screen" },
+		},
+	];
+	const migrated = migrateProjectDataToAxcutDocument(project);
+	const restored = migrateAxcutDocumentToProjectData(migrated);
+	expect(restored.editor.zoomRegions[0].source).toBe("manual");
+	expect(restored.editor.zoomRegions[0].automaticDirection).toEqual({
+		version: 1,
+		reason: "typing",
+	});
+	expect(restored.editor.cameraFullscreenRegions?.[0].automaticDirection).toEqual({
+		version: 1,
+		reason: "speech-with-quiet-screen",
+	});
+});

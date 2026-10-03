@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CameraFullscreenRegion } from "@/components/video-editor/types";
-import { computeCameraFullscreenProgress, computeCameraLayoutState } from "./cameraFullscreenUtils";
+import {
+	cameraTransitionTiming,
+	computeCameraDriftFactor,
+	computeCameraFullscreenProgress,
+	computeCameraLayoutState,
+} from "./cameraFullscreenUtils";
 import { TRANSITION_WINDOW_MS } from "./constants";
 
 function makeRegion(startMs: number, endMs: number): CameraFullscreenRegion {
@@ -140,6 +145,7 @@ describe("computeCameraLayoutState", () => {
 			progress: 1,
 			mode: "fullscreen",
 			cameraScale: 1,
+			driftScale: 1,
 		});
 	});
 
@@ -153,6 +159,7 @@ describe("computeCameraLayoutState", () => {
 			progress: 1,
 			mode: "emphasis",
 			cameraScale: 1.35,
+			driftScale: 1,
 		});
 		expect(computeCameraFullscreenProgress([emphasis], 2000)).toBe(0);
 	});
@@ -171,8 +178,8 @@ describe("computeCameraLayoutState", () => {
 
 		expect(computeCameraLayoutState([smooth], atQuarter).progress).toBeCloseTo(0.103515625, 8);
 		expect(computeCameraLayoutState([snappy], atQuarter).progress).toBeGreaterThan(0.8);
-		expect(computeCameraLayoutState([instant], startMs)).toHaveProperty("progress", 0);
-		expect(computeCameraLayoutState([instant], startMs + 1)).toHaveProperty("progress", 1);
+		expect(computeCameraLayoutState([instant], startMs - 1)).toHaveProperty("progress", 0);
+		expect(computeCameraLayoutState([instant], startMs)).toHaveProperty("progress", 1);
 		expect(computeCameraLayoutState([instant], endMs - 1)).toHaveProperty("progress", 1);
 		expect(computeCameraLayoutState([instant], endMs)).toHaveProperty("progress", 0);
 	});
@@ -194,5 +201,54 @@ describe("computeCameraLayoutState", () => {
 		const atFastQuarter = fast.startMs + (TRANSITION_WINDOW_MS / 2) * 0.25;
 
 		expect(computeCameraLayoutState([fast], atFastQuarter).progress).toBeCloseTo(0.25, 8);
+	});
+});
+
+describe("cameraTransitionTiming", () => {
+	it("clamps each phase to half a short region", () => {
+		expect(cameraTransitionTiming(makeRegion(5800, 6900))).toEqual({
+			leadInWindow: 550,
+			leadOutWindow: 550,
+			leadInEnd: 6350,
+			leadOutStart: 6350,
+		});
+	});
+	it("has no transition duration for an instant region", () => {
+		const region = { ...makeRegion(2000, 6000), motionStyle: "instant" as const };
+		expect(cameraTransitionTiming(region)).toEqual({
+			leadInWindow: 0,
+			leadOutWindow: 0,
+			leadInEnd: 2000,
+			leadOutStart: 6000,
+		});
+		expect(computeCameraLayoutState([region], 1999).progress).toBe(0);
+		expect(computeCameraLayoutState([region], 2000).progress).toBe(1);
+		expect(computeCameraLayoutState([region], 5999).progress).toBe(1);
+		expect(computeCameraLayoutState([region], 6000).progress).toBe(0);
+	});
+});
+
+describe("computeCameraDriftFactor", () => {
+	const region: CameraFullscreenRegion = {
+		...makeRegion(1000, 6000),
+		drift: { scaleTo: 1.2, releaseSec: 0.5 },
+	};
+
+	it("pushes in slowly, then releases fast to exactly 1 at the end", () => {
+		expect(computeCameraDriftFactor(region, 1000)).toBe(1);
+		expect(computeCameraDriftFactor(region, 3250)).toBeCloseTo(1.1, 3);
+		expect(computeCameraDriftFactor(region, 5500)).toBeCloseTo(1.2, 3);
+		expect(computeCameraDriftFactor(region, 5750)).toBeCloseTo(1.05, 3);
+		expect(computeCameraDriftFactor(region, 6000)).toBe(1);
+		expect(computeCameraDriftFactor(makeRegion(1000, 6000), 3000)).toBe(1);
+	});
+
+	it("fades the drift with the region envelope in the layout state", () => {
+		expect(computeCameraLayoutState([region], 1000).driftScale).toBe(1);
+		expect(computeCameraLayoutState([region], 3000).driftScale).toBeCloseTo(
+			computeCameraDriftFactor(region, 3000),
+			6,
+		);
+		expect(computeCameraLayoutState([makeRegion(1000, 6000)], 3000).driftScale).toBe(1);
 	});
 });

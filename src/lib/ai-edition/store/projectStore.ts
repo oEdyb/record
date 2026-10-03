@@ -1,18 +1,25 @@
 import { create } from "zustand";
 import { requireEntitlement } from "@/lib/entitlements/store";
 import { nativeBridgeClient } from "@/native/client";
+import type {
+	AiEditionProjectVersion,
+	AiEditionTransactionReceipt,
+	AiEditionUndoRecovery,
+	AiEditionWriteGuard,
+} from "@/native/contracts";
+import { removeAssetFromDocument } from "../document/assets";
 import {
 	type Interval,
 	replaceTimeline as replaceTimelineOp,
 	restoreFullTimeline as restoreFullTimelineOp,
 } from "../document/timeline";
-import { type AxcutAsset, type AxcutDocument, documentSchema } from "../schema";
+import { type AxcutAsset, type AxcutDocument, assetSchema, documentSchema } from "../schema";
 import {
 	clearDocumentHistory,
 	patchDocumentHistory,
 	recordDocumentSnapshot,
 } from "./documentHistory";
-import { applyEditingDefaultPreferences, loadEditingPreferences } from "./editingPreferences";
+import { applyNewProjectPreferences, loadEditingPreferences } from "./editingPreferences";
 
 // ponytail: thin Zustand wrapper over the native-bridge client. Keeps the
 // current project + revision counter in renderer memory; mutations round-trip
@@ -26,6 +33,10 @@ export interface ProjectState {
 	projectId: string | null;
 	document: AxcutDocument | null;
 	revision: number;
+	transactionVersion: AiEditionProjectVersion | null;
+	transactionBusy: boolean;
+	transactionSyncPending: boolean;
+	lastTransactionReceipt: AiEditionTransactionReceipt | null;
 	status: ProjectStatus;
 	error: string | null;
 	sourceDurationSec: number;
@@ -59,6 +70,8 @@ export interface ProjectState {
 	saveDocumentAsEdit: (
 		document: AxcutDocument,
 		historySnapshot?: AxcutDocument,
+		agentHistory?: AiEditionWriteGuard["agentHistory"],
+		requestId?: string,
 	) => Promise<boolean>;
 	/** Merge a background enhancement into the latest document without adding an Undo step. */
 	applyDocumentPatch: (
@@ -66,6 +79,8 @@ export interface ProjectState {
 		patch: ProjectDocumentPatch,
 		options?: {
 			coalesceIntoHistory?: boolean;
+			agentHistory?: AiEditionWriteGuard["agentHistory"];
+			requestId?: string;
 			maximumAttempts?: number;
 			/**
 			 * Record this successful patch as one user-visible edit. The snapshot is
@@ -100,19 +115,605 @@ const latestMutationByProject = new Map<string, number>();
 const activeMutationCountByProject = new Map<string, number>();
 const idleWaitersByProject = new Map<string, Array<() => void>>();
 
-function persistDocument(document: AxcutDocument): Promise<AxcutDocument> {
-	const operation = persistQueue.then(async () => {
-		const result = await nativeBridgeClient.aiEdition.save(document);
-		if (!result.success || !result.document) {
-			throw new Error(result.error ?? "Failed to save project");
+export class ProjectTransactionSessionError extends Error {
+	constructor(
+		public readonly code: string,
+		message: string,
+	) {
+		super(message);
+	}
+}
+let externalSaveGuard: AiEditionWriteGuard | null = null;
+let pendingExternalRequest: { projectId: string; requestId: string } | null = null;
+let pendingLocalRequest: {
+	projectId: string;
+	requestId: string;
+	expected: AiEditionProjectVersion;
+	candidate: AxcutDocument;
+	base: AxcutDocument | null;
+} | null = null;
+let recoveryCopy: { projectId: string; revision: number; copyId: string } | null = null;
+const queuedLocalSaves = new Map<string, number>();
+
+const recoveredUndoRequests = new Set<string>();
+function restoreRecoveryUndo(projectId: string, recovery?: AiEditionUndoRecovery) {
+	if (!recovery) return;
+	const key = `${projectId}:${recovery.requestId}`;
+	if (recoveredUndoRequests.has(key)) return;
+	const before = parseDocument(recovery.beforeDocument);
+	if (before.project.id !== projectId)
+		throw new ProjectTransactionSessionError(
+			"IDENTITY_CHANGED",
+			"Undo recovery belongs to a different project",
+		);
+	recordDocumentSnapshot(before);
+	recoveredUndoRequests.add(key);
+}
+/** Reconcile only the blocked external request. Never discard a newer local edit
+ * or apply an old receipt over a later committed transaction. */
+export async function reconcileProjectTransactions(
+	projectId: string,
+): Promise<"applied" | "not-committed" | "unchanged"> {
+	const before = useProjectStore.getState();
+	if (before.projectId !== projectId || !before.document)
+		throw new ProjectTransactionSessionError("PROJECT_CHANGED", "Project is no longer active");
+	if (!before.transactionSyncPending) return "unchanged";
+	if (pendingExternalRequest?.projectId !== projectId)
+		throw new ProjectTransactionSessionError(
+			"LOCAL_RECONCILIATION_REQUIRED",
+			"Local edits need explicit conflict recovery",
+		);
+	const requestId = pendingExternalRequest.requestId;
+	const snapshot = await nativeBridgeClient.aiEdition.snapshot(projectId);
+	const current = useProjectStore.getState();
+	if (current.projectId !== projectId || current.revision !== before.revision)
+		throw new ProjectTransactionSessionError(
+			"PROJECT_CHANGED",
+			"Editor changed during reconciliation",
+		);
+	if (!snapshot.success || !snapshot.document || !snapshot.version)
+		throw new ProjectTransactionSessionError(
+			snapshot.errorCode ?? "UNAVAILABLE",
+			snapshot.error ?? "Recovery snapshot unavailable",
+		);
+	if (sameVersion(before.transactionVersion, snapshot.version)) {
+		useProjectStore.setState({ transactionSyncPending: false, dirty: false, error: null });
+		pendingExternalRequest = null;
+		return "not-committed";
+	}
+	if (
+		snapshot.undoRecovery?.requestId !== requestId ||
+		snapshot.undoRecovery.afterRevision !== snapshot.version.revision
+	)
+		throw new ProjectTransactionSessionError(
+			"CONFLICT",
+			"A newer or unrecoverable transaction requires explicit review",
+		);
+	const document = parseDocument(snapshot.document);
+	if (document.project.id !== projectId)
+		throw new ProjectTransactionSessionError(
+			"IDENTITY_CHANGED",
+			"Recovery document identity mismatch",
+		);
+	restoreRecoveryUndo(projectId, snapshot.undoRecovery);
+	useProjectStore.setState({
+		document,
+		transactionVersion: snapshot.version,
+		revision: current.revision + 1,
+		dirty: false,
+		transactionSyncPending: false,
+		error: null,
+		lastSavedAt: new Date(),
+	});
+	pendingExternalRequest = null;
+	return "applied";
+}
+/** Explicit user choice only. Reload discards the unsaved local version; saving
+ * a copy preserves it in a new project and never writes the conflicted original. */
+export async function resolveLocalTransactionConflict(
+	strategy: "save-copy" | "reload",
+): Promise<{ projectId: string; strategy: "save-copy" | "reload" }> {
+	const before = useProjectStore.getState();
+	if (strategy !== "save-copy" && strategy !== "reload")
+		throw new ProjectTransactionSessionError("INVALID_RECOVERY", "Unknown recovery choice");
+	if (!before.projectId || !before.document)
+		throw new ProjectTransactionSessionError("PROJECT_CHANGED", "No active project to recover");
+	const projectId = before.projectId;
+	if (pendingExternalRequest?.projectId === projectId)
+		throw new ProjectTransactionSessionError(
+			"EXTERNAL_RECONCILIATION_REQUIRED",
+			"Reconcile the external transaction receipt before choosing local recovery",
+		);
+	if (before.transactionBusy || (activeMutationCountByProject.get(projectId) ?? 0) > 0)
+		throw new ProjectTransactionSessionError(
+			"EDITOR_BUSY",
+			"Wait for active saves before recovery",
+		);
+	if (!before.transactionSyncPending && !before.error)
+		throw new ProjectTransactionSessionError(
+			"NO_CONFLICT",
+			"The project has no conflict to recover",
+		);
+	if (strategy === "save-copy" && !requireEntitlement("edit"))
+		throw new Error("Editing access is required to save a recovery copy");
+	const assertCurrent = () => {
+		const current = useProjectStore.getState();
+		if (current.projectId !== projectId || current.revision !== before.revision)
+			throw new ProjectTransactionSessionError("PROJECT_CHANGED", "Editor changed during recovery");
+	};
+	useProjectStore.setState({ transactionBusy: true });
+	try {
+		const pending = pendingLocalRequest?.projectId === projectId ? pendingLocalRequest : null;
+		if (pending) {
+			const receipt = await nativeBridgeClient.aiEdition.receipt(projectId, pending.requestId);
+			assertCurrent();
+			if (!receipt.success || receipt.receipt === undefined)
+				throw new ProjectTransactionSessionError(
+					"EDITOR_SYNC_PENDING",
+					receipt.error ?? "Local commit receipt is still unavailable",
+				);
+			const snapshot = await nativeBridgeClient.aiEdition.snapshot(projectId);
+			assertCurrent();
+			if (!snapshot.success || !snapshot.version || !snapshot.document)
+				throw new ProjectTransactionSessionError(
+					"EDITOR_SYNC_PENDING",
+					snapshot.error ?? "Recovery snapshot is unavailable",
+				);
+			if (receipt.receipt) {
+				if (
+					receipt.receipt.requestId !== pending.requestId ||
+					snapshot.version.mutationIdentity !== pending.expected.mutationIdentity
+				)
+					throw new ProjectTransactionSessionError(
+						"CONFLICT",
+						"Local receipt does not belong to the saved project",
+					);
+			} else if (!sameVersion(pending.expected, snapshot.version)) {
+				throw new ProjectTransactionSessionError(
+					"CONFLICT",
+					"Saved project changed without a matching local receipt",
+				);
+			}
+			// Preserve the request until recovery publishes, so a failed retry still
+			// checks the exact receipt rather than treating uncertainty as a normal conflict.
 		}
-		return parseDocument(result.document);
+		let targetId = projectId;
+		if (strategy === "save-copy") {
+			if (recoveryCopy?.projectId === projectId && recoveryCopy.revision === before.revision) {
+				targetId = recoveryCopy.copyId;
+			} else {
+				const local =
+					pending && pending.base && equalJson(before.document, pending.base)
+						? pending.candidate
+						: before.document;
+				const copy = await nativeBridgeClient.aiEdition.importProject({
+					...local,
+					project: { ...local.project, title: `${local.project.title} (recovered copy)` },
+				});
+				assertCurrent();
+				if (!copy.success || !copy.document)
+					throw new Error(copy.error ?? "Could not save a recovery copy");
+				const document = parseDocument(copy.document);
+				if (document.project.id === projectId)
+					throw new ProjectTransactionSessionError(
+						"IDENTITY_CHANGED",
+						"Recovery copy must have a new project identity",
+					);
+				targetId = document.project.id;
+				recoveryCopy = { projectId, revision: before.revision, copyId: targetId };
+			}
+		}
+		const loaded = await nativeBridgeClient.aiEdition.get(targetId);
+		assertCurrent();
+		if (!loaded.success || !loaded.document)
+			throw new Error(loaded.error ?? "Could not load recovered project");
+		const document = parseDocument(loaded.document);
+		if (document.project.id !== targetId)
+			throw new ProjectTransactionSessionError(
+				"IDENTITY_CHANGED",
+				"Recovered project identity mismatch",
+			);
+		if (
+			loaded.transactionVersion &&
+			loaded.undoRecovery?.afterRevision === loaded.transactionVersion.revision
+		) {
+			const undoDocument = parseDocument(loaded.undoRecovery.beforeDocument);
+			if (undoDocument.project.id !== targetId)
+				throw new ProjectTransactionSessionError(
+					"IDENTITY_CHANGED",
+					"Recovery Undo belongs to another project",
+				);
+		}
+		clearDocumentHistory();
+		recoveredUndoRequests.clear();
+		localCommitLineage.delete(projectId);
+		useProjectStore.setState({
+			projectId: targetId,
+			document,
+			revision: before.revision + 1,
+			transactionVersion: loaded.transactionVersion ?? null,
+			lastTransactionReceipt: null,
+			transactionSyncPending: false,
+			dirty: false,
+			status: "ready",
+			error: null,
+			lastSavedAt: new Date(),
+			playing: false,
+		});
+		if (
+			loaded.transactionVersion &&
+			loaded.undoRecovery?.afterRevision === loaded.transactionVersion.revision
+		)
+			restoreRecoveryUndo(targetId, loaded.undoRecovery);
+		pendingLocalRequest = null;
+		recoveryCopy = null;
+		return { projectId: targetId, strategy };
+	} catch (error) {
+		if (useProjectStore.getState().projectId === projectId)
+			useProjectStore.setState({
+				dirty: true,
+				transactionSyncPending: true,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		throw error;
+	} finally {
+		useProjectStore.setState({ transactionBusy: false });
+	}
+}
+
+function sameVersion(a: AiEditionProjectVersion | null, b: AiEditionProjectVersion) {
+	return (
+		a?.revision === b.revision &&
+		a.fileHash === b.fileHash &&
+		a.mutationIdentity === b.mutationIdentity
+	);
+}
+export function isProjectTransactionBlocked(): boolean {
+	const state = useProjectStore.getState();
+	return state.transactionBusy || state.transactionSyncPending;
+}
+function assertTransactionIdle(projectId: string) {
+	const state = useProjectStore.getState();
+	if (state.projectId !== projectId || !state.document || state.status !== "ready")
+		throw new ProjectTransactionSessionError(
+			"PROJECT_CHANGED",
+			"Project is not the active ready document",
+		);
+	if (
+		state.dirty ||
+		isProjectTransactionBlocked() ||
+		(activeMutationCountByProject.get(projectId) ?? 0) > 0
+	)
+		throw new ProjectTransactionSessionError(
+			"EDITOR_BUSY",
+			"Finish pending editor changes before applying a transaction",
+		);
+	return state;
+}
+/** Explicit opt-in only. No new endpoint is called for ordinary unadopted projects. */
+export async function activateProjectTransactions(
+	projectId: string,
+): Promise<AiEditionProjectVersion> {
+	const before = assertTransactionIdle(projectId);
+	const generation = getProjectMutationGeneration(projectId);
+	const result = await nativeBridgeClient.aiEdition.snapshot(projectId);
+	const current = assertTransactionIdle(projectId);
+	if (
+		current.revision !== before.revision ||
+		getProjectMutationGeneration(projectId) !== generation
+	)
+		throw new ProjectTransactionSessionError("CONFLICT", "Editor changed during activation");
+	if (!result.success || !result.version || !result.document)
+		throw new ProjectTransactionSessionError(
+			result.errorCode ?? "UNAVAILABLE",
+			result.error ?? "Saved snapshot unavailable",
+		);
+	const document = parseDocument(result.document);
+	if (
+		document.project.id !== projectId ||
+		JSON.stringify(document) !== JSON.stringify(parseDocument(current.document))
+	)
+		throw new ProjectTransactionSessionError(
+			"CONFLICT",
+			"Saved content differs from the live editor; activation refused",
+		);
+	localCommitLineage.delete(projectId);
+	useProjectStore.setState({ transactionVersion: result.version, lastTransactionReceipt: null });
+	return result.version;
+}
+/** Commit one prepared replacement through the normal history path. No transport
+ * exposes this until owner leases, import and restart reconciliation are complete. */
+export async function applyExternalProjectTransaction(
+	projectId: string,
+	document: AxcutDocument,
+	guard: AiEditionWriteGuard,
+): Promise<AiEditionTransactionReceipt> {
+	const state = assertTransactionIdle(projectId);
+	if (!sameVersion(state.transactionVersion, guard.expected))
+		throw new ProjectTransactionSessionError("CONFLICT", "Prepared transaction version is stale");
+	if (document.project.id !== projectId)
+		throw new ProjectTransactionSessionError(
+			"IDENTITY_CHANGED",
+			"Prepared document belongs to another project",
+		);
+	useProjectStore.setState({ transactionBusy: true });
+	try {
+		externalSaveGuard = { ...guard, recordUndo: true };
+		pendingExternalRequest = { projectId, requestId: guard.requestId };
+		const saving = state.saveDocumentAsEdit(document);
+		externalSaveGuard = null;
+		if (!(await saving))
+			throw new ProjectTransactionSessionError(
+				"EDITOR_SYNC_PENDING",
+				"The committed result could not be applied to the editor",
+			);
+		const receipt = useProjectStore.getState().lastTransactionReceipt;
+		if (!receipt || receipt.requestId !== guard.requestId)
+			throw new ProjectTransactionSessionError(
+				"EDITOR_SYNC_PENDING",
+				"Transaction receipt is not available",
+			);
+		recoveredUndoRequests.add(`${projectId}:${guard.requestId}`);
+		pendingExternalRequest = null;
+		return receipt;
+	} finally {
+		externalSaveGuard = null;
+		useProjectStore.setState({ transactionBusy: false });
+		if (!useProjectStore.getState().transactionSyncPending) pendingExternalRequest = null;
+	}
+}
+
+// A queue may advance CAS only through writes whose exact committed snapshots
+// this renderer received. External transactions never enter this lineage.
+const localCommitLineage = new Map<
+	string,
+	{
+		version: AiEditionProjectVersion;
+		document: AxcutDocument;
+		ancestors: string[];
+	}
+>();
+function versionKey(version: AiEditionProjectVersion): string {
+	return JSON.stringify([version.mutationIdentity, version.revision, version.fileHash]);
+}
+function equalJson(a: unknown, b: unknown): boolean {
+	return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+/** Carry untouched fields forward from earlier queued saves. A later scalar edit
+ * is intentional; concurrent structural array replacements need explicit review. */
+function rebaseLocalDocument(base: unknown, candidate: unknown, committed: unknown): unknown {
+	if (equalJson(candidate, base)) return committed;
+	if (equalJson(committed, base) || equalJson(candidate, committed)) return candidate;
+	if (Array.isArray(candidate) || Array.isArray(committed) || Array.isArray(base))
+		throw new ProjectTransactionSessionError(
+			"CONFLICT",
+			"Concurrent structural edits need review; newer local changes were retained",
+		);
+	if (
+		base &&
+		candidate &&
+		committed &&
+		typeof base === "object" &&
+		typeof candidate === "object" &&
+		typeof committed === "object"
+	) {
+		const before = base as Record<string, unknown>;
+		const next = candidate as Record<string, unknown>;
+		const saved = committed as Record<string, unknown>;
+		const keys = new Set([...Object.keys(before), ...Object.keys(next), ...Object.keys(saved)]);
+		return Object.fromEntries(
+			[...keys]
+				.map((key) => [key, rebaseLocalDocument(before[key], next[key], saved[key])])
+				.filter(([, value]) => value !== undefined),
+		);
+	}
+	return candidate;
+}
+
+function retainSupersedingLocalEdit(parsed: AxcutDocument, base: AxcutDocument | null) {
+	const current = useProjectStore.getState();
+	if (!current.transactionVersion || current.projectId !== parsed.project.id) return;
+	// The next queued save rebases its own intent. Do not publish this older
+	// snapshot over its candidate or turn a known successful write into a barrier.
+	if ((queuedLocalSaves.get(parsed.project.id) ?? 0) > 0 || !base || !current.document) {
+		useProjectStore.setState({ dirty: true });
+		return;
+	}
+	try {
+		const document = parseDocument(rebaseLocalDocument(base, current.document, parsed));
+		useProjectStore.setState({
+			document,
+			revision: current.revision + 1,
+			dirty: true,
+			error: null,
+		});
+	} catch (error) {
+		// Both structures contain edits. Preserve the live document and stop
+		// automatic replacement until the actual conflict has been reviewed.
+		useProjectStore.setState({
+			transactionSyncPending: true,
+			dirty: true,
+			error: error instanceof Error ? error.message : String(error),
+		});
+	}
+}
+
+// Keep the earliest unsaved publication base across gesture frames. A scheduled
+// save becomes the next checkpoint. References stay immutable; clone only at save.
+let publishedDraftBase: { document: AxcutDocument; before: AxcutDocument } | null = null;
+function trackPublishedDraft(document: AxcutDocument, previous: AxcutDocument | null) {
+	publishedDraftBase = previous
+		? {
+				document,
+				before: publishedDraftBase?.document === previous ? publishedDraftBase.before : previous,
+			}
+		: null;
+}
+
+function persistDocument(
+	document: AxcutDocument,
+	agentHistory?: AiEditionWriteGuard["agentHistory"],
+	requestId?: string,
+): Promise<AxcutDocument> {
+	const state = useProjectStore.getState();
+	// Capture the editor base and explicit external guard before joining the queue.
+	// Only proven earlier local commits may rebase an ordinary queued edit.
+	const external = externalSaveGuard !== null;
+	const published = state.document !== null && equalJson(document, state.document);
+	const baseDocument =
+		published && publishedDraftBase?.document === state.document
+			? publishedDraftBase.before
+			: state.document;
+	const base = baseDocument ? structuredClone(baseDocument) : null;
+	if (!external && published && state.document)
+		publishedDraftBase = { document: state.document, before: state.document };
+	const guard: AiEditionWriteGuard | null =
+		externalSaveGuard ??
+		(state.projectId === document.project.id && state.transactionVersion
+			? {
+					requestId: requestId ?? crypto.randomUUID(),
+					expected: { ...state.transactionVersion },
+					...(agentHistory ? { agentHistory, recordUndo: true } : {}),
+				}
+			: null);
+	let candidate = guard ? structuredClone(document) : document;
+	if (guard && !external)
+		queuedLocalSaves.set(document.project.id, (queuedLocalSaves.get(document.project.id) ?? 0) + 1);
+
+	const operation = persistQueue.then(async () => {
+		if (!guard) {
+			const result = await nativeBridgeClient.aiEdition.save(candidate);
+			if (!result.success || !result.document)
+				throw new Error(result.error ?? "Failed to save project");
+			return parseDocument(result.document);
+		}
+		try {
+			if (
+				!external &&
+				pendingLocalRequest?.projectId === document.project.id &&
+				useProjectStore.getState().transactionSyncPending
+			)
+				throw new ProjectTransactionSessionError(
+					"EDITOR_SYNC_PENDING",
+					"Recover the previous local save receipt before another write",
+				);
+			const prior = localCommitLineage.get(document.project.id);
+			if (
+				!external &&
+				prior &&
+				!sameVersion(guard.expected, prior.version) &&
+				prior.ancestors.includes(versionKey(guard.expected))
+			) {
+				const current = useProjectStore.getState();
+				if (
+					!base ||
+					!prior.ancestors.includes(versionKey(guard.expected)) ||
+					!sameVersion(current.transactionVersion, prior.version)
+				)
+					throw new ProjectTransactionSessionError(
+						"CONFLICT",
+						"Queued save no longer has a known local base",
+					);
+				try {
+					candidate = parseDocument(rebaseLocalDocument(base, candidate, prior.document));
+				} catch (error) {
+					// An unpublished rejected replacement must not leave the editor
+					// behind its known committed base: a later autosave could erase it.
+					if (current.document && equalJson(current.document, base)) {
+						useProjectStore.setState({ document: prior.document, revision: current.revision + 1 });
+					} else {
+						// Both structures contain real edits. Retain the live version
+						// and require conflict review before another full replacement.
+						useProjectStore.setState({ transactionSyncPending: true });
+					}
+					throw error;
+				}
+				guard.expected = { ...prior.version };
+			}
+			if (!external)
+				pendingLocalRequest = {
+					projectId: document.project.id,
+					requestId: guard.requestId,
+					expected: { ...guard.expected },
+					candidate,
+					base,
+				};
+			const result = await nativeBridgeClient.aiEdition.commit(
+				document.project.id,
+				candidate,
+				guard,
+			);
+			if (!result.success)
+				throw new ProjectTransactionSessionError(
+					result.errorCode ?? "EXECUTION_FAILED",
+					result.error ?? "Guarded save failed",
+				);
+			if (
+				!result.receipt ||
+				!result.document ||
+				!result.version ||
+				!result.snapshotMatchesReceipt ||
+				result.receipt.requestId !== guard.requestId ||
+				result.version.revision !== result.receipt.revision
+			) {
+				if (useProjectStore.getState().projectId === document.project.id)
+					useProjectStore.setState({
+						transactionSyncPending: true,
+						lastTransactionReceipt: result.receipt ?? null,
+					});
+				throw new ProjectTransactionSessionError(
+					"EDITOR_SYNC_PENDING",
+					"Commit succeeded but its exact editor snapshot is unavailable",
+				);
+			}
+			const parsed = parseDocument(result.document);
+			if (pendingLocalRequest?.requestId === guard.requestId) pendingLocalRequest = null;
+
+			if (external) localCommitLineage.delete(document.project.id);
+			else
+				localCommitLineage.set(document.project.id, {
+					version: result.version,
+					document: parsed,
+					ancestors: [
+						...(prior && sameVersion(guard.expected, prior.version) ? prior.ancestors : []),
+						versionKey(guard.expected),
+					].slice(-64),
+				});
+			if (useProjectStore.getState().projectId === document.project.id)
+				useProjectStore.setState({
+					transactionVersion: result.version,
+					lastTransactionReceipt: result.receipt,
+				});
+			return parsed;
+		} catch (error) {
+			if (
+				error instanceof ProjectTransactionSessionError &&
+				error.code === "CONFLICT" &&
+				pendingLocalRequest?.requestId === guard.requestId
+			)
+				pendingLocalRequest = null;
+			if (useProjectStore.getState().projectId === document.project.id)
+				useProjectStore.setState({
+					dirty: true,
+					error: error instanceof Error ? error.message : String(error),
+					...(error instanceof ProjectTransactionSessionError && error.code === "CONFLICT"
+						? {}
+						: { transactionSyncPending: true }),
+				});
+			throw error;
+		}
 	});
 	persistQueue = operation.then(
 		() => undefined,
 		() => undefined,
 	);
-	return operation;
+	return operation.finally(() => {
+		if (guard && !external) {
+			const count = (queuedLocalSaves.get(document.project.id) ?? 1) - 1;
+			if (count > 0) queuedLocalSaves.set(document.project.id, count);
+			else queuedLocalSaves.delete(document.project.id);
+		}
+	});
 }
 
 type ProjectMutationLease = { operation: number; finish: () => void };
@@ -170,6 +771,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	projectId: null,
 	document: null,
 	revision: 0,
+	transactionVersion: null,
+	transactionBusy: false,
+	transactionSyncPending: false,
+	lastTransactionReceipt: null,
 	status: "idle",
 	error: null,
 	sourceDurationSec: 0,
@@ -179,6 +784,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	lastSavedAt: null,
 
 	async loadProject(projectId) {
+		if (isProjectTransactionBlocked())
+			throw new ProjectTransactionSessionError(
+				"EDITOR_BUSY",
+				"Transaction reconciliation is pending",
+			);
 		const currentProjectId = get().projectId;
 		const currentMutation = currentProjectId
 			? beginTrackedProjectMutation(currentProjectId)
@@ -192,6 +802,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			const document = parseDocument(result.document);
 			set({
 				projectId,
+				transactionVersion: result.transactionVersion ?? null,
+				lastTransactionReceipt: null,
 				document,
 				revision: get().revision + 1,
 				status: "ready",
@@ -200,6 +812,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 				lastSavedAt: new Date(),
 			});
 			clearDocumentHistory();
+			recoveredUndoRequests.clear();
+			if (
+				result.transactionVersion &&
+				result.undoRecovery?.afterRevision === result.transactionVersion.revision
+			)
+				restoreRecoveryUndo(projectId, result.undoRecovery);
 		} catch (error) {
 			set({
 				status: "error",
@@ -211,6 +829,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async createProject(title) {
+		if (isProjectTransactionBlocked())
+			throw new ProjectTransactionSessionError(
+				"EDITOR_BUSY",
+				"Transaction reconciliation is pending",
+			);
 		if (!requireEntitlement("edit")) throw new Error("Klippt Pro is required to create a project.");
 		const currentProjectId = get().projectId;
 		const currentMutation = currentProjectId
@@ -226,7 +849,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			let document = createdDocument;
 			try {
 				document = await persistDocument(
-					applyEditingDefaultPreferences(createdDocument, loadEditingPreferences()),
+					applyNewProjectPreferences(createdDocument, loadEditingPreferences()),
 				);
 			} catch (error) {
 				// The native create already persisted a valid project. Keep that
@@ -241,6 +864,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			}
 			set({
 				projectId: document.project.id,
+				transactionVersion: null,
+				lastTransactionReceipt: null,
 				document,
 				revision: get().revision + 1,
 				status: "ready",
@@ -268,6 +893,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async addAsset(path, label, options) {
+		if (isProjectTransactionBlocked())
+			throw new ProjectTransactionSessionError("BUSY", "The project is synchronizing");
+		if (get().transactionVersion) return addGuardedAsset(path, label, options);
+
 		if (!requireEntitlement("import")) return null;
 		const { projectId } = get();
 		if (!projectId) throw new Error("No project loaded");
@@ -367,6 +996,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async removeAsset(assetId) {
+		if (isProjectTransactionBlocked())
+			throw new ProjectTransactionSessionError("BUSY", "The project is synchronizing");
+		if (get().transactionVersion) {
+			const doc = get().document;
+			if (!doc || !doc.assets.some((asset) => asset.id === assetId))
+				throw new Error("Asset not found");
+			if (!(await get().saveDocumentAsEdit(removeAssetFromDocument(doc, assetId))))
+				throw new ProjectTransactionSessionError("CONFLICT", "Asset removal was not synchronized");
+			return;
+		}
+
 		if (!requireEntitlement("edit")) return;
 		const { projectId } = get();
 		if (!projectId) throw new Error("No project loaded");
@@ -386,8 +1026,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async saveDocument(document) {
+		if (isProjectTransactionBlocked()) return false;
 		if (!requireEntitlement("edit")) return false;
 		const startingRevision = get().revision;
+		const base = get().document;
 		const mutation = beginSave(document);
 		try {
 			const parsed = await persistDocument(document);
@@ -396,11 +1038,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 				get().revision !== startingRevision ||
 				latestMutationByProject.get(parsed.project.id) !== mutation.operation
 			) {
+				retainSupersedingLocalEdit(parsed, base);
 				return false;
 			}
 			set({
 				document: parsed,
 				revision: get().revision + 1,
+				error: null,
 				dirty: false,
 				lastSavedAt: new Date(),
 			});
@@ -425,18 +1069,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 		return state.saveDocument(document);
 	},
 
-	async saveDocumentAsEdit(document, historySnapshot) {
+	async saveDocumentAsEdit(document, historySnapshot, agentHistory, requestId) {
+		if (isProjectTransactionBlocked() && !externalSaveGuard) return false;
 		if (!requireEntitlement("edit")) return false;
 		const startingRevision = get().revision;
+		const base = get().document;
 		const mutation = beginSave(document);
 		const previous = historySnapshot ?? get().document;
 		try {
-			const parsed = await persistDocument(document);
+			const parsed = await persistDocument(document, agentHistory, requestId);
 			if (
 				get().projectId !== parsed.project.id ||
 				get().revision !== startingRevision ||
 				latestMutationByProject.get(parsed.project.id) !== mutation.operation
 			) {
+				retainSupersedingLocalEdit(parsed, base);
 				return false;
 			}
 			// Record only after persistence succeeds, but before publishing the new
@@ -447,6 +1094,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			set({
 				document: parsed,
 				revision: get().revision + 1,
+				error: null,
 				dirty: false,
 				lastSavedAt: new Date(),
 			});
@@ -457,10 +1105,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async applyDocumentPatch(projectId, patch, options) {
+		if (isProjectTransactionBlocked()) return "conflict";
 		if (!requireEntitlement("edit")) return "conflict";
+		if (options?.agentHistory && !get().transactionVersion)
+			await activateProjectTransactions(projectId);
 		const maximumAttempts = Math.max(1, Math.floor(options?.maximumAttempts ?? 5));
 		for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
 			await waitForProjectMutations(projectId);
+			if (isProjectTransactionBlocked()) return "conflict";
 			const state = get();
 			if (state.projectId !== projectId || !state.document) return "project-changed";
 			const base = state.document;
@@ -471,7 +1123,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			}
 			const historySnapshot = options?.createHistorySnapshot?.(base);
 			const saved = historySnapshot
-				? await state.saveDocumentAsEdit(next, historySnapshot)
+				? await state.saveDocumentAsEdit(
+						next,
+						historySnapshot,
+						options?.agentHistory,
+						options?.requestId,
+					)
 				: await state.saveDocumentIfCurrent(next, {
 						revision: state.revision,
 						mutationGeneration: getProjectMutationGeneration(projectId),
@@ -489,8 +1146,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	setDocument(document) {
+		if (isProjectTransactionBlocked()) return;
 		if (!requireEntitlement("edit")) return;
 		const prev = get().document;
+		trackPublishedDraft(document, prev);
 		if (prev && prev !== document) {
 			recordDocumentSnapshot(prev);
 		}
@@ -502,7 +1161,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	setDocumentLive(document) {
+		if (isProjectTransactionBlocked()) return;
 		if (!requireEntitlement("edit")) return;
+		trackPublishedDraft(document, get().document);
 		set({
 			document,
 			revision: get().revision + 1,
@@ -511,7 +1172,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	restoreDocumentFromHistory(document) {
+		if (isProjectTransactionBlocked()) return;
 		if (!requireEntitlement("edit")) return;
+		trackPublishedDraft(document, get().document);
 		set({
 			document,
 			revision: get().revision + 1,
@@ -548,12 +1211,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	clear() {
+		if (isProjectTransactionBlocked()) return;
 		void window.electronAPI?.stt?.release?.();
 		clearDocumentHistory();
+		recoveredUndoRequests.clear();
+		pendingExternalRequest = null;
+		localCommitLineage.clear();
+		publishedDraftBase = null;
+		pendingLocalRequest = null;
+		recoveryCopy = null;
 		set({
 			projectId: null,
 			document: null,
 			revision: 0,
+			transactionVersion: null,
+			transactionBusy: false,
+			transactionSyncPending: false,
+			lastTransactionReceipt: null,
 			status: "idle",
 			error: null,
 			sourceDurationSec: 0,
@@ -565,6 +1239,71 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	markClean() {
+		if (isProjectTransactionBlocked()) return;
 		set({ dirty: false, lastSavedAt: new Date() });
 	},
 }));
+
+/** File/camera preparation never publishes partial asset state. The original
+ * revision must still be current when the complete edit enters the save queue. */
+async function addGuardedAsset(
+	path: string,
+	label?: string,
+	options?: { recordingImportId?: string },
+): Promise<AxcutAsset | null> {
+	if (!requireEntitlement("import")) return null;
+	const base = useProjectStore.getState();
+	if (!base.document || !base.projectId) throw new Error("No project loaded");
+	const mutation = beginTrackedProjectMutation(base.projectId);
+	const generation = getProjectMutationGeneration(base.projectId);
+	try {
+		const prepared = await nativeBridgeClient.aiEdition.prepareAsset(
+			base.projectId,
+			path,
+			label,
+			options?.recordingImportId,
+		);
+		let asset = assetSchema.parse(prepared.asset);
+		if (window.electronAPI?.findRecordingCamera) {
+			const camera = await window.electronAPI.findRecordingCamera(asset.originalPath);
+			if (camera.success && camera.webcamVideoPath)
+				asset = assetSchema.parse({
+					...asset,
+					cameraTrack: {
+						sourcePath: camera.webcamVideoPath,
+						startMs: 0,
+						offsetMs: Math.round(camera.offsetMs ?? 0),
+						visible: true,
+					},
+				});
+		}
+		const current = useProjectStore.getState();
+		if (
+			current.projectId !== base.projectId ||
+			current.revision !== base.revision ||
+			getProjectMutationGeneration(base.projectId) !== generation ||
+			isProjectTransactionBlocked()
+		)
+			throw new ProjectTransactionSessionError(
+				"CONFLICT",
+				"The project changed during media preparation. Try importing again.",
+			);
+		const next = {
+			...base.document,
+			assets: [...base.document.assets, asset],
+			project: {
+				...base.document.project,
+				primaryAssetId: base.document.project.primaryAssetId ?? asset.id,
+			},
+		};
+		// Recording insertion owns its combined assets/clips Undo snapshot.
+		const saved = options?.recordingImportId
+			? await current.saveDocument(next)
+			: await current.saveDocumentAsEdit(next);
+		if (!saved)
+			throw new ProjectTransactionSessionError("CONFLICT", "Media import was not synchronized");
+		return asset;
+	} finally {
+		mutation.finish();
+	}
+}

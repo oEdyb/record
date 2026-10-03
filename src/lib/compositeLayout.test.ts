@@ -589,3 +589,59 @@ describe("computeCameraFullscreenRect", () => {
 		);
 	});
 });
+
+describe("camera corner controls", () => {
+	const params = {
+		canvasSize: { width: 1920, height: 1080 },
+		screenSize: { width: 1920, height: 1080 },
+		webcamSize: { width: 1280, height: 720 },
+		webcamSizePreset: 40,
+	};
+	it("keeps squircle corners on a rectangular camera by default", () => {
+		const camera = computeCompositeLayout({ ...params, webcamMaskShape: "squircle" })?.webcamRect;
+		expect(camera).toMatchObject({ width: 432, height: 243, maskShape: "squircle" });
+		expect(camera?.borderRadius).toBe(Math.round(243 * 0.3));
+	});
+	it.each([0, 15, 50])("uses %s percent independently of screen rounding", (radius) => {
+		const layout = computeCompositeLayout({
+			...params,
+			webcamMaskShape: "squircle",
+			webcamCornerRadius: radius,
+		});
+		expect(layout?.webcamRect?.borderRadius).toBe((243 * radius) / 100);
+		expect(layout?.screenRect).toEqual(computeCompositeLayout(params)?.screenRect);
+	});
+	it("preserves a circle and block layouts when a PiP corner override exists", () => {
+		for (const options of [
+			{ webcamMaskShape: "circle" as const },
+			{ layoutPreset: "dual-frame" as const, webcamMaskShape: "squircle" as const },
+		]) {
+			expect(computeCompositeLayout({ ...params, ...options, webcamCornerRadius: 0 })).toEqual(
+				computeCompositeLayout({ ...params, ...options }),
+			);
+		}
+	});
+});
+
+it.each([
+	["1:1", 432, 432],
+	["4:3", 432, 324],
+	["16:9", 432, 243],
+	["9:16", 243, 432],
+] as const)("configures %s camera framing separately from squircle corners", (webcamAspectRatio, width, height) => {
+	const layout = computeCompositeLayout({
+		canvasSize: { width: 1920, height: 1080 },
+		screenSize: { width: 1920, height: 1080 },
+		webcamSize: { width: 1280, height: 720 },
+		webcamSizePreset: 40,
+		webcamMaskShape: "squircle",
+		webcamAspectRatio,
+		webcamCornerRadius: 35,
+	});
+	expect(layout?.webcamRect).toMatchObject({
+		width,
+		height,
+		maskShape: "squircle",
+		borderRadius: (Math.min(width, height) * 35) / 100,
+	});
+});

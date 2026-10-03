@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "Calidad de vista previa",
+		"sharp": "Nítida",
+		"performance": "Rendimiento"
+	},
 	"errors": {
 		"noVideoLoaded": "No hay video cargado",
 		"videoNotReady": "El video no está listo",
@@ -89,6 +94,9 @@
 		"toggleTheme": "Alternar tema",
 		"settings": "Ajustes",
 		"export": "Exportar",
+		"exporting": "Exportando",
+		"exportProgressTitle": "{{pct}}% completado, quedan {{eta}}. Abrir exportación",
+		"exportProgressPreparing": "Preparando la exportación. Abrir exportación",
 		"renameProject": "Renombrar proyecto",
 		"noProject": "Sin proyecto",
 		"changeLanguage": "Cambiar idioma",
@@ -97,7 +105,8 @@
 			"media": "Multimedia",
 			"edit": "Editar",
 			"rec": "Grabar"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "Fuente",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "Error al exportar.",
 		"writingFile": "Escribiendo archivo…",
 		"renderingFrames": "Renderizando fotogramas",
-		"framesEta": "{{current}} / {{total}} fotogramas · quedan {{eta}}",
+		"framesEta": "{{current}} / {{total}} fotogramas, quedan {{eta}}",
 		"preparingEncoder": "Preparando codificador…",
+		"cancelExport": "Cancelar exportación",
+		"backgroundHint": "Puedes cerrar esta ventana y seguir editando. El progreso se muestra en el botón Exportar. Los cambios que hagas ahora no forman parte de esta exportación.",
 		"close": "Cerrar",
 		"cancel": "Cancelar",
 		"rendering": "Renderizando…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "No se pudo escribir el archivo",
 		"qualityUpscaleWarning": "Upscaling",
 		"exportedVideoOf": "de vídeo exportado en",
-		"nothingToExport": "Nada que exportar: la línea de tiempo está vacía."
+		"nothingToExport": "Nada que exportar: la línea de tiempo está vacía.",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "Restablecer punto de enfoque",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "La cámara se amplía suavemente mientras la pantalla sigue visible y luego vuelve a su tamaño normal.",
 		"cameraFullscreenDescription": "Mientras se reproduce esta región, la cámara ocupa todo el cuadro —sin borde, sin redondeo, sin fondo— y vuelve suavemente al final. Arrastra los bordes de la región en la línea de tiempo para cambiar cuándo empieza y cuánto dura.",
 		"deleteRegion": "Eliminar región",
-		"freehandRendersAsBox": "En la exportación, una forma libre se cubre con su caja contenedora: cubre de más, nunca de menos."
+		"freehandRendersAsBox": "En la exportación, una forma libre se cubre con su caja contenedora: cubre de más, nunca de menos.",
+		"cameraSize": "Tamaño de la cámara"
 	},
 	"leftPanel": {
 		"mediaTitle": "Medios",
@@ -295,7 +309,7 @@
 			"title": "Historial de conversaciones",
 			"subtitle": "Cambia o crea sesiones",
 			"empty": "Aún no hay conversaciones.",
-			"msgsCount": "{{count}} mensajes · {{date}}"
+			"msgsCount": "{{count}} mensajes, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "Retoma un proyecto existente o explora tus archivos",
 		"searchPlaceholder": "Buscar proyectos…",
 		"noMatches": "Ningún proyecto coincide con \"{{query}}\".",
-		"navigateHint": "para navegar ·",
+		"navigateHint": "para navegar",
 		"openHint": "para abrir",
 		"browseFiles": "Explorar archivos…",
 		"deleteProject": "Eliminar proyecto",
@@ -358,7 +372,10 @@
 		"previousClip": "Clip anterior",
 		"nextClip": "Clip siguiente",
 		"loop": "Bucle",
-		"seekVideo": "Desplazarse por el vídeo"
+		"seekVideo": "Desplazarse por el vídeo",
+		"mute": "Silenciar la vista previa",
+		"unmute": "Activar el sonido de la vista previa",
+		"previewVolume": "Volumen de la vista previa"
 	},
 	"shell": {
 		"aiEditor": "Editor de IA",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "Prueba de 14 días",
-			"trialDay": "Prueba · {{count}} día",
-			"trialDays": "Prueba · {{count}} días",
-			"offline": "Klippt Pro · Sin conexión",
+			"trialDay": "Prueba {{count}} día",
+			"trialDays": "Prueba {{count}} días",
+			"offline": "Klippt Pro, Sin conexión",
 			"readOnly": "Solo lectura"
 		},
 		"eyebrowReadOnly": "Acceso de solo lectura",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "Sin GPU compatible: el renderizado se hace en la CPU, por lo que la reproducción es más lenta.",
 		"exportWarning": "Sin GPU compatible: esta exportación se ejecuta en la CPU y tardará mucho más de lo normal."
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

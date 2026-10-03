@@ -1,0 +1,53 @@
+{
+	"api_version": "1.0",
+	"request_id": "be72b968-776a-4ded-a2d4-125e837898f3",
+	"status": "completed",
+	"data": {
+		"source": "saved_project",
+		"time_base": "source seconds",
+		"total_clips": 2,
+		"missing_count": 1,
+		"page": 1,
+		"pages": 1,
+		"next_page": null,
+		"clips": [
+			{
+				"id": "clip_recording_1789653794581_10",
+				"name": "recording-1789665352709-clip-0028.mp4",
+				"name_truncated": false,
+				"status": "stored",
+				"words": [
+					{
+						"id": "word_you_600_860_1iwaucs",
+						"start": 0.6,
+						"end": 0.86,
+						"text": "But"
+					},
+					{
+						"id": "word_you_1180_1560_1oj91fl",
+						"start": 1.18,
+						"end": 1.56,
+						"text": "this"
+					}
+				],
+				"sentences": [],
+				"words_offset": 0,
+				"sentences_offset": 0
+			}
+		],
+		"missing": [
+			{
+				"id": "clip_recording_1789659441187_1",
+				"name": "recording-1789665352709-clip-0041.mp4",
+				"name_truncated": false,
+				"status": "unavailable"
+			}
+		],
+		"sentence_rule": "Sentence punctuation or a source gap of at least 0.8 seconds.",
+		"next_actions": [
+			{
+				"command": "klippt agent transcribe --project_id proj_x"
+			}
+		]
+	}
+}

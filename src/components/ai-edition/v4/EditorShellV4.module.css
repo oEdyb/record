@@ -380,6 +380,61 @@
 	opacity: 0.5;
 	cursor: not-allowed;
 }
+/* Export in progress: same footprint as the Export button, quiet graphite surface, the
+   fill and a 2px baseline carry the progress. Monochrome by design (see Visual direction). */
+.exportProgress {
+	position: relative;
+	overflow: hidden;
+	min-width: 148px;
+	justify-content: flex-start;
+	background: var(--surface-2);
+	border-color: var(--border-hi);
+	color: var(--fg);
+	box-shadow: none;
+	font-variant-numeric: tabular-nums;
+}
+.exportProgress:hover {
+	background: var(--surface-3);
+}
+.exportProgressFill {
+	position: absolute;
+	inset: 0;
+	width: calc(var(--export-pct, 0) * 1%);
+	background: var(--accent-soft);
+	pointer-events: none;
+	transition: width var(--motion-base) var(--ease);
+}
+.exportProgressBaseline {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	height: 2px;
+	width: calc(var(--export-pct, 0) * 1%);
+	background: var(--accent);
+	pointer-events: none;
+	transition: width var(--motion-base) var(--ease);
+}
+.exportProgressIcon,
+.exportProgressLabel,
+.exportProgressPct {
+	position: relative;
+}
+.exportProgressIcon {
+	color: var(--muted);
+}
+.exportProgressPct {
+	margin-left: auto;
+	font: 600 12px/1 var(--font-mono);
+	color: var(--fg-2);
+	min-width: 3.4ch;
+	text-align: right;
+}
+@media (prefers-reduced-motion: reduce) {
+	.exportProgressFill,
+	.exportProgressBaseline {
+		transition: none;
+	}
+}
 
 /* ─── BODY ─────────────────────────────────────────────────────────── */
 .body {
@@ -443,6 +498,8 @@
 }
 
 .previewWorkspace {
+	display: flex;
+	flex-direction: column;
 	position: absolute;
 	inset: 0;
 	box-sizing: border-box;
@@ -528,10 +585,10 @@
 	overflow-x: hidden;
 	overflow-y: auto;
 	overscroll-behavior: contain;
-	scrollbar-width: none;
+	scrollbar-width: thin;
 }
 .facetRailScroll::-webkit-scrollbar {
-	display: none;
+	width: 3px;
 }
 .facetRailUtility {
 	position: relative;
@@ -593,7 +650,7 @@
 	background: transparent;
 	color: var(--muted);
 }
-.facetRail button[aria-pressed="true"] {
+.facetRail button[data-state="on"] {
 	color: var(--editor-accent-strong);
 	background: var(--editor-accent-soft);
 }
@@ -1518,39 +1575,6 @@
 	border-radius: 7px;
 	background: transparent;
 }
-.pauseCandidateOverlay {
-	position: absolute;
-	inset: 0;
-	z-index: 4;
-	pointer-events: none;
-}
-.pauseCandidatePill {
-	position: absolute;
-	top: 4px;
-	bottom: 4px;
-	min-width: 2px;
-	padding: 0;
-	border: 1px solid color-mix(in srgb, var(--muted) 55%, transparent);
-	border-radius: 4px;
-	background: repeating-linear-gradient(
-		-45deg,
-		color-mix(in srgb, var(--muted) 14%, transparent) 0 3px,
-		transparent 3px 6px
-	);
-	opacity: 0.48;
-	cursor: pointer;
-	pointer-events: auto;
-}
-.pauseCandidatePill:hover,
-.pauseCandidateSelected {
-	border-color: var(--editor-accent);
-	background: repeating-linear-gradient(
-		-45deg,
-		color-mix(in srgb, var(--editor-accent) 28%, transparent) 0 3px,
-		color-mix(in srgb, var(--editor-accent) 8%, transparent) 3px 6px
-	);
-	opacity: 1;
-}
 .lanePill {
 	position: absolute;
 	top: 1px;
@@ -1634,6 +1658,120 @@
 .laneCameraFullscreen {
 	border-color: color-mix(in srgb, var(--editor-accent) 62%, var(--fg));
 	background: color-mix(in srgb, var(--editor-accent-soft) 74%, var(--surface-2));
+}
+.proposedPause, .proposedCutWash[data-kind="pause"] { --cut-color: var(--editor-accent); --cut-fill: color-mix(in srgb, var(--editor-accent) 24%, var(--surface)); }
+.proposedBlip, .proposedCutWash[data-kind="blip"] { --cut-color: var(--annotation); --cut-fill: color-mix(in srgb, var(--annotation) 24%, var(--surface)); }
+.proposedAgent, .proposedCutWash[data-kind="agent"] { --cut-color: var(--accent); --cut-fill: color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.proposedFix, .proposedCutWash[data-kind="fix"] { --cut-color: var(--warn); --cut-fill: color-mix(in srgb, var(--warn) 42%, var(--surface)); }
+.proposedCutWash {
+	position: absolute;
+	inset-block: 0;
+	z-index: 4;
+	background: color-mix(in srgb, var(--cut-color) 18%, transparent);
+	pointer-events: none;
+}
+.proposedCutPill {
+	min-width: 14px;
+	padding: 0 2px;
+	gap: 0;
+	border-color: var(--cut-color);
+	background: var(--cut-fill);
+	opacity: 1;
+	overflow: visible;
+	cursor: pointer;
+	user-select: none;
+}
+.proposedCutPill[data-selected="false"] { opacity: 0.55; }
+.proposedCutPill[data-selected="false"] .proposedCutLabel { text-decoration: line-through; }
+.proposedCutCompact {
+	border: 0;
+	background: transparent;
+}
+.proposedCutCompact::before {
+	content: "";
+	position: absolute;
+	inset-inline: 0;
+	top: 12px;
+	height: 3px;
+	border-radius: 7px;
+	background: var(--cut-color);
+	pointer-events: none;
+}
+.proposedCutHandle {
+	position: absolute;
+	inset-block: 0;
+	width: 6px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: ew-resize;
+	touch-action: none;
+	z-index: 2;
+}
+.proposedCutHandle::after {
+	content: "";
+	position: absolute;
+	inset-block: 5px;
+	left: 2px;
+	width: 2px;
+	border-radius: 1px;
+	background: var(--cut-color);
+}
+.proposedCutCompact .proposedCutHandle::after { inset-block: 12px 13px; }
+.proposedCutHandle:hover::after, .proposedCutHandle:focus-visible::after {
+	background: color-mix(in srgb, var(--cut-color) 50%, var(--fg));
+	filter: brightness(1.25);
+	inset-block: 3px;
+}
+.proposedCutStart { left: -3px; }
+.proposedCutEnd { right: -3px; }
+.proposedCutBody {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	border-radius: inherit;
+	background: transparent;
+	color: var(--fg);
+	font: inherit;
+	cursor: pointer;
+}
+.proposedCutBody svg { flex-shrink: 0; color: var(--cut-color); }
+.proposedCutLabel { font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.proposedCutPill[data-dragging="true"] { z-index: 5; }
+.proposedCutPill[data-floating-delta="true"] .proposedCutLabel {
+	position: absolute;
+	top: 100%;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 3px 6px;
+	border-radius: 4px;
+	background: var(--surface);
+	color: var(--fg);
+	text-decoration: none;
+}
+.proposedCutReject {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	border: 0;
+	border-radius: 3px;
+	background: transparent;
+	color: var(--fg);
+	line-height: 16px;
+	cursor: pointer;
+}
+.proposedCutReject:hover { background: var(--surface); }
+.proposedCutHandle:focus-visible, .proposedCutBody:focus-visible, .proposedCutReject:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 1px;
 }
 .tlClips {
 	position: relative;
@@ -2053,4 +2191,69 @@
 	box-shadow: 0 0 6px color-mix(in oklch, var(--danger) 60%, transparent);
 	pointer-events: none;
 	z-index: 14;
+}
+
+/* Contained camera motion phases. Keep the center clear for the region label. */
+.cameraTransition {
+	position: absolute;
+	bottom: 0;
+	height: 5px;
+	pointer-events: none;
+	background: currentColor;
+	opacity: 0.65;
+	clip-path: polygon(0 100%, 100% 0, 100% 100%);
+}
+.cameraTransition[data-camera-transition="exit"] {
+	clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+
+.captionTrack { position: relative; height: 28px; margin: 0 0 6px; border-radius: 5px; background: var(--editor-accent-wash); color: var(--fg-2); }
+.captionTrackLabel { position: absolute; top: 0; height: 28px; padding: 0 9px; display: flex; align-items: center; gap: 7px; font: 500 11px/1 var(--font-body); pointer-events: none; z-index: 2; background: var(--surface-1); border-radius: 5px; }
+.captionCount { color: var(--muted); font-variant-numeric: tabular-nums; }
+.captionCue { position: absolute; top: 0; height: 28px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); cursor: pointer; min-width: 0; overflow: hidden; }
+.captionCue:hover, .captionCue[aria-pressed="true"] { background: var(--editor-accent-soft); box-shadow: inset 0 -2px var(--editor-accent); }
+.captionCue:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: -2px; z-index: 3; }
+.captionCueText { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.brollTrack { position: relative; height: 66px; margin-bottom: 8px; }
+.brollClip { position: absolute; top: 0; height: 66px; min-width: 1px; padding: 0; overflow: hidden; border: 1px solid var(--border-hi); border-radius: 7px; color: var(--fg); background: var(--surface-2); cursor: pointer; text-align: left; }
+.brollClip:hover { border-color: var(--editor-accent); }
+.brollClip:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 2px; z-index: 2; }
+.brollClipContent { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.brollThumbnail { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.brollLabel { position: absolute; bottom: 0; left: 0; right: 0; padding: 3px 6px; font: 500 10px/1.3 var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--surface-1); color: var(--fg); opacity: .92; }
+
+
+/* Keep project identity and persistence status together without adding another toolbar slot. */
+.projectIdentity { display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; min-width: 0; }
+.projectIdentity .projectNameBtn { height: 26px; }
+.projectIdentity .projectNameInput { height: 26px; }
+.saveStatus { padding-left: 10px; font-size: 10px; line-height: 14px; color: var(--muted); }
+.saveStatus[data-dirty="true"] { color: var(--fg); font-weight: 600; }
+/* Visible task names replace icon recall. Long translations wrap inside the rail. */
+.facetRailScroll button { flex: 0 0 auto; width: 100%; min-height: 48px; height: auto; padding: 5px 2px; gap: 4px; }
+.facetLabel { font: 500 10px/1.2 var(--font-body); overflow-wrap: anywhere; max-width: 100%; }
+
+/* Preserve the complete toolbar at the supported 800 px window minimum. */
+@media (max-width: 1100px) {
+ .topbar { --topbar-gap: 5px; --topbar-project-w: 130px; }
+ .topbarLead:empty { display: none; }
+ .topbar .brand, .topbar > .sep { display: none; }
+ .langShort { display: none; }
+ .langButton { padding: 0 4px; gap: 3px; }
+}
+
+@media (max-width: 1000px) {
+ .app { --editor-inspector-pane-w: 300px; --editor-inspector-w: calc(var(--editor-inspector-pane-w) + var(--editor-inspector-rail-w)); }
+}
+
+.compactMenu { display: none; -webkit-app-region: no-drag; }
+@media (max-width: 1100px) {
+ .topbar { --topbar-project-w: 110px; --topbar-gap: 4px; }
+ .compactHidden { display: none; }
+ .compactMenu { display: block; }
+}
+
+.previewWorkspace > :first-child {
+ flex: 1;
+ min-height: 0;
 }

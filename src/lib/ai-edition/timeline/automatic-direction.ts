@@ -1,5 +1,6 @@
 import type { KeyboardActivitySample } from "@/native/contracts";
 import type { AxcutDocument } from "../schema";
+import { filterDismissedAutomaticDirection } from "./automatic-direction-ownership";
 import {
 	type AutoCameraEmphasisSuggestion,
 	appendAutoCameraEmphasisSuggestions,
@@ -295,7 +296,7 @@ export function applyAutomaticDirectionPlan(
 				? appendAutoZoomSuggestions(next, [materialized.suggestion], createRegionId)
 				: appendAutoCameraEmphasisSuggestions(next, [materialized.suggestion], createRegionId);
 	}
-	return next;
+	return filterDismissedAutomaticDirection(next);
 }
 
 /** Build and apply a fresh plan against one document snapshot. */

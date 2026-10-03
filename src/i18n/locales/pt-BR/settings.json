@@ -79,19 +79,29 @@
 			"rectangle": "Ret.",
 			"circle": "Círculo",
 			"square": "Quadrado",
-			"rounded": "Arredondado"
-		}
+			"rounded": "Arredondado",
+			"squircle": "Superelipse"
+		},
+		"webcamCornerRadius": "Cantos da câmera",
+		"webcamCornerRadiusDescription": "Arredonda os cantos da câmera como porcentagem do lado mais curto.",
+		"cameraAspectRatio": "Proporção da câmera",
+		"cameraSourceAspect": "Igual à fonte da câmera"
 	},
 	"effects": {
 		"title": "Efeitos de Vídeo",
-		"blurBg": "Desfocar Fundo",
-		"motionBlur": "Desfoque de Movimento",
+		"blurBg": "Desfocar fundo",
+		"motionBlur": "Desfoque de movimento da tela",
 		"off": "desativado",
 		"on": "ativado",
-		"shadow": "Sombra",
-		"roundness": "Arredondamento",
-		"padding": "Espaçamento",
-		"help": "Estilo do quadro da gravação: desfoque de fundo, sombra, desfoque de movimento, raio dos cantos e margem em volta do vídeo."
+		"shadow": "Sombra da tela",
+		"roundness": "Cantos da tela",
+		"padding": "Margem do quadro",
+		"help": "Estilo do quadro da gravação: desfoque de fundo, sombra, desfoque de movimento, raio dos cantos e margem em volta do vídeo.",
+		"blurBgDescription": "Suaviza o fundo atrás da gravação.",
+		"motionBlurDescription": "Adiciona desfoque durante animações de zoom e deslocamento da tela.",
+		"shadowDescription": "Ajusta a sombra atrás da gravação da tela.",
+		"roundnessDescription": "Arredonda os cantos da gravação da tela. Os cantos da câmera são separados.",
+		"paddingDescription": "Adiciona espaço ao redor da gravação para mostrar mais fundo."
 	},
 	"background": {
 		"title": "Fundo",
@@ -240,7 +250,9 @@
 		"errorTimeout": "A fonte demorou muito para carregar. Por favor, verifique a URL e tente novamente.",
 		"errorLoadFailed": "A fonte não pôde ser carregada. Por favor, verifique se a URL do Google Fonts está correta."
 	},
-	"automatic": { "title": "Automático" },
+	"automatic": {
+		"title": "Automático"
+	},
 	"audio": {
 		"title": "Áudio",
 		"help": "Limpe a voz, encurte pausas e prepare a mixagem final.",
@@ -249,7 +261,7 @@
 		"cleanVoice": "Clean Voice",
 		"testing": "Em teste",
 		"cleanVoiceDescription": "Reduza o ruído de fundo localmente.",
-		"cleanVoiceTrust": "Local · apenas microfone · original preservado",
+		"cleanVoiceTrust": "Local, apenas microfone, original preservado",
 		"cleanVoiceprocessing": "Preparando…",
 		"cleanVoiceready": "Pronto",
 		"cleanVoicefailed": "Usando o original",
@@ -263,7 +275,7 @@
 		"normalizeVolume": "Normalizar volume",
 		"normalizeVolumeDescription": "Ajuste o vídeo completo a um nível seguro.",
 		"preset": "Predefinição",
-		"youtubeTarget": "YouTube · -14.5 LUFS",
+		"youtubeTarget": "YouTube, -14.5 LUFS",
 		"custom": "Personalizado",
 		"targetLoudness": "Loudness desejada",
 		"targetLoudnessHelp": "Loudness integrada do vídeo exportado completo.",
@@ -299,7 +311,7 @@
 		"analyze": "Analyze pauses",
 		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
-		"resultCount": "{{count}} pause suggestions",
+		"resultCount": "{{count}} proposed cuts",
 		"timeSaved": "{{duration}} shorter",
 		"selectAll": "Select all",
 		"clearAll": "Clear all",
@@ -317,7 +329,16 @@
 		"save": "Save",
 		"applied": "Applied {{count}} pause cuts",
 		"nothingToApply": "Those pauses are already edited",
-		"applyFailed": "Could not apply pause cuts"
+		"applyFailed": "Could not apply pause cuts",
+		"acceptAll": "Accept all ({{count}})",
+		"clearLane": "Clear",
+		"rejectedEarlier": "{{count}} rejected earlier",
+		"kinds": {
+			"pause": "{{count}} pauses",
+			"blip": "{{count}} blips",
+			"agent": "{{count}} agent",
+			"fix": "{{count}} fixes"
+		}
 	},
 	"cursor": {
 		"title": "Cursor",
@@ -337,7 +358,8 @@
 	},
 	"facets": {
 		"captions": "Legendas",
-		"transcript": "Transcrição"
+		"transcript": "Transcrição",
+		"navigation": "Editing tools"
 	},
 	"panes": {
 		"help": "Ajuda"
@@ -397,6 +419,63 @@
 		"width": "Largura",
 		"lineLength": "Comprimento da linha",
 		"minWords": "Mín. de palavras por linha",
-		"maxWords": "Máx. de palavras por linha"
+		"maxWords": "Máx. de palavras por linha",
+		"correctWords": "Correct words",
+		"correctionOriginalOnly": "Switch the display language to Original to correct transcript words.",
+		"selectToCorrect": "Select a caption in the timeline to correct its words.",
+		"correctionUnavailable": "This caption has no source word timing to correct.",
+		"correctionHint": "Keep one word per field. Corrections update every use of this recording. Audio, timing and saved translations stay unchanged.",
+		"correctionWord": "Word {{number}}",
+		"correctionInvalid": "Enter one non-empty word per field, up to 100 characters.",
+		"correctionSaveFailed": "The correction could not be saved. Try again, or select the caption again if the project changed.",
+		"saveCorrection": "Save correction",
+		"resetCorrection": "Reset"
+	},
+	"automaticReview": {
+		"title": "Review effects",
+		"hint": "Keep protects an effect from regeneration. Remove excludes matching suggestions. Manual edits stay unchanged.",
+		"regenerate": "Regenerate",
+		"keepAll": "Keep all",
+		"removeAll": "Remove all",
+		"empty": "No automatic effects to review.",
+		"camera": "Camera emphasis",
+		"zoom": "Screen zoom",
+		"jump": "Go to {{name}} at {{time}}",
+		"trimmed": "Trimmed out",
+		"reasonUnavailable": "Trigger not saved in this project.",
+		"reason": {
+			"screen-activity": "Screen interaction detected",
+			"cursor-trace": "Cursor movement to follow",
+			"typing": "Typing activity detected",
+			"speech-with-quiet-screen": "Speech while the screen is quiet"
+		},
+		"adjust": "Adjust",
+		"keep": "Keep",
+		"remove": "Remove",
+		"previous": "Previous effects",
+		"next": "Next effects",
+		"dismissed": "{{count}} effects excluded. Different timing or framing can produce new suggestions.",
+		"restore": "Allow dismissed effects again",
+		"saveFailed": "Could not save this review change. Your previous edit is preserved.",
+		"saving": "Saving review…",
+		"saved": "Review saved. Use Undo to restore the previous edit.",
+		"recordingRequired": "Automatic edits need a recording in this timeline. Imported videos and older projects may not include recording evidence.",
+		"tune": "Tune automatic edits"
+	},
+	"panels": {
+		"canvas": "Canvas",
+		"screen": "Screen",
+		"camera": "Camera",
+		"voice": "Voice",
+		"pauses": "Pauses",
+		"music": "Music",
+		"delivery": "Delivery",
+		"correctionHint": "Select a word to correct it. Timing stays unchanged.",
+		"microphoneRequired": "Clean Voice needs a separate microphone track.",
+		"cleanupUnavailable": "Voice cleanup is unavailable on this device.",
+		"fill": "Fill",
+		"clickBounceHelp": "How strongly the cursor responds to a click. Zero turns the bounce off.",
+		"transcriptRead": "Click a word to move the playhead.",
+		"transcriptEdit": "Click to seek. Select words and press Delete to cut."
 	}
 }

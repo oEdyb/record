@@ -15,6 +15,12 @@
  * refactor for fields they never used).
  */
 
+/** Pure planned composition. JSON input: scene, clipIndex, sourceTimeSec,
+ * screenSize [width,height], webcamSize [width,height] | null.
+ * Returns JSON with resolved geometry or unavailable when auto-follow needs cursor evidence.
+ * Throws on invalid input. Does not prove decoded pixels or source availability. */
+export function evaluateSceneGeometry(requestJson: string): string;
+
 export interface CompositorViewRect {
 	x: number;
 	y: number;
@@ -173,6 +179,7 @@ export interface ClipInput {
 export type CompositorBackend = "hardware" | "cpu" | "none";
 
 export interface CompositorViewAddon {
+	renderAudioOverlayStem?(requestJson: string, outputPath: string, jobId?: string): Promise<string>;
 	/** What this machine offers, asked without allocating a view — the export dialog
 	 *  needs the answer before any preview exists. Cached native-side. */
 	probeBackend(): CompositorBackend;

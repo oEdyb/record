@@ -1,3 +1,4 @@
+import { directionProvenanceFields } from "@/lib/ai-edition/schema/automatic-direction-review";
 // Bidirectional migration between OpenScreen's v2 EditorProjectData and the
 // current AxcutDocument. See technical-documentation/architecture/document-model.md
 // for the field-by-field mapping. The migration is pure (no DOM, no fs, no
@@ -202,6 +203,7 @@ export function migrateProjectDataToAxcutDocument(
 			...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
 			...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 			...(region.source === "auto" || region.source === "manual" ? { source: region.source } : {}),
+			...directionProvenanceFields(region.automaticDirection),
 			...(region.directionGroupId ? { directionGroupId: region.directionGroupId } : {}),
 		}));
 
@@ -344,6 +346,7 @@ export function migrateAxcutDocumentToProjectData(input: AxcutDocument): EditorP
 		...(region.motionStyle ? { motionStyle: region.motionStyle } : {}),
 		...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 		...(region.source ? { source: region.source } : {}),
+		...directionProvenanceFields(region.automaticDirection),
 		...(region.directionGroupId ? { directionGroupId: region.directionGroupId } : {}),
 	}));
 	editor.zoomRegions = reverseZoomRegions;

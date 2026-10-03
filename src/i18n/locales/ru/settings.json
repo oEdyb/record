@@ -79,19 +79,29 @@
 			"rectangle": "Прямоуг.",
 			"circle": "Круг",
 			"square": "Квадрат",
-			"rounded": "Скруглённый"
-		}
+			"rounded": "Скруглённый",
+			"squircle": "Суперэллипс"
+		},
+		"webcamCornerRadius": "Углы камеры",
+		"webcamCornerRadiusDescription": "Скругляет углы камеры в процентах от её короткой стороны.",
+		"cameraAspectRatio": "Соотношение сторон камеры",
+		"cameraSourceAspect": "Как у исходной камеры"
 	},
 	"effects": {
 		"title": "Видеоэффекты",
 		"blurBg": "Размытие фона",
-		"motionBlur": "Размытие движения",
+		"motionBlur": "Размытие движения экрана",
 		"off": "выкл",
 		"on": "вкл",
-		"shadow": "Тень",
-		"roundness": "Скругление",
-		"padding": "Отступ",
-		"help": "Оформление кадра записи: размытие фона, тень, размытие движения, скругление углов и отступ вокруг видео."
+		"shadow": "Тень экрана",
+		"roundness": "Углы экрана",
+		"padding": "Отступ кадра",
+		"help": "Оформление кадра записи: размытие фона, тень, размытие движения, скругление углов и отступ вокруг видео.",
+		"blurBgDescription": "Размывает фон позади записи.",
+		"motionBlurDescription": "Добавляет размытие при анимации масштабирования и перемещения экрана.",
+		"shadowDescription": "Регулирует тень позади записи экрана.",
+		"roundnessDescription": "Скругляет углы записи экрана. Углы камеры настраиваются отдельно.",
+		"paddingDescription": "Добавляет пространство вокруг записи, чтобы показать больше фона."
 	},
 	"background": {
 		"title": "Фон",
@@ -240,7 +250,9 @@
 		"errorTimeout": "Загрузка шрифта заняла слишком много времени. Пожалуйста, проверьте URL и попробуйте снова.",
 		"errorLoadFailed": "Не удалось загрузить шрифт. Пожалуйста, проверьте правильность URL Google Fonts."
 	},
-	"automatic": { "title": "Автомонтаж" },
+	"automatic": {
+		"title": "Автомонтаж"
+	},
 	"audio": {
 		"title": "Аудио",
 		"help": "Очистите речь, сократите паузы и подготовьте финальный микс.",
@@ -249,7 +261,7 @@
 		"cleanVoice": "Clean Voice",
 		"testing": "Тестируется",
 		"cleanVoiceDescription": "Уменьшите фоновый шум локально.",
-		"cleanVoiceTrust": "Локально · только микрофон · оригинал сохранён",
+		"cleanVoiceTrust": "Локально, только микрофон, оригинал сохранён",
 		"cleanVoiceprocessing": "Подготовка…",
 		"cleanVoiceready": "Готово",
 		"cleanVoicefailed": "Используется оригинал",
@@ -263,7 +275,7 @@
 		"normalizeVolume": "Нормализовать громкость",
 		"normalizeVolumeDescription": "Настройте всё видео на безопасный уровень.",
 		"preset": "Пресет",
-		"youtubeTarget": "YouTube · -14.5 LUFS",
+		"youtubeTarget": "YouTube, -14.5 LUFS",
 		"custom": "Свой",
 		"targetLoudness": "Целевая громкость",
 		"targetLoudnessHelp": "Интегральная громкость всего экспортированного видео.",
@@ -299,7 +311,7 @@
 		"analyze": "Analyze pauses",
 		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
-		"resultCount": "{{count}} pause suggestions",
+		"resultCount": "{{count}} proposed cuts",
 		"timeSaved": "{{duration}} shorter",
 		"selectAll": "Select all",
 		"clearAll": "Clear all",
@@ -317,7 +329,16 @@
 		"save": "Save",
 		"applied": "Applied {{count}} pause cuts",
 		"nothingToApply": "Those pauses are already edited",
-		"applyFailed": "Could not apply pause cuts"
+		"applyFailed": "Could not apply pause cuts",
+		"acceptAll": "Accept all ({{count}})",
+		"clearLane": "Clear",
+		"rejectedEarlier": "{{count}} rejected earlier",
+		"kinds": {
+			"pause": "{{count}} pauses",
+			"blip": "{{count}} blips",
+			"agent": "{{count}} agent",
+			"fix": "{{count}} fixes"
+		}
 	},
 	"cursor": {
 		"title": "Курсор",
@@ -337,7 +358,8 @@
 	},
 	"facets": {
 		"captions": "Субтитры",
-		"transcript": "Транскрипт"
+		"transcript": "Транскрипт",
+		"navigation": "Editing tools"
 	},
 	"panes": {
 		"help": "Справка"
@@ -397,6 +419,63 @@
 		"width": "Ширина",
 		"lineLength": "Длина строки",
 		"minWords": "Мин. слов в строке",
-		"maxWords": "Макс. слов в строке"
+		"maxWords": "Макс. слов в строке",
+		"correctWords": "Correct words",
+		"correctionOriginalOnly": "Switch the display language to Original to correct transcript words.",
+		"selectToCorrect": "Select a caption in the timeline to correct its words.",
+		"correctionUnavailable": "This caption has no source word timing to correct.",
+		"correctionHint": "Keep one word per field. Corrections update every use of this recording. Audio, timing and saved translations stay unchanged.",
+		"correctionWord": "Word {{number}}",
+		"correctionInvalid": "Enter one non-empty word per field, up to 100 characters.",
+		"correctionSaveFailed": "The correction could not be saved. Try again, or select the caption again if the project changed.",
+		"saveCorrection": "Save correction",
+		"resetCorrection": "Reset"
+	},
+	"automaticReview": {
+		"title": "Review effects",
+		"hint": "Keep protects an effect from regeneration. Remove excludes matching suggestions. Manual edits stay unchanged.",
+		"regenerate": "Regenerate",
+		"keepAll": "Keep all",
+		"removeAll": "Remove all",
+		"empty": "No automatic effects to review.",
+		"camera": "Camera emphasis",
+		"zoom": "Screen zoom",
+		"jump": "Go to {{name}} at {{time}}",
+		"trimmed": "Trimmed out",
+		"reasonUnavailable": "Trigger not saved in this project.",
+		"reason": {
+			"screen-activity": "Screen interaction detected",
+			"cursor-trace": "Cursor movement to follow",
+			"typing": "Typing activity detected",
+			"speech-with-quiet-screen": "Speech while the screen is quiet"
+		},
+		"adjust": "Adjust",
+		"keep": "Keep",
+		"remove": "Remove",
+		"previous": "Previous effects",
+		"next": "Next effects",
+		"dismissed": "{{count}} effects excluded. Different timing or framing can produce new suggestions.",
+		"restore": "Allow dismissed effects again",
+		"saveFailed": "Could not save this review change. Your previous edit is preserved.",
+		"saving": "Saving review…",
+		"saved": "Review saved. Use Undo to restore the previous edit.",
+		"recordingRequired": "Automatic edits need a recording in this timeline. Imported videos and older projects may not include recording evidence.",
+		"tune": "Tune automatic edits"
+	},
+	"panels": {
+		"canvas": "Canvas",
+		"screen": "Screen",
+		"camera": "Camera",
+		"voice": "Voice",
+		"pauses": "Pauses",
+		"music": "Music",
+		"delivery": "Delivery",
+		"correctionHint": "Select a word to correct it. Timing stays unchanged.",
+		"microphoneRequired": "Clean Voice needs a separate microphone track.",
+		"cleanupUnavailable": "Voice cleanup is unavailable on this device.",
+		"fill": "Fill",
+		"clickBounceHelp": "How strongly the cursor responds to a click. Zero turns the bounce off.",
+		"transcriptRead": "Click a word to move the playhead.",
+		"transcriptEdit": "Click to seek. Select words and press Delete to cut."
 	}
 }

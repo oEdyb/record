@@ -1,0 +1,24 @@
+{
+	"kind": "composed_frame",
+	"snapshot": "f1eb6088f14d063477f7263d1d14b6f69697d6315bdd1dc8846066e5b955216e",
+	"source_project": "/Users/olle/Library/Application Support/openscreen/projects/proj_e4e71378-8fc9-4643-a0a4-b57815f78f8a.klippt",
+	"frame_path": "/Users/olle/dev/screenrec/klippt-batch-e5d13ce6-f13b-4224-b49d-d165e009a72b-frames/klippt-preview-9zMiIL/frame.png",
+	"manifest_path": "/Users/olle/dev/screenrec/klippt-batch-e5d13ce6-f13b-4224-b49d-d165e009a72b-frames/klippt-preview-9zMiIL/manifest.json",
+	"requested_edited_time_sec": 262.96666666666664,
+	"frame_time_sec": 262.95,
+	"fps": 60,
+	"output": { "width": 1280, "height": 720 },
+	"project_edited_duration_sec": 675.8962926984899,
+	"time_bases": {
+		"requested_edited_time_sec": "export_output_seconds (speed-adjusted output clock)",
+		"frame_time_sec": "export_output_seconds (speed-adjusted output clock)",
+		"project_edited_duration_sec": "export_output_seconds (speed-adjusted output clock)"
+	},
+	"sha256": "3ef623cf83cff6f2dea3b2ea7f9e3ab684413da2f01e23fdb22f6fc293f42d88",
+	"renderer": "native_offscreen_compositor_still",
+	"limitations": [
+		"Preview resolution is bounded; inspect a finished export for final-resolution pixel quality.",
+		"A frame verifies one instant, not animation continuity or audio.",
+		"Project content hash binds the document; external media files are not content-hashed."
+	]
+}

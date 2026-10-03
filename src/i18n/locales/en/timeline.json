@@ -33,7 +33,18 @@
 		"emptyText": "Empty text",
 		"cameraEmphasis": "Camera Emphasis",
 		"cameraFullscreen": "Full Camera",
-		"cameraFullscreenItem": "Full Camera {{index}}"
+		"cameraFullscreenItem": "Full Camera {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "No Video Loaded",
@@ -76,7 +87,7 @@
 		"arrangeClips": "Arrange clips",
 		"arrangeClipsHint": "Drag clips below to reorder or drop new ones in",
 		"newAnnotation": "Annotation",
-		"dragToReorderHint": "Drag to reorder · double-click to edit in/out points",
+		"dragToReorderHint": "Drag to reorder, double-click to edit in/out points",
 		"editInOutPoints": "Edit in/out points",
 		"deleteClip": "Delete clip",
 		"dropToAdd": "Drop to add to timeline",

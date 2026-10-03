@@ -1,3 +1,4 @@
+import { resolveOverlayInputs } from "../lib/ai-edition/timeline/overlayAnchors";
 /**
  * Scene contract — the flat description the app hands the native D3D compositor so it can
  * compute the composed frame itself (preview AND export) with **no POC-fixture logic**.
@@ -27,11 +28,20 @@ import {
 import { createId } from "@/lib/ai-edition/document/ids";
 import { pickOutputDims } from "@/lib/ai-edition/document/outputFormat";
 import { resolvePlaybackSegments } from "@/lib/ai-edition/document/timeline";
+import {
+	assertClipLayoutSupported,
+	resolveClipEditorSettings,
+} from "@/lib/ai-edition/layout/vocabulary";
 import type { AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
+import { validateAudioReferences } from "@/lib/ai-edition/schema/audioOverlays";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
-import { projectRegionsToSource } from "@/lib/ai-edition/timeline/timelineMap";
+import { projectRegionsToSource, segmentRawSpanSec } from "@/lib/ai-edition/timeline/timelineMap";
+
+/** A camera region edge this close to a cut is drawn on the cut, already at full strength. */
+const CAMERA_REGION_CUT_SNAP_SEC = 0.6;
+
 import type { CleanVoiceRoute } from "@/lib/cleanVoiceRuntime";
 import {
 	computeCompositeLayout,
@@ -88,8 +98,15 @@ export interface SceneCameraFullscreenRegion {
 	cameraScale?: number;
 	motionStyle?: MotionStyle;
 	motionSpeed?: MotionSpeed;
+	/** Slow push-in to `scaleTo`, quick return over the last `releaseSec`. */
+	drift?: { scaleTo: number; releaseSec: number };
 	/** See `SceneZoomRegion.clipIndex`. */
 	clipIndex?: number;
+	/** The whole region's bounds in this piece's source seconds. A piece cut out of the middle
+	 *  of a region (a trim or clip boundary inside it) eases and drifts on the whole region's
+	 *  clock, so export matches the preview instead of restarting at every cut. */
+	envelopeStartSec?: number;
+	envelopeEndSec?: number;
 }
 
 /** A speed region projected onto each clip's source time. The native compositor matches
@@ -153,6 +170,8 @@ export interface SceneAnnotation {
 	};
 	/** Present for `kind: "image"` — the authored `imageContent` (path or data URI). */
 	imagePath?: string;
+	/** Image entrance uses the existing annotation style animation. */
+	imageAnimation?: string | null;
 	/** Present for `kind: "figure"`. */
 	figure?: {
 		direction:
@@ -218,7 +237,7 @@ export interface SceneLayout {
 	 * chosen in PiP follow the user into "Side by side" and round the camera off into a
 	 * disc — see `computeCompositeLayout`, which is the one place that decides.
 	 */
-	webcamShape: "rectangle" | "circle" | "square" | "rounded";
+	webcamShape: "rectangle" | "circle" | "square" | "rounded" | "squircle";
 	webcamMirror: boolean;
 	/** Normalized position (0..1) for the webcam centre, or null to use the preset default. */
 	webcamPosition: { cx: number; cy: number } | null;
@@ -299,7 +318,7 @@ export interface ResolvedClipLayout {
 	webcamRect: SceneRect | null;
 	screenRadiusFrac: number | null;
 	webcamRadiusFrac: number | null;
-	webcamShape: "rectangle" | "circle" | "square" | "rounded";
+	webcamShape: "rectangle" | "circle" | "square" | "rounded" | "squircle";
 	screenCover: boolean;
 }
 
@@ -344,8 +363,26 @@ export interface SceneCursor {
 	theme: string;
 }
 
+/** B-roll video projected onto clip source time. Drawn above the screen layer and below
+ *  the cursor, camera and annotations; never contributes audio. `rect` is in the same
+ *  screen-layer fraction space as `SceneAnnotation`; null fills the un-zoomed screen rect. */
+export interface SceneVideoOverlay {
+	id: string;
+	clipIndex?: number;
+	startSec: number;
+	endSec: number;
+	path: string;
+	/** Overlay source time at `startSec`. */
+	sourceOffsetSec: number;
+	fit: "cover" | "contain";
+	rect: { x: number; y: number; w: number; h: number } | null;
+	opacity: number;
+}
+
 /** Everything native needs to compose the scene, serialized from one document. */
 export interface SceneDescription {
+	/** Independent music/SFX placed in final output seconds, without implicit ripple. */
+	audioOverlays?: SceneAudioOverlay[];
 	/** Ordered clips (multiclip) with source trims — same shape the export already uses. */
 	clips: CompositorClipInput[];
 	layout: SceneLayout;
@@ -362,6 +399,8 @@ export interface SceneDescription {
 	 * source-time span after `projectRegionsToSourceTime`). Empty when none set.
 	 */
 	cameraFullscreenRegions: SceneCameraFullscreenRegion[];
+	/** Video B-roll overlays projected onto each clip's source time. Empty when none set. */
+	videoOverlays?: SceneVideoOverlay[];
 	/**
 	 * Speed regions projected onto each clip's source time (one entry per
 	 * source-time span after `projectRegionsToSourceTime`). Empty when none set.
@@ -389,6 +428,25 @@ export interface SceneDescription {
 	cropByClip: Array<{ x: number; y: number; width: number; height: number } | null>;
 	/** Output frame. `fps` null = use the first clip's source fps. */
 	output: { width: number; height: number; fps: number | null };
+}
+
+export interface SceneAudioOverlay {
+	id: string;
+	sourcePath: string;
+	startSec: number;
+	endSec: number;
+	sourceOffsetSec: number;
+	gain: number;
+	fadeInSec: number;
+	fadeOutSec: number;
+}
+
+export function buildAudioOverlays(document: AxcutDocument): SceneAudioOverlay[] {
+	const assets = document.audioAssets ?? [];
+	const clips = document.timeline.audioClips ?? [];
+	validateAudioReferences(assets, clips);
+	const paths = new Map(assets.map((asset) => [asset.id, asset.originalPath]));
+	return clips.map(({ assetId, ...clip }) => ({ ...clip, sourcePath: paths.get(assetId)! }));
 }
 
 /** Parse the settings wallpaper string into the discriminated SceneBackground union. */
@@ -454,6 +512,93 @@ export function buildCompositorClipInputs(
 }
 
 /** Serialize a document into a {@link SceneDescription}. Pure — no per-frame math. */
+/**
+ * Each projected fragment starts at its own point inside the overlay's video: the raw
+ * start of the fragment minus the raw start of the whole overlay, added to the stored
+ * source offset. Overlays whose asset is missing are skipped; the compositor never
+ * guesses a path.
+ */
+export function expandVideoOverlayFade(
+	region: SceneVideoOverlay,
+	envelopeStartSec: number,
+): SceneVideoOverlay[] {
+	const end = Math.min(region.endSec, envelopeStartSec + 0.3);
+	if (end <= region.startSec) return [region];
+	const pieces: SceneVideoOverlay[] = [];
+	let start = region.startSec;
+	while (start < end - 0.000001) {
+		const next = end - start < 1 / 60 + 0.000001 ? end : start + 1 / 60;
+		pieces.push({
+			...region,
+			startSec: start,
+			endSec: next,
+			sourceOffsetSec: region.sourceOffsetSec + start - region.startSec,
+			opacity: region.opacity * Math.max(0, Math.min(1, (start - envelopeStartSec) / 0.3)),
+		});
+		start = next;
+	}
+	if (end < region.endSec)
+		pieces.push({
+			...region,
+			startSec: end,
+			sourceOffsetSec: region.sourceOffsetSec + end - region.startSec,
+		});
+	return pieces;
+}
+
+export function projectVideoOverlays(
+	document: AxcutDocument,
+	visibleClips: AxcutClip[],
+	includeMotion = true,
+): SceneVideoOverlay[] {
+	const overlays = resolveOverlayInputs(document, visibleClips, document.videoOverlays ?? []);
+	if (overlays.length === 0) return [];
+	const assetPathById = new Map(document.assets.map((asset) => [asset.id, asset.originalPath]));
+	const rawSpans = visibleClips.map((segment) =>
+		segmentRawSpanSec(segment, document.timeline.clips),
+	);
+	const tagged = overlays.map((overlay) => ({ ...overlay, originStartMs: overlay.startMs }));
+	return projectRegionsToSource(tagged, visibleClips, document.timeline.clips, () =>
+		createId("vo"),
+	).flatMap((fragment) => {
+		const path = assetPathById.get(fragment.assetId);
+		if (!path || fragment.clipIndex === undefined) return [];
+		const segment = visibleClips[fragment.clipIndex];
+		const rawSpan = rawSpans[fragment.clipIndex];
+		if (!segment || !rawSpan) return [];
+		const fragmentRawStartSec =
+			rawSpan.startSec + (fragment.startMs / 1000 - segment.sourceStartSec);
+		const sourceOffsetSec = Math.max(
+			0,
+			fragment.sourceOffsetSec +
+				(fragment.anchor
+					? (fragment.startMs - (fragment.envelopeStartMs ?? fragment.startMs)) / 1000
+					: fragmentRawStartSec - fragment.originStartMs / 1000),
+		);
+		const base: SceneVideoOverlay = {
+			id: fragment.id,
+			clipIndex: fragment.clipIndex,
+			startSec: fragment.startMs / 1000,
+			endSec: fragment.endMs / 1000,
+			path,
+			sourceOffsetSec,
+			fit: fragment.fit,
+			rect: fragment.placement
+				? {
+						x: fragment.placement.x / 100,
+						y: fragment.placement.y / 100,
+						w: fragment.placement.width / 100,
+						h: fragment.placement.height / 100,
+					}
+				: null,
+			opacity: fragment.opacity,
+		};
+		if (!includeMotion || fragment.motion !== "fade") return [base];
+		const start = (fragment.envelopeStartMs ?? fragment.startMs) / 1000;
+		return expandVideoOverlayFade(base, start);
+	});
+}
+
 export function buildSceneDescription(
 	document: AxcutDocument,
 	webcamSourceSize: { width: number; height: number } | null = null,
@@ -521,13 +666,14 @@ export function buildSceneDescription(
 	);
 	const projectedAnnotations = projectRegionsToSource(
 		[
-			...(document.annotations ?? []),
+			...resolveOverlayInputs(document, visibleClips, document.annotations ?? []),
 			...(captionRegions as unknown as NonNullable<AxcutDocument["annotations"]>),
 		],
 		visibleClips,
 		document.timeline.clips,
 		() => createId("ann"),
 	);
+	const projectedVideoOverlays = projectVideoOverlays(document, visibleClips);
 	const projectedCameraFullscreenRegions = projectRegionsToSource(
 		((document.legacyEditor as Record<string, unknown> | null)?.cameraFullscreenRegions as
 			| CameraFullscreenRegion[]
@@ -535,6 +681,7 @@ export function buildSceneDescription(
 		visibleClips,
 		document.timeline.clips,
 		() => createId("camfull"),
+		CAMERA_REGION_CUT_SNAP_SEC,
 	);
 	// Speed regions carry an extra `speed` field the standard `rangeSchema` does not, so we
 	// can't read from `document.timeline.speedRanges` today (see SceneDescription.speedRegions
@@ -602,32 +749,32 @@ export function buildSceneDescription(
 	 *  ignores `visible` on purpose, so the panel stays reachable to un-hide a camera. */
 	const clipHasCamera = (clip: AxcutClip) =>
 		assetCameraSource(assetById.get(clip.assetId)).path !== "";
-	/**
-	 * The layout preset is GLOBAL — one panel for the whole timeline — but the camera is
-	 * per clip: a project mixes a screen+webcam recording with a plain import that has
-	 * none. A clip with no camera must lay out as if the preset were "no-webcam".
-	 *
-	 * Skipping this is not merely a stray thumbnail: the block presets (`dual-frame`,
-	 * `vertical-stack`) size the SCREEN off the block, so a camera-less clip kept the
-	 * screen squeezed into its half with nothing beside it. `has_webcam` (native) only
-	 * gates the camera's own draw — it cannot give the screen its frame back.
-	 */
-	const layoutForClip = (screenSize: { width: number; height: number }, hasCamera: boolean) => {
-		const preset = hasCamera ? settings.webcamLayoutPreset : "no-webcam";
+	const settingsByClip = visibleClips.map((clip) => {
+		assertClipLayoutSupported(document, clip.id);
+		return resolveClipEditorSettings(document, clip.id, {
+			canvasSize: outputDims,
+			webcamSize: webcamSourceSize,
+		});
+	});
+	const layoutForClip = (clip: AxcutClip, index: number) => {
+		const clipSettings = settingsByClip[index];
+		const preset = clipHasCamera(clip) ? clipSettings.webcamLayoutPreset : "no-webcam";
 		return computeCompositeLayout({
 			canvasSize: outputDims,
 			maxContentSize: {
 				width: Math.round(outputDims.width * paddingFit),
 				height: Math.round(outputDims.height * paddingFit),
 			},
-			screenSize,
+			screenSize: screenSourceSizeOf(clip, index),
 			webcamSize: preset === "no-webcam" ? null : (webcamSourceSize ?? { width: 960, height: 720 }),
 			layoutPreset: preset,
-			webcamSizePreset: settings.webcamSizePreset,
-			webcamPosition: preset === "picture-in-picture" ? settings.webcamPosition : null,
-			webcamMaskShape: settings.webcamMaskShape,
-			webcamBlockOrder: settings.webcamBlockOrder,
-			webcamBlockCameraShare: settings.webcamBlockCameraShare,
+			webcamSizePreset: clipSettings.webcamSizePreset,
+			webcamPosition: preset === "picture-in-picture" ? clipSettings.webcamPosition : null,
+			webcamMaskShape: clipSettings.webcamMaskShape,
+			webcamCornerRadius: clipSettings.webcamCornerRadius,
+			webcamAspectRatio: clipSettings.webcamAspectRatio,
+			webcamBlockOrder: clipSettings.webcamBlockOrder,
+			webcamBlockCameraShare: clipSettings.webcamBlockCameraShare,
 		});
 	};
 	const toFrameFractions = (r: RenderRect) => ({
@@ -659,13 +806,11 @@ export function buildSceneDescription(
 	// `for_clip_window` (Rust) selects the entry for the clip being composed, so the
 	// draw path keeps reading a single `layout` and needs no per-clip branch of its own.
 	const layoutByClip = visibleClips.map((clip, index) =>
-		resolvedLayoutOf(layoutForClip(screenSourceSizeOf(clip, index), clipHasCamera(clip))),
+		resolvedLayoutOf(layoutForClip(clip, index)),
 	);
 	// Scalar fields stay the FIRST clip's layout: they are the fallback for a payload
 	// without `layoutByClip`, and the value native starts from before any clip is active.
-	const computedLayout = visibleClips[0]
-		? layoutForClip(screenSourceSizeOf(visibleClips[0], 0), clipHasCamera(visibleClips[0]))
-		: null;
+	const computedLayout = visibleClips[0] ? layoutForClip(visibleClips[0], 0) : null;
 	const webcamRect = computedLayout?.webcamRect
 		? toFrameFractions(computedLayout.webcamRect)
 		: null;
@@ -673,6 +818,9 @@ export function buildSceneDescription(
 
 	return {
 		clips,
+		...(document.timeline.audioClips?.length
+			? { audioOverlays: buildAudioOverlays(document) }
+			: {}),
 		layout: {
 			preset: settings.webcamLayoutPreset,
 			// web-consistent 0..1 fraction of the canvas reference dimension
@@ -765,7 +913,8 @@ export function buildSceneDescription(
 				const style = region.style;
 				const base = {
 					id: region.id,
-					startSec: region.startMs / 1000,
+					startSec:
+						(region.anchor ? (region.envelopeStartMs ?? region.startMs) : region.startMs) / 1000,
 					endSec: region.endMs / 1000,
 					clipIndex: region.clipIndex,
 					kind: region.type,
@@ -804,7 +953,11 @@ export function buildSceneDescription(
 					// `content.startsWith("data:image")`), `imageContent` being the parallel slot
 					// older documents used. Reading them the other way round would render an image
 					// the preview isn't showing.
-					return { ...base, imagePath: region.content || region.imageContent || "" };
+					return {
+						...base,
+						imagePath: region.content || region.imageContent || "",
+						imageAnimation: style.textAnimation ?? null,
+					};
 				}
 				if (region.type === "figure") {
 					const figure = region.figureData;
@@ -843,6 +996,12 @@ export function buildSceneDescription(
 			startSec: region.startMs / 1000,
 			endSec: region.endMs / 1000,
 			clipIndex: region.clipIndex,
+			...(region.envelopeStartMs !== undefined && region.envelopeEndMs !== undefined
+				? {
+						envelopeStartSec: region.envelopeStartMs / 1000,
+						envelopeEndSec: region.envelopeEndMs / 1000,
+					}
+				: {}),
 			...(region.mode === "emphasis"
 				? { mode: "emphasis" as const, cameraScale: region.cameraScale ?? 1.35 }
 				: {}),
@@ -850,6 +1009,7 @@ export function buildSceneDescription(
 			...(region.motionSpeed !== undefined
 				? { motionSpeed: normalizeMotionSpeed(region.motionSpeed) }
 				: {}),
+			...(region.drift ? { drift: region.drift } : {}),
 		})),
 		speedRegions: projectedSpeedRegions.map((region) => ({
 			startSec: region.startMs / 1000,
@@ -857,6 +1017,7 @@ export function buildSceneDescription(
 			speed: region.speed,
 			clipIndex: region.clipIndex,
 		})),
+		...(projectedVideoOverlays.length ? { videoOverlays: projectedVideoOverlays } : {}),
 		cropByClip,
 		output: {
 			...pickOutputDims(document, settings.aspectRatio, {}, settings.outputResolution),

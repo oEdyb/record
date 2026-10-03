@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "预览画质",
+		"sharp": "清晰",
+		"performance": "流畅"
+	},
 	"newRecording": {
 		"title": "返回录屏",
 		"description": "当前会话已保存。",
@@ -89,6 +94,9 @@
 		"toggleTheme": "切换主题",
 		"settings": "设置",
 		"export": "导出",
+		"exporting": "正在导出",
+		"exportProgressTitle": "已完成 {{pct}}%，剩余 {{eta}}。打开导出",
+		"exportProgressPreparing": "正在准备导出。打开导出",
 		"renameProject": "重命名项目",
 		"noProject": "无项目",
 		"changeLanguage": "切换语言",
@@ -97,7 +105,8 @@
 			"media": "媒体",
 			"edit": "编辑",
 			"rec": "录制"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "来源",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "导出失败。",
 		"writingFile": "正在写入文件…",
 		"renderingFrames": "正在渲染帧",
-		"framesEta": "{{current}} / {{total}} 帧 · 剩余 {{eta}}",
+		"framesEta": "{{current}} / {{total}} 帧, 剩余 {{eta}}",
 		"preparingEncoder": "正在准备编码器…",
+		"cancelExport": "取消导出",
+		"backgroundHint": "你可以关闭此窗口并继续编辑。进度显示在“导出”按钮上。现在所做的修改不会包含在本次导出中。",
 		"close": "关闭",
 		"cancel": "取消",
 		"rendering": "渲染中…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "写入文件失败",
 		"qualityUpscaleWarning": "放大",
 		"exportedVideoOf": "的视频已导出，用时",
-		"nothingToExport": "没有可导出的内容 — 时间轴为空。"
+		"nothingToExport": "没有可导出的内容 — 时间轴为空。",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "重置焦点",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "摄像头会在屏幕保持可见时平滑放大，然后恢复到正常大小。",
 		"cameraFullscreenDescription": "该区间播放时，摄像头会占满整个画面 — 没有边框、圆角和背景 — 并在结束时平滑还原。在时间轴上拖动区间边缘可调整其起始位置和时长。",
 		"deleteRegion": "删除区间",
-		"freehandRendersAsBox": "导出时，手绘形状会以其外接矩形遮挡——宁可多遮，绝不少遮。"
+		"freehandRendersAsBox": "导出时，手绘形状会以其外接矩形遮挡——宁可多遮，绝不少遮。",
+		"cameraSize": "摄像头大小"
 	},
 	"leftPanel": {
 		"mediaTitle": "媒体",
@@ -295,7 +309,7 @@
 			"title": "对话历史",
 			"subtitle": "切换或新建会话",
 			"empty": "暂无对话。",
-			"msgsCount": "{{count}} 条消息 · {{date}}"
+			"msgsCount": "{{count}} 条消息, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "继续现有项目或浏览文件",
 		"searchPlaceholder": "搜索项目…",
 		"noMatches": "没有与 \"{{query}}\" 匹配的项目。",
-		"navigateHint": "导航 ·",
+		"navigateHint": "导航",
 		"openHint": "打开",
 		"browseFiles": "浏览文件…",
 		"deleteProject": "删除项目",
@@ -358,7 +372,10 @@
 		"previousClip": "上一个片段",
 		"nextClip": "下一个片段",
 		"loop": "循环",
-		"seekVideo": "拖动视频进度"
+		"seekVideo": "拖动视频进度",
+		"mute": "静音预览",
+		"unmute": "取消静音预览",
+		"previewVolume": "预览音量"
 	},
 	"shell": {
 		"aiEditor": "AI 编辑器",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "14 天试用",
-			"trialDay": "试用 · {{count}} 天",
-			"trialDays": "试用 · {{count}} 天",
-			"offline": "Klippt Pro · 离线",
+			"trialDay": "试用 {{count}} 天",
+			"trialDays": "试用 {{count}} 天",
+			"offline": "Klippt Pro, 离线",
 			"readOnly": "只读"
 		},
 		"eyebrowReadOnly": "只读访问",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "没有兼容的 GPU，正在使用 CPU 渲染，因此播放较慢。",
 		"exportWarning": "没有兼容的 GPU：本次导出将在 CPU 上运行，耗时会比平常长很多。"
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

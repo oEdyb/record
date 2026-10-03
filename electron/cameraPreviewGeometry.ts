@@ -39,3 +39,32 @@ export function defaultCameraPreviewPosition(
 		workArea,
 	);
 }
+
+export interface CameraPreviewBounds extends CameraPreviewPoint, CameraPreviewSize {}
+
+/** Transparent gutter around the painted surface; keeps its shadow inside the window. */
+export const CAMERA_PREVIEW_GUTTER = 12;
+
+/**
+ * Largest 16:9 surface (plus gutter) that fits inside the work area with a margin,
+ * centred. Used while the confidence monitor is expanded so the whole camera frame is
+ * readable; it stays a preview and never changes the recorded camera layout.
+ */
+export function expandedCameraPreviewBounds(
+	workArea: CameraPreviewWorkArea,
+	margin = 48,
+	gutter = CAMERA_PREVIEW_GUTTER,
+): CameraPreviewBounds {
+	const availableWidth = Math.max(0, workArea.width - 2 * (margin + gutter));
+	const availableHeight = Math.max(0, workArea.height - 2 * (margin + gutter));
+	const surfaceWidth = Math.floor(Math.min(availableWidth, (availableHeight * 16) / 9));
+	const surfaceHeight = Math.floor((surfaceWidth * 9) / 16);
+	const width = surfaceWidth + 2 * gutter;
+	const height = surfaceHeight + 2 * gutter;
+	return {
+		x: workArea.x + Math.round((workArea.width - width) / 2),
+		y: workArea.y + Math.round((workArea.height - height) / 2),
+		width,
+		height,
+	};
+}

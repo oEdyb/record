@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 
+const available = vi.hoisted(() => ({ value: true }));
 const regenerate = vi.fn(async (..._args: unknown[]) => ({
 	screenZooms: 1,
 	cameraEmphasis: 0,
@@ -16,7 +17,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 }));
 
 vi.mock("./regenerateAutomaticDirection", () => ({
-	canRegenerateAutomaticDirection: () => true,
+	canRegenerateAutomaticDirection: () => available.value,
 	regenerateProjectAutomaticDirection: (...args: unknown[]) => regenerate(...args),
 }));
 
@@ -39,6 +40,16 @@ function recordedProject() {
 	});
 	return {
 		...base,
+		zoomRanges: [
+			{
+				id: "auto-zoom",
+				startMs: 1000,
+				endMs: 2000,
+				depth: 2 as const,
+				focus: { cx: 0.5, cy: 0.5 },
+				source: "auto" as const,
+			},
+		],
 		assets: [
 			{
 				id: "asset-1",
@@ -70,6 +81,7 @@ function recordedProject() {
 }
 
 beforeEach(() => {
+	available.value = true;
 	vi.useFakeTimers();
 	regenerate.mockReset();
 	regenerate.mockResolvedValue({
@@ -95,8 +107,69 @@ afterEach(() => {
 });
 
 describe("AutomaticDirectionPane", () => {
+	it("saves tuning without generating until Apply is pressed on a raw recording", async () => {
+		const raw = { ...recordedProject(), zoomRanges: [] };
+		const patch = vi
+			.spyOn(useProjectStore.getState(), "applyDocumentPatch")
+			.mockImplementation(async (_id, apply) => {
+				useProjectStore.setState((state) => ({
+					document: apply(state.document!),
+					revision: state.revision + 1,
+				}));
+				return "applied";
+			});
+		useProjectStore.setState({ document: raw });
+		render(<AutomaticDirectionPane />);
+		fireEvent.click(screen.getByText("automaticReview.tune"));
+		fireEvent.keyDown(screen.getByRole("slider", { name: "Max Zoom" }), { key: "ArrowLeft" });
+		await act(async () => vi.advanceTimersByTimeAsync(180));
+		expect(regenerate).not.toHaveBeenCalled();
+		expect(patch).toHaveBeenCalledTimes(1);
+		expect(useProjectStore.getState().document?.zoomRanges).toEqual([]);
+		fireEvent.click(screen.getByRole("button", { name: "automaticReview.regenerate" }));
+		await act(async () => undefined);
+		expect(regenerate).toHaveBeenCalledWith(
+			"project-1",
+			expect.objectContaining({ policy: expect.objectContaining({ maximumScreenScale: 1.6 }) }),
+		);
+		patch.mockRestore();
+	});
+	it("shows one unavailable state without inactive tuning controls", () => {
+		available.value = false;
+		useProjectStore.setState({ document: { ...recordedProject(), zoomRanges: [] } });
+		render(<AutomaticDirectionPane />);
+		expect(screen.getByText("automaticReview.recordingRequired")).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "automaticReview.regenerate" }),
+		).not.toBeInTheDocument();
+		expect(screen.queryByText("automaticReview.tune")).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("combobox", { name: "Automatic editing preset" }),
+		).not.toBeInTheDocument();
+	});
+	it("cancels queued tuning when switching projects before regeneration", async () => {
+		render(<AutomaticDirectionPane />);
+		fireEvent.click(screen.getByText("automaticReview.tune"));
+		const slider = screen.getByRole("slider", { name: "Max Zoom" });
+		fireEvent.keyDown(slider, { key: "ArrowLeft" });
+		const other = recordedProject();
+		other.project.id = "project-2";
+		act(() => useProjectStore.setState({ projectId: "project-2", document: other, revision: 2 }));
+		await act(async () => vi.advanceTimersByTimeAsync(180));
+		expect(regenerate).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole("button", { name: "automaticReview.regenerate" }));
+		await act(async () => undefined);
+		expect(regenerate).toHaveBeenCalledWith(
+			"project-2",
+			expect.objectContaining({
+				policy: expect.objectContaining({ maximumScreenScale: 1.65 }),
+				createHistorySnapshot: true,
+			}),
+		);
+	});
 	it("replans from Max Zoom after a short debounce", async () => {
 		const { container } = render(<AutomaticDirectionPane />);
+		fireEvent.click(screen.getByText("automaticReview.tune"));
 		const slider = screen.getByRole("slider", { name: "Max Zoom" });
 		slider.focus();
 		for (let index = 0; index < 5; index += 1) {
@@ -137,6 +210,7 @@ describe("AutomaticDirectionPane", () => {
 			return { screenZooms: 1, cameraEmphasis: 0, recordings: 1 };
 		});
 		render(<AutomaticDirectionPane />);
+		fireEvent.click(screen.getByText("automaticReview.tune"));
 		const slider = screen.getByRole("slider", { name: "Max Zoom" });
 		slider.focus();
 		for (let index = 0; index < 7; index += 1) {

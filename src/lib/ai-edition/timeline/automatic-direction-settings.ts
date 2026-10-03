@@ -85,6 +85,12 @@ const PRIMARY_CONTROLS: Record<
 	},
 };
 
+const CONTROL_LABELS: Record<string, string> = {
+	"connectedClicks.heldAttentionMaximumGapMs": "Held attention gap",
+	"connectedClicks.heldAttentionMaximumFocusDistance": "Held attention distance",
+	"connectedClicks.heldAttentionMaximumMovement": "Held attention movement",
+};
+
 const GROUP_LABELS: Record<string, string> = {
 	maximumScreenScale: "General",
 	screen: "Screen intent",
@@ -116,7 +122,7 @@ export function automaticDirectionNumberRange(path: string): NumberRange {
 		return { min: 1.05, max: 5, step: 0.05, decimals: 2, suffix: "×" };
 	}
 	if (path === "camera.cameraScale") {
-		return { min: 1, max: 1.6, step: 0.05, decimals: 2, suffix: "×" };
+		return { min: 1, max: 2, step: 0.05, decimals: 2, suffix: "×" };
 	}
 	if (path.endsWith("Scale") || path.endsWith(".scale")) {
 		return { min: 1, max: 5, step: 0.05, decimals: 2, suffix: "×" };
@@ -267,7 +273,7 @@ function collectNumberControls(
 		controls.push({
 			path,
 			group: GROUP_LABELS[path.split(".")[0]] ?? "Advanced",
-			label: primary?.label ?? generatedLabel,
+			label: primary?.label ?? CONTROL_LABELS[path] ?? generatedLabel,
 			description: primary?.description ?? path,
 			...range,
 			primary: Boolean(primary),

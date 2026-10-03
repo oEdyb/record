@@ -24,6 +24,14 @@ declare namespace NodeJS {
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
 	electronAPI: {
+		onAgentSessionRequest?: (
+			callback: (
+				message: import("../src/lib/ai-edition/agent/sessionProtocol").AgentSessionMessage,
+			) => void,
+		) => () => void;
+		replyAgentSession?: (
+			reply: import("../src/lib/ai-edition/agent/sessionProtocol").AgentSessionReply,
+		) => void;
 		getEntitlement: () => Promise<import("../src/lib/entitlements/contracts").EntitlementSnapshot>;
 		activateEntitlement: (
 			licenseKey: string,
@@ -61,6 +69,7 @@ interface Window {
 			success: boolean;
 			context?: import("../src/lib/recordingSession").RecordingWorkspaceContext | null;
 		}>;
+		onRecordingWorkspaceReturned?: (callback: () => void) => () => void;
 		setRecordingWorkspaceContext: (
 			context: import("../src/lib/recordingSession").RecordingWorkspaceContext | null,
 		) => Promise<{
@@ -82,6 +91,11 @@ interface Window {
 			opened: boolean;
 			reason?: string;
 		}>;
+		closeNotesWindow: () => void;
+		setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
+		onNotesWindowBoundsChanged: (
+			callback: (bounds: { x: number; y: number; width: number; height: number }) => void,
+		) => () => void;
 		selectSource: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
 		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
 		onSelectedSourceChanged: (callback: (source: ProcessedDesktopSource) => void) => () => void;
@@ -498,6 +512,7 @@ interface Window {
 			rectangles: Array<{ x: number; y: number; width: number; height: number }>,
 		) => void;
 		setCameraPreviewVisible: (visible: boolean) => void;
+		setCameraPreviewExpanded: (expanded: boolean) => void;
 		requestCameraPreviewConnection: () => void;
 		reportCapturePerformance: (sample: {
 			cameraDeliveredFps: number;

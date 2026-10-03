@@ -22,19 +22,21 @@ unsafe fn check_seek(path: &Path, end_target: f64, last_pts: f64, earlier: f64) 
         );
         assert!((decoder.cur_time_sec() - last_pts).abs() < 0.0001);
         assert!((*frame).width > 0 && (*frame).height > 0);
-        comp.compose_frame(frame, frame, 0.0, &Cfg::c8()).unwrap();
+        comp.compose_frame(frame, frame, 0.0, &Cfg::c8(), std::ptr::null(), None)
+            .unwrap();
 
         // EOF must not unref the frame retained by the decoder, including GPU storage.
         assert!(decoder.next().unwrap().is_null());
         let retained = decoder.cur_frame();
         assert!((*retained).width > 0 && (*retained).height > 0);
-        comp.compose_frame(retained, retained, 0.0, &Cfg::c8())
+        comp.compose_frame(retained, retained, 0.0, &Cfg::c8(), std::ptr::null(), None)
             .unwrap();
         for _ in 0..3 {
             let frame = decoder.seek_to(end_target).unwrap();
             assert!(!frame.is_null());
             assert!((decoder.cur_time_sec() - last_pts).abs() < 0.0001);
-            comp.compose_frame(frame, frame, 0.0, &Cfg::c8()).unwrap();
+            comp.compose_frame(frame, frame, 0.0, &Cfg::c8(), std::ptr::null(), None)
+                .unwrap();
         }
 
         assert!(!decoder.seek_to(0.0).unwrap().is_null());
@@ -43,7 +45,8 @@ unsafe fn check_seek(path: &Path, end_target: f64, last_pts: f64, earlier: f64) 
         let frame = decoder.seek_to(end_target).unwrap();
         assert!(!frame.is_null(), "reused forward seek returned EOF");
         assert!((decoder.cur_time_sec() - last_pts).abs() < 0.0001);
-        comp.compose_frame(frame, frame, 0.0, &Cfg::c8()).unwrap();
+        comp.compose_frame(frame, frame, 0.0, &Cfg::c8(), std::ptr::null(), None)
+            .unwrap();
     }
     let source = path.to_str().unwrap();
     let mut player = Player::open(source, source, &gpu).unwrap();

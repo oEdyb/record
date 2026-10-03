@@ -149,4 +149,67 @@ describe("useCameraPreviewFrameBridge", () => {
 		expect(cancelVideoFrameCallback).toHaveBeenCalledWith(7);
 		expect(port.postMessage).toHaveBeenLastCalledWith({ type: "clear" });
 	});
+
+	it("relays at the size the monitor configures, within the 1440p cap", async () => {
+		const port = new PreviewPort();
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { requestCameraPreviewConnection: vi.fn(), reportCapturePerformance: vi.fn() },
+		});
+		const stream = {
+			getVideoTracks: () => [{ id: "camera-track", getSettings: () => ({ frameRate: 30 }) }],
+		} as unknown as MediaStream;
+		const view = renderHook(() => useCameraPreviewFrameBridge(stream));
+		act(() => {
+			const event = new MessageEvent("message", {
+				data: { type: "openscreen-camera-preview-port", role: "producer" },
+				source: window,
+			});
+			Object.defineProperty(event, "ports", { value: [port] });
+			window.dispatchEvent(event);
+		});
+		await waitFor(() => expect(frameCallback).not.toBeNull());
+		const metadata = (mediaTime: number, presentedFrames: number) =>
+			({ mediaTime, presentedFrames }) as VideoFrameCallbackMetadata;
+
+		act(() =>
+			port.dispatchEvent(
+				new MessageEvent("message", { data: { type: "configure", width: 4_000, height: 2_250 } }),
+			),
+		);
+		act(() => frameCallback?.(100, metadata(0, 1)));
+		expect(context.drawImage).toHaveBeenLastCalledWith(
+			expect.any(HTMLVideoElement),
+			0,
+			0,
+			1_920,
+			1_080,
+			0,
+			0,
+			2_560,
+			1_440,
+		);
+		// Resizing the canvas resets the context; smoothing must be re-applied.
+		expect(context.imageSmoothingQuality).toBe("high");
+
+		act(() => port.dispatchEvent(new MessageEvent("message", { data: { type: "consumed" } })));
+		act(() =>
+			port.dispatchEvent(
+				new MessageEvent("message", { data: { type: "configure", width: 100, height: 50 } }),
+			),
+		);
+		act(() => frameCallback?.(200, metadata(1 / 30, 2)));
+		expect(context.drawImage).toHaveBeenLastCalledWith(
+			expect.any(HTMLVideoElement),
+			0,
+			0,
+			1_920,
+			1_080,
+			0,
+			0,
+			576,
+			324,
+		);
+		view.unmount();
+	});
 });

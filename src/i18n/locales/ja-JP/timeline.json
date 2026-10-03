@@ -33,7 +33,18 @@
 		"emptyText": "空のテキスト",
 		"cameraEmphasis": "カメラ強調",
 		"cameraFullscreen": "フルスクリーンカメラ",
-		"cameraFullscreenItem": "フルスクリーンカメラ {{index}}"
+		"cameraFullscreenItem": "フルスクリーンカメラ {{index}}",
+		"proposedCuts": "Proposed cuts",
+		"cutStart": "Adjust cut start",
+		"cutEnd": "Adjust cut end",
+		"rejectCut": "Reject cut",
+		"cutDetails": "{{origin}} · {{start}}–{{end}} s · {{saved}} s saved",
+		"cutKind": {
+			"pause": "Pause",
+			"blip": "Blip",
+			"agent": "Agent",
+			"fix": "Fix"
+		}
 	},
 	"emptyState": {
 		"noVideo": "ビデオが読み込まれていません",

@@ -59,8 +59,8 @@ const transcript: AxcutTranscript = {
 	sources: [],
 	segments: [],
 	words: [
-		{ id: "w1", segmentId: "s1", startSec: 0.2, endSec: 1.1, text: "hello" },
-		{ id: "w2", segmentId: "s2", startSec: 4.8, endSec: 5.6, text: "again" },
+		{ id: "w1", segmentId: "s1", startSec: 0.2, endSec: 1.1, text: "hello", sourceRole: "you" },
+		{ id: "w2", segmentId: "s2", startSec: 4.8, endSec: 5.6, text: "again", sourceRole: "you" },
 	],
 };
 
@@ -92,6 +92,67 @@ describe("pause analysis", () => {
 		expect(middle?.sourceStartSec).toBeGreaterThan(1.1);
 		expect(middle?.sourceEndSec).toBeLessThan(4.8);
 		expect(middle?.savedSec).toBeGreaterThan(3);
+	});
+
+	it("cuts a silent clip lead-in back to the speech-side padding only", () => {
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([[1.0, 6]]),
+				speechProbabilities: speechProbabilities([[1.0, 6]]),
+				speechFrameSec: 0.032,
+				transcript: {
+					...transcript,
+					words: [{ id: "w1", segmentId: "s1", startSec: 1.0, endSec: 6, text: "hello" }],
+				},
+			},
+			policy(),
+		);
+		expect(suggestions).toHaveLength(1);
+		expect(suggestions[0]?.sourceStartSec).toBe(0);
+		expect(suggestions[0]?.sourceEndSec).toBeGreaterThan(0.7);
+		expect(suggestions[0]?.sourceEndSec).toBeLessThanOrEqual(
+			1.0 - DEFAULT_PAUSE_POLICY.keepBeforeSec,
+		);
+	});
+
+	it("cuts a silent clip tail after the speech-side padding", () => {
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([[0, 5.0]]),
+				speechProbabilities: speechProbabilities([[0, 5.0]]),
+				speechFrameSec: 0.032,
+				transcript: {
+					...transcript,
+					words: [{ id: "w1", segmentId: "s1", startSec: 0, endSec: 5.0, text: "hello" }],
+				},
+			},
+			policy(),
+		);
+		expect(suggestions).toHaveLength(1);
+		expect(suggestions[0]?.sourceEndSec).toBe(6);
+		expect(suggestions[0]?.sourceStartSec).toBeGreaterThanOrEqual(
+			5.0 + DEFAULT_PAUSE_POLICY.keepAfterSec,
+		);
+		expect(suggestions[0]?.sourceStartSec).toBeLessThan(5.4);
+	});
+
+	it("never proposes removing a clip that is silent from start to end", () => {
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([]),
+				speechProbabilities: speechProbabilities([]),
+				speechFrameSec: 0.032,
+				transcript: { ...transcript, words: [] },
+			},
+			policy(),
+		);
+		expect(suggestions).toEqual([]);
 	});
 
 	it("does not silently fall back when Speech mode has no VAD envelope", () => {
@@ -188,6 +249,7 @@ describe("pause analysis", () => {
 		expect(middle?.silenceStartSec).toBeLessThan(2);
 		expect(middle?.silenceEndSec).toBeGreaterThan(4);
 		expect(middle?.savedSec).toBeGreaterThan(3);
+		expect(suggestions.some((suggestion) => suggestion.kind === "blip")).toBe(false);
 	});
 
 	it("keeps a changing noise floor and a non-speech burst inside the removable pause", () => {
@@ -221,7 +283,7 @@ describe("pause analysis", () => {
 		).toBe(true);
 	});
 
-	it("protects the burst when cleaned analysis is absent or the option is disabled", () => {
+	it("admits the burst without cleaned analysis and keeps it when the option is disabled", () => {
 		const input = {
 			clip,
 			durationSec: 6,
@@ -249,13 +311,134 @@ describe("pause analysis", () => {
 			policy({ includeNonSpeechEvents: false }),
 		);
 
-		for (const suggestions of [withoutCleaned, disabled]) {
+		const spansBurst = (suggestions: ReturnType<typeof analyzeClipPauses>) =>
+			suggestions.some(
+				(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
+			);
+		expect(spansBurst(withoutCleaned)).toBe(true);
+		expect(spansBurst(disabled)).toBe(false);
+	});
+
+	it("keeps a wordless sound the detector calls speech, or one longer than half a second", () => {
+		const base = {
+			clip,
+			durationSec: 6,
+			speechFrameSec: 0.032,
+			transcript,
+		};
+		const confident = analyzeClipPauses(
+			{
+				...base,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[2.7, 3.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[2.7, 3.1],
+					[4.8, 5.6],
+				]),
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+		const long = analyzeClipPauses(
+			{
+				...base,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[2.5, 3.2],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+		for (const suggestions of [confident, long]) {
 			expect(
 				suggestions.some(
 					(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
 				),
 			).toBe(false);
+			expect(suggestions.every((suggestion) => suggestion.kind === "pause")).toBe(true);
 		}
+	});
+
+	it("widens only within trusted word margins past the detector's tail", () => {
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 1.1],
+					[4.8, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 1.6],
+					[4.3, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript,
+			},
+			policy(),
+		);
+		const middle = suggestions.find((suggestion) => suggestion.silenceStartSec > 1);
+		expect(middle?.silenceStartSec).toBeCloseTo(1.24, 2);
+		expect(middle?.silenceEndSec).toBeCloseTo(4.72, 2);
+	});
+	it("proposes removing a wordless blip inside a sentence on its own", () => {
+		const close: AxcutTranscript = {
+			...transcript,
+			words: [
+				{ id: "w1", segmentId: "s1", startSec: 0.2, endSec: 2.5, text: "hello", sourceRole: "you" },
+				{ id: "w2", segmentId: "s1", startSec: 3.3, endSec: 5.6, text: "again", sourceRole: "you" },
+			],
+		};
+		const suggestions = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 2.5],
+					[2.7, 3.1],
+					[3.3, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 2.5],
+					[3.3, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript: close,
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+		const blip = suggestions.find((suggestion) => suggestion.kind === "blip");
+		expect(blip).toBeDefined();
+		const click = analyzeClipPauses(
+			{
+				clip,
+				durationSec: 6,
+				microphonePeaks: peaks([
+					[0.2, 2.5],
+					[2.8, 2.88],
+					[3.3, 5.6],
+				]),
+				speechProbabilities: speechProbabilities([
+					[0.2, 2.5],
+					[3.3, 5.6],
+				]),
+				speechFrameSec: 0.032,
+				transcript: close,
+			},
+			policy({ includeNonSpeechEvents: true }),
+		);
+		expect(click).toHaveLength(0);
+		expect(blip?.sourceStartSec).toBeCloseTo(2.68, 2);
+		expect(blip?.sourceEndSec).toBeCloseTo(3.12, 2);
+		expect(suggestions.filter((suggestion) => suggestion.kind === "pause")).toHaveLength(0);
 	});
 
 	it("protects an energy event that falls outside a truncated speech envelope", () => {
@@ -332,7 +515,7 @@ describe("pause analysis", () => {
 		expect(suggestions).toHaveLength(0);
 	});
 
-	it("uses cleaned speech as protection and keeps an uncertain raw burst", () => {
+	it("keeps a burst the cleaned detector calls speech and admits an uncertain one", () => {
 		const baseProbabilities = speechProbabilities([
 			[0.2, 1.1],
 			[4.8, 5.6],
@@ -371,13 +554,12 @@ describe("pause analysis", () => {
 			policy({ includeNonSpeechEvents: true }),
 		);
 
-		for (const suggestions of [protectedByCleaned, protectedByUncertainty]) {
-			expect(
-				suggestions.some(
-					(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
-				),
-			).toBe(false);
-		}
+		const spansBurst = (suggestions: ReturnType<typeof analyzeClipPauses>) =>
+			suggestions.some(
+				(suggestion) => suggestion.silenceStartSec < 2.7 && suggestion.silenceEndSec > 3.1,
+			);
+		expect(spansBurst(protectedByCleaned)).toBe(false);
+		expect(spansBurst(protectedByUncertainty)).toBe(true);
 	});
 
 	it("lets audio-level mode work without a transcript", () => {

@@ -16,7 +16,7 @@ export interface ProjectPauseAnalysisResult {
 	usedMixedAudio: boolean;
 }
 
-async function loadPeaks(
+export async function loadPeaks(
 	path: string,
 	durationSec: number,
 	track: "mixed" | "microphone" | "system",
@@ -27,7 +27,7 @@ async function loadPeaks(
 	return result.success && result.peaks ? result.peaks : null;
 }
 
-async function loadSpeechActivity(path: string): Promise<{
+export async function loadSpeechActivity(path: string): Promise<{
 	probabilities: Float32Array;
 	cleanedProbabilities: Float32Array | null;
 	frameSec: number;

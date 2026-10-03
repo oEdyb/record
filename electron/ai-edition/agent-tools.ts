@@ -26,7 +26,7 @@ import {
 	replaceTimeline,
 	setClipSourceRange,
 } from "../../src/lib/ai-edition/document/timeline";
-import type { AxcutDocument } from "../../src/lib/ai-edition/schema";
+import { type AxcutDocument, zoomRegionSchema } from "../../src/lib/ai-edition/schema";
 import { hasAnyClipWithCamera } from "../../src/lib/ai-edition/timeline/camera";
 import {
 	buildCursorTrack,
@@ -478,15 +478,38 @@ export const setAnnotationArgs = z.object({
 	text: z.string().optional(),
 });
 
+const cameraPresentation = {
+	mode: z.enum(["fullscreen", "emphasis"]).optional(),
+	cameraScale: z.number().finite().min(1).max(2).optional(),
+	motionStyle: zoomRegionSchema.shape.motionStyle,
+	motionSpeed: zoomRegionSchema.shape.motionSpeed,
+	driftScaleTo: z.number().finite().min(1).max(1.6).optional(),
+	driftReleaseSec: z.number().finite().min(0.1).max(3).optional(),
+};
+
+export function cameraPresentationFields<
+	T extends { driftScaleTo?: number; driftReleaseSec?: number },
+>(
+	presentation: T,
+): Omit<T, "driftScaleTo" | "driftReleaseSec"> & {
+	drift?: { scaleTo: number; releaseSec: number };
+} {
+	const { driftScaleTo, driftReleaseSec, ...rest } = presentation;
+	return driftScaleTo === undefined
+		? rest
+		: { ...rest, drift: { scaleTo: driftScaleTo, releaseSec: driftReleaseSec ?? 0.4 } };
+}
 export const addCameraFullscreenArgs = z.object({
 	startSec: secondsSchema,
 	endSec: secondsSchema,
+	...cameraPresentation,
 });
 
 export const setCameraFullscreenArgs = z.object({
 	cameraFullscreenId: z.string().min(1),
 	startSec: secondsSchema.optional(),
 	endSec: secondsSchema.optional(),
+	...cameraPresentation,
 });
 
 export const removeTrimArgs = z.object({
@@ -1541,7 +1564,13 @@ export function executeAgentTool(
 			const endMs = toMs(Math.max(parsed.data.startSec, parsed.data.endSec));
 			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
 			const prev = (legacy.cameraFullscreenRegions as unknown[] | undefined) ?? [];
-			const region = { id: createId("camfull"), startMs, endMs };
+			const { startSec: _start, endSec: _end, ...presentation } = parsed.data;
+			const region = {
+				id: createId("camfull"),
+				startMs,
+				endMs,
+				...cameraPresentationFields(presentation),
+			};
 			const placed = anchorForAgent(region, document, "camfull");
 			const landing = landingOf(placed, document);
 			if (!landing.anchored) {
@@ -1593,9 +1622,22 @@ export function executeAgentTool(
 			}
 			const blindMove = noCameraUnderSpan(document, landing.startSec, landing.endSec);
 			if (blindMove) return blindMove;
+			const {
+				cameraFullscreenId: _id,
+				startSec: _start,
+				endSec: _end,
+				...presentation
+			} = parsed.data;
+			const fields = cameraPresentationFields(presentation);
+			const landedIds = new Set(landing.ids);
 			const next: AxcutDocument = {
 				...document,
-				legacyEditor: { ...legacy, cameraFullscreenRegions: rebuiltCamera },
+				legacyEditor: {
+					...legacy,
+					cameraFullscreenRegions: rebuiltCamera.map((region) =>
+						landedIds.has(region.id) ? { ...region, ...fields } : region,
+					),
+				},
 			};
 			return {
 				ok: true,

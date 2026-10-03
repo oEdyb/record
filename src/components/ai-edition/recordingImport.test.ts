@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AxcutAsset, type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
+import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { type ProjectState, useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
 
 const getRecordingData = vi.hoisted(() => vi.fn());
 const probeVideoDuration = vi.hoisted(() => vi.fn());
+const probeVideoDimensions = vi.hoisted(() => vi.fn());
 
 // The store's own bridge calls are never reached — every project action the
 // import uses is stubbed below. Cursor recording data is read directly because
@@ -14,7 +16,7 @@ const probeVideoDuration = vi.hoisted(() => vi.fn());
 vi.mock("@/native/client", () => ({
 	nativeBridgeClient: { aiEdition: {}, cursor: { getRecordingData } },
 }));
-vi.mock("@/lib/ai-edition/timeline/duration", () => ({ probeVideoDuration }));
+vi.mock("@/lib/ai-edition/timeline/duration", () => ({ probeVideoDuration, probeVideoDimensions }));
 
 const createProject = vi.fn<ProjectState["createProject"]>(async (title) => {
 	const document = createEmptyDocument({ title, projectId: "test-project" });
@@ -63,6 +65,7 @@ describe("importPendingRecording", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		probeVideoDuration.mockResolvedValue(null);
+		probeVideoDimensions.mockResolvedValue(null);
 		getRecordingData.mockResolvedValue({ version: 2, provider: "native", samples: [], assets: [] });
 		saveDocumentAsEdit.mockImplementation(async (document) => {
 			useProjectStore.setState({ document });
@@ -119,6 +122,27 @@ describe("importPendingRecording", () => {
 
 		expect(createProject).toHaveBeenCalledTimes(1);
 		expect(addAsset).toHaveBeenCalledTimes(1);
+	});
+
+	it("uses the first recording's actual shape instead of remembered framing", async () => {
+		stubElectronApi("/recordings/wide.mp4");
+		const asset: AxcutAsset = {
+			id: "wide",
+			kind: "video",
+			label: "Wide",
+			originalPath: "/recordings/wide.mp4",
+			durationSec: 2,
+			cameraTrack: null,
+		};
+		addAsset.mockImplementationOnce(async () => {
+			const document = useProjectStore.getState().document!;
+			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			return asset;
+		});
+		probeVideoDimensions.mockResolvedValueOnce({ width: 1920, height: 1200 });
+		await expect(importPendingRecording()).resolves.toBe(true);
+		expect(getEditorSettings(useProjectStore.getState().document).aspectRatio).toBe("8:5");
+		expect(useProjectStore.getState().document?.zoomRanges).toEqual([]);
 	});
 
 	it("seeds a placeholder clip when the imported asset has none", async () => {
@@ -236,6 +260,79 @@ describe("importPendingRecording", () => {
 		);
 	});
 
+	it("keeps per-clip camera files at their own offsets instead of shifting them by earlier clips", async () => {
+		// macOS records one camera file per clip, named after the clip. Each starts with its
+		// own clip, so seeking past earlier clips (the continuous-file rule) put the camera
+		// tens of seconds off in a real multi-clip recording.
+		let session = {
+			screenVideoPath: "/recordings/recording-1-clip-0001.mp4",
+			createdAt: 0,
+			schemaVersion: 2 as const,
+			clips: [
+				{ index: 0, screenVideoPath: "/recordings/recording-1-clip-0001.mp4", durationMs: 1500 },
+				{
+					index: 1,
+					screenVideoPath: "/recordings/recording-1-clip-0002.mp4",
+					durationMs: 800,
+					removed: true,
+				},
+				{ index: 2, screenVideoPath: "/recordings/recording-1-clip-0003.mp4", durationMs: 2250 },
+			],
+		};
+		setElectronApi({
+			getCurrentRecordingSession: vi.fn(async () => ({ success: true, session })),
+			setCurrentRecordingSession: vi.fn(async (next) => {
+				session = next as typeof session;
+				return { success: true };
+			}),
+		});
+
+		addAsset
+			.mockImplementationOnce(async () => {
+				const asset: AxcutAsset = {
+					id: "asset_1",
+					kind: "video",
+					label: "Clip 1",
+					originalPath: session.clips[0].screenVideoPath,
+					cameraTrack: {
+						sourcePath: "/recordings/recording-1-clip-0001-webcam.webm",
+						startMs: 0,
+						offsetMs: -219,
+						visible: true,
+					},
+				};
+				const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
+				useProjectStore.setState({ document: { ...document, assets: [asset] } });
+				return asset;
+			})
+			.mockImplementationOnce(async () => {
+				const asset: AxcutAsset = {
+					id: "asset_3",
+					kind: "video",
+					label: "Clip 3",
+					originalPath: session.clips[2].screenVideoPath,
+					cameraTrack: {
+						sourcePath: "/recordings/recording-1-clip-0003-webcam.webm",
+						startMs: 0,
+						offsetMs: -180,
+						visible: true,
+					},
+				};
+				const document = useProjectStore.getState().document;
+				if (!document) throw new Error("Expected the first imported clip document");
+				useProjectStore.setState({
+					document: { ...document, assets: [...document.assets, asset] },
+				});
+				return asset;
+			});
+
+		await expect(importPendingRecording()).resolves.toBe(true);
+
+		const saved = useProjectStore.getState().document!;
+		expect(saved.assets.find((asset) => asset.id === "asset_1")?.cameraTrack?.offsetMs).toBe(-219);
+		expect(saved.assets.find((asset) => asset.id === "asset_3")?.cameraTrack?.offsetMs).toBe(-180);
+	});
+
 	it("probes a crash-recovered clip before it writes the timeline", async () => {
 		const screenVideoPath = "/recordings/recording-9-clip-0001.mp4";
 		let session = {
@@ -339,7 +436,7 @@ describe("importPendingRecording", () => {
 		});
 	});
 
-	it("adds sparse automatic direction as normal regions during recording import", async () => {
+	it("keeps recordings raw even when clicks could generate automatic direction", async () => {
 		const screenVideoPath = "/recordings/directed-clip.mp4";
 		let session = {
 			screenVideoPath,
@@ -379,18 +476,14 @@ describe("importPendingRecording", () => {
 
 		await importPendingRecording();
 
-		expect(getRecordingData).toHaveBeenCalledWith(screenVideoPath);
+		expect(getRecordingData).not.toHaveBeenCalled();
 		const saved = useProjectStore.getState().document!;
-		expect(saved.zoomRanges).toHaveLength(1);
-		expect(saved.zoomRanges[0]).toMatchObject({
-			clipId: "clip_recording_7_1",
-			focus: { cx: 0.6, cy: 0.4 },
-			focusMode: "manual",
-			source: "auto",
-		});
+		expect(saved.zoomRanges).toEqual([]);
+		expect(saved.timeline.trimRanges).toEqual([]);
+		expect(getRecordingData).not.toHaveBeenCalled();
 	});
 
-	it("imports a rapid click chain as connected editable Zoom regions", async () => {
+	it("keeps rapid click chains unedited on import", async () => {
 		const screenVideoPath = "/recordings/connected-clicks.mp4";
 		let session = {
 			screenVideoPath,
@@ -435,25 +528,12 @@ describe("importPendingRecording", () => {
 		await importPendingRecording();
 
 		const saved = useProjectStore.getState().document!;
-		expect(saved.zoomRanges.length).toBeGreaterThan(1);
-		expect(new Set(saved.zoomRanges.map((region) => region.id)).size).toBe(saved.zoomRanges.length);
-		for (const region of saved.zoomRanges) {
-			expect(region).toMatchObject({
-				clipId: "clip_recording_8_1",
-				focusMode: "manual",
-				motionStyle: "smooth",
-				source: "auto",
-			});
-			expect(region.motionSpeed).toBeDefined();
-		}
-		for (let index = 1; index < saved.zoomRanges.length; index += 1) {
-			expect(
-				saved.zoomRanges[index].startMs - saved.zoomRanges[index - 1].endMs,
-			).toBeLessThanOrEqual(1_500);
-		}
+		expect(saved.zoomRanges).toEqual([]);
+		expect(saved.timeline.trimRanges).toEqual([]);
+		expect(getRecordingData).not.toHaveBeenCalled();
 	});
 
-	it("imports sustained typing as a normal editable Zoom region", async () => {
+	it("keeps typing unedited on import", async () => {
 		const screenVideoPath = "/recordings/typing-focus.mp4";
 		let session = {
 			screenVideoPath,
@@ -500,16 +580,12 @@ describe("importPendingRecording", () => {
 		await importPendingRecording();
 
 		const saved = useProjectStore.getState().document!;
-		expect(saved.zoomRanges).toHaveLength(1);
-		expect(saved.zoomRanges[0]).toMatchObject({
-			clipId: "clip_recording_81_1",
-			focusMode: "manual",
-			motionStyle: "smooth",
-			source: "auto",
-		});
+		expect(saved.zoomRanges).toEqual([]);
+		expect(saved.timeline.trimRanges).toEqual([]);
+		expect(getRecordingData).not.toHaveBeenCalled();
 	});
 
-	it("adds camera emphasis when the isolated microphone is active and the cursor is quiet", async () => {
+	it("keeps camera recordings raw without analyzing the microphone", async () => {
 		const screenVideoPath = "/recordings/camera-emphasis.mp4";
 		let session = {
 			screenVideoPath,
@@ -563,22 +639,14 @@ describe("importPendingRecording", () => {
 
 		await importPendingRecording();
 
-		expect(getAudioPeaks).toHaveBeenCalledWith(screenVideoPath, 10, "microphone");
-		await vi.waitFor(() => expect(applyDocumentPatch).toHaveBeenCalledTimes(2));
+		expect(getAudioPeaks).not.toHaveBeenCalled();
+		expect(applyDocumentPatch).toHaveBeenCalledTimes(1);
 		const saved = useProjectStore.getState().document!;
-		const cameraRegions = (
-			saved.legacyEditor as { cameraFullscreenRegions?: Array<Record<string, unknown>> }
-		).cameraFullscreenRegions;
-		expect(cameraRegions).toHaveLength(1);
-		expect(cameraRegions?.[0]).toMatchObject({
-			clipId: "clip_recording_9_1",
-			mode: "emphasis",
-			cameraScale: 1.35,
-			source: "auto",
-		});
+		expect(saved.legacyEditor?.cameraFullscreenRegions ?? []).toEqual([]);
+		expect(saved.assets[0].cameraTrack).toEqual(asset.cameraTrack);
 	});
 
-	it("adds camera emphasis to a camera-linked single-file recording", async () => {
+	it("keeps a camera-linked single-file recording raw", async () => {
 		const screenVideoPath = "/recordings/single-file-camera.mp4";
 		let session = { screenVideoPath, createdAt: 10 };
 		const peaks = new Float32Array(4_000);
@@ -628,21 +696,14 @@ describe("importPendingRecording", () => {
 
 		await importPendingRecording();
 
-		expect(getAudioPeaks).toHaveBeenCalledWith(screenVideoPath, 10, "microphone");
-		await vi.waitFor(() => expect(applyDocumentPatch).toHaveBeenCalledTimes(2));
+		expect(getAudioPeaks).not.toHaveBeenCalled();
+		expect(applyDocumentPatch).toHaveBeenCalledTimes(1);
 		const saved = useProjectStore.getState().document!;
 		expect(saved.timeline.clips).toMatchObject([
 			{ id: "clip_recording_10_1", assetId: "single-camera-asset", timelineEndSec: 10 },
 		]);
-		const cameraRegions = (
-			saved.legacyEditor as { cameraFullscreenRegions?: Array<Record<string, unknown>> }
-		).cameraFullscreenRegions;
-		expect(cameraRegions).toHaveLength(1);
-		expect(cameraRegions?.[0]).toMatchObject({
-			clipId: "clip_recording_10_1",
-			mode: "emphasis",
-			source: "auto",
-		});
+		expect(saved.legacyEditor?.cameraFullscreenRegions ?? []).toEqual([]);
+		expect(saved.assets[0].cameraTrack).toEqual(asset.cameraTrack);
 	});
 
 	it("imports the recording when cursor telemetry never responds", async () => {
@@ -679,7 +740,7 @@ describe("importPendingRecording", () => {
 
 			const importing = importPendingRecording();
 			await vi.advanceTimersByTimeAsync(0);
-			expect(getRecordingData).toHaveBeenCalledWith(screenVideoPath);
+			expect(getRecordingData).not.toHaveBeenCalled();
 			await vi.advanceTimersByTimeAsync(500);
 
 			await expect(importing).resolves.toBe(true);
@@ -691,7 +752,7 @@ describe("importPendingRecording", () => {
 		}
 	});
 
-	it("rebases clip insertion on the latest document after telemetry finishes", async () => {
+	it("rebases clip insertion on the latest document at commit", async () => {
 		const screenVideoPath = "/recordings/rebased-import.mp4";
 		let session = {
 			screenVideoPath,
@@ -719,26 +780,18 @@ describe("importPendingRecording", () => {
 			useProjectStore.setState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
-		let finishTelemetry:
-			| ((value: { version: 2; provider: "native"; samples: []; assets: [] }) => void)
-			| undefined;
-		getRecordingData.mockReturnValueOnce(
-			new Promise((resolve) => {
-				finishTelemetry = resolve;
-			}),
-		);
-
-		const importing = importPendingRecording();
-		await vi.waitFor(() => expect(getRecordingData).toHaveBeenCalledWith(screenVideoPath));
-		const current = useProjectStore.getState().document!;
-		useProjectStore.setState({
-			document: { ...current, project: { ...current.project, title: "Edited while reading" } },
+		applyDocumentPatch.mockImplementationOnce(async (projectId, patch) => {
+			const current = useProjectStore.getState().document!;
+			const latest = { ...current, project: { ...current.project, title: "Edited before commit" } };
+			expect(projectId).toBe(latest.project.id);
+			useProjectStore.setState({ document: patch(latest) });
+			return "applied";
 		});
-		finishTelemetry?.({ version: 2, provider: "native", samples: [], assets: [] });
+		const importing = importPendingRecording();
 
 		await expect(importing).resolves.toBe(true);
 		const saved = useProjectStore.getState().document!;
-		expect(saved.project.title).toBe("Edited while reading");
+		expect(saved.project.title).toBe("Edited before commit");
 		expect(saved.timeline.clips).toMatchObject([{ id: "clip_recording_18_1" }]);
 	});
 
@@ -855,7 +908,7 @@ describe("importPendingRecording", () => {
 
 		await expect(importPendingRecording()).resolves.toBe(true);
 
-		expect(getAudioPeaks).toHaveBeenCalledTimes(1);
+		expect(getAudioPeaks).not.toHaveBeenCalled();
 		expect(applyDocumentPatch).toHaveBeenCalledTimes(1);
 		expect(api.setCurrentRecordingSession).toHaveBeenCalledWith(null);
 		useProjectStore.setState({ revision: 1 });

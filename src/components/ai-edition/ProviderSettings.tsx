@@ -351,7 +351,7 @@ function ProviderForm({
 					<span className={`${styles.statusPill} ${styles.ready}`}>
 						<Check size={10} />
 						{te("providerSettings.pillConnected")}{" "}
-						{credentialKind && credentialKind !== "api-key" ? `· ${credentialKind}` : ""}
+						{credentialKind && credentialKind !== "api-key" ? `(${credentialKind})` : ""}
 					</span>
 				) : (
 					<span className={`${styles.statusPill} ${styles.idle}`}>

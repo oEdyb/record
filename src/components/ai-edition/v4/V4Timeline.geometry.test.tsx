@@ -18,6 +18,7 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.f
 import type { AxcutTrimRange } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
+import type { SelectablePauseSuggestion } from "../pauses/pauseAnalysisStore";
 import { V4Timeline } from "./V4Timeline";
 
 beforeAll(() => {
@@ -76,6 +77,8 @@ function renderTimeline(
 		startMs: number;
 		endMs: number;
 		mode: "emphasis";
+		motionStyle?: "smooth" | "instant";
+		motionSpeed?: 2;
 		cameraScale: number;
 		source: "auto";
 		directionGroupId?: string;
@@ -93,6 +96,7 @@ function renderTimeline(
 	}> = [],
 	selection: { kind: "zoom" | "cameraFullscreen"; id: string } | null = null,
 	trimRanges: AxcutTrimRange[] = [],
+	pauseSuggestions: SelectablePauseSuggestion[] = [],
 ) {
 	const setCurrentTime = vi.fn();
 	const tl = {
@@ -135,6 +139,7 @@ function renderTimeline(
 				onPrevClip={vi.fn()}
 				onNextClip={vi.fn()}
 				onEditClip={vi.fn()}
+				pauseSuggestions={pauseSuggestions}
 			/>
 		</TooltipProvider>,
 	);
@@ -163,6 +168,26 @@ function zoomIn(notches: number) {
 		fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -100, clientX: 0 });
 	}
 }
+
+describe("V4Timeline wheel navigation", () => {
+	const canvasTransform = () => {
+		const canvases = Array.from(document.querySelectorAll("[class*=tlCanvas]")) as HTMLElement[];
+		return canvases.at(-1)?.style.transform ?? "";
+	};
+
+	it("pans a zoomed timeline with a plain horizontal trackpad swipe, like Shift+wheel", () => {
+		renderTimeline();
+		const tracks = document.querySelector("[class*=tlTracks]") as HTMLElement;
+		zoomIn(10);
+		expect(canvasTransform()).toBe("translateX(0.000%)");
+		// A vertical scroll must stay a vertical scroll.
+		fireEvent.wheel(tracks, { deltaY: 100, deltaX: 0, clientX: 0 });
+		expect(canvasTransform()).toBe("translateX(0.000%)");
+		fireEvent.wheel(tracks, { deltaX: 100, deltaY: 3, clientX: 0 });
+		const panned = Number.parseFloat(canvasTransform().replace("translateX(", ""));
+		expect(panned).toBeLessThan(0);
+	});
+});
 
 describe("V4Timeline lane pills", () => {
 	it("shows one clean icon pill for a short Zoom that is too narrow for its label", () => {
@@ -214,6 +239,167 @@ describe("V4Timeline lane pills", () => {
 		expect(tl.selectRegion).toHaveBeenCalledWith("cameraFullscreen", "camera-emphasis-1", {
 			additive: false,
 		});
+	});
+
+	it.each([
+		undefined,
+		2,
+	] as const)("shows contained camera phase spans at speed %s", (motionSpeed) => {
+		renderTimeline([clip(0, 20)], undefined, null, [
+			{
+				id: "camera",
+				startMs: 2000,
+				endMs: 6000,
+				mode: "emphasis",
+				cameraScale: 1.35,
+				source: "auto",
+				motionStyle: "smooth",
+				motionSpeed,
+			},
+		]);
+		const entry = document.querySelector<HTMLElement>('[data-camera-transition="entry"]')!;
+		const exit = document.querySelector<HTMLElement>('[data-camera-transition="exit"]')!;
+		expect(entry.style.left).toBe("0%");
+		expect(Number.parseFloat(entry.style.width)).toBeCloseTo(
+			(1015.05 / (motionSpeed ?? 1) / 4000) * 100,
+		);
+		expect(Number.parseFloat(exit.style.width)).toBeCloseTo(
+			(1522.575 / (motionSpeed ?? 1) / 4000) * 100,
+		);
+		expect(Number.parseFloat(exit.style.left) + Number.parseFloat(exit.style.width)).toBeCloseTo(
+			100,
+		);
+	});
+
+	it("keeps each stored transition when equal camera fragments share a pill", () => {
+		renderTimeline([clip(0, 20)], undefined, null, [
+			{
+				id: "camera-a",
+				startMs: 2000,
+				endMs: 4000,
+				mode: "emphasis",
+				cameraScale: 1.35,
+				source: "auto",
+			},
+			{
+				id: "camera-b",
+				startMs: 4000,
+				endMs: 6000,
+				mode: "emphasis",
+				cameraScale: 1.35,
+				source: "auto",
+			},
+		]);
+		expect(screen.getAllByTitle("labels.cameraEmphasis")).toHaveLength(1);
+		expect(document.querySelectorAll("[data-camera-transition]")).toHaveLength(4);
+	});
+
+	it("recomputes camera phase spans during an edge drag", () => {
+		renderTimeline([clip(0, 20)], undefined, null, [
+			{
+				id: "camera",
+				startMs: 2000,
+				endMs: 6000,
+				mode: "emphasis",
+				cameraScale: 1.35,
+				source: "auto",
+			},
+		]);
+		const pill = screen.getByTitle("labels.cameraEmphasis");
+		const right = pill.querySelectorAll("[class*=lanePillHandle]")[1];
+		fireEvent.pointerDown(right, { clientX: 0 });
+		act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 90 })));
+		const entry = document.querySelector<HTMLElement>('[data-camera-transition="entry"]')!;
+		expect(Number.parseFloat(entry.style.width)).toBeCloseTo((1015.05 / 6000) * 100);
+		act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 90 })));
+	});
+
+	it("omits phase spans for instant camera motion", () => {
+		renderTimeline([clip(0, 20)], undefined, null, [
+			{
+				id: "camera",
+				startMs: 2000,
+				endMs: 6000,
+				mode: "emphasis",
+				cameraScale: 1.35,
+				source: "auto",
+				motionStyle: "instant",
+			},
+		]);
+		expect(document.querySelector("[data-camera-transition]")).toBeNull();
+	});
+
+	it("restarts camera transition bands at trimmed segment boundaries", () => {
+		renderTimeline(
+			[clip(0, 20)],
+			undefined,
+			null,
+			[
+				{
+					id: "camera",
+					startMs: 2000,
+					endMs: 6000,
+					mode: "emphasis",
+					cameraScale: 1.35,
+					source: "auto",
+					motionStyle: "smooth",
+				},
+			],
+			[],
+			null,
+			[
+				{
+					id: "trim",
+					assetId: "a1",
+					clipId: "c@0",
+					startSec: 2,
+					endSec: 2.5,
+					reason: "pause",
+					origin: "user",
+				},
+			],
+		);
+		const entry = document.querySelector<HTMLElement>('[data-camera-transition="entry"]')!;
+		expect(entry.style.left).toBe("0%");
+		expect(Number.parseFloat(entry.style.width)).toBeCloseTo((1015.05 / 3500) * 100);
+	});
+
+	it("shows separate camera entry and exit phases on both sides of an interior cut", () => {
+		renderTimeline(
+			[clip(0, 20)],
+			undefined,
+			null,
+			[
+				{
+					id: "camera",
+					startMs: 2000,
+					endMs: 8000,
+					mode: "emphasis",
+					cameraScale: 1.35,
+					source: "auto",
+				},
+			],
+			[],
+			null,
+			[
+				{
+					id: "trim",
+					assetId: "a1",
+					clipId: "c@0",
+					startSec: 4,
+					endSec: 5,
+					reason: "pause",
+					origin: "user",
+				},
+			],
+		);
+		const entries = document.querySelectorAll<HTMLElement>('[data-camera-transition="entry"]');
+		const exits = document.querySelectorAll<HTMLElement>('[data-camera-transition="exit"]');
+		expect(entries).toHaveLength(2);
+		expect(exits).toHaveLength(2);
+		expect(Number.parseFloat(entries[0].style.width)).toBeCloseTo((1000 / 5000) * 100);
+		expect(Number.parseFloat(entries[1].style.left)).toBeCloseTo((2000 / 5000) * 100);
+		expect(Number.parseFloat(entries[1].style.width)).toBeCloseTo((1015.05 / 5000) * 100);
 	});
 
 	it("shows each automatic Zoom target as a real editable pill", () => {
@@ -571,4 +757,36 @@ describe("V4Timeline clip row", () => {
 		fireEvent.pointerDown(ruler as HTMLElement, { button: 0, clientX: 450 });
 		expect(setCurrentTime).toHaveBeenCalledWith(6);
 	});
+});
+
+it("places proposed cuts in their own row before clips, keeping the wash at exact duration", () => {
+	const cut: SelectablePauseSuggestion = {
+		id: "proposal",
+		clipId: "c@0",
+		assetId: "a1",
+		kind: "agent",
+		origin: "test",
+		selected: true,
+		sourceStartSec: 100,
+		sourceEndSec: 100.3,
+		timelineStartSec: 100,
+		timelineEndSec: 100.3,
+		savedSec: 0.3,
+		silenceStartSec: 100,
+		silenceEndSec: 100.3,
+	};
+	const { clipEls } = renderTimeline(undefined, undefined, null, [], [], null, [], [cut]);
+	const lane = screen.getByRole("group", { name: "labels.proposedCuts" });
+	const pill = screen.getByTestId("proposed-cut-proposal");
+	const wash = screen.getByTestId("proposed-cut-wash-proposal");
+	expect(lane).toContainElement(pill);
+	expect(lane.nextElementSibling).toBe(clipEls[0].parentElement);
+	expect(clipEls[0].parentElement).toContainElement(wash);
+	expect(wash).toHaveAttribute("aria-hidden", "true");
+	expect(Number.parseFloat(wash.style.width)).toBeCloseTo((0.3 / TOTAL_SEC) * 100);
+	expect(pill).toHaveAttribute("data-compact", "true");
+});
+it("does not reserve a proposed cuts row when there are no proposals", () => {
+	renderTimeline();
+	expect(screen.queryByRole("group", { name: "labels.proposedCuts" })).not.toBeInTheDocument();
 });

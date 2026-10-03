@@ -1,0 +1,136 @@
+import { expect, it } from "vitest";
+import { buildSourceTimeline, type HandoffSource, type HandoffSpan } from "./sourceTimeline";
+
+const source: HandoffSource = {
+	assetId: "a",
+	screen: {
+		file: "001-screen.mp4",
+		durationSec: 10,
+		audio: [
+			{ role: "microphone", file: "001-microphone.wav", durationSec: 10 },
+			{ role: "system", file: "001-system.wav", durationSec: 10 },
+		],
+	},
+	camera: { file: "001-camera.mov", durationSec: 11, audio: [], startMs: 0, offsetMs: -775 },
+};
+
+function span(start = 0, end = 2, timelineStart = 0): HandoffSpan {
+	return {
+		id: `c-${start}`,
+		assetId: "a",
+		sourceStartSec: start,
+		sourceEndSec: end,
+		timelineStartSec: timelineStart,
+		timelineEndSec: timelineStart + end - start,
+	};
+}
+
+it("places only isolated WAVs on audio tracks and preserves cuts on all four tracks", () => {
+	const { timeline, warnings } = buildSourceTimeline("Test", [source], [span(), span(4, 10, 2)]);
+	const tracks = timeline.tracks.children;
+	expect(tracks.map((track) => [track.name, track.kind])).toEqual([
+		["Screen", "Video"],
+		["Camera", "Video"],
+		["Microphone", "Audio"],
+		["System audio", "Audio"],
+	]);
+	expect(warnings).toEqual([]);
+	for (const [index, track] of tracks.entries()) {
+		expect(track.children.map((child) => child.source_range.duration.value)).toEqual([120, 360]);
+		expect(track.children.map((child) => child.source_range.start_time.value)).toEqual(
+			index === 1 ? [47, 287] : [0, 240],
+		);
+		for (const child of track.children) {
+			expect(child.OTIO_SCHEMA).toBe("Clip.2");
+			if ("media_references" in child) {
+				const url = child.media_references.DEFAULT_MEDIA.target_url;
+				expect(url).not.toContain("/");
+				if (index >= 2) expect(url).toMatch(/\.wav$/);
+			}
+		}
+	}
+});
+
+it("keeps late camera starts, short camera tails, and missing takes as gaps", () => {
+	const late = {
+		...source,
+		camera: { ...source.camera!, durationSec: 1, startMs: 400, offsetMs: 100 },
+	};
+	const missing: HandoffSource = { ...source, assetId: "b", camera: null };
+	const result = buildSourceTimeline(
+		"Gaps",
+		[late, missing],
+		[span(), { ...span(0, 2, 2), assetId: "b" }],
+	);
+	expect(
+		result.timeline.tracks.children[1].children.map((child) => [
+			child.OTIO_SCHEMA,
+			child.source_range.start_time.value,
+			child.source_range.duration.value,
+		]),
+	).toEqual([
+		["Gap.1", 0, 30],
+		["Clip.2", 0, 60],
+		["Gap.1", 0, 30],
+		["Gap.1", 0, 120],
+	]);
+	expect(result.warnings).toHaveLength(1);
+});
+
+it("bounds short audio independently and keeps unidentified audio separate", () => {
+	const short: HandoffSource = {
+		...source,
+		screen: {
+			...source.screen,
+			audio: [
+				{ role: "microphone", file: "mic.wav", durationSec: 0.5 },
+				{ role: "audio", file: "old.wav", durationSec: 2 },
+			],
+		},
+	};
+	const tracks = buildSourceTimeline("Audio", [short], [span()]).timeline.tracks.children;
+	expect(
+		tracks[2].children.map((child) => [child.OTIO_SCHEMA, child.source_range.duration.value]),
+	).toEqual([
+		["Clip.2", 30],
+		["Gap.1", 90],
+	]);
+	expect(tracks[3].children[0].OTIO_SCHEMA).toBe("Gap.1");
+	expect(tracks[4].name).toBe("Original audio (unidentified)");
+	expect(tracks[4].children[0].name).toBe("old.wav");
+});
+
+it("rounds cumulative boundaries without a frame of drift for each fractional cut", () => {
+	const spans = Array.from({ length: 100 }, (_, index) => span(0, 0.025, index * 0.025));
+	const { timeline } = buildSourceTimeline("Fractional", [source], spans);
+	for (const track of timeline.tracks.children) {
+		expect(track.children.reduce((sum, child) => sum + child.source_range.duration.value, 0)).toBe(
+			150,
+		);
+	}
+});
+
+it("does not create a one-frame gap for an ordinary fractional media duration", () => {
+	const fractional = { ...source, screen: { ...source.screen, durationSec: 1.08 } };
+	const { timeline, warnings } = buildSourceTimeline("End", [fractional], [span(0, 1.08)]);
+	expect(timeline.tracks.children[0].children).toHaveLength(1);
+	expect(timeline.tracks.children[0].children[0].source_range.duration.value).toBe(65);
+	expect(warnings).toEqual([]);
+});
+
+it("reports sub-frame omissions and rejects unknown media duration", () => {
+	expect(() => buildSourceTimeline("Empty", [source], [span(0, 0.001)])).toThrow(
+		"shorter than one timeline frame",
+	);
+	expect(
+		buildSourceTimeline("Short", [source], [span(0, 0.001), span(1, 2, 0.001)]).warnings,
+	).toEqual(["A kept span shorter than one timeline frame was omitted from timeline.otio."]);
+	expect(() =>
+		buildSourceTimeline(
+			"Unknown",
+			[{ ...source, screen: { ...source.screen, durationSec: null } }],
+			[span()],
+		),
+	).toThrow("Could not read the duration");
+	expect(() => buildSourceTimeline("Missing", [], [span()])).toThrow("Missing timeline source");
+});

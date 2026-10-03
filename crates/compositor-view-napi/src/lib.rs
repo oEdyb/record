@@ -38,6 +38,13 @@ pub struct CompositorViewRect {
 
 static REGISTRY: OnceLock<Mutex<HashMap<i32, LiveView>>> = OnceLock::new();
 static NEXT_ID: Mutex<i32> = Mutex::new(1);
+
+/// Evaluate planned composition without opening media or allocating a GPU.
+#[napi]
+pub fn evaluate_scene_geometry(request_json: String) -> Result<String> {
+    openscreen_compositor::agent_geometry::evaluate_json(&request_json)
+        .map_err(|error| Error::from_reason(format!("Invalid geometry request: {error:#}")))
+}
 static EXPORT_CANCELLATIONS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
 
 fn registry() -> &'static Mutex<HashMap<i32, LiveView>> {
@@ -1075,6 +1082,59 @@ pub fn verify_gif_export(
             fps: input.fps,
             duration_s: input.duration_s,
         },
+        export_id,
+        cancelled,
+    }))
+}
+
+pub struct AudioOverlayStemTask {
+    request_json: String,
+    output_path: String,
+    export_id: Option<String>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Task for AudioOverlayStemTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let _active = ActiveExportCancellation {
+            export_id: self.export_id.clone(),
+        };
+        openscreen_compositor::audio::overlays::render_stem_json(
+            &self.request_json,
+            &self.output_path,
+            &mut || {
+                if self.cancelled.load(Ordering::Acquire) {
+                    anyhow::bail!("audio overlay stem cancelled");
+                }
+                Ok(())
+            },
+        )
+        .map_err(|error| Error::from_reason(format!("{error:#}")))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// Bounded shared mixer for preview cache generation. Output must be a new local file.
+/// Cancel through cancelExport with the same unique job id.
+#[napi]
+pub fn render_audio_overlay_stem(
+    request_json: String,
+    output_path: String,
+    export_id: Option<String>,
+) -> Result<AsyncTask<AudioOverlayStemTask>> {
+    if request_json.len() > 4 * 1024 * 1024 {
+        return Err(Error::from_reason("audio stem request exceeds 4 MiB"));
+    }
+    let cancelled = register_export_cancellation(export_id.as_ref());
+    Ok(AsyncTask::new(AudioOverlayStemTask {
+        request_json,
+        output_path,
         export_id,
         cancelled,
     }))

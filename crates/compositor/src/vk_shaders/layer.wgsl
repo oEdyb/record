@@ -24,7 +24,7 @@ struct Layer {
     radius_px: f32,
     mode: f32,            // 0 = vidéo NV12, 1 = couleur pleine, 2 = ombre, 8 = écran tilté, 9 = flèche, 10 = flou/mosaïque, 12 = ombre du quad tilté, 13 = curseur tilté
     color: vec4<f32>,
-    fx: vec4<f32>,        // mode 2 : spread ombre en px ; modes 8/12/13 : coins TL,TR du quad projeté ; mode 9 : hampe de la flèche ; mode 10 : (flou?, rayon/bloc px, ovale?, teinté?)
+    fx: vec4<f32>,        // modes 0/2: y = squircle flag; mode 2: x = spread ombre en px ; modes 8/12/13 : coins TL,TR du quad projeté ; mode 9 : hampe de la flèche ; mode 10 : (flou?, rayon/bloc px, ovale?, teinté?)
     src_prev: vec4<f32>,  // modes 8/12/13 : coins BR,BL du quad projeté ; mode 9 : barbe 1
     dst_prev: vec4<f32>,  // mode 8 : taille du plan en px AVANT projection (le rayon y vit) ; mode 13 : rect de clip ; mode 9 : barbe 2
     mb: vec4<f32>,        // mode 12 : mb.y = spread de la pénombre en px ; mode 9 : mb.y = demi-épaisseur du trait en px
@@ -77,6 +77,20 @@ fn sample_yuv(uv: vec2<f32>) -> vec3<f32> {
 fn sd_round_rect(p: vec2<f32>, halfsz: vec2<f32>, r: f32) -> f32 {
     let q = abs(p) - halfsz + vec2<f32>(r);
     return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+fn sd_camera_rect(p: vec2<f32>, halfsz: vec2<f32>, radius: f32, squircle: f32) -> f32 {
+    // L4 superellipse corners: zero curvature where each corner meets the straight edge.
+    // Radius controls corner size; half the square side gives x^4 + y^4 = r^4.
+    // CSS Borders 4 corner-shape uses the same fourth-power squircle definition.
+    if squircle < 0.5 {
+        return sd_round_rect(p, halfsz, radius);
+    }
+    let r = clamp(radius, 0.0, min(halfsz.x, halfsz.y));
+    let q = abs(p) - halfsz + vec2<f32>(r);
+    let v = max(q, vec2<f32>(0.0));
+    let v2 = v * v;
+    return sqrt(sqrt(dot(v2, v2))) + min(max(q.x, q.y), 0.0) - r;
 }
 
 // ---- Primitives du tilt 3D (modes 8 et 12), portees de `shaders.metal` ----
@@ -422,7 +436,7 @@ fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
         let spread = layer.fx.x;
         let halfsz = layer.quad_px * 0.5 - vec2<f32>(spread);
         let p = i.local - layer.quad_px * 0.5;
-        let d = sd_round_rect(p, halfsz, layer.radius_px);
+        let d = sd_camera_rect(p, halfsz, layer.radius_px, layer.fx.y);
         let a = layer.color.a * (1.0 - smoothstep(0.0, spread, d));
         return vec4<f32>(layer.color.rgb * a, a);
     }
@@ -435,7 +449,7 @@ fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
         // SORTIE ; on reproduit la même chose ici.
         let halfsz = layer.quad_px * 0.5;
         let p = i.local - layer.quad_px * 0.5;
-        let d = sd_round_rect(p, halfsz, layer.radius_px);
+        let d = sd_camera_rect(p, halfsz, layer.radius_px, layer.fx.y);
         alpha *= 1.0 - smoothstep(0.0, 1.5, d);
     }
 

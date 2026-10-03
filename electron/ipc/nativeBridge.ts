@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { app } from "electron";
+import { documentSchema } from "../../src/lib/ai-edition/schema";
 import type { EntitlementCapability } from "../../src/lib/entitlements/contracts";
 import type { AiEditionChatEvent } from "../../src/native/contracts";
 import {
@@ -17,11 +19,13 @@ import type { DocumentService } from "../ai-edition/document-service";
 import type { WorkloadMediaPath, WorkloadTelemetryService } from "../diagnostics/workloadTelemetry";
 import { EntitlementRequiredError } from "../entitlements/service";
 import { ExportTransactionError } from "../export/atomicExport";
+import { exportSourceHandoff } from "../export/sourceHandoff";
 import {
 	type CursorTelemetryLoadResult,
 	TelemetryCursorAdapter,
 } from "../native-bridge/cursor/telemetryCursorAdapter";
 import { AiEditionService } from "../native-bridge/services/aiEditionService";
+import { AudioOverlayStemService } from "../native-bridge/services/audioOverlayStemService";
 import { CompositorViewService } from "../native-bridge/services/compositorViewService";
 import { CursorService } from "../native-bridge/services/cursorService";
 import { ProjectService } from "../native-bridge/services/projectService";
@@ -30,6 +34,8 @@ import { createNativeBridgeState } from "../native-bridge/store";
 import type { RendererIpcMain } from "./trustedRendererIpc";
 
 export interface NativeBridgeContext {
+	resolveApprovedRendererMediaPath?: (sourcePath: string) => string | null;
+	approveReadableRendererMediaPath?: (outputPath: string) => Promise<string | null>;
 	workloadTelemetry?: WorkloadTelemetryService;
 	assertEntitlement: (capability: EntitlementCapability) => Promise<void>;
 	getPlatform: () => NodeJS.Platform;
@@ -284,6 +290,15 @@ export function registerNativeBridgeHandlers(
 		getCursorCapabilities: () => cursorService.getCapabilities(),
 	});
 	const compositorViewService = new CompositorViewService();
+	const audioOverlayStems = new AudioOverlayStemService({
+		cacheDirectory: path.join(app.getPath("userData"), "derived-media", "audio-overlays-v1"),
+		resolveSourcePath: (sourcePath) =>
+			context.resolveApprovedRendererMediaPath?.(sourcePath) ?? null,
+		approveOutputPath: async (outputPath) =>
+			context.approveReadableRendererMediaPath?.(outputPath) ?? null,
+		renderStem: (requestJson, outputPath, jobId) =>
+			compositorViewService.renderAudioOverlayStem(requestJson, outputPath, jobId),
+	});
 	void compositorViewService.initializeExportRecovery().catch((error) => {
 		console.warn("[export] startup recovery failed:", error);
 	});
@@ -302,6 +317,8 @@ export function registerNativeBridgeHandlers(
 			: [];
 	const aiEditionService = new AiEditionService({
 		documents: context.getAiEditionDocuments(),
+		resolveMediaPath: async (path) =>
+			(await import("./handlers")).resolveApprovedRendererMediaPath(path),
 		// Passed uncalled on purpose — invoking it here would build the store (and
 		// hit the macOS Keychain) while wiring the bridge at startup.
 		llmConfig: context.getAiEditionLlmConfig,
@@ -580,8 +597,11 @@ export function registerNativeBridgeHandlers(
 							return createSuccessResponse(requestId, {
 								cancelled: compositorViewService.cancelExport(request.payload.exportId),
 							});
+						case "audioOverlayStem":
+							return createSuccessResponse(requestId, await audioOverlayStems.get(request.payload));
 						case "exportMulti": {
 							await context.assertEntitlement("export");
+							audioOverlayStems.validateSceneSources(request.payload.sceneJson);
 							const sender = event.sender;
 							const telemetryId = context.workloadTelemetry?.begin({
 								kind: "export",
@@ -755,6 +775,28 @@ export function registerNativeBridgeHandlers(
 					switch (request.action) {
 						case "document.listProjects":
 							return createSuccessResponse(requestId, await aiEditionService.listProjects());
+						case "document.exportSources": {
+							const document = documentSchema.parse(request.payload?.document);
+							const { dialog, BrowserWindow } = await import("electron");
+							const options: Electron.OpenDialogOptions = {
+								title: "Export source files",
+								properties: ["openDirectory", "createDirectory"],
+							};
+							const parent = BrowserWindow.fromWebContents(event.sender);
+							const selected = parent
+								? await dialog.showOpenDialog(parent, options)
+								: await dialog.showOpenDialog(options);
+							if (selected.canceled || !selected.filePaths[0])
+								return createSuccessResponse(requestId, { canceled: true });
+							return createSuccessResponse(
+								requestId,
+								await exportSourceHandoff(
+									document,
+									selected.filePaths[0],
+									(source) => context.resolveApprovedRendererMediaPath?.(source) ?? null,
+								),
+							);
+						}
 						case "document.get":
 							return createSuccessResponse(
 								requestId,
@@ -765,6 +807,29 @@ export function registerNativeBridgeHandlers(
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.create(request.payload?.title),
+							);
+						case "document.snapshot":
+							return createSuccessResponse(
+								requestId,
+								await aiEditionService.snapshot(request.payload.projectId),
+							);
+						case "document.receipt":
+							return createSuccessResponse(
+								requestId,
+								await aiEditionService.receipt(
+									request.payload.projectId,
+									request.payload.operationRequestId,
+								),
+							);
+						case "document.commit":
+							await context.assertEntitlement("edit");
+							return createSuccessResponse(
+								requestId,
+								await aiEditionService.commit(
+									request.payload.projectId,
+									request.payload.document,
+									request.payload.guard,
+								),
 							);
 						case "document.save":
 							await context.assertEntitlement("edit");
@@ -778,6 +843,49 @@ export function registerNativeBridgeHandlers(
 								requestId,
 								await aiEditionService.deleteProject(request.payload.projectId),
 							);
+						case "document.import":
+							await context.assertEntitlement("import");
+							return createSuccessResponse(
+								requestId,
+								await aiEditionService.importProject(request.payload.document),
+							);
+						case "document.pickAudioAsset": {
+							await context.assertEntitlement("import");
+							const { dialog, BrowserWindow } = await import("electron");
+							const options: Electron.OpenDialogOptions = {
+								title: "Add audio",
+								properties: ["openFile"],
+								filters: [
+									{ name: "Audio", extensions: ["wav", "mp3", "m4a", "aac", "flac", "ogg"] },
+								],
+							};
+							const parent = BrowserWindow.fromWebContents(event.sender);
+							const selected = parent
+								? await dialog.showOpenDialog(parent, options)
+								: await dialog.showOpenDialog(options);
+							if (selected.canceled || !selected.filePaths[0])
+								return createSuccessResponse(requestId, { canceled: true });
+							const { approveReadableRendererMediaPath } = await import("./handlers");
+							const approved = await approveReadableRendererMediaPath(selected.filePaths[0]);
+							if (!approved) throw new Error("Selected audio file is not readable");
+							return createSuccessResponse(
+								requestId,
+								await aiEditionService.prepareAudioAsset(request.payload.projectId, approved),
+							);
+						}
+
+						case "document.prepareAsset":
+							await context.assertEntitlement("import");
+							return createSuccessResponse(
+								requestId,
+								await aiEditionService.prepareAsset(
+									request.payload.projectId,
+									request.payload.path,
+									request.payload.label,
+									request.payload.recordingImportId,
+								),
+							);
+
 						case "document.addAsset":
 							await context.assertEntitlement("import");
 							return createSuccessResponse(

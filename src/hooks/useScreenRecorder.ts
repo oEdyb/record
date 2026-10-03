@@ -76,6 +76,7 @@ function cameraErrorDescription(error: unknown): string {
 }
 
 type UseScreenRecorderReturn = {
+	preferencesReady: boolean;
 	recording: boolean;
 	paused: boolean;
 	saving: boolean;
@@ -185,6 +186,7 @@ export function webcamOffsetMsFrom(
 
 export function useScreenRecorder(): UseScreenRecorderReturn {
 	const t = useScopedT("editor");
+	const [preferencesReady, setPreferencesReady] = useState(false);
 	const [recording, setRecording] = useState(false);
 	const [paused, setPaused] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -223,6 +225,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				// back to this hook's own defaults is acceptable; an unhandled rejection
 				// on every HUD mount is not.
 				console.warn("Failed to seed the recording prefs:", err);
+			})
+			.finally(() => {
+				if (!cancelled) setPreferencesReady(true);
 			});
 		return () => {
 			cancelled = true;
@@ -2537,6 +2542,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		activeClipElapsedMs,
 		recordedClips,
 		toggleRecording,
+		preferencesReady,
 		startRecordingImmediately: () => startRecording(),
 		togglePaused,
 		canPauseRecording,

@@ -1,6 +1,8 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { loadUserPreferences, saveUserPreferences } from "../../lib/userPreferences";
+import { NotesFormattingMenu } from "./NotesFormattingMenu";
 import { NotesToolbar } from "./NotesToolbar";
 import {
 	clampNotesFontSize,
@@ -30,6 +32,17 @@ export function NotesWindow() {
 	// the mirrored note is presentation-only. The teleprompter controls themselves stay live
 	// in both states; turning the lock's last reason off restores editing.
 	const editingLocked = isPlaying || settings.mirrored;
+
+	// The window frame is private UI state, remembered like the camera monitor's position.
+	useEffect(() => {
+		const api = window.electronAPI;
+		const saved = loadUserPreferences().notesWindowBounds;
+		if (saved) api?.setNotesWindowBounds?.(saved);
+		const stop = api?.onNotesWindowBoundsChanged?.((bounds) => {
+			saveUserPreferences({ notesWindowBounds: bounds });
+		});
+		return () => stop?.();
+	}, []);
 
 	const editor = useEditor({
 		extensions: [StarterKit],
@@ -130,12 +143,15 @@ export function NotesWindow() {
 	}, []);
 
 	return (
-		<div className="flex h-screen w-screen flex-col overflow-hidden bg-white px-6 pb-4 pt-3 gap-4">
-			<div className="flex min-w-0 shrink-0 justify-center">
+		<div
+			className="notes-card flex h-screen w-screen flex-col gap-2 overflow-hidden px-3 pb-3 pt-1.5"
+			data-testid="notes-card"
+			data-playing={isPlaying}
+		>
+			<div className="notes-chrome flex min-w-0 shrink-0">
 				<NotesToolbar
 					editor={editor}
 					isPlaying={isPlaying}
-					formattingDisabled={editingLocked}
 					speed={settings.speed}
 					fontSize={settings.fontSize}
 					mirrored={settings.mirrored}
@@ -147,8 +163,11 @@ export function NotesWindow() {
 					onToggleMirror={() =>
 						setSettings((current) => ({ ...current, mirrored: !current.mirrored }))
 					}
+					onClose={() => window.electronAPI?.closeNotesWindow?.()}
 				/>
 			</div>
+
+			<NotesFormattingMenu editor={editor} disabled={editingLocked} />
 
 			<EditorContent
 				editor={editor}

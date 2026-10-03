@@ -450,6 +450,7 @@ pub fn run_preview_bench(
     unsafe {
         let mut sdec = Decoder::open(screen, gpu)?;
         let mut wdec = Decoder::open(webcam, gpu)?;
+        let mut overlays = crate::overlay_video::OverlayDecoders::default();
 
         // Hors mesure : première frame de chaque source. Le premier décodage porte
         // l'allocation du pool (matériel) ou de la texture NV12 + du contexte swscale
@@ -459,7 +460,8 @@ pub fn run_preview_bench(
         if sf.is_null() || wf.is_null() {
             bail!("source vide (screen ou webcam ne rend aucune frame)");
         }
-        comp.compose_frame(sf, wf, 0.0, cfg)?;
+        let (overlay, region) = comp.overlay_frame_at(&mut overlays, sdec.cur_time_sec(), gpu)?;
+        comp.compose_frame(sf, wf, 0.0, cfg, overlay, region.as_ref())?;
         let _ = comp.readback_direct()?;
 
         let mut last = (0u32, 0u32, Vec::new());
@@ -476,7 +478,9 @@ pub fn run_preview_bench(
             if sf.is_null() || wf.is_null() {
                 bail!("source épuisée après rembobinage à la frame {i}");
             }
-            comp.compose_frame(sf, wf, i as f32, cfg)?;
+            let (overlay, region) =
+                comp.overlay_frame_at(&mut overlays, sdec.cur_time_sec(), gpu)?;
+            comp.compose_frame(sf, wf, i as f32, cfg, overlay, region.as_ref())?;
             // Le readback fait partie de la mesure : c'est ce que la preview paie
             // réellement pour afficher une frame (GPU→CPU puis canvas).
             last = comp.readback_direct()?;
@@ -961,6 +965,7 @@ unsafe fn run_c1_inner(
 ) -> Result<Stats> {
     let mut sdec = Decoder::open(screen, gpu)?;
     let mut wdec = Decoder::open(webcam, gpu)?;
+    let mut overlays = crate::overlay_video::OverlayDecoders::default();
     let (mut enc_hwdev, mut enc_frames) = make_enc_frames(gpu, OUT_W as i32, OUT_H as i32)?;
 
     let mut enc = VideoEncoder::open(
@@ -1006,7 +1011,8 @@ unsafe fn run_c1_inner(
         if wf.is_null() {
             break;
         }
-        comp.compose_frame(sf, wf, frames as f32, cfg)?;
+        let (overlay, region) = comp.overlay_frame_at(&mut overlays, sdec.cur_time_sec(), gpu)?;
+        comp.compose_frame(sf, wf, frames as f32, cfg, overlay, region.as_ref())?;
 
         let outf = av_frame_alloc();
         averr(
@@ -1623,6 +1629,13 @@ unsafe fn run_multi_inner(
     }
     let mut assembled_audio =
         spool::assemble(clip_audio, &audio_plan, params.even_volume, &mut check)?;
+    if let Some(scene) = scene.as_ref() {
+        crate::audio::overlays::mix_into_program(
+            &mut assembled_audio,
+            &scene.audio_overlays,
+            &mut check,
+        )?;
+    }
     let audio_mastering = spool::master(
         &mut assembled_audio,
         AudioMasteringSettings::new(

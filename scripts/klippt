@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+if [ "${1-}" != agent ]; then
+  printf '%s\n' 'Usage: klippt agent <command> [options]. Start with: klippt agent skill' >&2
+  exit 2
+fi
+
+klippt_launcher=$0
+while [ -L "$klippt_launcher" ]; do
+  klippt_link_dir=$(CDPATH= cd -P -- "$(dirname -- "$klippt_launcher")" && pwd)
+  klippt_launcher=$(readlink -- "$klippt_launcher")
+  case "$klippt_launcher" in
+    /*) ;;
+    *) klippt_launcher=$klippt_link_dir/$klippt_launcher ;;
+  esac
+done
+klippt_root=$(CDPATH= cd -P -- "$(dirname -- "$klippt_launcher")/.." && pwd)
+klippt_electron=$klippt_root/node_modules/.bin/electron
+if [ ! -x "$klippt_electron" ] || [ ! -f "$klippt_root/dist-electron/bootstrap.js" ]; then
+  printf '%s\n' "Klippt development runtime unavailable in $klippt_root." \
+    "Install dependencies with npm install, then run DEVELOPER_DIR=/Library/Developer/CommandLineTools npx vite build from that checkout. No installed app was launched." >&2
+  exit 1
+fi
+
+if [ "$#" -eq 1 ]; then set -- agent guide; fi
+if [ ! -t 1 ]; then
+  klippt_has_json=false
+  for klippt_arg do
+    if [ "$klippt_arg" = --json ]; then klippt_has_json=true; fi
+  done
+  if [ "$klippt_has_json" = false ]; then set -- "$@" --json; fi
+fi
+
+exec env -u ELECTRON_RUN_AS_NODE "$klippt_electron" "$klippt_root" "$@"

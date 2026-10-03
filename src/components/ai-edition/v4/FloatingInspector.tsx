@@ -1,3 +1,4 @@
+import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group";
 import {
 	AudioLines,
 	Captions as CaptionsIcon,
@@ -135,6 +136,16 @@ interface FloatingInspectorProps {
 	tl: TimelineApi;
 }
 
+const DEFAULT_CAMERA_EMPHASIS_SCALE = 1.35;
+const CAMERA_SCALE_VALUES = [1.15, 1.25, 1.35, 1.5, 1.75, 2];
+/** The preset sizes, plus the region's own value when it was set elsewhere (agent, planner). */
+function cameraScaleOptions(current: number | undefined): number[] {
+	const value = current ?? DEFAULT_CAMERA_EMPHASIS_SCALE;
+	return CAMERA_SCALE_VALUES.includes(value)
+		? CAMERA_SCALE_VALUES
+		: [...CAMERA_SCALE_VALUES, value].sort((a, b) => a - b);
+}
+
 export function FloatingInspector({
 	facet,
 	open,
@@ -146,7 +157,6 @@ export function FloatingInspector({
 	onPausePreview = () => undefined,
 	tl,
 }: FloatingInspectorProps) {
-	const ts = useScopedT("settings");
 	const te = useScopedT("editor");
 	const selection = tl.selection;
 	const hasEditableMedia = clips.length > 0;
@@ -166,43 +176,22 @@ export function FloatingInspector({
 								onCollapse={onToggleOpen}
 								transcriptProps={transcriptProps}
 								onPausePreview={onPausePreview}
+								onAdjustAutomatic={(member) => tl.selectRegion(member.kind, member.id)}
 							/>
 						)}
 					</div>
 				) : null}
 				<div className={styles.facetRail}>
-					<div className={styles.facetRailScroll}>
-						{FACETS.map(({ id, labelKey, icon: Icon }) => {
-							const busy = id === "audio" && pauseAnalysisRunning;
-							const label = busy ? `${ts(labelKey)} — ${ts("pauses.analyzing")}` : ts(labelKey);
-							return (
-								<button
-									key={id}
-									type="button"
-									title={label}
-									aria-label={label}
-									aria-pressed={!selection && open && visibleFacet === id}
-									disabled={!hasEditableMedia}
-									onClick={() => {
-										// Switching facets while an element is selected should show
-										// the facet, not leave the selection pane on top of it.
-										if (selection) tl.clearSelection();
-										if (facet === id && open) onToggleOpen();
-										else onFacetChange(id);
-									}}
-								>
-									<Icon size={17} />
-									{busy ? (
-										<Loader2
-											className={`${styles.facetBusyIndicator} animate-spin`}
-											size={10}
-											aria-hidden
-										/>
-									) : null}
-								</button>
-							);
-						})}
-					</div>
+					<FacetNavigation
+						value={!selection && open ? visibleFacet : ""}
+						disabled={!hasEditableMedia}
+						pauseAnalysisRunning={pauseAnalysisRunning}
+						onValueChange={(next) => {
+							if (selection) tl.clearSelection();
+							if (next) onFacetChange(next);
+							else onToggleOpen();
+						}}
+					/>
 					<div className={styles.facetRailUtility}>
 						{clips.length > 1 ? (
 							<AppMenu>
@@ -524,10 +513,10 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 	// The panel clips its rounded, blurred surface. Keep the header fixed and scroll the body so
 	// tall selection controls remain available when the window gets shorter.
 	const bodyStyle: React.CSSProperties = {
-		padding: "16px",
+		padding: "12px 16px",
 		display: "flex",
 		flexDirection: "column",
-		gap: 16,
+		gap: 8,
 		flex: "1 1 auto",
 		minHeight: 0,
 		overflowY: "auto",
@@ -542,9 +531,9 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 7,
-		padding: "8px 11px",
+		padding: "6px 0",
 		borderRadius: 8,
-		border: "1px solid var(--border-soft)",
+		border: 0,
 		background: "transparent",
 		color: "var(--danger)",
 		font: "500 12px var(--font-body)",
@@ -1008,7 +997,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 								</div>,
 							)
 						: null}
-					{region.type === "text"
+					{region.type === "text" || region.type === "image"
 						? paneRow(
 								ts("textAnimation.title"),
 								// The schema, translations, and compositor already support all seven animations.
@@ -1099,6 +1088,21 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							))}
 						</AppSelect>,
 					)}
+					{isEmphasis &&
+						paneRow(
+							te("inspector.cameraSize"),
+							<AppSelect
+								value={String(region.cameraScale ?? DEFAULT_CAMERA_EMPHASIS_SCALE)}
+								onChange={(e) => void tl.updateCameraScale(region.id, Number(e.target.value))}
+								style={selectStyle}
+							>
+								{cameraScaleOptions(region.cameraScale).map((scale) => (
+									<option key={scale} value={String(scale)}>
+										{scale.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}×
+									</option>
+								))}
+							</AppSelect>,
+						)}
 					{paneRow(
 						ts("motion.speed"),
 						<AppSelect
@@ -1210,11 +1214,13 @@ function FacetBody({
 	onCollapse,
 	transcriptProps,
 	onPausePreview,
+	onAdjustAutomatic,
 }: {
 	facet: Facet;
 	onCollapse: () => void;
 	transcriptProps: TranscriptProps;
 	onPausePreview: (suggestions: SelectablePauseSuggestion[] | null) => void;
+	onAdjustAutomatic: (member: { kind: "zoom" | "cameraFullscreen"; id: string }) => void;
 }) {
 	const te = useScopedT("editor");
 	// A small collapse affordance floated over the reused pane header.
@@ -1237,7 +1243,11 @@ function FacetBody({
 	if (facet === "audio") {
 		return wrap(collapse, <AudioPane onPreview={onPausePreview} />);
 	}
-	if (facet === "automatic") return wrap(collapse, <AutomaticDirectionPane />);
+	if (facet === "automatic")
+		return wrap(
+			collapse,
+			<AutomaticDirectionPane onSeek={transcriptProps.onSeek} onAdjust={onAdjustAutomatic} />,
+		);
 	if (facet === "transcript") return wrap(collapse, <TranscriptPane {...transcriptProps} />);
 	return wrap(collapse, <CaptionsPane />);
 }
@@ -1248,5 +1258,55 @@ function wrap(collapse: React.ReactNode, body: React.ReactNode) {
 			{collapse}
 			{body}
 		</div>
+	);
+}
+
+/** Library-owned keyboard navigation; an empty value represents a collapsed/selection inspector. */
+export function FacetNavigation({
+	value,
+	disabled,
+	pauseAnalysisRunning,
+	onValueChange,
+}: {
+	value: Facet | "";
+	disabled: boolean;
+	pauseAnalysisRunning: boolean;
+	onValueChange: (value: Facet | "") => void;
+}) {
+	const ts = useScopedT("settings");
+	return (
+		<ToggleGroupPrimitive.Root
+			type="single"
+			orientation="vertical"
+			value={value}
+			disabled={disabled}
+			className={styles.facetRailScroll}
+			aria-label={ts("facets.navigation")}
+			onValueChange={(next) => {
+				if (next === "") onValueChange("");
+				else {
+					const facet = FACETS.find((item) => item.id === next);
+					if (facet) onValueChange(facet.id);
+				}
+			}}
+		>
+			{FACETS.map(({ id, labelKey, icon: Icon }) => {
+				const busy = id === "audio" && pauseAnalysisRunning;
+				const label = busy ? `${ts(labelKey)} — ${ts("pauses.analyzing")}` : ts(labelKey);
+				return (
+					<ToggleGroupPrimitive.Item key={id} value={id} title={label} aria-label={label}>
+						<Icon size={17} aria-hidden />
+						<span className={styles.facetLabel}>{ts(labelKey)}</span>
+						{busy ? (
+							<Loader2
+								className={`${styles.facetBusyIndicator} animate-spin`}
+								size={10}
+								aria-hidden
+							/>
+						) : null}
+					</ToggleGroupPrimitive.Item>
+				);
+			})}
+		</ToggleGroupPrimitive.Root>
 	);
 }

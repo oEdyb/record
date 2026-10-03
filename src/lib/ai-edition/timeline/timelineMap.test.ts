@@ -101,7 +101,43 @@ describe("projectRegionsToSource", () => {
 			timelineEndSec: 10,
 		});
 		const out = projectRegionsToSource([region("r", 3, 5)], [c], [c], () => "x");
-		expect(out).toEqual([{ id: "r", startMs: 3000, endMs: 5000, clipIndex: 0 }]);
+		expect(out).toEqual([
+			{
+				id: "r",
+				startMs: 3000,
+				endMs: 5000,
+				clipIndex: 0,
+				envelopeStartMs: 3000,
+				envelopeEndMs: 5000,
+			},
+		]);
+	});
+
+	it("moves a region edge that sits just inside a cut onto the cut, with the ease done", () => {
+		// Kept fragment src[2,8]; the region starts 0.3 s after the cut and ends 0.4 s before
+		// the next one. Both edges move onto the cuts; the envelope is pushed out so the
+		// compositor sees the region at full strength on its first and last frame.
+		const c = clip({
+			id: "c1",
+			assetId: "a",
+			sourceStartSec: 0,
+			sourceEndSec: 10,
+			timelineEndSec: 10,
+		});
+		const segments = resolvePlaybackSegments([c], [trim("a", 0, 2), trim("a", 8, 10)]);
+		const out = projectRegionsToSource([region("r", 2.3, 7.6)], segments, [c], () => "x", 0.6);
+		expect(out).toEqual([
+			{
+				id: "r",
+				startMs: 2000,
+				endMs: 8000,
+				clipIndex: 0,
+				envelopeStartMs: -1000,
+				envelopeEndMs: 11000,
+			},
+		]);
+		const far = projectRegionsToSource([region("r", 3, 7)], segments, [c], () => "x", 0.6);
+		expect(far[0]).toMatchObject({ startMs: 3000, endMs: 7000, envelopeStartMs: 3000 });
 	});
 
 	it("keeps a region on its source moment despite a trim before it (the core bug)", () => {
@@ -116,7 +152,16 @@ describe("projectRegionsToSource", () => {
 		});
 		const segments = resolvePlaybackSegments([c], [trim("a", 2, 4)]);
 		const out = projectRegionsToSource([region("r", 6, 8)], segments, [c], () => "x");
-		expect(out).toEqual([{ id: "r", startMs: 6000, endMs: 8000, clipIndex: 1 }]);
+		expect(out).toEqual([
+			{
+				id: "r",
+				startMs: 6000,
+				endMs: 8000,
+				clipIndex: 1,
+				envelopeStartMs: 6000,
+				envelopeEndMs: 8000,
+			},
+		]);
 	});
 
 	it("splits a region straddling two clips into one entry per clip, payload preserved", () => {
@@ -137,9 +182,26 @@ describe("projectRegionsToSource", () => {
 			timelineEndSec: 10,
 		});
 		const out = projectRegionsToSource([region("r", 3, 7, "keep")], [c1, c2], [c1, c2], () => "r2");
+		// Each piece carries the whole region's span in its own clip's source clock.
 		expect(out).toEqual([
-			{ id: "r", startMs: 103000, endMs: 105000, clipIndex: 0, payload: "keep" },
-			{ id: "r2", startMs: 200000, endMs: 202000, clipIndex: 1, payload: "keep" },
+			{
+				id: "r",
+				startMs: 103000,
+				endMs: 105000,
+				clipIndex: 0,
+				payload: "keep",
+				envelopeStartMs: 103000,
+				envelopeEndMs: 107000,
+			},
+			{
+				id: "r2",
+				startMs: 200000,
+				endMs: 202000,
+				clipIndex: 1,
+				payload: "keep",
+				envelopeStartMs: 198000,
+				envelopeEndMs: 202000,
+			},
 		]);
 	});
 
@@ -156,8 +218,22 @@ describe("projectRegionsToSource", () => {
 		const segments = resolvePlaybackSegments([c], [trim("a", 4, 6)]);
 		const out = projectRegionsToSource([region("r", 3, 8)], segments, [c], () => "r2");
 		expect(out).toEqual([
-			{ id: "r", startMs: 3000, endMs: 4000, clipIndex: 0 },
-			{ id: "r2", startMs: 6000, endMs: 8000, clipIndex: 1 },
+			{
+				id: "r",
+				startMs: 3000,
+				endMs: 4000,
+				clipIndex: 0,
+				envelopeStartMs: 3000,
+				envelopeEndMs: 8000,
+			},
+			{
+				id: "r2",
+				startMs: 6000,
+				endMs: 8000,
+				clipIndex: 1,
+				envelopeStartMs: 3000,
+				envelopeEndMs: 8000,
+			},
 		]);
 	});
 
@@ -225,7 +301,16 @@ describe("projectRegionsToSource", () => {
 			sourceEndSec: 8,
 		};
 		const out = projectRegionsToSource([stale], [c], [c], () => "x");
-		expect(out).toEqual([{ ...stale, startMs: 6000, endMs: 8000, clipIndex: 0 }]);
+		expect(out).toEqual([
+			{
+				...stale,
+				startMs: 6000,
+				endMs: 8000,
+				clipIndex: 0,
+				envelopeStartMs: 6000,
+				envelopeEndMs: 8000,
+			},
+		]);
 	});
 
 	it("splits an anchored region across the kept segments of its own clip", () => {
@@ -245,9 +330,10 @@ describe("projectRegionsToSource", () => {
 			sourceEndSec: 8,
 		};
 		const out = projectRegionsToSource([anchored], segments, [c], () => "r2");
+		const envelope = { envelopeStartMs: 3000, envelopeEndMs: 8000 };
 		expect(out).toEqual([
-			{ ...anchored, id: "r", startMs: 3000, endMs: 4000, clipIndex: 0 },
-			{ ...anchored, id: "r2", startMs: 6000, endMs: 8000, clipIndex: 1 },
+			{ ...anchored, id: "r", startMs: 3000, endMs: 4000, clipIndex: 0, ...envelope },
+			{ ...anchored, id: "r2", startMs: 6000, endMs: 8000, clipIndex: 1, ...envelope },
 		]);
 	});
 
@@ -277,7 +363,16 @@ describe("projectRegionsToSource", () => {
 			sourceEndSec: 2,
 		};
 		const out = projectRegionsToSource([anchored], [c1, c2], [c1, c2], () => "x");
-		expect(out).toEqual([{ ...anchored, startMs: 1000, endMs: 2000, clipIndex: 1 }]);
+		expect(out).toEqual([
+			{
+				...anchored,
+				startMs: 1000,
+				endMs: 2000,
+				clipIndex: 1,
+				envelopeStartMs: 1000,
+				envelopeEndMs: 2000,
+			},
+		]);
 	});
 
 	it("falls back to the raw mapping when the anchor is incomplete", () => {
@@ -292,7 +387,16 @@ describe("projectRegionsToSource", () => {
 		});
 		const partial = { ...region("r", 3, 5), clipId: "c1" }; // no source span
 		const out = projectRegionsToSource([partial], [c], [c], () => "x");
-		expect(out).toEqual([{ ...partial, startMs: 3000, endMs: 5000, clipIndex: 0 }]);
+		expect(out).toEqual([
+			{
+				...partial,
+				startMs: 3000,
+				endMs: 5000,
+				clipIndex: 0,
+				envelopeStartMs: 3000,
+				envelopeEndMs: 5000,
+			},
+		]);
 	});
 });
 

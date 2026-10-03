@@ -1,0 +1,20 @@
+.trigger { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border-radius: 6px; color: var(--fg); font-size: 12px; white-space: nowrap; }
+.trigger:hover { background: var(--surface-hover); }
+.panel { width: min(320px, calc(100vw - 24px)); max-height: var(--radix-popover-content-available-height); overflow-y: auto; padding: 16px; background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; font-family: var(--font-display); }
+.panel h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.scope { margin: 6px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.list { max-height: 240px; overflow-y: auto; }
+.row { display: flex; align-items: center; gap: 4px; }
+.choice { display: flex; flex: 1; align-items: center; gap: 9px; min-width: 0; min-height: 36px; padding: 7px 8px; border-radius: 6px; font-size: 12px; text-align: left; }
+.choice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.choice svg { flex-shrink: 0; color: var(--muted); }
+.choice:hover, .remove:hover { background: var(--surface-hover); }
+.remove { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 6px; color: var(--muted); }
+.save { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-soft); }
+.save label { display: block; margin-bottom: 7px; font-size: 12px; }
+.saveRow { display: flex; gap: 8px; }
+.saveRow input { min-width: 0; width: 100%; height: 32px; border: 1px solid var(--border); border-radius: 6px; padding: 0 9px; background: var(--surface-1); color: var(--fg); font-size: 12px; }
+.saveRow button { padding: 0 12px; border-radius: 6px; background: var(--surface-2); color: var(--fg); font-size: 12px; }
+.error { margin: 12px 0 0; color: var(--fg); font-size: 12px; line-height: 1.5; }
+.trigger:disabled, .panel button:disabled { opacity: 0.45; cursor: default; }
+.trigger:focus-visible, .panel button:focus-visible, .panel input:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 2px; }

@@ -29,6 +29,7 @@ function fixture() {
 
 const suggestion: PauseSuggestion = {
 	id: "pause_clip_1_2000_4000",
+	kind: "pause",
 	clipId: "clip_1",
 	assetId: "asset_1",
 	silenceStartSec: 1.8,

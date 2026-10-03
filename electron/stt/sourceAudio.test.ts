@@ -66,3 +66,19 @@ Stream mapping:
 		).toThrow("Conflicting Klippt audio metadata");
 	});
 });
+
+it("reads video dimensions and duration from the same input header", () => {
+	expect(
+		parseSourceAudioLayout(`
+ Duration: 00:00:08.250, start: 0.000000, bitrate: 1024 kb/s
+ Stream #0:0[0x1](und): Video: h264 (High), yuv420p(tv, bt709), 1080x1920 [SAR 1:1 DAR 9:16], 60 fps
+ Stream #0:1(eng): Audio: aac, 48000 Hz, stereo
+Stream mapping:
+ Stream #0:0(und): Video: h264, yuv420p, 1920x1080, 30 fps
+`),
+	).toMatchObject({
+		durationSec: 8.25,
+		video: { codec: "h264", width: 1080, height: 1920, fps: 60 },
+	});
+	expect(parseSourceAudioLayout("Stream #0:0: Video: h264, unknown").video).toBeUndefined();
+});

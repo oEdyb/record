@@ -16,20 +16,15 @@
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { insertClipsAtBoundary } from "@/lib/ai-edition/document/timeline";
 import type { AxcutAsset, AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
+import { getEditorSettings, patchEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
-import {
-	applyAutomaticDirection,
-	DEFAULT_AUTOMATIC_DIRECTION_POLICY,
-} from "@/lib/ai-edition/timeline/automatic-direction";
-import { readAutomaticDirectionSettings } from "@/lib/ai-edition/timeline/automatic-direction-settings";
-import { probeVideoDuration } from "@/lib/ai-edition/timeline/duration";
-import { buildMicrophoneActivitySpans } from "@/lib/ai-edition/timeline/microphone-activity";
+import { probeVideoDimensions, probeVideoDuration } from "@/lib/ai-edition/timeline/duration";
+import { isClipOwnedWebcamPath } from "@/lib/recording/capturePolicy";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
-import { nativeBridgeClient } from "@/native/client";
+import { type AspectRatio, toAspectRatioToken } from "@/utils/aspectRatioUtils";
 
 let pendingRecordingImportInProgress = false;
-const DIRECTION_READ_TIMEOUT_MS = 500;
-const DIRECTION_ANALYSIS_CONCURRENCY = 2;
+const RECOVERED_DURATION_CONCURRENCY = 2;
 const RECOVERED_CLIP_DURATION_TIMEOUT_MS = 5_000;
 
 /**
@@ -66,7 +61,7 @@ async function resolveRecoveredClipDurations(
 	const provisional = clips.filter((clip) => !clip.removed && clip.provisionalDuration);
 	const resolved = await mapWithConcurrency(
 		provisional,
-		DIRECTION_ANALYSIS_CONCURRENCY,
+		RECOVERED_DURATION_CONCURRENCY,
 		async (clip) => {
 			const durationSec = await probeVideoDuration(
 				toFileUrl(clip.screenVideoPath),
@@ -80,23 +75,6 @@ async function resolveRecoveredClipDurations(
 	);
 	return new Map(resolved);
 }
-
-type RecordedDirectionInput = {
-	assetId: string;
-	screenVideoPath: string;
-	durationMs: number;
-	hasCamera: boolean;
-};
-
-type RecordedScreenTelemetry = {
-	assetId: string;
-	cursorTelemetry: Awaited<
-		ReturnType<typeof nativeBridgeClient.cursor.getRecordingData>
-	>["samples"];
-	keyboardActivity: NonNullable<
-		Awaited<ReturnType<typeof nativeBridgeClient.cursor.getRecordingData>>["keyboardActivity"]
-	>;
-};
 
 function recordedClipId(createdAt: number, index: number) {
 	return `clip_recording_${createdAt}_${index + 1}`;
@@ -167,48 +145,13 @@ function createImportHistorySnapshot(
 	return { ...base, project, assets };
 }
 
-async function readRecordedScreenTelemetry(
-	recordings: RecordedDirectionInput[],
-): Promise<RecordedScreenTelemetry[]> {
-	return mapWithConcurrency(
-		recordings,
-		DIRECTION_ANALYSIS_CONCURRENCY,
-		async (recording): Promise<RecordedScreenTelemetry> => {
-			let cursorTimeout: ReturnType<typeof setTimeout> | undefined;
-			try {
-				const cursor = await Promise.race([
-					nativeBridgeClient.cursor.getRecordingData(recording.screenVideoPath),
-					new Promise<null>((resolve) => {
-						cursorTimeout = setTimeout(() => resolve(null), DIRECTION_READ_TIMEOUT_MS);
-					}),
-				]);
-				return {
-					assetId: recording.assetId,
-					cursorTelemetry: cursor?.samples ?? [],
-					keyboardActivity: cursor?.keyboardActivity ?? [],
-				};
-			} catch (error) {
-				// Direction is an enhancement, not a condition for keeping a recording.
-				console.warn("[recording-import] automatic direction unavailable:", error);
-				return {
-					assetId: recording.assetId,
-					cursorTelemetry: [],
-					keyboardActivity: [],
-				};
-			} finally {
-				if (cursorTimeout) clearTimeout(cursorTimeout);
-			}
-		},
-	);
-}
-
 async function commitRecordedImport(options: {
 	projectId: string;
 	clips: AxcutClip[];
 	insertionTimeSec: number;
-	telemetry: RecordedScreenTelemetry[];
 	planId: string;
 	historyBase: AxcutDocument;
+	sourceAspectRatio?: AspectRatio;
 	prepareMissingAssets?: (document: AxcutDocument, missingAssetIds: Set<string>) => AxcutDocument;
 }) {
 	const result = await useProjectStore.getState().applyDocumentPatch(
@@ -222,14 +165,12 @@ async function commitRecordedImport(options: {
 					? options.prepareMissingAssets(document, missingAssetIds)
 					: document;
 			const arranged = insertClipsAtBoundary(prepared, missingClips, options.insertionTimeSec);
-			const policy = readAutomaticDirectionSettings(arranged).policy;
-			return applyAutomaticDirection({
-				id: options.planId,
-				document: arranged,
-				recordings: options.telemetry,
-				phases: { screen: true, camera: false },
-				policy,
-			});
+			return options.sourceAspectRatio &&
+				document.timeline.clips.length === 0 &&
+				getEditorSettings(document).aspectRatio ===
+					getEditorSettings(options.historyBase).aspectRatio
+				? patchEditorSettings(arranged, { aspectRatio: options.sourceAspectRatio })
+				: arranged;
 		},
 		{
 			createHistorySnapshot: (base) =>
@@ -247,72 +188,17 @@ async function commitRecordedImport(options: {
 	}
 }
 
-async function appendRecordedCameraDirection(
-	recordings: RecordedDirectionInput[],
-	screenTelemetry: RecordedScreenTelemetry[],
-	projectId: string,
-	planId: string,
-) {
-	const currentDocument = useProjectStore.getState().document;
-	const policy = currentDocument
-		? readAutomaticDirectionSettings(currentDocument).policy
-		: DEFAULT_AUTOMATIC_DIRECTION_POLICY;
-	const microphoneByAssetId = new Map(
-		await mapWithConcurrency(
-			recordings.filter((recording) => recording.hasCamera),
-			DIRECTION_ANALYSIS_CONCURRENCY,
-			async (recording) => {
-				const microphone =
-					(await window.electronAPI
-						?.getAudioPeaks?.(recording.screenVideoPath, recording.durationMs / 1_000, "microphone")
-						.catch(() => null)) ?? null;
-				return [
-					recording.assetId,
-					microphone?.success && microphone.peaks
-						? buildMicrophoneActivitySpans(
-								microphone.peaks,
-								recording.durationMs,
-								policy.microphoneActivity,
-							)
-						: [],
-				] as const;
-			},
-		),
-	);
-	const result = await useProjectStore.getState().applyDocumentPatch(
-		projectId,
-		(document) =>
-			applyAutomaticDirection({
-				id: planId,
-				document,
-				recordings: screenTelemetry.map((item) => ({
-					...item,
-					microphoneActivity: microphoneByAssetId.get(item.assetId) ?? [],
-				})),
-				phases: { screen: false, camera: true },
-				policy,
-			}),
-		{ coalesceIntoHistory: true },
-	);
-	if (result === "conflict") {
-		console.warn("[recording-import] camera direction could not merge after repeated edits");
-		void import("sonner").then(({ toast }) =>
-			toast.error("Camera emphasis could not be added", {
-				description: "The project changed repeatedly while automatic direction was finishing.",
-			}),
-		);
-	}
+async function recordingAspectRatio(asset: AxcutAsset | undefined, matchSource: boolean) {
+	if (!asset || !matchSource) return undefined;
+	const dimensions =
+		asset.video?.width && asset.video.height
+			? asset.video
+			: await probeVideoDimensions(toFileUrl(asset.originalPath));
+	return dimensions
+		? (toAspectRatioToken(dimensions.width, dimensions.height) ?? undefined)
+		: undefined;
 }
 
-/**
- * Imports the recording the HUD handed over. When recording started from an
- * editor project, the new sections go into that project at the saved boundary.
- * A recording started from the standalone HUD still creates a new project.
- *
- * Returns false when there is nothing pending — the caller then falls back to
- * reopening the most recent project. Throws if the import itself fails, leaving
- * the session in place so a later mount can retry it.
- */
 export async function importPendingRecording(): Promise<boolean> {
 	const api = window.electronAPI;
 	if (!api) return false;
@@ -323,7 +209,7 @@ export async function importPendingRecording(): Promise<boolean> {
 	if (!session || !screenPath) return false;
 	const workspaceResult = await api.getRecordingWorkspaceContext?.();
 	const workspace = workspaceResult?.success ? workspaceResult.context : null;
-	const directionPlanId = `recording-${session.createdAt}`;
+	const recordingImportId = `recording-${session.createdAt}`;
 
 	pendingRecordingImportInProgress = true;
 	try {
@@ -381,7 +267,7 @@ export async function importPendingRecording(): Promise<boolean> {
 					path: clip.screenVideoPath,
 					label,
 					clipId: recordedClipId(session.createdAt, clip.index),
-					recordingImportId: directionPlanId,
+					recordingImportId: recordingImportId,
 				});
 				if (asset) imported.push({ asset, clip, durationMs: durationMsForClip(clip) });
 			}
@@ -410,22 +296,13 @@ export async function importPendingRecording(): Promise<boolean> {
 					imported.map(({ asset, durationMs }) => [asset.id, Math.max(0.001, durationMs / 1000)]),
 				);
 				const clipByAssetId = new Map(imported.map(({ asset, clip }) => [asset.id, clip]));
-				const directionRecordings = imported
-					.filter(({ clip }) => !clip.provisionalDuration)
-					.map(({ asset, clip, durationMs }) => ({
-						assetId: asset.id,
-						screenVideoPath: clip.screenVideoPath,
-						durationMs,
-						hasCamera: asset.cameraTrack != null && asset.cameraTrack.visible !== false,
-					}));
-				const telemetry = await readRecordedScreenTelemetry(directionRecordings);
 				await commitRecordedImport({
 					projectId: document.project.id,
 					clips,
 					insertionTimeSec: workspace?.insertionTimeSec ?? 0,
-					telemetry,
-					planId: directionPlanId,
+					planId: recordingImportId,
 					historyBase,
+					sourceAspectRatio: await recordingAspectRatio(imported[0]?.asset, !workspace?.projectId),
 					prepareMissingAssets: (latest, missingAssetIds) => ({
 						...latest,
 						assets: latest.assets.map((asset) => {
@@ -437,9 +314,16 @@ export async function importPendingRecording(): Promise<boolean> {
 									? {
 											cameraTrack: {
 												...asset.cameraTrack,
-												offsetMs:
-													asset.cameraTrack.offsetMs -
-													(capturedStartMsByIndex.get(clip.index) ?? 0),
+												// One continuous camera file spans every clip, so a later
+												// clip must seek past the clips captured before it. A
+												// per-clip camera file already starts with its clip.
+												offsetMs: isClipOwnedWebcamPath(
+													clip.screenVideoPath,
+													asset.cameraTrack.sourcePath,
+												)
+													? asset.cameraTrack.offsetMs
+													: asset.cameraTrack.offsetMs -
+														(capturedStartMsByIndex.get(clip.index) ?? 0),
 											},
 										}
 									: {}),
@@ -450,16 +334,6 @@ export async function importPendingRecording(): Promise<boolean> {
 						}),
 					}),
 				});
-				if (directionRecordings.some((recording) => recording.hasCamera)) {
-					void appendRecordedCameraDirection(
-						directionRecordings,
-						telemetry,
-						document.project.id,
-						directionPlanId,
-					).catch((error) =>
-						console.warn("[recording-import] camera direction unavailable:", error),
-					);
-				}
 			}
 		} else {
 			const label = screenPath.split(/[\\/]/).pop() || "Recording";
@@ -467,7 +341,7 @@ export async function importPendingRecording(): Promise<boolean> {
 				path: screenPath,
 				label,
 				clipId: recordedClipId(session.createdAt, 0),
-				recordingImportId: directionPlanId,
+				recordingImportId: recordingImportId,
 			});
 			const document = useProjectStore.getState().document;
 			if (asset && document) {
@@ -483,33 +357,14 @@ export async function importPendingRecording(): Promise<boolean> {
 					origin: "system",
 					reason: "Recorded section",
 				};
-				const directionRecordings = [
-					{
-						assetId: asset.id,
-						screenVideoPath: screenPath,
-						durationMs: durationSec * 1_000,
-						hasCamera: asset.cameraTrack != null && asset.cameraTrack.visible !== false,
-					},
-				];
-				const telemetry = await readRecordedScreenTelemetry(directionRecordings);
 				await commitRecordedImport({
 					projectId: document.project.id,
 					clips: [recordedClip],
 					insertionTimeSec: workspace?.insertionTimeSec ?? 0,
-					telemetry,
-					planId: directionPlanId,
+					planId: recordingImportId,
 					historyBase,
+					sourceAspectRatio: await recordingAspectRatio(asset, !workspace?.projectId),
 				});
-				if (directionRecordings.some((recording) => recording.hasCamera)) {
-					void appendRecordedCameraDirection(
-						directionRecordings,
-						telemetry,
-						document.project.id,
-						directionPlanId,
-					).catch((error) =>
-						console.warn("[recording-import] camera direction unavailable:", error),
-					);
-				}
 			}
 		}
 		// Consumed: the recording now lives in a project. Cleared here rather than

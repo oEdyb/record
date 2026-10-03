@@ -1,3 +1,4 @@
+import type { AutomaticDirectionProvenance } from "../schema/automatic-direction-review";
 // Cursor-driven auto-zoom suggestions. Pure, no DOM/IPC.
 //
 // Ported from main's `src/components/video-editor/timeline/zoomSuggestionUtils.ts`
@@ -39,6 +40,7 @@ export interface AutoZoomSuggestion {
 	source: "auto";
 	/** Local sequence identity. A plan namespaces it before persistence. */
 	directionGroupId?: string;
+	automaticDirection?: AutomaticDirectionProvenance;
 }
 
 /**
@@ -89,6 +91,15 @@ export function buildAutoZoomSuggestions(options: {
 		customScale: zoom.customScale,
 		motionSpeed: zoom.motionSpeed,
 		source: "auto",
+		automaticDirection: {
+			version: 1,
+			reason:
+				zoom.connectionMode === "renewable"
+					? "typing"
+					: zoom.signal === "trace"
+						? "cursor-trace"
+						: "screen-activity",
+		},
 		...(zoom.sequenceId ? { directionGroupId: zoom.sequenceId } : {}),
 	}));
 }
@@ -118,6 +129,9 @@ export function appendAutoZoomSuggestions(
 					source: suggestion.source,
 					motionStyle: NEW_ZOOM_MOTION_STYLE,
 					motionSpeed: suggestion.motionSpeed ?? DEFAULT_MOTION_SPEED,
+					...(suggestion.automaticDirection
+						? { automaticDirection: suggestion.automaticDirection }
+						: {}),
 					...(suggestion.directionGroupId ? { directionGroupId: suggestion.directionGroupId } : {}),
 				},
 			],
@@ -381,6 +395,15 @@ export function buildAutoZoomSuggestionsForTimeline(options: {
 		customScale: zoom.customScale,
 		motionSpeed: zoom.motionSpeed,
 		source: "auto",
+		automaticDirection: {
+			version: 1,
+			reason:
+				zoom.connectionMode === "renewable"
+					? "typing"
+					: zoom.signal === "trace"
+						? "cursor-trace"
+						: "screen-activity",
+		},
 		...(zoom.sequenceId ? { directionGroupId: zoom.sequenceId } : {}),
 	}));
 }

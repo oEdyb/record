@@ -1,3 +1,4 @@
+export type { ClipLayoutOverride } from "../lib/ai-edition/layout/schema";
 export const NATIVE_BRIDGE_CHANNEL = "native-bridge:invoke";
 export const NATIVE_BRIDGE_VERSION = 1;
 
@@ -331,8 +332,62 @@ export interface AiEditionAssetResult {
 
 export interface AiEditionDocumentResult {
 	success: boolean;
+	transactionVersion?: AiEditionProjectVersion;
+	undoRecovery?: AiEditionUndoRecovery;
 	document?: unknown;
 	error?: string;
+}
+
+export interface SourceHandoffResult {
+	canceled: boolean;
+	directory?: string;
+	manifestPath?: string;
+	timelinePath?: string;
+	sourceCount?: number;
+	warnings?: string[];
+}
+
+/** Persistent storage identity, distinct from a renderer's live edit generation. */
+export interface AiEditionProjectVersion {
+	mutationIdentity: string;
+	revision: string;
+	fileHash: string;
+}
+export interface AiEditionUndoRecovery {
+	requestId: string;
+	afterRevision: string;
+	beforeDocument: unknown;
+}
+export interface AiEditionWriteGuard {
+	agentHistory?: {
+		restoreTo?: string;
+		requestKey?: string;
+		planSummary: string;
+		kind: "apply" | "undo" | "redo";
+		targetIds: string[];
+		force: boolean;
+	};
+	recordUndo?: boolean;
+	requestId: string;
+	expected: AiEditionProjectVersion;
+}
+export interface AiEditionTransactionReceipt {
+	requestId: string;
+	payloadHash: string;
+	operationId: string;
+	revision: string;
+	changed: boolean;
+}
+export interface AiEditionTransactionResult {
+	undoRecovery?: AiEditionUndoRecovery;
+	success: boolean;
+	/** Current saved snapshot, never an assertion that this is the receipt's output. */
+	document?: unknown;
+	version?: AiEditionProjectVersion;
+	receipt?: AiEditionTransactionReceipt | null;
+	snapshotMatchesReceipt?: boolean;
+	error?: string;
+	errorCode?: string;
 }
 
 export interface AiEditionLlmConfig {
@@ -598,6 +653,12 @@ export type NativeBridgeRequest =
 	  }
 	| {
 			domain: "aiEdition";
+			action: "document.exportSources";
+			payload: { document: unknown };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
 			action: "document.listProjects";
 			payload?: EmptyPayload;
 			requestId?: string;
@@ -616,6 +677,24 @@ export type NativeBridgeRequest =
 	  }
 	| {
 			domain: "aiEdition";
+			action: "document.snapshot";
+			payload: { projectId: string };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
+			action: "document.commit";
+			payload: { projectId: string; document: unknown; guard: AiEditionWriteGuard };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
+			action: "document.receipt";
+			payload: { projectId: string; operationRequestId: string };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
 			action: "document.save";
 			payload: { document: unknown };
 			requestId?: string;
@@ -624,6 +703,24 @@ export type NativeBridgeRequest =
 			domain: "aiEdition";
 			action: "document.delete";
 			payload: { projectId: string };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
+			action: "document.import";
+			payload: { document: unknown };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
+			action: "document.pickAudioAsset";
+			payload: { projectId: string };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
+			action: "document.prepareAsset";
+			payload: { projectId: string; path: string; label?: string; recordingImportId?: string };
 			requestId?: string;
 	  }
 	| {
@@ -768,6 +865,15 @@ export type NativeBridgeRequest =
 				segments: Array<{ id: string; text: string }>;
 				targetLanguage: string;
 				sourceLanguage?: string;
+			};
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
+			action: "audioOverlayStem";
+			payload: {
+				audioOverlays: import("./sceneDescription").SceneAudioOverlay[];
+				durationSec: number;
 			};
 			requestId?: string;
 	  }

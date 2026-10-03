@@ -113,6 +113,15 @@ async function readObservations(
 	}));
 }
 
+export async function readProjectDirectionObservations(
+	document: AxcutDocument,
+	policy: AutomaticDirectionPolicy,
+) {
+	const sources = recordedSources(document);
+	if (!sources.length) throw new Error("This project has no recorded direction data");
+	return readObservations(sources, policy);
+}
+
 const observationCache = new Map<string, Promise<RawRecordedDirectionObservation[]>>();
 
 export function clearAutomaticDirectionObservationCache(): void {

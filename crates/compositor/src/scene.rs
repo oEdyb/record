@@ -235,6 +235,9 @@ pub struct SceneAnnotation {
     pub text: Option<SceneAnnotationText>,
     #[serde(default)]
     pub image_path: Option<String>,
+    /// Optional entrance, from the saved annotation style. Old scenes remain static.
+    #[serde(default)]
+    pub image_animation: Option<String>,
     #[serde(default)]
     pub figure: Option<SceneAnnotationFigure>,
     #[serde(default)]
@@ -367,6 +370,14 @@ fn default_motion_speed() -> f32 {
     1.0
 }
 
+/// A slow camera push-in followed by a quick release.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneCameraDrift {
+    pub scale_to: f32,
+    pub release_sec: f32,
+}
+
 /// A camera-layout timeline region. Payloads without `mode` remain Full Camera.
 /// `emphasis` grows the camera moderately without hiding the screen.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -385,6 +396,45 @@ pub struct SceneCameraFullscreenRegion {
     pub motion_style: SceneMotionStyle,
     #[serde(default = "default_motion_speed")]
     pub motion_speed: f32,
+    #[serde(default)]
+    pub drift: Option<SceneCameraDrift>,
+    /// Bornes de la région entière dans le temps source de ce morceau : un morceau découpé
+    /// au milieu d'une région (trim ou frontière de clip) garde la phase d'ease et de drift
+    /// de la région complète, comme l'aperçu.
+    #[serde(default)]
+    pub envelope_start_sec: Option<f64>,
+    #[serde(default)]
+    pub envelope_end_sec: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum VideoOverlayFit {
+    Cover,
+    Contain,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct VideoOverlayRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneVideoOverlay {
+    pub id: String,
+    #[serde(default)]
+    pub clip_index: Option<usize>,
+    pub start_sec: f64,
+    pub end_sec: f64,
+    pub path: String,
+    pub source_offset_sec: f64,
+    pub fit: VideoOverlayFit,
+    pub rect: Option<VideoOverlayRect>,
+    pub opacity: f32,
 }
 
 /// Rendu du curseur.
@@ -457,6 +507,11 @@ pub struct Scene {
     /// `#[serde(default)]` : champ ajouté après coup, absent des JSON de test existants.
     #[serde(default)]
     pub annotations: Vec<SceneAnnotation>,
+    #[serde(default)]
+    pub video_overlays: Vec<SceneVideoOverlay>,
+    /// Imported music/SFX positioned in output program time, not source time.
+    #[serde(default)]
+    pub audio_overlays: Vec<crate::audio::overlays::AudioOverlay>,
     /// `#[serde(default)]` : champ ajouté après coup, absent des JSON de test existants.
     #[serde(default)]
     pub speed_regions: Vec<SceneSpeedRegion>,
@@ -476,7 +531,9 @@ pub struct Scene {
 impl Scene {
     /// Parse le JSON produit par `buildSceneDescription` (TS).
     pub fn from_json(json: &str) -> anyhow::Result<Scene> {
-        Ok(serde_json::from_str(json)?)
+        let scene: Scene = serde_json::from_str(json)?;
+        crate::audio::overlays::validate_overlays(&scene.audio_overlays)?;
+        Ok(scene)
     }
 
     /// Copie de scène limitée aux régions du clip actif. `clipIndex` est l'identité fiable
@@ -501,6 +558,9 @@ impl Scene {
             .retain(|region| belongs(region.clip_index, region.start_sec, region.end_sec));
         scene
             .camera_fullscreen_regions
+            .retain(|region| belongs(region.clip_index, region.start_sec, region.end_sec));
+        scene
+            .video_overlays
             .retain(|region| belongs(region.clip_index, region.start_sec, region.end_sec));
         scene.annotations.retain(|annotation| {
             belongs(

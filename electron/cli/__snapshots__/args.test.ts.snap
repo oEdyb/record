@@ -1,0 +1,3949 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`additive-only api_version 1.x contract > pins every command's description and input schema surface 1`] = `
+{
+  "commands": {
+    "accept": {
+      "description": "Accept proposed cuts. One undo step; optional --ids a,b; otherwise accepts selected and clears the lane.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "apply": {
+      "description": "Apply a prepared plan once. Requires the running opt-in editor; preserve request_id for recovery. --deep adds a decoded content pass over the touched span to the verify block.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deep": {
+            "type": "boolean",
+          },
+          "force": {
+            "type": "boolean",
+          },
+          "plan_id": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "plan_id",
+          "request_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "assets": {
+      "description": "List project assets with first/middle cached 320px JPEG thumbnails.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "write_artifacts",
+        ],
+        "requires": [
+          "saved_render",
+        ],
+        "verification": [],
+      },
+    },
+    "auto": {
+      "description": "auto run|remove|regenerate --project_id ID [--settings JSON]. Settings are {policy: overrides, presetId?: string|null}. Uses recorded activity, preserves manual regions, and returns apply verification and region counts.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "run",
+              "remove",
+              "regenerate",
+            ],
+            "type": "string",
+          },
+          "force": {
+            "type": "boolean",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "settings": {
+            "additionalProperties": false,
+            "properties": {
+              "policy": {
+                "additionalProperties": false,
+                "properties": {
+                  "camera": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cameraScale": {
+                        "maximum": 2,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "cursorActivityPreRollMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "cursorMaximumSampleGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "cursorMaximumSampleStep": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "cursorQuietMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maxPerMinute": {
+                        "maximum": 20,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "maxTotalDirectionPerMinute": {
+                        "maximum": 20,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "minimumDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumSpacingMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "motionBucketMs": {
+                        "maximum": 60000,
+                        "minimum": 10,
+                        "type": "number",
+                      },
+                      "motionPathThreshold": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "screenToCameraSpacingMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "speechConfidenceMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "speechPreRollMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "type": "object",
+                  },
+                  "connectedClicks": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "anticipationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "chainGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickChainMaximumDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickDedupeDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickDedupeMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "deadZoneHeightRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "deadZoneWidthRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "dragFramingPadding": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "dragMaximumDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "dragMinimumDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "dragMinimumDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "dragMinimumPath": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "entryMotionSpeed": {
+                        "maximum": 2,
+                        "minimum": 0.5,
+                        "type": "number",
+                      },
+                      "heldAttentionMaximumFocusDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "heldAttentionMaximumGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "heldAttentionMaximumMovement": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "holdAfterLastClickMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "leadBeforeFirstClickMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maximumPanMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumFocusChangeDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumPanMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumTargetHoldMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumUsefulScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "panDistanceForMaximum": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "panMotionSpeeds": {
+                        "items": {
+                          "maximum": 2,
+                          "minimum": 0.5,
+                          "type": "number",
+                        },
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array",
+                      },
+                      "passageConnectionGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "passageMinimumStableScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "passageScaleSearchSteps": {
+                        "maximum": 64,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "requestedScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "safeInset": {
+                        "maximum": 0.5,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "safetyFramesPerSecond": {
+                        "maximum": 64,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "scaleSearchIterations": {
+                        "maximum": 64,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "shortDragDestinationDelayMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "stationaryBridgeMaximumFocusDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "stationaryBridgeMaximumGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "stationaryBridgeMaximumMovement": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "targetArrivalLookbackMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "targetArrivalRadius": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "targetMergeDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "targetMergeMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "type": "object",
+                  },
+                  "maximumScreenScale": {
+                    "maximum": 5,
+                    "minimum": 1.05,
+                    "type": "number",
+                  },
+                  "microphoneActivity": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "absoluteFloor": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "bridgeGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "floorThresholdMultiplier": {
+                        "maximum": 10,
+                        "minimum": 0.1,
+                        "type": "number",
+                      },
+                      "frameMs": {
+                        "maximum": 60000,
+                        "minimum": 10,
+                        "type": "number",
+                      },
+                      "minimumBurstMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumHighFloorMultiplier": {
+                        "maximum": 10,
+                        "minimum": 0.1,
+                        "type": "number",
+                      },
+                      "minimumVariationRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "noiseQuantile": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "noiseThresholdMultiplier": {
+                        "maximum": 10,
+                        "minimum": 0.1,
+                        "type": "number",
+                      },
+                      "variationHighQuantile": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "variationLowQuantile": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "variationOffset": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "type": "object",
+                  },
+                  "screen": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "clickAttentionScoreUnitMs": {
+                        "maximum": 60000,
+                        "minimum": 10,
+                        "type": "number",
+                      },
+                      "clickAttentionWindowMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickClusterGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickClusterMaximumDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickClusterRadius": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickEnvelopeFallbackScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "clickEnvelopeOutlierTrimRatio": {
+                        "maximum": 0.25,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickEnvelopePadding": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickEnvelopeScaleSteps": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "maximumSpan": {
+                              "maximum": 2,
+                              "minimum": 0,
+                              "type": "number",
+                            },
+                            "scale": {
+                              "maximum": 5,
+                              "minimum": 1,
+                              "type": "number",
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "maxItems": 4,
+                        "minItems": 4,
+                        "type": "array",
+                      },
+                      "clickMaximumAttentionScore": {
+                        "maximum": 50,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickMaximumFollowDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickMaximumScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "clickMinimumScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "clickObservationTailMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickPostRollMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickPreRollMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickScorePerInteraction": {
+                        "maximum": 50,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickTargetSettleMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "defaultZoomDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maxZoomsPerMinute": {
+                        "maximum": 20,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "maximumZoomDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumSpacingMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumZoomDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "sequenceConnectionGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "settleRadius": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceBaseScore": {
+                        "maximum": 50,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceLongScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "traceMaxDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMaximumSampleGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMaximumSampleStep": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMaximumSettleScore": {
+                        "maximum": 50,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMaximumSpeed": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMediumPathThreshold": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMediumScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "traceMinDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMinEfficiency": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMinNetDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMinPath": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMinimumMotionStep": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceMinimumSpeed": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceNearbyClickWindowMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "tracePostRollMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "tracePreRollMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceSettleMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceSettleScoreUnitMs": {
+                        "maximum": 60000,
+                        "minimum": 10,
+                        "type": "number",
+                      },
+                      "traceShortPathThreshold": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "traceShortScale": {
+                        "maximum": 5,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                    },
+                    "type": "object",
+                  },
+                  "typing": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "anchorIntervalMs": {
+                        "maximum": 60000,
+                        "minimum": 10,
+                        "type": "number",
+                      },
+                      "anchorMovementDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickFallbackMaximumAgeMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "clickFallbackTargetPaddingRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "framingPaddingRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maximumFallbackTargetHeightRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maximumFallbackTargetWidthRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maximumFramingHeightRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maximumFramingWidthRatio": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "maximumTargetCenterDistance": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumBurstDurationMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "minimumKeyDownCount": {
+                        "maximum": 64,
+                        "minimum": 1,
+                        "type": "number",
+                      },
+                      "typingIdleGapMs": {
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "type": "object",
+                  },
+                },
+                "type": "object",
+              },
+              "presetId": {
+                "anyOf": [
+                  {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+              },
+            },
+            "type": "object",
+          },
+        },
+        "required": [
+          "project_id",
+          "action",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+        ],
+      },
+    },
+    "batch": {
+      "description": "batch --input steps.json [--stop-on error|warning] [--verbosity summary|full]: run a JSON array of agent commands in order against the live editor. Every step is validated before any write runs; steps without --request_id join one undo group (undo --to <batch_id>). One summary envelope reports per-step status, exit codes, introduced findings, before/after hashes, rendered frames, and the first failure. Nested batch steps are rejected.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "stop_on": {
+            "default": "error",
+            "enum": [
+              "error",
+              "warning",
+            ],
+            "type": "string",
+          },
+          "verbosity": {
+            "default": "summary",
+            "enum": [
+              "summary",
+              "full",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "input",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "broll": {
+      "description": "broll add/swap. broll swap --overlay ID --file /absolute/video.mp4. Swap keeps placement, clip, motion and opacity. --fit auto (default) covers within 8% aspect difference, otherwise contains; cover/contain force it. --offset seconds defaults to 0; --time trim (default) shortens to available media, hold keeps the last frame. At most 0.5s available fails MEDIA_TOO_SHORT. Use remove + add to create a different slot.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "add",
+                "type": "string",
+              },
+              "anchor": {
+                "default": "center",
+                "enum": [
+                  "top-left",
+                  "top",
+                  "top-right",
+                  "left",
+                  "center",
+                  "right",
+                  "bottom-left",
+                  "bottom",
+                  "bottom-right",
+                ],
+                "type": "string",
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+              "file": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string",
+              },
+              "fit": {
+                "default": "cover",
+                "enum": [
+                  "cover",
+                  "contain",
+                ],
+                "type": "string",
+              },
+              "force": {
+                "default": false,
+                "type": "boolean",
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+              "motion": {
+                "default": "cut",
+                "enum": [
+                  "fade",
+                  "cut",
+                ],
+                "type": "string",
+              },
+              "offset": {
+                "default": 0,
+                "minimum": 0,
+                "type": "number",
+              },
+              "project_id": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string",
+              },
+              "request_id": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string",
+              },
+              "size": {
+                "default": "M",
+                "enum": [
+                  "S",
+                  "M",
+                  "L",
+                  "XL",
+                ],
+                "type": "string",
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+              "words": {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "project_id",
+              "action",
+              "file",
+            ],
+            "type": "object",
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "swap",
+                "type": "string",
+              },
+              "file": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string",
+              },
+              "fit": {
+                "default": "auto",
+                "enum": [
+                  "auto",
+                  "cover",
+                  "contain",
+                ],
+                "type": "string",
+              },
+              "force": {
+                "default": false,
+                "type": "boolean",
+              },
+              "offset": {
+                "default": 0,
+                "minimum": 0,
+                "type": "number",
+              },
+              "overlay": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string",
+              },
+              "project_id": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string",
+              },
+              "request_id": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string",
+              },
+              "time": {
+                "default": "trim",
+                "enum": [
+                  "trim",
+                  "hold",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "project_id",
+              "action",
+              "overlay",
+              "file",
+            ],
+            "type": "object",
+          },
+        ],
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+        ],
+      },
+    },
+    "camera": {
+      "description": "camera set: full/emphasis over --at, --from/--to, or --words; minimum 0.8 seconds.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "set",
+            "type": "string",
+          },
+          "at": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "force": {
+            "default": false,
+            "type": "boolean",
+          },
+          "from": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "mode": {
+            "enum": [
+              "full",
+              "emphasis",
+            ],
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "size": {
+            "default": "M",
+            "enum": [
+              "S",
+              "M",
+              "L",
+              "XL",
+            ],
+            "type": "string",
+          },
+          "to": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "words": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "action",
+          "mode",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+        ],
+      },
+    },
+    "check": {
+      "description": "Run paged checks with --all, --range from to, or --rule id. Poll by repeating. --deep adds speech analysis; --explain RULE describes a rule without a project. --rule reply.time-base audits replies for unlabeled *Sec fields. Always exits zero.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "default": false,
+            "type": "boolean",
+          },
+          "deep": {
+            "default": false,
+            "type": "boolean",
+          },
+          "explain": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string",
+          },
+          "limit": {
+            "default": 30,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "page": {
+            "default": 1,
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "page_size": {
+            "default": 50,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "range": {
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+              {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+            ],
+            "type": "array",
+          },
+          "rule": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "analysis_cache",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "clip": {
+      "description": "clip replace --clip ID --file /absolute/video: replace source, retain fitting trims and overlays, report losses, then verify.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "replace",
+            "type": "string",
+          },
+          "clip": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "file": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "force": {
+            "default": false,
+            "type": "boolean",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "project_id",
+          "clip",
+          "file",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "clone": {
+      "description": "Copy a saved project file into the app's projects folder under a new project ID without touching media or the original. Returns the new ID and path.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "write_new_project",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "contracts": {
+      "description": "List all command input schemas.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_contract",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "cutpoint": {
+      "description": "Where a sentence really ends or starts near --time in --clip: bare numbers stay source seconds (compatibility); 103e/1:43 (edited) and 125.3r (raw) convert, and the reply carries all three bases. The transcript picks the nearest sentence boundary, the microphone level finds the last sound of it (--edge out) or the first sound of the next one (--edge in), and cut_sec adds --pad_after / --pad_before. A chosen cut stages the footage it removes into the proposal lane by default — nothing is written; review with staged, then accept or reject. --accept "<reason>" applies directly. Repeat until status is ready.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accept": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "clip": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "edge": {
+            "enum": [
+              "out",
+              "in",
+            ],
+            "type": "string",
+          },
+          "pad_after": {
+            "default": 0.15,
+            "maximum": 10,
+            "minimum": 0,
+            "type": "number",
+          },
+          "pad_before": {
+            "default": 0.1,
+            "maximum": 10,
+            "minimum": 0,
+            "type": "number",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "sentence_gap": {
+            "default": 0.8,
+            "maximum": 10,
+            "minimum": 0,
+            "type": "number",
+          },
+          "time": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+        },
+        "required": [
+          "project_id",
+          "clip",
+          "time",
+          "edge",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "stage_proposals",
+          "commit_when_accepted",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "doctor": {
+      "description": "Inspect command readiness without restarting, seeking, or switching projects. --live checks live frame requirements for shot. Unknown components never count as ready.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "live": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "command",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_contract",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "edges": {
+      "description": "Cut take edges from speech detection and internal microphone gaps >= --min_gap (0 disables gaps). Keep --pad_before/--pad_after; skip clips > --max_clip_sec. Suggested trims stage into the proposal lane by default — nothing is written; review with staged, then accept or reject. --accept "<reason>" applies directly. --remove true reverses these trims with a direct guarded apply.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accept": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "max_clip_sec": {
+            "default": 120,
+            "maximum": 7200,
+            "minimum": 1,
+            "type": "number",
+          },
+          "min_gap": {
+            "default": 1,
+            "maximum": 10,
+            "minimum": 0,
+            "type": "number",
+          },
+          "pad_after": {
+            "default": 0.15,
+            "maximum": 10,
+            "minimum": 0,
+            "type": "number",
+          },
+          "pad_before": {
+            "default": 0.1,
+            "maximum": 10,
+            "minimum": 0,
+            "type": "number",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "remove": {
+            "default": "false",
+            "enum": [
+              "true",
+              "false",
+            ],
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "stage_proposals",
+          "commit_when_accepted",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "frame": {
+      "description": "Render a composited PNG at edited --at time (seconds, m:ss.s, r/s suffixes). Returns measured milliseconds.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "out": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "at",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "write_artifacts",
+        ],
+        "requires": [
+          "saved_render",
+        ],
+        "verification": [],
+      },
+    },
+    "frames": {
+      "description": "Render composited frames at comma-separated edited times (m:ss.s, r/s suffixes) plus a contact sheet.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "out": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "at",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "write_artifacts",
+        ],
+        "requires": [
+          "saved_render",
+        ],
+        "verification": [],
+      },
+    },
+    "geometry": {
+      "description": "Evaluate planned compositor placement at source time without decoding an image. --time is source seconds when bare; e/r suffixes convert and select the clip they land in. Unknown metadata or cursor evidence is reported unavailable.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "project": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "snapshot": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string",
+          },
+          "time": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+        },
+        "required": [
+          "project",
+          "time",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_saved_project",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "guide": {
+      "description": "--command: schema; --skill: bundled instructions.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string",
+          },
+          "skill": {
+            "type": "boolean",
+          },
+        },
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_contract",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "history": {
+      "description": "List the last 50 agent writes, newest first.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_live_project",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "import-plan": {
+      "description": "Prepare image/audio/video JSON {kind,path,placement} for plan/apply. Absolute paths; images <=512 KiB, PNG/JPEG or decoder-supported WebP. Image/video use raw seconds and percent boxes; audio uses edited seconds. Video B-roll overlay is silent; inspect the candidate before apply.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "input",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "prepare_candidate",
+          "stage_when_requested",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "inspect": {
+      "description": "Inspect a saved project snapshot without loading media or starting analysis.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_saved_project",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "item": {
+      "description": "Read one clip, asset, or effect by its exact stable ID.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "project": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "snapshot": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "project",
+          "id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_saved_project",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "layout": {
+      "description": "layout set --scope project|clip:ID: guarded plan/apply, then state at the clip's first kept second. Keep --request_id for recovery.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "set",
+            "type": "string",
+          },
+          "camera_anchor": {
+            "anyOf": [
+              {
+                "enum": [
+                  "top-left",
+                  "top",
+                  "top-right",
+                  "left",
+                  "center",
+                  "right",
+                  "bottom-left",
+                  "bottom",
+                  "bottom-right",
+                ],
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "cx": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  "cy": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "cx",
+                  "cy",
+                ],
+                "type": "object",
+              },
+            ],
+            "description": "--camera-anchor: named anchor or JSON {cx,cy} normalized coordinates.",
+          },
+          "camera_shape": {
+            "enum": [
+              "rectangle",
+              "circle",
+              "square",
+              "rounded",
+              "squircle",
+            ],
+            "type": "string",
+          },
+          "camera_size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "XS",
+                  "S",
+                  "M",
+                  "L",
+                  "XL",
+                ],
+                "type": "string",
+              },
+              {
+                "maximum": 80,
+                "minimum": 10,
+                "type": "number",
+              },
+            ],
+            "description": "--camera-size: XS/S/M/L/XL or percent 10..80.",
+          },
+          "captions": {
+            "enum": [
+              "on",
+              "off",
+            ],
+            "type": "string",
+          },
+          "force": {
+            "type": "boolean",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "scope": {
+            "maxLength": 261,
+            "pattern": "^(?:project|clip:.+)$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "project_id",
+          "scope",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+        ],
+      },
+    },
+    "live": {
+      "description": "Inspect the open editor through the opt-in app-owned broker.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_live_project",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "media": {
+      "description": "List candidate image, video and audio files in a supplied folder; never import or decode them.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "default": 0,
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "directory": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "limit": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+        "required": [
+          "directory",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_saved_project",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "open": {
+      "description": "Open a project by ID in the running editor (opens the editor window when only the recorder is showing). Use clone first to work on a copy.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "switch_project",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "operations": {
+      "description": "List supported edit operation types, or get one operation schema with --type. No broker required.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "swapVideoOverlay",
+              "replaceClipSource",
+              "addVideoOverlay",
+              "removeAnnotation",
+              "setVideoOverlay",
+              "removeVideoOverlay",
+              "addAudioClip",
+              "setAudioClip",
+              "removeAudioClip",
+              "set-layout",
+              "setAutomaticDirectionSettings",
+              "autoDirectionRun",
+              "autoDirectionRemove",
+              "autoDirectionRegenerate",
+              "setClipLayout",
+              "addZoom",
+              "setZoom",
+              "addAnnotation",
+              "setAnnotation",
+              "addCameraFullscreen",
+              "setCameraFullscreen",
+              "addTrim",
+              "setTrim",
+              "setClipRange",
+              "moveClip",
+              "removeClip",
+              "removeTrim",
+              "removeTrims",
+              "removeModifier",
+              "splitClip",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_contract",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "pauses": {
+      "description": "Ask the open editor to find shortenable pauses with the editor's own detector (preset natural|balanced|tight, optional overrides) and return paged suggestions plus ready addTrim operations. Repeat until status is ready. A ready page stages its operations into the proposal lane by default — nothing is written; review with staged, then accept or reject. --accept "<reason>" applies the page directly.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accept": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "clips": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "ignore_non_speech": {
+            "enum": [
+              "true",
+              "false",
+            ],
+            "type": "string",
+          },
+          "keep_after": {
+            "maximum": 60,
+            "minimum": 0,
+            "type": "number",
+          },
+          "keep_before": {
+            "maximum": 60,
+            "minimum": 0,
+            "type": "number",
+          },
+          "limit": {
+            "default": 200,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "min_pause": {
+            "maximum": 60,
+            "minimum": 0,
+            "type": "number",
+          },
+          "mode": {
+            "enum": [
+              "speech",
+              "audio-level",
+            ],
+            "type": "string",
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "preset": {
+            "default": "balanced",
+            "enum": [
+              "natural",
+              "balanced",
+              "tight",
+            ],
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "protect_screen_activity": {
+            "enum": [
+              "true",
+              "false",
+            ],
+            "type": "string",
+          },
+          "protect_system_audio": {
+            "enum": [
+              "true",
+              "false",
+            ],
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "shortened": {
+            "maximum": 60,
+            "minimum": 0,
+            "type": "number",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "stage_proposals",
+          "commit_when_accepted",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "plan": {
+      "description": "Prepare operations from JSON. --stage puts only addTrim/setTrim operations in the review lane without writing the document.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "stage": {
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "project_id",
+          "input",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "prepare_candidate",
+          "stage_when_requested",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "preset": {
+      "description": "preset list; preset save NAME --project_id ID; preset apply NAME --project_id ID; preset delete NAME. Agent presets are stored per user; UI presets are readable. Apply is guarded and undoable. --source ui|agent selects a library.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "list",
+              "save",
+              "apply",
+              "delete",
+            ],
+            "type": "string",
+          },
+          "force": {
+            "type": "boolean",
+          },
+          "name": {
+            "maxLength": 48,
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "source": {
+            "enum": [
+              "ui",
+              "agent",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_library",
+          "write_library",
+          "commit_when_applied",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+        ],
+      },
+    },
+    "preview": {
+      "description": "Render one composed PNG at export/output time from a hash-bound saved project. --time is speed-adjusted output seconds when bare; e/r/s suffixes convert through the timeline. Experimental: seeks one native still frame; at most 128 clips, 128 assets, and 1280 pixels per side. Requires a current native build.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "max_dimension": {
+            "default": 1280,
+            "maximum": 1280,
+            "minimum": 256,
+            "type": "integer",
+          },
+          "out": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "project": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "snapshot": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string",
+          },
+          "time": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+        },
+        "required": [
+          "project",
+          "snapshot",
+          "time",
+          "out",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "write_artifacts",
+        ],
+        "requires": [
+          "saved_render",
+        ],
+        "verification": [],
+      },
+    },
+    "receipt": {
+      "description": "Recover a prior mutation result using the original request ID.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "request_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_live_project",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "redo": {
+      "description": "Reapply undone after-documents; --steps N, optional --force.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "default": false,
+            "type": "boolean",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "steps": {
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "reject": {
+      "description": "Reject proposed cuts. Requires --ids a,b; remembered per project.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "ids",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "proposal_state",
+          "rejection_memory",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "settings": {
+      "description": "settings: every global setting with current/default values, ranges, units and meanings. settings set key=value ...: guarded, undoable writes; cursor.size and captions.fontSize accept dotted keys.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "set",
+            "type": "string",
+          },
+          "assignments": {
+            "default": [],
+            "items": {
+              "maxLength": 16384,
+              "minLength": 1,
+              "type": "string",
+            },
+            "maxItems": 100,
+            "type": "array",
+          },
+          "force": {
+            "type": "boolean",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_settings",
+          "commit_when_set",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+        ],
+      },
+    },
+    "shot": {
+      "description": "shot --project_id ID --at 3:50 | --words "…" [--live]: one instant on all three time bases (103e/1:43 edited, 125.3r raw, 10.4s source) — project id, revision, dirty flag, visible layers with sizes and anchors, transcript ±5 s, nearest cuts, staged proposals in range, and one image: the saved render by default, or --live seeks the editor and grabs the live canvas frame. The reply says which (image.source + evidence). A --live image carries image.frame_settled and image.freshness: "settled" when the frame is proven to postdate the seek; "possibly_stale" with image.freshness_note otherwise (frame_settled is false on older shells — never silent).",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "live": {
+            "default": false,
+            "type": "boolean",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "words": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "write_artifacts",
+          "seek_when_live",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "skill": {
+      "description": "Read bundled CLI instructions.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_contract",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "staged": {
+      "description": "List proposed cuts. Includes source and edited times.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_live_project",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "state": {
+      "description": "Read scene state at edited --at seconds or m:ss.s; r/s suffixes name raw/source. Optional --range from to. The reply carries all three bases.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "range": {
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+              {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+            ],
+            "type": "array",
+          },
+        },
+        "required": [
+          "project_id",
+          "at",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_live_project",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "text": {
+      "description": "text add: edited-time or word-anchored text with safe margins; plan checks then guarded apply.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "add",
+            "type": "string",
+          },
+          "anchor": {
+            "default": "top",
+            "enum": [
+              "top-left",
+              "top",
+              "top-right",
+              "left",
+              "center",
+              "right",
+              "bottom-left",
+              "bottom",
+              "bottom-right",
+            ],
+            "type": "string",
+          },
+          "at": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "force": {
+            "default": false,
+            "type": "boolean",
+          },
+          "from": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "motion": {
+            "default": "fade",
+            "enum": [
+              "fade",
+              "rise",
+              "cut",
+              "instant",
+            ],
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "size": {
+            "default": "M",
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+            ],
+            "type": "string",
+          },
+          "style": {
+            "default": "card",
+            "enum": [
+              "card",
+              "lower-third",
+              "label",
+            ],
+            "type": "string",
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string",
+          },
+          "to": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "words": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "action",
+          "text",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+        ],
+      },
+    },
+    "timeline": {
+      "description": "Read clips plus separately paged effect/audio lanes from a saved snapshot. Use each lane next_offset as --offset; IDs are edit targets, offsets are read positions.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "project": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "snapshot": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "project",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_saved_project",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "transcribe": {
+      "description": "Ask the open editor to transcribe every timeline asset that has no stored transcript, then report per-asset status. Repeat the command to poll; it never restarts a running job.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "transcript": {
+      "description": "Read saved source-time words: --clip ID for one clip or --all for every clip and derived sentences. Use --project PATH or --project_id ID. --all pages stay below 48 KiB; follow next_page with --page and reuse --snapshot.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "default": false,
+            "type": "boolean",
+          },
+          "clip": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "limit": {
+            "default": 200,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "min_gap": {
+            "default": 0.5,
+            "maximum": 60,
+            "minimum": 0.05,
+            "type": "number",
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "page": {
+            "default": 1,
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "project": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string",
+          },
+          "snapshot": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "read_saved_project",
+        ],
+        "requires": [],
+        "verification": [],
+      },
+    },
+    "transport": {
+      "description": "Run editor transport steps from --script JSON: play, pause, seek(sec raw; "1:43"/e/s forms convert), wait(ms), sample(label), probe(ms). Reports playback/media state and frame timing. Seek replies carry all three bases. At most 50 steps and 60 s waiting. Repeat until ready. See agent-cli.md for click, wheel, and frame sampling.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "script": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "script",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "seek_play_pause_ui",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [],
+      },
+    },
+    "undo": {
+      "description": "Restore before-documents via guarded apply; --steps N or --to APPLY_ID. --force bypasses intervening edit refusal.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "default": false,
+            "type": "boolean",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "steps": {
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "to": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+          "isolated_audio",
+          "listening",
+        ],
+      },
+    },
+    "verify": {
+      "description": "verify --range a b: decode the real media at every cut and overlay edge in the edited-time range with ffmpeg. cut.clipped-word (error) when the level 0–120 ms after an out point stays within 15 dB of the word tail; frame.black/frame.identical (warning) from sampled frames. Frames plus a filmstrip with waveforms land in --out or the agent cache. Times accept m:ss.s and e/r/s suffixes. Read-only; at most 100 edges per run. Exits 0 with findings present: read data.findings/data.counts, not the exit code. A data.status of 'unavailable' means the range was NOT content-verified (see the error-level content.unavailable findings) — never a pass.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "out": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "range": {
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+              {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                  {
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "edited",
+                          "raw",
+                          "source",
+                          "output",
+                        ],
+                        "type": "string",
+                      },
+                      "seconds": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "seconds",
+                      "base",
+                    ],
+                    "type": "object",
+                  },
+                ],
+              },
+            ],
+            "type": "array",
+          },
+        },
+        "required": [
+          "project_id",
+          "range",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "write_artifacts",
+        ],
+        "requires": [
+          "editor",
+          "audio_decode",
+        ],
+        "verification": [],
+      },
+    },
+    "zoom": {
+      "description": "zoom add: --at, --from/--to, or --words; speed quick/normal/slow, size S/M/L/XL; minimum 0.8 seconds.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "add",
+            "type": "string",
+          },
+          "anchor": {
+            "default": "center",
+            "enum": [
+              "top-left",
+              "top",
+              "top-right",
+              "left",
+              "center",
+              "right",
+              "bottom-left",
+              "bottom",
+              "bottom-right",
+            ],
+            "type": "string",
+          },
+          "at": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "force": {
+            "default": false,
+            "type": "boolean",
+          },
+          "from": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "project_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+          },
+          "size": {
+            "default": "M",
+            "enum": [
+              "S",
+              "M",
+              "L",
+              "XL",
+            ],
+            "type": "string",
+          },
+          "speed": {
+            "default": "normal",
+            "enum": [
+              "quick",
+              "normal",
+              "slow",
+            ],
+            "type": "string",
+          },
+          "to": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number",
+              },
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "enum": [
+                      "edited",
+                      "raw",
+                      "source",
+                      "output",
+                    ],
+                    "type": "string",
+                  },
+                  "seconds": {
+                    "minimum": 0,
+                    "type": "number",
+                  },
+                },
+                "required": [
+                  "seconds",
+                  "base",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "words": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "project_id",
+          "action",
+        ],
+        "type": "object",
+      },
+      "policy": {
+        "effects": [
+          "commit_document",
+        ],
+        "requires": [
+          "editor",
+        ],
+        "verification": [
+          "changed_span",
+          "boundaries",
+          "live_seek",
+          "live_playback",
+          "span_export",
+        ],
+      },
+    },
+  },
+  "output_contract": {
+    "compact": "--compact retains recovery metadata and writes the complete reply to full_reply_path; full output remains the default.",
+    "confirmation": "A reply blocked by checks exits 3 and carries confirm_command: the exact command that proceeds.",
+    "error_fields": [
+      "code",
+      "message",
+      "hint",
+      "retryable",
+      "field_errors",
+    ],
+    "exit_codes": {
+      "0": "completed — the terminal envelope carries status: completed. Observe commands (check, verify, shot) exit 0 with findings present: read data.findings/data.counts, not the exit code. A verify data.status of 'unavailable' means NOT verified, never a pass.",
+      "2": "invalid input — fix the flagged field_errors; guide --command <name> --json shows the installed schema",
+      "3": "blocked by checks or confirmation required — the reply carries the exact confirm_command to proceed",
+      "4": "editor or owner unavailable — start Klippt with OPENSCREEN_AGENT_CLI=1 and open the project, then retry",
+      "5": "revision or history conflict — re-read state/history and rebuild the plan against the current revision",
+      "6": "timeout — commit state is unknown; query receipt with the original request_id before any new write",
+      "7": "failed — the terminal envelope's error object carries code, message and hint",
+    },
+    "findings": "check and verify report findings in data and still exit 0. verify data.status 'unavailable' means deep content verification could NOT run for the range (error-level content.unavailable findings say why): the range is not verified and the reply must not read as a pass.",
+    "receipt_hash_scopes": {
+      "imported_media": "media_file_bytes",
+      "sha256_after": "JSON.stringify(document_without_klipptTransactions)",
+      "sha256_before": "saved_file_bytes_including_transaction_metadata",
+    },
+    "stderr": "Progress and planned envelopes as NDJSON on stderr, plus diagnostics.",
+    "stdout": "Exactly one terminal JSON envelope per invocation.",
+    "stream": "--stream moves progress/planned envelopes onto stdout (NDJSON) for single-stream callers.",
+    "verification": "Commit status is separate from pending/passed/failed/unavailable proof. A saved image cannot satisfy live proof. Never repeat a committed mutation to obtain evidence.",
+    "versioning": "api_version 1.x is additive-only: new commands and flags only. Removing or repurposing a flag requires a new major api_version.",
+  },
+}
+`;

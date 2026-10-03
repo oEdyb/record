@@ -1,10 +1,14 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import electron from "vite-plugin-electron/simple";
 
+const buildDefine = { __KLIPPT_BUILD_ID__: JSON.stringify(randomUUID()) };
+
 // https://vitejs.dev/config/
 export default defineConfig({
+	define: buildDefine,
 	// Vite's dependency cache defaults to `node_modules/.vite`, and in this repo every
 	// worktree's `node_modules` is a JUNCTION to the main checkout's — so the main repo
 	// and every worktree share ONE cache directory. Running two dev servers at once
@@ -32,6 +36,9 @@ export default defineConfig({
 					return startup(["."], { env });
 				},
 				vite: {
+					define: buildDefine,
+					// Shared document adapters use the same source alias as the renderer.
+					resolve: { alias: { "@": path.resolve(__dirname, "src") } },
 					build: {},
 				},
 			},

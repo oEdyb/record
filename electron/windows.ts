@@ -6,6 +6,7 @@ import {
 	type CameraPreviewPoint,
 	clampCameraPreviewPosition,
 	defaultCameraPreviewPosition,
+	expandedCameraPreviewBounds,
 } from "./cameraPreviewGeometry";
 import { shouldShowHudInactive, shouldStartHudClickThrough } from "./hudInputPolicy";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
@@ -114,6 +115,9 @@ let cameraPreviewVisible = false;
 let hudRendererReady = false;
 let cameraPreviewRendererReady = false;
 let cameraPreviewPortsConnected = false;
+let cameraPreviewExpanded = false;
+// Where the compact monitor sat before it was expanded, restored on collapse.
+let cameraPreviewCompactPosition: CameraPreviewPoint | null = null;
 let hudDirectionExclusionRectangles: PrivateUiRectangle[] = [];
 
 const CAMERA_PREVIEW_SIZE = { width: 312, height: 186 } as const;
@@ -224,6 +228,31 @@ function applyCameraPreviewVisibility() {
 		cameraPreviewWindow.hide();
 	}
 }
+
+function setCameraPreviewExpanded(expanded: boolean) {
+	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed()) return;
+	if (expanded === cameraPreviewExpanded) return;
+	cameraPreviewExpanded = expanded;
+	if (expanded) {
+		const [x, y] = cameraPreviewWindow.getPosition();
+		cameraPreviewCompactPosition = { x, y };
+		const bounds = cameraPreviewWindow.getBounds();
+		const display = screen.getDisplayNearestPoint({
+			x: bounds.x + Math.round(bounds.width / 2),
+			y: bounds.y + Math.round(bounds.height / 2),
+		});
+		cameraPreviewWindow.setBounds(expandedCameraPreviewBounds(display.workArea), false);
+		return;
+	}
+	cameraPreviewWindow.setSize(CAMERA_PREVIEW_SIZE.width, CAMERA_PREVIEW_SIZE.height, false);
+	placeCameraPreview(cameraPreviewCompactPosition ?? undefined);
+	cameraPreviewCompactPosition = null;
+}
+
+ipcMain.on("camera-preview-set-expanded", (event, expanded: boolean) => {
+	if (!isCameraPreviewSender(event.sender.id) || typeof expanded !== "boolean") return;
+	setCameraPreviewExpanded(expanded);
+});
 
 ipcMain.on("camera-preview-set-visible", (event, visible: boolean) => {
 	if (!isCameraPreviewSender(event.sender.id) || typeof visible !== "boolean") return;
@@ -538,6 +567,8 @@ export function createCameraPreviewWindow(): BrowserWindow {
 	cameraPreviewWindow = win;
 	cameraPreviewReady = false;
 	cameraPreviewVisible = false;
+	cameraPreviewExpanded = false;
+	cameraPreviewCompactPosition = null;
 	cameraPreviewRendererReady = false;
 	cameraPreviewPortsConnected = false;
 
@@ -788,17 +819,83 @@ export function createCountdownOverlayWindow(): BrowserWindow {
 	return win;
 }
 
-// Frameless Notes Window for taking notes during a recording.
+const NOTES_WINDOW_DEFAULT_SIZE = { width: 320, height: 420 } as const;
+const NOTES_WINDOW_MIN_SIZE = { width: 220, height: 140 } as const;
+
+export interface NotesWindowBounds {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+function isNotesWindowBounds(value: unknown): value is NotesWindowBounds {
+	const candidate = value as Partial<NotesWindowBounds> | null;
+	return Boolean(
+		candidate &&
+			[candidate.x, candidate.y, candidate.width, candidate.height].every(
+				(entry) => typeof entry === "number" && Number.isFinite(entry),
+			),
+	);
+}
+
+/** Keeps a remembered notes window inside the display it is nearest to. */
+export function clampNotesWindowBounds(
+	bounds: NotesWindowBounds,
+	workArea: { x: number; y: number; width: number; height: number },
+): NotesWindowBounds {
+	const width = Math.round(
+		Math.min(workArea.width, Math.max(NOTES_WINDOW_MIN_SIZE.width, bounds.width)),
+	);
+	const height = Math.round(
+		Math.min(workArea.height, Math.max(NOTES_WINDOW_MIN_SIZE.height, bounds.height)),
+	);
+	const position = clampCameraPreviewPosition(bounds, { width, height }, workArea);
+	return { ...position, width, height };
+}
+
+let notesBoundsTimer: ReturnType<typeof setTimeout> | null = null;
+
+function publishNotesWindowBounds(win: BrowserWindow) {
+	if (notesBoundsTimer) clearTimeout(notesBoundsTimer);
+	notesBoundsTimer = setTimeout(() => {
+		notesBoundsTimer = null;
+		if (win.isDestroyed()) return;
+		win.webContents.send("notes-window-bounds-changed", win.getBounds());
+	}, 250);
+}
+
+ipcMain.on("notes-window-set-bounds", (event, bounds: unknown) => {
+	const win = BrowserWindow.fromWebContents(event.sender);
+	if (!win || win.isDestroyed() || !isNotesWindowBounds(bounds)) return;
+	const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
+	win.setBounds(clampNotesWindowBounds(bounds, display.workArea), false);
+});
+
+ipcMain.on("notes-window-close", (event) => {
+	const win = BrowserWindow.fromWebContents(event.sender);
+	if (win && !win.isDestroyed()) win.close();
+});
+
+// Frameless, translucent notes card for gathering thoughts during a recording. It floats
+// above everything, takes as little space as the user wants, and is excluded from capture.
 export function createNotesWindow(): BrowserWindow {
 	const win = new BrowserWindow({
-		width: 400,
-		height: 540,
-		minWidth: 360,
-		minHeight: 400,
-		maxWidth: 640,
-		maxHeight: 720,
+		...NOTES_WINDOW_DEFAULT_SIZE,
+		minWidth: NOTES_WINDOW_MIN_SIZE.width,
+		minHeight: NOTES_WINDOW_MIN_SIZE.height,
 		title: `${APP_DISPLAY_NAME} — Notes`,
-		backgroundColor: "#09090b",
+		frame: false,
+		// macOS: a frosted dark material under the card. Elsewhere a solid dark body,
+		// since transparent windows need a compositor that is not guaranteed there.
+		...(process.platform === "darwin"
+			? {
+					transparent: true,
+					backgroundColor: "#00000000",
+					vibrancy: "popover" as const,
+					visualEffectState: "active" as const,
+				}
+			: { backgroundColor: "#111114" }),
 		resizable: true,
 		alwaysOnTop: true,
 		skipTaskbar: false,
@@ -818,6 +915,12 @@ export function createNotesWindow(): BrowserWindow {
 	}
 
 	applyContentProtection(win, "Notes");
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+		win.setAlwaysOnTop(true, "floating");
+	}
+	win.on("resize", () => publishNotesWindowBounds(win));
+	win.on("move", () => publishNotesWindowBounds(win));
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "Notes");
 		win.show();

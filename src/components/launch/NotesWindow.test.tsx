@@ -31,6 +31,16 @@ vi.mock("@tiptap/react", () => ({
 }));
 
 vi.mock("@tiptap/starter-kit", () => ({ default: {} }));
+vi.mock("@tiptap/react/menus", () => ({
+	BubbleMenu: ({
+		children,
+	}: {
+		children: React.ReactNode;
+		editor?: unknown;
+		options?: unknown;
+		shouldShow?: unknown;
+	}) => <div data-testid="bubble-menu">{children}</div>,
+}));
 
 vi.mock("@/components/ui/tooltip", () => ({
 	Tooltip: ({ children }: { children: React.ReactNode }) => children,
@@ -50,6 +60,10 @@ vi.mock("@/contexts/I18nContext", () => ({
 			"tooltips.notesToolbar.decreaseFontSize": "Decrease font size",
 			"tooltips.notesToolbar.increaseFontSize": "Increase font size",
 			"tooltips.notesToolbar.mirror": "Mirror",
+			"tooltips.notesToolbar.more": "More controls",
+			"tooltips.notesToolbar.less": "Fewer controls",
+			"tooltips.notesToolbar.close": "Close notes",
+			"tooltips.notesToolbar.move": "Move notes",
 			"units.pixelsPerSecond": "{{value}} px/s",
 			"units.pixels": "{{value}} px",
 		};
@@ -261,19 +275,33 @@ describe("NotesWindow teleprompter mode", () => {
 		render(<NotesWindow />);
 		expect(setEditable).toHaveBeenLastCalledWith(true, false);
 
+		// Formatting lives on the selection menu, which exists only while the note is editable.
+		expect(screen.getByRole("button", { name: "Bold" })).toBeEnabled();
+
 		await user.click(screen.getByRole("button", { name: "Play" }));
 		expect(setEditable).toHaveBeenLastCalledWith(false, false);
-		expect(screen.getByRole("button", { name: "Bold" })).toBeDisabled();
+		expect(screen.queryByRole("button", { name: "Bold" })).not.toBeInTheDocument();
 
 		await user.click(screen.getByRole("button", { name: "Pause" }));
 		expect(setEditable).toHaveBeenLastCalledWith(true, false);
 		expect(screen.getByRole("button", { name: "Bold" })).toBeEnabled();
 	});
 
+	it("fades its chrome only while auto-scroll runs", async () => {
+		const user = userEvent.setup();
+		render(<NotesWindow />);
+		expect(screen.getByTestId("notes-card")).toHaveAttribute("data-playing", "false");
+
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		expect(screen.getByTestId("notes-card")).toHaveAttribute("data-playing", "true");
+	});
+
 	it("locks the note in every mirrored or playing state and unlocks only when both end", async () => {
 		const user = userEvent.setup();
 		render(<NotesWindow />);
-		const bold = () => screen.getByRole("button", { name: "Bold" });
+		await user.click(screen.getByRole("button", { name: "More controls" }));
+		// The selection formatting menu exists only while the note is editable.
+		const bold = () => screen.queryByRole("button", { name: "Bold" });
 
 		// Not playing, not mirrored: editable.
 		expect(setEditable).toHaveBeenLastCalledWith(true, false);
@@ -282,17 +310,17 @@ describe("NotesWindow teleprompter mode", () => {
 		// Not playing, mirrored: locked.
 		await user.click(screen.getByRole("button", { name: "Mirror" }));
 		expect(setEditable).toHaveBeenLastCalledWith(false, false);
-		expect(bold()).toBeDisabled();
+		expect(bold()).not.toBeInTheDocument();
 
 		// Playing, mirrored: locked.
 		await user.click(screen.getByRole("button", { name: "Play" }));
 		expect(setEditable).toHaveBeenLastCalledWith(false, false);
-		expect(bold()).toBeDisabled();
+		expect(bold()).not.toBeInTheDocument();
 
 		// Paused again but still mirrored: stays locked.
 		await user.click(screen.getByRole("button", { name: "Pause" }));
 		expect(setEditable).toHaveBeenLastCalledWith(false, false);
-		expect(bold()).toBeDisabled();
+		expect(bold()).not.toBeInTheDocument();
 
 		// The teleprompter controls stay usable while the note is locked.
 		const content = screen.getByTestId("notes-teleprompter-content");
@@ -322,7 +350,7 @@ describe("NotesWindow teleprompter mode", () => {
 		expect(tiptapState.options?.editable).toBe(false);
 		expect(setEditable).toHaveBeenLastCalledWith(false, false);
 		expect(setEditable).not.toHaveBeenCalledWith(true, false);
-		expect(screen.getByRole("button", { name: "Bold" })).toBeDisabled();
+		expect(screen.queryByRole("button", { name: "Bold" })).not.toBeInTheDocument();
 		// A restored mirror must not auto-start playback.
 		expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
 	});
@@ -335,6 +363,7 @@ describe("NotesWindow teleprompter mode", () => {
 	it("keeps mirroring and playback independent", async () => {
 		const user = userEvent.setup();
 		render(<NotesWindow />);
+		await user.click(screen.getByRole("button", { name: "More controls" }));
 		const content = screen.getByTestId("notes-teleprompter-content");
 
 		// Mirroring must not start playback.
@@ -351,6 +380,7 @@ describe("NotesWindow teleprompter mode", () => {
 	it("applies and persists font and mirror settings without persisting playback", async () => {
 		const user = userEvent.setup();
 		render(<NotesWindow />);
+		await user.click(screen.getByRole("button", { name: "More controls" }));
 		const content = screen.getByTestId("notes-teleprompter-content");
 
 		expect(content).toHaveStyle({ fontSize: "16px" });

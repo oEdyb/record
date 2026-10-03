@@ -30,6 +30,7 @@ import { AudioPane } from "./AudioPane";
 const candidates: PauseSuggestion[] = [
 	{
 		id: "pause-1",
+		kind: "pause",
 		clipId: "clip-1",
 		assetId: "asset-1",
 		silenceStartSec: 1,
@@ -42,6 +43,7 @@ const candidates: PauseSuggestion[] = [
 	},
 	{
 		id: "pause-2",
+		kind: "pause",
 		clipId: "clip-1",
 		assetId: "asset-1",
 		silenceStartSec: 4,
@@ -142,13 +144,17 @@ describe("AudioPane", () => {
 		).toBeInTheDocument();
 
 		const evenVolume = screen.getByRole("switch", { name: "audio.evenVolume" });
+		fireEvent.click(evenVolume);
+		fireEvent.mouseDown(screen.getByRole("tab", { name: "panels.delivery" }), {
+			button: 0,
+			ctrlKey: false,
+		});
 		const normalizeVolume = screen.getByRole("switch", {
 			name: "audio.normalizeVolume",
 		});
-		expect(evenVolume).toHaveAttribute("aria-checked", "true");
+		expect(evenVolume).toHaveAttribute("aria-checked", "false");
 		expect(normalizeVolume).toHaveAttribute("aria-checked", "true");
 
-		fireEvent.click(evenVolume);
 		fireEvent.click(normalizeVolume);
 		await act(async () => undefined);
 
@@ -194,6 +200,10 @@ describe("AudioPane", () => {
 	it("stores custom loudness and peak targets as real project settings", async () => {
 		render(<Harness onPreview={vi.fn()} />);
 
+		fireEvent.mouseDown(screen.getByRole("tab", { name: "panels.delivery" }), {
+			button: 0,
+			ctrlKey: false,
+		});
 		const preset = screen.getByRole("combobox", { name: "audio.preset" });
 		fireEvent.keyDown(preset, { key: "ArrowDown" });
 		fireEvent.click(screen.getByRole("option", { name: "audio.custom" }));
@@ -229,6 +239,10 @@ describe("AudioPane", () => {
 		await act(async () => vi.advanceTimersByTimeAsync(500));
 		expect(analyze).not.toHaveBeenCalled();
 
+		fireEvent.mouseDown(screen.getByRole("tab", { name: "panels.pauses" }), {
+			button: 0,
+			ctrlKey: false,
+		});
 		fireEvent.click(screen.getByRole("button", { name: "pauses.analyze" }));
 		await act(async () => undefined);
 		expect(screen.getByText(/pauses.resultCount 2/)).toBeInTheDocument();
@@ -238,7 +252,7 @@ describe("AudioPane", () => {
 			expect.arrayContaining([expect.objectContaining({ id: "pause-1" })]),
 		);
 
-		fireEvent.click(screen.getByRole("button", { name: /pauses.applySelected 2/ }));
+		fireEvent.click(screen.getByRole("button", { name: /pauses.acceptAll 2/ }));
 		await act(async () => undefined);
 		expect(applyPatch).toHaveBeenCalledOnce();
 		const applyCall = applyPatch.mock.calls[0] as unknown[] | undefined;
@@ -257,6 +271,10 @@ describe("AudioPane", () => {
 		);
 		const { unmount } = render(<Harness onPreview={vi.fn()} />);
 
+		fireEvent.mouseDown(screen.getByRole("tab", { name: "panels.pauses" }), {
+			button: 0,
+			ctrlKey: false,
+		});
 		fireEvent.click(screen.getByRole("button", { name: "pauses.analyze" }));
 		expect(usePauseAnalysisStore.getState().status).toBe("analyzing");
 		unmount();
@@ -282,6 +300,10 @@ describe("AudioPane", () => {
 
 	it("invalidates finished suggestions when the project revision changes", async () => {
 		render(<Harness onPreview={vi.fn()} />);
+		fireEvent.mouseDown(screen.getByRole("tab", { name: "panels.pauses" }), {
+			button: 0,
+			ctrlKey: false,
+		});
 		fireEvent.click(screen.getByRole("button", { name: "pauses.analyze" }));
 		await act(async () => undefined);
 		expect(usePauseAnalysisStore.getState().suggestions).toHaveLength(2);

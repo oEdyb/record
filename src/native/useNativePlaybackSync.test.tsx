@@ -13,6 +13,9 @@ vi.mock("./compositorViewClient", () => ({
 		syncCompositorTransport(command),
 }));
 
+const waitForNativeScene = vi.fn(() => Promise.resolve(true));
+vi.mock("./nativeCompositorStore", () => ({ waitForNativeScene: () => waitForNativeScene() }));
+
 import { useNativePlaybackSync } from "./useNativePlaybackSync";
 
 const target = (overrides: Partial<NativeTransportTarget> = {}): NativeTransportTarget => ({
@@ -30,6 +33,7 @@ const target = (overrides: Partial<NativeTransportTarget> = {}): NativeTransport
 describe("useNativePlaybackSync", () => {
 	beforeEach(() => {
 		syncCompositorTransport.mockClear();
+		waitForNativeScene.mockReset().mockResolvedValue(true);
 		vi.restoreAllMocks();
 	});
 
@@ -85,5 +89,52 @@ describe("useNativePlaybackSync", () => {
 			sourceTimeSec: 1.2,
 			playing: true,
 		});
+	});
+});
+
+it("waits for scene submission and reanchors edits at the same paused position", async () => {
+	let ready!: (value: boolean) => void;
+	waitForNativeScene.mockReturnValueOnce(
+		new Promise((resolve) => {
+			ready = resolve;
+		}),
+	);
+	const scene = {};
+	const { rerender } = renderHook(({ value }) => useNativePlaybackSync(value), {
+		initialProps: { value: target({ sceneIdentity: scene }) },
+	});
+	const callsBefore = syncCompositorTransport.mock.calls.length;
+	await act(async () => {
+		await Promise.resolve();
+	});
+	expect(syncCompositorTransport).toHaveBeenCalledTimes(callsBefore);
+	await act(async () => {
+		ready(true);
+	});
+	expect(syncCompositorTransport).toHaveBeenCalledTimes(callsBefore + 1);
+	rerender({ value: target({ sceneIdentity: {} }) });
+	await waitFor(() => expect(syncCompositorTransport).toHaveBeenCalledTimes(callsBefore + 2));
+});
+
+it("coalesces normal playing ticks while scene submission is pending", async () => {
+	let ready!: (value: boolean) => void;
+	waitForNativeScene.mockReturnValueOnce(
+		new Promise((resolve) => {
+			ready = resolve;
+		}),
+	);
+	const scene = {};
+	const initial = target({ playing: true, sourceTimeSec: 10, sceneIdentity: scene });
+	const start = syncCompositorTransport.mock.calls.length;
+	const { rerender } = renderHook(({ value }) => useNativePlaybackSync(value), {
+		initialProps: { value: initial },
+	});
+	rerender({ value: { ...initial, sourceTimeSec: 10 + 1 / 60 } });
+	await act(async () => {
+		ready(true);
+	});
+	expect(syncCompositorTransport).toHaveBeenCalledTimes(start + 1);
+	expect(syncCompositorTransport.mock.calls.at(-1)?.[0]).toMatchObject({
+		sourceTimeSec: 10 + 1 / 60,
 	});
 });

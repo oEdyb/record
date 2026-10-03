@@ -79,6 +79,7 @@ import {
 import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
+import { parseCliArgs } from "../cli/args";
 import { createDiagnosticReport, type DiagnosticRequest } from "../diagnostics/diagnostic-report";
 import { createElectronWorkloadResourceSampler } from "../diagnostics/electronWorkloadResources";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
@@ -95,7 +96,6 @@ import {
 	createVoiceoverTempPath,
 	isVoiceoverTempPath,
 } from "../export/voiceoverTemp";
-import { writeJsonDurably } from "../filesystem/durableJson";
 import { mainT } from "../i18n";
 import {
 	type AudioPeakProfile,
@@ -115,6 +115,7 @@ import {
 	readCursorSidecar,
 	readCursorTelemetryFile as readCursorTelemetryFileFrom,
 } from "../media/cursorSidecar";
+import { MediaAccessRegistry } from "../media/mediaAccessRegistry";
 import {
 	findMediaLinksByFingerprint,
 	registerMediaLinks,
@@ -150,6 +151,11 @@ import {
 	waitForNativeWindowsCaptureStop,
 } from "../recording/nativeWindowsCaptureStop";
 import { parseNativeWindowsCaptureTelemetry } from "../recording/nativeWindowsCaptureTelemetry";
+import {
+	matchRecordingSource,
+	ProjectRecordingSetupStore,
+	recordingSource,
+} from "../recording/projectRecordingSetupStore";
 import { type RecordingPrefs, RecordingPrefsStore } from "../recording/recordingPrefsStore";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
@@ -161,6 +167,9 @@ import type { RendererIpcMain } from "./trustedRendererIpc";
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
 const RECORDING_PREFS_FILE = path.join(app.getPath("userData"), "recording-preferences.json");
 const recordingPrefsStore = new RecordingPrefsStore(RECORDING_PREFS_FILE);
+const projectRecordingSetupStore = new ProjectRecordingSetupStore(
+	path.join(app.getPath("userData"), "project-recording-setups"),
+);
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
 const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
@@ -177,11 +186,46 @@ const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
 const PREVIEW_AUDIO_DIR = path.join(app.getPath("userData"), "preview-audio");
 const RECORDINGS_DIR = recordingsDirectory(app.getPath("userData"));
 const CLEAN_VOICE_MEDIA_DIR = path.join(app.getPath("userData"), "derived-media", "clean-voice-v1");
+const AUDIO_OVERLAY_MEDIA_DIR = path.join(
+	app.getPath("userData"),
+	"derived-media",
+	"audio-overlays-v1",
+);
 const RENDERER_EXPORT_TEMP_DIR = app.getPath("temp");
 let nativeMacRecordingService: NativeMacRecordingService | null = null;
 
 // Paths the user approved via file picker or project load (i.e. outside the default dirs).
 const approvedPaths = new Set<string>();
+let mediaAccessRegistry: MediaAccessRegistry | undefined;
+let mediaGrantReadWarningShown = false;
+function mediaGrants(): MediaAccessRegistry {
+	mediaAccessRegistry ??= new MediaAccessRegistry(
+		path.join(app.getPath("userData"), "media-access-grants.json"),
+	);
+	return mediaAccessRegistry;
+}
+function hasMediaGrant(filePath: string): boolean {
+	try {
+		return mediaGrants().hasCanonicalPath(canonicalPath(filePath));
+	} catch (error) {
+		if (!mediaGrantReadWarningShown)
+			console.warn("[media-access] Cannot read saved media grants:", error);
+		mediaGrantReadWarningShown = true;
+		return false;
+	}
+}
+async function rememberTrustedMedia(
+	filePath: string,
+	trustedDirectories?: readonly string[],
+): Promise<void> {
+	if (
+		[RECORDINGS_DIR, PREVIEW_AUDIO_DIR, CLEAN_VOICE_MEDIA_DIR, AUDIO_OVERLAY_MEDIA_DIR].some(
+			(dir) => isPathWithinDir(filePath, dir),
+		)
+	)
+		return;
+	await mediaGrants().grantSelectedFile(filePath, trustedDirectories);
+}
 
 function canonicalPath(filePath: string): string {
 	try {
@@ -207,7 +251,7 @@ function isPathWithinDir(filePath: string, dirPath: string): boolean {
 
 function isPathAllowed(filePath: string): boolean {
 	const resolved = canonicalPath(filePath);
-	if (approvedPaths.has(resolved)) return true;
+	if (approvedPaths.has(resolved) || hasMediaGrant(resolved)) return true;
 	return getAllowedReadDirs().some((dir) => isPathWithinDir(resolved, dir));
 }
 
@@ -243,14 +287,20 @@ export function resolveApprovedRendererMediaPath(mediaPath?: string | null): str
 	) {
 		return null;
 	}
-	const appOwned = [RECORDINGS_DIR, PREVIEW_AUDIO_DIR, CLEAN_VOICE_MEDIA_DIR].some((directory) =>
-		isPathWithinDir(normalizedPath, directory),
-	);
+	const appOwned = [
+		RECORDINGS_DIR,
+		PREVIEW_AUDIO_DIR,
+		CLEAN_VOICE_MEDIA_DIR,
+		AUDIO_OVERLAY_MEDIA_DIR,
+	].some((directory) => isPathWithinDir(normalizedPath, directory));
 	const appOwnedExport = isVoiceoverTempPath(
 		canonicalPath(RENDERER_EXPORT_TEMP_DIR),
 		canonicalPath(normalizedPath),
 	);
-	return appOwned || appOwnedExport || approvedPaths.has(canonicalPath(normalizedPath))
+	return appOwned ||
+		appOwnedExport ||
+		approvedPaths.has(canonicalPath(normalizedPath)) ||
+		hasMediaGrant(normalizedPath)
 		? normalizedPath
 		: null;
 }
@@ -258,6 +308,7 @@ export function resolveApprovedRendererMediaPath(mediaPath?: string | null): str
 /** Grants renderer preview access to one existing media file selected by a trusted main flow. */
 export async function approveReadableRendererMediaPath(
 	filePath?: string | null,
+	trustedDirectories?: readonly string[],
 ): Promise<string | null> {
 	const normalizedPath = normalizeVideoSourcePath(filePath);
 	if (
@@ -271,6 +322,8 @@ export async function approveReadableRendererMediaPath(
 	} catch {
 		return null;
 	}
+	if (resolveApprovedRendererMediaPath(normalizedPath)) return normalizedPath;
+	await rememberTrustedMedia(normalizedPath, trustedDirectories);
 	approveFilePath(normalizedPath);
 	return normalizedPath;
 }
@@ -425,6 +478,7 @@ export async function approveReadableVideoPath(
 		return null;
 	}
 
+	await rememberTrustedMedia(normalizedPath, trustedDirs);
 	approveFilePath(normalizedPath);
 	return normalizedPath;
 }
@@ -437,6 +491,7 @@ async function approveUserSelectedVideoPath(filePath?: string | null): Promise<s
 	} catch {
 		return null;
 	}
+	await rememberTrustedMedia(normalizedPath);
 	approveFilePath(normalizedPath);
 	return normalizedPath;
 }
@@ -520,6 +575,19 @@ async function getApprovedProjectSession(
 ): Promise<RecordingSession | null> {
 	if (!project || typeof project !== "object") {
 		return null;
+	}
+	if ("schemaVersion" in project) {
+		const { approveCurrentProjectMedia } = await import("./currentProjectMedia");
+		return approveCurrentProjectMedia(
+			project,
+			projectFilePath,
+			RECORDINGS_DIR,
+			approveReadableVideoPath,
+			(file, trusted) =>
+				isPathAllowed(file) || trusted.some((dir) => isPathWithinDir(file, dir))
+					? approveReadableRendererMediaPath(file, trusted)
+					: Promise.resolve(null),
+		);
 	}
 
 	const rawProject = project as { media?: unknown; videoPath?: unknown };
@@ -622,6 +690,22 @@ let lastEnumeratedSources = new Map<string, DesktopCapturerSource>();
 let currentProjectPath: string | null = null;
 let currentRecordingSession: RecordingSession | null = null;
 let currentRecordingWorkspaceContext: RecordingWorkspaceContext | null = null;
+let unavailableRecordingSource: ReturnType<typeof recordingSource> = null;
+let recordingSetupQueue: Promise<unknown> = Promise.resolve();
+
+function serializeRecordingSetup<T>(operation: () => Promise<T>): Promise<T> {
+	const result = recordingSetupQueue.then(operation);
+	recordingSetupQueue = result.catch(() => undefined);
+	return result;
+}
+
+async function saveProjectRecordingSetup(projectId = currentRecordingWorkspaceContext?.projectId) {
+	if (!projectId) return;
+	await projectRecordingSetupStore.set(projectId, {
+		prefs: await recordingPrefsStore.get(),
+		source: recordingSource(selectedSource) ?? unavailableRecordingSource,
+	});
+}
 
 // One source of truth for the mic/camera/system-audio/cursor choices shared by
 // the editor Rec stage and the HUD. Unlike project content, these are app-level
@@ -1737,6 +1821,19 @@ export function registerIpcHandlers(
 		workloadTelemetry.observe(workloadId, "capture.delivered_fps", telemetry.deliveredVideoFps);
 		workloadTelemetry.observe(workloadId, "capture.pending_frames", telemetry.pendingVideoFrames);
 		workloadTelemetry.observe(workloadId, "capture.dropped_frames", telemetry.droppedVideoFrames);
+		// Samples ScreenCaptureKit delivered without new pixels (idle, blank, suspended,
+		// started, stopped, other). Reported apart from dropped frames so a static screen
+		// or a game below the requested rate does not read as capture loss.
+		workloadTelemetry.observe(
+			workloadId,
+			"capture.incomplete_frames",
+			telemetry.idleScreenSamples +
+				telemetry.blankScreenSamples +
+				telemetry.suspendedScreenSamples +
+				telemetry.startedScreenSamples +
+				telemetry.stoppedScreenSamples +
+				telemetry.otherScreenSamples,
+		);
 		if (telemetry.systemAudioDriftMs) {
 			workloadTelemetry.setMetricSummary(
 				workloadId,
@@ -1999,36 +2096,40 @@ export function registerIpcHandlers(
 		}));
 	});
 
-	ipcMain.handle("select-source", async (_, source: SelectedSource) => {
-		selectedSource = source;
-		// Reuse the exact source object returned during enumeration to avoid
-		// Windows window-source id mismatches across separate getSources() calls.
-		selectedDesktopSource =
-			typeof source.id === "string" ? (lastEnumeratedSources.get(source.id) ?? null) : null;
+	ipcMain.handle("select-source", async (_, source: SelectedSource) =>
+		serializeRecordingSetup(async () => {
+			selectedSource = source;
+			unavailableRecordingSource = null;
+			// Reuse the exact source object returned during enumeration to avoid
+			// Windows window-source id mismatches across separate getSources() calls.
+			selectedDesktopSource =
+				typeof source.id === "string" ? (lastEnumeratedSources.get(source.id) ?? null) : null;
 
-		if (!selectedDesktopSource && typeof source.id === "string") {
-			try {
-				const sources = await desktopCapturer.getSources({
-					types: ["screen", "window"],
-					thumbnailSize: { width: 0, height: 0 },
-					fetchWindowIcons: true,
-				});
-				lastEnumeratedSources = new Map(sources.map((candidate) => [candidate.id, candidate]));
-				selectedDesktopSource = lastEnumeratedSources.get(source.id) ?? null;
-			} catch {
-				selectedDesktopSource = null;
+			if (!selectedDesktopSource && typeof source.id === "string") {
+				try {
+					const sources = await desktopCapturer.getSources({
+						types: ["screen", "window"],
+						thumbnailSize: { width: 0, height: 0 },
+						fetchWindowIcons: true,
+					});
+					lastEnumeratedSources = new Map(sources.map((candidate) => [candidate.id, candidate]));
+					selectedDesktopSource = lastEnumeratedSources.get(source.id) ?? null;
+				} catch {
+					selectedDesktopSource = null;
+				}
 			}
-		}
-		const mainWin = getMainWindow();
-		if (mainWin && !mainWin.isDestroyed()) {
-			mainWin.webContents.send("selected-source-changed", selectedSource);
-		}
-		const sourceSelectorWin = getSourceSelectorWindow();
-		if (sourceSelectorWin) {
-			sourceSelectorWin.close();
-		}
-		return selectedSource;
-	});
+			await saveProjectRecordingSetup();
+			const mainWin = getMainWindow();
+			if (mainWin && !mainWin.isDestroyed()) {
+				mainWin.webContents.send("selected-source-changed", selectedSource);
+			}
+			const sourceSelectorWin = getSourceSelectorWindow();
+			if (sourceSelectorWin) {
+				sourceSelectorWin.close();
+			}
+			return selectedSource;
+		}),
+	);
 
 	ipcMain.handle("get-selected-source", () => {
 		return selectedSource;
@@ -2038,18 +2139,27 @@ export function registerIpcHandlers(
 		return await recordingPrefsStore.get();
 	});
 
-	ipcMain.handle("set-recording-prefs", async (_, prefs: Partial<RecordingPrefs>) => {
-		const recordingPrefs = await recordingPrefsStore.update(prefs);
-		// The recording HUD owns the controls, while the separate camera window owns
-		// the confidence monitor. Broadcast one normalized value so both renderers
-		// change device/format/visibility from the same persisted state.
-		for (const appWindow of BrowserWindow.getAllWindows()) {
-			if (!appWindow.isDestroyed()) {
-				appWindow.webContents.send("recording-prefs-changed", recordingPrefs);
+	ipcMain.handle("set-recording-prefs", async (_, prefs: Partial<RecordingPrefs>) =>
+		serializeRecordingSetup(async () => {
+			const projectId = currentRecordingWorkspaceContext?.projectId;
+			const recordingPrefs = await recordingPrefsStore.update(prefs);
+			if (projectId) {
+				await projectRecordingSetupStore.set(projectId, {
+					prefs: recordingPrefs,
+					source: recordingSource(selectedSource) ?? unavailableRecordingSource,
+				});
 			}
-		}
-		return recordingPrefs;
-	});
+			// The recording HUD owns the controls, while the separate camera window owns
+			// the confidence monitor. Broadcast one normalized value so both renderers
+			// change device/format/visibility from the same persisted state.
+			for (const appWindow of BrowserWindow.getAllWindows()) {
+				if (!appWindow.isDestroyed()) {
+					appWindow.webContents.send("recording-prefs-changed", recordingPrefs);
+				}
+			}
+			return recordingPrefs;
+		}),
+	);
 
 	ipcMain.handle("request-camera-access", async () => {
 		if (process.platform !== "darwin") {
@@ -2185,40 +2295,69 @@ export function registerIpcHandlers(
 		return { opened: true };
 	});
 
-	ipcMain.handle("switch-to-editor", () => {
-		// The main-process wrapper owns the HUD/editor hand-off. Closing either
-		// window here would race that lifecycle and can leave a ghost overlay.
-		createEditorWindow();
-	});
+	ipcMain.handle("switch-to-editor", () =>
+		serializeRecordingSetup(async () => {
+			// The main-process wrapper owns the HUD/editor hand-off. Closing either
+			// window here would race that lifecycle and can leave a ghost overlay.
+			createEditorWindow();
+		}),
+	);
 
 	ipcMain.handle("switch-to-hud", () => {
 		_switchToHud?.();
 		return { success: true };
 	});
 
-	ipcMain.handle("start-new-recording", async (_event, context?: RecordingWorkspaceContext) => {
-		const rejection = await rejectWithoutEntitlement("record");
-		if (rejection) return rejection;
-		currentRecordingWorkspaceContext = normalizeRecordingWorkspaceContext(context);
-		_switchToHud?.();
-		return { success: true };
-	});
+	ipcMain.handle("start-new-recording", async (_event, context?: RecordingWorkspaceContext) =>
+		serializeRecordingSetup(async () => {
+			const rejection = await rejectWithoutEntitlement("record");
+			if (rejection) return rejection;
+			const workspace = normalizeRecordingWorkspaceContext(context);
+			const setup = workspace ? await projectRecordingSetupStore.get(workspace.projectId) : null;
+			if (setup) {
+				let source: DesktopCapturerSource | null = null;
+				if (setup.source && process.platform !== "linux") {
+					const sources = await desktopCapturer.getSources({
+						types: ["screen", "window"],
+						thumbnailSize: { width: 0, height: 0 },
+					});
+					source = matchRecordingSource(setup.source, sources);
+				}
+				await recordingPrefsStore.update(setup.prefs);
+				selectedSource = source
+					? { id: source.id, name: source.name, display_id: source.display_id }
+					: null;
+				selectedDesktopSource = source;
+				unavailableRecordingSource = source ? null : setup.source;
+			} else {
+				unavailableRecordingSource = null;
+			}
+			currentRecordingWorkspaceContext = workspace;
+			await saveProjectRecordingSetup();
+			_switchToHud?.();
+			return { success: true };
+		}),
+	);
 
 	ipcMain.handle("get-recording-workspace-context", () => ({
 		success: currentRecordingWorkspaceContext !== null,
 		context: currentRecordingWorkspaceContext,
 	}));
 
-	ipcMain.handle("set-recording-workspace-context", (_event, context: unknown) => {
-		currentRecordingWorkspaceContext = normalizeRecordingWorkspaceContext(context);
-		return { success: true, context: currentRecordingWorkspaceContext };
-	});
+	ipcMain.handle("set-recording-workspace-context", (_event, context: unknown) =>
+		serializeRecordingSetup(async () => {
+			currentRecordingWorkspaceContext = normalizeRecordingWorkspaceContext(context);
+			return { success: true, context: currentRecordingWorkspaceContext };
+		}),
+	);
 
-	ipcMain.handle("return-to-editor-if-recording-workspace", () => {
-		if (!currentRecordingWorkspaceContext) return { returned: false };
-		createEditorWindow();
-		return { returned: true };
-	});
+	ipcMain.handle("return-to-editor-if-recording-workspace", () =>
+		serializeRecordingSetup(async () => {
+			if (!currentRecordingWorkspaceContext) return { returned: false };
+			createEditorWindow();
+			return { returned: true };
+		}),
+	);
 
 	ipcMain.handle("countdown-overlay-show", async (_, value: number, runId: number) => {
 		const overlayWindow = getCountdownOverlayWindow?.() ?? createCountdownOverlayWindow();
@@ -4207,7 +4346,11 @@ export function registerIpcHandlers(
 				// Saving a legacy project creates a `.klippt` sibling and keeps the old
 				// file untouched as a rollback copy.
 				const canonicalPath = withCanonicalProjectExtension(trustedExistingProjectPath);
-				await writeJsonDurably(canonicalPath, projectData, { followFinalSymlink: true });
+				await (await import("../filesystem/unmanagedProjectSave")).writeUnmanagedProjectFile(
+					canonicalPath,
+					projectData,
+					path.join(app.getPath("userData"), "projects"),
+				);
 				currentProjectPath = canonicalPath;
 				return {
 					success: true,
@@ -4248,7 +4391,11 @@ export function registerIpcHandlers(
 			}
 
 			const canonicalPath = withCanonicalProjectExtension(result.filePath);
-			await writeJsonDurably(canonicalPath, projectData, { followFinalSymlink: true });
+			await (await import("../filesystem/unmanagedProjectSave")).writeUnmanagedProjectFile(
+				canonicalPath,
+				projectData,
+				path.join(app.getPath("userData"), "projects"),
+			);
 			currentProjectPath = canonicalPath;
 
 			return {
@@ -4427,26 +4574,31 @@ export function registerIpcHandlers(
 		return setCurrentVideoPath(path);
 	});
 
-	ipcMain.handle("set-current-recording-session", async (_, session: RecordingSession | null) => {
-		const previousSession = currentRecordingSession;
-		const normalizedSession = normalizeRecordingSession(session);
-		try {
-			if (!normalizedSession) {
-				await consumeCurrentRecordingSession();
-			} else if (normalizedSession) {
-				await updateNativeMacRecoveryJournalIfPresent(RECORDINGS_DIR, normalizedSession);
+	ipcMain.handle("set-current-recording-session", async (_, session: RecordingSession | null) =>
+		serializeRecordingSetup(async () => {
+			const previousSession = currentRecordingSession;
+			const normalizedSession = normalizeRecordingSession(session);
+			try {
+				if (normalizedSession?.importProjectId && !previousSession?.importProjectId) {
+					await saveProjectRecordingSetup(normalizedSession.importProjectId);
+				}
+				if (!normalizedSession) {
+					await consumeCurrentRecordingSession();
+				} else if (normalizedSession) {
+					await updateNativeMacRecoveryJournalIfPresent(RECORDINGS_DIR, normalizedSession);
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.warn("[capture-mac] could not update the recovery handoff:", error);
+				return { success: false, error: message, session: previousSession };
 			}
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			console.warn("[capture-mac] could not update the recovery handoff:", error);
-			return { success: false, error: message, session: previousSession };
-		}
-		if (normalizedSession) {
-			setCurrentRecordingSessionState(normalizedSession);
-			currentProjectPath = null;
-		}
-		return { success: true, session: currentRecordingSession };
-	});
+			if (normalizedSession) {
+				setCurrentRecordingSessionState(normalizedSession);
+				currentProjectPath = null;
+			}
+			return { success: true, session: currentRecordingSession };
+		}),
+	);
 
 	ipcMain.handle("get-current-recording-session", () => {
 		return currentRecordingSession
@@ -4615,6 +4767,37 @@ export function registerIpcHandlers(
 				cleanVoiceServiceReady.then((service) => service?.syncDocument(document)),
 		},
 	);
+	// Development opt-in while the agent editing contract completes its release gates.
+	// CLI media workers must never become another editor broker owner.
+	if (
+		process.env.OPENSCREEN_AGENT_CLI === "1" &&
+		!parseCliArgs(process.argv, app.isPackaged ? 1 : 2)
+	) {
+		void import("../cli/editorAgentBroker")
+			.then(({ startEditorAgentBroker }) =>
+				startEditorAgentBroker({
+					directory: path.join(app.getPath("userData"), "agent-cli"),
+					documents: aiEditionDocuments,
+					approveSelectedMedia: approveReadableRendererMediaPath,
+					probeVideoMetadata: async (file) => {
+						const { inspectSourceAudioLayout } = await import("../stt/sourceAudio");
+						return inspectSourceAudioLayout(file);
+					},
+					probeVideoDuration: async (file) => {
+						const { inspectSourceAudioLayout } = await import("../stt/sourceAudio");
+						return (await inspectSourceAudioLayout(file)).durationSec;
+					},
+					openEditorWindow: createEditorWindow,
+					ipcMain: electronIpcMain,
+				}),
+			)
+			.then((broker) => {
+				app.once("before-quit", () => {
+					void broker.close();
+				});
+			})
+			.catch((error: unknown) => console.error("[agent-cli] Broker unavailable:", error));
+	}
 
 	// LlmConfigStore is single-instance for a duller reason — its constructor does
 	// two sync readFileSync plus a safeStorage decrypt, and it was running on every
@@ -4670,6 +4853,8 @@ export function registerIpcHandlers(
 				}
 			},
 			getAiEditionDocuments: () => aiEditionDocuments,
+			resolveApprovedRendererMediaPath,
+			approveReadableRendererMediaPath,
 			getAiEditionLlmConfig,
 			runAiEditionChat: (projectId, sessionId, message, document, sink) =>
 				runChat(projectId, sessionId, message, getAiEditionLlmConfig(), document, sink, {

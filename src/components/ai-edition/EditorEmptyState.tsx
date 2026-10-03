@@ -93,9 +93,9 @@ export function EditorEmptyState({
 			const doc = isAxcutDocument
 				? documentSchema.parse(migrateRawDocumentToCurrent(raw)) // disk-load: upgrade v3/v4 → v5, then validate
 				: await prepareLegacyProjectForOpen(raw as never);
-			const saved = await nativeBridgeClient.aiEdition.save(doc);
+			const saved = await nativeBridgeClient.aiEdition.importProject(doc);
 			if (!saved.success || !saved.document) return false;
-			await loadProject(doc.project.id);
+			await loadProject(documentSchema.parse(saved.document).project.id);
 			return true;
 		},
 		[loadProject],

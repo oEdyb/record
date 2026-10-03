@@ -92,9 +92,53 @@ pub fn text_animation_state(animation: Option<&str>, elapsed_ms: f32) -> TextAni
     }
 }
 
+/// Apply the shared entrance to a contain-fitted image rect in output fractions.
+/// Translation scales with output height; scaling keeps the image center fixed.
+pub fn image_animation_geometry(
+    animation: Option<&str>,
+    elapsed_ms: f32,
+    rect: [f32; 4],
+    output: [f32; 2],
+) -> ([f32; 4], TextAnimationState) {
+    let state = text_animation_state(animation, elapsed_ms);
+    let [x, y, w, h] = rect;
+    let width = w * state.scale;
+    let height = h * state.scale;
+    let dx = state.translate_x * output[1] / ANIMATION_REFERENCE_HEIGHT / output[0];
+    let dy = state.translate_y / ANIMATION_REFERENCE_HEIGHT;
+    (
+        [
+            x + (w - width) * 0.5 + dx,
+            y + (h - height) * 0.5 + dy,
+            width * state.reveal,
+            height,
+        ],
+        state,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_entrances_preserve_center_and_scale_translation_with_resolution() {
+        let rect = [0.2, 0.3, 0.4, 0.2];
+        let (pop, state) = image_animation_geometry(Some("pop"), 0.0, rect, [1920.0, 1080.0]);
+        assert_eq!(state.opacity, 0.0);
+        assert!((pop[0] + pop[2] * 0.5 - 0.4).abs() < 1e-6);
+        assert!((pop[1] + pop[3] * 0.5 - 0.4).abs() < 1e-6);
+        let (rise, _) = image_animation_geometry(Some("rise"), 0.0, rect, [3840.0, 2160.0]);
+        assert!(((rise[1] - rect[1]) * 2160.0 - 36.0).abs() < 1e-3);
+        for name in ["fade", "rise", "pop", "slide-left", "typewriter", "pulse"] {
+            let (settled, state) =
+                image_animation_geometry(Some(name), 701.0, rect, [1920.0, 1080.0]);
+            for (actual, expected) in settled.iter().zip(rect) {
+                assert!((actual - expected).abs() < 1e-6, "{name}");
+            }
+            assert_eq!(state.opacity, 1.0);
+        }
+    }
 
     #[test]
     fn no_animation_shows_the_text_as_is() {

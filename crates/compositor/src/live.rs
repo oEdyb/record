@@ -30,7 +30,7 @@ use crate::frame_geometry::webcam_is_real;
 use crate::pipeline::Decoder;
 use crate::regions::speed_at;
 use crate::scene::Scene;
-use crate::timeline_walk::{frame_step, FrameStep, NextFrameTime};
+use crate::timeline_walk::{advance_decoder_to, frame_step, FrameStep, NextFrameTime};
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -278,12 +278,16 @@ unsafe fn swap_clip_pooled(
 /// Lit deux sources en lockstep et compose la frame courante dans le RT du compositeur.
 /// Partagé avec la GUI standalone (`app.rs`).
 pub struct Player {
+    frame_composed: bool,
+    last_composed_time: Option<f64>,
+    overlays: std::cell::RefCell<crate::overlay_video::OverlayDecoders>,
     sdec: Decoder,
     wdec: Decoder,
     gpu: Gpu,
     webcam_offset_sec: f64,
     has_current_frame: bool,
     use_current_on_next_step: bool,
+    hold_at_eof: bool,
     idx: u32,
 }
 
@@ -291,6 +295,9 @@ impl Player {
     pub unsafe fn open(screen: &str, webcam: &str, gpu: &Gpu) -> Result<Player> {
         let wdec = open_webcam_or_stand_in(screen, webcam, gpu)?;
         Ok(Player {
+            frame_composed: false,
+            last_composed_time: None,
+            overlays: std::cell::RefCell::new(crate::overlay_video::OverlayDecoders::live()),
             sdec: Decoder::open(screen, gpu)?,
             wdec,
             gpu: Gpu {
@@ -302,6 +309,7 @@ impl Player {
             webcam_offset_sec: 0.0,
             has_current_frame: false,
             use_current_on_next_step: false,
+            hold_at_eof: false,
             idx: 0,
         })
     }
@@ -364,10 +372,15 @@ impl Player {
         )? {
             return Ok(false);
         }
+        self.mark_positioned(source_time_sec);
+        Ok(true)
+    }
+
+    unsafe fn mark_positioned(&mut self, source_time_sec: f64) {
         self.idx = (source_time_sec * self.sdec.fps()).round().max(0.0) as u32;
         self.has_current_frame = true;
+        self.last_composed_time = None;
         self.use_current_on_next_step = true;
-        Ok(true)
     }
 
     /// Bascule instantanément sur une paire de décodeurs déjà ouverte + positionnée — aucune
@@ -394,6 +407,7 @@ impl Player {
         self.webcam_offset_sec = incoming.webcam_offset_sec;
         self.idx = incoming.idx;
         self.has_current_frame = true;
+        self.last_composed_time = None;
         self.use_current_on_next_step = true;
         outgoing
     }
@@ -425,9 +439,9 @@ impl Player {
     }
 
     /// Compose la PROCHAINE frame due (→ `comp.rt`), au plus une, si `target_source_time`
-    /// (temps écran) est atteint. Sémantique de "hold" : `false` sans rien composer quand la
-    /// frame suivante n'est pas encore due — l'appelant garde alors l'image déjà affichée,
-    /// au lieu d'avancer aveuglément. Boucle sur EOF réel. `false` aussi si fixture vide.
+    /// (temps écran) est atteint. Sémantique de "hold" : `false` quand la
+    /// frame suivante n'est pas encore due. Les overlays peuvent néanmoins être recomposés
+    /// (`frame_composed`). Boucle sur EOF réel. `false` aussi si fixture vide.
     ///
     /// BUG corrigé : cette fonction consommait auparavant EXACTEMENT une frame réelle par
     /// appel (un `next()` inconditionnel), et `render_thread` l'appelait une fois par tranche
@@ -458,6 +472,11 @@ impl Player {
         cfg: &Cfg,
         target_source_time: f64,
     ) -> Result<bool> {
+        let step_started = Instant::now();
+        self.frame_composed = false;
+        let has_overlays = comp.has_video_overlays();
+        let mut screen_advanced = true;
+        let mut looped = false;
         let use_current = self.use_current_on_next_step;
         self.use_current_on_next_step = false;
 
@@ -470,14 +489,23 @@ impl Player {
             // règle, `>`/`<=` compris.
             match self.sdec.peek_next_time_sec()? {
                 NextFrameTime::At(t) if t <= target_source_time => self.sdec.commit_peek()?,
-                NextFrameTime::At(_) => return Ok(false), // pas encore due : on tient la courante.
+                NextFrameTime::At(_) if has_overlays && self.has_current_frame => {
+                    screen_advanced = false;
+                    self.sdec.cur_frame()
+                }
+                NextFrameTime::At(_) => return Ok(false),
                 // pts inexploitable : impossible de dire si elle est due. `step()` n'adopte
                 // qu'une frame écran par appel, donc l'adopter revient exactement à
                 // l'ancien « une frame par tick » — le repli correct pour un flux cassé.
                 NextFrameTime::Unknown => self.sdec.commit_peek()?,
+                NextFrameTime::Eof if self.hold_at_eof && self.has_current_frame => {
+                    screen_advanced = false;
+                    self.sdec.cur_frame()
+                }
                 NextFrameTime::Eof => {
                     // EOF réel (plus aucune frame à décoder) : reboucle sur le début.
                     self.idx = 0;
+                    looped = true;
                     self.sdec.seek_to(0.0)?
                 }
             }
@@ -487,7 +515,16 @@ impl Player {
             return Ok(false);
         }
 
-        let target_webcam_t = (self.sdec.cur_time_sec() - self.webcam_offset_sec).max(0.0);
+        // Catch-up can discard accumulator debt. Do not advance overlays past an
+        // adopted screen frame, or the next tick can force a backward overlay seek.
+        let source_time = if !screen_advanced && !looped {
+            target_source_time
+        } else {
+            self.sdec.cur_time_sec()
+        };
+        let screen_ms = step_started.elapsed().as_secs_f64() * 1000.0;
+        let camera_started = Instant::now();
+        let target_webcam_t = (source_time - self.webcam_offset_sec).max(0.0);
         let wf = if use_current {
             self.wdec.cur_frame()
         } else {
@@ -534,24 +571,23 @@ impl Player {
             return Ok(false);
         }
 
+        let camera_ms = camera_started.elapsed().as_secs_f64() * 1000.0;
         self.has_current_frame = true;
-        self.sync_time(comp);
-        comp.compose_frame(sf, wf, self.idx as f32, cfg)?;
-        self.idx = self.idx.wrapping_add(1);
-        Ok(true)
-    }
-
-    /// Positionne `comp` sur le temps source RÉEL (pts) de la frame écran courante, pour que le
-    /// curseur ET les zoom/full-camera regions du clip actif restent exacts quelle
-    /// que soit la cadence réelle de l'enregistrement — BUG corrigé : tout dérivait auparavant
-    /// de `frame / 60.0` (un compteur de frames supposant 60fps pile), qui dérive
-    /// silencieusement de plus en plus au fil de la lecture dès que le fichier n'est pas
-    /// exactement à 60fps (30/59.94/etc. sont courants), au lieu de suivre le pts réel du
-    /// décodeur — exactement la cause du "zoom désynchronisé de la timeline" observé.
-    unsafe fn sync_time(&self, comp: &Compositor) {
-        let t = self.sdec.cur_time_sec() as f32;
-        comp.set_cursor_time(Some(t));
-        comp.set_timeline_time(Some(t));
+        comp.set_cursor_time(Some(source_time as f32));
+        comp.set_timeline_time(Some(source_time as f32));
+        let (overlay, region) =
+            comp.overlay_frame_at(&mut self.overlays.borrow_mut(), source_time, &self.gpu)?;
+        let compose_started = Instant::now();
+        comp.compose_frame(sf, wf, self.idx as f32, cfg, overlay, region.as_ref())?;
+        if crate::overlay_video::timing_enabled() {
+            eprintln!("[compose-timing] source={source_time:.6} screen_ms={screen_ms:.3} camera_ms={camera_ms:.3} compose_ms={:.3} total_ms={:.3}", compose_started.elapsed().as_secs_f64() * 1000.0, step_started.elapsed().as_secs_f64() * 1000.0);
+        }
+        self.last_composed_time = Some(source_time);
+        self.frame_composed = true;
+        if screen_advanced {
+            self.idx = self.idx.wrapping_add(1);
+        }
+        Ok(screen_advanced)
     }
 
     /// Recompose la frame courante (déjà décodée) — rafraîchit après un changement de param.
@@ -564,10 +600,83 @@ impl Player {
         if sf.is_null() || wf.is_null() {
             return Ok(false);
         }
-        self.sync_time(comp);
+        let source_time = self
+            .last_composed_time
+            .unwrap_or_else(|| self.sdec.cur_time_sec());
+        comp.set_cursor_time(Some(source_time as f32));
+        comp.set_timeline_time(Some(source_time as f32));
         let f = self.idx.saturating_sub(1);
-        comp.compose_frame(sf, wf, f as f32, cfg)?;
+        let (overlay, region) =
+            comp.overlay_frame_at(&mut self.overlays.borrow_mut(), source_time, &self.gpu)?;
+        comp.compose_frame(sf, wf, f as f32, cfg, overlay, region.as_ref())?;
         Ok(true)
+    }
+
+    /// Reuse the requested decoder frame while preserving export's continuous effect clock.
+    unsafe fn recompose_still(
+        &mut self,
+        comp: &Compositor,
+        cfg: &Cfg,
+        source_time_sec: f64,
+        clip_start_sec: f64,
+    ) -> Result<()> {
+        // Seek near the target, then use the export decoder rule (last frame due).
+        // Seeking directly to the target selects the first later frame instead.
+        let mut lookback = 1.0;
+        let mut positioned = false;
+        // Sparse VFR can put the first frame after a nearby seek beyond the target.
+        // Back off with a fixed probe cap; never decode the whole earlier timeline.
+        for _ in 0..32 {
+            let anchor = (source_time_sec - lookback).max(clip_start_sec);
+            anyhow::ensure!(
+                seek_pair(
+                    &mut self.sdec,
+                    &mut self.wdec,
+                    anchor,
+                    self.webcam_offset_sec
+                )?,
+                "Still preview seek failed"
+            );
+            if anchor <= clip_start_sec
+                || (self.sdec.cur_time_sec() <= source_time_sec
+                    && self.wdec.cur_time_sec()
+                        <= webcam_seek_time(source_time_sec, self.webcam_offset_sec))
+            {
+                positioned = true;
+                break;
+            }
+            lookback *= 2.0;
+        }
+        anyhow::ensure!(
+            positioned,
+            "Still preview could not locate an earlier source frame within its seek budget"
+        );
+        anyhow::ensure!(
+            advance_decoder_to(&mut self.sdec, source_time_sec, 0.0)?
+                && advance_decoder_to(&mut self.wdec, source_time_sec, self.webcam_offset_sec)?,
+            "Still preview decode failed"
+        );
+        anyhow::ensure!(self.has_current_frame, "Still preview has no decoded frame");
+        let sf = self.sdec.cur_frame();
+        let wf = self.wdec.cur_frame();
+        anyhow::ensure!(
+            !sf.is_null() && !wf.is_null(),
+            "Still preview has empty media"
+        );
+        comp.set_cursor_time(Some(source_time_sec as f32));
+        comp.set_timeline_time(Some(source_time_sec as f32));
+        let (overlay, region) =
+            comp.overlay_frame_at(&mut self.overlays.borrow_mut(), source_time_sec, &self.gpu)?;
+        comp.compose_frame(
+            sf,
+            wf,
+            (source_time_sec * self.sdec.fps()) as f32,
+            cfg,
+            overlay,
+            region.as_ref(),
+        )?;
+        self.last_composed_time = Some(source_time_sec);
+        Ok(())
     }
 
     /// Seek à `target_sec` (secondes source du clip actif) : keyframe-seek + décodage-avant
@@ -591,11 +700,20 @@ impl Player {
         }
         self.has_current_frame = true;
         self.use_current_on_next_step = false;
-        self.sync_time(comp);
+        let source_time = if comp.has_video_overlays() {
+            target_sec
+        } else {
+            self.sdec.cur_time_sec()
+        };
+        comp.set_cursor_time(Some(source_time as f32));
+        comp.set_timeline_time(Some(source_time as f32));
+        self.last_composed_time = Some(source_time);
         // "idx" ne sert plus qu'au fallback fixture (jamais lu si une scène est posée) — dérivé
         // du temps réel pour rester cohérent si jamais consulté.
         self.idx = (target_sec * self.sdec.fps()).round().max(0.0) as u32;
-        comp.compose_frame(sf, wf, self.idx as f32, cfg)?;
+        let (overlay, region) =
+            comp.overlay_frame_at(&mut self.overlays.borrow_mut(), source_time, &self.gpu)?;
+        comp.compose_frame(sf, wf, self.idx as f32, cfg, overlay, region.as_ref())?;
         Ok(true)
     }
 }
@@ -622,6 +740,8 @@ pub(crate) fn consume_acc(acc: f64, before: f64, after: f64) -> f64 {
 /// booléens/taps → reconstruits dans le `Cfg` ; valeurs continues → `set_live_params`.
 #[derive(Clone, Copy, PartialEq)]
 struct InspectorParams {
+    /// Opt-in still rendering: evaluate effects at requested time, not decoded PTS.
+    preview_source_time_sec: Option<f64>,
     bg_blur: bool,
     bg_color: [f32; 4],
     shadow_scale: f32,
@@ -647,6 +767,7 @@ struct InspectorParams {
 impl Default for InspectorParams {
     fn default() -> Self {
         Self {
+            preview_source_time_sec: None,
             bg_blur: false,
             bg_color: [0.10, 0.11, 0.14, 1.0],
             shadow_scale: 1.0,
@@ -953,6 +1074,9 @@ impl LiveView {
         if let Ok(mut p) = self.shared.inspector.lock() {
             let v = value as f32;
             match key {
+                "previewSourceTimeSec" if value.is_finite() && value >= 0.0 => {
+                    p.preview_source_time_sec = Some(value)
+                }
                 "shadow" => p.shadow_scale = v.max(0.0),
                 "roundness" => p.radius_scale = v.max(0.0),
                 "motionBlur" => p.mblur_taps = (1.0 + value.clamp(0.0, 1.0) * 15.0).round() as u32,
@@ -1185,6 +1309,48 @@ type PendingPrefetch = (usize, std::sync::mpsc::Receiver<Result<PrefetchedClip>>
 /// décodeurs ouvertes plus longtemps que nécessaire.
 const PREFETCH_LEAD_SEC: f64 = 0.75;
 
+fn overlay_preparation_time(
+    requested: Option<f64>,
+    playing: bool,
+    composed: Option<f64>,
+    screen: f64,
+    acc: f64,
+) -> f64 {
+    requested.unwrap_or_else(|| {
+        if playing {
+            screen + acc
+        } else {
+            composed.unwrap_or(screen)
+        }
+    })
+}
+
+fn waits_for_cut_anchor(generation: u64, target_sec: f64, end_sec: f64) -> bool {
+    generation > 0 && target_sec >= end_sec
+}
+
+fn prefetch_matches_request(scene: &Scene, index: usize, request: &ActiveClipRequest) -> bool {
+    scene.clips.get(index).is_some_and(|clip| {
+        index == request.clip_index
+            && clip.screen_path == request.screen_path
+            && clip.webcam_path == request.webcam_path
+            && (clip.webcam_offset_sec - request.webcam_offset_sec).abs() < 1e-9
+            && (clip.source_start_sec - request.source_time_sec).abs() < 1e-6
+    })
+}
+
+fn take_prefetch_for_request(
+    prefetch: &mut Option<PendingPrefetch>,
+    scene: &Scene,
+    request: &ActiveClipRequest,
+) -> Option<PrefetchedClip> {
+    let (index, receiver) = prefetch.take()?;
+    if !prefetch_matches_request(scene, index, request) {
+        return None;
+    }
+    receiver.try_recv().ok()?.ok()
+}
+
 /// Démarre le préchargement du clip suivant sur un thread dédié dès qu'on entre dans la
 /// fenêtre `PREFETCH_LEAD_SEC` avant la fin du clip actif — pour que la bascule à la
 /// frontière (`advance_to_next_scene_clip`) trouve les décodeurs déjà ouverts et positionnés
@@ -1197,6 +1363,7 @@ unsafe fn maybe_start_prefetch(
     screen_time_sec: f64,
     gpu: &Gpu,
     prefetch: &mut Option<PendingPrefetch>,
+    worker_busy: &Arc<AtomicBool>,
 ) {
     if scene.clips.len() <= 1 || prefetch.is_some() {
         return;
@@ -1213,6 +1380,10 @@ unsafe fn maybe_start_prefetch(
     } else {
         0
     };
+    if worker_busy.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let worker_busy = Arc::clone(worker_busy);
     let next_clip = scene.clips[next_index].clone();
     // Copie légère (COM refcount, pas de nouveau device) — même motif que `Player::open`.
     let gpu_clone = Gpu {
@@ -1223,6 +1394,7 @@ unsafe fn maybe_start_prefetch(
     };
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        let started = Instant::now();
         let result = unsafe {
             open_and_seek_clip(
                 &next_clip.screen_path,
@@ -1235,7 +1407,14 @@ unsafe fn maybe_start_prefetch(
         // L'appelant a pu abandonner ce préchargement entre-temps (changement de clip
         // explicite, scène remplacée) — un receiver droppé fait juste échouer `send`
         // silencieusement ; les décodeurs déjà ouverts sont libérés normalement (`Drop`).
+        if std::env::var_os("OPENSCREEN_CLIPSWITCH_TIMING").is_some() {
+            eprintln!(
+                "[live-cut] preload index={next_index} ms={:.3}",
+                started.elapsed().as_secs_f64() * 1000.0
+            );
+        }
         let _ = tx.send(result);
+        worker_busy.store(false, Ordering::Release);
     });
     *prefetch = Some((next_index, rx));
 }
@@ -1298,6 +1477,12 @@ unsafe fn advance_to_next_scene_clip(
         _ => None,
     };
 
+    if std::env::var_os("OPENSCREEN_CLIPSWITCH_TIMING").is_some() {
+        eprintln!(
+            "[live-cut] automatic index={next_index} ready={}",
+            matches!(&ready, Some(Ok(_)))
+        );
+    }
     let applied = match ready {
         Some(Ok(prefetched)) => {
             player.apply_prefetched(prefetched);
@@ -1414,6 +1599,7 @@ unsafe fn render_thread(
     let mut active_webcam_offset_sec = 0.0f64;
     let mut active_clip_index = 0usize;
     let mut applied_transport_generation = 0u64;
+    let mut positioned_anchor: Option<(f64, f64, f64)> = None;
     // Copie de la Scene complète (tous les clips), tenue à jour à chaque push de l'app —
     // permet à la boucle de lecture libre de connaître la fenêtre source
     // [source_start_sec, source_end_sec) du clip actif et d'enchaîner elle-même sur le
@@ -1427,6 +1613,7 @@ unsafe fn render_thread(
     // devient obsolète (nouvelle scène, changement de clip explicite) pour ne jamais risquer
     // d'appliquer les décodeurs d'un préchargement qui ne correspond plus à la situation.
     let mut prefetch: Option<PendingPrefetch> = None;
+    let prefetch_worker_busy = Arc::new(AtomicBool::new(false));
     // Pool de décodeurs INACTIFS gardés ouverts entre franchissements de clip (scrub). Vidé
     // quand le thread de rendu meurt (vue détruite / document rechargé). Voir `swap_clip_pooled`
     // et `DECODER_POOL_CAP` — c'est le remède au ~120 ms/franchissement mesuré.
@@ -1442,6 +1629,7 @@ unsafe fn render_thread(
     cfg.layout_anim = false;
 
     let mut last = Instant::now();
+    let mut last_publish = Instant::now();
     let mut acc = 0.0f64;
     let mut first = true;
     let mut last_preview_size: (u32, u32) = (0, 0);
@@ -1458,17 +1646,26 @@ unsafe fn render_thread(
         let mut clip_changed = false;
         let clip_request = shared.active_clip_request.lock().unwrap().take();
         if let Some(request) = clip_request {
+            let anchor_started = Instant::now();
+            let anchor_index = request.clip_index;
+            let anchor_target = request.source_time_sec;
             let transport_generation = request.transport_generation;
             let playing_after_seek = request.playing_after_seek;
             if transport_generation.is_some() {
+                player.hold_at_eof = true;
                 // An atomic anchor always seeks while paused. This prevents a decoder step
                 // from landing between the requested source time and play-state update.
                 shared.playing.store(false, Ordering::Release);
             }
-            // Un changement de clip explicite depuis l'app rend obsolète tout préchargement
-            // en cours (il visait la suite du clip qu'on est en train de quitter maintenant
-            // autrement) — sans ça, `advance_to_next_scene_clip` pourrait plus tard appliquer
-            // des décodeurs qui ne correspondent plus au contexte réel.
+            // A cut anchor can consume the prepared fragment. Other seeks and scene
+            // changes invalidate it; none may wait for background work here.
+            let mut ready = full_scene.as_ref().and_then(|scene| {
+                if shared.scene_dirty.load(Ordering::Acquire) {
+                    None
+                } else {
+                    take_prefetch_for_request(&mut prefetch, scene, &request)
+                }
+            });
             prefetch = None;
             // Mêmes fichiers que ceux déjà ouverts → seule la fenêtre temporelle change
             // (segments d'un même clip séparés par un trim). On repositionne au lieu de
@@ -1479,9 +1676,29 @@ unsafe fn render_thread(
             // Le repositionnement n'est tenté que sur médias identiques, et son échec n'est
             // JAMAIS fatal : on retombe sur l'ouverture complète, chemin connu comme sûr.
             // L'optimisation ne s'applique donc que là où elle fonctionne démontrablement.
-            let repositioned =
-                same_media && matches!(player.seek_active(request.source_time_sec), Ok(true));
-            let switch_result = if repositioned {
+            let prepared_cursor = ready.as_mut().map(|clip| clip.cursor_track.take());
+            let preloaded = if let Some(clip) = ready {
+                player.apply_prefetched(clip);
+                true
+            } else {
+                false
+            };
+            let already_positioned = same_media
+                && positioned_anchor
+                    == Some((
+                        request.source_time_sec,
+                        player.sdec.cur_time_sec(),
+                        player.wdec.cur_time_sec(),
+                    ));
+            positioned_anchor = None;
+            if already_positioned && !preloaded {
+                player.mark_positioned(request.source_time_sec);
+            }
+            let repositioned = !preloaded
+                && same_media
+                && (already_positioned
+                    || matches!(player.seek_active(request.source_time_sec), Ok(true)));
+            let switch_result = if preloaded || repositioned {
                 Ok(())
             } else {
                 // Cross-média : passe par le pool de décodeurs — réutilise une paire déjà
@@ -1497,8 +1714,18 @@ unsafe fn render_thread(
                     active_webcam_offset_sec,
                 )
             };
+            if std::env::var_os("OPENSCREEN_CLIPSWITCH_TIMING").is_some() {
+                eprintln!("[live-cut] anchor index={anchor_index} target={anchor_target:.6} preloaded={preloaded} playing={playing_after_seek:?} ms={:.3}", anchor_started.elapsed().as_secs_f64() * 1000.0);
+            }
             match switch_result {
                 Ok(()) => {
+                    // A seek selects the first frame at/after the target. Repeating the
+                    // same anchor must keep that exact pair, even if its PTS is later.
+                    positioned_anchor = Some((
+                        request.source_time_sec,
+                        player.sdec.cur_time_sec(),
+                        player.wdec.cur_time_sec(),
+                    ));
                     // Condition sur `repositioned`, pas sur `same_media` : un repositionnement
                     // qui a échoué est retombé sur l'ouverture complète, donc des décodeurs
                     // ONT été fermés et le cache doit être vidé malgré des médias identiques.
@@ -1544,7 +1771,9 @@ unsafe fn render_thread(
                     let cursor_path = format!("{}.cursor.json", active_screen_path);
                     if cursor_path != loaded_cursor_path {
                         loaded_cursor_path = cursor_path.clone();
-                        raw_cursor = CursorTrack::load(&cursor_path, 0.0, 24.0 * 3600.0).ok();
+                        raw_cursor = prepared_cursor.unwrap_or_else(|| {
+                            CursorTrack::load(&cursor_path, 0.0, 24.0 * 3600.0).ok()
+                        });
                         // Journalisé ICI seulement : sinon la ligne annonce « loaded=ok » à
                         // chaque changement de segment alors que rien n'a été relu, et le log
                         // laisse croire à un travail qui n'a plus lieu.
@@ -1623,6 +1852,8 @@ unsafe fn render_thread(
         // scène de l'app : appliquée au compositeur quand elle change (dirty).
         let scene_changed = shared.scene_dirty.swap(false, Ordering::Relaxed);
         if scene_changed {
+            // Scene edits do not reposition decoders. Keep the anchor's exact PTS
+            // identity so a paused scene refresh cannot force a seek on Play.
             // La nouvelle scène peut avoir réordonné/modifié les clips — tout index visé par
             // un préchargement en cours n'est plus fiable.
             prefetch = None;
@@ -1687,7 +1918,26 @@ unsafe fn render_thread(
         let dt = (now - last).as_secs_f64().min(0.1);
         last = now;
         let mut stepped = false;
+        if let Some(scene) = &full_scene {
+            let time = overlay_preparation_time(
+                requested,
+                shared.playing.load(Ordering::Relaxed),
+                player.last_composed_time,
+                player.screen_time_sec(),
+                acc,
+            );
+            let speed = speed_at(&scene.speed_regions, active_clip_index, time);
+            player.overlays.borrow_mut().prepare_ahead(
+                scene,
+                active_clip_index,
+                time,
+                1.5 * speed.max(1.0),
+                &gpu,
+            );
+        }
         if let Some(target) = requested {
+            positioned_anchor = None;
+            prefetch = None;
             if player.present_frame(&comp, &cfg, target)? {
                 stepped = true;
             }
@@ -1716,7 +1966,9 @@ unsafe fn render_thread(
                     speed_at(
                         &scene.speed_regions,
                         active_clip_index,
-                        player.screen_time_sec(),
+                        player
+                            .last_composed_time
+                            .unwrap_or_else(|| player.screen_time_sec()),
                     )
                 })
                 .unwrap_or(1.0);
@@ -1742,12 +1994,28 @@ unsafe fn render_thread(
                     maybe_start_prefetch(
                         scene,
                         active_clip_index,
-                        player.screen_time_sec(),
+                        player.screen_time_sec() + acc,
                         &gpu,
                         &mut prefetch,
+                        &prefetch_worker_busy,
                     );
                     if let Some(clip) = scene.clips.get(active_clip_index) {
-                        if player.screen_time_sec() >= clip.source_end_sec {
+                        // An anchored view follows the media clock. Publishing the next
+                        // fragment early makes JS seek us back to the outgoing fragment.
+                        // Keep the prepared pair until that clock sends the cut anchor.
+                        if waits_for_cut_anchor(
+                            applied_transport_generation,
+                            player.screen_time_sec() + acc,
+                            clip.source_end_sec,
+                        ) {
+                            acc = (clip.source_end_sec - player.screen_time_sec()).max(0.0);
+                            break;
+                        }
+                        if player
+                            .last_composed_time
+                            .unwrap_or_else(|| player.screen_time_sec())
+                            >= clip.source_end_sec
+                        {
                             advance_to_next_scene_clip(
                                 &mut player,
                                 &comp,
@@ -1760,6 +2028,7 @@ unsafe fn render_thread(
                                 &mut raw_cursor,
                                 &mut last_smoothing,
                             );
+                            acc = 0.0;
                         }
                     }
                 }
@@ -1790,6 +2059,7 @@ unsafe fn render_thread(
                     }
                 }
                 if !committed {
+                    stepped |= player.frame_composed;
                     // Rien n'est dû pour l'instant (hold) : `acc` reste tel quel — il continue
                     // de s'accumuler aux ticks suivants jusqu'à ce qu'une vraie frame arrive.
                     break;
@@ -1814,6 +2084,13 @@ unsafe fn render_thread(
 
         if stepped || first {
             if pw > 0 && ph > 0 {
+                if let Some(time) = ip.preview_source_time_sec {
+                    let clip_start = full_scene
+                        .as_ref()
+                        .and_then(|scene| scene.clips.get(active_clip_index))
+                        .map_or(0.0, |clip| clip.source_start_sec);
+                    player.recompose_still(&comp, &cfg, time, clip_start)?;
+                }
                 // Step complet : `compose_frame` (déjà appelé par `step`/`present_frame`/
                 // `recompose`) a rastérisé le RT à la géométrie de sortie ramenée au panneau.
                 // On lit ce RT DIRECTEMENT à sa résolution de rendu (`readback_direct` : copy
@@ -1823,6 +2100,15 @@ unsafe fn render_thread(
                 match comp.readback_direct() {
                     Ok((rw, rh, rgba)) => {
                         let readback_ms = readback_started.elapsed().as_secs_f64() * 1_000.0;
+                        if crate::overlay_video::timing_enabled() {
+                            eprintln!(
+                                "[readback-timing] source={:.6} size={rw}x{rh} ms={readback_ms:.3} interval_ms={:.3} unix_ms={}",
+                                player.last_composed_time.unwrap_or(0.0),
+                                last_publish.elapsed().as_secs_f64() * 1000.0,
+                                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
+                            );
+                        }
+                        last_publish = Instant::now();
                         // Publie dans `latest_frame` : on remplace le buffer précédent
                         // (le canvas ne montre que la dernière frame, peu importe combien
                         // le renderer en a raté entre deux lectures napi). On incrémente
@@ -1838,7 +2124,11 @@ unsafe fn render_thread(
                         // des générations déjà peintes et boucherait. Séquence identique à
                         // l'ancienne dérivation tant que le slot n'est pas vidé.
                         let next_gen = shared.frame_gen.fetch_add(1, Ordering::Relaxed) + 1;
-                        let source_time_sec = player.screen_time_sec();
+                        let source_time_sec = ip.preview_source_time_sec.unwrap_or_else(|| {
+                            player
+                                .last_composed_time
+                                .unwrap_or_else(|| player.screen_time_sec())
+                        });
                         if let Ok(mut slot) = shared.latest_frame.lock() {
                             *slot = Some((
                                 next_gen,
@@ -2052,6 +2342,117 @@ pub fn run_standalone(_screen: &str, _webcam: &str, _cursor_json: &str) -> anyho
 mod tests {
     use super::*;
 
+    #[test]
+    fn overlay_preparation_uses_requested_clock_between_sparse_frame_requests() {
+        // seek_to can return a screen PTS ahead of the requested effects clock.
+        let sparse_screen_pts = 5.0;
+        let requested = overlay_preparation_time(Some(1.0), false, None, sparse_screen_pts, 0.0);
+        let idle = overlay_preparation_time(None, false, Some(requested), sparse_screen_pts, 0.0);
+        assert_eq!(requested, 1.0);
+        assert_eq!(idle, requested);
+        assert_eq!(
+            overlay_preparation_time(Some(2.0), false, Some(idle), sparse_screen_pts, 0.0),
+            2.0
+        );
+        assert_eq!(
+            overlay_preparation_time(None, true, Some(idle), 1.0, 0.5),
+            1.5
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn overlay_clock_does_not_rewind_after_catch_up_debt_is_dropped() {
+        let gpu = Gpu::create_auto(false).unwrap();
+        let comp = Compositor::new_sized(&gpu, 128, 128).unwrap();
+        let path = format!(
+            "{}/tests/fixtures/seek-eof-vfr.mp4",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mut scene = scene_with_output(128, 128);
+        scene.video_overlays.push(crate::scene::SceneVideoOverlay {
+            id: "catch-up".into(),
+            clip_index: None,
+            start_sec: 0.0,
+            end_sec: 2.0,
+            path: path.clone(),
+            source_offset_sec: 0.0,
+            fit: crate::scene::VideoOverlayFit::Cover,
+            rect: None,
+            opacity: 1.0,
+        });
+        comp.set_scene(Some(scene));
+        unsafe {
+            let mut player = Player::open(&path, &path, &gpu).unwrap();
+            assert!(player.seek_active(0.0).unwrap());
+            player.step(&comp, &Cfg::c8(), 0.0).unwrap();
+            let mut times = Vec::new();
+            for target in [0.2, 0.2, 0.2, 0.14] {
+                assert!(player.step(&comp, &Cfg::c8(), target).unwrap());
+                times.push(player.last_composed_time.unwrap());
+            }
+            assert!(times.windows(2).all(|pair| pair[1] >= pair[0]), "{times:?}");
+            assert!((times[3] - 4.0 / 30.0).abs() < 1e-6);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn overlay_plays_during_screen_hold_and_still_recompose_uses_requested_clock() {
+        let gpu = Gpu::create_auto(false).unwrap();
+        let comp = Compositor::new_sized(&gpu, 128, 128).unwrap();
+        let path = format!(
+            "{}/tests/fixtures/seek-eof-vfr.mp4",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mut scene = scene_with_output(128, 128);
+        scene.video_overlays.push(crate::scene::SceneVideoOverlay {
+            id: "during-screen-gap".into(),
+            clip_index: None,
+            start_sec: 0.68,
+            end_sec: 0.9,
+            path: path.clone(),
+            source_offset_sec: 1.0,
+            fit: crate::scene::VideoOverlayFit::Cover,
+            rect: None,
+            opacity: 1.0,
+        });
+        comp.set_scene(Some(scene.clone()));
+        unsafe {
+            let mut player = Player::open(&path, &path, &gpu).unwrap();
+            assert!(player.seek_active(19.0 / 30.0).unwrap());
+            player.step(&comp, &Cfg::c8(), 19.0 / 30.0).unwrap();
+            assert!(!player.step(&comp, &Cfg::c8(), 0.7).unwrap());
+            assert!(player.frame_composed);
+            assert_eq!(player.last_composed_time, Some(0.7));
+            let with_overlay = comp.readback_direct().unwrap().2;
+            scene.video_overlays.clear();
+            comp.set_scene(Some(scene.clone()));
+            player.recompose(&comp, &Cfg::c8()).unwrap();
+            assert_ne!(with_overlay, comp.readback_direct().unwrap().2);
+
+            scene.video_overlays.push(crate::scene::SceneVideoOverlay {
+                id: "still".into(),
+                clip_index: None,
+                start_sec: 0.78,
+                end_sec: 0.9,
+                path,
+                source_offset_sec: 1.0,
+                fit: crate::scene::VideoOverlayFit::Cover,
+                rect: None,
+                opacity: 1.0,
+            });
+            comp.set_scene(Some(scene.clone()));
+            player.recompose_still(&comp, &Cfg::c8(), 0.8, 0.0).unwrap();
+            assert_eq!(player.last_composed_time, Some(0.8));
+            let still_overlay = comp.readback_direct().unwrap().2;
+            scene.video_overlays.clear();
+            comp.set_scene(Some(scene));
+            player.recompose_still(&comp, &Cfg::c8(), 0.8, 0.0).unwrap();
+            assert_ne!(still_overlay, comp.readback_direct().unwrap().2);
+        }
+    }
+
     fn multiclip_scene() -> Scene {
         Scene::from_json(r##"{
             "clips": [
@@ -2067,6 +2468,173 @@ mod tests {
             "cropByClip":[null,null,null],
             "output":{"width":1920,"height":1080,"fps":30}
         }"##).expect("multiclip scene")
+    }
+
+    #[test]
+    fn anchored_playback_waits_at_the_cut_but_standalone_can_advance() {
+        assert!(waits_for_cut_anchor(7, 4.0, 4.0));
+        assert!(waits_for_cut_anchor(7, 4.1, 4.0));
+        assert!(!waits_for_cut_anchor(7, 3.99, 4.0));
+        assert!(!waits_for_cut_anchor(0, 4.1, 4.0));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn anchored_eof_holds_without_rewinding_and_still_allows_backward_scrub() {
+        let gpu = Gpu::create_auto(false).unwrap();
+        let comp = Compositor::new_sized(&gpu, 128, 128).unwrap();
+        comp.set_scene(Some(scene_with_output(128, 128)));
+        let path = format!(
+            "{}/tests/fixtures/seek-eof-vfr.mp4",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        unsafe {
+            let mut player = Player::open(&path, &path, &gpu).unwrap();
+            player.hold_at_eof = true;
+            assert!(player.seek_active(10.0).unwrap());
+            let last_pts = player.screen_time_sec();
+            player.step(&comp, &Cfg::c8(), last_pts).unwrap();
+            for target in [last_pts + 0.01, last_pts + 0.05] {
+                assert!(!player.step(&comp, &Cfg::c8(), target).unwrap());
+                assert_eq!(player.screen_time_sec(), last_pts);
+                assert_eq!(player.last_composed_time, Some(target));
+            }
+            assert!(player.seek_active(0.0).unwrap());
+            assert!(player.screen_time_sec() < last_pts);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unchanged_anchor_pair_is_presented_again_without_advancing_decode() {
+        let gpu = Gpu::create_auto(false).unwrap();
+        let comp = Compositor::new_sized(&gpu, 128, 128).unwrap();
+        comp.set_scene(Some(scene_with_output(128, 128)));
+        let path = format!(
+            "{}/tests/fixtures/seek-eof-vfr.mp4",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        unsafe {
+            let mut player = Player::open(&path, &path, &gpu).unwrap();
+            assert!(player.seek_active(0.0).unwrap());
+            assert!(player.step(&comp, &Cfg::c8(), 0.0).unwrap());
+            let pts = player.screen_time_sec();
+            let camera_pts = player.wdec.cur_time_sec();
+            let before = comp.readback_direct().unwrap().2;
+            let mut changed_scene = scene_with_output(128, 128);
+            changed_scene.layout.screen_rect = Some(crate::scene::SceneRect {
+                x: 0.2,
+                y: 0.2,
+                width: 0.6,
+                height: 0.6,
+            });
+            comp.set_scene(Some(changed_scene));
+            assert!(player.recompose(&comp, &Cfg::c8()).unwrap());
+            let changed = comp.readback_direct().unwrap().2;
+            assert_ne!(before, changed);
+            assert_eq!(player.screen_time_sec(), pts);
+            assert_eq!(player.wdec.cur_time_sec(), camera_pts);
+            assert!(!player.step(&comp, &Cfg::c8(), 0.0).unwrap());
+            player.mark_positioned(0.0);
+            assert!(player.step(&comp, &Cfg::c8(), 0.0).unwrap());
+            assert!(player.frame_composed);
+            assert_eq!(player.screen_time_sec(), pts);
+            assert_eq!(player.wdec.cur_time_sec(), camera_pts);
+            assert_eq!(comp.readback_direct().unwrap().2, changed);
+        }
+    }
+
+    fn fragment_request(index: usize, source_time_sec: f64) -> ActiveClipRequest {
+        let scene = multiclip_scene();
+        let clip = &scene.clips[index];
+        ActiveClipRequest {
+            screen_path: clip.screen_path.clone(),
+            webcam_path: clip.webcam_path.clone(),
+            webcam_offset_sec: clip.webcam_offset_sec,
+            clip_index: index,
+            source_time_sec,
+            transport_generation: Some(1),
+            playing_after_seek: Some(true),
+        }
+    }
+
+    #[test]
+    fn prepared_fragment_accepts_its_anchor_but_not_a_scrub_or_other_fragment() {
+        let scene = multiclip_scene();
+        assert!(prefetch_matches_request(
+            &scene,
+            1,
+            &fragment_request(1, 20.0)
+        ));
+        assert!(!prefetch_matches_request(
+            &scene,
+            1,
+            &fragment_request(1, 20.1)
+        ));
+        assert!(!prefetch_matches_request(
+            &scene,
+            1,
+            &fragment_request(0, 0.0)
+        ));
+        assert!(!prefetch_matches_request(
+            &scene,
+            1,
+            &fragment_request(2, 100.0)
+        ));
+        let mut changed = scene.clone();
+        changed.clips[1].webcam_offset_sec = 0.0;
+        assert!(!prefetch_matches_request(
+            &changed,
+            1,
+            &fragment_request(1, 20.0)
+        ));
+        changed.clips[1] = scene.clips[2].clone();
+        assert!(!prefetch_matches_request(
+            &changed,
+            1,
+            &fragment_request(1, 20.0)
+        ));
+    }
+
+    #[test]
+    fn unfinished_or_failed_prefetch_never_blocks_an_anchor() {
+        let scene = multiclip_scene();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut pending = Some((1, receiver));
+        assert!(
+            take_prefetch_for_request(&mut pending, &scene, &fragment_request(1, 20.0)).is_none()
+        );
+        assert!(pending.is_none());
+        assert!(sender.send(Err(anyhow::anyhow!("cancelled"))).is_err());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender.send(Err(anyhow::anyhow!("failed"))).unwrap();
+        let mut pending = Some((1, receiver));
+        assert!(
+            take_prefetch_for_request(&mut pending, &scene, &fragment_request(1, 20.0)).is_none()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn prefetched_pair_handoff_preserves_the_requested_frames_and_can_seek_back() {
+        let gpu = Gpu::create_auto(false).unwrap();
+        let path = format!(
+            "{}/tests/fixtures/seek-eof-vfr.mp4",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        unsafe {
+            let mut player = Player::open(&path, &path, &gpu).unwrap();
+            assert!(player.seek_active(0.0).unwrap());
+            let incoming = open_and_seek_clip(&path, &path, 0.0, 0.4, &gpu).unwrap();
+            let expected_screen = incoming.sdec.cur_time_sec();
+            let expected_webcam = incoming.wdec.cur_time_sec();
+            player.apply_prefetched(incoming);
+            assert_eq!(player.sdec.cur_time_sec(), expected_screen);
+            assert_eq!(player.wdec.cur_time_sec(), expected_webcam);
+            assert!(player.use_current_on_next_step);
+            assert!(player.seek_active(0.0).unwrap());
+            assert!(player.screen_time_sec() < 0.04);
+        }
     }
 
     #[test]

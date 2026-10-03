@@ -9,6 +9,12 @@ import {
 	resolveAutomaticDirectionPlanningPolicy,
 	resolveAutomaticDirectionPolicy,
 } from "./automatic-direction";
+import {
+	automaticDirectionGroupsForDocument,
+	clearAutomaticDirectionDismissals,
+	keepAutomaticDirectionGroup,
+	removeAutomaticDirectionGroup,
+} from "./automatic-direction-ownership";
 
 function recordingDocument(): AxcutDocument {
 	const base = createEmptyDocument({ title: "Direction", projectId: "direction-project" });
@@ -400,4 +406,111 @@ describe("automatic direction plan", () => {
 			),
 		).toBe(true);
 	});
+});
+
+it("persists review dismissals across fresh plan IDs and restores only on request", () => {
+	const recordings = [
+		{
+			assetId: "asset-1",
+			cursorTelemetry: [
+				{ timeMs: 5000, cx: 0.75, cy: 0.5, interactionType: "click" as const },
+				{ timeMs: 5400, cx: 0.75, cy: 0.5, interactionType: "move" as const },
+			],
+		},
+	];
+	const document = recordingDocument();
+	const first = regenerateAutomaticDirection({ id: "first", document, recordings });
+	const group = automaticDirectionGroupsForDocument(first)[0];
+	expect(group).toBeDefined();
+	expect(group.reasons).toEqual(["screen-activity"]);
+	const removed = removeAutomaticDirectionGroup(first, group.id);
+	const repeated = regenerateAutomaticDirection({ id: "second", document: removed, recordings });
+	expect(repeated.zoomRanges).toEqual([]);
+	const restored = regenerateAutomaticDirection({
+		id: "third",
+		document: clearAutomaticDirectionDismissals(repeated),
+		recordings,
+	});
+	expect(restored.zoomRanges.length).toBeGreaterThan(0);
+	const kept = keepAutomaticDirectionGroup(first, group.id);
+	const regenerated = regenerateAutomaticDirection({ id: "fourth", document: kept, recordings });
+	expect(regenerated.zoomRanges).toEqual(kept.zoomRanges);
+});
+
+it("keeps a removed legacy unanchored effect dismissed after anchored regeneration", () => {
+	const recordings = [
+		{
+			assetId: "asset-1",
+			cursorTelemetry: [
+				{ timeMs: 5000, cx: 0.75, cy: 0.5, interactionType: "click" as const },
+				{ timeMs: 5400, cx: 0.75, cy: 0.5, interactionType: "move" as const },
+			],
+		},
+	];
+	const generated = regenerateAutomaticDirection({
+		id: "before",
+		document: recordingDocument(),
+		recordings,
+	});
+	const legacy = {
+		...generated,
+		zoomRanges: generated.zoomRanges.map(
+			({
+				clipId: _clipId,
+				sourceStartSec: _sourceStart,
+				sourceEndSec: _sourceEnd,
+				automaticDirection: _provenance,
+				...region
+			}) => region,
+		),
+	};
+	const group = automaticDirectionGroupsForDocument(legacy)[0];
+	expect(group.reasons).toEqual([]);
+	const dismissed = removeAutomaticDirectionGroup(legacy, group.id);
+	expect(
+		regenerateAutomaticDirection({ id: "after", document: dismissed, recordings }).zoomRanges,
+	).toEqual([]);
+});
+
+it("matches dismissed source milliseconds after real clip-offset materialization", () => {
+	const document = recordingDocument();
+	const suggestion = {
+		span: { start: 4300, end: 6300 },
+		focus: { cx: 0.5, cy: 0.5 },
+		focusMode: "manual" as const,
+		customScale: 1.65,
+		source: "auto" as const,
+	};
+	const first = applyAutomaticDirectionPlan(document, {
+		schemaVersion: 1,
+		id: "original",
+		effects: [{ id: "screen", kind: "screen-zoom", suggestion }],
+	});
+	const removed = removeAutomaticDirectionGroup(
+		first,
+		automaticDirectionGroupsForDocument(first)[0].id,
+	);
+	const moved = {
+		...removed,
+		timeline: {
+			...removed.timeline,
+			clips: removed.timeline.clips.map((clip) => ({
+				...clip,
+				timelineStartSec: clip.timelineStartSec + 10,
+				timelineEndSec: clip.timelineEndSec + 10,
+			})),
+		},
+	};
+	const reapplied = applyAutomaticDirectionPlan(moved, {
+		schemaVersion: 1,
+		id: "moved",
+		effects: [
+			{
+				id: "screen",
+				kind: "screen-zoom",
+				suggestion: { ...suggestion, span: { start: 14300, end: 16300 } },
+			},
+		],
+	});
+	expect(reapplied.zoomRanges).toEqual([]);
 });

@@ -16,16 +16,74 @@
 	border: 1px solid rgb(255 255 255 / 16%);
 	border-radius: 24px;
 	background: rgb(18 18 21 / 96%);
-	box-shadow:
-		0 18px 48px rgb(0 0 0 / 42%),
-		0 2px 10px rgb(0 0 0 / 28%),
-		inset 0 1px 0 rgb(255 255 255 / 8%);
+	/* Keep the shadow inside the transparent window's 12px gutter. A broad
+	   shadow is clipped at the native window edge and looks like a second box. */
+	box-shadow: 0 3px 8px -3px rgb(0 0 0 / 35%);
 	cursor: grab;
 	-webkit-app-region: drag;
 }
 
 .surface:active {
 	cursor: grabbing;
+}
+
+.surfaceExpanded {
+	border-radius: 28px;
+}
+
+/* Top-right control. Opted out of the drag region so a click never starts a
+   window drag, and kept faint until the pointer is over the monitor. */
+.expandButton {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	z-index: 2;
+	display: flex;
+	height: 28px;
+	width: 28px;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid rgb(255 255 255 / 14%);
+	border-radius: 9px;
+	background: rgb(12 12 14 / 62%);
+	color: rgb(255 255 255 / 80%);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	cursor: pointer;
+	opacity: 0.55;
+	transition:
+		opacity 140ms ease,
+		background-color 140ms ease,
+		color 140ms ease;
+	-webkit-app-region: no-drag;
+}
+
+.surface:hover .expandButton,
+.expandButton:focus-visible {
+	opacity: 1;
+}
+
+.expandButton:hover {
+	background: rgb(30 30 34 / 82%);
+	color: #ffffff;
+}
+
+.expandButton:active {
+	transform: scale(0.96);
+}
+
+.surfaceExpanded .expandButton {
+	top: 14px;
+	right: 14px;
+	height: 34px;
+	width: 34px;
+	border-radius: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.expandButton {
+		transition: none;
+	}
 }
 
 .video {

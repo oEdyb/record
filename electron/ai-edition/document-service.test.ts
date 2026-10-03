@@ -7,6 +7,9 @@ import { axcutSchemaVersion } from "../../src/lib/ai-edition/schema";
 import { registerMediaLinks } from "../media/mediaLinksRegistry";
 import { DocumentNotFoundError, DocumentService, ProjectFileError } from "./document-service";
 
+const audioProbe = vi.hoisted(() => vi.fn());
+vi.mock("../media/probeAudioImport", () => ({ probeAudioImport: audioProbe }));
+
 async function makeTempDir(): Promise<string> {
 	const base = await fs.mkdtemp(path.join(os.tmpdir(), "openscreen-ai-edition-"));
 	return base;
@@ -26,6 +29,21 @@ describe("DocumentService", () => {
 	afterEach(async () => {
 		await fs.rm(tempDir, { recursive: true, force: true });
 		await fs.rm(mediaDir, { recursive: true, force: true });
+	});
+
+	it("loads legacy layout unchanged and preserves validated clip overrides on save", async () => {
+		const doc = await service.createProject("Layout compatibility");
+		const loaded = await service.getProject(doc.project.id);
+		expect(loaded.clipLayouts).toBeUndefined();
+		expect(loaded.legacyEditor).toEqual(doc.legacyEditor);
+		const withOverrides = {
+			...loaded,
+			clipLayouts: { c: { cameraSize: "L" as const, cameraAnchor: "bottom-right" as const } },
+		};
+		await service.saveProject(withOverrides);
+		expect((await service.getProject(doc.project.id)).clipLayouts).toEqual(
+			withOverrides.clipLayouts,
+		);
 	});
 
 	describe("createProject", () => {
@@ -88,6 +106,67 @@ describe("DocumentService", () => {
 			);
 			warning.mockRestore();
 		});
+	});
+
+	it("prepares audio without a document write and propagates probe failures", async () => {
+		const doc = await service.createProject("Audio");
+		const before = await service.getTransactionSnapshot(doc.project.id);
+		const source = path.join(mediaDir, "music.wav");
+		await fs.writeFile(source, "audio bytes");
+		audioProbe.mockResolvedValueOnce(2.5);
+		expect(await service.prepareAudioAsset(doc.project.id, source)).toMatchObject({
+			originalPath: source,
+			durationSec: 2.5,
+		});
+		audioProbe.mockRejectedValueOnce(new Error("No audio stream"));
+		await expect(service.prepareAudioAsset(doc.project.id, source)).rejects.toThrow(
+			"No audio stream",
+		);
+		expect(await service.getTransactionSnapshot(doc.project.id)).toEqual(before);
+	});
+
+	it("prepares a durable media reference without changing an adopted project", async () => {
+		const doc = await service.createProject("Media");
+		const first = await service.getTransactionSnapshot(doc.project.id);
+		await service.commitTransaction(
+			doc.project.id,
+			{ requestId: "adopt", payload: {}, expected: first.version },
+			(d) => d,
+		);
+		const before = await service.getTransactionSnapshot(doc.project.id);
+		const file = path.join(mediaDir, "complete.mp4");
+		await fs.writeFile(file, "video bytes");
+		const asset = await service.prepareAsset(doc.project.id, { path: file });
+		expect(asset).toMatchObject({ originalPath: path.resolve(file), sizeBytes: 11 });
+		expect(await service.getTransactionSnapshot(doc.project.id)).toEqual(before);
+		const empty = path.join(mediaDir, "empty.mp4");
+		await fs.writeFile(empty, "");
+		await expect(service.prepareAsset(doc.project.id, { path: empty })).rejects.toThrow(
+			"complete and nonempty",
+		);
+
+		await expect(
+			service.prepareAsset(doc.project.id, { path: path.join(mediaDir, "missing.mp4") }),
+		).rejects.toThrow();
+	});
+
+	it("imports a copy without overwriting the adopted identity or receipts", async () => {
+		const doc = await service.createProject("Original");
+		const first = await service.getTransactionSnapshot(doc.project.id);
+		await service.commitTransaction(
+			doc.project.id,
+			{ requestId: "adopt", payload: {}, expected: first.version },
+			(d) => d,
+		);
+		const before = await fs.readFile(path.join(tempDir, `${doc.project.id}.klippt`), "utf8");
+		const copy = await service.importProject({
+			...JSON.parse(before),
+			project: { ...doc.project, title: "Imported" },
+		});
+		expect(copy.project.id).not.toBe(doc.project.id);
+		expect((await service.getProject(copy.project.id)).project.title).toBe("Imported");
+		expect(await fs.readFile(path.join(tempDir, `${doc.project.id}.klippt`), "utf8")).toBe(before);
+		expect(await service.getTransactionReceipt(doc.project.id, "adopt")).not.toBeNull();
 	});
 
 	describe("getProject", () => {
@@ -580,5 +659,114 @@ describe("DocumentService", () => {
 
 			expect((await service.getProject(doc.project.id)).annotations).toHaveLength(7);
 		});
+	});
+});
+
+describe("DocumentService transaction adoption (external writes disabled)", () => {
+	let directory: string;
+	beforeEach(async () => {
+		directory = await makeTempDir();
+	});
+	afterEach(async () => {
+		await fs.rm(directory, { recursive: true, force: true });
+	});
+	it("stamps and notifies a committed transaction once, preserving its receipt on retry", async () => {
+		const ready = vi.fn();
+		const service = new DocumentService(directory, directory, { onDocumentReady: ready });
+		const document = await service.createProject("Original");
+		ready.mockClear();
+		const initial = await service.getTransactionSnapshot(document.project.id);
+		const request = {
+			requestId: "request-a",
+			payload: { title: "Edited" },
+			expected: initial.version,
+		};
+		const receipt = await service.commitTransaction(document.project.id, request, (doc) => ({
+			...doc,
+			project: { ...doc.project, title: "Edited", updatedAt: "2000-01-01T00:00:00.000Z" },
+		}));
+		const saved = await service.getTransactionSnapshot(document.project.id);
+		expect(saved.document.project.title).toBe("Edited");
+		expect(saved.document.project.updatedAt).not.toBe("2000-01-01T00:00:00.000Z");
+		expect(ready).toHaveBeenCalledTimes(1);
+		expect(
+			await service.commitTransaction(document.project.id, request, () => {
+				throw new Error("retry must not execute");
+			}),
+		).toEqual(receipt);
+		expect(await service.getTransactionReceipt(document.project.id, "request-a")).toEqual(receipt);
+		expect(ready).toHaveBeenCalledTimes(1);
+	});
+	it("blocks every old unconditional writer after adoption without stripping metadata", async () => {
+		const service = new DocumentService(directory, directory);
+		const document = await service.createProject("Original");
+		const snapshot = await service.getTransactionSnapshot(document.project.id);
+		await service.commitTransaction(
+			document.project.id,
+			{ requestId: "a", payload: {}, expected: snapshot.version },
+			(doc) => doc,
+		);
+		const file = path.join(directory, `${document.project.id}.klippt`);
+		const before = await fs.readFile(file, "utf8");
+		await expect(service.saveProject(document)).rejects.toThrow("guarded transaction");
+		await expect(service.addAsset(document.project.id, { path: "/tmp/media.mp4" })).rejects.toThrow(
+			"guarded transaction",
+		);
+		await expect(service.deleteProject(document.project.id)).rejects.toThrow("guarded transaction");
+		expect(await fs.readFile(file, "utf8")).toBe(before);
+	});
+	it("serializes old saves and adoption across service instances and rejects the stale expected version", async () => {
+		const service = new DocumentService(directory, directory);
+		const other = new DocumentService(directory, directory);
+		const document = await service.createProject("Original");
+		const snapshot = await service.getTransactionSnapshot(document.project.id);
+		const saving = other.saveProject({
+			...document,
+			project: { ...document.project, title: "GUI" },
+		});
+		const adopting = service.commitTransaction(
+			document.project.id,
+			{ requestId: "a", payload: {}, expected: snapshot.version },
+			(doc) => doc,
+		);
+		await saving;
+		await expect(adopting).rejects.toMatchObject({ code: "CONFLICT" });
+		expect((await service.getProject(document.project.id)).project.title).toBe("GUI");
+	});
+	it("reopens adopted content with its version and recovery from the same raw read", async () => {
+		const service = new DocumentService(directory, directory);
+		const original = await service.createProject("Original");
+		const snapshot = await service.getTransactionSnapshot(original.project.id);
+		const receipt = await service.commitTransaction(
+			original.project.id,
+			{ requestId: "agent", payload: {}, expected: snapshot.version, recordUndo: true },
+			(doc) => ({ ...doc, project: { ...doc.project, title: "Edited" } }),
+		);
+		const reopened = await new DocumentService(directory, directory).getProjectView(
+			original.project.id,
+		);
+		expect(reopened.transactionVersion?.revision).toBe(receipt.revision);
+		expect(reopened.document.project.title).toBe("Edited");
+		expect(reopened.undoRecovery?.beforeDocument.project.title).toBe("Original");
+	});
+
+	it("rejects traversal and document identity mismatches for snapshot, receipt and commit", async () => {
+		const service = new DocumentService(directory, directory);
+		const document = await service.createProject("Original");
+		const snapshot = await service.getTransactionSnapshot(document.project.id);
+		await expect(service.getTransactionSnapshot("../escape")).rejects.toThrow("Invalid project id");
+		await fs.copyFile(
+			path.join(directory, `${document.project.id}.klippt`),
+			path.join(directory, "different.klippt"),
+		);
+		await expect(service.getTransactionSnapshot("different")).rejects.toThrow("identity");
+		await expect(service.getTransactionReceipt("different", "a")).rejects.toThrow("identity");
+		await expect(
+			service.commitTransaction(
+				"different",
+				{ requestId: "a", payload: {}, expected: snapshot.version },
+				(doc) => doc,
+			),
+		).rejects.toThrow("identity");
 	});
 });

@@ -14,11 +14,12 @@ import {
 } from "./compositorViewClient";
 import type { CompositorParamValue } from "./contracts";
 import { NATIVE_SCREEN_BASE_RADIUS_PX, NATIVE_WEBCAM_BASE_PCT } from "./paramUnits";
+import { resetPreviewSettledFrames } from "./previewSettledFrames";
 
 let currentViewId: number | null = null;
 // Cache only the last submitted scene for this view. Each record owns its failure
 // handler so a rejected older send cannot clear a newer scene's duplicate gate.
-let submittedScene: { json: string } | null = null;
+let submittedScene: { json: string; ready: Promise<boolean> } | null = null;
 const listeners = new Set<() => void>();
 /** Derniers params poussés, par clé — rejoués à l'activation d'une vue (voir plus bas). */
 const lastParams = new Map<string, CompositorParamValue>();
@@ -28,6 +29,7 @@ export function setCurrentNativeViewId(id: number | null): void {
 	if (currentViewId === id) {
 		return;
 	}
+	resetPreviewSettledFrames();
 	currentViewId = id;
 	submittedScene = null;
 	// Rejoue les params connus sur la vue qui vient de s'activer. Rend la synchro
@@ -85,12 +87,16 @@ export function setNativeScene(sceneJson: string): void {
 		return;
 	}
 	if (submittedScene?.json === sceneJson) return;
-	const submission = { json: sceneJson };
+	const submission = { json: sceneJson, ready: Promise.resolve(false) };
 	submittedScene = submission;
-	setCompositorScene(currentViewId, sceneJson).catch((error: unknown) => {
-		if (submittedScene === submission) submittedScene = null;
-		console.warn("[compositor-view] setNativeScene failed:", error);
-	});
+	submission.ready = setCompositorScene(currentViewId, sceneJson).then(
+		() => true,
+		(error: unknown) => {
+			if (submittedScene === submission) submittedScene = null;
+			console.warn("[compositor-view] setNativeScene failed:", error);
+			return false;
+		},
+	);
 }
 
 /** Play/pause de la vue native active (lecture libre côté natif). No-op si aucune vue. */
@@ -134,28 +140,35 @@ export function subscribeNativeCompositor(listener: () => void): () => void {
  * clickBounce (x10) and to smoothing/motionBlur (x100). Sending a slider-space
  * value from here would scale the whole preview by 10 or 100 on load.
  */
-export function pushAllNativeParams(settings: EditorSettingsSnapshot): void {
-	setNativeParam("backgroundBlur", settings.showBlur);
-	setNativeParam("motionBlur", settings.motionBlurAmount);
-	setNativeParam("shadow", settings.shadowIntensity);
-	setNativeParam("roundness", settings.borderRadius / NATIVE_SCREEN_BASE_RADIUS_PX);
-	setNativeParam("padding", settings.padding / 100);
+export function pushAllNativeParams(
+	settings: EditorSettingsSnapshot,
+	setParam: typeof setNativeParam = setNativeParam,
+): void {
+	setParam("backgroundBlur", settings.showBlur);
+	setParam("motionBlur", settings.motionBlurAmount);
+	setParam("shadow", settings.shadowIntensity);
+	setParam("roundness", settings.borderRadius / NATIVE_SCREEN_BASE_RADIUS_PX);
+	setParam("padding", settings.padding / 100);
 	// Only a literal colour is a param; a gradient or an image wallpaper travels
 	// in the scene instead, and pushing its name here would be meaningless.
 	if (settings.wallpaper.startsWith("#")) {
-		setNativeParam("backgroundColor", settings.wallpaper);
+		setParam("backgroundColor", settings.wallpaper);
 	}
 
-	setNativeParam("webcamSize", settings.webcamSizePreset / NATIVE_WEBCAM_BASE_PCT);
-	setNativeParam("webcamZoom", settings.webcamZoom);
-	setNativeParam("webcamFocusX", settings.webcamFocalPoint.cx);
-	setNativeParam("webcamFocusY", settings.webcamFocalPoint.cy);
-	setNativeParam("webcamMirror", settings.webcamMirrored);
-	setNativeParam("webcamShape", settings.webcamMaskShape);
+	setParam("webcamSize", settings.webcamSizePreset / NATIVE_WEBCAM_BASE_PCT);
+	setParam("webcamZoom", settings.webcamZoom);
+	setParam("webcamFocusX", settings.webcamFocalPoint.cx);
+	setParam("webcamFocusY", settings.webcamFocalPoint.cy);
+	setParam("webcamMirror", settings.webcamMirrored);
+	setParam("webcamShape", settings.webcamMaskShape);
 
-	setNativeParam("cursorShow", settings.cursorShow);
-	setNativeParam("cursorSize", settings.cursor.size);
-	setNativeParam("cursorClickBounce", settings.cursor.clickBounce);
-	setNativeParam("cursorSmoothing", settings.cursor.smoothing);
-	setNativeParam("cursorMotionBlur", settings.cursor.motionBlur);
+	setParam("cursorShow", settings.cursorShow);
+	setParam("cursorSize", settings.cursor.size);
+	setParam("cursorClickBounce", settings.cursor.clickBounce);
+	setParam("cursorSmoothing", settings.cursor.smoothing);
+	setParam("cursorMotionBlur", settings.cursor.motionBlur);
+}
+
+export function waitForNativeScene(): Promise<boolean> {
+	return submittedScene?.ready ?? Promise.resolve(false);
 }

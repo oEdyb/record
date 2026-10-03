@@ -1,0 +1,20 @@
+{
+	"id": "observe-shot-3-50",
+	"title": "What is at 3:50, and is it live",
+	"pending": null,
+	"source_project": "/Users/olle/Library/Application Support/openscreen/projects/proj_77f9202f-6dfd-4bff-891a-df2177b88760.klippt",
+	"grader": {
+		"project_hash": "unchanged",
+		"staged": { "min": 0, "max": 0 },
+		"check": { "max_new_errors": 0, "max_new_warnings": 0 },
+		"transcript_unchanged": true,
+		"frames": { "min": 1 },
+		"usage": {
+			"shot": {
+				"edited_sec": 230,
+				"tolerance_sec": 2,
+				"allow_live": true
+			}
+		}
+	}
+}

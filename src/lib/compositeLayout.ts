@@ -1,3 +1,8 @@
+import {
+	normalizeWebcamAspectRatio,
+	normalizeWebcamCornerRadius,
+	type WebcamAspectRatio,
+} from "@/components/video-editor/types";
 export interface RenderRect {
 	x: number;
 	y: number;
@@ -326,6 +331,8 @@ export function computeCompositeLayout(params: {
 	webcamSizePreset?: WebcamSizePreset;
 	webcamPosition?: { cx: number; cy: number } | null;
 	webcamMaskShape?: import("@/components/video-editor/types").WebcamMaskShape;
+	webcamCornerRadius?: number;
+	webcamAspectRatio?: WebcamAspectRatio;
 	webcamBlockOrder?: WebcamBlockOrder;
 	webcamBlockCameraShare?: WebcamBlockCameraShare;
 }): WebcamCompositeLayout | null {
@@ -338,6 +345,8 @@ export function computeCompositeLayout(params: {
 		webcamSizePreset = 25,
 		webcamPosition,
 		webcamMaskShape = "rectangle",
+		webcamCornerRadius,
+		webcamAspectRatio,
 		webcamBlockOrder = "screen-first",
 		webcamBlockCameraShare = DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE,
 	} = params;
@@ -559,6 +568,21 @@ export function computeCompositeLayout(params: {
 		height = side;
 	}
 
+	// Frame proportions and corner style are independent. Circle/square presets keep their
+	// established square crop; the other masks can use a selected frame aspect ratio.
+	const cameraAspect = normalizeWebcamAspectRatio(webcamAspectRatio);
+	if (
+		cameraAspect &&
+		cameraAspect !== "source" &&
+		webcamMaskShape !== "circle" &&
+		webcamMaskShape !== "square"
+	) {
+		const [w, h] = cameraAspect.split(":").map(Number);
+		const longSide = Math.max(width, height);
+		width = Math.round(longSide * Math.min(1, w / h));
+		height = Math.round(longSide * Math.min(1, h / w));
+	}
+
 	let webcamX: number;
 	let webcamY: number;
 
@@ -577,7 +601,10 @@ export function computeCompositeLayout(params: {
 
 	// Shape-specific border radius
 	let borderRadius: number;
-	if (webcamMaskShape === "rounded") {
+	const cornerRadius = normalizeWebcamCornerRadius(webcamCornerRadius);
+	if (cornerRadius !== undefined && webcamMaskShape !== "circle") {
+		borderRadius = (Math.min(width, height) * cornerRadius) / 100;
+	} else if (webcamMaskShape === "rounded" || webcamMaskShape === "squircle") {
 		borderRadius = Math.round(Math.min(width, height) * 0.3);
 	} else if (webcamMaskShape === "circle") {
 		borderRadius = Math.round(Math.min(width, height) / 2);

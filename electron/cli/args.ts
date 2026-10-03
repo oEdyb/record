@@ -4,6 +4,7 @@
 import path from "node:path";
 import type { CliExportRequest, CliRecordRequest, CliRequest } from "../../src/lib/cliContracts";
 import { hasCanonicalProjectExtension } from "../../src/lib/projectFileFormat";
+import type { CliAgentCommand } from "./agentContracts";
 
 export interface CliInfoCommand {
 	kind: "info";
@@ -25,12 +26,14 @@ export type CliCommand = (
 	| CliPackCommand
 	| CliHelpCommand
 	| CliErrorCommand
+	| CliAgentCommand
 ) & {
 	/** Machine-readable NDJSON output on stdout instead of human progress. */
 	json?: boolean;
 };
 
 const SUBCOMMANDS = new Set([
+	"agent",
 	"export",
 	"record",
 	"sources",
@@ -45,6 +48,7 @@ const SUBCOMMANDS = new Set([
 export const CLI_USAGE = `Klippt CLI
 
 Usage:
+  klippt agent guide --json                  Discover agent inspection commands
   klippt export <project.klippt> [options]   Render a project to MP4/GIF
   klippt record [options]                    Record the screen headlessly
   klippt sources [--json]                    List displays, windows and microphones
@@ -128,6 +132,9 @@ export function parseCliArgs(
 	const sub = args[0];
 	if (!sub || !SUBCOMMANDS.has(sub)) return null;
 	if (sub === "help" || sub === "--help" || sub === "-h") return { kind: "help" };
+	if (sub === "agent") {
+		return { kind: "agent", args: args.slice(1), cwd, json: args.includes("--json") };
+	}
 
 	try {
 		if (sub === "export") return parseExport(args.slice(1), cwd);
@@ -142,6 +149,11 @@ export function parseCliArgs(
 }
 
 function parseExport(args: string[], cwd: string): CliCommand {
+	let previewPath: string | undefined;
+	let previewSnapshot: string | undefined;
+	let previewMaxDimension = 1280;
+	let previewTime: number | undefined;
+	let hasPreviewOption = false;
 	const request: CliExportRequest & { json?: boolean } = {
 		kind: "export",
 		projectPath: "",
@@ -159,6 +171,33 @@ function parseExport(args: string[], cwd: string): CliCommand {
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		switch (arg) {
+			case "--agent-preview-time": {
+				const [value, next] = takeValue(args, i, arg);
+				previewTime = Number(value);
+				hasPreviewOption = true;
+				i = next;
+				break;
+			}
+			case "--agent-preview-reference": {
+				const [value, next] = takeValue(args, i, arg);
+				previewPath = resolvePath(value, cwd);
+				i = next;
+				break;
+			}
+			case "--agent-preview-snapshot": {
+				const [value, next] = takeValue(args, i, arg);
+				previewSnapshot = value;
+				i = next;
+				break;
+			}
+			case "--agent-preview-max-dimension": {
+				const [value, next] = takeValue(args, i, arg);
+				previewMaxDimension = Number(value);
+				hasPreviewOption = true;
+				i = next;
+				break;
+			}
+
 			case "-o":
 			case "--out": {
 				const [value, next] = takeValue(args, i, arg);
@@ -244,7 +283,7 @@ function parseExport(args: string[], cwd: string): CliCommand {
 	}
 
 	if (!request.projectPath) throw new Error("export requires a <project.klippt> path");
-	if (request.outPath) {
+	if (request.outPath && previewTime === undefined) {
 		const ext = path.extname(request.outPath).toLowerCase();
 		if (ext !== ".mp4" && ext !== ".gif") {
 			throw new Error(`--out must end in .mp4 or .gif, got "${request.outPath}"`);
@@ -259,6 +298,32 @@ function parseExport(args: string[], cwd: string): CliCommand {
 	if (request.audioPath && request.format === "gif") {
 		throw new Error("--audio is only supported for MP4 exports");
 	}
+	if (previewPath || previewSnapshot || hasPreviewOption) {
+		if (
+			!previewPath ||
+			!previewSnapshot ||
+			!/^[a-f0-9]{64}$/.test(previewSnapshot) ||
+			!Number.isInteger(previewMaxDimension) ||
+			previewMaxDimension < 256 ||
+			previewMaxDimension > 1280 ||
+			(previewTime !== undefined &&
+				(!Number.isFinite(previewTime) ||
+					previewTime < 0 ||
+					!request.outPath ||
+					path.extname(request.outPath).toLowerCase() !== ".png" ||
+					request.format !== null ||
+					request.autoZoom ||
+					request.audioPath !== null))
+		)
+			throw new Error("Invalid internal preview reference");
+		request.previewReference = {
+			projectPath: previewPath,
+			snapshot: previewSnapshot,
+			maxDimension: previewMaxDimension,
+			...(previewTime !== undefined ? { time: previewTime } : {}),
+		};
+	}
+
 	return request;
 }
 

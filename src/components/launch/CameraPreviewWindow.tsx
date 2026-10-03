@@ -1,5 +1,5 @@
-import { CameraOff, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { CameraOff, LoaderCircle, Maximize2, Minimize2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadUserPreferences, saveUserPreferences } from "../../lib/userPreferences";
 import styles from "./CameraPreviewWindow.module.css";
 
@@ -8,12 +8,50 @@ interface CameraPreviewPreferences {
 }
 
 const PORT_MESSAGE_TYPE = "openscreen-camera-preview-port";
+const COMPACT_RELAY = { width: 576, height: 324 } as const;
+const MAX_RELAY = { width: 2_560, height: 1_440 } as const;
+const SURFACE_GUTTER = 12;
+
+/**
+ * Relay size for the current window: the painted surface at device pixels, bounded so a
+ * compact monitor keeps its 2x frame and an expanded one never exceeds 1440p.
+ */
+function relaySizeForWindow(): { width: number; height: number } {
+	const ratio = window.devicePixelRatio || 1;
+	const width = Math.round((window.innerWidth - 2 * SURFACE_GUTTER) * ratio);
+	const height = Math.round((window.innerHeight - 2 * SURFACE_GUTTER) * ratio);
+	return {
+		width: Math.min(MAX_RELAY.width, Math.max(COMPACT_RELAY.width, width)),
+		height: Math.min(MAX_RELAY.height, Math.max(COMPACT_RELAY.height, height)),
+	};
+}
 
 /** Private live confidence monitor. Its geometry never becomes editor camera layout. */
 export function CameraPreviewWindow() {
 	const [preferences, setPreferences] = useState<CameraPreviewPreferences | null>(null);
 	const [hasFrame, setHasFrame] = useState(false);
+	const [expanded, setExpanded] = useState(false);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const portRef = useRef<MessagePort | null>(null);
+
+	const toggleExpanded = useCallback(() => {
+		setExpanded((current) => {
+			const next = !current;
+			window.electronAPI.setCameraPreviewExpanded?.(next);
+			return next;
+		});
+	}, []);
+
+	// The main process resizes the window; the surface then asks the producer for a
+	// relay that matches its new device-pixel size so an expanded view is not a
+	// stretched 576 x 324 frame.
+	useEffect(() => {
+		const sendRelaySize = () => {
+			portRef.current?.postMessage({ type: "configure", ...relaySizeForWindow() });
+		};
+		window.addEventListener("resize", sendRelaySize);
+		return () => window.removeEventListener("resize", sendRelaySize);
+	}, []);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -59,6 +97,7 @@ export function CameraPreviewWindow() {
 			activePort?.close();
 			const nextPort = event.ports[0];
 			activePort = nextPort;
+			portRef.current = nextPort;
 			nextPort.onmessage = (frameEvent) => {
 				const bitmap = frameEvent.data?.bitmap as ImageBitmap | undefined;
 				if (frameEvent.data?.type === "frame" && bitmap) {
@@ -67,6 +106,16 @@ export function CameraPreviewWindow() {
 						bitmap.close();
 						nextPort.postMessage({ type: "consumed" });
 						return;
+					}
+					if (
+						typeof bitmap.width === "number" &&
+						typeof bitmap.height === "number" &&
+						bitmap.width > 0 &&
+						bitmap.height > 0 &&
+						(canvas.width !== bitmap.width || canvas.height !== bitmap.height)
+					) {
+						canvas.width = bitmap.width;
+						canvas.height = bitmap.height;
 					}
 					const bitmapRenderer = canvas.getContext("bitmaprenderer");
 					if (bitmapRenderer) {
@@ -89,12 +138,17 @@ export function CameraPreviewWindow() {
 				}
 			};
 			nextPort.start();
+			const relay = relaySizeForWindow();
+			if (relay.width !== COMPACT_RELAY.width || relay.height !== COMPACT_RELAY.height) {
+				nextPort.postMessage({ type: "configure", ...relay });
+			}
 		};
 		window.addEventListener("message", receivePort);
 		window.electronAPI.requestCameraPreviewConnection?.();
 		return () => {
 			window.removeEventListener("message", receivePort);
 			activePort?.close();
+			if (portRef.current === activePort) portRef.current = null;
 		};
 	}, []);
 
@@ -115,10 +169,11 @@ export function CameraPreviewWindow() {
 	return (
 		<div className={styles.root}>
 			<div
-				className={styles.surface}
+				className={expanded ? `${styles.surface} ${styles.surfaceExpanded}` : styles.surface}
 				role="img"
 				aria-label="Live webcam preview"
 				data-testid="camera-preview-surface"
+				data-expanded={expanded ? "true" : "false"}
 			>
 				<canvas
 					ref={canvasRef}
@@ -127,6 +182,20 @@ export function CameraPreviewWindow() {
 					className={styles.video}
 					data-testid="camera-preview-canvas"
 				/>
+				<button
+					type="button"
+					className={styles.expandButton}
+					onClick={toggleExpanded}
+					aria-label={expanded ? "Collapse camera preview" : "Expand camera preview"}
+					aria-pressed={expanded}
+					data-testid="camera-preview-expand"
+				>
+					{expanded ? (
+						<Minimize2 size={14} aria-hidden="true" />
+					) : (
+						<Maximize2 size={14} aria-hidden="true" />
+					)}
+				</button>
 				{!hasFrame ? (
 					<div
 						className={styles.status}

@@ -1,18 +1,61 @@
 /* Tiptap sets class="tiptap" on the ProseMirror root, so every selector here is global.
  * Plain .css, NOT .module.css: this sheet is imported for its side effect only, and a
  * binding-less CSS-module import is tree-shaken out of the production bundle. */
+/*
+ * The card: a dark, mostly opaque surface. On macOS the window carries a frosted
+ * vibrancy material underneath, so the alpha here is what lets it read as glass; on
+ * other platforms the window body is solid and this simply darkens it.
+ */
+.notes-card {
+	background: rgb(14 14 17 / 40%);
+	box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%);
+	text-shadow: 0 1px 2px rgb(0 0 0 / 40%);
+	color: rgb(255 255 255 / 92%);
+	user-select: none;
+}
+
+/* Chrome fades while auto-scroll runs so a take shows only text; hover brings it back. */
+.notes-card[data-playing="true"] .notes-chrome {
+	opacity: 0;
+	transition: opacity 180ms ease;
+}
+
+.notes-card[data-playing="true"]:hover .notes-chrome,
+.notes-card[data-playing="true"] .notes-chrome:focus-within {
+	opacity: 1;
+}
+
+.notes-drag-handle {
+	-webkit-app-region: drag;
+	cursor: grab;
+}
+
+.notes-drag-handle:active {
+	cursor: grabbing;
+}
+
+.notes-chrome-control {
+	-webkit-app-region: no-drag;
+}
+
 .tiptap {
 	height: 100%;
 	width: 100%;
 	outline: none;
 	overflow-y: auto;
-	color: #111827;
-	caret-color: #111827;
+	color: rgb(255 255 255 / 92%);
+	caret-color: #ffffff;
+	user-select: text;
+	scrollbar-width: thin;
+	scrollbar-color: rgb(255 255 255 / 18%) transparent;
+}
+
+.tiptap ::selection {
+	background: rgb(167 139 250 / 45%);
 }
 
 .tiptap:focus-visible {
-	outline: 2px solid var(--editor-accent-border);
-	outline-offset: -3px;
+	outline: none;
 }
 
 .notes-teleprompter-content[data-mirrored="true"] {
@@ -105,15 +148,15 @@
 }
 
 .tiptap code {
-	background-color: #ede9fe;
+	background-color: rgb(255 255 255 / 12%);
 	border-radius: 0.4rem;
-	color: #111827;
+	color: rgb(255 255 255 / 92%);
 	font-size: 0.85em;
 	padding: 0.25em 0.3em;
 }
 
 .tiptap pre {
-	background: #111827;
+	background: rgb(0 0 0 / 45%);
 	border-radius: 0.5rem;
 	color: #ffffff;
 	font-family: "JetBrainsMono", monospace;
@@ -129,13 +172,14 @@
 }
 
 .tiptap blockquote {
-	border-left: 3px solid #d1d5db;
+	border-left: 3px solid rgb(255 255 255 / 28%);
+	color: rgb(255 255 255 / 78%);
 	margin: 1.5em 0;
 	padding-left: 1em;
 }
 
 .tiptap hr {
 	border: none;
-	border-top: 1px solid #e5e7eb;
+	border-top: 1px solid rgb(255 255 255 / 16%);
 	margin: 2em 0;
 }

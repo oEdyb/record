@@ -38,6 +38,8 @@
   // release job uses --dir so it can create its signed ZIP and branded DMG from one app bundle.
   // Write the feed config in afterPack, before electron-builder signs the bundle.
   "afterPack": "scripts/after-pack.cjs",
+  // Reject a development signer before an app with a new TCC identity is installed.
+  "afterSign": "scripts/after-sign.cjs",
   "npmRebuild": true,
   // sharp ships ABI-stable (napi) prebuilt binaries with bundled libvips. Building it from source
   // needs a system libvips we don't provide and breaks on CI/local ("vips-cpp.42 not found"), so we

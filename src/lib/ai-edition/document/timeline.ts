@@ -16,7 +16,13 @@ import { createId } from "./ids";
  *  exist" has exactly one definition. `trim` is a source-time cut; the rest are pill-merged
  *  effects (zoom / speed / annotation / camera-fullscreen). Clips are removed via
  *  {@link removeClip}, not here — deleting a clip reflows the whole timeline. */
-export type RegionKind = "zoom" | "trim" | "annotation" | "speed" | "cameraFullscreen";
+export type RegionKind =
+	| "zoom"
+	| "trim"
+	| "annotation"
+	| "speed"
+	| "cameraFullscreen"
+	| "videoOverlay";
 
 /** Length a clip is given before its media has been probed. Lives here, in the pure
  *  document layer, because that layer decides which clips are still waiting for a real
@@ -231,6 +237,7 @@ export function invertIntervals(intervals: Interval[], durationSec: number): Int
  *  the source of truth, `startMs`/`endMs` a derived cache. Anchor fields are optional
  *  because a not-yet-migrated region (see `anchorRegionsWithDerivedMs`) has none. */
 type StoredRegion = {
+	anchor?: import("../schema/overlayAnchor").OverlayAnchor;
 	id: string;
 	startMs: number;
 	endMs: number;
@@ -244,6 +251,13 @@ function mapAllRegionCollections(
 	document: AxcutDocument,
 	fn: (regions: StoredRegion[], prefix: string) => StoredRegion[],
 ): AxcutDocument {
+	const transform = (regions: StoredRegion[], prefix: string) => [
+		...fn(
+			regions.filter((region) => !region.anchor),
+			prefix,
+		),
+		...regions.filter((region) => region.anchor),
+	];
 	const legacy = document.legacyEditor as Record<string, unknown> | null;
 	const speedRegions = legacy?.speedRegions as StoredRegion[] | undefined;
 	const cameraFullscreenRegions = legacy?.cameraFullscreenRegions as StoredRegion[] | undefined;
@@ -254,10 +268,14 @@ function mapAllRegionCollections(
 			document.zoomRanges as unknown as StoredRegion[],
 			"zoom",
 		) as unknown as AxcutDocument["zoomRanges"],
-		annotations: fn(
+		annotations: transform(
 			document.annotations as unknown as StoredRegion[],
 			"ann",
 		) as unknown as AxcutDocument["annotations"],
+		videoOverlays: transform(
+			(document.videoOverlays ?? []) as unknown as StoredRegion[],
+			"vo",
+		) as unknown as AxcutDocument["videoOverlays"],
 		legacyEditor:
 			legacy && (speedRegions || cameraFullscreenRegions)
 				? {
@@ -680,6 +698,7 @@ function anchoredRegionsOf(document: AxcutDocument): Array<{ id: string; clipId:
 	const collections: StoredRegion[][] = [
 		document.zoomRanges as unknown as StoredRegion[],
 		document.annotations as unknown as StoredRegion[],
+		(document.videoOverlays ?? []) as unknown as StoredRegion[],
 		(legacy?.speedRegions as StoredRegion[] | undefined) ?? [],
 		(legacy?.cameraFullscreenRegions as StoredRegion[] | undefined) ?? [],
 	];
@@ -1046,6 +1065,14 @@ export function splitClipAt(
 
 	const withSplitClip: AxcutDocument = {
 		...document,
+		...(document.clipLayouts?.[clipId]
+			? {
+					clipLayouts: {
+						...document.clipLayouts,
+						[rightClipId]: structuredClone(document.clipLayouts[clipId]),
+					},
+				}
+			: {}),
 		timeline: {
 			...document.timeline,
 			clips: nextClips,
@@ -1110,6 +1137,14 @@ export function duplicateClip(
 		.map((t) => ({ ...t, id: createId("trim"), clipId: copy.id }));
 	const updatedDoc: AxcutDocument = {
 		...document,
+		...(document.clipLayouts?.[clipId]
+			? {
+					clipLayouts: {
+						...document.clipLayouts,
+						[copy.id]: structuredClone(document.clipLayouts[clipId]),
+					},
+				}
+			: {}),
 		timeline: {
 			...document.timeline,
 			clips: newClips,
@@ -1175,6 +1210,8 @@ export function removeRegion(document: AxcutDocument, kind: RegionKind, id: stri
 			};
 		case "annotation":
 			return { ...document, annotations: dropPillById(document.annotations, id) };
+		case "videoOverlay":
+			return { ...document, videoOverlays: dropPillById(document.videoOverlays ?? [], id) };
 		case "trim":
 			return {
 				...document,

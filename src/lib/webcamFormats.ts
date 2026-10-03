@@ -57,7 +57,7 @@ export function formatWebcamFormat(format: WebcamFormat): string {
 					: format.height === 720
 						? "720p"
 						: `${format.width} × ${format.height}`;
-	return `${resolution} · ${format.fps} FPS`;
+	return `${resolution}, ${format.fps} FPS`;
 }
 
 function exactConstraints(format: WebcamFormat): MediaTrackConstraints {
@@ -110,7 +110,7 @@ function capabilityIncludes(
 	);
 }
 
-function settingsMatchFormat(settings: MediaTrackSettings, format: WebcamFormat): boolean {
+export function settingsMatchFormat(settings: MediaTrackSettings, format: WebcamFormat): boolean {
 	return (
 		settings.width === format.width &&
 		settings.height === format.height &&
@@ -153,4 +153,43 @@ export async function probeWebcamFormats(
 	}
 
 	return supported;
+}
+
+const probedFormatsByDevice = new Map<string, WebcamFormat[]>();
+
+/** Camera identity for the probe cache: the stable Chromium device id, else the track label. */
+export function webcamProbeCacheKey(
+	track: Pick<MediaStreamTrack, "getSettings" | "label">,
+	deviceId?: string,
+): string | null {
+	const settingsDeviceId = track.getSettings().deviceId;
+	const key = settingsDeviceId || deviceId || track.label;
+	return key ? key : null;
+}
+
+/**
+ * Probing switches the live camera through every candidate mode, which blanks the
+ * preview for seconds on a 4K UVC camera. Keep the result per device for the app session
+ * so reopening the panel or re-acquiring the same camera does not repeat that.
+ */
+export async function probeWebcamFormatsCached(
+	track: WebcamTrack & Pick<MediaStreamTrack, "label">,
+	deviceId?: string,
+	candidates: readonly WebcamFormat[] = WEBCAM_FORMAT_CANDIDATES,
+): Promise<WebcamFormat[]> {
+	const key = webcamProbeCacheKey(track, deviceId);
+	const cached = key ? probedFormatsByDevice.get(key) : undefined;
+	if (cached) return cached.map((format) => ({ ...format }));
+	const probed = await probeWebcamFormats(track, candidates);
+	if (key && probed.length > 0) {
+		probedFormatsByDevice.set(
+			key,
+			probed.map((format) => ({ ...format })),
+		);
+	}
+	return probed;
+}
+
+export function clearWebcamFormatProbeCache(): void {
+	probedFormatsByDevice.clear();
 }

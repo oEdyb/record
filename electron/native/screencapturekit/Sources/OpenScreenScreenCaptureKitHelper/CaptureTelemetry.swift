@@ -180,7 +180,12 @@ final class CaptureTelemetry {
 		defer { lock.unlock() }
 		let incompleteFrames = idleScreenSamples + blankScreenSamples + suspendedScreenSamples
 			+ startedScreenSamples + stoppedScreenSamples + otherScreenSamples
-		let droppedFrames = incompleteFrames + pendingVideoFrames + appendFailures
+		// Incomplete samples (idle, blank, suspended, ...) mean ScreenCaptureKit had no new
+		// pixels to deliver, which is normal when the screen or the game renders below
+		// the requested rate. They are not lost frames. Dropped frames are only the samples
+		// the writer refused (not ready) or failed to append; counting idle samples here
+		// produced a false 2.5% drop rate on a healthy 88-minute capture (2026-09-11).
+		let droppedFrames = pendingVideoFrames + appendFailures
 		let deliveredFps = mediaDurationMs > 0
 			? Double(appendedVideoFrames) * 1_000 / Double(mediaDurationMs)
 			: 0
@@ -195,6 +200,7 @@ final class CaptureTelemetry {
 			"startedScreenSamples": startedScreenSamples,
 			"stoppedScreenSamples": stoppedScreenSamples,
 			"otherScreenSamples": otherScreenSamples,
+			"incompleteScreenSamples": incompleteFrames,
 			"appendedVideoFrames": appendedVideoFrames,
 			"pendingVideoFrames": pendingVideoFrames,
 			"appendFailures": appendFailures,

@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "プレビュー画質",
+		"sharp": "高精細",
+		"performance": "パフォーマンス"
+	},
 	"newRecording": {
 		"title": "レコーダーに戻る",
 		"description": "現在の作業内容が保存されました。",
@@ -89,6 +94,9 @@
 		"toggleTheme": "テーマを切り替え",
 		"settings": "設定",
 		"export": "エクスポート",
+		"exporting": "書き出し中",
+		"exportProgressTitle": "{{pct}}% 完了、残り {{eta}}。書き出しを開く",
+		"exportProgressPreparing": "書き出しを準備中。書き出しを開く",
 		"renameProject": "プロジェクト名を変更",
 		"noProject": "プロジェクトなし",
 		"changeLanguage": "言語を変更",
@@ -97,7 +105,8 @@
 			"media": "メディア",
 			"edit": "編集",
 			"rec": "録画"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "ソース",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "エクスポートに失敗しました。",
 		"writingFile": "ファイルを書き込み中…",
 		"renderingFrames": "フレームをレンダリング中",
-		"framesEta": "{{current}} / {{total}} フレーム · 残り {{eta}}",
+		"framesEta": "{{current}} / {{total}} フレーム, 残り {{eta}}",
 		"preparingEncoder": "エンコーダーを準備中…",
+		"cancelExport": "書き出しをキャンセル",
+		"backgroundHint": "このウィンドウを閉じて編集を続けられます。進行状況は「書き出し」ボタンに表示されます。今行った編集はこの書き出しには含まれません。",
 		"close": "閉じる",
 		"cancel": "キャンセル",
 		"rendering": "レンダリング中…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "ファイルの書き込みに失敗しました",
 		"qualityUpscaleWarning": "アップスケール",
 		"exportedVideoOf": "の動画を書き出しました。所要時間:",
-		"nothingToExport": "書き出す内容がありません — タイムラインが空です。"
+		"nothingToExport": "書き出す内容がありません — タイムラインが空です。",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "フォーカスポイントをリセット",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "画面を表示したままカメラが滑らかに大きくなり、その後、通常のサイズに戻ります。",
 		"cameraFullscreenDescription": "この区間の再生中は、カメラが画面全体を占めます（枠・角丸・背景なし）。終わりでは滑らかに元に戻ります。タイムライン上で区間の端をドラッグすると、開始位置と長さを変更できます。",
 		"deleteRegion": "区間を削除",
-		"freehandRendersAsBox": "書き出しでは、フリーハンドの形は外接する矩形で覆われます。覆いすぎることはあっても、足りないことはありません。"
+		"freehandRendersAsBox": "書き出しでは、フリーハンドの形は外接する矩形で覆われます。覆いすぎることはあっても、足りないことはありません。",
+		"cameraSize": "カメラのサイズ"
 	},
 	"leftPanel": {
 		"mediaTitle": "メディア",
@@ -295,7 +309,7 @@
 			"title": "会話履歴",
 			"subtitle": "セッションを切り替えるか新規作成",
 			"empty": "まだ会話はありません。",
-			"msgsCount": "{{count}} 件のメッセージ · {{date}}"
+			"msgsCount": "{{count}} 件のメッセージ, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "既存のプロジェクトを開くか、ファイルを参照してください",
 		"searchPlaceholder": "プロジェクトを検索…",
 		"noMatches": "「{{query}}」に一致するプロジェクトがありません。",
-		"navigateHint": "で移動 ·",
+		"navigateHint": "で移動",
 		"openHint": "で開く",
 		"browseFiles": "ファイルを参照…",
 		"deleteProject": "プロジェクトを削除",
@@ -358,7 +372,10 @@
 		"previousClip": "前のクリップ",
 		"nextClip": "次のクリップ",
 		"loop": "ループ",
-		"seekVideo": "動画をシーク"
+		"seekVideo": "動画をシーク",
+		"mute": "プレビューをミュート",
+		"unmute": "プレビューのミュートを解除",
+		"previewVolume": "プレビューの音量"
 	},
 	"shell": {
 		"aiEditor": "AI エディター",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "14日間のトライアル",
-			"trialDay": "トライアル · 残り{{count}}日",
-			"trialDays": "トライアル · 残り{{count}}日",
-			"offline": "Klippt Pro · オフライン",
+			"trialDay": "トライアル, 残り{{count}}日",
+			"trialDays": "トライアル, 残り{{count}}日",
+			"offline": "Klippt Pro, オフライン",
 			"readOnly": "読み取り専用"
 		},
 		"eyebrowReadOnly": "読み取り専用アクセス",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "対応 GPU がないため CPU で描画しています。再生が遅くなります。",
 		"exportWarning": "対応 GPU がありません。この書き出しは CPU で実行されるため、通常よりはるかに時間がかかります。"
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

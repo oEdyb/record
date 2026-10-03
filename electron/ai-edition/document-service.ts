@@ -1,3 +1,4 @@
+import type { AgentHistoryIntent } from "./agentHistory";
 // DocumentService — main-process owner of v3 AxcutDocument projects.
 // Persists one .klippt JSON per project under userData/projects/ (the file
 // carries its own `schemaVersion`, so migration keys off the content, not the
@@ -13,8 +14,8 @@
 
 import fs, { type FileHandle } from "node:fs/promises";
 import path from "node:path";
+import { removeAssetFromDocument } from "../../src/lib/ai-edition/document/assets";
 import { createId } from "../../src/lib/ai-edition/document/ids";
-import { removeClip } from "../../src/lib/ai-edition/document/timeline";
 import {
 	type AxcutAsset,
 	type AxcutDocument,
@@ -27,6 +28,13 @@ import {
 	PROJECT_FILE_EXTENSION,
 } from "../../src/lib/projectFileFormat";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
+import {
+	type ProjectTransactionReceipt,
+	type ProjectTransactionSnapshot,
+	ProjectTransactionStore,
+	type ProjectTransactionVersion,
+	parseProjectTransactionRecord,
+} from "./projectTransactions";
 
 const CANONICAL_PROJECT_FILE_EXTENSION = `.${PROJECT_FILE_EXTENSION}`;
 const LEGACY_PROJECT_FILE_SUFFIXES = LEGACY_PROJECT_FILE_EXTENSIONS.map(
@@ -128,7 +136,11 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
 	}
 }
 
-async function writeFileAtomically(filePath: string, contents: string): Promise<void> {
+async function writeFileAtomically(
+	filePath: string,
+	contents: string,
+	createOnly = false,
+): Promise<void> {
 	const tempPath = `${filePath}.tmp-${process.pid}-${createId("w")}`;
 	let handle: FileHandle | undefined;
 	try {
@@ -137,7 +149,14 @@ async function writeFileAtomically(filePath: string, contents: string): Promise<
 		await handle.sync();
 		await handle.close();
 		handle = undefined;
-		await renameWithRetry(tempPath, filePath);
+		if (createOnly) {
+			// Publish a complete compatibility copy only if still absent. Another
+			// service may already have created or adopted the canonical project.
+			await fs.link(tempPath, filePath);
+			await fs.unlink(tempPath);
+		} else {
+			await renameWithRetry(tempPath, filePath);
+		}
 	} catch (error) {
 		await handle?.close().catch(() => undefined);
 		await fs.unlink(tempPath).catch(() => undefined);
@@ -150,7 +169,7 @@ export class DocumentService {
 	private readonly mediaRegistryDir: string;
 	private legacyMigration: Promise<void> | null = null;
 	/** Tail of the in-flight save chain per project id — see writeProject. */
-	private readonly writeQueues = new Map<string, Promise<void>>();
+	private static readonly writeQueues = new Map<string, Promise<unknown>>();
 
 	// `mediaRegistryDir` is where the media-links registry file lives
 	// (RECORDINGS_DIR in production) — see getProject. Injected for the same
@@ -206,8 +225,14 @@ export class DocumentService {
 					// No canonical project exists yet.
 				}
 				try {
-					const parsed = parseLoadedDocument(await fs.readFile(from, "utf8"));
-					await writeFileAtomically(to, JSON.stringify(parsed, null, 2));
+					const raw = await fs.readFile(from, "utf8");
+					const record = parseProjectTransactionRecord(raw);
+					// Preserve receipts when copying a transaction-aware legacy filename.
+					await writeFileAtomically(
+						to,
+						record.metadata ? raw : JSON.stringify(record.document, null, 2),
+						true,
+					);
 				} catch (error) {
 					console.warn(`[ai-edition] failed to copy legacy project ${from} -> ${to}:`, error);
 				}
@@ -252,6 +277,14 @@ export class DocumentService {
 	}
 
 	async getProject(projectId: string): Promise<AxcutDocument> {
+		return (await this.getProjectView(projectId)).document;
+	}
+	/** Resolve media and expose transaction identity from the same raw file read. */
+	async getProjectView(projectId: string): Promise<{
+		document: AxcutDocument;
+		transactionVersion?: ProjectTransactionVersion;
+		undoRecovery?: ProjectTransactionSnapshot["undoRecovery"];
+	}> {
 		await this.ensureProjectsDir();
 		const candidates = [
 			this.fileFor(projectId),
@@ -281,12 +314,20 @@ export class DocumentService {
 		// the upgraded JSON so `documentSchema.parse` still validates what we hand
 		// back, and it is not persisted from here: the renderer saves the document
 		// it was given, as it does for any other load-time repair.
+		const record = parseProjectTransactionRecord(raw);
+		if (record.document.project.id !== projectId)
+			throw new ProjectFileError("Project identity does not match managed path", projectId);
 		const migrated = migrateRawDocumentToCurrent(JSON.parse(raw));
 		const document = documentSchema.parse(
 			await relinkProjectMedia(migrated, this.mediaRegistryDir),
 		);
 		this.notifyDocumentReady(document);
-		return document;
+		return {
+			document,
+			...(record.metadata
+				? { transactionVersion: record.version, undoRecovery: record.undoRecovery }
+				: {}),
+		};
 	}
 
 	async createProject(title: string): Promise<AxcutDocument> {
@@ -311,18 +352,197 @@ export class DocumentService {
 	}
 
 	async deleteProject(projectId: string): Promise<void> {
-		for (const filePath of [
-			this.fileFor(projectId),
-			...LEGACY_PROJECT_FILE_SUFFIXES.map((suffix) => this.legacyFileFor(projectId, suffix)),
-		]) {
-			try {
-				await fs.unlink(filePath);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
-					throw error;
+		return this.enqueueProject(projectId, async () => {
+			await this.assertUnconditionalWriteAllowed(projectId);
+			for (const filePath of [
+				this.fileFor(projectId),
+				...LEGACY_PROJECT_FILE_SUFFIXES.map((suffix) => this.legacyFileFor(projectId, suffix)),
+			]) {
+				try {
+					await fs.unlink(filePath);
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+						throw error;
+					}
 				}
 			}
+		});
+	}
+
+	/** Unrelinked, validated persisted content plus exact on-disk version. Media
+	 * resolution remains the separate getProject view; never hash that repaired view.
+	 */
+	async getTransactionSnapshot(projectId: string): Promise<ProjectTransactionSnapshot> {
+		return this.enqueueProject(projectId, async () => {
+			await this.ensureProjectsDir();
+			const snapshot = await new ProjectTransactionStore(this.fileFor(projectId)).read();
+			if (snapshot.document.project.id !== projectId)
+				throw new ProjectFileError("Project identity does not match its managed path", projectId);
+			return snapshot;
+		});
+	}
+
+	/** Additive internal API only. External editing remains disabled until every
+	 * GUI writer, ownership lease and Undo acknowledgement uses this authority.
+	 */
+	async commitTransaction(
+		projectId: string,
+		request: {
+			requestId: string;
+			payload: unknown;
+			expected: ProjectTransactionVersion;
+			recordUndo?: boolean;
+			agentHistory?: AgentHistoryIntent;
+		},
+		transform: (document: AxcutDocument) => AxcutDocument,
+	): Promise<ProjectTransactionReceipt> {
+		return this.enqueueProject(projectId, async () => {
+			await this.ensureProjectsDir();
+			const store = new ProjectTransactionStore(this.fileFor(projectId));
+			if ((await store.read()).document.project.id !== projectId)
+				throw new ProjectFileError("Project identity does not match its managed path", projectId);
+			let committedDocument: AxcutDocument | undefined;
+			const receipt = await store.commit(request, (document) => {
+				const next = transform(document);
+				committedDocument = documentSchema.parse({
+					...next,
+					project: { ...next.project, updatedAt: new Date().toISOString() },
+				});
+				return committedDocument;
+			});
+			if (committedDocument) this.notifyDocumentReady(committedDocument);
+			return receipt;
+		});
+	}
+
+	async getAgentHistory(projectId: string) {
+		return this.enqueueProject(projectId, async () => {
+			const store = new ProjectTransactionStore(this.fileFor(projectId));
+			if ((await store.read()).document.project.id !== projectId)
+				throw new ProjectFileError("Project identity mismatch", projectId);
+			return (await store.history()).list();
+		});
+	}
+	async prepareAgentRestore(
+		projectId: string,
+		kind: "undo" | "redo",
+		input: { steps?: number; to?: string; force?: boolean },
+	) {
+		return this.enqueueProject(projectId, async () => {
+			const store = new ProjectTransactionStore(this.fileFor(projectId));
+			const snapshot = await store.read();
+			if (snapshot.document.project.id !== projectId)
+				throw new ProjectFileError("Project identity mismatch", projectId);
+			return {
+				...(await (await store.history()).select(kind, snapshot.version, input)),
+				version: snapshot.version,
+				before: snapshot.document,
+			};
+		});
+	}
+
+	async getTransactionReceipt(
+		projectId: string,
+		requestId: string,
+	): Promise<ProjectTransactionReceipt | null> {
+		return this.enqueueProject(projectId, async () => {
+			await this.ensureProjectsDir();
+			const store = new ProjectTransactionStore(this.fileFor(projectId));
+			if ((await store.read()).document.project.id !== projectId)
+				throw new ProjectFileError("Project identity does not match its managed path", projectId);
+			return store.receipt(requestId);
+		});
+	}
+
+	private async assertUnconditionalWriteAllowed(projectId: string): Promise<void> {
+		let raw: string;
+		try {
+			raw = await fs.readFile(this.fileFor(projectId), "utf8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw error;
 		}
+		const value: unknown = JSON.parse(raw);
+		if (value && typeof value === "object" && "_klipptTransactions" in value) {
+			throw new ProjectFileError(
+				"Revision-aware project requires a guarded transaction; unconditional write refused",
+				projectId,
+			);
+		}
+	}
+
+	async prepareAudioAsset(projectId: string, selectedPath: string) {
+		await this.getTransactionSnapshot(projectId);
+		const originalPath = path.resolve(selectedPath);
+		const handle = await fs.open(originalPath, "r");
+		try {
+			const before = await handle.stat();
+			if (!before.isFile() || before.size === 0) throw new Error("Select a nonempty audio file");
+			await handle.sync();
+			const { probeAudioImport } = await import("../media/probeAudioImport");
+			const durationSec = await probeAudioImport(originalPath);
+			const after = await fs.stat(originalPath);
+			if (
+				after.ino !== before.ino ||
+				after.size !== before.size ||
+				after.mtimeMs !== before.mtimeMs
+			)
+				throw new Error(
+					"The audio file changed during import. Try again when recording is complete.",
+				);
+			return {
+				id: createId("audio"),
+				label: path.basename(originalPath),
+				originalPath,
+				durationSec,
+			};
+		} finally {
+			await handle.close();
+		}
+	}
+
+	/** Prepare a complete file reference without changing any project revision. */
+	async prepareAsset(projectId: string, input: AddAssetInput): Promise<AxcutAsset> {
+		await this.getTransactionSnapshot(projectId);
+		if (!input.path || !isSupportedVideoPath(input.path))
+			throw new ProjectFileError("A supported video file is required.", projectId);
+		const originalPath = path.resolve(input.path);
+		const handle = await fs.open(originalPath, "r");
+		try {
+			const stats = await handle.stat();
+			if (!stats.isFile() || stats.size === 0)
+				throw new ProjectFileError("The video file must be complete and nonempty.", projectId);
+			// Node 22 FileHandle.sync flushes this existing source before a document
+			// can reference it. This does not copy or take ownership of user media.
+			await handle.sync();
+			return {
+				id: createId("asset"),
+				kind: "video",
+				label: input.label?.trim() || path.basename(originalPath),
+				originalPath,
+				sizeBytes: stats.size,
+				cameraTrack: null,
+				...(input.recordingImportId ? { recordingImportId: input.recordingImportId } : {}),
+			};
+		} finally {
+			await handle.close();
+		}
+	}
+
+	/** Import is a new project, never an unconditional replacement of another ID. */
+	async importProject(document: unknown): Promise<AxcutDocument> {
+		const parsed = documentSchema.parse(document);
+		const now = new Date().toISOString();
+		const copy: AxcutDocument = {
+			...parsed,
+			project: { ...parsed.project, id: createId("proj"), createdAt: now, updatedAt: now },
+		};
+		await this.ensureProjectsDir();
+		await this.enqueueProject(copy.project.id, async () => {
+			await writeFileAtomically(this.fileFor(copy.project.id), JSON.stringify(copy, null, 2), true);
+			this.notifyDocumentReady(copy);
+		});
+		return copy;
 	}
 
 	async addAsset(projectId: string, input: AddAssetInput): Promise<AxcutDocument> {
@@ -371,27 +591,7 @@ export class DocumentService {
 		if (!doc.assets.some((a) => a.id === assetId)) {
 			throw new ProjectFileError(`Asset ${assetId} not found in project ${projectId}.`, projectId);
 		}
-		const assets = doc.assets.filter((a) => a.id !== assetId);
-		const primaryAssetId =
-			doc.project.primaryAssetId === assetId
-				? (assets[0]?.id ?? undefined)
-				: doc.project.primaryAssetId;
-		const withoutAssetClips = doc.timeline.clips
-			.filter((clip) => clip.assetId === assetId)
-			.reduce((current, clip) => removeClip(current, clip.id), doc);
-		const next: AxcutDocument = {
-			...withoutAssetClips,
-			assets,
-			timeline: {
-				...withoutAssetClips.timeline,
-				trimRanges: withoutAssetClips.timeline.trimRanges.filter((r) => r.assetId !== assetId),
-			},
-			project: {
-				...withoutAssetClips.project,
-				primaryAssetId,
-				updatedAt: new Date().toISOString(),
-			},
-		};
+		const next = removeAssetFromDocument(doc, assetId);
 		return this.saveProject(next);
 	}
 
@@ -414,26 +614,27 @@ export class DocumentService {
 	 * The queue alone would still leave a torn file on a crash; the rename alone
 	 * would still let two saves race for the same destination.
 	 */
-	private writeProject(doc: AxcutDocument): Promise<void> {
-		const projectId = doc.project.id;
-		const tail = this.writeQueues.get(projectId) ?? Promise.resolve();
-		// Chained on both settlements: one save failing must not cancel the next.
-		const run = tail.then(
-			() => this.writeProjectNow(doc),
-			() => this.writeProjectNow(doc),
-		);
-		const settled = run.catch(() => undefined);
-		this.writeQueues.set(projectId, settled);
-		void settled.then(() => {
-			// Only the tail clears the entry — a later save may already own it.
-			if (this.writeQueues.get(projectId) === settled) this.writeQueues.delete(projectId);
-		});
+	private enqueueProject<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+		const key = this.fileFor(projectId);
+		const tail = DocumentService.writeQueues.get(key) ?? Promise.resolve();
+		const run = tail.catch(() => undefined).then(work);
+		DocumentService.writeQueues.set(key, run);
+		void run
+			.finally(() => {
+				if (DocumentService.writeQueues.get(key) === run) DocumentService.writeQueues.delete(key);
+			})
+			.catch(() => undefined);
 		return run;
+	}
+
+	private writeProject(doc: AxcutDocument): Promise<void> {
+		return this.enqueueProject(doc.project.id, () => this.writeProjectNow(doc));
 	}
 
 	private async writeProjectNow(doc: AxcutDocument): Promise<void> {
 		await this.ensureProjectsDir();
 		const filePath = this.fileFor(doc.project.id);
+		await this.assertUnconditionalWriteAllowed(doc.project.id);
 		// The suffix goes AFTER the extension on purpose: listProjects matches on a
 		// trailing `.klippt`, so an interrupted write's leftover is invisible to
 		// it rather than showing up as a corrupt project. Unique per write, so two

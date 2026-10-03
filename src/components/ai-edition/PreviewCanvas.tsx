@@ -66,6 +66,7 @@ import { getCssClipPath } from "@/lib/webcamMaskShapes";
 import { computeCameraLayoutState } from "@/lib/zoomMath/cameraFullscreenUtils";
 import { clamp, clamp01 } from "@/utils/math";
 import { AnnotationLayer } from "./AnnotationLayer";
+import { AudioOverlayPlayback } from "./AudioOverlayPlayback";
 import { NativeCompositorOverlay } from "./NativeCompositorOverlay";
 import styles from "./NewEditorShell.module.css";
 import { type VideoSource, VirtualPreview } from "./VirtualPreview";
@@ -280,6 +281,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			// it (their preset definitions hardcode their own placement).
 			webcamPosition: preset === "picture-in-picture" ? settings.webcamPosition : null,
 			webcamMaskShape: mask,
+			webcamCornerRadius: settings.webcamCornerRadius,
+			webcamAspectRatio: settings.webcamAspectRatio,
 			webcamBlockOrder: settings.webcamBlockOrder,
 			webcamBlockCameraShare: settings.webcamBlockCameraShare,
 		});
@@ -292,6 +295,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		settings.webcamBlockOrder,
 		settings.webcamBlockCameraShare,
 		settings.webcamMaskShape,
+		settings.webcamCornerRadius,
+		settings.webcamAspectRatio,
 		settings.webcamSizePreset,
 		settings.webcamPosition,
 		settings.padding,
@@ -335,9 +340,20 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 						cameraLayoutState.cameraScale,
 					)
 				: computeCameraFullscreenRect(layout.webcamRect, frameSize, cameraLayoutState.progress);
+		const k = cameraLayoutState.driftScale;
+		const drifted =
+			k === 1
+				? webcamRect
+				: {
+						...webcamRect,
+						x: webcamRect.x + (webcamRect.width * (1 - k)) / 2,
+						y: webcamRect.y + (webcamRect.height * (1 - k)) / 2,
+						width: webcamRect.width * k,
+						height: webcamRect.height * k,
+					};
 		return {
 			...layout,
-			webcamRect,
+			webcamRect: drifted,
 		};
 	}, [layout, cameraLayoutState, frameSize]);
 
@@ -358,10 +374,13 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	const handleVideoElement = useMemo(() => props.onVideoElement, [props.onVideoElement]);
 	// L'élément `<video>` lui-même n'est plus retenu : il ne servait qu'à échantillonner des pixels
 	// pour la mosaïque dessinée en DOM, que le compositeur natif rend désormais.
-	const relayIsPlaying = (el: HTMLVideoElement | null) => {
-		handleVideoElement(el);
-		setIsPlaying(!el?.paused);
-	};
+	const relayIsPlaying = useCallback(
+		(el: HTMLVideoElement | null) => {
+			handleVideoElement(el);
+			setIsPlaying(!el?.paused);
+		},
+		[handleVideoElement],
+	);
 	const relayLoadedMetadata = (
 		durationSec: number,
 		assetId: string,
@@ -518,6 +537,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			    hitbox) still render on top as normal DOM so they stay clickable. No more
 			    dual preview path. */}
 			<NativeCompositorOverlay />
+			<AudioOverlayPlayback clockRef={clockRef} />
 			{layout?.screenRect ? (
 				<div
 					ref={screenSlotRef}

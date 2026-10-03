@@ -110,6 +110,21 @@ describe("user preferences", () => {
 		expect(loadUserPreferences().cameraPreviewPosition).toEqual({ x: -241, y: 82 });
 	});
 
+	it("persists and normalizes the notes window frame", () => {
+		saveUserPreferences({ notesWindowBounds: { x: 10.4, y: 20.6, width: 320.2, height: 419.8 } });
+		expect(loadUserPreferences().notesWindowBounds).toEqual({
+			x: 10,
+			y: 21,
+			width: 320,
+			height: 420,
+		});
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ notesWindowBounds: { x: 0, y: 0, width: 0, height: 100 } }),
+		);
+		expect(loadUserPreferences().notesWindowBounds).toBeNull();
+	});
+
 	it("ignores an invalid floating camera preview position", () => {
 		localStorage.setItem(
 			"openscreen_user_preferences",

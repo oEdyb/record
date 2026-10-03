@@ -79,19 +79,29 @@
 			"rectangle": "Chữ nhật",
 			"circle": "Tròn",
 			"square": "Vuông",
-			"rounded": "Bo góc"
-		}
+			"rounded": "Bo góc",
+			"squircle": "Siêu elip"
+		},
+		"webcamCornerRadius": "Góc camera",
+		"webcamCornerRadiusDescription": "Bo tròn góc camera theo phần trăm cạnh ngắn hơn.",
+		"cameraAspectRatio": "Tỷ lệ khung hình camera",
+		"cameraSourceAspect": "Khớp với nguồn camera"
 	},
 	"effects": {
 		"title": "Hiệu ứng video",
 		"blurBg": "Làm mờ nền",
-		"motionBlur": "Làm mờ chuyển động",
+		"motionBlur": "Nhòe chuyển động màn hình",
 		"off": "tắt",
-		"shadow": "Bóng đổ",
-		"roundness": "Độ bo tròn",
-		"padding": "Phần đệm",
+		"shadow": "Bóng màn hình",
+		"roundness": "Góc màn hình",
+		"padding": "Lề khung hình",
 		"on": "bật",
-		"help": "Kiểu khung của bản ghi: làm mờ nền, đổ bóng, mờ chuyển động, bo góc và khoảng đệm quanh video."
+		"help": "Kiểu khung của bản ghi: làm mờ nền, đổ bóng, mờ chuyển động, bo góc và khoảng đệm quanh video.",
+		"blurBgDescription": "Làm mờ nền phía sau bản ghi.",
+		"motionBlurDescription": "Thêm hiệu ứng nhòe khi màn hình phóng to và di chuyển.",
+		"shadowDescription": "Điều chỉnh bóng phía sau bản ghi màn hình.",
+		"roundnessDescription": "Bo tròn các góc của bản ghi màn hình. Góc camera được chỉnh riêng.",
+		"paddingDescription": "Thêm khoảng trống quanh bản ghi để hiển thị thêm nền."
 	},
 	"background": {
 		"title": "Nền",
@@ -240,7 +250,9 @@
 		"errorTimeout": "Tải phông chữ mất quá nhiều thời gian. Vui lòng kiểm tra URL và thử lại.",
 		"errorLoadFailed": "Không thể tải phông chữ. Vui lòng xác minh URL Google Fonts là chính xác."
 	},
-	"automatic": { "title": "Tự động" },
+	"automatic": {
+		"title": "Tự động"
+	},
 	"audio": {
 		"title": "Âm thanh",
 		"help": "Làm sạch giọng nói, rút ngắn khoảng nghỉ và chuẩn bị bản phối cuối.",
@@ -249,7 +261,7 @@
 		"cleanVoice": "Clean Voice",
 		"testing": "Đang thử nghiệm",
 		"cleanVoiceDescription": "Giảm tiếng ồn nền ngay trên máy.",
-		"cleanVoiceTrust": "Trên máy · chỉ micrô · giữ bản gốc",
+		"cleanVoiceTrust": "Trên máy, chỉ micrô, giữ bản gốc",
 		"cleanVoiceprocessing": "Đang chuẩn bị…",
 		"cleanVoiceready": "Sẵn sàng",
 		"cleanVoicefailed": "Đang dùng bản gốc",
@@ -263,7 +275,7 @@
 		"normalizeVolume": "Chuẩn hóa âm lượng",
 		"normalizeVolumeDescription": "Đưa toàn bộ video về mức an toàn để tải lên.",
 		"preset": "Cài đặt sẵn",
-		"youtubeTarget": "YouTube · -14.5 LUFS",
+		"youtubeTarget": "YouTube, -14.5 LUFS",
 		"custom": "Tùy chỉnh",
 		"targetLoudness": "Độ lớn mục tiêu",
 		"targetLoudnessHelp": "Độ lớn tích hợp của toàn bộ video xuất ra.",
@@ -299,7 +311,7 @@
 		"analyze": "Analyze pauses",
 		"analyzeAgain": "Analyze again",
 		"analyzing": "Analyzing pauses…",
-		"resultCount": "{{count}} pause suggestions",
+		"resultCount": "{{count}} proposed cuts",
 		"timeSaved": "{{duration}} shorter",
 		"selectAll": "Select all",
 		"clearAll": "Clear all",
@@ -317,7 +329,16 @@
 		"save": "Save",
 		"applied": "Applied {{count}} pause cuts",
 		"nothingToApply": "Those pauses are already edited",
-		"applyFailed": "Could not apply pause cuts"
+		"applyFailed": "Could not apply pause cuts",
+		"acceptAll": "Accept all ({{count}})",
+		"clearLane": "Clear",
+		"rejectedEarlier": "{{count}} rejected earlier",
+		"kinds": {
+			"pause": "{{count}} pauses",
+			"blip": "{{count}} blips",
+			"agent": "{{count}} agent",
+			"fix": "{{count}} fixes"
+		}
 	},
 	"cursor": {
 		"title": "Con trỏ",
@@ -337,7 +358,8 @@
 	},
 	"facets": {
 		"captions": "Phụ đề",
-		"transcript": "Bản ghi lời thoại"
+		"transcript": "Bản ghi lời thoại",
+		"navigation": "Editing tools"
 	},
 	"panes": {
 		"help": "Trợ giúp"
@@ -397,6 +419,63 @@
 		"width": "Chiều rộng",
 		"lineLength": "Độ dài dòng",
 		"minWords": "Số từ tối thiểu mỗi dòng",
-		"maxWords": "Số từ tối đa mỗi dòng"
+		"maxWords": "Số từ tối đa mỗi dòng",
+		"correctWords": "Correct words",
+		"correctionOriginalOnly": "Switch the display language to Original to correct transcript words.",
+		"selectToCorrect": "Select a caption in the timeline to correct its words.",
+		"correctionUnavailable": "This caption has no source word timing to correct.",
+		"correctionHint": "Keep one word per field. Corrections update every use of this recording. Audio, timing and saved translations stay unchanged.",
+		"correctionWord": "Word {{number}}",
+		"correctionInvalid": "Enter one non-empty word per field, up to 100 characters.",
+		"correctionSaveFailed": "The correction could not be saved. Try again, or select the caption again if the project changed.",
+		"saveCorrection": "Save correction",
+		"resetCorrection": "Reset"
+	},
+	"automaticReview": {
+		"title": "Review effects",
+		"hint": "Keep protects an effect from regeneration. Remove excludes matching suggestions. Manual edits stay unchanged.",
+		"regenerate": "Regenerate",
+		"keepAll": "Keep all",
+		"removeAll": "Remove all",
+		"empty": "No automatic effects to review.",
+		"camera": "Camera emphasis",
+		"zoom": "Screen zoom",
+		"jump": "Go to {{name}} at {{time}}",
+		"trimmed": "Trimmed out",
+		"reasonUnavailable": "Trigger not saved in this project.",
+		"reason": {
+			"screen-activity": "Screen interaction detected",
+			"cursor-trace": "Cursor movement to follow",
+			"typing": "Typing activity detected",
+			"speech-with-quiet-screen": "Speech while the screen is quiet"
+		},
+		"adjust": "Adjust",
+		"keep": "Keep",
+		"remove": "Remove",
+		"previous": "Previous effects",
+		"next": "Next effects",
+		"dismissed": "{{count}} effects excluded. Different timing or framing can produce new suggestions.",
+		"restore": "Allow dismissed effects again",
+		"saveFailed": "Could not save this review change. Your previous edit is preserved.",
+		"saving": "Saving review…",
+		"saved": "Review saved. Use Undo to restore the previous edit.",
+		"recordingRequired": "Automatic edits need a recording in this timeline. Imported videos and older projects may not include recording evidence.",
+		"tune": "Tune automatic edits"
+	},
+	"panels": {
+		"canvas": "Canvas",
+		"screen": "Screen",
+		"camera": "Camera",
+		"voice": "Voice",
+		"pauses": "Pauses",
+		"music": "Music",
+		"delivery": "Delivery",
+		"correctionHint": "Select a word to correct it. Timing stays unchanged.",
+		"microphoneRequired": "Clean Voice needs a separate microphone track.",
+		"cleanupUnavailable": "Voice cleanup is unavailable on this device.",
+		"fill": "Fill",
+		"clickBounceHelp": "How strongly the cursor responds to a click. Zero turns the bounce off.",
+		"transcriptRead": "Click a word to move the playhead.",
+		"transcriptEdit": "Click to seek. Select words and press Delete to cut."
 	}
 }

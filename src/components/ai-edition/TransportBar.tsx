@@ -1,8 +1,9 @@
-import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { memo, useCallback, useEffect, useRef } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
+import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
@@ -39,6 +40,11 @@ export const TransportBar = memo(function TransportBar({
 	// directly instead of forcing V4Timeline — and the whole editor shell above it —
 	// to re-render once per frame to hand it down as a prop.
 	const storeTimeSec = useProjectStore((s) => s.currentTimeSec);
+	const previewVolume = usePreviewAudio((s) => s.volume);
+	const previewMuted = usePreviewAudio((s) => s.muted);
+	const setPreviewVolume = usePreviewAudio((s) => s.setVolume);
+	const togglePreviewMuted = usePreviewAudio((s) => s.toggleMuted);
+	const silent = previewMuted || previewVolume === 0;
 	const currentTimeSec = overrideTimeSec ?? toDisplayTime(storeTimeSec);
 	const virtualDurationSec = clips.reduce(
 		(acc, c) => acc + (c.timelineEndSec - c.timelineStartSec),
@@ -186,6 +192,29 @@ export const TransportBar = memo(function TransportBar({
 				<span className={styles.sep}>/</span>
 				<span className={styles.total}>{formatSec(virtualDurationSec)}</span>
 			</span>
+			<div className={styles.volume} data-silent={silent}>
+				<Tooltip content={te(previewMuted ? "transport.unmute" : "transport.mute")} side="top">
+					<button
+						type="button"
+						className={styles.tbtn}
+						aria-label={te(previewMuted ? "transport.unmute" : "transport.mute")}
+						aria-pressed={previewMuted}
+						onClick={togglePreviewMuted}
+					>
+						{silent ? <VolumeX size={13} /> : <Volume2 size={13} />}
+					</button>
+				</Tooltip>
+				<input
+					type="range"
+					min={0}
+					max={1}
+					step={0.01}
+					value={previewMuted ? 0 : previewVolume}
+					onChange={(e) => setPreviewVolume(Number(e.target.value))}
+					className={styles.volumeInput}
+					aria-label={te("transport.previewVolume")}
+				/>
+			</div>
 			<div className={styles.scrubBar}>
 				<div className={styles.scrubTrack}>
 					<div

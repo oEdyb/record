@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { syncCompositorTransport } from "./compositorViewClient";
 import type { CompositorFrameTiming } from "./contracts";
+import { waitForNativeScene } from "./nativeCompositorStore";
 import {
 	createTransportDriftState,
 	type NativeTransportTarget,
@@ -8,6 +9,7 @@ import {
 	observeTransportFrame,
 	type TransportDriftState,
 } from "./nativeTransportSync";
+import { notePreviewTransportAnchor } from "./previewSettledFrames";
 
 /**
  * Keeps the native preview slaved to the media element's source-time clock.
@@ -26,9 +28,20 @@ export function useNativePlaybackSync(
 	const generationRef = useRef(0);
 	const driftStateRef = useRef<TransportDriftState>(createTransportDriftState());
 
-	const pushAnchor = useCallback((next: NativeTransportTarget, nowMs = performance.now()) => {
+	const pushAnchor = useCallback(async (next: NativeTransportTarget, nowMs = performance.now()) => {
+		if (!(await waitForNativeScene())) return;
+		const current = targetRef.current;
+		if (!current || needsTransportSync(next, current)) return;
+		next = current;
 		const generation = generationRef.current + 1;
 		generationRef.current = generation;
+		notePreviewTransportAnchor({
+			viewId: next.viewId,
+			sceneIdentity: next.sceneIdentity,
+			generation,
+			clipIndex: next.clipIndex,
+			sourceTimeSec: next.sourceTimeSec,
+		});
 		driftStateRef.current = createTransportDriftState(nowMs);
 		void syncCompositorTransport({
 			id: next.viewId,

@@ -52,7 +52,107 @@ function clickPath() {
 	return samples;
 }
 
+// Five triple-click bursts, with quiet gaps measured from the last click to the next first click.
+function heldAttentionFixture(secondGapMs = 3_100, firstGapMs = 3_000) {
+	const cursor: ConnectedClickSample[] = [];
+	const position = (timeMs: number) => ({ cx: 0.5 + 0.035 * Math.sin(timeMs / 800), cy: 0.5 });
+	for (let timeMs = 0; timeMs <= 32_000; timeMs += 33) {
+		const { cx, cy } = position(timeMs);
+		cursor.push(sample(timeMs, cx, cy));
+	}
+	let firstClickMs = 1_200;
+	for (const gapMs of [firstGapMs, secondGapMs, 5_600, 4_200, 0]) {
+		for (const offset of [0, 320, 640]) {
+			const timeMs = firstClickMs + offset;
+			const { cx, cy } = position(timeMs);
+			cursor.push(sample(timeMs, cx, cy, "click"));
+		}
+		firstClickMs += 640 + gapMs;
+	}
+	return cursor.sort((left, right) => left.timeMs - right.timeMs);
+}
+
 describe("connected click chain planner", () => {
+	it("holds five nearby click bursts in one continuous fixed-scale passage", () => {
+		const plan = planConnectedClickChains({ cursor: heldAttentionFixture(), durationMs: 28_600 });
+		expect(plan.sequences).toHaveLength(1);
+		const passage = plan.sequences[0];
+		expect(passage.clickCount).toBe(15);
+		expect(passage.detectorChainCount).toBe(5);
+		expect(passage.span).toEqual({ start: 850, end: 21_200 });
+		expect(passage.zooms).toHaveLength(1);
+		expect(passage.resolvedScale).toBe(1.65);
+		expect(passage.croppedFrames).toBe(0);
+		for (const [index, zoom] of passage.zooms.entries()) {
+			expect(zoom.customScale).toBe(1.65);
+			if (index > 0) expect(zoom.span.start).toBeLessThanOrEqual(passage.zooms[index - 1].span.end);
+		}
+	});
+
+	it("holds attention when the first burst ends with a short drag inside the framed area", () => {
+		// Real recording: the last press of burst 1 dragged 0.2 of the screen left and released
+		// before burst 2 started 3 s after the release, outside the 1.5 s connection window.
+		// The drag end is still inside the 1.65× frame.
+		const pressMs = 1_840;
+		const releaseMs = 2_820;
+		const returnMs = 3_400;
+		const dragEnd = { cx: 0.3, cy: 0.5 };
+		const cursor = heldAttentionFixture(3_100, 4_000).map((entry) => {
+			if (entry.timeMs <= pressMs || entry.timeMs >= returnMs) return entry;
+			const origin = { cx: 0.5 + 0.035 * Math.sin(pressMs / 800), cy: 0.5 };
+			const progress =
+				entry.timeMs <= releaseMs
+					? (entry.timeMs - pressMs) / (releaseMs - pressMs)
+					: 1 - (entry.timeMs - releaseMs) / (returnMs - releaseMs);
+			return {
+				...entry,
+				cx: origin.cx + (dragEnd.cx - origin.cx) * progress,
+				cy: origin.cy + (dragEnd.cy - origin.cy) * progress,
+			};
+		});
+		cursor.push(sample(releaseMs, dragEnd.cx, dragEnd.cy, "mouseup"));
+		cursor.sort((left, right) => left.timeMs - right.timeMs);
+		const focusActivities = buildDragFocusActivities(cursor, DEFAULT_CONNECTED_CLICK_POLICY);
+		const plan = planConnectedClickChains({ cursor, focusActivities, durationMs: 28_600 });
+		expect(plan.sequences).toHaveLength(1);
+		const passage = plan.sequences[0];
+		expect(passage.containsDrag).toBe(true);
+		expect(passage.span.end).toBe(22_200);
+		expect(passage.croppedFrames).toBe(0);
+	});
+
+	it("ends held attention when the cursor leaves and returns between bursts", () => {
+		const cursor = heldAttentionFixture().map((entry) =>
+			entry.timeMs >= 6_000 && entry.timeMs <= 7_000 ? { ...entry, cx: 0.9, cy: 0.9 } : entry,
+		);
+		const plan = planConnectedClickChains({ cursor, durationMs: 28_600 });
+		expect(plan.sequences).toHaveLength(2);
+		expect(plan.sequences.map((passage) => passage.clickCount)).toEqual([6, 9]);
+		expect(plan.sequences[0].span.end).toBeLessThanOrEqual(5_480 + 900);
+		expect(plan.sequences[0].span.end).toBeLessThan(plan.sequences[1].span.start);
+	});
+
+	it.each([
+		{ visible: false },
+		{ directionExcluded: true },
+	])("does not bridge held attention across an unavailable cursor sample: %j", (extra) => {
+		const cursor = heldAttentionFixture();
+		Object.assign(cursor.find((entry) => entry.timeMs >= 6_000)!, extra);
+		const plan = planConnectedClickChains({ cursor, durationMs: 28_600 });
+		expect(plan.sequences).toHaveLength(2);
+		expect(plan.sequences.map((passage) => passage.clickCount)).toEqual([6, 9]);
+	});
+
+	it("ends held attention after a seven-second burst gap", () => {
+		const plan = planConnectedClickChains({
+			cursor: heldAttentionFixture(7_000),
+			durationMs: 32_000,
+		});
+		expect(plan.sequences).toHaveLength(2);
+		expect(plan.sequences.map((passage) => passage.clickCount)).toEqual([6, 9]);
+		expect(plan.sequences[0].span.end).toBeLessThan(plan.sequences[1].span.start);
+	});
+
 	it("does not bridge focus activities from different opaque app contexts", () => {
 		const focusActivities = [
 			sample(1_000, 0.25, 0.5, "click", { directionContextId: "context-a" }),

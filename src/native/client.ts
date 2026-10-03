@@ -14,6 +14,8 @@ import {
 	type AiEditionLlmProviderModelsResult,
 	type AiEditionLlmSnapshot,
 	type AiEditionProjectSummary,
+	type AiEditionTransactionResult,
+	type AiEditionWriteGuard,
 	type CursorCapabilities,
 	type CursorRecordingData,
 	type CursorTelemetryPoint,
@@ -174,6 +176,12 @@ export const nativeBridgeClient = {
 			}),
 	},
 	aiEdition: {
+		exportSources: (document: unknown) =>
+			requireNativeBridgeData<import("./contracts").SourceHandoffResult>({
+				domain: "aiEdition",
+				action: "document.exportSources",
+				payload: { document },
+			}),
 		listProjects: () =>
 			requireNativeBridgeData<AiEditionProjectSummary[]>({
 				domain: "aiEdition",
@@ -191,6 +199,25 @@ export const nativeBridgeClient = {
 				action: "document.create",
 				payload: { title },
 			}),
+		snapshot: (projectId: string) =>
+			requireNativeBridgeData<AiEditionTransactionResult>({
+				domain: "aiEdition",
+				action: "document.snapshot",
+				payload: { projectId },
+			}),
+		commit: (projectId: string, document: unknown, guard: AiEditionWriteGuard) =>
+			requireNativeBridgeData<AiEditionTransactionResult>({
+				domain: "aiEdition",
+				action: "document.commit",
+				payload: { projectId, document, guard },
+			}),
+		receipt: (projectId: string, operationRequestId: string) =>
+			requireNativeBridgeData<AiEditionTransactionResult>({
+				domain: "aiEdition",
+				action: "document.receipt",
+				payload: { projectId, operationRequestId },
+			}),
+
 		save: (document: unknown) =>
 			requireNativeBridgeData<AiEditionDocumentResult>({
 				domain: "aiEdition",
@@ -203,6 +230,26 @@ export const nativeBridgeClient = {
 				action: "document.delete",
 				payload: { projectId },
 			}),
+		importProject: (document: unknown) =>
+			requireNativeBridgeData<AiEditionDocumentResult>({
+				domain: "aiEdition",
+				action: "document.import",
+				payload: { document },
+			}),
+		pickAudioAsset: (projectId: string) =>
+			requireNativeBridgeData<{ asset?: unknown; canceled?: boolean }>({
+				domain: "aiEdition",
+				action: "document.pickAudioAsset",
+				payload: { projectId },
+			}),
+
+		prepareAsset: (projectId: string, path: string, label?: string, recordingImportId?: string) =>
+			requireNativeBridgeData<{ asset: unknown }>({
+				domain: "aiEdition",
+				action: "document.prepareAsset",
+				payload: { projectId, path, label, recordingImportId },
+			}),
+
 		addAsset: (projectId: string, path: string, label?: string, recordingImportId?: string) =>
 			requireNativeBridgeData<AiEditionAssetResult>({
 				domain: "aiEdition",

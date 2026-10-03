@@ -21,13 +21,18 @@ const noop = () => undefined;
 
 function renderTopBar(
 	projectTitle: string | null,
-	options: { readOnly?: boolean; entitlementLabel?: string | null } = {},
+	options: {
+		readOnly?: boolean;
+		entitlementLabel?: string | null;
+		exportRun?: { percent: number | null; etaLabel: string | null } | null;
+	} = {},
 ) {
 	const onRename = vi.fn();
 	const onRecord = vi.fn();
 	const onRegenerate = vi.fn();
 	const onImportMedia = vi.fn();
 	const onEntitlement = vi.fn();
+	const onExport = vi.fn();
 	render(
 		<EditorTopBar
 			mode="edit"
@@ -43,12 +48,13 @@ function renderTopBar(
 			readOnly={options.readOnly ?? false}
 			entitlementLabel={options.entitlementLabel ?? null}
 			onEntitlement={onEntitlement}
+			exportRun={options.exportRun ?? null}
 			actions={{
 				openProject: noop,
 				newProject: noop,
 				importMedia: onImportMedia,
 				save: noop,
-				export: noop,
+				export: onExport,
 				openSettings: noop,
 				renameProject: onRename,
 				toggleChat: noop,
@@ -57,7 +63,7 @@ function renderTopBar(
 			}}
 		/>,
 	);
-	return { onRename, onRecord, onRegenerate, onImportMedia, onEntitlement };
+	return { onRename, onRecord, onRegenerate, onImportMedia, onEntitlement, onExport };
 }
 
 describe("editor workspace navigation", () => {
@@ -111,13 +117,35 @@ describe("editor workspace navigation", () => {
 		expect(onImportMedia).toHaveBeenCalledOnce();
 	});
 
-	it("announces save state without persistent toolbar chrome", () => {
+	it("shows save state next to the project title", () => {
 		renderTopBar("Demo Project");
 
 		expect(screen.getByRole("status")).toHaveTextContent("topbar.saved");
+		expect(screen.getByRole("status")).toBeVisible();
+		expect(screen.getByRole("status").parentElement).toContainElement(
+			screen.getByRole("button", { name: "topbar.renameProject" }),
+		);
 		expect(screen.queryByText("topbar.unsaved")).not.toBeInTheDocument();
 	});
 
+	it("turns the Export button into the progress readout while an export runs", () => {
+		const { onExport } = renderTopBar("Demo", {
+			exportRun: { percent: 42.4, etaLabel: "3:10" },
+		});
+		expect(screen.queryByRole("button", { name: "topbar.export" })).not.toBeInTheDocument();
+		const progress = screen.getByTestId("export-progress");
+		expect(progress).toHaveAttribute("data-percent", "42");
+		expect(progress).toHaveTextContent("42%");
+		expect(progress).toHaveAttribute("aria-label", "topbar.exportProgressTitle");
+		fireEvent.click(progress);
+		expect(onExport).toHaveBeenCalledOnce();
+	});
+	it("shows an indeterminate readout before the encoder reports a frame", () => {
+		renderTopBar("Demo", { exportRun: { percent: null, etaLabel: null } });
+		const progress = screen.getByTestId("export-progress");
+		expect(progress).not.toHaveAttribute("data-percent");
+		expect(progress).toHaveAttribute("aria-label", "topbar.exportProgressPreparing");
+	});
 	it("exposes automatic-edit regeneration as one editor action", () => {
 		const { onRegenerate } = renderTopBar("Demo Project");
 

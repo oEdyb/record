@@ -27,6 +27,7 @@
 //! (`data[0]`, `data[1]`, `width`, `height`) sont identiques sur les deux plateformes
 //! — c'est précisément ce qui rend le port Metal possible (cf. PR #162).
 
+pub mod agent_geometry;
 pub mod audio;
 pub mod config;
 pub mod cursor;
@@ -35,6 +36,7 @@ pub mod export_verify;
 pub mod ffi;
 pub mod frame_geometry;
 pub mod gif_export;
+pub mod overlay_video;
 pub mod regions;
 // Multiplateforme à dessein : n'utilise que libavformat (liée sur les trois
 // cibles) et le shim C. Seul Linux l'appelle aujourd'hui, parce que c'est la
@@ -96,6 +98,8 @@ use cpu_frames_windows as cpu_frames;
 
 #[cfg(target_os = "macos")]
 mod mac_frames;
+#[cfg(target_os = "macos")]
+mod vt_decode_macos;
 #[cfg(target_os = "macos")]
 use mac_frames as cpu_frames;
 

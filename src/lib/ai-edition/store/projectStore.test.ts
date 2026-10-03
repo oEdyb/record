@@ -5,7 +5,11 @@ import type { AxcutDocument } from "../schema";
 import { saveEditorDefaultPreferences } from "./editingPreferences";
 import { DEFAULT_EDITOR_SETTINGS, getEditorSettings } from "./editorSettings";
 import {
+	activateProjectTransactions,
+	applyExternalProjectTransaction,
 	getProjectMutationGeneration,
+	reconcileProjectTransactions,
+	resolveLocalTransactionConflict,
 	useProjectStore,
 	waitForProjectMutations,
 } from "./projectStore";
@@ -13,9 +17,14 @@ import { redo, undo } from "./undo";
 
 const bridgeMocks = vi.hoisted(() => ({
 	get: vi.fn(),
+	snapshot: vi.fn(),
+	commit: vi.fn(),
+	receipt: vi.fn(),
+	importProject: vi.fn(),
 	create: vi.fn(),
 	save: vi.fn(),
 	addAsset: vi.fn(),
+	prepareAsset: vi.fn(),
 	removeAsset: vi.fn(),
 	listProjects: vi.fn(),
 }));
@@ -28,9 +37,14 @@ vi.mock("@/native/client", () => ({
 	nativeBridgeClient: {
 		aiEdition: {
 			get: bridgeMocks.get,
+			snapshot: bridgeMocks.snapshot,
+			commit: bridgeMocks.commit,
+			receipt: bridgeMocks.receipt,
+			importProject: bridgeMocks.importProject,
 			create: bridgeMocks.create,
 			save: bridgeMocks.save,
 			addAsset: bridgeMocks.addAsset,
+			prepareAsset: bridgeMocks.prepareAsset,
 			removeAsset: bridgeMocks.removeAsset,
 			listProjects: bridgeMocks.listProjects,
 		},
@@ -50,7 +64,7 @@ const sampleDoc = {
 	// literal, and an unannotated object literal widens it to `number` — so
 	// every `document: sampleDoc` below fails to type-check for a fixture that
 	// is, in fact, exactly right.
-	schemaVersion: 9 as const,
+	schemaVersion: 11 as const,
 	project: {
 		id: "proj_test",
 		title: "Test",
@@ -88,6 +102,7 @@ describe("useProjectStore", () => {
 			dialogOpen: false,
 			blockedCapability: null,
 		});
+		useProjectStore.setState({ transactionBusy: false, transactionSyncPending: false });
 		useProjectStore.getState().clear();
 		for (const mock of Object.values(bridgeMocks)) {
 			mock.mockReset();
@@ -103,6 +118,673 @@ describe("useProjectStore", () => {
 		vi.clearAllMocks();
 		// biome-ignore lint/suspicious/noExplicitAny: test-only stub of the legacy contextBridge surface
 		delete (window as any).electronAPI;
+	});
+
+	const version = { mutationIdentity: "identity", revision: "one", fileHash: "a".repeat(64) };
+	async function activate() {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			status: "ready",
+			dirty: false,
+		});
+		bridgeMocks.snapshot.mockResolvedValue({ success: true, document: sampleDoc, version });
+		await activateProjectTransactions(sampleDoc.project.id);
+	}
+	function committed(document: AxcutDocument, requestId: string, revision = "two") {
+		return {
+			success: true,
+			document,
+			version: { ...version, revision },
+			snapshotMatchesReceipt: true,
+			receipt: {
+				requestId,
+				revision,
+				payloadHash: "b".repeat(64),
+				operationId: "op",
+				changed: true,
+			},
+		};
+	}
+	it("accepts proposed cuts through one GUI undo step and one durable agent history entry", async () => {
+		const fs = await import("node:fs/promises");
+		const { ProjectTransactionStore } = await import(
+			"../../../../electron/ai-edition/projectTransactions"
+		);
+		const { editFixture } = await import("../checks/fixtures");
+		const { usePauseAnalysisStore, resetPauseAnalysisStoreForTests } = await import(
+			"@/components/ai-edition/pauses/pauseAnalysisStore"
+		);
+		const root = await fs.mkdtemp("/tmp/staged-history-");
+		try {
+			const file = `${root}/project.klippt`;
+			const doc = editFixture();
+			await fs.writeFile(file, JSON.stringify(doc));
+			const disk = new ProjectTransactionStore(file);
+			useProjectStore.setState({
+				projectId: "project",
+				document: doc,
+				status: "ready",
+				dirty: false,
+			});
+			bridgeMocks.snapshot.mockImplementation(async () => ({
+				success: true,
+				...(await disk.read()),
+			}));
+			bridgeMocks.commit.mockImplementation(async (_id, candidate, guard) => {
+				const receipt = await disk.commit({ ...guard, payload: candidate }, () => candidate);
+				return { success: true, receipt, ...(await disk.read()), snapshotMatchesReceipt: true };
+			});
+			resetPauseAnalysisStoreForTests();
+			usePauseAnalysisStore.getState().stageCuts(
+				[1, 6].map((start) => ({
+					id: `cut-${start}`,
+					clipId: "clip",
+					assetId: "asset",
+					sourceStartSec: start,
+					sourceEndSec: start + 1,
+					kind: "agent",
+					origin: "agent plan test",
+					selected: true,
+				})),
+			);
+			expect(
+				await usePauseAnalysisStore.getState().acceptAll(undefined, "accepted-cuts-request"),
+			).toBe("applied");
+			expect(bridgeMocks.commit).toHaveBeenCalledOnce();
+			expect((await disk.read()).document.timeline.trimRanges).toHaveLength(2);
+			const history = await (await new ProjectTransactionStore(file).history()).list();
+			expect(history).toHaveLength(1);
+			expect(history[0]).toMatchObject({
+				planSummary: "Accept 2 proposed cuts",
+				kind: "apply",
+				requestId: "accepted-cuts-request",
+			});
+			expect(undo()).toBe(true);
+			expect(useProjectStore.getState().document?.timeline.trimRanges).toEqual([]);
+			expect(undo()).toBe(false);
+		} finally {
+			await fs.rm(root, { recursive: true, force: true });
+		}
+	});
+	it("activates only a clean matching saved snapshot and rejects dirty or changed live content", async () => {
+		await activate();
+		expect(useProjectStore.getState().transactionVersion).toEqual(version);
+		useProjectStore
+			.getState()
+			.setDocumentLive({ ...sampleDoc, project: { ...sampleDoc.project, title: "Unsaved" } });
+		await expect(activateProjectTransactions(sampleDoc.project.id)).rejects.toMatchObject({
+			code: "EDITOR_BUSY",
+		});
+		useProjectStore.setState({ dirty: false });
+		await expect(activateProjectTransactions(sampleDoc.project.id)).rejects.toMatchObject({
+			code: "CONFLICT",
+		});
+	});
+	it("commits one external edit, blocks live gestures and Undo during the barrier, and creates one normal Undo step", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const edited = { ...sampleDoc, project: { ...sampleDoc.project, title: "Edited" } };
+		const applying = applyExternalProjectTransaction(sampleDoc.project.id, edited, {
+			requestId: "external",
+			expected: version,
+		});
+		await Promise.resolve();
+		expect(useProjectStore.getState().transactionBusy).toBe(true);
+		useProjectStore
+			.getState()
+			.setDocumentLive({ ...sampleDoc, project: { ...sampleDoc.project, title: "Gesture" } });
+		expect(undo()).toBe(false);
+		expect(useProjectStore.getState().document).toEqual(sampleDoc);
+		finish(committed(edited, "external"));
+		await expect(applying).resolves.toMatchObject({ requestId: "external" });
+		expect(useProjectStore.getState().transactionBusy).toBe(false);
+		expect(undo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("Test");
+		expect(undo()).toBe(false);
+		bridgeMocks.commit.mockImplementation(async (_id, doc, guard) =>
+			committed(doc, guard.requestId, "three"),
+		);
+		await useProjectStore.getState().saveDocument(useProjectStore.getState().document!);
+		expect(bridgeMocks.commit.mock.calls.at(-1)?.[2].expected.revision).toBe("two");
+		expect(useProjectStore.getState().transactionVersion?.revision).toBe("three");
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+	it("preserves dirty document and error on a guarded save conflict", async () => {
+		await activate();
+		const dirty = { ...sampleDoc, project: { ...sampleDoc.project, title: "Unsaved" } };
+		useProjectStore.getState().setDocumentLive(dirty);
+		bridgeMocks.commit.mockResolvedValue({
+			success: false,
+			errorCode: "CONFLICT",
+			error: "Newer disk revision",
+		});
+		await expect(useProjectStore.getState().saveDocument(dirty)).rejects.toMatchObject({
+			code: "CONFLICT",
+		});
+		expect(useProjectStore.getState()).toMatchObject({
+			document: dirty,
+			dirty: true,
+			error: "Newer disk revision",
+			transactionVersion: version,
+		});
+	});
+	it("rebases queued GUI intent only across a confirmed local commit without losing its other changes", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		bridgeMocks.commit.mockImplementationOnce(async (_id, doc, guard) =>
+			committed(doc, guard.requestId, "three"),
+		);
+		const firstDocument = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, title: "First" },
+			legacyEditor: { padding: 20 },
+		};
+		const first = useProjectStore.getState().saveDocument(firstDocument);
+		const second = useProjectStore
+			.getState()
+			.saveDocument({ ...sampleDoc, project: { ...sampleDoc.project, title: "Second" } });
+		await Promise.resolve();
+		finish(committed(firstDocument, bridgeMocks.commit.mock.calls[0][2].requestId));
+		await expect(first).resolves.toBe(false);
+		await expect(second).resolves.toBe(true);
+		expect(bridgeMocks.commit.mock.calls.map((call) => call[2].expected.revision)).toEqual([
+			"one",
+			"two",
+		]);
+		expect(useProjectStore.getState()).toMatchObject({
+			transactionSyncPending: false,
+			dirty: false,
+			document: { project: { title: "Second" }, legacyEditor: { padding: 20 } },
+			transactionVersion: { revision: "three" },
+		});
+		expect(await reconcileProjectTransactions(sampleDoc.project.id)).toBe("unchanged");
+	});
+	it("preserves the full newer GUI draft when controls publish each draft before saving", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		bridgeMocks.commit.mockImplementationOnce(async (_id, doc, guard) =>
+			committed(doc, guard.requestId, "three"),
+		);
+		const firstDocument = { ...sampleDoc, legacyEditor: { padding: 20 } };
+		useProjectStore.getState().setDocument(firstDocument);
+		const first = useProjectStore.getState().saveDocument(firstDocument);
+		const secondDocument = { ...firstDocument, legacyEditor: { padding: 40 } };
+		useProjectStore.getState().setDocument(secondDocument);
+		const second = useProjectStore.getState().saveDocument(secondDocument);
+		await Promise.resolve();
+		finish(committed(firstDocument, bridgeMocks.commit.mock.calls[0][2].requestId));
+		await expect(first).resolves.toBe(false);
+		await expect(second).resolves.toBe(true);
+		expect(bridgeMocks.commit.mock.calls[1][1]).toMatchObject({ legacyEditor: { padding: 40 } });
+		expect(bridgeMocks.commit.mock.calls[1][2].expected.revision).toBe("two");
+		expect(useProjectStore.getState()).toMatchObject({
+			document: { legacyEditor: { padding: 40 } },
+			dirty: false,
+			transactionSyncPending: false,
+		});
+	});
+	it("carries an unpublished structural save into a later multi-frame GUI gesture", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		bridgeMocks.commit.mockImplementationOnce(async (_id, doc, guard) =>
+			committed(doc, guard.requestId, "three"),
+		);
+		const firstDocument = {
+			...sampleDoc,
+			assets: [
+				{ id: "a", kind: "video" as const, label: "A", originalPath: "/a.mp4", cameraTrack: null },
+			],
+		};
+		const first = useProjectStore.getState().saveDocumentAsEdit(firstDocument);
+		const frameOne = { ...useProjectStore.getState().document!, legacyEditor: { padding: 10 } };
+		useProjectStore.getState().setDocumentLive(frameOne);
+		const frameTwo = { ...frameOne, legacyEditor: { padding: 10, borderRadius: 10 } };
+		useProjectStore.getState().setDocumentLive(frameTwo);
+		const second = useProjectStore.getState().saveDocument(frameTwo);
+		await Promise.resolve();
+		finish(committed(firstDocument, bridgeMocks.commit.mock.calls[0][2].requestId));
+		await expect(first).resolves.toBe(false);
+		await expect(second).resolves.toBe(true);
+		expect(bridgeMocks.commit.mock.calls[1][1]).toMatchObject({
+			assets: firstDocument.assets,
+			legacyEditor: { padding: 10, borderRadius: 10 },
+		});
+		expect(useProjectStore.getState()).toMatchObject({
+			document: { assets: firstDocument.assets, legacyEditor: { padding: 10, borderRadius: 10 } },
+			dirty: false,
+			transactionSyncPending: false,
+		});
+	});
+	it("keeps newer live edits dirty and editable after a successful older save", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const saved = { ...sampleDoc, project: { ...sampleDoc.project, title: "Saved" } };
+		const saving = useProjectStore.getState().saveDocumentAsEdit(saved);
+		await Promise.resolve();
+		const live = { ...sampleDoc, legacyEditor: { padding: 35 } };
+		useProjectStore.getState().setDocumentLive(live);
+		finish(committed(saved, bridgeMocks.commit.mock.calls[0][2].requestId));
+		await expect(saving).resolves.toBe(false);
+		expect(useProjectStore.getState()).toMatchObject({
+			transactionSyncPending: false,
+			dirty: true,
+			document: { project: { title: "Saved" }, legacyEditor: { padding: 35 } },
+			transactionVersion: { revision: "two" },
+		});
+		bridgeMocks.commit.mockImplementationOnce(async (_id, doc, guard) =>
+			committed(doc, guard.requestId, "three"),
+		);
+		await expect(
+			useProjectStore.getState().saveDocument(useProjectStore.getState().document!),
+		).resolves.toBe(true);
+		expect(bridgeMocks.commit.mock.calls[1][2].expected.revision).toBe("two");
+		expect(useProjectStore.getState().dirty).toBe(false);
+	});
+	it("does not bypass a real disk conflict after advancing through its own queued write", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		bridgeMocks.commit.mockResolvedValueOnce({
+			success: false,
+			errorCode: "CONFLICT",
+			error: "External disk edit",
+		});
+		const first = useProjectStore
+			.getState()
+			.saveDocument({ ...sampleDoc, project: { ...sampleDoc.project, title: "First" } });
+		const second = useProjectStore
+			.getState()
+			.saveDocument({ ...sampleDoc, project: { ...sampleDoc.project, title: "Second" } });
+		const outcomes = Promise.allSettled([first, second]);
+		await Promise.resolve();
+		finish(
+			committed(
+				{ ...sampleDoc, project: { ...sampleDoc.project, title: "First" } },
+				bridgeMocks.commit.mock.calls[0][2].requestId,
+			),
+		);
+		expect((await outcomes)[1]).toMatchObject({ status: "rejected", reason: { code: "CONFLICT" } });
+		expect(bridgeMocks.commit.mock.calls[1][2].expected.revision).toBe("two");
+		expect(useProjectStore.getState()).toMatchObject({
+			dirty: true,
+			error: "External disk edit",
+			transactionVersion: { revision: "two" },
+			transactionSyncPending: false,
+		});
+	});
+	it("rejects conflicting queued structures without leaving the live editor behind the known saved base", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const firstDocument = {
+			...sampleDoc,
+			assets: [
+				{ id: "a", kind: "video" as const, label: "A", originalPath: "/a.mp4", cameraTrack: null },
+			],
+		};
+		const secondDocument = {
+			...sampleDoc,
+			assets: [
+				{ id: "b", kind: "video" as const, label: "B", originalPath: "/b.mp4", cameraTrack: null },
+			],
+		};
+		const first = useProjectStore.getState().saveDocument(firstDocument);
+		const second = useProjectStore.getState().saveDocument(secondDocument);
+		const outcomes = Promise.allSettled([first, second]);
+		await Promise.resolve();
+		finish(committed(firstDocument, bridgeMocks.commit.mock.calls[0][2].requestId));
+		expect((await outcomes)[1]).toMatchObject({ status: "rejected", reason: { code: "CONFLICT" } });
+		expect(bridgeMocks.commit).toHaveBeenCalledTimes(1);
+		expect(useProjectStore.getState().document?.assets.map((asset) => asset.id)).toEqual(["a"]);
+		expect(useProjectStore.getState().transactionSyncPending).toBe(false);
+		bridgeMocks.commit.mockImplementationOnce(async (_id, doc, guard) =>
+			committed(doc, guard.requestId, "three"),
+		);
+		await expect(
+			useProjectStore.getState().saveDocument(useProjectStore.getState().document!),
+		).resolves.toBe(true);
+		expect(useProjectStore.getState().document?.assets.map((asset) => asset.id)).toEqual(["a"]);
+	});
+	it("saves a blocked local version as a new project without changing the original", async () => {
+		await activate();
+		const local = { ...sampleDoc, project: { ...sampleDoc.project, title: "Unsaved" } };
+		useProjectStore.setState({ document: local, dirty: true, transactionSyncPending: true });
+		const copy = {
+			...local,
+			project: { ...local.project, id: "copy", title: "Unsaved (recovered copy)" },
+		};
+		bridgeMocks.importProject.mockResolvedValue({ success: true, document: copy });
+		bridgeMocks.get.mockResolvedValue({ success: true, document: copy });
+		await expect(resolveLocalTransactionConflict("save-copy")).resolves.toEqual({
+			projectId: "copy",
+			strategy: "save-copy",
+		});
+		expect(bridgeMocks.importProject.mock.calls[0][0]).toMatchObject({
+			project: { id: sampleDoc.project.id, title: "Unsaved (recovered copy)" },
+		});
+		expect(bridgeMocks.commit).not.toHaveBeenCalled();
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: "copy",
+			document: copy,
+			dirty: false,
+			transactionBusy: false,
+			transactionSyncPending: false,
+		});
+	});
+	it("reloads the saved version only through the explicit local recovery choice", async () => {
+		await activate();
+		useProjectStore.setState({
+			document: { ...sampleDoc, project: { ...sampleDoc.project, title: "Unsaved" } },
+			dirty: true,
+			transactionSyncPending: true,
+		});
+		bridgeMocks.get.mockResolvedValue({
+			success: true,
+			document: sampleDoc,
+			transactionVersion: version,
+		});
+		await expect(resolveLocalTransactionConflict("reload")).resolves.toEqual({
+			projectId: sampleDoc.project.id,
+			strategy: "reload",
+		});
+		expect(useProjectStore.getState()).toMatchObject({
+			document: sampleDoc,
+			dirty: false,
+			transactionSyncPending: false,
+		});
+		expect(bridgeMocks.importProject).not.toHaveBeenCalled();
+		expect(bridgeMocks.commit).not.toHaveBeenCalled();
+	});
+	it("keeps dirty recovery state after load failure and reuses its already saved copy", async () => {
+		await activate();
+		useProjectStore.setState({ dirty: true, transactionSyncPending: true });
+		const copy = { ...sampleDoc, project: { ...sampleDoc.project, id: "copy" } };
+		bridgeMocks.importProject.mockResolvedValue({ success: true, document: copy });
+		bridgeMocks.get.mockRejectedValueOnce(new Error("load failed"));
+		await expect(resolveLocalTransactionConflict("save-copy")).rejects.toThrow("load failed");
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			dirty: true,
+			transactionSyncPending: true,
+			transactionBusy: false,
+		});
+		bridgeMocks.get.mockResolvedValue({ success: true, document: copy });
+		await resolveLocalTransactionConflict("save-copy");
+		expect(bridgeMocks.importProject).toHaveBeenCalledTimes(1);
+	});
+	it("requires external receipt reconciliation before any local discard or copy choice", async () => {
+		await activate();
+		bridgeMocks.commit.mockRejectedValueOnce(new Error("connection lost"));
+		await expect(
+			applyExternalProjectTransaction(sampleDoc.project.id, sampleDoc, {
+				requestId: "external",
+				expected: version,
+			}),
+		).rejects.toThrow();
+		await expect(resolveLocalTransactionConflict("reload")).rejects.toMatchObject({
+			code: "EXTERNAL_RECONCILIATION_REQUIRED",
+		});
+		await expect(resolveLocalTransactionConflict("save-copy")).rejects.toMatchObject({
+			code: "EXTERNAL_RECONCILIATION_REQUIRED",
+		});
+		expect(bridgeMocks.get).not.toHaveBeenCalled();
+		expect(bridgeMocks.importProject).not.toHaveBeenCalled();
+	});
+	it("checks an uncertain local request receipt before preserving its failed edit in a copy", async () => {
+		await activate();
+		const candidate = { ...sampleDoc, project: { ...sampleDoc.project, title: "Intended edit" } };
+		bridgeMocks.commit.mockRejectedValueOnce(new Error("connection lost"));
+		await expect(useProjectStore.getState().saveDocumentAsEdit(candidate)).rejects.toThrow();
+		const requestId = bridgeMocks.commit.mock.calls[0][2].requestId;
+		bridgeMocks.receipt.mockResolvedValue({
+			success: true,
+			receipt: committed(candidate, requestId).receipt,
+		});
+		bridgeMocks.snapshot.mockResolvedValue({
+			success: true,
+			document: candidate,
+			version: { ...version, revision: "two" },
+		});
+		const copy = { ...candidate, project: { ...candidate.project, id: "copy" } };
+		bridgeMocks.importProject.mockResolvedValue({ success: true, document: copy });
+		bridgeMocks.get.mockResolvedValue({ success: true, document: copy });
+		await resolveLocalTransactionConflict("save-copy");
+		expect(bridgeMocks.receipt).toHaveBeenCalledWith(sampleDoc.project.id, requestId);
+		expect(bridgeMocks.importProject.mock.calls[0][0].project.title).toBe(
+			"Intended edit (recovered copy)",
+		);
+		expect(bridgeMocks.commit).toHaveBeenCalledTimes(1);
+	});
+	it("does not discard local edits while their receipt is unavailable or absent from a changed snapshot", async () => {
+		await activate();
+		bridgeMocks.commit.mockRejectedValueOnce(new Error("connection lost"));
+		await expect(useProjectStore.getState().saveDocument(sampleDoc)).rejects.toThrow();
+		bridgeMocks.receipt.mockResolvedValueOnce({ success: false, error: "offline" });
+		await expect(resolveLocalTransactionConflict("reload")).rejects.toThrow("offline");
+		bridgeMocks.receipt.mockResolvedValueOnce({ success: true, receipt: null });
+		bridgeMocks.snapshot.mockResolvedValue({
+			success: true,
+			document: sampleDoc,
+			version: { ...version, revision: "unknown" },
+		});
+		await expect(resolveLocalTransactionConflict("reload")).rejects.toMatchObject({
+			code: "CONFLICT",
+		});
+		expect(bridgeMocks.get).not.toHaveBeenCalled();
+		expect(useProjectStore.getState()).toMatchObject({
+			document: sampleDoc,
+			dirty: true,
+			transactionSyncPending: true,
+			transactionBusy: false,
+		});
+	});
+	it("allows explicit reload after receipt lookup proves a local request did not commit", async () => {
+		await activate();
+		bridgeMocks.commit.mockRejectedValueOnce(new Error("connection lost"));
+		await expect(useProjectStore.getState().saveDocument(sampleDoc)).rejects.toThrow();
+		bridgeMocks.receipt.mockResolvedValue({ success: true, receipt: null });
+		bridgeMocks.snapshot.mockResolvedValue({ success: true, document: sampleDoc, version });
+		bridgeMocks.get.mockResolvedValue({
+			success: true,
+			document: sampleDoc,
+			transactionVersion: version,
+		});
+		await resolveLocalTransactionConflict("reload");
+		expect(useProjectStore.getState().transactionSyncPending).toBe(false);
+	});
+	it("keeps the barrier after uncertain durable commit, preventing stale edits and history movement", async () => {
+		await activate();
+		bridgeMocks.commit.mockResolvedValue({
+			success: true,
+			receipt: { requestId: "a", revision: "two", changed: true },
+			errorCode: "SNAPSHOT_UNAVAILABLE",
+		});
+		await expect(
+			applyExternalProjectTransaction(sampleDoc.project.id, sampleDoc, {
+				requestId: "a",
+				expected: version,
+			}),
+		).rejects.toMatchObject({ code: "EDITOR_SYNC_PENDING" });
+		expect(useProjectStore.getState()).toMatchObject({
+			transactionBusy: false,
+			transactionSyncPending: true,
+			dirty: true,
+		});
+		expect(undo()).toBe(false);
+		await expect(
+			useProjectStore.getState().loadProject(sampleDoc.project.id),
+		).rejects.toMatchObject({ code: "EDITOR_BUSY" });
+	});
+	it("automatically adopts a reopened transaction project and restores only its immediately applicable Undo", async () => {
+		const edited = { ...sampleDoc, project: { ...sampleDoc.project, title: "Edited" } };
+		bridgeMocks.get.mockResolvedValue({
+			success: true,
+			document: edited,
+			transactionVersion: { ...version, revision: "two" },
+			undoRecovery: { requestId: "agent", afterRevision: "two", beforeDocument: sampleDoc },
+		});
+		await useProjectStore.getState().loadProject(sampleDoc.project.id);
+		expect(useProjectStore.getState().transactionVersion?.revision).toBe("two");
+		expect(undo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("Test");
+		expect(undo()).toBe(false);
+	});
+	it("reconciles a lost committed response and restores its Undo once", async () => {
+		await activate();
+		const edited = { ...sampleDoc, project: { ...sampleDoc.project, title: "Edited" } };
+		bridgeMocks.commit.mockRejectedValueOnce(new Error("connection lost"));
+		await expect(
+			applyExternalProjectTransaction(sampleDoc.project.id, edited, {
+				requestId: "agent",
+				expected: version,
+			}),
+		).rejects.toThrow("connection lost");
+		bridgeMocks.snapshot.mockResolvedValue({
+			success: true,
+			document: edited,
+			version: { ...version, revision: "two" },
+			undoRecovery: { requestId: "agent", afterRevision: "two", beforeDocument: sampleDoc },
+		});
+		await expect(reconcileProjectTransactions(sampleDoc.project.id)).resolves.toBe("applied");
+		await expect(reconcileProjectTransactions(sampleDoc.project.id)).resolves.toBe("unchanged");
+		expect(useProjectStore.getState()).toMatchObject({
+			document: edited,
+			dirty: false,
+			transactionSyncPending: false,
+		});
+		expect(undo()).toBe(true);
+		expect(undo()).toBe(false);
+	});
+	it("does not reconcile an old request over a newer committed transaction", async () => {
+		await activate();
+		bridgeMocks.commit.mockRejectedValueOnce(new Error("connection lost"));
+		await expect(
+			applyExternalProjectTransaction(sampleDoc.project.id, sampleDoc, {
+				requestId: "agent",
+				expected: version,
+			}),
+		).rejects.toThrow();
+		bridgeMocks.snapshot.mockResolvedValue({
+			success: true,
+			document: sampleDoc,
+			version: { ...version, revision: "three" },
+		});
+		await expect(reconcileProjectTransactions(sampleDoc.project.id)).rejects.toMatchObject({
+			code: "CONFLICT",
+		});
+		expect(useProjectStore.getState().transactionSyncPending).toBe(true);
+	});
+
+	it("commits prepared guarded import and removal through normal Undo", async () => {
+		await activate();
+		const asset = {
+			id: "asset_new",
+			kind: "video",
+			label: "video",
+			originalPath: "/tmp/video.mp4",
+			cameraTrack: null,
+		};
+		bridgeMocks.prepareAsset.mockResolvedValue({ asset });
+		vi.mocked(window.electronAPI.findRecordingCamera).mockResolvedValue({ success: false });
+		let revision = 1;
+		bridgeMocks.commit.mockImplementation(async (_id, doc, guard) =>
+			committed(doc, guard.requestId, String(++revision)),
+		);
+		await useProjectStore.getState().addAsset("/tmp/video.mp4");
+		expect(useProjectStore.getState().document?.assets).toHaveLength(1);
+		await useProjectStore.getState().removeAsset(asset.id);
+		expect(useProjectStore.getState().document?.assets).toHaveLength(0);
+		await undo();
+		expect(useProjectStore.getState().document?.assets).toHaveLength(1);
+		await undo();
+		expect(useProjectStore.getState().document?.assets).toHaveLength(0);
+		expect(bridgeMocks.addAsset).not.toHaveBeenCalled();
+		expect(bridgeMocks.removeAsset).not.toHaveBeenCalled();
+	});
+
+	it("includes the camera link in the single guarded asset commit", async () => {
+		await activate();
+		bridgeMocks.prepareAsset.mockResolvedValue({
+			asset: {
+				id: "camera_asset",
+				kind: "video",
+				label: "screen",
+				originalPath: "/tmp/screen.mp4",
+			},
+		});
+		vi.mocked(window.electronAPI.findRecordingCamera).mockResolvedValue({
+			success: true,
+			webcamVideoPath: "/tmp/camera.mp4",
+			offsetMs: -12.7,
+		});
+		bridgeMocks.commit.mockImplementation(async (_id, doc, guard) =>
+			committed(doc, guard.requestId),
+		);
+		const added = await useProjectStore.getState().addAsset("/tmp/screen.mp4");
+		expect(added?.cameraTrack).toMatchObject({ sourcePath: "/tmp/camera.mp4", offsetMs: -13 });
+		expect(bridgeMocks.commit).toHaveBeenCalledTimes(1);
+		expect(bridgeMocks.commit.mock.calls[0][1].assets[0].cameraTrack).toEqual(added?.cameraTrack);
+	});
+
+	it("does not publish a prepared asset over a concurrent local edit", async () => {
+		await activate();
+		bridgeMocks.prepareAsset.mockImplementation(async () => {
+			useProjectStore
+				.getState()
+				.setDocument({ ...sampleDoc, project: { ...sampleDoc.project, title: "Local edit" } });
+			return {
+				asset: { id: "asset_new", kind: "video", label: "video", originalPath: "/tmp/video.mp4" },
+			};
+		});
+		vi.mocked(window.electronAPI.findRecordingCamera).mockResolvedValue({ success: false });
+		await expect(useProjectStore.getState().addAsset("/tmp/video.mp4")).rejects.toMatchObject({
+			code: "CONFLICT",
+		});
+		expect(useProjectStore.getState().document?.project.title).toBe("Local edit");
+		expect(bridgeMocks.commit).not.toHaveBeenCalled();
 	});
 
 	it("createProject stores the returned document and bumps revision", async () => {
@@ -150,7 +832,7 @@ describe("useProjectStore", () => {
 		});
 	});
 
-	it("seeds a new project from the last committed editor settings", async () => {
+	it("starts a new project plain while keeping chosen camera presentation", async () => {
 		saveEditorDefaultPreferences({
 			...DEFAULT_EDITOR_SETTINGS,
 			padding: 27,
@@ -163,10 +845,10 @@ describe("useProjectStore", () => {
 		const document = await useProjectStore.getState().createProject("Test");
 		const settings = getEditorSettings(document);
 
-		expect(settings.padding).toBe(27);
-		expect(settings.showBlur).toBe(true);
+		expect(settings.padding).toBe(0);
+		expect(settings.showBlur).toBe(false);
 		expect(settings.webcamMaskShape).toBe("circle");
-		expect(settings.cursor.smoothing).toBe(0.88);
+		expect(settings.cursor.smoothing).toBe(0);
 		expect(bridgeMocks.save).toHaveBeenCalledWith(document);
 	});
 

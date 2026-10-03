@@ -69,5 +69,8 @@
 		"screen": "屏幕",
 		"virtual": "虚拟显示器",
 		"unknown": "屏幕录制"
+	},
+	"inspector": {
+		"valueRange": "Enter a number from {{min}} to {{max}}."
 	}
 }

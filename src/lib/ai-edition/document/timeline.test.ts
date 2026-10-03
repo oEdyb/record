@@ -842,6 +842,39 @@ describe("resolvePlaybackSegments", () => {
 });
 
 describe("splitClipAt / duplicateClip / moveClip", () => {
+	it.each([
+		"split",
+		"duplicate",
+	])("%s preserves sparse layouts as independent copies", (operation) => {
+		const doc = makeDoc({
+			timeline: { ...makeDoc().timeline, clips: [makeClip()] },
+			clipLayouts: {
+				clip_a: { cameraAnchor: { cx: 0.8, cy: 0.8 }, cameraSize: "L", captions: false },
+				other: { cameraSize: "S" },
+			},
+		});
+		const next =
+			operation === "split" ? splitClipAt(doc, "clip_a", 2) : duplicateClip(doc, "clip_a");
+		const copyId = next.timeline.clips[1].id;
+		const original = doc.clipLayouts?.clip_a;
+		const copied = next.clipLayouts?.[copyId];
+		expect(copied).toEqual(original);
+		expect(copied).not.toBe(original);
+		expect(copied?.cameraAnchor).not.toBe(original?.cameraAnchor);
+		expect(next.clipLayouts?.clip_a).toBe(original);
+		expect(next.clipLayouts?.other).toBe(doc.clipLayouts?.other);
+		expect(copied).not.toHaveProperty("cameraShape");
+		expect(doc.clipLayouts).not.toHaveProperty(copyId);
+	});
+	it.each([
+		"split",
+		"duplicate",
+	])("%s keeps project inheritance when no override exists", (operation) => {
+		const doc = makeDoc({ timeline: { ...makeDoc().timeline, clips: [makeClip()] } });
+		const next =
+			operation === "split" ? splitClipAt(doc, "clip_a", 2) : duplicateClip(doc, "clip_a");
+		expect(next.clipLayouts).toBeUndefined();
+	});
 	it("splits one clip at the playhead without changing timeline duration", () => {
 		const doc = makeDoc({
 			timeline: {

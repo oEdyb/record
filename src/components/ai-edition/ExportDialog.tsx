@@ -9,9 +9,10 @@
 // used by the legacy VideoEditor; this one is a compact surface tuned for
 // the new shell's modal style.
 
-import { Download, FileVideo, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Download, FileVideo, FolderOpen, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { InspectorSwitch } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
 import {
@@ -26,6 +27,12 @@ import {
 	saveExportPreferences,
 } from "@/lib/ai-edition/store/editingPreferences";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
+import {
+	type ExportFailureDetails,
+	type ExportRunPhase,
+	isExportRunActive,
+	useExportRunStore,
+} from "@/lib/ai-edition/store/exportRunStore";
 import { APP_DISPLAY_NAME } from "@/lib/brand";
 import {
 	type ExportFormat,
@@ -48,19 +55,13 @@ import {
 } from "@/lib/exporter/mp4ExportSettings";
 import { exportGifNative, exportMultiNative, useIsCpuCompositor } from "@/native";
 import { NativeBridgeClientError } from "@/native/client";
-import type { CompositorAudioMasteringResult, ExportTransactionPhase } from "@/native/contracts";
+import type { CompositorAudioMasteringResult } from "@/native/contracts";
 import { buildCompositorClipInputs, buildSceneDescription } from "@/native/sceneDescription";
 import { formatBytes } from "@/utils/formatBytes";
+import exportStyles from "./ExportDialog.module.css";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
-
-type Phase = "idle" | "configuring" | "rendering" | "writing" | "done" | "error";
-
-interface ExportFailureDetails {
-	phase?: ExportTransactionPhase;
-	code?: string;
-	retryable: boolean;
-}
+import { SourceExportPanel } from "./SourceExportPanel";
 
 /** hh:mm:ss (always shows hours, unlike the shared mm:ss `formatTimePadded`) — exports can run
  *  past an hour on either axis (video duration or render wall-time). */
@@ -95,6 +96,8 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	// just runs on the software encoder and takes minutes instead of seconds.
 	const cpuCompositor = useIsCpuCompositor();
 	const [initialPreferences] = useState(() => loadEditingPreferences().export);
+	const [output, setOutput] = useState<"sources" | "video">("sources");
+	const [sourceBusy, setSourceBusy] = useState(false);
 	const [format, setFormat] = useState<ExportFormat>(initialPreferences.format);
 	const [quality, setQuality] = useState<ExportQuality>(initialPreferences.quality);
 	const [fps, setFps] = useState<24 | 30 | 60>(initialPreferences.fps);
@@ -102,13 +105,15 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(initialPreferences.gifFrameRate);
 	const [gifSize, setGifSize] = useState<GifSizePreset>(initialPreferences.gifSize);
 	const [gifLoop, setGifLoop] = useState(initialPreferences.gifLoop);
-	const [phase, setPhase] = useState<Phase>("idle");
-	const [progress, setProgress] = useState<ExportProgress | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const [errorDetails, setErrorDetails] = useState<ExportFailureDetails | null>(null);
-	const [savedPath, setSavedPath] = useState<string | null>(null);
-	const [audioMastering, setAudioMastering] = useState<CompositorAudioMasteringResult | null>(null);
-	const cancelRef = useRef<{ cancel: () => void } | null>(null);
+	// The run itself lives in a shared store so the dialog can close while the file
+	// renders and the top bar can show its progress.
+	const phase = useExportRunStore((s) => s.phase);
+	const progress = useExportRunStore((s) => s.progress);
+	const error = useExportRunStore((s) => s.error);
+	const errorDetails = useExportRunStore((s) => s.errorDetails);
+	const savedPath = useExportRunStore((s) => s.savedPath);
+	const audioMastering = useExportRunStore((s) => s.audioMastering);
+	const run = useExportRunStore.getState;
 
 	// (Old behavior: the native compositor overlay used to be a top-level OS window outside the
 	//  Chromium surface, so we'd hide it here to put this modal in front. The compositor now
@@ -232,16 +237,10 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			})
 		: 0;
 
+	// Closing after a finished or failed run clears it; closing during a run keeps it
+	// going (`reset` is a no-op while active) so the editor stays usable meanwhile.
 	useEffect(() => {
-		if (!open) {
-			setPhase("idle");
-			setProgress(null);
-			setError(null);
-			setErrorDetails(null);
-			setSavedPath(null);
-			setAudioMastering(null);
-			cancelRef.current = null;
-		}
+		if (!open) useExportRunStore.getState().reset();
 	}, [open]);
 
 	useEffect(() => {
@@ -256,20 +255,25 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		});
 	}, [codec, format, fps, gifFrameRate, gifLoop, gifSize, quality]);
 
+	// Escape, the backdrop and Close never cancel: a running export continues in the
+	// background and the top bar shows its progress. Cancel is its own button.
 	const handleClose = () => {
-		if (phase === "rendering" || phase === "writing") {
-			cancelRef.current?.cancel();
-			return;
-		}
+		if (phase === "configuring") return;
 		onClose();
 	};
 
 	const handleStart = async () => {
-		if (!document) return;
+		if (
+			!document ||
+			phase === "configuring" ||
+			phase === "rendering" ||
+			phase === "writing" ||
+			phase === "done"
+		)
+			return;
 		const asset = primaryAsset;
 		if (!asset) {
-			setError(t("exportDialog.addVideoBeforeExporting"));
-			setPhase("error");
+			run().fail(t("exportDialog.addVideoBeforeExporting"), null);
 			return;
 		}
 
@@ -279,24 +283,19 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			.slice(0, 60);
 		const suggested = `${safeName || "export"}${format === "gif" ? ".gif" : ".mp4"}`;
 
-		setPhase("configuring");
-		setError(null);
-		setErrorDetails(null);
-		setProgress(null);
-		setSavedPath(null);
-		setAudioMastering(null);
+		const exportController = new AbortController();
+		run().begin(() => exportController.abort());
 
 		let pickedPath: string | undefined;
 		try {
 			const picker = await window.electronAPI?.pickExportSavePath?.(suggested);
 			pickedPath = picker && "path" in picker ? picker.path : undefined;
 		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
-			setPhase("error");
+			run().fail(err instanceof Error ? err.message : String(err), null);
 			return;
 		}
 		if (!pickedPath) {
-			setPhase("idle");
+			run().abandon();
 			return;
 		}
 
@@ -308,9 +307,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		// as the live preview, so an export can no longer disagree with what the
 		// user previewed.
 		{
-			setPhase("rendering");
-			const exportController = new AbortController();
-			cancelRef.current = { cancel: () => exportController.abort() };
+			run().setPhase("rendering");
 			// Render the real timeline when there are clips; else fall back to the fixture.
 			const clips = nativeClips;
 			// GIF runs at its own frame rate, so the progress total has to use it.
@@ -331,7 +328,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				const renderRate = measuredFrames > 0 ? measuredFrames / Math.max(elapsedS, 0.001) : 0;
 				const estimatedTimeRemaining =
 					renderRate > 0 ? Math.max(0, (totalFrames - frames) / renderRate) : 0;
-				setProgress({
+				run().setProgress({
 					currentFrame: frames,
 					totalFrames,
 					percentage: fractionDone * 100,
@@ -339,7 +336,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				});
 			});
 			const unsubscribePhase = window.electronAPI?.onNativeExportPhase?.((nativePhase) => {
-				setPhase(
+				run().setPhase(
 					nativePhase === "preflight" || nativePhase === "rendering" ? "rendering" : "writing",
 				);
 			});
@@ -385,14 +382,15 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 									signal: exportController.signal,
 								},
 							);
-				setAudioMastering("audioMastering" in stats ? stats.audioMastering : null);
-				setSavedPath(pickedPath);
-				setPhase("done");
+				run().succeed({
+					savedPath: pickedPath,
+					audioMastering: "audioMastering" in stats ? stats.audioMastering : null,
+				});
 				const exportToast = stats.exportWarning ? toast.warning : toast.success;
 				exportToast(t("exportDialog.exportedVideo"), {
 					description:
 						stats.exportWarning?.message ??
-						`${pickedPath} · ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
+						`${pickedPath}, ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
 					action: {
 						label: t("exportDialog.showInFolder"),
 						onClick: () => {
@@ -407,8 +405,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				});
 			} catch (err) {
 				if (exportController.signal.aborted) {
-					setPhase("idle");
-					setProgress(null);
+					run().abandon();
 					return;
 				}
 				const message = err instanceof Error ? err.message : String(err);
@@ -420,427 +417,510 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								retryable: err.retryable,
 							}
 						: null;
-				setError(message);
-				setErrorDetails(details);
-				setPhase("error");
+				run().fail(message, details);
 				toast.error(t("exportDialog.exportFailed"), {
 					description: message,
 				});
 			} finally {
 				unsubscribeProgress?.();
 				unsubscribePhase?.();
-				cancelRef.current = null;
 			}
 			return;
 		}
 	};
 
-	const isBusy = phase === "rendering" || phase === "writing" || phase === "configuring";
+	const isBusy = isExportRunActive(phase);
 	const pct = progress?.percentage ?? 0;
 	const gifSizeLabel = GIF_SIZE_PRESETS[gifSize].label;
+	const selectedGifDims = gifOutputDims(gifSize, selectedMp4Settings);
+	const revealSavedFile = () => {
+		if (!savedPath) return;
+		void window.electronAPI?.revealInFolder?.(savedPath).catch((err) => {
+			console.warn("[export] failed to reveal the file in its folder:", err);
+		});
+	};
 
 	return (
 		<ModalShell
 			open={open}
-			onClose={handleClose}
+			onClose={() => {
+				if (!sourceBusy) handleClose();
+			}}
 			title={t("exportDialog.title")}
-			subtitle={t("exportDialog.subtitle")}
+			subtitle={
+				output === "sources"
+					? "Continue editing in your video editor."
+					: phase === "done"
+						? undefined
+						: t("exportDialog.subtitle")
+			}
 			size="xl"
 		>
-			<div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-				<div
-					style={{
-						display: "grid",
-						gridTemplateColumns: "1fr 1fr",
-						gap: 8,
-					}}
+			<div className={`${exportStyles.dialog} ${exportStyles.outputMode}`}>
+				<button
+					type="button"
+					className={styles.btn}
+					aria-pressed={output === "sources"}
+					disabled={isBusy || sourceBusy}
+					onClick={() => setOutput("sources")}
 				>
-					<FormatToggle
-						active={format === "mp4"}
-						label={ts("exportFormat.mp4")}
-						icon={<FileVideo size={18} />}
-						onClick={() => setFormat("mp4")}
-						disabled={isBusy}
-					/>
-					<FormatToggle
-						active={format === "gif"}
-						label={ts("exportFormat.gif")}
-						icon={<Download size={18} />}
-						onClick={() => setFormat("gif")}
-						disabled={isBusy}
-					/>
+					Separate takes
+				</button>
+				<button
+					type="button"
+					className={styles.btn}
+					aria-pressed={output === "video"}
+					disabled={isBusy || sourceBusy}
+					onClick={() => setOutput("video")}
+				>
+					One video
+				</button>
+			</div>
+			{output === "sources" && !isBusy ? (
+				<div className={exportStyles.dialog}>
+					<SourceExportPanel document={document} busy={sourceBusy} onBusy={setSourceBusy} />
 				</div>
-
-				{format === "mp4" ? (
-					<section>
-						<div
-							style={{
-								font: "500 11px/1 var(--font-body)",
-								textTransform: "uppercase",
-								letterSpacing: "0.06em",
-								color: "var(--muted)",
-								marginBottom: 8,
-							}}
-						>
-							{t("exportDialog.quality")}
-						</div>
-						<div
-							style={{
-								display: "grid",
-								gridTemplateColumns: "repeat(3, 1fr)",
-								gap: 8,
-							}}
-						>
-							{QUALITY_OPTIONS.map((q) => (
-								<button
-									type="button"
-									key={q.value}
-									disabled={isBusy}
-									onClick={() => setQuality(q.value)}
-									style={{
-										display: "flex",
-										flexDirection: "column",
-										gap: 2,
-										padding: "10px 12px",
-										border: `1px solid ${quality === q.value ? "var(--accent)" : "var(--border)"}`,
-										borderRadius: 10,
-										background: quality === q.value ? "var(--accent-wash)" : "var(--surface)",
-										color: "var(--fg-2)",
-										cursor: "pointer",
-										font: "500 13px/1 var(--font-body)",
-									}}
-								>
-									<span style={{ color: "var(--fg)", fontWeight: 600 }}>{ts(q.labelKey)}</span>
-									{(() => {
-										const dims = tierOutputDims(q.value);
-										if (!dims) return null;
-										// Downscale badge removed everywhere — restated what picking a lower
-										// tier already means, not actionable. The upscale badge asks whether
-										// the clip has to be STRETCHED to fill this frame (`wouldUpscale`),
-										// which is a contain-fit question: a short-side compare read the
-										// letterbox rows a non-16:9 source gets in a 16:9 project as if they
-										// were stretched pixels, and flagged "1080p" on the very frame
-										// "Source" produced unflagged. No "Source" special case any more —
-										// its frame is the source's long side at the project ratio, so its
-										// contain scale is never above 1 and the general test covers it.
-										const isUpscale = smallestSource !== null && wouldUpscale(dims, smallestSource);
-										return (
-											<span
-												style={{
-													font: "500 11px var(--font-body)",
-													color: isUpscale ? "var(--warn)" : "var(--muted)",
-												}}
-											>
-												{q.value === "source"
-													? editorSettings.outputResolution
-														? ts("background.custom")
-														: t("exportDialog.qualityMatchRecording")
-													: q.value === "good"
-														? "2K"
-														: "1080p"}
-												{" · "}
-												{dims.width} × {dims.height}
-												{isUpscale ? ` · ${t("exportDialog.qualityUpscaleWarning")}` : ""}
-											</span>
-										);
-									})()}
-								</button>
-							))}
-						</div>
-						<div
-							style={{
-								display: "grid",
-								gridTemplateColumns: "1fr 1fr",
-								gap: 12,
-								marginTop: 12,
-							}}
-						>
-							<div>
-								<div
-									style={{
-										font: "500 11px/1 var(--font-body)",
-										textTransform: "uppercase",
-										letterSpacing: "0.06em",
-										color: "var(--muted)",
-										marginBottom: 8,
-									}}
-								>
-									{t("exportDialog.frameRate")}
-								</div>
-								<div
-									style={{
-										display: "grid",
-										gridTemplateColumns: "repeat(3, 1fr)",
-										gap: 6,
-									}}
-								>
-									{([24, 30, 60] as const).map((r) => (
-										<button
-											type="button"
-											key={r}
-											disabled={isBusy}
-											onClick={() => setFps(r)}
-											style={segStyle(fps === r)}
-										>
-											{r}
-										</button>
-									))}
-								</div>
-							</div>
-							<div>
-								<div
-									style={{
-										font: "500 11px/1 var(--font-body)",
-										textTransform: "uppercase",
-										letterSpacing: "0.06em",
-										color: "var(--muted)",
-										marginBottom: 8,
-									}}
-								>
-									{t("exportDialog.codec")}
-								</div>
-								<div
-									style={{
-										display: "grid",
-										gridTemplateColumns: "repeat(2, 1fr)",
-										gap: 6,
-									}}
-								>
-									{(
-										[
-											["h264", "H.264"],
-											["h265", "H.265"],
-											// VP9 has no AMF hardware encoder on this GPU — the native pipeline
-											// (the only MP4 export path now) rejects it outright (tested: a
-											// software libvpx-vp9 fallback worked but was too slow to ship).
-											// Hidden here rather than left selectable-then-erroring.
-										] as Array<[ExportVideoCodec, string]>
-									).map(([value, label]) => (
-										<button
-											type="button"
-											key={value}
-											disabled={isBusy}
-											onClick={() => setCodec(value)}
-											style={segStyle(codec === value)}
-											title={
-												value === "h264"
-													? t("exportDialog.codecBestCompatibility")
-													: t("exportDialog.codecMaySupportVary")
-											}
-										>
-											{label}
-										</button>
-									))}
-								</div>
-							</div>
-						</div>
-						{selectedMp4Settings && effectiveDurationSec > 0 && (
+			) : (
+				<div
+					className={exportStyles.dialog}
+					style={{ display: "flex", flexDirection: "column", gap: 18 }}
+				>
+					{phase !== "done" && (
+						<>
 							<div
-								data-testid="export-estimate"
 								style={{
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "space-between",
-									gap: 16,
-									marginTop: 12,
-									padding: "12px 14px",
-									border: "1px solid var(--border-soft)",
-									borderRadius: 10,
-									background: "var(--surface-1)",
+									display: "grid",
+									gridTemplateColumns: "1fr 1fr",
+									gap: 8,
 								}}
 							>
-								<div style={{ minWidth: 0 }}>
+								<FormatToggle
+									active={format === "mp4"}
+									label={ts("exportFormat.mp4")}
+									icon={<FileVideo size={18} />}
+									onClick={() => setFormat("mp4")}
+									disabled={isBusy}
+								/>
+								<FormatToggle
+									active={format === "gif"}
+									label={ts("exportFormat.gif")}
+									icon={<Download size={18} />}
+									onClick={() => setFormat("gif")}
+									disabled={isBusy}
+								/>
+							</div>
+
+							{format === "mp4" ? (
+								<section>
 									<div
 										style={{
 											font: "500 11px/1 var(--font-body)",
+											textTransform: "uppercase",
+											letterSpacing: "0.06em",
 											color: "var(--muted)",
-											marginBottom: 6,
+											marginBottom: 8,
 										}}
 									>
-										{t("exportDialog.estimatedSize")}
+										{t("exportDialog.quality")}
 									</div>
 									<div
 										style={{
-											font: "500 11px/1.4 var(--font-mono)",
-											color: "var(--muted)",
+											display: "grid",
+											gridTemplateColumns: "repeat(3, 1fr)",
+											gap: 8,
 										}}
 									>
-										{selectedMp4Settings.width} × {selectedMp4Settings.height} · {fps} FPS ·{" "}
-										{codec === "h264" ? "H.264" : "H.265"} ·{" "}
-										{formatBitrate(selectedMp4Settings.bitrate)} · {formatHms(effectiveDurationSec)}
+										{QUALITY_OPTIONS.map((q) => (
+											<button
+												type="button"
+												key={q.value}
+												disabled={isBusy}
+												aria-pressed={quality === q.value}
+												onClick={() => setQuality(q.value)}
+												style={{
+													display: "flex",
+													flexDirection: "column",
+													gap: 2,
+													padding: "10px 12px",
+													border: `1px solid ${quality === q.value ? "var(--accent)" : "var(--border)"}`,
+													borderRadius: 10,
+													background: quality === q.value ? "var(--accent-wash)" : "var(--surface)",
+													color: "var(--fg-2)",
+													cursor: "pointer",
+													font: "500 13px/1 var(--font-body)",
+												}}
+											>
+												<span style={{ color: "var(--fg)", fontWeight: 600 }}>
+													{ts(q.labelKey)}
+												</span>
+												{(() => {
+													const dims = tierOutputDims(q.value);
+													if (!dims) return null;
+													// Downscale badge removed everywhere — restated what picking a lower
+													// tier already means, not actionable. The upscale badge asks whether
+													// the clip has to be STRETCHED to fill this frame (`wouldUpscale`),
+													// which is a contain-fit question: a short-side compare read the
+													// letterbox rows a non-16:9 source gets in a 16:9 project as if they
+													// were stretched pixels, and flagged "1080p" on the very frame
+													// "Source" produced unflagged. No "Source" special case any more —
+													// its frame is the source's long side at the project ratio, so its
+													// contain scale is never above 1 and the general test covers it.
+													const isUpscale =
+														smallestSource !== null && wouldUpscale(dims, smallestSource);
+													return (
+														<span
+															style={{
+																font: "500 11px var(--font-body)",
+																color: isUpscale ? "var(--warn)" : "var(--muted)",
+															}}
+														>
+															{q.value === "source"
+																? editorSettings.outputResolution
+																	? ts("background.custom")
+																	: t("exportDialog.qualityMatchRecording")
+																: q.value === "good"
+																	? "2K"
+																	: "1080p"}
+															{", "}
+															{dims.width} × {dims.height}
+															{isUpscale ? `, ${t("exportDialog.qualityUpscaleWarning")}` : ""}
+														</span>
+													);
+												})()}
+											</button>
+										))}
 									</div>
-								</div>
-								<strong
-									style={{
-										flexShrink: 0,
-										font: "650 18px/1 var(--font-body)",
-										color: "var(--fg)",
-									}}
-								>
-									~{formatBytes(estimatedMp4Bytes)}
-								</strong>
-							</div>
-						)}
-					</section>
-				) : (
-					<section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-						<div>
-							<div
-								style={{
-									font: "500 11px/1 var(--font-body)",
-									textTransform: "uppercase",
-									letterSpacing: "0.06em",
-									color: "var(--muted)",
-									marginBottom: 8,
-								}}
-							>
-								{t("exportDialog.frameRate")}
-							</div>
-							<div
-								style={{
-									display: "grid",
-									gridTemplateColumns: "repeat(4, 1fr)",
-									gap: 6,
-								}}
-							>
-								{GIF_FRAME_RATES.map((r) => (
-									<button
-										type="button"
-										key={r.value}
-										disabled={isBusy}
-										onClick={() => setGifFrameRate(r.value)}
-										style={segStyle(gifFrameRate === r.value)}
+									<div
+										style={{
+											display: "grid",
+											gridTemplateColumns: "1fr 1fr",
+											gap: 12,
+											marginTop: 12,
+										}}
 									>
-										{r.value} FPS
-									</button>
-								))}
-							</div>
-						</div>
-						<div>
-							<div
-								style={{
-									font: "500 11px/1 var(--font-body)",
-									textTransform: "uppercase",
-									letterSpacing: "0.06em",
-									color: "var(--muted)",
-									marginBottom: 8,
-								}}
-							>
-								{t("exportDialog.size")}
-							</div>
-							<div
-								style={{
-									display: "grid",
-									gridTemplateColumns: "repeat(3, 1fr)",
-									gap: 6,
-								}}
-							>
-								{(Object.keys(GIF_SIZE_PRESETS) as GifSizePreset[]).map((s) => (
-									<button
-										type="button"
-										key={s}
-										disabled={isBusy}
-										onClick={() => setGifSize(s)}
-										style={segStyle(gifSize === s)}
+										<div>
+											<div
+												style={{
+													font: "500 11px/1 var(--font-body)",
+													textTransform: "uppercase",
+													letterSpacing: "0.06em",
+													color: "var(--muted)",
+													marginBottom: 8,
+												}}
+											>
+												{t("exportDialog.frameRate")}
+											</div>
+											<div
+												style={{
+													display: "grid",
+													gridTemplateColumns: "repeat(3, 1fr)",
+													gap: 6,
+												}}
+											>
+												{([24, 30, 60] as const).map((r) => (
+													<button
+														type="button"
+														key={r}
+														disabled={isBusy}
+														aria-pressed={fps === r}
+														onClick={() => setFps(r)}
+														style={segStyle(fps === r)}
+													>
+														{r}
+													</button>
+												))}
+											</div>
+										</div>
+										<div>
+											<div
+												style={{
+													font: "500 11px/1 var(--font-body)",
+													textTransform: "uppercase",
+													letterSpacing: "0.06em",
+													color: "var(--muted)",
+													marginBottom: 8,
+												}}
+											>
+												{t("exportDialog.codec")}
+											</div>
+											<div
+												style={{
+													display: "grid",
+													gridTemplateColumns: "repeat(2, 1fr)",
+													gap: 6,
+												}}
+											>
+												{(
+													[
+														["h264", "H.264"],
+														["h265", "H.265"],
+														// VP9 has no AMF hardware encoder on this GPU — the native pipeline
+														// (the only MP4 export path now) rejects it outright (tested: a
+														// software libvpx-vp9 fallback worked but was too slow to ship).
+														// Hidden here rather than left selectable-then-erroring.
+													] as Array<[ExportVideoCodec, string]>
+												).map(([value, label]) => (
+													<button
+														type="button"
+														key={value}
+														disabled={isBusy}
+														aria-pressed={codec === value}
+														onClick={() => setCodec(value)}
+														style={segStyle(codec === value)}
+														title={
+															value === "h264"
+																? t("exportDialog.codecBestCompatibility")
+																: t("exportDialog.codecMaySupportVary")
+														}
+													>
+														{label}
+													</button>
+												))}
+											</div>
+										</div>
+									</div>
+									{selectedMp4Settings && effectiveDurationSec > 0 && (
+										<div
+											data-testid="export-estimate"
+											style={{
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "space-between",
+												gap: 16,
+												marginTop: 12,
+												padding: "12px 14px",
+												border: "1px solid var(--border-soft)",
+												borderRadius: 10,
+												background: "var(--surface-1)",
+											}}
+										>
+											<div style={{ minWidth: 0 }}>
+												<div
+													style={{
+														font: "500 11px/1 var(--font-body)",
+														color: "var(--muted)",
+														marginBottom: 6,
+													}}
+												>
+													{t("exportDialog.estimatedSize")}
+												</div>
+												<div
+													className={exportStyles.metadata}
+													style={{
+														font: "500 11px/1.4 var(--font-mono)",
+														color: "var(--muted)",
+													}}
+												>
+													<span>
+														{selectedMp4Settings.width} × {selectedMp4Settings.height}
+													</span>
+													<span>{fps} FPS</span>
+													<span>{codec === "h264" ? "H.264" : "H.265"}</span>
+													<span>{formatBitrate(selectedMp4Settings.bitrate)}</span>
+													<span>{formatHms(effectiveDurationSec)}</span>
+												</div>
+											</div>
+											<strong
+												style={{
+													flexShrink: 0,
+													font: "650 18px/1 var(--font-body)",
+													color: "var(--fg)",
+												}}
+											>
+												~{formatBytes(estimatedMp4Bytes)}
+											</strong>
+										</div>
+									)}
+								</section>
+							) : (
+								<section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+									<div>
+										<div
+											style={{
+												font: "500 11px/1 var(--font-body)",
+												textTransform: "uppercase",
+												letterSpacing: "0.06em",
+												color: "var(--muted)",
+												marginBottom: 8,
+											}}
+										>
+											{t("exportDialog.frameRate")}
+										</div>
+										<div
+											style={{
+												display: "grid",
+												gridTemplateColumns: "repeat(4, 1fr)",
+												gap: 6,
+											}}
+										>
+											{GIF_FRAME_RATES.map((r) => (
+												<button
+													type="button"
+													key={r.value}
+													disabled={isBusy}
+													aria-pressed={gifFrameRate === r.value}
+													onClick={() => setGifFrameRate(r.value)}
+													style={segStyle(gifFrameRate === r.value)}
+												>
+													{r.value} FPS
+												</button>
+											))}
+										</div>
+									</div>
+									<div>
+										<div
+											style={{
+												font: "500 11px/1 var(--font-body)",
+												textTransform: "uppercase",
+												letterSpacing: "0.06em",
+												color: "var(--muted)",
+												marginBottom: 8,
+											}}
+										>
+											{t("exportDialog.size")}
+										</div>
+										<div
+											style={{
+												display: "grid",
+												gridTemplateColumns: "repeat(3, 1fr)",
+												gap: 6,
+											}}
+										>
+											{(Object.keys(GIF_SIZE_PRESETS) as GifSizePreset[]).map((s) => (
+												<button
+													type="button"
+													key={s}
+													disabled={isBusy}
+													aria-pressed={gifSize === s}
+													onClick={() => setGifSize(s)}
+													style={segStyle(gifSize === s)}
+												>
+													{GIF_SIZE_PRESETS[s].label}
+												</button>
+											))}
+										</div>
+									</div>
+									<div className={styles.paneRow} style={{ margin: 0 }}>
+										<span className="label">{t("exportDialog.loopGif")}</span>
+										<InspectorSwitch
+											label={t("exportDialog.loopGif")}
+											checked={gifLoop}
+											disabled={isBusy}
+											onCheckedChange={setGifLoop}
+										/>
+									</div>
+									<div
+										className={exportStyles.metadata}
+										style={{
+											font: "500 11px/1.4 var(--font-mono)",
+											color: "var(--muted)",
+											letterSpacing: "0.04em",
+										}}
 									>
-										{GIF_SIZE_PRESETS[s].label}
-									</button>
-								))}
-							</div>
-						</div>
-						<div className={styles.paneRow} style={{ margin: 0 }}>
-							<span className="label">{t("exportDialog.loopGif")}</span>
-							<button
-								type="button"
-								className={`${styles.toggle} ${gifLoop ? styles.isOn : ""}`}
-								aria-label={t("exportDialog.loopGif")}
-								aria-pressed={gifLoop}
-								disabled={isBusy}
-								onClick={() => setGifLoop((v) => !v)}
-							/>
-						</div>
-						<div
+										{selectedGifDims.width && selectedGifDims.height ? (
+											<span>
+												{selectedGifDims.width} × {selectedGifDims.height}
+											</span>
+										) : null}
+										<span>{gifFrameRate} FPS</span>
+										<span>{gifSizeLabel}</span>
+										<span>{gifLoop ? t("exportDialog.loopOn") : t("exportDialog.loopOff")}</span>
+									</div>
+								</section>
+							)}
+						</>
+					)}
+
+					<ProgressBlock
+						phase={phase}
+						progress={progress}
+						error={error}
+						errorDetails={errorDetails}
+						pct={pct}
+						savedPath={savedPath}
+						audioMastering={audioMastering}
+					/>
+
+					{cpuCompositor && phase !== "done" && (
+						// Placed next to the export button, not in a toast: it has to land while
+						// the user is still deciding. A CPU export renders every effect correctly
+						// but takes minutes rather than seconds, and an unexplained ten-minute
+						// wait reads as a hang.
+						<p
+							data-testid="export-cpu-warning"
 							style={{
-								font: "500 11px/1.4 var(--font-mono)",
-								color: "var(--muted)",
-								letterSpacing: "0.04em",
+								margin: "0 0 4px",
+								fontSize: "0.8125rem",
+								lineHeight: 1.4,
+								color: "var(--text-muted, rgb(0 0 0 / 0.65))",
 							}}
 						>
-							{gifFrameRate} FPS · {gifSizeLabel} ·{" "}
-							{gifLoop ? t("exportDialog.loopOn") : t("exportDialog.loopOff")}
-						</div>
-					</section>
-				)}
+							{t("cpuCompositor.exportWarning")}
+						</p>
+					)}
 
-				<ProgressBlock
-					phase={phase}
-					progress={progress}
-					error={error}
-					errorDetails={errorDetails}
-					pct={pct}
-					savedPath={savedPath}
-					audioMastering={audioMastering}
-				/>
-
-				{cpuCompositor && phase !== "done" && (
-					// Placed next to the export button, not in a toast: it has to land while
-					// the user is still deciding. A CPU export renders every effect correctly
-					// but takes minutes rather than seconds, and an unexplained ten-minute
-					// wait reads as a hang.
-					<p
-						data-testid="export-cpu-warning"
+					<div
 						style={{
-							margin: "0 0 4px",
-							fontSize: "0.8125rem",
-							lineHeight: 1.4,
-							color: "var(--text-muted, rgb(0 0 0 / 0.65))",
+							display: "flex",
+							justifyContent: "flex-end",
+							gap: 8,
+							paddingTop: 12,
+							borderTop: "1px solid var(--border-soft)",
 						}}
 					>
-						{t("cpuCompositor.exportWarning")}
-					</p>
-				)}
-
-				<div
-					style={{
-						display: "flex",
-						justifyContent: "flex-end",
-						gap: 8,
-						paddingTop: 12,
-						borderTop: "1px solid var(--border-soft)",
-					}}
-				>
-					<button
-						type="button"
-						className={`${styles.btn} ${styles.btnSecondary}`}
-						onClick={handleClose}
-						disabled={phase === "configuring"}
-					>
-						{phase === "done" ? t("exportDialog.close") : t("exportDialog.cancel")}
-					</button>
-					<button
-						type="button"
-						className={`${styles.btn} ${styles.btnPrimary}`}
-						onClick={handleStart}
-						disabled={isBusy || !document}
-					>
-						{isBusy ? (
-							<>
-								<Loader2 size={14} className="animate-spin" />
-								{phase === "rendering"
-									? t("exportDialog.rendering")
-									: phase === "writing"
-										? t("exportDialog.saving")
-										: t("exportDialog.starting")}
-							</>
-						) : (
-							<>
-								<Download size={14} />
-								{format === "gif" ? t("exportDialog.exportGif") : t("exportDialog.exportMp4")}
-							</>
-						)}
-					</button>
+						{phase === "rendering" || phase === "writing" ? (
+							<button
+								type="button"
+								className={`${styles.btn} ${styles.btnSecondary}`}
+								onClick={() => run().requestCancel()}
+							>
+								{t("exportDialog.cancelExport")}
+							</button>
+						) : null}
+						<button
+							type="button"
+							className={`${styles.btn} ${styles.btnSecondary}`}
+							onClick={handleClose}
+							disabled={phase === "configuring"}
+						>
+							{phase === "done" || phase === "rendering" || phase === "writing"
+								? t("exportDialog.close")
+								: t("exportDialog.cancel")}
+						</button>
+						<button
+							type="button"
+							className={`${styles.btn} ${styles.btnPrimary}`}
+							onClick={phase === "done" ? revealSavedFile : handleStart}
+							disabled={isBusy || !document}
+						>
+							{phase === "done" ? (
+								<>
+									<FolderOpen size={14} />
+									{t("exportDialog.showInFolder")}
+								</>
+							) : isBusy ? (
+								<>
+									<Loader2 size={14} className="animate-spin" />
+									{phase === "rendering"
+										? t("exportDialog.rendering")
+										: phase === "writing"
+											? t("exportDialog.saving")
+											: t("exportDialog.starting")}
+								</>
+							) : (
+								<>
+									<Download size={14} />
+									{phase === "error"
+										? t("exportDialog.retryExport")
+										: format === "gif"
+											? t("exportDialog.exportGif")
+											: t("exportDialog.exportMp4")}
+								</>
+							)}
+						</button>
+					</div>
 				</div>
-			</div>
+			)}
 		</ModalShell>
 	);
 }
@@ -862,6 +942,7 @@ function FormatToggle({
 		<button
 			type="button"
 			disabled={disabled}
+			aria-pressed={active}
 			onClick={onClick}
 			style={{
 				display: "flex",
@@ -896,7 +977,7 @@ function ProgressBlock({
 	savedPath,
 	audioMastering,
 }: {
-	phase: Phase;
+	phase: ExportRunPhase;
 	progress: ExportProgress | null;
 	error: string | null;
 	errorDetails: ExportFailureDetails | null;
@@ -918,13 +999,15 @@ function ProgressBlock({
 					textAlign: "center",
 				}}
 			>
-				{t("exportDialog.pickFormatAndExport")}
+				{phase === "configuring"
+					? t("exportDialog.starting")
+					: t("exportDialog.pickFormatAndExport")}
 			</div>
 		);
 	}
 	if (phase === "done") {
 		const masteringSummary = audioMastering?.analyzed
-			? `${audioMastering.inputLufs?.toFixed(1)} → ${audioMastering.outputLufs?.toFixed(1)} LUFS · ${audioMastering.outputTruePeakDbtp?.toFixed(1)} dBTP`
+			? `${audioMastering.inputLufs?.toFixed(1)} → ${audioMastering.outputLufs?.toFixed(1)} LUFS, ${audioMastering.outputTruePeakDbtp?.toFixed(1)} dBTP`
 			: null;
 		return (
 			<div
@@ -937,7 +1020,10 @@ function ProgressBlock({
 					font: "500 12px var(--font-body)",
 				}}
 			>
-				<div>
+				<div role="status" style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>
+					{t("exportDialog.exportedVideo")}
+				</div>
+				<div style={{ overflowWrap: "anywhere" }}>
 					{t("exportDialog.savedTo")}{" "}
 					<span style={{ fontFamily: "var(--font-mono)" }}>{savedPath}</span>
 				</div>
@@ -955,11 +1041,12 @@ function ProgressBlock({
 	if (phase === "error") {
 		return (
 			<div
+				role="alert"
 				data-export-phase={errorDetails?.phase}
 				data-export-code={errorDetails?.code}
 				title={
 					errorDetails?.code
-						? `${errorDetails.phase ?? "export"} · ${errorDetails.code}${errorDetails.retryable ? " · retryable" : ""}`
+						? `${errorDetails.phase ?? "export"}, ${errorDetails.code}${errorDetails.retryable ? ", retryable" : ""}`
 						: undefined
 				}
 				style={{
@@ -1006,10 +1093,21 @@ function ProgressBlock({
 						color: "var(--brand)",
 					}}
 				>
-					{Math.round(pct)}%
+					{phase === "writing" || !progress ? (
+						<Loader2 size={14} className="animate-spin" />
+					) : (
+						`${Math.round(pct)}%`
+					)}
 				</span>
 			</div>
 			<div
+				role="progressbar"
+				aria-label={
+					phase === "writing" ? t("exportDialog.writingFile") : t("exportDialog.renderingFrames")
+				}
+				aria-valuemin={0}
+				aria-valuemax={100}
+				aria-valuenow={phase === "writing" || !progress ? undefined : Math.round(pct)}
 				style={{
 					position: "relative",
 					height: 8,
@@ -1022,7 +1120,7 @@ function ProgressBlock({
 					style={{
 						position: "absolute",
 						inset: 0,
-						width: `${Math.max(0, Math.min(100, pct))}%`,
+						width: phase === "writing" ? "100%" : `${Math.max(0, Math.min(100, pct))}%`,
 						background: "var(--brand)",
 						transition: "width 200ms var(--ease)",
 					}}
@@ -1035,14 +1133,27 @@ function ProgressBlock({
 					letterSpacing: "0.04em",
 				}}
 			>
-				{total > 0 && current > 1
-					? t("exportDialog.framesEta", {
-							current,
-							total,
-							eta: formatExportEta(eta),
-						})
-					: t("exportDialog.preparingEncoder")}
+				{phase === "writing"
+					? t("exportDialog.finishingFile")
+					: total > 0 && current > 1 && eta > 0
+						? t("exportDialog.framesEta", {
+								current,
+								total,
+								eta: formatExportEta(eta),
+							})
+						: progress
+							? t("exportDialog.renderingFrames")
+							: t("exportDialog.preparingEncoder")}
 			</div>
+			<p
+				style={{
+					margin: "2px 0 0",
+					font: "400 11.5px/1.45 var(--font-body)",
+					color: "var(--muted)",
+				}}
+			>
+				{t("exportDialog.backgroundHint")}
+			</p>
 		</div>
 	);
 }

@@ -1,0 +1,47 @@
+{
+	"api_version": "1.0",
+	"request_id": "456c1e81-0303-4548-809e-9f4c17d50bec",
+	"status": "completed",
+	"data": {
+		"status": "analyzing",
+		"revision": "6ba747f6-5432-42d6-9a68-41920a2436b9",
+		"result": {
+			"counts": {
+				"error": 0,
+				"warning": 0,
+				"info": 0,
+				"byRule": {
+					"cut.mid-sentence": 0
+				}
+			},
+			"total": 0,
+			"page": 1,
+			"pages": 1,
+			"page_size": 50,
+			"offset": 0,
+			"findings": [],
+			"notes": [
+				"Speech activity is disabled by default; use --deep for cached Silero analysis. Cut checks use microphone peaks and transcripts."
+			],
+			"notesOmitted": 0,
+			"rules": [
+				{
+					"id": "cut.mid-sentence",
+					"severity": "error",
+					"describe": "The cut lands inside speech (a sentence spans it, or audio continues on the removed side within 10 dB of the kept words), the removed footage is not a transcript-bounded sound of at most 1 s with complete detector silence inside one take, and its disagreement is at least 0.5s for transcript evidence or over 0.25s for mic/speech evidence; kept air after a sentence is not a finding. One strongest finding per cut."
+				}
+			]
+		},
+		"audio": {
+			"ready": 0,
+			"pending": 37
+		},
+		"timings": {
+			"elapsedMs": 141.79999995231628,
+			"peaksMs": 0,
+			"speechMs": 0
+		},
+		"error": null,
+		"documentHash": "e98deeecfbaa25b4292a698ab05c97552af12fd5a180035a830183422afa12d1"
+	}
+}

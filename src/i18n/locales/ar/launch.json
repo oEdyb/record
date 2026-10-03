@@ -31,7 +31,11 @@
 			"fontSize": "حجم الخط",
 			"decreaseFontSize": "تصغير حجم الخط",
 			"increaseFontSize": "تكبير حجم الخط",
-			"mirror": "عكس أفقي"
+			"mirror": "عكس أفقي",
+			"more": "مزيد من عناصر التحكم",
+			"less": "عناصر تحكم أقل",
+			"close": "إغلاق الملاحظات",
+			"move": "تحريك الملاحظات"
 		}
 	},
 	"audio": {
@@ -71,7 +75,7 @@
 		"inProgress": "جارٍ التسجيل",
 		"saving": "جاري الحفظ...",
 		"removePreviousClip": "إزالة المقطع السابق",
-		"removePreviousClipWithDuration": "إزالة المقطع السابق · {{duration}}",
+		"removePreviousClipWithDuration": "إزالة المقطع السابق ({{duration}})",
 		"clipRemoved": "تمت الإزالة"
 	},
 	"language": "اللغة",

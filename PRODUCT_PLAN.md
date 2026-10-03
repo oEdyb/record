@@ -1,7 +1,7 @@
 # Klippt product plan
 
 - Status: active
-- Updated: 2026-09-02
+- Updated: 2026-09-19
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Product source of truth: [`AGENTS.md`](AGENTS.md)
 - Upstream historical roadmap: [`ROADMAP.md`](ROADMAP.md)
@@ -24,7 +24,13 @@ before commercial enforcement turns on.
 
 The core workflow is:
 
-> Record in clean clips, remove bad clips while recording, then return to a polished first edit.
+> Record in clean takes, remove bad takes while recording, then export sources or apply edits explicitly.
+
+New recordings start without generated edits. Keep the CLI and existing editing tools.
+Prioritize fast source handoff and a calm timeline: one caption strip, with thumbnail B-roll
+immediately above the waveform. Export offers Separate takes (Pause/Resume boundaries) or
+One video. A continuous recording stays one take. Detailed behavior and limits live in
+[product behavior](technical-documentation/product-behavior.md).
 
 The product promise is:
 

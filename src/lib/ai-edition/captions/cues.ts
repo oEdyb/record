@@ -32,6 +32,8 @@ export interface CaptionCue {
 	startMs: number;
 	endMs: number;
 	text: string;
+	/** Original source words. Absent for translated or segment-only captions. */
+	source?: { assetId: string; wordIds: string[] };
 }
 
 /** Captions draw above every user annotation so a blur or a sticker can't bury
@@ -41,7 +43,12 @@ export const CAPTION_Z_INDEX_BASE = 100_000;
 function toCaptionSegments(transcript: AxcutTranscript): CaptionSegment[] {
 	return transcript.words
 		.filter((word) => word.text.trim().length > 0)
-		.map((word) => ({ startSec: word.startSec, endSec: word.endSec, text: word.text }));
+		.map((word) => ({
+			startSec: word.startSec,
+			endSec: word.endSec,
+			text: word.text,
+			sourceWordIds: [word.id],
+		}));
 }
 
 function segmentWordsAsCaptionSegments(
@@ -179,8 +186,10 @@ export function deriveCaptionCues(
 	settings: CaptionSettings,
 	translations: CaptionTranslations,
 ): CaptionCue[] {
-	if (!document || !settings.enabled) return [];
-	const clips = document.timeline.clips;
+	if (!document) return [];
+	const clips = document.timeline.clips.filter(
+		(clip) => document.clipLayouts?.[clip.id]?.captions ?? settings.enabled,
+	);
 	if (clips.length === 0) return [];
 
 	const transcripts = new Map(document.transcripts.map((t) => [t.assetId, t]));
@@ -188,7 +197,6 @@ export function deriveCaptionCues(
 	// from it (line grouping is the expensive part, clipping is cheap).
 	const linesByAsset = new Map<string, CaptionSegment[]>();
 	const cues: CaptionCue[] = [];
-	let n = 0;
 
 	for (const assetId of new Set(clips.map((c) => c.assetId))) {
 		const transcript = transcripts.get(assetId);
@@ -197,13 +205,23 @@ export function deriveCaptionCues(
 	}
 
 	for (const [assetId, lines] of linesByAsset) {
-		for (const line of lines) {
+		for (const [lineIndex, line] of lines.entries()) {
 			const text = line.text.trim();
 			if (!text) continue;
-			for (const span of sourceSpanToTimelineSpans(assetId, line.startSec, line.endSec, clips)) {
+			const wordIds = settings.language === null ? (line.sourceWordIds ?? []) : [];
+			for (const clip of clips) {
+				if (clip.assetId !== assetId) continue;
+				const span = sourceSpanToTimelineSpans(assetId, line.startSec, line.endSec, [clip])[0];
+				if (!span) continue;
 				const startMs = Math.round(span.startSec * 1000);
 				const endMs = Math.max(Math.round(span.endSec * 1000), startMs + 1);
-				cues.push({ id: `caption-${n++}`, startMs, endMs, text });
+				cues.push({
+					id: `caption-${JSON.stringify([assetId, clip.id, settings.language, line.startSec, line.endSec, lineIndex])}`,
+					startMs,
+					endMs,
+					text,
+					...(wordIds.length ? { source: { assetId, wordIds } } : {}),
+				});
 			}
 		}
 	}

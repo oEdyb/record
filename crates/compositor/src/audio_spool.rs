@@ -6,7 +6,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const BLOCK: usize = 4096;
+pub(super) const BLOCK: usize = 4096;
 static NEXT_SPOOL: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct PcmSpool {
@@ -71,7 +71,7 @@ impl PcmSpool {
         self.write(self.samples, pcm)
     }
 
-    fn write(&mut self, offset: usize, pcm: &PlanarPcm) -> Result<()> {
+    pub(super) fn write(&mut self, offset: usize, pcm: &PlanarPcm) -> Result<()> {
         let samples = pcm.first().map_or(0, Vec::len);
         anyhow::ensure!(
             pcm.len() == 2
@@ -96,7 +96,7 @@ impl PcmSpool {
         Ok(())
     }
 
-    fn read(&mut self, offset: usize, count: usize) -> Result<PlanarPcm> {
+    pub(super) fn read(&mut self, offset: usize, count: usize) -> Result<PlanarPcm> {
         anyhow::ensure!(
             count <= BLOCK + AUDIO_BOUNDARY_FADE_SAMPLES,
             "PCM read exceeds bounded block"
@@ -122,8 +122,8 @@ impl Drop for PcmSpool {
 }
 
 pub(crate) struct SpoolClip {
-    bed: Option<PcmSpool>,
-    microphone: Option<PcmSpool>,
+    pub(super) bed: Option<PcmSpool>,
+    pub(super) microphone: Option<PcmSpool>,
 }
 
 impl SpoolClip {

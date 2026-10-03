@@ -5,6 +5,7 @@ import { createEmptyDocument } from "../schema";
 import {
 	applyEditingDefaultPreferences,
 	applyEditorDefaultPreferences,
+	applyNewProjectPreferences,
 	loadEditingPreferences,
 	saveCaptionDefaultPreferences,
 	saveEditorDefaultPreferences,
@@ -21,6 +22,27 @@ function memoryStorage() {
 }
 
 describe("editing preferences", () => {
+	it("starts plain even when remembered effects and captions are enabled", () => {
+		const preferences = loadEditingPreferences(memoryStorage());
+		preferences.captions.enabled = true;
+		preferences.editor.aspectRatio = "9:16";
+		const empty = createEmptyDocument({ title: "Raw", projectId: "raw" });
+		const raw = applyNewProjectPreferences(empty, preferences);
+		expect(getCaptionSettings(raw).enabled).toBe(false);
+		expect(getEditorSettings(raw)).toMatchObject({
+			aspectRatio: "16:9",
+			padding: 0,
+			borderRadius: 0,
+			shadowIntensity: 0,
+			motionBlurAmount: 0,
+			evenVolume: false,
+			normalizeVolume: false,
+			webcamReactiveZoom: false,
+			cursor: { size: 1, smoothing: 0, motionBlur: 0, clickBounce: 0 },
+		});
+		expect(preferences.captions.enabled).toBe(true);
+		expect(getEditorSettings(empty).padding).toBe(DEFAULT_EDITOR_SETTINGS.padding);
+	});
 	it("uses safe defaults when no preferences exist", () => {
 		const preferences = loadEditingPreferences(memoryStorage());
 
@@ -300,6 +322,9 @@ describe("editing preferences", () => {
 			{
 				...DEFAULT_EDITOR_SETTINGS,
 				padding: 19,
+				webcamMaskShape: "squircle",
+				webcamCornerRadius: 35,
+				webcamAspectRatio: "4:3",
 				webcamMirrored: true,
 				cropRegion: { x: 0.2, y: 0.2, width: 0.6, height: 0.6 },
 			},
@@ -314,6 +339,9 @@ describe("editing preferences", () => {
 		const settings = getEditorSettings(seeded);
 
 		expect(settings.padding).toBe(19);
+		expect(settings.webcamMaskShape).toBe("squircle");
+		expect(settings.webcamCornerRadius).toBe(35);
+		expect(settings.webcamAspectRatio).toBe("4:3");
 		expect(settings.webcamMirrored).toBe(true);
 		expect(settings.cropRegion).toEqual(DEFAULT_CROP_REGION);
 	});

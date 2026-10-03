@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "Önizleme kalitesi",
+		"sharp": "Net",
+		"performance": "Performans"
+	},
 	"errors": {
 		"noVideoLoaded": "Video yüklenmedi",
 		"videoNotReady": "Video hazır değil",
@@ -89,6 +94,9 @@
 		"toggleTheme": "Temayı değiştir",
 		"settings": "Ayarlar",
 		"export": "Dışa aktar",
+		"exporting": "Dışa aktarılıyor",
+		"exportProgressTitle": "%{{pct}} tamamlandı, {{eta}} kaldı. Dışa aktarmayı aç",
+		"exportProgressPreparing": "Dışa aktarma hazırlanıyor. Dışa aktarmayı aç",
 		"renameProject": "Projeyi yeniden adlandır",
 		"noProject": "Proje yok",
 		"changeLanguage": "Dili değiştir",
@@ -97,7 +105,8 @@
 			"media": "Medya",
 			"edit": "Düzenle",
 			"rec": "Kayıt"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "Kaynak",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "Dışa aktarma başarısız oldu.",
 		"writingFile": "Dosya yazılıyor…",
 		"renderingFrames": "Kareler işleniyor",
-		"framesEta": "{{current}} / {{total}} kare · {{eta}} kaldı",
+		"framesEta": "{{current}} / {{total}} kare, {{eta}} kaldı",
 		"preparingEncoder": "Kodlayıcı hazırlanıyor…",
+		"cancelExport": "Dışa aktarmayı iptal et",
+		"backgroundHint": "Bu pencereyi kapatıp düzenlemeye devam edebilirsiniz. İlerleme, Dışa aktar düğmesinde gösterilir. Şimdi yaptığınız değişiklikler bu dışa aktarmaya dahil değildir.",
 		"close": "Kapat",
 		"cancel": "İptal",
 		"rendering": "İşleniyor…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "Dosya yazılamadı",
 		"qualityUpscaleWarning": "Upscale",
 		"exportedVideoOf": "video şu sürede dışa aktarıldı:",
-		"nothingToExport": "Dışa aktarılacak bir şey yok — zaman çizelgesi boş."
+		"nothingToExport": "Dışa aktarılacak bir şey yok — zaman çizelgesi boş.",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "Odak noktasını sıfırla",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "Ekran görünür kalırken kamera yumuşakça büyür ve ardından normal boyutuna döner.",
 		"cameraFullscreenDescription": "Bu bölge oynarken kamera tüm kareyi kaplar — kenarlık, yuvarlatma ve arka plan olmadan — ve sonunda yumuşakça geri döner. Ne zaman başlayacağını ve ne kadar süreceğini değiştirmek için zaman çizelgesinde bölgenin kenarlarını sürükleyin.",
 		"deleteRegion": "Bölgeyi sil",
-		"freehandRendersAsBox": "Dışa aktarmada serbest çizim, sınırlayıcı dikdörtgeniyle kapatılır — eksik değil, fazla kapatır."
+		"freehandRendersAsBox": "Dışa aktarmada serbest çizim, sınırlayıcı dikdörtgeniyle kapatılır — eksik değil, fazla kapatır.",
+		"cameraSize": "Kamera boyutu"
 	},
 	"leftPanel": {
 		"mediaTitle": "Medya",
@@ -295,7 +309,7 @@
 			"title": "Konuşma geçmişi",
 			"subtitle": "Oturum değiştir veya oluştur",
 			"empty": "Henüz konuşma yok.",
-			"msgsCount": "{{count}} mesaj · {{date}}"
+			"msgsCount": "{{count}} mesaj, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "Mevcut bir projeye devam edin veya dosyalarınıza göz atın",
 		"searchPlaceholder": "Projelerde ara…",
 		"noMatches": "\"{{query}}\" ile eşleşen proje yok.",
-		"navigateHint": "gezinmek için ·",
+		"navigateHint": "gezinmek için",
 		"openHint": "açmak için",
 		"browseFiles": "Dosyalara göz at…",
 		"deleteProject": "Projeyi sil",
@@ -358,7 +372,10 @@
 		"previousClip": "Önceki klip",
 		"nextClip": "Sonraki klip",
 		"loop": "Döngü",
-		"seekVideo": "Videoda gezin"
+		"seekVideo": "Videoda gezin",
+		"mute": "Önizlemeyi sessize al",
+		"unmute": "Önizleme sesini aç",
+		"previewVolume": "Önizleme ses düzeyi"
 	},
 	"shell": {
 		"aiEditor": "Yapay zekâ düzenleyici",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "14 günlük deneme",
-			"trialDay": "Deneme · {{count}} gün",
-			"trialDays": "Deneme · {{count}} gün",
-			"offline": "Klippt Pro · Çevrimdışı",
+			"trialDay": "Deneme {{count}} gün",
+			"trialDays": "Deneme {{count}} gün",
+			"offline": "Klippt Pro, Çevrimdışı",
 			"readOnly": "Salt okunur"
 		},
 		"eyebrowReadOnly": "Salt okunur erişim",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "Uyumlu GPU yok — işleme CPU üzerinde yapılıyor, bu yüzden oynatma daha yavaş.",
 		"exportWarning": "Uyumlu GPU yok: bu dışa aktarma CPU üzerinde çalışır ve normalden çok daha uzun sürer."
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

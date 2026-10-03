@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import { agentCommands } from "./agentContracts";
+import { AGENT_OUTPUT_CONTRACT } from "./agentOutputContract";
 import { parseCliArgs } from "./args";
 
 const CWD = path.resolve("/work");
@@ -25,6 +29,43 @@ describe("parseCliArgs", () => {
 		});
 		expect(parse(["--no-sandbox", "--help"])).toMatchObject({ kind: "help" });
 		expect(parse(["--no-sandbox"])).toBeNull();
+	});
+
+	it("requires a hash-bound original for internal derived preview exports", () => {
+		expect(
+			parse([
+				"export",
+				"derived.klippt",
+				"--agent-preview-reference",
+				"original.klippt",
+				"--agent-preview-snapshot",
+				"a".repeat(64),
+				"--agent-preview-max-dimension",
+				"720",
+			]),
+		).toMatchObject({
+			kind: "export",
+			previewReference: {
+				projectPath: inCwd("original.klippt"),
+				snapshot: "a".repeat(64),
+				maxDimension: 720,
+			},
+		});
+		expect(
+			parse(["export", "derived.klippt", "--agent-preview-reference", "original.klippt"]),
+		).toMatchObject({ kind: "error" });
+		expect(
+			parse([
+				"export",
+				"derived.klippt",
+				"--agent-preview-reference",
+				"original.klippt",
+				"--agent-preview-snapshot",
+				"a".repeat(64),
+				"--agent-preview-max-dimension",
+				"9999",
+			]),
+		).toMatchObject({ kind: "error" });
 	});
 
 	it("parses a minimal export command and resolves relative paths", () => {
@@ -141,10 +182,18 @@ describe("parseCliArgs", () => {
 	});
 
 	it("rejects invalid record values", () => {
-		expect(parse(["record", "--duration", "0"])).toMatchObject({ kind: "error" });
-		expect(parse(["record", "--cursor", "off"])).toMatchObject({ kind: "error" });
-		expect(parse(["record", "--project", "demo.json"])).toMatchObject({ kind: "error" });
-		expect(parse(["record", "--project", "demo.openscreen"])).toMatchObject({ kind: "error" });
+		expect(parse(["record", "--duration", "0"])).toMatchObject({
+			kind: "error",
+		});
+		expect(parse(["record", "--cursor", "off"])).toMatchObject({
+			kind: "error",
+		});
+		expect(parse(["record", "--project", "demo.json"])).toMatchObject({
+			kind: "error",
+		});
+		expect(parse(["record", "--project", "demo.openscreen"])).toMatchObject({
+			kind: "error",
+		});
 	});
 
 	it("parses --auto-zoom", () => {
@@ -156,7 +205,10 @@ describe("parseCliArgs", () => {
 	});
 
 	it("parses sources", () => {
-		expect(parse(["sources", "--json"])).toMatchObject({ kind: "sources", json: true });
+		expect(parse(["sources", "--json"])).toMatchObject({
+			kind: "sources",
+			json: true,
+		});
 		expect(parse(["sources", "--bogus"])).toMatchObject({ kind: "error" });
 		expect(parse(["sources", "extra-arg"])).toMatchObject({ kind: "error" });
 	});
@@ -203,5 +255,76 @@ describe("parseCliArgs", () => {
 		});
 		expect(parse(["help"])).toMatchObject({ kind: "help" });
 		expect(parse(["--help"])).toMatchObject({ kind: "help" });
+	});
+});
+
+it("bounds still-preview arguments and requires their complete authority", () => {
+	const base = [
+		"export",
+		"derived.klippt",
+		"--agent-preview-reference",
+		"original.klippt",
+		"--agent-preview-snapshot",
+		"a".repeat(64),
+	];
+	expect(parse([...base, "--agent-preview-time", "839", "--out", "frame.png"])).toMatchObject({
+		kind: "export",
+		previewReference: { time: 839 },
+	});
+	for (const tail of [
+		["--agent-preview-time", "NaN", "--out", "frame.png"],
+		["--agent-preview-time", "-1", "--out", "frame.png"],
+		["--agent-preview-time", "3"],
+		["--agent-preview-time", "3", "--out", "frame.mp4"],
+		["--agent-preview-time", "3", "--out", "frame.png", "--auto-zoom"],
+		["--agent-preview-time", "3", "--out", "frame.png", "--audio", "voice.wav"],
+	]) {
+		expect(parse([...base, ...tail])).toMatchObject({ kind: "error" });
+	}
+	expect(
+		parse(["export", "derived.klippt", "--agent-preview-time", "3", "--out", "frame.png"]),
+	).toMatchObject({ kind: "error" });
+	expect(parse(["export", "derived.klippt", "--agent-preview-max-dimension", "720"])).toMatchObject(
+		{ kind: "error" },
+	);
+});
+
+describe("additive-only api_version 1.x contract", () => {
+	it("pins every command's description and input schema surface", () => {
+		// A removed or repurposed flag changes this snapshot and fails the test;
+		// new commands/flags extend it. Snapshot diffs are the review gate.
+		const surface = Object.fromEntries(
+			Object.entries(agentCommands).map(([name, command]) => [
+				name,
+				{
+					description: command.description,
+					policy: command.policy,
+					input_schema: z.toJSONSchema(command.input, { io: "input" }),
+				},
+			]),
+		);
+		expect({
+			output_contract: AGENT_OUTPUT_CONTRACT,
+			commands: surface,
+		}).toMatchSnapshot();
+	});
+
+	it("keeps the agent-cli.md 'Start and discover' section in sync with the contract", () => {
+		const doc = readFileSync(
+			new URL("../../technical-documentation/agent-cli.md", import.meta.url),
+			"utf8",
+		);
+		const section = doc.split("## Start and discover")[1]?.split("\n## ")[0] ?? "";
+		expect(section).toContain("exactly one terminal JSON envelope on stdout");
+		expect(section).toContain("--stream");
+		for (const [code, description] of Object.entries(AGENT_OUTPUT_CONTRACT.exit_codes)) {
+			// Prettier pads Markdown table cells; match the row, not the spacing.
+			expect(section, `exit code ${code}`).toMatch(new RegExp(`\\| ${code}\\s+\\|`));
+			expect(section, `exit code ${code} description`).toContain(description.split(" — ")[0]);
+		}
+		for (const field of AGENT_OUTPUT_CONTRACT.error_fields) {
+			expect(section, `error field ${field}`).toContain(`\`${field}\``);
+		}
+		expect(section).toContain("additive-only");
 	});
 });

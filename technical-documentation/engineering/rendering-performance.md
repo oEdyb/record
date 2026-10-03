@@ -6,6 +6,124 @@ The older full export benchmark series uses an AMD Ryzen 5 7520U laptop with the
 GPU on Windows 11. Newer dated sections name their own reference machine. Do not compare numbers
 across machines or workload definitions without a fresh matched run.
 
+## Pipelined VideoToolbox decoder — 2026-09-11
+
+A 50-minute Klippt export (1920×1080, 30 fps, H.264, 90,752 frames) took 25.2 minutes on the
+Apple M5 with the installed 1.9.5 build. A `sample` of the export thread during that run placed 76%
+of its time inside `timeline_walk::advance_decoder_to` waiting on VideoToolbox decode, 15% in
+`-[_MTLCommandBuffer waitUntilCompleted]`, and under 9% in everything else, encoder included. The
+cause is structural: FFmpeg's VideoToolbox hwaccel
+([`libavcodec/videotoolbox.c`](https://github.com/FFmpeg/FFmpeg/blob/n8.1.2/libavcodec/videotoolbox.c))
+calls `VTDecompressionSessionDecodeFrame` with `decodeFlags = 0` and then
+`VTDecompressionSessionWaitForAsynchronousFrames` for every frame, so exactly one frame is ever in
+the hardware decoder. FFmpeg master and the 2025–2026 ffmpeg-devel patch queue contain no
+asynchronous decode change.
+
+The macOS `Decoder` now drives a direct `VTDecompressionSession` (`vt_decode_macos.rs`) with
+`kVTDecodeFrame_EnableAsynchronousDecompression | kVTDecodeFrame_EnableTemporalProcessing`, a bounded
+in-flight count (default 4, `OPENSCREEN_VT_INFLIGHT` accepts 1–64), `RealTime = false`, and an output
+pool minimum of 2N + 2. The consumer thread still owns demux and delivers each frame as the same
+`AV_PIX_FMT_VIDEOTOOLBOX` `AVFrame` (`data[3]` = `CVPixelBufferRef`, released through `buf[0]`) that
+FFmpeg produced, so `compositor_macos`, the peek/commit hold semantics, `live.rs`, and the timeline
+walker are untouched. Eligibility: MP4/MOV container, H.264 or HEVC with `avcC`/`hvcC` extradata,
+and no frame reordering (`video_delay == 0`, `has_b_frames == 0`); Klippt's recorder writes
+`AVVideoAllowFrameReorderingKey: false`. Anything else keeps the previous path.
+`OPENSCREEN_MAC_DECODE=ffmpeg-videotoolbox` forces the old FFmpeg hwaccel path for comparison;
+`software` and the Baseline software default are unchanged. Export stats report the actual decoder
+path, for example `videotoolbox-async(inflight=4)`.
+
+Primary contracts: the macOS 26.5 SDK `VTDecompressionSession.h`, `VTDecompressionProperties.h`
+and `VTErrors.h`; Apple's decode-frame documentation (a callback may run before
+`VTDecompressionSessionDecodeFrame` returns, so in-flight accounting precedes submission);
+WWDC20 session 10090 (the decoder applies back pressure when its pipeline is full; the output
+callback is serialized and must not block).
+
+Measured on the Apple M5, machine otherwise idle, `cargo test -p openscreen-compositor --release
+--test mac_decode_bench -- --ignored --nocapture`, source
+`recording-1789125415066-clip-0001.mp4` (3420×2214 H.264 High, ~50 fps, 67 Mbit/s), slice
+100–120 s, hardware session confirmed by
+`kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder`. Decode-only walks 965 source
+frames; export renders 600 frames at 1920×1080 30 fps H.264 through `run_composited_multi` with
+audio off. Two runs each; the first run's FFmpeg row was 120.7 / 69.2 fps.
+
+| Decoder | Decode-only fps | Export fps |
+|---|---|---|
+| FFmpeg VideoToolbox hwaccel (previous default) | 161.6 | 77.3 |
+| Async, 2 in flight | 379.9 | 160.5 |
+| Async, 4 in flight (new default) | 394.0 | 206.9 |
+| Async, 8 in flight | 392.5 | 204.1 |
+| Async, 16 in flight | 387.9 | 201.3 |
+
+Every path produced the identical PTS sequence and identical Y/UV plane hashes for the first 60
+frames, and every export contained exactly 600 decodable frames. Depth 4 is the knee; deeper
+queues only cost memory (about 11 MB per 3420×2214 NV12 frame). `decoder_seek_eof` passes in both
+modes.
+
+Real export of the full 50-minute project through the installed CLI (`klippt export`, project
+fps 60, 181,500 output frames): 15.1 minutes, 201 fps, decoder `videotoolbox-async(inflight=4)`
+on all nine clips, no warnings. The same project at 30 fps took 25.2 minutes on the previous build.
+
+### Deferred Metal wait (same day)
+
+The zero-copy encoder path used to call `waitUntilCompleted` on the RGB→NV12 command buffer
+before every `avcodec_send_frame`. `VideoEncoder` now holds each composed frame back one step and
+sends it after the next frame's conversion is queued, so the GPU converts frame N while the CPU
+decodes and composes frame N+1. `MTLCommandQueue` is a serial queue (Metal SDK,
+`MTLCommandQueue.h`), so the next `compose_frame` that overwrites the render target is ordered
+behind the conversion. `OPENSCREEN_EXPORT_DEFER_METAL=0` restores the synchronous wait.
+
+A/B on the 100–250 s slice (4500 output frames), same machine, otherwise idle:
+
+| Variant | 4 in flight | 8 in flight |
+|---|---|---|
+| Synchronous wait | 228.3 fps | 233.0 fps |
+| Deferred wait | 236.3 fps | 236.6 fps |
+
+A 1.5–3.5% gain, and the Metal wait fell from 15% to 4% of export-thread samples. It is small
+because the export is now near the hardware decoder's ceiling: a sample of the async export
+thread shows 71% of its time waiting for VideoToolbox output and 13% blocked in
+`VTDecompressionSessionDecodeFrame` back pressure. At 236 output fps for a 30 fps export of a
+~50 fps source, the decoder delivers about 390 source frames per second, which matches the
+decode-only ceiling of 394 fps. The next export lever is therefore fewer or smaller source
+frames (capture at 30 fps, smaller capture area, or a different capture codec), not more
+pipelining.
+
+## Editor and capture measurements on the 50-minute project — 2026-09-11
+
+Measured on the installed build (Apple M5) with the real 50-minute, nine-clip Vampire Survivors
+project, driven over the Chrome DevTools Protocol (`--remote-debugging-port`, Playwright
+`connectOverCDP`) so the numbers come from the shipped renderer, not a dev build.
+
+**Preview under scrub and playback.** 30 click seeks across the timeline, a 40-step drag scrub,
+then 12 s of playback, 22.5 s total, CPU profile at 0.5 ms sampling plus a `longtask`
+observer and a `requestAnimationFrame` interval log:
+
+| Signal | Value |
+|---|---|
+| Long tasks (> 50 ms) on the renderer main thread | 0 |
+| rAF interval p50 / p95 / p99 / max | 17 / 18 / 18 / 87 ms |
+| Renderer CPU: idle / `createImageBitmap` / GC / everything else | 78% / 3.8% / 1.8% / 16% |
+| Native preview (same run): GPU readback p95 / IPC p95 / draw p95 | 8.3 / 6.5 / 2.7 ms |
+
+**Editor reload of the project.** DOM ready 106 ms, seek slider present 152 ms, all nine clip
+buttons present 288 ms, zero long tasks. The 58–117 ms `preview.browser_main_thread_ms` values
+in earlier workload reports are single samples (n = 1–2), not a steady-state cost.
+
+**Automatic editing functions on the real project** (53,980 cursor samples, nine clips, three
+repetitions, median): cursor track build 4.1 ms total, automatic direction plan 77 ms
+(synchronous on the renderer main thread from the timeline UI), scene description 0.1 ms,
+document save serialization 0.03 ms. Pause analysis and caption seam merge were not measured
+because their inputs are transient. Nothing here justifies optimization on this evidence; the
+direction plan is the only candidate if a denser project pushes it past 100 ms.
+
+**Capture telemetry false alarm.** The 88-minute capture report showed `capture.delivered_fps`
+52 of 60 requested and `capture.dropped_frames` 6,939, but `capture.pending_frames` was 0.
+`CaptureTelemetry.payload()` counted idle, blank and suspended ScreenCaptureKit samples as
+dropped frames; those samples mean no new pixels, which is normal for a game rendering below
+60 fps. `droppedVideoFrames` now counts only writer-refused and failed appends, the helper adds
+`incompleteScreenSamples`, and the workload report records `capture.incomplete_frames`
+separately. Older reports overstate drops by that count.
+
 ## Apple Silicon editor preview diagnosis — 2026-09-01
 
 A 1280×720 visible editor preview was allocated as 2560×1440 on a Retina display because the

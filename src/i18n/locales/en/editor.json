@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "Preview quality",
+		"sharp": "Sharp",
+		"performance": "Performance"
+	},
 	"newRecording": {
 		"title": "Return to Recorder",
 		"description": "Your current session has been saved.",
@@ -80,8 +85,8 @@
 		"openProject": "Open project",
 		"newProject": "New project",
 		"saveProject": "Save project",
-		"regenerateAutomaticEdits": "Regenerate automatic edits",
-		"regeneratingAutomaticEdits": "Regenerating automatic edits…",
+		"regenerateAutomaticEdits": "Apply automatic edits",
+		"regeneratingAutomaticEdits": "Applying automatic edits…",
 		"unsaved": "Unsaved",
 		"saved": "Saved",
 		"switchToLightTheme": "Switch to light theme",
@@ -89,6 +94,9 @@
 		"toggleTheme": "Toggle theme",
 		"settings": "Settings",
 		"export": "Export",
+		"exporting": "Exporting",
+		"exportProgressTitle": "{{pct}}% done, {{eta}} left. Open export",
+		"exportProgressPreparing": "Preparing export. Open export",
 		"renameProject": "Rename project",
 		"noProject": "No project",
 		"changeLanguage": "Change language",
@@ -97,7 +105,8 @@
 			"media": "Media",
 			"edit": "Edit",
 			"rec": "Record"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "Source",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "Export failed.",
 		"writingFile": "Writing file…",
 		"renderingFrames": "Rendering frames",
-		"framesEta": "{{current}} / {{total}} frames · {{eta}} left",
+		"framesEta": "{{current}} / {{total}} frames, {{eta}} left",
 		"preparingEncoder": "Preparing encoder…",
+		"cancelExport": "Cancel export",
+		"backgroundHint": "You can close this window and keep editing. Progress shows on the Export button. Edits you make now are not part of this export.",
 		"close": "Close",
 		"cancel": "Cancel",
 		"rendering": "Rendering…",
@@ -199,7 +210,9 @@
 		"exportFailed": "Export failed",
 		"failedToWriteFile": "Failed to write file",
 		"qualityUpscaleWarning": "Upscale",
-		"nothingToExport": "Nothing to export — the timeline is empty."
+		"nothingToExport": "Nothing to export — the timeline is empty.",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "Reset focus point",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "The camera grows gently while the screen stays visible, then returns to its normal size.",
 		"cameraFullscreenDescription": "While this region plays, the camera takes the whole frame — no border, no rounding, no background — and eases back at the end. Drag the region's edges on the timeline to change when it starts and how long it lasts.",
 		"deleteRegion": "Delete region",
-		"freehandRendersAsBox": "In the export, a freehand shape is covered by its bounding box — over-covered, never under."
+		"freehandRendersAsBox": "In the export, a freehand shape is covered by its bounding box — over-covered, never under.",
+		"cameraSize": "Camera size"
 	},
 	"leftPanel": {
 		"mediaTitle": "Media",
@@ -295,7 +309,7 @@
 			"title": "Conversation history",
 			"subtitle": "Switch or create sessions",
 			"empty": "No conversations yet.",
-			"msgsCount": "{{count}} msgs · {{date}}"
+			"msgsCount": "{{count}} msgs, {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "Pick up an existing project or browse your files",
 		"searchPlaceholder": "Search projects…",
 		"noMatches": "No projects match \"{{query}}\".",
-		"navigateHint": "to navigate ·",
+		"navigateHint": "to navigate",
 		"openHint": "to open",
 		"browseFiles": "Browse files…",
 		"deleteProject": "Delete project",
@@ -358,7 +372,10 @@
 		"previousClip": "Previous clip",
 		"nextClip": "Next clip",
 		"loop": "Loop",
-		"seekVideo": "Seek video"
+		"seekVideo": "Seek video",
+		"mute": "Mute preview",
+		"unmute": "Unmute preview",
+		"previewVolume": "Preview volume"
 	},
 	"shell": {
 		"aiEditor": "AI editor",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "14-day trial",
-			"trialDay": "Trial · {{count}} day",
-			"trialDays": "Trial · {{count}} days",
-			"offline": "Klippt Pro · Offline",
+			"trialDay": "Trial {{count}} day",
+			"trialDays": "Trial {{count}} days",
+			"offline": "Klippt Pro, Offline",
 			"readOnly": "Read only"
 		},
 		"eyebrowReadOnly": "Read-only access",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "Running without a compatible GPU — rendering on CPU, so playback is slower.",
 		"exportWarning": "No compatible GPU: this export runs on CPU and will take much longer than usual."
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

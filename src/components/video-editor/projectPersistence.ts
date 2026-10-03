@@ -1,3 +1,9 @@
+import {
+	normalizeWebcamAspectRatio,
+	normalizeWebcamCornerRadius,
+	type WebcamAspectRatio,
+} from "@/components/video-editor/types";
+import { directionProvenanceFields } from "@/lib/ai-edition/schema/automatic-direction-review";
 import { normalizeTextAnimation } from "@/lib/annotationTextAnimation";
 import { normalizeBlurColor, normalizeBlurType } from "@/lib/blurEffects";
 import {
@@ -102,6 +108,8 @@ export interface ProjectEditorState {
 	webcamBlockOrder: WebcamBlockOrder;
 	webcamBlockCameraShare: WebcamBlockCameraShare;
 	webcamMaskShape: WebcamMaskShape;
+	webcamCornerRadius?: number;
+	webcamAspectRatio?: WebcamAspectRatio;
 	webcamMirrored: boolean;
 	webcamReactiveZoom: boolean;
 	webcamSizePreset: WebcamSizePreset;
@@ -284,6 +292,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						...(isMotionStyle(region.motionStyle) ? { motionStyle: region.motionStyle } : {}),
 						...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 						...(validPreset ? { rotationPreset: validPreset } : {}),
+						...directionProvenanceFields(region.automaticDirection),
 						...(typeof region.directionGroupId === "string" && region.directionGroupId.length > 0
 							? { directionGroupId: region.directionGroupId }
 							: {}),
@@ -314,6 +323,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						...(isMotionStyle(region.motionStyle) ? { motionStyle: region.motionStyle } : {}),
 						...(isMotionSpeed(region.motionSpeed) ? { motionSpeed: region.motionSpeed } : {}),
 						...(region.source === "auto" ? { source: "auto" as const } : {}),
+						...directionProvenanceFields(region.automaticDirection),
 						...(typeof region.directionGroupId === "string" && region.directionGroupId.length > 0
 							? { directionGroupId: region.directionGroupId }
 							: {}),
@@ -556,9 +566,12 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			editor.webcamMaskShape === "rectangle" ||
 			editor.webcamMaskShape === "circle" ||
 			editor.webcamMaskShape === "square" ||
-			editor.webcamMaskShape === "rounded"
+			editor.webcamMaskShape === "rounded" ||
+			editor.webcamMaskShape === "squircle"
 				? editor.webcamMaskShape
 				: DEFAULT_WEBCAM_SETTINGS.maskShape,
+		webcamCornerRadius: normalizeWebcamCornerRadius(editor.webcamCornerRadius),
+		webcamAspectRatio: normalizeWebcamAspectRatio(editor.webcamAspectRatio),
 		webcamMirrored:
 			typeof editor.webcamMirrored === "boolean" ? editor.webcamMirrored : DEFAULT_WEBCAM_MIRRORED,
 		webcamReactiveZoom:

@@ -1,0 +1,21 @@
+.dialog button:not([data-inspector-switch]) {
+	min-height: 32px;
+}
+
+.dialog button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+}
+
+.metadata {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 4px 12px;
+}
+
+.metadata > span {
+ white-space: nowrap;
+}
+
+.outputMode { display: flex; gap: 8px; margin-bottom: 18px; }
+.outputMode button[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); }

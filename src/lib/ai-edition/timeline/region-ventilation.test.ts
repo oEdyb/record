@@ -36,6 +36,12 @@ describe("ventilateSpanAcrossClips", () => {
 		]);
 	});
 
+	it("drops a float-leftover fragment shorter than one millisecond at a clip boundary", () => {
+		expect(ventilateSpanAcrossClips(2, 10 + 1e-13, threeClips)).toEqual([
+			{ clipId: "c1", clipIndex: 0, localStartSec: 2, localEndSec: 10 },
+		]);
+	});
+
 	it("splits a span straddling two clips into per-clip fragments", () => {
 		expect(ventilateSpanAcrossClips(8, 13, threeClips)).toEqual([
 			{ clipId: "c1", clipIndex: 0, localStartSec: 8, localEndSec: 10 },
@@ -96,8 +102,48 @@ describe("projectRegionsToSourceTime (export coherence)", () => {
 		const clips = [clip("c1", 0, 10, 0), clip("c2", 10, 10, 20)];
 		const zooms = [{ id: "z1", startMs: 8000, endMs: 12000, depth: 4 }];
 		expect(projectRegionsToSourceTime(zooms, clips, () => "z2")).toEqual([
-			{ id: "z1", startMs: 8000, endMs: 10000, depth: 4, clipIndex: 0 },
-			{ id: "z2", startMs: 20000, endMs: 22000, depth: 4, clipIndex: 1 },
+			{
+				id: "z1",
+				startMs: 8000,
+				endMs: 10000,
+				depth: 4,
+				clipIndex: 0,
+				envelopeStartMs: 8000,
+				envelopeEndMs: 12000,
+			},
+			{
+				id: "z2",
+				startMs: 20000,
+				endMs: 22000,
+				depth: 4,
+				clipIndex: 1,
+				envelopeStartMs: 18000,
+				envelopeEndMs: 22000,
+			},
+		]);
+	});
+
+	it("gives a piece cut out of the middle of a region the whole region's envelope", () => {
+		// One take, a trim from source 4 s to 6 s: the visible fragments are [0,4) and [6,10).
+		const clips = [clip("c1a", 0, 4, 0), clip("c1b", 4, 4, 6)];
+		const cams = [{ id: "cam", startMs: 2000, endMs: 7000 }];
+		expect(projectRegionsToSourceTime(cams, clips, () => "cam2")).toEqual([
+			{
+				id: "cam",
+				startMs: 2000,
+				endMs: 4000,
+				clipIndex: 0,
+				envelopeStartMs: 2000,
+				envelopeEndMs: 7000,
+			},
+			{
+				id: "cam2",
+				startMs: 6000,
+				endMs: 9000,
+				clipIndex: 1,
+				envelopeStartMs: 4000,
+				envelopeEndMs: 9000,
+			},
 		]);
 	});
 

@@ -25,6 +25,8 @@ export interface ClipFragment {
  * Decompose a virtual-timeline span into the portions that fall over each clip,
  * expressed as clip-local offsets. Clips the span doesn't touch are omitted.
  */
+const MIN_FRAGMENT_SEC = 0.001;
+
 export function ventilateSpanAcrossClips(
 	startSec: number,
 	endSec: number,
@@ -36,7 +38,7 @@ export function ventilateSpanAcrossClips(
 	clips.forEach((c, clipIndex) => {
 		const s = Math.max(lo, c.timelineStartSec);
 		const e = Math.min(hi, c.timelineEndSec);
-		if (e > s) {
+		if (e - s >= MIN_FRAGMENT_SEC) {
 			out.push({
 				clipId: c.id,
 				clipIndex,
@@ -99,10 +101,18 @@ export function virtualSpanToSourceSpans(
  * `clips` MUST be the same array (same order) serialized to `Scene.clips` on the native
  * side, so the emitted `clipIndex` lines up — see `ClipFragment`.
  */
+export interface ProjectedRegionEnvelope {
+	clipIndex?: number;
+	/** The whole region's start/end in this piece's source-ms frame, so a piece cut out of
+	 *  the middle of a region can keep the region's ease-in/out and drift phase. */
+	envelopeStartMs?: number;
+	envelopeEndMs?: number;
+}
+
 export function projectRegionsToSourceTime<
 	T extends { id: string; startMs: number; endMs: number },
->(regions: T[], clips: AxcutClip[], makeId: () => string): (T & { clipIndex?: number })[] {
-	const out: (T & { clipIndex?: number })[] = [];
+>(regions: T[], clips: AxcutClip[], makeId: () => string): (T & ProjectedRegionEnvelope)[] {
+	const out: (T & ProjectedRegionEnvelope)[] = [];
 	for (const region of regions) {
 		const spans = virtualSpanToSourceSpans(region.startMs, region.endMs, clips);
 		if (spans.length === 0) {
@@ -110,12 +120,16 @@ export function projectRegionsToSourceTime<
 			continue;
 		}
 		spans.forEach((span, i) => {
+			const clip = clips[span.clipIndex];
+			const shiftMs = clip ? Math.round((clip.sourceStartSec - clip.timelineStartSec) * 1000) : 0;
 			out.push({
 				...region,
 				id: i === 0 ? region.id : makeId(),
 				startMs: span.startMs,
 				endMs: span.endMs,
 				clipIndex: span.clipIndex,
+				envelopeStartMs: region.startMs + shiftMs,
+				envelopeEndMs: region.endMs + shiftMs,
 			});
 		});
 	}

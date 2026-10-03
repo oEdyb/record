@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clampCameraPreviewPosition, defaultCameraPreviewPosition } from "./cameraPreviewGeometry";
+import {
+	clampCameraPreviewPosition,
+	defaultCameraPreviewPosition,
+	expandedCameraPreviewBounds,
+} from "./cameraPreviewGeometry";
 
 const size = { width: 312, height: 186 };
 const workArea = { x: 0, y: 24, width: 1_710, height: 1_082 };
@@ -22,5 +26,21 @@ describe("camera preview geometry", () => {
 			x: -1_920,
 			y: 0,
 		});
+	});
+
+	it("expands to the largest centred 16:9 surface that fits inside the work area", () => {
+		const bounds = expandedCameraPreviewBounds(workArea);
+
+		// Width-limited: 1710 - 2 * (48 + 12) = 1590 wide surface, 894 tall, plus gutters.
+		expect(bounds).toEqual({ x: 48, y: 106, width: 1_614, height: 918 });
+		expect(bounds.width - 24).toBeLessThanOrEqual(workArea.width - 96);
+		expect(bounds.height - 24).toBeLessThanOrEqual(workArea.height - 96);
+		expect((bounds.width - 24) / (bounds.height - 24)).toBeCloseTo(16 / 9, 2);
+	});
+
+	it("expands width-limited on a portrait work area", () => {
+		const bounds = expandedCameraPreviewBounds({ x: 100, y: 0, width: 1_000, height: 1_600 });
+
+		expect(bounds).toEqual({ x: 148, y: 541, width: 904, height: 519 });
 	});
 });

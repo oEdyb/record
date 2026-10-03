@@ -26,7 +26,7 @@ import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { fromFileUrl } from "@/components/video-editor/projectPersistence";
-import { effectiveZoomScale } from "@/components/video-editor/types";
+import { type CameraFullscreenRegion, effectiveZoomScale } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
 	resolveClipInsertionBoundary,
@@ -36,6 +36,7 @@ import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useTimelineTranscriptGate } from "@/lib/ai-edition/store/transcriptionStore";
+import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
@@ -58,12 +59,16 @@ import {
 	rawTimeToPlaybackTime,
 } from "@/lib/ai-edition/timeline/timelineMap";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
+import { cameraTransitionTiming } from "@/lib/zoomMath/cameraFullscreenUtils";
 import { nativeBridgeClient } from "@/native/client";
 import type { SelectablePauseSuggestion } from "../AudioPane";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
+import { BrollTrack } from "./BrollTrack";
+import { CaptionTrack } from "./CaptionTrack";
 import { ClipWaveform } from "./ClipWaveform";
 import styles from "./EditorShellV4.module.css";
+import { ProposedCutPill } from "./ProposedCutPill";
 
 // The AI option's prompt — sent straight to the chat agent via the prompt-bus.
 //
@@ -337,6 +342,7 @@ interface LanePill {
 	rawStart: number;
 	rawEnd: number;
 	label: string;
+	cameraRegions?: CameraFullscreenRegion[];
 }
 
 export function V4Timeline({
@@ -352,7 +358,9 @@ export function V4Timeline({
 	onPrevClip,
 	onNextClip,
 	onEditClip,
+	onOpenCaptions,
 }: {
+	onOpenCaptions?: () => void;
 	tl: TimelineApi;
 	setCurrentTime: (sec: number) => void;
 	variant?: "edit" | "media";
@@ -369,6 +377,7 @@ export function V4Timeline({
 	onEditClip: (clip: AxcutClip) => void;
 }) {
 	const t = useScopedT("timeline");
+	const { cues: captionCues } = useCaptions();
 	const tracksRef = useRef<HTMLDivElement | null>(null);
 	// The transformed canvas is the true timeline coordinate frame — clips, pills
 	// and the playhead are all positioned inside it. Time↔x math must measure THIS
@@ -528,6 +537,13 @@ export function V4Timeline({
 					rawStart: pill.start,
 					rawEnd: pill.end,
 					label: label(pill.member),
+					...(kind === "cameraFullscreen"
+						? {
+								cameraRegions: tl.cameraFullscreenRegions.filter((region) =>
+									pill.ids.includes(region.id),
+								),
+							}
+						: {}),
 				},
 			];
 		});
@@ -565,7 +581,15 @@ export function V4Timeline({
 			suggestion.timelineEndSec,
 			projection,
 		);
-		return visible ? [{ suggestion, visible }] : [];
+		return [
+			{
+				suggestion,
+				visible: visible ?? {
+					startSec: toPlaybackTime(suggestion.timelineStartSec),
+					endSec: toPlaybackTime(suggestion.timelineEndSec),
+				},
+			},
+		];
 	});
 
 	// Ruler ticks are chosen from what is actually ON SCREEN, not from the clip
@@ -844,8 +868,9 @@ export function V4Timeline({
 		[],
 	);
 
-	// Plain scroll = vertical scroll (the panel can be too short to show every
-	// lane + the main track). Shift+scroll = horizontal pan. Ctrl+scroll = zoom
+	// Plain vertical scroll = vertical scroll (the panel can be too short to show every
+	// lane + the main track). Shift+scroll or a horizontal trackpad swipe = horizontal
+	// pan. Ctrl+scroll = zoom
 	// around the cursor's timeline position. Shift is tested first, so it wins
 	// when both are held: holding Shift always pans, never zooms.
 	// Attached as a native (non-passive) listener rather than React's onWheel:
@@ -861,7 +886,11 @@ export function V4Timeline({
 		const onWheelNative = (e: WheelEvent) => {
 			const r = el.getBoundingClientRect();
 			const viewportPct = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-			if (e.shiftKey) {
+			// A two-finger horizontal swipe on a trackpad arrives with no modifier and
+			// a dominant deltaX; it pans like Shift+wheel does.
+			const horizontalSwipe =
+				!e.shiftKey && !e.ctrlKey && e.deltaX !== 0 && Math.abs(e.deltaX) > Math.abs(e.deltaY);
+			if (e.shiftKey || horizontalSwipe) {
 				e.preventDefault();
 				setNav((prev) => {
 					const width = prev.end - prev.start;
@@ -1193,6 +1222,50 @@ export function V4Timeline({
 						: undefined
 				}
 			>
+				{p.cameraRegions
+					?.flatMap((region) =>
+						// Native scene projection clips regions at every kept segment before
+						// applying the envelope. The bands must show those same restarts.
+						projection.flatMap((part, index) => {
+							const startMs = Math.max(region.startMs, part.rawStartSec * 1000);
+							const endMs = Math.min(region.endMs, part.rawEndSec * 1000);
+							return endMs > startMs
+								? [{ ...region, id: `${region.id}-${index}`, startMs, endMs }]
+								: [];
+						}),
+					)
+					.flatMap((region) => {
+						const timing = cameraTransitionTiming(region);
+						return (
+							[
+								["entry", region.startMs, timing.leadInEnd],
+								["exit", timing.leadOutStart, region.endMs],
+							] as const
+						).flatMap(([phase, startMs, endMs]) => {
+							if (endMs <= startMs) return [];
+							const visible = projectRawSpanToPlaybackSpan(
+								startMs / 1000,
+								endMs / 1000,
+								projection,
+							);
+							if (!visible) return [];
+							const start = Math.max(seg.segStart, visible.startSec);
+							const end = Math.min(seg.segEnd, visible.endSec);
+							if (end <= start) return [];
+							return [
+								<span
+									key={`${region.id}-${phase}`}
+									aria-hidden="true"
+									data-camera-transition={phase}
+									className={styles.cameraTransition}
+									style={{
+										left: `${((start - seg.segStart) / durSec) * 100}%`,
+										width: `${((end - start) / durSec) * 100}%`,
+									}}
+								/>,
+							];
+						});
+					})}
 				{seg.interactive ? (
 					<span
 						className={styles.lanePillHandle}
@@ -1224,7 +1297,28 @@ export function V4Timeline({
 	const renderPills = (pills: LanePill[]) => {
 		const effectivePills = pills.map((p) => {
 			if (activePillDrag && activePillDrag.id === p.id) {
-				return { ...p, start: activePillDrag.start, end: activePillDrag.end };
+				const rawStart = toRawTime(activePillDrag.start, "after");
+				const rawEnd = toRawTime(activePillDrag.end, "before");
+				return {
+					...p,
+					start: activePillDrag.start,
+					end: activePillDrag.end,
+					cameraRegions: p.cameraRegions?.[0]
+						? ventilateSpanAcrossClips(rawStart, rawEnd, clips).flatMap((fragment) => {
+								const clip = clips.find((candidate) => candidate.id === fragment.clipId);
+								return clip
+									? [
+											{
+												...p.cameraRegions![0],
+												startMs: (clip.timelineStartSec + fragment.localStartSec) * 1000,
+												endMs: (clip.timelineStartSec + fragment.localEndSec) * 1000,
+												id: `${p.id}-${fragment.clipId}`,
+											},
+										]
+									: [];
+							})
+						: undefined,
+				};
 			}
 			return p;
 		});
@@ -1461,7 +1555,7 @@ export function V4Timeline({
 				{/* Fixed ruler header: the ruler ticks stay pinned right below the toolbar
 			    so they don't scroll off when the panel is short — only the lanes/clips
 			    below scroll. Shares the tracks' zoom/pan transform so ticks line up. */}
-				<div className={styles.tlRulerRow} onPointerDown={startScrub}>
+				<div className={styles.tlRulerRow} data-testid="timeline-ruler" onPointerDown={startScrub}>
 					<div className={styles.tlCanvas} style={canvasStyle}>
 						<div className={styles.tlRuler}>
 							{rulerTicks.ticks.map((tick) => (
@@ -1479,8 +1573,18 @@ export function V4Timeline({
 					</div>
 				</div>
 
-				<div ref={tracksRef} className={styles.tlTracks} onPointerDown={startScrub}>
-					<div ref={canvasRef} className={styles.tlCanvas} style={canvasStyle}>
+				<div
+					ref={tracksRef}
+					className={styles.tlTracks}
+					data-testid="timeline-tracks"
+					onPointerDown={startScrub}
+				>
+					<div
+						ref={canvasRef}
+						className={styles.tlCanvas}
+						data-testid="timeline-canvas"
+						style={canvasStyle}
+					>
 						{snapPct !== null ? (
 							<div aria-hidden className={styles.tlSnapGuide} style={{ left: `${snapPct}%` }} />
 						) : null}
@@ -1502,6 +1606,59 @@ export function V4Timeline({
 							</>
 						) : null}
 
+						{showLanes && visiblePauseSuggestions.length > 0 ? (
+							<div className={styles.tlLane} role="group" aria-label={t("labels.proposedCuts")}>
+								{visiblePauseSuggestions.map(({ suggestion, visible }) => (
+									<ProposedCutPill
+										key={suggestion.id}
+										cut={suggestion}
+										widthPx={(visible.endSec - visible.startSec) * pxPerSec}
+										onToggle={onPauseSuggestionToggle}
+										style={{
+											left: `${pctOf(visible.startSec)}%`,
+											width: `${Math.max(0, pctOf(visible.endSec - visible.startSec))}%`,
+										}}
+										sourceAtOffset={(edge, offsetPx) => {
+											const source =
+												edge === "start" ? suggestion.sourceStartSec : suggestion.sourceEndSec;
+											const raw =
+												edge === "start" ? suggestion.timelineStartSec : suggestion.timelineEndSec;
+											if (pxPerSec <= 0 || offsetPx === 0) return source;
+											return (
+												source +
+												toRawTime(
+													toPlaybackTime(raw) + offsetPx / pxPerSec,
+													edge === "start" ? "after" : "before",
+												) -
+												raw
+											);
+										}}
+									/>
+								))}
+							</div>
+						) : null}
+						{showLanes ? (
+							<CaptionTrack
+								cues={captionCues}
+								projection={projection}
+								total={total}
+								start={nav.start * total}
+								end={nav.end * total}
+								onSelect={(sec) => {
+									tl.clearSelection();
+									setCurrentTime(sec);
+									onOpenCaptions?.();
+								}}
+							/>
+						) : null}
+						{showLanes ? (
+							<BrollTrack
+								total={total}
+								start={nav.start * total}
+								end={nav.end * total}
+								onSeek={seekPlaybackTime}
+							/>
+						) : null}
 						<div
 							ref={clipsRef}
 							className={`${styles.tlClips}${dragOver ? ` ${styles.tlClipsDrag}` : ""}`}
@@ -1525,29 +1682,20 @@ export function V4Timeline({
 									toPlaybackTime={toPlaybackTime}
 								/>
 							) : null}
-							{showLanes && visiblePauseSuggestions.length > 0 ? (
-								<div className={styles.pauseCandidateOverlay}>
-									{visiblePauseSuggestions.map(({ suggestion, visible }) => (
-										<button
-											key={suggestion.id}
-											type="button"
-											className={`${styles.pauseCandidatePill}${suggestion.selected ? ` ${styles.pauseCandidateSelected}` : ""}`}
-											style={{
-												left: `${pctOf(visible.startSec)}%`,
-												width: `${Math.max(0, pctOf(visible.endSec - visible.startSec))}%`,
-											}}
-											title={t("labels.pauseSuggestion", {
-												duration: formatSec(suggestion.savedSec),
-											})}
-											onPointerDown={(event) => event.stopPropagation()}
-											onClick={(event) => {
-												event.stopPropagation();
-												onPauseSuggestionToggle?.(suggestion.id);
-											}}
-										/>
-									))}
-								</div>
-							) : null}
+							{showLanes &&
+								visiblePauseSuggestions.map(({ suggestion, visible }) => (
+									<div
+										key={suggestion.id}
+										aria-hidden="true"
+										data-testid={`proposed-cut-wash-${suggestion.id}`}
+										data-kind={suggestion.kind}
+										className={styles.proposedCutWash}
+										style={{
+											left: `${pctOf(visible.startSec)}%`,
+											width: `${Math.max(0, pctOf(visible.endSec - visible.startSec))}%`,
+										}}
+									/>
+								))}
 							{clipTracks.map((track) => {
 								const { clip: c, rawIndex: i } = track;
 								const dur = track.endSec - track.startSec;
@@ -1642,7 +1790,7 @@ export function V4Timeline({
 							{showLanes
 								? cuts.map((cut) => {
 										const durationSec = cut.end - cut.start;
-										const restoreLabel = `${t("inspector.restoreDeleteTrim")} · ${formatSec(durationSec)}`;
+										const restoreLabel = `${t("inspector.restoreDeleteTrim")}, ${formatSec(durationSec)}`;
 										const edgeClass =
 											cut.playbackSec <= 0.001
 												? styles.tlCutAtStart
@@ -1738,13 +1886,13 @@ export function V4Timeline({
 							onKeyDown={(e) => adjustNavFromKeyboard("pan", e)}
 						/>
 					</Tooltip>
-					<Tooltip content={`${t("labels.zoom")} · ${formatSec(nav.start * total)}`} side="top">
+					<Tooltip content={`${t("labels.zoom")}, ${formatSec(nav.start * total)}`} side="top">
 						<div
 							className={styles.tlNavHandle}
 							style={{ left: `calc(${(nav.start * 100).toFixed(2)}% - 6px)` }}
 							role="slider"
 							tabIndex={0}
-							aria-label={`${t("labels.zoom")} · ${formatSec(nav.start * total)}`}
+							aria-label={`${t("labels.zoom")}, ${formatSec(nav.start * total)}`}
 							aria-valuemin={0}
 							aria-valuemax={Math.round(nav.end * total)}
 							aria-valuenow={Math.round(nav.start * total)}
@@ -1754,13 +1902,13 @@ export function V4Timeline({
 							<span aria-hidden />
 						</div>
 					</Tooltip>
-					<Tooltip content={`${t("labels.zoom")} · ${formatSec(nav.end * total)}`} side="top">
+					<Tooltip content={`${t("labels.zoom")}, ${formatSec(nav.end * total)}`} side="top">
 						<div
 							className={styles.tlNavHandle}
 							style={{ left: `calc(${(nav.end * 100).toFixed(2)}% - 6px)` }}
 							role="slider"
 							tabIndex={0}
-							aria-label={`${t("labels.zoom")} · ${formatSec(nav.end * total)}`}
+							aria-label={`${t("labels.zoom")}, ${formatSec(nav.end * total)}`}
 							aria-valuemin={Math.round(nav.start * total)}
 							aria-valuemax={Math.round(total)}
 							aria-valuenow={Math.round(nav.end * total)}

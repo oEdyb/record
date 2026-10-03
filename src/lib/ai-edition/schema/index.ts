@@ -1,3 +1,4 @@
+import { overlayAnchorSchema } from "./overlayAnchor";
 // Vendored from @axcut/schema (https://github.com/EtienneLescot/axcut) —
 // original file: packages/axcut-schema/src/index.ts. Modifications for
 // OpenScreen's AI-edition merge (Phase 0, see technical-documentation/architecture/document-model.md):
@@ -11,6 +12,10 @@
 // shape — runtime ops, IPC, and exporter integration land in Phase 1+.
 
 import { z } from "zod";
+import { cameraAnchorSchema, clipLayoutOverrideSchema } from "../layout/schema";
+
+export type { ClipLayoutOverride } from "../layout/schema";
+
 // Cycle-safe: `aspectRatioUtils` has no schema dependency, and `document/outputFormat`
 // is downstream of schema. We import the leaf tokeniser directly so the v5→v6 upgrader
 // can rewrite `"native"` without dragging in the whole output-format module.
@@ -23,6 +28,11 @@ import { isMotionSpeed, type MotionSpeed } from "../../zoomMath/motionCurve";
 // module TYPE-ONLY, so requiring them here never re-enters schema at runtime.
 import { createId } from "../document/ids";
 import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
+import { audioAssetSchema, audioClipSchema, validateAudioReferences } from "./audioOverlays";
+import {
+	automaticDirectionDismissalsSchema,
+	automaticDirectionProvenanceSchema,
+} from "./automatic-direction-review";
 
 //   4. v5 — modifiers (zoom / annotation / speed / cameraFullscreen) become
 //      CLIP-ANCHORED fragments: `{clipId, sourceStartSec, sourceEndSec}` is the
@@ -46,7 +56,7 @@ import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
 //   9. v9 — transcript words/segments preserve captured source roles and each
 //      source keeps reproducibility evidence. Legacy transcripts become
 //      explicit `unknown-mixed` data; no speaker identity is guessed.
-export const axcutSchemaVersion = 9;
+export const axcutSchemaVersion = 11;
 
 // ponytail: every region schema shares the same monotonicity rule
 // (end >= start) with the same error shape. Factor the refine so the
@@ -418,6 +428,7 @@ export const timelineSchema = z.preprocess(
 	},
 	z.object({
 		clips: z.array(clipSchema).default([]),
+		audioClips: z.array(audioClipSchema).max(256).optional(),
 		gaps: z.array(gapSchema).default([]),
 		trimRanges: z.array(trimRangeSchema).default([]),
 		muteRanges: z.array(rangeSchema).default([]),
@@ -536,6 +547,7 @@ const figureDataSchema = z
 	.optional();
 
 const annotationStyleSchema = z.object({
+	preset: z.enum(["card", "lower-third", "label"]).optional(),
 	color: z.string().default("#ffffff"),
 	backgroundColor: z.string().default("transparent"),
 	// `backgroundColor: "transparent"` is how every renderer reads "no background", so switching
@@ -567,8 +579,40 @@ const clipAnchorShape = {
 	sourceEndSec: z.number().nonnegative().optional(),
 };
 
+/** B-roll video drawn above the screen layer and below the camera for a raw-timeline span. */
+export const videoOverlaySchema = endGteStart(
+	z.object({
+		anchor: overlayAnchorSchema.optional(),
+		motion: z.enum(["fade", "cut"]).optional(),
+		id: z.string().min(1),
+		startMs: z.number().nonnegative(),
+		endMs: z.number().nonnegative(),
+		...clipAnchorShape,
+		/** References `assets[].id` (kind video). The overlay never contributes audio. */
+		assetId: z.string().min(1),
+		/** Overlay source time at `startMs`. */
+		sourceOffsetSec: z.number().nonnegative().max(10_800),
+		fit: z.enum(["cover", "contain"]).default("cover"),
+		/** Percent of the screen layer, top-left plus extent. Null fills the screen layer. */
+		placement: z
+			.object({
+				x: z.number().min(0).max(100),
+				y: z.number().min(0).max(100),
+				width: z.number().positive().max(100),
+				height: z.number().positive().max(100),
+			})
+			.nullable()
+			.default(null),
+		opacity: z.number().min(0).max(1).default(1),
+	}),
+	"endMs",
+	"startMs",
+);
+
 export const annotationRegionSchema = endGteStart(
 	z.object({
+		anchor: overlayAnchorSchema.optional(),
+		motion: z.enum(["fade", "rise", "cut", "instant"]).optional(),
 		id: z.string().min(1),
 		startMs: z.number().nonnegative(),
 		endMs: z.number().nonnegative(),
@@ -620,6 +664,7 @@ export const zoomRegionSchema = endGteStart(
 		motionSpeed: z.custom<MotionSpeed>(isMotionSpeed, "Invalid motion speed").optional(),
 		source: z.enum(["auto", "manual"]).optional(),
 		directionGroupId: z.string().min(1).optional(),
+		automaticDirection: automaticDirectionProvenanceSchema.optional(),
 	}),
 	"endMs",
 	"startMs",
@@ -633,7 +678,34 @@ export const zoomRegionSchema = endGteStart(
 // of which (autoZoomEnabled, autoFocusAll, cursorTheme, …) have no first-class
 // home yet. Phase 1 timeline rewrite + Phase 9 settings sync will tighten this.
 // Round-trip through the migration must be lossless for now.
-export const legacyEditorSchema = z.object({}).passthrough().nullable().default(null);
+export const legacyEditorSchema = z
+	.object({
+		safeMarginPercent: z.number().finite().min(0).max(50).optional(),
+		cameraAnchor: cameraAnchorSchema.optional(),
+	})
+	.passthrough()
+	.superRefine((legacy, context) => {
+		// Tighten only new provenance; older legacy settings keep their existing contract.
+		if (!Array.isArray(legacy.cameraFullscreenRegions)) return;
+		legacy.cameraFullscreenRegions.forEach((region: unknown, index: number) => {
+			if (
+				!region ||
+				typeof region !== "object" ||
+				!("automaticDirection" in region) ||
+				region.automaticDirection === undefined
+			)
+				return;
+			if (!automaticDirectionProvenanceSchema.safeParse(region.automaticDirection).success) {
+				context.addIssue({
+					code: "custom",
+					message: "Invalid automatic direction provenance",
+					path: ["cameraFullscreenRegions", index, "automaticDirection"],
+				});
+			}
+		});
+	})
+	.nullable()
+	.default(null);
 
 const documentSchemaShape = z.object({
 	schemaVersion: z.literal(axcutSchemaVersion),
@@ -645,6 +717,7 @@ const documentSchemaShape = z.object({
 		primaryAssetId: z.string().optional(),
 	}),
 	assets: z.array(assetSchema).default([]),
+	audioAssets: z.array(audioAssetSchema).max(256).optional(),
 	transcript: transcriptSchema.nullable().default(null),
 	transcripts: z.array(transcriptSchema).default([]),
 	timeline: timelineSchema.default({
@@ -656,8 +729,11 @@ const documentSchemaShape = z.object({
 		captionRanges: [],
 	}),
 	annotations: z.array(annotationRegionSchema).default([]),
+	videoOverlays: z.array(videoOverlaySchema).max(256).optional(),
 	zoomRanges: z.array(zoomRegionSchema).default([]),
+	automaticDirectionDismissals: automaticDirectionDismissalsSchema.optional(),
 	legacyEditor: legacyEditorSchema.nullable().default(null),
+	clipLayouts: z.record(z.string().min(1), clipLayoutOverrideSchema).optional(),
 });
 
 // P4 — v3 documents carried a single project-level `cameraTrack` (one project
@@ -985,13 +1061,31 @@ export function upgradeV8DocumentToV9(raw: unknown): unknown {
  * not configure for the main bundle. Keep this module alias-free.
  */
 export function migrateRawDocumentToCurrent(raw: unknown): unknown {
-	return upgradeV8DocumentToV9(
-		upgradeV7DocumentToV8(
-			upgradeV6DocumentToV7(
-				upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw))),
+	return upgradeV10DocumentToV11(
+		upgradeV9DocumentToV10(
+			upgradeV8DocumentToV9(
+				upgradeV7DocumentToV8(
+					upgradeV6DocumentToV7(
+						upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw))),
+					),
+				),
 			),
 		),
 	);
+}
+
+/** v11 owns video B-roll overlays. Older readers must reject rather than silently drop them. */
+export function upgradeV10DocumentToV11(raw: unknown): unknown {
+	if (!raw || typeof raw !== "object" || !("schemaVersion" in raw) || raw.schemaVersion !== 10)
+		return raw;
+	return { ...raw, schemaVersion: 11, videoOverlays: [] };
+}
+
+/** v10 owns editable audio overlays. Older readers must reject rather than silently drop them. */
+export function upgradeV9DocumentToV10(raw: unknown): unknown {
+	if (!raw || typeof raw !== "object" || !("schemaVersion" in raw) || raw.schemaVersion !== 9)
+		return raw;
+	return { ...raw, schemaVersion: 10 };
 }
 
 // PURE v8 validation. Callers that read a document from disk (or any other
@@ -1001,7 +1095,26 @@ export function migrateRawDocumentToCurrent(raw: unknown): unknown {
 // v3→…→v8 chain on EVERY parse, including in-memory parses of documents that
 // were already current. Hoisting it to load time makes the in-memory parse a
 // single `z.literal(8)` + shape check.
-export const documentSchema = documentSchemaShape;
+export const documentSchema = documentSchemaShape.superRefine((doc, ctx) => {
+	const videoAssetIds = new Set(doc.assets.map((asset) => asset.id));
+	(doc.videoOverlays ?? []).forEach((overlay, index) => {
+		if (!videoAssetIds.has(overlay.assetId))
+			ctx.addIssue({
+				code: "custom",
+				path: ["videoOverlays", index, "assetId"],
+				message: `Missing video asset for overlay ${overlay.id}`,
+			});
+	});
+	try {
+		validateAudioReferences(doc.audioAssets ?? [], doc.timeline.audioClips ?? []);
+	} catch (error) {
+		ctx.addIssue({
+			code: "custom",
+			path: ["timeline", "audioClips"],
+			message: error instanceof Error ? error.message : "Invalid audio references",
+		});
+	}
+});
 
 export const createProjectInputSchema = z.object({
 	title: z.string().trim().min(1).default("Untitled Project"),
@@ -1048,6 +1161,7 @@ export type AxcutTrimRange = z.infer<typeof trimRangeSchema>;
 export type AxcutTimeline = z.infer<typeof timelineSchema>;
 export type AxcutTimelineOperation = z.infer<typeof timelineOperationSchema>;
 export type AxcutAnnotationRegion = z.infer<typeof annotationRegionSchema>;
+export type AxcutVideoOverlay = z.infer<typeof videoOverlaySchema>;
 export type AxcutZoomRegion = z.infer<typeof zoomRegionSchema>;
 export type AxcutCameraTrack = z.infer<typeof cameraTrackSchema>;
 export type AxcutLegacyEditor = z.infer<typeof legacyEditorSchema>;
@@ -1081,6 +1195,7 @@ export function createEmptyDocument(
 			captionRanges: [],
 		},
 		annotations: [],
+		videoOverlays: [],
 		zoomRanges: [],
 		legacyEditor: null,
 	});

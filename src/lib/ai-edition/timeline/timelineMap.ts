@@ -1,3 +1,4 @@
+import type { OverlayAnchor } from "../schema/overlayAnchor";
 // The single place that maps between the timeline's three coordinate systems.
 // See technical-documentation/architecture/timeline-model.md.
 //
@@ -377,6 +378,7 @@ export function anchorRegionsWithDerivedMs<
 	T extends { id: string; startMs: number; endMs: number },
 >(regions: T[], clips: AxcutClip[], makeId: () => string): MigratedRegion<T>[] {
 	return regions.flatMap<MigratedRegion<T>>((region) => {
+		if ("anchor" in region && region.anchor) return [region];
 		const frags = anchorRawRegionsToClips([region], clips, makeId);
 		if (frags.length === 0) return [region];
 		return frags.map((frag) => {
@@ -514,6 +516,7 @@ export function projectRawSpanToPlaybackSpan(
 /** The clip anchor a region may carry: WHERE IN THE SOURCE MEDIA it lives. Optional
  *  by design — migration keeps a region it cannot anchor rather than dropping it. */
 interface RegionClipAnchor {
+	anchor?: OverlayAnchor;
 	clipId?: string;
 	sourceStartSec?: number;
 	sourceEndSec?: number;
@@ -553,6 +556,16 @@ function hasCompleteClipAnchor<T extends RegionClipAnchor>(
  * the emitted `clipIndex` lines up with the native stream; `rawClips` is
  * `document.timeline.clips`.
  */
+export interface ProjectedRegionPiece {
+	clipIndex?: number;
+	/** The whole region's start/end in this piece's source-ms clock (see `emit` below). */
+	envelopeStartMs?: number;
+	envelopeEndMs?: number;
+}
+
+/** How far past a snapped cut the ease is placed so the region is at full strength on the cut. */
+const SNAPPED_EASE_MARGIN_SEC = 3;
+
 export function projectRegionsToSource<
 	T extends { id: string; startMs: number; endMs: number } & RegionClipAnchor,
 >(
@@ -560,27 +573,70 @@ export function projectRegionsToSource<
 	visibleSegments: AxcutClip[],
 	rawClips: AxcutClip[],
 	makeId: () => string,
-): (T & { clipIndex?: number })[] {
+	snapToCutSec = 0,
+): (T & ProjectedRegionPiece)[] {
 	// RAW extents + owning raw clip per visible segment. Both are only consulted by the
 	// path that needs them (raw fallback / anchor match), but resolving them once keeps
 	// the per-region loop free of repeated lookups.
 	const spans = visibleSegments.map((seg) => segmentRawSpanSec(seg, rawClips));
 	const segmentRawClipIds = visibleSegments.map((seg) => findRawClipForSegment(seg, rawClips)?.id);
-	const out: (T & { clipIndex?: number })[] = [];
+	const out: (T & ProjectedRegionPiece)[] = [];
 	for (const region of regions) {
 		let emitted = 0;
-		const emit = (clipIndex: number, srcStartSec: number, srcEndSec: number) => {
+		// A region that a trim or clip boundary splits into pieces keeps the whole region's
+		// span on every piece, in that piece's source clock, so a piece cut from the middle
+		// does not restart the region's ease-in or drift at the cut.
+		// A region edge that lands within `snapToCutSec` of a cut moves onto the cut, with
+		// its ease already complete there: the cut itself is the transition, so a few frames
+		// of the other layout followed by an ease read as a flash.
+		const emit = (
+			clipIndex: number,
+			pieceStartSec: number,
+			pieceEndSec: number,
+			pieceEnvelopeStartSec: number,
+			pieceEnvelopeEndSec: number,
+			segmentStartSec = pieceStartSec,
+			segmentEndSec = pieceEndSec,
+		) => {
+			let srcStartSec = pieceStartSec;
+			let srcEndSec = pieceEndSec;
+			let envelopeStartSec = pieceEnvelopeStartSec;
+			let envelopeEndSec = pieceEnvelopeEndSec;
+			if (snapToCutSec > 0) {
+				const startGap = srcStartSec - segmentStartSec;
+				if (startGap > 0 && startGap <= snapToCutSec) {
+					srcStartSec = segmentStartSec;
+					envelopeStartSec = segmentStartSec - SNAPPED_EASE_MARGIN_SEC;
+				}
+				const endGap = segmentEndSec - srcEndSec;
+				if (endGap > 0 && endGap <= snapToCutSec) {
+					srcEndSec = segmentEndSec;
+					envelopeEndSec = segmentEndSec + SNAPPED_EASE_MARGIN_SEC;
+				}
+			}
 			out.push({
 				...region,
 				id: emitted === 0 ? region.id : makeId(),
 				startMs: Math.round(srcStartSec * 1000),
 				endMs: Math.round(srcEndSec * 1000),
 				clipIndex,
+				envelopeStartMs: Math.round(envelopeStartSec * 1000),
+				envelopeEndMs: Math.round(envelopeEndSec * 1000),
 			});
 			emitted += 1;
 		};
 
-		if (hasCompleteClipAnchor(region)) {
+		if (region.anchor?.kind === "edited") {
+			const { fromSec, toSec } = region.anchor;
+			const projection = buildTimelinePlaybackProjection(visibleSegments, rawClips);
+			projection.forEach((part, clipIndex) => {
+				const start = Math.max(fromSec, part.playbackStartSec);
+				const end = Math.min(toSec, part.playbackEndSec);
+				if (end <= start) return;
+				const offset = part.segment.sourceStartSec - part.playbackStartSec;
+				emit(clipIndex, start + offset, end + offset, fromSec + offset, toSec + offset);
+			});
+		} else if (hasCompleteClipAnchor(region)) {
 			// ANCHORED — the region already states where it lives in the source media, so
 			// there is nothing to project: intersect its source span with each kept segment
 			// of its OWN clip. No detour through raw-virtual time means no dependency on the
@@ -590,10 +646,11 @@ export function projectRegionsToSource<
 			const hi = Math.max(region.sourceStartSec, region.sourceEndSec);
 			visibleSegments.forEach((seg, clipIndex) => {
 				if (segmentRawClipIds[clipIndex] !== region.clipId) return;
+				const segEnd = seg.sourceEndSec ?? seg.sourceStartSec;
 				const s = Math.max(lo, seg.sourceStartSec);
-				const e = Math.min(hi, seg.sourceEndSec ?? seg.sourceStartSec);
+				const e = Math.min(hi, segEnd);
 				if (e <= s) return;
-				emit(clipIndex, s, e);
+				emit(clipIndex, s, e, lo, hi, seg.sourceStartSec, segEnd);
 			});
 		} else {
 			// UNANCHORED — migration kept this region rather than dropping it (see
@@ -610,6 +667,10 @@ export function projectRegionsToSource<
 					clipIndex,
 					seg.sourceStartSec + (s - segRawStart),
 					seg.sourceStartSec + (e - segRawStart),
+					seg.sourceStartSec + (lo - segRawStart),
+					seg.sourceStartSec + (hi - segRawStart),
+					seg.sourceStartSec,
+					seg.sourceStartSec + (segRawEnd - segRawStart),
 				);
 			});
 		}

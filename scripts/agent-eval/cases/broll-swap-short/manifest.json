@@ -1,0 +1,20 @@
+{
+	"id": "broll-swap-short",
+	"title": "Swap a B-roll overlay to shorter media",
+	"pending": null,
+	"source_project": "/Users/olle/Library/Application Support/openscreen/projects/proj_77f9202f-6dfd-4bff-891a-df2177b88760.klippt",
+	"grader": {
+		"project_hash": "changed",
+		"staged": { "min": 0, "max": 0 },
+		"check": { "max_new_errors": 0 },
+		"transcript_unchanged": true,
+		"frames": { "min": 2 },
+		"outcome": {
+			"swapped_overlay": {
+				"asset_path_prefix": "/Users/olle/dev/kimi-swarm-arena/_staging/play-2026-09-11/clips/",
+				"min_asset_duration_sec": 7,
+				"max_asset_duration_sec": 12
+			}
+		}
+	}
+}

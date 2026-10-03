@@ -101,6 +101,7 @@ export function LaunchWindow() {
 	const languageCode = locale.split("-")[0].toUpperCase();
 
 	const {
+		preferencesReady,
 		recording,
 		paused,
 		saving,
@@ -168,11 +169,11 @@ export function LaunchWindow() {
 	const isVertical = trayLayout === "vertical";
 	// Recording always keeps the established horizontal HUD as its first row.
 	// The saved tray preference still applies again when recording ends.
-	const hudIsVertical = isVertical && !recording;
+	const hudIsVertical = isVertical && !recording && !openedFromEditor;
 	// Pause is a transport-state change, not a layout change. Keep the compact
 	// HUD mounted so Pause becomes Continue in the same physical slot. The user
 	// can still open the full setup and clip-history panel with the size control.
-	const compactRecordingHud = recording && !activeHudExpanded;
+	const compactRecordingHud = (recording || openedFromEditor) && !activeHudExpanded;
 	const isPopoverOpen = isLanguageMenuOpen || isDeviceSettingsOpen;
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
@@ -242,16 +243,35 @@ export function LaunchWindow() {
 		devices: micDevices,
 		selectedDeviceId: selectedMicId,
 		setSelectedDeviceId: setSelectedMicId,
+		isLoading: isMicDevicesLoading,
 	} = useMicrophoneDevices(microphoneEnabled || isDeviceSettingsOpen);
 
 	useEffect(() => {
+		if (!preferencesReady || isMicDevicesLoading || !micDevices.length) return;
+		if (microphoneDeviceId && micDevices.some((device) => device.deviceId === microphoneDeviceId)) {
+			if (microphoneDeviceId !== selectedMicId) setSelectedMicId(microphoneDeviceId);
+			setMicrophoneDeviceName(
+				micDevices.find((device) => device.deviceId === microphoneDeviceId)?.label,
+			);
+			return;
+		}
 		if (selectedMicId && selectedMicId !== "default") {
 			setMicrophoneDeviceId(selectedMicId);
 			setMicrophoneDeviceName(micDevices.find((d) => d.deviceId === selectedMicId)?.label);
 		}
-	}, [selectedMicId, micDevices, setMicrophoneDeviceId, setMicrophoneDeviceName]);
+	}, [
+		preferencesReady,
+		isMicDevicesLoading,
+		microphoneDeviceId,
+		selectedMicId,
+		micDevices,
+		setSelectedMicId,
+		setMicrophoneDeviceId,
+		setMicrophoneDeviceName,
+	]);
 
 	useEffect(() => {
+		if (!preferencesReady || isCameraDevicesLoading || !cameraDevices.length) return;
 		if (
 			webcamDeviceId &&
 			webcamDeviceId !== selectedCameraId &&
@@ -265,6 +285,8 @@ export function LaunchWindow() {
 			setWebcamDeviceName(cameraDevices.find((d) => d.deviceId === selectedCameraId)?.label);
 		}
 	}, [
+		preferencesReady,
+		isCameraDevicesLoading,
 		selectedCameraId,
 		cameraDevices,
 		setSelectedCameraId,
@@ -345,7 +367,11 @@ export function LaunchWindow() {
 			const insideTrigger =
 				settingsTriggerRef.current?.contains(target) ||
 				languageTriggerRef.current?.contains(target);
-			if (!insideTrigger && !popoverRef.current?.contains(target)) {
+			// A select inside the panel renders its option list in a portal on
+			// document.body; clicking an option there is not a dismissal.
+			const insideSelectPortal =
+				target instanceof Element && target.closest("[data-klippt-select-content]") !== null;
+			if (!insideTrigger && !insideSelectPortal && !popoverRef.current?.contains(target)) {
 				closePopovers();
 			}
 		};
@@ -1049,27 +1075,42 @@ export function LaunchWindow() {
 							/>
 							<HudDivider vertical={false} />
 							<HudRecordButton
-								recording
+								recording={recording}
 								paused={paused}
 								saving={saving}
-								disabled={saving || clipFinalizing}
+								disabled={
+									saving ||
+									clipFinalizing ||
+									(!recording && (!preferencesReady || (microphoneEnabled && isMicDevicesLoading)))
+								}
 								elapsedSeconds={elapsedSeconds}
-								label="Stop and open editor"
+								label={recording ? "Stop and open editor" : recordLabel}
 								savingLabel={t("recording.saving")}
 								onClick={handleRecordClick}
 							/>
-							<HudCompactPauseButton
-								paused={paused}
-								disabled={saving || clipFinalizing || !canPauseRecording}
-								label={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
-								onClick={togglePaused}
-							/>
-							<HudRemovePreviousClipButton
-								disabled={saving || clipFinalizing || !canRemovePreviousClip}
-								label={removePreviousLabel}
-								tooltip={removePreviousTooltip}
-								onClick={handleRemovePreviousClip}
-							/>
+							{recording && (
+								<HudCompactPauseButton
+									paused={paused}
+									disabled={saving || clipFinalizing || !canPauseRecording}
+									label={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
+									onClick={togglePaused}
+								/>
+							)}
+							{recording && (
+								<HudRemovePreviousClipButton
+									disabled={saving || clipFinalizing || !canRemovePreviousClip}
+									label={removePreviousLabel}
+									tooltip={removePreviousTooltip}
+									onClick={handleRemovePreviousClip}
+								/>
+							)}
+							{!recording && (
+								<HudStudioButton
+									disabled={saving}
+									label={t("tooltips.openStudio")}
+									onClick={openStudio}
+								/>
+							)}
 							<HudRecordingSizeButton
 								expanded={false}
 								label={t("tooltips.showRecordingControls")}
@@ -1182,7 +1223,12 @@ export function LaunchWindow() {
 									recording={recording}
 									paused={paused}
 									saving={saving}
-									disabled={saving || clipFinalizing}
+									disabled={
+										saving ||
+										clipFinalizing ||
+										(!recording &&
+											(!preferencesReady || (microphoneEnabled && isMicDevicesLoading)))
+									}
 									elapsedSeconds={elapsedSeconds}
 									label={recording ? "Stop and open editor" : recordLabel}
 									savingLabel={t("recording.saving")}
@@ -1233,7 +1279,7 @@ export function LaunchWindow() {
 									data-testid="hud-right-controls"
 									className={`flex items-center gap-[5px] ${hudIsVertical ? "flex-col" : "ml-auto"} ${styles.electronNoDrag}`}
 								>
-									{recording && (
+									{(recording || openedFromEditor) && (
 										<HudRecordingSizeButton
 											expanded
 											label={t("tooltips.hideRecordingControls")}

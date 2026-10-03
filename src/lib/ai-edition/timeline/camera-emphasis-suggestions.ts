@@ -5,6 +5,7 @@ import type { KeyboardActivitySample } from "@/native/contracts";
 import { createId } from "../document/ids";
 import { resolvePlaybackSegments } from "../document/timeline";
 import type { AxcutClip, AxcutDocument, AxcutTrimRange } from "../schema";
+import type { AutomaticDirectionProvenance } from "../schema/automatic-direction-review";
 import { type DirectionCursorSample, normalizeDirectionCursor } from "./direction-engine";
 import type { MicrophoneActivitySpan } from "./microphone-activity";
 import { anchorRegionsWithDerivedMs } from "./timelineMap";
@@ -16,6 +17,7 @@ export interface AutoCameraEmphasisSuggestion {
 	source: "auto";
 	/** Stable ownership after a plan namespaces and persists this suggestion. */
 	directionGroupId?: string;
+	automaticDirection?: AutomaticDirectionProvenance;
 }
 
 export interface CameraEmphasisPolicy {
@@ -49,7 +51,7 @@ export const DEFAULT_CAMERA_EMPHASIS_POLICY: CameraEmphasisPolicy = {
 	motionBucketMs: 250,
 	motionPathThreshold: 0.018,
 	maxPerMinute: 2,
-	maxTotalDirectionPerMinute: 5,
+	maxTotalDirectionPerMinute: 12,
 	screenToCameraSpacingMs: 500,
 	minimumSpacingMs: 4_000,
 	cameraScale: 1.35,
@@ -455,7 +457,10 @@ export function buildAutoCameraEmphasisSuggestionsForTimeline(options: {
 	}
 	return selected
 		.sort((a, b) => a.span.start - b.span.start)
-		.map(({ score: _score, ...suggestion }) => suggestion);
+		.map(({ score: _score, ...suggestion }) => ({
+			...suggestion,
+			automaticDirection: { version: 1 as const, reason: "speech-with-quiet-screen" as const },
+		}));
 }
 
 export function appendAutoCameraEmphasisSuggestions(
@@ -478,6 +483,9 @@ export function appendAutoCameraEmphasisSuggestions(
 					source: suggestion.source,
 					motionStyle: NEW_CAMERA_MOTION_STYLE,
 					motionSpeed: DEFAULT_MOTION_SPEED,
+					...(suggestion.automaticDirection
+						? { automaticDirection: suggestion.automaticDirection }
+						: {}),
 					...(suggestion.directionGroupId ? { directionGroupId: suggestion.directionGroupId } : {}),
 				},
 			],

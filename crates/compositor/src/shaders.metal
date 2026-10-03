@@ -53,7 +53,7 @@ struct Layer
     float  radius_px; // rayon des coins arrondis en px (0 = aucun)
     float  mode;      // 0 = vidéo NV12, 1 = couleur pleine, 2 = ombre portée, ...
     float4 color;     // couleur pleine / teinte (ombre : rgb + opacité dans a)
-    float4 fx;        // fx.x = spread ombre (px), fx.y,fx.z libres
+    float4 fx;        // modes 0/2: fx.y = squircle flag; mode 2: fx.x = shadow spread (px)
     float4 src_prev;  // src à la frame précédente (flou de mouvement par vélocité)
     float4 dst_prev;  // dst à la frame précédente
     float4 mb;        // mb.x = nombre de taps de motion blur (1 = désactivé)
@@ -149,6 +149,21 @@ inline float sd_round_rect(float2 p, float2 halfsz, float r)
 {
     float2 q = abs(p) - halfsz + r;
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+inline float sd_camera_rect(float2 p, float2 halfsz, float radius, float squircle)
+{
+    // L4 superellipse corners: zero curvature where each corner meets the straight edge.
+    // Radius controls corner size; half the square side gives x^4 + y^4 = r^4.
+    // CSS Borders 4 corner-shape uses the same fourth-power squircle definition.
+    if (squircle < 0.5) {
+        return sd_round_rect(p, halfsz, radius);
+    }
+    float r = clamp(radius, 0.0, min(halfsz.x, halfsz.y));
+    float2 q = abs(p) - halfsz + r;
+    float2 v = max(q, 0.0);
+    float2 v2 = v * v;
+    return sqrt(sqrt(dot(v2, v2))) + min(max(q.x, q.y), 0.0) - r;
 }
 
 // Intersection de deux droites données par (normale, offset) : n·x = d. Cramer.
@@ -461,7 +476,7 @@ fragment float4 ps_main(VSOut i [[stage_in]],
         float spread = layer.fx.x;
         float2 halfsz = layer.quad_px * 0.5 - spread;
         float2 p = i.local - layer.quad_px * 0.5;
-        float d = sd_round_rect(p, halfsz, layer.radius_px);
+        float d = sd_camera_rect(p, halfsz, layer.radius_px, layer.fx.y);
         float a = layer.color.a * (1.0 - smoothstep(0.0, spread, d));
         return float4(layer.color.rgb * a, a);
     }
@@ -501,7 +516,7 @@ fragment float4 ps_main(VSOut i [[stage_in]],
     {
         float2 halfsz = layer.quad_px * 0.5;
         float2 p = i.local - layer.quad_px * 0.5;
-        float d = sd_round_rect(p, halfsz, layer.radius_px);
+        float d = sd_camera_rect(p, halfsz, layer.radius_px, layer.fx.y);
         alpha *= 1.0 - smoothstep(0.0, 1.5, d);
     }
     return float4(rgb * alpha, alpha);

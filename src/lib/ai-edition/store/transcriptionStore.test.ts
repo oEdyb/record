@@ -46,7 +46,7 @@ function asset(id: string, extra: Record<string, unknown> = {}) {
 
 function makeDoc(assetIds: string[], projectId = "proj_1"): AxcutDocument {
 	return {
-		schemaVersion: 9,
+		schemaVersion: 11,
 		project: {
 			id: projectId,
 			title: "Test",

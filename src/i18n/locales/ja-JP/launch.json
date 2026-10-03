@@ -31,7 +31,11 @@
 			"fontSize": "フォントサイズ",
 			"decreaseFontSize": "フォントサイズを小さくする",
 			"increaseFontSize": "フォントサイズを大きくする",
-			"mirror": "左右反転"
+			"mirror": "左右反転",
+			"more": "その他のコントロール",
+			"less": "コントロールを減らす",
+			"close": "メモを閉じる",
+			"move": "メモを移動"
 		}
 	},
 	"audio": {
@@ -75,7 +79,7 @@
 		"inProgress": "録画中",
 		"saving": "保存中...",
 		"removePreviousClip": "前のクリップを削除",
-		"removePreviousClipWithDuration": "前のクリップを削除 · {{duration}}",
+		"removePreviousClipWithDuration": "前のクリップを削除 ({{duration}})",
 		"clipRemoved": "削除済み"
 	},
 	"language": "言語",

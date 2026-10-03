@@ -53,12 +53,6 @@ function normalizePolicy(value: unknown): PauseAnalysisPolicy {
 			typeof raw.includeNonSpeechEvents === "boolean"
 				? raw.includeNonSpeechEvents
 				: DEFAULT_PAUSE_POLICY.includeNonSpeechEvents,
-		nonSpeechMaximumProbability: number(
-			raw.nonSpeechMaximumProbability,
-			DEFAULT_PAUSE_POLICY.nonSpeechMaximumProbability,
-			0.05,
-			0.4,
-		),
 		protectSystemAudio:
 			typeof raw.protectSystemAudio === "boolean"
 				? raw.protectSystemAudio

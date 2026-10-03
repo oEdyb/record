@@ -1,18 +1,13 @@
-// The Captions facet of the floating inspector.
-//
-// Captions have nothing to do with annotations any more: there is no "generate"
-// step that stamps text onto the timeline, because the caption layer IS the
-// transcript, read through this panel's settings. So every control here changes
-// how the transcript is *shown* — never what it says.
-//
-// The one exception is the translation row, and even that is additive: a
-// translation is stored beside the transcript, keyed by segment id, and picking
-// "Original" goes straight back to the SSOT text.
+// Caption appearance, translations, and explicit source-word corrections.
 
 import { Languages, Loader2, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AppSelect } from "@/components/ui/app-select";
-import { InspectorPane, InspectorSegmentedControl } from "@/components/ui/inspector";
+import {
+	InspectorPane,
+	InspectorSection,
+	InspectorSegmentedControl,
+} from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { CaptionTextAlign, CaptionVerticalPosition } from "@/lib/ai-edition/captions";
 import { untranslatedUnits } from "@/lib/ai-edition/captions";
@@ -23,6 +18,7 @@ import {
 } from "@/lib/ai-edition/store/transcriptionStore";
 import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
 import { nativeBridgeClient } from "@/native";
+import { CaptionCorrection } from "./CaptionCorrection";
 import { ColorField } from "./ColorField";
 import styles from "./NewEditorShell.module.css";
 import { SliderCell, Toggle } from "./RightPanes";
@@ -178,7 +174,8 @@ export function CaptionsPane() {
 		<InspectorPane
 			title={t("facets.captions")}
 			helpLabel={t("panes.help")}
-			className={styles.flatInspectorPane}
+			className={`${styles.flatInspectorPane} ${styles.captionInspector}`}
+			helpText={t("captions.derivedFromTranscript", { count: cues.length })}
 		>
 			<div className={styles.paneRow}>
 				<span className="label">{t("captions.show")}</span>
@@ -206,16 +203,7 @@ export function CaptionsPane() {
 						{isTranscribing ? t("captions.transcribing") : t("captions.transcribe")}
 					</button>
 				</div>
-			) : (
-				<p className={styles.captionHint}>
-					{/* The cue count is only meaningful while the layer is on — deriving
-						    cues short-circuits when it's off, so a "0 lines" reading there
-						    would say the transcript is empty when it isn't. */}
-					{settings.enabled
-						? t("captions.derivedFromTranscript", { count: cues.length })
-						: t("captions.hiddenHint")}
-				</p>
-			)}
+			) : null}
 
 			{legacyCaptionAnnotations.length > 0 ? (
 				<div className={styles.captionLegacyNotice}>
@@ -235,227 +223,241 @@ export function CaptionsPane() {
 				</div>
 			) : null}
 
-			{/* ── Language ───────────────────────────────────────────── */}
-			<div className={styles.sectionLabel}>{t("captions.language")}</div>
-			<div className={styles.paneRow}>
-				<span className="label">{t("captions.displayLanguage")}</span>
-				<AppSelect
-					value={settings.language ?? ""}
-					disabled={disabled}
-					onChange={(e) => void set({ language: e.target.value || null })}
-					className={styles.inspectorCompactSelect}
-				>
-					<option value="">{t("captions.original")}</option>
-					{languageOptions.map((entry) => (
-						<option key={entry.language} value={entry.language}>
-							{entry.label}
-						</option>
-					))}
-				</AppSelect>
-			</div>
-
-			<div className={styles.captionTranslationRow}>
-				<AppSelect
-					value={target}
-					disabled={disabled || translating}
-					onChange={(e) => setTarget(e.target.value)}
-					className={`${styles.inspectorCompactSelect} ${styles.inspectorGrowSelect}`}
-				>
-					{TRANSLATION_LANGUAGES.map((language) => (
-						<option key={language.code} value={language.code}>
-							{language.label}
-						</option>
-					))}
-				</AppSelect>
-				<button
-					type="button"
-					className={`${styles.btn} ${styles.btnSecondary}`}
-					disabled={disabled || translating || !hasTranscript}
-					onClick={() => void handleTranslate()}
-					title={t("captions.translateHint")}
-				>
-					{translating ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
-					{translating ? t("captions.translating") : t("captions.translate")}
-				</button>
-			</div>
-			{settings.language ? (
-				<button
-					type="button"
-					className={`${styles.btn} ${styles.btnSecondary} ${styles.captionDeleteTranslation}`}
-					disabled={disabled}
-					onClick={() => void deleteTranslation(settings.language as string)}
-				>
-					<Trash2 size={13} />
-					{t("captions.deleteTranslation")}
-				</button>
-			) : null}
-			{translateError ? <p className={styles.captionError}>{translateError}</p> : null}
-			<p className={styles.captionFinePrint}>{t("captions.translationIsNonDestructive")}</p>
+			<CaptionCorrection language={settings.language} />
 
 			{/* ── Text ───────────────────────────────────────────────── */}
-			<div className={styles.sectionLabel}>{t("captions.text")}</div>
-			<div className={styles.paneRow}>
-				<span className="label">{t("captions.font")}</span>
-				<AppSelect
-					value={settings.fontFamily}
-					disabled={disabled}
-					onChange={(e) => void set({ fontFamily: e.target.value })}
-					className={styles.inspectorCompactSelect}
-				>
-					{CAPTION_FONTS.map((font) => (
-						<option key={font} value={font} style={{ fontFamily: font }}>
-							{font}
-						</option>
-					))}
-				</AppSelect>
-			</div>
-			<div className={styles.paneRow}>
-				<span className="label">{t("captions.bold")}</span>
-				<Toggle
-					checked={settings.fontWeight === "bold"}
-					disabled={disabled}
-					label={t("captions.bold")}
-					onChange={(next) => void set({ fontWeight: next ? "bold" : "normal" })}
-				/>
-			</div>
-			<div className={styles.sliderGrid}>
-				<SliderCell
-					label={t("captions.fontSize")}
-					value={settings.fontSize}
-					min={16}
-					max={140}
-					suffix="px"
-					disabled={disabled}
-					onChange={(v) => setLive({ fontSize: v })}
-					onCommit={() => void commit()}
-				/>
-			</div>
-			<div className={styles.paneRow}>
-				<span className="label">{t("captions.textColor")}</span>
-				<ColorField
-					label={t("captions.textColor")}
-					value={settings.color}
-					disabled={disabled}
-					onChange={(color) => setLive({ color })}
-					onCommit={() => void commit()}
-				/>
-			</div>
-
-			{/* ── Background ─────────────────────────────────────────── */}
-			<div className={styles.sectionLabel}>{t("captions.background")}</div>
-			{/* Colour + switch on one row, exactly like the annotation pane's text
-				    background: the swatch keeps showing the remembered colour while the
-				    plate is off, because that is what turning it back on will draw. */}
-			<div className={styles.paneRow}>
-				<span className="label">{t("captions.background")}</span>
-				<div className={styles.captionBackgroundControls}>
-					<ColorField
-						label={t("captions.backgroundColor")}
-						value={settings.backgroundColor}
+			<InspectorSection title={t("captions.text")}>
+				<div className={styles.paneRow}>
+					<span className="label">{t("captions.font")}</span>
+					<AppSelect
+						aria-label={t("captions.font")}
+						value={settings.fontFamily}
 						disabled={disabled}
-						onChange={(backgroundColor) => setLive({ backgroundColor })}
-						onCommit={() => void commit()}
-					/>
+						onChange={(e) => void set({ fontFamily: e.target.value })}
+						className={styles.inspectorCompactSelect}
+					>
+						{!CAPTION_FONTS.some((font) => font === settings.fontFamily) ? (
+							<option value={settings.fontFamily}>{settings.fontFamily}</option>
+						) : null}
+						{CAPTION_FONTS.map((font) => (
+							<option key={font} value={font} style={{ fontFamily: font }}>
+								{font}
+							</option>
+						))}
+					</AppSelect>
+				</div>
+				<div className={styles.paneRow}>
+					<span className="label">{t("captions.bold")}</span>
 					<Toggle
-						checked={settings.backgroundEnabled}
+						checked={settings.fontWeight === "bold"}
 						disabled={disabled}
-						label={t("captions.background")}
-						onChange={(next) => void set({ backgroundEnabled: next })}
+						label={t("captions.bold")}
+						onChange={(next) => void set({ fontWeight: next ? "bold" : "normal" })}
 					/>
 				</div>
-			</div>
-			{settings.backgroundEnabled ? (
 				<div className={styles.sliderGrid}>
 					<SliderCell
-						label={t("captions.backgroundOpacity")}
-						value={Math.round(settings.backgroundOpacity * 100)}
-						min={0}
+						label={t("captions.fontSize")}
+						value={settings.fontSize}
+						min={16}
+						max={140}
+						suffix="px"
+						disabled={disabled}
+						onChange={(v) => setLive({ fontSize: v })}
+						onCommit={() => void commit()}
+					/>
+				</div>
+				<div className={styles.paneRow}>
+					<span className="label">{t("captions.textColor")}</span>
+					<ColorField
+						label={t("captions.textColor")}
+						value={settings.color}
+						disabled={disabled}
+						onChange={(color) => setLive({ color })}
+						onCommit={() => void commit()}
+					/>
+				</div>
+
+				{/* ── Background ─────────────────────────────────────────── */}
+			</InspectorSection>
+			<InspectorSection title={t("captions.background")}>
+				{/* Colour + switch on one row, exactly like the annotation pane's text
+				    background: the swatch keeps showing the remembered colour while the
+				    plate is off, because that is what turning it back on will draw. */}
+				<div className={styles.paneRow}>
+					<span className="label">{t("panels.fill")}</span>
+					<div className={styles.captionBackgroundControls}>
+						<ColorField
+							label={t("captions.backgroundColor")}
+							value={settings.backgroundColor}
+							disabled={disabled}
+							onChange={(backgroundColor) => setLive({ backgroundColor })}
+							onCommit={() => void commit()}
+						/>
+						<Toggle
+							checked={settings.backgroundEnabled}
+							disabled={disabled}
+							label={t("captions.background")}
+							onChange={(next) => void set({ backgroundEnabled: next })}
+						/>
+					</div>
+				</div>
+				{settings.backgroundEnabled ? (
+					<div className={styles.sliderGrid}>
+						<SliderCell
+							label={t("captions.backgroundOpacity")}
+							value={Math.round(settings.backgroundOpacity * 100)}
+							min={0}
+							max={100}
+							suffix="%"
+							disabled={disabled}
+							onChange={(v) => setLive({ backgroundOpacity: v / 100 })}
+							onCommit={() => void commit()}
+						/>
+					</div>
+				) : null}
+
+				{/* ── Placement ──────────────────────────────────────────── */}
+			</InspectorSection>
+			<InspectorSection title={t("captions.position")}>
+				<Segmented<CaptionVerticalPosition>
+					value={settings.verticalPosition}
+					disabled={disabled}
+					options={[
+						{ value: "top", label: t("captions.positionTop") },
+						{ value: "middle", label: t("captions.positionMiddle") },
+						{ value: "bottom", label: t("captions.positionBottom") },
+					]}
+					onChange={(verticalPosition) => void set({ verticalPosition })}
+				/>
+				<Segmented<CaptionTextAlign>
+					value={settings.textAlign}
+					disabled={disabled}
+					options={[
+						{ value: "left", label: t("captions.alignLeft") },
+						{ value: "center", label: t("captions.alignCenter") },
+						{ value: "right", label: t("captions.alignRight") },
+					]}
+					onChange={(textAlign) => void set({ textAlign })}
+				/>
+				<div className={styles.sliderGrid}>
+					<SliderCell
+						label={t("captions.verticalOffset")}
+						value={settings.offsetY}
+						min={-45}
+						max={45}
+						suffix="%"
+						disabled={disabled}
+						onChange={(v) => setLive({ offsetY: v })}
+						onCommit={() => void commit()}
+					/>
+					<SliderCell
+						label={t("captions.width")}
+						value={settings.width}
+						min={20}
 						max={100}
 						suffix="%"
 						disabled={disabled}
-						onChange={(v) => setLive({ backgroundOpacity: v / 100 })}
+						onChange={(v) => setLive({ width: v })}
 						onCommit={() => void commit()}
 					/>
 				</div>
-			) : null}
 
-			{/* ── Placement ──────────────────────────────────────────── */}
-			<div className={styles.sectionLabel}>{t("captions.position")}</div>
-			<Segmented<CaptionVerticalPosition>
-				value={settings.verticalPosition}
-				disabled={disabled}
-				options={[
-					{ value: "top", label: t("captions.positionTop") },
-					{ value: "middle", label: t("captions.positionMiddle") },
-					{ value: "bottom", label: t("captions.positionBottom") },
-				]}
-				onChange={(verticalPosition) => void set({ verticalPosition })}
-			/>
-			<Segmented<CaptionTextAlign>
-				value={settings.textAlign}
-				disabled={disabled}
-				options={[
-					{ value: "left", label: t("captions.alignLeft") },
-					{ value: "center", label: t("captions.alignCenter") },
-					{ value: "right", label: t("captions.alignRight") },
-				]}
-				onChange={(textAlign) => void set({ textAlign })}
-			/>
-			<div className={styles.sliderGrid}>
-				<SliderCell
-					label={t("captions.verticalOffset")}
-					value={settings.offsetY}
-					min={-45}
-					max={45}
-					suffix="%"
-					disabled={disabled}
-					onChange={(v) => setLive({ offsetY: v })}
-					onCommit={() => void commit()}
-				/>
-				<SliderCell
-					label={t("captions.width")}
-					value={settings.width}
-					min={20}
-					max={100}
-					suffix="%"
-					disabled={disabled}
-					onChange={(v) => setLive({ width: v })}
-					onCommit={() => void commit()}
-				/>
-			</div>
+				{/* ── Line length ────────────────────────────────────────── */}
+			</InspectorSection>
+			<InspectorSection title={t("captions.lineLength")}>
+				<div className={styles.paneRow}>
+					<span className="label">{t("captions.minWords")}</span>
+					<AppSelect
+						aria-label={t("captions.minWords")}
+						value={settings.minWordsPerLine}
+						disabled={disabled}
+						onChange={(e) => void set({ minWordsPerLine: Number(e.target.value) })}
+						className={styles.inspectorCompactSelect}
+					>
+						{WORD_COUNTS.map((n) => (
+							<option key={n} value={n}>
+								{n}
+							</option>
+						))}
+					</AppSelect>
+				</div>
+				<div className={styles.paneRow}>
+					<span className="label">{t("captions.maxWords")}</span>
+					<AppSelect
+						aria-label={t("captions.maxWords")}
+						value={settings.maxWordsPerLine}
+						disabled={disabled}
+						onChange={(e) => void set({ maxWordsPerLine: Number(e.target.value) })}
+						className={styles.inspectorCompactSelect}
+					>
+						{WORD_COUNTS.map((n) => (
+							<option key={n} value={n} disabled={n < settings.minWordsPerLine}>
+								{n}
+							</option>
+						))}
+					</AppSelect>
+				</div>
+			</InspectorSection>
+			<details className={styles.captionDisclosure}>
+				{/* ── Language ───────────────────────────────────────────── */}
+				<summary>{t("captions.language")}</summary>
+				<div className={styles.paneRow}>
+					<span className="label">{t("captions.displayLanguage")}</span>
+					<AppSelect
+						aria-label={t("captions.displayLanguage")}
+						value={settings.language ?? ""}
+						disabled={disabled}
+						onChange={(e) => void set({ language: e.target.value || null })}
+						className={styles.inspectorCompactSelect}
+					>
+						<option value="">{t("captions.original")}</option>
+						{languageOptions.map((entry) => (
+							<option key={entry.language} value={entry.language}>
+								{entry.label}
+							</option>
+						))}
+					</AppSelect>
+				</div>
 
-			{/* ── Line length ────────────────────────────────────────── */}
-			<div className={styles.sectionLabel}>{t("captions.lineLength")}</div>
-			<div className={styles.paneRow}>
-				<span className="label">{t("captions.minWords")}</span>
-				<AppSelect
-					value={settings.minWordsPerLine}
-					disabled={disabled}
-					onChange={(e) => void set({ minWordsPerLine: Number(e.target.value) })}
-					className={styles.inspectorCompactSelect}
-				>
-					{WORD_COUNTS.map((n) => (
-						<option key={n} value={n}>
-							{n}
-						</option>
-					))}
-				</AppSelect>
-			</div>
-			<div className={styles.paneRow}>
-				<span className="label">{t("captions.maxWords")}</span>
-				<AppSelect
-					value={settings.maxWordsPerLine}
-					disabled={disabled}
-					onChange={(e) => void set({ maxWordsPerLine: Number(e.target.value) })}
-					className={styles.inspectorCompactSelect}
-				>
-					{WORD_COUNTS.map((n) => (
-						<option key={n} value={n} disabled={n < settings.minWordsPerLine}>
-							{n}
-						</option>
-					))}
-				</AppSelect>
-			</div>
+				<div className={styles.captionTranslationRow}>
+					<AppSelect
+						value={target}
+						disabled={disabled || translating}
+						onChange={(e) => setTarget(e.target.value)}
+						className={`${styles.inspectorCompactSelect} ${styles.inspectorGrowSelect}`}
+					>
+						{TRANSLATION_LANGUAGES.map((language) => (
+							<option key={language.code} value={language.code}>
+								{language.label}
+							</option>
+						))}
+					</AppSelect>
+					<button
+						type="button"
+						className={`${styles.btn} ${styles.btnSecondary}`}
+						disabled={disabled || translating || !hasTranscript}
+						onClick={() => void handleTranslate()}
+						title={t("captions.translateHint")}
+					>
+						{translating ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
+						{translating ? t("captions.translating") : t("captions.translate")}
+					</button>
+				</div>
+				{settings.language ? (
+					<button
+						type="button"
+						className={`${styles.btn} ${styles.btnSecondary} ${styles.captionDeleteTranslation}`}
+						disabled={disabled}
+						onClick={() => void deleteTranslation(settings.language as string)}
+					>
+						<Trash2 size={13} />
+						{t("captions.deleteTranslation")}
+					</button>
+				) : null}
+				{translateError ? <p className={styles.captionError}>{translateError}</p> : null}
+				<p className={styles.captionFinePrint}>{t("captions.translationIsNonDestructive")}</p>
+			</details>
 		</InspectorPane>
 	);
 }

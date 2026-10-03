@@ -8,7 +8,7 @@
 export const PRODUCT_SURFACE = Object.freeze({
 	agentEditor: false,
 	mediaWorkspace: false,
-	captions: false,
+	captions: true,
 	transcript: true,
 	automaticTranscription: false,
 });

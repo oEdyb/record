@@ -1,4 +1,9 @@
 {
+	"previewQuality": {
+		"label": "Качество предпросмотра",
+		"sharp": "Чёткое",
+		"performance": "Производительность"
+	},
 	"newRecording": {
 		"title": "Вернуться к записи",
 		"description": "Ваша текущая сессия была сохранена.",
@@ -89,6 +94,9 @@
 		"toggleTheme": "Переключить тему",
 		"settings": "Настройки",
 		"export": "Экспорт",
+		"exporting": "Экспорт",
+		"exportProgressTitle": "{{pct}}% готово, осталось {{eta}}. Открыть экспорт",
+		"exportProgressPreparing": "Подготовка экспорта. Открыть экспорт",
 		"renameProject": "Переименовать проект",
 		"noProject": "Нет проекта",
 		"changeLanguage": "Сменить язык",
@@ -97,7 +105,8 @@
 			"media": "Медиа",
 			"edit": "Редактирование",
 			"rec": "Запись"
-		}
+		},
+		"moreActions": "More actions"
 	},
 	"rec": {
 		"source": "Источник",
@@ -183,8 +192,10 @@
 		"exportFailedGeneric": "Ошибка экспорта.",
 		"writingFile": "Запись файла…",
 		"renderingFrames": "Рендеринг кадров",
-		"framesEta": "{{current}} / {{total}} кадров · осталось {{eta}}",
+		"framesEta": "{{current}} / {{total}} кадров, осталось {{eta}}",
 		"preparingEncoder": "Подготовка кодировщика…",
+		"cancelExport": "Отменить экспорт",
+		"backgroundHint": "Это окно можно закрыть и продолжить монтаж. Прогресс отображается на кнопке «Экспорт». Правки, сделанные сейчас, в этот экспорт не войдут.",
 		"close": "Закрыть",
 		"cancel": "Отмена",
 		"rendering": "Рендеринг…",
@@ -199,7 +210,9 @@
 		"failedToWriteFile": "Не удалось записать файл",
 		"qualityUpscaleWarning": "Апскейл",
 		"exportedVideoOf": "видео экспортировано за",
-		"nothingToExport": "Нечего экспортировать — таймлайн пуст."
+		"nothingToExport": "Нечего экспортировать — таймлайн пуст.",
+		"retryExport": "Try export again",
+		"finishingFile": "Finishing and checking the file…"
 	},
 	"inspector": {
 		"resetFocusPoint": "Сбросить точку фокуса",
@@ -214,7 +227,8 @@
 		"cameraEmphasisDescription": "Камера плавно увеличивается, пока экран остаётся видимым, а затем возвращается к обычному размеру.",
 		"cameraFullscreenDescription": "Пока играет этот участок, камера занимает весь кадр — без рамки, скруглений и фона — и плавно возвращается в конце. Перетаскивайте края участка на таймлайне, чтобы изменить его начало и длительность.",
 		"deleteRegion": "Удалить участок",
-		"freehandRendersAsBox": "При экспорте произвольная форма закрывается своим ограничивающим прямоугольником — с запасом, а не с недостатком."
+		"freehandRendersAsBox": "При экспорте произвольная форма закрывается своим ограничивающим прямоугольником — с запасом, а не с недостатком.",
+		"cameraSize": "Размер камеры"
 	},
 	"leftPanel": {
 		"mediaTitle": "Медиа",
@@ -295,7 +309,7 @@
 			"title": "История бесед",
 			"subtitle": "Переключить или создать сессию",
 			"empty": "Пока нет бесед.",
-			"msgsCount": "{{count}} сообщ. · {{date}}"
+			"msgsCount": "{{count}} сообщ., {{date}}"
 		}
 	},
 	"newProjectDialog": {
@@ -316,7 +330,7 @@
 		"subtitle": "Продолжите существующий проект или просмотрите файлы",
 		"searchPlaceholder": "Поиск проектов…",
 		"noMatches": "Нет проектов, соответствующих «{{query}}».",
-		"navigateHint": "для навигации ·",
+		"navigateHint": "для навигации",
 		"openHint": "чтобы открыть",
 		"browseFiles": "Обзор файлов…",
 		"deleteProject": "Удалить проект",
@@ -358,7 +372,10 @@
 		"previousClip": "Предыдущий клип",
 		"nextClip": "Следующий клип",
 		"loop": "Повтор",
-		"seekVideo": "Перемотка видео"
+		"seekVideo": "Перемотка видео",
+		"mute": "Выключить звук предпросмотра",
+		"unmute": "Включить звук предпросмотра",
+		"previewVolume": "Громкость предпросмотра"
 	},
 	"shell": {
 		"aiEditor": "ИИ-редактор",
@@ -408,9 +425,9 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "Пробный период 14 дней",
-			"trialDay": "Пробный период · {{count}} день",
-			"trialDays": "Пробный период · {{count}} дн.",
-			"offline": "Klippt Pro · Не в сети",
+			"trialDay": "Пробный период {{count}} день",
+			"trialDays": "Пробный период {{count}} дн.",
+			"offline": "Klippt Pro, Не в сети",
 			"readOnly": "Только чтение"
 		},
 		"eyebrowReadOnly": "Доступ только для чтения",
@@ -439,5 +456,20 @@
 	"cpuCompositor": {
 		"notice": "Совместимый GPU не найден — отрисовка на CPU, поэтому воспроизведение медленнее.",
 		"exportWarning": "Совместимый GPU не найден: этот экспорт выполняется на CPU и займёт намного больше времени."
+	},
+	"visualPresets": {
+		"title": "Presets",
+		"scope": "Background, frame, camera corners and caption style.",
+		"saveCurrent": "Save current style",
+		"name": "Preset name",
+		"save": "Save",
+		"clean": "Clean",
+		"contrast": "High contrast",
+		"remove": "Remove {{name}}",
+		"duplicate": "Choose a different preset name.",
+		"unsupported": "Use a built-in background, a color or a gradient to save a reusable preset.",
+		"saveFailed": "Could not save the preset. Check available storage and try again.",
+		"applyFailed": "Could not apply the preset. Check the project’s save status and try again.",
+		"limit": "You can save up to 20 presets."
 	}
 }

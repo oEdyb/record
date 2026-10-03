@@ -691,6 +691,79 @@ describe("executeAgentTool", () => {
 		expect(snapshot.annotationCount).toBeUndefined();
 	});
 
+	it("authors camera emphasis and preserves presentation during a timing edit", () => {
+		const added = executeAgentTool(
+			withCameraTrack(fixtureDocument()),
+			"addCameraFullscreen",
+			JSON.stringify({
+				startSec: 1,
+				endSec: 3,
+				mode: "emphasis",
+				cameraScale: 1.5,
+				motionStyle: "smooth",
+				motionSpeed: 0.75,
+			}),
+		);
+		expect(added.ok).toBe(true);
+		const regions = added.document?.legacyEditor?.cameraFullscreenRegions as Array<{ id: string }>;
+		expect(regions[0]).toMatchObject({
+			mode: "emphasis",
+			cameraScale: 1.5,
+			motionStyle: "smooth",
+			motionSpeed: 0.75,
+		});
+		const moved = executeAgentTool(
+			added.document as AxcutDocument,
+			"setCameraFullscreen",
+			JSON.stringify({ cameraFullscreenId: regions[0].id, startSec: 2, endSec: 4 }),
+		);
+		expect(moved.document?.legacyEditor?.cameraFullscreenRegions).toEqual([
+			expect.objectContaining({
+				mode: "emphasis",
+				cameraScale: 1.5,
+				motionStyle: "smooth",
+				motionSpeed: 0.75,
+				startMs: 2000,
+				endMs: 4000,
+			}),
+		]);
+		expect(
+			executeAgentTool(
+				withCameraTrack(fixtureDocument()),
+				"addCameraFullscreen",
+				JSON.stringify({ startSec: 1, endSec: 3, cameraScale: 2.5 }),
+			).ok,
+		).toBe(false);
+	});
+
+	it("stores a drift as one object and keeps it through a move", () => {
+		const added = executeAgentTool(
+			withCameraTrack(fixtureDocument()),
+			"addCameraFullscreen",
+			JSON.stringify({ startSec: 1, endSec: 3, driftScaleTo: 1.12 }),
+		);
+		expect(added.ok).toBe(true);
+		const regions = added.document?.legacyEditor?.cameraFullscreenRegions as Array<{
+			id: string;
+			drift?: unknown;
+			driftScaleTo?: unknown;
+		}>;
+		expect(regions[0].drift).toEqual({ scaleTo: 1.12, releaseSec: 0.4 });
+		expect(regions[0].driftScaleTo).toBeUndefined();
+		const moved = executeAgentTool(
+			added.document as AxcutDocument,
+			"setCameraFullscreen",
+			JSON.stringify({
+				cameraFullscreenId: regions[0].id,
+				driftScaleTo: 1.2,
+				driftReleaseSec: 0.3,
+			}),
+		);
+		expect(moved.document?.legacyEditor?.cameraFullscreenRegions).toEqual([
+			expect.objectContaining({ drift: { scaleTo: 1.2, releaseSec: 0.3 } }),
+		]);
+	});
+
 	it("addCameraFullscreen / setCameraFullscreen write a region the snapshot exposes", () => {
 		const added = executeAgentTool(
 			withCameraTrack(fixtureDocument()),

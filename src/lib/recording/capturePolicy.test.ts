@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildNativeMacRecordingRequest,
 	computeCaptureBitrate,
+	isClipOwnedWebcamPath,
 	nativeMacWebcamFileName,
 	selectRecorderMimeType,
 } from "./capturePolicy";
@@ -53,5 +54,34 @@ describe("capture policy", () => {
 	it("uses stable per-clip webcam names", () => {
 		expect(nativeMacWebcamFileName(123, 0)).toBe("recording-123-clip-0001-webcam.webm");
 		expect(nativeMacWebcamFileName(123, 11)).toBe("recording-123-clip-0012-webcam.webm");
+	});
+
+	it("recognizes a camera file recorded for exactly one screen clip", () => {
+		expect(
+			isClipOwnedWebcamPath(
+				"/r/recording-1789653794581-clip-0003.mp4",
+				"/r/recording-1789653794581-clip-0003-webcam.webm",
+			),
+		).toBe(true);
+		// One continuous camera file for the whole session is named after the recording.
+		expect(
+			isClipOwnedWebcamPath(
+				"/r/recording-1789653794581-clip-0003.mp4",
+				"/r/recording-1789653794581-webcam.webm",
+			),
+		).toBe(false);
+		// Another clip's camera file never counts as this clip's own.
+		expect(
+			isClipOwnedWebcamPath(
+				"/r/recording-1789653794581-clip-0003.mp4",
+				"/r/recording-1789653794581-clip-0002-webcam.webm",
+			),
+		).toBe(false);
+		expect(
+			isClipOwnedWebcamPath(
+				"C:\\r\\recording-1-clip-0001.mp4",
+				"C:\\r\\recording-1-clip-0001-webcam.webm",
+			),
+		).toBe(true);
 	});
 });
