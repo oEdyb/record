@@ -249,6 +249,9 @@ export interface CompositorAudioMasteringResult {
 
 /** Taille/cadence/codec de sortie voulus. Tout omis → 1920x1080 / fps du 1er clip / h264. */
 export interface CompositorExportParams {
+	/** Preserve an untouched recording's encoded video, original timestamps and
+	 * cadence when safe. Explicit opt-in; FPS/bitrate apply to rendered fallback. */
+	preserveRecordingSource?: boolean;
 	width?: number;
 	height?: number;
 	fps?: number;

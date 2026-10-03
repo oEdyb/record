@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CURSOR_THEMES, DEFAULT_CURSOR_SPRITES } from "../../../src/lib/cursor/cursorThemes";
 import { AtomicExportPublisher } from "../../export/atomicExport";
+import type { RecordingFastExportPlan } from "../../export/recordingFastExport";
 import type {
 	CompositorViewAddon,
 	ExportStats,
@@ -204,6 +205,197 @@ describe("CompositorViewService export transaction", () => {
 			service.exportMulti([{ ...clips[0]!, sourceEndSec: 0 }], path.join(root, "unreadable.mp4")),
 		).rejects.toThrow(/Unable to read media duration.*unsupported container/);
 		expect(addon.exportMulti).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"mp4",
+		"gif",
+	] as const)("releases cancellation state and parent abort listener after a failed %s duration probe", async (format) => {
+		const signal = new AbortController().signal;
+		const removeListener = vi.spyOn(signal, "removeEventListener");
+		const cancelExport = vi.fn(() => true);
+		const addon = {
+			probeMediaDuration: vi.fn(async () => {
+				throw new Error("unreadable source");
+			}),
+			verifyVideoExport: vi.fn(),
+			verifyGifExport: vi.fn(),
+			cancelExport,
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "cleanup.json"),
+		});
+		const method =
+			format === "mp4" ? service.exportMulti.bind(service) : service.exportGif.bind(service);
+		await expect(
+			method(clips, path.join(root, `failed.${format}`), undefined, undefined, undefined, {
+				exportId: "failed-probe",
+				signal,
+			}),
+		).rejects.toThrow("unreadable source");
+		expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
+		service.cancelExport("failed-probe");
+		expect(cancelExport).not.toHaveBeenCalled();
+	});
+
+	it("verifies remux cadence after a closing frame changes the source guess from 600 to 58, with truthful frame stats", async () => {
+		const finalPath = path.join(root, "preserved.mp4");
+		fs.writeFileSync(finalPath, "old export");
+		const rawStats = {
+			...stats,
+			frames: 40,
+			encoderName: "stream-copy/h264",
+			decoderPath: "packet-copy",
+		};
+		const render = vi.fn(async (outPath: string) => {
+			await fs.promises.writeFile(outPath, "preserved video");
+			plan.fps = 58;
+			return rawStats;
+		});
+		const plan: RecordingFastExportPlan = {
+			expectedBytes: 50_000_000,
+			fps: 600,
+			durationS: 2,
+			render,
+		};
+		const verifyVideoExport = vi.fn(async () => {
+			expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
+		});
+		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
+			exportMulti: vi.fn(),
+			verifyVideoExport,
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const publisher = new AtomicExportPublisher({
+			journalPath: path.join(root, "fast-journal.json"),
+			getAvailableBytes: async () => 1024n ** 4n,
+		});
+		const publish = vi.spyOn(publisher, "publish");
+		const prepare = vi.fn(async () => plan);
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportPublisher: publisher,
+			recordingFastExport: prepare,
+		});
+		const result = await service.exportMulti(clips, finalPath, "identity scene", {
+			width: 320,
+			height: 240,
+			fps: 60,
+			codec: "h264",
+			preserveRecordingSource: true,
+		});
+		expect(result).toEqual(rawStats);
+		expect(addon.exportMulti).not.toHaveBeenCalled();
+		expect(addon.probeMediaDuration).toHaveBeenCalledOnce();
+		expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ sourceDurationSec: 2 }));
+		expect(verifyVideoExport).toHaveBeenCalledTimes(2);
+		expect(verifyVideoExport).toHaveBeenLastCalledWith(
+			expect.any(String),
+			{ width: 320, height: 240, fps: 58, durationS: 2, codec: "h264" },
+			expect.any(String),
+		);
+		expect(publish).toHaveBeenCalledWith(expect.objectContaining({ expectedBytes: 50_000_000 }));
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("preserved video");
+	});
+
+	it.each([
+		"render",
+		"verification",
+	] as const)("falls back atomically when source-copy %s fails", async (phase) => {
+		const finalPath = path.join(root, "fallback.mp4");
+		fs.writeFileSync(finalPath, "old export");
+		const plan: RecordingFastExportPlan = {
+			expectedBytes: 1000,
+			fps: 60,
+			durationS: 2,
+			render: async (outPath) => {
+				await fs.promises.writeFile(outPath, "unverified copy");
+				if (phase === "render") throw new Error("copy failed");
+				return stats;
+			},
+		};
+		const verifyVideoExport = vi.fn(async () => {
+			expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
+		});
+		if (phase === "verification")
+			verifyVideoExport.mockRejectedValueOnce(new Error("source tail unavailable"));
+		const exportMulti = vi.fn(async (_clips: unknown, outPath: string) => {
+			expect(fs.existsSync(outPath)).toBe(false);
+			await fs.promises.writeFile(outPath, "verified render");
+			return stats;
+		});
+		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
+			exportMulti,
+			verifyVideoExport,
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "fallback.json"),
+			recordingFastExport: async () => plan,
+		});
+		await service.exportMulti(clips, finalPath, undefined, {
+			width: 320,
+			height: 240,
+			fps: 60,
+			preserveRecordingSource: true,
+		});
+		expect(exportMulti).toHaveBeenCalledOnce();
+		expect(verifyVideoExport).toHaveBeenLastCalledWith(
+			expect.any(String),
+			expect.objectContaining({ fps: 30 }),
+			expect.any(String),
+		);
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("verified render");
+	});
+
+	it("cancels a source-copy without starting a fallback render or changing the destination", async () => {
+		const finalPath = path.join(root, "cancel-copy.mp4");
+		fs.writeFileSync(finalPath, "old export");
+		let stagedPath = "";
+		let listening = false;
+		const render = vi.fn(async (outPath: string, signal: AbortSignal) => {
+			stagedPath = outPath;
+			await fs.promises.writeFile(outPath, "partial copy");
+			await new Promise<void>((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(new Error("copy cancelled")), { once: true });
+				listening = true;
+			});
+			return stats;
+		});
+		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
+			exportMulti: vi.fn(),
+			verifyVideoExport: vi.fn(),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "cancel-copy.json"),
+			recordingFastExport: async () => ({ expectedBytes: 1000, fps: 60, durationS: 2, render }),
+		});
+		const operation = service.exportMulti(
+			clips,
+			finalPath,
+			undefined,
+			{ preserveRecordingSource: true },
+			undefined,
+			{ exportId: "copy-cancel" },
+		);
+		await vi.waitFor(() => expect(listening).toBe(true));
+		service.cancelExport("copy-cancel");
+		await expect(operation).rejects.toThrow(/cancel/i);
+		expect(addon.exportMulti).not.toHaveBeenCalled();
+		expect(addon.verifyVideoExport).not.toHaveBeenCalled();
+		expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
+		expect(fs.existsSync(stagedPath)).toBe(false);
 	});
 
 	it("renders MP4 with the resolved clip extent and a positive capacity estimate", async () => {

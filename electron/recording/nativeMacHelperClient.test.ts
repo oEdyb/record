@@ -36,6 +36,55 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("reports unexpected helper exit once after a confirmed recording start", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { onFatalError });
+		emit(process, { event: "recording-started" });
+		await client.waitForStart();
+		process.emit("error", new Error("Capture process failed"));
+		process.emit("close", null, "SIGKILL");
+		expect(onFatalError).toHaveBeenCalledOnce();
+		expect(onFatalError).toHaveBeenCalledWith({
+			code: "capture-helper-error",
+			message: "Capture process failed",
+		});
+	});
+
+	it("reports an abrupt helper death that has no error event", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { onFatalError });
+		emit(process, { event: "recording-started" });
+		await client.waitForStart();
+		process.emit("close", null, "SIGKILL");
+		expect(onFatalError).toHaveBeenCalledWith({
+			code: "capture-helper-exited",
+			message: expect.stringContaining("SIGKILL"),
+		});
+	});
+
+	it("does not report a completed Stop as an unexpected exit", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { onFatalError });
+		emit(process, { event: "recording-started" });
+		await client.waitForStart();
+		const stopped = client.stop({ screenPath: "/tmp/clip.mp4", clips: [] });
+		emit(process, { event: "recording-stopped", screenPath: "/tmp/clip.mp4", clips: [] });
+		await stopped;
+		process.emit("close", 0, null);
+		expect(onFatalError).not.toHaveBeenCalled();
+	});
+
+	it("rejects buffered startup success after the helper has already exited", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		emit(process, { event: "recording-started" });
+		process.emit("close", 1, null);
+		await expect(client.waitForStart()).rejects.toThrow("exited before start confirmation");
+	});
+
 	it("waits for exit and escalates a stuck helper to SIGKILL", async () => {
 		vi.useFakeTimers();
 		try {
@@ -96,6 +145,47 @@ describe("NativeMacHelperClient", () => {
 			helperPaused: true,
 		});
 		expect(await paused.catch((error) => error)).toBeInstanceOf(NativeMacPauseError);
+	});
+
+	it("keeps a committed clip when its closing frame fails during Pause", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const clip = { index: 0, screenVideoPath: "/tmp/clip.mp4", durationMs: 1234 };
+		const paused = client.pause();
+		emit(process, { event: "clip-finalized", clip });
+		emit(process, {
+			event: "error",
+			code: "clip-finalize-failed",
+			message: "Closing frame timed out; committed frames kept",
+		});
+		await expect(paused).rejects.toMatchObject({
+			name: "NativeMacPauseError",
+			helperPaused: true,
+			clip,
+			message: "Closing frame timed out; committed frames kept",
+		});
+	});
+
+	it("returns a closing-frame warning alongside the durable clips at Stop", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const clip = { index: 0, screenVideoPath: "/tmp/clip.mp4", durationMs: 1234 };
+		const warning = {
+			code: "final-screen-frame-failed",
+			message: "Closing frame timed out; committed frames kept",
+		};
+		const stopped = client.stop({ screenPath: clip.screenVideoPath, clips: [clip] });
+		emit(process, {
+			event: "recording-stopped",
+			screenPath: clip.screenVideoPath,
+			clips: [clip],
+			warning,
+		});
+		await expect(stopped).resolves.toEqual({
+			screenPath: clip.screenVideoPath,
+			clips: [clip],
+			warning,
+		});
 	});
 
 	it("sends reconfiguration before Continue and waits for both acknowledgements", async () => {

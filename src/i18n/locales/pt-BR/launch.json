@@ -74,6 +74,8 @@
 		"defaultSourceName": "Tela"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "Por favor, selecione uma fonte para gravar",
 		"systemPicker": "O sistema perguntará o que compartilhar",
 		"inProgress": "Gravando",

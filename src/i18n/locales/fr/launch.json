@@ -74,6 +74,8 @@
 		"defaultSourceName": "Écran"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "Veuillez sélectionner une source à enregistrer",
 		"systemPicker": "Le système vous demandera quoi partager",
 		"inProgress": "Enregistrement en cours",

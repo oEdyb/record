@@ -74,6 +74,8 @@
 		"defaultSourceName": "螢幕"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "請選擇要錄製的來源",
 		"systemPicker": "系統將詢問要分享的內容",
 		"inProgress": "正在錄製",

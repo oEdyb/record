@@ -74,6 +74,8 @@
 		"defaultSourceName": "Pantalla"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "Por favor selecciona una fuente para grabar",
 		"systemPicker": "El sistema te preguntará qué compartir",
 		"inProgress": "Grabando",

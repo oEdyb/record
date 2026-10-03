@@ -176,6 +176,11 @@ export class NativeMacRecordingService {
 				});
 				this.helper = helper;
 				await helper.waitForStart();
+				if (!helper.isRunning() || this.fatalError) {
+					throw new Error(
+						this.fatalError?.message ?? "Native macOS capture exited during startup.",
+					);
+				}
 				this.cursorOffsetMs = Math.max(0, this.deps.now() - cursorStartTimeMs);
 				this.deps.onRecordingStateChange(true);
 				return { success: true, recordingId, path: outputPath, helperPath };
@@ -256,6 +261,7 @@ export class NativeMacRecordingService {
 		return this.enqueue(async () => {
 			const helper = this.requireHelper();
 			if (!this.paused) return { success: true };
+			let resumeRequested = false;
 			try {
 				if (request) {
 					if (this.recordingId === null || !this.targetPath || !request.source?.sourceId) {
@@ -281,6 +287,7 @@ export class NativeMacRecordingService {
 					}
 					this.cursorCaptureMode = cursorCaptureMode;
 				}
+				resumeRequested = true;
 				const clipIndex = await helper.resume();
 				this.completeCursorPauseRange();
 				this.paused = false;
@@ -289,6 +296,10 @@ export class NativeMacRecordingService {
 				await this.persistRecoverySessionBestEffort();
 				return { success: true, clipIndex };
 			} catch (error) {
+				if (resumeRequested && !this.fatalError) {
+					this.fatalError = { code: "capture-resume-failed", message: this.errorMessage(error) };
+					this.deps.onFatalError(this.fatalError);
+				}
 				return { success: false, error: this.errorMessage(error) };
 			}
 		});

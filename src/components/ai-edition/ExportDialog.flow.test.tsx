@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type AxcutAsset,
@@ -118,6 +119,105 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ExportDialog task completion", () => {
+	it("does not open another save picker after cancelling a reopened active quick export", async () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		mocks.export.mockImplementation(
+			(_clips, _path, _scene, _options, transaction: { signal: AbortSignal }) =>
+				new Promise((_resolve, reject) => {
+					transaction.signal.addEventListener("abort", () => reject(new Error("Cancelled")));
+				}),
+		);
+		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce());
+		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
+		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.cancelExport" }));
+		await waitFor(() => expect(useExportRunStore.getState().phase).toBe("idle"));
+		expect(mocks.pick).toHaveBeenCalledOnce();
+		expect(mocks.export).toHaveBeenCalledOnce();
+		expect(screen.getByRole("button", { name: "exportDialog.exportMp4" })).toBeEnabled();
+	});
+	it("starts a fresh save after the previous export completed while the dialog was closed", async () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		let finish: ((stats: { videoDurationS: number; wallS: number }) => void) | undefined;
+		mocks.export.mockReturnValueOnce(
+			new Promise((resolve) => {
+				finish = resolve;
+			}),
+		);
+		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce());
+		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
+		await act(async () => {
+			finish?.({ videoDurationS: 10, wallS: 1 });
+		});
+		expect(useExportRunStore.getState().phase).toBe("done");
+		mocks.export.mockResolvedValueOnce({ videoDurationS: 10, wallS: 0.1 });
+		const next = { ...document, project: { ...document.project, title: "Next recording" } };
+		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={next} />);
+		await waitFor(() => expect(mocks.pick).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(2));
+		expect(mocks.pick).toHaveBeenLastCalledWith("Next_recording.mp4");
+	});
+	it("opens one save picker directly for a source-quality recording, even in StrictMode", async () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		document.legacyEditor = { evenVolume: false, normalizeVolume: false };
+		mocks.export.mockResolvedValue({ videoDurationS: 10, wallS: 0.1 });
+		render(
+			<StrictMode>
+				<ExportDialog open quickExport onClose={vi.fn()} document={document} />
+			</StrictMode>,
+		);
+		await screen.findByRole("button", { name: "exportDialog.showInFolder" });
+		expect(mocks.pick).toHaveBeenCalledOnce();
+		expect(mocks.export).toHaveBeenCalledOnce();
+		expect(mocks.export.mock.calls[0]?.[3]).toMatchObject({
+			fps: 60,
+			codec: "h264",
+			preserveRecordingSource: true,
+			evenVolume: false,
+			normalizeAudio: false,
+		});
+	});
+	it("keeps legacy audio processing on during quick Save video", async () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		document.legacyEditor = { evenVolume: true, normalizeVolume: true };
+		mocks.export.mockResolvedValue({ videoDurationS: 10, wallS: 1 });
+		render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		await screen.findByRole("button", { name: "exportDialog.showInFolder" });
+		expect(mocks.export.mock.calls[0]?.[3]).toMatchObject({
+			evenVolume: true,
+			normalizeAudio: true,
+		});
+	});
+	it("does not reopen a cancelled picker on rerender, and permits a fresh Save opening", async () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		mocks.pick.mockResolvedValue(undefined);
+		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		await waitFor(() => expect(mocks.pick).toHaveBeenCalledOnce());
+		await waitFor(() => expect(useExportRunStore.getState().phase).toBe("idle"));
+		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={{ ...document }} />);
+		expect(mocks.pick).toHaveBeenCalledOnce();
+		expect(mocks.export).not.toHaveBeenCalled();
+		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
+		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		await waitFor(() => expect(mocks.pick).toHaveBeenCalledTimes(2));
+	});
 	it("replaces export settings and duplicate export with the saved file action", async () => {
 		mocks.export.mockResolvedValue({ videoDurationS: 10, wallS: 1 });
 		const onClose = show();

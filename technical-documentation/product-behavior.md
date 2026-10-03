@@ -1,25 +1,28 @@
 ## Product goal
 
-Build a recorder with Screen Studio-level refinement and a faster speaking workflow:
+October 3, 2026 direction: a fast, strictly recording-focused recorder with a TikTok-style
+capture workflow. Editing is no longer the focus; do not build new editor features.
 
-1. From the editor, use the normal Record action to enter the recording workspace at the
-   current insertion boundary.
-2. The editor gets out of the way and the floating panel appears idle. Set up the
-   screen/window, microphone, system audio, camera, and cursor there.
-3. Start recording from the floating panel.
+1. Open the floating recorder with a usable screen selected when available.
+2. Set up the screen/window, microphone, system audio, and camera only when needed.
+3. Start recording immediately from the floating panel. Show recording only after the
+   native writer has accepted a frame.
 4. Pause whenever a spoken section ends.
 5. While paused, optionally change the source, microphone, system audio, camera, or cursor
    setup for the next clip.
 6. Continue into a new clip. Reuse the current capture pipeline when settings did not
    change; safely reconfigure it when they did.
 7. Remove the previous completed clip immediately with Backspace when it was bad.
-8. Stop to return to the editor.
-9. Review, remove, reorder, and insert clips with normal editor actions.
-10. Move between Edit and Record as often as needed.
-11. Export one normal MP4.
+8. Stop to review the recording with playback and a simple seek bar.
+9. Save one MP4 directly through the native save picker.
+10. Record again as a new capture, without creating an empty project first.
+11. Keep original clips available for recovery and outside workflows.
 
 The product must feel like a normal recording app. Clip-native recording is built in; it is
 not a separate mode or an advanced workflow.
+
+The inherited editing model remains for old-project compatibility and the existing CLI.
+The following editor sections describe that retained behavior, not a queue for new features.
 
 ## Agent-native product model
 
@@ -100,8 +103,8 @@ overlays and general timed layout keyframes remain planned, not implemented. See
 - Never call clips “takes”.
 - Never add a “redo take”, “replacement take”, “candidate”, “pickup”, “record here”,
   “keep”, or “retry” workflow.
-- To record something again, the user removes the clip, leaves the insertion cursor at that
-  position, and uses the same normal Record action.
+- To record something again, remove the previous completed clip while paused and Continue.
+  After Stop, Record starts a new recording; review has no insertion or editing workflow.
 
 ## Current delivery target: first working version
 
@@ -109,7 +112,7 @@ The first version is a bare Mac-first vertical slice. It is working only when th
 path works with real capture:
 
 1. The user selects a real screen/window and audio settings.
-2. Record starts after the countdown.
+2. Record starts immediately. Show `Starting recording…` until the first frame is accepted.
 3. The floating panel contracts into the compact active-recording HUD.
 4. Pause finalizes the current clip without stopping ScreenCaptureKit when settings stay
    unchanged.
@@ -119,10 +122,9 @@ path works with real capture:
 7. Pause and Continue can repeat several times.
 8. Backspace removes the newest completed clip; repeated presses can remove all completed
    clips.
-9. Stop finalizes the active clip, ends capture, hides the panel, and opens one project in
-   the editor.
-10. Every kept clip appears in order with a visible cut boundary and plays continuously.
-11. Export produces a normal MP4.
+9. Stop finalizes the active clip, ends capture, hides the panel, and opens recording review.
+10. Every kept clip plays continuously in order; review offers playback and a seek bar.
+11. Save video opens the native save picker directly and produces a normal MP4.
 
 Keep this slice minimal. Do not block it on captions, transcript, paused playback,
 thumbnails, waveforms, automatic zoom, AI editing, Windows, Linux, broad rebranding, or a
@@ -147,11 +149,16 @@ must change before Continue. Keep all completed clips in the same logical record
 must not wait for transcription, thumbnail generation, waveforms, proxy creation, cleanup,
 concat, remux, or re-encoding.
 
-Treat the final countdown value as the recording-start barrier. Start the capture pipeline
-while `1` is still visible, keep `1` visible until the recorder confirms its real first frame,
-paint the HUD timer, and only then hide the countdown overlay. Never hide the countdown and
-initialize capture afterward; that creates a dead gap where neither countdown nor timer is
-visible.
+Start immediately by default, with no countdown or duplicate source enumeration after screen
+permission is granted. A pending start disables duplicate Record and setup changes. Only the
+first successful native video append starts the HUD timer; Continue obeys the same barrier.
+The optional countdown overlay must settle or cancel within a bounded wait.
+
+Baked system cursor is the fresh-recording default. Preserve explicitly saved editable-cursor
+preferences. While paused, retain only the latest complete frame for the current source; seed
+Continue at its new host-clock boundary, then accept newer live frames. When a static source
+produces no new frame, preserve Pause/Stop duration with a closing frame. Bounded writer
+backpressure failure is reported to the HUD and preserves committed clips.
 
 Target local-SSD Pause finalization at p95 below 300 ms on this Mac. Show Pause feedback
 immediately. If `AVAssetWriter.finishWriting` is still running, show a quiet saving state and
@@ -160,8 +167,8 @@ disable Continue until the clip is safe.
 ## Pause, Continue, Stop, and Backspace
 
 - **Pause** finalizes the active clip and stays in the recording session.
-- **Continue** starts the next clip after a short countdown.
-- **Stop** is different from Pause. Stop ends capture and opens the editor. The Record circle
+- **Continue** starts the next clip immediately and confirms its first appended frame.
+- **Stop** is different from Pause. Stop ends capture and opens recording review. The Record circle
   changes into a clear Stop square while recording. Keep it icon-only; do not add permanent
   `Stop` or `Stop Recording` text. The tooltip and accessibility label explain the action.
 - **Backspace** removes the newest completed clip immediately.
@@ -173,21 +180,20 @@ disable Continue until the clip is safe.
 
 ## Floating recording panel
 
-Editing and recording are two states of the same project. They are not top-level tabs. Remove
-the editor's Record tab instead of treating setup as another inspector page.
+Capture and review are two states of the recorder. App launch opens the floating panel with
+a usable screen selected when available. Record starts capture directly; no project-creation
+step or source-picker click is required for the default screen. Explicit source selections
+and portal-based Linux selection remain authoritative.
 
-The editor's normal Record action saves the current insertion boundary, moves the editor out
-of the way, and shows the collapsed recording pill at the bottom center. The pill starts idle,
-with Record, return-to-editor and Expand controls. Expand reveals the full setup bar. Source,
-microphone, system-audio, camera, device, and cursor controls are available, but the timer does
-not run and no media file exists. Only the panel's Record circle starts the countdown and real
-capture. Closing the idle panel or pressing Escape returns to the editor without changing the
-project. Stop during capture returns to the same project and inserts the kept clips at the saved
-boundary.
+Review's Record action saves any pending project state and opens the idle recording pill for
+a new standalone capture. It does not insert into an old project. Expand reveals screen/window,
+audio, camera and cursor setup. Closing idle setup or pressing Escape returns to review.
+Stop saves the completed clips and opens review with Record, Save video, Original files,
+Recordings, playback and a seek bar. No timeline, inspector or canvas editing handles are shown.
 
-Use a quick, restrained transition between the workspaces. Preserve timeline selection,
-insertion boundary, preview time, inspector state, and window geometry. Do not show a setup
-page, dashboard, mode chooser, or navigation stack between Edit and Record.
+Use a quick, restrained transition. Do not add a setup dashboard, mode chooser or navigation
+stack. Native File menu and keyboard actions use the same recording and save flow; menu actions
+must not replace an active recording HUD.
 
 Keep the full floating bar and clip-history row for standalone idle setup or when explicitly expanded.
 During active recording, contract that same surface into one compact pill with Stop, total time,
@@ -318,6 +324,9 @@ saved setup begin from current app preferences. New standalone recordings retain
 when imported into their new project.
 
 ## Editor behavior
+
+Compatibility reference: these controls and mutations belong to existing projects and the
+CLI. The recording review surface is read-only and does not expose them.
 
 **Agent global settings and presets:** The agent can inspect every global setting with defaults,
 limits, units, and meanings. Setting changes and preset application use guarded plans, verification,
@@ -810,9 +819,17 @@ second timeline model.
 Olle records terminals, code, and other interfaces with small text. Preserve fine text as a
 product requirement, not as an optional maximum-quality mode.
 
-- Export offers **Separate takes** and **One video**. Separate takes is the initial selection.
-  Use recording Pause/Resume boundaries; a recording without pauses remains one take. Do not
-  invent scene splits. The existing rendered MP4/GIF path remains under One video.
+- **Save video** is the primary recording action. It opens the native save picker directly
+  for a source-quality MP4. **Original files** retains the existing source-recovery handoff.
+  The advanced export dialog remains for compatibility; it is not an extra recording step.
+- An explicitly source-preserving, full-span, single screen clip with identity geometry, baked
+  cursor, matching dimensions/codec and compatible audio may copy its encoded packets. Keep
+  the original frame cadence and timestamps; do not promise conversion to a selected constant
+  frame rate. Rendering settings apply only when this explicit path falls back to rendering.
+  Verify the staged MP4 before atomically publishing it. Camera, edits, trims, multiple clips,
+  effects and audio mastering continue through the existing renderer.
+- Closing export leaves it running. Reopening displays active progress; a later Save after
+  completion starts a fresh export instead of reusing a previous recording's success state.
 - Separate takes copies the kept takes' original screen and camera media into a new folder.
   Number each take's screen, camera and audio files together. Omit removed takes and preserve
   hidden camera originals. H.264/HEVC in WebM or MKV is remuxed to MOV without video encoding;

@@ -145,6 +145,78 @@ describe("importPendingRecording", () => {
 		expect(useProjectStore.getState().document?.zoomRanges).toEqual([]);
 	});
 
+	it("awaits the full raw recording duration before committing and consuming its handoff", async () => {
+		const screenPath = "/recordings/two-minute-recording.mp4";
+		const api = stubElectronApi(screenPath);
+		const asset: AxcutAsset = {
+			id: "two-minute-asset",
+			kind: "video",
+			label: "Two-minute recording",
+			originalPath: screenPath,
+			cameraTrack: null,
+		};
+		addAsset.mockImplementationOnce(async () => {
+			const document = useProjectStore.getState().document!;
+			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			return asset;
+		});
+		let resolveDuration!: (duration: number) => void;
+		probeVideoDuration.mockImplementationOnce(
+			() =>
+				new Promise<number>((resolve) => {
+					resolveDuration = resolve;
+				}),
+		);
+		const importing = importPendingRecording();
+		await vi.waitFor(() => {
+			expect(probeVideoDuration).toHaveBeenCalledWith(toKlipptMediaUrl(screenPath), 5_000);
+		});
+		expect(isPendingRecordingImportInProgress()).toBe(true);
+		expect(applyDocumentPatch).not.toHaveBeenCalled();
+		expect(api.setCurrentRecordingSession).not.toHaveBeenCalledWith(null);
+		resolveDuration(120.081667);
+		await expect(importing).resolves.toBe(true);
+		const document = useProjectStore.getState().document!;
+		expect(document.assets[0].durationSec).toBe(120.081667);
+		expect(document.timeline.clips[0]).toMatchObject({
+			sourceStartSec: 0,
+			sourceEndSec: 120.081667,
+			timelineStartSec: 0,
+			timelineEndSec: 120.081667,
+		});
+		expect(api.setCurrentRecordingSession).toHaveBeenCalledWith(null);
+		expect(isPendingRecordingImportInProgress()).toBe(false);
+	});
+
+	it.each([
+		null,
+		0,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+	])("keeps the raw recording handoff parked when its duration probe returns %s", async (duration) => {
+		const screenPath = "/recordings/unreadable-duration.mp4";
+		const api = stubElectronApi(screenPath);
+		const asset: AxcutAsset = {
+			id: "unreadable-duration-asset",
+			kind: "video",
+			label: "Recording",
+			originalPath: screenPath,
+			cameraTrack: null,
+		};
+		addAsset.mockImplementationOnce(async () => {
+			const document = useProjectStore.getState().document!;
+			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			return asset;
+		});
+		probeVideoDuration.mockResolvedValueOnce(duration);
+		await expect(importPendingRecording()).rejects.toThrow("Could not read the recording duration");
+		expect(api.setCurrentRecordingSession).not.toHaveBeenCalledWith(null);
+		await expect(api.getCurrentRecordingSession()).resolves.toMatchObject({ success: true });
+		expect(applyDocumentPatch).not.toHaveBeenCalled();
+		expect(useProjectStore.getState().document?.timeline.clips).toEqual([]);
+		expect(isPendingRecordingImportInProgress()).toBe(false);
+	});
+
 	it("seeds a placeholder clip when the imported asset has none", async () => {
 		stubElectronApi("/recordings/recording-1.webm");
 		addAsset.mockImplementationOnce(async () => {

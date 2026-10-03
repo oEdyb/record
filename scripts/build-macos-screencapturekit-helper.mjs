@@ -5,6 +5,11 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+	swiftBuildArguments,
+	swiftBuildOutputDirectory,
+	swiftBuiltExecutable,
+} from "./swift-build-output.mjs";
 
 if (process.platform !== "darwin") {
 	console.log("Skipping macOS ScreenCaptureKit helper build: host platform is not macOS.");
@@ -60,63 +65,28 @@ if (xcodebuildVersion.status !== 0) {
 	process.exit(1);
 }
 
-// SwiftPM writes a single-arch release build to <buildPath>/<swiftArch>-apple-macosx/release/<name>.
-// Fall back to a search that skips the identically-named file inside the .dSYM debug bundle (matching
-// that file and feeding it forward is what produced an unrunnable "exec format error" binary before).
-function findExecutable(dir, swiftArch, name) {
-	const expected = path.join(dir, `${swiftArch}-apple-macosx`, "release", name);
-	if (fs.existsSync(expected)) return expected;
-
-	const stack = [dir];
-	const matches = [];
-	while (stack.length > 0) {
-		const current = stack.pop();
-		let entries;
-		try {
-			entries = fs.readdirSync(current, { withFileTypes: true });
-		} catch {
-			continue;
-		}
-		for (const entry of entries) {
-			if (entry.name.endsWith(".dSYM")) continue;
-			const full = path.join(current, entry.name);
-			if (entry.isDirectory()) stack.push(full);
-			else if (entry.isFile() && entry.name === name && /[/\\]release[/\\]/i.test(full)) {
-				matches.push(full);
-			}
-		}
-	}
-	return matches[0] ?? null;
-}
-
 fs.mkdirSync(buildDir, { recursive: true });
 
 for (const { swift, tag } of archs) {
 	const archBuildDir = path.join(swiftBuildDir, swift);
-	const result = spawnSync(
-		"swift",
-		[
-			"build",
-			"-c",
-			"release",
-			"--arch",
-			swift,
-			"--package-path",
-			packageDir,
-			"--build-path",
-			archBuildDir,
-		],
-		{
-			cwd: root,
-			stdio: "inherit",
-		},
-	);
+	const buildArgs = swiftBuildArguments({ packageDir, scratchDir: archBuildDir, swiftArch: swift });
+	const result = spawnSync("swift", buildArgs, {
+		cwd: root,
+		stdio: "inherit",
+	});
 	if (result.error) {
 		console.error(`Failed to start Swift build (${swift}): ${result.error.message}`);
 		process.exit(1);
 	}
 	if (result.status !== 0) {
 		process.exit(result.status ?? 1);
+	}
+	let outputDirectory;
+	try {
+		outputDirectory = swiftBuildOutputDirectory({ buildArgs, cwd: root });
+	} catch (error) {
+		console.error(error.message);
+		process.exit(1);
 	}
 
 	const targetDir = path.join(root, "electron", "native", "bin", tag);
@@ -126,9 +96,11 @@ for (const { swift, tag } of archs) {
 		[helperName, localHelperPath],
 		[cursorHelperName, localCursorHelperPath],
 	]) {
-		const exe = findExecutable(archBuildDir, swift, name);
-		if (!exe) {
-			console.error(`Swift build (${swift}) completed but executable was not found: ${name}`);
+		let exe;
+		try {
+			exe = swiftBuiltExecutable(outputDirectory, name);
+		} catch (error) {
+			console.error(error.message);
 			process.exit(1);
 		}
 		// Always place it in the arch's bin folder; mirror the host-arch build into the dev build

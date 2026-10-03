@@ -70,6 +70,8 @@
 		"defaultSourceName": "Экран"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "Пожалуйста, выберите источник для записи",
 		"systemPicker": "Система спросит, чем поделиться",
 		"inProgress": "Идёт запись",

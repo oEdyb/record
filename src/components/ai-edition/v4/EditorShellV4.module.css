@@ -515,6 +515,41 @@
 	);
 }
 
+.previewWorkspace[data-recording-only="true"] {
+	padding: var(--editor-stage-inset);
+}
+.recordingTransport {
+	grid-row: 3;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 0;
+	padding: 8px 18px;
+	border-top: 1px solid var(--border-soft);
+}
+.recordingTransport > div { width: 100%; }
+.recordingEmpty {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 16px;
+	text-align: center;
+}
+.recordingEmpty p { font-size: 24px; font-weight: 600; }
+.recordingEmpty span { color: var(--fg-muted); }
+.recordingEmpty button {
+	background: var(--accent);
+	color: var(--accent-on);
+	border: 0;
+	border-radius: 10px;
+	min-height: 44px;
+	padding: 0 24px;
+	font: inherit;
+}
+.recordingEmpty button:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 3px; }
+
 /* ─── FLOATING INSPECTOR + FACET RAIL ──────────────────────────────── */
 /* The pane and rail are one object. The pane uses the full stage height instead
    of leaving a dead reserved column below a short floating card. */

@@ -74,6 +74,8 @@
 		"defaultSourceName": "Ekran"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "Lütfen kayıt için bir kaynak seçin",
 		"systemPicker": "Sisteminiz neyi paylaşacağınızı soracak",
 		"inProgress": "Kaydediliyor",

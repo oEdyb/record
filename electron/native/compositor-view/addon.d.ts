@@ -142,6 +142,9 @@ export interface GifParamsInput {
 /** Output size/framerate/codec the app wants. All optional — omitted → 1920x1080 / first
  *  clip's fps / h264. `width`/`height` are rounded to the nearest even number (NV12 4:2:0). */
 export interface ExportParamsInput {
+	/** Main-process opt-in to preserve encoded video and its original timestamps/
+	 * cadence at source quality. FPS/bitrate then apply only to rendered fallback. */
+	preserveRecordingSource?: boolean;
 	width?: number;
 	height?: number;
 	fps?: number;

@@ -6,6 +6,7 @@
  * accident across several unrelated components.
  */
 export const PRODUCT_SURFACE = Object.freeze({
+	recordingOnly: true,
 	agentEditor: false,
 	mediaWorkspace: false,
 	captions: true,

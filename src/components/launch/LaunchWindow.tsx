@@ -13,6 +13,7 @@ import { usePortalOwnsSource } from "../../hooks/usePortalOwnsSource";
 import { useScreenRecorder } from "../../hooks/useScreenRecorder";
 import { requestCameraAccess } from "../../lib/requestCameraAccess";
 import type { WebcamFormat } from "../../lib/webcamFormats";
+import { ensureDefaultRecordingSource } from "./defaultRecordingSource";
 import {
 	HudCameraButton,
 	HudCompactPauseButton,
@@ -102,6 +103,7 @@ export function LaunchWindow() {
 
 	const {
 		preferencesReady,
+		starting,
 		recording,
 		paused,
 		saving,
@@ -178,7 +180,8 @@ export function LaunchWindow() {
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
 	// be applied atomically before the next clip starts.
-	const controlsLocked = saving || clipFinalizing || (recording && !canReconfigureWhilePaused);
+	const controlsLocked =
+		starting || saving || clipFinalizing || (recording && !canReconfigureWhilePaused);
 
 	useEffect(() => {
 		if (!recording) setActiveHudExpanded(false);
@@ -578,6 +581,8 @@ export function LaunchWindow() {
 	const defaultSourceName = t("sourceSelector.defaultSourceName");
 	const [selectedSource, setSelectedSource] = useState(defaultSourceName);
 	const [hasSelectedSource, setHasSelectedSource] = useState(false);
+	const [sourceReady, setSourceReady] = useState(false);
+	const sourceGenerationRef = useRef(0);
 	const recordAfterSourceSelectionRef = useRef(false);
 
 	const applySelectedSource = useCallback(
@@ -601,32 +606,42 @@ export function LaunchWindow() {
 	useEffect(() => {
 		let cancelled = false;
 
-		const refreshSelectedSource = async () => {
+		const refreshSelectedSource = async (initialize = false) => {
 			if (!window.electronAPI) {
 				return;
 			}
 
 			try {
-				const source = await window.electronAPI.getSelectedSource();
+				const generation = sourceGenerationRef.current;
+				const source = initialize
+					? await ensureDefaultRecordingSource(
+							window.electronAPI,
+							() => !cancelled && generation === sourceGenerationRef.current,
+						)
+					: await window.electronAPI.getSelectedSource();
 				if (!cancelled) {
 					applySelectedSource(source);
 				}
 			} catch (error) {
 				console.warn("Failed to refresh selected source:", error);
+			} finally {
+				if (!cancelled && initialize) setSourceReady(true);
 			}
 		};
 
-		void refreshSelectedSource();
-		window.addEventListener("focus", refreshSelectedSource);
+		void refreshSelectedSource(true);
+		const onFocus = () => void refreshSelectedSource();
+		window.addEventListener("focus", onFocus);
 
 		return () => {
 			cancelled = true;
-			window.removeEventListener("focus", refreshSelectedSource);
+			window.removeEventListener("focus", onFocus);
 		};
 	}, [applySelectedSource]);
 
 	useEffect(() => {
 		const cleanupSourceChanged = window.electronAPI?.onSelectedSourceChanged?.((source) => {
+			sourceGenerationRef.current += 1;
 			applySelectedSource(source);
 			if (!recordAfterSourceSelectionRef.current || recording) {
 				return;
@@ -994,15 +1009,17 @@ export function LaunchWindow() {
 	// record will do, and the recording label stays neutral because the portal
 	// reports a KIND, never a window title. Naming a source we were never told
 	// is what put a window's name on a full-screen recording.
-	const recordLabel = saving
-		? t("recording.saving")
-		: portalOwnsSource
-			? recording
-				? t("recording.inProgress")
-				: t("recording.systemPicker")
-			: hasSelectedSource || recording
-				? selectedSource
-				: t("recording.selectSource");
+	const recordLabel = starting
+		? t("recording.starting")
+		: saving
+			? t("recording.saving")
+			: portalOwnsSource
+				? recording
+					? t("recording.inProgress")
+					: t("recording.systemPicker")
+				: hasSelectedSource || recording
+					? selectedSource
+					: t("recording.selectSource");
 
 	// Stable identity, or the panel's memo boundary would break on every parent
 	// render — including the once-a-second one during a recording.
@@ -1079,12 +1096,16 @@ export function LaunchWindow() {
 								paused={paused}
 								saving={saving}
 								disabled={
+									starting ||
 									saving ||
 									clipFinalizing ||
-									(!recording && (!preferencesReady || (microphoneEnabled && isMicDevicesLoading)))
+									(!recording &&
+										(!sourceReady ||
+											!preferencesReady ||
+											(microphoneEnabled && isMicDevicesLoading)))
 								}
 								elapsedSeconds={elapsedSeconds}
-								label={recording ? "Stop and open editor" : recordLabel}
+								label={recording ? "Stop recording" : recordLabel}
 								savingLabel={t("recording.saving")}
 								onClick={handleRecordClick}
 							/>
@@ -1107,7 +1128,7 @@ export function LaunchWindow() {
 							{!recording && (
 								<HudStudioButton
 									disabled={saving}
-									label={t("tooltips.openStudio")}
+									label={t("recording.recordings")}
 									onClick={openStudio}
 								/>
 							)}
@@ -1224,13 +1245,16 @@ export function LaunchWindow() {
 									paused={paused}
 									saving={saving}
 									disabled={
+										starting ||
 										saving ||
 										clipFinalizing ||
 										(!recording &&
-											(!preferencesReady || (microphoneEnabled && isMicDevicesLoading)))
+											(!sourceReady ||
+												!preferencesReady ||
+												(microphoneEnabled && isMicDevicesLoading)))
 									}
 									elapsedSeconds={elapsedSeconds}
-									label={recording ? "Stop and open editor" : recordLabel}
+									label={recording ? "Stop recording" : recordLabel}
 									savingLabel={t("recording.saving")}
 									onClick={handleRecordClick}
 								/>
@@ -1238,7 +1262,7 @@ export function LaunchWindow() {
 								{!recording && (
 									<HudStudioButton
 										disabled={saving}
-										label={t("tooltips.openStudio")}
+										label={t("recording.recordings")}
 										onClick={openStudio}
 									/>
 								)}

@@ -74,6 +74,8 @@
 		"defaultSourceName": "画面"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "録画するソースを選択してください",
 		"systemPicker": "共有する対象はシステムが確認します",
 		"inProgress": "録画中",

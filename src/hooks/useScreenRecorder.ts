@@ -78,6 +78,7 @@ function cameraErrorDescription(error: unknown): string {
 type UseScreenRecorderReturn = {
 	preferencesReady: boolean;
 	recording: boolean;
+	starting: boolean;
 	paused: boolean;
 	saving: boolean;
 	clipFinalizing: boolean;
@@ -200,7 +201,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
 	const [webcamEnabled, setWebcamEnabledState] = useState(false);
 	const [webcamPreviewStream, setWebcamPreviewStream] = useState<MediaStream | null>(null);
-	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("editable-overlay");
+	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("system");
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
 
@@ -254,6 +255,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const discardRecordingId = useRef<number | null>(null);
 	const restarting = useRef(false);
 	const countdownRunId = useRef(0);
+	const pendingStartRunId = useRef<number | null>(null);
+	const recordingStartPending = useRef(false);
 	const [countdownActive, setCountdownActive] = useState(false);
 	const [clipFinalizing, setClipFinalizing] = useState(false);
 	const [recordedClips, setRecordedClips] = useState<RecordingSessionClip[]>([]);
@@ -1095,32 +1098,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			teardownMedia();
 		};
 	}, [teardownMedia, safeHideCountdownOverlay, getRecordingDurationMs]);
-
-	const safeShowCountdownOverlay = async (value: number, runId: number) => {
-		try {
-			await window.electronAPI.showCountdownOverlay(value, runId);
-			return true;
-		} catch (error) {
-			console.warn("Failed to show countdown overlay:", error);
-			return false;
-		}
-	};
-
 	const cancelCountdown = () => {
 		const activeRunId = countdownRunId.current;
 		countdownRunId.current += 1;
 		setCountdownActive(false);
 		void safeHideCountdownOverlay(activeRunId);
 	};
-
-	const safeSetCountdownOverlayValue = async (value: number, runId: number) => {
-		try {
-			await window.electronAPI.setCountdownOverlayValue(value, runId);
-		} catch (error) {
-			console.warn("Failed to update countdown overlay value:", error);
-		}
-	};
-
 	const isCountdownRunActive = (runId?: number) =>
 		runId === undefined || countdownRunId.current === runId;
 
@@ -1284,6 +1267,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		selectedSource: ProcessedDesktopSource,
 		countdownRunToken?: number,
 	) => {
+		let nativeWebcamRecorder: RecorderHandle | null = null;
+		let webcamClaimed = false;
 		try {
 			const platform = window.electronAPI.getPlatform();
 			if (platform !== "darwin") {
@@ -1308,7 +1293,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 
 			const activeRecordingId = Date.now();
-			let nativeWebcamRecorder: RecorderHandle | null = null;
 			// createRecorderHandle() calls MediaRecorder.start() synchronously, so the
 			// webcam clip's first frame is captured right now -- before the native
 			// ScreenCaptureKit helper below has even been spawned. Stamp that instant
@@ -1393,6 +1377,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			activeClipStartedAt.current = Date.now();
 			setActiveClipElapsedMs(0);
 			webcamRecorder.current = nativeWebcamRecorder;
+			webcamClaimed = true;
 			accumulatedDurationMs.current = 0;
 			segmentStartedAt.current = Date.now();
 			allowAutoFinalize.current = true;
@@ -1403,6 +1388,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		} catch (error) {
 			console.error("Native macOS capture failed:", error);
 			throw error;
+		} finally {
+			if (nativeWebcamRecorder && !webcamClaimed) {
+				await discardWebcamRecorder(nativeWebcamRecorder);
+			}
 		}
 	};
 
@@ -1557,163 +1546,65 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	};
 
 	const startRecordCountdown = async () => {
-		if (countdownActive || recording) {
-			return;
-		}
+		if (pendingStartRunId.current !== null || recording) return;
 
 		const runId = countdownRunId.current + 1;
 		countdownRunId.current = runId;
-
-		let selectedSource: ProcessedDesktopSource | null = null;
-		try {
-			selectedSource = await window.electronAPI.getSelectedSource();
-		} catch (error) {
-			console.warn("Failed to read selected source before countdown:", error);
-		}
-
-		// Resolved before the liveness check below so every await stays ahead of it.
-		const portalOwnsSource = await portalOwnsSourceSelection(window.electronAPI);
-
-		if (!isCountdownRunActive(runId)) {
-			return;
-		}
-
-		// The countdown's OWN source gate, distinct from the one in
-		// `startRecording`. On Linux the portal has not been asked anything yet —
-		// its picker is raised when capture starts, several steps after this — so
-		// there is nothing to have selected, and refusing here blocked recording
-		// outright once the in-app picker was removed.
-		if (!selectedSource && !portalOwnsSource) {
-			if (countdownRunId.current === runId) {
-				setCountdownActive(false);
-			}
-			alert(t("recording.selectSource"));
-			return;
-		}
-
-		try {
-			const platform = window.electronAPI.getPlatform();
-			if (platform === "darwin" && cursorCaptureMode === "editable-overlay") {
-				// The main process shows a native dialog that deep-links to the
-				// Accessibility settings pane when access is missing, so we just stop
-				// here and let the user grant it and press record again.
-				const access = await window.electronAPI.requestNativeMacCursorAccess();
-				if (!access.granted) {
-					return;
-				}
-			}
-		} catch (error) {
-			console.warn("Failed to preflight macOS cursor accessibility before countdown:", error);
-		}
-
-		// THE PICKER GOES BEFORE THE COUNTDOWN. On Wayland the compositor's dialog
-		// is the source chooser, and it only appears once the portal session is
-		// started — so counting down first meant counting down before the user had
-		// been asked anything, then freezing the overlay while they read a dialog
-		// that has no time limit. Kooha does the same in the same order: session,
-		// then timer, then play.
-		//
-		// Best-effort on purpose. A failure here is not a failure to record: the
-		// start below still negotiates the portal itself, which is exactly the
-		// behaviour that shipped before this existed.
-		let preparedRecordingId: number | null = null;
-		if (portalOwnsSource) {
-			try {
-				const prepared = await window.electronAPI.prepareNativeLinuxRecording(
-					buildNativeLinuxRequest(),
-				);
-				if (prepared.success && typeof prepared.recordingId === "number") {
-					preparedRecordingId = prepared.recordingId;
-				} else if (prepared.reason) {
-					console.info(`Native Linux capture was not prepared: ${prepared.reason}`);
-				}
-			} catch (error) {
-				console.warn("Failed to prepare the native Linux capture:", error);
-			}
-			// The user can dismiss the picker, or answer it slower than they change
-			// their mind about recording at all.
-			if (!isCountdownRunActive(runId)) {
-				void window.electronAPI.cancelNativeLinuxPrepare?.();
-				return;
-			}
-		}
-
-		if (!isCountdownRunActive(runId)) {
-			return;
-		}
-
+		pendingStartRunId.current = runId;
 		setCountdownActive(true);
+		let portalOwnsSource = false;
 
-		let overlayHidden = false;
 		try {
-			const values = [3, 2, 1];
-			const overlayShown = await safeShowCountdownOverlay(values[0], runId);
-
-			if (countdownRunId.current !== runId) {
+			const [selectedSource, portalSelection] = await Promise.all([
+				window.electronAPI.getSelectedSource().catch((error) => {
+					console.warn("Failed to read selected source before recording:", error);
+					return null;
+				}),
+				portalOwnsSourceSelection(window.electronAPI),
+			]);
+			portalOwnsSource = portalSelection;
+			if (!isCountdownRunActive(runId)) return;
+			if (!selectedSource && !portalOwnsSource) {
+				alert(t("recording.selectSource"));
 				return;
 			}
 
-			for (const value of values.slice(0, -1)) {
-				if (countdownRunId.current !== runId) {
-					return;
-				}
+			if (
+				window.electronAPI.getPlatform() === "darwin" &&
+				cursorCaptureMode === "editable-overlay"
+			) {
+				const access = await window.electronAPI.requestNativeMacCursorAccess();
+				if (!access.granted || !isCountdownRunActive(runId)) return;
+			}
 
-				if (overlayShown && value !== values[0]) {
-					await safeSetCountdownOverlayValue(value, runId);
-
-					if (countdownRunId.current !== runId) {
-						return;
+			let preparedRecordingId: number | null = null;
+			if (portalOwnsSource) {
+				try {
+					const prepared = await window.electronAPI.prepareNativeLinuxRecording(
+						buildNativeLinuxRequest(),
+					);
+					if (prepared.success && typeof prepared.recordingId === "number") {
+						preparedRecordingId = prepared.recordingId;
 					}
+				} catch (error) {
+					console.warn("Failed to prepare the native Linux capture:", error);
 				}
-
-				await new Promise((resolve) => window.setTimeout(resolve, 1000));
 			}
+			if (!isCountdownRunActive(runId)) return;
 
-			if (countdownRunId.current !== runId) {
-				return;
-			}
-
-			if (overlayShown) {
-				await safeSetCountdownOverlayValue(values.at(-1) ?? 1, runId);
-			}
-
-			if (countdownRunId.current !== runId) {
-				return;
-			}
-
-			// Start the capture while the final countdown value is still visible.
-			// Native startup can take about one second; hiding first left a blank gap
-			// between `1` and the timer even though no media was being recorded. Keep
-			// the overlay up until the recorder has confirmed its real first frame.
 			await startRecording(runId, preparedRecordingId);
-
-			if (countdownRunId.current !== runId) {
-				return;
-			}
-
-			// Let React paint the timer behind the overlay before the main process
-			// hides it. The user then sees one direct `1` -> `00:00` transition.
+			if (!isCountdownRunActive(runId)) return;
 			await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-			if (countdownRunId.current !== runId) {
-				return;
-			}
-
-			setCountdownActive(false);
-			await safeHideCountdownOverlay(runId);
-			overlayHidden = true;
+		} catch (error) {
+			console.error("Failed to prepare recording:", error);
+			toast.error(error instanceof Error ? error.message : "Failed to prepare recording");
 		} finally {
-			if (!overlayHidden && countdownRunId.current === runId) {
+			if (isCountdownRunActive(runId)) {
 				setCountdownActive(false);
 				await safeHideCountdownOverlay(runId);
 			}
-			// Unconditional, and safe: a start that used the prepared session
-			// already claimed it, so this is a no-op there. Every OTHER way out of
-			// this block — cancelled countdown, an overlay that threw, a source
-			// that vanished — would otherwise leave a live ScreenCast session and
-			// the compositor's sharing indicator up with nothing recording.
-			if (portalOwnsSource) {
-				void window.electronAPI.cancelNativeLinuxPrepare?.();
-			}
+			if (portalOwnsSource) void window.electronAPI.cancelNativeLinuxPrepare?.();
+			if (pendingStartRunId.current === runId) pendingStartRunId.current = null;
 		}
 	};
 
@@ -1721,6 +1612,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		countdownRunToken?: number,
 		preparedRecordingId?: number | null,
 	) => {
+		if (
+			recordingStartPending.current ||
+			recording ||
+			nativeMacRecording.current ||
+			nativeWindowsRecording.current ||
+			nativeLinuxRecording.current ||
+			screenRecorder.current
+		)
+			return;
+		recordingStartPending.current = true;
 		try {
 			if (!isCountdownRunActive(countdownRunToken)) {
 				teardownMedia();
@@ -2030,6 +1931,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			screenRecorder.current = null;
 			webcamRecorder.current = null;
 			teardownMedia();
+		} finally {
+			recordingStartPending.current = false;
 		}
 	};
 
@@ -2535,6 +2438,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	return {
 		recording,
+		starting: countdownActive,
 		paused,
 		saving,
 		clipFinalizing,

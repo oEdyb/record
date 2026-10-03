@@ -103,6 +103,7 @@ interface PreviewCanvasProps {
 	onVideoError?: (assetId: string) => void;
 	/** Enables direct screen framing while the Layout inspector is visible. */
 	screenFramingEnabled?: boolean;
+	readOnly?: boolean;
 }
 
 // ponytail: fallback only — used until the active source's <video> reports
@@ -121,6 +122,7 @@ const SCREEN_SOURCE_SIZE = { width: 1920, height: 1080 };
 const WEBCAM_SOURCE_SIZE = { width: 960, height: 720 };
 
 export function PreviewCanvas(props: PreviewCanvasProps) {
+	const screenFramingEnabled = !props.readOnly && props.screenFramingEnabled;
 	const te = useScopedT("editor");
 	const ts = useScopedT("settings");
 	const { settings, setLive, commit } = useEditorSettings();
@@ -405,6 +407,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	};
 
 	const handleWebcamPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+		if (props.readOnly) return;
 		if (settings.webcamLayoutPreset !== "picture-in-picture") return;
 		if (isPlaying) return;
 		const slot = webcamSlotRef.current;
@@ -442,7 +445,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	};
 
 	const handleScreenPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-		if (!props.screenFramingEnabled || isPlaying || !layout?.screenRect) return;
+		if (!screenFramingEnabled || isPlaying || !layout?.screenRect) return;
 		const slot = screenSlotRef.current;
 		if (!slot) return;
 		const slotRect = slot.getBoundingClientRect();
@@ -494,7 +497,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	};
 
 	const handleScreenWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-		if (!props.screenFramingEnabled || isPlaying) return;
+		if (!screenFramingEnabled || isPlaying) return;
 		event.preventDefault();
 		event.stopPropagation();
 		const scale = clamp(
@@ -517,11 +520,12 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		[],
 	);
 
-	const isPipGrab = settings.webcamLayoutPreset === "picture-in-picture";
+	const isPipGrab = !props.readOnly && settings.webcamLayoutPreset === "picture-in-picture";
 
-	const selectedZoomRegion = props.selectedZoomRegionId
-		? (props.zoomRegions?.find((z) => z.id === props.selectedZoomRegionId) ?? null)
-		: null;
+	const selectedZoomRegion =
+		!props.readOnly && props.selectedZoomRegionId
+			? (props.zoomRegions?.find((z) => z.id === props.selectedZoomRegionId) ?? null)
+			: null;
 
 	return (
 		<div
@@ -545,19 +549,19 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 					style={{
 						...screenStyle,
 						cursor:
-							props.screenFramingEnabled && !isPlaying
+							screenFramingEnabled && !isPlaying
 								? isScreenDragging
 									? "grabbing"
 									: "grab"
 								: "default",
-						touchAction: props.screenFramingEnabled ? "none" : "auto",
+						touchAction: screenFramingEnabled ? "none" : "auto",
 					}}
-					tabIndex={props.screenFramingEnabled && !isPlaying ? 0 : -1}
-					aria-label={props.screenFramingEnabled ? ts("layout.screenFramingPreview") : undefined}
+					tabIndex={screenFramingEnabled && !isPlaying ? 0 : -1}
+					aria-label={screenFramingEnabled ? ts("layout.screenFramingPreview") : undefined}
 					onPointerDown={handleScreenPointerDown}
 					onWheel={handleScreenWheel}
 					onKeyDown={(event) => {
-						if (!props.screenFramingEnabled || isPlaying) return;
+						if (!screenFramingEnabled || isPlaying) return;
 						const point = screenFraming.focalPoint;
 						const step = event.shiftKey ? 0.1 : 0.02;
 						let next: ScreenFraming | null = null;
@@ -642,7 +646,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 							onFocusCommit={props.onZoomFocusCommit}
 						/>
 					) : null}
-					{props.annotationRegions &&
+					{!props.readOnly &&
+					props.annotationRegions &&
 					props.onSelectAnnotation &&
 					props.onAnnotationPositionChange &&
 					props.onAnnotationSizeChange &&

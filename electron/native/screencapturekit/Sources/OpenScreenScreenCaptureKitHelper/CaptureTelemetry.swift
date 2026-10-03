@@ -89,7 +89,7 @@ final class CaptureTelemetry {
 		lock.lock()
 		defer { lock.unlock() }
 		screenSamples += 1
-		guard let status = frameStatus(sampleBuffer) else {
+		guard let status = Self.frameStatus(sampleBuffer) else {
 			completeScreenSamples += 1
 			return true
 		}
@@ -230,7 +230,7 @@ final class CaptureTelemetry {
 		return value
 	}
 
-	private func frameStatus(_ sampleBuffer: CMSampleBuffer) -> SCFrameStatus? {
+	static func frameStatus(_ sampleBuffer: CMSampleBuffer) -> SCFrameStatus? {
 		guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
 			sampleBuffer,
 			createIfNecessary: false

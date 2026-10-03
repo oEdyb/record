@@ -19,9 +19,14 @@ import {
 	applyProbedDuration,
 	replaceTimeline as replaceTimelineOp,
 	resolveClipInsertionBoundary,
+	resolvePlaybackSegments,
 } from "@/lib/ai-edition/document/timeline";
 import { type AxcutClip, documentSchema } from "@/lib/ai-edition/schema";
-import { exportRunPercent, useExportRunStore } from "@/lib/ai-edition/store/exportRunStore";
+import {
+	exportRunPercent,
+	isExportRunActive,
+	useExportRunStore,
+} from "@/lib/ai-edition/store/exportRunStore";
 import { useProjectStore, waitForProjectMutations } from "@/lib/ai-edition/store/projectStore";
 import {
 	useAssetTranscriptions,
@@ -33,7 +38,12 @@ import { useUndoRedoShortcuts } from "@/lib/ai-edition/store/undo";
 import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTimelineOps";
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
-import { resolveNativePosition } from "@/lib/ai-edition/timeline/timelineMap";
+import {
+	buildTimelinePlaybackProjection,
+	playbackTimeToRawTime,
+	rawTimeToPlaybackTime,
+	resolveNativePosition,
+} from "@/lib/ai-edition/timeline/timelineMap";
 import { transcriptRelevantAssetIds } from "@/lib/ai-edition/transcription/status";
 import type { TranscriptLanguage } from "@/lib/captioning/transcriptLanguages";
 import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
@@ -61,13 +71,22 @@ import {
 import { Preview } from "./Preview";
 import { PreviewQualityControl } from "./PreviewQualityControl";
 import { type SelectablePauseSuggestion, usePauseAnalysisStore } from "./pauses/pauseAnalysisStore";
+import { RecordingReviewToolbar } from "./RecordingReviewToolbar";
 import type { TrimTarget } from "./RightPanes";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
+import { createRecordingReviewNavigation } from "./recordingReviewNavigation";
+import {
+	awaitRecordingReviewDocument,
+	hasPendingRecordingHandoff,
+} from "./recordingReviewReadiness";
 import {
 	canRegenerateAutomaticDirection,
 	regenerateProjectAutomaticDirection,
 } from "./regenerateAutomaticDirection";
 import { TransactionRecoveryBanner } from "./TransactionRecoveryBanner";
+import { TransportBar } from "./TransportBar";
+import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
+import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
 import v4 from "./v4/EditorShellV4.module.css";
 import { type EditorMode, EditorTopBar } from "./v4/EditorTopBar";
 import { type Facet, FloatingInspector } from "./v4/FloatingInspector";
@@ -147,6 +166,9 @@ export function NewEditorShell() {
 		() => PRODUCT_SURFACE.agentEditor && loadUserPreferences().editorChatOpen,
 	);
 	const [importingMedia, setImportingMedia] = useState(false);
+	const [recordingReviewPending, setRecordingReviewPending] = useState(false);
+	const [recordingReviewActionPending, setRecordingReviewActionPending] = useState(false);
+	const recordingReviewActionRef = useRef(false);
 	const [chatWidthPx, setChatWidthPx] = useState(
 		() => Number(localStorage.getItem("os-editor-chat-width")) || 392,
 	);
@@ -163,6 +185,7 @@ export function NewEditorShell() {
 	// mounted per trigger site.
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
 	const [exportOpen, setExportOpen] = useState(false);
+	const [quickExport, setQuickExport] = useState(true);
 	// A background export keeps rendering after its dialog closes; the top bar shows it.
 	const exportRunPhase = useExportRunStore((s) => s.phase);
 	const exportRunProgress = useExportRunStore((s) => s.progress);
@@ -240,12 +263,31 @@ export function NewEditorShell() {
 		const state = useProjectStore.getState();
 		const timelineEnd = state.document?.timeline.clips.at(-1)?.timelineEndSec ?? 0;
 		if (state.currentTimeSec > timelineEnd) state.setCurrentTime(timelineEnd);
-	});
+	}, !PRODUCT_SURFACE.recordingOnly);
 	const [copiedClipId, setCopiedClipId] = useState<string | null>(null);
 	const [projectSummaries, setProjectSummaries] = useState<AiEditionProjectSummary[]>([]);
 	const seekSeqRef = useRef(0);
 	const initRef = useRef(false);
 	const recordingResumeRef = useRef<Promise<boolean> | null>(null);
+	const recordingHandoffPendingRef = useRef(false);
+	const recordingNavigationRevisionRef = useRef(0);
+	const recordingReviewNavigation = useMemo(
+		() =>
+			createRecordingReviewNavigation({
+				isPreparing: () =>
+					PRODUCT_SURFACE.recordingOnly &&
+					Boolean(
+						recordingResumeRef.current ||
+							recordingHandoffPendingRef.current ||
+							recordingReviewActionRef.current ||
+							isPendingRecordingImportInProgress(),
+					),
+			}),
+		[],
+	);
+	const handleOpenRecordings = useCallback(() => {
+		recordingReviewNavigation.run(() => setOpenProjectOpen(true));
+	}, [recordingReviewNavigation]);
 
 	// Dev-only: expose the project store so the browser preview harness can
 	// seed a populated document for design QA. Tree-shaken out of prod builds.
@@ -302,6 +344,7 @@ export function NewEditorShell() {
 
 	const resumeRecordingWorkspace = useCallback(() => {
 		if (recordingResumeRef.current) return recordingResumeRef.current;
+		setRecordingReviewPending(true);
 
 		const resume = (async () => {
 			if (!window.electronAPI) return false;
@@ -342,11 +385,18 @@ export function NewEditorShell() {
 				return true;
 			}
 			return false;
-		})();
+		})().finally(async () => {
+			recordingHandoffPendingRef.current = window.electronAPI
+				? await hasPendingRecordingHandoff(() => window.electronAPI.getCurrentRecordingSession())
+				: false;
+		});
 
 		recordingResumeRef.current = resume;
 		const clearResume = () => {
-			if (recordingResumeRef.current === resume) recordingResumeRef.current = null;
+			if (recordingResumeRef.current === resume) {
+				recordingResumeRef.current = null;
+				setRecordingReviewPending(recordingHandoffPendingRef.current);
+			}
 		};
 		void resume.then(clearResume, clearResume);
 		return resume;
@@ -379,6 +429,12 @@ export function NewEditorShell() {
 		initRef.current = true;
 		void (async () => {
 			if (await resumeRecordingWorkspace()) return;
+			const navigationRevision = recordingNavigationRevisionRef.current;
+			const projectAtStart = useProjectStore.getState().projectId;
+			const canApply = () =>
+				!recordingReviewNavigation.isBlocked() &&
+				recordingNavigationRevisionRef.current === navigationRevision &&
+				useProjectStore.getState().projectId === projectAtStart;
 			// ponytail: no recording waiting — restore the user's most recent
 			// project. The browser-shim's listProjects returns the seeded
 			// `browser-shim-projects` entries, so e2e tests can land directly in a
@@ -392,7 +448,7 @@ export function NewEditorShell() {
 				console.info("[editor] listProjects returned", projects);
 				if (projects.length > 0) {
 					console.info("[editor] auto-loading project", projects[0].id);
-					await loadProject(projects[0].id);
+					await loadProject(projects[0].id, { canApply });
 					const state = useProjectStore.getState();
 					console.info(
 						"[editor] post-loadProject status=",
@@ -407,7 +463,7 @@ export function NewEditorShell() {
 				console.warn("[editor] auto-load failed", e);
 			}
 		})();
-	}, [loadProject, resumeRecordingWorkspace]);
+	}, [loadProject, recordingReviewNavigation, resumeRecordingWorkspace]);
 
 	// Warn on close when dirty
 	useEffect(() => {
@@ -765,33 +821,51 @@ export function NewEditorShell() {
 	);
 
 	const handleBrowseProject = useCallback(async () => {
+		const projectAtStart = useProjectStore.getState().projectId;
+		const navigationRevision = recordingNavigationRevisionRef.current;
+		const isCurrent = () =>
+			useProjectStore.getState().projectId === projectAtStart &&
+			recordingNavigationRevisionRef.current === navigationRevision;
+		const canApply = () => !recordingReviewNavigation.isBlocked() && isCurrent();
 		try {
-			const result = await window.electronAPI?.loadProjectFile();
-			if (!result?.success || !result.project) return;
-			const raw = result.project as unknown;
-			// A current project file already carries its own `schemaVersion` (v3/v4
-			// AxcutDocument); an older legacy export is EditorProjectData and must be
-			// migrated. Discriminate on the version field so a current document is
-			// never fed to the legacy migrator (which reads `.media`/`.editor` and
-			// would yield an empty doc).
-			const isAxcutDocument =
-				typeof raw === "object" && raw !== null && "schemaVersion" in raw && "timeline" in raw;
-			const doc = isAxcutDocument
-				? documentSchema.parse(migrateRawDocumentToCurrent(raw)) // disk-load: upgrade v3/v4 → v5, then validate
-				: await prepareLegacyProjectForOpen(raw as EditorProjectData);
-			const saved = await nativeBridgeClient.aiEdition.importProject(doc);
-			if (saved.success && saved.document) {
-				await loadProject(documentSchema.parse(saved.document).project.id);
-				toast.success(isAxcutDocument ? "Project copy opened" : "Legacy project copied and loaded");
-			} else {
-				toast.error(saved.error ?? "Failed to open project");
-			}
+			await recordingReviewNavigation.runAfter(
+				async () => window.electronAPI?.loadProjectFile(),
+				async (result) => {
+					if (!result?.success || !result.project) return;
+					const raw = result.project as unknown;
+					// Current documents carry their version; older exports need migration.
+					const isAxcutDocument =
+						typeof raw === "object" && raw !== null && "schemaVersion" in raw && "timeline" in raw;
+					const doc = isAxcutDocument
+						? documentSchema.parse(migrateRawDocumentToCurrent(raw))
+						: await prepareLegacyProjectForOpen(raw as EditorProjectData);
+					if (!canApply()) return;
+					const saved = await nativeBridgeClient.aiEdition.importProject(doc);
+					if (!canApply()) return;
+					if (saved.success && saved.document) {
+						const targetProjectId = documentSchema.parse(saved.document).project.id;
+						await loadProject(targetProjectId, { canApply });
+						if (
+							recordingReviewNavigation.isBlocked() ||
+							recordingNavigationRevisionRef.current !== navigationRevision ||
+							useProjectStore.getState().projectId !== targetProjectId
+						)
+							return;
+						toast.success(
+							isAxcutDocument ? "Project copy opened" : "Legacy project copied and loaded",
+						);
+					} else {
+						toast.error(saved.error ?? "Failed to open project");
+					}
+				},
+				isCurrent,
+			);
 		} catch (err) {
 			toast.error("Could not load project", {
 				description: err instanceof Error ? err.message : String(err),
 			});
 		}
-	}, [loadProject]);
+	}, [loadProject, recordingReviewNavigation]);
 
 	// ponytail: transcript-pane → timeline skip ranges. The right pane's
 	// contentEditable region converts user Backspace/Delete into a new
@@ -829,15 +903,23 @@ export function NewEditorShell() {
 
 	const handleSelectProject = useCallback(
 		async (id: string) => {
+			if (recordingReviewNavigation.isBlocked()) return;
+			const projectAtStart = useProjectStore.getState().projectId;
+			const navigationRevision = recordingNavigationRevisionRef.current;
 			try {
-				await loadProject(id);
+				await loadProject(id, {
+					canApply: () =>
+						!recordingReviewNavigation.isBlocked() &&
+						recordingNavigationRevisionRef.current === navigationRevision &&
+						useProjectStore.getState().projectId === projectAtStart,
+				});
 			} catch (err) {
 				toast.error("Could not open project", {
 					description: err instanceof Error ? err.message : String(err),
 				});
 			}
 		},
-		[loadProject],
+		[loadProject, recordingReviewNavigation],
 	);
 
 	// The dialog's starting point either opens Media or moves directly to the
@@ -871,23 +953,27 @@ export function NewEditorShell() {
 	// The only way to get rid of a project short of deleting its file by hand.
 	// Media is left alone on purpose: a recording can back several projects, and
 	// the dialog says so before it asks.
-	const handleDeleteProject = useCallback(async (id: string) => {
-		try {
-			const result = await nativeBridgeClient.aiEdition.delete(id);
-			if (!result.success) throw new Error(result.error ?? "Failed to delete project");
-			setProjectSummaries((prev) => prev.filter((p) => p.id !== id));
-			// Deleting the project that is open leaves the editor pointing at a file
-			// that no longer exists — any save from there would recreate it.
-			if (useProjectStore.getState().projectId === id) {
-				useProjectStore.getState().clear();
+	const handleDeleteProject = useCallback(
+		async (id: string) => {
+			if (recordingReviewNavigation.isBlocked()) return;
+			try {
+				const result = await nativeBridgeClient.aiEdition.delete(id);
+				if (!result.success) throw new Error(result.error ?? "Failed to delete project");
+				setProjectSummaries((prev) => prev.filter((p) => p.id !== id));
+				// Deleting the project that is open leaves the editor pointing at a file
+				// that no longer exists — any save from there would recreate it.
+				if (useProjectStore.getState().projectId === id) {
+					useProjectStore.getState().clear();
+				}
+				toast.success("Project deleted");
+			} catch (err) {
+				toast.error("Could not delete project", {
+					description: err instanceof Error ? err.message : String(err),
+				});
 			}
-			toast.success("Project deleted");
-		} catch (err) {
-			toast.error("Could not delete project", {
-				description: err instanceof Error ? err.message : String(err),
-			});
-		}
-	}, []);
+		},
+		[recordingReviewNavigation],
+	);
 
 	const handleSave = useCallback(async () => {
 		const doc = useProjectStore.getState().document;
@@ -909,6 +995,7 @@ export function NewEditorShell() {
 	// File/Edit/View menu bar works again (Edit/View items use Electron roles).
 	// The v4 editor has no separate "Save As" location, so it maps to Save.
 	useEffect(() => {
+		if (PRODUCT_SURFACE.recordingOnly) return;
 		const api = window.electronAPI;
 		if (!api) return;
 		const unsubscribers = [
@@ -996,11 +1083,18 @@ export function NewEditorShell() {
 	}, [addAsset, importingMedia, openEntitlement, te, tl]);
 
 	const handleNewRecording = useCallback(async () => {
+		if (isExportRunActive(useExportRunStore.getState().phase)) return;
 		if (!requireEntitlement("record")) return;
 		const api = window.electronAPI;
 		if (!api?.startNewRecording) return;
+		recordingNavigationRevisionRef.current += 1;
+		setOpenProjectOpen(false);
 		try {
-			await recordingResumeRef.current;
+			await resumeRecordingWorkspace();
+			const pending = await api.getCurrentRecordingSession();
+			if (pending.success && pending.session) {
+				throw new Error("The current recording is still being prepared. Try again shortly.");
+			}
 			// Stop the playback clock synchronously before any awaited save. Reading
 			// the store after this gives one authoritative playhead for both return
 			// state and insertion placement.
@@ -1015,7 +1109,7 @@ export function NewEditorShell() {
 			state = useProjectStore.getState();
 			currentDocument = state.document;
 			const context: RecordingWorkspaceContext | undefined =
-				state.projectId && currentDocument
+				state.projectId && currentDocument && !PRODUCT_SURFACE.recordingOnly
 					? {
 							origin: "editor",
 							projectId: state.projectId,
@@ -1042,15 +1136,60 @@ export function NewEditorShell() {
 				description: err instanceof Error ? err.message : String(err),
 			});
 		}
-	}, [facet, inspectorOpen, mode, openEntitlement, saveDocument, setPlaying]);
+	}, [
+		facet,
+		inspectorOpen,
+		mode,
+		openEntitlement,
+		resumeRecordingWorkspace,
+		saveDocument,
+		setPlaying,
+	]);
 
+	const openRecordingExport = useCallback(
+		async (sourceRecovery: boolean) => {
+			if (recordingReviewActionRef.current) return;
+			if (!sourceRecovery && !requireEntitlement("export")) return;
+			recordingReviewActionRef.current = true;
+			setRecordingReviewActionPending(true);
+			try {
+				const ready = await awaitRecordingReviewDocument({
+					refreshWorkspace: resumeRecordingWorkspace,
+					getCurrentRecordingSession: () => window.electronAPI.getCurrentRecordingSession(),
+					getProjectState: useProjectStore.getState,
+				});
+				if (!ready) {
+					toast.info(
+						te(
+							useProjectStore.getState().document?.timeline.clips.length
+								? "recordingReview.preparing"
+								: "recordingReview.recordFirst",
+						),
+					);
+					return;
+				}
+				setQuickExport(!sourceRecovery);
+				setExportOpen(true);
+			} catch (error) {
+				toast.error(te("recordingReview.preparing"), {
+					description: error instanceof Error ? error.message : String(error),
+				});
+			} finally {
+				recordingReviewActionRef.current = false;
+				setRecordingReviewActionPending(false);
+			}
+		},
+		[resumeRecordingWorkspace, te],
+	);
 	const handleExport = useCallback(() => {
-		if (!hasAsset) {
-			toast.info("Add a video to the project before exporting.");
+		if (PRODUCT_SURFACE.recordingOnly) {
+			void openRecordingExport(false);
 			return;
 		}
+		if (!hasAsset || !requireEntitlement("export")) return;
+		setQuickExport(false);
 		setExportOpen(true);
-	}, [hasAsset]);
+	}, [hasAsset, openRecordingExport]);
 
 	const handleRegenerateAutomaticEdits = useCallback(async () => {
 		if (!requireEntitlement("automatic-editing")) return;
@@ -1189,7 +1328,27 @@ export function NewEditorShell() {
 		toast.success("Region copied");
 	}, [tl]);
 
+	useRecordingReviewMenu({
+		enabled: PRODUCT_SURFACE.recordingOnly,
+		onRecord: () => void handleNewRecording(),
+		onRecordings: handleOpenRecordings,
+		onSave: handleExport,
+	});
+
+	useRecordingReviewShortcuts({
+		enabled: PRODUCT_SURFACE.recordingOnly,
+		isMac,
+		playPause: shortcuts.playPause,
+		onSave: handleExport,
+		onRecord: () => void handleNewRecording(),
+		onRecordings: handleOpenRecordings,
+		onPlayPause: togglePlay,
+		onStep: (direction) =>
+			handleSeek(Math.max(0, useProjectStore.getState().currentTimeSec + direction / 60)),
+	});
+
 	useEffect(() => {
+		if (PRODUCT_SURFACE.recordingOnly) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.defaultPrevented) return;
 			if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
@@ -1215,6 +1374,7 @@ export function NewEditorShell() {
 				return;
 			}
 			const ctrl = e.ctrlKey || e.metaKey;
+
 			if (ctrl && e.key === "s") {
 				e.preventDefault();
 				void handleSave();
@@ -1421,7 +1581,7 @@ export function NewEditorShell() {
 		handleSeek,
 	]);
 
-	const showTimeline = true;
+	const showTimeline = !PRODUCT_SURFACE.recordingOnly;
 	const visibleMode = PRODUCT_SURFACE.mediaWorkspace ? mode : "edit";
 	const timelineRow = visibleMode === "media" ? "188px" : `${timelineHeightPx}px`;
 	const bodyColumns =
@@ -1536,44 +1696,73 @@ export function NewEditorShell() {
 					pausePreviewSuggestions,
 				).timeline.trimRanges
 			: tl.trimRanges;
-	const inspectorExpanded = hasAsset && (inspectorOpen || tl.selection !== null);
+	const inspectorExpanded =
+		!PRODUCT_SURFACE.recordingOnly && hasAsset && (inspectorOpen || tl.selection !== null);
+	const reviewSegments = useMemo(
+		() => resolvePlaybackSegments(clips, tl.trimRanges),
+		[clips, tl.trimRanges],
+	);
+	const reviewProjection = useMemo(
+		() => buildTimelinePlaybackProjection(reviewSegments, clips),
+		[reviewSegments, clips],
+	);
 
 	return (
 		<div
 			className={v4.app}
 			style={{
-				gridTemplateRows: `var(--editor-topbar-h) 1fr ${showTimeline ? timelineRow : "0px"}`,
+				gridTemplateRows: PRODUCT_SURFACE.recordingOnly
+					? `auto 1fr ${hasAsset ? "64px" : "0px"}`
+					: `var(--editor-topbar-h) 1fr ${showTimeline ? timelineRow : "0px"}`,
 			}}
 		>
 			<TransactionRecoveryBanner />
-			<EditorTopBar
-				mode={visibleMode}
-				onModeChange={setMode}
-				projectTitle={project?.title ?? null}
-				dirty={dirty}
-				canExport={hasAsset}
-				exportRun={exportRun}
-				canImportMedia={hasProject}
-				canRegenerateAutomaticEdits={canRegenerateAutomaticDirection(document)}
-				regeneratingAutomaticEdits={regeneratingAutomaticEdits}
-				importingMedia={importingMedia}
-				chatOpen={chatOpen}
-				readOnly={entitlement.access === "read-only"}
-				entitlementLabel={entitlementLabel}
-				onEntitlement={() => openEntitlement()}
-				actions={{
-					openProject: () => setOpenProjectOpen(true),
-					newProject: () => requireEntitlement("edit") && setNewProjectOpen(true),
-					importMedia: () => void handleImportMedia(),
-					save: () => requireEntitlement("edit") && void handleSave(),
-					export: handleExport,
-					openSettings: handleOpenSettings,
-					renameProject: handleRenameProject,
-					toggleChat,
-					record: () => void handleNewRecording(),
-					regenerateAutomaticEdits: () => void handleRegenerateAutomaticEdits(),
-				}}
-			/>
+			{PRODUCT_SURFACE.recordingOnly ? (
+				<RecordingReviewToolbar
+					title={project?.title ?? null}
+					canSave={hasAsset}
+					preparing={recordingReviewPending || recordingReviewActionPending}
+					readOnly={entitlement.access === "read-only"}
+					busy={isExportRunActive(exportRunPhase)}
+					percent={exportRun?.percent ?? null}
+					entitlementLabel={entitlementLabel}
+					onEntitlement={() => openEntitlement()}
+					onRecordings={handleOpenRecordings}
+					onSettings={handleOpenSettings}
+					onRecord={() => void handleNewRecording()}
+					onSave={handleExport}
+					onOriginals={() => void openRecordingExport(true)}
+				/>
+			) : (
+				<EditorTopBar
+					mode={visibleMode}
+					onModeChange={setMode}
+					projectTitle={project?.title ?? null}
+					dirty={dirty}
+					canExport={hasAsset}
+					exportRun={exportRun}
+					canImportMedia={hasProject}
+					canRegenerateAutomaticEdits={canRegenerateAutomaticDirection(document)}
+					regeneratingAutomaticEdits={regeneratingAutomaticEdits}
+					importingMedia={importingMedia}
+					chatOpen={chatOpen}
+					readOnly={entitlement.access === "read-only"}
+					entitlementLabel={entitlementLabel}
+					onEntitlement={() => openEntitlement()}
+					actions={{
+						openProject: () => setOpenProjectOpen(true),
+						newProject: () => requireEntitlement("edit") && setNewProjectOpen(true),
+						importMedia: () => void handleImportMedia(),
+						save: () => requireEntitlement("edit") && void handleSave(),
+						export: handleExport,
+						openSettings: handleOpenSettings,
+						renameProject: handleRenameProject,
+						toggleChat,
+						record: () => void handleNewRecording(),
+						regenerateAutomaticEdits: () => void handleRegenerateAutomaticEdits(),
+					}}
+				/>
+			)}
 
 			<div className={v4.body} style={{ gridTemplateColumns: bodyColumns }}>
 				{visibleMode === "edit" && PRODUCT_SURFACE.agentEditor && chatOpen ? (
@@ -1600,63 +1789,90 @@ export function NewEditorShell() {
 				<section className={v4.stage} aria-label={te("shell.previewStage")}>
 					{visibleMode === "edit" ? (
 						<>
-							<div className={v4.previewWorkspace} data-inspector-open={inspectorExpanded}>
-								<Preview
-									hasProject={hasProject}
-									hasAsset={hasAsset}
-									videoSources={videoSources}
-									clips={clips}
-									zoomRegions={tl.zoomRegions}
-									speedRegions={tl.speedRegions}
-									cameraFullscreenRegions={tl.cameraFullscreenRegions}
-									trimRanges={previewTrimRanges}
-									selectedZoomRegionId={tl.selection?.kind === "zoom" ? tl.selection.id : null}
-									onZoomFocusChange={tl.updateZoomFocusLive}
-									onZoomFocusCommit={() => void tl.commitZoomFocus()}
-									annotationRegions={tl.annotationRegions}
-									selectedAnnotationId={
-										tl.selection?.kind === "annotation" ? tl.selection.id : null
-									}
-									onSelectAnnotation={(id) => tl.selectRegion("annotation", id)}
-									onAnnotationPositionChange={(id, position) => {
-										// Live seulement : appelé à chaque mouvement de souris pour que le
-										// compositeur natif suive le geste. L'écriture disque se fait une fois,
-										// au relâchement, via `onAnnotationCommit`.
-										tl.updateAnnotationLive(id, { position });
-									}}
-									onAnnotationSizeChange={(id, size) => {
-										tl.updateAnnotationLive(id, { size });
-									}}
-									onAnnotationBlurDataChange={(id, blurData) =>
-										tl.updateAnnotationLive(id, { blurData })
-									}
-									onAnnotationCommit={() => void tl.commitAnnotationChange()}
-									seekTarget={seekTarget}
-									onTimeChange={handleTimeChange}
-									onSeek={handleSeek}
-									onLoadedMetadata={handleLoadedMetadata}
-									onVideoElement={setVideoElement}
-									playing={playing}
-									screenFramingEnabled={
-										inspectorExpanded && facet === "layout" && tl.selection === null
-									}
-								/>
+							<div
+								className={v4.previewWorkspace}
+								data-inspector-open={inspectorExpanded}
+								data-recording-only={PRODUCT_SURFACE.recordingOnly}
+							>
+								{PRODUCT_SURFACE.recordingOnly && !hasAsset ? (
+									<div className={v4.recordingEmpty}>
+										<p>{te("recordingReview.ready")}</p>
+										<button type="button" onClick={() => void handleNewRecording()}>
+											{te("recordingReview.record")}
+										</button>
+										<span>{te("recordingReview.readyHint")}</span>
+									</div>
+								) : (
+									<Preview
+										hasProject={hasProject}
+										hasAsset={hasAsset}
+										readOnly={PRODUCT_SURFACE.recordingOnly}
+										videoSources={videoSources}
+										clips={clips}
+										zoomRegions={tl.zoomRegions}
+										speedRegions={tl.speedRegions}
+										cameraFullscreenRegions={tl.cameraFullscreenRegions}
+										trimRanges={previewTrimRanges}
+										selectedZoomRegionId={
+											!PRODUCT_SURFACE.recordingOnly && tl.selection?.kind === "zoom"
+												? tl.selection.id
+												: null
+										}
+										onZoomFocusChange={tl.updateZoomFocusLive}
+										onZoomFocusCommit={() => void tl.commitZoomFocus()}
+										annotationRegions={tl.annotationRegions}
+										selectedAnnotationId={
+											!PRODUCT_SURFACE.recordingOnly && tl.selection?.kind === "annotation"
+												? tl.selection.id
+												: null
+										}
+										onSelectAnnotation={
+											PRODUCT_SURFACE.recordingOnly
+												? undefined
+												: (id) => tl.selectRegion("annotation", id)
+										}
+										onAnnotationPositionChange={(id, position) => {
+											// Live seulement : appelé à chaque mouvement de souris pour que le
+											// compositeur natif suive le geste. L'écriture disque se fait une fois,
+											// au relâchement, via `onAnnotationCommit`.
+											tl.updateAnnotationLive(id, { position });
+										}}
+										onAnnotationSizeChange={(id, size) => {
+											tl.updateAnnotationLive(id, { size });
+										}}
+										onAnnotationBlurDataChange={(id, blurData) =>
+											tl.updateAnnotationLive(id, { blurData })
+										}
+										onAnnotationCommit={() => void tl.commitAnnotationChange()}
+										seekTarget={seekTarget}
+										onTimeChange={handleTimeChange}
+										onSeek={handleSeek}
+										onLoadedMetadata={handleLoadedMetadata}
+										onVideoElement={setVideoElement}
+										playing={playing}
+										screenFramingEnabled={
+											inspectorExpanded && facet === "layout" && tl.selection === null
+										}
+									/>
+								)}
 								{hasAsset ? <PreviewQualityControl /> : null}
 							</div>
-							<FloatingInspector
-								facet={facet}
-								open={hasAsset && inspectorOpen}
-								tl={tl}
-								onFacetChange={(f) => {
-									setFacet(f);
-									setInspectorOpen(true);
-								}}
-								onToggleOpen={() => setInspectorOpen((v) => !v)}
-								clips={tl.clips}
-								onEditClip={setEditClipTarget}
-								transcriptProps={transcriptProps}
-								onPausePreview={handlePausePreview}
-							/>
+							{!PRODUCT_SURFACE.recordingOnly ? (
+								<FloatingInspector
+									facet={facet}
+									open={hasAsset && inspectorOpen}
+									tl={tl}
+									onFacetChange={(f) => {
+										setFacet(f);
+										setInspectorOpen(true);
+									}}
+									onToggleOpen={() => setInspectorOpen((v) => !v)}
+									clips={tl.clips}
+									onEditClip={setEditClipTarget}
+									transcriptProps={transcriptProps}
+									onPausePreview={handlePausePreview}
+								/>
+							) : null}
 						</>
 					) : (
 						<MediaStage />
@@ -1665,6 +1881,20 @@ export function NewEditorShell() {
 			</div>
 
 			{/* Timeline footer shared by the Media and Edit workspaces. */}
+			{PRODUCT_SURFACE.recordingOnly && hasAsset ? (
+				<div className={v4.recordingTransport}>
+					<TransportBar
+						playing={playing}
+						overrideTimeSec={null}
+						clips={reviewSegments}
+						toDisplayTime={(sec) => rawTimeToPlaybackTime(sec, reviewProjection)}
+						onTogglePlay={togglePlay}
+						onPrevClip={handlePrevClip}
+						onNextClip={handleNextClip}
+						onSeek={(sec) => handleSeek(playbackTimeToRawTime(sec, reviewProjection, "after"))}
+					/>
+				</div>
+			) : null}
 			{showTimeline ? (
 				<div
 					style={{
@@ -1757,7 +1987,12 @@ export function NewEditorShell() {
 				action={unsavedPrompt?.action ?? "new"}
 				onChoose={handleConfirmUnsaved}
 			/>
-			<ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} document={document} />
+			<ExportDialog
+				open={exportOpen}
+				onClose={() => setExportOpen(false)}
+				document={document}
+				quickExport={PRODUCT_SURFACE.recordingOnly && quickExport}
+			/>
 		</div>
 	);
 }

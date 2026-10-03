@@ -136,6 +136,11 @@ import {
 	CompositorViewService,
 	type VideoBufferPublishSpec,
 } from "../native-bridge/services/compositorViewService";
+import {
+	buildNativeMacCaptureHelperCandidates,
+	buildNativeWindowsCaptureHelperCandidates,
+} from "../recording/nativeCaptureHelperPaths";
+import { prepareNativeMacCapturePermissions } from "../recording/nativeMacCapturePermissions";
 import { addNativeMacDisplayPrivacyExclusions } from "../recording/nativeMacCapturePrivacy";
 import { NativeMacHelperClient } from "../recording/nativeMacHelperClient";
 import { NativeMacRecordingService } from "../recording/nativeMacRecordingService";
@@ -157,6 +162,7 @@ import {
 	recordingSource,
 } from "../recording/projectRecordingSetupStore";
 import { type RecordingPrefs, RecordingPrefsStore } from "../recording/recordingPrefsStore";
+import { createRecordingStartupOverlayController } from "../recording/recordingStartupOverlay";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { recordingsDirectory } from "../recordingPaths";
@@ -1061,40 +1067,14 @@ function getSelectedDisplay() {
 	return screen.getAllDisplays().find((display) => display.id === sourceDisplayId) ?? null;
 }
 
-function resolveUnpackedAppPath(...segments: string[]) {
-	const resolved = path.join(app.getAppPath(), ...segments);
-	if (app.isPackaged) {
-		return resolved.replace(/\.asar([/\\])/, ".asar.unpacked$1");
-	}
-
-	return resolved;
-}
-
-function resolvePackagedResourcePath(...segments: string[]) {
-	if (!app.isPackaged) {
-		return null;
-	}
-
-	return path.join(process.resourcesPath, ...segments);
-}
-
 function getNativeWindowsCaptureHelperCandidates() {
-	const envPath = process.env.OPENSCREEN_WGC_CAPTURE_EXE?.trim();
-	const archTag = process.arch === "arm64" ? "win32-arm64" : "win32-x64";
-	return [
-		envPath,
-		resolveUnpackedAppPath(
-			"electron",
-			"native",
-			"wgc-capture",
-			"build",
-			"Release",
-			"wgc-capture.exe",
-		),
-		resolveUnpackedAppPath("electron", "native", "wgc-capture", "build", "wgc-capture.exe"),
-		resolveUnpackedAppPath("electron", "native", "bin", archTag, "wgc-capture.exe"),
-		resolvePackagedResourcePath("electron", "native", "bin", archTag, "wgc-capture.exe"),
-	].filter((candidate): candidate is string => Boolean(candidate));
+	return buildNativeWindowsCaptureHelperCandidates({
+		appPath: app.getAppPath(),
+		isPackaged: app.isPackaged,
+		resourcesPath: process.resourcesPath,
+		arch: process.arch,
+		envOverride: process.env.OPENSCREEN_WGC_CAPTURE_EXE,
+	});
 }
 
 async function findNativeWindowsCaptureHelperPath() {
@@ -1115,15 +1095,13 @@ async function findNativeWindowsCaptureHelperPath() {
 }
 
 function getNativeMacCaptureHelperCandidates() {
-	const envPath = process.env.OPENSCREEN_SCK_CAPTURE_EXE?.trim();
-	const archTag = process.arch === "arm64" ? "darwin-arm64" : "darwin-x64";
-	const helperName = "openscreen-screencapturekit-helper";
-	return [
-		envPath,
-		resolveUnpackedAppPath("electron", "native", "screencapturekit", "build", helperName),
-		resolveUnpackedAppPath("electron", "native", "bin", archTag, helperName),
-		resolvePackagedResourcePath("electron", "native", "bin", archTag, helperName),
-	].filter((candidate): candidate is string => Boolean(candidate));
+	return buildNativeMacCaptureHelperCandidates({
+		appPath: app.getAppPath(),
+		isPackaged: app.isPackaged,
+		resourcesPath: process.resourcesPath,
+		arch: process.arch,
+		envOverride: process.env.OPENSCREEN_SCK_CAPTURE_EXE,
+	});
 }
 
 async function findNativeMacCaptureHelperPath() {
@@ -2359,45 +2337,19 @@ export function registerIpcHandlers(
 		}),
 	);
 
-	ipcMain.handle("countdown-overlay-show", async (_, value: number, runId: number) => {
-		const overlayWindow = getCountdownOverlayWindow?.() ?? createCountdownOverlayWindow();
-		if (overlayWindow.isDestroyed()) {
-			return;
-		}
-
-		// Wait for the first frame before showing, else Chromium flashes a black
-		// rectangle because it hasn't rendered any pixels yet.
-		if (overlayWindow.webContents.isLoading()) {
-			await new Promise<void>((resolve) => {
-				overlayWindow.once("ready-to-show", resolve);
-			});
-		}
-
-		if (!overlayWindow.isVisible()) {
-			overlayWindow.showInactive();
-		}
-
-		overlayWindow.webContents.send("countdown-overlay-value", value, runId);
+	const recordingStartupOverlay = createRecordingStartupOverlayController({
+		getWindow: () => getCountdownOverlayWindow?.() ?? null,
+		createWindow: createCountdownOverlayWindow,
 	});
-
-	ipcMain.handle("countdown-overlay-set-value", (_, value: number, runId: number) => {
-		const overlayWindow = getCountdownOverlayWindow?.();
-		if (!overlayWindow || overlayWindow.isDestroyed()) {
-			return;
-		}
-
-		overlayWindow.webContents.send("countdown-overlay-value", value, runId);
-	});
-
-	ipcMain.handle("countdown-overlay-hide", (_, runId: number) => {
-		const overlayWindow = getCountdownOverlayWindow?.();
-		if (!overlayWindow || overlayWindow.isDestroyed()) {
-			return;
-		}
-
-		overlayWindow.webContents.send("countdown-overlay-value", null, runId);
-		overlayWindow.hide();
-	});
+	ipcMain.handle("countdown-overlay-show", (_, value: number, runId: number) =>
+		recordingStartupOverlay.show(value, runId),
+	);
+	ipcMain.handle("countdown-overlay-set-value", (_, value: number, runId: number) =>
+		recordingStartupOverlay.setValue(value, runId),
+	);
+	ipcMain.handle("countdown-overlay-hide", (_, runId: number) =>
+		recordingStartupOverlay.hide(runId),
+	);
 
 	ipcMain.handle("is-native-windows-capture-available", async () => {
 		if (!isWindowsGraphicsCaptureOsSupported()) {
@@ -3046,22 +2998,16 @@ export function registerIpcHandlers(
 			return new NativeMacHelperClient(process, { onFatalError });
 		},
 		resolveCapture: resolveNativeMacCaptureConfig,
-		prepareCapturePermissions: async (request) => {
-			try {
-				await desktopCapturer.getSources({
-					types: ["screen"],
-					thumbnailSize: { width: 1, height: 1 },
-				});
-			} catch {
-				// The helper reports the final ScreenCaptureKit permission status.
-			}
-			if (request.audio?.microphone?.enabled) {
-				const micStatus = systemPreferences.getMediaAccessStatus("microphone");
-				if (micStatus !== "granted") {
-					await systemPreferences.askForMediaAccess("microphone");
-				}
-			}
-		},
+		prepareCapturePermissions: (request) =>
+			prepareNativeMacCapturePermissions(request, {
+				getStatus: (mediaType) => systemPreferences.getMediaAccessStatus(mediaType),
+				requestScreenAccess: () =>
+					desktopCapturer.getSources({
+						types: ["screen"],
+						thumbnailSize: { width: 1, height: 1 },
+					}),
+				requestMicrophoneAccess: () => systemPreferences.askForMediaAccess("microphone"),
+			}),
 		startCursor: startCursorRecording,
 		stopCursor: stopCursorRecording,
 		clearCursor: () => {

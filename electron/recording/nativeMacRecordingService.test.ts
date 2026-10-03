@@ -85,6 +85,61 @@ describe("NativeMacRecordingService", () => {
 		await fs.rm(recordingsDir, { recursive: true, force: true });
 	});
 
+	it("rejects startup if the helper dies just after its first-frame acknowledgement", async () => {
+		helper.waitForStart.mockImplementation(async () => {
+			helper.running = false;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await expect(service.start(baseRequest)).resolves.toMatchObject({ success: false });
+		expect(deps.onRecordingStateChange).not.toHaveBeenCalledWith(true);
+		expect(deps.stopCursor).toHaveBeenCalledOnce();
+	});
+
+	it("keeps ordinary cursor pixels in capture without starting a separate cursor helper", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await expect(
+			service.start({ ...baseRequest, cursor: { mode: "system" } }),
+		).resolves.toMatchObject({ success: true });
+		expect(deps.startCursor).not.toHaveBeenCalled();
+		expect(deps.clearCursor).toHaveBeenCalled();
+	});
+
+	it("reports failed first-frame Continue so the HUD can save completed clips", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		helper.resume.mockRejectedValue(new Error("No first frame"));
+		await expect(service.resume()).resolves.toMatchObject({
+			success: false,
+			error: "No first frame",
+		});
+		expect(deps.onFatalError).toHaveBeenCalledWith({
+			code: "capture-resume-failed",
+			message: "No first frame",
+		});
+	});
+
+	it("reports a native Continue writer failure once", async () => {
+		let reportFatal: ((failure: { code: string; message: string }) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, callback) => {
+			reportFatal = callback;
+			return helper;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		helper.resume.mockImplementation(async () => {
+			reportFatal?.({ code: "writer-failed-during-capture", message: "Writer failed" });
+			throw new Error("Writer failed");
+		});
+		await expect(service.resume()).resolves.toMatchObject({ success: false });
+		expect(deps.onFatalError).toHaveBeenCalledOnce();
+		expect(deps.onFatalError).toHaveBeenCalledWith({
+			code: "writer-failed-during-capture",
+			message: "Writer failed",
+		});
+	});
+
 	it("applies changed paused settings before it continues with the next clip", async () => {
 		const clip = { index: 0, screenVideoPath: "/tmp/clip-1.mp4", durationMs: 1000 };
 		helper.pauseResult = Promise.resolve(clip);

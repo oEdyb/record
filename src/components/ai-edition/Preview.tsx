@@ -46,6 +46,7 @@ interface PreviewProps {
 	// data-is-playing test attribute.
 	playing: boolean;
 	screenFramingEnabled?: boolean;
+	readOnly?: boolean;
 }
 
 export function Preview({
@@ -74,6 +75,7 @@ export function Preview({
 	onVideoElement,
 	playing,
 	screenFramingEnabled = false,
+	readOnly = false,
 }: PreviewProps) {
 	const te = useScopedT("editor");
 	// Subscribed HERE rather than passed down from NewEditorShell: the playhead is
@@ -163,6 +165,7 @@ export function Preview({
 					onLoadedMetadata={onLoadedMetadata}
 					onVideoElement={onVideoElement}
 					currentTimeSec={currentTimeSec}
+					readOnly={readOnly}
 					onVideoError={handleVideoError}
 					screenFramingEnabled={screenFramingEnabled}
 				/>

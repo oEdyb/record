@@ -19,6 +19,10 @@ import {
 	type ExportTransactionPhase,
 	type ExportTransactionWarning,
 } from "../../export/atomicExport";
+import {
+	prepareRecordingFastExport,
+	type RecordingFastExportPlan,
+} from "../../export/recordingFastExport";
 import type {
 	ClipInput,
 	CompositorBackend,
@@ -199,6 +203,8 @@ export interface CompositorViewServiceOptions {
 	isPackaged?: boolean;
 	exportPublisher?: AtomicExportPublisher;
 	exportJournalPath?: string;
+	/** Injectable source-preserving preparation for export transaction tests. */
+	recordingFastExport?: typeof prepareRecordingFastExport;
 	/** Test-only/preloaded addon. Skips dynamic filesystem discovery when supplied. */
 	addon?: CompositorViewAddon;
 }
@@ -794,20 +800,43 @@ export class CompositorViewService {
 		if (transaction?.signal?.aborted) forwardAbort();
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
 		this.registerActiveExport(exportId, controller);
-		const width = Math.max(2, params?.width ?? 1920) & ~1;
-		const height = Math.max(2, params?.height ?? 1080) & ~1;
-		const resolvedClips = await resolveClipSourceDurations(
-			clips,
-			addon.probeMediaDuration.bind(addon),
-		);
-		const durationEstimate = calculateSceneExportDuration(resolvedClips, sceneJson);
-		const bitrate = params?.bitrate ?? 8_000_000;
-		const expectedBytes = estimateMp4FileSizeBytes({
-			durationSec: durationEstimate,
-			videoBitrate: bitrate,
-			hasAudio: resolvedClips.some((clip) => clip.hasAudio),
-		});
 		try {
+			const width = Math.max(2, params?.width ?? 1920) & ~1;
+			const height = Math.max(2, params?.height ?? 1080) & ~1;
+			const sourceDurations = new Map<string, number>();
+			const resolvedClips = await resolveClipSourceDurations(clips, async (sourcePath) => {
+				const duration = await addon.probeMediaDuration!(sourcePath);
+				sourceDurations.set(sourcePath, duration);
+				return duration;
+			});
+			let fastExport: RecordingFastExportPlan | null = null;
+			if (params?.preserveRecordingSource && resolvedClips.length === 1) {
+				try {
+					fastExport = await (this.options.recordingFastExport ?? prepareRecordingFastExport)({
+						clips: resolvedClips,
+						sceneJson,
+						params,
+						sourceDurationSec: sourceDurations.get(resolvedClips[0]!.screenPath)!,
+						signal: controller.signal,
+					});
+				} catch (error) {
+					if (controller.signal.aborted) throw error;
+					console.warn(
+						"[CompositorViewService] Source preservation unavailable; rendering recording.",
+						error,
+					);
+				}
+			}
+			const durationEstimate = calculateSceneExportDuration(resolvedClips, sceneJson);
+			const expectedBytes = Math.max(
+				fastExport?.expectedBytes ?? 0,
+				estimateMp4FileSizeBytes({
+					durationSec: durationEstimate,
+					videoBitrate: params?.bitrate ?? 8_000_000,
+					hasAudio: resolvedClips.some((clip) => clip.hasAudio),
+				}),
+			);
+			let copiedRecording = false;
 			let exportWarning: ExportTransactionWarning | undefined;
 			const stats = await this.exportPublisher.publish({
 				finalPath: target,
@@ -821,6 +850,35 @@ export class CompositorViewService {
 					const cancelNative = () => addon.cancelExport?.(exportId);
 					signal.addEventListener("abort", cancelNative, { once: true });
 					try {
+						if (fastExport) {
+							try {
+								const result = await fastExport.render(stagingPath, signal, onProgress);
+								if (signal.aborted) throw signal.reason ?? new Error("Recording export cancelled.");
+								// A sparse capture or unusual source may be playable but fail the
+								// final-file contract. Verify before committing to this fast path.
+								await addon.verifyVideoExport!(
+									stagingPath,
+									{
+										width,
+										height,
+										fps: fastExport.fps,
+										durationS: fastExport.durationS,
+										codec: params?.codec === "h265" ? "h265" : "h264",
+									},
+									exportId,
+								);
+								if (signal.aborted) throw signal.reason ?? new Error("Recording export cancelled.");
+								copiedRecording = true;
+								return result;
+							} catch (error) {
+								if (signal.aborted) throw error;
+								console.warn(
+									"[CompositorViewService] Source preservation failed verification; rendering recording.",
+									error,
+								);
+								await fs.promises.rm(stagingPath, { force: true });
+							}
+						}
 						const operation = addon.exportMulti(
 							resolvedClips,
 							stagingPath,
@@ -838,7 +896,8 @@ export class CompositorViewService {
 				verify: async (stagingPath, stats, signal) => {
 					const cancelNative = () => addon.cancelExport?.(exportId);
 					signal.addEventListener("abort", cancelNative, { once: true });
-					const outputFps = stats.frames / stats.videoDurationS;
+					const outputFps =
+						copiedRecording && fastExport ? fastExport.fps : stats.frames / stats.videoDurationS;
 					const verifyInput: VideoExportVerifyInput = {
 						width,
 						height,
@@ -891,21 +950,21 @@ export class CompositorViewService {
 		if (transaction?.signal?.aborted) forwardAbort();
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
 		this.registerActiveExport(exportId, controller);
-		const width = params?.width ?? 854;
-		const height = params?.height ?? 480;
-		const resolvedClips = await resolveClipSourceDurations(
-			clips,
-			addon.probeMediaDuration.bind(addon),
-		);
-		const durationEstimate = calculateSceneExportDuration(resolvedClips, sceneJson);
-		const fps = params?.fps ?? 12;
-		const expectedBytes = estimateGifFileSizeBytes({
-			durationSec: durationEstimate,
-			width,
-			height,
-			fps,
-		});
 		try {
+			const width = params?.width ?? 854;
+			const height = params?.height ?? 480;
+			const resolvedClips = await resolveClipSourceDurations(
+				clips,
+				addon.probeMediaDuration.bind(addon),
+			);
+			const durationEstimate = calculateSceneExportDuration(resolvedClips, sceneJson);
+			const fps = params?.fps ?? 12;
+			const expectedBytes = estimateGifFileSizeBytes({
+				durationSec: durationEstimate,
+				width,
+				height,
+				fps,
+			});
 			let exportWarning: ExportTransactionWarning | undefined;
 			const stats = await this.exportPublisher.publish({
 				finalPath: target,

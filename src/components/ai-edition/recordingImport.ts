@@ -345,7 +345,16 @@ export async function importPendingRecording(): Promise<boolean> {
 			});
 			const document = useProjectStore.getState().document;
 			if (asset && document) {
-				const durationSec = Math.max(0.001, asset.durationSec ?? 60);
+				const durationSec =
+					asset.durationSec != null && Number.isFinite(asset.durationSec) && asset.durationSec > 0
+						? asset.durationSec
+						: await probeVideoDuration(
+								toFileUrl(asset.originalPath),
+								RECOVERED_CLIP_DURATION_TIMEOUT_MS,
+							);
+				if (durationSec == null || !Number.isFinite(durationSec) || durationSec <= 0) {
+					throw new Error(`Could not read the recording duration: ${asset.originalPath}`);
+				}
 				const recordedClip: AxcutClip = {
 					id: recordedClipId(session.createdAt, 0),
 					assetId: asset.id,
@@ -364,6 +373,14 @@ export async function importPendingRecording(): Promise<boolean> {
 					planId: recordingImportId,
 					historyBase,
 					sourceAspectRatio: await recordingAspectRatio(asset, !workspace?.projectId),
+					prepareMissingAssets: (latest, missingAssetIds) => ({
+						...latest,
+						assets: latest.assets.map((current) =>
+							current.id === asset.id && missingAssetIds.has(current.id)
+								? { ...current, durationSec }
+								: current,
+						),
+					}),
 				});
 			}
 		}

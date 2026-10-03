@@ -112,12 +112,12 @@ async function settle(ms = 0) {
 	});
 }
 
-/** Drives the hook through the countdown and native start confirmation. */
+/** Drives the hook through native first-frame confirmation. */
 async function startNativeRecording(view: RecorderView) {
 	await act(async () => {
 		view.result.current.toggleRecording();
 	});
-	await settle(2_100);
+	await settle(20);
 	expect(view.result.current.recording).toBe(true);
 }
 
@@ -146,8 +146,19 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-describe("useScreenRecorder countdown timing", () => {
-	it("starts capture on the final countdown value and keeps it visible until the timer is ready", async () => {
+describe("useScreenRecorder start timing", () => {
+	it("handles rapid primary Record clicks with a single pending start", async () => {
+		const view = renderHook(() => useScreenRecorder());
+		act(() => {
+			view.result.current.toggleRecording();
+			view.result.current.toggleRecording();
+		});
+		await settle(20);
+		expect(api.startNativeWindowsRecording).toHaveBeenCalledOnce();
+		expect(view.result.current.recording).toBe(true);
+	});
+
+	it("requests capture immediately and keeps startup visible until its first-frame confirmation", async () => {
 		let finishStart: ((result: { success: true; recordingId: number }) => void) | undefined;
 		api.startNativeWindowsRecording.mockReturnValue(
 			new Promise((resolve) => {
@@ -159,9 +170,11 @@ describe("useScreenRecorder countdown timing", () => {
 		await act(async () => {
 			view.result.current.toggleRecording();
 		});
-		await settle(2_000);
+		await settle();
 
-		expect(api.setCountdownOverlayValue).toHaveBeenLastCalledWith(1, expect.any(Number));
+		expect(api.showCountdownOverlay).not.toHaveBeenCalled();
+		expect(view.result.current.starting).toBe(true);
+		expect(api.setCountdownOverlayValue).not.toHaveBeenCalled();
 		expect(api.startNativeWindowsRecording).toHaveBeenCalledOnce();
 		expect(api.hideCountdownOverlay).not.toHaveBeenCalled();
 		expect(view.result.current.recording).toBe(false);
@@ -170,7 +183,39 @@ describe("useScreenRecorder countdown timing", () => {
 		await settle(20);
 
 		expect(view.result.current.recording).toBe(true);
+		expect(view.result.current.starting).toBe(false);
 		expect(api.hideCountdownOverlay).toHaveBeenCalledOnce();
+	});
+
+	it("starts only one native writer when immediate start is called twice", async () => {
+		let finishStart: ((result: { success: true; recordingId: number }) => void) | undefined;
+		api.startNativeWindowsRecording.mockReturnValue(
+			new Promise((resolve) => {
+				finishStart = resolve;
+			}),
+		);
+		const view = renderHook(() => useScreenRecorder());
+		act(() => {
+			void view.result.current.startRecordingImmediately();
+			void view.result.current.startRecordingImmediately();
+		});
+		await settle();
+		expect(api.startNativeWindowsRecording).toHaveBeenCalledOnce();
+		finishStart?.({ success: true, recordingId: 7 });
+		await settle();
+		expect(view.result.current.recording).toBe(true);
+	});
+
+	it("does not start another immediate writer while recording is active", async () => {
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.startRecordingImmediately();
+		});
+		await act(async () => {
+			await view.result.current.startRecordingImmediately();
+		});
+		expect(api.startNativeWindowsRecording).toHaveBeenCalledOnce();
+		expect(view.result.current.recording).toBe(true);
 	});
 });
 
@@ -268,6 +313,93 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 			...overrides,
 		});
 	}
+
+	it("uses an ordinary captured cursor by default", async () => {
+		const start = vi.fn(async () => ({ success: true, recordingId: 7 }));
+		const cursorAccess = vi.fn(async () => ({ granted: true }));
+		stubNativeMac({ startNativeMacRecording: start, requestNativeMacCursorAccess: cursorAccess });
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		expect(start).toHaveBeenCalledWith(
+			expect.objectContaining({
+				cursor: { mode: "system" },
+				video: expect.objectContaining({ hideSystemCursor: false }),
+			}),
+		);
+		expect(cursorAccess).not.toHaveBeenCalled();
+	});
+
+	it("discards the initial camera recorder when native startup fails", async () => {
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
+			},
+		});
+		const close = vi.fn(async () => ({ success: true }));
+		stubNativeMac({
+			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			openRecordingStream: vi.fn(async () => ({ success: true })),
+			appendRecordingChunk: vi.fn(async () => ({ success: true })),
+			closeRecordingStream: close,
+			startNativeMacRecording: vi.fn(async () => ({ success: false, error: "Capture failed" })),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.setWebcamEnabled(true);
+		});
+		await settle();
+		act(() => view.result.current.toggleRecording());
+		await settle();
+		expect(view.result.current.recording).toBe(false);
+		expect(FakeMediaRecorder.instances).toHaveLength(1);
+		expect(FakeMediaRecorder.instances[0].state).toBe("inactive");
+		expect(close).toHaveBeenCalledOnce();
+	});
+
+	it("discards the unclaimed camera when startup is cancelled before confirmation", async () => {
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
+			},
+		});
+		let confirmStart: ((value: { success: true; recordingId: number }) => void) | undefined;
+		const close = vi.fn(async () => ({ success: true }));
+		const stop = vi.fn(async () => ({ success: true }));
+		stubNativeMac({
+			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			openRecordingStream: vi.fn(async () => ({ success: true })),
+			appendRecordingChunk: vi.fn(async () => ({ success: true })),
+			closeRecordingStream: close,
+			stopNativeMacRecording: stop,
+			startNativeMacRecording: vi.fn(
+				() =>
+					new Promise((resolve) => {
+						confirmStart = resolve;
+					}),
+			),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.setWebcamEnabled(true);
+		});
+		await settle();
+		act(() => view.result.current.toggleRecording());
+		await settle();
+		expect(view.result.current.starting).toBe(true);
+		expect(FakeMediaRecorder.instances[0].state).toBe("recording");
+		act(() => view.result.current.cancelRecording());
+		confirmStart?.({ success: true, recordingId: 7 });
+		await settle();
+		expect(stop).toHaveBeenCalledWith(true);
+		expect(view.result.current.recording).toBe(false);
+		expect(view.result.current.starting).toBe(false);
+		expect(FakeMediaRecorder.instances[0].state).toBe("inactive");
+		expect(close).toHaveBeenCalledOnce();
+	});
 
 	it("updates the kept duration when a removed clip is restored", async () => {
 		const clip = {

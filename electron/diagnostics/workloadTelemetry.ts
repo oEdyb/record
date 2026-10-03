@@ -100,6 +100,9 @@ export type WorkloadFallbackCode =
 	| "capture-recovered-fragmented-output"
 	| "clean-microphone-to-raw";
 export type WorkloadMediaPath =
+	| "stream-copy"
+	| "packet-copy"
+	| "identity-bypass"
 	| "videotoolbox-hardware"
 	| "videotoolbox-software"
 	| "media-foundation-hardware"

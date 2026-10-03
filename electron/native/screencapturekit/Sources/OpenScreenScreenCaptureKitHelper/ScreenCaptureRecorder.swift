@@ -44,7 +44,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var audioInputs: [AVAssetWriterInput] = []
 	private var audioMixer: AudioTrackMixer?
 	private var didStartWriting = false
-	private var didEmitRecordingStarted = false
+	private var startBarrier = RecordingStartBarrier()
+	private var frameCache = RecordingFrameCache()
+	private var boundaryWarnings = RecordingBoundaryWarnings()
+	private var acceptsCachedFrames = true
 	private var didReportWriterFailure = false
 	private var isStopping = false
 	private var isPaused = false
@@ -123,6 +126,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			emitError(code: "reconfigure-not-paused", message: "Capture setup can change only while paused.")
 			return
 		}
+		// Samples arriving during filter/configuration changes cannot be assigned
+		// reliably to either source. A resumed clip must never seed an old source.
+		sampleQueue.sync {
+			acceptsCachedFrames = false
+			frameCache.invalidateCapturedFrame()
+		}
+		defer {
+			sampleQueue.sync {
+				frameCache.invalidateCapturedFrame()
+				acceptsCachedFrames = true
+			}
+		}
 
 		do {
 			try ensureRequestedPermissions(for: nextRequest)
@@ -188,6 +203,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func stop() async {
+		let endTime = CMClockGetTime(CMClockGetHostTimeClock())
 		let shouldStop = stateQueue.sync {
 			if isStopping {
 				return false
@@ -212,7 +228,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		var finalClipWarning: [String: String]?
 		do {
 			let finalizeStartedAt = Date()
-			if let clip = try await finishCurrentClip() {
+			if let clip = try await finishCurrentClip(endingAt: endTime) {
 				captureTelemetry.recordFinalizedClip(
 					durationMs: clip.durationMs,
 					finalizeMs: Date().timeIntervalSince(finalizeStartedAt) * 1_000
@@ -232,6 +248,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			])
 		}
 
+		finalClipWarning = boundaryWarnings.stoppedWarning(finalClipWarning: finalClipWarning)
 		var stoppedPayload: [String: Any] = [
 			"event": "recording-stopped",
 			"screenPath": finalizedClips.first?.path ?? request.outputs.screenPath,
@@ -245,6 +262,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func pause() async {
+		let endTime = CMClockGetTime(CMClockGetHostTimeClock())
 		let didPause = stateQueue.sync {
 			if isStopping || isPaused {
 				return false
@@ -256,15 +274,22 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 		guard didPause else { return }
 		emit(["event": "clip-finalizing"])
+		let boundaryRevision = boundaryWarnings.revision
 		do {
 			let finalizeStartedAt = Date()
-			if let clip = try await finishCurrentClip() {
+			if let clip = try await finishCurrentClip(endingAt: endTime) {
 				captureTelemetry.recordFinalizedClip(
 					durationMs: clip.durationMs,
 					finalizeMs: Date().timeIntervalSince(finalizeStartedAt) * 1_000
 				)
 				finalizedClips.append(clip)
 				emit(["event": "clip-finalized", "clip": clip.payload])
+			}
+			if let boundaryFailure = boundaryWarnings.pauseFailure(since: boundaryRevision) {
+				// The durable clip has already been acknowledged. Existing paused-error
+				// handling keeps it and displays the missing-tail warning immediately.
+				emitError(code: "clip-finalize-failed", message: boundaryFailure)
+				return
 			}
 			emit([
 				"event": "recording-paused",
@@ -291,22 +316,58 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 		do {
 			let nextClipIndex = currentClipIndex + 1
-			try sampleQueue.sync {
+			var seed = try sampleQueue.sync {
+				try frameCache.resumedFrame(
+					at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps
+				)
+			}
+			if seed == nil, #available(macOS 14.0, *),
+				let activeFilter, let activeConfiguration
+			{
+				// A static screen may produce no new complete frame after a filter
+				// change. Capture that filtered source once while still paused.
+				let screenshot = try await SCScreenshotManager.captureSampleBuffer(
+					contentFilter: activeFilter, configuration: activeConfiguration
+				)
+				seed = try RecordingFrameCache.retime(
+					screenshot, at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps
+				)
+			}
+			let seededWriter = try sampleQueue.sync { () -> (AVAssetWriterInput, AVAssetWriter)? in
 				do {
 					try setupWriter(for: nextClipIndex)
 				} catch {
 					discardCurrentWriterOnSampleQueue()
 					throw error
 				}
+				currentClipIndex = nextClipIndex
+				if let seed {
+					frameCache.observe(seed)
+					guard let videoInput, let writer, writer.startWriting() else {
+						throw HelperError.writerSetupFailed("Unable to start the resumed clip writer.")
+					}
+					let startTime = CMSampleBufferGetPresentationTimeStamp(seed)
+					writer.startSession(atSourceTime: startTime)
+					didStartWriting = true
+					clipStartTime = startTime
+					audioMixer?.beginTimeline(at: startTime)
+					return (videoInput, writer)
+				}
+				stateQueue.sync { isPaused = false }
+				return nil
 			}
-			currentClipIndex = nextClipIndex
-			stateQueue.sync { isPaused = false }
-			emit([
-				"event": "recording-resumed",
-				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
-				"clipIndex": currentClipIndex,
-			])
+			if let seed, let (input, writer) = seededWriter {
+				// Retry encoder backpressure without waiting for the static screen
+				// to change. The same bounded append keeps readiness truthful.
+				try await ClosingFrameAppender(sample: seed, input: input, writer: writer, queue: sampleQueue).append()
+				sampleQueue.sync {
+					stateQueue.sync { isPaused = false }
+					recordSuccessfulVideoAppend(seed)
+				}
+			}
 		} catch {
+			sampleQueue.sync { discardCurrentWriterOnSampleQueue() }
+			stateQueue.sync { isPaused = true }
 			emitError(code: "clip-start-failed", message: "\(error)")
 		}
 	}
@@ -319,7 +380,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard CMSampleBufferDataIsReady(sampleBuffer) else {
 			return
 		}
-		if stateQueue.sync(execute: { isPaused }) {
+		if type == .screen, acceptsCachedFrames {
+			let status = CaptureTelemetry.frameStatus(sampleBuffer)
+			if status == nil || status == .complete { frameCache.observe(sampleBuffer) }
+		}
+		if stateQueue.sync(execute: { isPaused || isStopping }) {
 			return
 		}
 
@@ -341,12 +406,23 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard captureTelemetry.recordScreenSample(sampleBuffer) else {
 			return
 		}
+		appendScreenFrame(sampleBuffer)
+	}
+
+	/// Runs on sampleQueue. Readiness for each clip means an actual appended frame.
+	private func appendScreenFrame(_ sampleBuffer: CMSampleBuffer) {
 		guard let videoInput, let writer else {
 			return
 		}
 		let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+		guard presentationTime.isValid, presentationTime.isNumeric else { return }
+		if let clipLastTime, presentationTime <= clipLastTime { return }
+		if let clipStartTime, presentationTime < clipStartTime { return }
 		if !didStartWriting {
-			writer.startWriting()
+			guard writer.startWriting() else {
+				reportWriterFailure("start writing")
+				return
+			}
 			writer.startSession(atSourceTime: presentationTime)
 			didStartWriting = true
 			clipStartTime = presentationTime
@@ -356,28 +432,34 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		if videoInput.isReadyForMoreMediaData {
 			let appended = videoInput.append(sampleBuffer)
 			if appended {
-				captureTelemetry.recordVideoAppend(at: presentationTime)
-				clipLastTime = presentationTime
-				let duration = CMSampleBufferGetDuration(sampleBuffer)
-				clipLastFrameDuration = duration.isValid && duration > .zero
-					? duration
-					: CMTime(value: 1, timescale: CMTimeScale(max(1, request.video.fps)))
-			}
-			if appended, !didEmitRecordingStarted {
-				didEmitRecordingStarted = true
-				emit([
-					"event": "recording-started",
-					"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
-					"width": outputWidth,
-					"height": outputHeight,
-					"captureBounds": captureBoundsPayload(),
-				])
-			} else if !appended {
+				recordSuccessfulVideoAppend(sampleBuffer)
+			} else {
 				captureTelemetry.recordVideoAppendFailure()
 				reportWriterFailure("video append")
 			}
 		} else {
 			captureTelemetry.recordVideoBackpressure()
+		}
+	}
+
+	private func recordSuccessfulVideoAppend(_ sample: CMSampleBuffer) {
+		let presentationTime = CMSampleBufferGetPresentationTimeStamp(sample)
+		frameCache.didAppend(sample)
+		captureTelemetry.recordVideoAppend(at: presentationTime)
+		clipLastTime = presentationTime
+		let duration = CMSampleBufferGetDuration(sample)
+		clipLastFrameDuration = duration.isValid && duration > .zero
+			? duration
+			: CMTime(value: 1, timescale: CMTimeScale(max(1, request.video.fps)))
+		if let clipIndex = startBarrier.acknowledgeAppend(succeeded: true) {
+			emit([
+				"event": clipIndex == 0 ? "recording-started" : "recording-resumed",
+				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
+				"clipIndex": clipIndex,
+				"width": outputWidth,
+				"height": outputHeight,
+				"captureBounds": captureBoundsPayload(),
+			])
 		}
 	}
 
@@ -570,6 +652,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			)
 		}
 		captureTelemetry.beginClip()
+		frameCache.beginClip()
+		startBarrier.prepare(clipIndex: index)
 	}
 
 	private func detachCurrentWriter() -> DetachedWriter? {
@@ -625,7 +709,23 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		clipLastFrameDuration = .zero
 	}
 
-	private func finishCurrentClip() async throws -> FinalizedClip? {
+	private func finishCurrentClip(endingAt endTime: CMTime) async throws -> FinalizedClip? {
+		let closingFrame = try sampleQueue.sync { () -> (CMSampleBuffer, AVAssetWriterInput, AVAssetWriter)? in
+			guard didStartWriting, let videoInput, let writer, writer.status == .writing,
+				let sample = try frameCache.closingFrame(at: endTime, fps: request.video.fps)
+			else { return nil }
+			return (sample, videoInput, writer)
+		}
+		if let (sample, input, writer) = closingFrame {
+			do {
+				try await ClosingFrameAppender(sample: sample, input: input, writer: writer, queue: sampleQueue).append()
+				sampleQueue.sync { recordSuccessfulVideoAppend(sample) }
+			} catch {
+				// Still finish the writer and preserve all frames already committed.
+				let message = boundaryWarnings.record(error)
+				emit(["event": "warning", "code": "final-screen-frame-failed", "message": message])
+			}
+		}
 		guard let detached = detachCurrentWriter() else { return nil }
 		guard detached.started else {
 			detached.writer.cancelWriting()

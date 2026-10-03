@@ -51,7 +51,7 @@ export interface ProjectState {
 	/** Timestamp of the most recent successful save (used by the titlebar indicator). */
 	lastSavedAt: Date | null;
 
-	loadProject: (projectId: string) => Promise<void>;
+	loadProject: (projectId: string, options?: { canApply: () => boolean }) => Promise<void>;
 	createProject: (title: string) => Promise<AxcutDocument>;
 	refresh: () => Promise<void>;
 	addAsset: (
@@ -111,6 +111,7 @@ function parseDocument(value: unknown): AxcutDocument {
 
 let persistQueue: Promise<void> = Promise.resolve();
 let mutationSequence = 0;
+let projectLoadGeneration = 0;
 const latestMutationByProject = new Map<string, number>();
 const activeMutationCountByProject = new Map<string, number>();
 const idleWaitersByProject = new Map<string, Array<() => void>>();
@@ -783,23 +784,44 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	dirty: false,
 	lastSavedAt: null,
 
-	async loadProject(projectId) {
+	async loadProject(projectId, options) {
+		if (options && !options.canApply()) return;
 		if (isProjectTransactionBlocked())
 			throw new ProjectTransactionSessionError(
 				"EDITOR_BUSY",
 				"Transaction reconciliation is pending",
 			);
-		const currentProjectId = get().projectId;
+		const initial = get();
+		const loadGeneration = ++projectLoadGeneration;
+		const ownsPendingLoad = () => {
+			const current = get();
+			return (
+				projectLoadGeneration === loadGeneration &&
+				current.projectId === initial.projectId &&
+				current.document === initial.document &&
+				current.revision === initial.revision &&
+				current.status === "loading" &&
+				current.error === null
+			);
+		};
+		const discardStaleLoad = () => {
+			if (!options || (options.canApply() && ownsPendingLoad())) return false;
+			if (ownsPendingLoad()) set({ status: initial.status, error: initial.error });
+			return true;
+		};
+		const currentProjectId = initial.projectId;
 		const currentMutation = currentProjectId
 			? beginTrackedProjectMutation(currentProjectId)
 			: undefined;
-		set({ status: "loading", error: null });
 		try {
+			set({ status: "loading", error: null });
 			const result = await nativeBridgeClient.aiEdition.get(projectId);
+			if (discardStaleLoad()) return;
 			if (!result.success || !result.document) {
 				throw new Error(result.error ?? "Failed to load project");
 			}
 			const document = parseDocument(result.document);
+			if (discardStaleLoad()) return;
 			set({
 				projectId,
 				transactionVersion: result.transactionVersion ?? null,
@@ -819,6 +841,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			)
 				restoreRecoveryUndo(projectId, result.undoRecovery);
 		} catch (error) {
+			if (discardStaleLoad()) return;
 			set({
 				status: "error",
 				error: error instanceof Error ? error.message : String(error),
@@ -835,6 +858,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 				"Transaction reconciliation is pending",
 			);
 		if (!requireEntitlement("edit")) throw new Error("Klippt Pro is required to create a project.");
+		projectLoadGeneration += 1;
 		const currentProjectId = get().projectId;
 		const currentMutation = currentProjectId
 			? beginTrackedProjectMutation(currentProjectId)

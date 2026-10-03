@@ -1,4 +1,18 @@
 {
+	"recordingReview": {
+		"controls": "Recording controls",
+		"recordings": "Recordings",
+		"settings": "Settings",
+		"originals": "Original files",
+		"record": "Record",
+		"save": "Save video",
+		"saving": "Saving… {{percent}}%",
+		"ready": "Ready to record",
+		"readyHint": "Capture a clip, pause when needed, then save your video.",
+		"recordFirst": "Record a video before saving.",
+		"originalsHint": "Keep the original screen, camera, and audio files.",
+		"preparing": "Preparing recording…"
+	},
 	"previewQuality": {
 		"label": "Качество предпросмотра",
 		"sharp": "Чёткое",

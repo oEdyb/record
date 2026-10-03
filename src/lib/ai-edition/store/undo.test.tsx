@@ -125,4 +125,22 @@ describe("project document undo and redo", () => {
 		expect(onAfter).toHaveBeenCalledTimes(4);
 		view.unmount();
 	});
+
+	it("does not modify a recording through hidden undo shortcuts", async () => {
+		const before = documentWithClipIds(["old-1"]),
+			after = documentWithClipIds(["old-1", "recorded"]);
+		useProjectStore.setState({ projectId: before.project.id, document: before });
+		await useProjectStore.getState().saveDocumentAsEdit(after);
+		const onAfter = vi.fn();
+		const view = renderHook(({ enabled }) => useUndoRedoShortcuts(onAfter, enabled), {
+			initialProps: { enabled: false },
+		});
+		act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true })));
+		expect(useProjectStore.getState().document?.timeline.clips).toHaveLength(2);
+		expect(onAfter).not.toHaveBeenCalled();
+		view.rerender({ enabled: true });
+		act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true })));
+		expect(useProjectStore.getState().document?.timeline.clips).toHaveLength(1);
+		view.unmount();
+	});
 });

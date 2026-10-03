@@ -1,3 +1,19 @@
+# October 3: recording focus
+
+Working branch: `codex/overnight-2026-10-03`. Original uncommitted work was preserved unchanged
+in `fff98f36f4748d74d67cd01fd1cdd12b3c66d712` before implementation. Klippt now prioritizes
+immediate recording, Pause/Continue, read-only review and direct Save video. Do not build
+editor features; preserve existing project, original-media and CLI/export compatibility.
+
+[Changes, actual measurements, checks and remaining limits](docs/overnight-2026-10-03.md)
+own the completed overnight result. Actual Record start improved from 2,355.2 to 294.1 ms;
+the identical 120.081667-second source exports in 879.6 ms versus 54,389.3 ms. Full suite:
+3,992 passed, one existing skip; lint and workbench/app/test TypeScript are green. Twelve
+native tests and nine actual Mac smoke cases passed. No installed app, packaging/signing/CI,
+update feed, Resolve or remote push was changed. The approved Swift package is unchanged.
+
+Older handoffs below describe historical editor work, not the current feature queue.
+
 # September 21: synchronized source timeline
 
 Separate takes now writes `timeline.otio` with screen, camera, microphone and system audio on
@@ -35,7 +51,7 @@ The installed app is unchanged. This interchange transfers source cuts and sync,
 
 - **As of:** 2026-09-05
 - **Repository:** `github.com/oEdyb/record` (private)
-- **Working branch:** `checkpoint/klippt-beta-hardening-2026-09-01`
+- **Working branch:** `codex/overnight-2026-10-03`
 - **Verified code checkpoint:** `5e7bc7e9f6f2d2bfefc72597138bd467ad810c82`
 - **Product rules:** [`AGENTS.md`](AGENTS.md)
 - **Delivery plan:** [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md)

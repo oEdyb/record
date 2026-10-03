@@ -32,7 +32,7 @@ describe("RecordingPrefsStore", () => {
 			camDeviceId: null,
 			camFormat: { width: 1920, height: 1080, fps: 30 },
 			systemAudioEnabled: false,
-			cursorCaptureMode: "editable-overlay",
+			cursorCaptureMode: "system",
 		});
 	});
 
@@ -84,6 +84,14 @@ describe("RecordingPrefsStore", () => {
 		await expect(new RecordingPrefsStore(filePath).get()).resolves.toMatchObject({
 			micEnabled: false,
 			camDeviceId: null,
+			cursorCaptureMode: "system",
+		});
+	});
+
+	it("keeps an explicitly saved editable cursor choice", async () => {
+		const { filePath, store } = await makeStore();
+		await store.update({ cursorCaptureMode: "editable-overlay" });
+		await expect(new RecordingPrefsStore(filePath).get()).resolves.toMatchObject({
 			cursorCaptureMode: "editable-overlay",
 		});
 	});

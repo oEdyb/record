@@ -26,10 +26,11 @@ export function redo(): boolean {
 	return true;
 }
 
-export function useUndoRedoShortcuts(onAfter: () => void) {
+export function useUndoRedoShortcuts(onAfter: () => void, enabled = true) {
 	const onAfterRef = useRef(onAfter);
 	onAfterRef.current = onAfter;
 	useEffect(() => {
+		if (!enabled) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
 			if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
@@ -52,5 +53,5 @@ export function useUndoRedoShortcuts(onAfter: () => void) {
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, []);
+	}, [enabled]);
 }

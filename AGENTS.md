@@ -1,8 +1,10 @@
 # AGENTS.md — Klippt product and engineering guide
 
 This repository is the private working copy for **Klippt**, currently hosted at the legacy
-repository `github.com/oEdyb/record`. Klippt is a normal, high-quality screen recorder and editor with
-clip-native recording built into the core workflow. It starts from the MIT-licensed OpenScreen
+repository `github.com/oEdyb/record`. Klippt is a fast, recording-focused screen recorder with
+clip-native capture built into the core workflow. As of October 3, 2026, prioritize immediate
+capture, Pause/Continue, review, and saving a video. Do not build new editor features. Preserve
+existing projects, playback, source recovery, and export compatibility. It starts from the MIT-licensed OpenScreen
 continuation, but it is a separate, proprietary commercial product.
 
 `Klippt` is the selected product name. `.klippt` is the canonical project extension. Keep reading

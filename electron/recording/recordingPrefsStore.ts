@@ -24,7 +24,7 @@ export const DEFAULT_RECORDING_PREFS: RecordingPrefs = {
 	camDeviceId: null,
 	camFormat: DEFAULT_WEBCAM_FORMAT,
 	systemAudioEnabled: false,
-	cursorCaptureMode: "editable-overlay",
+	cursorCaptureMode: "system",
 };
 
 function copyRecordingPrefs(preferences: RecordingPrefs): RecordingPrefs {

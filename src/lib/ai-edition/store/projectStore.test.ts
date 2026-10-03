@@ -1272,6 +1272,267 @@ describe("useProjectStore", () => {
 		expect(state.error).toBe("not found");
 	});
 
+	it("does no loading work when the navigation guard is already blocked", async () => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+			error: "Previous warning",
+		});
+		const before = useProjectStore.getState();
+		const generation = getProjectMutationGeneration(sampleDoc.project.id);
+		await before.loadProject("library-project", { canApply: () => false });
+		expect(bridgeMocks.get).not.toHaveBeenCalled();
+		expect(useProjectStore.getState()).toBe(before);
+		expect(getProjectMutationGeneration(sampleDoc.project.id)).toBe(generation);
+	});
+
+	it("restores only its owned loading status when a pending handoff blocks the response", async () => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+			error: "Previous warning",
+		});
+		let finishLoad!: () => void;
+		bridgeMocks.get.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishLoad = () => resolve({ success: true, document: sampleDoc });
+				}),
+		);
+		let canApply = true;
+		const loading = useProjectStore.getState().loadProject("library-project", {
+			canApply: () => canApply,
+		});
+		expect(useProjectStore.getState().status).toBe("loading");
+		let mutationsFinished = false;
+		const mutations = waitForProjectMutations(sampleDoc.project.id).then(() => {
+			mutationsFinished = true;
+		});
+		await Promise.resolve();
+		expect(mutationsFinished).toBe(false);
+		canApply = false;
+		finishLoad();
+		await loading;
+		await mutations;
+		expect(mutationsFinished).toBe(true);
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: sampleDoc.project.id,
+			revision: 7,
+			status: "ready",
+			error: "Previous warning",
+		});
+		expect(useProjectStore.getState().document).toBe(sampleDoc);
+	});
+
+	it.each([
+		"different-project",
+		"same-project",
+	])("does not replace a newer %s document after a deferred load", async (identity) => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+		});
+		let finishLoad!: () => void;
+		bridgeMocks.get.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishLoad = () => resolve({ success: true, document: sampleDoc });
+				}),
+		);
+		const loading = useProjectStore.getState().loadProject("library-project", {
+			canApply: () => true,
+		});
+		const recording = {
+			...sampleDoc,
+			project: {
+				...sampleDoc.project,
+				id: identity === "different-project" ? "new-recording" : sampleDoc.project.id,
+				title: "New recording",
+			},
+		};
+		useProjectStore.setState({
+			projectId: recording.project.id,
+			document: recording,
+			revision: 8,
+			status: "ready",
+			error: "Current warning",
+		});
+		const published = useProjectStore.getState();
+		finishLoad();
+		await loading;
+		expect(useProjectStore.getState()).toBe(published);
+		await waitForProjectMutations(sampleDoc.project.id);
+	});
+
+	it("does not publish a late load failure over a newer recording", async () => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+		});
+		let failLoad!: () => void;
+		bridgeMocks.get.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					failLoad = () => reject(new Error("Old library file disappeared"));
+				}),
+		);
+		const loading = useProjectStore.getState().loadProject("library-project", {
+			canApply: () => true,
+		});
+		const recording = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, id: "new-recording" },
+		};
+		useProjectStore.setState({
+			projectId: recording.project.id,
+			document: recording,
+			revision: 8,
+			status: "ready",
+			error: null,
+		});
+		const published = useProjectStore.getState();
+		failLoad();
+		await loading;
+		expect(useProjectStore.getState()).toBe(published);
+		await waitForProjectMutations(sampleDoc.project.id);
+	});
+
+	it.each([
+		["document", { document: { ...sampleDoc, project: { ...sampleDoc.project, title: "Newer" } } }],
+		["revision", { revision: 8 }],
+		["status", { status: "error" as const, error: "New failure" }],
+		["error", { error: "New warning" }],
+	] as const)("does not restore canceled loading status over a newer %s", async (_field, change) => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+			error: null,
+		});
+		let finishLoad!: () => void;
+		bridgeMocks.get.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishLoad = () => resolve({ success: true, document: sampleDoc });
+				}),
+		);
+		let canApply = true;
+		const loading = useProjectStore.getState().loadProject("library-project", {
+			canApply: () => canApply,
+		});
+		useProjectStore.setState(change);
+		const published = useProjectStore.getState();
+		canApply = false;
+		finishLoad();
+		await loading;
+		expect(useProjectStore.getState()).toBe(published);
+		await waitForProjectMutations(sampleDoc.project.id);
+	});
+
+	it("does not restore old status over a newer pending load of the same initial project", async () => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+		});
+		let finishFirst!: () => void;
+		let finishSecond!: () => void;
+		bridgeMocks.get
+			.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishFirst = () => resolve({ success: true, document: sampleDoc });
+					}),
+			)
+			.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishSecond = () => resolve({ success: true, document: sampleDoc });
+					}),
+			);
+		let canApplyFirst = true;
+		const first = useProjectStore.getState().loadProject("first-project", {
+			canApply: () => canApplyFirst,
+		});
+		const second = useProjectStore.getState().loadProject(sampleDoc.project.id);
+		canApplyFirst = false;
+		const pendingSecond = useProjectStore.getState();
+		finishFirst();
+		await first;
+		expect(useProjectStore.getState()).toBe(pendingSecond);
+		expect(useProjectStore.getState().status).toBe("loading");
+		finishSecond();
+		await second;
+		expect(useProjectStore.getState().status).toBe("ready");
+		await waitForProjectMutations(sampleDoc.project.id);
+	});
+
+	it("loads a current guarded project normally", async () => {
+		bridgeMocks.get.mockResolvedValueOnce({ success: true, document: sampleDoc });
+		await useProjectStore.getState().loadProject(sampleDoc.project.id, { canApply: () => true });
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	it("does not restore canceled loading status over a newer pending project creation", async () => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+		});
+		let finishLoad!: () => void;
+		let finishCreate!: () => void;
+		bridgeMocks.get.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishLoad = () => resolve({ success: true, document: sampleDoc });
+				}),
+		);
+		const recording = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, id: "new-recording", title: "New recording" },
+		};
+		bridgeMocks.create.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishCreate = () => resolve({ success: true, document: recording });
+				}),
+		);
+		let canApply = true;
+		const loading = useProjectStore.getState().loadProject("library-project", {
+			canApply: () => canApply,
+		});
+		const creating = useProjectStore.getState().createProject("New recording");
+		const pendingCreation = useProjectStore.getState();
+		canApply = false;
+		finishLoad();
+		await loading;
+		expect(useProjectStore.getState()).toBe(pendingCreation);
+		expect(useProjectStore.getState().status).toBe("loading");
+		finishCreate();
+		await creating;
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: "new-recording",
+			status: "ready",
+		});
+		await waitForProjectMutations(sampleDoc.project.id);
+	});
+
 	it("addAsset replaces the document and bumps revision", async () => {
 		useProjectStore.setState({
 			projectId: "proj_test",

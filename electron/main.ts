@@ -15,6 +15,7 @@ import {
 	Tray,
 } from "electron";
 import { APP_DISPLAY_NAME } from "../src/lib/brand";
+import { PRODUCT_SURFACE } from "../src/lib/productSurface";
 import type { ShortcutsConfig } from "../src/lib/shortcuts";
 import {
 	blockedFromInstalling,
@@ -51,6 +52,10 @@ import {
 } from "./ipc/trustedRendererIpc";
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
+import {
+	canDispatchRecordingReviewMenu,
+	recordingReviewFileMenu,
+} from "./recording/recordingReviewFileMenu";
 import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
 import { getSttManager, registerSttIpc } from "./stt";
@@ -209,6 +214,16 @@ function sendEditorMenuAction(
 	channel: "menu-load-project" | "menu-save-project" | "menu-save-project-as" | "menu-new-project",
 ) {
 	let targetWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+	if (
+		!canDispatchRecordingReviewMenu(channel, {
+			recordingOnly: PRODUCT_SURFACE.recordingOnly,
+			isRecording,
+			targetIsReview: Boolean(
+				targetWindow && !targetWindow.isDestroyed() && isEditorWindow(targetWindow),
+			),
+		})
+	)
+		return;
 
 	if (!targetWindow || targetWindow.isDestroyed() || !isEditorWindow(targetWindow)) {
 		createEditorWindowWrapper();
@@ -269,27 +284,31 @@ function setupApplicationMenu() {
 		{
 			label: mainT("common", "actions.file") || "File",
 			submenu: [
-				{
-					label: mainT("dialogs", "unsavedChanges.newProject") || "New Project",
-					accelerator: "CmdOrCtrl+N",
-					click: () => sendEditorMenuAction("menu-new-project"),
-				},
-				{ type: "separator" as const },
-				{
-					label: mainT("dialogs", "unsavedChanges.loadProject") || "Load Project…",
-					accelerator: "CmdOrCtrl+O",
-					click: () => sendEditorMenuAction("menu-load-project"),
-				},
-				{
-					label: mainT("dialogs", "unsavedChanges.saveProject") || "Save Project…",
-					accelerator: "CmdOrCtrl+S",
-					click: () => sendEditorMenuAction("menu-save-project"),
-				},
-				{
-					label: mainT("dialogs", "unsavedChanges.saveProjectAs") || "Save Project As…",
-					accelerator: "CmdOrCtrl+Shift+S",
-					click: () => sendEditorMenuAction("menu-save-project-as"),
-				},
+				...(PRODUCT_SURFACE.recordingOnly
+					? recordingReviewFileMenu(sendEditorMenuAction)
+					: [
+							{
+								label: mainT("dialogs", "unsavedChanges.newProject") || "New Project",
+								accelerator: "CmdOrCtrl+N",
+								click: () => sendEditorMenuAction("menu-new-project"),
+							},
+							{ type: "separator" as const },
+							{
+								label: mainT("dialogs", "unsavedChanges.loadProject") || "Load Project…",
+								accelerator: "CmdOrCtrl+O",
+								click: () => sendEditorMenuAction("menu-load-project"),
+							},
+							{
+								label: mainT("dialogs", "unsavedChanges.saveProject") || "Save Project…",
+								accelerator: "CmdOrCtrl+S",
+								click: () => sendEditorMenuAction("menu-save-project"),
+							},
+							{
+								label: mainT("dialogs", "unsavedChanges.saveProjectAs") || "Save Project As…",
+								accelerator: "CmdOrCtrl+Shift+S",
+								click: () => sendEditorMenuAction("menu-save-project-as"),
+							},
+						]),
 				...(isMac
 					? []
 					: [

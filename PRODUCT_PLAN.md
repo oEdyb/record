@@ -1,7 +1,7 @@
 # Klippt product plan
 
 - Status: active
-- Updated: 2026-09-19
+- Updated: 2026-10-03
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Product source of truth: [`AGENTS.md`](AGENTS.md)
 - Upstream historical roadmap: [`ROADMAP.md`](ROADMAP.md)
@@ -9,7 +9,13 @@
 
 ## Product decision
 
-Klippt is a proprietary, Mac-first, clip-native recorder and editor. Its current private repository
+Klippt is a proprietary, Mac-first, clip-native recorder. October 3 direction: strictly focus on
+fast capture, Pause/Continue, review, and saving a video; do not build editor features. Retain
+existing project and export compatibility. The immediate performance work and acceptance gates
+are in [`docs/overnight-2026-10-03.md`](docs/overnight-2026-10-03.md).
+
+The inherited editor delivery sections below are historical or compatibility work, not the
+active feature queue. Its current private repository
 remains `github.com/oEdyb/record` until the compatibility-safe rebrand. It is not an
 OpenScreen distribution, a generic AI editor, or a cross-platform project for the current
 release.
@@ -24,21 +30,16 @@ before commercial enforcement turns on.
 
 The core workflow is:
 
-> Record in clean takes, remove bad takes while recording, then export sources or apply edits explicitly.
+> Open → Record → Pause/Continue or remove the previous clip → Stop → Save video.
 
-New recordings start without generated edits. Keep the CLI and existing editing tools.
-Prioritize fast source handoff and a calm timeline: one caption strip, with thumbnail B-roll
-immediately above the waveform. Export offers Separate takes (Pause/Resume boundaries) or
-One video. A continuous recording stays one take. Detailed behavior and limits live in
-[product behavior](technical-documentation/product-behavior.md).
+New recordings start plain and preserve their original media. Review offers playback and a
+seek bar. Save uses the native picker directly; Original files remains available for recovery.
+Keep existing project and CLI capabilities for compatibility, without adding editor features.
+Detailed behavior and limits live in [product behavior](technical-documentation/product-behavior.md).
 
 The product promise is:
 
-> Record once. Keep every source. Fix the edit afterward. Export for any platform without
-> needless quality loss.
-
-Automatic direction supports this workflow. It does not become a second product, a second
-timeline model, or a reason to delay recording reliability.
+> Start quickly. Capture reliably. Keep every source. Save a normal video quickly.
 
 Klippt is also agent-native. The UI, CLI, and future agent bridge must operate on the same
 versioned project model and the same editing commands. An agent can inspect, edit, validate, and

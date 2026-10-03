@@ -40,14 +40,27 @@ export class NativeMacHelperClient {
 	private bounds: Rectangle | null = null;
 	private closed = false;
 	private fatalReported = false;
+	private recordingStarted = false;
+	private terminationRequested = false;
 	private stoppedResult: NativeMacStopResult | null = null;
 
 	constructor(
 		private readonly process: ChildProcessWithoutNullStreams,
 		private readonly options: NativeMacHelperClientOptions = {},
 	) {
-		this.process.once("close", () => {
+		this.process.once("close", (code, signal) => {
 			this.closed = true;
+			if (this.recordingStarted && !this.terminationRequested && !this.stoppedResult) {
+				this.reportFatalError({
+					code: "capture-helper-exited",
+					message: `Native macOS capture exited unexpectedly (${signal ?? `code=${code ?? "unknown"}`}).`,
+				});
+			}
+		});
+		this.process.on("error", (error) => {
+			if (this.recordingStarted && !this.terminationRequested && !this.stoppedResult) {
+				this.reportFatalError({ code: "capture-helper-error", message: error.message });
+			}
 		});
 		this.attachOutputDrain();
 	}
@@ -66,6 +79,7 @@ export class NativeMacHelperClient {
 
 	async kill(): Promise<void> {
 		if (!this.isRunning()) return;
+		this.terminationRequested = true;
 
 		const gracefulExit = this.waitForClose(1_000);
 		this.process.kill("SIGTERM");
@@ -79,6 +93,9 @@ export class NativeMacHelperClient {
 	}
 
 	async waitForStart(): Promise<void> {
+		if (!this.isRunning()) {
+			throw new Error("Native macOS capture exited before start confirmation.");
+		}
 		await new Promise<void>((resolve, reject) => {
 			const cleanup = this.observe({
 				timeoutMs: 10_000,
@@ -208,6 +225,7 @@ export class NativeMacHelperClient {
 			});
 		});
 		// Register the waiter before the helper can answer.
+		this.terminationRequested = true;
 		this.process.stdin.write("stop\n");
 		return pending;
 	}
@@ -308,6 +326,7 @@ export class NativeMacHelperClient {
 	private dispatchLine(line: string): void {
 		const event = this.parseEvent(line.trim());
 		if (!event) return;
+		if (event.event === "recording-started") this.recordingStarted = true;
 		const bounds = event.captureBounds as Rectangle | undefined;
 		if (bounds && bounds.width > 0 && bounds.height > 0) this.bounds = bounds;
 		if (event.event === "recording-stopped") {
@@ -317,14 +336,19 @@ export class NativeMacHelperClient {
 			event.event === "error" &&
 			(event.code === "writer-failed-during-capture" ||
 				event.code === "capture-stopped-with-error");
-		if (fatalCode && !this.fatalReported) {
-			this.fatalReported = true;
-			this.options.onFatalError?.({
+		if (fatalCode) {
+			this.reportFatalError({
 				code: String(event.code),
 				message: String(event.message ?? "The current macOS recording clip failed."),
 			});
 		}
 		this.events.emit("helper-event", event);
+	}
+
+	private reportFatalError(failure: NativeMacRecordingFailure): void {
+		if (this.fatalReported) return;
+		this.fatalReported = true;
+		this.options.onFatalError?.(failure);
 	}
 
 	private parseEvent(line: string): Record<string, unknown> | null {

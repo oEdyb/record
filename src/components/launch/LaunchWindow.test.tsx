@@ -38,6 +38,7 @@ class CapturingResizeObserver extends StubResizeObserver {
 const recorderState = vi.hoisted(() => ({
 	value: {
 		preferencesReady: true,
+		starting: false,
 		recording: false,
 		paused: false,
 		saving: false,
@@ -206,6 +207,8 @@ vi.mock("@/contexts/I18nContext", () => ({
 			"cursor.useEditableCursor": "Use editable cursor",
 			"cursor.useSystemCursor": "Use system cursor",
 			"tooltips.openStudio": "Open Studio",
+			"recording.recordings": "Recordings",
+			"recording.starting": "Starting recording…",
 			"tooltips.hideHUD": "Hide HUD",
 			"tooltips.closeApp": "Close App",
 			language: "Language",
@@ -351,6 +354,7 @@ function emitSourceSelectorClosed() {
 
 function resetLaunchMocks() {
 	recorderState.value.preferencesReady = true;
+	recorderState.value.starting = false;
 	recorderState.value.microphoneDeviceId = undefined;
 	vi.stubGlobal("ResizeObserver", StubResizeObserver);
 	recorderState.value.toggleRecording.mockClear();
@@ -544,6 +548,40 @@ describe("LaunchWindow record button", () => {
 
 		expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
 		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+	});
+
+	it("starts a fresh screen recording with one primary click", async () => {
+		let selected: ProcessedDesktopSource | null = null;
+		stubElectronAPI(vi.fn(async () => selected));
+		window.electronAPI.getSources = vi.fn(async () => [displayOneSource]);
+		window.electronAPI.getRecordingWorkspaceContext = vi.fn(async () => ({
+			success: true,
+			context: null,
+		}));
+		window.electronAPI.selectSource = vi.fn(async (source) => {
+			selected = source;
+			return source;
+		});
+		renderLaunchWindow();
+		const record = screen.getByTestId("launch-record-button");
+		await waitFor(() => expect(record).toBeEnabled());
+		expect(record).toHaveAttribute("title", "Display 1");
+		fireEvent.click(record);
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce();
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+		// Keep subsequent tests' API surface unchanged.
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).getSources;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).getRecordingWorkspaceContext;
+	});
+
+	it("shows pending capture without claiming recording or allowing another start", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		recorderState.value.starting = true;
+		renderLaunchWindow();
+		const record = await screen.findByTestId("launch-record-button");
+		expect(record).toBeDisabled();
+		expect(record).toHaveAttribute("aria-label", "Starting recording…");
+		expect(screen.queryByRole("button", { name: "Stop recording" })).toBeNull();
 	});
 
 	it("anchors the horizontal window controls to the right edge", async () => {
@@ -787,7 +825,7 @@ describe("LaunchWindow record button", () => {
 		renderLaunchWindow();
 
 		expect(await screen.findByTestId("launch-open-studio-button")).toHaveAccessibleName(
-			"Open Studio",
+			"Recordings",
 		);
 	});
 

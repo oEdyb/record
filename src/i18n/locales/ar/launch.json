@@ -70,6 +70,8 @@
 		"defaultSourceName": "الشاشة"
 	},
 	"recording": {
+		"starting": "Starting recording…",
+		"recordings": "Recordings",
 		"selectSource": "يرجى تحديد مصدر للتسجيل",
 		"systemPicker": "سيسألك النظام عمّا تريد مشاركته",
 		"inProgress": "جارٍ التسجيل",
