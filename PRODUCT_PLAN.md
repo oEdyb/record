@@ -16,6 +16,8 @@ existing project and export compatibility. The immediate performance work and ac
 are in [`docs/overnight-2026-10-03.md`](docs/overnight-2026-10-03.md).
 The October 4 compact return, recordings browser and keyboard/navigation refinement is in
 [`docs/creator-loop-2026-10-04.md`](docs/creator-loop-2026-10-04.md).
+Capture scheduling, long-session acceptance and fast native source handoff are documented in
+[`docs/capture-queue-2026-10-04.md`](docs/capture-queue-2026-10-04.md).
 
 The inherited editor delivery sections below are historical or compatibility work, not the
 active feature queue. Its current private repository

@@ -175,7 +175,8 @@ moving fixture. Record readiness 732.7 ms; Stop-to-review 2,381.1 ms; source han
 `delivery-cache/summary.json`, `full-decode.json`, and `motion-10/11.png` retain the evidence.
 Final independent concurrency/frame-cache review found no actionable findings. All eight
 repository gates pass (4,119 tests, one skip), all 62 native tests pass, and full native/Vite
-builds pass. Endurance acceptance at 30/60 minutes remains outstanding.
+builds pass. At this checkpoint, endurance acceptance remained outstanding; the subsequent
+30/60-minute results below supersede that limit.
 
 ## Thirty-minute capture and local source-copy correction
 
@@ -206,7 +207,7 @@ rejection. Six new tests plus the full suite pass: 4,125 tests, one existing ski
 all eight gates, Vite build, and independent review pass. Native code is unchanged since the
 62-test native validation. Evidence: `endurance-30/clone-retry/report.json`,
 `endurance-30/clone-independence.json`, and `clone-final-checks/summary.json` under the artifact root.
-The one-hour acceptance run remains pending. Installed app, release configuration and remotes
+The subsequent one-hour acceptance below completes the endurance check. Installed app, release configuration and remotes
 are unchanged.
 
 ## Source handoff feedback
@@ -227,3 +228,29 @@ The real dialog confirms Space toggling, Tab focus into the scrollable list, End
 last warning, and a visible folder action. Both disclosure states and indeterminate Saving
 were inspected. Final feedback gates: 4,129 unit tests, one skip, all eight checks pass;
 independent UI review is clean. Native code remains unchanged.
+
+## One-hour normal-runtime acceptance
+
+Build `511f1142`, diagnostics off, High 4K60 screen plus camera, microphone and system audio:
+
+- Requested workflow: 3,600 seconds including two Pause/Continue cycles and paused Stop.
+- Committed media: 3,597.586 seconds across three clips.
+- Record ready: 910.9 ms; Stop-to-review: 3,823.8 ms; source handoff: 1,675.1 ms.
+- 215,856 appended screen frames; 2,705 repeats (1.253%); no append failures or backpressure.
+- Complete source rate: 59.939 fps. Bounded delivery-age sample p99 1.988 ms, maximum 105.438 ms.
+- All three screen clips have zero 60 Hz packet-grid violations. Final frame at 3,593 seconds inspected.
+- All 12 exported files match original hashes; before/after original hashes are unchanged.
+- All 12 originals fully decode with zero errors; the exported copies match those exact bytes.
+
+The paused source-switch smoke also passed: the first resumed clip visibly contains the newly
+selected window and all 12 exported originals match. One successful endurance run does not
+establish reliability across all devices or workloads. Exact receipts live in `endurance-60`
+and `source-switch`. Large owned test media is removed only after verification; cleanup receipts
+preserve the file inventory, while metrics, hashes and screenshots remain available.
+
+The final one-hour decoder receipt contains 12 successful results with empty error output.
+The two long-run media sets were then removed from their explicitly owned temporary and
+artifact paths; no user recording or project was removed. Free disk space returned to 138 GiB.
+Keep `test-media-cleanup.json` alongside each run's receipt so missing large media is explained.
+All local branches are ancestors of the integrated code; the final acceptance commit is merged
+locally only. No public release approval, install or push is implied by these results.
