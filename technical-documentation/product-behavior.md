@@ -925,6 +925,8 @@ product requirement, not as an optional maximum-quality mode.
   transferred. Say this on the export surface and in the handoff. DaVinci Resolve is the first
   verified interchange target; keep the export labels editor-neutral.
 - Source handoff uses the native folder picker, existing media grants and a fresh unique folder.
+  Use native APFS cloning on macOS for independent local copies, with ordinary copying on
+  unsupported or different filesystems. Never hard-link originals or overwrite an existing file.
   Write the completion manifest last and clean up an incomplete handoff on failure. Keep source
   recovery available without a paid entitlement; finished video rendering retains its export gate.
   Use editor-neutral UI labels; do not name an external editor as a product requirement.

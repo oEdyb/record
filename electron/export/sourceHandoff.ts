@@ -1,9 +1,9 @@
-import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePlaybackSegments } from "../../src/lib/ai-edition/document/timeline";
 import { documentSchema } from "../../src/lib/ai-edition/schema";
 import { resolveClipSourceEndSec } from "../../src/lib/ai-edition/timeline/clipDuration";
+import { copyOriginalFile } from "./copyOriginalFile";
 import { inspectHandoffSourceMedia } from "./sourceHandoffMedia";
 import { buildSourceTimeline, type HandoffMedia, SOURCE_TIMELINE_RATE } from "./sourceTimeline";
 
@@ -83,11 +83,7 @@ export async function exportSourceHandoff(
 			const prefix = String(takeNumber).padStart(3, "0");
 			const extension = path.extname(canonical).toLowerCase();
 			const file = `${prefix}-${label}${extension}`;
-			await fs.copyFile(
-				canonical,
-				path.join(directory, file),
-				constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE,
-			);
+			await copyOriginalFile(canonical, path.join(directory, file));
 			if ([".webm", ".mkv"].includes(extension))
 				warnings.push(
 					`${file}: original container retained; your video editor may require conversion.`,

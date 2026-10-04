@@ -1,3 +1,17 @@
+# October 4: fast large-source handoff
+
+On `codex/endurance-evidence-2026-10-04`, the 30-minute four-source capture completed without
+writer failures: 107,876 frames, 957 repeats (0.887%), Stop-to-review 4.63 seconds. Its handoff
+exceeded 60 seconds because libuv ignores Mac clone requests and copies every byte.
+Native macOS cloning now exports that same saved session in 2.02 seconds, with all 12 files
+hash-matching originals. Independent modification/deletion and no-overwrite checks pass.
+All eight gates pass: 4,125 tests, one existing skip; Vite build and independent review clean.
+[Evidence and research](docs/capture-queue-2026-10-04.md).
+
+Next: finish full decoding and packet-grid verification, then one-hour normal-runtime capture.
+The installed app and remotes remain unchanged. The older DMG predates current fixes; public
+distribution remains blocked by its existing manifest policy. Overall goal remains active.
+
 # October 4: isolated capture delivery and correct source-frame selection
 
 Branch `codex/long-capture-acceptance-2026-10-04` follows local main `675e6d72` (54 commits

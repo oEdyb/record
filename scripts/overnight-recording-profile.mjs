@@ -143,6 +143,15 @@ function sampleOwnedFatalCapture() {
 		JSON.stringify(receipt, null, 2),
 	);
 }
+async function copyProfileMedia(source, destination) {
+	if (process.platform === "darwin") execFileSync("/bin/cp", ["-c", "-n", source, destination]);
+	else
+		await fsp.copyFile(
+			source,
+			destination,
+			fs.constants.COPYFILE_EXCL | fs.constants.COPYFILE_FICLONE,
+		);
+}
 function digest(file) {
 	const hash = crypto.createHash("sha256");
 	const descriptor = fs.openSync(file, "r");
@@ -192,7 +201,7 @@ async function loadSource(src) {
 	const records = path.join(userData, "recordings");
 	await fsp.mkdir(records, { recursive: true });
 	const ownedSource = path.join(records, "same-baseline-source.mp4");
-	await fsp.copyFile(src, ownedSource);
+	await copyProfileMedia(src, ownedSource);
 	report.loadedSource = { source: src, ownedSource, sha256: digest(ownedSource) };
 	const hud = await windowFor("hud-overlay");
 	await hud.evaluate((p) => window.electronAPI.setCurrentVideoPath(p), ownedSource);
@@ -1318,14 +1327,14 @@ try {
 			);
 			await editor.screenshot({ path: path.join(out, `review-${i}.png`) });
 			for (const [clipIndex, clip] of clipProbes.entries())
-				await fsp.copyFile(
+				await copyProfileMedia(
 					clip.screenVideoPath,
 					path.join(out, `recording-${i}-clip-${clipIndex}.mp4`),
 				);
 			if (i === durations.length - 1) {
 				report.source = source;
 				report.sourceArtifact = path.join(out, "source-recording.mp4");
-				await fsp.copyFile(source, report.sourceArtifact);
+				await copyProfileMedia(source, report.sourceArtifact);
 				report.sourceSha256 = digest(source);
 				report.sourceProbe = JSON.parse(
 					execFileSync(

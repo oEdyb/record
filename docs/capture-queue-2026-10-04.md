@@ -176,3 +176,35 @@ moving fixture. Record readiness 732.7 ms; Stop-to-review 2,381.1 ms; source han
 Final independent concurrency/frame-cache review found no actionable findings. All eight
 repository gates pass (4,119 tests, one skip), all 62 native tests pass, and full native/Vite
 builds pass. Endurance acceptance at 30/60 minutes remains outstanding.
+
+## Thirty-minute capture and local source-copy correction
+
+The diagnostics-off 30-minute four-source run completed: 107,876 output frames, 957 repeated
+source frames (0.887%), zero append failures/backpressure, and Stop-to-review 4,633.7 ms.
+The source-export test then exceeded its 60-second deadline while copying the 30.69 GB third
+screen file. The harness closed the app; this is a missed handoff deadline, not a returned
+production export error. Original media remains intact. Full-duration decoding and all-screen
+packet-grid checks are recorded separately; do not infer their completion from capture success.
+
+The installed Electron 44.1.0 uses Node 24.19.0/libuv 1.52.1. That exact
+[libuv implementation](https://github.com/libuv/libuv/blob/v1.52.1/src/unix/fs.c#L1279-L1316)
+implements `FICLONE` on Linux; the macOS path silently byte-copies (FORCE returns ENOSYS).
+[Apple cp](https://github.com/apple-oss-distributions/file_cmds/blob/main/cp/utils.c#L222-L279)
+rejects an existing file with `-n`, uses `clonefileat` for `-c`, and falls back for EXDEV/ENOTSUP.
+The local macOS `man cp` confirms this contract. Native copying of this 30.69 GB source took
+3.69 ms. File sizes or allocated-block counts alone do not prove shared storage.
+
+The exporter now uses asynchronous `/bin/cp -c -n` with absolute argument-array paths on Mac,
+after rejecting any existing destination including directories and dangling symlinks. Other
+platforms retain exclusive Node copying. Native errors propagate into existing owned-folder
+cleanup. The harness uses the same native command for its own media artifact copies.
+
+Acceptance: actual saved-session GUI retry finishes in 2,020.9 ms (native 1,813.6 ms), all 12
+exported files hash-match originals, and the success screenshot was inspected. A separate
+native test verifies identical bytes, independent modification/deletion, and existing-file
+rejection. Six new tests plus the full suite pass: 4,125 tests, one existing skip, 379 files;
+all eight gates, Vite build, and independent review pass. Native code is unchanged since the
+62-test native validation. Evidence: `endurance-30/clone-retry/report.json`,
+`endurance-30/clone-independence.json`, and `clone-final-checks/summary.json` under the artifact root.
+The one-hour acceptance run remains pending. Installed app, release configuration and remotes
+are unchanged.
