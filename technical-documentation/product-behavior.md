@@ -196,6 +196,10 @@ only to the next clip. Fresh setup defaults to **High**. Standard preserves the 
 68 Mbps H.264 screen request; High selects 136 Mbps H.264 at source pixels and a 60 fps output clock
 where the display permits it. Report actual source cadence, output cadence, duplicated frames
 and writer drops separately. A cadence hint alone does not establish constant-rate recording.
+When the screen encoder is briefly full (camera plus High at 60 fps on a MacBook Air), the 60 fps
+clock skips the frames it cannot fit and holds the previous picture; the take continues and the
+skips are reported as `skippedVideoFrames`. Only an encoder that accepts nothing for two seconds
+stops the take, loudly (Olle, 2026-10-04; it previously stopped after 133 ms).
 The native helper's legacy missing-bitrate fallback remains 18 Mbps; that fallback did not
 describe the bitrate explicitly requested by the current app.
 High requests a supported native camera format automatically; Standard retains the remembered

@@ -14,7 +14,7 @@ struct RecordingCadence {
 		guard elapsed >= nextFrame else { return [] }
 		guard elapsed - nextFrame < maximumCatchUpFrames else {
 			throw HelperError.writerSetupFailed(maximumCatchUpFrames == Self.maximumCatchUpFrames
-				? "The 60 fps writer fell more than 133 ms behind the host clock."
+				? "The screen encoder stopped accepting frames for two seconds."
 				: "Recording startup exceeded its one-second video backlog.")
 		}
 		return (nextFrame...elapsed).map { anchor + CMTime(value: $0, timescale: CMTimeScale(max(1, fps))) }
@@ -40,6 +40,23 @@ struct RecordingCadence {
 		}
 	}
 	mutating func didAppend() { nextFrame += 1 }
+	/// How long the encoder may refuse every frame before the take stops loudly.
+	static let maximumWriterStallSeconds = 2.0
+	/// Drops the grid frames a busy encoder could not take and keeps the newest
+	/// one due. The previous picture stays up a little longer; nothing is retimed.
+	mutating func skipBacklog(at now: CMTime) -> Int {
+		guard let anchor, now.isNumeric, now >= anchor else { return 0 }
+		let elapsed = CMTimeConvertScale(now - anchor, timescale: CMTimeScale(max(1, fps)), method: .roundTowardZero).value
+		guard elapsed > nextFrame else { return 0 }
+		let dropped = Int(elapsed - nextFrame)
+		nextFrame = elapsed
+		return dropped
+	}
+	/// A brief encoder backlog is skipped; one that lasts is a failed writer.
+	static func writerStalled(lastAppended: CMTime?, at now: CMTime) -> Bool {
+		guard let lastAppended, lastAppended.isNumeric, now.isNumeric else { return true }
+		return now - lastAppended >= CMTime(seconds: maximumWriterStallSeconds, preferredTimescale: 1_000_000)
+	}
 }
 
 enum RecordingQualityPolicy {

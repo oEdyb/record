@@ -44,6 +44,24 @@ final class NativeCaptureQualityTests: XCTestCase {
 		XCTAssertThrowsError(try grid.dueTimes(at: time(100.2)))
 	}
 
+	func testBriefEncoderBacklogSkipsToTheNewestFrameInsteadOfFailing() throws {
+		var grid = RecordingCadence(fps: 60)
+		grid.begin(at: time(100))
+		for _ in 1...60 { grid.didAppend() }
+		let now = time(101.31)
+		XCTAssertThrowsError(try grid.dueTimes(at: now))
+		XCTAssertFalse(RecordingCadence.writerStalled(lastAppended: time(101), at: now))
+		XCTAssertEqual(grid.skipBacklog(at: now), 78 - 61)
+		XCTAssertEqual(try grid.dueTimes(at: now), [time(100) + CMTime(value: 78, timescale: 60)])
+		XCTAssertEqual(grid.skipBacklog(at: now), 0)
+	}
+
+	func testEncoderThatTakesNothingForTwoSecondsStillFailsLoudly() {
+		XCTAssertTrue(RecordingCadence.writerStalled(lastAppended: time(100), at: time(102)))
+		XCTAssertTrue(RecordingCadence.writerStalled(lastAppended: nil, at: time(102)))
+		XCTAssertFalse(RecordingCadence.writerStalled(lastAppended: time(100.5), at: time(102)))
+	}
+
 	func testClosingGridFillsOnlyFrozenBoundaryWithOnePartialInterval() throws {
 		var grid = RecordingCadence(fps: 60)
 		grid.begin(at: time(100))

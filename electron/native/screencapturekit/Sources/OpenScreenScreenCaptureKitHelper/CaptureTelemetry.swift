@@ -55,6 +55,7 @@ final class CaptureTelemetry {
 	private var stoppedScreenSamples = 0
 	private var otherScreenSamples = 0
 	private var repeatedVideoFrames = 0
+	private var skippedVideoFrames = 0
 	private var appendedVideoFrames = 0
 	private var writerBackpressureEvents = 0
 	private var appendedCameraFrames = 0
@@ -159,6 +160,7 @@ final class CaptureTelemetry {
 	func recordCameraSample(dropped: Bool = false) { lock.withLock { if dropped { cameraDroppedFrames += 1 } else { cameraSamples += 1 } } }
 
 	func recordRepeatedVideoFrame() { lock.withLock { repeatedVideoFrames += 1 } }
+	func recordSkippedVideoFrames(_ count: Int) { guard count > 0 else { return }; lock.withLock { skippedVideoFrames += count } }
 
 	func recordVideoBackpressure(retried: Bool = false) {
 		lock.withLock { writerBackpressureEvents += 1; if !retried { pendingVideoFrames += 1 } }
@@ -234,6 +236,7 @@ final class CaptureTelemetry {
 			"incompleteScreenSamples": incompleteFrames,
 			"appendedVideoFrames": appendedVideoFrames,
 			"repeatedVideoFrames": repeatedVideoFrames,
+			"skippedVideoFrames": skippedVideoFrames,
 			"completeSourceVideoFps": mediaDurationMs > 0 ? Double(completeScreenSamples) * 1_000 / Double(mediaDurationMs) : 0,
 			"pendingVideoFrames": pendingVideoFrames,
 			"writerBackpressureEvents": writerBackpressureEvents,

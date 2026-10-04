@@ -1225,7 +1225,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 		do {
-			for time in try cadence.dueTimes(at: CMClockGetTime(CMClockGetHostTimeClock()), maximumCatchUpFrames: startup.backlogLimit(fps: request.video.fps)) {
+			let now = CMClockGetTime(CMClockGetHostTimeClock())
+			let limit = startup.backlogLimit(fps: request.video.fps)
+			let due: [CMTime]
+			do {
+				due = try cadence.dueTimes(at: now, maximumCatchUpFrames: limit)
+			} catch where startup.isLive && !RecordingCadence.writerStalled(lastAppended: clipLastTime, at: now) {
+				// A briefly full encoder (camera plus a 60 fps High screen) skips
+				// frames rather than ending the take.
+				captureTelemetry.recordSkippedVideoFrames(cadence.skipBacklog(at: now))
+				due = try cadence.dueTimes(at: now, maximumCatchUpFrames: limit)
+			}
+			for time in due {
 				guard videoInput.isReadyForMoreMediaData else { captureTelemetry.recordVideoBackpressure(retried: request.video.quality == "high"); return }
 				guard let frame = try measureCaptureStage("frameRetime", { try frameCache.scheduledFrame(at: time, fps: request.video.fps, firstFrame: firstScreenFrame) }) else { return }
 				let previousTime = clipLastTime
