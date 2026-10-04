@@ -1,5 +1,9 @@
 import { useEffect } from "react";
-import { resolveOutputAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
+import {
+	collectEffectiveClipDims,
+	pickExtremeDims,
+	resolveOutputAspectRatioValue,
+} from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 
@@ -19,9 +23,14 @@ function reviewChromeHeight(): number {
  */
 export function useCompactReviewFit(enabled: boolean, document: AxcutDocument | null) {
 	const { settings } = useEditorSettings();
-	const ratio = document
-		? resolveOutputAspectRatioValue(document, settings.aspectRatio, settings.outputResolution)
-		: null;
+	// Until the recording's own size is known the shape is only a 16:9 guess, and
+	// fitting to it would shrink the window and grow it back once the size arrives.
+	const sizeKnown =
+		document !== null && pickExtremeDims(collectEffectiveClipDims(document), "largest") !== null;
+	const ratio =
+		document && sizeKnown
+			? resolveOutputAspectRatioValue(document, settings.aspectRatio, settings.outputResolution)
+			: null;
 	useEffect(() => {
 		if (!enabled || ratio === null || !Number.isFinite(ratio) || ratio <= 0) return;
 		const frame = requestAnimationFrame(() => {

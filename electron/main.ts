@@ -65,6 +65,7 @@ import { getSttManager, registerSttIpc } from "./stt";
 import { checkLatestRelease } from "./update-checker";
 import {
 	ASSET_BASE_DIR,
+	closeWithoutAnimation,
 	createCameraPreviewWindow,
 	createCountdownOverlayWindow,
 	createEditorWindow,
@@ -734,7 +735,7 @@ function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
 		editorWindow.webContents.send("recording-workspace-returned");
 		if (previousWindow && previousWindow !== editorWindow && !previousWindow.isDestroyed()) {
 			isForceClosing = true;
-			previousWindow.close();
+			closeWithoutAnimation(previousWindow);
 			isForceClosing = false;
 		}
 		return;
@@ -758,7 +759,7 @@ function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
 		if (workspaceTransition?.window === nextEditorWindow) workspaceTransition = null;
 		if (!previousWindow || previousWindow.isDestroyed()) return;
 		isForceClosing = true;
-		previousWindow.close();
+		closeWithoutAnimation(previousWindow);
 		isForceClosing = false;
 	});
 	nextEditorWindow.once("closed", () => {

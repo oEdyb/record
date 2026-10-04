@@ -648,6 +648,16 @@ export function createCameraPreviewWindow(): BrowserWindow {
 	return win;
 }
 
+/**
+ * Closes a window with no macOS fade-and-shrink. When review replaces the pill,
+ * only review should move; the pill and camera bubble just go.
+ */
+export function closeWithoutAnimation(win: BrowserWindow) {
+	if (win.isDestroyed()) return;
+	if (process.platform === "darwin") win.setOpacity(0);
+	win.close();
+}
+
 export function closeCameraPreviewWindow() {
 	const win = cameraPreviewWindow;
 	cameraPreviewWindow = null;
@@ -655,7 +665,7 @@ export function closeCameraPreviewWindow() {
 	cameraPreviewVisible = false;
 	cameraPreviewRendererReady = false;
 	cameraPreviewPortsConnected = false;
-	if (win && !win.isDestroyed()) win.close();
+	if (win) closeWithoutAnimation(win);
 }
 
 /**
