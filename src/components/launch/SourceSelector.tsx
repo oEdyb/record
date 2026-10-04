@@ -26,8 +26,14 @@ export function SourcePicker({
 	onClose,
 	onChosen,
 	panelRef,
+	className = "",
+	closing = false,
 }: {
 	variant: "window" | "panel";
+	/** Extra classes for the panel shell, such as the HUD's motion. */
+	className?: string;
+	/** True while the panel plays its exit before unmounting. */
+	closing?: boolean;
 	onClose: () => void;
 	onChosen?: () => void;
 	panelRef?: (el: HTMLDivElement | null) => void;
@@ -108,7 +114,7 @@ export function SourcePicker({
 	const shellClass =
 		variant === "window"
 			? `h-screen flex flex-col ${styles.glassContainer}`
-			: `flex flex-col ${styles.glassContainer} ${styles.panel}`;
+			: `flex flex-col ${styles.glassContainer} ${styles.panel} ${className}`;
 
 	if (loading) {
 		return (
@@ -116,6 +122,7 @@ export function SourcePicker({
 				ref={panelRef}
 				data-hud-interactive="true"
 				data-testid={panelTestId}
+				data-closing={closing}
 				className={`${shellClass} items-center justify-center ${styles.stateShell}`}
 			>
 				<div className="text-center">
@@ -132,6 +139,7 @@ export function SourcePicker({
 				ref={panelRef}
 				data-hud-interactive="true"
 				data-testid={panelTestId}
+				data-closing={closing}
 				className={`${shellClass} items-center justify-center ${styles.stateShell}`}
 			>
 				<div className="max-w-[320px] px-6 text-center">
@@ -201,6 +209,7 @@ export function SourcePicker({
 			ref={panelRef}
 			data-hud-interactive="true"
 			data-testid={panelTestId}
+			data-closing={closing}
 			className={shellClass}
 		>
 			<div className={styles.header}>

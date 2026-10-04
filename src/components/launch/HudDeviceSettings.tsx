@@ -211,6 +211,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onToggleMicrophone,
 	onToggleCamera,
 	extras = {},
+	closing = false,
 }: {
 	micDevices: MicrophoneDevice[];
 	cameraDevices: CameraDevice[];
@@ -228,7 +229,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onSelectCamera: (device: CameraDevice) => void;
 	onSelectWebcamFormat: (format: WebcamFormat) => void;
 	onClose: () => void;
-	panelRef: (el: HTMLDivElement | null) => void;
+	panelRef?: (el: HTMLDivElement | null) => void;
 	systemAudioEnabled?: boolean;
 	microphoneEnabled?: boolean;
 	controlsLocked?: boolean;
@@ -236,6 +237,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onToggleMicrophone?: () => void;
 	onToggleCamera?: () => void;
 	extras?: HudSetupExtras;
+	/** True while the panel plays its exit before unmounting. */
+	closing?: boolean;
 }) {
 	const [expanded, setExpanded] = useState<DeviceSection | null>(null);
 	const toggleSection = (section: DeviceSection) =>
@@ -309,7 +312,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			data-locked={controlsLocked}
 			role="dialog"
 			aria-label={labels.title}
-			className={`${styles.hudModal} ${styles.hudScrollbar} animate-mic-panel-in ${styles.electronNoDrag}`}
+			data-closing={closing}
+			className={`${styles.hudModal} ${styles.hudScrollbar} ${styles.hudPanel} ${styles.electronNoDrag}`}
 		>
 			<div className={styles.hudModalHeader}>
 				<span className={styles.hudModalTitle}>

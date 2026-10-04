@@ -62,12 +62,15 @@ export function HudClipPeek({
 	clips,
 	labels,
 	open,
+	instant = false,
 	panelRef,
 	onClose,
 }: {
 	clips: readonly RecordingSessionClip[];
 	labels: HudClipPeekLabels;
 	open: boolean;
+	/** Opened from the keyboard: show it without animation. */
+	instant?: boolean;
 	panelRef?: (el: HTMLDivElement | null) => void;
 	onClose: () => void;
 }) {
@@ -223,7 +226,8 @@ export function HudClipPeek({
 			data-testid="hud-clip-peek"
 			role="dialog"
 			aria-label={labels.title}
-			className={`${styles.clipPeek} animate-mic-panel-in ${styles.electronNoDrag}`}
+			data-instant={instant}
+			className={`${styles.clipPeek} ${styles.hudPanel} ${styles.electronNoDrag}`}
 		>
 			<div className={styles.clipPeekStage}>
 				<video

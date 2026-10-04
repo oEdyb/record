@@ -328,6 +328,12 @@ guard: ignore the shortcut while idle, saving, or finalizing.
 The idle pill is 360 CSS px wide and 50 px tall; the recording pill fits its controls at the
 same height. Preserve one surface and one anchored position through the transition.
 
+Motion (Olle, 2026-10-04, following Emil Kowalski's rules): Setup, Source and Replay grow out of
+the pill from its bottom centre (96 % scale, 8 px lower, 240 ms strong ease-out) and close in
+120 ms. Replay opened with the Up key appears instantly. The pill morphs between idle and recording
+widths on the drawer curve while the new row fades in through a slight blur. Reduced motion keeps
+only fades. Only transform, opacity, filter and width animate.
+
 ### Setup locking
 
 - Lock setup controls while a clip is actively recording or finalizing.

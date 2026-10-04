@@ -51,6 +51,7 @@ import {
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
 import { SourcePicker } from "./SourceSelector";
+import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
 // Locale list is computed once at module load; keeping the reference stable lets
@@ -186,6 +187,10 @@ export function LaunchWindow() {
 		recording && presentation.paused && !saving && !clipFinalizing && keptClipCount > 0;
 	const peekOpen = isPeekOpen && canPeek;
 	const isPopoverOpen = isDeviceSettingsOpen || peekOpen || isSourcePanelOpen;
+	const setupPresence = usePresence(isDeviceSettingsOpen, 120);
+	const sourcePresence = usePresence(isSourcePanelOpen, 120);
+	// Replay opened with the Up key appears without animation.
+	const [peekInstant, setPeekInstant] = useState(false);
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
 	// be applied atomically before the next clip starts.
@@ -797,6 +802,7 @@ export function LaunchWindow() {
 			if (event.key === "ArrowUp" && canPeek && !peekOpen && !isDeviceSettingsOpen) {
 				event.preventDefault();
 				setIsDeviceSettingsOpen(false);
+				setPeekInstant(true);
 				setIsPeekOpen(true);
 				return;
 			}
@@ -950,6 +956,7 @@ export function LaunchWindow() {
 	const togglePeek = useCallback(() => {
 		setIsDeviceSettingsOpen(false);
 		setIsSourcePanelOpen(false);
+		setPeekInstant(false);
 		setIsPeekOpen((open) => !open);
 	}, []);
 
@@ -1440,11 +1447,17 @@ export function LaunchWindow() {
 					)}
 				</div>
 
-				{(isPopoverOpen || canPeek || hasNotices || removedClipFeedback) && (
+				{(isPopoverOpen ||
+					setupPresence.present ||
+					sourcePresence.present ||
+					canPeek ||
+					hasNotices ||
+					removedClipFeedback) && (
 					// column-reverse: first child sits closest to the bar.
 					<div className={styles.hudAbove}>
-						{isDeviceSettingsOpen && (
+						{setupPresence.present && (
 							<HudDeviceSettings
+								closing={setupPresence.closing}
 								micDevices={micDevices}
 								cameraDevices={cameraDevices}
 								activeMicId={microphoneDeviceId || selectedMicId}
@@ -1468,16 +1481,18 @@ export function LaunchWindow() {
 								onSelectCamera={handleSelectCameraDevice}
 								onSelectWebcamFormat={handleSelectWebcamFormat}
 								onClose={closeDeviceSettings}
-								panelRef={setPopoverEl}
+								panelRef={isDeviceSettingsOpen ? setPopoverEl : undefined}
 							/>
 						)}
 
-						{isSourcePanelOpen && (
+						{sourcePresence.present && (
 							<SourcePicker
 								variant="panel"
+								className={styles.hudPanel}
+								closing={sourcePresence.closing}
 								onClose={closeSourcePanel}
 								onChosen={() => setIsSourcePanelOpen(false)}
-								panelRef={setPopoverEl}
+								panelRef={isSourcePanelOpen ? setPopoverEl : undefined}
 							/>
 						)}
 
@@ -1486,6 +1501,7 @@ export function LaunchWindow() {
 								clips={presentation.recordedClips}
 								labels={peekLabels}
 								open={peekOpen}
+								instant={peekInstant}
 								panelRef={peekOpen ? setPopoverEl : undefined}
 								onClose={closePeek}
 							/>
