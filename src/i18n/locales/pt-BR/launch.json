@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "Fonte",
 		"editableCursor": "Cursor editável",
-		"language": "Idioma"
+		"language": "Idioma",
+		"lockedHint": "Pause para alterar a configuração",
+		"display": "Tela",
+		"window": "Janela"
 	},
 	"setup": {
 		"notes": "Notas",

@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "Kaynak",
 		"editableCursor": "Düzenlenebilir imleç",
-		"language": "Dil"
+		"language": "Dil",
+		"lockedHint": "Kurulumu değiştirmek için duraklatın",
+		"display": "Ekran",
+		"window": "Pencere"
 	},
 	"setup": {
 		"notes": "Notlar",

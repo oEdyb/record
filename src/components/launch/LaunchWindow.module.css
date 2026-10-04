@@ -64,7 +64,8 @@
 }
 
 .hudPillIdle {
-	width: 360px;
+	/* Same width as Setup, so the panel reads as growing out of the pill. */
+	width: 424px;
 }
 
 .hudPillRecording {
@@ -250,9 +251,20 @@
 /* Device settings. Same shell as the popovers, and deliberately the same width
    as the notice column (HUD_STACK_WIDTH) so opening it only ever changes the
    overlay window's height, never its width. */
+/* Setup grows out of the pill: same glass, one shape. Geometry is concentric:
+   a 1px border, an 8px inset, then 14px-radius tiles (14 + 8 = 22px panel
+   radius). Every block is separated by the same 8px. */
 .hudModal {
+	--surface: #151519;
+	--surface-3: #25252b;
+	--fg-emphasis: #ffffff;
+	--border-hi: #3c3c46;
+	--muted: #92929d;
 	pointer-events: auto;
-	width: 360px;
+	display: flex;
+	width: 424px;
+	flex-direction: column;
+	gap: 8px;
 	/* Its own cap, larger than a popover's — but the window reserves this room
 	   whether the panel is open or not, so opening it never resizes anything. */
 	max-height: var(--hud-modal-max-h, 560px);
@@ -260,8 +272,8 @@
 	overflow-x: hidden;
 	overscroll-behavior: contain;
 	box-sizing: border-box;
-	padding: 6px;
-	border-radius: 20px;
+	padding: 8px;
+	border-radius: 22px;
 	border: 1px solid rgba(255, 255, 255, 0.09);
 	background: rgba(18, 21, 26, 0.96);
 	box-shadow:
@@ -273,10 +285,11 @@
 
 .hudModalHeader {
 	display: flex;
-	height: 32px;
+	height: 28px;
+	flex: none;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0 2px 2px 10px;
+	padding-left: 6px;
 }
 
 .hudModalHeaderActions {
@@ -286,8 +299,8 @@
 
 .hudModalTitle {
 	font-size: 12px;
-	font-weight: 600;
-	color: #f5f7fa;
+	font-weight: 500;
+	color: rgba(255, 255, 255, 0.6);
 }
 
 .hudModalClose {
@@ -299,9 +312,9 @@
 	border: 0;
 	border-radius: 14px;
 	background: transparent;
-	color: rgba(255, 255, 255, 0.55);
+	color: rgba(255, 255, 255, 0.5);
 	cursor: pointer;
-	transition: background-color 120ms ease, color 120ms ease;
+	transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
 .hudModalClose:disabled {
@@ -314,121 +327,203 @@
 	color: #ffffff;
 }
 
+.hudModalClose:active {
+	transform: scale(0.92);
+}
+
 .hudModalEmpty {
-	padding: 8px 10px;
+	padding: 8px 12px;
 	font-size: 11px;
-	font-style: italic;
 	color: rgba(255, 255, 255, 0.4);
 }
 
 .hudModalMeterRow {
 	display: flex;
+	height: 36px;
 	align-items: center;
 	gap: 8px;
-	padding: 8px 10px 2px;
+	padding: 0 4px 0 12px;
 }
 
 .hudModalMeterLabel {
-	font-size: 11px;
-	color: rgba(255, 255, 255, 0.45);
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.6);
 	white-space: nowrap;
 }
 
 .hudModalSelect[data-klippt-select-trigger] {
-	min-width: 132px;
+	min-width: 140px;
 	height: 28px;
 	margin-left: auto;
-	padding: 0 8px;
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	border-radius: 8px;
-	background: #171b21;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.07);
 	color: #f5f7fa;
-	font-size: 11px;
+	font-size: 12px;
 }
 
 .hudModalSelect[data-klippt-select-trigger]:hover:not(:disabled) {
-	background: #232933;
-	border-color: rgba(255, 255, 255, 0.24);
+	background: rgba(255, 255, 255, 0.11);
 }
 
 .hudModalSelect:disabled {
-	opacity: 0.55;
+	opacity: 0.45;
 }
 
 .hudNativeCameraFormat {
 	margin-left: auto;
-	color: #f5f7fa;
-	font-size: 11px;
-	line-height: 1.4;
-	text-align: right;
+	padding-right: 10px;
+	color: rgba(255, 255, 255, 0.8);
+	font-size: 12px;
 }
 
 .hudModalHint {
-	padding: 0 10px 6px;
+	padding: 4px 12px 0;
 	font-size: 11px;
-	color: rgba(255, 255, 255, 0.35);
+	color: rgba(255, 255, 255, 0.4);
 }
 
-/* The HUD window has no theme attribute, so the shared switch would pick up the
-   light palette. Pin the dark values it reads for this panel only. */
-.deviceList {
-	--surface: #151519;
-	--surface-3: #25252b;
-	--fg-emphasis: #ffffff;
-	--border-hi: #3c3c46;
-	--muted: #92929d;
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-
-.deviceRow {
-	display: flex;
-	align-items: center;
+/* Source: two large choices with one thumb that slides between them. */
+.setupSources {
+	position: relative;
+	display: grid;
+	height: 64px;
+	flex: none;
+	grid-template-columns: 1fr 1fr;
 	gap: 8px;
-	padding-right: 8px;
+}
+
+.setupSourceThumb {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: calc((100% - 8px) / 2);
 	border-radius: 14px;
-	transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1);
+	background: rgba(255, 255, 255, 0.12);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+	transition: transform 320ms cubic-bezier(0.34, 1.3, 0.64, 1);
 }
 
-.deviceRow:hover,
-.deviceRow[data-expanded="true"] {
-	background: rgba(255, 255, 255, 0.045);
+.setupSources[data-source="window"] .setupSourceThumb {
+	transform: translateX(calc(100% + 8px));
 }
 
-.deviceRowMain {
+.setupSource {
+	position: relative;
 	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 14px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.55);
+	font-size: 12px;
+	cursor: pointer;
+	transition: color 150ms ease, background-color 150ms ease, transform 120ms ease;
+}
+
+.setupSource:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.05);
+	color: #ffffff;
+}
+
+.setupSource:active:not(:disabled) {
+	transform: scale(0.97);
+}
+
+.setupSource[aria-checked="true"] {
+	color: #ffffff;
+}
+
+.setupSource:disabled {
+	cursor: not-allowed;
+}
+
+.setupSourceName {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Inputs: a 2 by 2 grid. Each tile opens its device list and has its own switch. */
+.setupGrid {
+	display: grid;
+	flex: none;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.hudModal[data-locked="true"] .setupSources,
+.hudModal[data-locked="true"] .setupGrid {
+	opacity: 0.4;
+}
+
+.setupTile {
+	position: relative;
+	display: flex;
+	height: 56px;
+	min-width: 0;
+	align-items: center;
+	padding-right: 12px;
+	overflow: hidden;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.06);
+	transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.setupTile:hover,
+.setupTile[data-expanded="true"] {
+	background: rgba(255, 255, 255, 0.1);
+}
+
+.setupTile[data-expanded="true"] {
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.setupTileMain {
+	display: flex;
+	height: 100%;
 	min-width: 0;
 	flex: 1;
 	align-items: center;
 	gap: 10px;
-	padding: 8px 4px 8px 10px;
+	padding: 0 6px 0 12px;
 	border: 0;
-	border-radius: 14px;
 	background: transparent;
 	color: inherit;
 	text-align: left;
-	cursor: default;
-}
-
-button.deviceRowMain {
 	cursor: pointer;
 }
 
-button.deviceRowMain:focus-visible {
+.setupTileMain:disabled {
+	cursor: default;
+}
+
+.setupTileMain:focus-visible {
 	outline: none;
+	border-radius: 14px;
 	box-shadow: inset 0 0 0 2px rgba(142, 165, 191, 0.72);
 }
 
-.deviceRowIcon {
+.setupTileIcon {
 	display: flex;
-	width: 20px;
-	flex-shrink: 0;
-	justify-content: center;
-	color: #c3cad3;
+	flex: none;
+	color: rgba(255, 255, 255, 0.55);
+	transition: color 150ms ease;
 }
 
-.deviceRowText {
+.setupTile[data-on="true"] .setupTileIcon {
+	color: #ffffff;
+}
+
+.setupTileText {
 	display: flex;
 	min-width: 0;
 	flex: 1;
@@ -436,49 +531,65 @@ button.deviceRowMain:focus-visible {
 	gap: 1px;
 }
 
-.deviceRowName {
+.setupTileName {
+	overflow: hidden;
 	color: #f5f7fa;
-	font-size: 12px;
-	font-weight: 560;
+	font-size: 13px;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
-.deviceRowDetail {
+.setupTileDetail {
 	overflow: hidden;
-	color: rgba(255, 255, 255, 0.5);
+	color: rgba(255, 255, 255, 0.45);
 	font-size: 11px;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.deviceRowChevron {
-	flex-shrink: 0;
-	color: rgba(255, 255, 255, 0.45);
-	transition: transform 160ms cubic-bezier(0.2, 0, 0, 1);
+.setupTileChevron {
+	flex: none;
+	color: rgba(255, 255, 255, 0.4);
+	transition: transform 220ms cubic-bezier(0.34, 1.3, 0.64, 1);
 }
 
-.deviceRowChevronOpen {
+.setupTile[data-expanded="true"] .setupTileChevron {
 	transform: rotate(180deg);
+}
+
+.setupTileLevel {
+	position: absolute;
+	right: 12px;
+	bottom: 0;
+	left: 12px;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--success, #34d399);
+	transform-origin: left center;
+	transition: transform 60ms linear;
+	pointer-events: none;
 }
 
 .deviceOptions {
 	display: flex;
+	flex: none;
 	flex-direction: column;
-	gap: 1px;
-	padding: 2px 4px 6px 34px;
+	gap: 2px;
 	animation: hud-content-enter 140ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
 .deviceOption {
 	display: flex;
-	min-height: 30px;
+	min-height: 36px;
 	align-items: center;
-	gap: 8px;
-	padding: 0 10px;
+	gap: 10px;
+	padding: 0 12px;
 	border: 0;
-	border-radius: 10px;
+	border-radius: 14px;
 	background: transparent;
-	color: rgba(255, 255, 255, 0.72);
-	font-size: 12px;
+	color: rgba(255, 255, 255, 0.65);
+	font-size: 13px;
 	text-align: left;
 	cursor: pointer;
 	transition: background-color 120ms ease, color 120ms ease;
@@ -509,45 +620,17 @@ button.deviceRowMain:focus-visible {
 	color: #ffffff;
 }
 
-.deviceOption .levelMeter {
-	width: 56px;
-	flex: none;
-	height: 6px;
-}
-
 .deviceOptionCheck {
 	flex-shrink: 0;
-	color: rgba(255, 255, 255, 0.85);
+	color: #ffffff;
 }
 
 .deviceQuality {
-	margin-top: 4px;
-	padding-top: 2px;
-	border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.deviceOptions .cameraPreview {
-	margin: 6px 0 2px;
-}
-
-.levelMeter {
 	display: flex;
-	flex: 1;
-	align-items: center;
-	gap: 2px;
-	height: 10px;
-}
-
-.levelSegment {
-	flex: 1;
-	height: 100%;
-	border-radius: 1px;
-	background: rgba(255, 255, 255, 0.1);
-	transition: background-color 60ms linear;
-}
-
-.levelSegmentOn {
-	background: var(--success);
+	flex: none;
+	flex-direction: column;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.04);
 }
 
 .cameraPreview {
@@ -557,7 +640,7 @@ button.deviceRowMain:focus-visible {
 	margin-top: 6px;
 	align-items: center;
 	justify-content: center;
-	border-radius: 10px;
+	border-radius: 14px;
 	background: #0d1014;
 	object-fit: cover;
 	/* The preview is a mirror of the user, so flip it like every other self-view. */
@@ -566,7 +649,6 @@ button.deviceRowMain:focus-visible {
 
 .cameraPreviewFallback {
 	font-size: 11px;
-	font-style: italic;
 	color: rgba(255, 255, 255, 0.4);
 	transform: scaleX(-1);
 }
@@ -645,59 +727,54 @@ button.deviceRowMain:focus-visible {
 	}
 }
 
-.deviceRowAction {
-	width: 100%;
-	padding-right: 12px;
-	border: 0;
-	text-align: left;
-	cursor: pointer;
-}
-
-.deviceRowAction:disabled {
-	opacity: 0.45;
-	cursor: not-allowed;
-}
-
-.deviceRowChevronSide {
-	flex-shrink: 0;
-	color: var(--muted);
-	transform: rotate(-90deg);
-}
-
 .hudSetupFooter {
-	display: flex;
-	gap: 4px;
-	margin-top: 6px;
-	padding-top: 6px;
-	border-top: 1px solid rgba(255, 255, 255, 0.06);
+	display: grid;
+	flex: none;
+	grid-auto-columns: 1fr;
+	grid-auto-flow: column;
+	gap: 8px;
 }
 
 .hudSetupFooterButton {
 	display: flex;
-	flex: 1;
 	min-width: 0;
-	height: 34px;
+	height: 36px;
 	align-items: center;
 	justify-content: center;
-	gap: 6px;
+	gap: 7px;
+	padding: 0 10px;
 	border: 0;
 	border-radius: 14px;
-	background: rgba(255, 255, 255, 0.045);
-	color: #c9ced6;
+	background: rgba(255, 255, 255, 0.06);
+	color: #e8ebef;
 	font-size: 12px;
 	font-weight: 500;
 	white-space: nowrap;
 	cursor: pointer;
-	transition: background-color 150ms ease, color 150ms ease;
+	transition: background-color 150ms ease, color 150ms ease, transform 120ms ease;
 }
 
-.hudSetupFooterButton:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.09);
+.hudSetupFooterButton svg {
+	flex: none;
+	color: rgba(255, 255, 255, 0.6);
+}
+
+.hudSetupFooterButton:hover:not(:disabled),
+.hudSetupFooterButton[aria-expanded="true"] {
+	background: rgba(255, 255, 255, 0.12);
 	color: #ffffff;
+}
+
+.hudSetupFooterButton:active:not(:disabled) {
+	transform: scale(0.97);
 }
 
 .hudSetupFooterButton[data-variant="danger"]:hover:not(:disabled) {
 	background: rgba(248, 113, 113, 0.14);
+	color: #f87171;
+}
+
+.hudSetupFooterButton[data-variant="danger"]:hover:not(:disabled) svg {
 	color: #f87171;
 }
 

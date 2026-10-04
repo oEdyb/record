@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "Source",
 		"editableCursor": "Editable cursor",
-		"language": "Language"
+		"language": "Language",
+		"lockedHint": "Pause to change setup",
+		"display": "Display",
+		"window": "Window"
 	},
 	"setup": {
 		"notes": "Notes",

@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "Источник",
 		"editableCursor": "Редактируемый курсор",
-		"language": "Язык"
+		"language": "Язык",
+		"lockedHint": "Поставьте на паузу, чтобы изменить настройки",
+		"display": "Экран",
+		"window": "Окно"
 	},
 	"setup": {
 		"notes": "Заметки",

@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "المصدر",
 		"editableCursor": "مؤشر قابل للتعديل",
-		"language": "اللغة"
+		"language": "اللغة",
+		"lockedHint": "أوقف مؤقتًا لتغيير الإعداد",
+		"display": "الشاشة",
+		"window": "نافذة"
 	},
 	"setup": {
 		"notes": "ملاحظات",

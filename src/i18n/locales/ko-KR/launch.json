@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "소스",
 		"editableCursor": "편집 가능한 커서",
-		"language": "언어"
+		"language": "언어",
+		"lockedHint": "설정을 바꾸려면 일시정지하세요",
+		"display": "디스플레이",
+		"window": "창"
 	},
 	"setup": {
 		"notes": "메모",

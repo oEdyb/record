@@ -1,4 +1,4 @@
-import { Clapperboard, NotepadText, Power, RotateCcw, X } from "lucide-react";
+import { Clapperboard, NotepadText, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
@@ -58,7 +58,7 @@ const AVAILABLE_LOCALES = getAvailableLocales();
 // Used only when the renderer can't see a real display (tests, headless).
 const FALLBACK_SCREEN_HEIGHT = 1080;
 const FALLBACK_SCREEN_WIDTH = 1920;
-const HUD_PILL_WIDTH = 360;
+const HUD_PILL_WIDTH = 424;
 const HUD_PILL_HEIGHT = 50;
 const REMOVED_CLIP_FEEDBACK_MS = 4_000;
 
@@ -564,6 +564,7 @@ export function LaunchWindow() {
 	const defaultSourceName = t("sourceSelector.defaultSourceName");
 	const [selectedSource, setSelectedSource] = useState(defaultSourceName);
 	const [hasSelectedSource, setHasSelectedSource] = useState(false);
+	const [selectedSourceKind, setSelectedSourceKind] = useState<"display" | "window">("display");
 	const [sourceReady, setSourceReady] = useState(false);
 	const sourceGenerationRef = useRef(0);
 	const recordAfterSourceSelectionRef = useRef(false);
@@ -573,11 +574,13 @@ export function LaunchWindow() {
 			if (source) {
 				setSelectedSource(source.name);
 				setHasSelectedSource(true);
+				setSelectedSourceKind(source.id.startsWith("window:") ? "window" : "display");
 				return;
 			}
 
 			setSelectedSource(defaultSourceName);
 			setHasSelectedSource(false);
+			setSelectedSourceKind("display");
 		},
 		[defaultSourceName],
 	);
@@ -1068,6 +1071,9 @@ export function LaunchWindow() {
 			language: t("deviceSettings.language"),
 			hide: t("tooltips.hideHUD"),
 			close: hasReviewReturn && !recording ? t("tooltips.openStudio") : t("tooltips.closeApp"),
+			lockedHint: t("deviceSettings.lockedHint"),
+			display: t("deviceSettings.display"),
+			window: t("deviceSettings.window"),
 		}),
 		[hasReviewReturn, recording, t],
 	);
@@ -1096,20 +1102,25 @@ export function LaunchWindow() {
 	const handleCancelRecording = useCallback(() => {
 		recorderActionsRef.current.cancelRecording();
 	}, []);
+	const setupFooterLead = useMemo(
+		() =>
+			isLinuxHud ? null : (
+				<button
+					type="button"
+					className={styles.hudSetupFooterButton}
+					disabled={saving}
+					onClick={openNotes}
+				>
+					<NotepadText size={15} aria-hidden />
+					{t("setup.notes")}
+				</button>
+			),
+		[isLinuxHud, openNotes, saving, t],
+	);
+
 	const setupFooter = useMemo(
 		() => (
 			<>
-				{!isLinuxHud && (
-					<button
-						type="button"
-						className={styles.hudSetupFooterButton}
-						disabled={saving}
-						onClick={openNotes}
-					>
-						<NotepadText size={15} aria-hidden />
-						{t("setup.notes")}
-					</button>
-				)}
 				{recording ? (
 					<>
 						<button
@@ -1133,53 +1144,61 @@ export function LaunchWindow() {
 						</button>
 					</>
 				) : (
-					<>
-						<button
-							type="button"
-							data-testid="launch-open-studio-button"
-							className={styles.hudSetupFooterButton}
-							disabled={saving}
-							onClick={openStudio}
-						>
-							<Clapperboard size={15} aria-hidden />
-							{t("recording.recordings")}
-						</button>
-						{!hasReviewReturn && (
-							<button
-								type="button"
-								data-testid="hud-close-app-button"
-								className={styles.hudSetupFooterButton}
-								disabled={transitionLocked}
-								onClick={sendHudOverlayClose}
-							>
-								<Power size={15} aria-hidden />
-								{deviceSettingsLabels.close}
-							</button>
-						)}
-					</>
+					<button
+						type="button"
+						data-testid="launch-open-studio-button"
+						className={styles.hudSetupFooterButton}
+						disabled={saving}
+						onClick={openStudio}
+					>
+						<Clapperboard size={15} aria-hidden />
+						{t("recording.recordings")}
+					</button>
 				)}
 			</>
 		),
 		[
 			handleCancelRecording,
 			handleRestartRecording,
-			isLinuxHud,
-			openNotes,
 			openStudio,
 			recording,
 			saving,
-			deviceSettingsLabels.close,
-			hasReviewReturn,
-			sendHudOverlayClose,
 			t,
 			transitionLocked,
 		],
 	);
 
+	// Display picks the main display in one click; with a display already chosen
+	// it opens the picker so another display can be chosen.
+	const selectDisplaySource = useCallback(async () => {
+		if (selectedSourceKind === "display" || !window.electronAPI?.getSources) {
+			void openSourceSelector();
+			return;
+		}
+		try {
+			const sources = await window.electronAPI.getSources({
+				types: ["screen"],
+				thumbnailSize: { width: 1, height: 1 },
+				fetchWindowIcons: false,
+			});
+			const display = sources.find((source) => source.id.startsWith("screen:"));
+			if (!display) {
+				void openSourceSelector();
+				return;
+			}
+			sourceGenerationRef.current += 1;
+			applySelectedSource(await window.electronAPI.selectSource(display));
+		} catch (error) {
+			console.warn("Failed to select the display:", error);
+		}
+	}, [applySelectedSource, openSourceSelector, selectedSourceKind]);
+
 	const setupExtras = useMemo<HudSetupExtras>(
 		() => ({
 			sourceLabel: portalOwnsSource ? undefined : selectedSource,
+			sourceKind: selectedSourceKind,
 			sourceDisabled: controlsLocked,
+			onSelectDisplay: portalOwnsSource ? undefined : () => void selectDisplaySource(),
 			onOpenSource: portalOwnsSource
 				? undefined
 				: () => {
@@ -1188,15 +1207,23 @@ export function LaunchWindow() {
 					},
 			editableCursor: cursorCaptureMode === "editable-overlay",
 			onToggleCursor: supportsCursorModeToggle ? toggleCursorMode : undefined,
-			locales: AVAILABLE_LOCALES,
+			locales: recording ? undefined : AVAILABLE_LOCALES,
 			activeLocale: locale,
 			getLocaleName: getLocaleName as (loc: string) => string,
 			onSelectLocale: handleSelectLocale,
 			onHide: sendHudOverlayHide,
+			onQuit: recording || hasReviewReturn ? undefined : sendHudOverlayClose,
 			windowControlsDisabled: transitionLocked,
+			footerLead: setupFooterLead,
 			footer: setupFooter,
 		}),
 		[
+			hasReviewReturn,
+			recording,
+			selectDisplaySource,
+			selectedSourceKind,
+			sendHudOverlayClose,
+			setupFooterLead,
 			controlsLocked,
 			cursorCaptureMode,
 			handleSelectLocale,

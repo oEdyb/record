@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "來源",
 		"editableCursor": "可編輯游標",
-		"language": "語言"
+		"language": "語言",
+		"lockedHint": "暫停後才能變更設定",
+		"display": "顯示器",
+		"window": "視窗"
 	},
 	"setup": {
 		"notes": "筆記",

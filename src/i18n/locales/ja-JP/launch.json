@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "ソース",
 		"editableCursor": "編集可能なカーソル",
-		"language": "言語"
+		"language": "言語",
+		"lockedHint": "設定を変更するには一時停止してください",
+		"display": "ディスプレイ",
+		"window": "ウインドウ"
 	},
 	"setup": {
 		"notes": "メモ",

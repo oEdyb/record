@@ -113,7 +113,10 @@
 		"nativeCamera": "Native camera",
 		"source": "Nguồn",
 		"editableCursor": "Con trỏ chỉnh sửa được",
-		"language": "Ngôn ngữ"
+		"language": "Ngôn ngữ",
+		"lockedHint": "Tạm dừng để thay đổi thiết lập",
+		"display": "Màn hình",
+		"window": "Cửa sổ"
 	},
 	"setup": {
 		"notes": "Ghi chú",

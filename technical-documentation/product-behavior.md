@@ -285,13 +285,18 @@ Every edge inset is 4 px, so the 40 px round control is concentric with the 25 p
 The recording pill keeps the same controls through Pause, so Pause/Continue never moves under
 the cursor. Do not create a second bar or a detached timeline pill.
 
-Setup floats above the pill at the same 360 px width. It holds source, system audio,
-microphone, camera, editable cursor and language as rows; microphone, camera and language
-expand into one option list at a time. Recording quality sits below the rows. Its header has
-Hide and a close control that only closes the panel. The footer has Notes, Recordings and Close
-App while idle, and Notes, Restart and Discard while recording; quitting is never offered
-mid-take. Setup opens during capture with every switch, device list and quality choice locked,
-and it opens no mic meter or camera preview of its own until a completed Pause.
+Setup floats above the idle pill at the same 424 px width, laid out like the approved prototype
+(Olle, 2026-10-04). Top: a Display / Window choice with a sliding thumb; Display picks the main
+display in one click (or opens the picker when a display is already chosen), Window opens the
+picker. Middle: a 2 by 2 grid of System audio, Microphone, Camera and Editable cursor tiles, each
+with its device or state and its own switch; the microphone tile shows a live level line.
+Microphone and camera tiles open their device list below the grid, one at a time. Recording
+quality sits below that. The footer is Notes, Language and Recordings while idle, and Notes,
+Restart and Discard while recording. The header has Hide, Quit (idle only, not when returning to
+review) and a close control that only closes the panel. Every block uses an 8 px gap and inset,
+with 14 px tiles inside a 22 px panel radius. While capture runs, the header reads "Pause to change
+setup" and the source and tiles dim and lock; it opens no mic meter or camera preview of its own
+until a completed Pause.
 
 Replay (the up arrow or Up key, only after a completed Pause) opens a separate popup
 above the pill with no recording controls. Its video takes the recording's own shape, up to

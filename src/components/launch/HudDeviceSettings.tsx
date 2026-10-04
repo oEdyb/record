@@ -1,4 +1,14 @@
-import { Check, ChevronDown, Languages, Minus, MousePointer2, X } from "lucide-react";
+import {
+	AppWindow,
+	Check,
+	ChevronDown,
+	Languages,
+	Minus,
+	Monitor,
+	MousePointer2,
+	Power,
+	X,
+} from "lucide-react";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { AppSelect } from "@/components/ui/app-select";
 import { InspectorSwitch } from "@/components/ui/inspector";
@@ -13,11 +23,8 @@ import {
 	type WebcamFormat,
 	webcamFormatKey,
 } from "../../lib/webcamFormats";
-import { CameraIcon, MicIcon, SourceIcon, VolumeIcon } from "./HudIcons";
+import { CameraIcon, MicIcon, VolumeIcon } from "./HudIcons";
 import styles from "./LaunchWindow.module.css";
-
-const LEVEL_SEGMENTS = 12;
-const LEVEL_SEGMENT_KEYS = Array.from({ length: LEVEL_SEGMENTS }, (_, i) => `segment-${i}`);
 
 export interface HudDeviceSettingsLabels {
 	title: string;
@@ -47,14 +54,19 @@ export interface HudDeviceSettingsLabels {
 	language?: string;
 	hide?: string;
 	close?: string;
+	lockedHint?: string;
+	display?: string;
+	window?: string;
 }
 
 type DeviceSection = "microphone" | "camera" | "language";
 
 export interface HudSetupExtras {
 	sourceLabel?: string;
+	sourceKind?: "display" | "window";
 	sourceDisabled?: boolean;
 	onOpenSource?: () => void;
+	onSelectDisplay?: () => void;
 	editableCursor?: boolean;
 	onToggleCursor?: () => void;
 	locales?: readonly string[];
@@ -62,66 +74,57 @@ export interface HudSetupExtras {
 	getLocaleName?: (locale: string) => string;
 	onSelectLocale?: (locale: string) => void;
 	onHide?: () => void;
+	onQuit?: () => void;
 	windowControlsDisabled?: boolean;
+	footerLead?: ReactNode;
 	footer?: ReactNode;
 }
 
-function DeviceRow({
+function SetupTile({
 	icon,
 	name,
 	detail,
 	enabled,
 	disabled,
-	expandable,
 	expanded,
 	onToggleExpanded,
 	onToggleEnabled,
 	controlsId,
+	level,
 }: {
 	icon: ReactNode;
 	name: string;
 	detail: string;
 	enabled: boolean;
 	disabled: boolean;
-	expandable: boolean;
-	expanded: boolean;
+	expanded?: boolean;
 	onToggleExpanded?: () => void;
 	onToggleEnabled?: () => void;
 	controlsId?: string;
+	level?: number;
 }) {
-	const body = (
-		<>
-			<span className={styles.deviceRowIcon} aria-hidden>
-				{icon}
-			</span>
-			<span className={styles.deviceRowText}>
-				<span className={styles.deviceRowName}>{name}</span>
-				<span className={styles.deviceRowDetail}>{detail}</span>
-			</span>
-			{expandable ? (
-				<ChevronDown
-					size={14}
-					aria-hidden
-					className={`${styles.deviceRowChevron} ${expanded ? styles.deviceRowChevronOpen : ""}`}
-				/>
-			) : null}
-		</>
-	);
+	const expandable = Boolean(onToggleExpanded);
 	return (
-		<div className={styles.deviceRow} data-expanded={expanded}>
-			{expandable ? (
-				<button
-					type="button"
-					className={styles.deviceRowMain}
-					aria-expanded={expanded}
-					aria-controls={controlsId}
-					onClick={onToggleExpanded}
-				>
-					{body}
-				</button>
-			) : (
-				<div className={styles.deviceRowMain}>{body}</div>
-			)}
+		<div className={styles.setupTile} data-on={enabled} data-expanded={expanded === true}>
+			<button
+				type="button"
+				className={styles.setupTileMain}
+				aria-expanded={expandable ? expanded : undefined}
+				aria-controls={expandable ? controlsId : undefined}
+				disabled={!expandable && (disabled || !onToggleEnabled)}
+				onClick={expandable ? onToggleExpanded : onToggleEnabled}
+			>
+				<span className={styles.setupTileIcon} aria-hidden>
+					{icon}
+				</span>
+				<span className={styles.setupTileText}>
+					<span className={styles.setupTileName}>{name}</span>
+					<span className={styles.setupTileDetail}>{detail}</span>
+				</span>
+				{expandable ? (
+					<ChevronDown size={12} aria-hidden className={styles.setupTileChevron} />
+				) : null}
+			</button>
 			{onToggleEnabled ? (
 				<InspectorSwitch
 					label={name}
@@ -130,24 +133,16 @@ function DeviceRow({
 					onCheckedChange={onToggleEnabled}
 				/>
 			) : null}
+			{level !== undefined ? (
+				<span
+					className={styles.setupTileLevel}
+					style={{ transform: `scaleX(${Math.min(1, Math.max(0, level / 100))})` }}
+					aria-hidden
+				/>
+			) : null}
 		</div>
 	);
 }
-
-/** Segmented input-level bar, driven by the live analyser. */
-const LevelMeter = memo(function LevelMeter({ level }: { level: number }) {
-	const lit = Math.round((Math.min(100, Math.max(0, level)) / 100) * LEVEL_SEGMENTS);
-	return (
-		<div className={styles.levelMeter} role="meter" aria-valuenow={Math.round(level)}>
-			{LEVEL_SEGMENT_KEYS.map((key, index) => (
-				<span
-					key={key}
-					className={`${styles.levelSegment} ${index < lit ? styles.levelSegmentOn : ""}`}
-				/>
-			))}
-		</div>
-	);
-});
 
 function CameraPreview({
 	stream,
@@ -259,7 +254,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	// on a machine with no webcam fires a getUserMedia that can only fail.
 	const hasCamera = cameraDevices.length > 0 && !cameraError && !cameraLoading;
 	const { level } = useAudioLevelMeter({
-		enabled: micDevices.length > 0 && !controlsLocked,
+		enabled: micDevices.length > 0 && microphoneEnabled && !controlsLocked,
 		deviceId: activeMicId,
 	});
 	const {
@@ -302,17 +297,24 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		recordingQuality,
 	]);
 
+	const sourceKind = extras.sourceKind ?? "display";
+	const hasLanguages = Boolean(extras.locales && extras.onSelectLocale && extras.getLocaleName);
+	const languageName = extras.getLocaleName?.(extras.activeLocale ?? "en") ?? "";
+
 	return (
 		<div
 			ref={panelRef}
 			data-hud-interactive="true"
 			data-testid="hud-device-settings"
+			data-locked={controlsLocked}
 			role="dialog"
 			aria-label={labels.title}
 			className={`${styles.hudModal} ${styles.hudScrollbar} animate-mic-panel-in ${styles.electronNoDrag}`}
 		>
 			<div className={styles.hudModalHeader}>
-				<span className={styles.hudModalTitle}>{labels.title}</span>
+				<span className={styles.hudModalTitle}>
+					{controlsLocked && labels.lockedHint ? labels.lockedHint : labels.title}
+				</span>
 				<span className={styles.hudModalHeaderActions}>
 					{extras.onHide ? (
 						<button
@@ -323,7 +325,20 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 							onClick={extras.onHide}
 							className={styles.hudModalClose}
 						>
-							<Minus size={14} />
+							<Minus size={15} />
+						</button>
+					) : null}
+					{extras.onQuit ? (
+						<button
+							type="button"
+							data-testid="hud-close-app-button"
+							aria-label={labels.close}
+							title={labels.close}
+							disabled={extras.windowControlsDisabled}
+							onClick={extras.onQuit}
+							className={styles.hudModalClose}
+						>
+							<Power size={14} />
 						</button>
 					) : null}
 					<button
@@ -333,85 +348,72 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 						onClick={onClose}
 						className={styles.hudModalClose}
 					>
-						<X size={14} />
+						<X size={15} />
 					</button>
 				</span>
 			</div>
 
-			<div className={styles.deviceList}>
-				{extras.onOpenSource && extras.sourceLabel ? (
+			{extras.onOpenSource && extras.sourceLabel ? (
+				<div
+					className={styles.setupSources}
+					role="radiogroup"
+					aria-label={labels.source ?? "Source"}
+					data-testid="hud-setup-source-group"
+					data-source={sourceKind}
+				>
+					<span className={styles.setupSourceThumb} aria-hidden />
 					<button
 						type="button"
+						role="radio"
+						aria-checked={sourceKind === "display"}
 						data-testid="hud-setup-source"
-						className={`${styles.deviceRow} ${styles.deviceRowMain} ${styles.deviceRowAction}`}
+						className={styles.setupSource}
+						disabled={extras.sourceDisabled}
+						onClick={extras.onSelectDisplay ?? extras.onOpenSource}
+					>
+						<Monitor size={20} strokeWidth={1.6} aria-hidden />
+						<span className={styles.setupSourceName}>
+							{sourceKind === "display" ? extras.sourceLabel : (labels.display ?? "Display")}
+						</span>
+					</button>
+					<button
+						type="button"
+						role="radio"
+						aria-checked={sourceKind === "window"}
+						className={styles.setupSource}
 						disabled={extras.sourceDisabled}
 						onClick={extras.onOpenSource}
 					>
-						<span className={styles.deviceRowIcon} aria-hidden>
-							<SourceIcon />
+						<AppWindow size={20} strokeWidth={1.6} aria-hidden />
+						<span className={styles.setupSourceName}>
+							{sourceKind === "window" ? extras.sourceLabel : (labels.window ?? "Window")}
 						</span>
-						<span className={styles.deviceRowText}>
-							<span className={styles.deviceRowName}>{labels.source ?? "Source"}</span>
-							<span className={styles.deviceRowDetail}>{extras.sourceLabel}</span>
-						</span>
-						<ChevronDown size={14} aria-hidden className={styles.deviceRowChevronSide} />
 					</button>
-				) : null}
-				<DeviceRow
+				</div>
+			) : null}
+
+			<div className={styles.setupGrid}>
+				<SetupTile
 					icon={<VolumeIcon muted={!systemAudioEnabled} />}
 					name={labels.systemAudioName ?? "System audio"}
 					detail={systemAudioEnabled ? onLabel : offLabel}
 					enabled={systemAudioEnabled}
 					disabled={controlsLocked || !onToggleSystemAudio}
-					expandable={false}
-					expanded={false}
-					onToggleEnabled={() => onToggleSystemAudio?.()}
+					onToggleEnabled={onToggleSystemAudio}
 				/>
-				<DeviceRow
+				<SetupTile
 					icon={<MicIcon muted={!microphoneEnabled} />}
 					name={labels.microphoneName ?? labels.microphone}
 					detail={activeMicLabel ?? labels.noMicrophones}
 					enabled={microphoneEnabled}
 					disabled={controlsLocked || !onToggleMicrophone}
-					expandable
 					expanded={expanded === "microphone"}
 					onToggleExpanded={() => toggleSection("microphone")}
-					onToggleEnabled={() => onToggleMicrophone?.()}
+					onToggleEnabled={onToggleMicrophone}
 					controlsId="hud-device-list-microphone"
+					level={microphoneEnabled && !controlsLocked ? level : undefined}
 				/>
-				{expanded === "microphone" ? (
-					<div
-						id="hud-device-list-microphone"
-						className={styles.deviceOptions}
-						role="group"
-						aria-label={labels.microphone}
-					>
-						{micDevices.length === 0 ? (
-							<div className={styles.hudModalEmpty}>{labels.noMicrophones}</div>
-						) : (
-							micDevices.map((device) => {
-								const isActive = device.deviceId === effectiveMicId;
-								return (
-									<button
-										key={device.deviceId}
-										type="button"
-										role="menuitemradio"
-										aria-checked={isActive}
-										disabled={controlsLocked}
-										onClick={() => onSelectMic(device)}
-										className={`${styles.deviceOption} ${isActive ? styles.deviceOptionActive : ""}`}
-									>
-										<span className="truncate">{device.label}</span>
-										{isActive ? <LevelMeter level={level} /> : null}
-										{isActive ? <Check size={12} className={styles.deviceOptionCheck} /> : null}
-									</button>
-								);
-							})
-						)}
-						<div className={styles.hudModalHint}>{labels.micHint}</div>
-					</div>
-				) : null}
-				<DeviceRow
+				<SetupTile
 					icon={<CameraIcon off={!cameraEnabled} />}
 					name={labels.cameraName ?? labels.camera}
 					detail={
@@ -423,107 +425,121 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					}
 					enabled={cameraEnabled}
 					disabled={controlsLocked || !onToggleCamera}
-					expandable
 					expanded={expanded === "camera"}
 					onToggleExpanded={() => toggleSection("camera")}
-					onToggleEnabled={() => onToggleCamera?.()}
+					onToggleEnabled={onToggleCamera}
 					controlsId="hud-device-list-camera"
 				/>
-				{expanded === "camera" ? (
-					<div
-						id="hud-device-list-camera"
-						className={styles.deviceOptions}
-						role="group"
-						aria-label={labels.camera}
-					>
-						{cameraLoading ? (
-							<div className={styles.hudModalEmpty}>{labels.searching}</div>
-						) : cameraError ? (
-							<div className={styles.hudModalEmpty}>{labels.cameraUnavailable}</div>
-						) : cameraDevices.length === 0 ? (
-							<div className={styles.hudModalEmpty}>{labels.noCameras}</div>
-						) : (
-							cameraDevices.map((device) => {
-								const isActive = device.deviceId === activeCameraId;
-								return (
-									<button
-										key={device.deviceId}
-										type="button"
-										role="menuitemradio"
-										aria-checked={isActive}
-										disabled={controlsLocked}
-										onClick={() => onSelectCamera(device)}
-										className={`${styles.deviceOption} ${isActive ? styles.deviceOptionActive : ""}`}
-									>
-										<span className="truncate">{device.label}</span>
-										{isActive ? <Check size={12} className={styles.deviceOptionCheck} /> : null}
-									</button>
-								);
-							})
-						)}
-						{hasCamera ? (
-							<CameraPreview
-								stream={stream}
-								error={previewError}
-								unavailableLabel={labels.previewUnavailable}
-							/>
-						) : null}
-					</div>
-				) : null}
 				{extras.onToggleCursor ? (
-					<DeviceRow
+					<SetupTile
 						icon={<MousePointer2 size={18} />}
 						name={labels.editableCursor ?? "Editable cursor"}
 						detail={extras.editableCursor ? onLabel : offLabel}
 						enabled={Boolean(extras.editableCursor)}
 						disabled={controlsLocked}
-						expandable={false}
-						expanded={false}
 						onToggleEnabled={extras.onToggleCursor}
 					/>
 				) : null}
-				{extras.locales && extras.onSelectLocale && extras.getLocaleName ? (
-					<>
-						<DeviceRow
-							icon={<Languages size={18} />}
-							name={labels.language ?? "Language"}
-							detail={extras.getLocaleName(extras.activeLocale ?? "en")}
-							enabled={false}
-							disabled={false}
-							expandable
-							expanded={expanded === "language"}
-							onToggleExpanded={() => toggleSection("language")}
-							controlsId="hud-device-list-language"
-						/>
-						{expanded === "language" ? (
-							<div
-								id="hud-device-list-language"
-								data-testid="hud-language-menu"
-								className={styles.deviceOptions}
-								role="group"
-								aria-label={labels.language ?? "Language"}
-							>
-								{extras.locales.map((loc) => {
-									const isActive = loc === extras.activeLocale;
-									return (
-										<button
-											key={loc}
-											type="button"
-											role="menuitemradio"
-											aria-checked={isActive}
-											onClick={() => extras.onSelectLocale?.(loc)}
-											className={`${styles.deviceOption} ${isActive ? styles.deviceOptionActive : ""}`}
-										>
-											<span className="truncate">{extras.getLocaleName?.(loc)}</span>
-											{isActive ? <Check size={12} className={styles.deviceOptionCheck} /> : null}
-										</button>
-									);
-								})}
-							</div>
-						) : null}
-					</>
-				) : null}
 			</div>
+
+			{expanded === "microphone" ? (
+				<div
+					id="hud-device-list-microphone"
+					className={styles.deviceOptions}
+					role="group"
+					aria-label={labels.microphone}
+				>
+					{micDevices.length === 0 ? (
+						<div className={styles.hudModalEmpty}>{labels.noMicrophones}</div>
+					) : (
+						micDevices.map((device) => {
+							const isActive = device.deviceId === effectiveMicId;
+							return (
+								<button
+									key={device.deviceId}
+									type="button"
+									role="menuitemradio"
+									aria-checked={isActive}
+									disabled={controlsLocked}
+									onClick={() => onSelectMic(device)}
+									className={`${styles.deviceOption} ${isActive ? styles.deviceOptionActive : ""}`}
+								>
+									<span className="truncate">{device.label}</span>
+									{isActive ? <Check size={14} className={styles.deviceOptionCheck} /> : null}
+								</button>
+							);
+						})
+					)}
+					<div className={styles.hudModalHint}>{labels.micHint}</div>
+				</div>
+			) : null}
+			{expanded === "camera" ? (
+				<div
+					id="hud-device-list-camera"
+					className={styles.deviceOptions}
+					role="group"
+					aria-label={labels.camera}
+				>
+					{cameraLoading ? (
+						<div className={styles.hudModalEmpty}>{labels.searching}</div>
+					) : cameraError ? (
+						<div className={styles.hudModalEmpty}>{labels.cameraUnavailable}</div>
+					) : cameraDevices.length === 0 ? (
+						<div className={styles.hudModalEmpty}>{labels.noCameras}</div>
+					) : (
+						cameraDevices.map((device) => {
+							const isActive = device.deviceId === activeCameraId;
+							return (
+								<button
+									key={device.deviceId}
+									type="button"
+									role="menuitemradio"
+									aria-checked={isActive}
+									disabled={controlsLocked}
+									onClick={() => onSelectCamera(device)}
+									className={`${styles.deviceOption} ${isActive ? styles.deviceOptionActive : ""}`}
+								>
+									<span className="truncate">{device.label}</span>
+									{isActive ? <Check size={14} className={styles.deviceOptionCheck} /> : null}
+								</button>
+							);
+						})
+					)}
+					{hasCamera ? (
+						<CameraPreview
+							stream={stream}
+							error={previewError}
+							unavailableLabel={labels.previewUnavailable}
+						/>
+					) : null}
+				</div>
+			) : null}
+			{expanded === "language" && hasLanguages ? (
+				<div
+					id="hud-device-list-language"
+					data-testid="hud-language-menu"
+					className={styles.deviceOptions}
+					role="group"
+					aria-label={labels.language ?? "Language"}
+				>
+					{extras.locales?.map((loc) => {
+						const isActive = loc === extras.activeLocale;
+						return (
+							<button
+								key={loc}
+								type="button"
+								role="menuitemradio"
+								aria-checked={isActive}
+								onClick={() => extras.onSelectLocale?.(loc)}
+								className={`${styles.deviceOption} ${isActive ? styles.deviceOptionActive : ""}`}
+							>
+								<span className="truncate">{extras.getLocaleName?.(loc)}</span>
+								{isActive ? <Check size={14} className={styles.deviceOptionCheck} /> : null}
+							</button>
+						);
+					})}
+				</div>
+			) : null}
 
 			<div className={styles.deviceQuality}>
 				<div className={styles.hudModalMeterRow}>
@@ -577,7 +593,23 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					</div>
 				) : null}
 			</div>
-			{extras.footer ? <div className={styles.hudSetupFooter}>{extras.footer}</div> : null}
+			<div className={styles.hudSetupFooter}>
+				{extras.footerLead}
+				{hasLanguages ? (
+					<button
+						type="button"
+						className={styles.hudSetupFooterButton}
+						aria-label={`${labels.language ?? "Language"}: ${languageName}`}
+						aria-expanded={expanded === "language"}
+						aria-controls="hud-device-list-language"
+						onClick={() => toggleSection("language")}
+					>
+						<Languages size={15} aria-hidden />
+						<span className="truncate">{languageName}</span>
+					</button>
+				) : null}
+				{extras.footer}
+			</div>
 		</div>
 	);
 });
