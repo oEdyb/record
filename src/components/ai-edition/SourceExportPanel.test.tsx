@@ -57,6 +57,7 @@ it("uses an explicit action and reports the saved source folder", async () => {
 	).toBeVisible();
 	expect(nativeBridgeClient.aiEdition.exportSources).toHaveBeenCalledTimes(1);
 	expect(screen.queryByText(/Resolve/)).toBeNull();
+	expect(document.querySelector("details")).toBeNull();
 });
 it("does not claim success after cancellation", async () => {
 	vi.mocked(nativeBridgeClient.aiEdition.exportSources).mockResolvedValue({ canceled: true });
@@ -122,4 +123,29 @@ it("does not present a completed export as belonging to a later recording", asyn
 	expect(screen.queryByText("Sources exported")).toBeNull();
 	expect(screen.queryByText("/exports/old")).toBeNull();
 	expect(onBusy).toHaveBeenLastCalledWith(false);
+});
+
+it("keeps many warnings collapsed outside the completion announcement", async () => {
+	const warnings = Array.from(
+		{ length: 9 },
+		(_, index) => `Take ${index + 1}: source time is unavailable.`,
+	);
+	vi.mocked(nativeBridgeClient.aiEdition.exportSources).mockResolvedValue({
+		canceled: false,
+		directory: "/exports/raw",
+		manifestPath: "/exports/raw/handoff.json",
+		warnings,
+	});
+	render(<Fixture />);
+	fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
+	await screen.findByText("Sources exported");
+	const disclosure = document.querySelector("details")!;
+	expect(disclosure).not.toHaveAttribute("open");
+	expect(disclosure.querySelector("summary")).toHaveTextContent("9 export warnings");
+	expect(disclosure.closest('[role="status"]')).toBeNull();
+	expect(screen.getByRole("button", { name: "Show in folder" })).toBeVisible();
+	for (const warning of warnings) expect(screen.getByText(warning)).not.toBeVisible();
+	fireEvent.click(disclosure.querySelector("summary")!);
+	await waitFor(() => expect(disclosure).toHaveAttribute("open"));
+	for (const warning of warnings) expect(screen.getByText(warning)).toBeVisible();
 });

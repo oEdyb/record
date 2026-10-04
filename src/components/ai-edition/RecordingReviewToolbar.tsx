@@ -101,7 +101,9 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 							: props.preparing && !props.openingRecorder
 								? t("recordingReview.preparing")
 								: props.busy
-									? t("recordingReview.saving", { percent: Math.round(props.percent ?? 0) })
+									? props.percent !== null && Number.isFinite(props.percent)
+										? t("recordingReview.saving", { percent: Math.round(props.percent) })
+										: t("exportDialog.saving")
 									: t("recordingReview.save")}
 						<kbd aria-hidden="true">{modifier}S</kbd>
 					</button>

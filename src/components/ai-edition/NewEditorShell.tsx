@@ -1775,7 +1775,7 @@ export function NewEditorShell() {
 					openingRecorder={recordingReviewActionPending === "record"}
 					readOnly={entitlement.access === "read-only"}
 					busy={sourceExportBusy || isExportRunActive(exportRunPhase)}
-					percent={exportRun?.percent ?? null}
+					percent={sourceExportBusy ? null : (exportRun?.percent ?? null)}
 					entitlementLabel={entitlementLabel}
 					onEntitlement={() => openEntitlement()}
 					onRecordings={handleOpenRecordings}

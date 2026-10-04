@@ -183,8 +183,8 @@ The diagnostics-off 30-minute four-source run completed: 107,876 output frames, 
 source frames (0.887%), zero append failures/backpressure, and Stop-to-review 4,633.7 ms.
 The source-export test then exceeded its 60-second deadline while copying the 30.69 GB third
 screen file. The harness closed the app; this is a missed handoff deadline, not a returned
-production export error. Original media remains intact. Full-duration decoding and all-screen
-packet-grid checks are recorded separately; do not infer their completion from capture success.
+production export error. Original media remains intact. All 12 originals now fully decode with zero errors; all three screen clips have zero 60 Hz
+packet-grid violations. The final screen frame at 1,793 seconds was inspected.
 
 The installed Electron 44.1.0 uses Node 24.19.0/libuv 1.52.1. That exact
 [libuv implementation](https://github.com/libuv/libuv/blob/v1.52.1/src/unix/fs.c#L1279-L1316)
@@ -208,3 +208,22 @@ all eight gates, Vite build, and independent review pass. Native code is unchang
 `endurance-30/clone-independence.json`, and `clone-final-checks/summary.json` under the artifact root.
 The one-hour acceptance run remains pending. Installed app, release configuration and remotes
 are unchanged.
+
+## Source handoff feedback
+
+The real thirty-minute success screen exposed nine permanently expanded timing warnings and
+an unknown copy operation displayed as 0%. Keep every warning, but put its text in a native
+[`details` disclosure](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/details)
+with a visible count. Completion's live status announces the count, not all warning paragraphs.
+Native keyboard behavior avoids a custom disclosure state machine. The warning list is bounded
+so the folder action remains reachable. Source copy activity now takes precedence over stale
+render progress and uses the existing translated Saving label; only finite progress gets a percent.
+
+Focused tests cover zero/nine warnings, disclosure expansion, null/NaN/infinite progress, and
+existing measured-progress behavior. The saved-session GUI retry, keyboard disclosure and
+collapsed/expanded screenshots are under `endurance-30/feedback-retry`.
+
+The real dialog confirms Space toggling, Tab focus into the scrollable list, End reaching the
+last warning, and a visible folder action. Both disclosure states and indeterminate Saving
+were inspected. Final feedback gates: 4,129 unit tests, one skip, all eight checks pass;
+independent UI review is clean. Native code remains unchanged.

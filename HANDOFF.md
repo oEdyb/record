@@ -5,10 +5,13 @@ writer failures: 107,876 frames, 957 repeats (0.887%), Stop-to-review 4.63 secon
 exceeded 60 seconds because libuv ignores Mac clone requests and copies every byte.
 Native macOS cloning now exports that same saved session in 2.02 seconds, with all 12 files
 hash-matching originals. Independent modification/deletion and no-overwrite checks pass.
-All eight gates pass: 4,125 tests, one existing skip; Vite build and independent review clean.
+All eight gates pass: 4,129 tests, one existing skip; Vite build and independent review clean.
 [Evidence and research](docs/capture-queue-2026-10-04.md).
 
-Next: finish full decoding and packet-grid verification, then one-hour normal-runtime capture.
+All 12 originals fully decode without errors; all three screen clips have exact 60 Hz grids.
+Export warnings now use a keyboard-operable disclosure and unknown progress says Saving.
+Paused source switching passed with the new window visible and 12 unchanged source exports.
+Next: one-hour normal-runtime capture.
 The installed app and remotes remain unchanged. The older DMG predates current fixes; public
 distribution remains blocked by its existing manifest policy. Overall goal remains active.
 

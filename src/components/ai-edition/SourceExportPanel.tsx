@@ -66,10 +66,22 @@ export function SourceExportPanel({
 					{result.timelinePath && (
 						<p>Import timeline.otio in your video editor to continue editing.</p>
 					)}
-					{result.warnings?.map((warning) => (
-						<p key={warning}>{warning}</p>
-					))}
+					{!!result.warnings?.length && (
+						<span className="sr-only">{result.warnings.length} export warnings</span>
+					)}
 				</div>
+			)}
+			{!!result?.warnings?.length && (
+				<details style={{ overflowWrap: "anywhere" }}>
+					<summary style={{ cursor: "pointer", fontWeight: 600 }}>
+						{result.warnings.length} export {result.warnings.length === 1 ? "warning" : "warnings"}
+					</summary>
+					<ul style={{ maxHeight: 192, overflowY: "auto", paddingInlineStart: 24 }}>
+						{result.warnings.map((warning) => (
+							<li key={warning}>{warning}</li>
+						))}
+					</ul>
+				</details>
 			)}
 			<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
 				{result?.manifestPath && (

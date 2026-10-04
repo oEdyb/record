@@ -116,3 +116,13 @@ describe("recording review", () => {
 		expect(actions.onRecordings).not.toHaveBeenCalled();
 	});
 });
+
+it.each([
+	null,
+	Number.NaN,
+	Number.POSITIVE_INFINITY,
+])("does not invent a percentage for unknown progress %s", (percent) => {
+	render(<RecordingReviewToolbar {...props()} busy percent={percent} />);
+	expect(screen.getByRole("button", { name: "exportDialog.saving" })).toBeEnabled();
+	expect(screen.queryByText("recordingReview.saving")).toBeNull();
+});

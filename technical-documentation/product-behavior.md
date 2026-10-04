@@ -924,6 +924,9 @@ product requirement, not as an optional maximum-quality mode.
   captions, layouts, editable cursor overlays, speed changes, B-roll and audio processing are not
   transferred. Say this on the export surface and in the handoff. DaVinci Resolve is the first
   verified interchange target; keep the export labels editor-neutral.
+- Source handoff shows indeterminate Saving feedback, never a fabricated percentage or stale
+  render progress. On success, keep the folder action visible and show a warning count with
+  keyboard-operable disclosure of every warning; announce completion without reading the full list.
 - Source handoff uses the native folder picker, existing media grants and a fresh unique folder.
   Use native APFS cloning on macOS for independent local copies, with ordinary copying on
   unsupported or different filesystems. Never hard-link originals or overwrite an existing file.
