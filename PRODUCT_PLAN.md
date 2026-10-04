@@ -1,7 +1,7 @@
 # Klippt product plan
 
 - Status: active
-- Updated: 2026-10-03
+- Updated: 2026-10-04
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Product source of truth: [`AGENTS.md`](AGENTS.md)
 - Upstream historical roadmap: [`ROADMAP.md`](ROADMAP.md)
@@ -14,6 +14,8 @@ fast high-quality capture, Pause/Continue, review, and untouched separate-source
 do not build editor features. Retain
 existing project and export compatibility. The immediate performance work and acceptance gates
 are in [`docs/overnight-2026-10-03.md`](docs/overnight-2026-10-03.md).
+The October 4 compact return, recordings browser and keyboard/navigation refinement is in
+[`docs/creator-loop-2026-10-04.md`](docs/creator-loop-2026-10-04.md).
 
 The inherited editor delivery sections below are historical or compatibility work, not the
 active feature queue. Its current private repository

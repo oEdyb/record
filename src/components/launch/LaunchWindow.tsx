@@ -160,6 +160,9 @@ export function LaunchWindow() {
 	const [supportsCursorModeToggle, setSupportsCursorModeToggle] = useState(false);
 	const [isLinuxHud, setIsLinuxHud] = useState(false);
 	const [openedFromEditor, setOpenedFromEditor] = useState(false);
+	const returnToReview =
+		new URLSearchParams(window.location.search).get("returnToReview") === "true";
+	const hasReviewReturn = openedFromEditor || returnToReview;
 	const [activeHudExpanded, setActiveHudExpanded] = useState(false);
 	const [removedClipFeedback, setRemovedClipFeedback] = useState<RecordingSessionClip | null>(null);
 	const removedClipFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,11 +185,11 @@ export function LaunchWindow() {
 	const isVertical = trayLayout === "vertical";
 	// Recording always keeps the established horizontal HUD as its first row.
 	// The saved tray preference still applies again when recording ends.
-	const hudIsVertical = isVertical && !recordingHudActive && !openedFromEditor;
+	const hudIsVertical = isVertical && !recordingHudActive && !hasReviewReturn;
 	// Pause is a transport-state change, not a layout change. Keep the compact
 	// HUD mounted so Pause becomes Continue in the same physical slot. The user
 	// can still open the full setup and clip-history panel with the size control.
-	const compactRecordingHud = (recordingHudActive || openedFromEditor) && !activeHudExpanded;
+	const compactRecordingHud = (recordingHudActive || hasReviewReturn) && !activeHudExpanded;
 	const isPopoverOpen = isLanguageMenuOpen || isDeviceSettingsOpen;
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
@@ -801,27 +804,33 @@ export function LaunchWindow() {
 		window.electronAPI?.hudOverlayHide?.();
 	}, []);
 	const sendHudOverlayClose = useCallback(() => {
+		if (starting || saving || clipFinalizing) return;
 		if (recording) {
 			window.electronAPI?.hudOverlayClose?.();
+			return;
+		}
+		if (returnToReview) {
+			void window.electronAPI?.switchToEditor();
 			return;
 		}
 		void window.electronAPI?.returnToEditorIfRecordingWorkspace?.().then((result) => {
 			if (!result.returned) window.electronAPI?.hudOverlayClose?.();
 		});
-	}, [recording]);
+	}, [recording, returnToReview, starting, saving, clipFinalizing]);
 	const openStudio = useCallback(() => {
 		if (!saving) window.electronAPI.switchToEditor();
 	}, [saving]);
 	useEffect(() => {
-		if (recording || saving || isPopoverOpen) return;
+		if (starting || recording || saving || clipFinalizing || isPopoverOpen) return;
 		const returnToEditor = (event: KeyboardEvent) => {
 			if (event.key !== "Escape") return;
 			event.preventDefault();
-			void window.electronAPI?.returnToEditorIfRecordingWorkspace?.();
+			if (returnToReview) void window.electronAPI?.switchToEditor();
+			else void window.electronAPI?.returnToEditorIfRecordingWorkspace?.();
 		};
 		window.addEventListener("keydown", returnToEditor);
 		return () => window.removeEventListener("keydown", returnToEditor);
-	}, [isPopoverOpen, recording, saving]);
+	}, [isPopoverOpen, starting, recording, saving, clipFinalizing, returnToReview]);
 	const openNotes = useCallback(() => {
 		if (!saving) window.electronAPI.openNotes();
 	}, [saving]);
@@ -1332,7 +1341,7 @@ export function LaunchWindow() {
 									data-testid="hud-right-controls"
 									className={`flex items-center gap-[5px] ${hudIsVertical ? "flex-col" : "ml-auto"} ${styles.electronNoDrag}`}
 								>
-									{(recordingHudActive || openedFromEditor) && (
+									{(recordingHudActive || hasReviewReturn) && (
 										<HudRecordingSizeButton
 											expanded
 											disabled={saving || clipFinalizing}
@@ -1357,7 +1366,7 @@ export function LaunchWindow() {
 										disabled={saving}
 										hideLabel={t("tooltips.hideHUD")}
 										closeLabel={
-											openedFromEditor && !recording
+											hasReviewReturn && !recording
 												? t("tooltips.openStudio")
 												: t("tooltips.closeApp")
 										}

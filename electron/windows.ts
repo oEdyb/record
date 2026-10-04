@@ -406,7 +406,7 @@ ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
  * Frameless transparent HUD overlay, always-on-top, centred at the bottom of the
  * primary display. Follows the user across macOS Spaces so it isn't lost on switch.
  */
-export function createHudOverlayWindow(): BrowserWindow {
+export function createHudOverlayWindow(options: { returnToReview?: boolean } = {}): BrowserWindow {
 	const primaryDisplay = screen.getPrimaryDisplay();
 	const { workArea } = primaryDisplay;
 
@@ -510,11 +510,8 @@ export function createHudOverlayWindow(): BrowserWindow {
 		}
 	});
 
-	if (VITE_DEV_SERVER_URL) {
-		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=hud-overlay");
-	} else {
-		win.loadURL("klippt://app/index.html?windowType=hud-overlay");
-	}
+	const query = `?windowType=hud-overlay${options.returnToReview ? "&returnToReview=true" : ""}`;
+	win.loadURL((VITE_DEV_SERVER_URL || "klippt://app/index.html") + query);
 
 	return win;
 }

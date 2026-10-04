@@ -965,7 +965,7 @@ appReady?.then(async () => {
 			return;
 		}
 		const previousWindow = mainWindow;
-		const hudWindow = createHudOverlayWindow();
+		const hudWindow = createHudOverlayWindow({ returnToReview: true });
 		if (isMac) createCameraPreviewWindow();
 		workspaceTransition = { target: "hud", window: hudWindow };
 		mainWindow = hudWindow;

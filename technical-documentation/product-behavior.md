@@ -21,6 +21,15 @@ capture workflow. Editing is no longer the focus; do not build new editor featur
 The product must feel like a normal recording app. Clip-native recording is built in; it is
 not a separate mode or an advanced workflow.
 
+October 4 creator-loop refinement: Record from review opens an idle compact pill for a new
+recording. Escape or Close returns to the saved review while idle; navigation stays blocked
+during recording startup and finalization. Settings expand without a delayed entrance.
+Record, Save and Recordings share a pending-action guard, with visible progress and recovery
+after failure. The recordings browser supports search, arrow-key selection and Enter, and
+shows loading or failure instead of presenting stale rows. Review shortcuts respect dialogs,
+focused controls and the exact platform modifier; held action keys do not repeat navigation.
+Editing happens in DaVinci Resolve; this refinement adds no editing tools.
+
 The inherited editing model remains for old-project compatibility and the existing CLI.
 The following editor sections describe that retained behavior, not a queue for new features.
 

@@ -22,6 +22,64 @@ function key(key: string, metaKey = false, target: EventTarget = window) {
 	);
 }
 describe("recording review shortcuts", () => {
+	it.each([true, false])("requires exact platform modifiers (Mac=%s)", (isMac) => {
+		const calls = { ...actions(), isMac };
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		const modifier = isMac ? { metaKey: true } : { ctrlKey: true };
+		for (const extra of [{ shiftKey: true }, { altKey: true }, { ctrlKey: true, metaKey: true }]) {
+			for (const key of ["s", "n", "o"])
+				window.dispatchEvent(new KeyboardEvent("keydown", { key, ...modifier, ...extra }));
+		}
+		window.dispatchEvent(
+			new KeyboardEvent("keydown", {
+				key: "n",
+				...(isMac ? { ctrlKey: true } : { metaKey: true }),
+			}),
+		);
+		expect(calls.onRecord).not.toHaveBeenCalled();
+		expect(calls.onSave).not.toHaveBeenCalled();
+		expect(calls.onRecordings).not.toHaveBeenCalled();
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "n", ...modifier }));
+		expect(calls.onRecord).toHaveBeenCalledOnce();
+	});
+	it("ignores repeated commands and composition but allows held frame stepping", () => {
+		const calls = actions();
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		for (const key of ["s", "n", "o", " "]) {
+			window.dispatchEvent(
+				new KeyboardEvent("keydown", { key, metaKey: key !== " ", repeat: true }),
+			);
+		}
+		window.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "n", metaKey: true, isComposing: true }),
+		);
+		expect(calls.onRecord).not.toHaveBeenCalled();
+		expect(calls.onSave).not.toHaveBeenCalled();
+		expect(calls.onRecordings).not.toHaveBeenCalled();
+		expect(calls.onPlayPause).not.toHaveBeenCalled();
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", repeat: true }));
+		expect(calls.onStep).toHaveBeenCalledWith(1);
+	});
+	it("leaves dialogs and toggle controls to their own keyboard behavior", () => {
+		const calls = actions();
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		const dialog = document.createElement("div");
+		dialog.setAttribute("role", "dialog");
+		const button = document.createElement("button");
+		dialog.append(button);
+		document.body.append(dialog);
+		key("n", true, button);
+		key(" ", false, dialog);
+		expect(calls.onRecord).not.toHaveBeenCalled();
+		expect(calls.onPlayPause).not.toHaveBeenCalled();
+		dialog.remove();
+		const toggle = document.createElement("div");
+		toggle.setAttribute("role", "switch");
+		document.body.append(toggle);
+		key(" ", false, toggle);
+		expect(calls.onPlayPause).not.toHaveBeenCalled();
+		toggle.remove();
+	});
 	it("maps Save, New, Open, playback and seeking to recorder actions", () => {
 		const calls = actions();
 		renderHook(() => useRecordingReviewShortcuts(calls));

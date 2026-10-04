@@ -23,6 +23,18 @@ function props() {
 	};
 }
 describe("recording review", () => {
+	it("shows pending feedback on Record while opening the recorder", () => {
+		render(<RecordingReviewToolbar {...props()} preparing openingRecorder isMac />);
+		expect(screen.getByRole("button", { name: "recordingReview.record" })).toHaveAttribute(
+			"aria-busy",
+			"true",
+		);
+		expect(screen.getByRole("button", { name: "recordingReview.save" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "recordingReview.record" })).toHaveAttribute(
+			"aria-keyshortcuts",
+			"Meta+N",
+		);
+	});
 	it("blocks stale recording actions while the newest capture is being loaded", () => {
 		const actions = props();
 		render(<RecordingReviewToolbar {...actions} preparing />);

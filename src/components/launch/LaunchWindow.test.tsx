@@ -640,6 +640,40 @@ describe("LaunchWindow record button", () => {
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledTimes(2);
 		expect(window.electronAPI.hudOverlayClose).not.toHaveBeenCalled();
 	});
+	it("returns to review in a compact pill without an insertion workspace", async () => {
+		window.history.replaceState(null, "", "?windowType=hud-overlay&returnToReview=true");
+		try {
+			stubElectronAPI(vi.fn(async () => displayOneSource));
+			renderLaunchWindow();
+			await waitFor(() => expect(screen.getByTestId("launch-record-button")).toBeEnabled());
+			expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull();
+			expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+			fireEvent.click(screen.getByTestId("hud-recording-size-button"));
+			expect(screen.getByTestId("launch-device-settings-button")).toBeVisible();
+			fireEvent.keyDown(window, { key: "Escape" });
+			expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
+			expect(window.electronAPI.hudOverlayClose).not.toHaveBeenCalled();
+			expect(window.electronAPI.setRecordingWorkspaceContext).not.toHaveBeenCalled();
+		} finally {
+			window.history.replaceState(null, "", "/");
+		}
+	});
+
+	it.each([
+		"starting",
+		"clipFinalizing",
+	] as const)("keeps the recorder open while %s", async (state) => {
+		window.history.replaceState(null, "", "?windowType=hud-overlay&returnToReview=true");
+		try {
+			recorderState.value[state] = true;
+			renderLaunchWindow();
+			fireEvent.keyDown(window, { key: "Escape" });
+			expect(window.electronAPI.switchToEditor).not.toHaveBeenCalled();
+			expect(window.electronAPI.hudOverlayClose).not.toHaveBeenCalled();
+		} finally {
+			window.history.replaceState(null, "", "/");
+		}
+	});
 
 	it("keeps the restored microphone and resolves its native device name", async () => {
 		recorderState.value.microphoneEnabled = true;

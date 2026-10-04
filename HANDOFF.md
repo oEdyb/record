@@ -1,3 +1,19 @@
+# October 4: creator recording loop
+
+UI work on `codex/creator-recording-loop-2026-10-04` is ready for local main integration with the
+50 prior commits already contained in its baseline. Compact Record-again/Escape return, guarded
+navigation with visible pending state, exact keyboard/focus handling, searchable keyboard-driven
+recordings and narrow layouts are verified. Settings controls no longer wait for a delayed entrance.
+No new editing tools. [Research, evidence and limits](docs/creator-loop-2026-10-04.md).
+
+Full suite: 4,108 passed, one existing skip; all eight code/document checks pass. Rebuilt real UI
+smoke and two screen-only recordings with Pause/Continue, paused Stop, playback and export pass.
+Four-source acceptance remains open: High cadence failures, a camera format mismatch and a default
+microphone startup timeout were observed. No native cause is proven; next investigate resolved
+microphone identity and input/append timing. Packaging also stopped at the existing helper-hash
+provenance guard after rebuilding native helpers. Installed app and remote branches are unchanged.
+The overall goal remains active for the capture reliability follow-up.
+
 # October 3 follow-up: high-quality untouched sources
 
 Active goal on `codex/overnight-2026-10-03`: Separate takes is the fresh remembered export

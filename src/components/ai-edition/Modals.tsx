@@ -111,6 +111,9 @@ interface ProjectItem {
 
 interface OpenProjectModalProps extends BaseModalProps {
 	projects: ProjectItem[];
+	loading?: boolean;
+	loadFailed?: boolean;
+	recordingOnly?: boolean;
 	activeProjectId: string | null;
 	onSelect: (id: string) => void;
 	onDelete: (id: string) => void;
@@ -121,6 +124,9 @@ export function OpenProjectModal({
 	open,
 	onClose,
 	projects,
+	loading = false,
+	loadFailed = false,
+	recordingOnly = false,
 	activeProjectId,
 	onSelect,
 	onDelete,
@@ -129,20 +135,28 @@ export function OpenProjectModal({
 	const t = useScopedT("editor");
 	const tc = useScopedT("common");
 	const [query, setQuery] = useState("");
+	const searchRef = useRef<HTMLInputElement>(null);
+	const rowRefs = useRef(new Map<string, HTMLButtonElement>());
 	// Deleting a project cannot be undone, so the trash icon arms an inline
 	// confirm on its own row instead of deleting on the first click. One row at a
 	// time, and closing the dialog disarms it.
 	const [confirmId, setConfirmId] = useState<string | null>(null);
 	useEffect(() => {
-		if (!open) setConfirmId(null);
+		if (!open) {
+			setConfirmId(null);
+			setQuery("");
+		}
 	}, [open]);
-	const filtered = projects.filter((p) => p.title.toLowerCase().includes(query.toLowerCase()));
+	const filtered =
+		loading || loadFailed
+			? []
+			: projects.filter((p) => p.title.toLowerCase().includes(query.trim().toLowerCase()));
 	return (
 		<ModalShell
 			open={open}
 			onClose={onClose}
-			title={t("openProjectDialog.title")}
-			subtitle={t("openProjectDialog.subtitle")}
+			title={t(recordingOnly ? "recordingReview.recordings" : "openProjectDialog.title")}
+			subtitle={t(recordingOnly ? "recordingReview.libraryHint" : "openProjectDialog.subtitle")}
 			size="lg"
 		>
 			<div
@@ -155,13 +169,43 @@ export function OpenProjectModal({
 			>
 				<FolderOpen size={14} style={{ color: "var(--muted)" }} />
 				<input
+					ref={searchRef}
 					type="search"
 					className={styles.modalSearchInput}
-					aria-label={t("openProjectDialog.searchPlaceholder")}
+					aria-label={t(
+						recordingOnly
+							? "recordingReview.searchRecordings"
+							: "openProjectDialog.searchPlaceholder",
+					)}
 					data-dialog-initial-focus
-					placeholder={t("openProjectDialog.searchPlaceholder")}
+					placeholder={t(
+						recordingOnly
+							? "recordingReview.searchRecordings"
+							: "openProjectDialog.searchPlaceholder",
+					)}
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
+					onKeyDown={(event) => {
+						if (
+							event.nativeEvent.isComposing ||
+							event.altKey ||
+							event.ctrlKey ||
+							event.metaKey ||
+							event.shiftKey
+						)
+							return;
+						const available = filtered.filter((project) => project.id !== confirmId);
+						const target = event.key === "ArrowUp" ? available.at(-1) : available[0];
+						if (!target) return;
+						if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+							event.preventDefault();
+							rowRefs.current.get(target.id)?.focus();
+						} else if (event.key === "Enter" && !event.repeat) {
+							event.preventDefault();
+							onSelect(target.id);
+							onClose();
+						}
+					}}
 					style={{
 						flex: 1,
 						height: 36,
@@ -176,6 +220,7 @@ export function OpenProjectModal({
 				/>
 			</div>
 			<div
+				aria-busy={loading}
 				style={{
 					display: "flex",
 					flexDirection: "column",
@@ -192,6 +237,7 @@ export function OpenProjectModal({
 			>
 				{filtered.length === 0 ? (
 					<p
+						role={loadFailed ? "alert" : "status"}
 						style={{
 							color: "var(--muted)",
 							fontSize: 12,
@@ -199,7 +245,15 @@ export function OpenProjectModal({
 							textAlign: "center",
 						}}
 					>
-						{t("openProjectDialog.noMatches", { query })}
+						{loading
+							? t("rec.loading")
+							: loadFailed
+								? t(recordingOnly ? "recordingReview.loadRecordingsFailed" : "project.failedToLoad")
+								: recordingOnly && projects.length === 0
+									? t("recordingReview.recordFirst")
+									: t(recordingOnly ? "recordingReview.noMatches" : "openProjectDialog.noMatches", {
+											query,
+										})}
 					</p>
 				) : (
 					filtered.map((p) => {
@@ -264,6 +318,20 @@ export function OpenProjectModal({
 							<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
 								<button
 									type="button"
+									ref={(element) => {
+										if (element) rowRefs.current.set(p.id, element);
+										else rowRefs.current.delete(p.id);
+									}}
+									onKeyDown={(event) => {
+										if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+										if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+										event.preventDefault();
+										const available = filtered.filter((project) => project.id !== confirmId);
+										const index = available.findIndex((project) => project.id === p.id);
+										const next = available[index + (event.key === "ArrowDown" ? 1 : -1)];
+										if (next) rowRefs.current.get(next.id)?.focus();
+										else searchRef.current?.focus();
+									}}
 									onClick={() => {
 										onSelect(p.id);
 										onClose();
@@ -317,7 +385,10 @@ export function OpenProjectModal({
 												marginTop: 2,
 											}}
 										>
-											id: {p.id.slice(0, 8)}
+											{new Date(p.updatedAt).toLocaleTimeString([], {
+												hour: "2-digit",
+												minute: "2-digit",
+											})}
 										</div>
 									</div>
 									<span
@@ -349,11 +420,13 @@ export function OpenProjectModal({
 					display: "flex",
 					justifyContent: "space-between",
 					alignItems: "center",
+					flexWrap: "wrap",
+					gap: 12,
 					paddingTop: 12,
 					borderTop: "1px solid var(--border-soft)",
 				}}
 			>
-				<span style={{ fontSize: 12, color: "var(--muted)" }}>
+				<span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>
 					<kbd
 						style={{
 							font: "500 11px/1 var(--font-mono)",
@@ -384,6 +457,7 @@ export function OpenProjectModal({
 				<button
 					type="button"
 					className={`${styles.btn} ${styles.btnSecondary}`}
+					style={{ whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}
 					onClick={() => {
 						onBrowse();
 						onClose();

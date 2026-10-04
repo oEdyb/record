@@ -1,5 +1,9 @@
 {
 	"recordingReview": {
+		"searchRecordings": "Search recordings…",
+		"noMatches": "No recordings match \"{{query}}\".",
+		"libraryHint": "Review recordings and find the originals.",
+		"loadRecordingsFailed": "Could not load recordings. Close and reopen to try again.",
 		"controls": "Recording controls",
 		"recordings": "Recordings",
 		"settings": "Settings",

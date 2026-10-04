@@ -167,7 +167,9 @@ export function NewEditorShell() {
 	);
 	const [importingMedia, setImportingMedia] = useState(false);
 	const [recordingReviewPending, setRecordingReviewPending] = useState(false);
-	const [recordingReviewActionPending, setRecordingReviewActionPending] = useState(false);
+	const [recordingReviewActionPending, setRecordingReviewActionPending] = useState<
+		"record" | "export" | null
+	>(null);
 	const recordingReviewActionRef = useRef(false);
 	const [chatWidthPx, setChatWidthPx] = useState(
 		() => Number(localStorage.getItem("os-editor-chat-width")) || 392,
@@ -273,6 +275,8 @@ export function NewEditorShell() {
 	}, !PRODUCT_SURFACE.recordingOnly);
 	const [copiedClipId, setCopiedClipId] = useState<string | null>(null);
 	const [projectSummaries, setProjectSummaries] = useState<AiEditionProjectSummary[]>([]);
+	const [projectListLoading, setProjectListLoading] = useState(false);
+	const [projectListFailed, setProjectListFailed] = useState(false);
 	const seekSeqRef = useRef(0);
 	const initRef = useRef(false);
 	const recordingResumeRef = useRef<Promise<boolean> | null>(null);
@@ -342,14 +346,22 @@ export function NewEditorShell() {
 	// refresh project list when the Open Project modal is open
 	useEffect(() => {
 		if (!openProjectOpen) return;
+		let current = true;
+		setProjectListLoading(true);
+		setProjectListFailed(false);
 		void (async () => {
 			try {
 				const next = await nativeBridgeClient.aiEdition.listProjects();
-				setProjectSummaries(next);
+				if (current) setProjectSummaries(next);
 			} catch {
-				// ponytail: silent
+				if (current) setProjectListFailed(true);
+			} finally {
+				if (current) setProjectListLoading(false);
 			}
 		})();
+		return () => {
+			current = false;
+		};
 	}, [openProjectOpen]);
 
 	const resumeRecordingWorkspace = useCallback(() => {
@@ -1093,11 +1105,18 @@ export function NewEditorShell() {
 	}, [addAsset, importingMedia, openEntitlement, te, tl]);
 
 	const handleNewRecording = useCallback(async () => {
-		if (sourceExportBusyRef.current || isExportRunActive(useExportRunStore.getState().phase))
+		if (
+			recordingReviewActionRef.current ||
+			sourceExportBusyRef.current ||
+			isExportRunActive(useExportRunStore.getState().phase)
+		)
 			return;
 		if (!requireEntitlement("record")) return;
 		const api = window.electronAPI;
 		if (!api?.startNewRecording) return;
+		recordingReviewActionRef.current = true;
+		setRecordingReviewActionPending("record");
+		setPlaying(false);
 		recordingNavigationRevisionRef.current += 1;
 		setOpenProjectOpen(false);
 		try {
@@ -1135,7 +1154,13 @@ export function NewEditorShell() {
 						}
 					: undefined;
 			// A source picker/copy can start while the workspace or dirty save awaits.
-			if (recordingReviewNavigation.isBlocked()) return;
+			if (
+				sourceExportBusyRef.current ||
+				isExportRunActive(useExportRunStore.getState().phase) ||
+				recordingHandoffPendingRef.current ||
+				isPendingRecordingImportInProgress()
+			)
+				return;
 			const result = await api.startNewRecording(context);
 			if (!result.success) {
 				if (result.code === "ENTITLEMENT_REQUIRED") {
@@ -1148,13 +1173,15 @@ export function NewEditorShell() {
 			toast.error("Could not open recording controls", {
 				description: err instanceof Error ? err.message : String(err),
 			});
+		} finally {
+			recordingReviewActionRef.current = false;
+			setRecordingReviewActionPending(null);
 		}
 	}, [
 		facet,
 		inspectorOpen,
 		mode,
 		openEntitlement,
-		recordingReviewNavigation,
 		resumeRecordingWorkspace,
 		saveDocument,
 		setPlaying,
@@ -1165,7 +1192,7 @@ export function NewEditorShell() {
 			if (sourceExportBusyRef.current || recordingReviewActionRef.current) return;
 			if (!sourceRecovery && !requireEntitlement("export")) return;
 			recordingReviewActionRef.current = true;
-			setRecordingReviewActionPending(true);
+			setRecordingReviewActionPending("export");
 			try {
 				const ready = await awaitRecordingReviewDocument({
 					refreshWorkspace: resumeRecordingWorkspace,
@@ -1190,7 +1217,7 @@ export function NewEditorShell() {
 				});
 			} finally {
 				recordingReviewActionRef.current = false;
-				setRecordingReviewActionPending(false);
+				setRecordingReviewActionPending(null);
 			}
 		},
 		[resumeRecordingWorkspace, te],
@@ -1733,9 +1760,11 @@ export function NewEditorShell() {
 			<TransactionRecoveryBanner />
 			{PRODUCT_SURFACE.recordingOnly ? (
 				<RecordingReviewToolbar
+					isMac={isMac}
 					title={project?.title ?? null}
 					canSave={hasAsset}
-					preparing={recordingReviewPending || recordingReviewActionPending}
+					preparing={recordingReviewPending || recordingReviewActionPending !== null}
+					openingRecorder={recordingReviewActionPending === "record"}
 					readOnly={entitlement.access === "read-only"}
 					busy={sourceExportBusy || isExportRunActive(exportRunPhase)}
 					percent={exportRun?.percent ?? null}
@@ -1956,6 +1985,9 @@ export function NewEditorShell() {
 
 			{/* Modals */}
 			<OpenProjectModal
+				loading={projectListLoading}
+				loadFailed={projectListFailed}
+				recordingOnly={PRODUCT_SURFACE.recordingOnly}
 				open={openProjectOpen}
 				onClose={() => setOpenProjectOpen(false)}
 				projects={projectSummaries}
