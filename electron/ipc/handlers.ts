@@ -149,6 +149,7 @@ import {
 	restoreLatestNativeMacRecoverySession,
 	updateNativeMacRecoveryJournalIfPresent,
 } from "../recording/nativeMacRecoveryJournal";
+import { NativeMacStandbyHelper } from "../recording/nativeMacStandbyHelper";
 import {
 	isSalvageableFragmentedCapture,
 	NATIVE_WINDOWS_SALVAGEABLE_OUTPUT_BYTES,
@@ -2122,6 +2123,12 @@ export function registerIpcHandlers(
 	// The picker opens on the last list at once and refreshes it in the background.
 	ipcMain.handle("get-cached-sources", () => lastPickerSources);
 
+	ipcMain.handle("prewarm-native-mac-capture", async () => {
+		if (process.platform !== "darwin" || nativeMacRecordingService?.isRunning()) return;
+		const helperPath = await findNativeMacCaptureHelperPath();
+		if (helperPath && !nativeMacRecordingService?.isRunning()) nativeMacStandby.warm(helperPath);
+	});
+
 	ipcMain.handle("select-source", async (_, source: SelectedSource) =>
 		serializeRecordingSetup(async () => {
 			selectedSource = source;
@@ -3049,15 +3056,24 @@ export function registerIpcHandlers(
 		};
 	};
 
+	const nativeMacStandby = new NativeMacStandbyHelper({
+		spawn: (helperPath) =>
+			spawn(helperPath, ["--standby"], { cwd: RECORDINGS_DIR, stdio: ["pipe", "pipe", "pipe"] }),
+		now: Date.now,
+	});
+	app.once("will-quit", () => nativeMacStandby.discard());
+
 	nativeMacRecordingService = new NativeMacRecordingService({
 		recordingsDir: RECORDINGS_DIR,
 		now: Date.now,
 		findHelperPath: findNativeMacCaptureHelperPath,
 		createHelper: (helperPath, config, onFatalError, onOriginalStarted) => {
-			const process = spawn(helperPath, [JSON.stringify(config)], {
-				cwd: RECORDINGS_DIR,
-				stdio: ["pipe", "pipe", "pipe"],
-			});
+			const process =
+				nativeMacStandby.take(helperPath, config) ??
+				spawn(helperPath, [JSON.stringify(config)], {
+					cwd: RECORDINGS_DIR,
+					stdio: ["pipe", "pipe", "pipe"],
+				});
 			return new NativeMacHelperClient(process, {
 				onFatalError,
 				onOriginalStarted,

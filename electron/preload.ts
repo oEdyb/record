@@ -178,6 +178,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return await ipcRenderer.invoke("get-sources", opts);
 	},
 	getCachedSources: () => ipcRenderer.invoke("get-cached-sources"),
+	prewarmNativeMacCapture: () => ipcRenderer.invoke("prewarm-native-mac-capture"),
 	switchToEditor: (options?: { compactReview?: boolean }) => {
 		return ipcRenderer.invoke("switch-to-editor", options);
 	},

@@ -106,9 +106,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			startSteps["start\(name)Ms"] = milliseconds(since: stepStarted)
 			stepStarted = DispatchTime.now().uptimeNanoseconds
 		}
+		if request.webcam.enabled, AVCaptureDevice.authorizationStatus(for: .video) != .authorized {
+			throw HelperError.permissionDenied("Camera permission is required for native camera capture.")
+		}
+		async let cameraReady: Void = configureCamera(for: request)
 		try ensureRequestedPermissions(for: request)
 		markStep("Permissions")
-		async let cameraReady: Void = configureCamera(for: request)
 
 		let content = try await SCShareableContent.excludingDesktopWindows(
 			false,

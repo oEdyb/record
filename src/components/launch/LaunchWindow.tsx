@@ -1125,6 +1125,9 @@ export function LaunchWindow() {
 	// record will do, and the recording label stays neutral because the portal
 	// reports a KIND, never a window title. Naming a source we were never told
 	// is what put a window's name on a full-screen recording.
+	const prewarmCapture = useCallback(() => {
+		void window.electronAPI.prewarmNativeMacCapture?.().catch(() => undefined);
+	}, []);
 	const recordLabel = starting
 		? t("recording.starting")
 		: saving
@@ -1510,6 +1513,7 @@ export function LaunchWindow() {
 								label={recordLabel}
 								accessibleLabel={recordAccessibleLabel}
 								onClick={handleRecordClick}
+								onIntent={prewarmCapture}
 							/>
 						</div>
 					)}

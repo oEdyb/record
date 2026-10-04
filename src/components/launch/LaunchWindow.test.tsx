@@ -423,6 +423,16 @@ describe("LaunchWindow record button", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it("warms the capture helper when the pointer reaches Record", async () => {
+		const prewarm = vi.fn(async () => undefined);
+		window.electronAPI.prewarmNativeMacCapture = prewarm;
+		renderLaunchWindow();
+
+		fireEvent.pointerEnter(await screen.findByTestId("launch-record-button"));
+
+		expect(prewarm).toHaveBeenCalledTimes(1);
+	});
+
 	it("opens the source panel above the pill instead of disabling Record when no source is selected", async () => {
 		window.electronAPI.getSources = vi.fn(async () => []);
 		renderLaunchWindow();

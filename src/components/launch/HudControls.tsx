@@ -296,11 +296,14 @@ export const HudCompactRecordButton = memo(function HudCompactRecordButton({
 	label,
 	accessibleLabel,
 	onClick,
+	onIntent,
 }: {
 	disabled: boolean;
 	label: string;
 	accessibleLabel?: string;
 	onClick: () => void;
+	/** The pointer or focus reached Record, so a click is likely next. */
+	onIntent?: () => void;
 }) {
 	return (
 		<Tooltip content={label}>
@@ -309,6 +312,8 @@ export const HudCompactRecordButton = memo(function HudCompactRecordButton({
 				data-testid="launch-record-button"
 				className={`${styles.hudRecordButton} ${hudFocusClasses} ${styles.electronNoDrag}`}
 				onClick={onClick}
+				onPointerEnter={onIntent}
+				onFocus={onIntent}
 				disabled={disabled}
 				title={label}
 				aria-label={accessibleLabel ?? label}

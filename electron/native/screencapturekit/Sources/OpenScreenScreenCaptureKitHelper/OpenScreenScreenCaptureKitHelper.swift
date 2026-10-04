@@ -12,7 +12,15 @@ struct OpenScreenScreenCaptureKitHelper {
 				throw HelperError.unsupportedMacOS
 			}
 
-			let requestData = Data(CommandLine.arguments[1].utf8)
+			let requestData: Data
+			if CommandLine.arguments[1] == HelperWarmup.standbyArgument {
+				await HelperWarmup.run()
+				emit(["event": "standby"])
+				guard let line = HelperWarmup.awaitRequest() else { exit(0) }
+				requestData = line
+			} else {
+				requestData = Data(CommandLine.arguments[1].utf8)
+			}
 			let decoder = JSONDecoder()
 			let request = try decoder.decode(RecordingRequest.self, from: requestData)
 			let commandExecutor = RecorderCommandExecutor()
