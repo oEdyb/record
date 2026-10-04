@@ -54,16 +54,21 @@ export function locatePeekTime(timeline: readonly PeekClip[], time: number) {
  * Replays what has been recorded so far, while paused, so the creator can pick
  * up where they left off. It plays the kept clip files exactly as written; it
  * has no recording controls and never changes the session.
+ *
+ * It stays mounted for the whole pause and only shows or hides, so toggling it
+ * quickly never reloads the video and its frame already has the recording's shape.
  */
 export function HudClipPeek({
 	clips,
 	labels,
+	open,
 	panelRef,
 	onClose,
 }: {
 	clips: readonly RecordingSessionClip[];
 	labels: HudClipPeekLabels;
-	panelRef: (el: HTMLDivElement | null) => void;
+	open: boolean;
+	panelRef?: (el: HTMLDivElement | null) => void;
 	onClose: () => void;
 }) {
 	const timeline = useMemo(() => buildPeekTimeline(clips), [clips]);
@@ -76,8 +81,10 @@ export function HudClipPeek({
 	const pendingOffsetRef = useRef<number | null>(initial.offset);
 	const [clipIndex, setClipIndex] = useState(initial.index);
 	const [position, setPosition] = useState((timeline[initial.index]?.start ?? 0) + initial.offset);
-	const [playing, setPlaying] = useState(true);
+	const [playing, setPlaying] = useState(false);
 	const [muted, setMuted] = useState(false);
+	// The first clip that loads sets the frame; a clip of another size letterboxes inside it.
+	const [aspect, setAspect] = useState<number | null>(null);
 
 	// A src change aborts a pending play(); that is not the user pausing.
 	const stopUnlessInterrupted = useCallback((error: unknown) => {
@@ -128,6 +135,7 @@ export function HudClipPeek({
 	}, [current, playing]);
 
 	useEffect(() => {
+		if (!open) return;
 		const handleKey = (event: KeyboardEvent) => {
 			if (event.key === "Escape" || event.key === "ArrowDown") {
 				event.preventDefault();
@@ -146,17 +154,40 @@ export function HudClipPeek({
 		};
 		window.addEventListener("keydown", handleKey);
 		return () => window.removeEventListener("keydown", handleKey);
-	}, [clipIndex, current, onClose, position, seek, timeline]);
+	}, [clipIndex, current, onClose, open, position, seek, timeline]);
+
+	const rootRef = useRef<HTMLDivElement | null>(null);
+	const attachPanel = useCallback(
+		(el: HTMLDivElement | null) => {
+			rootRef.current = el;
+			panelRef?.(el);
+		},
+		[panelRef],
+	);
+	useEffect(() => {
+		if (aspect) rootRef.current?.style.setProperty("--peek-aspect", String(aspect));
+	}, [aspect]);
 
 	const playButtonRef = useRef<HTMLButtonElement | null>(null);
+	const seekRef = useRef(seek);
+	seekRef.current = seek;
 	useEffect(() => {
+		if (!open) {
+			setPlaying(false);
+			return;
+		}
+		seekRef.current(total - CLIP_PEEK_LEAD_IN_SECONDS);
+		setPlaying(true);
 		playButtonRef.current?.focus({ preventScroll: true });
-	}, []);
+	}, [open, total]);
 
 	const handleLoadedMetadata = () => {
 		const video = videoRef.current;
 		const offset = pendingOffsetRef.current;
 		pendingOffsetRef.current = null;
+		if (video && aspect === null && video.videoWidth > 0 && video.videoHeight > 0) {
+			setAspect(video.videoWidth / video.videoHeight);
+		}
 		if (video && offset !== null) video.currentTime = offset;
 		if (video && playing) video.play()?.catch(stopUnlessInterrupted);
 	};
@@ -186,7 +217,8 @@ export function HudClipPeek({
 
 	return (
 		<div
-			ref={panelRef}
+			ref={attachPanel}
+			hidden={!open}
 			data-hud-interactive="true"
 			data-testid="hud-clip-peek"
 			role="dialog"

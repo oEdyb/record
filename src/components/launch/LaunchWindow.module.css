@@ -711,12 +711,18 @@ button.deviceRowMain:focus-visible {
 	box-shadow: inset 0 0 0 1px rgba(142, 165, 191, 0.72);
 }
 
-/* Replay of the recording so far. Same width and shell as setup, so opening it
-   never changes the reserved window size. 6px inset, 14px media radius
-   (20 - 6), 16:9 stage. */
+/* Replay of the recording so far. The stage takes the recording's own shape so
+   the video fills it with no letterbox: up to 640 wide, or as wide as the
+   reserved height allows for tall footage. Its width is part of the reserved
+   window width, so opening it never resizes the window. 6px inset, 14px media
+   radius (20 - 6). */
 .clipPeek {
 	pointer-events: auto;
-	width: 360px;
+	--peek-aspect: 16 / 9;
+	width: calc(
+		min(640px, (var(--hud-modal-max-h, 560px) - 54px) * var(--peek-aspect)) + 12px
+	);
+	max-width: calc(100vw - 48px);
 	box-sizing: border-box;
 	padding: 6px;
 	border-radius: 20px;
@@ -731,7 +737,7 @@ button.deviceRowMain:focus-visible {
 
 .clipPeekStage {
 	position: relative;
-	aspect-ratio: 16 / 9;
+	aspect-ratio: var(--peek-aspect);
 	overflow: hidden;
 	border-radius: 14px;
 	background: #000000;

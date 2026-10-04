@@ -897,9 +897,29 @@ describe("LaunchWindow record button", () => {
 			</TooltipProvider>,
 		);
 		fireEvent.keyDown(window, { key: "ArrowUp" });
-		expect(await screen.findByTestId("hud-clip-peek")).toBeInTheDocument();
+		expect(await screen.findByRole("dialog", { name: "peek.title" })).toBeVisible();
 		fireEvent.keyDown(window, { key: "Escape" });
-		expect(screen.queryByTestId("hud-clip-peek")).not.toBeInTheDocument();
+		expect(screen.queryByRole("dialog", { name: "peek.title" })).not.toBeInTheDocument();
+	});
+
+	it("keeps the replay's video loaded while it is toggled open and closed", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.canPauseRecording = true;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
+		];
+		renderLaunchWindow();
+		const video = await screen.findByTestId("hud-clip-peek-video");
+		expect(screen.getByTestId("hud-clip-peek")).not.toBeVisible();
+
+		for (let index = 0; index < 4; index += 1) {
+			fireEvent.keyDown(window, { key: "ArrowUp" });
+			expect(screen.getByTestId("hud-clip-peek")).toBeVisible();
+			fireEvent.keyDown(window, { key: "ArrowDown" });
+			expect(screen.getByTestId("hud-clip-peek")).not.toBeVisible();
+		}
+		expect(screen.getByTestId("hud-clip-peek-video")).toBe(video);
 	});
 
 	it("shows Stop as a secondary control and keeps setup locked while capturing", async () => {

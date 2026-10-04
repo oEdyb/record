@@ -27,4 +27,10 @@ describe("fitCompactReviewBounds", () => {
 		expect(bounds.y).toBeGreaterThanOrEqual(0);
 		expect(bounds.height).toBeGreaterThanOrEqual(DEFAULT_REVIEW_CHROME_HEIGHT);
 	});
+
+	it("centres over a dragged pill and stays on screen at the edges", () => {
+		expect(fitCompactReviewBounds(laptop, 16 / 9, 117, 600).x).toBe(120);
+		expect(fitCompactReviewBounds(laptop, 16 / 9, 117, 100).x).toBe(0);
+		expect(fitCompactReviewBounds(laptop, 16 / 9, 117, 1700).x).toBe(1710 - 960);
+	});
 });

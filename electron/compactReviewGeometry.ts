@@ -17,12 +17,13 @@ export interface WindowBounds {
 /**
  * Small review player sized so the video fills it edge to edge: its width
  * times the recording's aspect ratio, plus the review's own bars. Centred
- * above where the recorder pill sits.
+ * above where the recorder pill sits, or on the display when that is unknown.
  */
 export function fitCompactReviewBounds(
 	workArea: WindowBounds,
 	aspectRatio = 16 / 9,
 	chromeHeight = DEFAULT_REVIEW_CHROME_HEIGHT,
+	anchorCenterX = workArea.x + workArea.width / 2,
 ): WindowBounds {
 	const ratio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 16 / 9;
 	const maxVideoHeight = Math.max(
@@ -41,7 +42,12 @@ export function fitCompactReviewBounds(
 		Math.round(videoHeight) + Math.round(chromeHeight),
 	);
 	return {
-		x: Math.round(workArea.x + (workArea.width - width) / 2),
+		x: Math.round(
+			Math.min(
+				Math.max(anchorCenterX - width / 2, workArea.x),
+				workArea.x + workArea.width - width,
+			),
+		),
 		y: Math.max(
 			workArea.y,
 			Math.round(workArea.y + workArea.height - height - COMPACT_REVIEW_BOTTOM_GAP),

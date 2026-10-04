@@ -33,11 +33,14 @@ export const HUD_STACK_GAP = 10;
 export const HUD_POPOVER_WIDTH = 220;
 /** Width of the top notices (locale suggestion, software-encoder fallback). */
 export const HUD_NOTICE_WIDTH = 360;
+/** Widest the paused replay's video gets; its frame adds a 6px inset per side. */
+export const HUD_PEEK_VIDEO_MAX_WIDTH = 640;
+export const HUD_PEEK_WIDTH = HUD_PEEK_VIDEO_MAX_WIDTH + 12;
 /**
- * Widest thing that can ever float above the bar. Always reserved, so a popover
- * or a notice appearing never changes the window's width.
+ * Widest thing that can ever float above the bar. Always reserved, so a popover,
+ * a notice or the replay appearing never changes the window's width.
  */
-export const HUD_STACK_WIDTH = Math.max(HUD_POPOVER_WIDTH, HUD_NOTICE_WIDTH);
+export const HUD_STACK_WIDTH = Math.max(HUD_POPOVER_WIDTH, HUD_NOTICE_WIDTH, HUD_PEEK_WIDTH);
 /** Cap on any popover's height; past this it scrolls internally. */
 export const HUD_POPOVER_MAX_HEIGHT = 320;
 /** Floor for the popover cap on very short screens. */

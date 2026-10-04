@@ -293,8 +293,10 @@ App while idle, and Notes, Restart and Discard while recording; quitting is neve
 mid-take. Setup opens during capture with every switch, device list and quality choice locked,
 and it opens no mic meter or camera preview of its own until a completed Pause.
 
-Replay (the up arrow or Up key, only after a completed Pause) opens a separate 360 px popup
-above the pill with no recording controls. It plays the kept clip files end to end with sound,
+Replay (the up arrow or Up key, only after a completed Pause) opens a separate popup
+above the pill with no recording controls. Its video takes the recording's own shape, up to
+640 px wide, with no letterbox (Olle, 2026-10-04); a later clip of another size letterboxes
+inside the first clip's frame. It plays the kept clip files end to end with sound,
 starting five seconds before the end, so the creator can pick up where they left off. One
 scrubber is split by clips; Left and Right jump between clips; M mutes; Escape or Down closes.
 Continue closes it immediately. It never changes the session.

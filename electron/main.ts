@@ -664,7 +664,13 @@ function compactReviewBoundsNear(window: BrowserWindow | null) {
 		window && !window.isDestroyed()
 			? screen.getDisplayMatching(window.getBounds())
 			: screen.getPrimaryDisplay();
-	return fitCompactReviewBounds(display.workArea);
+	const anchor = window && !window.isDestroyed() ? window.getBounds() : display.workArea;
+	return fitCompactReviewBounds(
+		display.workArea,
+		undefined,
+		undefined,
+		anchor.x + anchor.width / 2,
+	);
 }
 
 const compactReviewWindows = new WeakSet<BrowserWindow>();
@@ -684,9 +690,15 @@ ipcMain.handle(
 		const window = BrowserWindow.fromWebContents(event.sender);
 		if (!window || window.isDestroyed() || !compactReviewWindows.has(window)) return false;
 		if (window.isFullScreen() || window.isMaximized()) return false;
-		const display = screen.getDisplayMatching(window.getBounds());
+		const current = window.getBounds();
+		const display = screen.getDisplayMatching(current);
 		window.setBounds(
-			fitCompactReviewBounds(display.workArea, request?.aspectRatio, request?.chromeHeight),
+			fitCompactReviewBounds(
+				display.workArea,
+				request?.aspectRatio,
+				request?.chromeHeight,
+				current.x + current.width / 2,
+			),
 		);
 		return true;
 	},

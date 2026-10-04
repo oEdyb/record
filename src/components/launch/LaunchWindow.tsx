@@ -1360,7 +1360,7 @@ export function LaunchWindow() {
 					)}
 				</div>
 
-				{(isPopoverOpen || hasNotices || removedClipFeedback) && (
+				{(isPopoverOpen || canPeek || hasNotices || removedClipFeedback) && (
 					// column-reverse: first child sits closest to the bar.
 					<div className={styles.hudAbove}>
 						{isDeviceSettingsOpen && (
@@ -1392,11 +1392,12 @@ export function LaunchWindow() {
 							/>
 						)}
 
-						{peekOpen && (
+						{canPeek && (
 							<HudClipPeek
 								clips={presentation.recordedClips}
 								labels={peekLabels}
-								panelRef={setPopoverEl}
+								open={peekOpen}
+								panelRef={peekOpen ? setPopoverEl : undefined}
 								onClose={closePeek}
 							/>
 						)}
