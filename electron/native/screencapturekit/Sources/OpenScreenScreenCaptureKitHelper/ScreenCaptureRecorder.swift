@@ -100,12 +100,21 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func start() async throws {
+		var stepStarted = DispatchTime.now().uptimeNanoseconds
+		var startSteps: [String: Double] = ["startEnteredEpochMs": Date().timeIntervalSince1970 * 1_000]
+		let markStep = { [self] (name: String) in
+			startSteps["start\(name)Ms"] = milliseconds(since: stepStarted)
+			stepStarted = DispatchTime.now().uptimeNanoseconds
+		}
 		try ensureRequestedPermissions(for: request)
+		markStep("Permissions")
+		async let cameraReady: Void = configureCamera(for: request)
 
 		let content = try await SCShareableContent.excludingDesktopWindows(
 			false,
 			onScreenWindowsOnly: true
 		)
+		markStep("ShareableContent")
 		stateQueue.sync { recordingActivity = processActivity.acquire() }
 		var started = false
 		defer { if !started { endRecordingActivity() } }
@@ -115,8 +124,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		captureFrame = setup.captureFrame
 		nativeMicrophoneEnabled = setup.microphoneEnabled
 		let stream = try configuredStream(filter: setup.filter, configuration: setup.configuration)
-		try await configureCamera(for: request)
+		markStep("StreamSetup")
+		try await cameraReady
+		markStep("Camera")
 		try sampleQueue.sync { try setupWriter(for: currentClipIndex) }
+		markStep("Writers")
+		if diagnosticTiming { startupTiming.merge(startSteps) { _, step in step } }
 
 		self.stream = stream
 		stateQueue.sync { streamRecovery.install(stream) }
