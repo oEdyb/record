@@ -476,7 +476,7 @@ final class NativeCaptureQualityTests: XCTestCase {
 			}
 		}
 		XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
-		XCTAssertFalse(startup.acknowledge(videoAppended: false, readyOriginals: [], readyAudio: [], gridCaughtUp: false))
+		XCTAssertFalse(startup.acknowledge(videoAppended: false, gridCaughtUp: false))
 		// Model the observed temporarily-not-ready video input. New captured pixels
 		// arrive, but the first sample remains retained until an actual append.
 		cache.observe(future)
@@ -485,7 +485,7 @@ final class NativeCaptureQualityTests: XCTestCase {
 		XCTAssertEqual(readyAAC, ["mixed", "system", "microphone"])
 		let due = try grid.dueTimes(at: readyTime, maximumCatchUpFrames: startup.backlogLimit(fps: 60))
 		XCTAssertEqual(due.count, 13)
-		XCTAssertFalse(startup.acknowledge(videoAppended: true, readyOriginals: [], readyAudio: readyAAC, gridCaughtUp: due.isEmpty))
+		XCTAssertFalse(startup.acknowledge(videoAppended: true, gridCaughtUp: due.isEmpty))
 		for point in due {
 			let frame = try XCTUnwrap(cache.scheduledFrame(at: point, fps: 60, firstFrame: first))
 			XCTAssertEqual(frame.sourceTime, epoch)
@@ -494,7 +494,7 @@ final class NativeCaptureQualityTests: XCTestCase {
 			try await ClosingFrameAppender(sample: sample, input: video, writer: writer, queue: videoQueue).append()
 			cache.didAppend(sample, sourceTime: frame.sourceTime); grid.didAppend()
 		}
-		XCTAssertTrue(startup.acknowledge(videoAppended: true, readyOriginals: [], readyAudio: readyAAC,
+		XCTAssertTrue(startup.acknowledge(videoAppended: true,
 			gridCaughtUp: try grid.dueTimes(at: readyTime, maximumCatchUpFrames: startup.backlogLimit(fps: 60)).isEmpty))
 		XCTAssertThrowsError(try grid.dueTimes(at: time(100.4), maximumCatchUpFrames: startup.backlogLimit(fps: 60)))
 		XCTAssertEqual(startup.epoch, epoch)

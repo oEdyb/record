@@ -176,8 +176,10 @@ from replaced streams and callbacks during Stop; do not suppress current active-
 
 Start immediately by default, with no countdown or duplicate source enumeration after screen
 permission is granted. A pending start disables duplicate Record and setup changes. Only the
-first successful screen append, every enabled original-source append and every enabled
-compatibility AAC track append start the HUD timer; Continue obeys the same barrier. High
+first successful screen append starts the HUD timer (Olle, 2026-10-04); camera, microphone and
+system audio join on the same epoch when their first sample lands, and each original keeps its
+offset. Continue obeys the same barrier. A source that has not appended within two seconds of
+the epoch fails the take loudly, even after the timer started. High
 must also catch up its output grid before confirming recording. Preserve the first screen
 epoch and pixels while writers become ready; do not move the session start to hide delay.
 Allow at most one second of pending High grid slots during startup and fail missing source

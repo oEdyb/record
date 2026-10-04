@@ -621,10 +621,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			try startup.checkDeadline(at: now, videoAppended: true, readyOriginals: readyOriginals, readyAudio: readyAudioTracks)
 			var caughtUp = true
 			if request.video.quality == "high" { caughtUp = try cadence.dueTimes(at: now, maximumCatchUpFrames: startup.backlogLimit(fps: request.video.fps)).isEmpty }
-			guard startup.acknowledge(videoAppended: true, readyOriginals: readyOriginals, readyAudio: readyAudioTracks, gridCaughtUp: caughtUp) else { return }
+			guard startup.acknowledge(videoAppended: true, gridCaughtUp: caughtUp) else { return }
 		} catch { reportWriterFailure("\(error)", detectedAt: startupDeadline.map { min($0, now) } ?? now); return }
 		if let clipIndex = startBarrier.acknowledgeAppend(succeeded: true) {
-			startupTimer?.cancel(); startupTimer = nil
 			if diagnosticTiming { emitTiming(stage: "startup-ready") }
 			emit([
 				"event": clipIndex == 0 ? "recording-started" : "recording-resumed",
@@ -1202,7 +1201,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		let writerID = ObjectIdentifier(writer), clipIndex = currentClipIndex
 		startupTimer = RecordingStartupWatchdog(epoch: epoch, queue: sampleQueue) { [weak self] deadline in
 			guard let self, self.writer.map(ObjectIdentifier.init) == writerID, self.currentClipIndex == clipIndex,
-				!self.startup.isLive, !self.stateQueue.sync(execute: { self.isPaused || self.isStopping || self.hasTerminalFailure }) else { return }
+				!self.stateQueue.sync(execute: { self.isPaused || self.isStopping || self.hasTerminalFailure }) else { return }
 			do {
 				try self.startup.checkDeadline(at: deadline, videoAppended: self.clipLastTime != nil,
 					readyOriginals: self.readyOriginals, readyAudio: self.readyAudioTracks)

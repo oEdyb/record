@@ -15,17 +15,21 @@ struct RecordingStartup {
 		self.originals = originals; self.audioTracks = audioTracks
 	}
 	mutating func begin(at time: CMTime) { if epoch == nil { epoch = time } }
+	/// Screen readiness makes the take live; camera and audio may join later on the
+	/// same epoch but must still arrive before the deadline or the take fails loudly.
 	func checkDeadline(at now: CMTime, videoAppended: Bool, readyOriginals: Set<String>, readyAudio: Set<String>) throws {
-		guard !cancelled, !isLive, let epoch, now.isNumeric,
+		guard !cancelled, let epoch, now.isNumeric,
 			now - epoch >= CMTime(seconds: Self.sourceDeadlineSeconds, preferredTimescale: 1_000_000) else { return }
 		var missing = originals.subtracting(readyOriginals).sorted() + audioTracks.subtracting(readyAudio).sorted().map { "\($0) AAC" }
 		if !videoAppended { missing.insert("screen video", at: 0) }
-		if missing.isEmpty { missing = ["the video timeline to catch up"] }
+		if missing.isEmpty {
+			guard !isLive else { return }
+			missing = ["the video timeline to catch up"]
+		}
 		throw HelperError.writerSetupFailed("Recording startup exceeded two seconds waiting for \(missing.joined(separator: ", ")).")
 	}
-	mutating func acknowledge(videoAppended: Bool, readyOriginals: Set<String>, readyAudio: Set<String>, gridCaughtUp: Bool) -> Bool {
-		guard !cancelled, !isLive, epoch != nil, videoAppended, originals.isSubset(of: readyOriginals),
-			audioTracks.isSubset(of: readyAudio), gridCaughtUp else { return false }
+	mutating func acknowledge(videoAppended: Bool, gridCaughtUp: Bool) -> Bool {
+		guard !cancelled, !isLive, epoch != nil, videoAppended, gridCaughtUp else { return false }
 		isLive = true
 		return true
 	}
