@@ -679,7 +679,7 @@ export function closeCameraPreviewWindow() {
  */
 export function createEditorWindow(
 	query: Record<string, string> = {},
-	options: { compactBounds?: WindowBounds } = {},
+	options: { compactBounds?: WindowBounds; hidden?: boolean } = {},
 ): BrowserWindow {
 	const isMac = process.platform === "darwin";
 	const compact = options.compactBounds;
@@ -725,7 +725,7 @@ export function createEditorWindow(
 
 	// Show only once painted to avoid a white flash on cold Vite start.
 	win.once("ready-to-show", () => {
-		if (!HEADLESS) win.show();
+		if (!HEADLESS && !options.hidden) win.show();
 	});
 
 	// Inject dark background before any React paint so the sub-titlebar area never

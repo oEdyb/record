@@ -259,6 +259,26 @@ async function readRecoverySession(filePath: string): Promise<RecordingSession |
 	}
 }
 
+/**
+ * True when the helper's final clips already hold every clip and original the
+ * journal knows about, so restoring the journal could add nothing.
+ */
+export async function nativeMacJournalCoveredBy(
+	recordingsDir: string,
+	recordingId: number,
+	clips: RecordingSessionClip[],
+): Promise<boolean> {
+	const journal = await readRecoverySession(
+		nativeMacRecoveryJournalPath(recordingsDir, recordingId),
+	);
+	if (!journal) return true;
+	return (journal.clips ?? []).every((journaled) => {
+		if (journaled.removed) return true;
+		const known = clips.find((clip) => clip.index === journaled.index);
+		return Boolean(known && ORIGINAL_FIELDS.every(([field]) => !journaled[field] || known[field]));
+	});
+}
+
 export async function restoreNativeMacRecoverySession(
 	recordingsDir: string,
 	recordingId: number,

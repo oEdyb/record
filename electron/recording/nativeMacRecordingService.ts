@@ -25,6 +25,7 @@ import {
 } from "./nativeMacHelperClient";
 import {
 	clearNativeMacRecoveryJournal,
+	nativeMacJournalCoveredBy,
 	persistNativeMacRecoveryJournal,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
@@ -53,6 +54,8 @@ export type NativeMacCaptureHelper = Pick<
 export type NativeMacRecordingServiceDependencies = {
 	/** Names each start step as it finishes, for the start timing log. */
 	onStartStage?: (stage: string) => void;
+	/** Names each Stop step as it finishes, for the stop timing log. */
+	onStopStage?: (stage: string) => void;
 	recordingsDir: string;
 	now: () => number;
 	findHelperPath: () => Promise<string | null>;
@@ -425,6 +428,7 @@ export class NativeMacRecordingService {
 				let stopped: Awaited<ReturnType<NativeMacCaptureHelper["stop"]>>;
 				try {
 					if (!helper.isRunning()) throw new Error("The native capture helper exited early.");
+					this.deps.onStopStage?.("helper-stop-sent");
 					stopped = await helper.stop({
 						screenPath: preferredPath ?? "",
 						clips: this.clips,
@@ -432,6 +436,7 @@ export class NativeMacRecordingService {
 					this.acceptsOriginalMetadata = false;
 					await this.recoveryWrites.catch(() => undefined);
 					stoppedPaths = [stopped.screenPath, ...stopped.clips.map((clip) => clip.screenVideoPath)];
+					this.deps.onStopStage?.("helper-stopped");
 				} catch (error) {
 					await helper.kill();
 					this.acceptsOriginalMetadata = false;
@@ -470,10 +475,15 @@ export class NativeMacRecordingService {
 						this.cursorCaptureMode,
 				}));
 				if (!discard) {
-					const recovery = await restoreNativeMacRecoverySession(
+					// Probing every source takes ~130 ms; skip it when the helper's final
+					// event already reported everything the journal knows about.
+					const recovery = (await nativeMacJournalCoveredBy(
 						this.deps.recordingsDir,
 						recordingId,
-					);
+						this.clips,
+					))
+						? null
+						: await restoreNativeMacRecoverySession(this.deps.recordingsDir, recordingId);
 					// A failed original finalization can still leave readable fragments.
 					// Keep the committed screen duration; only attach explicitly timed,
 					// validated originals that its final event could not include.
@@ -507,6 +517,7 @@ export class NativeMacRecordingService {
 				}
 				if (this.cursorTelemetryStarted) await this.deps.stopCursor();
 				else this.deps.clearCursor();
+				this.deps.onStopStage?.("cursor-stopped");
 				if (discard) {
 					this.deps.clearCursor();
 					const discoveredPaths = await this.findSessionMediaPaths(recordingId);
@@ -548,12 +559,14 @@ export class NativeMacRecordingService {
 					clips: this.clips,
 				};
 				await writeJsonDurably(this.manifestPath(recordingId), session);
+				this.deps.onStopStage?.("session-written");
 				await this.serializeRecoveryMutation(() =>
 					persistNativeMacRecoveryJournal(this.deps.recordingsDir, session),
 				).catch((error) => {
 					console.warn("[capture-mac] could not update recovery journal after Stop:", error);
 				});
 				this.deps.onSessionStored(session);
+				this.deps.onStopStage?.("session-stored");
 				let cursorWarning: string | undefined;
 				if (this.cursorTelemetryStarted) {
 					try {
@@ -567,6 +580,7 @@ export class NativeMacRecordingService {
 						this.deps.clearCursor();
 					}
 				}
+				this.deps.onStopStage?.("cursor-finalized");
 				await Promise.all(
 					keptClips.map((clip) =>
 						this.deps.registerMediaLinks(
@@ -575,6 +589,7 @@ export class NativeMacRecordingService {
 						),
 					),
 				);
+				this.deps.onStopStage?.("media-linked");
 				const warnings = [
 					stopped.warning?.message,
 					this.fatalError?.code === "capture-recovery-failed" ? this.fatalError.message : undefined,
@@ -595,6 +610,7 @@ export class NativeMacRecordingService {
 				return { success: false, error: this.errorMessage(error) };
 			} finally {
 				if (helper.isRunning()) await helper.kill();
+				this.deps.onStopStage?.("helper-exited");
 				this.acceptsOriginalMetadata = false;
 				await this.recoveryWrites.catch(() => undefined);
 				this.reset();

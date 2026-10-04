@@ -450,8 +450,8 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		view.unmount();
 		await settle();
 
-		expect(stopNativeMacRecording).toHaveBeenCalledWith(false);
-		expect(stopNativeMacRecording).not.toHaveBeenCalledWith(true);
+		expect(stopNativeMacRecording).toHaveBeenCalledWith(false, expect.any(Number));
+		expect(stopNativeMacRecording).not.toHaveBeenCalledWith(true, expect.anything());
 	});
 
 	it("rolls the HUD back to recording when Pause fails before the helper pauses", async () => {

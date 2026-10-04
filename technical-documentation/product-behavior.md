@@ -277,7 +277,11 @@ the header and a 12 px frame. When clips have different
 resolutions, the window follows the one output frame and mixed clips letterbox inside it.
 The window opens at that final size, using the recorded display's or window's shape, so it never
 resizes while loading. Until the first frame is ready the video area shows only a dark frame
-with a small 12-bar spinner; the video and play bar then fade in (Olle, 2026-10-04).
+with a small 12-bar spinner; the video and play bar then fade in (Olle, 2026-10-04). Two seconds into a take,
+Electron loads the review window hidden so Stop shows a warm window; that hidden review opens no
+project until Stop hands it the take. Stop skips re-probing the recovery journal when the helper's
+final event already lists every clip and original. Stop timings land in
+`diagnostics/record-stop-timing.jsonl` under the app's user-data folder.
 
 Review follows the approved prototype and is always dark (Olle, 2026-10-04): a 60 px header with
 the Klippt mark, the recording name and "0:28 total, 3 clips", then Record (red dot), Original

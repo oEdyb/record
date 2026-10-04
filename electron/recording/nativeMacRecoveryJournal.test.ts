@@ -6,6 +6,7 @@ import type { RecordingSession } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
 import {
 	clearNativeMacRecoveryJournal,
+	nativeMacJournalCoveredBy,
 	nativeMacRecoveryJournalPath,
 	persistNativeMacRecoveryJournal,
 	restoreLatestNativeMacRecoverySession,
@@ -172,6 +173,37 @@ describe("native macOS recovery journal", () => {
 		});
 		const recovered = await restoreNativeMacRecoverySession(recordingsDir, 64);
 		expect(recovered?.clips?.[0]).not.toHaveProperty("webcamVideoPath");
+		expect(inspectHandoffSourceMedia).not.toHaveBeenCalled();
+	});
+
+	it("says a Stop needs no restore only when the helper reported every journaled clip and original", async () => {
+		const screen = path.join(recordingsDir, "recording-7-clip-0001.mp4");
+		const microphone = path.join(recordingsDir, "recording-7-clip-0001-microphone.mov");
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			schemaVersion: 2,
+			createdAt: 7,
+			screenVideoPath: screen,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath: screen,
+					durationMs: 1_000,
+					provisionalDuration: true,
+					microphoneAudioPath: microphone,
+					microphoneAudioOffsetMs: 40,
+				},
+			],
+		});
+		const reported = { index: 0, screenVideoPath: screen, durationMs: 1_200 };
+
+		await expect(
+			nativeMacJournalCoveredBy(recordingsDir, 7, [
+				{ ...reported, microphoneAudioPath: microphone, microphoneAudioOffsetMs: 40 },
+			]),
+		).resolves.toBe(true);
+		await expect(nativeMacJournalCoveredBy(recordingsDir, 7, [reported])).resolves.toBe(false);
+		await expect(nativeMacJournalCoveredBy(recordingsDir, 7, [])).resolves.toBe(false);
+		await expect(nativeMacJournalCoveredBy(recordingsDir, 8, [])).resolves.toBe(true);
 		expect(inspectHandoffSourceMedia).not.toHaveBeenCalled();
 	});
 

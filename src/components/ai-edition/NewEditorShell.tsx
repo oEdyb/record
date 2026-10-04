@@ -86,6 +86,7 @@ import {
 	canRegenerateAutomaticDirection,
 	regenerateProjectAutomaticDirection,
 } from "./regenerateAutomaticDirection";
+import { isPrewarmedReview } from "./reviewPrewarm";
 import { TransactionRecoveryBanner } from "./TransactionRecoveryBanner";
 import { TransportBar } from "./TransportBar";
 import { useCompactReviewFit } from "./useCompactReviewFit";
@@ -167,6 +168,10 @@ export function NewEditorShell() {
 	const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
 	const firstFrameReady = useVideoFirstFrame(videoElement);
 	const [startupLoaded, setStartupLoaded] = useState(false);
+	const deferredStartupRef = useRef<(() => void) | null>(null);
+	useEffect(() => {
+		if (firstFrameReady) window.electronAPI?.markStopStage?.("review-first-frame");
+	}, [firstFrameReady]);
 	// Media and Edit are editor workspaces. Record is an action that opens the
 	// floating HUD, not a third editor tab.
 	// column, and a floating facet inspector over the stage.
@@ -436,6 +441,12 @@ export function NewEditorShell() {
 	// while the HUD records, then consumes the hand-off when Electron shows it again.
 	useEffect(() => {
 		const resumeWorkspace = () => {
+			const deferredStartup = deferredStartupRef.current;
+			if (deferredStartup) {
+				deferredStartupRef.current = null;
+				deferredStartup();
+				return;
+			}
 			void resumeRecordingWorkspace().catch((error) =>
 				console.warn("[editor] could not resume recording workspace:", error),
 			);
@@ -457,13 +468,31 @@ export function NewEditorShell() {
 	useEffect(() => {
 		if (initRef.current) return;
 		initRef.current = true;
-		void (async () => {
-			try {
-				await loadStartupProject();
-			} finally {
-				setStartupLoaded(true);
-			}
-		})();
+		const runStartup = () => {
+			window.electronAPI?.markStopStage?.("review-startup");
+			void (async () => {
+				try {
+					await loadStartupProject();
+				} finally {
+					window.electronAPI?.markStopStage?.("review-project-loaded");
+					setStartupLoaded(true);
+				}
+			})();
+		};
+		// A review loaded ahead of Stop waits for the take: Electron's return event,
+		// or a hand-off that was already pending when this renderer mounted.
+		if (isPrewarmedReview(globalThis.location.search) && window.electronAPI) {
+			deferredStartupRef.current = runStartup;
+			void hasPendingRecordingHandoff(() => window.electronAPI.getCurrentRecordingSession())
+				.catch(() => false)
+				.then((pending) => {
+					if (!pending || deferredStartupRef.current !== runStartup) return;
+					deferredStartupRef.current = null;
+					runStartup();
+				});
+			return;
+		}
+		runStartup();
 		async function loadStartupProject() {
 			if (await resumeRecordingWorkspace()) return;
 			const navigationRevision = recordingNavigationRevisionRef.current;

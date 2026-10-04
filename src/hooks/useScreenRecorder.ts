@@ -715,6 +715,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 
 			activeNativeRecording.finalizing = true;
+			const clickedAtMs = Date.now();
 			if (!discard) {
 				setSaving(true);
 			}
@@ -753,7 +754,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			};
 
 			try {
-				const result = await window.electronAPI.stopNativeMacRecording(discard);
+				const result = await window.electronAPI.stopNativeMacRecording(discard, clickedAtMs);
+				window.electronAPI.markStopStage?.("renderer-stop-returned");
 				if (discard || result.discarded) {
 					clearNativeRecordingState();
 					return true;
@@ -829,14 +831,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					}
 				}
 
+				window.electronAPI.markStopStage?.("webcams-collected");
 				clearNativeRecordingState();
 				if (result.session) {
 					await window.electronAPI.setCurrentRecordingSession(result.session);
 				} else if (result.path) {
 					await window.electronAPI.setCurrentVideoPath(result.path);
 				}
+				window.electronAPI.markStopStage?.("session-set");
 
 				await window.electronAPI.switchToEditor({ compactReview: true });
+				window.electronAPI.markStopStage?.("editor-switched");
 				return true;
 			} catch (error) {
 				console.error("Error saving native macOS recording:", error);

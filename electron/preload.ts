@@ -380,9 +380,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("native-mac-recording-error", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-error", listener);
 	},
-	stopNativeMacRecording: (discard?: boolean) => {
-		return ipcRenderer.invoke("stop-native-mac-recording", discard);
+	stopNativeMacRecording: (discard?: boolean, clickedAtMs?: number) => {
+		return ipcRenderer.invoke("stop-native-mac-recording", discard, clickedAtMs);
 	},
+	markStopStage: (stage: string) => ipcRenderer.send("mark-stop-stage", stage),
 	attachNativeMacWebcamRecording: (payload: {
 		screenVideoPath: string;
 		recordingId: number;

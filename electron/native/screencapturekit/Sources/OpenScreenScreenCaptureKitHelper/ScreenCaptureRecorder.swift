@@ -146,6 +146,25 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		started = true
 	}
 
+	/// The camera session and the screen stream shut down independently.
+	private func stopSourcesForFinalization() async {
+		async let cameraStopped: Void = stopCameraForFinalization()
+		do {
+			if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) { try await stream?.stopCapture() }
+		} catch {
+			emit([
+				"event": "warning",
+				"code": "stop-capture-failed",
+				"message": "\(error)",
+			])
+		}
+		await cameraStopped
+	}
+
+	private func stopCameraForFinalization() async {
+		await cameraCapture?.stop()
+	}
+
 	private func endRecordingActivity() {
 		let activity = stateQueue.sync {
 			let previous = recordingActivity
@@ -281,17 +300,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		endRecordingActivity()
 		defer { finalizationActivity.end() }
 
-		do {
-			if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) { try await stream?.stopCapture() }
-		} catch {
-			emit([
-				"event": "warning",
-				"code": "stop-capture-failed",
-				"message": "\(error)",
-			])
-		}
-
-		await cameraCapture?.stop()
+		await stopSourcesForFinalization()
 		var finalClipWarning: [String: String]?
 		do {
 			let finalizeStartedAt = Date()

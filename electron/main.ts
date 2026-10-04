@@ -742,13 +742,7 @@ function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
 	}
 	const previousWindow = mainWindow;
 	const nextEditorWindow = createEditorWindow({}, { compactBounds });
-	editorWindow = nextEditorWindow;
-	if (compactBounds) compactReviewWindows.add(nextEditorWindow);
-	nextEditorWindow.on("maximize", () => setReviewWindowCompact(nextEditorWindow, false));
-	nextEditorWindow.on("enter-full-screen", () => setReviewWindowCompact(nextEditorWindow, false));
-	nextEditorWindow.webContents.once("did-finish-load", () => {
-		readyEditorWindows.add(nextEditorWindow);
-	});
+	adoptEditorWindow(nextEditorWindow, Boolean(compactBounds));
 	workspaceTransition = { target: "editor", window: nextEditorWindow };
 	mainWindow = nextEditorWindow;
 	editorHasUnsavedChanges = false;
@@ -761,6 +755,39 @@ function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
 		isForceClosing = true;
 		closeWithoutAnimation(previousWindow);
 		isForceClosing = false;
+	});
+}
+
+/**
+ * Loads the review hidden while the first take records, so Stop shows a warm
+ * window instead of building one. It loads no project until Electron shows it.
+ */
+function prewarmReviewWindow() {
+	if ((editorWindow && !editorWindow.isDestroyed()) || workspaceTransition) return;
+	const compactBounds = compactReviewBoundsNear(mainWindow);
+	const win = createEditorWindow({ prewarm: "1" }, { compactBounds, hidden: true });
+	adoptEditorWindow(win, true);
+}
+
+let reviewPrewarmTimer: NodeJS.Timeout | null = null;
+function scheduleReviewPrewarm(recording: boolean) {
+	if (reviewPrewarmTimer) clearTimeout(reviewPrewarmTimer);
+	reviewPrewarmTimer = null;
+	if (!recording) return;
+	// Let the capture start settle before loading a renderer next to it.
+	reviewPrewarmTimer = setTimeout(() => {
+		reviewPrewarmTimer = null;
+		if (isRecording) prewarmReviewWindow();
+	}, 2_000);
+}
+
+function adoptEditorWindow(nextEditorWindow: BrowserWindow, compact: boolean) {
+	editorWindow = nextEditorWindow;
+	if (compact) compactReviewWindows.add(nextEditorWindow);
+	nextEditorWindow.on("maximize", () => setReviewWindowCompact(nextEditorWindow, false));
+	nextEditorWindow.on("enter-full-screen", () => setReviewWindowCompact(nextEditorWindow, false));
+	nextEditorWindow.webContents.once("did-finish-load", () => {
+		readyEditorWindows.add(nextEditorWindow);
 	});
 	nextEditorWindow.once("closed", () => {
 		if (workspaceTransition?.window === nextEditorWindow) workspaceTransition = null;
@@ -1071,6 +1098,7 @@ appReady?.then(async () => {
 		(recording: boolean, sourceName: string) => {
 			selectedSourceName = sourceName;
 			isRecording = recording;
+			scheduleReviewPrewarm(recording);
 			if (!tray) createTray();
 			updateTrayMenu(recording);
 			if (!recording) {

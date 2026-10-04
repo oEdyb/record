@@ -705,6 +705,23 @@ let lastPickerSources: Array<{
 let activeStartTimeline: RecordStartTimeline | null = null;
 const recordStartTimingFile = () =>
 	path.join(app.getPath("userData"), "diagnostics", "record-start-timing.jsonl");
+/** Collects the Stop steps until the review shows its first frame. */
+let activeStopTimeline: RecordStartTimeline | null = null;
+let activeStopTimelineTimer: NodeJS.Timeout | null = null;
+const recordStopTimingFile = () =>
+	path.join(app.getPath("userData"), "diagnostics", "record-stop-timing.jsonl");
+function finishStopTimeline(success: boolean) {
+	const timeline = activeStopTimeline;
+	if (!timeline) return;
+	activeStopTimeline = null;
+	if (activeStopTimelineTimer) clearTimeout(activeStopTimelineTimer);
+	activeStopTimelineTimer = null;
+	void appendRecordStartTiming(recordStopTimingFile(), {
+		recordedAt: new Date().toISOString(),
+		success,
+		steps: timeline.steps(),
+	}).catch((error) => console.warn("[capture-mac] could not log stop timing:", error));
+}
 let selectedDesktopSource: DesktopCapturerSource | null = null;
 let lastEnumeratedSources = new Map<string, DesktopCapturerSource>();
 let currentProjectPath: string | null = null;
@@ -3078,7 +3095,9 @@ export function registerIpcHandlers(
 				onFatalError,
 				onOriginalStarted,
 				onEvent: (name) => {
-					if (name !== "capture-timing") activeStartTimeline?.mark(`helper:${name}`);
+					if (name === "capture-timing") return;
+					activeStartTimeline?.mark(`helper:${name}`);
+					activeStopTimeline?.mark(`helper:${name}`);
 				},
 			});
 		},
@@ -3094,6 +3113,7 @@ export function registerIpcHandlers(
 				requestMicrophoneAccess: () => systemPreferences.askForMediaAccess("microphone"),
 			}),
 		onStartStage: (stage) => activeStartTimeline?.mark(stage),
+		onStopStage: (stage) => activeStopTimeline?.mark(stage),
 		startCursor: startCursorRecording,
 		stopCursor: stopCursorRecording,
 		clearCursor: () => {
@@ -3473,19 +3493,38 @@ export function registerIpcHandlers(
 		}
 	});
 
-	ipcMain.handle("stop-native-mac-recording", async (_, discard?: boolean) => {
-		const result = await invokeNativeMac(() => getNativeMacRecordingService().stop(discard));
-		if ("telemetry" in result && result.telemetry) {
-			recordNativeMacCaptureTelemetry(result.telemetry);
-		}
-		if ("success" in result && result.success) {
-			finishCaptureWorkload(discard ? "discarded" : "succeeded");
-			if (!discard) markSuccessfulRecording();
-		} else {
-			finishCaptureWorkload("failed", activeCaptureFailure ?? "capture-stop-failed");
-		}
-		return result;
+	ipcMain.on("mark-stop-stage", (_, stage: unknown) => {
+		if (typeof stage !== "string") return;
+		activeStopTimeline?.mark(stage.slice(0, 64));
+		if (stage === "review-first-frame") finishStopTimeline(true);
 	});
+
+	ipcMain.handle(
+		"stop-native-mac-recording",
+		async (_, discard?: boolean, clickedAtMs?: unknown) => {
+			finishStopTimeline(false);
+			const timeline = new RecordStartTimeline(
+				Date.now,
+				typeof clickedAtMs === "number" ? [{ stage: "click", atMs: clickedAtMs }] : [],
+			);
+			timeline.mark("ipc-received");
+			activeStopTimeline = timeline;
+			activeStopTimelineTimer = setTimeout(() => finishStopTimeline(false), 15_000);
+			const result = await invokeNativeMac(() => getNativeMacRecordingService().stop(discard));
+			timeline.mark("stop-returned");
+			if (discard || !("success" in result && result.success)) finishStopTimeline(false);
+			if ("telemetry" in result && result.telemetry) {
+				recordNativeMacCaptureTelemetry(result.telemetry);
+			}
+			if ("success" in result && result.success) {
+				finishCaptureWorkload(discard ? "discarded" : "succeeded");
+				if (!discard) markSuccessfulRecording();
+			} else {
+				finishCaptureWorkload("failed", activeCaptureFailure ?? "capture-stop-failed");
+			}
+			return result;
+		},
+	);
 
 	// On-disk write streams for in-progress recordings, keyed by output file name.
 	// Chunks append as they arrive so the renderer never buffers the full video (#616).
