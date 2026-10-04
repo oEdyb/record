@@ -60,6 +60,8 @@ interface Window {
 			callback: (phase: import("../src/native/contracts").ExportTransactionPhase) => void,
 		) => () => void;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
+		/** The last picker-sized source list, empty until one has been read. */
+		getCachedSources?: () => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: (options?: { compactReview?: boolean }) => Promise<void>;
 		expandReviewWindow: () => Promise<{ success: boolean }>;
 		isReviewWindowCompact: () => Promise<boolean>;

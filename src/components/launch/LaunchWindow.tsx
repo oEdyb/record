@@ -52,7 +52,7 @@ import {
 } from "./hudGeometry";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
-import { SourcePicker, type SourcePickerKind } from "./SourceSelector";
+import { prefetchPickerSources, SourcePicker, type SourcePickerKind } from "./SourceSelector";
 import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
@@ -1467,6 +1467,7 @@ export function LaunchWindow() {
 									expanded={isSourcePanelOpen}
 									disabled={controlsLocked}
 									onClick={toggleSourcePanel}
+									onIntent={isLinuxHud ? undefined : prefetchPickerSources}
 								/>
 							)}
 							<HudSystemAudioButton

@@ -309,6 +309,8 @@ click chooses and closes; Escape or a click outside closes without a change. It 
 tab of the current source and marks it. If macOS screen access is not granted yet, and always on
 Linux, the standalone picker window opens instead, because that path asks for access and lets
 the main process decide who owns the choice.
+The panel opens on the last screens and windows it read and swaps in fresh thumbnails when
+they arrive; pointing at the source chip starts that read early (Olle, 2026-10-04).
 
 Setup floats above the idle pill at the same 424 px width, laid out like the approved prototype
 (Olle, 2026-10-04). Top: a Display / Window choice with a sliding thumb; Display picks the main

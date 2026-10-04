@@ -13,6 +13,41 @@ interface DesktopSource {
 	appIcon: string | null;
 }
 
+const PICKER_SOURCE_OPTIONS: Electron.SourcesOptions = {
+	types: ["screen", "window"],
+	thumbnailSize: { width: 320, height: 180 },
+	fetchWindowIcons: true,
+};
+
+function toDesktopSources(rawSources: ProcessedDesktopSource[]): DesktopSource[] {
+	return rawSources.map((source) => ({
+		id: source.id,
+		name:
+			source.id.startsWith("window:") && source.name.includes(" — ")
+				? source.name.split(" — ")[1] || source.name
+				: source.name,
+		thumbnail: source.thumbnail || null,
+		display_id: source.display_id,
+		appIcon: source.appIcon,
+	}));
+}
+
+let pickerPrefetch: Promise<unknown> | null = null;
+
+/**
+ * Starts reading screens and windows before the picker opens, such as when the
+ * pointer reaches the source chip. Main keeps the result for the picker.
+ */
+export function prefetchPickerSources() {
+	if (pickerPrefetch || !window.electronAPI?.getSources) return;
+	pickerPrefetch = window.electronAPI
+		.getSources(PICKER_SOURCE_OPTIONS)
+		.catch(() => undefined)
+		.finally(() => {
+			pickerPrefetch = null;
+		});
+}
+
 /** The standalone picker window, used when the recorder has to ask for screen access first. */
 export function SourceSelector() {
 	return <SourcePicker variant="window" onClose={() => window.close()} />;
@@ -52,35 +87,35 @@ export function SourcePicker({
 	const [loadFailed, setLoadFailed] = useState(false);
 
 	const fetchSources = useCallback(async () => {
-		setLoading(true);
 		setLoadFailed(false);
-		try {
-			const rawSources = await window.electronAPI.getSources({
-				types: ["screen", "window"],
-				thumbnailSize: { width: 320, height: 180 },
-				fetchWindowIcons: true,
-			});
-			const mapped: DesktopSource[] = rawSources.map((source) => ({
-				id: source.id,
-				name:
-					source.id.startsWith("window:") && source.name.includes(" — ")
-						? source.name.split(" — ")[1] || source.name
-						: source.name,
-				thumbnail: source.thumbnail || null,
-				display_id: source.display_id,
-				appIcon: source.appIcon,
-			}));
+		const showSources = async (mapped: DesktopSource[]) => {
 			setSources(mapped);
 			const chosen = await window.electronAPI.getSelectedSource?.().catch(() => null);
 			setSelectedSource((current) => {
 				const id = current?.id ?? chosen?.id;
 				return mapped.find((source) => source.id === id) ?? null;
 			});
+		};
+		// Last time's list shows at once; fresh thumbnails replace it when they arrive.
+		const cached = await window.electronAPI.getCachedSources?.().catch(() => null);
+		const hasCached = Boolean(cached && cached.length > 0);
+		if (cached && hasCached) {
+			await showSources(toDesktopSources(cached));
+			setLoading(false);
+		} else {
+			setLoading(true);
+		}
+		try {
+			await showSources(
+				toDesktopSources(await window.electronAPI.getSources(PICKER_SOURCE_OPTIONS)),
+			);
 		} catch (error) {
 			console.error("Error loading sources:", error);
-			setSources([]);
-			setSelectedSource(null);
-			setLoadFailed(true);
+			if (!hasCached) {
+				setSources([]);
+				setSelectedSource(null);
+				setLoadFailed(true);
+			}
 		} finally {
 			setLoading(false);
 		}

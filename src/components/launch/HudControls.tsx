@@ -76,16 +76,20 @@ export const HudSourceChip = memo(function HudSourceChip({
 	expanded = false,
 	disabled,
 	onClick,
+	onIntent,
 }: {
 	label: string;
 	kind?: "display" | "window";
 	expanded?: boolean;
 	disabled: boolean;
 	onClick: () => void;
+	/** The pointer reached the chip: a click is likely, so start loading sources. */
+	onIntent?: () => void;
 }) {
 	return (
 		<button
 			type="button"
+			onPointerEnter={onIntent}
 			data-testid="launch-source-selector-button"
 			data-hud-popover-trigger="true"
 			aria-expanded={expanded}

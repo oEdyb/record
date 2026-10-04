@@ -177,6 +177,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSources: async (opts: Electron.SourcesOptions) => {
 		return await ipcRenderer.invoke("get-sources", opts);
 	},
+	getCachedSources: () => ipcRenderer.invoke("get-cached-sources"),
 	switchToEditor: (options?: { compactReview?: boolean }) => {
 		return ipcRenderer.invoke("switch-to-editor", options);
 	},

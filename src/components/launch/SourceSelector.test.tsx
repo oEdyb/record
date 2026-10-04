@@ -148,6 +148,36 @@ describe("SourceSelector", () => {
 		expect(screen.queryByText("Entire Screen")).not.toBeInTheDocument();
 	});
 
+	it("opens on the last list at once and swaps in fresh sources when they arrive", async () => {
+		const screenSource = {
+			id: "screen:1:0",
+			name: "Entire Screen",
+			thumbnail: null,
+			display_id: "1",
+			appIcon: null,
+		};
+		let finishFresh: (sources: (typeof screenSource)[]) => void = () => undefined;
+		window.electronAPI = {
+			...window.electronAPI,
+			getCachedSources: vi.fn().mockResolvedValue([{ ...screenSource, name: "Old Screen" }]),
+			getSources: vi.fn(
+				() =>
+					new Promise<(typeof screenSource)[]>((resolve) => {
+						finishFresh = resolve;
+					}),
+			),
+		} as typeof window.electronAPI;
+
+		render(<SourcePicker variant="panel" onClose={vi.fn()} />);
+
+		expect(await screen.findByText("Old Screen")).toBeInTheDocument();
+		expect(screen.queryByText("Loading sources...")).not.toBeInTheDocument();
+
+		finishFresh([screenSource]);
+		expect(await screen.findByText("Entire Screen")).toBeInTheDocument();
+		expect(screen.queryByText("Old Screen")).not.toBeInTheDocument();
+	});
+
 	it("keeps the old choice and says so when switching fails", async () => {
 		const toastError = vi.mocked(toast.error);
 		window.electronAPI = {

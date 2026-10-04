@@ -692,6 +692,14 @@ type AttachNativeMacClipWebcamsInput = {
 };
 
 let selectedSource: SelectedSource | null = null;
+/** The last screens and windows read at picker thumbnail size. */
+let lastPickerSources: Array<{
+	id: string;
+	name: string;
+	display_id: string;
+	thumbnail: string | null;
+	appIcon: string | null;
+}> = [];
 /** Collects the start steps of the recording being started, if any. */
 let activeStartTimeline: RecordStartTimeline | null = null;
 const recordStartTimingFile = () =>
@@ -2099,14 +2107,20 @@ export function registerIpcHandlers(
 	ipcMain.handle("get-sources", async (_, opts) => {
 		const sources = await desktopCapturer.getSources(opts);
 		lastEnumeratedSources = new Map(sources.map((source) => [source.id, source]));
-		return sources.map((source) => ({
+		const processed = sources.map((source) => ({
 			id: source.id,
 			name: source.name,
 			display_id: source.display_id,
 			thumbnail: source.thumbnail.isEmpty() ? null : source.thumbnail.toDataURL(),
 			appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
 		}));
+		// Only a picker-sized read is worth reopening with; permission probes ask for 1x1.
+		if ((opts?.thumbnailSize?.width ?? 0) >= 160) lastPickerSources = processed;
+		return processed;
 	});
+
+	// The picker opens on the last list at once and refreshes it in the background.
+	ipcMain.handle("get-cached-sources", () => lastPickerSources);
 
 	ipcMain.handle("select-source", async (_, source: SelectedSource) =>
 		serializeRecordingSetup(async () => {
