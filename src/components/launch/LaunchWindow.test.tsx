@@ -255,6 +255,8 @@ function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSo
 		...window.electronAPI,
 		getSelectedSource,
 		openSourceSelector: vi.fn(async () => ({ opened: true })),
+		getSources: vi.fn(async () => []),
+		selectSource: vi.fn(async (source: ProcessedDesktopSource) => source),
 		requestScreenAccess: vi.fn(async () => ({
 			success: true,
 			granted: true,
@@ -433,6 +435,49 @@ describe("LaunchWindow record button", () => {
 
 		expect(await screen.findByTestId("hud-source-panel")).toBeInTheDocument();
 		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("records once a source is chosen in the panel after Record", async () => {
+		window.electronAPI.getSources = vi
+			.fn()
+			.mockResolvedValueOnce([])
+			.mockResolvedValue([displayOneSource]);
+		window.electronAPI.selectSource = vi.fn(async (source) => {
+			selectedSourceChangedListeners.forEach((listener) => listener(source));
+			return source;
+		});
+		renderLaunchWindow();
+		await waitForSourceSelectionSubscription();
+
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+		fireEvent.click((await screen.findAllByTestId("source-selector-card"))[0]);
+
+		await waitFor(() => expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(screen.queryByTestId("hud-source-panel")).not.toBeInTheDocument());
+	});
+
+	it("drops the pending Record when the source panel is closed through Setup", async () => {
+		window.electronAPI.getSources = vi
+			.fn()
+			.mockResolvedValueOnce([])
+			.mockResolvedValue([displayOneSource]);
+		window.electronAPI.selectSource = vi.fn(async (source) => {
+			selectedSourceChangedListeners.forEach((listener) => listener(source));
+			return source;
+		});
+		renderLaunchWindow();
+		await waitForSourceSelectionSubscription();
+
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+		await screen.findByTestId("hud-source-panel");
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+
+		fireEvent.click(screen.getByTestId("launch-source-selector-button"));
+		fireEvent.click((await screen.findAllByTestId("source-selector-card"))[0]);
+
+		await waitFor(() => expect(window.electronAPI.selectSource).toHaveBeenCalled());
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 	});
 

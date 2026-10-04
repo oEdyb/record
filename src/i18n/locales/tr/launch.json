@@ -72,7 +72,8 @@
 		"emptyTitle": "Ekran veya pencere bulunamadı",
 		"emptyDescription": "Ekran kaydı iznini az önce verdiyseniz bu seçiciyi yeniden yükleyin. macOS'ta Klippt'i yeniden açmanız gerekebilir.",
 		"loadFailedDescription": "Klippt yakalama kaynaklarını yükleyemedi. Bu seçiciyi yeniden yükleyip tekrar deneyin.",
-		"defaultSourceName": "Ekran"
+		"defaultSourceName": "Ekran",
+		"selectFailed": "Bu kaynağa geçilemedi. Tekrar deneyin."
 	},
 	"recording": {
 		"starting": "Starting recording…",

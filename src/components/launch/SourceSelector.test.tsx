@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SourceSelector } from "./SourceSelector";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 vi.mock("@/contexts/I18nContext", () => ({
 	useScopedT: (namespace: string) => {
@@ -123,5 +126,30 @@ describe("SourceSelector", () => {
 		fireEvent.click(await screen.findByText("Editor"));
 		await waitFor(() => expect(selectSource).toHaveBeenCalledWith(windowSource));
 		expect(screen.queryByTestId("source-selector-share-button")).not.toBeInTheDocument();
+	});
+
+	it("keeps the old choice and says so when switching fails", async () => {
+		const toastError = vi.mocked(toast.error);
+		window.electronAPI = {
+			...window.electronAPI,
+			getSources: vi.fn().mockResolvedValue([
+				{
+					id: "screen:1:0",
+					name: "Entire Screen",
+					thumbnail: null,
+					display_id: "1",
+					appIcon: null,
+				},
+			]),
+			selectSource: vi.fn().mockRejectedValue(new Error("save failed")),
+		} as typeof window.electronAPI;
+
+		render(<SourceSelector />);
+		const card = (await screen.findByText("Entire Screen")).closest("button");
+		if (!card) throw new Error("card missing");
+		fireEvent.click(card);
+
+		await waitFor(() => expect(toastError).toHaveBeenCalledWith("sourceSelector.selectFailed"));
+		expect(card).toHaveAttribute("aria-pressed", "false");
 	});
 });

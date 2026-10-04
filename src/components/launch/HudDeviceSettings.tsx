@@ -257,7 +257,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	// on a machine with no webcam fires a getUserMedia that can only fail.
 	const hasCamera = cameraDevices.length > 0 && !cameraError && !cameraLoading;
 	const { level } = useAudioLevelMeter({
-		enabled: micDevices.length > 0 && microphoneEnabled && !controlsLocked,
+		enabled: micDevices.length > 0 && microphoneEnabled && !controlsLocked && !closing,
 		deviceId: activeMicId,
 	});
 	const {
@@ -269,7 +269,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		// When the recorder owns the camera, reuse that feed. If camera capture is
 		// off, this panel can own one temporary verification stream.
 		// Never open a second camera client during a take.
-		enabled: hasCamera && (cameraStream !== null || (!cameraEnabled && !controlsLocked)),
+		enabled:
+			!closing && hasCamera && (cameraStream !== null || (!cameraEnabled && !controlsLocked)),
 		deviceId: activeCameraId,
 		nativeFormat: recordingQuality === "high",
 		format: webcamFormat,

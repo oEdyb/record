@@ -72,7 +72,8 @@
 		"emptyTitle": "未找到屏幕或窗口",
 		"emptyDescription": "如果您刚刚授予了屏幕录制权限，请重新加载此选择器。在 macOS 上，您可能需要重新打开 Klippt。",
 		"loadFailedDescription": "Klippt 无法加载采集源。请重新加载此选择器并重试。",
-		"defaultSourceName": "屏幕"
+		"defaultSourceName": "屏幕",
+		"selectFailed": "无法切换到该来源，请重试。"
 	},
 	"recording": {
 		"starting": "Starting recording…",

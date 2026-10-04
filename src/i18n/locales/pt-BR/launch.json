@@ -72,7 +72,8 @@
 		"emptyTitle": "Nenhuma tela ou janela encontrada",
 		"emptyDescription": "Se você acabou de conceder a permissão de gravação de tela, recarregue este seletor. No macOS, pode ser necessário reabrir o Klippt.",
 		"loadFailedDescription": "O Klippt não conseguiu carregar as fontes de captura. Recarregue este seletor e tente novamente.",
-		"defaultSourceName": "Tela"
+		"defaultSourceName": "Tela",
+		"selectFailed": "Não foi possível mudar para essa fonte. Tente novamente."
 	},
 	"recording": {
 		"starting": "Starting recording…",

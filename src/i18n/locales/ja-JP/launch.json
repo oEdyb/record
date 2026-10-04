@@ -72,7 +72,8 @@
 		"emptyTitle": "画面またはウィンドウが見つかりません",
 		"emptyDescription": "画面収録の権限を許可したばかりの場合は、このピッカーを再読み込みしてください。macOSではKlipptの再起動が必要な場合があります。",
 		"loadFailedDescription": "Klipptはキャプチャソースを読み込めませんでした。このピッカーを再読み込みしてもう一度お試しください。",
-		"defaultSourceName": "画面"
+		"defaultSourceName": "画面",
+		"selectFailed": "そのソースに切り替えられませんでした。もう一度お試しください。"
 	},
 	"recording": {
 		"starting": "Starting recording…",

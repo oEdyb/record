@@ -72,7 +72,8 @@
 		"emptyTitle": "No se encontraron pantallas ni ventanas",
 		"emptyDescription": "Si acabas de conceder permiso de grabación de pantalla, recarga este selector. En macOS puede que debas volver a abrir Klippt.",
 		"loadFailedDescription": "Klippt no pudo cargar las fuentes de captura. Recarga este selector e inténtalo de nuevo.",
-		"defaultSourceName": "Pantalla"
+		"defaultSourceName": "Pantalla",
+		"selectFailed": "No se pudo cambiar a esa fuente. Inténtalo de nuevo."
 	},
 	"recording": {
 		"starting": "Starting recording…",

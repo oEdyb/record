@@ -68,7 +68,8 @@
 		"emptyTitle": "Không tìm thấy màn hình hoặc cửa sổ nào",
 		"emptyDescription": "Nếu bạn vừa cấp quyền ghi màn hình, hãy tải lại bộ chọn này. Trên macOS, bạn có thể cần mở lại Klippt.",
 		"loadFailedDescription": "Klippt không thể tải các nguồn ghi hình. Hãy tải lại bộ chọn này và thử lại.",
-		"defaultSourceName": "Màn hình"
+		"defaultSourceName": "Màn hình",
+		"selectFailed": "Không thể chuyển sang nguồn đó. Hãy thử lại."
 	},
 	"recording": {
 		"starting": "Starting recording…",

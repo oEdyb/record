@@ -72,7 +72,8 @@
 		"emptyTitle": "No screens or windows found",
 		"emptyDescription": "If you just granted screen recording permission, reload this picker. On macOS you may need to reopen Klippt.",
 		"loadFailedDescription": "Klippt could not load capture sources. Reload this picker and try again.",
-		"defaultSourceName": "Screen"
+		"defaultSourceName": "Screen",
+		"selectFailed": "Could not switch to that source. Try again."
 	},
 	"recording": {
 		"starting": "Starting recording…",

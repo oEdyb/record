@@ -1,5 +1,6 @@
 import { AppWindow, Monitor, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { Button } from "../ui/button";
 import styles from "./SourceSelector.module.css";
@@ -89,10 +90,22 @@ export function SourcePicker({
 	const hasNoSources = !loading && sources.length === 0;
 
 	// One click chooses; the main process closes the picker once the choice is saved.
+	const [choosing, setChoosing] = useState(false);
 	const handleSourceSelect = async (source: DesktopSource) => {
+		if (choosing) return;
+		const previous = selectedSource;
+		setChoosing(true);
 		setSelectedSource(source);
-		await window.electronAPI.selectSource(source);
-		onChosen?.();
+		try {
+			await window.electronAPI.selectSource(source);
+			onChosen?.();
+		} catch (error) {
+			console.error("Error selecting source:", error);
+			setSelectedSource(previous);
+			toast.error(t("sourceSelector.selectFailed"));
+		} finally {
+			setChoosing(false);
+		}
 	};
 	const [kind, setKind] = useState<"screens" | "windows" | null>(null);
 	const activeKind =
@@ -170,6 +183,7 @@ export function SourcePicker({
 				data-testid="source-selector-card"
 				data-source-kind={sourceKind}
 				aria-pressed={isSelected}
+				disabled={choosing}
 				className={styles.sourceCard}
 				onClick={() => void handleSourceSelect(source)}
 			>

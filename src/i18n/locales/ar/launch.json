@@ -68,7 +68,8 @@
 		"emptyTitle": "لم يتم العثور على شاشات أو نوافذ",
 		"emptyDescription": "إذا كنت قد منحت للتو إذن تسجيل الشاشة، أعد تحميل هذه النافذة. قد تحتاج على macOS إلى إعادة فتح Klippt.",
 		"loadFailedDescription": "تعذّر على Klippt تحميل مصادر الالتقاط. أعد تحميل هذه النافذة وحاول مرة أخرى.",
-		"defaultSourceName": "الشاشة"
+		"defaultSourceName": "الشاشة",
+		"selectFailed": "تعذّر التبديل إلى هذا المصدر. حاول مرة أخرى."
 	},
 	"recording": {
 		"starting": "Starting recording…",

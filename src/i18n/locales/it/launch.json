@@ -72,7 +72,8 @@
 		"emptyTitle": "Nessuno schermo o finestra trovati",
 		"emptyDescription": "Se hai appena concesso il permesso di registrazione dello schermo, ricarica questo selettore. Su macOS potrebbe essere necessario riaprire Klippt.",
 		"loadFailedDescription": "Klippt non è riuscito a caricare le sorgenti di cattura. Ricarica questo selettore e riprova.",
-		"defaultSourceName": "Schermo"
+		"defaultSourceName": "Schermo",
+		"selectFailed": "Impossibile passare a questa sorgente. Riprova."
 	},
 	"recording": {
 		"starting": "Starting recording…",

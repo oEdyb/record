@@ -503,6 +503,9 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	win.on("show", () => sendHudVisible(true));
 
 	win.webContents.on("did-finish-load", () => {
+		// The page may load after the window was shown or minimized, or in a
+		// headless run where it is never shown; send where it actually stands.
+		sendHudVisible(win.isVisible() && !win.isMinimized());
 		hudRendererReady = true;
 		cameraPreviewPortsConnected = false;
 		connectCameraPreviewRenderers();

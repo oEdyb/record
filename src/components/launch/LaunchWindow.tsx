@@ -1,5 +1,6 @@
 import { Clapperboard, NotepadText, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
 import { requireEntitlement } from "@/lib/entitlements/store";
@@ -199,6 +200,8 @@ export function LaunchWindow() {
 	// be applied atomically before the next clip starts.
 	const controlsLocked =
 		starting || saving || clipFinalizing || (recording && !canReconfigureWhilePaused);
+	const controlsLockedRef = useRef(controlsLocked);
+	controlsLockedRef.current = controlsLocked;
 
 	useEffect(() => {
 		if (!canPeek) setIsPeekOpen(false);
@@ -665,7 +668,14 @@ export function LaunchWindow() {
 		// Linux asks the main process every time: it is the authority on whether the
 		// portal owns the choice, which the renderer may not know yet.
 		if (window.electronAPI && !portalOwnsSource && window.electronAPI.getPlatform?.() !== "linux") {
+			if (!requireEntitlement("record")) {
+				return { opened: false, reason: "entitlement-required" };
+			}
 			const access = await window.electronAPI.requestScreenAccess?.().catch(() => null);
+			// Capture may have started while macOS answered; the source is fixed then.
+			if (controlsLockedRef.current) {
+				return { opened: false, reason: "controls-locked" };
+			}
 			if (access?.granted) {
 				setIsDeviceSettingsOpen(false);
 				setIsPeekOpen(false);
@@ -685,8 +695,24 @@ export function LaunchWindow() {
 
 	const closeSourcePanel = useCallback(() => {
 		setIsSourcePanelOpen(false);
-		recordAfterSourceSelectionRef.current = false;
 	}, []);
+
+	// However the panel closes (its X, a click outside, Setup, Replay, or after a
+	// choice), a pending "record once a source is chosen" ends with it. A choice
+	// has already been delivered by then: main announces the new source before
+	// the select call returns.
+	const sourcePanelWasOpenRef = useRef(false);
+	useEffect(() => {
+		if (sourcePanelWasOpenRef.current && !isSourcePanelOpen) {
+			recordAfterSourceSelectionRef.current = false;
+		}
+		sourcePanelWasOpenRef.current = isSourcePanelOpen;
+	}, [isSourcePanelOpen]);
+
+	// The source is fixed while capture runs, so the panel closes when it locks.
+	useEffect(() => {
+		if (controlsLocked) setIsSourcePanelOpen(false);
+	}, [controlsLocked]);
 
 	const toggleSourcePanel = useCallback(() => {
 		if (isSourcePanelOpen) {
@@ -1234,8 +1260,9 @@ export function LaunchWindow() {
 			applySelectedSource(await window.electronAPI.selectSource(display));
 		} catch (error) {
 			console.warn("Failed to select the display:", error);
+			toast.error(t("sourceSelector.selectFailed"));
 		}
-	}, [applySelectedSource, openSourceSelector, selectedSourceKind]);
+	}, [applySelectedSource, openSourceSelector, selectedSourceKind, t]);
 
 	const setupExtras = useMemo<HudSetupExtras>(
 		() => ({
