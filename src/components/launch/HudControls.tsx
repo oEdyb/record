@@ -1,10 +1,10 @@
-import { ChevronUp, Delete, SlidersHorizontal } from "lucide-react";
+import { AppWindow, ChevronDown, ChevronUp, Delete, SlidersHorizontal } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { KlipptMark } from "../brand/KlipptMark";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
-import { CameraIcon, getIcon, MicIcon, VolumeIcon } from "./HudIcons";
+import { CameraIcon, getIcon, MicIcon, SourceIcon, VolumeIcon } from "./HudIcons";
 import styles from "./LaunchWindow.module.css";
 
 // Every control below is a `memo` boundary on purpose. The HUD's root re-renders
@@ -71,10 +71,12 @@ export function HudBrandMark() {
 
 export const HudSourceChip = memo(function HudSourceChip({
 	label,
+	kind = "display",
 	disabled,
 	onClick,
 }: {
 	label: string;
+	kind?: "display" | "window";
 	disabled: boolean;
 	onClick: () => void;
 }) {
@@ -88,7 +90,13 @@ export const HudSourceChip = memo(function HudSourceChip({
 			title={label}
 			aria-label={label}
 		>
+			{kind === "window" ? (
+				<AppWindow size={16} strokeWidth={1.75} className={styles.hudSourceChipIcon} aria-hidden />
+			) : (
+				<SourceIcon className={styles.hudSourceChipIcon} />
+			)}
 			<span className="min-w-0 flex-1 truncate text-left">{label}</span>
+			<ChevronDown size={14} className={styles.hudSourceChipChevron} aria-hidden />
 		</button>
 	);
 });
@@ -123,24 +131,34 @@ export const HudMicButton = memo(function HudMicButton({
 	enabled,
 	disabled,
 	label,
+	level,
 	onClick,
 }: {
 	enabled: boolean;
 	disabled: boolean;
 	label: string;
+	/** Live input level, 0 to 100. Omitted when the mic is not being listened to. */
+	level?: number;
 	onClick: () => void;
 }) {
 	return (
 		<button
 			type="button"
 			data-testid="launch-microphone-button"
-			className={enabled ? `${hudIconBtnBase} text-[#f5f7fa]` : hudIconBtnClasses}
+			className={`relative ${enabled ? `${hudIconBtnBase} text-[#f5f7fa]` : hudIconBtnClasses}`}
 			aria-pressed={enabled}
 			onClick={onClick}
 			disabled={disabled}
 			title={label}
 		>
 			<MicIcon muted={!enabled} />
+			{level !== undefined ? (
+				<span
+					className={styles.hudLevel}
+					style={{ transform: `scaleX(${Math.min(1, Math.max(0, level / 100))})` }}
+					aria-hidden
+				/>
+			) : null}
 		</button>
 	);
 });
@@ -274,13 +292,13 @@ export const HudCompactRecordButton = memo(function HudCompactRecordButton({
 			<button
 				type="button"
 				data-testid="launch-record-button"
-				className={`${styles.hudPrimaryTransport} ${hudFocusClasses} ${styles.electronNoDrag}`}
+				className={`${styles.hudRecordButton} ${hudFocusClasses} ${styles.electronNoDrag}`}
 				onClick={onClick}
 				disabled={disabled}
 				title={label}
 				aria-label={accessibleLabel ?? label}
 			>
-				<span className={styles.hudRecordGlyph} aria-hidden />
+				<span className={styles.hudRecordBall} aria-hidden />
 			</button>
 		</Tooltip>
 	);

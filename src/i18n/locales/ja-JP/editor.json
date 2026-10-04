@@ -23,7 +23,9 @@
 		"recordFirst": "Record a video before saving.",
 		"originalsHint": "Keep the original screen, camera, and audio files.",
 		"preparing": "Preparing recording…",
-		"expand": "拡大"
+		"expand": "拡大",
+		"metaOne": "合計 {{duration}}、1 クリップ",
+		"metaMany": "合計 {{duration}}、{{count}} クリップ"
 	},
 	"previewQuality": {
 		"label": "プレビュー画質",

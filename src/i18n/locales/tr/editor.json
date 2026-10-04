@@ -23,7 +23,9 @@
 		"recordFirst": "Record a video before saving.",
 		"originalsHint": "Keep the original screen, camera, and audio files.",
 		"preparing": "Preparing recording…",
-		"expand": "Genişlet"
+		"expand": "Genişlet",
+		"metaOne": "Toplam {{duration}}, 1 klip",
+		"metaMany": "Toplam {{duration}}, {{count}} klip"
 	},
 	"previewQuality": {
 		"label": "Önizleme kalitesi",

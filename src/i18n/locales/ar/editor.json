@@ -23,7 +23,9 @@
 		"recordFirst": "Record a video before saving.",
 		"originalsHint": "Keep the original screen, camera, and audio files.",
 		"preparing": "Preparing recording…",
-		"expand": "توسيع"
+		"expand": "توسيع",
+		"metaOne": "{{duration}} إجمالًا، مقطع واحد",
+		"metaMany": "{{duration}} إجمالًا، {{count}} مقاطع"
 	},
 	"previewQuality": {
 		"label": "جودة المعاينة",

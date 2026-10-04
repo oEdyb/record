@@ -23,7 +23,9 @@
 		"recordFirst": "Record a video before saving.",
 		"originalsHint": "Keep the original screen, camera, and audio files.",
 		"preparing": "Preparing recording…",
-		"expand": "Ampliar"
+		"expand": "Ampliar",
+		"metaOne": "{{duration}} en total, 1 clip",
+		"metaMany": "{{duration}} en total, {{count}} clips"
 	},
 	"previewQuality": {
 		"label": "Calidad de vista previa",

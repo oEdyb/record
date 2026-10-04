@@ -261,11 +261,17 @@ a new standalone capture. It does not insert into an old project. Setup reveals 
 audio, camera and cursor setup. Closing idle setup or pressing Escape returns to review.
 Stop saves the completed clips and opens review as a compact player centred above the
 recorder's spot on the same display (Olle, 2026-10-04). The window takes the recording's own
-shape: the video is up to 960 points wide, fills the window edge to edge with no padding, and
-the window is only as tall as the video plus the header and transport. When clips have different
-resolutions, the window follows the one output frame and mixed clips letterbox inside it. It has playback, a seek bar and
-icon-sized Recordings, Settings, Original files and Record controls; Save video keeps its label.
-Expand grows it into the full review window. Opening Recordings or a project uses the full window.
+shape: the video is up to 960 points wide with no letterbox, and the window is only the video plus
+the header and a 12 px frame. When clips have different
+resolutions, the window follows the one output frame and mixed clips letterbox inside it.
+
+Review follows the approved prototype and is always dark (Olle, 2026-10-04): a 60 px header with
+the Klippt mark, the recording name and "0:28 total, 3 clips", then Record (red dot), Original
+files and Recordings as ghost pills and Save video as the one light pill. The video sits 12 px in
+from the window edges with 16 px corners, and the play bar floats over its bottom on a dark
+gradient: a round play control, clip skip, time, mute and a white scrubber with a gap at each
+clip boundary. In the small player, ghost actions show icons only; Save video keeps its label.
+Expand grows it into the full review window.
 No timeline, inspector or canvas editing handles are shown.
 
 Record switches the pill to its recording layout the moment it is pressed. Until the writer
@@ -276,8 +282,9 @@ stack. Native File menu and keyboard actions use the same recording and save flo
 must not replace an active recording HUD.
 
 The recorder is one floating pill in every state (Olle, 2026-10-04: the old wide bar is gone).
-Idle, it shows the Klippt mark (drag handle), the source name, system audio, microphone,
-camera, Setup, and a round red Record control. Recording, it shows the large round
+Idle, it shows the Klippt mark (drag handle), the source with a screen or window icon and a
+chevron, system audio, microphone (with a live level line while idle), camera, Setup, and a
+28 px red Record ball inside a thin light ring. Recording, it shows the large round
 Pause/Continue control, the total time as plain text that doubles as the drag handle, then
 Stop, Remove, Replay and Setup as flat secondary icons. Pause/Continue is primary because
 creators pause far more often than they stop. No control sits in its own pill inside the pill.

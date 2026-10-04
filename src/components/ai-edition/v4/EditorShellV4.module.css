@@ -515,24 +515,30 @@
 	);
 }
 
+/* Review: the video sits 12px in from the window edges under the header, with
+   the play bar floating over its bottom. The small player is sized so the
+   video exactly fills that frame. */
 .previewWorkspace[data-recording-only="true"] {
-	padding: var(--editor-stage-inset);
+	padding: 0 12px 12px;
 }
-/* The small review player after Stop is sized to the recording, so the video
-   fills the stage edge to edge. */
-.app[data-compact-review="true"] .previewWorkspace {
-	padding: 0;
-}
-.recordingTransport {
-	grid-row: 3;
+.reviewTransport {
+	position: absolute;
+	right: 12px;
+	bottom: 12px;
+	left: 12px;
 	display: flex;
-	align-items: center;
-	justify-content: center;
-	min-width: 0;
-	padding: 8px 18px;
-	border-top: 1px solid var(--border-soft);
+	align-items: flex-end;
+	height: 128px;
+	padding: 0 14px 12px 10px;
+	border-radius: 0 0 16px 16px;
+	background: linear-gradient(transparent, rgba(0, 0, 0, 0.55) 45%, rgba(0, 0, 0, 0.9));
+	pointer-events: none;
+	opacity: 1;
+	transition: opacity 200ms ease;
 }
-.recordingTransport > div { width: 100%; }
+.reviewTransport > * {
+	pointer-events: auto;
+}
 .recordingEmpty {
 	display: flex;
 	flex: 1;

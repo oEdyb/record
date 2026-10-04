@@ -6,6 +6,7 @@ import { requireEntitlement } from "@/lib/entitlements/store";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { nativeBridgeClient } from "@/native";
 import { formatTimePadded } from "@/utils/timeUtils";
+import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import { type CameraDevice, useCameraDevices } from "../../hooks/useCameraDevices";
 import { useCameraPreviewFrameBridge } from "../../hooks/useCameraPreviewFrameBridge";
 import { type MicrophoneDevice, useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
@@ -1239,6 +1240,19 @@ export function LaunchWindow() {
 		],
 	);
 
+	// The idle pill shows the mic's live level so a dead or wrong mic is obvious
+	// before Record. Setup runs its own meter, and capture owns the mic once a take starts.
+	const idleMicMeterOn =
+		microphoneEnabled &&
+		!pillRecording &&
+		!isDeviceSettingsOpen &&
+		!isMicDevicesLoading &&
+		micDevices.length > 0;
+	const { level: idleMicLevel } = useAudioLevelMeter({
+		enabled: idleMicMeterOn,
+		deviceId: microphoneDeviceId || selectedMicId,
+	});
+
 	const hasNotices = Boolean(systemLocaleSuggestion) || softwareEncoderFallbackNoticeVisible;
 	const previousClip = [...recordedClips].reverse().find((clip) => !clip.removed) ?? null;
 	const removePreviousLabel = t("recording.removePreviousClip");
@@ -1339,6 +1353,7 @@ export function LaunchWindow() {
 							) : (
 								<HudSourceChip
 									label={selectedSource}
+									kind={selectedSourceKind}
 									disabled={controlsLocked}
 									onClick={openSourceSelector}
 								/>
@@ -1357,6 +1372,7 @@ export function LaunchWindow() {
 								label={
 									microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")
 								}
+								level={idleMicMeterOn ? idleMicLevel : undefined}
 								onClick={toggleMicrophone}
 							/>
 							<HudCameraButton

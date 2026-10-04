@@ -13,6 +13,7 @@ import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
 import { useReviewWindowCompact } from "@/hooks/useReviewWindowCompact";
+import { applyTheme } from "@/hooks/useTheme";
 import { registerAgentTransport } from "@/lib/ai-edition/agent/agentTransport";
 import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
 import { applyPauseSuggestions } from "@/lib/ai-edition/document/pause-edits";
@@ -1630,6 +1631,10 @@ export function NewEditorShell() {
 	const showTimeline = !PRODUCT_SURFACE.recordingOnly;
 	// After Stop, review opens as a small player; it can grow into the full window.
 	const compactReview = useReviewWindowCompact(PRODUCT_SURFACE.recordingOnly);
+	// Review is part of the recorder, which is always dark.
+	useEffect(() => {
+		if (PRODUCT_SURFACE.recordingOnly) applyTheme("dark");
+	}, []);
 	useCompactReviewFit(compactReview && hasAsset, document);
 	const visibleMode = PRODUCT_SURFACE.mediaWorkspace ? mode : "edit";
 	const timelineRow = visibleMode === "media" ? "188px" : `${timelineHeightPx}px`;
@@ -1755,6 +1760,18 @@ export function NewEditorShell() {
 		() => buildTimelinePlaybackProjection(reviewSegments, clips),
 		[reviewSegments, clips],
 	);
+	const reviewMeta = useMemo(() => {
+		if (!PRODUCT_SURFACE.recordingOnly || clips.length === 0) return null;
+		const totalSec = reviewSegments.reduce(
+			(sum, segment) => sum + (segment.timelineEndSec - segment.timelineStartSec),
+			0,
+		);
+		const whole = Math.round(totalSec);
+		const duration = `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+		return clips.length === 1
+			? te("recordingReview.metaOne", { duration })
+			: te("recordingReview.metaMany", { duration, count: clips.length });
+	}, [clips.length, reviewSegments, te]);
 
 	return (
 		<div
@@ -1762,7 +1779,7 @@ export function NewEditorShell() {
 			data-compact-review={compactReview}
 			style={{
 				gridTemplateRows: PRODUCT_SURFACE.recordingOnly
-					? `auto 1fr ${hasAsset ? "64px" : "0px"}`
+					? "auto 1fr 0px"
 					: `var(--editor-topbar-h) 1fr ${showTimeline ? timelineRow : "0px"}`,
 			}}
 		>
@@ -1776,6 +1793,7 @@ export function NewEditorShell() {
 						void resumeRecordingWorkspace();
 					}}
 					title={project?.title ?? null}
+					meta={reviewMeta}
 					canSave={hasAsset}
 					preparing={recordingReviewPending || recordingReviewActionPending !== null}
 					openingRecorder={recordingReviewActionPending === "record"}
@@ -1915,7 +1933,24 @@ export function NewEditorShell() {
 										}
 									/>
 								)}
-								{hasAsset && !compactReview ? <PreviewQualityControl /> : null}
+								{hasAsset && !PRODUCT_SURFACE.recordingOnly ? <PreviewQualityControl /> : null}
+								{PRODUCT_SURFACE.recordingOnly && hasAsset ? (
+									<div className={v4.reviewTransport}>
+										<TransportBar
+											variant="overlay"
+											playing={playing}
+											overrideTimeSec={null}
+											clips={reviewSegments}
+											toDisplayTime={(sec) => rawTimeToPlaybackTime(sec, reviewProjection)}
+											onTogglePlay={togglePlay}
+											onPrevClip={handlePrevClip}
+											onNextClip={handleNextClip}
+											onSeek={(sec) =>
+												handleSeek(playbackTimeToRawTime(sec, reviewProjection, "after"))
+											}
+										/>
+									</div>
+								) : null}
 							</div>
 							{!PRODUCT_SURFACE.recordingOnly ? (
 								<FloatingInspector
@@ -1941,20 +1976,6 @@ export function NewEditorShell() {
 			</div>
 
 			{/* Timeline footer shared by the Media and Edit workspaces. */}
-			{PRODUCT_SURFACE.recordingOnly && hasAsset ? (
-				<div className={v4.recordingTransport} data-review-chrome="transport">
-					<TransportBar
-						playing={playing}
-						overrideTimeSec={null}
-						clips={reviewSegments}
-						toDisplayTime={(sec) => rawTimeToPlaybackTime(sec, reviewProjection)}
-						onTogglePlay={togglePlay}
-						onPrevClip={handlePrevClip}
-						onNextClip={handleNextClip}
-						onSeek={(sec) => handleSeek(playbackTimeToRawTime(sec, reviewProjection, "after"))}
-					/>
-				</div>
-			) : null}
 			{showTimeline ? (
 				<div
 					style={{

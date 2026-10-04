@@ -20,6 +20,8 @@ interface TransportBarProps {
 	onPrevClip: () => void;
 	onNextClip: () => void;
 	onSeek: (sec: number) => void;
+	/** "overlay" floats over the review video, with a gap at each clip boundary. */
+	variant?: "bar" | "overlay";
 }
 
 // ponytail: lives in the timeline header now (not under the preview canvas)
@@ -33,6 +35,7 @@ export const TransportBar = memo(function TransportBar({
 	onPrevClip,
 	onNextClip,
 	onSeek,
+	variant = "bar",
 }: TransportBarProps) {
 	const te = useScopedT("editor");
 	// Same reason as PlayheadOverlay (see V4Timeline.tsx): the timecode and the
@@ -55,6 +58,15 @@ export const TransportBar = memo(function TransportBar({
 	const inputMax = virtualDurationSec || 1;
 	const inputValue = Math.min(Math.max(currentTimeSec, 0), inputMax);
 	const progress = (inputValue / inputMax) * 100;
+	const clipBoundaries = (() => {
+		const lefts: number[] = [];
+		let elapsed = 0;
+		for (const clip of clips.slice(0, -1)) {
+			elapsed += clip.timelineEndSec - clip.timelineStartSec;
+			lefts.push((elapsed / inputMax) * 100);
+		}
+		return lefts;
+	})();
 
 	// ── Drag de la barre : même cadence que le drag de la timeline ──────────────────
 	//
@@ -151,7 +163,12 @@ export const TransportBar = memo(function TransportBar({
 	}, [onSeek]);
 
 	return (
-		<div className={styles.transport} role="toolbar" aria-label={te("transport.playbackControls")}>
+		<div
+			className={styles.transport}
+			data-variant={variant}
+			role="toolbar"
+			aria-label={te("transport.playbackControls")}
+		>
 			<Tooltip content={te("transport.playPauseTitle")} side="top">
 				<button
 					type="button"
@@ -222,6 +239,11 @@ export const TransportBar = memo(function TransportBar({
 						className={styles.scrubProgress}
 						style={{ width: `${progress}%` }}
 					/>
+					{variant === "overlay"
+						? clipBoundaries.map((left) => (
+								<span key={left} className={styles.scrubGap} style={{ left: `${left}%` }} />
+							))
+						: null}
 				</div>
 				<input
 					type="range"

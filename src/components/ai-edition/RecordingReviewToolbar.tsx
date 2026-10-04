@@ -1,18 +1,20 @@
 import {
-	Circle,
+	Clapperboard,
 	Download,
-	Files,
 	FolderOpen,
 	LoaderCircle,
 	Maximize2,
 	Settings,
 } from "lucide-react";
+import { KlipptMark } from "@/components/brand/KlipptMark";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { RecordingInterruption } from "@/lib/recordingSession";
 import styles from "./RecordingReviewToolbar.module.css";
 
 interface RecordingReviewToolbarProps {
 	title: string | null;
+	/** Total length and clip count, e.g. "0:28 total, 3 clips". */
+	meta?: string | null;
 	canSave: boolean;
 	readOnly: boolean;
 	busy: boolean;
@@ -45,21 +47,15 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 				aria-label={t("recordingReview.controls")}
 				aria-busy={props.preparing}
 			>
-				<button
-					type="button"
-					disabled={props.preparing || props.busy}
-					onClick={props.onRecordings}
-					aria-label={t("recordingReview.recordings")}
-					title={`${t("recordingReview.recordings")} (${modifier}O)`}
-					aria-keyshortcuts={props.isMac ? "Meta+O" : "Control+O"}
-				>
-					<FolderOpen size={16} aria-hidden="true" />
-					<span className={styles.label}>{t("recordingReview.recordings")}</span>
-					<kbd aria-hidden="true">{modifier}O</kbd>
-				</button>
-				<span className={styles.title} title={props.title ?? undefined}>
-					{props.title ?? "Klippt"}
-				</span>
+				<div className={styles.identity}>
+					<KlipptMark className={styles.mark} />
+					<div className={styles.titleBlock}>
+						<span className={styles.title} title={props.title ?? undefined}>
+							{props.title ?? "Klippt"}
+						</span>
+						{props.meta ? <span className={styles.meta}>{props.meta}</span> : null}
+					</div>
+				</div>
 				<div className={styles.actions}>
 					{props.entitlementLabel ? (
 						<button type="button" className={styles.account} onClick={props.onEntitlement}>
@@ -69,7 +65,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 					{props.onExpand ? (
 						<button
 							type="button"
-							className={styles.expand}
+							className={styles.icon}
 							onClick={props.onExpand}
 							aria-label={t("recordingReview.expand")}
 							title={t("recordingReview.expand")}
@@ -78,29 +74,19 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						</button>
 					) : null}
 					<button
-						className={styles.settings}
+						className={styles.icon}
 						type="button"
 						onClick={props.onSettings}
 						aria-label={t("recordingReview.settings")}
+						title={t("recordingReview.settings")}
 					>
 						<Settings size={16} aria-hidden="true" />
 					</button>
 					<button
 						type="button"
-						disabled={!props.canSave || props.busy || props.preparing}
-						onClick={props.onOriginals}
-						className={styles.originals}
-						aria-label={t("recordingReview.originals")}
-						title={t("recordingReview.originals")}
-					>
-						<Files size={16} aria-hidden="true" className={styles.compactIcon} />
-						<span className={styles.label}>{t("recordingReview.originals")}</span>
-					</button>
-					<button
-						type="button"
 						disabled={props.readOnly || props.busy || props.preparing}
 						onClick={props.onRecord}
-						className={styles.record}
+						className={styles.ghost}
 						aria-label={t("recordingReview.record")}
 						aria-busy={props.openingRecorder}
 						title={`${t("recordingReview.record")} (${modifier}N)`}
@@ -109,10 +95,32 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						{props.openingRecorder ? (
 							<LoaderCircle size={16} className={styles.spinner} aria-hidden="true" />
 						) : (
-							<Circle size={13} fill="currentColor" aria-hidden="true" />
+							<span className={styles.recordDot} aria-hidden="true" />
 						)}
 						<span className={styles.label}>{t("recordingReview.record")}</span>
-						<kbd aria-hidden="true">{modifier}N</kbd>
+					</button>
+					<button
+						type="button"
+						disabled={!props.canSave || props.busy || props.preparing}
+						onClick={props.onOriginals}
+						className={styles.ghost}
+						aria-label={t("recordingReview.originals")}
+						title={t("recordingReview.originals")}
+					>
+						<FolderOpen size={16} aria-hidden="true" />
+						<span className={styles.label}>{t("recordingReview.originals")}</span>
+					</button>
+					<button
+						type="button"
+						disabled={props.preparing || props.busy}
+						onClick={props.onRecordings}
+						className={styles.ghost}
+						aria-label={t("recordingReview.recordings")}
+						title={`${t("recordingReview.recordings")} (${modifier}O)`}
+						aria-keyshortcuts={props.isMac ? "Meta+O" : "Control+O"}
+					>
+						<Clapperboard size={16} aria-hidden="true" />
+						<span className={styles.label}>{t("recordingReview.recordings")}</span>
 					</button>
 					<button
 						type="button"
@@ -132,7 +140,6 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 										? t("recordingReview.saving", { percent: Math.round(props.percent) })
 										: t("exportDialog.saving")
 									: t("recordingReview.save")}
-						<kbd aria-hidden="true">{modifier}S</kbd>
 					</button>
 				</div>
 			</header>

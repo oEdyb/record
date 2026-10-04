@@ -789,9 +789,10 @@
 	display: grid;
 	place-items: center;
 }
-[data-compact-review="true"] .previewFrame {
-	border-radius: 0;
-	box-shadow: none;
+[data-recording-only="true"] .previewFrame {
+	border-radius: 16px;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	background: #0c0d11;
 }
 .videoStage {
 	position: relative;
@@ -3264,3 +3265,84 @@
 .flatInspectorPane .bgGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .flatInspectorPane .bgThumb { aspect-ratio: 4 / 3; height: auto; }
 .flatInspectorPane .uploadBtn { width: 100%; min-height: 32px; justify-content: center; background: var(--surface-2); }
+
+/* Review play bar, floating over the bottom of the video (approved prototype):
+   a 38px light play circle, mono times, and a 6px white scrubber with a gap at
+   every clip boundary. */
+.transport[data-variant="overlay"] {
+	gap: 10px;
+	color: #ffffff;
+}
+.transport[data-variant="overlay"] .tbtn {
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+	color: rgba(255, 255, 255, 0.75);
+	transition:
+		background-color 150ms ease,
+		color 150ms ease,
+		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.transport[data-variant="overlay"] .tbtn:hover {
+	background: rgba(255, 255, 255, 0.14);
+	color: #ffffff;
+}
+.transport[data-variant="overlay"] .tbtn:active {
+	transform: scale(0.92);
+}
+.transport[data-variant="overlay"] .tbtn.play {
+	width: 38px;
+	height: 38px;
+	background: rgba(255, 255, 255, 0.16);
+	color: #ffffff;
+	backdrop-filter: blur(12px);
+}
+.transport[data-variant="overlay"] .tbtn.play:hover {
+	background: rgba(255, 255, 255, 0.24);
+}
+.transport[data-variant="overlay"] .time,
+.transport[data-variant="overlay"] .time .total,
+.transport[data-variant="overlay"] .time .sep {
+	color: rgba(255, 255, 255, 0.72);
+}
+.transport[data-variant="overlay"] .time {
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+.transport[data-variant="overlay"] .volumeInput {
+	display: none;
+}
+.transport[data-variant="overlay"] .volume {
+	margin-right: 0;
+}
+.transport[data-variant="overlay"] .scrubBar {
+	height: 30px;
+}
+.transport[data-variant="overlay"] .scrubTrack {
+	height: 6px;
+	background: rgba(255, 255, 255, 0.24);
+}
+.transport[data-variant="overlay"] .scrubProgress {
+	background: #ffffff;
+	border-radius: 0;
+}
+.transport[data-variant="overlay"] .scrubThumb {
+	width: 14px;
+	height: 14px;
+	transform: translate(-50%, -50%) scale(0.62);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+	transition: transform 220ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.transport[data-variant="overlay"] .scrubBar:hover .scrubThumb,
+.transport[data-variant="overlay"] .scrubBar:focus-within .scrubThumb {
+	transform: translate(-50%, -50%) scale(1.1);
+}
+.scrubGap {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 3px;
+	margin-left: -1.5px;
+	background: #0c0d11;
+	pointer-events: none;
+}

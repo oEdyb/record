@@ -23,7 +23,9 @@
 		"recordFirst": "Record a video before saving.",
 		"originalsHint": "Keep the original screen, camera, and audio files.",
 		"preparing": "Preparing recording…",
-		"expand": "Развернуть"
+		"expand": "Развернуть",
+		"metaOne": "Всего {{duration}}, 1 клип",
+		"metaMany": "Всего {{duration}}, клипов: {{count}}"
 	},
 	"previewQuality": {
 		"label": "Качество предпросмотра",

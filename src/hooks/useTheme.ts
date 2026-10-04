@@ -13,7 +13,7 @@ function readStoredTheme(): Theme {
 	}
 }
 
-function applyTheme(theme: Theme) {
+export function applyTheme(theme: Theme) {
 	if (theme === "dark") {
 		document.documentElement.setAttribute("data-theme", "dark");
 	} else {
