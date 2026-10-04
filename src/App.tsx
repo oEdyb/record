@@ -202,7 +202,8 @@ export default function App() {
 		<TooltipProvider>
 			<Suspense fallback={null}>{showNotes ? <NotesWindow /> : content}</Suspense>
 			<EntitlementDialog />
-			<Toaster theme="dark" />
+			{/* The recorder pill hosts its own, just above the pill. */}
+			{windowType === "hud-overlay" ? null : <Toaster theme="dark" />}
 		</TooltipProvider>
 	);
 }

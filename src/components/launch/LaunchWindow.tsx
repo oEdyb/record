@@ -15,6 +15,7 @@ import { useScreenRecorder } from "../../hooks/useScreenRecorder";
 import type { RecordingQuality } from "../../lib/recording/recordingQuality";
 import { requestCameraAccess } from "../../lib/requestCameraAccess";
 import type { WebcamFormat } from "../../lib/webcamFormats";
+import { Toaster } from "../ui/sonner";
 import { ensureDefaultRecordingSource } from "./defaultRecordingSource";
 import { HudClipPeek, type HudClipPeekLabels } from "./HudClipPeek";
 import {
@@ -63,6 +64,8 @@ const FALLBACK_SCREEN_HEIGHT = 1080;
 const FALLBACK_SCREEN_WIDTH = 1920;
 const HUD_PILL_WIDTH = 424;
 const HUD_PILL_HEIGHT = 50;
+/** Toasts sit just above the pill: its bottom gap, its height and one stack gap. */
+const HUD_TOAST_OFFSET = HUD_BAR_BOTTOM + HUD_PILL_HEIGHT + HUD_STACK_GAP;
 const REMOVED_CLIP_FEEDBACK_MS = 4_000;
 
 function formatClipDuration(durationMs: number): string {
@@ -1039,7 +1042,8 @@ export function LaunchWindow() {
 			if (isDraggingHudRef.current) return;
 			const target = event.target as HTMLElement | null;
 			setHudMouseEventsEnabled(
-				isPopoverOpen || Boolean(target?.closest("[data-hud-interactive='true']")),
+				isPopoverOpen ||
+					Boolean(target?.closest("[data-hud-interactive='true'], [data-sonner-toaster]")),
 			);
 		},
 		[isPopoverOpen, setHudMouseEventsEnabled],
@@ -1324,6 +1328,9 @@ export function LaunchWindow() {
 			onPointerMove={handleRootPointerMove}
 			onPointerLeave={handlePointerLeave}
 		>
+			{/* Recorder errors appear right above the pill, inside this root so a
+			    pointer over a toast makes the click-through window clickable. */}
+			<Toaster position="bottom-center" offset={HUD_TOAST_OFFSET} duration={6000} />
 			{/* One bottom-anchored stack: the pill, then whatever floats above it.
 			    Everything is laid out by flexbox relative to the pill, so no popover
 			    needs a measured position and none of them can move the window. */}

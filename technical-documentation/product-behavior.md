@@ -328,6 +328,11 @@ guard: ignore the shortcut while idle, saving, or finalizing.
 The idle pill is 360 CSS px wide and 50 px tall; the recording pill fits its controls at the
 same height. Preserve one surface and one anchored position through the transition.
 
+Notices (Olle, 2026-10-04: fewer toasts). Success toasts that repeat what the screen already shows
+are removed. Errors and warnings stay. In review they appear top centre under the header, two at
+most, in the pill's dark glass. In the recorder they appear just above the pill, stay six seconds,
+and make the click-through overlay clickable while the pointer is over them.
+
 Motion (Olle, 2026-10-04, following Emil Kowalski's rules): Setup, Source and Replay grow out of
 the pill from its bottom centre (96 % scale, 8 px lower, 240 ms strong ease-out) and close in
 120 ms. Replay opened with the Up key appears instantly. The pill morphs between idle and recording
