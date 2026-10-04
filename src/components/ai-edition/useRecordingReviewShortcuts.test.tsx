@@ -22,6 +22,18 @@ function key(key: string, metaKey = false, target: EventTarget = window) {
 	);
 }
 describe("recording review shortcuts", () => {
+	it("preserves keyboard activation of interruption details", () => {
+		const calls = actions();
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		const summary = document.createElement("summary");
+		document.body.append(summary);
+		summary.focus();
+		const event = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+		summary.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(false);
+		expect(calls.onPlayPause).not.toHaveBeenCalled();
+		summary.remove();
+	});
 	it.each([true, false])("requires exact platform modifiers (Mac=%s)", (isMac) => {
 		const calls = { ...actions(), isMac };
 		renderHook(() => useRecordingReviewShortcuts(calls));

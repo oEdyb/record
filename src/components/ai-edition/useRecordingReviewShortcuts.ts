@@ -29,7 +29,7 @@ export function useRecordingReviewShortcuts(options: ReviewShortcuts): void {
 			if (
 				target instanceof HTMLElement &&
 				target.closest(
-					"button, a[href], [role='button'], [role='slider'], [role='tab'], [role='switch'], [role='checkbox'], [role='combobox'], [role='radio']",
+					"button, summary, a[href], [role='button'], [role='slider'], [role='tab'], [role='switch'], [role='checkbox'], [role='combobox'], [role='radio']",
 				) &&
 				[" ", "Enter", "ArrowLeft", "ArrowRight"].includes(event.key)
 			)

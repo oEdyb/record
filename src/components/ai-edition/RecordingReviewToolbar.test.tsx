@@ -23,6 +23,36 @@ function props() {
 	};
 }
 describe("recording review", () => {
+	it("replaces endless preparation with a retryable retained-handoff error", () => {
+		const retry = vi.fn();
+		render(
+			<RecordingReviewToolbar
+				{...props()}
+				preparing
+				handoffError="Could not read the recovered clip"
+				onRetryHandoff={retry}
+			/>,
+		);
+		expect(screen.getByRole("alert")).toHaveTextContent("Could not read the recovered clip");
+		expect(screen.queryByText("recordingReview.preparing")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "recordingReview.retryOpen" }));
+		expect(retry).toHaveBeenCalledOnce();
+		expect(screen.getByRole("button", { name: "recordingReview.record" })).toBeDisabled();
+	});
+	it("keeps an interruption visible with retry and original recovery", () => {
+		const actions = props();
+		const interruptions = [{ code: "writer-failed", message: "The writer stopped." }];
+		const { rerender } = render(
+			<RecordingReviewToolbar {...actions} interruptions={interruptions} />,
+		);
+		expect(screen.getByRole("status")).toHaveTextContent("recordingReview.interrupted");
+		expect(screen.getByText("The writer stopped.")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "recordingReview.recordAgain" }));
+		expect(actions.onRecord).toHaveBeenCalledOnce();
+		rerender(<RecordingReviewToolbar {...actions} interruptions={interruptions} readOnly />);
+		expect(screen.getByRole("button", { name: "recordingReview.recordAgain" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "recordingReview.originals" })).toBeEnabled();
+	});
 	it("shows pending feedback on Record while opening the recorder", () => {
 		render(<RecordingReviewToolbar {...props()} preparing openingRecorder isMac />);
 		expect(screen.getByRole("button", { name: "recordingReview.record" })).toHaveAttribute(

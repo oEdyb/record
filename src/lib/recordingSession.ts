@@ -42,6 +42,7 @@ export interface RecordingWorkspaceContext {
 
 export interface RecordingSession extends ProjectMedia {
 	createdAt: number;
+	interruption?: RecordingInterruption;
 	/** Project reserved for a standalone import that may resume after interruption. */
 	importProjectId?: string;
 	/**
@@ -53,6 +54,20 @@ export interface RecordingSession extends ProjectMedia {
 	 */
 	clips?: RecordingSessionClip[];
 	schemaVersion?: 2;
+}
+
+export interface RecordingInterruption {
+	code: string;
+	message: string;
+}
+
+export function normalizeRecordingInterruption(value: unknown): RecordingInterruption | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	if (!("code" in value) || !("message" in value)) return undefined;
+	if (typeof value.code !== "string" || typeof value.message !== "string") return undefined;
+	const code = value.code.trim().slice(0, 120);
+	const message = value.message.trim().slice(0, 2000);
+	return code && message ? { code, message } : undefined;
 }
 
 export interface RecordingSessionClip {
@@ -225,6 +240,7 @@ export function normalizeRecordingSession(candidate: unknown): RecordingSession 
 		typeof raw.importProjectId === "string" && /^[A-Za-z0-9_-]+$/.test(raw.importProjectId.trim())
 			? raw.importProjectId.trim()
 			: undefined;
+	const interruption = normalizeRecordingInterruption(raw.interruption);
 
 	return {
 		...media,
@@ -233,6 +249,7 @@ export function normalizeRecordingSession(candidate: unknown): RecordingSession 
 				? raw.createdAt
 				: Date.now(),
 		...(importProjectId ? { importProjectId } : {}),
+		...(interruption ? { interruption } : {}),
 		...(clips ? { clips, schemaVersion: 2 as const } : {}),
 	};
 }

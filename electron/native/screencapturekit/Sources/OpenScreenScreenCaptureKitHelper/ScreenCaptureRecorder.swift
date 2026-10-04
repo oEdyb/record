@@ -1081,8 +1081,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func appendOriginal(_ sample: CMSampleBuffer, key: String) {
+		if diagnosticTiming, startupTiming[key + "FirstInputHostSeconds"] == nil {
+			startupTiming[key + "FirstInputHostSeconds"] = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
+			startupTiming[key + "FirstInputSamples"] = Double(CMSampleBufferGetNumSamples(sample))
+			startupTiming[key + "FirstInputWriterStarted"] = didStartWriting ? 1 : 0
+			emitTiming(stage: "first-input-" + key)
+		}
 		if let owner = originalOwners[key] {
 			guard didStartWriting, CMSampleBufferGetNumSamples(sample) > 0 else { return }
+			if diagnosticTiming, startupTiming[key + "FirstEnqueueHostSeconds"] == nil {
+				startupTiming[key + "FirstEnqueueHostSeconds"] = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
+				emitTiming(stage: "first-enqueue-" + key)
+			}
 			let clipIndex = currentClipIndex
 			do {
 				try owner.append(sample) { [weak self] result, detectedAt in

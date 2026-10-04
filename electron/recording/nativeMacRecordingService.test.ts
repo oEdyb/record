@@ -65,6 +65,13 @@ describe("NativeMacRecordingService", () => {
 
 	beforeEach(async () => {
 		vi.mocked(inspectHandoffSourceMedia).mockReset();
+		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			hasAudio: false,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: 0.5,
+			video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
+		});
 		recordingsDir = await fs.mkdtemp(path.join(os.tmpdir(), "screenrec-native-mac-"));
 		helper = new FakeHelper();
 		deps = {
@@ -106,6 +113,7 @@ describe("NativeMacRecordingService", () => {
 		await fs.writeFile(`${stem}.mp4`, "screen");
 		await fs.writeFile(`${stem}-microphone.mov`, "readable fragment");
 		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
 			hasAudio: true,
 			hasKlipptMetadata: false,
 			roles: [],
@@ -149,6 +157,7 @@ describe("NativeMacRecordingService", () => {
 		await fs.writeFile(clip.screenVideoPath, "durable screen");
 		await fs.writeFile(clip.microphoneAudioPath, "durable microphone");
 		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
 			hasAudio: true,
 			hasKlipptMetadata: false,
 			roles: [],
@@ -237,6 +246,7 @@ describe("NativeMacRecordingService", () => {
 		await fs.writeFile(`${stem}.mp4`, "screen fragment");
 		await fs.writeFile(`${stem}-microphone.mov`, "audio fragment");
 		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
 			hasAudio: true,
 			hasKlipptMetadata: false,
 			roles: [],
@@ -310,7 +320,7 @@ describe("NativeMacRecordingService", () => {
 			hasKlipptMetadata: false,
 			roles: [],
 			durationSec: 5,
-			...(file.endsWith("webcam.mov")
+			...(file.endsWith("webcam.mov") || file.endsWith(".mp4")
 				? { video: { codec: "h264", width: 1920, height: 1080, fps: 30 } }
 				: {}),
 		}));
@@ -1059,6 +1069,45 @@ describe("NativeMacRecordingService", () => {
 		});
 		expect(deps.onSessionStored).toHaveBeenCalledOnce();
 		expect(deps.clearCursor).toHaveBeenCalled();
+	});
+
+	it("retains a final-clip warning even when no fatal callback was emitted", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "clip.mp4"),
+			durationMs: 2000,
+		};
+		const warning = { code: "final-clip-failed", message: "The final clip could not be saved." };
+		helper.stop.mockResolvedValueOnce({
+			screenPath: clip.screenVideoPath,
+			clips: [clip],
+			...{ warning },
+		});
+		const result = await service.stop();
+		expect(result).toMatchObject({ success: true, session: { interruption: warning } });
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+
+	it("persists a fatal interruption even when Stop salvages a valid session", async () => {
+		let reportFatal: ((failure: { code: string; message: string }) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, fatal) => {
+			reportFatal = fatal;
+			return helper;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const interruption = { code: "cadence-failed", message: "Capture could not keep up." };
+		const screenVideoPath = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		await fs.writeFile(screenVideoPath, "retained fragment");
+		helper.stopClips = [{ index: 0, screenVideoPath, durationMs: 2000 }];
+		reportFatal?.(interruption);
+		const result = await service.stop();
+		expect(result).toMatchObject({ success: true, session: { interruption } });
+		expect(deps.onSessionStored).toHaveBeenCalledWith(expect.objectContaining({ interruption }));
+		const restored = await restoreNativeMacRecoverySession(recordingsDir, 100);
+		expect(restored?.interruption).toEqual(interruption);
 	});
 
 	it("ignores a fatal callback from an earlier helper generation", async () => {

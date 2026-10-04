@@ -6,7 +6,10 @@ import { _electron as electron, expect } from "@playwright/test";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const measured = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-if (measured.status !== "passed" || !measured.runRoot.includes("klippt-overnight-profile-"))
+if (
+	measured.status !== "passed" ||
+	!/klippt-(?:overnight|source)-profile-[^/]+$/.test(measured.runRoot)
+)
 	throw new Error("Expected a passed, task-owned capture profile");
 const userData = path.join(measured.runRoot, "user-data");
 const out = path.resolve(process.argv[3]);
@@ -65,6 +68,19 @@ try {
 	const record = editor.locator("header").getByRole("button", { name: "Record", exact: true });
 	await expect(record).toBeEnabled({ timeout: 30000 });
 	await expect(editor.getByRole("button", { name: "Save video", exact: true })).toBeEnabled();
+	if (
+		await editor.getByRole("status").filter({ hasText: "Recording stopped unexpectedly" }).count()
+	) {
+		const disclosure = editor.locator("summary").filter({ hasText: "Why it stopped" });
+		await disclosure.focus();
+		await editor.keyboard.press("Space");
+		await expect(editor.locator("details[open]")).toHaveCount(1);
+		await size(400);
+		await editor.screenshot({ path: path.join(out, "interruption-400.png") });
+		await editor.keyboard.press("Space");
+		await expect(editor.locator("details[open]")).toHaveCount(0);
+		report.checks.push("Interruption survives app restart; disclosure Space works at 400px");
+	}
 	for (const width of [1200, 400]) {
 		await size(width);
 		await expect.poll(() => editor.evaluate(() => innerWidth)).toBe(width);
@@ -209,6 +225,45 @@ try {
 		await expect(record).toBeEnabled();
 		report.transitions.push({ toRecorderMs, toReviewMs: performance.now() - returning });
 	}
+	// A failed import retains its handoff and offers an explicit, working retry.
+	const source = measured.recordings[0].source;
+	if (!source.startsWith(path.join(userData, "recordings") + path.sep))
+		throw new Error("Expected owned source");
+	await app.evaluate(({ ipcMain }) => {
+		const original = ipcMain._invokeHandlers.get("native-bridge:invoke");
+		globalThis.__retryBridge = original;
+		ipcMain._invokeHandlers.set("native-bridge:invoke", async (...args) => {
+			if (args[1]?.action === "document.create") throw new Error("Owned import recovery test");
+			return original(...args);
+		});
+	});
+	await editor.evaluate(async (screenVideoPath) => {
+		const result = await window.electronAPI.setCurrentRecordingSession({
+			screenVideoPath,
+			createdAt: Date.now(),
+		});
+		if (!result.success) throw new Error("Could not stage owned retry handoff");
+	}, source);
+	await menu(editor, "recording-workspace-returned");
+	await expect(editor.getByRole("alert")).toContainText("Owned import recovery test");
+	await expect(record).toBeDisabled();
+	await expect(editor.getByRole("button", { name: "Try again", exact: true })).toBeEnabled();
+	await size(400);
+	await editor.screenshot({ path: path.join(out, "handoff-error-400.png") });
+	await app.evaluate(({ ipcMain }) =>
+		ipcMain._invokeHandlers.set("native-bridge:invoke", globalThis.__retryBridge),
+	);
+	await editor.getByRole("button", { name: "Try again", exact: true }).click();
+	await expect(editor.getByRole("button", { name: "Save video", exact: true })).toBeEnabled({
+		timeout: 30000,
+	});
+	await expect(editor.getByRole("alert")).toHaveCount(0);
+	expect(
+		(await editor.evaluate(() => window.electronAPI.getCurrentRecordingSession())).success,
+	).toBe(false);
+	report.checks.push(
+		"Failed handoff stays visible, blocks replacement capture, and retries successfully",
+	);
 	expect(report.errors).toEqual([]);
 	report.status = "passed";
 } catch (error) {

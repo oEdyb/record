@@ -24,6 +24,12 @@ not a separate mode or an advanced workflow.
 October 4 creator-loop refinement: Record from review opens an idle compact pill for a new
 recording. Escape or Close returns to the saved review while idle; navigation stays blocked
 during recording startup and finalization. Settings expand without a delayed entrance.
+Recovered captures retain their interruption reason in the recording manifest and saved project.
+Review keeps a visible interruption notice after reopening, with details and Record again.
+Do not replace this with a transient toast or ordinary recording-success message. Original-file
+recovery remains available when the entitlement is read-only. Removing the affected recording
+from the timeline removes its notice; restoring it restores the notice.
+
 Record, Save and Recordings share a pending-action guard, with visible progress and recovery
 after failure. The recordings browser supports search, arrow-key selection and Enter, and
 shows loading or failure instead of presenting stale rows. Review shortcuts respect dialogs,

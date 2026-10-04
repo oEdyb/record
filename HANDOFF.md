@@ -1,18 +1,22 @@
-# October 4: creator recording loop
+# October 4: creator loop and recovery
 
-UI work on `codex/creator-recording-loop-2026-10-04` is ready for local main integration with the
-50 prior commits already contained in its baseline. Compact Record-again/Escape return, guarded
-navigation with visible pending state, exact keyboard/focus handling, searchable keyboard-driven
-recordings and narrow layouts are verified. Settings controls no longer wait for a delayed entrance.
-No new editing tools. [Research, evidence and limits](docs/creator-loop-2026-10-04.md).
+Local main includes the 51 prior commits through `bf10edff`. Follow-up branch
+`codex/capture-readiness-2026-10-04` makes capture interruptions persistent through Stop,
+recovery, import and reopen. Confirmed header-only tails no longer strand earlier valid clips;
+unknown probe failures keep the handoff retryable. Original media stays intact. Review shows
+an explicit recovery error and Try again instead of permanent Preparing.
 
-Full suite: 4,108 passed, one existing skip; all eight code/document checks pass. Rebuilt real UI
-smoke and two screen-only recordings with Pause/Continue, paused Stop, playback and export pass.
-Four-source acceptance remains open: High cadence failures, a camera format mismatch and a default
-microphone startup timeout were observed. No native cause is proven; next investigate resolved
-microphone identity and input/append timing. Packaging also stopped at the existing helper-hash
-provenance guard after rebuilding native helpers. Installed app and remote branches are unchanged.
-The overall goal remains active for the capture reliability follow-up.
+Real owned-helper crash, review/reopen, four-source hash-matching export and 400px UI checks
+pass. Independent review is clean. Full suite: 4,118 passed, one existing skip. Native 53 tests and full native directory rebuild passed.
+Full code-check receipts live in `artifacts/capture-readiness-2026-10-04/final-checks-2`.
+[Research, evidence and limits](docs/capture-readiness-2026-10-04.md).
+
+The overall goal remains active: five-minute High four-source capture failed its 133 ms
+cadence contract both with diagnostics on and off. Ready writer/no backpressure does not
+identify the stall's cause. Next measure complete sample-queue callback and timer delay,
+including state locks, sample retiming/admission and callback backlog, without hot-path
+logging. Packaging still needs fresh clean-source Whisper provenance; never weaken its guard.
+Installed app, remote branches and user projects remain unchanged.
 
 # October 3 follow-up: high-quality untouched sources
 

@@ -146,8 +146,16 @@ final class CaptureSetupBuilder {
 		}
 
 		configuration.setValue(true, forKey: "captureMicrophone")
-		if let deviceId = resolveMicrophoneCaptureDeviceID(for: request) {
+		let selectedDeviceID = resolveMicrophoneCaptureDeviceID(for: request)
+		if let deviceId = selectedDeviceID {
 			configuration.setValue(deviceId, forKey: "microphoneCaptureDeviceID")
+		}
+		if ProcessInfo.processInfo.environment["OPENSCREEN_CAPTURE_DIAGNOSTICS"] == "1" {
+			let systemDefault = AVCaptureDevice.default(for: .audio)
+			emit(["event": "capture-diagnostic", "stage": "microphone-device",
+				"configuredDeviceID": selectedDeviceID ?? "system-default",
+				"defaultDeviceID": systemDefault?.uniqueID ?? "unavailable",
+				"defaultDeviceName": systemDefault?.localizedName ?? "unavailable"])
 		}
 		return (configuration, true)
 	}

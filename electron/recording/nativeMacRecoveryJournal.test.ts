@@ -20,6 +20,13 @@ describe("native macOS recovery journal", () => {
 
 	beforeEach(async () => {
 		vi.mocked(inspectHandoffSourceMedia).mockReset();
+		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
+			hasAudio: false,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: 0.5,
+			video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
+		});
 		recordingsDir = await fs.mkdtemp(path.join(os.tmpdir(), "record-recovery-"));
 	});
 
@@ -50,7 +57,7 @@ describe("native macOS recovery journal", () => {
 			hasKlipptMetadata: false,
 			roles: [],
 			durationSec: 5.95,
-			...(file.endsWith("webcam.mov")
+			...(file.endsWith("webcam.mov") || file.endsWith(".mp4")
 				? { video: { codec: "h264", width: 1920, height: 1080, fps: 30 } }
 				: {}),
 		}));
@@ -65,7 +72,7 @@ describe("native macOS recovery journal", () => {
 		const recovered = await restoreNativeMacRecoverySession(recordingsDir, 61);
 		expect(recovered?.clips?.[0]).toMatchObject(originals);
 		expect(recovered?.recoveryWarnings).toBeUndefined();
-		expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(3);
+		expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(4);
 	});
 
 	it("keeps the screen and valid microphone when another original has no readable media duration", async () => {
@@ -82,7 +89,10 @@ describe("native macOS recovery journal", () => {
 			hasAudio: true,
 			hasKlipptMetadata: false,
 			roles: [],
-			durationSec: file.endsWith("microphone.mov") ? 3 : null,
+			durationSec: file.endsWith("microphone.mov") || file.endsWith(".mp4") ? 3 : null,
+			...(file.endsWith(".mp4")
+				? { video: { codec: "h264", width: 1920, height: 1080, fps: 60 } }
+				: {}),
 		}));
 		await persistNativeMacRecoveryJournal(recordingsDir, {
 			createdAt: 62,
@@ -242,6 +252,50 @@ describe("native macOS recovery journal", () => {
 				cursorCaptureMode: "editable-overlay",
 			},
 		]);
+	});
+
+	it.each([
+		"FFmpeg unavailable",
+		"Recording processing timed out",
+	])("keeps recovery retryable after %s", async (message) => {
+		const screenVideoPath = path.join(recordingsDir, "recording-48-clip-0001.mp4");
+		await fs.writeFile(screenVideoPath, "fragment");
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			createdAt: 48,
+			screenVideoPath,
+			schemaVersion: 2,
+			clips: [{ index: 0, screenVideoPath, durationMs: 60000, provisionalDuration: true }],
+		});
+		const before = await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 48), "utf8");
+		vi.mocked(inspectHandoffSourceMedia).mockRejectedValueOnce(new Error(message));
+		const unverified = await restoreNativeMacRecoverySession(recordingsDir, 48);
+		expect(unverified?.clips?.[0]).toMatchObject({ provisionalDuration: true, screenVideoPath });
+		expect(unverified?.clips?.[0].removed).not.toBe(true);
+		expect(unverified?.interruption?.message).toContain(message);
+		expect(await fs.readFile(nativeMacRecoveryJournalPath(recordingsDir, 48), "utf8")).toBe(before);
+		expect((await restoreNativeMacRecoverySession(recordingsDir, 48))?.clips?.[0].removed).not.toBe(
+			true,
+		);
+	});
+
+	it("excludes a header-only active tail while retaining all original files and completed clips", async () => {
+		const screenVideoPath = path.join(recordingsDir, "recording-49-clip-0001.mp4");
+		const tail = path.join(recordingsDir, "recording-49-clip-0002.mp4");
+		await fs.writeFile(screenVideoPath, "finalized");
+		await fs.writeFile(tail, "header only");
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			schemaVersion: 2,
+			createdAt: 49,
+			screenVideoPath,
+			clips: [{ index: 0, screenVideoPath, durationMs: 1000 }],
+		});
+		vi.mocked(inspectHandoffSourceMedia).mockRejectedValue(new Error("moov atom not found"));
+		const restored = await restoreNativeMacRecoverySession(recordingsDir, 49);
+		expect(restored?.clips).toMatchObject([{ index: 0 }, { index: 1, removed: true }]);
+		expect(restored?.recoveryWarnings?.[0]).toContain("file is retained");
+		expect(restored?.interruption?.code).toBe("capture-recovery-incomplete");
+		expect(await fs.readFile(tail, "utf8")).toBe("header only");
+		expect(await fs.readFile(screenVideoPath, "utf8")).toBe("finalized");
 	});
 
 	it("keeps a short non-empty fragmented clip for the editor's media probe", async () => {

@@ -1228,6 +1228,20 @@ try {
 			await expect(editor.getByRole("button", { name: /^(Export|Save video)$/ })).toBeEnabled({
 				timeout: 60000,
 			});
+			if (killedHelper) {
+				await expect(editor.getByRole("status")).toContainText("Recording stopped unexpectedly");
+				await expect(
+					editor.getByRole("button", { name: "Record again", exact: true }),
+				).toBeEnabled();
+				await editor.screenshot({ path: path.join(out, "interruption-before-reopen.png") });
+				await editor.reload();
+				await expect(editor.getByRole("status")).toContainText("Recording stopped unexpectedly", {
+					timeout: 60000,
+				});
+				await editor.getByText("Why it stopped", { exact: true }).click();
+				await editor.screenshot({ path: path.join(out, "interruption-after-reopen.png") });
+				report.persistentInterruption = { visible: true, survivedReload: true };
+			}
 			const session = await editor.evaluate(() => window.electronAPI.getCurrentRecordingSession());
 			const current = await editor.evaluate(() => window.electronAPI.getCurrentVideoPath());
 			const nativeHistory = await app.evaluate(() => globalThis.__overnightCapture);

@@ -143,6 +143,34 @@ async function recoverSession(
 			recoveredClips.push({ ...clip, removed: true });
 			continue;
 		}
+		if (clip.provisionalDuration) {
+			try {
+				const media = await inspectHandoffSourceMedia(clip.screenVideoPath);
+				if (
+					!media.video ||
+					!media.durationSec ||
+					!Number.isFinite(media.durationSec) ||
+					media.durationSec <= 0
+				)
+					throw new Error("no readable video duration");
+			} catch (error) {
+				// An unavailable inspector or timeout proves nothing about the media.
+				// Keep unknown tails provisional so the renderer can probe them and offer
+				// its retained-handoff retry if that independent probe also fails.
+				const message = error instanceof Error ? error.message : String(error);
+				if (error instanceof Error && /moov atom not found(?:\r?\n|$)/.test(message)) {
+					// Retain the path and bytes; exclude only this confirmed missing header.
+					recoveredClips.push({ ...clip, removed: true });
+					recoveryWarnings.push(
+						`The unfinished screen clip ${clip.index + 1} could not be opened. Its file is retained: ${message}`,
+					);
+					continue;
+				}
+				recoveryWarnings.push(
+					`The unfinished screen clip ${clip.index + 1} still needs a playback check: ${message}`,
+				);
+			}
+		}
 		const recovered = { ...clip };
 		for (const [field, offsetField, suffix, mediaType] of ORIGINAL_FIELDS) {
 			const originalPath = clip[field];
@@ -195,7 +223,15 @@ async function recoverSession(
 			screenVideoPath: firstKept.screenVideoPath,
 			clips: recoveredClips,
 			schemaVersion: 2,
-			...(recoveryWarnings.length > 0 ? { recoveryWarnings } : {}),
+			...(recoveryWarnings.length > 0
+				? {
+						recoveryWarnings,
+						interruption: session.interruption ?? {
+							code: "capture-recovery-incomplete",
+							message: recoveryWarnings.join(" ").slice(0, 2000),
+						},
+					}
+				: {}),
 		};
 	}
 

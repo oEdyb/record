@@ -1,5 +1,12 @@
 {
 	"recordingReview": {
+		"interrupted": "Recording stopped unexpectedly",
+		"recoveryNeeded": "Recording needs recovery",
+		"recoveryPending": "Your recording files are retained. Try opening the recording again.",
+		"retryOpen": "Try again",
+		"savedFootageRetained": "Your saved footage is retained. Review it or record again.",
+		"interruptionDetails": "Why it stopped",
+		"recordAgain": "Record again",
 		"searchRecordings": "Search recordings…",
 		"noMatches": "No recordings match \"{{query}}\".",
 		"libraryHint": "Review recordings and find the originals.",

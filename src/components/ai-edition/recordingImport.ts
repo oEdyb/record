@@ -14,13 +14,14 @@
 // after this point is the CLI runner, which lives in its own process.
 
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
+import { withRecordingInterruption } from "@/lib/ai-edition/document/recordingInterruptions";
 import { insertClipsAtBoundary } from "@/lib/ai-edition/document/timeline";
 import type { AxcutAsset, AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings, patchEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { probeVideoDimensions, probeVideoDuration } from "@/lib/ai-edition/timeline/duration";
 import { isClipOwnedWebcamPath } from "@/lib/recording/capturePolicy";
-import type { RecordingSessionClip } from "@/lib/recordingSession";
+import type { RecordingInterruption, RecordingSessionClip } from "@/lib/recordingSession";
 import { type AspectRatio, toAspectRatioToken } from "@/utils/aspectRatioUtils";
 
 let pendingRecordingImportInProgress = false;
@@ -150,6 +151,7 @@ async function commitRecordedImport(options: {
 	clips: AxcutClip[];
 	insertionTimeSec: number;
 	planId: string;
+	interruption?: RecordingInterruption;
 	historyBase: AxcutDocument;
 	sourceAspectRatio?: AspectRatio;
 	prepareMissingAssets?: (document: AxcutDocument, missingAssetIds: Set<string>) => AxcutDocument;
@@ -164,7 +166,11 @@ async function commitRecordedImport(options: {
 				missingClips.length > 0 && options.prepareMissingAssets
 					? options.prepareMissingAssets(document, missingAssetIds)
 					: document;
-			const arranged = insertClipsAtBoundary(prepared, missingClips, options.insertionTimeSec);
+			const arranged = withRecordingInterruption(
+				insertClipsAtBoundary(prepared, missingClips, options.insertionTimeSec),
+				options.planId,
+				options.interruption,
+			);
 			return options.sourceAspectRatio &&
 				document.timeline.clips.length === 0 &&
 				getEditorSettings(document).aspectRatio ===
@@ -301,6 +307,7 @@ export async function importPendingRecording(): Promise<boolean> {
 					clips,
 					insertionTimeSec: workspace?.insertionTimeSec ?? 0,
 					planId: recordingImportId,
+					interruption: session.interruption,
 					historyBase,
 					sourceAspectRatio: await recordingAspectRatio(imported[0]?.asset, !workspace?.projectId),
 					prepareMissingAssets: (latest, missingAssetIds) => ({
@@ -393,6 +400,7 @@ export async function importPendingRecording(): Promise<boolean> {
 					clips: [recordedClip],
 					insertionTimeSec: workspace?.insertionTimeSec ?? 0,
 					planId: recordingImportId,
+					interruption: session.interruption,
 					historyBase,
 					sourceAspectRatio: await recordingAspectRatio(asset, !workspace?.projectId),
 					prepareMissingAssets: (latest, missingAssetIds) => ({

@@ -1,3 +1,11 @@
+.header { grid-row: 1; min-width: 0; }
+.interruption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 18px; background: var(--surface-2); border-bottom: 1px solid var(--border); color: var(--fg); }
+.interruption p { margin: 4px 0; color: var(--fg-muted); overflow-wrap: anywhere; }
+.interruption > div { min-width: 0; flex: 1 1 240px; }
+.interruption summary { cursor: pointer; color: var(--fg-muted); }
+.interruption button { font: inherit; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--fg); white-space: nowrap; }
+.interruption button:disabled { opacity: .45; }
+.interruption button:focus-visible, .interruption summary:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 3px; }
 .bar {
 	grid-row: 1;
 	display: flex;

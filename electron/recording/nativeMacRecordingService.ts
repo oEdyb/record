@@ -185,6 +185,9 @@ export class NativeMacRecordingService {
 						if (generation !== this.sessionGeneration) return;
 						this.paused = true;
 						this.fatalError = failure;
+						void this.persistRecoverySession().catch((error) => {
+							console.warn("[capture-mac] could not preserve interruption status:", error);
+						});
 						this.deps.onFatalError(failure);
 					},
 					(original) => this.storeOriginalStarted(original, generation),
@@ -528,8 +531,10 @@ export class NativeMacRecordingService {
 				if (!screenVideoPath)
 					throw new Error("Native macOS capture did not return an output path.");
 
+				const interruption = this.fatalError ?? stopped.warning;
 				const session: RecordingSession = {
 					screenVideoPath,
+					...(interruption ? { interruption: { ...interruption } } : {}),
 					createdAt: recordingId,
 					cursorCaptureMode,
 					schemaVersion: 2,
@@ -672,6 +677,7 @@ export class NativeMacRecordingService {
 			this.targetPath;
 		return {
 			schemaVersion: 2,
+			...(this.fatalError ? { interruption: { ...this.fatalError } } : {}),
 			createdAt: this.recordingId,
 			screenVideoPath,
 			cursorCaptureMode: this.cursorCaptureMode,
@@ -767,6 +773,7 @@ export class NativeMacRecordingService {
 			recoveryClips.find((clip) => !clip.removed)?.screenVideoPath ?? this.targetPath;
 		return {
 			schemaVersion: 2,
+			...(this.fatalError ? { interruption: { ...this.fatalError } } : {}),
 			createdAt: this.recordingId,
 			screenVideoPath,
 			cursorCaptureMode: this.cursorCaptureMode,

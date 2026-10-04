@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { recordingInterruptions } from "@/lib/ai-edition/document/recordingInterruptions";
 import { type AxcutAsset, type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { type ProjectState, useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -80,6 +81,7 @@ describe("importPendingRecording", () => {
 				session: {
 					screenVideoPath: clip.screenVideoPath,
 					createdAt: 7,
+					interruption: { code: "writer-failed", message: "Recording stopped early." },
 					schemaVersion: 2,
 					clips: [clip],
 				},
@@ -89,6 +91,7 @@ describe("importPendingRecording", () => {
 		addAsset.mockImplementationOnce(async () => {
 			const asset: AxcutAsset = {
 				id: "asset_native",
+				recordingImportId: "recording-7",
 				kind: "video",
 				label: "Recorded",
 				originalPath: clip.screenVideoPath,
@@ -99,6 +102,9 @@ describe("importPendingRecording", () => {
 			return asset;
 		});
 		await importPendingRecording();
+		expect(recordingInterruptions(useProjectStore.getState().document)).toEqual([
+			{ code: "writer-failed", message: "Recording stopped early." },
+		]);
 		expect(useProjectStore.getState().document?.assets[0]).toMatchObject({
 			cameraTrack: { sourcePath: clip.webcamVideoPath, offsetMs: 0 },
 			microphoneAudioPath: clip.microphoneAudioPath,
@@ -914,7 +920,8 @@ describe("importPendingRecording", () => {
 
 	it("keeps the handoff and reuses one orphan asset when a conflicted import retries", async () => {
 		const screenVideoPath = "/recordings/conflicted-import.mp4";
-		let session = { screenVideoPath, createdAt: 19 };
+		const interruption = { code: "capture-stop-failed", message: "Capture stopped early." };
+		let session = { screenVideoPath, createdAt: 19, interruption };
 		let workspace = {
 			origin: "editor" as const,
 			projectId: "test-project",
@@ -973,6 +980,7 @@ describe("importPendingRecording", () => {
 		expect(addAsset).toHaveBeenCalledTimes(1);
 		const imported = useProjectStore.getState().document!;
 		expect(imported.assets).toEqual([asset]);
+		expect(recordingInterruptions(imported)).toEqual([interruption]);
 		expect(imported.timeline.clips).toMatchObject([
 			{ id: "clip_recording_19_1", assetId: asset.id },
 		]);

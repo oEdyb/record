@@ -15,6 +15,7 @@ import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
 import { registerAgentTransport } from "@/lib/ai-edition/agent/agentTransport";
 import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
 import { applyPauseSuggestions } from "@/lib/ai-edition/document/pause-edits";
+import { recordingInterruptions } from "@/lib/ai-edition/document/recordingInterruptions";
 import {
 	applyProbedDuration,
 	replaceTimeline as replaceTimelineOp,
@@ -167,6 +168,7 @@ export function NewEditorShell() {
 	);
 	const [importingMedia, setImportingMedia] = useState(false);
 	const [recordingReviewPending, setRecordingReviewPending] = useState(false);
+	const [recordingReviewError, setRecordingReviewError] = useState<string | null>(null);
 	const [recordingReviewActionPending, setRecordingReviewActionPending] = useState<
 		"record" | "export" | null
 	>(null);
@@ -367,6 +369,7 @@ export function NewEditorShell() {
 	const resumeRecordingWorkspace = useCallback(() => {
 		if (recordingResumeRef.current) return recordingResumeRef.current;
 		setRecordingReviewPending(true);
+		setRecordingReviewError(null);
 
 		const resume = (async () => {
 			if (!window.electronAPI) return false;
@@ -381,13 +384,13 @@ export function NewEditorShell() {
 			try {
 				if (await importPendingRecording()) {
 					if (workspace) restoreWorkspace(workspace, true);
-					toast.success(workspace ? "Recording added" : "Recording added to a new project");
+					if (recordingInterruptions(useProjectStore.getState().document).length === 0) {
+						toast.success(workspace ? "Recording added" : "Recording added to a new project");
+					}
 					return true;
 				}
 			} catch (err) {
-				toast.error("Could not auto-create project from recording", {
-					description: err instanceof Error ? err.message : String(err),
-				});
+				setRecordingReviewError(err instanceof Error ? err.message : String(err));
 				return true;
 			}
 			if (workspace) {
@@ -1761,6 +1764,11 @@ export function NewEditorShell() {
 			{PRODUCT_SURFACE.recordingOnly ? (
 				<RecordingReviewToolbar
 					isMac={isMac}
+					interruptions={recordingInterruptions(document)}
+					handoffError={recordingReviewError}
+					onRetryHandoff={() => {
+						void resumeRecordingWorkspace();
+					}}
 					title={project?.title ?? null}
 					canSave={hasAsset}
 					preparing={recordingReviewPending || recordingReviewActionPending !== null}
