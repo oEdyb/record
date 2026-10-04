@@ -143,3 +143,7 @@ workbench/fixtures/
 /aur_ci
 /aur_ci.pub
 /aur_known_hosts
+
+# Local evidence, footage and installer backups stay on disk, never in git.
+/artifacts/
+/.local-install.noindex/
