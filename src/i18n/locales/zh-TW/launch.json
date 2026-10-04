@@ -36,7 +36,8 @@
 			"less": "更少控制項",
 			"close": "關閉筆記",
 			"move": "移動筆記"
-		}
+		},
+		"stopRecording": "停止錄製"
 	},
 	"audio": {
 		"enableSystemAudio": "啟用系統音訊",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "來源",
+		"editableCursor": "可編輯游標",
+		"language": "語言"
+	},
+	"setup": {
+		"notes": "筆記",
+		"restart": "重新開始",
+		"discard": "捨棄"
+	},
+	"peek": {
+		"title": "目前的錄製",
+		"clipOf": "片段 {{current}}/{{total}}",
+		"play": "播放",
+		"pause": "暫停",
+		"mute": "靜音",
+		"unmute": "取消靜音",
+		"seek": "拖曳錄製進度",
+		"open": "回看目前的錄製"
 	}
 }

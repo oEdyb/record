@@ -42,95 +42,160 @@
 	pointer-events: none;
 }
 
+/* One surface in every state. Geometry is concentric: a 1px border, a 4px
+   inset, then a 40px primary circle (20 + 4 + 1 = 25px pill radius). Secondary
+   controls are 36px circles centred on the same 40px track, so every control
+   sits the same distance from the pill's edge. */
 .hudBar {
 	pointer-events: auto;
 	display: flex;
-	border-radius: 17px;
-	border: 1px solid #242932;
-	background: #14171c;
-	box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.35);
-	backdrop-filter: blur(24px) saturate(140%);
-}
-
-.hudBarHorizontal {
-	align-items: center;
-	gap: 5px;
-	padding: 7px 9px;
-}
-
-.hudBarVertical {
-	flex-direction: column;
-	align-items: center;
-	gap: 5px;
-	padding: 9px 7px;
-	/* Screen-derived, set once at mount — never the window's own height. */
-	max-height: var(--hud-bar-max-h, 900px);
-	overflow-y: auto;
-	overflow-x: hidden;
-}
-
-.hudBarRecording {
-	width: var(--hud-horizontal-width, 832px);
-	height: 84px;
 	box-sizing: border-box;
-	flex-direction: column;
-	align-items: stretch;
-	gap: 0;
-	padding: 0;
-	overflow: hidden;
-	transform-origin: center bottom;
-	transition:
-		width 180ms cubic-bezier(0.22, 1, 0.36, 1),
-		height 180ms cubic-bezier(0.22, 1, 0.36, 1),
-		border-radius 180ms cubic-bezier(0.22, 1, 0.36, 1),
-		box-shadow 180ms ease;
-}
-
-.hudBarCompact {
-	width: 256px;
 	height: 50px;
 	border-radius: 25px;
+	border: 1px solid rgba(255, 255, 255, 0.09);
+	background: rgba(18, 21, 26, 0.94);
 	box-shadow:
-		0 8px 24px -12px rgba(0, 0, 0, 0.68),
-		0 2px 6px -2px rgba(0, 0, 0, 0.38);
+		inset 0 1px 0 rgba(255, 255, 255, 0.05),
+		0 12px 32px -14px rgba(0, 0, 0, 0.7),
+		0 2px 6px -2px rgba(0, 0, 0, 0.4);
+	backdrop-filter: blur(24px) saturate(150%);
+	overflow: hidden;
+	transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.hudPrimaryRow {
-	display: flex;
-	flex: 0 0 52px;
-	box-sizing: border-box;
-	align-items: center;
-	gap: 5px;
-	padding: 7px 9px;
+.hudPillIdle {
+	width: 360px;
 }
 
-.hudCompactRow {
+.hudPillRecording {
+	width: max-content;
+}
+
+.hudPillRow {
 	display: flex;
+	flex: 1;
+	min-width: 0;
 	height: 48px;
 	box-sizing: border-box;
 	align-items: center;
+	gap: 2px;
+	padding: 4px;
+}
+
+.hudBrandMark {
+	width: 20px;
+	height: 20px;
+	color: #e8ebef;
+}
+
+.hudSourceChip {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	height: 36px;
+	align-items: center;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 18px;
+	background: transparent;
+	color: #e8ebef;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background-color 150ms ease;
+}
+
+.hudSourceChip:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.07);
+}
+
+.hudPrimaryTransport {
+	display: flex;
+	width: 40px;
+	height: 40px;
+	flex-shrink: 0;
+	align-items: center;
 	justify-content: center;
-	gap: 5px;
-	padding: 7px 9px;
+	border: 0;
+	border-radius: 50%;
+	background: radial-gradient(120% 120% at 50% 0%, #f2675d, #d93a30);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.28),
+		0 4px 12px -4px rgba(217, 58, 48, 0.55);
+	color: #ffffff;
+	cursor: pointer;
+	transition:
+		background 180ms cubic-bezier(0.2, 0, 0, 1),
+		box-shadow 180ms cubic-bezier(0.2, 0, 0, 1),
+		transform 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.hudPrimaryTransport:hover:not(:disabled) {
+	transform: scale(1.04);
+}
+
+.hudPrimaryTransport:active:not(:disabled) {
+	transform: scale(0.94);
+}
+
+.hudPrimaryTransport[data-paused="true"] {
+	background: #2a2f37;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+	color: #f5f7fa;
+}
+
+.hudBar[data-starting="true"] .hudPrimaryTransport {
+	animation: hud-arming 900ms ease-in-out infinite alternate;
+}
+
+@keyframes hud-arming {
+	from {
+		opacity: 0.55;
+	}
+	to {
+		opacity: 0.9;
+	}
+}
+
+.hudPrimaryTransport:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+.hudCompactTimer {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 48px;
+	padding: 0 6px;
+	color: #f5f7fa;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 13px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+	user-select: none;
+}
+
+.hudCompactTimer[data-paused="true"] {
+	color: #9aa3ae;
+}
+
+.hudRecordGlyph {
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: #ffffff;
+}
+
+.hudStopGlyph {
+	width: 11px;
+	height: 11px;
+	border-radius: 2.5px;
+	background: currentColor;
 }
 
 .hudContentEnter {
 	animation: hud-content-enter 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.hudBarExpanded > * {
-	animation: hud-expanded-content-enter 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes hud-expanded-content-enter {
-	from {
-		opacity: 0;
-		transform: scale(0.975);
-	}
-	to {
-		opacity: 1;
-		transform: scale(1);
-	}
 }
 
 @keyframes hud-content-enter {
@@ -144,83 +209,12 @@
 	}
 }
 
-.hudPrimaryRowContents {
-	display: contents;
-}
-
-.recordingHistoryRow {
-	display: flex;
-	flex-shrink: 0;
-	height: 30px;
-	box-sizing: border-box;
-	align-items: center;
-	padding: 5px 12px 8px;
-	border-top: 1px solid rgba(255, 255, 255, 0.055);
-}
-
-.recordingHistoryRail {
-	display: flex;
-	width: 100%;
-	height: 9px;
-	align-items: stretch;
-	gap: 3px;
-}
-
-.recordingHistorySegment {
-	min-width: 2px;
-	border-radius: 3px;
-	background: #3a414b;
-	transition:
-		flex-grow 160ms ease,
-		opacity 160ms ease,
-		transform 160ms ease,
-		background-color 160ms ease,
-		box-shadow 160ms ease;
-}
-
-.recordingHistorySegmentNewest {
-	background: #5d6875;
-}
-
-.recordingHistorySegmentActive {
-	background: #db5964;
-	box-shadow: 0 0 8px rgba(219, 89, 100, 0.22);
-}
-
-.recordingHistorySegmentExit {
-	opacity: 0;
-	transform: scaleX(0.45);
-}
-
-.recordingHistoryOverflow {
-	display: flex;
-	min-width: 25px;
-	align-items: center;
-	justify-content: center;
-	border-radius: 3px;
-	background: rgba(255, 255, 255, 0.045);
-	color: #68727e;
-	font-family: var(--font-mono, ui-monospace, monospace);
-	font-size: 8px;
-	font-weight: 650;
-}
-
-.recordingHistoryEmpty {
-	width: 100%;
-	border-radius: 3px;
-	background: rgba(255, 255, 255, 0.035);
-}
-
 @media (prefers-reduced-motion: reduce) {
 	.hudAnchor *,
 	.hudAnchor *::before,
 	.hudAnchor *::after {
 		animation: none !important;
 		transition: none !important;
-	}
-
-	.hudBarRecording {
-		transition: none;
 	}
 
 	.hudContentEnter {
@@ -230,33 +224,6 @@
 	.clipUndoNotice {
 		animation: none;
 	}
-
-	.recordingHistorySegment {
-		transition: none;
-	}
-}
-
-/* Shared shell for every floating HUD menu (language list, device pickers), so
-   they all read as one design and all reserve the same space in the window. */
-.hudPopover {
-	pointer-events: auto;
-	width: 220px;
-	box-sizing: border-box;
-	padding: 6px;
-	border-radius: 15px;
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	background: #1a1e25;
-	box-shadow: 0 20px 44px -14px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.hudPopoverScroll {
-	/* Capped, and the cap is reserved in the overlay window up front, so a list
-	   growing or shrinking never resizes the native window. */
-	max-height: var(--hud-popover-max-h, 320px);
-	overflow-y: auto;
-	overflow-x: hidden;
-	overscroll-behavior: contain;
-	touch-action: pan-y;
 }
 
 /* Scrollbar skin only — kept separate from the height caps so a surface can pick
@@ -280,26 +247,6 @@
 	background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.3));
 }
 
-/* The mic and camera toggles plus the gear that configures them read as one
-   unit: tighter spacing than the bar's 5px, inside a hairline outline.
-   Deliberately an outline rather than the tinted pill the design rules out —
-   a fill that reads at all on #14171c lands brighter than the buttons' own
-   hover colour, which would invert the hover affordance. */
-.hudControlGroup {
-	display: flex;
-	align-items: center;
-	gap: 2px;
-	margin: 0 1px;
-	padding: 2px;
-	border-radius: 12px;
-	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-}
-
-.hudControlGroupVertical {
-	flex-direction: column;
-	margin: 1px 0;
-}
-
 /* Device settings. Same shell as the popovers, and deliberately the same width
    as the notice column (HUD_STACK_WIDTH) so opening it only ever changes the
    overlay window's height, never its width. */
@@ -308,23 +255,33 @@
 	width: 360px;
 	/* Its own cap, larger than a popover's — but the window reserves this room
 	   whether the panel is open or not, so opening it never resizes anything. */
-	max-height: var(--hud-modal-max-h, 470px);
+	max-height: var(--hud-modal-max-h, 560px);
 	overflow-y: auto;
 	overflow-x: hidden;
 	overscroll-behavior: contain;
 	box-sizing: border-box;
 	padding: 6px;
-	border-radius: 15px;
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	background: #1a1e25;
-	box-shadow: 0 20px 44px -14px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+	border-radius: 20px;
+	border: 1px solid rgba(255, 255, 255, 0.09);
+	background: rgba(18, 21, 26, 0.96);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.05),
+		0 24px 48px -16px rgba(0, 0, 0, 0.7),
+		0 4px 12px rgba(0, 0, 0, 0.4);
+	backdrop-filter: blur(24px) saturate(150%);
 }
 
 .hudModalHeader {
 	display: flex;
+	height: 32px;
 	align-items: center;
 	justify-content: space-between;
-	padding: 4px 4px 6px 10px;
+	padding: 0 2px 2px 10px;
+}
+
+.hudModalHeaderActions {
+	display: flex;
+	gap: 2px;
 }
 
 .hudModalTitle {
@@ -335,16 +292,21 @@
 
 .hudModalClose {
 	display: flex;
-	height: 24px;
-	width: 24px;
+	height: 28px;
+	width: 28px;
 	align-items: center;
 	justify-content: center;
 	border: 0;
-	border-radius: 8px;
+	border-radius: 14px;
 	background: transparent;
 	color: rgba(255, 255, 255, 0.55);
 	cursor: pointer;
 	transition: background-color 120ms ease, color 120ms ease;
+}
+
+.hudModalClose:disabled {
+	opacity: 0.3;
+	pointer-events: none;
 }
 
 .hudModalClose:hover {
@@ -367,7 +329,7 @@
 }
 
 .hudModalMeterLabel {
-	font-size: 10px;
+	font-size: 11px;
 	color: rgba(255, 255, 255, 0.45);
 	white-space: nowrap;
 }
@@ -403,8 +365,169 @@
 
 .hudModalHint {
 	padding: 0 10px 6px;
-	font-size: 10px;
+	font-size: 11px;
 	color: rgba(255, 255, 255, 0.35);
+}
+
+/* The HUD window has no theme attribute, so the shared switch would pick up the
+   light palette. Pin the dark values it reads for this panel only. */
+.deviceList {
+	--surface: #151519;
+	--surface-3: #25252b;
+	--fg-emphasis: #ffffff;
+	--border-hi: #3c3c46;
+	--muted: #92929d;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.deviceRow {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-right: 8px;
+	border-radius: 14px;
+	transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.deviceRow:hover,
+.deviceRow[data-expanded="true"] {
+	background: rgba(255, 255, 255, 0.045);
+}
+
+.deviceRowMain {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 4px 8px 10px;
+	border: 0;
+	border-radius: 14px;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: default;
+}
+
+button.deviceRowMain {
+	cursor: pointer;
+}
+
+button.deviceRowMain:focus-visible {
+	outline: none;
+	box-shadow: inset 0 0 0 2px rgba(142, 165, 191, 0.72);
+}
+
+.deviceRowIcon {
+	display: flex;
+	width: 20px;
+	flex-shrink: 0;
+	justify-content: center;
+	color: #c3cad3;
+}
+
+.deviceRowText {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.deviceRowName {
+	color: #f5f7fa;
+	font-size: 12px;
+	font-weight: 560;
+}
+
+.deviceRowDetail {
+	overflow: hidden;
+	color: rgba(255, 255, 255, 0.5);
+	font-size: 11px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.deviceRowChevron {
+	flex-shrink: 0;
+	color: rgba(255, 255, 255, 0.45);
+	transition: transform 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.deviceRowChevronOpen {
+	transform: rotate(180deg);
+}
+
+.deviceOptions {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	padding: 2px 4px 6px 34px;
+	animation: hud-content-enter 140ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.deviceOption {
+	display: flex;
+	min-height: 30px;
+	align-items: center;
+	gap: 8px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 10px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.72);
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+	transition: background-color 120ms ease, color 120ms ease;
+}
+
+.deviceOption > .truncate {
+	flex: 1;
+	min-width: 0;
+}
+
+.deviceOption:hover,
+.deviceOption:focus-visible {
+	background: rgba(255, 255, 255, 0.07);
+	color: #ffffff;
+}
+
+.deviceOption:focus-visible {
+	outline: none;
+	box-shadow: inset 0 0 0 1px rgba(142, 165, 191, 0.72);
+}
+
+.deviceOption:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.deviceOptionActive {
+	color: #ffffff;
+}
+
+.deviceOption .levelMeter {
+	width: 56px;
+	flex: none;
+	height: 6px;
+}
+
+.deviceOptionCheck {
+	flex-shrink: 0;
+	color: rgba(255, 255, 255, 0.85);
+}
+
+.deviceQuality {
+	margin-top: 4px;
+	padding-top: 2px;
+	border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.deviceOptions .cameraPreview {
+	margin: 6px 0 2px;
 }
 
 .levelMeter {
@@ -522,58 +645,207 @@
 	}
 }
 
-.languageMenuItem {
+.deviceRowAction {
 	width: 100%;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 0.425rem 0.5rem;
-	border-radius: 0.45rem;
-	font-size: 11px;
-	color: rgba(255, 255, 255, 0.72);
-	background: transparent;
+	padding-right: 12px;
 	border: 0;
+	text-align: left;
 	cursor: pointer;
-	transition: background-color 120ms ease, color 120ms ease;
 }
 
-.languageMenuItem:hover,
-.languageMenuItem:focus-visible {
-	background: rgba(255, 255, 255, 0.075);
+.deviceRowAction:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.deviceRowChevronSide {
+	flex-shrink: 0;
+	color: var(--muted);
+	transform: rotate(-90deg);
+}
+
+.hudSetupFooter {
+	display: flex;
+	gap: 4px;
+	margin-top: 6px;
+	padding-top: 6px;
+	border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hudSetupFooterButton {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	height: 34px;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	border: 0;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.045);
+	color: #c9ced6;
+	font-size: 12px;
+	font-weight: 500;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background-color 150ms ease, color 150ms ease;
+}
+
+.hudSetupFooterButton:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.09);
 	color: #ffffff;
 }
 
-.languageMenuItem:focus-visible {
+.hudSetupFooterButton[data-variant="danger"]:hover:not(:disabled) {
+	background: rgba(248, 113, 113, 0.14);
+	color: #f87171;
+}
+
+.hudSetupFooterButton:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+.hudSetupFooterButton:focus-visible {
 	outline: none;
 	box-shadow: inset 0 0 0 1px rgba(142, 165, 191, 0.72);
 }
 
-.languageMenuItemActive {
-	background: var(--accent-soft);
-	color: #ffffff;
+/* Replay of the recording so far. Same width and shell as setup, so opening it
+   never changes the reserved window size. 6px inset, 14px media radius
+   (20 - 6), 16:9 stage. */
+.clipPeek {
+	pointer-events: auto;
+	width: 360px;
+	box-sizing: border-box;
+	padding: 6px;
+	border-radius: 20px;
+	border: 1px solid rgba(255, 255, 255, 0.09);
+	background: rgba(18, 21, 26, 0.96);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.05),
+		0 24px 48px -16px rgba(0, 0, 0, 0.7),
+		0 4px 12px rgba(0, 0, 0, 0.4);
+	backdrop-filter: blur(24px) saturate(150%);
 }
 
-/* Device-picker popovers (microphone / camera) reuse the language menu's
-   panel/item/checkmark shell; this is the one extra piece they need. */
-.hudMenuSectionLabel {
-	padding: 6px 10px 4px;
-	font-family: var(--font-mono, ui-monospace, monospace);
-	font-size: 9.5px;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-	color: rgba(255, 255, 255, 0.4);
+.clipPeekStage {
+	position: relative;
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	border-radius: 14px;
+	background: #000000;
 }
 
-/* Thin separators between HUD toolbar control groups. */
-.hudDivider {
+.clipPeekVideo {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	cursor: pointer;
+}
+
+.clipPeekLabel {
+	position: absolute;
+	top: 8px;
+	left: 8px;
+	padding: 3px 8px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.55);
+	color: #e8ebef;
+	font-size: 11px;
+	font-weight: 500;
+	pointer-events: none;
+	backdrop-filter: blur(8px);
+}
+
+.clipPeekMute {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	display: flex;
+	width: 28px;
+	height: 28px;
+	align-items: center;
+	justify-content: center;
+	border: 0;
+	border-radius: 14px;
+	background: rgba(0, 0, 0, 0.55);
+	color: #e8ebef;
+	cursor: pointer;
+	backdrop-filter: blur(8px);
+	transition: background-color 150ms ease;
+}
+
+.clipPeekMute:hover {
+	background: rgba(0, 0, 0, 0.75);
+}
+
+.clipPeekControls {
+	display: flex;
+	height: 36px;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 4px 0 0;
+}
+
+.clipPeekPlay {
+	display: flex;
+	width: 32px;
+	height: 32px;
 	flex-shrink: 0;
-	background: rgba(255, 255, 255, 0.1);
+	align-items: center;
+	justify-content: center;
+	border: 0;
+	border-radius: 16px;
+	background: transparent;
+	color: #e8ebef;
+	cursor: pointer;
+	transition: background-color 150ms ease;
 }
-.hudDividerHorizontal {
-	width: 1px;
-	height: 22px;
+
+.clipPeekPlay:hover {
+	background: rgba(255, 255, 255, 0.08);
 }
-.hudDividerVertical {
-	width: 22px;
-	height: 1px;
+
+.clipPeekTrack {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	height: 20px;
+	align-items: center;
+	gap: 3px;
+	cursor: pointer;
+	touch-action: none;
+}
+
+.clipPeekTrack:focus-visible {
+	outline: none;
+	border-radius: 4px;
+	box-shadow: 0 0 0 2px rgba(142, 165, 191, 0.72);
+}
+
+.clipPeekSegment {
+	position: relative;
+	flex-basis: 0;
+	min-width: 3px;
+	height: 4px;
+	overflow: hidden;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.16);
+}
+
+.clipPeekSegmentFill {
+	position: absolute;
+	inset: 0;
+	background: #e8ebef;
+	transform-origin: left center;
+}
+
+.clipPeekTime {
+	flex-shrink: 0;
+	color: #9aa3ae;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
 }

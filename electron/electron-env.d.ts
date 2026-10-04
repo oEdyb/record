@@ -60,7 +60,11 @@ interface Window {
 			callback: (phase: import("../src/native/contracts").ExportTransactionPhase) => void,
 		) => () => void;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
-		switchToEditor: () => Promise<void>;
+		switchToEditor: (options?: { compactReview?: boolean }) => Promise<void>;
+		expandReviewWindow: () => Promise<{ success: boolean }>;
+		isReviewWindowCompact: () => Promise<boolean>;
+		fitReviewWindow: (request: { aspectRatio: number; chromeHeight: number }) => Promise<boolean>;
+		onReviewWindowCompactChanged: (callback: (compact: boolean) => void) => () => void;
 		switchToHud: () => Promise<void>;
 		startNewRecording: (
 			context?: import("../src/lib/recordingSession").RecordingWorkspaceContext,

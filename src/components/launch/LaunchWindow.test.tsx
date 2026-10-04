@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
-import { saveUserPreferences } from "@/lib/userPreferences";
 import { TooltipProvider } from "../ui/tooltip";
 import { HUD_BAR_BOTTOM, HUD_POPOVER_GAP, HUD_POPOVER_MAX_HEIGHT } from "./hudGeometry";
 import { LaunchWindow } from "./LaunchWindow";
@@ -471,11 +470,7 @@ describe("LaunchWindow record button", () => {
 		expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
 	});
 
-	it.each([
-		"horizontal",
-		"vertical",
-	] as const)("names the idle action Record after manual selection (%s)", async (trayLayout) => {
-		saveUserPreferences({ trayLayout });
+	it("names the idle action Record after manual selection", async () => {
 		renderLaunchWindow();
 		await waitForSourceSelectionSubscription();
 
@@ -590,17 +585,17 @@ describe("LaunchWindow record button", () => {
 		stubElectronAPI(vi.fn(async () => displayOneSource));
 		recorderState.value.starting = true;
 		renderLaunchWindow();
-		const record = await screen.findByTestId("launch-record-button");
-		expect(record).toBeDisabled();
-		expect(record).toHaveAttribute("aria-label", "Starting recording…");
-		expect(screen.queryByRole("button", { name: "Stop recording" })).toBeNull();
-	});
-
-	it("anchors the horizontal window controls to the right edge", async () => {
-		renderLaunchWindow();
-
-		const controls = await screen.findByTestId("hud-right-controls");
-		expect(controls).toHaveClass("ml-auto");
+		// The pill switches immediately, but nothing claims capture has begun:
+		// the timer is held, Pause is unavailable and the transport cancels.
+		expect(document.querySelector('[data-recording-layout="recording"]')).not.toBeNull();
+		expect(document.querySelector('[data-starting="true"]')).not.toBeNull();
+		const transport = await screen.findByTestId("launch-record-button");
+		expect(transport).toBeEnabled();
+		expect(transport).toHaveAccessibleName("tooltips.cancelRecording");
+		expect(screen.getByTestId("hud-recording-timer")).toHaveAttribute("data-paused", "true");
+		expect(screen.getByTestId("hud-compact-pause-button")).toBeDisabled();
+		fireEvent.click(transport);
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce();
 	});
 
 	it("returns to the editor from the idle HUD with Escape or the close button", async () => {
@@ -627,18 +622,14 @@ describe("LaunchWindow record button", () => {
 		});
 
 		renderLaunchWindow();
-		await screen.findByTestId("launch-open-studio-button");
 		await waitFor(() =>
-			expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull(),
+			expect(document.querySelector('[data-recording-layout="idle"]')).not.toBeNull(),
 		);
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 		expect(screen.queryByTestId("hud-compact-pause-button")).not.toBeInTheDocument();
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		expect(document.querySelector('[data-recording-layout="full"]')).not.toBeNull();
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull();
 		fireEvent.keyDown(window, { key: "Escape" });
-		fireEvent.click(screen.getByTestId("launch-open-studio-button"));
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByTestId("launch-open-studio-button"));
 
 		await waitFor(() => {
 			expect(window.electronAPI.returnToEditorIfRecordingWorkspace).toHaveBeenCalledTimes(1);
@@ -646,15 +637,14 @@ describe("LaunchWindow record button", () => {
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledTimes(2);
 		expect(window.electronAPI.hudOverlayClose).not.toHaveBeenCalled();
 	});
-	it("returns to review in a compact pill without an insertion workspace", async () => {
+	it("returns to review from the idle pill without an insertion workspace", async () => {
 		window.history.replaceState(null, "", "?windowType=hud-overlay&returnToReview=true");
 		try {
 			stubElectronAPI(vi.fn(async () => displayOneSource));
 			renderLaunchWindow();
 			await waitFor(() => expect(screen.getByTestId("launch-record-button")).toBeEnabled());
-			expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull();
+			expect(document.querySelector('[data-recording-layout="idle"]')).not.toBeNull();
 			expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
-			fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 			expect(screen.getByTestId("launch-device-settings-button")).toBeVisible();
 			fireEvent.keyDown(window, { key: "Escape" });
 			expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
@@ -822,25 +812,14 @@ describe("LaunchWindow record button", () => {
 		expect(screen.queryByTestId("launch-source-selector-button")).not.toBeInTheDocument();
 	});
 
-	it("keeps the compact transport in place through Pause until the user expands it", async () => {
-		recorderState.value.recording = false;
-		recorderState.value.recordedClips = [];
-
-		const view = renderLaunchWindow();
-
-		const history = await screen.findByRole("img", {
-			name: /Clip history: 0 completed clips/,
-		});
-		expect(history).toBeVisible();
-		expect(history.firstElementChild?.children).toHaveLength(1);
+	it("keeps Pause in the same slot and the pill the same width through Pause", async () => {
 		recorderState.value.recording = true;
-		view.rerender(
-			<TooltipProvider>
-				<LaunchWindow />
-			</TooltipProvider>,
-		);
-
-		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
+		recorderState.value.canPauseRecording = true;
+		const view = renderLaunchWindow();
+		const buttonsWhileRecording = screen
+			.getAllByRole("button")
+			.map((button) => button.getAttribute("data-testid"));
+		expect(screen.getByTestId("hud-expand-button")).toBeDisabled();
 
 		recorderState.value.paused = true;
 		view.rerender(
@@ -848,121 +827,115 @@ describe("LaunchWindow record button", () => {
 				<LaunchWindow />
 			</TooltipProvider>,
 		);
-		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
 		expect(screen.getByTestId("hud-compact-pause-button")).toHaveAccessibleName(
 			"tooltips.resumeRecording",
 		);
-
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		expect(screen.getByRole("img", { name: /Clip history: 0 completed clips/ })).toBeVisible();
-		expect(screen.queryByTestId("hud-compact-pause-button")).not.toBeInTheDocument();
-		const collapseButton = screen.getByTestId("hud-recording-size-button");
-		expect(collapseButton).toHaveAccessibleName("tooltips.hideRecordingControls");
-		expect(screen.getByTestId("hud-right-controls")).toContainElement(collapseButton);
-
-		fireEvent.click(collapseButton);
+		expect(
+			screen.getAllByRole("button").map((button) => button.getAttribute("data-testid")),
+		).toEqual(buttonsWhileRecording);
 		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
-		expect(screen.getByTestId("hud-compact-pause-button")).toHaveAccessibleName(
-			"tooltips.resumeRecording",
-		);
 	});
 
-	it("gives tooltip-only HUD controls a stable accessible name", async () => {
+	it("gives the setup panel's actions stable accessible names", async () => {
 		renderLaunchWindow();
-
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
 		expect(await screen.findByTestId("launch-open-studio-button")).toHaveAccessibleName(
 			"Recordings",
 		);
 	});
 
-	it("restores the full panel with the finalized clip when Pause completes", async () => {
+	it("replays the kept clips while paused and closes the replay on Continue", async () => {
 		recorderState.value.recording = true;
-		recorderState.value.paused = false;
-		recorderState.value.clipFinalizing = false;
-		recorderState.value.activeClipElapsedMs = 1_200;
-		recorderState.value.recordedClips = [];
-
-		const view = renderLaunchWindow();
-		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		expect(screen.getByRole("img", { name: /Clip history/ })).toBeVisible();
-
 		recorderState.value.paused = true;
+		recorderState.value.canPauseRecording = true;
 		recorderState.value.recordedClips = [
-			{
-				index: 0,
-				screenVideoPath: "/recordings/clip-1.mp4",
-				durationMs: 1_200,
-			},
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
+			{ index: 1, screenVideoPath: "/recordings/clip-2.mp4", durationMs: 9_000, removed: true },
+			{ index: 2, screenVideoPath: "/recordings/clip-3.mp4", durationMs: 8_000 },
 		];
+		const view = renderLaunchWindow();
+
+		const expand = screen.getByTestId("hud-expand-button");
+		expect(expand).toBeEnabled();
+		expect(expand).toHaveAccessibleName("peek.open");
+		fireEvent.click(expand);
+
+		const peek = await screen.findByTestId("hud-clip-peek");
+		expect(peek).toHaveTextContent("peek.clipOf");
+		expect(screen.getByTestId("hud-clip-peek-video").getAttribute("src")).toContain(
+			"klippt://app/__media__/",
+		);
+		expect(screen.getByRole("slider", { name: "peek.seek" })).toHaveAttribute(
+			"aria-valuemax",
+			"10",
+		);
+
+		recorderState.value.paused = false;
 		view.rerender(
 			<TooltipProvider>
 				<LaunchWindow />
 			</TooltipProvider>,
 		);
-
-		const finalizedHistory = screen.getByRole("img", {
-			name: /Clip history: 1 completed clip$/,
-		});
-		expect(finalizedHistory.firstElementChild?.children).toHaveLength(1);
+		expect(screen.queryByTestId("hud-clip-peek")).not.toBeInTheDocument();
 	});
 
-	it("expands active recording into the full controls and proportional clip history", async () => {
+	it("opens the replay with the up arrow only after a completed Pause", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.clipFinalizing = true;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
+		];
+		const view = renderLaunchWindow();
+		fireEvent.keyDown(window, { key: "ArrowUp" });
+		expect(screen.queryByTestId("hud-clip-peek")).not.toBeInTheDocument();
+
+		recorderState.value.clipFinalizing = false;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		fireEvent.keyDown(window, { key: "ArrowUp" });
+		expect(await screen.findByTestId("hud-clip-peek")).toBeInTheDocument();
+		fireEvent.keyDown(window, { key: "Escape" });
+		expect(screen.queryByTestId("hud-clip-peek")).not.toBeInTheDocument();
+	});
+
+	it("shows Stop as a secondary control and keeps setup locked while capturing", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.canPauseRecording = true;
 		recorderState.value.canRemovePreviousClip = true;
 		recorderState.value.elapsedSeconds = 12;
-		recorderState.value.activeClipElapsedMs = 900;
 		recorderState.value.microphoneEnabled = true;
-		recorderState.value.systemAudioEnabled = false;
 		recorderState.value.recordedClips = [
 			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2200 },
-			{ index: 1, screenVideoPath: "/recordings/clip-2.mp4", durationMs: 4100 },
 		];
 
 		renderLaunchWindow();
-		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Remove previous clip" })).toBeEnabled();
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-
 		expect(screen.getByRole("button", { name: "tooltips.pauseRecording" })).toBeEnabled();
 		expect(screen.getByRole("button", { name: "Remove previous clip" })).toBeEnabled();
-		const history = screen.getByRole("img", {
-			name: /Clip history: 2 completed clips/,
-		});
-		expect(history).toBeVisible();
-		const segments = history.firstElementChild?.children;
-		expect((segments?.[0] as HTMLElement).style.flexGrow).toBe("2200");
-		expect((segments?.[1] as HTMLElement).style.flexGrow).toBe("4100");
-		expect(screen.queryByText(/2 clips/i)).not.toBeInTheDocument();
-		expect(screen.getByTestId("launch-source-selector-button")).toBeDisabled();
-		expect(screen.getByTestId("launch-microphone-button")).toBeDisabled();
-		expect(screen.getByTestId("launch-record-button")).toBeEnabled();
-		expect(screen.getByTestId("launch-record-button")).not.toHaveTextContent("Stop Recording");
-		expect(
-			screen.getByTestId("launch-record-button").querySelector('rect[x="6.5"][y="6.5"]'),
-		).toBeInTheDocument();
-
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		expect(screen.queryByRole("img", { name: /Clip history/ })).not.toBeInTheDocument();
+		expect(screen.getByTestId("launch-record-button")).toHaveAccessibleName(
+			"tooltips.stopRecording",
+		);
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		expect(await screen.findByTestId("hud-setup-source")).toBeDisabled();
+		expect(screen.getByRole("switch", { name: "audio.microphone" })).toBeDisabled();
 	});
 
-	it("unlocks the existing setup controls only after a completed macOS Pause", async () => {
+	it("unlocks the setup controls only after a completed macOS Pause", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.paused = true;
 		recorderState.value.canPauseRecording = true;
 		recorderState.value.canReconfigureWhilePaused = true;
 
 		renderLaunchWindow();
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		const cursorModeButton = await screen.findByTestId("launch-cursor-mode-button");
-
-		expect(screen.getByTestId("launch-source-selector-button")).toBeEnabled();
-		expect(screen.getByTestId("launch-system-audio-button")).toBeEnabled();
-		expect(screen.getByTestId("launch-microphone-button")).toBeEnabled();
-		expect(screen.getByTestId("launch-webcam-button")).toBeEnabled();
-		expect(screen.getByTestId("launch-device-settings-button")).toBeEnabled();
-		expect(cursorModeButton).toBeEnabled();
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		expect(await screen.findByTestId("hud-setup-source")).toBeEnabled();
+		expect(screen.getByRole("switch", { name: "audio.systemAudio" })).toBeEnabled();
+		expect(screen.getByRole("switch", { name: "audio.microphone" })).toBeEnabled();
+		expect(screen.getByRole("switch", { name: "webcam.camera" })).toBeEnabled();
+		expect(screen.getByRole("switch", { name: "deviceSettings.editableCursor" })).toBeEnabled();
 		expect(screen.getByTestId("launch-record-button")).toBeEnabled();
 	});
 
@@ -978,8 +951,8 @@ describe("LaunchWindow record button", () => {
 
 		const stop = await screen.findByTestId("launch-record-button");
 		expect(stop).toBeDisabled();
-		expect(stop).toHaveTextContent("00:12");
-		expect(stop).not.toHaveTextContent("recording.saving");
+		expect(stop).toHaveAccessibleName("tooltips.stopRecording");
+		expect(screen.getByTestId("hud-recording-timer")).toHaveTextContent("00:12");
 		expect(screen.getByRole("button", { name: "tooltips.resumeRecording" })).toBeDisabled();
 	});
 
@@ -996,23 +969,18 @@ describe("LaunchWindow record button", () => {
 		);
 
 		const transport = screen.getByTestId("launch-record-button");
-		expect(transport).toHaveTextContent("00:12");
+		expect(screen.getByTestId("hud-recording-timer")).toHaveTextContent("00:12");
 		expect(transport).not.toHaveTextContent("recording.saving");
 		expect(transport).toHaveAccessibleName("recording.saving");
 		expect(transport).toHaveAttribute("aria-busy", "true");
 		expect(transport).toBeDisabled();
 		expect(screen.getByTestId("hud-compact-pause-button")).toBeDisabled();
 		expect(screen.getByTestId("hud-remove-previous-clip-button")).toBeDisabled();
-		expect(screen.getByTestId("hud-recording-size-button")).toBeDisabled();
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull();
+		expect(screen.getByTestId("hud-expand-button")).toBeDisabled();
+		expect(document.querySelector('[data-recording-layout="recording"]')).not.toBeNull();
 	});
 
-	it.each([
-		false,
-		true,
-	])("retains the last recording presentation through async handoff (expanded: %s)", async (expanded) => {
-		saveUserPreferences({ trayLayout: "vertical" });
+	it("retains the last recording presentation through async handoff", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.paused = true;
 		recorderState.value.elapsedSeconds = 12;
@@ -1020,7 +988,6 @@ describe("LaunchWindow record button", () => {
 			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 12000 },
 		];
 		const view = renderLaunchWindow();
-		if (expanded) fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 		recorderState.value.saving = true;
 		recorderState.value.recording = false;
 		recorderState.value.paused = false;
@@ -1032,17 +999,9 @@ describe("LaunchWindow record button", () => {
 			</TooltipProvider>,
 		);
 
-		expect(screen.getByTestId("launch-record-button")).toHaveTextContent("00:12");
+		expect(screen.getByTestId("hud-recording-timer")).toHaveTextContent("00:12");
 		expect(screen.getByRole("button", { name: "tooltips.resumeRecording" })).toBeDisabled();
-		expect(screen.queryByTestId("launch-open-studio-button")).not.toBeInTheDocument();
-		expect(screen.queryByTestId("launch-tray-layout-button")).not.toBeInTheDocument();
-		expect(screen.getByTestId("hud-recording-size-button")).toHaveAttribute(
-			"aria-expanded",
-			String(expanded),
-		);
-		if (expanded)
-			expect(screen.getByRole("img", { name: "Clip history: 1 completed clip" })).toBeVisible();
-		else expect(document.querySelector('[data-recording-layout="compact"]')).not.toBeNull();
+		expect(document.querySelector('[data-recording-layout="recording"]')).not.toBeNull();
 
 		recorderState.value.saving = false;
 		view.rerender(
@@ -1050,10 +1009,7 @@ describe("LaunchWindow record button", () => {
 				<LaunchWindow />
 			</TooltipProvider>,
 		);
-		expect(await screen.findByTestId("launch-tray-layout-button")).toHaveAttribute(
-			"aria-pressed",
-			"true",
-		);
+		expect(document.querySelector('[data-recording-layout="idle"]')).not.toBeNull();
 		expect(screen.getByTestId("launch-record-button")).not.toHaveTextContent("00:12");
 	});
 
@@ -1084,7 +1040,6 @@ describe("LaunchWindow record button", () => {
 		];
 
 		renderLaunchWindow();
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
 		fireEvent.click(screen.getByRole("button", { name: "Remove previous clip" }));
 		fireEvent.keyDown(window, { key: "Backspace" });
 
@@ -1215,7 +1170,7 @@ describe("LaunchWindow overlay sizing", () => {
 		renderLaunchWindow();
 
 		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
-			"[data-tray-layout]",
+			"[data-recording-layout]",
 		) as HTMLElement;
 		stubBox(bar, 400, 56);
 		await flushResizeObservers();
@@ -1236,7 +1191,7 @@ describe("LaunchWindow overlay sizing", () => {
 		renderLaunchWindow();
 
 		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
-			"[data-tray-layout]",
+			"[data-recording-layout]",
 		) as HTMLElement;
 		// A bogus oversized reading (e.g. an unstyled first paint in dev) must not
 		// leave the overlay permanently inflated.
@@ -1258,7 +1213,7 @@ describe("LaunchWindow overlay sizing", () => {
 		renderLaunchWindow();
 
 		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
-			"[data-tray-layout]",
+			"[data-recording-layout]",
 		) as HTMLElement;
 		stubBox(bar, 400, 56);
 		await flushResizeObservers();
@@ -1268,28 +1223,25 @@ describe("LaunchWindow overlay sizing", () => {
 		};
 		sizeMock.mockClear();
 
-		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByRole("button", { name: /deviceSettings\.language/ }));
 		await screen.findByTestId("hud-language-menu");
 		await flushResizeObservers();
 
 		expect(window.electronAPI.setHudOverlaySize).not.toHaveBeenCalled();
 	});
 
-	it("keeps the native backing allocation through expansion and a deferred save", async () => {
-		saveUserPreferences({ trayLayout: "vertical" });
+	it("keeps the native backing allocation through Pause and a deferred save", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.elapsedSeconds = 12;
 		const view = renderLaunchWindow();
-		const bar = screen.getByTestId("hud-drag-handle").closest("[data-tray-layout]") as HTMLElement;
+		const bar = screen
+			.getByTestId("hud-drag-handle")
+			.closest("[data-recording-layout]") as HTMLElement;
 		stubBox(bar, 256, 50);
 		await flushResizeObservers();
 		const resize = vi.mocked(window.electronAPI.setHudOverlaySize);
 		const initialCalls = resize.mock.calls.length;
-		fireEvent.click(screen.getByTestId("hud-recording-size-button"));
-		for (const width of [400, 600, 832]) {
-			stubBox(bar, width, 84);
-			await flushResizeObservers();
-		}
 		recorderState.value.saving = true;
 		recorderState.value.recording = false;
 		recorderState.value.elapsedSeconds = 0;
@@ -1298,20 +1250,17 @@ describe("LaunchWindow overlay sizing", () => {
 				<LaunchWindow />
 			</TooltipProvider>,
 		);
+		stubBox(bar, 360, 50);
 		await flushResizeObservers();
 		expect(resize).toHaveBeenCalledTimes(initialCalls);
-		expect(screen.getByTestId("launch-record-button")).toHaveTextContent("00:12");
-		expect(screen.getByTestId("hud-recording-size-button")).toHaveAttribute(
-			"aria-expanded",
-			"true",
-		);
+		expect(screen.getByTestId("hud-recording-timer")).toHaveTextContent("00:12");
 	});
 
 	it("does not resize the overlay when the device-settings panel opens", async () => {
 		renderLaunchWindow();
 
 		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
-			"[data-tray-layout]",
+			"[data-recording-layout]",
 		) as HTMLElement;
 		stubBox(bar, 400, 56);
 		await flushResizeObservers();
@@ -1347,7 +1296,7 @@ describe("LaunchWindow overlay sizing", () => {
 		expect(await screen.findByText("Use your system language?")).toBeInTheDocument();
 
 		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
-			"[data-tray-layout]",
+			"[data-recording-layout]",
 		) as HTMLElement;
 		stubBox(bar, 400, 56);
 		const noticeHeight = 130;
@@ -1380,7 +1329,8 @@ describe("LaunchWindow language menu", () => {
 	it("sizes the menu from CSS instead of the overlay window's own height", async () => {
 		renderLaunchWindow();
 
-		fireEvent.click(await screen.findByRole("button", { name: "English" }));
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByRole("button", { name: /deviceSettings\.language/ }));
 
 		const menu = await screen.findByTestId("hud-language-menu");
 		// A measured maxHeight/bottom is what used to truncate the list to whatever
@@ -1389,10 +1339,8 @@ describe("LaunchWindow language menu", () => {
 		expect(menu.style.maxHeight).toBe("");
 		expect(menu.style.bottom).toBe("");
 		// And it lives inside the HUD stack, not portaled out to the document body.
-		expect(menu.closest("[data-tray-layout]")).toBeNull();
-		expect(menu.parentElement?.parentElement).toContainElement(
-			screen.getByTestId("hud-drag-handle"),
-		);
+		expect(menu.closest("[data-recording-layout]")).toBeNull();
+		expect(menu.closest("[data-testid='hud-device-settings']")).not.toBeNull();
 	});
 });
 
@@ -1503,14 +1451,22 @@ describe("LaunchWindow device settings", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("opens from the settings button and closes again from its own Done control", async () => {
+	it("opens from the setup button and closes again with Escape", async () => {
 		renderLaunchWindow();
 
 		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
 		const panel = await screen.findByTestId("hud-device-settings");
 		expect(panel).toBeInTheDocument();
-
+		expect(within(panel).getByRole("button", { name: "Close App" })).toBeInTheDocument();
 		fireEvent.click(within(panel).getByRole("button", { name: "Done" }));
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+		});
+		expect(window.electronAPI.hudOverlayClose).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+		fireEvent.keyDown(window, { key: "Escape" });
 
 		await waitFor(() => {
 			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
@@ -1527,6 +1483,7 @@ describe("LaunchWindow device settings", () => {
 
 		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
 		const panel = await screen.findByTestId("hud-device-settings");
+		fireEvent.click(within(panel).getByRole("button", { name: /audio\.microphone/ }));
 
 		fireEvent.click(within(panel).getByRole("menuitemradio", { name: /Mic B/ }));
 
@@ -1537,6 +1494,30 @@ describe("LaunchWindow device settings", () => {
 		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
 			micDeviceId: "mic-b",
 		});
+	});
+
+	it("switches devices on from their rows and opens one device list at a time", async () => {
+		micDevicesState.value = [{ deviceId: "mic-a", label: "Mic A", groupId: "g" }];
+		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
+
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+
+		expect(within(panel).queryByRole("menuitemradio")).toBeNull();
+		fireEvent.click(within(panel).getByRole("button", { name: /audio\.microphone/ }));
+		expect(within(panel).getByRole("menuitemradio", { name: /Mic A/ })).toBeVisible();
+		expect(within(panel).queryByRole("menuitemradio", { name: /Camera A/ })).toBeNull();
+
+		const cameraRow = within(panel).getByRole("button", { name: /webcam\.camera/ });
+		fireEvent.pointerDown(cameraRow);
+		fireEvent.click(cameraRow);
+		expect(screen.getByTestId("hud-device-settings")).toBeInTheDocument();
+		expect(within(panel).getByRole("menuitemradio", { name: /Camera A/ })).toBeVisible();
+		expect(within(panel).queryByRole("menuitemradio", { name: /Mic A/ })).toBeNull();
+
+		fireEvent.click(within(panel).getByRole("switch", { name: "audio.microphone" }));
+		expect(recorderState.value.setMicrophoneEnabled).toHaveBeenCalled();
 	});
 
 	it("persists a tested webcam resolution and frame-rate choice", async () => {
@@ -1618,13 +1599,25 @@ describe("LaunchWindow device settings", () => {
 		});
 	});
 
-	it("stays available but disabled in the expanded recording panel", async () => {
+	it("opens during capture with its rows and device lists locked", async () => {
 		recorderState.value.recording = true;
+		cameraDevicesState.value = [
+			{ deviceId: "cam-a", label: "Camera A", groupId: "g" },
+			{ deviceId: "cam-b", label: "Camera B", groupId: "g" },
+		];
 
 		renderLaunchWindow();
-		fireEvent.click(await screen.findByTestId("hud-recording-size-button"));
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
 
-		expect(screen.getByTestId("launch-device-settings-button")).toBeDisabled();
+		const panel = await screen.findByTestId("hud-device-settings");
+		expect(within(panel).getByRole("switch", { name: "webcam.camera" })).toBeDisabled();
+		expect(within(panel).getByRole("button", { name: "setup.discard" })).toBeEnabled();
+		expect(within(panel).queryByRole("button", { name: "Close App" })).toBeNull();
+		fireEvent.click(within(panel).getByRole("button", { name: /webcam\.camera/ }));
+		expect(within(panel).getByRole("menuitemradio", { name: /Camera B/ })).toBeDisabled();
+		fireEvent.click(within(panel).getByRole("menuitemradio", { name: /Camera B/ }));
+		expect(recorderState.value.setWebcamDeviceId).not.toHaveBeenCalledWith("cam-b");
+		expect(screen.getByTestId("hud-recording-quality")).toBeDisabled();
 	});
 });
 
@@ -1673,7 +1666,7 @@ describe("LaunchWindow HUD drag", () => {
 
 		// A bar wide enough that it genuinely outgrows the reserved window width, so a
 		// measurement would produce a `setHudOverlaySize` call if it weren't suppressed.
-		const bar = dragHandle.closest("[data-tray-layout]") as HTMLElement;
+		const bar = dragHandle.closest("[data-recording-layout]") as HTMLElement;
 		stubBox(bar, 900, 900);
 
 		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {

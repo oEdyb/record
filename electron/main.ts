@@ -9,6 +9,7 @@ import {
 	Menu,
 	nativeImage,
 	net,
+	screen,
 	session,
 	shell,
 	systemPreferences,
@@ -25,6 +26,7 @@ import {
 } from "./auto-updater";
 import { parseCliArgs } from "./cli/args";
 import { runCli } from "./cli/cliMain";
+import { COMPACT_REVIEW_MIN_SIZE, fitCompactReviewBounds } from "./compactReviewGeometry";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "./diagnostics/main-log-buffer";
 import {
 	loadAndRegisterGlobalShortcuts,
@@ -656,13 +658,64 @@ function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 	});
 }
 
-function createEditorWindowWrapper() {
+/** Where a finished recording's small review player opens: the recorder's display. */
+function compactReviewBoundsNear(window: BrowserWindow | null) {
+	const display =
+		window && !window.isDestroyed()
+			? screen.getDisplayMatching(window.getBounds())
+			: screen.getPrimaryDisplay();
+	return fitCompactReviewBounds(display.workArea);
+}
+
+const compactReviewWindows = new WeakSet<BrowserWindow>();
+
+/** Tells review whether it is the small player, so Expand appears only then. */
+function setReviewWindowCompact(window: BrowserWindow, compact: boolean) {
+	if (compact) compactReviewWindows.add(window);
+	else compactReviewWindows.delete(window);
+	if (!window.isDestroyed()) window.webContents.send("review-window-compact-changed", compact);
+}
+
+// Once review knows the recording's shape, the small player takes exactly that
+// shape plus its bars, so the video fills it with no padding.
+ipcMain.handle(
+	"fit-review-window",
+	(event, request: { aspectRatio?: number; chromeHeight?: number }) => {
+		const window = BrowserWindow.fromWebContents(event.sender);
+		if (!window || window.isDestroyed() || !compactReviewWindows.has(window)) return false;
+		if (window.isFullScreen() || window.isMaximized()) return false;
+		const display = screen.getDisplayMatching(window.getBounds());
+		window.setBounds(
+			fitCompactReviewBounds(display.workArea, request?.aspectRatio, request?.chromeHeight),
+		);
+		return true;
+	},
+);
+
+ipcMain.handle("is-review-window-compact", (event) => {
+	const window = BrowserWindow.fromWebContents(event.sender);
+	return Boolean(window && compactReviewWindows.has(window));
+});
+
+function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
 	if (workspaceTransition?.target === "editor" && !workspaceTransition.window.isDestroyed()) {
 		return;
 	}
+	const compactBounds = options.compactReview ? compactReviewBoundsNear(mainWindow) : undefined;
 	if (editorWindow && !editorWindow.isDestroyed()) {
 		const previousWindow = mainWindow;
 		mainWindow = editorWindow;
+		// A review the user put in native fullscreen stays there.
+		if (compactBounds && !editorWindow.isFullScreen()) {
+			if (editorWindow.isMaximized()) editorWindow.unmaximize();
+			editorWindow.setMinimumSize(COMPACT_REVIEW_MIN_SIZE.width, COMPACT_REVIEW_MIN_SIZE.height);
+			editorWindow.setBounds(compactBounds);
+			setReviewWindowCompact(editorWindow, true);
+		} else if (!compactBounds && compactReviewWindows.has(editorWindow)) {
+			// Anything other than a finished recording opens the full workspace.
+			editorWindow.setMinimumSize(800, 600);
+			editorWindow.maximize();
+		}
 		editorWindow.show();
 		editorWindow.focus();
 		editorWindow.webContents.send("recording-workspace-returned");
@@ -674,8 +727,11 @@ function createEditorWindowWrapper() {
 		return;
 	}
 	const previousWindow = mainWindow;
-	const nextEditorWindow = createEditorWindow();
+	const nextEditorWindow = createEditorWindow({}, { compactBounds });
 	editorWindow = nextEditorWindow;
+	if (compactBounds) compactReviewWindows.add(nextEditorWindow);
+	nextEditorWindow.on("maximize", () => setReviewWindowCompact(nextEditorWindow, false));
+	nextEditorWindow.on("enter-full-screen", () => setReviewWindowCompact(nextEditorWindow, false));
 	nextEditorWindow.webContents.once("did-finish-load", () => {
 		readyEditorWindows.add(nextEditorWindow);
 	});

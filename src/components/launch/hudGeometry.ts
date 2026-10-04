@@ -51,7 +51,7 @@ export const HUD_POPOVER_MIN_HEIGHT = 140;
  * the native resize, which reads as position judder. Its width matches
  * HUD_STACK_WIDTH so it never affects the window's width either.
  */
-export const HUD_MODAL_MAX_HEIGHT = 470;
+export const HUD_MODAL_MAX_HEIGHT = 560;
 export const HUD_MODAL_MIN_HEIGHT = 200;
 /**
  * Slack granted *beyond* what is strictly required, on each axis. This is pure

@@ -36,7 +36,8 @@
 			"less": "컨트롤 줄이기",
 			"close": "메모 닫기",
 			"move": "메모 이동"
-		}
+		},
+		"stopRecording": "녹화 중지"
 	},
 	"audio": {
 		"enableSystemAudio": "시스템 오디오 활성화",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "소스",
+		"editableCursor": "편집 가능한 커서",
+		"language": "언어"
+	},
+	"setup": {
+		"notes": "메모",
+		"restart": "다시 시작",
+		"discard": "삭제"
+	},
+	"peek": {
+		"title": "지금까지의 녹화",
+		"clipOf": "클립 {{current}}/{{total}}",
+		"play": "재생",
+		"pause": "일시 정지",
+		"mute": "음소거",
+		"unmute": "음소거 해제",
+		"seek": "녹화 탐색",
+		"open": "지금까지의 녹화 다시 보기"
 	}
 }

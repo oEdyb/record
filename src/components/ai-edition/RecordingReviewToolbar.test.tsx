@@ -23,6 +23,15 @@ function props() {
 	};
 }
 describe("recording review", () => {
+	it("offers Expand only while review is the small player", () => {
+		const expand = vi.fn();
+		const view = render(<RecordingReviewToolbar {...props()} onExpand={expand} />);
+		fireEvent.click(screen.getByRole("button", { name: "recordingReview.expand" }));
+		expect(expand).toHaveBeenCalledOnce();
+		expect(screen.getByRole("button", { name: "recordingReview.originals" })).toBeEnabled();
+		view.rerender(<RecordingReviewToolbar {...props()} />);
+		expect(screen.queryByRole("button", { name: "recordingReview.expand" })).toBeNull();
+	});
 	it("replaces endless preparation with a retryable retained-handoff error", () => {
 		const retry = vi.fn();
 		render(

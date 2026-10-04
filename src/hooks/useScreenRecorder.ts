@@ -601,7 +601,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						await window.electronAPI.setCurrentVideoPath(result.path);
 					}
 
-					await window.electronAPI.switchToEditor();
+					await window.electronAPI.switchToEditor({ compactReview: true });
 				} catch (error) {
 					console.error("Error saving recording:", error);
 				} finally {
@@ -676,7 +676,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				await window.electronAPI.setCurrentVideoPath(result.path);
 			}
 
-			await window.electronAPI.switchToEditor();
+			await window.electronAPI.switchToEditor({ compactReview: true });
 			return true;
 		} catch (error) {
 			console.error("Error saving native Windows recording:", error);
@@ -822,7 +822,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					await window.electronAPI.setCurrentVideoPath(result.path);
 				}
 
-				await window.electronAPI.switchToEditor();
+				await window.electronAPI.switchToEditor({ compactReview: true });
 				return true;
 			} catch (error) {
 				console.error("Error saving native macOS recording:", error);
@@ -946,7 +946,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					await window.electronAPI.setCurrentVideoPath(result.path);
 				}
 
-				await window.electronAPI.switchToEditor();
+				await window.electronAPI.switchToEditor({ compactReview: true });
 				return true;
 			} catch (error) {
 				console.error("Error saving native Linux recording:", error);

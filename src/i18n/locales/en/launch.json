@@ -36,7 +36,8 @@
 			"less": "Fewer controls",
 			"close": "Close notes",
 			"move": "Move notes"
-		}
+		},
+		"stopRecording": "Stop recording"
 	},
 	"audio": {
 		"enableSystemAudio": "Enable system audio",
@@ -98,7 +99,7 @@
 		"dontShowAgain": "Don't show again"
 	},
 	"deviceSettings": {
-		"title": "Device settings",
+		"title": "Setup",
 		"done": "Done",
 		"micLevel": "Input level",
 		"micHint": "Speak to check your microphone",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "Source",
+		"editableCursor": "Editable cursor",
+		"language": "Language"
+	},
+	"setup": {
+		"notes": "Notes",
+		"restart": "Restart",
+		"discard": "Discard"
+	},
+	"peek": {
+		"title": "Recording so far",
+		"clipOf": "Clip {{current}} of {{total}}",
+		"play": "Play",
+		"pause": "Pause",
+		"mute": "Mute",
+		"unmute": "Unmute",
+		"seek": "Seek recording",
+		"open": "Replay recording so far"
 	}
 }

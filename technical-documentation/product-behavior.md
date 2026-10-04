@@ -257,66 +257,63 @@ step or source-picker click is required for the default screen. Explicit source 
 and portal-based Linux selection remain authoritative.
 
 Review's Record action saves any pending project state and opens the idle recording pill for
-a new standalone capture. It does not insert into an old project. Expand reveals screen/window,
+a new standalone capture. It does not insert into an old project. Setup reveals screen/window,
 audio, camera and cursor setup. Closing idle setup or pressing Escape returns to review.
-Stop saves the completed clips and opens review with Record, Save video, Original files,
-Recordings, playback and a seek bar. No timeline, inspector or canvas editing handles are shown.
+Stop saves the completed clips and opens review as a compact player centred above the
+recorder's spot on the same display (Olle, 2026-10-04). The window takes the recording's own
+shape: the video is up to 960 points wide, fills the window edge to edge with no padding, and
+the window is only as tall as the video plus the header and transport. When clips have different
+resolutions, the window follows the one output frame and mixed clips letterbox inside it. It has playback, a seek bar and
+icon-sized Recordings, Settings, Original files and Record controls; Save video keeps its label.
+Expand grows it into the full review window. Opening Recordings or a project uses the full window.
+No timeline, inspector or canvas editing handles are shown.
+
+Record switches the pill to its recording layout the moment it is pressed. Until the writer
+confirms capture, the timer is held at zero, Pause is unavailable, and Stop cancels the start.
 
 Use a quick, restrained transition. Do not add a setup dashboard, mode chooser or navigation
 stack. Native File menu and keyboard actions use the same recording and save flow; menu actions
 must not replace an active recording HUD.
 
-Keep the full floating bar and clip-history row for standalone idle setup or when explicitly expanded.
-During active recording, contract that same surface into one compact pill with Stop, total time,
-Pause, and Expand. Do not create a second panel or a detached timeline pill. Pause keeps the
-pill in place and changes Pause to Continue; Expand reveals setup without moving the native window.
+The recorder is one floating pill in every state (Olle, 2026-10-04: the old wide bar is gone).
+Idle, it shows the Klippt mark (drag handle), the source name, system audio, microphone,
+camera, Setup, and a round red Record control. Recording, it shows the large round
+Pause/Continue control, the total time as plain text that doubles as the drag handle, then
+Stop, Remove, Replay and Setup as flat secondary icons. Pause/Continue is primary because
+creators pause far more often than they stop. No control sits in its own pill inside the pill.
+Every edge inset is 4 px, so the 40 px round control is concentric with the 25 px pill radius.
+The recording pill keeps the same controls through Pause, so Pause/Continue never moves under
+the cursor. Do not create a second bar or a detached timeline pill.
+
+Setup floats above the pill at the same 360 px width. It holds source, system audio,
+microphone, camera, editable cursor and language as rows; microphone, camera and language
+expand into one option list at a time. Recording quality sits below the rows. Its header has
+Hide and a close control that only closes the panel. The footer has Notes, Recordings and Close
+App while idle, and Notes, Restart and Discard while recording; quitting is never offered
+mid-take. Setup opens during capture with every switch, device list and quality choice locked,
+and it opens no mic meter or camera preview of its own until a completed Pause.
+
+Replay (the up arrow or Up key, only after a completed Pause) opens a separate 360 px popup
+above the pill with no recording controls. It plays the kept clip files end to end with sound,
+starting five seconds before the end, so the creator can pick up where they left off. One
+scrubber is split by clips; Left and Right jump between clips; M mutes; Escape or Down closes.
+Continue closes it immediately. It never changes the session.
 
 Provide a configurable global Pause/Continue shortcut. Default to `Command-Shift-Space` on
 macOS because `Command-Space` belongs to Spotlight. The renderer recording state is the final
 guard: ignore the shortcut while idle, saving, or finalizing.
 
-The full Mac render is approximately 829 CSS px wide and 84 px tall on a 1710 px-wide work
-area. The compact active state is approximately 224 CSS px wide and 50 px tall. Preserve one
-surface and one anchored position through the transition.
+The idle pill is 360 CSS px wide and 50 px tall; the recording pill fits its controls at the
+same height. Preserve one surface and one anchored position through the transition.
 
-### First row
+### Setup locking
 
-- Keep OpenScreen's source, system-audio, microphone, camera, cursor, tray-orientation,
-  notes, language, minimize, and close controls in their existing positions.
 - Lock setup controls while a clip is actively recording or finalizing.
 - Unlock source, system-audio, microphone, camera, device, and cursor controls after Pause.
   A paused change applies to the next clip and must never rewrite a completed clip.
 - Do not enable a paused control until its change reaches the real capture pipeline. A local
   UI toggle that the next clip ignores is a recording bug.
-- Keep OpenScreen's primary Stop button and live timer.
-- Add Backspace beside Pause/Continue.
-- Keep the separate drag handle and the existing window-control behavior.
-
-### Lower row
-
-Show a read-only live clip-history strip.
-
-- One small rounded segment represents each kept clip.
-- Segment width uses one linear duration scale, with a minimum visible width.
-- The active segment grows while recording.
-- Completed clips are quiet; the newest completed clip has priority; the active clip uses
-  the semantic recording color.
-- Keep the newest six to eight clips visible.
-- When history is longer, compress old clips first and collapse the oldest into `+N`.
-- Keep the newest clip fully visible.
-- Backspace removes the newest segment with a short 140–180 ms collapse.
-- Respect Reduce Motion by changing state without movement.
-- The strip is not clickable, selectable, draggable, scrubbable, or editable.
-- VoiceOver gets one combined history value. Do not expose every decorative segment as a
-  focus stop.
-
-Do **not** show a clip-count label. The segments already communicate clip count. Do not show
-text such as `6 clips`. The main timer already communicates duration, so the lower row can
-remain a clean visual history rather than a second status readout.
-
-Keep the lower row present in the full horizontal panel, including the idle state before capture.
-Show an empty rail while idle. Hide the row only in the compact active state; keep its clip state
-mounted so Pause or Expand can reveal it immediately.
+- Backspace removes the previous clip; Remove shows its duration in the tooltip.
 
 The HUD uses a native transparent backing window that is much larger than the painted panel so
 menus can open without resizing the window. On macOS, make that window click-through before its
@@ -327,14 +324,10 @@ forwarded mouse movement there with a global low-level hook.
 
 Pause must keep the transport geometry stable. Clip finalization must not replace the Stop
 button or timer with a Saving label, and the Pause/Continue control must stay mounted in one
-slot while it is temporarily disabled. Morph the active history segment into the finalized
-clip in place, with no empty frame or node replacement, so its color and glow can ease from
-active to completed.
+slot while it is temporarily disabled.
 
-Stop saving must retain the last timer, history and selected compact/expanded layout until the
-review handoff finishes. Disable transport and size changes while saving. Expanded content stays
-hidden until the panel width fits it; its distinct animation must restart on each expansion,
-and reduced motion removes the delay and animation.
+Stop saving must retain the last timer and recording pill until the review handoff finishes.
+Disable transport and Replay while saving. Reduced motion removes the entrance animations.
 
 ### Camera confidence monitor
 

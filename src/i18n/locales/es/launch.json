@@ -36,7 +36,8 @@
 			"less": "Menos controles",
 			"close": "Cerrar notas",
 			"move": "Mover notas"
-		}
+		},
+		"stopRecording": "Detener grabación"
 	},
 	"audio": {
 		"enableSystemAudio": "Activar audio del sistema",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "Fuente",
+		"editableCursor": "Cursor editable",
+		"language": "Idioma"
+	},
+	"setup": {
+		"notes": "Notas",
+		"restart": "Reiniciar",
+		"discard": "Descartar"
+	},
+	"peek": {
+		"title": "Grabación hasta ahora",
+		"clipOf": "Clip {{current}} de {{total}}",
+		"play": "Reproducir",
+		"pause": "Pausa",
+		"mute": "Silenciar",
+		"unmute": "Activar sonido",
+		"seek": "Buscar en la grabación",
+		"open": "Ver la grabación hasta ahora"
 	}
 }

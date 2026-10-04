@@ -12,6 +12,7 @@ import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
+import { useReviewWindowCompact } from "@/hooks/useReviewWindowCompact";
 import { registerAgentTransport } from "@/lib/ai-edition/agent/agentTransport";
 import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
 import { applyPauseSuggestions } from "@/lib/ai-edition/document/pause-edits";
@@ -86,6 +87,7 @@ import {
 } from "./regenerateAutomaticDirection";
 import { TransactionRecoveryBanner } from "./TransactionRecoveryBanner";
 import { TransportBar } from "./TransportBar";
+import { useCompactReviewFit } from "./useCompactReviewFit";
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
 import v4 from "./v4/EditorShellV4.module.css";
@@ -1626,6 +1628,9 @@ export function NewEditorShell() {
 	]);
 
 	const showTimeline = !PRODUCT_SURFACE.recordingOnly;
+	// After Stop, review opens as a small player; it can grow into the full window.
+	const compactReview = useReviewWindowCompact(PRODUCT_SURFACE.recordingOnly);
+	useCompactReviewFit(compactReview && hasAsset, document);
 	const visibleMode = PRODUCT_SURFACE.mediaWorkspace ? mode : "edit";
 	const timelineRow = visibleMode === "media" ? "188px" : `${timelineHeightPx}px`;
 	const bodyColumns =
@@ -1754,6 +1759,7 @@ export function NewEditorShell() {
 	return (
 		<div
 			className={v4.app}
+			data-compact-review={compactReview}
 			style={{
 				gridTemplateRows: PRODUCT_SURFACE.recordingOnly
 					? `auto 1fr ${hasAsset ? "64px" : "0px"}`
@@ -1783,6 +1789,9 @@ export function NewEditorShell() {
 					onRecord={() => void handleNewRecording()}
 					onSave={handleExport}
 					onOriginals={() => void openRecordingExport(true)}
+					onExpand={
+						compactReview ? () => void window.electronAPI?.expandReviewWindow?.() : undefined
+					}
 				/>
 			) : (
 				<EditorTopBar
@@ -1906,7 +1915,7 @@ export function NewEditorShell() {
 										}
 									/>
 								)}
-								{hasAsset ? <PreviewQualityControl /> : null}
+								{hasAsset && !compactReview ? <PreviewQualityControl /> : null}
 							</div>
 							{!PRODUCT_SURFACE.recordingOnly ? (
 								<FloatingInspector
@@ -1933,7 +1942,7 @@ export function NewEditorShell() {
 
 			{/* Timeline footer shared by the Media and Edit workspaces. */}
 			{PRODUCT_SURFACE.recordingOnly && hasAsset ? (
-				<div className={v4.recordingTransport}>
+				<div className={v4.recordingTransport} data-review-chrome="transport">
 					<TransportBar
 						playing={playing}
 						overrideTimeSec={null}

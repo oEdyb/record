@@ -789,6 +789,10 @@
 	display: grid;
 	place-items: center;
 }
+[data-compact-review="true"] .previewFrame {
+	border-radius: 0;
+	box-shadow: none;
+}
 .videoStage {
 	position: relative;
 	display: grid;

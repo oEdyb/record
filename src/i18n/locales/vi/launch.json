@@ -36,7 +36,8 @@
 			"less": "Bớt điều khiển",
 			"close": "Đóng ghi chú",
 			"move": "Di chuyển ghi chú"
-		}
+		},
+		"stopRecording": "Dừng ghi"
 	},
 	"audio": {
 		"enableSystemAudio": "Bật âm thanh hệ thống",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "Nguồn",
+		"editableCursor": "Con trỏ chỉnh sửa được",
+		"language": "Ngôn ngữ"
+	},
+	"setup": {
+		"notes": "Ghi chú",
+		"restart": "Bắt đầu lại",
+		"discard": "Bỏ"
+	},
+	"peek": {
+		"title": "Bản ghi đến lúc này",
+		"clipOf": "Clip {{current}}/{{total}}",
+		"play": "Phát",
+		"pause": "Tạm dừng",
+		"mute": "Tắt tiếng",
+		"unmute": "Bật tiếng",
+		"seek": "Tua bản ghi",
+		"open": "Xem lại bản ghi"
 	}
 }

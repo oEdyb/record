@@ -22,7 +22,8 @@
 		"readyHint": "Capture a clip, pause when needed, then save your video.",
 		"recordFirst": "Record a video before saving.",
 		"originalsHint": "Keep the original screen, camera, and audio files.",
-		"preparing": "Preparing recording…"
+		"preparing": "Preparing recording…",
+		"expand": "확대"
 	},
 	"previewQuality": {
 		"label": "미리보기 화질",

@@ -518,6 +518,11 @@
 .previewWorkspace[data-recording-only="true"] {
 	padding: var(--editor-stage-inset);
 }
+/* The small review player after Stop is sized to the recording, so the video
+   fills the stage edge to edge. */
+.app[data-compact-review="true"] .previewWorkspace {
+	padding: 0;
+}
 .recordingTransport {
 	grid-row: 3;
 	display: flex;

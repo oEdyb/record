@@ -36,7 +36,8 @@
 			"less": "コントロールを減らす",
 			"close": "メモを閉じる",
 			"move": "メモを移動"
-		}
+		},
+		"stopRecording": "録画を停止"
 	},
 	"audio": {
 		"enableSystemAudio": "システム音声を有効にする",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "ソース",
+		"editableCursor": "編集可能なカーソル",
+		"language": "言語"
+	},
+	"setup": {
+		"notes": "メモ",
+		"restart": "やり直す",
+		"discard": "破棄"
+	},
+	"peek": {
+		"title": "ここまでの録画",
+		"clipOf": "クリップ {{current}} / {{total}}",
+		"play": "再生",
+		"pause": "一時停止",
+		"mute": "ミュート",
+		"unmute": "ミュート解除",
+		"seek": "録画をシーク",
+		"open": "ここまでの録画を再生"
 	}
 }

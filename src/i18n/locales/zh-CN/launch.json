@@ -36,7 +36,8 @@
 			"less": "更少控件",
 			"close": "关闭笔记",
 			"move": "移动笔记"
-		}
+		},
+		"stopRecording": "停止录制"
 	},
 	"audio": {
 		"enableSystemAudio": "启用系统音频",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "来源",
+		"editableCursor": "可编辑光标",
+		"language": "语言"
+	},
+	"setup": {
+		"notes": "笔记",
+		"restart": "重新开始",
+		"discard": "放弃"
+	},
+	"peek": {
+		"title": "目前的录制",
+		"clipOf": "片段 {{current}}/{{total}}",
+		"play": "播放",
+		"pause": "暂停",
+		"mute": "静音",
+		"unmute": "取消静音",
+		"seek": "拖动录制进度",
+		"open": "回看目前的录制"
 	}
 }

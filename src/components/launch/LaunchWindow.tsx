@@ -1,9 +1,9 @@
+import { Clapperboard, NotepadText, Power, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
 import { requireEntitlement } from "@/lib/entitlements/store";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
-import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import { formatTimePadded } from "@/utils/timeUtils";
 import { type CameraDevice, useCameraDevices } from "../../hooks/useCameraDevices";
@@ -15,29 +15,28 @@ import type { RecordingQuality } from "../../lib/recording/recordingQuality";
 import { requestCameraAccess } from "../../lib/requestCameraAccess";
 import type { WebcamFormat } from "../../lib/webcamFormats";
 import { ensureDefaultRecordingSource } from "./defaultRecordingSource";
+import { HudClipPeek, type HudClipPeekLabels } from "./HudClipPeek";
 import {
+	HudBrandMark,
 	HudCameraButton,
 	HudCompactPauseButton,
-	HudCursorButton,
-	HudDivider,
+	HudCompactRecordButton,
+	HudCompactTimer,
 	HudDragHandle,
-	HudLanguageButton,
-	HudLanguageMenu,
+	HudExpandButton,
 	HudMicButton,
-	HudNotesButton,
 	HudNotice,
-	HudRecordButton,
-	HudRecordingControls,
-	HudRecordingSizeButton,
 	HudRemovePreviousClipButton,
 	HudSettingsButton,
-	HudSourceButton,
-	HudStudioButton,
+	HudSourceChip,
+	HudStopButton,
 	HudSystemAudioButton,
-	HudTrayLayoutButton,
-	HudWindowControls,
 } from "./HudControls";
-import { HudDeviceSettings, type HudDeviceSettingsLabels } from "./HudDeviceSettings";
+import {
+	HudDeviceSettings,
+	type HudDeviceSettingsLabels,
+	type HudSetupExtras,
+} from "./HudDeviceSettings";
 import {
 	computeHudBarMaxHeight,
 	computeHudModalMaxHeight,
@@ -50,18 +49,17 @@ import {
 } from "./hudGeometry";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
-import { RecordingClipHistory } from "./RecordingHud";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
 // Locale list is computed once at module load; keeping the reference stable lets
-// the language menu sit behind a memo boundary.
+// the setup panel sit behind a memo boundary.
 const AVAILABLE_LOCALES = getAvailableLocales();
 
 // Used only when the renderer can't see a real display (tests, headless).
 const FALLBACK_SCREEN_HEIGHT = 1080;
 const FALLBACK_SCREEN_WIDTH = 1920;
-const HORIZONTAL_HUD_WIDTH = 832;
-const HORIZONTAL_HUD_HEIGHT = 84;
+const HUD_PILL_WIDTH = 360;
+const HUD_PILL_HEIGHT = 50;
 const REMOVED_CLIP_FEEDBACK_MS = 4_000;
 
 function formatClipDuration(durationMs: number): string {
@@ -98,11 +96,6 @@ export function LaunchWindow() {
 		resolveSystemLocaleSuggestion,
 	} = useI18n();
 	const suggestedLanguageName = systemLocaleSuggestion ? getLocaleName(systemLocaleSuggestion) : "";
-	const activeLanguageLabel = getLocaleName(locale).split(/\s+/)[0] || locale.toUpperCase();
-	// Short mono-font code shown on the button itself (matches the design's
-	// "EN"/"FR" treatment) — activeLanguageLabel (the full localized name)
-	// stays as the tooltip/aria-label text.
-	const languageCode = locale.split("-")[0].toUpperCase();
 
 	const {
 		preferencesReady,
@@ -154,17 +147,13 @@ export function LaunchWindow() {
 	// settings panel. Overloading one button with both jobs is what made turning a
 	// camera after two clicks.
 	const [isDeviceSettingsOpen, setIsDeviceSettingsOpen] = useState(false);
-	const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
-	const [trayLayout, setTrayLayout] = useState<"horizontal" | "vertical">(
-		() => loadUserPreferences().trayLayout,
-	);
+	const [isPeekOpen, setIsPeekOpen] = useState(false);
 	const [supportsCursorModeToggle, setSupportsCursorModeToggle] = useState(false);
 	const [isLinuxHud, setIsLinuxHud] = useState(false);
 	const [openedFromEditor, setOpenedFromEditor] = useState(false);
 	const returnToReview =
 		new URLSearchParams(window.location.search).get("returnToReview") === "true";
 	const hasReviewReturn = openedFromEditor || returnToReview;
-	const [activeHudExpanded, setActiveHudExpanded] = useState(false);
 	const [removedClipFeedback, setRemovedClipFeedback] = useState<RecordingSessionClip | null>(null);
 	const removedClipFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const removedClipFeedbackGenerationRef = useRef(0);
@@ -182,16 +171,18 @@ export function LaunchWindow() {
 		recordedClips,
 	});
 	const recordingHudActive = presentation.active;
+	// Switch to the recording pill the instant Record is pressed. The timer stays
+	// at zero and Pause stays disabled until the writer confirms capture, so the
+	// pill never claims a recording that has not started; Stop cancels the start.
+	const pillRecording = recordingHudActive || starting;
 
-	const isVertical = trayLayout === "vertical";
-	// Recording always keeps the established horizontal HUD as its first row.
-	// The saved tray preference still applies again when recording ends.
-	const hudIsVertical = isVertical && !recordingHudActive && !hasReviewReturn;
-	// Pause is a transport-state change, not a layout change. Keep the compact
-	// HUD mounted so Pause becomes Continue in the same physical slot. The user
-	// can still open the full setup and clip-history panel with the size control.
-	const compactRecordingHud = (recordingHudActive || hasReviewReturn) && !activeHudExpanded;
-	const isPopoverOpen = isLanguageMenuOpen || isDeviceSettingsOpen;
+	const keptClipCount = presentation.recordedClips.filter((clip) => !clip.removed).length;
+	// The replay reads finished clip files, so it exists only while a completed
+	// Pause has handed every kept clip to disk.
+	const canPeek =
+		recording && presentation.paused && !saving && !clipFinalizing && keptClipCount > 0;
+	const peekOpen = isPeekOpen && canPeek;
+	const isPopoverOpen = isDeviceSettingsOpen || peekOpen;
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
 	// be applied atomically before the next clip starts.
@@ -199,8 +190,8 @@ export function LaunchWindow() {
 		starting || saving || clipFinalizing || (recording && !canReconfigureWhilePaused);
 
 	useEffect(() => {
-		if (!recordingHudActive) setActiveHudExpanded(false);
-	}, [recordingHudActive]);
+		if (!canPeek) setIsPeekOpen(false);
+	}, [canPeek]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -212,8 +203,6 @@ export function LaunchWindow() {
 		};
 	}, []);
 
-	const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
-	const languageTriggerRef = useRef<HTMLButtonElement | null>(null);
 	const hudAnchorRef = useRef<HTMLDivElement | null>(null);
 	const hudBarRef = useRef<HTMLDivElement | null>(null);
 	const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -370,12 +359,8 @@ export function LaunchWindow() {
 	// so a single pointerdown/Escape listener covers the pair instead of two.
 	const closePopovers = useCallback(() => {
 		setIsDeviceSettingsOpen(false);
-		setIsLanguageMenuOpen(false);
+		setIsPeekOpen(false);
 	}, []);
-
-	useEffect(() => {
-		if (compactRecordingHud) closePopovers();
-	}, [closePopovers, compactRecordingHud]);
 
 	useEffect(() => {
 		if (!isPopoverOpen) return;
@@ -383,8 +368,7 @@ export function LaunchWindow() {
 		const handlePointerDown = (event: PointerEvent) => {
 			const target = event.target as Node;
 			const insideTrigger =
-				settingsTriggerRef.current?.contains(target) ||
-				languageTriggerRef.current?.contains(target);
+				target instanceof Element && target.closest("[data-hud-popover-trigger]") !== null;
 			// A select inside the panel renders its option list in a portal on
 			// document.body; clicking an option there is not a dismissal.
 			const insideSelectPortal =
@@ -425,17 +409,10 @@ export function LaunchWindow() {
 	//      screen.availHeight (which a window resize can't change) and are pushed
 	//      down as CSS custom properties.
 	// ---------------------------------------------------------------------------
-	const hudAllocatedSizeRef = useRef({
-		width: 0,
-		height: 0,
-		orientation: trayLayout,
-	});
+	const hudAllocatedSizeRef = useRef({ width: 0, height: 0 });
 	const isDraggingHudRef = useRef(false);
 
-	const horizontalHudWidth = Math.min(
-		HORIZONTAL_HUD_WIDTH,
-		Math.max(480, getAvailableScreenWidth() - 32),
-	);
+	const horizontalHudWidth = Math.min(HUD_PILL_WIDTH, getAvailableScreenWidth() - 32);
 
 	useLayoutEffect(() => {
 		const anchor = hudAnchorRef.current;
@@ -461,16 +438,13 @@ export function LaunchWindow() {
 
 		const availableHeight = getAvailableScreenHeight();
 		const barRect = barEl.getBoundingClientRect();
-		const renderedBarWidth = barRect.width || barEl.scrollWidth;
 		const renderedBarHeight = barRect.height || barEl.scrollHeight;
 		// Keep the native transparent backing window at the full horizontal HUD
 		// allocation while the painted panel contracts. Resizing the BrowserWindow
 		// on every animation frame makes the panel move and can briefly intercept
 		// clicks outside the visible surface.
-		const barWidth = hudIsVertical ? renderedBarWidth : horizontalHudWidth;
-		const barHeight = hudIsVertical
-			? renderedBarHeight
-			: Math.max(renderedBarHeight, HORIZONTAL_HUD_HEIGHT);
+		const barWidth = horizontalHudWidth;
+		const barHeight = Math.max(renderedBarHeight, HUD_PILL_HEIGHT);
 		const noticeEl = hudNoticesRef.current;
 		const noticeHeight = noticeEl
 			? noticeEl.getBoundingClientRect().height || noticeEl.scrollHeight
@@ -499,10 +473,6 @@ export function LaunchWindow() {
 		});
 
 		const allocated = hudAllocatedSizeRef.current;
-		// A different orientation is a different shape entirely (wide-short vs
-		// narrow-tall), so the previous allocation says nothing useful.
-		const orientation = hudIsVertical ? "vertical" : "horizontal";
-		const orientationChanged = allocated.orientation !== orientation;
 		// Grow the moment the content stops fitting. Shrink only once the content
 		// has fallen a whole reserve below what was granted — that asymmetry is the
 		// hysteresis: the bar can grow into its reserve (recording controls, a
@@ -510,7 +480,6 @@ export function LaunchWindow() {
 		// while a one-off bad reading (an unstyled first paint in dev, say) can't
 		// leave the overlay permanently oversized.
 		const needsResize =
-			orientationChanged ||
 			required.width > allocated.width ||
 			required.height > allocated.height ||
 			granted.width + HUD_GROWTH_RESERVE < allocated.width ||
@@ -519,11 +488,10 @@ export function LaunchWindow() {
 			return;
 		}
 
-		allocated.orientation = orientation;
 		allocated.width = granted.width;
 		allocated.height = granted.height;
 		window.electronAPI.setHudOverlaySize(granted.width, granted.height);
-	}, [horizontalHudWidth, hudIsVertical, reportDirectionExclusionRectangles]);
+	}, [horizontalHudWidth, reportDirectionExclusionRectangles]);
 
 	// One persistent observer; elements wire themselves up via callback refs as
 	// they mount/unmount. Only the bar and the notice column are observed — the
@@ -727,8 +695,13 @@ export function LaunchWindow() {
 	);
 	const handleRecordClick = useCallback(() => {
 		closePopovers();
+		// Cancelling a start needs no entitlement or source check.
+		if (starting && !recording) {
+			toggleRecording();
+			return;
+		}
 		handleRecordButtonClick();
-	}, [closePopovers, handleRecordButtonClick]);
+	}, [closePopovers, handleRecordButtonClick, recording, starting, toggleRecording]);
 	const showRemovedClipFeedback = useCallback((clip: RecordingSessionClip) => {
 		removedClipFeedbackGenerationRef.current += 1;
 		const generation = removedClipFeedbackGenerationRef.current;
@@ -786,13 +759,27 @@ export function LaunchWindow() {
 	useEffect(() => {
 		if (!recording) return;
 		const handleRecordingKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Backspace" || event.repeat || !canRemovePreviousClip) return;
+			if (event.repeat) return;
+			if (event.key === "ArrowUp" && canPeek && !peekOpen && !isDeviceSettingsOpen) {
+				event.preventDefault();
+				setIsDeviceSettingsOpen(false);
+				setIsPeekOpen(true);
+				return;
+			}
+			if (event.key !== "Backspace" || !canRemovePreviousClip) return;
 			event.preventDefault();
 			void handleRemovePreviousClip();
 		};
 		window.addEventListener("keydown", handleRecordingKeyDown);
 		return () => window.removeEventListener("keydown", handleRecordingKeyDown);
-	}, [canRemovePreviousClip, handleRemovePreviousClip, recording]);
+	}, [
+		canPeek,
+		canRemovePreviousClip,
+		handleRemovePreviousClip,
+		isDeviceSettingsOpen,
+		peekOpen,
+		recording,
+	]);
 
 	useEffect(() => {
 		return window.electronAPI?.onHudToggleRecordingPause?.(() => {
@@ -836,19 +823,6 @@ export function LaunchWindow() {
 		if (!saving) window.electronAPI.openNotes();
 	}, [saving]);
 
-	/** Switches the HUD between horizontal and vertical tray layouts. */
-	const toggleTrayLayout = useCallback(() => {
-		// Popovers are laid out relative to the bar, so leaving one open across an
-		// orientation flip means resizing and re-flowing in the same frame. Closing
-		// first keeps the flip to a single, clean size change.
-		closePopovers();
-		setTrayLayout((previous) => {
-			const nextLayout = previous === "horizontal" ? "vertical" : "horizontal";
-			saveUserPreferences({ trayLayout: nextLayout });
-			return nextLayout;
-		});
-	}, [closePopovers]);
-
 	const toggleSystemAudio = useCallback(() => {
 		if (controlsLocked) return;
 		const enabled = !systemAudioEnabled;
@@ -888,6 +862,7 @@ export function LaunchWindow() {
 	// one the next toggle should use.
 	const handleSelectMicDevice = useCallback(
 		(device: MicrophoneDevice) => {
+			if (controlsLocked) return;
 			setSelectedMicId(device.deviceId);
 			setMicrophoneDeviceId(device.deviceId);
 			setMicrophoneDeviceName(device.label);
@@ -895,11 +870,12 @@ export function LaunchWindow() {
 				micDeviceId: device.deviceId,
 			});
 		},
-		[setMicrophoneDeviceId, setMicrophoneDeviceName, setSelectedMicId],
+		[controlsLocked, setMicrophoneDeviceId, setMicrophoneDeviceName, setSelectedMicId],
 	);
 
 	const handleSelectCameraDevice = useCallback(
 		(device: CameraDevice) => {
+			if (controlsLocked) return;
 			setSelectedCameraId(device.deviceId);
 			setWebcamDeviceId(device.deviceId);
 			setWebcamDeviceName(device.label);
@@ -907,7 +883,7 @@ export function LaunchWindow() {
 				camDeviceId: device.deviceId,
 			});
 		},
-		[setSelectedCameraId, setWebcamDeviceId, setWebcamDeviceName],
+		[controlsLocked, setSelectedCameraId, setWebcamDeviceId, setWebcamDeviceName],
 	);
 
 	const handleSelectRecordingQuality = useCallback(
@@ -921,33 +897,38 @@ export function LaunchWindow() {
 
 	const handleSelectWebcamFormat = useCallback(
 		(format: WebcamFormat) => {
+			if (controlsLocked) return;
 			setWebcamFormat(format);
 			void window.electronAPI?.setRecordingPrefs?.({ camFormat: format });
 		},
-		[setWebcamFormat],
+		[controlsLocked, setWebcamFormat],
 	);
 
+	// Setup opens at any time except a transition; while capture is live its
+	// rows are locked, so it reads as status rather than offering a change.
 	const toggleDeviceSettings = useCallback(() => {
-		if (controlsLocked) return;
-		setIsLanguageMenuOpen(false);
+		if (starting || saving) return;
+		setIsPeekOpen(false);
 		setIsDeviceSettingsOpen((open) => !open);
-	}, [controlsLocked]);
+	}, [saving, starting]);
+
+	const togglePeek = useCallback(() => {
+		setIsDeviceSettingsOpen(false);
+		setIsPeekOpen((open) => !open);
+	}, []);
+
+	const closePeek = useCallback(() => {
+		setIsPeekOpen(false);
+	}, []);
 
 	const closeDeviceSettings = useCallback(() => {
 		setIsDeviceSettingsOpen(false);
 	}, []);
 
-	const toggleLanguageMenu = useCallback(() => {
-		if (saving) return;
-		setIsDeviceSettingsOpen(false);
-		setIsLanguageMenuOpen((open) => !open);
-	}, [saving]);
-
 	const handleSelectLocale = useCallback(
 		(nextLocale: string) => {
 			setLocale(nextLocale as Parameters<typeof setLocale>[0]);
 			resolveSystemLocaleSuggestion();
-			setIsLanguageMenuOpen(false);
 		},
 		[resolveSystemLocaleSuggestion, setLocale],
 	);
@@ -1077,8 +1058,158 @@ export function LaunchWindow() {
 			cameraQuality: t("deviceSettings.cameraQuality"),
 			preview: t("deviceSettings.preview"),
 			previewUnavailable: t("deviceSettings.previewUnavailable"),
+			systemAudioName: t("audio.systemAudio"),
+			microphoneName: t("audio.microphone"),
+			cameraName: t("webcam.camera"),
+			on: t("audio.on"),
+			off: t("audio.off"),
+			source: t("deviceSettings.source"),
+			editableCursor: t("deviceSettings.editableCursor"),
+			language: t("deviceSettings.language"),
+			hide: t("tooltips.hideHUD"),
+			close: hasReviewReturn && !recording ? t("tooltips.openStudio") : t("tooltips.closeApp"),
+		}),
+		[hasReviewReturn, recording, t],
+	);
+
+	const peekLabels = useMemo<HudClipPeekLabels>(
+		() => ({
+			title: t("peek.title"),
+			clipOf: (current, total) => t("peek.clipOf", { current, total }),
+			play: t("peek.play"),
+			pause: t("peek.pause"),
+			mute: t("peek.mute"),
+			unmute: t("peek.unmute"),
+			seek: t("peek.seek"),
 		}),
 		[t],
+	);
+
+	const transitionLocked = starting || saving || clipFinalizing;
+	// The recorder's restart/cancel are recreated every render; route them through
+	// a ref so the setup panel's memo boundary survives the timer ticks.
+	const recorderActionsRef = useRef({ restartRecording, cancelRecording });
+	recorderActionsRef.current = { restartRecording, cancelRecording };
+	const handleRestartRecording = useCallback(() => {
+		recorderActionsRef.current.restartRecording();
+	}, []);
+	const handleCancelRecording = useCallback(() => {
+		recorderActionsRef.current.cancelRecording();
+	}, []);
+	const setupFooter = useMemo(
+		() => (
+			<>
+				{!isLinuxHud && (
+					<button
+						type="button"
+						className={styles.hudSetupFooterButton}
+						disabled={saving}
+						onClick={openNotes}
+					>
+						<NotepadText size={15} aria-hidden />
+						{t("setup.notes")}
+					</button>
+				)}
+				{recording ? (
+					<>
+						<button
+							type="button"
+							className={styles.hudSetupFooterButton}
+							disabled={transitionLocked}
+							onClick={handleRestartRecording}
+						>
+							<RotateCcw size={15} aria-hidden />
+							{t("setup.restart")}
+						</button>
+						<button
+							type="button"
+							data-variant="danger"
+							className={styles.hudSetupFooterButton}
+							disabled={transitionLocked}
+							onClick={handleCancelRecording}
+						>
+							<X size={15} aria-hidden />
+							{t("setup.discard")}
+						</button>
+					</>
+				) : (
+					<>
+						<button
+							type="button"
+							data-testid="launch-open-studio-button"
+							className={styles.hudSetupFooterButton}
+							disabled={saving}
+							onClick={openStudio}
+						>
+							<Clapperboard size={15} aria-hidden />
+							{t("recording.recordings")}
+						</button>
+						{!hasReviewReturn && (
+							<button
+								type="button"
+								data-testid="hud-close-app-button"
+								className={styles.hudSetupFooterButton}
+								disabled={transitionLocked}
+								onClick={sendHudOverlayClose}
+							>
+								<Power size={15} aria-hidden />
+								{deviceSettingsLabels.close}
+							</button>
+						)}
+					</>
+				)}
+			</>
+		),
+		[
+			handleCancelRecording,
+			handleRestartRecording,
+			isLinuxHud,
+			openNotes,
+			openStudio,
+			recording,
+			saving,
+			deviceSettingsLabels.close,
+			hasReviewReturn,
+			sendHudOverlayClose,
+			t,
+			transitionLocked,
+		],
+	);
+
+	const setupExtras = useMemo<HudSetupExtras>(
+		() => ({
+			sourceLabel: portalOwnsSource ? undefined : selectedSource,
+			sourceDisabled: controlsLocked,
+			onOpenSource: portalOwnsSource
+				? undefined
+				: () => {
+						setIsDeviceSettingsOpen(false);
+						void openSourceSelector();
+					},
+			editableCursor: cursorCaptureMode === "editable-overlay",
+			onToggleCursor: supportsCursorModeToggle ? toggleCursorMode : undefined,
+			locales: AVAILABLE_LOCALES,
+			activeLocale: locale,
+			getLocaleName: getLocaleName as (loc: string) => string,
+			onSelectLocale: handleSelectLocale,
+			onHide: sendHudOverlayHide,
+			windowControlsDisabled: transitionLocked,
+			footer: setupFooter,
+		}),
+		[
+			controlsLocked,
+			cursorCaptureMode,
+			handleSelectLocale,
+			locale,
+			openSourceSelector,
+			portalOwnsSource,
+			selectedSource,
+			sendHudOverlayHide,
+			setupFooter,
+			supportsCursorModeToggle,
+			toggleCursorMode,
+			transitionLocked,
+		],
 	);
 
 	const hasNotices = Boolean(systemLocaleSuggestion) || softwareEncoderFallbackNoticeVisible;
@@ -1090,309 +1221,142 @@ export function LaunchWindow() {
 			})
 		: removePreviousLabel;
 
+	const dragHandleProps = {
+		nativeDrag: isLinuxHud,
+		onPointerDown: handleHudDragPointerDown,
+		onPointerMove: handleHudDragPointerMove,
+		onPointerEnd: handleHudDragPointerEnd,
+	};
+
 	return (
 		// Avoid w-screen/h-screen: 100vw can exceed the inner layout width when scrollbars
 		// affect the viewport (Windows), causing a horizontal scrollbar (issue #305).
 		<div
-			// No `electronDrag` here. This root is the whole 820x560 window, nearly all of
-			// it invisible, and a drag region is honoured by the compositor whether or not
-			// anything is painted there. On Windows/macOS that stayed hidden because
-			// `setIgnoreMouseEvents` makes the transparent area input-transparent at the OS
-			// level; on Linux that call is a no-op, so pressing empty space next to the bar
-			// dragged the HUD from a spot the user was aiming *past*. The drag region
-			// belongs on the grab handle, which is where it now lives.
+			// No `electronDrag` here. This root is the whole transparent window, nearly
+			// all of it invisible, and a drag region is honoured by the compositor
+			// whether or not anything is painted there. The drag region belongs on the
+			// grab handle, which is where it lives.
 			className="h-full w-full min-w-0 max-w-full overflow-x-hidden overflow-y-hidden bg-transparent"
 			onPointerMove={handleRootPointerMove}
 			onPointerLeave={handlePointerLeave}
 		>
-			{/* One bottom-anchored stack: the bar, then whatever floats above it.
-			    Everything is laid out by flexbox relative to the bar, so no popover
+			{/* One bottom-anchored stack: the pill, then whatever floats above it.
+			    Everything is laid out by flexbox relative to the pill, so no popover
 			    needs a measured position and none of them can move the window. */}
 			<div ref={hudAnchorRef} className={styles.hudAnchor}>
 				<div
 					ref={setHudBarEl}
 					data-hud-interactive="true"
-					data-tray-layout={trayLayout}
-					data-recording-layout={compactRecordingHud ? "compact" : "full"}
-					className={`${styles.hudBar} ${hudIsVertical ? styles.hudBarVertical : styles.hudBarRecording} ${compactRecordingHud ? styles.hudBarCompact : recordingHudActive ? styles.hudBarExpanded : ""}`}
+					data-recording-layout={pillRecording ? "recording" : "idle"}
+					data-starting={starting && !recordingHudActive}
+					className={`${styles.hudBar} ${pillRecording ? styles.hudPillRecording : styles.hudPillIdle}`}
 					onPointerEnter={enableHudMouseEvents}
 					onPointerDown={enableHudMouseEvents}
 					onMouseEnter={enableHudMouseEvents}
 					onMouseLeave={handlePointerLeave}
 				>
-					{compactRecordingHud ? (
-						<div className={`${styles.hudCompactRow} ${styles.hudContentEnter}`}>
-							<HudDragHandle
-								vertical={false}
-								nativeDrag={isLinuxHud}
-								onPointerDown={handleHudDragPointerDown}
-								onPointerMove={handleHudDragPointerMove}
-								onPointerEnd={handleHudDragPointerEnd}
-							/>
-							<HudDivider vertical={false} />
-							<HudRecordButton
-								recording={recordingHudActive}
+					{pillRecording ? (
+						<div key="recording" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
+							<HudCompactPauseButton
 								paused={presentation.paused}
-								saving={saving}
-								disabled={
-									starting ||
-									saving ||
-									clipFinalizing ||
-									(!recording &&
-										(!sourceReady ||
-											!preferencesReady ||
-											(microphoneEnabled && isMicDevicesLoading)))
+								disabled={saving || clipFinalizing || !canPauseRecording}
+								label={
+									presentation.paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")
 								}
-								elapsedSeconds={presentation.elapsedSeconds}
-								label={recording ? "Stop recording" : recordLabel}
-								accessibleLabel={recordAccessibleLabel}
+								onClick={togglePaused}
+							/>
+							<HudDragHandle {...dragHandleProps}>
+								<HudCompactTimer
+									elapsedSeconds={presentation.elapsedSeconds}
+									paused={presentation.paused || saving || !recordingHudActive}
+								/>
+							</HudDragHandle>
+							<HudStopButton
+								saving={saving}
+								disabled={saving || clipFinalizing}
+								label={
+									recordingHudActive ? t("tooltips.stopRecording") : t("tooltips.cancelRecording")
+								}
 								savingLabel={t("recording.saving")}
 								onClick={handleRecordClick}
 							/>
-							{recordingHudActive && (
-								<HudCompactPauseButton
-									paused={presentation.paused}
-									disabled={saving || clipFinalizing || !canPauseRecording}
-									label={
-										presentation.paused
-											? t("tooltips.resumeRecording")
-											: t("tooltips.pauseRecording")
-									}
-									onClick={togglePaused}
-								/>
-							)}
-							{recordingHudActive && (
-								<HudRemovePreviousClipButton
-									disabled={saving || clipFinalizing || !canRemovePreviousClip}
-									label={removePreviousLabel}
-									tooltip={removePreviousTooltip}
-									onClick={handleRemovePreviousClip}
-								/>
-							)}
-							{!recordingHudActive && (
-								<HudStudioButton
-									disabled={saving}
-									label={t("recording.recordings")}
-									onClick={openStudio}
-								/>
-							)}
-							<HudRecordingSizeButton
-								expanded={false}
-								disabled={saving || clipFinalizing}
-								label={t("tooltips.showRecordingControls")}
-								onClick={() => setActiveHudExpanded(true)}
+							<HudRemovePreviousClipButton
+								disabled={saving || clipFinalizing || !canRemovePreviousClip}
+								label={removePreviousLabel}
+								tooltip={removePreviousTooltip}
+								onClick={handleRemovePreviousClip}
+							/>
+							<HudExpandButton
+								expanded={peekOpen}
+								disabled={!canPeek}
+								label={t("peek.open")}
+								onClick={togglePeek}
+							/>
+							<HudSettingsButton
+								disabled={starting || saving}
+								expanded={isDeviceSettingsOpen}
+								label={t("deviceSettings.title")}
+								onClick={toggleDeviceSettings}
 							/>
 						</div>
 					) : (
-						<>
-							<div className={hudIsVertical ? styles.hudPrimaryRowContents : styles.hudPrimaryRow}>
-								<HudDragHandle
-									vertical={hudIsVertical}
-									nativeDrag={isLinuxHud}
-									onPointerDown={handleHudDragPointerDown}
-									onPointerMove={handleHudDragPointerMove}
-									onPointerEnd={handleHudDragPointerEnd}
-								/>
-
-								<HudDivider vertical={hudIsVertical} />
-
-								{!recordingHudActive && (
-									<HudTrayLayoutButton
-										vertical={hudIsVertical}
-										label={
-											hudIsVertical
-												? t("tooltips.useHorizontalTray")
-												: t("tooltips.useVerticalTray")
-										}
-										onClick={toggleTrayLayout}
-									/>
-								)}
-
-								{/* No source button on Linux: `SelectSources` has no parameter
-					    naming a source, so nothing this picker returned could reach
-					    the capture. It raised a second portal dialog of its own —
-					    via `desktopCapturer.getSources()` — whose grant was then
-					    discarded, which is why picking a window here changed
-					    nothing. The compositor's picker is the only one that
-					    decides, and it appears when recording starts. */}
-								{!portalOwnsSource && (
-									<HudSourceButton
-										vertical={hudIsVertical}
-										label={selectedSource}
-										disabled={controlsLocked}
-										onClick={openSourceSelector}
-									/>
-								)}
-
-								<HudDivider vertical={hudIsVertical} />
-
-								{/* System audio / mic / camera / cursor — each its own standalone
-					    transparent icon button (no shared group pill), matching the
-					    design exactly: rest color is muted gray, active/enabled color
-					    is the accent green. */}
-								<HudSystemAudioButton
-									enabled={systemAudioEnabled}
+						<div key="idle" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
+							<HudDragHandle {...dragHandleProps} label="Klippt">
+								<HudBrandMark />
+							</HudDragHandle>
+							{/* No source chip on Linux: the ScreenCast portal owns the choice and
+							    asks when recording starts, so nothing picked here could reach the
+							    capture. */}
+							{portalOwnsSource ? (
+								<span className="flex-1" />
+							) : (
+								<HudSourceChip
+									label={selectedSource}
 									disabled={controlsLocked}
-									label={
-										systemAudioEnabled
-											? t("audio.disableSystemAudio")
-											: t("audio.enableSystemAudio")
-									}
-									onClick={toggleSystemAudio}
-								/>
-								{/* The gear configures the two toggles beside it, so the three sit
-					    closer together than the bar's normal control spacing — proximity
-					    is the design's own grouping device, no extra furniture needed. */}
-								<div
-									className={`${styles.hudControlGroup} ${hudIsVertical ? styles.hudControlGroupVertical : ""}`}
-								>
-									<HudMicButton
-										enabled={microphoneEnabled}
-										disabled={controlsLocked}
-										label={
-											microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")
-										}
-										onClick={toggleMicrophone}
-									/>
-									<HudCameraButton
-										enabled={webcamEnabled}
-										disabled={controlsLocked}
-										label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
-										onClick={toggleWebcam}
-									/>
-									<HudSettingsButton
-										buttonRef={settingsTriggerRef}
-										disabled={controlsLocked}
-										expanded={isDeviceSettingsOpen}
-										label={t("deviceSettings.title")}
-										onClick={toggleDeviceSettings}
-									/>
-								</div>
-								{supportsCursorModeToggle && (
-									<HudCursorButton
-										editableOverlay={cursorCaptureMode === "editable-overlay"}
-										disabled={controlsLocked}
-										label={
-											cursorCaptureMode === "editable-overlay"
-												? t("cursor.useSystemCursor")
-												: t("cursor.useEditableCursor")
-										}
-										onClick={toggleCursorMode}
-									/>
-								)}
-
-								<HudDivider vertical={hudIsVertical} />
-
-								<HudRecordButton
-									recording={recordingHudActive}
-									paused={presentation.paused}
-									saving={saving}
-									disabled={
-										starting ||
-										saving ||
-										clipFinalizing ||
-										(!recording &&
-											(!sourceReady ||
-												!preferencesReady ||
-												(microphoneEnabled && isMicDevicesLoading)))
-									}
-									elapsedSeconds={presentation.elapsedSeconds}
-									label={recording ? "Stop recording" : recordLabel}
-									accessibleLabel={recordAccessibleLabel}
-									savingLabel={t("recording.saving")}
-									onClick={handleRecordClick}
-								/>
-
-								{!recordingHudActive && (
-									<HudStudioButton
-										disabled={saving}
-										label={t("recording.recordings")}
-										onClick={openStudio}
-									/>
-								)}
-
-								{recordingHudActive && (
-									<HudRecordingControls
-										vertical={hudIsVertical}
-										paused={presentation.paused}
-										saving={saving || clipFinalizing}
-										canPause={canPauseRecording}
-										canRemovePreviousClip={canRemovePreviousClip}
-										pauseLabel={
-											presentation.paused
-												? t("tooltips.resumeRecording")
-												: t("tooltips.pauseRecording")
-										}
-										removePreviousLabel={removePreviousLabel}
-										removePreviousTooltip={removePreviousTooltip}
-										restartLabel={t("tooltips.restartRecording")}
-										cancelLabel={t("tooltips.cancelRecording")}
-										onTogglePause={togglePaused}
-										onRemovePreviousClip={handleRemovePreviousClip}
-										onRestart={restartRecording}
-										onCancel={cancelRecording}
-									/>
-								)}
-
-								{!isLinuxHud && (
-									<HudNotesButton
-										disabled={saving}
-										label={t("tooltips.openNotes")}
-										onClick={openNotes}
-									/>
-								)}
-
-								<HudDivider vertical={hudIsVertical} />
-
-								{/* Right sidebar controls */}
-								<div
-									data-testid="hud-right-controls"
-									className={`flex items-center gap-[5px] ${hudIsVertical ? "flex-col" : "ml-auto"} ${styles.electronNoDrag}`}
-								>
-									{(recordingHudActive || hasReviewReturn) && (
-										<HudRecordingSizeButton
-											expanded
-											disabled={saving || clipFinalizing}
-											label={t("tooltips.hideRecordingControls")}
-											onClick={() => setActiveHudExpanded(false)}
-										/>
-									)}
-									<HudLanguageButton
-										buttonRef={languageTriggerRef}
-										vertical={hudIsVertical}
-										code={languageCode}
-										label={activeLanguageLabel}
-										disabled={saving}
-										expanded={isLanguageMenuOpen}
-										onClick={toggleLanguageMenu}
-									/>
-
-									<HudDivider vertical={hudIsVertical} />
-
-									<HudWindowControls
-										vertical={hudIsVertical}
-										disabled={saving}
-										hideLabel={t("tooltips.hideHUD")}
-										closeLabel={
-											hasReviewReturn && !recording
-												? t("tooltips.openStudio")
-												: t("tooltips.closeApp")
-										}
-										onHide={sendHudOverlayHide}
-										onClose={sendHudOverlayClose}
-									/>
-								</div>
-							</div>
-							{!hudIsVertical && (
-								<RecordingClipHistory
-									clips={presentation.recordedClips}
-									active={recordingHudActive}
-									activeClipElapsedMs={presentation.activeClipElapsedMs}
-									paused={presentation.paused}
-									finalizing={clipFinalizing}
+									onClick={openSourceSelector}
 								/>
 							)}
-						</>
+							<HudSystemAudioButton
+								enabled={systemAudioEnabled}
+								disabled={controlsLocked}
+								label={
+									systemAudioEnabled ? t("audio.disableSystemAudio") : t("audio.enableSystemAudio")
+								}
+								onClick={toggleSystemAudio}
+							/>
+							<HudMicButton
+								enabled={microphoneEnabled}
+								disabled={controlsLocked}
+								label={
+									microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")
+								}
+								onClick={toggleMicrophone}
+							/>
+							<HudCameraButton
+								enabled={webcamEnabled}
+								disabled={controlsLocked}
+								label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
+								onClick={toggleWebcam}
+							/>
+							<HudSettingsButton
+								disabled={starting || saving}
+								expanded={isDeviceSettingsOpen}
+								label={t("deviceSettings.title")}
+								onClick={toggleDeviceSettings}
+							/>
+							<HudCompactRecordButton
+								disabled={
+									starting ||
+									saving ||
+									!sourceReady ||
+									!preferencesReady ||
+									(microphoneEnabled && isMicDevicesLoading)
+								}
+								label={recordLabel}
+								accessibleLabel={recordAccessibleLabel}
+								onClick={handleRecordClick}
+							/>
+						</div>
 					)}
 				</div>
 
@@ -1413,6 +1377,13 @@ export function LaunchWindow() {
 								cameraLoading={isCameraDevicesLoading}
 								cameraError={cameraDevicesError}
 								labels={deviceSettingsLabels}
+								systemAudioEnabled={systemAudioEnabled}
+								microphoneEnabled={microphoneEnabled}
+								controlsLocked={controlsLocked}
+								onToggleSystemAudio={toggleSystemAudio}
+								onToggleMicrophone={toggleMicrophone}
+								onToggleCamera={toggleWebcam}
+								extras={setupExtras}
 								onSelectMic={handleSelectMicDevice}
 								onSelectCamera={handleSelectCameraDevice}
 								onSelectWebcamFormat={handleSelectWebcamFormat}
@@ -1421,14 +1392,12 @@ export function LaunchWindow() {
 							/>
 						)}
 
-						{isLanguageMenuOpen && (
-							<HudLanguageMenu
-								locales={AVAILABLE_LOCALES}
-								activeLocale={locale}
-								getName={getLocaleName as (loc: string) => string}
-								onSelect={handleSelectLocale}
+						{peekOpen && (
+							<HudClipPeek
+								clips={presentation.recordedClips}
+								labels={peekLabels}
 								panelRef={setPopoverEl}
-								onEnsureInteractive={enableHudMouseEvents}
+								onClose={closePeek}
 							/>
 						)}
 

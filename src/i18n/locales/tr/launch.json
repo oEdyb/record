@@ -36,7 +36,8 @@
 			"less": "Daha az denetim",
 			"close": "Notları kapat",
 			"move": "Notları taşı"
-		}
+		},
+		"stopRecording": "Kaydı durdur"
 	},
 	"audio": {
 		"enableSystemAudio": "Sistem sesini etkinleştir",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "Kaynak",
+		"editableCursor": "Düzenlenebilir imleç",
+		"language": "Dil"
+	},
+	"setup": {
+		"notes": "Notlar",
+		"restart": "Yeniden başlat",
+		"discard": "At"
+	},
+	"peek": {
+		"title": "Şu ana kadarki kayıt",
+		"clipOf": "Klip {{current}}/{{total}}",
+		"play": "Oynat",
+		"pause": "Duraklat",
+		"mute": "Sesi kapat",
+		"unmute": "Sesi aç",
+		"seek": "Kayıtta gezin",
+		"open": "Şu ana kadarki kaydı izle"
 	}
 }

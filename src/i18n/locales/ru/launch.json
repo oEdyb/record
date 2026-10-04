@@ -36,7 +36,8 @@
 			"less": "Меньше элементов управления",
 			"close": "Закрыть заметки",
 			"move": "Переместить заметки"
-		}
+		},
+		"stopRecording": "Остановить запись"
 	},
 	"audio": {
 		"enableSystemAudio": "Включить системное аудио",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "Источник",
+		"editableCursor": "Редактируемый курсор",
+		"language": "Язык"
+	},
+	"setup": {
+		"notes": "Заметки",
+		"restart": "Заново",
+		"discard": "Удалить"
+	},
+	"peek": {
+		"title": "Запись на данный момент",
+		"clipOf": "Клип {{current}} из {{total}}",
+		"play": "Воспроизвести",
+		"pause": "Пауза",
+		"mute": "Выключить звук",
+		"unmute": "Включить звук",
+		"seek": "Перемотка записи",
+		"open": "Пересмотреть запись"
 	}
 }

@@ -22,7 +22,8 @@
 		"readyHint": "Capture a clip, pause when needed, then save your video.",
 		"recordFirst": "Record a video before saving.",
 		"originalsHint": "Keep the original screen, camera, and audio files.",
-		"preparing": "Preparing recording…"
+		"preparing": "Preparing recording…",
+		"expand": "Agrandir"
 	},
 	"previewQuality": {
 		"label": "Qualité de l’aperçu",

@@ -177,8 +177,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSources: async (opts: Electron.SourcesOptions) => {
 		return await ipcRenderer.invoke("get-sources", opts);
 	},
-	switchToEditor: () => {
-		return ipcRenderer.invoke("switch-to-editor");
+	switchToEditor: (options?: { compactReview?: boolean }) => {
+		return ipcRenderer.invoke("switch-to-editor", options);
+	},
+	expandReviewWindow: () => {
+		return ipcRenderer.invoke("expand-review-window");
+	},
+	fitReviewWindow: (request: { aspectRatio: number; chromeHeight: number }): Promise<boolean> => {
+		return ipcRenderer.invoke("fit-review-window", request);
+	},
+	isReviewWindowCompact: (): Promise<boolean> => {
+		return ipcRenderer.invoke("is-review-window-compact");
+	},
+	onReviewWindowCompactChanged: (callback: (compact: boolean) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, compact: boolean) => callback(compact);
+		ipcRenderer.on("review-window-compact-changed", listener);
+		return () => ipcRenderer.removeListener("review-window-compact-changed", listener);
 	},
 	switchToHud: () => {
 		return ipcRenderer.invoke("switch-to-hud");

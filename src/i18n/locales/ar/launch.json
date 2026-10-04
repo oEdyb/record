@@ -36,7 +36,8 @@
 			"less": "عناصر تحكم أقل",
 			"close": "إغلاق الملاحظات",
 			"move": "تحريك الملاحظات"
-		}
+		},
+		"stopRecording": "إيقاف التسجيل"
 	},
 	"audio": {
 		"enableSystemAudio": "تفعيل صوت النظام",
@@ -109,6 +110,24 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera"
+		"nativeCamera": "Native camera",
+		"source": "المصدر",
+		"editableCursor": "مؤشر قابل للتعديل",
+		"language": "اللغة"
+	},
+	"setup": {
+		"notes": "ملاحظات",
+		"restart": "إعادة البدء",
+		"discard": "تجاهل"
+	},
+	"peek": {
+		"title": "التسجيل حتى الآن",
+		"clipOf": "المقطع {{current}} من {{total}}",
+		"play": "تشغيل",
+		"pause": "إيقاف مؤقت",
+		"mute": "كتم الصوت",
+		"unmute": "إلغاء الكتم",
+		"seek": "التنقل في التسجيل",
+		"open": "إعادة مشاهدة التسجيل"
 	}
 }

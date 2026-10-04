@@ -1,4 +1,12 @@
-import { Circle, Download, FolderOpen, LoaderCircle, Settings } from "lucide-react";
+import {
+	Circle,
+	Download,
+	Files,
+	FolderOpen,
+	LoaderCircle,
+	Maximize2,
+	Settings,
+} from "lucide-react";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { RecordingInterruption } from "@/lib/recordingSession";
 import styles from "./RecordingReviewToolbar.module.css";
@@ -22,6 +30,8 @@ interface RecordingReviewToolbarProps {
 	onOriginals: () => void;
 	onSettings: () => void;
 	onEntitlement: () => void;
+	/** Present while review is the small player; grows it into the full window. */
+	onExpand?: () => void;
 }
 
 /** Capture review keeps only navigation, playback, and delivery in the foreground. */
@@ -29,7 +39,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 	const t = useScopedT("editor");
 	const modifier = props.isMac ? "⌘" : "Ctrl+";
 	return (
-		<div className={styles.header}>
+		<div className={styles.header} data-review-chrome="header">
 			<header
 				className={styles.bar}
 				aria-label={t("recordingReview.controls")}
@@ -39,10 +49,12 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 					type="button"
 					disabled={props.preparing || props.busy}
 					onClick={props.onRecordings}
+					aria-label={t("recordingReview.recordings")}
 					title={`${t("recordingReview.recordings")} (${modifier}O)`}
 					aria-keyshortcuts={props.isMac ? "Meta+O" : "Control+O"}
 				>
-					<FolderOpen size={16} aria-hidden="true" /> {t("recordingReview.recordings")}
+					<FolderOpen size={16} aria-hidden="true" />
+					<span className={styles.label}>{t("recordingReview.recordings")}</span>
 					<kbd aria-hidden="true">{modifier}O</kbd>
 				</button>
 				<span className={styles.title} title={props.title ?? undefined}>
@@ -52,6 +64,17 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 					{props.entitlementLabel ? (
 						<button type="button" className={styles.account} onClick={props.onEntitlement}>
 							{props.entitlementLabel}
+						</button>
+					) : null}
+					{props.onExpand ? (
+						<button
+							type="button"
+							className={styles.expand}
+							onClick={props.onExpand}
+							aria-label={t("recordingReview.expand")}
+							title={t("recordingReview.expand")}
+						>
+							<Maximize2 size={16} aria-hidden="true" />
 						</button>
 					) : null}
 					<button
@@ -67,14 +90,18 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						disabled={!props.canSave || props.busy || props.preparing}
 						onClick={props.onOriginals}
 						className={styles.originals}
+						aria-label={t("recordingReview.originals")}
+						title={t("recordingReview.originals")}
 					>
-						{t("recordingReview.originals")}
+						<Files size={16} aria-hidden="true" className={styles.compactIcon} />
+						<span className={styles.label}>{t("recordingReview.originals")}</span>
 					</button>
 					<button
 						type="button"
 						disabled={props.readOnly || props.busy || props.preparing}
 						onClick={props.onRecord}
 						className={styles.record}
+						aria-label={t("recordingReview.record")}
 						aria-busy={props.openingRecorder}
 						title={`${t("recordingReview.record")} (${modifier}N)`}
 						aria-keyshortcuts={props.isMac ? "Meta+N" : "Control+N"}
@@ -83,8 +110,8 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 							<LoaderCircle size={16} className={styles.spinner} aria-hidden="true" />
 						) : (
 							<Circle size={13} fill="currentColor" aria-hidden="true" />
-						)}{" "}
-						{t("recordingReview.record")}
+						)}
+						<span className={styles.label}>{t("recordingReview.record")}</span>
 						<kbd aria-hidden="true">{modifier}N</kbd>
 					</button>
 					<button

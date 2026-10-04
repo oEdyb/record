@@ -8,6 +8,7 @@ import {
 	defaultCameraPreviewPosition,
 	expandedCameraPreviewBounds,
 } from "./cameraPreviewGeometry";
+import { COMPACT_REVIEW_MIN_SIZE, type WindowBounds } from "./compactReviewGeometry";
 import { shouldShowHudInactive, shouldStartHudClickThrough } from "./hudInputPolicy";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import {
@@ -646,14 +647,17 @@ export function closeCameraPreviewWindow() {
  * editor keeps Electron's throttling enabled so its warm, hidden window does not
  * compete with recording work.
  */
-export function createEditorWindow(query: Record<string, string> = {}): BrowserWindow {
+export function createEditorWindow(
+	query: Record<string, string> = {},
+	options: { compactBounds?: WindowBounds } = {},
+): BrowserWindow {
 	const isMac = process.platform === "darwin";
+	const compact = options.compactBounds;
 
 	const win = new BrowserWindow({
-		width: 1200,
-		height: 800,
-		minWidth: 800,
-		minHeight: 600,
+		...(compact ?? { width: 1200, height: 800 }),
+		minWidth: compact ? COMPACT_REVIEW_MIN_SIZE.width : 800,
+		minHeight: compact ? COMPACT_REVIEW_MIN_SIZE.height : 600,
 		// Seamless titlebar on every platform: the app's own topbar IS the titlebar
 		// (it already carries the logo, the title and a drag region). macOS keeps its
 		// traffic lights, Windows/Linux get the native Window Controls Overlay — which
@@ -680,7 +684,7 @@ export function createEditorWindow(query: Record<string, string> = {}): BrowserW
 		},
 	});
 
-	win.maximize();
+	if (!compact) win.maximize();
 
 	// The editor renders its own File/Edit/View menu bar in the custom titlebar,
 	// so hide the native OS menu bar on Windows/Linux (it stays reachable via Alt).

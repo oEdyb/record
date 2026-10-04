@@ -1729,7 +1729,7 @@ async function resolveMediaLinksForVideo(videoPath: string): Promise<{
 }
 
 export function registerIpcHandlers(
-	createEditorWindow: () => void,
+	createEditorWindow: (options?: { compactReview?: boolean }) => void,
 	createSourceSelectorWindow: () => BrowserWindow,
 	createCountdownOverlayWindow: () => BrowserWindow,
 	createNotesWindowWrapper: () => BrowserWindow,
@@ -2287,13 +2287,22 @@ export function registerIpcHandlers(
 		return { opened: true };
 	});
 
-	ipcMain.handle("switch-to-editor", () =>
+	ipcMain.handle("switch-to-editor", (_event, options?: { compactReview?: boolean }) =>
 		serializeRecordingSetup(async () => {
 			// The main-process wrapper owns the HUD/editor hand-off. Closing either
 			// window here would race that lifecycle and can leave a ghost overlay.
-			createEditorWindow();
+			createEditorWindow({ compactReview: options?.compactReview === true });
 		}),
 	);
+
+	// The small review player grows into the full review window on request.
+	ipcMain.handle("expand-review-window", (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!win || win.isDestroyed()) return { success: false };
+		win.setMinimumSize(800, 600);
+		win.maximize();
+		return { success: true };
+	});
 
 	ipcMain.handle("switch-to-hud", () => {
 		_switchToHud?.();
