@@ -592,7 +592,7 @@ source endpoints follow a shortened end so preview and export agree. Shortening 
 edited/word-anchored overlay is pending the timing-policy decision; current builds reject
 that case rather than save an end that playback ignores. Hold and non-shortening swaps
 preserve those anchors. Evidence and current limits:
-[Task G report](../artifacts/broll-swap-2026-09-18/README.md).
+the Task G report (`artifacts/broll-swap-2026-09-18/`, kept locally, not in git).
 
 ## Text, B-roll, speech commands and frames (Task C, September 18)
 
@@ -716,7 +716,7 @@ launch handle cannot keep this process available for a second frame.
 
 The reviewer measured approximately 6 s per frame. Task A.2 did not repeat cold/warm rendering:
 the saved-project harness does not launch Electron, and this task explicitly forbids doing so.
-No warm timing or subsecond success is claimed. See [A.2 evidence](../artifacts/check-a2/report.md).
+No warm timing or subsecond success is claimed. A.2 evidence is in `artifacts/check-a2/` (kept locally, not in git).
 
 Implementation contracts: existing timeline, scene, native text elapsed-time and path-keyed overlay
 decoder contracts; installed Zod 4.4.3 with its [schema API](https://zod.dev/api); and FFmpeg 8.1.2
