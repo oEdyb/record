@@ -1047,30 +1047,49 @@ export function LaunchWindow() {
 		[setHudMouseEventsEnabled],
 	);
 
-	const handleHudDragPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-		const origin = dragOriginRef.current;
-		if (!origin) return;
-		const deltaX = event.screenX - origin.x;
-		const deltaY = event.screenY - origin.y;
-		const last = lastDragDeltaRef.current;
-		if (last.x === deltaX && last.y === deltaY) return;
-		lastDragDeltaRef.current = { x: deltaX, y: deltaY };
-		window.electronAPI?.dragHudOverlayTo?.(deltaX, deltaY);
-	}, []);
+	const endHudDrag = useCallback(() => {
+		if (!dragOriginRef.current) return;
+		dragOriginRef.current = null;
+		isDraggingHudRef.current = false;
+		window.electronAPI?.endHudOverlayDrag?.();
+		measureHudSize();
+	}, [measureHudSize]);
+
+	const handleHudDragPointerMove = useCallback(
+		(event: React.PointerEvent<HTMLDivElement>) => {
+			const origin = dragOriginRef.current;
+			if (!origin) return;
+			// A release that never arrived (the grip swapped between idle and
+			// recording mid-press) must not leave the window following the pointer.
+			if ((event.buttons & 1) === 0) {
+				endHudDrag();
+				return;
+			}
+			const deltaX = event.screenX - origin.x;
+			const deltaY = event.screenY - origin.y;
+			const last = lastDragDeltaRef.current;
+			if (last.x === deltaX && last.y === deltaY) return;
+			lastDragDeltaRef.current = { x: deltaX, y: deltaY };
+			window.electronAPI?.dragHudOverlayTo?.(deltaX, deltaY);
+		},
+		[endHudDrag],
+	);
 
 	const handleHudDragPointerEnd = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
-			if (!dragOriginRef.current) return;
-			dragOriginRef.current = null;
 			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
 				event.currentTarget.releasePointerCapture(event.pointerId);
 			}
-			isDraggingHudRef.current = false;
-			window.electronAPI?.endHudOverlayDrag?.();
-			measureHudSize();
+			endHudDrag();
 		},
-		[measureHudSize],
+		[endHudDrag],
 	);
+
+	// The idle and recording pills each render their own grip, so a press can
+	// outlive the element that started it. Any switch ends the drag.
+	useEffect(() => {
+		endHudDrag();
+	}, [pillRecording, endHudDrag]);
 
 	const handleRootPointerMove = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {

@@ -59,6 +59,7 @@ export const HudDragHandle = memo(function HudDragHandle({
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerEnd}
 			onPointerCancel={onPointerEnd}
+			onLostPointerCapture={onPointerEnd}
 		>
 			{children}
 		</div>

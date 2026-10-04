@@ -1751,8 +1751,8 @@ describe("LaunchWindow HUD drag", () => {
 		fireEvent.pointerDown(dragHandle, { screenX: 100, screenY: 100 });
 		expect(window.electronAPI.beginHudOverlayDrag).toHaveBeenCalledTimes(1);
 
-		fireEvent.pointerMove(dragHandle, { screenX: 140, screenY: 130 });
-		fireEvent.pointerMove(dragHandle, { screenX: 150, screenY: 140 });
+		fireEvent.pointerMove(dragHandle, { screenX: 140, screenY: 130, buttons: 1 });
+		fireEvent.pointerMove(dragHandle, { screenX: 150, screenY: 140, buttons: 1 });
 
 		// Absolute offsets from the drag origin: the main process applies them to the
 		// position it pinned at pointerdown, so nothing accumulates or drifts.
@@ -1760,6 +1760,19 @@ describe("LaunchWindow HUD drag", () => {
 		expect(window.electronAPI.dragHudOverlayTo).toHaveBeenNthCalledWith(2, 50, 40);
 
 		fireEvent.pointerUp(dragHandle, { screenX: 150, screenY: 140 });
+		expect(window.electronAPI.endHudOverlayDrag).toHaveBeenCalledTimes(1);
+	});
+
+	it("lets go of the window when the button is no longer held", async () => {
+		renderLaunchWindow();
+
+		const dragHandle = await screen.findByTestId("hud-drag-handle");
+
+		fireEvent.pointerDown(dragHandle, { screenX: 100, screenY: 100 });
+		fireEvent.pointerMove(dragHandle, { screenX: 400, screenY: 100, buttons: 0 });
+		fireEvent.pointerMove(dragHandle, { screenX: 900, screenY: 100, buttons: 1 });
+
+		expect(window.electronAPI.dragHudOverlayTo).not.toHaveBeenCalled();
 		expect(window.electronAPI.endHudOverlayDrag).toHaveBeenCalledTimes(1);
 	});
 
@@ -1783,7 +1796,7 @@ describe("LaunchWindow HUD drag", () => {
 		await flushResizeObservers();
 		expect(window.electronAPI.setHudOverlaySize).not.toHaveBeenCalled();
 
-		fireEvent.pointerMove(dragHandle, { screenX: 140, screenY: 130 });
+		fireEvent.pointerMove(dragHandle, { screenX: 140, screenY: 130, buttons: 1 });
 		fireEvent.pointerUp(dragHandle, { screenX: 140, screenY: 130 });
 
 		// Content is re-measured once the drag ends, so a real size change made mid-drag
