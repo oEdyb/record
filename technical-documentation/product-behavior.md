@@ -237,7 +237,9 @@ disable Continue until the clip is safe.
 
 ## Pause, Continue, Stop, and Backspace
 
-- **Pause** finalizes the active clip and stays in the recording session.
+- **Pause** finalizes the active clip and stays in the recording session. The control flips to
+  Continue at once and shows a thin spinning ring, never a dimmed button, while the clip file
+  closes; it accepts Continue once the writer confirms (Olle, 2026-10-04).
 - **Continue** starts the next clip immediately and confirms its first appended frame.
 - **Stop** is different from Pause. Stop ends capture and opens recording review. The Record circle
   changes into a clear Stop square while recording. Keep it icon-only; do not add permanent
@@ -264,6 +266,9 @@ recorder's spot on the same display (Olle, 2026-10-04). The window takes the rec
 shape: the video is up to 960 points wide with no letterbox, and the window is only the video plus
 the header and a 12 px frame. When clips have different
 resolutions, the window follows the one output frame and mixed clips letterbox inside it.
+The window opens at that final size, using the recorded display's or window's shape, so it never
+resizes while loading. Until the first frame is ready the video area shows only a dark frame
+with a small 12-bar spinner; the video and play bar then fade in (Olle, 2026-10-04).
 
 Review follows the approved prototype and is always dark (Olle, 2026-10-04): a 60 px header with
 the Klippt mark, the recording name and "0:28 total, 3 clips", then Record (red dot), Original
@@ -290,7 +295,8 @@ Stop, Remove, Replay and Setup as flat secondary icons. Pause/Continue is primar
 creators pause far more often than they stop. No control sits in its own pill inside the pill.
 Every edge inset is 4 px, so the 40 px round control is concentric with the 25 px pill radius.
 The recording pill keeps the same controls through Pause, so Pause/Continue never moves under
-the cursor. Do not create a second bar or a detached timeline pill.
+the cursor. Do not create a second bar or a detached timeline pill. A drag ends whenever the
+button is no longer held, and the pill cannot be dragged off the display.
 
 The source chip, Setup's Window choice and Record without a chosen source open the Source panel
 above the pill, Setup's width and glass (Olle, 2026-10-04): a Screens / Windows switch with a

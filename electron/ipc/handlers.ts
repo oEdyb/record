@@ -1054,6 +1054,21 @@ function getSelectedSourceBounds() {
 	return (sourceDisplay ?? screen.getDisplayNearestPoint(cursor)).bounds;
 }
 
+/**
+ * The recorded source's shape, when known: a captured window's frame, or the
+ * chosen display, or else the display the recorder sits on, which is what
+ * "Entire screen" records.
+ */
+export function getSelectedSourceAspectRatio(
+	fallbackDisplay: Electron.Display,
+): number | undefined {
+	const isWindowSource = selectedSource?.id?.startsWith("window:") === true;
+	const bounds = isWindowSource
+		? nativeMacRecordingService?.captureBounds
+		: (getSelectedDisplay() ?? fallbackDisplay).bounds;
+	return bounds && bounds.width > 0 && bounds.height > 0 ? bounds.width / bounds.height : undefined;
+}
+
 function getSelectedSourceId() {
 	return typeof selectedSource?.id === "string" ? selectedSource.id : null;
 }

@@ -953,6 +953,9 @@ describe("LaunchWindow record button", () => {
 			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
 		];
 		const view = renderLaunchWindow();
+		const pause = screen.getByTestId("hud-compact-pause-button");
+		expect(pause).toHaveAttribute("data-busy", "true");
+		expect(pause).toBeDisabled();
 		fireEvent.keyDown(window, { key: "ArrowUp" });
 		expect(screen.queryByTestId("hud-clip-peek")).not.toBeInTheDocument();
 
@@ -962,6 +965,7 @@ describe("LaunchWindow record button", () => {
 				<LaunchWindow />
 			</TooltipProvider>,
 		);
+		expect(screen.getByTestId("hud-compact-pause-button")).toHaveAttribute("data-busy", "false");
 		fireEvent.keyDown(window, { key: "ArrowUp" });
 		expect(await screen.findByRole("dialog", { name: "peek.title" })).toBeVisible();
 		fireEvent.keyDown(window, { key: "Escape" });

@@ -539,6 +539,56 @@
 .reviewTransport > * {
 	pointer-events: auto;
 }
+/* Covers the review's stage until the recording's first frame is ready, so the
+   window never shows the empty state, a bare canvas or the transport settling in. */
+.reviewLoading {
+	position: absolute;
+	inset: 0 12px 12px;
+	z-index: 3;
+	display: grid;
+	place-items: center;
+	border-radius: 16px;
+	background: #0c0d11;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	opacity: 1;
+	transition: opacity 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.reviewLoading[data-ready="true"] {
+	opacity: 0;
+	pointer-events: none;
+}
+.reviewSpinner {
+	position: relative;
+	width: 22px;
+	height: 22px;
+}
+.reviewSpinner > span {
+	position: absolute;
+	top: 37%;
+	left: 46%;
+	width: 8%;
+	height: 26%;
+	border-radius: 999px;
+	background: rgba(245, 247, 250, 0.9);
+	transform-origin: 50% 145%;
+	animation: reviewSpinnerFade 1.2s linear infinite;
+}
+@keyframes reviewSpinnerFade {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0.15;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.reviewLoading {
+		transition-duration: 120ms;
+	}
+	.reviewSpinner > span {
+		animation-duration: 2.4s;
+	}
+}
 .recordingEmpty {
 	display: flex;
 	flex: 1;

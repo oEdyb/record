@@ -1,8 +1,19 @@
 export const COMPACT_REVIEW_MIN_SIZE = { width: 480, height: 360 } as const;
 /** Widest the small review's video gets on a large screen. */
 const PREFERRED_VIDEO_WIDTH = 960;
-/** Review's top bar plus transport bar, used until the renderer reports its own. */
-export const DEFAULT_REVIEW_CHROME_HEIGHT = 117;
+/** Review's top bar, measured by the renderer once it has drawn. */
+const REVIEW_HEADER_HEIGHT = 60;
+/** The video's frame sits this far in from the window's left, right and bottom edges. */
+const REVIEW_STAGE_INSET = 12;
+
+/**
+ * The review's height beyond width / ratio: the header and the frame's bottom
+ * inset, minus the height the side insets take off the video. Matches what the
+ * renderer reports, so opening at this size means no resize once it loads.
+ */
+export function defaultReviewChromeHeight(aspectRatio: number): number {
+	return REVIEW_HEADER_HEIGHT + REVIEW_STAGE_INSET - (2 * REVIEW_STAGE_INSET) / aspectRatio;
+}
 /** Leaves the recorder pill's usual spot at the bottom of the screen uncovered. */
 const COMPACT_REVIEW_BOTTOM_GAP = 96;
 const EDGE_MARGIN = 16;
@@ -22,10 +33,14 @@ export interface WindowBounds {
 export function fitCompactReviewBounds(
 	workArea: WindowBounds,
 	aspectRatio = 16 / 9,
-	chromeHeight = DEFAULT_REVIEW_CHROME_HEIGHT,
+	chromeHeightOverride?: number,
 	anchorCenterX = workArea.x + workArea.width / 2,
 ): WindowBounds {
 	const ratio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 16 / 9;
+	const chromeHeight =
+		chromeHeightOverride !== undefined && Number.isFinite(chromeHeightOverride)
+			? chromeHeightOverride
+			: defaultReviewChromeHeight(ratio);
 	const maxVideoHeight = Math.max(
 		1,
 		workArea.height - COMPACT_REVIEW_BOTTOM_GAP - EDGE_MARGIN - chromeHeight,

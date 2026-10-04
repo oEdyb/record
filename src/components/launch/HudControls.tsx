@@ -255,12 +255,15 @@ export const HudRemovePreviousClipButton = memo(function HudRemovePreviousClipBu
 export const HudCompactPauseButton = memo(function HudCompactPauseButton({
 	testId = "hud-compact-pause-button",
 	paused,
+	busy = false,
 	disabled,
 	label,
 	onClick,
 }: {
 	testId?: string;
 	paused: boolean;
+	/** The writer is still closing the clip: the state has flipped, the file has not. */
+	busy?: boolean;
 	disabled: boolean;
 	label: string;
 	onClick: () => void;
@@ -271,6 +274,8 @@ export const HudCompactPauseButton = memo(function HudCompactPauseButton({
 				type="button"
 				data-testid={testId}
 				data-paused={paused}
+				data-busy={busy}
+				aria-busy={busy}
 				className={`${styles.hudPrimaryTransport} ${hudFocusClasses} ${styles.electronNoDrag}`}
 				onClick={onClick}
 				disabled={disabled}

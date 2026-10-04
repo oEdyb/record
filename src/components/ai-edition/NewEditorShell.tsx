@@ -91,11 +91,14 @@ import { TransportBar } from "./TransportBar";
 import { useCompactReviewFit } from "./useCompactReviewFit";
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
+import { useVideoFirstFrame } from "./useVideoFirstFrame";
 import v4 from "./v4/EditorShellV4.module.css";
 import { type EditorMode, EditorTopBar } from "./v4/EditorTopBar";
 import { type Facet, FloatingInspector } from "./v4/FloatingInspector";
 import { MediaStage } from "./v4/MediaStage";
 import { V4Timeline } from "./v4/V4Timeline";
+
+const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
 
 interface SeekTarget {
 	timeSec: number;
@@ -162,6 +165,8 @@ export function NewEditorShell() {
 
 	const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
 	const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+	const firstFrameReady = useVideoFirstFrame(videoElement);
+	const [startupLoaded, setStartupLoaded] = useState(false);
 	// Media and Edit are editor workspaces. Record is an action that opens the
 	// floating HUD, not a third editor tab.
 	// column, and a floating facet inspector over the stage.
@@ -453,6 +458,13 @@ export function NewEditorShell() {
 		if (initRef.current) return;
 		initRef.current = true;
 		void (async () => {
+			try {
+				await loadStartupProject();
+			} finally {
+				setStartupLoaded(true);
+			}
+		})();
+		async function loadStartupProject() {
 			if (await resumeRecordingWorkspace()) return;
 			const navigationRevision = recordingNavigationRevisionRef.current;
 			const projectAtStart = useProjectStore.getState().projectId;
@@ -487,7 +499,7 @@ export function NewEditorShell() {
 			} catch (e) {
 				console.warn("[editor] auto-load failed", e);
 			}
-		})();
+		}
 	}, [loadProject, recordingReviewNavigation, resumeRecordingWorkspace]);
 
 	// Warn on close when dirty
@@ -1931,6 +1943,26 @@ export function NewEditorShell() {
 									/>
 								)}
 								{hasAsset && !PRODUCT_SURFACE.recordingOnly ? <PreviewQualityControl /> : null}
+								{PRODUCT_SURFACE.recordingOnly ? (
+									<div
+										className={v4.reviewLoading}
+										data-ready={firstFrameReady || (startupLoaded && !hasAsset)}
+										data-testid="review-loading"
+										aria-hidden="true"
+									>
+										<div className={v4.reviewSpinner}>
+											{REVIEW_SPINNER_BARS.map((bar) => (
+												<span
+													key={bar}
+													style={{
+														transform: `rotate(${bar * 30}deg) translateY(-146%)`,
+														animationDelay: `${bar * 0.1 - 1.2}s`,
+													}}
+												/>
+											))}
+										</div>
+									</div>
+								) : null}
 								{PRODUCT_SURFACE.recordingOnly && hasAsset ? (
 									<div className={v4.reviewTransport}>
 										<TransportBar

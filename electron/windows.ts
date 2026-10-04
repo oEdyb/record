@@ -9,6 +9,7 @@ import {
 	expandedCameraPreviewBounds,
 } from "./cameraPreviewGeometry";
 import { COMPACT_REVIEW_MIN_SIZE, type WindowBounds } from "./compactReviewGeometry";
+import { clampHudDragPosition } from "./hudDragGeometry";
 import { shouldShowHudInactive, shouldStartHudClickThrough } from "./hudInputPolicy";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import {
@@ -331,8 +332,14 @@ ipcMain.on("hud-overlay-drag-to", (_event, deltaX: number, deltaY: number) => {
 	// still -0, and Math.trunc preserves it too.)
 	const x = Math.round(hudDragOrigin.x + deltaX) | 0;
 	const y = Math.round(hudDragOrigin.y + deltaY) | 0;
+	const [width, height] = hudOverlayWindow.getSize();
+	const display = screen.getDisplayNearestPoint({
+		x: Math.round(x + width / 2),
+		y: Math.round(y + height),
+	});
+	const next = clampHudDragPosition({ x, y }, { width, height }, display);
 
-	hudOverlayWindow.setPosition(x, y, false);
+	hudOverlayWindow.setPosition(next.x, next.y, false);
 });
 
 ipcMain.on("hud-overlay-drag-end", () => {

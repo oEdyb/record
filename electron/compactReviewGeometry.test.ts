@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_REVIEW_CHROME_HEIGHT, fitCompactReviewBounds } from "./compactReviewGeometry";
+import { defaultReviewChromeHeight, fitCompactReviewBounds } from "./compactReviewGeometry";
 
 const laptop = { x: 0, y: 25, width: 1710, height: 1080 };
 
@@ -25,12 +25,20 @@ describe("fitCompactReviewBounds", () => {
 		expect(bounds.width).toBeGreaterThanOrEqual(480);
 		expect(bounds.x).toBeGreaterThanOrEqual(-1280);
 		expect(bounds.y).toBeGreaterThanOrEqual(0);
-		expect(bounds.height).toBeGreaterThanOrEqual(DEFAULT_REVIEW_CHROME_HEIGHT);
+		expect(bounds.height).toBeGreaterThanOrEqual(defaultReviewChromeHeight(16 / 9));
 	});
 
 	it("centres over a dragged pill and stays on screen at the edges", () => {
 		expect(fitCompactReviewBounds(laptop, 16 / 9, 117, 600).x).toBe(120);
 		expect(fitCompactReviewBounds(laptop, 16 / 9, 117, 100).x).toBe(0);
 		expect(fitCompactReviewBounds(laptop, 16 / 9, 117, 1700).x).toBe(1710 - 960);
+	});
+
+	it("opens at the size the renderer will ask for, so loading does not resize it", () => {
+		const macbook = { x: 0, y: 25, width: 1440, height: 875 };
+		const ratio = 1440 / 932;
+		const opened = fitCompactReviewBounds(macbook, ratio);
+		const fitted = fitCompactReviewBounds(macbook, ratio, 60 + 12 - 24 / ratio);
+		expect(opened).toEqual(fitted);
 	});
 });

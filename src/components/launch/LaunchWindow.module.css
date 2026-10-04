@@ -207,9 +207,10 @@
 		0 4px 12px -4px rgba(217, 58, 48, 0.55);
 	color: #ffffff;
 	cursor: pointer;
+	position: relative;
 	transition:
-		background 180ms cubic-bezier(0.2, 0, 0, 1),
-		box-shadow 180ms cubic-bezier(0.2, 0, 0, 1),
+		background 100ms cubic-bezier(0.2, 0, 0, 1),
+		box-shadow 100ms cubic-bezier(0.2, 0, 0, 1),
 		transform 120ms cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -243,6 +244,35 @@
 .hudPrimaryTransport:disabled {
 	opacity: 0.55;
 	cursor: not-allowed;
+}
+
+/* Pause has already taken effect; only the clip file is still closing. Stay
+   bright and show the wait as a thin ring instead of a dimmed, dead button. */
+.hudPrimaryTransport[data-busy="true"]:disabled {
+	opacity: 1;
+	cursor: progress;
+}
+
+.hudPrimaryTransport[data-busy="true"]::after {
+	content: "";
+	position: absolute;
+	inset: -3px;
+	border-radius: 50%;
+	border: 1.5px solid transparent;
+	border-top-color: rgba(245, 247, 250, 0.75);
+	animation: hud-busy-ring 700ms linear infinite;
+}
+
+@keyframes hud-busy-ring {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.hudPrimaryTransport[data-busy="true"]::after {
+		animation-duration: 1.6s;
+	}
 }
 
 .hudCompactTimer {

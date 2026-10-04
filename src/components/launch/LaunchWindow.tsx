@@ -1087,7 +1087,10 @@ export function LaunchWindow() {
 
 	// The idle and recording pills each render their own grip, so a press can
 	// outlive the element that started it. Any switch ends the drag.
+	const gripRecordingRef = useRef(pillRecording);
 	useEffect(() => {
+		if (gripRecordingRef.current === pillRecording) return;
+		gripRecordingRef.current = pillRecording;
 		endHudDrag();
 	}, [pillRecording, endHudDrag]);
 
@@ -1406,6 +1409,7 @@ export function LaunchWindow() {
 						<div key="recording" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
 							<HudCompactPauseButton
 								paused={presentation.paused}
+								busy={clipFinalizing}
 								disabled={saving || clipFinalizing || !canPauseRecording}
 								label={
 									presentation.paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")

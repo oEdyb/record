@@ -42,6 +42,7 @@ import {
 } from "./install-channel";
 import {
 	getSelectedDesktopSource,
+	getSelectedSourceAspectRatio,
 	registerIpcHandlers,
 	resolveApprovedRendererMediaPath,
 	resolveApprovedVideoPath,
@@ -667,7 +668,7 @@ function compactReviewBoundsNear(window: BrowserWindow | null) {
 	const anchor = window && !window.isDestroyed() ? window.getBounds() : display.workArea;
 	return fitCompactReviewBounds(
 		display.workArea,
-		undefined,
+		getSelectedSourceAspectRatio(display),
 		undefined,
 		anchor.x + anchor.width / 2,
 	);
