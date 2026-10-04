@@ -2173,6 +2173,14 @@ export function registerIpcHandlers(
 		}),
 	);
 
+	ipcMain.handle("open-camera-privacy-settings", async () => {
+		if (process.platform !== "darwin") return false;
+		await shell.openExternal(
+			"x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
+		);
+		return true;
+	});
+
 	ipcMain.handle("request-camera-access", async () => {
 		if (process.platform !== "darwin") {
 			return { success: true, granted: true, status: "granted" };

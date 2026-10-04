@@ -271,6 +271,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	requestCameraAccess: () => {
 		return ipcRenderer.invoke("request-camera-access");
 	},
+	openCameraPrivacySettings: () => ipcRenderer.invoke("open-camera-privacy-settings"),
 	requestScreenAccess: () => {
 		return ipcRenderer.invoke("request-screen-access");
 	},

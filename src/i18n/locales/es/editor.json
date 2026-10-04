@@ -62,6 +62,7 @@
 	"recording": {
 		"failedCameraAccess": "Error al solicitar acceso a la cámara.",
 		"cameraBlocked": "El acceso a la cámara está bloqueado. Actívalo en la configuración del sistema para usar la cámara web.",
+		"openCameraSettings": "Abrir Ajustes",
 		"systemAudioUnavailable": "Audio del sistema no disponible. Grabando sin audio del sistema.",
 		"microphoneDenied": "Acceso al micrófono denegado. La grabación continuará sin audio.",
 		"cameraDenied": "Acceso a la cámara denegado. La grabación continuará sin cámara web.",

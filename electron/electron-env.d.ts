@@ -115,6 +115,8 @@ interface Window {
 		onAiEditionChatEvent: (
 			callback: (event: import("../src/native/contracts").AiEditionChatEvent) => void,
 		) => () => void;
+		/** Opens macOS Privacy & Security > Camera, where the app's access is switched on. */
+		openCameraPrivacySettings?: () => Promise<boolean>;
 		requestCameraAccess: () => Promise<{
 			success: boolean;
 			granted: boolean;

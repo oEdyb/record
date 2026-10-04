@@ -195,6 +195,15 @@ export function webcamOffsetMsFrom(
 
 export function useScreenRecorder(): UseScreenRecorderReturn {
 	const t = useScopedT("editor");
+	const showCameraBlocked = useCallback(() => {
+		const openSettings = window.electronAPI?.openCameraPrivacySettings;
+		toast.error(t("recording.cameraBlocked"), {
+			id: "camera-blocked",
+			action: openSettings
+				? { label: t("recording.openCameraSettings"), onClick: () => void openSettings() }
+				: undefined,
+		});
+	}, [t]);
 	const [preferencesReady, setPreferencesReady] = useState(false);
 	const [recording, setRecording] = useState(false);
 	const [paused, setPaused] = useState(false);
@@ -371,14 +380,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 
 			if (!accessResult.granted) {
-				toast.error(t("recording.cameraBlocked"));
+				showCameraBlocked();
 				return false;
 			}
 
 			setWebcamEnabledState(true);
 			return true;
 		},
-		[t],
+		[t, showCameraBlocked],
 	);
 
 	useEffect(() => {
@@ -481,7 +490,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							"OverconstrainedError",
 							"NotReadableError",
 						].includes(cameraError.name);
-					toast.error(t(isDeviceError ? "recording.cameraNotFound" : "recording.cameraBlocked"));
+					if (isDeviceError) toast.error(t("recording.cameraNotFound"));
+					else showCameraBlocked();
 					webcamReady.current = true;
 				}
 			}
@@ -503,7 +513,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			}
 		};
-	}, [webcamEnabled, webcamDeviceId, webcamFormat, recordingQuality, t]);
+	}, [webcamEnabled, webcamDeviceId, webcamFormat, recordingQuality, t, showCameraBlocked]);
 
 	const finalizeRecording = useCallback(
 		(
