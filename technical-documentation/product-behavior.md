@@ -303,7 +303,7 @@ the main process decide who owns the choice.
 Setup floats above the idle pill at the same 424 px width, laid out like the approved prototype
 (Olle, 2026-10-04). Top: a Display / Window choice with a sliding thumb; Display picks the main
 display in one click (or opens the picker when a display is already chosen), Window opens the
-source panel. Middle: a 2 by 2 grid of System audio, Microphone, Camera and Editable cursor tiles, each
+source panel on its Windows tab. Middle: a 2 by 2 grid of System audio, Microphone, Camera and Editable cursor tiles, each
 with its device or state and its own switch; the microphone tile shows a live level line.
 Microphone and camera tiles open their device list below the grid, one at a time. Recording
 quality sits below that. The footer is Notes, Language and Recordings while idle, and Notes,

@@ -22,8 +22,11 @@ export function SourceSelector() {
  * Screens and windows to record, one click to choose. Renders as its own window
  * or as a panel above the recorder pill.
  */
+export type SourcePickerKind = "screens" | "windows";
+
 export function SourcePicker({
 	variant,
+	initialKind,
 	onClose,
 	onChosen,
 	panelRef,
@@ -31,6 +34,8 @@ export function SourcePicker({
 	closing = false,
 }: {
 	variant: "window" | "panel";
+	/** The tab to open on, when the caller asked for screens or windows. */
+	initialKind?: SourcePickerKind;
 	/** Extra classes for the panel shell, such as the HUD's motion. */
 	className?: string;
 	/** True while the panel plays its exit before unmounting. */
@@ -107,7 +112,7 @@ export function SourcePicker({
 			setChoosing(false);
 		}
 	};
-	const [kind, setKind] = useState<"screens" | "windows" | null>(null);
+	const [kind, setKind] = useState<SourcePickerKind | null>(initialKind ?? null);
 	const activeKind =
 		kind ??
 		(screenSources.length === 0 || selectedSource?.id.startsWith("window:")

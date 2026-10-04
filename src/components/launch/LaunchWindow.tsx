@@ -52,7 +52,7 @@ import {
 } from "./hudGeometry";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
-import { SourcePicker } from "./SourceSelector";
+import { SourcePicker, type SourcePickerKind } from "./SourceSelector";
 import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
@@ -664,34 +664,44 @@ export function LaunchWindow() {
 
 	// With screen access granted, the picker opens as a panel above the pill. The
 	// standalone window remains the path that asks macOS for access first, and Linux's.
-	const openSourceSelector = useCallback(async () => {
-		// Linux asks the main process every time: it is the authority on whether the
-		// portal owns the choice, which the renderer may not know yet.
-		if (window.electronAPI && !portalOwnsSource && window.electronAPI.getPlatform?.() !== "linux") {
-			if (!requireEntitlement("record")) {
-				return { opened: false, reason: "entitlement-required" };
+	const openSourceSelector = useCallback(
+		async (kind?: SourcePickerKind) => {
+			// Linux asks the main process every time: it is the authority on whether the
+			// portal owns the choice, which the renderer may not know yet.
+			if (
+				window.electronAPI &&
+				!portalOwnsSource &&
+				window.electronAPI.getPlatform?.() !== "linux"
+			) {
+				if (!requireEntitlement("record")) {
+					return { opened: false, reason: "entitlement-required" };
+				}
+				const access = await window.electronAPI.requestScreenAccess?.().catch(() => null);
+				// Capture may have started while macOS answered; the source is fixed then.
+				if (controlsLockedRef.current) {
+					return { opened: false, reason: "controls-locked" };
+				}
+				if (access?.granted) {
+					setIsDeviceSettingsOpen(false);
+					setIsPeekOpen(false);
+					setSourcePanelKind(kind);
+					setIsSourcePanelOpen(true);
+					return { opened: true };
+				}
 			}
-			const access = await window.electronAPI.requestScreenAccess?.().catch(() => null);
-			// Capture may have started while macOS answered; the source is fixed then.
-			if (controlsLockedRef.current) {
-				return { opened: false, reason: "controls-locked" };
+			if (window.electronAPI) {
+				return await openSourceSelectorWithPermissionRetry({
+					openSourceSelector: () => window.electronAPI.openSourceSelector(),
+					requestScreenAccess: () => window.electronAPI.requestScreenAccess(),
+				});
 			}
-			if (access?.granted) {
-				setIsDeviceSettingsOpen(false);
-				setIsPeekOpen(false);
-				setIsSourcePanelOpen(true);
-				return { opened: true };
-			}
-		}
-		if (window.electronAPI) {
-			return await openSourceSelectorWithPermissionRetry({
-				openSourceSelector: () => window.electronAPI.openSourceSelector(),
-				requestScreenAccess: () => window.electronAPI.requestScreenAccess(),
-			});
-		}
 
-		return { opened: false, reason: "electron-api-unavailable" };
-	}, [portalOwnsSource]);
+			return { opened: false, reason: "electron-api-unavailable" };
+		},
+		[portalOwnsSource],
+	);
+
+	const [sourcePanelKind, setSourcePanelKind] = useState<SourcePickerKind>();
 
 	const closeSourcePanel = useCallback(() => {
 		setIsSourcePanelOpen(false);
@@ -1274,7 +1284,7 @@ export function LaunchWindow() {
 				? undefined
 				: () => {
 						setIsDeviceSettingsOpen(false);
-						void openSourceSelector();
+						void openSourceSelector("windows");
 					},
 			editableCursor: cursorCaptureMode === "editable-overlay",
 			onToggleCursor: supportsCursorModeToggle ? toggleCursorMode : undefined,
@@ -1522,6 +1532,7 @@ export function LaunchWindow() {
 						{sourcePresence.present && (
 							<SourcePicker
 								variant="panel"
+								initialKind={sourcePanelKind}
 								className={styles.hudPanel}
 								closing={sourcePresence.closing}
 								onClose={closeSourcePanel}

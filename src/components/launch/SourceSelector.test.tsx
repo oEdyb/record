@@ -3,7 +3,7 @@ import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SourceSelector } from "./SourceSelector";
+import { SourcePicker, SourceSelector } from "./SourceSelector";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -126,6 +126,26 @@ describe("SourceSelector", () => {
 		fireEvent.click(await screen.findByText("Editor"));
 		await waitFor(() => expect(selectSource).toHaveBeenCalledWith(windowSource));
 		expect(screen.queryByTestId("source-selector-share-button")).not.toBeInTheDocument();
+	});
+
+	it("opens on the windows tab when asked for a window", async () => {
+		const screenSource = {
+			id: "screen:1:0",
+			name: "Entire Screen",
+			thumbnail: null,
+			display_id: "1",
+			appIcon: null,
+		};
+		const windowSource = { ...screenSource, id: "window:9:0", name: "Editor" };
+		window.electronAPI = {
+			...window.electronAPI,
+			getSources: vi.fn().mockResolvedValue([screenSource, windowSource]),
+		} as typeof window.electronAPI;
+
+		render(<SourcePicker variant="panel" initialKind="windows" onClose={vi.fn()} />);
+
+		expect(await screen.findByText("Editor")).toBeInTheDocument();
+		expect(screen.queryByText("Entire Screen")).not.toBeInTheDocument();
 	});
 
 	it("keeps the old choice and says so when switching fails", async () => {
