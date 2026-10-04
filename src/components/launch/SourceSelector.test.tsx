@@ -98,4 +98,30 @@ describe("SourceSelector", () => {
 		expect(screen.getByTestId("source-thumbnail-placeholder")).toBeInTheDocument();
 		expect(screen.queryByRole("img", { name: "Entire Screen" })).not.toBeInTheDocument();
 	});
+
+	it("chooses a source in one click and switches between screens and windows", async () => {
+		const screenSource = {
+			id: "screen:1:0",
+			name: "Entire Screen",
+			thumbnail: null,
+			display_id: "1",
+			appIcon: null,
+		};
+		const windowSource = { ...screenSource, id: "window:9:0", name: "Editor" };
+		const selectSource = vi.fn().mockResolvedValue(windowSource);
+		window.electronAPI = {
+			...window.electronAPI,
+			getSources: vi.fn().mockResolvedValue([screenSource, windowSource]),
+			selectSource,
+		} as typeof window.electronAPI;
+
+		render(<SourceSelector />);
+		await screen.findByText("Entire Screen");
+		expect(screen.queryByText("Editor")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("tab", { name: /Windows \(1\)/ }));
+		fireEvent.click(await screen.findByText("Editor"));
+		await waitFor(() => expect(selectSource).toHaveBeenCalledWith(windowSource));
+		expect(screen.queryByTestId("source-selector-share-button")).not.toBeInTheDocument();
+	});
 });

@@ -1,8 +1,7 @@
-import { Monitor } from "lucide-react";
+import { AppWindow, Monitor, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { Button } from "../ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import styles from "./SourceSelector.module.css";
 
 interface DesktopSource {
@@ -13,7 +12,26 @@ interface DesktopSource {
 	appIcon: string | null;
 }
 
+/** The standalone picker window, used when the recorder has to ask for screen access first. */
 export function SourceSelector() {
+	return <SourcePicker variant="window" onClose={() => window.close()} />;
+}
+
+/**
+ * Screens and windows to record, one click to choose. Renders as its own window
+ * or as a panel above the recorder pill.
+ */
+export function SourcePicker({
+	variant,
+	onClose,
+	onChosen,
+	panelRef,
+}: {
+	variant: "window" | "panel";
+	onClose: () => void;
+	onChosen?: () => void;
+	panelRef?: (el: HTMLDivElement | null) => void;
+}) {
 	const t = useScopedT("launch");
 	const tc = useScopedT("common");
 	const [sources, setSources] = useState<DesktopSource[]>([]);
@@ -30,21 +48,22 @@ export function SourceSelector() {
 				thumbnailSize: { width: 320, height: 180 },
 				fetchWindowIcons: true,
 			});
-			setSources(
-				rawSources.map((source) => ({
-					id: source.id,
-					name:
-						source.id.startsWith("window:") && source.name.includes(" — ")
-							? source.name.split(" — ")[1] || source.name
-							: source.name,
-					thumbnail: source.thumbnail || null,
-					display_id: source.display_id,
-					appIcon: source.appIcon,
-				})),
-			);
-			setSelectedSource((current) =>
-				current && rawSources.some((source) => source.id === current.id) ? current : null,
-			);
+			const mapped: DesktopSource[] = rawSources.map((source) => ({
+				id: source.id,
+				name:
+					source.id.startsWith("window:") && source.name.includes(" — ")
+						? source.name.split(" — ")[1] || source.name
+						: source.name,
+				thumbnail: source.thumbnail || null,
+				display_id: source.display_id,
+				appIcon: source.appIcon,
+			}));
+			setSources(mapped);
+			const chosen = await window.electronAPI.getSelectedSource?.().catch(() => null);
+			setSelectedSource((current) => {
+				const id = current?.id ?? chosen?.id;
+				return mapped.find((source) => source.id === id) ?? null;
+			});
 		} catch (error) {
 			console.error("Error loading sources:", error);
 			setSources([]);
@@ -63,16 +82,41 @@ export function SourceSelector() {
 	const windowSources = sources.filter((s) => s.id.startsWith("window:"));
 	const hasNoSources = !loading && sources.length === 0;
 
-	const handleSourceSelect = (source: DesktopSource) => setSelectedSource(source);
-	const handleShare = async () => {
-		if (selectedSource) await window.electronAPI.selectSource(selectedSource);
+	// One click chooses; the main process closes the picker once the choice is saved.
+	const handleSourceSelect = async (source: DesktopSource) => {
+		setSelectedSource(source);
+		await window.electronAPI.selectSource(source);
+		onChosen?.();
 	};
+	const [kind, setKind] = useState<"screens" | "windows" | null>(null);
+	const activeKind =
+		kind ??
+		(screenSources.length === 0 || selectedSource?.id.startsWith("window:")
+			? "windows"
+			: "screens");
+	const visibleSources = activeKind === "screens" ? screenSources : windowSources;
+
+	useEffect(() => {
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === "Escape") onClose();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [onClose]);
+
+	const panelTestId = variant === "panel" ? "hud-source-panel" : undefined;
+	const shellClass =
+		variant === "window"
+			? `h-screen flex flex-col ${styles.glassContainer}`
+			: `flex flex-col ${styles.glassContainer} ${styles.panel}`;
 
 	if (loading) {
 		return (
 			<div
-				className={`h-full flex items-center justify-center ${styles.glassContainer}`}
-				style={{ minHeight: "100vh" }}
+				ref={panelRef}
+				data-hud-interactive="true"
+				data-testid={panelTestId}
+				className={`${shellClass} items-center justify-center ${styles.stateShell}`}
 			>
 				<div className="text-center">
 					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[var(--accent)] mx-auto mb-2" />
@@ -85,8 +129,10 @@ export function SourceSelector() {
 	if (hasNoSources) {
 		return (
 			<div
-				className={`h-full flex items-center justify-center ${styles.glassContainer}`}
-				style={{ minHeight: "100vh" }}
+				ref={panelRef}
+				data-hud-interactive="true"
+				data-testid={panelTestId}
+				className={`${shellClass} items-center justify-center ${styles.stateShell}`}
 			>
 				<div className="max-w-[320px] px-6 text-center">
 					<h2 className="text-sm font-semibold text-[#ffffff]">{t("sourceSelector.emptyTitle")}</h2>
@@ -115,92 +161,90 @@ export function SourceSelector() {
 				type="button"
 				data-testid="source-selector-card"
 				data-source-kind={sourceKind}
-				className={`${styles.sourceCard} ${isSelected ? styles.selected : ""} flex flex-col text-left`}
-				onClick={() => handleSourceSelect(source)}
+				aria-pressed={isSelected}
+				className={styles.sourceCard}
+				onClick={() => void handleSourceSelect(source)}
 			>
 				<div className={styles.thumb}>
 					{source.thumbnail ? (
-						<img src={source.thumbnail} alt={source.name} className="w-full h-full object-cover" />
+						<img src={source.thumbnail} alt={source.name} />
 					) : (
 						<div
 							className={styles.thumbFallback}
 							data-testid="source-thumbnail-placeholder"
 							aria-hidden="true"
 						>
-							<Monitor size={28} strokeWidth={1.5} />
+							{sourceKind === "screen" ? (
+								<Monitor size={28} strokeWidth={1.5} />
+							) : (
+								<AppWindow size={28} strokeWidth={1.5} />
+							)}
 						</div>
 					)}
 				</div>
-				<div className="flex items-center gap-[7px] px-[11px] py-[9px]">
+				<div className={styles.caption}>
 					{source.appIcon ? (
 						<img src={source.appIcon} alt="" className={styles.icon} />
+					) : sourceKind === "screen" ? (
+						<Monitor size={14} className={styles.captionIcon} aria-hidden />
 					) : (
-						<span className={styles.iconFallback}>
-							<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
-								<circle cx="12" cy="12" r="10" />
-							</svg>
-						</span>
+						<AppWindow size={14} className={styles.captionIcon} aria-hidden />
 					)}
-					<div className={`${styles.name} truncate`}>{source.name}</div>
+					<span className={styles.name}>{source.name}</span>
 				</div>
 			</button>
 		);
 	};
 
 	return (
-		<div className={`h-screen flex flex-col ${styles.glassContainer}`}>
-			<Tabs
-				defaultValue={screenSources.length === 0 ? "windows" : "screens"}
-				className="flex-1 flex flex-col min-h-0"
-			>
-				<TabsList className="flex items-center gap-1.5 h-auto p-3.5 rounded-none bg-transparent border-b border-[#191d24] flex-shrink-0">
-					<TabsTrigger
-						value="screens"
-						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-[background-color,border-color,color] data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
+		<div
+			ref={panelRef}
+			data-hud-interactive="true"
+			data-testid={panelTestId}
+			className={shellClass}
+		>
+			<div className={styles.header}>
+				<div
+					className={styles.segmented}
+					role="tablist"
+					aria-label={t("sourceSelector.screens", { count: String(screenSources.length) })}
+					data-kind={activeKind}
+				>
+					<span className={styles.segmentThumb} aria-hidden />
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeKind === "screens"}
+						className={styles.segment}
+						onClick={() => setKind("screens")}
 					>
+						<Monitor size={15} aria-hidden />
 						{t("sourceSelector.screens", { count: String(screenSources.length) })}
-					</TabsTrigger>
-					<TabsTrigger
-						value="windows"
-						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-[background-color,border-color,color] data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
+					</button>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeKind === "windows"}
+						className={styles.segment}
+						onClick={() => setKind("windows")}
 					>
+						<AppWindow size={15} aria-hidden />
 						{t("sourceSelector.windows", { count: String(windowSources.length) })}
-					</TabsTrigger>
-				</TabsList>
-				<div className="flex-1 min-h-0 px-[18px] pt-[18px] pb-1.5">
-					<TabsContent value="screens" className="h-full mt-0">
-						<div
-							className={`grid h-full auto-rows-min grid-cols-2 gap-3.5 overflow-y-auto pr-1.5 ${styles.sourceGridScroll}`}
-						>
-							{screenSources.map(renderSourceCard)}
-						</div>
-					</TabsContent>
-					<TabsContent value="windows" className="h-full mt-0">
-						<div
-							className={`grid h-full auto-rows-min grid-cols-2 gap-3.5 overflow-y-auto pr-1.5 ${styles.sourceGridScroll}`}
-						>
-							{windowSources.map(renderSourceCard)}
-						</div>
-					</TabsContent>
+					</button>
 				</div>
-			</Tabs>
-			<div className="flex justify-end gap-2.5 border-t border-[#191d24] px-[18px] py-4">
-				<Button
+				<button
+					type="button"
 					data-testid="source-selector-cancel-button"
-					variant="ghost"
-					onClick={() => window.close()}
-					className="h-9 rounded-[9px] border border-[#333a45] px-4 text-[13px] font-medium text-[#f5f7fa] transition-colors duration-150 hover:bg-[#1a1e25] hover:text-[#f5f7fa]"
+					className={styles.close}
+					aria-label={tc("actions.cancel")}
+					title={tc("actions.cancel")}
+					onClick={onClose}
 				>
-					{tc("actions.cancel")}
-				</Button>
-				<Button
-					data-testid="source-selector-share-button"
-					onClick={handleShare}
-					disabled={!selectedSource}
-					className="h-9 rounded-[9px] bg-[var(--accent)] px-5 text-[13px] font-semibold text-[var(--accent-on)] transition-[background-color,transform] duration-150 hover:bg-[var(--brand-lo)] active:scale-95 disabled:bg-[#232830] disabled:border disabled:border-[#242932] disabled:text-[#565f6b] disabled:opacity-100"
-				>
-					{tc("actions.share")}
-				</Button>
+					<X size={16} aria-hidden />
+				</button>
+			</div>
+			<div className={`${styles.grid} ${styles.sourceGridScroll}`} role="tabpanel">
+				{visibleSources.map(renderSourceCard)}
 			</div>
 		</div>
 	);

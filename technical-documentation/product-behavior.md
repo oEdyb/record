@@ -292,10 +292,18 @@ Every edge inset is 4 px, so the 40 px round control is concentric with the 25 p
 The recording pill keeps the same controls through Pause, so Pause/Continue never moves under
 the cursor. Do not create a second bar or a detached timeline pill.
 
+The source chip, Setup's Window choice and Record without a chosen source open the Source panel
+above the pill, Setup's width and glass (Olle, 2026-10-04): a Screens / Windows switch with a
+sliding thumb, a close control, and a two-column grid of live thumbnails with app icons. One
+click chooses and closes; Escape or a click outside closes without a change. It opens on the
+tab of the current source and marks it. If macOS screen access is not granted yet, and always on
+Linux, the standalone picker window opens instead, because that path asks for access and lets
+the main process decide who owns the choice.
+
 Setup floats above the idle pill at the same 424 px width, laid out like the approved prototype
 (Olle, 2026-10-04). Top: a Display / Window choice with a sliding thumb; Display picks the main
 display in one click (or opens the picker when a display is already chosen), Window opens the
-picker. Middle: a 2 by 2 grid of System audio, Microphone, Camera and Editable cursor tiles, each
+source panel. Middle: a 2 by 2 grid of System audio, Microphone, Camera and Editable cursor tiles, each
 with its device or state and its own switch; the microphone tile shows a live level line.
 Microphone and camera tiles open their device list below the grid, one at a time. Recording
 quality sits below that. The footer is Notes, Language and Recordings while idle, and Notes,

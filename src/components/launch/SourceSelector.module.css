@@ -1,53 +1,188 @@
+/* Same glass and geometry as the recorder: 1px border, 8px inset, 14px tiles
+   inside a 22px window radius, 8px between blocks. */
 .glassContainer {
-	background: #14171c;
-	border-radius: 20px;
+	box-sizing: border-box;
+	gap: 8px;
+	padding: 8px;
+	background: rgba(18, 21, 26, 0.98);
+	color: #e8ebef;
+	border-radius: 22px;
 	corner-shape: squircle;
 	/*
 		No box-shadow: Electron doesn't round the shadow's corners on this
 		transparent frameless window, leaving a square shadow that clashes with
 		the rounded card. Border + surface contrast carries the elevation instead.
 	*/
-	border: 1px solid #333a45;
+	border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
-.sourceCard {
+/* Above the pill: Setup's width and height cap, so the HUD window never resizes. */
+.panel {
+	pointer-events: auto;
+	width: 424px;
+	max-height: min(var(--hud-modal-max-h, 560px), 480px);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.05),
+		0 24px 48px -16px rgba(0, 0, 0, 0.7),
+		0 4px 12px rgba(0, 0, 0, 0.4);
+	backdrop-filter: blur(24px) saturate(150%);
+	-webkit-app-region: no-drag;
+}
+
+.panel .header {
+	-webkit-app-region: no-drag;
+}
+
+.stateShell {
+	min-height: 160px;
+	text-align: center;
+}
+
+.header {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 8px;
+	-webkit-app-region: drag;
+}
+
+.segmented {
 	position: relative;
-	corner-shape: squircle;
+	display: grid;
+	flex: 1;
+	height: 44px;
+	grid-template-columns: 1fr 1fr;
+	padding: 4px;
 	border-radius: 14px;
-	background: #0f1216;
-	border: 1.5px solid #242932;
-	overflow: hidden;
+	background: rgba(255, 255, 255, 0.06);
+	-webkit-app-region: no-drag;
+}
+
+.segmentThumb {
+	position: absolute;
+	top: 4px;
+	bottom: 4px;
+	left: 4px;
+	width: calc(50% - 4px);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.12);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+	transition: transform 320ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.segmented[data-kind="windows"] .segmentThumb {
+	transform: translateX(100%);
+}
+
+.segment {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	border: 0;
+	border-radius: 10px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.55);
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: color 150ms ease;
+}
+
+.segment[aria-selected="true"] {
+	color: #ffffff;
+}
+
+.segment:focus-visible,
+.close:focus-visible,
+.sourceCard:focus-visible {
+	outline: none;
+	box-shadow: inset 0 0 0 2px rgba(142, 165, 191, 0.72);
+}
+
+.close {
+	display: grid;
+	width: 44px;
+	height: 44px;
+	flex: none;
+	place-items: center;
+	border: 0;
+	border-radius: 14px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.55);
+	cursor: pointer;
+	-webkit-app-region: no-drag;
+	transition:
+		background-color 150ms ease,
+		color 150ms ease,
+		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.close:hover {
+	background: rgba(255, 255, 255, 0.08);
+	color: #ffffff;
+}
+
+.close:active {
+	transform: scale(0.94);
+}
+
+.grid {
+	display: grid;
+	flex: 1;
+	min-height: 0;
+	grid-auto-rows: min-content;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+	overflow-y: auto;
+}
+
+/* A tile with a 4px inset, so the 10px thumbnail radius is concentric with 14. */
+.sourceCard {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 4px;
+	padding: 4px;
+	border: 0;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.04);
+	color: inherit;
+	text-align: left;
 	cursor: pointer;
 	transition:
-		border-color 0.15s ease,
-		box-shadow 0.15s ease,
-		transform 0.15s ease;
+		background-color 150ms ease,
+		box-shadow 150ms ease,
+		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .sourceCard:hover {
-	border-color: #333a45;
-	transform: translateY(-2px);
+	background: rgba(255, 255, 255, 0.09);
 }
 
 .sourceCard:active {
-	transform: translateY(-1px) scale(0.98);
+	transform: scale(0.98);
 }
 
-.selected {
-	border-color: var(--accent);
-	box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.selected:hover {
-	border-color: var(--accent);
-	transform: translateY(-2px);
+.sourceCard[aria-pressed="true"] {
+	background: rgba(255, 255, 255, 0.12);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 .thumb {
 	position: relative;
-	aspect-ratio: 16 / 10.5;
-	background: #0a0c10;
+	aspect-ratio: 16 / 10;
 	overflow: hidden;
+	border-radius: 10px;
+	background: #0b0d11;
+}
+
+.thumb img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
 }
 
 .thumbFallback {
@@ -55,37 +190,38 @@
 	width: 100%;
 	height: 100%;
 	place-items: center;
-	color: #565f6b;
-	background: linear-gradient(145deg, #11151b, #0b0e12);
+	color: rgba(255, 255, 255, 0.3);
+}
+
+.caption {
+	display: flex;
+	min-width: 0;
+	height: 28px;
+	align-items: center;
+	gap: 8px;
+	padding: 0 8px;
 }
 
 .icon {
-	width: 15px;
-	height: 15px;
-	border-radius: 9999px;
+	width: 16px;
+	height: 16px;
+	flex: none;
+	border-radius: 4px;
 	object-fit: cover;
-	flex-shrink: 0;
-	border: 1px solid #333a45;
 }
 
-.iconFallback {
-	width: 15px;
-	height: 15px;
-	border-radius: 9999px;
-	background: #232830;
-	border: 1px solid #333a45;
-	color: #828c99;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
+.captionIcon {
+	flex: none;
+	color: rgba(255, 255, 255, 0.55);
 }
 
 .name {
-	font-size: 12.5px;
+	overflow: hidden;
 	color: #f5f7fa;
-	font-weight: 600;
-	letter-spacing: 0;
+	font-size: 13px;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 /* scrollbar */

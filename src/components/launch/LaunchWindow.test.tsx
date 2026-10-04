@@ -420,7 +420,8 @@ describe("LaunchWindow record button", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("opens the source selector instead of disabling the primary action when no source is selected", async () => {
+	it("opens the source panel above the pill instead of disabling Record when no source is selected", async () => {
+		window.electronAPI.getSources = vi.fn(async () => []);
 		renderLaunchWindow();
 
 		const recordButton = await screen.findByTestId("launch-record-button");
@@ -430,10 +431,25 @@ describe("LaunchWindow record button", () => {
 
 		fireEvent.click(recordButton);
 
+		expect(await screen.findByTestId("hud-source-panel")).toBeInTheDocument();
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("falls back to the picker window when screen access still has to be granted", async () => {
+		window.electronAPI.requestScreenAccess = vi.fn(async () => ({
+			success: true,
+			granted: false,
+			status: "denied",
+		}));
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+
 		await waitFor(() => {
 			expect(window.electronAPI.openSourceSelector).toHaveBeenCalledTimes(1);
 		});
-		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+		expect(screen.queryByTestId("hud-source-panel")).not.toBeInTheDocument();
 	});
 
 	it("restores HUD direction exclusions after a StrictMode effect restart", async () => {
@@ -498,6 +514,11 @@ describe("LaunchWindow record button", () => {
 	});
 
 	it("clears record-after-selection intent when opening the source picker fails", async () => {
+		window.electronAPI.requestScreenAccess = vi.fn(async () => ({
+			success: true,
+			granted: false,
+			status: "denied",
+		}));
 		window.electronAPI.openSourceSelector = vi.fn(async () => {
 			throw new Error("source selector failed");
 		});

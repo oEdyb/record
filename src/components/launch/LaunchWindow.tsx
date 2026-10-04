@@ -50,6 +50,7 @@ import {
 } from "./hudGeometry";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
+import { SourcePicker } from "./SourceSelector";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
 // Locale list is computed once at module load; keeping the reference stable lets
@@ -148,6 +149,7 @@ export function LaunchWindow() {
 	// settings panel. Overloading one button with both jobs is what made turning a
 	// camera after two clicks.
 	const [isDeviceSettingsOpen, setIsDeviceSettingsOpen] = useState(false);
+	const [isSourcePanelOpen, setIsSourcePanelOpen] = useState(false);
 	const [isPeekOpen, setIsPeekOpen] = useState(false);
 	const [supportsCursorModeToggle, setSupportsCursorModeToggle] = useState(false);
 	const [isLinuxHud, setIsLinuxHud] = useState(false);
@@ -183,7 +185,7 @@ export function LaunchWindow() {
 	const canPeek =
 		recording && presentation.paused && !saving && !clipFinalizing && keptClipCount > 0;
 	const peekOpen = isPeekOpen && canPeek;
-	const isPopoverOpen = isDeviceSettingsOpen || peekOpen;
+	const isPopoverOpen = isDeviceSettingsOpen || peekOpen || isSourcePanelOpen;
 	// The same controls stay in the same places while recording. Active capture
 	// locks them; a completed macOS Pause unlocks them so their staged values can
 	// be applied atomically before the next clip starts.
@@ -361,6 +363,8 @@ export function LaunchWindow() {
 	const closePopovers = useCallback(() => {
 		setIsDeviceSettingsOpen(false);
 		setIsPeekOpen(false);
+		setIsSourcePanelOpen(false);
+		recordAfterSourceSelectionRef.current = false;
 	}, []);
 
 	useEffect(() => {
@@ -647,7 +651,20 @@ export function LaunchWindow() {
 		};
 	}, [applySelectedSource, recording, toggleRecording]);
 
+	// With screen access granted, the picker opens as a panel above the pill. The
+	// standalone window remains the path that asks macOS for access first, and Linux's.
 	const openSourceSelector = useCallback(async () => {
+		// Linux asks the main process every time: it is the authority on whether the
+		// portal owns the choice, which the renderer may not know yet.
+		if (window.electronAPI && !portalOwnsSource && window.electronAPI.getPlatform?.() !== "linux") {
+			const access = await window.electronAPI.requestScreenAccess?.().catch(() => null);
+			if (access?.granted) {
+				setIsDeviceSettingsOpen(false);
+				setIsPeekOpen(false);
+				setIsSourcePanelOpen(true);
+				return { opened: true };
+			}
+		}
 		if (window.electronAPI) {
 			return await openSourceSelectorWithPermissionRetry({
 				openSourceSelector: () => window.electronAPI.openSourceSelector(),
@@ -656,7 +673,20 @@ export function LaunchWindow() {
 		}
 
 		return { opened: false, reason: "electron-api-unavailable" };
+	}, [portalOwnsSource]);
+
+	const closeSourcePanel = useCallback(() => {
+		setIsSourcePanelOpen(false);
+		recordAfterSourceSelectionRef.current = false;
 	}, []);
+
+	const toggleSourcePanel = useCallback(() => {
+		if (isSourcePanelOpen) {
+			closeSourcePanel();
+			return;
+		}
+		void openSourceSelector();
+	}, [closeSourcePanel, isSourcePanelOpen, openSourceSelector]);
 
 	const handleRecordButtonClick = useCallback(
 		(sourceSelectedOverride?: boolean) => {
@@ -913,11 +943,13 @@ export function LaunchWindow() {
 	const toggleDeviceSettings = useCallback(() => {
 		if (starting || saving) return;
 		setIsPeekOpen(false);
+		setIsSourcePanelOpen(false);
 		setIsDeviceSettingsOpen((open) => !open);
 	}, [saving, starting]);
 
 	const togglePeek = useCallback(() => {
 		setIsDeviceSettingsOpen(false);
+		setIsSourcePanelOpen(false);
 		setIsPeekOpen((open) => !open);
 	}, []);
 
@@ -1358,8 +1390,9 @@ export function LaunchWindow() {
 								<HudSourceChip
 									label={selectedSource}
 									kind={selectedSourceKind}
+									expanded={isSourcePanelOpen}
 									disabled={controlsLocked}
-									onClick={openSourceSelector}
+									onClick={toggleSourcePanel}
 								/>
 							)}
 							<HudSystemAudioButton
@@ -1435,6 +1468,15 @@ export function LaunchWindow() {
 								onSelectCamera={handleSelectCameraDevice}
 								onSelectWebcamFormat={handleSelectWebcamFormat}
 								onClose={closeDeviceSettings}
+								panelRef={setPopoverEl}
+							/>
+						)}
+
+						{isSourcePanelOpen && (
+							<SourcePicker
+								variant="panel"
+								onClose={closeSourcePanel}
+								onChosen={() => setIsSourcePanelOpen(false)}
 								panelRef={setPopoverEl}
 							/>
 						)}

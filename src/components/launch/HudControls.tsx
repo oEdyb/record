@@ -72,11 +72,13 @@ export function HudBrandMark() {
 export const HudSourceChip = memo(function HudSourceChip({
 	label,
 	kind = "display",
+	expanded = false,
 	disabled,
 	onClick,
 }: {
 	label: string;
 	kind?: "display" | "window";
+	expanded?: boolean;
 	disabled: boolean;
 	onClick: () => void;
 }) {
@@ -84,6 +86,9 @@ export const HudSourceChip = memo(function HudSourceChip({
 		<button
 			type="button"
 			data-testid="launch-source-selector-button"
+			data-hud-popover-trigger="true"
+			aria-expanded={expanded}
+			aria-haspopup="dialog"
 			className={`${styles.hudSourceChip} ${hudFocusClasses} ${hudDisabledClasses} ${styles.electronNoDrag}`}
 			onClick={onClick}
 			disabled={disabled}
