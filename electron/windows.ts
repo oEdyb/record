@@ -492,6 +492,16 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 		else win.show();
 	});
 
+	// The renderer listens to the mic for its idle level line only while the pill
+	// is on screen, so tell it when the pill is minimized, hidden or back.
+	const sendHudVisible = (visible: boolean) => {
+		if (!win.isDestroyed()) win.webContents.send("hud-visibility-changed", visible);
+	};
+	win.on("minimize", () => sendHudVisible(false));
+	win.on("hide", () => sendHudVisible(false));
+	win.on("restore", () => sendHudVisible(true));
+	win.on("show", () => sendHudVisible(true));
+
 	win.webContents.on("did-finish-load", () => {
 		hudRendererReady = true;
 		cameraPreviewPortsConnected = false;

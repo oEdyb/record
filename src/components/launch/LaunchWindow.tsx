@@ -1241,8 +1241,12 @@ export function LaunchWindow() {
 	);
 
 	// The idle pill shows the mic's live level so a dead or wrong mic is obvious
-	// before Record. Setup runs its own meter, and capture owns the mic once a take starts.
+	// before Record, only while the pill is on screen. Setup runs its own meter,
+	// and capture owns the mic once a take starts.
+	const [hudVisible, setHudVisible] = useState(true);
+	useEffect(() => window.electronAPI?.onHudVisibilityChanged?.(setHudVisible), []);
 	const idleMicMeterOn =
+		hudVisible &&
 		microphoneEnabled &&
 		!pillRecording &&
 		!isDeviceSettingsOpen &&

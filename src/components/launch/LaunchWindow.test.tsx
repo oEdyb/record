@@ -902,6 +902,24 @@ describe("LaunchWindow record button", () => {
 		expect(screen.queryByRole("dialog", { name: "peek.title" })).not.toBeInTheDocument();
 	});
 
+	it("shows the idle mic level only while the pill is on screen", async () => {
+		recorderState.value.microphoneEnabled = true;
+		micDevicesState.value = [{ deviceId: "mic-a", label: "Mic A", groupId: "g" }];
+		let setVisible: (visible: boolean) => void = vi.fn();
+		window.electronAPI.onHudVisibilityChanged = vi.fn((callback) => {
+			setVisible = callback;
+			return vi.fn();
+		});
+		renderLaunchWindow();
+		const mic = await screen.findByTestId("launch-microphone-button");
+		await waitFor(() => expect(mic.querySelector("span[aria-hidden]")).not.toBeNull());
+
+		act(() => setVisible(false));
+		expect(mic.querySelector("span[aria-hidden]")).toBeNull();
+		act(() => setVisible(true));
+		expect(mic.querySelector("span[aria-hidden]")).not.toBeNull();
+	});
+
 	it("keeps the replay's video loaded while it is toggled open and closed", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.paused = true;

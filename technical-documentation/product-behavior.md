@@ -283,7 +283,7 @@ must not replace an active recording HUD.
 
 The recorder is one floating pill in every state (Olle, 2026-10-04: the old wide bar is gone).
 Idle, it shows the Klippt mark (drag handle), the source with a screen or window icon and a
-chevron, system audio, microphone (with a live level line while idle), camera, Setup, and a
+chevron, system audio, microphone (with a live level line while the idle pill is on screen; it stops when the pill is hidden or minimized), camera, Setup, and a
 28 px red Record ball inside a thin light ring. Recording, it shows the large round
 Pause/Continue control, the total time as plain text that doubles as the drag handle, then
 Stop, Remove, Replay and Setup as flat secondary icons. Pause/Continue is primary because
