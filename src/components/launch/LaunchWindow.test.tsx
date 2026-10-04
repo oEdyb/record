@@ -177,6 +177,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 	useScopedT: () => (key: string, vars?: Record<string, string | number>) => {
 		const translations: Record<string, string> = {
 			"sourceSelector.defaultSourceName": "Screen",
+			"recordingReview.record": "Record",
 			"recording.selectSource": "Please select a source to record",
 			"recording.systemPicker": "Your system will ask what to share",
 			"recording.inProgress": "Recording",
@@ -470,7 +471,11 @@ describe("LaunchWindow record button", () => {
 		expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
 	});
 
-	it("does not record after manual source selection", async () => {
+	it.each([
+		"horizontal",
+		"vertical",
+	] as const)("names the idle action Record after manual selection (%s)", async (trayLayout) => {
+		saveUserPreferences({ trayLayout });
 		renderLaunchWindow();
 		await waitForSourceSelectionSubscription();
 
@@ -479,6 +484,7 @@ describe("LaunchWindow record button", () => {
 		await waitFor(() => {
 			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
 		});
+		expect(screen.getByTestId("launch-record-button")).toHaveAccessibleName("Record");
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 	});
 

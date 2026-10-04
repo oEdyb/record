@@ -88,6 +88,7 @@ function getAvailableScreenWidth(): number {
 export function LaunchWindow() {
 	const t = useScopedT("launch");
 	const commonT = useScopedT("common");
+	const editorT = useScopedT("editor");
 	const {
 		locale,
 		setLocale,
@@ -1050,6 +1051,11 @@ export function LaunchWindow() {
 					? selectedSource
 					: t("recording.selectSource");
 
+	const recordAccessibleLabel =
+		!recording && !starting && !saving && hasSelectedSource && !portalOwnsSource
+			? editorT("recordingReview.record")
+			: undefined;
+
 	// Stable identity, or the panel's memo boundary would break on every parent
 	// render — including the once-a-second one during a recording.
 	const deviceSettingsLabels = useMemo<HudDeviceSettingsLabels>(
@@ -1139,6 +1145,7 @@ export function LaunchWindow() {
 								}
 								elapsedSeconds={presentation.elapsedSeconds}
 								label={recording ? "Stop recording" : recordLabel}
+								accessibleLabel={recordAccessibleLabel}
 								savingLabel={t("recording.saving")}
 								onClick={handleRecordClick}
 							/>
@@ -1291,6 +1298,7 @@ export function LaunchWindow() {
 									}
 									elapsedSeconds={presentation.elapsedSeconds}
 									label={recording ? "Stop recording" : recordLabel}
+									accessibleLabel={recordAccessibleLabel}
 									savingLabel={t("recording.saving")}
 									onClick={handleRecordClick}
 								/>

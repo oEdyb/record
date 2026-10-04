@@ -11,7 +11,11 @@ cycles, paused Stop, review and 12 byte-identical originals. Start 859 ms; Stop-
 2,259 ms; source handoff 3,797 ms. All eight code gates passed: 4,118 tests plus 56 native tests.
 Independent lifecycle review is clean. [Evidence and limits](docs/capture-queue-2026-10-04.md).
 
-Next: full-duration source decode, clean-source signed packaging and 30/60-minute acceptance.
+All 12 source files decode fully; all three screen files have zero 60 Hz grid violations.
+Signed local packaging and actual desktop recording/review/export smoke passed. Public
+distribution validation remains blocked by unapproved `dist/.vite/manifest.json`; release
+configuration is unchanged. Record accessible name is corrected and verified in both tray layouts; 4,119 tests and
+all eight gates pass. Next: 30/60-minute acceptance.
 One successful run does not establish causality or long-session reliability. Installed app,
 remote branches and user projects remain unchanged. The overall goal remains active.
 

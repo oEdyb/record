@@ -305,6 +305,7 @@ export const HudRecordButton = memo(function HudRecordButton({
 	disabled,
 	elapsedSeconds,
 	label,
+	accessibleLabel,
 	savingLabel,
 	onClick,
 }: {
@@ -314,6 +315,7 @@ export const HudRecordButton = memo(function HudRecordButton({
 	disabled: boolean;
 	elapsedSeconds: number;
 	label: string;
+	accessibleLabel?: string;
 	savingLabel: string;
 	onClick: () => void;
 }) {
@@ -332,7 +334,7 @@ export const HudRecordButton = memo(function HudRecordButton({
 				}`}
 				onClick={onClick}
 				title={saving ? savingLabel : label}
-				aria-label={saving ? savingLabel : label}
+				aria-label={saving ? savingLabel : (accessibleLabel ?? label)}
 				aria-busy={saving}
 				style={{ flex: "0 0 auto" }}
 			>
