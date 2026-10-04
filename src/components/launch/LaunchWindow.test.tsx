@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { TooltipProvider } from "../ui/tooltip";
@@ -970,6 +971,18 @@ describe("LaunchWindow record button", () => {
 		expect(await screen.findByRole("dialog", { name: "peek.title" })).toBeVisible();
 		fireEvent.keyDown(window, { key: "Escape" });
 		expect(screen.queryByRole("dialog", { name: "peek.title" })).not.toBeInTheDocument();
+	});
+
+	it("shows recorder errors at the bottom, right above the pill", async () => {
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+
+		act(() => {
+			toast.error("Recording stopped: the writer failed");
+		});
+
+		const message = await screen.findByText("Recording stopped: the writer failed");
+		expect(message.closest("[data-sonner-toaster]")).toHaveAttribute("data-y-position", "bottom");
 	});
 
 	it("shows the idle mic level only while the pill is on screen", async () => {
