@@ -1,3 +1,15 @@
+# October 4: current creator-loop build installed
+
+The user authorized fixing packaging and installing the merged build. `/Applications/Klippt.app`
+now contains the current recording-loop fixes. Developer ID/permission identities, afterSign,
+deep strict signature, compiled-file parity and packaged distribution audit pass. Parakeet uses
+Swift's actual output path; build-only Vite metadata is excluded with the reviewed signed policy.
+Installed Record/Pause/Continue/Stop/playback/source export and compact return passed; all six
+files from two clips hash-match originals and fully decode. App left ready to record.
+4,131 unit tests pass across full run plus repaired approval-file rerun, one existing skip;
+types and lint pass. Prior app backed up. No push, notarization or public release.
+[Installation evidence](docs/local-install-2026-10-04.md).
+
 # October 4: creator recording loop verified locally
 
 All local branch work is integrated through `511f1142`; the final acceptance commit records
