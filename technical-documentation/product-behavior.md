@@ -184,7 +184,9 @@ Allow at most one second of pending High grid slots during startup and fail miss
 readiness after two monotonic seconds, even if no more samples arrive. These are bounded
 local policies, not platform latency guarantees. After confirmation, retain the strict
 eight-frame live backlog limit. A historical output slot uses only pixels captured at or
-before that slot; repeated pixels retain their original source timestamp. Prepare screen
+before that slot; repeated pixels retain their original source timestamp. While active, retain
+at most two recent complete captures so a newer arrival cannot displace the image for the
+current slot. Never regress behind the last written source timestamp. Prepare screen
 and enabled original writers before accepting the
 first capture sample; Continue chooses its new host-clock seed after preparation completes.
 The optional countdown overlay must settle or cancel within a bounded wait.
@@ -204,6 +206,10 @@ Create complete microphone and system-audio source files during capture, alongsi
 and camera sources. On macOS, camera video and standalone AAC audio use fragmented MOV files
 so readable fragments survive a helper crash. Persist their actual first-sample offsets and
 paths as they start; recovery validates readable, owned sources before attaching them.
+Framework sample delivery has a separate serial queue from writer/cadence processing, with
+synchronous handoff and a delivery barrier when changing sources. Report source delivery age
+and complete-source frame intervals separately from output cadence; static-source gaps are
+observations, not proof of lost frames. Reset interval baselines across clip boundaries.
 Camera and standalone audio appends run on bounded serial owners outside the video cadence
 queue. Compatibility PCM decode, mixing and AAC appends also use a separate serial owner,
 with at most 128 queued/in-flight samples and 8 MiB retained raw data. Preserve source

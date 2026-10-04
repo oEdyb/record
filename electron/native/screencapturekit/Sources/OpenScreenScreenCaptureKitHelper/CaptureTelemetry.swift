@@ -79,6 +79,9 @@ final class CaptureTelemetry {
 	private var currentClipFirstScreenTimestampSeconds: Double?
 	private var currentClipAppendedFrames = 0
 	private let screenTimestampDriftMs = BoundedSeries()
+	private let screenDeliveryAgeMs = BoundedSeries()
+	private let completeScreenIntervalMs = BoundedSeries()
+	private var previousCompleteScreenTime: Double?
 
 	init(requestedVideoFps: Int) {
 		self.requestedVideoFps = requestedVideoFps
@@ -89,20 +92,24 @@ final class CaptureTelemetry {
 		defer { lock.unlock() }
 		currentClipFirstScreenTimestampSeconds = nil
 		currentClipAppendedFrames = 0
+		previousCompleteScreenTime = nil
 	}
 
 	@discardableResult
-	func recordScreenSample(_ sampleBuffer: CMSampleBuffer) -> Bool {
+	func recordScreenSample(_ sampleBuffer: CMSampleBuffer, receivedAt: CMTime = CMClockGetTime(CMClockGetHostTimeClock())) -> Bool {
 		lock.lock()
 		defer { lock.unlock() }
 		screenSamples += 1
+		let sourceTime = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+		let receivedTime = CMTimeGetSeconds(receivedAt)
+		if sourceTime.isFinite && receivedTime.isFinite { screenDeliveryAgeMs.append((receivedTime - sourceTime) * 1_000) }
 		guard let status = Self.frameStatus(sampleBuffer) else {
-			completeScreenSamples += 1
+			recordCompleteScreen(at: sourceTime)
 			return true
 		}
 		switch status {
 		case .complete:
-			completeScreenSamples += 1
+			recordCompleteScreen(at: sourceTime)
 			return true
 		case .idle:
 			idleScreenSamples += 1
@@ -118,6 +125,15 @@ final class CaptureTelemetry {
 			otherScreenSamples += 1
 		}
 		return false
+	}
+
+	private func recordCompleteScreen(at sourceTime: Double) {
+		completeScreenSamples += 1
+		guard sourceTime.isFinite else { return }
+		if let previousCompleteScreenTime, sourceTime >= previousCompleteScreenTime {
+			completeScreenIntervalMs.append((sourceTime - previousCompleteScreenTime) * 1_000)
+		}
+		previousCompleteScreenTime = sourceTime
 	}
 
 	func recordVideoAppend(at presentationTime: CMTime) {
@@ -252,6 +268,8 @@ final class CaptureTelemetry {
 		if let summary = audioBlockMs.summary() {
 			value["audioBlockMs"] = summary
 		}
+		if let summary = screenDeliveryAgeMs.summary() { value["screenDeliveryAgeMs"] = summary }
+		if let summary = completeScreenIntervalMs.summary() { value["completeScreenIntervalMs"] = summary }
 		return value
 	}
 

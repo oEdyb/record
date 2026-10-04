@@ -928,6 +928,21 @@ final class NativeCaptureQualityTests: XCTestCase {
 		catch { XCTAssertFalse(FileManager.default.fileExists(atPath: track.path)) }
 	}
 
+	func testSourceTimingReportsDeliveryDelayAndExcludesPauseFromFrameIntervals() throws {
+		let telemetry = CaptureTelemetry(requestedVideoFps: 60)
+		telemetry.beginClip()
+		XCTAssertTrue(telemetry.recordScreenSample(try screenSample(at: time(10), width: 16, height: 16), receivedAt: time(10.2)))
+		XCTAssertTrue(telemetry.recordScreenSample(try screenSample(at: time(10.05), width: 16, height: 16), receivedAt: time(10.06)))
+		telemetry.beginClip()
+		XCTAssertTrue(telemetry.recordScreenSample(try screenSample(at: time(20), width: 16, height: 16), receivedAt: time(20.01)))
+		let payload = telemetry.payload()
+		let age = try XCTUnwrap(payload["screenDeliveryAgeMs"] as? [String: Any])
+		let interval = try XCTUnwrap(payload["completeScreenIntervalMs"] as? [String: Any])
+		XCTAssertEqual(try XCTUnwrap(age["max"] as? Double), 200, accuracy: 0.001)
+		XCTAssertEqual(try XCTUnwrap(interval["max"] as? Double), 50, accuracy: 0.001)
+		XCTAssertEqual(interval["count"] as? Int, 1)
+	}
+
 	private func temporaryDirectory() throws -> URL {
 		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

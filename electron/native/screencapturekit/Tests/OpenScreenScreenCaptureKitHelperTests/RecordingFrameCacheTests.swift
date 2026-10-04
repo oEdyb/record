@@ -21,6 +21,39 @@ final class RecordingFrameCacheTests: XCTestCase {
 		XCTAssertEqual(current.sourceTime, time(100.5))
 		XCTAssertEqual(CMSampleBufferGetPresentationTimeStamp(future), time(100.5))
 	}
+	func testFutureArrivalDoesNotDiscardTheFrameForTheCurrentGridSlot() throws {
+		let first = try makeScreenSample(at: 100)
+		let eligible = try makeScreenSample(at: 100.015)
+		let future = try makeScreenSample(at: 100.031)
+		var cache = RecordingFrameCache()
+		cache.observe(first); cache.didAppend(first)
+		cache.observe(eligible); cache.observe(future)
+		let scheduled = try XCTUnwrap(cache.scheduledFrame(at: time(100) + CMTime(value: 1, timescale: 60), fps: 60, firstFrame: first))
+		XCTAssertEqual(scheduled.sourceTime, time(100.015))
+		XCTAssertTrue(CMSampleBufferGetImageBuffer(scheduled.sample) === CMSampleBufferGetImageBuffer(eligible))
+	}
+
+	func testHistoryIsBoundedAndPauseRetainsOnlyLatestSource() throws {
+		var cache = RecordingFrameCache()
+		cache.observe(try makeScreenSample(at: 100))
+		cache.observe(try makeScreenSample(at: 101))
+		cache.observe(try makeScreenSample(at: 102))
+		XCTAssertNil(try cache.scheduledFrame(at: time(100), fps: 60, firstFrame: nil))
+		XCTAssertEqual(try cache.scheduledFrame(at: time(101), fps: 60, firstFrame: nil)?.sourceTime, time(101))
+		cache.observe(try makeScreenSample(at: 103), retainingPrevious: false)
+		XCTAssertNil(try cache.scheduledFrame(at: time(102), fps: 60, firstFrame: nil))
+		cache.invalidateCapturedFrame()
+		XCTAssertNil(try cache.scheduledFrame(at: time(104), fps: 60, firstFrame: nil))
+	}
+
+	func testOutOfOrderSourceCannotRegressWrittenPixels() throws {
+		var cache = RecordingFrameCache()
+		let current = try makeScreenSample(at: 101)
+		cache.observe(current); cache.didAppend(current)
+		cache.observe(try makeScreenSample(at: 100))
+		XCTAssertEqual(try cache.scheduledFrame(at: time(102), fps: 60, firstFrame: nil)?.sourceTime, time(101))
+	}
+
 	func testEveryClipAcknowledgesOnlyItsFirstSuccessfulAppend() {
 		var barrier = RecordingStartBarrier()
 		barrier.prepare(clipIndex: 0)

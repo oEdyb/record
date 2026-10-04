@@ -17,21 +17,32 @@ struct RecordingStartBarrier {
 
 struct RecordingFrameCache {
 	private var capturedFrame: CMSampleBuffer?
+	private var previousCapturedFrame: CMSampleBuffer?
 	private var writtenFrame: CMSampleBuffer?
 	private(set) var writtenSourcePresentationTime: CMTime?
 
 	var capturedPresentationTime: CMTime? { capturedFrame.map { CMSampleBufferGetPresentationTimeStamp($0) } }
 
-	mutating func observe(_ sample: CMSampleBuffer) {
+	mutating func observe(_ sample: CMSampleBuffer, retainingPrevious: Bool = true) {
 		guard CMSampleBufferDataIsReady(sample), CMSampleBufferGetImageBuffer(sample) != nil else { return }
+		let incomingTime = CMSampleBufferGetPresentationTimeStamp(sample)
+		guard incomingTime.isNumeric else { return }
+		if let capturedFrame, incomingTime < CMSampleBufferGetPresentationTimeStamp(capturedFrame) { return }
+		if !retainingPrevious {
+			previousCapturedFrame = nil
+		} else if capturedFrame.map({ CMSampleBufferGetPresentationTimeStamp($0) != incomingTime }) ?? false {
+			previousCapturedFrame = capturedFrame
+		}
 		capturedFrame = sample
 	}
 
 	mutating func invalidateCapturedFrame() {
 		capturedFrame = nil
+		previousCapturedFrame = nil
 	}
 
 	mutating func beginClip() {
+		previousCapturedFrame = nil
 		writtenFrame = nil
 		writtenSourcePresentationTime = nil
 	}
@@ -46,7 +57,7 @@ struct RecordingFrameCache {
 	func scheduledFrame(at time: CMTime, fps: Int, firstFrame: CMSampleBuffer?) throws -> (sample: CMSampleBuffer, sourceTime: CMTime)? {
 		let source: CMSampleBuffer
 		let sourceTime: CMTime
-		if let capturedFrame, CMSampleBufferGetPresentationTimeStamp(capturedFrame) <= time {
+		if let capturedFrame = eligibleCapturedFrame(capturedFrame, at: time) ?? eligibleCapturedFrame(previousCapturedFrame, at: time) {
 			source = capturedFrame; sourceTime = CMSampleBufferGetPresentationTimeStamp(capturedFrame)
 		} else if let writtenFrame, let writtenSourcePresentationTime {
 			source = writtenFrame; sourceTime = writtenSourcePresentationTime
@@ -54,6 +65,13 @@ struct RecordingFrameCache {
 			source = firstFrame; sourceTime = CMSampleBufferGetPresentationTimeStamp(firstFrame)
 		} else { return nil }
 		return (try Self.retime(source, at: time, fps: fps), sourceTime)
+	}
+
+	private func eligibleCapturedFrame(_ frame: CMSampleBuffer?, at time: CMTime) -> CMSampleBuffer? {
+		guard let frame else { return nil }
+		let sourceTime = CMSampleBufferGetPresentationTimeStamp(frame)
+		guard sourceTime <= time, writtenSourcePresentationTime.map({ sourceTime >= $0 }) ?? true else { return nil }
+		return frame
 	}
 
 	func resumedFrame(at time: CMTime, fps: Int) throws -> CMSampleBuffer? {

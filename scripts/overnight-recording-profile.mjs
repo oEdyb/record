@@ -1370,7 +1370,7 @@ try {
 								"json",
 								source,
 							],
-							{ encoding: "utf8", maxBuffer: 10_000_000 },
+							{ encoding: "utf8", maxBuffer: 128_000_000 },
 						),
 					);
 					await fsp.writeFile(path.join(out, "screen-packets.json"), JSON.stringify(packetProbe));

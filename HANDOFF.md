@@ -1,3 +1,22 @@
+# October 4: isolated capture delivery and correct source-frame selection
+
+Branch `codex/long-capture-acceptance-2026-10-04` follows local main `675e6d72` (54 commits
+ahead of origin). Activity and explicit queue priority alone did not resolve timer-lag failures.
+Live stacks exposed framework receive work sharing cadence's queue. Framework delivery now
+uses a separate serial queue with bounded synchronous handoff and a source-change barrier.
+
+The first isolated run completed but repeated 45% of output frames: keeping only the newest
+capture could discard the eligible image for the current clock slot. A bounded two-frame
+cache fixes this while rejecting future/older pixels and retaining only one frame while paused.
+The corrected 60-second four-source run passed with 2/3,466 repeated source frames, zero
+backpressure, 12 unchanged source exports and clean full decoding. Source delivery p99 0.893 ms.
+Record 733 ms; Stop-to-review 2,381 ms; handoff 2,741 ms. All eight gates, 4,119 unit tests,
+62 native tests, native/Vite builds and independent review pass. [Evidence](docs/capture-queue-2026-10-04.md).
+
+Next: 30/60-minute normal-runtime acceptance. Installed app, remotes, release configuration
+and user projects remain unchanged. The signed local test DMG predates these capture fixes;
+public distribution remains blocked by the manifest asset policy. Overall goal remains active.
+
 # October 4: sustained capture scheduling
 
 Branch `codex/capture-queue-timing-2026-10-04` follows local main `ccc12867` (52 commits ahead
@@ -15,7 +34,9 @@ All 12 source files decode fully; all three screen files have zero 60 Hz grid vi
 Signed local packaging and actual desktop recording/review/export smoke passed. Public
 distribution validation remains blocked by unapproved `dist/.vite/manifest.json`; release
 configuration is unchanged. Record accessible name is corrected and verified in both tray layouts; 4,119 tests and
-all eight gates pass. Next: 30/60-minute acceptance.
+all eight gates pass. The diagnostics-off 30-minute attempt failed around 100 seconds
+with the same eight-frame lag limit. Next: isolate dispatch scheduling before rerunning
+30/60-minute acceptance.
 One successful run does not establish causality or long-session reliability. Installed app,
 remote branches and user projects remain unchanged. The overall goal remains active.
 

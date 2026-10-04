@@ -1826,6 +1826,20 @@ export function registerIpcHandlers(
 				telemetry.screenTimestampDriftMs,
 			);
 		}
+		if (telemetry.screenDeliveryAgeMs) {
+			workloadTelemetry.setMetricSummary(
+				workloadId,
+				"capture.source_delivery_age_ms",
+				telemetry.screenDeliveryAgeMs,
+			);
+		}
+		if (telemetry.completeScreenIntervalMs) {
+			workloadTelemetry.setMetricSummary(
+				workloadId,
+				"capture.source_frame_interval_ms",
+				telemetry.completeScreenIntervalMs,
+			);
+		}
 		if (telemetry.microphoneDriftMs) {
 			workloadTelemetry.setMetricSummary(
 				workloadId,

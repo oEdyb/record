@@ -102,3 +102,77 @@ The rebuilt development app's native accessibility tree announces Record with En
 as its help text in both horizontal and vertical trays. The vertical tray was also inspected
 visually. All eight gates passed again: 4,119 unit tests, one existing skip; Vite production
 build passed. Receipts: `record-name-checks/summary.json` and `record-name-desktop.json`.
+
+## Normal-runtime endurance attempt
+
+At `675e6d72`, the requested 30-minute High four-source run failed about 100 seconds after
+starting, with diagnostics off and no concurrent build/test jobs. The same eight-frame
+backlog safeguard ended capture with writer status still writing. Automatic recovery opened
+review. `long-normal/summary.json` records the native results and owned file paths.
+The five-minute pass therefore does not establish a scheduling fix. No 60-minute acceptance
+run is claimed. The profiler's packet-output buffer is raised to 128 MB for planned long
+60 Hz packet inspection; the old 10 MB cap could truncate that test after capture completed.
+
+## Explicit capture-queue priority experiment
+
+The serial sample queue previously declared no QoS. Apple's
+[task-priority guidance](https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/PrioritizeWorkAtTheTaskLevel.html)
+explains that queue priority affects CPU scheduling and timer latency. The next experiment
+sets only this queue to `.userInitiated`. Serial ownership, process-activity leases, timer
+flags, one-millisecond leeway and the eight-frame safeguard are unchanged. This targets the
+observed timer-entry delay without changing media tolerances. Existing callback/timer metrics
+will compare the same four-source workload. It is not an established fix until measured.
+All 56 native tests pass with the explicit queue priority. Full native rebuild and all eight
+repository gates pass (4,119 unit tests, one skip). `qos-checks/summary.json` records commands.
+
+The explicit-priority run also failed: third clip 150.447 seconds, timer-entry gap 184.283 ms,
+lag 176.850 ms, writer ready. Unlike the earlier measured run, the preceding timer callback
+lasted 31.233 ms and a nearby screen callback 60.287 ms (60.194 ms in telemetry). Zero writer
+backpressure and append failures remain. This does not validate queue priority as a fix.
+`qos-diagnostic/failure-timing.json` preserves the exact measurements. Next distinguish
+preemption from time actually spent inside callbacks before changing another policy.
+
+## Framework delivery isolation
+
+The live 10 ms stack sample exposed framework receive/deserialization on the same serial
+queue as cadence, before our delegate callback measurements begin. A System Trace then joined
+receive stacks to preempted thread-state intervals (22.64 ms in IOSurface/IOKit, 11.90 ms in
+deserialization). This confirms off-CPU time, not an expensive attachment cast. The trace's
+retained scheduling data did not include the run's largest 145 ms timer gap; attribution of
+that maximum remains unverified. `qos-system-trace/scheduling-analysis.json` owns exact joins.
+The traced five-minute run passed, following two failed explicit-priority runs.
+
+[Apple's SCStream output contract](https://developer.apple.com/documentation/screencapturekit/scstream/addstreamoutput(_:type:samplehandlerqueue:))
+allows a separate delivery queue. Framework delivery now uses its own serial queue and
+synchronously forwards application processing to the writer/cadence queue. This introduces no
+unbounded application sample backlog. A command-lane delivery barrier drains old callbacks
+before reconfiguration restores source-cache acceptance. Camera and writer state keep their
+existing processing owner. Source delivery age and intervals between complete source frames
+are reported separately from output-grid drift, with the interval baseline reset per clip.
+These observations do not classify static-screen gaps as failures. The eight-frame writer
+backlog policy remains unchanged. Moving-source quality and long recording still need proof.
+
+The first isolated-delivery five-minute run completed, with 12 source copies and exact output
+cadence, but was not accepted as smooth: 8,008/17,869 output frames reused a previously written
+source timestamp. Source delivery p99 was 1.101 ms, maximum 58.361 ms; complete-source intervals
+maxed at 26.744 ms, with no backpressure. The cache retained only the newest captured image,
+so an image just ahead of a quantized grid slot could displace that slot's eligible image.
+
+The cache now retains at most two recent captures while active, selecting the newest PTS no
+later than the grid slot and no earlier than the last written source. It rejects out-of-order
+captures, clears both references on source invalidation, and retains only the latest while
+paused. This fixes normal one-frame timing mismatch without deep-copying surfaces or claiming
+to preserve every frame in longer bursts. Deterministic tests cover the demonstrated mismatch,
+reference selection bounds, pause/invalidation and out-of-order samples. Real verification
+must inspect repeated-source counts as well as on-grid PTS.
+
+The corrected 60-second four-source run passed: 2 repeated source frames out of 3,466 output
+frames (the prior five-minute version had 8,008/17,869). This is a comparison of different
+length runs, not a controlled statistical rate guarantee. Maximum source delivery age was
+3.387 ms; p99 0.893 ms. All 12 exports match originals and fully decode without errors;
+packet-grid validation passed. Decoded frames at 10 and 11 seconds visibly advance the
+moving fixture. Record readiness 732.7 ms; Stop-to-review 2,381.1 ms; source handoff 2,740.7 ms.
+`delivery-cache/summary.json`, `full-decode.json`, and `motion-10/11.png` retain the evidence.
+Final independent concurrency/frame-cache review found no actionable findings. All eight
+repository gates pass (4,119 tests, one skip), all 62 native tests pass, and full native/Vite
+builds pass. Endurance acceptance at 30/60 minutes remains outstanding.

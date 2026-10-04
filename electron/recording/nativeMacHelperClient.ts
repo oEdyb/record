@@ -488,6 +488,8 @@ export class NativeMacHelperClient {
 		}
 		const systemAudioDriftMs = this.parseMetricSummary(telemetry.systemAudioDriftMs);
 		const screenTimestampDriftMs = this.parseMetricSummary(telemetry.screenTimestampDriftMs);
+		const screenDeliveryAgeMs = this.parseMetricSummary(telemetry.screenDeliveryAgeMs);
+		const completeScreenIntervalMs = this.parseMetricSummary(telemetry.completeScreenIntervalMs);
 		const microphoneDriftMs = this.parseMetricSummary(telemetry.microphoneDriftMs);
 		const fragmentFinalizeMs = this.parseMetricSummary(telemetry.fragmentFinalizeMs);
 		const audioBlockMs = this.parseMetricSummary(telemetry.audioBlockMs);
@@ -524,6 +526,8 @@ export class NativeMacHelperClient {
 			thermalState: telemetry.thermalState as NativeMacCaptureTelemetry["thermalState"],
 			...(systemAudioDriftMs ? { systemAudioDriftMs } : {}),
 			...(screenTimestampDriftMs ? { screenTimestampDriftMs } : {}),
+			...(screenDeliveryAgeMs ? { screenDeliveryAgeMs } : {}),
+			...(completeScreenIntervalMs ? { completeScreenIntervalMs } : {}),
 			...(microphoneDriftMs ? { microphoneDriftMs } : {}),
 			...(fragmentFinalizeMs ? { fragmentFinalizeMs } : {}),
 			...(audioBlockMs ? { audioBlockMs } : {}),

@@ -431,6 +431,8 @@ describe("NativeMacHelperClient", () => {
 				thermalState: "nominal",
 				systemAudioDriftMs: summary,
 				screenTimestampDriftMs: summary,
+				screenDeliveryAgeMs: summary,
+				completeScreenIntervalMs: summary,
 				microphoneDriftMs: summary,
 				fragmentFinalizeMs: summary,
 				audioBlockMs: summary,
@@ -457,6 +459,8 @@ describe("NativeMacHelperClient", () => {
 				thermalState: "nominal",
 				systemAudioDriftMs: summary,
 				screenTimestampDriftMs: summary,
+				screenDeliveryAgeMs: summary,
+				completeScreenIntervalMs: summary,
 			},
 		});
 	});

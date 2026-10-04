@@ -37,7 +37,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 	private var request: RecordingRequest
 	private let captureSetupBuilder = CaptureSetupBuilder()
-	private let sampleQueue = DispatchQueue(label: "app.openscreen.sck-helper.samples")
+	private let sampleDelivery = RecordingSampleDelivery()
+	private var sampleQueue: DispatchQueue { sampleDelivery.processingQueue }
 	private let stateQueue = DispatchQueue(label: "app.openscreen.sck-helper.state")
 	private let processActivity = RecordingProcessActivity()
 	private var recordingActivity: RecordingProcessActivity.Lease?
@@ -140,10 +141,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 	private func configuredStream(filter: SCContentFilter, configuration: SCStreamConfiguration) throws -> SCStream {
 		let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-		try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
-		try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+		try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleDelivery.queue)
+		try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleDelivery.queue)
 		if #available(macOS 15.0, *), let type = SCStreamOutputType(rawValue: screenCaptureKitMicrophoneOutputTypeRawValue) {
-			try stream.addStreamOutput(self, type: type, sampleHandlerQueue: sampleQueue)
+			try stream.addStreamOutput(self, type: type, sampleHandlerQueue: sampleDelivery.queue)
 		}
 		return stream
 	}
@@ -180,7 +181,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			frameCache.invalidateCapturedFrame()
 		}
 		defer {
-			sampleQueue.sync {
+			sampleDelivery.barrier {
 				frameCache.invalidateCapturedFrame()
 				acceptsCachedFrames = true
 			}
@@ -481,6 +482,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+		sampleDelivery.process { processStreamSample(stream, sampleBuffer: sampleBuffer, type: type) }
+	}
+
+	private func processStreamSample(_ stream: SCStream, sampleBuffer: CMSampleBuffer, type: SCStreamOutputType) {
 		let callbackStart = diagnosticTiming ? DispatchTime.now().uptimeNanoseconds : 0
 		let callbackStage = type == .screen ? "screenCallback" : type == .audio ? "systemCallback" : "microphoneCallback"
 		defer { if diagnosticTiming { trackTiming(stage: callbackStage, since: callbackStart) } }
@@ -491,11 +496,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard measureCaptureStage("streamStateWait", { stateQueue.sync(execute: { streamRecovery.acceptsSamples(from: stream) }) }), CMSampleBufferDataIsReady(sampleBuffer) else {
 			return
 		}
+		let inactive = measureCaptureStage("streamPausedStateWait", { stateQueue.sync(execute: { isPaused || isStopping }) })
 		if type == .screen, acceptsCachedFrames {
 			let status = CaptureTelemetry.frameStatus(sampleBuffer)
-			if status == nil || status == .complete { measureCaptureStage("frameCacheObserve") { frameCache.observe(sampleBuffer) } }
+			if status == nil || status == .complete { measureCaptureStage("frameCacheObserve") { frameCache.observe(sampleBuffer, retainingPrevious: !inactive) } }
 		}
-		if measureCaptureStage("streamPausedStateWait", { stateQueue.sync(execute: { isPaused || isStopping }) }) { return }
+		if inactive { return }
 
 		if type == .audio {
 			captureTelemetry.recordAudioSample(sampleBuffer, microphone: false)

@@ -49,6 +49,8 @@ export type WorkloadMetric =
 	| "capture.dropped_frames"
 	| "capture.incomplete_frames"
 	| "capture.timestamp_drift_ms"
+	| "capture.source_delivery_age_ms"
+	| "capture.source_frame_interval_ms"
 	| "camera.timestamp_drift_ms"
 	| "microphone.timestamp_drift_ms"
 	| "system_audio.timestamp_drift_ms"

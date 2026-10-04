@@ -170,6 +170,8 @@ export type NativeMacCaptureTelemetry = {
 	thermalState: "unknown" | "nominal" | "fair" | "serious" | "critical";
 	systemAudioDriftMs?: NativeMacMetricSummary;
 	screenTimestampDriftMs?: NativeMacMetricSummary;
+	screenDeliveryAgeMs?: NativeMacMetricSummary;
+	completeScreenIntervalMs?: NativeMacMetricSummary;
 	microphoneDriftMs?: NativeMacMetricSummary;
 	fragmentFinalizeMs?: NativeMacMetricSummary;
 	audioBlockMs?: NativeMacMetricSummary;
