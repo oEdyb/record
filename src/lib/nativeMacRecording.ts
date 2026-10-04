@@ -9,9 +9,14 @@ import { normalizeCursorCaptureMode, normalizeRecordingOriginals } from "./recor
 
 export type NativeMacSourceType = "display" | "window";
 
+/** A moment on the way from the Record click to the first saved frame, in epoch ms. */
+export type RecordStartMark = { stage: string; atMs: number };
+
 export type NativeMacRecordingRequest = {
 	schemaVersion: 1;
 	recordingId?: number;
+	/** The renderer's steps since the click, so main can log where start time goes. */
+	startTiming?: RecordStartMark[];
 	source: {
 		type: NativeMacSourceType;
 		sourceId: string;

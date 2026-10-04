@@ -163,6 +163,7 @@ import {
 } from "../recording/projectRecordingSetupStore";
 import { type RecordingPrefs, RecordingPrefsStore } from "../recording/recordingPrefsStore";
 import { createRecordingStartupOverlayController } from "../recording/recordingStartupOverlay";
+import { appendRecordStartTiming, RecordStartTimeline } from "../recording/recordStartTimeline";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { recordingsDirectory } from "../recordingPaths";
@@ -691,6 +692,10 @@ type AttachNativeMacClipWebcamsInput = {
 };
 
 let selectedSource: SelectedSource | null = null;
+/** Collects the start steps of the recording being started, if any. */
+let activeStartTimeline: RecordStartTimeline | null = null;
+const recordStartTimingFile = () =>
+	path.join(app.getPath("userData"), "diagnostics", "record-start-timing.jsonl");
 let selectedDesktopSource: DesktopCapturerSource | null = null;
 let lastEnumeratedSources = new Map<string, DesktopCapturerSource>();
 let currentProjectPath: string | null = null;
@@ -3031,7 +3036,13 @@ export function registerIpcHandlers(
 				cwd: RECORDINGS_DIR,
 				stdio: ["pipe", "pipe", "pipe"],
 			});
-			return new NativeMacHelperClient(process, { onFatalError, onOriginalStarted });
+			return new NativeMacHelperClient(process, {
+				onFatalError,
+				onOriginalStarted,
+				onEvent: (name) => {
+					if (name !== "capture-timing") activeStartTimeline?.mark(`helper:${name}`);
+				},
+			});
 		},
 		resolveCapture: resolveNativeMacCaptureConfig,
 		prepareCapturePermissions: (request) =>
@@ -3044,6 +3055,7 @@ export function registerIpcHandlers(
 					}),
 				requestMicrophoneAccess: () => systemPreferences.askForMediaAccess("microphone"),
 			}),
+		onStartStage: (stage) => activeStartTimeline?.mark(stage),
 		startCursor: startCursorRecording,
 		stopCursor: stopCursorRecording,
 		clearCursor: () => {
@@ -3096,9 +3108,20 @@ export function registerIpcHandlers(
 	};
 
 	ipcMain.handle("start-native-mac-recording", async (_, request: NativeMacRecordingRequest) => {
+		const timeline = new RecordStartTimeline(Date.now, request?.startTiming);
+		timeline.mark("ipc-received");
+		activeStartTimeline = timeline;
 		const rejection = await rejectWithoutEntitlement("record");
 		if (rejection) return rejection;
+		timeline.mark("entitled");
 		const result = await invokeNativeMac(() => getNativeMacRecordingService().start(request));
+		timeline.mark("start-returned");
+		if (activeStartTimeline === timeline) activeStartTimeline = null;
+		void appendRecordStartTiming(recordStartTimingFile(), {
+			recordedAt: new Date().toISOString(),
+			success: "success" in result && result.success === true,
+			steps: timeline.steps(),
+		}).catch((error) => console.warn("[capture-mac] could not log start timing:", error));
 		if ("success" in result && result.success && activeCaptureWorkloadId) {
 			workloadTelemetry.configure(activeCaptureWorkloadId, {
 				requestedVideoFps: request.video.fps,

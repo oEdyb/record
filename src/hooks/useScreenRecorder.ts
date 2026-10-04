@@ -8,7 +8,7 @@ import {
 	portalOwnsSourceSelection,
 } from "@/lib/nativeLinuxRecording";
 import { getKeptRecordingDurationMs } from "@/lib/nativeMacClipSession";
-import type { NativeMacRecordingRequest } from "@/lib/nativeMacRecording";
+import type { NativeMacRecordingRequest, RecordStartMark } from "@/lib/nativeMacRecording";
 import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
@@ -266,6 +266,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const discardRecordingId = useRef<number | null>(null);
 	const restarting = useRef(false);
 	const countdownRunId = useRef(0);
+	const startMarks = useRef<RecordStartMark[]>([]);
+	const markStart = (stage: string) => {
+		startMarks.current.push({ stage, atMs: Date.now() });
+	};
 	const pendingStartRunId = useRef<number | null>(null);
 	const recordingStartPending = useRef(false);
 	const [countdownActive, setCountdownActive] = useState(false);
@@ -1291,7 +1295,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return false;
 			}
 
+			markStart("native-start");
 			const availability = await window.electronAPI.isNativeMacCaptureAvailable();
+			markStart("helper-available");
 			if (!availability.success || !availability.available) {
 				if (availability.reason === "unsupported-platform") {
 					return false;
@@ -1319,13 +1325,18 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 				if (!isCountdownRunActive(countdownRunToken)) return true;
 				if (!webcamReady.current) throw new Error("The selected camera is not ready to record.");
+				markStart("camera-ready");
 			}
 			const activeRecordingId = Date.now();
 
 			if (!isCountdownRunActive(countdownRunToken)) {
 				return true;
 			}
-			const request = currentNativeMacRequest(selectedSource, activeRecordingId);
+			markStart("start-requested");
+			const request = {
+				...currentNativeMacRequest(selectedSource, activeRecordingId),
+				startTiming: startMarks.current,
+			};
 			const result = await window.electronAPI.startNativeMacRecording(request);
 			if (!result.success || !result.recordingId) {
 				throw new Error(result.error ?? "Native macOS capture failed.");
@@ -1519,6 +1530,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const startRecordCountdown = async () => {
 		if (pendingStartRunId.current !== null || recording) return;
 
+		startMarks.current = [];
+		markStart("click");
 		const runId = countdownRunId.current + 1;
 		countdownRunId.current = runId;
 		pendingStartRunId.current = runId;
@@ -1534,6 +1547,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				portalOwnsSourceSelection(window.electronAPI),
 			]);
 			portalOwnsSource = portalSelection;
+			markStart("source-read");
 			if (!isCountdownRunActive(runId)) return;
 			if (!selectedSource && !portalOwnsSource) {
 				alert(t("recording.selectSource"));

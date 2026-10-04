@@ -21,6 +21,8 @@ export type NativeMacStopResult = {
 type NativeMacHelperClientOptions = {
 	onFatalError?: (failure: NativeMacRecordingFailure) => void;
 	onOriginalStarted?: (original: NativeMacOriginalStarted) => void;
+	/** Every event the helper sends, by name, as it arrives. */
+	onEvent?: (name: string) => void;
 };
 
 export class NativeMacPauseError extends Error {
@@ -352,6 +354,10 @@ export class NativeMacHelperClient {
 	private dispatchLine(line: string): void {
 		const event = this.parseEvent(line.trim());
 		if (!event) return;
+		if (typeof event.event === "string") {
+			const key = typeof event.key === "string" ? `:${event.key}` : "";
+			this.options.onEvent?.(`${event.event}${key}`);
+		}
 		if (event.event === "recording-started") this.recordingStarted = true;
 		const bounds = event.captureBounds as Rectangle | undefined;
 		if (event.event === "original-started") {

@@ -51,6 +51,8 @@ export type NativeMacCaptureHelper = Pick<
 >;
 
 export type NativeMacRecordingServiceDependencies = {
+	/** Names each start step as it finishes, for the start timing log. */
+	onStartStage?: (stage: string) => void;
 	recordingsDir: string;
 	now: () => number;
 	findHelperPath: () => Promise<string | null>;
@@ -159,6 +161,7 @@ export class NativeMacRecordingService {
 					outputPath,
 				);
 				await this.deps.prepareCapturePermissions(request);
+				this.deps.onStartStage?.("permissions-checked");
 				await fs.mkdir(this.deps.recordingsDir, { recursive: true });
 
 				const cursorStartTimeMs = this.deps.now();
@@ -173,7 +176,9 @@ export class NativeMacRecordingService {
 					this.deps.clearCursor();
 				}
 				this.initializeSession(recordingId, outputPath, config, cursorCaptureMode);
+				this.deps.onStartStage?.("cursor-ready");
 				await this.persistRecoverySession();
+				this.deps.onStartStage?.("recovery-saved");
 				this.cursorRecordingStartMs = cursorStartTimeMs;
 				this.cursorTelemetryStarted = cursorCaptureMode === "editable-overlay";
 
@@ -193,8 +198,10 @@ export class NativeMacRecordingService {
 					(original) => this.storeOriginalStarted(original, generation),
 				);
 				this.helper = helper;
+				this.deps.onStartStage?.("helper-spawned");
 				await helper.waitForStart();
 				await this.persistRecoverySession();
+				this.deps.onStartStage?.("recovery-updated");
 				if (!helper.isRunning() || this.fatalError) {
 					throw new Error(
 						this.fatalError?.message ?? "Native macOS capture exited during startup.",
