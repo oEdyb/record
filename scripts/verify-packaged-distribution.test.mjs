@@ -436,6 +436,36 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 		).rejects.toThrow(/Unmapped packaged application resource/);
 	});
 
+	it("keeps build analysis metadata out of the packaged app", async () => {
+		const packageDir = await packageFixture(
+			{},
+			{
+				stagingFiles: { "dist/.vite/manifest.json": "{}" },
+				omitAsarFiles: ["dist/.vite/manifest.json"],
+			},
+		);
+		await expect(
+			verifyPackagedDistribution({
+				root: REPO_ROOT,
+				packageDir,
+				platform: "darwin",
+				arch: "arm64",
+			}),
+		).resolves.toBeDefined();
+	});
+
+	it("rejects build analysis metadata if it leaks into the packaged app", async () => {
+		const packageDir = await packageFixture({ "dist/.vite/manifest.json": "{}" });
+		await expect(
+			verifyPackagedDistribution({
+				root: REPO_ROOT,
+				packageDir,
+				platform: "darwin",
+				arch: "arm64",
+			}),
+		).rejects.toThrow();
+	});
+
 	it("rejects an unreviewed file even when staging and ASAR bytes match", async () => {
 		const packageDir = await packageFixture(
 			{},

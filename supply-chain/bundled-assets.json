@@ -61,6 +61,10 @@
 		],
 		"excludedOutputs": [
 			{
+				"pattern": "^dist/\\.vite/manifest\\.json$",
+				"builderPattern": "!dist/.vite/manifest.json"
+			},
+			{
 				"pattern": "^dist/wasm/web-demuxer\\.wasm$",
 				"builderPattern": "!dist/wasm/web-demuxer.wasm"
 			},

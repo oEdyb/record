@@ -59,6 +59,7 @@
   "files": [
     "dist",
     "dist-electron",
+    "!dist/.vite/manifest.json",
     "!dist/wasm/web-demuxer.wasm",
     "!node_modules/web-demuxer/dist/wasm-files{,/**/*}",
     "!dist/cursors{,/**/*}",
