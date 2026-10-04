@@ -387,9 +387,6 @@ export function NewEditorShell() {
 			try {
 				if (await importPendingRecording()) {
 					if (workspace) restoreWorkspace(workspace, true);
-					if (recordingInterruptions(useProjectStore.getState().document).length === 0) {
-						toast.success(workspace ? "Recording added" : "Recording added to a new project");
-					}
 					return true;
 				}
 			} catch (err) {

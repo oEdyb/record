@@ -10,7 +10,7 @@
 // the new shell's modal style.
 
 import { Download, FileVideo, FolderOpen, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { InspectorSwitch } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
@@ -121,6 +121,8 @@ export function ExportDialog({
 	const error = useExportRunStore((s) => s.error);
 	const errorDetails = useExportRunStore((s) => s.errorDetails);
 	const savedPath = useExportRunStore((s) => s.savedPath);
+	const openRef = useRef(open);
+	openRef.current = open;
 	const audioMastering = useExportRunStore((s) => s.audioMastering);
 	const run = useExportRunStore.getState;
 
@@ -418,23 +420,27 @@ export function ExportDialog({
 					savedPath: pickedPath,
 					audioMastering: "audioMastering" in stats ? stats.audioMastering : null,
 				});
-				const exportToast = stats.exportWarning ? toast.warning : toast.success;
-				exportToast(t("exportDialog.exportedVideo"), {
-					description:
-						stats.exportWarning?.message ??
-						`${pickedPath}, ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
-					action: {
-						label: t("exportDialog.showInFolder"),
-						onClick: () => {
-							// `revealInFolder` is a bare ipcRenderer.invoke, so it rejects when
-							// the main handler throws. The export already succeeded — failing to
-							// open the folder is not worth a second toast, but it is worth a line.
-							void window.electronAPI?.revealInFolder?.(pickedPath).catch((err) => {
-								console.warn("[export] failed to reveal the file in its folder:", err);
-							});
+				// The open dialog shows the finished state with Show in folder itself; a
+				// toast is only for a warning or for an export finished in the background.
+				if (stats.exportWarning || !openRef.current) {
+					const exportToast = stats.exportWarning ? toast.warning : toast.success;
+					exportToast(t("exportDialog.exportedVideo"), {
+						description:
+							stats.exportWarning?.message ??
+							`${pickedPath}, ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
+						action: {
+							label: t("exportDialog.showInFolder"),
+							onClick: () => {
+								// `revealInFolder` is a bare ipcRenderer.invoke, so it rejects when
+								// the main handler throws. The export already succeeded — failing to
+								// open the folder is not worth a second toast, but it is worth a line.
+								void window.electronAPI?.revealInFolder?.(pickedPath).catch((err) => {
+									console.warn("[export] failed to reveal the file in its folder:", err);
+								});
+							},
 						},
-					},
-				});
+					});
+				}
 			} catch (err) {
 				if (exportController.signal.aborted) {
 					run().abandon();
