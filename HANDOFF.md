@@ -1,3 +1,20 @@
+# October 4: sustained capture scheduling
+
+Branch `codex/capture-queue-timing-2026-10-04` follows local main `ccc12867` (52 commits ahead
+of origin). Complete callback timing confirms a 167 ms timer-entry gap, with the writer ready;
+the post-failure sampler has no stacks and establishes no cause. Active recording now declares
+Apple's user-initiated, latency-critical activity. Separate finalization leases preserve saving
+priority after capture failure; Pause releases the activity once saving finishes.
+
+One five-minute High screen/camera/microphone/system recording passed with two Pause/Continue
+cycles, paused Stop, review and 12 byte-identical originals. Start 859 ms; Stop-to-review
+2,259 ms; source handoff 3,797 ms. All eight code gates passed: 4,118 tests plus 56 native tests.
+Independent lifecycle review is clean. [Evidence and limits](docs/capture-queue-2026-10-04.md).
+
+Next: full-duration source decode, clean-source signed packaging and 30/60-minute acceptance.
+One successful run does not establish causality or long-session reliability. Installed app,
+remote branches and user projects remain unchanged. The overall goal remains active.
+
 # October 4: creator loop and recovery
 
 Local main includes the 51 prior commits through `bf10edff`. Follow-up branch

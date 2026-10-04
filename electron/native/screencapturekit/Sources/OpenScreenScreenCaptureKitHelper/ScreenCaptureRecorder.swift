@@ -39,6 +39,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private let captureSetupBuilder = CaptureSetupBuilder()
 	private let sampleQueue = DispatchQueue(label: "app.openscreen.sck-helper.samples")
 	private let stateQueue = DispatchQueue(label: "app.openscreen.sck-helper.state")
+	private let processActivity = RecordingProcessActivity()
+	private var recordingActivity: RecordingProcessActivity.Lease?
 	private var stream: SCStream?
 	private var streamRecovery = RecordingStreamRecovery()
 	private var activeFilter: SCContentFilter?
@@ -103,6 +105,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			false,
 			onScreenWindowsOnly: true
 		)
+		stateQueue.sync { recordingActivity = processActivity.acquire() }
+		var started = false
+		defer { if !started { endRecordingActivity() } }
 		let setup = try captureSetupBuilder.make(from: content, request: request)
 		outputWidth = setup.width
 		outputHeight = setup.height
@@ -121,6 +126,16 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			"schemaVersion": 1,
 		])
 		try await stream.startCapture()
+		started = true
+	}
+
+	private func endRecordingActivity() {
+		let activity = stateQueue.sync {
+			let previous = recordingActivity
+			recordingActivity = nil
+			return previous
+		}
+		activity?.end()
 	}
 
 	private func configuredStream(filter: SCContentFilter, configuration: SCStreamConfiguration) throws -> SCStream {
@@ -245,6 +260,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return terminationBoundary.endingAt(requestedEndTime)
 		}
 		guard let endTime = boundary else { return }
+		let finalizationActivity = processActivity.acquire()
+		endRecordingActivity()
+		defer { finalizationActivity.end() }
 
 		do {
 			if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) { try await stream?.stopCapture() }
@@ -305,6 +323,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 
 		guard didPause else { return }
+		let finalizationActivity = processActivity.acquire()
+		endRecordingActivity()
+		defer { finalizationActivity.end() }
 		emit(["event": "clip-finalizing"])
 		let boundaryRevision = boundaryWarnings.revision
 		do {
@@ -346,6 +367,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 
+		stateQueue.sync { recordingActivity = processActivity.acquire() }
+		var resumed = false
+		defer { if !resumed { endRecordingActivity() } }
 		let previousClipIndex = currentClipIndex
 		do {
 			if stateQueue.sync(execute: { streamRecovery.needsReplacement }), let activeFilter, let activeConfiguration {
@@ -416,6 +440,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					recordSuccessfulVideoAppend(seed)
 				}
 			}
+			resumed = true
 		} catch {
 			let rejected = sampleQueue.sync { () -> Bool in
 				let rejected = stateQueue.sync {
@@ -449,21 +474,28 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		case .pausedSourceUnavailable:
 			sampleQueue.async { self.frameCache.invalidateCapturedFrame() }
 			emit(["event": "warning", "code": "paused-source-unavailable", "message": "\(error)"])
-		case .activeFailure: unexpectedStopHandler(self, error)
+		case .activeFailure:
+			endRecordingActivity()
+			unexpectedStopHandler(self, error)
 		}
 	}
 
 	func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-		guard stateQueue.sync(execute: { streamRecovery.acceptsSamples(from: stream) }), CMSampleBufferDataIsReady(sampleBuffer) else {
+		let callbackStart = diagnosticTiming ? DispatchTime.now().uptimeNanoseconds : 0
+		let callbackStage = type == .screen ? "screenCallback" : type == .audio ? "systemCallback" : "microphoneCallback"
+		defer { if diagnosticTiming { trackTiming(stage: callbackStage, since: callbackStart) } }
+		if diagnosticTiming, type == .screen {
+			let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+			if time.isNumeric { trackTiming(stage: "screenSourceAge", durationMs: CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()) - time) * 1000, hostTime: CMClockGetTime(CMClockGetHostTimeClock())) }
+		}
+		guard measureCaptureStage("streamStateWait", { stateQueue.sync(execute: { streamRecovery.acceptsSamples(from: stream) }) }), CMSampleBufferDataIsReady(sampleBuffer) else {
 			return
 		}
 		if type == .screen, acceptsCachedFrames {
 			let status = CaptureTelemetry.frameStatus(sampleBuffer)
-			if status == nil || status == .complete { frameCache.observe(sampleBuffer) }
+			if status == nil || status == .complete { measureCaptureStage("frameCacheObserve") { frameCache.observe(sampleBuffer) } }
 		}
-		if stateQueue.sync(execute: { isPaused || isStopping }) {
-			return
-		}
+		if measureCaptureStage("streamPausedStateWait", { stateQueue.sync(execute: { isPaused || isStopping }) }) { return }
 
 		if type == .audio {
 			captureTelemetry.recordAudioSample(sampleBuffer, microphone: false)
@@ -482,7 +514,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard type == .screen else {
 			return
 		}
-		guard captureTelemetry.recordScreenSample(sampleBuffer) else {
+		guard measureCaptureStage("screenTelemetry", { captureTelemetry.recordScreenSample(sampleBuffer) }) else {
 			return
 		}
 		if request.video.quality != "high" || cadence.anchor == nil { appendScreenFrame(sampleBuffer) }
@@ -612,6 +644,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			isPaused = true
 			hasTerminalFailure = true
 		}
+		endRecordingActivity()
 		emitError(
 			code: "writer-failed-during-capture",
 			message: "\(stage): "
@@ -1022,6 +1055,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			self.captureTelemetry.recordCameraSample(dropped: true)
 		}) { [weak self] sample in
 			guard let self else { return }
+			let callbackStart = self.diagnosticTiming ? DispatchTime.now().uptimeNanoseconds : 0
+			defer { if self.diagnosticTiming { self.trackTiming(stage: "cameraCallback", since: callbackStart) } }
 			self.cameraSample = sample
 			guard !self.stateQueue.sync(execute: { self.isPaused || self.isStopping }) else { return }
 			if self.didStartWriting { self.captureTelemetry.recordCameraSample() }
@@ -1050,14 +1085,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func appendCompatibilityAudio(_ sample: CMSampleBuffer, from source: AudioTrackMixer.Source) {
+		let admissionStart = diagnosticTiming ? DispatchTime.now().uptimeNanoseconds : 0
+		defer { if diagnosticTiming { trackTiming(stage: "compatibilityAdmission", since: admissionStart) } }
 		guard didStartWriting, let owner = compatibilityAudio, CMSampleBufferGetNumSamples(sample) > 0 else { return }
 		let clipIndex = currentClipIndex
 		do {
 			try owner.append(sample, from: source) { [weak self] result, detectedAt in
 				guard let self else { return }
+				let queuedAt = DispatchTime.now().uptimeNanoseconds
 				self.sampleQueue.async {
 					guard self.compatibilityAudio === owner,
 						owner.isCurrent(writer: self.writer, clipIndex: clipIndex, currentClipIndex: self.currentClipIndex) else { return }
+					self.trackTiming(stage: "compatibilityCompletionQueueDelay", since: queuedAt)
 					switch result {
 					case .success(let completed):
 						self.readyAudioTracks = completed.readyTracks
@@ -1081,6 +1120,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func appendOriginal(_ sample: CMSampleBuffer, key: String) {
+		let admissionStart = diagnosticTiming ? DispatchTime.now().uptimeNanoseconds : 0
+		defer { if diagnosticTiming { trackTiming(stage: key + "Admission", since: admissionStart) } }
 		if diagnosticTiming, startupTiming[key + "FirstInputHostSeconds"] == nil {
 			startupTiming[key + "FirstInputHostSeconds"] = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
 			startupTiming[key + "FirstInputSamples"] = Double(CMSampleBufferGetNumSamples(sample))
@@ -1097,8 +1138,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			do {
 				try owner.append(sample) { [weak self] result, detectedAt in
 					guard let self else { return }
+					let queuedAt = DispatchTime.now().uptimeNanoseconds
 					self.sampleQueue.async {
 						guard owner.isCurrent(original: self.originals[key], clipIndex: clipIndex, currentClipIndex: self.currentClipIndex) else { return }
+						self.trackTiming(stage: key + "CompletionQueueDelay", since: queuedAt)
 						switch result {
 						case .success(let completed):
 							self.trackTiming(stage: key + "Append", durationMs: completed.elapsedMs, hostTime: completed.hostTime)
@@ -1162,7 +1205,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func writeScheduledFrames() {
-		guard !stateQueue.sync(execute: { isPaused || isStopping }), let videoInput else { return }
+		let callbackStart = diagnosticTiming ? DispatchTime.now().uptimeNanoseconds : 0
+		defer { if diagnosticTiming { trackTiming(stage: "cadenceTimerCallback", since: callbackStart) } }
+		if diagnosticTiming {
+			let now = CMClockGetTime(CMClockGetHostTimeClock())
+			let seconds = CMTimeGetSeconds(now)
+			if let previous = startupTiming["cadenceTimerEntryHostSeconds"] { trackTiming(stage: "cadenceTimerInterval", durationMs: (seconds - previous) * 1000, hostTime: now) }
+			startupTiming["cadenceTimerEntryHostSeconds"] = seconds
+		}
+		guard !measureCaptureStage("timerStateWait", { stateQueue.sync(execute: { isPaused || isStopping }) }), let videoInput else { return }
 		if request.video.quality != "high" {
 			if clipLastTime == nil, let firstScreenFrame { appendScreenFrame(firstScreenFrame) }
 			return
@@ -1170,7 +1221,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		do {
 			for time in try cadence.dueTimes(at: CMClockGetTime(CMClockGetHostTimeClock()), maximumCatchUpFrames: startup.backlogLimit(fps: request.video.fps)) {
 				guard videoInput.isReadyForMoreMediaData else { captureTelemetry.recordVideoBackpressure(retried: request.video.quality == "high"); return }
-				guard let frame = try frameCache.scheduledFrame(at: time, fps: request.video.fps, firstFrame: firstScreenFrame) else { return }
+				guard let frame = try measureCaptureStage("frameRetime", { try frameCache.scheduledFrame(at: time, fps: request.video.fps, firstFrame: firstScreenFrame) }) else { return }
 				let previousTime = clipLastTime
 				appendScreenFrame(frame.sample, sourceTime: frame.sourceTime)
 				guard clipLastTime != previousTime else { return }
@@ -1185,16 +1236,25 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 	}
 
+	// sampleQueue only. Keep a fixed set of aggregate metrics in memory; do not
+	// synchronously serialize/flush on the hot path being measured.
+	private func measureCaptureStage<T>(_ stage: String, _ work: () throws -> T) rethrows -> T {
+		guard diagnosticTiming else { return try work() }
+		let started = DispatchTime.now().uptimeNanoseconds
+		defer { trackTiming(stage: stage, since: started) }
+		return try work()
+	}
+
 	private func trackTiming(stage: String, since start: UInt64) {
 		guard diagnosticTiming else { return }
 		trackTiming(stage: stage, durationMs: milliseconds(since: start), hostTime: CMClockGetTime(CMClockGetHostTimeClock()))
 	}
 	private func trackTiming(stage: String, durationMs duration: Double, hostTime: CMTime) {
 		guard diagnosticTiming else { return }
+		if duration > (startupTiming[stage + "MaxMs"] ?? 0) { startupTiming[stage + "MaxHostSeconds"] = CMTimeGetSeconds(hostTime) }
 		startupTiming[stage + "MaxMs"] = max(startupTiming[stage + "MaxMs"] ?? 0, duration)
 		startupTiming[stage + "LastMs"] = duration
 		startupTiming[stage + "LastHostSeconds"] = CMTimeGetSeconds(hostTime)
-		if duration >= 10 { emitTiming(stage: "slow-" + stage) }
 	}
 
 	private func milliseconds(since start: UInt64) -> Double { Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000 }
