@@ -15,7 +15,10 @@ Mac pass on the private dev app: screen Record, Pause/Continue, Pause→Stop, re
 Originals (byte-identical) and an old project with three zooms all pass; no console or IPC errors.
 Not run: camera/microphone/system audio. Older breakage, not from the archive: `klippt info`
 reads only the legacy format, `klippt export` fails on a fresh profile, and the profile and
-creator-loop smoke scripts predate the October 4 HUD. Nothing installed.
+creator-loop smoke scripts predate the October 4 HUD. Scrubbing fix `8a308450`: the loading cover
+no longer hides the preview during a playhead drag (96% of frames covered before, none after).
+Installed this branch at `8a308450` to `/Applications/Klippt.app`, Developer ID signed, same
+designated requirements; previous app in `.local-install.noindex/backup-installed-20261005-1720`.
 [Evidence](artifacts/cleanup-verify-2026-10-05/).
 
 # October 4: current creator-loop build installed
