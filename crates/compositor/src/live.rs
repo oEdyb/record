@@ -2396,6 +2396,18 @@ mod tests {
         }
     }
 
+    /// GitHub's virtual Macs have no hardware video decoder ("Failed setup for format
+    /// videotoolbox_vld"), so the preview has no decoded picture to compare. Positions,
+    /// clocks and decode state are still asserted there; only pixel diffs need a real decoder.
+    #[cfg(target_os = "macos")]
+    fn decoded_pixels_visible(player: &Player) -> bool {
+        let visible = player.sdec.uses_hardware();
+        if !visible {
+            eprintln!("skipping pixel comparison: no hardware video decoder on this machine");
+        }
+        visible
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn overlay_plays_during_screen_hold_and_still_recompose_uses_requested_clock() {
@@ -2429,7 +2441,9 @@ mod tests {
             scene.video_overlays.clear();
             comp.set_scene(Some(scene.clone()));
             player.recompose(&comp, &Cfg::c8()).unwrap();
-            assert_ne!(with_overlay, comp.readback_direct().unwrap().2);
+            if decoded_pixels_visible(&player) {
+                assert_ne!(with_overlay, comp.readback_direct().unwrap().2);
+            }
 
             scene.video_overlays.push(crate::scene::SceneVideoOverlay {
                 id: "still".into(),
@@ -2449,7 +2463,9 @@ mod tests {
             scene.video_overlays.clear();
             comp.set_scene(Some(scene));
             player.recompose_still(&comp, &Cfg::c8(), 0.8, 0.0).unwrap();
-            assert_ne!(still_overlay, comp.readback_direct().unwrap().2);
+            if decoded_pixels_visible(&player) {
+                assert_ne!(still_overlay, comp.readback_direct().unwrap().2);
+            }
         }
     }
 
@@ -2531,7 +2547,9 @@ mod tests {
             comp.set_scene(Some(changed_scene));
             assert!(player.recompose(&comp, &Cfg::c8()).unwrap());
             let changed = comp.readback_direct().unwrap().2;
-            assert_ne!(before, changed);
+            if decoded_pixels_visible(&player) {
+                assert_ne!(before, changed);
+            }
             assert_eq!(player.screen_time_sec(), pts);
             assert_eq!(player.wdec.cur_time_sec(), camera_pts);
             assert!(!player.step(&comp, &Cfg::c8(), 0.0).unwrap());
