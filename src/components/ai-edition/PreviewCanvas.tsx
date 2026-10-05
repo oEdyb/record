@@ -400,13 +400,27 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	const handleVideoElement = useMemo(() => props.onVideoElement, [props.onVideoElement]);
 	// L'élément `<video>` lui-même n'est plus retenu : il ne servait qu'à échantillonner des pixels
 	// pour la mosaïque dessinée en DOM, que le compositeur natif rend désormais.
+	// A clip change during playback hands over an element that is already playing, so its
+	// state at attach time is not enough: follow the element's own play and pause events.
+	const [clockVideo, setClockVideo] = useState<HTMLVideoElement | null>(null);
 	const relayIsPlaying = useCallback(
 		(el: HTMLVideoElement | null) => {
 			handleVideoElement(el);
-			setIsPlaying(!el?.paused);
+			setClockVideo(el);
+			setIsPlaying(Boolean(el && !el.paused));
 		},
 		[handleVideoElement],
 	);
+	useEffect(() => {
+		if (!clockVideo) return;
+		const sync = () => setIsPlaying(!clockVideo.paused && !clockVideo.ended);
+		sync();
+		const events = ["play", "playing", "pause", "ended"] as const;
+		for (const name of events) clockVideo.addEventListener(name, sync);
+		return () => {
+			for (const name of events) clockVideo.removeEventListener(name, sync);
+		};
+	}, [clockVideo]);
 	const relayLoadedMetadata = (
 		durationSec: number,
 		assetId: string,

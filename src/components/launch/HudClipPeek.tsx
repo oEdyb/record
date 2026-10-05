@@ -1,5 +1,7 @@
 import { Pause, Play, Volume2, VolumeX } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { loadEditingPreferences } from "@/lib/ai-edition/store/editingPreferences";
+import { webcamSizeToFraction } from "@/lib/compositeLayout";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { formatTimePadded } from "@/utils/timeUtils";
@@ -50,6 +52,26 @@ export function locatePeekTime(timeline: readonly PeekClip[], time: number) {
 	return { index: 0, offset: 0 };
 }
 
+/** Where the review will draw the camera, so the replay shows it in the same place. */
+export interface PeekCameraPlacement {
+	webcamPosition: { cx: number; cy: number } | null;
+	webcamSizePreset: number;
+	webcamMirrored: boolean;
+}
+
+/** The camera's box inside the replay stage: the remembered size and spot, in its own shape. */
+export function peekCameraStyle(placement: PeekCameraPlacement, portrait: boolean): CSSProperties {
+	const longSide = `${(webcamSizeToFraction(placement.webcamSizePreset) * 100).toFixed(2)}cqmin`;
+	const position = placement.webcamPosition;
+	return {
+		...(portrait ? { height: longSide } : { width: longSide }),
+		...(position
+			? { left: `${position.cx * 100}%`, top: `${position.cy * 100}%`, translate: "-50% -50%" }
+			: { right: "2cqmin", bottom: "2cqmin" }),
+		...(placement.webcamMirrored ? { scale: "-1 1" } : {}),
+	};
+}
+
 /**
  * Replays what has been recorded so far, while paused, so the creator can pick
  * up where they left off. It plays the kept clip files exactly as written; it
@@ -96,6 +118,36 @@ export function HudClipPeek({
 
 	const current = timeline[Math.min(clipIndex, timeline.length - 1)];
 	const source = current ? toKlipptMediaUrl(current.clip.screenVideoPath) : undefined;
+	const cameraPath = current?.clip.webcamVideoPath;
+	const cameraSource = cameraPath ? toKlipptMediaUrl(cameraPath) : undefined;
+	const cameraOffsetSec = (current?.clip.webcamOffsetMs ?? 0) / 1_000;
+	const cameraRef = useRef<HTMLVideoElement | null>(null);
+	const [cameraPortrait, setCameraPortrait] = useState(false);
+	// Read when the replay opens: the creator may have moved the camera in review since.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-read on each open
+	const cameraPlacement = useMemo(() => loadEditingPreferences().editor, [open]);
+	const showCamera = Boolean(cameraSource) && cameraPlacement.webcamLayoutPreset !== "no-webcam";
+
+	// The camera file follows the screen file: same moment, same play state.
+	useEffect(() => {
+		if (!open || !showCamera) return;
+		let frame = 0;
+		const tick = () => {
+			frame = requestAnimationFrame(tick);
+			const video = videoRef.current;
+			const camera = cameraRef.current;
+			if (!video || !camera || camera.readyState < 1) return;
+			const target = Math.max(0, video.currentTime - cameraOffsetSec);
+			if (Math.abs(camera.currentTime - target) > 0.15) camera.currentTime = target;
+			if (video.paused || video.ended) {
+				if (!camera.paused) camera.pause();
+			} else if (camera.paused && !camera.ended) {
+				camera.play()?.catch(() => undefined);
+			}
+		};
+		frame = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(frame);
+	}, [open, showCamera, cameraOffsetSec]);
 
 	const seek = useCallback(
 		(time: number) => {
@@ -242,6 +294,22 @@ export function HudClipPeek({
 					onEnded={handleEnded}
 					onClick={togglePlaying}
 				/>
+				{showCamera && (
+					<video
+						ref={cameraRef}
+						data-testid="hud-clip-peek-camera"
+						className={styles.clipPeekCamera}
+						style={peekCameraStyle(cameraPlacement, cameraPortrait)}
+						src={cameraSource}
+						muted
+						playsInline
+						preload="auto"
+						onLoadedMetadata={(event) => {
+							const camera = event.currentTarget;
+							setCameraPortrait(camera.videoHeight > camera.videoWidth);
+						}}
+					/>
+				)}
 				<span className={styles.clipPeekLabel}>
 					{labels.clipOf(clipIndex + 1, timeline.length)}
 				</span>

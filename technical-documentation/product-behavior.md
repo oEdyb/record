@@ -357,7 +357,9 @@ above the pill with no recording controls. Its video takes the recording's own s
 inside the first clip's frame. It plays the kept clip files end to end with sound,
 starting five seconds before the end, so the creator can pick up where they left off. One
 scrubber is split by clips; Left and Right jump between clips; M mutes; Escape or Down closes.
-Continue closes it immediately. It never changes the session.
+Continue closes it immediately. It never changes the session. A clip recorded with the camera
+shows the camera on top of the screen, in its own shape, at the size and place last chosen in
+review (Olle, 2026-10-06).
 
 Provide a configurable global Pause/Continue shortcut. Default to `Command-Shift-Space` on
 macOS because `Command-Space` belongs to Spotlight. The renderer recording state is the final

@@ -1065,6 +1065,7 @@
 
 .clipPeekStage {
 	position: relative;
+	container-type: size;
 	aspect-ratio: var(--peek-aspect);
 	overflow: hidden;
 	border-radius: 14px;
@@ -1077,6 +1078,12 @@
 	height: 100%;
 	object-fit: contain;
 	cursor: pointer;
+}
+
+.clipPeekCamera {
+	position: absolute;
+	display: block;
+	pointer-events: none;
 }
 
 .clipPeekLabel {

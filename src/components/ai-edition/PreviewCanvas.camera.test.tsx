@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AxcutClip, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
@@ -11,6 +11,9 @@ import { PreviewCanvas } from "./PreviewCanvas";
 // from a corner, straight on the preview, through the normal editor-settings path.
 
 const actions = vi.hoisted(() => ({ setLive: vi.fn(), commit: vi.fn(async () => undefined) }));
+const preview = vi.hoisted(() => ({
+	attach: null as ((element: HTMLVideoElement | null) => void) | null,
+}));
 vi.mock("@/contexts/I18nContext", () => ({ useScopedT: () => (key: string) => key }));
 vi.mock("@/native/client", () => ({ nativeBridgeClient: { aiEdition: {} } }));
 vi.mock("@/lib/ai-edition/store/useEditorSettings", () => ({
@@ -21,7 +24,12 @@ vi.mock("@/lib/ai-edition/store/useEditorSettings", () => ({
 }));
 vi.mock("./NativeCompositorOverlay", () => ({ NativeCompositorOverlay: () => null }));
 vi.mock("./AudioOverlayPlayback", () => ({ AudioOverlayPlayback: () => null }));
-vi.mock("./VirtualPreview", () => ({ VirtualPreview: () => null }));
+vi.mock("./VirtualPreview", () => ({
+	VirtualPreview: (props: { onVideoElement?: (element: HTMLVideoElement | null) => void }) => {
+		preview.attach = props.onVideoElement ?? null;
+		return null;
+	},
+}));
 vi.mock("./WebcamOverlay", () => ({ WebcamOverlay: () => null }));
 
 const clip: AxcutClip = {
@@ -125,6 +133,21 @@ describe("camera placement in review", () => {
 		expect(patch.webcamPosition.cx).toBeCloseTo((MARGIN + tile.width / 2) / FRAME.width, 6);
 		expect(patch.webcamPosition.cy).toBeCloseTo((MARGIN + tile.height / 2) / FRAME.height, 6);
 		expect(actions.commit).toHaveBeenCalledTimes(1);
+	});
+
+	it("is movable again once a clip handed over mid-playback is paused", () => {
+		renderCanvas(true);
+		const video = document.createElement("video");
+		let paused = false;
+		Object.defineProperty(video, "paused", { get: () => paused });
+		act(() => preview.attach?.(video));
+		const camera = screen.getByLabelText("preview.webcamPreview");
+		expect(camera).not.toHaveAttribute("data-editable");
+		paused = true;
+		act(() => {
+			video.dispatchEvent(new Event("pause"));
+		});
+		expect(camera).toHaveAttribute("data-editable", "true");
 	});
 
 	it("leaves an older project untouched by a click that does not move", () => {
