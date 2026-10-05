@@ -42,6 +42,20 @@ export function hasAnyClipWithCamera(assets: AxcutAsset[], clips: AxcutClip[]): 
  * `visible: false` counts as no camera, matching what the preview and scene
  * already did and what the export producers did NOT.
  */
+/**
+ * The camera file's pixel size: the size stored on the track, else the size a loaded
+ * <video> reported (`probed`), else null. Preview and export both resolve the
+ * picture-in-picture shape through this, so neither can assume a placeholder aspect
+ * while the other knows the real one.
+ */
+export function cameraTrackSourceSize(
+	track: AxcutCameraTrack | null | undefined,
+	probed: { width: number; height: number } | null = null,
+): { width: number; height: number } | null {
+	if (track?.width && track.height) return { width: track.width, height: track.height };
+	return probed && probed.width > 0 && probed.height > 0 ? probed : null;
+}
+
 export function assetCameraSource(asset: AxcutAsset | undefined): {
 	path: string;
 	offsetSec: number;

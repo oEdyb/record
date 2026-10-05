@@ -41,6 +41,7 @@ import {
 	MIN_AUDIO_TARGET_LUFS,
 	MIN_SOURCE_VOLUME,
 	patchEditorSettings,
+	realCameraShape,
 } from "./editorSettings";
 
 const STORAGE_KEY = "screenrec.editing-preferences:v1";
@@ -485,6 +486,9 @@ export function applyNewProjectPreferences(
 	preferences: EditingPreferences,
 ): AxcutDocument {
 	const plain = patchEditorSettings(applyEditingDefaultPreferences(document, preferences), {
+		// The remembered camera place and size carry over; its shape does not: a new
+		// recording shows the camera as recorded (owner decision 2026-10-05).
+		...realCameraShape(),
 		aspectRatio: DEFAULT_EDITOR_SETTINGS.aspectRatio,
 		padding: 0,
 		borderRadius: 0,
@@ -495,7 +499,6 @@ export function applyNewProjectPreferences(
 		screenFramingByVariant: {},
 		autoFocusAll: false,
 		webcamReactiveZoom: false,
-		webcamZoom: 1,
 		microphoneVolume: 1,
 		microphoneMuted: false,
 		systemAudioVolume: 1,

@@ -4,6 +4,7 @@ import {
 	computeCameraFullscreenRect,
 	computeCompositeLayout,
 	isWebcamBlockLayout,
+	pictureInPictureMargin,
 	resolveWebcamReactiveZoom,
 	type StyledRenderRect,
 } from "./compositeLayout";
@@ -643,5 +644,53 @@ it.each([
 		height,
 		maskShape: "squircle",
 		borderRadius: (Math.min(width, height) * 35) / 100,
+	});
+});
+
+describe("picture-in-picture camera inside the frame (owner decision 2026-10-05)", () => {
+	const canvasSize = { width: 3420, height: 2214 };
+	const real = {
+		canvasSize,
+		screenSize: canvasSize,
+		webcamMaskShape: "rectangle" as const,
+		webcamAspectRatio: "source" as const,
+		webcamCornerRadius: 0,
+	};
+
+	it("draws the camera in its own shape with square corners", () => {
+		const square = computeCompositeLayout({
+			...real,
+			webcamSize: { width: 1552, height: 1552 },
+			webcamSizePreset: 50,
+		})?.webcamRect;
+		expect(square).toMatchObject({ width: 1107, height: 1107, borderRadius: 0 });
+		const wide = computeCompositeLayout({
+			...real,
+			webcamSize: { width: 1920, height: 1080 },
+			webcamSizePreset: 50,
+		})?.webcamRect;
+		expect(wide).toMatchObject({ width: 1107, height: 623, borderRadius: 0 });
+	});
+
+	it("keeps the default margin when a saved position would touch or cross an edge", () => {
+		// The measured project: centre (0.834, 0.774) at 50% put the square camera flush
+		// with, and visually cut off by, the bottom edge.
+		const margin = pictureInPictureMargin(canvasSize);
+		const rect = computeCompositeLayout({
+			...real,
+			webcamSize: { width: 1552, height: 1552 },
+			webcamSizePreset: 50,
+			webcamPosition: { cx: 0.8342923883318141, cy: 0.7740706037277147 },
+		})?.webcamRect;
+		expect(rect).toBeTruthy();
+		expect(rect!.y + rect!.height).toBe(canvasSize.height - margin);
+		expect(rect!.x + rect!.width).toBeLessThanOrEqual(canvasSize.width - margin);
+		const topLeft = computeCompositeLayout({
+			...real,
+			webcamSize: { width: 1552, height: 1552 },
+			webcamSizePreset: 20,
+			webcamPosition: { cx: 0, cy: 0 },
+		})?.webcamRect;
+		expect([topLeft!.x, topLeft!.y]).toEqual([margin, margin]);
 	});
 });

@@ -995,6 +995,13 @@ export function RecordingReviewShell() {
 								hasProject={hasProject}
 								hasAsset={hasAsset}
 								readOnly
+								// Direct camera placement only: off for a read-only entitlement
+								// and while an export reads the project.
+								cameraEditable={
+									entitlement.access !== "read-only" &&
+									!sourceExportBusy &&
+									!isExportRunActive(exportRunPhase)
+								}
 								videoSources={videoSources}
 								clips={clips}
 								zoomRegions={zoomRegions}

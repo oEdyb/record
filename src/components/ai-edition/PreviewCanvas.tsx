@@ -20,8 +20,12 @@
 // size (via ResizeObserver), so the camera + screen both resize correctly
 // as the user resizes the workbench.
 
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+	KeyboardEvent as ReactKeyboardEvent,
+	PointerEvent as ReactPointerEvent,
+	WheelEvent as ReactWheelEvent,
+} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
 	type CameraFullscreenRegion,
 	type CropRegion,
@@ -32,17 +36,26 @@ import {
 import { useScopedT } from "@/contexts/I18nContext";
 import { resolveOutputAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutClip, AxcutTrimRange, AxcutZoomRegion } from "@/lib/ai-edition/schema";
-import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
+import { getEditorSettings, realCameraShape } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
-import { resolveActiveCameraTrack } from "@/lib/ai-edition/timeline/camera";
+import { cameraTrackSourceSize, resolveActiveCameraTrack } from "@/lib/ai-edition/timeline/camera";
 import { createPlaybackClockRef } from "@/lib/ai-edition/timeline/playback-clock";
 import type { SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview";
 import {
+	type CameraPlacement,
+	type CameraPlacementFrame,
+	cameraResizeCorner,
+	cameraTileSize,
+	moveCameraTile,
+	resizeCameraTile,
+} from "@/lib/cameraPlacement";
+import {
 	computeCameraEmphasisRect,
 	computeCameraFullscreenRect,
 	computeCompositeLayout,
+	type RenderRect,
 	type WebcamCompositeLayout,
 } from "@/lib/compositeLayout";
 import {
@@ -58,6 +71,11 @@ import {
 import { classifyWallpaper, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
 import { computeCameraLayoutState } from "@/lib/zoomMath/cameraFullscreenUtils";
+import {
+	getWebcamNativeSize,
+	getWebcamNativeSizeRevision,
+	subscribeWebcamNativeSize,
+} from "@/native/webcamSizeCache";
 import { clamp, clamp01 } from "@/utils/math";
 import { AudioOverlayPlayback } from "./AudioOverlayPlayback";
 import { NativeCompositorOverlay } from "./NativeCompositorOverlay";
@@ -84,7 +102,16 @@ interface PreviewCanvasProps {
 	/** Enables direct screen framing while the Layout inspector is visible. */
 	screenFramingEnabled?: boolean;
 	readOnly?: boolean;
+	/**
+	 * Lets the viewer move and resize the picture-in-picture camera directly in the
+	 * preview. Independent of `readOnly`, which keeps every other layout control off in
+	 * review. The caller turns it off for a read-only entitlement and while exporting.
+	 */
+	cameraEditable?: boolean;
 }
+
+/** Pointer travel, in CSS pixels, before a press on the camera counts as a move. */
+const CAMERA_DRAG_THRESHOLD_PX = 3;
 
 // ponytail: fallback only — used until the active source's <video> reports
 // its real intrinsic size via onLoadedMetadata. Nothing in the import/record
@@ -95,10 +122,12 @@ interface PreviewCanvasProps {
 // (the <video> contain-fits its true ratio within a box sized for the wrong
 // one), on top of the intentional `settings.padding` margin.
 const SCREEN_SOURCE_SIZE = { width: 1920, height: 1080 };
-// ponytail: live preview defaults until the camera <video> reports its real
-// dimensions via loadedmetadata. 4:3 is the legacy default — typical webcams
-// capture at 1.33, and using a 16:9 default collapses vertical-stack to a
-// degenerate full-bleed camera with 0px screen height.
+// ponytail: live preview defaults until the camera's real size is known — stored on
+// the camera track, or reported by its <video> on loadedmetadata. 4:3 is the legacy
+// default — typical webcams capture at 1.33, and using a 16:9 default collapses
+// vertical-stack to a degenerate full-bleed camera with 0px screen height. The scene
+// sent to the compositor resolves the same chain, so the hit area and the drawn
+// tile share one shape.
 const WEBCAM_SOURCE_SIZE = { width: 960, height: 720 };
 
 export function PreviewCanvas(props: PreviewCanvasProps) {
@@ -225,6 +254,20 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		[assets, props.clips, props.currentTimeSec],
 	);
 	const activeClipHasCamera = Boolean(activeCameraTrack?.visible && activeCameraTrack.sourcePath);
+	const probedCameraRevision = useSyncExternalStore(
+		subscribeWebcamNativeSize,
+		getWebcamNativeSizeRevision,
+		() => 0,
+	);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the revision re-reads the probe cache
+	const cameraSourceSize = useMemo(
+		() =>
+			cameraTrackSourceSize(
+				activeCameraTrack,
+				activeCameraTrack?.sourcePath ? getWebcamNativeSize(activeCameraTrack.sourcePath) : null,
+			) ?? WEBCAM_SOURCE_SIZE,
+		[activeCameraTrack, probedCameraRevision],
+	);
 
 	const layout = useMemo(() => {
 		// A clip with no camera lays out as "no-webcam", whatever the panel says. Hiding
@@ -254,7 +297,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			canvasSize: frameSize,
 			maxContentSize,
 			screenSize: croppedScreenSize,
-			webcamSize: preset === "no-webcam" ? null : WEBCAM_SOURCE_SIZE,
+			webcamSize: preset === "no-webcam" ? null : cameraSourceSize,
 			layoutPreset: preset,
 			webcamSizePreset: settings.webcamSizePreset,
 			// ponytail: PiP webcam is grabbable. Pass through the user's
@@ -273,6 +316,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		screenNativeSize,
 		cropRegion,
 		activeClipHasCamera,
+		cameraSourceSize,
 		settings.webcamLayoutPreset,
 		settings.webcamBlockOrder,
 		settings.webcamBlockCameraShare,
@@ -386,27 +430,65 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		clockRef,
 	};
 
-	const handleWebcamPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-		if (props.readOnly) return;
-		if (settings.webcamLayoutPreset !== "picture-in-picture") return;
-		if (isPlaying) return;
+	// Direct camera placement. Every gesture starts from the camera AS RECORDED at its
+	// current centre and size (an older project's stored shape gives way only once the
+	// camera actually moves), and saves the existing position and size fields plus the
+	// real-shape fields through the normal settings path.
+	const cameraEditable =
+		Boolean(props.cameraEditable) &&
+		settings.webcamLayoutPreset === "picture-in-picture" &&
+		!isPlaying &&
+		cameraLayoutState.progress <= 0;
+	const cameraPlacementFrame = (): CameraPlacementFrame | null =>
+		layout?.screenRect
+			? { canvas: frameSize, bounds: layout.screenRect, camera: cameraSourceSize }
+			: null;
+	const realCameraRect = (): RenderRect | null => {
+		const current = layout?.webcamRect;
+		if (!current) return null;
+		const tile = cameraTileSize(frameSize, cameraSourceSize, settings.webcamSizePreset);
+		const cx = current.x + current.width / 2;
+		const cy = current.y + current.height / 2;
+		return { x: cx - tile.width / 2, y: cy - tile.height / 2, ...tile };
+	};
+	const applyCameraPlacement = (placement: CameraPlacement) =>
+		setLive({
+			...realCameraShape(),
+			webcamPosition: placement.webcamPosition,
+			webcamSizePreset: placement.webcamSizePreset,
+		});
+	const startCameraGesture = (
+		event: ReactPointerEvent<HTMLDivElement>,
+		place: (
+			frame: CameraPlacementFrame,
+			start: RenderRect,
+			dx: number,
+			dy: number,
+		) => CameraPlacement,
+	) => {
+		if (!cameraEditable) return;
 		const slot = webcamSlotRef.current;
-		if (!slot) return;
-		const slotRect = slot.getBoundingClientRect();
-		const frameRect = frameRef.current?.getBoundingClientRect();
-		if (!frameRect) return;
+		const frameElement = frameRef.current;
+		const frame = cameraPlacementFrame();
+		const start = realCameraRect();
+		if (!slot || !frameElement || !frame || !start) return;
+		// preventDefault also keeps the press from focusing the camera, so Space and the
+		// arrows stay with review playback after a click or drag.
 		event.preventDefault();
 		event.stopPropagation();
-		const offsetX = event.clientX - (slotRect.left + slotRect.width / 2);
-		const offsetY = event.clientY - (slotRect.top + slotRect.height / 2);
+		const box = frameElement.getBoundingClientRect();
+		const toCanvasX = box.width > 0 ? frameSize.width / box.width : 1;
+		const toCanvasY = box.height > 0 ? frameSize.height / box.height : 1;
+		const startX = event.clientX;
+		const startY = event.clientY;
+		let moved = false;
 		slot.setPointerCapture(event.pointerId);
-
 		const handleMove = (e: PointerEvent) => {
-			const frameNow = frameRef.current?.getBoundingClientRect();
-			if (!frameNow) return;
-			const cx = clamp01((e.clientX - offsetX - frameNow.left) / frameNow.width);
-			const cy = clamp01((e.clientY - offsetY - frameNow.top) / frameNow.height);
-			setLive({ webcamPosition: { cx, cy } });
+			const dx = e.clientX - startX;
+			const dy = e.clientY - startY;
+			if (!moved && Math.hypot(dx, dy) < CAMERA_DRAG_THRESHOLD_PX) return;
+			moved = true;
+			applyCameraPlacement(place(frame, start, dx * toCanvasX, dy * toCanvasY));
 		};
 		const handleUp = () => {
 			slot.removeEventListener("pointermove", handleMove);
@@ -417,11 +499,56 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			} catch {
 				// pointer already released
 			}
-			void commit();
+			if (moved) void commit();
 		};
 		slot.addEventListener("pointermove", handleMove);
 		slot.addEventListener("pointerup", handleUp);
 		slot.addEventListener("pointercancel", handleUp);
+	};
+	const handleWebcamPointerDown = (event: ReactPointerEvent<HTMLDivElement>) =>
+		startCameraGesture(event, (frame, start, dx, dy) =>
+			moveCameraTile(frame, settings.webcamSizePreset, start.x + dx, start.y + dy),
+		);
+	const resizeCorner = (() => {
+		const frame = cameraPlacementFrame();
+		const rect = layout?.webcamRect;
+		return frame && rect ? cameraResizeCorner(frame, rect) : { left: true, top: true };
+	})();
+	const handleWebcamResizeDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+		const corner = resizeCorner;
+		startCameraGesture(event, (frame, start, dx, dy) =>
+			resizeCameraTile(frame, start, corner, {
+				x: (corner.left ? start.x : start.x + start.width) + dx,
+				y: (corner.top ? start.y : start.y + start.height) + dy,
+			}),
+		);
+	};
+	const handleWebcamKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+		const step = Math.min(frameSize.width, frameSize.height) * (event.shiftKey ? 0.05 : 0.01);
+		const delta =
+			event.key === "ArrowLeft"
+				? [-step, 0]
+				: event.key === "ArrowRight"
+					? [step, 0]
+					: event.key === "ArrowUp"
+						? [0, -step]
+						: event.key === "ArrowDown"
+							? [0, step]
+							: null;
+		const frame = cameraPlacementFrame();
+		const start = realCameraRect();
+		if (!cameraEditable || !delta || !frame || !start) return;
+		// Handled here, so the review's global arrow keys leave this press alone.
+		event.preventDefault();
+		applyCameraPlacement(
+			moveCameraTile(frame, settings.webcamSizePreset, start.x + delta[0], start.y + delta[1], {
+				snap: false,
+			}),
+		);
+	};
+	const handleWebcamKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+		if (!cameraEditable) return;
+		if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) void commit();
 	};
 
 	const handleScreenPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -499,8 +626,6 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		},
 		[],
 	);
-
-	const isPipGrab = !props.readOnly && settings.webcamLayoutPreset === "picture-in-picture";
 
 	return (
 		<div
@@ -618,14 +743,32 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 				<div
 					ref={webcamSlotRef}
 					className={styles.webcamSlot}
+					data-editable={cameraEditable ? "true" : undefined}
 					style={{
 						...webcamStyle,
-						cursor: isPipGrab && !isPlaying ? "grab" : "default",
+						cursor: cameraEditable ? "grab" : "default",
 						touchAction: "none",
 					}}
-					onPointerDown={isPipGrab ? handleWebcamPointerDown : undefined}
+					onPointerDown={cameraEditable ? handleWebcamPointerDown : undefined}
+					onKeyDown={cameraEditable ? handleWebcamKeyDown : undefined}
+					onKeyUp={cameraEditable ? handleWebcamKeyUp : undefined}
+					tabIndex={cameraEditable ? 0 : undefined}
 					aria-label={te("preview.webcamPreview")}
 				>
+					{cameraEditable ? (
+						<div
+							className={styles.webcamResizeHandle}
+							data-testid="camera-resize-handle"
+							data-corner={`${resizeCorner.top ? "top" : "bottom"}-${resizeCorner.left ? "left" : "right"}`}
+							aria-hidden="true"
+							style={{
+								[resizeCorner.top ? "top" : "bottom"]: 0,
+								[resizeCorner.left ? "left" : "right"]: 0,
+								cursor: resizeCorner.top === resizeCorner.left ? "nwse-resize" : "nesw-resize",
+							}}
+							onPointerDown={handleWebcamResizeDown}
+						/>
+					) : null}
 					<WebcamOverlay
 						clips={props.clips}
 						currentTimeSec={props.currentTimeSec}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { type AxcutDocument, createEmptyDocument } from "../schema";
 import { useProjectStore } from "./projectStore";
 import { useAssetDimensionBackfill } from "./useAssetDimensionBackfill";
@@ -90,6 +91,29 @@ describe("useAssetDimensionBackfill", () => {
 		});
 		expect(probeVideoDimensionsMock).not.toHaveBeenCalled();
 		expect(save).not.toHaveBeenCalled();
+	});
+
+	it("probes the camera file once and stores its real size on the camera track", async () => {
+		const document = documentWithAsset({ codec: "unknown", width: 1920, height: 1080, fps: 0 });
+		document.assets[0].cameraTrack = {
+			sourcePath: "/tmp/camera.mp4",
+			startMs: 0,
+			offsetMs: 0,
+			visible: true,
+		};
+		probeVideoDimensionsMock.mockResolvedValue({ width: 1552, height: 1552 });
+		load(document);
+		renderHook(() => useAssetDimensionBackfill());
+		await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+		expect(probeVideoDimensionsMock).toHaveBeenCalledTimes(1);
+		expect(probeVideoDimensionsMock).toHaveBeenCalledWith(toFileUrl("/tmp/camera.mp4"));
+		const saved = useProjectStore.getState().document?.assets[0];
+		expect(saved?.cameraTrack).toMatchObject({
+			sourcePath: "/tmp/camera.mp4",
+			width: 1552,
+			height: 1552,
+		});
+		expect(saved?.video).toMatchObject({ width: 1920, height: 1080 });
 	});
 
 	it("does not re-probe a used asset with no reachable file more than once", async () => {

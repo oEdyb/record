@@ -771,12 +771,22 @@ describe("useProjectStore", () => {
 		});
 	});
 
-	it("starts a new project plain while keeping chosen camera presentation", async () => {
+	// Owner decision 2026-10-05: a new recording keeps the remembered camera place and
+	// size but shows the camera as recorded. This test used to expect the remembered
+	// "circle" mask to carry over.
+	it("starts a new project plain with the remembered camera place and size in its real shape", async () => {
 		saveEditorDefaultPreferences({
 			...DEFAULT_EDITOR_SETTINGS,
 			padding: 27,
 			showBlur: true,
 			webcamMaskShape: "circle",
+			webcamAspectRatio: "16:9",
+			webcamCornerRadius: 32,
+			webcamFocalPoint: { cx: 0.3, cy: 0.7 },
+			webcamLayoutPreset: "dual-frame",
+			webcamSizePreset: 41,
+			webcamPosition: { cx: 0.2, cy: 0.25 },
+			webcamMirrored: true,
 			cursor: { ...DEFAULT_EDITOR_SETTINGS.cursor, smoothing: 0.88 },
 		});
 		bridgeMocks.create.mockResolvedValue({ success: true, document: sampleDoc });
@@ -786,7 +796,17 @@ describe("useProjectStore", () => {
 
 		expect(settings.padding).toBe(0);
 		expect(settings.showBlur).toBe(false);
-		expect(settings.webcamMaskShape).toBe("circle");
+		expect(settings).toMatchObject({
+			webcamLayoutPreset: "picture-in-picture",
+			webcamMaskShape: "rectangle",
+			webcamAspectRatio: "source",
+			webcamCornerRadius: 0,
+			webcamZoom: 1,
+			webcamFocalPoint: { cx: 0.5, cy: 0.5 },
+			webcamSizePreset: 41,
+			webcamPosition: { cx: 0.2, cy: 0.25 },
+			webcamMirrored: true,
+		});
 		expect(settings.cursor.smoothing).toBe(0);
 		expect(bridgeMocks.save).toHaveBeenCalledWith(document);
 	});

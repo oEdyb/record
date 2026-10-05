@@ -281,6 +281,13 @@ export const cameraTrackSchema = z
 		startMs: z.number().nonnegative().default(0),
 		offsetMs: z.number().int().default(0),
 		visible: z.boolean().default(true),
+		/**
+		 * The camera file's own pixel size, probed once (see `useAssetDimensionBackfill`).
+		 * The picture-in-picture tile takes this shape, so preview and export can lay it out
+		 * before any <video> has loaded. Additive: older documents simply lack it.
+		 */
+		width: z.number().int().positive().optional(),
+		height: z.number().int().positive().optional(),
 	})
 	.nullable()
 	.default(null);

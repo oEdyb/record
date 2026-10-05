@@ -18,6 +18,7 @@ import type {
 	AxcutZoomRegion,
 } from "@/lib/ai-edition/schema";
 import { axcutSchemaVersion } from "@/lib/ai-edition/schema";
+import { computeCompositeLayout } from "@/lib/compositeLayout";
 import { getFocusBoundsForScale } from "@/lib/zoomMath/focusUtils";
 import {
 	buildCompositorClipInputs,
@@ -2141,5 +2142,130 @@ describe("per-clip layout overrides", () => {
 		scene = buildSceneDescription(doc);
 		expect(scene.annotations.length).toBeGreaterThan(0);
 		expect(scene.annotations.every((annotation) => annotation.clipIndex === 0)).toBe(true);
+	});
+});
+
+// Owner decision 2026-10-05: the review hit area, the preview pixels and the One video
+// export all place the SAME camera tile, in the camera file's own shape.
+describe("camera tile shared by preview and export", () => {
+	const output = { width: 3420, height: 2214 };
+	const camera = { width: 1552, height: 1552 };
+	const realShape = {
+		aspectRatio: "190:123",
+		padding: 0,
+		borderRadius: 0,
+		webcamLayoutPreset: "picture-in-picture",
+		webcamMaskShape: "rectangle",
+		webcamAspectRatio: "source",
+		webcamCornerRadius: 0,
+		webcamZoom: 1,
+		webcamFocalPoint: { cx: 0.5, cy: 0.5 },
+		webcamSizePreset: 30,
+		webcamPosition: { cx: 0.2, cy: 0.3 },
+	};
+	const docWith = (track: Partial<NonNullable<AxcutAsset["cameraTrack"]>>) =>
+		makeDoc({
+			assets: [
+				makeAsset({
+					id: "a1",
+					originalPath: "/screen.mp4",
+					video: { codec: "h264", ...output, fps: 60 },
+					cameraTrack: { sourcePath: "/cam.mp4", startMs: 0, offsetMs: 0, visible: true, ...track },
+				}),
+			],
+			clips: [
+				makeClip({
+					id: "c1",
+					assetId: "a1",
+					sourceStartSec: 0,
+					sourceEndSec: 5,
+					timelineStartSec: 0,
+					timelineEndSec: 5,
+				}),
+			],
+			legacyEditor: realShape,
+		});
+
+	it("sizes the export tile from the camera size stored on the track, with no probe", () => {
+		// The export dialog builds its scene without a probed size; before 2026-10-05 it
+		// fell back to a 4:3 box and cover-cropped a square camera the preview drew whole.
+		const scene = buildSceneDescription(docWith({ ...camera }));
+		const rect = scene.layout.webcamRect;
+		expect(rect).toBeTruthy();
+		expect((rect!.width * output.width) / (rect!.height * output.height)).toBeCloseTo(1, 3);
+		expect(scene.layout.webcamShape).toBe("rectangle");
+		expect(scene.layout.webcamRadiusFrac).toBe(0);
+		expect(scene.layout.webcamZoom).toBe(1);
+		expect(scene.layout.webcamFocalPoint).toEqual({ cx: 0.5, cy: 0.5 });
+	});
+
+	it("gives the export the same tile as the probed preview scene", () => {
+		const exported = buildSceneDescription(docWith({ ...camera }));
+		const preview = buildSceneDescription(docWith({}), camera);
+		expect(preview.layout.webcamRect).toEqual(exported.layout.webcamRect);
+		expect(preview.layout.webcamRadiusFrac).toEqual(exported.layout.webcamRadiusFrac);
+		expect(preview.layout.webcamShape).toEqual(exported.layout.webcamShape);
+	});
+
+	it("matches the preview hit area computed at the on-screen frame size within 2 export px", () => {
+		const scene = buildSceneDescription(docWith({ ...camera }));
+		const frame = { width: 900, height: 583 };
+		const hit = computeCompositeLayout({
+			canvasSize: frame,
+			screenSize: output,
+			webcamSize: camera,
+			webcamSizePreset: realShape.webcamSizePreset,
+			webcamPosition: realShape.webcamPosition,
+			webcamMaskShape: "rectangle",
+			webcamAspectRatio: "source",
+			webcamCornerRadius: 0,
+		})?.webcamRect;
+		const rect = scene.layout.webcamRect;
+		expect(hit && rect).toBeTruthy();
+		const toExport = (v: number, frameExtent: number, outExtent: number) =>
+			(v / frameExtent) * outExtent;
+		expect(
+			Math.abs(toExport(hit!.x, frame.width, output.width) - rect!.x * output.width),
+		).toBeLessThanOrEqual(2 * (output.width / frame.width));
+		expect(
+			Math.abs(toExport(hit!.width, frame.width, output.width) - rect!.width * output.width),
+		).toBeLessThanOrEqual(2 * (output.width / frame.width));
+		expect(
+			Math.abs(toExport(hit!.y, frame.height, output.height) - rect!.y * output.height),
+		).toBeLessThanOrEqual(2 * (output.height / frame.height));
+	});
+
+	it("uses each clip's own camera size", () => {
+		const doc = docWith({ ...camera });
+		doc.assets.push(
+			makeAsset({
+				id: "a2",
+				originalPath: "/screen2.mp4",
+				video: { codec: "h264", ...output, fps: 60 },
+				cameraTrack: {
+					sourcePath: "/cam2.mp4",
+					startMs: 0,
+					offsetMs: 0,
+					visible: true,
+					width: 1920,
+					height: 1080,
+				},
+			}),
+		);
+		doc.timeline.clips.push(
+			makeClip({
+				id: "c2",
+				assetId: "a2",
+				sourceStartSec: 0,
+				sourceEndSec: 5,
+				timelineStartSec: 5,
+				timelineEndSec: 10,
+			}),
+		);
+		const [first, second] = buildSceneDescription(doc).layout.layoutByClip ?? [];
+		const aspect = (r: { width: number; height: number } | null | undefined) =>
+			r ? (r.width * output.width) / (r.height * output.height) : 0;
+		expect(aspect(first?.webcamRect)).toBeCloseTo(1, 2);
+		expect(aspect(second?.webcamRect)).toBeCloseTo(16 / 9, 2);
 	});
 });

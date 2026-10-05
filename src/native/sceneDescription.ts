@@ -35,7 +35,7 @@ import {
 import type { AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { validateAudioReferences } from "@/lib/ai-edition/schema/audioOverlays";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
-import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
+import { assetCameraSource, cameraTrackSourceSize } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
 import { projectRegionsToSource, segmentRawSpanSec } from "@/lib/ai-edition/timeline/timelineMap";
 
@@ -749,11 +749,19 @@ export function buildSceneDescription(
 	 *  ignores `visible` on purpose, so the panel stays reachable to un-hide a camera. */
 	const clipHasCamera = (clip: AxcutClip) =>
 		assetCameraSource(assetById.get(clip.assetId)).path !== "";
+	/** The camera file's real size for THIS clip: stored on its track, else the size the
+	 *  preview probed, else the legacy 4:3 placeholder. The preview's hit area resolves
+	 *  the same chain (`cameraTrackSourceSize`), so the tile has one shape everywhere. */
+	const cameraSizeOf = (clip: AxcutClip) =>
+		cameraTrackSourceSize(assetById.get(clip.assetId)?.cameraTrack, webcamSourceSize) ?? {
+			width: 960,
+			height: 720,
+		};
 	const settingsByClip = visibleClips.map((clip) => {
 		assertClipLayoutSupported(document, clip.id);
 		return resolveClipEditorSettings(document, clip.id, {
 			canvasSize: outputDims,
-			webcamSize: webcamSourceSize,
+			webcamSize: cameraSizeOf(clip),
 		});
 	});
 	const layoutForClip = (clip: AxcutClip, index: number) => {
@@ -766,7 +774,7 @@ export function buildSceneDescription(
 				height: Math.round(outputDims.height * paddingFit),
 			},
 			screenSize: screenSourceSizeOf(clip, index),
-			webcamSize: preset === "no-webcam" ? null : (webcamSourceSize ?? { width: 960, height: 720 }),
+			webcamSize: preset === "no-webcam" ? null : cameraSizeOf(clip),
 			layoutPreset: preset,
 			webcamSizePreset: clipSettings.webcamSizePreset,
 			webcamPosition: preset === "picture-in-picture" ? clipSettings.webcamPosition : null,

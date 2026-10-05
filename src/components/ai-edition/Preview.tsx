@@ -30,6 +30,8 @@ interface PreviewProps {
 	playing: boolean;
 	screenFramingEnabled?: boolean;
 	readOnly?: boolean;
+	/** Lets the viewer move and resize the camera in the preview (see PreviewCanvas). */
+	cameraEditable?: boolean;
 }
 
 export function Preview({
@@ -49,6 +51,7 @@ export function Preview({
 	playing,
 	screenFramingEnabled = false,
 	readOnly = false,
+	cameraEditable = false,
 }: PreviewProps) {
 	const te = useScopedT("editor");
 	// Subscribed HERE rather than passed down from the review shell: the playhead is
@@ -127,6 +130,7 @@ export function Preview({
 					onVideoElement={onVideoElement}
 					currentTimeSec={currentTimeSec}
 					readOnly={readOnly}
+					cameraEditable={cameraEditable}
 					onVideoError={handleVideoError}
 					screenFramingEnabled={screenFramingEnabled}
 				/>

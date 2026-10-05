@@ -280,6 +280,30 @@
 	z-index: 2;
 	display: flex;
 }
+/* Review lets the viewer move and resize the camera: show the tile's edge and its
+   resize corner on hover or keyboard focus. The pixels underneath are native. */
+.webcamSlot[data-editable="true"]:hover,
+.webcamSlot[data-editable="true"]:focus-visible {
+	outline: 2px solid rgb(255 255 255 / 0.9);
+	outline-offset: -2px;
+}
+.webcamSlot[data-editable="true"]:active {
+	cursor: grabbing !important;
+}
+.webcamResizeHandle {
+	position: absolute;
+	z-index: 1;
+	width: 14px;
+	height: 14px;
+	background: rgb(255 255 255 / 0.95);
+	box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+	opacity: 0;
+	touch-action: none;
+}
+.webcamSlot[data-editable="true"]:hover .webcamResizeHandle,
+.webcamSlot[data-editable="true"]:focus-visible .webcamResizeHandle {
+	opacity: 1;
+}
 .webcamSlot .webcamVideo {
 	width: 100%;
 	height: 100%;

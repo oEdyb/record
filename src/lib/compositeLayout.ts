@@ -200,6 +200,21 @@ export function webcamSizeToFraction(percent: number): number {
 }
 
 const MARGIN_FRACTION = 0.02;
+
+/**
+ * Space between a picture-in-picture camera and the frame edge, in canvas pixels. The
+ * default bottom-right placement, an explicit position and the review drag all keep it,
+ * so a camera never touches or crosses the edge.
+ */
+export function pictureInPictureMargin(canvasSize: Size): number {
+	return Math.round(Math.min(canvasSize.width, canvasSize.height) * MARGIN_FRACTION);
+}
+
+/** Keeps `start` inside `[margin, extent - margin - size]`, or inside the extent when the margin does not fit. */
+function clampWithMargin(start: number, size: number, extent: number, margin: number): number {
+	const inset = size + 2 * margin <= extent ? margin : 0;
+	return Math.max(inset, Math.min(extent - inset - size, start));
+}
 const MAX_BORDER_RADIUS = 24;
 /**
  * Breathing room between the screen box and the camera box inside a block layout,
@@ -558,9 +573,10 @@ export function computeCompositeLayout(params: {
 		// cx/cy are the webcam center as a fraction of the canvas.
 		webcamX = Math.round(webcamPosition.cx * canvasWidth - width / 2);
 		webcamY = Math.round(webcamPosition.cy * canvasHeight - height / 2);
-		// Clamp inside canvas bounds.
-		webcamX = Math.max(0, Math.min(canvasWidth - width, webcamX));
-		webcamY = Math.max(0, Math.min(canvasHeight - height, webcamY));
+		// Keep the whole camera inside the frame with the same margin as the default
+		// placement (owner decision 2026-10-05: never touching or cut off by an edge).
+		webcamX = clampWithMargin(webcamX, width, canvasWidth, margin);
+		webcamY = clampWithMargin(webcamY, height, canvasHeight, margin);
 	} else {
 		// Default: bottom-right with margin
 		webcamX = Math.max(0, Math.round(canvasWidth - margin - width));

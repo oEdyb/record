@@ -556,6 +556,19 @@ and screen framing fail clearly until the native contract supports those values.
   in browser preference storage; retain the previous reusable color, gradient, or built-in image as
   the next-project default. Do not carry source-specific crops, clips, cuts, zoom regions, caption
   text or translation, or other timeline content into a new project.
+- **Camera in review (owner decision, 2026-10-05).** After Stop the camera is a plain
+  picture-in-picture rectangle in the camera file's own aspect, uncropped (no focal crop or
+  zoom), with square corners. New recordings start with this shape; the remembered camera
+  position, size and mirroring still carry over. In the review preview the viewer drags the
+  camera to move it and drags the corner facing the middle to resize it, aspect locked;
+  hovering shows an outline and that corner. A focused camera moves with the arrow keys; a
+  click never takes focus, so Space and the arrows stay playback keys. Moves snap to the
+  corners and edges and always keep the default margin (2% of the frame's short side) inside
+  the screen. Placement saves into the project and becomes the next recording's default.
+  Not editable with a read-only entitlement, while exporting, during playback, without a
+  camera, or in a block layout. An older project keeps its stored shape until its camera is
+  moved or resized. The camera file's size is stored on the camera track so preview and
+  One video export draw the same tile from the full-resolution camera file.
 - Let picture-in-picture camera size range from 10% to 80% of the canvas reference dimension.
   Keep the range constants shared by the slider, project validation, reusable preferences,
   preview, and export so a saved large camera cannot shrink after reopening.

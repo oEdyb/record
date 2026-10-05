@@ -351,6 +351,22 @@ export interface EditorSettingsPatch {
 	audioPeakCeilingDbtp?: number;
 }
 
+/**
+ * The camera as recorded (owner decision 2026-10-05): a picture-in-picture tile with the
+ * camera file's own aspect, no crop or zoom, square corners. New projects start with it,
+ * and moving or resizing the camera in review applies it to an older project.
+ */
+export function realCameraShape(): EditorSettingsPatch {
+	return {
+		webcamLayoutPreset: "picture-in-picture",
+		webcamMaskShape: "rectangle",
+		webcamAspectRatio: "source",
+		webcamCornerRadius: 0,
+		webcamZoom: 1,
+		webcamFocalPoint: { cx: 0.5, cy: 0.5 },
+	};
+}
+
 function nextLegacy(current: LegacyShape | null, patch: EditorSettingsPatch): LegacyShape {
 	const base: LegacyShape = current ?? {};
 	// Spread, but only over keys the patch actually set — a plain {...base,
