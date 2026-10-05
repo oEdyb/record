@@ -79,7 +79,7 @@ jobs:
       - name: Verify the exact-source release contract
         run: node scripts/check-release-workflow-contract.mjs
       - name: Reject high or critical npm advisories
-        run: npm audit --audit-level=high
+        run: node scripts/check-website-audit.mjs --desktop
       - name: Verify npm registry signatures and attestations
         run: npm audit signatures
       - name: Restore and verify the locked website graph

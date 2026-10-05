@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkWebsiteAudit } from "./check-website-audit.mjs";
+import { AUDIT_SCOPES, checkWebsiteAudit } from "./check-website-audit.mjs";
 
 const advisory = {
 	source: 42,
@@ -48,5 +48,19 @@ describe("website npm audit policy", () => {
 				exceptions: [{ ...policy.exceptions[0], package: "another-package" }],
 			}),
 		).toThrow(/changed package/);
+	});
+
+	it("keeps website and desktop exceptions apart", () => {
+		expect(() => checkWebsiteAudit(audit(), policy, AUDIT_SCOPES.desktop)).toThrow(
+			/Desktop dependency audit failed:\n- new high advisory 42/,
+		);
+		const desktopPolicy = {
+			...policy,
+			exceptions: [{ ...policy.exceptions[0], scope: "desktop-build-only" }],
+		};
+		expect(
+			checkWebsiteAudit(audit(), desktopPolicy, AUDIT_SCOPES.desktop).activeExceptions,
+		).toEqual(["42"]);
+		expect(() => checkWebsiteAudit(audit(), desktopPolicy)).toThrow(/new high advisory 42/);
 	});
 });

@@ -2,6 +2,15 @@
 	"schemaVersion": 1,
 	"exceptions": [
 		{
+			"source": "1240992",
+			"package": "braces",
+			"severity": "high",
+			"url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+			"scope": "desktop-build-only",
+			"reviewedOn": "2026-10-05",
+			"reason": "Only Tailwind CSS 3 build tooling (chokidar, micromatch, fast-glob) uses braces, on patterns from the repository's own config. No patched braces release exists. Nothing ships or runs it in the desktop application; the Tailwind 4 migration removes it."
+		},
+		{
 			"source": "1113686",
 			"package": "serialize-javascript",
 			"severity": "high",
@@ -11,22 +20,13 @@
 			"reason": "Docusaurus build tooling requires serialize-javascript and npm reports no patched compatible release. Klippt does not ship or run this package in the desktop application."
 		},
 		{
-			"source": "1138808",
-			"package": "image-size",
+			"source": "1240992",
+			"package": "braces",
 			"severity": "high",
-			"url": "https://github.com/advisories/GHSA-w3rx-r6r6-pgpr",
+			"url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
 			"scope": "website-build-only",
-			"reviewedOn": "2026-08-28",
-			"reason": "Docusaurus uses image-size while compiling trusted repository assets and npm reports no patched release. Klippt does not process uploaded images with this package."
-		},
-		{
-			"source": "1138809",
-			"package": "image-size",
-			"severity": "high",
-			"url": "https://github.com/advisories/GHSA-5p2g-fcmc-qvqq",
-			"scope": "website-build-only",
-			"reviewedOn": "2026-08-28",
-			"reason": "Docusaurus uses image-size while compiling trusted repository assets and npm reports no patched release. Klippt does not process uploaded images with this package."
+			"reviewedOn": "2026-10-05",
+			"reason": "Docusaurus build tooling uses braces through file-watching and glob packages on the repository's own patterns. No patched braces release exists, and the published website does not run it."
 		}
 	]
 }
