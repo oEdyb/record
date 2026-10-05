@@ -193,44 +193,6 @@ beforeEach(() => {
 });
 
 describe("runExport", () => {
-	it("loads original media authority first and refuses a derived snapshot that changed after main verification", async () => {
-		nativeMocks.loadProjectFileFromPath.mockResolvedValue({
-			success: true,
-			project: currentMultiAssetProject(),
-		});
-		vi.stubGlobal("crypto", { subtle: { digest: vi.fn(async () => new Uint8Array(32).buffer) } });
-		try {
-			await expect(
-				runExport({
-					kind: "export",
-					projectPath: "/temporary/derived.klippt",
-					outPath: "/temporary/preview.mp4",
-					format: "mp4",
-					quality: "source",
-					gifFrameRate: null,
-					gifSizePreset: null,
-					autoZoom: false,
-					audioPath: null,
-					audioMode: "mix",
-					audioOffsetSec: 0,
-					previewReference: {
-						projectPath: "/original/source.klippt",
-						snapshot: "a".repeat(64),
-						maxDimension: 1280,
-						verifiedDocumentHash: "b".repeat(64),
-					},
-				}),
-			).rejects.toThrow("changed after verification");
-			expect(nativeMocks.loadProjectFileFromPath.mock.calls.map((call) => call[0])).toEqual([
-				"/original/source.klippt",
-				"/temporary/derived.klippt",
-			]);
-			expect(nativeMocks.exportMultiNative).not.toHaveBeenCalled();
-		} finally {
-			vi.unstubAllGlobals();
-		}
-	});
-
 	it("exports a current two-asset edit with reorder, trim, crop, speed, zoom, and camera data", async () => {
 		nativeMocks.loadProjectFileFromPath.mockResolvedValue({
 			success: true,

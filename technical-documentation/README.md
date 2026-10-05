@@ -27,7 +27,7 @@ who reads and writes the project document.
 | [recording.md](architecture/recording.md) | Capture on Windows, macOS and Linux: the HUD, the native helpers, what lands on disk |
 | [cursor.md](architecture/cursor.md) | Cursor capture, telemetry, rendering and auto-follow |
 | [transcription-and-captions.md](architecture/transcription-and-captions.md) | On-device speech to text, and the caption layer derived from it |
-| [ai-agent.md](architecture/ai-agent.md) | The optional agent: tool loop, checkpoints, context management |
+| [ai-agent.md](architecture/ai-agent.md) | Archived: the removed agent, its CLI, and what remains |
 | [llm-providers.md](architecture/llm-providers.md) | Provider registry, auth modes, credential storage |
 | [native-bridge.md](architecture/native-bridge.md) | The renderer ↔ main-process contract every native capability goes through |
 | [decisions.md](architecture/decisions.md) | **The decision ledger** — what is settled, what was rejected and why |

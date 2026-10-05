@@ -108,7 +108,7 @@ so the unmastered preview can differ in loudness. Report missing audio visibly.
 Image annotations use the shared entrance-animation field in preview and native export. Agent
 imports validate local image decoding and audio duration before preparing the candidate. Video
 overlays and general timed layout keyframes remain planned, not implemented. See
-[agent CLI](agent-cli.md) for the experimental capability and limit contract.
+[agent CLI](agent-cli.md) (archived on 2026-10-05) for the former capability and limit contract.
 
 ## Product language — non-negotiable
 
@@ -789,7 +789,7 @@ second timeline model.
 - Import recordings without running automatic direction or microphone analysis. Preserve source
   observations so **Apply automatic edits** can generate editable regions later. Changing a tuning
   control before the first application only saves its policy. Once automatic regions exist, live
-  tuning can regenerate them. The agent CLI remains available for explicit editing operations.
+  tuning can regenerate them. The agent CLI was archived on 2026-10-05.
 
 - The Automatic pane groups generated regions for review. Show the saved trigger reason and
   edited-playback time, with jump, Adjust, Keep and Remove actions. Older projects without saved

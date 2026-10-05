@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { prepareAgentEditPlan } from "../../../../electron/ai-edition/agentEditPlan";
-import { buildPlacement, placementIntentSchema } from "../../../../electron/cli/agentPlacement";
 import {
 	buildSceneDescription,
 	projectVideoOverlays,
@@ -14,6 +12,65 @@ import {
 	playbackTimeToRawTime,
 	rawTimeToPlaybackTime,
 } from "./timelineMap";
+
+type Fixture = ReturnType<typeof editFixture>;
+type Annotation = Fixture["annotations"][number];
+type VideoOverlay = NonNullable<Fixture["videoOverlays"]>[number];
+
+// The shapes the archived `klippt agent` placement wrote for these intents.
+function withText(
+	document: Fixture,
+	anchor: Annotation["anchor"],
+	content: string,
+	range: [number, number],
+	motion: "fade" | "rise" = "fade",
+): Fixture {
+	const annotation = {
+		anchor,
+		motion,
+		id: "ann_fixture",
+		startMs: range[0] * 1000,
+		endMs: range[1] * 1000,
+		type: "text",
+		content,
+		position: { x: 26.796875, y: 4 },
+		size: { width: 46.40625, height: 16.5 },
+		style: {
+			preset: "card",
+			color: "#ffffff",
+			backgroundColor: "#171717",
+			fontSize: 81,
+			fontFamily: "Inter",
+			fontWeight: "bold",
+			fontStyle: "normal",
+			textDecoration: "none",
+			textAlign: "center",
+			textAnimation: motion,
+		},
+		zIndex: 1,
+	} as Annotation;
+	return { ...document, annotations: [...document.annotations, annotation] };
+}
+
+function withBroll(
+	document: Fixture,
+	anchor: VideoOverlay["anchor"],
+	range: [number, number],
+): Fixture {
+	const overlay = {
+		anchor,
+		motion: "cut",
+		id: "vo_fixture",
+		startMs: range[0] * 1000,
+		endMs: range[1] * 1000,
+		assetId: "asset",
+		sourceOffsetSec: 0,
+		fit: "cover",
+		placement: null,
+		opacity: 1,
+	} as VideoOverlay;
+	return { ...document, videoOverlays: [...(document.videoOverlays ?? []), overlay] };
+}
 
 describe("independent overlay anchoring", () => {
 	it("round trips edited/raw times through a trim, with seam edge affinity", () => {
@@ -29,19 +86,9 @@ describe("independent overlay anchoring", () => {
 			expect(rawTimeToPlaybackTime(playbackTimeToRawTime(at, projection), projection)).toBe(at);
 	});
 	it("keeps edited position and duration after trims and source replacement", () => {
-		const document = editFixture();
-		const built = buildPlacement(
-			document,
-			placementIntentSchema.parse({
-				kind: "text",
-				action: "add",
-				project_id: "project",
-				from: 6,
-				to: 9,
-				text: "Kept",
-			}),
+		const candidate = structuredClone(
+			withText(editFixture(), { kind: "edited", fromSec: 6, toSec: 9 }, "Kept", [6, 9]),
 		);
-		const candidate = structuredClone(prepareAgentEditPlan(document, built.operations).candidate);
 		candidate.timeline.trimRanges = [
 			{
 				id: "cut",
@@ -70,19 +117,8 @@ describe("independent overlay anchoring", () => {
 		expect(candidate.annotations).toHaveLength(1);
 	});
 	it("preserves overlay identity across clip split and reorder", () => {
-		const built = buildPlacement(
-			editFixture(),
-			placementIntentSchema.parse({
-				kind: "text",
-				action: "add",
-				project_id: "project",
-				from: 4,
-				to: 9,
-				text: "Stable",
-			}),
-		);
 		const candidate = structuredClone(
-			prepareAgentEditPlan(editFixture(), built.operations).candidate,
+			withText(editFixture(), { kind: "edited", fromSec: 4, toSec: 9 }, "Stable", [4, 9]),
 		);
 		const split = splitClipAt(candidate, "clip", 6);
 		const moved = moveClip(split, split.timeline.clips[1].id, 0);
@@ -111,19 +147,13 @@ describe("independent overlay anchoring", () => {
 		expect(resolveOverlaySpan(document, resolveVisibleClips(document), anchor)).toBeNull();
 	});
 	it("advances B-roll source across kept time, excluding removed footage", () => {
-		const document = editFixture({ trims: [[4, 8]] });
-		const built = buildPlacement(
-			document,
-			placementIntentSchema.parse({
-				kind: "broll",
-				action: "add",
-				project_id: "project",
-				from: 2,
-				to: 7,
-				file: "/take.mp4",
-			}),
+		const candidate = structuredClone(
+			withBroll(
+				editFixture({ trims: [[4, 8]] }),
+				{ kind: "edited", fromSec: 2, toSec: 7 },
+				[2, 11],
+			),
 		);
-		const candidate = structuredClone(prepareAgentEditPlan(document, built.operations).candidate);
 		const overlays = projectVideoOverlays(candidate, resolveVisibleClips(candidate));
 		expect(overlays).toHaveLength(2);
 		expect(overlays.map((o) => o.sourceOffsetSec)).toEqual([0, 2]);
@@ -133,17 +163,20 @@ describe("independent overlay anchoring", () => {
 
 it("follows anchored words onto the right half of a split", () => {
 	const document = editFixture({ words: [word("keep", 8, 8.5), word("this", 8.5, 9)] });
-	const built = buildPlacement(
+	const candidate = withText(
 		document,
-		placementIntentSchema.parse({
-			kind: "text",
-			action: "add",
-			project_id: "project",
-			words: "keep this",
-			text: "Kept",
-		}),
+		{
+			kind: "words",
+			clipId: "clip",
+			assetId: "asset",
+			text: "keep this",
+			sourceStartSec: 8,
+			sourceEndSec: 9,
+			minimumDurationSec: 1.5,
+		},
+		"Kept",
+		[8, 9.5],
 	);
-	const candidate = prepareAgentEditPlan(document, built.operations).candidate;
 	const split = splitClipAt(candidate, "clip", 5);
 	expect(buildSceneDescription(split).annotations[0]).toMatchObject({
 		startSec: 8,
@@ -152,19 +185,13 @@ it("follows anchored words onto the right half of a split", () => {
 	});
 });
 it("keeps the text animation clock across clip boundaries", () => {
-	const built = buildPlacement(
+	const candidate = withText(
 		editFixture(),
-		placementIntentSchema.parse({
-			kind: "text",
-			action: "add",
-			project_id: "project",
-			from: 4,
-			to: 9,
-			text: "Stable",
-			motion: "rise",
-		}),
+		{ kind: "edited", fromSec: 4, toSec: 9 },
+		"Stable",
+		[4, 9],
+		"rise",
 	);
-	const candidate = prepareAgentEditPlan(editFixture(), built.operations).candidate;
 	const split = splitClipAt(candidate, "clip", 6);
 	const annotations = buildSceneDescription(split).annotations;
 	expect(annotations).toHaveLength(2);

@@ -39,7 +39,6 @@ import { getSttManager, registerSttIpc } from "../stt";
 import { ASSET_BASE_DIR, ASSET_BASE_URL_ARG } from "../windows";
 import { CLI_USAGE, type CliCommand } from "./args";
 import { finalizeCliResult } from "./cliCompletion";
-import { flushCliOutput } from "./cliOutputFlush";
 import { runInfoCommand, runPackCommand } from "./projectCommands";
 import { createCliSttSourceResolver } from "./sttSourceApproval";
 
@@ -245,8 +244,6 @@ function setupExportCancelSignals(cancel: (reason: string) => void): void {
 
 /** Both file-only commands write through the same EPIPE-safe stdout writer. */
 const writeStdout = (text: string) => safeWrite(process.stdout, text);
-/** Agent progress/planned envelopes and diagnostics; never mixed into stdout. */
-const writeStderr = (text: string) => safeWrite(process.stderr, text);
 
 export function runCli(command: CliCommand): void {
 	if (command.kind === "help") {
@@ -259,40 +256,6 @@ export function runCli(command: CliCommand): void {
 		app.exit(2);
 		return;
 	}
-	if (command.kind === "agent") {
-		for (const level of ["log", "info", "debug"] as const) {
-			console[level] = console.error.bind(console);
-		}
-		process.stdout.on("error", () => {
-			// A closed consumer pipe must not open Electron's crash dialog.
-		});
-		process.stderr.on("error", () => {
-			// Diagnostics may also be connected to a closed pipe.
-		});
-		void import("./agentMain")
-			.then(({ runAgentCommand }) =>
-				runAgentCommand(command, writeStdout, {
-					err: writeStderr,
-					brokerSocketPath: path.join(app.getPath("userData"), "agent-cli", "agent.sock"),
-					projectsDirectory: path.join(app.getPath("userData"), "projects"),
-					previewLaunch: {
-						executable: process.execPath,
-						args: app.isPackaged ? [] : [app.getAppPath()],
-					},
-				}),
-			)
-			.then(async (code) => {
-				await flushCliOutput(process.stdout, process.stderr);
-				app.exit(code);
-			})
-			.catch(async (error: unknown) => {
-				safeWrite(process.stderr, `${String(error)}\n`);
-				await flushCliOutput(process.stdout, process.stderr);
-				app.exit(7);
-			});
-		return;
-	}
-
 	const output = createOutput(command.json === true);
 	const exitAfterSpeechShutdown = (code: number) => {
 		if (command.kind !== "captions") {
@@ -445,14 +408,6 @@ export function runCli(command: CliCommand): void {
 				if (micStatus !== "granted") {
 					await systemPreferences.askForMediaAccess("microphone");
 				}
-			}
-
-			if (command.kind === "export" && command.previewReference) {
-				const { verifyAgentPreviewReference } = await import("./agentPreview");
-				command.previewReference.verifiedDocumentHash = await verifyAgentPreviewReference(
-					command.projectPath,
-					command.previewReference,
-				);
 			}
 
 			let cliWindow: BrowserWindow | null = null;

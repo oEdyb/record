@@ -138,11 +138,3 @@ describe("finalizeCliResult", () => {
 		expect(result.error).toContain("journal busy");
 	});
 });
-
-it("completes review-lane commands from the installed command registry", async () => {
-	const { completeAgentCommands } = await import("./cliCompletion");
-	expect(await completeAgentCommands()).toEqual(
-		expect.arrayContaining(["plan", "staged", "accept", "reject"]),
-	);
-	expect(await completeAgentCommands("stag")).toEqual(["staged"]);
-});

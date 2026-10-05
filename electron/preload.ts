@@ -1,10 +1,4 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import {
-	AGENT_SESSION_REPLY,
-	AGENT_SESSION_REQUEST,
-	type AgentSessionMessage,
-	type AgentSessionReply,
-} from "../src/lib/ai-edition/agent/sessionProtocol";
 import type { EntitlementSnapshot } from "../src/lib/entitlements/contracts";
 import type { NativeLinuxRecordingRequest } from "../src/lib/nativeLinuxRecording";
 import type { NativeMacRecordingRequest } from "../src/lib/nativeMacRecording";
@@ -46,12 +40,6 @@ ipcRenderer.on("camera-preview-port", (event, payload: { role: "producer" | "con
 });
 
 contextBridge.exposeInMainWorld("electronAPI", {
-	onAgentSessionRequest: (callback: (message: AgentSessionMessage) => void) => {
-		const listener = (_event: unknown, message: AgentSessionMessage) => callback(message);
-		ipcRenderer.on(AGENT_SESSION_REQUEST, listener);
-		return () => ipcRenderer.removeListener(AGENT_SESSION_REQUEST, listener);
-	},
-	replyAgentSession: (reply: AgentSessionReply) => ipcRenderer.send(AGENT_SESSION_REPLY, reply),
 	assetBaseUrl,
 	getEntitlement: () => ipcRenderer.invoke("entitlement:get") as Promise<EntitlementSnapshot>,
 	activateEntitlement: (licenseKey: string) =>

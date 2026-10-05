@@ -10,14 +10,6 @@ export interface CliExportRequest {
 	kind: "export";
 	/** Absolute path to a .klippt project file (legacy project files are readable). */
 	projectPath: string;
-	/** Internal derived-preview authority, verified in main before renderer startup. */
-	previewReference?: {
-		projectPath: string;
-		snapshot: string;
-		maxDimension: number;
-		time?: number;
-		verifiedDocumentHash?: string;
-	};
 	/** Absolute output path; null = derive from projectPath + format. */
 	outPath: string | null;
 	/** null = use the format stored in the project. */
@@ -98,8 +90,6 @@ export interface CliProgressEvent {
 
 export interface CliDoneResult {
 	success: boolean;
-	/** Internal bounded still-frame payload; main validates and removes it before stdout. */
-	previewPng?: string;
 	error?: string;
 	exportPhase?: import("@/native/contracts").ExportTransactionPhase;
 	exportCode?: string;

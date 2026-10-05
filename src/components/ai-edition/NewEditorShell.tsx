@@ -14,7 +14,6 @@ import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
 import { useReviewWindowCompact } from "@/hooks/useReviewWindowCompact";
 import { applyTheme } from "@/hooks/useTheme";
-import { registerAgentTransport } from "@/lib/ai-edition/agent/agentTransport";
 import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
 import { applyPauseSuggestions } from "@/lib/ai-edition/document/pause-edits";
 import { recordingInterruptions } from "@/lib/ai-edition/document/recordingInterruptions";
@@ -44,7 +43,6 @@ import {
 	buildTimelinePlaybackProjection,
 	playbackTimeToRawTime,
 	rawTimeToPlaybackTime,
-	resolveNativePosition,
 } from "@/lib/ai-edition/timeline/timelineMap";
 import { transcriptRelevantAssetIds } from "@/lib/ai-edition/transcription/status";
 import type { TranscriptLanguage } from "@/lib/captioning/transcriptLanguages";
@@ -56,9 +54,6 @@ import { matchesShortcut } from "@/lib/shortcuts";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
-import { getCurrentNativeViewId } from "@/native/nativeCompositorStore";
-import { getPreviewFrameEvidence, waitForPreviewSettledFrame } from "@/native/previewSettledFrames";
-import { resolveVisibleClips } from "@/native/sceneDescription";
 import { ExportDialog } from "./ExportDialog";
 import { prepareLegacyProjectForOpen } from "./legacyProjectOpen";
 import {
@@ -113,17 +108,6 @@ interface SeekTarget {
 }
 
 export function NewEditorShell() {
-	useEffect(() => {
-		let dispose: (() => void) | undefined;
-		let active = true;
-		void import("@/lib/ai-edition/agent/editorSession").then(({ installAgentEditorSession }) => {
-			if (active) dispose = installAgentEditorSession();
-		});
-		return () => {
-			active = false;
-			dispose?.();
-		};
-	}, []);
 	const te = useScopedT("editor");
 	const document = useProjectStore((s) => s.document);
 	const projectId = useProjectStore((s) => s.projectId);
@@ -681,104 +665,6 @@ export function NewEditorShell() {
 		},
 		[setCurrentTime],
 	);
-
-	// The agent bridge drives playback through the same paths the transport bar and
-	// the timeline use, so a scripted run reproduces what a user does.
-	useEffect(() => {
-		return registerAgentTransport({
-			seek: handleSeek,
-			click: (testId, fraction) => {
-				const target = window.document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
-				const canvas =
-					window.document.querySelector<HTMLElement>('[data-testid="timeline-canvas"]') ?? target;
-				if (!target || !canvas) throw new Error(`CLICK_TARGET_MISSING: ${testId}`);
-				const canvasRect = canvas.getBoundingClientRect();
-				const targetRect = target.getBoundingClientRect();
-				const init: PointerEventInit = {
-					bubbles: true,
-					cancelable: true,
-					clientX: canvasRect.left + fraction * canvasRect.width,
-					clientY: targetRect.top + targetRect.height / 2,
-					button: 0,
-					buttons: 1,
-					pointerId: 1,
-					pointerType: "mouse",
-					isPrimary: true,
-				};
-				target.dispatchEvent(new PointerEvent("pointerdown", init));
-				window.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
-			},
-			wheel: (testId, fraction, deltaX, deltaY, ctrl) => {
-				const target = window.document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
-				if (!target) throw new Error(`WHEEL_TARGET_MISSING: ${testId}`);
-				const rect = target.getBoundingClientRect();
-				target.dispatchEvent(
-					new WheelEvent("wheel", {
-						bubbles: true,
-						cancelable: true,
-						clientX: rect.left + fraction * rect.width,
-						clientY: rect.top + rect.height / 2,
-						deltaX,
-						deltaY,
-						ctrlKey: ctrl,
-					}),
-				);
-			},
-			frame: () => {
-				const source = window.document.querySelector<HTMLCanvasElement>(
-					'[data-testid="native-compositor-mount"]',
-				);
-				if (!source || source.width === 0) return null;
-				const small = window.document.createElement("canvas");
-				small.width = 192;
-				small.height = Math.max(1, Math.round((192 * source.height) / source.width));
-				small.getContext("2d")?.drawImage(source, 0, 0, small.width, small.height);
-				return small.toDataURL("image/jpeg", 0.5);
-			},
-			frameEvidence: getPreviewFrameEvidence,
-			awaitFrameSettled: (budgetMs) => {
-				const state = useProjectStore.getState();
-				const viewId = getCurrentNativeViewId();
-				if (!state.document || viewId === null) return Promise.resolve(false);
-				const position = resolveNativePosition(
-					state.currentTimeSec,
-					resolveVisibleClips(state.document),
-					state.document.timeline.clips,
-				);
-				return position
-					? waitForPreviewSettledFrame(budgetMs, {
-							viewId,
-							sceneIdentity: state.document,
-							playing: state.playing,
-							clipIndex: position.clipIndex,
-							sourceTimeSec: position.sourceTimeSec,
-						})
-					: Promise.resolve(false);
-			},
-			play: () => {
-				void videoElement?.play().catch(() => {
-					// swallow: rejection just means playback never started
-				});
-			},
-			pause: () => videoElement?.pause(),
-			snapshot: () => {
-				const state = useProjectStore.getState();
-				return {
-					currentTimeSec: state.currentTimeSec,
-					playing: state.playing,
-					videoTimeSec: videoElement?.currentTime ?? null,
-					videoPaused: videoElement?.paused ?? null,
-					videoConnected: videoElement?.isConnected ?? null,
-					videos: Array.from(window.document.querySelectorAll("video")).map((video) => ({
-						src: video.currentSrc.split("/").pop() ?? "",
-						currentTimeSec: Number(video.currentTime.toFixed(3)),
-						paused: video.paused,
-						readyState: video.readyState,
-					})),
-				};
-			},
-		});
-	}, [handleSeek, videoElement]);
 
 	const handleTimeChange = useCallback(
 		(timeSec: number) => {

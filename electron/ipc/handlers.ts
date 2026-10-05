@@ -66,7 +66,6 @@ import type {
 	ProjectPathResult,
 } from "../../src/native/contracts";
 import { DocumentService } from "../ai-edition/document-service";
-import { parseCliArgs } from "../cli/args";
 import { createDiagnosticReport, type DiagnosticRequest } from "../diagnostics/diagnostic-report";
 import { createElectronWorkloadResourceSampler } from "../diagnostics/electronWorkloadResources";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
@@ -4838,38 +4837,6 @@ export function registerIpcHandlers(
 				cleanVoiceServiceReady.then((service) => service?.syncDocument(document)),
 		},
 	);
-	// Development opt-in while the agent editing contract completes its release gates.
-	// CLI media workers must never become another editor broker owner.
-	if (
-		process.env.OPENSCREEN_AGENT_CLI === "1" &&
-		!parseCliArgs(process.argv, app.isPackaged ? 1 : 2)
-	) {
-		void import("../cli/editorAgentBroker")
-			.then(({ startEditorAgentBroker }) =>
-				startEditorAgentBroker({
-					directory: path.join(app.getPath("userData"), "agent-cli"),
-					documents: aiEditionDocuments,
-					approveSelectedMedia: approveReadableRendererMediaPath,
-					probeVideoMetadata: async (file) => {
-						const { inspectSourceAudioLayout } = await import("../stt/sourceAudio");
-						return inspectSourceAudioLayout(file);
-					},
-					probeVideoDuration: async (file) => {
-						const { inspectSourceAudioLayout } = await import("../stt/sourceAudio");
-						return (await inspectSourceAudioLayout(file)).durationSec;
-					},
-					openEditorWindow: createEditorWindow,
-					ipcMain: electronIpcMain,
-				}),
-			)
-			.then((broker) => {
-				app.once("before-quit", () => {
-					void broker.close();
-				});
-			})
-			.catch((error: unknown) => console.error("[agent-cli] Broker unavailable:", error));
-	}
-
 	registerNativeBridgeHandlers(
 		{
 			workloadTelemetry,

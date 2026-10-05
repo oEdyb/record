@@ -23,13 +23,9 @@ Use [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md) for delivery order and release gates. T
 
 ## Research before implementation
 
-For project inspection, editing, review, playback, or export, load the canonical
-`klippt-edit` skill at `/Users/olle/dev/skills/skills/klippt-edit/SKILL.md`, then run
-`klippt agent skill` for instructions shipped with the installed CLI. Use the CLI
-as the default interface for every supported editing action. Query exact command
-schemas instead of relying on remembered flags. Report unsupported capabilities;
-do not bypass the CLI with direct project JSON edits. Software development still
-follows the development skill.
+The editor and the `klippt agent` editing CLI are archived at tag `archive/pre-cleanup-2026-10-05`
+and are not available on this branch. Restore them from the tag before relying on them. Software
+development follows the development skill.
 
 Before each feature slice, inspect at least one current primary source that can falsify the planned
 implementation. Prefer official platform documentation, the exact dependency's source or API

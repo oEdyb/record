@@ -27,26 +27,11 @@ export async function finalizeCliResult(
 	result: CliDoneResult,
 	dependencies: CliCompletionDependencies,
 ): Promise<CliDoneResult> {
-	if (!result.success) {
-		const failure = { ...result };
-		delete failure.previewPng;
-		return failure;
-	}
+	if (!result.success) return { ...result };
 	const writeProjectFile = dependencies.writeProjectFile ?? writeProjectFileDurably;
 	const finalized = { ...result };
-	delete finalized.previewPng;
 
 	try {
-		if (command.kind === "export" && command.previewReference?.time !== undefined) {
-			const { publishAgentPreviewFrame } = await import("./agentPreview");
-			const dimensions = await publishAgentPreviewFrame(
-				command.projectPath,
-				command.previewReference,
-				command.outPath,
-				result.previewPng,
-			);
-			Object.assign(finalized, dimensions, { outputPath: command.outPath, format: "png" });
-		}
 		if (command.kind === "record" && command.projectOut) {
 			if (result.projectData === undefined) {
 				throw new Error("recording finished without the requested project data");
@@ -73,9 +58,4 @@ export async function finalizeCliResult(
 			}`,
 		};
 	}
-}
-
-export async function completeAgentCommands(prefix = ""): Promise<string[]> {
-	const { agentCommands } = await import("./agentContracts");
-	return Object.keys(agentCommands).filter((command) => command.startsWith(prefix));
 }

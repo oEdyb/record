@@ -24,14 +24,6 @@ declare namespace NodeJS {
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
 	electronAPI: {
-		onAgentSessionRequest?: (
-			callback: (
-				message: import("../src/lib/ai-edition/agent/sessionProtocol").AgentSessionMessage,
-			) => void,
-		) => () => void;
-		replyAgentSession?: (
-			reply: import("../src/lib/ai-edition/agent/sessionProtocol").AgentSessionReply,
-		) => void;
 		getEntitlement: () => Promise<import("../src/lib/entitlements/contracts").EntitlementSnapshot>;
 		activateEntitlement: (
 			licenseKey: string,
