@@ -169,23 +169,6 @@ export function SourcePicker({
 			? `h-screen flex flex-col ${styles.glassContainer}`
 			: `flex flex-col ${styles.glassContainer} ${styles.panel} ${className}`;
 
-	if (loading) {
-		return (
-			<div
-				ref={panelRef}
-				data-hud-interactive="true"
-				data-testid={panelTestId}
-				data-closing={closing}
-				className={`${shellClass} items-center justify-center ${styles.stateShell}`}
-			>
-				<div className="text-center">
-					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[var(--accent)] mx-auto mb-2" />
-					<p className="text-xs text-[#828c99]">{t("sourceSelector.loading")}</p>
-				</div>
-			</div>
-		);
-	}
-
 	if (hasNoSources) {
 		return (
 			<div
@@ -265,6 +248,10 @@ export function SourcePicker({
 			data-testid={panelTestId}
 			data-closing={closing}
 			className={shellClass}
+			data-rows={Math.min(
+				3,
+				Math.ceil(Math.max(1, screenSources.length, windowSources.length) / 2),
+			)}
 		>
 			<div className={styles.header}>
 				<div
@@ -306,8 +293,24 @@ export function SourcePicker({
 					<X size={16} aria-hidden />
 				</button>
 			</div>
-			<div className={`${styles.grid} ${styles.sourceGridScroll}`} role="tabpanel">
-				{visibleSources.map(renderSourceCard)}
+			<div
+				className={`${styles.grid} ${styles.sourceGridScroll}`}
+				role="tabpanel"
+				aria-busy={loading}
+			>
+				{loading ? (
+					<>
+						<span className="sr-only">{t("sourceSelector.loading")}</span>
+						{[0, 1, 2, 3].map((slot) => (
+							<div key={slot} className={styles.sourceCard} data-placeholder aria-hidden>
+								<div className={styles.thumb} />
+								<div className={styles.caption} />
+							</div>
+						))}
+					</>
+				) : (
+					visibleSources.map(renderSourceCard)
+				)}
 			</div>
 		</div>
 	);

@@ -193,8 +193,12 @@ export function LaunchWindow() {
 		recording && presentation.paused && !saving && !clipFinalizing && keptClipCount > 0;
 	const peekOpen = isPeekOpen && canPeek;
 	const isPopoverOpen = isDeviceSettingsOpen || peekOpen || isSourcePanelOpen;
-	const setupPresence = usePresence(isDeviceSettingsOpen, 120);
-	const sourcePresence = usePresence(isSourcePanelOpen, 120);
+	const setupPresence = usePresence(isDeviceSettingsOpen, 150);
+	const sourcePresence = usePresence(isSourcePanelOpen, 150);
+	const removedClipPresence = usePresence(removedClipFeedback !== null, 120);
+	const lastRemovedClipRef = useRef(removedClipFeedback);
+	if (removedClipFeedback) lastRemovedClipRef.current = removedClipFeedback;
+	const shownRemovedClip = removedClipPresence.present ? lastRemovedClipRef.current : null;
 	// Replay opened with the Up key appears without animation.
 	const [peekInstant, setPeekInstant] = useState(false);
 	// The same controls stay in the same places while recording. Active capture
@@ -1538,7 +1542,7 @@ export function LaunchWindow() {
 					sourcePresence.present ||
 					canPeek ||
 					hasNotices ||
-					removedClipFeedback) && (
+					shownRemovedClip) && (
 					// column-reverse: first child sits closest to the bar.
 					<div className={styles.hudAbove}>
 						{setupPresence.present && (
@@ -1595,23 +1599,24 @@ export function LaunchWindow() {
 							/>
 						)}
 
-						{(removedClipFeedback || hasNotices) && (
+						{(shownRemovedClip || hasNotices) && (
 							<div
 								ref={setHudNoticesEl}
 								data-testid="hud-notice-column"
 								className={styles.hudNoticeColumn}
 							>
-								{removedClipFeedback && (
+								{shownRemovedClip && (
 									<div
 										data-hud-interactive="true"
 										data-testid="clip-removal-feedback"
+										data-closing={removedClipPresence.closing}
 										className={`${styles.clipUndoNotice} ${styles.electronNoDrag}`}
 										onPointerEnter={enableHudMouseEvents}
 										role="status"
 									>
 										<span>{t("recording.clipRemoved")}</span>
 										<span className={styles.clipUndoDuration}>
-											{formatClipDuration(removedClipFeedback.durationMs)}
+											{formatClipDuration(shownRemovedClip.durationMs)}
 										</span>
 										<button
 											type="button"

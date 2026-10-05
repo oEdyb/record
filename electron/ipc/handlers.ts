@@ -2125,20 +2125,36 @@ export function registerIpcHandlers(
 		await clipboard.writeText(text);
 	});
 
-	ipcMain.handle("get-sources", async (_, opts) => {
+	const dataUrl = (image: Electron.NativeImage, jpeg: boolean) =>
+		jpeg ? `data:image/jpeg;base64,${image.toJPEG(82).toString("base64")}` : image.toDataURL();
+
+	const readSources = async (opts: Electron.SourcesOptions) => {
 		const sources = await desktopCapturer.getSources(opts);
 		lastEnumeratedSources = new Map(sources.map((source) => [source.id, source]));
 		const processed = sources.map((source) => ({
 			id: source.id,
 			name: source.name,
 			display_id: source.display_id,
-			thumbnail: source.thumbnail.isEmpty() ? null : source.thumbnail.toDataURL(),
-			appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
+			thumbnail: source.thumbnail.isEmpty() ? null : dataUrl(source.thumbnail, true),
+			appIcon: source.appIcon && !source.appIcon.isEmpty() ? dataUrl(source.appIcon, false) : null,
 		}));
 		// Only a picker-sized read is worth reopening with; permission probes ask for 1x1.
 		if ((opts?.thumbnailSize?.width ?? 0) >= 160) lastPickerSources = processed;
 		return processed;
-	});
+	};
+
+	ipcMain.handle("get-sources", (_, opts) => readSources(opts));
+
+	// With access already granted, the first picker open finds a list waiting.
+	setTimeout(() => {
+		if (process.platform !== "darwin" || lastPickerSources) return;
+		if (systemPreferences.getMediaAccessStatus("screen") !== "granted") return;
+		void readSources({
+			types: ["screen", "window"],
+			thumbnailSize: { width: 320, height: 180 },
+			fetchWindowIcons: true,
+		}).catch(() => undefined);
+	}, 1500);
 
 	// The picker opens on the last list at once and refreshes it in the background.
 	ipcMain.handle("get-cached-sources", () => lastPickerSources);

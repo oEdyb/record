@@ -129,7 +129,7 @@
 .hudSourceChipChevron {
 	flex: none;
 	color: rgba(255, 255, 255, 0.4);
-	transition: transform 220ms cubic-bezier(0.34, 1.3, 0.64, 1);
+	transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .hudSourceChip[aria-expanded="true"] {
@@ -326,15 +326,15 @@
 .hudPanel {
 	transform-origin: 50% 100%;
 	transition:
-		opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
-		transform 240ms cubic-bezier(0.23, 1, 0.32, 1),
-		display 180ms allow-discrete;
+		opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
+		transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
+		display 200ms allow-discrete;
 }
 
 @starting-style {
 	.hudPanel {
 		opacity: 0;
-		transform: translateY(8px) scale(0.96);
+		transform: translateY(6px) scale(0.97);
 	}
 }
 
@@ -456,7 +456,6 @@
 		inset 0 1px 0 rgba(255, 255, 255, 0.05),
 		0 24px 48px -16px rgba(0, 0, 0, 0.7),
 		0 4px 12px rgba(0, 0, 0, 0.4);
-	backdrop-filter: blur(24px) saturate(150%);
 }
 
 .hudModalHeader {
@@ -560,7 +559,7 @@
 	border-radius: 14px;
 	background: rgba(255, 255, 255, 0.12);
 	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-	transition: transform 320ms cubic-bezier(0.34, 1.3, 0.64, 1);
+	transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .setupSources[data-source="window"] .setupSourceThumb {
@@ -708,7 +707,7 @@
 .setupTileChevron {
 	flex: none;
 	color: rgba(255, 255, 255, 0.4);
-	transition: transform 220ms cubic-bezier(0.34, 1.3, 0.64, 1);
+	transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .setupTile[data-expanded="true"] .setupTileChevron {
@@ -733,7 +732,7 @@
 	flex: none;
 	flex-direction: column;
 	gap: 2px;
-	animation: hud-content-enter 140ms cubic-bezier(0.2, 0, 0, 1) both;
+	animation: hud-content-enter 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
 .deviceOption {
@@ -915,7 +914,7 @@
 	color: rgba(255, 255, 255, 0.82);
 	font-size: 11px;
 	font-weight: 560;
-	animation: clip-undo-enter 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+	animation: clip-undo-enter 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
 .clipUndoDuration {
@@ -947,6 +946,16 @@
 .clipUndoButton:focus-visible {
 	outline: none;
 	box-shadow: 0 0 0 2px rgba(142, 165, 191, 0.72);
+}
+
+.clipUndoNotice[data-closing="true"] {
+	animation: none;
+	opacity: 0;
+	transform: translateY(3px) scale(0.98);
+	pointer-events: none;
+	transition:
+		opacity 120ms ease-out,
+		transform 120ms ease-out;
 }
 
 @keyframes clip-undo-enter {
@@ -1042,7 +1051,6 @@
 		inset 0 1px 0 rgba(255, 255, 255, 0.05),
 		0 24px 48px -16px rgba(0, 0, 0, 0.7),
 		0 4px 12px rgba(0, 0, 0, 0.4);
-	backdrop-filter: blur(24px) saturate(150%);
 }
 
 .clipPeekStage {
@@ -1067,12 +1075,11 @@
 	left: 8px;
 	padding: 3px 8px;
 	border-radius: 999px;
-	background: rgba(0, 0, 0, 0.55);
+	background: rgba(0, 0, 0, 0.7);
 	color: #e8ebef;
 	font-size: 11px;
 	font-weight: 500;
 	pointer-events: none;
-	backdrop-filter: blur(8px);
 }
 
 .clipPeekMute {
@@ -1086,10 +1093,9 @@
 	justify-content: center;
 	border: 0;
 	border-radius: 14px;
-	background: rgba(0, 0, 0, 0.55);
+	background: rgba(0, 0, 0, 0.7);
 	color: #e8ebef;
 	cursor: pointer;
-	backdrop-filter: blur(8px);
 	transition: background-color 150ms ease;
 }
 

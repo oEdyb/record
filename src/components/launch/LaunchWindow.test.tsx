@@ -1241,6 +1241,8 @@ describe("LaunchWindow record button", () => {
 			act(() => vi.advanceTimersByTime(3999));
 			expect(screen.getByTestId("clip-removal-feedback")).toBeInTheDocument();
 			act(() => vi.advanceTimersByTime(1));
+			expect(screen.getByTestId("clip-removal-feedback")).toHaveAttribute("data-closing", "true");
+			act(() => vi.advanceTimersByTime(120));
 			expect(screen.queryByTestId("clip-removal-feedback")).not.toBeInTheDocument();
 		} finally {
 			vi.useRealTimers();
