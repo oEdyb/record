@@ -101,6 +101,11 @@ pub struct Decoder {
     peek_frame: *mut crate::ffi::AVFrame,
     /// `true` si `peek_frame` porte une frame décodée en attente de `commit_peek`.
     has_peek: bool,
+    /// Live preview only: recent frames kept for backward scrubbing (see
+    /// `scrub_cache_macos`). `None` for export and for inactive preview decoders.
+    scrub_cache: Option<crate::scrub_cache_macos::ScrubCache>,
+    /// Keyframe seeks performed (`av_seek_frame`). Diagnostics and tests.
+    keyframe_seeks: u64,
 }
 
 impl Decoder {
@@ -225,6 +230,8 @@ impl Decoder {
                     cpu: None,
                     has_peek: false,
                     async_vt: Some(async_vt),
+                    scrub_cache: None,
+                    keyframe_seeks: 0,
                 };
                 if decoder.pkt.is_null() || decoder.frame.is_null() || decoder.peek_frame.is_null()
                 {
@@ -277,7 +284,73 @@ impl Decoder {
                 async_vt: None,
                 peek_frame: crate::ffi::av_frame_alloc(),
                 has_peek: false,
+                scrub_cache: None,
+                keyframe_seeks: 0,
             })
+        }
+    }
+
+    /// Keeps up to `budget_bytes` of recently decoded frames so backward scrub steps inside
+    /// that run skip the keyframe seek (see `scrub_cache_macos`). Hardware frames only: the
+    /// software path re-uploads into one shared texture, so a cached reference would not
+    /// stay valid. No-op when already enabled.
+    pub(crate) fn enable_scrub_cache(&mut self, budget_bytes: usize) {
+        if self.cpu.is_some() {
+            return;
+        }
+        match &mut self.scrub_cache {
+            Some(cache) => cache.resume(),
+            None => {
+                self.scrub_cache = Some(crate::scrub_cache_macos::ScrubCache::new(budget_bytes))
+            }
+        }
+    }
+
+    /// Playback: stop caching. Frames the decoder is behind are still handed out in order,
+    /// then released (see `ScrubCache::retire`).
+    pub(crate) fn retire_scrub_cache(&mut self) {
+        if let Some(cache) = &mut self.scrub_cache {
+            cache.retire();
+        }
+    }
+
+    /// Releases the cached frames now (an inactive, pooled decoder must not hold them). If
+    /// the decoder was behind its newest frame, the frames in between are gone, so the next
+    /// seek must start from a keyframe: forget the current position.
+    pub(crate) fn disable_scrub_cache(&mut self) {
+        if self.cached_next_index().is_some() {
+            self.cur_pts = None;
+        }
+        self.scrub_cache = None;
+    }
+
+    pub(crate) fn keyframe_seeks(&self) -> u64 {
+        self.keyframe_seeks
+    }
+
+    #[cfg(test)]
+    pub(crate) fn scrub_cache_len(&self) -> usize {
+        self.scrub_cache.as_ref().map_or(0, |c| c.len())
+    }
+
+    /// Next frame comes from the cache when the current frame is an older cached one.
+    pub(crate) fn cached_next_index(&self) -> Option<usize> {
+        self.scrub_cache.as_ref().and_then(|c| c.next_index())
+    }
+
+    unsafe fn adopt_cached(&mut self, index: usize) -> Result<*mut crate::ffi::AVFrame> {
+        let cache = self
+            .scrub_cache
+            .as_mut()
+            .ok_or_else(|| anyhow!("scrub cache disabled"))?;
+        let pts = cache.adopt(index, self.frame)?;
+        self.cur_pts = Some(pts);
+        Ok(self.frame)
+    }
+
+    unsafe fn clear_scrub_cache(&mut self) {
+        if let Some(cache) = &mut self.scrub_cache {
+            cache.clear();
         }
     }
 
@@ -287,6 +360,8 @@ impl Decoder {
         // ici — sans ça le `next()` suivant promouvait une frame décodée avant le rewind,
         // avec son ancien `cur_pts`.
         self.has_peek = false;
+        self.clear_scrub_cache();
+        self.keyframe_seeks += 1;
         crate::ffi::averr(
             crate::ffi::av_seek_frame(self.fmt, self.vidx, 0, crate::ffi::AVSEEK_FLAG_BACKWARD),
             "rewind_seek",
@@ -316,9 +391,34 @@ impl Decoder {
     /// rapide compris : mêmes seuils, même critère d'arrêt (`decode_forward_to`), pour
     /// que les deux moteurs rendent la même frame au même coût relatif.
     pub unsafe fn seek_to(&mut self, seconds: f64) -> Result<*mut crate::ffi::AVFrame> {
-        // Tout seek invalide un éventuel peek en attente : il portait sur "la frame après
-        // l'ancienne position courante", qui n'a plus de sens une fois qu'on a sauté ailleurs.
-        self.has_peek = false;
+        Ok(self
+            .seek_to_inner(seconds, None)?
+            .unwrap_or(ptr::null_mut()))
+    }
+
+    /// `seek_to` that gives up as soon as `superseded(decoded_sec)` says the frame being
+    /// decoded toward `seconds` is no longer wanted (`Ok(None)`). The decoder stays on the
+    /// last decoded frame, a valid position for the next seek. Scrub only: a backward
+    /// keyframe seek can decode a whole GOP, and a newer target behind the decoded position
+    /// makes the rest of that work useless.
+    pub(crate) unsafe fn seek_to_unless(
+        &mut self,
+        seconds: f64,
+        superseded: &dyn Fn(f64) -> bool,
+    ) -> Result<Option<*mut crate::ffi::AVFrame>> {
+        self.seek_to_inner(seconds, Some(superseded))
+    }
+
+    unsafe fn seek_to_inner(
+        &mut self,
+        seconds: f64,
+        superseded: Option<&dyn Fn(f64) -> bool>,
+    ) -> Result<Option<*mut crate::ffi::AVFrame>> {
+        // A pending lookahead frame (`peek_next_time_sec`, playback) is the frame right
+        // after the current one. It stays valid for the paths below that keep the decoder
+        // position (`next()` consumes it first); only a keyframe seek invalidates it.
+        // Dropping it here made a forward seek right after playback skip that frame and
+        // settle one frame late.
         let tb_sec = self.tb_sec();
 
         if tb_sec > 0.0 {
@@ -329,14 +429,28 @@ impl Decoder {
                 //    `cur_frame()`, pas `self.frame` : en backend CPU la frame exploitable
                 //    est la texture NV12 déjà présentée, pas la frame système du décodeur.
                 if (cur - seconds).abs() < frame_dur * 0.5 {
-                    return Ok(self.cur_frame());
+                    return Ok(Some(self.cur_frame()));
+                }
+                // Backward inside the cached run: the frame a keyframe seek would select is
+                // already decoded. Same selection rule as the loop below.
+                if seconds < cur {
+                    let hit = self.scrub_cache.as_ref().and_then(|c| {
+                        crate::scrub_cache_macos::first_at_or_after(
+                            c.pts(),
+                            (seconds - tb_sec * 0.5) / tb_sec,
+                        )
+                    });
+                    if let Some(index) = hit {
+                        return self.adopt_cached(index).map(Some);
+                    }
                 }
                 // 2) La cible est DEVANT et à portée : dérouler depuis ici plutôt que de
                 //    repartir d'une image clé (cf. `pipeline_windows::SEEK_FORWARD_MAX_SEC`).
                 if cur < seconds && seconds - cur <= SEEK_FORWARD_MAX_SEC {
-                    let f = self.decode_forward_to(seconds, tb_sec)?;
-                    if !f.is_null() {
-                        return Ok(f);
+                    match self.decode_forward_to(seconds, tb_sec, superseded)? {
+                        None => return Ok(None),
+                        Some(f) if !f.is_null() => return Ok(Some(f)),
+                        Some(_) => {}
                     }
                     // No valid current frame survived this decoder state. Retry a full
                     // keyframe seek before allowing the caller to reopen the source.
@@ -349,6 +463,10 @@ impl Decoder {
         } else {
             0
         };
+        // Tout seek keyframe invalide un éventuel peek en attente : il portait sur « la
+        // frame après l'ancienne position courante », qui n'a plus de sens ici.
+        self.has_peek = false;
+        self.clear_scrub_cache();
         crate::ffi::averr(
             crate::ffi::av_seek_frame(
                 self.fmt,
@@ -358,6 +476,7 @@ impl Decoder {
             ),
             "seek_to",
         )?;
+        self.keyframe_seeks += 1;
         if let Some(vt) = &mut self.async_vt {
             vt.reset()?;
             self.cur_pts = None;
@@ -373,18 +492,21 @@ impl Decoder {
                 // The requested time can lie after the final PTS but inside that frame's
                 // display interval. Hold only a frame decoded in this seek; a full seek
                 // clears cur_pts first, so empty media cannot reuse an old frame.
-                return Ok(if self.cur_pts.is_some() {
+                return Ok(Some(if self.cur_pts.is_some() {
                     self.cur_frame()
                 } else {
                     ptr::null_mut()
-                });
+                }));
             }
             let pts = (*f).best_effort_timestamp;
             if pts == i64::MIN || tb_sec <= 0.0 {
-                return Ok(f);
+                return Ok(Some(f));
             }
             if (pts as f64) * tb_sec >= seconds - tb_sec * 0.5 {
-                return Ok(f);
+                return Ok(Some(f));
+            }
+            if superseded.is_some_and(|stop| stop(pts as f64 * tb_sec)) {
+                return Ok(None);
             }
         }
     }
@@ -395,25 +517,29 @@ impl Decoder {
         &mut self,
         seconds: f64,
         tb_sec: f64,
-    ) -> Result<*mut crate::ffi::AVFrame> {
+        superseded: Option<&dyn Fn(f64) -> bool>,
+    ) -> Result<Option<*mut crate::ffi::AVFrame>> {
         loop {
             let f = self.next()?;
             if f.is_null() {
                 // The requested time can lie after the final PTS but inside that frame's
                 // display interval. Hold only a frame decoded in this seek; a full seek
                 // clears cur_pts first, so empty media cannot reuse an old frame.
-                return Ok(if self.cur_pts.is_some() {
+                return Ok(Some(if self.cur_pts.is_some() {
                     self.cur_frame()
                 } else {
                     ptr::null_mut()
-                });
+                }));
             }
             let pts = (*f).best_effort_timestamp;
             if pts == i64::MIN {
-                return Ok(f);
+                return Ok(Some(f));
             }
             if (pts as f64) * tb_sec >= seconds - tb_sec * 0.5 {
-                return Ok(f);
+                return Ok(Some(f));
+            }
+            if superseded.is_some_and(|stop| stop(pts as f64 * tb_sec)) {
+                return Ok(None);
             }
         }
     }
@@ -424,6 +550,9 @@ impl Decoder {
     /// Windows, juste sans le dispatch D3D11VA (le GPU hand-off est déjà fait par
     /// `av_hwdevice_ctx_create`).
     pub unsafe fn next(&mut self) -> Result<*mut crate::ffi::AVFrame> {
+        if let Some(index) = self.cached_next_index() {
+            return self.adopt_cached(index);
+        }
         // receive_frame unrefs its destination even on EOF. Decode into lookahead,
         // then promote only success, so the current frame keeps owning its GPU buffers.
         // FFmpeg 8.x avcodec.h: avcodec_receive_frame destination lifetime contract.
@@ -483,6 +612,9 @@ impl Decoder {
     /// `NextFrameTime::Unknown` — et non `0.0` — quand le pts est inexploitable : `0.0`
     /// satisfait toujours la condition d'adoption, ce qui vidait le flux jusqu'à l'EOF.
     pub(crate) unsafe fn peek_next_time_sec(&mut self) -> Result<NextFrameTime> {
+        if let (Some(index), Some(cache)) = (self.cached_next_index(), &self.scrub_cache) {
+            return Ok(NextFrameTime::At(cache.pts()[index] as f64 * self.tb_sec()));
+        }
         if !self.has_peek {
             if !self.receive_into(self.peek_frame)? {
                 return Ok(NextFrameTime::Eof);
@@ -502,6 +634,9 @@ impl Decoder {
     /// rang de frame courante — échange de pointeurs, aucune E/S. Ne doit être appelé
     /// qu'après un `peek_next_time_sec` ayant renvoyé une frame.
     pub(crate) unsafe fn commit_peek(&mut self) -> Result<*mut crate::ffi::AVFrame> {
+        if let Some(index) = self.cached_next_index() {
+            return self.adopt_cached(index);
+        }
         // `bail!` et non `debug_assert!` : compilée en release, l'assertion disparaissait
         // et l'échange promouvait un `AVFrame` jamais rempli, avec un
         // `best_effort_timestamp` indéterminé, jusque dans le chemin de présentation.
@@ -512,6 +647,9 @@ impl Decoder {
         self.has_peek = false;
         let pts = (*self.frame).best_effort_timestamp;
         self.cur_pts = if pts == i64::MIN { None } else { Some(pts) };
+        if let Some(cache) = &mut self.scrub_cache {
+            cache.push(self.frame);
+        }
         match &mut self.cpu {
             Some(cpu) => cpu.present(self.frame),
             None => Ok(self.frame),

@@ -6,6 +6,59 @@ The older full export benchmark series uses an AMD Ryzen 5 7520U laptop with the
 GPU on Windows 11. Newer dated sections name their own reference machine. Do not compare numbers
 across machines or workload definitions without a fresh matched run.
 
+## Backward scrub in the review preview — 2026-10-05
+
+Dragging the review playhead backward stalled; forward was smooth. Measured on the Apple M5 with a
+3-clip recording (H.264 High, 3420×2214, 60 fps, a keyframe every 30 frames) and a real pointer
+drag (probe and raw data in `artifacts/backward-scrub-2026-10-05/`, outside git):
+
+- Every backward step lands behind the decoder, so `Decoder::seek_to` seeks to the previous
+  keyframe and decodes forward: 96% of backward anchors, about 3.6 ms per decoded frame.
+- A clip without a camera opens the screen file a second time as a stand-in camera decoder. It is
+  never drawn, but `seek_pair` and `Player::step` decoded it too, so each step paid twice: anchor
+  p50/p90/max 69/244/249 ms.
+- Coalescing already worked: the request slot is latest-wins (154 of 180 requests on a slow drag
+  were never decoded). A larger VideoToolbox in-flight window did not help (12: 4.9 ms per frame;
+  1: 9 ms; default 4: 3.6 ms) because the decode-ahead past the target is drained on each reseek.
+
+What changed:
+
+- `live.rs`: a stand-in camera (`!webcam_is_real`) is never positioned or decoded; the screen
+  frame is composed in its place, which is what the export already does (`timeline_walk.rs`).
+- `scrub_cache_macos.rs`: the active screen decoder keeps references to its most recent decoded
+  VideoToolbox frames (`av_frame_ref`, no copy, no rescale) while the preview is paused. A backward
+  step inside that run is served from it, with the same rule as a keyframe seek (first frame at or
+  after the target, proven by a cached predecessor), so the settled frame is the exact frame.
+  Bound: 256 MiB of NV12 payload and at most 32 frames (23 frames at 3420×2214). Playback stops
+  recording frames and releases them once the decoder reaches its newest frame; a pooled decoder
+  drops them and forgets its position. Export never enables it.
+- `Decoder::seek_to_unless`: a scrub seek stops decoding as soon as a newer request waits for a
+  time behind the decoded frame, or for another file; that newer request is then a cache hit.
+- `seek_to` no longer discards a pending lookahead frame on a forward or cache seek. Before, a
+  pause right after playback could settle one frame late (24.7 ms after the target in one run).
+
+Before → after, same probe, same copy of the project:
+
+- Slow backward drag (3.5 s of timeline in 3 s): 8 → 25 canvas updates/s; request→frame
+  p50/p90/max 120/278/287 → 18/21/53 ms; gaps ≥ 100 ms 15 (100–282 ms) → 7 (114–117 ms).
+- Fast backward drag (3.5 s in 0.8 s): 7.1 → 17.5 updates/s; 136/236/236 → 19/20/30 ms; gaps
+  4 (146–215 ms) → 3 (113–131 ms).
+- Drag across both clip boundaries and back: 18.5 → 25.1 updates/s; p90 101 → 28 ms; backward
+  gaps 14 (118–267 ms) → 10 (100–149 ms); forward gaps 3 (100–357 ms) → 2 (152–251 ms).
+- Forward drag: unchanged (29 updates/s, no gaps). Settled frames within one frame in every run.
+  Playback over 3 s: 46.3 fps / 40 dropped before, 45–48 fps / 34–42 dropped after (3 runs).
+
+What remains: crossing into the previous GOP still decodes up to one GOP (about 25–30 frames,
+~100 ms), once per 0.5 s of timeline on a backward drag, and the first open of a clip still costs
+about 250 ms. Removing the GOP crossing needs speculative decoding of the previous GOP on a second
+decoder (about one GOP of extra frames in memory, ~340 MB at this resolution).
+
+Sources: `VTDecompressionSession.h` and `VTErrors.h` in the macOS SDK
+(`VTDecompressionSessionWaitForAsynchronousFrames`; `kVTDecodeFrame_DoNotOutputFrame` is only a
+hint not to emit an image buffer, it does not skip decoding, so it was not used); FFmpeg 8.1
+`libavutil/frame.h` (`av_frame_ref` adds a reference to each `AVBufferRef`) and
+`libavformat/avformat.h` (`av_seek_frame` with `AVSEEK_FLAG_BACKWARD`).
+
 ## Pipelined VideoToolbox decoder — 2026-09-11
 
 A 50-minute Klippt export (1920×1080, 30 fps, H.264, 90,752 frames) took 25.2 minutes on the

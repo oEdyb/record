@@ -99,6 +99,8 @@ use cpu_frames_windows as cpu_frames;
 #[cfg(target_os = "macos")]
 mod mac_frames;
 #[cfg(target_os = "macos")]
+mod scrub_cache_macos;
+#[cfg(target_os = "macos")]
 mod vt_decode_macos;
 #[cfg(target_os = "macos")]
 use mac_frames as cpu_frames;

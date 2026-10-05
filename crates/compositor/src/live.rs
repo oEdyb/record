@@ -62,6 +62,10 @@ fn webcam_seek_time(screen_source_time_sec: f64, webcam_offset_sec: f64) -> f64 
 struct PrefetchedClip {
     sdec: Decoder,
     wdec: Decoder,
+    /// `wdec` stands in for a camera the clip does not have (see `open_webcam_or_stand_in`).
+    /// It is never drawn, so it is never positioned or decoded either: the screen frame is
+    /// passed in its place, as the export already does (`timeline_walk`).
+    webcam_stand_in: bool,
     webcam_offset_sec: f64,
     idx: u32,
     /// Piste curseur du clip à venir, préchargée ici pour la même raison que les décodeurs :
@@ -124,11 +128,15 @@ unsafe fn open_and_seek_clip(
 ) -> Result<PrefetchedClip> {
     let source_time_sec = source_time_sec.max(0.0);
     let mut sdec = Decoder::open(screen_path, gpu)?;
+    let webcam_stand_in = !webcam_is_real(webcam_path, screen_path);
     let mut wdec = open_webcam_or_stand_in(screen_path, webcam_path, gpu)?;
     let sf = sdec.seek_to(source_time_sec)?;
-    let mut wf = wdec.seek_to(webcam_seek_time(source_time_sec, webcam_offset_sec))?;
-    if wf.is_null() {
-        wf = wdec.seek_to(0.0)?;
+    if !webcam_stand_in
+        && wdec
+            .seek_to(webcam_seek_time(source_time_sec, webcam_offset_sec))?
+            .is_null()
+    {
+        wdec.seek_to(0.0)?;
     }
     if sf.is_null() {
         anyhow::bail!(
@@ -141,6 +149,7 @@ unsafe fn open_and_seek_clip(
     Ok(PrefetchedClip {
         sdec,
         wdec,
+        webcam_stand_in,
         webcam_offset_sec,
         idx,
         cursor_track,
@@ -171,6 +180,7 @@ struct PooledClip {
 unsafe fn seek_pair(
     sdec: &mut Decoder,
     wdec: &mut Decoder,
+    webcam_stand_in: bool,
     source_time_sec: f64,
     webcam_offset_sec: f64,
 ) -> Result<bool> {
@@ -178,14 +188,37 @@ unsafe fn seek_pair(
     if sf.is_null() {
         return Ok(false);
     }
+    if webcam_stand_in {
+        return Ok(true);
+    }
+    seek_webcam(wdec, source_time_sec, webcam_offset_sec)
+}
+
+/// Camera half of `seek_pair`: `false` when the camera has no frame at that time, nor at 0.
+unsafe fn seek_webcam(
+    wdec: &mut Decoder,
+    source_time_sec: f64,
+    webcam_offset_sec: f64,
+) -> Result<bool> {
     let mut wf = wdec.seek_to(webcam_seek_time(source_time_sec, webcam_offset_sec))?;
     if wf.is_null() {
         wf = wdec.seek_to(0.0)?;
     }
-    if wf.is_null() {
-        return Ok(false);
-    }
-    Ok(true)
+    Ok(!wf.is_null())
+}
+
+/// A scrub seek still decoding toward its target is useless once a newer request waits for
+/// another file, or for a time behind the frame just decoded: finishing it would only delay
+/// the newer one. A newer target ahead of the decoded frame is on the way, so the seek goes on.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn newer_request_supersedes(
+    newer: Option<&ActiveClipRequest>,
+    screen_path: &str,
+    decoded_sec: f64,
+) -> bool {
+    newer.is_some_and(|newer| {
+        newer.screen_path != screen_path || newer.source_time_sec < decoded_sec
+    })
 }
 
 /// Bascule cross-média en réutilisant le pool de décodeurs. Réactive la paire cible si elle
@@ -219,6 +252,7 @@ unsafe fn swap_clip_pooled(
             if seek_pair(
                 &mut pooled.clip.sdec,
                 &mut pooled.clip.wdec,
+                pooled.clip.webcam_stand_in,
                 t,
                 request.webcam_offset_sec,
             )? {
@@ -283,6 +317,8 @@ pub struct Player {
     overlays: std::cell::RefCell<crate::overlay_video::OverlayDecoders>,
     sdec: Decoder,
     wdec: Decoder,
+    /// See `PrefetchedClip::webcam_stand_in`.
+    webcam_stand_in: bool,
     gpu: Gpu,
     webcam_offset_sec: f64,
     has_current_frame: bool,
@@ -294,12 +330,14 @@ pub struct Player {
 impl Player {
     pub unsafe fn open(screen: &str, webcam: &str, gpu: &Gpu) -> Result<Player> {
         let wdec = open_webcam_or_stand_in(screen, webcam, gpu)?;
+        let sdec = Decoder::open(screen, gpu)?;
         Ok(Player {
             frame_composed: false,
             last_composed_time: None,
             overlays: std::cell::RefCell::new(crate::overlay_video::OverlayDecoders::live()),
-            sdec: Decoder::open(screen, gpu)?,
+            sdec,
             wdec,
+            webcam_stand_in: !webcam_is_real(webcam, screen),
             gpu: Gpu {
                 device: gpu.device.clone(),
                 context: gpu.context.clone(),
@@ -367,6 +405,7 @@ impl Player {
         if !seek_pair(
             &mut self.sdec,
             &mut self.wdec,
+            self.webcam_stand_in,
             source_time_sec,
             self.webcam_offset_sec,
         )? {
@@ -374,6 +413,29 @@ impl Player {
         }
         self.mark_positioned(source_time_sec);
         Ok(true)
+    }
+
+    /// `seek_active` for a scrub anchor: `Ok(None)` when `superseded` stopped the screen seek
+    /// before its target (see `Decoder::seek_to_unless`). Nothing is marked positioned then;
+    /// the caller handles the newer request instead.
+    #[cfg(target_os = "macos")]
+    unsafe fn seek_active_unless(
+        &mut self,
+        source_time_sec: f64,
+        superseded: &dyn Fn(f64) -> bool,
+    ) -> Result<Option<bool>> {
+        let source_time_sec = source_time_sec.max(0.0);
+        let Some(sf) = self.sdec.seek_to_unless(source_time_sec, superseded)? else {
+            return Ok(None);
+        };
+        if sf.is_null()
+            || !(self.webcam_stand_in
+                || seek_webcam(&mut self.wdec, source_time_sec, self.webcam_offset_sec)?)
+        {
+            return Ok(Some(false));
+        }
+        self.mark_positioned(source_time_sec);
+        Ok(Some(true))
     }
 
     unsafe fn mark_positioned(&mut self, source_time_sec: f64) {
@@ -396,14 +458,19 @@ impl Player {
     /// Échange la paire active contre `incoming` (déjà ouverte + positionnée) et REND la paire
     /// sortante — pour la mettre en pool au lieu de la fermer. Aucune E/S : juste des champs.
     unsafe fn swap_active(&mut self, incoming: PrefetchedClip) -> PrefetchedClip {
-        let outgoing = PrefetchedClip {
+        #[allow(unused_mut)]
+        let mut outgoing = PrefetchedClip {
             sdec: std::mem::replace(&mut self.sdec, incoming.sdec),
             wdec: std::mem::replace(&mut self.wdec, incoming.wdec),
+            webcam_stand_in: std::mem::replace(&mut self.webcam_stand_in, incoming.webcam_stand_in),
             webcam_offset_sec: self.webcam_offset_sec,
             idx: self.idx,
             // Le curseur est re-dérivé du chemin à la réactivation ; inutile de le trimballer.
             cursor_track: None,
         };
+        // Only the active screen decoder keeps scrub frames; a pooled one releases them.
+        #[cfg(target_os = "macos")]
+        outgoing.sdec.disable_scrub_cache();
         self.webcam_offset_sec = incoming.webcam_offset_sec;
         self.idx = incoming.idx;
         self.has_current_frame = true;
@@ -525,7 +592,9 @@ impl Player {
         let screen_ms = step_started.elapsed().as_secs_f64() * 1000.0;
         let camera_started = Instant::now();
         let target_webcam_t = (source_time - self.webcam_offset_sec).max(0.0);
-        let wf = if use_current {
+        let wf = if self.webcam_stand_in {
+            sf
+        } else if use_current {
             self.wdec.cur_frame()
         } else {
             let cur = self.wdec.cur_frame();
@@ -590,13 +659,39 @@ impl Player {
         Ok(screen_advanced)
     }
 
+    /// Backward-scrub frame cache of the active screen decoder (see `scrub_cache_macos`):
+    /// kept while paused, released during playback, which reads forward only and would just
+    /// hold the frames (and their VideoToolbox buffers) for nothing.
+    #[cfg(target_os = "macos")]
+    fn keep_scrub_frames(&mut self, paused: bool) {
+        if paused {
+            self.sdec
+                .enable_scrub_cache(crate::scrub_cache_macos::SCRUB_CACHE_BUDGET_BYTES);
+        } else {
+            self.sdec.retire_scrub_cache();
+        }
+    }
+
+    /// Camera frame to compose next to `screen_frame`: the screen frame itself when the clip
+    /// has no camera (never drawn, see `PrefetchedClip::webcam_stand_in`).
+    unsafe fn webcam_frame(
+        &self,
+        screen_frame: *mut crate::ffi::AVFrame,
+    ) -> *mut crate::ffi::AVFrame {
+        if self.webcam_stand_in {
+            screen_frame
+        } else {
+            self.wdec.cur_frame()
+        }
+    }
+
     /// Recompose la frame courante (déjà décodée) — rafraîchit après un changement de param.
     pub unsafe fn recompose(&self, comp: &Compositor, cfg: &Cfg) -> Result<bool> {
         if !self.has_current_frame {
             return Ok(false);
         }
         let sf = self.sdec.cur_frame();
-        let wf = self.wdec.cur_frame();
+        let wf = self.webcam_frame(sf);
         if sf.is_null() || wf.is_null() {
             return Ok(false);
         }
@@ -632,6 +727,7 @@ impl Player {
                 seek_pair(
                     &mut self.sdec,
                     &mut self.wdec,
+                    self.webcam_stand_in,
                     anchor,
                     self.webcam_offset_sec
                 )?,
@@ -639,8 +735,9 @@ impl Player {
             );
             if anchor <= clip_start_sec
                 || (self.sdec.cur_time_sec() <= source_time_sec
-                    && self.wdec.cur_time_sec()
-                        <= webcam_seek_time(source_time_sec, self.webcam_offset_sec))
+                    && (self.webcam_stand_in
+                        || self.wdec.cur_time_sec()
+                            <= webcam_seek_time(source_time_sec, self.webcam_offset_sec)))
             {
                 positioned = true;
                 break;
@@ -653,12 +750,17 @@ impl Player {
         );
         anyhow::ensure!(
             advance_decoder_to(&mut self.sdec, source_time_sec, 0.0)?
-                && advance_decoder_to(&mut self.wdec, source_time_sec, self.webcam_offset_sec)?,
+                && (self.webcam_stand_in
+                    || advance_decoder_to(
+                        &mut self.wdec,
+                        source_time_sec,
+                        self.webcam_offset_sec
+                    )?),
             "Still preview decode failed"
         );
         anyhow::ensure!(self.has_current_frame, "Still preview has no decoded frame");
         let sf = self.sdec.cur_frame();
-        let wf = self.wdec.cur_frame();
+        let wf = self.webcam_frame(sf);
         anyhow::ensure!(
             !sf.is_null() && !wf.is_null(),
             "Still preview has empty media"
@@ -691,9 +793,12 @@ impl Player {
         target_sec: f64,
     ) -> Result<bool> {
         let sf = self.sdec.seek_to(target_sec)?;
-        let wf = self
-            .wdec
-            .seek_to(webcam_seek_time(target_sec, self.webcam_offset_sec))?;
+        let wf = if self.webcam_stand_in {
+            sf
+        } else {
+            self.wdec
+                .seek_to(webcam_seek_time(target_sec, self.webcam_offset_sec))?
+        };
         if sf.is_null() || wf.is_null() {
             self.has_current_frame = false;
             return Ok(false);
@@ -1657,6 +1762,8 @@ unsafe fn render_thread(
                 // from landing between the requested source time and play-state update.
                 shared.playing.store(false, Ordering::Release);
             }
+            #[cfg(target_os = "macos")]
+            player.keep_scrub_frames(!shared.playing.load(Ordering::Acquire));
             // A cut anchor can consume the prepared fragment. Other seeks and scene
             // changes invalidate it; none may wait for background work here.
             let mut ready = full_scene.as_ref().and_then(|scene| {
@@ -1694,10 +1801,39 @@ unsafe fn render_thread(
             if already_positioned && !preloaded {
                 player.mark_positioned(request.source_time_sec);
             }
+            let mut superseded = false;
             let repositioned = !preloaded
                 && same_media
-                && (already_positioned
-                    || matches!(player.seek_active(request.source_time_sec), Ok(true)));
+                && (already_positioned || {
+                    #[cfg(target_os = "macos")]
+                    {
+                        let newer_supersedes = |decoded_sec: f64| {
+                            newer_request_supersedes(
+                                shared.active_clip_request.lock().unwrap().as_ref(),
+                                &request.screen_path,
+                                decoded_sec,
+                            )
+                        };
+                        match player.seek_active_unless(request.source_time_sec, &newer_supersedes)
+                        {
+                            Ok(Some(positioned)) => positioned,
+                            Ok(None) => {
+                                superseded = true;
+                                false
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        matches!(player.seek_active(request.source_time_sec), Ok(true))
+                    }
+                });
+            if superseded {
+                // The newer request is already in the slot: the next pass takes it. Nothing
+                // was positioned or published for this one.
+                continue;
+            }
             let switch_result = if preloaded || repositioned {
                 Ok(())
             } else {
@@ -1912,6 +2048,8 @@ unsafe fn render_thread(
             continue;
         }
 
+        #[cfg(target_os = "macos")]
+        player.keep_scrub_frames(!shared.playing.load(Ordering::Relaxed));
         // avance : seek app-piloté (presentTime) prioritaire, sinon lecture libre (60 fps)
         let requested = shared.requested_frame.lock().unwrap().take();
         let now = Instant::now();
@@ -2504,6 +2642,47 @@ mod tests {
         }
     }
 
+    /// A clip without a camera opens the screen file as a stand-in camera decoder. It is
+    /// never drawn, so scrubbing and playback must not decode it: before this, every
+    /// backward scrub step decoded the 3420x2214 screen file twice.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_stand_in_camera_is_never_decoded_but_a_real_camera_follows_the_scrub() {
+        let gpu = Gpu::create_auto(false).unwrap();
+        let comp = Compositor::new_sized(&gpu, 128, 128).unwrap();
+        comp.set_scene(Some(scene_with_output(128, 128)));
+        let path = format!(
+            "{}/tests/fixtures/seek-eof-vfr.mp4",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let camera = std::env::temp_dir().join(format!("klippt-camera-{}.mp4", std::process::id()));
+        std::fs::copy(&path, &camera).unwrap();
+        let camera = camera.to_str().unwrap().to_string();
+        unsafe {
+            let mut player = Player::open(&path, &path, &gpu).unwrap();
+            assert!(player.webcam_stand_in);
+            for target in [1.5, 0.2, 1.0, 0.0] {
+                assert!(player.seek_active(target).unwrap());
+                assert!(player.step(&comp, &Cfg::c8(), target).unwrap());
+            }
+            for i in 1..30 {
+                player.step(&comp, &Cfg::c8(), i as f64 / 30.0).unwrap();
+            }
+            assert!(player.recompose(&comp, &Cfg::c8()).unwrap());
+            assert!(player.present_frame(&comp, &Cfg::c8(), 0.5).unwrap());
+            assert_eq!(player.wdec.keyframe_seeks(), 0);
+            assert!(player.wdec.cur_frame().is_null() || (*player.wdec.cur_frame()).width == 0);
+
+            let mut player = Player::open(&path, &camera, &gpu).unwrap();
+            assert!(!player.webcam_stand_in);
+            assert!(player.seek_active(1.5).unwrap());
+            assert!(player.seek_active(0.2).unwrap());
+            assert!(player.wdec.keyframe_seeks() >= 2);
+            assert_eq!(player.wdec.cur_time_sec(), player.screen_time_sec());
+        }
+        std::fs::remove_file(camera).unwrap();
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn unchanged_anchor_pair_is_presented_again_without_advancing_decode() {
@@ -2542,6 +2721,21 @@ mod tests {
             assert_eq!(player.wdec.cur_time_sec(), camera_pts);
             assert_eq!(comp.readback_direct().unwrap().2, changed);
         }
+    }
+
+    #[test]
+    fn only_a_newer_request_behind_the_decoded_frame_or_elsewhere_stops_a_scrub_seek() {
+        let mut newer = fragment_request(0, 1.0);
+        newer.screen_path = "a.mp4".into();
+        // Nothing newer: finish the seek.
+        assert!(!newer_request_supersedes(None, "a.mp4", 1.5));
+        // Newer target behind the decoded frame (backward drag): stop.
+        assert!(newer_request_supersedes(Some(&newer), "a.mp4", 1.5));
+        // Newer target still ahead (or at) the decoded frame: it is on the way, go on.
+        assert!(!newer_request_supersedes(Some(&newer), "a.mp4", 0.5));
+        assert!(!newer_request_supersedes(Some(&newer), "a.mp4", 1.0));
+        // Newer request for another file: this decode is useless whatever the time.
+        assert!(newer_request_supersedes(Some(&newer), "b.mp4", 0.5));
     }
 
     fn fragment_request(index: usize, source_time_sec: f64) -> ActiveClipRequest {
