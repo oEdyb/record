@@ -20,7 +20,7 @@ const hudFocusClasses =
 
 // Pill geometry: 4px inset, a 40px primary circle, 36px secondary circles
 // centred on the same 40px track. Every radius is concentric with the pill.
-const hudIconBtnBase = `flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-transparent cursor-pointer transition-[background-color,color,transform] duration-150 hover:bg-white/[0.07] hover:text-[#f5f7fa] active:scale-[0.94] ${hudFocusClasses} ${hudDisabledClasses} ${styles.electronNoDrag}`;
+const hudIconBtnBase = `flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-transparent cursor-pointer transition-[background-color,color,transform,opacity] duration-150 hover:bg-white/[0.07] hover:text-[#f5f7fa] active:scale-[0.94] ${hudFocusClasses} ${hudDisabledClasses} ${styles.hudIconDim} ${styles.electronNoDrag}`;
 const hudIconBtnClasses = `${hudIconBtnBase} text-[#7d8794]`;
 const hudIconBtnActiveClasses = `${hudIconBtnBase} bg-white/[0.09] text-[#f5f7fa]`;
 

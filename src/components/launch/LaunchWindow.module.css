@@ -242,6 +242,13 @@
 	}
 }
 
+/* Pause disables the icons for the ~300 ms the clip file takes to close. An
+   instant dim-and-back read as the icons flashing, so dimming waits 400 ms and
+   fades; a short wait never shows, a real disable still does. */
+.hudIconDim:disabled {
+	transition-delay: 400ms;
+}
+
 .hudPrimaryTransport:disabled {
 	opacity: 0.55;
 	cursor: not-allowed;
@@ -803,12 +810,6 @@
 	min-width: 0;
 }
 
-.qualityValue {
-	padding-right: 6px;
-	color: rgba(255, 255, 255, 0.55);
-	font-size: 12px;
-	white-space: nowrap;
-}
 
 .qualitySegments {
 	display: flex;

@@ -580,7 +580,9 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 						))}
 					</fieldset>
 				</div>
-				{hasCamera ? (
+				{/* High always records the camera's native format, so there is nothing
+				    to choose; the format picker exists only for Standard. */}
+				{hasCamera && recordingQuality === "standard" ? (
 					<div className={styles.qualityRow}>
 						<span className={styles.setupTileIcon} aria-hidden>
 							<Video size={18} />
@@ -588,32 +590,26 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 						<span className={styles.setupTileName} id="hud-webcam-format-label">
 							{labels.cameraQuality}
 						</span>
-						{recordingQuality === "high" ? (
-							<span className={styles.qualityValue} data-testid="hud-native-camera-format">
-								{labels.nativeCamera ?? "Native camera"}
-							</span>
-						) : (
-							<AppSelect
-								id="hud-webcam-format"
-								data-testid="hud-webcam-format"
-								aria-labelledby="hud-webcam-format-label"
-								className={styles.hudModalSelect}
-								value={webcamFormatKey(webcamFormat)}
-								disabled={controlsLocked || supportedFormats.length === 0}
-								onChange={(event) => {
-									const selected = formatOptions.find(
-										(format) => webcamFormatKey(format) === event.target.value,
-									);
-									if (selected) onSelectWebcamFormat(selected);
-								}}
-							>
-								{formatOptions.map((format) => (
-									<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
-										{formatWebcamFormat(format)}
-									</option>
-								))}
-							</AppSelect>
-						)}
+						<AppSelect
+							id="hud-webcam-format"
+							data-testid="hud-webcam-format"
+							aria-labelledby="hud-webcam-format-label"
+							className={styles.hudModalSelect}
+							value={webcamFormatKey(webcamFormat)}
+							disabled={controlsLocked || supportedFormats.length === 0}
+							onChange={(event) => {
+								const selected = formatOptions.find(
+									(format) => webcamFormatKey(format) === event.target.value,
+								);
+								if (selected) onSelectWebcamFormat(selected);
+							}}
+						>
+							{formatOptions.map((format) => (
+								<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
+									{formatWebcamFormat(format)}
+								</option>
+							))}
+						</AppSelect>
 					</div>
 				) : null}
 			</div>

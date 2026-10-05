@@ -1550,15 +1550,14 @@ describe("LaunchWindow device buttons", () => {
 });
 
 describe("LaunchWindow device settings", () => {
-	it("shows native camera capture without claiming the preview format is the recording format", async () => {
+	it("offers no camera format on High, which records the camera's native format", async () => {
 		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
 		cameraPreviewState.value.activeFormat = { width: 1080, height: 1920, fps: 30 };
 		renderLaunchWindow();
 		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
-		const nativeFormat = await screen.findByTestId("hud-native-camera-format");
-		expect(nativeFormat).toHaveTextContent(/^deviceSettings\.nativeCamera$/);
-		expect(nativeFormat).not.toHaveTextContent(/1080|1920|FPS/);
-		expect(screen.queryByTestId("hud-webcam-format")).not.toBeInTheDocument();
+		const panel = await screen.findByTestId("hud-device-settings");
+		expect(within(panel).queryByTestId("hud-webcam-format")).not.toBeInTheDocument();
+		expect(panel).not.toHaveTextContent(/cameraQuality|1080|1920|FPS/);
 	});
 	it("shows High before recording and remembers a Standard choice", async () => {
 		renderLaunchWindow();
