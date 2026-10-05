@@ -24,10 +24,15 @@ Up/Down, Home/End and M. Installed at `67d3aa26`; Space, Home, End and Right con
 installed app. Evening: a recording with fewer source files than the previous one no longer
 sticks on the loading cover (`5025f1c9`), and the review camera keeps its real shape and can be
 dragged and resized (`cc16d3c4`, on main). The Automatic camera format now prefers 16:9 over the
-largest pixel area, so a MacBook camera records 1920x1080 instead of 1552x1552 (`7fed550f`, branch
-`fix/auto-camera-prefers-16x9`, not yet on main). Installed at `7fed550f`; a live camera recording
-on Automatic is not yet tested. Previous app in
-`.local-install.noindex/backup-installed-20261005-2320`.
+largest pixel area, so a MacBook camera records 1920x1080 instead of 1552x1552 (`7fed550f`); a
+live camera recording on Automatic is not yet tested. October 6: the review camera stays movable
+after playback crosses a clip boundary and the paused Replay shows the camera (`ff53f5ba`). Stop
+no longer waits for the camera to shut down, Pause and Continue log their steps to
+`diagnostics/record-pause-continue-timing.jsonl`, and the timer no longer drops back on Pause
+(`e3174b30`). Installed at `e3174b30`. Olle's 01:44 camera recording on that build: Stop 0.35 s
+(was 1.05-1.13 s), Pause 0.06-0.19 s, Continue 0.05-0.32 s, all 4 screen and camera clips
+readable. Open: one first Pause took 3.7-5.4 s at 00:49 on the previous build; cause unknown,
+not seen since. Previous app in `.local-install.noindex/backup-installed-20261006-0105`.
 [Evidence](artifacts/cleanup-verify-2026-10-05/).
 
 # October 4: current creator-loop build installed
