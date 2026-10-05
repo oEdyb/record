@@ -1807,12 +1807,15 @@ unsafe fn render_thread(
                 && (already_positioned || {
                     #[cfg(target_os = "macos")]
                     {
+                        // A transport anchor carries the play state; abandoning it would
+                        // leave playback paused while the renderer believes it is playing.
                         let newer_supersedes = |decoded_sec: f64| {
-                            newer_request_supersedes(
-                                shared.active_clip_request.lock().unwrap().as_ref(),
-                                &request.screen_path,
-                                decoded_sec,
-                            )
+                            transport_generation.is_none()
+                                && newer_request_supersedes(
+                                    shared.active_clip_request.lock().unwrap().as_ref(),
+                                    &request.screen_path,
+                                    decoded_sec,
+                                )
                         };
                         match player.seek_active_unless(request.source_time_sec, &newer_supersedes)
                         {
