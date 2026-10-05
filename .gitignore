@@ -95,16 +95,10 @@ result-*
 # re-optimising into each other's cache. See `cacheDir` in vite.config.ts.
 /.vite-cache/
 
-# whisper.cpp DTW POC (tools/stt-eval/whispercpp-dtw-poc) — vendored engine
-# clone, downloaded GGML models, and generated build/results artifacts.
-# See technical-documentation/architecture/transcription-and-captions.md.
-/tools/stt-eval/whispercpp-dtw-poc/whisper.cpp/
-/tools/stt-eval/whispercpp-dtw-poc/build-cpu/
-/tools/stt-eval/whispercpp-dtw-poc/build-vulkan/
-/tools/stt-eval/whispercpp-dtw-poc/build-cuda/
-/tools/stt-eval/whispercpp-dtw-poc/build-harness/
-/tools/stt-eval/whispercpp-dtw-poc/fixtures/*.wav
-/tools/stt-eval/whispercpp-dtw-poc/results/
+# Klippt agent CLI output written into the working directory (agent batch
+# preview frames and full-reply artifacts). Never versioned.
+/klippt-batch-*-frames/
+/klippt-agent-artifacts/
 
 opencode.json
 opencode.json

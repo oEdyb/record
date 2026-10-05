@@ -26,7 +26,7 @@ Run `Prepare RC promotion to stable` (`promote.yml`) with:
 
 The workflow verifies the RC signature against the external release key. It also requires the frozen release branch tip to equal the tested RC commit. If the branch moved, cut and test a new RC. The workflow changes `package.json` and `package-lock.json` to the stable version, pushes that exact commit, and syncs it to `main`. It does not create the stable tag. Sign the exact SHA from the workflow summary on Olle's Mac. The signed tag starts `build.yml`.
 
-`build.yml` checks out one resolved SHA everywhere. It runs the supply-chain gates and source-bound Whisper build before platform packaging. The release creates a private GitHub draft first. It then publishes and verifies immutable update artifacts, validates and publishes the mutable feeds, fetches every public file to compare size and SHA-512, and publishes the draft last. A stable `release: published` event closes the milestone, announces Discord, and starts Homebrew, WinGet, Nix, and AUR.
+`build.yml` checks out one resolved SHA everywhere. It runs the supply-chain gates and source-bound Whisper build before platform packaging. The release creates a private GitHub draft first. It then publishes and verifies immutable update artifacts, validates and publishes the mutable feeds, fetches every public file to compare size and SHA-512, and publishes the draft last. A stable `release: published` event starts Homebrew, WinGet, Nix, and AUR.
 
 The supply-chain job also creates the exact `web-demuxer.wasm` corresponding-source offer from the
 approved source lock. The publisher downloads that source-bound artifact before staging a release.
@@ -64,8 +64,6 @@ The branch **stays around** indefinitely: it is the frozen history of the releas
 
 This contract exists because of the **v1.6.0 incident (2026-07-05)**: the original `promote.yml` checked out `main`, so the stable tag captured the post-RC tip of `main` rather than the RC snapshot. Twenty-three commits (Tiptap, NotesWindow, an in-recorder lint button, AI handoff) shipped in v1.6.0 without ever having been in v1.6.0-rc.1. The re-release the same day used `release/v1.6.0` and cherry-picked only the commits that were genuinely safe.
 
-Day-to-day branching, PR, and review procedure is maintained in [the operational git workflow](../../.harness/docs/git-workflow.md).
-
 ### Manual fallback
 
 When the dispatch UI is unavailable, the release can be cut from a shell. Set the version with `.github/scripts/set-release-version.mjs` — the same script both workflows call — and **never with a hand-rolled `sed` on `package.json`**: the script also writes `package-lock.json`, and a release commit that bumps only `package.json` ships a lockfile whose root version disagrees with the package it locks. `npm ci` does not reject that (the root `version` field is not a dependency, so the sync check ignores it), which is how three releases shipped with the mismatch before anyone noticed.
@@ -73,7 +71,7 @@ When the dispatch UI is unavailable, the release can be cut from a shell. Set th
 ```bash
 RC=1.5.0-rc.1                          # bump the rc.N for every later candidate
 
-# Cut RC (skips milestone migration and Discord announce)
+# Cut RC (skips milestone migration)
 git checkout -b release/v1.5.0 main    # rc.2+: git checkout release/v1.5.0 instead
 node .github/scripts/set-release-version.mjs "$RC"
 git commit -am "chore(release): bump to $RC [skip ci]"
@@ -85,7 +83,7 @@ git -c user.name='Olle Dyberg' \
   tag -s -m "Klippt v$RC" "v$RC" HEAD
 git push origin "refs/tags/v$RC"
 
-# Promote (skips milestone close and Discord announce)
+# Promote
 git checkout release/v1.5.0
 node .github/scripts/set-release-version.mjs 1.5.0
 git commit -am "chore(release): bump to 1.5.0 [skip ci]"
@@ -100,7 +98,7 @@ git push origin refs/tags/v1.5.0
 
 A tag pushed with your own credentials **does** fire `build.yml`'s `push:` trigger, so the release publishes on its own and no explicit dispatch is needed — that restriction only applies to `GITHUB_TOKEN`. Either way the same `build.yml` builds and publishes.
 
-The fallback skips milestone migration/closure, release-branch automation, main synchronization, and Discord announcements, so the operator must preserve the freeze and the version/tag match by hand.
+The fallback skips milestone migration, release-branch automation, and main synchronization, so the operator must preserve the freeze and the version/tag match by hand.
 
 ### Backports / patch on a previous line
 
@@ -115,16 +113,16 @@ No new workflow code is needed; the tag-pushed trigger is branch-agnostic.
 
 ### Issue tracking during a release cycle
 
-- **Daily state**: issues/PRs accumulate in the rolling `Next Release` milestone. `merged-pr-bookkeeping.yml` adds them automatically on PR merge; maintainers can also drag issues in by hand.
+- **Daily state**: issues/PRs accumulate in the rolling `Next Release` milestone; maintainers add them by hand.
 - **At RC cut**: `prerelease.yml` snapshots `Next Release` into a versioned `vX.Y.Z` milestone. The rolling milestone is left open and empty for new work.
 - **Between RC cut and promote**: any PR that merges during the RC window lands back in the empty `Next Release`. It is **not** retroactively added to `vX.Y.Z`. If a critical fix lands, cut `vX.Y.Z-rc.(N+1)` instead of promoting.
-- **After stable publication**: `announce-release.yml` closes the `vX.Y.Z` milestone and uses its issues to populate the Discord release announcement.
+- **After stable publication**: close the `vX.Y.Z` milestone by hand.
 
 ## Required release credential
 
 ### `KLIPPT_RELEASE_TOKEN`
 
-This fine-grained personal access token creates and publishes GitHub releases, closes the release milestone, and lets the release event start downstream automation. It cannot sign release tags. Preparation workflows use their explicitly scoped `GITHUB_TOKEN`; they do not receive this token.
+This fine-grained personal access token creates and publishes GitHub releases and lets the release event start downstream automation. It cannot sign release tags. Preparation workflows use their explicitly scoped `GITHUB_TOKEN`; they do not receive this token.
 
 Grant the token access only to `oEdyb/record` with:
 
@@ -210,22 +208,6 @@ It exists because `build.yml`'s own job has no usable retry. Re-running the fail
 
 Rotate by issuing a new client secret on the Entra registration, updating `AZURE_AD_APPLICATION_SECRET`, publishing one release to confirm, then deleting the old secret. The tenant, client and seller IDs change only when the registration or account does.
 
-## Discord secrets and variables
-
-| Name | Kind | Used for |
-|---|---|---|
-| `DISCORD_BOT_TOKEN` | Secret | RC/stable announcements, PR forum sync, roadmap sync, and weekly leaderboard posts. |
-| `DISCORD_REVIEWER_ROLE_ID` | Secret | Role mention used by PR-to-Discord synchronization. |
-| `DISCORD_RC_TESTING_CHANNEL_ID` | Variable | RC announcement destination. |
-| `DISCORD_RELEASE_CHANNEL_ID` | Variable | Stable announcement destination. |
-| `DISCORD_PR_FORUM_CHANNEL_ID` | Variable | Forum that receives PR threads. |
-| `DISCORD_ALERT_CHANNEL_ID` | Variable | Optional alert destination for PR sync failures. |
-| `DISCORD_ROADMAP_CHANNEL_ID` | Variable | Channel containing the synchronized roadmap message. |
-| `DISCORD_ROADMAP_MESSAGE_ID` | Variable | Optional explicit message override; pin discovery is otherwise used. |
-| `DISCORD_SPOTLIGHT_CHANNEL_ID` | Variable | Weekly leaderboard destination. |
-
-The bot token comes from a Discord application authorized with the `bot` scope. Grant only the channel permissions each automation needs: View Channel, Send Messages, Embed Links, Create Public Threads and Send Messages in Threads for forum use, Manage Threads for forum state, and Manage Messages when roadmap pinning is required. Rotate by resetting the bot token in the Discord developer portal, updating `DISCORD_BOT_TOKEN`, testing a non-release post/sync, then invalidating the old token automatically through the reset. Channel and role IDs are identifiers rather than credentials; update their repository variable/secret when channels or roles are replaced.
-
 ## Package registry credentials and variables
 
 | Name | Kind | Required access and use | Rotation |
@@ -252,7 +234,7 @@ Note what it would publish before turning it on: `winget-releaser` submits the *
 
 ## Automatic `GITHUB_TOKEN`
 
-GitHub supplies `GITHUB_TOKEN` per run. Workflows use it for semantic PR validation, release-asset reads, issue bookkeeping, and the Nix bump PR. Its scopes come from each workflow's `permissions` block and it is not manually created or rotated. Do not replace it with a PAT unless cross-workflow triggering or external-repository access is actually required.
+GitHub supplies `GITHUB_TOKEN` per run. Workflows use it for semantic PR validation, release-asset reads, milestone migration, and the Nix bump PR. Its scopes come from each workflow's `permissions` block and it is not manually created or rotated. Do not replace it with a PAT unless cross-workflow triggering or external-repository access is actually required.
 
 ## Secret-handling rules
 

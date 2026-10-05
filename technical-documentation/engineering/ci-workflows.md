@@ -50,10 +50,6 @@ flowchart TD
     Publish -->|stable release published| AUR
 
     subgraph T4["Tier 4 — automation and diagnostics"]
-        PRDiscord[discord-pr-notify.yml]
-        Roadmap[discord-roadmap-sync.yml]
-        Leaderboard[discord-weekly-leaderboard.yml]
-        Bookkeeping[merged-pr-bookkeeping.yml]
         Diagnostic[diagnostic-artifact.yml] --> DiagWin[Windows diagnostic ZIP]
         Diagnostic --> DiagMac[macOS diagnostic archives]
     end
@@ -76,10 +72,6 @@ The STT workflow uploads standalone archives for binary refresh and does not cur
 | 3 | `publish-winget.yml` | Published release; manual dispatch |
 | 3 | `bump-nix-package.yml` | Published release; manual dispatch |
 | 3 | `aur-publish.yml` | Published release; manual dispatch |
-| 4 | `discord-pr-notify.yml` | PR target, review, and issue-comment events |
-| 4 | `discord-roadmap-sync.yml` | Merged PR to `main`; push to `main` |
-| 4 | `discord-weekly-leaderboard.yml` | Monday 12:00 UTC schedule; manual dispatch |
-| 4 | `merged-pr-bookkeeping.yml` | Closed pull request, conditional on merge to `main` |
 | 4 | `diagnostic-artifact.yml` | Push or PR to `main`; manual dispatch |
 
 ## Tier 1: application and documentation CI
@@ -147,10 +139,6 @@ Each workflow needs variables or credentials, and where it checks for them decid
 
 ## Tier 4: automation and diagnostics
 
-- `discord-pr-notify.yml` mirrors PR events, reviews, and comments into a Discord forum thread. It is `continue-on-error`, so Discord does not block PR work.
-- `discord-roadmap-sync.yml` updates a pinned Discord roadmap message after a merged PR or push to `main`.
-- `discord-weekly-leaderboard.yml` posts a weekly contributor leaderboard.
-- `merged-pr-bookkeeping.yml` finds closing issue references, applies pending-release labels and the rolling milestone, closes the issue, and adds an idempotent marker comment.
 - `diagnostic-artifact.yml` builds WGC and ScreenCaptureKit helpers and bundles platform diagnostics. Its Windows ZIP and two macOS archives are retained for 14 days.
 
 ## Artifact flow

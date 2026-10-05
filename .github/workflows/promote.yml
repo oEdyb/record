@@ -103,11 +103,7 @@ jobs:
           echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      # No announcement step here any more. It moved to announce-release.yml, which
-      # runs on `release: published` — the one event every release path shares,
-      # including a tag pushed straight to build.yml with no promotion at all. This
-      # step could only ever announce what THIS workflow did, and it announced it
-      # from here, before build.yml had produced a single asset.
+      # No announcement step: Klippt releases are not announced from CI.
       #
       # Bookkeeping only. The stable tag is still created locally after this job, so a
       # sync failure cannot publish an unreviewed or unsigned release.

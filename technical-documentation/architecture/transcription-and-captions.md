@@ -192,8 +192,8 @@ Why whisper.cpp, in one paragraph: a single C++ dependency with native DTW
 token timestamps for word-level timing and portable runtime device selection
 that covers Metal, Vulkan and CPU in one binary. Klippt supplies bounded source
 windows; `whisper_full()` handles only the current window. Validation data — backend-by-backend WER and real-time
-factors — lives in
-[`tools/stt-eval/whispercpp-dtw-poc/REPORT.md`](../../tools/stt-eval/whispercpp-dtw-poc/REPORT.md).
+factors — lived in `tools/stt-eval/whispercpp-dtw-poc/REPORT.md`, removed from the tree on
+2026-10-05 and kept in git tag `archive/pre-cleanup-2026-10-05`.
 
 ### Per-platform backend
 

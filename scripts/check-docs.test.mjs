@@ -1,13 +1,7 @@
-// check-docs.mjs gained `.harness/` because that tree rotted unwatched:
-// `git-workflow.md` and `memory/MEMORY.md` both described the pre-#90
-// `release/vX.Y.Z-rc.N` branch naming for a month, sending anyone who read them
-// to a branch the workflows never create, while the same fact stayed correct
-// under technical-documentation/ because this script was watching that tree.
-//
-// The failure mode worth guarding is not a missed doc — it is this script
-// reporting OK while checking nothing. If the walk silently stops covering a
-// tree, or a LEGACY entry stops matching, the output is still a green
-// `check-docs: OK` and the rot resumes invisibly for months. So assert the
+// The failure mode worth guarding is not a missed doc — it is check-docs.mjs
+// reporting OK while checking nothing. If the walk silently stops covering
+// technical-documentation/, or a pattern stops matching, the output is still a
+// green `check-docs: OK` and the rot resumes invisibly for months. So assert the
 // script actually *rejects* something, not just that it exits 0.
 //
 // Run as a subprocess rather than imported: the script exits on failure and
@@ -46,10 +40,8 @@ describe("check-docs", () => {
 	// A substring check on the placeholder waves the concrete one straight
 	// through, which is the more dangerous of the two.
 	for (const naming of ["release/vX.Y.Z-rc.N", "release/v1.5.0-rc.1"]) {
-		it(`rejects the retired release-branch naming "${naming}" inside .harness/`, () => {
-			// .harness/ specifically: technical-documentation/ was never the tree that
-			// went stale, so planting there would pass even if the walk lost .harness/.
-			const probe = path.join(ROOT, ".harness", "docs", "_check-docs-probe.md");
+		it(`rejects the retired release-branch naming "${naming}"`, () => {
+			const probe = path.join(ROOT, "technical-documentation", "_check-docs-probe.md");
 			writeFileSync(probe, `# probe\n\n\`\`\`bash\ngit checkout ${naming}\n\`\`\`\n`);
 			try {
 				const { code, out } = run();
@@ -67,7 +59,7 @@ describe("check-docs", () => {
 	// branch and its ephemeral sync branch are current, and backport lines use
 	// `release/1.4.x`.
 	it("accepts the naming that is still current", () => {
-		const probe = path.join(ROOT, ".harness", "docs", "_check-docs-probe.md");
+		const probe = path.join(ROOT, "technical-documentation", "_check-docs-probe.md");
 		writeFileSync(
 			probe,
 			"# probe\n\nTag `v1.6.0-rc.1` on `release/v1.6.0`, synced via `release/v1.6.0-sync`; backports on `release/1.4.x`.\n",

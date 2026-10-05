@@ -359,14 +359,6 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 
 	checkPreparedTagWorkflow(root, "prerelease.yml");
 	checkPreparedTagWorkflow(root, "promote.yml");
-	const announce = workflow(root, "announce-release.yml");
-	const announceJob = announce.jobs?.announce;
-	const closeMilestone = findStep(announceJob, "Close the stable release milestone");
-	requireValue(
-		String(closeMilestone?.if).includes("steps.ctx.outputs.kind == 'stable'") &&
-			String(closeMilestone?.run).includes("release-milestone-close.mjs"),
-		"Stable milestones must close only after a published release event or explicit replay",
-	);
 	return { packageJobs: 4, helperJobs: Object.keys(helper.jobs ?? {}).length };
 }
 
