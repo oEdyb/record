@@ -65,6 +65,9 @@ function navigationDuringImport(isExporting?: () => boolean) {
 			playPause: { key: " " },
 			onPlayPause: vi.fn(),
 			onStep: vi.fn(),
+			onClip: vi.fn(),
+			onEdge: vi.fn(),
+			onMute: vi.fn(),
 		});
 	});
 	const navigate = () => {
