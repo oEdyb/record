@@ -111,13 +111,13 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera",
 		"source": "Fonte",
 		"editableCursor": "Cursor editável",
 		"language": "Idioma",
 		"lockedHint": "Pause para alterar a configuração",
 		"display": "Tela",
-		"window": "Janela"
+		"window": "Janela",
+		"cameraAutomatic": "Automatic (sharpest)"
 	},
 	"setup": {
 		"notes": "Notas",

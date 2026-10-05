@@ -56,7 +56,12 @@ afterEach(() => {
 });
 
 describe("useCameraPreviewStream", () => {
-	it("keeps High native camera pixels without probing or applying smaller preview formats", async () => {
+	it("keeps High native camera pixels while listing the camera's modes for the picker", async () => {
+		const modes = [
+			{ width: 3840, height: 2160, fps: 30 },
+			{ width: 1920, height: 1080, fps: 60 },
+		];
+		probeWebcamFormatsCached.mockResolvedValue(modes);
 		const owned = cameraStream();
 		const getUserMedia = vi.fn(async () => owned.stream);
 		Object.defineProperty(navigator, "mediaDevices", {
@@ -74,7 +79,7 @@ describe("useCameraPreviewStream", () => {
 				frameRate: { ideal: 60, max: 60 },
 			},
 		});
-		expect(probeWebcamFormatsCached).not.toHaveBeenCalled();
+		await waitFor(() => expect(view.result.current.supportedFormats).toEqual(modes));
 		expect(owned.applyConstraints).not.toHaveBeenCalled();
 		view.unmount();
 	});

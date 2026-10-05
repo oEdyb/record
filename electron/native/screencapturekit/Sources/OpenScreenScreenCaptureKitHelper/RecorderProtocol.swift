@@ -69,6 +69,8 @@ struct RecordingRequest: Decodable {
 		let width: Int
 		let height: Int
 		let fps: Int
+		/// High only: record exactly width × height at fps instead of the sharpest format.
+		let exactFormat: Bool?
 	}
 
 	struct Cursor: Decodable {

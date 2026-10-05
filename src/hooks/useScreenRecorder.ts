@@ -116,6 +116,9 @@ type UseScreenRecorderReturn = {
 	setWebcamDeviceName: (deviceName: string | undefined) => void;
 	webcamFormat: WebcamFormat;
 	setWebcamFormat: (format: WebcamFormat) => void;
+	/** High records the sharpest native camera format instead of webcamFormat. */
+	webcamFormatAuto: boolean;
+	setWebcamFormatAuto: (auto: boolean) => void;
 	systemAudioEnabled: boolean;
 	setSystemAudioEnabled: (enabled: boolean) => void;
 	webcamEnabled: boolean;
@@ -217,6 +220,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [recordingQuality, setRecordingQuality] =
 		useState<RecordingQuality>(DEFAULT_RECORDING_QUALITY);
 	const [webcamFormat, setWebcamFormat] = useState<WebcamFormat>(DEFAULT_WEBCAM_FORMAT);
+	const [webcamFormatAuto, setWebcamFormatAuto] = useState(true);
 	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
 	const [webcamEnabled, setWebcamEnabledState] = useState(false);
 	const [webcamPreviewStream, setWebcamPreviewStream] = useState<MediaStream | null>(null);
@@ -237,6 +241,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setWebcamEnabledState(prefs.camEnabled);
 				if (prefs.camDeviceId) setWebcamDeviceId(prefs.camDeviceId);
 				setWebcamFormat(normalizeWebcamFormat(prefs.camFormat));
+				setWebcamFormatAuto(prefs.camFormatAuto !== false);
 				setRecordingQuality(normalizeRecordingQuality(prefs.recordingQuality));
 				setSystemAudioEnabled(prefs.systemAudioEnabled);
 				setCursorCaptureMode(prefs.cursorCaptureMode);
@@ -411,7 +416,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 								...(webcamDeviceId && !useDefaultCamera
 									? { deviceId: { exact: webcamDeviceId } }
 									: {}),
-								...(recordingQuality === "high"
+								...(recordingQuality === "high" && webcamFormatAuto
 									? nativeWebcamConstraints(
 											supportsNativeWebcamMode(
 												navigator.mediaDevices.getSupportedConstraints?.() ?? {},
@@ -513,7 +518,15 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			}
 		};
-	}, [webcamEnabled, webcamDeviceId, webcamFormat, recordingQuality, t, showCameraBlocked]);
+	}, [
+		webcamEnabled,
+		webcamDeviceId,
+		webcamFormat,
+		webcamFormatAuto,
+		recordingQuality,
+		t,
+		showCameraBlocked,
+	]);
 
 	const finalizeRecording = useCallback(
 		(
@@ -1294,7 +1307,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					enabled: webcamEnabled,
 					deviceId: webcamDeviceId,
 					deviceName: webcamDeviceName ?? webcamStream.current?.getVideoTracks()[0]?.label,
-					format: activeWebcamFormat.current,
+					format:
+						recordingQuality === "high" && !webcamFormatAuto
+							? webcamFormat
+							: activeWebcamFormat.current,
+					formatAuto: webcamFormatAuto,
 				},
 				cursorCaptureMode,
 			},
@@ -2425,6 +2442,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setRecordingQuality,
 		webcamFormat,
 		setWebcamFormat,
+		webcamFormatAuto,
+		setWebcamFormatAuto,
 		systemAudioEnabled,
 		setSystemAudioEnabled,
 		webcamEnabled,

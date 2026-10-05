@@ -111,13 +111,13 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera",
 		"source": "Kaynak",
 		"editableCursor": "Düzenlenebilir imleç",
 		"language": "Dil",
 		"lockedHint": "Kurulumu değiştirmek için duraklatın",
 		"display": "Ekran",
-		"window": "Pencere"
+		"window": "Pencere",
+		"cameraAutomatic": "Automatic (sharpest)"
 	},
 	"setup": {
 		"notes": "Notlar",

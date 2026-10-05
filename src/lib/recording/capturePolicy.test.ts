@@ -47,6 +47,7 @@ describe("capture policy", () => {
 					deviceId: "cam-id",
 					deviceName: "Studio Cam",
 					format: { width: 2560, height: 1440, fps: 30 },
+					formatAuto: false,
 				},
 				cursorCaptureMode: "system",
 			},
@@ -57,7 +58,7 @@ describe("capture policy", () => {
 			source: { type: "window", displayId: 7, windowId: 42 },
 			video: { quality: "high", bitrate: 136_000_000, hideSystemCursor: false },
 			audio: { system: { enabled: true }, microphone: { deviceId: "mic-id" } },
-			webcam: { width: 2560, height: 1440, fps: 30 },
+			webcam: { width: 2560, height: 1440, fps: 30, exactFormat: true },
 			cursor: { mode: "system" },
 		});
 	});

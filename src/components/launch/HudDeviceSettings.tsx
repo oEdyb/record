@@ -33,7 +33,7 @@ export interface HudDeviceSettingsLabels {
 	recordingQuality?: string;
 	qualityHigh?: string;
 	qualityStandard?: string;
-	nativeCamera?: string;
+	cameraAutomatic?: string;
 	done: string;
 	microphone: string;
 	camera: string;
@@ -200,6 +200,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	recordingQuality = "high",
 	onSelectRecordingQuality,
 	webcamFormat,
+	webcamFormatAuto = true,
 	cameraLoading,
 	cameraError,
 	labels,
@@ -226,12 +227,14 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	recordingQuality?: RecordingQuality;
 	onSelectRecordingQuality?: (quality: RecordingQuality) => void;
 	webcamFormat: WebcamFormat;
+	/** High only: record the sharpest native format instead of webcamFormat. */
+	webcamFormatAuto?: boolean;
 	cameraLoading: boolean;
 	cameraError: string | null;
 	labels: HudDeviceSettingsLabels;
 	onSelectMic: (device: MicrophoneDevice) => void;
 	onSelectCamera: (device: CameraDevice) => void;
-	onSelectWebcamFormat: (format: WebcamFormat) => void;
+	onSelectWebcamFormat: (format: WebcamFormat | "auto") => void;
 	onClose: () => void;
 	panelRef?: (el: HTMLDivElement | null) => void;
 	systemAudioEnabled?: boolean;
@@ -264,6 +267,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		enabled: micDevices.length > 0 && microphoneEnabled && !controlsLocked && !closing,
 		deviceId: activeMicId,
 	});
+	const automaticCamera = recordingQuality === "high" && webcamFormatAuto;
 	const {
 		stream,
 		error: previewError,
@@ -276,7 +280,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		enabled:
 			!closing && hasCamera && (cameraStream !== null || (!cameraEnabled && !controlsLocked)),
 		deviceId: activeCameraId,
-		nativeFormat: recordingQuality === "high",
+		nativeFormat: automaticCamera,
 		format: webcamFormat,
 		externalStream: cameraStream,
 	});
@@ -288,7 +292,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	useEffect(() => {
 		if (
 			!controlsLocked &&
-			recordingQuality === "standard" &&
+			!automaticCamera &&
 			supportedFormats.length > 0 &&
 			!supportedFormats.some((format) => sameWebcamFormat(format, webcamFormat)) &&
 			!sameWebcamFormat(activeFormat, webcamFormat) &&
@@ -302,7 +306,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		onSelectWebcamFormat,
 		supportedFormats,
 		webcamFormat,
-		recordingQuality,
+		automaticCamera,
 	]);
 
 	const sourceKind = extras.sourceKind ?? "display";
@@ -580,9 +584,9 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 						))}
 					</fieldset>
 				</div>
-				{/* High always records the camera's native format, so there is nothing
-				    to choose; the format picker exists only for Standard. */}
-				{hasCamera && recordingQuality === "standard" ? (
+				{/* Every option is a format the camera produces itself; High can also
+				    leave the choice to the helper, which takes the sharpest one. */}
+				{hasCamera ? (
 					<div className={styles.qualityRow}>
 						<span className={styles.setupTileIcon} aria-hidden>
 							<Video size={18} />
@@ -595,15 +599,22 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 							data-testid="hud-webcam-format"
 							aria-labelledby="hud-webcam-format-label"
 							className={styles.hudModalSelect}
-							value={webcamFormatKey(webcamFormat)}
-							disabled={controlsLocked || supportedFormats.length === 0}
+							value={automaticCamera ? "auto" : webcamFormatKey(webcamFormat)}
+							disabled={controlsLocked || (supportedFormats.length === 0 && !automaticCamera)}
 							onChange={(event) => {
+								if (event.target.value === "auto") {
+									onSelectWebcamFormat("auto");
+									return;
+								}
 								const selected = formatOptions.find(
 									(format) => webcamFormatKey(format) === event.target.value,
 								);
 								if (selected) onSelectWebcamFormat(selected);
 							}}
 						>
+							{recordingQuality === "high" ? (
+								<option value="auto">{labels.cameraAutomatic ?? "Automatic (sharpest)"}</option>
+							) : null}
 							{formatOptions.map((format) => (
 								<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
 									{formatWebcamFormat(format)}

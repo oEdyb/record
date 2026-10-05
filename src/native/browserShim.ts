@@ -46,6 +46,7 @@ type ShimRecordingPrefs = {
 	camEnabled: boolean;
 	camDeviceId: string | null;
 	camFormat: { width: number; height: number; fps: number };
+	camFormatAuto: boolean;
 	systemAudioEnabled: boolean;
 	cursorCaptureMode: "editable-overlay" | "system";
 };
@@ -56,6 +57,7 @@ let shimRecordingPrefs: ShimRecordingPrefs = {
 	camEnabled: false,
 	camDeviceId: null,
 	camFormat: { width: 1920, height: 1080, fps: 30 },
+	camFormatAuto: true,
 	systemAudioEnabled: false,
 	cursorCaptureMode: "editable-overlay",
 };

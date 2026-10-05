@@ -29,8 +29,13 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		}
 		self.device = device
 		let high = request.video.quality == "high"
+		// A format picked in Setup is recorded as chosen. If this camera cannot deliver
+		// it (it was unplugged and swapped), fall back to the sharpest format.
+		let chosen = high && request.webcam.exactFormat == true
+			? Self.exactFormat(device.formats, width: request.webcam.width, height: request.webcam.height, fps: request.webcam.fps)
+			: nil
 		let candidates = device.formats.filter { $0.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= (high ? 60 : Double(max(1, request.webcam.fps))) } }
-		guard let format = candidates.min(by: { left, right in
+		guard let format = chosen ?? candidates.min(by: { left, right in
 			let a = CMVideoFormatDescriptionGetDimensions(left.formatDescription)
 			let b = CMVideoFormatDescriptionGetDimensions(right.formatDescription)
 			if high {
@@ -45,7 +50,7 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
 		nativeFormat = format
 		width = Int(dimensions.width); height = Int(dimensions.height)
-		let target = high ? 60 : Double(max(1, request.webcam.fps))
+		let target = chosen != nil || !high ? Double(max(1, request.webcam.fps)) : 60
 		let supportedRate = Self.supportedFps(ranges: format.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: target)
 		guard let frameDuration = Self.frameDuration(ranges: format.videoSupportedFrameRateRanges.map { ($0.minFrameDuration, $0.maxFrameDuration) }, fps: supportedRate) else {
 			throw HelperError.writerSetupFailed("No supported native camera frame duration is available.")
@@ -140,6 +145,15 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		}
 		emit(["event": "camera-format", "width": width, "height": height, "fps": fps, "container": "mov", "codec": "h264"])
 	}
+	static func exactFormat(_ formats: [AVCaptureDevice.Format], width: Int, height: Int, fps: Int) -> AVCaptureDevice.Format? {
+		formats.first { format in
+			let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+			// Drivers advertise 60 FPS modes as 59.94, so allow one frame of slack.
+			return Int(dimensions.width) == width && Int(dimensions.height) == height
+				&& format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= Double(fps) - 1 && $0.minFrameRate <= Double(fps) }
+		}
+	}
+
 	func stop() async {
 		await withCheckedContinuation { continuation in lifecycleQueue.async { self.session.stopRunning(); continuation.resume() } }
 	}

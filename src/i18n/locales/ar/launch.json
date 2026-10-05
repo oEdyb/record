@@ -111,13 +111,13 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera",
 		"source": "المصدر",
 		"editableCursor": "مؤشر قابل للتعديل",
 		"language": "اللغة",
 		"lockedHint": "أوقف مؤقتًا لتغيير الإعداد",
 		"display": "الشاشة",
-		"window": "نافذة"
+		"window": "نافذة",
+		"cameraAutomatic": "Automatic (sharpest)"
 	},
 	"setup": {
 		"notes": "ملاحظات",

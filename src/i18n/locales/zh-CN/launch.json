@@ -111,13 +111,13 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera",
 		"source": "来源",
 		"editableCursor": "可编辑光标",
 		"language": "语言",
 		"lockedHint": "暂停后才能更改设置",
 		"display": "显示器",
-		"window": "窗口"
+		"window": "窗口",
+		"cameraAutomatic": "Automatic (sharpest)"
 	},
 	"setup": {
 		"notes": "笔记",

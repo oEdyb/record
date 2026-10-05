@@ -43,6 +43,7 @@ describe("RecordingPrefsStore", () => {
 			camEnabled: false,
 			camDeviceId: null,
 			camFormat: { width: 1920, height: 1080, fps: 30 },
+			camFormatAuto: true,
 			systemAudioEnabled: false,
 			cursorCaptureMode: "system",
 		});

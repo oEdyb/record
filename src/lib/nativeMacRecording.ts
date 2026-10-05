@@ -52,6 +52,8 @@ export type NativeMacRecordingRequest = {
 		width: number;
 		height: number;
 		fps: number;
+		/** Record this native width/height/fps as chosen instead of the sharpest format. */
+		exactFormat?: boolean;
 	};
 	cursor: {
 		mode: CursorCaptureMode;

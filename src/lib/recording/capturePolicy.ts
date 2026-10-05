@@ -45,6 +45,8 @@ export type NativeMacCaptureSettings = {
 		deviceId?: string;
 		deviceName?: string;
 		format: WebcamFormat;
+		/** High only: true lets the helper pick the sharpest native format. */
+		formatAuto: boolean;
 	};
 	cursorCaptureMode: CursorCaptureMode;
 };
@@ -114,6 +116,7 @@ export function buildNativeMacRecordingRequest(input: {
 			deviceId: settings.webcam.deviceId,
 			deviceName: settings.webcam.deviceName,
 			...settings.webcam.format,
+			exactFormat: quality === "high" && !settings.webcam.formatAuto,
 		},
 		cursor: { mode: settings.cursorCaptureMode },
 		outputs: { screenPath: "" },

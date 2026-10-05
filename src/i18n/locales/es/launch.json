@@ -111,13 +111,13 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera",
 		"source": "Fuente",
 		"editableCursor": "Cursor editable",
 		"language": "Idioma",
 		"lockedHint": "Pausa para cambiar la configuración",
 		"display": "Pantalla",
-		"window": "Ventana"
+		"window": "Ventana",
+		"cameraAutomatic": "Automatic (sharpest)"
 	},
 	"setup": {
 		"notes": "Notas",

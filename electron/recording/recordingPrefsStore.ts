@@ -19,6 +19,8 @@ export interface RecordingPrefs {
 	camEnabled: boolean;
 	camDeviceId: string | null;
 	camFormat: WebcamFormat;
+	/** High picks the camera's sharpest native format; false records camFormat exactly. */
+	camFormatAuto: boolean;
 	systemAudioEnabled: boolean;
 	cursorCaptureMode: CursorCaptureMode;
 }
@@ -30,6 +32,7 @@ export const DEFAULT_RECORDING_PREFS: RecordingPrefs = {
 	camEnabled: false,
 	camDeviceId: null,
 	camFormat: DEFAULT_WEBCAM_FORMAT,
+	camFormatAuto: true,
 	systemAudioEnabled: false,
 	cursorCaptureMode: "system",
 };
@@ -59,6 +62,10 @@ export function normalizeRecordingPrefs(raw: unknown): RecordingPrefs {
 				: DEFAULT_RECORDING_PREFS.camEnabled,
 		camDeviceId: nullableDeviceId(candidate.camDeviceId),
 		camFormat: normalizeWebcamFormat(candidate.camFormat),
+		camFormatAuto:
+			typeof candidate.camFormatAuto === "boolean"
+				? candidate.camFormatAuto
+				: DEFAULT_RECORDING_PREFS.camFormatAuto,
 		systemAudioEnabled:
 			typeof candidate.systemAudioEnabled === "boolean"
 				? candidate.systemAudioEnabled

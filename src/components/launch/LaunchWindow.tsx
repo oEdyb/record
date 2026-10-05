@@ -140,6 +140,8 @@ export function LaunchWindow() {
 		setRecordingQuality,
 		webcamFormat,
 		setWebcamFormat,
+		webcamFormatAuto,
+		setWebcamFormatAuto,
 		cursorCaptureMode,
 		setCursorCaptureMode,
 		softwareEncoderFallbackNoticeVisible,
@@ -975,12 +977,24 @@ export function LaunchWindow() {
 	);
 
 	const handleSelectWebcamFormat = useCallback(
-		(format: WebcamFormat) => {
+		(format: WebcamFormat | "auto") => {
 			if (controlsLocked) return;
+			if (format === "auto") {
+				setWebcamFormatAuto(true);
+				void window.electronAPI?.setRecordingPrefs?.({ camFormatAuto: true });
+				return;
+			}
 			setWebcamFormat(format);
-			void window.electronAPI?.setRecordingPrefs?.({ camFormat: format });
+			// A Standard choice (or Standard adopting the camera's mode) must not take
+			// High off Automatic; only a pick made on High does.
+			if (recordingQuality !== "high") {
+				void window.electronAPI?.setRecordingPrefs?.({ camFormat: format });
+				return;
+			}
+			setWebcamFormatAuto(false);
+			void window.electronAPI?.setRecordingPrefs?.({ camFormat: format, camFormatAuto: false });
 		},
-		[controlsLocked, setWebcamFormat],
+		[controlsLocked, recordingQuality, setWebcamFormat, setWebcamFormatAuto],
 	);
 
 	// Setup opens at any time except a transition; while capture is live its
@@ -1153,7 +1167,7 @@ export function LaunchWindow() {
 			recordingQuality: t("deviceSettings.recordingQuality"),
 			qualityHigh: t("deviceSettings.qualityHigh"),
 			qualityStandard: t("deviceSettings.qualityStandard"),
-			nativeCamera: t("deviceSettings.nativeCamera"),
+			cameraAutomatic: t("deviceSettings.cameraAutomatic"),
 			done: t("deviceSettings.done"),
 			microphone: t("audio.inputDevice"),
 			camera: t("webcam.cameraDevice"),
@@ -1539,6 +1553,7 @@ export function LaunchWindow() {
 								recordingQuality={recordingQuality}
 								onSelectRecordingQuality={handleSelectRecordingQuality}
 								webcamFormat={webcamFormat}
+								webcamFormatAuto={webcamFormatAuto}
 								cameraLoading={isCameraDevicesLoading}
 								cameraError={cameraDevicesError}
 								labels={deviceSettingsLabels}

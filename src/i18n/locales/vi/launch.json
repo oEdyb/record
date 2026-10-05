@@ -111,13 +111,13 @@
 		"recordingQuality": "Recording quality",
 		"qualityHigh": "High",
 		"qualityStandard": "Standard",
-		"nativeCamera": "Native camera",
 		"source": "Nguồn",
 		"editableCursor": "Con trỏ chỉnh sửa được",
 		"language": "Ngôn ngữ",
 		"lockedHint": "Tạm dừng để thay đổi thiết lập",
 		"display": "Màn hình",
-		"window": "Cửa sổ"
+		"window": "Cửa sổ",
+		"cameraAutomatic": "Automatic (sharpest)"
 	},
 	"setup": {
 		"notes": "Ghi chú",

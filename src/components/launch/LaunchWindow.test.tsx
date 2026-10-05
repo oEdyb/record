@@ -71,6 +71,8 @@ const recorderState = vi.hoisted(() => ({
 		setRecordingQuality: vi.fn(),
 		webcamFormat: { width: 1920, height: 1080, fps: 30 },
 		setWebcamFormat: vi.fn(),
+		webcamFormatAuto: true,
+		setWebcamFormatAuto: vi.fn(),
 		systemAudioEnabled: false,
 		setSystemAudioEnabled: vi.fn(),
 		cursorCaptureMode: "editable-overlay",
@@ -1550,14 +1552,23 @@ describe("LaunchWindow device buttons", () => {
 });
 
 describe("LaunchWindow device settings", () => {
-	it("offers no camera format on High, which records the camera's native format", async () => {
+	it("offers Automatic on High and records a picked camera format exactly", async () => {
 		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
-		cameraPreviewState.value.activeFormat = { width: 1080, height: 1920, fps: 30 };
+		cameraPreviewState.value.supportedFormats = [
+			{ width: 3840, height: 2160, fps: 30 },
+			{ width: 1920, height: 1080, fps: 60 },
+		];
 		renderLaunchWindow();
 		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
-		const panel = await screen.findByTestId("hud-device-settings");
-		expect(within(panel).queryByTestId("hud-webcam-format")).not.toBeInTheDocument();
-		expect(panel).not.toHaveTextContent(/cameraQuality|1080|1920|FPS/);
+		const formatSelect = await screen.findByTestId("hud-webcam-format");
+		expect(formatSelect).toHaveTextContent("deviceSettings.cameraAutomatic");
+		fireEvent.keyDown(formatSelect, { key: "ArrowDown" });
+		fireEvent.click(screen.getByRole("option", { name: "1080p, 60 FPS" }));
+		expect(recorderState.value.setWebcamFormatAuto).toHaveBeenCalledWith(false);
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+			camFormat: { width: 1920, height: 1080, fps: 60 },
+			camFormatAuto: false,
+		});
 	});
 	it("shows High before recording and remembers a Standard choice", async () => {
 		renderLaunchWindow();

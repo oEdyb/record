@@ -209,10 +209,11 @@ skips are reported as `skippedVideoFrames`. Only an encoder that accepts nothing
 stops the take, loudly (Olle, 2026-10-04; it previously stopped after 133 ms).
 The native helper's legacy missing-bitrate fallback remains 18 Mbps; that fallback did not
 describe the bitrate explicitly requested by the current app.
-High requests a supported native camera format automatically; Standard retains the remembered
-explicit camera-format choice. Setup shows the camera-format picker only on Standard; High has
-nothing to choose, so it shows no camera row (Olle, 2026-10-05) and never promises preview
-dimensions as the native recording geometry. Report actual negotiated pixels in capture
+Setup shows the camera-format picker on both qualities (Olle, 2026-10-05). On High it starts at
+Automatic (sharpest), which requests the best supported native format; picking a listed mode
+such as 4K 30 fps or 1080p 60 fps records exactly that mode and is remembered. Standard keeps the
+remembered explicit camera-format choice. High never promises preview dimensions as the native
+recording geometry. Report actual negotiated pixels in capture
 telemetry and the saved media.
 Create complete microphone and system-audio source files during capture, alongside the screen
 and camera sources. On macOS, camera video and standalone AAC audio use fragmented MOV files

@@ -72,8 +72,11 @@ export function useCameraPreviewStream({
 			const track = nextStream.getVideoTracks()[0];
 			if (!track) return;
 			if (nativeFormat) {
-				setSupportedFormats([]);
+				// The helper picks the format; still list the camera's modes so Setup can
+				// offer them. Probing restores the native constraints when it finishes.
 				setActiveFormat(webcamFormatFromSettings(track.getSettings(), formatRef.current));
+				const available = await probeWebcamFormatsCached(track, deviceId);
+				if (!cancelled) setSupportedFormats(available);
 				return;
 			}
 			const available = await probeWebcamFormatsCached(track, deviceId);
