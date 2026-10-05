@@ -361,8 +361,12 @@ pub fn set_scene(id: i32, scene_json: String) {
 #[napi]
 pub fn destroy_view(id: i32) {
     // remove hors du lock : le Drop (join du thread de rendu) ne le tient pas.
-    let removed = registry().lock().unwrap().remove(&id);
-    drop(removed);
+    // The join waits for the render thread to finish its current step, which can be
+    // opening decoders (~270 ms measured). The view owns no window handle, so finish
+    // the teardown off the JS thread and keep Electron's main process responsive.
+    if let Some(view) = registry().lock().unwrap().remove(&id) {
+        std::thread::spawn(move || drop(view));
+    }
 }
 
 /// Bilan d'un export natif (mesure §10 : une lecture d'horloge avant-après tout le run).
