@@ -49,7 +49,7 @@ function getElectronBridge() {
 	return window.electronAPI.invokeNativeBridge;
 }
 
-export async function invokeNativeBridge<TData = unknown>(
+async function invokeNativeBridge<TData = unknown>(
 	request: NativeBridgeRequest,
 ): Promise<NativeBridgeResponse<TData>> {
 	const invoke = getElectronBridge();

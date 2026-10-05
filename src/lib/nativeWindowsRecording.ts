@@ -1,4 +1,4 @@
-export type NativeWindowsSourceType = "display" | "window";
+type NativeWindowsSourceType = "display" | "window";
 
 export type NativeWindowsRecordingRequest = {
 	recordingId?: number;

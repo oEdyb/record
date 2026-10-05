@@ -25,9 +25,9 @@ import { applyNewProjectPreferences, loadEditingPreferences } from "./editingPre
 // current project + revision counter in renderer memory; mutations round-trip
 // through the main process via the bridge so disk state stays authoritative.
 
-export type ProjectStatus = "idle" | "loading" | "ready" | "error";
-export type DocumentPatchResult = "applied" | "unchanged" | "project-changed" | "conflict";
-export type ProjectDocumentPatch = (document: AxcutDocument) => AxcutDocument;
+type ProjectStatus = "idle" | "loading" | "ready" | "error";
+type DocumentPatchResult = "applied" | "unchanged" | "project-changed" | "conflict";
+type ProjectDocumentPatch = (document: AxcutDocument) => AxcutDocument;
 
 export interface ProjectState {
 	projectId: string | null;
@@ -116,7 +116,7 @@ const latestMutationByProject = new Map<string, number>();
 const activeMutationCountByProject = new Map<string, number>();
 const idleWaitersByProject = new Map<string, Array<() => void>>();
 
-export class ProjectTransactionSessionError extends Error {
+class ProjectTransactionSessionError extends Error {
 	constructor(
 		public readonly code: string,
 		message: string,

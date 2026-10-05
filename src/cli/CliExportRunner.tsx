@@ -478,7 +478,7 @@ export async function runExport(
 	}
 }
 
-export function CliExportRunner() {
+function CliExportRunner() {
 	const startedRef = useRef(false);
 	const [status, setStatus] = useState("Starting export…");
 

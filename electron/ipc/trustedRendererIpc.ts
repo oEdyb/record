@@ -37,7 +37,7 @@ const isTrustedRendererOrigin = (rawOrigin: string, config: TrustedRendererConfi
 	}
 };
 
-export function isTrustedMainFrame(
+function isTrustedMainFrame(
 	frame: Pick<WebFrameMain, "parent" | "url"> | null,
 	config: TrustedRendererConfig,
 ): boolean {

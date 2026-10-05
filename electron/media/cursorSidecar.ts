@@ -4,7 +4,7 @@
 //
 // ponytail: the extraction IS the fix, not a tidy-up. The readers existed and
 // worked — they were simply only ever wired to the renderer (loadCursorTelemetry
-// → CursorService → useCursorTelemetry → V4Timeline), so the ONE consumer that
+// → CursorService → the former editor timeline), so the ONE consumer that
 // most needed them, the agent, could not reach them. Asked what pointer data the
 // project holds, the model had no door to open and answered from the only thing
 // it could see. Nothing here changes what is parsed; it changes who may parse.
@@ -26,14 +26,14 @@ import type {
 } from "../../src/native/contracts";
 import { findMediaLinksByFingerprint } from "./mediaLinksRegistry";
 
-export const CURSOR_TELEMETRY_VERSION = 5;
+const CURSOR_TELEMETRY_VERSION = 5;
 const OPAQUE_CONTEXT_ID = /^(?:context-[a-f0-9]{24}|process-\d+)$/;
 const OPAQUE_TARGET_ID = /^target-[a-f0-9]{24}$/;
 
 /** Where a sidecar was found, or why it was not. `"none"` means we LOOKED and
  * there was nothing — distinct from never having looked, which this module
  * cannot represent and its callers must not conflate. */
-export type CursorSidecarSource = "sidecar" | "registry" | "none";
+type CursorSidecarSource = "sidecar" | "registry" | "none";
 
 export interface CursorSidecarResult {
 	found: boolean;
@@ -53,7 +53,7 @@ function emptyRecording(): CursorRecordingData {
 	};
 }
 
-export function normalizeKeyboardActivitySample(sample: unknown): KeyboardActivitySample | null {
+function normalizeKeyboardActivitySample(sample: unknown): KeyboardActivitySample | null {
 	if (!sample || typeof sample !== "object") return null;
 	const point = sample as Partial<KeyboardActivitySample>;
 	if (
@@ -116,7 +116,7 @@ export function normalizeKeyboardActivitySample(sample: unknown): KeyboardActivi
 	};
 }
 
-export function normalizeCursorSample(sample: unknown): CursorRecordingSample | null {
+function normalizeCursorSample(sample: unknown): CursorRecordingSample | null {
 	if (!sample || typeof sample !== "object") {
 		return null;
 	}
@@ -148,7 +148,7 @@ export function normalizeCursorSample(sample: unknown): CursorRecordingSample | 
 	};
 }
 
-export function normalizeCursorAsset(
+function normalizeCursorAsset(
 	asset: unknown,
 	platform: NodeJS.Platform = process.platform,
 ): NativeCursorAsset | null {

@@ -43,7 +43,7 @@ const receiptSchema = z
 	})
 	.strict();
 const tombstoneSchema = receiptSchema.pick({ requestId: true, payloadHash: true });
-export const MAX_TRANSACTION_UNDO_BYTES = 16 * 1024 * 1024;
+const MAX_TRANSACTION_UNDO_BYTES = 16 * 1024 * 1024;
 const undoRecoverySchema = z
 	.object({
 		requestId: z.string().min(1).max(256),
@@ -155,7 +155,7 @@ export function parseProjectTransactionRecord(
 		},
 	};
 }
-export type TransactionFaultStage = "before-rename" | "after-rename" | "after-directory-sync";
+type TransactionFaultStage = "before-rename" | "after-rename" | "after-directory-sync";
 export interface ProjectTransactionOptions {
 	receiptLimit?: number;
 	/** Never evict used keys. Fail closed when this bound is reached. */

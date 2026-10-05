@@ -6,12 +6,7 @@
  */
 
 import type { EditorSettingsSnapshot } from "@/lib/ai-edition/store/editorSettings";
-import {
-	setCompositorParam,
-	setCompositorPlaying,
-	setCompositorScene,
-	setCompositorTime,
-} from "./compositorViewClient";
+import { setCompositorParam, setCompositorScene } from "./compositorViewClient";
 import type { CompositorParamValue } from "./contracts";
 import { NATIVE_SCREEN_BASE_RADIUS_PX, NATIVE_WEBCAM_BASE_PCT } from "./paramUnits";
 import { resetPreviewSettledFrames } from "./previewSettledFrames";
@@ -48,15 +43,6 @@ export function setCurrentNativeViewId(id: number | null): void {
 	}
 }
 
-export function getCurrentNativeViewId(): number | null {
-	return currentViewId;
-}
-
-/** True quand une vue native est montée — pour n'appeler `setNativeParam` que si utile. */
-export function isNativeCompositorActive(): boolean {
-	return currentViewId !== null;
-}
-
 /** Pousse un paramètre à la vue native active, ET le mémorise pour rejeu à l'activation
  *  d'une (nouvelle) vue. No-op sur l'envoi si aucune vue ; la valeur reste mémorisée. */
 export function setNativeParam(key: string, value: CompositorParamValue): void {
@@ -66,17 +52,6 @@ export function setNativeParam(key: string, value: CompositorParamValue): void {
 	}
 	setCompositorParam(currentViewId, key, value).catch((error: unknown) => {
 		console.warn(`[compositor-view] setNativeParam(${key}) failed:`, error);
-	});
-}
-
-/** Seek la vue native au temps SOURCE du clip actif. La conversion depuis la playhead timeline
- *  est faite par `useNativePlaybackSync`. Transitoire → non mémorisé/rejoué. */
-export function setNativeTime(seconds: number): void {
-	if (currentViewId === null) {
-		return;
-	}
-	setCompositorTime(currentViewId, seconds).catch((error: unknown) => {
-		console.warn("[compositor-view] setNativeTime failed:", error);
 	});
 }
 
@@ -99,16 +74,6 @@ export function setNativeScene(sceneJson: string): void {
 	);
 }
 
-/** Play/pause de la vue native active (lecture libre côté natif). No-op si aucune vue. */
-export function setNativePlaying(playing: boolean): void {
-	if (currentViewId === null) {
-		return;
-	}
-	setCompositorPlaying(currentViewId, playing).catch((error: unknown) => {
-		console.warn("[compositor-view] setNativePlaying failed:", error);
-	});
-}
-
 /** S'abonner à l'activité de la vue native (React: via useSyncExternalStore). */
 export function subscribeNativeCompositor(listener: () => void): () => void {
 	listeners.add(listener);
@@ -121,9 +86,9 @@ export function subscribeNativeCompositor(listener: () => void): () => void {
  * Pushes EVERY param the addon understands, from a settings snapshot.
  *
  * WHY THIS EXISTS. Until this function, each group of params was pushed only by
- * the mount effect of the panel that owns it — VideoEffectsPane, LayoutPane,
- * CursorPane. The inspector renders exactly ONE panel at a time
- * (the former editor inspector's if/else on `facet`, defaulting to "effects"), so on load
+ * the mount effect of the former editor panel that owned it. The inspector
+ * rendered exactly ONE panel at a time (its if/else on `facet`, defaulting to
+ * "effects"), so on load
  * the cursor and layout panels have never mounted and their params sit at the
  * addon's compiled-in defaults. That is the whole bug: a project with cursor
  * size 3.0 previewed at 1.0 until the user opened the cursor panel, at which

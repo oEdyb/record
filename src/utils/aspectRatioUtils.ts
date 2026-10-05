@@ -9,7 +9,7 @@ export const ASPECT_RATIO_PRESETS = [
 	"10:16",
 ] as const;
 
-export type AspectRatioPreset = (typeof ASPECT_RATIO_PRESETS)[number];
+type AspectRatioPreset = (typeof ASPECT_RATIO_PRESETS)[number];
 
 /**
  * A concrete `"W:H"` shape. The presets are just the well-known members — the picker also
@@ -106,27 +106,6 @@ export function getNativeAspectRatioValue(
 	return Number.isFinite(ratio) && ratio > 0 ? ratio : NATIVE_ASPECT_RATIO_FALLBACK;
 }
 
-export function getAspectRatioDimensions(
-	aspectRatio: AspectRatio,
-	baseWidth: number,
-): { width: number; height: number } {
-	const ratio = getAspectRatioValue(aspectRatio);
-	return {
-		width: baseWidth,
-		height: baseWidth / ratio,
-	};
-}
-
-export function getAspectRatioLabel(aspectRatio: AspectRatio): string {
-	if (aspectRatio === "native") return "Original";
-	return aspectRatio;
-}
-
 export function isPortraitAspectRatio(aspectRatio: AspectRatio): boolean {
 	return getAspectRatioValue(aspectRatio) < 1;
-}
-
-export function formatAspectRatioForCSS(aspectRatio: AspectRatio, nativeRatio?: number): string {
-	if (aspectRatio === "native") return String(nativeRatio ?? NATIVE_ASPECT_RATIO_FALLBACK);
-	return aspectRatio.replace(":", "/");
 }

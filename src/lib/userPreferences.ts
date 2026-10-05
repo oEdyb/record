@@ -179,11 +179,6 @@ export function parentDirectoryOf(filePath: string): string | null {
 	return filePath.slice(0, lastSep);
 }
 
-/** Remembered export folder as `string | undefined`, for IPC handlers that treat absence as "use the default". */
-export function getExportFolder(): string | undefined {
-	return loadUserPreferences().exportFolder ?? undefined;
-}
-
 /** Remembered open-project folder as `string | undefined`, for IPC handlers that treat absence as "use the default". */
 export function getProjectFolder(): string | undefined {
 	return loadUserPreferences().projectFolder ?? undefined;

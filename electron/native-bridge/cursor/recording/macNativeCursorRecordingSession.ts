@@ -101,7 +101,7 @@ function helperCandidates() {
 	].filter((candidate): candidate is string => Boolean(candidate));
 }
 
-export function findMacCursorHelperPath() {
+function findMacCursorHelperPath() {
 	for (const candidate of helperCandidates()) {
 		try {
 			accessSync(candidate, fsConstants.X_OK);

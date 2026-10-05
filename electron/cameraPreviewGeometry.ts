@@ -43,7 +43,7 @@ export function defaultCameraPreviewPosition(
 export interface CameraPreviewBounds extends CameraPreviewPoint, CameraPreviewSize {}
 
 /** Transparent gutter around the painted surface; keeps its shadow inside the window. */
-export const CAMERA_PREVIEW_GUTTER = 12;
+const CAMERA_PREVIEW_GUTTER = 12;
 
 /**
  * Largest 16:9 surface (plus gutter) that fits inside the work area with a margin,

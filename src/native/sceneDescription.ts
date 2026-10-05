@@ -59,13 +59,13 @@ import {
 import type { CompositorClipInput } from "./contracts";
 
 /** Background behind the screen. Parsed from `settings.wallpaper`. */
-export type SceneBackground =
+type SceneBackground =
 	| { kind: "color"; color: string } // "#rrggbb"
 	| { kind: "gradient"; angleDeg: number; stops: string[] } // linear-gradient(deg, c1, c2, …)
 	| { kind: "image"; path: string }; // "/wallpapers/…" or a data: URL
 
 /** A timeline zoom region (from `document.zoomRanges`). Times in seconds. */
-export interface SceneZoomRegion {
+interface SceneZoomRegion {
 	/** Stable id — native uses it to pair adjacent regions for connected zoom-pan. */
 	id: string;
 	/** Only regions in the same authored passage may use one connected pan. */
@@ -91,7 +91,7 @@ export interface SceneZoomRegion {
 }
 
 /** A "Full Camera" timeline region (from `legacyEditor.cameraFullscreenRegions`). Times in seconds. */
-export interface SceneCameraFullscreenRegion {
+interface SceneCameraFullscreenRegion {
 	startSec: number;
 	endSec: number;
 	mode?: "fullscreen" | "emphasis";
@@ -136,7 +136,7 @@ export interface SceneSpeedRegion {
  *  `layout.screenRect` as its container. And they are deliberately NOT affected by the zoom
  *  crop: the overlay is a sibling of the element carrying the zoom transform, so annotations
  *  hold still while the content zooms underneath them. */
-export interface SceneAnnotation {
+interface SceneAnnotation {
 	id: string;
 	startSec: number;
 	endSec: number;
@@ -199,7 +199,7 @@ export interface SceneAnnotation {
 }
 
 /** Normalized rect in 0..1 of the output frame (x, y top-left; width, height). */
-export interface SceneRect {
+interface SceneRect {
 	x: number;
 	y: number;
 	width: number;
@@ -518,7 +518,7 @@ export function buildCompositorClipInputs(
  * source offset. Overlays whose asset is missing are skipped; the compositor never
  * guesses a path.
  */
-export function expandVideoOverlayFade(
+function expandVideoOverlayFade(
 	region: SceneVideoOverlay,
 	envelopeStartSec: number,
 ): SceneVideoOverlay[] {

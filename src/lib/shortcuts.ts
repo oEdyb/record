@@ -80,7 +80,7 @@ export type ShortcutConflict =
 	| { type: "configurable"; action: ShortcutAction }
 	| { type: "fixed"; label: string };
 
-export function bindingsEqual(a: ShortcutBinding, b: ShortcutBinding): boolean {
+function bindingsEqual(a: ShortcutBinding, b: ShortcutBinding): boolean {
 	return (
 		a.key.toLowerCase() === b.key.toLowerCase() &&
 		!!a.ctrl === !!b.ctrl &&
@@ -149,15 +149,6 @@ export function matchesShortcut(
 	if (e.altKey !== !!binding.alt) return false;
 
 	return true;
-}
-
-/** True when the event target is a text-editing surface where shortcuts should not fire. */
-export function isTextEditingTarget(target: EventTarget | null): boolean {
-	return (
-		target instanceof HTMLInputElement ||
-		target instanceof HTMLTextAreaElement ||
-		(target instanceof HTMLElement && target.isContentEditable)
-	);
 }
 
 const KEY_LABELS: Record<string, string> = {

@@ -28,13 +28,13 @@ import { type ChildProcessWithoutNullStreams, execFile } from "node:child_proces
  * Getting here means the helper is stuck somewhere even `TerminateProcess`
  * could not reach.
  */
-export const NATIVE_WINDOWS_CAPTURE_STOP_TIMEOUT_MS = 60_000;
+const NATIVE_WINDOWS_CAPTURE_STOP_TIMEOUT_MS = 60_000;
 
 /** How long a killed helper gets to actually die before we escalate. */
 const NATIVE_WINDOWS_CAPTURE_KILL_GRACE_MS = 2_000;
 
 /** What `mf_encoder.h`'s `kContainerFormatFragmentedMp4` puts on the wire. */
-export const NATIVE_WINDOWS_FRAGMENTED_CONTAINER = "fragmented-mp4";
+const NATIVE_WINDOWS_FRAGMENTED_CONTAINER = "fragmented-mp4";
 
 /**
  * An MP4 the helper never indexed is a few bytes of header at most. Anything
@@ -73,7 +73,7 @@ export function isSalvageableFragmentedCapture(
 const RECORDING_STOPPED_PATTERN = /Recording stopped\. Output path: (.+)/;
 const STOP_TIMEOUT_EVENT_PATTERN = /"event":"stop-timeout"[^\n]*"step":"([^"]+)"/;
 
-export type NativeWindowsCaptureStopReason = "stop-timeout" | "helper-failed";
+type NativeWindowsCaptureStopReason = "stop-timeout" | "helper-failed";
 
 export type NativeWindowsCaptureStopResult =
 	| { ok: true; screenVideoPath: string }
@@ -90,7 +90,7 @@ export function readStoppedPath(output: string) {
 }
 
 /** The step the helper's shutdown watchdog gave up on, if it fired. */
-export function readAbandonedStep(output: string) {
+function readAbandonedStep(output: string) {
 	return output.match(STOP_TIMEOUT_EVENT_PATTERN)?.[1] ?? null;
 }
 
@@ -101,7 +101,7 @@ export function readAbandonedStep(output: string) {
  * "the last line" is reliably a diagnostic rather than a cause. Prefer what the
  * helper actually complained about.
  */
-export function readHelperFailureMessage(output: string, code: number | null) {
+function readHelperFailureMessage(output: string, code: number | null) {
 	const complaints = output
 		.split(/\r?\n/)
 		.map((line) => line.trim())

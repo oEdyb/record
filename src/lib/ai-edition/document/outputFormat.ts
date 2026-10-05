@@ -30,8 +30,8 @@ export interface Dims {
 
 export type OutputResolution = Dims;
 
-export const MIN_OUTPUT_DIMENSION = 256;
-export const MAX_OUTPUT_DIMENSION = 7680;
+const MIN_OUTPUT_DIMENSION = 256;
+const MAX_OUTPUT_DIMENSION = 7680;
 
 /** Output frame used when a document has no usable asset dimensions at all. */
 const FALLBACK_OUTPUT_DIMS: Dims = { width: 1920, height: 1080 };

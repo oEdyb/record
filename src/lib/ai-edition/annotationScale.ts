@@ -23,18 +23,11 @@
  * output height, so a project authored while previewing near full size needs no adjustment and
  * the number in the inspector keeps meaning what a user would guess it means.
  */
-export const ANNOTATION_REFERENCE_HEIGHT = 1080;
+const ANNOTATION_REFERENCE_HEIGHT = 1080;
 
 /** Authored font size → fraction of the screen rect's height. Resolution-free, which is the form
  *  the native scene carries. */
 export function annotationFontSizeFraction(fontSizePx: number): number {
 	if (!Number.isFinite(fontSizePx) || fontSizePx <= 0) return 0;
 	return fontSizePx / ANNOTATION_REFERENCE_HEIGHT;
-}
-
-/** Authored font size → pixels, for a box of `containerHeightPx`. Used by the preview overlay;
- *  the native renderer applies the same product against the screen rect in output pixels. */
-export function annotationFontSizePx(fontSizePx: number, containerHeightPx: number): number {
-	if (!Number.isFinite(containerHeightPx) || containerHeightPx <= 0) return 0;
-	return annotationFontSizeFraction(fontSizePx) * containerHeightPx;
 }

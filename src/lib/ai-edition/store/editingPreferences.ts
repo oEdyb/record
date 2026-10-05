@@ -53,7 +53,7 @@ interface PreferenceStorage {
 }
 
 export type EditorDefaultPreferences = Omit<EditorSettingsSnapshot, "cropRegion">;
-export type CaptionDefaultPreferences = Omit<CaptionSettings, "language">;
+type CaptionDefaultPreferences = Omit<CaptionSettings, "language">;
 
 export interface ExportPreferences {
 	output: "sources" | "video";
@@ -74,7 +74,7 @@ export interface EditingPreferences {
 	export: ExportPreferences;
 }
 
-export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
+const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
 	output: "sources",
 	format: "mp4",
 	quality: "good",
@@ -419,7 +419,7 @@ export function saveExportPreferences(
 	);
 }
 
-export function editorDefaultPreferencesToPatch(
+function editorDefaultPreferencesToPatch(
 	preferences: EditorDefaultPreferences,
 ): EditorSettingsPatch {
 	return {

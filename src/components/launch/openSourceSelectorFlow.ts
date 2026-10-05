@@ -1,4 +1,4 @@
-export type ScreenAccessResult = {
+type ScreenAccessResult = {
 	success: boolean;
 	granted: boolean;
 	status: string;

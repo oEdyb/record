@@ -7,7 +7,7 @@ import type {
 } from "./recordingSession";
 import { normalizeCursorCaptureMode, normalizeRecordingOriginals } from "./recordingSession";
 
-export type NativeMacSourceType = "display" | "window";
+type NativeMacSourceType = "display" | "window";
 
 /** A moment on the way from the Record click to the first saved frame, in epoch ms. */
 export type RecordStartMark = { stage: string; atMs: number };
@@ -64,11 +64,6 @@ export type NativeMacRecordingRequest = {
 	};
 };
 
-export type NativeMacHelperReadyEvent = {
-	event: "ready";
-	schemaVersion: 1;
-};
-
 export type NativeMacOriginalStarted = {
 	clipIndex: number;
 	key: "webcamVideoPath" | "microphoneAudioPath" | "systemAudioPath";
@@ -96,45 +91,7 @@ export function parseNativeMacOriginalStarted(value: unknown): NativeMacOriginal
 	return { clipIndex: raw.clipIndex, key: raw.key, path: raw.path, offsetMs: raw.offsetMs };
 }
 
-export type NativeMacHelperRecordingStartedEvent = {
-	event: "recording-started";
-	timestampMs: number;
-	captureBounds?: Rectangle;
-};
-
-export type NativeMacHelperClipFinalizedEvent = {
-	event: "clip-finalized";
-	clip: RecordingSessionClip;
-};
-
-export type NativeMacHelperRecordingPausedEvent = {
-	event: "recording-paused";
-	timestampMs: number;
-};
-
-export type NativeMacHelperRecordingResumedEvent = {
-	event: "recording-resumed";
-	timestampMs: number;
-};
-
-export type NativeMacHelperRecordingReconfiguredEvent = {
-	event: "recording-reconfigured";
-	timestampMs: number;
-	captureBounds?: Rectangle;
-};
-
-export type NativeMacHelperRecordingStoppedEvent = {
-	event: "recording-stopped";
-	screenPath: string;
-	clips: RecordingSessionClip[];
-	warning?: {
-		code: string;
-		message: string;
-	};
-	telemetry?: NativeMacCaptureTelemetry;
-};
-
-export type NativeMacMetricSummary = {
+type NativeMacMetricSummary = {
 	count: number;
 	min: number;
 	max: number;
@@ -184,41 +141,11 @@ export type NativeMacCaptureTelemetry = {
 	audioBlockMs?: NativeMacMetricSummary;
 };
 
-export type NativeMacHelperWarningEvent = {
-	event: "warning";
-	code: string;
-	message: string;
-};
-
-export type NativeMacHelperErrorEvent = {
-	event: "error";
-	code: string;
-	message: string;
-};
-
-export type NativeMacHelperEvent =
-	| NativeMacHelperReadyEvent
-	| NativeMacHelperRecordingStartedEvent
-	| NativeMacHelperClipFinalizedEvent
-	| NativeMacHelperRecordingPausedEvent
-	| NativeMacHelperRecordingReconfiguredEvent
-	| NativeMacHelperRecordingResumedEvent
-	| NativeMacHelperRecordingStoppedEvent
-	| NativeMacHelperWarningEvent
-	| NativeMacHelperErrorEvent;
-
 export type NativeMacRecordingStartResult = {
 	success: boolean;
 	recordingId?: number;
 	path?: string;
 	helperPath?: string;
-	error?: string;
-};
-
-export type NativeMacRecordingClipResult = {
-	success: boolean;
-	clip?: RecordingSessionClip;
-	paused?: boolean;
 	error?: string;
 };
 

@@ -2,9 +2,8 @@
  * Unit conversions between the editor's settings and the native compositor's
  * params.
  *
- * These two constants used to live inside the panels that pushed them — one
- * declared inside `VideoEffectsPane`'s body, the other at RightPanes module
- * scope. They are here because `pushAllNativeParams` needs the same numbers,
+ * These two constants used to live inside the former editor panels that pushed
+ * them. They are here because `pushAllNativeParams` needs the same numbers,
  * and a second copy of a conversion factor is a silent divergence waiting to
  * happen: the preview would drift from the panel by exactly the ratio between
  * the two values, which is the kind of bug nobody attributes to a constant.

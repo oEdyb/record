@@ -43,12 +43,6 @@ export function getBlurOverlayColor(blurData?: BlurData | null): string {
 	return blurColor === "black" ? "rgba(0, 0, 0, 0.72)" : "rgba(255, 255, 255, 0.06)";
 }
 
-export function getMosaicGridOverlayColor(blurData?: BlurData | null): string {
-	return normalizeBlurColor(blurData?.color) === "black"
-		? "rgba(255,255,255,0.05)"
-		: "rgba(255,255,255,0.04)";
-}
-
 export function applyMosaicToImageData(imageData: ImageData, blockSize: number): ImageData {
 	const width = imageData.width;
 	const height = imageData.height;

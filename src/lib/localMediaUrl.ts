@@ -1,4 +1,4 @@
-export const KLIPPT_SCHEME = "klippt";
+const KLIPPT_SCHEME = "klippt";
 export const KLIPPT_APP_ORIGIN = `${KLIPPT_SCHEME}://app`;
 export const KLIPPT_MEDIA_PATH_PREFIX = "/__media__/";
 export const KLIPPT_RESOURCE_PATH_PREFIX = "/__resources__/";

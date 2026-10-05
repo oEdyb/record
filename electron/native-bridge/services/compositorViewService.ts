@@ -444,8 +444,8 @@ function pinnedFfmpegDir(appRoot: string): string | null {
  * since `electron/native/bin/**` ships exclusively via `extraResources` (see
  * `electron-builder.json5`'s `files` list, which only packs
  * `dist`/`dist-electron`) and is never inside `app.getAppPath()` there.
- * Mirrors the appPath/resourcePath pattern `stt/gpuDetector.ts` already uses
- * for the other native binaries in this same directory.
+ * Same appPath/resourcePath pattern the other native binaries in this
+ * directory use.
  */
 export function ffmpegSharedBinCandidates(appRoot: string): string[] {
 	const tag = platformArchTag();

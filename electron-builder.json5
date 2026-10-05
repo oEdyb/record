@@ -314,10 +314,10 @@
     // paquet qui garantit lavapipe, sans quoi l'aperçu du compositeur est indisponible.
     //
     // `libsecret` n'est PAS dans le défaut rpm alors qu'il l'est dans le défaut deb
-    // (`libsecret-1-0`). `safeStorage` chiffre les clés d'API des fournisseurs LLM
-    // (electron/ai-edition/llm-config-store.ts) et passe par le Secret Service :
-    // sans lui, `isEncryptionAvailable()` répond faux et l'enregistrement d'une clé
-    // lève. Une omission d'electron-builder, pas un choix.
+    // (`libsecret-1-0`). `safeStorage` chiffre l'état de licence local
+    // (electron/entitlements/secretCodec.ts) et passe par le Secret Service :
+    // sans lui, `isEncryptionAvailable()` répond faux et l'enregistrement de la
+    // licence lève. Une omission d'electron-builder, pas un choix.
     //
     // `mesa-libgbm`, `alsa-lib` et `libgomp` sont les équivalents Fedora des sonames
     // décrits sur `deb`, relevés par `dnf provides` : `libgbm.so.1` vient de

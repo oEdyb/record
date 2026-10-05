@@ -20,15 +20,15 @@ who reads and writes the project document.
 | [overview.md](architecture/overview.md) | The whole picture: windows, processes, data flow, subsystem map |
 | [document-model.md](architecture/document-model.md) | `AxcutDocument` — the single source of truth, its schema, migrations and persistence |
 | [timeline-model.md](architecture/timeline-model.md) | Time reference frames, clip-anchored modifiers, and the invariants that keep preview and render agreeing |
-| [editor-shell.md](architecture/editor-shell.md) | The editor UI: surfaces, modes, facets, and how to add a region kind |
+| [editor-shell.md](architecture/editor-shell.md) | The recording review window, the only shell since the editor was archived |
 | [preview.md](architecture/preview.md) | Showing the frame at the playhead: scene description, frame delivery, playback sync |
 | [native-compositor.md](architecture/native-compositor.md) | The Rust + D3D11 engine that composites and encodes, for both preview and export |
 | [export-pipeline.md](architecture/export-pipeline.md) | Document to file: render plan, segment loop, audio junctions, output formats |
 | [recording.md](architecture/recording.md) | Capture on Windows, macOS and Linux: the HUD, the native helpers, what lands on disk |
 | [cursor.md](architecture/cursor.md) | Cursor capture, telemetry, rendering and auto-follow |
-| [transcription-and-captions.md](architecture/transcription-and-captions.md) | On-device speech to text, and the caption layer derived from it |
+| [transcription-and-captions.md](architecture/transcription-and-captions.md) | Speech to text is archived; how stored captions still render |
 | [ai-agent.md](architecture/ai-agent.md) | Archived: the removed agent, its CLI, and what remains |
-| [llm-providers.md](architecture/llm-providers.md) | Provider registry, auth modes, credential storage |
+| [llm-providers.md](architecture/llm-providers.md) | Archived: the removed LLM provider layer |
 | [native-bridge.md](architecture/native-bridge.md) | The renderer ↔ main-process contract every native capability goes through |
 | [decisions.md](architecture/decisions.md) | **The decision ledger** — what is settled, what was rejected and why |
 

@@ -1,7 +1,7 @@
 # Klippt
 
-Klippt is a private, Mac-first screen recorder and editor for creators. Record in clean clips,
-remove a bad section while recording, and return to a polished editable timeline.
+Klippt is a private, Mac-first screen recorder for creators. Record in clean clips, remove a bad
+section while recording, review the take, and hand off the untouched sources or save one video.
 
 The project started from the MIT-licensed OpenScreen continuation. Klippt is now a separate
 proprietary commercial product. Legacy OpenScreen identifiers remain only where a compatibility-safe
@@ -20,9 +20,10 @@ migration has not happened yet. The upstream copyright and permission notice rem
 
 ## Current state
 
-The Mac core works: clip-native Record, Pause, Continue, Remove previous clip, Stop, editor
-insertion, reversible timeline edits, automatic direction, local transcription, pause shortening,
-and native MP4/GIF export. The current checkpoint uses Electron `44.1.0`, a contained
+The Mac core works: clip-native Record, Pause, Continue, Remove previous clip, Stop, review,
+untouched-source handoff, and native MP4/GIF export. The editor UI, in-app chat, `klippt agent`
+CLI, automatic direction, and transcription were archived on 2026-10-05 (tag
+`archive/pre-cleanup-2026-10-05`); existing projects still open and render their stored edits. The current checkpoint uses Electron `44.1.0`, a contained
 `klippt://app` origin, central privileged-IPC validation, production fuses, ASAR integrity, and an
 atomic export publisher.
 

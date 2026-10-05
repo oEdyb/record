@@ -48,5 +48,3 @@ export function getAssetPath(relativePath: string): string {
 	}
 	return new URL(encoded, ensureTrailingSlash(base)).toString();
 }
-
-export default getAssetPath;

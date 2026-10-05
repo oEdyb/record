@@ -1,4 +1,4 @@
-export const ENTITLEMENT_CAPABILITIES = [
+const ENTITLEMENT_CAPABILITIES = [
 	"record",
 	"edit",
 	"import",
@@ -8,7 +8,7 @@ export const ENTITLEMENT_CAPABILITIES = [
 
 export type EntitlementCapability = (typeof ENTITLEMENT_CAPABILITIES)[number];
 
-export type EntitlementStatus =
+type EntitlementStatus =
 	| "development"
 	| "trial-not-started"
 	| "trial-active"
@@ -32,11 +32,7 @@ export interface EntitlementSnapshot {
 	customerEmail?: string;
 }
 
-export interface EntitlementActivationResult {
-	snapshot: EntitlementSnapshot;
-}
-
-export function hasPaidAccess(snapshot: EntitlementSnapshot): boolean {
+function hasPaidAccess(snapshot: EntitlementSnapshot): boolean {
 	return snapshot.access === "full";
 }
 

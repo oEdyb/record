@@ -118,34 +118,11 @@ export function syncCompositorTransport(
 	});
 }
 
-export function setCompositorTime(id: number, seconds: number): Promise<{ ok: true }> {
-	return requireNativeBridgeData<{ ok: true }>({
-		domain: "compositor",
-		action: "presentTime",
-		payload: { id, seconds },
-	});
-}
-
 export function setCompositorScene(id: number, sceneJson: string): Promise<{ ok: true }> {
 	return requireNativeBridgeData<{ ok: true }>({
 		domain: "compositor",
 		action: "setScene",
 		payload: { id, sceneJson },
-	});
-}
-
-export function setActiveClip(
-	id: number,
-	screenPath: string,
-	webcamPath: string,
-	webcamOffsetSec: number,
-	clipIndex: number,
-	sourceTimeSec: number,
-): Promise<{ ok: true }> {
-	return requireNativeBridgeData<{ ok: true }>({
-		domain: "compositor",
-		action: "setActiveClip",
-		payload: { id, screenPath, webcamPath, webcamOffsetSec, clipIndex, sourceTimeSec },
 	});
 }
 
@@ -222,17 +199,4 @@ function runCancellableExport<T>(
 	};
 	signal?.addEventListener("abort", cancel, { once: true });
 	return start(exportId).finally(() => signal?.removeEventListener("abort", cancel));
-}
-
-/** Generate/reuse an approved, output-time audio overlay preview stem. */
-export function prepareAudioOverlayStem(input: {
-	audioOverlays: import("./sceneDescription").SceneAudioOverlay[];
-	durationSec: number;
-}) {
-	return requireNativeBridgeData<{
-		sourcePath: string;
-		sourceUrl: string;
-		cacheKey: string;
-		durationSec: number;
-	}>({ domain: "compositor", action: "audioOverlayStem", payload: input });
 }

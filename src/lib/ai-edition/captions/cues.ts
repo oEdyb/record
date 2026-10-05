@@ -38,7 +38,7 @@ export interface CaptionCue {
 
 /** Captions draw above every user annotation so a blur or a sticker can't bury
  *  the subtitle. Well clear of the annotation z-range, which counts up from 1. */
-export const CAPTION_Z_INDEX_BASE = 100_000;
+const CAPTION_Z_INDEX_BASE = 100_000;
 
 function toCaptionSegments(transcript: AxcutTranscript): CaptionSegment[] {
 	return transcript.words
@@ -93,7 +93,7 @@ function textAsPseudoWords(startSec: number, endSec: number, text: string): Capt
  * transcript stores one segment per word, so translating per segment would have
  * translated word by word.
  */
-export function captionLinesForAsset(
+function captionLinesForAsset(
 	transcript: AxcutTranscript,
 	settings: CaptionSettings,
 	translations: CaptionTranslations,
@@ -154,7 +154,7 @@ function translatedWordStream(
  * yields one timeline span per covering clip, so the caption appears wherever
  * its audio actually plays and nowhere else. A span no clip plays yields [].
  */
-export function sourceSpanToTimelineSpans(
+function sourceSpanToTimelineSpans(
 	assetId: string,
 	startSec: number,
 	endSec: number,
@@ -236,17 +236,6 @@ export function deriveCaptionCues(
 		if (prev.endMs > cur.startMs) prev.endMs = Math.max(prev.startMs + 1, cur.startMs);
 	}
 	return cues;
-}
-
-/** The cue playing at `timeMs`, or null. Ties go to the one that started later,
- *  which is what "the next line has taken over" looks like. */
-export function captionCueAt(cues: CaptionCue[], timeMs: number): CaptionCue | null {
-	let found: CaptionCue | null = null;
-	for (const cue of cues) {
-		if (timeMs >= cue.startMs && timeMs < cue.endMs) found = cue;
-		else if (cue.startMs > timeMs) break;
-	}
-	return found;
 }
 
 /**

@@ -95,7 +95,7 @@ function buildDefaultProject(session: {
 	};
 }
 
-export function CliRecordRunner() {
+function CliRecordRunner() {
 	const recorder = useScreenRecorder();
 	const startedRef = useRef(false);
 	const requestRef = useRef<CliRecordRequest | null>(null);

@@ -1,12 +1,11 @@
 import { z } from "zod";
 
-export const automaticDirectionReasonSchema = z.enum([
+const automaticDirectionReasonSchema = z.enum([
 	"screen-activity",
 	"cursor-trace",
 	"typing",
 	"speech-with-quiet-screen",
 ]);
-export type AutomaticDirectionReason = z.infer<typeof automaticDirectionReasonSchema>;
 export const automaticDirectionProvenanceSchema = z.object({
 	version: z.literal(1),
 	reason: automaticDirectionReasonSchema,

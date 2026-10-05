@@ -35,7 +35,7 @@ export interface MediaFingerprint {
 	tailSampleBase64: string;
 }
 
-export interface MediaLinkEntry {
+interface MediaLinkEntry {
 	lastKnownPath: string;
 	fingerprint: MediaFingerprint;
 	webcamVideoPath?: string;
@@ -86,7 +86,7 @@ export async function computeFingerprint(filePath: string): Promise<MediaFingerp
 	}
 }
 
-export function fingerprintsMatch(a: MediaFingerprint, b: MediaFingerprint): boolean {
+function fingerprintsMatch(a: MediaFingerprint, b: MediaFingerprint): boolean {
 	return (
 		a.sizeBytes === b.sizeBytes &&
 		a.headSampleBase64 === b.headSampleBase64 &&

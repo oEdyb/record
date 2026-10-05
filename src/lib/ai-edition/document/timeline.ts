@@ -29,7 +29,7 @@ export type RegionKind =
  *  duration (`applyProbedDuration`); the store re-exports it for its own callers. */
 export const PLACEHOLDER_DURATION_SEC = 60;
 
-export function byStart(a: { startSec: number }, b: { startSec: number }): number {
+function byStart(a: { startSec: number }, b: { startSec: number }): number {
 	return a.startSec - b.startSec;
 }
 
@@ -623,7 +623,7 @@ export function applyProbedDuration(
 /** One interval of a rebuilt timeline, plus the identity it inherits. `keepClipId`
  *  is set when the CALLER'S raw interval is (to the epsilon) an existing clip's own
  *  source window: the same stretch of media, so the same clip. */
-export interface TimelineReplacementSlot {
+interface TimelineReplacementSlot {
 	interval: Interval;
 	keepClipId: string | null;
 }

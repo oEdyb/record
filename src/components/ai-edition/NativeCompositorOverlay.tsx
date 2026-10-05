@@ -155,7 +155,7 @@ export function NativeCompositorOverlay() {
 	// SYNCHRO COMPLETE DES PARAMS, en un seul endroit.
 	//
 	// Avant, chaque groupe de params n'etait pousse que par l'effet de montage du
-	// panneau qui le possede (VideoEffectsPane, LayoutPane, CursorPane). Or
+	// panneau qui le possedait dans l'ancien editeur. Or
 	// l'inspecteur n'affiche qu'UN panneau a la fois, donc au chargement les
 	// params curseur et layout n'avaient jamais ete pousses et l'addon restait
 	// sur ses defauts compiles : un projet en taille de curseur 3.0 s'affichait a

@@ -11,7 +11,7 @@ import {
 	DEFAULT_SAFE_MARGIN_PERCENT,
 } from "./schema";
 
-export { CAMERA_ANCHORS, CAMERA_SIZES, DEFAULT_SAFE_MARGIN_PERCENT } from "./schema";
+export { CAMERA_ANCHORS, CAMERA_SIZES } from "./schema";
 
 const axes: Record<CameraAnchor, readonly [number, number]> = {
 	"top-left": [0, 0],
@@ -120,18 +120,7 @@ export function assertClipLayoutSupported(document: AxcutDocument, clipId: strin
 		);
 	}
 }
-
-export const ZOOM_SCALES = { S: 1.25, M: 1.5, L: 2, XL: 2.5 } as const;
-export const CAMERA_EMPHASIS_SCALES = { S: 1.15, M: 1.35, L: 1.65, XL: 2 } as const;
-export const SPEECH_MOTION = {
-	quick: { motionStyle: "snappy", motionSpeed: 1.5 },
-	normal: { motionStyle: "smooth", motionSpeed: 1 },
-	slow: { motionStyle: "smooth", motionSpeed: 0.5 },
-} as const;
-export function textSizeFraction(
-	size: CameraSize,
-	style: "card" | "lower-third" | "label" = "card",
-) {
+function textSizeFraction(size: CameraSize, style: "card" | "lower-third" | "label" = "card") {
 	const step = { XS: 1, S: 2, M: 3, L: 4, XL: 5 }[size];
 	return [0.02, 0.03, 0.045, 0.06, 0.08, 0.11, 0.15][
 		step + (style === "label" ? -1 : style === "lower-third" ? 1 : 0)

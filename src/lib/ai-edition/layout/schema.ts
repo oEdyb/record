@@ -17,7 +17,7 @@ export const cameraAnchorSchema = z.union([
 	z.enum(CAMERA_ANCHORS),
 	z.strictObject({ cx: z.number().finite().min(0).max(1), cy: z.number().finite().min(0).max(1) }),
 ]);
-export const cameraSizeSchema = z.union([
+const cameraSizeSchema = z.union([
 	z.enum(["XS", "S", "M", "L", "XL"]),
 	z.number().finite().min(10).max(80),
 ]);

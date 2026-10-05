@@ -17,7 +17,7 @@ import {
 	Output,
 } from "mediabunny";
 
-export type VoiceoverMixMode = "mix" | "replace";
+type VoiceoverMixMode = "mix" | "replace";
 
 export interface VoiceoverMixOptions {
 	/** Encoded audio file bytes (mp3/wav/m4a — anything decodeAudioData accepts). */

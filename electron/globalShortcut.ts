@@ -8,7 +8,7 @@ import {
 } from "../src/lib/shortcuts";
 import { SHORTCUTS_FILE } from "./ipc/handlers";
 
-export type GlobalShortcutAction = "openApp" | "toggleRecordingPause";
+type GlobalShortcutAction = "openApp" | "toggleRecordingPause";
 export type GlobalShortcutBindings = Pick<ShortcutsConfig, GlobalShortcutAction>;
 export type GlobalShortcutHandlers = Record<GlobalShortcutAction, () => void>;
 

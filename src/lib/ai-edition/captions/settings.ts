@@ -13,10 +13,10 @@ import { clamp } from "@/utils/math";
 import type { AxcutDocument } from "../schema";
 
 /** Vertical anchor of the caption band inside the frame. */
-export type CaptionVerticalPosition = "top" | "middle" | "bottom";
+type CaptionVerticalPosition = "top" | "middle" | "bottom";
 
 /** Horizontal alignment of the text inside the (always centred) caption band. */
-export type CaptionTextAlign = "left" | "center" | "right";
+type CaptionTextAlign = "left" | "center" | "right";
 
 export interface CaptionSettings {
 	/** Master show/hide for the whole caption layer (preview AND export). */
@@ -72,7 +72,7 @@ export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
 
 /** Band height as a % of frame height. Generous enough for two wrapped lines at
  *  the default size; the renderers clip to it, so it is deliberately not tight. */
-export const CAPTION_BAND_HEIGHT_PCT = 22;
+const CAPTION_BAND_HEIGHT_PCT = 22;
 
 /** Margin between the band and the frame edge for the top/bottom anchors, in %. */
 const CAPTION_EDGE_MARGIN_PCT = 3;

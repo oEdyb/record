@@ -1,7 +1,7 @@
 import type { Rectangle } from "electron";
 import type { NativeCursorType } from "../../../../src/native/contracts";
 
-export interface WindowsCursorSampleEvent {
+interface WindowsCursorSampleEvent {
 	type: "sample";
 	timestampMs: number;
 	x: number;
@@ -21,18 +21,18 @@ export interface WindowsCursorSampleEvent {
 	asset: WindowsCursorAssetPayload | null;
 }
 
-export interface WindowsCursorReadyEvent {
+interface WindowsCursorReadyEvent {
 	type: "ready";
 	timestampMs: number;
 }
 
-export interface WindowsCursorErrorEvent {
+interface WindowsCursorErrorEvent {
 	type: "error";
 	timestampMs: number;
 	message: string;
 }
 
-export interface WindowsCursorAssetPayload {
+interface WindowsCursorAssetPayload {
 	id: string;
 	imageDataUrl: string;
 	width: number;

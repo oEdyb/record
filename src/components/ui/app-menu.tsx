@@ -37,7 +37,7 @@ export const AppMenuItem = React.forwardRef<
 ));
 AppMenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
 
-export const AppMenuLabel = React.forwardRef<
+const AppMenuLabel = React.forwardRef<
 	React.ElementRef<typeof DropdownMenuPrimitive.Label>,
 	React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label>
 >(({ className = "", ...props }, ref) => (
@@ -45,7 +45,7 @@ export const AppMenuLabel = React.forwardRef<
 ));
 AppMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
 
-export const AppMenuSeparator = React.forwardRef<
+const AppMenuSeparator = React.forwardRef<
 	React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
 	React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
 >(({ className = "", ...props }, ref) => (

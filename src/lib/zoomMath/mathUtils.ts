@@ -10,7 +10,7 @@ function sampleCubicBezierDerivative(a1: number, a2: number, t: number) {
 	return 3 * a1 * oneMinusT * oneMinusT + 6 * (a2 - a1) * oneMinusT * t + 3 * (1 - a2) * t * t;
 }
 
-export function cubicBezier(x1: number, y1: number, x2: number, y2: number, t: number) {
+function cubicBezier(x1: number, y1: number, x2: number, y2: number, t: number) {
 	const targetX = clamp01(t);
 	let solvedT = targetX;
 
@@ -49,12 +49,4 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number, t: n
 
 export function easeOutScreenStudio(t: number) {
 	return cubicBezier(0.16, 1, 0.3, 1, t);
-}
-
-/**
- * Ease-out cubic. Used for zoom-out transitions so strength eases to zero.
- */
-export function easeOutCubic(t: number) {
-	const x = clamp01(t);
-	return 1 - Math.pow(1 - x, 3);
 }

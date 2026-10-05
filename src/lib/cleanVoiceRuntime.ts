@@ -1,4 +1,4 @@
-export type CleanVoiceRuntimePhase =
+type CleanVoiceRuntimePhase =
 	| "queued"
 	| "checking-cache"
 	| "processing"

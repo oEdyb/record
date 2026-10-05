@@ -136,7 +136,3 @@ export function requireEntitlement(capability: EntitlementCapability): boolean {
 	state.openDialog(capability);
 	return false;
 }
-
-export function currentEntitlement(): EntitlementSnapshot {
-	return useEntitlementStore.getState().snapshot;
-}

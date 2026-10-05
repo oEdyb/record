@@ -15,7 +15,7 @@ export type ScreenFramingByVariant = Record<string, ScreenFraming>;
 
 export const MIN_SCREEN_FRAMING_SCALE = 1;
 export const MAX_SCREEN_FRAMING_SCALE = 4;
-export const DEFAULT_SCREEN_FRAMING: ScreenFraming = {
+const DEFAULT_SCREEN_FRAMING: ScreenFraming = {
 	scale: MIN_SCREEN_FRAMING_SCALE,
 	focalPoint: { cx: 0.5, cy: 0.5 },
 };
@@ -82,7 +82,7 @@ export function setScreenFramingForVariant(
 	};
 }
 
-export function cloneScreenFraming(framing: ScreenFraming): ScreenFraming {
+function cloneScreenFraming(framing: ScreenFraming): ScreenFraming {
 	return { scale: framing.scale, focalPoint: { ...framing.focalPoint } };
 }
 

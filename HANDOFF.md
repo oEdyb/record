@@ -1,3 +1,18 @@
+# October 5: repo slimmed; editor archived
+
+Branch `cleanup/slim-repo-2026-10-05` archived the editor UI, in-app LLM chat, `klippt agent`
+CLI, automatic direction, pause analysis, zoom suggestions, STT and caption generation, plus
+direction-lab, dead exports and 831 unused i18n keys. All of it is in tag `archive/pre-cleanup-2026-10-05`.
+Kept: recording, review, playback, source handoff, One video, opening/rendering existing projects,
+Notes, Clean Voice, entitlements, `klippt record/export/sources/info/pack`, Windows/Linux code.
+Tracked files 1,918 → 1,368; +3,106/−146,095 lines vs the tag. Unit tests: 2,449 pass, 1 skip
+(4,131 on October 4); types, lint, docs, i18n, design, supply-chain and `build-vite` pass.
+Owner: re-sign `supply-chain/approved-dependency-inputs.json` to drop the importer-free npm
+packages langchain, @langchain/{anthropic,core,openai,mistralai}, motion, react-icons, react-rnd,
+@uiw/react-color-colorful, @electron/rebuild, fast-check, esbuild, the parakeet/whisper helpers
+and `electron/stt/modelManager.ts`. `web-demuxer` now has no code importer either.
+Not yet done: a real Mac record → review → export pass on this branch; nothing installed.
+
 # October 4: current creator-loop build installed
 
 The user authorized fixing packaging and installing the merged build. `/Applications/Klippt.app`

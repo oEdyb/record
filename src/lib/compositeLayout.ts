@@ -10,20 +10,6 @@ export interface RenderRect {
 	height: number;
 }
 
-/** Floor for the reactive webcam multiplier so the camera never shrinks below ~35% at deep zoom. */
-export const WEBCAM_REACTIVE_ZOOM_MIN_SCALE = 0.35;
-
-/**
- * Maps the live zoom scale to a webcam size multiplier, inversely (2x zoom, half size; 3x, a
- * third) so the camera stays out of the way while zoomed and returns to full size as zoom eases
- * back. Clamped to a floor so it never disappears. appliedScale is already eased per frame, so
- * the camera animates in sync for free.
- */
-export function reactiveWebcamScale(zoomScale: number): number {
-	const safe = Number.isFinite(zoomScale) && zoomScale > 0 ? zoomScale : 1;
-	return Math.max(WEBCAM_REACTIVE_ZOOM_MIN_SCALE, Math.min(1, 1 / safe));
-}
-
 export interface StyledRenderRect extends RenderRect {
 	borderRadius: number;
 	maskShape?: import("@/components/video-editor/types").WebcamMaskShape;
@@ -130,7 +116,7 @@ export const DEFAULT_WEBCAM_BLOCK_CAMERA_SHARE: WebcamBlockCameraShare = 50;
 export const MIN_WEBCAM_SIZE_PERCENT = 10;
 export const MAX_WEBCAM_SIZE_PERCENT = 80;
 
-export interface WebcamLayoutShadow {
+interface WebcamLayoutShadow {
 	color: string;
 	blur: number;
 	offsetX: number;
@@ -163,7 +149,7 @@ interface BlockTransform {
 	gapFraction: number;
 }
 
-export interface WebcamLayoutPresetDefinition {
+interface WebcamLayoutPresetDefinition {
 	label: string;
 	transform: OverlayTransform | BlockTransform;
 	borderRadius: BorderRadiusRule;
@@ -186,9 +172,7 @@ export function isWebcamBlockLayout(preset: WebcamLayoutPreset = "picture-in-pic
  * as the screen capture" contract and tear a hole in the block. Single rule shared by
  * the UI (which hides the toggle), the preview, both exporters and the native scene.
  */
-export function supportsWebcamReactiveZoom(
-	preset: WebcamLayoutPreset = "picture-in-picture",
-): boolean {
+function supportsWebcamReactiveZoom(preset: WebcamLayoutPreset = "picture-in-picture"): boolean {
 	return preset === "picture-in-picture";
 }
 
@@ -300,26 +284,10 @@ const WEBCAM_LAYOUT_PRESET_MAP: Record<WebcamLayoutPreset, WebcamLayoutPresetDef
 	},
 };
 
-export const WEBCAM_LAYOUT_PRESETS = Object.entries(WEBCAM_LAYOUT_PRESET_MAP).map(
-	([value, preset]) => ({
-		value: value as WebcamLayoutPreset,
-		label: preset.label,
-	}),
-);
-
-export function getWebcamLayoutPresetDefinition(
+function getWebcamLayoutPresetDefinition(
 	preset: WebcamLayoutPreset = "picture-in-picture",
 ): WebcamLayoutPresetDefinition {
 	return WEBCAM_LAYOUT_PRESET_MAP[preset];
-}
-
-export function getWebcamLayoutCssBoxShadow(
-	preset: WebcamLayoutPreset = "picture-in-picture",
-): string {
-	const shadow = getWebcamLayoutPresetDefinition(preset).shadow;
-	return shadow
-		? `${shadow.offsetX}px ${shadow.offsetY}px ${shadow.blur}px ${shadow.color}`
-		: "none";
 }
 
 export function computeCompositeLayout(params: {

@@ -15,7 +15,7 @@
 
 import type { AxcutDocument, AxcutTranscript } from "../schema";
 
-export interface CaptionTranslation {
+interface CaptionTranslation {
 	/** Language code as chosen by the user, e.g. `"fr"`, `"pt-BR"`. */
 	language: string;
 	/** Human-readable name for the picker, e.g. `"Français"`. */

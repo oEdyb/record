@@ -13,8 +13,10 @@ import {
 import type { MotionSpeed, MotionStyle } from "@/lib/zoomMath/motionCurve";
 import { clamp01 } from "@/utils/math";
 
-export type { ZoomDepth, ZoomScaleInput };
-export type ZoomFocusMode = "manual" | "auto";
+export type { ZoomScaleInput };
+
+type ZoomFocusMode = "manual" | "auto";
+
 export type { WebcamBlockCameraShare, WebcamBlockOrder, WebcamLayoutPreset };
 /** Webcam size as a percentage of the canvas reference dimension (10-80). */
 export type WebcamSizePreset = number;
@@ -69,7 +71,7 @@ export const DEFAULT_ROTATION_3D: Rotation3D = {
 	rotationZ: 0,
 };
 
-export type Rotation3DPreset = "iso" | "left" | "right";
+type Rotation3DPreset = "iso" | "left" | "right";
 
 // Every preset carries all three components on purpose. With a single-axis rotation the projected
 // quad keeps an edge exactly parallel to the frame — both vertical edges for a pure Y rotation,
@@ -77,30 +79,18 @@ export type Rotation3DPreset = "iso" | "left" | "right";
 // indistinguishable from `overflow: hidden`. That is what got reported three times as "the
 // recording is truncated" while the plane was in fact drawn whole. `regions.rs` holds the same
 // numbers and a test asserting no edge comes within 2° of an axis.
-export const ROTATION_3D_PRESETS: Record<Rotation3DPreset, Rotation3D> = {
+const ROTATION_3D_PRESETS: Record<Rotation3DPreset, Rotation3D> = {
 	iso: { rotationX: -12, rotationY: -18, rotationZ: -2 },
 	left: { rotationX: -8, rotationY: -16, rotationZ: -1 },
 	right: { rotationX: -8, rotationY: 16, rotationZ: 1 },
 };
-
-export const ROTATION_3D_PRESET_ORDER: Rotation3DPreset[] = ["iso", "left", "right"];
-
-/** Perspective distance in CSS px is this factor times min(viewport w, h). Same
- * factor in preview and export so the look matches at any canvas resolution.
- * Lower = camera closer = edges converge more visibly. At 2.6 the convergence was so flat that
- * iso's top edge came out 0.08° off horizontal and the tilt stopped reading as a tilt. */
-export const ROTATION_3D_PERSPECTIVE_FACTOR = 1.6;
-
-export function rotation3DPerspective(width: number, height: number): number {
-	return Math.min(width, height) * ROTATION_3D_PERSPECTIVE_FACTOR;
-}
 
 /**
  * Origin of a zoom region. "auto" marks zooms from the magic-wand suggest pass;
  * toggling the wand off removes only these. Editing an auto zoom promotes it to
  * "manual" so it survives. Undefined is treated as "manual" for back-compat.
  */
-export type ZoomRegionSource = "auto" | "manual";
+type ZoomRegionSource = "auto" | "manual";
 
 export interface ZoomRegion {
 	id: string;
@@ -127,93 +117,12 @@ export function getRotation3D(region: Pick<ZoomRegion, "rotationPreset">): Rotat
 	return ROTATION_3D_PRESETS[region.rotationPreset];
 }
 
-export function isRotation3DIdentity(r: Rotation3D, eps = 0.01): boolean {
-	return Math.abs(r.rotationX) < eps && Math.abs(r.rotationY) < eps && Math.abs(r.rotationZ) < eps;
-}
-
 export function lerpRotation3D(a: Rotation3D, b: Rotation3D, t: number): Rotation3D {
 	return {
 		rotationX: a.rotationX + (b.rotationX - a.rotationX) * t,
 		rotationY: a.rotationY + (b.rotationY - a.rotationY) * t,
 		rotationZ: a.rotationZ + (b.rotationZ - a.rotationZ) * t,
 	};
-}
-
-/**
- * Max uniform scale that, with `rot` and a perspective of `perspective` CSS px, keeps
- * the projected bounding box of a width x height element inside its original rectangle.
- * Returns 1 when no scaling is needed. Projects each rotated corner (x' = x*P/(P-z)) and
- * returns the limiting half-extent ratio so the rotated recording stays inside the zoom window.
- */
-export function computeRotation3DContainScale(
-	rot: Rotation3D,
-	width: number,
-	height: number,
-	perspective: number,
-): number {
-	const a = (rot.rotationX * Math.PI) / 180;
-	const b = (rot.rotationY * Math.PI) / 180;
-	const g = (rot.rotationZ * Math.PI) / 180;
-	const ca = Math.cos(a);
-	const sa = Math.sin(a);
-	const cb = Math.cos(b);
-	const sb = Math.sin(b);
-	const cg = Math.cos(g);
-	const sg = Math.sin(g);
-	const halfW = width / 2;
-	const halfH = height / 2;
-	const corners: Array<[number, number]> = [
-		[-halfW, -halfH],
-		[halfW, -halfH],
-		[halfW, halfH],
-		[-halfW, halfH],
-	];
-
-	let maxAbsX = 0;
-	let maxAbsY = 0;
-
-	for (const [x0, y0] of corners) {
-		// CSS "rotateX rotateY rotateZ" applies right-to-left: Z first, then Y, then X.
-		let px = x0;
-		let py = y0;
-		let pz = 0;
-
-		// rotateZ
-		const zx = px * cg - py * sg;
-		const zy = px * sg + py * cg;
-		px = zx;
-		py = zy;
-
-		// rotateY
-		const yx = px * cb + pz * sb;
-		const yz = -px * sb + pz * cb;
-		px = yx;
-		pz = yz;
-
-		// rotateX
-		const xy = py * ca - pz * sa;
-		const xz = py * sa + pz * ca;
-		py = xy;
-		pz = xz;
-
-		// Viewer at (0, 0, P) looking toward -z; a point at z=pz scales by P/(P-pz).
-		// perspective <= 0 means orthographic.
-		if (perspective > 0) {
-			const denom = perspective - pz;
-			if (denom <= 0) return 1; // pathological, skip scaling rather than crash
-			const f = perspective / denom;
-			px *= f;
-			py *= f;
-		}
-
-		if (Math.abs(px) > maxAbsX) maxAbsX = Math.abs(px);
-		if (Math.abs(py) > maxAbsY) maxAbsY = Math.abs(py);
-	}
-
-	if (maxAbsX === 0 || maxAbsY === 0) return 1;
-	const sx = halfW / maxAbsX;
-	const sy = halfH / maxAbsY;
-	return Math.min(sx, sy, 1);
 }
 
 export interface CursorTelemetryPoint {
@@ -255,14 +164,14 @@ export interface TrimRegion {
 	endMs: number;
 }
 
-export type CameraLayoutMode = "fullscreen" | "emphasis";
+type CameraLayoutMode = "fullscreen" | "emphasis";
 
 /**
  * A camera-layout timeline region. Old regions omit `mode` and remain Full Camera.
  * Automatic direction uses `emphasis`: the webcam grows moderately while the screen
  * remains visible. Both modes use the same contained ease-in/hold/ease-out envelope.
  */
-export interface CameraDrift {
+interface CameraDrift {
 	scaleTo: number;
 	releaseSec: number;
 }
@@ -286,9 +195,9 @@ export interface CameraFullscreenRegion {
 	automaticDirection?: AutomaticDirectionProvenance;
 }
 
-export type AnnotationType = "text" | "image" | "figure" | "blur";
+type AnnotationType = "text" | "image" | "figure" | "blur";
 
-export type ArrowDirection =
+type ArrowDirection =
 	| "up"
 	| "down"
 	| "left"
@@ -304,7 +213,7 @@ export interface FigureData {
 	strokeWidth: number;
 }
 
-export type BlurShape = "rectangle" | "oval" | "freehand";
+type BlurShape = "rectangle" | "oval" | "freehand";
 export type BlurType = "blur" | "mosaic";
 export type BlurColor = "white" | "black";
 
@@ -457,19 +366,6 @@ export interface SpeedRegion {
 	speed: PlaybackSpeed;
 }
 
-export const SPEED_OPTIONS: Array<{ speed: PlaybackSpeed; label: string }> = [
-	{ speed: 0.25, label: "0.25×" },
-	{ speed: 0.5, label: "0.5×" },
-	{ speed: 0.75, label: "0.75×" },
-	{ speed: 1.25, label: "1.25×" },
-	{ speed: 1.5, label: "1.5×" },
-	{ speed: 1.75, label: "1.75×" },
-	{ speed: 2, label: "2×" },
-	{ speed: 3, label: "3×" },
-	{ speed: 4, label: "4×" },
-	{ speed: 5, label: "5×" },
-];
-
 export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1.5;
 
 // The table and the clamp moved to `@/lib/ai-edition/timeline/zoom-scale` so
@@ -479,10 +375,6 @@ export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1.5;
 // reaches them through this module.
 export {
 	DEFAULT_ZOOM_DEPTH,
-	effectiveZoomScale,
-	MAX_ZOOM_SCALE,
-	MIN_ZOOM_SCALE,
-	ZOOM_DEPTH_LEGEND,
 	ZOOM_DEPTH_SCALES,
 } from "@/lib/ai-edition/timeline/zoom-scale";
 
@@ -512,7 +404,7 @@ export function normalizeWebcamCornerRadius(value: unknown): number | undefined 
 		: undefined;
 }
 
-export const WEBCAM_ASPECT_RATIOS = ["source", "1:1", "4:3", "16:9", "9:16"] as const;
+const WEBCAM_ASPECT_RATIOS = ["source", "1:1", "4:3", "16:9", "9:16"] as const;
 export type WebcamAspectRatio = (typeof WEBCAM_ASPECT_RATIOS)[number];
 export function normalizeWebcamAspectRatio(value: unknown): WebcamAspectRatio | undefined {
 	return WEBCAM_ASPECT_RATIOS.find((ratio) => ratio === value);

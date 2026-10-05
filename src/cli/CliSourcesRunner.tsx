@@ -54,7 +54,7 @@ async function enumerateSources(): Promise<CliSourcesResult> {
 	return { displays, windows, microphones, microphoneLabelsUnavailable };
 }
 
-export function CliSourcesRunner() {
+function CliSourcesRunner() {
 	const startedRef = useRef(false);
 	const [status] = useState("Enumerating sources…");
 

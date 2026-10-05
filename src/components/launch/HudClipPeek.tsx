@@ -6,7 +6,7 @@ import { formatTimePadded } from "@/utils/timeUtils";
 import styles from "./LaunchWindow.module.css";
 
 /** How much of the recording plays back when the replay opens. */
-export const CLIP_PEEK_LEAD_IN_SECONDS = 5;
+const CLIP_PEEK_LEAD_IN_SECONDS = 5;
 
 export interface HudClipPeekLabels {
 	title: string;

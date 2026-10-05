@@ -8,7 +8,7 @@ const LEAD_OUT_WINDOW_MS = TRANSITION_WINDOW_MS * 1.5;
 
 /** Shared contained phase boundaries for rendering and timeline decoration. */
 /** Largest camera growth an emphasis region may ask for; preview and export clamp to it. */
-export const MAX_CAMERA_EMPHASIS_SCALE = 2;
+const MAX_CAMERA_EMPHASIS_SCALE = 2;
 
 export function cameraTransitionTiming(region: CameraFullscreenRegion) {
 	const halfDuration = Math.max(0, region.endMs - region.startMs) / 2;

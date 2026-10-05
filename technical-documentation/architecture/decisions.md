@@ -11,16 +11,14 @@ A decision leaves this list only when the code stops honouring it.
 
 | Decision | Why |
 |---|---|
-| **One document is the single source of truth.** `AxcutDocument` (`src/lib/ai-edition/schema/index.ts`) holds the whole project; the timeline, the preview, the captions pane and the exporter are all projections of it. No pane keeps parallel edit state. | Every desync bug this editor has had came from two surfaces owning the same fact. See [document-model.md](document-model.md). |
+| **The editor is archived; the review window is the only shell.** On 2026-10-05 the editor UI, in-app chat, `klippt agent` CLI, automatic direction, and speech-to-text were removed. The last source with them is the tag `archive/pre-cleanup-2026-10-05`. Windows and Linux capture code stays for later ports. | The product is recording-first: capture, review, untouched-source handoff, and One video export. Restoring from the tag is cheaper than maintaining unused surfaces. Existing projects still open and render their stored regions. See [editor-shell.md](editor-shell.md). |
+| **One document is the single source of truth.** `AxcutDocument` (`src/lib/ai-edition/schema/index.ts`) holds the whole project; the review preview and the exporter are projections of it. No surface keeps parallel edit state. | Every desync bug this editor has had came from two surfaces owning the same fact. See [document-model.md](document-model.md). |
 | **Modifiers are authored above the timeline and stored down on the clip.** Zoom, speed and annotation ranges are anchored to a clip, not to absolute timeline time. | Trimming or reordering a clip must carry its modifiers with it. Absolute anchoring silently desyncs preview from render. See [timeline-model.md](timeline-model.md). |
 | **Clips on the timeline are always contiguous** — no gaps, no overlap. | The export segment loop and the audio junction logic both depend on it; permitting holes would double the state space for no user-visible gain. See [export-pipeline.md](export-pipeline.md). |
-| **The model never free-writes the document.** The agent calls a fixed, validated tool schema, and a checkpoint is taken before each tool batch so the batch undoes as one unit. | A model emitting raw JSON patches can corrupt a project in a way the user cannot undo. See [ai-agent.md](ai-agent.md). |
 | **Native helpers own capture, timing and encoding; Electron owns session orchestration and persistence.** | Frame timing cannot be made reliable across an IPC boundary. See [recording.md](recording.md). |
 | **Windows production recording does not silently fall back to `getDisplayMedia` / `MediaRecorder`.** A native path that fails, fails loudly. | A silent fallback produced recordings that were subtly worse with no signal to the user. |
 | **Compositing and encoding run in one native Rust engine**, shared by live preview and export, with platform GPU backends such as D3D11 and Metal. | See [native-compositor.md](native-compositor.md), and [../engineering/rendering-performance.md](../engineering/rendering-performance.md) for the measurements that chose it. |
-| **Local transcription is bundled and never gated.** It runs on-device; no audio leaves the machine. | It is the foundation the caption and transcript features stand on, and gating it would make the privacy story conditional. See [transcription-and-captions.md](transcription-and-captions.md). |
 | **The inherited AI/LLM surface is hidden from the normal paid-alpha UI.** Its validated operations and the `klippt agent` CLI were archived on 2026-10-05. Local deterministic editing does not depend on an LLM. | Clip-native recording and the normal editor are the product. A second chat product must not clutter or delay the alpha path. See [ai-agent.md](ai-agent.md). |
-| **LLM credentials live in Electron `safeStorage`** (the OS keychain), never in plain JSON on disk. A write fails rather than falling back to plaintext. | `electron/ai-edition/llm-config-store.ts`. See [llm-providers.md](llm-providers.md). |
 | **The project file extension is `.klippt`.** Legacy `.openscreen` and `.axcut` files remain readable and are copied forward after validation without deleting the original. | Klippt needs its own project identity without breaking old projects or rollback. See [document-model.md](document-model.md). |
 | **Migrations are forward-only.** A document is migrated up to the current `schemaVersion` on open and never written back down. | Round-tripping through an older schema loses fields silently. |
 | **Projects store derived-media intent, not derived files or job state.** An asset can store an optional versioned Clean Voice recipe. App-owned content-addressed caches hold generated stems, manifests, progress and failures. | Raw recordings stay authoritative, projects stay portable, and a missing or corrupt cache can fall back to raw and rebuild without changing an edit. |
@@ -52,10 +50,11 @@ behaviour lives now.
 
 | Removed | Replaced by |
 |---|---|
-| `VideoEditor` (the pre-merge editor) | `src/components/ai-edition/NewEditorShell.tsx` mounting the v4 surfaces |
-| `TimelinePane.tsx` | `src/components/ai-edition/v4/V4Timeline.tsx` |
-| `Titlebar.tsx`, `Bottombar.tsx` | `src/components/ai-edition/v4/EditorTopBar.tsx` |
-| `RightPanelStack.tsx` | `src/components/ai-edition/v4/FloatingInspector.tsx` |
-| `TranscriptEditor.tsx` | `src/components/ai-edition/CaptionsPane.tsx` + `src/lib/ai-edition/captions/` |
+| `VideoEditor` (the pre-merge editor) | the v4 editor, itself archived on 2026-10-05; now `src/components/ai-edition/RecordingReviewShell.tsx` |
+| `TimelinePane.tsx` | archived with the v4 editor (`V4Timeline.tsx`, tag `archive/pre-cleanup-2026-10-05`) |
+| `Titlebar.tsx`, `Bottombar.tsx` | archived with the v4 editor; now `RecordingReviewToolbar.tsx` |
+| `RightPanelStack.tsx` | archived with the v4 editor (`FloatingInspector.tsx`) |
+| `TranscriptEditor.tsx` | archived with the v4 editor (`CaptionsPane.tsx`); stored captions render through `src/lib/ai-edition/captions/` |
+| Local transcription, the in-app chat, LLM providers, `klippt agent` | archived on 2026-10-05; see [transcription-and-captions.md](transcription-and-captions.md), [ai-agent.md](ai-agent.md), [llm-providers.md](llm-providers.md) |
 | The browser-based exporter | the native compositor export path — see [export-pipeline.md](export-pipeline.md) |
 | CTranslate2 speech-to-text | whisper.cpp — see [transcription-and-captions.md](transcription-and-captions.md) |

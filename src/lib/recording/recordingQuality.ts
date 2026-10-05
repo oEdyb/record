@@ -1,8 +1,8 @@
 export type RecordingQuality = "high" | "standard";
 
 export const DEFAULT_RECORDING_QUALITY: RecordingQuality = "high";
-export const STANDARD_CAPTURE_BITRATE = 68_000_000;
-export const HIGH_CAPTURE_BITRATE = 136_000_000;
+const STANDARD_CAPTURE_BITRATE = 68_000_000;
+const HIGH_CAPTURE_BITRATE = 136_000_000;
 
 export function normalizeRecordingQuality(value: unknown): RecordingQuality {
 	return value === "standard" ? "standard" : DEFAULT_RECORDING_QUALITY;

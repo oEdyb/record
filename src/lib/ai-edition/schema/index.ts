@@ -12,10 +12,6 @@ import { overlayAnchorSchema } from "./overlayAnchor";
 // shape — runtime ops, IPC, and exporter integration land in Phase 1+.
 
 import { z } from "zod";
-import { cameraAnchorSchema, clipLayoutOverrideSchema } from "../layout/schema";
-
-export type { ClipLayoutOverride } from "../layout/schema";
-
 // Cycle-safe: `aspectRatioUtils` has no schema dependency, and `document/outputFormat`
 // is downstream of schema. We import the leaf tokeniser directly so the v5→v6 upgrader
 // can rewrite `"native"` without dragging in the whole output-format module.
@@ -27,6 +23,7 @@ import { isMotionSpeed, type MotionSpeed } from "../../zoomMath/motionCurve";
 // transitive value-imports (region-ventilation, virtual-preview) import from this
 // module TYPE-ONLY, so requiring them here never re-enters schema at runtime.
 import { createId } from "../document/ids";
+import { cameraAnchorSchema, clipLayoutOverrideSchema } from "../layout/schema";
 import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
 import { audioAssetSchema, audioClipSchema, validateAudioReferences } from "./audioOverlays";
 import {
@@ -72,11 +69,11 @@ const endGteStart = <T extends z.ZodObject<z.ZodRawShape>>(
 		path: [endKey],
 	});
 
-export const isoDateSchema = z.string().datetime({ offset: true });
+const isoDateSchema = z.string().datetime({ offset: true });
 
-export const transcriptSourceRoleSchema = z.enum(["you", "system", "unknown-mixed"]);
+const transcriptSourceRoleSchema = z.enum(["you", "system", "unknown-mixed"]);
 
-export const wordSchema = z
+const wordSchema = z
 	.object({
 		id: z.string().min(1),
 		segmentId: z.string().min(1),
@@ -91,7 +88,7 @@ export const wordSchema = z
 		path: ["endSec"],
 	});
 
-export const transcriptSegmentSchema = z
+const transcriptSegmentSchema = z
 	.object({
 		id: z.string().min(1),
 		kind: z.enum(["speech", "silence"]),
@@ -106,7 +103,7 @@ export const transcriptSegmentSchema = z
 		path: ["endSec"],
 	});
 
-export const transcriptSourceEvidenceSchema = z.object({
+const transcriptSourceEvidenceSchema = z.object({
 	sourceRole: transcriptSourceRoleSchema,
 	trackLanguageCode: z.enum(["qac", "qab"]).nullable(),
 	sourceContentSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -242,14 +239,14 @@ export const transcriptSchema = z
 		}
 	});
 
-export const assetVideoSchema = z.object({
+const assetVideoSchema = z.object({
 	codec: z.string().default("unknown"),
 	width: z.number().int().nonnegative().default(0),
 	height: z.number().int().nonnegative().default(0),
 	fps: z.number().nonnegative().default(0),
 });
 
-export const assetAudioSchema = z.object({
+const assetAudioSchema = z.object({
 	codec: z.string().default("unknown"),
 	sampleRate: z.number().int().nonnegative().default(0),
 	channels: z.number().int().nonnegative().default(0),
@@ -293,9 +290,9 @@ export const cameraTrackSchema = z
 // mic and no system audio — the common case) fails identically on every
 // attempt, and re-deciding that costs a full audio extraction on each project
 // open. Transient failures (engine down, decode hiccup) are deliberately NOT
-// persistable and stay in the transcription store for the session, so the next
-// load retries them. See `src/lib/ai-edition/transcription/status.ts`.
-export const assetTranscriptionFailureSchema = z.object({
+// persistable. Transcription is archived (tag archive/pre-cleanup-2026-10-05);
+// the field stays so existing projects keep parsing.
+const assetTranscriptionFailureSchema = z.object({
 	kind: z.enum(["no-audio", "unsupported-audio"]),
 	message: z.string().default(""),
 	at: isoDateSchema.optional(),
@@ -339,7 +336,7 @@ export const assetSchema = z.object({
 // framings. Mirrors `CropRegion` in `src/components/video-editor/types.ts`;
 // duplicated here so the schema package has no dependency on the React
 // editor module (same rationale as AnnotationRegion/ZoomRegion above).
-export const clipCropRegionSchema = z.object({
+const clipCropRegionSchema = z.object({
 	x: z.number().min(0).max(1),
 	y: z.number().min(0).max(1),
 	width: z.number().min(0).max(1),
@@ -374,7 +371,7 @@ export const clipSchema = z
 		path: ["sourceEndSec"],
 	});
 
-export const gapSchema = endGteStart(
+const gapSchema = endGteStart(
 	z.object({
 		id: z.string().min(1),
 		timelineStartSec: z.number().nonnegative(),
@@ -442,88 +439,6 @@ export const timelineSchema = z.preprocess(
 	}),
 );
 
-export const timelineOperationSchema = z.discriminatedUnion("type", [
-	z.object({
-		type: z.literal("replace_timeline"),
-		reason: z.string().default(""),
-		intervals: z
-			.array(z.object({ startSec: z.number().nonnegative(), endSec: z.number().nonnegative() }))
-			.default([]),
-	}),
-	z.object({
-		type: z.literal("drop_range"),
-		reason: z.string().default(""),
-		startSec: z.number().nonnegative(),
-		endSec: z.number().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("drop_word_range"),
-		reason: z.string().default(""),
-		startWordId: z.string().min(1),
-		endWordId: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal("add_trim_range"),
-		reason: z.string().default(""),
-		assetId: z.string().min(1),
-		// Which clip the cut was authored on. Optional so callers that genuinely have no
-		// clip context still work, but every UI path knows it — without it a trim on the
-		// second clip of a duplicated asset is indistinguishable from one on the first.
-		clipId: z.string().min(1).optional(),
-		startSec: z.number().nonnegative(),
-		endSec: z.number().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("update_trim_range"),
-		reason: z.string().default(""),
-		trimRangeId: z.string().min(1),
-		startSec: z.number().nonnegative(),
-		endSec: z.number().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("remove_trim_range"),
-		reason: z.string().default(""),
-		trimRangeId: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal("update_clip_range"),
-		reason: z.string().default(""),
-		clipId: z.string().min(1),
-		sourceStartSec: z.number().nonnegative(),
-		sourceEndSec: z.number().nonnegative().optional(),
-	}),
-	z.object({
-		type: z.literal("duplicate_clip"),
-		reason: z.string().default(""),
-		clipId: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal("move_clip"),
-		reason: z.string().default(""),
-		clipId: z.string().min(1),
-		// ponytail: `insertIndex`, matching the ONE implementation
-		// (`AxcutTimelineOperation` in document/operations.ts, applied by
-		// `applyTimelineOperation`). This schema declared `timelineStartSec`
-		// instead — a second, incompatible contract for the same op name, with no
-		// importer anywhere to notice. Whoever wired the two together next would
-		// have had a parse that accepted what the dispatcher could not run.
-		insertIndex: z.number().int().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("insert_asset_clip"),
-		reason: z.string().default(""),
-		assetId: z.string().min(1),
-		beforeClipId: z.string().min(1).nullable(),
-		afterClipId: z.string().min(1).nullable(),
-		sourceStartSec: z.number().nonnegative(),
-		sourceEndSec: z.number().nonnegative().optional(),
-	}),
-	z.object({
-		type: z.literal("restore_full_timeline"),
-		reason: z.string().default(""),
-	}),
-]);
-
 // OpenScreen additions to the axcut document. Mirrors src/components/video-editor/types.ts
 // (AnnotationRegion / ZoomRegion) — duplicated here so the schema package has no
 // dependency on the React editor module.
@@ -585,7 +500,7 @@ const clipAnchorShape = {
 };
 
 /** B-roll video drawn above the screen layer and below the camera for a raw-timeline span. */
-export const videoOverlaySchema = endGteStart(
+const videoOverlaySchema = endGteStart(
 	z.object({
 		anchor: overlayAnchorSchema.optional(),
 		motion: z.enum(["fade", "cut"]).optional(),
@@ -752,7 +667,7 @@ const documentSchemaShape = z.object({
 // pure function) or reject unknown versions; anything that isn't exactly v3
 // passes through unchanged so the caller's `documentSchema.parse` can
 // reject it via the `schemaVersion` literal.
-export function upgradeV3DocumentToV4(raw: unknown): unknown {
+function upgradeV3DocumentToV4(raw: unknown): unknown {
 	if (!raw || typeof raw !== "object") return raw;
 	const doc = raw as Record<string, unknown>;
 	if (doc.schemaVersion !== 3) return raw;
@@ -790,7 +705,7 @@ export function upgradeV3DocumentToV4(raw: unknown): unknown {
  * Invoked at LOAD TIME by `migrateRawDocumentToCurrent` in `document/migrate.ts`,
  * not at every `documentSchema.parse(...)` call.
  */
-export function upgradeV4DocumentToV5(raw: unknown): unknown {
+function upgradeV4DocumentToV5(raw: unknown): unknown {
 	if (!raw || typeof raw !== "object") return raw;
 	const doc = raw as Record<string, unknown>;
 	if (doc.schemaVersion !== 4) return raw;
@@ -957,7 +872,7 @@ function upgradeV5DocumentToV6(raw: unknown): unknown {
  * clip by construction), and a document with no clips has nothing to anchor against.
  * Un-anchored trims keep the v6 asset-wide behaviour via `trimAppliesToClip`.
  */
-export function upgradeV6DocumentToV7(raw: unknown): unknown {
+function upgradeV6DocumentToV7(raw: unknown): unknown {
 	if (!raw || typeof raw !== "object") return raw;
 	const doc = raw as Record<string, unknown>;
 	if (doc.schemaVersion !== 6) return raw;
@@ -1011,14 +926,14 @@ export function upgradeV6DocumentToV7(raw: unknown): unknown {
  * existing sound. Missing is the canonical Original setting, so the migration
  * changes only the version marker and cannot start background work.
  */
-export function upgradeV7DocumentToV8(raw: unknown): unknown {
+function upgradeV7DocumentToV8(raw: unknown): unknown {
 	if (!raw || typeof raw !== "object") return raw;
 	const doc = raw as Record<string, unknown>;
 	return doc.schemaVersion === 7 ? { ...doc, schemaVersion: 8 } : raw;
 }
 
 /** v8 → v9 — label legacy transcript content without inventing a speaker. */
-export function upgradeV8DocumentToV9(raw: unknown): unknown {
+function upgradeV8DocumentToV9(raw: unknown): unknown {
 	if (!raw || typeof raw !== "object") return raw;
 	const doc = raw as Record<string, unknown>;
 	if (doc.schemaVersion !== 8) return raw;
@@ -1121,60 +1036,21 @@ export const documentSchema = documentSchemaShape.superRefine((doc, ctx) => {
 	}
 });
 
-export const createProjectInputSchema = z.object({
+const createProjectInputSchema = z.object({
 	title: z.string().trim().min(1).default("Untitled Project"),
 });
-
-export const addAssetInputSchema = z.object({
-	path: z.string().trim().min(1),
-	label: z.string().trim().optional(),
-	recordingImportId: z.string().trim().min(1).optional(),
-	autoTranscribe: z.boolean().default(true),
-});
-
-export const chatInputSchema = z.object({
-	sessionId: z.string().trim().min(1).optional(),
-	message: z.string().trim().min(1),
-});
-
-export const transcriptLanguageSchema = z.enum([
-	"auto",
-	"en",
-	"fr",
-	"de",
-	"es",
-	"it",
-	"pt",
-	"nl",
-	"ja",
-	"ko",
-	"zh",
-]);
-
-export type AxcutTranscriptSourceRole = z.infer<typeof transcriptSourceRoleSchema>;
-export type AxcutTranscriptSourceEvidence = z.infer<typeof transcriptSourceEvidenceSchema>;
 export type AxcutWord = z.infer<typeof wordSchema>;
-export type AxcutTranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
 export type AxcutTranscript = z.infer<typeof transcriptSchema>;
 export type AxcutAsset = z.infer<typeof assetSchema>;
 export type CleanVoiceRecipe = z.infer<typeof cleanVoiceRecipeSchema>;
-export type AxcutAssetTranscriptionFailure = z.infer<typeof assetTranscriptionFailureSchema>;
 export type AxcutClip = z.infer<typeof clipSchema>;
-export type AxcutClipCropRegion = z.infer<typeof clipCropRegionSchema>;
-export type AxcutGap = z.infer<typeof gapSchema>;
 export type AxcutTrimRange = z.infer<typeof trimRangeSchema>;
-export type AxcutTimeline = z.infer<typeof timelineSchema>;
-export type AxcutTimelineOperation = z.infer<typeof timelineOperationSchema>;
 export type AxcutAnnotationRegion = z.infer<typeof annotationRegionSchema>;
-export type AxcutVideoOverlay = z.infer<typeof videoOverlaySchema>;
 export type AxcutZoomRegion = z.infer<typeof zoomRegionSchema>;
 export type AxcutCameraTrack = z.infer<typeof cameraTrackSchema>;
 export type AxcutLegacyEditor = z.infer<typeof legacyEditorSchema>;
 export type AxcutDocument = z.infer<typeof documentSchema>;
-export type AxcutDocumentInput = z.input<typeof documentSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
-export type AddAssetInput = z.infer<typeof addAssetInputSchema>;
-export type ChatInput = z.infer<typeof chatInputSchema>;
 
 export function createEmptyDocument(
 	input: CreateProjectInput & { projectId: string; createdAt?: string },

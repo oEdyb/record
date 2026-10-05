@@ -30,12 +30,12 @@ export const HUD_POPOVER_GAP = 8;
 /** Gap between stacked floating elements (popover, notices). */
 export const HUD_STACK_GAP = 10;
 /** Width of the device / language popovers. */
-export const HUD_POPOVER_WIDTH = 220;
+const HUD_POPOVER_WIDTH = 220;
 /** Width of the top notices (locale suggestion, software-encoder fallback). */
-export const HUD_NOTICE_WIDTH = 360;
+const HUD_NOTICE_WIDTH = 360;
 /** Widest the paused replay's video gets; its frame adds a 6px inset per side. */
-export const HUD_PEEK_VIDEO_MAX_WIDTH = 640;
-export const HUD_PEEK_WIDTH = HUD_PEEK_VIDEO_MAX_WIDTH + 12;
+const HUD_PEEK_VIDEO_MAX_WIDTH = 640;
+const HUD_PEEK_WIDTH = HUD_PEEK_VIDEO_MAX_WIDTH + 12;
 /**
  * Widest thing that can ever float above the bar. Always reserved, so a popover,
  * a notice or the replay appearing never changes the window's width.
@@ -55,7 +55,7 @@ export const HUD_POPOVER_MIN_HEIGHT = 140;
  * HUD_STACK_WIDTH so it never affects the window's width either.
  */
 export const HUD_MODAL_MAX_HEIGHT = 560;
-export const HUD_MODAL_MIN_HEIGHT = 200;
+const HUD_MODAL_MIN_HEIGHT = 200;
 /**
  * Slack granted *beyond* what is strictly required, on each axis. This is pure
  * hysteresis: the bar can grow by this much (recording controls appearing, a
@@ -64,7 +64,7 @@ export const HUD_MODAL_MIN_HEIGHT = 200;
  */
 export const HUD_GROWTH_RESERVE = 120;
 /** Floor for the window itself, in case the bar measures as ~nothing. */
-export const HUD_MIN_WINDOW_WIDTH = 220;
+const HUD_MIN_WINDOW_WIDTH = 220;
 
 export interface HudSize {
 	width: number;

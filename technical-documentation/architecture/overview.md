@@ -1,12 +1,16 @@
 # Architecture overview
 
-Klippt is an Electron, React, and TypeScript recorder and editor with native media helpers. The main
-process lives in `electron/`. The Vite renderer starts at `src/App.tsx` and selects a window surface
-from `?windowType=`.
+Klippt is an Electron, React, and TypeScript screen recorder with a review window and native media
+helpers. The main process lives in `electron/`. The Vite renderer starts at `src/App.tsx` and
+selects a window surface from `?windowType=`.
+
+The editor UI, the in-app LLM chat, the `klippt agent` editing CLI, automatic direction, and
+speech-to-text were archived on 2026-10-05; the last source with them is the tag
+`archive/pre-cleanup-2026-10-05`. Windows and Linux capture code stays for later ports.
 
 ## Runtime surfaces
 
-- `editor` — the main studio and project timeline.
+- `editor` — the recording review window ([editor-shell.md](editor-shell.md)).
 - `hud-overlay` — the floating recording controller.
 - `camera-preview` — the preview-only confidence monitor.
 - `source-selector` — the screen and window picker.
@@ -56,26 +60,27 @@ copied forward after validation without deleting the original.
 
 The renderer holds one current document in the Zustand project store. Timeline clips, trim ranges,
 Screen Zoom, Camera Emphasis, transcript words, layout, audio policy, captions, and export settings
-are projections or edits of that document. Project writes go through the main-process document
+live in that document. Review edits only clips; projects from earlier releases keep their stored
+regions, captions, and annotations, and preview and export still render them. Project writes go through the main-process document
 service, use revision checks where supported, and publish atomically.
 
 Modifiers stay clip-anchored in source time. The timeline projects them into playback time after
-cuts. Preview and export consume the same scene mapping so trim, clip reorder, focus, camera layout,
-and automatic direction do not need parallel render models.
+cuts. Preview and export consume the same scene mapping so trim, clip reorder, focus, and camera
+layout do not need parallel render models.
 
 ## Recording flow
 
 ```text
-idle HUD -> setup -> countdown -> clip 1 -> Pause -> clip 2 -> Stop -> same project editor
+idle HUD -> setup -> countdown -> clip 1 -> Pause -> clip 2 -> Stop -> review window
 ```
 
 Pause finalizes the current fragmented MP4 clip while the logical session stays active. Continue
 starts a new writer. Remove previous clip updates project state without deleting recoverable media.
-Stop persists the kept clips and returns to the editor at the saved insertion boundary.
+Stop persists the kept clips and returns to the review window at the saved insertion boundary.
 
 Microphone and system audio roles remain explicit. The mixed audio track exists for compatibility,
-not as the preferred analysis source. Cursor and privacy-safe interaction timing remain sidecars so
-automatic direction can create reversible timeline regions after capture.
+not as the preferred analysis source. Cursor and privacy-safe interaction timing remain sidecars
+next to the recording.
 
 ## Security boundary
 

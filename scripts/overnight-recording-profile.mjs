@@ -711,7 +711,6 @@ try {
 			LANG: "en_US.UTF-8",
 			LC_ALL: "en_US.UTF-8",
 			LANGUAGE: "en_US",
-			...(opt["export-mode"] === "sources" ? { OPENSCREEN_AGENT_CLI: "1" } : {}),
 		},
 	});
 	await app.evaluate(({ app: host }) =>

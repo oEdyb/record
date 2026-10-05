@@ -57,7 +57,7 @@ export function clampNotesFontSize(value: number): number {
 	);
 }
 
-export function normalizeNotesTeleprompterSettings(value: unknown): NotesTeleprompterSettings {
+function normalizeNotesTeleprompterSettings(value: unknown): NotesTeleprompterSettings {
 	if (!value || typeof value !== "object") {
 		return { ...DEFAULT_NOTES_TELEPROMPTER_SETTINGS };
 	}

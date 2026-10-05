@@ -14,7 +14,7 @@ interface ParsedOption {
 	style?: CSSProperties;
 }
 
-export interface AppSelectChangeEvent {
+interface AppSelectChangeEvent {
 	target: { value: string };
 }
 

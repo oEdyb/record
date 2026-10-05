@@ -54,14 +54,12 @@ import { normalizeOutputResolution, type OutputResolution } from "../document/ou
 import { type ClipLayoutOverride, DEFAULT_SAFE_MARGIN_PERCENT } from "../layout/schema";
 import type { AxcutDocument } from "../schema";
 
-export type { ClipLayoutOverride } from "../layout/schema";
-
 // ponytail: avoid dragging in lib/exporter full surface here — we only
 // need the type names. Wallpaper + cursor theme are stored as plain strings
 // for the same reason (their canonical types live in lib/wallpaper and
 // lib/cursor/cursorThemes as the source of truth).
 
-export type AudioDeliveryPreset = "youtube" | "custom";
+type AudioDeliveryPreset = "youtube" | "custom";
 
 export const DEFAULT_AUDIO_TARGET_LUFS = -14.5;
 export const MIN_AUDIO_TARGET_LUFS = -30;
@@ -69,7 +67,7 @@ export const MAX_AUDIO_TARGET_LUFS = -9;
 export const DEFAULT_AUDIO_PEAK_CEILING_DBTP = -2;
 export const MIN_AUDIO_PEAK_CEILING_DBTP = -6;
 export const MAX_AUDIO_PEAK_CEILING_DBTP = -1;
-export const DEFAULT_SOURCE_VOLUME = 1;
+const DEFAULT_SOURCE_VOLUME = 1;
 export const MIN_SOURCE_VOLUME = 0;
 export const MAX_SOURCE_VOLUME = 1;
 

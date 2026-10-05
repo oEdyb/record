@@ -11,9 +11,9 @@ export const DEFAULT_ZOOM_MOTION_STYLE: MotionStyle = "snappy";
 export const DEFAULT_CAMERA_MOTION_STYLE: MotionStyle = "snappy";
 export const NEW_ZOOM_MOTION_STYLE: MotionStyle = "smooth";
 export const NEW_CAMERA_MOTION_STYLE: MotionStyle = "smooth";
-export const MOTION_SPEED_VALUES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+const MOTION_SPEED_VALUES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 export type MotionSpeed = (typeof MOTION_SPEED_VALUES)[number];
-export const DEFAULT_MOTION_SPEED: MotionSpeed = 1;
+const DEFAULT_MOTION_SPEED: MotionSpeed = 1;
 
 export function isMotionStyle(value: unknown): value is MotionStyle {
 	return typeof value === "string" && MOTION_STYLE_VALUES.includes(value as MotionStyle);

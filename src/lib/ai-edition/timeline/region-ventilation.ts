@@ -50,7 +50,7 @@ export function ventilateSpanAcrossClips(
 	return out;
 }
 
-export interface Span {
+interface Span {
 	startMs: number;
 	endMs: number;
 }

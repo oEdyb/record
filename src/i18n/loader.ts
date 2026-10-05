@@ -65,10 +65,6 @@ export function getLocaleName(locale: Locale): string {
 	return tAt(locale, "common", "locale.name") ?? locale;
 }
 
-export function getLocaleShort(locale: Locale): string {
-	return tAt(locale, "common", "locale.short") ?? locale;
-}
-
 export function translate(
 	locale: Locale,
 	namespace: I18nNamespace,

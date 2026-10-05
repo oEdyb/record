@@ -38,7 +38,7 @@ const HEARTBEAT_FILE = ".heartbeat";
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const STALE_RUN_MS = 5 * 60_000;
 
-export interface MaterializeProgress {
+interface MaterializeProgress {
 	copiedBytes: number;
 	totalBytes: number;
 }

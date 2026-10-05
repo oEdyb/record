@@ -8,7 +8,7 @@ import type { NativeCursorType } from "@/native/contracts";
  * size regardless of source PNG resolution. The PNG can be higher-res (e.g. 128x128)
  * and is downscaled at draw time for crisper retina output.
  */
-export interface CursorThemeAsset {
+interface CursorThemeAsset {
 	/** Path relative to the public asset root, e.g. "cursors/hello-kitty-watermelon/arrow.png". */
 	assetPath: string;
 	width: number;
@@ -463,13 +463,13 @@ export const CURSOR_THEMES: readonly CursorTheme[] = [];
 void UNREVIEWED_CURSOR_THEMES;
 
 /** All selectable theme ids, including the built-in default. */
-export const CURSOR_THEME_IDS: ReadonlySet<string> = new Set([
+const CURSOR_THEME_IDS: ReadonlySet<string> = new Set([
 	DEFAULT_CURSOR_THEME_ID,
 	...CURSOR_THEMES.map((theme) => theme.id),
 ]);
 
 /** Returns the theme for `id`, or null for the default / unknown ids. */
-export function getCursorTheme(id: string | null | undefined): CursorTheme | null {
+function getCursorTheme(id: string | null | undefined): CursorTheme | null {
 	if (!id || id === DEFAULT_CURSOR_THEME_ID) {
 		return null;
 	}

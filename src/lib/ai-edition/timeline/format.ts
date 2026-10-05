@@ -1,6 +1,5 @@
 // Timeline timecodes. Two shapes, one home — this used to be six near-identical
-// private copies spread across Modals, the timeline, MediaStage, operations and
-// virtual-preview.
+// private copies spread across the former editor and virtual-preview.
 //
 // `formatSeconds` shows the hour field only when there is one; `formatSec`
 // never does (timeline pills and region readouts are always sub-hour and the
@@ -8,19 +7,13 @@
 //
 // Not covered here, deliberately: ExportDialog's `formatHms` (hh:mm:ss, always
 // padded hours, no tenths) and timeUtils' `formatTimePadded` (mm:ss) are
-// different formats, not copies of these. LeftPanel's `formatTimecode`
-// (h:mm:ss.t, hours always shown) is a third format for the same reason — it
-// stays local, but it shares `splitRoundedTime` so the carry lives in one place.
+// different formats, not copies of these.
 
 /**
  * Rounds to a tenth and carries the result, so the minute and second fields can
  * never disagree. Doing the floor and the rounding independently is what made
  * `0:60.0` renderable: at 59.96 the minutes field still saw 59.96 while the
  * seconds field had already rounded to 60.0.
- *
- * Exported for the one formatter that lives outside this file (LeftPanel's
- * `formatTimecode`) — its always-padded `h:mm:ss.t` matches neither shape here,
- * so it formats itself, but it must not re-derive the carry.
  */
 export function splitRoundedTime(value: number): { totalMinutes: number; seconds: number } {
 	const safe = Number.isFinite(value) && value > 0 ? value : 0;

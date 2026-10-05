@@ -165,7 +165,7 @@ export function toFileUrl(filePath: string): string {
 	return toKlipptMediaUrl(fromFileUrl(filePath));
 }
 
-export function fromFileUrl(fileUrl: string): string {
+function fromFileUrl(fileUrl: string): string {
 	const protocolPath = fromKlipptMediaUrl(fileUrl);
 	if (protocolPath !== null) {
 		return protocolPath;
@@ -191,16 +191,6 @@ export function fromFileUrl(fileUrl: string): string {
 		const fallbackPath = decodeURIComponent(fileUrl.replace(/^file:\/\//, ""));
 		return fallbackPath.replace(/^\/([a-zA-Z]:)/, "$1");
 	}
-}
-
-export function deriveNextId(prefix: string, ids: string[]): number {
-	const max = ids.reduce((acc, id) => {
-		const match = id.match(new RegExp(`^${prefix}-(\\d+)$`));
-		if (!match) return acc;
-		const value = Number(match[1]);
-		return Number.isFinite(value) ? Math.max(acc, value) : acc;
-	}, 0);
-	return max + 1;
 }
 
 export function validateProjectData(candidate: unknown): candidate is EditorProjectData {

@@ -4,7 +4,7 @@
 
 import type { ExportQuality, GifFrameRate, GifSizePreset } from "./exporter/types";
 
-export type CliCursorCaptureMode = "editable-overlay" | "system";
+type CliCursorCaptureMode = "editable-overlay" | "system";
 
 export interface CliExportRequest {
 	kind: "export";
@@ -48,7 +48,7 @@ export interface CliRecordRequest {
 	projectOut: string | null;
 }
 
-export interface CliSourcesRequest {
+interface CliSourcesRequest {
 	kind: "sources";
 }
 

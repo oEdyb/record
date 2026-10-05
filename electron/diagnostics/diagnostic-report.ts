@@ -11,7 +11,7 @@ export interface DiagnosticRequest {
 	logs?: unknown;
 }
 
-export interface DiagnosticEnvironment {
+interface DiagnosticEnvironment {
 	appVersion: string;
 	platform: NodeJS.Platform;
 	arch: string;

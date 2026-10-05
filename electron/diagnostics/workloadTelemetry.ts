@@ -13,7 +13,7 @@ const DISK_PRESSURE_BYTES = 5 * 1_024 * 1_024 * 1_024;
 const MAX_REPORTS = 100;
 const MAX_REPORT_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 
-export type WorkloadKind = "capture" | "preview" | "export";
+type WorkloadKind = "capture" | "preview" | "export";
 export type WorkloadOperation =
 	| "screen-capturekit"
 	| "windows-graphics-capture"

@@ -2,10 +2,9 @@ import * as SliderPrimitive from "@radix-ui/react-slider";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group";
-import { ChevronRight, HelpCircle, Info } from "lucide-react";
+import { HelpCircle, Info } from "lucide-react";
 import {
 	type ButtonHTMLAttributes,
-	type ComponentPropsWithoutRef,
 	forwardRef,
 	type ReactNode,
 	useCallback,
@@ -19,7 +18,7 @@ import { Tooltip, TooltipProvider } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import styles from "./inspector.module.css";
 
-export const InspectorIconButton = forwardRef<
+const InspectorIconButton = forwardRef<
 	HTMLButtonElement,
 	ButtonHTMLAttributes<HTMLButtonElement> & {
 		label: string;
@@ -109,45 +108,6 @@ export function InspectorActionButton({
 		>
 			{children}
 		</button>
-	);
-}
-
-export function InspectorEmptyState({
-	icon,
-	title,
-	description,
-	action,
-}: {
-	icon?: ReactNode;
-	title: string;
-	description?: string;
-	action?: ReactNode;
-}) {
-	return (
-		<div className={styles.emptyState}>
-			{icon ? <div className={styles.emptyStateIcon}>{icon}</div> : null}
-			<strong>{title}</strong>
-			{description ? <p>{description}</p> : null}
-			{action}
-		</div>
-	);
-}
-
-export function InspectorSection({
-	title,
-	hint,
-	children,
-}: {
-	title?: string;
-	hint?: string;
-	children: ReactNode;
-}) {
-	return (
-		<section className={styles.section}>
-			{title ? <h3>{title}</h3> : null}
-			{hint ? <p className={styles.sectionHint}>{hint}</p> : null}
-			{children}
-		</section>
 	);
 }
 
@@ -465,27 +425,6 @@ export function InspectorSegmentedControl<T extends string>({
 				</ToggleGroupPrimitive.Item>
 			))}
 		</ToggleGroupPrimitive.Root>
-	);
-}
-
-export function InspectorDisclosure({
-	label,
-	children,
-	defaultOpen = false,
-	...props
-}: ComponentPropsWithoutRef<"details"> & {
-	label: string;
-	children: ReactNode;
-	defaultOpen?: boolean;
-}) {
-	return (
-		<details className={styles.disclosure} open={defaultOpen || undefined} {...props}>
-			<summary>
-				<ChevronRight size={14} />
-				<span>{label}</span>
-			</summary>
-			<div className={styles.disclosureBody}>{children}</div>
-		</details>
 	);
 }
 

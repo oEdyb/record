@@ -50,7 +50,7 @@ export function registerKlipptScheme(): void {
 	]);
 }
 
-export function isPathInside(filePath: string, rootPath: string): boolean {
+function isPathInside(filePath: string, rootPath: string): boolean {
 	const relative = path.relative(rootPath, filePath);
 	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }

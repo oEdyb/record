@@ -296,16 +296,6 @@ export function dropPillById<T extends { id: string; startMs: number; endMs: num
 	return regions.filter((r) => !under.has(r.id));
 }
 
-/** Batch variant of {@link dropPillById} — expands every selected id to its whole pill. */
-export function dropPillsByIds<T extends { id: string; startMs: number; endMs: number }>(
-	regions: T[],
-	ids: Iterable<string>,
-): T[] {
-	let out = regions;
-	for (const id of ids) out = dropPillById(out, id);
-	return out;
-}
-
 /**
  * Move/resize the pill containing `id`, obeying both rules: the requested span is first
  * CLAMPED against pills of a different identity (rule 2 — they act as walls and never

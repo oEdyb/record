@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 
-export const ICON_SIZE = 20;
+const ICON_SIZE = 20;
 
 const ICON_CONFIG = {
 	spinner: { icon: Loader2, size: ICON_SIZE },

@@ -20,8 +20,8 @@ import { interpolateCursorAt } from "./cursorFollowUtils";
 import { clampFocusToScale } from "./focusUtils";
 import { applyMotionCurve, DEFAULT_ZOOM_MOTION_STYLE, normalizeMotionSpeed } from "./motionCurve";
 
-export const CHAINED_ZOOM_PAN_GAP_MS = 1500;
-export const CONNECTED_ZOOM_PAN_DURATION_MS = 1000;
+const CHAINED_ZOOM_PAN_GAP_MS = 1500;
+const CONNECTED_ZOOM_PAN_DURATION_MS = 1000;
 
 type DominantRegionOptions = {
 	connectZooms?: boolean;

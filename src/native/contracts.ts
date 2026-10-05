@@ -1,4 +1,3 @@
-export type { ClipLayoutOverride } from "../lib/ai-edition/layout/schema";
 export const NATIVE_BRIDGE_CHANNEL = "native-bridge:invoke";
 export const NATIVE_BRIDGE_VERSION = 1;
 
@@ -227,7 +226,7 @@ export interface CompositorExportResult {
 	exportWarning?: CompositorExportWarning;
 }
 
-export interface CompositorExportWarning {
+interface CompositorExportWarning {
 	phase: "publishing";
 	code: "DURABILITY_UNCONFIRMED";
 	message: string;
@@ -412,19 +411,19 @@ export interface NativeBridgeError {
 	};
 }
 
-export interface NativeBridgeMeta {
+interface NativeBridgeMeta {
 	version: typeof NATIVE_BRIDGE_VERSION;
 	requestId: string;
 	timestampMs: number;
 }
 
-export interface NativeBridgeSuccess<TData> {
+interface NativeBridgeSuccess<TData> {
 	ok: true;
 	data: TData;
 	meta: NativeBridgeMeta;
 }
 
-export interface NativeBridgeFailure {
+interface NativeBridgeFailure {
 	ok: false;
 	error: NativeBridgeError;
 	meta: NativeBridgeMeta;
@@ -766,14 +765,3 @@ export type NativeBridgeRequest =
 			payload: { exportId: string };
 			requestId?: string;
 	  };
-
-export type NativeBridgeEventName =
-	| "project.contextChanged"
-	| "cursor.providerChanged"
-	| "cursor.telemetryLoaded";
-
-export interface NativeBridgeEvent<TPayload = unknown> {
-	name: NativeBridgeEventName;
-	payload: TPayload;
-	meta: NativeBridgeMeta;
-}

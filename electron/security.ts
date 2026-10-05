@@ -1,4 +1,4 @@
-import type { App, WebContents } from "electron";
+import type { App } from "electron";
 
 export interface TrustedRendererConfig {
 	devServerUrl?: string;
@@ -15,13 +15,6 @@ export function isTrustedRendererUrl(rawUrl: string, config: TrustedRendererConf
 	} catch {
 		return false;
 	}
-}
-
-export function isTrustedWebContents(
-	webContents: Pick<WebContents, "getURL"> | null,
-	config: TrustedRendererConfig,
-): boolean {
-	return webContents !== null && isTrustedRendererUrl(webContents.getURL(), config);
 }
 
 /** Applies Electron's deny-by-default navigation and child-window guidance. */

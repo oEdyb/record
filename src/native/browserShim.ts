@@ -370,5 +370,3 @@ export function installBrowserShims(): void {
 	}
 	console.info("[openscreen] browser-mode shims active (no Electron)");
 }
-
-export { isBrowserMode };

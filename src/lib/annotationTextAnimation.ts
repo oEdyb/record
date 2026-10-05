@@ -1,7 +1,7 @@
 import type { AnnotationTextAnimation } from "@/components/video-editor/types";
 import { clamp01 } from "@/utils/math";
 
-export const TEXT_ANIMATION_DURATION_MS = 700;
+const TEXT_ANIMATION_DURATION_MS = 700;
 
 export interface TextAnimationState {
 	opacity: number;
@@ -11,7 +11,7 @@ export interface TextAnimationState {
 	revealProgress: number;
 }
 
-export const TEXT_ANIMATION_OPTIONS: Array<{
+const TEXT_ANIMATION_OPTIONS: Array<{
 	value: AnnotationTextAnimation;
 	translationKey: string;
 }> = [

@@ -658,7 +658,7 @@ export function closeWithoutAnimation(win: BrowserWindow) {
 	win.close();
 }
 
-export function closeCameraPreviewWindow() {
+function closeCameraPreviewWindow() {
 	const win = cameraPreviewWindow;
 	cameraPreviewWindow = null;
 	cameraPreviewReady = false;
@@ -853,7 +853,7 @@ export function createCountdownOverlayWindow(): BrowserWindow {
 const NOTES_WINDOW_DEFAULT_SIZE = { width: 320, height: 420 } as const;
 const NOTES_WINDOW_MIN_SIZE = { width: 220, height: 140 } as const;
 
-export interface NotesWindowBounds {
+interface NotesWindowBounds {
 	x: number;
 	y: number;
 	width: number;
@@ -871,7 +871,7 @@ function isNotesWindowBounds(value: unknown): value is NotesWindowBounds {
 }
 
 /** Keeps a remembered notes window inside the display it is nearest to. */
-export function clampNotesWindowBounds(
+function clampNotesWindowBounds(
 	bounds: NotesWindowBounds,
 	workArea: { x: number; y: number; width: number; height: number },
 ): NotesWindowBounds {

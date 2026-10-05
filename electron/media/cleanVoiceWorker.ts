@@ -32,7 +32,7 @@ export interface WaveInfo {
 	dataBytes: number;
 }
 
-export interface CleanVoiceArtifact {
+interface CleanVoiceArtifact {
 	rawPath: string;
 	cleanPath: string;
 	previewPath: string;

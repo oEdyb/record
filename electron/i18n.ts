@@ -78,10 +78,6 @@ export function setMainLocale(locale: string) {
 	}
 }
 
-export function getMainLocale(): Locale {
-	return currentLocale;
-}
-
 function getMessageValue(obj: unknown, dotPath: string): string | undefined {
 	const keys = dotPath.split(".");
 	let current: unknown = obj;

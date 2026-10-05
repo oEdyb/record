@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { audioTrackMapArgs, resolveFfmpeg } from "../media/audioPeaks";
 import type { SttSourceRole } from "./transcriptionContract";
 
-export const SOURCE_SAMPLE_RATE = 16_000 as const;
 const SOURCE_PROBE_TIMEOUT_MS = 10_000;
 
 const TRACK_TITLE_BY_LANGUAGE = {
@@ -20,14 +19,6 @@ export interface SourceAudioLayout {
 	roles: SttSourceRole[];
 	durationSec: number | null;
 	video?: { codec: string; width: number; height: number; fps: number };
-}
-
-/** Raised only when the requested source track does not exist in the container. */
-export class MissingSourceTrackError extends Error {
-	constructor(readonly sourceRole: SttSourceRole) {
-		super(`No ${sourceRole} audio track found in this recording.`);
-		this.name = "MissingSourceTrackError";
-	}
 }
 
 function cancelledError(): Error {
@@ -168,117 +159,4 @@ export function sourceTrackMapArgs(role: SttSourceRole): string[] {
 	// Imported media is explicitly mixed. Pick its first audio stream instead of
 	// relying on FFmpeg's automatic selection, which can change with dispositions.
 	return ["-map", "0:a:0"];
-}
-
-export interface SourceAudioChunkRequest {
-	sourcePath: string;
-	sourceRole: SttSourceRole;
-	startSec: number;
-	durationSec: number;
-	signal?: AbortSignal;
-}
-
-/**
- * Decode one bounded source-time window to mono 16 kHz float PCM.
- *
- * The child runs outside Electron's renderer and stdout is consumed as it is
- * produced. The returned allocation is therefore bounded by `durationSec`, not
- * by the recording length. `-map` stays required so qac/qab can never fall back
- * to the mixed preview track.
- */
-export async function extractSourceAudioChunk(
-	request: SourceAudioChunkRequest,
-): Promise<Float32Array> {
-	if (request.signal?.aborted) throw cancelledError();
-	const ffmpeg = resolveFfmpeg();
-	if (!ffmpeg) throw new Error("Bundled FFmpeg is unavailable for transcription.");
-	if (!Number.isFinite(request.startSec) || request.startSec < 0) {
-		throw new Error("Invalid transcription chunk start.");
-	}
-	if (!Number.isFinite(request.durationSec) || request.durationSec <= 0) {
-		throw new Error("Invalid transcription chunk duration.");
-	}
-
-	const args = [
-		"-hide_banner",
-		"-loglevel",
-		"error",
-		"-nostdin",
-		"-ss",
-		request.startSec.toFixed(6),
-		"-i",
-		request.sourcePath,
-		"-t",
-		request.durationSec.toFixed(6),
-		...sourceTrackMapArgs(request.sourceRole),
-		"-vn",
-		"-sn",
-		"-dn",
-		"-ac",
-		"1",
-		"-af",
-		`aresample=${SOURCE_SAMPLE_RATE}:async=1:first_pts=0`,
-		"-c:a",
-		"pcm_f32le",
-		"-f",
-		"f32le",
-		"pipe:1",
-	];
-
-	return await new Promise<Float32Array>((resolve, reject) => {
-		const child = spawn(ffmpeg, args, {
-			stdio: ["ignore", "pipe", "pipe"],
-			signal: request.signal,
-		});
-		const chunks: Buffer[] = [];
-		let byteLength = 0;
-		let stderr = "";
-		let settled = false;
-		const maximumBytes =
-			Math.ceil(request.durationSec * SOURCE_SAMPLE_RATE * Float32Array.BYTES_PER_ELEMENT) +
-			SOURCE_SAMPLE_RATE * Float32Array.BYTES_PER_ELEMENT;
-
-		const finish = (fn: () => void) => {
-			if (settled) return;
-			settled = true;
-			fn();
-		};
-		child.stdout.on("data", (chunk: Buffer) => {
-			byteLength += chunk.byteLength;
-			if (byteLength > maximumBytes) {
-				child.kill("SIGKILL");
-				finish(() => reject(new Error("FFmpeg exceeded the bounded transcription chunk size.")));
-				return;
-			}
-			chunks.push(chunk);
-		});
-		child.stderr.on("data", (chunk: Buffer) => {
-			stderr = (stderr + chunk.toString()).slice(-16_384);
-		});
-		child.once("error", (error) => {
-			finish(() => {
-				if (request.signal?.aborted || error.name === "AbortError") reject(cancelledError());
-				else reject(error);
-			});
-		});
-		child.once("close", (code) => {
-			finish(() => {
-				if (request.signal?.aborted) {
-					reject(cancelledError());
-					return;
-				}
-				if (code !== 0) {
-					if (/matches no streams|stream map .* matches no streams/i.test(stderr)) {
-						reject(new MissingSourceTrackError(request.sourceRole));
-						return;
-					}
-					reject(new Error(`FFmpeg audio extraction failed: ${stderr.trim() || `exit ${code}`}`));
-					return;
-				}
-				const pcm = Buffer.concat(chunks, byteLength - (byteLength % 4));
-				const aligned = Uint8Array.from(pcm);
-				resolve(new Float32Array(aligned.buffer));
-			});
-		});
-	});
 }

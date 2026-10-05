@@ -1,19 +1,4 @@
 export const DEFAULT_LOCALE = "en" as const;
-export const SUPPORTED_LOCALES = [
-	"en",
-	"ar",
-	"es",
-	"fr",
-	"it",
-	"ja-JP",
-	"ko-KR",
-	"ru",
-	"tr",
-	"vi",
-	"pt-BR",
-	"zh-CN",
-	"zh-TW",
-] as const;
 export const I18N_NAMESPACES = [
 	"common",
 	"dialogs",
@@ -21,7 +6,6 @@ export const I18N_NAMESPACES = [
 	"launch",
 	"settings",
 	"shortcuts",
-	"timeline",
 ] as const;
 
 export type Locale = string;

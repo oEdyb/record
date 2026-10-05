@@ -168,7 +168,7 @@ export async function probeWebcamFormats(
 const probedFormatsByDevice = new Map<string, WebcamFormat[]>();
 
 /** Camera identity for the probe cache: the stable Chromium device id, else the track label. */
-export function webcamProbeCacheKey(
+function webcamProbeCacheKey(
 	track: Pick<MediaStreamTrack, "getSettings" | "label">,
 	deviceId?: string,
 ): string | null {

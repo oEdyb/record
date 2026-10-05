@@ -7,8 +7,6 @@ import styles from "./dialog.module.css";
 
 const Dialog = DialogPrimitive.Root;
 
-const DialogTrigger = DialogPrimitive.Trigger;
-
 const DialogPortal = DialogPrimitive.Portal;
 
 const DialogClose = DialogPrimitive.Close;
@@ -114,8 +112,5 @@ export {
 	DialogFooter,
 	DialogHeader,
 	DialogHeading,
-	DialogOverlay,
-	DialogPortal,
 	DialogTitle,
-	DialogTrigger,
 };

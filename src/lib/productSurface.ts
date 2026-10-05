@@ -13,11 +13,3 @@ export const PRODUCT_SURFACE = Object.freeze({
 	transcript: true,
 	automaticTranscription: false,
 });
-
-export type OptionalEditorFacet = "captions" | "transcript";
-
-export function isOptionalEditorFacetVisible(facet: OptionalEditorFacet): boolean {
-	return facet === "captions" ? PRODUCT_SURFACE.captions : PRODUCT_SURFACE.transcript;
-}
-
-export const AUTOMATIC_TRANSCRIPTION_ENABLED = PRODUCT_SURFACE.automaticTranscription;

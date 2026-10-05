@@ -5,16 +5,16 @@ import path from "node:path";
 import type { CliExportRequest, CliRecordRequest, CliRequest } from "../../src/lib/cliContracts";
 import { hasCanonicalProjectExtension } from "../../src/lib/projectFileFormat";
 
-export interface CliInfoCommand {
+interface CliInfoCommand {
 	kind: "info";
 	projectPath: string;
 }
 
-export interface CliHelpCommand {
+interface CliHelpCommand {
 	kind: "help";
 }
 
-export interface CliErrorCommand {
+interface CliErrorCommand {
 	kind: "error";
 	message: string;
 }
@@ -348,7 +348,7 @@ function parseSources(args: string[]): CliCommand {
 	return { kind: "sources", json };
 }
 
-export interface CliPackCommand {
+interface CliPackCommand {
 	kind: "pack";
 	projectPath: string;
 	outDir: string;

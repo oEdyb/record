@@ -176,7 +176,7 @@ export function coalescedTrimGroups(
  * row (its anchor clip deleted, so `trimToTimelineSpan` maps it nowhere) is dropped from the
  * groups but must still be deletable.
  */
-export function resolveTrimPillIds(
+function resolveTrimPillIds(
 	trimRanges: AxcutTrimRange[],
 	clips: AxcutClip[],
 	id: string,

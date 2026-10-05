@@ -17,14 +17,9 @@ const FOUR_K_PIXELS = TARGET_WIDTH * TARGET_HEIGHT;
 const QHD_PIXELS = 2560 * 1440;
 const BITRATE_4K = 45_000_000;
 const BITRATE_QHD = 28_000_000;
-export const BITRATE_BASE = 18_000_000;
+const BITRATE_BASE = 18_000_000;
 const HIGH_FRAME_RATE_THRESHOLD = 60;
 const HIGH_FRAME_RATE_BOOST = 1.7;
-
-// YouTube recommends at most 68 Mbps for 4K60 H.264 uploads. More importantly,
-// VideoToolbox rejects 76.5 Mbps for some built-in Retina capture geometries,
-// while 68 Mbps records cleanly.
-export const MAC_H264_CAPTURE_BITRATE_MAX = 68_000_000;
 
 export type CaptureSource = {
 	id: string;
