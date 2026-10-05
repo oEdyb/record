@@ -87,7 +87,7 @@ export function anchorRawRegionsToClips<T extends { id: string; startMs: number;
  * clip's live position — the single forward map source↔raw for one fragment (a raw
  * clip is identity between source and raw-virtual time). Returns null when the
  * fragment's `clipId` is gone (clip deleted → the fragment is not shown). Used to
- * place pills (`V4Timeline`), derive the transition `startMs/endMs`, and by
+ * place timeline pills, derive the transition `startMs/endMs`, and by
  * `coalesceAnchoredFragments`.
  */
 export function anchoredToRawSpanSec(

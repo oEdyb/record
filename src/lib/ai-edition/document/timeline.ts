@@ -129,7 +129,7 @@ function collectWordRefs(
 
 // Lay clips back-to-back from t=0, preserving each clip's own length. Called
 // after any structural change (insert / move / remove / trim) so the timeline
-// never has gaps or overlaps between clips. Shared by useTimeline (UI) and
+// never has gaps or overlaps between clips. Shared by the editor timeline (UI) and
 // the agent tool executor (main process) so both enforce the same invariant.
 export function resequenceClips(clips: AxcutClip[]): AxcutClip[] {
 	let cursor = 0;

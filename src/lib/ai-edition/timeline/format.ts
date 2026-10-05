@@ -1,5 +1,5 @@
 // Timeline timecodes. Two shapes, one home — this used to be six near-identical
-// private copies spread across Modals, V4Timeline, MediaStage, operations and
+// private copies spread across Modals, the timeline, MediaStage, operations and
 // virtual-preview.
 //
 // `formatSeconds` shows the hour field only when there is one; `formatSec`

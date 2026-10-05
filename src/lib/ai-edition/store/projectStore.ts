@@ -42,7 +42,7 @@ export interface ProjectState {
 	sourceDurationSec: number;
 	currentTimeSec: number;
 	/** Single source of truth for "is the timeline transport playing?" — previously
-	 *  duplicated as separate local state in NewEditorShell AND VirtualPreview, each
+	 *  duplicated as separate local state in the editor shell AND VirtualPreview, each
 	 *  independently wired to the same raw <video> DOM events, which let one advance
 	 *  a clip boundary while the other unconditionally stopped playback. */
 	playing: boolean;

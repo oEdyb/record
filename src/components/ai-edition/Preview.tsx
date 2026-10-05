@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CameraFullscreenRegion, ZoomFocus } from "@/components/video-editor/types";
+import type { CameraFullscreenRegion } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
-import type {
-	AxcutAnnotationRegion,
-	AxcutClip,
-	AxcutTrimRange,
-	AxcutZoomRegion,
-} from "@/lib/ai-edition/schema";
+import type { AxcutClip, AxcutTrimRange, AxcutZoomRegion } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import type { SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import { EditorEmptyState } from "./EditorEmptyState";
-import styles from "./NewEditorShell.module.css";
 import { PreviewCanvas } from "./PreviewCanvas";
+import styles from "./ReviewSurface.module.css";
 import type { VideoSource } from "./VirtualPreview";
-
-type BlurData = NonNullable<AxcutAnnotationRegion["blurData"]>;
 
 interface PreviewProps {
 	hasProject: boolean;
@@ -25,16 +18,6 @@ interface PreviewProps {
 	speedRegions?: SpeedRegion[];
 	cameraFullscreenRegions?: CameraFullscreenRegion[];
 	trimRanges?: AxcutTrimRange[];
-	selectedZoomRegionId?: string | null;
-	onZoomFocusChange?: (id: string, focus: ZoomFocus) => void;
-	onZoomFocusCommit?: () => void;
-	annotationRegions?: AxcutAnnotationRegion[];
-	selectedAnnotationId?: string | null;
-	onSelectAnnotation?: (id: string) => void;
-	onAnnotationPositionChange?: (id: string, position: { x: number; y: number }) => void;
-	onAnnotationSizeChange?: (id: string, size: { width: number; height: number }) => void;
-	onAnnotationBlurDataChange?: (id: string, blurData: BlurData) => void;
-	onAnnotationCommit?: () => void;
 	seekTarget: { timeSec: number; requestId: number } | null;
 	onTimeChange: (sec: number) => void;
 	onSeek: (sec: number) => void;
@@ -58,16 +41,6 @@ export function Preview({
 	speedRegions,
 	cameraFullscreenRegions,
 	trimRanges,
-	selectedZoomRegionId,
-	onZoomFocusChange,
-	onZoomFocusCommit,
-	annotationRegions,
-	selectedAnnotationId,
-	onSelectAnnotation,
-	onAnnotationPositionChange,
-	onAnnotationSizeChange,
-	onAnnotationBlurDataChange,
-	onAnnotationCommit,
 	seekTarget,
 	onTimeChange,
 	onSeek,
@@ -78,12 +51,10 @@ export function Preview({
 	readOnly = false,
 }: PreviewProps) {
 	const te = useScopedT("editor");
-	// Subscribed HERE rather than passed down from NewEditorShell: the playhead is
+	// Subscribed HERE rather than passed down from the review shell: the playhead is
 	// rewritten every animation frame during playback, and reading it in the shell
-	// re-rendered the whole editor (timeline included) once per frame — see
-	// NativePlaybackSync in NewEditorShell.tsx. The preview subtree genuinely has to
-	// re-render at that rate (annotations, captions, crop, Full Camera all animate
-	// against it); the timeline does not.
+	// re-rendered the whole window once per frame. The preview subtree genuinely has to
+	// re-render at that rate (crop and Full Camera animate against it); the shell does not.
 	const currentTimeSec = useProjectStore((s) => s.currentTimeSec);
 	// ponytail: the preview follows the TIMELINE, not the raw asset list. A
 	// document can hold an asset no clip references — an import whose file was
@@ -95,7 +66,7 @@ export function Preview({
 	// Ordered by timeline position, so the first source mounted is the one the
 	// playhead actually needs at 0:00.
 	// The fallback is load-bearing: the first clip of a fresh import is minted
-	// from the <video>'s own loadedmetadata (NewEditorShell.handleLoadedMetadata),
+	// from the <video>'s own loadedmetadata (RecordingReviewShell.handleLoadedMetadata),
 	// so with a still-empty timeline the asset has to be mounted before anything
 	// references it.
 	const previewSources = useMemo(() => {
@@ -149,16 +120,6 @@ export function Preview({
 					speedRegions={speedRegions}
 					cameraFullscreenRegions={cameraFullscreenRegions}
 					trimRanges={trimRanges}
-					selectedZoomRegionId={selectedZoomRegionId}
-					onZoomFocusChange={onZoomFocusChange}
-					onZoomFocusCommit={onZoomFocusCommit}
-					annotationRegions={annotationRegions}
-					selectedAnnotationId={selectedAnnotationId}
-					onSelectAnnotation={onSelectAnnotation}
-					onAnnotationPositionChange={onAnnotationPositionChange}
-					onAnnotationSizeChange={onAnnotationSizeChange}
-					onAnnotationBlurDataChange={onAnnotationBlurDataChange}
-					onAnnotationCommit={onAnnotationCommit}
 					seekTarget={seekTarget}
 					onTimeChange={onTimeChange}
 					onSeek={onSeek}

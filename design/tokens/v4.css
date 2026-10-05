@@ -68,7 +68,7 @@
 	--playhead-shadow: rgba(63, 95, 132, 0.24);
 
 	/* legacy shadcn-style aliases → canonical tokens. Referenced by the
-	   TimelinePane / TranscriptEditor / VirtualPreview / NewEditorShell module
+	   TimelinePane / TranscriptEditor / VirtualPreview / ReviewSurface module
 	   CSS that was ported before the token system existed. Defined via var()
 	   so the dark-theme overrides of the target tokens cascade automatically —
 	   no need to redefine these in the dark block. */

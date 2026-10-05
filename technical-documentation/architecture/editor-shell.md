@@ -1,85 +1,54 @@
 # Editor shell
 
-The current Klippt alpha uses
-[`NewEditorShell.tsx`](../../src/components/ai-edition/NewEditorShell.tsx) as the owner of the
-editor surface. The shell mounts the top bar, preview stage, floating inspector, timeline, project
-modals, and export dialog.
+Klippt is recording-only. The editor window is the recording review shell,
+[`RecordingReviewShell.tsx`](../../src/components/ai-edition/RecordingReviewShell.tsx), mounted by
+[`AiEditionShell.tsx`](../../src/components/ai-edition/AiEditionShell.tsx). It opens after Stop to
+watch the take, record again, add a clip, open earlier recordings, and export.
 
-[`productSurface.ts`](../../src/lib/productSurface.ts) is the release-surface switchboard. The
-current alpha keeps the inherited media workspace and captions hidden; the AI chat was removed. Transcript is the
-only optional inherited facet that is visible. Hidden code keeps document compatibility, but it is
-not part of the normal user flow.
+The inherited editor (top bar, floating inspector, timeline, media workspace, and their panes)
+was removed on 2026-10-05. It is recoverable from the `archive/pre-cleanup-2026-10-05` tag.
+[`productSurface.ts`](../../src/lib/productSurface.ts) still pins `recordingOnly` to `true`.
 
 ## Current component tree
 
 ```mermaid
 flowchart TD
-    Shell[NewEditorShell]
-    Top[EditorTopBar]
-    Stage[Preview]
-    Inspector[FloatingInspector]
-    Timeline[V4Timeline]
-    Modals[Project and clip modals]
+    Shell[RecordingReviewShell]
+    Banner[TransactionRecoveryBanner]
+    Toolbar[RecordingReviewToolbar]
+    Stage[Preview read-only]
+    Transport[TransportBar overlay]
+    Modals[OpenProjectModal and UnsavedChangesModal]
     Export[ExportDialog]
 
-    Shell --> Top
+    Shell --> Banner
+    Shell --> Toolbar
     Shell --> Stage
-    Shell --> Inspector
-    Shell --> Timeline
+    Shell --> Transport
     Shell --> Modals
     Shell --> Export
 ```
 
-The top bar exposes one visible workspace: **Edit**. Recording starts from its Record action and
-then moves to the separate recorder HUD and camera-preview windows. Recording is not a third editor
-mode.
-
-The inherited `MediaStage` path remains in code behind `PRODUCT_SURFACE.mediaWorkspace`. The
-inherited `LeftPanel` chat was removed on 2026-10-05 (see the `archive/pre-cleanup-2026-10-05`
-tag). Keep the remaining paths hidden unless a planned product slice explicitly restores them.
+The toolbar's Record and Add clip actions hide the window and open the recorder HUD. The
+recorder hands the take back through `recordingImport.ts`, and the shell restores the playhead
+from the persisted `RecordingWorkspaceContext`. That context keeps its `mode`, `inspectorOpen`,
+and `facet` fields for compatibility with the main process; review always writes `edit`, `true`,
+and `effects`.
 
 ## State ownership
 
-`NewEditorShell` owns the active workspace, transport state, inspector state, modal state, preview
-seek target, and timeline height. [`useProjectStore`](../../src/lib/ai-edition/store/projectStore.ts)
-owns the loaded document and project persistence. [`useTimeline`](../../src/lib/ai-edition/store/useTimeline.ts)
-owns clip and timeline-region mutations.
+`RecordingReviewShell` owns transport wiring, seek requests, modal state, the export lock, and
+the recording hand-off flags. [`useProjectStore`](../../src/lib/ai-edition/store/projectStore.ts)
+owns the loaded document and project persistence.
+[`useAssetDimensionBackfill`](../../src/lib/ai-edition/store/useAssetDimensionBackfill.ts) probes
+and persists missing source dimensions once per asset.
 
-The preview receives the document sources plus zoom, speed, camera-emphasis, annotation, and trim
-regions. Preview framing changes use live state during a drag and commit once when the gesture ends.
-This keeps interaction smooth and keeps undo history useful.
-
-## Inspector facets
-
-[`FloatingInspector.tsx`](../../src/components/ai-edition/v4/FloatingInspector.tsx) defines these
-facets:
-
-| Facet | Purpose | Current alpha |
-| --- | --- | --- |
-| Background | Canvas color, image, blur, padding, and presentation | Visible |
-| Effects | Screen presentation and motion controls | Visible |
-| Layout | Aspect ratio, screen framing, and camera layout | Visible |
-| Cursor | Cursor appearance and motion | Visible |
-| Audio | Clean Voice, loudness, and pause analysis | Visible |
-| Automatic | Automatic-direction settings and presets | Visible |
-| Captions | Caption appearance and translation | Hidden |
-| Transcript | Transcript review, language, and copy actions | Visible |
-
-When the user selects a timeline region, the selection pane replaces the facet body. The selection
-pane edits the real region value. User changes must promote an automatic region to manual ownership
-so regeneration does not remove the correction.
-
-## Timeline
-
-[`V4Timeline.tsx`](../../src/components/ai-edition/v4/V4Timeline.tsx) renders clips, the ruler,
-playhead, audio waveform, and visible edit regions. Timeline positions use project-time seconds.
-Fixed visual affordances use pixels and convert to time through the current pixels-per-second value.
-This rule keeps clip edges, pills, and the playhead aligned on long recordings and at every zoom
-level.
-
-The timeline remains mounted below the editor preview. Background analysis can continue when the
-user switches inspector facets. The app must not start pause analysis only because the Audio facet
-opened.
+The preview receives the document sources plus zoom, speed, Full Camera, and trim regions, read
+directly from the document by
+[`reviewPreviewRegions.ts`](../../src/components/ai-edition/reviewPreviewRegions.ts). Projects
+edited before review became the only shell keep rendering their regions. Annotations and zooms
+are drawn by the native compositor from the same document. The preview is read-only: review
+offers no framing, webcam drag, or region editing.
 
 ## Preview and export
 
@@ -90,14 +59,15 @@ not make export resolution depend on the preview viewport.
 MP4 and GIF export use the native compositor through
 [`ExportDialog.tsx`](../../src/components/ai-edition/ExportDialog.tsx) and
 [`compositorViewClient.ts`](../../src/native/compositorViewClient.ts). Multi-clip export projects
-project-time regions into each clip's source-time span.
+project-time regions into each clip's source-time span. Review opens the dialog in quick-export
+mode; the Originals action opens untouched source recovery.
 
 ## UI authorities
 
 [`src/styles/design-tokens.css`](../../src/styles/design-tokens.css) is the production token
-authority. Shared selects, menus, popovers, tooltips, and inspector wrappers live under
+authority. Shared selects, menus, popovers, tooltips, and dialog wrappers live under
 [`src/components/ui/`](../../src/components/ui/). Do not add raw HTML selects or local accent colors
-to editor surfaces.
+to review surfaces.
 
 The current project state, verification evidence, and remaining beta gates live in
 [`HANDOFF.md`](../../HANDOFF.md).

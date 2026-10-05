@@ -146,67 +146,6 @@ describe("useProjectStore", () => {
 			},
 		};
 	}
-	it("accepts proposed cuts through one GUI undo step and one durable agent history entry", async () => {
-		const fs = await import("node:fs/promises");
-		const { ProjectTransactionStore } = await import(
-			"../../../../electron/ai-edition/projectTransactions"
-		);
-		const { editFixture } = await import("../checks/fixtures");
-		const { usePauseAnalysisStore, resetPauseAnalysisStoreForTests } = await import(
-			"@/components/ai-edition/pauses/pauseAnalysisStore"
-		);
-		const root = await fs.mkdtemp("/tmp/staged-history-");
-		try {
-			const file = `${root}/project.klippt`;
-			const doc = editFixture();
-			await fs.writeFile(file, JSON.stringify(doc));
-			const disk = new ProjectTransactionStore(file);
-			useProjectStore.setState({
-				projectId: "project",
-				document: doc,
-				status: "ready",
-				dirty: false,
-			});
-			bridgeMocks.snapshot.mockImplementation(async () => ({
-				success: true,
-				...(await disk.read()),
-			}));
-			bridgeMocks.commit.mockImplementation(async (_id, candidate, guard) => {
-				const receipt = await disk.commit({ ...guard, payload: candidate }, () => candidate);
-				return { success: true, receipt, ...(await disk.read()), snapshotMatchesReceipt: true };
-			});
-			resetPauseAnalysisStoreForTests();
-			usePauseAnalysisStore.getState().stageCuts(
-				[1, 6].map((start) => ({
-					id: `cut-${start}`,
-					clipId: "clip",
-					assetId: "asset",
-					sourceStartSec: start,
-					sourceEndSec: start + 1,
-					kind: "agent",
-					origin: "agent plan test",
-					selected: true,
-				})),
-			);
-			expect(
-				await usePauseAnalysisStore.getState().acceptAll(undefined, "accepted-cuts-request"),
-			).toBe("applied");
-			expect(bridgeMocks.commit).toHaveBeenCalledOnce();
-			expect((await disk.read()).document.timeline.trimRanges).toHaveLength(2);
-			const history = await (await new ProjectTransactionStore(file).history()).list();
-			expect(history).toHaveLength(1);
-			expect(history[0]).toMatchObject({
-				planSummary: "Accept 2 proposed cuts",
-				kind: "apply",
-				requestId: "accepted-cuts-request",
-			});
-			expect(undo()).toBe(true);
-			expect(useProjectStore.getState().document?.timeline.trimRanges).toEqual([]);
-			expect(undo()).toBe(false);
-		} finally {
-			await fs.rm(root, { recursive: true, force: true });
-		}
-	});
 	it("activates only a clean matching saved snapshot and rejects dirty or changed live content", async () => {
 		await activate();
 		expect(useProjectStore.getState().transactionVersion).toEqual(version);

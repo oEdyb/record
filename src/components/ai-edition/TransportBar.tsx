@@ -7,7 +7,7 @@ import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { formatPlayerTime, formatSec } from "@/lib/ai-edition/timeline/format";
-import styles from "./NewEditorShell.module.css";
+import styles from "./ReviewSurface.module.css";
 
 interface TransportBarProps {
 	playing: boolean;
@@ -41,10 +41,9 @@ export const TransportBar = memo(function TransportBar({
 	insertionBoundarySec,
 }: TransportBarProps) {
 	const te = useScopedT("editor");
-	// Same reason as PlayheadOverlay (see V4Timeline.tsx): the timecode and the
-	// scrub thumb are animated during playback, so they subscribe to the playhead
-	// directly instead of forcing V4Timeline — and the whole editor shell above it —
-	// to re-render once per frame to hand it down as a prop.
+	// The timecode and the scrub thumb are animated during playback, so they
+	// subscribe to the playhead directly instead of forcing the review shell
+	// above them to re-render once per frame to hand it down as a prop.
 	const storeTimeSec = useProjectStore((s) => s.currentTimeSec);
 	const previewVolume = usePreviewAudio((s) => s.volume);
 	const previewMuted = usePreviewAudio((s) => s.muted);
@@ -82,7 +81,7 @@ export const TransportBar = memo(function TransportBar({
 	//
 	// L'`onChange` d'un `<input type="range">` se déclenche à la cadence du POINTEUR — 125 à
 	// 1000 Hz selon la souris — et appelait `onSeek` à chacun. Or `onSeek` est `handleSeek`,
-	// qui écrit au store ET repose un `seekTarget` neuf dans l'état de `NewEditorShell`, la
+	// qui écrit au store ET repose un `seekTarget` neuf dans l'état de `RecordingReviewShell`, la
 	// racine : chaque appel re-rend tout l'éditeur et fait poser `<video>.currentTime`, un
 	// vrai seek média.
 	//
@@ -100,7 +99,7 @@ export const TransportBar = memo(function TransportBar({
 	const draggingRef = useRef(false);
 	// Remplissage et curseur de la barre, écrits DIRECTEMENT pendant un drag.
 	//
-	// Même patron que `playheadElRef` dans V4Timeline, et pour la même raison : la position
+	// Même patron que l'ancienne tête de lecture de la timeline, et pour la même raison : la position
 	// que l'utilisateur voit ne doit pas attendre un rendu React. Ces deux éléments étaient
 	// positionnés uniquement depuis `progress`, dérivé du store — donc en retard d'un commit
 	// à chaque mouvement, alors que la tête de lecture de la timeline, elle, colle au

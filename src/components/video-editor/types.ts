@@ -493,7 +493,7 @@ export function getZoomScale(region: ZoomScaleInput): number {
 
 // An unknown focus means "centre", not "top-left" — so this one can't use the
 // shared clamp, which floors non-finite input to `min`. Same convention as
-// `finiteFraction` in useTimeline.ts.
+// `finiteFraction` in the former editor timeline hook.
 function focusOrCentre(value: number): number {
 	return Number.isFinite(value) ? clamp01(value) : 0.5;
 }

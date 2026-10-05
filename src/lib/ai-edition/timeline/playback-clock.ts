@@ -4,7 +4,7 @@
 //
 // Why this exists: previously the webcam derived its sync target from a
 // `currentTimeSec` PROP that traveled screen-video-rAF -> React state
-// (VirtualPreview) -> onTimeChange callback -> React state (NewEditorShell)
+// (VirtualPreview) -> onTimeChange callback -> React state (the editor shell)
 // -> prop drilling back down through Preview/PreviewCanvas -> WebcamOverlay.
 // Each hop adds a render pass of latency and makes the exact update cadence
 // dependent on React's scheduling rather than the video's actual frame rate.

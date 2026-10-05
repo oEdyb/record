@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { nativeBridgeClient } from "@/native/client";
 import type { SourceHandoffResult } from "@/native/contracts";
-import styles from "./NewEditorShell.module.css";
+import styles from "./ReviewSurface.module.css";
 
 export function SourceExportPanel({
 	document,

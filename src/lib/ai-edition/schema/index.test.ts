@@ -857,7 +857,7 @@ describe("v5 -> v6 native AspectRatio migration", () => {
 		// Baking here would stamp a hardcoded 16:9 and persist it — permanently
 		// reframing every portrait v1.7 project saved with "Native". Leave the
 		// sentinel; it resolves dynamically at runtime and converts on a later load,
-		// once useTimeline's probe has written `asset.video` back.
+		// once useAssetDimensionBackfill's probe has written `asset.video` back.
 		const doc = documentSchema.parse(
 			migrateRawDocumentToCurrent({
 				schemaVersion: 5,
@@ -898,7 +898,7 @@ describe("v5 -> v6 native AspectRatio migration", () => {
 	});
 
 	it("converts 'native' once the probe has persisted dimensions", () => {
-		// Second load of the same project, after useTimeline probed a PORTRAIT source.
+		// Second load of the same project, after useAssetDimensionBackfill probed a PORTRAIT source.
 		// This is the case that must not become 16:9.
 		const doc = documentSchema.parse(
 			migrateRawDocumentToCurrent({

@@ -47,7 +47,7 @@ describe("TransportBar reads the playhead from the store", () => {
 		vi.clearAllMocks();
 	});
 
-	// The counterpart to useTimeline.test.ts's "not re-rendered by playhead ticks":
+	// The counterpart to the shell's "not re-rendered by playhead ticks" rule:
 	// now that the editor shell no longer subscribes to the playhead, the pieces that
 	// DO display it have to pick it up themselves. Nothing here re-renders the parent
 	// — the store write alone must move the timecode.

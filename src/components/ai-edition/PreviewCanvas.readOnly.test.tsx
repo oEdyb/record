@@ -20,10 +20,6 @@ vi.mock("./NativeCompositorOverlay", () => ({ NativeCompositorOverlay: () => nul
 vi.mock("./AudioOverlayPlayback", () => ({ AudioOverlayPlayback: () => null }));
 vi.mock("./VirtualPreview", () => ({ VirtualPreview: () => null }));
 vi.mock("./WebcamOverlay", () => ({ WebcamOverlay: () => null }));
-vi.mock("./ZoomFocusOverlay", () => ({ ZoomFocusOverlay: () => <div data-testid="zoom-edit" /> }));
-vi.mock("./AnnotationLayer", () => ({
-	AnnotationLayer: () => <div data-testid="annotation-edit" />,
-}));
 
 const clip: AxcutClip = {
 	id: "c1",

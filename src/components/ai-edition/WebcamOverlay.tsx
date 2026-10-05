@@ -29,7 +29,7 @@ import {
 import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
 import { setWebcamNativeSize } from "@/native/webcamSizeCache";
-import styles from "./NewEditorShell.module.css";
+import styles from "./ReviewSurface.module.css";
 
 interface WebcamOverlayProps {
 	clips: AxcutClip[];

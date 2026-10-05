@@ -71,7 +71,7 @@ let shimRecordingPrefs: ShimRecordingPrefs = {
 
 // ponytail: real file dialogs/ffmpeg probing aren't available in a plain
 // browser tab, but a hidden <input type="file"> + blob URL gets us a real,
-// playable video without any native bridge — NewEditorShell/toFileUrl
+// playable video without any native bridge — RecordingReviewShell/toFileUrl
 // already special-case blob:/http(s):/data: asset paths and pass them
 // through untouched, so this just has to produce one.
 type PickVideoResult =
@@ -182,7 +182,7 @@ function createShimBridgeClient() {
 	// ponytail: keyed by project id, matching the real DocumentService (one
 	// file per project on disk). The previous shim kept a single global
 	// `currentDoc` that `get(projectId)` ignored entirely — after a reload,
-	// NewEditorShell's auto-load effect would call `listProjects()` (which
+	// RecordingReviewShell's auto-load effect would call `listProjects()` (which
 	// *did* remember every created project), pick the most recent one, then
 	// `get()` that id and get back whatever `currentDoc` happened to be
 	// (often null, if `save()` hadn't fired yet), throwing "Failed to load

@@ -50,11 +50,11 @@ not a parallel store.
 
 The first calm product surface starts transcription when the user presses
 **Transcribe**. This avoids a surprise 482 MB first-use download and keeps
-project opening independent from speech recognition. The reusable queue lives in
-[`src/lib/ai-edition/store/transcriptionStore.ts`](../../src/lib/ai-edition/store/transcriptionStore.ts),
-and it is the only renderer service that calls `transcribeAsset`. The existing
-`useAutoTranscription()` hook remains available for a later opt-in workflow but
-`PRODUCT_SURFACE.automaticTranscription` keeps it off today.
+project opening independent from speech recognition. The reusable renderer queue lived in
+`src/lib/ai-edition/store/transcriptionStore.ts` until the editor UI was removed on
+2026-10-05 (tag `archive/pre-cleanup-2026-10-05`); it was the only renderer
+service that called `transcribeAsset`, and its `useAutoTranscription()` hook went
+with it. No renderer surface starts transcription today.
 
 What the store owns and what it does not:
 
@@ -98,8 +98,7 @@ What the store owns and what it does not:
 
 What each state means in the UI: a spinner and "Transcribing…" while queued or
 running, the media-card dot green (ready) / amber (silent or no speech) / red
-(failed) via
-[`TranscriptionStatus.tsx`](../../src/components/ai-edition/TranscriptionStatus.tsx),
+(failed) via `TranscriptionStatus.tsx` (removed 2026-10-05, tag `archive/pre-cleanup-2026-10-05`),
 and — the point of the whole thing — a disabled "Smart cuts" entry whose
 subtitle is the reason rather than "With AI".
 
@@ -579,7 +578,7 @@ is generous enough for two wrapped lines at the default size — the
 renderers clip to it, so it is deliberately not tight.
 
 The Captions pane itself
-([`src/components/ai-edition/CaptionsPane.tsx`](../../src/components/ai-edition/CaptionsPane.tsx))
+(`src/components/ai-edition/CaptionsPane.tsx`, removed 2026-10-05, tag `archive/pre-cleanup-2026-10-05`)
 is the only place that runs `transcribe` from the editor shell, and
 proposes removing any "legacy caption annotations" already present on the
 document — see the next subsection.
@@ -622,12 +621,12 @@ sync.
 
 Documents produced by an older "generate captions" flow carry caption text
 as real `annotations[]` entries with `annotationSource === "auto-caption"`
-([`src/components/ai-edition/CaptionsPane.tsx:96-99`](../../src/components/ai-edition/CaptionsPane.tsx:96)).
+(`CaptionsPane.tsx:96-99` in the archive tag).
 They would now render *on top of* the derived layer, so the Captions pane
 explicitly offers a "remove legacy caption annotations" action that
 filters them off the document — gated on the user's confirmation, since
 it deletes data
-([`src/components/ai-edition/CaptionsPane.tsx:154-161`](../../src/components/ai-edition/CaptionsPane.tsx:154)).
+(`CaptionsPane.tsx:154-161` in the archive tag).
 
 ## Known gaps
 

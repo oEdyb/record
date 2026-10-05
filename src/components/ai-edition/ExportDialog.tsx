@@ -60,7 +60,7 @@ import { buildCompositorClipInputs, buildSceneDescription } from "@/native/scene
 import { formatBytes } from "@/utils/formatBytes";
 import exportStyles from "./ExportDialog.module.css";
 import { ModalShell } from "./Modals";
-import styles from "./NewEditorShell.module.css";
+import styles from "./ReviewSurface.module.css";
 import { SourceExportPanel } from "./SourceExportPanel";
 
 /** hh:mm:ss (always shows hours, unlike the shared mm:ss `formatTimePadded`) — exports can run
@@ -132,8 +132,8 @@ export function ExportDialog({
 	//  and there's no OS window to hide. The hide/show dance is now dead code; removed.)
 
 	// Source dimensions come straight off `asset.video`. This dialog used to probe missing ones
-	// into local state as a fallback for recordings that were never probed; `useTimeline` now
-	// backfills them on editor load (before this dialog can open) and persists them, so every
+	// into local state as a fallback for recordings that were never probed; `useAssetDimensionBackfill` now
+	// backfills them on review load (before this dialog can open) and persists them, so every
 	// consumer reads the one populated source instead of each re-probing on its own.
 	const primaryAsset = useMemo(
 		() =>

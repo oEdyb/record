@@ -123,7 +123,7 @@ export function subscribeNativeCompositor(listener: () => void): () => void {
  * WHY THIS EXISTS. Until this function, each group of params was pushed only by
  * the mount effect of the panel that owns it — VideoEffectsPane, LayoutPane,
  * CursorPane. The inspector renders exactly ONE panel at a time
- * (FloatingInspector's if/else on `facet`, defaulting to "effects"), so on load
+ * (the former editor inspector's if/else on `facet`, defaulting to "effects"), so on load
  * the cursor and layout panels have never mounted and their params sit at the
  * addon's compiled-in defaults. That is the whole bug: a project with cursor
  * size 3.0 previewed at 1.0 until the user opened the cursor panel, at which

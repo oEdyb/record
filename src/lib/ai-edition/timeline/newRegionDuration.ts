@@ -13,11 +13,10 @@
  * minimum pill width inflated it in the RENDERING — the lie removed in #233.)
  *
  * This lives outside the timeline component because BOTH ways of creating a
- * region must agree: the toolbar buttons in V4Timeline and the keyboard
- * shortcuts in NewEditorShell, which the empty lanes advertise ("Press Z to add
- * zoom") and which have no other access to the zoom — `nav` is local state
- * inside V4Timeline. Paths that are not a user placing a pill by hand (the
- * agent, auto-zooms) don't call this and keep useTimeline's flat default.
+ * region must agree: the timeline toolbar buttons and the editor keyboard
+ * shortcuts, which the empty lanes advertised ("Press Z to add zoom") and which
+ * had no other access to the zoom. Paths that are not a user placing a pill by
+ * hand (the agent, auto-zooms) don't call this and keep the flat default.
  */
 
 /**
@@ -45,7 +44,7 @@ export const PILL_CREATE_MIN_SEC = 0.25;
  * the instant a region is created — deliberately not a store subscription. The
  * value changes on every zoom notch and nothing renders it, so subscribing would
  * re-render the whole editor shell for a number only a click ever reads. Same
- * reasoning as `playheadSec()` in useTimeline.
+ * reasoning as reading the playhead with `getState()`.
  */
 let pxPerSec = 0;
 

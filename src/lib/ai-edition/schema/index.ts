@@ -916,7 +916,7 @@ function upgradeV5DocumentToV6(raw: unknown): unknown {
 	// OPPORTUNISTIC, never forced. Baking requires real source dimensions, and a
 	// project imported from v1.7 has none yet: `migrateProjectDataToAxcutDocument`
 	// builds its asset from `{version:2, media, editor}`, which carries only file
-	// paths — dimensions arrive later, when `useTimeline`'s probe effect writes
+	// paths — dimensions arrive later, when `useAssetDimensionBackfill`'s probe effect writes
 	// `asset.video` back to disk.
 	//
 	// So when dimensions are unknown we leave `"native"` in place rather than

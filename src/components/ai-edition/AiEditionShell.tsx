@@ -1,12 +1,9 @@
-import { NewEditorShell } from "./NewEditorShell";
+import { RecordingReviewShell } from "./RecordingReviewShell";
 
-// ponytail: the new editor is the default for all users (merge plan §0 — the
-// new editing model is NOT opt-in). The LLM/agent UI (chat panel, provider
-// settings) always mounts inside NewEditorShell. The legacy VideoEditor is
-// deprecated.
+// Klippt is recording-only: the editor window is the recording review shell.
 
 export function AiEditionOrLegacy() {
-	return <NewEditorShell />;
+	return <RecordingReviewShell />;
 }
 
 export default AiEditionOrLegacy;

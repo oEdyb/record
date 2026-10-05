@@ -30,7 +30,7 @@ import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { isSupportedProjectFile } from "@/lib/projectFileFormat";
 import { nativeBridgeClient } from "@/native";
 import { prepareLegacyProjectForOpen } from "./legacyProjectOpen";
-import styles from "./NewEditorShell.module.css";
+import styles from "./ReviewSurface.module.css";
 
 type DropError = "unsupported-format" | "load-failed" | null;
 

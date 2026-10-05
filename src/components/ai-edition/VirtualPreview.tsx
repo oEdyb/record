@@ -834,7 +834,7 @@ export function VirtualPreview({
 											pendingSeekRef.current = null;
 											setLoadState("error");
 											// An 'error' doesn't itself fire 'pause', so make sure the shell's
-											// transport state (single source of truth, see NewEditorShell's
+											// transport state (single source of truth, see RecordingReviewShell's
 											// own play/pause/ended listener) actually learns playback stopped.
 											e.currentTarget.pause();
 											onVideoError?.(source.id);
@@ -856,7 +856,7 @@ export function VirtualPreview({
 											// 'ended', donc le check `!video.paused` habituel empêcherait
 											// toujours la reprise de la lecture sur le clip suivant. Si aucun
 											// clip suivant n'existe, on ne fait rien de plus ici : le navigateur
-											// a déjà mis la vidéo en pause, et NewEditorShell (seule source de
+											// a déjà mis la vidéo en pause, et RecordingReviewShell (seule source de
 											// vérité pour l'état de lecture) l'apprend via son propre listener
 											// 'ended'/'pause' sur ce même élément.
 											const current = clipsRef.current.find(
