@@ -23,9 +23,11 @@ the stand-in camera (slow backward drag 8 → 25 updates/s), and review gained S
 Up/Down, Home/End and M. Installed at `67d3aa26`; Space, Home, End and Right confirmed in the
 installed app. Evening: a recording with fewer source files than the previous one no longer
 sticks on the loading cover (`5025f1c9`), and the review camera keeps its real shape and can be
-dragged and resized (`cc16d3c4`, branch `feat/review-camera-placement-2026-10-05`, not yet on
-main). Installed at `cc16d3c4`; the 14:13 camera recording opens in the installed app. Previous
-app in `.local-install.noindex/backup-installed-20261005-2030`.
+dragged and resized (`cc16d3c4`, on main). The Automatic camera format now prefers 16:9 over the
+largest pixel area, so a MacBook camera records 1920x1080 instead of 1552x1552 (`7fed550f`, branch
+`fix/auto-camera-prefers-16x9`, not yet on main). Installed at `7fed550f`; a live camera recording
+on Automatic is not yet tested. Previous app in
+`.local-install.noindex/backup-installed-20261005-2320`.
 [Evidence](artifacts/cleanup-verify-2026-10-05/).
 
 # October 4: current creator-loop build installed
