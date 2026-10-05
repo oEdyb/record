@@ -692,6 +692,8 @@ export function LaunchWindow() {
 	// standalone window remains the path that asks macOS for access first, and Linux's.
 	const openSourceSelector = useCallback(
 		async (kind?: SourcePickerKind) => {
+			// Setup stays up while macOS answers, then the picker replaces it in place.
+			const fromSetup = panelsOpenRef.current.setup;
 			// Linux asks the main process every time: it is the authority on whether the
 			// portal owns the choice, which the renderer may not know yet.
 			if (
@@ -708,7 +710,7 @@ export function LaunchWindow() {
 					return { opened: false, reason: "controls-locked" };
 				}
 				if (access?.granted) {
-					setSourceSwappedIn(panelsOpenRef.current.setup);
+					setSourceSwappedIn(fromSetup);
 					setIsDeviceSettingsOpen(false);
 					setIsPeekOpen(false);
 					setSourcePanelKind(kind);
@@ -717,6 +719,7 @@ export function LaunchWindow() {
 				}
 			}
 			if (window.electronAPI) {
+				setIsDeviceSettingsOpen(false);
 				return await openSourceSelectorWithPermissionRetry({
 					openSourceSelector: () => window.electronAPI.openSourceSelector(),
 					requestScreenAccess: () => window.electronAPI.requestScreenAccess(),
@@ -1353,12 +1356,7 @@ export function LaunchWindow() {
 			sourceKind: selectedSourceKind,
 			sourceDisabled: controlsLocked,
 			onSelectDisplay: portalOwnsSource ? undefined : () => void selectDisplaySource(),
-			onOpenSource: portalOwnsSource
-				? undefined
-				: () => {
-						setIsDeviceSettingsOpen(false);
-						void openSourceSelector("windows");
-					},
+			onOpenSource: portalOwnsSource ? undefined : () => void openSourceSelector("windows"),
 			editableCursor: cursorCaptureMode === "editable-overlay",
 			onToggleCursor: supportsCursorModeToggle ? toggleCursorMode : undefined,
 			locales: recording ? undefined : AVAILABLE_LOCALES,

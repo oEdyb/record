@@ -511,6 +511,21 @@ describe("LaunchWindow record button", () => {
 		expect(screen.queryByTestId("hud-source-panel")).not.toBeInTheDocument();
 	});
 
+	it("keeps Setup up until its Window tile's picker replaces it in place", async () => {
+		window.electronAPI.getSources = vi.fn(async () => [displayOneSource]);
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const sourceGroup = screen.getByTestId("hud-setup-source-group");
+		const tiles = within(sourceGroup).getAllByRole("radio");
+		fireEvent.click(tiles[tiles.length - 1]);
+
+		expect(screen.getByTestId("hud-device-settings")).toBeInTheDocument();
+		const sourcePanel = await screen.findByTestId("hud-source-panel");
+		expect(sourcePanel).toHaveAttribute("data-instant", "true");
+		expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+	});
+
 	it("falls back to the picker window when screen access still has to be granted", async () => {
 		window.electronAPI.requestScreenAccess = vi.fn(async () => ({
 			success: true,
