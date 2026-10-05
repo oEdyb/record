@@ -16,6 +16,8 @@
 		"settings": "Settings",
 		"originals": "Original files",
 		"record": "Record",
+		"addClip": "クリップを追加",
+		"addClipTitle": "マーカーの位置にこの録画へ別のクリップを録画",
 		"save": "Save video",
 		"saving": "Saving… {{percent}}%",
 		"ready": "Ready to record",

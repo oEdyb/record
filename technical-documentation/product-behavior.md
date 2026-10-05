@@ -121,7 +121,8 @@ overlays and general timed layout keyframes remain planned, not implemented. See
 - Never add a “redo take”, “replacement take”, “candidate”, “pickup”, “record here”,
   “keep”, or “retry” workflow.
 - To record something again, remove the previous completed clip while paused and Continue.
-  After Stop, Record starts a new recording; review has no insertion or editing workflow.
+  After Stop, review's **Add clip** records more clips into the same recording (Olle,
+  2026-10-05). Record starts a new recording. Review has no other editing workflow.
 
 ## Current delivery target: first working version
 
@@ -268,7 +269,15 @@ step or source-picker click is required for the default screen. Explicit source 
 and portal-based Linux selection remain authoritative.
 
 Review's Record action saves any pending project state and opens the idle recording pill for
-a new standalone capture. It does not insert into an old project. Setup reveals screen/window,
+a new standalone capture. It does not insert into an old project.
+
+Review's **Add clip** action opens the same idle pill, and the clips it records go into the
+open recording (Olle, 2026-10-05). They land at a clip boundary, never inside a clip. Until
+the viewer moves the playhead after Stop or after an added clip, the boundary is the end, so
+an accidental Stop is fixed with Add clip and Record. Once the playhead moves, the boundary is
+the one nearest the playhead (a tie goes to the later one). A short accent mark on the
+paused progress bar shows that boundary. The project keeps its canvas, each clip keeps its
+own source files, and nothing is re-encoded until export. Setup reveals screen/window,
 audio, camera and cursor setup. Closing idle setup or pressing Escape returns to review.
 Stop saves the completed clips and opens review as a compact player centred above the
 recorder's spot on the same display (Olle, 2026-10-04). The window takes the recording's own
@@ -530,7 +539,7 @@ and screen framing fail clearly until the native contract supports those values.
   assets, clips, camera offsets, shifted later clips, and edits attached to those clips.
 - `Command-Z` restores a removal or reverses an insertion or reorder.
   `Shift-Command-Z` and `Command-Y` redo it. Keep `Command-C` for Copy.
-- Recording inside a clip requires Split first.
+- Recording never splits a clip: the playhead resolves to the nearest clip boundary.
 - Save every editor control in the project. New projects start without generated edits, captions,
   framing effects, cursor animation or audio processing. A standalone recording uses the first
   screen source's aspect ratio, with zero padding; insertion into an existing project keeps its canvas.

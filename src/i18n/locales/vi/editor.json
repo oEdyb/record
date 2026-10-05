@@ -16,6 +16,8 @@
 		"settings": "Settings",
 		"originals": "Original files",
 		"record": "Record",
+		"addClip": "Thêm clip",
+		"addClipTitle": "Ghi thêm một clip vào bản ghi này tại điểm đánh dấu",
 		"save": "Save video",
 		"saving": "Saving… {{percent}}%",
 		"ready": "Ready to record",

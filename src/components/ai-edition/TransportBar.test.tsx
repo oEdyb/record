@@ -149,6 +149,57 @@ describe("TransportBar reads the playhead from the store", () => {
 	});
 });
 
+describe("review insertion marker", () => {
+	afterEach(() => {
+		cleanup();
+		vi.clearAllMocks();
+	});
+
+	it("marks where a new clip goes while paused and hides during playback", () => {
+		useProjectStore.setState({ currentTimeSec: 12 });
+		const boundary = vi.fn(() => 30);
+		const view = render(
+			<TestShell>
+				<TransportBar
+					playing={false}
+					overrideTimeSec={null}
+					clips={[
+						clips[0],
+						{ ...clips[0], id: "clip_b", timelineStartSec: 30, timelineEndSec: 60 },
+					]}
+					onTogglePlay={noop}
+					onPrevClip={noop}
+					onNextClip={noop}
+					onSeek={noop}
+					insertionBoundarySec={boundary}
+				/>
+			</TestShell>,
+		);
+
+		expect(boundary).toHaveBeenCalledWith(12);
+		expect(screen.getByTestId("review-insertion-marker")).toHaveStyle({ left: "50%" });
+
+		view.rerender(
+			<TestShell>
+				<TransportBar
+					playing
+					overrideTimeSec={null}
+					clips={[
+						clips[0],
+						{ ...clips[0], id: "clip_b", timelineStartSec: 30, timelineEndSec: 60 },
+					]}
+					onTogglePlay={noop}
+					onPrevClip={noop}
+					onNextClip={noop}
+					onSeek={noop}
+					insertionBoundarySec={boundary}
+				/>
+			</TestShell>,
+		);
+		expect(screen.queryByTestId("review-insertion-marker")).toBeNull();
+	});
+});
+
 describe("le drag de la barre de progression est coalescé en rAF", () => {
 	beforeEach(() => {
 		useProjectStore.setState({ currentTimeSec: 0 });

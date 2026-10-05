@@ -1121,9 +1121,9 @@ describe("importPendingRecording", () => {
 		let workspace = {
 			origin: "editor" as const,
 			projectId: "existing-project",
-			// Inside old-1: insertion resolves to its end, not a destructive split.
-			insertionTimeSec: 2,
-			currentTimeSec: 2,
+			// Inside old-1, nearer its end: insertion resolves to that boundary, never a split.
+			insertionTimeSec: 3,
+			currentTimeSec: 3,
 			mode: "edit" as const,
 			inspectorOpen: true,
 			facet: "effects" as const,

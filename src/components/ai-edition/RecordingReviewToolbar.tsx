@@ -4,6 +4,7 @@ import {
 	FolderOpen,
 	LoaderCircle,
 	Maximize2,
+	Plus,
 	Settings,
 } from "lucide-react";
 import { KlipptMark } from "@/components/brand/KlipptMark";
@@ -20,6 +21,8 @@ interface RecordingReviewToolbarProps {
 	busy: boolean;
 	preparing?: boolean;
 	openingRecorder?: boolean;
+	/** True while Add clip opens the recorder. */
+	addingClip?: boolean;
 	interruptions?: RecordingInterruption[];
 	handoffError?: string | null;
 	onRetryHandoff?: () => void;
@@ -28,6 +31,8 @@ interface RecordingReviewToolbarProps {
 	entitlementLabel: string | null;
 	onRecordings: () => void;
 	onRecord: () => void;
+	/** Records another clip into this recording, at the marker on the progress bar. */
+	onAddClip?: () => void;
 	onSave: () => void;
 	onOriginals: () => void;
 	onSettings: () => void;
@@ -82,6 +87,25 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 					>
 						<Settings size={16} aria-hidden="true" />
 					</button>
+					{props.onAddClip && props.canSave ? (
+						<button
+							type="button"
+							disabled={props.readOnly || props.busy || props.preparing}
+							onClick={props.onAddClip}
+							className={styles.ghost}
+							aria-label={t("recordingReview.addClip")}
+							aria-busy={props.addingClip}
+							title={t("recordingReview.addClipTitle")}
+							data-testid="review-add-clip"
+						>
+							{props.addingClip ? (
+								<LoaderCircle size={16} className={styles.spinner} aria-hidden="true" />
+							) : (
+								<Plus size={16} aria-hidden="true" />
+							)}
+							<span className={styles.label}>{t("recordingReview.addClip")}</span>
+						</button>
+					) : null}
 					<button
 						type="button"
 						disabled={props.readOnly || props.busy || props.preparing}
@@ -133,7 +157,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						<Download size={16} aria-hidden="true" />
 						{props.handoffError
 							? t("recordingReview.recoveryNeeded")
-							: props.preparing && !props.openingRecorder
+							: props.preparing && !props.openingRecorder && !props.addingClip
 								? t("recordingReview.preparing")
 								: props.busy
 									? props.percent !== null && Number.isFinite(props.percent)

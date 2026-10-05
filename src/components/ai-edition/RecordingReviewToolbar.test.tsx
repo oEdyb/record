@@ -32,6 +32,18 @@ describe("recording review", () => {
 		view.rerender(<RecordingReviewToolbar {...props()} />);
 		expect(screen.queryByRole("button", { name: "recordingReview.expand" })).toBeNull();
 	});
+	it("offers Add clip once there is a recording to add to", () => {
+		const addClip = vi.fn();
+		const view = render(
+			<RecordingReviewToolbar {...props()} canSave={false} onAddClip={addClip} />,
+		);
+		expect(screen.queryByRole("button", { name: "recordingReview.addClip" })).toBeNull();
+		view.rerender(<RecordingReviewToolbar {...props()} onAddClip={addClip} />);
+		fireEvent.click(screen.getByRole("button", { name: "recordingReview.addClip" }));
+		expect(addClip).toHaveBeenCalledOnce();
+		view.rerender(<RecordingReviewToolbar {...props()} readOnly onAddClip={addClip} />);
+		expect(screen.getByRole("button", { name: "recordingReview.addClip" })).toBeDisabled();
+	});
 	it("replaces endless preparation with a retryable retained-handoff error", () => {
 		const retry = vi.fn();
 		render(

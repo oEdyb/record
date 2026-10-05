@@ -17,13 +17,16 @@ function clip(id: string, start: number, end: number): AxcutClip {
 }
 
 describe("recording timeline insertion", () => {
-	it("uses an exact boundary but inserts after the section containing the playhead", () => {
+	it("inserts at the clip boundary nearest the playhead, never inside a clip", () => {
 		const clips = [clip("one", 0, 5), clip("two", 5, 10)];
 
 		expect(resolveClipInsertionBoundary(clips, 0)).toBe(0);
 		expect(resolveClipInsertionBoundary(clips, 5)).toBe(5);
-		expect(resolveClipInsertionBoundary(clips, 0.02)).toBe(5);
-		expect(resolveClipInsertionBoundary(clips, 7)).toBe(10);
+		expect(resolveClipInsertionBoundary(clips, 0.02)).toBe(0);
+		expect(resolveClipInsertionBoundary(clips, 2.5)).toBe(5);
+		expect(resolveClipInsertionBoundary(clips, 7)).toBe(5);
+		expect(resolveClipInsertionBoundary(clips, 9)).toBe(10);
+		expect(resolveClipInsertionBoundary(clips, 60)).toBe(10);
 	});
 
 	it("moves every unanchored legacy modifier with its original media", () => {

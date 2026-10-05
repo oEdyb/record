@@ -328,30 +328,19 @@ export function rederiveRegionMs(document: AxcutDocument, clips: AxcutClip[]): A
 }
 
 /**
- * Resolve an editor playhead to a safe place for a new recording section.
+ * Resolve the playhead to the clip boundary where a new recording goes.
  *
- * A recording inserts between clips; it never cuts a clip just because the
- * playhead happened to sit in its middle. At an existing boundary we preserve
- * that boundary. Inside a clip we choose the end of that clip, which matches the
- * natural "record after this section" action.
+ * A recording inserts between clips and never cuts a clip. The playhead picks
+ * the nearest boundary; a tie goes to the later one.
  */
 export function resolveClipInsertionBoundary(clips: AxcutClip[], playheadSec: number): number {
-	const ordered = [...clips].sort((a, b) => a.timelineStartSec - b.timelineStartSec);
-	if (ordered.length === 0) return 0;
+	if (clips.length === 0) return 0;
 	const playhead = Number.isFinite(playheadSec) ? Math.max(0, playheadSec) : 0;
 	const boundaries = Array.from(
-		new Set(ordered.flatMap((clip) => [clip.timelineStartSec, clip.timelineEndSec])),
+		new Set(clips.flatMap((clip) => [clip.timelineStartSec, clip.timelineEndSec])),
 	).sort((a, b) => a - b);
-	const exact = boundaries.find((boundary) => Math.abs(boundary - playhead) <= 0.001);
-	if (exact !== undefined) return exact;
-
-	const active = ordered.find(
-		(clip) => playhead > clip.timelineStartSec && playhead < clip.timelineEndSec,
-	);
-	if (active) return active.timelineEndSec;
-
 	return boundaries.reduce((nearest, boundary) =>
-		Math.abs(boundary - playhead) < Math.abs(nearest - playhead) ? boundary : nearest,
+		Math.abs(boundary - playhead) <= Math.abs(nearest - playhead) ? boundary : nearest,
 	);
 }
 

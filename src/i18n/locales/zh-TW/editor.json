@@ -16,6 +16,8 @@
 		"settings": "Settings",
 		"originals": "Original files",
 		"record": "Record",
+		"addClip": "新增片段",
+		"addClipTitle": "在標記處為此錄製新增另一個片段",
 		"save": "Save video",
 		"saving": "Saving… {{percent}}%",
 		"ready": "Ready to record",

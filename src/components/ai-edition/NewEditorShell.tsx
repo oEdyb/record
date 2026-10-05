@@ -21,7 +21,6 @@ import { recordingInterruptions } from "@/lib/ai-edition/document/recordingInter
 import {
 	applyProbedDuration,
 	replaceTimeline as replaceTimelineOp,
-	resolveClipInsertionBoundary,
 	resolvePlaybackSegments,
 } from "@/lib/ai-edition/document/timeline";
 import { type AxcutClip, documentSchema } from "@/lib/ai-edition/schema";
@@ -86,6 +85,7 @@ import {
 	canRegenerateAutomaticDirection,
 	regenerateProjectAutomaticDirection,
 } from "./regenerateAutomaticDirection";
+import { recordsIntoOpenProject, reviewInsertionTime } from "./reviewInsertion";
 import { isPrewarmedReview } from "./reviewPrewarm";
 import { TransactionRecoveryBanner } from "./TransactionRecoveryBanner";
 import { TransportBar } from "./TransportBar";
@@ -183,7 +183,7 @@ export function NewEditorShell() {
 	const [recordingReviewPending, setRecordingReviewPending] = useState(false);
 	const [recordingReviewError, setRecordingReviewError] = useState<string | null>(null);
 	const [recordingReviewActionPending, setRecordingReviewActionPending] = useState<
-		"record" | "export" | null
+		"record" | "add" | "export" | null
 	>(null);
 	const recordingReviewActionRef = useRef(false);
 	const [chatWidthPx, setChatWidthPx] = useState(
@@ -860,6 +860,24 @@ export function NewEditorShell() {
 		handleTimeChange(next.timelineStartSec);
 	}, [clips, handleSeek, handleTimeChange]);
 
+	// After Stop, a new clip goes at the end until the viewer moves the playhead;
+	// from then on it goes to the clip boundary nearest the playhead. A new
+	// recording or an added clip starts at the end again.
+	const insertionKey = `${document?.project.id ?? ""}:${clips.length}`;
+	const [playheadMovedFor, setPlayheadMovedFor] = useState<string | null>(null);
+	const insertFollowsPlayhead = !PRODUCT_SURFACE.recordingOnly || playheadMovedFor === insertionKey;
+	const followPlayheadForInsertion = useCallback(
+		() => setPlayheadMovedFor(insertionKey),
+		[insertionKey],
+	);
+	const reviewInsertionBoundary = useCallback(
+		(playheadSec: number) => {
+			const current = useProjectStore.getState().document?.timeline.clips ?? [];
+			return reviewInsertionTime(current, playheadSec, insertFollowsPlayhead);
+		},
+		[insertFollowsPlayhead],
+	);
+
 	// "Transcribe now" from the transcript pane. The run itself belongs to the
 	// transcription store (it owns the queue, the toasts and the failure
 	// bookkeeping) — all the shell adds is bringing the transcript into view
@@ -1148,88 +1166,91 @@ export function NewEditorShell() {
 		}
 	}, [addAsset, importingMedia, openEntitlement, te, tl]);
 
-	const handleNewRecording = useCallback(async () => {
-		if (
-			recordingReviewActionRef.current ||
-			sourceExportBusyRef.current ||
-			isExportRunActive(useExportRunStore.getState().phase)
-		)
-			return;
-		if (!requireEntitlement("record")) return;
-		const api = window.electronAPI;
-		if (!api?.startNewRecording) return;
-		recordingReviewActionRef.current = true;
-		setRecordingReviewActionPending("record");
-		setPlaying(false);
-		recordingNavigationRevisionRef.current += 1;
-		setOpenProjectOpen(false);
-		try {
-			await resumeRecordingWorkspace();
-			const pending = await api.getCurrentRecordingSession();
-			if (pending.success && pending.session) {
-				throw new Error("The current recording is still being prepared. Try again shortly.");
-			}
-			// Stop the playback clock synchronously before any awaited save. Reading
-			// the store after this gives one authoritative playhead for both return
-			// state and insertion placement.
-			setPlaying(false);
-			const activeProjectId = useProjectStore.getState().projectId;
-			if (activeProjectId) await waitForProjectMutations(activeProjectId);
-			let state = useProjectStore.getState();
-			let currentDocument = state.document;
-			// The editor window closes during the workspace switch. Save first so
-			// reopening the project is exact and never needs an unsaved-changes modal.
-			if (currentDocument && state.dirty) await saveDocument(currentDocument);
-			state = useProjectStore.getState();
-			currentDocument = state.document;
-			const context: RecordingWorkspaceContext | undefined =
-				state.projectId && currentDocument && !PRODUCT_SURFACE.recordingOnly
-					? {
-							origin: "editor",
-							projectId: state.projectId,
-							insertionTimeSec: resolveClipInsertionBoundary(
-								currentDocument.timeline.clips,
-								state.currentTimeSec,
-							),
-							currentTimeSec: state.currentTimeSec,
-							mode,
-							inspectorOpen,
-							facet,
-						}
-					: undefined;
-			// A source picker/copy can start while the workspace or dirty save awaits.
+	const handleNewRecording = useCallback(
+		async (target: "new" | "add" = "new") => {
 			if (
+				recordingReviewActionRef.current ||
 				sourceExportBusyRef.current ||
-				isExportRunActive(useExportRunStore.getState().phase) ||
-				recordingHandoffPendingRef.current ||
-				isPendingRecordingImportInProgress()
+				isExportRunActive(useExportRunStore.getState().phase)
 			)
 				return;
-			const result = await api.startNewRecording(context);
-			if (!result.success) {
-				if (result.code === "ENTITLEMENT_REQUIRED") {
-					openEntitlement("record");
-					return;
+			if (!requireEntitlement("record")) return;
+			const api = window.electronAPI;
+			if (!api?.startNewRecording) return;
+			recordingReviewActionRef.current = true;
+			setRecordingReviewActionPending(target === "add" ? "add" : "record");
+			setPlaying(false);
+			recordingNavigationRevisionRef.current += 1;
+			setOpenProjectOpen(false);
+			try {
+				await resumeRecordingWorkspace();
+				const pending = await api.getCurrentRecordingSession();
+				if (pending.success && pending.session) {
+					throw new Error("The current recording is still being prepared. Try again shortly.");
 				}
-				throw new Error(result.error ?? "Could not open recording controls");
+				// Stop the playback clock synchronously before any awaited save. Reading
+				// the store after this gives one authoritative playhead for both return
+				// state and insertion placement.
+				setPlaying(false);
+				const activeProjectId = useProjectStore.getState().projectId;
+				if (activeProjectId) await waitForProjectMutations(activeProjectId);
+				let state = useProjectStore.getState();
+				let currentDocument = state.document;
+				// The editor window closes during the workspace switch. Save first so
+				// reopening the project is exact and never needs an unsaved-changes modal.
+				if (currentDocument && state.dirty) await saveDocument(currentDocument);
+				state = useProjectStore.getState();
+				currentDocument = state.document;
+				const context: RecordingWorkspaceContext | undefined =
+					state.projectId &&
+					currentDocument &&
+					recordsIntoOpenProject(target, PRODUCT_SURFACE.recordingOnly)
+						? {
+								origin: "editor",
+								projectId: state.projectId,
+								insertionTimeSec: reviewInsertionBoundary(state.currentTimeSec),
+								currentTimeSec: state.currentTimeSec,
+								mode,
+								inspectorOpen,
+								facet,
+							}
+						: undefined;
+				// A source picker/copy can start while the workspace or dirty save awaits.
+				if (
+					sourceExportBusyRef.current ||
+					isExportRunActive(useExportRunStore.getState().phase) ||
+					recordingHandoffPendingRef.current ||
+					isPendingRecordingImportInProgress()
+				)
+					return;
+				const result = await api.startNewRecording(context);
+				if (!result.success) {
+					if (result.code === "ENTITLEMENT_REQUIRED") {
+						openEntitlement("record");
+						return;
+					}
+					throw new Error(result.error ?? "Could not open recording controls");
+				}
+			} catch (err) {
+				toast.error("Could not open recording controls", {
+					description: err instanceof Error ? err.message : String(err),
+				});
+			} finally {
+				recordingReviewActionRef.current = false;
+				setRecordingReviewActionPending(null);
 			}
-		} catch (err) {
-			toast.error("Could not open recording controls", {
-				description: err instanceof Error ? err.message : String(err),
-			});
-		} finally {
-			recordingReviewActionRef.current = false;
-			setRecordingReviewActionPending(null);
-		}
-	}, [
-		facet,
-		inspectorOpen,
-		mode,
-		openEntitlement,
-		resumeRecordingWorkspace,
-		saveDocument,
-		setPlaying,
-	]);
+		},
+		[
+			facet,
+			inspectorOpen,
+			mode,
+			openEntitlement,
+			resumeRecordingWorkspace,
+			reviewInsertionBoundary,
+			saveDocument,
+			setPlaying,
+		],
+	);
 
 	const openRecordingExport = useCallback(
 		async (sourceRecovery: boolean) => {
@@ -1427,9 +1448,14 @@ export function NewEditorShell() {
 		onSave: handleExport,
 		onRecord: () => void handleNewRecording(),
 		onRecordings: handleOpenRecordings,
-		onPlayPause: togglePlay,
-		onStep: (direction) =>
-			handleSeek(Math.max(0, useProjectStore.getState().currentTimeSec + direction / 60)),
+		onPlayPause: () => {
+			followPlayheadForInsertion();
+			togglePlay();
+		},
+		onStep: (direction) => {
+			followPlayheadForInsertion();
+			handleSeek(Math.max(0, useProjectStore.getState().currentTimeSec + direction / 60));
+		},
 	});
 
 	useEffect(() => {
@@ -1835,6 +1861,7 @@ export function NewEditorShell() {
 					canSave={hasAsset}
 					preparing={recordingReviewPending || recordingReviewActionPending !== null}
 					openingRecorder={recordingReviewActionPending === "record"}
+					addingClip={recordingReviewActionPending === "add"}
 					readOnly={entitlement.access === "read-only"}
 					busy={sourceExportBusy || isExportRunActive(exportRunPhase)}
 					percent={sourceExportBusy ? null : (exportRun?.percent ?? null)}
@@ -1843,6 +1870,7 @@ export function NewEditorShell() {
 					onRecordings={handleOpenRecordings}
 					onSettings={handleOpenSettings}
 					onRecord={() => void handleNewRecording()}
+					onAddClip={() => void handleNewRecording("add")}
 					onSave={handleExport}
 					onOriginals={() => void openRecordingExport(true)}
 					onExpand={
@@ -2000,12 +2028,23 @@ export function NewEditorShell() {
 											overrideTimeSec={null}
 											clips={reviewSegments}
 											toDisplayTime={(sec) => rawTimeToPlaybackTime(sec, reviewProjection)}
-											onTogglePlay={togglePlay}
-											onPrevClip={handlePrevClip}
-											onNextClip={handleNextClip}
-											onSeek={(sec) =>
-												handleSeek(playbackTimeToRawTime(sec, reviewProjection, "after"))
-											}
+											onTogglePlay={() => {
+												followPlayheadForInsertion();
+												togglePlay();
+											}}
+											onPrevClip={() => {
+												followPlayheadForInsertion();
+												handlePrevClip();
+											}}
+											onNextClip={() => {
+												followPlayheadForInsertion();
+												handleNextClip();
+											}}
+											onSeek={(sec) => {
+												followPlayheadForInsertion();
+												handleSeek(playbackTimeToRawTime(sec, reviewProjection, "after"));
+											}}
+											insertionBoundarySec={reviewInsertionBoundary}
 										/>
 									</div>
 								) : null}

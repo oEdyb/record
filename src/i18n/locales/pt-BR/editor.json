@@ -16,6 +16,8 @@
 		"settings": "Settings",
 		"originals": "Original files",
 		"record": "Record",
+		"addClip": "Adicionar clipe",
+		"addClipTitle": "Gravar outro clipe nesta gravação, no marcador",
 		"save": "Save video",
 		"saving": "Saving… {{percent}}%",
 		"ready": "Ready to record",

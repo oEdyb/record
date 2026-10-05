@@ -16,6 +16,8 @@
 		"settings": "Settings",
 		"originals": "Original files",
 		"record": "Record",
+		"addClip": "إضافة مقطع",
+		"addClipTitle": "سجّل مقطعًا آخر في هذا التسجيل عند العلامة",
 		"save": "Save video",
 		"saving": "Saving… {{percent}}%",
 		"ready": "Ready to record",

@@ -653,8 +653,8 @@ describe("V4Timeline clip row", () => {
 		}
 	});
 
-	it("shows the recording insertion boundary after the clip under the playhead", () => {
-		act(() => useProjectStore.getState().setCurrentTime(650));
+	it("shows the recording insertion boundary at the clip edge nearest the playhead", () => {
+		act(() => useProjectStore.getState().setCurrentTime(800));
 		renderTimeline(CLIPS);
 
 		// Each card ends 6px before the next clip's true start. The marker belongs

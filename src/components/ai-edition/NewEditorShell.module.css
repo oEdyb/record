@@ -3337,6 +3337,18 @@
 .transport[data-variant="overlay"] .scrubBar:focus-within .scrubThumb {
 	transform: translate(-50%, -50%) scale(1.1);
 }
+/* Where Add clip puts the next clip: a short bar above the track, at a clip edge. */
+.scrubInsertion {
+	position: absolute;
+	top: -5px;
+	bottom: -5px;
+	width: 2px;
+	margin-left: -1px;
+	border-radius: 1px;
+	background: var(--accent);
+	pointer-events: none;
+}
+
 .scrubGap {
 	position: absolute;
 	top: 0;

@@ -22,6 +22,8 @@ interface TransportBarProps {
 	onSeek: (sec: number) => void;
 	/** "overlay" floats over the review video, with a gap at each clip boundary. */
 	variant?: "bar" | "overlay";
+	/** Where a new clip would go for a raw playhead time; shows a marker while paused. */
+	insertionBoundarySec?: (rawPlayheadSec: number) => number;
 }
 
 // ponytail: lives in the timeline header now (not under the preview canvas)
@@ -36,6 +38,7 @@ export const TransportBar = memo(function TransportBar({
 	onNextClip,
 	onSeek,
 	variant = "bar",
+	insertionBoundarySec,
 }: TransportBarProps) {
 	const te = useScopedT("editor");
 	// Same reason as PlayheadOverlay (see V4Timeline.tsx): the timecode and the
@@ -67,6 +70,12 @@ export const TransportBar = memo(function TransportBar({
 		}
 		return lefts;
 	})();
+	const insertionLeft =
+		insertionBoundarySec && !playing && clips.length > 0
+			? (Math.min(Math.max(toDisplayTime(insertionBoundarySec(storeTimeSec)), 0), inputMax) /
+					inputMax) *
+				100
+			: null;
 
 	// ── Drag de la barre : même cadence que le drag de la timeline ──────────────────
 	//
@@ -244,6 +253,14 @@ export const TransportBar = memo(function TransportBar({
 								<span key={left} className={styles.scrubGap} style={{ left: `${left}%` }} />
 							))
 						: null}
+					{insertionLeft !== null ? (
+						<span
+							className={styles.scrubInsertion}
+							style={{ left: `${insertionLeft}%` }}
+							data-testid="review-insertion-marker"
+							aria-hidden="true"
+						/>
+					) : null}
 				</div>
 				<input
 					type="range"
