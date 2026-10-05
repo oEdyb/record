@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "Развернуть",
 		"metaOne": "Всего {{duration}}, 1 клип",
-		"metaMany": "Всего {{duration}}, клипов: {{count}}"
+		"metaMany": "Всего {{duration}}, клипов: {{count}}",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "Качество предпросмотра",
@@ -40,8 +42,8 @@
 		"cancel": "Отмена",
 		"confirm": "Подтвердить"
 	},
-	"loadingVideo": "Загрузка видео...",
-	"loadingEditor": "Загрузка редактора...",
+	"loadingVideo": "Загрузка видео…",
+	"loadingEditor": "Загрузка редактора…",
 	"errors": {
 		"noVideoLoaded": "Видео не загружено",
 		"videoNotReady": "Видео не готово",
@@ -95,7 +97,7 @@
 		"dropOverlay": "Перетащите файл проекта для открытия",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Неподдерживаемый формат",
-			"unsupportedFormatMessage": "Сюда можно перетаскивать только файлы проекта .klippt. Для импорта видео используйте кнопку «Импортировать видеофайл...».",
+			"unsupportedFormatMessage": "Сюда можно перетаскивать только файлы проекта .klippt. Для импорта видео используйте кнопку «Импортировать видеофайл…».",
 			"couldNotOpenTitle": "Не удалось открыть файл",
 			"couldNotOpenMessage": "Не удалось открыть файл проекта. Видео, на которое он ссылается, возможно, было перемещено или удалено."
 		}

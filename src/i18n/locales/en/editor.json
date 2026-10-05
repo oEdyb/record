@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "Expand",
 		"metaOne": "{{duration}} total, 1 clip",
-		"metaMany": "{{duration}} total, {{count}} clips"
+		"metaMany": "{{duration}} total, {{count}} clips",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "Preview quality",
@@ -40,8 +42,8 @@
 		"cancel": "Cancel",
 		"confirm": "Confirm"
 	},
-	"loadingVideo": "Loading video...",
-	"loadingEditor": "Loading editor...",
+	"loadingVideo": "Loading video…",
+	"loadingEditor": "Loading editor…",
 	"errors": {
 		"noVideoLoaded": "No video loaded",
 		"videoNotReady": "Video not ready",

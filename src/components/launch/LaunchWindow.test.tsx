@@ -1564,9 +1564,8 @@ describe("LaunchWindow device settings", () => {
 		renderLaunchWindow();
 		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
 		const quality = await screen.findByTestId("hud-recording-quality");
-		expect(quality).toHaveTextContent("High");
-		fireEvent.keyDown(quality, { key: "ArrowDown" });
-		fireEvent.click(screen.getByRole("option", { name: /qualityStandard/ }));
+		expect(within(quality).getByRole("radio", { checked: true })).toHaveTextContent("High");
+		fireEvent.click(within(quality).getByRole("radio", { name: /qualityStandard|Standard/ }));
 		expect(recorderState.value.setRecordingQuality).toHaveBeenCalledWith("standard");
 		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
 			recordingQuality: "standard",

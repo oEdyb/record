@@ -2,11 +2,13 @@ import {
 	AppWindow,
 	Check,
 	ChevronDown,
+	Gauge,
 	Languages,
 	Minus,
 	Monitor,
 	MousePointer2,
 	Power,
+	Video,
 	X,
 } from "lucide-react";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
@@ -119,7 +121,9 @@ function SetupTile({
 				</span>
 				<span className={styles.setupTileText}>
 					<span className={styles.setupTileName}>{name}</span>
-					<span className={styles.setupTileDetail}>{detail}</span>
+					<span className={styles.setupTileDetail} title={detail}>
+						{detail}
+					</span>
 				</span>
 				{expandable ? (
 					<ChevronDown size={12} aria-hidden className={styles.setupTileChevron} />
@@ -330,7 +334,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 							onClick={extras.onHide}
 							className={styles.hudModalClose}
 						>
-							<Minus size={15} />
+							<Minus size={14} aria-hidden />
 						</button>
 					) : null}
 					{extras.onQuit ? (
@@ -343,7 +347,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 							onClick={extras.onQuit}
 							className={styles.hudModalClose}
 						>
-							<Power size={14} />
+							<Power size={14} aria-hidden />
 						</button>
 					) : null}
 					<button
@@ -353,7 +357,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 						onClick={onClose}
 						className={styles.hudModalClose}
 					>
-						<X size={15} />
+						<X size={14} aria-hidden />
 					</button>
 				</span>
 			</div>
@@ -547,37 +551,52 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			) : null}
 
 			<div className={styles.deviceQuality}>
-				<div className={styles.hudModalMeterRow}>
-					<label className={styles.hudModalMeterLabel} htmlFor="hud-recording-quality">
+				<div className={styles.qualityRow}>
+					<span className={styles.setupTileIcon} aria-hidden>
+						<Gauge size={18} />
+					</span>
+					<span className={styles.setupTileName} id="hud-recording-quality-label">
 						{labels.recordingQuality ?? "Recording quality"}
-					</label>
-					<AppSelect
-						id="hud-recording-quality"
+					</span>
+					<fieldset
+						className={styles.qualitySegments}
 						data-testid="hud-recording-quality"
-						className={styles.hudModalSelect}
+						aria-labelledby="hud-recording-quality-label"
 						disabled={controlsLocked}
-						value={recordingQuality}
-						onChange={(event) =>
-							onSelectRecordingQuality?.(event.target.value === "standard" ? "standard" : "high")
-						}
 					>
-						<option value="high">{labels.qualityHigh ?? "High"}</option>
-						<option value="standard">{labels.qualityStandard ?? "Standard"}</option>
-					</AppSelect>
+						{(["high", "standard"] as const).map((quality) => (
+							<button
+								key={quality}
+								type="button"
+								role="radio"
+								aria-checked={recordingQuality === quality}
+								className={styles.qualitySegment}
+								onClick={() => onSelectRecordingQuality?.(quality)}
+							>
+								{quality === "high"
+									? (labels.qualityHigh ?? "High")
+									: (labels.qualityStandard ?? "Standard")}
+							</button>
+						))}
+					</fieldset>
 				</div>
 				{hasCamera ? (
-					<div className={styles.hudModalMeterRow}>
-						<label className={styles.hudModalMeterLabel} htmlFor="hud-webcam-format">
+					<div className={styles.qualityRow}>
+						<span className={styles.setupTileIcon} aria-hidden>
+							<Video size={18} />
+						</span>
+						<span className={styles.setupTileName} id="hud-webcam-format-label">
 							{labels.cameraQuality}
-						</label>
+						</span>
 						{recordingQuality === "high" ? (
-							<span className={styles.hudNativeCameraFormat} data-testid="hud-native-camera-format">
+							<span className={styles.qualityValue} data-testid="hud-native-camera-format">
 								{labels.nativeCamera ?? "Native camera"}
 							</span>
 						) : (
 							<AppSelect
 								id="hud-webcam-format"
 								data-testid="hud-webcam-format"
+								aria-labelledby="hud-webcam-format-label"
 								className={styles.hudModalSelect}
 								value={webcamFormatKey(webcamFormat)}
 								disabled={controlsLocked || supportedFormats.length === 0}

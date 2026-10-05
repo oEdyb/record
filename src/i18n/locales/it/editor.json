@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "Espandi",
 		"metaOne": "{{duration}} in totale, 1 clip",
-		"metaMany": "{{duration}} in totale, {{count}} clip"
+		"metaMany": "{{duration}} in totale, {{count}} clip",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "Qualità anteprima",
@@ -40,8 +42,8 @@
 		"cancel": "Annulla",
 		"confirm": "Conferma"
 	},
-	"loadingVideo": "Caricamento video...",
-	"loadingEditor": "Caricamento editor...",
+	"loadingVideo": "Caricamento video…",
+	"loadingEditor": "Caricamento editor…",
 	"errors": {
 		"noVideoLoaded": "Nessun video caricato",
 		"videoNotReady": "Video non pronto",

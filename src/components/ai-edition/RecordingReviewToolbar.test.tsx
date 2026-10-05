@@ -6,6 +6,14 @@ import { RecordingReviewToolbar } from "./RecordingReviewToolbar";
 
 vi.mock("@/contexts/I18nContext", () => ({ useScopedT: () => (key: string) => key }));
 afterEach(cleanup);
+function menuItem(name: string) {
+	if (!screen.queryByRole("menu")) {
+		fireEvent.keyDown(screen.getByRole("button", { name: "recordingReview.more" }), {
+			key: "Enter",
+		});
+	}
+	return screen.getByRole("menuitem", { name });
+}
 function props() {
 	return {
 		title: "Recording",
@@ -28,7 +36,7 @@ describe("recording review", () => {
 		const view = render(<RecordingReviewToolbar {...props()} onExpand={expand} />);
 		fireEvent.click(screen.getByRole("button", { name: "recordingReview.expand" }));
 		expect(expand).toHaveBeenCalledOnce();
-		expect(screen.getByRole("button", { name: "recordingReview.originals" })).toBeEnabled();
+		expect(menuItem("recordingReview.originals")).not.toHaveAttribute("aria-disabled");
 		view.rerender(<RecordingReviewToolbar {...props()} />);
 		expect(screen.queryByRole("button", { name: "recordingReview.expand" })).toBeNull();
 	});
@@ -58,7 +66,7 @@ describe("recording review", () => {
 		expect(screen.queryByText("recordingReview.preparing")).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "recordingReview.retryOpen" }));
 		expect(retry).toHaveBeenCalledOnce();
-		expect(screen.getByRole("button", { name: "recordingReview.record" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "recordingReview.newRecording" })).toBeDisabled();
 	});
 	it("keeps an interruption visible with retry and original recovery", () => {
 		const actions = props();
@@ -72,16 +80,16 @@ describe("recording review", () => {
 		expect(actions.onRecord).toHaveBeenCalledOnce();
 		rerender(<RecordingReviewToolbar {...actions} interruptions={interruptions} readOnly />);
 		expect(screen.getByRole("button", { name: "recordingReview.recordAgain" })).toBeDisabled();
-		expect(screen.getByRole("button", { name: "recordingReview.originals" })).toBeEnabled();
+		expect(menuItem("recordingReview.originals")).not.toHaveAttribute("aria-disabled");
 	});
 	it("shows pending feedback on Record while opening the recorder", () => {
 		render(<RecordingReviewToolbar {...props()} preparing openingRecorder isMac />);
-		expect(screen.getByRole("button", { name: "recordingReview.record" })).toHaveAttribute(
+		expect(screen.getByRole("button", { name: "recordingReview.newRecording" })).toHaveAttribute(
 			"aria-busy",
 			"true",
 		);
 		expect(screen.getByRole("button", { name: "recordingReview.save" })).toBeDisabled();
-		expect(screen.getByRole("button", { name: "recordingReview.record" })).toHaveAttribute(
+		expect(screen.getByRole("button", { name: "recordingReview.newRecording" })).toHaveAttribute(
 			"aria-keyshortcuts",
 			"Meta+N",
 		);
@@ -89,15 +97,15 @@ describe("recording review", () => {
 	it("blocks stale recording actions while the newest capture is being loaded", () => {
 		const actions = props();
 		render(<RecordingReviewToolbar {...actions} preparing />);
-		for (const name of [
-			"recordingReview.preparing",
-			"recordingReview.record",
-			"recordingReview.recordings",
-			"recordingReview.originals",
-		]) {
+		for (const name of ["recordingReview.preparing", "recordingReview.newRecording"]) {
 			const button = screen.getByRole("button", { name });
 			expect(button).toBeDisabled();
 			fireEvent.click(button);
+		}
+		for (const name of ["recordingReview.recordings", "recordingReview.originals"]) {
+			const item = menuItem(name);
+			expect(item).toHaveAttribute("aria-disabled", "true");
+			fireEvent.click(item);
 		}
 		expect(actions.onSave).not.toHaveBeenCalled();
 		expect(actions.onRecord).not.toHaveBeenCalled();
@@ -107,10 +115,10 @@ describe("recording review", () => {
 	it("exposes capture and delivery without editing controls", () => {
 		const actions = props();
 		render(<RecordingReviewToolbar {...actions} />);
-		fireEvent.click(screen.getByRole("button", { name: "recordingReview.record" }));
+		fireEvent.click(screen.getByRole("button", { name: "recordingReview.newRecording" }));
 		fireEvent.click(screen.getByRole("button", { name: "recordingReview.save" }));
-		fireEvent.click(screen.getByRole("button", { name: "recordingReview.recordings" }));
-		fireEvent.click(screen.getByRole("button", { name: "recordingReview.originals" }));
+		fireEvent.click(menuItem("recordingReview.recordings"));
+		fireEvent.click(menuItem("recordingReview.originals"));
 		expect(actions.onRecord).toHaveBeenCalledOnce();
 		expect(actions.onSave).toHaveBeenCalledOnce();
 		expect(actions.onRecordings).toHaveBeenCalledOnce();
@@ -121,18 +129,18 @@ describe("recording review", () => {
 	});
 	it("keeps original-file recovery available with expired access", () => {
 		render(<RecordingReviewToolbar {...props()} readOnly />);
-		expect(screen.getByRole("button", { name: "recordingReview.record" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "recordingReview.newRecording" })).toBeDisabled();
 		expect(screen.getByRole("button", { name: "recordingReview.save" })).toBeDisabled();
-		expect(screen.getByRole("button", { name: "recordingReview.originals" })).toBeEnabled();
+		expect(menuItem("recordingReview.originals")).not.toHaveAttribute("aria-disabled");
 	});
 	it("can reopen a running save while preventing a new capture", () => {
 		const actions = props();
 		render(<RecordingReviewToolbar {...actions} busy percent={42} />);
 		fireEvent.click(screen.getByRole("button", { name: "recordingReview.saving" }));
 		expect(actions.onSave).toHaveBeenCalledOnce();
-		expect(screen.getByRole("button", { name: "recordingReview.record" })).toBeDisabled();
-		const recordings = screen.getByRole("button", { name: "recordingReview.recordings" });
-		expect(recordings).toBeDisabled();
+		expect(screen.getByRole("button", { name: "recordingReview.newRecording" })).toBeDisabled();
+		const recordings = menuItem("recordingReview.recordings");
+		expect(recordings).toHaveAttribute("aria-disabled", "true");
 		fireEvent.click(recordings);
 		expect(actions.onRecordings).not.toHaveBeenCalled();
 	});

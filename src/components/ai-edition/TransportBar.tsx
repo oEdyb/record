@@ -6,7 +6,7 @@ import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
-import { formatSec } from "@/lib/ai-edition/timeline/format";
+import { formatPlayerTime, formatSec } from "@/lib/ai-edition/timeline/format";
 import styles from "./NewEditorShell.module.css";
 
 interface TransportBarProps {
@@ -52,6 +52,7 @@ export const TransportBar = memo(function TransportBar({
 	const togglePreviewMuted = usePreviewAudio((s) => s.toggleMuted);
 	const silent = previewMuted || previewVolume === 0;
 	const currentTimeSec = overrideTimeSec ?? toDisplayTime(storeTimeSec);
+	const formatTime = variant === "overlay" ? formatPlayerTime : formatSec;
 	const virtualDurationSec = clips.reduce(
 		(acc, c) => acc + (c.timelineEndSec - c.timelineStartSec),
 		0,
@@ -214,9 +215,9 @@ export const TransportBar = memo(function TransportBar({
 				</button>
 			</Tooltip>
 			<span className={styles.time}>
-				<span>{formatSec(currentTimeSec)}</span>
+				<span>{formatTime(currentTimeSec)}</span>
 				<span className={styles.sep}>/</span>
-				<span className={styles.total}>{formatSec(virtualDurationSec)}</span>
+				<span className={styles.total}>{formatTime(virtualDurationSec)}</span>
 			</span>
 			<div className={styles.volume} data-silent={silent}>
 				<Tooltip content={te(previewMuted ? "transport.unmute" : "transport.mute")} side="top">

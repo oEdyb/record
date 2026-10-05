@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "Ampliar",
 		"metaOne": "{{duration}} en total, 1 clip",
-		"metaMany": "{{duration}} en total, {{count}} clips"
+		"metaMany": "{{duration}} en total, {{count}} clips",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "Calidad de vista previa",
@@ -74,8 +76,8 @@
 		"accessibilityAllowAndRetry": "Permite el acceso de accesibilidad para Klippt y luego pulsa grabar de nuevo para iniciar la cuenta atrás.",
 		"selectSource": "Por favor selecciona una fuente para grabar"
 	},
-	"loadingVideo": "Cargando video...",
-	"loadingEditor": "Cargando editor...",
+	"loadingVideo": "Cargando video…",
+	"loadingEditor": "Cargando editor…",
 	"newRecording": {
 		"title": "Volver a la grabadora",
 		"description": "Tu sesión actual ha sido guardada.",
@@ -95,7 +97,7 @@
 		"dropOverlay": "Suelta el archivo de proyecto para abrirlo",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Formato no compatible",
-			"unsupportedFormatMessage": "Solo se pueden soltar aquí archivos de proyecto .klippt. Para importar un video, usa el botón \"Importar archivo de video...\" en su lugar.",
+			"unsupportedFormatMessage": "Solo se pueden soltar aquí archivos de proyecto .klippt. Para importar un video, usa el botón \"Importar archivo de video…\" en su lugar.",
 			"couldNotOpenTitle": "No se pudo abrir el archivo",
 			"couldNotOpenMessage": "No se pudo abrir el archivo de proyecto. El video al que hace referencia puede haber sido movido o eliminado."
 		}

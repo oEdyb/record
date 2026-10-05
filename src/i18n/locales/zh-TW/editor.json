@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "展開",
 		"metaOne": "共 {{duration}}，1 個片段",
-		"metaMany": "共 {{duration}}，{{count}} 個片段"
+		"metaMany": "共 {{duration}}，{{count}} 個片段",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "預覽畫質",
@@ -40,8 +42,8 @@
 		"cancel": "取消",
 		"confirm": "確認"
 	},
-	"loadingVideo": "正在載入影片...",
-	"loadingEditor": "正在載入編輯器...",
+	"loadingVideo": "正在載入影片…",
+	"loadingEditor": "正在載入編輯器…",
 	"errors": {
 		"noVideoLoaded": "未載入影片",
 		"videoNotReady": "影片未就緒",
@@ -95,7 +97,7 @@
 		"dropOverlay": "將專案檔案拖放至此以開啟",
 		"dropErrors": {
 			"unsupportedFormatTitle": "不支援的格式",
-			"unsupportedFormatMessage": "此處只能拖放 .klippt 專案檔案。要匯入影片，請使用「匯入影片檔案...」按鈕。",
+			"unsupportedFormatMessage": "此處只能拖放 .klippt 專案檔案。要匯入影片，請使用「匯入影片檔案…」按鈕。",
 			"couldNotOpenTitle": "無法開啟檔案",
 			"couldNotOpenMessage": "無法開啟專案檔案。它所參照的影片可能已被移動或刪除。"
 		}

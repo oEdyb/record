@@ -14,7 +14,7 @@
 		"useHorizontalTray": "Usa barra orizzontale",
 		"openStudio": "Apri Studio",
 		"openNotes": "Apri note",
-		"openNotesPlaceholder": "Scrivi le tue note qui...",
+		"openNotesPlaceholder": "Scrivi le tue note qui…",
 		"notesToolbar": {
 			"bold": "Grassetto",
 			"italic": "Corsivo",
@@ -55,7 +55,7 @@
 		"enableWebcam": "Abilita webcam",
 		"disableWebcam": "Disabilita webcam",
 		"defaultCamera": "Fotocamera predefinita",
-		"searching": "Ricerca in corso...",
+		"searching": "Ricerca in corso…",
 		"noneFound": "Nessuna fotocamera trovata",
 		"unavailable": "Fotocamera non disponibile",
 		"camera": "Fotocamera",
@@ -66,7 +66,7 @@
 		"useSystemCursor": "Usa cursore di sistema"
 	},
 	"sourceSelector": {
-		"loading": "Caricamento sorgenti...",
+		"loading": "Caricamento sorgenti…",
 		"screens": "Schermi ({{count}})",
 		"windows": "Finestre ({{count}})",
 		"emptyTitle": "Nessuno schermo o finestra trovati",
@@ -81,7 +81,7 @@
 		"selectSource": "Seleziona una sorgente da registrare",
 		"systemPicker": "Il sistema ti chiederà cosa condividere",
 		"inProgress": "Registrazione in corso",
-		"saving": "Salvataggio...",
+		"saving": "Salvataggio…",
 		"removePreviousClip": "Rimuovi clip precedente",
 		"removePreviousClipWithDuration": "Rimuovi clip precedente ({{duration}})",
 		"clipRemoved": "Rimosso"

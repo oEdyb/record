@@ -33,6 +33,12 @@ export function splitRoundedTime(value: number): { totalMinutes: number; seconds
 	return { totalMinutes, seconds };
 }
 
+/** `m:ss`, whole seconds, for the review player where tenths read as a stopwatch. */
+export function formatPlayerTime(sec: number): string {
+	const safe = Number.isFinite(sec) && sec > 0 ? Math.floor(sec) : 0;
+	return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
 /** `m:ss.t` — no hour field, ever. */
 export function formatSec(sec: number): string {
 	const { totalMinutes, seconds } = splitRoundedTime(sec);

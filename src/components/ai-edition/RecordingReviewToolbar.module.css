@@ -86,6 +86,8 @@
 	.bar .ghost { width: 34px; padding: 0; }
 }
 @media (max-width: 620px) { .meta { display: none; } }
+.menuLabel { flex: 1; }
+.shortcut { margin-left: 16px; color: var(--muted); font: 500 11px/1 var(--font-body); }
 .spinner { animation: spin 800ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .bar button { transition: none; } .spinner { animation: none; } }

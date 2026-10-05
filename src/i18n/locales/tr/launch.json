@@ -14,7 +14,7 @@
 		"useHorizontalTray": "Yatay araç çubuğunu kullan",
 		"openStudio": "Stüdyoyu aç",
 		"openNotes": "Notları aç",
-		"openNotesPlaceholder": "Notlarınızı buraya yazın...",
+		"openNotesPlaceholder": "Notlarınızı buraya yazın…",
 		"notesToolbar": {
 			"bold": "Kalın",
 			"italic": "İtalik",
@@ -55,7 +55,7 @@
 		"enableWebcam": "Kamerayı etkinleştir",
 		"disableWebcam": "Kamerayı devre dışı bırak",
 		"defaultCamera": "Varsayılan Kamera",
-		"searching": "Aranıyor...",
+		"searching": "Aranıyor…",
 		"noneFound": "Kamera bulunamadı",
 		"unavailable": "Kamera kullanılamıyor",
 		"camera": "Kamera",
@@ -66,7 +66,7 @@
 		"useSystemCursor": "Sistem imlecini kullan"
 	},
 	"sourceSelector": {
-		"loading": "Kaynaklar yükleniyor...",
+		"loading": "Kaynaklar yükleniyor…",
 		"screens": "Ekranlar ({{count}})",
 		"windows": "Pencereler ({{count}})",
 		"emptyTitle": "Ekran veya pencere bulunamadı",
@@ -81,7 +81,7 @@
 		"selectSource": "Lütfen kayıt için bir kaynak seçin",
 		"systemPicker": "Sisteminiz neyi paylaşacağınızı soracak",
 		"inProgress": "Kaydediliyor",
-		"saving": "Kaydediliyor...",
+		"saving": "Kaydediliyor…",
 		"removePreviousClip": "Önceki klibi kaldır",
 		"removePreviousClipWithDuration": "Önceki klibi kaldır ({{duration}})",
 		"clipRemoved": "Kaldırıldı"

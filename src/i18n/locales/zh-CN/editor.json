@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "展开",
 		"metaOne": "共 {{duration}}，1 个片段",
-		"metaMany": "共 {{duration}}，{{count}} 个片段"
+		"metaMany": "共 {{duration}}，{{count}} 个片段",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "预览画质",
@@ -40,8 +42,8 @@
 		"cancel": "取消",
 		"confirm": "确认"
 	},
-	"loadingVideo": "正在加载视频...",
-	"loadingEditor": "正在加载编辑器...",
+	"loadingVideo": "正在加载视频…",
+	"loadingEditor": "正在加载编辑器…",
 	"errors": {
 		"noVideoLoaded": "未加载视频",
 		"videoNotReady": "视频未就绪",
@@ -95,7 +97,7 @@
 		"dropOverlay": "将项目文件拖放至此以打开",
 		"dropErrors": {
 			"unsupportedFormatTitle": "不支持的格式",
-			"unsupportedFormatMessage": "此处只能拖放 .klippt 项目文件。要导入视频，请使用\"导入视频文件...\"按钮。",
+			"unsupportedFormatMessage": "此处只能拖放 .klippt 项目文件。要导入视频，请使用\"导入视频文件…\"按钮。",
 			"couldNotOpenTitle": "无法打开文件",
 			"couldNotOpenMessage": "无法打开项目文件。它引用的视频可能已被移动或删除。"
 		}

@@ -508,24 +508,11 @@
 	color: rgba(255, 255, 255, 0.4);
 }
 
-.hudModalMeterRow {
-	display: flex;
-	height: 36px;
-	align-items: center;
-	gap: 8px;
-	padding: 0 4px 0 12px;
-}
 
-.hudModalMeterLabel {
-	font-size: 12px;
-	color: rgba(255, 255, 255, 0.6);
-	white-space: nowrap;
-}
 
 .hudModalSelect[data-klippt-select-trigger] {
 	min-width: 140px;
 	height: 28px;
-	margin-left: auto;
 	padding: 0 10px;
 	border: 0;
 	border-radius: 10px;
@@ -542,12 +529,6 @@
 	opacity: 0.45;
 }
 
-.hudNativeCameraFormat {
-	margin-left: auto;
-	padding-right: 10px;
-	color: rgba(255, 255, 255, 0.8);
-	font-size: 12px;
-}
 
 .hudModalHint {
 	padding: 4px 12px 0;
@@ -800,8 +781,90 @@
 	display: flex;
 	flex: none;
 	flex-direction: column;
+	overflow: hidden;
 	border-radius: 14px;
-	background: rgba(255, 255, 255, 0.04);
+	background: rgba(255, 255, 255, 0.06);
+}
+
+/* Same rhythm as a setup tile: icon, name, then the control on the right. */
+.qualityRow {
+	display: flex;
+	height: 48px;
+	min-width: 0;
+	align-items: center;
+	gap: 10px;
+	padding: 0 8px 0 12px;
+}
+
+.qualityRow + .qualityRow {
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.qualityRow .setupTileName {
+	flex: 1;
+	min-width: 0;
+}
+
+.qualityValue {
+	padding-right: 6px;
+	color: rgba(255, 255, 255, 0.55);
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.qualitySegments {
+	display: flex;
+	flex: none;
+	min-width: 0;
+	gap: 2px;
+	margin: 0;
+	padding: 2px;
+	border: 0;
+	border-radius: 10px;
+	background: rgba(0, 0, 0, 0.28);
+}
+
+.qualitySegments:disabled {
+	opacity: 0.45;
+}
+
+.qualitySegment {
+	height: 26px;
+	padding: 0 11px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.55);
+	font: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background-color 150ms ease, color 150ms ease;
+}
+
+.qualitySegment:hover:not(:disabled):not([aria-checked="true"]) {
+	color: #f5f7fa;
+}
+
+.qualitySegment[aria-checked="true"] {
+	background: rgba(255, 255, 255, 0.14);
+	color: #ffffff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.qualitySegment:disabled {
+	cursor: default;
+}
+
+.qualitySegment:focus-visible {
+	outline: 2px solid rgba(142, 165, 191, 0.72);
+	outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.qualitySegment {
+		transition: none;
+	}
 }
 
 .cameraPreview {

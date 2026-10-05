@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "확대",
 		"metaOne": "총 {{duration}}, 클립 1개",
-		"metaMany": "총 {{duration}}, 클립 {{count}}개"
+		"metaMany": "총 {{duration}}, 클립 {{count}}개",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "미리보기 화질",
@@ -40,8 +42,8 @@
 		"cancel": "취소",
 		"confirm": "확인"
 	},
-	"loadingVideo": "비디오 로드 중...",
-	"loadingEditor": "편집기 로드 중...",
+	"loadingVideo": "비디오 로드 중…",
+	"loadingEditor": "편집기 로드 중…",
 	"errors": {
 		"noVideoLoaded": "불러온 비디오가 없습니다",
 		"videoNotReady": "비디오가 준비되지 않았습니다",
@@ -95,7 +97,7 @@
 		"dropOverlay": "프로젝트 파일을 드롭하여 열기",
 		"dropErrors": {
 			"unsupportedFormatTitle": "지원되지 않는 형식",
-			"unsupportedFormatMessage": ".klippt 프로젝트 파일만 여기에 드롭할 수 있습니다. 동영상을 가져오려면 \"동영상 파일 가져오기...\" 버튼을 사용하세요.",
+			"unsupportedFormatMessage": ".klippt 프로젝트 파일만 여기에 드롭할 수 있습니다. 동영상을 가져오려면 \"동영상 파일 가져오기…\" 버튼을 사용하세요.",
 			"couldNotOpenTitle": "파일을 열 수 없음",
 			"couldNotOpenMessage": "프로젝트 파일을 열 수 없습니다. 참조된 동영상이 이동되었거나 삭제되었을 수 있습니다."
 		}

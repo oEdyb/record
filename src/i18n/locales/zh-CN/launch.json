@@ -14,7 +14,7 @@
 		"useHorizontalTray": "使用横向托盘",
 		"openStudio": "打开工作室",
 		"openNotes": "打开笔记",
-		"openNotesPlaceholder": "在此输入笔记...",
+		"openNotesPlaceholder": "在此输入笔记…",
 		"notesToolbar": {
 			"bold": "加粗",
 			"italic": "斜体",
@@ -55,7 +55,7 @@
 		"enableWebcam": "启用摄像头",
 		"disableWebcam": "禁用摄像头",
 		"defaultCamera": "默认摄像头",
-		"searching": "正在搜索...",
+		"searching": "正在搜索…",
 		"noneFound": "未找到摄像头",
 		"unavailable": "摄像头不可用",
 		"camera": "摄像头",
@@ -66,7 +66,7 @@
 		"useSystemCursor": "使用系统光标"
 	},
 	"sourceSelector": {
-		"loading": "正在加载源...",
+		"loading": "正在加载源…",
 		"screens": "屏幕 ({{count}})",
 		"windows": "窗口 ({{count}})",
 		"emptyTitle": "未找到屏幕或窗口",
@@ -81,7 +81,7 @@
 		"selectSource": "请选择要录制的源",
 		"systemPicker": "系统将询问要共享的内容",
 		"inProgress": "正在录制",
-		"saving": "正在保存...",
+		"saving": "正在保存…",
 		"removePreviousClip": "移除上一个片段",
 		"removePreviousClipWithDuration": "移除上一个片段 ({{duration}})",
 		"clipRemoved": "已移除"

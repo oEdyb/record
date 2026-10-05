@@ -103,6 +103,11 @@ export function ModalShell({
 	);
 }
 
+const UPDATED_AT_FORMAT = new Intl.DateTimeFormat(undefined, {
+	dateStyle: "medium",
+	timeStyle: "short",
+});
+
 interface ProjectItem {
 	id: string;
 	title: string;
@@ -228,8 +233,9 @@ export function OpenProjectModal({
 					marginBottom: 12,
 					// Cap the list so the footer's "Browse files" button stays visible
 					// instead of being pushed below the fold when there are many projects;
-					// the list scrolls internally.
-					maxHeight: "48vh",
+					// the list scrolls internally. A fixed height keeps the dialog from
+					// jumping when the list replaces the loading line.
+					height: "min(48vh, 420px)",
 					overflowY: "auto",
 					scrollbarWidth: "thin",
 					scrollbarColor: "var(--border-hi) transparent",
@@ -242,6 +248,7 @@ export function OpenProjectModal({
 							color: "var(--muted)",
 							fontSize: 12,
 							padding: 16,
+							margin: "auto 0",
 							textAlign: "center",
 						}}
 					>
@@ -378,18 +385,6 @@ export function OpenProjectModal({
 										>
 											{p.title}
 										</div>
-										<div
-											style={{
-												font: "400 11px/1.4 var(--font-mono)",
-												color: "var(--muted)",
-												marginTop: 2,
-											}}
-										>
-											{new Date(p.updatedAt).toLocaleTimeString([], {
-												hour: "2-digit",
-												minute: "2-digit",
-											})}
-										</div>
 									</div>
 									<span
 										style={{
@@ -398,7 +393,7 @@ export function OpenProjectModal({
 											whiteSpace: "nowrap",
 										}}
 									>
-										{new Date(p.updatedAt).toLocaleDateString()}
+										{UPDATED_AT_FORMAT.format(new Date(p.updatedAt))}
 									</span>
 								</button>
 								<button

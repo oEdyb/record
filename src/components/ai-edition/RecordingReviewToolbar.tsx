@@ -4,10 +4,12 @@ import {
 	FolderOpen,
 	LoaderCircle,
 	Maximize2,
+	MoreHorizontal,
 	Plus,
 	Settings,
 } from "lucide-react";
 import { KlipptMark } from "@/components/brand/KlipptMark";
+import { AppMenu, AppMenuContent, AppMenuItem, AppMenuTrigger } from "@/components/ui/app-menu";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { RecordingInterruption } from "@/lib/recordingSession";
 import styles from "./RecordingReviewToolbar.module.css";
@@ -78,15 +80,6 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 							<Maximize2 size={16} aria-hidden="true" />
 						</button>
 					) : null}
-					<button
-						className={styles.icon}
-						type="button"
-						onClick={props.onSettings}
-						aria-label={t("recordingReview.settings")}
-						title={t("recordingReview.settings")}
-					>
-						<Settings size={16} aria-hidden="true" />
-					</button>
 					{props.onAddClip && props.canSave ? (
 						<button
 							type="button"
@@ -111,9 +104,9 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						disabled={props.readOnly || props.busy || props.preparing}
 						onClick={props.onRecord}
 						className={styles.ghost}
-						aria-label={t("recordingReview.record")}
+						aria-label={t("recordingReview.newRecording")}
 						aria-busy={props.openingRecorder}
-						title={`${t("recordingReview.record")} (${modifier}N)`}
+						title={`${t("recordingReview.newRecording")} (${modifier}N)`}
 						aria-keyshortcuts={props.isMac ? "Meta+N" : "Control+N"}
 					>
 						{props.openingRecorder ? (
@@ -121,31 +114,45 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						) : (
 							<span className={styles.recordDot} aria-hidden="true" />
 						)}
-						<span className={styles.label}>{t("recordingReview.record")}</span>
+						<span className={styles.label}>{t("recordingReview.newRecording")}</span>
 					</button>
-					<button
-						type="button"
-						disabled={!props.canSave || props.busy || props.preparing}
-						onClick={props.onOriginals}
-						className={styles.ghost}
-						aria-label={t("recordingReview.originals")}
-						title={t("recordingReview.originals")}
-					>
-						<FolderOpen size={16} aria-hidden="true" />
-						<span className={styles.label}>{t("recordingReview.originals")}</span>
-					</button>
-					<button
-						type="button"
-						disabled={props.preparing || props.busy}
-						onClick={props.onRecordings}
-						className={styles.ghost}
-						aria-label={t("recordingReview.recordings")}
-						title={`${t("recordingReview.recordings")} (${modifier}O)`}
-						aria-keyshortcuts={props.isMac ? "Meta+O" : "Control+O"}
-					>
-						<Clapperboard size={16} aria-hidden="true" />
-						<span className={styles.label}>{t("recordingReview.recordings")}</span>
-					</button>
+					<AppMenu>
+						<AppMenuTrigger asChild>
+							<button
+								type="button"
+								className={styles.icon}
+								aria-label={t("recordingReview.more")}
+								title={t("recordingReview.more")}
+								data-testid="review-more"
+							>
+								<MoreHorizontal size={16} aria-hidden="true" />
+							</button>
+						</AppMenuTrigger>
+						<AppMenuContent align="end">
+							<AppMenuItem
+								disabled={props.preparing || props.busy}
+								onSelect={props.onRecordings}
+								aria-keyshortcuts={props.isMac ? "Meta+O" : "Control+O"}
+							>
+								<Clapperboard size={14} aria-hidden="true" />
+								<span className={styles.menuLabel}>{t("recordingReview.recordings")}</span>
+								<kbd className={styles.shortcut} aria-hidden="true">
+									{modifier}O
+								</kbd>
+							</AppMenuItem>
+							<AppMenuItem
+								disabled={!props.canSave || props.busy || props.preparing}
+								onSelect={props.onOriginals}
+							>
+								<FolderOpen size={14} aria-hidden="true" />
+								<span className={styles.menuLabel}>{t("recordingReview.originals")}</span>
+							</AppMenuItem>
+							<AppMenuItem onSelect={props.onSettings}>
+								<Settings size={14} aria-hidden="true" />
+								<span className={styles.menuLabel}>{t("recordingReview.settings")}</span>
+							</AppMenuItem>
+						</AppMenuContent>
+					</AppMenu>
 					<button
 						type="button"
 						className={styles.primary}

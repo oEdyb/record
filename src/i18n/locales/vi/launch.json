@@ -14,7 +14,7 @@
 		"useHorizontalTray": "Dùng khay ngang",
 		"openStudio": "Mở Studio",
 		"openNotes": "Mở ghi chú",
-		"openNotesPlaceholder": "Ghi chú của bạn tại đây...",
+		"openNotesPlaceholder": "Ghi chú của bạn tại đây…",
 		"notesToolbar": {
 			"bold": "In đậm",
 			"italic": "In nghiêng",
@@ -55,14 +55,14 @@
 		"enableWebcam": "Bật webcam",
 		"disableWebcam": "Tắt webcam",
 		"defaultCamera": "Máy ảnh Mặc định",
-		"searching": "Đang tìm kiếm...",
+		"searching": "Đang tìm kiếm…",
 		"noneFound": "Không tìm thấy máy ảnh",
 		"unavailable": "Máy ảnh không khả dụng",
 		"camera": "Máy ảnh",
 		"cameraDevice": "Thiết bị máy ảnh"
 	},
 	"sourceSelector": {
-		"loading": "Đang tải nguồn...",
+		"loading": "Đang tải nguồn…",
 		"screens": "Màn hình ({{count}})",
 		"windows": "Cửa sổ ({{count}})",
 		"emptyTitle": "Không tìm thấy màn hình hoặc cửa sổ nào",
@@ -77,7 +77,7 @@
 		"selectSource": "Vui lòng chọn một nguồn để ghi",
 		"systemPicker": "Hệ thống sẽ hỏi bạn muốn chia sẻ gì",
 		"inProgress": "Đang ghi",
-		"saving": "Đang lưu...",
+		"saving": "Đang lưu…",
 		"removePreviousClip": "Xóa clip trước",
 		"removePreviousClipWithDuration": "Xóa clip trước ({{duration}})",
 		"clipRemoved": "Đã xóa"

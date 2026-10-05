@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "拡大",
 		"metaOne": "合計 {{duration}}、1 クリップ",
-		"metaMany": "合計 {{duration}}、{{count}} クリップ"
+		"metaMany": "合計 {{duration}}、{{count}} クリップ",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "プレビュー画質",
@@ -40,8 +42,8 @@
 		"cancel": "キャンセル",
 		"confirm": "確認"
 	},
-	"loadingVideo": "動画を読み込み中...",
-	"loadingEditor": "エディターを読み込み中...",
+	"loadingVideo": "動画を読み込み中…",
+	"loadingEditor": "エディターを読み込み中…",
 	"errors": {
 		"noVideoLoaded": "動画が読み込まれていません",
 		"videoNotReady": "動画の準備ができていません",
@@ -95,7 +97,7 @@
 		"dropOverlay": "プロジェクトファイルをドロップして開く",
 		"dropErrors": {
 			"unsupportedFormatTitle": "非対応フォーマット",
-			"unsupportedFormatMessage": "ここにドロップできるのは .klippt プロジェクトファイルのみです。動画をインポートするには「動画ファイルをインポート...」ボタンをご使用ください。",
+			"unsupportedFormatMessage": "ここにドロップできるのは .klippt プロジェクトファイルのみです。動画をインポートするには「動画ファイルをインポート…」ボタンをご使用ください。",
 			"couldNotOpenTitle": "ファイルを開けませんでした",
 			"couldNotOpenMessage": "プロジェクトファイルを開けませんでした。参照している動画が移動または削除された可能性があります。"
 		}

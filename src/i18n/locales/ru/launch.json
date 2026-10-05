@@ -14,7 +14,7 @@
 		"useHorizontalTray": "Использовать горизонтальную панель",
 		"openStudio": "Открыть студию",
 		"openNotes": "Открыть заметки",
-		"openNotesPlaceholder": "Пишите заметки здесь...",
+		"openNotesPlaceholder": "Пишите заметки здесь…",
 		"notesToolbar": {
 			"bold": "Жирный",
 			"italic": "Курсив",
@@ -55,14 +55,14 @@
 		"enableWebcam": "Включить веб-камеру",
 		"disableWebcam": "Отключить веб-камеру",
 		"defaultCamera": "Камера по умолчанию",
-		"searching": "Поиск...",
+		"searching": "Поиск…",
 		"noneFound": "Камера не найдена",
 		"unavailable": "Камера недоступна",
 		"camera": "Камера",
 		"cameraDevice": "Устройство камеры"
 	},
 	"sourceSelector": {
-		"loading": "Загрузка источников...",
+		"loading": "Загрузка источников…",
 		"screens": "Экраны ({{count}})",
 		"windows": "Окна ({{count}})",
 		"emptyTitle": "Экраны или окна не найдены",
@@ -77,7 +77,7 @@
 		"selectSource": "Пожалуйста, выберите источник для записи",
 		"systemPicker": "Система спросит, чем поделиться",
 		"inProgress": "Идёт запись",
-		"saving": "Сохранение...",
+		"saving": "Сохранение…",
 		"removePreviousClip": "Удалить предыдущий клип",
 		"removePreviousClipWithDuration": "Удалить предыдущий клип ({{duration}})",
 		"clipRemoved": "Удалено"

@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "Genişlet",
 		"metaOne": "Toplam {{duration}}, 1 klip",
-		"metaMany": "Toplam {{duration}}, {{count}} klip"
+		"metaMany": "Toplam {{duration}}, {{count}} klip",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "Önizleme kalitesi",
@@ -74,8 +76,8 @@
 		"accessibilityAllowAndRetry": "Klippt için Erişilebilirlik erişimine izin verin, ardından geri sayımı başlatmak için tekrar kayda basın.",
 		"selectSource": "Lütfen kayıt için bir kaynak seçin"
 	},
-	"loadingVideo": "Video yükleniyor...",
-	"loadingEditor": "Editör yükleniyor...",
+	"loadingVideo": "Video yükleniyor…",
+	"loadingEditor": "Editör yükleniyor…",
 	"newRecording": {
 		"title": "Kaydediciye Dön",
 		"description": "Mevcut oturumunuz kaydedildi.",
@@ -95,7 +97,7 @@
 		"dropOverlay": "Açmak için proje dosyasını bırakın",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Desteklenmeyen Format",
-			"unsupportedFormatMessage": "Buraya yalnızca .klippt proje dosyaları bırakılabilir. Video içe aktarmak için \"Video Dosyası İçe Aktar...\" düğmesini kullanın.",
+			"unsupportedFormatMessage": "Buraya yalnızca .klippt proje dosyaları bırakılabilir. Video içe aktarmak için \"Video Dosyası İçe Aktar…\" düğmesini kullanın.",
 			"couldNotOpenTitle": "Dosya Açılamadı",
 			"couldNotOpenMessage": "Proje dosyası açılamadı. Başvurulan video taşınmış veya silinmiş olabilir."
 		}

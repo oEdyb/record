@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "Mở rộng",
 		"metaOne": "Tổng {{duration}}, 1 clip",
-		"metaMany": "Tổng {{duration}}, {{count}} clip"
+		"metaMany": "Tổng {{duration}}, {{count}} clip",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "Chất lượng xem trước",
@@ -40,8 +42,8 @@
 		"cancel": "Hủy",
 		"confirm": "Xác nhận"
 	},
-	"loadingVideo": "Đang tải video...",
-	"loadingEditor": "Đang tải trình chỉnh sửa...",
+	"loadingVideo": "Đang tải video…",
+	"loadingEditor": "Đang tải trình chỉnh sửa…",
 	"errors": {
 		"noVideoLoaded": "Chưa tải video nào",
 		"videoNotReady": "Video chưa sẵn sàng",
@@ -95,7 +97,7 @@
 		"dropOverlay": "Thả tệp dự án để mở",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Định dạng không được hỗ trợ",
-			"unsupportedFormatMessage": "Chỉ có thể thả các tệp dự án .klippt vào đây. Để nhập video, hãy sử dụng nút \"Nhập tệp video...\" thay thế.",
+			"unsupportedFormatMessage": "Chỉ có thể thả các tệp dự án .klippt vào đây. Để nhập video, hãy sử dụng nút \"Nhập tệp video…\" thay thế.",
 			"couldNotOpenTitle": "Không thể mở tệp",
 			"couldNotOpenMessage": "Không thể mở tệp dự án. Video mà nó tham chiếu có thể đã bị di chuyển hoặc xóa."
 		}

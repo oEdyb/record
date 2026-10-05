@@ -14,7 +14,7 @@
 		"useHorizontalTray": "استخدام الشريط الأفقي",
 		"openStudio": "فتح الاستوديو",
 		"openNotes": "فتح الملاحظات",
-		"openNotesPlaceholder": "اكتب ملاحظاتك هنا...",
+		"openNotesPlaceholder": "اكتب ملاحظاتك هنا…",
 		"notesToolbar": {
 			"bold": "غامق",
 			"italic": "مائل",
@@ -55,14 +55,14 @@
 		"enableWebcam": "تفعيل كاميرا الويب",
 		"disableWebcam": "تعطيل كاميرا الويب",
 		"defaultCamera": "الكاميرا الافتراضية",
-		"searching": "جاري البحث...",
+		"searching": "جاري البحث…",
 		"noneFound": "لم يتم العثور على كاميرا",
 		"unavailable": "الكاميرا غير متوفرة",
 		"camera": "الكاميرا",
 		"cameraDevice": "جهاز الكاميرا"
 	},
 	"sourceSelector": {
-		"loading": "جاري تحميل المصادر...",
+		"loading": "جاري تحميل المصادر…",
 		"screens": "الشاشات ({{count}})",
 		"windows": "النوافذ ({{count}})",
 		"emptyTitle": "لم يتم العثور على شاشات أو نوافذ",
@@ -77,7 +77,7 @@
 		"selectSource": "يرجى تحديد مصدر للتسجيل",
 		"systemPicker": "سيسألك النظام عمّا تريد مشاركته",
 		"inProgress": "جارٍ التسجيل",
-		"saving": "جاري الحفظ...",
+		"saving": "جاري الحفظ…",
 		"removePreviousClip": "إزالة المقطع السابق",
 		"removePreviousClipWithDuration": "إزالة المقطع السابق ({{duration}})",
 		"clipRemoved": "تمت الإزالة"

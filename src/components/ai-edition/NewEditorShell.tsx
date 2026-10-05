@@ -1954,7 +1954,7 @@ export function NewEditorShell() {
 									<div className={v4.recordingEmpty}>
 										<p>{te("recordingReview.ready")}</p>
 										<button type="button" onClick={() => void handleNewRecording()}>
-											{te("recordingReview.record")}
+											{te("recordingReview.newRecording")}
 										</button>
 										<span>{te("recordingReview.readyHint")}</span>
 									</div>

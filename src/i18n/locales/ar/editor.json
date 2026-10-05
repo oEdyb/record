@@ -27,7 +27,9 @@
 		"preparing": "Preparing recording…",
 		"expand": "توسيع",
 		"metaOne": "{{duration}} إجمالًا، مقطع واحد",
-		"metaMany": "{{duration}} إجمالًا، {{count}} مقاطع"
+		"metaMany": "{{duration}} إجمالًا، {{count}} مقاطع",
+		"more": "More",
+		"newRecording": "New recording"
 	},
 	"previewQuality": {
 		"label": "جودة المعاينة",
@@ -40,8 +42,8 @@
 		"cancel": "إلغاء",
 		"confirm": "تأكيد"
 	},
-	"loadingVideo": "جاري تحميل الفيديو...",
-	"loadingEditor": "جارٍ تحميل المحرر...",
+	"loadingVideo": "جاري تحميل الفيديو…",
+	"loadingEditor": "جارٍ تحميل المحرر…",
 	"errors": {
 		"noVideoLoaded": "لم يتم تحميل أي فيديو",
 		"videoNotReady": "الفيديو غير جاهز",
@@ -95,7 +97,7 @@
 		"dropOverlay": "أفلت ملف المشروع لفتحه",
 		"dropErrors": {
 			"unsupportedFormatTitle": "تنسيق غير مدعوم",
-			"unsupportedFormatMessage": "يمكن إسقاط ملفات مشروع .klippt فقط هنا. لاستيراد مقطع فيديو، استخدم زر \"استيراد ملف فيديو...\" بدلاً من ذلك.",
+			"unsupportedFormatMessage": "يمكن إسقاط ملفات مشروع .klippt فقط هنا. لاستيراد مقطع فيديو، استخدم زر \"استيراد ملف فيديو…\" بدلاً من ذلك.",
 			"couldNotOpenTitle": "تعذّر فتح الملف",
 			"couldNotOpenMessage": "تعذّر فتح ملف المشروع. ربما تم نقل الفيديو المرجعي أو حذفه."
 		}
@@ -148,10 +150,10 @@
 		"cursorHighlight": "إبراز المؤشر",
 		"on": "تشغيل",
 		"off": "إيقاف",
-		"loading": "جارٍ التحميل...",
+		"loading": "جارٍ التحميل…",
 		"noCameraFound": "لم يتم العثور على كاميرا",
 		"cameraAccessError": "تعذّر الوصول إلى هذه الكاميرا",
-		"startingCamera": "جارٍ تشغيل الكاميرا...",
+		"startingCamera": "جارٍ تشغيل الكاميرا…",
 		"turnOnCameraHint": "شغّل الكاميرا للحصول على معاينة مباشرة",
 		"entireScreen": "الشاشة بأكملها",
 		"cancel": "إلغاء",
@@ -160,7 +162,7 @@
 		"sourceModal": {
 			"screens": "الشاشات ({{count}})",
 			"windows": "النوافذ ({{count}})",
-			"loadingSources": "جارٍ تحميل المصادر...",
+			"loadingSources": "جارٍ تحميل المصادر…",
 			"noScreensFound": "لم يتم العثور على شاشات",
 			"noWindowsFound": "لم يتم العثور على نوافذ",
 			"cancel": "إلغاء"
@@ -169,7 +171,7 @@
 	"mediaStage": {
 		"openProjectFirst": "افتح مشروعًا أولاً",
 		"couldNotAddAsset": "تعذّرت إضافة الملف",
-		"searchPlaceholder": "بحث في الوسائط...",
+		"searchPlaceholder": "بحث في الوسائط…",
 		"dragHint": "اسحب مقطعًا إلى المخطط الزمني أدناه لإضافته",
 		"emptyHint": "لا توجد وسائط بعد — استورد تسجيلاً للبدء.",
 		"importMedia": "استيراد وسائط",
@@ -221,17 +223,17 @@
 		"pickFormatAndExport": "اختر صيغة واضغط على تصدير للبدء.",
 		"savedTo": "تم الحفظ في",
 		"exportFailedGeneric": "فشل التصدير.",
-		"writingFile": "جارٍ كتابة الملف...",
+		"writingFile": "جارٍ كتابة الملف…",
 		"renderingFrames": "جارٍ عرض الإطارات",
 		"framesEta": "{{current}} / {{total}} إطار, متبقٍ {{eta}}",
-		"preparingEncoder": "جارٍ تجهيز المرمّز...",
+		"preparingEncoder": "جارٍ تجهيز المرمّز…",
 		"cancelExport": "إلغاء التصدير",
 		"backgroundHint": "يمكنك إغلاق هذه النافذة ومتابعة التحرير. يظهر التقدم على زر التصدير. التعديلات التي تجريها الآن ليست جزءًا من هذا التصدير.",
 		"close": "إغلاق",
 		"cancel": "إلغاء",
-		"rendering": "جارٍ العرض...",
-		"saving": "جارٍ الحفظ...",
-		"starting": "جارٍ البدء...",
+		"rendering": "جارٍ العرض…",
+		"saving": "جارٍ الحفظ…",
+		"starting": "جارٍ البدء…",
 		"exportGif": "تصدير GIF",
 		"exportMp4": "تصدير MP4",
 		"exportedGif": "تم تصدير GIF",

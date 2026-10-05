@@ -3,7 +3,7 @@
 	"customize": "사용자 지정",
 	"configurable": "변경 가능",
 	"fixed": "고정",
-	"pressKey": "키를 누르세요...",
+	"pressKey": "키를 누르세요…",
 	"clickToChange": "클릭해서 변경",
 	"pressEscToCancel": "Esc를 눌러 취소",
 	"helpText": "단축키를 클릭한 후 새 키 조합을 누르세요. 취소하려면 Esc를 누르세요.",

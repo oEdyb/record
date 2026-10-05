@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMs, formatSec, formatSeconds, splitRoundedTime } from "./format";
+import { formatMs, formatPlayerTime, formatSec, formatSeconds, splitRoundedTime } from "./format";
 
 // These three replaced six private copies; the cases that differed between
 // those copies (negatives, NaN, the hour boundary) are what this pins down.
@@ -81,5 +81,16 @@ describe("splitRoundedTime", () => {
 	it("floors junk to zero", () => {
 		expect(splitRoundedTime(Number.NaN)).toEqual({ totalMinutes: 0, seconds: 0 });
 		expect(splitRoundedTime(-1)).toEqual({ totalMinutes: 0, seconds: 0 });
+	});
+});
+
+describe("formatPlayerTime", () => {
+	it("shows whole seconds so the end time and the total agree", () => {
+		expect(formatPlayerTime(0)).toBe("0:00");
+		expect(formatPlayerTime(5.6)).toBe("0:05");
+		expect(formatPlayerTime(59.99)).toBe("0:59");
+		expect(formatPlayerTime(61)).toBe("1:01");
+		expect(formatPlayerTime(Number.NaN)).toBe("0:00");
+		expect(formatPlayerTime(-3)).toBe("0:00");
 	});
 });

@@ -14,7 +14,7 @@
 		"useHorizontalTray": "가로 트레이 사용",
 		"openStudio": "스튜디오 열기",
 		"openNotes": "노트 열기",
-		"openNotesPlaceholder": "여기에 메모를 입력하세요...",
+		"openNotesPlaceholder": "여기에 메모를 입력하세요…",
 		"notesToolbar": {
 			"bold": "굵게",
 			"italic": "기울임꼴",
@@ -55,7 +55,7 @@
 		"enableWebcam": "웹캠 활성화",
 		"disableWebcam": "웹캠 비활성화",
 		"defaultCamera": "기본 카메라",
-		"searching": "검색 중...",
+		"searching": "검색 중…",
 		"noneFound": "카메라를 찾을 수 없음",
 		"unavailable": "카메라를 사용할 수 없음",
 		"camera": "카메라",
@@ -66,7 +66,7 @@
 		"useSystemCursor": "시스템 커서 사용"
 	},
 	"sourceSelector": {
-		"loading": "소스 불러오는 중...",
+		"loading": "소스 불러오는 중…",
 		"screens": "화면 ({{count}}개)",
 		"windows": "창 ({{count}}개)",
 		"emptyTitle": "화면이나 창을 찾을 수 없음",
@@ -81,7 +81,7 @@
 		"selectSource": "녹화할 소스를 선택해 주세요",
 		"systemPicker": "공유할 대상을 시스템이 묻습니다",
 		"inProgress": "녹화 중",
-		"saving": "저장 중...",
+		"saving": "저장 중…",
 		"removePreviousClip": "이전 클립 삭제",
 		"removePreviousClipWithDuration": "이전 클립 삭제 ({{duration}})",
 		"clipRemoved": "삭제됨"
