@@ -40,7 +40,6 @@ const VideoEditorEntry = lazy(() =>
 const CliExportRunner = lazy(() => import("./cli/CliExportRunner"));
 const CliRecordRunner = lazy(() => import("./cli/CliRecordRunner"));
 const CliSourcesRunner = lazy(() => import("./cli/CliSourcesRunner"));
-const CliCaptionsRunner = lazy(() => import("./cli/CliCaptionsRunner"));
 const ShortcutsConfigDialog = lazy(() =>
 	import("./components/video-editor/ShortcutsConfigDialog").then((module) => ({
 		default: module.ShortcutsConfigDialog,
@@ -142,12 +141,6 @@ export default function App() {
 				return (
 					<Suspense fallback={null}>
 						<CliSourcesRunner />
-					</Suspense>
-				);
-			case "cli-captions":
-				return (
-					<Suspense fallback={null}>
-						<CliCaptionsRunner />
 					</Suspense>
 				);
 			case "editor":

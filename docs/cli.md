@@ -19,7 +19,6 @@ Development — build once per checkout:
 npm run build-vite                                            # renderer + main
 npm run build:native:mac                                      # capture helpers (recording)
 npm run fetch:ffmpeg:mac && npm run build:native:compositor:mac  # Rust compositor (export)
-bash scripts/build-whisper-stt.sh                             # STT server (captions; model downloads on first run)
 ```
 
 Then:
@@ -49,7 +48,7 @@ Records headlessly through the same pipeline as the GUI: the native
 ScreenCaptureKit helper on macOS, the WGC helper on Windows (browser capture as
 fallback). Recordings land in the app's recordings directory
 (`<userData>/recordings/`), exactly like GUI recordings — including the
-`.cursor.json` cursor-telemetry sidecar used for editable cursors and auto-zoom.
+`.cursor.json` cursor-telemetry sidecar used for editable cursors.
 
 ```bash
 klippt record --duration 30 --project demo.klippt --json
@@ -132,7 +131,6 @@ klippt export demo.klippt --json | while read line; do ...; done
 | `--format <mp4\|gif>` | Override the project's stored format |
 | `--quality <medium\|good\|source>` | MP4 quality |
 | `--gif-fps <15\|20\|25\|30>`, `--gif-size <medium\|large\|original>` | GIF settings |
-| `--auto-zoom` | Add automatic zooms from cursor telemetry before rendering — the same dwell-detection engine as the editor's magic wand. Existing zoom regions are kept; suggestions never overlap them |
 | `--audio <file>` | Mix a voiceover file into the MP4 (mp3/wav/m4a — anything Chromium can decode; AIFF is not supported) |
 | `--audio-mode <mix\|replace>` | Layer the voiceover over the recording's audio (default `mix`) or replace it |
 | `--audio-offset <seconds>` | Delay before the voiceover starts (default 0) |
@@ -166,23 +164,6 @@ klippt pack demo.klippt --out bundle/
 The folder survives being moved or shipped as a CI artifact: when the stored
 absolute paths go stale, the loader falls back to files with the same basename
 next to the project file.
-
-### `klippt captions`
-
-Transcribes the project's audio with the app's on-device Whisper model (no
-upload; language auto-detected) and writes the resulting caption annotations
-into the project. Re-running replaces earlier auto-captions; manual annotations
-are preserved.
-
-```bash
-klippt captions demo.klippt --min-words 2 --max-words 7
-klippt export demo.klippt -o demo.mp4   # subtitles are burned in
-```
-
-Requires an audio track in the project's video (e.g. `record --mic`, or a
-voiceover mixed in with a re-recorded source). Transcription runs on the
-native whisper.cpp engine (ggml-small); the model downloads automatically on
-first use.
 
 ### `klippt info`
 
@@ -245,9 +226,9 @@ node -e '
 # 3. Narrate with any TTS (macOS `say` shown; any engine producing mp3/wav/m4a works)
 say -o voice.m4a --file-format=m4af "Welcome to my product. Here's a quick tour."
 
-# 4. Render with auto-zooms; the voiceover replaces the recording's own audio
+# 4. Render; the voiceover replaces the recording's own audio
 #    (drop --audio-mode replace to duck the original under the narration instead)
-klippt export demo.klippt -o demo.mp4 --auto-zoom --audio voice.m4a --audio-mode replace --json
+klippt export demo.klippt -o demo.mp4 --audio voice.m4a --audio-mode replace --json
 ```
 
 ## Architecture

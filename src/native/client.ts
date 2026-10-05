@@ -225,13 +225,6 @@ export const nativeBridgeClient = {
 				action: "document.import",
 				payload: { document },
 			}),
-		pickAudioAsset: (projectId: string) =>
-			requireNativeBridgeData<{ asset?: unknown; canceled?: boolean }>({
-				domain: "aiEdition",
-				action: "document.pickAudioAsset",
-				payload: { projectId },
-			}),
-
 		prepareAsset: (projectId: string, path: string, label?: string, recordingImportId?: string) =>
 			requireNativeBridgeData<{ asset: unknown }>({
 				domain: "aiEdition",

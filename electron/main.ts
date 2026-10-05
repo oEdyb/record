@@ -45,7 +45,6 @@ import {
 	getSelectedSourceAspectRatio,
 	registerIpcHandlers,
 	resolveApprovedRendererMediaPath,
-	resolveApprovedVideoPath,
 } from "./ipc/handlers";
 import {
 	createTrustedRendererIpcMain,
@@ -61,7 +60,6 @@ import {
 } from "./recording/recordingReviewFileMenu";
 import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
-import { getSttManager, registerSttIpc } from "./stt";
 import { checkLatestRelease } from "./update-checker";
 import {
 	ASSET_BASE_DIR,
@@ -794,9 +792,6 @@ function adoptEditorWindow(nextEditorWindow: BrowserWindow, compact: boolean) {
 	nextEditorWindow.once("closed", () => {
 		if (workspaceTransition?.window === nextEditorWindow) workspaceTransition = null;
 		if (editorWindow === nextEditorWindow) editorWindow = null;
-		void getSttManager()
-			.shutdown()
-			.catch((error) => console.warn("[stt] Could not release the speech model:", error));
 	});
 
 	nextEditorWindow.on("close", (event) => {
@@ -1117,17 +1112,6 @@ appReady?.then(async () => {
 			),
 		{ ipcMain },
 	);
-
-	// Native STT (whisper.cpp + forced alignment) — single instance per app.
-	registerSttIpc(ipcMain, async (sourcePath) => {
-		const approvedPath = resolveApprovedVideoPath(sourcePath);
-		return approvedPath
-			? {
-					sourcePath: approvedPath,
-					forceNative: approvedPath.startsWith(`${path.resolve(RECORDINGS_DIR)}${path.sep}`),
-				}
-			: null;
-	});
 
 	await loadAndRegisterGlobalShortcuts(globalShortcutHandlers);
 

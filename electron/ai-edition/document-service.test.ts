@@ -7,9 +7,6 @@ import { axcutSchemaVersion } from "../../src/lib/ai-edition/schema";
 import { registerMediaLinks } from "../media/mediaLinksRegistry";
 import { DocumentNotFoundError, DocumentService, ProjectFileError } from "./document-service";
 
-const audioProbe = vi.hoisted(() => vi.fn());
-vi.mock("../media/probeAudioImport", () => ({ probeAudioImport: audioProbe }));
-
 async function makeTempDir(): Promise<string> {
 	const base = await fs.mkdtemp(path.join(os.tmpdir(), "openscreen-ai-edition-"));
 	return base;
@@ -106,23 +103,6 @@ describe("DocumentService", () => {
 			);
 			warning.mockRestore();
 		});
-	});
-
-	it("prepares audio without a document write and propagates probe failures", async () => {
-		const doc = await service.createProject("Audio");
-		const before = await service.getTransactionSnapshot(doc.project.id);
-		const source = path.join(mediaDir, "music.wav");
-		await fs.writeFile(source, "audio bytes");
-		audioProbe.mockResolvedValueOnce(2.5);
-		expect(await service.prepareAudioAsset(doc.project.id, source)).toMatchObject({
-			originalPath: source,
-			durationSec: 2.5,
-		});
-		audioProbe.mockRejectedValueOnce(new Error("No audio stream"));
-		await expect(service.prepareAudioAsset(doc.project.id, source)).rejects.toThrow(
-			"No audio stream",
-		);
-		expect(await service.getTransactionSnapshot(doc.project.id)).toEqual(before);
 	});
 
 	it("prepares a durable media reference without changing an adopted project", async () => {

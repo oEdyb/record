@@ -714,31 +714,6 @@ export function registerNativeBridgeHandlers(
 								requestId,
 								await aiEditionService.importProject(request.payload.document),
 							);
-						case "document.pickAudioAsset": {
-							await context.assertEntitlement("import");
-							const { dialog, BrowserWindow } = await import("electron");
-							const options: Electron.OpenDialogOptions = {
-								title: "Add audio",
-								properties: ["openFile"],
-								filters: [
-									{ name: "Audio", extensions: ["wav", "mp3", "m4a", "aac", "flac", "ogg"] },
-								],
-							};
-							const parent = BrowserWindow.fromWebContents(event.sender);
-							const selected = parent
-								? await dialog.showOpenDialog(parent, options)
-								: await dialog.showOpenDialog(options);
-							if (selected.canceled || !selected.filePaths[0])
-								return createSuccessResponse(requestId, { canceled: true });
-							const { approveReadableRendererMediaPath } = await import("./handlers");
-							const approved = await approveReadableRendererMediaPath(selected.filePaths[0]);
-							if (!approved) throw new Error("Selected audio file is not readable");
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.prepareAudioAsset(request.payload.projectId, approved),
-							);
-						}
-
 						case "document.prepareAsset":
 							await context.assertEntitlement("import");
 							return createSuccessResponse(

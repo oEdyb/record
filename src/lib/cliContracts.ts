@@ -23,12 +23,6 @@ export interface CliExportRequest {
 	 * same way the editor's on-screen preview does. The composition is fitted
 	 * into this box, mirroring the editor layout. Defaults to 1280x720.
 	 */
-	/**
-	 * Add automatic zoom regions derived from cursor-dwell telemetry (same
-	 * suggestion engine as the editor's magic wand) before rendering. Existing
-	 * zoom regions are preserved; suggestions never overlap them.
-	 */
-	autoZoom: boolean;
 	/** Absolute path to a voiceover audio file to mix into the export (MP4 only). */
 	audioPath: string | null;
 	/** "mix" layers the voiceover over the recording's audio; "replace" drops the original. */
@@ -58,19 +52,7 @@ export interface CliSourcesRequest {
 	kind: "sources";
 }
 
-export interface CliCaptionsRequest {
-	kind: "captions";
-	/** Absolute path to a .klippt project file (updated in place). */
-	projectPath: string;
-	minWordsPerCaption: number;
-	maxWordsPerCaption: number;
-}
-
-export type CliRequest =
-	| CliExportRequest
-	| CliRecordRequest
-	| CliSourcesRequest
-	| CliCaptionsRequest;
+export type CliRequest = CliExportRequest | CliRecordRequest | CliSourcesRequest;
 
 export interface CliSourcesResult {
 	displays: { index: number; id: string; name: string }[];
@@ -113,6 +95,4 @@ export interface CliDoneResult {
 	projectData?: unknown;
 	/** Sources: enumeration payload printed by the main process. */
 	sources?: CliSourcesResult;
-	/** Captions: number of caption annotations generated. */
-	captionCount?: number;
 }

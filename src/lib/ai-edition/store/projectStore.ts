@@ -1236,7 +1236,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
 	clear() {
 		if (isProjectTransactionBlocked()) return;
-		void window.electronAPI?.stt?.release?.();
 		clearDocumentHistory();
 		recoveredUndoRequests.clear();
 		pendingExternalRequest = null;

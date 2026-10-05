@@ -471,36 +471,6 @@ export class DocumentService {
 		}
 	}
 
-	async prepareAudioAsset(projectId: string, selectedPath: string) {
-		await this.getTransactionSnapshot(projectId);
-		const originalPath = path.resolve(selectedPath);
-		const handle = await fs.open(originalPath, "r");
-		try {
-			const before = await handle.stat();
-			if (!before.isFile() || before.size === 0) throw new Error("Select a nonempty audio file");
-			await handle.sync();
-			const { probeAudioImport } = await import("../media/probeAudioImport");
-			const durationSec = await probeAudioImport(originalPath);
-			const after = await fs.stat(originalPath);
-			if (
-				after.ino !== before.ino ||
-				after.size !== before.size ||
-				after.mtimeMs !== before.mtimeMs
-			)
-				throw new Error(
-					"The audio file changed during import. Try again when recording is complete.",
-				);
-			return {
-				id: createId("audio"),
-				label: path.basename(originalPath),
-				originalPath,
-				durationSec,
-			};
-		} finally {
-			await handle.close();
-		}
-	}
-
 	/** Prepare a complete file reference without changing any project revision. */
 	async prepareAsset(projectId: string, input: AddAssetInput): Promise<AxcutAsset> {
 		await this.getTransactionSnapshot(projectId);

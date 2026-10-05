@@ -83,13 +83,7 @@ import {
 	isVoiceoverTempPath,
 } from "../export/voiceoverTemp";
 import { mainT } from "../i18n";
-import {
-	type AudioPeakProfile,
-	type AudioPeaksResult,
-	type AudioTrackSelection,
-	getAudioPeaks,
-	resolveFfmpeg,
-} from "../media/audioPeaks";
+import { resolveFfmpeg } from "../media/audioPeaks";
 import { CleanVoiceService, type CleanVoiceThermalState } from "../media/cleanVoiceService";
 import {
 	cleanVoiceHelperCandidates,
@@ -107,7 +101,6 @@ import {
 	resolveMediaLinkSources,
 } from "../media/mediaLinksRegistry";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
-import { getSpeechActivity, type SpeechActivityIpcResult } from "../media/speechActivity";
 import {
 	type LinuxCaptureSourceKind,
 	LinuxNativeCaptureSession,
@@ -4281,58 +4274,6 @@ export function registerIpcHandlers(
 			};
 		}
 	});
-
-	// Waveform peaks for a timeline clip, decoded natively (see media/audioPeaks).
-	// The renderer's own pipelines take ~12s on a 32-minute recording because they
-	// decode the whole track in Chromium; ffmpeg does the same work in ~2s off the
-	// UI process, and the result is cached on disk so it is paid once per file.
-	// `peaks: null` means "no native path available" — the caller falls back to
-	// its own decoding rather than losing the waveform.
-	ipcMain.handle(
-		"get-audio-peaks",
-		async (
-			_,
-			filePath: string,
-			durationSec: number,
-			track: AudioTrackSelection = "mixed",
-			profile: AudioPeakProfile = "waveform",
-		): Promise<AudioPeaksResult> => {
-			try {
-				// Same approval gate as every other read of a renderer-supplied path.
-				const normalizedPath = resolveApprovedVideoPath(filePath);
-				if (!normalizedPath) {
-					return { success: false, message: "File path is not approved" };
-				}
-				const peaks = await getAudioPeaks(
-					normalizedPath,
-					durationSec,
-					track === "microphone" || track === "system" ? track : "mixed",
-					profile === "analysis" ? "analysis" : "waveform",
-				);
-				return { success: true, peaks };
-			} catch (error) {
-				// A clip with no audio track lands here. Degrade quietly: the renderer
-				// draws no waveform, which is correct, and logs its own warning.
-				return { success: false, message: String(error) };
-			}
-		},
-	);
-
-	// Silero speech probabilities for Shorten Pauses. This always analyzes the
-	// isolated microphone track and never falls back to the mixed program.
-	ipcMain.handle(
-		"get-speech-activity",
-		async (_, filePath: string): Promise<SpeechActivityIpcResult> => {
-			try {
-				const normalizedPath = resolveApprovedVideoPath(filePath);
-				if (!normalizedPath) return { success: false, message: "File path is not approved" };
-				const result = await getSpeechActivity(normalizedPath);
-				return { success: true, ...result };
-			} catch (error) {
-				return { success: false, message: String(error) };
-			}
-		},
-	);
 
 	// Cap renderer-requested chunk sizes so a buggy or compromised renderer
 	// cannot make the main process allocate an arbitrarily large buffer.

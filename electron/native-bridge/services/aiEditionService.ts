@@ -174,10 +174,6 @@ export class AiEditionService {
 	async importProject(document: unknown): Promise<AiEditionDocumentResult> {
 		return { success: true, document: await this.options.documents.importProject(document) };
 	}
-	async prepareAudioAsset(projectId: string, selectedPath: string) {
-		return { asset: await this.options.documents.prepareAudioAsset(projectId, selectedPath) };
-	}
-
 	async prepareAsset(projectId: string, path: string, label?: string, recordingImportId?: string) {
 		return {
 			asset: await this.options.documents.prepareAsset(projectId, {

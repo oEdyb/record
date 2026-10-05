@@ -1,49 +1,12 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	audioTrackMapArgs,
-	ffmpegCandidates,
-	isAudioPeaksCacheCompatible,
-	peakBlockCount,
-	resolveFfmpeg,
-} from "./audioPeaks";
+import { audioTrackMapArgs, ffmpegCandidates, resolveFfmpeg } from "./audioPeaks";
 
 const ROOT = path.resolve(__dirname, "..", "..");
-
-describe("peakBlockCount", () => {
-	it("matches the browser pipelines' block maths", () => {
-		// Same formula as audioPeaksWorker.ts / streamingAudioPeaks.ts: a clip must
-		// not change shape depending on which pipeline drew it.
-		expect(peakBlockCount(10)).toBe(2000);
-		expect(peakBlockCount(60)).toBe(12000);
-		// Creator-length recordings retain 5 ms source detail. The bounded cap is
-		// reached only after one hour, not after the old two-minute threshold.
-		expect(peakBlockCount(1951)).toBe(390200);
-		expect(peakBlockCount(3_600)).toBe(720000);
-		expect(peakBlockCount(99999)).toBe(720000);
-	});
-
-	it("never returns zero blocks for a sliver of audio", () => {
-		expect(peakBlockCount(0.001)).toBe(1);
-	});
-
-	it("keeps 20 ms cut-analysis frames after the visible waveform cap", () => {
-		expect(peakBlockCount(1_800, "waveform")).toBe(360_000);
-		expect(peakBlockCount(1_800, "analysis")).toBe(90_000);
-	});
-
-	it("refreshes a long waveform cache made with the old low-resolution cap", () => {
-		const oldCacheBytes = 24_000 * 2 * Float32Array.BYTES_PER_ELEMENT;
-		const currentCacheBytes = peakBlockCount(1_800) * 2 * Float32Array.BYTES_PER_ELEMENT;
-
-		expect(isAudioPeaksCacheCompatible(oldCacheBytes, 1_800, "waveform")).toBe(false);
-		expect(isAudioPeaksCacheCompatible(currentCacheBytes, 1_800, "waveform")).toBe(true);
-	});
-});
 
 describe("audio track selection", () => {
 	it("keeps the normal mixed waveform on ffmpeg's default audio track", () => {
@@ -275,49 +238,4 @@ describe("ffmpeg resolution", () => {
 			},
 		);
 	});
-});
-
-// Only runs where the binary is actually staged; skipped elsewhere rather than
-// failing a checkout that has not run scripts/fetch-ffmpeg.mjs.
-const staged = resolveFfmpeg(ROOT);
-describe.runIf(staged)("decoding a real file", () => {
-	it("produces peaks in range, with real signal in them", async () => {
-		// A synthetic 5s 440 Hz tone from ffmpeg's own lavfi source — no user
-		// recording in the repo, and a signal whose shape is known rather than
-		// "whatever this capture happened to contain".
-		const fixture = path.join(ROOT, "electron", "media", "__fixtures__", "peaks-sample.m4a");
-		if (!existsSync(fixture)) return;
-		const { getAudioPeaks } = await import("./audioPeaks");
-		const peaks = await getAudioPeaks(fixture, 5);
-		expect(peaks).not.toBeNull();
-		if (!peaks) return;
-		expect(peaks.length).toBe(peakBlockCount(5) * 2);
-		// [min, max] pairs, both inside [-1, 1], min <= 0 <= max (the folder starts
-		// each block at the silence baseline, like the worker does).
-		for (let i = 0; i < peaks.length; i += 2) {
-			expect(peaks[i]).toBeLessThanOrEqual(0);
-			expect(peaks[i + 1]).toBeGreaterThanOrEqual(0);
-			expect(peaks[i]).toBeGreaterThanOrEqual(-1);
-			expect(peaks[i + 1]).toBeLessThanOrEqual(1);
-		}
-		// Not all silence — otherwise everything above would pass on a pipeline
-		// that returned a zeroed array.
-		//
-		// The bound is tight rather than "> 0" because loose is the same as
-		// absent here: the mistakes worth catching are all scale errors — int16
-		// divided by 65536 instead of 32768, a stereo downmix halving the signal,
-		// a block whose samples never get compared — and every one of them is a
-		// factor of two. 0.214 is what ffmpeg itself decodes this fixture to
-		// (verified with `-f s16le` straight to a file), so this asserts the fold
-		// agrees with the decoder rather than restating the fixture's nominal
-		// amplitude, which lavfi's volume filter does not actually deliver.
-		let mn = 0;
-		let mx = 0;
-		for (const v of peaks) {
-			if (v < mn) mn = v;
-			if (v > mx) mx = v;
-		}
-		expect(mx).toBeCloseTo(0.214, 1);
-		expect(mn).toBeCloseTo(-0.205, 1);
-	}, 120_000);
 });

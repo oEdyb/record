@@ -574,6 +574,10 @@ small last-clip review feature then. Do not build it before that evidence exists
 
 ## Pause shortening
 
+> **Archived 2026-10-05.** Pause analysis, proposed cuts, and speech-activity detection were
+> removed (tag `archive/pre-cleanup-2026-10-05`). Trims already stored in a project still apply
+> in preview and export. The rest of this section describes the archived behavior.
+
 Proposed cuts occupy their own temporary row directly above the clip strip, below zooms,
 using the same scroll and zoom coordinates as the other lanes. Each 28 px pill has a
 7 px radius, a 1.5 px border, visible edge handles, scissors and saved seconds; narrow
@@ -730,6 +734,10 @@ no visible lane label (2026-09-18, Task F2).
 
 ## Transcript and captions
 
+> **Transcription archived 2026-10-05** (tag `archive/pre-cleanup-2026-10-05`). Klippt no longer
+> creates transcripts or captions. Captions already stored in a project, including their settings
+> and translations, still render identically in preview and export.
+
 - Show the Captions inspector so users can change the appearance and visibility of
   transcript-derived captions in projects, including projects edited by an agent.
   Captions remain derived from transcript words, rather than separate annotation blocks.
@@ -776,6 +784,11 @@ no visible lane label (2026-09-18, Task F2).
   secondary menu after real use proves they are needed.
 
 ## Automatic direction
+
+> **Archived 2026-10-05.** The direction engine, automatic zoom and camera suggestions, and the
+> CLI export flag that generated zooms at export time were removed (tag
+> `archive/pre-cleanup-2026-10-05`). Zooms and camera emphasis already stored in a project still
+> render in preview and export. The rest of this section describes the archived behavior.
 
 The agent can run, remove, or regenerate automatic direction through ordinary guarded plans.
 The agent uses the same recorded observations and pure functions as the editor. Analysis must finish

@@ -30,12 +30,6 @@ import {
 	migrateRawDocumentToCurrent,
 } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
-import {
-	applyAutomaticDirectionPlan,
-	buildAutomaticDirectionPlan,
-} from "@/lib/ai-edition/timeline/automatic-direction";
-import { readAutomaticDirectionSettings } from "@/lib/ai-edition/timeline/automatic-direction-settings";
-import type { DirectionCursorSample } from "@/lib/ai-edition/timeline/direction-engine";
 import { type CleanVoiceRuntimeSnapshot, cleanVoiceRoutes } from "@/lib/cleanVoiceRuntime";
 import type { CliDoneResult, CliExportRequest } from "@/lib/cliContracts";
 import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
@@ -162,23 +156,6 @@ function gifOutputDims(
 	return { width: even(tierDims.width), height: even(tierDims.height) };
 }
 
-function appendAutoZoomRanges(
-	axcutDocument: AxcutDocument,
-	cursorTelemetry: DirectionCursorSample[],
-	assetId: string,
-): number {
-	const plan = buildAutomaticDirectionPlan({
-		id: `cli-${axcutDocument.project.id}`,
-		document: axcutDocument,
-		recordings: [{ assetId, cursorTelemetry }],
-		phases: { screen: true, camera: false },
-		policy: readAutomaticDirectionSettings(axcutDocument).policy,
-	});
-	const directed = applyAutomaticDirectionPlan(axcutDocument, plan);
-	axcutDocument.zoomRanges = directed.zoomRanges;
-	return plan.effects.filter((effect) => effect.kind === "screen-zoom").length;
-}
-
 export async function runExport(
 	request: CliExportRequest,
 	signal?: AbortSignal,
@@ -283,22 +260,6 @@ export async function runExport(
 	const primaryAssetId = axcutDocument.project.primaryAssetId ?? axcutDocument.assets[0]?.id;
 	if (!primaryAssetId) {
 		throw new Error("Project contains no media asset");
-	}
-
-	if (request.autoZoom) {
-		let cursorTelemetry: DirectionCursorSample[] = [];
-		const primaryAsset = axcutDocument.assets.find((asset) => asset.id === primaryAssetId);
-		if (primaryAsset?.originalPath) {
-			try {
-				cursorTelemetry = (
-					await nativeBridgeClient.cursor.getRecordingData(primaryAsset.originalPath)
-				).samples;
-			} catch {
-				cursorTelemetry = [];
-			}
-		}
-		const added = appendAutoZoomRanges(axcutDocument, cursorTelemetry, primaryAssetId);
-		window.electronAPI.cliLog("info", `Auto-zoom: added ${added} region(s) from cursor telemetry`);
 	}
 
 	// Output sizing mirrors the ExportDialog: crop-aware smallest clip on the

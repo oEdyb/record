@@ -35,7 +35,6 @@ const SUBCOMMANDS = new Set([
 	"record",
 	"sources",
 	"pack",
-	"captions",
 	"info",
 	"help",
 	"--help",
@@ -49,8 +48,6 @@ Usage:
   klippt record [options]                    Record the screen headlessly
   klippt sources [--json]                    List displays, windows and microphones
   klippt pack <project.klippt> --out <dir>   Copy project + media into one portable folder
-  klippt captions <project.klippt>           Add auto-captions (on-device Whisper) to a project
-                     [--min-words <n>] [--max-words <n>]
   klippt info <project.klippt> [--json]      Inspect a project file
   klippt help                                Show this help
 
@@ -62,7 +59,6 @@ Export options:
   --gif-fps <15|20|25|30>   GIF frame rate (default: from project)
   --gif-size <medium|large|original>
                             GIF size preset (default: from project)
-  --auto-zoom               Add automatic zooms from cursor telemetry (editor's magic wand)
   --audio <file>            Mix a voiceover audio file into the MP4 (mp3/wav/m4a)
   --audio-mode <mix|replace>
                             Layer over the recording's audio (default) or replace it
@@ -134,7 +130,6 @@ export function parseCliArgs(
 		if (sub === "record") return parseRecord(args.slice(1), cwd);
 		if (sub === "sources") return parseSources(args.slice(1));
 		if (sub === "pack") return parsePack(args.slice(1), cwd);
-		if (sub === "captions") return parseCaptions(args.slice(1), cwd);
 		return parseInfo(args.slice(1), cwd);
 	} catch (error) {
 		return { kind: "error", message: error instanceof Error ? error.message : String(error) };
@@ -150,7 +145,6 @@ function parseExport(args: string[], cwd: string): CliCommand {
 		quality: null,
 		gifFrameRate: null,
 		gifSizePreset: null,
-		autoZoom: false,
 		audioPath: null,
 		audioMode: "mix",
 		audioOffsetSec: 0,
@@ -203,9 +197,6 @@ function parseExport(args: string[], cwd: string): CliCommand {
 				i = next;
 				break;
 			}
-			case "--auto-zoom":
-				request.autoZoom = true;
-				break;
 			case "--audio": {
 				const [value, next] = takeValue(args, i, arg);
 				request.audioPath = resolvePath(value, cwd);
@@ -386,39 +377,6 @@ function parsePack(args: string[], cwd: string): CliCommand {
 	if (!projectPath) throw new Error("pack requires a <project.klippt> path");
 	if (!outDir) throw new Error("pack requires --out <directory>");
 	return { kind: "pack", projectPath, outDir, json };
-}
-
-function parseCaptions(args: string[], cwd: string): CliCommand {
-	let projectPath = "";
-	let minWordsPerCaption = 2;
-	let maxWordsPerCaption = 7;
-	let json = false;
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i];
-		if (arg === "--min-words" || arg === "--max-words") {
-			const [value, next] = takeValue(args, i, arg);
-			const count = Number(value);
-			if (!Number.isInteger(count) || count < 1) {
-				throw new Error(`${arg} must be a positive integer, got "${value}"`);
-			}
-			if (arg === "--min-words") minWordsPerCaption = count;
-			else maxWordsPerCaption = count;
-			i = next;
-		} else if (arg === "--json") {
-			json = true;
-		} else if (arg.startsWith("-")) {
-			throw new Error(`Unknown captions option: ${arg}`);
-		} else if (projectPath) {
-			throw new Error(`Unexpected extra argument: ${arg}`);
-		} else {
-			projectPath = resolvePath(arg, cwd);
-		}
-	}
-	if (!projectPath) throw new Error("captions requires a <project.klippt> path");
-	if (minWordsPerCaption > maxWordsPerCaption) {
-		throw new Error("--min-words cannot exceed --max-words");
-	}
-	return { kind: "captions", projectPath, minWordsPerCaption, maxWordsPerCaption, json };
 }
 
 function parseInfo(args: string[], cwd: string): CliCommand {

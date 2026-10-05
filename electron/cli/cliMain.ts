@@ -26,7 +26,6 @@ import {
 	getSelectedDesktopSource,
 	registerIpcHandlers,
 	resolveApprovedRendererMediaPath,
-	resolveApprovedVideoPath,
 } from "../ipc/handlers";
 import {
 	createTrustedRendererIpcMain,
@@ -35,12 +34,10 @@ import {
 	isTrustedPermissionRequest,
 } from "../ipc/trustedRendererIpc";
 import { installKlipptProtocol } from "../localMediaProtocol";
-import { getSttManager, registerSttIpc } from "../stt";
 import { ASSET_BASE_DIR, ASSET_BASE_URL_ARG } from "../windows";
 import { CLI_USAGE, type CliCommand } from "./args";
 import { finalizeCliResult } from "./cliCompletion";
 import { runInfoCommand, runPackCommand } from "./projectCommands";
-import { createCliSttSourceResolver } from "./sttSourceApproval";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -257,16 +254,6 @@ export function runCli(command: CliCommand): void {
 		return;
 	}
 	const output = createOutput(command.json === true);
-	const exitAfterSpeechShutdown = (code: number) => {
-		if (command.kind !== "captions") {
-			app.exit(code);
-			return;
-		}
-		void getSttManager()
-			.shutdown()
-			.catch((error) => output.error(`Could not release speech model: ${String(error)}`))
-			.finally(() => app.exit(code));
-	};
 
 	// stdout belongs to the CLI protocol (NDJSON / progress); reroute the app's
 	// own console chatter (e.g. "[native-sck] starting…") to stderr.
@@ -295,14 +282,14 @@ export function runCli(command: CliCommand): void {
 	process.stderr.on("error", ignoreStreamError);
 	process.on("uncaughtException", (error) => {
 		safeWrite(process.stderr, `Fatal: ${error?.stack ?? String(error)}\n`);
-		exitAfterSpeechShutdown(1);
+		app.exit(1);
 	});
 	process.on("unhandledRejection", (reason) => {
 		safeWrite(
 			process.stderr,
 			`Fatal (unhandled rejection): ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`,
 		);
-		exitAfterSpeechShutdown(1);
+		app.exit(1);
 	});
 
 	// Set once cli-done has been received; suppresses the window-all-closed
@@ -323,7 +310,7 @@ export function runCli(command: CliCommand): void {
 		// only while the run is still in flight.
 		if (finished) return;
 		output.error("Renderer window closed unexpectedly");
-		exitAfterSpeechShutdown(1);
+		app.exit(1);
 	});
 
 	void app
@@ -421,16 +408,6 @@ export function runCli(command: CliCommand): void {
 				throw new Error(`Voiceover file is missing or unsupported: ${command.audioPath}`);
 			}
 
-			// Speech-to-text backs the captions command; registered by the GUI boot
-			// path (main.ts) rather than registerIpcHandlers.
-			registerSttIpc(
-				ipcMain,
-				createCliSttSourceResolver(
-					path.join(app.getPath("userData"), "recordings"),
-					resolveApprovedVideoPath,
-				),
-			);
-
 			// Registered by the GUI boot path (main.ts) rather than registerIpcHandlers;
 			// the renderer's i18n init invokes it unconditionally.
 			ipcMain.handle("set-locale", () => {
@@ -474,10 +451,6 @@ export function runCli(command: CliCommand): void {
 					}
 					if (command.kind === "sources" && result.sources) {
 						printSources(output, result.sources);
-					} else if (command.kind === "captions") {
-						output.info(
-							`Added ${result.captionCount ?? 0} caption annotation(s) → ${result.projectPath}`,
-						);
 					} else if (command.kind === "export") {
 						output.info(`Exported ${result.format ?? ""} → ${result.outputPath}`);
 					} else {
@@ -490,12 +463,6 @@ export function runCli(command: CliCommand): void {
 					output.error(result.error ?? "Unknown failure");
 					output.event("done", { ...result });
 				}
-				if (command.kind === "captions") {
-					await getSttManager()
-						.shutdown()
-						.catch((error) => output.error(`Could not release speech model: ${String(error)}`));
-				}
-
 				// Give the renderer a beat to resolve the invoke before exiting.
 				setTimeout(() => app.exit(result.success ? 0 : 1), 50);
 			});
@@ -516,29 +483,12 @@ export function runCli(command: CliCommand): void {
 						cliWindow.webContents.send("cli-cancel-export");
 					}
 				});
-			} else if (command.kind === "captions") {
-				let stopping = false;
-				const stopCaptions = (signal: "SIGINT" | "SIGTERM", exitCode: number) => {
-					if (stopping) return;
-					stopping = true;
-					output.info(`Cancelling captions (${signal})…`);
-					output.event("cancelling", { reason: signal });
-					const manager = getSttManager();
-					manager.cancel();
-					void manager
-						.shutdown()
-						.catch((error) => output.error(`Could not release speech model: ${String(error)}`))
-						.finally(() => app.exit(exitCode));
-				};
-				process.on("SIGINT", () => stopCaptions("SIGINT", 130));
-				process.on("SIGTERM", () => stopCaptions("SIGTERM", 143));
 			}
 
 			const windowType = {
 				export: "cli-export",
 				record: "cli-record",
 				sources: "cli-sources",
-				captions: "cli-captions",
 			}[command.kind];
 			cliWindow = loadRunnerWindow(windowType);
 			if (command.kind === "export") {
@@ -570,6 +520,6 @@ export function runCli(command: CliCommand): void {
 		})
 		.catch((error) => {
 			output.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
-			exitAfterSpeechShutdown(1);
+			app.exit(1);
 		});
 }

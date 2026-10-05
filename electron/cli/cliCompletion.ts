@@ -39,12 +39,6 @@ export async function finalizeCliResult(
 			await writeProjectFile(command.projectOut, result.projectData);
 			finalized.projectPath = command.projectOut;
 		}
-		if (command.kind === "captions") {
-			if (result.projectData === undefined) {
-				throw new Error("captioning finished without updated project data");
-			}
-			await writeProjectFile(command.projectPath, result.projectData);
-		}
 		if (command.kind === "record") {
 			await dependencies.consumeRecordingSession();
 		}

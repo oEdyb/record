@@ -11,11 +11,6 @@ import type {
 import type { ShortcutsConfig } from "../src/lib/shortcuts";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
 import type { RecordingPrefs } from "./ipc/handlers";
-import type {
-	SttStatusEvent,
-	SttTranscribeRequest,
-	SttTranscribeResponse,
-} from "./stt/transcriptionContract";
 
 // Asset base URL is passed from the main process via webPreferences.additionalArguments
 // (see windows.ts). Sandboxed preloads cannot import node:path / node:url, so we
@@ -451,19 +446,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getReadableFileInfo: (filePath: string) => {
 		return ipcRenderer.invoke("get-readable-file-info", filePath);
 	},
-	/** Native waveform peaks, disk-cached. See electron/media/audioPeaks.ts. */
-	getAudioPeaks: (
-		filePath: string,
-		durationSec: number,
-		track?: "mixed" | "microphone" | "system",
-		profile?: "waveform" | "analysis",
-	) => {
-		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec, track, profile);
-	},
-	/** Local Silero speech probabilities for the isolated microphone track. */
-	getSpeechActivity: (filePath: string) => {
-		return ipcRenderer.invoke("get-speech-activity", filePath);
-	},
 	getCleanVoiceRuntime: (projectId: string, assetIds: string[]) => {
 		return ipcRenderer.invoke("clean-voice:get-runtime", projectId, assetIds);
 	},
@@ -608,28 +590,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	// One-way fire-and-forget; we deliberately don't await the IPC.
 	rendererConsole: (channel: "log" | "warn" | "error", args: unknown[]) => {
 		ipcRenderer.send(`renderer-console-${channel}`, ...args);
-	},
-	stt: {
-		isAvailable: (): Promise<boolean> => ipcRenderer.invoke("stt:is-available") as Promise<boolean>,
-		transcribe: (request: SttTranscribeRequest): Promise<SttTranscribeResponse> => {
-			return ipcRenderer.invoke("stt:transcribe", request) as Promise<SttTranscribeResponse>;
-		},
-		transcribeSource: (
-			request: import("./stt/transcriptionContract").SttTranscribeSourceRequest,
-		): Promise<import("./stt/transcriptionContract").SttTranscribeSourceResponse> => {
-			return ipcRenderer.invoke("stt:transcribe-source", request) as Promise<
-				import("./stt/transcriptionContract").SttTranscribeSourceResponse
-			>;
-		},
-		/** Stop the running transcription at its next chunk boundary. */
-		cancel: (): Promise<void> => ipcRenderer.invoke("stt:cancel") as Promise<void>,
-		/** Stop helpers and release model memory. A later request starts them again. */
-		release: (): Promise<void> => ipcRenderer.invoke("stt:release") as Promise<void>,
-		onStatus: (callback: (event: SttStatusEvent) => void) => {
-			const listener = (_event: unknown, payload: SttStatusEvent) => callback(payload);
-			ipcRenderer.on("stt:status", listener);
-			return () => ipcRenderer.removeListener("stt:status", listener);
-		},
 	},
 	// --- CLI mode (hidden runner windows; see electron/cli/) ---
 	cliGetRequest: (): Promise<import("../src/lib/cliContracts").CliRequest> => {

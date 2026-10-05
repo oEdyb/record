@@ -1,5 +1,16 @@
 # Transcription and captions
 
+> **Transcription archived 2026-10-05.** Speech-to-text, the `stt:*` IPC group, the
+> `klippt captions` command, and the renderer transcription adapters were removed. The
+> source is in tag `archive/pre-cleanup-2026-10-05`. What remains: existing transcripts
+> in project documents still parse, and **Captions** below still derive cues from them and
+> render them in preview and export. `electron/stt/sourceAudio.ts` (source-audio layout for
+> export) and `electron/stt/transcriptionContract.ts` (its role types) stay. The
+> Parakeet/Whisper helper sources, their build scripts and packaging entries, and
+> `electron/stt/modelManager.ts` also stay until the owner re-signs
+> `supply-chain/approved-dependency-inputs.json`; nothing in the app calls them. The
+> transcription sections below describe the archived pipeline.
+
 Klippt turns recorded audio into on-device text, and can render that text as
 captions over both the preview and the export. The recogniser runs natively on
 the desktop — no network calls, no Python — and feeds one role-aware transcript
@@ -61,7 +72,7 @@ What the store owns and what it does not:
 - **The document owns the transcript.** `document.transcripts[]` is still the
   source of truth for "is there one"; the store only owns the JOB (queued /
   running / failed + the phase for the spinner). `deriveAssetStatus`
-  ([`transcription/status.ts`](../../src/lib/ai-edition/transcription/status.ts))
+  (`transcription/status.ts`)
   folds the two into the single status the UI renders, and
   `resolveTranscriptGate` folds a set of those into the ready / pending /
   blocked verdict that enables or disables a transcript-dependent action.
@@ -130,7 +141,7 @@ Three edges make that promise hold, and each is load-bearing:
   rejected `prepare()` promise, so one dropped connection during the first
   download failed every later transcription in the session — including the retry
   the editor offers — until the app was restarted. It now clears the slot on
-  failure ([`electron/stt/index.ts`](../../electron/stt/index.ts)).
+  failure (`electron/stt/index.ts`).
 - **A transient failure stops the queue** instead of walking the remaining
   assets into the same wall: they inherit the verdict (one toast, one retry
   affordance) rather than each spending a full retry budget.
@@ -199,7 +210,7 @@ factors — lived in `tools/stt-eval/whispercpp-dtw-poc/REPORT.md`, removed from
 The binary is named `whisper-stt-server` (`.exe` on Windows) on **every**
 platform — the backend is a build-time flag, not a file name, and
 `binaryNameForBackend`
-([`electron/stt/gpuDetector.ts:60`](../../electron/stt/gpuDetector.ts:60))
+(`electron/stt/gpuDetector.ts:60`)
 returns that single name. What varies is which backend was compiled in:
 
 | Platform | Backend compiled in | Runtime device candidates |
@@ -245,7 +256,7 @@ it verbatim in the response.
    80–150 ms late (measured across real recordings; the mean correction on
    the reference clip is 83 ms). Because consecutive words share a boundary,
    the whole transcript is dragged right by roughly a syllable.
-   [`electron/stt/snapWordBoundaries.ts`](../../electron/stt/snapWordBoundaries.ts)
+   `electron/stt/snapWordBoundaries.ts`
    pulls each boundary back to the quietest 10 ms frame in the preceding
    150 ms of the same samples whisper was given. It is self-limiting: on a
    decaying tail — a word ending a phrase, where whisper is already right —
@@ -524,7 +535,7 @@ segment id is stable across renders.
 
 Keying by segment id also drives the grouping rule. A Whisper transcript
 stores **one segment per word** (see
-[`src/lib/ai-edition/document/transcribe.ts:52-83`](../../src/lib/ai-edition/document/transcribe.ts:52)),
+`src/lib/ai-edition/document/transcribe.ts:52-83`),
 so translating word by word — i.e. per segment — would produce nonsense in
 any language whose word order or agreement differs from the source, and
 would put exactly one word on screen at a time. `captionTranslationUnits`

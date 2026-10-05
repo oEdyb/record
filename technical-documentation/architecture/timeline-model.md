@@ -164,20 +164,24 @@ one layout: a single clip, starting at 0, covering the whole recording. Feeding 
 detector's source-time output straight to the store therefore dropped every suggestion
 wherever `[0, assetDuration]` happens to fall on the ruler, i.e. on the first clip —
 "automatic zooms only decorate the first clip". `buildAutoZoomSuggestionsForClips`
-([`zoom-suggestions.ts`](../../src/lib/ai-edition/timeline/zoom-suggestions.ts)) does the
+(`zoom-suggestions.ts`) does the
 projection: per clip of the asset, a plain shift (a raw clip is identity between source and
 raw-virtual time), so a dwell replayed by two clips over one recording yields one zoom on
 each. Each clip sees only the samples inside its own source window, so a dwell a cut split
 across two clips is no longer one dwell — the cursor did not sit still across the cut on
 the timeline the user is watching.
 
+
+> Archived 2026-10-05: automatic zoom suggestions and the transcript pane's aggregation
+> (`zoom-suggestions.ts`, `aggregated-transcript.ts`) live in tag
+> `archive/pre-cleanup-2026-10-05`. Stored zooms and clip-scoped trims still render.
 ### The same ambiguity in the transcript pane
 
 Two clips over one media do not only share a source coordinate space — they share the
 **transcript**, which also belongs to the asset. The pane renders one block per clip, so
 the same `AxcutWord` is projected twice and `word.id` names a moment in the media, not a
 thing on screen. `ClipWord.id` = `clipWordId(clip.id, word.id)`
-([`aggregated-transcript.ts`](../../src/lib/ai-edition/timeline/aggregated-transcript.ts))
+(`aggregated-transcript.ts`)
 is the on-screen identity; the React key, `data-word-id`, the cue highlight and the caret
 anchor all use it, and `findCueWordId` selects its section by `cue.clipId` before
 returning one. The synthetic `[silence]` tokens make the scoping unconditional rather

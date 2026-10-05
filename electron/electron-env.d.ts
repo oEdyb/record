@@ -416,15 +416,6 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
-		getAudioPeaks: (
-			filePath: string,
-			durationSec: number,
-			track?: import("./media/audioPeaks").AudioTrackSelection,
-			profile?: import("./media/audioPeaks").AudioPeakProfile,
-		) => Promise<import("./media/audioPeaks").AudioPeaksResult>;
-		getSpeechActivity: (
-			filePath: string,
-		) => Promise<import("./media/speechActivity").SpeechActivityIpcResult>;
 		getCleanVoiceRuntime: (
 			projectId: string,
 			assetIds: string[],
@@ -536,20 +527,6 @@ interface Window {
 		onRequestSaveBeforeClose: (callback: () => Promise<boolean> | boolean) => () => void;
 		onRequestCloseConfirm: (callback: () => void) => () => void;
 		sendCloseConfirmResponse: (choice: "save" | "discard" | "cancel") => void;
-		stt: {
-			isAvailable: () => Promise<boolean>;
-			transcribe: (
-				request: import("./stt/transcriptionContract").SttTranscribeRequest,
-			) => Promise<import("./stt/transcriptionContract").SttTranscribeResponse>;
-			transcribeSource: (
-				request: import("./stt/transcriptionContract").SttTranscribeSourceRequest,
-			) => Promise<import("./stt/transcriptionContract").SttTranscribeSourceResponse>;
-			cancel: () => Promise<void>;
-			release: () => Promise<void>;
-			onStatus: (
-				callback: (event: import("./stt/transcriptionContract").SttStatusEvent) => void,
-			) => () => void;
-		};
 		// CLI mode (hidden runner windows; see electron/cli/)
 		cliGetRequest: () => Promise<import("../src/lib/cliContracts").CliRequest>;
 		cliProgress: (progress: import("../src/lib/cliContracts").CliProgressEvent) => void;

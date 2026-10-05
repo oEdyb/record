@@ -156,14 +156,6 @@ describe("parseCliArgs", () => {
 		});
 	});
 
-	it("parses --auto-zoom", () => {
-		expect(parse(["export", "a.klippt", "--auto-zoom"])).toMatchObject({
-			kind: "export",
-			autoZoom: true,
-		});
-		expect(parse(["export", "a.klippt"])).toMatchObject({ autoZoom: false });
-	});
-
 	it("parses sources", () => {
 		expect(parse(["sources", "--json"])).toMatchObject({
 			kind: "sources",
@@ -185,24 +177,6 @@ describe("parseCliArgs", () => {
 			kind: "error",
 		});
 		expect(parse(["pack", "a.klippt", "b.klippt", "--out", "bundle"])).toMatchObject({
-			kind: "error",
-		});
-	});
-
-	it("parses captions", () => {
-		expect(
-			parse(["captions", "demo.klippt", "--min-words", "1", "--max-words", "5"]),
-		).toMatchObject({
-			kind: "captions",
-			projectPath: inCwd("demo.klippt"),
-			minWordsPerCaption: 1,
-			maxWordsPerCaption: 5,
-		});
-		expect(parse(["captions", "demo.klippt"])).toMatchObject({
-			minWordsPerCaption: 2,
-			maxWordsPerCaption: 7,
-		});
-		expect(parse(["captions", "a.klippt", "--min-words", "9", "--max-words", "3"])).toMatchObject({
 			kind: "error",
 		});
 	});
