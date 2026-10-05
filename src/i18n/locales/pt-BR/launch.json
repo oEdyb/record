@@ -110,7 +110,7 @@
 		"lockedHint": "Pause para alterar a configuração",
 		"display": "Tela",
 		"window": "Janela",
-		"cameraAutomatic": "Automatic (sharpest)"
+		"cameraAutomatic": "Automatic (16:9)"
 	},
 	"setup": {
 		"notes": "Notas",

@@ -110,7 +110,7 @@
 		"lockedHint": "Metti in pausa per cambiare la configurazione",
 		"display": "Schermo",
 		"window": "Finestra",
-		"cameraAutomatic": "Automatic (sharpest)"
+		"cameraAutomatic": "Automatic (16:9)"
 	},
 	"setup": {
 		"notes": "Note",

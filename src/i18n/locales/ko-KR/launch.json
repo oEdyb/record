@@ -110,7 +110,7 @@
 		"lockedHint": "설정을 바꾸려면 일시정지하세요",
 		"display": "디스플레이",
 		"window": "창",
-		"cameraAutomatic": "Automatic (sharpest)"
+		"cameraAutomatic": "Automatic (16:9)"
 	},
 	"setup": {
 		"notes": "메모",

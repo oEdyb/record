@@ -110,7 +110,7 @@
 		"lockedHint": "Kurulumu değiştirmek için duraklatın",
 		"display": "Ekran",
 		"window": "Pencere",
-		"cameraAutomatic": "Automatic (sharpest)"
+		"cameraAutomatic": "Automatic (16:9)"
 	},
 	"setup": {
 		"notes": "Notlar",

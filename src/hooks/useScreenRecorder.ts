@@ -116,7 +116,7 @@ type UseScreenRecorderReturn = {
 	setWebcamDeviceName: (deviceName: string | undefined) => void;
 	webcamFormat: WebcamFormat;
 	setWebcamFormat: (format: WebcamFormat) => void;
-	/** High records the sharpest native camera format instead of webcamFormat. */
+	/** High records the largest 16:9 native camera format instead of webcamFormat. */
 	webcamFormatAuto: boolean;
 	setWebcamFormatAuto: (auto: boolean) => void;
 	systemAudioEnabled: boolean;

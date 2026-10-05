@@ -213,7 +213,9 @@ stops the take, loudly (Olle, 2026-10-04; it previously stopped after 133 ms).
 The native helper's legacy missing-bitrate fallback remains 18 Mbps; that fallback did not
 describe the bitrate explicitly requested by the current app.
 Setup shows the camera-format picker on both qualities (Olle, 2026-10-05). On High it starts at
-Automatic (sharpest), which requests the best supported native format; picking a listed mode
+Automatic (16:9), which requests the camera's largest 16:9 native format, then its highest rate
+(Olle, 2026-10-05: pixel count alone chose the MacBook camera's square 1552×1552 mode); a camera
+with no 16:9 mode gets its largest format. Picking a listed mode
 such as 4K 30 fps or 1080p 60 fps records exactly that mode and is remembered. Standard keeps the
 remembered explicit camera-format choice. High never promises preview dimensions as the native
 recording geometry. Report actual negotiated pixels in capture

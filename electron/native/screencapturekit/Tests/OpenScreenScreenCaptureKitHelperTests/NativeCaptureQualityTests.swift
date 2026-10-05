@@ -99,6 +99,16 @@ final class NativeCaptureQualityTests: XCTestCase {
 	}
 
 	func testCameraUsesActualSupportedRangesAndRejectsAmbiguousOpaqueIDs() {
+		// MacBook Air camera: the square mode has the most pixels, but Automatic takes 16:9.
+		let macBook: [(width: Int, height: Int, fps: Double)] = [(640, 480, 30), (1280, 720, 30), (1760, 1328, 30), (1328, 1760, 30), (1552, 1552, 30), (1920, 1080, 30), (1080, 1920, 30)]
+		let macBookPick = macBook.min(by: NativeCameraCapture.automaticFormatPrecedes)
+		XCTAssertEqual(macBookPick?.width, 1920); XCTAssertEqual(macBookPick?.height, 1080)
+		let phone: [(width: Int, height: Int, fps: Double)] = [(1280, 720, 60), (1920, 1080, 30), (1920, 1080, 60), (1920, 1440, 60)]
+		let phonePick = phone.min(by: NativeCameraCapture.automaticFormatPrecedes)
+		XCTAssertEqual(phonePick?.width, 1920); XCTAssertEqual(phonePick?.height, 1080); XCTAssertEqual(phonePick?.fps, 60)
+		// A camera with no 16:9 mode still gets its largest format.
+		let square: [(width: Int, height: Int, fps: Double)] = [(640, 480, 30), (1552, 1552, 30)]
+		XCTAssertEqual(square.min(by: NativeCameraCapture.automaticFormatPrecedes)?.width, 1552)
 		XCTAssertEqual(NativeCameraCapture.supportedFps(ranges: [(24, 30), (120, 240)], target: 60), 30)
 		XCTAssertEqual(NativeCameraCapture.supportedFps(ranges: [(1, 60)], target: 60), 60)
 		XCTAssertEqual(NativeCameraCapture.supportedFps(ranges: [(59.94, 59.94)], target: 60), 59.94)

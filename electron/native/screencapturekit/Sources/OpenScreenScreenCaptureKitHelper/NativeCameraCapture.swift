@@ -30,7 +30,7 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		self.device = device
 		let high = request.video.quality == "high"
 		// A format picked in Setup is recorded as chosen. If this camera cannot deliver
-		// it (it was unplugged and swapped), fall back to the sharpest format.
+		// it (it was unplugged and swapped), fall back to the Automatic format.
 		let chosen = high && request.webcam.exactFormat == true
 			? Self.exactFormat(device.formats, width: request.webcam.width, height: request.webcam.height, fps: request.webcam.fps)
 			: nil
@@ -39,10 +39,9 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 			let a = CMVideoFormatDescriptionGetDimensions(left.formatDescription)
 			let b = CMVideoFormatDescriptionGetDimensions(right.formatDescription)
 			if high {
-				let leftArea = Int64(a.width) * Int64(a.height), rightArea = Int64(b.width) * Int64(b.height)
-				if leftArea != rightArea { return leftArea > rightArea }
-				return Self.supportedFps(ranges: left.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: 60)
-					> Self.supportedFps(ranges: right.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: 60)
+				return Self.automaticFormatPrecedes(
+					(Int(a.width), Int(a.height), Self.supportedFps(ranges: left.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: 60)),
+					(Int(b.width), Int(b.height), Self.supportedFps(ranges: right.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: 60)))
 			}
 			return abs(Int(a.width) - request.webcam.width) + abs(Int(a.height) - request.webcam.height)
 				< abs(Int(b.width) - request.webcam.width) + abs(Int(b.height) - request.webcam.height)
@@ -145,6 +144,16 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		}
 		emit(["event": "camera-format", "width": width, "height": height, "fps": fps, "container": "mov", "codec": "h264"])
 	}
+	/// Automatic takes a 16:9 format when the camera has one, then the most pixels, then the
+	/// highest rate. Pixel count alone picks a square or 4:3 sensor mode on Apple cameras.
+	static func automaticFormatPrecedes(_ left: (width: Int, height: Int, fps: Double), _ right: (width: Int, height: Int, fps: Double)) -> Bool {
+		let leftWide = left.width * 9 == left.height * 16, rightWide = right.width * 9 == right.height * 16
+		if leftWide != rightWide { return leftWide }
+		let leftArea = left.width * left.height, rightArea = right.width * right.height
+		if leftArea != rightArea { return leftArea > rightArea }
+		return left.fps > right.fps
+	}
+
 	static func exactFormat(_ formats: [AVCaptureDevice.Format], width: Int, height: Int, fps: Int) -> AVCaptureDevice.Format? {
 		formats.first { format in
 			let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)

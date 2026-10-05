@@ -40,7 +40,7 @@ export type NativeMacCaptureSettings = {
 		deviceId?: string;
 		deviceName?: string;
 		format: WebcamFormat;
-		/** High only: true lets the helper pick the sharpest native format. */
+		/** High only: true lets the helper pick the largest 16:9 native format. */
 		formatAuto: boolean;
 	};
 	cursorCaptureMode: CursorCaptureMode;

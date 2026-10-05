@@ -52,7 +52,7 @@ export type NativeMacRecordingRequest = {
 		width: number;
 		height: number;
 		fps: number;
-		/** Record this native width/height/fps as chosen instead of the sharpest format. */
+		/** Record this native width/height/fps as chosen instead of the Automatic format. */
 		exactFormat?: boolean;
 	};
 	cursor: {

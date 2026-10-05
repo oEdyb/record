@@ -110,7 +110,7 @@
 		"lockedHint": "設定を変更するには一時停止してください",
 		"display": "ディスプレイ",
 		"window": "ウインドウ",
-		"cameraAutomatic": "Automatic (sharpest)"
+		"cameraAutomatic": "Automatic (16:9)"
 	},
 	"setup": {
 		"notes": "メモ",

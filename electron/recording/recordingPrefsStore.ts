@@ -19,7 +19,7 @@ export interface RecordingPrefs {
 	camEnabled: boolean;
 	camDeviceId: string | null;
 	camFormat: WebcamFormat;
-	/** High picks the camera's sharpest native format; false records camFormat exactly. */
+	/** High picks the camera's largest 16:9 native format; false records camFormat exactly. */
 	camFormatAuto: boolean;
 	systemAudioEnabled: boolean;
 	cursorCaptureMode: CursorCaptureMode;

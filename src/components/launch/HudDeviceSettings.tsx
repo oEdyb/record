@@ -228,7 +228,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	recordingQuality?: RecordingQuality;
 	onSelectRecordingQuality?: (quality: RecordingQuality) => void;
 	webcamFormat: WebcamFormat;
-	/** High only: record the sharpest native format instead of webcamFormat. */
+	/** High only: record the largest 16:9 native format instead of webcamFormat. */
 	webcamFormatAuto?: boolean;
 	cameraLoading: boolean;
 	cameraError: string | null;
@@ -589,7 +589,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					</fieldset>
 				</div>
 				{/* Every option is a format the camera produces itself; High can also
-				    leave the choice to the helper, which takes the sharpest one. */}
+				    leave the choice to the helper, which takes the largest 16:9 one. */}
 				{hasCamera ? (
 					<div className={styles.qualityRow}>
 						<span className={styles.setupTileIcon} aria-hidden>
@@ -617,7 +617,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 							}}
 						>
 							{recordingQuality === "high" ? (
-								<option value="auto">{labels.cameraAutomatic ?? "Automatic (sharpest)"}</option>
+								<option value="auto">{labels.cameraAutomatic ?? "Automatic (16:9)"}</option>
 							) : null}
 							{formatOptions.map((format) => (
 								<option key={webcamFormatKey(format)} value={webcamFormatKey(format)}>
