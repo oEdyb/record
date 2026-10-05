@@ -11,7 +11,12 @@ Owner: re-sign `supply-chain/approved-dependency-inputs.json` to drop the import
 packages langchain, @langchain/{anthropic,core,openai,mistralai}, motion, react-icons, react-rnd,
 @uiw/react-color-colorful, @electron/rebuild, fast-check, esbuild, the parakeet/whisper helpers
 and `electron/stt/modelManager.ts`. `web-demuxer` now has no code importer either.
-Not yet done: a real Mac record → review → export pass on this branch; nothing installed.
+Mac pass on the private dev app: screen Record, Pause/Continue, Pause→Stop, review, One video,
+Originals (byte-identical) and an old project with three zooms all pass; no console or IPC errors.
+Not run: camera/microphone/system audio. Older breakage, not from the archive: `klippt info`
+reads only the legacy format, `klippt export` fails on a fresh profile, and the profile and
+creator-loop smoke scripts predate the October 4 HUD. Nothing installed.
+[Evidence](artifacts/cleanup-verify-2026-10-05/).
 
 # October 4: current creator-loop build installed
 
