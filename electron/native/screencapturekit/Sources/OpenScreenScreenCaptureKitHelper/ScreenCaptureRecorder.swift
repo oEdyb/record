@@ -301,6 +301,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		defer { finalizationActivity.end() }
 
 		await stopSourcesForFinalization()
+		emitStopStage("sources-stopped")
 		var finalClipWarning: [String: String]?
 		do {
 			let finalizeStartedAt = Date()
@@ -957,6 +958,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		let (audioOwner, audioClipIndex) = sampleQueue.sync { (compatibilityAudio, currentClipIndex) }
 		if let audioOwner { await audioOwner.drain() }
 		for owner in sourceOwners { await owner.drain() }
+		emitStopStage("drained")
 
 		// Each owner dispatched its metadata/failure before completing drain.
 		// Cross this queue barrier before detaching or acknowledging any clip.
@@ -993,8 +995,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			let message = boundaryWarnings.record(error)
 			emit(["event": "warning", "code": "final-screen-frame-failed", "message": message])
 		}
+		emitStopStage("closing-frames-written")
 		if let audioOwner {
 			let finished = await audioOwner.finish()
+			emitStopStage("audio-finished")
 			sampleQueue.sync {
 				guard compatibilityAudio === audioOwner,
 					audioOwner.isCurrent(writer: writer, clipIndex: audioClipIndex, currentClipIndex: currentClipIndex) else { return }
@@ -1019,11 +1023,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return nil
 		}
 
+		emitStopStage("writer-detached")
 		await withCheckedContinuation { continuation in
 			detached.writer.finishWriting {
 				continuation.resume()
 			}
 		}
+		emitStopStage("main-written")
 		var originalPayload: [String: Any] = [:]
 		for (key, original) in detached.originals {
 			defer {
@@ -1048,6 +1054,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			}
 		}
 
+		emitStopStage("originals-written")
 		guard detached.writer.status == .completed else {
 			throw HelperError.writerSetupFailed(
 				detached.writer.error.map { "\($0)" }
@@ -1299,6 +1306,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func milliseconds(since start: UInt64) -> Double { Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000 }
+	private func emitStopStage(_ stage: String) {
+		guard stateQueue.sync(execute: { isStopping }) else { return }
+		emit(["event": "stop-stage", "key": stage])
+	}
+
 	private func emitTiming(stage: String) {
 		emit(["event": "capture-diagnostic", "stage": stage, "clipIndex": currentClipIndex, "timingMs": startupTiming])
 	}
