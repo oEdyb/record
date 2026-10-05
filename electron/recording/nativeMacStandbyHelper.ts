@@ -1,7 +1,9 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 
-/** The helper exits after 60 idle seconds; never hand over one that is about to. */
-export const STANDBY_HELPER_MAX_AGE_MS = 45_000;
+/** The helper exits after 10 idle minutes; never hand over one that is about to. */
+export const STANDBY_HELPER_MAX_AGE_MS = 540_000;
+/** How often main checks that a fresh standby helper is ready while nothing records. */
+export const STANDBY_HELPER_REWARM_INTERVAL_MS = 60_000;
 
 type Standby = { process: ChildProcessWithoutNullStreams; helperPath: string; spawnedAt: number };
 

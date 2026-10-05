@@ -169,8 +169,11 @@ export function NewEditorShell() {
 	const firstFrameReady = useVideoFirstFrame(videoElement);
 	const [startupLoaded, setStartupLoaded] = useState(false);
 	const deferredStartupRef = useRef<(() => void) | null>(null);
+	const firstFrameShownRef = useRef(false);
 	useEffect(() => {
-		if (firstFrameReady) window.electronAPI?.markStopStage?.("review-first-frame");
+		if (!firstFrameReady) return;
+		firstFrameShownRef.current = true;
+		window.electronAPI?.markStopStage?.("review-first-frame");
 	}, [firstFrameReady]);
 	// Media and Edit are editor workspaces. Record is an action that opens the
 	// floating HUD, not a third editor tab.
@@ -397,6 +400,15 @@ export function NewEditorShell() {
 			try {
 				if (await importPendingRecording()) {
 					if (workspace) restoreWorkspace(workspace, true);
+					// An open review keeps its video element, so the first-frame hook
+					// does not fire again; time the added clip to the next painted frame.
+					if (firstFrameShownRef.current) {
+						requestAnimationFrame(() =>
+							requestAnimationFrame(() =>
+								window.electronAPI?.markStopStage?.("review-first-frame"),
+							),
+						);
+					}
 					return true;
 				}
 			} catch (err) {

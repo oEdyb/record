@@ -194,12 +194,18 @@ async function commitRecordedImport(options: {
 	}
 }
 
-async function recordingAspectRatio(asset: AxcutAsset | undefined, matchSource: boolean) {
+type VideoDimensions = { width: number; height: number } | null;
+
+async function recordingAspectRatio(
+	asset: AxcutAsset | undefined,
+	matchSource: boolean,
+	earlyProbe: Promise<VideoDimensions>,
+) {
 	if (!asset || !matchSource) return undefined;
 	const dimensions =
 		asset.video?.width && asset.video.height
 			? asset.video
-			: await probeVideoDimensions(toFileUrl(asset.originalPath));
+			: ((await earlyProbe) ?? (await probeVideoDimensions(toFileUrl(asset.originalPath))));
 	return dimensions
 		? (toAspectRatioToken(dimensions.width, dimensions.height) ?? undefined)
 		: undefined;
@@ -216,6 +222,14 @@ export async function importPendingRecording(): Promise<boolean> {
 	const workspaceResult = await api.getRecordingWorkspaceContext?.();
 	const workspace = workspaceResult?.success ? workspaceResult.context : null;
 	const recordingImportId = `recording-${session.createdAt}`;
+	// A new project takes the first clip's shape. Reading it opens the file, so
+	// start now and let it overlap project creation instead of waiting at the end.
+	const firstScreenPath =
+		session.clips?.filter((clip) => !clip.removed).sort((a, b) => a.index - b.index)[0]
+			?.screenVideoPath ?? screenPath;
+	const earlyDimensions: Promise<VideoDimensions> = workspace?.projectId
+		? Promise.resolve(null)
+		: probeVideoDimensions(toFileUrl(firstScreenPath));
 
 	pendingRecordingImportInProgress = true;
 	try {
@@ -246,6 +260,7 @@ export async function importPendingRecording(): Promise<boolean> {
 		// One completed recording import is one editor action. Capture the document
 		// before any assets are added so Undo removes the complete insertion and
 		// Redo restores those same assets, clips, camera offsets, and shifted edits.
+		api.markStopStage?.("import-project-ready");
 		const documentBeforeImport = useProjectStore.getState().document;
 		const historyBase = documentBeforeImport ? structuredClone(documentBeforeImport) : undefined;
 		if (!historyBase) throw new Error("Could not capture the project before recording import");
@@ -254,6 +269,7 @@ export async function importPendingRecording(): Promise<boolean> {
 			const sortedClips = [...session.clips].sort((a, b) => a.index - b.index);
 			const keptClips = sortedClips.filter((clip) => !clip.removed);
 			const recoveredDurationMsByIndex = await resolveRecoveredClipDurations(keptClips);
+			api.markStopStage?.("import-durations");
 			const durationMsForClip = (clip: RecordingSessionClip) =>
 				recoveredDurationMsByIndex.get(clip.index) ?? clip.durationMs;
 			const capturedStartMsByIndex = new Map<number, number>();
@@ -277,6 +293,7 @@ export async function importPendingRecording(): Promise<boolean> {
 				});
 				if (asset) imported.push({ asset, clip, durationMs: durationMsForClip(clip) });
 			}
+			api.markStopStage?.("import-assets");
 
 			const document = useProjectStore.getState().document;
 			if (document && imported.length > 0) {
@@ -302,6 +319,12 @@ export async function importPendingRecording(): Promise<boolean> {
 					imported.map(({ asset, durationMs }) => [asset.id, Math.max(0.001, durationMs / 1000)]),
 				);
 				const clipByAssetId = new Map(imported.map(({ asset, clip }) => [asset.id, clip]));
+				const sourceAspectRatio = await recordingAspectRatio(
+					imported[0]?.asset,
+					!workspace?.projectId,
+					earlyDimensions,
+				);
+				api.markStopStage?.("import-aspect");
 				await commitRecordedImport({
 					projectId: document.project.id,
 					clips,
@@ -309,7 +332,7 @@ export async function importPendingRecording(): Promise<boolean> {
 					planId: recordingImportId,
 					interruption: session.interruption,
 					historyBase,
-					sourceAspectRatio: await recordingAspectRatio(imported[0]?.asset, !workspace?.projectId),
+					sourceAspectRatio,
 					prepareMissingAssets: (latest, missingAssetIds) => ({
 						...latest,
 						assets: latest.assets.map((asset) => {
@@ -402,7 +425,11 @@ export async function importPendingRecording(): Promise<boolean> {
 					planId: recordingImportId,
 					interruption: session.interruption,
 					historyBase,
-					sourceAspectRatio: await recordingAspectRatio(asset, !workspace?.projectId),
+					sourceAspectRatio: await recordingAspectRatio(
+						asset,
+						!workspace?.projectId,
+						earlyDimensions,
+					),
 					prepareMissingAssets: (latest, missingAssetIds) => ({
 						...latest,
 						assets: latest.assets.map((current) =>
@@ -417,6 +444,7 @@ export async function importPendingRecording(): Promise<boolean> {
 		// Consumed: the recording now lives in a project. Cleared here rather than
 		// after the timeline seed below so a failure down there can't hand the same
 		// recording to the next editor window.
+		api.markStopStage?.("import-committed");
 		const consumed = await api.setCurrentRecordingSession(null);
 		if (!consumed.success) {
 			throw new Error(

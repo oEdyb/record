@@ -8,7 +8,7 @@ import ScreenCaptureKit
 @available(macOS 13.0, *)
 enum HelperWarmup {
 	static let standbyArgument = "--standby"
-	static let idleSeconds = 60
+	static let idleSeconds = 600
 
 	static func run() async {
 		_ = CGPreflightScreenCaptureAccess()

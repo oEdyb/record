@@ -176,10 +176,11 @@ dead helper or failed active writer still requires loud recovery. Ignore stopped
 from replaced streams and callbacks during Stop; do not suppress current active-source loss.
 
 Start immediately by default, with no countdown or duplicate source enumeration after screen
-permission is granted. On macOS, pointer or focus on Record starts one standby capture helper
-that loads the capture frameworks and encoder without capturing; Record hands it the request. It
-exits after 60 idle seconds and is never reused after 45 seconds; without it Record spawns a fresh
-helper as before. A pending start disables duplicate Record and setup changes. Only the
+permission is granted. On macOS, one standby capture helper loads the capture frameworks and
+encoder without capturing; Record hands it the request. Main starts it a second after launch and
+checks every minute while nothing records (Olle, 2026-10-05: the first Record after launch was
+2.3 s cold); pointer or focus on Record also warms it. It exits after 10 idle minutes and is
+never reused after 9; without it Record spawns a fresh helper as before. A pending start disables duplicate Record and setup changes. Only the
 first successful screen append starts the HUD timer (Olle, 2026-10-04); camera, microphone and
 system audio join on the same epoch when their first sample lands, and each original keeps its
 offset. Continue obeys the same barrier. A source that has not appended within two seconds of

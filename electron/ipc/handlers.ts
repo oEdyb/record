@@ -149,7 +149,10 @@ import {
 	restoreLatestNativeMacRecoverySession,
 	updateNativeMacRecoveryJournalIfPresent,
 } from "../recording/nativeMacRecoveryJournal";
-import { NativeMacStandbyHelper } from "../recording/nativeMacStandbyHelper";
+import {
+	NativeMacStandbyHelper,
+	STANDBY_HELPER_REWARM_INTERVAL_MS,
+} from "../recording/nativeMacStandbyHelper";
 import {
 	isSalvageableFragmentedCapture,
 	NATIVE_WINDOWS_SALVAGEABLE_OUTPUT_BYTES,
@@ -2140,11 +2143,12 @@ export function registerIpcHandlers(
 	// The picker opens on the last list at once and refreshes it in the background.
 	ipcMain.handle("get-cached-sources", () => lastPickerSources);
 
-	ipcMain.handle("prewarm-native-mac-capture", async () => {
+	const warmNativeMacCapture = async () => {
 		if (process.platform !== "darwin" || nativeMacRecordingService?.isRunning()) return;
 		const helperPath = await findNativeMacCaptureHelperPath();
 		if (helperPath && !nativeMacRecordingService?.isRunning()) nativeMacStandby.warm(helperPath);
-	});
+	};
+	ipcMain.handle("prewarm-native-mac-capture", warmNativeMacCapture);
 
 	ipcMain.handle("select-source", async (_, source: SelectedSource) =>
 		serializeRecordingSetup(async () => {
@@ -3078,7 +3082,22 @@ export function registerIpcHandlers(
 			spawn(helperPath, ["--standby"], { cwd: RECORDINGS_DIR, stdio: ["pipe", "pipe", "pipe"] }),
 		now: Date.now,
 	});
-	app.once("will-quit", () => nativeMacStandby.discard());
+	// Keep one warmed helper ready while nothing records, so even the first Record
+	// after launch skips the cold framework load. warm() is a no-op while it is fresh.
+	const keepCaptureWarm =
+		process.platform === "darwin"
+			? setInterval(
+					() => void warmNativeMacCapture().catch(() => undefined),
+					STANDBY_HELPER_REWARM_INTERVAL_MS,
+				)
+			: null;
+	keepCaptureWarm?.unref();
+	if (process.platform === "darwin")
+		setTimeout(() => void warmNativeMacCapture().catch(() => undefined), 1_000).unref();
+	app.once("will-quit", () => {
+		if (keepCaptureWarm) clearInterval(keepCaptureWarm);
+		nativeMacStandby.discard();
+	});
 
 	nativeMacRecordingService = new NativeMacRecordingService({
 		recordingsDir: RECORDINGS_DIR,
