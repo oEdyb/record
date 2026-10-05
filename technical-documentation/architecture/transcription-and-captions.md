@@ -544,19 +544,16 @@ segment id; a predecessor revision that keyed per segment would otherwise
 let one of those word-sized translations be read back as a whole phrase's
 text.
 
-The translation itself runs through
-[`electron/ai-edition/caption-translate.ts`](../../electron/ai-edition/caption-translate.ts),
-a one-shot LLM call against the chat model (not the agent loop — caption
-translation is a pure text transform with no reason to mutate the
-document). It takes the pending units, returns a `segmentId → translated
-text` map, and the renderer writes the map into the layer via
-`putCaptionTranslation`
-([`src/lib/ai-edition/captions/translations.ts:85`](../../src/lib/ai-edition/captions/translations.ts:85)),
-which merges into the existing layer per asset. A re-run after adding
-footage therefore costs just the missing units, not the whole video;
-nothing the model fails to return is silently invented — the untranslated
-unit falls back to the original words (`untranslatedUnits`,
-[`src/lib/ai-edition/captions/translations.ts:233`](../../src/lib/ai-edition/captions/translations.ts:233)).
+Producing new translations was removed on 2026-10-05 with the in-app LLM
+provider layer (the one-shot `caption-translate.ts` call and the Captions
+pane's Translate button; see the `archive/pre-cleanup-2026-10-05` tag).
+Existing translation layers in a document are still read, selectable as the
+display language, and deletable. `putCaptionTranslation`
+([`src/lib/ai-edition/captions/translations.ts:85`](../../src/lib/ai-edition/captions/translations.ts:85))
+and `untranslatedUnits`
+([`src/lib/ai-edition/captions/translations.ts:233`](../../src/lib/ai-edition/captions/translations.ts:233))
+remain in the captions library, and a unit with no translation still falls
+back to the original words.
 
 ### Settings
 

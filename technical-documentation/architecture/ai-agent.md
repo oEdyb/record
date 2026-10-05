@@ -1,47 +1,20 @@
 # AI agent
 
-The optional legacy AI editing layer lives in `electron/ai-edition/` and `src/components/ai-edition/`. It connects the editor's chat UI to configured language models and exposes a fixed set of validated operations over the shared project document. Klippt's normal paid-alpha surface hides this layer through `productSurface.ts`; it is retained for later agent-native work and upstream compatibility.
+The agent layer lives in `electron/ai-edition/`. It exposes a fixed set of validated operations over the shared project document. The `klippt agent` CLI (`electron/cli/`) drives those operations through `agentEditPlan.ts`, which calls `executeAgentTool` in `agent-tools.ts`.
 
-## What it is and what gates it
+> **In-app chat: removed on 2026-10-05.** Klippt is recording-only. The in-app LLM chat panel, its LangChain tool loop (`deep-agent/`), `chat-service.ts`, `chat-compaction.ts`, chat sessions, per-message checkpoints and rewind, and the renderer chat UI (`LeftPanel`, `ChatWelcome`, `ProviderSettings`, `chatAvailability`, `chatBudget`, `useChatPromptBus`) were deleted. The last source that contains them is the git tag `archive/pre-cleanup-2026-10-05`; read the earlier version of this page there for the tool loop, checkpoint, context-compaction, and session design. Provider configuration is archived in [llm-providers.md](llm-providers.md).
 
-When the legacy surface is explicitly enabled, a missing API key produces a "no provider connected" welcome view and nothing agentic runs. Configuring a provider or OAuth connection enables the legacy chat path. This is not part of the normal Klippt alpha navigation.
+## What remains
 
-The boundary is intentionally narrow: only the LLM and agent UI are gated. The editing model, project panel, timeline, transcript and export surfaces ship to every user. Local Whisper transcription is privacy-preserving and is not gated.
+- `agent-tools.ts`: the Zod argument schemas and the pure, synchronous executor (`executeAgentTool`). It has no IPC and no filesystem access.
+- `agentEditPlan.ts`, `agentVerification.ts`, `agentHistory.ts`, and the other `agent*.ts` modules used by the CLI and the agent editor session.
+- `document-service.ts` and `projectTransactions.ts`, which own saved snapshots and transactions for every writer.
 
-## The tool loop
-
-The deep-agent service builds one `createDeepAgent` instance per user turn. It streams model text and tool lifecycle events to the renderer while a mutable document holder ensures that each call in the turn sees the preceding call's result.
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant Chat as Chat service
-    participant Provider as Configured provider
-    participant Tools as Validated tool executor
-    participant Doc as Project document
-
-    User->>Chat: Send message
-    Chat->>Chat: Validate document and save pre-turn checkpoint
-    Chat->>Provider: History, document context, and fixed tool schemas
-    loop Agent iterations (createDeepAgent default cap: 10)
-        Provider-->>Chat: Text delta or tool call(s)
-        alt Tool calls requested
-            Chat->>Tools: Validate JSON arguments with shared Zod schema
-            Tools->>Doc: Apply validated operation to current snapshot
-            Doc-->>Tools: Updated document
-            Tools-->>Provider: JSON result or validation error
-        else Final answer
-            Provider-->>Chat: Final text
-        end
-    end
-    Chat-->>User: Streamed answer, tool summaries, and updated document
-```
-
-The agent is built with LangChain's `createAgent`, not `deepagents`' `createDeepAgent`, and pins `recursionLimit: 1000` explicitly. `createAgent` alone would fall back to LangGraph's default of 25 steps, which an auto-enhance pass placing one trim per silence exceeds without difficulty.
+No code in the app talks to a language model.
 
 ## Tool schema
 
-The model never free-writes the project document. It can only call the fixed set of 21 tools built by `deep-agent/service.ts#buildTools`, described by `TOOL_DESCRIPTIONS` in the same file and validated against the Zod argument schemas in `agent-tools.ts`; the executor parses JSON, validates arguments, and returns either a new schema-valid snapshot or an error. Those three surfaces (descriptions, built tools, executor cases) are pinned to one another by `deep-agent/service.test.ts` — an earlier fourth surface, `AGENT_TOOL_SPECS`, described the tools in JSON Schema for a provider it had stopped reaching, and drifted. The tools operate on the same [document model](document-model.md) as manual editing.
+No caller free-writes the project document. Writes go through the fixed tool set validated against the Zod argument schemas in `agent-tools.ts`; the executor parses JSON, validates arguments, and returns either a new schema-valid snapshot or an error. The tools operate on the same [document model](document-model.md) as manual editing.
 
 | Tool | What it does | What it mutates |
 |---|---|---|
@@ -69,26 +42,8 @@ The model never free-writes the project document. It can only call the fixed set
 
 Clips and trims use source time. Zoom, speed, annotation, and camera-fullscreen tools use virtual edited-timeline time; the executor converts these spans to the clip-anchored millisecond representation used by the document.
 
-## Checkpoints and undo
-
-Before a user message starts an agent turn, `chat-service.ts` clones the current document and associates it with that user message. All write calls produced by the turn operate from that checkpoint lineage, so restoring the message reverts the complete tool batch as one undo unit rather than undoing each model call separately. Rewind also truncates later conversation messages and invalidates later checkpoints.
-
-## Context management
-
-`chat-compaction.ts` uses a four-characters-per-token estimate, adds tool-summary text, and compares history with an 80,000-token budget. Once a session has at least four messages and reaches 70% of that budget, it asks the active provider to summarize the older half at a user-message boundary and inserts an `Earlier context` assistant message while retaining recent turns. Compaction failure leaves history unchanged. The chat path also sends only the latest 20 stored messages to the agent.
-
-`chatBudget.ts` duplicates the same lightweight estimate in the renderer so Electron-only code is not bundled into the UI. It drives the context-percentage badge and the manual compact action. The heuristic deliberately leaves room for the system prompt and tool payloads; it is not a provider tokenizer.
-
-## Sessions
-
-Sessions are scoped first by project ID and then by session ID. Each session stores a generated ID, project ID, title, creation timestamp, messages, and per-user-message checkpoint references. The renderer can create, select, rename, delete, compact, and rewind sessions through the native bridge.
-
-Chat sessions and checkpoints live only in nested process-memory `Map` objects in `chat-service.ts`. They are not written to project files or user data, so restarting Electron loses the conversation and its restore checkpoints. Provider configuration and encrypted credentials are separate and do persist.
-
 ## Known gaps
 
-- Chat sessions and message checkpoints have no durable persistence.
-- `allowAgentEdits` has no per-turn approval channel. When it is off the agent reads freely, is told by its system prompt to state the edit and ask, and has every write refused by `executeAgentTool` with a `consent_required` payload; the returned document is withheld as well. But there is no way for the user to answer "yes, go ahead" for one turn — they have to re-enable the setting in Settings → AI, which is what the refusal tells the model to say.
-- Cursor telemetry is read through an injected `CursorTelemetryReader` (`electron/ipc/handlers.ts` builds the only production one, behind `resolveApprovedVideoPath`). A runtime with no reader wired answers `reason: "unavailable"` on every call and reports `hasCursorTelemetry: null` — honest, and useless. There is no cache: a turn probes each asset's sidecar once and reads it in full only if the model asks.
+- `allowAgentEdits` refusals: `executeAgentTool` still returns a `consent_required` payload for writes when its options say edits are not allowed. The in-app setting that fed it was removed with the provider layer.
+- Cursor telemetry reaches `executeAgentTool` through its `cursorTelemetry` option. The only production loader for that context (a `CursorTelemetryReader` in the removed `deep-agent/service.ts`) went with the chat path, so a caller that passes none gets `hasCursorTelemetry: null` and an unavailable cursor track.
 - The digest reports dwells and click counts, not the raw samples, and `readCursorSidecar`'s normalizer flattens `double-click` / `right-click` / `middle-click` to `move` before the digest sees them, so those clicks are currently invisible. The digest already counts the wide union; the narrowing is upstream, in `CursorRecordingSample`.
-- The deep-agent instance is rebuilt for every turn without a LangGraph checkpointer, so stateful agent threads do not persist independently of the explicit chat history.

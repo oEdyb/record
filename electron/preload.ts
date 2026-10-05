@@ -15,7 +15,6 @@ import type {
 	StoreRecordedSessionInput,
 } from "../src/lib/recordingSession";
 import type { ShortcutsConfig } from "../src/lib/shortcuts";
-import type { AiEditionChatEvent } from "../src/native/contracts";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
 import type { RecordingPrefs } from "./ipc/handlers";
 import type {
@@ -621,11 +620,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	// One-way fire-and-forget; we deliberately don't await the IPC.
 	rendererConsole: (channel: "log" | "warn" | "error", args: unknown[]) => {
 		ipcRenderer.send(`renderer-console-${channel}`, ...args);
-	},
-	onAiEditionChatEvent: (callback: (event: AiEditionChatEvent) => void) => {
-		const listener = (_e: unknown, payload: AiEditionChatEvent) => callback(payload);
-		ipcRenderer.on("ai-edition.chat-event", listener);
-		return () => ipcRenderer.removeListener("ai-edition.chat-event", listener);
 	},
 	stt: {
 		isAvailable: (): Promise<boolean> => ipcRenderer.invoke("stt:is-available") as Promise<boolean>,

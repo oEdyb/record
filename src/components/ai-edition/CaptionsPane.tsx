@@ -1,7 +1,7 @@
 // Caption appearance, translations, and explicit source-word corrections.
 
-import { Languages, Loader2, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Loader2, Trash2 } from "lucide-react";
+import { useMemo } from "react";
 import { AppSelect } from "@/components/ui/app-select";
 import {
 	InspectorPane,
@@ -10,14 +10,12 @@ import {
 } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { CaptionTextAlign, CaptionVerticalPosition } from "@/lib/ai-edition/captions";
-import { untranslatedUnits } from "@/lib/ai-edition/captions";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import {
 	useTimelineTranscriptGate,
 	useTranscriptionStore,
 } from "@/lib/ai-edition/store/transcriptionStore";
 import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
-import { nativeBridgeClient } from "@/native";
 import { CaptionCorrection } from "./CaptionCorrection";
 import { ColorField } from "./ColorField";
 import styles from "./NewEditorShell.module.css";
@@ -45,25 +43,6 @@ const CAPTION_FONTS = [
 	"IBM Plex Mono",
 ] as const;
 
-/** Offered as translation targets. Codes double as the storage key. */
-const TRANSLATION_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = [
-	{ code: "en", label: "English" },
-	{ code: "fr", label: "Français" },
-	{ code: "es", label: "Español" },
-	{ code: "de", label: "Deutsch" },
-	{ code: "it", label: "Italiano" },
-	{ code: "pt", label: "Português" },
-	{ code: "nl", label: "Nederlands" },
-	{ code: "pl", label: "Polski" },
-	{ code: "tr", label: "Türkçe" },
-	{ code: "ru", label: "Русский" },
-	{ code: "ar", label: "العربية" },
-	{ code: "hi", label: "हिन्दी" },
-	{ code: "ja", label: "日本語" },
-	{ code: "ko", label: "한국어" },
-	{ code: "zh", label: "中文" },
-];
-
 export function CaptionsPane() {
 	const t = useScopedT("settings");
 	const te = useScopedT("editor");
@@ -76,7 +55,6 @@ export function CaptionsPane() {
 		set,
 		setLive,
 		commit,
-		saveTranslation,
 		deleteTranslation,
 	} = useCaptions();
 	const document = useProjectStore((s) => s.document);
@@ -96,10 +74,6 @@ export function CaptionsPane() {
 	const silentMedia = gate.state === "blocked" && gate.reason === "no-audio";
 	const engineError = gate.state === "blocked" && gate.reason === "failed" ? gate.message : null;
 
-	const [target, setTarget] = useState<string>(TRANSLATION_LANGUAGES[1].code);
-	const [translating, setTranslating] = useState(false);
-	const [translateError, setTranslateError] = useState<string | null>(null);
-
 	// Documents made by the old "generate captions" flow carry caption text as
 	// real annotations. They'd now render *on top of* the derived layer, so the
 	// pane offers to clear them — explicitly, since they are the user's data.
@@ -110,56 +84,6 @@ export function CaptionsPane() {
 
 	const disabled = !hasDocument;
 	const languageOptions = useMemo(() => Object.values(translations), [translations]);
-
-	const handleTranslate = async () => {
-		const doc = useProjectStore.getState().document;
-		if (!doc) return;
-		const label = TRANSLATION_LANGUAGES.find((l) => l.code === target)?.label ?? target;
-		setTranslating(true);
-		setTranslateError(null);
-		try {
-			// Only the assets actually on the timeline, and only the units that aren't
-			// translated yet — a re-run after adding footage costs just the new
-			// material instead of the whole video. Units, not segments: a Whisper
-			// transcript is one segment per word, and translating single words gives
-			// nonsense in any language that reorders or agrees differently.
-			const assetIds = new Set(doc.timeline.clips.map((c) => c.assetId));
-			let translatedAny = false;
-			for (const transcript of doc.transcripts) {
-				if (!assetIds.has(transcript.assetId)) continue;
-				const pending = untranslatedUnits(transcript, translations, target);
-				if (pending.length === 0) {
-					translatedAny = true;
-					continue;
-				}
-				const result = await nativeBridgeClient.aiEdition.translateCaptions({
-					segments: pending.map((s) => ({ id: s.id, text: s.text })),
-					targetLanguage: label,
-					sourceLanguage: transcript.language,
-				});
-				if (Object.keys(result.segments).length > 0) {
-					await saveTranslation({
-						language: target,
-						label,
-						assetId: transcript.assetId,
-						segments: result.segments,
-						model: result.model,
-					});
-					translatedAny = true;
-				}
-				if (!result.success) {
-					setTranslateError(result.error ?? t("captions.translateFailed"));
-					return;
-				}
-			}
-			if (translatedAny) await set({ language: target, enabled: true });
-			else setTranslateError(t("captions.noTranscript"));
-		} catch (error) {
-			setTranslateError(error instanceof Error ? error.message : String(error));
-		} finally {
-			setTranslating(false);
-		}
-	};
 
 	const clearLegacyCaptionAnnotations = async () => {
 		const doc = useProjectStore.getState().document;
@@ -420,30 +344,6 @@ export function CaptionsPane() {
 					</AppSelect>
 				</div>
 
-				<div className={styles.captionTranslationRow}>
-					<AppSelect
-						value={target}
-						disabled={disabled || translating}
-						onChange={(e) => setTarget(e.target.value)}
-						className={`${styles.inspectorCompactSelect} ${styles.inspectorGrowSelect}`}
-					>
-						{TRANSLATION_LANGUAGES.map((language) => (
-							<option key={language.code} value={language.code}>
-								{language.label}
-							</option>
-						))}
-					</AppSelect>
-					<button
-						type="button"
-						className={`${styles.btn} ${styles.btnSecondary}`}
-						disabled={disabled || translating || !hasTranscript}
-						onClick={() => void handleTranslate()}
-						title={t("captions.translateHint")}
-					>
-						{translating ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
-						{translating ? t("captions.translating") : t("captions.translate")}
-					</button>
-				</div>
 				{settings.language ? (
 					<button
 						type="button"
@@ -455,7 +355,6 @@ export function CaptionsPane() {
 						{t("captions.deleteTranslation")}
 					</button>
 				) : null}
-				{translateError ? <p className={styles.captionError}>{translateError}</p> : null}
 				<p className={styles.captionFinePrint}>{t("captions.translationIsNonDestructive")}</p>
 			</details>
 		</InspectorPane>

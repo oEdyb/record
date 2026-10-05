@@ -217,6 +217,8 @@ Zoom, speed, annotation, and full-camera regions are stored against a clip in th
 
 ## AI chat and providers — requires a configured provider
 
+> **Archived 2026-10-05.** The in-app chat, provider settings, and caption translation were removed. Skip this section and the caption-translation checks; they apply only to builds from the `archive/pre-cleanup-2026-10-05` tag.
+
 - [ ] Open the chat panel with the top-bar control identified by its `aria-label` and confirm the chat surface appears.
 - [ ] Confirm the chat header shows controls for AI settings, history, and a new conversation.
 - [ ] Send a short request and confirm the user message appears in the conversation.

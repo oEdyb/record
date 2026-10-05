@@ -6,7 +6,7 @@ editor surface. The shell mounts the top bar, preview stage, floating inspector,
 modals, and export dialog.
 
 [`productSurface.ts`](../../src/lib/productSurface.ts) is the release-surface switchboard. The
-current alpha keeps the inherited media workspace, AI chat, and captions hidden. Transcript is the
+current alpha keeps the inherited media workspace and captions hidden; the AI chat was removed. Transcript is the
 only optional inherited facet that is visible. Hidden code keeps document compatibility, but it is
 not part of the normal user flow.
 
@@ -35,8 +35,8 @@ then moves to the separate recorder HUD and camera-preview windows. Recording is
 mode.
 
 The inherited `MediaStage` path remains in code behind `PRODUCT_SURFACE.mediaWorkspace`. The
-inherited `LeftPanel` chat remains behind `PRODUCT_SURFACE.agentEditor`. Keep these paths hidden
-unless a planned product slice explicitly restores them.
+inherited `LeftPanel` chat was removed on 2026-10-05 (see the `archive/pre-cleanup-2026-10-05`
+tag). Keep the remaining paths hidden unless a planned product slice explicitly restores them.
 
 ## State ownership
 

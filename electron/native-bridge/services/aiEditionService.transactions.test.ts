@@ -15,9 +15,6 @@ describe("native bridge transaction service", () => {
 		documents = new DocumentService(root, root);
 		service = new AiEditionService({
 			documents,
-			llmConfig: () => {
-				throw new Error("No LLM needed");
-			},
 		} as unknown as AiEditionServiceOptions);
 	});
 	afterEach(async () => {

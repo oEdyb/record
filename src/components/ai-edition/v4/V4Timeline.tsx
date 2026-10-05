@@ -5,7 +5,6 @@ import {
 	Maximize2,
 	MessageSquare,
 	Scissors,
-	Sparkles,
 	SplitSquareHorizontal,
 	Wand2,
 	ZoomIn,
@@ -35,9 +34,7 @@ import {
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
-import { useTimelineTranscriptGate } from "@/lib/ai-edition/store/transcriptionStore";
 import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
-import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import {
@@ -69,23 +66,6 @@ import { CaptionTrack } from "./CaptionTrack";
 import { ClipWaveform } from "./ClipWaveform";
 import styles from "./EditorShellV4.module.css";
 import { ProposedCutPill } from "./ProposedCutPill";
-
-// The AI option's prompt — sent straight to the chat agent via the prompt-bus.
-//
-// ponytail: cuts ONLY, deliberately. It used to ask for zooms too ("smart
-// zoom-ins on the moments where the cursor dwells… focused on the cursor's
-// location"), and the model has no way to do that well: measured on a real 66s
-// screencast, every trim it emitted landed strictly inside a true silence with a
-// 0.06–0.33s margin and destroyed zero speech, while 7 of its 9 zoom focus points
-// missed the actual cursor position in their own window — three of them by more
-// than a third of the frame. It places zooms from what the transcript SAYS, not
-// from where the pointer WAS. Asking for both in one breath bought misaimed zooms
-// at the price of the cuts' credibility, and the cursor-driven wand next to it
-// already does the zoom pass from the same telemetry, deterministically.
-// Re-widen this when the model can be shown to read the track; the workbench
-// scenario `real-wizard-enhance` is what would show it.
-const AI_ENHANCE_PROMPT =
-	"Cut the dead time in this recording: long pauses, silences, and idle stretches where nothing is being said or done. Keep the pacing tight and natural, and do not cut anything a viewer needs. Apply the edits directly to the timeline.";
 
 type TimelineApi = ReturnType<typeof useTimeline>;
 
@@ -424,24 +404,6 @@ export function V4Timeline({
 	const { settings, set: setSettings } = useEditorSettings();
 	const [autoEnhanceOpen, setAutoEnhanceOpen] = useState(false);
 	const [autoBusy, setAutoBusy] = useState(false);
-	// The AI cut pass reads the transcript, and the transcript is produced in the
-	// background (see transcriptionStore). Until it is there, the entry says why
-	// rather than handing the agent a prompt it cannot honour — the failure mode
-	// that made this button the wrong first click for a new user.
-	const transcriptGate = useTimelineTranscriptGate();
-	const smartCutsBlocked = transcriptGate.state !== "ready";
-	const smartCutsHint =
-		transcriptGate.state === "pending"
-			? t("toolbar.smartCutsWaiting")
-			: transcriptGate.state === "ready"
-				? t("toolbar.smartZoomsAndCutsHint")
-				: transcriptGate.reason === "no-audio"
-					? t("toolbar.smartCutsNoAudio")
-					: transcriptGate.reason === "no-speech"
-						? t("toolbar.smartCutsNoSpeech")
-						: transcriptGate.reason === "failed"
-							? t("toolbar.smartCutsFailed")
-							: t("toolbar.smartCutsNeedsTranscript");
 
 	const clips = tl.clips;
 	const showLanes = variant === "edit";
@@ -1134,15 +1096,6 @@ export function V4Timeline({
 		}
 	}, [videoSources, clips, tl, t]);
 
-	// Auto-enhance option 2 — hand a generic prompt to the AI agent (smart
-	// zooms + cuts) via the chat prompt-bus. The chat panel owns the outcome
-	// toast: submitting is not the same as being accepted (no usable provider
-	// bounces the prompt), and only the consumer knows which happened.
-	const runAiEnhance = useCallback(() => {
-		setAutoEnhanceOpen(false);
-		useChatPromptBus.getState().submit(AI_ENHANCE_PROMPT);
-	}, []);
-
 	const isPillSelected = (id: string) =>
 		tl.selection?.id === id || tl.multiSelection.some((m) => m.id === id);
 	// Optimistic preview: during a clip-reorder drag, slide each region pill by
@@ -1434,24 +1387,6 @@ export function V4Timeline({
 											<span style={{ fontSize: 11, color: "var(--muted)" }}>
 												{t("toolbar.automaticZoomsHint")}
 											</span>
-										</span>
-									</button>
-									<button
-										type="button"
-										className={styles.recMenuRow}
-										onClick={runAiEnhance}
-										disabled={smartCutsBlocked}
-										title={transcriptGate.reason === "failed" ? transcriptGate.message : undefined}
-										style={smartCutsBlocked ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
-									>
-										{transcriptGate.state === "pending" ? (
-											<Loader2 size={15} className="animate-spin" style={{ flexShrink: 0 }} />
-										) : (
-											<Sparkles size={15} style={{ flexShrink: 0 }} />
-										)}
-										<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-											<span style={{ fontWeight: 600 }}>{t("toolbar.smartZoomsAndCuts")}</span>
-											<span style={{ fontSize: 11, color: "var(--muted)" }}>{smartCutsHint}</span>
 										</span>
 									</button>
 								</div>

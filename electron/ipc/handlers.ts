@@ -65,20 +65,7 @@ import type {
 	ProjectFileResult,
 	ProjectPathResult,
 } from "../../src/native/contracts";
-import {
-	compactSessionNow,
-	createSession,
-	deleteSession,
-	getSessionContextUsage,
-	listSessions,
-	renameSession,
-	rewindToMessage,
-	runChat,
-	selectSession,
-} from "../ai-edition/chat-service";
-import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
-import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { parseCliArgs } from "../cli/args";
 import { createDiagnosticReport, type DiagnosticRequest } from "../diagnostics/diagnostic-report";
 import { createElectronWorkloadResourceSampler } from "../diagnostics/electronWorkloadResources";
@@ -112,7 +99,6 @@ import {
 } from "../media/cleanVoiceWorker";
 import {
 	readCursorRecordingFile as readCursorRecordingFileFrom,
-	readCursorSidecar,
 	readCursorTelemetryFile as readCursorTelemetryFileFrom,
 } from "../media/cursorSidecar";
 import { MediaAccessRegistry } from "../media/mediaAccessRegistry";
@@ -1033,38 +1019,6 @@ const readCursorRecordingFile = (targetVideoPath: string) =>
 
 const readCursorTelemetryFile = (targetVideoPath: string) =>
 	readCursorTelemetryFileFrom(targetVideoPath, cursorSidecarOptions());
-
-/**
- * The agent's door onto cursor telemetry — the last mile of D-TELEM.
- *
- * ponytail: `resolveApprovedVideoPath` is not ceremony. The asset path comes
- * from the DOCUMENT rather than from the model, but the document is a file on
- * disk that the user (or a future import path) can put anything in, and the
- * sidecar path is DERIVED from it. Reusing the same allow-list the video loaders
- * use means a crafted `originalPath` cannot walk this into reading an arbitrary
- * JSON file. A refused path yields "unavailable", not "no-sidecar": we did not
- * look, and the model must not report otherwise.
- */
-const agentCursorTelemetryReader: CursorTelemetryReader = {
-	probe: async ({ originalPath }) => {
-		const approved = resolveApprovedVideoPath(originalPath);
-		if (!approved) return false;
-		return (await readCursorSidecar(approved, cursorSidecarOptions())).found;
-	},
-	read: async ({ assetId, originalPath }) => {
-		const approved = resolveApprovedVideoPath(originalPath);
-		if (!approved) {
-			return {
-				status: "unavailable",
-				assetId,
-				note: "The asset's file is outside the folders this app may read, so its cursor sidecar was not opened.",
-			};
-		}
-		const sidecar = await readCursorSidecar(approved, cursorSidecarOptions());
-		if (!sidecar.found) return { status: "no-sidecar", assetId };
-		return { status: "ok", assetId, samples: sidecar.data.samples };
-	},
-};
 
 function resolveAssetBasePath() {
 	return `${KLIPPT_APP_ORIGIN}${KLIPPT_RESOURCE_PATH_PREFIX}assets/`;
@@ -4916,23 +4870,6 @@ export function registerIpcHandlers(
 			.catch((error: unknown) => console.error("[agent-cli] Broker unavailable:", error));
 	}
 
-	// LlmConfigStore is single-instance for a duller reason — its constructor does
-	// two sync readFileSync plus a safeStorage decrypt, and it was running on every
-	// chat message. But it must also stay UNBUILT until something actually needs it:
-	// on macOS that decrypt is backed by a Keychain item, so constructing it at
-	// startup made every launch prompt for Keychain access, including for users who
-	// never open the AI layer at all. (The prompt repeats because an unsigned or
-	// ad-hoc-signed build has no stable code identity for the item's ACL to trust —
-	// signing is the other half of that fix, and is not this function's business.)
-	// Memoised, so the "one instance" guarantee above still holds.
-	let aiEditionLlmConfigInstance: LlmConfigStore | null = null;
-	const getAiEditionLlmConfig = (): LlmConfigStore => {
-		if (!aiEditionLlmConfigInstance) {
-			aiEditionLlmConfigInstance = new LlmConfigStore(app.getPath("userData"));
-		}
-		return aiEditionLlmConfigInstance;
-	};
-
 	registerNativeBridgeHandlers(
 		{
 			workloadTelemetry,
@@ -4972,26 +4909,6 @@ export function registerIpcHandlers(
 			getAiEditionDocuments: () => aiEditionDocuments,
 			resolveApprovedRendererMediaPath,
 			approveReadableRendererMediaPath,
-			getAiEditionLlmConfig,
-			runAiEditionChat: (projectId, sessionId, message, document, sink) =>
-				runChat(projectId, sessionId, message, getAiEditionLlmConfig(), document, sink, {
-					cursor: agentCursorTelemetryReader,
-				}),
-			undoAiEditionToolBatch: (_projectId, _sessionId) => ({
-				success: false,
-				error: "Per-tool-batch undo retired in favor of per-message rewind.",
-			}),
-			rewindToMessage: (projectId, sessionId, messageId) =>
-				rewindToMessage(projectId, sessionId, messageId),
-			compactNow: (projectId, sessionId) =>
-				compactSessionNow(projectId, sessionId, getAiEditionLlmConfig()),
-			getContextUsage: getSessionContextUsage,
-			listAiEditionChatSessions: (projectId) => listSessions(projectId),
-			createAiEditionChatSession: (projectId, title) => createSession(projectId, title),
-			selectAiEditionChatSession: (projectId, sessionId) => selectSession(projectId, sessionId),
-			renameAiEditionChatSession: (projectId, sessionId, title) =>
-				renameSession(projectId, sessionId, title),
-			deleteAiEditionChatSession: (projectId, sessionId) => deleteSession(projectId, sessionId),
 		},
 		ipcMain,
 	);

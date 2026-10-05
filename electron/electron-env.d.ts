@@ -116,9 +116,6 @@ interface Window {
 			callback: (prefs: import("./ipc/handlers").RecordingPrefs) => void,
 		) => () => void;
 		onSourceSelectorClosed: (callback: () => void) => () => void;
-		onAiEditionChatEvent: (
-			callback: (event: import("../src/native/contracts").AiEditionChatEvent) => void,
-		) => () => void;
 		/** Opens macOS Privacy & Security > Camera, where the app's access is switched on. */
 		openCameraPrivacySettings?: () => Promise<boolean>;
 		requestCameraAccess: () => Promise<{

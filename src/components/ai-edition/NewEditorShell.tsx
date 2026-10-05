@@ -60,7 +60,6 @@ import { getCurrentNativeViewId } from "@/native/nativeCompositorStore";
 import { getPreviewFrameEvidence, waitForPreviewSettledFrame } from "@/native/previewSettledFrames";
 import { resolveVisibleClips } from "@/native/sceneDescription";
 import { ExportDialog } from "./ExportDialog";
-import { LeftPanel } from "./LeftPanel";
 import { prepareLegacyProjectForOpen } from "./legacyProjectOpen";
 import {
 	EditClipModal,
@@ -198,9 +197,6 @@ export function NewEditorShell() {
 		"record" | "add" | "export" | null
 	>(null);
 	const recordingReviewActionRef = useRef(false);
-	const [chatWidthPx, setChatWidthPx] = useState(
-		() => Number(localStorage.getItem("os-editor-chat-width")) || 392,
-	);
 	const [timelineHeightPx, setTimelineHeightPx] = useState(
 		() => Number(localStorage.getItem("os-editor-timeline-height")) || 308,
 	);
@@ -1729,38 +1725,12 @@ export function NewEditorShell() {
 	useCompactReviewFit(compactReview && hasAsset, document);
 	const visibleMode = PRODUCT_SURFACE.mediaWorkspace ? mode : "edit";
 	const timelineRow = visibleMode === "media" ? "188px" : `${timelineHeightPx}px`;
-	const bodyColumns =
-		visibleMode === "edit" && PRODUCT_SURFACE.agentEditor && chatOpen
-			? `${chatWidthPx}px 1fr`
-			: "1fr";
 
-	// Drag the chat/stage divider (col-resize) or the timeline's top edge
-	// (row-resize) to resize. Pointer-driven like V4Timeline's pill/nav/clip
-	// drags — pointerdown arms a window-level pointermove/pointerup pair, no
+	// Drag the timeline's top edge (row-resize) to resize. Pointer-driven like
+	// V4Timeline's pill/nav/clip drags — pointerdown arms a window-level pointermove/pointerup pair, no
 	// drag library. Persisted to localStorage (a UI layout preference, not
 	// project content, so it doesn't belong in the document/useEditorSettings
 	// round-trip).
-	const startChatResize = useCallback(
-		(e: React.PointerEvent) => {
-			e.preventDefault();
-			const startX = e.clientX;
-			const startWidth = chatWidthPx;
-			let latest = startWidth;
-			const move = (ev: PointerEvent) => {
-				latest = Math.min(560, Math.max(280, startWidth + (ev.clientX - startX)));
-				setChatWidthPx(latest);
-			};
-			const up = () => {
-				window.removeEventListener("pointermove", move);
-				window.removeEventListener("pointerup", up);
-				localStorage.setItem("os-editor-chat-width", String(latest));
-			};
-			window.addEventListener("pointermove", move);
-			window.addEventListener("pointerup", up);
-		},
-		[chatWidthPx],
-	);
-
 	const startTimelineResize = useCallback(
 		(e: React.PointerEvent) => {
 			e.preventDefault();
@@ -1782,22 +1752,6 @@ export function NewEditorShell() {
 			window.addEventListener("pointerup", up);
 		},
 		[timelineHeightPx],
-	);
-
-	const resizeChatFromKeyboard = useCallback(
-		(e: ReactKeyboardEvent<HTMLDivElement>) => {
-			let next = chatWidthPx;
-			if (e.key === "ArrowLeft") next -= 16;
-			else if (e.key === "ArrowRight") next += 16;
-			else if (e.key === "Home") next = 280;
-			else if (e.key === "End") next = 560;
-			else return;
-			e.preventDefault();
-			next = Math.min(560, Math.max(280, next));
-			setChatWidthPx(next);
-			localStorage.setItem("os-editor-chat-width", String(next));
-		},
-		[chatWidthPx],
 	);
 
 	const resizeTimelineFromKeyboard = useCallback(
@@ -1935,28 +1889,7 @@ export function NewEditorShell() {
 				/>
 			)}
 
-			<div className={v4.body} style={{ gridTemplateColumns: bodyColumns }}>
-				{visibleMode === "edit" && PRODUCT_SURFACE.agentEditor && chatOpen ? (
-					<>
-						<aside className={v4.agent} aria-label={te("shell.aiEditor")}>
-							<LeftPanel active="chat" />
-						</aside>
-						<div
-							className={v4.chatResizeHandle}
-							style={{ left: chatWidthPx }}
-							role="separator"
-							tabIndex={0}
-							aria-orientation="vertical"
-							aria-label={te("shell.resizeChatPanel")}
-							aria-valuemin={280}
-							aria-valuemax={560}
-							aria-valuenow={chatWidthPx}
-							onPointerDown={startChatResize}
-							onKeyDown={resizeChatFromKeyboard}
-						/>
-					</>
-				) : null}
-
+			<div className={v4.body} style={{ gridTemplateColumns: "1fr" }}>
 				<section className={v4.stage} aria-label={te("shell.previewStage")}>
 					{visibleMode === "edit" ? (
 						<>

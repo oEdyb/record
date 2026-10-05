@@ -3,7 +3,6 @@ import path from "node:path";
 import { app } from "electron";
 import { documentSchema } from "../../src/lib/ai-edition/schema";
 import type { EntitlementCapability } from "../../src/lib/entitlements/contracts";
-import type { AiEditionChatEvent } from "../../src/native/contracts";
 import {
 	NATIVE_BRIDGE_CHANNEL,
 	NATIVE_BRIDGE_VERSION,
@@ -14,7 +13,6 @@ import {
 	type ProjectFileResult,
 	type ProjectPathResult,
 } from "../../src/native/contracts";
-import type { ChatEventSink } from "../ai-edition/chat-service";
 import type { DocumentService } from "../ai-edition/document-service";
 import { addNativeExportPaths } from "../diagnostics/nativeExportPaths";
 import type { WorkloadTelemetryService } from "../diagnostics/workloadTelemetry";
@@ -68,55 +66,6 @@ export interface NativeBridgeContext {
 	 */
 	getNativeWindowHandle?: (sender: import("electron").WebContents) => Buffer | null;
 	getAiEditionDocuments: () => DocumentService;
-	getAiEditionLlmConfig: () => import("../ai-edition/llm-config-store").LlmConfigStore;
-	runAiEditionChat: (
-		projectId: string,
-		sessionId: string,
-		message: string,
-		document?: unknown,
-		sink?: ChatEventSink,
-	) => Promise<import("../../src/native/contracts").AiEditionChatResult>;
-	undoAiEditionToolBatch: (
-		projectId: string,
-		sessionId: string,
-	) => import("../../src/native/contracts").AiEditionChatResult;
-	rewindToMessage: (
-		projectId: string,
-		sessionId: string,
-		messageId: string,
-	) =>
-		| {
-				success: true;
-				prompt: string;
-				document: unknown;
-				messages: import("../../src/native/contracts").AiEditionChatMessage[];
-		  }
-		| { success: false; error: string };
-	compactNow: (
-		projectId: string,
-		sessionId: string,
-	) => Promise<import("../../src/native/contracts").AiEditionChatCompactResult | null>;
-	getContextUsage: (
-		projectId: string,
-		sessionId: string,
-	) => import("../../src/native/contracts").AiEditionChatBudget | null;
-	listAiEditionChatSessions: (
-		projectId: string,
-	) => import("../../src/native/contracts").AiEditionChatSessionSummary[];
-	createAiEditionChatSession: (
-		projectId: string,
-		title?: string,
-	) => import("../../src/native/contracts").AiEditionChatSessionSummary;
-	selectAiEditionChatSession: (
-		projectId: string,
-		sessionId: string,
-	) => import("../../src/native/contracts").AiEditionChatSession | null;
-	renameAiEditionChatSession: (
-		projectId: string,
-		sessionId: string,
-		title: string,
-	) => import("../../src/native/contracts").AiEditionChatSessionSummary | null;
-	deleteAiEditionChatSession: (projectId: string, sessionId: string) => boolean;
 }
 
 function normalizePlatform(platform: NodeJS.Platform): NativePlatform {
@@ -166,7 +115,7 @@ function createErrorResponse(
  * Strips absolute filesystem paths out of an error message before it crosses to
  * the renderer. Main-process errors quote the path they failed on (`ENOENT: no
  * such file or directory, open 'C:\Users\alice\…'`), and that string is rendered
- * verbatim in toasts and the chat error rail. Keeps the basename, which is the
+ * verbatim in toasts. Keeps the basename, which is the
  * part a user can act on. The full message still goes to the main-process log.
  */
 function redactPaths(message: string): string {
@@ -182,28 +131,6 @@ function isBridgeRequest(value: unknown): value is NativeBridgeRequest {
 
 	const candidate = value as Partial<NativeBridgeRequest>;
 	return typeof candidate.domain === "string" && typeof candidate.action === "string";
-}
-
-// build a ChatEventSink that broadcasts each event to the renderer
-// that requested the chat run. The webContents may be gone by the time a late
-// delta fires (tab closed, window destroyed) — webContents.send throws, so we
-// swallow the error to keep the loop running. The renderer treats a missing
-// "end of stream" as "the run was abandoned" and shows an inline error.
-function buildChatEventSink(sender: Electron.WebContents, sessionId: string): ChatEventSink {
-	const send = (payload: AiEditionChatEvent) => {
-		try {
-			sender.send("ai-edition.chat-event", payload);
-		} catch {
-			// webContents gone — keep the loop running silently.
-		}
-	};
-	return {
-		text: (delta) => send({ kind: "text", sessionId, delta }),
-		thinking: (delta) => send({ kind: "thinking", sessionId, delta }),
-		toolStart: (name, args) => send({ kind: "toolStart", sessionId, name, args }),
-		toolEnd: (name, ok, summary) => send({ kind: "toolEnd", sessionId, name, ok, summary }),
-		error: (message) => send({ kind: "error", sessionId, message }),
-	};
 }
 
 export function registerNativeBridgeHandlers(
@@ -270,19 +197,6 @@ export function registerNativeBridgeHandlers(
 		documents: context.getAiEditionDocuments(),
 		resolveMediaPath: async (path) =>
 			(await import("./handlers")).resolveApprovedRendererMediaPath(path),
-		// Passed uncalled on purpose — invoking it here would build the store (and
-		// hit the macOS Keychain) while wiring the bridge at startup.
-		llmConfig: context.getAiEditionLlmConfig,
-		runChat: context.runAiEditionChat,
-		undoLastToolBatch: context.undoAiEditionToolBatch,
-		rewindToMessage: context.rewindToMessage,
-		compactNow: context.compactNow,
-		getContextUsage: context.getContextUsage,
-		listSessions: context.listAiEditionChatSessions,
-		createSession: context.createAiEditionChatSession,
-		selectSession: context.selectAiEditionChatSession,
-		renameSession: context.renameAiEditionChatSession,
-		deleteSession: context.deleteAiEditionChatSession,
 	});
 
 	ipcMain.handle(NATIVE_BRIDGE_CHANNEL, async (event, request: unknown) => {
@@ -856,147 +770,6 @@ export function registerNativeBridgeHandlers(
 									request.payload.projectId,
 									request.payload.assetId,
 								),
-							);
-						case "llm.getSnapshot":
-							return createSuccessResponse(requestId, await aiEditionService.llmGetSnapshot());
-						case "llm.setConfig":
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.llmSetConfig(request.payload.config),
-							);
-						case "llm.setApiKey":
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.llmSetApiKey(
-									request.payload.providerId,
-									request.payload.apiKey,
-								),
-							);
-						case "llm.removeApiKey":
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.llmRemoveApiKey(request.payload.providerId),
-							);
-						case "llm.disconnect":
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.llmDisconnect(request.payload.providerId),
-							);
-						case "llm.listProviderModels":
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.llmListProviderModels(request.payload.providerId),
-							);
-						case "chat.run": {
-							await context.assertEntitlement("automatic-editing");
-							const sessionId = request.payload.sessionId;
-							const sink = buildChatEventSink(event.sender, sessionId);
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.chatRun(
-									request.payload.projectId,
-									sessionId,
-									request.payload.message,
-									request.payload.document,
-									sink,
-								),
-							);
-						}
-						case "chat.undoLastBatch":
-							await context.assertEntitlement("edit");
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatUndoLastBatch(
-									request.payload.projectId,
-									request.payload.sessionId,
-								),
-							);
-						case "chat.listSessions":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatListSessions(request.payload.projectId),
-							);
-						case "chat.createSession":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatCreateSession(
-									request.payload.projectId,
-									request.payload.title,
-								),
-							);
-						case "chat.selectSession":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatSelectSession(
-									request.payload.projectId,
-									request.payload.sessionId,
-								),
-							);
-						case "chat.renameSession":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatRenameSession(
-									request.payload.projectId,
-									request.payload.sessionId,
-									request.payload.title,
-								),
-							);
-						case "chat.deleteSession":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatDeleteSession(
-									request.payload.projectId,
-									request.payload.sessionId,
-								),
-							);
-						case "chat.budget":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatBudget(request.payload.projectId, request.payload.sessionId),
-							);
-						case "chat.compact":
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.chatCompact(
-									request.payload.projectId,
-									request.payload.sessionId,
-								),
-							);
-						case "chat.rewind":
-							await context.assertEntitlement("edit");
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatRewindToMessage(
-									request.payload.projectId,
-									request.payload.sessionId,
-									request.payload.messageId,
-								),
-							);
-						case "chat.contextUsage":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatContextUsage(
-									request.payload.projectId,
-									request.payload.sessionId,
-								),
-							);
-						case "chat.compactNow":
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.chatCompactNow(
-									request.payload.projectId,
-									request.payload.sessionId,
-								),
-							);
-						case "captions.translate":
-							await context.assertEntitlement("automatic-editing");
-							return createSuccessResponse(
-								requestId,
-								await aiEditionService.captionsTranslate({
-									segments: request.payload.segments,
-									targetLanguage: request.payload.targetLanguage,
-									sourceLanguage: request.payload.sourceLanguage,
-								}),
 							);
 						default:
 							return createErrorResponse(

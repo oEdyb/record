@@ -1716,12 +1716,6 @@
 	margin-bottom: 14px;
 	font-size: 11px;
 }
-.captionTranslationRow {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 8px 0 12px;
-}
 .inspectorCompactSelect {
 	width: min(160px, 100%);
 	height: var(--editor-inspector-control-h);
@@ -1730,10 +1724,6 @@
 	border-radius: var(--editor-inspector-control-radius);
 	background: var(--surface);
 	font: 500 12.5px/1 var(--font-body);
-}
-.inspectorGrowSelect {
-	flex: 1 1 auto;
-	width: auto;
 }
 .captionDeleteTranslation {
 	margin-bottom: 12px;

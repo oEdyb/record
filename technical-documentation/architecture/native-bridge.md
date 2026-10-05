@@ -83,13 +83,13 @@ The files under `electron/native-bridge/services/` each own one domain. The IPC 
 | `projectService.ts` | Current project/video context and project file load, save, path, and clear operations. |
 | `cursorService.ts` | Cursor capability reporting plus loading complete cursor recording data and telemetry through the cursor adapter. |
 | `compositorViewService.ts` | The native compositor-view addon lifecycle and view operations, with a safe no-op when the addon is unavailable. |
-| `aiEditionService.ts` | AI-edition project/document operations, LLM configuration actions, chat sessions, streaming chat, undo/rewind, context usage, and timeline operations. |
+| `aiEditionService.ts` | AI-edition project/document operations: list, open, create, snapshot, commit, receipts, save, delete, import, and asset prepare/add/remove. |
 
 The service table describes domains, not every action. The action-to-service mapping remains in the central dispatcher, which keeps transport validation and response envelopes consistent.
 
 ## The browser shim
 
-`src/native/browserShim.ts` detects a plain browser by the absence of `window.electronAPI` and by the `browser` or editor-window URL mode. In that mode it supplies a browser implementation of the expected surface so the renderer can run without an Electron shell. It fakes plausible desktop sources for the source picker, stores recording preferences in `localStorage`, uses a hidden file input and blob URLs for video selection, and provides project, chat, and LLM state backed by browser storage. Its `invokeNativeBridge` returns a successful null-shaped response for operations that do not need a browser implementation.
+`src/native/browserShim.ts` detects a plain browser by the absence of `window.electronAPI` and by the `browser` or editor-window URL mode. In that mode it supplies a browser implementation of the expected surface so the renderer can run without an Electron shell. It fakes plausible desktop sources for the source picker, stores recording preferences in `localStorage`, uses a hidden file input and blob URLs for video selection, and provides project state backed by browser storage. Its `invokeNativeBridge` returns a successful null-shaped response for operations that do not need a browser implementation.
 
 The shim exists for fast renderer development in Chrome or Firefox: desktop capture, file dialogs, native addons, and main-process services do not exist in a normal browser tab. It therefore preserves the renderer's boot and interaction paths without pretending that browser mode has the native capability itself.
 
