@@ -694,6 +694,7 @@ ipcMain.handle(
 		if (window.isFullScreen() || window.isMaximized()) return false;
 		const current = window.getBounds();
 		const display = screen.getDisplayMatching(current);
+		// A visible player eases into its new shape instead of jumping.
 		window.setBounds(
 			fitCompactReviewBounds(
 				display.workArea,
@@ -701,6 +702,7 @@ ipcMain.handle(
 				request?.chromeHeight,
 				current.x + current.width / 2,
 			),
+			window.isVisible(),
 		);
 		return true;
 	},

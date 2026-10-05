@@ -101,6 +101,12 @@ import { V4Timeline } from "./v4/V4Timeline";
 
 const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
 
+/** Resolves once the current DOM has reached the screen. */
+const nextPaint = () =>
+	new Promise<void>((resolve) =>
+		requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+	);
+
 interface SeekTarget {
 	timeSec: number;
 	isSource?: boolean;
@@ -167,6 +173,9 @@ export function NewEditorShell() {
 	const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
 	const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
 	const firstFrameReady = useVideoFirstFrame(videoElement);
+	// Covers the stage before the window hides for the recorder, so showing it
+	// again never flashes the previous recording.
+	const [leavingForRecorder, setLeavingForRecorder] = useState(false);
 	const [startupLoaded, setStartupLoaded] = useState(false);
 	const deferredStartupRef = useRef<(() => void) | null>(null);
 	const firstFrameShownRef = useRef(false);
@@ -459,9 +468,9 @@ export function NewEditorShell() {
 				deferredStartup();
 				return;
 			}
-			void resumeRecordingWorkspace().catch((error) =>
-				console.warn("[editor] could not resume recording workspace:", error),
-			);
+			void resumeRecordingWorkspace()
+				.catch((error) => console.warn("[editor] could not resume recording workspace:", error))
+				.finally(() => setLeavingForRecorder(false));
 		};
 		const unsubscribe = window.electronAPI?.onRecordingWorkspaceReturned?.(resumeWorkspace);
 		const handleVisibilityChange = () => {
@@ -1235,8 +1244,13 @@ export function NewEditorShell() {
 					isPendingRecordingImportInProgress()
 				)
 					return;
+				if (PRODUCT_SURFACE.recordingOnly) {
+					setLeavingForRecorder(true);
+					await nextPaint();
+				}
 				const result = await api.startNewRecording(context);
 				if (!result.success) {
+					setLeavingForRecorder(false);
 					if (result.code === "ENTITLEMENT_REQUIRED") {
 						openEntitlement("record");
 						return;
@@ -1244,6 +1258,7 @@ export function NewEditorShell() {
 					throw new Error(result.error ?? "Could not open recording controls");
 				}
 			} catch (err) {
+				setLeavingForRecorder(false);
 				toast.error("Could not open recording controls", {
 					description: err instanceof Error ? err.message : String(err),
 				});
@@ -2015,7 +2030,12 @@ export function NewEditorShell() {
 								{PRODUCT_SURFACE.recordingOnly ? (
 									<div
 										className={v4.reviewLoading}
-										data-ready={firstFrameReady || (startupLoaded && !hasAsset)}
+										data-ready={
+											!leavingForRecorder &&
+											((firstFrameReady &&
+												(videoElement?.readyState ?? 0) >= HTMLMediaElement.HAVE_CURRENT_DATA) ||
+												(startupLoaded && !hasAsset))
+										}
 										data-testid="review-loading"
 										aria-hidden="true"
 									>

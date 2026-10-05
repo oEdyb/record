@@ -346,7 +346,7 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 		const input = screen.getByLabelText(/seek/i) as HTMLInputElement;
 		// Les deux éléments décorés : le remplissage (largeur) et le curseur (position).
 		const styled = Array.from(container.querySelectorAll("div")).filter(
-			(el) => el.style.width !== "" || el.style.left !== "",
+			(el) => el.style.transform !== "",
 		);
 		expect(styled.length).toBeGreaterThanOrEqual(2);
 
@@ -359,7 +359,9 @@ describe("le drag de la barre de progression est coalescé en rAF", () => {
 		// Aucun rAF n'a été vidé, donc aucune écriture au store et aucun rendu React : ce qui
 		// a bougé ne peut venir que de l'écriture DOM directe.
 		expect(onSeek).not.toHaveBeenCalled();
-		const moved = styled.filter((el) => el.style.width === "50%" || el.style.left === "50%");
+		const moved = styled.filter(
+			(el) => el.style.transform === "scaleX(0.5)" || el.style.transform === "translateX(50%)",
+		);
 		expect(moved.length).toBeGreaterThanOrEqual(2);
 	});
 });

@@ -1158,9 +1158,10 @@ function ProgressBlock({
 					style={{
 						position: "absolute",
 						inset: 0,
-						width: phase === "writing" ? "100%" : `${Math.max(0, Math.min(100, pct))}%`,
+						transform: `scaleX(${phase === "writing" ? 1 : Math.max(0, Math.min(100, pct)) / 100})`,
+						transformOrigin: "left center",
 						background: "var(--brand)",
-						transition: "width 200ms var(--ease)",
+						transition: "transform 200ms var(--ease)",
 					}}
 				/>
 			</div>

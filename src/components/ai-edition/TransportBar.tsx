@@ -134,10 +134,10 @@ export const TransportBar = memo(function TransportBar({
 			// de la timeline. `inputMax` est déjà borné à 1 minimum, pas de division par zéro.
 			const pct = Math.min(100, Math.max(0, (value / inputMax) * 100));
 			if (progressElRef.current) {
-				progressElRef.current.style.width = `${pct}%`;
+				progressElRef.current.style.transform = `scaleX(${pct / 100})`;
 			}
 			if (thumbElRef.current) {
-				thumbElRef.current.style.left = `${pct}%`;
+				thumbElRef.current.style.transform = `translateX(${pct}%)`;
 			}
 			if (rafRef.current !== 0) {
 				return;
@@ -247,7 +247,7 @@ export const TransportBar = memo(function TransportBar({
 					<div
 						ref={progressElRef}
 						className={styles.scrubProgress}
-						style={{ width: `${progress}%` }}
+						style={{ transform: `scaleX(${progress / 100})` }}
 					/>
 					{variant === "overlay"
 						? clipBoundaries.map((left) => (
@@ -288,11 +288,11 @@ export const TransportBar = memo(function TransportBar({
 				/>
 				<div
 					ref={thumbElRef}
-					className={styles.scrubThumb}
-					style={{
-						left: `${progress}%`,
-					}}
-				/>
+					className={styles.scrubThumbTrack}
+					style={{ transform: `translateX(${progress}%)` }}
+				>
+					<div className={styles.scrubThumb} />
+				</div>
 			</div>
 		</div>
 	);

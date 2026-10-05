@@ -33,4 +33,21 @@ describe("useVideoFirstFrame", () => {
 		});
 		expect(silent.result.current).toBe(true);
 	});
+
+	it("waits again when the same video loads a new recording", () => {
+		const video = document.createElement("video");
+		const { result } = renderHook(() => useVideoFirstFrame(video));
+		act(() => {
+			video.dispatchEvent(new Event("loadeddata"));
+		});
+		expect(result.current).toBe(true);
+		act(() => {
+			video.dispatchEvent(new Event("loadstart"));
+		});
+		expect(result.current).toBe(false);
+		act(() => {
+			video.dispatchEvent(new Event("loadeddata"));
+		});
+		expect(result.current).toBe(true);
+	});
 });

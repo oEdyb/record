@@ -27,7 +27,7 @@ const Toaster = ({ className, ...props }: ToasterProps) => {
 					fontSize: 13,
 				},
 				classNames: {
-					toast: "group toast backdrop-blur-xl",
+					toast: "group toast",
 					description: "group-[.toast]:text-slate-400",
 					actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
 					cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",

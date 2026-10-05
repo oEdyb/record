@@ -69,9 +69,11 @@
 .bar .icon { width: 34px; padding: 0; }
 .recordDot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #ff453a; }
 .bar .primary {
+	min-width: 128px;
 	margin-left: 8px;
 	padding: 0 16px 0 13px;
 	background: #f5f5f7;
+	font-variant-numeric: tabular-nums;
 	color: #16161a;
 	font-weight: 600;
 	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
