@@ -52,6 +52,7 @@ import { TransportBar } from "./TransportBar";
 import { useCompactReviewFit } from "./useCompactReviewFit";
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
+import { useRevealLatch } from "./useRevealLatch";
 import { useVideoFirstFrame } from "./useVideoFirstFrame";
 
 const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
@@ -124,6 +125,11 @@ export function RecordingReviewShell() {
 	// Covers the stage before the window hides for the recorder, so showing it
 	// again never flashes the previous recording.
 	const [leavingForRecorder, setLeavingForRecorder] = useState(false);
+	const stageRevealed = useRevealLatch(
+		projectId,
+		firstFrameReady && (videoElement?.readyState ?? 0) >= HTMLMediaElement.HAVE_CURRENT_DATA,
+		leavingForRecorder,
+	);
 	const [startupLoaded, setStartupLoaded] = useState(false);
 	const deferredStartupRef = useRef<(() => void) | null>(null);
 	const firstFrameShownRef = useRef(false);
@@ -981,12 +987,7 @@ export function RecordingReviewShell() {
 						)}
 						<div
 							className={styles.reviewLoading}
-							data-ready={
-								!leavingForRecorder &&
-								((firstFrameReady &&
-									(videoElement?.readyState ?? 0) >= HTMLMediaElement.HAVE_CURRENT_DATA) ||
-									(startupLoaded && !hasAsset))
-							}
+							data-ready={!leavingForRecorder && (stageRevealed || (startupLoaded && !hasAsset))}
 							data-testid="review-loading"
 							aria-hidden="true"
 						>
