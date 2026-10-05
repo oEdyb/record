@@ -69,6 +69,11 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Verify the reviewed FFmpeg WebAssembly source
         run: npm run supply-chain:web-demuxer
+      - name: Fetch the macOS Electron release for its Chromium licence file
+        env:
+          ELECTRON_INSTALL_PLATFORM: darwin
+          ELECTRON_INSTALL_ARCH: arm64
+        run: node node_modules/electron/install.js
       - name: Verify the packaged third-party notice inventory
         run: npm run supply-chain:notices
       - name: Verify the exact-source release contract

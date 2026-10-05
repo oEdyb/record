@@ -1610,7 +1610,7 @@ impl Compositor {
                         };
                         let (animated_dst, anim) = crate::text_anim::image_animation_geometry(
                             a.image_animation.as_deref(),
-                            (t - a.start_sec as f32) * 1000.0,
+                            (g.source_t - a.start_sec as f32) * 1000.0,
                             [
                                 dst[0] + (dst[2] - fit_w) * 0.5,
                                 dst[1] + (dst[3] - fit_h) * 0.5,

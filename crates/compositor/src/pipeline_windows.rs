@@ -421,6 +421,7 @@ unsafe fn run_c0_inner(screen: &str, out: &str, gpu: &Gpu) -> Result<Stats> {
         wall_s,
         fps,
         video_duration_s: frames as f64 / 60.0,
+        audio_mastering: AudioMasteringStats::disabled(),
     })
 }
 
@@ -493,6 +494,7 @@ pub fn run_preview_bench(
                 wall_s,
                 fps: frames as f64 / wall_s,
                 video_duration_s: frames as f64 / 60.0,
+                audio_mastering: AudioMasteringStats::disabled(),
             },
             last,
         ))
@@ -1054,6 +1056,7 @@ unsafe fn run_c1_inner(
         wall_s,
         fps,
         video_duration_s: frames as f64 / 60.0,
+        audio_mastering: AudioMasteringStats::disabled(),
     })
 }
 
@@ -1602,7 +1605,7 @@ unsafe fn run_multi_inner(
 
     comp.set_cursor_time(None);
     comp.set_timeline_time(None);
-    comp.set_scene(scene);
+    comp.set_scene(scene.clone());
 
     enc.send(ptr::null_mut())?;
     drain_encoder(ectx, octx, ostream, opkt)?;

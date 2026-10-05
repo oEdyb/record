@@ -149,7 +149,7 @@ pub struct AudioMasteringStats {
 }
 
 impl AudioMasteringStats {
-    fn disabled() -> Self {
+    pub(crate) fn disabled() -> Self {
         Self {
             enabled: false,
             analyzed: false,
