@@ -18,7 +18,10 @@ reads only the legacy format, `klippt export` fails on a fresh profile, and the 
 creator-loop smoke scripts predate the October 4 HUD. Scrubbing fix `8a308450`: the loading cover
 no longer hides the preview during a playhead drag (96% of frames covered before, none after).
 Installed this branch at `8a308450` to `/Applications/Klippt.app`, Developer ID signed, same
-designated requirements; previous app in `.local-install.noindex/backup-installed-20261005-1720`.
+designated requirements. Later the same day: backward scrubbing reuses decoded frames and skips
+the stand-in camera (slow backward drag 8 → 25 updates/s), and review gained Space/K, J/L, arrows,
+Up/Down, Home/End and M. Installed at `67d3aa26`; Space, Home, End and Right confirmed in the
+installed app. Previous app in `.local-install.noindex/backup-installed-20261005-1845`.
 [Evidence](artifacts/cleanup-verify-2026-10-05/).
 
 # October 4: current creator-loop build installed
