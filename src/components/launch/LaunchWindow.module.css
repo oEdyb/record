@@ -35,6 +35,7 @@
 }
 
 .hudAbove {
+	position: relative;
 	display: flex;
 	flex-direction: column-reverse;
 	align-items: center;
@@ -336,6 +337,16 @@
 		opacity: 0;
 		transform: translateY(6px) scale(0.97);
 	}
+}
+
+/* A closing panel leaves the stack, so the one replacing it (Setup to Source)
+   opens in the same place and the two crossfade instead of stacking. */
+.hudPanel[data-closing="true"] {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	margin-inline: auto;
 }
 
 .hudPanel[data-closing="true"],

@@ -584,8 +584,15 @@ export function LaunchWindow() {
 	// flip the window back to click-through mid-travel — so hold the overlay
 	// interactive for as long as one is open, and hand control back to the
 	// pointer-move tracking once it closes.
+	// A popover closed under a still pointer gets no pointermove, so check where
+	// the pointer was: still on the pill means the next click belongs to the pill.
+	const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
 	useEffect(() => {
-		setHudMouseEventsEnabled(isPopoverOpen);
+		const point = lastPointerRef.current;
+		const underPointer = point ? document.elementFromPoint?.(point.x, point.y) : null;
+		setHudMouseEventsEnabled(
+			isPopoverOpen || Boolean(underPointer?.closest("[data-hud-interactive='true']")),
+		);
 	}, [isPopoverOpen, setHudMouseEventsEnabled]);
 
 	const defaultSourceName = t("sourceSelector.defaultSourceName");
@@ -1125,6 +1132,7 @@ export function LaunchWindow() {
 
 	const handleRootPointerMove = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
+			lastPointerRef.current = { x: event.clientX, y: event.clientY };
 			// The pointer is captured by the drag handle anyway; skip the DOM walk.
 			if (isDraggingHudRef.current) return;
 			const target = event.target as HTMLElement | null;
@@ -1137,6 +1145,7 @@ export function LaunchWindow() {
 	);
 
 	const handlePointerLeave = useCallback(() => {
+		lastPointerRef.current = null;
 		if (!isPopoverOpen) {
 			setHudMouseEventsEnabled(false);
 		}
