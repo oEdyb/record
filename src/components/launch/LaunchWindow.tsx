@@ -52,7 +52,12 @@ import {
 } from "./hudGeometry";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
-import { prefetchPickerSources, SourcePicker, type SourcePickerKind } from "./SourceSelector";
+import {
+	prefetchPickerSources,
+	SourcePicker,
+	type SourcePickerKind,
+	warmPickerSources,
+} from "./SourceSelector";
 import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
@@ -708,6 +713,12 @@ export function LaunchWindow() {
 	);
 
 	const [sourcePanelKind, setSourcePanelKind] = useState<SourcePickerKind>();
+
+	// Main warms its list about 1.5s after launch; the HUD copies it once it exists.
+	useEffect(() => {
+		const timer = window.setTimeout(() => void warmPickerSources(), 2500);
+		return () => window.clearTimeout(timer);
+	}, []);
 
 	const closeSourcePanel = useCallback(() => {
 		setIsSourcePanelOpen(false);

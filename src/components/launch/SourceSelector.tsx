@@ -33,6 +33,9 @@ function toDesktopSources(rawSources: ProcessedDesktopSource[]): DesktopSource[]
 }
 
 let pickerPrefetch: Promise<unknown> | null = null;
+// The last list shown, so the picker's first frame already has its final size.
+let shownSources: DesktopSource[] = [];
+let shownSelection: DesktopSource | null = null;
 
 /**
  * Starts reading screens and windows before the picker opens, such as when the
@@ -42,10 +45,30 @@ export function prefetchPickerSources() {
 	if (pickerPrefetch || !window.electronAPI?.getSources) return;
 	pickerPrefetch = window.electronAPI
 		.getSources(PICKER_SOURCE_OPTIONS)
+		.then((raw) => {
+			shownSources = toDesktopSources(raw);
+		})
 		.catch(() => undefined)
 		.finally(() => {
 			pickerPrefetch = null;
 		});
+}
+
+/** Drops the HUD's copy, so the next picker starts from main's list. */
+export function forgetPickerSources() {
+	shownSources = [];
+	shownSelection = null;
+}
+
+/** Copies main's warmed list into the HUD, or reads it when main has none yet. */
+export async function warmPickerSources() {
+	if (shownSources.length > 0) return;
+	const cached = await window.electronAPI?.getCachedSources?.().catch(() => null);
+	if (cached && cached.length > 0) {
+		if (shownSources.length === 0) shownSources = toDesktopSources(cached);
+		return;
+	}
+	prefetchPickerSources();
 }
 
 /** The standalone picker window, used when the recorder has to ask for screen access first. */
@@ -81,28 +104,33 @@ export function SourcePicker({
 }) {
 	const t = useScopedT("launch");
 	const tc = useScopedT("common");
-	const [sources, setSources] = useState<DesktopSource[]>([]);
-	const [selectedSource, setSelectedSource] = useState<DesktopSource | null>(null);
-	const [loading, setLoading] = useState(true);
+	const [sources, setSources] = useState<DesktopSource[]>(shownSources);
+	const [selectedSource, setSelectedSource] = useState<DesktopSource | null>(shownSelection);
+	const [loading, setLoading] = useState(shownSources.length === 0);
 	const [loadFailed, setLoadFailed] = useState(false);
 
 	const fetchSources = useCallback(async () => {
 		setLoadFailed(false);
 		const showSources = async (mapped: DesktopSource[]) => {
+			shownSources = mapped;
 			setSources(mapped);
 			const chosen = await window.electronAPI.getSelectedSource?.().catch(() => null);
 			setSelectedSource((current) => {
 				const id = current?.id ?? chosen?.id;
-				return mapped.find((source) => source.id === id) ?? null;
+				shownSelection = mapped.find((source) => source.id === id) ?? null;
+				return shownSelection;
 			});
 		};
 		// Last time's list shows at once; fresh thumbnails replace it when they arrive.
-		const cached = await window.electronAPI.getCachedSources?.().catch(() => null);
-		const hasCached = Boolean(cached && cached.length > 0);
-		if (cached && hasCached) {
+		const cached =
+			shownSources.length > 0
+				? null
+				: await window.electronAPI.getCachedSources?.().catch(() => null);
+		const hasCached = shownSources.length > 0 || Boolean(cached && cached.length > 0);
+		if (cached && cached.length > 0) {
 			await showSources(toDesktopSources(cached));
 			setLoading(false);
-		} else {
+		} else if (!hasCached) {
 			setLoading(true);
 		}
 		try {
@@ -138,6 +166,7 @@ export function SourcePicker({
 		setSelectedSource(source);
 		try {
 			await window.electronAPI.selectSource(source);
+			shownSelection = source;
 			onChosen?.();
 		} catch (error) {
 			console.error("Error selecting source:", error);
@@ -150,7 +179,7 @@ export function SourcePicker({
 	const [kind, setKind] = useState<SourcePickerKind | null>(initialKind ?? null);
 	const activeKind =
 		kind ??
-		(screenSources.length === 0 || selectedSource?.id.startsWith("window:")
+		((!loading && screenSources.length === 0) || selectedSource?.id.startsWith("window:")
 			? "windows"
 			: "screens");
 	const visibleSources = activeKind === "screens" ? screenSources : windowSources;
@@ -248,10 +277,11 @@ export function SourcePicker({
 			data-testid={panelTestId}
 			data-closing={closing}
 			className={shellClass}
-			data-rows={Math.min(
-				3,
-				Math.ceil(Math.max(1, screenSources.length, windowSources.length) / 2),
-			)}
+			data-rows={
+				loading
+					? undefined
+					: Math.min(3, Math.ceil(Math.max(1, screenSources.length, windowSources.length) / 2))
+			}
 		>
 			<div className={styles.header}>
 				<div

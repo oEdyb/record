@@ -3,7 +3,12 @@ import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SourcePicker, SourceSelector } from "./SourceSelector";
+import {
+	forgetPickerSources,
+	SourcePicker,
+	SourceSelector,
+	warmPickerSources,
+} from "./SourceSelector";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -36,6 +41,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 
 describe("SourceSelector", () => {
 	beforeEach(() => {
+		forgetPickerSources();
 		window.electronAPI = {
 			...window.electronAPI,
 			getSources: vi.fn().mockResolvedValue([]),
@@ -176,6 +182,40 @@ describe("SourceSelector", () => {
 		finishFresh([screenSource]);
 		expect(await screen.findByText("Entire Screen")).toBeInTheDocument();
 		expect(screen.queryByText("Old Screen")).not.toBeInTheDocument();
+	});
+
+	it("draws its first frame at the final size once the HUD holds a list", async () => {
+		const windows = Array.from({ length: 6 }, (_, index) => ({
+			id: `window:${index}:0`,
+			name: `Window ${index}`,
+			thumbnail: null,
+			display_id: "",
+			appIcon: null,
+		}));
+		window.electronAPI = {
+			...window.electronAPI,
+			getCachedSources: vi.fn().mockResolvedValue(windows),
+			getSources: vi.fn(() => new Promise(() => undefined)),
+		} as typeof window.electronAPI;
+		await warmPickerSources();
+
+		render(<SourcePicker variant="panel" onClose={vi.fn()} />);
+
+		expect(screen.getByTestId("hud-source-panel")).toHaveAttribute("data-rows", "3");
+		expect(screen.getByText("Window 0")).toBeInTheDocument();
+	});
+
+	it("stays on Screens while the first list loads", () => {
+		window.electronAPI = {
+			...window.electronAPI,
+			getCachedSources: vi.fn().mockResolvedValue(null),
+			getSources: vi.fn(() => new Promise(() => undefined)),
+		} as typeof window.electronAPI;
+
+		render(<SourcePicker variant="panel" onClose={vi.fn()} />);
+
+		expect(screen.getByRole("tab", { name: /Screens/ })).toHaveAttribute("aria-selected", "true");
+		expect(screen.getByTestId("hud-source-panel")).not.toHaveAttribute("data-rows");
 	});
 
 	it("keeps the old choice and says so when switching fails", async () => {
