@@ -119,7 +119,7 @@ jobs:
 
   # PR #189 — port macOS du compositor (Metal + VideoToolbox).
   #
-  # Compile check on a `macos-14` runner (Apple Silicon). Verifies that the
+  # Compile check on a `macos-15` runner (Apple Silicon). Verifies that the
   # scaffold + engine-layer code added by #189 actually compiles for
   # `aarch64-apple-darwin` — bindgen + cc on macOS produce the ffmpeg FFI
   # bindings + the VideoToolbox context that the Rust crate statically
@@ -147,7 +147,7 @@ jobs:
   #   * `shaders.metal` is compiled AT RUNTIME by `new_library_with_source`, so a
   #     whole file of invalid MSL (HLSL's global `cbuffer`/`Texture2D` have no MSL
   #     equivalent) type-checks perfectly — `every_shader_entry_point_compiles`
-  #     catches it. macos-14 runners have a real Metal device, so it runs for real.
+  #     catches it. macos-15 runners have a real Metal device, so it runs for real.
   #   * `AVERROR(EAGAIN)` is -11 on Windows/Linux and -35 on macOS. A hardcoded -11
   #     compiles anywhere and silently decodes zero frames —
   #     `averror_constants_match_the_ffmpeg_macros` confronts it with shim.c.
@@ -155,7 +155,9 @@ jobs:
   #     `newRenderPipelineState` time — `the_compositor_builds_on_the_system_device`.
   rust-macos-compositor-check:
     name: Rust test (macOS compositor)
-    runs-on: macos-14
+    # macos-14 became a Homebrew Tier 3 system: no ffmpeg bottles, so the
+    # install compiled ffmpeg and its dependencies for 30 minutes.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust toolchain
