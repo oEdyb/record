@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 /** Gives up waiting so a slow or silent source never hides the preview for good. */
-const FIRST_FRAME_TIMEOUT_MS = 6000;
+export const FIRST_FRAME_TIMEOUT_MS = 6000;
 
 /**
  * True once the video can show its current source's first frame, or failed to:

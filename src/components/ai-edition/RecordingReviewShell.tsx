@@ -54,7 +54,7 @@ import { useCompactReviewFit } from "./useCompactReviewFit";
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
 import { useRevealLatch } from "./useRevealLatch";
-import { useVideoFirstFrame } from "./useVideoFirstFrame";
+import { FIRST_FRAME_TIMEOUT_MS, useVideoFirstFrame } from "./useVideoFirstFrame";
 
 const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
 
@@ -130,6 +130,9 @@ export function RecordingReviewShell() {
 		projectId,
 		firstFrameReady && (videoElement?.readyState ?? 0) >= HTMLMediaElement.HAVE_CURRENT_DATA,
 		leavingForRecorder,
+		// Also covers a missing <video> or one that never decodes: reveal what the
+		// native preview has instead of a spinner that never ends.
+		FIRST_FRAME_TIMEOUT_MS,
 	);
 	const [startupLoaded, setStartupLoaded] = useState(false);
 	const deferredStartupRef = useRef<(() => void) | null>(null);

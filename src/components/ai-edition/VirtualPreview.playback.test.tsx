@@ -608,3 +608,38 @@ describe("VirtualPreview hand-off event and audio ownership", () => {
 		expect(close).toHaveBeenCalledOnce();
 	});
 });
+
+describe("VirtualPreview opening a project with fewer sources", () => {
+	it("still renders a <video> when the last project's active source index is past the new list", () => {
+		const twoSources: VideoSource[] = [
+			{ id: "a1", src: "file:///tmp/a1.mp4", label: "a1" },
+			{ id: "a2", src: "file:///tmp/a2.mp4", label: "a2" },
+		];
+		const twoClips = [clip("clip_1", "a1", 0, 10, 0), clip("clip_2", "a2", 0, 10, 10)];
+		const { container, rerender } = render(
+			<VirtualPreview videoSources={twoSources} clips={twoClips} seekTarget={null} />,
+		);
+		const first = container.querySelector("video") as HTMLVideoElement;
+		driveVideo(first);
+		act(() => {
+			fireEvent.loadedMetadata(first);
+		});
+		// The playhead moves into the second recording's clip: source index 1.
+		const seekTarget = { timeSec: 12, requestId: 1 };
+		rerender(<VirtualPreview videoSources={twoSources} clips={twoClips} seekTarget={seekTarget} />);
+		expect(container.querySelector("video")?.getAttribute("src")).toBe("file:///tmp/a2.mp4");
+
+		// Another project opens in the same mounted preview, with a single source. The seek
+		// request is unchanged, so nothing re-resolves the source index.
+		rerender(
+			<VirtualPreview
+				videoSources={[{ id: "b1", src: "file:///tmp/b1.mp4", label: "b1" }]}
+				clips={[clip("clip_b", "b1", 0, 5, 0)]}
+				seekTarget={seekTarget}
+			/>,
+		);
+		const videos = container.querySelectorAll("video");
+		expect(videos).toHaveLength(1);
+		expect(videos[0].getAttribute("src")).toBe("file:///tmp/b1.mp4");
+	});
+});

@@ -206,6 +206,14 @@ export function VirtualPreview({
 		});
 	};
 
+	// Opening a project with fewer sources than the last one keeps this component mounted,
+	// so the index from the previous project can point past the new list. That rendered no
+	// <video> at all and left the review cover up for good. Restart on the first source;
+	// its loadedmetadata seek then moves to the source under the playhead.
+	if (sourceIndex > 0 && sourceIndex >= videoSources.length) {
+		setSourceIndex(0);
+		setActiveBufferKey(null);
+	}
 	const virtualDurationSec = useMemo(() => totalVirtualDuration(clips), [clips]);
 	const activeSource = videoSources[sourceIndex] ?? null;
 	const requestedAudioKey = activeSource?.audioSrc
