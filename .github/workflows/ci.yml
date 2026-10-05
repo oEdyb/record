@@ -165,7 +165,12 @@ jobs:
       - name: Install ffmpeg (homebrew-core) and verify headers/libs
         run: |
           brew update
-          brew install ffmpeg
+          # The runner image can hold files that block linking the upgraded openssl@3
+          # ("Could not symlink bin/openssl"); overwrite that one link and retry.
+          if ! brew install ffmpeg; then
+            brew link --overwrite openssl@3
+            brew install ffmpeg
+          fi
           ls /opt/homebrew/opt/ffmpeg/include | head -5
           ls /opt/homebrew/opt/ffmpeg/lib | head -5
           /opt/homebrew/opt/ffmpeg/bin/ffmpeg -hide_banner -version | head -1
