@@ -14,6 +14,7 @@ import {
 	replaceTimeline as replaceTimelineOp,
 	resolvePlaybackSegments,
 } from "@/lib/ai-edition/document/timeline";
+import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import { type AxcutClip, documentSchema } from "@/lib/ai-edition/schema";
 import {
 	exportRunPercent,
@@ -875,6 +876,29 @@ export function RecordingReviewShell() {
 		onSave: handleExport,
 	});
 
+	const reviewSegments = useMemo(
+		() => resolvePlaybackSegments(clips, trimRanges),
+		[clips, trimRanges],
+	);
+	const reviewProjection = useMemo(
+		() => buildTimelinePlaybackProjection(reviewSegments, clips),
+		[reviewSegments, clips],
+	);
+	// Keyboard seeking moves in playback time, like the scrub bar, so trimmed
+	// stretches are never a stop.
+	const seekPlayback = (next: (playbackSec: number, endSec: number) => number) => {
+		followPlayheadForInsertion();
+		const endSec = reviewSegments.reduce(
+			(sum, segment) => sum + (segment.timelineEndSec - segment.timelineStartSec),
+			0,
+		);
+		const nowSec = rawTimeToPlaybackTime(
+			useProjectStore.getState().currentTimeSec,
+			reviewProjection,
+		);
+		const targetSec = Math.min(endSec, Math.max(0, next(nowSec, endSec)));
+		handleSeek(playbackTimeToRawTime(targetSec, reviewProjection, "after"));
+	};
 	useRecordingReviewShortcuts({
 		enabled: true,
 		isMac,
@@ -886,10 +910,15 @@ export function RecordingReviewShell() {
 			followPlayheadForInsertion();
 			togglePlay();
 		},
-		onStep: (direction) => {
+		onStep: (direction, unit) =>
+			seekPlayback((sec) => sec + direction / (unit === "frame" ? 60 : 1)),
+		onClip: (direction) => {
 			followPlayheadForInsertion();
-			handleSeek(Math.max(0, useProjectStore.getState().currentTimeSec + direction / 60));
+			if (direction < 0) handlePrevClip();
+			else handleNextClip();
 		},
+		onEdge: (edge) => seekPlayback((_, endSec) => (edge === "start" ? 0 : endSec)),
+		onMute: () => usePreviewAudio.getState().toggleMuted(),
 	});
 
 	// After Stop, review opens as a small player; it can grow into the full window.
@@ -900,14 +929,6 @@ export function RecordingReviewShell() {
 	}, []);
 	useCompactReviewFit(compactReview && hasAsset, document);
 
-	const reviewSegments = useMemo(
-		() => resolvePlaybackSegments(clips, trimRanges),
-		[clips, trimRanges],
-	);
-	const reviewProjection = useMemo(
-		() => buildTimelinePlaybackProjection(reviewSegments, clips),
-		[reviewSegments, clips],
-	);
 	const reviewMeta = useMemo(() => {
 		if (clips.length === 0) return null;
 		const totalSec = reviewSegments.reduce(

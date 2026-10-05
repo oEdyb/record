@@ -33,7 +33,10 @@ from the timeline removes its notice; restoring it restores the notice.
 Record, Save and Recordings share a pending-action guard, with visible progress and recovery
 after failure. The recordings browser supports search, arrow-key selection and Enter, and
 shows loading or failure instead of presenting stale rows. Review shortcuts respect dialogs,
-focused controls and the exact platform modifier; held action keys do not repeat navigation.
+text fields and the exact platform modifier; held action keys do not repeat navigation.
+Space or K always plays or pauses in review, including with a button or the playhead focused
+(Enter still activates a focused button). Left/Right step one frame, Shift-Left/Right or J/L one
+second, Up/Down move between clips, Home/End jump to the start or end, and M mutes the preview.
 Editing happens in DaVinci Resolve; this refinement adds no editing tools.
 
 The inherited editing model remains for old-project compatibility and the existing CLI.

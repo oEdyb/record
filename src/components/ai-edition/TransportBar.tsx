@@ -283,6 +283,7 @@ export const TransportBar = memo(function TransportBar({
 					onPointerCancel={endDrag}
 					onBlur={endDrag}
 					className={styles.scrubInput}
+					data-review-seek=""
 					aria-label={te("transport.seekVideo")}
 				/>
 				<div

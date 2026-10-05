@@ -14,6 +14,9 @@ function actions() {
 		onRecordings: vi.fn(),
 		onPlayPause: vi.fn(),
 		onStep: vi.fn(),
+		onClip: vi.fn(),
+		onEdge: vi.fn(),
+		onMute: vi.fn(),
 	};
 }
 function key(key: string, metaKey = false, target: EventTarget = window) {
@@ -70,7 +73,7 @@ describe("recording review shortcuts", () => {
 		expect(calls.onRecordings).not.toHaveBeenCalled();
 		expect(calls.onPlayPause).not.toHaveBeenCalled();
 		window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", repeat: true }));
-		expect(calls.onStep).toHaveBeenCalledWith(1);
+		expect(calls.onStep).toHaveBeenCalledWith(1, "frame");
 	});
 	it("leaves dialogs and toggle controls to their own keyboard behavior", () => {
 		const calls = actions();
@@ -104,22 +107,70 @@ describe("recording review shortcuts", () => {
 		expect(calls.onRecord).toHaveBeenCalledOnce();
 		expect(calls.onRecordings).toHaveBeenCalledOnce();
 		expect(calls.onPlayPause).toHaveBeenCalledOnce();
-		expect(calls.onStep).toHaveBeenCalledWith(1);
+		expect(calls.onStep).toHaveBeenCalledWith(1, "frame");
 	});
-	it("leaves text inputs and focused buttons to their normal keyboard behavior", () => {
+	it("leaves text inputs to their normal keyboard behavior", () => {
 		const calls = actions();
 		renderHook(() => useRecordingReviewShortcuts(calls));
-		const input = document.createElement("input"),
-			button = document.createElement("button");
-		document.body.append(input, button);
+		const input = document.createElement("input");
+		document.body.append(input);
 		key("s", true, input);
-		key(" ", false, button);
-		key("ArrowRight", false, button);
+		key(" ", false, input);
+		key("ArrowRight", false, input);
 		expect(calls.onSave).not.toHaveBeenCalled();
 		expect(calls.onPlayPause).not.toHaveBeenCalled();
 		expect(calls.onStep).not.toHaveBeenCalled();
 		input.remove();
+	});
+	it("plays and steps from a focused button or the playhead without clicking it", () => {
+		const calls = actions();
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		const button = document.createElement("button");
+		const seek = document.createElement("input");
+		seek.type = "range";
+		seek.setAttribute("data-review-seek", "");
+		document.body.append(button, seek);
+		const down = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+		button.dispatchEvent(down);
+		const up = new KeyboardEvent("keyup", { key: " ", bubbles: true, cancelable: true });
+		button.dispatchEvent(up);
+		expect(down.defaultPrevented).toBe(true);
+		expect(up.defaultPrevented).toBe(true);
+		key(" ", false, seek);
+		key("ArrowLeft", false, seek);
+		expect(calls.onPlayPause).toHaveBeenCalledTimes(2);
+		expect(calls.onStep).toHaveBeenCalledWith(-1, "frame");
 		button.remove();
+		seek.remove();
+	});
+	it("leaves another slider its arrow keys but still plays on Space", () => {
+		const calls = actions();
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		const volume = document.createElement("input");
+		volume.type = "range";
+		document.body.append(volume);
+		key("ArrowRight", false, volume);
+		key(" ", false, volume);
+		expect(calls.onStep).not.toHaveBeenCalled();
+		expect(calls.onPlayPause).toHaveBeenCalledOnce();
+		volume.remove();
+	});
+	it("maps K, J, L, Shift-arrows, clip keys, Home, End and M", () => {
+		const calls = actions();
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		for (const name of ["k", "j", "l", "ArrowUp", "ArrowDown", "Home", "End", "m"]) key(name);
+		window.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, cancelable: true }),
+		);
+		expect(calls.onPlayPause).toHaveBeenCalledOnce();
+		expect(calls.onStep.mock.calls).toEqual([
+			[-1, "second"],
+			[1, "second"],
+			[1, "second"],
+		]);
+		expect(calls.onClip.mock.calls).toEqual([[-1], [1]]);
+		expect(calls.onEdge.mock.calls).toEqual([["start"], ["end"]]);
+		expect(calls.onMute).toHaveBeenCalledOnce();
 	});
 	it("ignores hidden edit bindings and removes handlers when disabled", () => {
 		const calls = actions();
@@ -133,6 +184,9 @@ describe("recording review shortcuts", () => {
 			calls.onRecordings,
 			calls.onPlayPause,
 			calls.onStep,
+			calls.onClip,
+			calls.onEdge,
+			calls.onMute,
 		])
 			expect(callback).not.toHaveBeenCalled();
 		view.rerender({ enabled: false });
