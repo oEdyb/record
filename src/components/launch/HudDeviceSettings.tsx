@@ -217,6 +217,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onToggleCamera,
 	extras = {},
 	closing = false,
+	instant = false,
 }: {
 	micDevices: MicrophoneDevice[];
 	cameraDevices: CameraDevice[];
@@ -246,6 +247,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	extras?: HudSetupExtras;
 	/** True while the panel plays its exit before unmounting. */
 	closing?: boolean;
+	/** True when it replaces Source in place, so it appears without motion. */
+	instant?: boolean;
 }) {
 	const [expanded, setExpanded] = useState<DeviceSection | null>(null);
 	const toggleSection = (section: DeviceSection) =>
@@ -322,6 +325,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			role="dialog"
 			aria-label={labels.title}
 			data-closing={closing}
+			data-instant={instant}
 			className={`${styles.hudModal} ${styles.hudScrollbar} ${styles.hudPanel} ${styles.electronNoDrag}`}
 		>
 			<div className={styles.hudModalHeader}>

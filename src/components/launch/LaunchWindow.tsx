@@ -200,6 +200,14 @@ export function LaunchWindow() {
 	const isPopoverOpen = isDeviceSettingsOpen || peekOpen || isSourcePanelOpen;
 	const setupPresence = usePresence(isDeviceSettingsOpen, 150);
 	const sourcePresence = usePresence(isSourcePanelOpen, 150);
+	// Setup and Source are two pages of one popover: switching between them swaps
+	// in place with no motion, while opening or closing either one still animates.
+	const [setupSwappedIn, setSetupSwappedIn] = useState(false);
+	const [sourceSwappedIn, setSourceSwappedIn] = useState(false);
+	const panelsOpenRef = useRef({ setup: false, source: false });
+	panelsOpenRef.current = { setup: isDeviceSettingsOpen, source: isSourcePanelOpen };
+	const showSetup = isDeviceSettingsOpen || (setupPresence.present && !isSourcePanelOpen);
+	const showSource = isSourcePanelOpen || (sourcePresence.present && !isDeviceSettingsOpen);
 	const removedClipPresence = usePresence(removedClipFeedback !== null, 120);
 	const lastRemovedClipRef = useRef(removedClipFeedback);
 	if (removedClipFeedback) lastRemovedClipRef.current = removedClipFeedback;
@@ -700,6 +708,7 @@ export function LaunchWindow() {
 					return { opened: false, reason: "controls-locked" };
 				}
 				if (access?.granted) {
+					setSourceSwappedIn(panelsOpenRef.current.setup);
 					setIsDeviceSettingsOpen(false);
 					setIsPeekOpen(false);
 					setSourcePanelKind(kind);
@@ -1024,6 +1033,7 @@ export function LaunchWindow() {
 	const toggleDeviceSettings = useCallback(() => {
 		if (starting || saving) return;
 		setIsPeekOpen(false);
+		setSetupSwappedIn(panelsOpenRef.current.source);
 		setIsSourcePanelOpen(false);
 		setIsDeviceSettingsOpen((open) => !open);
 	}, [saving, starting]);
@@ -1558,16 +1568,17 @@ export function LaunchWindow() {
 				</div>
 
 				{(isPopoverOpen ||
-					setupPresence.present ||
-					sourcePresence.present ||
+					showSetup ||
+					showSource ||
 					canPeek ||
 					hasNotices ||
 					shownRemovedClip) && (
 					// column-reverse: first child sits closest to the bar.
 					<div className={styles.hudAbove}>
-						{setupPresence.present && (
+						{showSetup && (
 							<HudDeviceSettings
 								closing={setupPresence.closing}
+								instant={setupSwappedIn}
 								micDevices={micDevices}
 								cameraDevices={cameraDevices}
 								activeMicId={microphoneDeviceId || selectedMicId}
@@ -1596,9 +1607,10 @@ export function LaunchWindow() {
 							/>
 						)}
 
-						{sourcePresence.present && (
+						{showSource && (
 							<SourcePicker
 								variant="panel"
+								instant={sourceSwappedIn}
 								initialKind={sourcePanelKind}
 								className={styles.hudPanel}
 								closing={sourcePresence.closing}

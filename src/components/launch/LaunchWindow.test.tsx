@@ -494,6 +494,23 @@ describe("LaunchWindow record button", () => {
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 	});
 
+	it("swaps Setup and the source panel in place, without motion", async () => {
+		window.electronAPI.getSources = vi.fn(async () => [displayOneSource]);
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		expect(screen.getByTestId("hud-device-settings")).toHaveAttribute("data-instant", "false");
+
+		fireEvent.click(screen.getByTestId("launch-source-selector-button"));
+		const sourcePanel = await screen.findByTestId("hud-source-panel");
+		expect(sourcePanel).toHaveAttribute("data-instant", "true");
+		expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		expect(screen.getByTestId("hud-device-settings")).toHaveAttribute("data-instant", "true");
+		expect(screen.queryByTestId("hud-source-panel")).not.toBeInTheDocument();
+	});
+
 	it("falls back to the picker window when screen access still has to be granted", async () => {
 		window.electronAPI.requestScreenAccess = vi.fn(async () => ({
 			success: true,

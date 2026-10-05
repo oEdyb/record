@@ -90,6 +90,7 @@ export function SourcePicker({
 	panelRef,
 	className = "",
 	closing = false,
+	instant = false,
 }: {
 	variant: "window" | "panel";
 	/** The tab to open on, when the caller asked for screens or windows. */
@@ -98,6 +99,8 @@ export function SourcePicker({
 	className?: string;
 	/** True while the panel plays its exit before unmounting. */
 	closing?: boolean;
+	/** True when it replaces Setup in place, so it appears without motion. */
+	instant?: boolean;
 	onClose: () => void;
 	onChosen?: () => void;
 	panelRef?: (el: HTMLDivElement | null) => void;
@@ -276,6 +279,7 @@ export function SourcePicker({
 			data-hud-interactive="true"
 			data-testid={panelTestId}
 			data-closing={closing}
+			data-instant={instant}
 			className={shellClass}
 			data-rows={
 				loading

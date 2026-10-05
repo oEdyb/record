@@ -344,9 +344,8 @@
 .hudPanel[data-closing="true"] {
 	position: absolute;
 	bottom: 0;
-	left: 0;
-	right: 0;
-	margin-inline: auto;
+	left: 50%;
+	translate: -50% 0;
 }
 
 .hudPanel[data-closing="true"],
@@ -357,7 +356,7 @@
 	transition-duration: 120ms;
 }
 
-.hudPanel[data-instant="true"] {
+.hudPanel[data-instant="true"]:not([data-closing="true"]) {
 	transition: none;
 }
 
