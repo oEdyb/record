@@ -400,6 +400,37 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(close).not.toHaveBeenCalled();
 	});
 
+	it("keeps the timer steady while Pause is still saving the clip", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: "/tmp/recording-7-clip-0001.mp4",
+			durationMs: 2_000,
+		};
+		const pausing: { finish?: (value: unknown) => void } = {};
+		stubNativeMac({
+			pauseNativeMacRecording: vi.fn(
+				() =>
+					new Promise((resolve) => {
+						pausing.finish = resolve;
+					}),
+			),
+		});
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await settle(2_000);
+		expect(view.result.current.elapsedSeconds).toBe(2);
+
+		act(() => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(true);
+		expect(view.result.current.elapsedSeconds).toBe(2);
+
+		pausing.finish?.({ success: true, paused: true, clip });
+		await settle();
+		expect(view.result.current.elapsedSeconds).toBe(2);
+	});
+
 	it("updates the kept duration when a removed clip is restored", async () => {
 		const clip = {
 			index: 0,

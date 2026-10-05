@@ -148,7 +148,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 	/// The camera session and the screen stream shut down independently.
 	private func stopSourcesForFinalization() async {
-		async let cameraStopped: Void = stopCameraForFinalization()
+		// Camera frames are already refused once `isStopping` is set, and the helper exits after
+		// Stop. Shutting the session down takes hundreds of ms, or seconds when the device is
+		// busy, so it must not hold up the final clip.
+		if let cameraCapture { Task.detached { await cameraCapture.stop() } }
 		do {
 			if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) { try await stream?.stopCapture() }
 		} catch {
@@ -158,11 +161,6 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				"message": "\(error)",
 			])
 		}
-		await cameraStopped
-	}
-
-	private func stopCameraForFinalization() async {
-		await cameraCapture?.stop()
 	}
 
 	private func endRecordingActivity() {
@@ -1307,7 +1305,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 	private func milliseconds(since start: UInt64) -> Double { Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000 }
 	private func emitStopStage(_ stage: String) {
-		guard stateQueue.sync(execute: { isStopping }) else { return }
+		// Pause finalizes a clip through the same steps, so it reports them too.
+		guard stateQueue.sync(execute: { isStopping || isPaused }) else { return }
 		emit(["event": "stop-stage", "key": stage])
 	}
 

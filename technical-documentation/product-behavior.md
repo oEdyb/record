@@ -298,7 +298,11 @@ with a small 12-bar spinner; the video and play bar then fade in (Olle, 2026-10-
 Electron loads the review window hidden so Stop shows a warm window; that hidden review opens no
 project until Stop hands it the take. Stop skips re-probing the recovery journal when the helper's
 final event already lists every clip and original. Stop timings land in
-`diagnostics/record-stop-timing.jsonl` under the app's user-data folder.
+`diagnostics/record-stop-timing.jsonl` under the app's user-data folder; Pause and Continue
+timings land beside it in `record-pause-continue-timing.jsonl`. Stop does not wait for the
+camera to shut down: its frames are refused from the click and the helper exits right after
+(Olle, 2026-10-06). The timer never drops back while Pause saves a clip, and it holds the time
+of the click while Stop saves.
 
 Review follows the approved prototype and is always dark (Olle, 2026-10-04): a 60 px header with
 the Klippt mark, the recording name and "0:28 total, 3 clips", then Record (red dot), Original

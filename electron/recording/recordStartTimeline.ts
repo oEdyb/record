@@ -40,7 +40,7 @@ export class RecordStartTimeline {
 /** Appends one start as a JSON line and trims the file to the newest entries. */
 export async function appendRecordStartTiming(
 	file: string,
-	entry: { recordedAt: string; success: boolean; steps: RecordStartStep[] },
+	entry: { recordedAt: string; success: boolean; steps: RecordStartStep[]; action?: string },
 ): Promise<void> {
 	await fs.mkdir(path.dirname(file), { recursive: true });
 	const previous = await fs.readFile(file, "utf8").catch(() => "");

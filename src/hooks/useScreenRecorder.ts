@@ -291,6 +291,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [recordedClips, setRecordedClips] = useState<RecordingSessionClip[]>([]);
 	const [activeClipElapsedMs, setActiveClipElapsedMs] = useState(0);
 	const activeClipStartedAt = useRef<number | null>(null);
+	// The length of a clip that Pause is still saving. It keeps the timer from dropping
+	// back by that clip until the saved clip joins the kept clips.
+	const finalizingClipMs = useRef(0);
 	const webcamReady = useRef(false);
 	const activeWebcamFormat = useRef<WebcamFormat>(DEFAULT_WEBCAM_FORMAT);
 	const webcamAcquireId = useRef(0);
@@ -2048,6 +2051,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					const pausedAtMs = getRecordingDurationMs();
 					const activeClipStartedAtMs = activeClipStartedAt.current;
 					activeNativeMacRecording.paused = true;
+					finalizingClipMs.current =
+						activeClipStartedAtMs === null ? 0 : Date.now() - activeClipStartedAtMs;
 					activeClipStartedAt.current = null;
 					setPaused(true);
 					setClipFinalizing(true);
@@ -2108,6 +2113,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					console.error("Failed to toggle native macOS pause state:", error);
 					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
 				} finally {
+					finalizingClipMs.current = 0;
 					setClipFinalizing(false);
 				}
 			})();
@@ -2335,10 +2341,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			setActiveClipElapsedMs(0);
 			return;
 		}
+		// Stop keeps the time shown at the click until the review takes over.
+		if (saving) return;
 
 		const updateElapsedTime = () => {
 			const activeMs =
-				activeClipStartedAt.current === null ? 0 : Date.now() - activeClipStartedAt.current;
+				activeClipStartedAt.current === null
+					? finalizingClipMs.current
+					: Date.now() - activeClipStartedAt.current;
 			setActiveClipElapsedMs(activeMs);
 			setElapsedSeconds(
 				Math.floor(
@@ -2357,7 +2367,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		const interval = window.setInterval(updateElapsedTime, 250);
 
 		return () => window.clearInterval(interval);
-	}, [getRecordingDurationMs, paused, recordedClips, recording]);
+	}, [getRecordingDurationMs, paused, recordedClips, recording, saving]);
 
 	const cancelRecording = () => {
 		if (nativeWindowsRecording.current) {

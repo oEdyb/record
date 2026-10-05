@@ -703,6 +703,32 @@ function finishStopTimeline(success: boolean) {
 		steps: timeline.steps(),
 	}).catch((error) => console.warn("[capture-mac] could not log stop timing:", error));
 }
+/** Collects the helper's steps while one Pause or Continue runs. */
+let activeClipBoundaryTimeline: RecordStartTimeline | null = null;
+const recordClipBoundaryTimingFile = () =>
+	path.join(app.getPath("userData"), "diagnostics", "record-pause-continue-timing.jsonl");
+async function timeClipBoundary<T>(action: "pause" | "continue", run: () => Promise<T>) {
+	const timeline = new RecordStartTimeline(Date.now);
+	timeline.mark("ipc-received");
+	activeClipBoundaryTimeline = timeline;
+	let success = false;
+	try {
+		const result = await run();
+		success = Boolean(
+			result && typeof result === "object" && "success" in result && result.success === true,
+		);
+		return result;
+	} finally {
+		timeline.mark("returned");
+		if (activeClipBoundaryTimeline === timeline) activeClipBoundaryTimeline = null;
+		void appendRecordStartTiming(recordClipBoundaryTimingFile(), {
+			recordedAt: new Date().toISOString(),
+			action,
+			success,
+			steps: timeline.steps(),
+		}).catch((error) => console.warn("[capture-mac] could not log clip timing:", error));
+	}
+}
 let selectedDesktopSource: DesktopCapturerSource | null = null;
 let lastEnumeratedSources = new Map<string, DesktopCapturerSource>();
 let currentProjectPath: string | null = null;
@@ -3079,6 +3105,7 @@ export function registerIpcHandlers(
 					if (name === "capture-timing") return;
 					activeStartTimeline?.mark(`helper:${name}`);
 					activeStopTimeline?.mark(`helper:${name}`);
+					activeClipBoundaryTimeline?.mark(`helper:${name}`);
 				},
 			});
 		},
@@ -3188,7 +3215,9 @@ export function registerIpcHandlers(
 		const workloadId = activeCaptureWorkloadId;
 		if (workloadId) workloadTelemetry.startPhase(workloadId, "clip-finalization");
 		const startedAt = Date.now();
-		const result = await invokeNativeMac(() => getNativeMacRecordingService().pause());
+		const result = await timeClipBoundary("pause", () =>
+			invokeNativeMac(() => getNativeMacRecordingService().pause()),
+		);
 		if (workloadId) {
 			workloadTelemetry.endPhase(workloadId, "clip-finalization");
 			workloadTelemetry.observe(workloadId, "writer.fragment_finalize_ms", Date.now() - startedAt);
@@ -3202,7 +3231,9 @@ export function registerIpcHandlers(
 		return result;
 	});
 	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
-		const result = await invokeNativeMac(() => getNativeMacRecordingService().resume(request));
+		const result = await timeClipBoundary("continue", () =>
+			invokeNativeMac(() => getNativeMacRecordingService().resume(request)),
+		);
 		if (activeCaptureWorkloadId && "success" in result && result.success) {
 			if (request) {
 				workloadTelemetry.configure(activeCaptureWorkloadId, {
