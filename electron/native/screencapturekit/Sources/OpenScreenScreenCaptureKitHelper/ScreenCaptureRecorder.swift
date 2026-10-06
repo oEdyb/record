@@ -239,7 +239,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			// Await both operations before changing the writer settings. Continue stays
 			// disabled in the renderer until this acknowledgement arrives.
 			do {
-				try await configureCamera(for: nextRequest)
+				if Self.cameraNeedsRestart(from: request, to: nextRequest, running: cameraCapture?.isRunning ?? false) {
+					try await configureCamera(for: nextRequest)
+				}
 				if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
 					try await stream.updateConfiguration(setup.configuration)
 					try await stream.updateContentFilter(setup.filter)
@@ -1079,6 +1081,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		// fractional millisecond.
 		let durationMs = max(1, Int(ceil(durationSeconds * 1000)))
 		return FinalizedClip(index: detached.index, path: detached.path, durationMs: durationMs, originals: originalPayload)
+	}
+
+	/// A running camera whose setup did not change keeps its session across Continue. A
+	/// source or window change must not cost a camera restart and a gap in its picture.
+	static func cameraNeedsRestart(from current: RecordingRequest, to next: RecordingRequest, running: Bool) -> Bool {
+		if !next.webcam.enabled { return current.webcam.enabled || running }
+		return !running || next.webcam != current.webcam || next.video.quality != current.video.quality
 	}
 
 	private func configureCamera(for nextRequest: RecordingRequest) async throws {

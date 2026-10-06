@@ -62,7 +62,7 @@ struct RecordingRequest: Decodable {
 		let microphone: Microphone
 	}
 
-	struct Webcam: Decodable {
+	struct Webcam: Decodable, Equatable {
 		let enabled: Bool
 		let deviceId: String?
 		let deviceName: String?

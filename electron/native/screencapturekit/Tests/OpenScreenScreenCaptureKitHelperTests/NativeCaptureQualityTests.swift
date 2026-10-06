@@ -17,6 +17,27 @@ final class NativeCaptureQualityTests: XCTestCase {
 		XCTAssertTrue(failures[0].hasPrefix("configuration:"))
 	}
 
+	func testUnchangedRunningCameraIsNotRestartedOnContinue() throws {
+		func request(camera: Bool = true, width: Int = 1920, quality: String = "high", windows: [Int] = []) throws -> RecordingRequest {
+			let json = """
+			{"source":{"type":"display","sourceId":"screen:1","excludedWindowIds":\(windows)},
+			"video":{"quality":"\(quality)","fps":60,"width":1920,"height":1080,"hideSystemCursor":false},
+			"audio":{"system":{"enabled":false},"microphone":{"enabled":false,"gain":1}},
+			"webcam":{"enabled":\(camera),"deviceId":"cam","width":\(width),"height":1080,"fps":30,"exactFormat":true},
+			"cursor":{"mode":"system"},"outputs":{"screenPath":"/tmp/a.mp4"}}
+			"""
+			return try JSONDecoder().decode(RecordingRequest.self, from: Data(json.utf8))
+		}
+		let current = try request()
+		// A new excluded window is a capture change, not a camera change.
+		XCTAssertFalse(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(windows: [7]), running: true))
+		XCTAssertTrue(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(), running: false))
+		XCTAssertTrue(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(width: 1280), running: true))
+		XCTAssertTrue(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(quality: "standard"), running: true))
+		XCTAssertTrue(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(camera: false), running: true))
+		XCTAssertFalse(ScreenCaptureRecorder.cameraNeedsRestart(from: try request(camera: false), to: try request(camera: false), running: false))
+	}
+
 	func testProfilesPreserveStandardUIAndLegacyRequestBitrates() {
 		XCTAssertEqual(RecordingQualityPolicy.bitrate(quality: "standard", legacyBitrate: 1), 68_000_000)
 		XCTAssertEqual(RecordingQualityPolicy.bitrate(quality: "high", legacyBitrate: 1), 136_000_000)

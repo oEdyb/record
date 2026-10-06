@@ -163,6 +163,8 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		}
 	}
 
+	var isRunning: Bool { session.isRunning }
+
 	func stop() async {
 		await withCheckedContinuation { continuation in lifecycleQueue.async { self.session.stopRunning(); continuation.resume() } }
 	}
