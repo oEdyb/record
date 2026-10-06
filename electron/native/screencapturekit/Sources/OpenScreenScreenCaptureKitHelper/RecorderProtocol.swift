@@ -19,7 +19,7 @@ final class RecorderCommandExecutor: @unchecked Sendable {
 	}
 }
 
-struct Rectangle: Decodable {
+struct Rectangle: Decodable, Equatable {
 	let x: Double
 	let y: Double
 	let width: Double
@@ -37,7 +37,7 @@ struct RecordingRequest: Decodable {
 		let bounds: Rectangle?
 	}
 
-	struct Video: Decodable {
+	struct Video: Decodable, Equatable {
 		let quality: String?
 		let fps: Int
 		let width: Int
@@ -46,12 +46,12 @@ struct RecordingRequest: Decodable {
 		let hideSystemCursor: Bool
 	}
 
-	struct Audio: Decodable {
-		struct SystemAudio: Decodable {
+	struct Audio: Decodable, Equatable {
+		struct SystemAudio: Decodable, Equatable {
 			let enabled: Bool
 		}
 
-		struct Microphone: Decodable {
+		struct Microphone: Decodable, Equatable {
 			let enabled: Bool
 			let deviceId: String?
 			let deviceName: String?
@@ -73,11 +73,11 @@ struct RecordingRequest: Decodable {
 		let exactFormat: Bool?
 	}
 
-	struct Cursor: Decodable {
+	struct Cursor: Decodable, Equatable {
 		let mode: String
 	}
 
-	struct Outputs: Decodable {
+	struct Outputs: Decodable, Equatable {
 		let screenPath: String
 		let manifestPath: String?
 	}

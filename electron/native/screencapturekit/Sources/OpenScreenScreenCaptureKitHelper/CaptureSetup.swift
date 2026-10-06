@@ -13,6 +13,9 @@ struct CaptureSetup {
 	let height: Int
 	let captureFrame: CGRect
 	let microphoneEnabled: Bool
+	/// True when the filter hides the app by process (or records one window), so the
+	/// request's list of windows to exclude has no effect on what is captured.
+	let ignoresExcludedWindows: Bool
 }
 
 @available(macOS 13.0, *)
@@ -22,6 +25,7 @@ final class CaptureSetupBuilder {
 		let width: Int
 		let height: Int
 		let captureFrame: CGRect
+		let ignoresExcludedWindows: Bool
 	}
 
 	func make(from content: SCShareableContent, request: RecordingRequest) throws -> CaptureSetup {
@@ -37,7 +41,8 @@ final class CaptureSetupBuilder {
 			width: target.width,
 			height: target.height,
 			captureFrame: target.captureFrame,
-			microphoneEnabled: streamSettings.microphoneEnabled
+			microphoneEnabled: streamSettings.microphoneEnabled,
+			ignoresExcludedWindows: target.ignoresExcludedWindows
 		)
 	}
 
@@ -77,7 +82,8 @@ final class CaptureSetupBuilder {
 				filter: filter,
 				width: dimensions.width,
 				height: dimensions.height,
-				captureFrame: display.frame
+				captureFrame: display.frame,
+				ignoresExcludedWindows: !excludedApplications.isEmpty
 			)
 		case "window":
 			guard let windowId = request.source.windowId else {
@@ -102,7 +108,8 @@ final class CaptureSetupBuilder {
 				filter: filter,
 				width: dimensions.width,
 				height: dimensions.height,
-				captureFrame: window.frame
+				captureFrame: window.frame,
+				ignoresExcludedWindows: true
 			)
 		default:
 			throw HelperError.invalidSourceType(request.source.type)

@@ -48,6 +48,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var activeConfiguration: SCStreamConfiguration?
 	private var writer: AVAssetWriter?
 	private var cameraCapture: NativeCameraCapture?
+	private var activeFilterIgnoresExcludedWindows = false
 	/// A camera the standby helper already started for this exact setup; used by the first start only.
 	var warmCamera: NativeCameraCapture?
 	private var cameraSample: CMSampleBuffer?
@@ -140,6 +141,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		stateQueue.sync { streamRecovery.install(stream) }
 		activeFilter = setup.filter
 		activeConfiguration = setup.configuration
+		activeFilterIgnoresExcludedWindows = setup.ignoresExcludedWindows
 		emit([
 			"event": "ready",
 			"schemaVersion": 1,
@@ -209,6 +211,20 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			emitError(code: "reconfigure-not-paused", message: "Capture setup can change only while paused.")
 			return
 		}
+		// The app opens and closes its own windows while recording. When the filter already
+		// hides the app by process, a new list of those windows changes nothing that is
+		// captured: keep the running stream, its cached frame and the camera as they are.
+		if activeFilterIgnoresExcludedWindows, Self.sameCaptureExceptExcludedWindows(request, nextRequest) {
+			request = nextRequest
+			emit([
+				"event": "recording-reconfigured",
+				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
+				"width": outputWidth,
+				"height": outputHeight,
+				"captureBounds": captureBoundsPayload(),
+			])
+			return
+		}
 		// Samples arriving during filter/configuration changes cannot be assigned
 		// reliably to either source. A resumed clip must never seed an old source.
 		sampleQueue.sync {
@@ -274,6 +290,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			cadence = RecordingCadence(fps: nextRequest.video.fps)
 			activeFilter = setup.filter
 			activeConfiguration = setup.configuration
+			activeFilterIgnoresExcludedWindows = setup.ignoresExcludedWindows
 			outputWidth = setup.width
 			outputHeight = setup.height
 			captureFrame = setup.captureFrame
@@ -1083,6 +1100,14 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		// fractional millisecond.
 		let durationMs = max(1, Int(ceil(durationSeconds * 1000)))
 		return FinalizedClip(index: detached.index, path: detached.path, durationMs: durationMs, originals: originalPayload)
+	}
+
+	static func sameCaptureExceptExcludedWindows(_ current: RecordingRequest, _ next: RecordingRequest) -> Bool {
+		current.source.type == next.source.type && current.source.sourceId == next.source.sourceId
+			&& current.source.displayId == next.source.displayId && current.source.windowId == next.source.windowId
+			&& current.source.excludedProcessIds == next.source.excludedProcessIds && current.source.bounds == next.source.bounds
+			&& current.video == next.video && current.audio == next.audio && current.webcam == next.webcam
+			&& current.cursor == next.cursor && current.outputs == next.outputs
 	}
 
 	/// A running camera whose setup did not change keeps its session across Continue. A

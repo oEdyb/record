@@ -37,6 +37,11 @@ final class NativeCaptureQualityTests: XCTestCase {
 		XCTAssertTrue(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(camera: false), running: true))
 		XCTAssertFalse(ScreenCaptureRecorder.cameraNeedsRestart(from: try request(camera: false), to: try request(camera: false), running: false))
 
+		// The app's own window list alone is not a capture change; anything else is.
+		XCTAssertTrue(ScreenCaptureRecorder.sameCaptureExceptExcludedWindows(current, try request(windows: [7, 9])))
+		XCTAssertFalse(ScreenCaptureRecorder.sameCaptureExceptExcludedWindows(current, try request(width: 1280)))
+		XCTAssertFalse(ScreenCaptureRecorder.sameCaptureExceptExcludedWindows(current, try request(quality: "standard")))
+
 		// Standby hands over its warm camera only for the exact camera setup being recorded.
 		XCTAssertTrue(HelperWarmup.warmCameraMatches(webcam: current.webcam, quality: "high", request: try request(windows: [7])))
 		XCTAssertFalse(HelperWarmup.warmCameraMatches(webcam: current.webcam, quality: "high", request: try request(width: 1280)))
