@@ -48,6 +48,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var activeConfiguration: SCStreamConfiguration?
 	private var writer: AVAssetWriter?
 	private var cameraCapture: NativeCameraCapture?
+	/// A camera the standby helper already started for this exact setup; used by the first start only.
+	var warmCamera: NativeCameraCapture?
 	private var cameraSample: CMSampleBuffer?
 	private var originals: [String: OriginalTrackWriter] = [:]
 	private var originalOwners: [String: OriginalSourceWriter] = [:]
@@ -1093,11 +1095,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private func configureCamera(for nextRequest: RecordingRequest) async throws {
 		await cameraCapture?.stop()
 		sampleQueue.sync { cameraCapture = nil; cameraSample = nil }
-		guard nextRequest.webcam.enabled else { return }
-		let camera = try NativeCameraCapture(request: nextRequest, sampleQueue: sampleQueue, onFailure: { [weak self] error in self?.reportWriterFailure("\(error)") }, onDrop: { [weak self] in
+		let warm = warmCamera
+		warmCamera = nil
+		guard nextRequest.webcam.enabled else { await warm?.stop(); return }
+		let onFailure: (Error) -> Void = { [weak self] error in self?.reportWriterFailure("\(error)") }
+		let onDrop: () -> Void = { [weak self] in
 			guard let self, !self.stateQueue.sync(execute: { self.isPaused || self.isStopping }) else { return }
 			self.captureTelemetry.recordCameraSample(dropped: true)
-		}) { [weak self] sample in
+		}
+		let onSample: (CMSampleBuffer) -> Void = { [weak self] sample in
 			guard let self else { return }
 			let callbackStart = self.diagnosticTiming ? DispatchTime.now().uptimeNanoseconds : 0
 			defer { if self.diagnosticTiming { self.trackTiming(stage: "cameraCallback", since: callbackStart) } }
@@ -1106,6 +1112,14 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			if self.didStartWriting { self.captureTelemetry.recordCameraSample() }
 			self.appendOriginal(sample, key: "webcamVideoPath")
 		}
+		if let warm, warm.isRunning {
+			warm.adopt(sampleQueue: sampleQueue, onFailure: onFailure, onDrop: onDrop, onSample: onSample)
+			sampleQueue.sync { cameraCapture = warm }
+			warm.announceFormat()
+			return
+		}
+		await warm?.stop()
+		let camera = try NativeCameraCapture(webcam: nextRequest.webcam, quality: nextRequest.video.quality, sampleQueue: sampleQueue, onFailure: onFailure, onDrop: onDrop, onSample: onSample)
 		sampleQueue.sync { cameraCapture = camera }
 		try await camera.start()
 	}

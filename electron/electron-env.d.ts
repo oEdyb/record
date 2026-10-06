@@ -56,6 +56,13 @@ interface Window {
 		getCachedSources?: () => Promise<ProcessedDesktopSource[]>;
 		/** Warms a capture helper so the next Record starts faster. macOS only; elsewhere a no-op. */
 		prewarmNativeMacCapture?: () => Promise<void>;
+		/** While this window shows the camera, lets the standby helper keep it started. */
+		setNativeMacWarmCamera?: (
+			camera: {
+				webcam: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest["webcam"];
+				quality: string;
+			} | null,
+		) => void;
 		switchToEditor: (options?: { compactReview?: boolean }) => Promise<void>;
 		expandReviewWindow: () => Promise<{ success: boolean }>;
 		isReviewWindowCompact: () => Promise<boolean>;

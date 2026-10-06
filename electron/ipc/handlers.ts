@@ -2137,6 +2137,32 @@ export function registerIpcHandlers(
 		if (helperPath && !nativeMacRecordingService?.isRunning()) nativeMacStandby.warm(helperPath);
 	};
 	ipcMain.handle("prewarm-native-mac-capture", warmNativeMacCapture);
+	// Only the window that shows the camera may keep it warm, and only while it lives.
+	let warmCameraOwner: Electron.WebContents | null = null;
+	ipcMain.on("set-native-mac-warm-camera", (event, camera: unknown) => {
+		if (process.platform !== "darwin") return;
+		const webcam = (camera as { webcam?: Record<string, unknown> } | null)?.webcam;
+		const valid =
+			webcam?.enabled === true &&
+			[webcam.width, webcam.height, webcam.fps].every((value) => Number.isFinite(value));
+		if (!valid) {
+			if (warmCameraOwner === event.sender || warmCameraOwner === null) {
+				warmCameraOwner = null;
+				nativeMacStandby.setWarmCamera(null);
+			}
+			return;
+		}
+		if (warmCameraOwner !== event.sender) {
+			const owner = event.sender;
+			warmCameraOwner = owner;
+			owner.once("destroyed", () => {
+				if (warmCameraOwner !== owner) return;
+				warmCameraOwner = null;
+				nativeMacStandby.setWarmCamera(null);
+			});
+		}
+		nativeMacStandby.setWarmCamera(camera);
+	});
 
 	ipcMain.handle("select-source", async (_, source: SelectedSource) =>
 		serializeRecordingSetup(async () => {

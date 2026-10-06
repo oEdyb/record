@@ -13,6 +13,7 @@ type Standby = { process: ChildProcessWithoutNullStreams; helperPath: string; sp
  */
 export class NativeMacStandbyHelper {
 	private standby: Standby | null = null;
+	private warmCamera: unknown = null;
 
 	constructor(
 		private readonly deps: {
@@ -31,6 +32,24 @@ export class NativeMacStandbyHelper {
 			if (this.standby === standby) this.standby = null;
 		});
 		this.standby = standby;
+		if (this.warmCamera !== null) this.sendWarmCamera();
+	}
+
+	/**
+	 * Keeps the standby helper's camera running for this camera setup, or releases it with
+	 * null. Call it only while the app itself shows that camera, so the camera is never
+	 * held where the user cannot see it.
+	 */
+	setWarmCamera(camera: unknown): void {
+		const changed = JSON.stringify(camera ?? null) !== JSON.stringify(this.warmCamera);
+		this.warmCamera = camera ?? null;
+		if (changed) this.sendWarmCamera();
+	}
+
+	private sendWarmCamera(): void {
+		const standby = this.standby;
+		if (!standby || !this.usable(standby, standby.helperPath)) return;
+		standby.process.stdin.write(`${JSON.stringify({ warmCamera: this.warmCamera })}\n`);
 	}
 
 	/** Hands the warm helper its request, or returns null so the caller spawns a fresh one. */

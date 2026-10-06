@@ -17,6 +17,7 @@ import {
 	buildNativeMacRecordingRequest,
 	computeCaptureBitrate,
 	MIN_FRAME_RATE,
+	nativeMacWebcamRequest,
 	selectRecorderMimeType,
 	TARGET_FRAME_RATE,
 	TARGET_HEIGHT,
@@ -529,6 +530,36 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		recordingQuality,
 		t,
 		showCameraBlocked,
+	]);
+
+	// While this window holds the camera, the standby capture helper may hold it too, so
+	// Record does not wait for the camera to start. It is released as soon as we let go.
+	useEffect(() => {
+		if (!webcamPreviewStream) return;
+		window.electronAPI?.setNativeMacWarmCamera?.({
+			webcam: nativeMacWebcamRequest(
+				{
+					enabled: true,
+					deviceId: webcamDeviceId,
+					deviceName: webcamDeviceName ?? webcamPreviewStream.getVideoTracks()[0]?.label,
+					format:
+						recordingQuality === "high" && !webcamFormatAuto
+							? webcamFormat
+							: activeWebcamFormat.current,
+					formatAuto: webcamFormatAuto,
+				},
+				recordingQuality,
+			),
+			quality: normalizeRecordingQuality(recordingQuality),
+		});
+		return () => window.electronAPI?.setNativeMacWarmCamera?.(null);
+	}, [
+		webcamPreviewStream,
+		webcamDeviceId,
+		webcamDeviceName,
+		webcamFormat,
+		webcamFormatAuto,
+		recordingQuality,
 	]);
 
 	const finalizeRecording = useCallback(

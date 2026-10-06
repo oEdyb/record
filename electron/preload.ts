@@ -161,6 +161,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	getCachedSources: () => ipcRenderer.invoke("get-cached-sources"),
 	prewarmNativeMacCapture: () => ipcRenderer.invoke("prewarm-native-mac-capture"),
+	setNativeMacWarmCamera: (camera: unknown) =>
+		ipcRenderer.send("set-native-mac-warm-camera", camera),
 	switchToEditor: (options?: { compactReview?: boolean }) => {
 		return ipcRenderer.invoke("switch-to-editor", options);
 	},

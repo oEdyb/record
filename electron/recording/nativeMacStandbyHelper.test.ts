@@ -41,6 +41,31 @@ describe("NativeMacStandbyHelper", () => {
 		expect(helper.take("/helper", {})).toBeNull();
 	});
 
+	it("tells the standby helper which camera to keep started, and when to release it", () => {
+		const { helper, spawned } = setup();
+		const camera = {
+			webcam: { enabled: true, width: 1920, height: 1080, fps: 30 },
+			quality: "high",
+		};
+		helper.warm("/helper");
+		helper.setWarmCamera(camera);
+		helper.setWarmCamera(camera);
+		expect(spawned[0].stdin.write.mock.calls).toEqual([
+			[`${JSON.stringify({ warmCamera: camera })}\n`],
+		]);
+
+		helper.setWarmCamera(null);
+		expect(spawned[0].stdin.write).toHaveBeenLastCalledWith('{"warmCamera":null}\n');
+
+		// A helper spawned later learns the camera that is being shown right now.
+		helper.setWarmCamera(camera);
+		helper.discard();
+		helper.warm("/helper");
+		expect(spawned[1].stdin.write.mock.calls).toEqual([
+			[`${JSON.stringify({ warmCamera: camera })}\n`],
+		]);
+	});
+
 	it("never hands over a helper that exited or is close to its idle exit", () => {
 		const { helper, spawned, advance } = setup();
 		helper.warm("/helper");

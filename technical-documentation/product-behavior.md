@@ -302,7 +302,10 @@ final event already lists every clip and original. Stop timings land in
 timings land beside it in `record-pause-continue-timing.jsonl`. Stop does not wait for the
 camera to shut down: its frames are refused from the click and the helper exits right after
 (Olle, 2026-10-06). The timer never drops back while Pause saves a clip, and it holds the time
-of the click while Stop saves.
+of the click while Stop saves. While the recorder window itself holds the camera, the standby
+capture helper keeps the same camera started so Record does not wait for it; the helper lets go
+the moment the recorder does, and a Continue restarts the camera only when the camera's own
+setup changed (Olle, 2026-10-06).
 
 Review follows the approved prototype and is always dark (Olle, 2026-10-04): a 60 px header with
 the Klippt mark, the recording name and "0:28 total, 3 clips", then Record (red dot), Original

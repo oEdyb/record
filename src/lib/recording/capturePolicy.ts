@@ -74,6 +74,20 @@ export function computeCaptureBitrate(
 	return Math.round(BITRATE_BASE * highFrameRateBoost);
 }
 
+/** The camera block of a macOS request. Start and the standby warm-up must build it alike. */
+export function nativeMacWebcamRequest(
+	webcam: NativeMacCaptureSettings["webcam"],
+	recordingQuality: NativeMacCaptureSettings["recordingQuality"],
+): NativeMacRecordingRequest["webcam"] {
+	return {
+		enabled: webcam.enabled,
+		deviceId: webcam.deviceId,
+		deviceName: webcam.deviceName,
+		...webcam.format,
+		exactFormat: normalizeRecordingQuality(recordingQuality) === "high" && !webcam.formatAuto,
+	};
+}
+
 export function buildNativeMacRecordingRequest(input: {
 	source: CaptureSource;
 	recordingId: number;
@@ -106,13 +120,7 @@ export function buildNativeMacRecordingRequest(input: {
 			system: { enabled: settings.systemAudioEnabled },
 			microphone: settings.microphone,
 		},
-		webcam: {
-			enabled: settings.webcam.enabled,
-			deviceId: settings.webcam.deviceId,
-			deviceName: settings.webcam.deviceName,
-			...settings.webcam.format,
-			exactFormat: quality === "high" && !settings.webcam.formatAuto,
-		},
+		webcam: nativeMacWebcamRequest(settings.webcam, settings.recordingQuality),
 		cursor: { mode: settings.cursorCaptureMode },
 		outputs: { screenPath: "" },
 	};

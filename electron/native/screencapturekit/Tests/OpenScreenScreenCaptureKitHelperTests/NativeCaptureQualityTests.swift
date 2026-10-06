@@ -36,6 +36,17 @@ final class NativeCaptureQualityTests: XCTestCase {
 		XCTAssertTrue(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(quality: "standard"), running: true))
 		XCTAssertTrue(ScreenCaptureRecorder.cameraNeedsRestart(from: current, to: try request(camera: false), running: true))
 		XCTAssertFalse(ScreenCaptureRecorder.cameraNeedsRestart(from: try request(camera: false), to: try request(camera: false), running: false))
+
+		// Standby hands over its warm camera only for the exact camera setup being recorded.
+		XCTAssertTrue(HelperWarmup.warmCameraMatches(webcam: current.webcam, quality: "high", request: try request(windows: [7])))
+		XCTAssertFalse(HelperWarmup.warmCameraMatches(webcam: current.webcam, quality: "high", request: try request(width: 1280)))
+		XCTAssertFalse(HelperWarmup.warmCameraMatches(webcam: current.webcam, quality: "high", request: try request(quality: "standard")))
+		XCTAssertFalse(HelperWarmup.warmCameraMatches(webcam: current.webcam, quality: "high", request: try request(camera: false)))
+		XCTAssertTrue(HelperWarmup.isWarmCameraLine(Data(#"{"warmCamera":null}"#.utf8)))
+		XCTAssertFalse(HelperWarmup.isWarmCameraLine(Data(#"{"source":{}}"#.utf8)))
+		let command = try JSONDecoder().decode(HelperWarmup.WarmCameraCommand.self, from: Data(
+			#"{"warmCamera":{"quality":"high","webcam":{"enabled":true,"deviceId":"cam","width":1920,"height":1080,"fps":30,"exactFormat":true}}}"#.utf8))
+		XCTAssertEqual(command.warmCamera?.webcam, current.webcam)
 	}
 
 	func testProfilesPreserveStandardUIAndLegacyRequestBitrates() {

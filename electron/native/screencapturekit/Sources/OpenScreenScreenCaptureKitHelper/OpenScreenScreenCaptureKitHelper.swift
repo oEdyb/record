@@ -16,7 +16,7 @@ struct OpenScreenScreenCaptureKitHelper {
 			if CommandLine.arguments[1] == HelperWarmup.standbyArgument {
 				await HelperWarmup.run()
 				emit(["event": "standby"])
-				guard let line = HelperWarmup.awaitRequest() else { exit(0) }
+				guard let line = await HelperWarmup.awaitRequest() else { exit(0) }
 				requestData = line
 			} else {
 				requestData = Data(CommandLine.arguments[1].utf8)
@@ -30,6 +30,7 @@ struct OpenScreenScreenCaptureKitHelper {
 					await recorder.stop()
 				}
 			}
+			recorder.warmCamera = await HelperWarmup.takeWarmCamera(for: request)
 			try await recorder.start()
 			let stopTask = Task.detached {
 				while let line = readLine() {

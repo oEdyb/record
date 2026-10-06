@@ -9,32 +9,33 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 	private let nativeFormat: AVCaptureDevice.Format
 	private let nativeFrameDuration: CMTime
 	private let lifecycleQueue = DispatchQueue(label: "app.openscreen.sck-helper.camera")
-	private let sampleQueue: DispatchQueue
+	private let output = AVCaptureVideoDataOutput()
+	private var sampleQueue: DispatchQueue
 	private var runtimeObserver: NSObjectProtocol?
-	private let onDrop: () -> Void
-	private let onFailure: (Error) -> Void
-	private let onSample: (CMSampleBuffer) -> Void
+	private var onDrop: () -> Void
+	private var onFailure: (Error) -> Void
+	private var onSample: (CMSampleBuffer) -> Void
 	let width: Int
 	let height: Int
 	let fps: Double
 
-	init(request: RecordingRequest, sampleQueue: DispatchQueue, onFailure: @escaping (Error) -> Void, onDrop: @escaping () -> Void, onSample: @escaping (CMSampleBuffer) -> Void) throws {
+	init(webcam: RecordingRequest.Webcam, quality: String?, sampleQueue: DispatchQueue, onFailure: @escaping (Error) -> Void, onDrop: @escaping () -> Void, onSample: @escaping (CMSampleBuffer) -> Void) throws {
 		self.sampleQueue = sampleQueue
 		self.onDrop = onDrop
 		self.onFailure = onFailure
 		self.onSample = onSample
 		let cameras = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .externalUnknown], mediaType: .video, position: .unspecified).devices
-		guard let device = Self.resolveDevice(cameras, id: request.webcam.deviceId, name: request.webcam.deviceName) else {
+		guard let device = Self.resolveDevice(cameras, id: webcam.deviceId, name: webcam.deviceName) else {
 			throw HelperError.writerSetupFailed("The selected camera is unavailable.")
 		}
 		self.device = device
-		let high = request.video.quality == "high"
+		let high = quality == "high"
 		// A format picked in Setup is recorded as chosen. If this camera cannot deliver
 		// it (it was unplugged and swapped), fall back to the Automatic format.
-		let chosen = high && request.webcam.exactFormat == true
-			? Self.exactFormat(device.formats, width: request.webcam.width, height: request.webcam.height, fps: request.webcam.fps)
+		let chosen = high && webcam.exactFormat == true
+			? Self.exactFormat(device.formats, width: webcam.width, height: webcam.height, fps: webcam.fps)
 			: nil
-		let candidates = device.formats.filter { $0.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= (high ? 60 : Double(max(1, request.webcam.fps))) } }
+		let candidates = device.formats.filter { $0.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= (high ? 60 : Double(max(1, webcam.fps))) } }
 		guard let format = chosen ?? candidates.min(by: { left, right in
 			let a = CMVideoFormatDescriptionGetDimensions(left.formatDescription)
 			let b = CMVideoFormatDescriptionGetDimensions(right.formatDescription)
@@ -43,13 +44,13 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 					(Int(a.width), Int(a.height), Self.supportedFps(ranges: left.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: 60)),
 					(Int(b.width), Int(b.height), Self.supportedFps(ranges: right.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: 60)))
 			}
-			return abs(Int(a.width) - request.webcam.width) + abs(Int(a.height) - request.webcam.height)
-				< abs(Int(b.width) - request.webcam.width) + abs(Int(b.height) - request.webcam.height)
+			return abs(Int(a.width) - webcam.width) + abs(Int(a.height) - webcam.height)
+				< abs(Int(b.width) - webcam.width) + abs(Int(b.height) - webcam.height)
 		}) else { throw HelperError.writerSetupFailed("No native camera format is available.") }
 		let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
 		nativeFormat = format
 		width = Int(dimensions.width); height = Int(dimensions.height)
-		let target = chosen != nil || !high ? Double(max(1, request.webcam.fps)) : 60
+		let target = chosen != nil || !high ? Double(max(1, webcam.fps)) : 60
 		let supportedRate = Self.supportedFps(ranges: format.videoSupportedFrameRateRanges.map { ($0.minFrameRate, $0.maxFrameRate) }, target: target)
 		guard let frameDuration = Self.frameDuration(ranges: format.videoSupportedFrameRateRanges.map { ($0.minFrameDuration, $0.maxFrameDuration) }, fps: supportedRate) else {
 			throw HelperError.writerSetupFailed("No supported native camera frame duration is available.")
@@ -63,7 +64,6 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		let input = try AVCaptureDeviceInput(device: device)
 		guard session.canAddInput(input) else { throw HelperError.writerSetupFailed("Cannot open the selected camera.") }
 		session.addInput(input)
-		let output = AVCaptureVideoDataOutput()
 		// On macOS, preset-only output configuration overrides explicit activeFormat.
 		// Request the exact advertised native dimensions; never accept a scaled source.
 		output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
@@ -118,7 +118,23 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 
 	deinit { if let runtimeObserver { NotificationCenter.default.removeObserver(runtimeObserver) } }
 
-	func start() async throws {
+	/// Hands a camera that standby already started to the recording: its frames now go to the
+	/// recorder's queue and handlers. Never call this from the queue it is leaving.
+	func adopt(sampleQueue: DispatchQueue, onFailure: @escaping (Error) -> Void, onDrop: @escaping () -> Void, onSample: @escaping (CMSampleBuffer) -> Void) {
+		output.setSampleBufferDelegate(nil, queue: nil)
+		self.sampleQueue.sync {}
+		self.sampleQueue = sampleQueue
+		self.onFailure = onFailure
+		self.onDrop = onDrop
+		self.onSample = onSample
+		output.setSampleBufferDelegate(self, queue: sampleQueue)
+	}
+
+	func announceFormat() {
+		emit(["event": "camera-format", "width": width, "height": height, "fps": fps, "container": "mov", "codec": "h264"])
+	}
+
+	func start(announce: Bool = true) async throws {
 		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
 			lifecycleQueue.async {
 				do {
@@ -142,7 +158,7 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 				} catch { continuation.resume(throwing: error) }
 			}
 		}
-		emit(["event": "camera-format", "width": width, "height": height, "fps": fps, "container": "mov", "codec": "h264"])
+		if announce { announceFormat() }
 	}
 	/// Automatic takes a 16:9 format when the camera has one, then the most pixels, then the
 	/// highest rate. Pixel count alone picks a square or 4:3 sensor mode on Apple cameras.
