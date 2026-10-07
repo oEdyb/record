@@ -452,6 +452,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps
 				)
 			}
+			if seed == nil {
+				let waited = try await ResumeSeedWait.firstFrame {
+					try sampleQueue.sync {
+						try frameCache.resumedFrame(at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps)
+					}
+				}
+				seed = waited.frame
+				if seed != nil { emit(["event": "resume-stage", "key": "first-frame", "waitedMs": waited.waitedMs]) }
+			}
 			if seed == nil, #available(macOS 14.0, *),
 				let activeFilter, let activeConfiguration
 			{
