@@ -9,8 +9,13 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 	private let nativeFormat: AVCaptureDevice.Format
 	private let nativeFrameDuration: CMTime
 	private let lifecycleQueue = DispatchQueue(label: "app.openscreen.sck-helper.camera")
+	/// AVFoundation delivers on this queue and discards frames whenever it is busy. It only
+	/// checks and forwards, so a stalled recorder queue delays camera frames instead of
+	/// losing them.
+	private let deliveryQueue = DispatchQueue(label: "app.openscreen.sck-helper.camera.delivery")
 	private let output = AVCaptureVideoDataOutput()
 	private var sampleQueue: DispatchQueue
+	private var dropReport = CameraDropReport()
 	private var runtimeObserver: NSObjectProtocol?
 	private var onDrop: () -> Void
 	private var onFailure: (Error) -> Void
@@ -75,13 +80,13 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
 			kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height]
 		output.alwaysDiscardsLateVideoFrames = true
-		output.setSampleBufferDelegate(self, queue: sampleQueue)
+		output.setSampleBufferDelegate(self, queue: deliveryQueue)
 		guard session.canAddOutput(output) else { throw HelperError.writerSetupFailed("Cannot read native camera frames.") }
 		session.addOutput(output)
 		runtimeObserver = NotificationCenter.default.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak self] notification in
 			guard let self else { return }
 			let message = String(describing: notification.userInfo?[AVCaptureSessionErrorKey])
-			self.sampleQueue.async { self.onFailure(HelperError.writerSetupFailed("Native camera failed: \(message)")) }
+			self.deliveryQueue.async { self.fail("Native camera failed: \(message)") }
 		}
 		let center = NotificationCenter.default
 		interruptionObservers = [
@@ -97,6 +102,12 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 				self.reportInterruption("session stopped running on its own")
 			},
 		]
+	}
+
+	/// Runs on the delivery queue: hands the failure to the recorder queue current at that moment.
+	private func fail(_ message: String) {
+		let queue = sampleQueue, handler = onFailure
+		queue.async { handler(HelperError.writerSetupFailed(message)) }
 	}
 
 	private func reportInterruption(_ message: String) {
@@ -146,15 +157,18 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 	}
 
 	/// Hands a camera that standby already started to the recording: its frames now go to the
-	/// recorder's queue and handlers. Never call this from the queue it is leaving.
+	/// recorder's queue and handlers. Never call this from the queue it is leaving or from the
+	/// delivery queue.
 	func adopt(sampleQueue: DispatchQueue, onFailure: @escaping (Error) -> Void, onDrop: @escaping () -> Void, onSample: @escaping (CMSampleBuffer) -> Void) {
-		output.setSampleBufferDelegate(nil, queue: nil)
-		self.sampleQueue.sync {}
-		self.sampleQueue = sampleQueue
-		self.onFailure = onFailure
-		self.onDrop = onDrop
-		self.onSample = onSample
-		output.setSampleBufferDelegate(self, queue: sampleQueue)
+		let previous = deliveryQueue.sync { () -> DispatchQueue in
+			let previous = self.sampleQueue
+			self.sampleQueue = sampleQueue
+			self.onFailure = onFailure
+			self.onDrop = onDrop
+			self.onSample = onSample
+			return previous
+		}
+		previous.sync {}
 	}
 
 	func announceFormat() {
@@ -219,18 +233,27 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 			reportInterruption(String(format: "no camera frames for %.0f ms", (nowSeconds - last) * 1_000))
 		}
 		lastSampleHostSeconds = nowSeconds
-		guard let clock = session.synchronizationClock else { onFailure(HelperError.writerSetupFailed("The native camera clock is unavailable.")); return }
-		guard let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { onFailure(HelperError.writerSetupFailed("The native camera delivered no image.")); return }
+		guard let clock = session.synchronizationClock else { fail("The native camera clock is unavailable."); return }
+		guard let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { fail("The native camera delivered no image."); return }
 		let active = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
 		guard Self.matchesNativeGeometry(expected: (width, height), active: (Int(active.width), Int(active.height)), delivered: (CVPixelBufferGetWidth(image), CVPixelBufferGetHeight(image))) else {
 			let settings = (output as? AVCaptureVideoDataOutput)?.videoSettings ?? [:]
-			onFailure(HelperError.writerSetupFailed("The camera changed its native resolution during capture: configured \(width)x\(height), delivered \(CVPixelBufferGetWidth(image))x\(CVPixelBufferGetHeight(image)), active format \(active.width)x\(active.height), preset \(session.sessionPreset.rawValue), output settings \(settings).")); return
+			fail("The camera changed its native resolution during capture: configured \(width)x\(height), delivered \(CVPixelBufferGetWidth(image))x\(CVPixelBufferGetHeight(image)), active format \(active.width)x\(active.height), preset \(session.sessionPreset.rawValue), output settings \(settings)."); return
 		}
 		let hostTime = CMSyncConvertTime(CMSampleBufferGetPresentationTimeStamp(sampleBuffer), from: clock, to: CMClockGetHostTimeClock())
-		if let sample = try? RecordingFrameCache.retime(sampleBuffer, at: hostTime, fps: max(1, Int(fps.rounded()))) { onSample(sample) }
+		guard let sample = try? RecordingFrameCache.retime(sampleBuffer, at: hostTime, fps: max(1, Int(fps.rounded()))) else { return }
+		let queue = sampleQueue, handler = onSample
+		queue.async { handler(sample) }
 	}
 	static func matchesNativeGeometry(expected: (Int, Int), active: (Int, Int), delivered: (Int, Int)) -> Bool {
 		expected.0 == active.0 && expected.1 == active.1 && expected.0 == delivered.0 && expected.1 == delivered.1
 	}
-	func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) { onDrop() }
+	func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+		let queue = sampleQueue, handler = onDrop
+		queue.async { handler() }
+		if dropReport.shouldReport(at: CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))) {
+			let reason = CMGetAttachment(sampleBuffer, key: kCMSampleBufferAttachmentKey_DroppedFrameReason, attachmentModeOut: nil)
+			reportInterruption("camera frame dropped, \(CameraDropReport.describe(reason))")
+		}
+	}
 }
