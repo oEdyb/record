@@ -212,6 +212,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	systemAudioEnabled = false,
 	microphoneEnabled = false,
 	controlsLocked = false,
+	cameraLocked = false,
 	onToggleSystemAudio,
 	onToggleMicrophone,
 	onToggleCamera,
@@ -241,6 +242,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	systemAudioEnabled?: boolean;
 	microphoneEnabled?: boolean;
 	controlsLocked?: boolean;
+	/** A take, live or paused, owns the camera; the panel must not change its mode. */
+	cameraLocked?: boolean;
 	onToggleSystemAudio?: () => void;
 	onToggleMicrophone?: () => void;
 	onToggleCamera?: () => void;
@@ -286,6 +289,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		nativeFormat: automaticCamera,
 		format: webcamFormat,
 		externalStream: cameraStream,
+		deviceLocked: cameraLocked && cameraStream !== null,
 	});
 	const formatOptions = supportedFormats.length > 0 ? supportedFormats : [webcamFormat];
 

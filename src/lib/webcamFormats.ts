@@ -182,6 +182,16 @@ function webcamProbeCacheKey(
  * preview for seconds on a 4K UVC camera. Keep the result per device for the app session
  * so reopening the panel or re-acquiring the same camera does not repeat that.
  */
+/** Modes already probed for this camera in this app session; empty when never probed. */
+export function cachedWebcamFormats(
+	track: Pick<MediaStreamTrack, "getSettings" | "label">,
+	deviceId?: string,
+): WebcamFormat[] {
+	const key = webcamProbeCacheKey(track, deviceId);
+	const cached = key ? probedFormatsByDevice.get(key) : undefined;
+	return cached ? cached.map((format) => ({ ...format })) : [];
+}
+
 export async function probeWebcamFormatsCached(
 	track: WebcamTrack & Pick<MediaStreamTrack, "label">,
 	deviceId?: string,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
 	applyWebcamFormat,
+	cachedWebcamFormats,
 	DEFAULT_WEBCAM_FORMAT,
 	nativeWebcamConstraints,
 	preferredWebcamConstraints,
@@ -19,6 +20,11 @@ export interface CameraPreviewStreamOptions {
 	format?: WebcamFormat;
 	/** Recorder-owned feed to display and probe without opening or stopping the camera again. */
 	externalStream?: MediaStream | null;
+	/**
+	 * The native recorder owns the camera's mode during a take. Probing or applying a
+	 * format then switches the shared device under it and blanks the recorded camera.
+	 */
+	deviceLocked?: boolean;
 }
 
 /**
@@ -31,6 +37,7 @@ export function useCameraPreviewStream({
 	deviceId,
 	format = DEFAULT_WEBCAM_FORMAT,
 	externalStream = null,
+	deviceLocked = false,
 }: CameraPreviewStreamOptions) {
 	const [stream, setStream] = useState<MediaStream | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -71,6 +78,11 @@ export function useCameraPreviewStream({
 
 			const track = nextStream.getVideoTracks()[0];
 			if (!track) return;
+			if (deviceLocked) {
+				setSupportedFormats(cachedWebcamFormats(track, deviceId));
+				setActiveFormat(webcamFormatFromSettings(track.getSettings(), formatRef.current));
+				return;
+			}
 			if (nativeFormat) {
 				// The helper picks the format; still list the camera's modes so Setup can
 				// offer them. Probing restores the native constraints when it finishes.
@@ -136,7 +148,7 @@ export function useCameraPreviewStream({
 				ownsStreamRef.current = false;
 			}
 		};
-	}, [enabled, deviceId, externalStream, nativeFormat]);
+	}, [enabled, deviceId, externalStream, nativeFormat, deviceLocked]);
 
 	useEffect(() => {
 		const track = streamRef.current?.getVideoTracks()[0];

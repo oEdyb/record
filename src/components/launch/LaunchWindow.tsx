@@ -1593,6 +1593,7 @@ export function LaunchWindow() {
 								systemAudioEnabled={systemAudioEnabled}
 								microphoneEnabled={microphoneEnabled}
 								controlsLocked={controlsLocked}
+								cameraLocked={recording}
 								onToggleSystemAudio={toggleSystemAudio}
 								onToggleMicrophone={toggleMicrophone}
 								onToggleCamera={toggleWebcam}

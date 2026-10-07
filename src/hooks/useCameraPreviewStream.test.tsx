@@ -146,6 +146,29 @@ describe("useCameraPreviewStream", () => {
 		view.unmount();
 	});
 
+	it("never probes or reconfigures the shared camera while a take owns it", async () => {
+		const external = cameraStream();
+		probeWebcamFormatsCached.mockResolvedValue([{ width: 3840, height: 2160, fps: 30 }]);
+
+		const view = renderHook(() =>
+			useCameraPreviewStream({
+				enabled: true,
+				externalStream: external.stream,
+				format: { width: 3840, height: 2160, fps: 30 },
+				deviceLocked: true,
+			}),
+		);
+		await waitFor(() => expect(view.result.current.stream).toBe(external.stream));
+		await waitFor(() =>
+			expect(view.result.current.activeFormat).toEqual({ width: 1920, height: 1080, fps: 30 }),
+		);
+
+		expect(probeWebcamFormatsCached).not.toHaveBeenCalled();
+		expect(external.applyConstraints).not.toHaveBeenCalled();
+		expect(view.result.current.supportedFormats).toEqual([]);
+		view.unmount();
+	});
+
 	it("does not reconfigure a track that already delivers the requested format", async () => {
 		const external = cameraStream();
 		const formats = [{ width: 1920, height: 1080, fps: 30 }];
