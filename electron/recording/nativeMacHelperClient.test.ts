@@ -95,6 +95,28 @@ describe("NativeMacHelperClient", () => {
 		await assertion;
 	});
 
+	it("hands every helper warning to the warning sink with its payload", async () => {
+		const process = fakeProcess();
+		const onWarning = vi.fn();
+		new NativeMacHelperClient(process, { onWarning });
+		emit(process, {
+			event: "warning",
+			code: "camera-interrupted",
+			message: "no camera frames for 600 ms",
+			timestampMs: 5,
+		});
+		emit(process, { event: "recording-resumed" });
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(onWarning).toHaveBeenCalledTimes(1);
+		expect(onWarning).toHaveBeenCalledWith(
+			expect.objectContaining({
+				code: "camera-interrupted",
+				message: "no camera frames for 600 ms",
+				timestampMs: 5,
+			}),
+		);
+	});
+
 	it("names helper stage keys and warning codes in the event timeline", async () => {
 		const process = fakeProcess();
 		const onEvent = vi.fn();

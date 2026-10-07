@@ -23,6 +23,8 @@ type NativeMacHelperClientOptions = {
 	onOriginalStarted?: (original: NativeMacOriginalStarted) => void;
 	/** Every event the helper sends, by name, as it arrives. */
 	onEvent?: (name: string) => void;
+	/** Every warning the helper sends, with its code, message and timestamps. */
+	onWarning?: (warning: Record<string, unknown>) => void;
 };
 
 export class NativeMacPauseError extends Error {
@@ -367,6 +369,7 @@ export class NativeMacHelperClient {
 				`[capture-mac] helper warning at ${new Date().toISOString()}:`,
 				JSON.stringify(event),
 			);
+			this.options.onWarning?.(event);
 		}
 		const bounds = event.captureBounds as Rectangle | undefined;
 		if (event.event === "original-started") {

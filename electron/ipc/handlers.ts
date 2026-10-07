@@ -151,7 +151,11 @@ import {
 } from "../recording/projectRecordingSetupStore";
 import { type RecordingPrefs, RecordingPrefsStore } from "../recording/recordingPrefsStore";
 import { createRecordingStartupOverlayController } from "../recording/recordingStartupOverlay";
-import { appendRecordStartTiming, RecordStartTimeline } from "../recording/recordStartTimeline";
+import {
+	appendDiagnosticRow,
+	appendRecordStartTiming,
+	RecordStartTimeline,
+} from "../recording/recordStartTimeline";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { recordingsDirectory } from "../recordingPaths";
@@ -683,6 +687,9 @@ let selectedSource: SelectedSource | null = null;
 /** The last screens and windows read at picker thumbnail size. */
 let lastPickerSources: PickerSource[] = [];
 let lastPickerFullReadAt: number | null = null;
+/** Every helper warning, so a gap or a slow switch can be explained after the take. */
+const helperWarningsFile = () =>
+	path.join(app.getPath("userData"), "diagnostics", "helper-warnings.jsonl");
 /** Collects the start steps of the recording being started, if any. */
 let activeStartTimeline: RecordStartTimeline | null = null;
 const recordStartTimingFile = () =>
@@ -3159,6 +3166,12 @@ export function registerIpcHandlers(
 					activeStartTimeline?.mark(`helper:${name}`);
 					activeStopTimeline?.mark(`helper:${name}`);
 					activeClipBoundaryTimeline?.mark(`helper:${name}`);
+				},
+				onWarning: (warning) => {
+					void appendDiagnosticRow(helperWarningsFile(), {
+						recordedAt: new Date().toISOString(),
+						...warning,
+					}).catch((error) => console.warn("[capture-mac] could not log helper warning:", error));
 				},
 			});
 		},

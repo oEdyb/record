@@ -38,7 +38,7 @@ export class RecordStartTimeline {
 }
 
 /** Appends one start as a JSON line and trims the file to the newest entries. */
-export async function appendRecordStartTiming(
+export function appendRecordStartTiming(
 	file: string,
 	entry: {
 		recordedAt: string;
@@ -48,10 +48,15 @@ export async function appendRecordStartTiming(
 		error?: string;
 	},
 ): Promise<void> {
+	return appendDiagnosticRow(file, entry);
+}
+
+/** Appends one JSON row to a bounded diagnostics file, one writer per file. */
+export function appendDiagnosticRow(file: string, row: Record<string, unknown>): Promise<void> {
 	const write = async () => {
 		await fs.mkdir(path.dirname(file), { recursive: true });
 		const previous = await fs.readFile(file, "utf8").catch(() => "");
-		const lines = [...previous.split("\n").filter(Boolean), JSON.stringify(entry)];
+		const lines = [...previous.split("\n").filter(Boolean), JSON.stringify(row)];
 		await fs.writeFile(file, `${lines.slice(-MAX_ENTRIES).join("\n")}\n`);
 	};
 	// Two timelines can end in the same tick (a pick and the prepare it triggers). A
