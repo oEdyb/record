@@ -48,8 +48,16 @@ export async function appendRecordStartTiming(
 		error?: string;
 	},
 ): Promise<void> {
-	await fs.mkdir(path.dirname(file), { recursive: true });
-	const previous = await fs.readFile(file, "utf8").catch(() => "");
-	const lines = [...previous.split("\n").filter(Boolean), JSON.stringify(entry)];
-	await fs.writeFile(file, `${lines.slice(-MAX_ENTRIES).join("\n")}\n`);
+	const write = async () => {
+		await fs.mkdir(path.dirname(file), { recursive: true });
+		const previous = await fs.readFile(file, "utf8").catch(() => "");
+		const lines = [...previous.split("\n").filter(Boolean), JSON.stringify(entry)];
+		await fs.writeFile(file, `${lines.slice(-MAX_ENTRIES).join("\n")}\n`);
+	};
+	// Two timelines can end in the same tick (a pick and the prepare it triggers). A
+	// read-modify-write per entry needs one writer per file or rows interleave.
+	const queued = (pendingWrites.get(file) ?? Promise.resolve()).then(write, write);
+	pendingWrites.set(file, queued);
+	return queued;
 }
+const pendingWrites = new Map<string, Promise<void>>();

@@ -4,6 +4,20 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { appendRecordStartTiming, RecordStartTimeline } from "./recordStartTimeline";
 
+describe("appendRecordStartTiming", () => {
+	it("keeps every row intact when two timelines end in the same tick", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-timing-"));
+		const file = path.join(dir, "rows.jsonl");
+		await Promise.all(
+			["pick", "prepare", "continue"].map((action) =>
+				appendRecordStartTiming(file, { recordedAt: action, success: true, steps: [], action }),
+			),
+		);
+		const rows = (await fs.readFile(file, "utf8")).split("\n").filter(Boolean);
+		expect(rows.map((row) => JSON.parse(row).action)).toEqual(["pick", "prepare", "continue"]);
+	});
+});
+
 describe("RecordStartTimeline", () => {
 	it("measures each step from the click, renderer and main together", () => {
 		let clock = 1_150;

@@ -101,7 +101,6 @@ type UseScreenRecorderReturn = {
 	canPauseRecording: boolean;
 	canReconfigureWhilePaused: boolean;
 	/** Rebuilds a paused take's capture for a likely next source before Continue. */
-	prepareContinueForSource: (source: ProcessedDesktopSource) => void;
 	canRemovePreviousClip: boolean;
 	removePreviousClip: () => Promise<RecordingSessionClip | null>;
 	restoreRemovedClip: (clipIndex: number) => Promise<RecordingSessionClip | null>;
@@ -1372,9 +1371,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		);
 		return () => cleanup?.();
 	}, []);
-	const prepareContinueForSource = useCallback((source: ProcessedDesktopSource) => {
-		prepareNativeMacContinueRef.current(source);
-	}, []);
 
 	const startNativeMacRecordingIfAvailable = async (
 		selectedSource: ProcessedDesktopSource,
@@ -2489,7 +2485,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		togglePaused,
 		canPauseRecording,
 		canReconfigureWhilePaused,
-		prepareContinueForSource,
 		canRemovePreviousClip,
 		removePreviousClip,
 		restoreRemovedClip,

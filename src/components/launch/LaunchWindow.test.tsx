@@ -53,7 +53,6 @@ const recorderState = vi.hoisted(() => ({
 		togglePaused: vi.fn(),
 		canPauseRecording: false,
 		canReconfigureWhilePaused: false,
-		prepareContinueForSource: vi.fn(),
 		canRemovePreviousClip: false,
 		removePreviousClip: vi.fn(async (): Promise<RecordingSessionClip | null> => null),
 		restoreRemovedClip: vi.fn(async (): Promise<RecordingSessionClip | null> => null),
@@ -370,7 +369,6 @@ function resetLaunchMocks() {
 	recorderState.value.recording = false;
 	recorderState.value.paused = false;
 	recorderState.value.canReconfigureWhilePaused = false;
-	recorderState.value.prepareContinueForSource.mockClear();
 	recorderState.value.microphoneDeviceId = undefined;
 	vi.stubGlobal("ResizeObserver", StubResizeObserver);
 	recorderState.value.toggleRecording.mockClear();
@@ -442,7 +440,7 @@ describe("LaunchWindow record button", () => {
 		expect(prewarm).toHaveBeenCalledTimes(1);
 	});
 
-	it("rebuilds the capture for the main display when a paused window take looks at the picker", async () => {
+	it("leaves a paused window take alone when Setup is hovered, so keeping the window costs nothing", async () => {
 		recorderState.value.recording = true;
 		recorderState.value.paused = true;
 		recorderState.value.canReconfigureWhilePaused = true;
@@ -455,29 +453,13 @@ describe("LaunchWindow record button", () => {
 			);
 		});
 
-		const setup = await screen.findByTestId("launch-device-settings-button");
-		fireEvent.pointerEnter(setup);
-		await waitFor(() =>
-			expect(recorderState.value.prepareContinueForSource).toHaveBeenCalledWith(displayOneSource),
-		);
-		fireEvent.pointerEnter(setup);
-		expect(recorderState.value.prepareContinueForSource).toHaveBeenCalledTimes(1);
-	});
-
-	it("leaves a paused display take alone when the picker opens", async () => {
-		recorderState.value.recording = true;
-		recorderState.value.paused = true;
-		recorderState.value.canReconfigureWhilePaused = true;
-		window.electronAPI.getSources = vi.fn(async () => [displayOneSource]);
-		renderLaunchWindow();
-		await waitForSourceSelectionSubscription();
-		act(() => {
-			selectedSourceChangedListeners.forEach((listener) => listener(displayOneSource));
-		});
-
+		window.electronAPI.prepareNativeMacContinue = vi.fn(async () => ({
+			success: true,
+			prepared: true,
+		}));
 		fireEvent.pointerEnter(await screen.findByTestId("launch-device-settings-button"));
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		expect(recorderState.value.prepareContinueForSource).not.toHaveBeenCalled();
+		expect(window.electronAPI.prepareNativeMacContinue).not.toHaveBeenCalled();
 	});
 
 	it("opens the source panel above the pill instead of disabling Record when no source is selected", async () => {
