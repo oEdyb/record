@@ -658,7 +658,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard !startup.isLive else { return }
 		let now = CMClockGetTime(CMClockGetHostTimeClock())
 		do {
-			try startup.checkDeadline(at: now, videoAppended: true, readyOriginals: readyOriginals, readyAudio: readyAudioTracks)
+			reportLateSources(try startup.checkDeadline(at: now, videoAppended: true, readyOriginals: readyOriginals, readyAudio: readyAudioTracks))
 			var caughtUp = true
 			if request.video.quality == "high" { caughtUp = try cadence.dueTimes(at: now, maximumCatchUpFrames: startup.backlogLimit(fps: request.video.fps)).isEmpty }
 			guard startup.acknowledge(videoAppended: true, gridCaughtUp: caughtUp) else { return }
@@ -1289,10 +1289,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			guard let self, self.writer.map(ObjectIdentifier.init) == writerID, self.currentClipIndex == clipIndex,
 				!self.stateQueue.sync(execute: { self.isPaused || self.isStopping || self.hasTerminalFailure }) else { return }
 			do {
-				try self.startup.checkDeadline(at: deadline, videoAppended: self.clipLastTime != nil,
-					readyOriginals: self.readyOriginals, readyAudio: self.readyAudioTracks)
+				self.reportLateSources(try self.startup.checkDeadline(at: deadline, videoAppended: self.clipLastTime != nil,
+					readyOriginals: self.readyOriginals, readyAudio: self.readyAudioTracks))
 			} catch { self.reportWriterFailure("\(error)", detectedAt: deadline) }
 		}
+	}
+
+	private func reportLateSources(_ sources: [String]) {
+		guard !sources.isEmpty else { return }
+		emit([
+			"event": "warning", "code": "source-late", "clipIndex": currentClipIndex,
+			"message": "Recording continues without \(sources.joined(separator: ", ")) two seconds after the first screen frame; each source joins when its first sample arrives.",
+		])
 	}
 
 	private func startCadenceTimer() {

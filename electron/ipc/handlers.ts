@@ -3216,6 +3216,7 @@ export function registerIpcHandlers(
 			recordedAt: new Date().toISOString(),
 			success: "success" in result && result.success === true,
 			steps: timeline.steps(),
+			...("error" in result && typeof result.error === "string" ? { error: result.error } : {}),
 		}).catch((error) => console.warn("[capture-mac] could not log start timing:", error));
 		if ("success" in result && result.success && activeCaptureWorkloadId) {
 			workloadTelemetry.configure(activeCaptureWorkloadId, {

@@ -1463,7 +1463,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			setElapsedSeconds(0);
 			return true;
 		} catch (error) {
-			console.error("Native macOS capture failed:", error);
+			console.error("Native macOS capture failed:", error instanceof Error ? error.message : error);
 			throw error;
 		}
 	};
