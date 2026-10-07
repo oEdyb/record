@@ -162,3 +162,30 @@ Resume within about 100 ms of each pick): window stream starts 668 ms and 984 ms
 449 ms; Continue 428 ms and 503 ms with `first-frame` after 74 ms and 46 ms; Stop 499 ms;
 no gaps, no warnings. A stray click removed the second clip during the drive; the Undo toast
 appeared as designed.
+
+## Eleventh installation, October 8, 00:20
+
+Olle's take on the 00:12 build (recording 1791411267578, five clips) was clean and every pick
+0 ms, but the first window pick's stream took 8877 ms to start, with two `camera-interrupted`
+warnings at 5.2 s and 6.3 s of that wait; later window starts took 1.9 s and 1.5 s. The helper
+printed the warning text only to the console, so the reason was lost. `e88f1a4a` gives the
+helper client an `onWarning` sink and appends every warning with its message, code, and time to
+`diagnostics/helper-warnings.jsonl`. Package `warn-20261008`; same signing identity and
+identifiers; deep strict verification passed. Previous app kept at
+`backup-installed-20261008-0020`.
+
+Olle's take on this build (recording 1791411853778, six clips, window picks of a Roblox
+window): no gaps (max 17 ms), no clip warnings, every pick 0 ms. Record 329 ms, Stop 265 ms,
+Pause 60 to 107 ms, Continue 41 to 55 ms when the stream was already up. Window stream starts
+after the first: 378, 313, and 300 ms.
+
+The one outlier was the first window pick: the replacement stream was created in 101 ms and
+then `startCapture` blocked for 9013 ms. Three seconds later, while paused, the helper logged
+`paused-source-unavailable` with ScreenCaptureKit error -3815, "Failed to find any displays or
+windows to capture": the picked window had gone away. The next prepare took the
+`previous-stopped` path and started a fresh stream in 378 ms. The slow start and the vanished
+window point at the Roblox window itself (being created or replaced while it was picked), not
+at the capture path, which started every stable window in well under half a second.
+
+Open from earlier: the first clip's microphone track still starts 130 to 620 ms late
+(318 ms here); offsets are compensated in the clip metadata.
