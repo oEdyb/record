@@ -141,7 +141,7 @@ actor ShareableContentCache {
 	}
 
 	static func liveWindowBounds(_ id: CGWindowID) -> CGRect? {
-		guard let info = CGWindowListCreateDescriptionFromArray([id] as CFArray) as? [[String: Any]],
+		guard let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]],
 			let bounds = info.first?[kCGWindowBounds as String] as? NSDictionary,
 			let rect = CGRect(dictionaryRepresentation: bounds)
 		else { return nil }

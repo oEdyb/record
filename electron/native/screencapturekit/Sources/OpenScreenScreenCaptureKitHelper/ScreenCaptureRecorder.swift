@@ -417,7 +417,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				"event": "recording-paused",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
 			])
-			await ShareableContentCache.shared.keepFresh(every: 2)
+			await ShareableContentCache.shared.keepFresh(every: 3)
 		} catch {
 			emitError(code: "clip-finalize-failed", message: "\(error)")
 		}

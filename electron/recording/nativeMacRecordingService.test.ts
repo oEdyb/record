@@ -922,6 +922,40 @@ describe("NativeMacRecordingService", () => {
 		await service.stop(true);
 	});
 
+	it("does not rebuild again when only the resolved bounds moved after a prepare", async () => {
+		helper.pauseResult = Promise.resolve({
+			index: 0,
+			screenVideoPath: "/tmp/clip-1.mp4",
+			durationMs: 500,
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		const windowRequest: NativeMacRecordingRequest = {
+			...baseRequest,
+			source: {
+				type: "window",
+				sourceId: "window:77:0",
+				windowId: 77,
+				bounds: { x: 0, y: 0, width: 1728, height: 1117 },
+			},
+		};
+		await expect(service.prepareResume(windowRequest)).resolves.toEqual({
+			success: true,
+			prepared: true,
+		});
+		expect(helper.reconfigure).toHaveBeenCalledTimes(1);
+
+		await expect(
+			service.resume({
+				...windowRequest,
+				source: { ...windowRequest.source, bounds: { x: 100, y: 80, width: 1200, height: 800 } },
+			}),
+		).resolves.toEqual({ success: true, clipIndex: 1 });
+		expect(helper.reconfigure).toHaveBeenCalledTimes(1);
+		await service.stop(true);
+	});
+
 	it("ignores an early prepare while the recording is live", async () => {
 		const service = new NativeMacRecordingService(deps);
 		await service.start(baseRequest);

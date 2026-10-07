@@ -861,6 +861,9 @@ export class NativeMacRecordingService {
 		const source: NativeMacRecordingRequest["source"] = { ...config.source };
 		delete source.excludedWindowIds;
 		delete source.excludedProcessIds;
+		// Bounds are resolved from the helper's last reported frame, so they change as a
+		// consequence of a rebuild; they never describe a different capture.
+		delete source.bounds;
 		return JSON.stringify({
 			...config,
 			source: {
