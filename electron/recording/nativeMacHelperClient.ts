@@ -355,8 +355,11 @@ export class NativeMacHelperClient {
 		const event = this.parseEvent(line.trim());
 		if (!event) return;
 		if (typeof event.event === "string") {
-			const key = typeof event.key === "string" ? `:${event.key}` : "";
-			this.options.onEvent?.(`${event.event}${key}`);
+			const detail = typeof event.key === "string" ? event.key : event.code;
+			const named = event.event === "warning" || typeof event.key === "string";
+			this.options.onEvent?.(
+				named && typeof detail === "string" ? `${event.event}:${detail}` : event.event,
+			);
 		}
 		if (event.event === "recording-started") this.recordingStarted = true;
 		if (event.event === "warning") {

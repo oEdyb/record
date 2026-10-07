@@ -95,6 +95,21 @@ describe("NativeMacHelperClient", () => {
 		await assertion;
 	});
 
+	it("names helper stage keys and warning codes in the event timeline", async () => {
+		const process = fakeProcess();
+		const onEvent = vi.fn();
+		new NativeMacHelperClient(process, { onEvent });
+		emit(process, { event: "resume-stage", key: "first-frame", waitedMs: 55 });
+		emit(process, { event: "warning", code: "camera-interrupted", message: "gap" });
+		emit(process, { event: "recording-resumed" });
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(onEvent.mock.calls.map(([name]) => name)).toEqual([
+			"resume-stage:first-frame",
+			"warning:camera-interrupted",
+			"recording-resumed",
+		]);
+	});
+
 	it("does not classify an unacknowledged clip-start failure as safely paused", async () => {
 		const process = fakeProcess();
 		const client = new NativeMacHelperClient(process);
