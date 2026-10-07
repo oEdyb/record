@@ -118,7 +118,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		markStep("Permissions")
 
 		let (content, contentRejection) = try await ShareableContentCache.shared.content(for: request)
-		emit(["event": "start-stage", "key": contentRejection == nil ? "shareable-content-cached" : "shareable-content", "reason": contentRejection ?? ""])
+		emit(["event": "start-stage", "key": contentRejection.map { "shareable-content:\($0)" } ?? "shareable-content-cached"])
 		markStep("ShareableContent")
 		stateQueue.sync { recordingActivity = processActivity.acquire() }
 		var started = false
@@ -190,13 +190,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	/// charge; without it the previous stream has already stopped and nothing is lost.
 	private func replaceCaptureStream(filter: SCContentFilter, configuration: SCStreamConfiguration, keepingPrevious: Bool = false) async throws {
 		let replacement = try configuredStream(filter: filter, configuration: configuration)
+		emit(["event": "reconfigure-stage", "key": "replacement-created"])
 		let previous = stream
 		stream = replacement
 		stateQueue.sync { streamRecovery.install(replacement) }
 		sampleQueue.sync { frameCache.invalidateCapturedFrame() }
-		if !keepingPrevious { try? await previous?.stopCapture() }
+		if !keepingPrevious {
+			try? await previous?.stopCapture()
+			emit(["event": "reconfigure-stage", "key": "previous-stopped"])
+		}
 		do {
 			try await replacement.startCapture()
+			emit(["event": "reconfigure-stage", "key": "replacement-started"])
 			guard !stateQueue.sync(execute: { streamRecovery.needsReplacement }) else {
 				throw HelperError.sourceNotFound("The selected capture source stopped before recording could continue. Select an available source and try again.")
 			}
@@ -252,7 +257,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			try ensureRequestedPermissions(for: nextRequest)
 			emit(["event": "reconfigure-stage", "key": "permissions"])
 			let (content, contentRejection) = try await ShareableContentCache.shared.content(for: nextRequest)
-			emit(["event": "reconfigure-stage", "key": contentRejection == nil ? "shareable-content-cached" : "shareable-content", "reason": contentRejection ?? ""])
+			emit(["event": "reconfigure-stage", "key": contentRejection.map { "shareable-content:\($0)" } ?? "shareable-content-cached"])
 			let setup = try captureSetupBuilder.make(from: content, request: nextRequest)
 			guard let stream else {
 				throw HelperError.writerSetupFailed("ScreenCaptureKit stream is not running.")
