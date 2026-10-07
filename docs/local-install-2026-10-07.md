@@ -88,3 +88,27 @@ capture stack was contended; the absolute numbers are not comparable to the 22:3
   path discards camera frames instead of delaying them. Two helper warnings were raised
   (pause at 402 ms, Continue at 791 ms); their codes were not captured, which `2e7bfb80`
   fixes for the next take by naming the code in the timeline stage.
+
+## Seventh installation, 23:10
+
+Package `.local-install.noindex/camq-20261007` from `599e2418`: the camera's
+`AVCaptureVideoDataOutput` now delivers on its own queue and forwards each frame to the recorder
+queue asynchronously, so a stalled recorder queue delays camera frames instead of making
+AVFoundation discard them. A dropped frame raises `camera-interrupted` with Apple's reason
+(`FrameWasLate`, `OutOfBuffers`, `Discontinuity`) at most once a second. Same signing identity
+and identifiers; deep strict verification passed. Previous app kept at
+`backup-installed-20261007-2310`.
+
+Driven test take (recording 1791407455699, Entire screen → Claude window → Entire screen, Resume
+within ~100 ms of each pick, screenshots taken throughout). The capture stack was not contended
+this time, so this take proves no regression, not the stall case:
+
+- Record 276 ms to recording-started; Stop 695 ms to stop-returned.
+- Window pick: prepare 941 ms (stream start 833 ms), Continue 458 ms with `first-frame` 23 ms
+  after the stream started.
+- Display pick: prepare 462 ms, Continue 484 ms with `first-frame` after 23 ms.
+- Clip 1 microphone offset 278 ms; clips 2 and 3 under 10 ms.
+- No helper warnings. Screen files max gap 17 ms; webcam files max gap 100 ms, none over 250 ms.
+
+Open: reproduce the 22:53 stall (window picker open plus repeated ScreenCaptureKit screenshots)
+on this build and read the `camera-interrupted` reasons.
