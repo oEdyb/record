@@ -25,3 +25,16 @@ microphone, camera and Record.
 
 Not yet verified on this build: a real recording pass. The first take should be read from
 `diagnostics/record-start-timing.jsonl` and any `camera-interrupted` warnings.
+
+## Second installation, 22:02
+
+Reinstalled from `a42dafa9` after the first take on the 21:46 build showed Record taking 1.8 s,
+all of it in `SCShareableContent`. The helper now keeps a window-list snapshot young in standby
+and while paused and reuses it when it still matches the live target. Same signing identity and
+identifiers; deep strict verification passes. Previous app kept at
+`.local-install.noindex/backup-installed-20261007-2202/Klippt.app`.
+
+Driven test take on the installed app (recording 1791403354509, Entire screen, camera, mic,
+system audio): Record click to recording-started 306 ms with `shareable-content-cached`; Pause;
+Continue 35 ms; Stop; two clips, 18.5 s and 10.8 s, no camera frame gaps in either webcam file.
+Olle's earlier six-clip take on the 21:46 build also had no camera gaps.
