@@ -3,6 +3,19 @@ import CoreMedia
 import CoreVideo
 import Foundation
 
+struct OriginalAdmissionOverflow: Error, CustomStringConvertible {
+	let accepting: Bool
+	let sampleBytes: Int
+	let queuedSamples: Int
+	let sampleLimit: Int
+	let queuedBytes: Int
+	let byteLimit: Int
+	var description: String {
+		"The original source encoder exceeded its bounded source queue (accepting \(accepting), sample \(sampleBytes) bytes,"
+			+ " queued \(queuedSamples)/\(sampleLimit) samples, \(queuedBytes)/\(byteLimit) bytes)."
+	}
+}
+
 /// Admission includes queued, currently encoding and not-yet-appended source buffers.
 /// It never allocates the limit; it accounts for the actual retained samples.
 final class OriginalSourceAdmission: @unchecked Sendable {
@@ -32,7 +45,8 @@ final class OriginalSourceAdmission: @unchecked Sendable {
 		lock.lock(); defer { lock.unlock() }
 		guard accepting, size > 0, size <= byteLimit,
 			tickets.count < sampleLimit, bytes <= byteLimit - size else {
-			throw HelperError.writerSetupFailed("The original source encoder exceeded its bounded source queue.")
+			throw OriginalAdmissionOverflow(accepting: accepting, sampleBytes: size, queuedSamples: tickets.count,
+				sampleLimit: sampleLimit, queuedBytes: bytes, byteLimit: byteLimit)
 		}
 		nextID += 1
 		tickets.append((nextID, size)); bytes += size

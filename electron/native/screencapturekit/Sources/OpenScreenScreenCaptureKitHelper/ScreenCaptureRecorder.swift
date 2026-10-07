@@ -55,6 +55,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var originals: [String: OriginalTrackWriter] = [:]
 	private var originalOwners: [String: OriginalSourceWriter] = [:]
 	private var readyOriginals: Set<String> = []
+	private var droppedOriginalSamples: [String: Int] = [:]
 	private var readyAudioTracks: Set<String> = []
 	private var startup = RecordingStartup()
 	private var startupTimer: RecordingStartupWatchdog?
@@ -868,7 +869,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				queue: DispatchQueue(label: "app.openscreen.sck-helper.compatibility-audio"))
 		}
 		originals = [:]
-		originalOwners = [:]; readyOriginals = []
+		originalOwners = [:]; readyOriginals = []; droppedOriginalSamples = [:]
 		if request.audio.system.enabled { originals["systemAudioPath"] = try originalWriter(screenPath: outputPath, suffix: "system", type: .audio) }
 		if nativeMicrophoneEnabled { originals["microphoneAudioPath"] = try originalWriter(screenPath: outputPath, suffix: "microphone", type: .audio) }
 		if cameraCapture != nil { originals["webcamVideoPath"] = try originalWriter(screenPath: outputPath, suffix: "webcam", type: .video) }
@@ -1056,7 +1057,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				captureTelemetry.recordOriginalWriter(cameraFrames: key == "webcamVideoPath" ? original.appendedSamples : 0, backpressureEvents: original.backpressureEvents, queueDepth: owner?.maximumQueueDepth ?? original.maximumQueueDepth)
 				if diagnosticTiming, let owner {
 					emit(["event": "capture-timing", "stage": "original-source-queue", "key": key,
-						"maximumQueueDepth": owner.maximumQueueDepth, "maximumQueuedBytes": owner.maximumQueuedBytes])
+						"maximumQueueDepth": owner.maximumQueueDepth, "maximumQueuedBytes": owner.maximumQueuedBytes,
+						"droppedSamples": droppedOriginalSamples[key] ?? 0])
 				}
 			}
 			do {
@@ -1246,9 +1248,21 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 						}
 					}
 				}
-			} catch { reportWriterFailure("\(error)", detectedAt: owner.failureTime) }
+			} catch let overflow as OriginalAdmissionOverflow {
+				recordOriginalOverflow(key, overflow)
+			} catch { reportWriterFailure("\(key): \(error)", detectedAt: owner.failureTime) }
 			return
 		}
+	}
+
+	/// A side track whose encoder falls behind sheds its own samples, like a late camera
+	/// frame. Only the screen writer decides whether the recording lives.
+	private func recordOriginalOverflow(_ key: String, _ overflow: OriginalAdmissionOverflow) {
+		let dropped = (droppedOriginalSamples[key] ?? 0) + 1
+		droppedOriginalSamples[key] = dropped
+		if key == "webcamVideoPath" { captureTelemetry.recordCameraSample(dropped: true) }
+		guard dropped == 1 else { return }
+		emit(["event": "warning", "code": "original-sample-dropped", "key": key, "clipIndex": currentClipIndex, "message": "\(key): \(overflow)"])
 	}
 	private func emitOriginalStart(_ metadata: (path: String, offsetMs: Double), key: String, clipIndex: Int) {
 		emit(["event": "original-started", "clipIndex": clipIndex, "key": key, "path": metadata.path, "offsetMs": metadata.offsetMs])

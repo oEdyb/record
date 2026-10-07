@@ -774,7 +774,13 @@ final class NativeCaptureQualityTests: XCTestCase {
 		XCTAssertEqual(countBound.retainedBytes, 38 * frameBytes)
 		XCTAssertEqual(countBound.maxBytes, 38 * frameBytes)
 		XCTAssertLessThanOrEqual(countBound.retainedBytes, 512 * 1024 * 1024)
-		XCTAssertThrowsError(try countBound.reserve(bytes: frameBytes), "Native30+8 source frames is a strict count cap")
+		XCTAssertThrowsError(try countBound.reserve(bytes: frameBytes), "Native30+8 source frames is a strict count cap") { error in
+			let overflow = error as? OriginalAdmissionOverflow
+			XCTAssertEqual(overflow?.queuedSamples, 38)
+			XCTAssertEqual(overflow?.sampleLimit, 38)
+			XCTAssertEqual(overflow?.accepting, true)
+			XCTAssertTrue("\(error)".contains("queued 38/38 samples"), "The overflow names the queue state so a dropped sample can be diagnosed")
+		}
 		let bytesBound = OriginalSourceAdmission(maximumSamples: 128, maximumBytes: OriginalSourceAdmission.maximumCameraBytes)
 		let fullFrames = OriginalSourceAdmission.maximumCameraBytes / frameBytes
 		for _ in 0..<fullFrames { _ = try bytesBound.reserve(bytes: frameBytes) }
