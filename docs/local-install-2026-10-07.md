@@ -64,3 +64,27 @@ window → Entire screen, camera, mic, system audio):
 Open: a Continue pressed within ~300 ms of a source change can pay for an `SCScreenshotManager`
 capture (about 600 ms) instead of the first stream frame. A human pick-then-Resume gap is longer,
 so the earlier measured 214 ms + 45 ms display-back stays the typical case.
+
+## Sixth installation, 22:53
+
+Package `.local-install.noindex/seed-20261007` from `95a1712e`: Continue now waits up to 300 ms
+(20 ms polls) for the replaced stream's first frame and only then falls back to the
+`SCScreenshotManager` capture. Same signing identity and identifiers; deep strict verification
+passed. Previous app kept at `backup-installed-20261007-2253`.
+
+Driven test take (recording 1791406432193, Entire screen → Claude window → Entire screen, Resume
+pressed within ~70 ms of each pick). This take ran while the computer-use screenshot tool was
+timing out on ScreenCaptureKit ("did not call back within the watchdog window"), so the whole
+capture stack was contended; the absolute numbers are not comparable to the 22:34 take.
+
+- Window pick: `resume-stage:first-frame` after 55 ms, no screenshot seed. Before the change
+  the same sequence spent 595 ms in `screenshot-seed`.
+- Display pick: Continue seeded from the cache directly (prepare had finished 1.7 s earlier).
+- Stream starts under contention: window 2.0 s, display 1.6 s. Record 872 ms, Stop 836 ms.
+- Clip 1 microphone offset 902 ms (late side source); clips 2 and 3 about 15 ms.
+- Clip 3 (66 s, Entire screen): screen file has 13 gaps above 250 ms (max 1.9 s) and the
+  webcam file 9 gaps (max 2.1 s) at matching times. Camera frames are delivered on the
+  recorder's sample queue with `alwaysDiscardsLateVideoFrames = true`, so a stalled screen
+  path discards camera frames instead of delaying them. Two helper warnings were raised
+  (pause at 402 ms, Continue at 791 ms); their codes were not captured, which `2e7bfb80`
+  fixes for the next take by naming the code in the timeline stage.
