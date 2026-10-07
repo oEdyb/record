@@ -15,8 +15,8 @@ enum HelperWarmup {
 		_ = AVCaptureDevice.authorizationStatus(for: .video)
 		_ = AVCaptureDevice.authorizationStatus(for: .audio)
 		_ = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .externalUnknown], mediaType: .video, position: .unspecified).devices
-		if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
-			let display = content.displays.first {
+		await ShareableContentCache.shared.refresh()
+		if let content = await ShareableContentCache.shared.current(), let display = content.displays.first {
 			let configuration = SCStreamConfiguration()
 			configuration.width = display.width
 			configuration.height = display.height
@@ -99,9 +99,13 @@ enum HelperWarmup {
 		let idle = DispatchWorkItem { exit(0) }
 		DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(idleSeconds), execute: idle)
 		defer { idle.cancel() }
+		await ShareableContentCache.shared.keepFresh(every: 4)
 		while let line = readLine() {
 			let data = Data(line.utf8)
-			guard isWarmCameraLine(data) else { return data }
+			guard isWarmCameraLine(data) else {
+				await ShareableContentCache.shared.stopKeepingFresh()
+				return data
+			}
 			await setWarmCamera((try? JSONDecoder().decode(WarmCameraCommand.self, from: data))?.warmCamera)
 		}
 		return nil

@@ -117,10 +117,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		try ensureRequestedPermissions(for: request)
 		markStep("Permissions")
 
-		let content = try await SCShareableContent.excludingDesktopWindows(
-			false,
-			onScreenWindowsOnly: true
-		)
+		let (content, cachedContent) = try await ShareableContentCache.shared.content(for: request)
+		emit(["event": "start-stage", "key": cachedContent ? "shareable-content-cached" : "shareable-content"])
 		markStep("ShareableContent")
 		stateQueue.sync { recordingActivity = processActivity.acquire() }
 		var started = false
@@ -242,11 +240,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		do {
 			try ensureRequestedPermissions(for: nextRequest)
 			emit(["event": "reconfigure-stage", "key": "permissions"])
-			let content = try await SCShareableContent.excludingDesktopWindows(
-				false,
-				onScreenWindowsOnly: true
-			)
-			emit(["event": "reconfigure-stage", "key": "shareable-content"])
+			let (content, cachedContent) = try await ShareableContentCache.shared.content(for: nextRequest)
+			emit(["event": "reconfigure-stage", "key": cachedContent ? "shareable-content-cached" : "shareable-content"])
 			let setup = try captureSetupBuilder.make(from: content, request: nextRequest)
 			guard let stream else {
 				throw HelperError.writerSetupFailed("ScreenCaptureKit stream is not running.")
@@ -315,6 +310,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func stop() async {
+		await ShareableContentCache.shared.stopKeepingFresh()
 		let requestedEndTime = CMClockGetTime(CMClockGetHostTimeClock())
 		let boundary = stateQueue.sync { () -> CMTime? in
 			guard !isStopping else { return nil }
@@ -401,12 +397,14 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				"event": "recording-paused",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
 			])
+			await ShareableContentCache.shared.keepFresh(every: 2)
 		} catch {
 			emitError(code: "clip-finalize-failed", message: "\(error)")
 		}
 	}
 
 	func resume() async {
+		await ShareableContentCache.shared.stopKeepingFresh()
 		let resumeState = stateQueue.sync {
 			(!isStopping && isPaused && !hasTerminalFailure, hasTerminalFailure)
 		}
