@@ -38,3 +38,29 @@ Driven test take on the installed app (recording 1791403354509, Entire screen, c
 system audio): Record click to recording-started 306 ms with `shareable-content-cached`; Pause;
 Continue 35 ms; Stop; two clips, 18.5 s and 10.8 s, no camera frame gaps in either webcam file.
 Olle's earlier six-clip take on the 21:46 build also had no camera gaps.
+
+## Third, fourth and fifth installations, 22:15 to 22:34
+
+Three more packages of the same branch, each over the previous one after confirming no take was in
+progress: `.local-install.noindex/stages-20261007` (the rebuild stage events name the snapshot
+rejection and the replacement steps, and a new output size starts a new stream instead of
+resizing the live one), then `bounds-20261007` from `7fbaa86d` (a window pick no longer rebuilds
+twice because the resolved bounds moved, and windows are looked up by id). Same signing identity
+and identifiers; deep strict verification passed each time. Previous apps kept at
+`backup-installed-20261007-2215`, `-2225` and `-2234`.
+
+Driven test take on the `7fbaa86d` build (recording 1791405280393, Entire screen → Claude
+window → Entire screen, camera, mic, system audio):
+
+- Record click to recording-started 269 ms, `shareable-content-cached`.
+- Pause 63 ms. Window pick: prepare 333 ms (`shareable-content-cached`, stream start 286 ms),
+  Continue 40 ms with no second rebuild.
+- Pause 61 ms. Display pick: prepare 422 ms (stream start 384 ms). Continue clicked 66 ms after
+  the pick, so it waited for that rebuild and then spent 595 ms in `screenshot-seed` because the
+  new stream had not delivered a frame yet; Continue returned at 999 ms.
+- Stop 262 ms to stop-returned, review first frame 512 ms.
+- Three clips (12.1 s, 7.0 s, 6.7 s); webcam files have no gap above 35 ms.
+
+Open: a Continue pressed within ~300 ms of a source change can pay for an `SCScreenshotManager`
+capture (about 600 ms) instead of the first stream frame. A human pick-then-Resume gap is longer,
+so the earlier measured 214 ms + 45 ms display-back stays the typical case.
