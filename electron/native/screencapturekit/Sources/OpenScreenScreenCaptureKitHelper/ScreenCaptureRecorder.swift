@@ -241,10 +241,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 		do {
 			try ensureRequestedPermissions(for: nextRequest)
+			emit(["event": "reconfigure-stage", "key": "permissions"])
 			let content = try await SCShareableContent.excludingDesktopWindows(
 				false,
 				onScreenWindowsOnly: true
 			)
+			emit(["event": "reconfigure-stage", "key": "shareable-content"])
 			let setup = try captureSetupBuilder.make(from: content, request: nextRequest)
 			guard let stream else {
 				throw HelperError.writerSetupFailed("ScreenCaptureKit stream is not running.")
@@ -260,13 +262,17 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			do {
 				if Self.cameraNeedsRestart(from: request, to: nextRequest, running: cameraCapture?.isRunning ?? false) {
 					try await configureCamera(for: nextRequest)
+					emit(["event": "reconfigure-stage", "key": "camera"])
 				}
 				if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
 					try await stream.updateConfiguration(setup.configuration)
+					emit(["event": "reconfigure-stage", "key": "configuration"])
 					try await stream.updateContentFilter(setup.filter)
+					emit(["event": "reconfigure-stage", "key": "filter"])
 				}
 				if stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
 					try await replaceCaptureStream(filter: setup.filter, configuration: setup.configuration)
+					emit(["event": "reconfigure-stage", "key": "replaced-stream"])
 				}
 			} catch {
 				var rollback: [(String, () async throws -> Void)] = []
@@ -436,6 +442,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				let screenshot = try await SCScreenshotManager.captureSampleBuffer(
 					contentFilter: activeFilter, configuration: activeConfiguration
 				)
+				emit(["event": "resume-stage", "key": "screenshot-seed"])
 				seed = try RecordingFrameCache.retime(
 					screenshot, at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps
 				)

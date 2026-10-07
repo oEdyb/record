@@ -707,7 +707,10 @@ function finishStopTimeline(success: boolean) {
 let activeClipBoundaryTimeline: RecordStartTimeline | null = null;
 const recordClipBoundaryTimingFile = () =>
 	path.join(app.getPath("userData"), "diagnostics", "record-pause-continue-timing.jsonl");
-async function timeClipBoundary<T>(action: "pause" | "continue", run: () => Promise<T>) {
+async function timeClipBoundary<T>(
+	action: "pause" | "continue" | "prepare",
+	run: () => Promise<T>,
+) {
 	const timeline = new RecordStartTimeline(Date.now);
 	timeline.mark("ipc-received");
 	activeClipBoundaryTimeline = timeline;
@@ -3287,7 +3290,9 @@ export function registerIpcHandlers(
 		return result;
 	});
 	ipcMain.handle("prepare-native-mac-continue", (_, request: NativeMacRecordingRequest) =>
-		invokeNativeMac(() => getNativeMacRecordingService().prepareResume(request)),
+		timeClipBoundary("prepare", () =>
+			invokeNativeMac(() => getNativeMacRecordingService().prepareResume(request)),
+		),
 	);
 	ipcMain.handle("remove-previous-native-mac-clip", () =>
 		invokeNativeMac(() => getNativeMacRecordingService().removePreviousClip()),
