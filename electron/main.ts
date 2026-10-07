@@ -764,7 +764,6 @@ function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
  */
 function prewarmReviewWindow() {
 	if ((editorWindow && !editorWindow.isDestroyed()) || workspaceTransition) return;
-	console.log(`[review] prewarm at ${new Date().toISOString()}`);
 	const compactBounds = compactReviewBoundsNear(mainWindow);
 	const win = createEditorWindow({ prewarm: "1" }, { compactBounds, hidden: true });
 	adoptEditorWindow(win, true);

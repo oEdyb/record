@@ -410,7 +410,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		webcamReady.current = false;
 
 		const acquire = async () => {
-			console.warn(`[camera] renderer acquiring camera at ${new Date().toISOString()}`);
 			try {
 				let stream: MediaStream;
 				let retryIndex = 0;
@@ -515,7 +514,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			cancelled = true;
 			webcamReady.current = false;
 			if (acquiredStream) {
-				console.warn(`[camera] renderer releasing camera at ${new Date().toISOString()}`);
 				acquiredStream.getTracks().forEach((track) => {
 					track.onended = null;
 					track.stop();
