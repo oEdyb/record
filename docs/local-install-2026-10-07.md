@@ -112,3 +112,32 @@ this time, so this take proves no regression, not the stall case:
 
 Open: reproduce the 22:53 stall (window picker open plus repeated ScreenCaptureKit screenshots)
 on this build and read the `camera-interrupted` reasons.
+
+## Eighth and ninth installations, 23:39 and 23:53
+
+Olle's own take on the 23:10 build (recording 1791408627715, four clips, display and window
+toggled several times in Setup) had no frame gaps and no warnings, but every window pick in the
+picker felt slow. Two causes found in code and measured with an Electron script:
+
+- A Display pick reads screens only and replaced the whole enumerated-source map, so the next
+  window pick missed the map and re-enumerated every window with icons before the picker could
+  close: 320 to 713 ms measured, 576 ms while the picker's own thumbnail read was running.
+  `9b9ef366` merges reads by kind instead, and times the pick path as a `pick` row in
+  `record-pause-continue-timing.jsonl`.
+- Hovering Setup or opening the picker while paused on a window rebuilt the capture for the
+  display on speculation. When Olle kept the window, Continue paid a second window stream
+  start (2.1 s in his take). `48a01d1f` removes that prebuild and serialises timing-row writes,
+  which had interleaved when a pick and its prepare ended in the same tick.
+
+Packages `pick-20261007` (installed 23:39) and `hover-20261007` from `48a01d1f` (installed 23:53,
+after Olle had quit the app). Same signing identity and identifiers; deep strict verification
+passed. Previous apps kept at `backup-installed-20261007-2339` and `-2353`.
+
+Driven take on the 23:53 build (recording at 23:54, Entire screen → Claude window → Display →
+Claude window → Continue → Stop): every pick returned in 0 ms with `source-cached`, including the
+window pick right after Display; no display prepare followed opening Setup; window stream starts
+1362 ms and 949 ms, display 697 ms; Continue 156 ms; Stop 854 ms.
+
+Open: the picker's thumbnail refresh (about 1.9 s of ScreenCaptureKit work for 28 windows) runs
+on every open and overlaps the window stream start that follows a pick. Not yet measured as the
+cause of slow window stream starts.
