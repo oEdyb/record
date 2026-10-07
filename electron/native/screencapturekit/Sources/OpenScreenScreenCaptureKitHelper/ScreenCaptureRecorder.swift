@@ -117,8 +117,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		try ensureRequestedPermissions(for: request)
 		markStep("Permissions")
 
-		let (content, cachedContent) = try await ShareableContentCache.shared.content(for: request)
-		emit(["event": "start-stage", "key": cachedContent ? "shareable-content-cached" : "shareable-content"])
+		let (content, contentRejection) = try await ShareableContentCache.shared.content(for: request)
+		emit(["event": "start-stage", "key": contentRejection == nil ? "shareable-content-cached" : "shareable-content", "reason": contentRejection ?? ""])
 		markStep("ShareableContent")
 		stateQueue.sync { recordingActivity = processActivity.acquire() }
 		var started = false
@@ -185,22 +185,33 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		return stream
 	}
 
-	private func replaceCaptureStream(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws {
+	/// Starts a stream for the new setup and only then retires the previous one. With
+	/// `keepingPrevious` the previous stream is still healthy, so a failed start leaves it in
+	/// charge; without it the previous stream has already stopped and nothing is lost.
+	private func replaceCaptureStream(filter: SCContentFilter, configuration: SCStreamConfiguration, keepingPrevious: Bool = false) async throws {
 		let replacement = try configuredStream(filter: filter, configuration: configuration)
 		let previous = stream
 		stream = replacement
 		stateQueue.sync { streamRecovery.install(replacement) }
 		sampleQueue.sync { frameCache.invalidateCapturedFrame() }
-		try? await previous?.stopCapture()
+		if !keepingPrevious { try? await previous?.stopCapture() }
 		do {
 			try await replacement.startCapture()
 			guard !stateQueue.sync(execute: { streamRecovery.needsReplacement }) else {
 				throw HelperError.sourceNotFound("The selected capture source stopped before recording could continue. Select an available source and try again.")
 			}
 		} catch {
-			stateQueue.sync { streamRecovery.invalidate() }
 			try? await replacement.stopCapture()
+			if keepingPrevious, let previous {
+				stream = previous
+				stateQueue.sync { streamRecovery.install(previous) }
+			} else {
+				stateQueue.sync { streamRecovery.invalidate() }
+			}
 			throw error
+		}
+		if keepingPrevious, let previous {
+			Task.detached { try? await previous.stopCapture() }
 		}
 	}
 
@@ -240,8 +251,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		do {
 			try ensureRequestedPermissions(for: nextRequest)
 			emit(["event": "reconfigure-stage", "key": "permissions"])
-			let (content, cachedContent) = try await ShareableContentCache.shared.content(for: nextRequest)
-			emit(["event": "reconfigure-stage", "key": cachedContent ? "shareable-content-cached" : "shareable-content"])
+			let (content, contentRejection) = try await ShareableContentCache.shared.content(for: nextRequest)
+			emit(["event": "reconfigure-stage", "key": contentRejection == nil ? "shareable-content-cached" : "shareable-content", "reason": contentRejection ?? ""])
 			let setup = try captureSetupBuilder.make(from: content, request: nextRequest)
 			guard let stream else {
 				throw HelperError.writerSetupFailed("ScreenCaptureKit stream is not running.")
@@ -259,14 +270,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					try await configureCamera(for: nextRequest)
 					emit(["event": "reconfigure-stage", "key": "camera"])
 				}
-				if !stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
+				// Resizing a live stream costs one to two seconds in ScreenCaptureKit; starting a
+				// second stream at the new size takes a few hundred ms, so a new size gets a new
+				// stream while the old one keeps running until the new one delivers.
+				let sizeChanges = setup.width != outputWidth || setup.height != outputHeight
+				let previousHealthy = !stateQueue.sync(execute: { streamRecovery.needsReplacement })
+				if previousHealthy && !sizeChanges {
 					try await stream.updateConfiguration(setup.configuration)
 					emit(["event": "reconfigure-stage", "key": "configuration"])
 					try await stream.updateContentFilter(setup.filter)
 					emit(["event": "reconfigure-stage", "key": "filter"])
-				}
-				if stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
-					try await replaceCaptureStream(filter: setup.filter, configuration: setup.configuration)
+				} else {
+					try await replaceCaptureStream(filter: setup.filter, configuration: setup.configuration, keepingPrevious: previousHealthy)
 					emit(["event": "reconfigure-stage", "key": "replaced-stream"])
 				}
 			} catch {

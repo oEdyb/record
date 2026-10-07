@@ -43,6 +43,20 @@ final class ContentSnapshotRuleTests: XCTestCase {
 		XCTAssertFalse(covers(ContentSnapshotNeeds(target: .display(1), excludedProcessIDs: [600])))
 	}
 
+	func testRejectionNamesTheReason() {
+		let now: TimeInterval = 105
+		func reason(_ needs: ContentSnapshotNeeds, liveWindow: CGRect?, now: TimeInterval = 105) -> String? {
+			ContentSnapshotRule.rejection(summary(), needs: needs, now: now,
+				liveDisplayBounds: { _ in self.display }, liveWindowBounds: { _ in liveWindow })
+		}
+		XCTAssertNil(reason(ContentSnapshotNeeds(target: .window(40)), liveWindow: window))
+		XCTAssertEqual(reason(ContentSnapshotNeeds(target: .window(40)), liveWindow: nil), "window-gone")
+		XCTAssertEqual(reason(ContentSnapshotNeeds(target: .window(40)), liveWindow: window.offsetBy(dx: 1, dy: 0)), "window-bounds-changed")
+		XCTAssertEqual(reason(ContentSnapshotNeeds(target: .window(99)), liveWindow: window), "window-missing")
+		XCTAssertEqual(reason(ContentSnapshotNeeds(target: .display(1)), liveWindow: window, now: now + 20), "snapshot-too-old")
+		XCTAssertEqual(reason(ContentSnapshotNeeds(target: .display(1), excludedWindowIDs: [7]), liveWindow: window), "excluded-window-missing")
+	}
+
 	func testWindowCoverageIsLiveWhenNoWindowBoundsAreKnown() {
 		var stale = summary()
 		stale.windows = [:]

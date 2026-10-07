@@ -49,19 +49,31 @@ enum ContentSnapshotRule {
 	/// A snapshot serves a request only when it holds every object the filter needs and the
 	/// capture target's live bounds still equal the snapshot's. Anything else fetches again,
 	/// so a window resized or a display switched since the snapshot never sets the output size.
+	/// Returns nil when the snapshot covers the request, otherwise why it does not.
+	static func rejection(
+		_ summary: ContentSnapshotSummary, needs: ContentSnapshotNeeds, now: TimeInterval,
+		liveDisplayBounds: (CGDirectDisplayID) -> CGRect?, liveWindowBounds: (CGWindowID) -> CGRect?
+	) -> String? {
+		guard now - summary.fetchedAt <= maxAgeSeconds else { return "snapshot-too-old" }
+		switch needs.target {
+		case .display(let id):
+			guard let frame = summary.displays[id] else { return "display-missing" }
+			guard liveDisplayBounds(id) == frame else { return "display-bounds-changed" }
+		case .window(let id):
+			guard let frame = summary.windows[id] else { return "window-missing" }
+			guard let live = liveWindowBounds(id) else { return "window-gone" }
+			guard live == frame else { return "window-bounds-changed" }
+		}
+		guard needs.excludedProcessIDs.isSubset(of: summary.processIDs) else { return "excluded-app-missing" }
+		guard needs.excludedWindowIDs.isSubset(of: Set(summary.windows.keys)) else { return "excluded-window-missing" }
+		return nil
+	}
+
 	static func covers(
 		_ summary: ContentSnapshotSummary, needs: ContentSnapshotNeeds, now: TimeInterval,
 		liveDisplayBounds: (CGDirectDisplayID) -> CGRect?, liveWindowBounds: (CGWindowID) -> CGRect?
 	) -> Bool {
-		guard now - summary.fetchedAt <= maxAgeSeconds else { return false }
-		switch needs.target {
-		case .display(let id):
-			guard let frame = summary.displays[id], liveDisplayBounds(id) == frame else { return false }
-		case .window(let id):
-			guard let frame = summary.windows[id], liveWindowBounds(id) == frame else { return false }
-		}
-		guard needs.excludedProcessIDs.isSubset(of: summary.processIDs) else { return false }
-		return needs.excludedWindowIDs.isSubset(of: Set(summary.windows.keys))
+		rejection(summary, needs: needs, now: now, liveDisplayBounds: liveDisplayBounds, liveWindowBounds: liveWindowBounds) == nil
 	}
 }
 
@@ -86,18 +98,20 @@ actor ShareableContentCache {
 
 	func current() -> SCShareableContent? { content }
 
-	/// The cached snapshot when it still describes the request exactly, otherwise a fresh one.
-	func content(for request: RecordingRequest) async throws -> (content: SCShareableContent, cached: Bool) {
-		if let content, let summary, let needs = ContentSnapshotNeeds(request: request),
-			ContentSnapshotRule.covers(
+	/// The cached snapshot when it still describes the request exactly, otherwise a fresh one
+	/// and the reason the snapshot could not serve.
+	func content(for request: RecordingRequest) async throws -> (content: SCShareableContent, rejection: String?) {
+		var rejection = "no-snapshot"
+		if let content, let summary {
+			guard let needs = ContentSnapshotNeeds(request: request) else { return (content, nil) }
+			rejection = ContentSnapshotRule.rejection(
 				summary, needs: needs, now: Date().timeIntervalSince1970,
-				liveDisplayBounds: { CGDisplayBounds($0) }, liveWindowBounds: Self.liveWindowBounds)
-		{
-			return (content, true)
+				liveDisplayBounds: { CGDisplayBounds($0) }, liveWindowBounds: Self.liveWindowBounds) ?? ""
+			if rejection.isEmpty { return (content, nil) }
 		}
 		let fresh = try await Self.fetch()
 		store(fresh)
-		return (fresh, false)
+		return (fresh, rejection)
 	}
 
 	/// Refetches on an interval while nothing is being captured, so the next start or rebuild
