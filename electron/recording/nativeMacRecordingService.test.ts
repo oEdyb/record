@@ -898,6 +898,30 @@ describe("NativeMacRecordingService", () => {
 		await service.stop(true);
 	});
 
+	it("does not rebuild when only the app's own window list changed", async () => {
+		helper.pauseResult = Promise.resolve({
+			index: 0,
+			screenVideoPath: "/tmp/clip-1.mp4",
+			durationMs: 500,
+		});
+		const service = new NativeMacRecordingService(deps);
+		const byProcess: NativeMacRecordingRequest = {
+			...baseRequest,
+			source: { ...baseRequest.source, excludedWindowIds: [10], excludedProcessIds: [4242] },
+		};
+		await service.start(byProcess);
+		await service.pause();
+
+		await expect(
+			service.resume({
+				...byProcess,
+				source: { ...byProcess.source, excludedWindowIds: [10, 11] },
+			}),
+		).resolves.toEqual({ success: true, clipIndex: 1 });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		await service.stop(true);
+	});
+
 	it("ignores an early prepare while the recording is live", async () => {
 		const service = new NativeMacRecordingService(deps);
 		await service.start(baseRequest);

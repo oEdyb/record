@@ -855,12 +855,18 @@ export class NativeMacRecordingService {
 		const excludedProcessIds = [...(config.source.excludedProcessIds ?? [])].sort(
 			(left, right) => left - right,
 		);
+		// The helper hides the app by process when it can, so its own window list
+		// changes nothing in the capture and must not cost a rebuild.
+		const hidesByProcess = excludedProcessIds.length > 0;
+		const source: NativeMacRecordingRequest["source"] = { ...config.source };
+		delete source.excludedWindowIds;
+		delete source.excludedProcessIds;
 		return JSON.stringify({
 			...config,
 			source: {
-				...config.source,
-				...(excludedWindowIds.length > 0 ? { excludedWindowIds } : {}),
-				...(excludedProcessIds.length > 0 ? { excludedProcessIds } : {}),
+				...source,
+				...(excludedWindowIds.length > 0 && !hidesByProcess ? { excludedWindowIds } : {}),
+				...(hidesByProcess ? { excludedProcessIds } : {}),
 			},
 		});
 	}
