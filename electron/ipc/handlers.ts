@@ -114,6 +114,7 @@ import {
 	CompositorViewService,
 	type VideoBufferPublishSpec,
 } from "../native-bridge/services/compositorViewService";
+import { mergeEnumeratedSources } from "../recording/enumeratedSources";
 import {
 	buildNativeMacCaptureHelperCandidates,
 	buildNativeWindowsCaptureHelperCandidates,
@@ -708,7 +709,7 @@ let activeClipBoundaryTimeline: RecordStartTimeline | null = null;
 const recordClipBoundaryTimingFile = () =>
 	path.join(app.getPath("userData"), "diagnostics", "record-pause-continue-timing.jsonl");
 async function timeClipBoundary<T>(
-	action: "pause" | "continue" | "prepare",
+	action: "pause" | "continue" | "prepare" | "pick",
 	run: () => Promise<T>,
 ) {
 	const timeline = new RecordStartTimeline(Date.now);
@@ -717,9 +718,12 @@ async function timeClipBoundary<T>(
 	let success = false;
 	try {
 		const result = await run();
-		success = Boolean(
-			result && typeof result === "object" && "success" in result && result.success === true,
-		);
+		success =
+			action === "pick"
+				? result !== null
+				: Boolean(
+						result && typeof result === "object" && "success" in result && result.success === true,
+					);
 		return result;
 	} finally {
 		timeline.mark("returned");
@@ -2105,7 +2109,7 @@ export function registerIpcHandlers(
 
 	const readSources = async (opts: Electron.SourcesOptions) => {
 		const sources = await desktopCapturer.getSources(opts);
-		lastEnumeratedSources = new Map(sources.map((source) => [source.id, source]));
+		lastEnumeratedSources = mergeEnumeratedSources(lastEnumeratedSources, sources, opts.types);
 		const processed = sources.map((source) => ({
 			id: source.id,
 			name: source.name,
@@ -2168,38 +2172,46 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("select-source", async (_, source: SelectedSource) =>
-		serializeRecordingSetup(async () => {
-			selectedSource = source;
-			unavailableRecordingSource = null;
-			// Reuse the exact source object returned during enumeration to avoid
-			// Windows window-source id mismatches across separate getSources() calls.
-			selectedDesktopSource =
-				typeof source.id === "string" ? (lastEnumeratedSources.get(source.id) ?? null) : null;
+		timeClipBoundary("pick", () =>
+			serializeRecordingSetup(async () => {
+				activeClipBoundaryTimeline?.mark("setup-queue-free");
+				selectedSource = source;
+				unavailableRecordingSource = null;
+				// Reuse the exact source object returned during enumeration to avoid
+				// Windows window-source id mismatches across separate getSources() calls.
+				selectedDesktopSource =
+					typeof source.id === "string" ? (lastEnumeratedSources.get(source.id) ?? null) : null;
 
-			if (!selectedDesktopSource && typeof source.id === "string") {
-				try {
-					const sources = await desktopCapturer.getSources({
-						types: ["screen", "window"],
-						thumbnailSize: { width: 0, height: 0 },
-						fetchWindowIcons: true,
-					});
-					lastEnumeratedSources = new Map(sources.map((candidate) => [candidate.id, candidate]));
-					selectedDesktopSource = lastEnumeratedSources.get(source.id) ?? null;
-				} catch {
-					selectedDesktopSource = null;
+				if (!selectedDesktopSource && typeof source.id === "string") {
+					try {
+						const types: Array<"screen" | "window"> = ["screen", "window"];
+						const sources = await desktopCapturer.getSources({
+							types,
+							thumbnailSize: { width: 0, height: 0 },
+							fetchWindowIcons: true,
+						});
+						lastEnumeratedSources = mergeEnumeratedSources(lastEnumeratedSources, sources, types);
+						selectedDesktopSource = lastEnumeratedSources.get(source.id) ?? null;
+					} catch {
+						selectedDesktopSource = null;
+					}
+					activeClipBoundaryTimeline?.mark("source-enumerated");
+				} else {
+					activeClipBoundaryTimeline?.mark("source-cached");
 				}
-			}
-			await saveProjectRecordingSetup();
-			const mainWin = getMainWindow();
-			if (mainWin && !mainWin.isDestroyed()) {
-				mainWin.webContents.send("selected-source-changed", selectedSource);
-			}
-			const sourceSelectorWin = getSourceSelectorWindow();
-			if (sourceSelectorWin) {
-				sourceSelectorWin.close();
-			}
-			return selectedSource;
-		}),
+				await saveProjectRecordingSetup();
+				activeClipBoundaryTimeline?.mark("setup-saved");
+				const mainWin = getMainWindow();
+				if (mainWin && !mainWin.isDestroyed()) {
+					mainWin.webContents.send("selected-source-changed", selectedSource);
+				}
+				const sourceSelectorWin = getSourceSelectorWindow();
+				if (sourceSelectorWin) {
+					sourceSelectorWin.close();
+				}
+				return selectedSource;
+			}),
+		),
 	);
 
 	ipcMain.handle("get-selected-source", () => {
