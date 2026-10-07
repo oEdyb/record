@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klippt UI directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d0d10;--panel:#151519;--line:rgba(255,255,255,.08);--fg:#e7e7ec;--mut:#92929d;--red:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 Geist,system-ui,sans-serif}
+main{max-width:1240px;margin:0 auto;padding:48px 16px 80px}
+h1{font-size:28px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}
+.lede{color:var(--mut);margin:0 0 40px;max-width:640px}
+.dir{display:grid;grid-template-columns:300px 1fr;gap:28px;padding:32px 0;border-top:1px solid var(--line)}
+.dir h2{font-size:20px;font-weight:600;margin:4px 0 8px;letter-spacing:-.01em}
+.tag{font:500 12px "Geist Mono",monospace;color:var(--mut)}
+.dir p{margin:0 0 10px;color:#c9c9d1}
+.dir dl{margin:14px 0 18px;display:grid;gap:8px}
+.dir dt{font:500 12px "Geist Mono",monospace;color:var(--mut)}
+.dir dd{margin:0}
+.bends{color:var(--red)}
+.open{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;background:#f2f1ee;color:#111;text-decoration:none;font-weight:500;transition:transform .12s cubic-bezier(.2,0,0,1)}
+.open:active{transform:scale(.97)}
+.open:focus-visible{outline:2px solid #91aac8;outline-offset:3px}
+.shots{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.shots figure{margin:0}
+.shots img{width:100%;display:block;border-radius:10px;border:1px solid var(--line)}
+.shots figcaption{font-size:12px;color:var(--mut);margin-top:6px}
+@media (max-width:860px){.dir{grid-template-columns:1fr}.shots{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Klippt UI directions</h1>
+  <p class="lede">Three clickable prototypes for the recorder HUD, review and export. Open one and try Record, Space, Backspace, Stop, then Save video. Nothing in the app has changed yet.</p>
+
+  <section class="dir">
+    <div>
+      <span class="tag">A</span>
+      <h2>Liquid pill</h2>
+      <p>One glass capsule that morphs. Pause is the big red button. While paused, the up arrow replays what you have recorded so far. Stop grows the capsule into the review window.</p><p><strong>Picked direction.</strong></p>
+      <dl><dt>Signature</dt><dd>The pill-to-review morph.</dd><dt>Rules this bends</dt><dd>None. Fits the current monochrome rules.</dd></dl>
+      <a class="open" href="a-liquid-pill.html">Open prototype</a>
+    </div>
+    <div class="shots">
+      <figure><img src="shots/a-liquid-pill-1-idle.png" alt="Liquid pill setup with mic list"><figcaption>Setup, picking a mic</figcaption></figure>
+      <figure><img src="shots/a-liquid-pill-3-paused.png" alt="Liquid pill paused with mini review"><figcaption>Paused, replaying what you recorded</figcaption></figure>
+      <figure><img src="shots/a-liquid-pill-4-review.png" alt="Liquid pill review"><figcaption>Review</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="dir">
+    <div>
+      <span class="tag">B</span>
+      <h2>Studio instrument</h2>
+      <p>A precision recording device. Machined graphite, keys that press, live input meters, clips laid down like tape.</p>
+      <dl><dt>Signature</dt><dd>Live mic meter and tape clip history: you see that you are being heard.</dd><dt>Rules this bends</dt><dd class="bends">Green mic meter, faint surface texture, taller bar and pill.</dd></dl>
+      <a class="open" href="b-studio-instrument.html">Open prototype</a>
+    </div>
+    <div class="shots">
+      <figure><img src="shots/b-studio-instrument-1-idle.png" alt="Studio instrument idle"><figcaption>Idle</figcaption></figure>
+      <figure><img src="shots/b-studio-instrument-3-paused.png" alt="Studio instrument paused"><figcaption>Paused, 3 clips</figcaption></figure>
+      <figure><img src="shots/b-studio-instrument-4-review.png" alt="Studio instrument review"><figcaption>Review</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="dir">
+    <div>
+      <span class="tag">C</span>
+      <h2>Ghost orb</h2>
+      <p>The recorder almost disappears. One orb, clips as a ring around it, controls only when you reach for them.</p>
+      <dl><dt>Signature</dt><dd>The clip-history ring around the orb.</dd><dt>Rules this bends</dt><dd class="bends">Replaces the wide bar and clip row, auto-hides controls. A behavior change, not only a look.</dd></dl>
+      <a class="open" href="c-ghost-orb.html">Open prototype</a>
+    </div>
+    <div class="shots">
+      <figure><img src="shots/c-ghost-orb-1-idle.png" alt="Ghost orb idle with setup tray"><figcaption>Idle, setup open</figcaption></figure>
+      <figure><img src="shots/c-ghost-orb-3-paused.png" alt="Ghost orb paused"><figcaption>Paused, 3 clips</figcaption></figure>
+      <figure><img src="shots/c-ghost-orb-4-review.png" alt="Ghost orb review"><figcaption>Review</figcaption></figure>
+    </div>
+  </section>
+</main>
+</body>
+</html>
