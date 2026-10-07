@@ -668,6 +668,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			emit([
 				"event": clipIndex == 0 ? "recording-started" : "recording-resumed",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
+				"epochMs": startup.epoch.map { Int((Date().timeIntervalSince1970 - CMTimeGetSeconds(now - $0)) * 1_000) } ?? 0,
 				"clipIndex": clipIndex,
 				"width": outputWidth,
 				"height": outputHeight,
@@ -1146,16 +1147,33 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			if self.didStartWriting { self.captureTelemetry.recordCameraSample() }
 			self.appendOriginal(sample, key: "webcamVideoPath")
 		}
+		let onInterruption: (String) -> Void = { [weak self] message in self?.recordCameraInterruption(message) }
 		if let warm, warm.isRunning {
 			warm.adopt(sampleQueue: sampleQueue, onFailure: onFailure, onDrop: onDrop, onSample: onSample)
+			warm.onInterruption = onInterruption
 			sampleQueue.sync { cameraCapture = warm }
 			warm.announceFormat()
 			return
 		}
 		await warm?.stop()
 		let camera = try NativeCameraCapture(webcam: nextRequest.webcam, quality: nextRequest.video.quality, sampleQueue: sampleQueue, onFailure: onFailure, onDrop: onDrop, onSample: onSample)
+		camera.onInterruption = onInterruption
 		sampleQueue.sync { cameraCapture = camera }
 		try await camera.start()
+	}
+
+	/// The camera stopped feeding the take. Loud but not fatal: the device usually comes
+	/// back, and the warning carries the moment so the gap in the file can be explained.
+	private func recordCameraInterruption(_ message: String) {
+		sampleQueue.async { [weak self] in
+			guard let self else { return }
+			let now = CMClockGetTime(CMClockGetHostTimeClock())
+			let sinceEpochMs = self.startup.epoch.map { Int(CMTimeGetSeconds(now - $0) * 1_000) } ?? -1
+			emit([
+				"event": "warning", "code": "camera-interrupted", "clipIndex": self.currentClipIndex,
+				"timestampMs": Int(Date().timeIntervalSince1970 * 1_000), "sinceEpochMs": sinceEpochMs, "message": message,
+			])
+		}
 	}
 
 	private func originalWriter(screenPath: String, suffix: String, type: AVMediaType) throws -> OriginalTrackWriter {

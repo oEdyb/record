@@ -15,6 +15,12 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 	private var onDrop: () -> Void
 	private var onFailure: (Error) -> Void
 	private var onSample: (CMSampleBuffer) -> Void
+	/// Called from any thread when the device stops feeding this session: an AVFoundation
+	/// interruption, a stop this capture did not ask for, or a silent gap between samples.
+	var onInterruption: ((String) -> Void)?
+	private var interruptionObservers: [NSObjectProtocol] = []
+	private var lastSampleHostSeconds: Double?
+	private var stopRequested = false
 	let width: Int
 	let height: Int
 	let fps: Double
@@ -77,6 +83,24 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 			let message = String(describing: notification.userInfo?[AVCaptureSessionErrorKey])
 			self.sampleQueue.async { self.onFailure(HelperError.writerSetupFailed("Native camera failed: \(message)")) }
 		}
+		let center = NotificationCenter.default
+		interruptionObservers = [
+			center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { [weak self] notification in
+				let reason = notification.userInfo.map { "\($0)" } ?? "unknown"
+				self?.reportInterruption("session interrupted, info \(reason)")
+			},
+			center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session, queue: nil) { [weak self] _ in
+				self?.reportInterruption("session interruption ended")
+			},
+			center.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session, queue: nil) { [weak self] _ in
+				guard let self, !self.stopRequested else { return }
+				self.reportInterruption("session stopped running on its own")
+			},
+		]
+	}
+
+	private func reportInterruption(_ message: String) {
+		onInterruption?("\(message); session running \(session.isRunning), device in use elsewhere \(device.isInUseByAnotherApplication)")
 	}
 
 	static func supportedFps(ranges: [(Double, Double)], target: Double) -> Double {
@@ -116,7 +140,10 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		return devices[index]
 	}
 
-	deinit { if let runtimeObserver { NotificationCenter.default.removeObserver(runtimeObserver) } }
+	deinit {
+		if let runtimeObserver { NotificationCenter.default.removeObserver(runtimeObserver) }
+		for observer in interruptionObservers { NotificationCenter.default.removeObserver(observer) }
+	}
 
 	/// Hands a camera that standby already started to the recording: its frames now go to the
 	/// recorder's queue and handlers. Never call this from the queue it is leaving.
@@ -182,9 +209,16 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 	var isRunning: Bool { session.isRunning }
 
 	func stop() async {
-		await withCheckedContinuation { continuation in lifecycleQueue.async { self.session.stopRunning(); continuation.resume() } }
+		await withCheckedContinuation { continuation in
+			lifecycleQueue.async { self.stopRequested = true; self.session.stopRunning(); continuation.resume() }
+		}
 	}
 	func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+		let nowSeconds = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
+		if let last = lastSampleHostSeconds, nowSeconds - last > 0.25 {
+			reportInterruption(String(format: "no camera frames for %.0f ms", (nowSeconds - last) * 1_000))
+		}
+		lastSampleHostSeconds = nowSeconds
 		guard let clock = session.synchronizationClock else { onFailure(HelperError.writerSetupFailed("The native camera clock is unavailable.")); return }
 		guard let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { onFailure(HelperError.writerSetupFailed("The native camera delivered no image.")); return }
 		let active = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)

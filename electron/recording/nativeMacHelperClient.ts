@@ -359,6 +359,12 @@ export class NativeMacHelperClient {
 			this.options.onEvent?.(`${event.event}${key}`);
 		}
 		if (event.event === "recording-started") this.recordingStarted = true;
+		if (event.event === "warning") {
+			console.warn(
+				`[capture-mac] helper warning at ${new Date().toISOString()}:`,
+				JSON.stringify(event),
+			);
+		}
 		const bounds = event.captureBounds as Rectangle | undefined;
 		if (event.event === "original-started") {
 			const original = parseNativeMacOriginalStarted(event);

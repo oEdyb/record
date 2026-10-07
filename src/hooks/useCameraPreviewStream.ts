@@ -87,10 +87,12 @@ export function useCameraPreviewStream({
 				// The helper picks the format; still list the camera's modes so Setup can
 				// offer them. Probing restores the native constraints when it finishes.
 				setActiveFormat(webcamFormatFromSettings(track.getSettings(), formatRef.current));
+				console.warn(`[camera] setup probing formats at ${new Date().toISOString()}`);
 				const available = await probeWebcamFormatsCached(track, deviceId);
 				if (!cancelled) setSupportedFormats(available);
 				return;
 			}
+			console.warn(`[camera] setup probing formats at ${new Date().toISOString()}`);
 			const available = await probeWebcamFormatsCached(track, deviceId);
 			if (cancelled) return;
 
@@ -100,6 +102,7 @@ export function useCameraPreviewStream({
 				available.find((candidate) => sameWebcamFormat(candidate, DEFAULT_WEBCAM_FORMAT)) ??
 				available[0];
 			if (resolved && !settingsMatchFormat(track.getSettings(), resolved)) {
+				console.warn(`[camera] setup applying resolved format at ${new Date().toISOString()}`);
 				await applyWebcamFormat(track, resolved).catch(() => undefined);
 			}
 			if (cancelled) return;
@@ -113,7 +116,8 @@ export function useCameraPreviewStream({
 			? Promise.resolve(externalStream).then((nextStream) =>
 					configurePreviewStream(nextStream, false),
 				)
-			: navigator.mediaDevices
+			: (console.warn(`[camera] setup opening its own camera at ${new Date().toISOString()}`),
+				navigator.mediaDevices)
 					.getUserMedia({
 						video: {
 							...(deviceId ? { deviceId: { exact: deviceId } } : {}),
@@ -166,6 +170,7 @@ export function useCameraPreviewStream({
 		}
 
 		let cancelled = false;
+		console.warn(`[camera] setup applying chosen format at ${new Date().toISOString()}`);
 		void applyWebcamFormat(track, format)
 			.then(() => {
 				if (!cancelled) setActiveFormat(webcamFormatFromSettings(track.getSettings(), format));
