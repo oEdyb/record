@@ -141,3 +141,24 @@ window pick right after Display; no display prepare followed opening Setup; wind
 Open: the picker's thumbnail refresh (about 1.9 s of ScreenCaptureKit work for 28 windows) runs
 on every open and overlaps the window stream start that follows a pick. Not yet measured as the
 cause of slow window stream starts.
+
+## Tenth installation, October 8, 00:12
+
+Olle's take on the 23:53 build (recording 1791410548909, three clips) was clean: no gaps, no
+warnings, every pick 0 ms. But each window pick still waited on the stream: starts of 3.1 s and
+2.3 s, and Continue pressed 1.6 s after the pick waited 1.5 s and 0.6 s.
+
+Benchmark with the real helper (scratch script, display and window requests, three runs each):
+a display or window stream starts in 246 to 708 ms alone and in 2.4 to 2.5 s while the picker's
+28-window thumbnail read is in flight; the `SCShareableContent` fetch itself waits about 2.2 s
+behind that read. `d77a3ed3` makes a picker-sized read cheap (names and membership, no
+thumbnails, pictures carried over by id) within 60 s of the last full read, so the hover
+prefetch and the picker open no longer put two seconds of ScreenCaptureKit work in front of
+the pick. Package `thumbs-20261008`; same signing identity and identifiers; deep strict
+verification passed. Previous app kept at `backup-installed-20261008-0012`.
+
+Driven take (recording at 00:12, Entire screen → Claude window → Display → Claude window,
+Resume within about 100 ms of each pick): window stream starts 668 ms and 984 ms, display
+449 ms; Continue 428 ms and 503 ms with `first-frame` after 74 ms and 46 ms; Stop 499 ms;
+no gaps, no warnings. A stray click removed the second clip during the drive; the Undo toast
+appeared as designed.
