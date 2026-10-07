@@ -865,6 +865,54 @@ describe("NativeMacRecordingService", () => {
 		await service.stop(true);
 	});
 
+	it("prepares a changed paused setup so Continue only resumes", async () => {
+		helper.pauseResult = Promise.resolve({
+			index: 0,
+			screenVideoPath: "/tmp/clip-1.mp4",
+			durationMs: 500,
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		const changedRequest: NativeMacRecordingRequest = {
+			...baseRequest,
+			source: { type: "display", sourceId: "screen:2:0", displayId: 2 },
+		};
+
+		await expect(service.prepareResume(changedRequest)).resolves.toEqual({
+			success: true,
+			prepared: true,
+		});
+		expect(helper.reconfigure).toHaveBeenCalledOnce();
+		expect(helper.reconfigure).toHaveBeenCalledWith(
+			expect.objectContaining({ source: expect.objectContaining({ sourceId: "screen:2:0" }) }),
+		);
+		await expect(service.prepareResume(changedRequest)).resolves.toEqual({
+			success: true,
+			prepared: true,
+		});
+		expect(helper.reconfigure).toHaveBeenCalledOnce();
+
+		await expect(service.resume(changedRequest)).resolves.toEqual({ success: true, clipIndex: 1 });
+		expect(helper.reconfigure).toHaveBeenCalledOnce();
+		await service.stop(true);
+	});
+
+	it("ignores an early prepare while the recording is live", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const changedRequest: NativeMacRecordingRequest = {
+			...baseRequest,
+			source: { type: "display", sourceId: "screen:2:0", displayId: 2 },
+		};
+		await expect(service.prepareResume(changedRequest)).resolves.toEqual({
+			success: true,
+			prepared: false,
+		});
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		await service.stop(true);
+	});
+
 	it("does not reconfigure an unchanged paused setup", async () => {
 		helper.pauseResult = Promise.resolve({
 			index: 0,

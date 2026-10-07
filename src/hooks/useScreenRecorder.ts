@@ -1351,6 +1351,26 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			},
 		});
 
+	// A new source picked while paused rebuilds the capture right away, so Continue
+	// only has to resume instead of waiting about a second for the stream change.
+	const prepareNativeMacContinueRef = useRef<(source: ProcessedDesktopSource) => void>(
+		() => undefined,
+	);
+	prepareNativeMacContinueRef.current = (source) => {
+		const activeRecording = nativeMacRecording.current;
+		if (!activeRecording?.paused || activeRecording.finalizing) return;
+		if (!window.electronAPI?.prepareNativeMacContinue) return;
+		void window.electronAPI
+			.prepareNativeMacContinue(currentNativeMacRequest(source, activeRecording.recordingId))
+			.catch((error) => console.warn("Could not prepare the next clip early:", error));
+	};
+	useEffect(() => {
+		const cleanup = window.electronAPI?.onSelectedSourceChanged?.((source) =>
+			prepareNativeMacContinueRef.current(source),
+		);
+		return () => cleanup?.();
+	}, []);
+
 	const startNativeMacRecordingIfAvailable = async (
 		selectedSource: ProcessedDesktopSource,
 		countdownRunToken?: number,

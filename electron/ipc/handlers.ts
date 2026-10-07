@@ -3286,6 +3286,9 @@ export function registerIpcHandlers(
 		}
 		return result;
 	});
+	ipcMain.handle("prepare-native-mac-continue", (_, request: NativeMacRecordingRequest) =>
+		invokeNativeMac(() => getNativeMacRecordingService().prepareResume(request)),
+	);
 	ipcMain.handle("remove-previous-native-mac-clip", () =>
 		invokeNativeMac(() => getNativeMacRecordingService().removePreviousClip()),
 	);

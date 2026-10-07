@@ -225,6 +225,9 @@ interface Window {
 			clipIndex?: number;
 			error?: string;
 		}>;
+		prepareNativeMacContinue: (
+			request: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
+		) => Promise<{ success: boolean; prepared?: boolean; error?: string }>;
 		removePreviousNativeMacClip: () => Promise<{
 			success: boolean;
 			clip?: import("../src/lib/recordingSession").RecordingSessionClip;

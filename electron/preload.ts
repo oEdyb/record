@@ -348,6 +348,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	resumeNativeMacRecording: (request?: NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("resume-native-mac-recording", request);
 	},
+	prepareNativeMacContinue: (request: NativeMacRecordingRequest) => {
+		return ipcRenderer.invoke("prepare-native-mac-continue", request);
+	},
 	removePreviousNativeMacClip: () => {
 		return ipcRenderer.invoke("remove-previous-native-mac-clip");
 	},

@@ -291,6 +291,34 @@ export class NativeMacRecordingService {
 		});
 	}
 
+	/** Rebuilds the capture while the user is still choosing, so Continue only resumes. */
+	prepareResume(request: NativeMacRecordingRequest) {
+		return this.enqueue(async () => {
+			const helper = this.helper;
+			if (
+				!helper ||
+				!this.paused ||
+				this.fatalError ||
+				this.recordingId === null ||
+				!this.targetPath ||
+				!request.source?.sourceId
+			) {
+				return { success: true, prepared: false };
+			}
+			try {
+				await this.deps.prepareCapturePermissions(request);
+				const { config } = this.deps.resolveCapture(request, this.recordingId, this.targetPath);
+				if (this.captureConfigKey(config) !== this.captureConfigKey(this.captureConfig)) {
+					await helper.reconfigure(config);
+					this.captureConfig = config;
+				}
+				return { success: true, prepared: true };
+			} catch (error) {
+				return { success: false, prepared: false, error: this.errorMessage(error) };
+			}
+		});
+	}
+
 	resume(request?: NativeMacRecordingRequest) {
 		return this.enqueue(async () => {
 			const helper = this.requireHelper();
