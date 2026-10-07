@@ -204,11 +204,13 @@ export const HudSettingsButton = memo(function HudSettingsButton({
 	expanded,
 	label,
 	onClick,
+	onIntent,
 }: {
 	disabled: boolean;
 	expanded: boolean;
 	label: string;
 	onClick: () => void;
+	onIntent?: () => void;
 }) {
 	return (
 		<Tooltip content={label}>
@@ -221,6 +223,7 @@ export const HudSettingsButton = memo(function HudSettingsButton({
 				aria-haspopup="dialog"
 				className={expanded ? hudIconBtnActiveClasses : hudIconBtnClasses}
 				onClick={onClick}
+				onPointerEnter={onIntent}
 				disabled={disabled}
 			>
 				<SlidersHorizontal size={18} aria-hidden />

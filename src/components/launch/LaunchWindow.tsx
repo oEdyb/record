@@ -123,6 +123,7 @@ export function LaunchWindow() {
 		togglePaused,
 		canPauseRecording,
 		canReconfigureWhilePaused,
+		prepareContinueForSource,
 		canRemovePreviousClip,
 		removePreviousClip,
 		restoreRemovedClip,
@@ -607,6 +608,34 @@ export function LaunchWindow() {
 	const [selectedSource, setSelectedSource] = useState(defaultSourceName);
 	const [hasSelectedSource, setHasSelectedSource] = useState(false);
 	const [selectedSourceKind, setSelectedSourceKind] = useState<"display" | "window">("display");
+	// A paused window take that looks at the picker most often continues on the main
+	// display. Rebuilding for it now hides the second ScreenCaptureKit needs to switch.
+	const prebuiltDisplayForPauseRef = useRef(false);
+	useEffect(() => {
+		if (!paused) prebuiltDisplayForPauseRef.current = false;
+	}, [paused]);
+	const prebuildDisplayContinue = useCallback(() => {
+		if (!paused || !canReconfigureWhilePaused || selectedSourceKind === "display") return;
+		if (prebuiltDisplayForPauseRef.current || !window.electronAPI?.getSources) return;
+		prebuiltDisplayForPauseRef.current = true;
+		void window.electronAPI
+			.getSources({
+				types: ["screen"],
+				thumbnailSize: { width: 1, height: 1 },
+				fetchWindowIcons: false,
+			})
+			.then((sources) => {
+				const display = sources.find((source) => source.id.startsWith("screen:"));
+				if (display) prepareContinueForSource(display);
+			})
+			.catch(() => undefined);
+	}, [paused, canReconfigureWhilePaused, selectedSourceKind, prepareContinueForSource]);
+	const prebuildDisplayContinueRef = useRef(prebuildDisplayContinue);
+	prebuildDisplayContinueRef.current = prebuildDisplayContinue;
+	const sourceChipIntent = useCallback(() => {
+		prefetchPickerSources();
+		prebuildDisplayContinue();
+	}, [prebuildDisplayContinue]);
 	const [sourceReady, setSourceReady] = useState(false);
 	const sourceGenerationRef = useRef(0);
 	const recordAfterSourceSelectionRef = useRef(false);
@@ -715,6 +744,7 @@ export function LaunchWindow() {
 					setIsPeekOpen(false);
 					setSourcePanelKind(kind);
 					setIsSourcePanelOpen(true);
+					prebuildDisplayContinueRef.current();
 					return { opened: true };
 				}
 			}
@@ -1497,6 +1527,7 @@ export function LaunchWindow() {
 								expanded={isDeviceSettingsOpen}
 								label={t("deviceSettings.title")}
 								onClick={toggleDeviceSettings}
+								onIntent={prebuildDisplayContinue}
 							/>
 						</div>
 					) : (
@@ -1516,7 +1547,7 @@ export function LaunchWindow() {
 									expanded={isSourcePanelOpen}
 									disabled={controlsLocked}
 									onClick={toggleSourcePanel}
-									onIntent={isLinuxHud ? undefined : prefetchPickerSources}
+									onIntent={isLinuxHud ? undefined : sourceChipIntent}
 								/>
 							)}
 							<HudSystemAudioButton
