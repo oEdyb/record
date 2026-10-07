@@ -124,6 +124,7 @@
 		"pause": "Pausa",
 		"mute": "Silenciar",
 		"unmute": "Activar sonido",
+		"volume": "Volumen de la repetición",
 		"seek": "Buscar en la grabación",
 		"open": "Ver la grabación hasta ahora"
 	}

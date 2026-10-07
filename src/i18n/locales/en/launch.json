@@ -124,6 +124,7 @@
 		"pause": "Pause",
 		"mute": "Mute",
 		"unmute": "Unmute",
+		"volume": "Replay volume",
 		"seek": "Seek recording",
 		"open": "Replay recording so far"
 	}

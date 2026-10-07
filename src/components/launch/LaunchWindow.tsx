@@ -1272,6 +1272,7 @@ export function LaunchWindow() {
 			pause: t("peek.pause"),
 			mute: t("peek.mute"),
 			unmute: t("peek.unmute"),
+			volume: t("peek.volume"),
 			seek: t("peek.seek"),
 		}),
 		[t],

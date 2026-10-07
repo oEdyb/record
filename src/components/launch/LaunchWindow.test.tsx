@@ -4,7 +4,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { StrictMode } from "react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
+import { loadUserPreferences } from "@/lib/userPreferences";
 import { TooltipProvider } from "../ui/tooltip";
 import { HUD_BAR_BOTTOM, HUD_POPOVER_GAP, HUD_POPOVER_MAX_HEIGHT } from "./hudGeometry";
 import { LaunchWindow } from "./LaunchWindow";
@@ -1088,6 +1090,35 @@ describe("LaunchWindow record button", () => {
 		expect(mic.querySelector("span[aria-hidden]")).toBeNull();
 		act(() => setVisible(true));
 		expect(mic.querySelector("span[aria-hidden]")).not.toBeNull();
+	});
+
+	it("sets the replay's listening level from the volume slider and shares it with the review", async () => {
+		usePreviewAudio.setState({ volume: 1, muted: false });
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.canPauseRecording = true;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
+		];
+		renderLaunchWindow();
+		fireEvent.keyDown(window, { key: "ArrowUp" });
+		const video = (await screen.findByTestId("hud-clip-peek-video")) as HTMLVideoElement;
+		expect(video.volume).toBe(1);
+
+		fireEvent.change(screen.getByRole("slider", { name: "peek.volume" }), {
+			target: { value: "0.3" },
+		});
+		expect(video.volume).toBeCloseTo(0.3);
+		expect(video.muted).toBe(false);
+		expect(loadUserPreferences().previewVolume).toBeCloseTo(0.3);
+
+		fireEvent.click(screen.getByRole("button", { name: "peek.mute" }));
+		expect(video.muted).toBe(true);
+		expect(screen.getByRole("slider", { name: "peek.volume" })).toHaveValue("0");
+		expect(loadUserPreferences().previewMuted).toBe(true);
+
+		fireEvent.keyDown(screen.getByRole("slider", { name: "peek.volume" }), { key: "ArrowDown" });
+		expect(screen.getByTestId("hud-clip-peek")).toBeVisible();
 	});
 
 	it("keeps the replay's video loaded while it is toggled open and closed", async () => {

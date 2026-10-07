@@ -1,5 +1,6 @@
-import { Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { Pause, Play, Volume1, Volume2, VolumeX } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import { loadEditingPreferences } from "@/lib/ai-edition/store/editingPreferences";
 import { webcamSizeToFraction } from "@/lib/compositeLayout";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
@@ -17,6 +18,7 @@ export interface HudClipPeekLabels {
 	pause: string;
 	mute: string;
 	unmute: string;
+	volume: string;
 	seek: string;
 }
 
@@ -107,7 +109,12 @@ export function HudClipPeek({
 	const [clipIndex, setClipIndex] = useState(initial.index);
 	const [position, setPosition] = useState((timeline[initial.index]?.start ?? 0) + initial.offset);
 	const [playing, setPlaying] = useState(false);
-	const [muted, setMuted] = useState(false);
+	// The same listening level as the review, so the replay never surprises with its loudness.
+	const volume = usePreviewAudio((state) => state.volume);
+	const muted = usePreviewAudio((state) => state.muted);
+	const setVolume = usePreviewAudio((state) => state.setVolume);
+	const toggleMuted = usePreviewAudio((state) => state.toggleMuted);
+	const silent = muted || volume === 0;
 	// The first clip that loads sets the frame; a clip of another size letterboxes inside it.
 	const [aspect, setAspect] = useState<number | null>(null);
 
@@ -204,12 +211,16 @@ export function HudClipPeek({
 				event.preventDefault();
 				if (clipIndex < timeline.length - 1) seek(timeline[clipIndex + 1].start);
 			} else if (event.key === "m" || event.key === "M") {
-				setMuted((value) => !value);
+				toggleMuted();
 			}
 		};
 		window.addEventListener("keydown", handleKey);
 		return () => window.removeEventListener("keydown", handleKey);
-	}, [clipIndex, current, onClose, open, position, seek, timeline]);
+	}, [clipIndex, current, onClose, open, position, seek, timeline, toggleMuted]);
+
+	useEffect(() => {
+		applyPreviewAudio(videoRef.current, { volume, muted });
+	}, [volume, muted]);
 
 	const rootRef = useRef<HTMLDivElement | null>(null);
 	const attachPanel = useCallback(
@@ -287,7 +298,6 @@ export function HudClipPeek({
 					data-testid="hud-clip-peek-video"
 					className={styles.clipPeekVideo}
 					src={source}
-					muted={muted}
 					playsInline
 					preload="auto"
 					onLoadedMetadata={handleLoadedMetadata}
@@ -313,15 +323,40 @@ export function HudClipPeek({
 				<span className={styles.clipPeekLabel}>
 					{labels.clipOf(clipIndex + 1, timeline.length)}
 				</span>
-				<button
-					type="button"
-					className={styles.clipPeekMute}
-					aria-label={muted ? labels.unmute : labels.mute}
-					aria-pressed={muted}
-					onClick={() => setMuted((value) => !value)}
-				>
-					{muted ? <VolumeX size={15} aria-hidden /> : <Volume2 size={15} aria-hidden />}
-				</button>
+				<div className={styles.clipPeekVolume} data-silent={silent}>
+					<button
+						type="button"
+						className={styles.clipPeekMute}
+						aria-label={muted ? labels.unmute : labels.mute}
+						aria-pressed={muted}
+						onClick={toggleMuted}
+					>
+						{silent ? (
+							<VolumeX size={15} aria-hidden />
+						) : volume < 0.5 ? (
+							<Volume1 size={15} aria-hidden />
+						) : (
+							<Volume2 size={15} aria-hidden />
+						)}
+					</button>
+					<div className={styles.clipPeekVolumePop}>
+						<input
+							type="range"
+							min={0}
+							max={1}
+							step={0.01}
+							value={muted ? 0 : volume}
+							aria-label={labels.volume}
+							className={styles.clipPeekVolumeInput}
+							onChange={(event) => setVolume(Number(event.target.value))}
+							onKeyDown={(event) => {
+								if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") {
+									event.stopPropagation();
+								}
+							}}
+						/>
+					</div>
+				</div>
 			</div>
 			<div className={styles.clipPeekControls}>
 				<button

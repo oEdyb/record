@@ -124,6 +124,7 @@
 		"pause": "Pause",
 		"mute": "Couper le son",
 		"unmute": "Réactiver le son",
+		"volume": "Volume de la relecture",
 		"seek": "Parcourir l'enregistrement",
 		"open": "Revoir l'enregistrement"
 	}
