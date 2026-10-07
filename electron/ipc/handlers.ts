@@ -140,6 +140,11 @@ import {
 } from "../recording/nativeWindowsCaptureStop";
 import { parseNativeWindowsCaptureTelemetry } from "../recording/nativeWindowsCaptureTelemetry";
 import {
+	type PickerSource,
+	pickerThumbnailsAreFresh,
+	reusePickerThumbnails,
+} from "../recording/pickerSources";
+import {
 	matchRecordingSource,
 	ProjectRecordingSetupStore,
 	recordingSource,
@@ -676,13 +681,8 @@ type AttachNativeMacClipWebcamsInput = {
 
 let selectedSource: SelectedSource | null = null;
 /** The last screens and windows read at picker thumbnail size. */
-let lastPickerSources: Array<{
-	id: string;
-	name: string;
-	display_id: string;
-	thumbnail: string | null;
-	appIcon: string | null;
-}> = [];
+let lastPickerSources: PickerSource[] = [];
+let lastPickerFullReadAt: number | null = null;
 /** Collects the start steps of the recording being started, if any. */
 let activeStartTimeline: RecordStartTimeline | null = null;
 const recordStartTimingFile = () =>
@@ -2107,18 +2107,30 @@ export function registerIpcHandlers(
 	const dataUrl = (image: Electron.NativeImage, jpeg: boolean) =>
 		jpeg ? `data:image/jpeg;base64,${image.toJPEG(82).toString("base64")}` : image.toDataURL();
 
-	const readSources = async (opts: Electron.SourcesOptions) => {
+	const readSources = async (requested: Electron.SourcesOptions) => {
+		// Only a picker-sized read is worth reopening with; permission probes ask for 1x1.
+		const pickerSized = (requested?.thumbnailSize?.width ?? 0) >= 160;
+		const cheap =
+			pickerSized &&
+			lastPickerSources.length > 0 &&
+			pickerThumbnailsAreFresh(lastPickerFullReadAt, Date.now());
+		const opts = cheap
+			? { types: requested.types, thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false }
+			: requested;
 		const sources = await desktopCapturer.getSources(opts);
 		lastEnumeratedSources = mergeEnumeratedSources(lastEnumeratedSources, sources, opts.types);
-		const processed = sources.map((source) => ({
+		const read = sources.map((source) => ({
 			id: source.id,
 			name: source.name,
 			display_id: source.display_id,
 			thumbnail: source.thumbnail.isEmpty() ? null : dataUrl(source.thumbnail, true),
 			appIcon: source.appIcon && !source.appIcon.isEmpty() ? dataUrl(source.appIcon, false) : null,
 		}));
-		// Only a picker-sized read is worth reopening with; permission probes ask for 1x1.
-		if ((opts?.thumbnailSize?.width ?? 0) >= 160) lastPickerSources = processed;
+		const processed = cheap ? reusePickerThumbnails(read, lastPickerSources) : read;
+		if (pickerSized) {
+			lastPickerSources = processed;
+			if (!cheap) lastPickerFullReadAt = Date.now();
+		}
 		return processed;
 	};
 
