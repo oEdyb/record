@@ -35,3 +35,18 @@ Idle with the HUD open (camera preview and mic meter on), 8 samples before Recor
   desktop; busier screens push the screen file toward the 136 Mbps cap).
 
 The test recording was left in Olle's recordings list and is his to delete.
+
+## Camera bitrate ladder, same day
+
+Fifteen-second segments of two camera originals (1920x1080) were re-encoded with the same
+VideoToolbox H.264 encoder in realtime mode at 4, 8, 12, 18 and 24 Mbps and scored against a
+ProRes copy of the 36 Mbps source with ffmpeg's `ssim` and `xpsnr` filters (no libvmaf in the
+bundled ffmpeg). "Dark" is a night take of Olle at 24 fps with heavy sensor noise; "bright" is the
+daylit static room from the five-minute take.
+
+XPSNR luma, dB (SSIM): dark 4: 28.5 (0.880), 8: 31.3 (0.911), 12: 33.3 (0.931), 18: 35.5 (0.950),
+24: 37.4 (0.963); bright 4: 30.7 (0.932), 8: 32.7 (0.945), 12: 34.2 (0.954), 18: 36.0 (0.964),
+24: 37.7 (0.972). At 2x zoom of a 480x270 detail crop of the bright take, 4 Mbps is slightly
+soft on fine texture and 8 Mbps upward is not distinguishable from the source by eye. The dark
+take spends its extra bits reproducing sensor noise. Current policy: Standard writes 18 Mbps for
+1080p30 and High doubles it to 36 Mbps.
