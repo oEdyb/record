@@ -59,8 +59,9 @@ final class NativeCaptureQualityTests: XCTestCase {
 		XCTAssertEqual(RecordingQualityPolicy.bitrate(quality: "high", legacyBitrate: 1), 136_000_000)
 		XCTAssertEqual(RecordingQualityPolicy.bitrate(quality: nil, legacyBitrate: nil), 18_000_000)
 		XCTAssertEqual(RecordingQualityPolicy.bitrate(quality: nil, legacyBitrate: 45_000_000), 45_000_000)
-		XCTAssertEqual(RecordingQualityPolicy.cameraBitrate(quality: "standard", width: 1920, height: 1080, fps: 30), 18_000_000)
-		XCTAssertEqual(RecordingQualityPolicy.cameraBitrate(quality: "high", width: 3840, height: 2160, fps: 30), 90_000_000)
+		XCTAssertEqual(RecordingQualityPolicy.cameraBitrate(quality: "standard", width: 1920, height: 1080, fps: 30), 12_000_000)
+		XCTAssertEqual(RecordingQualityPolicy.cameraBitrate(quality: "high", width: 1920, height: 1080, fps: 30), 18_000_000)
+		XCTAssertEqual(RecordingQualityPolicy.cameraBitrate(quality: "high", width: 3840, height: 2160, fps: 30), 48_000_000)
 	}
 
 	func testCadenceUsesExactGridDespiteTimerJitterAndReanchorsEachClip() throws {

@@ -71,11 +71,13 @@ enum RecordingQualityPolicy {
 
 
 extension RecordingQualityPolicy {
+	/// 1080p30 stops looking better past about 12-18 Mbps even on dark, noisy footage
+	/// (docs/hardware-usage-2026-10-08.md), so High is 1.5x Standard, not 2x.
 	static func cameraBitrate(quality: String?, width: Int, height: Int, fps: Int) -> Int {
 		let pixels = width * height
-		let base = pixels >= 3840 * 2160 ? 45_000_000 : pixels >= 2560 * 1440 ? 28_000_000 : 18_000_000
+		let base = pixels >= 3840 * 2160 ? 32_000_000 : pixels >= 2560 * 1440 ? 20_000_000 : 12_000_000
 		let standard = Int((Double(base) * (fps >= 60 ? 1.7 : 1)).rounded())
-		return quality == "high" ? standard * 2 : standard
+		return quality == "high" ? Int((Double(standard) * 1.5).rounded()) : standard
 	}
 }
 
