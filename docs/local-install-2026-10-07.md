@@ -189,3 +189,19 @@ at the capture path, which started every stable window in well under half a seco
 
 Open from earlier: the first clip's microphone track still starts 130 to 620 ms late
 (318 ms here); offsets are compensated in the clip metadata.
+
+## Twelfth installation, October 8, 10:33: mic hand-over experiment, reverted
+
+Hypothesis: the first clip's microphone offset (100–900 ms on Record, under 10 ms on
+Continue, across the last 25 recordings) came from the HUD's idle level meter releasing the
+microphone at the Record click, at the moment ScreenCaptureKit opened it. Branch
+`perf/mic-hold-through-record` (commit `7c02ae75`) kept the meter's stream open through the
+take; package `michold-20261008`, signed by Developer ID Application: Dyberg & Co AB
+(LF8KF3G42Q), installed over `backup-installed-20261008-1033`.
+
+Olle's 10:39 take (recording 1791448735567, one clip, mic and camera on): Record 246 ms,
+`microphoneAudioOffsetMs` 192, `systemAudioOffsetMs` 10. That is inside the baseline range, so
+the delay is ScreenCaptureKit's own microphone start, not a device restart. The build was removed
+at 10:41 (kept at `backup-installed-20261008-1041`), the 00:20 build restored from
+`backup-installed-20261008-1033`, and the branch deleted. Removing the offset would need the
+microphone captured by an AVCaptureSession warmed in standby like the camera; not scheduled.
