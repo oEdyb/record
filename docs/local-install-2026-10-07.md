@@ -205,3 +205,19 @@ the delay is ScreenCaptureKit's own microphone start, not a device restart. The 
 at 10:41 (kept at `backup-installed-20261008-1041`), the 00:20 build restored from
 `backup-installed-20261008-1033`, and the branch deleted. Removing the offset would need the
 microphone captured by an AVCaptureSession warmed in standby like the camera; not scheduled.
+
+## Thirteenth installation, October 8, 12:43: camera originals at 18 Mbps High
+
+Branch `perf/camera-bitrate` (commit `dc6b976f`): the camera original bitrate policy is now
+12 Mbps Standard and 18 Mbps High at 1080p (was 18 and 36), 20/30 at 1440p, 32/48 at 4K, with
+the 1.7x 60 fps factor kept. Chosen from the bitrate ladder in
+[hardware-usage-2026-10-08.md](hardware-usage-2026-10-08.md). Swift tests: 76 pass. Helper rebuilt
+with `npm run build:native:mac`; the packaged helper's `__text` section and UUID match the fresh
+build. Package `cambitrate-20261008`, Developer ID Application: Dyberg & Co AB (LF8KF3G42Q),
+deep strict verification passed, installed over `backup-installed-20261008-1243`.
+
+Agent-driven 33.9 s take on the installed app (recording 1791456231399, entire screen, camera,
+mic, system audio, High): camera original 1920x1080 at 29.97 fps, 16.9 Mbps, 81 MB; screen
+3420x2214 at 60 fps, 10.0 Mbps, 44 MB; Stop to review frame 675 ms; mic offset 337 ms. A 1:1
+face crop at 15 s shows crisp hair and eyes. The 10:39 and 12:43 test takes stay in Olle's
+recordings list.
