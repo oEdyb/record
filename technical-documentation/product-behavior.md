@@ -483,6 +483,23 @@ is unavailable. Do not silently select another screen or a same-name window. Pro
 saved setup begin from current app preferences. New standalone recordings retain their setup
 when imported into their new project.
 
+### Transcript
+
+- A Transcript button next to Notes in the Settings panel opens a read-only floating card,
+  the same dark window as Notes and excluded from capture. It transcribes the committed
+  microphone clips of the current take on request, newest clips only, with the bundled
+  Parakeet v3 Core ML helper; nothing leaves the Mac and no API key exists.
+- Refresh only runs while the take is paused or stopped. While a take is live the card says
+  so and does nothing, because the helper and FFmpeg would compete with capture.
+- Each clip's text is cached in memory and under `userData/transcripts/<recordingId>.json`,
+  keyed by clip index and original path, so a second Refresh after one more clip transcribes
+  one clip. Removed takes are excluded. Microphone originals are read, never modified.
+- Copy puts the whole transcript on the clipboard as plain paragraphs, one per clip, so it
+  can be pasted into a chat. The transcript is never written into the project and is not an
+  editor feature; captions and cuts stay archived.
+- The Parakeet model downloads on first use with progress shown in the card. Intel Macs and
+  macOS 13 see one plain message that transcription needs Apple Silicon on macOS 14.
+
 ## Editor behavior
 
 Compatibility reference: these controls and mutations belong to existing projects and the
