@@ -20,6 +20,13 @@ export interface HandoffSpan {
 }
 
 export const SOURCE_TIMELINE_RATE = 60;
+/**
+ * Separate writers end a few frames apart: audio flushes its last buffer and the camera
+ * stops with the screen, so every original is tens of milliseconds shorter than the screen.
+ * Those sub-tenth-second shortfalls become honest one-frame gaps in the timeline but are
+ * not worth a warning; a real loss, like a camera that dropped out, is.
+ */
+export const SOURCE_GAP_WARNING_SEC = 0.1;
 
 function time(value: number) {
 	return { OTIO_SCHEMA: "RationalTime.1", value, rate: SOURCE_TIMELINE_RATE };
@@ -121,8 +128,11 @@ export function buildSourceTimeline(title: string, sources: HandoffSource[], spa
 			if (length)
 				children.push(clip(media.file, sourceStart, length, available, span, media.offsetSec));
 			if (duration > lead + length) children.push(gap(duration - lead - length));
-			if (lead || duration > lead + length)
-				warnings.add(`${media.file}: unavailable source time is left as a gap in timeline.otio.`);
+			const missingSec = (duration - length) / SOURCE_TIMELINE_RATE;
+			if (missingSec > SOURCE_GAP_WARNING_SEC)
+				warnings.add(
+					`${media.file}: ${missingSec.toFixed(1)} s of source time is missing and left as a gap in timeline.otio.`,
+				);
 		}
 		return {
 			OTIO_SCHEMA: "Track.1",

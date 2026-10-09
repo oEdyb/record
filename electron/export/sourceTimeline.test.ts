@@ -128,6 +128,30 @@ it("keeps late camera starts, short camera tails, and missing takes as gaps", ()
 	expect(result.warnings).toHaveLength(1);
 });
 
+it("pads writer tails with silent one-frame gaps and warns only about real losses", () => {
+	const tails: HandoffSource = {
+		...source,
+		screen: {
+			...source.screen,
+			durationSec: 48.757,
+			audio: [
+				{ role: "microphone", file: "mic.m4a", durationSec: 48.74, offsetSec: 0.009 },
+				{ role: "system", file: "system.m4a", durationSec: 48.7, offsetSec: 0.018 },
+			],
+		},
+		camera: { ...source.camera!, durationSec: 40.5, startMs: 0, offsetMs: 0 },
+	};
+	const result = buildSourceTimeline("Tails", [tails], [span(0, 48.757)]);
+	const kinds = (index: number) =>
+		result.timeline.tracks.children[index].children.map((child) => child.OTIO_SCHEMA);
+	expect(kinds(2)).toEqual(["Gap.1", "Clip.2"]);
+	expect(kinds(3)).toEqual(["Gap.1", "Clip.2", "Gap.1"]);
+	expect(kinds(1)).toEqual(["Clip.2", "Gap.1"]);
+	expect(result.warnings).toEqual([
+		"001-camera.mov: 8.3 s of source time is missing and left as a gap in timeline.otio.",
+	]);
+});
+
 it("bounds short audio independently and keeps unidentified audio separate", () => {
 	const short: HandoffSource = {
 		...source,
