@@ -93,7 +93,7 @@
 		"dontShowAgain": "Non mostrare più"
 	},
 	"deviceSettings": {
-		"title": "Impostazioni dispositivi",
+		"title": "Impostazioni",
 		"done": "Fatto",
 		"micLevel": "Livello di ingresso",
 		"micHint": "Parla per testare il microfono",

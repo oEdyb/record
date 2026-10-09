@@ -437,7 +437,7 @@ Disable transport and Replay while saving. Reduced motion removes the entrance a
   pointer travel, keeps the painted surface 16:9, and stays between the 288 × 162 default and
   the display's work area. Double-clicking the grip restores the default. Remember the size
   across relaunches in user preferences; it is never camera layout.
-- Put a Hide control next to Expand, and a "Camera monitor" switch in the Setup panel's camera
+- Put a Hide control next to Expand, and a "Camera monitor" switch in the Settings panel's camera
   section. Hiding keeps the camera recording and only removes the monitor; the switch is the
   way back. The preference is shared between the HUD and the monitor window through the same
   localStorage, so either side's change reaches the other without a relaunch.

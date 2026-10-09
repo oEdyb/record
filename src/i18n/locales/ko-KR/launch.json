@@ -93,7 +93,7 @@
 		"dontShowAgain": "다시 표시하지 않음"
 	},
 	"deviceSettings": {
-		"title": "장치 설정",
+		"title": "설정",
 		"done": "완료",
 		"micLevel": "입력 레벨",
 		"micHint": "마이크를 테스트하려면 말해 보세요",

@@ -93,7 +93,7 @@
 		"dontShowAgain": "今後表示しない"
 	},
 	"deviceSettings": {
-		"title": "デバイス設定",
+		"title": "設定",
 		"done": "完了",
 		"micLevel": "入力レベル",
 		"micHint": "マイクをテストするには話してください",

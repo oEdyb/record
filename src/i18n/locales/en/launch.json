@@ -93,7 +93,7 @@
 		"dontShowAgain": "Don't show again"
 	},
 	"deviceSettings": {
-		"title": "Setup",
+		"title": "Settings",
 		"done": "Done",
 		"micLevel": "Input level",
 		"micHint": "Speak to check your microphone",
@@ -107,7 +107,7 @@
 		"source": "Source",
 		"editableCursor": "Editable cursor",
 		"language": "Language",
-		"lockedHint": "Pause to change setup",
+		"lockedHint": "Pause to change settings",
 		"display": "Display",
 		"window": "Window",
 		"cameraAutomatic": "Automatic (16:9)",

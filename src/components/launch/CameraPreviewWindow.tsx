@@ -261,7 +261,7 @@ export function CameraPreviewWindow() {
 						className={styles.controlButton}
 						onClick={hideMonitor}
 						aria-label="Hide camera preview"
-						title="Hide camera preview. Turn it back on in the Setup panel."
+						title="Hide camera preview. Turn it back on in Settings."
 						data-testid="camera-preview-hide"
 					>
 						<EyeOff size={14} aria-hidden="true" />

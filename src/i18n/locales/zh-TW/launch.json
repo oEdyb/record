@@ -93,7 +93,7 @@
 		"dontShowAgain": "不再顯示"
 	},
 	"deviceSettings": {
-		"title": "裝置設定",
+		"title": "設定",
 		"done": "完成",
 		"micLevel": "輸入音量",
 		"micHint": "說話以測試麥克風",

@@ -93,7 +93,7 @@
 		"dontShowAgain": "Ne plus afficher"
 	},
 	"deviceSettings": {
-		"title": "Paramètres des périphériques",
+		"title": "Réglages",
 		"done": "Terminé",
 		"micLevel": "Niveau d'entrée",
 		"micHint": "Parlez pour tester votre microphone",
