@@ -17,9 +17,14 @@ const enabledPreferences = {
 
 let preferencesChanged: ((preferences: typeof enabledPreferences) => void) | null = null;
 let positionChanged: ((position: { x: number; y: number }) => void) | null = null;
+let sizeChanged: ((size: { width: number; height: number }) => void) | null = null;
 const setCameraPreviewVisible = vi.fn();
 const setCameraPreviewExpanded = vi.fn();
 const setCameraPreviewPosition = vi.fn();
+const setCameraPreviewSize = vi.fn();
+const beginCameraPreviewResize = vi.fn();
+const resizeCameraPreviewTo = vi.fn();
+const endCameraPreviewResize = vi.fn();
 const requestCameraPreviewConnection = vi.fn();
 const transferFromImageBitmap = vi.fn();
 let previewPort: {
@@ -48,9 +53,14 @@ beforeEach(() => {
 	localStorage.clear();
 	preferencesChanged = null;
 	positionChanged = null;
+	sizeChanged = null;
 	setCameraPreviewVisible.mockClear();
 	setCameraPreviewExpanded.mockClear();
 	setCameraPreviewPosition.mockClear();
+	setCameraPreviewSize.mockClear();
+	beginCameraPreviewResize.mockClear();
+	resizeCameraPreviewTo.mockClear();
+	endCameraPreviewResize.mockClear();
 	requestCameraPreviewConnection.mockClear();
 	transferFromImageBitmap.mockClear();
 	previewPort = { onmessage: null, start: vi.fn(), close: vi.fn(), postMessage: vi.fn() };
@@ -73,10 +83,18 @@ beforeEach(() => {
 				positionChanged = callback;
 				return vi.fn();
 			}),
+			onCameraPreviewSizeChanged: vi.fn((callback) => {
+				sizeChanged = callback;
+				return vi.fn();
+			}),
 			setCameraPreviewVisible,
 			setCameraPreviewExpanded,
 			requestCameraPreviewConnection,
 			setCameraPreviewPosition,
+			setCameraPreviewSize,
+			beginCameraPreviewResize,
+			resizeCameraPreviewTo,
+			endCameraPreviewResize,
 		},
 	});
 });
@@ -188,5 +206,69 @@ describe("CameraPreviewWindow", () => {
 		fireEvent.click(button);
 		expect(setCameraPreviewExpanded).toHaveBeenLastCalledWith(false);
 		expect(button).toHaveAttribute("aria-label", "Expand camera preview");
+	});
+
+	it("restores and saves the remembered compact size", async () => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ cameraPreviewSize: { width: 504, height: 294 } }),
+		);
+		render(<CameraPreviewWindow />);
+
+		await waitFor(() => {
+			expect(setCameraPreviewSize).toHaveBeenCalledWith({ width: 504, height: 294 });
+		});
+		act(() => sizeChanged?.({ width: 600, height: 348 }));
+		expect(JSON.parse(localStorage.getItem("openscreen_user_preferences") ?? "{}")).toMatchObject({
+			cameraPreviewSize: { width: 600, height: 348 },
+		});
+	});
+
+	it("resizes through the main process with total pointer travel from the grip", async () => {
+		render(<CameraPreviewWindow />);
+		await screen.findByTestId("camera-preview-loading");
+		const grip = screen.getByTestId("camera-preview-resize");
+		grip.setPointerCapture = vi.fn();
+		grip.hasPointerCapture = vi.fn(() => true);
+		grip.releasePointerCapture = vi.fn();
+
+		fireEvent.pointerDown(grip, { button: 0, pointerId: 1, screenX: 100, screenY: 100 });
+		expect(beginCameraPreviewResize).toHaveBeenCalledOnce();
+		fireEvent.pointerMove(grip, { buttons: 1, pointerId: 1, screenX: 140, screenY: 110 });
+		fireEvent.pointerMove(grip, { buttons: 1, pointerId: 1, screenX: 190, screenY: 130 });
+		expect(resizeCameraPreviewTo).toHaveBeenNthCalledWith(1, 40, 10);
+		expect(resizeCameraPreviewTo).toHaveBeenNthCalledWith(2, 90, 30);
+		fireEvent.pointerUp(grip, { pointerId: 1 });
+		expect(endCameraPreviewResize).toHaveBeenCalledOnce();
+
+		fireEvent.doubleClick(grip);
+		expect(setCameraPreviewSize).toHaveBeenLastCalledWith({ width: 312, height: 186 });
+
+		// Expanded monitors fill the work area; there is nothing to drag.
+		fireEvent.click(screen.getByTestId("camera-preview-expand"));
+		expect(screen.queryByTestId("camera-preview-resize")).not.toBeInTheDocument();
+	});
+
+	it("hides on request and stays hidden while the camera still records", async () => {
+		render(<CameraPreviewWindow />);
+		await screen.findByTestId("camera-preview-loading");
+		await waitFor(() => expect(setCameraPreviewVisible).toHaveBeenCalledWith(true));
+
+		fireEvent.click(screen.getByTestId("camera-preview-hide"));
+
+		await waitFor(() => expect(setCameraPreviewVisible).toHaveBeenLastCalledWith(false));
+		expect(JSON.parse(localStorage.getItem("openscreen_user_preferences") ?? "{}")).toMatchObject({
+			cameraMonitorHidden: true,
+		});
+
+		// The HUD's setup toggle writes the same preference from another window.
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ cameraMonitorHidden: false }),
+		);
+		act(() => {
+			window.dispatchEvent(new Event("storage"));
+		});
+		await waitFor(() => expect(setCameraPreviewVisible).toHaveBeenLastCalledWith(true));
 	});
 });

@@ -396,8 +396,10 @@ only fades. Only transform, opacity, filter and width animate.
 - Backspace removes the previous clip; Remove shows its duration in the tooltip.
 
 The HUD uses a native transparent backing window that is much larger than the painted panel so
-menus can open without resizing the window. On macOS, make that window click-through before its
-first visible frame. Forward pointer movement and enable mouse input only over painted HUD
+menus can open without resizing the window. On macOS it is a non-activating panel at the floating
+level, like the camera monitor, so it stays visible when another app enters its own fullscreen
+Space; a plain always-on-top window drops out of that Space. Make that window click-through
+before its first visible frame. Forward pointer movement and enable mouse input only over painted HUD
 surfaces. Never leave a startup gap where the invisible backing window can swallow a click meant
 for another app. Keep the delayed renderer-driven startup on Windows because Electron implements
 forwarded mouse movement there with a global low-level hook.
@@ -427,9 +429,18 @@ Disable transport and Replay while saving. Reduced motion removes the entrance a
 - Put one Expand control in the monitor's top-right corner. Expanding grows the same window to
   the largest centred 16:9 surface that fits its display's work area, still on top and
   non-focusable, so the user can check framing or a camera-only shot. The same control
-  collapses it back to the compact size at its previous position. While expanded, relay a
+  collapses it back to the user's compact size at its previous position. While expanded, relay a
   larger frame sized to the surface's device pixels, capped at 2560 × 1440 and still at most
   24 FPS. Expanding never changes the recording resolution, FPS, or editor camera layout.
+- Let the user pick the compact size with a bottom-right grip. The window is transparent, so
+  macOS gives it no native resize edges; the grip drag goes through the main process as total
+  pointer travel, keeps the painted surface 16:9, and stays between the 288 × 162 default and
+  the display's work area. Double-clicking the grip restores the default. Remember the size
+  across relaunches in user preferences; it is never camera layout.
+- Put a Hide control next to Expand, and a "Camera monitor" switch in the Setup panel's camera
+  section. Hiding keeps the camera recording and only removes the monitor; the switch is the
+  way back. The preference is shared between the HUD and the monitor window through the same
+  localStorage, so either side's change reaches the other without a relaunch.
 
 ### Notes
 

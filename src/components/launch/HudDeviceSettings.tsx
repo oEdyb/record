@@ -7,6 +7,7 @@ import {
 	Minus,
 	Monitor,
 	MousePointer2,
+	PictureInPicture2,
 	Power,
 	Video,
 	X,
@@ -59,6 +60,7 @@ export interface HudDeviceSettingsLabels {
 	lockedHint?: string;
 	display?: string;
 	window?: string;
+	cameraMonitor?: string;
 }
 
 type DeviceSection = "microphone" | "camera" | "language";
@@ -71,6 +73,9 @@ export interface HudSetupExtras {
 	onSelectDisplay?: () => void;
 	editableCursor?: boolean;
 	onToggleCursor?: () => void;
+	/** The floating webcam monitor is kept off screen while the camera still records. */
+	cameraMonitorHidden?: boolean;
+	onToggleCameraMonitor?: () => void;
 	locales?: readonly string[];
 	activeLocale?: string;
 	getLocaleName?: (locale: string) => string;
@@ -526,6 +531,21 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 							);
 						})
 					)}
+					{extras.onToggleCameraMonitor ? (
+						<div className={styles.qualityRow} data-testid="hud-camera-monitor">
+							<span className={styles.setupTileIcon} aria-hidden>
+								<PictureInPicture2 size={18} />
+							</span>
+							<span className={styles.setupTileName}>
+								{labels.cameraMonitor ?? "Camera monitor"}
+							</span>
+							<InspectorSwitch
+								label={labels.cameraMonitor ?? "Camera monitor"}
+								checked={!extras.cameraMonitorHidden}
+								onCheckedChange={extras.onToggleCameraMonitor}
+							/>
+						</div>
+					) : null}
 					{hasCamera ? (
 						<CameraPreview
 							stream={stream}

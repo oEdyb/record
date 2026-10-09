@@ -43,7 +43,10 @@ export function defaultCameraPreviewPosition(
 export interface CameraPreviewBounds extends CameraPreviewPoint, CameraPreviewSize {}
 
 /** Transparent gutter around the painted surface; keeps its shadow inside the window. */
-const CAMERA_PREVIEW_GUTTER = 12;
+export const CAMERA_PREVIEW_GUTTER = 12;
+
+/** Default compact monitor: a 288 × 162 surface plus the gutter. */
+export const COMPACT_CAMERA_PREVIEW_SIZE: CameraPreviewSize = { width: 312, height: 186 };
 
 /**
  * Largest 16:9 surface (plus gutter) that fits inside the work area with a margin,
@@ -67,4 +70,38 @@ export function expandedCameraPreviewBounds(
 		width,
 		height,
 	};
+}
+
+/**
+ * Window size for a 16:9 painted surface at the given window width, kept between
+ * the compact size and the largest surface the work area can hold.
+ */
+export function clampCameraPreviewSize(
+	width: number,
+	workArea: CameraPreviewWorkArea,
+	gutter = CAMERA_PREVIEW_GUTTER,
+): CameraPreviewSize {
+	const largest = expandedCameraPreviewBounds(workArea, 0, gutter);
+	const minSurfaceWidth = COMPACT_CAMERA_PREVIEW_SIZE.width - 2 * gutter;
+	const maxSurfaceWidth = Math.max(minSurfaceWidth, largest.width - 2 * gutter);
+	const surfaceWidth = Math.round(
+		Math.min(maxSurfaceWidth, Math.max(minSurfaceWidth, width - 2 * gutter)),
+	);
+	const surfaceHeight = Math.round((surfaceWidth * 9) / 16);
+	return { width: surfaceWidth + 2 * gutter, height: surfaceHeight + 2 * gutter };
+}
+
+/**
+ * Size after dragging the bottom-right grip by a total pointer travel. The larger
+ * of the two axes wins so a straight pull down grows the monitor as much as a pull
+ * to the right; the result stays 16:9 and inside the work area.
+ */
+export function resizedCameraPreviewSize(
+	origin: CameraPreviewSize,
+	delta: CameraPreviewPoint,
+	workArea: CameraPreviewWorkArea,
+	gutter = CAMERA_PREVIEW_GUTTER,
+): CameraPreviewSize {
+	const growth = Math.max(delta.x, (delta.y * 16) / 9);
+	return clampCameraPreviewSize(origin.width + growth, workArea, gutter);
 }

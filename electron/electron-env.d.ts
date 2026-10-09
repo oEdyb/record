@@ -528,6 +528,16 @@ interface Window {
 		onCameraPreviewPositionChanged: (
 			callback: (position: { x: number; y: number }) => void,
 		) => () => void;
+		/** Restores the remembered compact monitor size; the main process clamps it. */
+		setCameraPreviewSize: (size: { width: number; height: number }) => void;
+		onCameraPreviewSizeChanged: (
+			callback: (size: { width: number; height: number }) => void,
+		) => () => void;
+		/** Pins the monitor's current size as the origin for `resizeCameraPreviewTo`. */
+		beginCameraPreviewResize: () => void;
+		/** Total pointer travel since `beginCameraPreviewResize`, not a per-frame delta. */
+		resizeCameraPreviewTo: (deltaX: number, deltaY: number) => void;
+		endCameraPreviewResize: () => void;
 		showCountdownOverlay: (value: number, runId: number) => Promise<void>;
 		setCountdownOverlayValue: (value: number, runId: number) => Promise<void>;
 		hideCountdownOverlay: (runId: number) => Promise<void>;

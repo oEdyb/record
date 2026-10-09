@@ -110,7 +110,8 @@
 		"lockedHint": "Tạm dừng để thay đổi thiết lập",
 		"display": "Màn hình",
 		"window": "Cửa sổ",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "Màn hình camera"
 	},
 	"setup": {
 		"notes": "Ghi chú",

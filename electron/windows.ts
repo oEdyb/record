@@ -4,9 +4,13 @@ import { BrowserWindow, ipcMain as electronIpcMain, MessageChannelMain, screen }
 import { APP_DISPLAY_NAME } from "../src/lib/brand";
 import {
 	type CameraPreviewPoint,
+	type CameraPreviewSize,
+	COMPACT_CAMERA_PREVIEW_SIZE,
 	clampCameraPreviewPosition,
+	clampCameraPreviewSize,
 	defaultCameraPreviewPosition,
 	expandedCameraPreviewBounds,
+	resizedCameraPreviewSize,
 } from "./cameraPreviewGeometry";
 import { COMPACT_REVIEW_MIN_SIZE, type WindowBounds } from "./compactReviewGeometry";
 import { clampHudDragPosition } from "./hudDragGeometry";
@@ -120,9 +124,11 @@ let cameraPreviewPortsConnected = false;
 let cameraPreviewExpanded = false;
 // Where the compact monitor sat before it was expanded, restored on collapse.
 let cameraPreviewCompactPosition: CameraPreviewPoint | null = null;
+// The user's chosen compact size; Expand grows past it and Collapse returns to it.
+let cameraPreviewCompactSize: CameraPreviewSize = { ...COMPACT_CAMERA_PREVIEW_SIZE };
+// Window size when the current grip drag began; deltas are total pointer travel.
+let cameraPreviewResizeOrigin: CameraPreviewSize | null = null;
 let hudDirectionExclusionRectangles: PrivateUiRectangle[] = [];
-
-const CAMERA_PREVIEW_SIZE = { width: 312, height: 186 } as const;
 
 function isHudSender(senderId: number) {
 	return Boolean(
@@ -215,9 +221,11 @@ ipcMain.on("camera-preview-request-connection", (event) => {
 function placeCameraPreview(position?: CameraPreviewPoint): CameraPreviewPoint | null {
 	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed()) return null;
 	const display = position ? screen.getDisplayNearestPoint(position) : screen.getPrimaryDisplay();
+	const [width, height] = cameraPreviewWindow.getSize();
+	const size = { width, height };
 	const nextPosition = position
-		? clampCameraPreviewPosition(position, CAMERA_PREVIEW_SIZE, display.workArea)
-		: defaultCameraPreviewPosition(display.workArea, CAMERA_PREVIEW_SIZE);
+		? clampCameraPreviewPosition(position, size, display.workArea)
+		: defaultCameraPreviewPosition(display.workArea, size);
 	cameraPreviewWindow.setPosition(nextPosition.x, nextPosition.y, false);
 	return nextPosition;
 }
@@ -246,10 +254,84 @@ function setCameraPreviewExpanded(expanded: boolean) {
 		cameraPreviewWindow.setBounds(expandedCameraPreviewBounds(display.workArea), false);
 		return;
 	}
-	cameraPreviewWindow.setSize(CAMERA_PREVIEW_SIZE.width, CAMERA_PREVIEW_SIZE.height, false);
+	cameraPreviewWindow.setSize(
+		cameraPreviewCompactSize.width,
+		cameraPreviewCompactSize.height,
+		false,
+	);
 	placeCameraPreview(cameraPreviewCompactPosition ?? undefined);
 	cameraPreviewCompactPosition = null;
 }
+
+function cameraPreviewWorkArea() {
+	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed()) return null;
+	return screen.getDisplayMatching(cameraPreviewWindow.getBounds()).workArea;
+}
+
+/** Applies a compact size, keeps the top-left corner, and reports the applied size. */
+function applyCameraPreviewCompactSize(width: number) {
+	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed()) return;
+	const workArea = cameraPreviewWorkArea();
+	if (!workArea) return;
+	cameraPreviewCompactSize = clampCameraPreviewSize(width, workArea);
+	if (cameraPreviewExpanded) return;
+	const [x, y] = cameraPreviewWindow.getPosition();
+	cameraPreviewWindow.setSize(
+		cameraPreviewCompactSize.width,
+		cameraPreviewCompactSize.height,
+		false,
+	);
+	const appliedPosition = placeCameraPreview({ x, y });
+	if (appliedPosition) {
+		cameraPreviewWindow.webContents.send("camera-preview-position-changed", appliedPosition);
+	}
+}
+
+ipcMain.on("camera-preview-set-size", (event, size: CameraPreviewSize) => {
+	if (
+		!isCameraPreviewSender(event.sender.id) ||
+		!size ||
+		typeof size.width !== "number" ||
+		!Number.isFinite(size.width)
+	) {
+		return;
+	}
+	applyCameraPreviewCompactSize(size.width);
+	cameraPreviewWindow?.webContents.send("camera-preview-size-changed", cameraPreviewCompactSize);
+});
+
+ipcMain.on("camera-preview-resize-start", (event) => {
+	if (!isCameraPreviewSender(event.sender.id) || !cameraPreviewWindow) return;
+	if (cameraPreviewWindow.isDestroyed() || cameraPreviewExpanded) return;
+	const [width, height] = cameraPreviewWindow.getSize();
+	cameraPreviewResizeOrigin = { width, height };
+});
+
+ipcMain.on("camera-preview-resize-to", (event, deltaX: number, deltaY: number) => {
+	if (
+		!isCameraPreviewSender(event.sender.id) ||
+		!cameraPreviewResizeOrigin ||
+		!Number.isFinite(deltaX) ||
+		!Number.isFinite(deltaY)
+	) {
+		return;
+	}
+	const workArea = cameraPreviewWorkArea();
+	if (!workArea) return;
+	const next = resizedCameraPreviewSize(
+		cameraPreviewResizeOrigin,
+		{ x: deltaX, y: deltaY },
+		workArea,
+	);
+	applyCameraPreviewCompactSize(next.width);
+});
+
+ipcMain.on("camera-preview-resize-end", (event) => {
+	if (!isCameraPreviewSender(event.sender.id)) return;
+	if (!cameraPreviewResizeOrigin) return;
+	cameraPreviewResizeOrigin = null;
+	cameraPreviewWindow?.webContents.send("camera-preview-size-changed", cameraPreviewCompactSize);
+});
 
 ipcMain.on("camera-preview-set-expanded", (event, expanded: boolean) => {
 	if (!isCameraPreviewSender(event.sender.id) || typeof expanded !== "boolean") return;
@@ -449,6 +531,9 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 		skipTaskbar: true,
 		hasShadow: false,
 		show: false, // shown via ready-to-show to avoid black rectangle flash
+		// A panel floats above other apps' fullscreen Spaces; the camera monitor
+		// already relies on the same type, and the pill must follow the user there.
+		...(process.platform === "darwin" ? { type: "panel" as const } : {}),
 		webPreferences: {
 			preload: path.join(__dirname, "preload.mjs"),
 			additionalArguments: [ASSET_BASE_URL_ARG],
@@ -488,6 +573,7 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	// it was first opened on.
 	if (process.platform === "darwin") {
 		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+		win.setAlwaysOnTop(true, "floating");
 	}
 
 	// Show only once painted to avoid the black rectangle flash when a transparent
@@ -544,12 +630,14 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 export function createCameraPreviewWindow(): BrowserWindow {
 	if (cameraPreviewWindow && !cameraPreviewWindow.isDestroyed()) return cameraPreviewWindow;
 
+	cameraPreviewCompactSize = { ...COMPACT_CAMERA_PREVIEW_SIZE };
+	cameraPreviewResizeOrigin = null;
 	const initialPosition = defaultCameraPreviewPosition(
 		screen.getPrimaryDisplay().workArea,
-		CAMERA_PREVIEW_SIZE,
+		cameraPreviewCompactSize,
 	);
 	const win = new BrowserWindow({
-		...CAMERA_PREVIEW_SIZE,
+		...cameraPreviewCompactSize,
 		x: initialPosition.x,
 		y: initialPosition.y,
 		frame: false,

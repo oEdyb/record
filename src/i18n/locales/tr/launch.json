@@ -110,7 +110,8 @@
 		"lockedHint": "Kurulumu değiştirmek için duraklatın",
 		"display": "Ekran",
 		"window": "Pencere",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "Kamera monitörü"
 	},
 	"setup": {
 		"notes": "Notlar",

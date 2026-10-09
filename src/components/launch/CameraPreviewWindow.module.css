@@ -31,13 +31,19 @@
 	border-radius: 28px;
 }
 
-/* Top-right control. Opted out of the drag region so a click never starts a
+/* Top-right controls. Opted out of the drag region so a click never starts a
    window drag, and kept faint until the pointer is over the monitor. */
-.expandButton {
+.controls {
 	position: absolute;
 	top: 10px;
 	right: 10px;
 	z-index: 2;
+	display: flex;
+	gap: 6px;
+	-webkit-app-region: no-drag;
+}
+
+.controlButton {
 	display: flex;
 	height: 28px;
 	width: 28px;
@@ -58,30 +64,71 @@
 	-webkit-app-region: no-drag;
 }
 
-.surface:hover .expandButton,
-.expandButton:focus-visible {
+.surface:hover .controlButton,
+.controlButton:focus-visible {
 	opacity: 1;
 }
 
-.expandButton:hover {
+.controlButton:hover {
 	background: rgb(30 30 34 / 82%);
 	color: #ffffff;
 }
 
-.expandButton:active {
+.controlButton:active {
 	transform: scale(0.96);
 }
 
-.surfaceExpanded .expandButton {
+.surfaceExpanded .controls {
 	top: 14px;
 	right: 14px;
+	gap: 8px;
+}
+
+.surfaceExpanded .controlButton {
 	height: 34px;
 	width: 34px;
 	border-radius: 11px;
 }
 
+/* Bottom-right grip. The window is transparent, so macOS gives it no native
+   resize edges; this drag goes through the main process instead. */
+.resizeGrip {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	z-index: 2;
+	display: grid;
+	height: 28px;
+	width: 28px;
+	place-items: end;
+	padding: 0 8px 8px 0;
+	border: 0;
+	background: transparent;
+	color: rgb(255 255 255 / 70%);
+	cursor: nwse-resize;
+	opacity: 0;
+	transition: opacity 140ms ease;
+	touch-action: none;
+	-webkit-app-region: no-drag;
+}
+
+.surface:hover .resizeGrip,
+.resizeGrip:focus-visible {
+	opacity: 1;
+}
+
+.resizeGripMark {
+	display: block;
+	height: 10px;
+	width: 10px;
+	border-right: 2px solid currentColor;
+	border-bottom: 2px solid currentColor;
+	border-bottom-right-radius: 3px;
+}
+
 @media (prefers-reduced-motion: reduce) {
-	.expandButton {
+	.controlButton,
+	.resizeGrip {
 		transition: none;
 	}
 }

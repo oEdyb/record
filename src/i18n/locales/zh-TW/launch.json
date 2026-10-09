@@ -110,7 +110,8 @@
 		"lockedHint": "暫停後才能變更設定",
 		"display": "顯示器",
 		"window": "視窗",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "攝影機監視器"
 	},
 	"setup": {
 		"notes": "筆記",

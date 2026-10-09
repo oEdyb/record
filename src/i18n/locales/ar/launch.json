@@ -110,7 +110,8 @@
 		"lockedHint": "أوقف مؤقتًا لتغيير الإعداد",
 		"display": "الشاشة",
 		"window": "نافذة",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "شاشة الكاميرا"
 	},
 	"setup": {
 		"notes": "ملاحظات",

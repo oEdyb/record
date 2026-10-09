@@ -151,6 +151,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setCameraPreviewPosition: (position: { x: number; y: number }) => {
 		ipcRenderer.send("camera-preview-set-position", position);
 	},
+	setCameraPreviewSize: (size: { width: number; height: number }) => {
+		ipcRenderer.send("camera-preview-set-size", size);
+	},
+	onCameraPreviewSizeChanged: (callback: (size: { width: number; height: number }) => void) => {
+		const listener = (_event: unknown, size: { width: number; height: number }) => callback(size);
+		ipcRenderer.on("camera-preview-size-changed", listener);
+		return () => ipcRenderer.removeListener("camera-preview-size-changed", listener);
+	},
+	beginCameraPreviewResize: () => {
+		ipcRenderer.send("camera-preview-resize-start");
+	},
+	resizeCameraPreviewTo: (deltaX: number, deltaY: number) => {
+		ipcRenderer.send("camera-preview-resize-to", deltaX, deltaY);
+	},
+	endCameraPreviewResize: () => {
+		ipcRenderer.send("camera-preview-resize-end");
+	},
 	onCameraPreviewPositionChanged: (callback: (position: { x: number; y: number }) => void) => {
 		const listener = (_event: unknown, position: { x: number; y: number }) => callback(position);
 		ipcRenderer.on("camera-preview-position-changed", listener);

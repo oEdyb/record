@@ -24,6 +24,10 @@ export interface UserPreferences {
 	trayLayout: "horizontal" | "vertical";
 	/** Last native screen position of the recording-mode webcam confidence monitor */
 	cameraPreviewPosition: { x: number; y: number } | null;
+	/** Last compact window size of the webcam confidence monitor; never camera layout */
+	cameraPreviewSize: { width: number; height: number } | null;
+	/** Keep the webcam confidence monitor off screen while the camera still records */
+	cameraMonitorHidden: boolean;
 	/** Private notes window frame in screen coordinates; never project content. */
 	notesWindowBounds: { x: number; y: number; width: number; height: number } | null;
 	/** Whether the AI editor sidebar was open when the user last changed it */
@@ -47,6 +51,8 @@ export const DEFAULT_PREFS: UserPreferences = {
 	projectFolder: null,
 	trayLayout: "horizontal",
 	cameraPreviewPosition: null,
+	cameraPreviewSize: null,
+	cameraMonitorHidden: false,
 	notesWindowBounds: null,
 	editorChatOpen: false,
 	preferSoftwareEncoder: false,
@@ -81,6 +87,14 @@ function parseNotesWindowBounds(
 		width: Math.round(width),
 		height: Math.round(height),
 	};
+}
+
+function parseCameraPreviewSize(value: unknown): { width: number; height: number } | null {
+	if (!value || typeof value !== "object") return null;
+	const { width, height } = value as Record<string, unknown>;
+	if (typeof width !== "number" || !Number.isFinite(width) || width <= 0) return null;
+	if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) return null;
+	return { width: Math.round(width), height: Math.round(height) };
 }
 
 export function loadUserPreferences(): UserPreferences {
@@ -135,6 +149,11 @@ export function loadUserPreferences(): UserPreferences {
 						y: Math.round((raw.cameraPreviewPosition as Record<string, number>).y),
 					}
 				: DEFAULT_PREFS.cameraPreviewPosition,
+		cameraPreviewSize: parseCameraPreviewSize(raw.cameraPreviewSize),
+		cameraMonitorHidden:
+			typeof raw.cameraMonitorHidden === "boolean"
+				? raw.cameraMonitorHidden
+				: DEFAULT_PREFS.cameraMonitorHidden,
 		notesWindowBounds: parseNotesWindowBounds(raw.notesWindowBounds),
 		editorChatOpen:
 			typeof raw.editorChatOpen === "boolean" ? raw.editorChatOpen : DEFAULT_PREFS.editorChatOpen,

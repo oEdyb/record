@@ -110,7 +110,8 @@
 		"lockedHint": "Pause para alterar a configuração",
 		"display": "Tela",
 		"window": "Janela",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "Monitor da câmera"
 	},
 	"setup": {
 		"notes": "Notas",

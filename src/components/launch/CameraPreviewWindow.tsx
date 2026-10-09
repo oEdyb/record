@@ -1,4 +1,4 @@
-import { CameraOff, LoaderCircle, Maximize2, Minimize2 } from "lucide-react";
+import { CameraOff, EyeOff, LoaderCircle, Maximize2, Minimize2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadUserPreferences, saveUserPreferences } from "../../lib/userPreferences";
 import styles from "./CameraPreviewWindow.module.css";
@@ -11,6 +11,7 @@ const PORT_MESSAGE_TYPE = "openscreen-camera-preview-port";
 const COMPACT_RELAY = { width: 576, height: 324 } as const;
 const MAX_RELAY = { width: 2_560, height: 1_440 } as const;
 const SURFACE_GUTTER = 12;
+const DEFAULT_WINDOW_SIZE = { width: 312, height: 186 } as const;
 
 /**
  * Relay size for the current window: the painted surface at device pixels, bounded so a
@@ -31,8 +32,12 @@ export function CameraPreviewWindow() {
 	const [preferences, setPreferences] = useState<CameraPreviewPreferences | null>(null);
 	const [hasFrame, setHasFrame] = useState(false);
 	const [expanded, setExpanded] = useState(false);
+	const [monitorHidden, setMonitorHidden] = useState(
+		() => loadUserPreferences().cameraMonitorHidden,
+	);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const portRef = useRef<MessagePort | null>(null);
+	const resizeOriginRef = useRef<{ x: number; y: number } | null>(null);
 
 	const toggleExpanded = useCallback(() => {
 		setExpanded((current) => {
@@ -40,6 +45,66 @@ export function CameraPreviewWindow() {
 			window.electronAPI.setCameraPreviewExpanded?.(next);
 			return next;
 		});
+	}, []);
+
+	// The HUD's setup panel owns the same preference; it writes to the shared
+	// localStorage, which reaches this window as a storage event.
+	useEffect(() => {
+		const readHidden = () => setMonitorHidden(loadUserPreferences().cameraMonitorHidden);
+		window.addEventListener("storage", readHidden);
+		return () => window.removeEventListener("storage", readHidden);
+	}, []);
+
+	const hideMonitor = useCallback(() => {
+		saveUserPreferences({ cameraMonitorHidden: true });
+		setMonitorHidden(true);
+	}, []);
+
+	// Grip drag reports total pointer travel since press, like the HUD drag: every
+	// move is an absolute origin + delta, so a dropped message self-corrects.
+	const handleResizePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+		event.currentTarget.setPointerCapture(event.pointerId);
+		resizeOriginRef.current = { x: event.screenX, y: event.screenY };
+		window.electronAPI.beginCameraPreviewResize?.();
+	}, []);
+
+	const endResize = useCallback(() => {
+		if (!resizeOriginRef.current) return;
+		resizeOriginRef.current = null;
+		window.electronAPI.endCameraPreviewResize?.();
+	}, []);
+
+	const handleResizePointerMove = useCallback(
+		(event: React.PointerEvent<HTMLButtonElement>) => {
+			const origin = resizeOriginRef.current;
+			if (!origin) return;
+			if ((event.buttons & 1) === 0) {
+				endResize();
+				return;
+			}
+			window.electronAPI.resizeCameraPreviewTo?.(
+				event.screenX - origin.x,
+				event.screenY - origin.y,
+			);
+		},
+		[endResize],
+	);
+
+	const handleResizePointerEnd = useCallback(
+		(event: React.PointerEvent<HTMLButtonElement>) => {
+			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+				event.currentTarget.releasePointerCapture(event.pointerId);
+			}
+			endResize();
+		},
+		[endResize],
+	);
+
+	const resetSize = useCallback(() => {
+		window.electronAPI.setCameraPreviewSize?.({ ...DEFAULT_WINDOW_SIZE });
 	}, []);
 
 	// The main process resizes the window; the surface then asks the producer for a
@@ -70,17 +135,25 @@ export function CameraPreviewWindow() {
 		const stopPosition = window.electronAPI.onCameraPreviewPositionChanged((position) => {
 			saveUserPreferences({ cameraPreviewPosition: position });
 		});
-		const savedPosition = loadUserPreferences().cameraPreviewPosition;
-		if (savedPosition) window.electronAPI.setCameraPreviewPosition(savedPosition);
+		const stopSize = window.electronAPI.onCameraPreviewSizeChanged?.((size) => {
+			saveUserPreferences({ cameraPreviewSize: size });
+		});
+		const saved = loadUserPreferences();
+		if (saved.cameraPreviewSize) window.electronAPI.setCameraPreviewSize?.(saved.cameraPreviewSize);
+		if (saved.cameraPreviewPosition) {
+			window.electronAPI.setCameraPreviewPosition(saved.cameraPreviewPosition);
+		}
 
 		return () => {
 			cancelled = true;
 			stopPreferences();
 			stopPosition();
+			stopSize?.();
 		};
 	}, []);
 
 	const enabled = preferences?.camEnabled ?? false;
+	const visible = enabled && !monitorHidden;
 
 	useEffect(() => {
 		let activePort: MessagePort | null = null;
@@ -154,10 +227,10 @@ export function CameraPreviewWindow() {
 
 	useEffect(() => {
 		const animationFrame = window.requestAnimationFrame(() => {
-			window.electronAPI.setCameraPreviewVisible(enabled);
+			window.electronAPI.setCameraPreviewVisible(visible);
 		});
 		return () => window.cancelAnimationFrame(animationFrame);
-	}, [enabled]);
+	}, [visible]);
 
 	useEffect(
 		() => () => {
@@ -182,20 +255,48 @@ export function CameraPreviewWindow() {
 					className={styles.video}
 					data-testid="camera-preview-canvas"
 				/>
-				<button
-					type="button"
-					className={styles.expandButton}
-					onClick={toggleExpanded}
-					aria-label={expanded ? "Collapse camera preview" : "Expand camera preview"}
-					aria-pressed={expanded}
-					data-testid="camera-preview-expand"
-				>
-					{expanded ? (
-						<Minimize2 size={14} aria-hidden="true" />
-					) : (
-						<Maximize2 size={14} aria-hidden="true" />
-					)}
-				</button>
+				<div className={styles.controls}>
+					<button
+						type="button"
+						className={styles.controlButton}
+						onClick={hideMonitor}
+						aria-label="Hide camera preview"
+						title="Hide camera preview. Turn it back on in the Setup panel."
+						data-testid="camera-preview-hide"
+					>
+						<EyeOff size={14} aria-hidden="true" />
+					</button>
+					<button
+						type="button"
+						className={styles.controlButton}
+						onClick={toggleExpanded}
+						aria-label={expanded ? "Collapse camera preview" : "Expand camera preview"}
+						aria-pressed={expanded}
+						data-testid="camera-preview-expand"
+					>
+						{expanded ? (
+							<Minimize2 size={14} aria-hidden="true" />
+						) : (
+							<Maximize2 size={14} aria-hidden="true" />
+						)}
+					</button>
+				</div>
+				{!expanded ? (
+					<button
+						type="button"
+						className={styles.resizeGrip}
+						aria-label="Resize camera preview"
+						title="Drag to resize. Double-click to reset."
+						data-testid="camera-preview-resize"
+						onPointerDown={handleResizePointerDown}
+						onPointerMove={handleResizePointerMove}
+						onPointerUp={handleResizePointerEnd}
+						onPointerCancel={handleResizePointerEnd}
+						onDoubleClick={resetSize}
+					>
+						<span className={styles.resizeGripMark} aria-hidden="true" />
+					</button>
+				) : null}
 				{!hasFrame ? (
 					<div
 						className={styles.status}

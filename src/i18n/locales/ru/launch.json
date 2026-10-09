@@ -110,7 +110,8 @@
 		"lockedHint": "Поставьте на паузу, чтобы изменить настройки",
 		"display": "Экран",
 		"window": "Окно",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "Монитор камеры"
 	},
 	"setup": {
 		"notes": "Заметки",

@@ -110,6 +110,20 @@ describe("user preferences", () => {
 		expect(loadUserPreferences().cameraPreviewPosition).toEqual({ x: -241, y: 82 });
 	});
 
+	it("persists and normalizes the camera monitor size and hidden state", () => {
+		saveUserPreferences({ cameraPreviewSize: { width: 503.6, height: 293.9 } });
+		expect(loadUserPreferences().cameraPreviewSize).toEqual({ width: 504, height: 294 });
+		expect(loadUserPreferences().cameraMonitorHidden).toBe(false);
+		saveUserPreferences({ cameraMonitorHidden: true });
+		expect(loadUserPreferences().cameraMonitorHidden).toBe(true);
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ cameraPreviewSize: { width: 0, height: 10 }, cameraMonitorHidden: "yes" }),
+		);
+		expect(loadUserPreferences().cameraPreviewSize).toBeNull();
+		expect(loadUserPreferences().cameraMonitorHidden).toBe(false);
+	});
+
 	it("persists and normalizes the notes window frame", () => {
 		saveUserPreferences({ notesWindowBounds: { x: 10.4, y: 20.6, width: 320.2, height: 419.8 } });
 		expect(loadUserPreferences().notesWindowBounds).toEqual({

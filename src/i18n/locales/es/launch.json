@@ -110,7 +110,8 @@
 		"lockedHint": "Pausa para cambiar la configuración",
 		"display": "Pantalla",
 		"window": "Ventana",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "Monitor de cámara"
 	},
 	"setup": {
 		"notes": "Notas",

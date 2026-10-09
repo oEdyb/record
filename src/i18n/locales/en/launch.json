@@ -110,7 +110,8 @@
 		"lockedHint": "Pause to change setup",
 		"display": "Display",
 		"window": "Window",
-		"cameraAutomatic": "Automatic (16:9)"
+		"cameraAutomatic": "Automatic (16:9)",
+		"cameraMonitor": "Camera monitor"
 	},
 	"setup": {
 		"notes": "Notes",

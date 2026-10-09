@@ -5,6 +5,7 @@ import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
 import { requireEntitlement } from "@/lib/entitlements/store";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
+import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import { formatTimePadded } from "@/utils/timeUtils";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
@@ -957,6 +958,23 @@ export function LaunchWindow() {
 		void window.electronAPI?.setRecordingPrefs?.({ cursorCaptureMode: mode });
 	}, [controlsLocked, cursorCaptureMode, setCursorCaptureMode]);
 
+	// The monitor window reads the same preference and hides itself on the
+	// storage event; the camera keeps recording either way.
+	const [cameraMonitorHidden, setCameraMonitorHidden] = useState(
+		() => loadUserPreferences().cameraMonitorHidden,
+	);
+	useEffect(() => {
+		const readHidden = () => setCameraMonitorHidden(loadUserPreferences().cameraMonitorHidden);
+		window.addEventListener("storage", readHidden);
+		return () => window.removeEventListener("storage", readHidden);
+	}, []);
+	const toggleCameraMonitor = useCallback(() => {
+		setCameraMonitorHidden((current) => {
+			saveUserPreferences({ cameraMonitorHidden: !current });
+			return !current;
+		});
+	}, []);
+
 	const toggleMicrophone = useCallback(() => {
 		if (controlsLocked) return;
 		const enabled = !microphoneEnabled;
@@ -1233,6 +1251,7 @@ export function LaunchWindow() {
 			lockedHint: t("deviceSettings.lockedHint"),
 			display: t("deviceSettings.display"),
 			window: t("deviceSettings.window"),
+			cameraMonitor: t("deviceSettings.cameraMonitor"),
 		}),
 		[hasReviewReturn, recording, t],
 	);
@@ -1363,6 +1382,8 @@ export function LaunchWindow() {
 			onOpenSource: portalOwnsSource ? undefined : () => void openSourceSelector("windows"),
 			editableCursor: cursorCaptureMode === "editable-overlay",
 			onToggleCursor: supportsCursorModeToggle ? toggleCursorMode : undefined,
+			cameraMonitorHidden,
+			onToggleCameraMonitor: toggleCameraMonitor,
 			locales: recording ? undefined : AVAILABLE_LOCALES,
 			activeLocale: locale,
 			getLocaleName: getLocaleName as (loc: string) => string,
@@ -1380,6 +1401,7 @@ export function LaunchWindow() {
 			selectedSourceKind,
 			sendHudOverlayClose,
 			setupFooterLead,
+			cameraMonitorHidden,
 			controlsLocked,
 			cursorCaptureMode,
 			handleSelectLocale,
@@ -1390,6 +1412,7 @@ export function LaunchWindow() {
 			sendHudOverlayHide,
 			setupFooter,
 			supportsCursorModeToggle,
+			toggleCameraMonitor,
 			toggleCursorMode,
 			transitionLocked,
 		],
