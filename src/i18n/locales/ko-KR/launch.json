@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "메모",
 		"restart": "다시 시작",
-		"discard": "삭제"
+		"discard": "삭제",
+		"transcript": "자막 텍스트"
 	},
 	"peek": {
 		"title": "지금까지의 녹화",
@@ -128,5 +129,18 @@
 		"volume": "다시보기 볼륨",
 		"seek": "녹화 탐색",
 		"open": "지금까지의 녹화 다시 보기"
+	},
+	"transcript": {
+		"title": "자막 텍스트",
+		"refresh": "새로고침",
+		"copy": "복사",
+		"copied": "복사됨",
+		"close": "닫기",
+		"loading": "불러오는 중…",
+		"downloading": "음성 모델 다운로드 중, {{done}} / {{total}} MB…",
+		"transcribing": "클립 {{done}} / {{total}} 변환 중…",
+		"pauseFirst": "최신 클립을 변환하려면 녹화를 일시정지하세요.",
+		"empty": "아직 클립이 없습니다. 먼저 녹화하세요.",
+		"clip": "클립 {{n}}"
 	}
 }

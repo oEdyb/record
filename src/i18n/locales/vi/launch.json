@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "Ghi chú",
 		"restart": "Bắt đầu lại",
-		"discard": "Bỏ"
+		"discard": "Bỏ",
+		"transcript": "Bản ghi lời"
 	},
 	"peek": {
 		"title": "Bản ghi đến lúc này",
@@ -128,5 +129,18 @@
 		"volume": "Âm lượng phát lại",
 		"seek": "Tua bản ghi",
 		"open": "Xem lại bản ghi"
+	},
+	"transcript": {
+		"title": "Bản ghi lời",
+		"refresh": "Làm mới",
+		"copy": "Sao chép",
+		"copied": "Đã sao chép",
+		"close": "Đóng",
+		"loading": "Đang tải…",
+		"downloading": "Đang tải mô hình giọng nói, {{done}} / {{total}} MB…",
+		"transcribing": "Đang chuyển lời clip {{done}} / {{total}}…",
+		"pauseFirst": "Tạm dừng ghi để chuyển lời các clip mới nhất.",
+		"empty": "Chưa có clip. Hãy ghi trước.",
+		"clip": "Clip {{n}}"
 	}
 }

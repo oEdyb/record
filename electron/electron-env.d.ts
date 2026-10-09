@@ -99,6 +99,13 @@ interface Window {
 			reason?: string;
 		}>;
 		closeNotesWindow: () => void;
+		openTranscript: () => Promise<{ opened: boolean }>;
+		closeTranscriptWindow: () => void;
+		getTranscriptSnapshot: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
+		refreshTranscript: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
+		onTranscriptUpdated: (
+			callback: (snapshot: import("./transcript/liveTranscript").TranscriptSnapshot) => void,
+		) => () => void;
 		setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
 		onNotesWindowBoundsChanged: (
 			callback: (bounds: { x: number; y: number; width: number; height: number }) => void,

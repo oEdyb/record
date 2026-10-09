@@ -43,6 +43,7 @@ import {
 import {
 	getSelectedDesktopSource,
 	getSelectedSourceAspectRatio,
+	listTranscriptClips,
 	registerIpcHandlers,
 	resolveApprovedRendererMediaPath,
 } from "./ipc/handlers";
@@ -54,12 +55,17 @@ import {
 } from "./ipc/trustedRendererIpc";
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
+import { resolveFfmpeg } from "./media/audioPeaks";
 import {
 	canDispatchRecordingReviewMenu,
 	recordingReviewFileMenu,
 } from "./recording/recordingReviewFileMenu";
 import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
+import { ensureModels, modelPaths } from "./stt/modelManager";
+import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
+import { LiveTranscriptService } from "./transcript/liveTranscript";
+import { resolveParakeetBinaryPath } from "./transcript/parakeetProcess";
 import { checkLatestRelease } from "./update-checker";
 import {
 	ASSET_BASE_DIR,
@@ -70,6 +76,7 @@ import {
 	createHudOverlayWindow,
 	createNotesWindow,
 	createSourceSelectorWindow,
+	createTranscriptWindow,
 	isPointOverPrivateRecordingUi,
 } from "./windows";
 
@@ -158,6 +165,8 @@ const readyEditorWindows = new WeakSet<BrowserWindow>();
 let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
 let notesWindow: BrowserWindow | null = null;
+let transcriptWindow: BrowserWindow | null = null;
+let liveTranscript: LiveTranscriptService | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
 const isMac = process.platform === "darwin";
@@ -838,6 +847,14 @@ function createSourceSelectorWindowWrapper() {
 	return sourceSelectorWindow;
 }
 
+function createTranscriptWindowWrapper() {
+	transcriptWindow = createTranscriptWindow();
+	transcriptWindow.on("closed", () => {
+		transcriptWindow = null;
+	});
+	return transcriptWindow;
+}
+
 function createNotesWindowWrapper() {
 	{
 		notesWindow = createNotesWindow();
@@ -893,6 +910,7 @@ app.on("before-quit", () => {
 	// A check started seconds ago must not settle after the app is gone and try to open a
 	// dialog on a quitting app.
 	updateCheckAbort?.abort();
+	liveTranscript?.stop();
 });
 
 app.on("will-quit", () => {
@@ -1106,12 +1124,35 @@ appReady?.then(async () => {
 		(point) =>
 			isPointOverPrivateRecordingUi(
 				point,
-				[notesWindow, sourceSelectorWindow, countdownOverlayWindow].filter(
+				[notesWindow, transcriptWindow, sourceSelectorWindow, countdownOverlayWindow].filter(
 					(window): window is BrowserWindow => Boolean(window),
 				),
 			),
 		{ ipcMain },
 	);
+
+	const sttModelsDir = path.join(app.getPath("userData"), "stt-models");
+	liveTranscript = new LiveTranscriptService({
+		listClips: listTranscriptClips,
+		ffmpegPath: () => resolveFfmpeg(),
+		helperPath: () => resolveParakeetBinaryPath(),
+		ensureModel: async (onProgress) => {
+			await ensureModels({
+				baseDir: sttModelsDir,
+				only: ["parakeet-v3"],
+				onProgress: (event) => onProgress(event.downloadedBytes, event.totalBytes),
+			});
+			return modelPaths(sttModelsDir)["parakeet-v3"];
+		},
+		tempDir: path.join(app.getPath("temp"), "klippt-transcript"),
+		cacheDir: path.join(app.getPath("userData"), "transcripts"),
+		onSnapshot: (snapshot) => sendTranscriptSnapshot(transcriptWindow, snapshot),
+	});
+	registerTranscriptIpc(ipcMain, {
+		service: liveTranscript,
+		openWindow: createTranscriptWindowWrapper,
+		getWindow: () => transcriptWindow,
+	});
 
 	await loadAndRegisterGlobalShortcuts(globalShortcutHandlers);
 

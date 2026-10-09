@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "笔记",
 		"restart": "重新开始",
-		"discard": "放弃"
+		"discard": "放弃",
+		"transcript": "转录"
 	},
 	"peek": {
 		"title": "目前的录制",
@@ -128,5 +129,18 @@
 		"volume": "回放音量",
 		"seek": "拖动录制进度",
 		"open": "回看目前的录制"
+	},
+	"transcript": {
+		"title": "转录",
+		"refresh": "刷新",
+		"copy": "复制",
+		"copied": "已复制",
+		"close": "关闭",
+		"loading": "加载中…",
+		"downloading": "正在下载语音模型，{{done}} / {{total}} MB…",
+		"transcribing": "正在转录第 {{done}} / {{total}} 段…",
+		"pauseFirst": "暂停录制后才能转录最新片段。",
+		"empty": "还没有片段，请先录制。",
+		"clip": "片段 {{n}}"
 	}
 }

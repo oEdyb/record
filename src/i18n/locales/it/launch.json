@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "Note",
 		"restart": "Ricomincia",
-		"discard": "Scarta"
+		"discard": "Scarta",
+		"transcript": "Trascrizione"
 	},
 	"peek": {
 		"title": "Registrazione finora",
@@ -128,5 +129,18 @@
 		"volume": "Volume della ripetizione",
 		"seek": "Scorri la registrazione",
 		"open": "Rivedi la registrazione"
+	},
+	"transcript": {
+		"title": "Trascrizione",
+		"refresh": "Aggiorna",
+		"copy": "Copia",
+		"copied": "Copiato",
+		"close": "Chiudi",
+		"loading": "Caricamento…",
+		"downloading": "Download del modello vocale, {{done}} di {{total}} MB…",
+		"transcribing": "Trascrizione clip {{done}} di {{total}}…",
+		"pauseFirst": "Metti in pausa la registrazione per trascrivere gli ultimi clip.",
+		"empty": "Nessun clip ancora. Registra qualcosa prima.",
+		"clip": "Clip {{n}}"
 	}
 }

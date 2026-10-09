@@ -193,6 +193,17 @@ const AUDIO_OVERLAY_MEDIA_DIR = path.join(
 const RENDERER_EXPORT_TEMP_DIR = app.getPath("temp");
 let nativeMacRecordingService: NativeMacRecordingService | null = null;
 
+/** Clip listing for the transcript window; empty before the recorder exists. */
+export function listTranscriptClips() {
+	return (
+		nativeMacRecordingService?.transcriptClipListing() ?? {
+			recordingId: null,
+			clips: [],
+			live: false,
+		}
+	);
+}
+
 // Paths the user approved via file picker or project load (i.e. outside the default dirs).
 const approvedPaths = new Set<string>();
 let mediaAccessRegistry: MediaAccessRegistry | undefined;

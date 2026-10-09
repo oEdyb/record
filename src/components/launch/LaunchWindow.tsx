@@ -1,4 +1,4 @@
-import { Clapperboard, NotepadText, RotateCcw, X } from "lucide-react";
+import { Captions, Clapperboard, NotepadText, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
@@ -938,6 +938,9 @@ export function LaunchWindow() {
 		window.addEventListener("keydown", returnToEditor);
 		return () => window.removeEventListener("keydown", returnToEditor);
 	}, [isPopoverOpen, starting, recording, saving, clipFinalizing, returnToReview]);
+	const openTranscript = useCallback(() => {
+		if (!saving) void window.electronAPI.openTranscript?.();
+	}, [saving]);
 	const openNotes = useCallback(() => {
 		if (!saving) window.electronAPI.openNotes();
 	}, [saving]);
@@ -1284,17 +1287,29 @@ export function LaunchWindow() {
 	const setupFooterLead = useMemo(
 		() =>
 			isLinuxHud ? null : (
-				<button
-					type="button"
-					className={styles.hudSetupFooterButton}
-					disabled={saving}
-					onClick={openNotes}
-				>
-					<NotepadText size={15} aria-hidden />
-					{t("setup.notes")}
-				</button>
+				<>
+					<button
+						type="button"
+						className={styles.hudSetupFooterButton}
+						disabled={saving}
+						onClick={openNotes}
+					>
+						<NotepadText size={15} aria-hidden />
+						{t("setup.notes")}
+					</button>
+					<button
+						type="button"
+						className={styles.hudSetupFooterButton}
+						disabled={saving}
+						onClick={openTranscript}
+						data-testid="hud-open-transcript"
+					>
+						<Captions size={15} aria-hidden />
+						{t("setup.transcript")}
+					</button>
+				</>
 			),
-		[isLinuxHud, openNotes, saving, t],
+		[isLinuxHud, openNotes, openTranscript, saving, t],
 	);
 
 	const setupFooter = useMemo(

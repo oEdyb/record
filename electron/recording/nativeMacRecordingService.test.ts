@@ -1280,4 +1280,30 @@ describe("NativeMacRecordingService", () => {
 			{ ...clips[1], cursorCaptureMode: "editable-overlay", removed: true },
 		]);
 	});
+
+	it("lists committed microphone clips for the transcript and marks a live take", async () => {
+		const stem = path.join(recordingsDir, "recording-100-clip-0001");
+		helper.pauseResult = Promise.resolve({
+			index: 0,
+			screenVideoPath: `${stem}.mp4`,
+			durationMs: 2000,
+			microphoneAudioPath: `${stem}-microphone.mov`,
+		});
+		const service = new NativeMacRecordingService(deps);
+		expect(service.transcriptClipListing()).toEqual({ recordingId: null, clips: [], live: false });
+		await service.start(baseRequest);
+		expect(service.transcriptClipListing()).toMatchObject({
+			recordingId: 100,
+			clips: [],
+			live: true,
+		});
+		await service.pause();
+		expect(service.transcriptClipListing()).toEqual({
+			recordingId: 100,
+			clips: [{ index: 0, microphoneAudioPath: `${stem}-microphone.mov`, durationMs: 2000 }],
+			live: false,
+		});
+		await service.resume();
+		expect(service.transcriptClipListing().live).toBe(true);
+	});
 });

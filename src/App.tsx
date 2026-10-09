@@ -22,6 +22,11 @@ const LaunchWindow = lazy(() =>
 	import("./components/launch/LaunchWindow").then((module) => ({ default: module.LaunchWindow })),
 );
 
+const TranscriptWindow = lazy(() =>
+	import("./components/launch/TranscriptWindow").then((module) => ({
+		default: module.TranscriptWindow,
+	})),
+);
 const NotesWindow = lazy(() =>
 	import("./components/launch/NotesWindow").then((module) => ({ default: module.NotesWindow })),
 );
@@ -65,6 +70,7 @@ export default function App() {
 		if (
 			type === "hud-overlay" ||
 			type === "camera-preview" ||
+			type === "transcript" ||
 			type === "source-selector" ||
 			type === "countdown-overlay"
 		) {
@@ -125,6 +131,12 @@ export default function App() {
 				return <SourceSelector />;
 			case "countdown-overlay":
 				return <CountdownOverlay />;
+			case "transcript":
+				return (
+					<Suspense fallback={null}>
+						<TranscriptWindow />
+					</Suspense>
+				);
 			case "cli-export":
 				return (
 					<Suspense fallback={null}>

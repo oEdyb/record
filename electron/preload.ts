@@ -226,6 +226,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	closeNotesWindow: () => {
 		ipcRenderer.send("notes-window-close");
 	},
+	openTranscript: () => {
+		return ipcRenderer.invoke("transcript-open");
+	},
+	closeTranscriptWindow: () => {
+		ipcRenderer.send("transcript-window-close");
+	},
+	getTranscriptSnapshot: () => {
+		return ipcRenderer.invoke("transcript-snapshot");
+	},
+	refreshTranscript: () => {
+		return ipcRenderer.invoke("transcript-refresh");
+	},
+	onTranscriptUpdated: (callback: (snapshot: unknown) => void) => {
+		const listener = (_event: unknown, snapshot: unknown) => callback(snapshot);
+		ipcRenderer.on("transcript-updated", listener);
+		return () => ipcRenderer.removeListener("transcript-updated", listener);
+	},
 	setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => {
 		ipcRenderer.send("notes-window-set-bounds", bounds);
 	},

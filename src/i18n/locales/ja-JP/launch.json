@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "メモ",
 		"restart": "やり直す",
-		"discard": "破棄"
+		"discard": "破棄",
+		"transcript": "文字起こし"
 	},
 	"peek": {
 		"title": "ここまでの録画",
@@ -128,5 +129,18 @@
 		"volume": "リプレイの音量",
 		"seek": "録画をシーク",
 		"open": "ここまでの録画を再生"
+	},
+	"transcript": {
+		"title": "文字起こし",
+		"refresh": "更新",
+		"copy": "コピー",
+		"copied": "コピーしました",
+		"close": "閉じる",
+		"loading": "読み込み中…",
+		"downloading": "音声モデルをダウンロード中、{{done}} / {{total}} MB…",
+		"transcribing": "クリップ {{done}} / {{total}} を文字起こし中…",
+		"pauseFirst": "最新のクリップを文字起こしするには録画を一時停止してください。",
+		"empty": "クリップがまだありません。先に録画してください。",
+		"clip": "クリップ {{n}}"
 	}
 }

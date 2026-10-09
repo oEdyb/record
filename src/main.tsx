@@ -35,6 +35,7 @@ if (
 	showNotes ||
 	windowType === "hud-overlay" ||
 	windowType === "camera-preview" ||
+	windowType === "transcript" ||
 	windowType === "source-selector" ||
 	windowType === "countdown-overlay"
 ) {

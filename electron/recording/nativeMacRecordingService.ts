@@ -137,6 +137,29 @@ export class NativeMacRecordingService {
 		return Boolean(this.helper?.isRunning());
 	}
 
+	/** Committed clips with a microphone original, for the on-demand transcript. */
+	transcriptClipListing(): {
+		recordingId: number | null;
+		clips: Array<{ index: number; microphoneAudioPath: string; durationMs: number }>;
+		live: boolean;
+	} {
+		return {
+			recordingId: this.recordingId,
+			clips: this.clips.flatMap((clip) =>
+				!clip.removed && clip.microphoneAudioPath
+					? [
+							{
+								index: clip.index,
+								microphoneAudioPath: clip.microphoneAudioPath,
+								durationMs: clip.durationMs,
+							},
+						]
+					: [],
+			),
+			live: this.isRunning() && !this.paused,
+		};
+	}
+
 	start(request: NativeMacRecordingRequest) {
 		return this.enqueue(async () => {
 			if (this.isRunning()) {

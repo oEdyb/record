@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "筆記",
 		"restart": "重新開始",
-		"discard": "捨棄"
+		"discard": "捨棄",
+		"transcript": "逐字稿"
 	},
 	"peek": {
 		"title": "目前的錄製",
@@ -128,5 +129,18 @@
 		"volume": "重播音量",
 		"seek": "拖曳錄製進度",
 		"open": "回看目前的錄製"
+	},
+	"transcript": {
+		"title": "逐字稿",
+		"refresh": "重新整理",
+		"copy": "複製",
+		"copied": "已複製",
+		"close": "關閉",
+		"loading": "載入中…",
+		"downloading": "正在下載語音模型，{{done}} / {{total}} MB…",
+		"transcribing": "正在轉錄第 {{done}} / {{total}} 段…",
+		"pauseFirst": "暫停錄製後才能轉錄最新片段。",
+		"empty": "還沒有片段，請先錄製。",
+		"clip": "片段 {{n}}"
 	}
 }

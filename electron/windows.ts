@@ -938,6 +938,58 @@ export function createCountdownOverlayWindow(): BrowserWindow {
 	return win;
 }
 
+const TRANSCRIPT_WINDOW_DEFAULT_SIZE = { width: 440, height: 600 } as const;
+const TRANSCRIPT_WINDOW_MIN_SIZE = { width: 300, height: 220 } as const;
+
+/**
+ * Read-only transcript of the current take. Same floating dark card as Notes, kept
+ * out of capture; the text is never written into the project.
+ */
+export function createTranscriptWindow(): BrowserWindow {
+	const win = new BrowserWindow({
+		...TRANSCRIPT_WINDOW_DEFAULT_SIZE,
+		minWidth: TRANSCRIPT_WINDOW_MIN_SIZE.width,
+		minHeight: TRANSCRIPT_WINDOW_MIN_SIZE.height,
+		title: `${APP_DISPLAY_NAME} — Transcript`,
+		frame: false,
+		...(process.platform === "darwin"
+			? {
+					transparent: true,
+					backgroundColor: "#00000000",
+					vibrancy: "popover" as const,
+					visualEffectState: "active" as const,
+				}
+			: { backgroundColor: "#111114" }),
+		resizable: true,
+		alwaysOnTop: true,
+		skipTaskbar: false,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
+	if (process.platform !== "darwin") win.setAutoHideMenuBar(true);
+	applyContentProtection(win, "Transcript");
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+		win.setAlwaysOnTop(true, "floating");
+	}
+	win.once("ready-to-show", () => {
+		applyContentProtection(win, "Transcript");
+		win.show();
+	});
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=transcript");
+	} else {
+		win.loadURL("klippt://app/index.html?windowType=transcript");
+	}
+	return win;
+}
+
 const NOTES_WINDOW_DEFAULT_SIZE = { width: 320, height: 420 } as const;
 const NOTES_WINDOW_MIN_SIZE = { width: 220, height: 140 } as const;
 

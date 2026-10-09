@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "Notes",
 		"restart": "Restart",
-		"discard": "Discard"
+		"discard": "Discard",
+		"transcript": "Transcript"
 	},
 	"peek": {
 		"title": "Recording so far",
@@ -128,5 +129,18 @@
 		"volume": "Replay volume",
 		"seek": "Seek recording",
 		"open": "Replay recording so far"
+	},
+	"transcript": {
+		"title": "Transcript",
+		"refresh": "Refresh",
+		"copy": "Copy",
+		"copied": "Copied",
+		"close": "Close",
+		"loading": "Loading…",
+		"downloading": "Downloading the speech model, {{done}} of {{total}} MB…",
+		"transcribing": "Transcribing clip {{done}} of {{total}}…",
+		"pauseFirst": "Pause the recording to transcribe the latest clips.",
+		"empty": "No clips yet. Record something first.",
+		"clip": "Clip {{n}}"
 	}
 }

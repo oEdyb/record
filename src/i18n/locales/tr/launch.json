@@ -116,7 +116,8 @@
 	"setup": {
 		"notes": "Notlar",
 		"restart": "Yeniden başlat",
-		"discard": "At"
+		"discard": "At",
+		"transcript": "Döküm"
 	},
 	"peek": {
 		"title": "Şu ana kadarki kayıt",
@@ -128,5 +129,18 @@
 		"volume": "Tekrar ses düzeyi",
 		"seek": "Kayıtta gezin",
 		"open": "Şu ana kadarki kaydı izle"
+	},
+	"transcript": {
+		"title": "Döküm",
+		"refresh": "Yenile",
+		"copy": "Kopyala",
+		"copied": "Kopyalandı",
+		"close": "Kapat",
+		"loading": "Yükleniyor…",
+		"downloading": "Konuşma modeli indiriliyor, {{done}} / {{total}} MB…",
+		"transcribing": "Klip {{done}} / {{total}} dökümü yapılıyor…",
+		"pauseFirst": "Son klipleri dökmek için kaydı duraklatın.",
+		"empty": "Henüz klip yok. Önce bir şey kaydedin.",
+		"clip": "Klip {{n}}"
 	}
 }
