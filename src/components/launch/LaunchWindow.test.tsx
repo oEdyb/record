@@ -1642,6 +1642,24 @@ describe("LaunchWindow device buttons", () => {
 });
 
 describe("LaunchWindow device settings", () => {
+	it("keeps Settings open when its switches are toggled", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+		for (const toggle of within(panel).getAllByRole("switch")) {
+			fireEvent.click(toggle);
+		}
+
+		await waitFor(() => {
+			expect(recorderState.value.setWebcamEnabled).toHaveBeenCalledWith(true);
+		});
+		expect(screen.getByTestId("launch-device-settings-button")).toHaveAttribute(
+			"aria-expanded",
+			"true",
+		);
+	});
+
 	it("offers Automatic on High and records a picked camera format exactly", async () => {
 		cameraDevicesState.value = [{ deviceId: "cam-a", label: "Camera A", groupId: "g" }];
 		cameraPreviewState.value.supportedFormats = [

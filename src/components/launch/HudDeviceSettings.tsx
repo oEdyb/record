@@ -202,6 +202,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	activeCameraId,
 	cameraEnabled,
 	cameraStream,
+	cameraHandoff = false,
 	recordingQuality = "high",
 	onSelectRecordingQuality,
 	webcamFormat,
@@ -231,6 +232,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	activeCameraId: string | undefined;
 	cameraEnabled: boolean;
 	cameraStream: MediaStream | null;
+	/** The recorder is acquiring the camera; release the panel's own stream. */
+	cameraHandoff?: boolean;
 	recordingQuality?: RecordingQuality;
 	onSelectRecordingQuality?: (quality: RecordingQuality) => void;
 	webcamFormat: WebcamFormat;
@@ -289,7 +292,9 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 		// off, this panel can own one temporary verification stream.
 		// Never open a second camera client during a take.
 		enabled:
-			!closing && hasCamera && (cameraStream !== null || (!cameraEnabled && !controlsLocked)),
+			!closing &&
+			hasCamera &&
+			(cameraStream !== null || (!cameraEnabled && !controlsLocked && !cameraHandoff)),
 		deviceId: activeCameraId,
 		nativeFormat: automaticCamera,
 		format: webcamFormat,

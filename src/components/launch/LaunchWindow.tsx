@@ -1,5 +1,6 @@
 import { Captions, Clapperboard, NotepadText, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
@@ -985,16 +986,22 @@ export function LaunchWindow() {
 		void window.electronAPI?.setRecordingPrefs?.({ micEnabled: enabled });
 	}, [controlsLocked, microphoneEnabled, setMicrophoneEnabled]);
 
+	const [cameraHandoff, setCameraHandoff] = useState(false);
 	const toggleWebcam = useCallback(() => {
 		if (controlsLocked) return;
 		const enabled = !webcamEnabled;
-		// If the settings panel owns a temporary verification stream, unmount it
-		// before the recorder acquires the same device.
-		if (enabled) closePopovers();
-		void setWebcamEnabled(enabled).then((applied) => {
-			if (applied) void window.electronAPI?.setRecordingPrefs?.({ camEnabled: enabled });
-		});
-	}, [closePopovers, controlsLocked, setWebcamEnabled, webcamEnabled]);
+		// If the settings panel owns a temporary verification stream, stop it before
+		// the recorder acquires the same device. flushSync runs that cleanup now, so
+		// the panel can stay open while the switch is toggled.
+		if (enabled) flushSync(() => setCameraHandoff(true));
+		void setWebcamEnabled(enabled)
+			.then((applied) => {
+				if (applied) void window.electronAPI?.setRecordingPrefs?.({ camEnabled: enabled });
+			})
+			.finally(() => {
+				if (enabled) setCameraHandoff(false);
+			});
+	}, [controlsLocked, setWebcamEnabled, webcamEnabled]);
 
 	// Selecting a device never switches it on. If the device is already live the
 	// recorder re-acquires on the id change; if it isn't, this just records which
@@ -1625,6 +1632,7 @@ export function LaunchWindow() {
 								activeCameraId={webcamDeviceId || selectedCameraId}
 								cameraEnabled={webcamEnabled}
 								cameraStream={webcamPreviewStream}
+								cameraHandoff={cameraHandoff}
 								recordingQuality={recordingQuality}
 								onSelectRecordingQuality={handleSelectRecordingQuality}
 								webcamFormat={webcamFormat}
