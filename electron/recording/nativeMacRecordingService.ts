@@ -239,16 +239,12 @@ export class NativeMacRecordingService {
 			} catch (error) {
 				const failedRecordingId = this.recordingId;
 				await this.deps.stopCursor();
-				if (this.helper) {
-					try {
-						await this.helper.kill();
-					} catch (terminationError) {
-						return {
-							success: false,
-							error: `${this.errorMessage(error)} ${this.errorMessage(terminationError)}`,
-						};
-					}
-				}
+				// A helper that outlives its kill window must not leave the service
+				// claiming a running capture; finish the cleanup and report both errors.
+				const terminationError = await this.helper?.kill().then(
+					() => null,
+					(killError: unknown) => killError,
+				);
 				this.acceptsOriginalMetadata = false;
 				await this.recoveryWrites.catch(() => undefined);
 				if (
@@ -260,7 +256,12 @@ export class NativeMacRecordingService {
 					).catch(() => undefined);
 				}
 				this.reset();
-				return { success: false, error: this.errorMessage(error) };
+				return {
+					success: false,
+					error: terminationError
+						? `${this.errorMessage(error)} ${this.errorMessage(terminationError)}`
+						: this.errorMessage(error),
+				};
 			}
 		});
 	}
@@ -667,7 +668,10 @@ export class NativeMacRecordingService {
 				await this.deps.stopCursor().catch(() => undefined);
 				return { success: false, error: this.errorMessage(error) };
 			} finally {
-				if (helper.isRunning()) await helper.kill();
+				if (helper.isRunning())
+					await helper.kill().catch((killError: unknown) => {
+						console.warn("[capture-mac] capture helper did not exit after Stop:", killError);
+					});
 				this.deps.onStopStage?.("helper-exited");
 				this.acceptsOriginalMetadata = false;
 				await this.recoveryWrites.catch(() => undefined);

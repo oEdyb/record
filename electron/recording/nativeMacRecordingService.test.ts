@@ -486,6 +486,35 @@ describe("NativeMacRecordingService", () => {
 		expect(deps.clearCursor).toHaveBeenCalled();
 	});
 
+	it("finishes Stop and allows a new take when the helper outlives its kill window", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.kill.mockRejectedValueOnce(new Error("helper did not exit"));
+		await service.stop();
+
+		expect(deps.onRecordingStateChange).toHaveBeenLastCalledWith(false);
+		helper = new FakeHelper();
+		vi.mocked(deps.createHelper).mockReturnValue(helper);
+		await expect(service.start({ ...baseRequest, recordingId: 101 })).resolves.toMatchObject({
+			success: true,
+		});
+	});
+
+	it("releases a failed start when the helper outlives its kill window", async () => {
+		helper.waitForStart.mockRejectedValueOnce(new Error("Screen capture was denied"));
+		helper.kill.mockRejectedValueOnce(new Error("helper did not exit"));
+		const service = new NativeMacRecordingService(deps);
+		await expect(service.start(baseRequest)).resolves.toEqual({
+			success: false,
+			error: "Screen capture was denied helper did not exit",
+		});
+		helper = new FakeHelper();
+		vi.mocked(deps.createHelper).mockReturnValue(helper);
+		await expect(service.start({ ...baseRequest, recordingId: 101 })).resolves.toMatchObject({
+			success: true,
+		});
+	});
+
 	it("stays paused when the helper paused but saving the session fails", async () => {
 		const clip = {
 			index: 0,
