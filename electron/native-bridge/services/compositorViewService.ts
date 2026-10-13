@@ -247,6 +247,21 @@ function sceneSpeedRegions(sceneJson?: string): SceneSpeedRegion[] {
 	}
 }
 
+/** The atomic publish renames over the destination, so a save path that names
+ * one of the export's own sources would replace the original recording. */
+export async function assertExportKeepsSources(target: string, clips: ClipInput[]): Promise<void> {
+	const resolve = (file: string) => fs.promises.realpath(file).catch(() => path.resolve(file));
+	const destination = await resolve(target);
+	for (const clip of clips) {
+		for (const source of [clip.screenPath, clip.webcamPath, clip.cleanMicrophonePath]) {
+			if (source && (await resolve(source)) === destination)
+				throw new Error(
+					"Choose another file name. This file is one of the recordings in this export.",
+				);
+		}
+	}
+}
+
 export function calculateSceneExportDuration(clips: ClipInput[], sceneJson?: string): number {
 	return calculateEffectiveExportDuration(clips, sceneSpeedRegions(sceneJson));
 }
@@ -801,6 +816,7 @@ export class CompositorViewService {
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
 		this.registerActiveExport(exportId, controller);
 		try {
+			await assertExportKeepsSources(target, clips);
 			const width = Math.max(2, params?.width ?? 1920) & ~1;
 			const height = Math.max(2, params?.height ?? 1080) & ~1;
 			const sourceDurations = new Map<string, number>();

@@ -186,6 +186,30 @@ describe("CompositorViewService export transaction", () => {
 		expect(resolved[0]?.sourceEndSec).toBe(1.25);
 	});
 
+	it("refuses to save over one of the export's own recordings", async () => {
+		const screenPath = path.join(root, "screen.mp4");
+		fs.writeFileSync(screenPath, "original");
+		fs.symlinkSync(screenPath, path.join(root, "alias.mp4"));
+		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
+			exportMulti: vi.fn(),
+			verifyVideoExport: vi.fn(),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		for (const target of [screenPath, path.join(root, "alias.mp4")])
+			await expect(service.exportMulti([{ ...clips[0]!, screenPath }], target)).rejects.toThrow(
+				"Choose another file name. This file is one of the recordings in this export.",
+			);
+		expect(addon.exportMulti).not.toHaveBeenCalled();
+		expect(fs.readFileSync(screenPath, "utf8")).toBe("original");
+	});
+
 	it("fails before rendering when a source duration cannot be probed", async () => {
 		const addon = {
 			probeMediaDuration: vi.fn(async () => {
