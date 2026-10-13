@@ -190,6 +190,11 @@ export class RecordingVideoPacketAccumulator {
 		}
 	}
 
+	/** Presentation time covered so far, for progress while the pass runs. */
+	get spanSeconds(): number {
+		return this.lastPts > this.firstPts ? (this.lastPts - this.firstPts) / 1_000_000_000 : 0;
+	}
+
 	finish(): RecordingVideoPacketProof {
 		if (this.pending.trim() || !this.frames)
 			throw new Error("Incomplete recording video packet proof.");
@@ -204,7 +209,12 @@ export class RecordingVideoPacketAccumulator {
 	}
 }
 
-async function probeRecordingPackets(ffmpeg: string, file: string, signal: AbortSignal) {
+async function probeRecordingPackets(
+	ffmpeg: string,
+	file: string,
+	signal: AbortSignal,
+	onSpan?: (seconds: number) => void,
+) {
 	const packets = new RecordingVideoPacketAccumulator();
 	const header = await runRecordingFfmpeg(
 		ffmpeg,
@@ -224,14 +234,44 @@ async function probeRecordingPackets(ffmpeg: string, file: string, signal: Abort
 		],
 		signal,
 		30 * 60_000,
-		(chunk) => packets.append(chunk),
+		(chunk) => {
+			packets.append(chunk);
+			onSpan?.(packets.spanSeconds);
+		},
 	);
 	return { header, packets: packets.finish() };
 }
 
 export type RecordingFastExportRequest = Omit<RecordingPassthroughRequest, "hasCursorTrack"> & {
 	signal: AbortSignal;
+	/** Receives progress on the same frame scale as a rendered export. */
+	onProgress?: (frames: number) => void;
+	/** Fails early when the destination cannot hold a copy of this many bytes. */
+	assertCapacity?: (bytes: number) => Promise<void>;
 };
+
+/** The source-preserving path reads the recording, copies it and reads the copy
+ * back. Report the three passes as equal thirds of one bar, scaled to the frame
+ * total the renderer expects for this duration and frame rate. */
+function fastExportProgress(durationS: number, fps: number) {
+	const total = Math.max(1, Math.round(durationS * fps));
+	let last = -1;
+	let lastAt = 0;
+	return (
+		onProgress: ((frames: number) => void) | undefined,
+		pass: 0 | 1 | 2,
+		fraction: number,
+	) => {
+		if (!onProgress) return;
+		const clamped = Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0));
+		const frames = Math.min(total, Math.round(((pass + clamped) / 3) * total));
+		const now = performance.now();
+		if (frames <= last || (now - lastAt < 100 && frames < total)) return;
+		last = frames;
+		lastAt = now;
+		onProgress(frames);
+	};
+}
 
 export async function prepareRecordingFastExport(
 	request: RecordingFastExportRequest,
@@ -251,7 +291,13 @@ export async function prepareRecordingFastExport(
 	if (!ffmpeg) return null;
 	const source = await fs.stat(clip.screenPath);
 	if (!source.isFile()) return null;
-	const original = await probeRecordingPackets(ffmpeg, clip.screenPath, request.signal);
+	// The copy is at least as large as the recording. Say so before the first
+	// pass reads the whole file, rather than after it.
+	await request.assertCapacity?.(source.size + 1024 * 1024);
+	const report = fastExportProgress(request.sourceDurationSec, request.params?.fps ?? 60);
+	const original = await probeRecordingPackets(ffmpeg, clip.screenPath, request.signal, (s) =>
+		report(request.onProgress, 0, s / request.sourceDurationSec),
+	);
 	const media = parseRecordingSourceMetadata(original.header);
 	const params = request.params!;
 	if (
@@ -299,12 +345,14 @@ export async function prepareRecordingFastExport(
 					const [key, value] = line.trim().split("=");
 					if (key === "frame") {
 						frames = Math.max(frames, Number(value) || 0);
-						onProgress?.(frames);
+						report(onProgress, 1, frames / original.packets.frames);
 					}
 				}
 			});
 			if (frames <= 0) throw new Error("The source-preserving export contained no video frames.");
-			const staged = await probeRecordingPackets(ffmpeg, stagingPath, signal);
+			const staged = await probeRecordingPackets(ffmpeg, stagingPath, signal, (s) =>
+				report(onProgress, 2, s / durationS),
+			);
 			const stagedMedia = parseRecordingSourceMetadata(staged.header);
 			// FFmpeg's human-readable duration is rounded to hundredths; allow
 			// at most two display quanta, alongside exact packet PTS/DTS proof.
@@ -332,7 +380,7 @@ export async function prepareRecordingFastExport(
 			// native verifier still checks the staged stream's actual nominal FPS.
 			verificationFps = stagedMedia.fps;
 			const wallS = (performance.now() - start) / 1000;
-			onProgress?.(frames);
+			report(onProgress, 2, 1);
 			return {
 				frames,
 				wallS,

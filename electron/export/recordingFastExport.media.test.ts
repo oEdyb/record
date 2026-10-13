@@ -141,6 +141,8 @@ describe("real source-preserving media export", () => {
 				cropByClip: [null],
 				output: { width: 160, height: 90, fps: 60 },
 			};
+			const progress: number[] = [];
+			const capacityRequests: number[] = [];
 			const plan = await prepareRecordingFastExport({
 				clips: [clip],
 				sceneJson: JSON.stringify(scene),
@@ -155,10 +157,20 @@ describe("real source-preserving media export", () => {
 					evenVolume: false,
 				},
 				signal,
+				onProgress: (frames) => progress.push(frames),
+				assertCapacity: async (bytes) => {
+					capacityRequests.push(bytes);
+				},
 			});
 			expect(plan).not.toBeNull();
 			expect(plan!.fps).toBe(sourceMetadata.fps);
-			const result = await plan!.render(outputPath, signal);
+			const result = await plan!.render(outputPath, signal, (frames) => progress.push(frames));
+			// One bar across read, copy and read-back, on the rendered export's frame scale.
+			const total = Math.round(sourceDuration * 60);
+			expect(capacityRequests).toEqual([(await fs.stat(sourcePath)).size + 1024 * 1024]);
+			expect(progress.at(-1)).toBe(total);
+			expect(progress.every((frames, i) => i === 0 || frames > progress[i - 1]!)).toBe(true);
+			expect(progress.every((frames) => frames <= total)).toBe(true);
 			expect(result).toMatchObject({
 				frames: audio === "vfr" ? 112 : audio === "closing" ? 121 : 120,
 				encoderName: "stream-copy/h264",

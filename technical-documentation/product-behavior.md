@@ -1031,6 +1031,10 @@ product requirement, not as an optional maximum-quality mode.
   frame rate. Rendering settings apply only when this explicit path falls back to rendering.
   Verify the staged MP4 before atomically publishing it. Camera, edits, trims, multiple clips,
   effects and audio mastering continue through the existing renderer.
+- One video in recording review shows no format choices. It states the fixed output (MP4 at
+  recording quality and size) and labels progress as saving. The copy path reports one bar
+  across reading the recording, copying it and reading the copy back. It checks free space
+  before the first read and names the space needed and available.
 - Closing export leaves it running. Reopening displays active progress; a later Save after
   completion starts a fresh export instead of reusing a previous recording's success state.
 - Separate takes copies the kept clips' complete original screen, camera, microphone and

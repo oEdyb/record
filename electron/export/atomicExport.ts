@@ -233,6 +233,11 @@ async function writeJournalAtomically(
 	}
 }
 
+function formatGigabytes(bytes: bigint): string {
+	const gigabytes = Number(bytes) / 1_000_000_000;
+	return `${gigabytes < 10 ? gigabytes.toFixed(1) : Math.round(gigabytes)} GB`;
+}
+
 function availableBytes(stats: Awaited<ReturnType<typeof fs.statfs>>): bigint {
 	return BigInt(stats.bavail) * BigInt(stats.bsize);
 }
@@ -479,6 +484,18 @@ export class AtomicExportPublisher {
 		}
 	}
 
+	/** Fails with INSUFFICIENT_SPACE before work starts when `finalPath`'s disk
+	 * cannot hold `expectedBytes` plus the publish safety margin. Other failures are left to the publish preflight, which reports them in phase. */
+	async checkCapacity(finalPath: string, expectedBytes: number): Promise<void> {
+		try {
+			const directory = path.dirname(await resolveFinalSymlink(path.resolve(finalPath)));
+			const unwritten = path.join(directory, `.${randomUUID()}.capacity`);
+			await this.assertCapacity(directory, unwritten, expectedBytes);
+		} catch (error) {
+			if (error instanceof ExportTransactionError) throw error;
+		}
+	}
+
 	private async assertCapacity(
 		directory: string,
 		stagingPath: string,
@@ -497,7 +514,7 @@ export class AtomicExportPublisher {
 			: availableBytes(await fs.statfs(directory));
 		if (free < remaining + safety) {
 			throw new ExportTransactionError(
-				"Not enough free space to finish this export safely.",
+				`Not enough free space to finish this export safely. It needs about ${formatGigabytes(remaining + safety)} free, and this disk has ${formatGigabytes(free)}.`,
 				"preflight",
 				"INSUFFICIENT_SPACE",
 				true,

@@ -247,6 +247,20 @@ describe("AtomicExportPublisher", () => {
 		expect(render).not.toHaveBeenCalled();
 	});
 
+	it("checks capacity up front and names the space needed", async () => {
+		const finalPath = path.join(directory, "video.mp4");
+		const check = publisher(5, async () => 33_000_000_000n).checkCapacity(
+			finalPath,
+			34_653_309_259,
+		);
+
+		await expect(check).rejects.toMatchObject({ phase: "preflight", code: "INSUFFICIENT_SPACE" });
+		await expect(check).rejects.toThrow("needs about 38 GB free, and this disk has 33 GB");
+		await expect(
+			publisher(5, async () => 40_000_000_000n).checkCapacity(finalPath, 34_653_309_259),
+		).resolves.toBeUndefined();
+	});
+
 	it("reports disk-full errors consistently after preflight", async () => {
 		const phases = ["rendering", "verification", "syncing", "publishing"] as const;
 		for (const phase of phases) {

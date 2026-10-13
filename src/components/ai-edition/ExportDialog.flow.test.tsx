@@ -165,6 +165,25 @@ describe("ExportDialog task completion", () => {
 		expect(onSourceBusyChange).toHaveBeenLastCalledWith(false);
 		expect(screen.getByRole("button", { name: "One video" })).toBeEnabled();
 	});
+	it("describes the fixed One video save and its progress instead of format choices", async () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		mocks.export.mockReturnValueOnce(new Promise(() => undefined));
+		render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		fireEvent.click(screen.getByRole("button", { name: "One video" }));
+		expect(screen.getByText("exportDialog.quickSummary")).toBeInTheDocument();
+		expect(screen.queryByText("exportDialog.pickFormatAndExport")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.exportMp4" }));
+		await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce());
+		act(() => mocks.progress?.(1));
+		expect(
+			screen.getByRole("progressbar", { name: "exportDialog.savingVideo" }),
+		).toBeInTheDocument();
+		expect(screen.getByText("exportDialog.quickBackgroundHint")).toBeInTheDocument();
+		expect(screen.queryByText("exportDialog.renderingFrames")).toBeNull();
+	});
 	it("does not open another save picker after cancelling a reopened active quick export", async () => {
 		const document = doc(
 			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],

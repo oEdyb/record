@@ -490,7 +490,9 @@ export function ExportDialog({
 					? t("recordingReview.originalsHint")
 					: phase === "done"
 						? undefined
-						: t("exportDialog.subtitle")
+						: quickExport
+							? t("exportDialog.quickSubtitle")
+							: t("exportDialog.subtitle")
 			}
 			size="xl"
 		>
@@ -870,6 +872,15 @@ export function ExportDialog({
 					)}
 
 					<ProgressBlock
+						quickExport={quickExport}
+						quickSummary={
+							selectedMp4Settings
+								? t("exportDialog.quickSummary", {
+										width: selectedMp4Settings.width,
+										height: selectedMp4Settings.height,
+									})
+								: t("exportDialog.quickSubtitle")
+						}
 						phase={phase}
 						progress={progress}
 						error={error}
@@ -940,7 +951,9 @@ export function ExportDialog({
 								<>
 									<Loader2 size={14} className="animate-spin" />
 									{phase === "rendering"
-										? t("exportDialog.rendering")
+										? quickExport
+											? t("exportDialog.saving")
+											: t("exportDialog.rendering")
 										: phase === "writing"
 											? t("exportDialog.saving")
 											: t("exportDialog.starting")}
@@ -1007,6 +1020,8 @@ function FormatToggle({
 }
 
 function ProgressBlock({
+	quickExport,
+	quickSummary,
 	phase,
 	progress,
 	error,
@@ -1015,6 +1030,9 @@ function ProgressBlock({
 	savedPath,
 	audioMastering,
 }: {
+	/** Recording review's One video: a fixed-quality save, not a frame render. */
+	quickExport: boolean;
+	quickSummary: string;
 	phase: ExportRunPhase;
 	progress: ExportProgress | null;
 	error: string | null;
@@ -1039,7 +1057,9 @@ function ProgressBlock({
 			>
 				{phase === "configuring"
 					? t("exportDialog.starting")
-					: t("exportDialog.pickFormatAndExport")}
+					: quickExport
+						? quickSummary
+						: t("exportDialog.pickFormatAndExport")}
 			</div>
 		);
 	}
@@ -1103,6 +1123,12 @@ function ProgressBlock({
 	const current = progress?.currentFrame ?? 0;
 	const total = progress?.totalFrames ?? 0;
 	const eta = progress?.estimatedTimeRemaining ?? 0;
+	const stepLabel =
+		phase === "writing"
+			? t("exportDialog.writingFile")
+			: quickExport
+				? t("exportDialog.savingVideo")
+				: t("exportDialog.renderingFrames");
 	return (
 		<div
 			style={{
@@ -1122,9 +1148,7 @@ function ProgressBlock({
 					justifyContent: "space-between",
 				}}
 			>
-				<span style={{ font: "500 12px var(--font-body)", color: "var(--fg-2)" }}>
-					{phase === "writing" ? t("exportDialog.writingFile") : t("exportDialog.renderingFrames")}
-				</span>
+				<span style={{ font: "500 12px var(--font-body)", color: "var(--fg-2)" }}>{stepLabel}</span>
 				<span
 					style={{
 						font: "500 12px/1 var(--font-mono)",
@@ -1140,9 +1164,7 @@ function ProgressBlock({
 			</div>
 			<div
 				role="progressbar"
-				aria-label={
-					phase === "writing" ? t("exportDialog.writingFile") : t("exportDialog.renderingFrames")
-				}
+				aria-label={stepLabel}
 				aria-valuemin={0}
 				aria-valuemax={100}
 				aria-valuenow={phase === "writing" || !progress ? undefined : Math.round(pct)}
@@ -1174,15 +1196,19 @@ function ProgressBlock({
 			>
 				{phase === "writing"
 					? t("exportDialog.finishingFile")
-					: total > 0 && current > 1 && eta > 0
-						? t("exportDialog.framesEta", {
-								current,
-								total,
-								eta: formatExportEta(eta),
-							})
-						: progress
-							? t("exportDialog.renderingFrames")
-							: t("exportDialog.preparingEncoder")}
+					: quickExport
+						? eta > 0
+							? t("exportDialog.timeLeft", { eta: formatExportEta(eta) })
+							: t("exportDialog.quickChecking")
+						: total > 0 && current > 1 && eta > 0
+							? t("exportDialog.framesEta", {
+									current,
+									total,
+									eta: formatExportEta(eta),
+								})
+							: progress
+								? t("exportDialog.renderingFrames")
+								: t("exportDialog.preparingEncoder")}
 			</div>
 			<p
 				style={{
@@ -1191,7 +1217,7 @@ function ProgressBlock({
 					color: "var(--muted)",
 				}}
 			>
-				{t("exportDialog.backgroundHint")}
+				{quickExport ? t("exportDialog.quickBackgroundHint") : t("exportDialog.backgroundHint")}
 			</p>
 		</div>
 	);

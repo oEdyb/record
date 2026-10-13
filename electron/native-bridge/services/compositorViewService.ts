@@ -16,6 +16,7 @@ import {
 } from "../../../src/lib/exporter/mp4ExportSettings";
 import {
 	AtomicExportPublisher,
+	ExportTransactionError,
 	type ExportTransactionPhase,
 	type ExportTransactionWarning,
 } from "../../export/atomicExport";
@@ -818,9 +819,12 @@ export class CompositorViewService {
 						params,
 						sourceDurationSec: sourceDurations.get(resolvedClips[0]!.screenPath)!,
 						signal: controller.signal,
+						onProgress,
+						assertCapacity: (bytes) => this.exportPublisher.checkCapacity(target, bytes),
 					});
 				} catch (error) {
-					if (controller.signal.aborted) throw error;
+					// A full disk fails the rendered fallback too; report it now.
+					if (controller.signal.aborted || error instanceof ExportTransactionError) throw error;
 					console.warn(
 						"[CompositorViewService] Source preservation unavailable; rendering recording.",
 						error,
