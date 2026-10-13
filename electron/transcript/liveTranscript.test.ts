@@ -90,6 +90,20 @@ describe("LiveTranscriptService", () => {
 		expect(transcribe).not.toHaveBeenCalled();
 	});
 
+	it("stops before the next clip when the take continues during a pass", async () => {
+		transcribe.mockImplementationOnce(async ({ id }: { id: string }) => {
+			listing = { ...listing, live: true };
+			return { id, text: `text ${id}`, detectedLanguage: "en" };
+		});
+		const result = await makeService().refresh();
+
+		expect(transcribe).toHaveBeenCalledOnce();
+		expect(result.status).toBe("blocked");
+		expect(result.clips.map((entry) => entry.text)).toEqual(["text clip-0", null]);
+		const cached = JSON.parse(await readFile(path.join(dir, "cache", "7.json"), "utf8"));
+		expect(Object.values(cached)).toEqual(["text clip-0"]);
+	});
+
 	it("keeps the last take after the recorder forgets it", async () => {
 		const service = makeService();
 		await service.refresh();

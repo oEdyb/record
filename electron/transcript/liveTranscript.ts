@@ -178,6 +178,17 @@ export class LiveTranscriptService {
 			await mkdir(this.deps.tempDir, { recursive: true });
 			let done = 0;
 			for (const clip of pending) {
+				// Continue during a pass: finish this clip at most, never transcribe alongside capture.
+				if (this.deps.listClips().live) {
+					await this.saveCache(listing);
+					this.publish({
+						clips: this.entries(listing, errors),
+						status: "blocked",
+						progress: null,
+						download: null,
+					});
+					return this.current;
+				}
 				const wavPath = path.join(
 					this.deps.tempDir,
 					`transcript-${listing.recordingId ?? "x"}-${clip.index}.wav`,
