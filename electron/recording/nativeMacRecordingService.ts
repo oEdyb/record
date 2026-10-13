@@ -276,7 +276,12 @@ export class NativeMacRecordingService {
 				console.warn("[capture-mac] Stop before quit failed:", error);
 			}),
 			new Promise<void>((resolve) => {
-				timer = setTimeout(resolve, timeoutMs);
+				timer = setTimeout(() => {
+					console.warn(
+						`[capture-mac] Stop before quit did not finish in ${timeoutMs} ms; quitting.`,
+					);
+					resolve();
+				}, timeoutMs);
 			}),
 		]);
 		clearTimeout(timer);

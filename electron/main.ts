@@ -9,6 +9,7 @@ import {
 	Menu,
 	nativeImage,
 	net,
+	powerMonitor,
 	screen,
 	session,
 	shell,
@@ -58,6 +59,7 @@ import {
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
 import { resolveFfmpeg } from "./media/audioPeaks";
+import { createQuitCaptureGuard } from "./recording/quitCaptureGuard";
 import {
 	canDispatchRecordingReviewMenu,
 	recordingReviewFileMenu,
@@ -908,16 +910,18 @@ app.on("activate", () => {
 	}
 });
 
-let captureStoppedForQuit = false;
+const quitCaptureGuard = createQuitCaptureGuard({
+	isCaptureRunning: isNativeMacCaptureRunning,
+	stopCapture: stopNativeMacCaptureForQuit,
+	quit: () => app.quit(),
+});
+
 app.on("before-quit", (event) => {
 	// A check started seconds ago must not settle after the app is gone and try to open a
 	// dialog on a quitting app.
 	updateCheckAbort?.abort();
 	liveTranscript?.stop();
-	if (captureStoppedForQuit || !isNativeMacCaptureRunning()) return;
-	event.preventDefault();
-	captureStoppedForQuit = true;
-	void stopNativeMacCaptureForQuit().finally(() => app.quit());
+	quitCaptureGuard.beforeQuit(event);
 });
 
 app.on("will-quit", () => {
@@ -927,6 +931,7 @@ app.on("will-quit", () => {
 const appReady = !cliCommand && hasSingleInstanceLock ? app.whenReady() : null;
 
 appReady?.then(async () => {
+	powerMonitor.on("shutdown", () => quitCaptureGuard.systemPoweringOff());
 	installKlipptProtocol({
 		rendererDist: RENDERER_DIST,
 		resourceRoot: ASSET_BASE_DIR,
