@@ -11,7 +11,11 @@ import type {
 } from "../../src/lib/nativeMacRecording";
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
-import { NativeMacHelperClient, NativeMacResumeRejectedError } from "./nativeMacHelperClient";
+import {
+	NativeMacHelperClient,
+	NativeMacPauseError,
+	NativeMacResumeRejectedError,
+} from "./nativeMacHelperClient";
 import {
 	type NativeMacCaptureHelper,
 	NativeMacRecordingService,
@@ -480,6 +484,30 @@ describe("NativeMacRecordingService", () => {
 		).resolves.toMatchObject({ success: true });
 		expect(deps.startCursor).not.toHaveBeenCalled();
 		expect(deps.clearCursor).toHaveBeenCalled();
+	});
+
+	it("stays paused when the helper paused but saving the session fails", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "clip.mp4"),
+			durationMs: 2000,
+		};
+		helper.pause.mockRejectedValueOnce(new NativeMacPauseError("Clip tail failed", true, clip));
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await fs.chmod(recordingsDir, 0o500);
+		try {
+			await expect(service.pause()).resolves.toMatchObject({
+				success: false,
+				paused: true,
+				clip: expect.objectContaining({ index: 0 }),
+				error: "Clip tail failed",
+			});
+			await expect(service.pause()).resolves.toEqual({ success: true });
+			expect(helper.pause).toHaveBeenCalledOnce();
+		} finally {
+			await fs.chmod(recordingsDir, 0o700);
+		}
 	});
 
 	it("keeps completed clips and source bytes when a rejected Continue is safely paused", async () => {

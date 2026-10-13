@@ -290,6 +290,10 @@ export class NativeMacRecordingService {
 				return { success: true, clip: finalizedClip, paused: true };
 			} catch (error) {
 				const helperPaused = error instanceof NativeMacPauseError && error.helperPaused;
+				// Record the helper's state before saving: a failed save must not leave
+				// the HUD counting while the helper has stopped writing.
+				if (helperPaused) this.paused = true;
+				else if (!this.paused) this.pauseStartedAtMs = null;
 				if (error instanceof NativeMacPauseError && error.clip) {
 					finalizedClip = {
 						...error.clip,
@@ -300,10 +304,13 @@ export class NativeMacRecordingService {
 						this.clips.sort((a, b) => a.index - b.index);
 					}
 					this.activeClipIndex = null;
-					await this.persistLiveSession();
+					await this.persistLiveSession().catch((persistError: unknown) => {
+						console.warn(
+							"[capture-mac] could not save the session after Pause failed:",
+							persistError,
+						);
+					});
 				}
-				if (helperPaused) this.paused = true;
-				else if (!this.paused) this.pauseStartedAtMs = null;
 				return {
 					success: false,
 					...(finalizedClip ? { clip: finalizedClip } : {}),
