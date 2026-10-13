@@ -255,6 +255,20 @@ export function ExportDialog({
 	}, [open]);
 
 	useEffect(() => {
+		if (!open) return;
+		if (quickExport && !isExportRunActive(useExportRunStore.getState().phase))
+			useExportRunStore.getState().reset();
+		const saved = loadEditingPreferences().export;
+		setOutput(saved.output);
+		// Quick export forces its own settings without saving them. Restore the saved
+		// ones for a full export before the save effect below can persist forced values.
+		setFormat(quickExport ? "mp4" : saved.format);
+		setQuality(quickExport ? "source" : saved.quality);
+		setFps(quickExport ? 60 : saved.fps);
+		setCodec(quickExport ? "h264" : saved.codec);
+	}, [open, quickExport]);
+
+	useEffect(() => {
 		if (quickExport) return;
 		saveExportPreferences({
 			format,
@@ -266,19 +280,6 @@ export function ExportDialog({
 			gifLoop,
 		});
 	}, [codec, format, fps, gifFrameRate, gifLoop, gifSize, quality, quickExport]);
-
-	useEffect(() => {
-		if (!open) return;
-		if (quickExport && !isExportRunActive(useExportRunStore.getState().phase))
-			useExportRunStore.getState().reset();
-		setOutput(loadEditingPreferences().export.output);
-		if (quickExport) {
-			setFormat("mp4");
-			setQuality("source");
-			setFps(60);
-			setCodec("h264");
-		}
-	}, [open, quickExport]);
 	const selectOutput = (next: "sources" | "video") => {
 		setOutput(next);
 		saveExportPreferences({ output: next });

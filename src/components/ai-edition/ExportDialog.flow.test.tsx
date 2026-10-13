@@ -371,6 +371,20 @@ describe("ExportDialog task completion", () => {
 			screen.queryByRole("button", { name: "exportDialog.showInFolder" }),
 		).not.toBeInTheDocument();
 	});
+	it("keeps saved export settings after a quick export was opened", () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 30 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		const view = render(<ExportDialog open onClose={vi.fn()} document={document} />);
+		fireEvent.click(screen.getByRole("button", { name: "One video" }));
+		fireEvent.click(screen.getByRole("button", { name: "H.265" }));
+		view.rerender(<ExportDialog open={false} onClose={vi.fn()} document={document} />);
+		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
+		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
+		view.rerender(<ExportDialog open onClose={vi.fn()} document={document} />);
+		expect(screen.getByRole("button", { name: "H.265" })).toHaveAttribute("aria-pressed", "true");
+	});
 	it("restarts the time estimate when a source copy falls back to rendering", async () => {
 		mocks.export.mockReturnValue(new Promise(() => undefined));
 		show();
