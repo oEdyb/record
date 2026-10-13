@@ -166,7 +166,7 @@ describe("recording FFmpeg child lifetime", () => {
 });
 
 describe("recording packet timestamp proof", () => {
-	const hashes = ["a".repeat(64), "b".repeat(64), "c".repeat(64)];
+	const hashes = ["a".repeat(32), "b".repeat(32), "c".repeat(32)];
 	const original = `#tb 0: 1/600\n0, -20, 0, 10, 7, ${hashes[0]}\n0, -10, 10, 1, 7, ${hashes[1]}\n0, 0, 11, 1, 7, ${hashes[2]}\n`;
 	const remuxed = `#tb 0: 1/19200\n0, -640, 0, 320, 7, ${hashes[0]}\n0, -320, 320, 32, 7, ${hashes[1]}\n0, 0, 352, 32, 7, ${hashes[2]}\n`;
 	const proof = (text: string) => {
@@ -183,7 +183,7 @@ describe("recording packet timestamp proof", () => {
 	it.each([
 		(remuxed: string) => remuxed.replace("320, 32", "321, 32"),
 		(remuxed: string) => remuxed.replace("-640", "-641"),
-		(remuxed: string) => remuxed.replace(hashes[1]!, "d".repeat(64)),
+		(remuxed: string) => remuxed.replace(hashes[1]!, "d".repeat(32)),
 	])("detects changed presentation/decode timing or encoded payload", (change) => {
 		expect(proof(change(remuxed)).digest).not.toBe(proof(original).digest);
 	});

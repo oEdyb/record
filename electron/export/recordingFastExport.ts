@@ -142,6 +142,12 @@ export interface RecordingVideoPacketProof {
 	averageFps: number | null;
 }
 
+/** The proof guards against a remux changing packets, not against an attacker,
+ * so it uses a fast non-cryptographic 128-bit hash. SHA-256 bound the pass to
+ * one CPU core (about 60 s for a 35 GB recording). */
+const PACKET_HASH = "murmur3";
+const PACKET_HASH_PATTERN = /^[a-f0-9]{32}$/i;
+
 /** Streaming proof of encoded packet identity and original PTS/DTS. Framehash
  * with `-c:v copy` never decodes/re-encodes video. Normalize timestamp units
  * because MP4 remuxing may rescale the same timestamps into a new time base. */
@@ -171,7 +177,7 @@ export class RecordingVideoPacketAccumulator {
 				!this.timeBase ||
 				!this.timeBase.numerator ||
 				!this.timeBase.denominator ||
-				!/^[a-f0-9]{64}$/i.test(fields[5]!)
+				!PACKET_HASH_PATTERN.test(fields[5]!)
 			) {
 				throw new Error("Unable to prove recording video packet identity.");
 			}
@@ -229,7 +235,7 @@ async function probeRecordingPackets(
 			"-f",
 			"framehash",
 			"-hash",
-			"sha256",
+			PACKET_HASH,
 			"-",
 		],
 		signal,
