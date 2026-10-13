@@ -21,8 +21,11 @@ queue lasts about 1.3 s instead of 0.5 s); checked only with the MacBook camera 
 (400/400 frames, neutral chroma, bt709 tags). Open: verify the camera change with the Meet 2 at
 4K in daylight. Open: recording import of a take that outlives an expired trial is blocked by the
 import entitlement (off today; product call). Not done: the review playback-clock rAF still runs
-at 60 Hz while paused (about 2%). Test takes from 21:22 (28 s) and 21:44 (13 s, camera) are in the
-library. Previous app in `.local-install.noindex/backup-installed-20261013-2*`.
+at 60 Hz while paused (about 2%). A fresh-context review of the night's diff found no blockers; its two
+findings in the quit-time stop are fixed (`cd038502`: logout or shutdown is never held, and a
+cancelled quit re-arms the stop). Still open from that review: if a quit is cancelled after the
+take was stopped, the HUD keeps counting a take main already stopped. Test takes from 21:22
+(28 s), 21:44 (13 s, camera) and 21:56 (8 s) are in the library. Previous app in `.local-install.noindex/backup-installed-20261013-2*`.
 
 # October 5: repo slimmed; editor archived
 
