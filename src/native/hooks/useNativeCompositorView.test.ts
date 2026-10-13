@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 	destroyCompositorView: vi.fn(),
 	reportCompositorPreviewTiming: vi.fn(),
 	setCompositorRect: vi.fn(),
+	commandListeners: new Set<(playing: boolean | undefined) => void>(),
 }));
 
 vi.mock("../compositorViewClient", () => ({
@@ -32,7 +33,15 @@ vi.mock("../compositorViewClient", () => ({
 	setCompositorParam: vi.fn(),
 	setCompositorPlaying: vi.fn(),
 	setCompositorRect: mocks.setCompositorRect,
+	onCompositorCommand: (listener: (playing: boolean | undefined) => void) => {
+		mocks.commandListeners.add(listener);
+		return () => mocks.commandListeners.delete(listener);
+	},
 }));
+
+const sendCommand = (playing?: boolean) => {
+	for (const listener of mocks.commandListeners) listener(playing);
+};
 
 import { useNativeCompositorView } from "./useNativeCompositorView";
 
@@ -102,6 +111,31 @@ describe("useNativeCompositorView", () => {
 		expect(mocks.readCompositorFrame.mock.calls.length).toBeGreaterThanOrEqual(59);
 		expect(mocks.readCompositorFrame.mock.calls.length).toBeLessThanOrEqual(61);
 		view.unmount();
+	});
+
+	it("polls at 10 Hz once a paused preview has been unchanged for a second", async () => {
+		const frame = controlledFrames();
+		mocks.createCompositorView.mockResolvedValue({ id: 7 });
+		mocks.readCompositorFrame.mockResolvedValue(null);
+		const view = renderHook(() => useNativeCompositorView(stubCanvasRef()));
+		await act(async () => undefined);
+		const pullsDuring = async (fromMs: number, toMs: number) => {
+			const before = mocks.readCompositorFrame.mock.calls.length;
+			for (let t = fromMs; t < toMs; t += 1000 / 60) await frame(t);
+			return mocks.readCompositorFrame.mock.calls.length - before;
+		};
+
+		expect(await pullsDuring(0, 1000)).toBeGreaterThanOrEqual(59);
+		const idlePulls = await pullsDuring(1000, 2000);
+		expect(idlePulls).toBeGreaterThanOrEqual(9);
+		expect(idlePulls).toBeLessThanOrEqual(11);
+		sendCommand();
+		expect(await pullsDuring(2000, 2500)).toBeGreaterThanOrEqual(29);
+		sendCommand(true);
+		await pullsDuring(2500, 4000);
+		expect(await pullsDuring(4000, 5000)).toBeGreaterThanOrEqual(59);
+		view.unmount();
+		expect(mocks.commandListeners.size).toBe(0);
 	});
 
 	it("waits for presentation before requesting and reporting another frame", async () => {

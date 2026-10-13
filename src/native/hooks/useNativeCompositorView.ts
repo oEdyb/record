@@ -25,6 +25,7 @@ import { usePreviewPreferences } from "@/lib/ai-edition/store/previewPreferences
 import {
 	createCompositorView,
 	destroyCompositorView,
+	onCompositorCommand,
 	readCompositorFrame,
 	reportCompositorPreviewTiming,
 	setCompositorParam,
@@ -84,6 +85,11 @@ function safelyCall(label: string, call: () => Promise<unknown>) {
 
 /** Use the rAF timestamp: displays can run at 60, 120, or 144 Hz. */
 const PREVIEW_FRAME_INTERVAL_MS = 1000 / 60;
+/** While paused and untouched, an empty pull costs a main-process round trip
+ *  for nothing. After a second without a new frame or command, poll at 10 Hz;
+ *  the next command or frame restores 60 Hz. */
+const IDLE_PREVIEW_FRAME_INTERVAL_MS = 100;
+const EMPTY_PULLS_BEFORE_IDLE = 60;
 
 export function useNativeCompositorView(
 	canvasRef: RefObject<HTMLCanvasElement>,
@@ -234,6 +240,13 @@ export function useNativeCompositorView(
 		// preview sits still (paused editing — the dominant case). `0` = "painted
 		// nothing yet", which forces delivery of the first frame.
 		let lastGen = 0;
+		let playing = false;
+		let emptyPulls = 0;
+		const unsubscribeCommands = onCompositorCommand((nextPlaying) => {
+			if (nextPlaying !== undefined) playing = nextPlaying;
+			emptyPulls = 0;
+			nextPullAt = 0;
+		});
 		// Keep the entire read → bitmap → paint operation in flight. Releasing
 		// after IPC alone lets bitmap promises finish and paint out of order.
 		let inFlight = false;
@@ -258,16 +271,18 @@ export function useNativeCompositorView(
 			if (!ctx) {
 				return;
 			}
-			nextPullAt =
-				timestamp +
-				PREVIEW_FRAME_INTERVAL_MS -
-				(Math.max(0, timestamp - nextPullAt) % PREVIEW_FRAME_INTERVAL_MS);
+			const interval =
+				!playing && emptyPulls >= EMPTY_PULLS_BEFORE_IDLE
+					? IDLE_PREVIEW_FRAME_INTERVAL_MS
+					: PREVIEW_FRAME_INTERVAL_MS;
+			nextPullAt = timestamp + interval - (Math.max(0, timestamp - nextPullAt) % interval);
 			inFlight = true;
 			const requestedRectGeneration = rectGeneration;
 			const readStartedAt = performance.now();
 			readCompositorFrame(id, lastGen)
 				.then(async (frame) => {
 					recordTiming("ipcMs", performance.now() - readStartedAt);
+					emptyPulls = frame ? 0 : emptyPulls + 1;
 					// `null` = nothing newer than `lastGen` (idle path — no pixels
 					// crossed IPC) OR no frame yet. Either way, leave the canvas as-is.
 					if (disposed || !frame || requestedRectGeneration !== rectGeneration) {
@@ -396,6 +411,7 @@ export function useNativeCompositorView(
 
 		return () => {
 			disposed = true;
+			unsubscribeCommands();
 			if (rectRafHandle !== 0) {
 				cancelAnimationFrame(rectRafHandle);
 			}

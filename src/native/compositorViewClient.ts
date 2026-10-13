@@ -24,6 +24,21 @@ import type {
 	CompositorViewResult,
 } from "./contracts";
 
+type CompositorCommandListener = (playing: boolean | undefined) => void;
+const commandListeners = new Set<CompositorCommandListener>();
+
+/** Called for every command that can change the composed frame, with the new
+ *  playing state when the command sets one. The frame pull loop uses it to poll
+ *  quickly only while something can change. */
+export function onCompositorCommand(listener: CompositorCommandListener): () => void {
+	commandListeners.add(listener);
+	return () => commandListeners.delete(listener);
+}
+
+function commandSent(playing?: boolean) {
+	for (const listener of commandListeners) listener(playing);
+}
+
 /** Which backend the native compositor will use here.
  *
  *  Resolves `"none"` rather than rejecting when there is no bridge or no addon — callers
@@ -53,6 +68,7 @@ export function createCompositorView(
 }
 
 export function setCompositorRect(id: number, rect: CompositorViewRect): Promise<{ ok: true }> {
+	commandSent();
 	return requireNativeBridgeData<{ ok: true }>({
 		domain: "compositor",
 		action: "setRect",
@@ -93,6 +109,7 @@ export function setCompositorParam(
 	key: string,
 	value: CompositorParamValue,
 ): Promise<{ ok: true }> {
+	commandSent();
 	return requireNativeBridgeData<{ ok: true }>({
 		domain: "compositor",
 		action: "setParam",
@@ -101,6 +118,7 @@ export function setCompositorParam(
 }
 
 export function setCompositorPlaying(id: number, playing: boolean): Promise<{ ok: true }> {
+	commandSent(playing);
 	return requireNativeBridgeData<{ ok: true }>({
 		domain: "compositor",
 		action: "setPlaying",
@@ -111,6 +129,7 @@ export function setCompositorPlaying(id: number, playing: boolean): Promise<{ ok
 export function syncCompositorTransport(
 	command: CompositorTransportCommand,
 ): Promise<{ ok: true }> {
+	commandSent(command.playing);
 	return requireNativeBridgeData<{ ok: true }>({
 		domain: "compositor",
 		action: "syncTransport",
@@ -119,6 +138,7 @@ export function syncCompositorTransport(
 }
 
 export function setCompositorScene(id: number, sceneJson: string): Promise<{ ok: true }> {
+	commandSent();
 	return requireNativeBridgeData<{ ok: true }>({
 		domain: "compositor",
 		action: "setScene",
