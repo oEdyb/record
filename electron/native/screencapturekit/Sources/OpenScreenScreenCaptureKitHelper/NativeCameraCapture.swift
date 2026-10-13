@@ -77,7 +77,9 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		session.addInput(input)
 		// On macOS, preset-only output configuration overrides explicit activeFormat.
 		// Request the exact advertised native dimensions; never accept a scaled source.
-		output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+		// 4:2:0 is what the encoder consumes. A 4K BGRA frame is 33 MB, so the 512 MB
+		// camera queue held half a second and overflowed during a 7 s stall (2026-10-10).
+		output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 			kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height]
 		output.alwaysDiscardsLateVideoFrames = true
 		output.setSampleBufferDelegate(self, queue: deliveryQueue)
