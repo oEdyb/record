@@ -1,3 +1,29 @@
+# October 13: overnight fixes and speed (installed)
+
+Olle asked for fixes and speed across the app while he slept; all of it is on `main` and
+installed, Developer ID signed. One video on the 63-minute, 34.6 GB take: about 174 s → 46 s in
+the installed app. Two changes: the packet proof hashes with murmur3 instead of SHA-256 (SHA-256
+bound each read pass to one core: 60.4/68.6/62.7 s vs 7.8/11.8/7.1 s per pass), and the copy
+reserves the MP4 index (`-moov_size`) instead of rewriting the whole file for `+faststart`
+(49.3/50.3 s vs 64.5/93.1 s, two runs each). The installed export's 226,757 video packets match
+the source in size and content; index before media; audio -18.4 dB. One video now shows one
+progress bar across its three passes, names the space needed on a full disk, and describes its
+fixed output instead of "Pick a format". Fixed from a review sweep, each with a test that fails
+without it: a save path naming the export's own source is refused; Originals no longer overwrites
+saved export settings; a failed Pause whose session save also fails stays paused; a helper that
+outlives its kill window no longer blocks the next take; a second Pause hotkey press before
+re-render is ignored; a transcript pass stops before the next clip once the take continues;
+quitting mid-take stops it first (at most 15 s). Checked live: a 27 s take quit mid-recording
+finalized all three files and reopened in review. Paused review CPU: 14.3% → 6.0-7.7% of one core
+(preview polls at 10 Hz after a second without change; the hidden loading spinner no longer
+animates). The camera now records 4:2:0 instead of BGRA (4K frame 33 MB → 12.4 MB, so the 512 MB
+queue lasts about 1.3 s instead of 0.5 s); checked only with the MacBook camera in a dark room
+(400/400 frames, neutral chroma, bt709 tags). Open: verify the camera change with the Meet 2 at
+4K in daylight. Open: recording import of a take that outlives an expired trial is blocked by the
+import entitlement (off today; product call). Not done: the review playback-clock rAF still runs
+at 60 Hz while paused (about 2%). Test takes from 21:22 (28 s) and 21:44 (13 s, camera) are in the
+library. Previous app in `.local-install.noindex/backup-installed-20261013-2*`.
+
 # October 5: repo slimmed; editor archived
 
 Branch `cleanup/slim-repo-2026-10-05` archived the editor UI, in-app LLM chat, `klippt agent`
