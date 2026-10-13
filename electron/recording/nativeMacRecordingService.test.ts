@@ -486,6 +486,31 @@ describe("NativeMacRecordingService", () => {
 		expect(deps.clearCursor).toHaveBeenCalled();
 	});
 
+	it("stops a running take before quit and gives up on a helper that never answers", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "clip.mp4"),
+			durationMs: 1000,
+		};
+		const service = new NativeMacRecordingService(deps);
+		await service.stopBeforeQuit();
+		expect(helper.stop).not.toHaveBeenCalled();
+
+		await service.start(baseRequest);
+		helper.stopClips = [clip];
+		await service.stopBeforeQuit();
+		expect(helper.stop).toHaveBeenCalledOnce();
+		expect(deps.onSessionStored).toHaveBeenCalledWith(
+			expect.objectContaining({ clips: [expect.objectContaining({ index: 0 })] }),
+		);
+
+		helper = new FakeHelper();
+		vi.mocked(deps.createHelper).mockReturnValue(helper);
+		await service.start({ ...baseRequest, recordingId: 101 });
+		helper.stop.mockReturnValueOnce(new Promise(() => undefined));
+		await expect(service.stopBeforeQuit(20)).resolves.toBeUndefined();
+	});
+
 	it("finishes Stop and allows a new take when the helper outlives its kill window", async () => {
 		const service = new NativeMacRecordingService(deps);
 		await service.start(baseRequest);

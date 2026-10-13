@@ -266,6 +266,22 @@ export class NativeMacRecordingService {
 		});
 	}
 
+	/** Quitting mid-take stops the capture so its clips finalize normally. The
+	 * recovery journal still covers a helper that does not answer in time. */
+	async stopBeforeQuit(timeoutMs = 15_000): Promise<void> {
+		if (!this.isRunning()) return;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		await Promise.race([
+			this.stop(false).catch((error: unknown) => {
+				console.warn("[capture-mac] Stop before quit failed:", error);
+			}),
+			new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, timeoutMs);
+			}),
+		]);
+		clearTimeout(timer);
+	}
+
 	pause() {
 		return this.enqueue(async () => {
 			const helper = this.requireHelper();

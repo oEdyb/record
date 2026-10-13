@@ -262,6 +262,8 @@ disable Continue until the clip is safe.
 - **Stop** is different from Pause. Stop ends capture and opens recording review. The Record circle
   changes into a clear Stop square while recording. Keep it icon-only; do not add permanent
   `Stop` or `Stop Recording` text. The tooltip and accessibility label explain the action.
+- Quitting during a take stops it first so its clips finalize, waiting at most 15 seconds. The
+  recovery journal covers a capture that does not stop in time.
 - **Backspace** removes the newest completed clip immediately.
 - Backspace has no confirmation dialog and no removal mode.
 - Repeated Backspace presses continue backward, including removing every completed clip.

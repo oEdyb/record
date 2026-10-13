@@ -194,6 +194,14 @@ const RENDERER_EXPORT_TEMP_DIR = app.getPath("temp");
 let nativeMacRecordingService: NativeMacRecordingService | null = null;
 
 /** Clip listing for the transcript window; empty before the recorder exists. */
+export function isNativeMacCaptureRunning(): boolean {
+	return nativeMacRecordingService?.isRunning() ?? false;
+}
+
+export async function stopNativeMacCaptureForQuit(): Promise<void> {
+	await nativeMacRecordingService?.stopBeforeQuit();
+}
+
 export function listTranscriptClips() {
 	return (
 		nativeMacRecordingService?.transcriptClipListing() ?? {

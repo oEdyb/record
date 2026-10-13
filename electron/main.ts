@@ -43,9 +43,11 @@ import {
 import {
 	getSelectedDesktopSource,
 	getSelectedSourceAspectRatio,
+	isNativeMacCaptureRunning,
 	listTranscriptClips,
 	registerIpcHandlers,
 	resolveApprovedRendererMediaPath,
+	stopNativeMacCaptureForQuit,
 } from "./ipc/handlers";
 import {
 	createTrustedRendererIpcMain,
@@ -906,11 +908,16 @@ app.on("activate", () => {
 	}
 });
 
-app.on("before-quit", () => {
+let captureStoppedForQuit = false;
+app.on("before-quit", (event) => {
 	// A check started seconds ago must not settle after the app is gone and try to open a
 	// dialog on a quitting app.
 	updateCheckAbort?.abort();
 	liveTranscript?.stop();
+	if (captureStoppedForQuit || !isNativeMacCaptureRunning()) return;
+	event.preventDefault();
+	captureStoppedForQuit = true;
+	void stopNativeMacCaptureForQuit().finally(() => app.quit());
 });
 
 app.on("will-quit", () => {
