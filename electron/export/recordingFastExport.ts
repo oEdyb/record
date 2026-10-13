@@ -252,8 +252,6 @@ export type RecordingFastExportRequest = Omit<RecordingPassthroughRequest, "hasC
 	signal: AbortSignal;
 	/** Receives progress on the same frame scale as a rendered export. */
 	onProgress?: (frames: number) => void;
-	/** Fails early when the destination cannot hold a copy of this many bytes. */
-	assertCapacity?: (bytes: number) => Promise<void>;
 };
 
 /** The source-preserving path reads the recording, copies it and reads the copy
@@ -297,9 +295,6 @@ export async function prepareRecordingFastExport(
 	if (!ffmpeg) return null;
 	const source = await fs.stat(clip.screenPath);
 	if (!source.isFile()) return null;
-	// The copy is at least as large as the recording. Say so before the first
-	// pass reads the whole file, rather than after it.
-	await request.assertCapacity?.(source.size + 1024 * 1024);
 	const report = fastExportProgress(request.sourceDurationSec, request.params?.fps ?? 60);
 	const original = await probeRecordingPackets(ffmpeg, clip.screenPath, request.signal, (s) =>
 		report(request.onProgress, 0, s / request.sourceDurationSec),
@@ -340,7 +335,12 @@ export async function prepareRecordingFastExport(
 			if (media.codec === "hevc") args.push("-tag:v", "hvc1");
 			if (silence) args.push("-c:a", "aac", "-b:a", "384k", "-ar", "48000", "-ac", "2");
 			else args.push("-c:a", "copy");
-			args.push("-movflags", "+faststart", "-sn", "-dn", stagingPath);
+			// Reserve the index at the front instead of +faststart, which rewrites the
+			// whole file a second time to move it there. 40 bytes covers each sample's
+			// size, timing, sync and chunk entries; muxing fails rather than truncating.
+			const audioPackets = Math.ceil((durationS * 48_000) / 1024);
+			const moovBytes = 40 * (original.packets.frames + audioPackets) + 1024 * 1024;
+			args.push("-moov_size", String(moovBytes), "-sn", "-dn", stagingPath);
 			let pending = "";
 			let frames = 0;
 			await runRecordingFfmpeg(ffmpeg, args, signal, 30 * 60_000, (chunk) => {
