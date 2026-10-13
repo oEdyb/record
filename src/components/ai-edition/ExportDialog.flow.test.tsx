@@ -371,6 +371,27 @@ describe("ExportDialog task completion", () => {
 			screen.queryByRole("button", { name: "exportDialog.showInFolder" }),
 		).not.toBeInTheDocument();
 	});
+	it("restarts the time estimate when a source copy falls back to rendering", async () => {
+		mocks.export.mockReturnValue(new Promise(() => undefined));
+		show();
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.exportMp4" }));
+		await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce());
+		const now = vi.spyOn(Date, "now");
+		act(() => {
+			now.mockReturnValue(0);
+			mocks.progress?.(10);
+			now.mockReturnValue(1_000);
+			mocks.progress?.(300);
+			now.mockReturnValue(2_000);
+			mocks.progress?.(0);
+			now.mockReturnValue(4_000);
+			mocks.progress?.(60);
+		});
+		const progress = useExportRunStore.getState().progress!;
+		expect(progress.currentFrame).toBe(60);
+		expect(progress.estimatedTimeRemaining).toBe((progress.totalFrames - 60) / 30);
+		now.mockRestore();
+	});
 	it("cancels the active export and returns to the same settings", async () => {
 		mocks.export.mockImplementation(
 			(_clips, _path, _scene, _options, transaction: { signal: AbortSignal }) =>

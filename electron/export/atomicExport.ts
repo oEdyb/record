@@ -484,18 +484,6 @@ export class AtomicExportPublisher {
 		}
 	}
 
-	/** Fails with INSUFFICIENT_SPACE before work starts when `finalPath`'s disk
-	 * cannot hold `expectedBytes` plus the publish safety margin. Other failures are left to the publish preflight, which reports them in phase. */
-	async checkCapacity(finalPath: string, expectedBytes: number): Promise<void> {
-		try {
-			const directory = path.dirname(await resolveFinalSymlink(path.resolve(finalPath)));
-			const unwritten = path.join(directory, `.${randomUUID()}.capacity`);
-			await this.assertCapacity(directory, unwritten, expectedBytes);
-		} catch (error) {
-			if (error instanceof ExportTransactionError) throw error;
-		}
-	}
-
 	private async assertCapacity(
 		directory: string,
 		stagingPath: string,

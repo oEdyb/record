@@ -352,9 +352,12 @@ export function ExportDialog({
 			const totalDurationSec = effectiveDurationSec;
 			const totalFrames = Math.max(1, Math.round(totalDurationSec * outFps));
 			let firstProgress: { frame: number; timeMs: number } | null = null;
+			const progressOf = () => useExportRunStore.getState().progress;
 			const unsubscribeProgress = window.electronAPI?.onNativeExportProgress?.((frames) => {
 				const now = Date.now();
-				firstProgress ??= { frame: frames, timeMs: now };
+				// A source copy that falls back to rendering starts counting again.
+				if (!firstProgress || frames < (progressOf()?.currentFrame ?? 0))
+					firstProgress = { frame: frames, timeMs: now };
 				const elapsedS = (now - firstProgress.timeMs) / 1000;
 				const measuredFrames = frames - firstProgress.frame;
 				const fractionDone = Math.min(1, frames / totalFrames);
