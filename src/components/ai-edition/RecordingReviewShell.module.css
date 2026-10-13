@@ -92,6 +92,11 @@
 	transform-origin: 50% 145%;
 	animation: reviewSpinnerFade 1.2s linear infinite;
 }
+/* A hidden spinner still runs its animation, which keeps the renderer drawing
+   every frame while review sits paused. Freeze it as the overlay fades. */
+.reviewLoading[data-ready="true"] .reviewSpinner > span {
+	animation-play-state: paused;
+}
 @keyframes reviewSpinnerFade {
 	from {
 		opacity: 1;
