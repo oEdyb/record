@@ -296,6 +296,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	// The length of a clip that Pause is still saving. It keeps the timer from dropping
 	// back by that clip until the saved clip joins the kept clips.
 	const finalizingClipMs = useRef(0);
+	// Pause and Continue each finish before the next toggle; two hotkey presses can
+	// arrive before React re-renders the HUD with the finalizing state.
+	const nativeMacToggleInFlight = useRef(false);
 	const webcamReady = useRef(false);
 	const activeWebcamFormat = useRef<WebcamFormat>(DEFAULT_WEBCAM_FORMAT);
 	const webcamAcquireId = useRef(0);
@@ -2044,6 +2047,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		const activeNativeMacRecording = nativeMacRecording.current;
 		if (activeNativeMacRecording && !activeNativeMacRecording.finalizing) {
+			if (nativeMacToggleInFlight.current) return;
+			nativeMacToggleInFlight.current = true;
 			void (async () => {
 				const activeWebcamHandle = webcamRecorder.current;
 				try {
@@ -2165,6 +2170,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					console.error("Failed to toggle native macOS pause state:", error);
 					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
 				} finally {
+					nativeMacToggleInFlight.current = false;
 					finalizingClipMs.current = 0;
 					setClipFinalizing(false);
 				}
