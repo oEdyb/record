@@ -68,7 +68,9 @@ still open upstream.
   NSIS + electron-updater, x64 and arm64. Microsoft Store as a second channel later.
 - **Testing.** One real Windows 11 PC with an NVIDIA or Intel GPU is the gate. A Parallels
   Windows 11 ARM VM on the Mac covers capture logic and the CPU path (no hardware encode, per a
-  2025 forum report). GitHub runners: unit tests and packaging only.
+  2025 forum report). GitHub runners: unit tests and packaging only. This Mac already has UTM VMs
+  "Koett Windows 11" (ARM64) and "Koett Fedora 44" (GNOME Wayland), used for Koett's
+  cross-platform checks; reuse them for the VM steps.
 
 ## Linux stack
 
