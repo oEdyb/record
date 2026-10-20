@@ -46,6 +46,28 @@
   // let electron-builder use the prebuilt instead of recompiling.
   "buildDependenciesFromSource": false,
   "compression": "normal",
+  // Keeps only the languages the app ships (SUPPORTED_LOCALES in src/i18n/config.ts). Chromium's
+  // locale folders inside Electron Framework were 220 directories and 50 MB. Matching is by exact
+  // lower-cased folder name: macOS names them `pt_BR`/`zh_CN`, Linux and Windows `pt-BR`/`zh-CN`,
+  // so both spellings are listed. A bare `en` also keeps `en-US` but not `en_GB`.
+  "electronLanguages": [
+    "en",
+    "fr",
+    "ar",
+    "es",
+    "it",
+    "ja",
+    "ko",
+    "ru",
+    "tr",
+    "vi",
+    "pt_BR",
+    "pt-BR",
+    "zh_CN",
+    "zh-CN",
+    "zh_TW",
+    "zh-TW"
+  ],
   "directories": {
     "output": "release/${version}",
     // Electron-builder's default, spelled out because the appx target depends on it:
@@ -63,6 +85,9 @@
     "!dist/wasm/web-demuxer.wasm",
     "!node_modules/web-demuxer/dist/wasm-files{,/**/*}",
     "!dist/cursors{,/**/*}",
+    // Packaged builds read wallpapers from resourcesPath (extraResources below, ASSET_BASE_DIR in
+    // electron/windows.ts), so the copy Vite makes under dist/ is 24 MB nobody opens.
+    "!dist/wallpapers{,/**/*}",
     "!dist/demo.gif",
     "!dist/openscreen.png",
     "!dist/preview*.png",
