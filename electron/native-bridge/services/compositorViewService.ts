@@ -19,6 +19,7 @@ import {
 	type ExportTransactionPhase,
 	type ExportTransactionWarning,
 } from "../../export/atomicExport";
+import { assertAudioSpoolSpace } from "../../export/audioSpoolSpace";
 import { renderedExportCodec } from "../../export/exportCodec";
 import {
 	prepareRecordingFastExport,
@@ -899,6 +900,10 @@ export class CompositorViewService {
 								await fs.promises.rm(stagingPath, { force: true });
 							}
 						}
+						if (resolvedClips.some((clip) => clip.hasAudio))
+							await assertAudioSpoolSpace(
+								resolvedClips.map((clip) => clip.sourceEndSec - clip.sourceStartSec),
+							);
 						const operation = addon.exportMulti(
 							resolvedClips,
 							stagingPath,
