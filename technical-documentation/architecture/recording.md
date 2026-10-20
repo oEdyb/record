@@ -69,11 +69,11 @@ Cursor samples are persisted as cursor telemetry rather than baked into editable
 
 ## Known gaps
 
-- The macOS package still uses the legacy bundle identifier `com.etiennelescot.openscreen`. When
-  differently signed old builds with that ID remain registered, System Settings can show one
-  enabled Screen Recording row while the running app receives `denied`. Keep only the intended
-  `/Applications/Klippt.app` registered during tests. The Dyberg-owned identity migration must reset
-  and retest TCC once; it must not delete legacy user data.
+- The macOS package moved from `com.etiennelescot.openscreen` to `co.dyberg.klippt` on October 20,
+  2026. Each install that crosses the change needs its Screen Recording, Accessibility, Camera and
+  Microphone grants once more; the old grants stay attached to the old ID. When differently signed
+  builds with one ID remain registered, System Settings can show one enabled row while the running
+  app receives `denied`. Keep only the intended `/Applications/Klippt.app` registered during tests.
 
 - A window with odd client dimensions can produce black video: H.264 encoding requires even dimensions (`electron/native/wgc-capture/src/wgc_session.cpp:38`).
 - The Windows helper's frame lock (`electron/native/wgc-capture/src/main.cpp`) is still held across blocking, uninterruptible D3D11 work: the WGC callback's `CopyResource`, and whatever the video writer does with the frame. A driver that stalls inside either one still costs the recording. What no longer happens is a hang: stop detection runs on `CaptureControl::stopMutex`, which no frame thread ever touches, and a shutdown watchdog force-exits the helper when a step overruns its budget, naming the step it died in. Each step gets `OPENSCREEN_WGC_STEP_BUDGET_MS` (8s by default) and that is the bound which normally fires; the whole shutdown is capped by `OPENSCREEN_WGC_STOP_BUDGET_MS` (50s by default), which the encoder-finalize step alone is allowed to spend in full because a long software-encoder finalize legitimately takes seconds (issue #34). Picking the D3D adapter that actually drives the captured monitor instead of adapter 0 is still outstanding.
