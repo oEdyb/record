@@ -24,6 +24,7 @@ final class CaptureSetupBuilder {
 		let height: Int
 		let captureFrame: CGRect
 		let ignoresExcludedWindows: Bool
+		let displayID: CGDirectDisplayID?
 	}
 
 	func make(from content: SCShareableContent, request: RecordingRequest) throws -> CaptureSetup {
@@ -31,7 +32,8 @@ final class CaptureSetupBuilder {
 		let streamSettings = makeStreamConfiguration(
 			for: request,
 			width: target.width,
-			height: target.height
+			height: target.height,
+			displayID: target.displayID
 		)
 		return CaptureSetup(
 			filter: target.filter,
@@ -81,7 +83,8 @@ final class CaptureSetupBuilder {
 				width: dimensions.width,
 				height: dimensions.height,
 				captureFrame: display.frame,
-				ignoresExcludedWindows: !excludedApplications.isEmpty
+				ignoresExcludedWindows: !excludedApplications.isEmpty,
+				displayID: display.displayID
 			)
 		case "window":
 			guard let windowId = request.source.windowId else {
@@ -107,7 +110,8 @@ final class CaptureSetupBuilder {
 				width: dimensions.width,
 				height: dimensions.height,
 				captureFrame: window.frame,
-				ignoresExcludedWindows: true
+				ignoresExcludedWindows: true,
+				displayID: candidateDisplay?.displayID
 			)
 		default:
 			throw HelperError.invalidSourceType(request.source.type)
@@ -117,7 +121,8 @@ final class CaptureSetupBuilder {
 	private func makeStreamConfiguration(
 		for request: RecordingRequest,
 		width: Int,
-		height: Int
+		height: Int,
+		displayID: CGDirectDisplayID?
 	) -> (configuration: SCStreamConfiguration, microphoneEnabled: Bool) {
 		let configuration = SCStreamConfiguration()
 		configuration.width = width
@@ -126,7 +131,11 @@ final class CaptureSetupBuilder {
 			configuration.preservesAspectRatio = true
 			configuration.captureResolution = .best
 		}
-		configuration.minimumFrameInterval = Self.minimumFrameInterval(quality: request.video.quality, fps: request.video.fps)
+		configuration.minimumFrameInterval = Self.minimumFrameInterval(
+			quality: request.video.quality,
+			fps: request.video.fps,
+			refreshHz: displayID.flatMap { CGDisplayCopyDisplayMode($0)?.refreshRate } ?? 0
+		)
 		configuration.queueDepth = Self.queueDepth
 		configuration.showsCursor = !request.video.hideSystemCursor
 		configuration.pixelFormat = Self.pixelFormat
@@ -164,11 +173,16 @@ final class CaptureSetupBuilder {
 	}
 
 	/// Standard appends every delivered frame, so delivery is the written rate. High writes a
-	/// fixed grid from the newest frame; 10% headroom keeps every slot fresh without taking
-	/// the 120 Hz a ProMotion display would otherwise deliver (zero means native refresh).
-	static func minimumFrameInterval(quality: String?, fps: Int) -> CMTime {
+	/// fixed grid from the newest frame, and frames arrive only on display refreshes, so it
+	/// skips whole refreshes: as many as still deliver at least `fps` (60 of a 120 Hz panel's
+	/// 120, 72 of 144, every refresh of a 75 or 100 Hz one). An unknown rate keeps zero, which
+	/// means every refresh.
+	static func minimumFrameInterval(quality: String?, fps: Int, refreshHz: Double) -> CMTime {
 		let rate = Int32(max(1, fps))
-		return quality == "high" ? CMTime(value: 9, timescale: rate * 10) : CMTime(value: 1, timescale: rate)
+		guard quality == "high" else { return CMTime(value: 1, timescale: rate) }
+		guard refreshHz > 0 else { return .zero }
+		let refreshesPerFrame = max(1, (refreshHz / Double(rate) + 0.01).rounded(.down))
+		return CMTime(seconds: 0.9 * refreshesPerFrame / refreshHz, preferredTimescale: 600_000)
 	}
 
 	/// The encoder takes 4:2:0, so capture it directly: 12 instead of 32 bits a pixel through the
