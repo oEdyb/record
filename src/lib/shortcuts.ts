@@ -1,16 +1,4 @@
-export const SHORTCUT_ACTIONS = [
-	"openApp",
-	"toggleRecordingPause",
-	"addZoom",
-	"addTrim",
-	"addSpeed",
-	"addCameraFullscreen",
-	"addAnnotation",
-	"deleteSelected",
-	"playPause",
-	"copySelected",
-	"paste",
-] as const;
+export const SHORTCUT_ACTIONS = ["openApp", "toggleRecordingPause", "playPause"] as const;
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
 
@@ -27,58 +15,41 @@ export type ShortcutsConfig = Record<ShortcutAction, ShortcutBinding>;
 export interface FixedShortcut {
 	i18nKey: string;
 	label: string;
-	display: string;
 	bindings: ShortcutBinding[];
 }
 
+/** Keys the recorder and review handle that cannot be rebound (`useRecordingReviewShortcuts`). */
 export const FIXED_SHORTCUTS: FixedShortcut[] = [
-	{ i18nKey: "undo", label: "Undo", display: "Ctrl + Z", bindings: [{ key: "z", ctrl: true }] },
+	{ i18nKey: "saveVideo", label: "Save Video", bindings: [{ key: "s", ctrl: true }] },
+	{ i18nKey: "newRecording", label: "New Recording", bindings: [{ key: "n", ctrl: true }] },
+	{ i18nKey: "openRecordings", label: "Recordings", bindings: [{ key: "o", ctrl: true }] },
+	{ i18nKey: "playPauseAlt", label: "Play / Pause", bindings: [{ key: "k" }] },
+	{ i18nKey: "mute", label: "Mute / Unmute", bindings: [{ key: "m" }] },
 	{
-		i18nKey: "redo",
-		label: "Redo",
-		display: "Ctrl + Shift + Z / Ctrl + Y",
-		bindings: [
-			{ key: "z", ctrl: true, shift: true },
-			{ key: "y", ctrl: true },
-		],
+		i18nKey: "skipSecond",
+		label: "Back / Forward 1 Second",
+		bindings: [{ key: "j" }, { key: "l" }],
 	},
 	{
-		i18nKey: "cycleAnnotationsForward",
-		label: "Cycle Annotations Forward",
-		display: "Alt + ↓",
-		bindings: [{ key: "arrowdown", alt: true }],
+		i18nKey: "stepFrame",
+		label: "Previous / Next Frame",
+		bindings: [{ key: "arrowleft" }, { key: "arrowright" }],
 	},
 	{
-		i18nKey: "cycleAnnotationsBackward",
-		label: "Cycle Annotations Backward",
-		display: "Alt + ↑",
-		bindings: [{ key: "arrowup", alt: true }],
+		i18nKey: "stepClip",
+		label: "Previous / Next Clip",
+		bindings: [{ key: "arrowup" }, { key: "arrowdown" }],
 	},
 	{
-		i18nKey: "deleteSelectedAlt",
-		label: "Delete Selected (alt)",
-		display: "Del / ⌫",
-		bindings: [{ key: "delete" }, { key: "backspace" }],
-	},
-	{
-		i18nKey: "panTimeline",
-		label: "Pan Timeline",
-		display: "Shift + Scroll",
-		bindings: [],
-	},
-	{ i18nKey: "zoomTimeline", label: "Zoom Timeline", display: "Ctrl + Scroll", bindings: [] },
-	{ i18nKey: "frameBack", label: "Frame Back", display: "←", bindings: [{ key: "arrowleft" }] },
-	{
-		i18nKey: "frameForward",
-		label: "Frame Forward",
-		display: "→",
-		bindings: [{ key: "arrowright" }],
+		i18nKey: "jumpToEdge",
+		label: "Start / End",
+		bindings: [{ key: "home" }, { key: "end" }],
 	},
 ];
 
 export type ShortcutConflict =
 	| { type: "configurable"; action: ShortcutAction }
-	| { type: "fixed"; label: string };
+	| { type: "fixed"; label: string; i18nKey: string };
 
 function bindingsEqual(a: ShortcutBinding, b: ShortcutBinding): boolean {
 	return (
@@ -96,7 +67,7 @@ export function findConflict(
 ): ShortcutConflict | null {
 	for (const fixed of FIXED_SHORTCUTS) {
 		if (fixed.bindings.some((b) => bindingsEqual(b, binding))) {
-			return { type: "fixed", label: fixed.label };
+			return { type: "fixed", label: fixed.label, i18nKey: fixed.i18nKey };
 		}
 	}
 	for (const action of SHORTCUT_ACTIONS) {
@@ -110,29 +81,13 @@ export function findConflict(
 export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	openApp: { key: "o", ctrl: true, shift: true },
 	toggleRecordingPause: { key: " ", ctrl: true, shift: true },
-	addZoom: { key: "z" },
-	addTrim: { key: "t" },
-	addSpeed: { key: "s" },
-	addCameraFullscreen: { key: "c" },
-	addAnnotation: { key: "a" },
-	deleteSelected: { key: "d", ctrl: true },
 	playPause: { key: " " },
-	copySelected: { key: "c", ctrl: true },
-	paste: { key: "v", ctrl: true },
 };
 
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	openApp: "Open App",
 	toggleRecordingPause: "Pause / Continue Recording",
-	addZoom: "Add Zoom",
-	addTrim: "Add Trim",
-	addSpeed: "Add Speed",
-	addCameraFullscreen: "Add Full Camera",
-	addAnnotation: "Add Annotation",
-	deleteSelected: "Delete Selected",
 	playPause: "Play / Pause",
-	copySelected: "Copy Selected",
-	paste: "Paste",
 };
 
 export function matchesShortcut(
@@ -160,6 +115,8 @@ const KEY_LABELS: Record<string, string> = {
 	arrowdown: "↓",
 	arrowleft: "←",
 	arrowright: "→",
+	home: "Home",
+	end: "End",
 };
 
 export function formatBinding(binding: ShortcutBinding, isMac: boolean): string {
