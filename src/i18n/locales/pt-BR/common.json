@@ -39,7 +39,9 @@
 		"services": "Serviços",
 		"hide": "Ocultar Klippt",
 		"hideOthers": "Ocultar Outros",
-		"unhide": "Mostrar Todos"
+		"unhide": "Mostrar Todos",
+		"showRecorder": "Mostrar Gravador",
+		"startRecording": "Iniciar Gravação"
 	},
 	"updates": {
 		"available": "O Klippt {{latestVersion}} está disponível. Você está usando a versão {{currentVersion}}.",
@@ -64,6 +66,19 @@
 		"unknown": "Gravação de tela"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "Insira um número de {{min}} a {{max}}."
+	},
+	"menu": {
+		"newRecording": "Nova Gravação",
+		"recordings": "Gravações…",
+		"saveVideo": "Salvar Vídeo…"
+	},
+	"permissions": {
+		"accessibilityDetail": "O {{app}} lê a posição do ponteiro para que o cursor fique nítido no seu vídeo. Ative o {{app}} em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade e pressione Gravar novamente.",
+		"accessibilityMissingHelper": "Falta uma parte do {{app}}, então o cursor editável não está disponível. Reinstale o {{app}} ou mude o cursor para Sistema em Configurações.",
+		"accessibilityTitle": "Permita Acessibilidade para um cursor nítido e fluido",
+		"openSettings": "Abrir Ajustes do Sistema",
+		"screenDetail": "Ative o {{app}} em Ajustes do Sistema → Privacidade e Segurança → Gravação de Tela, depois feche e reabra o {{app}}.",
+		"screenTitle": "O {{app}} precisa de acesso à Gravação de Tela"
 	}
 }

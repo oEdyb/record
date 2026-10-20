@@ -13,7 +13,7 @@
 		"loadRecordingsFailed": "Could not load recordings. Close and reopen to try again.",
 		"controls": "Recording controls",
 		"recordings": "Recordings",
-		"settings": "Settings",
+		"settings": "Keyboard Shortcuts…",
 		"originals": "Original files",
 		"record": "Record",
 		"addClip": "Add clip",
@@ -29,7 +29,9 @@
 		"metaOne": "{{duration}} total, 1 clip",
 		"metaMany": "{{duration}} total, {{count}} clips",
 		"more": "More",
-		"newRecording": "New recording"
+		"newRecording": "New recording",
+		"libraryEmpty": "No recordings yet. Your recordings appear here after you stop.",
+		"prepareFailed": "Could not get this recording ready to save. Try again."
 	},
 	"loadingEditor": "Loading editor…",
 	"errors": {
@@ -108,14 +110,29 @@
 		"starting": "Starting…",
 		"exportGif": "Export GIF",
 		"exportMp4": "Export MP4",
-		"exportedVideo": "Video exported",
-		"exportedVideoOf": "of video exported in",
+		"exportedVideo": "Video saved",
 		"showInFolder": "Show in folder",
 		"exportFailed": "Export failed",
 		"qualityUpscaleWarning": "Upscale",
 		"nothingToExport": "Nothing to export — the timeline is empty.",
-		"retryExport": "Try export again",
-		"finishingFile": "Finishing and checking the file…"
+		"retryExport": "Try again",
+		"finishingFile": "Finishing and checking the file…",
+		"outputSources": "Separate files",
+		"outputVideo": "One video",
+		"sourcesSubtitle": "Screen, camera, and audio as separate files for your editor.",
+		"saveVideoAction": "Save video…",
+		"savedSummary": "{{name}}, {{duration}}",
+		"sourcesIntro": "Every clip you recorded between pauses is saved as its original screen, camera, microphone, and system audio files, unchanged.",
+		"sourcesIncludedTitle": "What's included",
+		"sourcesIncluded": "The original recordings, plus a timeline file (timeline.otio) with your cuts and camera sync that most video editors can import. Screen, camera, microphone, and system audio stay on separate tracks. The editable cursor and visual effects are not applied.",
+		"sourcesSaved": "Files saved",
+		"sourcesTimelineHint": "Import timeline.otio in your video editor to keep editing.",
+		"sourcesWarning": "{{count}} warning",
+		"sourcesWarnings": "{{count}} warnings",
+		"sourcesSave": "Save files…",
+		"sourcesSaveAgain": "Save again…",
+		"sourcesPreparing": "Preparing files…",
+		"sourcesCopying": "Copying original files…"
 	},
 	"chat": {
 		"history": "History"
@@ -152,8 +169,8 @@
 	"entitlement": {
 		"status": {
 			"trialNotStarted": "14-day trial",
-			"trialDay": "Trial {{count}} day",
-			"trialDays": "Trial {{count}} days",
+			"trialDay": "{{count}} day left",
+			"trialDays": "{{count}} days left",
 			"offline": "Klippt Pro, Offline",
 			"readOnly": "Read only",
 			"reactivate": "Re-enter license"
@@ -161,10 +178,10 @@
 		"eyebrowReadOnly": "Read-only access",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "Your projects are safe.",
-		"titleTrial": "Make every recording ready to publish.",
+		"titleTrial": "Record fast. Keep every file.",
 		"titleReactivate": "Enter your license key again.",
 		"descriptionExpired": "Klippt is now read only. Continue with Pro to {{capability}}.",
-		"descriptionTrial": "Your trial includes the complete recorder, editor, automatic direction, and finished exports.",
+		"descriptionTrial": "Your trial includes all of Klippt: recording, review, and both ways to save.",
 		"descriptionReactivate": "Klippt could not read the license saved on this Mac. Your projects and trial date are kept. Enter your key once to continue with Pro.",
 		"capability": {
 			"record": "record new clips",
@@ -174,14 +191,18 @@
 			"automatic-editing": "run automatic editing",
 			"default": "record, edit, and export"
 		},
-		"benefitClips": "Clip-native recording with Pause, Continue, and Remove Previous Clip",
-		"benefitAutomatic": "Editable automatic zooms, Camera Emphasis, and silence removal",
-		"benefitExport": "High-quality local preview and export",
+		"benefitClips": "Pause, continue, and remove the last clip while you record",
+		"benefitExport": "One video at the same quality as your recording",
 		"getPro": "Get Klippt Pro",
 		"licenseKey": "License key",
 		"activate": "Activate",
 		"filesSafe": "No project or source file is removed when access ends.",
-		"manage": "Manage"
+		"manage": "Manage",
+		"descriptionTrialNotStarted": "Your 14-day trial starts after your first recording. No card needed.",
+		"benefitSources": "Untouched screen, camera, and audio files for your editor",
+		"price": "{{monthly}} per month or {{yearly}} per year",
+		"activated": "Klippt Pro is active.",
+		"trialStarted": "Your 14-day trial has started. Everything you record stays on your Mac."
 	},
 	"cpuCompositor": {
 		"notice": "Running without a compatible GPU — rendering on CPU, so playback is slower.",

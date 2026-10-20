@@ -65,6 +65,10 @@ import { SourceExportPanel } from "./SourceExportPanel";
 
 /** hh:mm:ss (always shows hours, unlike the shared mm:ss `formatTimePadded`) — exports can run
  *  past an hour on either axis (video duration or render wall-time). */
+function fileName(filePath: string): string {
+	return filePath.split(/[\\/]/).pop() || filePath;
+}
+
 function formatHms(totalSeconds: number): string {
 	const s = Math.max(0, Math.round(totalSeconds));
 	const h = Math.floor(s / 3600);
@@ -431,7 +435,10 @@ export function ExportDialog({
 					exportToast(t("exportDialog.exportedVideo"), {
 						description:
 							stats.exportWarning?.message ??
-							`${pickedPath}, ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
+							t("exportDialog.savedSummary", {
+								name: fileName(pickedPath),
+								duration: formatHms(stats.videoDurationS),
+							}),
 						action: {
 							label: t("exportDialog.showInFolder"),
 							onClick: () => {
@@ -488,10 +495,10 @@ export function ExportDialog({
 			onClose={() => {
 				if (!sourceBusy) handleClose();
 			}}
-			title={t("exportDialog.title")}
+			title={t("recordingReview.save")}
 			subtitle={
 				output === "sources"
-					? t("recordingReview.originalsHint")
+					? t("exportDialog.sourcesSubtitle")
 					: phase === "done"
 						? undefined
 						: quickExport
@@ -508,7 +515,7 @@ export function ExportDialog({
 					disabled={isBusy || sourceBusy}
 					onClick={() => selectOutput("sources")}
 				>
-					Separate takes
+					{t("exportDialog.outputSources")}
 				</button>
 				<button
 					type="button"
@@ -517,7 +524,7 @@ export function ExportDialog({
 					disabled={isBusy || sourceBusy}
 					onClick={() => selectOutput("video")}
 				>
-					One video
+					{t("exportDialog.outputVideo")}
 				</button>
 			</div>
 			{output === "sources" && !isBusy ? (
@@ -967,9 +974,11 @@ export function ExportDialog({
 									<Download size={14} />
 									{phase === "error"
 										? t("exportDialog.retryExport")
-										: format === "gif"
-											? t("exportDialog.exportGif")
-											: t("exportDialog.exportMp4")}
+										: quickExport
+											? t("exportDialog.saveVideoAction")
+											: format === "gif"
+												? t("exportDialog.exportGif")
+												: t("exportDialog.exportMp4")}
 								</>
 							)}
 						</button>

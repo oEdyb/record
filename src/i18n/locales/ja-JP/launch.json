@@ -69,8 +69,8 @@
 		"selectFailed": "そのソースに切り替えられませんでした。もう一度お試しください。"
 	},
 	"recording": {
-		"starting": "Starting recording…",
-		"recordings": "Recordings",
+		"starting": "録画を開始しています…",
+		"recordings": "録画",
 		"selectSource": "録画するソースを選択してください",
 		"systemPicker": "共有する対象はシステムが確認します",
 		"inProgress": "録画中",
@@ -101,16 +101,16 @@
 		"cameraQuality": "カメラ画質",
 		"preview": "プレビュー",
 		"previewUnavailable": "プレビューを利用できません",
-		"recordingQuality": "Recording quality",
-		"qualityHigh": "High",
-		"qualityStandard": "Standard",
+		"recordingQuality": "録画品質",
+		"qualityHigh": "高",
+		"qualityStandard": "標準",
 		"source": "ソース",
 		"editableCursor": "編集可能なカーソル",
 		"language": "言語",
 		"lockedHint": "設定を変更するには一時停止してください",
 		"display": "ディスプレイ",
 		"window": "ウインドウ",
-		"cameraAutomatic": "Automatic (16:9)",
+		"cameraAutomatic": "自動 (16:9)",
 		"cameraMonitor": "カメラモニター"
 	},
 	"setup": {
@@ -142,5 +142,27 @@
 		"pauseFirst": "最新のクリップを文字起こしするには録画を一時停止してください。",
 		"empty": "クリップがまだありません。先に録画してください。",
 		"clip": "クリップ {{n}}"
+	},
+	"countdown": {
+		"cancelHint": "もう一度「録画」を押すとキャンセルします"
+	},
+	"permissions": {
+		"blocked": "オフ",
+		"camera": "カメラ",
+		"cameraDetail": "カメラを録画するため",
+		"continue": "続ける",
+		"description": "macOSは、これらについてそれぞれ一度だけ確認します。Klippt は録画中にのみキャプチャします。",
+		"granted": "許可済み",
+		"microphone": "マイク",
+		"microphoneDetail": "声を録音するため",
+		"notAsked": "未確認",
+		"notNow": "今はしない",
+		"openSettings": "設定を開く",
+		"relaunch": "終了して再度開く",
+		"relaunchHint": "システム設定で Klippt をオンにしてから、Klippt を終了して開き直すと、macOSに反映されます。",
+		"screen": "画面収録",
+		"screenDetail": "画面をキャプチャするため",
+		"settingsHint": "システム設定で Klippt をオンにしてください。このパネルは自動的に更新されます。",
+		"title": "録画の前に"
 	}
 }

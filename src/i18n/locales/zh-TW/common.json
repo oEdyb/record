@@ -39,7 +39,9 @@
 		"services": "服務",
 		"hide": "隱藏 Klippt",
 		"hideOthers": "隱藏其他",
-		"unhide": "全部顯示"
+		"unhide": "全部顯示",
+		"showRecorder": "顯示錄製器",
+		"startRecording": "開始錄製"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} 已推出。目前版本為 {{currentVersion}}。",
@@ -64,6 +66,19 @@
 		"unknown": "螢幕錄製"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "請輸入 {{min}} 到 {{max}} 之間的數字。"
+	},
+	"menu": {
+		"newRecording": "新增錄製",
+		"recordings": "錄製內容…",
+		"saveVideo": "儲存影片…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}} 會讀取指標位置，讓影片中的游標保持清晰。請在「系統設定」→「隱私權與安全性」→「輔助使用」中開啟 {{app}}，然後再按一次「錄製」。",
+		"accessibilityMissingHelper": "{{app}} 缺少部分元件，因此無法使用可編輯游標。請重新安裝 {{app}}，或在「設定」中將游標切換為「系統」。",
+		"accessibilityTitle": "允許輔助使用，讓游標清晰流暢",
+		"openSettings": "開啟系統設定",
+		"screenDetail": "請在「系統設定」→「隱私權與安全性」→「螢幕錄製」中開啟 {{app}}，然後結束並重新開啟 {{app}}。",
+		"screenTitle": "{{app}} 需要「螢幕錄製」權限"
 	}
 }

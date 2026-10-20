@@ -9,33 +9,24 @@
 	"resetToDefaults": "Redefinir para os padrões",
 	"alreadyUsedBy": "Já utilizado por {{action}}",
 	"swap": "Trocar",
-	"reservedShortcut": "Este atalho é reservado para \"{{label}}\" e não pode ser reatribuído.",
+	"reservedShortcut": "Este atalho é reservado para “{{label}}” e não pode ser reatribuído.",
 	"savedToast": "Atalhos de teclado salvos",
 	"resetToast": "Atalhos redefinidos para o padrão — clique em Salvar para aplicar",
-	"registrationFailed": "Falha ao registrar o atalho. Ele pode já estar em uso por outro aplicativo. Tente uma tecla diferente.",
+	"registrationFailed": "Não foi possível registrar este atalho. Outro app pode já estar usando. Tente outra tecla.",
 	"actions": {
 		"openApp": "Abrir Aplicativo",
 		"toggleRecordingPause": "Pausar / continuar gravação",
-		"addZoom": "Adicionar Zoom",
-		"addTrim": "Adicionar Recorte",
-		"addSpeed": "Adicionar Velocidade",
-		"addAnnotation": "Adicionar Anotação",
-		"addKeyframe": "Adicionar Quadro-chave",
-		"addCameraFullscreen": "Adicionar Câmera em Tela Cheia",
-		"deleteSelected": "Excluir Selecionado",
-		"playPause": "Reproduzir / Pausar",
-		"copySelected": "Copiar seleção",
-		"paste": "Colar"
+		"playPause": "Reproduzir / Pausar"
 	},
 	"fixedActions": {
-		"undo": "Desfazer",
-		"redo": "Refazer",
-		"cycleAnnotationsForward": "Alternar Anotações (Próximo)",
-		"cycleAnnotationsBackward": "Alternar Anotações (Anterior)",
-		"deleteSelectedAlt": "Excluir Selecionado (alt)",
-		"panTimeline": "Mover Linha do Tempo",
-		"zoomTimeline": "Zoom na Linha do Tempo",
-		"frameBack": "Quadro Anterior",
-		"frameForward": "Próximo Quadro"
+		"jumpToEdge": "Início / Fim",
+		"mute": "Silenciar / Ativar Som",
+		"newRecording": "Nova Gravação",
+		"openRecordings": "Gravações",
+		"playPauseAlt": "Reproduzir / Pausar",
+		"saveVideo": "Salvar Vídeo",
+		"skipSecond": "Voltar / Avançar 1 Segundo",
+		"stepClip": "Clipe Anterior / Próximo",
+		"stepFrame": "Quadro Anterior / Próximo"
 	}
 }

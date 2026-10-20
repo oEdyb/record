@@ -1,6 +1,8 @@
 import { FolderOpen, Loader2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
+import { useScopedT } from "@/contexts/I18nContext";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
+import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import { nativeBridgeClient } from "@/native/client";
 import type { SourceHandoffResult } from "@/native/contracts";
 import styles from "./ReviewSurface.module.css";
@@ -14,6 +16,7 @@ export function SourceExportPanel({
 	busy: boolean;
 	onBusy: (busy: boolean) => void;
 }) {
+	const t = useScopedT("editor");
 	const [result, setResult] = useState<SourceHandoffResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const activeRequest = useRef(false);
@@ -36,8 +39,7 @@ export function SourceExportPanel({
 			const next = await nativeBridgeClient.aiEdition.exportSources(structuredClone(document));
 			if (currentDocument.current === document && !next.canceled) setResult(next);
 		} catch (error) {
-			if (currentDocument.current === document)
-				setError(error instanceof Error ? error.message : String(error));
+			if (currentDocument.current === document) setError(ipcErrorMessage(error));
 		} finally {
 			activeRequest.current = false;
 			onBusy(false);
@@ -45,15 +47,13 @@ export function SourceExportPanel({
 	}
 	return (
 		<section style={{ display: "flex", flexDirection: "column", gap: 16, color: "var(--fg-2)" }}>
-			<p style={{ margin: 0 }}>
-				Each Pause/Continue clip gets its original screen, camera, microphone, and system audio
-				files. A recording without pauses stays one clip. Files keep their complete original bytes.
-			</p>
-			<p style={{ margin: 0, fontSize: 12, color: "var(--muted)" }}>
-				Includes complete source recordings and an importable timeline with cuts and camera sync.
-				Screen, camera, microphone, and system audio stay on separate tracks. Visual effects, speed
-				changes, and editable cursor overlays are not applied.
-			</p>
+			<p style={{ margin: 0 }}>{t("exportDialog.sourcesIntro")}</p>
+			<details style={{ fontSize: 12, color: "var(--muted)" }}>
+				<summary style={{ cursor: "pointer", fontWeight: 600 }}>
+					{t("exportDialog.sourcesIncludedTitle")}
+				</summary>
+				<p style={{ margin: "8px 0 0" }}>{t("exportDialog.sourcesIncluded")}</p>
+			</details>
 			{error && (
 				<p role="alert" style={{ color: "var(--danger)", overflowWrap: "anywhere" }}>
 					{error}
@@ -61,20 +61,25 @@ export function SourceExportPanel({
 			)}
 			{result?.manifestPath && (
 				<div role="status" style={{ overflowWrap: "anywhere" }}>
-					<strong>Sources exported</strong>
+					<strong>{t("exportDialog.sourcesSaved")}</strong>
 					<p>{result.directory}</p>
-					{result.timelinePath && (
-						<p>Import timeline.otio in your video editor to continue editing.</p>
-					)}
+					{result.timelinePath && <p>{t("exportDialog.sourcesTimelineHint")}</p>}
 					{!!result.warnings?.length && (
-						<span className="sr-only">{result.warnings.length} export warnings</span>
+						<span className="sr-only">
+							{t("exportDialog.sourcesWarnings", { count: result.warnings.length })}
+						</span>
 					)}
 				</div>
 			)}
 			{!!result?.warnings?.length && (
 				<details style={{ overflowWrap: "anywhere" }}>
 					<summary style={{ cursor: "pointer", fontWeight: 600 }}>
-						{result.warnings.length} export {result.warnings.length === 1 ? "warning" : "warnings"}
+						{t(
+							result.warnings.length === 1
+								? "exportDialog.sourcesWarning"
+								: "exportDialog.sourcesWarnings",
+							{ count: result.warnings.length },
+						)}
 					</summary>
 					<ul style={{ maxHeight: 192, overflowY: "auto", paddingInlineStart: 24 }}>
 						{result.warnings.map((warning) => (
@@ -91,11 +96,11 @@ export function SourceExportPanel({
 						onClick={() => {
 							void window.electronAPI
 								.revealInFolder(result.timelinePath ?? result.manifestPath!)
-								.catch((error) => setError(String(error)));
+								.catch((error) => setError(ipcErrorMessage(error)));
 						}}
 					>
 						<FolderOpen size={14} aria-hidden="true" />
-						Show in folder
+						{t("exportDialog.showInFolder")}
 					</button>
 				)}
 				<button
@@ -105,11 +110,15 @@ export function SourceExportPanel({
 					onClick={() => void start()}
 				>
 					{busy && <Loader2 size={14} aria-hidden="true" className="animate-spin" />}
-					{busy ? "Preparing sources…" : result ? "Export again…" : "Export sources…"}
+					{busy
+						? t("exportDialog.sourcesPreparing")
+						: result
+							? t("exportDialog.sourcesSaveAgain")
+							: t("exportDialog.sourcesSave")}
 				</button>
 			</div>
 			<div role="status" aria-live="polite">
-				{busy ? "Copying original files…" : ""}
+				{busy ? t("exportDialog.sourcesCopying") : ""}
 			</div>
 		</section>
 	);

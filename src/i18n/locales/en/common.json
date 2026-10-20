@@ -39,7 +39,9 @@
 		"services": "Services",
 		"hide": "Hide Klippt",
 		"hideOthers": "Hide Others",
-		"unhide": "Show All"
+		"unhide": "Show All",
+		"startRecording": "Start Recording",
+		"showRecorder": "Show Recorder"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} is available. You are using {{currentVersion}}.",
@@ -65,5 +67,18 @@
 	},
 	"inspector": {
 		"valueRange": "Enter a number from {{min}} to {{max}}."
+	},
+	"permissions": {
+		"openSettings": "Open System Settings",
+		"screenTitle": "{{app}} needs Screen Recording access",
+		"screenDetail": "Switch {{app}} on in System Settings → Privacy & Security → Screen Recording, then quit and reopen {{app}}.",
+		"accessibilityTitle": "Allow Accessibility for a sharp, smooth cursor",
+		"accessibilityDetail": "{{app}} reads your pointer position so the cursor stays crisp in your video. Switch {{app}} on in System Settings → Privacy & Security → Accessibility, then press Record again.",
+		"accessibilityMissingHelper": "Part of {{app}} is missing, so the editable cursor is unavailable. Reinstall {{app}}, or switch the cursor to System in Settings."
+	},
+	"menu": {
+		"newRecording": "New Recording",
+		"recordings": "Recordings…",
+		"saveVideo": "Save Video…"
 	}
 }

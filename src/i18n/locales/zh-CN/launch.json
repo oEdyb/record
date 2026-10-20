@@ -69,8 +69,8 @@
 		"selectFailed": "无法切换到该来源，请重试。"
 	},
 	"recording": {
-		"starting": "Starting recording…",
-		"recordings": "Recordings",
+		"starting": "正在开始录制…",
+		"recordings": "录制内容",
 		"selectSource": "请选择要录制的源",
 		"systemPicker": "系统将询问要共享的内容",
 		"inProgress": "正在录制",
@@ -101,16 +101,16 @@
 		"cameraQuality": "摄像头画质",
 		"preview": "预览",
 		"previewUnavailable": "预览不可用",
-		"recordingQuality": "Recording quality",
-		"qualityHigh": "High",
-		"qualityStandard": "Standard",
+		"recordingQuality": "录制画质",
+		"qualityHigh": "高",
+		"qualityStandard": "标准",
 		"source": "来源",
 		"editableCursor": "可编辑光标",
 		"language": "语言",
 		"lockedHint": "暂停后才能更改设置",
 		"display": "显示器",
 		"window": "窗口",
-		"cameraAutomatic": "Automatic (16:9)",
+		"cameraAutomatic": "自动 (16:9)",
 		"cameraMonitor": "摄像头监视器"
 	},
 	"setup": {
@@ -142,5 +142,27 @@
 		"pauseFirst": "暂停录制后才能转录最新片段。",
 		"empty": "还没有片段，请先录制。",
 		"clip": "片段 {{n}}"
+	},
+	"countdown": {
+		"cancelHint": "再次点按“录制”以取消"
+	},
+	"permissions": {
+		"blocked": "已关闭",
+		"camera": "摄像头",
+		"cameraDetail": "用于录制你的摄像头",
+		"continue": "继续",
+		"description": "macOS 会对每一项分别询问你一次。Klippt 只会在你录制时进行捕捉。",
+		"granted": "已允许",
+		"microphone": "麦克风",
+		"microphoneDetail": "用于录制你的声音",
+		"notAsked": "尚未询问",
+		"notNow": "暂不",
+		"openSettings": "打开设置",
+		"relaunch": "退出并重新打开",
+		"relaunchHint": "请在“系统设置”中打开 Klippt，然后退出并重新打开 Klippt，让 macOS 应用更改。",
+		"screen": "屏幕录制",
+		"screenDetail": "用于录制你的屏幕",
+		"settingsHint": "请在“系统设置”中打开 Klippt。此面板会自动更新。",
+		"title": "录制之前"
 	}
 }

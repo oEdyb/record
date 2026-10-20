@@ -39,7 +39,9 @@
 		"services": "Servizi",
 		"hide": "Nascondi Klippt",
 		"hideOthers": "Nascondi gli altri",
-		"unhide": "Mostra tutto"
+		"unhide": "Mostra tutto",
+		"showRecorder": "Mostra registratore",
+		"startRecording": "Avvia registrazione"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} è disponibile. Stai usando la versione {{currentVersion}}.",
@@ -64,6 +66,19 @@
 		"unknown": "Registrazione schermo"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "Inserisci un numero da {{min}} a {{max}}."
+	},
+	"menu": {
+		"newRecording": "Nuova registrazione",
+		"recordings": "Registrazioni…",
+		"saveVideo": "Salva video…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}} legge la posizione del puntatore per mantenere il cursore nitido nel video. Attiva {{app}} in Impostazioni di Sistema → Privacy e sicurezza → Accessibilità, poi premi di nuovo Registra.",
+		"accessibilityMissingHelper": "Manca una parte di {{app}}, quindi il cursore modificabile non è disponibile. Reinstalla {{app}} oppure imposta il cursore su Sistema nelle impostazioni.",
+		"accessibilityTitle": "Consenti Accessibilità per un cursore nitido e fluido",
+		"openSettings": "Apri Impostazioni di Sistema",
+		"screenDetail": "Attiva {{app}} in Impostazioni di Sistema → Privacy e sicurezza → Registrazione schermo, poi esci e riapri {{app}}.",
+		"screenTitle": "{{app}} ha bisogno dell’accesso a Registrazione schermo"
 	}
 }

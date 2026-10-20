@@ -299,6 +299,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	requestScreenAccess: () => {
 		return ipcRenderer.invoke("request-screen-access");
 	},
+	getCapturePermissions: () => ipcRenderer.invoke("get-capture-permissions"),
+	requestMicrophoneAccess: () => ipcRenderer.invoke("request-microphone-access"),
+	openPrivacySettings: (kind: "screen" | "microphone" | "camera") =>
+		ipcRenderer.invoke("open-privacy-settings", kind),
+	relaunchApp: () => ipcRenderer.invoke("relaunch-app"),
 	requestNativeMacCursorAccess: () => {
 		return ipcRenderer.invoke("request-native-mac-cursor-access");
 	},
@@ -590,6 +595,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	updateGlobalShortcuts: (shortcuts: ShortcutsConfig) => {
 		return ipcRenderer.invoke("update-global-shortcuts", shortcuts);
+	},
+	onHudStartRecording: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("hud-start-recording", listener);
+		return () => ipcRenderer.removeListener("hud-start-recording", listener);
 	},
 	onHudToggleRecordingPause: (callback: () => void) => {
 		const listener = () => callback();

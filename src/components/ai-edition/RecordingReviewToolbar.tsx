@@ -2,11 +2,11 @@ import {
 	Clapperboard,
 	Download,
 	FolderOpen,
+	Keyboard,
 	LoaderCircle,
 	Maximize2,
 	MoreHorizontal,
 	Plus,
-	Settings,
 } from "lucide-react";
 import { KlipptMark } from "@/components/brand/KlipptMark";
 import { AppMenu, AppMenuContent, AppMenuItem, AppMenuTrigger } from "@/components/ui/app-menu";
@@ -148,7 +148,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 								<span className={styles.menuLabel}>{t("recordingReview.originals")}</span>
 							</AppMenuItem>
 							<AppMenuItem onSelect={props.onSettings}>
-								<Settings size={14} aria-hidden="true" />
+								<Keyboard size={14} aria-hidden="true" />
 								<span className={styles.menuLabel}>{t("recordingReview.settings")}</span>
 							</AppMenuItem>
 						</AppMenuContent>

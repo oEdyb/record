@@ -606,11 +606,21 @@ function updateTrayMenu(recording: boolean = false) {
 			]
 		: [
 				{
-					label: mainT("common", "actions.open") || "Open",
+					label: mainT("common", "actions.startRecording"),
+					click: () => {
+						showMainWindow();
+						if (mainWindow && !mainWindow.isDestroyed()) {
+							mainWindow.webContents.send("hud-start-recording");
+						}
+					},
+				},
+				{
+					label: mainT("common", "actions.showRecorder"),
 					click: () => {
 						showMainWindow();
 					},
 				},
+				{ type: "separator" as const },
 				// Omitted entirely where a package manager owns the update (Microsoft Store,
 				// Flathub, Snap, Nix): there the app is already kept current, and offering a
 				// GitHub download walks the user into a second, parallel installation.

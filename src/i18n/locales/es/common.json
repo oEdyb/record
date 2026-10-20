@@ -39,7 +39,9 @@
 		"services": "Servicios",
 		"hide": "Ocultar Klippt",
 		"hideOthers": "Ocultar otros",
-		"unhide": "Mostrar todo"
+		"unhide": "Mostrar todo",
+		"showRecorder": "Mostrar grabadora",
+		"startRecording": "Iniciar grabación"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} está disponible. Estás usando {{currentVersion}}.",
@@ -64,6 +66,19 @@
 		"unknown": "Grabación de pantalla"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "Introduce un número de {{min}} a {{max}}."
+	},
+	"menu": {
+		"newRecording": "Nueva grabación",
+		"recordings": "Grabaciones…",
+		"saveVideo": "Guardar vídeo…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}} lee la posición del puntero para que el cursor se vea nítido en tu vídeo. Activa {{app}} en Ajustes del Sistema → Privacidad y seguridad → Accesibilidad y vuelve a pulsar Grabar.",
+		"accessibilityMissingHelper": "Falta una parte de {{app}}, así que el cursor editable no está disponible. Reinstala {{app}} o cambia el cursor a Sistema en Ajustes.",
+		"accessibilityTitle": "Permite Accesibilidad para un cursor nítido y fluido",
+		"openSettings": "Abrir Ajustes del Sistema",
+		"screenDetail": "Activa {{app}} en Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla, y después cierra y vuelve a abrir {{app}}.",
+		"screenTitle": "{{app}} necesita acceso a la grabación de pantalla"
 	}
 }

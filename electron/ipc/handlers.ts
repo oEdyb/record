@@ -67,6 +67,7 @@ import type {
 	ProjectPathResult,
 } from "../../src/native/contracts";
 import { DocumentService } from "../ai-edition/document-service";
+import { privacySettingsPane, readCapturePermissions } from "../capturePermissions";
 import { createDiagnosticReport, type DiagnosticRequest } from "../diagnostics/diagnostic-report";
 import { createElectronWorkloadResourceSampler } from "../diagnostics/electronWorkloadResources";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
@@ -2327,6 +2328,28 @@ export function registerIpcHandlers(
 		return requestScreenAccess();
 	});
 
+	// Read-only: the HUD explains what Klippt needs before any macOS prompt appears.
+	ipcMain.handle("get-capture-permissions", () => readCapturePermissions());
+
+	ipcMain.handle("request-microphone-access", async () => {
+		if (process.platform !== "darwin") return { granted: true, status: "granted" };
+		const granted = await systemPreferences.askForMediaAccess("microphone").catch(() => false);
+		return { granted, status: systemPreferences.getMediaAccessStatus("microphone") };
+	});
+
+	ipcMain.handle("open-privacy-settings", async (_event, kind: unknown) => {
+		const pane = privacySettingsPane(kind);
+		if (process.platform !== "darwin" || !pane) return false;
+		await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
+		return true;
+	});
+
+	// macOS applies a new Screen Recording grant only to a fresh process.
+	ipcMain.handle("relaunch-app", () => {
+		app.relaunch();
+		app.quit();
+	});
+
 	ipcMain.handle("request-native-mac-cursor-access", async () => {
 		const access = await requestMacCursorAccessibilityAccess();
 
@@ -2334,23 +2357,24 @@ export function registerIpcHandlers(
 		// that deep-links to the Accessibility pane (mirrors the Screen Recording flow).
 		if (process.platform === "darwin" && !access.granted) {
 			const mainWin = getMainWindow();
-			const detail =
-				access.status === "missing-helper"
-					? "The cursor helper couldn't be found in this build, so the editable cursor can't be enabled. Rebuild the native helper (npm run build:native:mac) or switch the HUD cursor mode to system."
-					: `Allow ${APP_DISPLAY_NAME} under System Settings → Privacy & Security → Accessibility, then press record again to start the countdown.`;
+			const missingHelper = access.status === "missing-helper";
 			const messageOptions = {
 				type: "warning",
-				buttons: ["Open Accessibility Settings", "Cancel"],
+				buttons: missingHelper
+					? [mainT("common", "actions.close")]
+					: [mainT("common", "permissions.openSettings"), mainT("common", "actions.cancel")],
 				defaultId: 0,
-				cancelId: 1,
-				message: "Accessibility access is required for the editable cursor",
-				detail,
+				cancelId: missingHelper ? 0 : 1,
+				message: mainT("common", "permissions.accessibilityTitle"),
+				detail: missingHelper
+					? mainT("common", "permissions.accessibilityMissingHelper", { app: APP_DISPLAY_NAME })
+					: mainT("common", "permissions.accessibilityDetail", { app: APP_DISPLAY_NAME }),
 			} satisfies Electron.MessageBoxOptions;
 			const result =
 				mainWin && !mainWin.isDestroyed()
 					? await dialog.showMessageBox(mainWin, messageOptions)
 					: await dialog.showMessageBox(messageOptions);
-			if (result.response === 0) {
+			if (!missingHelper && result.response === 0) {
 				await shell.openExternal(
 					"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
 				);
@@ -2382,11 +2406,11 @@ export function registerIpcHandlers(
 				const mainWin = getMainWindow();
 				const messageOptions = {
 					type: "warning",
-					buttons: ["Open System Settings", "Cancel"],
+					buttons: [mainT("common", "permissions.openSettings"), mainT("common", "actions.cancel")],
 					defaultId: 0,
 					cancelId: 1,
-					message: "Screen Recording permission is required",
-					detail: `Allow ${APP_DISPLAY_NAME} in macOS System Settings, then come back and choose a screen or window.`,
+					message: mainT("common", "permissions.screenTitle", { app: APP_DISPLAY_NAME }),
+					detail: mainT("common", "permissions.screenDetail", { app: APP_DISPLAY_NAME }),
 				} satisfies Electron.MessageBoxOptions;
 				const result =
 					mainWin && !mainWin.isDestroyed()

@@ -1,0 +1,135 @@
+.title {
+	color: var(--hud-ink);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.description {
+	margin: 0;
+	padding: 0 6px 2px;
+	color: var(--hud-muted);
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.rows {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.row {
+	display: flex;
+	min-height: 52px;
+	align-items: center;
+	gap: 10px;
+	padding: 0 8px 0 12px;
+	border-radius: var(--hud-radius-lg);
+	background: var(--hud-fill);
+}
+
+.icon {
+	display: flex;
+	flex: none;
+	color: var(--hud-muted);
+}
+
+.row[data-status="granted"] .icon {
+	color: var(--hud-ink);
+}
+
+.text {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.name {
+	color: var(--hud-ink);
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.detail {
+	overflow: hidden;
+	color: var(--hud-muted);
+	font-size: 11px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.status {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: 4px;
+	color: var(--hud-muted);
+	font-size: 11px;
+	font-weight: 500;
+}
+
+.row[data-status="granted"] .status {
+	color: var(--hud-success);
+}
+
+.settingsButton {
+	flex: none;
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--hud-radius-md);
+	background: var(--hud-fill-strong);
+	color: var(--hud-ink);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		background-color 150ms ease,
+		transform 120ms ease-out;
+}
+
+.settingsButton:hover {
+	background: rgba(255, 255, 255, 0.2);
+}
+
+.settingsButton:active {
+	transform: scale(0.97);
+}
+
+.settingsButton:focus-visible {
+	outline: none;
+	box-shadow: inset 0 0 0 1px var(--hud-focus);
+}
+
+.hint {
+	margin: 0;
+	padding: 0 6px;
+	color: var(--hud-ink-2);
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.primary {
+	background: var(--hud-ink);
+	color: #10121b;
+}
+
+.primary:hover:not(:disabled) {
+	background: #ffffff;
+	color: #10121b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.settingsButton {
+		transition: none;
+	}
+
+	.settingsButton:active {
+		transform: none;
+	}
+}

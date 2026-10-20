@@ -69,8 +69,8 @@
 		"selectFailed": "Bu kaynağa geçilemedi. Tekrar deneyin."
 	},
 	"recording": {
-		"starting": "Starting recording…",
-		"recordings": "Recordings",
+		"starting": "Kayıt başlatılıyor…",
+		"recordings": "Kayıtlar",
 		"selectSource": "Lütfen kayıt için bir kaynak seçin",
 		"systemPicker": "Sisteminiz neyi paylaşacağınızı soracak",
 		"inProgress": "Kaydediliyor",
@@ -101,16 +101,16 @@
 		"cameraQuality": "Kamera kalitesi",
 		"preview": "Önizleme",
 		"previewUnavailable": "Önizleme kullanılamıyor",
-		"recordingQuality": "Recording quality",
-		"qualityHigh": "High",
-		"qualityStandard": "Standard",
+		"recordingQuality": "Kayıt kalitesi",
+		"qualityHigh": "Yüksek",
+		"qualityStandard": "Standart",
 		"source": "Kaynak",
 		"editableCursor": "Düzenlenebilir imleç",
 		"language": "Dil",
 		"lockedHint": "Kurulumu değiştirmek için duraklatın",
 		"display": "Ekran",
 		"window": "Pencere",
-		"cameraAutomatic": "Automatic (16:9)",
+		"cameraAutomatic": "Otomatik (16:9)",
 		"cameraMonitor": "Kamera monitörü"
 	},
 	"setup": {
@@ -142,5 +142,27 @@
 		"pauseFirst": "Son klipleri dökmek için kaydı duraklatın.",
 		"empty": "Henüz klip yok. Önce bir şey kaydedin.",
 		"clip": "Klip {{n}}"
+	},
+	"countdown": {
+		"cancelHint": "İptal etmek için kayıt düğmesine tekrar basın"
+	},
+	"permissions": {
+		"blocked": "Kapalı",
+		"camera": "Kamera",
+		"cameraDetail": "Kameranızı kaydetmek için",
+		"continue": "Devam",
+		"description": "macOS bunların her biri için sizi bir kez uyarır. Klippt yalnızca siz kayıt yaparken yakalama yapar.",
+		"granted": "İzin verildi",
+		"microphone": "Mikrofon",
+		"microphoneDetail": "Sesinizi kaydetmek için",
+		"notAsked": "Henüz sorulmadı",
+		"notNow": "Şimdi değil",
+		"openSettings": "Ayarları Aç",
+		"relaunch": "Çık ve Yeniden Aç",
+		"relaunchHint": "Klippt'i Sistem Ayarları'nda açın, ardından macOS'in uygulaması için Klippt'ten çıkıp yeniden açın.",
+		"screen": "Ekran Kaydı",
+		"screenDetail": "Ekranınızı yakalamak için",
+		"settingsHint": "Klippt'i Sistem Ayarları'nda açın. Bu panel kendiliğinden güncellenir.",
+		"title": "Kayıttan önce"
 	}
 }

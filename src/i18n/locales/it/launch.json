@@ -69,8 +69,8 @@
 		"selectFailed": "Impossibile passare a questa sorgente. Riprova."
 	},
 	"recording": {
-		"starting": "Starting recording…",
-		"recordings": "Recordings",
+		"starting": "Avvio della registrazione…",
+		"recordings": "Registrazioni",
 		"selectSource": "Seleziona una sorgente da registrare",
 		"systemPicker": "Il sistema ti chiederà cosa condividere",
 		"inProgress": "Registrazione in corso",
@@ -101,8 +101,8 @@
 		"cameraQuality": "Qualità della fotocamera",
 		"preview": "Anteprima",
 		"previewUnavailable": "Anteprima non disponibile",
-		"recordingQuality": "Recording quality",
-		"qualityHigh": "High",
+		"recordingQuality": "Qualità di registrazione",
+		"qualityHigh": "Alta",
 		"qualityStandard": "Standard",
 		"source": "Sorgente",
 		"editableCursor": "Cursore modificabile",
@@ -110,7 +110,7 @@
 		"lockedHint": "Metti in pausa per cambiare la configurazione",
 		"display": "Schermo",
 		"window": "Finestra",
-		"cameraAutomatic": "Automatic (16:9)",
+		"cameraAutomatic": "Automatica (16:9)",
 		"cameraMonitor": "Monitor fotocamera"
 	},
 	"setup": {
@@ -142,5 +142,27 @@
 		"pauseFirst": "Metti in pausa la registrazione per trascrivere gli ultimi clip.",
 		"empty": "Nessun clip ancora. Registra qualcosa prima.",
 		"clip": "Clip {{n}}"
+	},
+	"countdown": {
+		"cancelHint": "Premi di nuovo Registra per annullare"
+	},
+	"permissions": {
+		"blocked": "Disattivato",
+		"camera": "Fotocamera",
+		"cameraDetail": "Per registrare la tua fotocamera",
+		"continue": "Continua",
+		"description": "macOS te chiede il permesso una sola volta per ciascuno. Klippt cattura solo mentre registri.",
+		"granted": "Consentito",
+		"microphone": "Microfono",
+		"microphoneDetail": "Per registrare la tua voce",
+		"notAsked": "Non ancora richiesto",
+		"notNow": "Non ora",
+		"openSettings": "Apri impostazioni",
+		"relaunch": "Esci e riapri",
+		"relaunchHint": "Attiva Klippt in Impostazioni di Sistema, poi esci e riapri Klippt così macOS applica la modifica.",
+		"screen": "Registrazione schermo",
+		"screenDetail": "Per catturare lo schermo",
+		"settingsHint": "Attiva Klippt in Impostazioni di Sistema. Questo pannello si aggiorna da solo.",
+		"title": "Prima di registrare"
 	}
 }

@@ -14,6 +14,11 @@ function api() {
 		getSources: vi.fn(async () => [display]),
 		selectSource: vi.fn(async (source: ProcessedDesktopSource) => source),
 		getPlatform: vi.fn(() => "darwin"),
+		getCapturePermissions: vi.fn(
+			async (): Promise<
+				Awaited<ReturnType<NonNullable<Window["electronAPI"]["getCapturePermissions"]>>>
+			> => ({ screen: "granted", microphone: "granted", camera: "granted" }),
+		),
 		getRecordingWorkspaceContext: vi.fn(
 			async (): Promise<
 				Awaited<ReturnType<Window["electronAPI"]["getRecordingWorkspaceContext"]>>
@@ -37,6 +42,18 @@ describe("fresh recorder source", () => {
 		calls.getSelectedSource.mockResolvedValue(display);
 		expect(await ensureDefaultRecordingSource(calls, () => true)).toEqual(display);
 		expect(calls.getSources).not.toHaveBeenCalled();
+	});
+	it("does not enumerate screens before Screen Recording access exists", async () => {
+		for (const screen of ["not-determined", "denied"] as const) {
+			const calls = api();
+			calls.getCapturePermissions.mockResolvedValue({
+				screen,
+				microphone: "granted",
+				camera: "granted",
+			});
+			expect(await ensureDefaultRecordingSource(calls, () => true)).toBeNull();
+			expect(calls.getSources).not.toHaveBeenCalled();
+		}
 	});
 	it("leaves Linux source selection with the portal", async () => {
 		const calls = api();

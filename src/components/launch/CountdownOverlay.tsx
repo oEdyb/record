@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { useScopedT } from "@/contexts/I18nContext";
+import styles from "./CountdownOverlay.module.css";
 
 export function CountdownOverlay() {
+	const t = useScopedT("launch");
 	const [value, setValue] = useState<number | null>(null);
 
 	useEffect(() => {
@@ -16,15 +19,14 @@ export function CountdownOverlay() {
 	}
 
 	return (
-		<div className="w-screen h-screen bg-transparent flex items-center justify-center pointer-events-none select-none">
-			<div className="flex items-center justify-center w-40 h-40 rounded-full bg-black/50">
-				<div
-					className="text-white/90 text-[80px] font-bold leading-none tabular-nums"
-					style={{ textShadow: "0 4px 24px rgba(0, 0, 0, 0.65)" }}
-				>
+		<div className={styles.stage}>
+			<div className={styles.dial}>
+				{/* A new key per digit replays its entrance. */}
+				<div key={value} className={styles.digit} role="status" aria-live="assertive">
 					{value}
 				</div>
 			</div>
+			<p className={styles.hint}>{t("countdown.cancelHint")}</p>
 		</div>
 	);
 }

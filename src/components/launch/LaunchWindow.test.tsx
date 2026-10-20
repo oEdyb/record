@@ -695,6 +695,81 @@ describe("LaunchWindow record button", () => {
 		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
 	});
 
+	it("explains Screen Recording before macOS is asked, instead of probing it", async () => {
+		stubElectronAPI(vi.fn(async () => null));
+		window.electronAPI.getCapturePermissions = vi.fn(async () => ({
+			screen: "not-determined" as const,
+			microphone: "granted" as const,
+			camera: "granted" as const,
+		}));
+		window.electronAPI.requestScreenAccess = vi.fn(async () => ({
+			success: true,
+			granted: false,
+			status: "not-determined",
+		}));
+		renderLaunchWindow();
+		const record = await screen.findByTestId("launch-record-button");
+		await waitFor(() => expect(window.electronAPI.getCapturePermissions).toHaveBeenCalled());
+		fireEvent.click(record);
+
+		expect(await screen.findByTestId("hud-permission-panel")).toBeInTheDocument();
+		expect(window.electronAPI.requestScreenAccess).not.toHaveBeenCalled();
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+		expect(window.electronAPI.getSources).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByRole("button", { name: "permissions.continue" }));
+		await waitFor(() => expect(window.electronAPI.requestScreenAccess).toHaveBeenCalledOnce());
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).getCapturePermissions;
+	});
+
+	it("records once a blocked microphone is switched on in System Settings", async () => {
+		recorderState.value.microphoneEnabled = true;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		let microphone: "denied" | "granted" = "denied";
+		window.electronAPI.getCapturePermissions = vi.fn(async () => ({
+			screen: "granted" as const,
+			microphone,
+			camera: "granted" as const,
+		}));
+		window.electronAPI.openPrivacySettings = vi.fn(async () => true);
+		renderLaunchWindow();
+		const record = await screen.findByTestId("launch-record-button");
+		await waitFor(() => expect(record).toHaveAttribute("title", "Display 1"));
+		await waitFor(() => expect(window.electronAPI.getCapturePermissions).toHaveBeenCalled());
+		fireEvent.click(record);
+
+		await screen.findByTestId("hud-permission-panel");
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+		fireEvent.click(
+			screen.getByRole("button", { name: "permissions.openSettings: permissions.microphone" }),
+		);
+		expect(window.electronAPI.openPrivacySettings).toHaveBeenCalledWith("microphone");
+
+		microphone = "granted";
+		await waitFor(() => expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce(), {
+			timeout: 2500,
+		});
+		recorderState.value.microphoneEnabled = false;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).getCapturePermissions;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).openPrivacySettings;
+	});
+
+	it("starts recording from the menu bar item like a Record click", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		let startFromMenu: () => void = () => undefined;
+		window.electronAPI.onHudStartRecording = vi.fn((callback: () => void) => {
+			startFromMenu = callback;
+			return () => undefined;
+		});
+		renderLaunchWindow();
+		const record = await screen.findByTestId("launch-record-button");
+		await waitFor(() => expect(record).toHaveAttribute("title", "Display 1"));
+
+		act(() => startFromMenu());
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce();
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).onHudStartRecording;
+	});
+
 	it("starts a fresh screen recording with one primary click", async () => {
 		let selected: ProcessedDesktopSource | null = null;
 		stubElectronAPI(vi.fn(async () => selected));

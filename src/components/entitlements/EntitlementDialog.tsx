@@ -1,12 +1,27 @@
 import { ArrowUpRight, Check, LoaderCircle } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { useScopedT } from "@/contexts/I18nContext";
+import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useEntitlementStore } from "@/lib/entitlements/store";
+import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import styles from "./EntitlementDialog.module.css";
+
+const MONTHLY_PRICE_USD = 19;
+const YEARLY_PRICE_USD = 99;
+const LICENSE_KEY_PATTERN = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX";
+
+function formatUsd(locale: string, amount: number): string {
+	return new Intl.NumberFormat(locale, {
+		style: "currency",
+		currency: "USD",
+		maximumFractionDigits: 0,
+	}).format(amount);
+}
 
 export function EntitlementDialog() {
 	const t = useScopedT("editor");
+	const { locale } = useI18n();
 	const {
 		snapshot,
 		dialogOpen,
@@ -37,10 +52,19 @@ export function EntitlementDialog() {
 		? t("entitlement.descriptionReactivate")
 		: expired
 			? t("entitlement.descriptionExpired", { capability })
-			: t("entitlement.descriptionTrial");
+			: snapshot.status === "trial-not-started"
+				? t("entitlement.descriptionTrialNotStarted")
+				: t("entitlement.descriptionTrial");
+	const price = t("entitlement.price", {
+		monthly: formatUsd(locale, MONTHLY_PRICE_USD),
+		yearly: formatUsd(locale, YEARLY_PRICE_USD),
+	});
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
-		if (await activate(licenseKey)) setLicenseKey("");
+		if (await activate(licenseKey)) {
+			setLicenseKey("");
+			toast.success(t("entitlement.activated"));
+		}
 	};
 
 	return (
@@ -60,7 +84,7 @@ export function EntitlementDialog() {
 						</li>
 						<li className={styles.benefit}>
 							<Check size={15} aria-hidden />
-							<span>{t("entitlement.benefitAutomatic")}</span>
+							<span>{t("entitlement.benefitSources")}</span>
 						</li>
 						<li className={styles.benefit}>
 							<Check size={15} aria-hidden />
@@ -77,12 +101,13 @@ export function EntitlementDialog() {
 						{t("entitlement.getPro")}
 						<ArrowUpRight size={14} aria-hidden />
 					</button>
+					<p className={styles.price}>{price}</p>
 					<form className={styles.license} onSubmit={submit}>
 						<input
 							type="text"
 							autoComplete="off"
 							spellCheck={false}
-							placeholder={t("entitlement.licenseKey")}
+							placeholder={LICENSE_KEY_PATTERN}
 							aria-label={t("entitlement.licenseKey")}
 							value={licenseKey}
 							onChange={(event) => setLicenseKey(event.target.value)}
@@ -91,7 +116,11 @@ export function EntitlementDialog() {
 							{t("entitlement.activate")}
 						</button>
 					</form>
-					{error ? <p className={styles.error}>{error}</p> : null}
+					{error ? (
+						<p className={styles.error} role="alert">
+							{ipcErrorMessage(error)}
+						</p>
+					) : null}
 				</div>
 				<div className={styles.footer}>
 					<span>{t("entitlement.filesSafe")}</span>

@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
+import { I18nProvider } from "@/contexts/I18nContext";
 import { createEmptyDocument } from "@/lib/ai-edition/schema";
 import { nativeBridgeClient } from "@/native/client";
 import { SourceExportPanel } from "./SourceExportPanel";
@@ -44,38 +45,34 @@ it("uses an explicit action and reports the saved source folder", async () => {
 		timelinePath: "/exports/raw/timeline.otio",
 		sourceCount: 1,
 	});
-	render(<Fixture />);
-	expect(screen.getByText(/Each Pause\/Continue clip/)).toHaveTextContent(
-		"A recording without pauses stays one clip.",
-	);
+	render(<Fixture />, { wrapper: I18nProvider });
+	expect(screen.getByText(/Every clip you recorded between pauses/)).toHaveTextContent("unchanged");
 	expect(nativeBridgeClient.aiEdition.exportSources).not.toHaveBeenCalled();
-	fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
-	expect(await screen.findByText("Sources exported")).toBeVisible();
+	fireEvent.click(screen.getByRole("button", { name: "Save files…" }));
+	expect(await screen.findByText("Files saved")).toBeVisible();
 	expect(screen.getByText("/exports/raw")).toBeVisible();
 	expect(
-		screen.getByText("Import timeline.otio in your video editor to continue editing."),
+		screen.getByText("Import timeline.otio in your video editor to keep editing."),
 	).toBeVisible();
 	expect(nativeBridgeClient.aiEdition.exportSources).toHaveBeenCalledTimes(1);
 	expect(screen.queryByText(/Resolve/)).toBeNull();
-	expect(document.querySelector("details")).toBeNull();
+	expect(screen.queryByText(/\d+ warnings?$/)).toBeNull();
 });
 it("does not claim success after cancellation", async () => {
 	vi.mocked(nativeBridgeClient.aiEdition.exportSources).mockResolvedValue({ canceled: true });
-	render(<Fixture />);
-	fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
-	await waitFor(() =>
-		expect(screen.getByRole("button", { name: "Export sources…" })).toBeEnabled(),
-	);
-	expect(screen.queryByText("Sources exported")).toBeNull();
+	render(<Fixture />, { wrapper: I18nProvider });
+	fireEvent.click(screen.getByRole("button", { name: "Save files…" }));
+	await waitFor(() => expect(screen.getByRole("button", { name: "Save files…" })).toBeEnabled());
+	expect(screen.queryByText("Files saved")).toBeNull();
 });
 it("shows a failure and permits a retry", async () => {
 	vi.mocked(nativeBridgeClient.aiEdition.exportSources).mockRejectedValue(
 		new Error("Relink missing media"),
 	);
-	render(<Fixture />);
-	fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
+	render(<Fixture />, { wrapper: I18nProvider });
+	fireEvent.click(screen.getByRole("button", { name: "Save files…" }));
 	expect(await screen.findByRole("alert")).toHaveTextContent("Relink missing media");
-	expect(screen.getByRole("button", { name: "Export sources…" })).toBeEnabled();
+	expect(screen.getByRole("button", { name: "Save files…" })).toBeEnabled();
 });
 it("locks requests synchronously even if its owner has not rerendered the busy prop", async () => {
 	let finish: ((result: { canceled: boolean }) => void) | undefined;
@@ -86,8 +83,10 @@ it("locks requests synchronously even if its owner has not rerendered the busy p
 			}),
 	);
 	const onBusy = vi.fn();
-	render(<SourceExportPanel document={documentFor()} busy={false} onBusy={onBusy} />);
-	const button = screen.getByRole("button", { name: "Export sources…" });
+	render(<SourceExportPanel document={documentFor()} busy={false} onBusy={onBusy} />, {
+		wrapper: I18nProvider,
+	});
+	const button = screen.getByRole("button", { name: "Save files…" });
 	fireEvent.click(button);
 	fireEvent.click(button);
 	expect(nativeBridgeClient.aiEdition.exportSources).toHaveBeenCalledOnce();
@@ -110,8 +109,9 @@ it("does not present a completed export as belonging to a later recording", asyn
 	const onBusy = vi.fn();
 	const view = render(
 		<SourceExportPanel document={documentFor("old")} busy={false} onBusy={onBusy} />,
+		{ wrapper: I18nProvider },
 	);
-	fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
+	fireEvent.click(screen.getByRole("button", { name: "Save files…" }));
 	view.rerender(<SourceExportPanel document={documentFor("new")} busy={true} onBusy={onBusy} />);
 	await act(async () => {
 		finish?.({
@@ -120,7 +120,7 @@ it("does not present a completed export as belonging to a later recording", asyn
 			manifestPath: "/exports/old/handoff.json",
 		});
 	});
-	expect(screen.queryByText("Sources exported")).toBeNull();
+	expect(screen.queryByText("Files saved")).toBeNull();
 	expect(screen.queryByText("/exports/old")).toBeNull();
 	expect(onBusy).toHaveBeenLastCalledWith(false);
 });
@@ -136,12 +136,12 @@ it("keeps many warnings collapsed outside the completion announcement", async ()
 		manifestPath: "/exports/raw/handoff.json",
 		warnings,
 	});
-	render(<Fixture />);
-	fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
-	await screen.findByText("Sources exported");
-	const disclosure = document.querySelector("details")!;
+	render(<Fixture />, { wrapper: I18nProvider });
+	fireEvent.click(screen.getByRole("button", { name: "Save files…" }));
+	await screen.findByText("Files saved");
+	const disclosure = screen.getByText("9 warnings", { selector: "summary" }).closest("details")!;
 	expect(disclosure).not.toHaveAttribute("open");
-	expect(disclosure.querySelector("summary")).toHaveTextContent("9 export warnings");
+	expect(disclosure.querySelector("summary")).toHaveTextContent("9 warnings");
 	expect(disclosure.closest('[role="status"]')).toBeNull();
 	expect(screen.getByRole("button", { name: "Show in folder" })).toBeVisible();
 	for (const warning of warnings) expect(screen.getByText(warning)).not.toBeVisible();

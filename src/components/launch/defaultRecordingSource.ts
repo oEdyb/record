@@ -5,6 +5,7 @@ type SourceApi = Pick<
 	| "selectSource"
 	| "getPlatform"
 	| "getRecordingWorkspaceContext"
+	| "getCapturePermissions"
 >;
 
 /** A fresh standalone recorder can use a screen without opening a second picker. */
@@ -19,6 +20,10 @@ export async function ensureDefaultRecordingSource(
 	if (api.getPlatform?.() === "linux" || !api.getSources || !api.selectSource) return null;
 	const workspace = await api.getRecordingWorkspaceContext?.();
 	if (!isCurrent() || workspace?.context) return null;
+	// Enumerating screens is what raises the macOS Screen Recording prompt. Until
+	// access exists, the HUD explains it first and asks only when the user records.
+	const permissions = await api.getCapturePermissions?.();
+	if (!isCurrent() || (permissions && permissions.screen !== "granted")) return null;
 	const sources = await api.getSources({
 		types: ["screen"],
 		thumbnailSize: { width: 1, height: 1 },

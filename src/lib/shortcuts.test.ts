@@ -26,22 +26,34 @@ describe("shortcut registry", () => {
 		// type. While `addBlur: {key: "b"}` was still in the registry, binding B to
 		// any real action reported "Already used by Add Blur" and offered a Swap
 		// that handed the old binding to a hidden, undispatched action.
-		expect(findConflict({ key: "b" }, "addZoom", DEFAULT_SHORTCUTS)).toBeNull();
+		expect(findConflict({ key: "b" }, "playPause", DEFAULT_SHORTCUTS)).toBeNull();
 	});
 
 	it("still reports a real collision", () => {
-		expect(findConflict({ key: "z" }, "addTrim", DEFAULT_SHORTCUTS)).toEqual({
+		expect(findConflict({ key: " " }, "openApp", DEFAULT_SHORTCUTS)).toEqual({
 			type: "configurable",
-			action: "addZoom",
+			action: "playPause",
+		});
+	});
+
+	it("reserves the review keys, including the menu's command keys", () => {
+		expect(findConflict({ key: "s", ctrl: true }, "playPause", DEFAULT_SHORTCUTS)).toMatchObject({
+			type: "fixed",
+			i18nKey: "saveVideo",
+		});
+		expect(findConflict({ key: "j" }, "playPause", DEFAULT_SHORTCUTS)).toMatchObject({
+			type: "fixed",
+			i18nKey: "skipSecond",
 		});
 	});
 
 	it("ignores stored bindings for actions that no longer exist", () => {
 		// mergeWithDefaults iterates SHORTCUT_ACTIONS, so a config saved before an
 		// action was dropped loads without a migration.
-		const stored = { addZoom: { key: "q" }, addBlur: { key: "b" } };
+		const stored = { playPause: { key: "q" }, addZoom: { key: "z" }, addBlur: { key: "b" } };
 		const merged = mergeWithDefaults(stored as Partial<ShortcutsConfig>);
-		expect(merged.addZoom).toEqual({ key: "q" });
+		expect(merged.playPause).toEqual({ key: "q" });
+		expect(merged).not.toHaveProperty("addZoom");
 		expect(merged).not.toHaveProperty("addBlur");
 	});
 });

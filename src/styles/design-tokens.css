@@ -119,6 +119,26 @@
 	--overlay-text-2: rgba(255, 255, 255, 0.55);
 	--overlay-border: rgba(22, 23, 29, 0.06);
 
+	/* recorder HUD — always dark, whatever the theme. Secondary text uses
+	   --hud-muted (about 6:1 on the pill); --hud-faint is for marks, never text. */
+	--hud-surface: rgba(18, 21, 26, 0.94);
+	--hud-surface-solid: rgba(18, 21, 26, 0.96);
+	--hud-fill: rgba(255, 255, 255, 0.06);
+	--hud-fill-hover: rgba(255, 255, 255, 0.1);
+	--hud-fill-strong: rgba(255, 255, 255, 0.14);
+	--hud-border: rgba(255, 255, 255, 0.09);
+	--hud-ink: #f5f7fa;
+	--hud-ink-2: rgba(255, 255, 255, 0.78);
+	--hud-muted: rgba(255, 255, 255, 0.58);
+	--hud-faint: rgba(255, 255, 255, 0.4);
+	--hud-focus: rgba(142, 165, 191, 0.72);
+	--hud-success: #6ee7a8;
+	--hud-radius-sm: 4px;
+	--hud-radius-md: 10px;
+	--hud-radius-lg: 14px;
+	--hud-radius-xl: 22px;
+	--hud-radius-pill: 999px;
+
 	/* typography — Geist / Geist Mono are the brand faces, self-hosted by
 	   styles/fonts.css. The old system stacks stay on as fallback so a failed
 	   font load degrades instead of dropping to a serif default. */

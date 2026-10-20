@@ -15,6 +15,11 @@ import { useCameraPreviewFrameBridge } from "../../hooks/useCameraPreviewFrameBr
 import { type MicrophoneDevice, useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
 import { usePortalOwnsSource } from "../../hooks/usePortalOwnsSource";
 import { useScreenRecorder } from "../../hooks/useScreenRecorder";
+import {
+	type CapturePermissionKind,
+	type CapturePermissions,
+	permissionStep,
+} from "../../lib/capturePermissions";
 import type { RecordingQuality } from "../../lib/recording/recordingQuality";
 import { requestCameraAccess } from "../../lib/requestCameraAccess";
 import type { WebcamFormat } from "../../lib/webcamFormats";
@@ -42,6 +47,7 @@ import {
 	type HudDeviceSettingsLabels,
 	type HudSetupExtras,
 } from "./HudDeviceSettings";
+import { type HudPermissionLabels, HudPermissionPanel } from "./HudPermissionPanel";
 import {
 	computeHudBarMaxHeight,
 	computeHudModalMaxHeight,
@@ -66,6 +72,14 @@ import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 // Locale list is computed once at module load; keeping the reference stable lets
 // the setup panel sit behind a memo boundary.
 const AVAILABLE_LOCALES = getAvailableLocales();
+
+async function readCapturePermissions(): Promise<CapturePermissions | null> {
+	try {
+		return (await window.electronAPI?.getCapturePermissions?.()) ?? null;
+	} catch {
+		return null;
+	}
+}
 
 // Used only when the renderer can't see a real display (tests, headless).
 const FALLBACK_SCREEN_HEIGHT = 1080;
@@ -199,7 +213,20 @@ export function LaunchWindow() {
 	const canPeek =
 		recording && presentation.paused && !saving && !clipFinalizing && keptClipCount > 0;
 	const peekOpen = isPeekOpen && canPeek;
-	const isPopoverOpen = isDeviceSettingsOpen || peekOpen || isSourcePanelOpen;
+	// Shown before any macOS capture prompt: what Klippt needs, and why.
+	const [permissionPanelOpen, setPermissionPanelOpen] = useState(false);
+	const [capturePermissions, setCapturePermissions] = useState<CapturePermissions | null>(null);
+	const [permissionRequestBusy, setPermissionRequestBusy] = useState(false);
+	const pendingPermissionActionRef = useRef<(() => void) | null>(null);
+	const permissionPresence = usePresence(permissionPanelOpen, 150);
+	const permissionNeeds = useMemo(
+		() => ({ microphone: microphoneEnabled, camera: webcamEnabled }),
+		[microphoneEnabled, webcamEnabled],
+	);
+	const permissionNeedsRef = useRef(permissionNeeds);
+	permissionNeedsRef.current = permissionNeeds;
+	const isPopoverOpen =
+		isDeviceSettingsOpen || peekOpen || isSourcePanelOpen || permissionPanelOpen;
 	const setupPresence = usePresence(isDeviceSettingsOpen, 150);
 	const sourcePresence = usePresence(isSourcePanelOpen, 150);
 	// Setup and Source are two pages of one popover: switching between them swaps
@@ -396,7 +423,107 @@ export function LaunchWindow() {
 		setIsDeviceSettingsOpen(false);
 		setIsPeekOpen(false);
 		setIsSourcePanelOpen(false);
+		setPermissionPanelOpen(false);
+		pendingPermissionActionRef.current = null;
 		recordAfterSourceSelectionRef.current = false;
+	}, []);
+
+	const openPermissionPanel = useCallback(
+		(permissions: CapturePermissions, then: (() => void) | null) => {
+			pendingPermissionActionRef.current = then;
+			setCapturePermissions(permissions);
+			setIsDeviceSettingsOpen(false);
+			setIsSourcePanelOpen(false);
+			setIsPeekOpen(false);
+			setPermissionPanelOpen(true);
+		},
+		[],
+	);
+
+	// Kept current without a round trip, so Record starts in the same click.
+	const knownPermissionsRef = useRef<CapturePermissions | null>(null);
+	useEffect(() => {
+		const refresh = () => {
+			void readCapturePermissions().then((next) => {
+				if (next) knownPermissionsRef.current = next;
+			});
+		};
+		refresh();
+		window.addEventListener("focus", refresh);
+		return () => window.removeEventListener("focus", refresh);
+	}, []);
+
+	/** Runs `action` at once when capture is allowed; otherwise explains first and runs it once it is. */
+	const runWithCapturePermissions = useCallback(
+		(action: () => void) => {
+			const permissions = knownPermissionsRef.current;
+			if (
+				!permissions ||
+				permissionStep(permissions, permissionNeedsRef.current).kind === "ready"
+			) {
+				action();
+				return;
+			}
+			openPermissionPanel(permissions, action);
+		},
+		[openPermissionPanel],
+	);
+
+	const settlePermissions = useCallback((permissions: CapturePermissions) => {
+		knownPermissionsRef.current = permissions;
+		setCapturePermissions(permissions);
+		if (permissionStep(permissions, permissionNeedsRef.current).kind !== "ready") return;
+		setPermissionPanelOpen(false);
+		const action = pendingPermissionActionRef.current;
+		pendingPermissionActionRef.current = null;
+		action?.();
+	}, []);
+
+	// System Settings changes arrive without an event, so the open panel polls.
+	useEffect(() => {
+		if (!permissionPanelOpen) return;
+		let cancelled = false;
+		const timer = window.setInterval(() => {
+			void readCapturePermissions().then((next) => {
+				if (!cancelled && next) settlePermissions(next);
+			});
+		}, 1000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(timer);
+		};
+	}, [permissionPanelOpen, settlePermissions]);
+
+	const closePermissionPanel = useCallback(() => {
+		setPermissionPanelOpen(false);
+		pendingPermissionActionRef.current = null;
+	}, []);
+
+	const requestNextPermission = useCallback(async () => {
+		if (!capturePermissions) return;
+		const step = permissionStep(capturePermissions, permissionNeedsRef.current);
+		if (step.kind !== "ask") return;
+		const api = window.electronAPI;
+		setPermissionRequestBusy(true);
+		try {
+			if (step.permission === "screen") await api.requestScreenAccess();
+			else if (step.permission === "microphone") await api.requestMicrophoneAccess?.();
+			else await api.requestCameraAccess();
+		} catch (error) {
+			console.warn("Permission request failed:", error);
+		} finally {
+			setPermissionRequestBusy(false);
+		}
+		const next = await readCapturePermissions();
+		if (next) settlePermissions(next);
+	}, [capturePermissions, settlePermissions]);
+
+	const openPrivacySettings = useCallback((kind: CapturePermissionKind) => {
+		void window.electronAPI?.openPrivacySettings?.(kind);
+	}, []);
+
+	const relaunchApp = useCallback(() => {
+		void window.electronAPI?.relaunchApp?.();
 	}, []);
 
 	useEffect(() => {
@@ -709,6 +836,13 @@ export function LaunchWindow() {
 				if (!requireEntitlement("record")) {
 					return { opened: false, reason: "entitlement-required" };
 				}
+				// Asking macOS directly would show its prompt with no explanation.
+				const permissions = await readCapturePermissions();
+				if (permissions) knownPermissionsRef.current = permissions;
+				if (permissions && permissions.screen !== "granted") {
+					openPermissionPanel(permissions, null);
+					return { opened: false, reason: "permission-required" };
+				}
 				const access = await window.electronAPI.requestScreenAccess?.().catch(() => null);
 				// Capture may have started while macOS answered; the source is fixed then.
 				if (controlsLockedRef.current) {
@@ -733,7 +867,7 @@ export function LaunchWindow() {
 
 			return { opened: false, reason: "electron-api-unavailable" };
 		},
-		[portalOwnsSource],
+		[openPermissionPanel, portalOwnsSource],
 	);
 
 	const [sourcePanelKind, setSourcePanelKind] = useState<SourcePickerKind>();
@@ -808,9 +942,21 @@ export function LaunchWindow() {
 				return;
 			}
 
+			if (!recording) {
+				runWithCapturePermissions(toggleRecording);
+				return;
+			}
 			toggleRecording();
 		},
-		[hasSelectedSource, portalOwnsSource, openSourceSelector, recording, saving, toggleRecording],
+		[
+			hasSelectedSource,
+			portalOwnsSource,
+			openSourceSelector,
+			recording,
+			runWithCapturePermissions,
+			saving,
+			toggleRecording,
+		],
 	);
 	const handleRecordClick = useCallback(() => {
 		closePopovers();
@@ -900,6 +1046,13 @@ export function LaunchWindow() {
 		peekOpen,
 		recording,
 	]);
+
+	useEffect(() => {
+		return window.electronAPI?.onHudStartRecording?.(() => {
+			if (recording || starting || saving) return;
+			handleRecordButtonClick();
+		});
+	}, [handleRecordButtonClick, recording, saving, starting]);
 
 	useEffect(() => {
 		return window.electronAPI?.onHudToggleRecordingPause?.(() => {
@@ -1458,6 +1611,32 @@ export function LaunchWindow() {
 	});
 
 	const hasNotices = Boolean(systemLocaleSuggestion) || softwareEncoderFallbackNoticeVisible;
+	const permissionLabels = useMemo<HudPermissionLabels>(
+		() => ({
+			title: t("permissions.title"),
+			description: t("permissions.description"),
+			names: {
+				screen: t("permissions.screen"),
+				microphone: t("permissions.microphone"),
+				camera: t("permissions.camera"),
+			},
+			details: {
+				screen: t("permissions.screenDetail"),
+				microphone: t("permissions.microphoneDetail"),
+				camera: t("permissions.cameraDetail"),
+			},
+			granted: t("permissions.granted"),
+			notAsked: t("permissions.notAsked"),
+			blocked: t("permissions.blocked"),
+			continue: t("permissions.continue"),
+			openSettings: t("permissions.openSettings"),
+			notNow: t("permissions.notNow"),
+			relaunch: t("permissions.relaunch"),
+			relaunchHint: t("permissions.relaunchHint"),
+			settingsHint: t("permissions.settingsHint"),
+		}),
+		[t],
+	);
 	const previousClip = [...recordedClips].reverse().find((clip) => !clip.removed) ?? null;
 	const removePreviousLabel = t("recording.removePreviousClip");
 	const removePreviousTooltip = previousClip
@@ -1617,6 +1796,7 @@ export function LaunchWindow() {
 				{(isPopoverOpen ||
 					showSetup ||
 					showSource ||
+					permissionPresence.present ||
 					canPeek ||
 					hasNotices ||
 					shownRemovedClip) && (
@@ -1666,6 +1846,22 @@ export function LaunchWindow() {
 								onClose={closeSourcePanel}
 								onChosen={() => setIsSourcePanelOpen(false)}
 								panelRef={isSourcePanelOpen ? setPopoverEl : undefined}
+							/>
+						)}
+
+						{permissionPresence.present && capturePermissions && (
+							<HudPermissionPanel
+								permissions={capturePermissions}
+								needs={permissionNeeds}
+								step={permissionStep(capturePermissions, permissionNeeds)}
+								labels={permissionLabels}
+								busy={permissionRequestBusy}
+								closing={permissionPresence.closing}
+								panelRef={permissionPanelOpen ? setPopoverEl : undefined}
+								onContinue={() => void requestNextPermission()}
+								onOpenSettings={openPrivacySettings}
+								onRelaunch={relaunchApp}
+								onClose={closePermissionPanel}
 							/>
 						)}
 

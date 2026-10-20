@@ -39,7 +39,9 @@
 		"services": "Dịch vụ",
 		"hide": "Ẩn Klippt",
 		"hideOthers": "Ẩn ứng dụng khác",
-		"unhide": "Hiển thị tất cả"
+		"unhide": "Hiển thị tất cả",
+		"showRecorder": "Hiện trình ghi hình",
+		"startRecording": "Bắt đầu ghi hình"
 	},
 	"updates": {
 		"available": "Đã có Klippt {{latestVersion}}. Bạn đang dùng phiên bản {{currentVersion}}.",
@@ -64,6 +66,19 @@
 		"unknown": "Ghi màn hình"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "Nhập một số từ {{min}} đến {{max}}."
+	},
+	"menu": {
+		"newRecording": "Ghi hình mới",
+		"recordings": "Bản ghi…",
+		"saveVideo": "Lưu video…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}} đọc vị trí con trỏ để con trỏ luôn sắc nét trong video của bạn. Bật {{app}} trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Trợ năng, rồi nhấn Ghi hình lần nữa.",
+		"accessibilityMissingHelper": "Thiếu một phần của {{app}} nên không dùng được con trỏ có thể chỉnh sửa. Hãy cài đặt lại {{app}} hoặc chuyển con trỏ sang Hệ thống trong Cài đặt.",
+		"accessibilityTitle": "Cho phép Trợ năng để con trỏ sắc nét, mượt mà",
+		"openSettings": "Mở Cài đặt hệ thống",
+		"screenDetail": "Bật {{app}} trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Ghi màn hình, rồi thoát và mở lại {{app}}.",
+		"screenTitle": "{{app}} cần quyền Ghi màn hình"
 	}
 }

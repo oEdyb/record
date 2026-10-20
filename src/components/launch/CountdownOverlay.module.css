@@ -1,0 +1,57 @@
+.stage {
+	display: flex;
+	width: 100vw;
+	height: 100vh;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	background: transparent;
+	pointer-events: none;
+	user-select: none;
+}
+
+.dial {
+	display: flex;
+	width: 160px;
+	height: 160px;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.5);
+}
+
+.digit {
+	color: rgba(255, 255, 255, 0.92);
+	font: 700 80px/1 var(--font-display);
+	font-variant-numeric: tabular-nums;
+	text-shadow: 0 4px 24px rgba(0, 0, 0, 0.65);
+	animation: digit-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.hint {
+	padding: 6px 12px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.55);
+	color: rgba(255, 255, 255, 0.85);
+	font: 500 13px/1.2 var(--font-body);
+}
+
+@keyframes digit-in {
+	from {
+		opacity: 0;
+		transform: scale(0.96);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.digit {
+		animation-name: digit-fade;
+	}
+
+	@keyframes digit-fade {
+		from {
+			opacity: 0;
+		}
+	}
+}

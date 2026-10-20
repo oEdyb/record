@@ -30,6 +30,7 @@ import {
 } from "@/lib/ai-edition/timeline/timelineMap";
 import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
 import { formatExportEta } from "@/lib/exporter/mp4ExportSettings";
+import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
@@ -54,6 +55,7 @@ import { useCompactReviewFit } from "./useCompactReviewFit";
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
 import { useRevealLatch } from "./useRevealLatch";
+import { useTrialStartNotice } from "./useTrialStartNotice";
 import { FIRST_FRAME_TIMEOUT_MS, useVideoFirstFrame } from "./useVideoFirstFrame";
 
 const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
@@ -855,8 +857,8 @@ export function RecordingReviewShell() {
 				setQuickExport(!sourceRecovery);
 				setExportOpen(true);
 			} catch (error) {
-				toast.error(te("recordingReview.preparing"), {
-					description: error instanceof Error ? error.message : String(error),
+				toast.error(te("recordingReview.prepareFailed"), {
+					description: ipcErrorMessage(error),
 				});
 			} finally {
 				recordingReviewActionRef.current = false;
@@ -932,6 +934,7 @@ export function RecordingReviewShell() {
 		applyTheme("dark");
 	}, []);
 	useCompactReviewFit(compactReview && hasAsset, document);
+	useTrialStartNotice(entitlement, hasAsset, te("entitlement.trialStarted"));
 
 	const reviewMeta = useMemo(() => {
 		if (clips.length === 0) return null;

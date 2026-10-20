@@ -74,7 +74,11 @@ export function ShortcutsConfigDialog() {
 			setCaptureFor(null);
 
 			if (found?.type === "fixed") {
-				toast.error(t("reservedShortcut", { label: found.label }));
+				toast.error(
+					t("reservedShortcut", {
+						label: t(`fixedActions.${found.i18nKey}`, { defaultValue: found.label }),
+					}),
+				);
 				return;
 			}
 
@@ -197,12 +201,14 @@ export function ShortcutsConfigDialog() {
 
 					<section className={styles.section}>
 						<p className={styles.sectionLabel}>{t("fixed")}</p>
-						{FIXED_SHORTCUTS.map(({ i18nKey, label, display }) => (
+						{FIXED_SHORTCUTS.map(({ i18nKey, label, bindings }) => (
 							<div key={i18nKey} className={styles.row}>
 								<span className={`${styles.label} ${styles.fixedLabel}`}>
 									{t(`fixedActions.${i18nKey}`, { defaultValue: label })}
 								</span>
-								<kbd className={`${styles.binding} ${styles.fixedBinding}`}>{display}</kbd>
+								<kbd className={`${styles.binding} ${styles.fixedBinding}`}>
+									{bindings.map((binding) => formatBinding(binding, isMac)).join(" / ")}
+								</kbd>
 							</div>
 						))}
 					</section>

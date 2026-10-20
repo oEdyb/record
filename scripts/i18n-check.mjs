@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Validates that all locale translation files have identical key structures.
+ * Validates that all locale translation files have identical key structures, and
+ * that no locale ships an English phrase copied over untranslated.
  * Compares all locale folders (except en) against the en baseline for every namespace.
  *
  * Usage: node scripts/i18n-check.mjs
@@ -22,6 +23,30 @@ function getKeys(obj, prefix = "") {
 		}
 	}
 	return keys.sort();
+}
+
+function getValues(obj, prefix = "", values = new Map()) {
+	for (const [key, value] of Object.entries(obj)) {
+		const fullKey = prefix ? `${prefix}.${key}` : key;
+		if (value && typeof value === "object" && !Array.isArray(value)) {
+			getValues(value, fullKey, values);
+		} else {
+			values.set(fullKey, value);
+		}
+	}
+	return values;
+}
+
+// A phrase of two or more words reads as English when copied over. Single words,
+// placeholders, the brand and acronyms such as MP4 are often the same everywhere.
+function isTranslatablePhrase(text) {
+	if (typeof text !== "string") return false;
+	const words = text
+		.replace(/\{\{[^}]*\}\}/g, " ")
+		.replace(/\bKlippt\b/g, " ")
+		.split(/[^\p{L}]+/u)
+		.filter((word) => word.length > 1 && word !== word.toUpperCase());
+	return words.length >= 2;
 }
 
 let hasErrors = false;
@@ -55,6 +80,11 @@ for (const namespace of namespaces) {
 
 		const localeData = JSON.parse(fs.readFileSync(localePath, "utf-8"));
 		const localeKeys = getKeys(localeData);
+		const baseValues = getValues(baseData);
+		const localeValues = getValues(localeData);
+		const untranslated = [...baseValues].filter(
+			([key, value]) => localeValues.get(key) === value && isTranslatablePhrase(value),
+		);
 
 		const missing = baseKeys.filter((k) => !localeKeys.includes(k));
 		const extra = localeKeys.filter((k) => !baseKeys.includes(k));
@@ -63,6 +93,14 @@ for (const namespace of namespaces) {
 			console.error(`MISSING in ${locale}/${namespace}.json:`);
 			for (const key of missing) {
 				console.error(`  - ${key}`);
+			}
+			hasErrors = true;
+		}
+
+		if (untranslated.length > 0) {
+			console.error(`UNTRANSLATED in ${locale}/${namespace}.json:`);
+			for (const [key, value] of untranslated) {
+				console.error(`  = ${key}: ${value}`);
 			}
 			hasErrors = true;
 		}

@@ -11,7 +11,7 @@
 		"viewRelease": "リリースを表示",
 		"downloadUpdate": "アップデートをダウンロード",
 		"restartNow": "今すぐ再起動",
-		"upload": "読み込む",
+		"upload": "アップロード",
 		"export": "エクスポート",
 		"showInFolder": "フォルダに表示",
 		"file": "ファイル",
@@ -39,7 +39,9 @@
 		"services": "サービス",
 		"hide": "Klipptを隠す",
 		"hideOthers": "ほかを隠す",
-		"unhide": "すべて表示"
+		"unhide": "すべて表示",
+		"showRecorder": "レコーダーを表示",
+		"startRecording": "録画を開始"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} を利用できます。現在のバージョンは {{currentVersion}} です。",
@@ -64,6 +66,19 @@
 		"unknown": "画面録画"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "{{min}}から{{max}}までの数値を入力してください。"
+	},
+	"menu": {
+		"newRecording": "新規録画",
+		"recordings": "録画…",
+		"saveVideo": "動画を保存…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}}はポインタの位置を読み取り、動画内のカーソルを鮮明に保ちます。システム設定 → プライバシーとセキュリティ → アクセシビリティで{{app}}をオンにしてから、もう一度「録画」を押してください。",
+		"accessibilityMissingHelper": "{{app}}の一部が見つからないため、編集可能なカーソルは使用できません。{{app}}を再インストールするか、設定でカーソルを「システム」に切り替えてください。",
+		"accessibilityTitle": "くっきりなめらかなカーソルのため、アクセシビリティを許可",
+		"openSettings": "システム設定を開く",
+		"screenDetail": "システム設定 → プライバシーとセキュリティ → 画面収録で{{app}}をオンにしてから、{{app}}を終了して開き直してください。",
+		"screenTitle": "{{app}}には画面収録へのアクセスが必要です"
 	}
 }
