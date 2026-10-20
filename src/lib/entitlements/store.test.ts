@@ -52,3 +52,46 @@ describe("requireEntitlement", () => {
 		});
 	});
 });
+
+describe("a license key this Mac can no longer read", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		useEntitlementStore.setState({
+			snapshot: LICENSED,
+			dialogOpen: false,
+			blockedCapability: null,
+		});
+	});
+
+	function stubStorage() {
+		const values = new Map<string, string>();
+		vi.stubGlobal("window", {
+			localStorage: {
+				getItem: (key: string) => values.get(key) ?? null,
+				setItem: (key: string, value: string) => values.set(key, value),
+				removeItem: (key: string) => values.delete(key),
+			},
+		});
+	}
+
+	it("opens the license dialog once, not on every update", () => {
+		stubStorage();
+		const unreadable: EntitlementSnapshot = {
+			...base,
+			status: "offline-grace",
+			access: "full",
+			reactivationRequired: true,
+		};
+		const store = useEntitlementStore.getState();
+
+		store.setSnapshot(unreadable);
+		expect(useEntitlementStore.getState().dialogOpen).toBe(true);
+		store.closeDialog();
+		store.setSnapshot(unreadable);
+		expect(useEntitlementStore.getState().dialogOpen).toBe(false);
+
+		store.setSnapshot(LICENSED);
+		store.setSnapshot(unreadable);
+		expect(useEntitlementStore.getState().dialogOpen).toBe(true);
+	});
+});

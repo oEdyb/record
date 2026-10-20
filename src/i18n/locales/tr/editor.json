@@ -155,14 +155,17 @@
 			"trialDay": "Deneme {{count}} gün",
 			"trialDays": "Deneme {{count}} gün",
 			"offline": "Klippt Pro, Çevrimdışı",
-			"readOnly": "Salt okunur"
+			"readOnly": "Salt okunur",
+			"reactivate": "Lisansı yeniden girin"
 		},
 		"eyebrowReadOnly": "Salt okunur erişim",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "Projelerin güvende.",
 		"titleTrial": "Her kaydı yayınlanmaya hazırla.",
+		"titleReactivate": "Lisans anahtarınızı yeniden girin.",
 		"descriptionExpired": "Klippt artık salt okunur. {{capability}} için Pro ile devam et.",
 		"descriptionTrial": "Deneme süren kaydedicinin, editörün, otomatik yönlendirmenin ve son dışa aktarımların tamamını içerir.",
+		"descriptionReactivate": "Klippt bu Mac'te kayıtlı lisansı okuyamadı. Projeleriniz ve deneme tarihiniz korunuyor. Pro ile devam etmek için anahtarınızı bir kez girin.",
 		"capability": {
 			"record": "yeni klipler kaydetmek",
 			"edit": "bu projeyi düzenlemek",

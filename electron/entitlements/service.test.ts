@@ -332,3 +332,130 @@ describe("EntitlementService", () => {
 		});
 	});
 });
+
+describe("a saved license key that can no longer be decrypted", () => {
+	const savedAt = "2026-10-01T00:00:00.000Z";
+	const stored = (): StoredEntitlementState => ({
+		version: 1,
+		trialStartedAt: "2026-09-01T00:00:00.000Z",
+		license: {
+			encryptedKey: "c2VjcmV0LWtleQ==",
+			instanceId: "instance-1",
+			valid: true,
+			lastValidatedAt: savedAt,
+			expiresAt: null,
+		},
+	});
+	const lockedKeychain = (): SecretCodec => ({
+		encrypt: vi.fn(async (value) => Buffer.from(value).toString("base64")),
+		decrypt: vi.fn(async () => {
+			throw new Error(
+				"Error while decrypting the ciphertext provided to safeStorage.decryptString.",
+			);
+		}),
+	});
+
+	it("keeps the trial date and offline grace and asks for the key once more", async () => {
+		const { store, read } = memoryStore(stored());
+		const licenseProvider = provider();
+		const service = new EntitlementService({
+			config: config(),
+			provider: licenseProvider,
+			codec: lockedKeychain(),
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-02T00:00:00.000Z"),
+		});
+
+		await expect(service.refresh()).resolves.toMatchObject({
+			status: "offline-grace",
+			access: "full",
+			reactivationRequired: true,
+		});
+		expect(licenseProvider.validate).not.toHaveBeenCalled();
+		expect(read()?.trialStartedAt).toBe("2026-09-01T00:00:00.000Z");
+		expect(read()?.license?.keyUnreadable).toBe(true);
+	});
+
+	it("falls back to read-only after the grace without throwing, and keeps the request", async () => {
+		const { store } = memoryStore(stored());
+		const service = new EntitlementService({
+			config: config(),
+			provider: provider(),
+			codec: lockedKeychain(),
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-20T00:00:00.000Z"),
+		});
+
+		await expect(service.getSnapshot()).resolves.toMatchObject({
+			status: "expired",
+			access: "read-only",
+			trialStartedAt: "2026-09-01T00:00:00.000Z",
+			reactivationRequired: true,
+		});
+	});
+
+	it("clears the request after the user activates the key again", async () => {
+		const { store, read } = memoryStore(stored());
+		const service = new EntitlementService({
+			config: config(),
+			provider: provider(),
+			codec: lockedKeychain(),
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-20T00:00:00.000Z"),
+		});
+		await service.refresh();
+
+		const snapshot = await service.activate("secret-key");
+		expect(snapshot).toMatchObject({ status: "licensed", access: "full" });
+		expect(snapshot.reactivationRequired).toBeUndefined();
+		expect(read()?.trialStartedAt).toBe("2026-09-01T00:00:00.000Z");
+		expect(read()?.license?.keyUnreadable).toBeUndefined();
+	});
+
+	it("recovers on its own when the Keychain allows the key again", async () => {
+		const { store, read } = memoryStore(stored());
+		const decrypt = vi
+			.fn<SecretCodec["decrypt"]>()
+			.mockRejectedValueOnce(new Error("User denied Keychain access"))
+			.mockResolvedValue("secret-key");
+		let clock = 0;
+		const service = new EntitlementService({
+			config: config(),
+			provider: provider(),
+			codec: { encrypt: codec.encrypt, decrypt },
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-02T00:00:00.000Z"),
+			monotonicNow: () => clock,
+		});
+
+		await expect(service.refresh()).resolves.toMatchObject({ reactivationRequired: true });
+		clock += 61_000;
+		const snapshot = await service.refresh();
+		expect(snapshot).toMatchObject({ status: "licensed", access: "full" });
+		expect(snapshot.reactivationRequired).toBeUndefined();
+		expect(read()?.license?.keyUnreadable).toBeUndefined();
+	});
+
+	it("still reads an unreadable flag saved by an earlier run", async () => {
+		const { store } = memoryStore({
+			...stored(),
+			license: { ...stored().license!, keyUnreadable: true, validationFailedAt: savedAt },
+		});
+		const service = new EntitlementService({
+			config: config(),
+			codec,
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-02T00:00:00.000Z"),
+		});
+
+		await expect(service.getSnapshot()).resolves.toMatchObject({
+			status: "offline-grace",
+			reactivationRequired: true,
+		});
+	});
+});

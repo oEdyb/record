@@ -21,6 +21,8 @@ interface StoredLicense {
 	expiresAt?: string | null;
 	customerEmail?: string;
 	validationFailedAt?: string;
+	/** The saved key could not be decrypted, e.g. after the app's signing identity changed. */
+	keyUnreadable?: boolean;
 }
 
 export interface StoredEntitlementState {
@@ -83,6 +85,7 @@ function normalizeStoredState(value: unknown): StoredEntitlementState {
 			...(validIso(license.validationFailedAt)
 				? { validationFailedAt: license.validationFailedAt }
 				: {}),
+			...(license.keyUnreadable === true ? { keyUnreadable: true } : {}),
 		};
 	}
 	return normalized;
@@ -189,7 +192,7 @@ export class EntitlementService extends EventEmitter {
 				licenseKey = await this.options.codec.decrypt(license.encryptedKey);
 			} catch (error) {
 				console.warn("Could not decrypt the Klippt license:", error);
-				return this.markValidationFailure();
+				return this.markKeyUnreadable();
 			}
 
 			try {
@@ -203,6 +206,7 @@ export class EntitlementService extends EventEmitter {
 						expiresAt: validation.expiresAt,
 						customerEmail: validation.customerEmail ?? license.customerEmail,
 						validationFailedAt: undefined,
+						keyUnreadable: undefined,
 					},
 				};
 				await this.persistAndEmit();
@@ -232,6 +236,23 @@ export class EntitlementService extends EventEmitter {
 		});
 	}
 
+	/** Keeps the trial date and the license's offline grace, and asks for the key again. The
+	 *  next refresh retries the decrypt, so a Keychain that unlocks later recovers on its own. */
+	private async markKeyUnreadable(): Promise<EntitlementSnapshot> {
+		const license = this.state.license;
+		if (!license) return this.buildSnapshot();
+		this.state = {
+			...this.state,
+			license: {
+				...license,
+				keyUnreadable: true,
+				validationFailedAt: license.validationFailedAt ?? new Date(this.now()).toISOString(),
+			},
+		};
+		await this.persistAndEmit();
+		return this.buildSnapshot();
+	}
+
 	private async markValidationFailure(): Promise<EntitlementSnapshot> {
 		const license = this.state.license;
 		if (!license) return this.buildSnapshot();
@@ -257,6 +278,13 @@ export class EntitlementService extends EventEmitter {
 	}
 
 	private buildSnapshot(): EntitlementSnapshot {
+		const snapshot = this.buildAccessSnapshot();
+		return snapshot.commerceConfigured && this.state.license?.keyUnreadable
+			? { ...snapshot, reactivationRequired: true }
+			: snapshot;
+	}
+
+	private buildAccessSnapshot(): EntitlementSnapshot {
 		const { config } = this.options;
 		const base = {
 			version: 1 as const,

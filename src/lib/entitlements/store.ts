@@ -17,6 +17,24 @@ const DEVELOPMENT_ENTITLEMENT: EntitlementSnapshot = {
 
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 
+const REACTIVATION_PROMPTED_KEY = "klippt.entitlement.reactivationPrompted";
+
+/** Opens the license dialog the first time this Mac cannot read the saved key, then never again
+ *  until a working key clears the request. */
+function shouldPromptReactivation(snapshot: EntitlementSnapshot): boolean {
+	try {
+		if (!snapshot.reactivationRequired) {
+			window.localStorage.removeItem(REACTIVATION_PROMPTED_KEY);
+			return false;
+		}
+		if (window.localStorage.getItem(REACTIVATION_PROMPTED_KEY)) return false;
+		window.localStorage.setItem(REACTIVATION_PROMPTED_KEY, "1");
+		return true;
+	} catch {
+		return Boolean(snapshot.reactivationRequired);
+	}
+}
+
 function scheduleAccessBoundary(snapshot: EntitlementSnapshot): void {
 	if (expirationTimer) clearTimeout(expirationTimer);
 	expirationTimer = null;
@@ -60,7 +78,12 @@ export const useEntitlementStore = create<EntitlementRendererState>((set, get) =
 	error: null,
 	setSnapshot: (snapshot) => {
 		scheduleAccessBoundary(snapshot);
-		set({ snapshot, loaded: true, error: null });
+		set({
+			snapshot,
+			loaded: true,
+			error: null,
+			...(shouldPromptReactivation(snapshot) ? { dialogOpen: true, blockedCapability: null } : {}),
+		});
 	},
 	openDialog: (blockedCapability = undefined) =>
 		set({ dialogOpen: true, blockedCapability: blockedCapability ?? null, error: null }),

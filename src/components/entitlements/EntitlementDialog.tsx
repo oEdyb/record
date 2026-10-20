@@ -22,13 +22,22 @@ export function EntitlementDialog() {
 	if (!snapshot.commerceConfigured) return null;
 
 	const expired = snapshot.access === "read-only";
-	const title = t(expired ? "entitlement.titleExpired" : "entitlement.titleTrial");
+	const reactivate = Boolean(snapshot.reactivationRequired);
+	const title = t(
+		reactivate
+			? "entitlement.titleReactivate"
+			: expired
+				? "entitlement.titleExpired"
+				: "entitlement.titleTrial",
+	);
 	const capability = blockedCapability
 		? t(`entitlement.capability.${blockedCapability}`)
 		: t("entitlement.capability.default");
-	const description = expired
-		? t("entitlement.descriptionExpired", { capability })
-		: t("entitlement.descriptionTrial");
+	const description = reactivate
+		? t("entitlement.descriptionReactivate")
+		: expired
+			? t("entitlement.descriptionExpired", { capability })
+			: t("entitlement.descriptionTrial");
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
 		if (await activate(licenseKey)) setLicenseKey("");

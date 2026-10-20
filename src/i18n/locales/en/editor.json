@@ -155,14 +155,17 @@
 			"trialDay": "Trial {{count}} day",
 			"trialDays": "Trial {{count}} days",
 			"offline": "Klippt Pro, Offline",
-			"readOnly": "Read only"
+			"readOnly": "Read only",
+			"reactivate": "Re-enter license"
 		},
 		"eyebrowReadOnly": "Read-only access",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "Your projects are safe.",
 		"titleTrial": "Make every recording ready to publish.",
+		"titleReactivate": "Enter your license key again.",
 		"descriptionExpired": "Klippt is now read only. Continue with Pro to {{capability}}.",
 		"descriptionTrial": "Your trial includes the complete recorder, editor, automatic direction, and finished exports.",
+		"descriptionReactivate": "Klippt could not read the license saved on this Mac. Your projects and trial date are kept. Enter your key once to continue with Pro.",
 		"capability": {
 			"record": "record new clips",
 			"edit": "edit this project",

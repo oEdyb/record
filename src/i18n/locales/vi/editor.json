@@ -155,14 +155,17 @@
 			"trialDay": "Dùng thử {{count}} ngày",
 			"trialDays": "Dùng thử {{count}} ngày",
 			"offline": "Klippt Pro, Ngoại tuyến",
-			"readOnly": "Chỉ đọc"
+			"readOnly": "Chỉ đọc",
+			"reactivate": "Nhập lại giấy phép"
 		},
 		"eyebrowReadOnly": "Quyền truy cập chỉ đọc",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "Các dự án của bạn vẫn an toàn.",
 		"titleTrial": "Chuẩn bị mọi bản ghi để xuất bản.",
+		"titleReactivate": "Nhập lại khóa giấy phép của bạn.",
 		"descriptionExpired": "Klippt hiện ở chế độ chỉ đọc. Tiếp tục với Pro để {{capability}}.",
 		"descriptionTrial": "Bản dùng thử gồm đầy đủ trình ghi, trình chỉnh sửa, điều hướng tự động và xuất video hoàn chỉnh.",
+		"descriptionReactivate": "Klippt không đọc được giấy phép đã lưu trên máy Mac này. Dự án và ngày dùng thử của bạn vẫn được giữ. Nhập khóa một lần để tiếp tục dùng Pro.",
 		"capability": {
 			"record": "ghi các clip mới",
 			"edit": "chỉnh sửa dự án này",
