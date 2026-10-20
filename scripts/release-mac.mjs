@@ -4,6 +4,10 @@
 //
 //   node scripts/release-mac.mjs                 full build, notarize, and stage
 //   node scripts/release-mac.mjs --skip-native   reuse the helpers already in electron/native/bin
+//   node scripts/release-mac.mjs --rehearsal     build, notarize, and staple only; stages nothing
+//
+// A rehearsal proves signing and notarization while the dependency approval or notices are not
+// yet signed off. Its output is never publishable: the release gates it skips are the reason.
 //
 // Nothing here uploads. `scripts/publish-mac-release.mjs` publishes a staged release.
 
@@ -45,9 +49,15 @@ export function assertNotaryAccepted(result) {
 }
 
 export function parseArguments(args) {
-	const options = { skipNative: false, allowDirty: false, allowUnconfiguredCommerce: false };
+	const options = {
+		skipNative: false,
+		allowDirty: false,
+		allowUnconfiguredCommerce: false,
+		rehearsal: false,
+	};
 	for (const arg of args) {
 		if (arg === "--skip-native") options.skipNative = true;
+		else if (arg === "--rehearsal") options.rehearsal = true;
 		else if (arg === "--allow-dirty") options.allowDirty = true;
 		else if (arg === "--allow-unconfigured-commerce") options.allowUnconfiguredCommerce = true;
 		else throw new Error(`Unknown option: ${arg}`);
@@ -66,6 +76,29 @@ function read(command, args, options = {}) {
 
 function step(title) {
 	console.log(`\n=== ${title}`);
+}
+
+/** The signed dependency approval and the shipped notices must hold before anything is built. */
+async function releaseGateProblem() {
+	const scripts = path.join(ROOT, "scripts");
+	try {
+		const { verifyApprovedDependencies } = await import(
+			pathToFileURL(path.join(scripts, "check-approved-dependencies.mjs")).href
+		);
+		verifyApprovedDependencies(ROOT);
+		const { verifyThirdPartyInventory } = await import(
+			pathToFileURL(path.join(scripts, "generate-third-party-inventory.mjs")).href
+		);
+		await verifyThirdPartyInventory({ root: ROOT });
+		return null;
+	} catch (error) {
+		return (
+			`Release gate failed: ${error.message}\n` +
+			"After reviewing the dependency inputs, the owner re-signs them with:\n\n" +
+			"    ssh-keygen -Y sign -f ~/.ssh/klippt_dependency_approval -n klippt-dependency-approval supply-chain/approved-dependency-inputs.json\n\n" +
+			"then regenerates the notices with: node scripts/generate-third-party-inventory.mjs --write"
+		);
+	}
 }
 
 async function preflight(options, notaryProfile) {
@@ -93,6 +126,9 @@ async function preflight(options, notaryProfile) {
 				`Run this once yourself; it asks for an app-specific password and stores it in the Keychain:\n\n    ${notaryProfileSetupCommand(notaryProfile)}\n`,
 		);
 	}
+	const gateProblem = await releaseGateProblem();
+	if (gateProblem && !options.rehearsal) throw new Error(gateProblem);
+	if (gateProblem) console.warn(`REHEARSAL: ${gateProblem}`);
 	const { commercialReleaseProblem } = await import(
 		pathToFileURL(path.join(ROOT, "scripts", "commercial-config.mjs")).href
 	);
@@ -286,6 +322,12 @@ async function main() {
 	createDmg(app, dmg, identity);
 	notarize(dmg, notaryProfile, releaseDir);
 	stapleAndCheck(dmg, app);
+
+	if (options.rehearsal) {
+		console.log(`\nRehearsal passed: ${path.relative(ROOT, dmg)} is notarized and stapled.`);
+		console.log("Nothing was staged; run without --rehearsal once the release gates pass.");
+		return;
+	}
 
 	const zip = path.join(artifacts, names.zip);
 	const sidecar = path.join(releaseDir, names.sidecar);

@@ -42,7 +42,8 @@ describe("local macOS release", () => {
 	});
 
 	it("refuses unknown options", () => {
-		expect(parseArguments(["--skip-native"])).toMatchObject({ skipNative: true });
+		expect(parseArguments(["--skip-native"])).toMatchObject({ skipNative: true, rehearsal: false });
+		expect(parseArguments(["--rehearsal"])).toMatchObject({ rehearsal: true });
 		expect(() => parseArguments(["--notarize=false"])).toThrow(/Unknown option/);
 	});
 });
