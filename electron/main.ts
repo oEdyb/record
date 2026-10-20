@@ -64,6 +64,7 @@ import {
 	canDispatchRecordingReviewMenu,
 	recordingReviewFileMenu,
 } from "./recording/recordingReviewFileMenu";
+import { appendRecordStartTiming, RecordStartTimeline } from "./recording/recordStartTimeline";
 import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
 import { ensureModels, modelPaths } from "./stt/modelManager";
@@ -931,6 +932,10 @@ app.on("will-quit", () => {
 const appReady = !cliCommand && hasSingleInstanceLock ? app.whenReady() : null;
 
 appReady?.then(async () => {
+	const startup = new RecordStartTimeline(Date.now, [
+		{ stage: "process-start", atMs: process.getCreationTime() ?? Date.now() },
+	]);
+	startup.mark("app-ready");
 	powerMonitor.on("shutdown", () => quitCaptureGuard.systemPoweringOff());
 	installKlipptProtocol({
 		rendererDist: RENDERER_DIST,
@@ -1113,7 +1118,7 @@ appReady?.then(async () => {
 		});
 	}
 
-	const recoveredInterruptedRecording = await registerIpcHandlers(
+	const interruptedRecordingCheck = registerIpcHandlers(
 		createEditorWindowWrapper,
 		createSourceSelectorWindowWrapper,
 		createCountdownOverlayWindowWrapper,
@@ -1166,13 +1171,15 @@ appReady?.then(async () => {
 		getWindow: () => transcriptWindow,
 	});
 
-	await loadAndRegisterGlobalShortcuts(globalShortcutHandlers);
+	startup.mark("handlers-registered");
+	const shortcutsReady = loadAndRegisterGlobalShortcuts(globalShortcutHandlers);
 
 	// --bench=<query>: run the export bench instead of the app. Opens the real
 	// editor window (same webPreferences, same preload) pointed at the bench
 	// entry, and quits when it reports back. See src/bench/runBench.ts.
 	const benchArg = process.argv.find((a) => a.startsWith("--bench="));
 	if (benchArg) {
+		await shortcutsReady;
 		ipcMain.handle("bench:finished", () => {
 			// Let the reply reach the renderer before the process goes away.
 			setTimeout(() => app.exit(0), 100);
@@ -1182,9 +1189,30 @@ appReady?.then(async () => {
 		return;
 	}
 
+	// The IPC handlers above are registered synchronously, so the HUD can load now.
+	// Export-journal recovery, the temp-directory sweep and the interrupted-recording
+	// scan only decide whether the editor replaces the HUD, so they run behind it.
+	createWindow();
+	startup.mark("hud-created");
+	mainWindow?.once("ready-to-show", () => {
+		startup.mark("hud-ready-to-show");
+		void appendRecordStartTiming(
+			path.join(app.getPath("userData"), "diagnostics", "startup-timing.jsonl"),
+			{
+				recordedAt: new Date().toISOString(),
+				success: true,
+				action: "launch",
+				steps: startup.steps(),
+			},
+		).catch(() => undefined);
+	});
+
+	const recoveredInterruptedRecording = await interruptedRecordingCheck.catch((error) => {
+		console.warn("[startup] interrupted-recording check failed:", error);
+		return false;
+	});
+	await shortcutsReady;
 	if (recoveredInterruptedRecording) {
 		createEditorWindowWrapper();
-	} else {
-		createWindow();
 	}
 });
