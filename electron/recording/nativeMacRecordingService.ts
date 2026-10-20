@@ -255,7 +255,10 @@ export class NativeMacRecordingService {
 				this.helper = helper;
 				this.deps.onStartStage?.("helper-spawned");
 				await helper.waitForStart();
-				await this.persistRecoverySession();
+				// The journal written before the helper spawned already covers this clip. Originals
+				// reported before readiness queued their own entries; wait only for those instead of
+				// a further durable rewrite on the way to the HUD's first second.
+				await this.recoveryWrites;
 				this.deps.onStartStage?.("recovery-updated");
 				if (!helper.isRunning() || this.fatalError) {
 					throw new Error(
