@@ -9,7 +9,8 @@
 // job emits a JSON sidecar and `merge` folds both into ONE feed with two `files:` entries.
 //
 //   describe <zip> <version> <out.json>     — per-arch, on the macOS runner
-//   merge <a.json> <b.json> <out.yml>       — once, on the publish runner
+//   merge <a.json> [b.json] <out.yml>       — once, on the publish runner; one sidecar for an
+//                                            Apple Silicon only release
 //
 // JSON in between rather than parsing YAML back: nothing here needs a YAML parser, and the
 // repo has no dependency that provides one outside electron-builder's own tree.
@@ -44,8 +45,8 @@ export function archOf(url) {
 /** Pure: entries in, YAML out. The ordering and fallback rules live here so they are testable
  *  without a macOS runner — nothing else in this repo can exercise them. */
 export function buildFeedYml(entries, now = new Date()) {
-	if (entries.length !== 2) {
-		throw new Error(`expected exactly 2 architecture sidecars, got ${entries.length}`);
+	if (entries.length !== 1 && entries.length !== 2) {
+		throw new Error(`expected 1 or 2 architecture sidecars, got ${entries.length}`);
 	}
 	const versions = new Set(entries.map((entry) => entry.version));
 	if (versions.size !== 1) {
@@ -53,13 +54,14 @@ export function buildFeedYml(entries, now = new Date()) {
 	}
 	const arm64 = entries.filter((entry) => archOf(entry.url) === "arm64");
 	if (arm64.length !== 1) {
-		throw new Error(`expected exactly one arm64 and one x64 sidecar, got ${arm64.length} arm64`);
+		throw new Error(`expected exactly one arm64 sidecar, got ${arm64.length} arm64`);
 	}
 
 	// `path`/`sha512` at the top level are what pre-arch-aware clients read. Point them at the
-	// x64 entry: an Apple Silicon Mac runs an Intel build under Rosetta, whereas an Intel Mac
-	// handed an arm64 build cannot run it at all. Degrade to slow, never to broken.
-	const fallback = entries.find((entry) => archOf(entry.url) === "x64");
+	// x64 entry when there is one: an Apple Silicon Mac runs an Intel build under Rosetta,
+	// whereas an Intel Mac handed an arm64 build cannot run it at all. An Apple Silicon only
+	// release has nothing else to point at.
+	const fallback = entries.find((entry) => archOf(entry.url) === "x64") ?? arm64[0];
 	// Sorted so the feed is byte-identical whichever arch job finishes first. electron-updater
 	// selects by filtering, never by position, so this costs nothing and makes the published
 	// artifact diffable between releases.
@@ -99,7 +101,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 	else if (command === "merge") merge(args.slice(0, -1), args.at(-1));
 	else {
 		console.error("usage: mac-update-feed.mjs describe <zip> <version> <out.json>");
-		console.error("       mac-update-feed.mjs merge <a.json> <b.json> <out.yml>");
+		console.error("       mac-update-feed.mjs merge <a.json> [b.json] <out.yml>");
 		process.exit(2);
 	}
 }

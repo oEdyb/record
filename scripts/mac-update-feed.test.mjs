@@ -51,9 +51,15 @@ describe("buildFeedYml", () => {
 		expect(buildFeedYml([X64, ARM], NOW)).toBe(buildFeedYml([ARM, X64], NOW));
 	});
 
-	it("refuses a half-built feed rather than publishing one arch", () => {
-		expect(() => buildFeedYml([ARM], NOW)).toThrow(/exactly 2/);
-		expect(() => buildFeedYml([ARM, X64, X64], NOW)).toThrow(/exactly 2/);
+	it("emits an Apple Silicon only feed whose fallback is the arm64 build", () => {
+		const yml = buildFeedYml([ARM], NOW);
+		expect(yml.match(/^ {2}- url:/gm)).toHaveLength(1);
+		expect(yml).toMatch(/^path: Openscreen-Mac-arm64-1\.9\.3\.zip$/m);
+	});
+
+	it("refuses a feed without exactly one arm64 build", () => {
+		expect(() => buildFeedYml([X64], NOW)).toThrow(/one arm64/);
+		expect(() => buildFeedYml([ARM, X64, X64], NOW)).toThrow(/1 or 2/);
 		expect(() => buildFeedYml([ARM, ARM], NOW)).toThrow(/one arm64/);
 	});
 

@@ -114,4 +114,36 @@ describe("owned update release", () => {
 			/missing LGPL release evidence/,
 		);
 	});
+
+	it("stages an Apple Silicon only release with only the Mac feed", () => {
+		const root = mkdtempSync(path.join(os.tmpdir(), "klippt-release-test-"));
+		const output = path.join(root, "staged");
+		const source = path.join(root, "artifacts");
+		mkdirSync(source, { recursive: true });
+		for (const fileName of [files[0], files[4]])
+			writeFileSync(path.join(source, fileName), fileName);
+		for (const fileName of [
+			...sourceOfferFileNames(sourcePolicy),
+			...nativeFfmpegEvidenceFileNames("darwin-arm64"),
+		]) {
+			writeFileSync(path.join(source, fileName), fileName);
+		}
+		writeFileSync(
+			path.join(source, "latest-mac.yml"),
+			stringify({ files: [descriptor(files[4])] }),
+		);
+
+		const manifest = stageUpdateRelease(source, version, output, undefined, ["darwin-arm64"]);
+		expect(manifest.downloads).toEqual({
+			"darwin-arm64": `https://updates.dyberg.co/klippt/${files[0]}`,
+		});
+		expect(Object.keys(manifest.artifacts).sort()).toEqual(
+			[
+				files[0],
+				files[4],
+				...sourceOfferFileNames(sourcePolicy),
+				...nativeFfmpegEvidenceFileNames("darwin-arm64"),
+			].sort(),
+		);
+	});
 });
