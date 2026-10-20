@@ -75,5 +75,10 @@
 		"accessibilityTitle": "Allow Accessibility for a sharp, smooth cursor",
 		"accessibilityDetail": "{{app}} reads your pointer position so the cursor stays crisp in your video. Switch {{app}} on in System Settings → Privacy & Security → Accessibility, then press Record again.",
 		"accessibilityMissingHelper": "Part of {{app}} is missing, so the editable cursor is unavailable. Reinstall {{app}}, or switch the cursor to System in Settings."
+	},
+	"menu": {
+		"newRecording": "New Recording",
+		"recordings": "Recordings…",
+		"saveVideo": "Save Video…"
 	}
 }

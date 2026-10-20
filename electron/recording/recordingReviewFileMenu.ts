@@ -1,4 +1,5 @@
 import type { MenuItemConstructorOptions } from "electron";
+import { mainT } from "../i18n";
 
 export type RecordingReviewMenuChannel =
 	| "menu-new-project"
@@ -23,19 +24,19 @@ export function recordingReviewFileMenu(
 	return [
 		{
 			id: "recording-new",
-			label: "Record",
+			label: mainT("common", "menu.newRecording"),
 			accelerator: "CmdOrCtrl+N",
 			click: () => send("menu-new-project"),
 		},
 		{
 			id: "recording-library",
-			label: "Recordings…",
+			label: mainT("common", "menu.recordings"),
 			accelerator: "CmdOrCtrl+O",
 			click: () => send("menu-load-project"),
 		},
 		{
 			id: "recording-save",
-			label: "Save video…",
+			label: mainT("common", "menu.saveVideo"),
 			accelerator: "CmdOrCtrl+S",
 			click: () => send("menu-save-project"),
 		},

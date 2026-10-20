@@ -34,9 +34,9 @@ describe("native recorder File menu", () => {
 		const send = vi.fn(),
 			items = recordingReviewFileMenu(send);
 		expect(items.map(({ label, accelerator }) => ({ label, accelerator }))).toEqual([
-			{ label: "Record", accelerator: "CmdOrCtrl+N" },
+			{ label: "New Recording", accelerator: "CmdOrCtrl+N" },
 			{ label: "Recordings…", accelerator: "CmdOrCtrl+O" },
-			{ label: "Save video…", accelerator: "CmdOrCtrl+S" },
+			{ label: "Save Video…", accelerator: "CmdOrCtrl+S" },
 		]);
 		for (const item of items)
 			item.click?.({} as Electron.MenuItem, undefined, {} as Electron.KeyboardEvent);
