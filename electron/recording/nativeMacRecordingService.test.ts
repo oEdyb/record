@@ -101,6 +101,7 @@ describe("NativeMacRecordingService", () => {
 			onRecordingStateChange: vi.fn(),
 			onFatalError: vi.fn(),
 			onAppStopped: vi.fn(),
+			freeDiskBytes: vi.fn(async () => 100 * 1024 ** 3),
 		};
 	});
 
@@ -510,6 +511,16 @@ describe("NativeMacRecordingService", () => {
 		await service.start({ ...baseRequest, recordingId: 101 });
 		helper.stop.mockReturnValueOnce(new Promise(() => undefined));
 		await expect(service.stopBeforeQuit(20)).resolves.toBe(true);
+	});
+
+	it("refuses to start a take on a nearly full disk", async () => {
+		vi.mocked(deps.freeDiskBytes!).mockResolvedValueOnce(200 * 1024 ** 2);
+		const service = new NativeMacRecordingService(deps);
+		await expect(service.start(baseRequest)).resolves.toMatchObject({
+			success: false,
+			error: expect.stringContaining("free on the recordings disk"),
+		});
+		expect(deps.createHelper).not.toHaveBeenCalled();
 	});
 
 	it("hands a take stopped for quit to the HUD's next Stop, once", async () => {

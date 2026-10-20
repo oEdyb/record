@@ -3262,6 +3262,13 @@ export function registerIpcHandlers(
 				hudWindow.webContents.send("native-mac-recording-error", failure);
 			}
 		},
+		onStorageLow: (status) => {
+			const hudWindow = getMainWindow();
+			if (hudWindow && !hudWindow.isDestroyed()) {
+				hudWindow.webContents.send("native-mac-recording-storage-low", status);
+			}
+		},
+		onStorageCritical: () => notifyNativeMacInterruption("disk-low"),
 		onAppStopped: () => {
 			const hudWindow = getMainWindow();
 			if (hudWindow && !hudWindow.isDestroyed()) {

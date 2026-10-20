@@ -166,7 +166,10 @@ export type NativeMacRecordingInterruption =
 	| "source-inactive"
 	| "source-active"
 	| "screen-locked"
-	| "system-sleep";
+	| "system-sleep"
+	| "disk-low";
+
+export type NativeMacStorageStatus = { freeBytes: number; minutesLeft: number | null };
 
 export function parseNativeMacRecordingClip(value: unknown): RecordingSessionClip | null {
 	if (!value || typeof value !== "object") return null;

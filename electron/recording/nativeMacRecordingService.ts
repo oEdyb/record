@@ -29,6 +29,12 @@ import {
 	persistNativeMacRecoveryJournal,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+import {
+	freeDiskBytes,
+	RecordingStorageMonitor,
+	type RecordingStorageStatus,
+	storageStartError,
+} from "./recordingStorage";
 
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
@@ -88,6 +94,11 @@ export type NativeMacRecordingServiceDependencies = {
 	onFatalError: (failure: NativeMacRecordingFailure) => void;
 	/** The app stopped a take on its own; the HUD still shows it recording until told. */
 	onAppStopped?: () => void;
+	freeDiskBytes?: (directory: string) => Promise<number>;
+	/** Minutes of space left at the current write rate fell to 5 or 1. */
+	onStorageLow?: (status: RecordingStorageStatus) => void;
+	/** Free space is nearly gone; the live clip must close while it still can. */
+	onStorageCritical?: (status: RecordingStorageStatus) => void;
 };
 
 export type NativeMacRecordingStopResult = {
@@ -126,8 +137,17 @@ export class NativeMacRecordingService {
 	private acceptsOriginalMetadata = false;
 	/** A take the app stopped on its own (quit), kept until the HUD's own Stop collects it. */
 	private appStoppedResult: NativeMacRecordingStopResult | null = null;
+	private readonly storage: RecordingStorageMonitor;
 
-	constructor(private readonly deps: NativeMacRecordingServiceDependencies) {}
+	constructor(private readonly deps: NativeMacRecordingServiceDependencies) {
+		this.storage = new RecordingStorageMonitor({
+			directory: deps.recordingsDir,
+			now: deps.now,
+			freeBytes: deps.freeDiskBytes ?? freeDiskBytes,
+			onLow: (status) => deps.onStorageLow?.(status),
+			onCritical: (status) => deps.onStorageCritical?.(status),
+		});
+	}
 
 	get captureBounds() {
 		return this.helper?.captureBounds ?? null;
@@ -194,6 +214,10 @@ export class NativeMacRecordingService {
 				await this.deps.prepareCapturePermissions(request);
 				this.deps.onStartStage?.("permissions-checked");
 				await fs.mkdir(this.deps.recordingsDir, { recursive: true });
+				const storageError = storageStartError(
+					await (this.deps.freeDiskBytes ?? freeDiskBytes)(this.deps.recordingsDir),
+				);
+				if (storageError) return { success: false, error: storageError };
 
 				const cursorStartTimeMs = this.deps.now();
 				if (cursorCaptureMode === "editable-overlay") {
@@ -239,6 +263,7 @@ export class NativeMacRecordingService {
 					);
 				}
 				this.cursorOffsetMs = Math.max(0, this.deps.now() - cursorStartTimeMs);
+				this.storage.start();
 				this.deps.onRecordingStateChange(true);
 				return { success: true, recordingId, path: outputPath, helperPath };
 			} catch (error) {
@@ -419,6 +444,7 @@ export class NativeMacRecordingService {
 				this.paused = false;
 				this.activeClipIndex = clipIndex;
 				this.clipCursorModes.set(clipIndex, this.cursorCaptureMode);
+				this.storage.rearm();
 				await this.persistRecoverySession();
 				return { success: true, clipIndex };
 			} catch (error) {
@@ -743,6 +769,7 @@ export class NativeMacRecordingService {
 	}
 
 	private reset(): void {
+		this.storage.stop();
 		this.sessionGeneration += 1;
 		this.originals = new Map();
 		this.acceptsOriginalMetadata = false;

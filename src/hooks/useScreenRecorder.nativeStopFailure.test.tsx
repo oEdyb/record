@@ -988,6 +988,22 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
 	});
 
+	it("tells the user how many minutes of disk space the take has left", async () => {
+		let storageListener:
+			| ((status: { freeBytes: number; minutesLeft: number | null }) => void)
+			| undefined;
+		stubNativeMac({
+			onNativeMacRecordingStorageLow: vi.fn((callback) => {
+				storageListener = callback;
+				return vi.fn();
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		act(() => storageListener?.({ freeBytes: 3e9, minutesLeft: 4.9 }));
+		expect(toast.warning).toHaveBeenCalledWith("About 4 minutes of disk space left for this take.");
+	});
+
 	it("leaves the recording state and opens review when the app stopped the take itself", async () => {
 		let appStopListener: (() => void) | undefined;
 		stubNativeMac({

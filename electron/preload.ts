@@ -4,6 +4,7 @@ import type { NativeLinuxRecordingRequest } from "../src/lib/nativeLinuxRecordin
 import type {
 	NativeMacRecordingInterruption,
 	NativeMacRecordingRequest,
+	NativeMacStorageStatus,
 } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
 import type {
@@ -409,6 +410,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			callback(reason);
 		ipcRenderer.on("native-mac-recording-interrupted", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-interrupted", listener);
+	},
+	onNativeMacRecordingStorageLow: (callback: (status: NativeMacStorageStatus) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, status: NativeMacStorageStatus) =>
+			callback(status);
+		ipcRenderer.on("native-mac-recording-storage-low", listener);
+		return () => ipcRenderer.removeListener("native-mac-recording-storage-low", listener);
 	},
 	onNativeMacRecordingStoppedByApp: (callback: () => void) => {
 		const listener = () => callback();

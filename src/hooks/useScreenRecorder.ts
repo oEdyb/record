@@ -70,6 +70,7 @@ const NATIVE_MAC_INTERRUPTION_MESSAGES = {
 	"source-inactive": "The recorded window closed, so recording paused.",
 	"screen-locked": "The screen locked, so recording paused.",
 	"system-sleep": "The Mac is going to sleep, so recording paused.",
+	"disk-low": "The disk is almost full, so recording paused. Free space before you continue.",
 } as const;
 
 function cameraAcquireRetryDelay(error: unknown, retryIndex: number): number | null {
@@ -1121,6 +1122,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		let cleanupNativeMacError: (() => void) | undefined;
 		let cleanupNativeMacAppStop: (() => void) | undefined;
 		let cleanupNativeMacInterruption: (() => void) | undefined;
+		let cleanupNativeMacStorage: (() => void) | undefined;
 
 		if (window.electronAPI?.onStopRecordingFromTray) {
 			cleanupTray = window.electronAPI.onStopRecordingFromTray(() => {
@@ -1162,6 +1164,15 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				},
 			);
 		}
+		if (window.electronAPI?.onNativeMacRecordingStorageLow) {
+			cleanupNativeMacStorage = window.electronAPI.onNativeMacRecordingStorageLow((status) => {
+				if (!nativeMacRecording.current || status.minutesLeft === null) return;
+				const minutes = Math.max(1, Math.floor(status.minutesLeft));
+				toast.warning(
+					`About ${minutes} minute${minutes === 1 ? "" : "s"} of disk space left for this take.`,
+				);
+			});
+		}
 		if (window.electronAPI?.onNativeMacRecordingStoppedByApp) {
 			// Main already stopped and saved the take; Stop collects that result and opens review.
 			cleanupNativeMacAppStop = window.electronAPI.onNativeMacRecordingStoppedByApp(() => {
@@ -1177,6 +1188,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			cleanupNativeMacError?.();
 			cleanupNativeMacAppStop?.();
 			cleanupNativeMacInterruption?.();
+			cleanupNativeMacStorage?.();
 			countdownRunId.current += 1;
 			void safeHideCountdownOverlay(activeRunId);
 			allowAutoFinalize.current = false;
