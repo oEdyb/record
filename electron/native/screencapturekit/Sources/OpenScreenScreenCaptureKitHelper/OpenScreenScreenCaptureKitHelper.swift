@@ -30,6 +30,7 @@ struct OpenScreenScreenCaptureKitHelper {
 					await recorder.stop()
 				}
 			}
+			recorder.submitCommand = { operation in _ = commandExecutor.submit(operation) }
 			recorder.warmCamera = await HelperWarmup.takeWarmCamera(for: request)
 			try await recorder.start()
 			// The app gone (closed stdin) or a SIGTERM still closes the clip with a normal

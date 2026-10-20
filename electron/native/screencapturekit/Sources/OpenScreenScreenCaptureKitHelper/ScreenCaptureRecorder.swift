@@ -48,6 +48,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var activeConfiguration: SCStreamConfiguration?
 	/// The live frame interval while a paused stream runs throttled. Command lane only.
 	private var pausedFullFrameInterval: CMTime?
+	/// Runs work on the helper's serialized command lane, so a delayed throttle can never
+	/// overlap Continue, Stop or a reconfiguration.
+	var submitCommand: ((@escaping @Sendable () async -> Void) -> Void)?
+	private var pauseGeneration = 0
 	private var writer: AVAssetWriter?
 	private var cameraCapture: NativeCameraCapture?
 	private var activeFilterIgnoresExcludedWindows = false
@@ -339,6 +343,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		let boundary = stateQueue.sync { () -> CMTime? in
 			guard !isStopping else { return nil }
 			isStopping = true
+			pauseGeneration += 1
 			return terminationBoundary.endingAt(requestedEndTime)
 		}
 		guard let endTime = boundary else { return }
@@ -421,7 +426,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				"event": "recording-paused",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
 			])
-			await throttlePausedStream()
+			schedulePausedThrottle()
 			await ShareableContentCache.shared.keepFresh(every: ContentSnapshotRule.refreshSeconds)
 		} catch {
 			emitError(code: "clip-finalize-failed", message: "\(error)")
@@ -430,6 +435,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 	func resume() async {
 		await ShareableContentCache.shared.stopKeepingFresh()
+		stateQueue.sync { pauseGeneration += 1 }
 		let resumeState = stateQueue.sync {
 			(!isStopping && isPaused && !hasTerminalFailure, hasTerminalFailure)
 		}
@@ -549,6 +555,21 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	/// A paused take keeps its stream so Continue starts at once, but nothing is written:
 	/// a few frames a second keep the resume seed fresh without full-rate composition.
 	static let pausedFrameInterval = CMTime(value: 1, timescale: 5)
+	/// Restoring the rate costs Continue about 70-130 ms (measured October 20), so only a
+	/// pause long enough to matter for power is throttled.
+	static let pausedThrottleDelayNanoseconds: UInt64 = 10_000_000_000
+
+	private func schedulePausedThrottle() {
+		guard let submitCommand else { return }
+		let generation = stateQueue.sync { pauseGeneration }
+		Task.detached { [weak self] in
+			try? await Task.sleep(nanoseconds: Self.pausedThrottleDelayNanoseconds)
+			submitCommand { [weak self] in
+				guard let self, self.stateQueue.sync(execute: { self.pauseGeneration == generation && self.isPaused }) else { return }
+				await self.throttlePausedStream()
+			}
+		}
+	}
 
 	private func throttlePausedStream() async {
 		guard pausedFullFrameInterval == nil, let stream, let activeConfiguration,
@@ -1161,6 +1182,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					originalPayload[key] = original.path
 					originalPayload[key == "webcamVideoPath" ? "webcamOffsetMs" : key.replacingOccurrences(of: "Path", with: "OffsetMs")] = original.offsetMs
 				}
+			} catch let empty as OriginalTrackWriter.NoSamples where Self.sourceCouldNotHaveStarted(start: detached.startTime, last: detached.lastTime) {
+				// A clip shorter than the source startup allowance can close before a microphone or
+				// camera delivers; that clip simply has no such original.
+				emit(["event": "warning", "code": "original-empty", "key": key, "clipIndex": detached.index, "message": "\(empty)"])
 			} catch {
 				let message = boundaryWarnings.record(error)
 				emit(["event": "warning", "code": "original-track-failed", "message": message])
@@ -1194,6 +1219,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		// fractional millisecond.
 		let durationMs = max(1, Int(ceil(durationSeconds * 1000)))
 		return FinalizedClip(index: detached.index, path: detached.path, durationMs: durationMs, originals: originalPayload)
+	}
+
+	static func sourceCouldNotHaveStarted(start: CMTime?, last: CMTime?) -> Bool {
+		guard let start, let last, start.isNumeric, last.isNumeric else { return true }
+		return CMTimeGetSeconds(last - start) < RecordingStartup.sourceDeadlineSeconds
 	}
 
 	static func sameCaptureExceptExcludedWindows(_ current: RecordingRequest, _ next: RecordingRequest) -> Bool {
