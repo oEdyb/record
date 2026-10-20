@@ -81,7 +81,12 @@ final class RecordingStartupTests: XCTestCase {
 
 	func testOnlyAClipShorterThanTheSourceAllowanceExcusesAnEmptyOriginal() {
 		let start = CMTime(seconds: 10, preferredTimescale: 600)
-		XCTAssertTrue(ScreenCaptureRecorder.sourceCouldNotHaveStarted(start: start, last: start + CMTime(seconds: 0.4, preferredTimescale: 600)))
-		XCTAssertFalse(ScreenCaptureRecorder.sourceCouldNotHaveStarted(start: start, last: start + CMTime(seconds: 2.5, preferredTimescale: 600)))
+		let after = { (seconds: Double) in start + CMTime(seconds: seconds, preferredTimescale: 600) }
+		// A source that has not delivered on this stream gets the startup allowance.
+		XCTAssertTrue(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: false, start: start, end: after(1.5)))
+		XCTAssertFalse(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: false, start: start, end: after(2.5)))
+		// One that already delivered is only excused for a few buffers after Continue.
+		XCTAssertTrue(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: true, start: start, end: after(0.3)))
+		XCTAssertFalse(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: true, start: start, end: after(1.5)))
 	}
 }

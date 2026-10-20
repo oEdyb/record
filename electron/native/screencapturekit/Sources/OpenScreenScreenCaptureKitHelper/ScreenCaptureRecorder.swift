@@ -61,6 +61,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var originals: [String: OriginalTrackWriter] = [:]
 	private var originalOwners: [String: OriginalSourceWriter] = [:]
 	private var readyOriginals: Set<String> = []
+	/// Sources that have delivered since the current stream started; owned by `sampleQueue`.
+	private var originalsStartedOnStream: Set<String> = []
 	private var droppedOriginalSamples: [String: Int] = [:]
 	private var readyAudioTracks: Set<String> = []
 	private var startup = RecordingStartup()
@@ -200,7 +202,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		let previous = stream
 		stream = replacement
 		stateQueue.sync { streamRecovery.install(replacement) }
-		sampleQueue.sync { frameCache.invalidateCapturedFrame() }
+		sampleQueue.sync {
+			frameCache.invalidateCapturedFrame()
+			originalsStartedOnStream = []
+		}
 		if !keepingPrevious {
 			try? await previous?.stopCapture()
 			emit(["event": "reconfigure-stage", "key": "previous-stopped"])
@@ -1164,6 +1169,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 		emitStopStage("main-written")
 		var originalPayload: [String: Any] = [:]
+		let startedOnStream = sampleQueue.sync { originalsStartedOnStream }
+		let clipEnd = effectiveEndTime.isNumeric ? effectiveEndTime : detached.lastTime
 		for (key, original) in detached.originals {
 			defer {
 				let owner = detached.sourceOwners[key]
@@ -1182,9 +1189,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					originalPayload[key] = original.path
 					originalPayload[key == "webcamVideoPath" ? "webcamOffsetMs" : key.replacingOccurrences(of: "Path", with: "OffsetMs")] = original.offsetMs
 				}
-			} catch let empty as OriginalTrackWriter.NoSamples where Self.sourceCouldNotHaveStarted(start: detached.startTime, last: detached.lastTime) {
-				// A clip shorter than the source startup allowance can close before a microphone or
-				// camera delivers; that clip simply has no such original.
+			} catch let empty as OriginalTrackWriter.NoSamples where Self.originalMayBeEmpty(
+				sourceAlreadyDelivered: startedOnStream.contains(key), start: detached.startTime, end: clipEnd
+			) {
+				// A clip can close before a microphone or camera delivers: within the startup
+				// allowance of a new stream, or within a few buffers of Continue. That clip simply
+				// has no such original; a longer silent source still fails loudly.
 				emit(["event": "warning", "code": "original-empty", "key": key, "clipIndex": detached.index, "message": "\(empty)"])
 			} catch {
 				let message = boundaryWarnings.record(error)
@@ -1221,9 +1231,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		return FinalizedClip(index: detached.index, path: detached.path, durationMs: durationMs, originals: originalPayload)
 	}
 
-	static func sourceCouldNotHaveStarted(start: CMTime?, last: CMTime?) -> Bool {
-		guard let start, let last, start.isNumeric, last.isNumeric else { return true }
-		return CMTimeGetSeconds(last - start) < RecordingStartup.sourceDeadlineSeconds
+	static let resumedSourceAllowanceSeconds = 0.5
+
+	static func originalMayBeEmpty(sourceAlreadyDelivered: Bool, start: CMTime?, end: CMTime?) -> Bool {
+		guard let start, let end, start.isNumeric, end.isNumeric else { return true }
+		let allowance = sourceAlreadyDelivered ? resumedSourceAllowanceSeconds : RecordingStartup.sourceDeadlineSeconds
+		return CMTimeGetSeconds(end - start) < allowance
 	}
 
 	static func sameCaptureExceptExcludedWindows(_ current: RecordingRequest, _ next: RecordingRequest) -> Bool {
@@ -1375,6 +1388,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 							}
 							if let metadata = completed.metadata {
 								self.readyOriginals.insert(key)
+								self.originalsStartedOnStream.insert(key)
 								self.emitOriginalStart(metadata, key: key, clipIndex: clipIndex)
 								self.acknowledgeClipReadiness()
 							}
