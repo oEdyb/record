@@ -78,4 +78,10 @@ final class RecordingStartupTests: XCTestCase {
 		XCTAssertEqual(try startup.checkDeadline(at: epoch + time(3), videoAppended: false, readyOriginals: [], readyAudio: []), [],
 			"A cancelled startup never fails a paused or stopped take")
 	}
+
+	func testOnlyAClipShorterThanTheSourceAllowanceExcusesAnEmptyOriginal() {
+		let start = CMTime(seconds: 10, preferredTimescale: 600)
+		XCTAssertTrue(ScreenCaptureRecorder.sourceCouldNotHaveStarted(start: start, last: start + CMTime(seconds: 0.4, preferredTimescale: 600)))
+		XCTAssertFalse(ScreenCaptureRecorder.sourceCouldNotHaveStarted(start: start, last: start + CMTime(seconds: 2.5, preferredTimescale: 600)))
+	}
 }
