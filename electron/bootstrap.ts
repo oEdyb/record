@@ -1,7 +1,12 @@
+import { enableCompileCache } from "node:module";
 import path from "node:path";
 import { app } from "electron";
 import { APP_DISPLAY_NAME } from "../src/lib/brand";
 import { registerKlipptScheme } from "./localMediaProtocol";
+
+// V8 code cache for the bundles imported below (Node 22.8+, never throws). The first launch
+// after an update compiles and writes it; later launches skip compiling the main bundle.
+enableCompileCache();
 
 registerKlipptScheme();
 
