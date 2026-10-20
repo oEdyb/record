@@ -100,7 +100,17 @@ export class EntitlementService extends EventEmitter {
 
 	async getSnapshot(): Promise<EntitlementSnapshot> {
 		await this.ready;
-		return this.buildSnapshot();
+		const snapshot = this.buildSnapshot();
+		if (!this.mayRecoverByRevalidating(snapshot)) return snapshot;
+		// A stored license is about to read as read-only, either because its offline grace ran
+		// out or because the last answer was "not active". Ask the provider once before locking
+		// the user out; a renewed subscription or a returned network unlocks immediately.
+		try {
+			return await this.refresh();
+		} catch (error) {
+			console.warn("Could not revalidate the Klippt license before read-only:", error);
+			return this.buildSnapshot();
+		}
 	}
 
 	async assertCapability(capability: EntitlementCapability): Promise<void> {
@@ -213,6 +223,16 @@ export class EntitlementService extends EventEmitter {
 		};
 		await this.persistAndEmit();
 		return this.buildSnapshot();
+	}
+
+	private mayRecoverByRevalidating(snapshot: EntitlementSnapshot): boolean {
+		return (
+			snapshot.access === "read-only" &&
+			this.options.config.commerceConfigured &&
+			!this.options.config.forceStatus &&
+			Boolean(this.options.provider) &&
+			Boolean(this.state.license)
+		);
 	}
 
 	private buildSnapshot(): EntitlementSnapshot {
