@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, "..");
-const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "release", "target"]);
+const SKIPPED_DIRECTORIES = new Set([".claude", ".git", "node_modules", "release", "target"]);
 const RUSTSEC_ID = /^RUSTSEC-\d{4}-\d{4}$/;
 
 function portable(relativePath) {
