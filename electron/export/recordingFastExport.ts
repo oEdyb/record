@@ -376,14 +376,15 @@ export async function prepareRecordingFastExport(
 	const timeoutMs = passTimeoutMs(sourceBytes);
 	const report = fastExportProgress(durationS, params.fps ?? 60);
 	// Reserve the index at the front instead of +faststart, which rewrites the
-	// whole file a second time to move it there. 40 bytes covers each sample's
-	// size, timing, sync and chunk entries; muxing fails rather than truncating.
+	// whole file a second time to move it there. A sample costs at most 44 bytes
+	// of size, timing, sync and chunk entries; 64 leaves margin, and muxing
+	// fails rather than truncating.
 	// The frame bound doubles the nominal rate, capped where a closing sample makes
 	// it read 600, because a variable-rate capture can run above its nominal rate;
 	// slack covers the closing samples themselves.
 	const audioPackets = Math.ceil((durationS * 48_000) / 1024) + clips.length;
 	const videoPackets = Math.ceil(2 * durationS * Math.min(media.fps, 120)) + 600 * clips.length;
-	const moovBytes = 40 * (videoPackets + audioPackets) + 1024 * 1024;
+	const moovBytes = 64 * (videoPackets + audioPackets) + 1024 * 1024;
 	let verificationFps = media.fps;
 	return {
 		expectedBytes:

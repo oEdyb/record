@@ -222,6 +222,96 @@ fn mp4_export_frame_count_follows_output_fps() {
     );
     let probed = pipeline::probe_frame_count(&out.to_string_lossy()).expect("probe");
     assert_eq!(probed, 120, "muxed file disagrees with the reported count");
+    #[cfg(target_os = "macos")]
+    {
+        let boxes = top_level_boxes(&std::fs::read(&out).expect("read mp4"));
+        let order: Vec<&str> = boxes
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .filter(|name| *name != "free")
+            .collect();
+        assert_eq!(
+            order,
+            ["ftyp", "moov", "mdat"],
+            "the index must lead the media"
+        );
+        // A reserved index leaves its unused space as padding; `+faststart` leaves none.
+        let padding: usize = boxes
+            .iter()
+            .filter(|(name, _)| name == "free")
+            .map(|(_, length)| length)
+            .sum();
+        assert!(
+            padding > 512 * 1024,
+            "index was moved after writing ({padding} B padding)"
+        );
+    }
+}
+
+/// Large exports switch to HEVC, so its encoder path must render a complete file.
+#[cfg(target_os = "macos")]
+#[test]
+fn hevc_export_renders_every_frame_through_videotoolbox() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let gpu = Gpu::create(false).expect("gpu");
+    let params = ExportParams {
+        width: 640,
+        height: 360,
+        fps: Some(30),
+        codec: ExportCodec::H265,
+        bitrate: None,
+        normalize_audio: false,
+        even_volume: false,
+        target_lufs: openscreen_compositor::audio::DEFAULT_TARGET_LUFS,
+        peak_ceiling_dbtp: openscreen_compositor::audio::DEFAULT_TRUE_PEAK_CEILING_DBTP,
+    };
+    let comp = Compositor::new_sized(&gpu, params.width, params.height).expect("compositor");
+    let out = dir.join("out_timing_hevc.mp4");
+    let stats = pipeline::run_composited_multi(
+        &[whole_clip(&dir)],
+        &out.to_string_lossy(),
+        &gpu,
+        &comp,
+        &Cfg::c8(),
+        &params,
+        &mut |_| Ok(()),
+    )
+    .expect("hevc export");
+
+    assert_eq!(stats.frames, 120);
+    assert_eq!(stats.encoder_name, "hevc_videotoolbox");
+    assert!(stats.encoder_hardware);
+    assert_eq!(
+        pipeline::probe_frame_count(&out.to_string_lossy()).expect("probe"),
+        120
+    );
+}
+
+/// An MP4's top-level boxes as (name, length), in file order.
+#[cfg(target_os = "macos")]
+fn top_level_boxes(bytes: &[u8]) -> Vec<(String, usize)> {
+    let mut names = Vec::new();
+    let mut offset = 0usize;
+    while offset + 8 <= bytes.len() {
+        let short = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+        let length = match short {
+            1 => u64::from_be_bytes(bytes[offset + 8..offset + 16].try_into().unwrap()) as usize,
+            0 => bytes.len() - offset,
+            n => n,
+        };
+        names.push((
+            String::from_utf8_lossy(&bytes[offset + 4..offset + 8]).into_owned(),
+            length,
+        ));
+        if length < 8 {
+            break;
+        }
+        offset += length;
+    }
+    names
 }
 
 /// The GIF must cover the WHOLE timeline, not just its first

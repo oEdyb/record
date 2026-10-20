@@ -1384,8 +1384,14 @@ pub fn run_composited_multi(
     // décodage, WSOLA, mix, plan de concaténation) était déjà portable — c'est le muxing
     // qui manquait, pas la machinerie.
     let mut audio_encoder = unsafe { AacEncoder::open(octx)? };
+    let scene = comp.scene_snapshot();
     unsafe {
-        crate::export_settings::write_mp4_header(octx)?;
+        match index_reserve_bytes(clips, scene.as_ref(), out_fps) {
+            Some(bytes) => {
+                crate::export_settings::write_mp4_header_with_index_reserve(octx, bytes)?
+            }
+            None => crate::export_settings::write_mp4_header(octx)?,
+        }
     }
     // Save only source windows during video. Decode audio into bounded spools afterward,
     // using the actual video frame counts for exact clip lengths.
@@ -1406,7 +1412,6 @@ pub fn run_composited_multi(
     // ici décodait 1:1 en avançant `t` de `1/fps`, donc elle ignorait tout cela — et c'est
     // exactement le bug de troncature en slow-motion que la doc de `walk_composited_timeline`
     // raconte avoir déjà coûté une fois.
-    let scene = comp.scene_snapshot();
     let walk = unsafe {
         crate::timeline_walk::walk_composited_timeline(
             clips,
@@ -1515,6 +1520,51 @@ pub fn run_composited_multi(
         decoder_path: decoder_path.to_owned(),
         compositor_backend: "metal".to_owned(),
     })
+}
+
+/// Upper bound on the index the export will write, or `None` when the timeline
+/// is too long to reserve and the muxer must move the index after writing instead.
+/// Frames come from the same speed segments the timeline walk renders.
+fn index_reserve_bytes(
+    clips: &[ClipSource],
+    scene: Option<&crate::scene::Scene>,
+    out_fps: i32,
+) -> Option<u64> {
+    let fps = out_fps.max(1) as f64;
+    let max_frames = (24.0 * 3600.0 * fps) as u64;
+    let mut frames = 0_u64;
+    for (index, clip) in clips.iter().enumerate() {
+        if !clip.source_start_sec.is_finite()
+            || !clip.source_end_sec.is_finite()
+            || clip.source_end_sec - clip.source_start_sec > 24.0 * 3600.0
+        {
+            return None;
+        }
+        let clip_scene = scene
+            .map(|scene| scene.for_clip_window(index, clip.source_start_sec, clip.source_end_sec));
+        let segments = crate::regions::speed_segments_for_window(
+            clip_scene
+                .as_ref()
+                .map(|scene| scene.speed_regions.as_slice())
+                .unwrap_or(&[]),
+            clip.source_start_sec,
+            clip.source_end_sec,
+            fps,
+        );
+        for segment in segments {
+            frames = frames.saturating_add(segment.frame_count);
+        }
+        if frames > max_frames {
+            return None;
+        }
+    }
+    let output_sec = frames as f64 / fps;
+    let slack = 600 * clips.len() as u64;
+    let video = frames + slack;
+    let audio = (output_sec * 48_000.0 / 1024.0).ceil() as u64 + slack;
+    Some(crate::export_settings::mp4_index_reserve_bytes(
+        video, audio,
+    ))
 }
 
 /// Draine les paquets de l'encodeur vers le muxer — symétrique de
