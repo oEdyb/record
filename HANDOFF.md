@@ -7,7 +7,7 @@ staples and runs `spctl`; then stages the update release. `--rehearsal` stops af
 `node scripts/publish-mac-release.mjs --root release/<v>/update-release` is a dry run until
 `--yes`, and needs R2 credentials. The feed is arm64-only. License revalidation runs every 12 h,
 after wake and before read-only. Commerce IDs live in `electron/entitlements/commercial-config.json`.
-Website pages are drafts behind a deploy guard. The app is now `co.dyberg.klippt`, with
+Website pages in `website/` are drafts behind a deploy guard. Do not deploy them from this repo. The live site is `~/dev/klippt-site` (klippt.olledyberg.com); once Olle picks klippt.app or klippt.olledyberg.com, move the download, privacy, terms, refund, support and notices pages there. The app is now `co.dyberg.klippt`, with
 `klippt-*` helpers signed `co.dyberg.klippt.*`. An existing `…/openscreen` data folder keeps being used; fresh installs use `…/Klippt`. The installed
 1.9.5 still has the old ID: installing the new build needs Olle's OK, a one-time permission
 re-grant, and a manual install, because Squirrel.Mac cannot cross the ID change (see
