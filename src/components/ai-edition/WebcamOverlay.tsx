@@ -23,8 +23,11 @@ import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import { resolveActiveCameraTrack } from "@/lib/ai-edition/timeline/camera";
 import {
 	CAMERA_SYNC_TOLERANCE_PAUSED_SEC,
+	onPlaybackClockChange,
 	type PlaybackClockRef,
+	type PlaybackLoop,
 	resolveCameraSyncTarget,
+	startPlaybackLoop,
 } from "@/lib/ai-edition/timeline/playback-clock";
 import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
@@ -105,6 +108,7 @@ export function WebcamOverlay(props: WebcamOverlayProps) {
 	clipsRef.current = props.clips;
 	const assetsRef = useRef(assets);
 	assetsRef.current = assets;
+	const loopRef = useRef<PlaybackLoop | null>(null);
 
 	// Drive the camera <video> directly off the shared playback clock: read
 	// it every rAF tick, resolve which clip/camera is active THIS frame, and
@@ -114,9 +118,8 @@ export function WebcamOverlay(props: WebcamOverlayProps) {
 	useEffect(() => {
 		if (!videoEl || !props.clockRef) return;
 		const clockRef = props.clockRef;
-		let raf = 0;
-		const tick = () => {
-			raf = window.requestAnimationFrame(tick);
+		/** Returns whether the camera still had to be moved, so a settled pause can idle. */
+		const tick = (): boolean => {
 			const clock = clockRef.current;
 			const clipsNow = clipsRef.current;
 			const positionNow = locateVirtualPosition(clipsNow, clock.virtualTimeSec);
@@ -130,13 +133,16 @@ export function WebcamOverlay(props: WebcamOverlayProps) {
 				trackNow,
 				positionNow ? positionNow.sourceTimeSec : null,
 			);
-			if (!target) return;
+			if (!target) return false;
+			let moved = target.isPlaying || videoEl.seeking || videoEl.readyState < 2;
 
 			if (videoEl.playbackRate !== target.playbackRate) {
 				videoEl.playbackRate = target.playbackRate;
+				moved = true;
 			}
 
 			if (Math.abs(videoEl.currentTime - target.targetTimeSec) > target.toleranceSec) {
+				moved = true;
 				try {
 					videoEl.currentTime = target.targetTimeSec;
 				} catch {
@@ -148,11 +154,25 @@ export function WebcamOverlay(props: WebcamOverlayProps) {
 				void videoEl.play().catch(() => setHasError(true));
 			} else if (!target.isPlaying && !videoEl.paused) {
 				videoEl.pause();
+				moved = true;
 			}
+			return moved;
 		};
-		raf = window.requestAnimationFrame(tick);
-		return () => window.cancelAnimationFrame(raf);
+		const loop = startPlaybackLoop(tick);
+		loopRef.current = loop;
+		const stopListening = onPlaybackClockChange(clockRef, loop.wake);
+		videoEl.addEventListener("loadeddata", loop.wake);
+		return () => {
+			loop.stop();
+			loopRef.current = null;
+			stopListening();
+			videoEl.removeEventListener("loadeddata", loop.wake);
+		};
 	}, [videoEl, props.clockRef]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: an edit can move the camera while paused.
+	useEffect(() => {
+		loopRef.current?.wake();
+	}, [props.clips, assets]);
 
 	// Fallback for when no clockRef is wired up (defensive — all current call
 	// sites pass one): keep the old prop-driven correction so the overlay

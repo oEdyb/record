@@ -86,8 +86,8 @@ function safelyCall(label: string, call: () => Promise<unknown>) {
 /** Use the rAF timestamp: displays can run at 60, 120, or 144 Hz. */
 const PREVIEW_FRAME_INTERVAL_MS = 1000 / 60;
 /** While paused and untouched, an empty pull costs a main-process round trip
- *  for nothing. After a second without a new frame or command, poll at 10 Hz;
- *  the next command or frame restores 60 Hz. */
+ *  for nothing. After a second without a new frame or command, poll at 10 Hz
+ *  from a timer; the next command or frame restores 60 Hz display frames. */
 const IDLE_PREVIEW_FRAME_INTERVAL_MS = 100;
 const EMPTY_PULLS_BEFORE_IDLE = 60;
 
@@ -242,11 +242,31 @@ export function useNativeCompositorView(
 		let lastGen = 0;
 		let playing = false;
 		let emptyPulls = 0;
+		let idleTimer = 0;
 		const unsubscribeCommands = onCompositorCommand((nextPlaying) => {
 			if (nextPlaying !== undefined) playing = nextPlaying;
 			emptyPulls = 0;
 			nextPullAt = 0;
+			if (idleTimer !== 0) {
+				window.clearTimeout(idleTimer);
+				idleTimer = 0;
+				pullRafHandle = requestAnimationFrame(pullLoop);
+			}
 		});
+		/** Paused and unchanged, the next pull waits on a timer instead of the next
+		 *  display frame: a requestAnimationFrame request alone keeps Chromium
+		 *  producing frames 60 times a second. */
+		const scheduleNextPull = () => {
+			if (!playing && emptyPulls >= EMPTY_PULLS_BEFORE_IDLE) {
+				idleTimer = window.setTimeout(() => {
+					idleTimer = 0;
+					nextPullAt = 0;
+					pullRafHandle = requestAnimationFrame(pullLoop);
+				}, IDLE_PREVIEW_FRAME_INTERVAL_MS);
+			} else {
+				pullRafHandle = requestAnimationFrame(pullLoop);
+			}
+		};
 		// Keep the entire read → bitmap → paint operation in flight. Releasing
 		// after IPC alone lets bitmap promises finish and paint out of order.
 		let inFlight = false;
@@ -256,7 +276,8 @@ export function useNativeCompositorView(
 		 *  pixels), so the canvas is sized from the packet — pixels and canvas can
 		 *  never drift out of sync. Native rendering runs on its own thread. */
 		const pullLoop = (timestamp: number) => {
-			pullRafHandle = requestAnimationFrame(pullLoop);
+			pullRafHandle = 0;
+			scheduleNextPull();
 			if (disposed || inFlight) {
 				return;
 			}
@@ -344,6 +365,8 @@ export function useNativeCompositorView(
 					}
 					cancelAnimationFrame(pullRafHandle);
 					pullRafHandle = 0;
+					window.clearTimeout(idleTimer);
+					idleTimer = 0;
 					setError(cause instanceof Error ? cause.message : String(cause));
 				})
 				.finally(() => {
@@ -418,6 +441,7 @@ export function useNativeCompositorView(
 			if (pullRafHandle !== 0) {
 				cancelAnimationFrame(pullRafHandle);
 			}
+			window.clearTimeout(idleTimer);
 			observer.disconnect();
 			unsubscribeQuality();
 			densityQuery?.removeEventListener("change", onDensityChange);

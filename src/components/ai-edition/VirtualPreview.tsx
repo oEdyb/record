@@ -9,7 +9,12 @@ import { resolvePlaybackSegments } from "@/lib/ai-edition/document/timeline";
 import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import type { AxcutClip, AxcutTrimRange, AxcutZoomRegion } from "@/lib/ai-edition/schema";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
-import type { PlaybackClockRef } from "@/lib/ai-edition/timeline/playback-clock";
+import {
+	type PlaybackClockRef,
+	type PlaybackLoop,
+	publishPlaybackClock,
+	startPlaybackLoop,
+} from "@/lib/ai-edition/timeline/playback-clock";
 import { assetSwitchInFlight, playingFragment } from "@/lib/ai-edition/timeline/playbackSwitch";
 import { findActiveSpeedRegion, type SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import {
@@ -27,6 +32,17 @@ import {
 	IDENTITY_ZOOM_TRANSFORM,
 } from "@/lib/ai-edition/timeline/zoom-preview";
 import styles from "./VirtualPreview.module.css";
+
+/** Media events that end a paused preview's idle wait at once. */
+const PLAYBACK_WAKE_EVENTS = [
+	"play",
+	"pause",
+	"seeking",
+	"seeked",
+	"ratechange",
+	"loadeddata",
+	"emptied",
+] as const;
 
 export interface VideoSource {
 	id: string;
@@ -296,6 +312,7 @@ export function VirtualPreview({
 	// finished, but only after reordering" bug: with no reorder both arrays are identical, so
 	// nothing shows. Assigned after the callback exists, below; read through the ref here so
 	// the tick always invokes the latest closure.
+	const loopRef = useRef<PlaybackLoop | null>(null);
 	const seekToVirtualTimeRef = useRef<
 		| ((
 				nextVirtualTimeSec: number,
@@ -307,12 +324,20 @@ export function VirtualPreview({
 	>(null);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: re-create the rAF when the active source swaps.
 	useEffect(() => {
-		let raf = 0;
-		const tick = () => {
-			raf = window.requestAnimationFrame(tick);
+		let boundVideo: HTMLVideoElement | null = null;
+		const wake = () => loopRef.current?.wake();
+		const bindVideo = (v: HTMLVideoElement | null) => {
+			if (boundVideo === v) return;
+			for (const event of PLAYBACK_WAKE_EVENTS) boundVideo?.removeEventListener(event, wake);
+			boundVideo = v;
+			for (const event of PLAYBACK_WAKE_EVENTS) boundVideo?.addEventListener(event, wake);
+		};
+		/** Returns whether anything moved, so a paused, settled preview can idle. */
+		const tick = (): boolean => {
 			const v = videoRef.current;
+			bindVideo(v);
 			if (!v || !Number.isFinite(v.currentTime)) {
-				return;
+				return false;
 			}
 			const routedAudio = routedAudioRef.current;
 			if (routedAudioActive && routedAudio && Number.isFinite(routedAudio.duration)) {
@@ -331,12 +356,14 @@ export function VirtualPreview({
 			// Publish this frame's live position/rate for other media elements
 			// (webcam) to read directly — see playback-clock.ts for why this
 			// bypasses React state entirely.
-			if (clockRef) {
-				clockRef.current.sourceTimeSec = v.currentTime;
-				clockRef.current.isPlaying = !v.paused;
-				clockRef.current.playbackRate = v.playbackRate;
-				clockRef.current.virtualTimeSec = virtualTimeSecRef.current;
-			}
+			const clockChanged =
+				!!clockRef &&
+				publishPlaybackClock(clockRef, {
+					sourceTimeSec: v.currentTime,
+					isPlaying: !v.paused,
+					playbackRate: v.playbackRate,
+					virtualTimeSec: virtualTimeSecRef.current,
+				});
 			const activeSourceId = videoSourcesRef.current[sourceIndexRef.current]?.id;
 			// Trims only trim ahead during actual playback — scrubbing/paused seeks are
 			// intentionally NOT clamped, so the user can navigate freely into a trim while
@@ -348,7 +375,7 @@ export function VirtualPreview({
 			// A seek into another asset has been requested but React has not swapped the
 			// <video> yet: this element is on its way out, so it must not steer playback.
 			if (assetSwitchInFlight(clipsRef.current, activeClipIdRef.current, activeSourceId)) {
-				return;
+				return true;
 			}
 			if (!v.paused) {
 				// Resolved against the segments of the clip we are ACTUALLY playing (see
@@ -417,11 +444,11 @@ export function VirtualPreview({
 						}
 						const rawTargetTime = getRawVirtualStartTime(nextKeptSegment, clipsRef.current);
 						seekToVirtualTimeRef.current?.(rawTargetTime, true, false, true);
-						return;
+						return true;
 					}
 					v.pause();
 					updateVirtualTime(virtualDurationSecRef.current);
-					return;
+					return true;
 				}
 			}
 			// ponytail: also push setSourceTimeSec every frame (was previously
@@ -445,7 +472,7 @@ export function VirtualPreview({
 			// et le calque curseur ont besoin du temps source même à l'arrêt. Seule la
 			// position de la TIMELINE cesse d'être dictée par le média.
 			if (v.paused) {
-				return;
+				return clockChanged || v.seeking || v.readyState < 2;
 			}
 			if (clipsRef.current.length === 0) {
 				// ponytail: no clip yet (auto-create runs from
@@ -455,7 +482,7 @@ export function VirtualPreview({
 				// playback. The proper timeline-aware mapping kicks in
 				// when the auto-created clip arrives.
 				updateVirtualTime(v.currentTime);
-				return;
+				return true;
 			}
 			if (isProgrammaticSeekRef.current) {
 				isProgrammaticSeekRef.current = false;
@@ -470,7 +497,7 @@ export function VirtualPreview({
 					activeClipIdRef.current = pos.clip.id;
 					updateVirtualTime(clampVirtualTime(clipsRef.current, pos.virtualTimeSec));
 				}
-				return;
+				return true;
 			}
 			const position = locateSourcePosition(
 				clipsRef.current,
@@ -488,7 +515,7 @@ export function VirtualPreview({
 					v.pause();
 					updateVirtualTime(virtualDurationSecRef.current);
 				}
-				return;
+				return true;
 			}
 			activeClipIdRef.current = position.clip.id;
 			const reachedClipEnd = v.currentTime >= (position.clip.sourceEndSec ?? Infinity) - 0.04;
@@ -508,18 +535,28 @@ export function VirtualPreview({
 				if (!nextClip) {
 					v.pause();
 					updateVirtualTime(virtualDurationSecRef.current);
-					return;
+					return true;
 				}
 				seekToVirtualTimeRef.current?.(nextClip.timelineStartSec, true, false, true);
-				return;
+				return true;
 			}
 			updateVirtualTime(clampVirtualTime(clipsRef.current, position.virtualTimeSec));
+			return true;
 		};
-		raf = window.requestAnimationFrame(tick);
-		return () => window.cancelAnimationFrame(raf);
+		const loop = startPlaybackLoop(tick);
+		loopRef.current = loop;
+		return () => {
+			loop.stop();
+			if (loopRef.current === loop) loopRef.current = null;
+			bindVideo(null);
+		};
 		// re-create the rAF when the active source swaps (by asset id, not src —
 		// two clips can point at distinct assets that resolve to the same URL).
 	}, [activeSource?.id, routedAudioActive]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: each of these moves the clock.
+	useEffect(() => {
+		loopRef.current?.wake();
+	}, [virtualTimeSec, clips, playbackClips, sourceIndex]);
 
 	// Promotion changes the prepared element's ref without replacing its decoded media.
 	// The parent must bind transport listeners to that element before the outgoing pause.
@@ -527,6 +564,7 @@ export function VirtualPreview({
 	onVideoElementRef.current = onVideoElement;
 	const attachVideo = useCallback((element: HTMLVideoElement | null) => {
 		videoRef.current = element;
+		loopRef.current?.wake();
 		onVideoElementRef.current?.(element);
 	}, []);
 	// The screen video is silent while the Clean Voice mix carries the sound; the listening
@@ -544,6 +582,7 @@ export function VirtualPreview({
 	const updateVirtualTime = useCallback(
 		(nextTimeSec: number) => {
 			virtualTimeSecRef.current = nextTimeSec;
+			loopRef.current?.wake();
 			setVirtualTimeSec(nextTimeSec);
 			onTimeChange?.(nextTimeSec);
 			// ponytail: mirrors main's per-frame `video.playbackRate = ...`

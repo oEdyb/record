@@ -146,6 +146,24 @@ function mount(clips: AxcutClip[], trimRanges: AxcutTrimRange[] = []) {
 const reportedTimes = (onTimeChange: ReturnType<typeof vi.fn>) =>
 	onTimeChange.mock.calls.map((call) => call[0] as number);
 
+describe("VirtualPreview paused idle", () => {
+	it("stops asking for display frames once paused and settled, and a seek wakes it", () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			const { element } = mount([clip("clip_1", "a1", 0, 10, 0)]);
+			for (let i = 0; i < 40 && frameCallbacks.length > 0; i += 1) tick();
+			expect(frameCallbacks).toHaveLength(0);
+
+			act(() => {
+				fireEvent.seeking(element);
+			});
+			expect(frameCallbacks).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("VirtualPreview playback across a clip boundary", () => {
 	it("uses the ready Clean Voice mix as one synced audio route and falls back as a whole", () => {
 		const sources: VideoSource[] = [

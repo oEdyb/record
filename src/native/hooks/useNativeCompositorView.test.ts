@@ -113,29 +113,53 @@ describe("useNativeCompositorView", () => {
 		view.unmount();
 	});
 
-	it("polls at 10 Hz once a paused preview has been unchanged for a second", async () => {
-		const frame = controlledFrames();
-		mocks.createCompositorView.mockResolvedValue({ id: 7 });
-		mocks.readCompositorFrame.mockResolvedValue(null);
-		const view = renderHook(() => useNativeCompositorView(stubCanvasRef()));
-		await act(async () => undefined);
-		const pullsDuring = async (fromMs: number, toMs: number) => {
-			const before = mocks.readCompositorFrame.mock.calls.length;
-			for (let t = fromMs; t < toMs; t += 1000 / 60) await frame(t);
-			return mocks.readCompositorFrame.mock.calls.length - before;
-		};
+	it("polls at 10 Hz from a timer once a paused preview has been unchanged for a second", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			const frame = controlledFrames();
+			mocks.createCompositorView.mockResolvedValue({ id: 7 });
+			mocks.readCompositorFrame.mockResolvedValue(null);
+			const view = renderHook(() => useNativeCompositorView(stubCanvasRef()));
+			await act(async () => undefined);
+			// Each step lets due timers schedule their frame, then runs display frames.
+			const pullsDuring = async (fromMs: number, toMs: number) => {
+				const before = mocks.readCompositorFrame.mock.calls.length;
+				for (let t = fromMs; t < toMs; t += 1000 / 60) {
+					await act(async () => {
+						vi.advanceTimersByTime(1000 / 60);
+					});
+					await frame(t);
+				}
+				return mocks.readCompositorFrame.mock.calls.length - before;
+			};
+			const framesRequestedDuring = async (ms: number) => {
+				let requested = 0;
+				const original = globalThis.requestAnimationFrame;
+				vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+					requested += 1;
+					return original(callback);
+				});
+				await pullsDuring(0, ms);
+				vi.stubGlobal("requestAnimationFrame", original);
+				return requested;
+			};
 
-		expect(await pullsDuring(0, 1000)).toBeGreaterThanOrEqual(59);
-		const idlePulls = await pullsDuring(1000, 2000);
-		expect(idlePulls).toBeGreaterThanOrEqual(9);
-		expect(idlePulls).toBeLessThanOrEqual(11);
-		sendCommand();
-		expect(await pullsDuring(2000, 2500)).toBeGreaterThanOrEqual(29);
-		sendCommand(true);
-		await pullsDuring(2500, 4000);
-		expect(await pullsDuring(4000, 5000)).toBeGreaterThanOrEqual(59);
-		view.unmount();
-		expect(mocks.commandListeners.size).toBe(0);
+			expect(await pullsDuring(0, 1000)).toBeGreaterThanOrEqual(59);
+			const idlePulls = await pullsDuring(1000, 2000);
+			expect(idlePulls).toBeGreaterThanOrEqual(9);
+			expect(idlePulls).toBeLessThanOrEqual(11);
+			// Idle, a display frame is requested only for each timed pull.
+			expect(await framesRequestedDuring(1000)).toBeLessThanOrEqual(11);
+			sendCommand();
+			expect(await pullsDuring(2000, 2500)).toBeGreaterThanOrEqual(29);
+			sendCommand(true);
+			await pullsDuring(2500, 4000);
+			expect(await pullsDuring(4000, 5000)).toBeGreaterThanOrEqual(59);
+			view.unmount();
+			expect(mocks.commandListeners.size).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("waits for presentation before requesting and reporting another frame", async () => {
