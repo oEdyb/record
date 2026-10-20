@@ -1048,6 +1048,13 @@ export function LaunchWindow() {
 	]);
 
 	useEffect(() => {
+		return window.electronAPI?.onHudStartRecording?.(() => {
+			if (recording || starting || saving) return;
+			handleRecordButtonClick();
+		});
+	}, [handleRecordButtonClick, recording, saving, starting]);
+
+	useEffect(() => {
 		return window.electronAPI?.onHudToggleRecordingPause?.(() => {
 			if (!recording || saving || clipFinalizing || !canPauseRecording) return;
 			togglePaused();

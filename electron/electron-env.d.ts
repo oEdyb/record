@@ -521,6 +521,8 @@ interface Window {
 		updateGlobalShortcuts: (
 			shortcuts: import("../src/lib/shortcuts").ShortcutsConfig,
 		) => Promise<{ success: boolean }>;
+		/** The menu bar item's Start Recording: the HUD records as if its button was pressed. */
+		onHudStartRecording?: (callback: () => void) => () => void;
 		onHudToggleRecordingPause: (callback: () => void) => () => void;
 		writeClipboardText: (text: string) => Promise<void>;
 		hudOverlayHide: () => void;

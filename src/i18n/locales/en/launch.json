@@ -161,5 +161,8 @@
 		"relaunch": "Quit & Reopen",
 		"relaunchHint": "Switch Klippt on in System Settings, then quit and reopen Klippt so macOS applies it.",
 		"settingsHint": "Switch Klippt on in System Settings. This panel updates on its own."
+	},
+	"countdown": {
+		"cancelHint": "Press Record again to cancel"
 	}
 }

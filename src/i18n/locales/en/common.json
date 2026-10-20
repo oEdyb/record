@@ -39,7 +39,9 @@
 		"services": "Services",
 		"hide": "Hide Klippt",
 		"hideOthers": "Hide Others",
-		"unhide": "Show All"
+		"unhide": "Show All",
+		"startRecording": "Start Recording",
+		"showRecorder": "Show Recorder"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} is available. You are using {{currentVersion}}.",

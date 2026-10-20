@@ -754,6 +754,22 @@ describe("LaunchWindow record button", () => {
 		delete (window.electronAPI as Partial<Window["electronAPI"]>).openPrivacySettings;
 	});
 
+	it("starts recording from the menu bar item like a Record click", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		let startFromMenu: () => void = () => undefined;
+		window.electronAPI.onHudStartRecording = vi.fn((callback: () => void) => {
+			startFromMenu = callback;
+			return () => undefined;
+		});
+		renderLaunchWindow();
+		const record = await screen.findByTestId("launch-record-button");
+		await waitFor(() => expect(record).toHaveAttribute("title", "Display 1"));
+
+		act(() => startFromMenu());
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce();
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).onHudStartRecording;
+	});
+
 	it("starts a fresh screen recording with one primary click", async () => {
 		let selected: ProcessedDesktopSource | null = null;
 		stubElectronAPI(vi.fn(async () => selected));

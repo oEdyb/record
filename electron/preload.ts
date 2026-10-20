@@ -575,6 +575,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	updateGlobalShortcuts: (shortcuts: ShortcutsConfig) => {
 		return ipcRenderer.invoke("update-global-shortcuts", shortcuts);
 	},
+	onHudStartRecording: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("hud-start-recording", listener);
+		return () => ipcRenderer.removeListener("hud-start-recording", listener);
+	},
 	onHudToggleRecordingPause: (callback: () => void) => {
 		const listener = () => callback();
 		ipcRenderer.on("hud-toggle-recording-pause", listener);
