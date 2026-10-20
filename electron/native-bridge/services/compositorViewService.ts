@@ -19,6 +19,7 @@ import {
 	type ExportTransactionPhase,
 	type ExportTransactionWarning,
 } from "../../export/atomicExport";
+import { renderedExportCodec } from "../../export/exportCodec";
 import {
 	prepareRecordingFastExport,
 	type RecordingFastExportPlan,
@@ -825,6 +826,8 @@ export class CompositorViewService {
 				sourceDurations.set(sourcePath, duration);
 				return duration;
 			});
+			// The copy path keeps the recording's own codec; only a render can switch.
+			const renderParams = { ...params, codec: renderedExportCodec(params) };
 			let fastExport: RecordingFastExportPlan | null = null;
 			if (params?.preserveRecordingSource) {
 				try {
@@ -900,7 +903,7 @@ export class CompositorViewService {
 							resolvedClips,
 							stagingPath,
 							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
-							params,
+							renderParams,
 							onProgress,
 							exportId,
 						);
@@ -920,7 +923,11 @@ export class CompositorViewService {
 						height,
 						fps: outputFps,
 						durationS: stats.videoDurationS,
-						codec: params?.codec === "h265" ? "h265" : "h264",
+						codec: copiedRecording
+							? params?.codec === "h265"
+								? "h265"
+								: "h264"
+							: renderParams.codec,
 					};
 					try {
 						const operation = addon.verifyVideoExport?.(stagingPath, verifyInput, exportId);
