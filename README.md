@@ -23,7 +23,7 @@ migration has not happened yet. The upstream copyright and permission notice rem
 The Mac core works: clip-native Record, Pause, Continue, Remove previous clip, Stop, review,
 untouched-source handoff, and native MP4/GIF export. The editor UI, in-app chat, `klippt agent`
 CLI, automatic direction, and transcription were archived on 2026-10-05 (tag
-`archive/pre-cleanup-2026-10-05`); existing projects still open and render their stored edits. The current checkpoint uses Electron `44.1.0`, a contained
+`archive/pre-cleanup-2026-10-05`); existing projects still open and render their stored edits. The current checkpoint uses Electron `44.9.1`, a contained
 `klippt://app` origin, central privileged-IPC validation, production fuses, ASAR integrity, and an
 atomic export publisher.
 

@@ -342,4 +342,4 @@ Electron-builder produces AppImage, `.deb`, `.pacman`, and `.rpm` targets. Each 
 
 `package.json#engines` and `.nvmrc` both pin Node.js `22.22.1`. The package manifest pins npm `10.9.4` through both `packageManager` and `engines.npm`. The Nix shell supplies Node 22, while the shared GitHub Actions setup currently requests the Node 22 release line rather than the exact patch.
 
-TypeScript is `5.9.3`, Vite is `7.3.2`, Electron is `44.1.0`, and electron-builder is `26.8.1` in `package.json`. Native versions are controlled by their platform tools and project files rather than a single repository-wide compiler version.
+TypeScript is `5.9.3`, Vite is `7.3.2`, Electron is `44.9.1`, and electron-builder is `26.8.1` in `package.json`. Native versions are controlled by their platform tools and project files rather than a single repository-wide compiler version.
