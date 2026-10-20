@@ -18,10 +18,15 @@ const DEVELOPMENT_ENTITLEMENT: EntitlementSnapshot = {
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 
 const REACTIVATION_PROMPTED_KEY = "klippt.entitlement.reactivationPrompted";
+let promptsReactivation = false;
+let promptedThisSession = false;
 
 /** Opens the license dialog the first time this Mac cannot read the saved key, then never again
- *  until a working key clears the request. */
+ *  until a working key clears the request. Only the window that asked for it prompts, so the
+ *  recorder pill and overlays never spend the one prompt. */
 function shouldPromptReactivation(snapshot: EntitlementSnapshot): boolean {
+	if (!promptsReactivation) return false;
+	if (!snapshot.reactivationRequired) promptedThisSession = false;
 	try {
 		if (!snapshot.reactivationRequired) {
 			window.localStorage.removeItem(REACTIVATION_PROMPTED_KEY);
@@ -31,7 +36,9 @@ function shouldPromptReactivation(snapshot: EntitlementSnapshot): boolean {
 		window.localStorage.setItem(REACTIVATION_PROMPTED_KEY, "1");
 		return true;
 	} catch {
-		return Boolean(snapshot.reactivationRequired);
+		if (!snapshot.reactivationRequired || promptedThisSession) return false;
+		promptedThisSession = true;
+		return true;
 	}
 }
 
@@ -131,7 +138,12 @@ export const useEntitlementStore = create<EntitlementRendererState>((set, get) =
 
 let removeEntitlementListener: (() => void) | null = null;
 
-export async function initializeEntitlements(): Promise<() => void> {
+export async function initializeEntitlements({
+	promptReactivation = false,
+}: {
+	promptReactivation?: boolean;
+} = {}): Promise<() => void> {
+	promptsReactivation = promptReactivation;
 	removeEntitlementListener?.();
 	removeEntitlementListener = null;
 	const api = window.electronAPI;

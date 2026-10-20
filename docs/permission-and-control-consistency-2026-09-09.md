@@ -110,14 +110,18 @@ identifiers, the Developer ID OIDs, and team LF8KF3G42Q, and requires both helpe
 What stays the same:
 - An existing `~/Library/Application Support/openscreen` keeps being used; it is chosen by path,
   not by bundle ID (`electron/userDataLocation.ts`). Projects hold absolute paths into it, so nothing
-  is copied or remapped. A Mac that never ran an OpenScreen-era build starts in `…/Klippt`. Every
+  is copied or remapped. A Mac that never ran an OpenScreen-era build starts in `…/Klippt` and marks
+it with `.klippt-user-data`, so a later `openscreen` folder never switches it back. The legacy match
+is exact-case, so upstream OpenScreen's `Openscreen` folder is never adopted. Every
   trust root (recordings, projects, settings) derives from `app.getPath("userData")`. Renaming an
   existing folder would be a separate migration with a path remap and is not planned.
 - `OPENSCREEN_*` environment variables are still read.
 - The safeStorage Keychain item is still named "Klippt Safe Storage". Its access list trusts the
   old signature, so macOS may ask once to allow the new app. If the key can't be decrypted, Klippt
-  keeps the trial date and the license's offline grace, asks for the license key once, and retries
-  the decrypt on each refresh. Projects stay viewable throughout.
+  keeps the trial date and the license's offline grace, and the editor asks for the license key
+  once. Re-entering the same key reuses the existing Lemon Squeezy activation. If the Keychain also
+  refuses to store it, the key unlocks that session from memory and is asked for again next launch.
+  Projects stay viewable throughout.
 
 What changes once per Mac that crosses the change:
 - TCC grants belong to the old ID. Grant Screen Recording, Accessibility, Camera and Microphone to

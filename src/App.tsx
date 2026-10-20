@@ -109,7 +109,7 @@ export default function App() {
 	useEffect(() => {
 		let disposed = false;
 		let dispose: () => void = () => undefined;
-		void initializeEntitlements()
+		void initializeEntitlements({ promptReactivation: windowType === "editor" })
 			.then((cleanup) => {
 				if (disposed) cleanup();
 				else dispose = cleanup;
@@ -119,7 +119,7 @@ export default function App() {
 			disposed = true;
 			dispose();
 		};
-	}, []);
+	}, [windowType]);
 
 	const content = (() => {
 		switch (windowType) {

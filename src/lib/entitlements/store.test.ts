@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EntitlementSnapshot } from "./contracts";
-import { requireEntitlement, useEntitlementStore } from "./store";
+import { initializeEntitlements, requireEntitlement, useEntitlementStore } from "./store";
 
 const base = {
 	version: 1,
@@ -74,8 +74,16 @@ describe("a license key this Mac can no longer read", () => {
 		});
 	}
 
-	it("opens the license dialog once, not on every update", () => {
+	it("opens the license dialog once, not on every update", async () => {
 		stubStorage();
+		vi.stubGlobal("window", {
+			...window,
+			electronAPI: {
+				getEntitlement: async () => LICENSED,
+				onEntitlementChanged: () => () => undefined,
+			},
+		});
+		await initializeEntitlements({ promptReactivation: true });
 		const unreadable: EntitlementSnapshot = {
 			...base,
 			status: "offline-grace",
@@ -93,5 +101,37 @@ describe("a license key this Mac can no longer read", () => {
 		store.setSnapshot(LICENSED);
 		store.setSnapshot(unreadable);
 		expect(useEntitlementStore.getState().dialogOpen).toBe(true);
+	});
+
+	it("never prompts from a window that did not ask to", async () => {
+		stubStorage();
+		vi.stubGlobal("window", {
+			...window,
+			electronAPI: {
+				getEntitlement: async () => LICENSED,
+				onEntitlementChanged: () => () => undefined,
+			},
+		});
+		await initializeEntitlements({ promptReactivation: false });
+		useEntitlementStore.getState().setSnapshot({ ...LICENSED, reactivationRequired: true });
+		expect(useEntitlementStore.getState().dialogOpen).toBe(false);
+		expect(window.localStorage.getItem("klippt.entitlement.reactivationPrompted")).toBeNull();
+	});
+
+	it("prompts once per session when localStorage is unavailable", async () => {
+		vi.stubGlobal("window", {
+			electronAPI: {
+				getEntitlement: async () => LICENSED,
+				onEntitlementChanged: () => () => undefined,
+			},
+		});
+		await initializeEntitlements({ promptReactivation: true });
+		const unreadable: EntitlementSnapshot = { ...LICENSED, reactivationRequired: true };
+		const store = useEntitlementStore.getState();
+		store.setSnapshot(unreadable);
+		expect(useEntitlementStore.getState().dialogOpen).toBe(true);
+		store.closeDialog();
+		store.setSnapshot(unreadable);
+		expect(useEntitlementStore.getState().dialogOpen).toBe(false);
 	});
 });

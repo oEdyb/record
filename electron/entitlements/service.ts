@@ -4,7 +4,7 @@ import type {
 	EntitlementSnapshot,
 } from "../../src/lib/entitlements/contracts";
 import type { EntitlementConfig } from "./config";
-import { type LicenseProvider, LicenseProviderError } from "./provider";
+import { type LicenseProvider, LicenseProviderError, type LicenseValidation } from "./provider";
 import type { SecretCodec } from "./secretCodec";
 import type { EntitlementStateStore } from "./stateStore";
 
@@ -98,6 +98,8 @@ export class EntitlementService extends EventEmitter {
 	private readonly now: () => number;
 	private readonly monotonicNow: () => number;
 	private lastRefreshAttemptAt: number | undefined;
+	/** A key the user entered while the Keychain refused to store it; never written to disk. */
+	private sessionKey: string | undefined;
 
 	constructor(private readonly options: EntitlementServiceOptions) {
 		super();
@@ -152,22 +154,31 @@ export class EntitlementService extends EventEmitter {
 		if (!normalizedKey) throw new Error("Enter a license key.");
 		return this.mutate(async () => {
 			const provider = this.requireProvider();
-			const encryptedKey = await this.options.codec.encrypt(normalizedKey);
-			const validation = await provider.activate(normalizedKey, this.options.instanceName);
+			let encryptedKey: string | undefined;
+			try {
+				encryptedKey = await this.options.codec.encrypt(normalizedKey);
+			} catch (error) {
+				console.warn("Could not save the Klippt license key; keeping it for this session:", error);
+			}
+			const validation =
+				(await this.reuseUnreadableInstance(provider, normalizedKey)) ??
+				(await provider.activate(normalizedKey, this.options.instanceName));
 			if (!validation.valid || !validation.instanceId) {
 				throw new Error(validation.error ?? "This license is not active.");
 			}
+			this.sessionKey = encryptedKey === undefined ? normalizedKey : undefined;
 			const validatedAt = new Date(this.now()).toISOString();
 			this.state = {
 				...this.state,
 				trialStartedAt: this.state.trialStartedAt ?? validatedAt,
 				license: {
-					encryptedKey,
+					encryptedKey: encryptedKey ?? "",
 					instanceId: validation.instanceId,
 					valid: true,
 					lastValidatedAt: validatedAt,
 					expiresAt: validation.expiresAt,
 					customerEmail: validation.customerEmail,
+					...(encryptedKey === undefined ? { keyUnreadable: true } : {}),
 				},
 			};
 			await this.persistAndEmit();
@@ -189,7 +200,7 @@ export class EntitlementService extends EventEmitter {
 			if (!license || !this.options.provider) return this.buildSnapshot();
 			let licenseKey: string;
 			try {
-				licenseKey = await this.options.codec.decrypt(license.encryptedKey);
+				licenseKey = await this.readLicenseKey(license);
 			} catch (error) {
 				console.warn("Could not decrypt the Klippt license:", error);
 				return this.markKeyUnreadable();
@@ -228,8 +239,9 @@ export class EntitlementService extends EventEmitter {
 			const license = this.state.license;
 			if (!license) return this.buildSnapshot();
 			const provider = this.requireProvider();
-			const licenseKey = await this.options.codec.decrypt(license.encryptedKey);
+			const licenseKey = await this.readLicenseKey(license);
 			await provider.deactivate(licenseKey, license.instanceId);
+			this.sessionKey = undefined;
 			this.state = { ...this.state, license: undefined };
 			await this.persistAndEmit();
 			return this.buildSnapshot();
@@ -240,7 +252,9 @@ export class EntitlementService extends EventEmitter {
 	 *  next refresh retries the decrypt, so a Keychain that unlocks later recovers on its own. */
 	private async markKeyUnreadable(): Promise<EntitlementSnapshot> {
 		const license = this.state.license;
-		if (!license) return this.buildSnapshot();
+		if (!license || (license.keyUnreadable && license.validationFailedAt)) {
+			return this.buildSnapshot();
+		}
 		this.state = {
 			...this.state,
 			license: {
@@ -251,6 +265,28 @@ export class EntitlementService extends EventEmitter {
 		};
 		await this.persistAndEmit();
 		return this.buildSnapshot();
+	}
+
+	private async readLicenseKey(license: StoredLicense): Promise<string> {
+		if (this.sessionKey) return this.sessionKey;
+		if (!license.encryptedKey) throw new Error("The license key was never saved on this Mac.");
+		return this.options.codec.decrypt(license.encryptedKey);
+	}
+
+	/** Re-entering a key this Mac could no longer read keeps its existing activation, so the
+	 *  user does not spend a second activation slot. */
+	private async reuseUnreadableInstance(
+		provider: LicenseProvider,
+		licenseKey: string,
+	): Promise<LicenseValidation | undefined> {
+		const previous = this.state.license;
+		if (!previous?.keyUnreadable || !previous.instanceId) return undefined;
+		try {
+			const validation = await provider.validate(licenseKey, previous.instanceId);
+			return validation.valid ? { ...validation, instanceId: previous.instanceId } : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	private async markValidationFailure(): Promise<EntitlementSnapshot> {
@@ -279,7 +315,7 @@ export class EntitlementService extends EventEmitter {
 
 	private buildSnapshot(): EntitlementSnapshot {
 		const snapshot = this.buildAccessSnapshot();
-		return snapshot.commerceConfigured && this.state.license?.keyUnreadable
+		return snapshot.commerceConfigured && this.state.license?.keyUnreadable && !this.sessionKey
 			? { ...snapshot, reactivationRequired: true }
 			: snapshot;
 	}

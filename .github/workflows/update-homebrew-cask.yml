@@ -227,11 +227,11 @@ jobs:
             app "Klippt.app"
 
             zap trash: [
-              "~/Library/Application Support/Openscreen",
-              "~/Library/Caches/com.etiennelescot.openscreen",
-              "~/Library/Logs/Openscreen",
-              "~/Library/Preferences/com.etiennelescot.openscreen.plist",
-              "~/Library/Saved Application State/com.etiennelescot.openscreen.savedState",
+              "~/Library/Application Support/Klippt",
+              "~/Library/Caches/co.dyberg.klippt",
+              "~/Library/Logs/Klippt",
+              "~/Library/Preferences/co.dyberg.klippt.plist",
+              "~/Library/Saved Application State/co.dyberg.klippt.savedState",
             ]
           end
           EOF

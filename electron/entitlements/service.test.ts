@@ -415,7 +415,7 @@ describe("a saved license key that can no longer be decrypted", () => {
 		expect(read()?.license?.keyUnreadable).toBeUndefined();
 	});
 
-	it("recovers on its own when the Keychain allows the key again", async () => {
+	it("recovers on a later refresh once the key decrypts again", async () => {
 		const { store, read } = memoryStore(stored());
 		const decrypt = vi
 			.fn<SecretCodec["decrypt"]>()
@@ -457,5 +457,99 @@ describe("a saved license key that can no longer be decrypted", () => {
 			status: "offline-grace",
 			reactivationRequired: true,
 		});
+	});
+
+	it("keeps the existing activation when the same key is entered again", async () => {
+		const { store, read } = memoryStore(stored());
+		const licenseProvider = provider();
+		const service = new EntitlementService({
+			config: config(),
+			provider: licenseProvider,
+			codec: lockedKeychain(),
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-02T00:00:00.000Z"),
+		});
+		await service.refresh();
+
+		await expect(service.activate("secret-key")).resolves.toMatchObject({ access: "full" });
+		expect(licenseProvider.validate).toHaveBeenCalledWith("secret-key", "instance-1");
+		expect(licenseProvider.activate).not.toHaveBeenCalled();
+		expect(read()?.license?.instanceId).toBe("instance-1");
+	});
+
+	it("activates a new instance when the old one does not accept the key", async () => {
+		const { store, read } = memoryStore(stored());
+		const licenseProvider = provider();
+		vi.mocked(licenseProvider.validate).mockRejectedValueOnce(
+			new LicenseProviderError("license_key not found", "rejected"),
+		);
+		const service = new EntitlementService({
+			config: config(),
+			provider: licenseProvider,
+			codec: lockedKeychain(),
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-02T00:00:00.000Z"),
+		});
+		await service.refresh();
+
+		await service.activate("new-key");
+		expect(licenseProvider.activate).toHaveBeenCalledOnce();
+		expect(read()?.license?.instanceId).toBe("instance-1");
+		expect(vi.mocked(licenseProvider.activate).mock.calls[0][0]).toBe("new-key");
+	});
+
+	it("unlocks for this session when the Keychain refuses to store the key, and never writes it", async () => {
+		const { store, read } = memoryStore({ version: 1, trialStartedAt: "2026-09-01T00:00:00.000Z" });
+		const licenseProvider = provider();
+		const refusing: SecretCodec = {
+			encrypt: vi.fn(async () => {
+				throw new Error("Secure license storage is not available on this device.");
+			}),
+			decrypt: vi.fn(async () => {
+				throw new Error("unreachable");
+			}),
+		};
+		let clock = 0;
+		const service = new EntitlementService({
+			config: config(),
+			provider: licenseProvider,
+			codec: refusing,
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-02T00:00:00.000Z"),
+			monotonicNow: () => clock,
+		});
+
+		const snapshot = await service.activate("secret-key");
+		expect(snapshot).toMatchObject({ status: "licensed", access: "full" });
+		expect(snapshot.reactivationRequired).toBeUndefined();
+		expect(JSON.stringify(read())).not.toContain("secret-key");
+		expect(read()?.license?.keyUnreadable).toBe(true);
+
+		clock += 61_000;
+		await service.refresh();
+		expect(licenseProvider.validate).toHaveBeenLastCalledWith("secret-key", "instance-1");
+		expect(refusing.decrypt).not.toHaveBeenCalled();
+	});
+
+	it("does not rewrite the state on every refresh while the key stays unreadable", async () => {
+		const { store } = memoryStore(stored());
+		let clock = 0;
+		const service = new EntitlementService({
+			config: config(),
+			provider: provider(),
+			codec: lockedKeychain(),
+			store,
+			instanceName: "Klippt on Mac",
+			now: () => Date.parse("2026-10-02T00:00:00.000Z"),
+			monotonicNow: () => clock,
+		});
+		await service.refresh();
+		const writes = vi.mocked(store.write).mock.calls.length;
+		clock += 61_000;
+		await service.refresh();
+		expect(vi.mocked(store.write).mock.calls.length).toBe(writes);
 	});
 });
