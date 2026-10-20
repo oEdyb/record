@@ -38,8 +38,11 @@ export function fcpxmlTime(frames: number): string {
 	return denominator === 1 ? `${numerator}s` : `${numerator}/${denominator}s`;
 }
 
+const INVALID_XML_CHARACTERS = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
+
 function escapeXml(value: string): string {
 	return value
+		.replace(INVALID_XML_CHARACTERS, "")
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
 		.replace(/>/g, "&gt;")

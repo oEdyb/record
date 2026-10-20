@@ -186,6 +186,21 @@ it("anchors late and short sources to the spine piece that contains their first 
 	expect(xml).toContain('<gap name="Gap" offset="3/2s" start="0s" duration="1/2s"');
 });
 
+it("anchors a source that starts after a short screen tail to the spine gap", () => {
+	const tail: HandoffSource = {
+		...source,
+		screen: { ...source.screen, durationSec: 1 },
+		camera: { ...source.camera!, durationSec: 5, startMs: 1500, offsetMs: 0 },
+	};
+	const xml = build([tail], [span()]);
+	const { pieces, placed } = placements(xml);
+	expect(pieces).toEqual(["asset-clip", "gap"]);
+	expect(sorted(placed)).toEqual(sorted(planned([tail], [span()])));
+	expect(xml).toContain(
+		'<gap name="Gap" offset="1s" start="0s" duration="1s"><asset-clip ref="r4" lane="1" offset="1/2s" name="001-camera.mov" start="0s" duration="1/2s" srcEnable="video"/></gap>',
+	);
+});
+
 it("keeps unidentified embedded audio on its own lane from the same screen asset", () => {
 	const legacy: HandoffSource = {
 		...source,
@@ -237,7 +252,7 @@ it("escapes titles and file names", () => {
 		camera: null,
 		screen: { ...source.screen, file: "001 screen & co.mov", audio: [] },
 	};
-	const xml = build([odd], [span()], `Tom & "Jerry" <take>`);
+	const xml = build([odd], [span()], `Tom & "Jerry" <take>\u0007\uFFFF`);
 	expect(xml).toContain('<event name="Tom &amp; &quot;Jerry&quot; &lt;take&gt;">');
 	expect(xml).toContain('name="001 screen &amp; co.mov"');
 	expect(xml).toContain('src="./001%20screen%20%26%20co.mov"');
