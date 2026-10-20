@@ -233,12 +233,12 @@ async function writeJournalAtomically(
 	}
 }
 
-function formatGigabytes(bytes: bigint): string {
+export function formatGigabytes(bytes: bigint): string {
 	const gigabytes = Number(bytes) / 1_000_000_000;
 	return `${gigabytes < 10 ? gigabytes.toFixed(1) : Math.round(gigabytes)} GB`;
 }
 
-function availableBytes(stats: Awaited<ReturnType<typeof fs.statfs>>): bigint {
+export function availableBytes(stats: Awaited<ReturnType<typeof fs.statfs>>): bigint {
 	return BigInt(stats.bavail) * BigInt(stats.bsize);
 }
 
