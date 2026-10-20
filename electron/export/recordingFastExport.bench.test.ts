@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -87,8 +88,10 @@ describe.runIf(process.platform === "darwin" && spec)("recording copy benchmark"
 		const result = await plan!.render(out, signal, () => undefined);
 		const wallSec = (performance.now() - started) / 1000;
 		const videoSec = durations.reduce((sum, value) => sum + value, 0);
-		console.log(
-			`BENCH copy: takes=${takes.length} video_s=${videoSec.toFixed(1)} prepare_s=${((prepared - started) / 1000).toFixed(2)} wall_s=${wallSec.toFixed(2)} realtime=${(videoSec / wallSec).toFixed(1)}x frames=${result.frames} decoder=${result.decoderPath} encoder=${result.encoderName} hardware=${result.encoderHardware}`,
+		// The suite silences console output, so the result goes next to the output file.
+		appendFileSync(
+			`${out}.bench.log`,
+			`BENCH copy: takes=${takes.length} video_s=${videoSec.toFixed(1)} prepare_s=${((prepared - started) / 1000).toFixed(2)} wall_s=${wallSec.toFixed(2)} realtime=${(videoSec / wallSec).toFixed(1)}x frames=${result.frames} decoder=${result.decoderPath} encoder=${result.encoderName} hardware=${result.encoderHardware}\n`,
 		);
 	});
 });

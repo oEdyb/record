@@ -217,6 +217,10 @@ export class RecordingVideoPacketAccumulator {
 	}
 }
 
+/** Apple's AudioToolbox AAC encoder, in the bundled macOS FFmpeg, encodes a
+ * 40-minute stereo track in 40 s; FFmpeg's own AAC encoder takes 263 s. */
+const AAC_ENCODER = process.platform === "darwin" ? "aac_at" : "aac";
+
 /** Time limit for one full pass over the recording: never less than 30 minutes,
  * and enough for a slow external disk reading 20 MB/s. */
 function passTimeoutMs(bytes: number): number {
@@ -419,7 +423,7 @@ export async function prepareRecordingFastExport(
 					"copy",
 				);
 				if (media.codec === "hevc") args.push("-tag:v", "hvc1");
-				if (silence) args.push("-c:a", "aac", "-b:a", "384k", "-ar", "48000", "-ac", "2");
+				if (silence) args.push("-c:a", AAC_ENCODER, "-b:a", "384k", "-ar", "48000", "-ac", "2");
 				else if (joined)
 					// Each take's audio starts where its take starts. Fill or trim the few
 					// milliseconds where a take's audio and video lengths differ, so sync
@@ -428,7 +432,7 @@ export async function prepareRecordingFastExport(
 						"-af",
 						"aresample=async=1:min_hard_comp=0.005:first_pts=0",
 						"-c:a",
-						"aac",
+						AAC_ENCODER,
 						"-b:a",
 						"384k",
 						"-ar",
