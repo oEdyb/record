@@ -113,9 +113,16 @@ export class LemonSqueezyLicenseProvider implements LicenseProvider {
 		if (!response.ok) {
 			const retryable =
 				response.status === 408 || response.status === 429 || response.status >= 500;
+			// Only a License API answer may revoke a license. A captive portal or proxy can return
+			// a 4xx with some other JSON body; that is a failed check, not a rejection.
+			const licenseAnswer =
+				"license_key" in parsed ||
+				typeof parsed.valid === "boolean" ||
+				typeof parsed.activated === "boolean" ||
+				typeof parsed.deactivated === "boolean";
 			throw new LicenseProviderError(
 				stringField(parsed.error) ?? `Lemon Squeezy returned HTTP ${response.status}.`,
-				retryable ? "network" : "rejected",
+				retryable ? "network" : licenseAnswer ? "rejected" : "invalid-response",
 			);
 		}
 		return parsed;

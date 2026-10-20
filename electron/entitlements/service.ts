@@ -9,6 +9,9 @@ import type { SecretCodec } from "./secretCodec";
 import type { EntitlementStateStore } from "./stateStore";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const REFRESH_THROTTLE_MS = 60_000;
+/** How long a gated action waits for a revalidation before answering from what is known. */
+const READ_ONLY_RECHECK_WAIT_MS = 3_000;
 
 interface StoredLicense {
 	encryptedKey: string;
@@ -33,6 +36,8 @@ interface EntitlementServiceOptions {
 	store: EntitlementStateStore<StoredEntitlementState>;
 	instanceName: string;
 	now?: () => number;
+	/** A clock the user cannot set back; throttles provider calls. */
+	monotonicNow?: () => number;
 }
 
 export class EntitlementRequiredError extends Error {
@@ -88,11 +93,13 @@ export class EntitlementService extends EventEmitter {
 	private readonly ready: Promise<void>;
 	private mutationQueue: Promise<unknown> = Promise.resolve();
 	private readonly now: () => number;
-	private lastRefreshAttemptAt = 0;
+	private readonly monotonicNow: () => number;
+	private lastRefreshAttemptAt: number | undefined;
 
 	constructor(private readonly options: EntitlementServiceOptions) {
 		super();
 		this.now = options.now ?? Date.now;
+		this.monotonicNow = options.monotonicNow ?? (() => performance.now());
 		this.ready = options.store.read().then((value) => {
 			this.state = normalizeStoredState(value);
 		});
@@ -103,13 +110,21 @@ export class EntitlementService extends EventEmitter {
 		const snapshot = this.buildSnapshot();
 		if (!this.mayRecoverByRevalidating(snapshot)) return snapshot;
 		// A stored license is about to read as read-only, either because its offline grace ran
-		// out or because the last answer was "not active". Ask the provider once before locking
-		// the user out; a renewed subscription or a returned network unlocks immediately.
-		try {
-			return await this.refresh();
-		} catch (error) {
+		// out or because the last answer was "not active". Ask the provider before locking the
+		// user out; a renewed subscription or a returned network unlocks immediately. A slow
+		// network answers read-only now and broadcasts the result when the check finishes.
+		const revalidated = this.refresh().catch((error) => {
 			console.warn("Could not revalidate the Klippt license before read-only:", error);
 			return this.buildSnapshot();
+		});
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const waited = new Promise<EntitlementSnapshot>((resolve) => {
+			timer = setTimeout(() => resolve(this.buildSnapshot()), READ_ONLY_RECHECK_WAIT_MS);
+		});
+		try {
+			return await Promise.race([revalidated, waited]);
+		} finally {
+			clearTimeout(timer);
 		}
 	}
 
@@ -159,8 +174,14 @@ export class EntitlementService extends EventEmitter {
 
 	async refresh(): Promise<EntitlementSnapshot> {
 		return this.mutate(async () => {
-			if (this.now() - this.lastRefreshAttemptAt < 60_000) return this.buildSnapshot();
-			this.lastRefreshAttemptAt = this.now();
+			const attemptAt = this.monotonicNow();
+			if (
+				this.lastRefreshAttemptAt !== undefined &&
+				attemptAt - this.lastRefreshAttemptAt < REFRESH_THROTTLE_MS
+			) {
+				return this.buildSnapshot();
+			}
+			this.lastRefreshAttemptAt = attemptAt;
 			const license = this.state.license;
 			if (!license || !this.options.provider) return this.buildSnapshot();
 			let licenseKey: string;

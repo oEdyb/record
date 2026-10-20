@@ -107,15 +107,41 @@ describe("LemonSqueezyLicenseProvider", () => {
 			productId: 22,
 			variantIds: new Set([33]),
 			fetch: vi.fn<typeof fetch>().mockResolvedValue(
-				new Response(JSON.stringify({ error: "License key not found." }), {
-					status: 404,
+				new Response(
+					JSON.stringify({
+						valid: false,
+						error: "license_key not found.",
+						license_key: null,
+						meta: null,
+					}),
+					{
+						status: 404,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			),
+		});
+
+		await expect(provider.validate("license", "instance-1")).rejects.toMatchObject({
+			kind: "rejected",
+		});
+	});
+
+	it("does not treat a proxy's 4xx JSON as a license rejection", async () => {
+		const provider = new LemonSqueezyLicenseProvider({
+			storeId: 11,
+			productId: 22,
+			variantIds: new Set([33]),
+			fetch: vi.fn<typeof fetch>().mockResolvedValue(
+				new Response(JSON.stringify({ error: "Sign in to the hotel Wi-Fi." }), {
+					status: 403,
 					headers: { "Content-Type": "application/json" },
 				}),
 			),
 		});
 
 		await expect(provider.validate("license", "instance-1")).rejects.toMatchObject({
-			kind: "rejected",
+			kind: "invalid-response",
 		});
 	});
 });

@@ -271,5 +271,64 @@ describe("EntitlementService", () => {
 			await expect(service.getSnapshot()).resolves.toMatchObject({ access: "full" });
 			warn.mockRestore();
 		});
+
+		it("answers read-only after three seconds on a stalled network and broadcasts the late result", async () => {
+			vi.useFakeTimers();
+			try {
+				let finish: (() => void) | undefined;
+				const slow = provider();
+				vi.mocked(slow.validate).mockImplementation(
+					() =>
+						new Promise((resolve) => {
+							finish = () => resolve({ valid: true, status: "active", expiresAt: null });
+						}),
+				);
+				const { store } = memoryStore(storedLicense());
+				const service = new EntitlementService({
+					config: config(),
+					provider: slow,
+					codec,
+					store,
+					instanceName: "Klippt on Mac",
+					now: () => validatedAt + 8 * DAY_MS,
+				});
+				const changed = vi.fn();
+				service.on("changed", changed);
+
+				const pending = service.getSnapshot();
+				await vi.advanceTimersByTimeAsync(3_000);
+				await expect(pending).resolves.toMatchObject({ access: "read-only" });
+				finish?.();
+				await vi.advanceTimersByTimeAsync(0);
+				expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ access: "full" }));
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("throttles provider calls on a clock the user cannot set back", async () => {
+			let wall = validatedAt + 8 * DAY_MS;
+			let monotonic = 1_000;
+			const offline = provider();
+			vi.mocked(offline.validate).mockRejectedValue(new LicenseProviderError("offline", "network"));
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+			const { store } = memoryStore(storedLicense());
+			const service = new EntitlementService({
+				config: config(),
+				provider: offline,
+				codec,
+				store,
+				instanceName: "Klippt on Mac",
+				now: () => wall,
+				monotonicNow: () => monotonic,
+			});
+
+			await service.refresh();
+			wall -= 365 * DAY_MS;
+			monotonic += 61_000;
+			await service.refresh();
+			expect(offline.validate).toHaveBeenCalledTimes(2);
+			warn.mockRestore();
+		});
 	});
 });

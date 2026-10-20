@@ -130,9 +130,30 @@ export async function initializeEntitlements(): Promise<() => void> {
 	};
 }
 
+let recheck: Promise<void> | null = null;
+
+/** Main revalidates a stored license before answering read-only; a renewed or back-online
+ *  subscriber is unlocked here without re-entering the key. */
+function recheckBlockedAccess(): void {
+	const api = window.electronAPI;
+	if (recheck || !api?.getEntitlement) return;
+	recheck = api
+		.getEntitlement()
+		.then((next) => {
+			const store = useEntitlementStore.getState();
+			store.setSnapshot(next);
+			if (next.access === "full") store.closeDialog();
+		})
+		.catch((error) => console.warn("Could not recheck Klippt access:", error))
+		.finally(() => {
+			recheck = null;
+		});
+}
+
 export function requireEntitlement(capability: EntitlementCapability): boolean {
 	const state = useEntitlementStore.getState();
 	if (canUseCapability(state.snapshot, capability)) return true;
 	state.openDialog(capability);
+	if (state.snapshot.provider) recheckBlockedAccess();
 	return false;
 }
