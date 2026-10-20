@@ -100,6 +100,7 @@ describe("NativeMacRecordingService", () => {
 			onSessionStored: vi.fn(),
 			onRecordingStateChange: vi.fn(),
 			onFatalError: vi.fn(),
+			onAppStopped: vi.fn(),
 		};
 	});
 
@@ -508,7 +509,42 @@ describe("NativeMacRecordingService", () => {
 		vi.mocked(deps.createHelper).mockReturnValue(helper);
 		await service.start({ ...baseRequest, recordingId: 101 });
 		helper.stop.mockReturnValueOnce(new Promise(() => undefined));
-		await expect(service.stopBeforeQuit(20)).resolves.toBeUndefined();
+		await expect(service.stopBeforeQuit(20)).resolves.toBe(true);
+	});
+
+	it("hands a take stopped for quit to the HUD's next Stop, once", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "clip.mp4"),
+			durationMs: 1000,
+		};
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.stopClips = [clip];
+		await expect(service.stopBeforeQuit()).resolves.toBe(true);
+		expect(deps.onAppStopped).toHaveBeenCalledOnce();
+		expect(helper.stop).toHaveBeenCalledOnce();
+
+		await expect(service.stop()).resolves.toMatchObject({
+			success: true,
+			session: expect.objectContaining({ clips: [expect.objectContaining({ index: 0 })] }),
+		});
+		expect(helper.stop).toHaveBeenCalledOnce();
+		await expect(service.stop()).resolves.toMatchObject({ success: false });
+	});
+
+	it("does not hand an earlier quit-time take to a new take's Stop", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.stopClips = [
+			{ index: 0, screenVideoPath: path.join(recordingsDir, "clip.mp4"), durationMs: 1000 },
+		];
+		await service.stopBeforeQuit();
+		helper = new FakeHelper();
+		vi.mocked(deps.createHelper).mockReturnValue(helper);
+		await service.start({ ...baseRequest, recordingId: 101 });
+		await service.stop();
+		expect(helper.stop).toHaveBeenCalledOnce();
 	});
 
 	it("finishes Stop and allows a new take when the helper outlives its kill window", async () => {

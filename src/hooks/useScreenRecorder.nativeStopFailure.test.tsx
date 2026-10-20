@@ -961,4 +961,24 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
 		expect(toast.error).toHaveBeenCalledWith("The active clip failed. Saving completed clips now.");
 	});
+
+	it("leaves the recording state and opens review when the app stopped the take itself", async () => {
+		let appStopListener: (() => void) | undefined;
+		stubNativeMac({
+			onNativeMacRecordingStoppedByApp: vi.fn((callback) => {
+				appStopListener = callback;
+				return vi.fn();
+			}),
+		});
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		expect(appStopListener).toBeTypeOf("function");
+		act(() => appStopListener?.());
+		await settle();
+
+		expect(window.electronAPI.stopNativeMacRecording).toHaveBeenCalledOnce();
+		expect(view.result.current.recording).toBe(false);
+		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
+	});
 });

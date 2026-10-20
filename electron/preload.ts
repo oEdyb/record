@@ -401,6 +401,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("native-mac-recording-error", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-error", listener);
 	},
+	onNativeMacRecordingStoppedByApp: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("native-mac-recording-stopped-by-app", listener);
+		return () => ipcRenderer.removeListener("native-mac-recording-stopped-by-app", listener);
+	},
 	stopNativeMacRecording: (discard?: boolean, clickedAtMs?: number) => {
 		return ipcRenderer.invoke("stop-native-mac-recording", discard, clickedAtMs);
 	},

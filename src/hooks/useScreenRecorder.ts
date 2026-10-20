@@ -1113,6 +1113,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	useEffect(() => {
 		let cleanupTray: (() => void) | undefined;
 		let cleanupNativeMacError: (() => void) | undefined;
+		let cleanupNativeMacAppStop: (() => void) | undefined;
 
 		if (window.electronAPI?.onStopRecordingFromTray) {
 			cleanupTray = window.electronAPI.onStopRecordingFromTray(() => {
@@ -1138,11 +1139,20 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				void finalizeNativeMacRecordingRef.current(false);
 			});
 		}
+		if (window.electronAPI?.onNativeMacRecordingStoppedByApp) {
+			// Main already stopped and saved the take; Stop collects that result and opens review.
+			cleanupNativeMacAppStop = window.electronAPI.onNativeMacRecordingStoppedByApp(() => {
+				const activeRecording = nativeMacRecording.current;
+				if (!activeRecording || activeRecording.finalizing) return;
+				void finalizeNativeMacRecordingRef.current(false);
+			});
+		}
 
 		return () => {
 			const activeRunId = countdownRunId.current;
 			cleanupTray?.();
 			cleanupNativeMacError?.();
+			cleanupNativeMacAppStop?.();
 			countdownRunId.current += 1;
 			void safeHideCountdownOverlay(activeRunId);
 			allowAutoFinalize.current = false;

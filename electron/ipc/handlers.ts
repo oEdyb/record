@@ -3238,6 +3238,12 @@ export function registerIpcHandlers(
 				hudWindow.webContents.send("native-mac-recording-error", failure);
 			}
 		},
+		onAppStopped: () => {
+			const hudWindow = getMainWindow();
+			if (hudWindow && !hudWindow.isDestroyed()) {
+				hudWindow.webContents.send("native-mac-recording-stopped-by-app");
+			}
+		},
 	});
 
 	const getNativeMacRecordingService = () => {

@@ -86,6 +86,8 @@ export type NativeMacRecordingServiceDependencies = {
 	onSessionStored: (session: RecordingSession) => void;
 	onRecordingStateChange: (recording: boolean) => void;
 	onFatalError: (failure: NativeMacRecordingFailure) => void;
+	/** The app stopped a take on its own; the HUD still shows it recording until told. */
+	onAppStopped?: () => void;
 };
 
 export type NativeMacRecordingStopResult = {
@@ -122,6 +124,8 @@ export class NativeMacRecordingService {
 	private originals = new Map<number, Partial<RecordingSessionClip>>();
 	private recoveryWrites: Promise<void> = Promise.resolve();
 	private acceptsOriginalMetadata = false;
+	/** A take the app stopped on its own (quit), kept until the HUD's own Stop collects it. */
+	private appStoppedResult: NativeMacRecordingStopResult | null = null;
 
 	constructor(private readonly deps: NativeMacRecordingServiceDependencies) {}
 
@@ -165,6 +169,7 @@ export class NativeMacRecordingService {
 			if (this.isRunning()) {
 				return { success: false, error: "Native macOS capture is already running." };
 			}
+			this.appStoppedResult = null;
 			const helperPath = await this.deps.findHelperPath();
 			if (!helperPath) {
 				return { success: false, error: "Native macOS capture helper is not available." };
@@ -268,13 +273,19 @@ export class NativeMacRecordingService {
 
 	/** Quitting mid-take stops the capture so its clips finalize normally. The
 	 * recovery journal still covers a helper that does not answer in time. */
-	async stopBeforeQuit(timeoutMs = 15_000): Promise<void> {
-		if (!this.isRunning()) return;
+	async stopBeforeQuit(timeoutMs = 15_000): Promise<boolean> {
+		if (!this.isRunning()) return false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		await Promise.race([
-			this.stop(false).catch((error: unknown) => {
-				console.warn("[capture-mac] Stop before quit failed:", error);
-			}),
+			this.stop(false).then(
+				(result) => {
+					this.appStoppedResult = result;
+					this.deps.onAppStopped?.();
+				},
+				(error: unknown) => {
+					console.warn("[capture-mac] Stop before quit failed:", error);
+				},
+			),
 			new Promise<void>((resolve) => {
 				timer = setTimeout(() => {
 					console.warn(
@@ -285,6 +296,7 @@ export class NativeMacRecordingService {
 			}),
 		]);
 		clearTimeout(timer);
+		return true;
 	}
 
 	pause() {
@@ -496,6 +508,9 @@ export class NativeMacRecordingService {
 		return this.enqueue(async () => {
 			const helper = this.helper;
 			if (!helper) {
+				const appStopped = this.appStoppedResult;
+				this.appStoppedResult = null;
+				if (appStopped && !discard) return appStopped;
 				return { success: false, error: "Native macOS capture is not running." };
 			}
 			const preferredPath = this.targetPath;
