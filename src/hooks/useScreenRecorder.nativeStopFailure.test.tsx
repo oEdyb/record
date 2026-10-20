@@ -460,6 +460,46 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(view.result.current.paused).toBe(true);
 	});
 
+	it("stops once with the saved clip when Stop follows Pause before the clip is saved", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: "/tmp/recording-7-clip-0001.mp4",
+			durationMs: 1_000,
+		};
+		const pausing: { finish?: (value: unknown) => void } = {};
+		const stopNativeMacRecording = vi.fn(async () => ({
+			success: true,
+			path: clip.screenVideoPath,
+			session: {
+				schemaVersion: 2,
+				createdAt: 7,
+				screenVideoPath: clip.screenVideoPath,
+				clips: [clip],
+			},
+		}));
+		stubNativeMac({
+			pauseNativeMacRecording: vi.fn(
+				() =>
+					new Promise((resolve) => {
+						pausing.finish = resolve;
+					}),
+			),
+			stopNativeMacRecording,
+		});
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		act(() => view.result.current.togglePaused());
+		await settle();
+		await pressStop(view);
+		pausing.finish?.({ success: true, paused: true, clip });
+		await settle(50);
+
+		expect(stopNativeMacRecording).toHaveBeenCalledTimes(1);
+		expect(view.result.current.recording).toBe(false);
+		expect(window.electronAPI.switchToEditor).toHaveBeenCalledTimes(1);
+	});
+
 	it("updates the kept duration when a removed clip is restored", async () => {
 		const clip = {
 			index: 0,
