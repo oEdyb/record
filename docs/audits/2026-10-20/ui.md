@@ -76,6 +76,11 @@ Gates run locally on the final branch: `tsc --noEmit`, the test typecheck, `npm 
   app-menu item was also left undone.
 - **E. Record Without It (audit-recording):** the Accessibility alert needs a button that switches
   the cursor mode to System and starts recording. That is recording-state logic.
+- **F. OpenScreen names (audit-launch):** no user-visible "OpenScreen" text is left in `src/` or the
+  locales, and commit `dc5a78fbb` removed the unused OpenScreen logo and demo GIF. What remains is
+  internal: storage keys, message IDs, the legacy `.openscreen` extension, comments, the Swift and
+  Rust helper names, and `public/openscreen.png`. That file already shows the Klippt mark under a
+  legacy name. The `!dist/demo.gif` rule in `electron-builder.json5` is now stale.
 - **Not verified:** the panel window's Spaces behaviour over full-screen apps (Cherry Studio
   #21253), and a fresh-macOS-user pass of the permission panel against the real TCC prompts.
 
