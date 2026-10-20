@@ -136,6 +136,17 @@ interface Window {
 			status: string;
 			error?: string;
 		}>;
+		/** Every capture permission's status, read without prompting (macOS only gates capture). */
+		getCapturePermissions?: () => Promise<
+			import("../src/lib/capturePermissions").CapturePermissions
+		>;
+		requestMicrophoneAccess?: () => Promise<{ granted: boolean; status: string }>;
+		/** Opens the Privacy & Security pane where Klippt's access is switched on. */
+		openPrivacySettings?: (
+			kind: import("../src/lib/capturePermissions").CapturePermissionKind,
+		) => Promise<boolean>;
+		/** Quits and reopens Klippt, which macOS needs before a new Screen Recording grant applies. */
+		relaunchApp?: () => Promise<void>;
 		requestNativeMacCursorAccess: () => Promise<{
 			success: boolean;
 			granted: boolean;

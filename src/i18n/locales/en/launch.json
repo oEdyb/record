@@ -142,5 +142,24 @@
 		"pauseFirst": "Pause the recording to transcribe the latest clips.",
 		"empty": "No clips yet. Record something first.",
 		"clip": "Clip {{n}}"
+	},
+	"permissions": {
+		"title": "Before you record",
+		"description": "macOS asks you once for each of these. Klippt only captures while you record.",
+		"screen": "Screen Recording",
+		"microphone": "Microphone",
+		"camera": "Camera",
+		"screenDetail": "To capture your screen",
+		"microphoneDetail": "To record your voice",
+		"cameraDetail": "To record your camera",
+		"granted": "Allowed",
+		"notAsked": "Not asked yet",
+		"blocked": "Off",
+		"continue": "Continue",
+		"openSettings": "Open Settings",
+		"notNow": "Not now",
+		"relaunch": "Quit & Reopen",
+		"relaunchHint": "Switch Klippt on in System Settings, then quit and reopen Klippt so macOS applies it.",
+		"settingsHint": "Switch Klippt on in System Settings. This panel updates on its own."
 	}
 }

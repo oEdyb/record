@@ -295,6 +295,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	requestScreenAccess: () => {
 		return ipcRenderer.invoke("request-screen-access");
 	},
+	getCapturePermissions: () => ipcRenderer.invoke("get-capture-permissions"),
+	requestMicrophoneAccess: () => ipcRenderer.invoke("request-microphone-access"),
+	openPrivacySettings: (kind: "screen" | "microphone" | "camera") =>
+		ipcRenderer.invoke("open-privacy-settings", kind),
+	relaunchApp: () => ipcRenderer.invoke("relaunch-app"),
 	requestNativeMacCursorAccess: () => {
 		return ipcRenderer.invoke("request-native-mac-cursor-access");
 	},
