@@ -1,4 +1,6 @@
+import CoreGraphics
 import CoreMedia
+import CoreVideo
 import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
@@ -16,5 +18,10 @@ final class CaptureSetupTests: XCTestCase {
 
 	func testQueueDepthIsTheDocumentedMaximum() {
 		XCTAssertEqual(CaptureSetupBuilder.queueDepth, 8)
+	}
+
+	func testScreenIsCapturedAsBT709VideoRange420() {
+		XCTAssertEqual(CaptureSetupBuilder.pixelFormat, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+		XCTAssertEqual(CaptureSetupBuilder.colorMatrix as String, CGDisplayStream.yCbCrMatrix_ITU_R_709_2 as String)
 	}
 }

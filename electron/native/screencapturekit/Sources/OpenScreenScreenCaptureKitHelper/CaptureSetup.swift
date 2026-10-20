@@ -129,7 +129,8 @@ final class CaptureSetupBuilder {
 		configuration.minimumFrameInterval = Self.minimumFrameInterval(quality: request.video.quality, fps: request.video.fps)
 		configuration.queueDepth = Self.queueDepth
 		configuration.showsCursor = !request.video.hideSystemCursor
-		configuration.pixelFormat = kCVPixelFormatType_32BGRA
+		configuration.pixelFormat = Self.pixelFormat
+		configuration.colorMatrix = Self.colorMatrix
 		configuration.sampleRate = 48_000
 		configuration.channelCount = 2
 		configuration.excludesCurrentProcessAudio = true
@@ -169,6 +170,12 @@ final class CaptureSetupBuilder {
 		let rate = Int32(max(1, fps))
 		return quality == "high" ? CMTime(value: 9, timescale: rate * 10) : CMTime(value: 1, timescale: rate)
 	}
+
+	/// The encoder takes 4:2:0, so capture it directly: 12 instead of 32 bits a pixel through the
+	/// surface pool, and no BGRA conversion inside VideoToolbox. BT.709 video range is what the
+	/// encoder produced from BGRA and what the compositor decodes (`shaders.metal`).
+	static let pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+	static let colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
 
 	/// The documented maximum. The frame cache keeps up to three pool surfaces between
 	/// frames, and the pool stalls when the app holds too many of them.
