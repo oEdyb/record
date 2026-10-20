@@ -83,6 +83,11 @@
     "dist-electron",
     "!dist/.vite/manifest.json",
     "!dist/wasm/web-demuxer.wasm",
+    // Vite bundles every runtime dependency into dist/ and dist-electron/ (electron-updater
+    // included), and nothing resolves a package from the asar at runtime, so the production
+    // dependency tree electron-builder copies in (71 MB) is never read. Native addons are not
+    // in node_modules: they ship through extraResources.
+    "!node_modules{,/**/*}",
     "!node_modules/web-demuxer/dist/wasm-files{,/**/*}",
     "!dist/cursors{,/**/*}",
     // Packaged builds read wallpapers from resourcesPath (extraResources below, ASSET_BASE_DIR in
