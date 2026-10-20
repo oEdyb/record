@@ -25,8 +25,8 @@ Ranked by user impact: lost or silently broken takes first, then cost, then late
 All ten findings and the quick wins are fixed on `fix/recording`; technique F is not adopted.
 Verification ran locally only (no CI):
 - `npx tsc --noEmit`, `npx tsc -p tsconfig.test.json --noEmit`, `npm run lint`: pass.
-- Full vitest suite: 2,549 passed, 7 skipped, 0 failed.
-- Swift helper suite (`scripts/test-macos-capture-helper.mjs`): 84 passed.
+- Full vitest suite: 2,551 passed, 7 skipped, 0 failed.
+- Swift helper suite (`scripts/test-macos-capture-helper.mjs`): 85 passed.
 - `npm run build:native:mac`: pass.
 
 The helper was A/B tested against the installed 1.9.5 helper (copied from
@@ -39,11 +39,11 @@ The helper was A/B tested against the installed 1.9.5 helper (copied from
 | 1 | `.idleDisplaySleepDisabled` joins the process activity | `b718dc06` | Unit test only; a full idle-sleep wait was not run |
 | 2 | A quit that stops the take and is then cancelled sends `native-mac-recording-stopped-by-app`; the HUD opens review with the saved result | `b8de6981` | Unit tests (service and HUD) |
 | 3 | `streamDidBecomeInactive/Active` (15.2+), screen lock and system sleep auto-Pause a live take with a toast | `0abb51a7` | Unit tests; not triggered live (a lock would interrupt the user) |
-| 4 | High asks for `0.9 / fps` (OBS's 10% headroom), queue depth 8 | `234c52b8` | Delivered 60.0 fps, 0 dropped frames, helper CPU 14.4% → 13.2% while recording; the 120 Hz saving is unmeasured (60 Hz panel) |
+| 4 | High skips only whole display refreshes: as many as still deliver at least the written fps (60 of 120 Hz, 72 of 144 Hz, every refresh of 75 or 100 Hz), with OBS's 10% headroom; unknown refresh keeps zero. Queue depth 8 | `234c52b8`, `183d9038` | Delivered 60.0 fps, 0 dropped frames, helper CPU 14.4% → 13.2% while recording; delivery per refresh rate is a unit test; the 120 Hz saving is unmeasured (60 Hz panel) |
 | 5 | Screen captured as 420v with the BT.709 matrix | `77aa5fb9` | Files tagged `tv/bt709`; mean difference from a screenshot about 2 levels for both formats, saturated UI colours 2–3 levels for both |
-| 6 | Start refused below 1 GiB free; during a take, a toast at 5 and 1 minutes left, and an auto-Pause below 512 MiB | `ecfcebd7` | Unit tests; not run on a small disk image |
+| 6 | Start refused below 1 GiB free; during a take, a toast at 5 and 1 minutes left, and an auto-Pause below 512 MiB, asked again every 5 s until the take is paused. Below 2 GiB on `statfs`, the helper's `--available-capacity` adds purgeable space | `ecfcebd7`, `58de2f58` | Unit tests. On this Mac `statfs` shows 33.8 GB and the helper 51.7 GB. Not run on a small disk image |
 | 7 | A paused stream drops to 5 fps after 10 s paused; window lists refresh every 8 s instead of 3–4 s | `8302c98c`, `1819ea45` | Paused 12 s: helper 2.0% → 0.1%, replayd 6.9% → 4.6%; see the Continue trade-off below |
-| 8 | stdin EOF and SIGTERM finalize the clip through the command lane, then exit | `ef9c2afc` | SIGTERM after 3 s: old helper killed, file cut at 2.0 s, no stop event; new helper exits 0 with a 3.05 s clip after 464 ms. EOF: old helper 2.25 s, no stop event; new helper 3.01 s with a stop event |
+| 8 | stdin EOF and SIGTERM finalize the clip through the command lane, then exit. SIGPIPE is ignored, and the client waits 3 s after SIGTERM before SIGKILL | `ef9c2afc`, `6091654e` | SIGTERM after 3 s: old helper killed, file cut at 2.0 s, no stop event; new helper exits 0 with a 3.05 s clip after 464 ms. EOF: old helper 2.25 s, no stop event; new helper 3.01 s with a stop event. Parent process exits after 3 s: old helper 2.02 s, new helper 3.07 and 3.08 s |
 | 9 | Events are parsed from stdout only; stderr is kept for diagnostics | `d5065aff` | Unit test with interleaved chunks |
 | 10 | The second journal rewrite after the first frame is gone; Start waits only for writes already queued | `bdcf7b70` | Dev app: `recovery-updated` 0 ms (10–11 ms on October 16). The cache-rejection reason was already logged (`helper:start-stage:shareable-content:*`) |
 
@@ -54,7 +54,19 @@ Also fixed:
   than the microphone's start time failed Pause with "Original track … microphone.mov received no
   source samples". The installed helper failed 2 of 3 such runs. Now a clip shorter than the 2 s
   source allowance keeps its screen file and reports `original-empty` (`8d34fcb7`); 0 of 6 runs
-  failed. A longer clip with no microphone samples still fails loudly.
+  failed. After review, the 2 s allowance applies only to a source that has not delivered on the
+  current stream; one that already delivered is excused for 0.5 s after Continue. A longer clip
+  with no samples still fails loudly (`fe48d716`).
+- **Lock and sleep after a cancelled quit:** the listeners now stay until `will-quit`
+  (`bfcb0552`).
+
+Fresh-context review of the branch (code-reviewer agent):
+- **Result:** 2 HIGH, 4 MEDIUM and 2 LOW findings. All are fixed except the Discard item
+  (LOW, below).
+- **SIGPIPE was the most serious:** with the app gone, the first event write killed the helper, so
+  the EOF finalize never ran. Reproduced by exiting the parent process: 2.02 s of a 3 s take.
+- **Final helper re-run:** the gates below, and an interleaved Continue check against the
+  shipped helper. Both had p50 about 24 ms at load average 130–170.
 
 AGENTS.md gates, run with the new helper:
 - **Sub-second clips:** six per run.
@@ -80,6 +92,8 @@ Seen but not fixed:
   - Neither happened at normal load.
 - **Mic level meter:** the dev app logged `Error starting audio level monitoring` in the
   renderer. It is outside this branch and was not investigated.
+- **Discard after a quit-time stop:** the take was already saved, so Discard leaves its files.
+  This keeps media rather than deleting it.
 
 Not verified here:
 - **Camera combinations:** this shell has no camera permission.
