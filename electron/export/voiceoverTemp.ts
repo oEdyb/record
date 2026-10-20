@@ -9,8 +9,18 @@ export function createVoiceoverTempPath(tempDirectory: string, ownerPid = proces
 	return path.join(tempDirectory, `.klippt-voiceover-${ownerPid}-${randomUUID()}.mp4`);
 }
 
+/** PCM scratch files the native exporter writes to the temp directory
+ * (`crates/compositor/src/audio_spool.rs`). A crash or kill leaves them behind. */
+const AUDIO_SPOOL_PATTERN = /^klippt-audio-(\d+)-\d+\.pcm$/;
+const CONCAT_LIST_PATTERN =
+	/^klippt-concat-(\d+)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/i;
+
 function voiceoverTempOwnerPid(filePath: string): number | null {
-	const match = path.basename(filePath).match(VOICEOVER_TEMP_PATTERN);
+	return tempOwnerPid(filePath, VOICEOVER_TEMP_PATTERN);
+}
+
+function tempOwnerPid(filePath: string, pattern: RegExp): number | null {
+	const match = path.basename(filePath).match(pattern);
 	if (!match) return null;
 	const ownerPid = Number(match[1]);
 	return Number.isSafeInteger(ownerPid) && ownerPid > 0 ? ownerPid : null;
@@ -38,8 +48,9 @@ export function isVoiceoverTempPath(
 	);
 }
 
-/** Removes only Klippt-owned voiceover intermediates left by an earlier process. */
-export async function cleanupOrphanedVoiceoverTemps(
+/** Removes only Klippt-owned voiceover intermediates and audio spools left by
+ * an earlier process. */
+export async function cleanupOrphanedExportTemps(
 	tempDirectory: string,
 	isProcessAlive: (pid: number) => boolean = defaultIsProcessAlive,
 ): Promise<number> {
@@ -51,7 +62,10 @@ export async function cleanupOrphanedVoiceoverTemps(
 	for (const entry of entries) {
 		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
 		const filePath = path.join(tempDirectory, entry.name);
-		const ownerPid = voiceoverTempOwnerPid(filePath);
+		const ownerPid =
+			voiceoverTempOwnerPid(filePath) ??
+			tempOwnerPid(filePath, AUDIO_SPOOL_PATTERN) ??
+			tempOwnerPid(filePath, CONCAT_LIST_PATTERN);
 		if (ownerPid === null || isProcessAlive(ownerPid)) continue;
 		await fs.rm(filePath, { force: true });
 		removed += 1;

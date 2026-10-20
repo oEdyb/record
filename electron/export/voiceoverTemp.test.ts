@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	cleanupOrphanedVoiceoverTemps,
+	cleanupOrphanedExportTemps,
 	createVoiceoverTempPath,
 	isVoiceoverTempPath,
 } from "./voiceoverTemp";
@@ -55,7 +55,30 @@ describe("voiceover export temporary files", () => {
 			fs.writeFile(lookalike, "unrelated"),
 		]);
 
-		expect(await cleanupOrphanedVoiceoverTemps(directory, (pid) => pid === 77_777)).toBe(1);
+		const orphanSpool = path.join(directory, "klippt-audio-88888-3.pcm");
+		const activeSpool = path.join(directory, "klippt-audio-77777-0.pcm");
+		const spoolLookalike = path.join(directory, "klippt-audio-88888-x.pcm");
+		await Promise.all([
+			fs.writeFile(orphanSpool, "pcm"),
+			fs.writeFile(activeSpool, "pcm"),
+			fs.writeFile(spoolLookalike, "unrelated"),
+		]);
+		const orphanList = path.join(
+			directory,
+			"klippt-concat-88888-123e4567-e89b-42d3-a456-426614174000.txt",
+		);
+		const activeList = path.join(
+			directory,
+			"klippt-concat-77777-123e4567-e89b-42d3-a456-426614174000.txt",
+		);
+		await Promise.all([fs.writeFile(orphanList, "file 'a'"), fs.writeFile(activeList, "file 'b'")]);
+
+		expect(await cleanupOrphanedExportTemps(directory, (pid) => pid === 77_777)).toBe(3);
+		await expect(fs.stat(orphanList)).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(fs.readFile(activeList, "utf8")).resolves.toBe("file 'b'");
+		await expect(fs.stat(orphanSpool)).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(fs.readFile(activeSpool, "utf8")).resolves.toBe("pcm");
+		await expect(fs.readFile(spoolLookalike, "utf8")).resolves.toBe("unrelated");
 		await expect(fs.stat(orphan)).rejects.toMatchObject({ code: "ENOENT" });
 		await expect(fs.readFile(active, "utf8")).resolves.toBe("active export");
 		await expect(fs.readFile(unrelated, "utf8")).resolves.toBe("recording");

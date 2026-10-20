@@ -29,6 +29,87 @@ export function createPlaybackClockRef(): PlaybackClockRef {
 	};
 }
 
+const clockListeners = new WeakMap<PlaybackClockRef, Set<() => void>>();
+
+/** Calls `listener` whenever `publishPlaybackClock` changes the clock. */
+export function onPlaybackClockChange(ref: PlaybackClockRef, listener: () => void): () => void {
+	let listeners = clockListeners.get(ref);
+	if (!listeners) {
+		listeners = new Set();
+		clockListeners.set(ref, listeners);
+	}
+	listeners.add(listener);
+	return () => listeners.delete(listener);
+}
+
+/** Writes this frame's clock and tells readers when it changed. Returns whether it did. */
+export function publishPlaybackClock(ref: PlaybackClockRef, next: PlaybackClockSnapshot): boolean {
+	const current = ref.current;
+	const changed =
+		current.virtualTimeSec !== next.virtualTimeSec ||
+		current.sourceTimeSec !== next.sourceTimeSec ||
+		current.isPlaying !== next.isPlaying ||
+		current.playbackRate !== next.playbackRate;
+	if (!changed) return false;
+	Object.assign(current, next);
+	for (const listener of clockListeners.get(ref) ?? []) listener();
+	return true;
+}
+
+/** Paused and unchanged, a playback loop runs four times a second instead of on every
+ *  display frame: a pending requestAnimationFrame alone keeps Chromium drawing at 60 Hz. */
+export const IDLE_PLAYBACK_LOOP_MS = 250;
+const QUIET_FRAMES_BEFORE_IDLE = 30;
+
+export interface PlaybackLoop {
+	/** Returns to display-frame ticks at once. */
+	wake(): void;
+	stop(): void;
+}
+
+/** Runs `frame` on every display frame while it reports activity, and every
+ *  `IDLE_PLAYBACK_LOOP_MS` after 30 quiet frames until it reports activity or is woken. */
+export function startPlaybackLoop(frame: () => boolean): PlaybackLoop {
+	let raf = 0;
+	let timer = 0;
+	let quietFrames = 0;
+	let stopped = false;
+	const run = () => {
+		raf = 0;
+		let active = true;
+		try {
+			active = frame();
+		} finally {
+			quietFrames = active ? 0 : quietFrames + 1;
+			if (!stopped) {
+				if (quietFrames >= QUIET_FRAMES_BEFORE_IDLE) {
+					timer = window.setTimeout(() => {
+						timer = 0;
+						raf = window.requestAnimationFrame(run);
+					}, IDLE_PLAYBACK_LOOP_MS);
+				} else {
+					raf = window.requestAnimationFrame(run);
+				}
+			}
+		}
+	};
+	raf = window.requestAnimationFrame(run);
+	return {
+		wake() {
+			quietFrames = 0;
+			if (timer === 0 || stopped) return;
+			window.clearTimeout(timer);
+			timer = 0;
+			raf = window.requestAnimationFrame(run);
+		},
+		stop() {
+			stopped = true;
+			window.cancelAnimationFrame(raf);
+			window.clearTimeout(timer);
+		},
+	};
+}
+
 // ponytail: mirrors main's VideoPlayback.tsx webcam-sync tolerances — tighter
 // while paused (a still frame's exact position is visually obvious and a
 // seek is cheap when nothing's moving) and looser while playing (a little

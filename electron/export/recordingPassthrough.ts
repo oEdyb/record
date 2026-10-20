@@ -49,7 +49,7 @@ const layoutFields = {
 	webcamRect: z.null(),
 	screenRect: fullFrame,
 	screenCover: z.literal(false),
-	layoutByClip: z.tuple([z.strictObject(resolvedLayoutFields).nullable()]).optional(),
+	layoutByClip: z.array(z.strictObject(resolvedLayoutFields).nullable()).optional(),
 	screenRadiusFrac: noRadius.optional(),
 	webcamRadiusFrac: z.number().nullable().optional(),
 } satisfies Record<keyof SceneLayout, z.ZodType>;
@@ -75,7 +75,7 @@ const empty = z.array(z.never()).length(0);
 // also fall back to the compositor instead of silently dropping new features.
 const sceneFields = {
 	audioOverlays: empty.optional(),
-	clips: z.tuple([z.strictObject(clipFields)]),
+	clips: z.array(z.strictObject(clipFields)).min(1),
 	layout: z.strictObject(layoutFields),
 	effects: z.strictObject(effectFields),
 	background: z.unknown(),
@@ -85,7 +85,7 @@ const sceneFields = {
 	videoOverlays: empty.optional(),
 	speedRegions: empty,
 	cursor: z.strictObject(cursorFields),
-	cropByClip: z.tuple([fullFrame.nullable()]),
+	cropByClip: z.array(fullFrame.nullable()),
 	output: z.strictObject({
 		width: z.number().int().positive(),
 		height: z.number().int().positive(),
@@ -98,46 +98,56 @@ export interface RecordingPassthroughRequest {
 	clips: ClipInput[];
 	sceneJson?: string;
 	params?: ExportParamsInput;
-	sourceDurationSec: number;
+	/** Each clip's complete source duration, in clip order. */
+	sourceDurationsSec: number[];
 	hasCursorTrack: boolean;
 }
 
-/** Only an explicitly requested, complete recording whose scene covers the
- * output unchanged can bypass the compositor. The explicit opt-in preserves
- * original timestamps/cadence and bitrate; FPS and bitrate then describe only
- * the rendered fallback. Ordinary exports retain their encoding contract. */
+/** Only an explicitly requested set of complete recordings whose scene covers
+ * the output unchanged can bypass the compositor. Takes split by Pause are
+ * joined back to back. The explicit opt-in preserves original timestamps,
+ * cadence and bitrate; FPS and bitrate then describe only the rendered
+ * fallback. Ordinary exports retain their encoding contract. */
 export function canPreserveRecordingSource(request: RecordingPassthroughRequest): boolean {
-	const { clips, params, sourceDurationSec, hasCursorTrack } = request;
+	const { clips, params, sourceDurationsSec, hasCursorTrack } = request;
 	if (
 		params?.preserveRecordingSource !== true ||
 		params.evenVolume !== false ||
 		params.normalizeAudio !== false ||
 		(params.codec !== undefined && params.codec !== "h264" && params.codec !== "h265") ||
-		clips.length !== 1 ||
-		!Number.isFinite(sourceDurationSec) ||
-		sourceDurationSec <= 0 ||
+		clips.length === 0 ||
+		sourceDurationsSec.length !== clips.length ||
+		!sourceDurationsSec.every((duration) => Number.isFinite(duration) && duration > 0) ||
 		!request.sceneJson
 	)
 		return false;
-	const clip = clips[0]!;
-	if (
-		clip.sourceStartSec !== 0 ||
-		clip.sourceEndSec !== sourceDurationSec ||
-		clip.cleanMicrophonePath ||
-		(clip.webcamPath && clip.webcamPath !== clip.screenPath)
-	)
-		return false;
+	const complete = clips.every(
+		(clip, index) =>
+			clip.sourceStartSec === 0 &&
+			clip.sourceEndSec === sourceDurationsSec[index] &&
+			!clip.cleanMicrophonePath &&
+			(!clip.webcamPath || clip.webcamPath === clip.screenPath),
+	);
+	if (!complete) return false;
 	try {
 		const parsed = identityScene.safeParse(JSON.parse(request.sceneJson));
 		if (!parsed.success) return false;
 		const scene = parsed.data;
-		const sceneClip = scene.clips[0];
 		return (
-			sceneClip.screenPath === clip.screenPath &&
-			sceneClip.webcamPath === clip.webcamPath &&
-			sceneClip.webcamOffsetSec === clip.webcamOffsetSec &&
-			sceneClip.hasAudio === clip.hasAudio &&
-			sceneClip.sourceEndSec >= sourceDurationSec &&
+			scene.clips.length === clips.length &&
+			scene.cropByClip.length === clips.length &&
+			(scene.layout.layoutByClip === undefined ||
+				scene.layout.layoutByClip.length === clips.length) &&
+			scene.clips.every((sceneClip, index) => {
+				const clip = clips[index]!;
+				return (
+					sceneClip.screenPath === clip.screenPath &&
+					sceneClip.webcamPath === clip.webcamPath &&
+					sceneClip.webcamOffsetSec === clip.webcamOffsetSec &&
+					sceneClip.hasAudio === clip.hasAudio &&
+					sceneClip.sourceEndSec >= sourceDurationsSec[index]!
+				);
+			}) &&
 			!(scene.cursor.show && hasCursorTrack) &&
 			scene.output.width === (Math.max(2, params.width ?? 1920) & ~1) &&
 			scene.output.height === (Math.max(2, params.height ?? 1080) & ~1)

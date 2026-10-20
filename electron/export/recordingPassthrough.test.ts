@@ -65,7 +65,7 @@ function eligible(
 		clips: [clip],
 		sceneJson: JSON.stringify(value),
 		params,
-		sourceDurationSec: 120,
+		sourceDurationsSec: [120],
 		hasCursorTrack: false,
 		...overrides,
 	});
@@ -131,6 +131,33 @@ describe("recording source preservation", () => {
 			expect(eligible(scene(), { clips: [{ ...clip, ...changed }] })).toBe(false);
 		}
 		expect(eligible(scene(), { clips: [clip, clip] })).toBe(false);
+	});
+	it("joins complete takes split by Pause, and renders when any take is trimmed or framed", () => {
+		const second = { ...clip, screenPath: "/recording-2.mp4", sourceEndSec: 45 };
+		const joined = () => {
+			const value = scene();
+			value.clips = [{ ...clip }, { ...second }];
+			value.cropByClip = [null, null];
+			return value;
+		};
+		const takes = { clips: [clip, second], sourceDurationsSec: [120, 45] };
+		expect(eligible(joined(), takes)).toBe(true);
+		expect(eligible(joined(), { ...takes, sourceDurationsSec: [120, 46] })).toBe(false);
+		expect(eligible(joined(), { ...takes, clips: [clip, { ...second, sourceStartSec: 2 }] })).toBe(
+			false,
+		);
+		expect(
+			eligible(joined(), { ...takes, clips: [clip, { ...second, webcamPath: "/camera.mov" }] }),
+		).toBe(false);
+		const cropped = joined();
+		cropped.cropByClip = [null, { x: 0, y: 0, width: 0.5, height: 1 }];
+		expect(eligible(cropped, takes)).toBe(false);
+		const missingCrop = joined();
+		missingCrop.cropByClip = [null];
+		expect(eligible(missingCrop, takes)).toBe(false);
+		const reordered = joined();
+		reordered.clips.reverse();
+		expect(eligible(reordered, takes)).toBe(false);
 	});
 	it("renders cropping, zoom, padding, blur, and per-clip placement", () => {
 		const changes: Array<(value: SceneDescription) => void> = [

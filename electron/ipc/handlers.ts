@@ -79,7 +79,7 @@ import { createEntitlementService } from "../entitlements/createService";
 import { registerEntitlementIpc } from "../entitlements/ipc";
 import { ExportTransactionError } from "../export/atomicExport";
 import {
-	cleanupOrphanedVoiceoverTemps,
+	cleanupOrphanedExportTemps,
 	createVoiceoverTempPath,
 	isVoiceoverTempPath,
 } from "../export/voiceoverTemp";
@@ -1814,7 +1814,7 @@ export function registerIpcHandlers(
 	const exportTempDirectory = app.getPath("temp");
 	const exportRecovery = Promise.all([
 		exportBufferService.initializeExportRecovery(),
-		cleanupOrphanedVoiceoverTemps(exportTempDirectory),
+		cleanupOrphanedExportTemps(exportTempDirectory),
 	]).catch((error) => {
 		console.warn("[export] startup recovery failed:", error);
 	});

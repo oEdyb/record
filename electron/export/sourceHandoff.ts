@@ -3,12 +3,36 @@ import path from "node:path";
 import { resolvePlaybackSegments } from "../../src/lib/ai-edition/document/timeline";
 import { documentSchema } from "../../src/lib/ai-edition/schema";
 import { resolveClipSourceEndSec } from "../../src/lib/ai-edition/timeline/clipDuration";
+import { availableBytes, formatGigabytes } from "./atomicExport";
 import { copyOriginalFile } from "./copyOriginalFile";
 import { inspectHandoffSourceMedia } from "./sourceHandoffMedia";
 import { buildSourceTimeline, type HandoffMedia, SOURCE_TIMELINE_RATE } from "./sourceTimeline";
 
 interface SourceFile extends HandoffMedia {
 	label: string;
+}
+
+/** `statfs` type of an APFS volume on macOS, where `cp -c` clones instead of copying. */
+const APFS_TYPE = 26;
+const HANDOFF_SAFETY_BYTES = 64n * 1024n * 1024n;
+
+/** A clone on the same APFS volume takes no space; every other copy needs the
+ * whole file. Fail before creating the folder rather than partway through. */
+async function assertHandoffSpace(sources: string[], destination: string): Promise<void> {
+	const [target, volume] = await Promise.all([fs.stat(destination), fs.statfs(destination)]);
+	const clones = process.platform === "darwin" && volume.type === APFS_TYPE;
+	let needed = 0n;
+	for (const source of sources) {
+		const stats = await fs.stat(source);
+		if (!(clones && stats.dev === target.dev)) needed += BigInt(stats.size);
+	}
+	if (needed === 0n) return;
+	const safety = needed / 100n > HANDOFF_SAFETY_BYTES ? needed / 100n : HANDOFF_SAFETY_BYTES;
+	const free = availableBytes(volume);
+	if (free < needed + safety)
+		throw new Error(
+			`Not enough free space for the source files. They need about ${formatGigabytes(needed + safety)} free, and this disk has ${formatGigabytes(free)}.`,
+		);
 }
 
 export async function exportSourceHandoff(
@@ -53,14 +77,13 @@ export async function exportSourceHandoff(
 	}
 	const safeTitle =
 		document.project.title.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 60) || "Recording";
-	const directory = await fs
-		.realpath(destination)
-		.then((parent) => fs.mkdtemp(path.join(parent, `${safeTitle}-sources-`)))
-		.catch(() => {
-			throw new Error(
-				"Could not create the source folder. Choose a writable folder and try again.",
-			);
-		});
+	const parent = await fs.realpath(destination).catch(() => {
+		throw new Error("Could not create the source folder. Choose a writable folder and try again.");
+	});
+	await assertHandoffSpace([...new Set(paths.values())], parent);
+	const directory = await fs.mkdtemp(path.join(parent, `${safeTitle}-sources-`)).catch(() => {
+		throw new Error("Could not create the source folder. Choose a writable folder and try again.");
+	});
 	const written = new Map<string, SourceFile>();
 	const inspected = new Map<string, Awaited<ReturnType<typeof inspectHandoffSourceMedia>>>();
 	const warnings: string[] = [];

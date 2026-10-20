@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { resolveFfmpeg } from "../media/audioPeaks";
 import type { ExportStats } from "../native/compositor-view/addon";
@@ -215,31 +217,33 @@ export class RecordingVideoPacketAccumulator {
 	}
 }
 
+/** Apple's AudioToolbox AAC encoder, in the bundled macOS FFmpeg, encodes a
+ * 40-minute stereo track in 40 s; FFmpeg's own AAC encoder takes 263 s. */
+const AAC_ENCODER = process.platform === "darwin" ? "aac_at" : "aac";
+
+/** Time limit for one full pass over the recording: never less than 30 minutes,
+ * and enough for a slow external disk reading 20 MB/s. */
+function passTimeoutMs(bytes: number): number {
+	return Math.max(30 * 60_000, Math.ceil(bytes / 20_000));
+}
+
+function videoHashArgs(): string[] {
+	return ["-map", "0:v:0", "-c:v", "copy", "-f", "framehash", "-hash", PACKET_HASH, "pipe:1"];
+}
+
 async function probeRecordingPackets(
 	ffmpeg: string,
 	file: string,
 	signal: AbortSignal,
+	timeoutMs: number,
 	onSpan?: (seconds: number) => void,
 ) {
 	const packets = new RecordingVideoPacketAccumulator();
 	const header = await runRecordingFfmpeg(
 		ffmpeg,
-		[
-			"-copyts",
-			"-i",
-			file,
-			"-map",
-			"0:v:0",
-			"-c:v",
-			"copy",
-			"-f",
-			"framehash",
-			"-hash",
-			PACKET_HASH,
-			"-",
-		],
+		["-copyts", "-i", file, ...videoHashArgs()],
 		signal,
-		30 * 60_000,
+		timeoutMs,
 		(chunk) => {
 			packets.append(chunk);
 			onSpan?.(packets.spanSeconds);
@@ -248,27 +252,66 @@ async function probeRecordingPackets(
 	return { header, packets: packets.finish() };
 }
 
+interface RecordingClipHeader {
+	media: RecordingSourceMetadata;
+	durationSec: number | null;
+	/** Codec configuration and time base; joined takes must share both. */
+	streamIdentity: string;
+}
+
+/** Reads one video packet: enough for the container header, the codec
+ * configuration hash and the stream time base, without a pass over the file. */
+async function inspectRecordingClip(
+	ffmpeg: string,
+	file: string,
+	signal: AbortSignal,
+): Promise<RecordingClipHeader | null> {
+	let stdout = "";
+	const header = await runRecordingFfmpeg(
+		ffmpeg,
+		["-copyts", "-i", file, "-frames:v", "1", ...videoHashArgs()],
+		signal,
+		60_000,
+		(chunk) => {
+			stdout += chunk;
+		},
+	);
+	const media = parseRecordingSourceMetadata(header);
+	const identity = stdout
+		.split("\n")
+		.filter((line) => /^#(?:extradata|tb|codec_id|dimensions|sar) 0:?/.test(line))
+		.join("\n");
+	if (!media || !identity.includes("#tb 0")) return null;
+	return {
+		media,
+		durationSec: parseSourceAudioLayout(header).durationSec,
+		streamIdentity: identity,
+	};
+}
+
+/** FFmpeg concat list. Single quotes close, escape and reopen the quoted path. */
+function concatList(files: string[]): string | null {
+	if (files.some((file) => /[\r\n]/.test(file))) return null;
+	return files.map((file) => `file '${file.split("'").join("'\\''")}'\n`).join("");
+}
+
 export type RecordingFastExportRequest = Omit<RecordingPassthroughRequest, "hasCursorTrack"> & {
 	signal: AbortSignal;
 	/** Receives progress on the same frame scale as a rendered export. */
 	onProgress?: (frames: number) => void;
 };
 
-/** The source-preserving path reads the recording, copies it and reads the copy
- * back. Report the three passes as equal thirds of one bar, scaled to the frame
- * total the renderer expects for this duration and frame rate. */
+/** The source-preserving path copies the recording while hashing what it read,
+ * then reads the copy back. Report the two passes as equal halves of one bar,
+ * scaled to the frame total the renderer expects for this duration and rate. */
 function fastExportProgress(durationS: number, fps: number) {
 	const total = Math.max(1, Math.round(durationS * fps));
 	let last = -1;
 	let lastAt = 0;
-	return (
-		onProgress: ((frames: number) => void) | undefined,
-		pass: 0 | 1 | 2,
-		fraction: number,
-	) => {
+	return (onProgress: ((frames: number) => void) | undefined, pass: 0 | 1, fraction: number) => {
 		if (!onProgress) return;
 		const clamped = Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0));
-		const frames = Math.min(total, Math.round(((pass + clamped) / 3) * total));
+		const frames = Math.min(total, Math.round(((pass + clamped) / 2) * total));
 		const now = performance.now();
 		if (frames <= last || (now - lastAt < 100 && frames < total)) return;
 		last = frames;
@@ -277,134 +320,191 @@ function fastExportProgress(durationS: number, fps: number) {
 	};
 }
 
-export async function prepareRecordingFastExport(
-	request: RecordingFastExportRequest,
-): Promise<RecordingFastExportPlan | null> {
-	if (!canPreserveRecordingSource({ ...request, hasCursorTrack: false })) return null;
-	if (request.signal.aborted) throw abortError();
-	const clip = request.clips[0]!;
-	const sidecar = await fs
-		.stat(`${clip.screenPath}.cursor.json`)
+async function hasCursorSidecar(screenPath: string): Promise<boolean> {
+	return await fs
+		.stat(`${screenPath}.cursor.json`)
 		.then(() => true)
 		.catch((error: unknown) => {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
 			throw error;
 		});
-	if (!canPreserveRecordingSource({ ...request, hasCursorTrack: sidecar })) return null;
+}
+
+/** Cheap checks only: eligibility, file sizes and one packet per take. Every
+ * full pass over the recording runs inside `render`, after the export has
+ * confirmed there is room for it. */
+export async function prepareRecordingFastExport(
+	request: RecordingFastExportRequest,
+): Promise<RecordingFastExportPlan | null> {
+	if (!canPreserveRecordingSource({ ...request, hasCursorTrack: false })) return null;
+	if (request.signal.aborted) throw abortError();
+	const { clips } = request;
+	const sidecars = await Promise.all(clips.map((clip) => hasCursorSidecar(clip.screenPath)));
+	if (!canPreserveRecordingSource({ ...request, hasCursorTrack: sidecars.some(Boolean) }))
+		return null;
 	const ffmpeg = resolveFfmpeg();
 	if (!ffmpeg) return null;
-	const source = await fs.stat(clip.screenPath);
-	if (!source.isFile()) return null;
-	const report = fastExportProgress(request.sourceDurationSec, request.params?.fps ?? 60);
-	const original = await probeRecordingPackets(ffmpeg, clip.screenPath, request.signal, (s) =>
-		report(request.onProgress, 0, s / request.sourceDurationSec),
-	);
-	const media = parseRecordingSourceMetadata(original.header);
+	const sources = await Promise.all(clips.map((clip) => fs.stat(clip.screenPath)));
+	if (!sources.every((source) => source.isFile())) return null;
+	const headers: RecordingClipHeader[] = [];
+	for (const clip of clips) {
+		const header = await inspectRecordingClip(ffmpeg, clip.screenPath, request.signal);
+		if (!header) return null;
+		headers.push(header);
+	}
 	const params = request.params!;
+	const first = headers[0]!;
+	const media = first.media;
+	const silentClip = clips.map(
+		(clip, index) => !clip.hasAudio || headers[index]!.media.audioStreamIndex === null,
+	);
 	if (
-		!media ||
 		media.width !== params.width ||
 		media.height !== params.height ||
-		media.codec !== (params.codec === "h265" ? "hevc" : "h264")
+		media.codec !== (params.codec === "h265" ? "hevc" : "h264") ||
+		headers.some(
+			(header) =>
+				header.streamIdentity !== first.streamIdentity ||
+				header.media.codec !== media.codec ||
+				header.media.audioStreamIndex !== media.audioStreamIndex,
+		) ||
+		silentClip.some((silent) => silent !== silentClip[0])
 	)
 		return null;
-	const silence = !clip.hasAudio || media.audioStreamIndex === null;
-	const durationS = request.sourceDurationSec;
+	const joined = clips.length > 1;
+	const list = joined ? concatList(clips.map((clip) => path.resolve(clip.screenPath))) : "";
+	if (list === null) return null;
+	const silence = silentClip[0]!;
+	const durationS = request.sourceDurationsSec.reduce((sum, duration) => sum + duration, 0);
+	const sourceBytes = sources.reduce((sum, source) => sum + source.size, 0);
+	const timeoutMs = passTimeoutMs(sourceBytes);
+	const report = fastExportProgress(durationS, params.fps ?? 60);
+	// Reserve the index at the front instead of +faststart, which rewrites the
+	// whole file a second time to move it there. A sample costs at most 44 bytes
+	// of size, timing, sync and chunk entries; 64 leaves margin, and muxing
+	// fails rather than truncating.
+	// The frame bound doubles the nominal rate, capped where a closing sample makes
+	// it read 600, because a variable-rate capture can run above its nominal rate;
+	// slack covers the closing samples themselves.
+	const audioPackets = Math.ceil((durationS * 48_000) / 1024) + clips.length;
+	const videoPackets = Math.ceil(2 * durationS * Math.min(media.fps, 120)) + 600 * clips.length;
+	const moovBytes = 64 * (videoPackets + audioPackets) + 1024 * 1024;
 	let verificationFps = media.fps;
 	return {
-		expectedBytes: source.size + Math.ceil(silence ? (durationS * 384_000) / 8 : 0) + 1024 * 1024,
+		expectedBytes:
+			sourceBytes + Math.ceil(silence || joined ? (durationS * 384_000) / 8 : 0) + moovBytes,
 		get fps() {
 			return verificationFps;
 		},
 		durationS,
 		render: async (stagingPath, signal, onProgress) => {
 			const start = performance.now();
-			const args = ["-v", "error", "-n", "-progress", "pipe:1", "-nostats", "-i", clip.screenPath];
-			// Bound only the synthetic audio input. An output-wide -t would
-			// discard a closing video packet whose PTS equals container duration.
-			if (silence)
-				args.push("-f", "lavfi", "-t", String(durationS), "-i", "anullsrc=r=48000:cl=stereo");
-			args.push(
-				"-map",
-				"0:v:0",
-				"-map",
-				silence ? "1:a:0" : `0:${media.audioStreamIndex}`,
-				"-c:v",
-				"copy",
-			);
-			if (media.codec === "hevc") args.push("-tag:v", "hvc1");
-			if (silence) args.push("-c:a", "aac", "-b:a", "384k", "-ar", "48000", "-ac", "2");
-			else args.push("-c:a", "copy");
-			// Reserve the index at the front instead of +faststart, which rewrites the
-			// whole file a second time to move it there. 40 bytes covers each sample's
-			// size, timing, sync and chunk entries; muxing fails rather than truncating.
-			const audioPackets = Math.ceil((durationS * 48_000) / 1024);
-			const moovBytes = 40 * (original.packets.frames + audioPackets) + 1024 * 1024;
-			args.push("-moov_size", String(moovBytes), "-sn", "-dn", stagingPath);
-			let pending = "";
-			let frames = 0;
-			await runRecordingFfmpeg(ffmpeg, args, signal, 30 * 60_000, (chunk) => {
-				pending += chunk;
-				const lines = pending.split("\n");
-				pending = lines.pop() ?? "";
-				for (const line of lines) {
-					const [key, value] = line.trim().split("=");
-					if (key === "frame") {
-						frames = Math.max(frames, Number(value) || 0);
-						report(onProgress, 1, frames / original.packets.frames);
-					}
+			const listPath = joined
+				? path.join(os.tmpdir(), `klippt-concat-${process.pid}-${randomUUID()}.txt`)
+				: null;
+			try {
+				if (listPath) await fs.writeFile(listPath, list, { flag: "wx", mode: 0o600 });
+				const args = ["-v", "error", "-n", "-copyts"];
+				// auto_convert would rewrite H.264 packets to Annex B and back, adding
+				// parameter sets to the first keyframe; joined takes share one codec
+				// configuration, so packets pass through unchanged.
+				if (listPath) args.push("-f", "concat", "-safe", "0", "-auto_convert", "0", "-i", listPath);
+				else args.push("-i", clips[0]!.screenPath);
+				// Bound only the synthetic audio input. An output-wide -t would
+				// discard a closing video packet whose PTS equals container duration.
+				if (silence)
+					args.push("-f", "lavfi", "-t", String(durationS), "-i", "anullsrc=r=48000:cl=stereo");
+				args.push(
+					"-map",
+					"0:v:0",
+					"-map",
+					silence ? "1:a:0" : `0:${media.audioStreamIndex}`,
+					"-c:v",
+					"copy",
+				);
+				if (media.codec === "hevc") args.push("-tag:v", "hvc1");
+				if (silence) args.push("-c:a", AAC_ENCODER, "-b:a", "384k", "-ar", "48000", "-ac", "2");
+				else if (joined)
+					// Each take's audio starts where its take starts. Fill or trim the few
+					// milliseconds where a take's audio and video lengths differ, so sync
+					// never drifts across joins.
+					args.push(
+						"-af",
+						"aresample=async=1:min_hard_comp=0.005:first_pts=0",
+						"-c:a",
+						AAC_ENCODER,
+						"-b:a",
+						"384k",
+						"-ar",
+						"48000",
+						"-ac",
+						"2",
+					);
+				else args.push("-c:a", "copy");
+				args.push("-moov_size", String(moovBytes), "-sn", "-dn", stagingPath, ...videoHashArgs());
+				const read = new RecordingVideoPacketAccumulator();
+				const header = await runRecordingFfmpeg(ffmpeg, args, signal, timeoutMs, (chunk) => {
+					read.append(chunk);
+					report(onProgress, 0, read.spanSeconds / durationS);
+				});
+				const original = read.finish();
+				const staged = await probeRecordingPackets(ffmpeg, stagingPath, signal, timeoutMs, (s) =>
+					report(onProgress, 1, s / durationS),
+				);
+				const stagedMedia = parseRecordingSourceMetadata(staged.header);
+				// FFmpeg's human-readable duration is rounded to hundredths; allow
+				// at most two display quanta per take, alongside exact packet proof.
+				const originalDuration = joined
+					? headers.every((clip) => clip.durationSec !== null)
+						? headers.reduce((sum, clip) => sum + clip.durationSec!, 0)
+						: null
+					: (parseSourceAudioLayout(header).durationSec ?? first.durationSec);
+				const stagedDuration = parseSourceAudioLayout(staged.header).durationSec;
+				if (
+					!stagedMedia ||
+					stagedMedia.width !== media.width ||
+					stagedMedia.height !== media.height ||
+					stagedMedia.codec !== media.codec ||
+					stagedMedia.audioStreamIndex === null ||
+					(originalDuration !== null &&
+						stagedDuration !== null &&
+						Math.abs(originalDuration - stagedDuration) > 0.020000001 * clips.length) ||
+					staged.packets.frames !== original.frames ||
+					staged.packets.digest !== original.digest ||
+					staged.packets.averageFps !== original.averageFps
+				) {
+					throw new Error(
+						"Source-preserving export changed recording video packets or timestamps.",
+					);
 				}
-			});
-			if (frames <= 0) throw new Error("The source-preserving export contained no video frames.");
-			const staged = await probeRecordingPackets(ffmpeg, stagingPath, signal, (s) =>
-				report(onProgress, 2, s / durationS),
-			);
-			const stagedMedia = parseRecordingSourceMetadata(staged.header);
-			// FFmpeg's human-readable duration is rounded to hundredths; allow
-			// at most two display quanta, alongside exact packet PTS/DTS proof.
-			const originalDuration = parseSourceAudioLayout(original.header).durationSec;
-			const stagedDuration = parseSourceAudioLayout(staged.header).durationSec;
-			if (
-				!stagedMedia ||
-				stagedMedia.width !== media.width ||
-				stagedMedia.height !== media.height ||
-				stagedMedia.codec !== media.codec ||
-				stagedMedia.audioStreamIndex === null ||
-				(originalDuration !== null &&
-					stagedDuration !== null &&
-					Math.abs(originalDuration - stagedDuration) > 0.020000001) ||
-				frames !== original.packets.frames ||
-				staged.packets.frames !== original.packets.frames ||
-				staged.packets.digest !== original.packets.digest ||
-				staged.packets.averageFps !== original.packets.averageFps
-			) {
-				throw new Error("Source-preserving export changed recording video packets or timestamps.");
+				// A last closing sample can make input r_frame_rate/tbr read 600 even
+				// though ~58 frames/s were recorded. Remuxing normalizes that guess.
+				// Packet/timestamp proof above establishes cadence preservation; the
+				// native verifier still checks the staged stream's actual nominal FPS.
+				verificationFps = stagedMedia.fps;
+				const wallS = (performance.now() - start) / 1000;
+				report(onProgress, 1, 1);
+				return {
+					frames: original.frames,
+					wallS,
+					fps: original.frames / Math.max(wallS, 0.000001),
+					videoDurationS: durationS,
+					audioMastering: {
+						enabled: false,
+						analyzed: false,
+						appliedGainDb: 0,
+						limitedByTruePeak: false,
+						limitedByGainCap: false,
+					},
+					encoderName: `stream-copy/${media.codec}`,
+					encoderHardware: false,
+					encoderFallback: false,
+					decoderPath: joined ? "packet-concat" : "packet-copy",
+					compositorBackend: "bypassed-identity-scene",
+				};
+			} finally {
+				if (listPath) await fs.rm(listPath, { force: true });
 			}
-			// A last closing sample can make input r_frame_rate/tbr read 600 even
-			// though ~58 frames/s were recorded. Remuxing normalizes that guess.
-			// Packet/timestamp proof above establishes cadence preservation; the
-			// native verifier still checks the staged stream's actual nominal FPS.
-			verificationFps = stagedMedia.fps;
-			const wallS = (performance.now() - start) / 1000;
-			report(onProgress, 2, 1);
-			return {
-				frames,
-				wallS,
-				fps: frames / Math.max(wallS, 0.000001),
-				videoDurationS: durationS,
-				audioMastering: {
-					enabled: false,
-					analyzed: false,
-					appliedGainDb: 0,
-					limitedByTruePeak: false,
-					limitedByGainCap: false,
-				},
-				encoderName: `stream-copy/${media.codec}`,
-				encoderHardware: false,
-				encoderFallback: false,
-				decoderPath: "packet-copy",
-				compositorBackend: "bypassed-identity-scene",
-			};
 		},
 	};
 }

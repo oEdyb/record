@@ -1032,15 +1032,17 @@ product requirement, not as an optional maximum-quality mode.
 - **Save video** opens the export dialog. **Separate takes** is the fresh preselected choice;
   remember the last explicit output choice. **One video** remains the other choice and uses
   the source-quality MP4 preset in recording review. **Original files** retains recovery access.
-- An explicitly source-preserving, full-span, single screen clip with identity geometry, baked
-  cursor, matching dimensions/codec and compatible audio may copy its encoded packets. Keep
-  the original frame cadence and timestamps; do not promise conversion to a selected constant
-  frame rate. Rendering settings apply only when this explicit path falls back to rendering.
-  Verify the staged MP4 before atomically publishing it. Camera, edits, trims, multiple clips,
-  effects and audio mastering continue through the existing renderer.
+- An explicitly source-preserving export of full-span screen clips with identity geometry, baked
+  cursor, matching dimensions/codec and compatible audio may copy its encoded packets. Takes
+  split by Pause join in order when every take is complete and all share one stream format;
+  joined audio is re-encoded once so it stays in sync across the joins. Keep the original frame
+  cadence and timestamps; do not promise conversion to a selected constant frame rate.
+  Rendering settings apply only when this explicit path falls back to rendering. Verify the
+  staged MP4 before atomically publishing it. Camera, edits, trims, effects and audio mastering
+  continue through the existing renderer.
 - One video in recording review shows no format choices. It states the fixed output (MP4 at
   recording quality and size) and labels progress as saving. The copy path reports one bar
-  across reading the recording, copying it and reading the copy back. A space failure names
+  across copying the recording and reading the copy back. A space failure names
   the space needed and available. The copy reserves the MP4 index at the front, so it is
   written once.
 - Closing export leaves it running. Reopening displays active progress; a later Save after
@@ -1091,6 +1093,8 @@ product requirement, not as an optional maximum-quality mode.
 - Vertical Stack divides the complete padded canvas into cover-cropped screen and camera cells.
   Default to an equal split, and let the user set the camera share from 20% to 80%. Preview,
   native export, CLI export, saved projects, and remembered editor defaults must use one value.
+- Apple's H.264 encoder stops at 4096 pixels on either side. A rendered export larger than that
+  is written as HEVC instead of failing.
 - Export must offer real control over resolution, frame rate, codec, and bitrate. A quality
   preset must pass its resolved bitrate to the native encoder; do not calculate a value in the
   UI and then let the native pipeline replace it with a hidden fixed bitrate.

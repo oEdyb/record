@@ -1485,27 +1485,25 @@ pub(crate) struct AacEncoder {
 
 impl AacEncoder {
     pub(crate) unsafe fn open(output: *mut AVFormatContext) -> Result<Self> {
-        let name = CString::new("aac")?;
-        let codec = avcodec_find_encoder_by_name(name.as_ptr());
-        if codec.is_null() {
-            bail!("encodeur aac introuvable");
+        // AudioToolbox's AAC encoder is about six times faster than FFmpeg's own
+        // (40 s against 263 s for 40 minutes of stereo on M5) and takes 16-bit input.
+        #[cfg(target_os = "macos")]
+        let candidates = [
+            ("aac_at", AVSampleFormat::AV_SAMPLE_FMT_S16),
+            ("aac", AVSampleFormat::AV_SAMPLE_FMT_FLTP),
+        ];
+        #[cfg(not(target_os = "macos"))]
+        let candidates = [("aac", AVSampleFormat::AV_SAMPLE_FMT_FLTP)];
+        let mut opened = None;
+        for (name, sample_fmt) in candidates {
+            if let Some(context) = Self::open_codec(name, sample_fmt)? {
+                opened = Some(context);
+                break;
+            }
         }
-        let context = avcodec_alloc_context3(codec);
-        if context.is_null() {
-            bail!("aac avcodec_alloc_context3");
-        }
-        (*context).sample_fmt = AVSampleFormat::AV_SAMPLE_FMT_FLTP;
-        (*context).sample_rate = AUDIO_OUTPUT_SAMPLE_RATE;
-        (*context).bit_rate = AUDIO_BITRATE;
-        (*context).time_base = AVRational {
-            num: 1,
-            den: AUDIO_OUTPUT_SAMPLE_RATE,
+        let Some(context) = opened else {
+            bail!("no AAC encoder in this FFmpeg build");
         };
-        av_channel_layout_default(&mut (*context).ch_layout, AUDIO_OUTPUT_CHANNELS as i32);
-        averr(
-            avcodec_open2(context, codec, ptr::null_mut()),
-            "aac avcodec_open2",
-        )?;
 
         let stream = avformat_new_stream(output, ptr::null());
         if stream.is_null() {
@@ -1526,6 +1524,37 @@ impl AacEncoder {
             packet,
             sample_offset: 0,
         })
+    }
+
+    /// Opens `name` at the output format, or `None` when this build lacks it or refuses it.
+    unsafe fn open_codec(
+        name: &str,
+        sample_fmt: AVSampleFormat::Type,
+    ) -> Result<Option<*mut AVCodecContext>> {
+        let name = CString::new(name)?;
+        let codec = avcodec_find_encoder_by_name(name.as_ptr());
+        if codec.is_null() {
+            return Ok(None);
+        }
+        let mut context = avcodec_alloc_context3(codec);
+        if context.is_null() {
+            bail!("aac avcodec_alloc_context3");
+        }
+        (*context).sample_fmt = sample_fmt;
+        (*context).sample_rate = AUDIO_OUTPUT_SAMPLE_RATE;
+        (*context).bit_rate = AUDIO_BITRATE;
+        (*context).time_base = AVRational {
+            num: 1,
+            den: AUDIO_OUTPUT_SAMPLE_RATE,
+        };
+        av_channel_layout_default(&mut (*context).ch_layout, AUDIO_OUTPUT_CHANNELS as i32);
+        // MP4 keeps the decoder configuration in the track header, not in each packet.
+        (*context).flags |= crate::ffi::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+        if avcodec_open2(context, codec, ptr::null_mut()) < 0 {
+            avcodec_free_context(&mut context);
+            return Ok(None);
+        }
+        Ok(Some(context))
     }
 
     pub(crate) unsafe fn encode_block(
@@ -1555,17 +1584,25 @@ impl AacEncoder {
             )?;
             averr(av_frame_get_buffer(frame, 0), "aac frame_get_buffer")?;
             averr(av_frame_make_writable(frame), "aac frame_make_writable")?;
-            for channel in 0..AUDIO_OUTPUT_CHANNELS {
-                let destination = *(*frame).extended_data.add(channel) as *mut f32;
-                ptr::write_bytes(destination, 0, sample_count);
-                if let Some(source) = pcm.get(channel) {
-                    let available = source.len().saturating_sub(offset).min(sample_count);
-                    if available > 0 {
-                        ptr::copy_nonoverlapping(
-                            source.as_ptr().add(offset),
-                            destination,
-                            available,
-                        );
+            if (*self.context).sample_fmt == AVSampleFormat::AV_SAMPLE_FMT_S16 {
+                let destination = std::slice::from_raw_parts_mut(
+                    (*frame).data[0] as *mut i16,
+                    sample_count * AUDIO_OUTPUT_CHANNELS,
+                );
+                interleave_s16(pcm, offset, destination);
+            } else {
+                for channel in 0..AUDIO_OUTPUT_CHANNELS {
+                    let destination = *(*frame).extended_data.add(channel) as *mut f32;
+                    ptr::write_bytes(destination, 0, sample_count);
+                    if let Some(source) = pcm.get(channel) {
+                        let available = source.len().saturating_sub(offset).min(sample_count);
+                        if available > 0 {
+                            ptr::copy_nonoverlapping(
+                                source.as_ptr().add(offset),
+                                destination,
+                                available,
+                            );
+                        }
                     }
                 }
             }
@@ -1606,6 +1643,20 @@ impl AacEncoder {
     }
 }
 
+/// Writes `destination.len() / channels` frames of planar float PCM from `offset` as
+/// interleaved 16-bit samples, clipping to full scale and padding missing samples with silence.
+fn interleave_s16(pcm: &[Vec<f32>], offset: usize, destination: &mut [i16]) {
+    for (index, sample) in destination.iter_mut().enumerate() {
+        let channel = index % AUDIO_OUTPUT_CHANNELS;
+        let value = pcm
+            .get(channel)
+            .and_then(|source| source.get(offset + index / AUDIO_OUTPUT_CHANNELS))
+            .copied()
+            .unwrap_or(0.0);
+        *sample = (value.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
+    }
+}
+
 impl Drop for AacEncoder {
     fn drop(&mut self) {
         unsafe {
@@ -1623,6 +1674,16 @@ mod tests {
     /// un seul suffit, mais les deux plans doivent exister (le format de sortie est stéréo).
     fn planar(samples: &[f32]) -> PlanarPcm {
         vec![samples.to_vec(), samples.to_vec()]
+    }
+
+    #[test]
+    fn s16_interleaving_clips_and_pads_with_silence() {
+        let pcm = vec![vec![0.5, 2.0], vec![-1.0]];
+        let mut out = [7_i16; 6];
+        interleave_s16(&pcm, 0, &mut out);
+        assert_eq!(out, [16_384, -32_767, 32_767, 0, 0, 0]);
+        interleave_s16(&pcm, 1, &mut out[..2]);
+        assert_eq!(&out[..2], &[32_767, 0]);
     }
 
     #[test]

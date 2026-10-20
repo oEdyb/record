@@ -33,7 +33,7 @@ use crate::scene::Scene;
 use crate::timeline_walk::{advance_decoder_to, frame_step, FrameStep, NextFrameTime};
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -1024,6 +1024,48 @@ struct Shared {
     /// `read_frame` la relaie en `Err` au prochain tour de la boucle de pull (~33 ms),
     /// donc elle remonte jusqu'à l'UI par le chemin d'erreur qui existe déjà.
     fatal: Mutex<Option<String>>,
+    /// Set by every command so a waiting render thread wakes at once.
+    commands: CommandSignal,
+}
+
+/// Paused and unchanged, every recompose is triggered by a command, so the render thread
+/// waits for one instead of spinning every few milliseconds.
+const PAUSED_IDLE_WAIT: Duration = Duration::from_millis(50);
+const PLAYING_IDLE_WAIT: Duration = Duration::from_millis(4);
+
+#[derive(Default)]
+struct CommandSignal {
+    pending: Mutex<bool>,
+    signal: Condvar,
+}
+
+impl CommandSignal {
+    fn notify(&self) {
+        if let Ok(mut pending) = self.pending.lock() {
+            *pending = true;
+        }
+        self.signal.notify_one();
+    }
+
+    /// Returns when a command arrives or `timeout` passes, whichever is first.
+    fn wait(&self, timeout: Duration) {
+        let Ok(pending) = self.pending.lock() else {
+            std::thread::sleep(timeout);
+            return;
+        };
+        if let Ok((mut pending, _)) = self
+            .signal
+            .wait_timeout_while(pending, timeout, |pending| !*pending)
+        {
+            *pending = false;
+        }
+    }
+}
+
+impl Shared {
+    fn wake(&self) {
+        self.commands.notify();
+    }
 }
 
 /// Handle d'une vue live. `Drop` arrête le rendu.
@@ -1074,6 +1116,7 @@ impl LiveView {
             latest_frame: Mutex::new(None),
             frame_gen: AtomicU64::new(0),
             fatal: Mutex::new(None),
+            commands: CommandSignal::default(),
         });
         let sh = shared.clone();
         let (s, wc, cj) = (
@@ -1107,6 +1150,7 @@ impl LiveView {
         if let Ok(mut s) = self.shared.preview_size.lock() {
             *s = (w.max(1), h.max(1));
         }
+        self.shared.wake();
     }
 
     /// Message de l'erreur qui a tué le thread de rendu, `None` tant qu'il tourne.
@@ -1170,6 +1214,7 @@ impl LiveView {
                 _ => {}
             }
         }
+        self.shared.wake();
     }
 
     /// Slider inspector (numérique). Conventions : `shadow`/`roundness`/`webcamSize`/
@@ -1197,6 +1242,7 @@ impl LiveView {
                 _ => {}
             }
         }
+        self.shared.wake();
     }
 
     /// Sélection de chaîne : couleur de fond "#rrggbb" ou forme webcam.
@@ -1214,10 +1260,12 @@ impl LiveView {
                 _ => {}
             }
         }
+        self.shared.wake();
     }
 
     pub fn set_playing(&self, playing: bool) {
         self.shared.playing.store(playing, Ordering::Relaxed);
+        self.shared.wake();
     }
 
     /// Ce que la vue est en train de faire : lecture libre (`true`) ou pause (`false`).
@@ -1239,6 +1287,7 @@ impl LiveView {
             }
             Err(e) => eprintln!("[live] set_scene: JSON invalide: {e:#}"),
         }
+        self.shared.wake();
     }
 
     /// Positionne la vue sur le temps source `seconds` du clip actif — plus de conversion en
@@ -1247,6 +1296,7 @@ impl LiveView {
         if let Ok(mut r) = self.shared.requested_frame.lock() {
             *r = Some(seconds.max(0.0));
         }
+        self.shared.wake();
     }
 
     /// Programme le remplacement de la paire screen/webcam sur le thread de rendu. L'identité
@@ -1270,6 +1320,7 @@ impl LiveView {
                 playing_after_seek: None,
             });
         }
+        self.shared.wake();
     }
 
     /// Applies clip identity, source time, and play state as one ordered transport anchor.
@@ -1311,6 +1362,7 @@ impl LiveView {
                 playing_after_seek: Some(playing),
             });
         }
+        self.shared.wake();
     }
 }
 
@@ -1318,6 +1370,7 @@ impl Drop for LiveView {
     fn drop(&mut self) {
         // 1. Stoper le thread (il observe `stop` en tête de boucle et sort proprement).
         self.shared.stop.store(true, Ordering::SeqCst);
+        self.shared.wake();
         // 2. Join. À la sortie, le thread a relâché toutes ses ressources GPU (compositor,
         //    décodeurs, resize_target, staging) ; le `Shared` reste vivant tant qu'on n'a
         //    pas droppé notre `Arc` final.
@@ -2290,8 +2343,10 @@ unsafe fn render_thread(
                     }
                 }
             }
+        } else if shared.playing.load(Ordering::Relaxed) {
+            shared.commands.wait(PLAYING_IDLE_WAIT);
         } else {
-            std::thread::sleep(Duration::from_millis(4));
+            shared.commands.wait(PAUSED_IDLE_WAIT);
         }
     }
     Ok(())
@@ -2482,6 +2537,26 @@ pub fn run_standalone(_screen: &str, _webcam: &str, _cursor_json: &str) -> anyho
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_ends_the_idle_wait_at_once_and_is_consumed() {
+        let commands = std::sync::Arc::new(CommandSignal::default());
+        let waker = commands.clone();
+        let sender = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            waker.notify();
+        });
+        let started = std::time::Instant::now();
+        commands.wait(std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        sender.join().unwrap();
+
+        commands.notify();
+        commands.wait(std::time::Duration::from_secs(5));
+        let started = std::time::Instant::now();
+        commands.wait(std::time::Duration::from_millis(30));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(30));
+    }
 
     #[test]
     fn overlay_preparation_uses_requested_clock_between_sparse_frame_requests() {

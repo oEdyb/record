@@ -352,3 +352,39 @@ it("checks standalone audio isolation even when its path aliases an already copi
 	);
 	expect((await fs.readdir(root)).sort()).toEqual(["camera.mp4", "screen.mp4"]);
 });
+
+it("refuses a copy that cannot fit before creating any source folder", async () => {
+	const doc = await fixture();
+	const statfs = vi.spyOn(fs, "statfs").mockResolvedValue({
+		type: 0x1c,
+		bsize: 4096,
+		bavail: 1,
+	} as Awaited<ReturnType<typeof fs.statfs>>);
+	try {
+		await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow(
+			"Not enough free space for the source files",
+		);
+		expect((await fs.readdir(root)).filter((name) => name.includes("-sources-"))).toEqual([]);
+	} finally {
+		statfs.mockRestore();
+	}
+});
+
+// Real clones need macOS `cp -c`; elsewhere the platform-neutral refusal test covers the check.
+it.runIf(process.platform === "darwin")(
+	"needs no free space for clones on the same APFS volume",
+	async () => {
+		const doc = await fixture();
+		const statfs = vi.spyOn(fs, "statfs").mockResolvedValue({
+			type: 26,
+			bsize: 4096,
+			bavail: 0,
+		} as Awaited<ReturnType<typeof fs.statfs>>);
+		try {
+			const result = await exportSourceHandoff(doc, root, (file) => file);
+			expect(result.sourceCount).toBe(2);
+		} finally {
+			statfs.mockRestore();
+		}
+	},
+);

@@ -19,6 +19,8 @@ import {
 	type ExportTransactionPhase,
 	type ExportTransactionWarning,
 } from "../../export/atomicExport";
+import { assertAudioSpoolSpace } from "../../export/audioSpoolSpace";
+import { renderedExportCodec } from "../../export/exportCodec";
 import {
 	prepareRecordingFastExport,
 	type RecordingFastExportPlan,
@@ -825,14 +827,16 @@ export class CompositorViewService {
 				sourceDurations.set(sourcePath, duration);
 				return duration;
 			});
+			// The copy path keeps the recording's own codec; only a render can switch.
+			const renderParams = { ...params, codec: renderedExportCodec(params) };
 			let fastExport: RecordingFastExportPlan | null = null;
-			if (params?.preserveRecordingSource && resolvedClips.length === 1) {
+			if (params?.preserveRecordingSource) {
 				try {
 					fastExport = await (this.options.recordingFastExport ?? prepareRecordingFastExport)({
 						clips: resolvedClips,
 						sceneJson,
 						params,
-						sourceDurationSec: sourceDurations.get(resolvedClips[0]!.screenPath)!,
+						sourceDurationsSec: resolvedClips.map((clip) => sourceDurations.get(clip.screenPath)!),
 						signal: controller.signal,
 						onProgress,
 					});
@@ -896,11 +900,23 @@ export class CompositorViewService {
 								await fs.promises.rm(stagingPath, { force: true });
 							}
 						}
+						// The program spool is written even for silent takes, at output length:
+						// slow speed regions make it longer than the source.
+						const sourceSec = resolvedClips.map((clip) => clip.sourceEndSec - clip.sourceStartSec);
+						const stretch = Math.max(
+							1,
+							durationEstimate /
+								Math.max(
+									1e-6,
+									sourceSec.reduce((sum, sec) => sum + sec, 0),
+								),
+						);
+						await assertAudioSpoolSpace(sourceSec.map((sec) => sec * stretch));
 						const operation = addon.exportMulti(
 							resolvedClips,
 							stagingPath,
 							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
-							params,
+							renderParams,
 							onProgress,
 							exportId,
 						);
@@ -920,7 +936,11 @@ export class CompositorViewService {
 						height,
 						fps: outputFps,
 						durationS: stats.videoDurationS,
-						codec: params?.codec === "h265" ? "h265" : "h264",
+						codec: copiedRecording
+							? params?.codec === "h265"
+								? "h265"
+								: "h264"
+							: renderParams.codec,
 					};
 					try {
 						const operation = addon.verifyVideoExport?.(stagingPath, verifyInput, exportId);
