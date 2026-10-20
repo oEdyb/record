@@ -22,7 +22,7 @@ beforeEach(() => {
 	packageDir = path.join(directory, "original");
 	temporaryRoot = path.join(directory, "temporary");
 	fs.mkdirSync(temporaryRoot);
-	for (const name of ["Sources", "Tests", ".build"]) {
+	for (const name of ["Sources", "Tests", "Support", ".build"]) {
 		fs.mkdirSync(path.join(packageDir, name), { recursive: true });
 		fs.writeFileSync(path.join(packageDir, name, "sentinel.swift"), `original ${name}`);
 	}
@@ -63,7 +63,7 @@ describe("isolated macOS capture helper tests", () => {
 			(base) =>
 				base.replace(
 					"\t]\n)\n",
-					`\t\t.executableTarget(\n\t\t\tname: "OpenScreenScreenCaptureKitHelper",\n\t\t\tpath: "Sources/OpenScreenScreenCaptureKitHelper"\n\t\t)\n\t]\n)\n`,
+					`\t\t.executableTarget(\n\t\t\tname: "OpenScreenScreenCaptureKitHelper",\n\t\t\tpath: "Sources/OpenScreenScreenCaptureKitHelper",\n\t\t\tlinkerSettings: embeddedInfoPlist("screencapturekit-helper")\n\t\t)\n\t]\n)\n`,
 				),
 		],
 		["existing test target", (base) => base.replace("\ttargets: [", "\ttargets: [.testTarget(")],
@@ -106,7 +106,7 @@ describe("isolated macOS capture helper tests", () => {
 		});
 		expect(path.dirname(isolatedPackage)).toBe(temporaryRoot);
 		expect(fs.existsSync(path.join(isolatedPackage, ".build"))).toBe(false);
-		for (const name of ["Sources", "Tests"]) {
+		for (const name of ["Sources", "Tests", "Support"]) {
 			expect(fs.readFileSync(path.join(isolatedPackage, name, "sentinel.swift"), "utf8")).toBe(
 				`original ${name}`,
 			);
