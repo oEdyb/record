@@ -101,13 +101,13 @@ function show() {
 	);
 	const onClose = vi.fn();
 	render(<ExportDialog open onClose={onClose} document={document} />);
-	fireEvent.click(screen.getByRole("button", { name: "One video" }));
+	fireEvent.click(screen.getByRole("button", { name: "exportDialog.outputVideo" }));
 	return onClose;
 }
 
 function startOneVideo() {
-	fireEvent.click(screen.getByRole("button", { name: "One video" }));
-	fireEvent.click(screen.getByRole("button", { name: "exportDialog.exportMp4" }));
+	fireEvent.click(screen.getByRole("button", { name: "exportDialog.outputVideo" }));
+	fireEvent.click(screen.getByRole("button", { name: "exportDialog.saveVideoAction" }));
 }
 
 beforeEach(() => {
@@ -155,15 +155,15 @@ describe("ExportDialog task completion", () => {
 				onSourceBusyChange={onSourceBusyChange}
 			/>,
 		);
-		fireEvent.click(screen.getByRole("button", { name: "Export sources…" }));
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.sourcesSave" }));
 		expect(onSourceBusyChange).toHaveBeenCalledExactlyOnceWith(true);
-		expect(screen.getByRole("button", { name: "One video" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "exportDialog.outputVideo" })).toBeDisabled();
 		await act(async () => {
 			rejectExport?.(new Error("Disk unavailable"));
 		});
 		expect(await screen.findByRole("alert")).toHaveTextContent("Disk unavailable");
 		expect(onSourceBusyChange).toHaveBeenLastCalledWith(false);
-		expect(screen.getByRole("button", { name: "One video" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "exportDialog.outputVideo" })).toBeEnabled();
 	});
 	it("describes the fixed One video save and its progress instead of format choices", async () => {
 		const document = doc(
@@ -172,10 +172,10 @@ describe("ExportDialog task completion", () => {
 		);
 		mocks.export.mockReturnValueOnce(new Promise(() => undefined));
 		render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
-		fireEvent.click(screen.getByRole("button", { name: "One video" }));
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.outputVideo" }));
 		expect(screen.getByText("exportDialog.quickSummary")).toBeInTheDocument();
 		expect(screen.queryByText("exportDialog.pickFormatAndExport")).toBeNull();
-		fireEvent.click(screen.getByRole("button", { name: "exportDialog.exportMp4" }));
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.saveVideoAction" }));
 		await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce());
 		act(() => mocks.progress?.(1));
 		expect(
@@ -204,7 +204,7 @@ describe("ExportDialog task completion", () => {
 		await waitFor(() => expect(useExportRunStore.getState().phase).toBe("idle"));
 		expect(mocks.pick).toHaveBeenCalledOnce();
 		expect(mocks.export).toHaveBeenCalledOnce();
-		expect(screen.getByRole("button", { name: "exportDialog.exportMp4" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "exportDialog.saveVideoAction" })).toBeEnabled();
 	});
 	it("starts a fresh save after the previous export completed while the dialog was closed", async () => {
 		const document = doc(
@@ -246,7 +246,7 @@ describe("ExportDialog task completion", () => {
 				<ExportDialog open quickExport onClose={vi.fn()} document={document} />
 			</StrictMode>,
 		);
-		expect(screen.getByRole("button", { name: "Separate takes" })).toHaveAttribute(
+		expect(screen.getByRole("button", { name: "exportDialog.outputSources" })).toHaveAttribute(
 			"aria-pressed",
 			"true",
 		);
@@ -301,23 +301,23 @@ describe("ExportDialog task completion", () => {
 	it("remembers the last output across reopen and a new dialog session", () => {
 		const document = doc([asset({ id: "a1" })], [clip({ id: "c1", assetId: "a1" })]);
 		const view = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
-		fireEvent.click(screen.getByRole("button", { name: "One video" }));
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.outputVideo" }));
 		view.rerender(<ExportDialog open={false} quickExport onClose={vi.fn()} document={document} />);
 		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
-		expect(screen.getByRole("button", { name: "One video" })).toHaveAttribute(
+		expect(screen.getByRole("button", { name: "exportDialog.outputVideo" })).toHaveAttribute(
 			"aria-pressed",
 			"true",
 		);
 		view.unmount();
 		const next = render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
-		expect(screen.getByRole("button", { name: "One video" })).toHaveAttribute(
+		expect(screen.getByRole("button", { name: "exportDialog.outputVideo" })).toHaveAttribute(
 			"aria-pressed",
 			"true",
 		);
-		fireEvent.click(screen.getByRole("button", { name: "Separate takes" }));
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.outputSources" }));
 		next.unmount();
 		render(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);
-		expect(screen.getByRole("button", { name: "Separate takes" })).toHaveAttribute(
+		expect(screen.getByRole("button", { name: "exportDialog.outputSources" })).toHaveAttribute(
 			"aria-pressed",
 			"true",
 		);
@@ -377,7 +377,7 @@ describe("ExportDialog task completion", () => {
 			[clip({ id: "c1", assetId: "a1" })],
 		);
 		const view = render(<ExportDialog open onClose={vi.fn()} document={document} />);
-		fireEvent.click(screen.getByRole("button", { name: "One video" }));
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.outputVideo" }));
 		fireEvent.click(screen.getByRole("button", { name: "H.265" }));
 		view.rerender(<ExportDialog open={false} onClose={vi.fn()} document={document} />);
 		view.rerender(<ExportDialog open quickExport onClose={vi.fn()} document={document} />);

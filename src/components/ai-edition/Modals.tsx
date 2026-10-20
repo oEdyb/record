@@ -224,7 +224,7 @@ export function OpenProjectModal({
 							: loadFailed
 								? t(recordingOnly ? "recordingReview.loadRecordingsFailed" : "project.failedToLoad")
 								: recordingOnly && projects.length === 0
-									? t("recordingReview.recordFirst")
+									? t("recordingReview.libraryEmpty")
 									: t(recordingOnly ? "recordingReview.noMatches" : "openProjectDialog.noMatches", {
 											query,
 										})}
@@ -289,7 +289,16 @@ export function OpenProjectModal({
 							);
 						}
 						return (
-							<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+							<div
+								key={p.id}
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 4,
+									contentVisibility: "auto",
+									containIntrinsicSize: "auto 60px",
+								}}
+							>
 								<button
 									type="button"
 									ref={(element) => {

@@ -29,7 +29,9 @@
 		"metaOne": "{{duration}} total, 1 clip",
 		"metaMany": "{{duration}} total, {{count}} clips",
 		"more": "More",
-		"newRecording": "New recording"
+		"newRecording": "New recording",
+		"libraryEmpty": "No recordings yet. Your recordings appear here after you stop.",
+		"prepareFailed": "Could not get this recording ready to save. Try again."
 	},
 	"loadingEditor": "Loading editor…",
 	"errors": {
@@ -108,14 +110,29 @@
 		"starting": "Starting…",
 		"exportGif": "Export GIF",
 		"exportMp4": "Export MP4",
-		"exportedVideo": "Video exported",
-		"exportedVideoOf": "of video exported in",
+		"exportedVideo": "Video saved",
 		"showInFolder": "Show in folder",
 		"exportFailed": "Export failed",
 		"qualityUpscaleWarning": "Upscale",
 		"nothingToExport": "Nothing to export — the timeline is empty.",
-		"retryExport": "Try export again",
-		"finishingFile": "Finishing and checking the file…"
+		"retryExport": "Try again",
+		"finishingFile": "Finishing and checking the file…",
+		"outputSources": "Separate files",
+		"outputVideo": "One video",
+		"sourcesSubtitle": "Screen, camera, and audio as separate files for your editor.",
+		"saveVideoAction": "Save video…",
+		"savedSummary": "{{name}}, {{duration}}",
+		"sourcesIntro": "Every clip you recorded between pauses is saved as its original screen, camera, microphone, and system audio files, unchanged.",
+		"sourcesIncludedTitle": "What's included",
+		"sourcesIncluded": "The original recordings, plus a timeline file (timeline.otio) with your cuts and camera sync that most video editors can import. Screen, camera, microphone, and system audio stay on separate tracks. The editable cursor and visual effects are not applied.",
+		"sourcesSaved": "Files saved",
+		"sourcesTimelineHint": "Import timeline.otio in your video editor to keep editing.",
+		"sourcesWarning": "{{count}} warning",
+		"sourcesWarnings": "{{count}} warnings",
+		"sourcesSave": "Save files…",
+		"sourcesSaveAgain": "Save again…",
+		"sourcesPreparing": "Preparing files…",
+		"sourcesCopying": "Copying original files…"
 	},
 	"chat": {
 		"history": "History"

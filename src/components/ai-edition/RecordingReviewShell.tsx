@@ -30,6 +30,7 @@ import {
 } from "@/lib/ai-edition/timeline/timelineMap";
 import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
 import { formatExportEta } from "@/lib/exporter/mp4ExportSettings";
+import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
@@ -855,8 +856,8 @@ export function RecordingReviewShell() {
 				setQuickExport(!sourceRecovery);
 				setExportOpen(true);
 			} catch (error) {
-				toast.error(te("recordingReview.preparing"), {
-					description: error instanceof Error ? error.message : String(error),
+				toast.error(te("recordingReview.prepareFailed"), {
+					description: ipcErrorMessage(error),
 				});
 			} finally {
 				recordingReviewActionRef.current = false;
