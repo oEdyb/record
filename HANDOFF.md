@@ -1,3 +1,20 @@
+# October 20: local release path and the co.dyberg.klippt identity (branch `fix/launch-readiness`)
+
+GitHub Actions has been blocked by billing since October 8, so every release step now runs on this
+Mac. `node scripts/release-mac.mjs` checks the signer, notary profile `klippt-notary`, dependency
+approval, notices and commerce IDs; builds the native helpers; packages arm64; signs, notarizes,
+staples and runs `spctl`; then stages the update release. `--rehearsal` stops after stapling.
+`node scripts/publish-mac-release.mjs --root release/<v>/update-release` is a dry run until
+`--yes`, and needs R2 credentials. The feed is arm64-only. License revalidation runs every 12 h,
+after wake and before read-only. Commerce IDs live in `electron/entitlements/commercial-config.json`.
+Website pages are drafts behind a deploy guard. The app is now `co.dyberg.klippt`, with
+`klippt-*` helpers signed `co.dyberg.klippt.*`. An existing `…/openscreen` data folder keeps being used; fresh installs use `…/Klippt`. The installed
+1.9.5 still has the old ID: installing the new build needs Olle's OK, a one-time permission
+re-grant, and a manual install, because Squirrel.Mac cannot cross the ID change (see
+`docs/permission-and-control-consistency-2026-09-09.md`). Rehearsal passed: notarized and stapled 1.9.5 arm64 DMG (submission 86a208ef), `spctl` accepts DMG and app as Notarized Developer ID; app `co.dyberg.klippt`, helpers `co.dyberg.klippt.*`, after-sign guard passes.
+Waits on Olle: re-sign `supply-chain/approved-dependency-inputs.json`, Lemon IDs, legal text,
+klippt.app DNS/MX/CORS, R2 credentials. Follow-ups: Windows `nsis.guid` derives from the new appId (only matters if Windows installs exist); SwiftPM does not rebuild when only a helper Info.plist changes (after-sign catches it). Audit and status: `docs/audits/2026-10-20/launch.md` (main checkout).
+
 # October 13: overnight fixes and speed (installed)
 
 Olle asked for fixes and speed across the app while he slept; all of it is on `main` and
