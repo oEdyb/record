@@ -128,11 +128,8 @@ final class CaptureSetupBuilder {
 			configuration.preservesAspectRatio = true
 			configuration.captureResolution = .best
 		}
-		configuration.minimumFrameInterval = request.video.quality == "high" ? .zero : CMTime(
-			value: 1,
-			timescale: CMTimeScale(max(1, request.video.fps))
-		)
-		configuration.queueDepth = 6
+		configuration.minimumFrameInterval = Self.minimumFrameInterval(quality: request.video.quality, fps: request.video.fps)
+		configuration.queueDepth = Self.queueDepth
 		configuration.showsCursor = !request.video.hideSystemCursor
 		configuration.pixelFormat = kCVPixelFormatType_32BGRA
 		configuration.sampleRate = 48_000
@@ -166,6 +163,18 @@ final class CaptureSetupBuilder {
 		}
 		return (configuration, true)
 	}
+
+	/// Standard appends every delivered frame, so delivery is the written rate. High writes a
+	/// fixed grid from the newest frame; 10% headroom keeps every slot fresh without taking
+	/// the 120 Hz a ProMotion display would otherwise deliver (zero means native refresh).
+	static func minimumFrameInterval(quality: String?, fps: Int) -> CMTime {
+		let rate = Int32(max(1, fps))
+		return quality == "high" ? CMTime(value: 9, timescale: rate * 10) : CMTime(value: 1, timescale: rate)
+	}
+
+	/// The documented maximum. The frame cache keeps up to three pool surfaces between
+	/// frames, and the pool stalls when the app holds too many of them.
+	static let queueDepth = 8
 
 	private func captureDimensions(
 		for filter: SCContentFilter,
