@@ -108,8 +108,11 @@ and `co.dyberg.klippt.cursor-helper` instead of their file names. `after-sign.cj
 identifiers, the Developer ID OIDs, and team LF8KF3G42Q, and requires both helpers.
 
 What stays the same:
-- User data stays in `~/Library/Application Support/openscreen`. `electron/bootstrap.ts` pins it by
-  path, not by bundle ID. Projects hold absolute paths into it, so no copy or remap is needed.
+- An existing `~/Library/Application Support/openscreen` keeps being used; it is chosen by path,
+  not by bundle ID (`electron/userDataLocation.ts`). Projects hold absolute paths into it, so nothing
+  is copied or remapped. A Mac that never ran an OpenScreen-era build starts in `…/Klippt`. Every
+  trust root (recordings, projects, settings) derives from `app.getPath("userData")`. Renaming an
+  existing folder would be a separate migration with a path remap and is not planned.
 - `OPENSCREEN_*` environment variables are still read.
 - The safeStorage Keychain item is still named "Klippt Safe Storage". Its access list trusts the
   old signature, so macOS may ask once to allow the new app. If the key can't be decrypted, Klippt

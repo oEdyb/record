@@ -13,8 +13,9 @@ legacy `.openscreen` and `.axcut` projects, copy them forward after validation, 
 legacy files during migration. The macOS app is signed as `co.dyberg.klippt`; its helpers are
 `klippt-screencapturekit-helper` and `klippt-cursor-helper`, signed as `co.dyberg.klippt.*` from an
 embedded Info.plist (October 20, 2026). Keep the `oEdyb/record` repository name, the legacy
-`OPENSCREEN_*` environment variables, and the `~/Library/Application Support/openscreen` user-data
-location stable; rename only what users can see. Do not perform a blind global rename. The identity
+`OPENSCREEN_*` environment variables, and an existing `~/Library/Application Support/openscreen`
+user-data folder stable (projects store absolute paths into it); only a Mac without that folder
+starts in `…/Klippt` (`electron/userDataLocation.ts`). Rename only what users can see. Do not perform a blind global rename. The identity
 change, its TCC re-grant, and the one-time manual reinstall are in
 `docs/permission-and-control-consistency-2026-09-09.md`.
 
