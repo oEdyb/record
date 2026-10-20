@@ -6,14 +6,14 @@
 	padding: 8px;
 	background: rgba(18, 21, 26, 0.98);
 	color: #e8ebef;
-	border-radius: 22px;
+	border-radius: var(--hud-radius-xl);
 	corner-shape: squircle;
 	/*
 		No box-shadow: Electron doesn't round the shadow's corners on this
 		transparent frameless window, leaving a square shadow that clashes with
 		the rounded card. Border + surface contrast carries the elevation instead.
 	*/
-	border: 1px solid rgba(255, 255, 255, 0.09);
+	border: 1px solid var(--hud-border);
 }
 
 /* Above the pill: Setup's width and height cap, so the HUD window never resizes. */
@@ -62,8 +62,8 @@
 	height: 44px;
 	grid-template-columns: 1fr 1fr;
 	padding: 4px;
-	border-radius: 14px;
-	background: rgba(255, 255, 255, 0.06);
+	border-radius: var(--hud-radius-lg);
+	background: var(--hud-fill);
 	-webkit-app-region: no-drag;
 }
 
@@ -73,7 +73,7 @@
 	bottom: 4px;
 	left: 4px;
 	width: calc(50% - 4px);
-	border-radius: 10px;
+	border-radius: var(--hud-radius-md);
 	background: rgba(255, 255, 255, 0.12);
 	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 	transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -90,9 +90,9 @@
 	justify-content: center;
 	gap: 8px;
 	border: 0;
-	border-radius: 10px;
+	border-radius: var(--hud-radius-md);
 	background: transparent;
-	color: rgba(255, 255, 255, 0.55);
+	color: var(--hud-muted);
 	font-size: 13px;
 	font-weight: 500;
 	cursor: pointer;
@@ -107,7 +107,7 @@
 .close:focus-visible,
 .sourceCard:focus-visible {
 	outline: none;
-	box-shadow: inset 0 0 0 2px rgba(142, 165, 191, 0.72);
+	box-shadow: inset 0 0 0 2px var(--hud-focus);
 }
 
 .close {
@@ -117,9 +117,9 @@
 	flex: none;
 	place-items: center;
 	border: 0;
-	border-radius: 14px;
+	border-radius: var(--hud-radius-lg);
 	background: transparent;
-	color: rgba(255, 255, 255, 0.55);
+	color: var(--hud-muted);
 	cursor: pointer;
 	-webkit-app-region: no-drag;
 	transition:
@@ -155,7 +155,7 @@
 	gap: 4px;
 	padding: 4px;
 	border: 0;
-	border-radius: 14px;
+	border-radius: var(--hud-radius-lg);
 	background: rgba(255, 255, 255, 0.04);
 	color: inherit;
 	text-align: left;
@@ -191,7 +191,7 @@
 	position: relative;
 	aspect-ratio: 16 / 10;
 	overflow: hidden;
-	border-radius: 10px;
+	border-radius: var(--hud-radius-md);
 	background: #0b0d11;
 }
 
@@ -207,7 +207,7 @@
 	width: 100%;
 	height: 100%;
 	place-items: center;
-	color: rgba(255, 255, 255, 0.3);
+	color: var(--hud-faint);
 }
 
 .caption {
@@ -223,18 +223,18 @@
 	width: 16px;
 	height: 16px;
 	flex: none;
-	border-radius: 4px;
+	border-radius: var(--hud-radius-sm);
 	object-fit: cover;
 }
 
 .captionIcon {
 	flex: none;
-	color: rgba(255, 255, 255, 0.55);
+	color: var(--hud-muted);
 }
 
 .name {
 	overflow: hidden;
-	color: #f5f7fa;
+	color: var(--hud-ink);
 	font-size: 13px;
 	font-weight: 500;
 	text-overflow: ellipsis;
@@ -253,7 +253,7 @@
 
 .sourceGridScroll::-webkit-scrollbar-thumb {
 	background: #333a45;
-	border-radius: 999px;
+	border-radius: var(--hud-radius-pill);
 }
 
 .sourceGridScroll::-webkit-scrollbar-thumb:hover {
