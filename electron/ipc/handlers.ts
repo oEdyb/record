@@ -3181,7 +3181,8 @@ export function registerIpcHandlers(
 		const onSuspend = () => notifyNativeMacInterruption("system-sleep");
 		powerMonitor.on("lock-screen", onLockScreen);
 		powerMonitor.on("suspend", onSuspend);
-		app.once("before-quit", () => {
+		// A quit can still be cancelled at before-quit, and the take carries on.
+		app.once("will-quit", () => {
 			powerMonitor.off("lock-screen", onLockScreen);
 			powerMonitor.off("suspend", onSuspend);
 		});
