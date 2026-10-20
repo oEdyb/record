@@ -1,3 +1,13 @@
+# October 20: Final Cut Pro timeline in Separate takes (branch `claude/clever-yalow-8c1dcd`)
+
+Separate takes now writes `timeline.fcpxml` beside `timeline.otio`. Both come from one shared
+frame-grid plan (`planSourceTimeline`); OTIO output is byte-identical to before. Screen is the
+primary storyline; camera lane 1, microphone −1, system −2, unidentified audio −3. Real nine-take
+export: 36 media files byte-identical, FCPXML passes Apple's 1.10 DTD. **Not imported into Final
+Cut or Premiere yet**: neither is installed. Premiere 25.6+ reportedly imports `timeline.otio`.
+Next: install the Final Cut trial (needs Olle's OK), import, screenshot. Details:
+`docs/fcpxml-source-timeline-2026-10-20.md`.
+
 # October 20: local release path and the co.dyberg.klippt identity (branch `fix/launch-readiness`)
 
 GitHub Actions has been blocked by billing since October 8, so every release step now runs on this

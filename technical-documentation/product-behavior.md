@@ -1060,11 +1060,19 @@ product requirement, not as an optional maximum-quality mode.
   gaps, and bound camera source time after applying its offset. Round shared cumulative cut
   boundaries to the timeline frame grid; do not accumulate a rounding error per cut. Use relative
   media references so the folder can move. Keep exact source offsets in OTIO metadata; cuts and
-  synchronization belong only in `timeline.otio`. `handoff.json` lists the unchanged media files.
+  synchronization belong only in the timeline files. `handoff.json` lists the unchanged media files.
   Whole source files retain material outside partial trims. Camera remains a full separate layer;
   captions, layouts, editable cursor overlays, speed changes, B-roll and audio processing are not
   transferred. Say this on the export surface and in the handoff. DaVinci Resolve is the first
   verified interchange target; keep the export labels editor-neutral.
+- Beside `timeline.otio`, write `timeline.fcpxml` (FCPXML 1.10) for Final Cut Pro from the same
+  frame-grid plan, never a second sync calculation. Screen clips and gaps form the primary storyline; camera
+  connects on lane 1, microphone on lane −1 (dialogue role), system audio on lane −2 (effects
+  role) and unidentified audio on lane −3 with no guessed role. Each connected clip anchors to
+  the storyline piece holding its first frame. Times are reduced rational seconds of whole 60 fps
+  frames. Screen and camera use video only, so embedded audio is not doubled. Media links are
+  `./`-relative to the file. Premiere Pro 25.6 and later are reported to import `timeline.otio`
+  and not FCPXML, so Premiere gets no third file. Neither editor import is verified yet.
 - Source handoff shows indeterminate Saving feedback, never a fabricated percentage or stale
   render progress. On success, keep the folder action visible and show a warning count with
   keyboard-operable disclosure of every warning; announce completion without reading the full list.
