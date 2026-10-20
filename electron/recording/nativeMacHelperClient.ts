@@ -11,6 +11,9 @@ import {
 } from "../../src/lib/nativeMacRecording";
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
 
+/** SIGTERM finalizes the open clip (about 0.5 s under load) before the helper exits. */
+export const HELPER_FINALIZE_GRACE_MS = 3_000;
+
 export type NativeMacStopResult = {
 	screenPath: string;
 	clips: RecordingSessionClip[];
@@ -101,7 +104,7 @@ export class NativeMacHelperClient {
 		if (!this.isRunning()) return;
 		this.terminationRequested = true;
 
-		const gracefulExit = this.waitForClose(1_000);
+		const gracefulExit = this.waitForClose(HELPER_FINALIZE_GRACE_MS);
 		this.process.kill("SIGTERM");
 		if (await gracefulExit) return;
 

@@ -4,6 +4,7 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import type { NativeMacRecordingRequest } from "../../src/lib/nativeMacRecording";
 import {
+	HELPER_FINALIZE_GRACE_MS,
 	NativeMacHelperClient,
 	NativeMacPauseError,
 	NativeMacResumeRejectedError,
@@ -255,7 +256,9 @@ describe("NativeMacHelperClient", () => {
 			const killed = client.kill();
 
 			expect(process.kill).toHaveBeenCalledWith("SIGTERM");
-			await vi.advanceTimersByTimeAsync(1_000);
+			await vi.advanceTimersByTimeAsync(HELPER_FINALIZE_GRACE_MS - 1);
+			expect(process.kill).not.toHaveBeenCalledWith("SIGKILL");
+			await vi.advanceTimersByTimeAsync(1);
 			expect(process.kill).toHaveBeenCalledWith("SIGKILL");
 			await expect(killed).resolves.toBeUndefined();
 			expect(client.isRunning()).toBe(false);

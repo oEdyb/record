@@ -3,6 +3,9 @@ import Foundation
 @main
 struct OpenScreenScreenCaptureKitHelper {
 	static func main() async {
+		// With the app gone, writing an event to its closed pipe must not kill the helper
+		// before the clip is finalized.
+		signal(SIGPIPE, SIG_IGN)
 		do {
 			guard CommandLine.arguments.count == 2 else {
 				throw HelperError.invalidArguments
