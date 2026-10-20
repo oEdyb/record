@@ -32,6 +32,18 @@ struct OpenScreenScreenCaptureKitHelper {
 			}
 			recorder.warmCamera = await HelperWarmup.takeWarmCamera(for: request)
 			try await recorder.start()
+			// The app gone (closed stdin) or a SIGTERM still closes the clip with a normal
+			// index instead of leaving recovery to the last whole fragment.
+			let finalizeAndExit: @Sendable () -> Task<Void, Never> = {
+				commandExecutor.submit {
+					await recorder.stop()
+					exit(0)
+				}
+			}
+			signal(SIGTERM, SIG_IGN)
+			let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+			termination.setEventHandler { _ = finalizeAndExit() }
+			termination.resume()
 			let stopTask = Task.detached {
 				while let line = readLine() {
 					let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,9 +86,11 @@ struct OpenScreenScreenCaptureKitHelper {
 						break
 					}
 				}
+				await finalizeAndExit().value
 			}
 
 			await stopTask.value
+			termination.cancel()
 		} catch let error as HelperError {
 			emitError(code: "helper-error", message: error.description)
 			exit(1)
