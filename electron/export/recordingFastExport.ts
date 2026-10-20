@@ -368,7 +368,7 @@ export async function prepareRecordingFastExport(
 	)
 		return null;
 	const joined = clips.length > 1;
-	const list = joined ? concatList(clips.map((clip) => clip.screenPath)) : "";
+	const list = joined ? concatList(clips.map((clip) => path.resolve(clip.screenPath))) : "";
 	if (list === null) return null;
 	const silence = silentClip[0]!;
 	const durationS = request.sourceDurationsSec.reduce((sum, duration) => sum + duration, 0);
@@ -378,10 +378,11 @@ export async function prepareRecordingFastExport(
 	// Reserve the index at the front instead of +faststart, which rewrites the
 	// whole file a second time to move it there. 40 bytes covers each sample's
 	// size, timing, sync and chunk entries; muxing fails rather than truncating.
-	// The frame bound uses the nominal rate, capped where a closing sample makes
-	// it read 600, plus slack for the closing samples themselves.
+	// The frame bound doubles the nominal rate, capped where a closing sample makes
+	// it read 600, because a variable-rate capture can run above its nominal rate;
+	// slack covers the closing samples themselves.
 	const audioPackets = Math.ceil((durationS * 48_000) / 1024) + clips.length;
-	const videoPackets = Math.ceil(durationS * Math.min(media.fps, 120)) + 600 * clips.length;
+	const videoPackets = Math.ceil(2 * durationS * Math.min(media.fps, 120)) + 600 * clips.length;
 	const moovBytes = 40 * (videoPackets + audioPackets) + 1024 * 1024;
 	let verificationFps = media.fps;
 	return {

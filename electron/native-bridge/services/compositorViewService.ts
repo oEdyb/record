@@ -900,10 +900,18 @@ export class CompositorViewService {
 								await fs.promises.rm(stagingPath, { force: true });
 							}
 						}
-						if (resolvedClips.some((clip) => clip.hasAudio))
-							await assertAudioSpoolSpace(
-								resolvedClips.map((clip) => clip.sourceEndSec - clip.sourceStartSec),
-							);
+						// The program spool is written even for silent takes, at output length:
+						// slow speed regions make it longer than the source.
+						const sourceSec = resolvedClips.map((clip) => clip.sourceEndSec - clip.sourceStartSec);
+						const stretch = Math.max(
+							1,
+							durationEstimate /
+								Math.max(
+									1e-6,
+									sourceSec.reduce((sum, sec) => sum + sec, 0),
+								),
+						);
+						await assertAudioSpoolSpace(sourceSec.map((sec) => sec * stretch));
 						const operation = addon.exportMulti(
 							resolvedClips,
 							stagingPath,

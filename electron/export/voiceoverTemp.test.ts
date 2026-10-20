@@ -63,8 +63,19 @@ describe("voiceover export temporary files", () => {
 			fs.writeFile(activeSpool, "pcm"),
 			fs.writeFile(spoolLookalike, "unrelated"),
 		]);
+		const orphanList = path.join(
+			directory,
+			"klippt-concat-88888-123e4567-e89b-42d3-a456-426614174000.txt",
+		);
+		const activeList = path.join(
+			directory,
+			"klippt-concat-77777-123e4567-e89b-42d3-a456-426614174000.txt",
+		);
+		await Promise.all([fs.writeFile(orphanList, "file 'a'"), fs.writeFile(activeList, "file 'b'")]);
 
-		expect(await cleanupOrphanedExportTemps(directory, (pid) => pid === 77_777)).toBe(2);
+		expect(await cleanupOrphanedExportTemps(directory, (pid) => pid === 77_777)).toBe(3);
+		await expect(fs.stat(orphanList)).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(fs.readFile(activeList, "utf8")).resolves.toBe("file 'b'");
 		await expect(fs.stat(orphanSpool)).rejects.toMatchObject({ code: "ENOENT" });
 		await expect(fs.readFile(activeSpool, "utf8")).resolves.toBe("pcm");
 		await expect(fs.readFile(spoolLookalike, "utf8")).resolves.toBe("unrelated");

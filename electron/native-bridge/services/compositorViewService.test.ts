@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CURSOR_THEMES, DEFAULT_CURSOR_SPRITES } from "../../../src/lib/cursor/cursorThemes";
 import { AtomicExportPublisher } from "../../export/atomicExport";
+import { assertAudioSpoolSpace } from "../../export/audioSpoolSpace";
 import type { RecordingFastExportPlan } from "../../export/recordingFastExport";
 import type {
 	CompositorViewAddon,
@@ -19,6 +20,10 @@ import {
 	resolveSceneAssetPath,
 	resolveSceneAssetPaths,
 } from "./compositorViewService";
+
+vi.mock("../../export/audioSpoolSpace", () => ({
+	assertAudioSpoolSpace: vi.fn(async () => undefined),
+}));
 
 /** A source checkout's `crates/.cargo/config.toml`, with `FFMPEG_DIR` written as `body`. */
 function writeCargoConfig(root: string, body: string): void {
@@ -420,6 +425,41 @@ describe("CompositorViewService export transaction", () => {
 		expect(addon.verifyVideoExport).not.toHaveBeenCalled();
 		expect(fs.readFileSync(finalPath, "utf8")).toBe("old export");
 		expect(fs.existsSync(stagedPath)).toBe(false);
+	});
+
+	it("checks audio scratch space at output length, even for a silent take", async () => {
+		vi.mocked(assertAudioSpoolSpace).mockClear();
+		const finalPath = path.join(root, "slow.mp4");
+		const addon = {
+			probeMediaDuration: vi.fn(async () => 2),
+			exportMulti: vi.fn(async (_clips: unknown, outPath: string) => {
+				await fs.promises.writeFile(outPath, "verified export");
+				return stats;
+			}),
+			verifyVideoExport: vi.fn(async () => ({
+				durationS: 8,
+				fps: 30,
+				videoStreams: 1,
+				audioStreams: 1,
+				firstVideoFrameS: 0,
+				tailVideoFrameS: 7.9,
+			})),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await service.exportMulti(
+			[{ ...clips[0]!, hasAudio: false }],
+			finalPath,
+			JSON.stringify({ speedRegions: [{ clipIndex: 0, startSec: 0, endSec: 2, speed: 0.25 }] }),
+			{ width: 320, height: 240, fps: 30, codec: "h264" },
+		);
+
+		expect(assertAudioSpoolSpace).toHaveBeenCalledWith([8]);
 	});
 
 	it("renders MP4 with the resolved clip extent and a positive capacity estimate", async () => {
