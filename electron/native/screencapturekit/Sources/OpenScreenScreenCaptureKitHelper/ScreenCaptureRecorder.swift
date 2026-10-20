@@ -46,6 +46,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var streamRecovery = RecordingStreamRecovery()
 	private var activeFilter: SCContentFilter?
 	private var activeConfiguration: SCStreamConfiguration?
+	/// The live frame interval while a paused stream runs throttled. Command lane only.
+	private var pausedFullFrameInterval: CMTime?
 	private var writer: AVAssetWriter?
 	private var cameraCapture: NativeCameraCapture?
 	private var activeFilterIgnoresExcludedWindows = false
@@ -312,6 +314,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			cadence = RecordingCadence(fps: nextRequest.video.fps)
 			activeFilter = setup.filter
 			activeConfiguration = setup.configuration
+			// The new configuration runs at the full rate already.
+			pausedFullFrameInterval = nil
 			activeFilterIgnoresExcludedWindows = setup.ignoresExcludedWindows
 			outputWidth = setup.width
 			outputHeight = setup.height
@@ -417,7 +421,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				"event": "recording-paused",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
 			])
-			await ShareableContentCache.shared.keepFresh(every: 3)
+			await throttlePausedStream()
+			await ShareableContentCache.shared.keepFresh(every: ContentSnapshotRule.refreshSeconds)
 		} catch {
 			emitError(code: "clip-finalize-failed", message: "\(error)")
 		}
@@ -443,6 +448,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		defer { if !resumed { endRecordingActivity() } }
 		let previousClipIndex = currentClipIndex
 		do {
+			try await restorePausedStreamRate()
 			if stateQueue.sync(execute: { streamRecovery.needsReplacement }), let activeFilter, let activeConfiguration {
 				try await replaceCaptureStream(filter: activeFilter, configuration: activeConfiguration)
 			}
@@ -538,6 +544,39 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			if rejected { emit(RecordingStreamRecovery.rejectedResumePayload(previousClipIndex: previousClipIndex, message: "\(error)")) }
 			else { emitError(code: "clip-start-failed", message: "\(error)") }
 		}
+	}
+
+	/// A paused take keeps its stream so Continue starts at once, but nothing is written:
+	/// a few frames a second keep the resume seed fresh without full-rate composition.
+	static let pausedFrameInterval = CMTime(value: 1, timescale: 5)
+
+	private func throttlePausedStream() async {
+		guard pausedFullFrameInterval == nil, let stream, let activeConfiguration,
+			!stateQueue.sync(execute: { streamRecovery.needsReplacement || isStopping })
+		else { return }
+		let fullInterval = activeConfiguration.minimumFrameInterval
+		activeConfiguration.minimumFrameInterval = Self.pausedFrameInterval
+		do {
+			try await stream.updateConfiguration(activeConfiguration)
+			pausedFullFrameInterval = fullInterval
+		} catch {
+			activeConfiguration.minimumFrameInterval = fullInterval
+			emit(["event": "warning", "code": "paused-throttle-failed", "message": "\(error)"])
+		}
+	}
+
+	private func restorePausedStreamRate() async throws {
+		guard let fullInterval = pausedFullFrameInterval, let activeConfiguration else { return }
+		activeConfiguration.minimumFrameInterval = fullInterval
+		// A stream due for replacement restarts from this configuration at the full rate.
+		if let stream, !stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
+			do { try await stream.updateConfiguration(activeConfiguration) } catch {
+				activeConfiguration.minimumFrameInterval = Self.pausedFrameInterval
+				throw error
+			}
+			emit(["event": "resume-stage", "key": "full-rate"])
+		}
+		pausedFullFrameInterval = nil
 	}
 
 	func stream(_ stream: SCStream, didStopWithError error: Error) {

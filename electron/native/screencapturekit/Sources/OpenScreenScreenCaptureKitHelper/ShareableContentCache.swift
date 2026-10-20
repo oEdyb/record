@@ -45,6 +45,10 @@ struct ContentSnapshotSummary {
 
 enum ContentSnapshotRule {
 	static let maxAgeSeconds: TimeInterval = 10
+	/// Each refresh costs replayd and the helper a window-server listing, and the standby
+	/// helper lives as long as the app does. Refresh just often enough to stay inside
+	/// `maxAgeSeconds`, with room for a slow listing.
+	static let refreshSeconds: TimeInterval = 8
 
 	/// A snapshot serves a request only when it holds every object the filter needs and the
 	/// capture target's live bounds still equal the snapshot's. Anything else fetches again,

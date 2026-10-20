@@ -99,7 +99,7 @@ enum HelperWarmup {
 		let idle = DispatchWorkItem { exit(0) }
 		DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(idleSeconds), execute: idle)
 		defer { idle.cancel() }
-		await ShareableContentCache.shared.keepFresh(every: 4)
+		await ShareableContentCache.shared.keepFresh(every: ContentSnapshotRule.refreshSeconds)
 		while let line = readLine() {
 			let data = Data(line.utf8)
 			guard isWarmCameraLine(data) else {
