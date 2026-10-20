@@ -53,7 +53,10 @@ Evidence: `artifacts/fcpxml-handoff-2026-10-20/` (git-ignored).
 - Unit tests check rational time output, reject sub-frame values, and resolve every FCPXML clip
   to its absolute frame and source start, matching the plan clip for clip. Cases: two-take cuts,
   camera lead, late and short camera, a short screen tail that becomes a spine gap, unidentified
-  audio, 100 fractional cuts without drift, and escaping.
+  audio, 100 fractional cuts without drift, escaping and illegal XML characters, and a camera
+  that starts inside a spine gap (also DTD-validated).
+- Independent review of the diff: no blocking findings; OTIO byte-identity re-run against the
+  old code. Review points not fixed are listed below.
 
 ## Limits
 
@@ -61,6 +64,11 @@ Evidence: `artifacts/fcpxml-handoff-2026-10-20/` (git-ignored).
   screenshots of an imported timeline exist yet.
 - Camera media at 30 fps can start on a 1/60 s boundary; Final Cut may round that to a camera frame.
 - Exact sub-frame source offsets are kept only in OTIO metadata, not in FCPXML.
+- Same as OTIO: embedded-only system audio in a screen file that also has a standalone
+  microphone file gets no lane (the export warns), and media lengths round to the nearest frame,
+  so a clip can reach up to half a frame past the real file end.
+- On the legacy unidentified lane, Final Cut enables every audio stream in the screen file. A
+  file with a mix plus isolated tracks would play them summed; this needs a real import to fix.
 - Roles use Final Cut's built-in Dialogue and Effects. Custom role names were not tried.
 - Connected clips move with the screen clip they anchor to; a camera or audio clip that runs past
   its screen piece still anchors to that piece.
