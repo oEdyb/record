@@ -1,4 +1,5 @@
 import Foundation
+import ScreenCaptureKit
 
 struct RecordingStreamRecovery {
 	enum StopDisposition: Equatable {
@@ -33,5 +34,18 @@ struct RecordingStreamRecovery {
 
 	static func rejectedResumePayload(previousClipIndex: Int, message: String) -> [String: Any] {
 		["event": "error", "code": "clip-resume-rejected", "clipIndex": previousClipIndex + 1, "message": message]
+	}
+
+	/// The stop reasons a user can act on, named in plain words; anything else keeps its
+	/// framework description. Codes: SCError.h (-3817 macOS 12.3, -3821 15.0, -3822 27.0).
+	static func stopMessage(for error: Error) -> String {
+		let nsError = error as NSError
+		guard nsError.domain == SCStreamErrorDomain else { return "\(error)" }
+		switch nsError.code {
+		case -3817: return "Screen sharing was stopped from the menu bar."
+		case -3821: return "macOS stopped the screen capture."
+		case -3822: return "The disk is full, so macOS stopped the screen capture."
+		default: return "\(error)"
+		}
 	}
 }

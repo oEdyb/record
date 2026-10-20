@@ -3,8 +3,6 @@ import CoreGraphics
 import CoreMedia
 import ScreenCaptureKit
 
-let screenCaptureKitMicrophoneOutputTypeRawValue = 2
-
 @available(macOS 13.0, *)
 struct CaptureSetup {
 	let filter: SCContentFilter
@@ -140,7 +138,7 @@ final class CaptureSetupBuilder {
 		guard request.audio.microphone.enabled else {
 			return (configuration, false)
 		}
-		guard supportsNativeMicrophoneCapture(configuration) else {
+		guard #available(macOS 15.0, *) else {
 			emit([
 				"event": "warning",
 				"code": "microphone-unavailable",
@@ -149,10 +147,10 @@ final class CaptureSetupBuilder {
 			return (configuration, false)
 		}
 
-		configuration.setValue(true, forKey: "captureMicrophone")
+		configuration.captureMicrophone = true
 		let selectedDeviceID = resolveMicrophoneCaptureDeviceID(for: request)
 		if let deviceId = selectedDeviceID {
-			configuration.setValue(deviceId, forKey: "microphoneCaptureDeviceID")
+			configuration.microphoneCaptureDeviceID = deviceId
 		}
 		if ProcessInfo.processInfo.environment["OPENSCREEN_CAPTURE_DIAGNOSTICS"] == "1" {
 			let systemDefault = AVCaptureDevice.default(for: .audio)
@@ -206,14 +204,6 @@ final class CaptureSetupBuilder {
 			return 1
 		}
 		return max(1, mode.pixelWidth / max(1, mode.width))
-	}
-
-	private func supportsNativeMicrophoneCapture(_ configuration: SCStreamConfiguration) -> Bool {
-		guard #available(macOS 15.0, *) else {
-			return false
-		}
-		return configuration.responds(to: Selector(("setCaptureMicrophone:"))) &&
-			configuration.responds(to: Selector(("setMicrophoneCaptureDeviceID:")))
 	}
 
 	private func resolveMicrophoneCaptureDeviceID(for request: RecordingRequest) -> String? {

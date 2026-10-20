@@ -1,4 +1,5 @@
 import Foundation
+import ScreenCaptureKit
 import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
@@ -47,5 +48,14 @@ final class RecordingStreamRecoveryTests: XCTestCase {
 		XCTAssertEqual(recovery.stopped(attemptedSource, paused: false, stopping: false), .ignored,
 			"The failed start attempt was already classified while paused")
 		XCTAssertTrue(recovery.needsReplacement)
+	}
+
+	func testNamesTheStopReasonsAUserCanActOn() {
+		let stopped = NSError(domain: SCStreamErrorDomain, code: -3821)
+		XCTAssertEqual(RecordingStreamRecovery.stopMessage(for: stopped), "macOS stopped the screen capture.")
+		let full = NSError(domain: SCStreamErrorDomain, code: -3822)
+		XCTAssertTrue(RecordingStreamRecovery.stopMessage(for: full).contains("disk is full"))
+		let other = NSError(domain: NSCocoaErrorDomain, code: 4)
+		XCTAssertEqual(RecordingStreamRecovery.stopMessage(for: other), "\(other)")
 	}
 }

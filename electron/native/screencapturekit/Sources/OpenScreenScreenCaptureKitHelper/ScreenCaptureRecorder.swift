@@ -181,8 +181,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
 		try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleDelivery.queue)
 		try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleDelivery.queue)
-		if #available(macOS 15.0, *), let type = SCStreamOutputType(rawValue: screenCaptureKitMicrophoneOutputTypeRawValue) {
-			try stream.addStreamOutput(self, type: type, sampleHandlerQueue: sampleDelivery.queue)
+		if #available(macOS 15.0, *) {
+			try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: sampleDelivery.queue)
 		}
 		return stream
 	}
@@ -647,7 +647,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 
-		if type.rawValue == screenCaptureKitMicrophoneOutputTypeRawValue {
+		if #available(macOS 15.0, *), type == .microphone {
 			captureTelemetry.recordAudioSample(sampleBuffer, microphone: true)
 			appendOriginal(sampleBuffer, key: "microphoneAudioPath")
 			appendCompatibilityAudio(sampleBuffer, from: .microphone)

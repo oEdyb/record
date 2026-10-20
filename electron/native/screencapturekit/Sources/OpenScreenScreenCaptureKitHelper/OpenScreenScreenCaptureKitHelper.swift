@@ -26,7 +26,7 @@ struct OpenScreenScreenCaptureKitHelper {
 			let commandExecutor = RecorderCommandExecutor()
 			let recorder = ScreenCaptureRecorder(request: request) { recorder, error in
 				_ = commandExecutor.submit {
-					emitError(code: "capture-stopped-with-error", message: "\(error)")
+					emitError(code: "capture-stopped-with-error", message: RecordingStreamRecovery.stopMessage(for: error))
 					await recorder.stop()
 				}
 			}
