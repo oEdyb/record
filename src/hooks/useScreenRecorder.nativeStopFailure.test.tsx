@@ -962,6 +962,32 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(toast.error).toHaveBeenCalledWith("The active clip failed. Saving completed clips now.");
 	});
 
+	it("pauses a live take when the screen locks and ignores a source that comes back", async () => {
+		let interruptionListener: ((reason: string) => void) | undefined;
+		stubNativeMac({
+			onNativeMacRecordingInterrupted: vi.fn((callback) => {
+				interruptionListener = callback;
+				return vi.fn();
+			}),
+		});
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		act(() => interruptionListener?.("source-active"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).not.toHaveBeenCalled();
+
+		act(() => interruptionListener?.("screen-locked"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
+		expect(view.result.current.paused).toBe(true);
+		expect(toast.warning).toHaveBeenCalledWith("The screen locked, so recording paused.");
+
+		act(() => interruptionListener?.("system-sleep"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
+	});
+
 	it("leaves the recording state and opens review when the app stopped the take itself", async () => {
 		let appStopListener: (() => void) | undefined;
 		stubNativeMac({

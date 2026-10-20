@@ -561,6 +561,24 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 	}
 
+	/// Everything the stream shared has closed (macOS 15.2+). On High the cadence grid would
+	/// keep writing the last picture, so the app is told and pauses the take.
+	@available(macOS 15.2, *)
+	func streamDidBecomeInactive(_ stream: SCStream) {
+		emitSourceActivity(stream, code: "source-inactive")
+	}
+
+	@available(macOS 15.2, *)
+	func streamDidBecomeActive(_ stream: SCStream) {
+		emitSourceActivity(stream, code: "source-active")
+	}
+
+	private func emitSourceActivity(_ stream: SCStream, code: String) {
+		guard stateQueue.sync(execute: { streamRecovery.acceptsSamples(from: stream) && !isStopping }) else { return }
+		emit(["event": "warning", "code": code, "clipIndex": currentClipIndex,
+			"timestampMs": Int(Date().timeIntervalSince1970 * 1_000), "message": "The captured content \(code == "source-inactive" ? "closed" : "is back")."])
+	}
+
 	func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
 		sampleDelivery.process { processStreamSample(stream, sampleBuffer: sampleBuffer, type: type) }
 	}

@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { EntitlementSnapshot } from "../src/lib/entitlements/contracts";
 import type { NativeLinuxRecordingRequest } from "../src/lib/nativeLinuxRecording";
-import type { NativeMacRecordingRequest } from "../src/lib/nativeMacRecording";
+import type {
+	NativeMacRecordingInterruption,
+	NativeMacRecordingRequest,
+} from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
 import type {
 	RecordingSession,
@@ -400,6 +403,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		) => callback(failure);
 		ipcRenderer.on("native-mac-recording-error", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-error", listener);
+	},
+	onNativeMacRecordingInterrupted: (callback: (reason: NativeMacRecordingInterruption) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, reason: NativeMacRecordingInterruption) =>
+			callback(reason);
+		ipcRenderer.on("native-mac-recording-interrupted", listener);
+		return () => ipcRenderer.removeListener("native-mac-recording-interrupted", listener);
 	},
 	onNativeMacRecordingStoppedByApp: (callback: () => void) => {
 		const listener = () => callback();

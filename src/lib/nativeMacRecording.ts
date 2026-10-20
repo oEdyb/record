@@ -161,6 +161,13 @@ export type NativeMacRecordingFailure = {
 	message: string;
 };
 
+/** Why the app asks the HUD to pause, or that the captured content came back. */
+export type NativeMacRecordingInterruption =
+	| "source-inactive"
+	| "source-active"
+	| "screen-locked"
+	| "system-sleep";
+
 export function parseNativeMacRecordingClip(value: unknown): RecordingSessionClip | null {
 	if (!value || typeof value !== "object") return null;
 	const clip = value as Partial<RecordingSessionClip>;
