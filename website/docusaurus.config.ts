@@ -74,7 +74,7 @@ const config: Config = {
 			{
 				name: "keywords",
 				content:
-					"Mac screen recorder, clip-native recording, screen recording editor, automatic zoom, creator video editor, Screen Studio alternative",
+					"Mac screen recorder, clip-native recording, pause and continue recording, separate source files, creator screen recording",
 			},
 			{ name: "robots", content: "index, follow, max-image-preview:large, max-snippet:-1" },
 			{ property: "og:type", content: "website" },
@@ -91,10 +91,10 @@ const config: Config = {
 				{ to: "/#workflow", label: "Workflow", position: "left" },
 				{ to: "/#features", label: "Features", position: "left" },
 				{ to: "/#pricing", label: "Pricing", position: "left" },
-				{ href: "mailto:support@klippt.app", label: "Contact", position: "right" },
+				{ to: "/support/", label: "Support", position: "right" },
 				{
-					href: "mailto:support@klippt.app?subject=Klippt%20private%20alpha",
-					label: "Private alpha",
+					to: "/download/",
+					label: "Download",
 					position: "right",
 					className: "navbar-alpha-cta",
 				},
