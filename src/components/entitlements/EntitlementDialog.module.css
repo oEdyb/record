@@ -79,11 +79,19 @@
 	color: var(--bg);
 	font: 650 13px/1 var(--font-body);
 	cursor: pointer;
-	transition: transform 140ms ease, opacity 140ms ease;
+	transition: transform 160ms ease-out, opacity 140ms ease;
 }
 
-.primary:hover:not(:disabled) {
-	transform: translateY(-1px);
+.primary:active:not(:disabled) {
+	transform: scale(0.97);
+}
+
+.price {
+	margin: 10px 0 0;
+	color: var(--muted);
+	font: 500 12px/1.4 var(--font-body);
+	text-align: center;
+	font-variant-numeric: tabular-nums;
 }
 
 .primary:disabled {
@@ -110,9 +118,26 @@
 	font: 500 12px/1 var(--font-mono);
 }
 
-.license input:focus {
-	border-color: color-mix(in srgb, var(--fg) 32%, var(--border));
-	box-shadow: 0 0 0 3px rgb(255 255 255 / 4%);
+.license input:focus-visible {
+	border-color: color-mix(in srgb, var(--fg) 48%, var(--border));
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.license input::placeholder {
+	color: color-mix(in srgb, var(--muted) 72%, transparent);
+	letter-spacing: 0.02em;
+}
+
+.primary:focus-visible,
+.license button:focus-visible,
+.manage:focus-visible {
+	outline: 2px solid var(--fg);
+	outline-offset: 2px;
+}
+
+.license button:active:not(:disabled),
+.manage:active:not(:disabled) {
+	transform: scale(0.97);
 }
 
 .license button,
@@ -125,6 +150,7 @@
 	color: var(--fg-2);
 	font: 600 12px/1 var(--font-body);
 	cursor: pointer;
+	transition: transform 160ms ease-out, background-color 140ms ease, color 140ms ease;
 }
 
 .license button:hover:not(:disabled),
@@ -155,4 +181,18 @@
 	height: 28px;
 	padding: 0 8px;
 	border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.primary,
+	.license button,
+	.manage {
+		transition: none;
+	}
+
+	.primary:active:not(:disabled),
+	.license button:active:not(:disabled),
+	.manage:active:not(:disabled) {
+		transform: none;
+	}
 }

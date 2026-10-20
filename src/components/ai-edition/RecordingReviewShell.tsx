@@ -54,6 +54,7 @@ import { useCompactReviewFit } from "./useCompactReviewFit";
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
 import { useRevealLatch } from "./useRevealLatch";
+import { useTrialStartNotice } from "./useTrialStartNotice";
 import { FIRST_FRAME_TIMEOUT_MS, useVideoFirstFrame } from "./useVideoFirstFrame";
 
 const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
@@ -931,6 +932,7 @@ export function RecordingReviewShell() {
 		applyTheme("dark");
 	}, []);
 	useCompactReviewFit(compactReview && hasAsset, document);
+	useTrialStartNotice(entitlement, hasAsset, te("entitlement.trialStarted"));
 
 	const reviewMeta = useMemo(() => {
 		if (clips.length === 0) return null;
