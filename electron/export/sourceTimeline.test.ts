@@ -148,7 +148,7 @@ it("pads writer tails with silent one-frame gaps and warns only about real losse
 	expect(kinds(3)).toEqual(["Gap.1", "Clip.2", "Gap.1"]);
 	expect(kinds(1)).toEqual(["Clip.2", "Gap.1"]);
 	expect(result.warnings).toEqual([
-		"001-camera.mov: 8.3 s of source time is missing and left as a gap in timeline.otio.",
+		"001-camera.mov: 8.3 s of source time is missing and left as a gap in the timelines.",
 	]);
 });
 
@@ -199,7 +199,7 @@ it("reports sub-frame omissions and rejects unknown media duration", () => {
 	);
 	expect(
 		buildSourceTimeline("Short", [source], [span(0, 0.001), span(1, 2, 0.001)]).warnings,
-	).toEqual(["A kept span shorter than one timeline frame was omitted from timeline.otio."]);
+	).toEqual(["A kept span shorter than one timeline frame was omitted from the timelines."]);
 	expect(() =>
 		buildSourceTimeline(
 			"Unknown",
