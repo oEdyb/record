@@ -770,6 +770,13 @@ pub enum ExportCodec {
 }
 
 impl ExportCodec {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ExportCodec::H264 => "H.264",
+            ExportCodec::H265 => "HEVC",
+        }
+    }
+
     /// Liste ordonnée des encodeurs candidats pour ce codec, **spécifique à macOS**.
     /// Symétrique de `ExportCodec::candidates()` côté Windows — la première candidate
     /// qui ouvre gagne, sauf si `OPENSCREEN_EXPORT_ENCODER=<name>` force un autre choix
@@ -815,6 +822,12 @@ impl ExportCodec {
                 },
             ],
             ExportCodec::H265 => &[
+                // Same zero-copy pool as H.264: the compositor renders into the
+                // encoder's own CVPixelBuffer instead of reading NV12 back to the CPU.
+                EncoderCandidate {
+                    name: "hevc_videotoolbox",
+                    pix_fmt: crate::ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX,
+                },
                 EncoderCandidate {
                     name: "hevc_videotoolbox",
                     pix_fmt: crate::ffi::AVPixelFormat::AV_PIX_FMT_NV12,
@@ -971,8 +984,9 @@ impl VideoEncoder {
                 refused[0]
             ),
             None => bail!(
-                "aucun encodeur vidéo utilisable sur cette machine : {}",
-                refused.join(" ; ")
+                "No video encoder on this Mac can encode {} at {w}x{h}: {}",
+                codec.label(),
+                refused.join("; ")
             ),
         }
     }
@@ -987,7 +1001,7 @@ impl VideoEncoder {
         let cname = std::ffi::CString::new(candidate.name)?;
         let enc = crate::ffi::avcodec_find_encoder_by_name(cname.as_ptr());
         if enc.is_null() {
-            bail!("absent de ce build ffmpeg");
+            bail!("not in this FFmpeg build");
         }
         let mut ctx = crate::ffi::avcodec_alloc_context3(enc);
         if ctx.is_null() {
@@ -999,6 +1013,10 @@ impl VideoEncoder {
         (*ctx).time_base = crate::ffi::AVRational { num: 1, den: fps };
         (*ctx).framerate = crate::ffi::AVRational { num: fps, den: 1 };
         (*ctx).bit_rate = bit_rate;
+        // One keyframe per second. libavcodec's default of 12 frames put five
+        // keyframes in every second of a 60 fps export and made files about 1.4x
+        // larger at the same visual quality.
+        (*ctx).gop_size = fps.max(1);
         (*ctx).flags |= crate::ffi::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
 
         // VT : on attache le hw_frames_ctx. En pratique le call-site (run_composited_multi)
@@ -1147,12 +1165,12 @@ impl VideoEncoder {
                 let mut frame = frame;
                 if crate::ffi::av_hwframe_get_buffer((*self.ctx).hw_frames_ctx, frame, 0) < 0 {
                     crate::ffi::av_frame_free(&mut frame);
-                    bail!("av_hwframe_get_buffer (pool VT épuisé)");
+                    bail!("the VideoToolbox frame pool is exhausted (av_hwframe_get_buffer)");
                 }
                 let pb = (*frame).data[3] as *mut std::ffi::c_void;
                 if pb.is_null() {
                     crate::ffi::av_frame_free(&mut frame);
-                    bail!("frame VT sans CVPixelBuffer dans data[3]");
+                    bail!("VideoToolbox frame has no CVPixelBuffer in data[3]");
                 }
                 // `OPENSCREEN_EXPORT_DEFER_METAL=0` restores the synchronous wait for A/B runs.
                 if std::env::var("OPENSCREEN_EXPORT_DEFER_METAL").as_deref() == Ok("0") {
