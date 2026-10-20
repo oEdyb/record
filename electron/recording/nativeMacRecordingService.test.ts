@@ -25,6 +25,7 @@ import {
 	nativeMacRecoveryJournalPath,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+import { STORAGE_POLL_MS } from "./recordingStorage";
 
 vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
 
@@ -521,6 +522,24 @@ describe("NativeMacRecordingService", () => {
 			error: expect.stringContaining("free on the recordings disk"),
 		});
 		expect(deps.createHelper).not.toHaveBeenCalled();
+	});
+
+	it("asks the HUD to pause on every low-disk poll while live, not while paused", async () => {
+		vi.useFakeTimers();
+		try {
+			const onStorageCritical = vi.fn();
+			const service = new NativeMacRecordingService({ ...deps, onStorageCritical });
+			await service.start(baseRequest);
+			vi.mocked(deps.freeDiskBytes!).mockResolvedValue(100 * 1024 ** 2);
+			await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS * 2);
+			expect(onStorageCritical).toHaveBeenCalledTimes(2);
+
+			await service.pause();
+			await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS * 2);
+			expect(onStorageCritical).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("hands a take stopped for quit to the HUD's next Stop, once", async () => {

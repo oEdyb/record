@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 
 /** Below this a take does not start: a High screen alone can write about 17 MB/s. */
@@ -9,9 +10,37 @@ const WARNING_MINUTES = [5, 1] as const;
 
 export type RecordingStorageStatus = { freeBytes: number; minutesLeft: number | null };
 
-export async function freeDiskBytes(directory: string): Promise<number> {
+/** Below this, `statfs` is checked against the space macOS would free for a recording. */
+const PURGEABLE_CHECK_BELOW_BYTES = 2 * 1024 ** 3;
+
+export type ImportantUsageReader = (directory: string) => Promise<number | null>;
+
+export async function freeDiskBytes(
+	directory: string,
+	importantUsage?: ImportantUsageReader,
+): Promise<number> {
 	const stats = await fs.statfs(directory);
-	return stats.bavail * stats.bsize;
+	const free = stats.bavail * stats.bsize;
+	if (free >= PURGEABLE_CHECK_BELOW_BYTES || !importantUsage) return free;
+	return Math.max(free, (await importantUsage(directory).catch(() => null)) ?? 0);
+}
+
+/** Asks the capture helper, which can read the APFS figure that includes purgeable space. */
+export function helperImportantUsageBytes(
+	helperPath: string,
+	directory: string,
+): Promise<number | null> {
+	return new Promise((resolve) => {
+		execFile(
+			helperPath,
+			["--available-capacity", directory],
+			{ timeout: 2_000 },
+			(error, stdout) => {
+				const bytes = Number(stdout.trim());
+				resolve(!error && Number.isFinite(bytes) && bytes >= 0 ? bytes : null);
+			},
+		);
+	});
 }
 
 export function storageStartError(freeBytes: number): string | null {
@@ -27,14 +56,14 @@ export function formatBytes(bytes: number): string {
 
 /**
  * Watches free space during a take. It warns once as each of 5 and 1 minutes left at the
- * measured write rate is crossed, and asks for a Pause before the writer can hit a full disk.
+ * measured write rate is crossed, and asks for a Pause on every poll below the floor, so a
+ * request the HUD could not act on is repeated before the writer can hit a full disk.
  */
 export class RecordingStorageMonitor {
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private previous: { freeBytes: number; atMs: number } | null = null;
 	private bytesPerMs: number | null = null;
 	private warned = new Set<number>();
-	private pauseRequested = false;
 	private polling = false;
 
 	constructor(
@@ -59,12 +88,10 @@ export class RecordingStorageMonitor {
 		this.previous = null;
 		this.bytesPerMs = null;
 		this.warned.clear();
-		this.pauseRequested = false;
 	}
 
-	/** Pausing writes nothing, so free space can be re-armed for the next clip. */
+	/** Pausing writes nothing, so the write rate starts over with the next clip. */
 	rearm(): void {
-		this.pauseRequested = false;
 		this.previous = null;
 	}
 
@@ -88,10 +115,7 @@ export class RecordingStorageMonitor {
 					: null;
 			const status = { freeBytes, minutesLeft };
 			if (freeBytes < PAUSE_FREE_BYTES) {
-				if (!this.pauseRequested) {
-					this.pauseRequested = true;
-					this.deps.onCritical(status);
-				}
+				this.deps.onCritical(status);
 				return;
 			}
 			if (minutesLeft === null) return;

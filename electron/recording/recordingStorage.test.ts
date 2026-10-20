@@ -1,5 +1,7 @@
+import fs from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import {
+	freeDiskBytes,
 	MINIMUM_START_FREE_BYTES,
 	PAUSE_FREE_BYTES,
 	RecordingStorageMonitor,
@@ -52,16 +54,15 @@ describe("recording storage", () => {
 		expect(onCritical).not.toHaveBeenCalled();
 	});
 
-	it("asks for one Pause below the pause floor until a new clip re-arms it", async () => {
-		const { monitor, onCritical, advance } = monitorWith([
-			PAUSE_FREE_BYTES - 1,
+	it("asks for a Pause on every poll below the pause floor", async () => {
+		const { onCritical, advance } = monitorWith([
+			PAUSE_FREE_BYTES + 1,
 			PAUSE_FREE_BYTES - 1,
 			PAUSE_FREE_BYTES - 1,
 		]);
 		await advance(0);
+		expect(onCritical).not.toHaveBeenCalled();
 		await advance(5_000);
-		expect(onCritical).toHaveBeenCalledTimes(1);
-		monitor.rearm();
 		await advance(5_000);
 		expect(onCritical).toHaveBeenCalledTimes(2);
 	});
@@ -72,5 +73,32 @@ describe("recording storage", () => {
 		await advance(5_000);
 		await advance(5_000);
 		expect(onLow).not.toHaveBeenCalled();
+	});
+
+	it("counts purgeable space only when statfs reads low", async () => {
+		const statfs = vi.spyOn(fs, "statfs");
+		const volume = (bavail: number) => ({
+			type: 0,
+			bsize: MB,
+			blocks: 0,
+			bfree: bavail,
+			bavail,
+			files: 0,
+			ffree: 0,
+		});
+		const importantUsage = vi.fn(async () => 40 * 1024 ** 3);
+		try {
+			statfs.mockResolvedValueOnce(volume(900));
+			await expect(freeDiskBytes("/recordings", importantUsage)).resolves.toBe(40 * 1024 ** 3);
+
+			statfs.mockResolvedValueOnce(volume(10_000));
+			await expect(freeDiskBytes("/recordings", importantUsage)).resolves.toBe(10_000 * MB);
+			expect(importantUsage).toHaveBeenCalledOnce();
+
+			statfs.mockResolvedValueOnce(volume(900));
+			await expect(freeDiskBytes("/recordings", async () => null)).resolves.toBe(900 * MB);
+		} finally {
+			statfs.mockRestore();
+		}
 	});
 });

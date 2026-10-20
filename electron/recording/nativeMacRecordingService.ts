@@ -31,6 +31,7 @@ import {
 } from "./nativeMacRecoveryJournal";
 import {
 	freeDiskBytes,
+	helperImportantUsageBytes,
 	RecordingStorageMonitor,
 	type RecordingStorageStatus,
 	storageStartError,
@@ -143,9 +144,19 @@ export class NativeMacRecordingService {
 		this.storage = new RecordingStorageMonitor({
 			directory: deps.recordingsDir,
 			now: deps.now,
-			freeBytes: deps.freeDiskBytes ?? freeDiskBytes,
+			freeBytes: (directory) => this.freeDiskBytes(directory),
 			onLow: (status) => deps.onStorageLow?.(status),
-			onCritical: (status) => deps.onStorageCritical?.(status),
+			onCritical: (status) => {
+				if (this.isRunning() && !this.paused) deps.onStorageCritical?.(status);
+			},
+		});
+	}
+
+	private freeDiskBytes(directory: string): Promise<number> {
+		if (this.deps.freeDiskBytes) return this.deps.freeDiskBytes(directory);
+		return freeDiskBytes(directory, async (target) => {
+			const helperPath = await this.deps.findHelperPath();
+			return helperPath ? helperImportantUsageBytes(helperPath, target) : null;
 		});
 	}
 
@@ -214,9 +225,7 @@ export class NativeMacRecordingService {
 				await this.deps.prepareCapturePermissions(request);
 				this.deps.onStartStage?.("permissions-checked");
 				await fs.mkdir(this.deps.recordingsDir, { recursive: true });
-				const storageError = storageStartError(
-					await (this.deps.freeDiskBytes ?? freeDiskBytes)(this.deps.recordingsDir),
-				);
+				const storageError = storageStartError(await this.freeDiskBytes(this.deps.recordingsDir));
 				if (storageError) return { success: false, error: storageError };
 
 				const cursorStartTimeMs = this.deps.now();
