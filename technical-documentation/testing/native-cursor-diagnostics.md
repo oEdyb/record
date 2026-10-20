@@ -55,7 +55,7 @@ The build copies development binaries to `electron/native/screencapturekit/build
 Run the cursor helper directly after building it:
 
 ```bash
-BIN=electron/native/screencapturekit/build/openscreen-macos-cursor-helper
+BIN=electron/native/screencapturekit/build/klippt-cursor-helper
 ("$BIN" '{"sampleIntervalMs":100}' & PID=$!; sleep 2; kill $PID) | head -20
 ```
 
@@ -64,7 +64,7 @@ The first JSON line should have `type: "ready"`, together with `mouseTapReady` a
 To run the app with a specific helper binary:
 
 ```bash
-export OPENSCREEN_MAC_CURSOR_HELPER_EXE=/path/to/openscreen-macos-cursor-helper
+export OPENSCREEN_MAC_CURSOR_HELPER_EXE=/path/to/klippt-cursor-helper
 npm run dev
 ```
 

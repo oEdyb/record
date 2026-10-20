@@ -10,10 +10,14 @@ continuation, but it is a separate, proprietary commercial product.
 
 `Klippt` is the selected product name. `.klippt` is the canonical project extension. Keep reading
 legacy `.openscreen` and `.axcut` projects, copy them forward after validation, and do not delete the
-legacy files during migration. Keep the current `oEdyb/record` repository name and legacy OpenScreen
-bundle IDs, helper names, environment variables, and user-data location stable until a separate
-migration includes permissions, compatibility, packaging, and rollback. Do not perform a blind
-global rename.
+legacy files during migration. The macOS app is signed as `co.dyberg.klippt`; its helpers are
+`klippt-screencapturekit-helper` and `klippt-cursor-helper`, signed as `co.dyberg.klippt.*` from an
+embedded Info.plist (October 20, 2026). Keep the `oEdyb/record` repository name, the legacy
+`OPENSCREEN_*` environment variables, and an existing `~/Library/Application Support/openscreen`
+user-data folder stable (projects store absolute paths into it); only a Mac without that folder
+starts in `…/Klippt` (`electron/userDataLocation.ts`). Rename only what users can see. Do not perform a blind global rename. The identity
+change, its TCC re-grant, and the one-time manual reinstall are in
+`docs/permission-and-control-consistency-2026-09-09.md`.
 
 Read this file before changing product behavior, UI, recording, project storage, preview,
 or export. Preserve these decisions across context compaction and future agent sessions.
@@ -153,8 +157,8 @@ not prove the helper contains the current source.
 ## Working discipline
 
 - Preserve unrelated user changes in a dirty worktree.
-- Installed local Mac builds must retain the Dyberg Developer ID signing identity and existing
-  bundle/helper identifiers. The `afterSign` guard must pass before replacing `/Applications/Klippt.app`.
+- Installed local Mac builds must retain the Dyberg Developer ID signing identity and the
+  `co.dyberg.klippt` bundle/helper identifiers. The `afterSign` guard must pass before replacing `/Applications/Klippt.app`.
   Never install an Apple Development or unsigned CI build over the permission-granted app.
   See `docs/permission-and-control-consistency-2026-09-09.md` for the stale Accessibility grant repair.
 - Keep the first working path small and real. Do not substitute a visual mock for working

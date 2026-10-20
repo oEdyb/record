@@ -155,14 +155,17 @@
 			"trialDay": "التجربة {{count}} يوم",
 			"trialDays": "التجربة {{count}} أيام",
 			"offline": "Klippt Pro, دون اتصال",
-			"readOnly": "للقراءة فقط"
+			"readOnly": "للقراءة فقط",
+			"reactivate": "أعد إدخال الترخيص"
 		},
 		"eyebrowReadOnly": "وصول للقراءة فقط",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "مشاريعك آمنة.",
 		"titleTrial": "اجعل كل تسجيل جاهزًا للنشر.",
+		"titleReactivate": "أدخل مفتاح الترخيص مرة أخرى.",
 		"descriptionExpired": "أصبح Klippt الآن للقراءة فقط. تابع مع Pro من أجل {{capability}}.",
 		"descriptionTrial": "تشمل تجربتك المسجل والمحرر والتوجيه التلقائي وعمليات التصدير النهائية بالكامل.",
+		"descriptionReactivate": "تعذّر على Klippt قراءة الترخيص المحفوظ على هذا الجهاز. مشاريعك وتاريخ التجربة محفوظة. أدخل المفتاح مرة واحدة للمتابعة مع Pro.",
 		"capability": {
 			"record": "تسجيل مقاطع جديدة",
 			"edit": "تحرير هذا المشروع",

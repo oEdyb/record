@@ -12,10 +12,10 @@ macOS native recording uses a ScreenCaptureKit helper with the same process boun
 Helper locations:
 
 1. `OPENSCREEN_SCK_CAPTURE_EXE`, for local development and diagnostics.
-2. `electron/native/screencapturekit/build/openscreen-screencapturekit-helper`, for locally built Swift output.
-3. `electron/native/bin/darwin-arm64/openscreen-screencapturekit-helper` or `electron/native/bin/darwin-x64/openscreen-screencapturekit-helper`, for packaged prebuilt helpers.
+2. `electron/native/screencapturekit/build/klippt-screencapturekit-helper`, for locally built Swift output.
+3. `electron/native/bin/darwin-arm64/klippt-screencapturekit-helper` or `electron/native/bin/darwin-x64/klippt-screencapturekit-helper`, for packaged prebuilt helpers.
 
-The macOS cursor-shape helper is resolved from `OPENSCREEN_MAC_CURSOR_HELPER_EXE` first, then the matching `openscreen-macos-cursor-helper` binary in the same local build and packaged `electron/native/bin/darwin-${arch}` directories.
+The macOS cursor-shape helper is resolved from `OPENSCREEN_MAC_CURSOR_HELPER_EXE` first, then the matching `klippt-cursor-helper` binary in the same local build and packaged `electron/native/bin/darwin-${arch}` directories.
 
 Build the macOS helper with:
 

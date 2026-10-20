@@ -155,14 +155,17 @@
 			"trialDay": "Essai {{count}} jour",
 			"trialDays": "Essai {{count}} jours",
 			"offline": "Klippt Pro, Hors ligne",
-			"readOnly": "Lecture seule"
+			"readOnly": "Lecture seule",
+			"reactivate": "Saisir à nouveau la licence"
 		},
 		"eyebrowReadOnly": "Accès en lecture seule",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "Vos projets sont en sécurité.",
 		"titleTrial": "Préparez chaque enregistrement pour sa publication.",
+		"titleReactivate": "Saisissez à nouveau votre clé de licence.",
 		"descriptionExpired": "Klippt est maintenant en lecture seule. Passez à Pro pour {{capability}}.",
 		"descriptionTrial": "Votre essai comprend l’enregistreur, l’éditeur, la direction automatique et les exports finaux.",
+		"descriptionReactivate": "Klippt n’a pas pu lire la licence enregistrée sur ce Mac. Vos projets et la date d’essai sont conservés. Saisissez votre clé une fois pour continuer avec Pro.",
 		"capability": {
 			"record": "enregistrer de nouveaux clips",
 			"edit": "modifier ce projet",

@@ -1,4 +1,5 @@
 import Head from "@docusaurus/Head";
+import Link from "@docusaurus/Link";
 import Heading from "@theme/Heading";
 import Layout from "@theme/Layout";
 import {
@@ -16,6 +17,7 @@ import {
 	Sparkles,
 } from "lucide-react";
 
+import { CHECKOUT_URL } from "../lib/commerce";
 import { jsonLd, SOFTWARE_APPLICATION_LD } from "../lib/structured-data";
 import styles from "./index.module.css";
 
@@ -185,12 +187,9 @@ export default function Home() {
 							adjust.
 						</p>
 						<div className={styles.heroActions}>
-							<a
-								className={styles.primaryAction}
-								href="mailto:support@klippt.app?subject=Klippt%20private%20alpha"
-							>
-								Join the private alpha <ArrowRight size={15} />
-							</a>
+							<Link className={styles.primaryAction} to="/download/">
+								Download for Mac <ArrowRight size={15} />
+							</Link>
 							<a className={styles.textAction} href="#workflow">
 								See the workflow
 							</a>
@@ -281,13 +280,18 @@ export default function Home() {
 								<Check size={14} /> Cancel before the next billing period
 							</li>
 						</ul>
-						<a
-							className={styles.primaryAction}
-							href="mailto:support@klippt.app?subject=Klippt%20private%20alpha"
-						>
-							Request alpha access <ArrowRight size={15} />
-						</a>
-						<p className={styles.priceFoot}>Checkout opens after the private alpha is ready.</p>
+						{CHECKOUT_URL ? (
+							<a className={styles.primaryAction} href={CHECKOUT_URL}>
+								Buy Klippt Pro <ArrowRight size={15} />
+							</a>
+						) : (
+							<Link className={styles.primaryAction} to="/download/">
+								Start with the free trial <ArrowRight size={15} />
+							</Link>
+						)}
+						<p className={styles.priceFoot}>
+							14-day money-back guarantee · <Link to="/refund/">Refund policy</Link>
+						</p>
 					</div>
 				</section>
 
@@ -295,12 +299,9 @@ export default function Home() {
 					<Sparkles size={18} />
 					<Heading as="h2">Record without planning every correction.</Heading>
 					<p>Your source stays clean. The first edit stays flexible.</p>
-					<a
-						className={styles.secondaryAction}
-						href="mailto:support@klippt.app?subject=Klippt%20private%20alpha"
-					>
-						Join the private alpha <ArrowRight size={15} />
-					</a>
+					<Link className={styles.secondaryAction} to="/download/">
+						Download for Mac <ArrowRight size={15} />
+					</Link>
 				</section>
 			</main>
 		</Layout>

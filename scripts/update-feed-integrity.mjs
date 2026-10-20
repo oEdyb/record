@@ -2,6 +2,25 @@ import path from "node:path";
 import { parse } from "yaml";
 
 export const ELECTRON_FEED_FILES = ["latest.yml", "latest-mac.yml", "latest-linux.yml"];
+export const RELEASE_TARGETS = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
+const FEED_FOR_PLATFORM = {
+	darwin: "latest-mac.yml",
+	linux: "latest-linux.yml",
+	win32: "latest.yml",
+};
+
+/** The electron-updater feeds a release for these targets must publish, in ELECTRON_FEED_FILES order. */
+export function feedFilesForTargets(targets) {
+	if (targets.length === 0) throw new Error("a release needs at least one target");
+	const feeds = new Set(
+		targets.map((target) => {
+			if (!RELEASE_TARGETS.includes(target))
+				throw new Error(`unsupported release target: ${target}`);
+			return FEED_FOR_PLATFORM[target.split("-")[0]];
+		}),
+	);
+	return ELECTRON_FEED_FILES.filter((feedName) => feeds.has(feedName));
+}
 const SHA512_BYTES = 64;
 
 function feedArtifactName(value, label) {
@@ -48,8 +67,12 @@ function validateDescriptor(feedName, descriptor, artifacts, label) {
 	return fileName;
 }
 
-export function validateElectronUpdateFeeds(feedContents, artifacts) {
-	for (const feedName of ELECTRON_FEED_FILES) {
+export function validateElectronUpdateFeeds(
+	feedContents,
+	artifacts,
+	feedNames = ELECTRON_FEED_FILES,
+) {
+	for (const feedName of feedNames) {
 		let feed;
 		try {
 			feed = parse(feedContents[feedName]);
@@ -80,10 +103,14 @@ export function validateElectronUpdateFeeds(feedContents, artifacts) {
 			}
 		}
 		if (feedName === "latest-mac.yml") {
-			const hasArm64 = referenced.some((name) => /(?:^|[-_.])arm64(?:[-_.]|$)/i.test(name));
 			const hasX64 = referenced.some((name) => /(?:^|[-_.])x64(?:[-_.]|$)/i.test(name));
-			if (referenced.length !== 2 || !hasArm64 || !hasX64) {
-				throw new Error("latest-mac.yml must bind exactly one arm64 and one x64 update archive");
+			const arm64Count = referenced.filter((name) =>
+				/(?:^|[-_.])arm64(?:[-_.]|$)/i.test(name),
+			).length;
+			if (arm64Count !== 1 || referenced.length !== (hasX64 ? 2 : 1)) {
+				throw new Error(
+					"latest-mac.yml must bind exactly one arm64 update archive and at most one x64 archive",
+				);
 			}
 		}
 	}

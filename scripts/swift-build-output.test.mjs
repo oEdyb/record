@@ -9,7 +9,7 @@ import {
 } from "./swift-build-output.mjs";
 
 let directory;
-const helperName = "openscreen-screencapturekit-helper";
+const helperName = "klippt-screencapturekit-helper";
 
 beforeEach(() => {
 	directory = fs.mkdtempSync(path.join(os.tmpdir(), "klippt-swift-output-"));

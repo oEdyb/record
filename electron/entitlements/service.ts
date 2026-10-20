@@ -4,11 +4,14 @@ import type {
 	EntitlementSnapshot,
 } from "../../src/lib/entitlements/contracts";
 import type { EntitlementConfig } from "./config";
-import { type LicenseProvider, LicenseProviderError } from "./provider";
+import { type LicenseProvider, LicenseProviderError, type LicenseValidation } from "./provider";
 import type { SecretCodec } from "./secretCodec";
 import type { EntitlementStateStore } from "./stateStore";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const REFRESH_THROTTLE_MS = 60_000;
+/** How long a gated action waits for a revalidation before answering from what is known. */
+const READ_ONLY_RECHECK_WAIT_MS = 3_000;
 
 interface StoredLicense {
 	encryptedKey: string;
@@ -18,6 +21,8 @@ interface StoredLicense {
 	expiresAt?: string | null;
 	customerEmail?: string;
 	validationFailedAt?: string;
+	/** The saved key could not be decrypted, e.g. after the app's signing identity changed. */
+	keyUnreadable?: boolean;
 }
 
 export interface StoredEntitlementState {
@@ -33,6 +38,8 @@ interface EntitlementServiceOptions {
 	store: EntitlementStateStore<StoredEntitlementState>;
 	instanceName: string;
 	now?: () => number;
+	/** A clock the user cannot set back; throttles provider calls. */
+	monotonicNow?: () => number;
 }
 
 export class EntitlementRequiredError extends Error {
@@ -78,6 +85,7 @@ function normalizeStoredState(value: unknown): StoredEntitlementState {
 			...(validIso(license.validationFailedAt)
 				? { validationFailedAt: license.validationFailedAt }
 				: {}),
+			...(license.keyUnreadable === true ? { keyUnreadable: true } : {}),
 		};
 	}
 	return normalized;
@@ -88,11 +96,15 @@ export class EntitlementService extends EventEmitter {
 	private readonly ready: Promise<void>;
 	private mutationQueue: Promise<unknown> = Promise.resolve();
 	private readonly now: () => number;
-	private lastRefreshAttemptAt = 0;
+	private readonly monotonicNow: () => number;
+	private lastRefreshAttemptAt: number | undefined;
+	/** A key the user entered while the Keychain refused to store it; never written to disk. */
+	private sessionKey: string | undefined;
 
 	constructor(private readonly options: EntitlementServiceOptions) {
 		super();
 		this.now = options.now ?? Date.now;
+		this.monotonicNow = options.monotonicNow ?? (() => performance.now());
 		this.ready = options.store.read().then((value) => {
 			this.state = normalizeStoredState(value);
 		});
@@ -100,7 +112,25 @@ export class EntitlementService extends EventEmitter {
 
 	async getSnapshot(): Promise<EntitlementSnapshot> {
 		await this.ready;
-		return this.buildSnapshot();
+		const snapshot = this.buildSnapshot();
+		if (!this.mayRecoverByRevalidating(snapshot)) return snapshot;
+		// A stored license is about to read as read-only, either because its offline grace ran
+		// out or because the last answer was "not active". Ask the provider before locking the
+		// user out; a renewed subscription or a returned network unlocks immediately. A slow
+		// network answers read-only now and broadcasts the result when the check finishes.
+		const revalidated = this.refresh().catch((error) => {
+			console.warn("Could not revalidate the Klippt license before read-only:", error);
+			return this.buildSnapshot();
+		});
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const waited = new Promise<EntitlementSnapshot>((resolve) => {
+			timer = setTimeout(() => resolve(this.buildSnapshot()), READ_ONLY_RECHECK_WAIT_MS);
+		});
+		try {
+			return await Promise.race([revalidated, waited]);
+		} finally {
+			clearTimeout(timer);
+		}
 	}
 
 	async assertCapability(capability: EntitlementCapability): Promise<void> {
@@ -124,22 +154,31 @@ export class EntitlementService extends EventEmitter {
 		if (!normalizedKey) throw new Error("Enter a license key.");
 		return this.mutate(async () => {
 			const provider = this.requireProvider();
-			const encryptedKey = await this.options.codec.encrypt(normalizedKey);
-			const validation = await provider.activate(normalizedKey, this.options.instanceName);
+			let encryptedKey: string | undefined;
+			try {
+				encryptedKey = await this.options.codec.encrypt(normalizedKey);
+			} catch (error) {
+				console.warn("Could not save the Klippt license key; keeping it for this session:", error);
+			}
+			const validation =
+				(await this.reuseUnreadableInstance(provider, normalizedKey)) ??
+				(await provider.activate(normalizedKey, this.options.instanceName));
 			if (!validation.valid || !validation.instanceId) {
 				throw new Error(validation.error ?? "This license is not active.");
 			}
+			this.sessionKey = encryptedKey === undefined ? normalizedKey : undefined;
 			const validatedAt = new Date(this.now()).toISOString();
 			this.state = {
 				...this.state,
 				trialStartedAt: this.state.trialStartedAt ?? validatedAt,
 				license: {
-					encryptedKey,
+					encryptedKey: encryptedKey ?? "",
 					instanceId: validation.instanceId,
 					valid: true,
 					lastValidatedAt: validatedAt,
 					expiresAt: validation.expiresAt,
 					customerEmail: validation.customerEmail,
+					...(encryptedKey === undefined ? { keyUnreadable: true } : {}),
 				},
 			};
 			await this.persistAndEmit();
@@ -149,16 +188,22 @@ export class EntitlementService extends EventEmitter {
 
 	async refresh(): Promise<EntitlementSnapshot> {
 		return this.mutate(async () => {
-			if (this.now() - this.lastRefreshAttemptAt < 60_000) return this.buildSnapshot();
-			this.lastRefreshAttemptAt = this.now();
+			const attemptAt = this.monotonicNow();
+			if (
+				this.lastRefreshAttemptAt !== undefined &&
+				attemptAt - this.lastRefreshAttemptAt < REFRESH_THROTTLE_MS
+			) {
+				return this.buildSnapshot();
+			}
+			this.lastRefreshAttemptAt = attemptAt;
 			const license = this.state.license;
 			if (!license || !this.options.provider) return this.buildSnapshot();
 			let licenseKey: string;
 			try {
-				licenseKey = await this.options.codec.decrypt(license.encryptedKey);
+				licenseKey = await this.readLicenseKey(license);
 			} catch (error) {
 				console.warn("Could not decrypt the Klippt license:", error);
-				return this.markValidationFailure();
+				return this.markKeyUnreadable();
 			}
 
 			try {
@@ -172,6 +217,7 @@ export class EntitlementService extends EventEmitter {
 						expiresAt: validation.expiresAt,
 						customerEmail: validation.customerEmail ?? license.customerEmail,
 						validationFailedAt: undefined,
+						keyUnreadable: undefined,
 					},
 				};
 				await this.persistAndEmit();
@@ -193,12 +239,54 @@ export class EntitlementService extends EventEmitter {
 			const license = this.state.license;
 			if (!license) return this.buildSnapshot();
 			const provider = this.requireProvider();
-			const licenseKey = await this.options.codec.decrypt(license.encryptedKey);
+			const licenseKey = await this.readLicenseKey(license);
 			await provider.deactivate(licenseKey, license.instanceId);
+			this.sessionKey = undefined;
 			this.state = { ...this.state, license: undefined };
 			await this.persistAndEmit();
 			return this.buildSnapshot();
 		});
+	}
+
+	/** Keeps the trial date and the license's offline grace, and asks for the key again. The
+	 *  next refresh retries the decrypt, so a Keychain that unlocks later recovers on its own. */
+	private async markKeyUnreadable(): Promise<EntitlementSnapshot> {
+		const license = this.state.license;
+		if (!license || (license.keyUnreadable && license.validationFailedAt)) {
+			return this.buildSnapshot();
+		}
+		this.state = {
+			...this.state,
+			license: {
+				...license,
+				keyUnreadable: true,
+				validationFailedAt: license.validationFailedAt ?? new Date(this.now()).toISOString(),
+			},
+		};
+		await this.persistAndEmit();
+		return this.buildSnapshot();
+	}
+
+	private async readLicenseKey(license: StoredLicense): Promise<string> {
+		if (this.sessionKey) return this.sessionKey;
+		if (!license.encryptedKey) throw new Error("The license key was never saved on this Mac.");
+		return this.options.codec.decrypt(license.encryptedKey);
+	}
+
+	/** Re-entering a key this Mac could no longer read keeps its existing activation, so the
+	 *  user does not spend a second activation slot. */
+	private async reuseUnreadableInstance(
+		provider: LicenseProvider,
+		licenseKey: string,
+	): Promise<LicenseValidation | undefined> {
+		const previous = this.state.license;
+		if (!previous?.keyUnreadable || !previous.instanceId) return undefined;
+		try {
+			const validation = await provider.validate(licenseKey, previous.instanceId);
+			return validation.valid ? { ...validation, instanceId: previous.instanceId } : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	private async markValidationFailure(): Promise<EntitlementSnapshot> {
@@ -215,7 +303,24 @@ export class EntitlementService extends EventEmitter {
 		return this.buildSnapshot();
 	}
 
+	private mayRecoverByRevalidating(snapshot: EntitlementSnapshot): boolean {
+		return (
+			snapshot.access === "read-only" &&
+			this.options.config.commerceConfigured &&
+			!this.options.config.forceStatus &&
+			Boolean(this.options.provider) &&
+			Boolean(this.state.license)
+		);
+	}
+
 	private buildSnapshot(): EntitlementSnapshot {
+		const snapshot = this.buildAccessSnapshot();
+		return snapshot.commerceConfigured && this.state.license?.keyUnreadable && !this.sessionKey
+			? { ...snapshot, reactivationRequired: true }
+			: snapshot;
+	}
+
+	private buildAccessSnapshot(): EntitlementSnapshot {
 		const { config } = this.options;
 		const base = {
 			version: 1 as const,

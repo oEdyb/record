@@ -70,7 +70,9 @@ function defaultModelPath() {
 				? [process.env.APPDATA ?? ""]
 				: [process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config")];
 	const candidates = roots.flatMap((root) =>
-		["openscreen", "Openscreen", "Electron"].map((appName) => path.join(root, appName, file)),
+		["Klippt", "openscreen", "Openscreen", "Electron"].map((appName) =>
+			path.join(root, appName, file),
+		),
 	);
 	return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
 }

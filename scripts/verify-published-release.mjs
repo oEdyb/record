@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ELECTRON_FEED_FILES, validateElectronUpdateFeeds } from "./update-feed-integrity.mjs";
+import { feedFilesForTargets, validateElectronUpdateFeeds } from "./update-feed-integrity.mjs";
 
 const FEED_FILES = new Set(["latest.yml", "latest-mac.yml", "latest-linux.yml", "latest.json"]);
 
@@ -90,16 +90,18 @@ export async function verifyPublishedRelease({
 				throw new Error(`latest.json integrity mismatch for ${fileName}`);
 			}
 		}
+		const feedNames = feedFilesForTargets(Object.keys(latest.downloads ?? {}));
 		validateElectronUpdateFeeds(
 			Object.fromEntries(
 				await Promise.all(
-					ELECTRON_FEED_FILES.map(async (feedName) => [
+					feedNames.map(async (feedName) => [
 						feedName,
 						await fs.promises.readFile(path.join(root, feedName), "utf8"),
 					]),
 				),
 			),
 			latest.artifacts,
+			feedNames,
 		);
 		for (const downloadUrl of Object.values(latest.downloads ?? {})) {
 			const parsed = new URL(downloadUrl);

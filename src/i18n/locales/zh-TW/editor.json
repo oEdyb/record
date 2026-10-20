@@ -155,14 +155,17 @@
 			"trialDay": "試用 {{count}} 天",
 			"trialDays": "試用 {{count}} 天",
 			"offline": "Klippt Pro, 離線",
-			"readOnly": "唯讀"
+			"readOnly": "唯讀",
+			"reactivate": "重新輸入授權"
 		},
 		"eyebrowReadOnly": "唯讀存取",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "你的專案很安全。",
 		"titleTrial": "讓每段錄製都能直接發佈。",
+		"titleReactivate": "請重新輸入授權金鑰。",
 		"descriptionExpired": "Klippt 現在處於唯讀模式。升級到 Pro 即可{{capability}}。",
 		"descriptionTrial": "試用包含完整的錄製器、編輯器、自動導向和成片匯出。",
+		"descriptionReactivate": "Klippt 無法讀取此 Mac 上儲存的授權。你的專案與試用日期都已保留。輸入一次金鑰即可繼續使用 Pro。",
 		"capability": {
 			"record": "錄製新片段",
 			"edit": "編輯此專案",

@@ -1,7 +1,7 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.etiennelescot.openscreen",
+  "appId": "co.dyberg.klippt",
   "asar": true,
   // .node binaries can't be dlopen'd from inside an asar — must live unpacked.
   // onnxruntime-node distributes as a `.node` shared object that whisper.cpp

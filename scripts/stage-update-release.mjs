@@ -17,7 +17,12 @@ import {
 	isNativeFfmpegEvidenceFileName,
 	nativeFfmpegEvidenceFileNames,
 } from "./native-ffmpeg-source.mjs";
-import { ELECTRON_FEED_FILES, validateElectronUpdateFeeds } from "./update-feed-integrity.mjs";
+import {
+	ELECTRON_FEED_FILES,
+	feedFilesForTargets,
+	RELEASE_TARGETS,
+	validateElectronUpdateFeeds,
+} from "./update-feed-integrity.mjs";
 import { loadWebDemuxerPolicy, sourceOfferFileNames } from "./web-demuxer-source.mjs";
 
 const UPDATE_BASE_URL = "https://updates.dyberg.co/klippt";
@@ -25,10 +30,15 @@ const FEED_FILES = new Set(ELECTRON_FEED_FILES);
 const SOURCE_SHA = /^[0-9a-f]{40}$/;
 const WEB_DEMUXER_POLICY = loadWebDemuxerPolicy();
 const SOURCE_OFFER_FILES = new Set(sourceOfferFileNames(WEB_DEMUXER_POLICY));
-const RELEASE_FFMPEG_TARGETS = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
-const NATIVE_FFMPEG_EVIDENCE_FILES = new Set(
-	RELEASE_FFMPEG_TARGETS.flatMap(nativeFfmpegEvidenceFileNames),
-);
+const DOWNLOADS = {
+	"darwin-arm64": {
+		pattern: (v) => `^Klippt-macOS-Apple-Silicon-${v}\\.dmg$`,
+		label: "Apple Silicon DMG",
+	},
+	"darwin-x64": { pattern: (v) => `^Klippt-macOS-Intel-${v}\\.dmg$`, label: "Intel DMG" },
+	"win32-x64": { pattern: (v) => `^Klippt\\.Setup\\.${v}\\.exe$`, label: "Windows installer" },
+	"linux-x64": { pattern: (v) => `^Klippt-Linux-${v}\\.AppImage$`, label: "Linux AppImage" },
+};
 
 function listFiles(root) {
 	return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
@@ -61,32 +71,27 @@ function sha512File(filePath) {
 	return hash.digest("base64");
 }
 
-export function buildReleaseManifest(fileNames, version, baseUrl = UPDATE_BASE_URL) {
+export function buildReleaseManifest(
+	fileNames,
+	version,
+	baseUrl = UPDATE_BASE_URL,
+	targets = RELEASE_TARGETS,
+) {
 	const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const manifest = {
 		version,
-		downloads: {
-			"darwin-arm64": matchesSingle(
-				fileNames,
-				new RegExp(`^Klippt-macOS-Apple-Silicon-${escapedVersion}\\.dmg$`),
-				"Apple Silicon DMG",
-			),
-			"darwin-x64": matchesSingle(
-				fileNames,
-				new RegExp(`^Klippt-macOS-Intel-${escapedVersion}\\.dmg$`),
-				"Intel DMG",
-			),
-			"win32-x64": matchesSingle(
-				fileNames,
-				new RegExp(`^Klippt\\.Setup\\.${escapedVersion}\\.exe$`),
-				"Windows installer",
-			),
-			"linux-x64": matchesSingle(
-				fileNames,
-				new RegExp(`^Klippt-Linux-${escapedVersion}\\.AppImage$`),
-				"Linux AppImage",
-			),
-		},
+		downloads: Object.fromEntries(
+			Object.keys(DOWNLOADS)
+				.filter((target) => targets.includes(target))
+				.map((target) => [
+					target,
+					matchesSingle(
+						fileNames,
+						new RegExp(DOWNLOADS[target].pattern(escapedVersion)),
+						DOWNLOADS[target].label,
+					),
+				]),
+		),
 	};
 
 	return {
@@ -109,7 +114,15 @@ function isUpdateArtifact(fileName) {
 	);
 }
 
-export function stageUpdateRelease(sourceRoot, version, outputRoot, sourceSha) {
+export function stageUpdateRelease(
+	sourceRoot,
+	version,
+	outputRoot,
+	sourceSha,
+	targets = RELEASE_TARGETS,
+) {
+	const feedFiles = feedFilesForTargets(targets);
+	const nativeFfmpegEvidenceFiles = targets.flatMap(nativeFfmpegEvidenceFileNames);
 	const sourceFiles = listFiles(sourceRoot).filter((file) => isUpdateArtifact(path.basename(file)));
 	const seen = new Set();
 	mkdirSync(outputRoot, { recursive: true });
@@ -121,14 +134,14 @@ export function stageUpdateRelease(sourceRoot, version, outputRoot, sourceSha) {
 		copyFileSync(sourceFile, path.join(outputRoot, fileName));
 	}
 
-	for (const feedFile of FEED_FILES) {
+	for (const feedFile of feedFiles) {
 		if (!seen.has(feedFile)) throw new Error(`missing update feed: ${feedFile}`);
 	}
-	for (const fileName of [...SOURCE_OFFER_FILES, ...NATIVE_FFMPEG_EVIDENCE_FILES]) {
+	for (const fileName of [...SOURCE_OFFER_FILES, ...nativeFfmpegEvidenceFiles]) {
 		if (!seen.has(fileName)) throw new Error(`missing LGPL release evidence: ${fileName}`);
 	}
 
-	const manifest = buildReleaseManifest([...seen], version);
+	const manifest = buildReleaseManifest([...seen], version, UPDATE_BASE_URL, targets);
 	const immutableFiles = [...seen].filter((fileName) => !FEED_FILES.has(fileName)).sort();
 	manifest.artifacts = Object.fromEntries(
 		immutableFiles.map((fileName) => {
@@ -138,12 +151,13 @@ export function stageUpdateRelease(sourceRoot, version, outputRoot, sourceSha) {
 	);
 	validateElectronUpdateFeeds(
 		Object.fromEntries(
-			ELECTRON_FEED_FILES.map((feedName) => [
+			feedFiles.map((feedName) => [
 				feedName,
 				fs.readFileSync(path.join(outputRoot, feedName), "utf8"),
 			]),
 		),
 		manifest.artifacts,
+		feedFiles,
 	);
 	if (sourceSha !== undefined) {
 		if (!SOURCE_SHA.test(sourceSha)) throw new Error("release source SHA must be 40 hex digits");
@@ -154,11 +168,17 @@ export function stageUpdateRelease(sourceRoot, version, outputRoot, sourceSha) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-	const [sourceRoot, version, outputRoot] = process.argv.slice(2);
+	const args = process.argv.slice(2);
+	const targetsIndex = args.indexOf("--targets");
+	const targets =
+		targetsIndex === -1 ? RELEASE_TARGETS : (args.splice(targetsIndex, 2)[1] ?? "").split(",");
+	const [sourceRoot, version, outputRoot] = args;
 	if (!sourceRoot || !version || !outputRoot) {
-		console.error("usage: stage-update-release.mjs <artifact-root> <version> <output-dir>");
+		console.error(
+			"usage: stage-update-release.mjs <artifact-root> <version> <output-dir> [--targets darwin-arm64,...]",
+		);
 		process.exit(2);
 	}
-	stageUpdateRelease(sourceRoot, version, outputRoot, process.env.KLIPPT_SOURCE_SHA);
+	stageUpdateRelease(sourceRoot, version, outputRoot, process.env.KLIPPT_SOURCE_SHA, targets);
 	console.info(`Staged Klippt ${version} update files in ${outputRoot}`);
 }

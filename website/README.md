@@ -1,35 +1,17 @@
-# Archived OpenScreen docs site
+# klippt.app
 
-This Docusaurus tree is inherited upstream documentation. It does not describe the current Klippt
-alpha and must not be published as Klippt product guidance. Current status lives in
-[`../HANDOFF.md`](../HANDOFF.md). The planned `klippt.app` beta site is a separate, original one-page
-product surface.
+The Klippt marketing site: Docusaurus, built to static files and hosted on Cloudflare Pages.
 
-Docusaurus 3 site. Lives in `website/` inside the monorepo. Deployed to GitHub Pages via `.github/workflows/docs.yml`.
-
-## Develop
-
-```sh
-cd website
-npm install
-npm run dev      # http://localhost:3000/openscreen/
+```bash
+npm ci
+npm run dev        # local preview
+npm run build      # static build in build/
+npm run deploy     # build and check; refuses while any page carries KLIPPT-DRAFT
+npm run deploy -- --yes   # upload to the Cloudflare Pages project "klippt" (owner only)
 ```
 
-## Build
-
-```sh
-npm run build    # outputs to website/build/
-npm run serve    # serves the built site locally
-```
-
-## Type-check
-
-```sh
-npm run typecheck
-```
-
-## Notes
-
-- Site URL: <https://getopenscreen.github.io/openscreen/>
-- The base URL is `/openscreen/` because the org-level Pages site hosts multiple projects.
-- Docs migration from `docs/` (root) → `website/docs/` happens in a follow-up PR. For now only the intro page is published.
+- The download page reads `https://updates.dyberg.co/klippt/latest.json` in the browser. The R2
+  bucket needs a CORS rule that allows `GET` from `https://klippt.app`.
+- The checkout link comes from `electron/entitlements/commercial-config.json` (`live.checkoutUrl`),
+  the same file the app reads.
+- `static/_headers` sets the security headers Cloudflare Pages serves.

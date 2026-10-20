@@ -43,7 +43,7 @@ function buildHelperCandidates(options: CaptureHelperPathOptions, locations: str
 }
 
 export function buildNativeMacCaptureHelperCandidates(options: CaptureHelperPathOptions): string[] {
-	const helperName = "openscreen-screencapturekit-helper";
+	const helperName = "klippt-screencapturekit-helper";
 	const archTag = options.arch === "arm64" ? "darwin-arm64" : "darwin-x64";
 	return buildHelperCandidates(options, [
 		["electron", "native", "screencapturekit", "build", helperName],

@@ -101,6 +101,7 @@ export function RecordingReviewShell() {
 	const { routes: cleanVoiceRoutes } = useCleanVoiceRuntime(document);
 	const openEntitlement = useEntitlementStore((s) => s.openDialog);
 	const entitlementLabel = (() => {
+		if (entitlement.reactivationRequired) return te("entitlement.status.reactivate");
 		switch (entitlement.status) {
 			case "trial-not-started":
 				return te("entitlement.status.trialNotStarted");

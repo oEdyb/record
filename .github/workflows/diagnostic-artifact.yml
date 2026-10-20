@@ -96,8 +96,8 @@ jobs:
           cp scripts/diagnostic-tool/diagnostic.mjs "$bundle/"
           cp scripts/diagnostic-tool/diagnostic.sh "$bundle/"
           cp scripts/diagnostic-tool/README.md "$bundle/"
-          cp "electron/native/bin/$arch_tag/openscreen-screencapturekit-helper" "$bundle/helpers/$arch_tag/"
-          chmod +x "$bundle/diagnostic.sh" "$bundle/helpers/$arch_tag/openscreen-screencapturekit-helper"
+          cp "electron/native/bin/$arch_tag/klippt-screencapturekit-helper" "$bundle/helpers/$arch_tag/"
+          chmod +x "$bundle/diagnostic.sh" "$bundle/helpers/$arch_tag/klippt-screencapturekit-helper"
           tar -czf "$bundle.tar.gz" "$bundle"
 
       - name: Upload macOS diagnostic bundle

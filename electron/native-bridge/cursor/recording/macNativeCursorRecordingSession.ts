@@ -81,7 +81,7 @@ type MacCursorEvent =
 			contextIdentity?: string;
 	  };
 
-const HELPER_NAME = "openscreen-macos-cursor-helper";
+const HELPER_NAME = "klippt-cursor-helper";
 const READY_TIMEOUT_MS = 5_000;
 
 function helperCandidates() {

@@ -17,6 +17,31 @@ const DEVELOPMENT_ENTITLEMENT: EntitlementSnapshot = {
 
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 
+const REACTIVATION_PROMPTED_KEY = "klippt.entitlement.reactivationPrompted";
+let promptsReactivation = false;
+let promptedThisSession = false;
+
+/** Opens the license dialog the first time this Mac cannot read the saved key, then never again
+ *  until a working key clears the request. Only the window that asked for it prompts, so the
+ *  recorder pill and overlays never spend the one prompt. */
+function shouldPromptReactivation(snapshot: EntitlementSnapshot): boolean {
+	if (!promptsReactivation) return false;
+	if (!snapshot.reactivationRequired) promptedThisSession = false;
+	try {
+		if (!snapshot.reactivationRequired) {
+			window.localStorage.removeItem(REACTIVATION_PROMPTED_KEY);
+			return false;
+		}
+		if (window.localStorage.getItem(REACTIVATION_PROMPTED_KEY)) return false;
+		window.localStorage.setItem(REACTIVATION_PROMPTED_KEY, "1");
+		return true;
+	} catch {
+		if (!snapshot.reactivationRequired || promptedThisSession) return false;
+		promptedThisSession = true;
+		return true;
+	}
+}
+
 function scheduleAccessBoundary(snapshot: EntitlementSnapshot): void {
 	if (expirationTimer) clearTimeout(expirationTimer);
 	expirationTimer = null;
@@ -60,7 +85,12 @@ export const useEntitlementStore = create<EntitlementRendererState>((set, get) =
 	error: null,
 	setSnapshot: (snapshot) => {
 		scheduleAccessBoundary(snapshot);
-		set({ snapshot, loaded: true, error: null });
+		set({
+			snapshot,
+			loaded: true,
+			error: null,
+			...(shouldPromptReactivation(snapshot) ? { dialogOpen: true, blockedCapability: null } : {}),
+		});
 	},
 	openDialog: (blockedCapability = undefined) =>
 		set({ dialogOpen: true, blockedCapability: blockedCapability ?? null, error: null }),
@@ -108,7 +138,12 @@ export const useEntitlementStore = create<EntitlementRendererState>((set, get) =
 
 let removeEntitlementListener: (() => void) | null = null;
 
-export async function initializeEntitlements(): Promise<() => void> {
+export async function initializeEntitlements({
+	promptReactivation = false,
+}: {
+	promptReactivation?: boolean;
+} = {}): Promise<() => void> {
+	promptsReactivation = promptReactivation;
 	removeEntitlementListener?.();
 	removeEntitlementListener = null;
 	const api = window.electronAPI;
@@ -130,9 +165,30 @@ export async function initializeEntitlements(): Promise<() => void> {
 	};
 }
 
+let recheck: Promise<void> | null = null;
+
+/** Main revalidates a stored license before answering read-only; a renewed or back-online
+ *  subscriber is unlocked here without re-entering the key. */
+function recheckBlockedAccess(): void {
+	const api = window.electronAPI;
+	if (recheck || !api?.getEntitlement) return;
+	recheck = api
+		.getEntitlement()
+		.then((next) => {
+			const store = useEntitlementStore.getState();
+			store.setSnapshot(next);
+			if (next.access === "full") store.closeDialog();
+		})
+		.catch((error) => console.warn("Could not recheck Klippt access:", error))
+		.finally(() => {
+			recheck = null;
+		});
+}
+
 export function requireEntitlement(capability: EntitlementCapability): boolean {
 	const state = useEntitlementStore.getState();
 	if (canUseCapability(state.snapshot, capability)) return true;
 	state.openDialog(capability);
+	if (state.snapshot.provider) recheckBlockedAccess();
 	return false;
 }

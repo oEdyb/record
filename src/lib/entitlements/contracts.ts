@@ -30,6 +30,8 @@ export interface EntitlementSnapshot {
 	lastValidatedAt?: string;
 	offlineUntil?: string;
 	customerEmail?: string;
+	/** The saved license key could not be read on this Mac; the user enters it once more. */
+	reactivationRequired?: boolean;
 }
 
 function hasPaidAccess(snapshot: EntitlementSnapshot): boolean {

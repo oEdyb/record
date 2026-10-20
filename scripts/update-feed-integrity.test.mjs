@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stringify } from "yaml";
-import { validateElectronUpdateFeeds } from "./update-feed-integrity.mjs";
+import { feedFilesForTargets, validateElectronUpdateFeeds } from "./update-feed-integrity.mjs";
 
 const artifact = (text) => ({
 	size: Buffer.byteLength(text),
@@ -68,11 +68,26 @@ describe("Electron update-feed integrity", () => {
 		expect(() => validateElectronUpdateFeeds(escaping, artifacts)).toThrow(/escapes/);
 	});
 
-	it("rejects a Mac feed that does not bind both architectures", () => {
-		const incomplete = feeds();
-		incomplete["latest-mac.yml"] = stringify({
-			files: [descriptor("Klippt-Mac-arm64-2.0.0.zip")],
-		});
-		expect(() => validateElectronUpdateFeeds(incomplete, artifacts)).toThrow(/arm64 and one x64/);
+	it("accepts an Apple Silicon only Mac feed", () => {
+		const armOnly = {
+			"latest-mac.yml": stringify({ files: [descriptor("Klippt-Mac-arm64-2.0.0.zip")] }),
+		};
+		expect(() => validateElectronUpdateFeeds(armOnly, artifacts, ["latest-mac.yml"])).not.toThrow();
+	});
+
+	it("rejects a Mac feed without exactly one arm64 archive", () => {
+		const intelOnly = feeds();
+		intelOnly["latest-mac.yml"] = stringify({ files: [descriptor("Klippt-Mac-x64-2.0.0.zip")] });
+		expect(() => validateElectronUpdateFeeds(intelOnly, artifacts)).toThrow(/exactly one arm64/);
+	});
+
+	it("validates only the feeds a release publishes", () => {
+		expect(feedFilesForTargets(["darwin-arm64"])).toEqual(["latest-mac.yml"]);
+		expect(feedFilesForTargets(["win32-x64", "darwin-arm64", "darwin-x64"])).toEqual([
+			"latest.yml",
+			"latest-mac.yml",
+		]);
+		expect(() => feedFilesForTargets([])).toThrow(/at least one/);
+		expect(() => feedFilesForTargets(["darwin-ppc"])).toThrow(/unsupported/);
 	});
 });

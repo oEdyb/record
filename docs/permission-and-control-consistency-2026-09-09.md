@@ -98,3 +98,39 @@ as Saved in the updated editor. The installed Audio panel was visually inspected
 recorded media; screenshot: `artifacts/panel-consistency-2026-09-09/installed-audio.jpg`.
 Second test recording: `recording-1788928759280-clip-0001.mp4` in the existing recordings directory.
 The app is left open on Audio. Test recordings and prior projects remain intact.
+
+## October 20, 2026: bundle identity moves to co.dyberg.klippt
+
+The app is now signed as `co.dyberg.klippt`. The helpers are renamed `klippt-screencapturekit-helper`
+and `klippt-cursor-helper`. Each embeds an Info.plist (`electron/native/screencapturekit/Support/`,
+linked into `__TEXT,__info_plist`), so codesign signs them as `co.dyberg.klippt.screencapturekit-helper`
+and `co.dyberg.klippt.cursor-helper` instead of their file names. `after-sign.cjs` pins all three
+identifiers, the Developer ID OIDs, and team LF8KF3G42Q, and requires both helpers.
+
+What stays the same:
+- An existing `~/Library/Application Support/openscreen` keeps being used; it is chosen by path,
+  not by bundle ID (`electron/userDataLocation.ts`). Projects hold absolute paths into it, so nothing
+  is copied or remapped. A Mac that never ran an OpenScreen-era build starts in `…/Klippt` and marks
+it with `.klippt-user-data`, so a later `openscreen` folder never switches it back. The legacy match
+is exact-case, so upstream OpenScreen's `Openscreen` folder is never adopted. Every
+  trust root (recordings, projects, settings) derives from `app.getPath("userData")`. Renaming an
+  existing folder would be a separate migration with a path remap and is not planned.
+- `OPENSCREEN_*` environment variables are still read.
+- The safeStorage Keychain item is still named "Klippt Safe Storage". Its access list trusts the
+  old signature, so macOS may ask once to allow the new app. If the key can't be decrypted, Klippt
+  keeps the trial date and the license's offline grace, and the editor asks for the license key
+  once. Re-entering the same key reuses the existing Lemon Squeezy activation. If the Keychain also
+  refuses to store it, the key unlocks that session from memory and is asked for again next launch.
+  Projects stay viewable throughout.
+
+What changes once per Mac that crosses the change:
+- TCC grants belong to the old ID. Grant Screen Recording, Accessibility, Camera and Microphone to
+  the new `/Applications/Klippt.app` once. The old rows can be cleared with
+  `tccutil reset All com.etiennelescot.openscreen` (owner's action).
+- In-app update cannot cross the change. Squirrel.Mac accepts an update only if it satisfies the
+  running app's designated requirement, which names `com.etiennelescot.openscreen`. Install the first
+  `co.dyberg.klippt` build by hand from the DMG. After that, builds update each other through
+  `updates.dyberg.co/klippt` as before.
+
+Rollback: reinstall the previous build from `.local-install.noindex/backup-installed-*`. It still
+carries the old ID, so its old TCC grants apply again, and the user-data folder is the same.

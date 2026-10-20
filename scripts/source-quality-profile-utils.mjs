@@ -274,8 +274,7 @@ export function summarizeLiveProcessSamples(samples) {
 			const [, , cpu, rss, ...command] = line.trim().split(/\s+/);
 			if (!Number.isFinite(Number(cpu)) || !Number.isFinite(Number(rss)))
 				throw new Error("Invalid owned process sample");
-			if (command.join(" ").endsWith("openscreen-screencapturekit-helper"))
-				helperCpu += Number(cpu);
+			if (command.join(" ").endsWith("klippt-screencapturekit-helper")) helperCpu += Number(cpu);
 			else electronCpu += Number(cpu);
 			rssKiB += Number(rss);
 		}
@@ -297,7 +296,7 @@ export function summarizeLiveProcessSamples(samples) {
 
 export function installedCaptureProcesses(psText) {
 	const executable =
-		"/Applications/Klippt.app/Contents/Resources/electron/native/bin/darwin-arm64/openscreen-screencapturekit-helper";
+		"/Applications/Klippt.app/Contents/Resources/electron/native/bin/darwin-arm64/klippt-screencapturekit-helper";
 	return psText
 		.split("\n")
 		.map((line) => line.trim().split(/\s+/))

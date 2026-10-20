@@ -9,13 +9,15 @@ import { fileURLToPath } from "node:url";
 const helperTarget = [
 	"\t\t.executableTarget(",
 	'\t\t\tname: "OpenScreenScreenCaptureKitHelper",',
-	'\t\t\tpath: "Sources/OpenScreenScreenCaptureKitHelper"',
+	'\t\t\tpath: "Sources/OpenScreenScreenCaptureKitHelper",',
+	'\t\t\tlinkerSettings: embeddedInfoPlist("screencapturekit-helper")',
 	"\t\t)",
 ].join("\n");
 const packageTail = [
 	"\t\t.executableTarget(",
 	'\t\t\tname: "OpenScreenMacOSCursorHelper",',
-	'\t\t\tpath: "Sources/OpenScreenMacOSCursorHelper"',
+	'\t\t\tpath: "Sources/OpenScreenMacOSCursorHelper",',
+	'\t\t\tlinkerSettings: embeddedInfoPlist("cursor-helper")',
 	"\t\t)",
 	"\t]",
 	")",
@@ -117,7 +119,7 @@ export async function runCaptureHelperTests({
 	const isolatedPackage = fs.mkdtempSync(path.join(temporaryRoot, "klippt-capture-tests-"));
 	try {
 		fs.writeFileSync(path.join(isolatedPackage, "Package.swift"), manifest);
-		for (const directory of ["Sources", "Tests"]) {
+		for (const directory of ["Sources", "Tests", "Support"]) {
 			fs.cpSync(path.join(packageDir, directory), path.join(isolatedPackage, directory), {
 				recursive: true,
 			});

@@ -92,14 +92,14 @@ const TARGET_NATIVE_COMPONENTS = {
 	"darwin-arm64": {
 		"compositor_view.node": "metal-compositor",
 		"klippt-parakeet-stt": "parakeet-stt",
-		"openscreen-macos-cursor-helper": "macos-cursor",
-		"openscreen-screencapturekit-helper": "screencapturekit",
+		"klippt-cursor-helper": "macos-cursor",
+		"klippt-screencapturekit-helper": "screencapturekit",
 		...Object.fromEntries(DARWIN_FFMPEG.map((file) => [file, "ffmpeg"])),
 	},
 	"darwin-x64": {
 		"compositor_view.node": "metal-compositor",
-		"openscreen-macos-cursor-helper": "macos-cursor",
-		"openscreen-screencapturekit-helper": "screencapturekit",
+		"klippt-cursor-helper": "macos-cursor",
+		"klippt-screencapturekit-helper": "screencapturekit",
 		...Object.fromEntries(DARWIN_FFMPEG.map((file) => [file, "ffmpeg"])),
 	},
 	"linux-arm64": {

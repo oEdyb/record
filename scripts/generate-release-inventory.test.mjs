@@ -120,11 +120,11 @@ describe("release inventory", { timeout: 30_000 }, () => {
 		const nativeRoot = await temporaryDirectory("klippt-inventory-native-");
 		const targetRoot = path.join(nativeRoot, "darwin-arm64");
 		await mkdir(path.join(targetRoot, "framework"), { recursive: true });
-		await writeFile(path.join(targetRoot, "openscreen-screencapturekit-helper"), "capture-helper");
+		await writeFile(path.join(targetRoot, "klippt-screencapturekit-helper"), "capture-helper");
 		await writeFile(path.join(targetRoot, "framework", "libavcodec.dylib"), "ffmpeg-library");
 		await writeFile(path.join(targetRoot, "klippt-clean-voice"), "development-only");
 		if (process.platform !== "win32") {
-			await symlink("openscreen-screencapturekit-helper", path.join(targetRoot, "capture-link"));
+			await symlink("klippt-screencapturekit-helper", path.join(targetRoot, "capture-link"));
 		}
 
 		const options = {
@@ -141,7 +141,7 @@ describe("release inventory", { timeout: 30_000 }, () => {
 			new Set(["npm", "cargo", "swift", "ffmpeg", "model", "webassembly", "native"]),
 		);
 		expect(
-			first.components.some((component) => component.name === "openscreen-screencapturekit-helper"),
+			first.components.some((component) => component.name === "klippt-screencapturekit-helper"),
 		).toBe(true);
 		expect(
 			first.components.some((component) => component.name === "framework/libavcodec.dylib"),
@@ -151,7 +151,7 @@ describe("release inventory", { timeout: 30_000 }, () => {
 				first.components.some(
 					(component) =>
 						component.name === "capture-link" &&
-						component.symlinkTarget === "openscreen-screencapturekit-helper",
+						component.symlinkTarget === "klippt-screencapturekit-helper",
 				),
 			).toBe(true);
 		}

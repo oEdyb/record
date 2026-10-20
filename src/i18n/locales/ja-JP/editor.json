@@ -155,14 +155,17 @@
 			"trialDay": "トライアル, 残り{{count}}日",
 			"trialDays": "トライアル, 残り{{count}}日",
 			"offline": "Klippt Pro, オフライン",
-			"readOnly": "読み取り専用"
+			"readOnly": "読み取り専用",
+			"reactivate": "ライセンスを再入力"
 		},
 		"eyebrowReadOnly": "読み取り専用アクセス",
 		"eyebrowPro": "Klippt Pro",
 		"titleExpired": "プロジェクトは安全です。",
 		"titleTrial": "すべての録画を公開できる状態に。",
+		"titleReactivate": "ライセンスキーをもう一度入力してください。",
 		"descriptionExpired": "Klippt は現在、読み取り専用です。{{capability}}には Pro をご利用ください。",
 		"descriptionTrial": "トライアルには、レコーダー、エディター、自動ディレクション、完成動画の書き出しがすべて含まれます。",
+		"descriptionReactivate": "このMacに保存されたライセンスを読み取れませんでした。プロジェクトと試用開始日は保持されています。Proを続けるにはキーを一度入力してください。",
 		"capability": {
 			"record": "新しいクリップを録画する",
 			"edit": "このプロジェクトを編集する",
