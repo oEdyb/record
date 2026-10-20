@@ -65,8 +65,8 @@
 		"selectFailed": "تعذّر التبديل إلى هذا المصدر. حاول مرة أخرى."
 	},
 	"recording": {
-		"starting": "Starting recording…",
-		"recordings": "Recordings",
+		"starting": "جارٍ بدء التسجيل…",
+		"recordings": "التسجيلات",
 		"selectSource": "يرجى تحديد مصدر للتسجيل",
 		"systemPicker": "سيسألك النظام عمّا تريد مشاركته",
 		"inProgress": "جارٍ التسجيل",
@@ -101,16 +101,16 @@
 		"cameraQuality": "جودة الكاميرا",
 		"preview": "معاينة",
 		"previewUnavailable": "المعاينة غير متاحة",
-		"recordingQuality": "Recording quality",
-		"qualityHigh": "High",
-		"qualityStandard": "Standard",
+		"recordingQuality": "جودة التسجيل",
+		"qualityHigh": "عالية",
+		"qualityStandard": "قياسية",
 		"source": "المصدر",
 		"editableCursor": "مؤشر قابل للتعديل",
 		"language": "اللغة",
 		"lockedHint": "أوقف مؤقتًا لتغيير الإعداد",
 		"display": "الشاشة",
 		"window": "نافذة",
-		"cameraAutomatic": "Automatic (16:9)",
+		"cameraAutomatic": "تلقائي (16:9)",
 		"cameraMonitor": "شاشة الكاميرا"
 	},
 	"setup": {
@@ -142,5 +142,27 @@
 		"pauseFirst": "أوقف التسجيل مؤقتًا لتفريغ أحدث المقاطع.",
 		"empty": "لا توجد مقاطع بعد. سجّل شيئًا أولًا.",
 		"clip": "المقطع {{n}}"
+	},
+	"countdown": {
+		"cancelHint": "اضغط على تسجيل مرة أخرى للإلغاء"
+	},
+	"permissions": {
+		"blocked": "غير مفعّل",
+		"camera": "الكاميرا",
+		"cameraDetail": "لتسجيل الكاميرا",
+		"continue": "متابعة",
+		"description": "يطلب macOS موافقتك مرة واحدة لكل من هذه الصلاحيات. لا يلتقط Klippt شيئًا إلا أثناء التسجيل.",
+		"granted": "مسموح",
+		"microphone": "الميكروفون",
+		"microphoneDetail": "لتسجيل صوتك",
+		"notAsked": "لم يُطلب بعد",
+		"notNow": "ليس الآن",
+		"openSettings": "فتح الإعدادات",
+		"relaunch": "الخروج وإعادة الفتح",
+		"relaunchHint": "فعّل Klippt في إعدادات النظام، ثم أنهِ Klippt وأعد فتحه ليطبّق macOS التغيير.",
+		"screen": "تسجيل الشاشة",
+		"screenDetail": "لالتقاط شاشتك",
+		"settingsHint": "فعّل Klippt في إعدادات النظام. تتحدّث هذه اللوحة تلقائيًا.",
+		"title": "قبل أن تسجّل"
 	}
 }

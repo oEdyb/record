@@ -39,7 +39,9 @@
 		"services": "서비스",
 		"hide": "Klippt 숨기기",
 		"hideOthers": "다른 항목 숨기기",
-		"unhide": "모두 보기"
+		"unhide": "모두 보기",
+		"showRecorder": "녹화기 표시",
+		"startRecording": "녹화 시작"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} 버전을 사용할 수 있습니다. 현재 버전은 {{currentVersion}}입니다.",
@@ -64,6 +66,19 @@
 		"unknown": "화면 녹화"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "{{min}}에서 {{max}} 사이의 숫자를 입력하세요."
+	},
+	"menu": {
+		"newRecording": "새 녹화",
+		"recordings": "녹화 목록…",
+		"saveVideo": "동영상 저장…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}}은(는) 동영상에서 커서가 선명하게 보이도록 포인터 위치를 읽습니다. 시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용에서 {{app}}을(를) 켠 다음 녹화를 다시 누르세요.",
+		"accessibilityMissingHelper": "{{app}}의 일부가 없어 편집 가능한 커서를 사용할 수 없습니다. {{app}}을(를) 다시 설치하거나 설정에서 커서를 시스템으로 바꾸세요.",
+		"accessibilityTitle": "선명하고 부드러운 커서를 위해 손쉬운 사용 허용",
+		"openSettings": "시스템 설정 열기",
+		"screenDetail": "시스템 설정 → 개인정보 보호 및 보안 → 화면 녹화에서 {{app}}을(를) 켠 다음 {{app}}을(를) 종료하고 다시 여세요.",
+		"screenTitle": "{{app}}에 화면 녹화 권한이 필요합니다"
 	}
 }

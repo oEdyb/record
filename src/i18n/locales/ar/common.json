@@ -36,10 +36,12 @@
 		"toggleFullScreen": "ملء الشاشة",
 		"recordingStatus": "جاري التسجيل: {{source}}",
 		"about": "حول Klippt",
-		"services": "خدمات",
+		"services": "الخدمات",
 		"hide": "إخفاء Klippt",
 		"hideOthers": "إخفاء الآخرين",
-		"unhide": "إظهار الكل"
+		"unhide": "إظهار الكل",
+		"showRecorder": "إظهار المسجّل",
+		"startRecording": "بدء التسجيل"
 	},
 	"updates": {
 		"available": "يتوفر Klippt {{latestVersion}}. الإصدار المثبت هو {{currentVersion}}.",
@@ -64,6 +66,19 @@
 		"unknown": "تسجيل الشاشة"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "أدخل رقمًا من {{min}} إلى {{max}}."
+	},
+	"menu": {
+		"newRecording": "تسجيل جديد",
+		"recordings": "التسجيلات…",
+		"saveVideo": "حفظ الفيديو…"
+	},
+	"permissions": {
+		"accessibilityDetail": "يقرأ {{app}} موضع المؤشر ليبقى المؤشر واضحًا في الفيديو. فعّل {{app}} في إعدادات النظام ← الخصوصية والأمان ← تسهيلات الاستخدام، ثم اضغط على تسجيل مرة أخرى.",
+		"accessibilityMissingHelper": "جزء من {{app}} مفقود، لذا لا يتوفر المؤشر القابل للتحرير. أعد تثبيت {{app}} أو غيّر المؤشر إلى النظام في الإعدادات.",
+		"accessibilityTitle": "اسمح بتسهيلات الاستخدام للحصول على مؤشر واضح وسلس",
+		"openSettings": "فتح إعدادات النظام",
+		"screenDetail": "فعّل {{app}} في إعدادات النظام ← الخصوصية والأمان ← تسجيل الشاشة، ثم أنهِ {{app}} وأعد فتحه.",
+		"screenTitle": "يحتاج {{app}} إلى صلاحية تسجيل الشاشة"
 	}
 }

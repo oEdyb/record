@@ -39,7 +39,9 @@
 		"services": "Services",
 		"hide": "Masquer Klippt",
 		"hideOthers": "Masquer les autres",
-		"unhide": "Tout afficher"
+		"unhide": "Tout afficher",
+		"showRecorder": "Afficher l’enregistreur",
+		"startRecording": "Démarrer l’enregistrement"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} est disponible. Vous utilisez la version {{currentVersion}}.",
@@ -64,6 +66,19 @@
 		"unknown": "Enregistrement d'écran"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "Saisissez un nombre de {{min}} à {{max}}."
+	},
+	"menu": {
+		"newRecording": "Nouvel enregistrement",
+		"recordings": "Enregistrements…",
+		"saveVideo": "Enregistrer la vidéo…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}} lit la position du pointeur pour que le curseur reste net dans votre vidéo. Activez {{app}} dans Réglages Système → Confidentialité et sécurité → Accessibilité, puis appuyez de nouveau sur Enregistrer.",
+		"accessibilityMissingHelper": "Une partie de {{app}} est manquante : le curseur modifiable n’est donc pas disponible. Réinstallez {{app}} ou réglez le curseur sur Système dans les réglages.",
+		"accessibilityTitle": "Autorisez l’accessibilité pour un curseur net et fluide",
+		"openSettings": "Ouvrir Réglages Système",
+		"screenDetail": "Activez {{app}} dans Réglages Système → Confidentialité et sécurité → Enregistrement de l’écran, puis quittez et rouvrez {{app}}.",
+		"screenTitle": "{{app}} a besoin d’accéder à l’enregistrement de l’écran"
 	}
 }

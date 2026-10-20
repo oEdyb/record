@@ -39,7 +39,9 @@
 		"services": "服务",
 		"hide": "隐藏 Klippt",
 		"hideOthers": "隐藏其他",
-		"unhide": "显示全部"
+		"unhide": "显示全部",
+		"showRecorder": "显示录制器",
+		"startRecording": "开始录制"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} 已发布。当前版本为 {{currentVersion}}。",
@@ -64,6 +66,19 @@
 		"unknown": "屏幕录制"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "请输入 {{min}} 到 {{max}} 之间的数字。"
+	},
+	"menu": {
+		"newRecording": "新建录制",
+		"recordings": "录制内容…",
+		"saveVideo": "保存视频…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}} 会读取指针位置，让视频中的光标保持清晰。请在“系统设置”→“隐私与安全性”→“辅助功能”中打开 {{app}}，然后再次点按“录制”。",
+		"accessibilityMissingHelper": "{{app}} 缺少部分组件，因此无法使用可编辑光标。请重新安装 {{app}}，或在“设置”中将光标切换为“系统”。",
+		"accessibilityTitle": "允许辅助功能，让光标清晰流畅",
+		"openSettings": "打开系统设置",
+		"screenDetail": "请在“系统设置”→“隐私与安全性”→“屏幕录制”中打开 {{app}}，然后退出并重新打开 {{app}}。",
+		"screenTitle": "{{app}} 需要“屏幕录制”权限"
 	}
 }

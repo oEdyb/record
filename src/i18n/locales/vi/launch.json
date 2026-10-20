@@ -65,8 +65,8 @@
 		"selectFailed": "Không thể chuyển sang nguồn đó. Hãy thử lại."
 	},
 	"recording": {
-		"starting": "Starting recording…",
-		"recordings": "Recordings",
+		"starting": "Đang bắt đầu ghi hình…",
+		"recordings": "Bản ghi",
 		"selectSource": "Vui lòng chọn một nguồn để ghi",
 		"systemPicker": "Hệ thống sẽ hỏi bạn muốn chia sẻ gì",
 		"inProgress": "Đang ghi",
@@ -101,16 +101,16 @@
 		"cameraQuality": "Chất lượng camera",
 		"preview": "Xem trước",
 		"previewUnavailable": "Không thể xem trước",
-		"recordingQuality": "Recording quality",
-		"qualityHigh": "High",
-		"qualityStandard": "Standard",
+		"recordingQuality": "Chất lượng ghi hình",
+		"qualityHigh": "Cao",
+		"qualityStandard": "Tiêu chuẩn",
 		"source": "Nguồn",
 		"editableCursor": "Con trỏ chỉnh sửa được",
 		"language": "Ngôn ngữ",
 		"lockedHint": "Tạm dừng để thay đổi thiết lập",
 		"display": "Màn hình",
 		"window": "Cửa sổ",
-		"cameraAutomatic": "Automatic (16:9)",
+		"cameraAutomatic": "Tự động (16:9)",
 		"cameraMonitor": "Màn hình camera"
 	},
 	"setup": {
@@ -142,5 +142,27 @@
 		"pauseFirst": "Tạm dừng ghi để chuyển lời các clip mới nhất.",
 		"empty": "Chưa có clip. Hãy ghi trước.",
 		"clip": "Clip {{n}}"
+	},
+	"countdown": {
+		"cancelHint": "Nhấn Ghi hình lần nữa để hủy"
+	},
+	"permissions": {
+		"blocked": "Tắt",
+		"camera": "Camera",
+		"cameraDetail": "Để ghi camera của bạn",
+		"continue": "Tiếp tục",
+		"description": "macOS sẽ hỏi bạn một lần cho mỗi mục này. Klippt chỉ ghi lại khi bạn đang ghi hình.",
+		"granted": "Đã cho phép",
+		"microphone": "Micrô",
+		"microphoneDetail": "Để ghi giọng nói của bạn",
+		"notAsked": "Chưa hỏi",
+		"notNow": "Để sau",
+		"openSettings": "Mở Cài đặt",
+		"relaunch": "Thoát và mở lại",
+		"relaunchHint": "Bật Klippt trong Cài đặt hệ thống, rồi thoát và mở lại Klippt để macOS áp dụng thay đổi.",
+		"screen": "Ghi màn hình",
+		"screenDetail": "Để ghi màn hình của bạn",
+		"settingsHint": "Bật Klippt trong Cài đặt hệ thống. Bảng này tự cập nhật.",
+		"title": "Trước khi ghi hình"
 	}
 }

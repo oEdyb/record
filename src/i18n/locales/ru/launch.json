@@ -65,8 +65,8 @@
 		"selectFailed": "Не удалось переключиться на этот источник. Попробуйте ещё раз."
 	},
 	"recording": {
-		"starting": "Starting recording…",
-		"recordings": "Recordings",
+		"starting": "Запуск записи…",
+		"recordings": "Записи",
 		"selectSource": "Пожалуйста, выберите источник для записи",
 		"systemPicker": "Система спросит, чем поделиться",
 		"inProgress": "Идёт запись",
@@ -101,16 +101,16 @@
 		"cameraQuality": "Качество камеры",
 		"preview": "Предпросмотр",
 		"previewUnavailable": "Предпросмотр недоступен",
-		"recordingQuality": "Recording quality",
-		"qualityHigh": "High",
-		"qualityStandard": "Standard",
+		"recordingQuality": "Качество записи",
+		"qualityHigh": "Высокое",
+		"qualityStandard": "Стандартное",
 		"source": "Источник",
 		"editableCursor": "Редактируемый курсор",
 		"language": "Язык",
 		"lockedHint": "Поставьте на паузу, чтобы изменить настройки",
 		"display": "Экран",
 		"window": "Окно",
-		"cameraAutomatic": "Automatic (16:9)",
+		"cameraAutomatic": "Автоматически (16:9)",
 		"cameraMonitor": "Монитор камеры"
 	},
 	"setup": {
@@ -142,5 +142,27 @@
 		"pauseFirst": "Поставьте запись на паузу, чтобы расшифровать последние клипы.",
 		"empty": "Клипов пока нет. Сначала запишите что-нибудь.",
 		"clip": "Клип {{n}}"
+	},
+	"countdown": {
+		"cancelHint": "Нажмите «Записать» ещё раз, чтобы отменить"
+	},
+	"permissions": {
+		"blocked": "Выкл.",
+		"camera": "Камера",
+		"cameraDetail": "Чтобы записывать камеру",
+		"continue": "Продолжить",
+		"description": "macOS спросит об этом один раз для каждого пункта. Klippt захватывает изображение только во время записи.",
+		"granted": "Разрешено",
+		"microphone": "Микрофон",
+		"microphoneDetail": "Чтобы записывать ваш голос",
+		"notAsked": "Ещё не запрашивалось",
+		"notNow": "Не сейчас",
+		"openSettings": "Открыть настройки",
+		"relaunch": "Выйти и открыть заново",
+		"relaunchHint": "Включите Klippt в «Системных настройках», затем закройте и снова откройте Klippt, чтобы macOS применила изменение.",
+		"screen": "Запись экрана",
+		"screenDetail": "Чтобы записывать экран",
+		"settingsHint": "Включите Klippt в «Системных настройках». Эта панель обновится сама.",
+		"title": "Перед записью"
 	}
 }

@@ -39,7 +39,9 @@
 		"services": "Servisler",
 		"hide": "Klippt’i Gizle",
 		"hideOthers": "Diğerlerini Gizle",
-		"unhide": "Tümünü Göster"
+		"unhide": "Tümünü Göster",
+		"showRecorder": "Kaydediciyi Göster",
+		"startRecording": "Kaydı Başlat"
 	},
 	"updates": {
 		"available": "Klippt {{latestVersion}} kullanılabilir. Mevcut sürümünüz {{currentVersion}}.",
@@ -64,6 +66,19 @@
 		"unknown": "Ekran kaydı"
 	},
 	"inspector": {
-		"valueRange": "Enter a number from {{min}} to {{max}}."
+		"valueRange": "{{min}} ile {{max}} arasında bir sayı girin."
+	},
+	"menu": {
+		"newRecording": "Yeni Kayıt",
+		"recordings": "Kayıtlar…",
+		"saveVideo": "Videoyu Kaydet…"
+	},
+	"permissions": {
+		"accessibilityDetail": "{{app}}, videonuzda imlecin net kalması için işaretçi konumunu okur. Sistem Ayarları → Gizlilik ve Güvenlik → Erişilebilirlik bölümünde {{app}} uygulamasını açın, ardından Kaydı başlat düğmesine tekrar basın.",
+		"accessibilityMissingHelper": "{{app}} uygulamasının bir parçası eksik, bu yüzden düzenlenebilir imleç kullanılamıyor. {{app}} uygulamasını yeniden yükleyin veya Ayarlar'da imleci Sistem olarak değiştirin.",
+		"accessibilityTitle": "Net ve akıcı bir imleç için Erişilebilirlik'e izin verin",
+		"openSettings": "Sistem Ayarları'nı Aç",
+		"screenDetail": "Sistem Ayarları → Gizlilik ve Güvenlik → Ekran Kaydı bölümünde {{app}} uygulamasını açın, ardından {{app}} uygulamasından çıkıp yeniden açın.",
+		"screenTitle": "{{app}} için Ekran Kaydı erişimi gerekiyor"
 	}
 }
