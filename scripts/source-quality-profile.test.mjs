@@ -40,8 +40,8 @@ describe("real source-quality evidence", () => {
 	});
 	it("samples only the exact development capture child, never the installed or unrelated helper", () => {
 		const helper =
-			"/Users/olle/dev/screenrec/electron/native/screencapturekit/build/openscreen-screencapturekit-helper";
-		const rows = `11 99 ${helper}\n12 1 ${helper}\n13 99 /Applications/Klippt.app/Contents/Resources/openscreen-screencapturekit-helper\n14 99 ${helper}-other`;
+			"/Users/olle/dev/screenrec/electron/native/screencapturekit/build/klippt-screencapturekit-helper";
+		const rows = `11 99 ${helper}\n12 1 ${helper}\n13 99 /Applications/Klippt.app/Contents/Resources/klippt-screencapturekit-helper\n14 99 ${helper}-other`;
 		expect(ownedCaptureProcessPid(rows, helper, 99)).toBe(11);
 		expect(ownedCaptureProcessPid(rows, helper, 123)).toBeUndefined();
 		expect(() => ownedCaptureProcessPid(rows, "/Applications/Klippt.app/helper", 99)).toThrow();
@@ -138,13 +138,13 @@ describe("real source-quality evidence", () => {
 	});
 	it("observes installed capture load separately and keeps original paths and device identifiers out", () => {
 		const executable =
-			"/Applications/Klippt.app/Contents/Resources/electron/native/bin/darwin-arm64/openscreen-screencapturekit-helper";
+			"/Applications/Klippt.app/Contents/Resources/electron/native/bin/darwin-arm64/klippt-screencapturekit-helper";
 		expect(installedCaptureProcesses(`1 0 3.5 1024 Electron\n2 1 20.5 2048 ${executable}`)).toEqual(
 			[{ pid: 2, parentPid: 1, cpuPercent: 20.5, rssKiB: 2048 }],
 		);
-		expect(
-			installedCaptureProcesses("1 0 3.5 1024 /tmp/openscreen-screencapturekit-helper"),
-		).toEqual([]);
+		expect(installedCaptureProcesses("1 0 3.5 1024 /tmp/klippt-screencapturekit-helper")).toEqual(
+			[],
+		);
 		const configuration = installedCaptureConfiguration(
 			`${executable} ${JSON.stringify({
 				source: { type: "window", windowId: 12345 },
@@ -353,7 +353,7 @@ describe("real source-quality evidence", () => {
 				{
 					ps: [
 						"1 0 10.0 1024 Electron",
-						"2 1 20.0 2048 /tmp/openscreen-screencapturekit-helper",
+						"2 1 20.0 2048 /tmp/klippt-screencapturekit-helper",
 						"3 1 5.0 1024 Electron Helper",
 					],
 				},

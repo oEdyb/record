@@ -18,8 +18,14 @@ if (process.platform !== "darwin") {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const helperName = "openscreen-screencapturekit-helper";
-const cursorHelperName = "openscreen-macos-cursor-helper";
+const helperName = "klippt-screencapturekit-helper";
+const cursorHelperName = "klippt-cursor-helper";
+// Builds before the co.dyberg.klippt identity left these behind; packaging them would ship a
+// second, stale copy of each helper.
+const LEGACY_HELPER_NAMES = [
+	"openscreen-screencapturekit-helper",
+	"openscreen-macos-cursor-helper",
+];
 const packageDir = path.join(root, "electron", "native", "screencapturekit");
 const buildDir = path.join(packageDir, "build");
 const swiftBuildDir = path.join(buildDir, "swiftpm");
@@ -91,6 +97,10 @@ for (const { swift, tag } of archs) {
 
 	const targetDir = path.join(root, "electron", "native", "bin", tag);
 	fs.mkdirSync(targetDir, { recursive: true });
+	for (const legacy of LEGACY_HELPER_NAMES) {
+		fs.rmSync(path.join(targetDir, legacy), { force: true });
+		fs.rmSync(path.join(buildDir, legacy), { force: true });
+	}
 
 	for (const [name, localPath] of [
 		[helperName, localHelperPath],

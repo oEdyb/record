@@ -6,7 +6,7 @@ import {
 } from "./nativeCaptureHelperPaths";
 
 const repo = path.resolve("/capture-helper-test/checkout");
-const helperName = "openscreen-screencapturekit-helper";
+const helperName = "klippt-screencapturekit-helper";
 
 describe("native macOS capture helper paths", () => {
 	it("finds the real native build when Electron is launched through dist-electron/bootstrap.js", () => {

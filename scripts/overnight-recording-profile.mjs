@@ -169,7 +169,7 @@ function digest(file) {
 }
 for (const file of [
 	"dist-electron/bootstrap.js",
-	"electron/native/bin/darwin-arm64/openscreen-screencapturekit-helper",
+	"electron/native/bin/darwin-arm64/klippt-screencapturekit-helper",
 ])
 	if (fs.existsSync(path.join(APP_ROOT, file)))
 		report[file] = { sha256: digest(path.join(APP_ROOT, file)) };
@@ -1053,7 +1053,7 @@ try {
 							([pid, parent, command]) =>
 								Number(pid) > 1 &&
 								Number(parent) === child.pid &&
-								path.basename(command ?? "") === "openscreen-screencapturekit-helper",
+								path.basename(command ?? "") === "klippt-screencapturekit-helper",
 						);
 					if (!row) throw new Error("No task-owned capture child to terminate");
 					await hud.exposeFunction("__rememberNativeFailureProof", (proof) => {

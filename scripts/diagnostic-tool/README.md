@@ -15,7 +15,7 @@ data without installing or rebuilding the full app.
 - Node.js `22.22.1` with npm `10.9.4` (Klippt's repository pin)
 - The native capture helper for your platform in one of:
   - the same directory as `diagnostic.mjs` (`wgc-capture.exe` on Windows,
-    `openscreen-screencapturekit-helper` on macOS)
+    `klippt-screencapturekit-helper` on macOS)
   - `helpers/<platform>-<arch>/<helper-name>` (CI artifact layout)
   - `$OPENSCREEN_HELPER_EXE` env var
 

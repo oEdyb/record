@@ -126,7 +126,7 @@ const MAC_REQUIRED = [
 		atLeast: 1,
 	},
 	{
-		match: (name) => name === "openscreen-screencapturekit-helper",
+		match: (name) => name === "klippt-screencapturekit-helper",
 		what: "the ScreenCaptureKit capture helper",
 		breaks: "native screen capture is unavailable",
 		fix: "Build it with:\n\n    npm run build:native:mac",

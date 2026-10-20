@@ -15,7 +15,7 @@
 // Helper discovery:
 //   1. $OPENSCREEN_HELPER_EXE (any path)
 //   2. ./wgc-capture.exe                          (Windows)
-//      ./openscreen-screencapturekit-helper        (macOS)
+//      ./klippt-screencapturekit-helper        (macOS)
 //   3. ./helpers/<platform>-<arch>/<helper-name>  (CI artifact layout)
 
 import { spawn } from "node:child_process";
@@ -33,8 +33,8 @@ const HELPER_CANDIDATES = {
 		arm64: { name: "wgc-capture.exe", kind: "windows" },
 	},
 	darwin: {
-		x64: { name: "openscreen-screencapturekit-helper", kind: "mac" },
-		arm64: { name: "openscreen-screencapturekit-helper", kind: "mac" },
+		x64: { name: "klippt-screencapturekit-helper", kind: "mac" },
+		arm64: { name: "klippt-screencapturekit-helper", kind: "mac" },
 	},
 };
 

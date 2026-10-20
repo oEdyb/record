@@ -288,7 +288,7 @@ The hook now reads `electron/native/bin/darwin-<arch>/` — the directory `mac.e
 | `libavcodec/libavformat/libavutil.*.dylib` | the addon cannot load at all (dyld error at `require()`) |
 | `whisper-stt-server` | transcription and captions fail with a developer error shown to end users |
 | `libggml*.dylib` | the helper dies in dyld before `main()`; STT times out with no diagnostic |
-| `openscreen-screencapturekit-helper` | native screen capture unavailable |
+| `klippt-screencapturekit-helper` | native screen capture unavailable |
 
 It then applies the same staleness comparison to the **shipped** addon (the arch-tagged copy), not the dev copy under `electron/native/compositor-view/build/`, since the arch-tagged one is what electron-builder actually packages.
 
