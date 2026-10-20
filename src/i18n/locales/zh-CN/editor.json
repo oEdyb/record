@@ -122,7 +122,7 @@
 		"saveVideoAction": "保存视频…",
 		"savedSummary": "{{name}} · {{duration}}",
 		"sourcesCopying": "正在复制原始文件…",
-		"sourcesIncluded": "原始录制文件，外加一个包含你的剪辑点和摄像头同步信息、大多数视频编辑软件都能导入的时间线文件（timeline.otio）。屏幕、摄像头、麦克风和系统音频位于各自独立的轨道上。可编辑光标和视觉效果不会被应用。",
+		"sourcesIncluded": "原始录制文件，外加一个包含你的剪辑点和摄像头同步信息、大多数视频编辑软件都能导入的时间线文件（timeline.otio / timeline.fcpxml）。屏幕、摄像头、麦克风和系统音频位于各自独立的轨道上。可编辑光标和视觉效果不会被应用。",
 		"sourcesIncludedTitle": "包含内容",
 		"sourcesIntro": "每次暂停之间录制的每个片段，都会以原始的屏幕、摄像头、麦克风和系统音频文件保存，不做任何改动。",
 		"sourcesPreparing": "正在准备文件…",
@@ -130,7 +130,7 @@
 		"sourcesSaveAgain": "再次保存…",
 		"sourcesSaved": "文件已保存",
 		"sourcesSubtitle": "屏幕、摄像头和音频以独立文件提供，方便导入你的剪辑软件。",
-		"sourcesTimelineHint": "在视频编辑软件中导入 timeline.otio 即可继续编辑。",
+		"sourcesTimelineHint": "在视频编辑软件中导入 timeline.otio / timeline.fcpxml 即可继续编辑。",
 		"sourcesWarning": "{{count}} 条警告",
 		"sourcesWarnings": "{{count}} 条警告"
 	},

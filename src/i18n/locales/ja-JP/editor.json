@@ -122,7 +122,7 @@
 		"saveVideoAction": "動画を保存…",
 		"savedSummary": "{{name}}、{{duration}}",
 		"sourcesCopying": "元のファイルをコピーしています…",
-		"sourcesIncluded": "元の録画に加えて、カットとカメラの同期を含むタイムラインファイル (timeline.otio) が含まれます。ほとんどの動画編集ソフトで読み込めます。画面、カメラ、マイク、システムオーディオはそれぞれ別のトラックのままです。編集可能なカーソルとビジュアルエフェクトは適用されません。",
+		"sourcesIncluded": "元の録画に加えて、カットとカメラの同期を含むタイムラインファイル (timeline.otio / timeline.fcpxml) が含まれます。ほとんどの動画編集ソフトで読み込めます。画面、カメラ、マイク、システムオーディオはそれぞれ別のトラックのままです。編集可能なカーソルとビジュアルエフェクトは適用されません。",
 		"sourcesIncludedTitle": "含まれるもの",
 		"sourcesIntro": "一時停止の間に録画したクリップは、画面、カメラ、マイク、システムオーディオの元ファイルとして、そのまま保存されます。",
 		"sourcesPreparing": "ファイルを準備しています…",
@@ -130,7 +130,7 @@
 		"sourcesSaveAgain": "もう一度保存…",
 		"sourcesSaved": "ファイルを保存しました",
 		"sourcesSubtitle": "画面、カメラ、音声を個別のファイルとして編集ソフトへ。",
-		"sourcesTimelineHint": "編集を続けるには、動画編集ソフトで timeline.otio を読み込んでください。",
+		"sourcesTimelineHint": "編集を続けるには、動画編集ソフトで timeline.otio / timeline.fcpxml を読み込んでください。",
 		"sourcesWarning": "警告 {{count}} 件",
 		"sourcesWarnings": "警告 {{count}} 件"
 	},

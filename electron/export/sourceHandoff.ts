@@ -7,6 +7,7 @@ import { availableBytes, formatGigabytes } from "./atomicExport";
 import { copyOriginalFile } from "./copyOriginalFile";
 import { inspectHandoffSourceMedia } from "./sourceHandoffMedia";
 import { buildSourceTimeline, type HandoffMedia, SOURCE_TIMELINE_RATE } from "./sourceTimeline";
+import { buildSourceFcpxml, type FcpxmlMediaInfo } from "./sourceTimelineFcpxml";
 
 interface SourceFile extends HandoffMedia {
 	label: string;
@@ -188,6 +189,25 @@ export async function exportSourceHandoff(
 		await fs.writeFile(timelinePath, `${JSON.stringify(interchange.timeline, null, 2)}\n`, {
 			flag: "wx",
 		});
+		const media = new Map<string, FcpxmlMediaInfo>();
+		for (const [canonical, file] of written) {
+			const layout = inspected.get(canonical);
+			media.set(file.file, {
+				hasVideo: Boolean(layout?.video),
+				hasAudio: Boolean(layout?.hasAudio),
+			});
+		}
+		const frame = inspected.get(paths.get(assets[0].originalPath)!)?.video;
+		const fcpxmlPath = path.join(directory, "timeline.fcpxml");
+		await fs.writeFile(
+			fcpxmlPath,
+			buildSourceFcpxml(document.project.title, interchange.plan.tracks, {
+				width: frame?.width ?? 1920,
+				height: frame?.height ?? 1080,
+				media,
+			}),
+			{ flag: "wx" },
+		);
 		const manifest = {
 			version: 2,
 			kind: "klippt-source-handoff",
@@ -197,6 +217,7 @@ export async function exportSourceHandoff(
 			audioEncoding: "unchanged",
 			mediaBytes: "unchanged",
 			timeline: { file: "timeline.otio", frameRate: SOURCE_TIMELINE_RATE },
+			finalCutTimeline: { file: "timeline.fcpxml", frameRate: SOURCE_TIMELINE_RATE },
 			sources: sources.map(({ assetId, screen, camera }) => ({
 				assetId,
 				screen: {
@@ -221,8 +242,9 @@ export async function exportSourceHandoff(
 				"Klippt source files",
 				"",
 				"Import timeline.otio as a timeline in your video editor. In DaVinci Resolve, use File > Import > Timeline. Keep this folder together so the relative media links resolve. If prompted, select this folder as the source clips location.",
+				"For Final Cut Pro, open timeline.fcpxml with File > Import > XML. It holds the same cuts and sync: Screen in the primary storyline, Camera connected above it, Microphone and System audio connected below it.",
 				"The 60 fps timeline contains Screen V1, Camera V2, Microphone A1 and System audio A2. Missing source time remains a gap. Only original standalone audio files are placed on the microphone and system tracks. Legacy embedded-only audio has an Original audio (unidentified) track.",
-				"Cuts, clip order and camera sync are stored only in timeline.otio. Boundaries are rounded to the nearest timeline frame. Complete source files retain all material outside the kept spans.",
+				"Cuts, clip order and camera sync are stored only in timeline.otio and timeline.fcpxml. Boundaries are rounded to the nearest timeline frame. Complete source files retain all material outside the kept spans.",
 				"Camera is a full, separate video layer above the screen; resize or disable it in your editor. This timeline does not recreate the Klippt visual layout. Camera-file audio, if present, is exported but not added to the timeline.",
 				"Every media file is an unchanged byte copy of its complete original. Nothing is trimmed, remuxed, extracted, decoded, re-encoded, cleaned, or normalized during export.",
 				"If separate audio is present, disable the screen file's embedded audio to avoid doubling it. Older untagged audio is labelled audio; it is not assumed to be an isolated microphone.",
@@ -238,6 +260,7 @@ export async function exportSourceHandoff(
 			directory,
 			manifestPath,
 			timelinePath,
+			fcpxmlPath,
 			sourceCount: written.size,
 			warnings,
 		};

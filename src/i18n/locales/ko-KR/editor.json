@@ -122,7 +122,7 @@
 		"saveVideoAction": "동영상 저장…",
 		"savedSummary": "{{name}}, {{duration}}",
 		"sourcesCopying": "원본 파일 복사 중…",
-		"sourcesIncluded": "원본 녹화본과 함께, 컷과 카메라 동기화가 담긴 타임라인 파일(timeline.otio)이 포함되며 대부분의 동영상 편집기에서 가져올 수 있습니다. 화면, 카메라, 마이크, 시스템 오디오는 각각 별도의 트랙에 담깁니다. 편집 가능한 커서와 시각 효과는 적용되지 않습니다.",
+		"sourcesIncluded": "원본 녹화본과 함께, 컷과 카메라 동기화가 담긴 타임라인 파일(timeline.otio / timeline.fcpxml)이 포함되며 대부분의 동영상 편집기에서 가져올 수 있습니다. 화면, 카메라, 마이크, 시스템 오디오는 각각 별도의 트랙에 담깁니다. 편집 가능한 커서와 시각 효과는 적용되지 않습니다.",
 		"sourcesIncludedTitle": "포함된 항목",
 		"sourcesIntro": "일시 정지 사이에 녹화한 모든 클립이 화면, 카메라, 마이크, 시스템 오디오 원본 파일 그대로 저장됩니다.",
 		"sourcesPreparing": "파일 준비 중…",
@@ -130,7 +130,7 @@
 		"sourcesSaveAgain": "다시 저장…",
 		"sourcesSaved": "파일 저장됨",
 		"sourcesSubtitle": "편집기에서 쓸 수 있도록 화면, 카메라, 오디오를 개별 파일로 저장합니다.",
-		"sourcesTimelineHint": "계속 편집하려면 동영상 편집기에서 timeline.otio를 가져오세요.",
+		"sourcesTimelineHint": "계속 편집하려면 동영상 편집기에서 timeline.otio / timeline.fcpxml를 가져오세요.",
 		"sourcesWarning": "경고 {{count}}개",
 		"sourcesWarnings": "경고 {{count}}개"
 	},

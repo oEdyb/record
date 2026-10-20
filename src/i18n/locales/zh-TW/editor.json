@@ -122,7 +122,7 @@
 		"saveVideoAction": "儲存影片…",
 		"savedSummary": "{{name}} · {{duration}}",
 		"sourcesCopying": "正在拷貝原始檔案…",
-		"sourcesIncluded": "原始錄製檔案，外加一個包含你的剪輯點和攝影機同步資訊、大多數影片剪輯軟體都能匯入的時間軸檔案（timeline.otio）。螢幕、攝影機、麥克風和系統音訊位於各自獨立的軌道上。可編輯游標和視覺效果不會被套用。",
+		"sourcesIncluded": "原始錄製檔案，外加一個包含你的剪輯點和攝影機同步資訊、大多數影片剪輯軟體都能匯入的時間軸檔案（timeline.otio / timeline.fcpxml）。螢幕、攝影機、麥克風和系統音訊位於各自獨立的軌道上。可編輯游標和視覺效果不會被套用。",
 		"sourcesIncludedTitle": "包含內容",
 		"sourcesIntro": "每次暫停之間錄製的每個片段，都會以原始的螢幕、攝影機、麥克風和系統音訊檔案儲存，不做任何更動。",
 		"sourcesPreparing": "正在準備檔案…",
@@ -130,7 +130,7 @@
 		"sourcesSaveAgain": "再次儲存…",
 		"sourcesSaved": "檔案已儲存",
 		"sourcesSubtitle": "螢幕、攝影機和音訊以獨立檔案提供，方便匯入你的剪輯軟體。",
-		"sourcesTimelineHint": "在影片剪輯軟體中匯入 timeline.otio 即可繼續編輯。",
+		"sourcesTimelineHint": "在影片剪輯軟體中匯入 timeline.otio / timeline.fcpxml 即可繼續編輯。",
 		"sourcesWarning": "{{count}} 則警告",
 		"sourcesWarnings": "{{count}} 則警告"
 	},
