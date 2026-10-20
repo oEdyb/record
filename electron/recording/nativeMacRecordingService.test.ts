@@ -25,6 +25,7 @@ import {
 	nativeMacRecoveryJournalPath,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+import { STORAGE_POLL_MS } from "./recordingStorage";
 
 vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
 
@@ -100,6 +101,8 @@ describe("NativeMacRecordingService", () => {
 			onSessionStored: vi.fn(),
 			onRecordingStateChange: vi.fn(),
 			onFatalError: vi.fn(),
+			onAppStopped: vi.fn(),
+			freeDiskBytes: vi.fn(async () => 100 * 1024 ** 3),
 		};
 	});
 
@@ -508,7 +511,70 @@ describe("NativeMacRecordingService", () => {
 		vi.mocked(deps.createHelper).mockReturnValue(helper);
 		await service.start({ ...baseRequest, recordingId: 101 });
 		helper.stop.mockReturnValueOnce(new Promise(() => undefined));
-		await expect(service.stopBeforeQuit(20)).resolves.toBeUndefined();
+		await expect(service.stopBeforeQuit(20)).resolves.toBe(true);
+	});
+
+	it("refuses to start a take on a nearly full disk", async () => {
+		vi.mocked(deps.freeDiskBytes!).mockResolvedValueOnce(200 * 1024 ** 2);
+		const service = new NativeMacRecordingService(deps);
+		await expect(service.start(baseRequest)).resolves.toMatchObject({
+			success: false,
+			error: expect.stringContaining("free on the recordings disk"),
+		});
+		expect(deps.createHelper).not.toHaveBeenCalled();
+	});
+
+	it("asks the HUD to pause on every low-disk poll while live, not while paused", async () => {
+		vi.useFakeTimers();
+		try {
+			const onStorageCritical = vi.fn();
+			const service = new NativeMacRecordingService({ ...deps, onStorageCritical });
+			await service.start(baseRequest);
+			vi.mocked(deps.freeDiskBytes!).mockResolvedValue(100 * 1024 ** 2);
+			await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS * 2);
+			expect(onStorageCritical).toHaveBeenCalledTimes(2);
+
+			await service.pause();
+			await vi.advanceTimersByTimeAsync(STORAGE_POLL_MS * 2);
+			expect(onStorageCritical).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("hands a take stopped for quit to the HUD's next Stop, once", async () => {
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "clip.mp4"),
+			durationMs: 1000,
+		};
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.stopClips = [clip];
+		await expect(service.stopBeforeQuit()).resolves.toBe(true);
+		expect(deps.onAppStopped).toHaveBeenCalledOnce();
+		expect(helper.stop).toHaveBeenCalledOnce();
+
+		await expect(service.stop()).resolves.toMatchObject({
+			success: true,
+			session: expect.objectContaining({ clips: [expect.objectContaining({ index: 0 })] }),
+		});
+		expect(helper.stop).toHaveBeenCalledOnce();
+		await expect(service.stop()).resolves.toMatchObject({ success: false });
+	});
+
+	it("does not hand an earlier quit-time take to a new take's Stop", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.stopClips = [
+			{ index: 0, screenVideoPath: path.join(recordingsDir, "clip.mp4"), durationMs: 1000 },
+		];
+		await service.stopBeforeQuit();
+		helper = new FakeHelper();
+		vi.mocked(deps.createHelper).mockReturnValue(helper);
+		await service.start({ ...baseRequest, recordingId: 101 });
+		await service.stop();
+		expect(helper.stop).toHaveBeenCalledOnce();
 	});
 
 	it("finishes Stop and allows a new take when the helper outlives its kill window", async () => {

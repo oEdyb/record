@@ -4,6 +4,7 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import type { NativeMacRecordingRequest } from "../../src/lib/nativeMacRecording";
 import {
+	HELPER_FINALIZE_GRACE_MS,
 	NativeMacHelperClient,
 	NativeMacPauseError,
 	NativeMacResumeRejectedError,
@@ -40,6 +41,24 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("reads events from stdout even when stderr writes in the middle of a line", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const stopped = client.stop({ screenPath: "/tmp/fallback.mp4", clips: [] });
+		const line = JSON.stringify({
+			event: "recording-stopped",
+			screenPath: "/tmp/recording-7-clip-0001.mp4",
+			clips: [{ index: 0, screenVideoPath: "/tmp/recording-7-clip-0001.mp4", durationMs: 1200 }],
+		});
+		(process.stdout as PassThrough).write(line.slice(0, 20));
+		(process.stderr as PassThrough).write("framework log line\n");
+		(process.stdout as PassThrough).write(`${line.slice(20)}\n`);
+		await expect(stopped).resolves.toMatchObject({
+			clips: [expect.objectContaining({ index: 0, durationMs: 1200 })],
+		});
+		expect(client.output).toContain("framework log line");
+	});
+
 	it("keeps an acknowledged paused Continue rejection retryable", async () => {
 		const process = fakeProcess();
 		const onFatalError = vi.fn();
@@ -237,7 +256,9 @@ describe("NativeMacHelperClient", () => {
 			const killed = client.kill();
 
 			expect(process.kill).toHaveBeenCalledWith("SIGTERM");
-			await vi.advanceTimersByTimeAsync(1_000);
+			await vi.advanceTimersByTimeAsync(HELPER_FINALIZE_GRACE_MS - 1);
+			expect(process.kill).not.toHaveBeenCalledWith("SIGKILL");
+			await vi.advanceTimersByTimeAsync(1);
 			expect(process.kill).toHaveBeenCalledWith("SIGKILL");
 			await expect(killed).resolves.toBeUndefined();
 			expect(client.isRunning()).toBe(false);

@@ -250,6 +250,16 @@ interface Window {
 				failure: import("../src/lib/nativeMacRecording").NativeMacRecordingFailure,
 			) => void,
 		) => () => void;
+		onNativeMacRecordingInterrupted?: (
+			callback: (
+				reason: import("../src/lib/nativeMacRecording").NativeMacRecordingInterruption,
+			) => void,
+		) => () => void;
+		onNativeMacRecordingStorageLow?: (
+			callback: (status: import("../src/lib/nativeMacRecording").NativeMacStorageStatus) => void,
+		) => () => void;
+		/** The app stopped the take itself (a quit that was later cancelled). */
+		onNativeMacRecordingStoppedByApp?: (callback: () => void) => () => void;
 		/** Names a Stop step for the stop timing log; ignored when no Stop is being timed. */
 		markStopStage?: (stage: string) => void;
 		stopNativeMacRecording: (

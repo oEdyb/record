@@ -11,6 +11,9 @@ import {
 } from "../../src/lib/nativeMacRecording";
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
 
+/** SIGTERM finalizes the open clip (about 0.5 s under load) before the helper exits. */
+export const HELPER_FINALIZE_GRACE_MS = 3_000;
+
 export type NativeMacStopResult = {
 	screenPath: string;
 	clips: RecordingSessionClip[];
@@ -54,6 +57,8 @@ export class NativeMacHelperClient {
 	private readonly events = new EventEmitter();
 	private outputBuffer = "";
 	private lineBuffer = "";
+	/** stdout before start confirmation, replayed once to the start waiter. */
+	private stdoutEvents: string | null = "";
 	private bounds: Rectangle | null = null;
 	private closed = false;
 	private fatalReported = false;
@@ -99,7 +104,7 @@ export class NativeMacHelperClient {
 		if (!this.isRunning()) return;
 		this.terminationRequested = true;
 
-		const gracefulExit = this.waitForClose(1_000);
+		const gracefulExit = this.waitForClose(HELPER_FINALIZE_GRACE_MS);
 		this.process.kill("SIGTERM");
 		if (await gracefulExit) return;
 
@@ -328,29 +333,37 @@ export class NativeMacHelperClient {
 		return cleanup;
 	}
 
+	/** Events arrive on stdout only. stderr text is kept for diagnostics but never parsed, so
+	 * framework logging that lands mid-line cannot corrupt an event. */
 	private attachOutputDrain(): void {
 		const drain = (chunk: Buffer) => {
 			const text = chunk.toString();
 			this.outputBuffer += text;
 			this.lineBuffer += text;
+			if (this.stdoutEvents !== null) this.stdoutEvents += text;
 			const lines = this.lineBuffer.split(/\r?\n/);
 			this.lineBuffer = lines.pop() ?? "";
 			for (const line of lines) this.dispatchLine(line);
 		};
+		const keepDiagnostics = (chunk: Buffer) => {
+			this.outputBuffer += chunk.toString();
+		};
 		const cleanup = () => {
 			this.process.stdout.off("data", drain);
-			this.process.stderr.off("data", drain);
+			this.process.stderr.off("data", keepDiagnostics);
 			this.process.off("close", cleanup);
 			this.process.off("error", cleanup);
 		};
 		this.process.stdout.on("data", drain);
-		this.process.stderr.on("data", drain);
+		this.process.stderr.on("data", keepDiagnostics);
 		this.process.once("close", cleanup);
 		this.process.once("error", cleanup);
 	}
 
 	private replayBufferedEvents(): void {
-		for (const line of this.outputBuffer.split(/\r?\n/)) this.dispatchLine(line);
+		const buffered = this.stdoutEvents ?? "";
+		this.stdoutEvents = null;
+		for (const line of buffered.split(/\r?\n/)) this.dispatchLine(line);
 	}
 
 	private dispatchLine(line: string): void {

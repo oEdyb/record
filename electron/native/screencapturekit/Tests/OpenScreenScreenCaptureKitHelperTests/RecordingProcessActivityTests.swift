@@ -3,6 +3,11 @@ import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
 final class RecordingProcessActivityTests: XCTestCase {
+	func testRecordingKeepsTheDisplayAwake() {
+		XCTAssertTrue(RecordingProcessActivity.options.contains(.idleDisplaySleepDisabled))
+		XCTAssertTrue(RecordingProcessActivity.options.contains(.idleSystemSleepDisabled))
+	}
+
 	func testCaptureFailureKeepsFinalizationActive() {
 		var starts = 0
 		var ends = 0

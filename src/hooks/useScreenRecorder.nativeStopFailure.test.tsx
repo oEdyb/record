@@ -1001,4 +1001,66 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
 		expect(toast.error).toHaveBeenCalledWith("The active clip failed. Saving completed clips now.");
 	});
+
+	it("pauses a live take when the screen locks and ignores a source that comes back", async () => {
+		let interruptionListener: ((reason: string) => void) | undefined;
+		stubNativeMac({
+			onNativeMacRecordingInterrupted: vi.fn((callback) => {
+				interruptionListener = callback;
+				return vi.fn();
+			}),
+		});
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		act(() => interruptionListener?.("source-active"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).not.toHaveBeenCalled();
+
+		act(() => interruptionListener?.("screen-locked"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
+		expect(view.result.current.paused).toBe(true);
+		expect(toast.warning).toHaveBeenCalledWith("The screen locked, so recording paused.");
+
+		act(() => interruptionListener?.("system-sleep"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
+	});
+
+	it("tells the user how many minutes of disk space the take has left", async () => {
+		let storageListener:
+			| ((status: { freeBytes: number; minutesLeft: number | null }) => void)
+			| undefined;
+		stubNativeMac({
+			onNativeMacRecordingStorageLow: vi.fn((callback) => {
+				storageListener = callback;
+				return vi.fn();
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		act(() => storageListener?.({ freeBytes: 3e9, minutesLeft: 4.9 }));
+		expect(toast.warning).toHaveBeenCalledWith("About 4 minutes of disk space left for this take.");
+	});
+
+	it("leaves the recording state and opens review when the app stopped the take itself", async () => {
+		let appStopListener: (() => void) | undefined;
+		stubNativeMac({
+			onNativeMacRecordingStoppedByApp: vi.fn((callback) => {
+				appStopListener = callback;
+				return vi.fn();
+			}),
+		});
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		expect(appStopListener).toBeTypeOf("function");
+		act(() => appStopListener?.());
+		await settle();
+
+		expect(window.electronAPI.stopNativeMacRecording).toHaveBeenCalledOnce();
+		expect(view.result.current.recording).toBe(false);
+		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
+	});
 });

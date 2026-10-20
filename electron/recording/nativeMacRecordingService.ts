@@ -29,6 +29,13 @@ import {
 	persistNativeMacRecoveryJournal,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+import {
+	freeDiskBytes,
+	helperImportantUsageBytes,
+	RecordingStorageMonitor,
+	type RecordingStorageStatus,
+	storageStartError,
+} from "./recordingStorage";
 
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
@@ -86,6 +93,13 @@ export type NativeMacRecordingServiceDependencies = {
 	onSessionStored: (session: RecordingSession) => void;
 	onRecordingStateChange: (recording: boolean) => void;
 	onFatalError: (failure: NativeMacRecordingFailure) => void;
+	/** The app stopped a take on its own; the HUD still shows it recording until told. */
+	onAppStopped?: () => void;
+	freeDiskBytes?: (directory: string) => Promise<number>;
+	/** Minutes of space left at the current write rate fell to 5 or 1. */
+	onStorageLow?: (status: RecordingStorageStatus) => void;
+	/** Free space is nearly gone; the live clip must close while it still can. */
+	onStorageCritical?: (status: RecordingStorageStatus) => void;
 };
 
 export type NativeMacRecordingStopResult = {
@@ -122,8 +136,29 @@ export class NativeMacRecordingService {
 	private originals = new Map<number, Partial<RecordingSessionClip>>();
 	private recoveryWrites: Promise<void> = Promise.resolve();
 	private acceptsOriginalMetadata = false;
+	/** A take the app stopped on its own (quit), kept until the HUD's own Stop collects it. */
+	private appStoppedResult: NativeMacRecordingStopResult | null = null;
+	private readonly storage: RecordingStorageMonitor;
 
-	constructor(private readonly deps: NativeMacRecordingServiceDependencies) {}
+	constructor(private readonly deps: NativeMacRecordingServiceDependencies) {
+		this.storage = new RecordingStorageMonitor({
+			directory: deps.recordingsDir,
+			now: deps.now,
+			freeBytes: (directory) => this.freeDiskBytes(directory),
+			onLow: (status) => deps.onStorageLow?.(status),
+			onCritical: (status) => {
+				if (this.isRunning() && !this.paused) deps.onStorageCritical?.(status);
+			},
+		});
+	}
+
+	private freeDiskBytes(directory: string): Promise<number> {
+		if (this.deps.freeDiskBytes) return this.deps.freeDiskBytes(directory);
+		return freeDiskBytes(directory, async (target) => {
+			const helperPath = await this.deps.findHelperPath();
+			return helperPath ? helperImportantUsageBytes(helperPath, target) : null;
+		});
+	}
 
 	get captureBounds() {
 		return this.helper?.captureBounds ?? null;
@@ -165,6 +200,7 @@ export class NativeMacRecordingService {
 			if (this.isRunning()) {
 				return { success: false, error: "Native macOS capture is already running." };
 			}
+			this.appStoppedResult = null;
 			const helperPath = await this.deps.findHelperPath();
 			if (!helperPath) {
 				return { success: false, error: "Native macOS capture helper is not available." };
@@ -189,6 +225,8 @@ export class NativeMacRecordingService {
 				await this.deps.prepareCapturePermissions(request);
 				this.deps.onStartStage?.("permissions-checked");
 				await fs.mkdir(this.deps.recordingsDir, { recursive: true });
+				const storageError = storageStartError(await this.freeDiskBytes(this.deps.recordingsDir));
+				if (storageError) return { success: false, error: storageError };
 
 				const cursorStartTimeMs = this.deps.now();
 				if (cursorCaptureMode === "editable-overlay") {
@@ -226,7 +264,10 @@ export class NativeMacRecordingService {
 				this.helper = helper;
 				this.deps.onStartStage?.("helper-spawned");
 				await helper.waitForStart();
-				await this.persistRecoverySession();
+				// The journal written before the helper spawned already covers this clip. Originals
+				// reported before readiness queued their own entries; wait only for those instead of
+				// a further durable rewrite on the way to the HUD's first second.
+				await this.recoveryWrites;
 				this.deps.onStartStage?.("recovery-updated");
 				if (!helper.isRunning() || this.fatalError) {
 					throw new Error(
@@ -234,6 +275,7 @@ export class NativeMacRecordingService {
 					);
 				}
 				this.cursorOffsetMs = Math.max(0, this.deps.now() - cursorStartTimeMs);
+				this.storage.start();
 				this.deps.onRecordingStateChange(true);
 				return { success: true, recordingId, path: outputPath, helperPath };
 			} catch (error) {
@@ -268,13 +310,19 @@ export class NativeMacRecordingService {
 
 	/** Quitting mid-take stops the capture so its clips finalize normally. The
 	 * recovery journal still covers a helper that does not answer in time. */
-	async stopBeforeQuit(timeoutMs = 15_000): Promise<void> {
-		if (!this.isRunning()) return;
+	async stopBeforeQuit(timeoutMs = 15_000): Promise<boolean> {
+		if (!this.isRunning()) return false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		await Promise.race([
-			this.stop(false).catch((error: unknown) => {
-				console.warn("[capture-mac] Stop before quit failed:", error);
-			}),
+			this.stop(false).then(
+				(result) => {
+					this.appStoppedResult = result;
+					this.deps.onAppStopped?.();
+				},
+				(error: unknown) => {
+					console.warn("[capture-mac] Stop before quit failed:", error);
+				},
+			),
 			new Promise<void>((resolve) => {
 				timer = setTimeout(() => {
 					console.warn(
@@ -285,6 +333,7 @@ export class NativeMacRecordingService {
 			}),
 		]);
 		clearTimeout(timer);
+		return true;
 	}
 
 	pause() {
@@ -407,6 +456,7 @@ export class NativeMacRecordingService {
 				this.paused = false;
 				this.activeClipIndex = clipIndex;
 				this.clipCursorModes.set(clipIndex, this.cursorCaptureMode);
+				this.storage.rearm();
 				await this.persistRecoverySession();
 				return { success: true, clipIndex };
 			} catch (error) {
@@ -496,6 +546,9 @@ export class NativeMacRecordingService {
 		return this.enqueue(async () => {
 			const helper = this.helper;
 			if (!helper) {
+				const appStopped = this.appStoppedResult;
+				this.appStoppedResult = null;
+				if (appStopped && !discard) return appStopped;
 				return { success: false, error: "Native macOS capture is not running." };
 			}
 			const preferredPath = this.targetPath;
@@ -728,6 +781,7 @@ export class NativeMacRecordingService {
 	}
 
 	private reset(): void {
+		this.storage.stop();
 		this.sessionGeneration += 1;
 		this.originals = new Map();
 		this.acceptsOriginalMetadata = false;

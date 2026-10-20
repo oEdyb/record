@@ -22,9 +22,13 @@ final class RecordingProcessActivity {
 	private let beginActivity: () -> NSObjectProtocol
 	private let endActivity: (NSObjectProtocol) -> Void
 
+	/// `.userInitiated` keeps the Mac awake but not its display. A hands-off take would
+	/// otherwise reach the display-off timer, and the screen lock behind it, mid-recording.
+	static let options: ProcessInfo.ActivityOptions = [.userInitiated, .latencyCritical, .idleDisplaySleepDisabled]
+
 	init(
 		begin: @escaping () -> NSObjectProtocol = {
-			ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Recording screen and audio")
+			ProcessInfo.processInfo.beginActivity(options: RecordingProcessActivity.options, reason: "Recording screen and audio")
 		},
 		end: @escaping (NSObjectProtocol) -> Void = { ProcessInfo.processInfo.endActivity($0) }
 	) {

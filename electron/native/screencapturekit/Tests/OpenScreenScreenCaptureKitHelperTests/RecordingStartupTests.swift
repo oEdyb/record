@@ -78,4 +78,15 @@ final class RecordingStartupTests: XCTestCase {
 		XCTAssertEqual(try startup.checkDeadline(at: epoch + time(3), videoAppended: false, readyOriginals: [], readyAudio: []), [],
 			"A cancelled startup never fails a paused or stopped take")
 	}
+
+	func testOnlyAClipShorterThanTheSourceAllowanceExcusesAnEmptyOriginal() {
+		let start = CMTime(seconds: 10, preferredTimescale: 600)
+		let after = { (seconds: Double) in start + CMTime(seconds: seconds, preferredTimescale: 600) }
+		// A source that has not delivered on this stream gets the startup allowance.
+		XCTAssertTrue(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: false, start: start, end: after(1.5)))
+		XCTAssertFalse(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: false, start: start, end: after(2.5)))
+		// One that already delivered is only excused for a few buffers after Continue.
+		XCTAssertTrue(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: true, start: start, end: after(0.3)))
+		XCTAssertFalse(ScreenCaptureRecorder.originalMayBeEmpty(sourceAlreadyDelivered: true, start: start, end: after(1.5)))
+	}
 }

@@ -2,7 +2,24 @@ import Foundation
 
 @main
 struct OpenScreenScreenCaptureKitHelper {
+	static let availableCapacityArgument = "--available-capacity"
+
+	/// Free space as Finder reports it, including purgeable space macOS releases for a
+	/// recording. Node's `statfs` cannot see it.
+	static func printAvailableCapacity(atPath path: String) -> Never {
+		let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+		guard let bytes = values?.volumeAvailableCapacityForImportantUsage else { exit(1) }
+		print(bytes)
+		exit(0)
+	}
+
 	static func main() async {
+		// With the app gone, writing an event to its closed pipe must not kill the helper
+		// before the clip is finalized.
+		signal(SIGPIPE, SIG_IGN)
+		if CommandLine.arguments.count == 3, CommandLine.arguments[1] == availableCapacityArgument {
+			printAvailableCapacity(atPath: CommandLine.arguments[2])
+		}
 		do {
 			guard CommandLine.arguments.count == 2 else {
 				throw HelperError.invalidArguments
@@ -26,12 +43,25 @@ struct OpenScreenScreenCaptureKitHelper {
 			let commandExecutor = RecorderCommandExecutor()
 			let recorder = ScreenCaptureRecorder(request: request) { recorder, error in
 				_ = commandExecutor.submit {
-					emitError(code: "capture-stopped-with-error", message: "\(error)")
+					emitError(code: "capture-stopped-with-error", message: RecordingStreamRecovery.stopMessage(for: error))
 					await recorder.stop()
 				}
 			}
+			recorder.submitCommand = { operation in _ = commandExecutor.submit(operation) }
 			recorder.warmCamera = await HelperWarmup.takeWarmCamera(for: request)
 			try await recorder.start()
+			// The app gone (closed stdin) or a SIGTERM still closes the clip with a normal
+			// index instead of leaving recovery to the last whole fragment.
+			let finalizeAndExit: @Sendable () -> Task<Void, Never> = {
+				commandExecutor.submit {
+					await recorder.stop()
+					exit(0)
+				}
+			}
+			signal(SIGTERM, SIG_IGN)
+			let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+			termination.setEventHandler { _ = finalizeAndExit() }
+			termination.resume()
 			let stopTask = Task.detached {
 				while let line = readLine() {
 					let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,9 +104,11 @@ struct OpenScreenScreenCaptureKitHelper {
 						break
 					}
 				}
+				await finalizeAndExit().value
 			}
 
 			await stopTask.value
+			termination.cancel()
 		} catch let error as HelperError {
 			emitError(code: "helper-error", message: error.description)
 			exit(1)

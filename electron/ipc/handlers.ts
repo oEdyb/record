@@ -37,6 +37,7 @@ import {
 import type {
 	NativeMacCaptureTelemetry,
 	NativeMacClipWebcamInput,
+	NativeMacRecordingInterruption,
 	NativeMacRecordingRequest,
 } from "../../src/lib/nativeMacRecording";
 import { parseNativeMacRecordingClip } from "../../src/lib/nativeMacRecording";
@@ -3166,6 +3167,27 @@ export function registerIpcHandlers(
 		nativeMacStandby.discard();
 	});
 
+	// The HUD pauses a live take when there is nothing left to record: the captured window
+	// closed, the screen locked, or the Mac is going to sleep.
+	const notifyNativeMacInterruption = (reason: NativeMacRecordingInterruption) => {
+		if (!nativeMacRecordingService?.isRunning()) return;
+		const hudWindow = getMainWindow();
+		if (hudWindow && !hudWindow.isDestroyed()) {
+			hudWindow.webContents.send("native-mac-recording-interrupted", reason);
+		}
+	};
+	if (process.platform === "darwin") {
+		const onLockScreen = () => notifyNativeMacInterruption("screen-locked");
+		const onSuspend = () => notifyNativeMacInterruption("system-sleep");
+		powerMonitor.on("lock-screen", onLockScreen);
+		powerMonitor.on("suspend", onSuspend);
+		// A quit can still be cancelled at before-quit, and the take carries on.
+		app.once("will-quit", () => {
+			powerMonitor.off("lock-screen", onLockScreen);
+			powerMonitor.off("suspend", onSuspend);
+		});
+	}
+
 	nativeMacRecordingService = new NativeMacRecordingService({
 		recordingsDir: RECORDINGS_DIR,
 		now: Date.now,
@@ -3187,6 +3209,9 @@ export function registerIpcHandlers(
 					activeClipBoundaryTimeline?.mark(`helper:${name}`);
 				},
 				onWarning: (warning) => {
+					if (warning.code === "source-inactive" || warning.code === "source-active") {
+						notifyNativeMacInterruption(warning.code);
+					}
 					void appendDiagnosticRow(helperWarningsFile(), {
 						recordedAt: new Date().toISOString(),
 						...warning,
@@ -3236,6 +3261,19 @@ export function registerIpcHandlers(
 			const hudWindow = getMainWindow();
 			if (hudWindow && !hudWindow.isDestroyed()) {
 				hudWindow.webContents.send("native-mac-recording-error", failure);
+			}
+		},
+		onStorageLow: (status) => {
+			const hudWindow = getMainWindow();
+			if (hudWindow && !hudWindow.isDestroyed()) {
+				hudWindow.webContents.send("native-mac-recording-storage-low", status);
+			}
+		},
+		onStorageCritical: () => notifyNativeMacInterruption("disk-low"),
+		onAppStopped: () => {
+			const hudWindow = getMainWindow();
+			if (hudWindow && !hudWindow.isDestroyed()) {
+				hudWindow.webContents.send("native-mac-recording-stopped-by-app");
 			}
 		},
 	});

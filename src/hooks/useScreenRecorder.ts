@@ -66,6 +66,12 @@ const AUDIO_BITRATE_VOICE = 128_000;
 const AUDIO_BITRATE_SYSTEM = 192_000;
 
 const CAMERA_ACQUIRE_RETRY_DELAYS_MS = [250, 750] as const;
+const NATIVE_MAC_INTERRUPTION_MESSAGES = {
+	"source-inactive": "The recorded window closed, so recording paused.",
+	"screen-locked": "The screen locked, so recording paused.",
+	"system-sleep": "The Mac is going to sleep, so recording paused.",
+	"disk-low": "The disk is almost full, so recording paused. Free space before you continue.",
+} as const;
 
 function cameraAcquireRetryDelay(error: unknown, retryIndex: number): number | null {
 	if (
@@ -1105,6 +1111,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	const finalizeNativeWindowsRecordingRef = useRef(finalizeNativeWindowsRecording);
 	const finalizeNativeMacRecordingRef = useRef(finalizeNativeMacRecording);
+	const togglePausedRef = useRef<() => void>(() => undefined);
 	const finalizeNativeLinuxRecordingRef = useRef(finalizeNativeLinuxRecording);
 	finalizeNativeWindowsRecordingRef.current = finalizeNativeWindowsRecording;
 	finalizeNativeMacRecordingRef.current = finalizeNativeMacRecording;
@@ -1113,6 +1120,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	useEffect(() => {
 		let cleanupTray: (() => void) | undefined;
 		let cleanupNativeMacError: (() => void) | undefined;
+		let cleanupNativeMacAppStop: (() => void) | undefined;
+		let cleanupNativeMacInterruption: (() => void) | undefined;
+		let cleanupNativeMacStorage: (() => void) | undefined;
 
 		if (window.electronAPI?.onStopRecordingFromTray) {
 			cleanupTray = window.electronAPI.onStopRecordingFromTray(() => {
@@ -1138,11 +1148,47 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				void finalizeNativeMacRecordingRef.current(false);
 			});
 		}
+		if (window.electronAPI?.onNativeMacRecordingInterrupted) {
+			cleanupNativeMacInterruption = window.electronAPI.onNativeMacRecordingInterrupted(
+				(reason) => {
+					const activeRecording = nativeMacRecording.current;
+					if (!activeRecording || activeRecording.finalizing) return;
+					if (reason === "source-active") {
+						if (activeRecording.paused)
+							toast.info("The recorded window is back. Continue when ready.");
+						return;
+					}
+					if (activeRecording.paused || nativeMacToggleInFlight.current) return;
+					toast.warning(NATIVE_MAC_INTERRUPTION_MESSAGES[reason]);
+					togglePausedRef.current();
+				},
+			);
+		}
+		if (window.electronAPI?.onNativeMacRecordingStorageLow) {
+			cleanupNativeMacStorage = window.electronAPI.onNativeMacRecordingStorageLow((status) => {
+				if (!nativeMacRecording.current || status.minutesLeft === null) return;
+				const minutes = Math.max(1, Math.floor(status.minutesLeft));
+				toast.warning(
+					`About ${minutes} minute${minutes === 1 ? "" : "s"} of disk space left for this take.`,
+				);
+			});
+		}
+		if (window.electronAPI?.onNativeMacRecordingStoppedByApp) {
+			// Main already stopped and saved the take; Stop collects that result and opens review.
+			cleanupNativeMacAppStop = window.electronAPI.onNativeMacRecordingStoppedByApp(() => {
+				const activeRecording = nativeMacRecording.current;
+				if (!activeRecording || activeRecording.finalizing) return;
+				void finalizeNativeMacRecordingRef.current(false);
+			});
+		}
 
 		return () => {
 			const activeRunId = countdownRunId.current;
 			cleanupTray?.();
 			cleanupNativeMacError?.();
+			cleanupNativeMacAppStop?.();
+			cleanupNativeMacInterruption?.();
+			cleanupNativeMacStorage?.();
 			countdownRunId.current += 1;
 			void safeHideCountdownOverlay(activeRunId);
 			allowAutoFinalize.current = false;
@@ -2256,6 +2302,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			console.error("Failed to pause recording:", error);
 		}
 	};
+	togglePausedRef.current = togglePaused;
 
 	const removePreviousClip = async (): Promise<RecordingSessionClip | null> => {
 		const activeNativeMacRecording = nativeMacRecording.current;

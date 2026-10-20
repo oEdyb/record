@@ -62,4 +62,9 @@ final class ContentSnapshotRuleTests: XCTestCase {
 		stale.windows = [:]
 		XCTAssertFalse(covers(ContentSnapshotNeeds(target: .window(40)), summary: stale))
 	}
+
+	func testRefreshStaysInsideTheReuseWindowWithRoomForASlowListing() {
+		XCTAssertLessThanOrEqual(ContentSnapshotRule.refreshSeconds + 2, ContentSnapshotRule.maxAgeSeconds)
+		XCTAssertGreaterThanOrEqual(ContentSnapshotRule.refreshSeconds, 8)
+	}
 }

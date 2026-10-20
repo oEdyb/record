@@ -88,7 +88,7 @@ final class OriginalTrackWriter {
 		if !started {
 			writer.cancelWriting()
 			try? FileManager.default.removeItem(atPath: path)
-			throw failure("received no source samples")
+			throw NoSamples(path: path)
 		}
 		let deadline = DispatchTime.now().uptimeNanoseconds + 500_000_000
 		while true {
@@ -106,6 +106,12 @@ final class OriginalTrackWriter {
 	func cancel(remove: Bool) {
 		writer.cancelWriting()
 		if remove { try? FileManager.default.removeItem(atPath: path) }
+	}
+
+	/// The source delivered nothing before the clip closed.
+	struct NoSamples: Error, CustomStringConvertible {
+		let path: String
+		var description: String { "Original track \(URL(fileURLWithPath: path).lastPathComponent) received no source samples." }
 	}
 
 	private func failure(_ stage: String) -> Error {

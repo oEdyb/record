@@ -264,6 +264,11 @@ disable Continue until the clip is safe.
   `Stop` or `Stop Recording` text. The tooltip and accessibility label explain the action.
 - Quitting during a take stops it first so its clips finalize, waiting at most 15 seconds. The
   recovery journal covers a capture that does not stop in time.
+  If the quit is then cancelled, the HUD leaves the recording state and opens review of the
+  take that was stopped.
+- A live take pauses on its own when there is nothing left to record: the recorded window
+  closed (macOS 15.2+), the screen locked, or the Mac is going to sleep. A toast says why;
+  Continue works as after any Pause. The display stays awake while a take records.
 - **Backspace** removes the newest completed clip immediately.
 - Backspace has no confirmation dialog and no removal mode.
 - Repeated Backspace presses continue backward, including removing every completed clip.

@@ -3,8 +3,6 @@ import CoreGraphics
 import CoreMedia
 import ScreenCaptureKit
 
-let screenCaptureKitMicrophoneOutputTypeRawValue = 2
-
 @available(macOS 13.0, *)
 struct CaptureSetup {
 	let filter: SCContentFilter
@@ -26,6 +24,7 @@ final class CaptureSetupBuilder {
 		let height: Int
 		let captureFrame: CGRect
 		let ignoresExcludedWindows: Bool
+		let displayID: CGDirectDisplayID?
 	}
 
 	func make(from content: SCShareableContent, request: RecordingRequest) throws -> CaptureSetup {
@@ -33,7 +32,8 @@ final class CaptureSetupBuilder {
 		let streamSettings = makeStreamConfiguration(
 			for: request,
 			width: target.width,
-			height: target.height
+			height: target.height,
+			displayID: target.displayID
 		)
 		return CaptureSetup(
 			filter: target.filter,
@@ -83,7 +83,8 @@ final class CaptureSetupBuilder {
 				width: dimensions.width,
 				height: dimensions.height,
 				captureFrame: display.frame,
-				ignoresExcludedWindows: !excludedApplications.isEmpty
+				ignoresExcludedWindows: !excludedApplications.isEmpty,
+				displayID: display.displayID
 			)
 		case "window":
 			guard let windowId = request.source.windowId else {
@@ -109,7 +110,8 @@ final class CaptureSetupBuilder {
 				width: dimensions.width,
 				height: dimensions.height,
 				captureFrame: window.frame,
-				ignoresExcludedWindows: true
+				ignoresExcludedWindows: true,
+				displayID: candidateDisplay?.displayID
 			)
 		default:
 			throw HelperError.invalidSourceType(request.source.type)
@@ -119,7 +121,8 @@ final class CaptureSetupBuilder {
 	private func makeStreamConfiguration(
 		for request: RecordingRequest,
 		width: Int,
-		height: Int
+		height: Int,
+		displayID: CGDirectDisplayID?
 	) -> (configuration: SCStreamConfiguration, microphoneEnabled: Bool) {
 		let configuration = SCStreamConfiguration()
 		configuration.width = width
@@ -128,13 +131,15 @@ final class CaptureSetupBuilder {
 			configuration.preservesAspectRatio = true
 			configuration.captureResolution = .best
 		}
-		configuration.minimumFrameInterval = request.video.quality == "high" ? .zero : CMTime(
-			value: 1,
-			timescale: CMTimeScale(max(1, request.video.fps))
+		configuration.minimumFrameInterval = Self.minimumFrameInterval(
+			quality: request.video.quality,
+			fps: request.video.fps,
+			refreshHz: displayID.flatMap { CGDisplayCopyDisplayMode($0)?.refreshRate } ?? 0
 		)
-		configuration.queueDepth = 6
+		configuration.queueDepth = Self.queueDepth
 		configuration.showsCursor = !request.video.hideSystemCursor
-		configuration.pixelFormat = kCVPixelFormatType_32BGRA
+		configuration.pixelFormat = Self.pixelFormat
+		configuration.colorMatrix = Self.colorMatrix
 		configuration.sampleRate = 48_000
 		configuration.channelCount = 2
 		configuration.excludesCurrentProcessAudio = true
@@ -143,7 +148,7 @@ final class CaptureSetupBuilder {
 		guard request.audio.microphone.enabled else {
 			return (configuration, false)
 		}
-		guard supportsNativeMicrophoneCapture(configuration) else {
+		guard #available(macOS 15.0, *) else {
 			emit([
 				"event": "warning",
 				"code": "microphone-unavailable",
@@ -152,10 +157,10 @@ final class CaptureSetupBuilder {
 			return (configuration, false)
 		}
 
-		configuration.setValue(true, forKey: "captureMicrophone")
+		configuration.captureMicrophone = true
 		let selectedDeviceID = resolveMicrophoneCaptureDeviceID(for: request)
 		if let deviceId = selectedDeviceID {
-			configuration.setValue(deviceId, forKey: "microphoneCaptureDeviceID")
+			configuration.microphoneCaptureDeviceID = deviceId
 		}
 		if ProcessInfo.processInfo.environment["OPENSCREEN_CAPTURE_DIAGNOSTICS"] == "1" {
 			let systemDefault = AVCaptureDevice.default(for: .audio)
@@ -166,6 +171,29 @@ final class CaptureSetupBuilder {
 		}
 		return (configuration, true)
 	}
+
+	/// Standard appends every delivered frame, so delivery is the written rate. High writes a
+	/// fixed grid from the newest frame, and frames arrive only on display refreshes, so it
+	/// skips whole refreshes: as many as still deliver at least `fps` (60 of a 120 Hz panel's
+	/// 120, 72 of 144, every refresh of a 75 or 100 Hz one). An unknown rate keeps zero, which
+	/// means every refresh.
+	static func minimumFrameInterval(quality: String?, fps: Int, refreshHz: Double) -> CMTime {
+		let rate = Int32(max(1, fps))
+		guard quality == "high" else { return CMTime(value: 1, timescale: rate) }
+		guard refreshHz > 0 else { return .zero }
+		let refreshesPerFrame = max(1, (refreshHz / Double(rate) + 0.01).rounded(.down))
+		return CMTime(seconds: 0.9 * refreshesPerFrame / refreshHz, preferredTimescale: 600_000)
+	}
+
+	/// The encoder takes 4:2:0, so capture it directly: 12 instead of 32 bits a pixel through the
+	/// surface pool, and no BGRA conversion inside VideoToolbox. BT.709 video range is what the
+	/// encoder produced from BGRA and what the compositor decodes (`shaders.metal`).
+	static let pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+	static let colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
+
+	/// The documented maximum. The frame cache keeps up to three pool surfaces between
+	/// frames, and the pool stalls when the app holds too many of them.
+	static let queueDepth = 8
 
 	private func captureDimensions(
 		for filter: SCContentFilter,
@@ -197,14 +225,6 @@ final class CaptureSetupBuilder {
 			return 1
 		}
 		return max(1, mode.pixelWidth / max(1, mode.width))
-	}
-
-	private func supportsNativeMicrophoneCapture(_ configuration: SCStreamConfiguration) -> Bool {
-		guard #available(macOS 15.0, *) else {
-			return false
-		}
-		return configuration.responds(to: Selector(("setCaptureMicrophone:"))) &&
-			configuration.responds(to: Selector(("setMicrophoneCaptureDeviceID:")))
 	}
 
 	private func resolveMicrophoneCaptureDeviceID(for request: RecordingRequest) -> String? {
