@@ -164,7 +164,7 @@ describe("real source-preserving media export", () => {
 			const plan = await prepareRecordingFastExport({
 				clips: [clip],
 				sceneJson: JSON.stringify(scene),
-				sourceDurationSec: sourceDuration,
+				sourceDurationsSec: [sourceDuration],
 				params: {
 					width: 160,
 					height: 90,
@@ -273,3 +273,158 @@ describe("real source-preserving media export", () => {
 });
 
 import { execFile } from "node:child_process";
+
+describe("real joined-takes media export", () => {
+	it.runIf(process.platform === "darwin" && !!ffmpeg)(
+		"joins takes split by Pause with unchanged packets and audio that stays in sync",
+		async () => {
+			const directory = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-recording-join-"));
+			temporary.push(directory);
+			const signal = new AbortController().signal;
+			const takes = [1.3, 2.6, 0.7].map((seconds, index) => ({
+				seconds,
+				path: path.join(directory, `take ${index + 1} it's.mp4`),
+			}));
+			for (const [index, take] of takes.entries()) {
+				const args = ["-v", "error", "-n", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=60"];
+				for (const frequency of [440 + index * 110, 220, 660])
+					args.push("-f", "lavfi", "-i", `sine=frequency=${frequency}:sample_rate=48000`);
+				args.push("-map", "0:v:0", "-map", "1:a:0", "-map", "2:a:0", "-map", "3:a:0");
+				args.push("-c:a", "aac", "-ar", "48000", "-ac", "2");
+				for (const [track, language] of ["qaa", "qab", "qac"].entries())
+					args.push(`-metadata:s:a:${track}`, `language=${language}`);
+				args.push("-t", String(take.seconds), "-c:v", "h264_videotoolbox", "-b:v", "1000k");
+				args.push("-pix_fmt", "yuv420p", take.path);
+				await runRecordingFfmpeg(ffmpeg!, args, signal, 20_000);
+			}
+			const addon = createRequire(import.meta.url)(
+				path.resolve("electron/native/bin/darwin-arm64/compositor_view.node"),
+			) as CompositorViewAddon;
+			const durations = await Promise.all(
+				takes.map((take) => addon.probeMediaDuration!(take.path)),
+			);
+			const clips = takes.map((take, index) => ({
+				screenPath: take.path,
+				webcamPath: "",
+				sourceStartSec: 0,
+				sourceEndSec: durations[index]!,
+				webcamOffsetSec: 0,
+				hasAudio: true,
+			}));
+			const scene = {
+				clips,
+				layout: {
+					preset: "no-webcam",
+					webcamSize: 0.25,
+					webcamZoom: 1,
+					webcamFocalPoint: { cx: 0.5, cy: 0.5 },
+					screenZoom: 1,
+					screenFocalPoint: { cx: 0.5, cy: 0.5 },
+					webcamShape: "rectangle",
+					webcamMirror: false,
+					webcamPosition: null,
+					webcamReactiveZoom: false,
+					webcamRect: null,
+					screenRect: { x: 0, y: 0, width: 1, height: 1 },
+					screenCover: false,
+				},
+				effects: { padding: 0, blur: false, shadow: 0, roundnessFrac: 0, motionBlur: 0 },
+				background: { kind: "color", color: "#000000" },
+				zoomRegions: [],
+				annotations: [],
+				cameraFullscreenRegions: [],
+				speedRegions: [],
+				cursor: {
+					show: true,
+					size: 1,
+					smoothing: 0,
+					motionBlur: 0,
+					clickBounce: 0,
+					clipToBounds: false,
+					theme: "default",
+				},
+				cropByClip: [null, null, null],
+				output: { width: 160, height: 90, fps: 60 },
+			} satisfies SceneDescription;
+			const plan = await prepareRecordingFastExport({
+				clips,
+				sceneJson: JSON.stringify(scene),
+				sourceDurationsSec: durations,
+				params: {
+					width: 160,
+					height: 90,
+					fps: 60,
+					codec: "h264",
+					preserveRecordingSource: true,
+					normalizeAudio: false,
+					evenVolume: false,
+				},
+				signal,
+			});
+			expect(plan).not.toBeNull();
+			const total = durations.reduce((sum, duration) => sum + duration, 0);
+			expect(plan!.durationS).toBeCloseTo(total, 6);
+			const outputPath = path.join(directory, "joined.mp4");
+			const progress: number[] = [];
+			const result = await plan!.render(outputPath, signal, (frames) => progress.push(frames));
+			expect(progress.at(-1)).toBe(Math.round(total * 60));
+			expect(result).toMatchObject({
+				decoderPath: "packet-concat",
+				encoderName: "stream-copy/h264",
+			});
+			expect((await topLevelBoxes(outputPath)).filter((box) => box !== "free")).toEqual([
+				"ftyp",
+				"moov",
+				"mdat",
+			]);
+			const packets = async (file: string) => {
+				let stdout = "";
+				await runRecordingFfmpeg(
+					ffmpeg!,
+					["-v", "error", "-i", file, "-map", "0:v:0", "-c", "copy", "-f", "framehash", "-"],
+					signal,
+					10_000,
+					(chunk) => {
+						stdout += chunk;
+					},
+				);
+				return stdout
+					.split("\n")
+					.filter((line) => line && !line.startsWith("#"))
+					.map((line) => line.split(",").slice(4).join(",").trim());
+			};
+			const sourcePackets = (await Promise.all(takes.map((take) => packets(take.path)))).flat();
+			expect(await packets(outputPath)).toEqual(sourcePackets);
+			const streamDuration = async (map: string) => {
+				let stdout = "";
+				await runRecordingFfmpeg(
+					ffmpeg!,
+					["-v", "error", "-i", outputPath, "-map", map, "-f", "framecrc", "-"],
+					signal,
+					10_000,
+					(chunk) => {
+						stdout += chunk;
+					},
+				);
+				const last = stdout
+					.trim()
+					.split("\n")
+					.at(-1)!
+					.split(",")
+					.map((field) => field.trim());
+				const tb = /#tb \d+: (\d+)\/(\d+)/.exec(stdout)!;
+				return ((Number(last[2]) + Number(last[3])) * Number(tb[1])) / Number(tb[2]);
+			};
+			// Audio ends with the joined video, not 21-43 ms early or late per join.
+			expect(Math.abs((await streamDuration("0:a:0")) - total)).toBeLessThan(0.03);
+			await addon.verifyVideoExport!(outputPath, {
+				width: 160,
+				height: 90,
+				fps: plan!.fps,
+				durationS: plan!.durationS,
+				codec: "h264",
+			});
+		},
+		60_000,
+	);
+});

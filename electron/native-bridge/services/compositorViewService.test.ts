@@ -315,7 +315,7 @@ describe("CompositorViewService export transaction", () => {
 		expect(result).toEqual(rawStats);
 		expect(addon.exportMulti).not.toHaveBeenCalled();
 		expect(addon.probeMediaDuration).toHaveBeenCalledOnce();
-		expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ sourceDurationSec: 2 }));
+		expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ sourceDurationsSec: [2] }));
 		expect(verifyVideoExport).toHaveBeenCalledTimes(2);
 		expect(verifyVideoExport).toHaveBeenLastCalledWith(
 			expect.any(String),

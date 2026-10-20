@@ -826,13 +826,13 @@ export class CompositorViewService {
 				return duration;
 			});
 			let fastExport: RecordingFastExportPlan | null = null;
-			if (params?.preserveRecordingSource && resolvedClips.length === 1) {
+			if (params?.preserveRecordingSource) {
 				try {
 					fastExport = await (this.options.recordingFastExport ?? prepareRecordingFastExport)({
 						clips: resolvedClips,
 						sceneJson,
 						params,
-						sourceDurationSec: sourceDurations.get(resolvedClips[0]!.screenPath)!,
+						sourceDurationsSec: resolvedClips.map((clip) => sourceDurations.get(clip.screenPath)!),
 						signal: controller.signal,
 						onProgress,
 					});
