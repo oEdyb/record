@@ -1,11 +1,12 @@
 import type { ExportParamsInput } from "../native/compositor-view/addon";
 
-/** Level 5.2, the highest H.264 level: 36,864 macroblocks per frame (4096×2304).
- * Apple's H.264 encoders refuse larger frames; their HEVC encoders go to 8K. */
-const H264_MAX_MACROBLOCKS = 36_864;
+/** Apple's H.264 hardware encoder refuses a frame wider or taller than 4096 pixels
+ * (measured on M5, macOS 26.6: 4096×4096 encodes, 4098×1080 and 1080×4098 fail with
+ * -12903). Its HEVC encoder goes to 8K. */
+const H264_MAX_SIDE = 4096;
 
 export function exceedsH264FrameLimit(width: number, height: number): boolean {
-	return Math.ceil(width / 16) * Math.ceil(height / 16) > H264_MAX_MACROBLOCKS;
+	return width > H264_MAX_SIDE || height > H264_MAX_SIDE;
 }
 
 /** The codec a rendered export actually encodes with. A 5K or 6K source-sized

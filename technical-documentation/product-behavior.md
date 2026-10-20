@@ -1088,8 +1088,8 @@ product requirement, not as an optional maximum-quality mode.
 - Vertical Stack divides the complete padded canvas into cover-cropped screen and camera cells.
   Default to an equal split, and let the user set the camera share from 20% to 80%. Preview,
   native export, CLI export, saved projects, and remembered editor defaults must use one value.
-- H.264 on this hardware stops at 4096 × 2304. A rendered export larger than that is written as
-  HEVC instead of failing.
+- Apple's H.264 encoder stops at 4096 pixels on either side. A rendered export larger than that
+  is written as HEVC instead of failing.
 - Export must offer real control over resolution, frame rate, codec, and bitrate. A quality
   preset must pass its resolved bitrate to the native encoder; do not calculate a value in the
   UI and then let the native pipeline replace it with a hidden fixed bitrate.
