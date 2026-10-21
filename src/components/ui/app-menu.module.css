@@ -5,16 +5,22 @@
 	max-height: min(320px, var(--radix-dropdown-menu-content-available-height));
 	overflow-y: auto;
 	padding: 5px;
-	border: 1px solid var(--border);
-	border-radius: 10px;
-	background: var(--surface-hi);
-	box-shadow: var(--elev-pop);
+	border: 0;
+	border-radius: 14px;
+	background: rgba(30, 30, 36, 0.78);
+	-webkit-backdrop-filter: blur(32px) saturate(170%);
+	backdrop-filter: blur(32px) saturate(170%);
+	box-shadow:
+		0 18px 48px rgba(0, 0, 0, 0.45),
+		0 2px 6px rgba(0, 0, 0, 0.25),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+		inset 0 1px 0 rgba(255, 255, 255, 0.12);
 	color: var(--fg);
 	transform-origin: var(--radix-dropdown-menu-content-transform-origin);
 }
 
 .content[data-state="open"] {
-	animation: app-menu-in 120ms var(--ease);
+	animation: app-menu-in 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .content[data-state="closed"] {
@@ -26,19 +32,27 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	min-height: 30px;
-	padding: 6px 9px;
-	border-radius: 7px;
-	font: 500 12px/1.25 var(--font-body);
+	min-height: 32px;
+	padding: 6px 10px;
+	border-radius: 9px;
+	font: 500 13px/1.25 var(--font-body);
 	color: var(--fg-2);
 	cursor: default;
 	user-select: none;
 	outline: none;
 }
 
+.item svg {
+	color: var(--muted);
+}
+
 .item[data-highlighted] {
-	background: var(--surface-3);
-	color: var(--fg);
+	background: rgba(255, 255, 255, 0.09);
+	color: var(--fg-emphasis);
+}
+
+.item[data-highlighted] svg {
+	color: var(--fg-emphasis);
 }
 
 .item[data-disabled] {
@@ -55,8 +69,8 @@
 
 .separator {
 	height: 1px;
-	margin: 4px 6px;
-	background: var(--border-soft);
+	margin: 4px 8px;
+	background: rgba(255, 255, 255, 0.07);
 }
 
 .radioItem {
@@ -76,7 +90,7 @@
 @keyframes app-menu-in {
 	from {
 		opacity: 0;
-		transform: scale(0.97);
+		transform: scale(0.96) translateY(-4px);
 	}
 	to {
 		opacity: 1;

@@ -121,8 +121,8 @@
 
 	/* recorder HUD — always dark, whatever the theme. Secondary text uses
 	   --hud-muted (about 6:1 on the pill); --hud-faint is for marks, never text. */
-	--hud-surface: rgba(18, 21, 26, 0.94);
-	--hud-surface-solid: rgba(18, 21, 26, 0.96);
+	--hud-surface: rgba(24, 24, 29, 0.94);
+	--hud-surface-solid: rgba(24, 24, 29, 0.97);
 	--hud-fill: rgba(255, 255, 255, 0.06);
 	--hud-fill-hover: rgba(255, 255, 255, 0.1);
 	--hud-fill-strong: rgba(255, 255, 255, 0.14);
@@ -131,7 +131,7 @@
 	--hud-ink-2: rgba(255, 255, 255, 0.78);
 	--hud-muted: rgba(255, 255, 255, 0.58);
 	--hud-faint: rgba(255, 255, 255, 0.4);
-	--hud-focus: rgba(142, 165, 191, 0.72);
+	--hud-focus: rgba(145, 170, 200, 0.72);
 	--hud-success: #6ee7a8;
 	--hud-radius-sm: 4px;
 	--hud-radius-md: 10px;

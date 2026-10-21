@@ -66,119 +66,131 @@
 }
 .previewEmptyDropOverlay {
 	position: absolute;
-	inset: 0;
+	inset: 16px;
 	z-index: 10;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	gap: var(--sp-2);
-	border: 2px dashed var(--primary);
-	background: color-mix(in srgb, var(--primary) 10%, transparent);
-	border-radius: var(--r-sm);
+	border: 1.5px dashed rgba(255, 255, 255, 0.32);
+	background: rgba(255, 255, 255, 0.04);
+	border-radius: 24px;
 	pointer-events: none;
 }
 .previewEmptyDropIcon {
-	width: 40px;
-	height: 40px;
-	color: var(--primary);
+	width: 32px;
+	height: 32px;
+	color: var(--fg-emphasis);
 }
 .previewEmptyDropLabel {
-	font-size: var(--fs-app);
-	font-weight: 600;
-	color: var(--primary);
+	font: 600 13px/1.3 var(--font-body);
+	color: var(--fg-emphasis);
 }
+/* No recording open: the mark, one line, one white decision. */
 .previewEmptyInner {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: var(--sp-4);
+	gap: 20px;
 	padding: var(--sp-5);
 	text-align: center;
-	max-width: 28rem;
+	max-width: 26rem;
+	animation: previewEmptyIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes previewEmptyIn {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
 }
 .previewEmptyLogo {
-	width: 64px;
-	height: 64px;
-	color: var(--fg-2);
+	width: 44px;
+	height: 44px;
+	color: var(--fg-emphasis);
 	opacity: 0.9;
 }
 .previewEmptyHeading {
 	display: flex;
 	flex-direction: column;
-	gap: var(--sp-1);
+	gap: 6px;
 }
 .previewEmptyTitle {
 	margin: 0;
-	font-size: 1.25rem;
-	font-weight: 600;
-	color: var(--fg-2);
+	font: 600 17px/1.3 var(--font-display);
+	letter-spacing: -0.012em;
+	color: var(--fg-emphasis);
 }
 .previewEmptyDescription {
 	margin: 0;
-	font-size: 0.875rem;
+	font: 400 13px/1.5 var(--font-body);
 	color: var(--muted);
-	line-height: 1.5;
 }
 .previewEmptyActions {
 	display: flex;
-	flex-direction: column;
-	gap: var(--sp-2);
-	width: 100%;
-	max-width: 18rem;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px;
+}
+.previewEmptyPrimaryButton,
+.previewEmptySecondaryButton {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	height: 34px;
+	padding: 0 16px;
+	border: 0;
+	border-radius: 17px;
+	font: 500 13px/1 var(--font-body);
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background-color 120ms var(--ease),
+		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .previewEmptyPrimaryButton {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: var(--sp-2);
-	padding: var(--sp-3) var(--sp-4);
-	border-radius: var(--r-sm);
-	background: var(--primary);
-	color: var(--accent-on);
-	border: none;
-	font-weight: 500;
-	font-size: 0.875rem;
-	cursor: pointer;
-	transition: background-color 120ms ease;
+	background: #f5f5f7;
+	color: #16161a;
+	font-weight: 600;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .previewEmptyPrimaryButton:hover {
-	filter: brightness(0.95);
+	background: #ffffff;
 }
 .previewEmptySecondaryButton {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: var(--sp-2);
-	padding: var(--sp-3) var(--sp-4);
-	border-radius: var(--r-sm);
-	background: var(--card);
-	color: var(--fg-2);
-	border: 1px solid var(--border);
-	font-weight: 500;
-	font-size: 0.875rem;
-	cursor: pointer;
-	transition: background-color 120ms ease;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
 }
 .previewEmptySecondaryButton:hover {
-	background: var(--accent, rgba(255, 255, 255, 0.06));
+	background: rgba(255, 255, 255, 0.14);
+}
+.previewEmptyPrimaryButton:active,
+.previewEmptySecondaryButton:active {
+	transform: scale(0.97);
+}
+.previewEmptyPrimaryButton:focus-visible,
+.previewEmptySecondaryButton:focus-visible,
+.previewEmptyDialogClose:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
 }
 .previewEmptyButtonIcon {
-	width: 16px;
-	height: 16px;
+	width: 15px;
+	height: 15px;
 }
 .previewEmptyHint {
 	margin: 0;
-	font-size: 0.75rem;
-	color: var(--muted-foreground, rgba(255, 255, 255, 0.5));
+	font: 400 12px/1.4 var(--font-mono);
+	color: var(--muted);
 }
 .previewEmptyDragHint {
 	display: flex;
 	align-items: center;
-	gap: var(--sp-1);
-	margin: 0;
-	font-size: 0.75rem;
-	color: var(--muted-foreground, rgba(255, 255, 255, 0.4));
+	gap: 6px;
+	margin: -12px 0 0;
+	font: 400 12px/1.4 var(--font-body);
+	color: var(--muted);
 }
 .previewEmptyDragHintIcon {
 	width: 12px;
@@ -186,77 +198,78 @@
 }
 .previewEmptyDialog {
 	max-width: 24rem;
-	padding: var(--sp-5);
-	background: var(--bg);
-	border: 1px solid var(--border);
+	padding: 20px;
 }
 .previewEmptyDialogHeader {
-	margin-bottom: var(--sp-3);
+	margin-bottom: 12px;
+	padding: 0;
 }
 .previewEmptyDialogHeaderInner {
 	display: flex;
 	align-items: center;
-	gap: var(--sp-2);
+	gap: 10px;
 }
 .previewEmptyDialogLogo {
-	width: 36px;
-	height: 36px;
-	color: var(--fg-2);
+	width: 24px;
+	height: 24px;
+	color: var(--fg-emphasis);
 	flex-shrink: 0;
 }
 .previewEmptyDialogTitle {
-	font-size: 1rem;
-	font-weight: 600;
-	color: var(--fg-2);
-	line-height: 1.2;
+	font: 600 15px/1.3 var(--font-display);
+	color: var(--fg-emphasis);
 }
 .previewEmptyDialogBody {
 	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: var(--sp-2);
-	margin-bottom: var(--sp-4);
-	text-align: center;
+	align-items: flex-start;
+	gap: 10px;
+	margin-bottom: 18px;
 }
 .previewEmptyDialogIcon {
 	display: flex;
+	flex: none;
 	align-items: center;
 	justify-content: center;
-	width: 40px;
-	height: 40px;
-	border-radius: 9999px;
-	background: var(--card);
-	border: 1px solid var(--border);
 }
 .previewEmptyDialogAlertIcon {
-	width: 20px;
-	height: 20px;
-	color: var(--muted);
+	width: 18px;
+	height: 18px;
+	color: var(--danger);
 }
 .previewEmptyDialogMessage {
 	margin: 0;
-	font-size: 0.875rem;
-	color: var(--muted);
-	line-height: 1.5;
+	font: 400 13px/1.5 var(--font-body);
+	color: var(--fg-2);
 }
 .previewEmptyDialogClose {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	gap: var(--sp-1);
+	gap: 6px;
 	width: 100%;
-	padding: var(--sp-2) var(--sp-3);
-	border-radius: var(--r-sm);
-	background: var(--card);
-	color: var(--fg-2);
-	border: 1px solid var(--border);
-	font-size: 0.875rem;
-	font-weight: 500;
+	height: 34px;
+	border: 0;
+	border-radius: 17px;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+	font: 500 13px/1 var(--font-body);
 	cursor: pointer;
+}
+.previewEmptyDialogClose:hover {
+	background: rgba(255, 255, 255, 0.14);
 }
 .previewEmptyDialogCloseIcon {
 	width: 14px;
 	height: 14px;
+}
+@media (prefers-reduced-motion: reduce) {
+	.previewEmptyInner {
+		animation: none;
+	}
+	.previewEmptyPrimaryButton,
+	.previewEmptySecondaryButton {
+		transition: none;
+	}
 }
 .previewFrame > .screenStage video {
 	position: relative;
@@ -421,15 +434,22 @@
 	height: 28px;
 	display: grid;
 	place-items: center;
-	border-radius: var(--r-sm);
+	border-radius: 50%;
 	color: var(--muted);
 	background: transparent;
 	border: 0;
 	cursor: pointer;
+	transition:
+		background-color 120ms var(--ease),
+		color 120ms var(--ease);
 }
 .closeBtn:hover {
-	background: var(--surface-3);
-	color: var(--fg);
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+}
+.closeBtn:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
 }
 .modalBody {
 	padding-top: 2px;
@@ -438,41 +458,59 @@
 	gap: 20px;
 }
 
+/* Dialog buttons share the review's pill: white is the decision, glass the rest. */
 .btn {
-	height: 32px;
-	padding: 0 14px;
-	border-radius: var(--r-md);
-	font: 500 var(--fs-app)/1 var(--font-body);
+	height: 34px;
+	padding: 0 16px;
+	border: 0;
+	border-radius: 17px;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+	font: 500 13px/1 var(--font-body);
+	white-space: nowrap;
 	cursor: pointer;
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	justify-content: center;
+	gap: 7px;
 	transition:
-		background var(--motion-fast) var(--ease),
-		border-color var(--motion-fast) var(--ease);
+		background-color 120ms var(--ease),
+		color 120ms var(--ease),
+		opacity 120ms var(--ease),
+		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.btn:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.14);
+}
+.btn:active:not(:disabled) {
+	transform: scale(0.97);
+}
+.btn:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
+}
+.btn:disabled {
+	opacity: 0.45;
+	cursor: default;
 }
 .btnSecondary {
-	background: var(--surface);
-	color: var(--fg);
-	border: 1px solid var(--border);
-}
-.btnSecondary:hover {
-	background: var(--surface-warm);
-	border-color: var(--border-hi);
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
 }
 .btnPrimary {
-	background: var(--accent);
-	color: var(--accent-on);
-	border: 1px solid var(--accent);
+	min-width: 112px;
+	background: #f5f5f7;
+	color: #16161a;
+	font-weight: 600;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
-.btnPrimary:hover {
-	background: var(--brand-lo);
+.btnPrimary:hover:not(:disabled) {
+	background: #ffffff;
 }
-.btnPrimary:disabled {
-	background: var(--surface-2);
-	border-color: var(--border);
-	color: var(--muted);
-	cursor: not-allowed;
+@media (prefers-reduced-motion: reduce) {
+	.btn {
+		transition: none;
+	}
 }
 
 /* Custom range slider / progress bar */
@@ -545,29 +583,34 @@
 	}
 }
 .dangerBtn {
-	background: color-mix(in srgb, var(--danger) 14%, transparent);
+	background: rgba(248, 113, 113, 0.14);
 	color: var(--danger);
-	border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
 }
-.dangerBtn:hover {
-	background: color-mix(in srgb, var(--danger) 22%, transparent);
-	color: var(--danger);
+.dangerBtn:hover:not(:disabled) {
+	background: rgba(248, 113, 113, 0.22);
 }
 
 .iconBtn {
-	width: 28px;
-	height: 28px;
+	width: 30px;
+	height: 30px;
 	display: inline-grid;
 	place-items: center;
-	border-radius: var(--r-sm);
+	border-radius: 50%;
 	background: transparent;
-	border: 1px solid transparent;
+	border: 0;
 	color: var(--muted);
 	cursor: pointer;
+	transition:
+		background-color 120ms var(--ease),
+		color 120ms var(--ease);
 }
 .iconBtn:hover {
-	background: var(--surface-3);
-	color: var(--fg);
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+}
+.iconBtn:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 1px;
 }
 .iconBtn:disabled {
 	opacity: 0.5;
@@ -648,6 +691,13 @@
 .transport[data-variant="overlay"] .scrubBar:hover .scrubThumb,
 .transport[data-variant="overlay"] .scrubBar:focus-within .scrubThumb {
 	transform: translate(-50%, -50%) scale(1.1);
+}
+/* An overview drawn on the play bar sits just above its track, edge to edge with it. */
+.scrubOverview {
+	position: absolute;
+	right: 0;
+	bottom: calc(50% + 7px);
+	left: 0;
 }
 /* Where Add clip puts the next clip: a short bar above the track, at a clip edge. */
 .scrubInsertion {

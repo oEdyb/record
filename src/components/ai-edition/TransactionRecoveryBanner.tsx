@@ -1,12 +1,16 @@
 import { useState } from "react";
+import { useScopedT } from "@/contexts/I18nContext";
 import {
 	reconcileProjectTransactions,
 	resolveLocalTransactionConflict,
 	useProjectStore,
 } from "@/lib/ai-edition/store/projectStore";
+import buttons from "./ReviewSurface.module.css";
+import styles from "./TransactionRecoveryBanner.module.css";
 
 /** Recovery is explicit: a conflict must never silently discard the live edit. */
 export function TransactionRecoveryBanner() {
+	const t = useScopedT("editor");
 	const pending = useProjectStore((state) => state.transactionSyncPending);
 	const error = useProjectStore((state) => state.error);
 	const guarded = useProjectStore((state) => state.transactionVersion !== null);
@@ -22,49 +26,45 @@ export function TransactionRecoveryBanner() {
 			if (strategy === "check") await reconcileProjectTransactions(projectId);
 			else await resolveLocalTransactionConflict(strategy);
 		} catch (error) {
-			setMessage(
-				error instanceof Error ? error.message : "Recovery failed. Your edit remains open.",
-			);
+			setMessage(error instanceof Error ? error.message : t("saveRecovery.failed"));
 		} finally {
 			setWorking(false);
 		}
 	};
 	return (
-		<section
-			role="alert"
-			aria-label="Save recovery"
-			style={{
-				position: "absolute",
-				top: 64,
-				left: "50%",
-				transform: "translateX(-50%)",
-				zIndex: 100,
-				width: "min(620px, 90%)",
-				padding: 16,
-				borderRadius: 12,
-				background: "var(--background, #202024)",
-				color: "var(--foreground, #fff)",
-				border: "1px solid #a88a44",
-				boxShadow: "0 8px 30px #0006",
-			}}
-		>
-			<p>Saving needs recovery. Your current edit remains open.</p>
-			<p>
-				Check an interrupted agent edit first. Save a copy to keep your version. Reload discards
-				unsaved changes and opens the saved version.
-			</p>
-			<div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-				<button type="button" disabled={busy || working} onClick={() => void recover("check")}>
-					Check interrupted edit
+		<section role="alert" aria-label={t("saveRecovery.label")} className={styles.banner}>
+			<div className={styles.head}>
+				<span className={styles.dot} aria-hidden="true" />
+				<p className={styles.title}>{t("saveRecovery.title")}</p>
+			</div>
+			<p className={styles.body}>{t("saveRecovery.body")}</p>
+			<div className={styles.actions}>
+				<button
+					type="button"
+					className={`${buttons.btn} ${buttons.btnSecondary}`}
+					disabled={busy || working}
+					onClick={() => void recover("check")}
+				>
+					{t("saveRecovery.check")}
 				</button>
-				<button type="button" disabled={busy || working} onClick={() => void recover("save-copy")}>
-					Save my version as a copy
+				<button
+					type="button"
+					className={`${buttons.btn} ${buttons.btnPrimary}`}
+					disabled={busy || working}
+					onClick={() => void recover("save-copy")}
+				>
+					{t("saveRecovery.saveCopy")}
 				</button>
-				<button type="button" disabled={busy || working} onClick={() => void recover("reload")}>
-					Discard unsaved changes and reload
+				<button
+					type="button"
+					className={`${buttons.btn} ${buttons.dangerBtn}`}
+					disabled={busy || working}
+					onClick={() => void recover("reload")}
+				>
+					{t("saveRecovery.reload")}
 				</button>
 			</div>
-			{message && <p style={{ marginTop: 12 }}>{message}</p>}
+			{message && <p className={styles.message}>{message}</p>}
 		</section>
 	);
 }
