@@ -71,7 +71,8 @@ function marker(entry: TimelineMarker, mediaFrame: number) {
 		marked_range: range(mediaFrame, 1),
 		color: entry.color,
 		comment: entry.comment,
-		metadata: {},
+		// DaVinci Resolve ignores `comment` and reads the marker note from its own metadata.
+		metadata: { Resolve_OTIO: { Keywords: [], Note: entry.comment } },
 	};
 }
 

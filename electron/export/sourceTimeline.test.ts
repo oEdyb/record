@@ -232,6 +232,10 @@ it("puts each marker on the microphone clip that plays at its timeline time, in 
 		],
 	]);
 	expect(screen.children.every((child) => child.markers.length === 0)).toBe(true);
+	const retake = microphone.children[1] as { markers: { metadata: unknown }[] };
+	expect(retake.markers[0]?.metadata).toEqual({
+		Resolve_OTIO: { Keywords: [], Note: "said again" },
+	});
 });
 
 it("hosts markers on the screen clip when there is no microphone original", () => {

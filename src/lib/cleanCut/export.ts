@@ -18,12 +18,15 @@ function clip(text: string) {
 	return text.length <= MAX_MARKER_TEXT ? text : `${text.slice(0, MAX_MARKER_TEXT - 1)}…`;
 }
 
-/** Marker names and colors for the editor timeline; one color per reason. */
+/**
+ * Marker names and colors for the editor timeline; one color per reason. Only colors
+ * DaVinci Resolve has: it shows an unknown color, such as orange, as green.
+ */
 export const CLEAN_CUT_MARKER_STYLE: Record<
 	Exclude<CleanCutKind, "pause">,
 	{ name: string; color: CleanCutMarkerColor }
 > = {
-	retake: { name: "Retake", color: "ORANGE" },
+	retake: { name: "Retake", color: "RED" },
 	"false-start": { name: "False start", color: "YELLOW" },
 	repair: { name: "Repair", color: "PURPLE" },
 	stutter: { name: "Stutter", color: "CYAN" },

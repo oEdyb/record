@@ -44,7 +44,7 @@ describe("toCleanCut", () => {
 				keepIndex: 1,
 				name: "Retake",
 				comment: "Retake (Stumbled attempt): “but okay”",
-				color: "ORANGE",
+				color: "RED",
 			},
 			{
 				keepIndex: 2,
