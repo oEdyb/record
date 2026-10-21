@@ -1,0 +1,53 @@
+.row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 32px;
+	color: var(--fg-2);
+	font-size: 13px;
+}
+.tick {
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 1px;
+	background: rgba(255, 255, 255, 0.24);
+}
+.label {
+	color: var(--fg-emphasis);
+	font-weight: 500;
+}
+.count,
+.removed {
+	color: var(--muted);
+	font: 400 12px/1 var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+.removed {
+	color: var(--fg-2);
+}
+.spacer {
+	flex: 1;
+}
+.action {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 26px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 13px;
+	background: rgba(255, 255, 255, 0.07);
+	color: var(--fg-2);
+	font: 500 12px/1 var(--font-body);
+	white-space: nowrap;
+	cursor: pointer;
+}
+.action:hover {
+	background: rgba(255, 255, 255, 0.13);
+	color: var(--fg-emphasis);
+}
+.action:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
+}

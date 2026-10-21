@@ -6,6 +6,8 @@ import { createInterface } from "node:readline";
 
 const START_TIMEOUT_MS = 45_000;
 const REQUEST_TIMEOUT_MS = 180_000;
+/** Aligning a long recording runs window by window on the GPU: minutes, not seconds. */
+const ALIGN_TIMEOUT_MS = 900_000;
 
 export interface ParakeetTranscribeRequest {
 	id: string;
@@ -13,10 +15,49 @@ export interface ParakeetTranscribeRequest {
 	language?: string;
 }
 
+export interface TranscriptWord {
+	word: string;
+	startSec: number;
+	endSec: number;
+	confidence: number;
+}
+
 export interface ParakeetTranscribeResult {
 	id: string;
 	text: string;
+	/** Clip-relative word times from the recognizer, in spoken order. */
+	words: TranscriptWord[];
 	detectedLanguage: string | null;
+}
+
+/** A word to place on the audio, with the recognizer's own times as the starting guess. */
+export interface AlignWordInput {
+	word: string;
+	startSec: number;
+	endSec: number;
+}
+
+export interface AlignedWord {
+	startSec: number;
+	endSec: number;
+	/** False when the aligner could not spell the word; the times are then the input times. */
+	aligned: boolean;
+}
+
+export interface ParakeetAlignRequest {
+	id: string;
+	/** Audio file the word times are relative to (any format the helper decodes; 16 kHz mono is cheapest). */
+	audioPath: string;
+	words: AlignWordInput[];
+	/** Directory holding the wav2vec2 Core ML aligner and its labels.json. */
+	alignerModels: string;
+	timeoutMs?: number;
+}
+
+export interface ParakeetAlignResult {
+	id: string;
+	/** Same order and count as the request's words. */
+	words: AlignedWord[];
 }
 
 interface HelperMessage {
@@ -24,14 +65,19 @@ interface HelperMessage {
 	id?: string;
 	error?: string;
 	segments?: Array<{ text: string }>;
+	wordSegments?: TranscriptWord[];
 	detectedLanguage?: string;
+	words?: AlignedWord[];
 }
 
-interface PendingRequest {
-	resolve: (value: ParakeetTranscribeResult) => void;
+type PendingKind =
+	| { kind: "transcribe"; resolve: (value: ParakeetTranscribeResult) => void }
+	| { kind: "align"; expectedWords: number; resolve: (value: ParakeetAlignResult) => void };
+
+type PendingRequest = PendingKind & {
 	reject: (reason: Error) => void;
 	timer: ReturnType<typeof setTimeout>;
-}
+};
 
 function readAppPath(): string | null {
 	try {
@@ -80,6 +126,8 @@ export class ParakeetProcess {
 			binaryPath: string;
 			modelDir: string;
 			spawnProcess?: typeof spawn;
+			/** The first start after an update compiles the model for the Neural Engine; allow for it. */
+			startTimeoutMs?: number;
 		},
 	) {}
 
@@ -108,7 +156,7 @@ export class ParakeetProcess {
 				if (ready) return;
 				child.kill("SIGKILL");
 				reject(new Error("Parakeet helper did not become ready."));
-			}, START_TIMEOUT_MS);
+			}, this.options.startTimeoutMs ?? START_TIMEOUT_MS);
 
 			createInterface({ input: child.stdout }).on("line", (line) => {
 				let message: HelperMessage;
@@ -128,17 +176,31 @@ export class ParakeetProcess {
 				if (!request) return;
 				this.pending.delete(message.id);
 				clearTimeout(request.timer);
-				if (message.type === "result") {
+				if (message.type === "result" && request.kind === "transcribe") {
 					request.resolve({
 						id: message.id,
 						text: (message.segments ?? [])
 							.map((segment) => segment.text)
 							.join(" ")
 							.trim(),
+						words: message.wordSegments ?? [],
 						detectedLanguage: message.detectedLanguage ?? null,
 					});
-				} else {
+				} else if (message.type === "aligned" && request.kind === "align") {
+					const words = message.words ?? [];
+					if (words.length === request.expectedWords) {
+						request.resolve({ id: message.id, words });
+					} else {
+						request.reject(
+							new Error(
+								`Parakeet helper aligned ${words.length} words, expected ${request.expectedWords}.`,
+							),
+						);
+					}
+				} else if (message.type === "error") {
 					request.reject(new Error(message.error || "Parakeet helper failed."));
+				} else {
+					request.reject(new Error(`Unexpected "${message.type}" reply from the Parakeet helper.`));
 				}
 			});
 			child.stderr.on("data", () => undefined);
@@ -166,16 +228,47 @@ export class ParakeetProcess {
 	}
 
 	async transcribe(request: ParakeetTranscribeRequest): Promise<ParakeetTranscribeResult> {
+		return this.send(request.id, REQUEST_TIMEOUT_MS, JSON.stringify(request), (resolve) => ({
+			kind: "transcribe",
+			resolve,
+		}));
+	}
+
+	/**
+	 * Forced alignment: places each word on the audio with a CTC character model, so cuts can land
+	 * between words. Loads the aligner on the first call; transcription is unaffected.
+	 */
+	async align(request: ParakeetAlignRequest): Promise<ParakeetAlignResult> {
+		const message = JSON.stringify({
+			type: "align",
+			id: request.id,
+			audioPath: request.audioPath,
+			words: request.words.map(({ word, startSec, endSec }) => ({ word, startSec, endSec })),
+			alignerModels: request.alignerModels,
+		});
+		return this.send(request.id, request.timeoutMs ?? ALIGN_TIMEOUT_MS, message, (resolve) => ({
+			kind: "align",
+			expectedWords: request.words.length,
+			resolve,
+		}));
+	}
+
+	private async send<T>(
+		id: string,
+		timeoutMs: number,
+		line: string,
+		kind: (resolve: (value: T) => void) => PendingKind,
+	): Promise<T> {
 		await this.start();
 		const child = this.child;
 		if (!child) throw new Error("Parakeet helper is not running.");
-		return new Promise((resolve, reject) => {
+		return new Promise<T>((resolve, reject) => {
 			const timer = setTimeout(() => {
-				this.pending.delete(request.id);
+				this.pending.delete(id);
 				reject(new Error("Parakeet helper timed out."));
-			}, REQUEST_TIMEOUT_MS);
-			this.pending.set(request.id, { resolve, reject, timer });
-			child.stdin.write(`${JSON.stringify(request)}\n`);
+			}, timeoutMs);
+			this.pending.set(id, { ...kind(resolve), reject, timer });
+			child.stdin.write(`${line}\n`);
 		});
 	}
 

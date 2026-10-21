@@ -264,6 +264,22 @@ describe("ExportDialog task completion", () => {
 			normalizeAudio: false,
 		});
 	});
+	it("says plainly that One video leaves the clean cut out", () => {
+		const document = doc([asset({ id: "a1" })], [clip({ id: "c1", assetId: "a1" })]);
+		render(
+			<ExportDialog
+				open
+				quickExport
+				onClose={vi.fn()}
+				document={document}
+				cleanCut={{ keep: [{ assetId: "a1", startSec: 0, endSec: 4 }], markers: [] }}
+			/>,
+		);
+		expect(screen.queryByText("cleanCut.oneVideoFull")).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "exportDialog.outputVideo" }));
+		expect(screen.getByText("cleanCut.oneVideoFull")).toBeInTheDocument();
+	});
+
 	it("keeps legacy audio processing on during quick Save video", async () => {
 		const document = doc(
 			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 60 } })],

@@ -14,6 +14,14 @@ interface ReviewShortcuts {
 	onClip: (direction: -1 | 1) => void;
 	onEdge: (edge: "start" | "end") => void;
 	onMute: () => void;
+	/** Present while the clean cut panel is open: the up and down arrows step through its cuts. */
+	onCut?: (direction: -1 | 1) => void;
+	/** R: restore the selected clean cut, or cut it again. */
+	onRestore?: () => void;
+	onUndo?: () => void;
+	onRedo?: () => void;
+	/** Present while the clean cut card is up: L loops its cut instead of stepping. */
+	onLoop?: () => void;
 }
 
 /** Controls that need Space, Enter or the arrows for themselves. */
@@ -49,6 +57,8 @@ export function useRecordingReviewShortcuts(options: ReviewShortcuts): void {
 			let action: (() => void) | undefined;
 			let repeatable = false;
 			if (command && key === "s") action = options.onSave;
+			else if (ctrl && !event.altKey && key === "z" && options.onUndo && options.onRedo)
+				action = event.shiftKey ? options.onRedo : options.onUndo;
 			else if (command && key === "n") action = options.onRecord;
 			else if (command && key === "o") action = options.onRecordings;
 			else if (ownsKeys) return;
@@ -56,6 +66,8 @@ export function useRecordingReviewShortcuts(options: ReviewShortcuts): void {
 			else if (matchesShortcut(event, options.playPause, options.isMac))
 				action = options.onPlayPause;
 			else if (plain && key === "m") action = options.onMute;
+			else if (plain && key === "r" && options.onRestore) action = options.onRestore;
+			else if (plain && key === "l" && options.onLoop) action = options.onLoop;
 			else if (plain && (key === "j" || key === "l")) {
 				action = () => options.onStep(key === "j" ? -1 : 1, "second");
 				repeatable = true;
@@ -64,9 +76,12 @@ export function useRecordingReviewShortcuts(options: ReviewShortcuts): void {
 				const unit = event.shiftKey ? "second" : "frame";
 				action = () => options.onStep(event.key === "ArrowLeft" ? -1 : 1, unit);
 				repeatable = true;
-			} else if (plain && (event.key === "ArrowUp" || event.key === "ArrowDown"))
-				action = () => options.onClip(event.key === "ArrowUp" ? -1 : 1);
-			else if (plain && (event.key === "Home" || event.key === "End"))
+			} else if (plain && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+				const direction = event.key === "ArrowUp" ? -1 : 1;
+				const onCut = options.onCut;
+				action = onCut ? () => onCut(direction) : () => options.onClip(direction);
+				repeatable = Boolean(onCut);
+			} else if (plain && (event.key === "Home" || event.key === "End"))
 				action = () => options.onEdge(event.key === "Home" ? "start" : "end");
 			if (action) {
 				event.preventDefault();

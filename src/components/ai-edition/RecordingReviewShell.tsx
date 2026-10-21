@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { EditorProjectData } from "@/components/video-editor/projectPersistence";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
@@ -28,12 +28,27 @@ import {
 	playbackTimeToRawTime,
 	rawTimeToPlaybackTime,
 } from "@/lib/ai-edition/timeline/timelineMap";
+import { toCleanCut } from "@/lib/cleanCut/export";
+import {
+	buildCleanCutReview,
+	joinSegmentsByClip,
+	type ReviewCut,
+} from "@/lib/cleanCut/reviewModel";
+import { useCleanCutStore } from "@/lib/cleanCut/store";
 import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
 import { formatExportEta } from "@/lib/exporter/mp4ExportSettings";
 import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
+import { AmbientBackdrop } from "./cleanCut/AmbientBackdrop";
+import { CleanCutHudPill } from "./cleanCut/CleanCutHud";
+import { CleanCutStage } from "./cleanCut/CleanCutStage";
+import { CleanCutWaveform } from "./cleanCut/CleanCutWaveform";
+import { groupMoments, pauseCuts } from "./cleanCut/moments";
+import { playbackSpans } from "./cleanCut/speechLevels";
+import { type ListenMode, useCleanCutGuide } from "./cleanCut/useCleanCutGuide";
+import { useCleanCutSession } from "./cleanCut/useCleanCutSession";
 import { ExportDialog } from "./ExportDialog";
 import { prepareLegacyProjectForOpen } from "./legacyProjectOpen";
 import { OpenProjectModal, UnsavedChangesModal, type UnsavedChoice } from "./Modals";
@@ -51,7 +66,7 @@ import { selectReviewPreviewRegions } from "./reviewPreviewRegions";
 import { isPrewarmedReview } from "./reviewPrewarm";
 import { TransactionRecoveryBanner } from "./TransactionRecoveryBanner";
 import { TransportBar } from "./TransportBar";
-import { useCompactReviewFit } from "./useCompactReviewFit";
+import { useCompactReviewFit, useReviewOutputRatio } from "./useCompactReviewFit";
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
 import { useRevealLatch } from "./useRevealLatch";
@@ -59,6 +74,23 @@ import { useTrialStartNotice } from "./useTrialStartNotice";
 import { FIRST_FRAME_TIMEOUT_MS, useVideoFirstFrame } from "./useVideoFirstFrame";
 
 const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
+/** Seconds of kept material a selected cut plays before it reaches the cut. */
+const CLEAN_CUT_LEAD_SEC = 2.5;
+/** Seconds a With or Without replay keeps playing after the cut before it stops. */
+const CLEAN_CUT_TAIL_SEC = 1.6;
+/** Seconds a loop plays after the cut before it starts over. */
+const CLEAN_CUT_LOOP_TAIL_SEC = 2.5;
+
+/** One replay across a cut: with it lifted, or without it, in the preview only. */
+interface Audition {
+	id: string;
+	mode: ListenMode;
+	rawStartSec: number;
+	rawEndSec: number;
+	/** Starts over at the end until stopped, instead of pausing. */
+	loop: boolean;
+	nonce: number;
+}
 
 /**
  * The workspace fields the main process persists across a recording. Review has no
@@ -81,6 +113,9 @@ interface SeekTarget {
 	isSource?: boolean;
 	requestId: number;
 }
+
+/** The trial length set in `electron/entitlements/config.ts`, for the badge ring. */
+const TRIAL_DAYS = 14;
 
 /**
  * The review window that opens after Stop: watch the take, add a clip, record again,
@@ -234,6 +269,61 @@ export function RecordingReviewShell() {
 	const { zoomRegions, speedRegions, cameraFullscreenRegions, trimRanges } = useMemo(
 		() => selectReviewPreviewRegions(document, projectId),
 		[document, projectId],
+	);
+
+	const { available: cleanCutAvailable } = useCleanCutSession(projectId, clips);
+	const cleanCutEnabled = useCleanCutStore((s) => s.enabled);
+	const cleanCutSnapshot = useCleanCutStore((s) => s.snapshot);
+	const cleanCutStrength = useCleanCutStore((s) => s.strength);
+	const cleanCutRestored = useCleanCutStore((s) => s.restored);
+	const cleanCutSelectedId = useCleanCutStore((s) => s.selectedId);
+	const cleanCutReady = cleanCutEnabled && cleanCutSnapshot.state === "ready";
+	const cleanCutReview = useMemo(
+		() =>
+			cleanCutReady
+				? buildCleanCutReview(cleanCutSnapshot, clips, cleanCutStrength, cleanCutRestored)
+				: null,
+		[cleanCutReady, cleanCutSnapshot, clips, cleanCutStrength, cleanCutRestored],
+	);
+	// The clean cut plays through the preview as extra trims; the document never sees them.
+	const previewTrimRanges = useMemo(
+		() => (cleanCutReview ? [...trimRanges, ...cleanCutReview.trimRanges] : trimRanges),
+		[cleanCutReview, trimRanges],
+	);
+	const [audition, setAudition] = useState<Audition | null>(null);
+	// The preview hands over a new element at a segment seam, so a replay reads the live one.
+	const videoElementRef = useRef<HTMLVideoElement | null>(null);
+	const auditionNonceRef = useRef(0);
+	// The preview alone hears a replay: the cut lifts or applies only for it, never for
+	// the toolbar runtime, the play bar or what Save writes.
+	const auditionTrimRanges = useMemo(() => {
+		if (!cleanCutReview || !audition) return previewTrimRanges;
+		const restored = new Set(cleanCutRestored);
+		if (audition.mode === "with") restored.add(audition.id);
+		else restored.delete(audition.id);
+		const lifted = buildCleanCutReview(cleanCutSnapshot, clips, cleanCutStrength, restored);
+		return [...trimRanges, ...lifted.trimRanges];
+	}, [
+		audition,
+		cleanCutReview,
+		cleanCutRestored,
+		cleanCutSnapshot,
+		clips,
+		cleanCutStrength,
+		previewTrimRanges,
+		trimRanges,
+	]);
+	const cleanCutExport = useMemo(
+		() =>
+			cleanCutReady
+				? toCleanCut(
+						cleanCutSnapshot.keep,
+						cleanCutSnapshot.regions,
+						cleanCutStrength,
+						cleanCutRestored,
+					)
+				: null,
+		[cleanCutReady, cleanCutSnapshot, cleanCutStrength, cleanCutRestored],
 	);
 
 	// Refresh the project list while the Recordings modal is open.
@@ -883,13 +973,38 @@ export function RecordingReviewShell() {
 	});
 
 	const reviewSegments = useMemo(
-		() => resolvePlaybackSegments(clips, trimRanges),
-		[clips, trimRanges],
+		() => resolvePlaybackSegments(clips, previewTrimRanges),
+		[clips, previewTrimRanges],
+	);
+	const uncutSegments = useMemo(
+		() => (cleanCutReview ? resolvePlaybackSegments(clips, trimRanges) : reviewSegments),
+		[cleanCutReview, clips, trimRanges, reviewSegments],
 	);
 	const reviewProjection = useMemo(
 		() => buildTimelinePlaybackProjection(reviewSegments, clips),
 		[reviewSegments, clips],
 	);
+	// The clean cut on the playback clock: seams where it jumps, and the speech that plays.
+	const toPlaybackSec = useCallback(
+		(rawSec: number) => rawTimeToPlaybackTime(rawSec, reviewProjection),
+		[reviewProjection],
+	);
+	const cleanCutMoments = useMemo(
+		() => (cleanCutReview ? groupMoments(cleanCutReview.strip, toPlaybackSec) : []),
+		[cleanCutReview, toPlaybackSec],
+	);
+	const cleanCutPauses = useMemo(
+		() => (cleanCutReview ? pauseCuts(cleanCutReview.strip) : []),
+		[cleanCutReview],
+	);
+	const cleanCutSpans = useMemo(() => {
+		if (!cleanCutReview) return [];
+		const cutIds = new Set<string>();
+		const restoredIds = new Set<string>();
+		for (const cut of cleanCutReview.strip)
+			(cut.restored ? restoredIds : cutIds).add(cut.region.id);
+		return playbackSpans(cleanCutSnapshot.words, clips, cutIds, restoredIds, toPlaybackSec);
+	}, [cleanCutReview, cleanCutSnapshot.words, clips, toPlaybackSec]);
 	// Keyboard seeking moves in playback time, like the scrub bar, so trimmed
 	// stretches are never a stop.
 	const seekPlayback = (next: (playbackSec: number, endSec: number) => number) => {
@@ -905,6 +1020,114 @@ export function RecordingReviewShell() {
 		const targetSec = Math.min(endSec, Math.max(0, next(nowSec, endSec)));
 		handleSeek(playbackTimeToRawTime(targetSec, reviewProjection, "after"));
 	};
+	// After Stop, review opens as a small player; it can grow into the full window.
+	const compactReview = useReviewWindowCompact(true);
+	const cleanCutPanelOpen = cleanCutEnabled && !compactReview && hasAsset;
+	const [cleanCutListOpen, setCleanCutListOpen] = useState(false);
+	const [cleanCutCollapsed, setCleanCutCollapsed] = useState(false);
+	useEffect(() => {
+		if (!cleanCutPanelOpen) setCleanCutListOpen(false);
+	}, [cleanCutPanelOpen]);
+	const seekBeforeRaw = (rawSec: number) => {
+		followPlayheadForInsertion();
+		const seamSec = rawTimeToPlaybackTime(rawSec, reviewProjection);
+		handleSeek(
+			playbackTimeToRawTime(Math.max(0, seamSec - CLEAN_CUT_LEAD_SEC), reviewProjection, "after"),
+		);
+	};
+	const selectCleanCut = (cut: ReviewCut) => {
+		useCleanCutStore.getState().select(cut.region.id);
+		seekBeforeRaw(cut.rawStartSec);
+	};
+	const stepCleanCut = (direction: -1 | 1) => {
+		if (!cleanCutReview) return;
+		const order =
+			useCleanCutStore.getState().view === "transcript"
+				? cleanCutReview.strip.filter((cut) => cut.region.kind !== "pause")
+				: cleanCutReview.cuts;
+		if (order.length === 0) return;
+		const selectedId = useCleanCutStore.getState().selectedId;
+		const index = order.findIndex((cut) => cut.region.id === selectedId);
+		const next =
+			index === -1
+				? direction > 0
+					? 0
+					: order.length - 1
+				: Math.min(order.length - 1, Math.max(0, index + direction));
+		selectCleanCut(order[next]);
+	};
+	videoElementRef.current = videoElement;
+	const auditionCut = (cut: ReviewCut, mode: ListenMode, loop: boolean) => {
+		auditionNonceRef.current += 1;
+		setAudition({
+			id: cut.region.id,
+			mode,
+			rawStartSec: cut.rawStartSec,
+			rawEndSec: cut.rawEndSec,
+			loop,
+			nonce: auditionNonceRef.current,
+		});
+	};
+	const stopAudition = () => {
+		setAudition(null);
+		videoElementRef.current?.pause();
+	};
+	const cleanCutGuide = useCleanCutGuide({
+		model: cleanCutReview,
+		resetKey: `${cleanCutSnapshot.projectId}:${cleanCutSnapshot.state}:${cleanCutSnapshot.regions.length}`,
+		active: cleanCutPanelOpen && !cleanCutCollapsed && !cleanCutListOpen,
+		select: (cut) => {
+			setAudition(null);
+			selectCleanCut(cut);
+		},
+		audition: auditionCut,
+		stop: stopAudition,
+	});
+	// A loop ends on its own when the viewer takes the playhead somewhere else.
+	const endLoopRef = useRef(cleanCutGuide.endLoop);
+	endLoopRef.current = cleanCutGuide.endLoop;
+	// A replay starts once the preview has the trim it asked for, plays across the cut and
+	// stops shortly after it, so each card is heard the same way.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: each replay runs once, by its nonce.
+	useEffect(() => {
+		if (!audition) return;
+		const projection = buildTimelinePlaybackProjection(
+			resolvePlaybackSegments(clips, auditionTrimRanges),
+			clips,
+		);
+		// Measured on the replay's own playback clock, so the cuts it jumps never count.
+		const seamSec = rawTimeToPlaybackTime(audition.rawStartSec, projection);
+		const fromSec = Math.max(0, seamSec - CLEAN_CUT_LEAD_SEC);
+		const fromRaw = playbackTimeToRawTime(fromSec, projection, "after");
+		const stopSec =
+			rawTimeToPlaybackTime(audition.rawEndSec, projection) +
+			(audition.loop ? CLEAN_CUT_LOOP_TAIL_SEC : CLEAN_CUT_TAIL_SEC);
+		handleSeek(fromRaw);
+		void videoElementRef.current?.play().catch(() => undefined);
+		let armed = false;
+		const unsubscribe = useProjectStore.subscribe((state) => {
+			const now = rawTimeToPlaybackTime(state.currentTimeSec, projection);
+			if (!armed) armed = now >= fromSec - 0.5 && now < stopSec;
+			else if (audition.loop && (now < fromSec - 1 || now > stopSec + 2)) {
+				// The viewer took the playhead elsewhere: the loop lets go.
+				unsubscribe();
+				endLoopRef.current();
+			} else if (audition.loop && now >= stopSec) {
+				armed = false;
+				handleSeek(fromRaw);
+				void videoElementRef.current?.play().catch(() => undefined);
+			} else if (now >= stopSec) {
+				unsubscribe();
+				videoElementRef.current?.pause();
+			}
+		});
+		return unsubscribe;
+	}, [audition?.nonce]);
+	const cleanCutKeys = cleanCutPanelOpen && cleanCutReview !== null;
+	const guideKeys = cleanCutKeys && !cleanCutListOpen;
+	// A minimised card takes no decisions: its cut is out of sight.
+	const cardHidden = guideKeys && cleanCutCollapsed;
+	const cardOpen = guideKeys && !cleanCutCollapsed && cleanCutGuide.current !== null;
 	useRecordingReviewShortcuts({
 		enabled: true,
 		isMac,
@@ -914,8 +1137,20 @@ export function RecordingReviewShell() {
 		onRecordings: handleOpenRecordings,
 		onPlayPause: () => {
 			followPlayheadForInsertion();
+			// With the card up, Space plays its cut again from the lead-in; pressed while
+			// playing it pauses, and ends a loop.
+			if (cardOpen && videoElementRef.current?.paused) {
+				cleanCutGuide.replay();
+				return;
+			}
+			if (cardOpen && cleanCutGuide.looping) {
+				cleanCutGuide.endLoop();
+				stopAudition();
+				return;
+			}
 			togglePlay();
 		},
+		onLoop: cardOpen ? cleanCutGuide.toggleLoop : undefined,
 		onStep: (direction, unit) =>
 			seekPlayback((sec) => sec + direction / (unit === "frame" ? 60 : 1)),
 		onClip: (direction) => {
@@ -925,20 +1160,54 @@ export function RecordingReviewShell() {
 		},
 		onEdge: (edge) => seekPlayback((_, endSec) => (edge === "start" ? 0 : endSec)),
 		onMute: () => usePreviewAudio.getState().toggleMuted(),
+		...(cleanCutKeys
+			? {
+					onCut: (direction) => {
+						if (cardHidden) return;
+						if (guideKeys) cleanCutGuide.step(direction);
+						else stepCleanCut(direction);
+					},
+					onRestore: () => {
+						if (cardHidden) return;
+						if (guideKeys) {
+							cleanCutGuide.restore();
+							return;
+						}
+						const id = useCleanCutStore.getState().selectedId;
+						if (id && cleanCutReview?.strip.some((cut) => cut.region.id === id))
+							useCleanCutStore.getState().toggleRestore(id);
+					},
+					onUndo: () => useCleanCutStore.getState().undo(),
+					onRedo: () => useCleanCutStore.getState().redo(),
+				}
+			: {}),
 	});
 
-	// After Stop, review opens as a small player; it can grow into the full window.
-	const compactReview = useReviewWindowCompact(true);
 	// Review is part of the recorder, which is always dark.
 	useEffect(() => {
 		applyTheme("dark");
 	}, []);
 	useCompactReviewFit(compactReview && hasAsset, document);
+	const videoRatio = useReviewOutputRatio(document);
 	useTrialStartNotice(entitlement, hasAsset, te("entitlement.trialStarted"));
+
+	const uncutTotalSec = uncutSegments.reduce(
+		(sum, segment) => sum + (segment.timelineEndSec - segment.timelineStartSec),
+		0,
+	);
+	const reviewTotalSec = reviewSegments.reduce(
+		(sum, segment) => sum + (segment.timelineEndSec - segment.timelineStartSec),
+		0,
+	);
+	const transportSegments = useMemo(() => {
+		if (!cleanCutReview) return reviewSegments;
+		const rawClipOf = new Map(reviewProjection.map((part) => [part.segment.id, part.rawClipId]));
+		return joinSegmentsByClip(reviewSegments, (segment) => rawClipOf.get(segment.id) ?? segment.id);
+	}, [cleanCutReview, reviewSegments, reviewProjection]);
 
 	const reviewMeta = useMemo(() => {
 		if (clips.length === 0) return null;
-		const totalSec = reviewSegments.reduce(
+		const totalSec = uncutSegments.reduce(
 			(sum, segment) => sum + (segment.timelineEndSec - segment.timelineStartSec),
 			0,
 		);
@@ -947,14 +1216,29 @@ export function RecordingReviewShell() {
 		return clips.length === 1
 			? te("recordingReview.metaOne", { duration })
 			: te("recordingReview.metaMany", { duration, count: clips.length });
-	}, [clips.length, reviewSegments, te]);
+	}, [clips.length, uncutSegments, te]);
 
 	return (
 		<div
 			className={styles.app}
 			data-compact-review={compactReview}
-			style={{ gridTemplateRows: "auto 1fr 0px" }}
+			data-cinema={cleanCutPanelOpen || undefined}
+			data-sheet={(cleanCutPanelOpen && cleanCutListOpen) || undefined}
+			data-card={
+				cleanCutPanelOpen
+					? cleanCutReady && cleanCutReview && !cleanCutCollapsed
+						? "open"
+						: "slim"
+					: undefined
+			}
+			style={
+				{
+					gridTemplateRows: "auto 1fr 0px",
+					"--video-ratio": videoRatio ?? 16 / 9,
+				} as CSSProperties
+			}
 		>
+			{cleanCutPanelOpen ? <AmbientBackdrop video={videoElement} /> : null}
 			<TransactionRecoveryBanner />
 			<RecordingReviewToolbar
 				isMac={isMac}
@@ -973,6 +1257,14 @@ export function RecordingReviewShell() {
 				busy={sourceExportBusy || isExportRunActive(exportRunPhase)}
 				percent={sourceExportBusy ? null : (exportRun?.percent ?? null)}
 				entitlementLabel={entitlementLabel}
+				trialDays={
+					entitlement.status === "trial-active" && !entitlement.reactivationRequired
+						? {
+								left: entitlement.trialDaysRemaining ?? 0,
+								total: Math.max(TRIAL_DAYS, entitlement.trialDaysRemaining ?? 0),
+							}
+						: null
+				}
 				onEntitlement={() => openEntitlement()}
 				onRecordings={handleOpenRecordings}
 				onSettings={handleOpenSettings}
@@ -981,10 +1273,26 @@ export function RecordingReviewShell() {
 				onSave={handleExport}
 				onOriginals={() => void openRecordingExport(true)}
 				onExpand={compactReview ? () => void window.electronAPI?.expandReviewWindow?.() : undefined}
+				cleanCut={
+					cleanCutAvailable
+						? {
+								enabled: cleanCutEnabled,
+								state: cleanCutSnapshot.state,
+								progress: cleanCutSnapshot.progress,
+								fromSec: uncutTotalSec,
+								toSec: cleanCutReview ? reviewTotalSec : null,
+								onToggle: () => useCleanCutStore.getState().setEnabled(!cleanCutEnabled, projectId),
+							}
+						: undefined
+				}
 			/>
 
-			<div className={styles.body} style={{ gridTemplateColumns: "1fr" }}>
-				<section className={styles.stage} aria-label={te("shell.previewStage")}>
+			<div className={styles.body} style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
+				<section
+					className={styles.stage}
+					aria-label={te("shell.previewStage")}
+					data-cinema={cleanCutPanelOpen || undefined}
+				>
 					<div className={styles.previewWorkspace} data-recording-only="true">
 						{!hasAsset ? (
 							<div className={styles.recordingEmpty}>
@@ -1011,7 +1319,7 @@ export function RecordingReviewShell() {
 								zoomRegions={zoomRegions}
 								speedRegions={speedRegions}
 								cameraFullscreenRegions={cameraFullscreenRegions}
-								trimRanges={trimRanges}
+								trimRanges={auditionTrimRanges}
 								seekTarget={seekTarget}
 								onTimeChange={handleTimeChange}
 								onSeek={handleSeek}
@@ -1039,12 +1347,23 @@ export function RecordingReviewShell() {
 							</div>
 						</div>
 						{hasAsset ? (
-							<div className={styles.reviewTransport}>
+							<div
+								className={styles.reviewTransport}
+								data-overview={
+									cleanCutReview === null
+										? undefined
+										: compactReview
+											? "compact"
+											: cleanCutPanelOpen
+												? "full"
+												: undefined
+								}
+							>
 								<TransportBar
 									variant="overlay"
 									playing={playing}
 									overrideTimeSec={null}
-									clips={reviewSegments}
+									clips={transportSegments}
 									toDisplayTime={(sec) => rawTimeToPlaybackTime(sec, reviewProjection)}
 									onTogglePlay={() => {
 										followPlayheadForInsertion();
@@ -1063,11 +1382,87 @@ export function RecordingReviewShell() {
 										handleSeek(playbackTimeToRawTime(sec, reviewProjection, "after"));
 									}}
 									insertionBoundarySec={reviewInsertionBoundary}
+									overview={
+										cleanCutReview && compactReview ? (
+											<CleanCutWaveform
+												compact
+												moments={cleanCutMoments}
+												pauses={cleanCutPauses}
+												spans={cleanCutSpans}
+												totalSec={reviewTotalSec}
+												selectedId={cleanCutSelectedId}
+												toPlaybackSec={toPlaybackSec}
+												onSelect={(cut) => {
+													setCleanCutCollapsed(false);
+													cleanCutGuide.show(cut);
+													void window.electronAPI?.expandReviewWindow?.();
+												}}
+											/>
+										) : cleanCutPanelOpen && cleanCutReview ? (
+											<CleanCutWaveform
+												moments={cleanCutMoments}
+												pauses={cleanCutPauses}
+												spans={cleanCutSpans}
+												totalSec={reviewTotalSec}
+												selectedId={cleanCutSelectedId}
+												toPlaybackSec={toPlaybackSec}
+												onSelect={(cut) => {
+													setCleanCutCollapsed(false);
+													cleanCutGuide.show(cut);
+												}}
+												onSeek={(sec) => {
+													followPlayheadForInsertion();
+													handleSeek(playbackTimeToRawTime(sec, reviewProjection, "after"));
+												}}
+											/>
+										) : undefined
+									}
 								/>
 							</div>
 						) : null}
 					</div>
 				</section>
+				{cleanCutPanelOpen ? (
+					<CleanCutStage
+						model={cleanCutReview}
+						moments={cleanCutMoments}
+						guide={cleanCutGuide}
+						clips={clips}
+						isMac={isMac}
+						collapsed={cleanCutCollapsed}
+						onCollapse={setCleanCutCollapsed}
+						fromSec={uncutTotalSec}
+						toSec={reviewTotalSec}
+						toPlaybackSec={toPlaybackSec}
+						listOpen={cleanCutListOpen}
+						onListOpen={setCleanCutListOpen}
+						saveDisabled={!hasAsset || entitlement.access === "read-only"}
+						onSave={handleExport}
+						onSeekRaw={(rawSec) => {
+							followPlayheadForInsertion();
+							handleSeek(
+								playbackTimeToRawTime(
+									rawTimeToPlaybackTime(rawSec, reviewProjection),
+									reviewProjection,
+									"after",
+								),
+							);
+						}}
+						onSelectCut={cleanCutGuide.show}
+					/>
+				) : null}
+				{compactReview && cleanCutReady && cleanCutReview ? (
+					<div className={styles.compactPill}>
+						<CleanCutHudPill
+							count={cleanCutReview.unsureCount}
+							basic={
+								cleanCutSnapshot.modelCheck === "unavailable" ||
+								cleanCutSnapshot.modelCheck === "failed"
+							}
+							onOpen={() => void window.electronAPI?.expandReviewWindow?.()}
+						/>
+					</div>
+				) : null}
 			</div>
 
 			<OpenProjectModal
@@ -1097,6 +1492,13 @@ export function RecordingReviewShell() {
 				document={document}
 				quickExport={quickExport}
 				onSourceBusyChange={handleSourceExportBusyChange}
+				cleanCut={cleanCutExport}
+				cleanCutStatus={
+					cleanCutEnabled &&
+					(cleanCutSnapshot.state === "working" || cleanCutSnapshot.state === "failed")
+						? cleanCutSnapshot.state
+						: null
+				}
 			/>
 		</div>
 	);

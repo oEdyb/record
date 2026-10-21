@@ -1,0 +1,30 @@
+/* Each digit is a 0–9 strip in a one-digit window, moved by its own height. */
+.rolling {
+	display: inline-flex;
+	font-variant-numeric: tabular-nums;
+}
+.column {
+	display: inline-block;
+	height: 1em;
+	overflow: hidden;
+	line-height: 1;
+}
+.strip {
+	display: flex;
+	flex-direction: column;
+	transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.strip > span {
+	height: 1em;
+	line-height: 1;
+}
+.sep {
+	display: inline-block;
+	line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.strip {
+		transition: none;
+	}
+}

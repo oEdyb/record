@@ -1,0 +1,134 @@
+/* What plays, drawn on the play bar. White is speech, steel is speech brought back.
+   Each block is a moment the clean cut closes: amber while unsure, a quiet fill once sure. */
+.wave {
+	position: relative;
+	width: 100%;
+	height: 38px;
+}
+.wave[data-compact] {
+	height: 14px;
+}
+
+.svg {
+	position: absolute;
+	inset: 0;
+	display: block;
+	overflow: visible;
+}
+.svg[data-seekable] {
+	cursor: pointer;
+}
+
+.bar {
+	fill: rgba(255, 255, 255, 0.3);
+	transition: fill 240ms var(--ease);
+}
+.bar[data-restored] {
+	fill: var(--editor-accent);
+}
+
+.tick {
+	fill: rgba(255, 255, 255, 0.2);
+}
+
+.block {
+	fill: rgba(255, 255, 255, 0.34);
+	transition:
+		fill 160ms var(--ease),
+		stroke 160ms var(--ease);
+}
+.block[data-unsure] {
+	fill: var(--warn);
+}
+.block[data-restored] {
+	fill: none;
+	stroke: var(--editor-accent);
+	stroke-width: 1;
+}
+.block[data-hover] {
+	fill: rgba(255, 255, 255, 0.6);
+}
+.block[data-unsure][data-hover] {
+	fill: color-mix(in srgb, var(--warn) 80%, white);
+}
+.block[data-selected] {
+	stroke: #f5f5f7;
+	stroke-width: 1.5;
+	paint-order: stroke;
+}
+
+/* A block's click target: the lane over it, never narrower than 12 px. */
+.target {
+	position: absolute;
+	top: -2px;
+	height: 18px;
+	padding: 0;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	cursor: pointer;
+}
+.target:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 0;
+}
+
+.tip {
+	position: absolute;
+	bottom: calc(100% + 4px);
+	z-index: 2;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 9px;
+	border-radius: 8px;
+	background: rgba(24, 24, 29, 0.86);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
+	box-shadow:
+		0 8px 24px rgba(0, 0, 0, 0.45),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+	color: var(--fg-emphasis);
+	font: 500 12px/1 var(--font-body);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	transform: translateX(-50%);
+	pointer-events: none;
+	animation: tipIn 140ms var(--ease) both;
+}
+.wave[data-compact] .tip {
+	bottom: calc(100% + 2px);
+}
+.tipDot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--warn);
+}
+@keyframes tipIn {
+	from {
+		opacity: 0;
+		transform: translate(-50%, 3px);
+	}
+}
+
+.playhead {
+	position: absolute;
+	top: 14px;
+	bottom: 0;
+	width: 1.5px;
+	border-radius: 1px;
+	background: rgba(255, 255, 255, 0.9);
+	transform: translateX(-50%);
+	pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.bar,
+	.block {
+		transition: none;
+	}
+	.tip {
+		animation: none;
+	}
+}

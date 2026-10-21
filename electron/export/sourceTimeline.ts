@@ -19,6 +19,23 @@ export interface HandoffSpan {
 	timelineEndSec: number;
 }
 
+export type MarkerColor =
+	| "RED"
+	| "ORANGE"
+	| "YELLOW"
+	| "GREEN"
+	| "CYAN"
+	| "BLUE"
+	| "PURPLE"
+	| "PINK";
+
+export interface TimelineMarker {
+	timelineSec: number;
+	name: string;
+	comment: string;
+	color: MarkerColor;
+}
+
 export const SOURCE_TIMELINE_RATE = 60;
 /**
  * Separate writers end a few frames apart: audio flushes its last buffer and the camera
@@ -47,6 +64,17 @@ function gap(duration: number) {
 	};
 }
 
+function marker(entry: TimelineMarker, mediaFrame: number) {
+	return {
+		OTIO_SCHEMA: "Marker.2",
+		name: entry.name,
+		marked_range: range(mediaFrame, 1),
+		color: entry.color,
+		comment: entry.comment,
+		metadata: {},
+	};
+}
+
 function clip(
 	file: string,
 	start: number,
@@ -69,7 +97,7 @@ function clip(
 		},
 		active_media_reference_key: "DEFAULT_MEDIA",
 		effects: [],
-		markers: [],
+		markers: [] as ReturnType<typeof marker>[],
 		metadata: {
 			klippt: {
 				clipId: span.id,
@@ -87,7 +115,13 @@ function clip(
 type Item = ReturnType<typeof gap> | ReturnType<typeof clip>;
 type TrackSource = { file: string; durationSec: number | null; offsetSec: number };
 
-export function buildSourceTimeline(title: string, sources: HandoffSource[], spans: HandoffSpan[]) {
+/** Markers sit on the clips of one host track, in that clip's media time, the way Resolve reads them. */
+export function buildSourceTimeline(
+	title: string,
+	sources: HandoffSource[],
+	spans: HandoffSpan[],
+	markers: TimelineMarker[] = [],
+) {
 	const sourceById = new Map(sources.map((source) => [source.assetId, source]));
 	const frame = (sec: number) => Math.round(sec * SOURCE_TIMELINE_RATE + 1e-8);
 	if (!spans.some((span) => frame(span.timelineEndSec) > frame(span.timelineStartSec)))
@@ -95,12 +129,15 @@ export function buildSourceTimeline(title: string, sources: HandoffSource[], spa
 			"The kept edit is shorter than one timeline frame. Keep a longer span to export.",
 		);
 	const warnings = new Set<string>();
+	const markerFrames = markers.map((entry) => ({ entry, frame: frame(entry.timelineSec) }));
 	const track = (
 		name: string,
 		kind: "Video" | "Audio",
 		select: (source: HandoffSource) => TrackSource | undefined,
+		hostsMarkers = false,
 	) => {
 		const children: Item[] = [];
+		let position = 0;
 		for (const span of spans) {
 			const duration = frame(span.timelineEndSec) - frame(span.timelineStartSec);
 			if (duration <= 0) {
@@ -112,6 +149,7 @@ export function buildSourceTimeline(title: string, sources: HandoffSource[], spa
 			const media = select(source);
 			if (!media) {
 				children.push(gap(duration));
+				position += duration;
 				continue;
 			}
 			if (media.durationSec === null || !Number.isFinite(media.durationSec)) {
@@ -125,9 +163,17 @@ export function buildSourceTimeline(title: string, sources: HandoffSource[], spa
 			const sourceStart = Math.max(0, start);
 			const length = Math.max(0, Math.min(duration - lead, available - sourceStart));
 			if (lead) children.push(gap(lead));
-			if (length)
-				children.push(clip(media.file, sourceStart, length, available, span, media.offsetSec));
+			if (length) {
+				const piece = clip(media.file, sourceStart, length, available, span, media.offsetSec);
+				const from = position + lead;
+				if (hostsMarkers)
+					for (const { entry, frame: at } of markerFrames)
+						if (at >= from && at < from + length)
+							piece.markers.push(marker(entry, sourceStart + at - from));
+				children.push(piece);
+			}
 			if (duration > lead + length) children.push(gap(duration - lead - length));
+			position += duration;
 			const missingSec = (duration - length) / SOURCE_TIMELINE_RATE;
 			if (missingSec > SOURCE_GAP_WARNING_SEC)
 				warnings.add(
@@ -156,14 +202,17 @@ export function buildSourceTimeline(title: string, sources: HandoffSource[], spa
 				}
 			: undefined;
 	};
+	const micHostsMarkers = sources.some((source) =>
+		source.screen.audio.some((item) => item.role === "microphone"),
+	);
 	const tracks = [
-		track("Screen", "Video", (source) => ({ ...source.screen, offsetSec: 0 })),
+		track("Screen", "Video", (source) => ({ ...source.screen, offsetSec: 0 }), !micHostsMarkers),
 		track("Camera", "Video", (source) =>
 			source.camera
 				? { ...source.camera, offsetSec: (source.camera.startMs + source.camera.offsetMs) / 1000 }
 				: undefined,
 		),
-		track("Microphone", "Audio", audio("microphone")),
+		track("Microphone", "Audio", audio("microphone"), micHostsMarkers),
 		track("System audio", "Audio", audio("system")),
 	];
 	if (sources.some((source) => source.screen.audio.some((item) => item.role === "audio")))

@@ -18,6 +18,7 @@ import { addNativeExportPaths } from "../diagnostics/nativeExportPaths";
 import type { WorkloadTelemetryService } from "../diagnostics/workloadTelemetry";
 import { EntitlementRequiredError } from "../entitlements/service";
 import { ExportTransactionError } from "../export/atomicExport";
+import { parseCleanCut } from "../export/cleanCutSpans";
 import { exportSourceHandoff } from "../export/sourceHandoff";
 import {
 	type CursorTelemetryLoadResult,
@@ -642,6 +643,7 @@ export function registerNativeBridgeHandlers(
 							return createSuccessResponse(requestId, await aiEditionService.listProjects());
 						case "document.exportSources": {
 							const document = documentSchema.parse(request.payload?.document);
+							const cleanCut = parseCleanCut(request.payload?.cleanCut);
 							const { dialog, BrowserWindow } = await import("electron");
 							const options: Electron.OpenDialogOptions = {
 								title: "Export source files",
@@ -659,6 +661,7 @@ export function registerNativeBridgeHandlers(
 									document,
 									selected.filePaths[0],
 									(source) => context.resolveApprovedRendererMediaPath?.(source) ?? null,
+									cleanCut,
 								),
 							);
 						}

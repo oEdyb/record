@@ -193,4 +193,49 @@ describe("recording review shortcuts", () => {
 		key("s", true);
 		expect(calls.onSave).not.toHaveBeenCalled();
 	});
+	it("steps clean cuts with the up and down arrows, restores with R and undoes with the command key", () => {
+		const calls = {
+			...actions(),
+			onCut: vi.fn(),
+			onRestore: vi.fn(),
+			onUndo: vi.fn(),
+			onRedo: vi.fn(),
+		};
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		key("ArrowDown");
+		key("ArrowUp");
+		key("r");
+		key("z", true);
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, shiftKey: true }));
+		expect(calls.onCut.mock.calls).toEqual([[1], [-1]]);
+		expect(calls.onClip).not.toHaveBeenCalled();
+		expect(calls.onRestore).toHaveBeenCalledOnce();
+		expect(calls.onUndo).toHaveBeenCalledOnce();
+		expect(calls.onRedo).toHaveBeenCalledOnce();
+	});
+	it("keeps clip jumps and leaves R and undo alone without the clean cut panel", () => {
+		const calls = actions();
+		renderHook(() => useRecordingReviewShortcuts(calls));
+		key("ArrowDown");
+		const restore = new KeyboardEvent("keydown", { key: "r", cancelable: true });
+		window.dispatchEvent(restore);
+		const undo = new KeyboardEvent("keydown", { key: "z", metaKey: true, cancelable: true });
+		window.dispatchEvent(undo);
+		expect(calls.onClip).toHaveBeenCalledWith(1);
+		expect(restore.defaultPrevented).toBe(false);
+		expect(undo.defaultPrevented).toBe(false);
+	});
+	it("loops the clean cut card's cut on L while the card is up, and steps on L without it", () => {
+		const onLoop = vi.fn();
+		const calls = { ...actions(), onLoop };
+		const { rerender } = renderHook((options) => useRecordingReviewShortcuts(options), {
+			initialProps: calls as ReturnType<typeof actions> & { onLoop?: () => void },
+		});
+		key("l");
+		expect(onLoop).toHaveBeenCalledOnce();
+		expect(calls.onStep).not.toHaveBeenCalled();
+		rerender({ ...calls, onLoop: undefined });
+		key("l");
+		expect(calls.onStep).toHaveBeenCalledWith(1, "second");
+	});
 });

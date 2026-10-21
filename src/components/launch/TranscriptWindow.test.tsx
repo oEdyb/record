@@ -11,8 +11,8 @@ type Snapshot = Awaited<ReturnType<Window["electronAPI"]["getTranscriptSnapshot"
 const idle: Snapshot = {
 	recordingId: 7,
 	clips: [
-		{ index: 0, durationMs: 23_000, text: "First we need some data.", error: null },
-		{ index: 3, durationMs: 5_000, text: "Then we clean it up.", error: null },
+		{ index: 0, durationMs: 23_000, text: "First we need some data.", words: null, error: null },
+		{ index: 3, durationMs: 5_000, text: "Then we clean it up.", words: null, error: null },
 	],
 	status: "idle",
 	progress: null,
@@ -99,7 +99,7 @@ describe("TranscriptWindow", () => {
 		expect(
 			transcriptClipboardText({
 				...idle,
-				clips: [...idle.clips, { index: 5, durationMs: 1, text: null, error: "x" }],
+				clips: [...idle.clips, { index: 5, durationMs: 1, text: null, words: null, error: "x" }],
 			}),
 		).toBe("First we need some data.\n\nThen we clean it up.");
 	});

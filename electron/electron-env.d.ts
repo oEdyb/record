@@ -106,6 +106,8 @@ interface Window {
 		onTranscriptUpdated: (
 			callback: (snapshot: import("./transcript/liveTranscript").TranscriptSnapshot) => void,
 		) => () => void;
+		/** Clean cut analysis for the review window; absent until the main process provides it. */
+		cleanCut?: import("../src/lib/cleanCut/types").CleanCutBridge;
 		setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
 		onNotesWindowBoundsChanged: (
 			callback: (bounds: { x: number; y: number; width: number; height: number }) => void,

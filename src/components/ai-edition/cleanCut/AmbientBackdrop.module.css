@@ -1,0 +1,28 @@
+/* Full bleed behind the whole window, title bar included. A soft shade at the top keeps
+   the toolbar legible on a bright frame. */
+.layer {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+.layer::after {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto;
+	height: 140px;
+	background: linear-gradient(to bottom, rgba(5, 5, 6, 0.28), rgba(5, 5, 6, 0));
+}
+.ambient {
+	position: absolute;
+	inset: -8%;
+	width: 116%;
+	height: 116%;
+	filter: blur(64px) saturate(1.5) brightness(0.55);
+	opacity: 0;
+	transition: opacity 600ms var(--ease);
+}
+.ambient[data-lit] {
+	opacity: 0.7;
+}

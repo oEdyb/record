@@ -155,3 +155,91 @@ it.each([
 	expect(screen.getByRole("button", { name: "exportDialog.saving" })).toBeEnabled();
 	expect(screen.queryByText("recordingReview.saving")).toBeNull();
 });
+
+describe("clean cut toggle", () => {
+	it("shows Clean cut beside Save and reports its progress, result and failure", () => {
+		const toggle = vi.fn();
+		const cut = {
+			enabled: false,
+			state: "off" as const,
+			progress: null,
+			fromSec: 1437,
+			toSec: null,
+			onToggle: toggle,
+		};
+		const view = render(<RecordingReviewToolbar {...props()} meta="23:57 total" cleanCut={cut} />);
+		const button = screen.getByRole("button", { name: "cleanCut.toggle" });
+		expect(button).toHaveAttribute("aria-pressed", "false");
+		expect(button.nextElementSibling).toHaveTextContent("recordingReview.save");
+		fireEvent.click(button);
+		expect(toggle).toHaveBeenCalledOnce();
+		expect(screen.getByText("23:57 total")).toBeInTheDocument();
+
+		view.rerender(
+			<RecordingReviewToolbar
+				{...props()}
+				cleanCut={{ ...cut, enabled: true, state: "working", progress: 0.42 }}
+			/>,
+		);
+		expect(screen.getByRole("button", { name: "cleanCut.toggle" })).toHaveAttribute(
+			"aria-busy",
+			"true",
+		);
+		expect(screen.getByText("cleanCut.findingPercent")).toBeInTheDocument();
+
+		view.rerender(
+			<RecordingReviewToolbar
+				{...props()}
+				cleanCut={{
+					...cut,
+					enabled: true,
+					state: "ready",
+					progress: 1,
+					toSec: 894,
+				}}
+			/>,
+		);
+		expect(screen.getByText("cleanCut.ready")).toBeInTheDocument();
+		expect(screen.getByText("23:57")).toBeInTheDocument();
+		expect(screen.getByRole("timer", { name: "14:54" })).toBeInTheDocument();
+
+		view.rerender(
+			<RecordingReviewToolbar {...props()} cleanCut={{ ...cut, enabled: true, state: "failed" }} />,
+		);
+		expect(screen.getByText("cleanCut.failed")).toBeInTheDocument();
+	});
+	it("keeps Return from turning Clean cut off while the review is open", () => {
+		const cut = {
+			enabled: true,
+			state: "ready" as const,
+			progress: 1,
+			fromSec: 1437,
+			toSec: 894,
+			onToggle: vi.fn(),
+		};
+		const view = render(<RecordingReviewToolbar {...props()} cleanCut={cut} />);
+		const button = screen.getByRole("button", { name: "cleanCut.toggle" });
+		expect(fireEvent.keyDown(button, { key: "Enter" })).toBe(false);
+		view.rerender(<RecordingReviewToolbar {...props()} cleanCut={{ ...cut, enabled: false }} />);
+		expect(
+			fireEvent.keyDown(screen.getByRole("button", { name: "cleanCut.toggle" }), { key: "Enter" }),
+		).toBe(true);
+	});
+	it("hides Clean cut until there is a recording", () => {
+		render(
+			<RecordingReviewToolbar
+				{...props()}
+				canSave={false}
+				cleanCut={{
+					enabled: false,
+					state: "off",
+					progress: null,
+					fromSec: 0,
+					toSec: null,
+					onToggle: vi.fn(),
+				}}
+			/>,
+		);
+		expect(screen.queryByRole("button", { name: "cleanCut.toggle" })).toBeNull();
+	});
+});

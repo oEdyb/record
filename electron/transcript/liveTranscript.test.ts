@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,22 +44,45 @@ beforeEach(async () => {
 	transcribe = vi.fn(async ({ id }: { id: string }) => ({
 		id,
 		text: `text ${id}`,
+		words: [{ word: id, startSec: 0.1, endSec: 0.4, confidence: 0.9 }],
 		detectedLanguage: "en",
 	}));
 });
 
 describe("LiveTranscriptService", () => {
-	it("transcribes committed clips in order, reports progress, and caches the text on disk", async () => {
+	it("transcribes committed clips in order, reports progress, and caches text and word times on disk", async () => {
 		const service = makeService();
 		const result = await service.refresh();
 
 		expect(result.status).toBe("idle");
 		expect(result.clips.map((entry) => entry.text)).toEqual(["text clip-0", "text clip-1"]);
+		expect(result.clips[1]?.words).toEqual([
+			{ word: "clip-1", startSec: 0.1, endSec: 0.4, confidence: 0.9 },
+		]);
 		expect(extract).toHaveBeenCalledTimes(2);
 		expect(extract.mock.calls[0]?.[1]).toBe("/rec/clip-0-microphone.mov");
 		expect(snapshots.map((s) => s.progress)).toContainEqual({ done: 1, total: 2 });
 		const cached = JSON.parse(await readFile(path.join(dir, "cache", "7.json"), "utf8"));
-		expect(Object.values(cached)).toEqual(["text clip-0", "text clip-1"]);
+		expect(Object.values(cached).map((entry) => (entry as { text: string }).text)).toEqual([
+			"text clip-0",
+			"text clip-1",
+		]);
+	});
+
+	it("reads a text-only cache from before word times without transcribing again", async () => {
+		await mkdir(path.join(dir, "cache"), { recursive: true });
+		await writeFile(
+			path.join(dir, "cache", "7.json"),
+			JSON.stringify({
+				"7:0:/rec/clip-0-microphone.mov": "old clip-0",
+				"7:1:/rec/clip-1-microphone.mov": "old clip-1",
+			}),
+		);
+		const result = await makeService().refresh();
+
+		expect(transcribe).not.toHaveBeenCalled();
+		expect(result.clips.map((entry) => entry.text)).toEqual(["old clip-0", "old clip-1"]);
+		expect(result.clips.map((entry) => entry.words)).toEqual([null, null]);
 	});
 
 	it("only transcribes clips it has not seen on the next refresh", async () => {
@@ -80,6 +103,7 @@ describe("LiveTranscriptService", () => {
 
 		expect(transcribe).not.toHaveBeenCalled();
 		expect(result.clips.map((entry) => entry.text)).toEqual(["text clip-0", "text clip-1"]);
+		expect(result.clips[0]?.words?.[0]?.word).toBe("clip-0");
 	});
 
 	it("refuses to run while a take is live and not paused", async () => {
@@ -101,7 +125,9 @@ describe("LiveTranscriptService", () => {
 		expect(result.status).toBe("blocked");
 		expect(result.clips.map((entry) => entry.text)).toEqual(["text clip-0", null]);
 		const cached = JSON.parse(await readFile(path.join(dir, "cache", "7.json"), "utf8"));
-		expect(Object.values(cached)).toEqual(["text clip-0"]);
+		expect(Object.values(cached).map((entry) => (entry as { text: string }).text)).toEqual([
+			"text clip-0",
+		]);
 	});
 
 	it("keeps the last take after the recorder forgets it", async () => {

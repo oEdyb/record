@@ -1,5 +1,5 @@
 import { Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, type ReactNode, useCallback, useEffect, useRef } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
@@ -24,6 +24,8 @@ interface TransportBarProps {
 	variant?: "bar" | "overlay";
 	/** Where a new clip would go for a raw playhead time; shows a marker while paused. */
 	insertionBoundarySec?: (rawPlayheadSec: number) => number;
+	/** Drawn on the play bar, edge to edge with its track, e.g. the clean cut's waveform. */
+	overview?: ReactNode;
 }
 
 // ponytail: lives in the timeline header now (not under the preview canvas)
@@ -39,6 +41,7 @@ export const TransportBar = memo(function TransportBar({
 	onSeek,
 	variant = "bar",
 	insertionBoundarySec,
+	overview,
 }: TransportBarProps) {
 	const te = useScopedT("editor");
 	// The timecode and the scrub thumb are animated during playback, so they
@@ -242,6 +245,7 @@ export const TransportBar = memo(function TransportBar({
 				/>
 			</div>
 			<div className={styles.scrubBar}>
+				{overview ? <div className={styles.scrubOverview}>{overview}</div> : null}
 				<div className={styles.scrubTrack}>
 					<div
 						ref={progressElRef}

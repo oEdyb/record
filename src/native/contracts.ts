@@ -345,6 +345,8 @@ export interface SourceHandoffResult {
 	directory?: string;
 	manifestPath?: string;
 	timelinePath?: string;
+	/** The clean cut's second timeline, when Save included one. */
+	cleanCutPath?: string | null;
 	sourceCount?: number;
 	warnings?: string[];
 }
@@ -537,7 +539,8 @@ export type NativeBridgeRequest =
 	| {
 			domain: "aiEdition";
 			action: "document.exportSources";
-			payload: { document: unknown };
+			/** `cleanCut` adds the review's clean cut as a second timeline. */
+			payload: { document: unknown; cleanCut?: import("@/lib/cleanCut/types").CleanCutExport };
 			requestId?: string;
 	  }
 	| {

@@ -247,6 +247,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("transcript-updated", listener);
 		return () => ipcRenderer.removeListener("transcript-updated", listener);
 	},
+	cleanCut: {
+		start: (projectId: string, strength: "gentle" | "clean", document: unknown): Promise<void> =>
+			ipcRenderer.invoke("clean-cut-start", { projectId, strength, document }),
+		cancel: (): Promise<void> => ipcRenderer.invoke("clean-cut-cancel"),
+		onSnapshot: (callback: (snapshot: unknown) => void) => {
+			const listener = (_event: unknown, snapshot: unknown) => callback(snapshot);
+			ipcRenderer.on("clean-cut-snapshot", listener);
+			return () => ipcRenderer.removeListener("clean-cut-snapshot", listener);
+		},
+	},
 	setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => {
 		ipcRenderer.send("notes-window-set-bounds", bounds);
 	},
