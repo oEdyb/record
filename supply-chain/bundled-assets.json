@@ -117,7 +117,7 @@
 		},
 		{
 			"id": "legacy-marketing-assets",
-			"paths": ["public/demo.gif", "public/openscreen.png", "public/vite.svg"],
+			"paths": ["public/openscreen.png", "public/vite.svg"],
 			"license": "LicenseRef-Not-Part-Of-Product",
 			"reason": "Repository and documentation assets are explicitly excluded from paid application packages."
 		}

@@ -8121,30 +8121,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "@anthropic-ai/sdk",
-			"version": "0.103.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@anthropic-ai/sdk/-/sdk-0.103.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "@babel/runtime",
 			"version": "7.29.2",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/@babel/runtime/-/runtime-7.29.2.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@cfworker/json-schema",
-			"version": "4.1.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@cfworker/json-schema/-/json-schema-4.1.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -8245,96 +8225,6 @@
 			"version": "0.3.31",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/anthropic",
-			"version": "1.5.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/anthropic/-/anthropic-1.5.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/core",
-			"version": "1.2.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/core/-/core-1.2.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/langgraph-checkpoint",
-			"version": "1.1.3",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/langgraph-checkpoint/-/langgraph-checkpoint-1.1.3.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/langgraph-sdk",
-			"version": "1.9.25",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/langgraph-sdk/-/langgraph-sdk-1.9.25.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/langgraph",
-			"version": "1.4.7",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/langgraph/-/langgraph-1.4.7.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/mistralai",
-			"version": "1.2.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/mistralai/-/mistralai-1.2.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/openai",
-			"version": "1.5.3",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/openai/-/openai-1.5.3.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@langchain/protocol",
-			"version": "0.0.18",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@langchain/protocol/-/protocol-0.0.18.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@mistralai/mistralai",
-			"version": "2.2.1",
-			"license": "Apache-2.0",
-			"source": "https://registry.npmjs.org/@mistralai/mistralai/-/mistralai-2.2.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -8761,26 +8651,6 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "@stablelib/base64",
-			"version": "1.0.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@stablelib/base64/-/base64-1.0.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@standard-schema/spec",
-			"version": "1.1.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "@tiptap/core",
 			"version": "3.31.4",
 			"license": "MIT",
@@ -9081,16 +8951,6 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "@types/json-schema",
-			"version": "7.0.15",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@types/json-schema/-/json-schema-7.0.15.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "@types/prop-types",
 			"version": "15.7.15",
 			"license": "MIT",
@@ -9125,66 +8985,6 @@
 			"version": "0.0.6",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/@types/use-sync-external-store/-/use-sync-external-store-0.0.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/color-convert",
-			"version": "2.9.6",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/color-convert/-/color-convert-2.9.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/react-color-alpha",
-			"version": "2.9.6",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-color-alpha/-/react-color-alpha-2.9.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/react-color-colorful",
-			"version": "2.9.6",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-color-colorful/-/react-color-colorful-2.9.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/react-color-hue",
-			"version": "2.9.6",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-color-hue/-/react-color-hue-2.9.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/react-color-saturation",
-			"version": "2.9.6",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-color-saturation/-/react-color-saturation-2.9.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "@uiw/react-drag-event-interactive",
-			"version": "2.9.6",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/@uiw/react-drag-event-interactive/-/react-drag-event-interactive-2.9.6.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9235,16 +9035,6 @@
 			"version": "1.2.6",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/aria-hidden/-/aria-hidden-1.2.6.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "base64-js",
-			"version": "1.5.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9402,9 +9192,9 @@
 		{
 			"ecosystem": "npm",
 			"name": "electron",
-			"version": "44.1.0",
+			"version": "44.9.1",
 			"license": "MIT",
-			"source": "https://registry.npmjs.org/electron/-/electron-44.1.0.tgz",
+			"source": "https://registry.npmjs.org/electron/-/electron-44.9.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9415,26 +9205,6 @@
 			"version": "1.3.0",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "eventemitter3",
-			"version": "4.0.7",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/eventemitter3/-/eventemitter3-4.0.7.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "eventemitter3",
-			"version": "5.0.4",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/eventemitter3/-/eventemitter3-5.0.4.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9455,16 +9225,6 @@
 			"version": "3.3.3",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/fast-glob/-/fast-glob-3.3.3.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "fast-sha256",
-			"version": "1.3.0",
-			"license": "Unlicense",
-			"source": "https://registry.npmjs.org/fast-sha256/-/fast-sha256-1.3.0.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9495,16 +9255,6 @@
 			"version": "7.1.1",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/fill-range/-/fill-range-7.1.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "framer-motion",
-			"version": "12.38.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/framer-motion/-/framer-motion-12.38.0.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9641,16 +9391,6 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "is-network-error",
-			"version": "1.3.2",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/is-network-error/-/is-network-error-1.3.2.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "is-number",
 			"version": "7.0.0",
 			"license": "MIT",
@@ -9681,16 +9421,6 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "js-tiktoken",
-			"version": "1.0.21",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/js-tiktoken/-/js-tiktoken-1.0.21.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "js-tokens",
 			"version": "4.0.0",
 			"license": "MIT",
@@ -9711,40 +9441,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "json-schema-to-ts",
-			"version": "3.1.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/json-schema-to-ts/-/json-schema-to-ts-3.1.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "jsonfile",
 			"version": "6.2.1",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/jsonfile/-/jsonfile-6.2.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "langchain",
-			"version": "1.5.2",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/langchain/-/langchain-1.5.2.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "langsmith",
-			"version": "0.7.15",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/langsmith/-/langsmith-0.7.15.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9861,50 +9561,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "motion-dom",
-			"version": "12.38.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/motion-dom/-/motion-dom-12.38.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "motion-utils",
-			"version": "12.36.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/motion-utils/-/motion-utils-12.36.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "motion",
-			"version": "12.38.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/motion/-/motion-12.38.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "ms",
 			"version": "2.1.3",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "mustache",
-			"version": "4.2.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/mustache/-/mustache-4.2.0.tgz",
 			"scopes": [
 				"required"
 			]
@@ -9961,80 +9621,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "openai",
-			"version": "6.45.0",
-			"license": "Apache-2.0",
-			"source": "https://registry.npmjs.org/openai/-/openai-6.45.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "orderedmap",
 			"version": "2.1.1",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/orderedmap/-/orderedmap-2.1.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "p-finally",
-			"version": "1.0.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/p-finally/-/p-finally-1.0.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "p-queue",
-			"version": "6.6.2",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/p-queue/-/p-queue-6.6.2.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "p-queue",
-			"version": "9.3.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/p-queue/-/p-queue-9.3.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "p-retry",
-			"version": "7.1.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/p-retry/-/p-retry-7.1.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "p-timeout",
-			"version": "3.2.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/p-timeout/-/p-timeout-3.2.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "p-timeout",
-			"version": "7.0.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/p-timeout/-/p-timeout-7.0.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10165,16 +9755,6 @@
 			"version": "8.5.25",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/postcss/-/postcss-8.5.25.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "prop-types",
-			"version": "15.8.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/prop-types/-/prop-types-15.8.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10321,50 +9901,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "re-resizable",
-			"version": "6.11.2",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/re-resizable/-/re-resizable-6.11.2.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "react-dom",
 			"version": "18.3.1",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "react-draggable",
-			"version": "4.5.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/react-draggable/-/react-draggable-4.5.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "react-icons",
-			"version": "5.6.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/react-icons/-/react-icons-5.6.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "react-is",
-			"version": "16.13.1",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/react-is/-/react-is-16.13.1.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10385,16 +9925,6 @@
 			"version": "2.7.2",
 			"license": "MIT",
 			"source": "https://registry.npmjs.org/react-remove-scroll/-/react-remove-scroll-2.7.2.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "react-rnd",
-			"version": "10.5.3",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/react-rnd/-/react-rnd-10.5.3.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10531,16 +10061,6 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "standardwebhooks",
-			"version": "1.0.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/standardwebhooks/-/standardwebhooks-1.0.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "sucrase",
 			"version": "3.35.1",
 			"license": "MIT",
@@ -10641,30 +10161,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "ts-algebra",
-			"version": "2.0.0",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/ts-algebra/-/ts-algebra-2.0.0.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "ts-interface-checker",
 			"version": "0.1.13",
 			"license": "Apache-2.0",
 			"source": "https://registry.npmjs.org/ts-interface-checker/-/ts-interface-checker-0.1.13.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "tslib",
-			"version": "2.6.2",
-			"license": "0BSD",
-			"source": "https://registry.npmjs.org/tslib/-/tslib-2.6.2.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10751,30 +10251,10 @@
 		},
 		{
 			"ecosystem": "npm",
-			"name": "ws",
-			"version": "8.21.3",
-			"license": "MIT",
-			"source": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
 			"name": "yaml",
 			"version": "2.8.3",
 			"license": "ISC",
 			"source": "https://registry.npmjs.org/yaml/-/yaml-2.8.3.tgz",
-			"scopes": [
-				"required"
-			]
-		},
-		{
-			"ecosystem": "npm",
-			"name": "zod-to-json-schema",
-			"version": "3.25.2",
-			"license": "ISC",
-			"source": "https://registry.npmjs.org/zod-to-json-schema/-/zod-to-json-schema-3.25.2.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10859,8 +10339,8 @@
 		{
 			"path": "LICENSES.chromium.html",
 			"sourcePath": "node_modules/electron/dist/LICENSES.chromium.html",
-			"size": 20111206,
-			"sha256": "4cbde8e3e7b29f451c78a44491fb32e2202884826fef47786a9cda5a36110525"
+			"size": 20115518,
+			"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
 		},
 		{
 			"path": "third-party-licenses/Cargo-Evidence.json",
@@ -13161,10 +12641,7 @@
 			{
 				"id": "legacy-marketing-assets",
 				"paths": [
-					"public/demo.gif",
 					"public/openscreen.png",
-					"public/preview3.png",
-					"public/preview4.png",
 					"public/vite.svg"
 				],
 				"license": "LicenseRef-Not-Part-Of-Product",
