@@ -20,7 +20,7 @@
 		"electron/native/whisper-stt/CMakeLists.txt": "26f955915de272fc13bc4ae9a0366d28605472f9deeaf23b0017c330b315b959",
 		"electron/stt/modelManager.ts": "e1de3254b30cc529d6b4375ec5e3a9c3a758aa179d77c345f14b7f7042643f87",
 		"scripts/ffmpeg-pins.mjs": "85225f1eb8abc9374bb4cdfe36b30dc0c236d8f93757cab773c02cd1b1984e60",
-		"supply-chain/bundled-assets.json": "c463effaa901e5bd89fbca1ea4167e9330d784f0518a4ead8bd68b63a2510498",
+		"supply-chain/bundled-assets.json": "fa646e6272f8d9cb07be3c2fa899a4922de5dda8623207452c11fbed528188f7",
 		"supply-chain/cargo-license-supplements.json": "ae44078c43ef8d5f31bbc3d79afdab8b2d407465f905b986ed70bf7f8e9762da",
 		"supply-chain/model-rights.json": "ca13433b8e977e46eed130b895ba2d1e6877871cdabf62e0a19a1f359766f8be",
 		"supply-chain/web-demuxer.json": "9e4f26d92c3104f0691b5ec1cc781fbb0924d2c48d0b455ee4f30d3e0477c855"

@@ -174,6 +174,7 @@ async function buildPackageFixture(realAssets) {
 		"dist/openscreen.png",
 		"dist/preview3.png",
 		"dist/vite.svg",
+		"dist/wallpapers",
 	]) {
 		await rm(path.join(appSource, relativePath), { recursive: true, force: true });
 	}

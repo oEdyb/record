@@ -26,10 +26,7 @@
 				"public/cursors/default/**",
 				"src/assets/cursors/**"
 			],
-			"packagedOutputPatterns": [
-				"^dist/rec-button\\.png$",
-				"^dist/wallpapers/(?:thumbs/)?wallpaper(?:[1-9]|1[0-8])\\.jpg$"
-			],
+			"packagedOutputPatterns": ["^dist/rec-button\\.png$"],
 			"license": "MIT",
 			"source": "OpenScreen repository contributions covered by the preserved upstream LICENSE"
 		},
@@ -71,6 +68,10 @@
 			{
 				"pattern": "^dist/cursors(?:/.*)?$",
 				"builderPattern": "!dist/cursors{,/**/*}"
+			},
+			{
+				"pattern": "^dist/wallpapers(?:/.*)?$",
+				"builderPattern": "!dist/wallpapers{,/**/*}"
 			},
 			{
 				"pattern": "^dist/demo\\.gif$",

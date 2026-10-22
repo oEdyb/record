@@ -349,7 +349,12 @@ async function main() {
 		"--output-dir",
 		artifacts,
 	]);
-	run("node", ["scripts/web-demuxer-source.mjs", "--output-dir", artifacts]);
+	const webDemuxerSource = path.join(releaseDir, "web-demuxer-source");
+	run("node", ["scripts/web-demuxer-source.mjs", "--output-dir", webDemuxerSource]);
+	for (const name of fs.readdirSync(webDemuxerSource)) {
+		fs.renameSync(path.join(webDemuxerSource, name), path.join(artifacts, name));
+	}
+	fs.rmdirSync(webDemuxerSource);
 	run(
 		"node",
 		[
