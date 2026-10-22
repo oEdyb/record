@@ -14,6 +14,7 @@ const DEPENDENCY_APPROVAL_NAMESPACE = "klippt-dependency-approval";
 const SKIPPED_DIRECTORIES = new Set([
 	".build",
 	".cache",
+	".claude",
 	".git",
 	"build",
 	"dist",
