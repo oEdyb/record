@@ -112,8 +112,8 @@ describe("registerIpcHandlers startup contract", () => {
 
 	afterEach(async () => {
 		if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
-		await fs.rm(paths.userData, { recursive: true, force: true });
-		await fs.rm(paths.temp, { recursive: true, force: true });
+		await fs.rm(paths.userData, { recursive: true, force: true, maxRetries: 5 });
+		await fs.rm(paths.temp, { recursive: true, force: true, maxRetries: 5 });
 		vi.mocked(inspectHandoffSourceMedia).mockReset();
 	});
 
@@ -152,6 +152,23 @@ describe("registerIpcHandlers startup contract", () => {
 		const { recovery } = await register();
 
 		await expect(recovery).resolves.toBe(false);
+	});
+
+	it("keeps starting when the diagnostics folder cannot be created", async () => {
+		pinPlatform("darwin");
+		await fs.writeFile(path.join(paths.userData, "diagnostics"), "not a folder");
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+		const { recovery } = await register();
+
+		await expect(recovery).resolves.toBe(false);
+		await vi.waitFor(() =>
+			expect(warn).toHaveBeenCalledWith(
+				"[diagnostics] workload telemetry startup failed:",
+				expect.anything(),
+			),
+		);
+		warn.mockRestore();
 	});
 
 	it("skips the recovery scan when the caller turns it off", async () => {

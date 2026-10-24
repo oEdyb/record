@@ -1832,7 +1832,9 @@ export function registerIpcHandlers(
 			getCpuSpeedLimitPercent: () => cpuSpeedLimitPercent,
 		}),
 	});
-	void workloadTelemetry.initialize();
+	void workloadTelemetry.initialize().catch((error) => {
+		console.warn("[diagnostics] workload telemetry startup failed:", error);
+	});
 	let activeCaptureWorkloadId: string | null = null;
 	let activeCaptureFailure: WorkloadFailureCode | undefined;
 	const captureOperation = (): WorkloadOperation => {
