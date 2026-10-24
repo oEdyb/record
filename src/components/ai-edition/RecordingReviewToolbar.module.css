@@ -233,6 +233,18 @@
 	animation: work-sheen 1.6s ease-in-out infinite;
 }
 @keyframes work-sheen { to { transform: translateX(100%); } }
+.reviewCuts { gap: 6px; }
+.reviewCount {
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	box-sizing: border-box;
+	border-radius: 9px;
+	background: var(--editor-accent);
+	color: #0d0d10;
+	font: 600 11px/18px var(--font-mono, ui-monospace, monospace);
+	text-align: center;
+}
 .srOnly {
 	position: absolute;
 	width: 1px;

@@ -251,4 +251,25 @@ describe("clean cut toggle", () => {
 		);
 		expect(screen.queryByRole("button", { name: "cleanCut.toggle" })).toBeNull();
 	});
+
+	it("opens the cut review from a button that shows how many cuts there are", () => {
+		const onReview = vi.fn();
+		render(
+			<RecordingReviewToolbar
+				{...props()}
+				cleanCut={{
+					enabled: true,
+					state: "ready",
+					progress: 1,
+					fromSec: 52,
+					toSec: 26,
+					onToggle: vi.fn(),
+					cutCount: 5,
+					onReview,
+				}}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "cleanCut.reviewCuts (5)" }));
+		expect(onReview).toHaveBeenCalled();
+	});
 });

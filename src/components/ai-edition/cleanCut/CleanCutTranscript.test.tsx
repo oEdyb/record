@@ -38,6 +38,7 @@ it("offers Cut for the hovered sentence, keeps it over gaps, and cuts that sente
 			clips={[clip]}
 			cutIds={new Set()}
 			restoredIds={new Set()}
+			chips={new Map()}
 			selectedId={null}
 			query=""
 			label="Transcript"
@@ -54,4 +55,32 @@ it("offers Cut for the hovered sentence, keeps it over gaps, and cuts that sente
 	fireEvent.pointerOver(screen.getByRole("document"));
 	fireEvent.click(screen.getByRole("button", { name: "cleanCut.cutSentence" }));
 	expect(onCutSentence).toHaveBeenCalledWith(2, 4);
+});
+
+it("names each cut with a chip that plays it on a tap and restores it with its button", () => {
+	const onSelectRegion = vi.fn();
+	const onToggleRestore = vi.fn();
+	const cutWords = words.map((word, i) => (i < 2 ? { ...word, regionId: "a:0" } : word));
+	render(
+		<CleanCutTranscript
+			words={cutWords}
+			regions={[]}
+			clips={[clip]}
+			cutIds={new Set(["a:0"])}
+			restoredIds={new Set()}
+			chips={new Map([["a:0", { label: "Retake", removedSec: 1.4, unsure: true }]])}
+			selectedId={null}
+			query=""
+			label="Transcript"
+			toPlaybackSec={(sec) => sec}
+			onSelectRegion={onSelectRegion}
+			onSeekRaw={vi.fn()}
+			onToggleRestore={onToggleRestore}
+			onCutSentence={vi.fn()}
+		/>,
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Retake −1.4 s" }));
+	expect(onSelectRegion).toHaveBeenCalledWith("a:0");
+	fireEvent.click(screen.getByRole("button", { name: "cleanCut.restore: Hi there." }));
+	expect(onToggleRestore).toHaveBeenCalledWith("a:0");
 });

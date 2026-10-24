@@ -88,6 +88,7 @@ export function CleanCutStage(props: CleanCutStageProps) {
 						open={listOpen}
 						model={props.model}
 						moments={props.moments}
+						guide={props.guide}
 						clips={props.clips}
 						fromSec={props.fromSec}
 						toSec={props.toSec}

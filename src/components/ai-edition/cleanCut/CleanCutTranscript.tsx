@@ -1,4 +1,4 @@
-import { RotateCcw, Scissors } from "lucide-react";
+import { Play, RotateCcw, Scissors } from "lucide-react";
 import { memo, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
@@ -7,6 +7,7 @@ import { sourceToTimeline } from "@/lib/cleanCut/timelineMap";
 import type { CleanCutRegion, CleanCutWord } from "@/lib/cleanCut/types";
 import { sentenceAround } from "@/lib/cleanCut/userCuts";
 import styles from "./CleanCutSheet.module.css";
+import { formatRemoved } from "./labels";
 
 const PARAGRAPH_PAUSE_SEC = 1.4;
 const PARAGRAPH_MIN_WORDS = 14;
@@ -68,11 +69,18 @@ export function matchWords(words: readonly CleanCutWord[], query: string): Set<n
 }
 
 interface HoverAction {
-	/** A cut region's id, or "sentence:first-last" for a kept sentence. */
+	/** "sentence:first-last" for the kept sentence under the pointer. */
 	id: string;
-	sentence: [number, number] | null;
+	sentence: [number, number];
 	top: number;
 	left: number;
+}
+
+/** What a cut's chip in the text says. */
+export interface TranscriptChip {
+	label: string;
+	removedSec: number;
+	unsure: boolean;
 }
 
 interface CleanCutTranscriptProps {
@@ -82,6 +90,8 @@ interface CleanCutTranscriptProps {
 	/** Regions cut right now; the rest read as plain text. */
 	cutIds: ReadonlySet<string>;
 	restoredIds: ReadonlySet<string>;
+	/** One chip per cut, keyed by region id, set right after its words. */
+	chips: ReadonlyMap<string, TranscriptChip>;
 	selectedId: string | null;
 	/** Words matching this are marked, and the first one scrolled into view. */
 	query: string;
@@ -94,13 +104,18 @@ interface CleanCutTranscriptProps {
 	onCutSentence: (first: number, last: number) => void;
 }
 
-/** The whole recording as text, cut words struck through. Click a word to hear it. */
+/**
+ * The whole recording as text, cut words struck through with a chip after each cut that
+ * names it, shows what it saves and restores it. Click a word to hear it from there; hover a
+ * kept sentence to cut it.
+ */
 export const CleanCutTranscript = memo(function CleanCutTranscript({
 	words,
 	regions,
 	clips,
 	cutIds,
 	restoredIds,
+	chips,
 	selectedId,
 	query,
 	label,
@@ -129,39 +144,30 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 		if (matches.size === 0) return;
 		rootRef.current?.querySelector("[data-match]")?.scrollIntoView({ block: "center" });
 	}, [matches]);
-	// Hovering a cut shows a Restore (or Cut again) button just above where it ends; hovering
-	// kept words shows a Cut button for their sentence right above the word under the pointer.
-	// Gaps between words and lines keep the button, so the pointer can always reach it.
+	// Hovering kept words shows a Cut button for their sentence right above the word under the
+	// pointer. Gaps between words and lines keep the button, so the pointer can always reach it.
 	const onPointerOver = (event: PointerEvent<HTMLDivElement>) => {
 		const target = event.target instanceof Element ? event.target : null;
-		if (target?.closest("[data-region-action]")) return;
+		if (target?.closest("[data-region-action], [data-chip]")) return;
 		const root = rootRef.current;
 		const region = target?.closest<HTMLElement>("[data-region-id]");
-		const regionId = region?.dataset.regionId;
 		const word = target?.closest<HTMLElement>("[data-word-index]");
 		if (!region && !word) return;
 		const sentence = !region && word ? sentenceAround(words, Number(word.dataset.wordIndex)) : null;
-		const id =
-			regionId && (cutIds.has(regionId) || restoredIds.has(regionId))
-				? regionId
-				: sentence
-					? `sentence:${sentence[0]}-${sentence[1]}`
-					: null;
-		const anchor = sentence ? word : region;
-		if (!root || !id || !anchor) {
+		if (!root || !word || !sentence) {
 			setAction(null);
 			return;
 		}
+		const id = `sentence:${sentence[0]}-${sentence[1]}`;
 		if (action?.id === id) return;
-		const rects = anchor.getClientRects();
-		const end = rects[rects.length - 1] ?? anchor.getBoundingClientRect();
+		const rects = word.getClientRects();
+		const end = rects[rects.length - 1] ?? word.getBoundingClientRect();
 		const box = root.getBoundingClientRect();
-		const x = sentence ? (end.left + end.right) / 2 - 28 : end.right - 40;
 		setAction({
 			id,
 			sentence,
-			top: end.top - box.top - (sentence ? 24 : 26),
-			left: Math.min(box.width - 96, Math.max(0, x - box.left)),
+			top: end.top - box.top - 24,
+			left: Math.min(box.width - 96, Math.max(0, (end.left + end.right) / 2 - 28 - box.left)),
 		});
 	};
 	return (
@@ -220,17 +226,65 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 										{word.text}{" "}
 									</span>
 								));
+							const chip = chips.get(id);
 							return (
-								<span
-									key={key}
-									className={styles.regionText}
-									data-region-id={id}
-									data-state={state}
-									data-unsure={unsure.has(id) || undefined}
-									data-selected={id === selectedId || undefined}
-									data-match={chunk.words.some((word) => matches.has(word.index)) || undefined}
-								>
-									{chunk.words.map((word) => word.text).join(" ")}{" "}
+								<span key={key}>
+									<span
+										className={styles.regionText}
+										data-region-id={id}
+										data-state={state}
+										data-unsure={unsure.has(id) || undefined}
+										data-selected={id === selectedId || undefined}
+										data-match={chunk.words.some((word) => matches.has(word.index)) || undefined}
+									>
+										{chunk.words.map((word) => word.text).join(" ")}
+									</span>
+									{chip ? (
+										<span
+											className={styles.chip}
+											data-chip=""
+											data-state={state}
+											data-unsure={chip.unsure || undefined}
+											data-selected={id === selectedId || undefined}
+										>
+											<button
+												type="button"
+												className={styles.chipBody}
+												title={chip.label}
+												aria-label={`${chip.label} ${formatRemoved(chip.removedSec)}`}
+												onClick={(event) => {
+													event.stopPropagation();
+													onSelectRegion(id);
+												}}
+											>
+												{state === "cut" ? (
+													formatRemoved(chip.removedSec)
+												) : (
+													<Play size={10} aria-hidden="true" />
+												)}
+											</button>
+											<button
+												type="button"
+												className={styles.chipAction}
+												aria-label={
+													state === "cut"
+														? `${t("cleanCut.restore")}: ${chunk.words.map((word) => word.text).join(" ")}`
+														: `${t("cleanCut.cutAgain")}: ${chunk.words.map((word) => word.text).join(" ")}`
+												}
+												title={state === "cut" ? t("cleanCut.restore") : t("cleanCut.cutAgain")}
+												onClick={(event) => {
+													event.stopPropagation();
+													onToggleRestore(id);
+												}}
+											>
+												{state === "cut" ? (
+													<RotateCcw size={11} aria-hidden="true" />
+												) : (
+													<Scissors size={11} aria-hidden="true" />
+												)}
+											</button>
+										</span>
+									) : null}{" "}
 								</span>
 							);
 						})}
@@ -245,21 +299,12 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 					style={{ top: action.top, left: action.left }}
 					onClick={(event) => {
 						event.stopPropagation();
-						if (action.sentence) onCutSentence(action.sentence[0], action.sentence[1]);
-						else onToggleRestore(action.id);
+						onCutSentence(action.sentence[0], action.sentence[1]);
 						setAction(null);
 					}}
 				>
-					{action.sentence || restoredIds.has(action.id) ? (
-						<Scissors size={12} aria-hidden="true" />
-					) : (
-						<RotateCcw size={12} aria-hidden="true" />
-					)}
-					{action.sentence
-						? t("cleanCut.cutSentence")
-						: restoredIds.has(action.id)
-							? t("cleanCut.cutAgain")
-							: t("cleanCut.restore")}
+					<Scissors size={12} aria-hidden="true" />
+					{t("cleanCut.cutSentence")}
 				</button>
 			) : null}
 		</div>

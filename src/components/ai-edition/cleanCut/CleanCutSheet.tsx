@@ -1,4 +1,14 @@
-import { Search, X } from "lucide-react";
+import {
+	AlignLeft,
+	AudioLines,
+	List,
+	Play,
+	Repeat,
+	RotateCcw,
+	Scissors,
+	Search,
+	X,
+} from "lucide-react";
 import {
 	type KeyboardEvent,
 	type ReactNode,
@@ -17,18 +27,21 @@ import { userCutRegion } from "@/lib/cleanCut/userCuts";
 import { BasicCutNotice } from "./BasicCutNotice";
 import { CleanCutList } from "./CleanCutList";
 import styles from "./CleanCutSheet.module.css";
-import { CleanCutTranscript } from "./CleanCutTranscript";
+import { CleanCutTranscript, type TranscriptChip } from "./CleanCutTranscript";
 import { buildCutRows, type CutRow } from "./cutRows";
-import { formatSaved } from "./labels";
+import { cleanCutKindKey } from "./labels";
 import { type CutMoment, pauseCuts, spokenSecByRegion } from "./moments";
 import { PausesRow } from "./PausesRow";
 import { RollingTime } from "./RollingTime";
 import { StrengthSwitch } from "./StrengthSwitch";
+import type { CleanCutGuide } from "./useCleanCutGuide";
 
 interface CleanCutSheetProps {
 	open: boolean;
 	model: CleanCutReviewModel;
 	moments: readonly CutMoment[];
+	/** Plays the picked cut with or without it, once or on a loop. */
+	guide: CleanCutGuide;
 	clips: readonly AxcutClip[];
 	fromSec: number;
 	toSec: number;
@@ -41,33 +54,72 @@ interface CleanCutSheetProps {
 	onSeekRaw: (rawSec: number) => void;
 }
 
-function Keys() {
+/** The picked cut: hear it without or with, once or on a loop, and restore it. */
+function ListenBar({ guide, cut }: { guide: CleanCutGuide; cut: ReviewCut }) {
 	const t = useScopedT("editor");
 	return (
-		<footer className={styles.keys} aria-hidden="true">
-			<span>
-				<kbd>↑</kbd>
-				<kbd>↓</kbd>
-			</span>
-			<span>
-				<kbd>↵</kbd>
-				{t("cleanCut.keyShow")}
-			</span>
-			<span>
-				<kbd>⇧↵</kbd>
-				{t("cleanCut.restore")}
-			</span>
-			<span>
-				<kbd>esc</kbd>
-			</span>
-		</footer>
+		<div className={styles.listenBar}>
+			<span className={styles.listenWhat}>{t(cleanCutKindKey(cut.region.kind))}</span>
+			<div className={styles.listenSwitch} role="group" aria-label={t("cleanCut.hud.listen")}>
+				{(["without", "with"] as const).map((mode) => (
+					<button
+						key={mode}
+						type="button"
+						aria-pressed={guide.listen === mode}
+						aria-label={t(`cleanCut.hud.${mode}`)}
+						title={t(mode === "with" ? "cleanCut.hud.withTitle" : "cleanCut.hud.withoutTitle")}
+						onClick={() => guide.setListen(mode)}
+					>
+						{mode === "without" ? (
+							<Scissors size={13} aria-hidden="true" />
+						) : (
+							<AudioLines size={13} aria-hidden="true" />
+						)}
+					</button>
+				))}
+			</div>
+			<button
+				type="button"
+				className={styles.listenIcon}
+				aria-label={t("cleanCut.hud.listen")}
+				title={t("cleanCut.hud.listen")}
+				onClick={guide.replay}
+			>
+				<Play size={13} aria-hidden="true" />
+			</button>
+			<button
+				type="button"
+				className={styles.listenIcon}
+				aria-pressed={guide.looping}
+				aria-label={t("cleanCut.hud.loopTitle")}
+				title={`${t("cleanCut.hud.loopTitle")} (L)`}
+				onClick={guide.toggleLoop}
+			>
+				<Repeat size={13} aria-hidden="true" />
+			</button>
+			<button
+				type="button"
+				className={styles.listenRestore}
+				data-restored={cut.restored || undefined}
+				aria-label={cut.restored ? t("cleanCut.cutAgain") : t("cleanCut.restore")}
+				title={cut.restored ? t("cleanCut.cutAgain") : t("cleanCut.restore")}
+				onClick={() => useCleanCutStore.getState().toggleRestore(cut.region.id)}
+			>
+				{cut.restored ? (
+					<Scissors size={13} aria-hidden="true" />
+				) : (
+					<RotateCcw size={13} aria-hidden="true" />
+				)}
+			</button>
+		</div>
 	);
 }
 
 /**
- * Every cut, one key away (⌘K or C). Search is focused on open; the arrows move through
- * the list, Return shows a cut on the card, Shift-Return restores it. The transcript tab
- * reads the whole recording with the cut words struck.
+ * Every cut, one key away (⌘K or C). Everything reads the whole recording with each cut
+ * struck and named by a chip; Only cuts lists them. Search is focused on open; in the list the
+ * arrows move, Return shows a cut, Shift-Return restores it. The bar at the bottom plays the
+ * picked cut without or with it.
  */
 export function CleanCutSheet(props: CleanCutSheetProps) {
 	const t = useScopedT("editor");
@@ -148,6 +200,17 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 		[props.model.strip],
 	);
 	const byId = (id: string) => props.model.strip.find((cut) => cut.region.id === id);
+	const chips = useMemo(() => {
+		const map = new Map<string, TranscriptChip>();
+		for (const cut of props.model.strip)
+			map.set(cut.region.id, {
+				label: t(cleanCutKindKey(cut.region.kind)),
+				removedSec: cut.removedSec,
+				unsure: cut.region.risky,
+			});
+		return map;
+	}, [props.model.strip, t]);
+	const picked = props.guide.current ? byId(props.guide.current.region.id) : undefined;
 	const spoken = useMemo(() => spokenSecByRegion(snapshot.words), [snapshot.words]);
 	const pauses = useMemo(() => pauseCuts(props.model.strip), [props.model.strip]);
 
@@ -160,6 +223,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				clips={props.clips}
 				cutIds={cutIds}
 				restoredIds={restoredIds}
+				chips={chips}
 				selectedId={selectedId}
 				query={query}
 				label={t("cleanCut.transcript")}
@@ -264,11 +328,8 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				</button>
 			</header>
 			<div className={styles.runtime}>
+				<span className={styles.from}>{formatPlayerTime(props.fromSec)} →</span>
 				<RollingTime sec={props.toSec} className={styles.runtimeFigure} />
-				<span className={styles.from}>
-					{t("cleanCut.from", { duration: formatPlayerTime(props.fromSec) })}
-				</span>
-				<span className={styles.saved}>{formatSaved(props.fromSec - props.toSec)}</span>
 				<span className={styles.spacer} />
 				<StrengthSwitch />
 			</div>
@@ -278,15 +339,21 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				</div>
 			) : null}
 			<div className={styles.tabs} role="tablist" aria-label={t("cleanCut.panel")}>
-				{(["cuts", "transcript"] as const).map((value) => (
+				{(["transcript", "cuts"] as const).map((value) => (
 					<button
 						key={value}
 						type="button"
 						role="tab"
 						aria-selected={view === value}
+						aria-label={value === "cuts" ? t("cleanCut.onlyCuts") : t("cleanCut.everything")}
+						title={value === "cuts" ? t("cleanCut.onlyCuts") : t("cleanCut.everything")}
 						onClick={() => useCleanCutStore.getState().setView(value)}
 					>
-						{value === "cuts" ? t("cleanCut.cuts") : t("cleanCut.transcript")}
+						{value === "cuts" ? (
+							<List size={14} aria-hidden="true" />
+						) : (
+							<AlignLeft size={14} aria-hidden="true" />
+						)}
 						{value === "cuts" ? (
 							<span className={styles.count}>{props.model.cuts.length}</span>
 						) : null}
@@ -294,7 +361,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				))}
 			</div>
 			<div className={styles.body}>{body}</div>
-			{view === "cuts" && rows.length > 0 ? <Keys /> : null}
+			{picked ? <ListenBar guide={props.guide} cut={picked} /> : null}
 		</div>
 	);
 }

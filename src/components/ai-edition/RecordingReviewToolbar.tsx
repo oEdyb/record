@@ -3,6 +3,7 @@ import {
 	Download,
 	FolderOpen,
 	Keyboard,
+	ListChecks,
 	LoaderCircle,
 	Maximize2,
 	MoreHorizontal,
@@ -27,6 +28,9 @@ export interface ReviewCleanCutControl {
 	fromSec: number;
 	toSec: number | null;
 	onToggle: () => void;
+	/** Cuts to review, once ready; opens the panel. */
+	cutCount?: number | null;
+	onReview?: () => void;
 }
 
 interface RecordingReviewToolbarProps {
@@ -268,6 +272,21 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 								<span className={styles.switch} aria-hidden="true" />
 							)}
 							<span className={styles.cleanCutLabel}>{t("cleanCut.toggle")}</span>
+						</button>
+					) : null}
+					{props.cleanCut?.enabled &&
+					props.cleanCut.state === "ready" &&
+					props.cleanCut.onReview &&
+					props.cleanCut.cutCount ? (
+						<button
+							type="button"
+							className={`${styles.ghost} ${styles.reviewCuts}`}
+							onClick={props.cleanCut.onReview}
+							aria-label={`${t("cleanCut.reviewCuts")} (${props.cleanCut.cutCount})`}
+							title={`${t("cleanCut.reviewCuts")} (${modifier}K)`}
+						>
+							<ListChecks size={15} aria-hidden="true" />
+							<span className={styles.reviewCount}>{props.cleanCut.cutCount}</span>
 						</button>
 					) : null}
 					<button

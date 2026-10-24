@@ -412,11 +412,10 @@
 	cursor: pointer;
 }
 .regionText[data-state="cut"] {
-	--strike: rgba(231, 231, 236, 0.62);
-	color: rgba(231, 231, 236, 0.58);
-}
-.regionText[data-state="cut"][data-unsure] {
-	--strike: color-mix(in srgb, var(--warn) 75%, transparent);
+	--strike: rgba(231, 231, 236, 0.55);
+	color: rgba(231, 231, 236, 0.66);
+	background-color: rgba(255, 255, 255, 0.05);
+	padding: 1px 3px;
 }
 .regionText[data-state="restored"] {
 	color: var(--fg-emphasis);
@@ -488,6 +487,128 @@
 	.rowAction,
 	.strike,
 	.regionText {
+		transition: none;
+	}
+}
+
+/* A cut's chip in the text: what it saves, tap to hear it, ↺ to restore. */
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 1px;
+	margin-left: 4px;
+	vertical-align: 1px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.06);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+	white-space: nowrap;
+}
+.chip[data-unsure] {
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 60%, transparent);
+}
+.chip[data-selected] {
+	background: var(--editor-accent-soft);
+	box-shadow: inset 0 0 0 1px var(--editor-accent);
+}
+.chip[data-state="restored"] {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.chipBody,
+.chipAction {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 20px;
+	border: 0;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+}
+.chipBody {
+	padding: 0 4px 0 8px;
+	font: 500 11px/1 var(--font-mono);
+}
+.chipAction {
+	width: 20px;
+	border-radius: 999px;
+	color: var(--fg);
+}
+.chipBody:hover,
+.chipAction:hover {
+	color: var(--fg-emphasis);
+}
+.chipAction:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+.chipBody:focus-visible,
+.chipAction:focus-visible,
+.listenBar button:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
+	border-radius: 999px;
+}
+
+/* The picked cut's player: without or with it, play, loop, restore. */
+.listenBar {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	border-top: 1px solid var(--border-soft);
+}
+.listenWhat {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--fg-emphasis);
+	font: 500 12.5px/1 var(--font-body);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.listenSwitch {
+	display: flex;
+	padding: 2px;
+	border-radius: 9px;
+	background: rgba(255, 255, 255, 0.06);
+}
+.listenSwitch button,
+.listenIcon,
+.listenRestore {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 28px;
+	border: 0;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+	transition: background-color 150ms ease, color 150ms ease;
+}
+.listenSwitch button[aria-pressed="true"] {
+	background: rgba(255, 255, 255, 0.14);
+	color: var(--fg-emphasis);
+}
+.listenIcon:hover,
+.listenRestore:hover,
+.listenSwitch button:hover {
+	color: var(--fg-emphasis);
+}
+.listenIcon[aria-pressed="true"] {
+	background: var(--editor-accent-soft);
+	color: var(--editor-accent-strong);
+}
+.listenRestore {
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+}
+@media (prefers-reduced-motion: reduce) {
+	.listenSwitch button,
+	.listenIcon,
+	.listenRestore {
 		transition: none;
 	}
 }
