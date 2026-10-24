@@ -66,6 +66,7 @@ export const HudDragHandle = memo(function HudDragHandle({
 	return (
 		<div
 			data-testid="hud-drag-handle"
+			data-hud-grip={tappable ? "" : undefined}
 			title={label}
 			role={tappable ? "button" : undefined}
 			tabIndex={tappable ? 0 : undefined}

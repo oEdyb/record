@@ -332,15 +332,45 @@
 	background: currentColor;
 }
 
-/* A new row (idle, recording) fades in through a slight blur while the pill
-   changes width, so the swap reads as one control changing shape. */
-.hudContentEnter {
-	transition: opacity 160ms ease-out;
+/* A new row (idle, folded, recording) unfolds from the grip while the pill
+   changes width: each control fades and slides in from the left, 20ms after the
+   one before it, so the swap reads as one control changing shape rather than a
+   row being replaced. An animation, not a transition, so the controls' own
+   press transitions stay untouched. */
+.hudContentEnter > * {
+	animation: hud-control-enter 180ms cubic-bezier(0.23, 1, 0.32, 1) backwards;
 }
 
-@starting-style {
-	.hudContentEnter {
+.hudContentEnter > :nth-child(2) {
+	animation-delay: 20ms;
+}
+
+.hudContentEnter > :nth-child(3) {
+	animation-delay: 40ms;
+}
+
+.hudContentEnter > :nth-child(4) {
+	animation-delay: 60ms;
+}
+
+.hudContentEnter > :nth-child(5) {
+	animation-delay: 80ms;
+}
+
+.hudContentEnter > :nth-child(n + 6) {
+	animation-delay: 100ms;
+}
+
+/* The tappable grip sits in the same place folded and unfolded, so it stays put
+   instead of flickering out and back in. */
+.hudContentEnter > [data-hud-grip]:first-child {
+	animation: none;
+}
+
+@keyframes hud-control-enter {
+	from {
 		opacity: 0;
+		transform: translateX(-6px) scale(0.96);
 	}
 }
 
@@ -409,10 +439,6 @@
 		transition: none;
 	}
 
-	.hudContentEnter {
-		transition: opacity 150ms ease;
-	}
-
 	.hudPanel,
 	.hudPanel[data-closing="true"],
 	.hudPanel[hidden],
@@ -451,7 +477,7 @@
 		transition: none !important;
 	}
 
-	.hudContentEnter {
+	.hudContentEnter > * {
 		animation: none;
 	}
 
