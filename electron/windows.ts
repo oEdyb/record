@@ -13,7 +13,12 @@ import {
 	resizedCameraPreviewSize,
 } from "./cameraPreviewGeometry";
 import { COMPACT_REVIEW_MIN_SIZE, type WindowBounds } from "./compactReviewGeometry";
-import { clampHudDragPosition } from "./hudDragGeometry";
+import {
+	clampHudDragPosition,
+	DEFAULT_HUD_PILL_SIZE,
+	initialHudBounds,
+	resizeHudAroundPill,
+} from "./hudDragGeometry";
 import { shouldShowHudInactive, shouldStartHudClickThrough } from "./hudInputPolicy";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import {
@@ -366,6 +371,9 @@ ipcMain.on("camera-preview-set-position", (event, position: CameraPreviewPoint) 
 // an absolute `origin + delta` — no rounding to accumulate, and a dropped message
 // self-corrects on the next one instead of leaving the window permanently offset.
 let hudDragOrigin: { x: number; y: number } | null = null;
+// Size of the painted pill, reported by the renderer. Only the pill must stay on
+// the display; the transparent window around it may reach past the edges.
+let hudPillSize = { ...DEFAULT_HUD_PILL_SIZE };
 
 ipcMain.on("hud-overlay-hide", () => {
 	if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
@@ -417,9 +425,9 @@ ipcMain.on("hud-overlay-drag-to", (_event, deltaX: number, deltaY: number) => {
 	const [width, height] = hudOverlayWindow.getSize();
 	const display = screen.getDisplayNearestPoint({
 		x: Math.round(x + width / 2),
-		y: Math.round(y + height),
+		y: Math.round(y + height / 2),
 	});
-	const next = clampHudDragPosition({ x, y }, { width, height }, display);
+	const next = clampHudDragPosition({ x, y }, { width, height }, hudPillSize, display.workArea);
 
 	hudOverlayWindow.setPosition(next.x, next.y, false);
 });
@@ -428,15 +436,48 @@ ipcMain.on("hud-overlay-drag-end", () => {
 	hudDragOrigin = null;
 });
 
-// Resize the HUD to fit its rendered content. Anchored by its bottom-centre so it
-// stays where the user dragged it while only growing/shrinking, which lets the
-// vertical tray layout grow tall instead of scrolling inside a fixed window.
+// The HUD window can reach onto a neighbouring display, where Chromium's
+// window.screen would describe the wrong one. The renderer places its panels
+// against the work area of the display under the pill, which main tells it.
+let hudWorkAreaSignature = "";
+function sendHudWorkArea(win: BrowserWindow) {
+	if (win.isDestroyed()) return;
+	const bounds = win.getBounds();
+	const { workArea } = screen.getDisplayNearestPoint({
+		x: Math.round(bounds.x + bounds.width / 2),
+		y: Math.round(bounds.y + bounds.height / 2),
+	});
+	const signature = `${workArea.x},${workArea.y},${workArea.width},${workArea.height}`;
+	if (signature === hudWorkAreaSignature) return;
+	hudWorkAreaSignature = signature;
+	win.webContents.send("hud-overlay-work-area", workArea);
+}
+
+/** Moves or resizes the HUD so its pill stays where it was and on the display. */
+function placeHudAroundPill(win: BrowserWindow, size: { width: number; height: number }) {
+	const bounds = win.getBounds();
+	const { workArea } = screen.getDisplayNearestPoint({
+		x: Math.round(bounds.x + bounds.width / 2),
+		y: Math.round(bounds.y + bounds.height / 2),
+	});
+	const next = resizeHudAroundPill(bounds, size, hudPillSize, workArea);
+	if (
+		next.x === bounds.x &&
+		next.y === bounds.y &&
+		next.width === bounds.width &&
+		next.height === bounds.height
+	) {
+		return;
+	}
+	win.setBounds(next);
+}
+
+// Resize the HUD around its pill. The pill sits at the window's centre, so a
+// resize keeps that centre still and only the transparent margins change.
 //
-// Applied in one shot rather than tweened. The renderer now reserves space for
-// everything that can float above the bar, so a resize only ever accompanies a
-// discrete content change (orientation flip, recording controls appearing) that
-// snaps anyway — tweening the window across 10 frames just meant 10 frames of the
-// bar sitting at an offset that didn't match the content it was drawn with.
+// Applied in one shot rather than tweened. The renderer reserves space for
+// everything that can float beside the bar, so a resize only ever accompanies a
+// discrete content change that snaps anyway.
 ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
 	if (
 		!hudOverlayWindow ||
@@ -453,61 +494,46 @@ ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
 		return;
 	}
 
-	const bounds = hudOverlayWindow.getBounds();
-
-	// Clamp to the work area of the display the HUD sits on; on a short screen the
-	// vertical layout can exceed the display, where the bar's own overflow scroll takes over.
-	const { workArea } = screen.getDisplayMatching(bounds);
-	const nextWidth = Math.min(workArea.width, Math.max(1, Math.round(width)));
-	const nextHeight = Math.min(workArea.height, Math.max(1, Math.round(height)));
-
-	if (bounds.width === nextWidth && bounds.height === nextHeight) {
-		return;
-	}
-
-	const centerX = bounds.x + bounds.width / 2;
-	const bottomY = bounds.y + bounds.height;
-
-	// Growing height keeps the bottom edge anchored (so the vertical tray grows
-	// upward from where the user left it), but that alone can push the top edge
-	// above the screen — e.g. switching to the tall vertical layout while sitting
-	// low/mid-screen. The drag handle lives at the tray's start (top, in vertical
-	// mode), so an off-screen top edge makes the HUD both invisible and
-	// undraggable back into view. Clamp both axes to the display's work area so
-	// the window (and its drag handle) always stays fully reachable.
-	const nextX = Math.min(
-		Math.max(workArea.x, Math.round(centerX - nextWidth / 2)),
-		workArea.x + workArea.width - nextWidth,
-	);
-	const nextY = Math.min(
-		Math.max(workArea.y, Math.round(bottomY - nextHeight)),
-		workArea.y + workArea.height - nextHeight,
-	);
-
-	hudOverlayWindow.setBounds({
-		x: nextX,
-		y: nextY,
-		width: nextWidth,
-		height: nextHeight,
+	placeHudAroundPill(hudOverlayWindow, {
+		width: Math.max(1, Math.round(width)),
+		height: Math.max(1, Math.round(height)),
 	});
 });
 
+// The painted pill changes size without the window doing so (minimize, expand,
+// Record). A pill that grows at a screen edge is pulled back onto the display.
+ipcMain.on("hud-overlay-set-pill-size", (event, width: number, height: number) => {
+	if (!isHudSender(event.sender.id) || !Number.isFinite(width) || !Number.isFinite(height)) {
+		return;
+	}
+	hudPillSize = {
+		width: Math.max(1, Math.round(width)),
+		height: Math.max(1, Math.round(height)),
+	};
+	if (!hudOverlayWindow || hudOverlayWindow.isDestroyed() || hudDragOrigin) return;
+	const [currentWidth, currentHeight] = hudOverlayWindow.getSize();
+	placeHudAroundPill(hudOverlayWindow, { width: currentWidth, height: currentHeight });
+});
+
 /**
- * Frameless transparent HUD overlay, always-on-top, centred at the bottom of the
- * primary display. Follows the user across macOS Spaces so it isn't lost on switch.
+ * Frameless transparent HUD overlay, always-on-top, with its pill centred near
+ * the bottom of the primary display. Follows the user across macOS Spaces so it isn't lost on switch.
  */
 export function createHudOverlayWindow(options: { returnToReview?: boolean } = {}): BrowserWindow {
 	const primaryDisplay = screen.getPrimaryDisplay();
 	const { workArea } = primaryDisplay;
 
-	// Close to what the renderer asks for on its very first measurement (bar plus
-	// the reserved space above it), so the HUD doesn't visibly resize itself the
-	// instant it becomes visible. See src/components/launch/hudGeometry.ts.
-	const windowWidth = 820;
-	const windowHeight = 560;
-
-	const x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2);
-	const y = Math.floor(workArea.y + workArea.height - windowHeight - 5);
+	// Close to what the renderer asks for on its very first measurement (the bar
+	// plus the menu room reserved on both sides of it), so the HUD doesn't visibly
+	// resize itself the instant it becomes visible. See
+	// src/components/launch/hudGeometry.ts.
+	hudPillSize = { ...DEFAULT_HUD_PILL_SIZE };
+	const {
+		x,
+		y,
+		width: windowWidth,
+		height: windowHeight,
+	} = initialHudBounds({ width: 940, height: 1400 }, hudPillSize, workArea);
 
 	const win = new BrowserWindow({
 		width: windowWidth,
@@ -527,6 +553,10 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 		// its own rounding and the window itself must be invisible.
 		roundedCorners: false,
 		resizable: false,
+		// The menu room around the pill may reach past the display, so a pill
+		// dragged to the top edge is not stopped by macOS keeping the window's
+		// top below the menu bar. Only the pill itself is kept on screen.
+		enableLargerThanScreen: true,
 		alwaysOnTop: true,
 		skipTaskbar: true,
 		hasShadow: false,
@@ -595,10 +625,20 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	win.on("restore", () => sendHudVisible(true));
 	win.on("show", () => sendHudVisible(true));
 
+	win.on("move", () => sendHudWorkArea(win));
+	const resendHudWorkArea = () => {
+		hudWorkAreaSignature = "";
+		sendHudWorkArea(win);
+	};
+	screen.on("display-metrics-changed", resendHudWorkArea);
+	screen.on("display-added", resendHudWorkArea);
+	screen.on("display-removed", resendHudWorkArea);
+
 	win.webContents.on("did-finish-load", () => {
 		// The page may load after the window was shown or minimized, or in a
 		// headless run where it is never shown; send where it actually stands.
 		sendHudVisible(win.isVisible() && !win.isMinimized());
+		resendHudWorkArea();
 		hudRendererReady = true;
 		cameraPreviewPortsConnected = false;
 		connectCameraPreviewRenderers();
@@ -608,6 +648,9 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	hudOverlayWindow = win;
 
 	win.on("closed", () => {
+		screen.off("display-metrics-changed", resendHudWorkArea);
+		screen.off("display-added", resendHudWorkArea);
+		screen.off("display-removed", resendHudWorkArea);
 		if (hudOverlayWindow === win) {
 			hudOverlayWindow = null;
 			hudDirectionExclusionRectangles = [];

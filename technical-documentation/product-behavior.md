@@ -342,6 +342,24 @@ The recording pill keeps the same controls through Pause, so Pause/Continue neve
 the cursor. Do not create a second bar or a detached timeline pill. A drag ends whenever the
 button is no longer held, and the pill cannot be dragged off the display.
 
+The pill drags to every edge of the display's work area: up to the menu bar, down to the Dock,
+and fully into each side and corner, and no part of it ever leaves the work area (2026-10-24; it
+used to be stuck in a strip at the bottom). When the pill sits near the top, Setup, Source,
+Replay, the permission panel, notices and recorder errors open below it instead of above it,
+shrunk to the room on that side.
+
+The idle pill can be minimized (2026-10-24). Clicking the Klippt mark without dragging folds it
+to the mark and the Record ball; clicking the mark again restores the full pill. Enter or Space on
+the focused mark does the same, and its tooltip says "Click to minimize, drag to move" (or "Click
+to show all controls, drag to move"). Dragging the mark still only moves the pill. Folding closes
+any open panel. It does not expand on hover, because hover expansion would move Record under the
+cursor. The choice is remembered across restarts. Record on the minimized pill runs exactly the
+same start path as the full pill (source check, permission panel, writer confirmation), and the
+pill then switches to the normal recording layout; when the recorder is idle again it returns to
+the minimized pill. A pill that grows at a screen edge (expanding, or switching to recording) is
+pulled back so it stays fully on the display. Loom and Screen Studio offer moving or hiding their
+controls rather than a folded state; this keeps Record one click away.
+
 The source chip, Setup's Window choice and Record without a chosen source open the Source panel
 above the pill, Setup's width and glass (Olle, 2026-10-04): a Screens / Windows switch with a
 sliding thumb, a close control, and a two-column grid of live thumbnails with app icons. One
@@ -379,16 +397,18 @@ Provide a configurable global Pause/Continue shortcut. Default to `Command-Shift
 macOS because `Command-Space` belongs to Spotlight. The renderer recording state is the final
 guard: ignore the shortcut while idle, saving, or finalizing.
 
-The idle pill is 360 CSS px wide and 50 px tall; the recording pill fits its controls at the
+The idle pill is 424 CSS px wide (88 px minimized) and 50 px tall; the recording pill fits its controls at the
 same height. Preserve one surface and one anchored position through the transition.
 
 Notices (Olle, 2026-10-04: fewer toasts). Success toasts that repeat what the screen already shows
 are removed. Errors and warnings stay. In review they appear top centre under the header, two at
-most, in the pill's dark glass. In the recorder they appear just above the pill, stay six seconds,
+most, in the pill's dark glass. In the recorder they appear just above the pill (below it when the
+pill is near the top), stay six seconds,
 and make the click-through overlay clickable while the pointer is over them.
 
 Motion (Olle, 2026-10-04, following Emil Kowalski's rules): Setup, Source and Replay grow out of
-the pill from its bottom centre (96 % scale, 8 px lower, 240 ms strong ease-out) and close in
+the pill from its bottom centre (its top centre when they open below it; 96 % scale, 8 px lower,
+240 ms strong ease-out) and close in
 120 ms. Replay opened with the Up key appears instantly. The pill morphs between idle and recording
 widths on the drawer curve while the new row fades in through a slight blur. Reduced motion keeps
 only fades. Only transform, opacity, filter and width animate.
@@ -403,12 +423,19 @@ only fades. Only transform, opacity, filter and width animate.
 - Backspace removes the previous clip; Remove shows its duration in the tooltip.
 
 The HUD uses a native transparent backing window that is much larger than the painted panel so
-menus can open without resizing the window. On macOS it is a non-activating panel at the floating
+menus can open without resizing the window. The pill sits at the window's centre with the same
+menu room reserved above and below it, so panels open on either side without moving the window.
+The window may extend past the display (on macOS it is created with `enableLargerThanScreen`,
+because AppKit otherwise keeps a window's top edge below the menu bar); only the pill is clamped
+to the work area. On macOS it is a non-activating panel at the floating
 level, like the camera monitor, so it stays visible when another app enters its own fullscreen
 Space; a plain always-on-top window drops out of that Space. Make that window click-through
 before its first visible frame. Forward pointer movement and enable mouse input only over painted HUD
-surfaces. Never leave a startup gap where the invisible backing window can swallow a click meant
-for another app. Keep the delayed renderer-driven startup on Windows because Electron implements
+surfaces, including while a panel is open (2026-10-24: holding the whole window clickable while
+Setup or the permission panel was open blocked clicks and scrolling in other apps, such as System
+Settings during the permission steps). A click in another app closes Setup, Source and Replay; the
+permission panel stays open until its steps finish. Never leave a startup gap where the invisible
+backing window can swallow a click meant for another app. Keep the delayed renderer-driven startup on Windows because Electron implements
 forwarded mouse movement there with a global low-level hook.
 
 Pause must keep the transport geometry stable. Clip finalization must not replace the Stop

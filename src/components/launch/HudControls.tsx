@@ -1,5 +1,5 @@
 import { AppWindow, ChevronDown, ChevronUp, Delete, SlidersHorizontal } from "lucide-react";
-import { memo, type ReactNode } from "react";
+import { memo, type ReactNode, useRef } from "react";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { KlipptMark } from "../brand/KlipptMark";
 import { Button } from "../ui/button";
@@ -24,11 +24,16 @@ const hudIconBtnBase = `flex h-9 w-9 shrink-0 items-center justify-center rounde
 const hudIconBtnClasses = `${hudIconBtnBase} text-[#7d8794]`;
 const hudIconBtnActiveClasses = `${hudIconBtnBase} bg-white/[0.09] text-[#f5f7fa]`;
 
+/** Pointer travel below which a press on the grip counts as a click, not a drag. */
+const HUD_GRIP_TAP_SLOP = 4;
+
 export const HudDragHandle = memo(function HudDragHandle({
 	nativeDrag,
 	onPointerDown,
 	onPointerMove,
 	onPointerEnd,
+	onTap,
+	tapExpanded,
 	children,
 	label,
 }: {
@@ -47,19 +52,62 @@ export const HudDragHandle = memo(function HudDragHandle({
 	onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
 	onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
 	onPointerEnd: (event: React.PointerEvent<HTMLDivElement>) => void;
+	/** A press released without dragging, or Enter/Space on the focused grip. */
+	onTap?: (fromKeyboard: boolean) => void;
+	/** With `onTap`, whether the grip's tap currently shows the full pill. */
+	tapExpanded?: boolean;
 }) {
+	// Where the press started, and whether it ever travelled far enough to be a drag.
+	const pressRef = useRef<{ x: number; y: number; dragged: boolean } | null>(null);
+	const tappable = Boolean(onTap);
 	return (
 		<div
 			data-testid="hud-drag-handle"
 			title={label}
-			className={`flex h-9 min-w-9 shrink-0 cursor-grab items-center justify-center active:cursor-grabbing ${
+			role={tappable ? "button" : undefined}
+			tabIndex={tappable ? 0 : undefined}
+			aria-label={tappable ? label : undefined}
+			aria-expanded={tappable ? tapExpanded : undefined}
+			className={`flex h-9 min-w-9 shrink-0 cursor-grab items-center justify-center rounded-full active:cursor-grabbing ${hudFocusClasses} ${
 				nativeDrag ? styles.electronDrag : styles.electronNoDrag
 			}`}
-			onPointerDown={onPointerDown}
-			onPointerMove={onPointerMove}
-			onPointerUp={onPointerEnd}
-			onPointerCancel={onPointerEnd}
+			onPointerDown={(event) => {
+				pressRef.current = { x: event.screenX, y: event.screenY, dragged: false };
+				onPointerDown(event);
+			}}
+			onPointerMove={(event) => {
+				const press = pressRef.current;
+				if (
+					press &&
+					Math.hypot(event.screenX - press.x, event.screenY - press.y) >= HUD_GRIP_TAP_SLOP
+				) {
+					press.dragged = true;
+				}
+				onPointerMove(event);
+			}}
+			onPointerUp={(event) => {
+				const press = pressRef.current;
+				pressRef.current = null;
+				onPointerEnd(event);
+				if (
+					onTap &&
+					press &&
+					!press.dragged &&
+					Math.hypot(event.screenX - press.x, event.screenY - press.y) < HUD_GRIP_TAP_SLOP
+				) {
+					onTap(false);
+				}
+			}}
+			onPointerCancel={(event) => {
+				pressRef.current = null;
+				onPointerEnd(event);
+			}}
 			onLostPointerCapture={onPointerEnd}
+			onKeyDown={(event) => {
+				if (!onTap || (event.key !== "Enter" && event.key !== " ")) return;
+				event.preventDefault();
+				if (!event.repeat) onTap(true);
+			}}
 		>
 			{children}
 		</div>

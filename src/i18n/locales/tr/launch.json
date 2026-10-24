@@ -8,6 +8,8 @@
 		"useVerticalTray": "Dikey araç çubuğunu kullan",
 		"useHorizontalTray": "Yatay araç çubuğunu kullan",
 		"openStudio": "Stüdyoyu aç",
+		"minimizeHud": "Küçültmek için tıklayın, taşımak için sürükleyin",
+		"expandHud": "Tüm denetimleri göstermek için tıklayın, taşımak için sürükleyin",
 		"notesToolbar": {
 			"bold": "Kalın",
 			"italic": "İtalik",

@@ -8,6 +8,8 @@
 		"useVerticalTray": "Usar bandeja vertical",
 		"useHorizontalTray": "Usar bandeja horizontal",
 		"openStudio": "Abrir Studio",
+		"minimizeHud": "Haz clic para minimizar, arrastra para mover",
+		"expandHud": "Haz clic para ver todos los controles, arrastra para mover",
 		"notesToolbar": {
 			"bold": "Negrita",
 			"italic": "Cursiva",

@@ -8,6 +8,8 @@
 		"useVerticalTray": "縦型トレイを使用",
 		"useHorizontalTray": "横型トレイを使用",
 		"openStudio": "スタジオを開く",
+		"minimizeHud": "クリックで最小化、ドラッグで移動",
+		"expandHud": "クリックですべてのコントロールを表示、ドラッグで移動",
 		"notesToolbar": {
 			"bold": "太字",
 			"italic": "斜体",

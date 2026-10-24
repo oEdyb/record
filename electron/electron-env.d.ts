@@ -114,6 +114,10 @@ interface Window {
 		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
 		onSelectedSourceChanged: (callback: (source: ProcessedDesktopSource) => void) => () => void;
 		onHudVisibilityChanged?: (callback: (visible: boolean) => void) => () => void;
+		/** Work area of the display under the HUD's pill, which the window may extend past. */
+		onHudWorkAreaChanged?: (
+			callback: (area: { x: number; y: number; width: number; height: number }) => void,
+		) => () => void;
 		getRecordingPrefs: () => Promise<import("./ipc/handlers").RecordingPrefs>;
 		setRecordingPrefs: (
 			prefs: Partial<import("./ipc/handlers").RecordingPrefs>,
@@ -548,6 +552,8 @@ interface Window {
 		dragHudOverlayTo: (deltaX: number, deltaY: number) => void;
 		endHudOverlayDrag: () => void;
 		setHudOverlaySize: (width: number, height: number) => void;
+		/** The painted pill, which drags and resizes keep on the display. */
+		setHudPillSize: (width: number, height: number) => void;
 		setHudDirectionExclusionRectangles: (
 			rectangles: Array<{ x: number; y: number; width: number; height: number }>,
 		) => void;

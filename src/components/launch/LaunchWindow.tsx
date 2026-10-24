@@ -51,12 +51,15 @@ import { type HudPermissionLabels, HudPermissionPanel } from "./HudPermissionPan
 import {
 	computeHudBarMaxHeight,
 	computeHudModalMaxHeight,
+	computeHudPlacement,
 	computeHudPopoverMaxHeight,
 	computeHudWindowSize,
-	HUD_BAR_BOTTOM,
+	fitHudStackCap,
 	HUD_GROWTH_RESERVE,
 	HUD_POPOVER_GAP,
+	HUD_POPOVER_MIN_HEIGHT,
 	HUD_STACK_GAP,
+	type HudStackPlacement,
 } from "./hudGeometry";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
@@ -86,8 +89,8 @@ const FALLBACK_SCREEN_HEIGHT = 1080;
 const FALLBACK_SCREEN_WIDTH = 1920;
 const HUD_PILL_WIDTH = 424;
 const HUD_PILL_HEIGHT = 50;
-/** Toasts sit just above the pill: its bottom gap, its height and one stack gap. */
-const HUD_TOAST_OFFSET = HUD_BAR_BOTTOM + HUD_PILL_HEIGHT + HUD_STACK_GAP;
+/** Toasts sit next to the pill, which is centred in the window: half its height and one stack gap. */
+const HUD_TOAST_OFFSET = `calc(50% + ${HUD_PILL_HEIGHT / 2 + HUD_STACK_GAP}px)`;
 const REMOVED_CLIP_FEEDBACK_MS = 4_000;
 
 function formatClipDuration(durationMs: number): string {
@@ -103,6 +106,22 @@ function formatClipDuration(durationMs: number): string {
 function getAvailableScreenHeight(): number {
 	const available = typeof window === "undefined" ? 0 : window.screen?.availHeight;
 	return available && available > 0 ? available : FALLBACK_SCREEN_HEIGHT;
+}
+
+/** Top edge of the display's work area in screen coordinates (below the menu bar). */
+function getAvailableScreenTop(): number {
+	if (typeof window === "undefined" || !("availTop" in window.screen)) return 0;
+	const top = window.screen.availTop;
+	return typeof top === "number" && Number.isFinite(top) ? top : 0;
+}
+
+/** Painted HUD pixels: the pill, its panels and notices, toasts, and select menus. */
+function isPaintedHudSurface(target: Element | null): boolean {
+	return Boolean(
+		target?.closest(
+			"[data-hud-interactive='true'], [data-sonner-toast], [data-klippt-select-content]",
+		),
+	);
 }
 
 function getAvailableScreenWidth(): number {
@@ -206,6 +225,12 @@ export function LaunchWindow() {
 	// at zero and Pause stays disabled until the writer confirms capture, so the
 	// pill never claims a recording that has not started; Stop cancels the start.
 	const pillRecording = recordingHudActive || starting;
+	// The idle pill can fold down to the mark and Record. The choice is remembered;
+	// recording always uses the full recording pill.
+	const [hudMinimized, setHudMinimized] = useState(() => loadUserPreferences().hudMinimized);
+	// Linux hands the grip to the compositor as a drag region, so it gets no clicks.
+	const canMinimize = !isLinuxHud;
+	const pillMinimized = canMinimize && hudMinimized && !pillRecording;
 
 	const keptClipCount = presentation.recordedClips.filter((clip) => !clip.removed).length;
 	// The replay reads finished clip files, so it exists only while a completed
@@ -428,6 +453,20 @@ export function LaunchWindow() {
 		recordAfterSourceSelectionRef.current = false;
 	}, []);
 
+	// The grip remounts when the pill folds or unfolds; a keyboard toggle keeps focus on it.
+	const refocusGripRef = useRef(false);
+	const toggleHudMinimized = useCallback(
+		(fromKeyboard: boolean) => {
+			refocusGripRef.current = fromKeyboard;
+			closePopovers();
+			setHudMinimized((current) => {
+				saveUserPreferences({ hudMinimized: !current });
+				return !current;
+			});
+		},
+		[closePopovers],
+	);
+
 	const openPermissionPanel = useCallback(
 		(permissions: CapturePermissions, then: (() => void) | null) => {
 			pendingPermissionActionRef.current = then;
@@ -548,12 +587,23 @@ export function LaunchWindow() {
 			}
 		};
 
+		// Clicks outside the painted panel now reach the app underneath, so a
+		// click elsewhere shows up here as the HUD losing focus. The permission
+		// panel stays: its steps send the user to System Settings and back.
+		const handleBlur = () => {
+			setIsDeviceSettingsOpen(false);
+			setIsPeekOpen(false);
+			setIsSourcePanelOpen(false);
+		};
+
 		window.addEventListener("pointerdown", handlePointerDown);
 		window.addEventListener("keydown", handleEscape);
+		window.addEventListener("blur", handleBlur);
 
 		return () => {
 			window.removeEventListener("pointerdown", handlePointerDown);
 			window.removeEventListener("keydown", handleEscape);
+			window.removeEventListener("blur", handleBlur);
 		};
 	}, [closePopovers, isPopoverOpen]);
 
@@ -574,6 +624,7 @@ export function LaunchWindow() {
 	//      down as CSS custom properties.
 	// ---------------------------------------------------------------------------
 	const hudAllocatedSizeRef = useRef({ width: 0, height: 0 });
+	const reportedPillSizeRef = useRef({ width: 0, height: 0 });
 	const isDraggingHudRef = useRef(false);
 
 	const horizontalHudWidth = Math.min(HUD_PILL_WIDTH, getAvailableScreenWidth() - 32);
@@ -581,7 +632,6 @@ export function LaunchWindow() {
 	useLayoutEffect(() => {
 		const anchor = hudAnchorRef.current;
 		if (!anchor) return;
-		anchor.style.setProperty("--hud-bar-bottom", `${HUD_BAR_BOTTOM}px`);
 		anchor.style.setProperty("--hud-popover-gap", `${HUD_POPOVER_GAP}px`);
 		anchor.style.setProperty("--hud-stack-gap", `${HUD_STACK_GAP}px`);
 		anchor.style.setProperty("--hud-horizontal-width", `${horizontalHudWidth}px`);
@@ -590,6 +640,55 @@ export function LaunchWindow() {
 			`${computeHudBarMaxHeight(getAvailableScreenHeight())}px`,
 		);
 	}, [horizontalHudWidth]);
+
+	// Height caps for the floating surfaces when the pill rests at a screen edge.
+	// The window always reserves these on both sides of the bar; the CSS caps are
+	// then shrunk to the room on whichever side the stack opens.
+	const stackCapsRef = useRef({ popover: 0, modal: 0 });
+	// The pill's display, from main. The window can reach onto a neighbour, where
+	// window.screen would describe the wrong display; that is only the fallback.
+	const workAreaRef = useRef<{ top: number; height: number } | null>(null);
+	const [stackPlacement, setStackPlacement] = useState<HudStackPlacement>("above");
+
+	const updateHudPlacement = useCallback(() => {
+		const barEl = hudBarRef.current;
+		const anchorEl = hudAnchorRef.current;
+		const caps = stackCapsRef.current;
+		if (!barEl || !anchorEl || caps.modal <= 0) return;
+		const barRect = barEl.getBoundingClientRect();
+		// Not laid out yet, or no real display to measure against: keep the default side.
+		if (barRect.height <= 0 || !(window.screen?.availHeight > 0)) return;
+		const pillTop = window.screenY + barRect.top;
+		const area = workAreaRef.current ?? {
+			top: getAvailableScreenTop(),
+			height: getAvailableScreenHeight(),
+		};
+		const { placement, room } = computeHudPlacement({
+			pillTop,
+			pillBottom: pillTop + barRect.height,
+			areaTop: area.top,
+			areaBottom: area.top + area.height,
+			stackHeight: caps.modal,
+		});
+		anchorEl.style.setProperty(
+			"--hud-popover-max-h",
+			`${fitHudStackCap(caps.popover, room, HUD_POPOVER_MIN_HEIGHT)}px`,
+		);
+		anchorEl.style.setProperty(
+			"--hud-modal-max-h",
+			`${fitHudStackCap(caps.modal, room, HUD_POPOVER_MIN_HEIGHT)}px`,
+		);
+		setStackPlacement(placement);
+	}, []);
+
+	useEffect(
+		() =>
+			window.electronAPI?.onHudWorkAreaChanged?.((area) => {
+				workAreaRef.current = { top: area.y, height: area.height };
+				updateHudPlacement();
+			}),
+		[updateHudPlacement],
+	);
 
 	const measureHudSize = useCallback(() => {
 		const barEl = hudBarRef.current;
@@ -617,24 +716,31 @@ export function LaunchWindow() {
 		// The two floating surfaces get their own CSS caps (a 470px-tall language
 		// list would look absurd), but the *window* always reserves room for the
 		// taller of them. Sizing the reserve to whichever happens to be open would
-		// mean the window grows when the panel opens — and since the stack is
-		// bottom-anchored, growing upward moves every bit of content down in window
-		// coordinates, which the renderer repaints a frame or two after the native
-		// resize lands. That gap is visible as exactly the position judder this
-		// whole architecture exists to remove. So: reserve the maximum, always.
+		// mean the window grows when the panel opens, and the renderer repaints a
+		// frame or two after the native resize lands. That gap is visible as
+		// exactly the position judder this whole architecture exists to remove.
+		// So: reserve the maximum, always.
 		const popoverMaxHeight = computeHudPopoverMaxHeight(barHeight, availableHeight);
 		const modalMaxHeight = computeHudModalMaxHeight(barHeight, availableHeight);
-		const anchorEl = hudAnchorRef.current;
-		anchorEl?.style.setProperty("--hud-popover-max-h", `${popoverMaxHeight}px`);
-		anchorEl?.style.setProperty("--hud-modal-max-h", `${modalMaxHeight}px`);
+		stackCapsRef.current = { popover: popoverMaxHeight, modal: modalMaxHeight };
+		updateHudPlacement();
 
 		const { required, granted } = computeHudWindowSize({
 			barWidth,
 			barHeight,
 			noticeHeight,
-			availableHeight,
 			stackMaxHeight: Math.max(popoverMaxHeight, modalMaxHeight),
 		});
+
+		// The painted pill is what drags and resizes keep on screen, so main hears
+		// about it whenever it changes, even when the window itself does not.
+		const pillWidth = Math.round(barRect.width || HUD_PILL_WIDTH);
+		const pillHeight = Math.round(barHeight);
+		const reportedPill = reportedPillSizeRef.current;
+		if (reportedPill.width !== pillWidth || reportedPill.height !== pillHeight) {
+			reportedPillSizeRef.current = { width: pillWidth, height: pillHeight };
+			window.electronAPI.setHudPillSize?.(pillWidth, pillHeight);
+		}
 
 		const allocated = hudAllocatedSizeRef.current;
 		// Grow the moment the content stops fitting. Shrink only once the content
@@ -655,7 +761,7 @@ export function LaunchWindow() {
 		allocated.width = granted.width;
 		allocated.height = granted.height;
 		window.electronAPI.setHudOverlaySize(granted.width, granted.height);
-	}, [horizontalHudWidth, reportDirectionExclusionRectangles]);
+	}, [horizontalHudWidth, reportDirectionExclusionRectangles, updateHudPlacement]);
 
 	// One persistent observer; elements wire themselves up via callback refs as
 	// they mount/unmount. Only the bar and the notice column are observed — the
@@ -717,19 +823,20 @@ export function LaunchWindow() {
 		};
 	}, [setHudMouseEventsEnabled]);
 
-	// A popover reaches beyond the bar, and the gap between the two would otherwise
-	// flip the window back to click-through mid-travel — so hold the overlay
-	// interactive for as long as one is open, and hand control back to the
-	// pointer-move tracking once it closes.
-	// A popover closed under a still pointer gets no pointermove, so check where
-	// the pointer was: still on the pill means the next click belongs to the pill.
+	// The overlay takes the mouse only over painted surfaces, open panel or not.
+	// Its transparent area can cover a large part of the screen, and holding it
+	// interactive while a panel was open swallowed clicks and scrolling meant for
+	// other apps, such as System Settings during the permission steps. Pointer
+	// movement is still forwarded while click-through, so a pointer crossing from
+	// the pill to a panel turns input back on before it can click.
+	// A surface that opens or closes under a still pointer gets no pointermove, so
+	// check where the pointer was.
 	const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-checks the pointer whenever a panel opens or closes
 	useEffect(() => {
 		const point = lastPointerRef.current;
 		const underPointer = point ? document.elementFromPoint?.(point.x, point.y) : null;
-		setHudMouseEventsEnabled(
-			isPopoverOpen || Boolean(underPointer?.closest("[data-hud-interactive='true']")),
-		);
+		setHudMouseEventsEnabled(isPaintedHudSurface(underPointer));
 	}, [isPopoverOpen, setHudMouseEventsEnabled]);
 
 	const defaultSourceName = t("sourceSelector.defaultSourceName");
@@ -1290,7 +1397,10 @@ export function LaunchWindow() {
 		isDraggingHudRef.current = false;
 		window.electronAPI?.endHudOverlayDrag?.();
 		measureHudSize();
-	}, [measureHudSize]);
+		// The renderer learns its new screen position a moment after the last
+		// move lands, so the stack picks its side once that has caught up.
+		window.setTimeout(updateHudPlacement, 120);
+	}, [measureHudSize, updateHudPlacement]);
 
 	const handleHudDragPointerMove = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
@@ -1336,21 +1446,17 @@ export function LaunchWindow() {
 			lastPointerRef.current = { x: event.clientX, y: event.clientY };
 			// The pointer is captured by the drag handle anyway; skip the DOM walk.
 			if (isDraggingHudRef.current) return;
-			const target = event.target as HTMLElement | null;
 			setHudMouseEventsEnabled(
-				isPopoverOpen ||
-					Boolean(target?.closest("[data-hud-interactive='true'], [data-sonner-toaster]")),
+				isPaintedHudSurface(event.target instanceof Element ? event.target : null),
 			);
 		},
-		[isPopoverOpen, setHudMouseEventsEnabled],
+		[setHudMouseEventsEnabled],
 	);
 
 	const handlePointerLeave = useCallback(() => {
 		lastPointerRef.current = null;
-		if (!isPopoverOpen) {
-			setHudMouseEventsEnabled(false);
-		}
-	}, [isPopoverOpen, setHudMouseEventsEnabled]);
+		setHudMouseEventsEnabled(false);
+	}, [setHudMouseEventsEnabled]);
 
 	const dismissSoftwareFallbackForever = useCallback(() => {
 		dismissSoftwareEncoderFallbackNotice(true);
@@ -1615,6 +1721,26 @@ export function LaunchWindow() {
 	});
 
 	const hasNotices = Boolean(systemLocaleSuggestion) || softwareEncoderFallbackNoticeVisible;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs once the folded or unfolded grip has mounted
+	useEffect(() => {
+		if (!refocusGripRef.current) return;
+		refocusGripRef.current = false;
+		document.querySelector<HTMLElement>("[data-testid='hud-drag-handle']")?.focus();
+	}, [pillMinimized]);
+
+	const stackVisible =
+		isPopoverOpen ||
+		showSetup ||
+		showSource ||
+		permissionPresence.present ||
+		canPeek ||
+		hasNotices ||
+		Boolean(shownRemovedClip);
+	// Pick the stack's side before the first frame it is visible in, while the
+	// window is still: a pill near the top opens its panels below it.
+	useLayoutEffect(() => {
+		if (stackVisible) updateHudPlacement();
+	}, [stackVisible, updateHudPlacement]);
 	const permissionLabels = useMemo<HudPermissionLabels>(
 		() => ({
 			title: t("permissions.title"),
@@ -1649,6 +1775,24 @@ export function LaunchWindow() {
 			})
 		: removePreviousLabel;
 
+	// One Record control for the full and the minimized idle pill, so both start
+	// a recording through exactly the same path.
+	const recordButton = (
+		<HudCompactRecordButton
+			disabled={
+				starting ||
+				saving ||
+				!sourceReady ||
+				!preferencesReady ||
+				(microphoneEnabled && isMicDevicesLoading)
+			}
+			label={recordLabel}
+			accessibleLabel={recordAccessibleLabel}
+			onClick={handleRecordClick}
+			onIntent={prewarmCapture}
+		/>
+	);
+
 	const dragHandleProps = {
 		nativeDrag: isLinuxHud,
 		onPointerDown: handleHudDragPointerDown,
@@ -1670,17 +1814,29 @@ export function LaunchWindow() {
 		>
 			{/* Recorder errors appear right above the pill, inside this root so a
 			    pointer over a toast makes the click-through window clickable. */}
-			<Toaster position="bottom-center" offset={HUD_TOAST_OFFSET} duration={6000} />
-			{/* One bottom-anchored stack: the pill, then whatever floats above it.
+			<Toaster
+				position={stackPlacement === "below" ? "top-center" : "bottom-center"}
+				offset={HUD_TOAST_OFFSET}
+				duration={6000}
+			/>
+			{/* The pill sits at the window's centre; whatever floats beside it stacks
+			    above it, or below it when the pill is near the top of the display.
 			    Everything is laid out by flexbox relative to the pill, so no popover
 			    needs a measured position and none of them can move the window. */}
-			<div ref={hudAnchorRef} className={styles.hudAnchor}>
+			<div ref={hudAnchorRef} className={styles.hudAnchor} data-placement={stackPlacement}>
 				<div
 					ref={setHudBarEl}
 					data-hud-interactive="true"
 					data-recording-layout={pillRecording ? "recording" : "idle"}
+					data-minimized={pillMinimized}
 					data-starting={starting && !recordingHudActive}
-					className={`${styles.hudBar} ${pillRecording ? styles.hudPillRecording : styles.hudPillIdle}`}
+					className={`${styles.hudBar} ${
+						pillRecording
+							? styles.hudPillRecording
+							: pillMinimized
+								? styles.hudPillMinimized
+								: styles.hudPillIdle
+					}`}
 					onPointerEnter={enableHudMouseEvents}
 					onPointerDown={enableHudMouseEvents}
 					onMouseEnter={enableHudMouseEvents}
@@ -1731,9 +1887,26 @@ export function LaunchWindow() {
 								onClick={toggleDeviceSettings}
 							/>
 						</div>
+					) : pillMinimized ? (
+						<div key="minimized" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
+							<HudDragHandle
+								{...dragHandleProps}
+								label={t("tooltips.expandHud")}
+								onTap={toggleHudMinimized}
+								tapExpanded={false}
+							>
+								<HudBrandMark />
+							</HudDragHandle>
+							{recordButton}
+						</div>
 					) : (
 						<div key="idle" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
-							<HudDragHandle {...dragHandleProps} label="Klippt">
+							<HudDragHandle
+								{...dragHandleProps}
+								label={canMinimize ? t("tooltips.minimizeHud") : "Klippt"}
+								onTap={canMinimize ? toggleHudMinimized : undefined}
+								tapExpanded
+							>
 								<HudBrandMark />
 							</HudDragHandle>
 							{/* No source chip on Linux: the ScreenCast portal owns the choice and
@@ -1780,31 +1953,13 @@ export function LaunchWindow() {
 								label={t("deviceSettings.title")}
 								onClick={toggleDeviceSettings}
 							/>
-							<HudCompactRecordButton
-								disabled={
-									starting ||
-									saving ||
-									!sourceReady ||
-									!preferencesReady ||
-									(microphoneEnabled && isMicDevicesLoading)
-								}
-								label={recordLabel}
-								accessibleLabel={recordAccessibleLabel}
-								onClick={handleRecordClick}
-								onIntent={prewarmCapture}
-							/>
+							{recordButton}
 						</div>
 					)}
 				</div>
 
-				{(isPopoverOpen ||
-					showSetup ||
-					showSource ||
-					permissionPresence.present ||
-					canPeek ||
-					hasNotices ||
-					shownRemovedClip) && (
-					// column-reverse: first child sits closest to the bar.
+				{stackVisible && (
+					// The first child sits closest to the bar on either side.
 					<div className={styles.hudAbove}>
 						{showSetup && (
 							<HudDeviceSettings

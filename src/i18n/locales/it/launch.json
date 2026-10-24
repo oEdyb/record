@@ -8,6 +8,8 @@
 		"useVerticalTray": "Usa barra verticale",
 		"useHorizontalTray": "Usa barra orizzontale",
 		"openStudio": "Apri Studio",
+		"minimizeHud": "Fai clic per ridurre, trascina per spostare",
+		"expandHud": "Fai clic per mostrare tutti i controlli, trascina per spostare",
 		"notesToolbar": {
 			"bold": "Grassetto",
 			"italic": "Corsivo",
