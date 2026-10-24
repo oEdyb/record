@@ -60,6 +60,10 @@
 		"importVideoButton": "导入视频",
 		"loadProjectButton": "打开项目",
 		"supportedFormats": "支持的格式：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
+		"startFailed": "无法开始录制。请再次按“录制”，或重新打开 Klippt。",
+		"pauseFailed": "无法暂停并保存此片段。请按“停止”，然后检查“录制内容”。",
+		"continueFailed": "无法继续录制。请按“停止”，然后检查“录制内容”。",
+		"stopFailed": "无法完成停止或打开回顾。请重新打开 Klippt，然后检查“录制内容”。",
 		"dragDropHint": "或将 .klippt 项目文件拖放到此处",
 		"dropOverlay": "将项目文件拖放至此以打开",
 		"dropErrors": {

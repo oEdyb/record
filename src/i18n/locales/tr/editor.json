@@ -48,6 +48,10 @@
 		"permissionDenied": "Kayıt izni reddedildi. Lütfen ekran kaydına izin verin.",
 		"cameraDisconnected": "Webcam bağlantısı kesildi.",
 		"cameraNotFound": "Kamera bulunamadı.",
+		"startFailed": "Kayıt başlatılamadı. Kayıt’a tekrar basın veya Klippt’i yeniden açın.",
+		"pauseFailed": "Duraklatılıp bu klip kaydedilemedi. Durdur’a basın, ardından Kayıtlar’ı kontrol edin.",
+		"continueFailed": "Kayıt sürdürülemedi. Durdur’a basın, ardından Kayıtlar’ı kontrol edin.",
+		"stopFailed": "Durdurma tamamlanamadı veya inceleme açılamadı. Klippt’i yeniden açıp Kayıtlar’ı kontrol edin.",
 		"selectSource": "Lütfen kayıt için bir kaynak seçin"
 	},
 	"loadingEditor": "Editör yükleniyor…",

@@ -60,6 +60,10 @@
 		"importVideoButton": "Importar vídeo",
 		"loadProjectButton": "Abrir projeto",
 		"supportedFormats": "Formatos suportados: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
+		"startFailed": "Não foi possível iniciar a gravação. Pressione Gravar novamente ou reabra o Klippt.",
+		"pauseFailed": "Não foi possível pausar e salvar este clipe. Pressione Parar e confira Gravações.",
+		"continueFailed": "Não foi possível continuar a gravação. Pressione Parar e confira Gravações.",
+		"stopFailed": "Não foi possível concluir a parada ou abrir a revisão. Reabra o Klippt e confira Gravações.",
 		"dragDropHint": "ou arraste e solte um arquivo de projeto .klippt aqui",
 		"dropOverlay": "Solte o arquivo de projeto para abrir",
 		"dropErrors": {

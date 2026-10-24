@@ -524,6 +524,25 @@ describe("NativeMacRecordingService", () => {
 		expect(deps.createHelper).not.toHaveBeenCalled();
 	});
 
+	it("refuses Continue on a nearly full disk and allows it after space is freed", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		vi.mocked(deps.freeDiskBytes!).mockResolvedValueOnce(200 * 1024 ** 2);
+
+		await expect(service.resume()).resolves.toMatchObject({
+			success: false,
+			paused: true,
+			error: expect.stringContaining("free on the recordings disk"),
+		});
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+
+		await expect(service.resume()).resolves.toEqual({ success: true, clipIndex: 1 });
+		expect(helper.resume).toHaveBeenCalledOnce();
+		await service.stop(true);
+	});
+
 	it("asks the HUD to pause on every low-disk poll while live, not while paused", async () => {
 		vi.useFakeTimers();
 		try {

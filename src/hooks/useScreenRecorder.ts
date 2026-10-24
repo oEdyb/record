@@ -3,12 +3,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
+import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import {
 	type NativeLinuxRecordingRequest,
 	portalOwnsSourceSelection,
 } from "@/lib/nativeLinuxRecording";
 import { getKeptRecordingDurationMs } from "@/lib/nativeMacClipSession";
-import type { NativeMacRecordingRequest, RecordStartMark } from "@/lib/nativeMacRecording";
+import type {
+	NativeMacRecordingInterruption,
+	NativeMacRecordingRequest,
+	RecordStartMark,
+} from "@/lib/nativeMacRecording";
 import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
@@ -305,6 +310,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	// Pause and Continue each finish before the next toggle; two hotkey presses can
 	// arrive before React re-renders the HUD with the finalizing state.
 	const nativeMacToggleInFlight = useRef(false);
+	const pendingNativeMacInterruption = useRef<Exclude<
+		NativeMacRecordingInterruption,
+		"source-active"
+	> | null>(null);
 	const webcamReady = useRef(false);
 	const activeWebcamFormat = useRef<WebcamFormat>(DEFAULT_WEBCAM_FORMAT);
 	const webcamAcquireId = useRef(0);
@@ -698,71 +707,74 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		[cursorCaptureMode, teardownMedia],
 	);
 
-	const finalizeNativeWindowsRecording = useCallback(async (discard = false) => {
-		const activeNativeRecording = nativeWindowsRecording.current;
-		if (!activeNativeRecording || activeNativeRecording.finalizing) {
-			return false;
-		}
+	const finalizeNativeWindowsRecording = useCallback(
+		async (discard = false) => {
+			const activeNativeRecording = nativeWindowsRecording.current;
+			if (!activeNativeRecording || activeNativeRecording.finalizing) {
+				return false;
+			}
 
-		activeNativeRecording.finalizing = true;
-		if (!discard) {
-			setSaving(true);
-		}
+			activeNativeRecording.finalizing = true;
+			if (!discard) {
+				setSaving(true);
+			}
 
-		const clearNativeRecordingState = () => {
-			nativeWindowsRecording.current = null;
-			setRecording(false);
-			setPaused(false);
-			setElapsedSeconds(0);
-			accumulatedDurationMs.current = 0;
-			segmentStartedAt.current = null;
-		};
+			const clearNativeRecordingState = () => {
+				nativeWindowsRecording.current = null;
+				setRecording(false);
+				setPaused(false);
+				setElapsedSeconds(0);
+				accumulatedDurationMs.current = 0;
+				segmentStartedAt.current = null;
+			};
 
-		try {
-			const result = await window.electronAPI.stopNativeWindowsRecording(discard);
-			if (discard || result.discarded) {
+			try {
+				const result = await window.electronAPI.stopNativeWindowsRecording(discard);
+				if (discard || result.discarded) {
+					clearNativeRecordingState();
+					return true;
+				}
+				if (!result.success) {
+					console.error("Failed to stop native Windows recording:", result.error);
+					toast.error(t("recording.stopFailed"), {
+						description: ipcErrorMessage(result.error ?? "Failed to stop native Windows recording"),
+					});
+					// Clear anyway. The main process releases its helper handle
+					// unconditionally, so holding on here left the two sides
+					// disagreeing about whether anything was recording: the HUD kept
+					// showing a stop button, and pressing it sent a second stop that
+					// came back "Native Windows capture is not running." (issue #252).
+					// Reaching here now means the recording really is unreadable -- a failed
+					// stop that left a playable fragmented file comes back `success`
+					// with a session and takes the editor path below, so this branch no
+					// longer decides the fate of a recoverable recording.
+					clearNativeRecordingState();
+					return true;
+				}
+
+				clearNativeRecordingState();
+				if (result.session) {
+					await window.electronAPI.setCurrentRecordingSession(result.session);
+				} else if (result.path) {
+					await window.electronAPI.setCurrentVideoPath(result.path);
+				}
+
+				await window.electronAPI.switchToEditor({ compactReview: true });
+				return true;
+			} catch (error) {
+				console.error("Error saving native Windows recording:", error);
+				toast.error(t("recording.stopFailed"), { description: ipcErrorMessage(error) });
 				clearNativeRecordingState();
 				return true;
+			} finally {
+				if (discardRecordingId.current === activeNativeRecording.recordingId) {
+					discardRecordingId.current = null;
+				}
+				setSaving(false);
 			}
-			if (!result.success) {
-				console.error("Failed to stop native Windows recording:", result.error);
-				toast.error(result.error ?? "Failed to stop native Windows recording");
-				// Clear anyway. The main process releases its helper handle
-				// unconditionally, so holding on here left the two sides
-				// disagreeing about whether anything was recording: the HUD kept
-				// showing a stop button, and pressing it sent a second stop that
-				// came back "Native Windows capture is not running." (issue #252).
-				// Reaching here now means the recording really is unreadable -- a failed
-				// stop that left a playable fragmented file comes back `success`
-				// with a session and takes the editor path below, so this branch no
-				// longer decides the fate of a recoverable recording.
-				clearNativeRecordingState();
-				return true;
-			}
-
-			clearNativeRecordingState();
-			if (result.session) {
-				await window.electronAPI.setCurrentRecordingSession(result.session);
-			} else if (result.path) {
-				await window.electronAPI.setCurrentVideoPath(result.path);
-			}
-
-			await window.electronAPI.switchToEditor({ compactReview: true });
-			return true;
-		} catch (error) {
-			console.error("Error saving native Windows recording:", error);
-			toast.error(
-				error instanceof Error ? error.message : "Failed to save native Windows recording",
-			);
-			clearNativeRecordingState();
-			return true;
-		} finally {
-			if (discardRecordingId.current === activeNativeRecording.recordingId) {
-				discardRecordingId.current = null;
-			}
-			setSaving(false);
-		}
-	}, []);
+		},
+		[t],
+	);
 
 	const finalizeNativeMacRecording = useCallback(
 		async (discard = false) => {
@@ -819,7 +831,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 				if (!result.success) {
 					console.error("Failed to stop native macOS recording:", result.error);
-					toast.error(result.error ?? "Failed to stop native macOS recording");
+					toast.error(t("recording.stopFailed"), {
+						description: ipcErrorMessage(result.error ?? "Failed to stop native macOS recording"),
+					});
 					// See the Windows finalizer: the main process has already
 					// released its helper handle, so keeping ours leaves the HUD
 					// stuck in a recording state the app can never be stopped out
@@ -902,9 +916,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return true;
 			} catch (error) {
 				console.error("Error saving native macOS recording:", error);
-				toast.error(
-					error instanceof Error ? error.message : "Failed to save native macOS recording",
-				);
+				toast.error(t("recording.stopFailed"), { description: ipcErrorMessage(error) });
 				clearNativeRecordingState();
 				return true;
 			} finally {
@@ -926,7 +938,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setSaving(false);
 			}
 		},
-		[queueNativeMacWebcamClipFinalization],
+		[queueNativeMacWebcamClipFinalization, t],
 	);
 
 	/**
@@ -982,7 +994,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 				if (!result.success) {
 					console.error("Failed to stop native Linux recording:", result.error);
-					toast.error(result.error ?? "Failed to stop native Linux recording");
+					toast.error(t("recording.stopFailed"), {
+						description: ipcErrorMessage(result.error ?? "Failed to stop native Linux recording"),
+					});
 					// See the Windows finalizer: the main process has already
 					// released its helper handle, so keeping ours leaves the HUD
 					// stuck in a recording state the app can never be stopped out
@@ -1026,9 +1040,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return true;
 			} catch (error) {
 				console.error("Error saving native Linux recording:", error);
-				toast.error(
-					error instanceof Error ? error.message : "Failed to save native Linux recording",
-				);
+				toast.error(t("recording.stopFailed"), { description: ipcErrorMessage(error) });
 				clearNativeRecordingState();
 				return true;
 			} finally {
@@ -1044,7 +1056,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setSaving(false);
 			}
 		},
-		[cursorCaptureMode, getRecordingDurationMs],
+		[cursorCaptureMode, getRecordingDurationMs, t],
 	);
 
 	const stopRecording = useRef(() => {
@@ -1158,9 +1170,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							toast.info("The recorded window is back. Continue when ready.");
 						return;
 					}
-					if (activeRecording.paused || nativeMacToggleInFlight.current) return;
+					if (nativeMacToggleInFlight.current) {
+						pendingNativeMacInterruption.current = reason;
+						return;
+					}
 					toast.warning(NATIVE_MAC_INTERRUPTION_MESSAGES[reason]);
-					togglePausedRef.current();
+					if (!activeRecording.paused) togglePausedRef.current();
 				},
 			);
 		}
@@ -2038,11 +2053,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 		} catch (error) {
 			console.error("Failed to start recording:", error);
-			const errorMsg = error instanceof Error ? error.message : "Failed to start recording";
+			const errorMsg = ipcErrorMessage(error);
 			if (errorMsg.includes("Permission denied") || errorMsg.includes("NotAllowedError")) {
 				toast.error(t("recording.permissionDenied"));
 			} else {
-				toast.error(errorMsg);
+				toast.error(t("recording.startFailed"), { description: ipcErrorMessage(error) });
 			}
 			setRecording(false);
 			setPaused(false);
@@ -2061,6 +2076,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		const activeNativeWindowsRecording = nativeWindowsRecording.current;
 		if (activeNativeWindowsRecording && !activeNativeWindowsRecording.finalizing) {
 			void (async () => {
+				const continuing = activeNativeWindowsRecording.paused;
 				try {
 					if (activeNativeWindowsRecording.paused) {
 						const result = await window.electronAPI.resumeNativeWindowsRecording();
@@ -2085,7 +2101,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					setPaused(true);
 				} catch (error) {
 					console.error("Failed to toggle native Windows pause state:", error);
-					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
+					toast.error(t(continuing ? "recording.continueFailed" : "recording.pauseFailed"), {
+						description: ipcErrorMessage(error),
+					});
 				}
 			})();
 			return;
@@ -2096,6 +2114,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (nativeMacToggleInFlight.current) return;
 			nativeMacToggleInFlight.current = true;
 			void (async () => {
+				const continuing = activeNativeMacRecording.paused;
 				const activeWebcamHandle = webcamRecorder.current;
 				try {
 					if (activeNativeMacRecording.paused) {
@@ -2214,11 +2233,23 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					}
 					if (activeNativeMacRecording.finalizing) return;
 					console.error("Failed to toggle native macOS pause state:", error);
-					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
+					toast.error(t(continuing ? "recording.continueFailed" : "recording.pauseFailed"), {
+						description: ipcErrorMessage(error),
+					});
 				} finally {
 					nativeMacToggleInFlight.current = false;
 					finalizingClipMs.current = 0;
 					setClipFinalizing(false);
+					const interruption = pendingNativeMacInterruption.current;
+					pendingNativeMacInterruption.current = null;
+					if (
+						interruption &&
+						nativeMacRecording.current &&
+						!nativeMacRecording.current.finalizing
+					) {
+						toast.warning(NATIVE_MAC_INTERRUPTION_MESSAGES[interruption]);
+						if (!nativeMacRecording.current.paused) togglePausedRef.current();
+					}
 				}
 			})();
 			return;
@@ -2227,6 +2258,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		const activeNativeLinuxRecording = nativeLinuxRecording.current;
 		if (activeNativeLinuxRecording && !activeNativeLinuxRecording.finalizing) {
 			void (async () => {
+				const continuing = activeNativeLinuxRecording.paused;
 				const activeWebcamRecorder = webcamRecorder.current?.recorder;
 				try {
 					if (activeNativeLinuxRecording.paused) {
@@ -2258,7 +2290,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					setPaused(true);
 				} catch (error) {
 					console.error("Failed to toggle native Linux pause state:", error);
-					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
+					toast.error(t(continuing ? "recording.continueFailed" : "recording.pauseFailed"), {
+						description: ipcErrorMessage(error),
+					});
 				}
 			})();
 			return;

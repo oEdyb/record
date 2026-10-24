@@ -3,7 +3,15 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/contexts/I18nContext", () => {
-	const translate = (key: string) => key;
+	const messages: Record<string, string> = {
+		"recording.startFailed": "Could not start recording. Press Record again, or reopen Klippt.",
+		"recording.pauseFailed":
+			"Could not pause and save this clip. Press Stop, then check Recordings.",
+		"recording.continueFailed": "Could not continue recording. Press Stop, then check Recordings.",
+		"recording.stopFailed":
+			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
+	};
+	const translate = (key: string) => messages[key] ?? key;
 	return { useScopedT: () => translate };
 });
 
@@ -217,6 +225,36 @@ describe("useScreenRecorder start timing", () => {
 		expect(api.startNativeWindowsRecording).toHaveBeenCalledOnce();
 		expect(view.result.current.recording).toBe(true);
 	});
+
+	it("shows start recovery guidance with the IPC detail", async () => {
+		api.startNativeWindowsRecording.mockRejectedValue(
+			new Error("Error invoking remote method 'recording:start': Error: IPC channel closed"),
+		);
+		const view = renderHook(() => useScreenRecorder());
+
+		await act(async () => {
+			await view.result.current.startRecordingImmediately();
+		});
+
+		expect(view.result.current.recording).toBe(false);
+		expect(view.result.current.starting).toBe(false);
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not start recording. Press Record again, or reopen Klippt.",
+			{ description: "IPC channel closed" },
+		);
+	});
+
+	it("keeps the specific permission message when start permission is denied", async () => {
+		api.startNativeWindowsRecording.mockRejectedValue(new Error("Permission denied"));
+		const view = renderHook(() => useScreenRecorder());
+
+		await act(async () => {
+			await view.result.current.startRecordingImmediately();
+		});
+
+		expect(view.result.current.recording).toBe(false);
+		expect(toast.error).toHaveBeenCalledWith("recording.permissionDenied");
+	});
 });
 
 describe("useScreenRecorder native Windows stop failure", () => {
@@ -239,7 +277,8 @@ describe("useScreenRecorder native Windows stop failure", () => {
 
 		expect(view.result.current.recording).toBe(false);
 		expect(toast.error).toHaveBeenCalledWith(
-			"Timed out waiting for native Windows capture to stop.",
+			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
+			{ description: "Timed out waiting for native Windows capture to stop." },
 		);
 		expect(view.result.current.saving).toBe(false);
 		// The failure must not be mistaken for a successful recording.
@@ -261,7 +300,11 @@ describe("useScreenRecorder native Windows stop failure", () => {
 		await pressStop(view);
 
 		expect(view.result.current.recording).toBe(false);
-		expect(toast.error).toHaveBeenCalledWith("IPC channel closed");
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
+			{ description: "IPC channel closed" },
+		);
+		expect(api.switchToEditor).not.toHaveBeenCalled();
 	});
 
 	it("still opens the editor when the stop succeeds", async () => {
@@ -276,6 +319,122 @@ describe("useScreenRecorder native Windows stop failure", () => {
 
 		expect(api.switchToEditor).toHaveBeenCalled();
 		expect(view.result.current.recording).toBe(false);
+	});
+
+	it("localizes native Windows Pause and Continue failures", async () => {
+		const pause = vi.fn();
+		const resume = vi.fn();
+		stubElectronAPI({
+			pauseNativeWindowsRecording: pause,
+			resumeNativeWindowsRecording: resume,
+		});
+		pause.mockImplementationOnce(async () => ({ success: false, error: "Windows pause failed" }));
+		pause.mockResolvedValue({ success: true });
+		resume.mockResolvedValue({ success: false, error: "Windows continue failed" });
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not pause and save this clip. Press Stop, then check Recordings.",
+			{ description: "Windows pause failed" },
+		);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(true);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(resume).toHaveBeenCalledOnce();
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not continue recording. Press Stop, then check Recordings.",
+			{ description: "Windows continue failed" },
+		);
+	});
+});
+
+describe("useScreenRecorder native Linux stop failure", () => {
+	function stubNativeLinux(overrides: Record<string, unknown> = {}) {
+		stubElectronAPI({
+			getPlatform: vi.fn(() => "linux"),
+			isNativeLinuxCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
+			startNativeLinuxRecording: vi.fn(async () => ({ success: true, recordingId: 7 })),
+			stopNativeLinuxRecording: vi.fn(async () => ({ success: true })),
+			...overrides,
+		});
+	}
+
+	async function startLinuxRecording(view: RecorderView) {
+		await act(async () => {
+			await view.result.current.startRecordingImmediately();
+		});
+		expect(view.result.current.recording).toBe(true);
+	}
+
+	it("shows Stop guidance without opening review when native Stop reports failure", async () => {
+		stubNativeLinux({
+			stopNativeLinuxRecording: vi.fn(async () => ({
+				success: false,
+				error: "Stop command failed",
+			})),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startLinuxRecording(view);
+		await pressStop(view);
+
+		expect(view.result.current.recording).toBe(false);
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
+			{ description: "Stop command failed" },
+		);
+		expect(window.electronAPI.switchToEditor).not.toHaveBeenCalled();
+	});
+
+	it("shows Stop guidance with the IPC detail when native Stop throws", async () => {
+		stubNativeLinux({
+			stopNativeLinuxRecording: vi.fn(async () => {
+				throw new Error("IPC channel closed");
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startLinuxRecording(view);
+		await pressStop(view);
+
+		expect(view.result.current.recording).toBe(false);
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
+			{ description: "IPC channel closed" },
+		);
+		expect(window.electronAPI.switchToEditor).not.toHaveBeenCalled();
+	});
+
+	it("localizes native Linux Pause and Continue failures", async () => {
+		const pause = vi.fn();
+		const resume = vi.fn();
+		stubNativeLinux({
+			pauseNativeLinuxRecording: pause,
+			resumeNativeLinuxRecording: resume,
+		});
+		pause.mockImplementationOnce(async () => ({ success: false, error: "Linux pause failed" }));
+		pause.mockResolvedValue({ success: true });
+		resume.mockResolvedValue({ success: false, error: "Linux continue failed" });
+		const view = renderHook(() => useScreenRecorder());
+		await startLinuxRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not pause and save this clip. Press Stop, then check Recordings.",
+			{ description: "Linux pause failed" },
+		);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(true);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(resume).toHaveBeenCalledOnce();
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not continue recording. Press Stop, then check Recordings.",
+			{ description: "Linux continue failed" },
+		);
 	});
 });
 
@@ -554,6 +713,41 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(stopNativeMacRecording).not.toHaveBeenCalledWith(true, expect.anything());
 	});
 
+	it("shows Stop guidance without opening review when native Stop reports failure", async () => {
+		stubNativeMac({
+			stopNativeMacRecording: vi.fn(async () => ({ success: false, error: "Stop command failed" })),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await pressStop(view);
+
+		expect(view.result.current.recording).toBe(false);
+		expect(view.result.current.saving).toBe(false);
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
+			{ description: "Stop command failed" },
+		);
+		expect(window.electronAPI.switchToEditor).not.toHaveBeenCalled();
+	});
+
+	it("shows Stop guidance with the IPC detail when native Stop throws", async () => {
+		stubNativeMac({
+			stopNativeMacRecording: vi.fn(async () => {
+				throw new Error("IPC channel closed");
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await pressStop(view);
+
+		expect(view.result.current.recording).toBe(false);
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
+			{ description: "IPC channel closed" },
+		);
+		expect(window.electronAPI.switchToEditor).not.toHaveBeenCalled();
+	});
+
 	it("rolls the HUD back to recording when Pause fails before the helper pauses", async () => {
 		const pause = vi.fn(async () => ({
 			success: false,
@@ -569,7 +763,50 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 
 		expect(pause).toHaveBeenCalledOnce();
 		expect(view.result.current.paused).toBe(false);
-		expect(toast.error).toHaveBeenCalledWith("Pause command failed");
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not pause and save this clip. Press Stop, then check Recordings.",
+			{ description: "Pause command failed" },
+		);
+	});
+
+	it("identifies Pause when its IPC rejects after the optimistic state change", async () => {
+		const pause = vi.fn(async () => {
+			throw new Error("IPC channel closed");
+		});
+		stubNativeMac({ pauseNativeMacRecording: pause });
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+
+		expect(pause).toHaveBeenCalledOnce();
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not pause and save this clip. Press Stop, then check Recordings.",
+			{ description: "IPC channel closed" },
+		);
+	});
+
+	it("keeps the HUD paused and shows Continue guidance when Continue fails", async () => {
+		const resume = vi.fn(async () => ({ success: false, error: "Continue command failed" }));
+		stubNativeMac({ resumeNativeMacRecording: resume });
+
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(true);
+
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+
+		expect(resume).toHaveBeenCalledOnce();
+		expect(view.result.current.paused).toBe(true);
+		expect(toast.error).toHaveBeenCalledWith(
+			"Could not continue recording. Press Stop, then check Recordings.",
+			{ description: "Continue command failed" },
+		);
+		expect(window.electronAPI.stopNativeMacRecording).not.toHaveBeenCalled();
 	});
 
 	it("keeps the HUD paused and lets Continue start a new clip after finalization fails", async () => {
@@ -1026,6 +1263,42 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		act(() => interruptionListener?.("system-sleep"));
 		await settle();
 		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
+	});
+
+	it("applies a terminal interruption that arrives while Continue is pending", async () => {
+		let interruptionListener: ((reason: string) => void) | undefined;
+		let finishResume: ((result: { success: true; clipIndex: number }) => void) | undefined;
+		const resume = vi.fn(
+			() =>
+				new Promise<{ success: true; clipIndex: number }>((resolve) => {
+					finishResume = resolve;
+				}),
+		);
+		stubNativeMac({
+			resumeNativeMacRecording: resume,
+			onNativeMacRecordingInterrupted: vi.fn((callback) => {
+				interruptionListener = callback;
+				return vi.fn();
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(true);
+
+		act(() => view.result.current.togglePaused());
+		await settle();
+		expect(resume).toHaveBeenCalledOnce();
+		act(() => interruptionListener?.("screen-locked"));
+		act(() => interruptionListener?.("source-active"));
+		await settle();
+		finishResume?.({ success: true, clipIndex: 1 });
+		await settle();
+
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledTimes(2);
+		expect(view.result.current.paused).toBe(true);
+		expect(toast.warning).toHaveBeenCalledWith("The screen locked, so recording paused.");
 	});
 
 	it("tells the user how many minutes of disk space the take has left", async () => {

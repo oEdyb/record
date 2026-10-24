@@ -1032,7 +1032,8 @@ export function LaunchWindow() {
 				setIsPeekOpen(true);
 				return;
 			}
-			if (event.key !== "Backspace" || !canRemovePreviousClip) return;
+			if (event.key !== "Backspace" || !canRemovePreviousClip || peekOpen || isDeviceSettingsOpen)
+				return;
 			event.preventDefault();
 			void handleRemovePreviousClip();
 		};

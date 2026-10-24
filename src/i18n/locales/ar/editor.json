@@ -60,6 +60,10 @@
 		"importVideoButton": "استيراد فيديو",
 		"loadProjectButton": "فتح مشروع",
 		"supportedFormats": "الصيغ المدعومة: MP4، MOV، WebM، MKV، AVI، M4V، WMV",
+		"startFailed": "تعذّر بدء التسجيل. اضغط تسجيل مرة أخرى، أو أعد فتح Klippt.",
+		"pauseFailed": "تعذّر الإيقاف المؤقت وحفظ هذا المقطع. اضغط إيقاف، ثم تحقق من التسجيلات.",
+		"continueFailed": "تعذّر متابعة التسجيل. اضغط إيقاف، ثم تحقق من التسجيلات.",
+		"stopFailed": "تعذّر إنهاء الإيقاف أو فتح المراجعة. أعد فتح Klippt، ثم تحقق من التسجيلات.",
 		"dragDropHint": "أو اسحب وأفلت ملف مشروع .klippt هنا",
 		"dropOverlay": "أفلت ملف المشروع لفتحه",
 		"dropErrors": {

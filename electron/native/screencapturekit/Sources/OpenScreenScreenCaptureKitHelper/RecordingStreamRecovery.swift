@@ -8,15 +8,40 @@ struct RecordingStreamRecovery {
 		case activeFailure
 	}
 	private var current: ObjectIdentifier?
+	private var sourceIsInactive = false
 	private(set) var needsReplacement = false
+	private(set) var generation: UInt64 = 0
+
+	var isSourceUsable: Bool {
+		current != nil && !needsReplacement && !sourceIsInactive
+	}
+
+	var canAttemptResume: Bool {
+		current != nil && !sourceIsInactive
+	}
 
 	mutating func install(_ stream: AnyObject) {
 		current = ObjectIdentifier(stream)
 		needsReplacement = false
+		sourceIsInactive = false
+		generation &+= 1
 	}
 
 	func acceptsSamples(from stream: AnyObject) -> Bool {
-		current == ObjectIdentifier(stream) && !needsReplacement
+		current == ObjectIdentifier(stream) && isSourceUsable
+	}
+
+	mutating func becameInactive(_ stream: AnyObject) -> Bool {
+		guard current == ObjectIdentifier(stream), !needsReplacement, !sourceIsInactive else { return false }
+		sourceIsInactive = true
+		generation &+= 1
+		return true
+	}
+
+	mutating func becameActive(_ stream: AnyObject) -> Bool {
+		guard current == ObjectIdentifier(stream), !needsReplacement, sourceIsInactive else { return false }
+		sourceIsInactive = false
+		return true
 	}
 
 	mutating func invalidate() { needsReplacement = true }
@@ -28,8 +53,9 @@ struct RecordingStreamRecovery {
 	}
 
 	static func canRejectResume(paused: Bool, stopping: Bool, terminalFailure: Bool,
-		acknowledgedClipIndex: Int?, previousClipIndex: Int) -> Bool {
-		paused && !stopping && !terminalFailure && (acknowledgedClipIndex.map { $0 <= previousClipIndex } ?? true)
+		acknowledgedClipIndex: Int?, previousClipIndex: Int, resumePending: Bool = false) -> Bool {
+		(paused || resumePending) && !stopping && !terminalFailure &&
+			(acknowledgedClipIndex.map { $0 <= previousClipIndex } ?? true)
 	}
 
 	static func rejectedResumePayload(previousClipIndex: Int, message: String) -> [String: Any] {

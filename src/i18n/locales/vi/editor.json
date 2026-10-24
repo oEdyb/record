@@ -60,6 +60,10 @@
 		"importVideoButton": "Nhập video",
 		"loadProjectButton": "Mở dự án",
 		"supportedFormats": "Định dạng được hỗ trợ: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
+		"startFailed": "Không thể bắt đầu ghi. Nhấn Ghi lại hoặc mở lại Klippt.",
+		"pauseFailed": "Không thể tạm dừng và lưu clip này. Nhấn Dừng, rồi kiểm tra Bản ghi.",
+		"continueFailed": "Không thể tiếp tục ghi. Nhấn Dừng, rồi kiểm tra Bản ghi.",
+		"stopFailed": "Không thể hoàn tất dừng hoặc mở phần xem lại. Mở lại Klippt, rồi kiểm tra Bản ghi.",
 		"dragDropHint": "hoặc kéo và thả tệp dự án .klippt vào đây",
 		"dropOverlay": "Thả tệp dự án để mở",
 		"dropErrors": {

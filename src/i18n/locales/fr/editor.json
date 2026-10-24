@@ -48,6 +48,10 @@
 		"cameraDisconnected": "Webcam déconnectée.",
 		"cameraNotFound": "Caméra introuvable.",
 		"permissionDenied": "Permission d'enregistrement refusée. Veuillez autoriser l'enregistrement d'écran.",
+		"startFailed": "Impossible de démarrer l’enregistrement. Appuyez à nouveau sur Enregistrer ou rouvrez Klippt.",
+		"pauseFailed": "Impossible de mettre en pause et d’enregistrer ce clip. Appuyez sur Arrêter, puis vérifiez Enregistrements.",
+		"continueFailed": "Impossible de poursuivre l’enregistrement. Appuyez sur Arrêter, puis vérifiez Enregistrements.",
+		"stopFailed": "Impossible de terminer l’arrêt ou d’ouvrir la révision. Rouvrez Klippt, puis vérifiez Enregistrements.",
 		"selectSource": "Veuillez sélectionner une source à enregistrer"
 	},
 	"loadingEditor": "Chargement de l'éditeur…",

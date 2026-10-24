@@ -60,6 +60,10 @@
 		"importVideoButton": "動画をインポート",
 		"loadProjectButton": "プロジェクトを開く",
 		"supportedFormats": "対応フォーマット：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
+		"startFailed": "録画を開始できませんでした。もう一度「録画」を押すか、Klippt を開き直してください。",
+		"pauseFailed": "一時停止してこのクリップを保存できませんでした。「停止」を押してから「録画」を確認してください。",
+		"continueFailed": "録画を続行できませんでした。「停止」を押してから「録画」を確認してください。",
+		"stopFailed": "停止の完了またはレビューを開くことができませんでした。Klippt を開き直して「録画」を確認してください。",
 		"dragDropHint": ".klippt プロジェクトファイルをここにドラッグ＆ドロップ",
 		"dropOverlay": "プロジェクトファイルをドロップして開く",
 		"dropErrors": {

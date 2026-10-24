@@ -60,6 +60,10 @@
 		"importVideoButton": "동영상 가져오기",
 		"loadProjectButton": "프로젝트 열기",
 		"supportedFormats": "지원 형식: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
+		"startFailed": "녹화를 시작하지 못했습니다. 녹화를 다시 누르거나 Klippt을 다시 여세요.",
+		"pauseFailed": "일시 정지하고 이 클립을 저장하지 못했습니다. 정지를 누른 다음 녹화를 확인하세요.",
+		"continueFailed": "녹화를 계속하지 못했습니다. 정지를 누른 다음 녹화를 확인하세요.",
+		"stopFailed": "정지를 완료하거나 검토를 열지 못했습니다. Klippt을 다시 연 후 녹화를 확인하세요.",
 		"dragDropHint": ".klippt 프로젝트 파일을 여기에 드래그 앤 드롭",
 		"dropOverlay": "프로젝트 파일을 드롭하여 열기",
 		"dropErrors": {

@@ -60,6 +60,10 @@
 		"importVideoButton": "Import video",
 		"loadProjectButton": "Open project",
 		"supportedFormats": "Supported formats: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
+		"startFailed": "Could not start recording. Press Record again, or reopen Klippt.",
+		"pauseFailed": "Could not pause and save this clip. Press Stop, then check Recordings.",
+		"continueFailed": "Could not continue recording. Press Stop, then check Recordings.",
+		"stopFailed": "Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
 		"dragDropHint": "or drag & drop a .klippt project file here",
 		"dropOverlay": "Drop project file to open",
 		"dropErrors": {

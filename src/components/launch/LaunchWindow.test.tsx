@@ -1119,6 +1119,26 @@ describe("LaunchWindow record button", () => {
 		expect(screen.queryByRole("dialog", { name: "peek.title" })).not.toBeInTheDocument();
 	});
 
+	it("does not remove a clip with Backspace while Replay owns the keyboard", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.canPauseRecording = true;
+		recorderState.value.canRemovePreviousClip = true;
+		recorderState.value.recordedClips = [
+			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
+		];
+		renderLaunchWindow();
+		fireEvent.keyDown(window, { key: "ArrowUp" });
+		expect(await screen.findByRole("dialog", { name: "peek.title" })).toBeVisible();
+
+		fireEvent.keyDown(window, { key: "Backspace" });
+		expect(recorderState.value.removePreviousClip).not.toHaveBeenCalled();
+
+		fireEvent.keyDown(window, { key: "Escape" });
+		fireEvent.keyDown(window, { key: "Backspace" });
+		expect(recorderState.value.removePreviousClip).toHaveBeenCalledOnce();
+	});
+
 	it("shows recorder errors at the bottom, right above the pill", async () => {
 		renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");

@@ -426,6 +426,8 @@ export class NativeMacRecordingService {
 			if (!this.paused) return { success: true };
 			let resumeRequested = false;
 			try {
+				const storageError = storageStartError(await this.freeDiskBytes(this.deps.recordingsDir));
+				if (storageError) return { success: false, paused: true, error: storageError };
 				if (request) {
 					if (this.recordingId === null || !this.targetPath || !request.source?.sourceId) {
 						return { success: false, error: "The next macOS clip setup is incomplete." };

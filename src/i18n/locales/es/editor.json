@@ -48,6 +48,10 @@
 		"cameraDisconnected": "Cámara web desconectada.",
 		"cameraNotFound": "Cámara no encontrada.",
 		"permissionDenied": "Permiso de grabación denegado. Por favor permite la grabación de pantalla.",
+		"startFailed": "No se pudo iniciar la grabación. Pulsa Grabar de nuevo o vuelve a abrir Klippt.",
+		"pauseFailed": "No se pudo pausar y guardar este clip. Pulsa Detener y revisa Grabaciones.",
+		"continueFailed": "No se pudo continuar la grabación. Pulsa Detener y revisa Grabaciones.",
+		"stopFailed": "No se pudo terminar de detener o abrir la revisión. Vuelve a abrir Klippt y revisa Grabaciones.",
 		"selectSource": "Por favor selecciona una fuente para grabar"
 	},
 	"loadingEditor": "Cargando editor…",
