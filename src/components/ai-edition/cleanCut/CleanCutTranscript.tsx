@@ -130,7 +130,8 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 		rootRef.current?.querySelector("[data-match]")?.scrollIntoView({ block: "center" });
 	}, [matches]);
 	// Hovering a cut shows a Restore (or Cut again) button just above where it ends; hovering
-	// kept words shows a Cut button for their sentence.
+	// kept words shows a Cut button for their sentence right above the word under the pointer.
+	// Gaps between words and lines keep the button, so the pointer can always reach it.
 	const onPointerOver = (event: PointerEvent<HTMLDivElement>) => {
 		const target = event.target instanceof Element ? event.target : null;
 		if (target?.closest("[data-region-action]")) return;
@@ -138,6 +139,7 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 		const region = target?.closest<HTMLElement>("[data-region-id]");
 		const regionId = region?.dataset.regionId;
 		const word = target?.closest<HTMLElement>("[data-word-index]");
+		if (!region && !word) return;
 		const sentence = !region && word ? sentenceAround(words, Number(word.dataset.wordIndex)) : null;
 		const id =
 			regionId && (cutIds.has(regionId) || restoredIds.has(regionId))
@@ -145,9 +147,7 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 				: sentence
 					? `sentence:${sentence[0]}-${sentence[1]}`
 					: null;
-		const anchor = sentence
-			? root?.querySelector<HTMLElement>(`[data-word-index="${sentence[1]}"]`)
-			: region;
+		const anchor = sentence ? word : region;
 		if (!root || !id || !anchor) {
 			setAction(null);
 			return;
@@ -156,11 +156,12 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 		const rects = anchor.getClientRects();
 		const end = rects[rects.length - 1] ?? anchor.getBoundingClientRect();
 		const box = root.getBoundingClientRect();
+		const x = sentence ? (end.left + end.right) / 2 - 28 : end.right - 40;
 		setAction({
 			id,
 			sentence,
-			top: end.top - box.top - 26,
-			left: Math.min(box.width - 96, Math.max(0, end.right - box.left - 40)),
+			top: end.top - box.top - (sentence ? 24 : 26),
+			left: Math.min(box.width - 96, Math.max(0, x - box.left)),
 		});
 	};
 	return (
@@ -249,17 +250,16 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 						setAction(null);
 					}}
 				>
-					{action.sentence ? (
-						<>
-							<Scissors size={12} aria-hidden="true" />
-							{t("cleanCut.cutSentence")}
-						</>
-					) : restoredIds.has(action.id) ? (
+					{action.sentence || restoredIds.has(action.id) ? (
 						<Scissors size={12} aria-hidden="true" />
 					) : (
 						<RotateCcw size={12} aria-hidden="true" />
 					)}
-					{restoredIds.has(action.id) ? t("cleanCut.cutAgain") : t("cleanCut.restore")}
+					{action.sentence
+						? t("cleanCut.cutSentence")
+						: restoredIds.has(action.id)
+							? t("cleanCut.cutAgain")
+							: t("cleanCut.restore")}
 				</button>
 			) : null}
 		</div>
