@@ -1900,6 +1900,7 @@ export function LaunchWindow() {
 								label={t("tooltips.expandHud")}
 								onTap={toggleHudMinimized}
 								tapExpanded={false}
+								roomy
 							>
 								<HudBrandMark />
 							</HudDragHandle>

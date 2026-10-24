@@ -93,9 +93,11 @@
 	width: max-content;
 }
 
-/* Folded idle pill: the mark and Record only. */
+/* Folded idle pill: the mark and Record only. A length, not max-content, so
+   Record morphs it into the recording pill: two max-content widths are the same
+   value and would snap instead of animating. 1 + 4 + grip 48 + 2 + Record 40 + 4 + 1. */
 .hudPillMinimized {
-	width: max-content;
+	width: 100px;
 }
 
 .hudPillRow {
@@ -950,24 +952,26 @@
 	gap: 8px;
 }
 
+/* A small pill made of the same surface, border and shadow as the recorder pill. */
 .clipUndoNotice {
 	pointer-events: auto;
 	display: flex;
-	min-height: 38px;
+	min-height: 40px;
 	width: max-content;
 	max-width: 100%;
 	box-sizing: border-box;
 	align-items: center;
-	gap: 8px;
-	padding: 5px 6px 5px 11px;
-	border: 1px solid rgba(255, 255, 255, 0.11);
-	border-radius: var(--hud-radius-lg);
-	background: #1a1e24;
+	gap: 10px;
+	padding: 5px 5px 5px 16px;
+	border: 1px solid var(--hud-border);
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-surface);
 	box-shadow:
-		0 10px 28px -14px rgba(0, 0, 0, 0.78),
-		0 2px 7px -3px rgba(0, 0, 0, 0.56);
-	color: rgba(255, 255, 255, 0.82);
-	font-size: 11px;
+		inset 0 1px 0 rgba(255, 255, 255, 0.05),
+		0 12px 32px -14px rgba(0, 0, 0, 0.7),
+		0 2px 6px -2px rgba(0, 0, 0, 0.4);
+	color: var(--hud-ink);
+	font-size: 13px;
 	font-weight: 560;
 	animation: clip-undo-enter 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
@@ -975,17 +979,17 @@
 .clipUndoDuration {
 	color: var(--hud-muted);
 	font-family: var(--font-mono, ui-monospace, monospace);
-	font-size: 10px;
+	font-size: 12px;
 	font-variant-numeric: tabular-nums;
 }
 
 .clipUndoButton {
-	min-height: 26px;
-	padding: 0 9px;
+	min-height: 28px;
+	padding: 0 12px;
 	border: 0;
-	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.09);
-	color: rgba(255, 255, 255, 0.9);
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill-strong);
+	color: var(--hud-ink);
 	font: inherit;
 	font-weight: 650;
 	cursor: pointer;
@@ -994,7 +998,7 @@
 
 .clipUndoButton:hover,
 .clipUndoButton:focus-visible {
-	background: rgba(255, 255, 255, 0.15);
+	background: rgba(255, 255, 255, 0.2);
 	color: #ffffff;
 }
 

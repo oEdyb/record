@@ -34,11 +34,14 @@ export const HudDragHandle = memo(function HudDragHandle({
 	onPointerEnd,
 	onTap,
 	tapExpanded,
+	roomy = false,
 	children,
 	label,
 }: {
 	children: ReactNode;
 	label?: string;
+	/** A larger grab target, for the folded pill where the grip is most of the surface. */
+	roomy?: boolean;
 	/**
 	 * Hand the gesture to the compositor instead of the pointer handlers below.
 	 *
@@ -68,7 +71,7 @@ export const HudDragHandle = memo(function HudDragHandle({
 			tabIndex={tappable ? 0 : undefined}
 			aria-label={tappable ? label : undefined}
 			aria-expanded={tappable ? tapExpanded : undefined}
-			className={`flex h-9 min-w-9 shrink-0 cursor-grab items-center justify-center rounded-full active:cursor-grabbing ${hudFocusClasses} ${
+			className={`flex ${roomy ? "h-10 min-w-12" : "h-9 min-w-9"} shrink-0 cursor-grab items-center justify-center rounded-full active:cursor-grabbing ${hudFocusClasses} ${
 				nativeDrag ? styles.electronDrag : styles.electronNoDrag
 			}`}
 			onPointerDown={(event) => {
