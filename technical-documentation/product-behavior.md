@@ -219,7 +219,9 @@ with no 16:9 mode gets its largest format. Picking a listed mode
 such as 4K 30 fps or 1080p 60 fps records exactly that mode and is remembered. Standard keeps the
 remembered explicit camera-format choice. High never promises preview dimensions as the native
 recording geometry. Report actual negotiated pixels in capture
-telemetry and the saved media.
+telemetry and the saved media. A camera that another client moves to a different frame size never
+stops Record or a take (Olle, 2026-10-24): those frames are dropped with a camera-interrupted
+warning, the native format is requested again, and the camera rejoins at its native size.
 Create complete microphone and system-audio source files during capture, alongside the screen
 and camera sources. On macOS, camera video and standalone AAC audio use fragmented MOV files
 so readable fragments survive a helper crash. Persist their actual first-sample offsets and

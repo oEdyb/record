@@ -25,6 +25,7 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 	var onInterruption: ((String) -> Void)?
 	private var interruptionObservers: [NSObjectProtocol] = []
 	private var lastSampleHostSeconds: Double?
+	private var geometryGate = CameraGeometryGate()
 	private var stopRequested = false
 	let width: Int
 	let height: Int
@@ -230,23 +231,53 @@ final class NativeCameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferD
 		}
 	}
 	func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+		guard let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { fail("The native camera delivered no image."); return }
+		let active = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+		let delivered = (CVPixelBufferGetWidth(image), CVPixelBufferGetHeight(image))
+		let native = Self.matchesNativeGeometry(expected: (width, height), active: (Int(active.width), Int(active.height)), delivered: delivered)
+		// A camera shared with another client can hand this session that client's frame
+		// size for a while. The writer only takes the configured native size, so those
+		// frames are dropped and the camera joins again once it returns; the take goes on.
+		switch geometryGate.admit(native: native) {
+		case .dropStartingGap:
+			reportInterruption("camera delivered \(delivered.0)x\(delivered.1) instead of its configured \(width)x\(height) (active format \(active.width)x\(active.height), preset \(session.sessionPreset.rawValue)); dropping its frames until it returns")
+			reassertNativeFormat()
+			return
+		case .drop:
+			return
+		case .forwardAfterGap(let dropped):
+			reportInterruption("camera returned to \(width)x\(height) after \(dropped) frames at another size")
+		case .forward:
+			break
+		}
 		let nowSeconds = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
 		if let last = lastSampleHostSeconds, nowSeconds - last > 0.25 {
 			reportInterruption(String(format: "no camera frames for %.0f ms", (nowSeconds - last) * 1_000))
 		}
 		lastSampleHostSeconds = nowSeconds
 		guard let clock = session.synchronizationClock else { fail("The native camera clock is unavailable."); return }
-		guard let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { fail("The native camera delivered no image."); return }
-		let active = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-		guard Self.matchesNativeGeometry(expected: (width, height), active: (Int(active.width), Int(active.height)), delivered: (CVPixelBufferGetWidth(image), CVPixelBufferGetHeight(image))) else {
-			let settings = (output as? AVCaptureVideoDataOutput)?.videoSettings ?? [:]
-			fail("The camera changed its native resolution during capture: configured \(width)x\(height), delivered \(CVPixelBufferGetWidth(image))x\(CVPixelBufferGetHeight(image)), active format \(active.width)x\(active.height), preset \(session.sessionPreset.rawValue), output settings \(settings)."); return
-		}
 		let hostTime = CMSyncConvertTime(CMSampleBufferGetPresentationTimeStamp(sampleBuffer), from: clock, to: CMClockGetHostTimeClock())
 		guard let sample = try? RecordingFrameCache.retime(sampleBuffer, at: hostTime, fps: max(1, Int(fps.rounded()))) else { return }
 		let queue = sampleQueue, handler = onSample
 		queue.async { handler(sample) }
 	}
+	/// Asks the device for this capture's native format again, so a camera another client
+	/// moved to a different size comes back as soon as that client lets it.
+	private func reassertNativeFormat() {
+		lifecycleQueue.async {
+			guard !self.stopRequested else { return }
+			do {
+				try self.device.lockForConfiguration()
+				self.device.activeFormat = self.nativeFormat
+				self.device.activeVideoMinFrameDuration = self.nativeFrameDuration
+				self.device.activeVideoMaxFrameDuration = self.nativeFrameDuration
+				self.device.unlockForConfiguration()
+			} catch {
+				self.reportInterruption("could not reapply the native camera format: \(error)")
+			}
+		}
+	}
+
 	static func matchesNativeGeometry(expected: (Int, Int), active: (Int, Int), delivered: (Int, Int)) -> Bool {
 		expected.0 == active.0 && expected.1 == active.1 && expected.0 == delivered.0 && expected.1 == delivered.1
 	}
