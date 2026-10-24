@@ -8,6 +8,8 @@
 		"useVerticalTray": "세로 트레이 사용",
 		"useHorizontalTray": "가로 트레이 사용",
 		"openStudio": "스튜디오 열기",
+		"minimizeHud": "클릭하여 최소화, 드래그하여 이동",
+		"expandHud": "클릭하여 모든 컨트롤 표시, 드래그하여 이동",
 		"notesToolbar": {
 			"bold": "굵게",
 			"italic": "기울임꼴",

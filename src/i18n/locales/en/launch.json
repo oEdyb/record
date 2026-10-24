@@ -8,6 +8,8 @@
 		"useVerticalTray": "Use vertical tray",
 		"useHorizontalTray": "Use horizontal tray",
 		"openStudio": "Open Studio",
+		"minimizeHud": "Click to minimize, drag to move",
+		"expandHud": "Click to show all controls, drag to move",
 		"notesToolbar": {
 			"bold": "Bold",
 			"italic": "Italic",

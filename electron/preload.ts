@@ -132,6 +132,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setHudOverlaySize: (width: number, height: number) => {
 		ipcRenderer.send("hud-overlay-set-size", width, height);
 	},
+	setHudPillSize: (width: number, height: number) => {
+		ipcRenderer.send("hud-overlay-set-pill-size", width, height);
+	},
 	setHudDirectionExclusionRectangles: (
 		rectangles: Array<{ x: number; y: number; width: number; height: number }>,
 	) => {
@@ -276,6 +279,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = (_event: unknown, prefs: RecordingPrefs) => callback(prefs);
 		ipcRenderer.on("recording-prefs-changed", listener);
 		return () => ipcRenderer.removeListener("recording-prefs-changed", listener);
+	},
+	onHudWorkAreaChanged: (
+		callback: (area: { x: number; y: number; width: number; height: number }) => void,
+	) => {
+		const listener = (
+			_event: unknown,
+			area: { x: number; y: number; width: number; height: number },
+		) => callback(area);
+		ipcRenderer.on("hud-overlay-work-area", listener);
+		return () => ipcRenderer.removeListener("hud-overlay-work-area", listener);
 	},
 	onHudVisibilityChanged: (callback: (visible: boolean) => void) => {
 		const listener = (_event: unknown, visible: boolean) => callback(visible === true);

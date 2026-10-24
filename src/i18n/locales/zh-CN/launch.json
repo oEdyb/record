@@ -8,6 +8,8 @@
 		"useVerticalTray": "使用竖向托盘",
 		"useHorizontalTray": "使用横向托盘",
 		"openStudio": "打开工作室",
+		"minimizeHud": "点击最小化，拖动以移动",
+		"expandHud": "点击显示全部控件，拖动以移动",
 		"notesToolbar": {
 			"bold": "加粗",
 			"italic": "斜体",

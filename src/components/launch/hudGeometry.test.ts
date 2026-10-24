@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
 	computeHudBarMaxHeight,
 	computeHudModalMaxHeight,
+	computeHudPlacement,
 	computeHudPopoverMaxHeight,
 	computeHudWindowSize,
+	fitHudStackCap,
 	HUD_BAR_BOTTOM,
 	HUD_EDGE_SLACK,
 	HUD_MODAL_MAX_HEIGHT,
@@ -20,7 +22,6 @@ function size(barWidth: number, barHeight: number, noticeHeight = 0, availableHe
 		barWidth,
 		barHeight,
 		noticeHeight,
-		availableHeight,
 		// What LaunchWindow reserves: the tallest surface that can float above the
 		// bar, regardless of which one is currently open.
 		stackMaxHeight: Math.max(
@@ -71,11 +72,68 @@ describe("computeHudWindowSize", () => {
 		expect(withNotice.required.height).toBeGreaterThan(without.required.height);
 	});
 
-	it("never asks for more height than the display's work area", () => {
+	it("mirrors the reserve so the bar sits at the window's centre", () => {
+		// The stack can open above or below the pill without moving the window,
+		// so the same room is reserved on both sides of the bar.
+		const { required } = size(520, 50);
+		const sideReserve = (required.height - 50) / 2;
+		expect(sideReserve).toBeGreaterThanOrEqual(HUD_POPOVER_GAP + HUD_MODAL_MAX_HEIGHT);
+		expect(Number.isInteger(sideReserve)).toBe(true);
+	});
+
+	it("may ask for more height than the display, since only the pill stays on screen", () => {
 		const shortScreen = 700;
-		const { required, granted } = size(48, 560, 0, shortScreen);
-		expect(required.height).toBeLessThanOrEqual(shortScreen);
-		expect(granted.height).toBeLessThanOrEqual(shortScreen);
+		const { required } = size(424, 50, 0, shortScreen);
+		expect(required.height).toBeGreaterThan(shortScreen);
+	});
+});
+
+describe("computeHudPlacement", () => {
+	const area = { areaTop: 34, areaBottom: 1029 };
+
+	it("opens the stack above a pill resting near the bottom", () => {
+		const result = computeHudPlacement({
+			...area,
+			pillTop: 954,
+			pillBottom: 1004,
+			stackHeight: 560,
+		});
+		expect(result.placement).toBe("above");
+		expect(result.room).toBe(954 - 34 - HUD_POPOVER_GAP - HUD_EDGE_SLACK);
+	});
+
+	it("opens the stack below a pill dragged to the top", () => {
+		const result = computeHudPlacement({ ...area, pillTop: 34, pillBottom: 84, stackHeight: 560 });
+		expect(result.placement).toBe("below");
+		expect(result.room).toBe(1029 - 84 - HUD_POPOVER_GAP - HUD_EDGE_SLACK);
+	});
+
+	it("stays above when the stack fits there, even with more room below", () => {
+		const result = computeHudPlacement({
+			...area,
+			pillTop: 400,
+			pillBottom: 450,
+			stackHeight: 300,
+		});
+		expect(result.placement).toBe("above");
+	});
+
+	it("picks the roomier side when the stack fits on neither", () => {
+		const result = computeHudPlacement({
+			...area,
+			pillTop: 500,
+			pillBottom: 550,
+			stackHeight: 900,
+		});
+		expect(result.placement).toBe("below");
+	});
+});
+
+describe("fitHudStackCap", () => {
+	it("shrinks a cap to the room on its side, but not below the floor", () => {
+		expect(fitHudStackCap(560, 900, 200)).toBe(560);
+		expect(fitHudStackCap(560, 400, 200)).toBe(400);
+		expect(fitHudStackCap(560, 50, 200)).toBe(200);
 	});
 });
 

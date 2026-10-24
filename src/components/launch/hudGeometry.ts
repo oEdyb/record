@@ -16,12 +16,17 @@
  * Opening or closing a popover, or a device list changing length, then costs
  * exactly zero native resizes.
  *
+ * The bar sits at the window's centre and the reserve is mirrored above and
+ * below it, so the floating stack can open on whichever side of the pill has
+ * room without moving the window. The window may reach past the display; only
+ * the pill is kept on screen (electron/hudDragGeometry.ts).
+ *
  * Nothing here may depend on `window.innerWidth/innerHeight`: that is the edge
  * the loop used to close on. Screen-derived values (`screen.availHeight`) are
  * fine — they don't change when the window does.
  */
 
-/** Gap between the window's bottom edge and the bar's bottom edge. */
+/** Gap between the pill and the work-area edge it rests against. */
 export const HUD_BAR_BOTTOM = 20;
 /** Hard minimum breathing room on every edge, so drop shadows aren't clipped. */
 export const HUD_EDGE_SLACK = 24;
@@ -76,13 +81,48 @@ export interface HudSizeInput {
 	barHeight: number;
 	/** 0 when no notice is on screen. */
 	noticeHeight: number;
-	/** Work-area height of the display, NOT the window height. */
-	availableHeight: number;
-	/** Room reserved above the bar: the tallest surface that can float there. */
+	/** Room reserved on each side of the bar: the tallest surface that can float there. */
 	stackMaxHeight: number;
 }
 
-/** Room left above the bar for whatever is floating there. */
+export type HudStackPlacement = "above" | "below";
+
+export interface HudPlacementInput {
+	/** The pill's top and bottom edges, in screen coordinates. */
+	pillTop: number;
+	pillBottom: number;
+	/** The work area's top and bottom edges, in screen coordinates. */
+	areaTop: number;
+	areaBottom: number;
+	/** Height the open stack would like to have. */
+	stackHeight: number;
+}
+
+/**
+ * Which side of the pill the floating stack opens on, and how tall it may get
+ * there. Above is the default; the stack moves below only when it would not fit
+ * above and there is more room below, as with a pill dragged near the top.
+ */
+export function computeHudPlacement(input: HudPlacementInput): {
+	placement: HudStackPlacement;
+	room: number;
+} {
+	const roomAbove = Math.round(input.pillTop - input.areaTop - HUD_POPOVER_GAP - HUD_EDGE_SLACK);
+	const roomBelow = Math.round(
+		input.areaBottom - input.pillBottom - HUD_POPOVER_GAP - HUD_EDGE_SLACK,
+	);
+	if (roomAbove >= input.stackHeight || roomAbove >= roomBelow) {
+		return { placement: "above", room: Math.max(0, roomAbove) };
+	}
+	return { placement: "below", room: Math.max(0, roomBelow) };
+}
+
+/** A floating surface's height cap, shrunk to the room on its side but never below `floor`. */
+export function fitHudStackCap(cap: number, room: number, floor: number): number {
+	return Math.round(Math.max(floor, Math.min(cap, room)));
+}
+
+/** Most room the floating stack can get: the pill resting at one edge of the work area. */
 function stackRoom(barHeight: number, availableHeight: number): number {
 	return availableHeight - HUD_BAR_BOTTOM - barHeight - HUD_POPOVER_GAP - HUD_EDGE_SLACK * 2;
 }
@@ -130,25 +170,17 @@ export function computeHudWindowSize(input: HudSizeInput): {
 	const requiredWidth = Math.max(HUD_MIN_WINDOW_WIDTH, stackWidth + HUD_EDGE_SLACK * 2);
 
 	const noticeBlock = input.noticeHeight > 0 ? HUD_STACK_GAP + Math.ceil(input.noticeHeight) : 0;
-	const rawHeight =
-		HUD_BAR_BOTTOM +
-		Math.ceil(input.barHeight) +
-		HUD_POPOVER_GAP +
-		Math.ceil(input.stackMaxHeight) +
-		noticeBlock +
-		HUD_EDGE_SLACK;
-
-	// The main process clamps to the display's work area, so clamp here too:
-	// otherwise the caller would record an allocation the window never actually
-	// got, then skip a resize it genuinely needs later on.
-	const ceiling = input.availableHeight > 0 ? input.availableHeight : Number.POSITIVE_INFINITY;
-	const requiredHeight = Math.min(rawHeight, ceiling);
+	const sideReserve =
+		HUD_POPOVER_GAP + Math.ceil(input.stackMaxHeight) + noticeBlock + HUD_EDGE_SLACK;
+	// No work-area ceiling: the window is allowed past the display, and the bar
+	// stays at its centre so the stack can open on either side.
+	const requiredHeight = Math.ceil(input.barHeight) + sideReserve * 2;
 
 	return {
 		required: { width: requiredWidth, height: requiredHeight },
 		granted: {
 			width: requiredWidth + HUD_GROWTH_RESERVE * 2,
-			height: Math.min(rawHeight + HUD_GROWTH_RESERVE, ceiling),
+			height: requiredHeight + HUD_GROWTH_RESERVE,
 		},
 	};
 }

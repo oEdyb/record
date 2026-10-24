@@ -19,28 +19,41 @@
  * the window-sizing measurement that closes a feedback loop (see hudGeometry.ts).
  * Screen-derived caps arrive as the --hud-* custom properties instead.
  */
+/* The pill is the only box in flow, centred in the window; main keeps that
+   centre on the pill when it clamps a drag or a resize. */
 .hudAnchor {
 	position: fixed;
-	bottom: var(--hud-bar-bottom, 20px);
+	top: 50%;
 	left: 50%;
-	transform: translateX(-50%);
+	transform: translate(-50%, -50%);
 	display: flex;
-	flex-direction: column-reverse;
+	flex-direction: column;
 	align-items: center;
-	gap: var(--hud-popover-gap, 8px);
 	/* The stack containers are only layout boxes; the gaps between and around
 	   their children must stay click-through, or the overlay would swallow clicks
 	   meant for whatever is behind it. Only the painted surfaces opt back in. */
 	pointer-events: none;
 }
 
+/* Floats beside the pill without moving it: above by default, below when the
+   pill is near the top of the display. The first child sits closest to the bar. */
 .hudAbove {
-	position: relative;
+	position: absolute;
+	bottom: calc(100% + var(--hud-popover-gap, 8px));
+	left: 50%;
+	translate: -50% 0;
+	width: max-content;
 	display: flex;
 	flex-direction: column-reverse;
 	align-items: center;
 	gap: var(--hud-stack-gap, 10px);
 	pointer-events: none;
+}
+
+.hudAnchor[data-placement="below"] .hudAbove {
+	top: calc(100% + var(--hud-popover-gap, 8px));
+	bottom: auto;
+	flex-direction: column;
 }
 
 /* One surface in every state. Geometry is concentric: a 1px border, a 4px
@@ -74,6 +87,11 @@
 }
 
 .hudPillRecording {
+	width: max-content;
+}
+
+/* Folded idle pill: the mark and Record only. */
+.hudPillMinimized {
 	width: max-content;
 }
 
@@ -348,6 +366,16 @@
 	translate: -50% 0;
 }
 
+/* Below the pill, panels grow downward out of its top edge instead. */
+.hudAnchor[data-placement="below"] .hudPanel {
+	transform-origin: 50% 0;
+}
+
+.hudAnchor[data-placement="below"] .hudPanel[data-closing="true"] {
+	top: 0;
+	bottom: auto;
+}
+
 .hudPanel[data-closing="true"],
 .hudPanel[hidden] {
 	opacity: 0;
@@ -358,6 +386,17 @@
 
 .hudPanel[data-instant="true"]:not([data-closing="true"]) {
 	transition: none;
+}
+
+@starting-style {
+	.hudAnchor[data-placement="below"] .hudPanel {
+		transform: translateY(-6px) scale(0.97);
+	}
+}
+
+.hudAnchor[data-placement="below"] .hudPanel[data-closing="true"],
+.hudAnchor[data-placement="below"] .hudPanel[hidden] {
+	transform: translateY(-4px) scale(0.98);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -371,7 +410,9 @@
 
 	.hudPanel,
 	.hudPanel[data-closing="true"],
-	.hudPanel[hidden] {
+	.hudPanel[hidden],
+	.hudAnchor[data-placement="below"] .hudPanel[data-closing="true"],
+	.hudAnchor[data-placement="below"] .hudPanel[hidden] {
 		transform: none;
 		transition:
 			opacity 150ms ease,
@@ -379,7 +420,8 @@
 	}
 
 	@starting-style {
-		.hudPanel {
+		.hudPanel,
+		.hudAnchor[data-placement="below"] .hudPanel {
 			transform: none;
 		}
 	}

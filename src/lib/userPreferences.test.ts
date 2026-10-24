@@ -104,6 +104,18 @@ describe("user preferences", () => {
 		expect(loadUserPreferences().trayLayout).toBe("horizontal");
 	});
 
+	it("remembers whether the idle recording pill is minimized", () => {
+		expect(loadUserPreferences().hudMinimized).toBe(false);
+		saveUserPreferences({ hudMinimized: true });
+		expect(loadUserPreferences().hudMinimized).toBe(true);
+	});
+
+	it("ignores a malformed minimized flag", () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudMinimized: "yes" }));
+
+		expect(loadUserPreferences().hudMinimized).toBe(false);
+	});
+
 	it("persists and normalizes the floating camera preview position", () => {
 		saveUserPreferences({ cameraPreviewPosition: { x: -241.4, y: 81.7 } });
 

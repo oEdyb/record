@@ -288,6 +288,7 @@ function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSo
 			...patch,
 		})),
 		setHudOverlaySize: vi.fn(),
+		setHudPillSize: vi.fn(),
 		setHudDirectionExclusionRectangles: vi.fn(),
 		requestCameraPreviewConnection: vi.fn(),
 		setHudOverlayIgnoreMouseEvents: vi.fn(),
@@ -2000,10 +2001,11 @@ describe("LaunchWindow HUD drag", () => {
 
 		const dragHandle = await screen.findByTestId("hud-drag-handle");
 
-		// A bar wide enough that it genuinely outgrows the reserved window width, so a
-		// measurement would produce a `setHudOverlaySize` call if it weren't suppressed.
+		// A bar tall enough that it genuinely outgrows the reserved window, even with
+		// the menu room mirrored on both sides of it, so a measurement would produce a
+		// `setHudOverlaySize` call if it weren't suppressed.
 		const bar = dragHandle.closest("[data-recording-layout]") as HTMLElement;
-		stubBox(bar, 900, 900);
+		stubBox(bar, 900, 2400);
 
 		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {
 			mockClear: () => void;
@@ -2022,6 +2024,322 @@ describe("LaunchWindow HUD drag", () => {
 		// still gets picked up promptly.
 		await waitFor(() => {
 			expect(window.electronAPI.setHudOverlaySize).toHaveBeenCalled();
+		});
+	});
+});
+
+describe("LaunchWindow minimized pill", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+		resizeCallbacks.length = 0;
+		vi.stubGlobal("ResizeObserver", CapturingResizeObserver);
+		HTMLElement.prototype.setPointerCapture = vi.fn();
+		HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+		HTMLElement.prototype.releasePointerCapture = vi.fn();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	function clickGrip(grip: HTMLElement) {
+		fireEvent.pointerDown(grip, { screenX: 300, screenY: 300 });
+		fireEvent.pointerUp(grip, { screenX: 301, screenY: 300 });
+	}
+
+	function pill() {
+		return screen.getByTestId("hud-drag-handle").closest("[data-recording-layout]") as HTMLElement;
+	}
+
+	it("folds the idle pill to the mark and Record when the mark is clicked, and back again", async () => {
+		renderLaunchWindow();
+		const grip = await screen.findByTestId("hud-drag-handle");
+		expect(grip).toHaveAttribute("aria-expanded", "true");
+
+		clickGrip(grip);
+
+		expect(pill()).toHaveAttribute("data-minimized", "true");
+		expect(screen.getByTestId("launch-record-button")).toBeInTheDocument();
+		expect(screen.queryByTestId("launch-source-selector-button")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("launch-microphone-button")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("launch-device-settings-button")).not.toBeInTheDocument();
+		expect(screen.getByTestId("hud-drag-handle")).toHaveAttribute("aria-expanded", "false");
+
+		clickGrip(screen.getByTestId("hud-drag-handle"));
+
+		expect(pill()).toHaveAttribute("data-minimized", "false");
+		expect(screen.getByTestId("launch-device-settings-button")).toBeInTheDocument();
+	});
+
+	it("does not fold when the mark is dragged", async () => {
+		renderLaunchWindow();
+		const grip = await screen.findByTestId("hud-drag-handle");
+
+		fireEvent.pointerDown(grip, { screenX: 300, screenY: 300 });
+		fireEvent.pointerMove(grip, { screenX: 360, screenY: 280, buttons: 1 });
+		fireEvent.pointerUp(grip, { screenX: 360, screenY: 280 });
+
+		expect(pill()).toHaveAttribute("data-minimized", "false");
+		expect(window.electronAPI.dragHudOverlayTo).toHaveBeenCalledWith(60, -20);
+	});
+
+	it("folds and unfolds from the keyboard", async () => {
+		renderLaunchWindow();
+		const grip = await screen.findByTestId("hud-drag-handle");
+
+		fireEvent.keyDown(grip, { key: "Enter" });
+		expect(pill()).toHaveAttribute("data-minimized", "true");
+
+		fireEvent.keyDown(screen.getByTestId("hud-drag-handle"), { key: " " });
+		expect(pill()).toHaveAttribute("data-minimized", "false");
+	});
+
+	it("keeps keyboard focus on the mark and ignores a held key", async () => {
+		renderLaunchWindow();
+		const grip = await screen.findByTestId("hud-drag-handle");
+
+		fireEvent.keyDown(grip, { key: "Enter" });
+		fireEvent.keyDown(grip, { key: "Enter", repeat: true });
+
+		expect(pill()).toHaveAttribute("data-minimized", "true");
+		await waitFor(() => expect(screen.getByTestId("hud-drag-handle")).toHaveFocus());
+	});
+
+	it("does not fold when a drag ends back where it started", async () => {
+		renderLaunchWindow();
+		const grip = await screen.findByTestId("hud-drag-handle");
+
+		fireEvent.pointerDown(grip, { screenX: 300, screenY: 300 });
+		fireEvent.pointerMove(grip, { screenX: 380, screenY: 300, buttons: 1 });
+		fireEvent.pointerMove(grip, { screenX: 301, screenY: 300, buttons: 1 });
+		fireEvent.pointerUp(grip, { screenX: 301, screenY: 300 });
+
+		expect(pill()).toHaveAttribute("data-minimized", "false");
+	});
+
+	it("never folds on Linux, where the grip is the compositor's drag region", async () => {
+		platformState.value = "linux";
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudMinimized: true }));
+		renderLaunchWindow();
+		await screen.findByTestId("hud-drag-handle");
+
+		await waitFor(() => expect(pill()).toHaveAttribute("data-minimized", "false"));
+		expect(screen.getByTestId("hud-drag-handle")).not.toHaveAttribute("role", "button");
+	});
+
+	it("remembers the folded pill across launches", async () => {
+		const first = renderLaunchWindow();
+		clickGrip(await screen.findByTestId("hud-drag-handle"));
+		expect(JSON.parse(localStorage.getItem("openscreen_user_preferences") ?? "{}")).toMatchObject({
+			hudMinimized: true,
+		});
+		first.unmount();
+
+		renderLaunchWindow();
+		await screen.findByTestId("hud-drag-handle");
+		expect(pill()).toHaveAttribute("data-minimized", "true");
+	});
+
+	it("closes an open panel when the pill folds", async () => {
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+
+		clickGrip(screen.getByTestId("hud-drag-handle"));
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+		});
+	});
+
+	it("starts a recording from the folded pill exactly like the full pill", async () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudMinimized: true }));
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		renderLaunchWindow();
+
+		const recordButton = await screen.findByTestId("launch-record-button");
+		expect(pill()).toHaveAttribute("data-minimized", "true");
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("title", "Display 1");
+		});
+
+		fireEvent.click(recordButton);
+
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+	});
+
+	it("shows the full recording pill while recording, then folds again when idle", async () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudMinimized: true }));
+		recorderState.value.recording = true;
+		recorderState.value.elapsedSeconds = 4;
+		const view = renderLaunchWindow();
+
+		expect(pill()).toHaveAttribute("data-recording-layout", "recording");
+		expect(pill()).toHaveAttribute("data-minimized", "false");
+		expect(screen.getByTestId("hud-recording-timer")).toBeInTheDocument();
+
+		recorderState.value.recording = false;
+		recorderState.value.elapsedSeconds = 0;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		await waitFor(() => expect(pill()).toHaveAttribute("data-minimized", "true"));
+	});
+
+	it("reports the painted pill's size so main can keep it on the display", async () => {
+		renderLaunchWindow();
+		const bar = pill();
+		stubBox(bar, 88, 50);
+		await flushResizeObservers();
+
+		expect(window.electronAPI.setHudPillSize).toHaveBeenCalledWith(88, 50);
+	});
+});
+
+describe("LaunchWindow panel placement", () => {
+	const screenSize = { availHeight: 995, availTop: 34 };
+
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+		resizeCallbacks.length = 0;
+		vi.stubGlobal("ResizeObserver", CapturingResizeObserver);
+		for (const [key, value] of Object.entries(screenSize)) {
+			Object.defineProperty(window.screen, key, { value, configurable: true });
+		}
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+		for (const key of Object.keys(screenSize)) {
+			Reflect.deleteProperty(window.screen, key);
+		}
+		Object.defineProperty(window, "screenY", { value: 0, configurable: true });
+	});
+
+	async function openSetupWithPillAt(pillTop: number) {
+		renderLaunchWindow();
+		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
+			"[data-recording-layout]",
+		) as HTMLElement;
+		// The pill sits at the centre of a 1400 px window.
+		Object.defineProperty(window, "screenY", { value: pillTop - 675, configurable: true });
+		vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({
+			top: 675,
+			left: 258,
+			right: 682,
+			bottom: 725,
+			width: 424,
+			height: 50,
+			x: 258,
+			y: 675,
+			toJSON: () => ({}),
+		});
+		await flushResizeObservers();
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+		return bar.parentElement as HTMLElement;
+	}
+
+	it("opens Setup above a pill resting near the bottom of the display", async () => {
+		const anchor = await openSetupWithPillAt(954);
+		expect(anchor).toHaveAttribute("data-placement", "above");
+	});
+
+	it("places panels against the pill's display from main, not window.screen", async () => {
+		let sendWorkArea: (area: { x: number; y: number; width: number; height: number }) => void =
+			() => undefined;
+		window.electronAPI.onHudWorkAreaChanged = vi.fn((callback) => {
+			sendWorkArea = callback;
+			return vi.fn();
+		});
+		// window.screen says the pill is at the bottom of a tall display, but the
+		// pill really sits at the top of a display that starts at y = 940.
+		const anchor = await openSetupWithPillAt(954);
+		expect(anchor).toHaveAttribute("data-placement", "above");
+
+		act(() => sendWorkArea({ x: 0, y: 940, width: 1440, height: 875 }));
+
+		expect(anchor).toHaveAttribute("data-placement", "below");
+	});
+
+	it("opens Setup below a pill dragged to the top of the display", async () => {
+		const anchor = await openSetupWithPillAt(34);
+		expect(anchor).toHaveAttribute("data-placement", "below");
+		const cap = Number.parseInt(anchor.style.getPropertyValue("--hud-modal-max-h"), 10);
+		expect(cap).toBeLessThanOrEqual(1029 - 84);
+	});
+});
+
+describe("LaunchWindow click-through", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).getCapturePermissions;
+	});
+
+	function root() {
+		return screen.getByTestId("hud-drag-handle").closest(".h-full") as HTMLElement;
+	}
+
+	it("lets clicks through the empty overlay while Setup is open", async () => {
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+		const ignore = vi.mocked(window.electronAPI.setHudOverlayIgnoreMouseEvents);
+
+		fireEvent.pointerMove(panel);
+		expect(ignore).toHaveBeenLastCalledWith(false);
+
+		// The transparent area around the panel belongs to whatever app is underneath.
+		fireEvent.pointerMove(root());
+		expect(ignore).toHaveBeenLastCalledWith(true);
+		expect(screen.getByTestId("hud-device-settings")).toBeInTheDocument();
+	});
+
+	it("keeps the empty overlay click-through while the permission panel waits on System Settings", async () => {
+		stubElectronAPI(vi.fn(async () => null));
+		window.electronAPI.getCapturePermissions = vi.fn(async () => ({
+			screen: "not-determined" as const,
+			microphone: "granted" as const,
+			camera: "granted" as const,
+		}));
+		renderLaunchWindow();
+		const record = await screen.findByTestId("launch-record-button");
+		await waitFor(() => expect(window.electronAPI.getCapturePermissions).toHaveBeenCalled());
+		fireEvent.click(record);
+		await screen.findByTestId("hud-permission-panel");
+		const ignore = vi.mocked(window.electronAPI.setHudOverlayIgnoreMouseEvents);
+
+		fireEvent.pointerMove(root());
+		expect(ignore).toHaveBeenLastCalledWith(true);
+
+		// Going to System Settings takes focus away; the panel waits for the return.
+		fireEvent.blur(window);
+		expect(screen.getByTestId("hud-permission-panel")).toBeInTheDocument();
+	});
+
+	it("closes Setup when another app is clicked", async () => {
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+
+		fireEvent.blur(window);
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
 		});
 	});
 });

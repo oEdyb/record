@@ -8,6 +8,8 @@
 		"useVerticalTray": "استخدام الشريط العمودي",
 		"useHorizontalTray": "استخدام الشريط الأفقي",
 		"openStudio": "فتح الاستوديو",
+		"minimizeHud": "انقر للتصغير، واسحب للتحريك",
+		"expandHud": "انقر لإظهار كل عناصر التحكم، واسحب للتحريك",
 		"notesToolbar": {
 			"bold": "غامق",
 			"italic": "مائل",
