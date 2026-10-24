@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { globSync } from "node:fs";
 import { lstat, open, readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -573,26 +574,60 @@ function verifyAsarBuildOutputs({ entries, policy, violations }) {
 	}
 }
 
-async function verifyReviewedAssets({ root, exact, entries, violations }) {
-	const fontPolicies = [
-		{
-			pattern: /^asar:dist\/assets\/Geist-Variable-[^/]+\.woff2$/,
-			source: "src/assets/fonts/Geist-Variable.woff2",
-			component: "geist-fonts",
-			count: 0,
-		},
-		{
-			pattern: /^asar:dist\/assets\/GeistMono-Variable-[^/]+\.woff2$/,
-			source: "src/assets/fonts/GeistMono-Variable.woff2",
-			component: "geist-fonts",
-			count: 0,
-		},
-	];
-	for (const policy of fontPolicies) {
-		const bytes = await readFile(path.join(root, policy.source));
-		policy.size = bytes.length;
-		policy.sha256 = sha256(bytes);
+function escapeRegExp(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function reviewedFontPolicies(root) {
+	const assetPolicy = JSON.parse(
+		await readFile(path.join(root, "supply-chain", "bundled-assets.json"), "utf8"),
+	);
+	const policies = [];
+	for (const group of assetPolicy.included ?? []) {
+		const outputPatterns = (group.packagedOutputPatterns ?? []).map(
+			(pattern) => new RegExp(pattern),
+		);
+		for (const sourcePattern of group.paths ?? []) {
+			if (!sourcePattern.endsWith(".woff2")) continue;
+			const sources = globSync(sourcePattern, { cwd: root }).filter((source) =>
+				source.endsWith(".woff2"),
+			);
+			if (sources.length === 0) {
+				throw new Error(`Reviewed font source pattern has no files: ${sourcePattern}`);
+			}
+			for (const source of sources) {
+				const portableSource = portable(source);
+				if (policies.some((policy) => policy.source === portableSource)) {
+					throw new Error(
+						`Reviewed font source appears in multiple asset groups: ${portableSource}`,
+					);
+				}
+				const basename = path.basename(source, ".woff2");
+				const exampleOutput = `dist/assets/${basename}-12345678.woff2`;
+				if (!outputPatterns.some((pattern) => pattern.test(exampleOutput))) {
+					throw new Error(
+						`Reviewed font has no matching packaged output policy: ${portableSource}`,
+					);
+				}
+				const bytes = await readFile(path.join(root, source));
+				policies.push({
+					pattern: new RegExp(
+						`^asar:dist/assets/${escapeRegExp(basename)}-[A-Za-z0-9_-]{8}\\.woff2$`,
+					),
+					source: portableSource,
+					component: group.id,
+					size: bytes.length,
+					sha256: sha256(bytes),
+					count: 0,
+				});
+			}
+		}
 	}
+	return policies;
+}
+
+async function verifyReviewedAssets({ root, exact, entries, violations }) {
+	const fontPolicies = await reviewedFontPolicies(root);
 	for (const entry of entries.filter(
 		(item) =>
 			isAssetPath(entryPolicyPath(item)) ||

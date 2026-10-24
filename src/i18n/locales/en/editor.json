@@ -34,6 +34,17 @@
 		"prepareFailed": "Could not get this recording ready to save. Try again."
 	},
 	"loadingEditor": "Loading editor…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} needs local files to restore its original style.",
+		"unsupportedFormat": "{{family}} uses an unsupported font request format. Exact local recovery is unavailable.",
+		"chooseLocal": "Choose local font files",
+		"normal": "Normal",
+		"italic": "Italic",
+		"importFailed": "Could not import {{family}} {{style}} {{weight}}. Choose a valid TTF, OTF, WOFF, or WOFF2 file up to 2 MiB.",
+		"loadFailed": "{{family}} could not load every selected variation. Your saved record is unchanged.",
+		"saveFailed": "{{family}} is loaded for this session, but was not saved for next launch. Free up storage and restart to try again.",
+		"recovered": "{{family}} was restored with local font files."
+	},
 	"errors": {
 		"previewCompositorUnavailable": "Preview unavailable on this machine"
 	},
@@ -49,6 +60,10 @@
 		"cameraDisconnected": "Webcam disconnected.",
 		"cameraNotFound": "Camera not found.",
 		"permissionDenied": "Recording permission denied. Please allow screen recording.",
+		"startFailed": "Could not start recording. Press Record again, or reopen Klippt.",
+		"pauseFailed": "Could not pause and save this clip. Press Stop, then check Recordings.",
+		"continueFailed": "Could not continue recording. Press Stop, then check Recordings.",
+		"stopFailed": "Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
 		"selectSource": "Please select a source to record"
 	},
 	"emptyState": {
@@ -60,10 +75,6 @@
 		"importVideoButton": "Import video",
 		"loadProjectButton": "Open project",
 		"supportedFormats": "Supported formats: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"startFailed": "Could not start recording. Press Record again, or reopen Klippt.",
-		"pauseFailed": "Could not pause and save this clip. Press Stop, then check Recordings.",
-		"continueFailed": "Could not continue recording. Press Stop, then check Recordings.",
-		"stopFailed": "Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
 		"dragDropHint": "or drag & drop a .klippt project file here",
 		"dropOverlay": "Drop project file to open",
 		"dropErrors": {

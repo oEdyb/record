@@ -410,6 +410,9 @@ interface Window {
 		removeTemporaryExportPath: (
 			filePath: string,
 		) => Promise<{ success: boolean; message?: string }>;
+		chooseLocalFont: (
+			request: import("../src/lib/localFont").ChooseLocalFontRequest,
+		) => Promise<import("../src/lib/localFont").ChooseLocalFontResult>;
 		openVideoFilePicker: () => Promise<{
 			success: boolean;
 			code?: "ENTITLEMENT_REQUIRED";

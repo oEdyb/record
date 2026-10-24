@@ -34,6 +34,17 @@
 		"prepareFailed": "无法准备好保存此录制。请重试。"
 	},
 	"loadingEditor": "正在加载编辑器…",
+	"customFonts": {
+		"recoveryNeeded": "需要本地文件才能恢复 {{family}} 的原始样式。",
+		"unsupportedFormat": "{{family}} 使用了不支持的字体请求格式，无法进行精确的本地恢复。",
+		"chooseLocal": "选择本地字体文件",
+		"normal": "常规",
+		"italic": "斜体",
+		"importFailed": "无法导入 {{family}}（{{style}}，{{weight}}）。请选择不超过 2 MiB 的有效 TTF、OTF、WOFF 或 WOFF2 文件。",
+		"loadFailed": "无法加载所选 {{family}} 的全部变体。已保存的记录未更改。",
+		"saveFailed": "{{family}} 已在本次会话中加载，但未保存供下次启动使用。请释放存储空间并重启后重试。",
+		"recovered": "已使用本地字体文件恢复 {{family}}。"
+	},
 	"errors": {
 		"previewCompositorUnavailable": "此设备无法使用预览"
 	},
@@ -49,6 +60,10 @@
 		"cameraDisconnected": "摄像头已断开连接。",
 		"cameraNotFound": "未找到摄像头。",
 		"permissionDenied": "录屏权限被拒绝。请允许屏幕录制。",
+		"startFailed": "无法开始录制。请再次按“录制”，或重新打开 Klippt。",
+		"pauseFailed": "无法暂停并保存此片段。请按“停止”，然后检查“录制内容”。",
+		"continueFailed": "无法继续录制。请按“停止”，然后检查“录制内容”。",
+		"stopFailed": "无法完成停止或打开回顾。请重新打开 Klippt，然后检查“录制内容”。",
 		"selectSource": "请选择要录制的源"
 	},
 	"emptyState": {
@@ -60,10 +75,6 @@
 		"importVideoButton": "导入视频",
 		"loadProjectButton": "打开项目",
 		"supportedFormats": "支持的格式：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
-		"startFailed": "无法开始录制。请再次按“录制”，或重新打开 Klippt。",
-		"pauseFailed": "无法暂停并保存此片段。请按“停止”，然后检查“录制内容”。",
-		"continueFailed": "无法继续录制。请按“停止”，然后检查“录制内容”。",
-		"stopFailed": "无法完成停止或打开回顾。请重新打开 Klippt，然后检查“录制内容”。",
 		"dragDropHint": "或将 .klippt 项目文件拖放到此处",
 		"dropOverlay": "将项目文件拖放至此以打开",
 		"dropErrors": {

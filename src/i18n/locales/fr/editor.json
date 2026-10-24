@@ -55,6 +55,17 @@
 		"selectSource": "Veuillez sélectionner une source à enregistrer"
 	},
 	"loadingEditor": "Chargement de l'éditeur…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} nécessite des fichiers locaux pour retrouver son style d’origine.",
+		"unsupportedFormat": "{{family}} utilise un format de requête de police non pris en charge. La restauration locale exacte est indisponible.",
+		"chooseLocal": "Choisir des fichiers de police locaux",
+		"normal": "Normal",
+		"italic": "Italique",
+		"importFailed": "Impossible d’importer {{family}} {{style}} {{weight}}. Choisissez un fichier TTF, OTF, WOFF ou WOFF2 valide de 2 Mio maximum.",
+		"loadFailed": "Impossible de charger toutes les variations sélectionnées de {{family}}. L’enregistrement existant est inchangé.",
+		"saveFailed": "{{family}} est chargée pour cette session, mais n’a pas été enregistrée pour le prochain démarrage. Libérez du stockage et redémarrez pour réessayer.",
+		"recovered": "{{family}} a été restaurée avec des fichiers de police locaux."
+	},
 	"emptyState": {
 		"title": "Aucun projet ouvert",
 		"description": "Créez un nouveau projet ou ouvrez-en un existant.",

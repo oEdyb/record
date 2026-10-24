@@ -55,6 +55,17 @@
 		"selectSource": "Por favor selecciona una fuente para grabar"
 	},
 	"loadingEditor": "Cargando editor…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} necesita archivos locales para restaurar su estilo original.",
+		"unsupportedFormat": "{{family}} usa un formato de solicitud de fuente no compatible. La recuperación local exacta no está disponible.",
+		"chooseLocal": "Elegir archivos de fuente locales",
+		"normal": "Normal",
+		"italic": "Cursiva",
+		"importFailed": "No se pudo importar {{family}} {{style}} {{weight}}. Elige un archivo TTF, OTF, WOFF o WOFF2 válido de hasta 2 MiB.",
+		"loadFailed": "No se pudieron cargar todas las variaciones seleccionadas de {{family}}. El registro guardado no cambió.",
+		"saveFailed": "{{family}} está cargada para esta sesión, pero no se guardó para el próximo inicio. Libera almacenamiento y reinicia para intentarlo de nuevo.",
+		"recovered": "{{family}} se restauró con archivos de fuente locales."
+	},
 	"emptyState": {
 		"title": "No hay proyecto abierto",
 		"description": "Crea un nuevo proyecto o abre uno existente.",

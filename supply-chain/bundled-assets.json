@@ -43,6 +43,198 @@
 			],
 			"license": "OFL-1.1",
 			"source": "https://github.com/vercel/geist-font"
+		},
+		{
+			"id": "google-font-bebas-neue",
+			"paths": [
+				"src/assets/fonts/google/google-bebas-neue-*.woff2",
+				"third-party-licenses/Google-bebas-neue-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-bebas-neue-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/bebasneue; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-caveat",
+			"paths": [
+				"src/assets/fonts/google/google-caveat-*.woff2",
+				"third-party-licenses/Google-caveat-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-caveat-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/caveat; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-dm-sans",
+			"paths": [
+				"src/assets/fonts/google/google-dm-sans-*.woff2",
+				"third-party-licenses/Google-dm-sans-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-dm-sans-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/dmsans; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-fira-code",
+			"paths": [
+				"src/assets/fonts/google/google-fira-code-*.woff2",
+				"third-party-licenses/Google-fira-code-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-fira-code-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/firacode; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-ibm-plex-mono",
+			"paths": [
+				"src/assets/fonts/google/google-ibm-plex-mono-*.woff2",
+				"third-party-licenses/Google-ibm-plex-mono-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-ibm-plex-mono-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/ibmplexmono; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-ibm-plex-sans",
+			"paths": [
+				"src/assets/fonts/google/google-ibm-plex-sans-*.woff2",
+				"third-party-licenses/Google-ibm-plex-sans-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-ibm-plex-sans-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/ibmplexsans; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-inter",
+			"paths": [
+				"src/assets/fonts/google/google-inter-*.woff2",
+				"third-party-licenses/Google-inter-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-inter-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/inter; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-lora",
+			"paths": [
+				"src/assets/fonts/google/google-lora-*.woff2",
+				"third-party-licenses/Google-lora-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-lora-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/lora; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-manrope",
+			"paths": [
+				"src/assets/fonts/google/google-manrope-*.woff2",
+				"third-party-licenses/Google-manrope-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-manrope-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/manrope; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-merriweather",
+			"paths": [
+				"src/assets/fonts/google/google-merriweather-*.woff2",
+				"third-party-licenses/Google-merriweather-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-merriweather-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/merriweather; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-oswald",
+			"paths": [
+				"src/assets/fonts/google/google-oswald-*.woff2",
+				"third-party-licenses/Google-oswald-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-oswald-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/oswald; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-permanent-marker",
+			"paths": [
+				"src/assets/fonts/google/google-permanent-marker-*.woff2",
+				"third-party-licenses/Google-permanent-marker-Apache-2.0.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-permanent-marker-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "Apache-2.0",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/apache/permanentmarker; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-playfair-display",
+			"paths": [
+				"src/assets/fonts/google/google-playfair-display-*.woff2",
+				"third-party-licenses/Google-playfair-display-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-playfair-display-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/playfairdisplay; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-plus-jakarta-sans",
+			"paths": [
+				"src/assets/fonts/google/google-plus-jakarta-sans-*.woff2",
+				"third-party-licenses/Google-plus-jakarta-sans-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-plus-jakarta-sans-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/plusjakartasans; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-space-grotesk",
+			"paths": [
+				"src/assets/fonts/google/google-space-grotesk-*.woff2",
+				"third-party-licenses/Google-space-grotesk-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-space-grotesk-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/spacegrotesk; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-sora",
+			"paths": [
+				"src/assets/fonts/google/google-sora-*.woff2",
+				"third-party-licenses/Google-sora-OFL-1.1.txt"
+			],
+			"packagedOutputPatterns": [
+				"^dist/assets/google-sora-[A-Za-z0-9-]+-[A-Za-z0-9_-]{8}\\.woff2$"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/sora; artifacts/release-optimization-2026-10-24/font-provenance.json"
 		}
 	],
 	"applicationBuild": {
@@ -53,7 +245,7 @@
 		],
 		"compiledOutputPatterns": [
 			"^dist/index\\.html$",
-			"^dist/assets/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\\.(?:js|css)$",
+			"^dist/assets/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\\.(?:js|css|json)$",
 			"^dist-electron/(?:bootstrap\\.js|preload\\.mjs|[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\\.js)$"
 		],
 		"excludedOutputs": [

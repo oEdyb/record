@@ -55,6 +55,17 @@
 		"selectSource": "Lütfen kayıt için bir kaynak seçin"
 	},
 	"loadingEditor": "Editör yükleniyor…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} özgün stilini geri yüklemek için yerel dosyalara ihtiyaç duyuyor.",
+		"unsupportedFormat": "{{family}} desteklenmeyen bir yazı tipi isteği biçimi kullanıyor. Tam yerel kurtarma kullanılamıyor.",
+		"chooseLocal": "Yerel yazı tipi dosyalarını seç",
+		"normal": "Normal",
+		"italic": "İtalik",
+		"importFailed": "{{family}} {{style}} {{weight}} içe aktarılamadı. En fazla 2 MiB boyutunda geçerli bir TTF, OTF, WOFF veya WOFF2 dosyası seçin.",
+		"loadFailed": "Seçilen {{family}} varyasyonlarının tümü yüklenemedi. Kaydedilen bilgiler değişmedi.",
+		"saveFailed": "{{family}} bu oturum için yüklendi ancak sonraki açılış için kaydedilmedi. Depolama alanı açıp yeniden başlatarak tekrar deneyin.",
+		"recovered": "{{family}}, yerel yazı tipi dosyalarıyla geri yüklendi."
+	},
 	"emptyState": {
 		"title": "Açık proje yok",
 		"description": "Yeni bir proje oluşturun veya mevcut birini açın.",

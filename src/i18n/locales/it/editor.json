@@ -34,6 +34,17 @@
 		"prepareFailed": "Impossibile preparare questa registrazione per il salvataggio. Riprova."
 	},
 	"loadingEditor": "Caricamento editor…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} richiede file locali per ripristinare lo stile originale.",
+		"unsupportedFormat": "{{family}} usa un formato di richiesta del font non supportato. Il ripristino locale esatto non è disponibile.",
+		"chooseLocal": "Scegli file di font locali",
+		"normal": "Normale",
+		"italic": "Corsivo",
+		"importFailed": "Impossibile importare {{family}} {{style}} {{weight}}. Scegli un file TTF, OTF, WOFF o WOFF2 valido fino a 2 MiB.",
+		"loadFailed": "Impossibile caricare tutte le varianti selezionate di {{family}}. Il record salvato non è cambiato.",
+		"saveFailed": "{{family}} è caricato per questa sessione, ma non è stato salvato per il prossimo avvio. Libera spazio e riavvia per riprovare.",
+		"recovered": "{{family}} è stato ripristinato con file di font locali."
+	},
 	"errors": {
 		"previewCompositorUnavailable": "Anteprima non disponibile su questo computer"
 	},
@@ -49,6 +60,10 @@
 		"cameraDisconnected": "Webcam disconnessa.",
 		"cameraNotFound": "Fotocamera non trovata.",
 		"permissionDenied": "Autorizzazione di registrazione negata. Consenti la registrazione dello schermo.",
+		"startFailed": "Impossibile avviare la registrazione. Premi di nuovo Registra o riapri Klippt.",
+		"pauseFailed": "Impossibile mettere in pausa e salvare questo clip. Premi Interrompi, poi controlla Registrazioni.",
+		"continueFailed": "Impossibile continuare la registrazione. Premi Interrompi, poi controlla Registrazioni.",
+		"stopFailed": "Impossibile completare l’interruzione o aprire la revisione. Riapri Klippt, poi controlla Registrazioni.",
 		"selectSource": "Seleziona una sorgente da registrare"
 	},
 	"emptyState": {
@@ -60,10 +75,6 @@
 		"importVideoButton": "Importa video",
 		"loadProjectButton": "Apri progetto",
 		"supportedFormats": "Formati supportati: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"startFailed": "Impossibile avviare la registrazione. Premi di nuovo Registra o riapri Klippt.",
-		"pauseFailed": "Impossibile mettere in pausa e salvare questo clip. Premi Interrompi, poi controlla Registrazioni.",
-		"continueFailed": "Impossibile continuare la registrazione. Premi Interrompi, poi controlla Registrazioni.",
-		"stopFailed": "Impossibile completare l’interruzione o aprire la revisione. Riapri Klippt, poi controlla Registrazioni.",
 		"dragDropHint": "oppure trascina qui un file di progetto .klippt",
 		"dropOverlay": "Rilascia il file di progetto per aprirlo",
 		"dropErrors": {

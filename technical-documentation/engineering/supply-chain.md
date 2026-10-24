@@ -157,8 +157,11 @@ The paid-package notice set has four reviewed input families:
   status for each speech or audio model. The DeepFilterNet engine can use MIT code, but its embedded
   model artifact remains excluded until the artifact's commercial distribution right is confirmed.
 - `supply-chain/bundled-assets.json` records reviewed shipped and excluded asset groups. Paid builds
-  ship only Klippt-owned icons, Geist under OFL-1.1, and the reviewed default cursor sprites. The
-  inherited third-party cursor packs and legacy OpenScreen marketing images stay out of the app.
+  ship Klippt-owned icons, the reviewed default cursor sprites, Geist and 15 Google families under
+  OFL-1.1, and Permanent Marker under Apache-2.0. Each Google family has exact WOFF2 output patterns
+  and a pinned license notice; binary URLs and hashes are recorded in
+  `artifacts/release-optimization-2026-10-24/font-provenance.json`. The inherited third-party cursor
+  packs and legacy OpenScreen marketing images stay out of the app.
 - `supply-chain/web-demuxer.json` binds the checked-in WebAssembly bytes to their exact source,
   FFmpeg configuration, Emscripten image, hashes, and relinking instructions.
 

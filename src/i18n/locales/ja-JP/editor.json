@@ -34,6 +34,17 @@
 		"prepareFailed": "この録画を保存する準備ができませんでした。もう一度お試しください。"
 	},
 	"loadingEditor": "エディターを読み込み中…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} の元のスタイルを復元するにはローカルファイルが必要です。",
+		"unsupportedFormat": "{{family}} はサポートされていないフォントリクエスト形式を使用しています。正確なローカル復元は利用できません。",
+		"chooseLocal": "ローカルフォントファイルを選択",
+		"normal": "標準",
+		"italic": "斜体",
+		"importFailed": "{{family}}（{{style}}・{{weight}}）を読み込めませんでした。2 MiB 以内の有効な TTF、OTF、WOFF、WOFF2 ファイルを選択してください。",
+		"loadFailed": "{{family}} の選択したバリエーションをすべて読み込めませんでした。保存済みレコードは変更されていません。",
+		"saveFailed": "{{family}} はこのセッションに読み込まれましたが、次回起動時用に保存されませんでした。空き容量を増やして再起動し、もう一度お試しください。",
+		"recovered": "{{family}} をローカルフォントファイルで復元しました。"
+	},
 	"errors": {
 		"previewCompositorUnavailable": "このマシンではプレビューを表示できません"
 	},
@@ -49,6 +60,10 @@
 		"permissionDenied": "録画の権限が拒否されました。画面録画を許可してください。",
 		"cameraDisconnected": "ウェブカメラが切断されました。",
 		"cameraNotFound": "カメラが見つかりません。",
+		"startFailed": "録画を開始できませんでした。もう一度「録画」を押すか、Klippt を開き直してください。",
+		"pauseFailed": "一時停止してこのクリップを保存できませんでした。「停止」を押してから「録画」を確認してください。",
+		"continueFailed": "録画を続行できませんでした。「停止」を押してから「録画」を確認してください。",
+		"stopFailed": "停止の完了またはレビューを開くことができませんでした。Klippt を開き直して「録画」を確認してください。",
 		"selectSource": "録画するソースを選択してください"
 	},
 	"emptyState": {
@@ -60,10 +75,6 @@
 		"importVideoButton": "動画をインポート",
 		"loadProjectButton": "プロジェクトを開く",
 		"supportedFormats": "対応フォーマット：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
-		"startFailed": "録画を開始できませんでした。もう一度「録画」を押すか、Klippt を開き直してください。",
-		"pauseFailed": "一時停止してこのクリップを保存できませんでした。「停止」を押してから「録画」を確認してください。",
-		"continueFailed": "録画を続行できませんでした。「停止」を押してから「録画」を確認してください。",
-		"stopFailed": "停止の完了またはレビューを開くことができませんでした。Klippt を開き直して「録画」を確認してください。",
 		"dragDropHint": ".klippt プロジェクトファイルをここにドラッグ＆ドロップ",
 		"dropOverlay": "プロジェクトファイルをドロップして開く",
 		"dropErrors": {

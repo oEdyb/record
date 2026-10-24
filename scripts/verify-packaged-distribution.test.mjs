@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, globSync } from "node:fs";
 import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -21,7 +21,7 @@ const cloneOptions = { recursive: true, mode: constants.COPYFILE_FICLONE };
 // hard links: negative cases overwrite their files and must not change the base.
 async function packageFixture(
 	asarFiles = {},
-	{ stagingFiles = {}, omitAsarFiles = [], realAssets = false } = {},
+	{ stagingFiles = {}, omitAsarFiles = [], omitBuildOutputs = [], realAssets = false } = {},
 ) {
 	if (!fixtureBases.has(realAssets)) {
 		const firstDirectory = temporaryDirectories.length;
@@ -40,10 +40,15 @@ async function packageFixture(
 	await cp(base.packageRoot, packageRoot, cloneOptions);
 	const buildOutputs = new Map(base.buildOutputs);
 	buildOutputsByPackage.set(packageRoot, buildOutputs);
-	if (Object.keys(asarFiles).length || Object.keys(stagingFiles).length || omitAsarFiles.length) {
+	if (
+		Object.keys(asarFiles).length ||
+		Object.keys(stagingFiles).length ||
+		omitAsarFiles.length ||
+		omitBuildOutputs.length
+	) {
 		const appSource = await temporaryDirectory("klippt-package-policy-asar-");
 		await cp(base.appSource, appSource, cloneOptions);
-		if (Object.keys(stagingFiles).length) {
+		if (Object.keys(stagingFiles).length || omitBuildOutputs.length) {
 			for (const [namespace, directory] of base.buildOutputs) {
 				const reviewed = await temporaryDirectory("klippt-package-policy-reviewed-");
 				await cp(directory, reviewed, cloneOptions);
@@ -55,13 +60,20 @@ async function packageFixture(
 				await mkdir(path.dirname(reviewed), { recursive: true });
 				await writeFile(reviewed, contents);
 			}
+			for (const relativePath of omitBuildOutputs) {
+				const [namespace, ...parts] = relativePath.split("/");
+				await rm(path.join(buildOutputs.get(namespace), ...parts), {
+					recursive: true,
+					force: true,
+				});
+			}
 		}
 		for (const [relativePath, contents] of Object.entries({ ...stagingFiles, ...asarFiles })) {
 			const destination = path.join(appSource, relativePath);
 			await mkdir(path.dirname(destination), { recursive: true });
 			await writeFile(destination, contents);
 		}
-		for (const relativePath of omitAsarFiles) {
+		for (const relativePath of [...omitAsarFiles, ...omitBuildOutputs]) {
 			await rm(path.join(appSource, relativePath), { recursive: true, force: true });
 		}
 		await createPackage(appSource, path.join(packageRoot, "Contents", "Resources", "app.asar"));
@@ -99,6 +111,10 @@ async function buildPackageFixture(realAssets) {
 		path.join(appSource, "dist", "assets", "index-fixture1.js"),
 		"export const fixture = true;\n",
 	);
+	await writeFile(
+		path.join(appSource, "dist", "assets", "locale-fixture1.json"),
+		'{"locale":"en"}\n',
+	);
 	await mkdir(path.join(appSource, "dist-electron"), { recursive: true });
 	await writeFile(path.join(appSource, "dist-electron", "bootstrap.js"), "export {};\n");
 	await writeFile(path.join(appSource, "dist-electron", "preload.mjs"), "export {};\n");
@@ -113,14 +129,21 @@ async function buildPackageFixture(realAssets) {
 			path.join(appSource, "dist", fileName),
 		);
 	}
-	await copyFile(
-		path.join(REPO_ROOT, "src", "assets", "fonts", "Geist-Variable.woff2"),
-		path.join(appSource, "dist", "assets", "Geist-Variable-fixture1.woff2"),
+	const assetPolicy = JSON.parse(
+		await readFile(path.join(REPO_ROOT, "supply-chain", "bundled-assets.json"), "utf8"),
 	);
-	await copyFile(
-		path.join(REPO_ROOT, "src", "assets", "fonts", "GeistMono-Variable.woff2"),
-		path.join(appSource, "dist", "assets", "GeistMono-Variable-fixture1.woff2"),
-	);
+	for (const group of assetPolicy.included) {
+		for (const sourcePattern of group.paths) {
+			if (!sourcePattern.endsWith(".woff2")) continue;
+			for (const source of globSync(sourcePattern, { cwd: REPO_ROOT })) {
+				const basename = path.basename(source, ".woff2");
+				await copyFile(
+					path.join(REPO_ROOT, source),
+					path.join(appSource, "dist", "assets", `${basename}-fixture1.woff2`),
+				);
+			}
+		}
+	}
 	// One real reviewed thumbnail is sufficient for focused negative policy cases.
 	// The real-assets integration case retains the complete wallpaper tree.
 	for (const destination of [
@@ -231,6 +254,18 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 				arch: "arm64",
 			}),
 		).resolves.toMatchObject({ webAssemblyFiles: 1 });
+	});
+
+	it("accepts reviewed locale JSON assets", async () => {
+		const packageDir = await packageFixture();
+		await expect(
+			verifyPackagedDistribution({
+				root: REPO_ROOT,
+				packageDir,
+				platform: "darwin",
+				arch: "arm64",
+			}),
+		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
 	});
 
 	it("keeps the host lookup path and normalizes Windows ASAR paths for policy", () => {
@@ -535,6 +570,37 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 				arch: "arm64",
 			}),
 		).rejects.toThrow(/Packaged application output differs from its build/);
+	});
+
+	it("rejects changed bytes in a reviewed Google font", async () => {
+		const output = "dist/assets/google-inter-latin-normal-400-a28b7e319024-fixture1.woff2";
+		const packageDir = await packageFixture(
+			{ [output]: "changed font" },
+			{ stagingFiles: { [output]: "changed font" } },
+		);
+		await expect(
+			verifyPackagedDistribution({
+				root: REPO_ROOT,
+				packageDir,
+				platform: "darwin",
+				arch: "arm64",
+			}),
+		).rejects.toThrow(/Packaged google-font-inter asset differs from policy/);
+	});
+
+	it("rejects a missing reviewed Google font", async () => {
+		const output = "dist/assets/google-inter-latin-normal-400-a28b7e319024-fixture1.woff2";
+		const packageDir = await packageFixture({}, { omitBuildOutputs: [output] });
+		await expect(
+			verifyPackagedDistribution({
+				root: REPO_ROOT,
+				packageDir,
+				platform: "darwin",
+				arch: "arm64",
+			}),
+		).rejects.toThrow(
+			/Expected one packaged google-font-inter asset for src\/assets\/fonts\/google\/google-inter-latin-normal-400-a28b7e319024\.woff2/,
+		);
 	});
 
 	it.each([

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { globSync } from "node:fs";
 import { copyFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -54,14 +55,21 @@ async function addRequiredPackageResources(packageRoot) {
 		path.join(appSource, "dist", "index.html"),
 		"<!doctype html><title>Klippt</title>\n",
 	);
-	await copyFile(
-		path.join(REPO_ROOT, "src", "assets", "fonts", "Geist-Variable.woff2"),
-		path.join(appSource, "dist", "assets", "Geist-Variable-fixture1.woff2"),
+	const assetPolicy = JSON.parse(
+		await readFile(path.join(REPO_ROOT, "supply-chain", "bundled-assets.json"), "utf8"),
 	);
-	await copyFile(
-		path.join(REPO_ROOT, "src", "assets", "fonts", "GeistMono-Variable.woff2"),
-		path.join(appSource, "dist", "assets", "GeistMono-Variable-fixture1.woff2"),
-	);
+	for (const group of assetPolicy.included) {
+		for (const sourcePattern of group.paths) {
+			if (!sourcePattern.endsWith(".woff2")) continue;
+			for (const source of globSync(sourcePattern, { cwd: REPO_ROOT })) {
+				const basename = path.basename(source, ".woff2");
+				await copyFile(
+					path.join(REPO_ROOT, source),
+					path.join(appSource, "dist", "assets", `${basename}-fixture1.woff2`),
+				);
+			}
+		}
+	}
 	await mkdir(path.join(appSource, "dist-electron"), { recursive: true });
 	await writeFile(path.join(appSource, "dist-electron", "bootstrap.js"), "export {};\n");
 	await writeFile(path.join(appSource, "dist-electron", "preload.mjs"), "export {};\n");

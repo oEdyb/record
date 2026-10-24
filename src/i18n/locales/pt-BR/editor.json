@@ -34,6 +34,17 @@
 		"prepareFailed": "Não foi possível preparar esta gravação para salvar. Tente novamente."
 	},
 	"loadingEditor": "Carregando editor…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} precisa de arquivos locais para restaurar seu estilo original.",
+		"unsupportedFormat": "{{family}} usa um formato de solicitação de fonte sem suporte. A recuperação local exata não está disponível.",
+		"chooseLocal": "Escolher arquivos de fonte locais",
+		"normal": "Normal",
+		"italic": "Itálico",
+		"importFailed": "Não foi possível importar {{family}} {{style}} {{weight}}. Escolha um arquivo TTF, OTF, WOFF ou WOFF2 válido de até 2 MiB.",
+		"loadFailed": "Não foi possível carregar todas as variações selecionadas de {{family}}. O registro salvo não foi alterado.",
+		"saveFailed": "{{family}} foi carregada nesta sessão, mas não foi salva para a próxima inicialização. Libere armazenamento e reinicie para tentar novamente.",
+		"recovered": "{{family}} foi restaurada com arquivos de fonte locais."
+	},
 	"errors": {
 		"previewCompositorUnavailable": "Pré-visualização indisponível neste computador"
 	},
@@ -49,6 +60,10 @@
 		"cameraDisconnected": "Webcam desconectada.",
 		"cameraNotFound": "Câmera não encontrada.",
 		"permissionDenied": "Permissão de gravação negada. Por favor, permita a gravação de tela.",
+		"startFailed": "Não foi possível iniciar a gravação. Pressione Gravar novamente ou reabra o Klippt.",
+		"pauseFailed": "Não foi possível pausar e salvar este clipe. Pressione Parar e confira Gravações.",
+		"continueFailed": "Não foi possível continuar a gravação. Pressione Parar e confira Gravações.",
+		"stopFailed": "Não foi possível concluir a parada ou abrir a revisão. Reabra o Klippt e confira Gravações.",
 		"selectSource": "Por favor, selecione uma fonte para gravar"
 	},
 	"emptyState": {
@@ -60,10 +75,6 @@
 		"importVideoButton": "Importar vídeo",
 		"loadProjectButton": "Abrir projeto",
 		"supportedFormats": "Formatos suportados: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"startFailed": "Não foi possível iniciar a gravação. Pressione Gravar novamente ou reabra o Klippt.",
-		"pauseFailed": "Não foi possível pausar e salvar este clipe. Pressione Parar e confira Gravações.",
-		"continueFailed": "Não foi possível continuar a gravação. Pressione Parar e confira Gravações.",
-		"stopFailed": "Não foi possível concluir a parada ou abrir a revisão. Reabra o Klippt e confira Gravações.",
 		"dragDropHint": "ou arraste e solte um arquivo de projeto .klippt aqui",
 		"dropOverlay": "Solte o arquivo de projeto para abrir",
 		"dropErrors": {

@@ -162,6 +162,7 @@ import {
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { recordingsDirectory } from "../recordingPaths";
+import { registerLocalFontIpc } from "./localFont";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 import type { RendererIpcMain } from "./trustedRendererIpc";
@@ -4360,6 +4361,8 @@ export function registerIpcHandlers(
 	ipcMain.handle("cancel-write-export", (_event, exportId: string) => ({
 		cancelled: typeof exportId === "string" && exportBufferService.cancelExport(exportId),
 	}));
+
+	registerLocalFontIpc(ipcMain, () => entitlementService.assertCapability("import"));
 
 	ipcMain.handle("open-video-file-picker", async () => {
 		const rejection = await rejectWithoutEntitlement("import");

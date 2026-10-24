@@ -34,6 +34,17 @@
 		"prepareFailed": "無法準備好儲存此錄製。請再試一次。"
 	},
 	"loadingEditor": "正在載入編輯器…",
+	"customFonts": {
+		"recoveryNeeded": "需要本機檔案才能還原 {{family}} 的原始樣式。",
+		"unsupportedFormat": "{{family}} 使用了不支援的字型要求格式，無法進行精確的本機還原。",
+		"chooseLocal": "選擇本機字型檔案",
+		"normal": "標準",
+		"italic": "斜體",
+		"importFailed": "無法匯入 {{family}}（{{style}}，{{weight}}）。請選擇不超過 2 MiB 的有效 TTF、OTF、WOFF 或 WOFF2 檔案。",
+		"loadFailed": "無法載入所選 {{family}} 的全部變體。已儲存的記錄未變更。",
+		"saveFailed": "{{family}} 已在本次工作階段載入，但未儲存供下次啟動使用。請釋放儲存空間並重新啟動後再試。",
+		"recovered": "已使用本機字型檔案還原 {{family}}。"
+	},
 	"errors": {
 		"previewCompositorUnavailable": "此裝置無法使用預覽"
 	},
@@ -49,6 +60,10 @@
 		"permissionDenied": "錄影權限被拒絕。請允許螢幕錄製。",
 		"cameraDisconnected": "網路攝影機已中斷連線。",
 		"cameraNotFound": "找不到攝影機。",
+		"startFailed": "無法開始錄製。請再按一次「錄製」，或重新開啟 Klippt。",
+		"pauseFailed": "無法暫停並儲存此片段。請按「停止」，然後檢查「錄製內容」。",
+		"continueFailed": "無法繼續錄製。請按「停止」，然後檢查「錄製內容」。",
+		"stopFailed": "無法完成停止或開啟檢視。請重新開啟 Klippt，然後檢查「錄製內容」。",
 		"selectSource": "請選擇要錄製的來源"
 	},
 	"emptyState": {
@@ -60,10 +75,6 @@
 		"importVideoButton": "匯入影片",
 		"loadProjectButton": "開啟專案",
 		"supportedFormats": "支援的格式：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
-		"startFailed": "無法開始錄製。請再按一次「錄製」，或重新開啟 Klippt。",
-		"pauseFailed": "無法暫停並儲存此片段。請按「停止」，然後檢查「錄製內容」。",
-		"continueFailed": "無法繼續錄製。請按「停止」，然後檢查「錄製內容」。",
-		"stopFailed": "無法完成停止或開啟檢視。請重新開啟 Klippt，然後檢查「錄製內容」。",
 		"dragDropHint": "或將 .klippt 專案檔案拖放至此",
 		"dropOverlay": "將專案檔案拖放至此以開啟",
 		"dropErrors": {

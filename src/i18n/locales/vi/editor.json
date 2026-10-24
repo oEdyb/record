@@ -34,6 +34,17 @@
 		"prepareFailed": "Không thể chuẩn bị bản ghi này để lưu. Hãy thử lại."
 	},
 	"loadingEditor": "Đang tải trình chỉnh sửa…",
+	"customFonts": {
+		"recoveryNeeded": "{{family}} cần tệp cục bộ để khôi phục kiểu ban đầu.",
+		"unsupportedFormat": "{{family}} đang dùng định dạng yêu cầu phông chữ không được hỗ trợ. Không thể khôi phục cục bộ chính xác.",
+		"chooseLocal": "Chọn tệp phông chữ cục bộ",
+		"normal": "Thường",
+		"italic": "Nghiêng",
+		"importFailed": "Không thể nhập {{family}} {{style}} {{weight}}. Hãy chọn tệp TTF, OTF, WOFF hoặc WOFF2 hợp lệ có dung lượng tối đa 2 MiB.",
+		"loadFailed": "Không thể tải mọi biến thể đã chọn của {{family}}. Bản ghi đã lưu không thay đổi.",
+		"saveFailed": "{{family}} đã được tải cho phiên này nhưng chưa được lưu cho lần khởi động sau. Hãy giải phóng dung lượng lưu trữ và khởi động lại để thử lại.",
+		"recovered": "Đã khôi phục {{family}} bằng tệp phông chữ cục bộ."
+	},
 	"errors": {
 		"previewCompositorUnavailable": "Không thể xem trước trên máy này"
 	},
@@ -49,6 +60,10 @@
 		"cameraDisconnected": "Webcam bị ngắt kết nối.",
 		"cameraNotFound": "Không tìm thấy máy ảnh.",
 		"permissionDenied": "Quyền ghi hình bị từ chối. Vui lòng cho phép ghi màn hình.",
+		"startFailed": "Không thể bắt đầu ghi. Nhấn Ghi lại hoặc mở lại Klippt.",
+		"pauseFailed": "Không thể tạm dừng và lưu clip này. Nhấn Dừng, rồi kiểm tra Bản ghi.",
+		"continueFailed": "Không thể tiếp tục ghi. Nhấn Dừng, rồi kiểm tra Bản ghi.",
+		"stopFailed": "Không thể hoàn tất dừng hoặc mở phần xem lại. Mở lại Klippt, rồi kiểm tra Bản ghi.",
 		"selectSource": "Vui lòng chọn một nguồn để ghi"
 	},
 	"emptyState": {
@@ -60,10 +75,6 @@
 		"importVideoButton": "Nhập video",
 		"loadProjectButton": "Mở dự án",
 		"supportedFormats": "Định dạng được hỗ trợ: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"startFailed": "Không thể bắt đầu ghi. Nhấn Ghi lại hoặc mở lại Klippt.",
-		"pauseFailed": "Không thể tạm dừng và lưu clip này. Nhấn Dừng, rồi kiểm tra Bản ghi.",
-		"continueFailed": "Không thể tiếp tục ghi. Nhấn Dừng, rồi kiểm tra Bản ghi.",
-		"stopFailed": "Không thể hoàn tất dừng hoặc mở phần xem lại. Mở lại Klippt, rồi kiểm tra Bản ghi.",
 		"dragDropHint": "hoặc kéo và thả tệp dự án .klippt vào đây",
 		"dropOverlay": "Thả tệp dự án để mở",
 		"dropErrors": {

@@ -78,6 +78,10 @@ export default defineConfig({
 		},
 	},
 	build: {
+		// Reviewed font binaries stay separate for package provenance checks.
+		assetsInlineLimit(filePath) {
+			if (filePath.endsWith(".woff2")) return false;
+		},
 		// Retain the emitted static import graph so per-window startup can be checked.
 		manifest: true,
 		target: "esnext",

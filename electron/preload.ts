@@ -495,6 +495,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	cancelWriteExport: (exportId: string) => {
 		return ipcRenderer.invoke("cancel-write-export", exportId) as Promise<{ cancelled: boolean }>;
 	},
+	chooseLocalFont: (request: import("../src/lib/localFont").ChooseLocalFontRequest) => {
+		return ipcRenderer.invoke("choose-local-font", request) as Promise<
+			import("../src/lib/localFont").ChooseLocalFontResult
+		>;
+	},
 	openVideoFilePicker: () => {
 		return ipcRenderer.invoke("open-video-file-picker");
 	},
