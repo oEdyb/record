@@ -132,8 +132,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setHudOverlaySize: (width: number, height: number) => {
 		ipcRenderer.send("hud-overlay-set-size", width, height);
 	},
-	setHudPillSize: (width: number, height: number) => {
-		ipcRenderer.send("hud-overlay-set-pill-size", width, height);
+	setHudPillSize: (width: number, height: number, offsetX: number) => {
+		ipcRenderer.send("hud-overlay-set-pill-size", width, height, offsetX);
 	},
 	setHudDirectionExclusionRectangles: (
 		rectangles: Array<{ x: number; y: number; width: number; height: number }>,

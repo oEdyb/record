@@ -501,14 +501,22 @@ ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
 });
 
 // The painted pill changes size without the window doing so (minimize, expand,
-// Record). A pill that grows at a screen edge is pulled back onto the display.
-ipcMain.on("hud-overlay-set-pill-size", (event, width: number, height: number) => {
-	if (!isHudSender(event.sender.id) || !Number.isFinite(width) || !Number.isFinite(height)) {
+// Record). It grows and shrinks from its left end, so the renderer also says how
+// far its centre sits from the window's. A pill that grows at a screen edge is
+// pulled back onto the display.
+ipcMain.on("hud-overlay-set-pill-size", (event, width: number, height: number, offsetX = 0) => {
+	if (
+		!isHudSender(event.sender.id) ||
+		!Number.isFinite(width) ||
+		!Number.isFinite(height) ||
+		!Number.isFinite(offsetX)
+	) {
 		return;
 	}
 	hudPillSize = {
 		width: Math.max(1, Math.round(width)),
 		height: Math.max(1, Math.round(height)),
+		offsetX: Math.round(offsetX),
 	};
 	if (!hudOverlayWindow || hudOverlayWindow.isDestroyed() || hudDragOrigin) return;
 	const [currentWidth, currentHeight] = hudOverlayWindow.getSize();

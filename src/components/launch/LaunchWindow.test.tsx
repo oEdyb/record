@@ -2336,7 +2336,11 @@ describe("LaunchWindow minimized pill", () => {
 		stubBox(bar, 88, 50);
 		await flushResizeObservers();
 
-		expect(window.electronAPI.setHudPillSize).toHaveBeenCalledWith(88, 50);
+		expect(window.electronAPI.setHudPillSize).toHaveBeenCalledWith(
+			88,
+			50,
+			44 - window.innerWidth / 2,
+		);
 	});
 });
 

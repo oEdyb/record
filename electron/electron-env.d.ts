@@ -553,7 +553,7 @@ interface Window {
 		endHudOverlayDrag: () => void;
 		setHudOverlaySize: (width: number, height: number) => void;
 		/** The painted pill, which drags and resizes keep on the display. */
-		setHudPillSize: (width: number, height: number) => void;
+		setHudPillSize: (width: number, height: number, offsetX: number) => void;
 		setHudDirectionExclusionRectangles: (
 			rectangles: Array<{ x: number; y: number; width: number; height: number }>,
 		) => void;

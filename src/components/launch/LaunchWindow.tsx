@@ -624,7 +624,7 @@ export function LaunchWindow() {
 	//      down as CSS custom properties.
 	// ---------------------------------------------------------------------------
 	const hudAllocatedSizeRef = useRef({ width: 0, height: 0 });
-	const reportedPillSizeRef = useRef({ width: 0, height: 0 });
+	const reportedPillSizeRef = useRef({ width: 0, height: 0, offsetX: 0 });
 	const isDraggingHudRef = useRef(false);
 
 	const horizontalHudWidth = Math.min(HUD_PILL_WIDTH, getAvailableScreenWidth() - 32);
@@ -736,10 +736,15 @@ export function LaunchWindow() {
 		// about it whenever it changes, even when the window itself does not.
 		const pillWidth = Math.round(barRect.width || HUD_PILL_WIDTH);
 		const pillHeight = Math.round(barHeight);
+		const pillOffsetX = Math.round(barRect.left + pillWidth / 2 - window.innerWidth / 2);
 		const reportedPill = reportedPillSizeRef.current;
-		if (reportedPill.width !== pillWidth || reportedPill.height !== pillHeight) {
-			reportedPillSizeRef.current = { width: pillWidth, height: pillHeight };
-			window.electronAPI.setHudPillSize?.(pillWidth, pillHeight);
+		if (
+			reportedPill.width !== pillWidth ||
+			reportedPill.height !== pillHeight ||
+			reportedPill.offsetX !== pillOffsetX
+		) {
+			reportedPillSizeRef.current = { width: pillWidth, height: pillHeight, offsetX: pillOffsetX };
+			window.electronAPI.setHudPillSize?.(pillWidth, pillHeight, pillOffsetX);
 		}
 
 		const allocated = hudAllocatedSizeRef.current;
@@ -1819,8 +1824,9 @@ export function LaunchWindow() {
 				offset={HUD_TOAST_OFFSET}
 				duration={6000}
 			/>
-			{/* The pill sits at the window's centre; whatever floats beside it stacks
-			    above it, or below it when the pill is near the top of the display.
+			{/* The pill's left end sits where the idle pill's does, so folding, unfolding
+			    and Record never move the grip out from under the pointer. Whatever floats
+			    beside it stacks above it, or below it when the pill is near the top of the display.
 			    Everything is laid out by flexbox relative to the pill, so no popover
 			    needs a measured position and none of them can move the window. */}
 			<div ref={hudAnchorRef} className={styles.hudAnchor} data-placement={stackPlacement}>

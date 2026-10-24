@@ -22,10 +22,13 @@
 /* The pill is the only box in flow, centred in the window; main keeps that
    centre on the pill when it clamps a drag or a resize. */
 .hudAnchor {
+	--hud-idle-pill-width: 424px;
 	position: fixed;
 	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
+	/* Anchored at the idle pill's left end: the pill grows and shrinks to the
+	   right, so the grip stays under the pointer when it folds or unfolds. */
+	left: calc(50% - var(--hud-idle-pill-width) / 2);
+	transform: translateY(-50%);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -83,7 +86,7 @@
 
 .hudPillIdle {
 	/* Same width as Setup, so the panel reads as growing out of the pill. */
-	width: 424px;
+	width: var(--hud-idle-pill-width);
 }
 
 .hudPillRecording {
