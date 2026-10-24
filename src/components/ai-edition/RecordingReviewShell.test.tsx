@@ -65,10 +65,14 @@ vi.mock("./Preview", () => ({
 vi.mock("./TransportBar", () => ({ TransportBar: () => <div data-testid="transport" /> }));
 vi.mock("./TransactionRecoveryBanner", () => ({ TransactionRecoveryBanner: () => null }));
 vi.mock("./ExportDialog", () => ({
-	ExportDialog: (props: { open: boolean; quickExport?: boolean }) => {
+	ExportDialog: (props: { open: boolean; quickExport?: boolean; sourceOnly?: boolean }) => {
 		mocks.exportDialog(props);
 		return props.open ? (
-			<div data-testid="export" data-quick={String(Boolean(props.quickExport))} />
+			<div
+				data-testid="export"
+				data-quick={String(Boolean(props.quickExport))}
+				data-source-only={String(Boolean(props.sourceOnly))}
+			/>
 		) : null;
 	},
 }));
@@ -301,6 +305,38 @@ describe("recording review shell", () => {
 		await waitFor(() =>
 			expect(screen.getByTestId("export")).toHaveAttribute("data-quick", "false"),
 		);
+		expect(screen.getByTestId("export")).toHaveAttribute("data-source-only", "true");
+	});
+
+	it("keeps finished export, import, and deletion out of read-only mode but allows source recovery", async () => {
+		mocks.entitlement.snapshot.access = "read-only";
+		const loadProjectFile = vi.fn();
+		window.electronAPI!.loadProjectFile = loadProjectFile;
+		loadDocument(recordingDocument());
+		render(<RecordingReviewShell />);
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "recordingReview.save" })).toBeDisabled(),
+		);
+		await act(async () => menuListeners.save?.());
+		expect(screen.queryByTestId("export")).not.toBeInTheDocument();
+		fireEvent.keyDown(screen.getByRole("button", { name: "recordingReview.more" }), {
+			key: "Enter",
+		});
+		fireEvent.click(screen.getByRole("menuitem", { name: "recordingReview.originals" }));
+		await waitFor(() =>
+			expect(screen.getByTestId("export")).toHaveAttribute("data-source-only", "true"),
+		);
+		const close = mocks.exportDialog.mock.lastCall?.[0] as { onClose: () => void };
+		act(() => close.onClose());
+		await act(async () => menuListeners.load?.());
+		const browse = mocks.openProject.mock.lastCall?.[0] as {
+			allowDelete: boolean;
+			allowImport: boolean;
+			onBrowse: () => void;
+		};
+		expect(browse).toMatchObject({ allowDelete: false, allowImport: false });
+		await act(async () => browse.onBrowse());
+		expect(loadProjectFile).not.toHaveBeenCalled();
 	});
 
 	it("opens Recordings from the File menu", async () => {

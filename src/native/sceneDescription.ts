@@ -57,6 +57,7 @@ import {
 	normalizeMotionSpeed,
 } from "@/lib/zoomMath/motionCurve";
 import type { CompositorClipInput } from "./contracts";
+import type { ExportSourceClip } from "./exportSourcePaths";
 
 /** Background behind the screen. Parsed from `settings.wallpaper`. */
 type SceneBackground =
@@ -490,7 +491,7 @@ export function resolveVisibleClips(document: AxcutDocument): AxcutClip[] {
 export function buildCompositorClipInputs(
 	document: AxcutDocument,
 	cleanVoiceRoutes: ReadonlyMap<string, CleanVoiceRoute> = new Map(),
-): CompositorClipInput[] {
+): (CompositorClipInput & ExportSourceClip)[] {
 	const assetById = new Map(document.assets.map((asset) => [asset.id, asset]));
 	return resolveVisibleClips(document).flatMap((clip) => {
 		const asset = assetById.get(clip.assetId);
@@ -505,6 +506,8 @@ export function buildCompositorClipInputs(
 				sourceEndSec: resolveClipSourceEndSec(clip, asset),
 				webcamOffsetSec: camera.offsetSec,
 				hasAudio: true,
+				microphoneAudioPath: asset.microphoneAudioPath,
+				systemAudioPath: asset.systemAudioPath,
 				...(cleanVoice ? { cleanMicrophonePath: cleanVoice.cleanMicrophonePath } : {}),
 			},
 		];
@@ -607,7 +610,17 @@ export function buildSceneDescription(
 
 	const assetById = new Map(document.assets.map((a) => [a.id, a]));
 	const visibleClips = resolveVisibleClips(document);
-	const clips = buildCompositorClipInputs(document);
+	const clips = buildCompositorClipInputs(document).map(
+		(clip): CompositorClipInput => ({
+			screenPath: clip.screenPath,
+			webcamPath: clip.webcamPath,
+			sourceStartSec: clip.sourceStartSec,
+			sourceEndSec: clip.sourceEndSec,
+			webcamOffsetSec: clip.webcamOffsetSec,
+			hasAudio: clip.hasAudio,
+			...(clip.cleanMicrophonePath ? { cleanMicrophonePath: clip.cleanMicrophonePath } : {}),
+		}),
+	);
 	const cropByClip = visibleClips.map(
 		(clip): { x: number; y: number; width: number; height: number } | null => {
 			const cropRegion = clip.cropRegion;

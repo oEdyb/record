@@ -429,6 +429,32 @@ describe("buildSceneDescription.clips", () => {
 		});
 		expect(buildSceneDescription(doc).clips[0]).not.toHaveProperty("cleanMicrophonePath");
 	});
+
+	it("retains standalone audio originals for source-overwrite protection only", () => {
+		const asset = makeAsset({
+			id: "a",
+			originalPath: "/take.mp4",
+			microphoneAudioPath: "/take-mic.mp4",
+			systemAudioPath: "/take-system.mp4",
+		});
+		const clip = makeClip({
+			id: "c1",
+			assetId: "a",
+			sourceStartSec: 0,
+			sourceEndSec: 4,
+			timelineStartSec: 0,
+			timelineEndSec: 4,
+		});
+		const doc = makeDoc({ assets: [asset], clips: [clip] });
+
+		expect(buildCompositorClipInputs(doc)[0]).toMatchObject({
+			microphoneAudioPath: "/take-mic.mp4",
+			systemAudioPath: "/take-system.mp4",
+		});
+		const sceneClip = buildSceneDescription(doc).clips[0];
+		expect(sceneClip).not.toHaveProperty("microphoneAudioPath");
+		expect(sceneClip).not.toHaveProperty("systemAudioPath");
+	});
 });
 
 // --- zoomRegions -----------------------------------------------------------

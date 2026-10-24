@@ -54,6 +54,24 @@
 	min-height: 0;
 }
 
+.reviewTransport {
+	position: absolute;
+	right: 12px;
+	bottom: 12px;
+	left: 12px;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	padding: 28px 8px 8px;
+	border-radius: 0 0 12px 12px;
+	background: linear-gradient(
+		to bottom,
+		rgb(12 13 17 / 0%),
+		rgb(12 13 17 / 88%) 55%,
+		rgb(12 13 17 / 96%)
+	);
+}
+
 /* Covers the review's stage until the recording's first frame is ready, so the
    window never shows the empty state, a bare canvas or the transport settling in. */
 .reviewLoading {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { type ReactElement, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { OpenProjectModal } from "./Modals";
@@ -22,6 +22,8 @@ function renderModal(
 		loading?: boolean;
 		loadFailed?: boolean;
 		recordingOnly?: boolean;
+		allowDelete?: boolean;
+		allowImport?: boolean;
 	} = {},
 ) {
 	const onSelect = overrides.onSelect ?? vi.fn();
@@ -31,6 +33,8 @@ function renderModal(
 			loading={overrides.loading}
 			loadFailed={overrides.loadFailed}
 			recordingOnly={overrides.recordingOnly}
+			allowDelete={overrides.allowDelete}
+			allowImport={overrides.allowImport}
 			open={true}
 			onClose={vi.fn()}
 			projects={projects}
@@ -41,6 +45,31 @@ function renderModal(
 		/>,
 	);
 	return { onSelect, onDelete };
+}
+
+function DeletingProjectModal({
+	initialProjects = projects,
+	onDelete,
+}: {
+	initialProjects?: typeof projects;
+	onDelete: (id: string) => Promise<void>;
+}) {
+	const [items, setItems] = useState(initialProjects);
+	return (
+		<OpenProjectModal
+			open={true}
+			onClose={vi.fn()}
+			projects={items}
+			activeProjectId={null}
+			onSelect={vi.fn()}
+			onDelete={(id) => {
+				void onDelete(id).then(() => {
+					setItems((current) => current.filter((project) => project.id !== id));
+				});
+			}}
+			onBrowse={vi.fn()}
+		/>
+	);
 }
 
 describe("OpenProjectModal delete", () => {
@@ -114,15 +143,80 @@ describe("OpenProjectModal delete", () => {
 		expect(onDelete).toHaveBeenCalledWith("proj_two");
 	});
 
-	it("cancels back to the row", () => {
-		const { onDelete } = renderModal();
+	it("focuses the next row after its confirmed deletion finishes", async () => {
+		let finishDeletion: (() => void) | undefined;
+		const onDelete = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					finishDeletion = resolve;
+				}),
+		);
+		renderWithI18n(<DeletingProjectModal onDelete={onDelete} />);
+		const deleteTrigger = screen.getAllByRole("button", { name: /delete project/i })[0];
+		const nextRow = screen.getByRole("button", { name: /Second project/ });
 
-		fireEvent.click(screen.getAllByRole("button", { name: /delete project/i })[0]);
+		fireEvent.click(deleteTrigger);
+		fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+		expect(onDelete).toHaveBeenCalledWith("proj_one");
+		await act(async () => {
+			finishDeletion?.();
+			await Promise.resolve();
+		});
+
+		expect(screen.queryByText("First project")).not.toBeInTheDocument();
+		expect(deleteTrigger).not.toBeInTheDocument();
+		expect(nextRow).toHaveFocus();
+		expect(document.body).not.toHaveFocus();
+	});
+
+	it("focuses Search when confirmed deletion removes the only project", async () => {
+		let finishDeletion: (() => void) | undefined;
+		const onDelete = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					finishDeletion = resolve;
+				}),
+		);
+		renderWithI18n(<DeletingProjectModal initialProjects={[projects[0]]} onDelete={onDelete} />);
+		const deleteTrigger = screen.getByRole("button", { name: /delete project/i });
+		const search = screen.getByRole("searchbox");
+
+		fireEvent.click(deleteTrigger);
+		fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+		expect(onDelete).toHaveBeenCalledWith("proj_one");
+		await act(async () => {
+			finishDeletion?.();
+			await Promise.resolve();
+		});
+
+		expect(screen.queryByText("First project")).not.toBeInTheDocument();
+		expect(deleteTrigger).not.toBeInTheDocument();
+		expect(search).toHaveFocus();
+		expect(document.body).not.toHaveFocus();
+	});
+
+	it("cancels back to the row with focus on Cancel, then the delete trigger", () => {
+		const { onDelete } = renderModal();
+		const deleteTrigger = screen.getAllByRole("button", { name: /delete project/i })[0];
+		fireEvent.click(deleteTrigger);
+		expect(screen.getByRole("button", { name: /cancel/i })).toHaveFocus();
 		fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
 
 		expect(onDelete).not.toHaveBeenCalled();
 		expect(screen.getByText("First project")).toBeInTheDocument();
 		expect(screen.queryByText(/recordings are kept/i)).not.toBeInTheDocument();
+		expect(deleteTrigger).toHaveFocus();
+	});
+
+	it("hides delete controls when they are not allowed", () => {
+		renderModal({ allowDelete: false });
+		expect(screen.queryByRole("button", { name: /delete project/i })).not.toBeInTheDocument();
+	});
+
+	it("keeps project browsing available while hiding imports in read-only mode", () => {
+		renderModal({ allowImport: false });
+		expect(screen.getByRole("button", { name: /First project/ })).toBeEnabled();
+		expect(screen.queryByRole("button", { name: /browse files/i })).not.toBeInTheDocument();
 	});
 
 	// The delete button sits next to the row's own button, not inside it — a

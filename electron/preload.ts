@@ -480,9 +480,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		videoData: ArrayBuffer,
 		filePath: string,
 		spec: import("./native-bridge/services/compositorViewService").VideoBufferPublishSpec,
-		exportId?: string,
+		exportId: string | undefined,
+		sourceMetadata: import("./native-bridge/services/compositorViewService").ExportSourceMetadata,
 	) => {
-		return ipcRenderer.invoke("write-export-to-path", videoData, filePath, spec, exportId);
+		return ipcRenderer.invoke(
+			"write-export-to-path",
+			videoData,
+			filePath,
+			spec,
+			exportId,
+			sourceMetadata,
+		);
 	},
 	cancelWriteExport: (exportId: string) => {
 		return ipcRenderer.invoke("cancel-write-export", exportId) as Promise<{ cancelled: boolean }>;

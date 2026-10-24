@@ -156,6 +156,7 @@ export function RecordingReviewShell() {
 	const [openProjectOpen, setOpenProjectOpen] = useState(false);
 	const [exportOpen, setExportOpen] = useState(false);
 	const [quickExport, setQuickExport] = useState(true);
+	const [sourceOnlyExport, setSourceOnlyExport] = useState(false);
 	const [sourceExportBusy, setSourceExportBusy] = useState(false);
 	const sourceExportBusyRef = useRef(false);
 	const handleSourceExportBusyChange = useCallback((busy: boolean) => {
@@ -643,6 +644,7 @@ export function RecordingReviewShell() {
 	);
 
 	const handleBrowseProject = useCallback(async () => {
+		if (!requireEntitlement("import")) return;
 		const projectAtStart = useProjectStore.getState().projectId;
 		const navigationRevision = recordingNavigationRevisionRef.current;
 		const isCurrent = () =>
@@ -715,7 +717,7 @@ export function RecordingReviewShell() {
 	// the dialog says so before it asks.
 	const handleDeleteProject = useCallback(
 		async (id: string) => {
-			if (recordingReviewNavigation.isBlocked()) return;
+			if (entitlement.access === "read-only" || recordingReviewNavigation.isBlocked()) return;
 			try {
 				const result = await nativeBridgeClient.aiEdition.delete(id);
 				if (!result.success) throw new Error(result.error ?? "Failed to delete project");
@@ -732,7 +734,7 @@ export function RecordingReviewShell() {
 				});
 			}
 		},
-		[recordingReviewNavigation],
+		[entitlement.access, recordingReviewNavigation],
 	);
 
 	const handleConfirmUnsaved = useCallback(
@@ -863,6 +865,7 @@ export function RecordingReviewShell() {
 					return;
 				}
 				setQuickExport(!sourceRecovery);
+				setSourceOnlyExport(sourceRecovery);
 				setExportOpen(true);
 			} catch (error) {
 				toast.error(te("recordingReview.prepareFailed"), {
@@ -1108,6 +1111,8 @@ export function RecordingReviewShell() {
 				loading={projectListLoading}
 				loadFailed={projectListFailed}
 				recordingOnly
+				allowDelete={entitlement.access !== "read-only"}
+				allowImport={entitlement.access !== "read-only"}
 				open={openProjectOpen}
 				onClose={() => setOpenProjectOpen(false)}
 				projects={projectSummaries}
@@ -1130,6 +1135,7 @@ export function RecordingReviewShell() {
 				onClose={() => setExportOpen(false)}
 				document={document}
 				quickExport={quickExport}
+				sourceOnly={sourceOnlyExport}
 				onSourceBusyChange={handleSourceExportBusyChange}
 			/>
 		</div>

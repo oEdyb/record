@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createEmptyDocument } from "@/lib/ai-edition/schema";
+import { type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
 
 type ElectronAPI = Window["electronAPI"];
 
@@ -312,10 +312,54 @@ describe("runExport", () => {
 				codec: "h264",
 			}),
 			expect.any(String),
+			expect.any(Object),
 		);
 		expect(window.electronAPI.removeTemporaryExportPath).toHaveBeenCalledWith(
 			"/tmp/.klippt-voiceover-test.mp4",
 		);
+		const sourceMetadata = vi.mocked(window.electronAPI.writeExportToPath).mock.calls[0]?.[4];
+		expect(sourceMetadata.additionalSourcePaths).toEqual(["/media/voiceover.wav"]);
+		expect(sourceMetadata.sceneJson).toEqual(expect.any(String));
+		expect(sourceMetadata.clips).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ screenPath: "/media/one.mp4" }),
+				expect.objectContaining({ webcamPath: "/media/camera-one.mp4" }),
+				expect.objectContaining({ screenPath: "/media/two.mp4" }),
+				expect.objectContaining({ webcamPath: "/media/camera-two.mp4" }),
+			]),
+		);
+	});
+
+	it("keeps camera-less voiceover source metadata publishable", async () => {
+		const project: AxcutDocument = currentMultiAssetProject();
+		for (const asset of project.assets) asset.cameraTrack = null;
+		nativeMocks.loadProjectFileFromPath.mockResolvedValue({ success: true, project });
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({
+				ok: true,
+				blob: async () => new Blob([new Uint8Array([5, 6, 7])]),
+				arrayBuffer: async () => new Uint8Array([8, 9]).buffer,
+			})),
+		);
+
+		const result = await runExport({
+			kind: "export",
+			projectPath: "/projects/demo.klippt",
+			outPath: "/exports/demo.mp4",
+			format: "mp4",
+			quality: null,
+			gifFrameRate: null,
+			gifSizePreset: null,
+			audioPath: "/media/voiceover.wav",
+			audioMode: "mix",
+			audioOffsetSec: 0,
+		});
+
+		expect(result.success).toBe(true);
+		const sourceMetadata = vi.mocked(window.electronAPI.writeExportToPath).mock.calls[0]?.[4];
+		expect(sourceMetadata.clips.length).toBeGreaterThan(0);
+		expect(sourceMetadata.clips.every((clip) => clip.webcamPath === "")).toBe(true);
 	});
 
 	it("uses speed-adjusted duration for GIF progress and capacity", async () => {

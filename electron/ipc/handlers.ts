@@ -114,6 +114,7 @@ import type { CursorRecordingSession } from "../native-bridge/cursor/recording/s
 import { toHelperRect } from "../native-bridge/helperCoordinates";
 import {
 	CompositorViewService,
+	type ExportSourceMetadata,
 	type VideoBufferPublishSpec,
 } from "../native-bridge/services/compositorViewService";
 import { mergeEnumeratedSources } from "../recording/enumeratedSources";
@@ -4266,6 +4267,7 @@ export function registerIpcHandlers(
 			filePath: string,
 			spec: VideoBufferPublishSpec,
 			exportId?: string,
+			sourceMetadata?: ExportSourceMetadata,
 		) => {
 			try {
 				// Sanity-check the path: the renderer is trusted (contextIsolation on), but a
@@ -4288,6 +4290,33 @@ export function registerIpcHandlers(
 				) {
 					return { success: false, message: "Invalid export verification contract" };
 				}
+				if (
+					!sourceMetadata ||
+					!Array.isArray(sourceMetadata.clips) ||
+					sourceMetadata.clips.length === 0 ||
+					sourceMetadata.clips.some(
+						(clip) =>
+							!clip ||
+							typeof clip.screenPath !== "string" ||
+							!path.isAbsolute(clip.screenPath) ||
+							(clip.webcamPath !== undefined &&
+								(typeof clip.webcamPath !== "string" ||
+									(clip.webcamPath.length > 0 && !path.isAbsolute(clip.webcamPath)))) ||
+							(clip.cleanMicrophonePath !== undefined &&
+								(typeof clip.cleanMicrophonePath !== "string" ||
+									(clip.cleanMicrophonePath.length > 0 &&
+										!path.isAbsolute(clip.cleanMicrophonePath)))),
+					) ||
+					(sourceMetadata.sceneJson !== undefined &&
+						typeof sourceMetadata.sceneJson !== "string") ||
+					(sourceMetadata.additionalSourcePaths !== undefined &&
+						(!Array.isArray(sourceMetadata.additionalSourcePaths) ||
+							sourceMetadata.additionalSourcePaths.some(
+								(source) => typeof source !== "string" || !path.isAbsolute(source),
+							)))
+				) {
+					return { success: false, message: "Invalid export source contract" };
+				}
 
 				const normalizedPath = path.normalize(filePath);
 				const exportWarning = await exportBufferService.publishVideoBuffer(
@@ -4296,6 +4325,7 @@ export function registerIpcHandlers(
 					spec,
 					{
 						exportId,
+						sourceMetadata,
 						onPhase: (phase) => {
 							if (!event.sender.isDestroyed()) event.sender.send("export:native-phase", phase);
 						},

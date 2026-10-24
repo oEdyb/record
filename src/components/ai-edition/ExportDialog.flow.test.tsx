@@ -463,4 +463,16 @@ describe("ExportDialog task completion", () => {
 		);
 		expect(screen.getByRole("button", { name: "exportDialog.exportGif" })).toBeInTheDocument();
 	});
+	it("restricts Original files to source recovery", () => {
+		const document = doc(
+			[asset({ id: "a1", video: { width: 1920, height: 1080, codec: "h264", fps: 30 } })],
+			[clip({ id: "c1", assetId: "a1" })],
+		);
+		render(<ExportDialog open onClose={vi.fn()} document={document} sourceOnly />);
+
+		expect(
+			screen.queryByRole("button", { name: "exportDialog.outputVideo" }),
+		).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "exportDialog.sourcesSave" })).toBeEnabled();
+	});
 });

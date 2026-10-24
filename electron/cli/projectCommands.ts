@@ -11,9 +11,21 @@ export type CliWriter = (text: string) => void;
 
 export interface PackedProjectData {
 	version?: number;
+	schemaVersion?: number;
 	media?: { screenVideoPath?: string; webcamVideoPath?: string; cursorCaptureMode?: string };
 	videoPath?: string;
+	assets?: Array<{ id?: string; kind?: string; originalPath?: string }>;
 	editor?: Record<string, unknown>;
+}
+
+function primaryScreenVideoPath(data: PackedProjectData): string | null {
+	return (
+		data.media?.screenVideoPath ??
+		data.videoPath ??
+		data.assets?.find((asset) => asset.kind === "video" && typeof asset.originalPath === "string")
+			?.originalPath ??
+		null
+	);
 }
 
 const isFile = (candidate: string): Promise<boolean> =>
@@ -36,7 +48,7 @@ export async function runPackCommand(
 	const raw = await fs.readFile(projectPath, "utf8");
 	const data = JSON.parse(raw) as PackedProjectData;
 	const media = data.media ?? (data.videoPath ? { screenVideoPath: data.videoPath } : undefined);
-	const screenVideoPath = media?.screenVideoPath;
+	const screenVideoPath = primaryScreenVideoPath(data);
 	if (!screenVideoPath) {
 		throw new Error("Project file does not reference a screen video");
 	}
@@ -54,7 +66,11 @@ export async function runPackCommand(
 	await fs.mkdir(outDir, { recursive: true });
 
 	const copied: string[] = [];
+	const copiedBySource = new Map<string, string>();
 	const copyIn = async (sourcePath: string): Promise<string> => {
+		const key = path.resolve(sourcePath);
+		const existing = copiedBySource.get(key);
+		if (existing) return existing;
 		const ext = path.extname(sourcePath);
 		const stem = path.basename(sourcePath, ext);
 		let destination = path.join(outDir, stem + ext);
@@ -62,9 +78,10 @@ export async function runPackCommand(
 		for (let n = 1; copied.includes(destination); n++) {
 			destination = path.join(outDir, `${stem}-${n}${ext}`);
 		}
-		if (path.resolve(sourcePath) !== path.resolve(destination)) {
+		if (key !== path.resolve(destination)) {
 			await fs.copyFile(sourcePath, destination);
 		}
+		copiedBySource.set(key, destination);
 		copied.push(destination);
 		return destination;
 	};
@@ -73,19 +90,39 @@ export async function runPackCommand(
 	const newScreenPath = await copyIn(screenSource);
 
 	let newWebcamPath: string | undefined;
-	if (media.webcamVideoPath) {
+	if (media?.webcamVideoPath) {
 		newWebcamPath = await copyIn(await resolveSource(media.webcamVideoPath));
 	}
 
+	const assets = data.assets
+		? await Promise.all(
+				data.assets.map(async (asset) => {
+					if (!asset.originalPath) return asset;
+					const source = await resolveSource(asset.originalPath);
+					return { ...asset, originalPath: await copyIn(source) };
+				}),
+			)
+		: undefined;
+
 	// Cursor telemetry sidecar sits at "<video path>.cursor.json".
 	const cursorSidecar = `${screenSource}.cursor.json`;
-	const hasCursorData = await isFile(cursorSidecar);
+	let hasCursorData = await isFile(cursorSidecar);
 	if (hasCursorData) {
 		await copyIn(cursorSidecar);
+	}
+	for (const asset of data.assets ?? []) {
+		if (asset.kind !== "video" || !asset.originalPath) continue;
+		const source = await resolveSource(asset.originalPath);
+		const sidecar = `${source}.cursor.json`;
+		if (await isFile(sidecar)) {
+			hasCursorData = true;
+			await copyIn(sidecar);
+		}
 	}
 
 	const packedProject: PackedProjectData = {
 		...data,
+		...(assets ? { assets } : {}),
 		media: {
 			...media,
 			screenVideoPath: newScreenPath,
@@ -132,7 +169,7 @@ export async function runInfoCommand(
 	const editor = data.editor ?? {};
 	const count = (key: string) =>
 		Array.isArray(editor[key]) ? (editor[key] as unknown[]).length : 0;
-	const screenVideoPath = data.media?.screenVideoPath ?? data.videoPath ?? null;
+	const screenVideoPath = primaryScreenVideoPath(data);
 	const mediaExists = screenVideoPath
 		? await fs
 				.access(screenVideoPath)
@@ -142,7 +179,7 @@ export async function runInfoCommand(
 
 	const summary = {
 		projectPath,
-		version: data.version ?? null,
+		version: data.version ?? data.schemaVersion ?? null,
 		screenVideoPath,
 		screenVideoExists: mediaExists,
 		webcamVideoPath: data.media?.webcamVideoPath ?? null,

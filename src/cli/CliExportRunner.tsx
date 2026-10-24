@@ -443,6 +443,7 @@ export async function runExport(
 						expectedBytes: mixedBuffer.byteLength,
 					},
 					bufferExportId,
+					{ clips, sceneJson, additionalSourcePaths: [request.audioPath] },
 				);
 			} finally {
 				signal?.removeEventListener("abort", cancelBufferExport);

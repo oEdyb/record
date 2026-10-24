@@ -14,6 +14,7 @@ import {
 	estimateGifFileSizeBytes,
 	estimateMp4FileSizeBytes,
 } from "../../../src/lib/exporter/mp4ExportSettings";
+import { collectExportSourcePaths } from "../../../src/native/exportSourcePaths";
 import {
 	AtomicExportPublisher,
 	type ExportTransactionPhase,
@@ -211,11 +212,15 @@ export interface CompositorViewServiceOptions {
 	addon?: CompositorViewAddon;
 }
 
+export type ExportSourceMetadata =
+	import("../../../src/native/exportSourcePaths").ExportSourceMetadata<ClipInput>;
+
 export interface ExportTransactionOptions {
 	expectedBytes?: number;
 	signal?: AbortSignal;
 	onPhase?: (phase: ExportTransactionPhase) => void;
 	exportId?: string;
+	sourceMetadata?: ExportSourceMetadata;
 }
 
 export type PublishedExportStats<T> = T & { exportWarning?: ExportTransactionWarning };
@@ -249,17 +254,41 @@ function sceneSpeedRegions(sceneJson?: string): SceneSpeedRegion[] {
 	}
 }
 
-/** The atomic publish renames over the destination, so a save path that names
- * one of the export's own sources would replace the original recording. */
-export async function assertExportKeepsSources(target: string, clips: ClipInput[]): Promise<void> {
-	const resolve = (file: string) => fs.promises.realpath(file).catch(() => path.resolve(file));
-	const destination = await resolve(target);
-	for (const clip of clips) {
-		for (const source of [clip.screenPath, clip.webcamPath, clip.cleanMicrophonePath]) {
-			if (source && (await resolve(source)) === destination)
-				throw new Error(
-					"Choose another file name. This file is one of the recordings in this export.",
-				);
+interface ExportPathIdentity {
+	canonicalPath: string;
+	device?: bigint;
+	inode?: bigint;
+}
+
+async function exportPathIdentity(file: string): Promise<ExportPathIdentity> {
+	const resolved = path.resolve(file);
+	try {
+		const [canonicalPath, stats] = await Promise.all([
+			fs.promises.realpath(resolved),
+			fs.promises.stat(resolved, { bigint: true }),
+		]);
+		return { canonicalPath, device: stats.dev, inode: stats.ino };
+	} catch {
+		const parent = await fs.promises
+			.realpath(path.dirname(resolved))
+			.catch(() => path.dirname(resolved));
+		return { canonicalPath: path.join(parent, path.basename(resolved)) };
+	}
+}
+
+export async function assertExportKeepsSources(
+	target: string,
+	sourcePaths: readonly string[],
+): Promise<void> {
+	const destination = await exportPathIdentity(target);
+	for (const source of sourcePaths) {
+		const candidate = await exportPathIdentity(source);
+		const sameFile =
+			destination.device !== undefined &&
+			candidate.device === destination.device &&
+			candidate.inode === destination.inode;
+		if (sameFile || candidate.canonicalPath === destination.canonicalPath) {
+			throw new Error("Choose another file name. This file is one of the sources in this export.");
 		}
 	}
 }
@@ -818,7 +847,8 @@ export class CompositorViewService {
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
 		this.registerActiveExport(exportId, controller);
 		try {
-			await assertExportKeepsSources(target, clips);
+			const resolvedSceneJson = sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined;
+			await assertExportKeepsSources(target, collectExportSourcePaths(clips, resolvedSceneJson));
 			const width = Math.max(2, params?.width ?? 1920) & ~1;
 			const height = Math.max(2, params?.height ?? 1080) & ~1;
 			const sourceDurations = new Map<string, number>();
@@ -915,7 +945,7 @@ export class CompositorViewService {
 						const operation = addon.exportMulti(
 							resolvedClips,
 							stagingPath,
-							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
+							resolvedSceneJson,
 							renderParams,
 							onProgress,
 							exportId,
@@ -927,6 +957,7 @@ export class CompositorViewService {
 					}
 				},
 				verify: async (stagingPath, stats, signal) => {
+					if (copiedRecording) return;
 					const cancelNative = () => addon.cancelExport?.(exportId);
 					signal.addEventListener("abort", cancelNative, { once: true });
 					const outputFps =
@@ -988,6 +1019,8 @@ export class CompositorViewService {
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
 		this.registerActiveExport(exportId, controller);
 		try {
+			const resolvedSceneJson = sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined;
+			await assertExportKeepsSources(target, collectExportSourcePaths(clips, resolvedSceneJson));
 			const width = params?.width ?? 854;
 			const height = params?.height ?? 480;
 			const resolvedClips = await resolveClipSourceDurations(
@@ -1018,7 +1051,7 @@ export class CompositorViewService {
 						const operation = addon.exportGif(
 							resolvedClips,
 							stagingPath,
-							sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
+							resolvedSceneJson,
 							params,
 							onProgress,
 							exportId,
@@ -1061,7 +1094,7 @@ export class CompositorViewService {
 		videoData: ArrayBuffer,
 		outPath: string,
 		spec: VideoBufferPublishSpec,
-		transaction?: ExportTransactionOptions,
+		transaction: ExportTransactionOptions & { sourceMetadata: ExportSourceMetadata },
 	): Promise<ExportTransactionWarning | undefined> {
 		const addon = this.ensureAddon();
 		if (!addon?.verifyVideoExport || !addon.cancelExport) {
@@ -1075,6 +1108,20 @@ export class CompositorViewService {
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
 		this.registerActiveExport(exportId, controller);
 		try {
+			if (!transaction.sourceMetadata || transaction.sourceMetadata.clips.length === 0) {
+				throw new Error("Export source metadata is required before publication.");
+			}
+			const sourceSceneJson = transaction.sourceMetadata.sceneJson
+				? resolveSceneAssetPaths(transaction.sourceMetadata.sceneJson)
+				: undefined;
+			await assertExportKeepsSources(
+				outPath,
+				collectExportSourcePaths(
+					transaction.sourceMetadata.clips,
+					sourceSceneJson,
+					transaction.sourceMetadata.additionalSourcePaths,
+				),
+			);
 			let exportWarning: ExportTransactionWarning | undefined;
 			await this.exportPublisher.publish({
 				finalPath: outPath,

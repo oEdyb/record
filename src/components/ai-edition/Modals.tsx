@@ -86,6 +86,8 @@ interface OpenProjectModalProps extends BaseModalProps {
 	loading?: boolean;
 	loadFailed?: boolean;
 	recordingOnly?: boolean;
+	allowDelete?: boolean;
+	allowImport?: boolean;
 	activeProjectId: string | null;
 	onSelect: (id: string) => void;
 	onDelete: (id: string) => void;
@@ -99,6 +101,8 @@ export function OpenProjectModal({
 	loading = false,
 	loadFailed = false,
 	recordingOnly = false,
+	allowDelete = true,
+	allowImport = true,
 	activeProjectId,
 	onSelect,
 	onDelete,
@@ -109,6 +113,9 @@ export function OpenProjectModal({
 	const [query, setQuery] = useState("");
 	const searchRef = useRef<HTMLInputElement>(null);
 	const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+	const cancelConfirmRef = useRef<HTMLButtonElement>(null);
+	const confirmReturnFocusRef = useRef<HTMLElement | null>(null);
+	const previousConfirmId = useRef<string | null>(null);
 	// Deleting a project cannot be undone, so the trash icon arms an inline
 	// confirm on its own row instead of deleting on the first click. One row at a
 	// time, and closing the dialog disarms it.
@@ -119,6 +126,17 @@ export function OpenProjectModal({
 			setQuery("");
 		}
 	}, [open]);
+	useEffect(() => {
+		if (confirmId) {
+			if (!previousConfirmId.current) cancelConfirmRef.current?.focus();
+		} else if (previousConfirmId.current && open) {
+			const target = confirmReturnFocusRef.current;
+			if (target?.isConnected) target.focus({ preventScroll: true });
+			else searchRef.current?.focus({ preventScroll: true });
+			confirmReturnFocusRef.current = null;
+		}
+		previousConfirmId.current = confirmId;
+	}, [confirmId, open]);
 	const filtered =
 		loading || loadFailed
 			? []
@@ -232,155 +250,168 @@ export function OpenProjectModal({
 				) : (
 					filtered.map((p) => {
 						const isActive = p.id === activeProjectId;
-						if (p.id === confirmId) {
-							return (
-								<div
-									key={p.id}
-									style={{
-										display: "flex",
-										alignItems: "center",
-										gap: 8,
-										padding: "10px 12px",
-										borderRadius: "var(--r-md)",
-										background: "var(--danger-soft)",
-										boxShadow: "inset 0 0 0 1px var(--danger-hatch)",
-									}}
-								>
-									<div style={{ minWidth: 0, flex: 1 }}>
-										<div
-											style={{
-												font: "500 13px/1.3 var(--font-body)",
-												overflow: "hidden",
-												textOverflow: "ellipsis",
-												whiteSpace: "nowrap",
-											}}
-										>
-											{p.title}
-										</div>
-										<div
-											style={{
-												font: "400 11px/1.4 var(--font-body)",
-												color: "var(--muted)",
-												marginTop: 2,
-											}}
-										>
-											{t("openProjectDialog.confirmDelete")}
-										</div>
-									</div>
-									<button
-										type="button"
-										className={`${styles.btn} ${styles.btnSecondary}`}
-										onClick={() => setConfirmId(null)}
-									>
-										{tc("actions.cancel")}
-									</button>
-									<button
-										type="button"
-										className={`${styles.btn} ${styles.dangerBtn}`}
-										onClick={() => {
-											setConfirmId(null);
-											onDelete(p.id);
-										}}
-									>
-										<Trash2 size={14} />
-										{tc("actions.delete")}
-									</button>
-								</div>
-							);
-						}
 						return (
-							<div
-								key={p.id}
-								style={{
-									display: "flex",
-									alignItems: "center",
-									gap: 4,
-									contentVisibility: "auto",
-									containIntrinsicSize: "auto 60px",
-								}}
-							>
-								<button
-									type="button"
-									ref={(element) => {
-										if (element) rowRefs.current.set(p.id, element);
-										else rowRefs.current.delete(p.id);
-									}}
-									onKeyDown={(event) => {
-										if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-										if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-										event.preventDefault();
-										const available = filtered.filter((project) => project.id !== confirmId);
-										const index = available.findIndex((project) => project.id === p.id);
-										const next = available[index + (event.key === "ArrowDown" ? 1 : -1)];
-										if (next) rowRefs.current.get(next.id)?.focus();
-										else searchRef.current?.focus();
-									}}
-									onClick={() => {
-										onSelect(p.id);
-										onClose();
-									}}
-									style={{
-										flex: 1,
-										minWidth: 0,
-										display: "grid",
-										gridTemplateColumns: "36px 1fr auto",
-										alignItems: "center",
-										gap: 12,
-										padding: "10px 12px",
-										border: "none",
-										borderRadius: "var(--r-md)",
-										background: isActive ? "var(--accent-wash)" : "transparent",
-										boxShadow: isActive ? "inset 0 0 0 1px var(--accent)" : "none",
-										color: "var(--fg)",
-										cursor: "pointer",
-										textAlign: "left",
-										font: "inherit",
-									}}
-								>
+							<div key={p.id} style={{ display: "contents" }}>
+								{p.id === confirmId ? (
 									<div
 										style={{
-											width: 36,
-											height: 36,
-											borderRadius: "var(--r-sm)",
-											background: "linear-gradient(135deg, var(--brand-lo), var(--brand))",
-											display: "grid",
-											placeItems: "center",
-											color: "var(--accent-on)",
+											display: "flex",
+											alignItems: "center",
+											gap: 8,
+											padding: "10px 12px",
+											borderRadius: "var(--r-md)",
+											background: "var(--danger-soft)",
+											boxShadow: "inset 0 0 0 1px var(--danger-hatch)",
 										}}
 									>
-										<FolderOpen size={18} />
+										<div style={{ minWidth: 0, flex: 1 }}>
+											<div
+												style={{
+													font: "500 13px/1.3 var(--font-body)",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													whiteSpace: "nowrap",
+												}}
+											>
+												{p.title}
+											</div>
+											<div
+												style={{
+													font: "400 11px/1.4 var(--font-body)",
+													color: "var(--muted)",
+													marginTop: 2,
+												}}
+											>
+												{t("openProjectDialog.confirmDelete")}
+											</div>
+										</div>
+										<button
+											ref={cancelConfirmRef}
+											type="button"
+											className={`${styles.btn} ${styles.btnSecondary}`}
+											onClick={() => setConfirmId(null)}
+										>
+											{tc("actions.cancel")}
+										</button>
+										<button
+											type="button"
+											className={`${styles.btn} ${styles.dangerBtn}`}
+											onClick={() => {
+												const index = filtered.findIndex((project) => project.id === p.id);
+												const adjacentProject = filtered[index + 1] ?? filtered[index - 1];
+												confirmReturnFocusRef.current = adjacentProject
+													? (rowRefs.current.get(adjacentProject.id) ?? searchRef.current)
+													: searchRef.current;
+												setConfirmId(null);
+												onDelete(p.id);
+											}}
+										>
+											<Trash2 size={14} />
+											{tc("actions.delete")}
+										</button>
 									</div>
-									<div style={{ minWidth: 0 }}>
+								) : null}
+								<div
+									style={
+										p.id === confirmId
+											? { display: "none" }
+											: {
+													display: "flex",
+													alignItems: "center",
+													gap: 4,
+													contentVisibility: "auto",
+													containIntrinsicSize: "auto 60px",
+												}
+									}
+								>
+									<button
+										type="button"
+										ref={(element) => {
+											if (element) rowRefs.current.set(p.id, element);
+											else rowRefs.current.delete(p.id);
+										}}
+										onKeyDown={(event) => {
+											if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+											if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+											event.preventDefault();
+											const available = filtered.filter((project) => project.id !== confirmId);
+											const index = available.findIndex((project) => project.id === p.id);
+											const next = available[index + (event.key === "ArrowDown" ? 1 : -1)];
+											if (next) rowRefs.current.get(next.id)?.focus();
+											else searchRef.current?.focus();
+										}}
+										onClick={() => {
+											onSelect(p.id);
+											onClose();
+										}}
+										style={{
+											flex: 1,
+											minWidth: 0,
+											display: "grid",
+											gridTemplateColumns: "36px 1fr auto",
+											alignItems: "center",
+											gap: 12,
+											padding: "10px 12px",
+											border: "none",
+											borderRadius: "var(--r-md)",
+											background: isActive ? "var(--accent-wash)" : "transparent",
+											boxShadow: isActive ? "inset 0 0 0 1px var(--accent)" : "none",
+											color: "var(--fg)",
+											cursor: "pointer",
+											textAlign: "left",
+											font: "inherit",
+										}}
+									>
 										<div
 											style={{
-												font: "500 13px/1.3 var(--font-body)",
-												overflow: "hidden",
-												textOverflow: "ellipsis",
+												width: 36,
+												height: 36,
+												borderRadius: "var(--r-sm)",
+												background: "linear-gradient(135deg, var(--brand-lo), var(--brand))",
+												display: "grid",
+												placeItems: "center",
+												color: "var(--accent-on)",
+											}}
+										>
+											<FolderOpen size={18} />
+										</div>
+										<div style={{ minWidth: 0 }}>
+											<div
+												style={{
+													font: "500 13px/1.3 var(--font-body)",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													whiteSpace: "nowrap",
+												}}
+											>
+												{p.title}
+											</div>
+										</div>
+										<span
+											style={{
+												font: "400 11px/1 var(--font-mono)",
+												color: "var(--meta)",
 												whiteSpace: "nowrap",
 											}}
 										>
-											{p.title}
-										</div>
-									</div>
-									<span
-										style={{
-											font: "400 11px/1 var(--font-mono)",
-											color: "var(--meta)",
-											whiteSpace: "nowrap",
-										}}
-									>
-										{UPDATED_AT_FORMAT.format(new Date(p.updatedAt))}
-									</span>
-								</button>
-								<button
-									type="button"
-									className={styles.iconBtn}
-									onClick={() => setConfirmId(p.id)}
-									title={t("openProjectDialog.deleteProject")}
-									aria-label={t("openProjectDialog.deleteProject")}
-								>
-									<Trash2 size={14} />
-								</button>
+											{UPDATED_AT_FORMAT.format(new Date(p.updatedAt))}
+										</span>
+									</button>
+									{allowDelete ? (
+										<button
+											type="button"
+											className={styles.iconBtn}
+											onClick={(event) => {
+												confirmReturnFocusRef.current = event.currentTarget;
+												setConfirmId(p.id);
+											}}
+											title={t("openProjectDialog.deleteProject")}
+											aria-label={t("openProjectDialog.deleteProject")}
+										>
+											<Trash2 size={14} />
+										</button>
+									) : null}
+								</div>
 							</div>
 						);
 					})
@@ -425,18 +456,20 @@ export function OpenProjectModal({
 					</kbd>{" "}
 					{t("openProjectDialog.openHint")}
 				</span>
-				<button
-					type="button"
-					className={`${styles.btn} ${styles.btnSecondary}`}
-					style={{ whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}
-					onClick={() => {
-						onBrowse();
-						onClose();
-					}}
-				>
-					<FolderOpen size={14} />
-					{t("openProjectDialog.browseFiles")}
-				</button>
+				{allowImport ? (
+					<button
+						type="button"
+						className={`${styles.btn} ${styles.btnSecondary}`}
+						style={{ whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}
+						onClick={() => {
+							onBrowse();
+							onClose();
+						}}
+					>
+						<FolderOpen size={14} />
+						{t("openProjectDialog.browseFiles")}
+					</button>
+				) : null}
 			</div>
 		</ModalShell>
 	);

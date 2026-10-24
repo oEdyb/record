@@ -92,6 +92,8 @@ interface ExportDialogProps {
 	document: AxcutDocument | null;
 	/** Recording review uses source-quality MP4 for the One video option. */
 	quickExport?: boolean;
+	/** Original files allows untouched source recovery, never a finished video export. */
+	sourceOnly?: boolean;
 	onSourceBusyChange?: (busy: boolean) => void;
 }
 
@@ -100,6 +102,7 @@ export function ExportDialog({
 	onClose,
 	document,
 	quickExport = false,
+	sourceOnly = false,
 	onSourceBusyChange,
 }: ExportDialogProps) {
 	const t = useScopedT("editor");
@@ -263,14 +266,14 @@ export function ExportDialog({
 		if (quickExport && !isExportRunActive(useExportRunStore.getState().phase))
 			useExportRunStore.getState().reset();
 		const saved = loadEditingPreferences().export;
-		setOutput(saved.output);
+		setOutput(sourceOnly ? "sources" : saved.output);
 		// Quick export forces its own settings without saving them. Restore the saved
 		// ones for a full export before the save effect below can persist forced values.
 		setFormat(quickExport ? "mp4" : saved.format);
 		setQuality(quickExport ? "source" : saved.quality);
 		setFps(quickExport ? 60 : saved.fps);
 		setCodec(quickExport ? "h264" : saved.codec);
-	}, [open, quickExport]);
+	}, [open, quickExport, sourceOnly]);
 
 	useEffect(() => {
 		if (quickExport) return;
@@ -507,26 +510,28 @@ export function ExportDialog({
 			}
 			size="xl"
 		>
-			<div className={`${exportStyles.dialog} ${exportStyles.outputMode}`}>
-				<button
-					type="button"
-					className={styles.btn}
-					aria-pressed={output === "sources"}
-					disabled={isBusy || sourceBusy}
-					onClick={() => selectOutput("sources")}
-				>
-					{t("exportDialog.outputSources")}
-				</button>
-				<button
-					type="button"
-					className={styles.btn}
-					aria-pressed={output === "video"}
-					disabled={isBusy || sourceBusy}
-					onClick={() => selectOutput("video")}
-				>
-					{t("exportDialog.outputVideo")}
-				</button>
-			</div>
+			{!sourceOnly ? (
+				<div className={`${exportStyles.dialog} ${exportStyles.outputMode}`}>
+					<button
+						type="button"
+						className={styles.btn}
+						aria-pressed={output === "sources"}
+						disabled={isBusy || sourceBusy}
+						onClick={() => selectOutput("sources")}
+					>
+						{t("exportDialog.outputSources")}
+					</button>
+					<button
+						type="button"
+						className={styles.btn}
+						aria-pressed={output === "video"}
+						disabled={isBusy || sourceBusy}
+						onClick={() => selectOutput("video")}
+					>
+						{t("exportDialog.outputVideo")}
+					</button>
+				</div>
+			) : null}
 			{output === "sources" && !isBusy ? (
 				<div className={exportStyles.dialog}>
 					<SourceExportPanel document={document} busy={sourceBusy} onBusy={sourceBusyChanged} />

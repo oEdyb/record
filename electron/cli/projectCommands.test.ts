@@ -75,6 +75,41 @@ describe("runPackCommand", () => {
 		expect(JSON.parse(out.text())).toMatchObject({ event: "done", cursorData: true });
 	});
 
+	it("packs clip-native assets and their cursor sidecars", async () => {
+		const first = await make("rec/a/first.mp4", "first");
+		const second = await make("rec/b/second.mp4", "second");
+		await make("rec/a/first.mp4.cursor.json", "first-cursor");
+		await make("rec/b/second.mp4.cursor.json", "second-cursor");
+		const project = await writeProject("demo.klippt", {
+			schemaVersion: 11,
+			assets: [
+				{ id: "first", kind: "video", originalPath: first },
+				{ id: "second", kind: "video", originalPath: second },
+			],
+		});
+		const outDir = path.join(root, "packed");
+
+		const out = recorder();
+		expect(await runPackCommand(project, outDir, true, out.write)).toBe(0);
+
+		const packed = await readProject(path.join(outDir, "demo.klippt"));
+		expect(packed.assets?.map((asset) => asset.originalPath)).toEqual([
+			path.join(outDir, "first.mp4"),
+			path.join(outDir, "second.mp4"),
+		]);
+		expect(packed.media?.screenVideoPath).toBe(path.join(outDir, "first.mp4"));
+		await expect(fs.readFile(path.join(outDir, "first.mp4"), "utf8")).resolves.toBe("first");
+		await expect(fs.readFile(path.join(outDir, "second.mp4"), "utf8")).resolves.toBe("second");
+		await expect(fs.readFile(path.join(outDir, "first.mp4.cursor.json"), "utf8")).resolves.toBe(
+			"first-cursor",
+		);
+		await expect(fs.readFile(path.join(outDir, "second.mp4.cursor.json"), "utf8")).resolves.toBe(
+			"second-cursor",
+		);
+		expect(JSON.parse(out.text())).toMatchObject({ event: "done", cursorData: true });
+		expect(JSON.parse(out.text()).files).toHaveLength(5);
+	});
+
 	it("falls back to media sitting next to the project when the stored path is stale", async () => {
 		await make("moved/clip.mp4", "screen");
 		const project = await writeProject("moved/demo.klippt", {
@@ -116,6 +151,22 @@ describe("runInfoCommand", () => {
 		expect(await runInfoCommand(missing, false, out.write)).toBe(1);
 		expect(out.text()).toContain("[MISSING]");
 		expect(await runInfoCommand(present, false, out.write)).toBe(0);
+	});
+
+	it("reads the primary video from clip-native assets", async () => {
+		const video = await make("rec/clip.mp4");
+		const project = await writeProject("present.klippt", {
+			schemaVersion: 11,
+			assets: [{ id: "screen", kind: "video", originalPath: video }],
+		});
+
+		const out = recorder();
+		expect(await runInfoCommand(project, true, out.write)).toBe(0);
+		expect(JSON.parse(out.text())).toMatchObject({
+			version: 11,
+			screenVideoPath: video,
+			screenVideoExists: true,
+		});
 	});
 
 	it("counts timeline regions in --json mode", async () => {

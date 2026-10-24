@@ -209,10 +209,218 @@ describe("CompositorViewService export transaction", () => {
 
 		for (const target of [screenPath, path.join(root, "alias.mp4")])
 			await expect(service.exportMulti([{ ...clips[0]!, screenPath }], target)).rejects.toThrow(
-				"Choose another file name. This file is one of the recordings in this export.",
+				"Choose another file name. This file is one of the sources in this export.",
 			);
 		expect(addon.exportMulti).not.toHaveBeenCalled();
 		expect(fs.readFileSync(screenPath, "utf8")).toBe("original");
+	});
+
+	it.runIf(process.platform === "darwin")(
+		"refuses case-only destination aliases for MP4, GIF, and buffer exports",
+		async () => {
+			const sourcePath = path.join(root, "Case Source.mp4");
+			const target = path.join(root, "case source.mp4");
+			fs.writeFileSync(sourcePath, "original case-sensitive source");
+			const addon = {
+				probeMediaDuration: vi.fn(async () => {
+					throw new Error("probe should not run");
+				}),
+				exportMulti: vi.fn(),
+				exportGif: vi.fn(),
+				verifyVideoExport: vi.fn(async () => {
+					throw new Error("verification should not run");
+				}),
+				verifyGifExport: vi.fn(),
+				cancelExport: vi.fn(() => true),
+			} as unknown as CompositorViewAddon;
+			const service = new CompositorViewService({
+				addon,
+				appRoot: root,
+				exportJournalPath: path.join(root, "journal.json"),
+			});
+			const sourceClips = [{ ...clips[0]!, screenPath: sourcePath }];
+
+			await expect(service.exportMulti(sourceClips, target)).rejects.toThrow(
+				"one of the sources in this export",
+			);
+			await expect(service.exportGif(sourceClips, target)).rejects.toThrow(
+				"one of the sources in this export",
+			);
+			await expect(
+				service.publishVideoBuffer(
+					new Uint8Array([1, 2, 3]).buffer,
+					target,
+					{
+						width: 320,
+						height: 240,
+						fps: 30,
+						durationS: 2,
+						codec: "h264",
+						expectedBytes: 3,
+					},
+					{ sourceMetadata: { clips: sourceClips } },
+				),
+			).rejects.toThrow("one of the sources in this export");
+			expect(addon.probeMediaDuration).not.toHaveBeenCalled();
+			expect(addon.exportMulti).not.toHaveBeenCalled();
+			expect(addon.exportGif).not.toHaveBeenCalled();
+			expect(addon.verifyVideoExport).not.toHaveBeenCalled();
+			expect(fs.readFileSync(sourcePath, "utf8")).toBe("original case-sensitive source");
+		},
+	);
+
+	it("refuses to save over any file-backed scene source before probing or rendering", async () => {
+		const sourcePath = path.join(root, "scene-source.mp4");
+		fs.writeFileSync(sourcePath, "original scene source");
+		const addon = {
+			probeMediaDuration: vi.fn(async () => {
+				throw new Error("probe should not run");
+			}),
+			exportMulti: vi.fn(),
+			verifyVideoExport: vi.fn(),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+		const scenes = [
+			{ videoOverlays: [{ path: sourcePath }] },
+			{ audioOverlays: [{ sourcePath }] },
+			{ annotations: [{ imagePath: sourcePath }] },
+			{ background: { kind: "image", path: sourcePath } },
+		];
+
+		for (const scene of scenes) {
+			await expect(service.exportMulti(clips, sourcePath, JSON.stringify(scene))).rejects.toThrow(
+				"one of the sources in this export",
+			);
+		}
+		expect(addon.probeMediaDuration).not.toHaveBeenCalled();
+		expect(addon.exportMulti).not.toHaveBeenCalled();
+		expect(fs.readFileSync(sourcePath, "utf8")).toBe("original scene source");
+	});
+
+	it("refuses a GIF destination that names one of its sources", async () => {
+		const sourcePath = path.join(root, "source.gif");
+		fs.writeFileSync(sourcePath, "original GIF source");
+		const addon = {
+			probeMediaDuration: vi.fn(async () => {
+				throw new Error("probe should not run");
+			}),
+			exportGif: vi.fn(),
+			verifyGifExport: vi.fn(),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await expect(
+			service.exportGif([{ ...clips[0]!, screenPath: sourcePath }], sourcePath),
+		).rejects.toThrow("one of the sources in this export");
+		expect(addon.probeMediaDuration).not.toHaveBeenCalled();
+		expect(addon.exportGif).not.toHaveBeenCalled();
+		expect(fs.readFileSync(sourcePath, "utf8")).toBe("original GIF source");
+	});
+
+	it("refuses buffer publication over a voiceover source before verification", async () => {
+		const sourcePath = path.join(root, "voiceover.mp4");
+		fs.writeFileSync(sourcePath, "original voiceover");
+		const addon = {
+			verifyVideoExport: vi.fn(async () => {
+				throw new Error("verification should not run");
+			}),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await expect(
+			service.publishVideoBuffer(
+				new Uint8Array([1, 2, 3]).buffer,
+				sourcePath,
+				{
+					width: 320,
+					height: 240,
+					fps: 30,
+					durationS: 2,
+					codec: "h264",
+					expectedBytes: 3,
+				},
+				{ sourceMetadata: { clips, additionalSourcePaths: [sourcePath] } },
+			),
+		).rejects.toThrow("one of the sources in this export");
+		expect(addon.verifyVideoExport).not.toHaveBeenCalled();
+		expect(fs.readFileSync(sourcePath, "utf8")).toBe("original voiceover");
+	});
+
+	it("refuses to replace cursor telemetry before rendering", async () => {
+		const screenPath = path.join(root, "screen.mp4");
+		const cursorPath = `${screenPath}.cursor.json`;
+		fs.writeFileSync(screenPath, "original screen");
+		fs.writeFileSync(cursorPath, "original cursor telemetry");
+		const addon = {
+			probeMediaDuration: vi.fn(async () => {
+				throw new Error("probe should not run");
+			}),
+			exportMulti: vi.fn(),
+			verifyVideoExport: vi.fn(),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+
+		await expect(service.exportMulti([{ ...clips[0]!, screenPath }], cursorPath)).rejects.toThrow(
+			"one of the sources in this export",
+		);
+		expect(addon.probeMediaDuration).not.toHaveBeenCalled();
+		expect(addon.exportMulti).not.toHaveBeenCalled();
+		expect(fs.readFileSync(cursorPath, "utf8")).toBe("original cursor telemetry");
+	});
+
+	it("rejects malformed scene metadata before buffer verification", async () => {
+		const sourcePath = path.join(root, "voice.wav");
+		fs.writeFileSync(sourcePath, "original audio");
+		const addon = {
+			verifyVideoExport: vi.fn(async () => {
+				throw new Error("verification should not run");
+			}),
+			cancelExport: vi.fn(() => true),
+		} as unknown as CompositorViewAddon;
+		const service = new CompositorViewService({
+			addon,
+			appRoot: root,
+			exportJournalPath: path.join(root, "journal.json"),
+		});
+		const sceneJson = `{"audioOverlays":[{"sourcePath":${JSON.stringify(sourcePath)},}]}`;
+
+		await expect(
+			service.publishVideoBuffer(
+				new Uint8Array([1, 2, 3]).buffer,
+				sourcePath,
+				{
+					width: 320,
+					height: 240,
+					fps: 30,
+					durationS: 2,
+					codec: "h264",
+					expectedBytes: 3,
+				},
+				{ sourceMetadata: { clips, sceneJson } },
+			),
+		).rejects.toThrow("Scene metadata is invalid");
+		expect(addon.verifyVideoExport).not.toHaveBeenCalled();
+		expect(fs.readFileSync(sourcePath, "utf8")).toBe("original audio");
 	});
 
 	it("fails before rendering when a source duration cannot be probed", async () => {
@@ -310,7 +518,7 @@ describe("CompositorViewService export transaction", () => {
 			exportPublisher: publisher,
 			recordingFastExport: prepare,
 		});
-		const result = await service.exportMulti(clips, finalPath, "identity scene", {
+		const result = await service.exportMulti(clips, finalPath, JSON.stringify({}), {
 			width: 320,
 			height: 240,
 			fps: 60,
@@ -321,8 +529,8 @@ describe("CompositorViewService export transaction", () => {
 		expect(addon.exportMulti).not.toHaveBeenCalled();
 		expect(addon.probeMediaDuration).toHaveBeenCalledOnce();
 		expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ sourceDurationsSec: [2] }));
-		expect(verifyVideoExport).toHaveBeenCalledTimes(2);
-		expect(verifyVideoExport).toHaveBeenLastCalledWith(
+		expect(verifyVideoExport).toHaveBeenCalledOnce();
+		expect(verifyVideoExport).toHaveBeenCalledWith(
 			expect.any(String),
 			{ width: 320, height: 240, fps: 58, durationS: 2, codec: "h264" },
 			expect.any(String),
@@ -749,7 +957,7 @@ describe("CompositorViewService export transaction", () => {
 				codec: "h264",
 				expectedBytes: 3,
 			},
-			{ exportId: "buffer-cancel" },
+			{ exportId: "buffer-cancel", sourceMetadata: { clips } },
 		);
 
 		await vi.waitFor(() => expect(addon.verifyVideoExport).toHaveBeenCalledOnce());

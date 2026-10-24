@@ -393,7 +393,8 @@ interface Window {
 			videoData: ArrayBuffer,
 			filePath: string,
 			spec: import("./native-bridge/services/compositorViewService").VideoBufferPublishSpec,
-			exportId?: string,
+			exportId: string | undefined,
+			sourceMetadata: import("./native-bridge/services/compositorViewService").ExportSourceMetadata,
 		) => Promise<{
 			success: boolean;
 			path?: string;
