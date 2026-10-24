@@ -37,7 +37,7 @@ export interface PlanView {
 }
 
 const UNIT_ID =
-	/\s*\b(?:in|before|after|of|from|than|at|with)?\s*\(?\b(?:T\d+\.)?U\d+(?:\s*[-–]\s*(?:T\d+\.)?U?\d+)?\b\)?/g;
+	/\s*(?:\b(?:in|before|after|of|from|than|at|with)\s+)?\(?(?<![\w.])(?:T\d+\.)?U\d+(?:\s*[-–]\s*(?:T\d+\.)?U?\d+)?\b\)?/g;
 
 /** Reasons come from rules and model replies that refer to internal sentence ids; drop those. */
 export function readableReason(reason: string): string {
@@ -80,18 +80,24 @@ export function viewPlan(plan: CleanCutPlan, takes: SnapshotTake[]): PlanView {
 			.filter((cut) => cut.takeId === takePlan.takeId)
 			.sort((a, b) => a.startSec - b.startSec);
 		// Cut words carry recognizer times and clips carry aligned ones, so find the gap by midpoint.
+		// A gap is named by the kept clip after it, which also tells apart the gap before the first clip.
 		const gapOf = (cut: CutRegion) => {
 			const mid = (cut.startSec + cut.endSec) / 2;
 			const before = clips.filter((clip) => clip.endSec <= mid).at(-1);
-			const after = clips.find((clip) => clip.startSec >= mid);
-			return { start: before?.endSec ?? cut.startSec, end: after?.startSec ?? cut.endSec };
+			const afterIndex = clips.findIndex((clip) => clip.startSec >= mid);
+			const after = afterIndex < 0 ? undefined : clips[afterIndex];
+			return {
+				key: afterIndex,
+				start: before?.endSec ?? cut.startSec,
+				end: after?.startSec ?? cut.endSec,
+			};
 		};
 		for (const [index, cut] of cuts.entries()) {
 			const gap = gapOf(cut);
 			const prev = cuts[index - 1];
 			const next = cuts[index + 1];
-			const sharesPrev = prev && gapOf(prev).start === gap.start;
-			const sharesNext = next && gapOf(next).start === gap.start;
+			const sharesPrev = prev && gapOf(prev).key === gap.key;
+			const sharesNext = next && gapOf(next).key === gap.key;
 			const start = sharesPrev ? (prev.endSec + cut.startSec) / 2 : gap.start;
 			const end = sharesNext ? (cut.endSec + next.startSec) / 2 : gap.end;
 			const id = `${take.assetId}:${cut.firstWordIndex}`;

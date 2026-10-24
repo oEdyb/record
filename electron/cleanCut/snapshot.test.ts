@@ -67,11 +67,28 @@ it("splits a shared gap between its cuts and shifts every time into the recordin
 	expect(view.words[1]?.startSec).toBe(1.5);
 });
 
+it("splits the gap before the first kept clip between its cuts instead of overlapping them", () => {
+	const leading = {
+		...plan,
+		takes: [{ takeId: "a", clips: [clip(9.2, 11)] }],
+		cuts: [cut(0, 2, 7.3, 8.5), cut(3, 4, 8.7, 9.2)],
+	} as unknown as CleanCutPlan;
+	const view = viewPlan(leading, [{ assetId: "a", offsetSec: 0, words }]);
+	expect(view.regions.map((r) => [r.id, r.removedStartSec, r.removedEndSec])).toEqual([
+		["a:0", 7.3, 8.6],
+		["a:3", 8.6, 9.2],
+	]);
+});
+
 it("drops internal sentence ids from reasons", () => {
 	expect(readableReason("Broken-off sentence, restated in U22")).toBe(
 		"Broken-off sentence, restated",
 	);
 	expect(readableReason("Fragment before U30")).toBe("Fragment");
 	expect(readableReason("echo of the end of T01.U36")).toBe("echo of the end");
+	expect(readableReason("follows the kept 'What's up?' (T01.U02)")).toBe(
+		"follows the kept 'What's up?'",
+	);
+	expect(readableReason("Menu12 stays")).toBe("Menu12 stays");
 	expect(readableReason("scratched")).toBe("scratched");
 });
