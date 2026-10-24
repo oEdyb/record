@@ -1290,6 +1290,7 @@ export function RecordingReviewShell() {
 								enabled: cleanCutEnabled,
 								state: cleanCutSnapshot.state,
 								progress: cleanCutSnapshot.progress,
+								stage: cleanCutSnapshot.stage ?? null,
 								fromSec: uncutTotalSec,
 								toSec: cleanCutReview ? reviewTotalSec : null,
 								onToggle: () => useCleanCutStore.getState().setEnabled(!cleanCutEnabled, projectId),

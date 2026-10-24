@@ -228,6 +228,12 @@
 		"toggleTitle": "剪掉重錄、開頭失誤和卡頓",
 		"finding": "正在尋找剪切點…",
 		"findingPercent": "正在尋找剪切點… {{percent}}%",
+		"stage": {
+			"listening": "正在聆聽錄音",
+			"aligning": "正在對齊每個詞",
+			"checking": "正在檢查剪輯",
+			"placing": "正在放置剪輯"
+		},
 		"ready": "精剪已就緒",
 		"failed": "精剪失敗",
 		"retry": "重試",

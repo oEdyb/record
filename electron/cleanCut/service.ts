@@ -12,6 +12,8 @@ import { encodePcm16Wav } from "./wav";
 const CHUNK_SEC = 300;
 
 export type CleanCutState = "off" | "working" | "ready" | "failed";
+/** What a working run is doing now. */
+export type CleanCutStage = "listening" | "aligning" | "checking" | "placing";
 /** Whether Claude checked the cut: not installed, or its calls failed, leaves a rules-only cut. */
 export type CleanCutModelCheck = "done" | "unavailable" | "failed";
 
@@ -19,6 +21,7 @@ export interface CleanCutSnapshot extends PlanView {
 	projectId: string | null;
 	state: CleanCutState;
 	progress: number | null;
+	stage: CleanCutStage | null;
 	error: string | null;
 	rawDurationSec: number | null;
 	modelCheck: CleanCutModelCheck | null;
@@ -62,6 +65,7 @@ const EMPTY: CleanCutSnapshot = {
 	projectId: null,
 	state: "off",
 	progress: null,
+	stage: null,
 	error: null,
 	rawDurationSec: null,
 	modelCheck: null,
@@ -109,10 +113,17 @@ export class CleanCutService {
 			this.deps.onSnapshot(this.current);
 			return true;
 		};
-		this.current = { ...EMPTY, projectId, rawDurationSec, state: "working", progress: 0 };
+		this.current = {
+			...EMPTY,
+			projectId,
+			rawDurationSec,
+			state: "working",
+			progress: 0,
+			stage: "listening",
+		};
 		this.deps.onSnapshot(this.current);
 		return this.execute(projectId, media, run, publish).catch((error) => {
-			publish({ state: "failed", progress: null, error: message(error) });
+			publish({ state: "failed", progress: null, stage: null, error: message(error) });
 		});
 	}
 
@@ -131,8 +142,8 @@ export class CleanCutService {
 		try {
 			const takes: CleanCutTake[] = [];
 			for (const [index, item] of media.entries()) {
-				const step = (fraction: number) =>
-					publish({ progress: ((index + fraction) / media.length) * 0.6 });
+				const step = (fraction: number, stage: CleanCutStage = "listening") =>
+					publish({ progress: ((index + fraction) / media.length) * 0.6, stage });
 				const pcm = await (this.deps.decode ?? decodeMonoPcm16k)(ffmpeg, item.audioPath);
 				if (run !== this.run) return;
 				step(0.1);
@@ -149,7 +160,7 @@ export class CleanCutService {
 					await writeFile(cachePath, JSON.stringify(words));
 				}
 				if (run !== this.run) return;
-				step(0.6);
+				step(0.5, "aligning");
 				const alignerModels = await this.deps.alignerModels?.();
 				let alignedTimes: WordTime[] | undefined;
 				if (alignerModels) {
@@ -163,7 +174,7 @@ export class CleanCutService {
 					alignedTimes = aligned?.words.map(({ startSec, endSec }) => ({ startSec, endSec }));
 				}
 				if (run !== this.run) return;
-				step(1);
+				step(1, "aligning");
 				const info = await stat(item.audioPath);
 				takes.push({
 					id: item.assetId,
@@ -181,6 +192,9 @@ export class CleanCutService {
 				takes,
 				model,
 				vetter: new ParakeetHesitationVetter(transcriber, path.join(scratch, "vet")),
+				onProgress: (stage, fraction) => {
+					publish({ stage, progress: 0.6 + fraction * 0.4 });
+				},
 			});
 			const view = viewPlan(
 				plan,
@@ -195,7 +209,15 @@ export class CleanCutService {
 				: plan.skipped.some((step) => step.includes("model"))
 					? "failed"
 					: "done";
-			publish({ ...view, projectId, state: "ready", progress: 1, error: null, modelCheck });
+			publish({
+				...view,
+				projectId,
+				state: "ready",
+				progress: 1,
+				stage: null,
+				error: null,
+				modelCheck,
+			});
 		} finally {
 			transcriber?.stop();
 			await rm(scratch, { recursive: true, force: true }).catch(() => undefined);

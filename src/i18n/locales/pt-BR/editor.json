@@ -228,6 +228,12 @@
 		"toggleTitle": "Corta repetições, inícios falsos e tropeços",
 		"finding": "Procurando cortes…",
 		"findingPercent": "Procurando cortes… {{percent}}%",
+		"stage": {
+			"listening": "Ouvindo a gravação",
+			"aligning": "Sincronizando cada palavra",
+			"checking": "Conferindo os cortes",
+			"placing": "Posicionando os cortes"
+		},
 		"ready": "Corte limpo pronto",
 		"failed": "O corte limpo falhou",
 		"retry": "Tentar de novo",

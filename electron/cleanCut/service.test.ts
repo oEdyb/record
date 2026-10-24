@@ -46,12 +46,35 @@ beforeEach(async () => {
 it("works in the background and publishes a ready view in source time", async () => {
 	const { service: s } = service();
 	await s.start("p", [{ assetId: "a", audioPath: audio, offsetSec: 0.25 }], 1);
-	expect(snapshots[0]).toMatchObject({ projectId: "p", state: "working", progress: 0 });
+	expect(snapshots[0]).toMatchObject({
+		projectId: "p",
+		state: "working",
+		progress: 0,
+		stage: "listening",
+	});
+	expect(snapshots.some((snap) => snap.stage === "aligning")).toBe(true);
 	expect(s.snapshot()).toMatchObject({
 		state: "ready",
 		keep: [{ assetId: "a", startSec: 0.25, endSec: 1.25 }],
 		words: [{ text: "hello", startSec: 0.35, regionId: null }],
+		stage: null,
 	});
+});
+
+it("reports the engine's stages as progress after the recordings are read", async () => {
+	const { service: s } = service({
+		plan: vi.fn(async (input) => {
+			input.onProgress?.("checking", 0.5);
+			input.onProgress?.("placing", 0.95);
+			return plan;
+		}),
+	});
+	await s.start("p", [{ assetId: "a", audioPath: audio, offsetSec: 0 }], 1);
+	expect(snapshots.map((snap) => [snap.stage, snap.progress]).slice(-3)).toEqual([
+		["checking", 0.8],
+		["placing", 0.98],
+		[null, 1],
+	]);
 });
 
 it("transcribes a recording once and reuses its words next time", async () => {

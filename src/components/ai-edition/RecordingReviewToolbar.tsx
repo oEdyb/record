@@ -13,7 +13,7 @@ import { KlipptMark } from "@/components/brand/KlipptMark";
 import { AppMenu, AppMenuContent, AppMenuItem, AppMenuTrigger } from "@/components/ui/app-menu";
 import { useScopedT } from "@/contexts/I18nContext";
 import { formatPlayerTime } from "@/lib/ai-edition/timeline/format";
-import type { CleanCutState } from "@/lib/cleanCut/types";
+import type { CleanCutStage, CleanCutState } from "@/lib/cleanCut/types";
 import type { RecordingInterruption } from "@/lib/recordingSession";
 import { RollingTime } from "./cleanCut/RollingTime";
 import styles from "./RecordingReviewToolbar.module.css";
@@ -23,6 +23,7 @@ export interface ReviewCleanCutControl {
 	enabled: boolean;
 	state: CleanCutState;
 	progress: number | null;
+	stage?: CleanCutStage | null;
 	fromSec: number;
 	toSec: number | null;
 	onToggle: () => void;
@@ -83,14 +84,19 @@ function ProgressRing({ progress }: { progress: number | null }) {
 
 function CleanCutStatus({ cut }: { cut: ReviewCleanCutControl }) {
 	const t = useScopedT("editor");
-	if (cut.state === "working")
+	if (cut.state === "working") {
+		const known = cut.progress !== null && Number.isFinite(cut.progress);
+		const percent = known ? Math.round((cut.progress ?? 0) * 100) : null;
 		return (
-			<span className={styles.meta}>
-				{cut.progress !== null
-					? t("cleanCut.findingPercent", { percent: Math.round(cut.progress * 100) })
-					: t("cleanCut.finding")}
+			<span className={`${styles.meta} ${styles.metaWorking}`} role="status">
+				<span>{cut.stage ? t(`cleanCut.stage.${cut.stage}`) : t("cleanCut.finding")}</span>
+				<span className={styles.workBar} aria-hidden="true">
+					<span style={{ transform: `scaleX(${known ? Math.max(0.04, cut.progress ?? 0) : 1})` }} />
+				</span>
+				{percent !== null ? <span>{percent}%</span> : null}
 			</span>
 		);
+	}
 	if (cut.state === "failed")
 		return <span className={`${styles.meta} ${styles.metaFailed}`}>{t("cleanCut.failed")}</span>;
 	if (cut.state !== "ready" || cut.toSec === null) return null;

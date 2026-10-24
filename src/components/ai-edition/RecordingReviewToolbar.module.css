@@ -206,6 +206,33 @@
 	transform-origin: left;
 	transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
 }
+/* Working: the stage, a bar that fills as it goes and shimmers while a stage waits, and the percent. */
+.metaWorking { display: inline-flex; align-items: center; gap: 7px; }
+.workBar {
+	position: relative;
+	width: 56px;
+	height: 4px;
+	overflow: hidden;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.12);
+}
+.workBar > span {
+	position: absolute;
+	inset: 0;
+	border-radius: 2px;
+	background: var(--editor-accent);
+	transform-origin: left;
+	transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.workBar::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+	transform: translateX(-100%);
+	animation: work-sheen 1.6s ease-in-out infinite;
+}
+@keyframes work-sheen { to { transform: translateX(100%); } }
 .srOnly {
 	position: absolute;
 	width: 1px;
@@ -214,4 +241,4 @@
 	clip-path: inset(50%);
 	white-space: nowrap;
 }
-@media (prefers-reduced-motion: reduce) { .ringSpin { animation: none; } .ringValue, .keptBar > span { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .ringSpin, .workBar::after { animation: none; } .ringValue, .keptBar > span, .workBar > span { transition: none; } }

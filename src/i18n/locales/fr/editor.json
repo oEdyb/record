@@ -228,6 +228,12 @@
 		"toggleTitle": "Coupe les reprises, faux départs et hésitations",
 		"finding": "Recherche des coupes…",
 		"findingPercent": "Recherche des coupes… {{percent}} %",
+		"stage": {
+			"listening": "Écoute de l’enregistrement",
+			"aligning": "Synchronisation des mots",
+			"checking": "Vérification des coupes",
+			"placing": "Placement des coupes"
+		},
 		"ready": "Coupe nette prête",
 		"failed": "La coupe nette a échoué",
 		"retry": "Réessayer",

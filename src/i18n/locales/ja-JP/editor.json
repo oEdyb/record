@@ -228,6 +228,12 @@
 		"toggleTitle": "撮り直し、言い出しの失敗、言いよどみをカット",
 		"finding": "カットを検出中…",
 		"findingPercent": "カットを検出中… {{percent}}%",
+		"stage": {
+			"listening": "録音を聞いています",
+			"aligning": "単語のタイミングを合わせています",
+			"checking": "カットを確認しています",
+			"placing": "カットを配置しています"
+		},
 		"ready": "クリーンカットの準備ができました",
 		"failed": "クリーンカットに失敗しました",
 		"retry": "再試行",

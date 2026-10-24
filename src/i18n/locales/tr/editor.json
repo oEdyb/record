@@ -228,6 +228,12 @@
 		"toggleTitle": "Tekrar çekimleri, yanlış başlangıçları ve takılmaları keser",
 		"finding": "Kesimler aranıyor…",
 		"findingPercent": "Kesimler aranıyor… %{{percent}}",
+		"stage": {
+			"listening": "Kayıt dinleniyor",
+			"aligning": "Kelimeler zamanlanıyor",
+			"checking": "Kesimler kontrol ediliyor",
+			"placing": "Kesimler yerleştiriliyor"
+		},
 		"ready": "Temiz kurgu hazır",
 		"failed": "Temiz kurgu başarısız oldu",
 		"retry": "Tekrar dene",

@@ -228,6 +228,12 @@
 		"toggleTitle": "Taglia ripetizioni, false partenze e inciampi",
 		"finding": "Ricerca dei tagli…",
 		"findingPercent": "Ricerca dei tagli… {{percent}}%",
+		"stage": {
+			"listening": "Ascolto della registrazione",
+			"aligning": "Sincronizzazione delle parole",
+			"checking": "Verifica dei tagli",
+			"placing": "Posizionamento dei tagli"
+		},
 		"ready": "Taglio pulito pronto",
 		"failed": "Taglio pulito non riuscito",
 		"retry": "Riprova",

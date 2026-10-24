@@ -228,6 +228,12 @@
 		"toggleTitle": "Cut retakes, false starts and stumbles",
 		"finding": "Finding cuts…",
 		"findingPercent": "Finding cuts… {{percent}}%",
+		"stage": {
+			"listening": "Listening to the recording",
+			"aligning": "Timing each word",
+			"checking": "Checking the cuts",
+			"placing": "Placing the cuts"
+		},
 		"ready": "Clean cut ready",
 		"failed": "Clean cut failed",
 		"retry": "Try again",

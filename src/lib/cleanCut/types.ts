@@ -3,6 +3,9 @@ export type CleanCutStrength = "gentle" | "clean";
 
 export type CleanCutState = "off" | "working" | "ready" | "failed";
 
+/** What a working run is doing now; matches `electron/cleanCut/service.ts`. */
+export type CleanCutStage = "listening" | "aligning" | "checking" | "placing";
+
 export type CleanCutKind =
 	| "retake"
 	| "false-start"
@@ -52,6 +55,7 @@ export interface CleanCutSnapshot {
 	state: CleanCutState;
 	/** 0 to 1 while working, null when unknown. */
 	progress: number | null;
+	stage?: CleanCutStage | null;
 	error: string | null;
 	rawDurationSec: number | null;
 	/** Whether Claude checked the cut. "unavailable" or "failed" means a rules-only cut that finds less. */

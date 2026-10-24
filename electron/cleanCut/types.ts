@@ -45,6 +45,8 @@ export interface CleanCutInput {
 	model?: DecisionModel | null;
 	vetter?: HesitationVetter | null;
 	options?: CleanCutOptions;
+	/** How far the engine is: checking takes the hesitation and model passes, placing the rest. */
+	onProgress?: (stage: "checking" | "placing", fraction: number) => void;
 }
 
 export type DecisionSource = "rule" | "model" | "session";

@@ -185,7 +185,16 @@ describe("clean cut toggle", () => {
 			"aria-busy",
 			"true",
 		);
-		expect(screen.getByText("cleanCut.findingPercent")).toBeInTheDocument();
+		expect(screen.getByText("cleanCut.finding")).toBeInTheDocument();
+		expect(screen.getByText("42%")).toBeInTheDocument();
+
+		view.rerender(
+			<RecordingReviewToolbar
+				{...props()}
+				cleanCut={{ ...cut, enabled: true, state: "working", progress: 0.7, stage: "checking" }}
+			/>,
+		);
+		expect(screen.getByRole("status")).toHaveTextContent("cleanCut.stage.checking70%");
 
 		view.rerender(
 			<RecordingReviewToolbar

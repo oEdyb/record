@@ -228,6 +228,12 @@
 		"toggleTitle": "다시 찍은 부분, 잘못된 시작, 말 더듬음을 잘라냅니다",
 		"finding": "컷 찾는 중…",
 		"findingPercent": "컷 찾는 중… {{percent}}%",
+		"stage": {
+			"listening": "녹음을 듣는 중",
+			"aligning": "단어 타이밍 맞추는 중",
+			"checking": "컷 확인 중",
+			"placing": "컷 배치 중"
+		},
 		"ready": "클린 컷 준비됨",
 		"failed": "클린 컷 실패",
 		"retry": "다시 시도",

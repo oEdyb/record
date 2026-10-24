@@ -228,6 +228,12 @@
 		"toggleTitle": "Cắt các lần quay lại, khởi đầu hỏng và chỗ vấp",
 		"finding": "Đang tìm đoạn cắt…",
 		"findingPercent": "Đang tìm đoạn cắt… {{percent}}%",
+		"stage": {
+			"listening": "Đang nghe bản ghi",
+			"aligning": "Đang căn thời gian từng từ",
+			"checking": "Đang kiểm tra các đoạn cắt",
+			"placing": "Đang đặt các đoạn cắt"
+		},
 		"ready": "Bản cắt gọn đã sẵn sàng",
 		"failed": "Cắt gọn thất bại",
 		"retry": "Thử lại",

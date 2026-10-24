@@ -29,7 +29,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * aligned times. Model and hesitation checks are injected, so nothing here touches Electron or the disk.
  */
 export async function planCleanCut(input: CleanCutInput): Promise<CleanCutPlan> {
-	const { takes, vetter = null, options = {} } = input;
+	const { takes, vetter = null, options = {}, onProgress } = input;
 	const model = input.model ?? null;
 	const skipped: string[] = [];
 	const acoustics = new Map<string, Acoustics>();
@@ -54,6 +54,7 @@ export async function planCleanCut(input: CleanCutInput): Promise<CleanCutPlan> 
 		? buildWords(takes, placeTimes, placeRefined)
 		: words;
 
+	onProgress?.("checking", 0);
 	const hesitations = new Map<string, TimeSpan[]>();
 	let candidatesSeen = 0;
 	let confirmed = 0;
@@ -71,6 +72,7 @@ export async function planCleanCut(input: CleanCutInput): Promise<CleanCutPlan> 
 		...restarts(words),
 		...retakes(words),
 	];
+	onProgress?.("checking", 0.25);
 	let decision: Decision;
 	try {
 		decision = await decide(words, cands, model);
@@ -81,6 +83,7 @@ export async function planCleanCut(input: CleanCutInput): Promise<CleanCutPlan> 
 	let session: SessionDrop[] = [];
 	let sessionOnly = 0;
 	if (model) {
+		onProgress?.("checking", 0.6);
 		try {
 			session = await sessionDrops(units, model);
 			sessionOnly = mergeSession(wordOf, units, session, decision.drop);
@@ -89,6 +92,7 @@ export async function planCleanCut(input: CleanCutInput): Promise<CleanCutPlan> 
 		}
 	}
 	const drop: DropMap = decision.drop;
+	onProgress?.("placing", 0.95);
 
 	const plan = planCuts(
 		placed,

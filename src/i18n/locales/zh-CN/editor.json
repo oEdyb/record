@@ -228,6 +228,12 @@
 		"toggleTitle": "剪掉重录、开头失误和卡顿",
 		"finding": "正在查找剪切点…",
 		"findingPercent": "正在查找剪切点… {{percent}}%",
+		"stage": {
+			"listening": "正在听录音",
+			"aligning": "正在对齐每个词",
+			"checking": "正在检查剪辑",
+			"placing": "正在放置剪辑"
+		},
 		"ready": "精剪已就绪",
 		"failed": "精剪失败",
 		"retry": "重试",
