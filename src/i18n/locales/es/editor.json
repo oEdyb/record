@@ -242,6 +242,7 @@
 		"otherCuts": "Otros cortes",
 		"restore": "Restaurar",
 		"cutAgain": "Volver a cortar",
+		"cutSentence": "Cortar",
 		"restored": "Restaurado",
 		"none": "No se encontraron cortes.",
 		"noneGentle": "Ninguno en el que coincidan dos comprobaciones.",
@@ -258,7 +259,8 @@
 			"stutter": "Tartamudeo",
 			"filler": "Muletilla",
 			"selfTalk": "Comentario propio",
-			"pause": "Pausa"
+			"pause": "Pausa",
+			"manual": "Tu corte"
 		},
 		"hud": {
 			"listen": "Escuchar",

@@ -242,6 +242,7 @@
 		"otherCuts": "其他剪切",
 		"restore": "還原",
 		"cutAgain": "再次剪掉",
+		"cutSentence": "剪掉",
 		"restored": "已還原",
 		"none": "找不到剪切點。",
 		"noneGentle": "沒有兩項檢查都認可的剪切。",
@@ -258,7 +259,8 @@
 			"stutter": "口吃",
 			"filler": "口頭禪",
 			"selfTalk": "自言自語",
-			"pause": "停頓"
+			"pause": "停頓",
+			"manual": "手動剪下"
 		},
 		"hud": {
 			"listen": "試聽",

@@ -242,6 +242,7 @@
 		"otherCuts": "Đoạn cắt khác",
 		"restore": "Khôi phục",
 		"cutAgain": "Cắt lại",
+		"cutSentence": "Cắt",
 		"restored": "Đã khôi phục",
 		"none": "Không tìm thấy đoạn cắt.",
 		"noneGentle": "Không có đoạn cắt nào được hai lượt kiểm tra cùng đồng ý.",
@@ -258,7 +259,8 @@
 			"stutter": "Nói lắp",
 			"filler": "Từ đệm",
 			"selfTalk": "Tự nói với mình",
-			"pause": "Khoảng lặng"
+			"pause": "Khoảng lặng",
+			"manual": "Đoạn bạn cắt"
 		},
 		"hud": {
 			"listen": "Nghe",

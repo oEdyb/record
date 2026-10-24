@@ -1,10 +1,17 @@
 import { create } from "zustand";
-import { type CleanCutSnapshot, type CleanCutStrength, EMPTY_CLEAN_CUT_SNAPSHOT } from "./types";
+import {
+	type CleanCutRegion,
+	type CleanCutSnapshot,
+	type CleanCutStrength,
+	EMPTY_CLEAN_CUT_SNAPSHOT,
+} from "./types";
+import { withUserCuts } from "./userCuts";
 
 type CleanCutStep =
 	| { type: "restore"; id: string; restored: boolean }
 	| { type: "restoreMany"; ids: string[]; restored: boolean }
-	| { type: "strength"; from: CleanCutStrength; to: CleanCutStrength };
+	| { type: "strength"; from: CleanCutStrength; to: CleanCutStrength }
+	| { type: "userCut"; region: CleanCutRegion };
 
 export type CleanCutView = "cuts" | "transcript";
 
@@ -13,7 +20,12 @@ interface CleanCutStore {
 	enabled: boolean;
 	projectId: string | null;
 	strength: CleanCutStrength;
+	/** What review shows: the engine's result with the viewer's own cuts applied. */
 	snapshot: CleanCutSnapshot;
+	/** The engine's result as it arrived. */
+	engine: CleanCutSnapshot;
+	/** Sentences the viewer cut themself; never written to the document. */
+	userCuts: readonly CleanCutRegion[];
 	/** Regions the viewer brought back; never written to the document. */
 	restored: ReadonlySet<string>;
 	selectedId: string | null;
@@ -28,6 +40,8 @@ interface CleanCutStore {
 	toggleRestore: (id: string) => void;
 	/** Restores, or cuts again, many regions as one undo step, e.g. every pause. */
 	setRestoredMany: (ids: readonly string[], restored: boolean) => void;
+	/** Cuts a sentence the engine kept. */
+	cutSentence: (region: CleanCutRegion) => void;
 	select: (id: string | null) => void;
 	setView: (view: CleanCutView) => void;
 	retry: () => void;
@@ -37,6 +51,8 @@ interface CleanCutStore {
 
 const FRESH = {
 	snapshot: EMPTY_CLEAN_CUT_SNAPSHOT,
+	engine: EMPTY_CLEAN_CUT_SNAPSHOT,
+	userCuts: [],
 	restored: new Set<string>(),
 	selectedId: null,
 	undoSteps: [],
@@ -50,7 +66,20 @@ function withRestore(restored: ReadonlySet<string>, id: string, on: boolean) {
 	return next;
 }
 
+function withUserCut(state: CleanCutStore, region: CleanCutRegion, on: boolean) {
+	const userCuts = on
+		? [...state.userCuts, region]
+		: state.userCuts.filter((cut) => cut.id !== region.id);
+	return {
+		userCuts,
+		snapshot: withUserCuts(state.engine, userCuts),
+		restored: withRestore(state.restored, region.id, false),
+		selectedId: on ? region.id : null,
+	};
+}
+
 function apply(state: CleanCutStore, step: CleanCutStep, reverse: boolean): Partial<CleanCutStore> {
+	if (step.type === "userCut") return withUserCut(state, step.region, !reverse);
 	if (step.type === "strength") return { strength: reverse ? step.from : step.to };
 	if (step.type === "restoreMany") {
 		let restored = state.restored;
@@ -83,8 +112,16 @@ export const useCleanCutStore = create<CleanCutStore>((set, get) => ({
 			(snapshot.state === "working" || snapshot.state === "ready");
 		set(
 			freshRun
-				? { snapshot, restored: new Set(), selectedId: null, undoSteps: [], redoSteps: [] }
-				: { snapshot },
+				? {
+						snapshot,
+						engine: snapshot,
+						userCuts: [],
+						restored: new Set(),
+						selectedId: null,
+						undoSteps: [],
+						redoSteps: [],
+					}
+				: { snapshot: withUserCuts(snapshot, state.userCuts), engine: snapshot },
 		);
 	},
 	setStrength: (strength) => {
@@ -114,6 +151,15 @@ export const useCleanCutStore = create<CleanCutStore>((set, get) => ({
 		set({
 			restored: next,
 			undoSteps: [...state.undoSteps, { type: "restoreMany", ids: changed, restored }],
+			redoSteps: [],
+		});
+	},
+	cutSentence: (region) => {
+		const state = get();
+		if (state.userCuts.some((cut) => cut.id === region.id)) return;
+		set({
+			...withUserCut(state, region, true),
+			undoSteps: [...state.undoSteps, { type: "userCut", region }],
 			redoSteps: [],
 		});
 	},

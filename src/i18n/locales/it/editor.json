@@ -242,6 +242,7 @@
 		"otherCuts": "Altri tagli",
 		"restore": "Ripristina",
 		"cutAgain": "Taglia di nuovo",
+		"cutSentence": "Taglia",
 		"restored": "Ripristinato",
 		"none": "Nessun taglio trovato.",
 		"noneGentle": "Nessun taglio confermato da due controlli.",
@@ -258,7 +259,8 @@
 			"stutter": "Balbettio",
 			"filler": "Riempitivo",
 			"selfTalk": "Commento a sé",
-			"pause": "Pausa"
+			"pause": "Pausa",
+			"manual": "Il tuo taglio"
 		},
 		"hud": {
 			"listen": "Ascolta",

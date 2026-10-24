@@ -5,7 +5,7 @@ const JOIN_EPSILON_SEC = 0.001;
 
 /** Pauses are silence, not mistakes, so every strength removes them. */
 export function regionAppliesAt(region: CleanCutRegion, strength: CleanCutStrength): boolean {
-	if (strength === "clean" || region.kind === "pause") return true;
+	if (strength === "clean" || region.kind === "pause" || region.kind === "manual") return true;
 	return new Set(region.sources).size >= 2;
 }
 

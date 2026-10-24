@@ -242,6 +242,7 @@
 		"otherCuts": "Autres coupes",
 		"restore": "Rétablir",
 		"cutAgain": "Couper à nouveau",
+		"cutSentence": "Couper",
 		"restored": "Rétabli",
 		"none": "Aucune coupe trouvée.",
 		"noneGentle": "Aucune coupe validée par deux contrôles.",
@@ -258,7 +259,8 @@
 			"stutter": "Bégaiement",
 			"filler": "Remplissage",
 			"selfTalk": "Aparté",
-			"pause": "Pause"
+			"pause": "Pause",
+			"manual": "Votre coupe"
 		},
 		"hud": {
 			"listen": "Écouter",

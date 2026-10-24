@@ -13,6 +13,7 @@ import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { formatPlayerTime } from "@/lib/ai-edition/timeline/format";
 import type { CleanCutReviewModel, ReviewCut } from "@/lib/cleanCut/reviewModel";
 import { useCleanCutStore } from "@/lib/cleanCut/store";
+import { userCutRegion } from "@/lib/cleanCut/userCuts";
 import { BasicCutNotice } from "./BasicCutNotice";
 import { CleanCutList } from "./CleanCutList";
 import styles from "./CleanCutSheet.module.css";
@@ -174,6 +175,11 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 					const cut = byId(id);
 					if (cut) toggleRestore(cut);
 				}}
+				onCutSentence={(first, last) =>
+					useCleanCutStore
+						.getState()
+						.cutSentence(userCutRegion(snapshot.words, snapshot.keep, first, last))
+				}
 			/>
 		);
 	} else if (props.model.cuts.length === 0) {

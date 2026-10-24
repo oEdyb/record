@@ -10,7 +10,9 @@ export type CleanCutKind =
 	| "stutter"
 	| "filler"
 	| "self-talk"
-	| "pause";
+	| "pause"
+	/** A sentence the viewer cut themself. */
+	| "manual";
 
 /** A stretch the clean cut keeps, in its recording's source seconds. */
 export interface CleanCutKeep {

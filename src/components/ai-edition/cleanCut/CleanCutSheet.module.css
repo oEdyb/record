@@ -403,6 +403,10 @@
 .word:hover {
 	color: var(--fg-emphasis);
 }
+.word[data-sentence] {
+	color: var(--fg-emphasis);
+	background-color: rgba(255, 255, 255, 0.06);
+}
 .regionText {
 	border-radius: 4px;
 	cursor: pointer;

@@ -32,6 +32,7 @@ export const CLEAN_CUT_MARKER_STYLE: Record<
 	stutter: { name: "Stutter", color: "CYAN" },
 	filler: { name: "Filler", color: "GREEN" },
 	"self-talk": { name: "Self-talk", color: "PINK" },
+	manual: { name: "Your cut", color: "BLUE" },
 };
 
 function quote(words: readonly string[]) {

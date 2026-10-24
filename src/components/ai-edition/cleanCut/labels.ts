@@ -8,6 +8,7 @@ const KIND_KEY: Record<CleanCutKind, string> = {
 	filler: "cleanCut.kind.filler",
 	"self-talk": "cleanCut.kind.selfTalk",
 	pause: "cleanCut.kind.pause",
+	manual: "cleanCut.kind.manual",
 };
 
 export function cleanCutKindKey(kind: CleanCutKind): string {

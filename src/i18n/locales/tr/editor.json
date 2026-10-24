@@ -242,6 +242,7 @@
 		"otherCuts": "Diğer kesimler",
 		"restore": "Geri al",
 		"cutAgain": "Yeniden kes",
+		"cutSentence": "Kes",
 		"restored": "Geri alındı",
 		"none": "Kesim bulunamadı.",
 		"noneGentle": "İki kontrolün onayladığı kesim yok.",
@@ -258,7 +259,8 @@
 			"stutter": "Kekeleme",
 			"filler": "Dolgu sözcüğü",
 			"selfTalk": "Kendi kendine konuşma",
-			"pause": "Duraklama"
+			"pause": "Duraklama",
+			"manual": "Sizin kesiminiz"
 		},
 		"hud": {
 			"listen": "Dinle",

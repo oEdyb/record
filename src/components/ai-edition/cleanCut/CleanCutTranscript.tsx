@@ -5,6 +5,7 @@ import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { formatPlayerTime } from "@/lib/ai-edition/timeline/format";
 import { sourceToTimeline } from "@/lib/cleanCut/timelineMap";
 import type { CleanCutRegion, CleanCutWord } from "@/lib/cleanCut/types";
+import { sentenceAround } from "@/lib/cleanCut/userCuts";
 import styles from "./CleanCutSheet.module.css";
 
 const PARAGRAPH_PAUSE_SEC = 1.4;
@@ -67,7 +68,9 @@ export function matchWords(words: readonly CleanCutWord[], query: string): Set<n
 }
 
 interface HoverAction {
+	/** A cut region's id, or "sentence:first-last" for a kept sentence. */
 	id: string;
+	sentence: [number, number] | null;
 	top: number;
 	left: number;
 }
@@ -87,6 +90,8 @@ interface CleanCutTranscriptProps {
 	onSelectRegion: (id: string) => void;
 	onSeekRaw: (rawSec: number) => void;
 	onToggleRestore: (id: string) => void;
+	/** Cuts kept words `first`..`last`, indexes into `words`. */
+	onCutSentence: (first: number, last: number) => void;
 }
 
 /** The whole recording as text, cut words struck through. Click a word to hear it. */
@@ -103,6 +108,7 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 	onSelectRegion,
 	onSeekRaw,
 	onToggleRestore,
+	onCutSentence,
 }: CleanCutTranscriptProps) {
 	const t = useScopedT("editor");
 	const [action, setAction] = useState<HoverAction | null>(null);
@@ -123,23 +129,36 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 		if (matches.size === 0) return;
 		rootRef.current?.querySelector("[data-match]")?.scrollIntoView({ block: "center" });
 	}, [matches]);
-	// Hovering a cut shows a Restore (or Cut again) button just above where it ends.
+	// Hovering a cut shows a Restore (or Cut again) button just above where it ends; hovering
+	// kept words shows a Cut button for their sentence.
 	const onPointerOver = (event: PointerEvent<HTMLDivElement>) => {
 		const target = event.target instanceof Element ? event.target : null;
 		if (target?.closest("[data-region-action]")) return;
-		const region = target?.closest<HTMLElement>("[data-region-id]");
 		const root = rootRef.current;
-		const id = region?.dataset.regionId;
-		if (!region || !root || !id || (!cutIds.has(id) && !restoredIds.has(id))) {
+		const region = target?.closest<HTMLElement>("[data-region-id]");
+		const regionId = region?.dataset.regionId;
+		const word = target?.closest<HTMLElement>("[data-word-index]");
+		const sentence = !region && word ? sentenceAround(words, Number(word.dataset.wordIndex)) : null;
+		const id =
+			regionId && (cutIds.has(regionId) || restoredIds.has(regionId))
+				? regionId
+				: sentence
+					? `sentence:${sentence[0]}-${sentence[1]}`
+					: null;
+		const anchor = sentence
+			? root?.querySelector<HTMLElement>(`[data-word-index="${sentence[1]}"]`)
+			: region;
+		if (!root || !id || !anchor) {
 			setAction(null);
 			return;
 		}
 		if (action?.id === id) return;
-		const rects = region.getClientRects();
-		const end = rects[rects.length - 1] ?? region.getBoundingClientRect();
+		const rects = anchor.getClientRects();
+		const end = rects[rects.length - 1] ?? anchor.getBoundingClientRect();
 		const box = root.getBoundingClientRect();
 		setAction({
 			id,
+			sentence,
 			top: end.top - box.top - 26,
 			left: Math.min(box.width - 96, Math.max(0, end.right - box.left - 40)),
 		});
@@ -187,6 +206,13 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 									<span
 										key={`${word.rawSec}`}
 										data-raw-sec={word.rawSec}
+										data-word-index={word.index}
+										data-sentence={
+											(action?.sentence &&
+												word.index >= action.sentence[0] &&
+												word.index <= action.sentence[1]) ||
+											undefined
+										}
 										data-match={matches.has(word.index) || undefined}
 										className={styles.word}
 									>
@@ -218,11 +244,17 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 					style={{ top: action.top, left: action.left }}
 					onClick={(event) => {
 						event.stopPropagation();
-						onToggleRestore(action.id);
+						if (action.sentence) onCutSentence(action.sentence[0], action.sentence[1]);
+						else onToggleRestore(action.id);
 						setAction(null);
 					}}
 				>
-					{restoredIds.has(action.id) ? (
+					{action.sentence ? (
+						<>
+							<Scissors size={12} aria-hidden="true" />
+							{t("cleanCut.cutSentence")}
+						</>
+					) : restoredIds.has(action.id) ? (
 						<Scissors size={12} aria-hidden="true" />
 					) : (
 						<RotateCcw size={12} aria-hidden="true" />

@@ -242,6 +242,7 @@
 		"otherCuts": "Other cuts",
 		"restore": "Restore",
 		"cutAgain": "Cut again",
+		"cutSentence": "Cut",
 		"restored": "Restored",
 		"none": "No cuts found.",
 		"noneGentle": "No cuts two checks agree on.",
@@ -258,7 +259,8 @@
 			"stutter": "Stutter",
 			"filler": "Filler",
 			"selfTalk": "Self-talk",
-			"pause": "Pause"
+			"pause": "Pause",
+			"manual": "Your cut"
 		},
 		"hud": {
 			"listen": "Listen",

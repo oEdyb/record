@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useCleanCutStore } from "./store";
 import { EMPTY_CLEAN_CUT_SNAPSHOT } from "./types";
+import { userCutRegion } from "./userCuts";
 
 const ready = { ...EMPTY_CLEAN_CUT_SNAPSHOT, projectId: "p1", state: "ready" as const };
 
@@ -39,6 +40,31 @@ describe("clean cut review state", () => {
 		useCleanCutStore.getState().toggleRestore("a");
 		expect([...useCleanCutStore.getState().restored]).toEqual(["b"]);
 		expect(useCleanCutStore.getState().redoSteps).toEqual([]);
+	});
+
+	it("cuts a sentence the viewer picked, keeps it across engine updates, and undoes it", () => {
+		const words = [
+			{ text: "Hi.", assetId: "a", startSec: 0, endSec: 0.4, regionId: null },
+			{ text: "Bye.", assetId: "a", startSec: 1, endSec: 1.4, regionId: null },
+		];
+		const engine = { ...ready, keep: [{ assetId: "a", startSec: 0, endSec: 2 }], words };
+		const store = useCleanCutStore.getState();
+		store.setEnabled(true, "p1");
+		store.receive(engine);
+		const region = userCutRegion(words, engine.keep, 1, 1);
+		useCleanCutStore.getState().cutSentence(region);
+		expect(useCleanCutStore.getState().snapshot.keep).toEqual([
+			{ assetId: "a", startSec: 0, endSec: 0.7 },
+			{ assetId: "a", startSec: 1.45, endSec: 2 },
+		]);
+		expect(useCleanCutStore.getState().selectedId).toBe(region.id);
+		useCleanCutStore.getState().receive({ ...engine, progress: 1 });
+		expect(useCleanCutStore.getState().snapshot.regions).toEqual([region]);
+		useCleanCutStore.getState().undo();
+		expect(useCleanCutStore.getState().snapshot.keep).toEqual(engine.keep);
+		expect(useCleanCutStore.getState().snapshot.regions).toEqual([]);
+		useCleanCutStore.getState().redo();
+		expect(useCleanCutStore.getState().userCuts).toEqual([region]);
 	});
 
 	it("undoes a strength change", () => {

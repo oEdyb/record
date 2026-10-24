@@ -242,6 +242,7 @@
 		"otherCuts": "その他のカット",
 		"restore": "戻す",
 		"cutAgain": "もう一度カット",
+		"cutSentence": "カット",
 		"restored": "戻しました",
 		"none": "カットは見つかりませんでした。",
 		"noneGentle": "2つのチェックが一致したカットはありません。",
@@ -258,7 +259,8 @@
 			"stutter": "言いよどみ",
 			"filler": "つなぎ言葉",
 			"selfTalk": "独り言",
-			"pause": "間"
+			"pause": "間",
+			"manual": "手動カット"
 		},
 		"hud": {
 			"listen": "聞く",

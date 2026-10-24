@@ -242,6 +242,7 @@
 		"otherCuts": "기타 컷",
 		"restore": "복원",
 		"cutAgain": "다시 자르기",
+		"cutSentence": "잘라내기",
 		"restored": "복원됨",
 		"none": "찾은 컷이 없습니다.",
 		"noneGentle": "두 검사가 모두 동의한 컷이 없습니다.",
@@ -258,7 +259,8 @@
 			"stutter": "말 더듬음",
 			"filler": "군말",
 			"selfTalk": "혼잣말",
-			"pause": "멈춤"
+			"pause": "멈춤",
+			"manual": "직접 자름"
 		},
 		"hud": {
 			"listen": "듣기",
