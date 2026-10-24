@@ -2,15 +2,6 @@
 	"schemaVersion": 1,
 	"exceptions": [
 		{
-			"source": "1240992",
-			"package": "braces",
-			"severity": "high",
-			"url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
-			"scope": "desktop-build-only",
-			"reviewedOn": "2026-10-05",
-			"reason": "Only Tailwind CSS 3 build tooling (chokidar, micromatch, fast-glob) uses braces, on patterns from the repository's own config. No patched braces release exists. Nothing ships or runs it in the desktop application; the Tailwind 4 migration removes it."
-		},
-		{
 			"source": "1113686",
 			"package": "serialize-javascript",
 			"severity": "high",

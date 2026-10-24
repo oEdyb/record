@@ -78,6 +78,10 @@ function step(title) {
 	console.log(`\n=== ${title}`);
 }
 
+export function runDesktopAuditPreflight(runCommand = run) {
+	runCommand("node", ["scripts/check-website-audit.mjs", "--desktop"]);
+}
+
 /** The signed dependency approval and the shipped notices must hold before anything is built. */
 async function releaseGateProblem() {
 	const scripts = path.join(ROOT, "scripts");
@@ -110,6 +114,7 @@ async function preflight(options, notaryProfile) {
 	if (status && !options.allowDirty) {
 		throw new Error(`Commit or stash these changes first, or pass --allow-dirty:\n${status}`);
 	}
+	runDesktopAuditPreflight();
 	const identity = findDeveloperIdIdentity(
 		read("security", ["find-identity", "-v", "-p", "codesigning"]),
 	);

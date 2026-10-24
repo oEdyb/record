@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { publicationPlan, rcloneUploadArgs } from "./publish-mac-release.mjs";
 import {
@@ -6,6 +7,7 @@ import {
 	notaryProfileSetupCommand,
 	parseArguments,
 	releaseFileNames,
+	runDesktopAuditPreflight,
 } from "./release-mac.mjs";
 
 describe("local macOS release", () => {
@@ -45,6 +47,24 @@ describe("local macOS release", () => {
 		expect(parseArguments(["--skip-native"])).toMatchObject({ skipNative: true, rehearsal: false });
 		expect(parseArguments(["--rehearsal"])).toMatchObject({ rehearsal: true });
 		expect(() => parseArguments(["--notarize=false"])).toThrow(/Unknown option/);
+	});
+
+	it("runs the desktop audit as a standalone release preflight", () => {
+		const calls = [];
+		runDesktopAuditPreflight((...args) => calls.push(args));
+		expect(calls).toEqual([["node", ["scripts/check-website-audit.mjs", "--desktop"]]]);
+	});
+
+	it("runs the desktop audit before signer and notary checks", () => {
+		const source = readFileSync(new URL("./release-mac.mjs", import.meta.url), "utf8");
+		const preflight = source.slice(
+			source.indexOf("async function preflight"),
+			source.indexOf("\nfunction buildNative"),
+		);
+		const auditCall = preflight.indexOf("runDesktopAuditPreflight();");
+		expect(auditCall).toBeGreaterThanOrEqual(0);
+		expect(preflight.indexOf('read("security"')).toBeGreaterThan(auditCall);
+		expect(preflight.indexOf('read("xcrun"')).toBeGreaterThan(auditCall);
 	});
 });
 

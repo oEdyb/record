@@ -9732,9 +9732,9 @@
 		{
 			"ecosystem": "npm",
 			"name": "postcss-selector-parser",
-			"version": "6.1.4",
+			"version": "6.1.5",
 			"license": "MIT",
-			"source": "https://registry.npmjs.org/postcss-selector-parser/-/postcss-selector-parser-6.1.4.tgz",
+			"source": "https://registry.npmjs.org/postcss-selector-parser/-/postcss-selector-parser-6.1.5.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10052,9 +10052,9 @@
 		{
 			"ecosystem": "npm",
 			"name": "source-map-js",
-			"version": "1.2.1",
+			"version": "1.2.2",
 			"license": "BSD-3-Clause",
-			"source": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+			"source": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10262,9 +10262,9 @@
 		{
 			"ecosystem": "npm",
 			"name": "zod",
-			"version": "4.4.3",
+			"version": "4.6.6",
 			"license": "MIT",
-			"source": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+			"source": "https://registry.npmjs.org/zod/-/zod-4.6.6.tgz",
 			"scopes": [
 				"required"
 			]
@@ -10333,6 +10333,150 @@
 			],
 			"license": "OFL-1.1",
 			"source": "https://github.com/vercel/geist-font"
+		},
+		{
+			"id": "google-font-bebas-neue",
+			"paths": [
+				"src/assets/fonts/google/google-bebas-neue-*.woff2",
+				"third-party-licenses/Google-bebas-neue-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/bebasneue; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-caveat",
+			"paths": [
+				"src/assets/fonts/google/google-caveat-*.woff2",
+				"third-party-licenses/Google-caveat-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/caveat; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-dm-sans",
+			"paths": [
+				"src/assets/fonts/google/google-dm-sans-*.woff2",
+				"third-party-licenses/Google-dm-sans-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/dmsans; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-fira-code",
+			"paths": [
+				"src/assets/fonts/google/google-fira-code-*.woff2",
+				"third-party-licenses/Google-fira-code-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/firacode; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-ibm-plex-mono",
+			"paths": [
+				"src/assets/fonts/google/google-ibm-plex-mono-*.woff2",
+				"third-party-licenses/Google-ibm-plex-mono-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/ibmplexmono; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-ibm-plex-sans",
+			"paths": [
+				"src/assets/fonts/google/google-ibm-plex-sans-*.woff2",
+				"third-party-licenses/Google-ibm-plex-sans-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/ibmplexsans; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-inter",
+			"paths": [
+				"src/assets/fonts/google/google-inter-*.woff2",
+				"third-party-licenses/Google-inter-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/inter; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-lora",
+			"paths": [
+				"src/assets/fonts/google/google-lora-*.woff2",
+				"third-party-licenses/Google-lora-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/lora; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-manrope",
+			"paths": [
+				"src/assets/fonts/google/google-manrope-*.woff2",
+				"third-party-licenses/Google-manrope-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/manrope; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-merriweather",
+			"paths": [
+				"src/assets/fonts/google/google-merriweather-*.woff2",
+				"third-party-licenses/Google-merriweather-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/merriweather; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-oswald",
+			"paths": [
+				"src/assets/fonts/google/google-oswald-*.woff2",
+				"third-party-licenses/Google-oswald-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/oswald; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-permanent-marker",
+			"paths": [
+				"src/assets/fonts/google/google-permanent-marker-*.woff2",
+				"third-party-licenses/Google-permanent-marker-Apache-2.0.txt"
+			],
+			"license": "Apache-2.0",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/apache/permanentmarker; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-playfair-display",
+			"paths": [
+				"src/assets/fonts/google/google-playfair-display-*.woff2",
+				"third-party-licenses/Google-playfair-display-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/playfairdisplay; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-plus-jakarta-sans",
+			"paths": [
+				"src/assets/fonts/google/google-plus-jakarta-sans-*.woff2",
+				"third-party-licenses/Google-plus-jakarta-sans-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/plusjakartasans; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-space-grotesk",
+			"paths": [
+				"src/assets/fonts/google/google-space-grotesk-*.woff2",
+				"third-party-licenses/Google-space-grotesk-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/spacegrotesk; artifacts/release-optimization-2026-10-24/font-provenance.json"
+		},
+		{
+			"id": "google-font-sora",
+			"paths": [
+				"src/assets/fonts/google/google-sora-*.woff2",
+				"third-party-licenses/Google-sora-OFL-1.1.txt"
+			],
+			"license": "OFL-1.1",
+			"source": "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/sora; artifacts/release-optimization-2026-10-24/font-provenance.json"
 		}
 	],
 	"licenseTexts": [
@@ -10377,6 +10521,102 @@
 			"sourcePath": "third-party-licenses/Geist-OFL-1.1.txt",
 			"size": 4383,
 			"sha256": "942560b236adfa83745b2c64e5fc09ebaf91cb331751b1157eb92187e5d6e930"
+		},
+		{
+			"path": "third-party-licenses/Google-bebas-neue-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-bebas-neue-OFL-1.1.txt",
+			"size": 4337,
+			"sha256": "72082f6cb4d04be2ecf7cc7d9e1e7d73787f0af8a5a278a47cade70c16b78341"
+		},
+		{
+			"path": "third-party-licenses/Google-caveat-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-caveat-OFL-1.1.txt",
+			"size": 4385,
+			"sha256": "1f9d81d094273d82f3898a1ee8b598a717d050ecbf5ff7bede105b704880157b"
+		},
+		{
+			"path": "third-party-licenses/Google-dm-sans-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-dm-sans-OFL-1.1.txt",
+			"size": 4482,
+			"sha256": "9af36190332437f5ecd09974de43c1f7c77a310a996cdd8ceb25628b458840e1"
+		},
+		{
+			"path": "third-party-licenses/Google-fira-code-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-fira-code-OFL-1.1.txt",
+			"size": 4391,
+			"sha256": "926041dac670e6922505e35ac1661a4e8d20f1ffeabbbcb5edb5544370702369"
+		},
+		{
+			"path": "third-party-licenses/Google-ibm-plex-mono-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-ibm-plex-mono-OFL-1.1.txt",
+			"size": 4456,
+			"sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da"
+		},
+		{
+			"path": "third-party-licenses/Google-ibm-plex-sans-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-ibm-plex-sans-OFL-1.1.txt",
+			"size": 4456,
+			"sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da"
+		},
+		{
+			"path": "third-party-licenses/Google-inter-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-inter-OFL-1.1.txt",
+			"size": 4377,
+			"sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57"
+		},
+		{
+			"path": "third-party-licenses/Google-lora-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-lora-OFL-1.1.txt",
+			"size": 4423,
+			"sha256": "1d9a970809ac804b582a6ce7f0ebc4e7fefcbfd7ff6299cad35ee656a21be716"
+		},
+		{
+			"path": "third-party-licenses/Google-manrope-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-manrope-OFL-1.1.txt",
+			"size": 4387,
+			"sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b"
+		},
+		{
+			"path": "third-party-licenses/Google-merriweather-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-merriweather-OFL-1.1.txt",
+			"size": 4438,
+			"sha256": "715bd349bfa6116f99e351e1548321dcfa25b91df65502d22ca8d624557697d2"
+		},
+		{
+			"path": "third-party-licenses/Google-oswald-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-oswald-OFL-1.1.txt",
+			"size": 4483,
+			"sha256": "0fd731a904b729a4e02eaf5e8ebd06783edd9abe400e8882760160230675b652"
+		},
+		{
+			"path": "third-party-licenses/Google-permanent-marker-Apache-2.0.txt",
+			"sourcePath": "third-party-licenses/Google-permanent-marker-Apache-2.0.txt",
+			"size": 11419,
+			"sha256": "8dc404f254e3ad427292eb78be04112e96f34de0c914c2965e8ede8e3bafc8e1"
+		},
+		{
+			"path": "third-party-licenses/Google-playfair-display-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-playfair-display-OFL-1.1.txt",
+			"size": 4449,
+			"sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+		},
+		{
+			"path": "third-party-licenses/Google-plus-jakarta-sans-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-plus-jakarta-sans-OFL-1.1.txt",
+			"size": 4402,
+			"sha256": "995c7199cab65954f545996326755daee7b63cc6b42b06c13da1f9502ab08a99"
+		},
+		{
+			"path": "third-party-licenses/Google-sora-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-sora-OFL-1.1.txt",
+			"size": 4385,
+			"sha256": "ba0b9729c9428ba79a0459ab8ec575791b51509dbec213e383d0316d37fec299"
+		},
+		{
+			"path": "third-party-licenses/Google-space-grotesk-OFL-1.1.txt",
+			"sourcePath": "third-party-licenses/Google-space-grotesk-OFL-1.1.txt",
+			"size": 4495,
+			"sha256": "564ce565c371c5e5bbf286006565a7c9aa55a9f56e7ca58d56e05d649dd61a72"
 		},
 		{
 			"path": "third-party-licenses/LGPL-2.1.txt",
