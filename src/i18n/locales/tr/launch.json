@@ -80,6 +80,7 @@
 		"clipRemoved": "Kaldırıldı"
 	},
 	"language": "Dil",
+	"languageLoadFailed": "Dil yüklenemedi. Tekrar deneyin.",
 	"systemLanguagePrompt": {
 		"title": "Sistem dilinizi kullanmak ister misiniz?",
 		"description": "Sistem diliniz {{language}} olarak algılandı. Klippt i {{language}} diline geçirmek ister misiniz?",

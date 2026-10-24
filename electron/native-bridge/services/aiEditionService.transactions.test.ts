@@ -37,6 +37,34 @@ describe("native bridge transaction service", () => {
 		expect(resolveMediaPath).toHaveBeenCalledWith("/user/music.wav");
 	});
 
+	it("returns a successful empty result when the latest library is empty", async () => {
+		await expect(service.getLatest()).resolves.toEqual({ success: true });
+	});
+
+	it("uses the existing media authorization once for the latest full view", async () => {
+		const original = await documents.createProject("Latest audio");
+		await documents.saveProject({
+			...original,
+			audioAssets: [
+				{ id: "music", label: "Music", originalPath: "/user/music.wav", durationSec: 3 },
+			],
+		});
+		const resolveMediaPath = vi.fn(async () => "/user/music.wav");
+		const reader = new AiEditionService({ documents, resolveMediaPath });
+		const getView = vi.spyOn(documents, "getProjectView");
+		try {
+			const result = await reader.getLatest();
+			expect(result).toMatchObject({
+				success: true,
+				document: { project: { id: original.project.id } },
+			});
+			expect(resolveMediaPath).toHaveBeenCalledWith("/user/music.wav");
+			expect(getView).toHaveBeenCalledOnce();
+		} finally {
+			vi.restoreAllMocks();
+		}
+	});
+
 	it("imported JSON cannot create outside-media grants, while a picker grant survives reopen", async () => {
 		const source = path.join(root, "private.wav");
 		await fs.writeFile(source, "private media");

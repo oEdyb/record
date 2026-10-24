@@ -163,7 +163,7 @@ vi.mock("@/native", () => ({
 const i18nState = vi.hoisted(() => ({
 	value: {
 		locale: "en",
-		setLocale: vi.fn(),
+		setLocale: vi.fn(() => Promise.resolve("applied")),
 		systemLocaleSuggestion: null as string | null,
 		acceptSystemLocaleSuggestion: vi.fn(),
 		dismissSystemLocaleSuggestion: vi.fn(),
@@ -180,7 +180,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 	useI18n: () => i18nState.value,
 	useScopedT: () => (key: string, vars?: Record<string, string | number>) => {
 		const translations: Record<string, string> = {
-			"sourceSelector.defaultSourceName": "Screen",
+			"sourceSelector.defaultSourceName": i18nState.value.locale === "ar" ? "الشاشة" : "Screen",
 			"recordingReview.record": "Record",
 			"recording.selectSource": "Please select a source to record",
 			"recording.systemPicker": "Your system will ask what to share",
@@ -411,7 +411,10 @@ function resetLaunchMocks() {
 	selectedSourceChangedListeners = [];
 	sourceSelectorClosedListeners = [];
 	toggleRecordingPauseListeners = [];
+	i18nState.value.locale = "en";
 	i18nState.value.systemLocaleSuggestion = null;
+	i18nState.value.setLocale.mockReset();
+	i18nState.value.setLocale.mockResolvedValue("applied");
 	i18nState.value.acceptSystemLocaleSuggestion.mockClear();
 	i18nState.value.dismissSystemLocaleSuggestion.mockClear();
 	i18nState.value.resolveSystemLocaleSuggestion.mockClear();
@@ -1659,6 +1662,121 @@ describe("LaunchWindow language menu", () => {
 		// And it lives inside the HUD stack, not portaled out to the document body.
 		expect(menu.closest("[data-recording-layout]")).toBeNull();
 		expect(menu.closest("[data-testid='hud-device-settings']")).not.toBeNull();
+	});
+
+	it("ignores a superseded locale selection without an error or prompt resolution", async () => {
+		i18nState.value.setLocale.mockResolvedValueOnce("superseded");
+		const localeErrors = () =>
+			toast
+				.getToasts()
+				.filter(
+					(item) =>
+						!("dismiss" in item) && item.type === "error" && item.title === "languageLoadFailed",
+				);
+		try {
+			renderLaunchWindow();
+			fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+			fireEvent.click(await screen.findByRole("button", { name: /deviceSettings\.language/ }));
+			const menu = await screen.findByTestId("hud-language-menu");
+			fireEvent.click(within(menu).getByRole("menuitemradio", { name: "English" }));
+			await waitFor(() => expect(i18nState.value.setLocale).toHaveBeenCalledWith("en"));
+			expect(i18nState.value.resolveSystemLocaleSuggestion).not.toHaveBeenCalled();
+			expect(localeErrors()).toEqual([]);
+		} finally {
+			for (const item of localeErrors()) toast.dismiss(item.id);
+		}
+	});
+
+	it("shows an error only when the active locale selection fails", async () => {
+		i18nState.value.setLocale.mockResolvedValueOnce("failed");
+		const localeErrors = () =>
+			toast
+				.getToasts()
+				.filter(
+					(item) =>
+						!("dismiss" in item) && item.type === "error" && item.title === "languageLoadFailed",
+				);
+		try {
+			renderLaunchWindow();
+			fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+			fireEvent.click(await screen.findByRole("button", { name: /deviceSettings\.language/ }));
+			const menu = await screen.findByTestId("hud-language-menu");
+			fireEvent.click(within(menu).getByRole("menuitemradio", { name: "English" }));
+			await waitFor(() => expect(localeErrors()).toHaveLength(1));
+			expect(i18nState.value.resolveSystemLocaleSuggestion).not.toHaveBeenCalled();
+		} finally {
+			for (const item of localeErrors()) toast.dismiss(item.id);
+		}
+	});
+
+	it("updates a genuinely generic source label through locale and source changes", async () => {
+		const { rerender } = renderLaunchWindow();
+		expect(await screen.findByTestId("launch-source-selector-button")).toHaveTextContent("Screen");
+
+		i18nState.value.locale = "ar";
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("الشاشة");
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		expect(screen.getByRole("radio", { name: "الشاشة" })).toBeInTheDocument();
+
+		i18nState.value.locale = "en";
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("Screen");
+		expect(screen.getByRole("radio", { name: "Screen" })).toBeInTheDocument();
+
+		await waitForSourceSelectionSubscription();
+		emitSelectedSourceChanged({ ...displayOneSource, name: "Display 1" });
+		expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("Display 1");
+		i18nState.value.locale = "ar";
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("Display 1");
+		i18nState.value.locale = "en";
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("Display 1");
+	});
+
+	it("does not localize an explicitly selected source named like the generic label", async () => {
+		stubElectronAPI(vi.fn(async () => ({ ...displayOneSource, name: "Screen" })));
+		const { rerender } = renderLaunchWindow();
+		expect(await screen.findByTestId("launch-source-selector-button")).toHaveTextContent("Screen");
+		await waitFor(() => {
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Screen");
+		});
+
+		i18nState.value.locale = "ar";
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("Screen");
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		expect(screen.getByRole("radio", { name: "Screen" })).toBeInTheDocument();
+		expect(screen.queryByRole("radio", { name: "الشاشة" })).not.toBeInTheDocument();
+
+		i18nState.value.locale = "en";
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("Screen");
 	});
 });
 

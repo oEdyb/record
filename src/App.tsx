@@ -1,16 +1,23 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import "./styles/fonts.css";
 import "./styles/design-tokens.css";
-import { EntitlementDialog } from "./components/entitlements/EntitlementDialog";
 // Keep the countdown listener eager: ready-to-show can precede a lazy component
 // mounting, which would lose the first countdown IPC value.
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
-import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { APP_DISPLAY_NAME } from "./lib/brand";
 import { initializeEntitlements } from "./lib/entitlements/store";
+
+const EntitlementDialog = lazy(() =>
+	import("./components/entitlements/EntitlementDialog").then((module) => ({
+		default: module.EntitlementDialog,
+	})),
+);
+const Toaster = lazy(() =>
+	import("./components/ui/sonner").then((module) => ({ default: module.Toaster })),
+);
 
 const CameraPreviewWindow = lazy(() =>
 	import("./components/launch/CameraPreviewWindow").then((module) => ({
@@ -206,9 +213,11 @@ export default function App() {
 	return (
 		<TooltipProvider>
 			<Suspense fallback={null}>{showNotes ? <NotesWindow /> : content}</Suspense>
-			<EntitlementDialog />
-			{/* The recorder pill hosts its own, just above the pill. */}
-			{windowType === "hud-overlay" ? null : <Toaster theme="dark" />}
+			<Suspense fallback={null}>
+				<EntitlementDialog />
+				{/* The recorder pill hosts its own, just above the pill. */}
+				{windowType === "hud-overlay" ? null : <Toaster theme="dark" />}
+			</Suspense>
 		</TooltipProvider>
 	);
 }

@@ -176,6 +176,11 @@ export const nativeBridgeClient = {
 				domain: "aiEdition",
 				action: "document.listProjects",
 			}),
+		getLatest: () =>
+			requireNativeBridgeData<AiEditionDocumentResult>({
+				domain: "aiEdition",
+				action: "document.getLatest",
+			}),
 		get: (projectId: string) =>
 			requireNativeBridgeData<AiEditionDocumentResult>({
 				domain: "aiEdition",

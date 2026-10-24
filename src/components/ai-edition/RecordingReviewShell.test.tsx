@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
 	applyTheme: vi.fn(),
 	importPendingRecording: vi.fn(),
 	listProjects: vi.fn(),
+	get: vi.fn(),
+	getLatest: vi.fn(),
+	entitlement: {
+		snapshot: { status: "active", access: "full", trialDaysRemaining: null },
+		openDialog: vi.fn(),
+	},
 }));
 
 vi.mock("@/contexts/I18nContext", () => ({ useScopedT: () => (key: string) => key }));
@@ -27,18 +33,20 @@ vi.mock("@/hooks/useCleanVoiceRuntime", () => ({
 }));
 vi.mock("@/hooks/useTheme", () => ({ applyTheme: mocks.applyTheme }));
 vi.mock("@/lib/entitlements/store", () => {
-	const state = {
-		snapshot: { status: "active", access: "full", trialDaysRemaining: null },
-		openDialog: vi.fn(),
-	};
 	return {
-		requireEntitlement: () => true,
-		useEntitlementStore: (select: (s: typeof state) => unknown) => select(state),
+		requireEntitlement: () => mocks.entitlement.snapshot.access === "full",
+		useEntitlementStore: (select: (s: typeof mocks.entitlement) => unknown) =>
+			select(mocks.entitlement),
 	};
 });
 vi.mock("@/native", () => ({
 	nativeBridgeClient: {
 		aiEdition: { listProjects: mocks.listProjects, delete: vi.fn(), importProject: vi.fn() },
+	},
+}));
+vi.mock("@/native/client", () => ({
+	nativeBridgeClient: {
+		aiEdition: { get: mocks.get, getLatest: mocks.getLatest },
 	},
 }));
 vi.mock("@/lib/ai-edition/store/useAssetDimensionBackfill", () => ({
@@ -140,8 +148,13 @@ function loadDocument(document: AxcutDocument) {
 
 beforeEach(() => {
 	installElectronApi();
+	mocks.entitlement.snapshot.access = "full";
 	mocks.importPendingRecording.mockResolvedValue(false);
 	mocks.listProjects.mockResolvedValue([]);
+	mocks.get.mockReset();
+	mocks.get.mockResolvedValue({ success: false, error: "not found" });
+	mocks.getLatest.mockReset();
+	mocks.getLatest.mockResolvedValue({ success: true });
 });
 afterEach(() => {
 	cleanup();
@@ -157,6 +170,76 @@ describe("recording review shell", () => {
 		const empty = screen.getByText("recordingReview.ready").parentElement as HTMLElement;
 		fireEvent.click(within(empty).getByRole("button", { name: "recordingReview.newRecording" }));
 		await waitFor(() => expect(startNewRecording).toHaveBeenCalledWith(undefined));
+	});
+
+	it("auto-loads the latest full view without listing the library", async () => {
+		const document = recordingDocument();
+		mocks.getLatest.mockResolvedValue({ success: true, document });
+
+		render(<RecordingReviewShell />);
+
+		await waitFor(() => {
+			expect(useProjectStore.getState().document?.project.id).toBe(document.project.id);
+		});
+		expect(mocks.getLatest).toHaveBeenCalledOnce();
+		expect(mocks.listProjects).not.toHaveBeenCalled();
+		expect(mocks.get).not.toHaveBeenCalled();
+	});
+
+	it("finishes startup with an empty latest library", async () => {
+		render(<RecordingReviewShell />);
+
+		await waitFor(() => {
+			expect(window.electronAPI?.markStopStage).toHaveBeenCalledWith("review-project-loaded");
+		});
+		expect(useProjectStore.getState()).toMatchObject({
+			document: null,
+			projectId: null,
+			status: "idle",
+			error: null,
+		});
+		expect(mocks.listProjects).not.toHaveBeenCalled();
+	});
+
+	it("surfaces a failed latest project and retries without showing an empty-library hint", async () => {
+		mocks.getLatest
+			.mockResolvedValueOnce({ success: false, error: "EACCES" })
+			.mockResolvedValueOnce({ success: true, document: recordingDocument() });
+		render(<RecordingReviewShell />);
+
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("recordingReview.loadRecordingsFailed");
+		expect(alert).toHaveTextContent("EACCES");
+		expect(screen.queryByText("recordingReview.readyHint")).not.toBeInTheDocument();
+		expect(mocks.getLatest).toHaveBeenCalledOnce();
+		expect(within(alert).getByRole("button", { name: "recordingReview.recordings" })).toBeEnabled();
+
+		fireEvent.click(within(alert).getByRole("button", { name: "recordingReview.retryOpen" }));
+		await waitFor(() => expect(mocks.getLatest).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+		expect(useProjectStore.getState().document?.project.id).toBe("p1");
+	});
+
+	it("does not apply a late latest result after the open project changes", async () => {
+		const latest = recordingDocument();
+		latest.project = { ...latest.project, id: "latest", title: "Latest" };
+		let finishLoad!: () => void;
+		mocks.getLatest.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishLoad = () => resolve({ success: true, document: latest });
+				}),
+		);
+		render(<RecordingReviewShell />);
+		await waitFor(() => expect(mocks.getLatest).toHaveBeenCalledOnce());
+		const current = recordingDocument();
+		act(() => loadDocument(current));
+
+		await act(async () => finishLoad());
+
+		expect(useProjectStore.getState().document?.project.id).toBe(current.project.id);
+		expect(useProjectStore.getState().status).toBe("ready");
+		expect(mocks.get).not.toHaveBeenCalled();
 	});
 
 	it("plays existing edited projects' regions back in a read-only preview", async () => {

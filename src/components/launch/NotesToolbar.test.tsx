@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import "@testing-library/jest-dom";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Editor } from "@tiptap/react";
 import { type ReactNode, useLayoutEffect, useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider, useI18n } from "@/contexts/I18nContext";
 import { LOCALE_STORAGE_KEY } from "@/i18n/config";
 import { NotesToolbar, type NotesToolbarProps } from "./NotesToolbar";
@@ -17,6 +19,20 @@ beforeEach(() => {
 	// `setLocale` persists its choice, and `I18nProvider` reads it back on mount — without
 	// this, the one test that switches language would leak into every test after it.
 	localStorage.removeItem(LOCALE_STORAGE_KEY);
+	vi.stubGlobal("fetch", async (input: string | URL) => {
+		const url = new URL(input, "http://localhost");
+		if (!url.pathname.startsWith("/src/i18n/locales/")) {
+			return new Response("Not found", { status: 404 });
+		}
+		return new Response(await readFile(path.join(process.cwd(), url.pathname), "utf8"), {
+			status: 200,
+			headers: { "Content-Type": "application/json" },
+		});
+	});
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
 });
 
 function createEditor(): Editor {
@@ -64,12 +80,19 @@ function createProps(overrides: Partial<NotesToolbarProps> = {}): NotesToolbarPr
 
 function ActiveLocale({ children, locale }: { children: ReactNode; locale: string }) {
 	const { setLocale } = useI18n();
+	const [loaded, setLoaded] = useState(locale === "en");
 
 	useLayoutEffect(() => {
-		setLocale(locale);
+		let active = true;
+		void setLocale(locale).then((result) => {
+			if (active && result === "applied") setLoaded(true);
+		});
+		return () => {
+			active = false;
+		};
 	}, [locale, setLocale]);
 
-	return children;
+	return loaded ? children : null;
 }
 
 function renderToolbar(props: NotesToolbarProps, locale = "en") {
@@ -173,7 +196,7 @@ describe("NotesToolbar teleprompter controls", () => {
 	it("formats readout values for the active locale", async () => {
 		const user = userEvent.setup();
 		renderToolbar(createProps(), "ar");
-		await user.click(screen.getByRole("button", { name: "مزيد من عناصر التحكم" }));
+		await user.click(await screen.findByRole("button", { name: "مزيد من عناصر التحكم" }));
 		const speed = within(screen.getByRole("group", { name: "سرعة التمرير" })).getByRole("status");
 		const fontSize = within(screen.getByRole("group", { name: "حجم الخط" })).getByRole("status");
 

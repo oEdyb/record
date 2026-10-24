@@ -80,6 +80,7 @@
 		"clipRemoved": "Rimosso"
 	},
 	"language": "Lingua",
+	"languageLoadFailed": "Impossibile caricare la lingua. Riprova.",
 	"systemLanguagePrompt": {
 		"title": "Usare la lingua del sistema?",
 		"description": "Abbiamo rilevato {{language}} come lingua del sistema. Vuoi passare Klippt a {{language}}?",

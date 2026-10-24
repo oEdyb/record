@@ -4,7 +4,11 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
-import { createPlaybackClockRef } from "@/lib/ai-edition/timeline/playback-clock";
+import {
+	createPlaybackClockRef,
+	IDLE_PLAYBACK_LOOP_MS,
+	publishPlaybackClock,
+} from "@/lib/ai-edition/timeline/playback-clock";
 import { AudioOverlayPlayback } from "./AudioOverlayPlayback";
 
 const request = vi.hoisted(() => vi.fn());
@@ -214,4 +218,39 @@ it("pauses again if a pending play resolves after unmount", async () => {
 	await act(async () => resolve());
 	expect(pause).toHaveBeenCalled();
 	expect(frames.size).toBe(0);
+});
+
+it("backs off while paused and wakes immediately for a seek or playback", async () => {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+	try {
+		const { audio } = await ready();
+		for (let index = 0; index < 30; index += 1) tick();
+		expect(frames.size).toBe(0);
+		vi.advanceTimersByTime(IDLE_PLAYBACK_LOOP_MS - 1);
+		expect(frames.size).toBe(0);
+		vi.advanceTimersByTime(1);
+		tick();
+		expect(frames.size).toBe(0);
+
+		act(() => useProjectStore.setState({ currentTimeSec: 4 }));
+		expect(frames.size).toBe(1);
+		tick();
+		expect(audio.currentTime).toBe(4);
+
+		for (let index = 0; index < 30; index += 1) tick();
+		act(() => {
+			useProjectStore.getState().setPlaying(true);
+			publishPlaybackClock(clock, {
+				virtualTimeSec: 7,
+				sourceTimeSec: 7,
+				isPlaying: true,
+				playbackRate: 1,
+			});
+		});
+		expect(frames.size).toBe(1);
+		tick();
+		expect(play).toHaveBeenCalledOnce();
+	} finally {
+		vi.useRealTimers();
+	}
 });

@@ -100,6 +100,7 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	useProjectStore.getState().clear();
+	vi.unstubAllGlobals();
 });
 
 describe("camera placement in review", () => {
@@ -210,5 +211,69 @@ describe("camera placement in review", () => {
 		load({ webcamLayoutPreset: "dual-frame" });
 		renderCanvas(true);
 		expect(screen.queryByTestId("camera-resize-handle")).toBeNull();
+	});
+
+	it.each([
+		"pointerUp",
+		"pointerCancel",
+	] as const)("coalesces moves and flushes the latest placement before %s commits", (ending) => {
+		const frames = new Map<number, FrameRequestCallback>();
+		let frameId = 0;
+		vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+			frames.set(++frameId, callback);
+			return frameId;
+		});
+		vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+		renderCanvas(true);
+		const camera = screen.getByLabelText("preview.webcamPreview");
+		fireEvent.pointerDown(camera, { pointerId: 1, clientX: 100, clientY: 100 });
+		for (let index = 1; index <= 10; index += 1) {
+			fireEvent.pointerMove(camera, {
+				pointerId: 1,
+				clientX: 100 - index * 10,
+				clientY: 100,
+			});
+		}
+		expect(actions.setLive).not.toHaveBeenCalled();
+		expect(frames.size).toBe(1);
+		act(() => {
+			for (const frame of [...frames.values()]) frame(0);
+		});
+		expect(actions.setLive).toHaveBeenCalledTimes(1);
+		const first = actions.setLive.mock.calls[0][0].webcamPosition.cx;
+
+		fireEvent.pointerMove(camera, { pointerId: 1, clientX: -100, clientY: 100 });
+		fireEvent[ending](camera, { pointerId: 1 });
+		expect(actions.setLive).toHaveBeenCalledTimes(2);
+		expect(actions.setLive.mock.calls.at(-1)?.[0].webcamPosition.cx).toBeLessThan(first);
+		expect(actions.commit).toHaveBeenCalledTimes(1);
+		expect(actions.setLive.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+			actions.commit.mock.invocationCallOrder[0]!,
+		);
+		expect(frames.size).toBe(0);
+	});
+
+	it("cancels a pending placement on unmount without saving", () => {
+		const frames = new Map<number, FrameRequestCallback>();
+		let frameId = 0;
+		vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+			frames.set(++frameId, callback);
+			return frameId;
+		});
+		vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+		const { unmount } = renderCanvas(true);
+		const camera = screen.getByLabelText("preview.webcamPreview");
+		fireEvent.pointerDown(camera, { pointerId: 1, clientX: 100, clientY: 100 });
+		fireEvent.pointerMove(camera, { pointerId: 1, clientX: 50, clientY: 100 });
+		const pending = [...frames.values()];
+		expect(pending).toHaveLength(1);
+
+		unmount();
+		expect(frames.size).toBe(0);
+		act(() => {
+			for (const frame of pending) frame(0);
+		});
+		expect(actions.setLive).not.toHaveBeenCalled();
+		expect(actions.commit).not.toHaveBeenCalled();
 	});
 });

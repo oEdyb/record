@@ -4,7 +4,7 @@ import { noteUiProbeClipSwitch } from "@/lib/ai-edition/perf/uiFrameProbe";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
-import { resolveNativePosition } from "@/lib/ai-edition/timeline/timelineMap";
+import { resolveNativePosition, segmentRawSpanSec } from "@/lib/ai-edition/timeline/timelineMap";
 import {
 	pushAllNativeParams,
 	setCurrentNativeViewId,
@@ -78,9 +78,14 @@ export function NativeCompositorOverlay() {
 		if (!document) return [];
 		return resolveVisibleClips(document);
 	}, [document]);
+	const rawClips = useMemo(() => document?.timeline.clips ?? [], [document]);
+	const rawSpans = useMemo(
+		() => nativeClips.map((segment) => segmentRawSpanSec(segment, rawClips)),
+		[nativeClips, rawClips],
+	);
 	const activePosition = useMemo(
-		() => resolveNativePosition(currentTimeSec, nativeClips, document?.timeline.clips ?? []),
-		[nativeClips, currentTimeSec, document],
+		() => resolveNativePosition(currentTimeSec, nativeClips, rawClips, rawSpans),
+		[nativeClips, currentTimeSec, rawClips, rawSpans],
 	);
 	const activeClip = activePosition?.clip ?? null;
 

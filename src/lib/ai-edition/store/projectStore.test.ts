@@ -17,6 +17,7 @@ import { redo, undo } from "./undo";
 
 const bridgeMocks = vi.hoisted(() => ({
 	get: vi.fn(),
+	getLatest: vi.fn(),
 	snapshot: vi.fn(),
 	commit: vi.fn(),
 	receipt: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("@/native/client", () => ({
 	nativeBridgeClient: {
 		aiEdition: {
 			get: bridgeMocks.get,
+			getLatest: bridgeMocks.getLatest,
 			snapshot: bridgeMocks.snapshot,
 			commit: bridgeMocks.commit,
 			receipt: bridgeMocks.receipt,
@@ -1219,6 +1221,123 @@ describe("useProjectStore", () => {
 
 		expect(useProjectStore.getState().projectId).toBe("proj_other");
 		expect(useProjectStore.getState().document?.project.title).toBe("Other");
+	});
+
+	it("loadLatestProject applies transaction identity and undo through the shared loader", async () => {
+		const edited = { ...sampleDoc, project: { ...sampleDoc.project, title: "Edited" } };
+		bridgeMocks.getLatest.mockResolvedValue({
+			success: true,
+			document: edited,
+			transactionVersion: { ...version, revision: "two" },
+			undoRecovery: { requestId: "agent", afterRevision: "two", beforeDocument: sampleDoc },
+		});
+
+		await useProjectStore.getState().loadLatestProject();
+
+		expect(bridgeMocks.getLatest).toHaveBeenCalledOnce();
+		expect(bridgeMocks.get).not.toHaveBeenCalled();
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: sampleDoc.project.id,
+			document: edited,
+			transactionVersion: { revision: "two" },
+			status: "ready",
+			dirty: false,
+		});
+		expect(undo()).toBe(true);
+		expect(useProjectStore.getState().document?.project.title).toBe("Test");
+		expect(undo()).toBe(false);
+	});
+
+	it("loadLatestProject leaves an empty library idle without an error", async () => {
+		bridgeMocks.getLatest.mockResolvedValue({ success: true });
+
+		await useProjectStore.getState().loadLatestProject();
+
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: null,
+			document: null,
+			status: "idle",
+			error: null,
+		});
+		expect(bridgeMocks.get).not.toHaveBeenCalled();
+	});
+
+	it("loadLatestProject clears an earlier startup error when retry returns empty", async () => {
+		useProjectStore.setState({ status: "error", error: "EACCES" });
+		bridgeMocks.getLatest.mockResolvedValue({ success: true });
+
+		await useProjectStore.getState().loadLatestProject();
+
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: null,
+			document: null,
+			status: "idle",
+			error: null,
+		});
+	});
+
+	it("loadLatestProject preserves an open document when latest is empty", async () => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			status: "ready",
+		});
+		bridgeMocks.getLatest.mockResolvedValue({ success: true });
+
+		await useProjectStore.getState().loadLatestProject();
+
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	it("loadLatestProject does not publish a late result after stale navigation", async () => {
+		useProjectStore.setState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			revision: 7,
+			status: "ready",
+			error: null,
+		});
+		let finishLoad!: () => void;
+		bridgeMocks.getLatest.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishLoad = () =>
+						resolve({
+							success: true,
+							document: {
+								...sampleDoc,
+								project: { ...sampleDoc.project, id: "latest", title: "Latest" },
+							},
+						});
+				}),
+		);
+		let canApply = true;
+		const loading = useProjectStore.getState().loadLatestProject({
+			canApply: () => canApply,
+		});
+		expect(useProjectStore.getState().status).toBe("loading");
+		canApply = false;
+		const recording = {
+			...sampleDoc,
+			project: { ...sampleDoc.project, id: "new-recording", title: "New recording" },
+		};
+		useProjectStore.setState({
+			projectId: recording.project.id,
+			document: recording,
+			revision: 8,
+			status: "ready",
+		});
+		const published = useProjectStore.getState();
+		finishLoad();
+		await loading;
+		expect(useProjectStore.getState()).toBe(published);
+		expect(bridgeMocks.get).not.toHaveBeenCalled();
+		await waitForProjectMutations(sampleDoc.project.id);
 	});
 
 	it("loadProject handles a failed bridge response by setting error status", async () => {

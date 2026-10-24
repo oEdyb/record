@@ -76,6 +76,7 @@
 		"clipRemoved": "تمت الإزالة"
 	},
 	"language": "اللغة",
+	"languageLoadFailed": "تعذّر تحميل تلك اللغة. حاول مرة أخرى.",
 	"systemLanguagePrompt": {
 		"title": "هل تريد استخدام لغة نظامك؟",
 		"description": "اكتشفنا أن {{language}} هي لغة نظامك. هل تريد تبديل Klippt إلى {{language}}؟",

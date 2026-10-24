@@ -604,7 +604,12 @@ export class WorkloadTelemetryService {
 
 	private async recoverAndPrune(): Promise<void> {
 		await fs.mkdir(this.deps.rootDirectory, { recursive: true });
-		const entries = await fs.readdir(this.deps.rootDirectory, { withFileTypes: true });
+		const entries = await fs
+			.readdir(this.deps.rootDirectory, { withFileTypes: true })
+			.catch((error: unknown) => {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+				throw error;
+			});
 		for (const entry of entries) {
 			if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
 			const filePath = path.join(this.deps.rootDirectory, entry.name);

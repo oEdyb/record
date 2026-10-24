@@ -143,6 +143,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	const webcamSlotRef = useRef<HTMLDivElement | null>(null);
 	const screenSlotRef = useRef<HTMLDivElement | null>(null);
 	const wheelCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const cancelPendingCameraPlacementRef = useRef<(() => void) | null>(null);
 	// One clock per mounted canvas, shared between the screen preview (writer)
 	// and the webcam overlay (reader) — see playback-clock.ts.
 	const clockRefHolder = useRef<ReturnType<typeof createPlaybackClockRef>>();
@@ -496,13 +497,28 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		const startX = event.clientX;
 		const startY = event.clientY;
 		let moved = false;
+		let pendingPlacement: CameraPlacement | null = null;
+		let frameRequest = 0;
+		const cancelPendingPlacement = () => {
+			if (frameRequest !== 0) cancelAnimationFrame(frameRequest);
+			frameRequest = 0;
+			pendingPlacement = null;
+		};
+		const flushPlacement = () => {
+			const placement = pendingPlacement;
+			cancelPendingPlacement();
+			if (placement) applyCameraPlacement(placement);
+		};
+		cancelPendingCameraPlacementRef.current?.();
+		cancelPendingCameraPlacementRef.current = cancelPendingPlacement;
 		slot.setPointerCapture(event.pointerId);
 		const handleMove = (e: PointerEvent) => {
 			const dx = e.clientX - startX;
 			const dy = e.clientY - startY;
 			if (!moved && Math.hypot(dx, dy) < CAMERA_DRAG_THRESHOLD_PX) return;
 			moved = true;
-			applyCameraPlacement(place(frame, start, dx * toCanvasX, dy * toCanvasY));
+			pendingPlacement = place(frame, start, dx * toCanvasX, dy * toCanvasY);
+			if (frameRequest === 0) frameRequest = requestAnimationFrame(flushPlacement);
 		};
 		const handleUp = () => {
 			slot.removeEventListener("pointermove", handleMove);
@@ -513,6 +529,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			} catch {
 				// pointer already released
 			}
+			cancelPendingCameraPlacementRef.current = null;
+			flushPlacement();
 			if (moved) void commit();
 		};
 		slot.addEventListener("pointermove", handleMove);
@@ -637,6 +655,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	useEffect(
 		() => () => {
 			if (wheelCommitTimerRef.current) clearTimeout(wheelCommitTimerRef.current);
+			cancelPendingCameraPlacementRef.current?.();
 		},
 		[],
 	);

@@ -360,6 +360,170 @@ describe("DocumentService", () => {
 		});
 	});
 
+	describe("getLatestProjectView", () => {
+		const setMtime = async (projectId: string, iso: string) => {
+			const modified = new Date(iso);
+			await fs.utimes(path.join(tempDir, `${projectId}.klippt`), modified, modified);
+		};
+		const setDocumentUpdatedAt = async (projectId: string, updatedAt: string) => {
+			const filePath = path.join(tempDir, `${projectId}.klippt`);
+			const raw = JSON.parse(await fs.readFile(filePath, "utf8")) as AxcutDocument;
+			await fs.writeFile(
+				filePath,
+				JSON.stringify({ ...raw, project: { ...raw.project, updatedAt } }, null, 2),
+			);
+		};
+
+		it("returns null for an empty library", async () => {
+			await expect(service.getLatestProjectView()).resolves.toBeNull();
+		});
+
+		it("skips a corrupt newest file and returns the next valid transaction view once", async () => {
+			const original = await service.createProject("Original");
+			const older = await service.createProject("Older");
+			await setDocumentUpdatedAt(older.project.id, "2020-01-01T00:00:00.000Z");
+			const snapshot = await service.getTransactionSnapshot(original.project.id);
+			const receipt = await service.commitTransaction(
+				original.project.id,
+				{ requestId: "edit", payload: {}, expected: snapshot.version, recordUndo: true },
+				(document) => ({
+					...document,
+					project: { ...document.project, title: "Edited" },
+				}),
+			);
+			const corruptPath = path.join(tempDir, "proj_9999.klippt");
+			await fs.writeFile(corruptPath, "not json", "utf8");
+			const getView = vi.spyOn(service, "getProjectView");
+			const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+			try {
+				const view = await service.getLatestProjectView();
+				expect(view?.document.project).toMatchObject({ id: original.project.id, title: "Edited" });
+				expect(view?.transactionVersion?.revision).toBe(receipt.revision);
+				expect(view?.undoRecovery?.beforeDocument.project.title).toBe("Original");
+				expect(getView.mock.calls.map(([projectId]) => projectId)).toEqual([original.project.id]);
+				expect(warning).toHaveBeenCalledWith(
+					`[ai-edition] failed to open latest project candidate ${corruptPath}:`,
+					expect.any(Error),
+				);
+			} finally {
+				vi.restoreAllMocks();
+			}
+		});
+
+		it("matches library ordering when a valid copy has newer updatedAt but older mtime", async () => {
+			const older = await service.createProject("Older document");
+			const copied = await service.createProject("Copied newest document");
+			await setDocumentUpdatedAt(older.project.id, "2024-01-01T00:00:00.000Z");
+			await setDocumentUpdatedAt(copied.project.id, "2030-01-01T00:00:00.000Z");
+			const copiedPath = path.join(tempDir, `${copied.project.id}.klippt`);
+			const copySource = path.join(tempDir, "valid-copy.json");
+			await fs.copyFile(copiedPath, copySource);
+			await fs.copyFile(copySource, copiedPath);
+			await setMtime(older.project.id, "2025-01-01T00:00:00.000Z");
+			await setMtime(copied.project.id, "2020-01-01T00:00:00.000Z");
+			const summaries = await service.listProjects();
+			expect(summaries[0]?.id).toBe(copied.project.id);
+			const fullReads = vi.spyOn(fs, "readFile");
+			try {
+				const latest = await service.getLatestProjectView();
+				expect(latest?.document.project.id).toBe(copied.project.id);
+				expect(latest?.document.project.id).toBe(summaries[0]?.id);
+				const projectReads = fullReads.mock.calls
+					.map(([filePath]) => String(filePath))
+					.filter((filePath) => filePath.endsWith(".klippt"));
+				expect(projectReads).toEqual([copiedPath]);
+			} finally {
+				vi.restoreAllMocks();
+			}
+
+			await setDocumentUpdatedAt(older.project.id, "2030-01-01T00:00:00.000Z");
+			const tiedSummaries = await service.listProjects();
+			expect((await service.getLatestProjectView())?.document.project.id).toBe(
+				tiedSummaries[0]?.id,
+			);
+		});
+
+		it("skips an identity mismatch without reading older candidates after a valid fallback", async () => {
+			const valid = await service.createProject("Valid");
+			const wrong = await service.createProject("Wrong");
+			await setDocumentUpdatedAt(valid.project.id, "2024-01-01T00:00:00.000Z");
+			await setDocumentUpdatedAt(wrong.project.id, "2020-01-01T00:00:00.000Z");
+			const mismatchPath = path.join(tempDir, "proj_9999.klippt");
+			await fs.copyFile(path.join(tempDir, `${wrong.project.id}.klippt`), mismatchPath);
+			await setDocumentUpdatedAt("proj_9999", "2025-01-01T00:00:00.000Z");
+			const getView = vi.spyOn(service, "getProjectView");
+			const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+			try {
+				expect((await service.getLatestProjectView())?.document.project.id).toBe(valid.project.id);
+				expect(getView.mock.calls.map(([projectId]) => projectId)).toEqual([
+					"proj_9999",
+					valid.project.id,
+				]);
+				expect(warning).toHaveBeenCalledOnce();
+			} finally {
+				vi.restoreAllMocks();
+			}
+		});
+
+		it("opens a readable newer project when an older candidate cannot be read", async () => {
+			const older = await service.createProject("Older unreadable");
+			const newest = await service.createProject("Newest valid");
+			await setDocumentUpdatedAt(older.project.id, "2020-01-01T00:00:00.000Z");
+			await setDocumentUpdatedAt(newest.project.id, "2030-01-01T00:00:00.000Z");
+			await setMtime(older.project.id, "2020-01-01T00:00:00.000Z");
+			await setMtime(newest.project.id, "2025-01-01T00:00:00.000Z");
+			const originalOpen = fs.open.bind(fs);
+			vi.spyOn(fs, "open").mockImplementation(async (file, flags, mode) => {
+				if (String(file) === path.join(tempDir, `${older.project.id}.klippt`)) {
+					throw Object.assign(new Error("denied"), { code: "EACCES" });
+				}
+				return originalOpen(file, flags, mode);
+			});
+			const getView = vi.spyOn(service, "getProjectView");
+			try {
+				const latest = await service.getLatestProjectView();
+				expect(latest?.document.project.id).toBe(newest.project.id);
+				expect(getView.mock.calls.map(([projectId]) => projectId)).toEqual([newest.project.id]);
+			} finally {
+				vi.restoreAllMocks();
+			}
+		});
+
+		it("does not turn a permission failure into a corrupt-file fallback", async () => {
+			const newest = await service.createProject("Denied");
+			const older = await service.createProject("Older");
+			await setDocumentUpdatedAt(newest.project.id, "2025-01-01T00:00:00.000Z");
+			await setDocumentUpdatedAt(older.project.id, "2020-01-01T00:00:00.000Z");
+			const originalGet = service.getProjectView.bind(service);
+			const denied = Object.assign(new ProjectFileError("denied", newest.project.id), {
+				code: "EACCES",
+			});
+			const getView = vi.spyOn(service, "getProjectView").mockImplementation(async (projectId) => {
+				if (projectId === newest.project.id) throw denied;
+				return originalGet(projectId);
+			});
+			const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+			try {
+				await expect(service.getLatestProjectView()).rejects.toBe(denied);
+				expect(getView.mock.calls.map(([projectId]) => projectId)).toEqual([newest.project.id]);
+				expect(warning).not.toHaveBeenCalled();
+			} finally {
+				vi.restoreAllMocks();
+			}
+		});
+
+		it("uses the same legacy migration before selecting a candidate", async () => {
+			const created = await service.createProject("Legacy latest");
+			const canonical = path.join(tempDir, `${created.project.id}.klippt`);
+			const legacy = path.join(tempDir, `${created.project.id}.openscreen`);
+			await fs.rename(canonical, legacy);
+			const fresh = new DocumentService(tempDir, mediaDir);
+			expect((await fresh.getLatestProjectView())?.document.project.id).toBe(created.project.id);
+			await expect(fs.access(canonical)).resolves.toBeUndefined();
+			await expect(fs.access(legacy)).resolves.toBeUndefined();
+		});
+	});
+
 	describe("addAsset", () => {
 		it("appends a video asset and sets primaryAssetId on the first add", async () => {
 			const doc = await service.createProject("P");

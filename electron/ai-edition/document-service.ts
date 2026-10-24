@@ -48,6 +48,12 @@ export interface ProjectSummary {
 	assetCount: number;
 }
 
+export interface ProjectDocumentView {
+	document: AxcutDocument;
+	transactionVersion?: ProjectTransactionVersion;
+	undoRecovery?: ProjectTransactionSnapshot["undoRecovery"];
+}
+
 export interface AddAssetInput {
 	path: string;
 	label?: string;
@@ -73,6 +79,7 @@ export class ProjectFileError extends Error {
 	constructor(
 		message: string,
 		public readonly projectId?: string,
+		public readonly code?: string,
 	) {
 		super(message);
 		this.name = "ProjectFileError";
@@ -109,10 +116,66 @@ function safeProjectId(raw: string): string {
 // `documentSchema.parse` is now a pure v6 validator — every JSON-read path
 // (list, get, future bulk-export) must run the upgrader chain first via this
 // helper so the in-memory parse is a single `z.literal(6)` + shape check.
-// `getProject` spells the same two steps out inline because it relinks moved
-// media between them; keep the order (upgrade, then validate) in step.
+// `getProjectView` reuses the upgraded, validated transaction document, then
+// relinks moved media and validates the repaired view before returning it.
 function parseLoadedDocument(raw: string): AxcutDocument {
 	return documentSchema.parse(migrateRawDocumentToCurrent(JSON.parse(raw)));
+}
+
+const PROJECT_METADATA_PREFIX_BYTES = 16 * 1024;
+const CANONICAL_PROJECT_UPDATED_AT_PREFIX =
+	/^\s*\{\s*"schemaVersion"\s*:\s*\d+\s*,\s*"project"\s*:\s*\{\s*"id"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*"title"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*"createdAt"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*"updatedAt"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+
+interface LatestProjectCandidate {
+	projectId: string;
+	filePath: string;
+	mtimeMs: number;
+}
+
+function projectReadFailure(projectId: string, error: unknown): ProjectFileError {
+	return new ProjectFileError(
+		`Failed to read project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
+		projectId,
+		(error as NodeJS.ErrnoException)?.code,
+	);
+}
+
+async function readCanonicalProjectUpdatedAt(filePath: string): Promise<string | undefined> {
+	const handle = await fs.open(filePath, "r");
+	try {
+		const buffer = Buffer.alloc(PROJECT_METADATA_PREFIX_BYTES);
+		const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+		const prefix = buffer.toString("utf8", 0, bytesRead);
+		const match = CANONICAL_PROJECT_UPDATED_AT_PREFIX.exec(prefix);
+		if (!match?.[1]) return undefined;
+		try {
+			const updatedAt: unknown = JSON.parse(`"${match[1]}"`);
+			return typeof updatedAt === "string" ? updatedAt : undefined;
+		} catch {
+			return undefined;
+		}
+	} finally {
+		await handle.close();
+	}
+}
+
+async function readLatestProjectUpdatedAt(candidate: LatestProjectCandidate): Promise<string> {
+	try {
+		const updatedAt = await readCanonicalProjectUpdatedAt(candidate.filePath);
+		if (updatedAt !== undefined) return updatedAt;
+	} catch (error) {
+		throw projectReadFailure(candidate.projectId, error);
+	}
+	let raw: string;
+	try {
+		raw = await fs.readFile(candidate.filePath, "utf8");
+	} catch (error) {
+		throw projectReadFailure(candidate.projectId, error);
+	}
+	const record = parseProjectTransactionRecord(raw);
+	if (record.document.project.id !== candidate.projectId)
+		throw new ProjectFileError("Project identity does not match managed path", candidate.projectId);
+	return record.document.project.updatedAt;
 }
 
 /**
@@ -280,11 +343,7 @@ export class DocumentService {
 		return (await this.getProjectView(projectId)).document;
 	}
 	/** Resolve media and expose transaction identity from the same raw file read. */
-	async getProjectView(projectId: string): Promise<{
-		document: AxcutDocument;
-		transactionVersion?: ProjectTransactionVersion;
-		undoRecovery?: ProjectTransactionSnapshot["undoRecovery"];
-	}> {
+	async getProjectView(projectId: string): Promise<ProjectDocumentView> {
 		await this.ensureProjectsDir();
 		const candidates = [
 			this.fileFor(projectId),
@@ -300,6 +359,7 @@ export class DocumentService {
 					throw new ProjectFileError(
 						`Failed to read project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
 						projectId,
+						(error as NodeJS.ErrnoException)?.code,
 					);
 				}
 			}
@@ -317,9 +377,8 @@ export class DocumentService {
 		const record = parseProjectTransactionRecord(raw);
 		if (record.document.project.id !== projectId)
 			throw new ProjectFileError("Project identity does not match managed path", projectId);
-		const migrated = migrateRawDocumentToCurrent(JSON.parse(raw));
 		const document = documentSchema.parse(
-			await relinkProjectMedia(migrated, this.mediaRegistryDir),
+			await relinkProjectMedia(record.document, this.mediaRegistryDir),
 		);
 		this.notifyDocumentReady(document);
 		return {
@@ -328,6 +387,81 @@ export class DocumentService {
 				? { transactionVersion: record.version, undoRecovery: record.undoRecovery }
 				: {}),
 		};
+	}
+
+	async getLatestProjectView(): Promise<ProjectDocumentView | null> {
+		await this.ensureProjectsDir();
+		const entries = await fs.readdir(this.projectsRoot);
+		const candidates = (
+			await Promise.all(
+				entries
+					.filter((name) => name.endsWith(CANONICAL_PROJECT_FILE_EXTENSION))
+					.map(async (name): Promise<LatestProjectCandidate | null> => {
+						const filePath = path.join(this.projectsRoot, name);
+						try {
+							const stats = await fs.stat(filePath);
+							if (!stats.isFile()) return null;
+							return {
+								projectId: name.slice(0, -CANONICAL_PROJECT_FILE_EXTENSION.length),
+								filePath,
+								mtimeMs: stats.mtimeMs,
+							};
+						} catch (error) {
+							if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+							return null;
+						}
+					}),
+			)
+		).filter((candidate): candidate is LatestProjectCandidate => candidate !== null);
+		type RankedCandidate = LatestProjectCandidate & { updatedAt: string; order: number };
+		const ranked: RankedCandidate[] = [];
+		// Bound fallback parsing while canonical prefix reads proceed in parallel.
+		for (let start = 0; start < candidates.length; start += 8) {
+			const batch = await Promise.all(
+				candidates
+					.slice(start, start + 8)
+					.map(async (candidate, offset): Promise<RankedCandidate | null> => {
+						try {
+							return {
+								...candidate,
+								updatedAt: await readLatestProjectUpdatedAt(candidate),
+								order: start + offset,
+							};
+						} catch (error) {
+							if (error instanceof ProjectFileError && error.code && error.code !== "ENOENT") {
+								// Rank by file time so newer readable projects can win first.
+								// If this candidate is reached, getProjectView surfaces the real failure.
+								return {
+									...candidate,
+									updatedAt: new Date(candidate.mtimeMs).toISOString(),
+									order: start + offset,
+								};
+							}
+							console.warn(
+								`[ai-edition] failed to open latest project candidate ${candidate.filePath}:`,
+								error,
+							);
+							return null;
+						}
+					}),
+			);
+			ranked.push(...batch.filter((candidate): candidate is RankedCandidate => candidate !== null));
+		}
+		ranked.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.order - b.order);
+		for (const candidate of ranked) {
+			try {
+				return await this.getProjectView(candidate.projectId);
+			} catch (error) {
+				if (error instanceof ProjectFileError && error.code && error.code !== "ENOENT") {
+					throw error;
+				}
+				console.warn(
+					`[ai-edition] failed to open latest project candidate ${candidate.filePath}:`,
+					error,
+				);
+			}
+		}
+		return null;
 	}
 
 	async createProject(title: string): Promise<AxcutDocument> {

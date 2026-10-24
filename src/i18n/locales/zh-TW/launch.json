@@ -80,6 +80,7 @@
 		"clipRemoved": "已移除"
 	},
 	"language": "語言",
+	"languageLoadFailed": "無法載入該語言。請再試一次。",
 	"systemLanguagePrompt": {
 		"title": "要使用系統語言嗎？",
 		"description": "偵測到系統語言為 {{language}}。要將 Klippt 切換為 {{language}} 嗎？",

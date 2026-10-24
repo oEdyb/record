@@ -1,42 +1,62 @@
 import i18next, { type Resource } from "i18next";
-import { DEFAULT_LOCALE, I18N_NAMESPACES, type I18nNamespace, type Locale } from "./config";
+import {
+	DEFAULT_LOCALE,
+	I18N_NAMESPACES,
+	type I18nNamespace,
+	LOCALE_STORAGE_KEY,
+	type Locale,
+} from "./config";
 
 const modules = import.meta.glob("./locales/**/*.json", {
+	query: "?url&no-inline",
+	import: "default",
+}) as Record<string, () => Promise<string>>;
+const bundledModules = import.meta.glob(["./locales/en/*.json", "./locales/*/common.json"], {
 	eager: true,
 	import: "default",
 }) as Record<string, unknown>;
 
 const byLocale: Record<string, Record<string, unknown>> = {};
-for (const [path, mod] of Object.entries(modules)) {
+for (const [path, mod] of Object.entries(bundledModules)) {
 	const [locale, namespace] = path.replace("./locales/", "").replace(".json", "").split("/");
 	if (!byLocale[locale]) byLocale[locale] = {};
 	byLocale[locale][namespace] = mod;
 }
 
-const isComplete = (locale: string) => I18N_NAMESPACES.every((ns) => byLocale[locale]?.[ns]);
-
-const incomplete = Object.keys(byLocale).filter((locale) => !isComplete(locale));
+const isComplete = (locale: string) =>
+	I18N_NAMESPACES.every((ns) => modules[`./locales/${locale}/${ns}.json`]);
+const candidates = [...new Set(Object.keys(modules).map((path) => path.split("/")[2]))].filter(
+	(locale): locale is string => Boolean(locale),
+);
+const incomplete = candidates.filter((locale) => !isComplete(locale));
 if (incomplete.length > 0) {
 	console.error("[i18n] Incomplete locale folders were excluded:", incomplete.join(", "));
 }
 
-const availableLocales = Object.keys(byLocale)
+const availableLocales = candidates
 	.filter(isComplete)
 	.sort((a, b) => (a === DEFAULT_LOCALE ? -1 : b === DEFAULT_LOCALE ? 1 : a.localeCompare(b)));
-
 const resources = Object.fromEntries(
 	availableLocales.map((locale) => [locale, byLocale[locale] as Resource[string]]),
 ) as Resource;
 
-// `lng` is inert here: every lookup below passes an explicit `lng`, so the init
-// language never reaches the output. Reading localStorage at module scope would
-// add a failure mode for no gain — it can throw SecurityError, and at module
-// scope that takes down the whole graph rather than one component. The user's
-// stored preference is applied by I18nContext, which guards its access.
+export function getInitialLocale(): Locale {
+	if (typeof localStorage === "undefined") return DEFAULT_LOCALE;
+	try {
+		const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
+		if (stored && getAvailableLocales().includes(stored)) return stored;
+	} catch {
+		return DEFAULT_LOCALE;
+	}
+	return DEFAULT_LOCALE;
+}
+
+const initialLocale = getInitialLocale();
 await i18next.init({
-	lng: DEFAULT_LOCALE,
+	lng: initialLocale,
 	fallbackLng: DEFAULT_LOCALE,
 	defaultNS: "common",
+	partialBundledLanguages: true,
 	resources,
 	interpolation: { escapeValue: false },
 	// A non-leaf key would otherwise render i18next's English developer message
@@ -45,6 +65,62 @@ await i18next.init({
 	// `namespace.key` marker.
 	returnedObjectHandler: () => undefined,
 });
+
+const loadedLocales = new Set<Locale>([DEFAULT_LOCALE]);
+const localeLoads = new Map<Locale, Promise<void>>();
+let initialLocaleLoadFailure: Locale | null = null;
+
+export function loadLocale(locale: Locale): Promise<void> {
+	const target = getAvailableLocales().includes(locale) ? locale : DEFAULT_LOCALE;
+	if (loadedLocales.has(target)) {
+		if (initialLocaleLoadFailure === target) initialLocaleLoadFailure = null;
+		return Promise.resolve();
+	}
+	const existing = localeLoads.get(target);
+	if (existing) return existing;
+	const load = Promise.all(
+		I18N_NAMESPACES.map(async (namespace) => {
+			const importLocale = modules[`./locales/${target}/${namespace}.json`];
+			if (!importLocale) throw new Error(`Missing ${target}/${namespace} translations`);
+			const url = await importLocale();
+			const response = await fetch(url, { cache: "no-store" });
+			if (!response.ok) {
+				throw new Error(`Could not load ${target}/${namespace} translations (${response.status})`);
+			}
+			const resource: unknown = await response.json();
+			i18next.addResourceBundle(target, namespace, resource, true, true);
+		}),
+	)
+		.then(() => {
+			loadedLocales.add(target);
+			if (initialLocaleLoadFailure === target) initialLocaleLoadFailure = null;
+		})
+		.catch((error: unknown) => {
+			localeLoads.delete(target);
+			throw error;
+		});
+	localeLoads.set(target, load);
+	return load;
+}
+
+export function getInitialLocaleLoadFailure(): Locale | null {
+	return initialLocaleLoadFailure;
+}
+
+export async function loadInitialLocale(
+	initial: Locale,
+	load: () => Promise<void> = () => loadLocale(initial),
+): Promise<void> {
+	try {
+		await load();
+	} catch (error) {
+		initialLocaleLoadFailure = initial;
+		await i18next.changeLanguage(DEFAULT_LOCALE);
+		console.warn(`[i18n] Could not load saved ${initial}; using English:`, error);
+	}
+}
+
+if (initialLocale !== DEFAULT_LOCALE) await loadInitialLocale(initialLocale);
 
 function tAt(
 	lng: Locale,

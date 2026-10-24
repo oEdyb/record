@@ -662,6 +662,8 @@ export function registerNativeBridgeHandlers(
 								),
 							);
 						}
+						case "document.getLatest":
+							return createSuccessResponse(requestId, await aiEditionService.getLatest());
 						case "document.get":
 							return createSuccessResponse(
 								requestId,

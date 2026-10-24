@@ -736,6 +736,7 @@ export function LaunchWindow() {
 	const [selectedSource, setSelectedSource] = useState(defaultSourceName);
 	const [hasSelectedSource, setHasSelectedSource] = useState(false);
 	const [selectedSourceKind, setSelectedSourceKind] = useState<"display" | "window">("display");
+	const localizedSourceLabel = hasSelectedSource ? selectedSource : defaultSourceName;
 	const sourceChipIntent = useCallback(() => {
 		prefetchPickerSources();
 	}, []);
@@ -1243,10 +1244,12 @@ export function LaunchWindow() {
 
 	const handleSelectLocale = useCallback(
 		(nextLocale: string) => {
-			setLocale(nextLocale as Parameters<typeof setLocale>[0]);
-			resolveSystemLocaleSuggestion();
+			void setLocale(nextLocale as Parameters<typeof setLocale>[0]).then((result) => {
+				if (result === "applied") resolveSystemLocaleSuggestion();
+				else if (result === "failed") toast.error(t("languageLoadFailed"));
+			});
 		},
-		[resolveSystemLocaleSuggestion, setLocale],
+		[resolveSystemLocaleSuggestion, setLocale, t],
 	);
 
 	const enableHudMouseEvents = useCallback(() => {
@@ -1551,7 +1554,7 @@ export function LaunchWindow() {
 
 	const setupExtras = useMemo<HudSetupExtras>(
 		() => ({
-			sourceLabel: portalOwnsSource ? undefined : selectedSource,
+			sourceLabel: portalOwnsSource ? undefined : localizedSourceLabel,
 			sourceKind: selectedSourceKind,
 			sourceDisabled: controlsLocked,
 			onSelectDisplay: portalOwnsSource ? undefined : () => void selectDisplaySource(),
@@ -1584,7 +1587,7 @@ export function LaunchWindow() {
 			locale,
 			openSourceSelector,
 			portalOwnsSource,
-			selectedSource,
+			localizedSourceLabel,
 			sendHudOverlayHide,
 			setupFooter,
 			supportsCursorModeToggle,
@@ -1740,7 +1743,7 @@ export function LaunchWindow() {
 								<span className="flex-1" />
 							) : (
 								<HudSourceChip
-									label={selectedSource}
+									label={localizedSourceLabel}
 									kind={selectedSourceKind}
 									expanded={isSourcePanelOpen}
 									disabled={controlsLocked}

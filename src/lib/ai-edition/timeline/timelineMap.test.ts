@@ -21,6 +21,7 @@ import {
 	replacePillSpan,
 	resolveNativePosition,
 	resolvePillIds,
+	segmentRawSpanSec,
 } from "./timelineMap";
 
 function clip(overrides: Partial<AxcutClip> & Pick<AxcutClip, "id" | "assetId">): AxcutClip {
@@ -503,6 +504,23 @@ describe("resolveNativePosition", () => {
 
 	it("returns null when there are no segments", () => {
 		expect(resolveNativePosition(1, [], [])).toBeNull();
+	});
+
+	it("keeps trim, seam, and EOF behavior when reusing raw spans", () => {
+		const c = clip({
+			id: "c1",
+			assetId: "a",
+			sourceStartSec: 0,
+			sourceEndSec: 10,
+			timelineEndSec: 10,
+		});
+		const segments = resolvePlaybackSegments([c], [trim("a", 2, 4)]);
+		const spans = segments.map((segment) => segmentRawSpanSec(segment, [c]));
+		for (const time of [-1, 0, 1.999, 2, 3, 4, 9.967, 10, 11]) {
+			expect(resolveNativePosition(time, segments, [c], spans)).toEqual(
+				resolveNativePosition(time, segments, [c]),
+			);
+		}
 	});
 });
 

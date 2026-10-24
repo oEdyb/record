@@ -548,6 +548,12 @@ export type NativeBridgeRequest =
 	  }
 	| {
 			domain: "aiEdition";
+			action: "document.getLatest";
+			payload?: EmptyPayload;
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
 			action: "document.get";
 			payload: { projectId: string };
 			requestId?: string;

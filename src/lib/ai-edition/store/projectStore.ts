@@ -52,6 +52,7 @@ export interface ProjectState {
 	lastSavedAt: Date | null;
 
 	loadProject: (projectId: string, options?: { canApply: () => boolean }) => Promise<void>;
+	loadLatestProject: (options?: { canApply: () => boolean }) => Promise<void>;
 	createProject: (title: string) => Promise<AxcutDocument>;
 	refresh: () => Promise<void>;
 	addAsset: (
@@ -768,6 +769,84 @@ export async function waitForProjectMutations(projectId: string): Promise<void> 
 	}
 }
 
+async function loadProjectRequest(
+	get: () => ProjectState,
+	set: (partial: Partial<ProjectState>) => void,
+	projectId: string | null,
+	request: () => ReturnType<typeof nativeBridgeClient.aiEdition.get>,
+	options?: { canApply: () => boolean },
+): Promise<void> {
+	if (options && !options.canApply()) return;
+	if (isProjectTransactionBlocked())
+		throw new ProjectTransactionSessionError(
+			"EDITOR_BUSY",
+			"Transaction reconciliation is pending",
+		);
+	const initial = get();
+	const loadGeneration = ++projectLoadGeneration;
+	const ownsPendingLoad = () => {
+		const current = get();
+		return (
+			projectLoadGeneration === loadGeneration &&
+			current.projectId === initial.projectId &&
+			current.document === initial.document &&
+			current.revision === initial.revision &&
+			current.status === "loading" &&
+			current.error === null
+		);
+	};
+	const discardStaleLoad = () => {
+		if (!options || (options.canApply() && ownsPendingLoad())) return false;
+		if (ownsPendingLoad()) set({ status: initial.status, error: initial.error });
+		return true;
+	};
+	const currentProjectId = initial.projectId;
+	const currentMutation = currentProjectId
+		? beginTrackedProjectMutation(currentProjectId)
+		: undefined;
+	try {
+		set({ status: "loading", error: null });
+		const result = await request();
+		if (discardStaleLoad()) return;
+		if (projectId === null && result.success && !result.document) {
+			if (ownsPendingLoad()) set({ status: initial.document ? "ready" : "idle", error: null });
+			return;
+		}
+		if (!result.success || !result.document) {
+			throw new Error(result.error ?? "Failed to load project");
+		}
+		const document = parseDocument(result.document);
+		if (discardStaleLoad()) return;
+		const loadedProjectId = projectId ?? document.project.id;
+		set({
+			projectId: loadedProjectId,
+			transactionVersion: result.transactionVersion ?? null,
+			lastTransactionReceipt: null,
+			document,
+			revision: get().revision + 1,
+			status: "ready",
+			error: null,
+			dirty: false,
+			lastSavedAt: new Date(),
+		});
+		clearDocumentHistory();
+		recoveredUndoRequests.clear();
+		if (
+			result.transactionVersion &&
+			result.undoRecovery?.afterRevision === result.transactionVersion.revision
+		)
+			restoreRecoveryUndo(loadedProjectId, result.undoRecovery);
+	} catch (error) {
+		if (discardStaleLoad()) return;
+		set({
+			status: "error",
+			error: error instanceof Error ? error.message : String(error),
+		});
+	} finally {
+		currentMutation?.finish();
+	}
+}
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
 	projectId: null,
 	document: null,
@@ -785,70 +864,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	lastSavedAt: null,
 
 	async loadProject(projectId, options) {
-		if (options && !options.canApply()) return;
-		if (isProjectTransactionBlocked())
-			throw new ProjectTransactionSessionError(
-				"EDITOR_BUSY",
-				"Transaction reconciliation is pending",
-			);
-		const initial = get();
-		const loadGeneration = ++projectLoadGeneration;
-		const ownsPendingLoad = () => {
-			const current = get();
-			return (
-				projectLoadGeneration === loadGeneration &&
-				current.projectId === initial.projectId &&
-				current.document === initial.document &&
-				current.revision === initial.revision &&
-				current.status === "loading" &&
-				current.error === null
-			);
-		};
-		const discardStaleLoad = () => {
-			if (!options || (options.canApply() && ownsPendingLoad())) return false;
-			if (ownsPendingLoad()) set({ status: initial.status, error: initial.error });
-			return true;
-		};
-		const currentProjectId = initial.projectId;
-		const currentMutation = currentProjectId
-			? beginTrackedProjectMutation(currentProjectId)
-			: undefined;
-		try {
-			set({ status: "loading", error: null });
-			const result = await nativeBridgeClient.aiEdition.get(projectId);
-			if (discardStaleLoad()) return;
-			if (!result.success || !result.document) {
-				throw new Error(result.error ?? "Failed to load project");
-			}
-			const document = parseDocument(result.document);
-			if (discardStaleLoad()) return;
-			set({
-				projectId,
-				transactionVersion: result.transactionVersion ?? null,
-				lastTransactionReceipt: null,
-				document,
-				revision: get().revision + 1,
-				status: "ready",
-				error: null,
-				dirty: false,
-				lastSavedAt: new Date(),
-			});
-			clearDocumentHistory();
-			recoveredUndoRequests.clear();
-			if (
-				result.transactionVersion &&
-				result.undoRecovery?.afterRevision === result.transactionVersion.revision
-			)
-				restoreRecoveryUndo(projectId, result.undoRecovery);
-		} catch (error) {
-			if (discardStaleLoad()) return;
-			set({
-				status: "error",
-				error: error instanceof Error ? error.message : String(error),
-			});
-		} finally {
-			currentMutation?.finish();
-		}
+		return loadProjectRequest(
+			get,
+			set,
+			projectId,
+			() => nativeBridgeClient.aiEdition.get(projectId),
+			options,
+		);
+	},
+
+	async loadLatestProject(options) {
+		return loadProjectRequest(
+			get,
+			set,
+			null,
+			() => nativeBridgeClient.aiEdition.getLatest(),
+			options,
+		);
 	},
 
 	async createProject(title) {

@@ -94,6 +94,8 @@ export function RecordingReviewShell() {
 	const setCurrentTime = useProjectStore((s) => s.setCurrentTime);
 	const setSourceDuration = useProjectStore((s) => s.setSourceDuration);
 	const loadProject = useProjectStore((s) => s.loadProject);
+	const loadLatestProject = useProjectStore((s) => s.loadLatestProject);
+	const projectLoadError = useProjectStore((s) => s.error);
 	const saveDocument = useProjectStore((s) => s.saveDocument);
 	// Single source of truth for transport state: anything that needs to know or drive
 	// playback reads/writes this store field, not a component-local copy.
@@ -209,6 +211,16 @@ export function RecordingReviewShell() {
 	const handleOpenRecordings = useCallback(() => {
 		recordingReviewNavigation.run(() => setOpenProjectOpen(true));
 	}, [recordingReviewNavigation]);
+	const handleRetryLatestProject = useCallback(async () => {
+		const navigationRevision = recordingNavigationRevisionRef.current;
+		const projectAtStart = useProjectStore.getState().projectId;
+		await loadLatestProject({
+			canApply: () =>
+				!recordingReviewNavigation.isBlocked() &&
+				recordingNavigationRevisionRef.current === navigationRevision &&
+				useProjectStore.getState().projectId === projectAtStart,
+		});
+	}, [loadLatestProject, recordingReviewNavigation]);
 
 	// Dev-only: expose the project store so the browser preview harness can
 	// seed a populated document for design QA. Tree-shaken out of prod builds.
@@ -385,31 +397,27 @@ export function RecordingReviewShell() {
 				!recordingReviewNavigation.isBlocked() &&
 				recordingNavigationRevisionRef.current === navigationRevision &&
 				useProjectStore.getState().projectId === projectAtStart;
-			// No recording waiting: restore the most recent project. The browser shim's
-			// listProjects returns seeded entries, so e2e tests land in a populated review.
+			// No recording waiting: restore the newest valid project without parsing the
+			// whole library. The browser shim uses its seeded project order as well.
 			// Reopening review after a recording lands on the project that recording went
 			// into, settings and all, instead of a second project on the same file.
 			try {
-				const projects = await nativeBridgeClient.aiEdition.listProjects();
-				console.info("[editor] listProjects returned", projects);
-				if (projects.length > 0) {
-					console.info("[editor] auto-loading project", projects[0].id);
-					await loadProject(projects[0].id, { canApply });
-					const state = useProjectStore.getState();
-					console.info(
-						"[editor] post-loadProject status=",
-						state.status,
-						"error=",
-						JSON.stringify(state.error),
-						"doc=",
-						state.document ? "loaded" : "null",
-					);
-				}
+				console.info("[editor] auto-loading latest valid project");
+				await loadLatestProject({ canApply });
+				const state = useProjectStore.getState();
+				console.info(
+					"[editor] post-loadProject status=",
+					state.status,
+					"error=",
+					JSON.stringify(state.error),
+					"doc=",
+					state.document ? "loaded" : "null",
+				);
 			} catch (e) {
 				console.warn("[editor] auto-load failed", e);
 			}
 		}
-	}, [loadProject, recordingReviewNavigation, resumeRecordingWorkspace]);
+	}, [loadLatestProject, recordingReviewNavigation, resumeRecordingWorkspace]);
 
 	// Warn on close when dirty
 	useEffect(() => {
@@ -988,11 +996,37 @@ export function RecordingReviewShell() {
 					<div className={styles.previewWorkspace} data-recording-only="true">
 						{!hasAsset ? (
 							<div className={styles.recordingEmpty}>
-								<p>{te("recordingReview.ready")}</p>
-								<button type="button" onClick={() => void handleNewRecording()}>
-									{te("recordingReview.newRecording")}
-								</button>
-								<span>{te("recordingReview.readyHint")}</span>
+								{startupLoaded && projectLoadError ? (
+									<div role="alert">
+										<p>{te("recordingReview.loadRecordingsFailed")}</p>
+										<div
+											style={{
+												display: "flex",
+												gap: 8,
+												flexWrap: "wrap",
+												justifyContent: "center",
+											}}
+										>
+											<button type="button" onClick={() => void handleRetryLatestProject()}>
+												{te("recordingReview.retryOpen")}
+											</button>
+											<button type="button" onClick={handleOpenRecordings}>
+												{te("recordingReview.recordings")}
+											</button>
+										</div>
+										<span style={{ maxWidth: "64ch", overflowWrap: "anywhere" }}>
+											{projectLoadError}
+										</span>
+									</div>
+								) : (
+									<>
+										<p>{te("recordingReview.ready")}</p>
+										<button type="button" onClick={() => void handleNewRecording()}>
+											{te("recordingReview.newRecording")}
+										</button>
+										<span>{te("recordingReview.readyHint")}</span>
+									</>
+								)}
 							</div>
 						) : (
 							<Preview

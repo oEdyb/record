@@ -9,13 +9,20 @@ import {
 	useState,
 } from "react";
 import { DEFAULT_LOCALE, type I18nNamespace, LOCALE_STORAGE_KEY, type Locale } from "@/i18n/config";
-import { getAvailableLocales, translate } from "@/i18n/loader";
+import {
+	getAvailableLocales,
+	getInitialLocale,
+	getInitialLocaleLoadFailure,
+	loadLocale,
+	translate,
+} from "@/i18n/loader";
 
 type TranslateVars = Record<string, string | number>;
+type LocaleChangeResult = "applied" | "superseded" | "failed";
 
 interface I18nContextValue {
 	locale: Locale;
-	setLocale: (locale: Locale) => void;
+	setLocale: (locale: Locale) => Promise<LocaleChangeResult>;
 	t: (qualifiedKey: string, vars?: TranslateVars) => string;
 	systemLocaleSuggestion: Locale | null;
 	acceptSystemLocaleSuggestion: () => void;
@@ -75,20 +82,13 @@ function getSupportedSystemLocale(): Locale | null {
 	return null;
 }
 
-function getInitialLocale(): Locale {
-	try {
-		const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-		if (stored && isSupportedLocale(stored)) return stored;
-	} catch {
-		// localStorage may be unavailable
-	}
-	return DEFAULT_LOCALE;
-}
-
 export function I18nProvider({ children }: { children: ReactNode }) {
-	const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
+	const [locale, setLocaleState] = useState<Locale>(() =>
+		getInitialLocaleLoadFailure() ? DEFAULT_LOCALE : getInitialLocale(),
+	);
 	const [systemLocaleSuggestion, setSystemLocaleSuggestion] = useState<Locale | null>(null);
 	const hasRunSystemLocaleCheckRef = useRef(false);
+	const localeChangeRef = useRef(0);
 
 	const markPromptAsHandled = useCallback(() => {
 		try {
@@ -98,16 +98,53 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 		}
 	}, []);
 
-	const setLocale = useCallback((newLocale: Locale) => {
+	const setLocale = useCallback(async (newLocale: Locale): Promise<LocaleChangeResult> => {
+		if (!getAvailableLocales().includes(newLocale)) return "failed";
+		const change = ++localeChangeRef.current;
+		try {
+			await loadLocale(newLocale);
+		} catch (error) {
+			if (change !== localeChangeRef.current) return "superseded";
+			console.warn(`[i18n] Could not load ${newLocale}:`, error);
+			return "failed";
+		}
+		if (change !== localeChangeRef.current) return "superseded";
 		setLocaleState(newLocale);
 		try {
 			localStorage.setItem(LOCALE_STORAGE_KEY, newLocale);
 		} catch {
 			// localStorage may be unavailable
 		}
-		document.documentElement.lang = newLocale;
-		window.electronAPI?.setLocale?.(newLocale);
+		return "applied";
 	}, []);
+
+	useEffect(() => {
+		const failed = getInitialLocaleLoadFailure();
+		if (!failed) return;
+		let active = true;
+		const id = "initial-locale-load-failed";
+		void import("sonner")
+			.then(({ toast }) => {
+				if (!active) return;
+				toast.error(translate(DEFAULT_LOCALE, "launch", "languageLoadFailed"), {
+					id,
+					action: {
+						label: translate(DEFAULT_LOCALE, "editor", "recordingReview.retryOpen"),
+						onClick: () => {
+							void setLocale(failed).then((result) => {
+								if (result === "applied") toast.dismiss(id);
+							});
+						},
+					},
+				});
+			})
+			.catch((error: unknown) => {
+				console.warn("[i18n] Could not load toast notifications:", error);
+			});
+		return () => {
+			active = false;
+		};
+	}, [setLocale]);
 
 	useEffect(() => {
 		document.documentElement.lang = locale;
@@ -141,9 +178,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 	const acceptSystemLocaleSuggestion = useCallback(() => {
 		if (!systemLocaleSuggestion) return;
-		setLocale(systemLocaleSuggestion);
-		setSystemLocaleSuggestion(null);
-		markPromptAsHandled();
+		void setLocale(systemLocaleSuggestion).then((result) => {
+			if (result !== "applied") return;
+			setSystemLocaleSuggestion(null);
+			markPromptAsHandled();
+		});
 	}, [markPromptAsHandled, setLocale, systemLocaleSuggestion]);
 
 	const dismissSystemLocaleSuggestion = useCallback(() => {

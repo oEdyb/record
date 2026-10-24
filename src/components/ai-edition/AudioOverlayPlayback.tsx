@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { audioOutputTime, buildAudioOutputClock } from "@/lib/ai-edition/timeline/audioOutputClock";
-import type { PlaybackClockRef } from "@/lib/ai-edition/timeline/playback-clock";
+import {
+	onPlaybackClockChange,
+	type PlaybackClockRef,
+	startPlaybackLoop,
+} from "@/lib/ai-edition/timeline/playback-clock";
 import { requireNativeBridgeData } from "@/native/client";
 import {
 	buildAudioOverlays,
@@ -79,11 +83,10 @@ export function AudioOverlayPlayback({ clockRef }: { clockRef: PlaybackClockRef 
 	useEffect(() => {
 		const audio = audioRef.current;
 		if (!audio || !sourceUrl || !compiled || !mediaReady || playbackFailed) return;
-		let frame = 0;
 		let disposed = false;
 		let playPending = false;
 		const tick = () => {
-			if (disposed) return;
+			if (disposed) return false;
 			const state = useProjectStore.getState();
 			const clock = clockRef.current;
 			const playing = state.playing && clock.isPlaying;
@@ -120,12 +123,25 @@ export function AudioOverlayPlayback({ clockRef }: { clockRef: PlaybackClockRef 
 						});
 				} else if (!playing) audio.pause();
 			}
-			frame = requestAnimationFrame(tick);
+			return playing;
 		};
-		frame = requestAnimationFrame(tick);
+		const loop = startPlaybackLoop(tick);
+		const stopClockListener = onPlaybackClockChange(clockRef, loop.wake);
+		const stopStoreListener = useProjectStore.subscribe((state, previous) => {
+			if (state.playing !== previous.playing || state.currentTimeSec !== previous.currentTimeSec)
+				loop.wake();
+		});
+		for (const event of ["canplay", "loadedmetadata", "play", "pause", "seeked"]) {
+			audio.addEventListener(event, loop.wake);
+		}
 		return () => {
 			disposed = true;
-			cancelAnimationFrame(frame);
+			loop.stop();
+			stopClockListener();
+			stopStoreListener();
+			for (const event of ["canplay", "loadedmetadata", "play", "pause", "seeked"]) {
+				audio.removeEventListener(event, loop.wake);
+			}
 			audio.pause();
 		};
 	}, [sourceUrl, compiled, clockRef, mediaReady, playbackFailed]);

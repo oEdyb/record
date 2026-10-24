@@ -129,6 +129,28 @@ describe("workload telemetry", () => {
 		second.dispose();
 	});
 
+	it("recovers when the diagnostics directory disappears during startup", async () => {
+		const service = createService();
+		const actualReaddir = fs.readdir;
+		let allowRead!: () => void;
+		const blockedRead = new Promise<void>((resolve) => {
+			allowRead = resolve;
+		});
+		const readdir = vi.spyOn(fs, "readdir").mockImplementation(async (...args) => {
+			await blockedRead;
+			return actualReaddir(...args);
+		});
+		try {
+			const initializing = service.initialize();
+			await vi.waitFor(() => expect(readdir).toHaveBeenCalled());
+			await fs.rm(directory, { recursive: true, force: true });
+			allowRead();
+			await expect(initializing).resolves.toBeUndefined();
+		} finally {
+			readdir.mockRestore();
+		}
+	});
+
 	it("keeps sampling failures out of the recording path", async () => {
 		const service = new WorkloadTelemetryService({
 			rootDirectory: directory,

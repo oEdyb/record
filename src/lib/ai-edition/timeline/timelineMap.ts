@@ -712,9 +712,10 @@ export function resolveNativePosition(
 	rawSec: number,
 	visibleSegments: AxcutClip[],
 	rawClips: AxcutClip[],
+	rawSpans?: { startSec: number; endSec: number }[],
 ): NativePosition | null {
 	if (!Number.isFinite(rawSec) || visibleSegments.length === 0) return null;
-	const spans = visibleSegments.map((seg) => segmentRawSpanSec(seg, rawClips));
+	const spans = rawSpans ?? visibleSegments.map((seg) => segmentRawSpanSec(seg, rawClips));
 
 	// Segment whose RAW extent contains the playhead (last segment's end inclusive).
 	let index = spans.findIndex((s, i) => {

@@ -76,6 +76,7 @@
 		"clipRemoved": "Удалено"
 	},
 	"language": "Язык",
+	"languageLoadFailed": "Не удалось загрузить этот язык. Попробуйте ещё раз.",
 	"systemLanguagePrompt": {
 		"title": "Использовать системный язык?",
 		"description": "Мы обнаружили {{language}} как системный язык. Хотите переключить Klippt на {{language}}?",

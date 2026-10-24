@@ -23,20 +23,37 @@ export class AiEditionService {
 		return this.options.documents.listProjects();
 	}
 
+	private async present(
+		view: Awaited<ReturnType<DocumentService["getProjectView"]>>,
+	): Promise<AiEditionDocumentResult> {
+		// Project content cannot grant filesystem access. Resolution only consults
+		// prior native-picker grants and app-owned paths, including after restart.
+		const paths = new Set([
+			...view.document.assets.flatMap((asset) => [
+				asset.originalPath,
+				asset.cameraTrack?.sourcePath,
+			]),
+			...(view.document.audioAssets ?? []).map((asset) => asset.originalPath),
+		]);
+		for (const source of paths) if (source) await this.options.resolveMediaPath?.(source);
+		return { success: true, ...view };
+	}
+
 	async get(projectId: string): Promise<AiEditionDocumentResult> {
 		try {
-			const view = await this.options.documents.getProjectView(projectId);
-			// Project content cannot grant filesystem access. Resolution only consults
-			// prior native-picker grants and app-owned paths, including after restart.
-			const paths = new Set([
-				...view.document.assets.flatMap((asset) => [
-					asset.originalPath,
-					asset.cameraTrack?.sourcePath,
-				]),
-				...(view.document.audioAssets ?? []).map((asset) => asset.originalPath),
-			]);
-			for (const source of paths) if (source) await this.options.resolveMediaPath?.(source);
-			return { success: true, ...view };
+			return await this.present(await this.options.documents.getProjectView(projectId));
+		} catch (error) {
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
+	}
+
+	async getLatest(): Promise<AiEditionDocumentResult> {
+		try {
+			const view = await this.options.documents.getLatestProjectView();
+			return view ? await this.present(view) : { success: true };
 		} catch (error) {
 			return {
 				success: false,

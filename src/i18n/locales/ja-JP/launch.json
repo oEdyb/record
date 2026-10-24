@@ -80,6 +80,7 @@
 		"clipRemoved": "削除済み"
 	},
 	"language": "言語",
+	"languageLoadFailed": "言語を読み込めませんでした。もう一度お試しください。",
 	"systemLanguagePrompt": {
 		"title": "システム言語を使用しますか？",
 		"description": "システム言語として{{language}}が検出されました。Klipptを{{language}}に切り替えますか？",

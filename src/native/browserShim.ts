@@ -182,9 +182,9 @@ function createShimBridgeClient() {
 	// ponytail: keyed by project id, matching the real DocumentService (one
 	// file per project on disk). The previous shim kept a single global
 	// `currentDoc` that `get(projectId)` ignored entirely — after a reload,
-	// RecordingReviewShell's auto-load effect would call `listProjects()` (which
-	// *did* remember every created project), pick the most recent one, then
-	// `get()` that id and get back whatever `currentDoc` happened to be
+	// older startup code called `listProjects()` (which *did* remember every
+	// created project), picked the most recent one, then called `get()` for that
+	// id and got back whatever `currentDoc` happened to be
 	// (often null, if `save()` hadn't fired yet), throwing "Failed to load
 	// project" on every reload. Same root cause broke addAsset/removeAsset:
 	// they ignored `projectId` and read/returned the same possibly-null
@@ -246,21 +246,29 @@ function createShimBridgeClient() {
 				assetCount: doc.assets.length,
 			}));
 
+	const readProject = (projectId: string) => {
+		const doc = documentsByProject[projectId];
+		const migrated = doc ? (migrateRawDocumentToCurrent(doc) as ShimDocument) : null;
+		return migrated
+			? { success: true as const, document: migrated }
+			: { success: false as const, error: "Project not found" };
+	};
+
 	return {
 		aiEdition: {
 			listProjects: () => Promise.resolve(listProjectSummaries()),
-			get: (projectId: string) => {
-				const doc = documentsByProject[projectId];
-				// ponytail: load-time migration. Older shims persisted v3 documents
-				// in localStorage; the renderer's `documentSchema.parse` now requires
-				// v5, so upgrade on read (idempotent for v5 inputs).
-				const migrated = doc ? (migrateRawDocumentToCurrent(doc) as ShimDocument) : null;
-				return Promise.resolve(
-					migrated
-						? { success: true, document: migrated }
-						: { success: false, error: "Project not found" },
-				);
+			getLatest: () => {
+				for (const projectId of projectOrder) {
+					try {
+						const result = readProject(projectId);
+						if (result.success) return Promise.resolve(result);
+					} catch (error) {
+						console.warn(`[browser-shim] failed to open latest project ${projectId}:`, error);
+					}
+				}
+				return Promise.resolve({ success: true as const });
 			},
+			get: (projectId: string) => Promise.resolve(readProject(projectId)),
 			create: (title?: string) => {
 				const doc: ShimDocument = {
 					// Mint at the current schema version so the renderer's

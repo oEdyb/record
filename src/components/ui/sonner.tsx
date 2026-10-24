@@ -1,9 +1,34 @@
-import { Toaster as Sonner } from "sonner";
+import { useEffect } from "react";
+import { Toaster as Sonner, toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
 const Toaster = ({ className, ...props }: ToasterProps) => {
+	useEffect(() => {
+		// Sonner 2.0.7 starts empty and does not hydrate from its history.
+		// Replay active toasts only, so lazy mounting cannot lose or resurrect notices.
+		for (const item of toast.getToasts()) {
+			if ("dismiss" in item) continue;
+			const { title, type, jsx, ...options } = item;
+			if (jsx) {
+				toast.custom(() => <>{jsx}</>, options);
+			} else if (type === "success") {
+				toast.success(title, options);
+			} else if (type === "info") {
+				toast.info(title, options);
+			} else if (type === "warning") {
+				toast.warning(title, options);
+			} else if (type === "error") {
+				toast.error(title, options);
+			} else if (type === "loading") {
+				toast.loading(title, options);
+			} else {
+				toast(title, options);
+			}
+		}
+	}, []);
+
 	return (
 		<Sonner
 			theme="dark"
