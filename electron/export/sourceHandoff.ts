@@ -4,6 +4,7 @@ import { resolvePlaybackSegments } from "../../src/lib/ai-edition/document/timel
 import { documentSchema } from "../../src/lib/ai-edition/schema";
 import { resolveClipSourceEndSec } from "../../src/lib/ai-edition/timeline/clipDuration";
 import { availableBytes, formatGigabytes } from "./atomicExport";
+import { type CleanCut, cleanCutTimeline } from "./cleanCutSpans";
 import { copyOriginalFile } from "./copyOriginalFile";
 import { inspectHandoffSourceMedia } from "./sourceHandoffMedia";
 import { buildSourceTimeline, type HandoffMedia, SOURCE_TIMELINE_RATE } from "./sourceTimeline";
@@ -14,6 +15,7 @@ interface SourceFile extends HandoffMedia {
 
 /** `statfs` type of an APFS volume on macOS, where `cp -c` clones instead of copying. */
 const APFS_TYPE = 26;
+const CLEAN_CUT_TIMELINE = "timeline-clean-cut.otio";
 const HANDOFF_SAFETY_BYTES = 64n * 1024n * 1024n;
 
 /** A clone on the same APFS volume takes no space; every other copy needs the
@@ -39,6 +41,7 @@ export async function exportSourceHandoff(
 	input: unknown,
 	destination: string,
 	resolveApprovedPath: (file: string) => string | null,
+	cleanCut?: CleanCut,
 ) {
 	const document = documentSchema.parse(input);
 	const assetById = new Map(document.assets.map((asset) => [asset.id, asset]));
@@ -188,6 +191,22 @@ export async function exportSourceHandoff(
 		await fs.writeFile(timelinePath, `${JSON.stringify(interchange.timeline, null, 2)}\n`, {
 			flag: "wx",
 		});
+		let cleanCutPath: string | null = null;
+		if (cleanCut) {
+			const layout = cleanCutTimeline(handoffClips, cleanCut);
+			if (!layout.spans.length) throw new Error("The clean cut keeps nothing from this recording.");
+			const cleanInterchange = buildSourceTimeline(
+				`${document.project.title} (clean cut)`,
+				sources,
+				layout.spans,
+				layout.markers,
+			);
+			warnings.push(...cleanInterchange.warnings.filter((warning) => !warnings.includes(warning)));
+			cleanCutPath = path.join(directory, CLEAN_CUT_TIMELINE);
+			await fs.writeFile(cleanCutPath, `${JSON.stringify(cleanInterchange.timeline, null, 2)}\n`, {
+				flag: "wx",
+			});
+		}
 		const manifest = {
 			version: 2,
 			kind: "klippt-source-handoff",
@@ -197,6 +216,7 @@ export async function exportSourceHandoff(
 			audioEncoding: "unchanged",
 			mediaBytes: "unchanged",
 			timeline: { file: "timeline.otio", frameRate: SOURCE_TIMELINE_RATE },
+			...(cleanCutPath ? { cleanCutTimeline: { file: CLEAN_CUT_TIMELINE } } : {}),
 			sources: sources.map(({ assetId, screen, camera }) => ({
 				assetId,
 				screen: {
@@ -222,6 +242,11 @@ export async function exportSourceHandoff(
 				"",
 				"Import timeline.otio as a timeline in your video editor. In DaVinci Resolve, use File > Import > Timeline. Keep this folder together so the relative media links resolve. If prompted, select this folder as the source clips location.",
 				"The 60 fps timeline contains Screen V1, Camera V2, Microphone A1 and System audio A2. Missing source time remains a gap. Only original standalone audio files are placed on the microphone and system tracks. Legacy embedded-only audio has an Original audio (unidentified) track.",
+				...(cleanCutPath
+					? [
+							`${CLEAN_CUT_TIMELINE} is the same recording with retakes, false starts and stumbles cut, one marker per cut naming why. Import it as a second timeline; timeline.otio keeps everything.`,
+						]
+					: []),
 				"Cuts, clip order and camera sync are stored only in timeline.otio. Boundaries are rounded to the nearest timeline frame. Complete source files retain all material outside the kept spans.",
 				"Camera is a full, separate video layer above the screen; resize or disable it in your editor. This timeline does not recreate the Klippt visual layout. Camera-file audio, if present, is exported but not added to the timeline.",
 				"Every media file is an unchanged byte copy of its complete original. Nothing is trimmed, remuxed, extracted, decoded, re-encoded, cleaned, or normalized during export.",
@@ -238,6 +263,7 @@ export async function exportSourceHandoff(
 			directory,
 			manifestPath,
 			timelinePath,
+			cleanCutPath,
 			sourceCount: written.size,
 			warnings,
 		};

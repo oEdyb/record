@@ -209,3 +209,43 @@ it("reports sub-frame omissions and rejects unknown media duration", () => {
 	).toThrow("Could not read the duration");
 	expect(() => buildSourceTimeline("Missing", [], [span()])).toThrow("Missing timeline source");
 });
+
+it("puts each marker on the microphone clip that plays at its timeline time, in that clip's media time", () => {
+	const { timeline } = buildSourceTimeline(
+		"Test",
+		[source],
+		[span(), span(4, 10, 2)],
+		[
+			{ timelineSec: 2, name: "Retake", comment: "said again", color: "RED" },
+			{ timelineSec: 3.5, name: "Stutter", comment: "", color: "CYAN" },
+		],
+	);
+	const [screen, , microphone] = timeline.tracks.children;
+	const marked = microphone.children.map((child) =>
+		"markers" in child ? child.markers.map((m) => [m.name, m.marked_range.start_time.value]) : [],
+	);
+	expect(marked).toEqual([
+		[],
+		[
+			["Retake", 240],
+			["Stutter", 330],
+		],
+	]);
+	expect(screen.children.every((child) => child.markers.length === 0)).toBe(true);
+	const retake = microphone.children[1] as { markers: { metadata: unknown }[] };
+	expect(retake.markers[0]?.metadata).toEqual({
+		Resolve_OTIO: { Keywords: [], Note: "said again" },
+	});
+});
+
+it("hosts markers on the screen clip when there is no microphone original", () => {
+	const silent: HandoffSource = { ...source, screen: { ...source.screen, audio: [] } };
+	const { timeline } = buildSourceTimeline(
+		"Test",
+		[silent],
+		[span()],
+		[{ timelineSec: 1, name: "Filler", comment: "", color: "GREEN" }],
+	);
+	const screen = timeline.tracks.children[0];
+	expect(screen.children[0]?.markers.map((m) => m.marked_range.start_time.value)).toEqual([60]);
+});

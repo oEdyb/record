@@ -120,6 +120,41 @@ it("copies kept sources once, preserves originals and hidden camera, and writes 
 	expect(again.directory).not.toBe(result.directory);
 });
 
+it("writes the clean cut as a second timeline with reason markers and leaves timeline.otio whole", async () => {
+	const doc = await fixture();
+	const result = await exportSourceHandoff(doc, root, (file) => file, {
+		keep: [
+			{ assetId: "a", startSec: 0, endSec: 1 },
+			{ assetId: "a", startSec: 3, endSec: 6 },
+			{ assetId: "a", startSec: 7, endSec: 9 },
+		],
+		markers: [{ keepIndex: 2, name: "Retake", comment: "said again later", color: "RED" }],
+	});
+	expect(result.cleanCutPath).toBe(path.join(result.directory, "timeline-clean-cut.otio"));
+	expect(await exportedClips(result.cleanCutPath!)).toMatchObject([
+		{ sourceStartSec: 0, sourceEndSec: 1, timelineStartSec: 0, timelineEndSec: 1 },
+		{ sourceStartSec: 4, sourceEndSec: 6, timelineStartSec: 1, timelineEndSec: 3 },
+		{ sourceStartSec: 7, sourceEndSec: 9, timelineStartSec: 3, timelineEndSec: 5 },
+	]);
+	const clean = JSON.parse(await fs.readFile(result.cleanCutPath!, "utf8"));
+	expect(clean.name).toBe("../My take (clean cut)");
+	expect(clean.tracks.children[0].children[2].markers).toMatchObject([
+		{ name: "Retake", comment: "said again later", color: "RED" },
+	]);
+	expect(await exportedClips(result.timelinePath)).toHaveLength(2);
+	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
+	expect(manifest.cleanCutTimeline).toEqual({ file: "timeline-clean-cut.otio" });
+	expect(await fs.readFile(path.join(result.directory, "README.txt"), "utf8")).toContain(
+		"timeline-clean-cut.otio",
+	);
+});
+
+it("writes no clean cut timeline unless one is asked for", async () => {
+	const result = await exportSourceHandoff(await fixture(), root, (file) => file);
+	expect(result.cleanCutPath).toBeNull();
+	await expect(fs.access(path.join(result.directory, "timeline-clean-cut.otio"))).rejects.toThrow();
+});
+
 it("does not validate removed spans that share a kept source", async () => {
 	const doc = await fixture();
 	doc.timeline.clips.push({

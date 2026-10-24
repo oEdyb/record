@@ -11,36 +11,43 @@
 	user-select: none;
 }
 
+/* The review's glass, as a dial: a dark frosted disc with a light top edge. */
 .dial {
 	display: flex;
-	width: 160px;
-	height: 160px;
+	width: 156px;
+	height: 156px;
 	align-items: center;
 	justify-content: center;
 	border-radius: 50%;
-	background: rgba(0, 0, 0, 0.5);
+	background: rgba(24, 24, 29, 0.78);
+	box-shadow:
+		0 24px 64px rgba(0, 0, 0, 0.45),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+		inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .digit {
-	color: rgba(255, 255, 255, 0.92);
-	font: 700 80px/1 var(--font-display);
+	color: #f5f5f7;
+	font: 600 76px/1 var(--font-mono);
 	font-variant-numeric: tabular-nums;
-	text-shadow: 0 4px 24px rgba(0, 0, 0, 0.65);
-	animation: digit-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+	letter-spacing: -0.04em;
+	animation: digit-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .hint {
-	padding: 6px 12px;
+	margin: 0;
+	padding: 7px 14px;
 	border-radius: 999px;
-	background: rgba(0, 0, 0, 0.55);
-	color: rgba(255, 255, 255, 0.85);
+	background: rgba(24, 24, 29, 0.78);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+	color: rgba(245, 245, 247, 0.86);
 	font: 500 13px/1.2 var(--font-body);
 }
 
 @keyframes digit-in {
 	from {
 		opacity: 0;
-		transform: scale(0.96);
+		transform: translateY(10px) scale(0.96);
 	}
 }
 

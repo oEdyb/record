@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { extractMicrophoneWav } from "./microphoneWav";
-import { ParakeetProcess } from "./parakeetProcess";
+import { ParakeetProcess, type TranscriptWord } from "./parakeetProcess";
 
 export interface TranscriptClipSource {
 	index: number;
@@ -20,6 +20,8 @@ export interface TranscriptClipEntry {
 	index: number;
 	durationMs: number;
 	text: string | null;
+	/** Clip-relative word times; null until transcribed, or for a cache written before word times. */
+	words: TranscriptWord[] | null;
 	error: string | null;
 }
 
@@ -55,6 +57,31 @@ export interface LiveTranscriptDeps {
 	extract?: typeof extractMicrophoneWav;
 }
 
+interface ClipTranscript {
+	text: string;
+	words: TranscriptWord[] | null;
+}
+
+function isWord(value: unknown): value is TranscriptWord {
+	if (!value || typeof value !== "object") return false;
+	const word = value as Record<string, unknown>;
+	return (
+		typeof word.word === "string" &&
+		typeof word.startSec === "number" &&
+		typeof word.endSec === "number" &&
+		typeof word.confidence === "number"
+	);
+}
+
+function readCachedClip(value: unknown): ClipTranscript | null {
+	if (typeof value === "string") return { text: value, words: null };
+	if (!value || typeof value !== "object") return null;
+	const entry = value as Record<string, unknown>;
+	if (typeof entry.text !== "string") return null;
+	const words = Array.isArray(entry.words) && entry.words.every(isWord) ? entry.words : null;
+	return { text: entry.text, words };
+}
+
 function cacheKey(recordingId: number | null, clip: TranscriptClipSource): string {
 	return `${recordingId ?? "none"}:${clip.index}:${clip.microphoneAudioPath}`;
 }
@@ -65,7 +92,7 @@ function cacheKey(recordingId: number | null, clip: TranscriptClipSource): strin
  * one more clip costs one clip. Originals are read, never written.
  */
 export class LiveTranscriptService {
-	private texts = new Map<string, string>();
+	private texts = new Map<string, ClipTranscript>();
 	private loadedCacheFor: number | null | undefined;
 	private helper: Pick<ParakeetProcess, "transcribe" | "stop"> | null = null;
 	private inFlight: Promise<TranscriptSnapshot> | null = null;
@@ -116,12 +143,16 @@ export class LiveTranscriptService {
 		listing: TranscriptClipListing,
 		errors: Map<number, string>,
 	): TranscriptClipEntry[] {
-		return listing.clips.map((clip) => ({
-			index: clip.index,
-			durationMs: clip.durationMs,
-			text: this.texts.get(cacheKey(listing.recordingId, clip)) ?? null,
-			error: errors.get(clip.index) ?? null,
-		}));
+		return listing.clips.map((clip) => {
+			const transcript = this.texts.get(cacheKey(listing.recordingId, clip));
+			return {
+				index: clip.index,
+				durationMs: clip.durationMs,
+				text: transcript?.text ?? null,
+				words: transcript?.words ?? null,
+				error: errors.get(clip.index) ?? null,
+			};
+		});
 	}
 
 	private async run(): Promise<TranscriptSnapshot> {
@@ -203,7 +234,10 @@ export class LiveTranscriptService {
 						id: `clip-${clip.index}`,
 						audioPath: wavPath,
 					});
-					this.texts.set(cacheKey(listing.recordingId, clip), result.text);
+					this.texts.set(cacheKey(listing.recordingId, clip), {
+						text: result.text,
+						words: result.words,
+					});
 				} catch (error) {
 					errors.set(clip.index, error instanceof Error ? error.message : String(error));
 				} finally {
@@ -242,7 +276,8 @@ export class LiveTranscriptService {
 			const raw = JSON.parse(await readFile(this.cachePath(recordingId), "utf8")) as unknown;
 			if (raw && typeof raw === "object") {
 				for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-					if (typeof value === "string") this.texts.set(key, value);
+					const clip = readCachedClip(value);
+					if (clip) this.texts.set(key, clip);
 				}
 			}
 		} catch {
@@ -251,7 +286,7 @@ export class LiveTranscriptService {
 	}
 
 	private async saveCache(listing: TranscriptClipListing) {
-		const entries: Record<string, string> = {};
+		const entries: Record<string, ClipTranscript> = {};
 		for (const clip of listing.clips) {
 			const key = cacheKey(listing.recordingId, clip);
 			const text = this.texts.get(key);

@@ -8,6 +8,23 @@ private struct TranscribeRequest: Decodable {
     let language: String?
 }
 
+private struct RequestKind: Decodable {
+    let type: String?
+}
+
+private struct AlignRequest: Decodable {
+    let id: String
+    let audioPath: String
+    let words: [AlignWordInput]
+    let alignerModels: String
+}
+
+private struct AlignedMessage: Encodable {
+    let type = "aligned"
+    let id: String
+    let words: [AlignedWordOutput]
+}
+
 private struct TimedPhrase: Encodable {
     let text: String
     let startSec: Double
@@ -208,8 +225,33 @@ private enum KlipptParakeetSTT {
             try writeJSON(ReadyMessage())
             log("ready")
 
+            // Loaded on the first align request only; transcription never touches it.
+            var aligner: (directory: String, instance: WordAligner)?
+
             while let line = readLine() {
                 guard let data = line.data(using: .utf8) else { continue }
+                if (try? JSONDecoder().decode(RequestKind.self, from: data))?.type == "align" {
+                    do {
+                        let request = try JSONDecoder().decode(AlignRequest.self, from: data)
+                        do {
+                            if aligner?.directory != request.alignerModels {
+                                aligner = (
+                                    request.alignerModels,
+                                    try WordAligner(
+                                        directory: URL(fileURLWithPath: request.alignerModels, isDirectory: true))
+                                )
+                            }
+                            let words = try aligner!.instance.align(
+                                audioPath: request.audioPath, words: request.words)
+                            try writeJSON(AlignedMessage(id: request.id, words: words))
+                        } catch {
+                            try writeJSON(ErrorMessage(id: request.id, error: error.localizedDescription))
+                        }
+                    } catch {
+                        try writeJSON(ErrorMessage(id: nil, error: HelperError.invalidRequest.localizedDescription))
+                    }
+                    continue
+                }
                 let request: TranscribeRequest
                 do {
                     request = try JSONDecoder().decode(TranscribeRequest.self, from: data)

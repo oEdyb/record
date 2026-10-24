@@ -165,11 +165,11 @@ export const nativeBridgeClient = {
 			}),
 	},
 	aiEdition: {
-		exportSources: (document: unknown) =>
+		exportSources: (document: unknown, cleanCut?: import("@/lib/cleanCut/types").CleanCutExport) =>
 			requireNativeBridgeData<import("./contracts").SourceHandoffResult>({
 				domain: "aiEdition",
 				action: "document.exportSources",
-				payload: { document },
+				payload: cleanCut ? { document, cleanCut } : { document },
 			}),
 		listProjects: () =>
 			requireNativeBridgeData<AiEditionProjectSummary[]>({

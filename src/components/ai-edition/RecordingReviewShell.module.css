@@ -21,12 +21,62 @@
 }
 /* rows set inline (toolbar / body / empty footer) */
 
+/* Guided clean cut review: the recording's light runs full bleed under the title bar and
+   the stage. The toolbar and the stage sit on it with no surface of their own. */
+.app {
+	position: relative;
+}
+.app[data-cinema] {
+	background: #050506;
+}
+.app[data-cinema] > [data-review-chrome],
+.app[data-cinema] > .body {
+	position: relative;
+	z-index: 1;
+}
+/* The video hangs from the top of the stage at its own shape, as large as the window
+   allows while leaving the play bar room; the card takes the space under it. */
+.app[data-cinema] .body {
+	--cinema-dock: 96px;
+	--cinema-card: 224px;
+	--cinema-video-h: min(
+		100cqh - var(--cinema-dock) - var(--cinema-card),
+		(100cqw - 24px - var(--cinema-side)) / var(--video-ratio)
+	);
+	--cinema-side: 0px;
+	container-type: size;
+}
+/* The sheet docks beside the video, which shrinks to make room; nothing covers it. The
+   card steps aside while the sheet is open, so the video may take its height too. */
+.app[data-sheet] .body {
+	--cinema-side: calc(clamp(320px, 28vw, 380px) + 12px);
+	--cinema-card: 0px;
+}
+/* A minimised card, or the slim working and failed bars, give the video its room back. */
+.app[data-card="slim"] .body {
+	--cinema-card: 72px;
+}
+
 .body {
 	position: relative;
 	grid-row: 2;
 	display: grid;
 	min-height: 0;
 	min-width: 0;
+	/* Overlays slide in from outside; nothing may scroll the window sideways to reach them. */
+	overflow: clip;
+}
+
+/* Small player: one glass pill above the play bar opens the guided review. */
+.compactPill {
+	position: absolute;
+	right: 0;
+	bottom: 72px;
+	left: 0;
+	z-index: 4;
+	display: flex;
+	justify-content: center;
+	pointer-events: none;
 }
 
 .stage {
@@ -35,6 +85,43 @@
 	min-height: 0;
 	overflow: hidden;
 	background: var(--bg);
+}
+.stage[data-cinema] {
+	margin-right: var(--cinema-side, 0px);
+	background: transparent;
+	transition: margin-right 380ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+	.stage[data-cinema] {
+		transition: none;
+	}
+}
+.stage[data-cinema] .previewWorkspace > :first-child {
+	flex: none;
+	height: var(--cinema-video-h);
+}
+
+.reviewTransport {
+	flex: none;
+}
+.stage[data-cinema] .reviewTransport {
+	margin-top: auto;
+}
+/* With the sheet docked the card steps aside, so the narrower video sits centred in the
+   stage above the play bar instead of hanging from the top over empty space. */
+.app[data-sheet] .stage[data-cinema] .previewWorkspace > :first-child {
+	margin-block: auto;
+}
+.app[data-sheet] .stage[data-cinema] .reviewTransport {
+	margin-top: 0;
+}
+/* Room for the clean cut's waveform, drawn on the play bar. */
+.reviewTransport[data-overview="full"] {
+	padding-top: 34px;
+}
+/* The small player shows the cut blocks alone, a thin lane over its play bar. */
+.reviewTransport[data-overview="compact"] {
+	padding-top: 12px;
 }
 
 /* Review: the video sits 12px in from the window edges under the header, with

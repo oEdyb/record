@@ -6,90 +6,212 @@
 .interruption button { font: inherit; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--fg); white-space: nowrap; }
 .interruption button:disabled { opacity: .45; }
 .interruption button:focus-visible, .interruption summary:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 3px; }
-/* Review header, from the approved prototype: identity on the left, ghost pill
-   actions, and one light primary pill. 34px pills on a 60px bar. */
+/* Review title bar. Three tiers, one height: a quiet capsule of secondary actions, the
+   Clean cut switch, and one light Save pill. Every control is 32px on a 56px bar. */
 .bar {
 	grid-row: 1;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
-	height: 60px;
+	height: 56px;
 	box-sizing: border-box;
-	padding: 0 calc(14px + 100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)) 0
-		calc(20px + var(--titlebar-inset-left, 0px));
+	padding: 0 calc(12px + 100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)) 0
+		calc(18px + var(--titlebar-inset-left, 0px));
 	min-width: 0;
 	-webkit-app-region: drag;
 }
-.identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.mark { width: 22px; height: 22px; flex: none; color: var(--fg-emphasis); }
-.titleBlock { display: flex; flex-direction: column; min-width: 0; }
+.identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mark { width: 20px; height: 20px; flex: none; color: var(--fg-emphasis); opacity: 0.9; }
+.titleBlock { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .title {
 	overflow: hidden;
 	color: var(--fg-emphasis);
 	font-size: 13px;
 	font-weight: 600;
-	line-height: 1.2;
+	line-height: 16px;
+	letter-spacing: -0.005em;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 .meta {
 	color: var(--muted);
-	font: 400 11px/1.3 var(--font-mono, ui-monospace, monospace);
+	font: 400 11px/14px var(--font-mono, ui-monospace, monospace);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
-.actions { display: flex; flex: none; align-items: center; gap: 4px; }
+.actions { display: flex; flex: none; align-items: center; gap: 10px; }
 .bar button {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 7px;
-	height: 34px;
-	min-width: 34px;
-	padding: 0 13px;
+	gap: 6px;
+	height: 32px;
+	min-width: 32px;
+	padding: 0 12px;
 	border: 0;
-	border-radius: 17px;
+	border-radius: 16px;
 	background: transparent;
-	color: var(--muted);
+	color: rgba(235, 235, 240, 0.8);
 	font: inherit;
+	font-size: 13px;
 	font-weight: 500;
 	white-space: nowrap;
 	cursor: pointer;
 	-webkit-app-region: no-drag;
 	transition:
-		background-color 150ms ease,
-		color 150ms ease,
+		background-color 120ms ease,
+		color 120ms ease,
+		box-shadow 120ms ease,
 		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.bar button:hover:not(:disabled) { background: var(--surface-2); color: var(--fg-emphasis); }
+.bar button:hover:not(:disabled) { color: var(--fg-emphasis); }
 .bar button:active:not(:disabled) { transform: scale(0.96); }
 .bar button:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 2px; }
-.bar button:disabled { opacity: 0.45; cursor: default; }
-.bar .icon { width: 34px; padding: 0; }
-.recordDot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #ff453a; }
+.bar button:disabled { opacity: 0.4; cursor: default; }
+/* Secondary actions share one capsule; each button lights only on hover. */
+.group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: 32px;
+	padding: 0 2px;
+	box-sizing: border-box;
+	border-radius: 16px;
+	background: rgba(255, 255, 255, 0.045);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.group button { height: 28px; min-width: 28px; padding: 0 10px; border-radius: 14px; }
+.group button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.group .icon { width: 28px; padding: 0; }
+.recordDot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: #ff453a; box-shadow: 0 0 0 2px rgba(255, 69, 58, 0.18); }
 .bar .primary {
-	min-width: 128px;
-	margin-left: 8px;
+	gap: 7px;
 	padding: 0 16px 0 13px;
 	background: #f5f5f7;
-	font-variant-numeric: tabular-nums;
 	color: #16161a;
 	font-weight: 600;
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+	font-variant-numeric: tabular-nums;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
 }
-.bar .primary:hover:not(:disabled) { background: #e8e8ec; color: #16161a; }
-.bar .account { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar .primary:hover:not(:disabled) { background: #ffffff; color: #16161a; }
+/* Trial: a quiet capsule; the ring empties as the days run out. */
+.bar .account {
+	gap: 7px;
+	padding: 0 12px 0 10px;
+	color: var(--fg-2);
+	font-variant-numeric: tabular-nums;
+	background: rgba(255, 255, 255, 0.045);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.bar .account:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.trialRing { width: 14px; height: 14px; flex: none; transform: rotate(-90deg); }
+.trialTrack { fill: none; stroke: rgba(255, 255, 255, 0.16); stroke-width: 2; }
+.trialValue { fill: none; stroke: #f5f5f7; stroke-width: 2; stroke-linecap: round; }
 @media (max-width: 520px) { .bar .account { display: none; } }
-/* The small review player: ghost actions become icons, Save keeps its words. */
+/* The small review player: the capsule turns to icons; Clean cut and Save keep their words. */
 @media (max-width: 860px) {
 	.bar { gap: 8px; }
-	.bar .label { display: none; }
-	.bar .ghost { width: 34px; padding: 0; }
+	.actions { gap: 8px; }
+	.group .label { display: none; }
+	.group .ghost { width: 28px; padding: 0; }
 }
 @media (max-width: 620px) { .meta { display: none; } }
 .menuLabel { flex: 1; }
-.shortcut { margin-left: 16px; color: var(--muted); font: 500 11px/1 var(--font-body); }
+.shortcut {
+	display: inline-grid;
+	place-items: center;
+	min-width: 18px;
+	height: 18px;
+	margin-left: 16px;
+	padding: 0 5px;
+	box-sizing: border-box;
+	border-radius: 5px;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--muted);
+	font: 500 11px/1 var(--font-body);
+}
 .spinner { animation: spin 800ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .bar button { transition: none; } .spinner { animation: none; } }
+/* Clean cut: a switch, so on and off read at a glance. On lights the capsule in the steel
+   of automatic edits; working swaps the switch for a progress ring. */
+.bar .cleanCut {
+	gap: 8px;
+	padding: 0 13px 0 9px;
+	background: rgba(255, 255, 255, 0.045);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.bar .cleanCut:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.bar .cleanCut[aria-pressed="true"] {
+	background: rgba(145, 170, 200, 0.16);
+	color: var(--fg-emphasis);
+	box-shadow: inset 0 0 0 1px rgba(145, 170, 200, 0.34);
+}
+.bar .cleanCut[aria-pressed="true"]:hover:not(:disabled) { background: rgba(145, 170, 200, 0.22); }
+.switch {
+	position: relative;
+	flex: none;
+	width: 24px;
+	height: 14px;
+	border-radius: 7px;
+	background: rgba(255, 255, 255, 0.16);
+	transition: background-color 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+.switch::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #f5f5f7;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+	transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.cleanCut[aria-pressed="true"] .switch { background: var(--editor-accent); }
+.cleanCut[aria-pressed="true"] .switch::after { transform: translateX(10px); }
+.cleanCutLabel { white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+.failedIcon { color: var(--danger); }
+.ring { width: 15px; height: 15px; flex: none; transform: rotate(-90deg); }
+.ringTrack { fill: none; stroke: var(--surface-3); stroke-width: 2; }
+.ringValue {
+	fill: none;
+	stroke: var(--editor-accent);
+	stroke-width: 2;
+	stroke-linecap: round;
+	transition: stroke-dasharray 220ms var(--ease);
+}
+.ringSpin { animation: ringSpin 900ms linear infinite; }
+@keyframes ringSpin { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+.metaFailed { color: var(--danger); }
+.runtime { color: var(--fg-emphasis); }
+/* Ready: the old length, a bar of what is kept, and the new length that rolls on a restore. */
+.metaReady { display: inline-flex; align-items: center; gap: 7px; }
+.keptBar {
+	position: relative;
+	width: 40px;
+	height: 4px;
+	overflow: hidden;
+	border-radius: 2px;
+	background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.16) 0 2px, transparent 2px 4px);
+}
+.keptBar > span {
+	position: absolute;
+	inset: 0;
+	border-radius: 2px;
+	background: var(--editor-accent);
+	transform-origin: left;
+	transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.srOnly {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) { .ringSpin { animation: none; } .ringValue, .keptBar > span { transition: none; } }

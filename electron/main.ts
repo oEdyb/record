@@ -25,6 +25,9 @@ import {
 	downloadSelfUpdate,
 	installSelfUpdate,
 } from "./auto-updater";
+import { claudeCliModel, findClaudeCli } from "./cleanCut/claudeCliModel";
+import { registerCleanCutIpc } from "./cleanCut/ipc";
+import { CleanCutService } from "./cleanCut/service";
 import { parseCliArgs } from "./cli/args";
 import { runCli } from "./cli/cliMain";
 import { COMPACT_REVIEW_MIN_SIZE, fitCompactReviewBounds } from "./compactReviewGeometry";
@@ -70,7 +73,7 @@ import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./
 import { ensureModels, modelPaths } from "./stt/modelManager";
 import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
 import { LiveTranscriptService } from "./transcript/liveTranscript";
-import { resolveParakeetBinaryPath } from "./transcript/parakeetProcess";
+import { ParakeetProcess, resolveParakeetBinaryPath } from "./transcript/parakeetProcess";
 import { checkLatestRelease } from "./update-checker";
 import {
 	ASSET_BASE_DIR,
@@ -1179,6 +1182,50 @@ appReady?.then(async () => {
 		service: liveTranscript,
 		openWindow: createTranscriptWindowWrapper,
 		getWindow: () => transcriptWindow,
+	});
+
+	let cleanCutReceiver: Electron.WebContents | null = null;
+	const claudeCli = findClaudeCli();
+	const cleanCut = new CleanCutService({
+		ffmpegPath: () => resolveFfmpeg(),
+		transcriber: async () => {
+			const binaryPath = resolveParakeetBinaryPath();
+			if (!binaryPath)
+				throw new Error("Clean cut needs an Apple Silicon Mac on macOS 14 or newer.");
+			await ensureModels({ baseDir: sttModelsDir, only: ["parakeet-v3"] });
+			return new ParakeetProcess({
+				binaryPath,
+				modelDir: modelPaths(sttModelsDir)["parakeet-v3"],
+				startTimeoutMs: 10 * 60_000,
+			});
+		},
+		alignerModels: async () => {
+			const dir = path.join(sttModelsDir, "wav2vec2-base-960h-coreml");
+			return (await fs.stat(path.join(dir, "labels.json")).catch(() => null)) ? dir : null;
+		},
+		model: () =>
+			claudeCli
+				? claudeCliModel({
+						binary: claudeCli,
+						cacheDir:
+							process.env.KLIPPT_CLEAN_CUT_REPLY_CACHE ??
+							path.join(app.getPath("userData"), "clean-cut", "replies"),
+						cacheOnly: process.env.KLIPPT_CLEAN_CUT_CACHE_ONLY === "1",
+					})
+				: null,
+		tempDir: path.join(app.getPath("temp"), "klippt-clean-cut"),
+		cacheDir: path.join(app.getPath("userData"), "clean-cut"),
+		onSnapshot: (snapshot) => {
+			if (cleanCutReceiver && !cleanCutReceiver.isDestroyed())
+				cleanCutReceiver.send("clean-cut-snapshot", snapshot);
+		},
+	});
+	registerCleanCutIpc(ipcMain, {
+		service: cleanCut,
+		resolveApprovedPath: resolveApprovedRendererMediaPath,
+		setReceiver: (receiver) => {
+			cleanCutReceiver = receiver;
+		},
 	});
 
 	startup.mark("handlers-registered");

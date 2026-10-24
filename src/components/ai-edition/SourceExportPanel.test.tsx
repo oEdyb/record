@@ -149,3 +149,44 @@ it("keeps many warnings collapsed outside the completion announcement", async ()
 	await waitFor(() => expect(disclosure).toHaveAttribute("open"));
 	for (const warning of warnings) expect(screen.getByText(warning)).toBeVisible();
 });
+it("passes the clean cut to the source export and says it is included", async () => {
+	vi.mocked(nativeBridgeClient.aiEdition.exportSources).mockResolvedValue({
+		canceled: false,
+		directory: "/exports/raw",
+		manifestPath: "/exports/raw/handoff.json",
+		timelinePath: "/exports/raw/timeline.otio",
+		cleanCutPath: "/exports/raw/timeline-clean-cut.otio",
+		sourceCount: 1,
+	});
+	const cleanCut = {
+		keep: [{ assetId: "a", startSec: 0, endSec: 0.5 }],
+		markers: [{ keepIndex: 0, name: "Retake", comment: "", color: "ORANGE" as const }],
+	};
+	const doc = documentFor();
+	render(<SourceExportPanel document={doc} busy={false} onBusy={vi.fn()} cleanCut={cleanCut} />, {
+		wrapper: I18nProvider,
+	});
+	expect(screen.getByText("Includes the clean cut as a second timeline.")).toBeVisible();
+	fireEvent.click(screen.getByRole("button", { name: "Save files…" }));
+	expect(await screen.findByText("The clean cut timeline is in the same folder.")).toBeVisible();
+	expect(nativeBridgeClient.aiEdition.exportSources).toHaveBeenCalledWith(doc, cleanCut);
+});
+it("saves without the clean cut while it is still working", () => {
+	render(
+		<SourceExportPanel
+			document={documentFor()}
+			busy={false}
+			onBusy={vi.fn()}
+			cleanCutStatus="working"
+		/>,
+		{ wrapper: I18nProvider },
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Save files…" }));
+	expect(
+		screen.getByText("Clean cut is still working, so this save has the full timeline only."),
+	).toBeVisible();
+	expect(nativeBridgeClient.aiEdition.exportSources).toHaveBeenCalledWith(
+		expect.anything(),
+		undefined,
+	);
+});

@@ -51,7 +51,7 @@
 }
 
 .tiptap ::selection {
-	background: rgb(167 139 250 / 45%);
+	background: rgb(145 170 200 / 40%);
 }
 
 .tiptap:focus-visible {

@@ -1,0 +1,68 @@
+/* Save recovery: a glass card under the title bar. Amber says something needs a look;
+   the destructive choice is the only red. */
+.banner {
+	position: absolute;
+	top: 64px;
+	left: 50%;
+	z-index: 100;
+	box-sizing: border-box;
+	width: min(720px, calc(100% - 32px));
+	padding: 16px 18px;
+	border-radius: 20px;
+	background: rgba(24, 24, 29, 0.74);
+	-webkit-backdrop-filter: blur(32px) saturate(170%);
+	backdrop-filter: blur(32px) saturate(170%);
+	box-shadow:
+		0 24px 64px rgba(0, 0, 0, 0.5),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+		inset 0 1px 0 rgba(255, 255, 255, 0.14);
+	color: var(--fg);
+	transform: translateX(-50%);
+	animation: bannerIn 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes bannerIn {
+	from {
+		opacity: 0;
+		transform: translate(-50%, -8px);
+	}
+}
+.head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+}
+.dot {
+	flex: none;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--warn);
+}
+.title {
+	margin: 0;
+	color: var(--fg-emphasis);
+	font: 600 14px/1.35 var(--font-body);
+}
+.body {
+	margin: 6px 0 0 16px;
+	color: var(--muted);
+	font: 400 13px/1.5 var(--font-body);
+	text-wrap: pretty;
+}
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 14px 0 0 16px;
+}
+.message {
+	margin: 12px 0 0 16px;
+	color: var(--fg-2);
+	font: 400 12px/1.45 var(--font-body);
+	overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+	.banner {
+		animation: none;
+	}
+}

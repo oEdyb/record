@@ -21,7 +21,8 @@ function reviewChromeHeight(): number {
  * Sizes the small review player to the recording: the window becomes the
  * video's shape plus its header and frame, so playback fills it with no letterbox.
  */
-export function useCompactReviewFit(enabled: boolean, document: AxcutDocument | null) {
+/** The review video's width over height, or null until the recording's own size is known. */
+export function useReviewOutputRatio(document: AxcutDocument | null): number | null {
 	const { settings } = useEditorSettings();
 	// Until the recording's own size is known the shape is only a 16:9 guess, and
 	// fitting to it would shrink the window and grow it back once the size arrives.
@@ -31,8 +32,13 @@ export function useCompactReviewFit(enabled: boolean, document: AxcutDocument | 
 		document && sizeKnown
 			? resolveOutputAspectRatioValue(document, settings.aspectRatio, settings.outputResolution)
 			: null;
+	return ratio !== null && Number.isFinite(ratio) && ratio > 0 ? ratio : null;
+}
+
+export function useCompactReviewFit(enabled: boolean, document: AxcutDocument | null) {
+	const ratio = useReviewOutputRatio(document);
 	useEffect(() => {
-		if (!enabled || ratio === null || !Number.isFinite(ratio) || ratio <= 0) return;
+		if (!enabled || ratio === null) return;
 		const frame = requestAnimationFrame(() => {
 			void window.electronAPI?.fitReviewWindow?.({
 				aspectRatio: ratio,

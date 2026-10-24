@@ -1,8 +1,18 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { TransactionRecoveryBanner } from "./TransactionRecoveryBanner";
+import { I18nProvider } from "@/contexts/I18nContext";
+import { TransactionRecoveryBanner as Banner } from "./TransactionRecoveryBanner";
+
+function TransactionRecoveryBanner(): ReactElement {
+	return (
+		<I18nProvider>
+			<Banner />
+		</I18nProvider>
+	);
+}
 
 const mock = vi.hoisted(() => ({
 	resolve: vi.fn(),

@@ -1,0 +1,741 @@
+/* Guided clean cut review: one glass card floating over the video.
+   Steel marks what the clean cut removes; white is the decision. No other color. */
+
+.hud {
+	--glass: rgba(24, 24, 29, 0.56);
+	--glass-edge: rgba(255, 255, 255, 0.09);
+	--glass-hi: rgba(255, 255, 255, 0.14);
+	position: relative;
+	width: min(720px, calc(100% - 48px));
+	box-sizing: border-box;
+	padding: 14px 18px 14px;
+	border-radius: 24px;
+	background: var(--glass);
+	-webkit-backdrop-filter: blur(32px) saturate(170%);
+	backdrop-filter: blur(32px) saturate(170%);
+	box-shadow:
+		0 30px 80px rgba(0, 0, 0, 0.5),
+		0 2px 8px rgba(0, 0, 0, 0.3),
+		inset 0 0 0 1px var(--glass-edge),
+		inset 0 1px 0 var(--glass-hi);
+	color: var(--fg);
+	pointer-events: auto;
+	transition:
+		opacity 220ms var(--ease),
+		transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
+	animation: hudIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.hud[data-hidden] {
+	opacity: 0;
+	transform: translateY(16px) scale(0.98);
+	pointer-events: none;
+}
+@keyframes hudIn {
+	from {
+		opacity: 0;
+		transform: translateY(20px) scale(0.98);
+	}
+}
+
+/* Progress: one segment per unsure cut, like a story. Each is a button with a 12 px
+   target around its 3 px bar. */
+.pips {
+	display: flex;
+	margin: -4px 2px 10px;
+}
+.pip {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	height: 12px;
+	margin-left: 4px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+.pip::before {
+	content: "";
+	position: absolute;
+	top: 4.5px;
+	right: 0;
+	left: 0;
+	height: 3px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.14);
+	transition:
+		background-color 240ms var(--ease),
+		box-shadow 240ms var(--ease),
+		transform 160ms var(--ease);
+}
+.pip:hover::before {
+	transform: scaleY(1.67);
+}
+.pip:first-child {
+	margin-left: 0;
+}
+.pip[data-joined] {
+	margin-left: 1px;
+}
+.pip[data-state="current"]::before {
+	background: #f5f5f7;
+}
+.pip[data-state="kept"]::before {
+	background: var(--editor-accent);
+}
+.pip[data-state="restored"]::before {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+/* Each card enters from the side it was stepped toward. */
+.card {
+	animation: cardIn 340ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.card[data-dir="-1"] {
+	animation-name: cardInBack;
+}
+@keyframes cardIn {
+	from {
+		opacity: 0;
+		transform: translateX(28px);
+		filter: blur(4px);
+	}
+}
+@keyframes cardInBack {
+	from {
+		opacity: 0;
+		transform: translateX(-28px);
+		filter: blur(4px);
+	}
+}
+
+.meta {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 2px;
+}
+.kind {
+	color: var(--fg-emphasis);
+	font-size: 13px;
+	font-weight: 600;
+}
+.mono {
+	color: var(--muted);
+	font: 400 12px/1 var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.spacer {
+	flex: 1;
+}
+
+.detail {
+	margin: 4px 2px -4px;
+	color: rgba(231, 231, 236, 0.42);
+	font: 400 12px/1.4 var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+.sentence {
+	margin: 10px 2px 16px;
+	color: rgba(231, 231, 236, 0.62);
+	font-size: 19px;
+	font-weight: 450;
+	line-height: 1.5;
+	letter-spacing: -0.012em;
+	text-wrap: pretty;
+}
+/* Another cut nearby: fainter and dotted, never struck, so only this card's words are. */
+.sentence [data-near-cut] {
+	color: rgba(231, 231, 236, 0.36);
+	text-decoration: underline dotted rgba(231, 231, 236, 0.32);
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 4px;
+}
+.ellipsis {
+	color: rgba(231, 231, 236, 0.3);
+}
+/* The strike is drawn, not text-decoration: it draws through the words as the card
+   arrives and undraws when they are heard (With) or restored. */
+.removed {
+	padding: 1px 3px;
+	margin: 0 -1px;
+	border-radius: 5px;
+	background-color: var(--editor-accent-soft);
+	background-image: linear-gradient(var(--editor-accent), var(--editor-accent));
+	background-repeat: no-repeat;
+	background-position: 0 58%;
+	background-size: 0% 1.5px;
+	color: var(--editor-accent-strong);
+	-webkit-box-decoration-break: clone;
+	box-decoration-break: clone;
+	transition:
+		background-size 460ms cubic-bezier(0.65, 0, 0.35, 1),
+		background-color 220ms var(--ease),
+		color 220ms var(--ease);
+}
+.removed[data-struck] {
+	background-size: 100% 1.5px;
+	animation: strikeIn 620ms cubic-bezier(0.65, 0, 0.35, 1) 180ms backwards;
+}
+@keyframes strikeIn {
+	from {
+		background-size: 0% 1.5px;
+	}
+}
+.removed[data-restored] {
+	background-color: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+	text-decoration: underline dotted var(--editor-accent);
+	text-underline-offset: 4px;
+}
+/* While With plays, the words read as heard: lifted back into the sentence. */
+.sentence[data-listen="with"] .removed {
+	background-color: rgba(255, 255, 255, 0.1);
+	color: var(--fg-emphasis);
+}
+.hidden {
+	display: inline-block;
+	padding: 0 7px;
+	border: 0;
+	border-radius: 9px;
+	background: rgba(145, 170, 200, 0.18);
+	color: inherit;
+	font: 500 12px/18px var(--font-mono);
+	text-decoration: none;
+	vertical-align: 2px;
+	cursor: pointer;
+}
+.hidden:hover {
+	background: rgba(145, 170, 200, 0.32);
+}
+.hidden:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 1px;
+}
+
+/* Loop: a quiet round button; while it runs the card wears a thin steel ring. */
+.loop {
+	gap: 6px !important;
+	padding: 0 10px !important;
+	background: transparent;
+	color: var(--muted);
+}
+.loop:hover {
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+}
+.loop[aria-pressed="true"] {
+	background: var(--editor-accent-soft);
+	color: var(--editor-accent-strong);
+}
+.loop[aria-pressed="true"] svg {
+	animation: loopTurn 2.4s linear infinite;
+}
+@keyframes loopTurn {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.hud[data-looping] {
+	box-shadow:
+		0 30px 80px rgba(0, 0, 0, 0.5),
+		0 2px 8px rgba(0, 0, 0, 0.3),
+		inset 0 0 0 1px color-mix(in srgb, var(--editor-accent) 55%, transparent),
+		inset 0 1px 0 var(--glass-hi);
+}
+.loopState {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--editor-accent-strong);
+	font: 500 12px/1 var(--font-body);
+}
+
+/* After Restore: what happened, and a way back, in place of the button for a few seconds. */
+.flash {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: 34px;
+	padding: 0 6px 0 12px;
+	border-radius: 17px;
+	background: var(--editor-accent-soft);
+	color: var(--editor-accent-strong);
+	font: 500 13px/1 var(--font-body);
+	white-space: nowrap;
+	animation: flashIn 220ms var(--ease) both;
+}
+.actions .undo {
+	height: 26px;
+	padding: 0 10px;
+	border-radius: 13px;
+	background: rgba(255, 255, 255, 0.1);
+	color: var(--fg-emphasis);
+	font-weight: 600;
+}
+.actions .undo:hover {
+	background: rgba(255, 255, 255, 0.18);
+}
+@keyframes flashIn {
+	from {
+		opacity: 0;
+		transform: scale(0.96);
+	}
+}
+
+/* Summary: what the cuts and the pauses each take, adding up to the time saved. */
+.breakdown {
+	margin-top: 8px;
+	padding-top: 4px;
+	border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.breakdownRow {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 28px;
+	font-size: 13px;
+}
+.breakdownMark {
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 1px;
+	background: rgba(255, 255, 255, 0.5);
+}
+.breakdownLabel {
+	color: var(--fg-emphasis);
+	font-weight: 500;
+}
+.breakdownTime {
+	color: var(--fg-2);
+	font: 400 12px/1 var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+
+.actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.actions button,
+.pill,
+.slim button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	height: 34px;
+	padding: 0 14px;
+	border: 0;
+	border-radius: 17px;
+	font: 500 13px/1 var(--font-body);
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background-color 120ms var(--ease),
+		color 120ms var(--ease),
+		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.actions button:active,
+.pill:active {
+	transform: scale(0.97);
+}
+.actions button:focus-visible,
+.pill:focus-visible,
+.slim button:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
+}
+.ghost {
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+}
+.ghost:hover {
+	background: rgba(255, 255, 255, 0.14);
+}
+.primary {
+	min-width: 116px;
+	background: #f5f5f7;
+	color: #16161a;
+	font-weight: 600 !important;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.primary:hover {
+	background: #ffffff;
+}
+.primary:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.actions kbd {
+	display: inline-grid;
+	place-items: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 4px;
+	box-sizing: border-box;
+	border-radius: 5px;
+	background: rgba(255, 255, 255, 0.1);
+	color: var(--muted);
+	font: 500 11px/1 var(--font-body);
+}
+.primary kbd {
+	background: rgba(0, 0, 0, 0.08);
+	color: #5b5b63;
+}
+.listButton {
+	padding: 0 10px !important;
+	background: transparent;
+	color: var(--muted);
+}
+.listButton:hover {
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+}
+
+/* With / Without: a two-way switch whose thumb slides; either side replays the cut. */
+.listen {
+	position: relative;
+	display: inline-grid;
+	grid-template-columns: 1fr 1fr;
+	padding: 3px;
+	border-radius: 19px;
+	background: rgba(0, 0, 0, 0.32);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.listen button {
+	position: relative;
+	z-index: 1;
+	height: 28px;
+	padding: 0 14px;
+	background: transparent;
+	color: var(--muted);
+}
+.listen button[aria-pressed="true"] {
+	color: var(--fg-emphasis);
+}
+.listen button:hover {
+	color: var(--fg-emphasis);
+}
+.listenThumb {
+	position: absolute;
+	top: 3px;
+	bottom: 3px;
+	left: 3px;
+	width: calc(50% - 3px);
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.14);
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+	transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.listen[data-mode="with"] .listenThumb {
+	transform: translateX(100%);
+}
+
+/* Summary */
+.done {
+	padding: 2px 2px 12px;
+}
+.doneRuntime {
+	display: flex;
+	align-items: baseline;
+	gap: 12px;
+}
+.bigTime {
+	color: var(--fg-emphasis);
+	font: 600 44px/1 var(--font-mono);
+	letter-spacing: -0.03em;
+}
+.fromTime {
+	color: var(--muted);
+	font: 400 14px/1 var(--font-mono);
+}
+.runtimeBar {
+	height: 4px;
+	margin-top: 12px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.1);
+	overflow: hidden;
+}
+.runtimeBar > span {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--editor-accent);
+	transform-origin: left center;
+	transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.doneLine {
+	margin: 10px 0 0;
+	color: var(--muted);
+	font-size: 13px;
+}
+
+/* Working and failed: a slim glass bar in the same place. */
+.slim {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: min(420px, calc(100% - 48px));
+	padding: 10px 12px 10px 18px;
+	border-radius: 20px;
+}
+.slimText {
+	color: var(--fg);
+	font-size: 13px;
+	white-space: nowrap;
+}
+.slimTrack {
+	position: relative;
+	flex: 1;
+	height: 3px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.12);
+	overflow: hidden;
+}
+.slimTrack > span {
+	position: absolute;
+	inset: 0;
+	background: var(--editor-accent);
+	transform-origin: left center;
+	transition: transform 240ms var(--ease);
+}
+.slim[role="alert"] {
+	width: auto;
+}
+.danger {
+	flex: none;
+	color: var(--danger);
+}
+
+/* Small player */
+.pill {
+	padding: 0 12px 0 6px;
+	background: rgba(24, 24, 29, 0.6);
+	-webkit-backdrop-filter: blur(24px) saturate(170%);
+	backdrop-filter: blur(24px) saturate(170%);
+	box-shadow:
+		0 12px 32px rgba(0, 0, 0, 0.45),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+	color: var(--fg-emphasis);
+	pointer-events: auto;
+	animation: hudIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.pill:hover {
+	background: rgba(40, 40, 46, 0.7);
+}
+.pillCount {
+	display: inline-grid;
+	place-items: center;
+	min-width: 22px;
+	height: 22px;
+	padding: 0 6px;
+	box-sizing: border-box;
+	border-radius: 11px;
+	background: #f5f5f7;
+	color: #16161a;
+	font: 600 12px/1 var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.hud,
+	.card,
+	.pill,
+	.flash,
+	.loop[aria-pressed="true"] svg,
+	.removed[data-struck] {
+		animation: none;
+	}
+	.listenThumb,
+	.strengthThumb,
+	.removed,
+	.runtimeBar > span {
+		transition: none;
+	}
+}
+
+/* Cuts that close into one seam: the count, and a dot for each with this one lit. */
+.moment {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--fg-2);
+	font: 500 12px/1 var(--font-mono);
+}
+.momentDots {
+	display: inline-flex;
+	gap: 3px;
+}
+.momentDots > span {
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.22);
+}
+.momentDots > span[data-restored] {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--editor-accent);
+}
+.momentDots > span[data-current] {
+	background: #f5f5f7;
+}
+
+.unsureDot {
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--warn);
+}
+
+.iconButton {
+	width: 28px;
+	height: 28px !important;
+	margin: -6px -8px -6px -2px;
+	padding: 0 !important;
+	border: 0;
+	border-radius: 14px;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+	display: inline-grid;
+	place-items: center;
+}
+.prevButton {
+	margin: -6px -4px -6px 0;
+}
+.iconButton:disabled {
+	opacity: 0.3;
+	cursor: default;
+}
+.iconButton:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fg-emphasis);
+}
+.iconButton:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 2px;
+}
+
+/* Gentle or Clean. Quiet on the card: small, no fill until hovered. */
+.strength {
+	position: relative;
+	display: inline-grid;
+	grid-template-columns: 1fr 1fr;
+	padding: 3px;
+	border-radius: 17px;
+	background: rgba(0, 0, 0, 0.32);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.strength button {
+	position: relative;
+	z-index: 1;
+	height: 26px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 13px;
+	background: transparent;
+	color: var(--muted);
+	font: 500 12.5px/1 var(--font-body);
+	white-space: nowrap;
+	cursor: pointer;
+}
+.strength button[aria-checked="true"],
+.strength button:hover {
+	color: var(--fg-emphasis);
+}
+.strength button:focus-visible {
+	outline: 2px solid var(--editor-accent);
+	outline-offset: 1px;
+}
+.strengthThumb {
+	position: absolute;
+	top: 3px;
+	bottom: 3px;
+	left: 3px;
+	width: calc(50% - 3px);
+	border-radius: 13px;
+	background: rgba(255, 255, 255, 0.14);
+	transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.strength[data-value="clean"] .strengthThumb {
+	transform: translateX(100%);
+}
+.strength[data-quiet] {
+	padding: 2px;
+	background: transparent;
+	box-shadow: none;
+}
+.strength[data-quiet] button {
+	height: 22px;
+	padding: 0 8px;
+	font-size: 11.5px;
+}
+.strength[data-quiet] .strengthThumb {
+	top: 2px;
+	bottom: 2px;
+	left: 2px;
+	width: calc(50% - 2px);
+	background: rgba(255, 255, 255, 0.09);
+}
+
+/* Minimised: the card folds to one glass pill that keeps its place. */
+.minimised {
+	gap: 10px;
+	padding: 0 12px 0 16px;
+}
+.minimised[data-hidden] {
+	opacity: 0;
+	pointer-events: none;
+}
+.pillTime {
+	font: 600 14px/1 var(--font-mono);
+}
+
+/* A rules-only cut, said quietly in the summary and on the small player's pill. */
+.basic {
+	margin-top: 8px;
+}
+.breakdown [data-testid="clean-cut-pauses"] {
+	min-height: 28px;
+}
+.pillBasic {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--fg-2);
+	font-weight: 500;
+}
+.pillTip {
+	position: absolute;
+	bottom: calc(100% + 12px);
+	left: 50%;
+	width: 240px;
+	padding: 8px 10px;
+	border-radius: 10px;
+	background: rgba(24, 24, 29, 0.92);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
+	box-shadow:
+		0 10px 28px rgba(0, 0, 0, 0.45),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+	color: var(--fg);
+	font: 400 12px/1.45 var(--font-body);
+	text-align: left;
+	white-space: normal;
+	opacity: 0;
+	transform: translate(-50%, 4px);
+	transition:
+		opacity 140ms var(--ease),
+		transform 140ms var(--ease);
+	pointer-events: none;
+}
+.pill:hover .pillTip,
+.pill:focus-visible .pillTip {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}

@@ -1,4 +1,4 @@
-import { AlertTriangle, FolderOpen, Trash2, X } from "lucide-react";
+import { Film, FolderOpen, Search, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
 	Dialog,
@@ -11,6 +11,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useScopedT } from "@/contexts/I18nContext";
+import modal from "./Modals.module.css";
 import styles from "./ReviewSurface.module.css";
 
 interface BaseModalProps {
@@ -24,11 +25,13 @@ export function ModalShell({
 	title,
 	subtitle,
 	size = "md",
+	className,
 	children,
 }: BaseModalProps & {
 	title: string;
 	subtitle?: string;
 	size?: "sm" | "md" | "lg" | "xl";
+	className?: string;
 	children: ReactNode;
 }) {
 	const tc = useScopedT("common");
@@ -37,6 +40,7 @@ export function ModalShell({
 		<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
 			<DialogContent
 				size={size}
+				className={className}
 				showCloseButton={false}
 				onOpenAutoFocus={() => {
 					openerRef.current =
@@ -148,20 +152,13 @@ export function OpenProjectModal({
 			title={t(recordingOnly ? "recordingReview.recordings" : "openProjectDialog.title")}
 			subtitle={t(recordingOnly ? "recordingReview.libraryHint" : "openProjectDialog.subtitle")}
 			size="lg"
+			className={modal.library}
 		>
-			<div
-				style={{
-					display: "flex",
-					alignItems: "center",
-					gap: 8,
-					marginBottom: 12,
-				}}
-			>
-				<FolderOpen size={14} style={{ color: "var(--muted)" }} />
+			<label className={modal.search}>
+				<Search size={15} aria-hidden="true" />
 				<input
 					ref={searchRef}
 					type="search"
-					className={styles.modalSearchInput}
 					aria-label={t(
 						recordingOnly
 							? "recordingReview.searchRecordings"
@@ -196,47 +193,13 @@ export function OpenProjectModal({
 							onClose();
 						}
 					}}
-					style={{
-						flex: 1,
-						height: 36,
-						padding: "0 12px",
-						border: "1px solid var(--border)",
-						borderRadius: "var(--r-md)",
-						background: "var(--surface)",
-						color: "var(--fg)",
-						font: "400 13px/1 var(--font-body)",
-						outline: "none",
-					}}
 				/>
-			</div>
-			<div
-				aria-busy={loading}
-				style={{
-					display: "flex",
-					flexDirection: "column",
-					gap: 2,
-					marginBottom: 12,
-					// Cap the list so the footer's "Browse files" button stays visible
-					// instead of being pushed below the fold when there are many projects;
-					// the list scrolls internally. A fixed height keeps the dialog from
-					// jumping when the list replaces the loading line.
-					height: "min(48vh, 420px)",
-					overflowY: "auto",
-					scrollbarWidth: "thin",
-					scrollbarColor: "var(--border-hi) transparent",
-				}}
-			>
+			</label>
+			{/* A fixed height keeps the dialog from jumping when the list replaces the loading
+			    line, and keeps Browse files visible however many recordings there are. */}
+			<div aria-busy={loading} className={modal.list}>
 				{filtered.length === 0 ? (
-					<p
-						role={loadFailed ? "alert" : "status"}
-						style={{
-							color: "var(--muted)",
-							fontSize: 12,
-							padding: 16,
-							margin: "auto 0",
-							textAlign: "center",
-						}}
-					>
+					<p role={loadFailed ? "alert" : "status"} className={modal.empty}>
 						{loading
 							? t("rec.loading")
 							: loadFailed
@@ -253,35 +216,10 @@ export function OpenProjectModal({
 						return (
 							<div key={p.id} style={{ display: "contents" }}>
 								{p.id === confirmId ? (
-									<div
-										style={{
-											display: "flex",
-											alignItems: "center",
-											gap: 8,
-											padding: "10px 12px",
-											borderRadius: "var(--r-md)",
-											background: "var(--danger-soft)",
-											boxShadow: "inset 0 0 0 1px var(--danger-hatch)",
-										}}
-									>
-										<div style={{ minWidth: 0, flex: 1 }}>
-											<div
-												style={{
-													font: "500 13px/1.3 var(--font-body)",
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													whiteSpace: "nowrap",
-												}}
-											>
-												{p.title}
-											</div>
-											<div
-												style={{
-													font: "400 11px/1.4 var(--font-body)",
-													color: "var(--muted)",
-													marginTop: 2,
-												}}
-											>
+									<div className={modal.confirm}>
+										<div className={modal.rowText}>
+											<div className={modal.rowTitle}>{p.title}</div>
+											<div className={modal.confirmText}>
 												{t("openProjectDialog.confirmDelete")}
 											</div>
 										</div>
@@ -312,20 +250,13 @@ export function OpenProjectModal({
 									</div>
 								) : null}
 								<div
-									style={
-										p.id === confirmId
-											? { display: "none" }
-											: {
-													display: "flex",
-													alignItems: "center",
-													gap: 4,
-													contentVisibility: "auto",
-													containIntrinsicSize: "auto 60px",
-												}
-									}
+									className={modal.rowWrap}
+									style={p.id === confirmId ? { display: "none" } : undefined}
 								>
 									<button
 										type="button"
+										className={modal.row}
+										data-active={isActive || undefined}
 										ref={(element) => {
 											if (element) rowRefs.current.set(p.id, element);
 											else rowRefs.current.delete(p.id);
@@ -344,63 +275,19 @@ export function OpenProjectModal({
 											onSelect(p.id);
 											onClose();
 										}}
-										style={{
-											flex: 1,
-											minWidth: 0,
-											display: "grid",
-											gridTemplateColumns: "36px 1fr auto",
-											alignItems: "center",
-											gap: 12,
-											padding: "10px 12px",
-											border: "none",
-											borderRadius: "var(--r-md)",
-											background: isActive ? "var(--accent-wash)" : "transparent",
-											boxShadow: isActive ? "inset 0 0 0 1px var(--accent)" : "none",
-											color: "var(--fg)",
-											cursor: "pointer",
-											textAlign: "left",
-											font: "inherit",
-										}}
 									>
-										<div
-											style={{
-												width: 36,
-												height: 36,
-												borderRadius: "var(--r-sm)",
-												background: "linear-gradient(135deg, var(--brand-lo), var(--brand))",
-												display: "grid",
-												placeItems: "center",
-												color: "var(--accent-on)",
-											}}
-										>
-											<FolderOpen size={18} />
-										</div>
-										<div style={{ minWidth: 0 }}>
-											<div
-												style={{
-													font: "500 13px/1.3 var(--font-body)",
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													whiteSpace: "nowrap",
-												}}
-											>
-												{p.title}
-											</div>
-										</div>
-										<span
-											style={{
-												font: "400 11px/1 var(--font-mono)",
-												color: "var(--meta)",
-												whiteSpace: "nowrap",
-											}}
-										>
+										<span className={modal.rowIcon} aria-hidden="true">
+											<Film size={16} />
+										</span>
+										<span className={modal.rowTitle}>{p.title}</span>
+										<span className={modal.rowDate}>
 											{UPDATED_AT_FORMAT.format(new Date(p.updatedAt))}
 										</span>
 									</button>
 									{allowDelete ? (
 										<button
 											type="button"
-											className={styles.iconBtn}
+											className={`${styles.iconBtn} ${modal.rowDelete}`}
 											onClick={(event) => {
 												confirmReturnFocusRef.current = event.currentTarget;
 												setConfirmId(p.id);
@@ -417,56 +304,21 @@ export function OpenProjectModal({
 					})
 				)}
 			</div>
-			<div
-				style={{
-					display: "flex",
-					justifyContent: "space-between",
-					alignItems: "center",
-					flexWrap: "wrap",
-					gap: 12,
-					paddingTop: 12,
-					borderTop: "1px solid var(--border-soft)",
-				}}
-			>
-				<span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>
-					<kbd
-						style={{
-							font: "500 11px/1 var(--font-mono)",
-							padding: "2px 6px",
-							borderRadius: 4,
-							background: "var(--surface-2)",
-							border: "1px solid var(--border)",
-							color: "var(--fg)",
-						}}
-					>
-						↑↓
-					</kbd>{" "}
-					{t("openProjectDialog.navigateHint")}{" "}
-					<kbd
-						style={{
-							font: "500 11px/1 var(--font-mono)",
-							padding: "2px 6px",
-							borderRadius: 4,
-							background: "var(--surface-2)",
-							border: "1px solid var(--border)",
-							color: "var(--fg)",
-						}}
-					>
-						Enter
-					</kbd>{" "}
+			<div className={modal.footer}>
+				<span className={modal.keys}>
+					<kbd>↑↓</kbd> {t("openProjectDialog.navigateHint")} <kbd>↩</kbd>{" "}
 					{t("openProjectDialog.openHint")}
 				</span>
 				{allowImport ? (
 					<button
 						type="button"
 						className={`${styles.btn} ${styles.btnSecondary}`}
-						style={{ whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}
 						onClick={() => {
 							onBrowse();
 							onClose();
 						}}
 					>
-						<FolderOpen size={14} />
+						<FolderOpen size={15} />
 						{t("openProjectDialog.browseFiles")}
 					</button>
 				) : null}
@@ -493,56 +345,21 @@ export function UnsavedChangesModal({
 	const td = useScopedT("dialogs");
 	const tc = useScopedT("common");
 	const titleKeys: Record<UnsavedChangesModalProps["action"], string> = {
-		close: "modal.closeTitle",
-		new: "modal.newTitle",
-		open: "modal.openTitle",
-		record: "modal.recordTitle",
+		close: "unsavedChanges.modal.closeTitle",
+		new: "unsavedChanges.modal.newTitle",
+		open: "unsavedChanges.modal.openTitle",
+		record: "unsavedChanges.modal.recordTitle",
 	};
 	const copy = {
 		title: td(titleKeys[action]),
-		body: action === "close" ? td("modal.closeBody") : td("modal.sharedBody"),
+		body:
+			action === "close"
+				? td("unsavedChanges.modal.closeBody")
+				: td("unsavedChanges.modal.sharedBody"),
 	};
 	return (
 		<ModalShell open={open} onClose={onClose} title={copy.title} subtitle={copy.body} size="md">
-			<div
-				style={{
-					display: "flex",
-					alignItems: "center",
-					gap: 10,
-					marginBottom: 4,
-				}}
-			>
-				<span
-					style={{
-						display: "grid",
-						placeItems: "center",
-						width: 32,
-						height: 32,
-						borderRadius: 8,
-						background: "var(--warn-soft)",
-						color: "var(--warn)",
-					}}
-				>
-					<AlertTriangle size={16} />
-				</span>
-				<div
-					style={{
-						font: "500 12px var(--font-body)",
-						color: "var(--fg-2)",
-					}}
-				>
-					{td("modal.notSavedYet")}
-				</div>
-			</div>
-			<div
-				style={{
-					display: "flex",
-					justifyContent: "flex-end",
-					gap: 8,
-					paddingTop: 12,
-					borderTop: "1px solid var(--border-soft)",
-				}}
-			>
+			<div className={modal.footer} data-align="end">
 				<button
 					type="button"
 					className={`${styles.btn} ${styles.btnSecondary}`}
@@ -553,11 +370,11 @@ export function UnsavedChangesModal({
 				</button>
 				<button
 					type="button"
-					className={`${styles.btn} ${styles.btnSecondary}`}
+					className={`${styles.btn} ${styles.dangerBtn}`}
 					onClick={() => onChoose("discard")}
 					disabled={busy}
 				>
-					{td("modal.discard")}
+					{td("unsavedChanges.modal.discard")}
 				</button>
 				<button
 					type="button"
@@ -565,7 +382,7 @@ export function UnsavedChangesModal({
 					onClick={() => onChoose("save")}
 					disabled={busy}
 				>
-					{busy ? td("modal.saving") : td("modal.saveAndContinue")}
+					{busy ? td("unsavedChanges.modal.saving") : td("unsavedChanges.modal.saveAndContinue")}
 				</button>
 			</div>
 		</ModalShell>
