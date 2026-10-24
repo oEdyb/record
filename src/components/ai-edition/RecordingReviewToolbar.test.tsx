@@ -272,4 +272,20 @@ describe("clean cut toggle", () => {
 		fireEvent.click(screen.getByRole("button", { name: "cleanCut.reviewCuts (5)" }));
 		expect(onReview).toHaveBeenCalled();
 	});
+
+	it("shows a recording problem as one warning mark whose details open on a click", () => {
+		const onRecord = vi.fn();
+		render(
+			<RecordingReviewToolbar
+				{...props()}
+				onRecord={onRecord}
+				interruptions={[{ code: "original-track-failed", message: "Camera sent no frames." }]}
+			/>,
+		);
+		expect(screen.queryByRole("img", { name: "Klippt" })).toBeNull();
+		fireEvent.click(screen.getByTitle("recordingReview.interrupted"));
+		expect(screen.getByText("Camera sent no frames.")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "recordingReview.recordAgain" }));
+		expect(onRecord).toHaveBeenCalled();
+	});
 });

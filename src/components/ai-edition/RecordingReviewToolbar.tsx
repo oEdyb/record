@@ -10,7 +10,6 @@ import {
 	Plus,
 	TriangleAlert,
 } from "lucide-react";
-import { KlipptMark } from "@/components/brand/KlipptMark";
 import { AppMenu, AppMenuContent, AppMenuItem, AppMenuTrigger } from "@/components/ui/app-menu";
 import { useScopedT } from "@/contexts/I18nContext";
 import { formatPlayerTime } from "@/lib/ai-edition/timeline/format";
@@ -129,7 +128,6 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 				aria-busy={props.preparing}
 			>
 				<div className={styles.identity}>
-					<KlipptMark className={styles.mark} />
 					<div className={styles.titleBlock}>
 						<span className={styles.title} title={props.title ?? undefined}>
 							{props.title ?? "Klippt"}
@@ -140,6 +138,29 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 							<span className={styles.meta}>{props.meta}</span>
 						) : null}
 					</div>
+					{!props.handoffError && props.interruptions?.length ? (
+						<details className={styles.issue}>
+							<summary
+								aria-label={t("recordingReview.interrupted")}
+								title={t("recordingReview.interrupted")}
+							>
+								<TriangleAlert size={14} aria-hidden="true" />
+							</summary>
+							<div className={styles.issuePopover} role="status">
+								<strong>{t("recordingReview.interrupted")}</strong>
+								{props.interruptions.map((entry, index) => (
+									<p key={`${entry.code}-${index}`}>{entry.message}</p>
+								))}
+								<button
+									type="button"
+									disabled={props.readOnly || props.busy || props.preparing}
+									onClick={props.onRecord}
+								>
+									{t("recordingReview.recordAgain")}
+								</button>
+							</div>
+						</details>
+					) : null}
 				</div>
 				<div className={styles.actions}>
 					{props.entitlementLabel ? (
@@ -322,26 +343,6 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 					</div>
 					<button type="button" onClick={props.onRetryHandoff} disabled={props.busy}>
 						{t("recordingReview.retryOpen")}
-					</button>
-				</aside>
-			) : props.interruptions?.length ? (
-				<aside className={styles.interruption} role="status">
-					<div>
-						<strong>{t("recordingReview.interrupted")}</strong>
-						<p>{t("recordingReview.savedFootageRetained")}</p>
-						<details>
-							<summary>{t("recordingReview.interruptionDetails")}</summary>
-							{props.interruptions.map((entry, index) => (
-								<p key={`${entry.code}-${index}`}>{entry.message}</p>
-							))}
-						</details>
-					</div>
-					<button
-						type="button"
-						disabled={props.readOnly || props.busy || props.preparing}
-						onClick={props.onRecord}
-					>
-						{t("recordingReview.recordAgain")}
 					</button>
 				</aside>
 			) : null}
