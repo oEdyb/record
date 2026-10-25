@@ -19,7 +19,11 @@ import {
 	initialHudBounds,
 	resizeHudAroundPill,
 } from "./hudDragGeometry";
-import { shouldShowHudInactive, shouldStartHudClickThrough } from "./hudInputPolicy";
+import {
+	hudPointerProbe,
+	shouldShowHudInactive,
+	shouldStartHudClickThrough,
+} from "./hudInputPolicy";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import {
 	localRectanglesContainScreenPoint,
@@ -381,9 +385,40 @@ ipcMain.on("hud-overlay-hide", () => {
 	}
 });
 
+// While the HUD takes the mouse, check where the cursor is: an inactive app can miss the
+// pointer leaving the pill, and the invisible window would then swallow the next click
+// meant for another app. Outside the window it goes click-through at once; inside, the
+// renderer decides from what is painted under the cursor.
+const HUD_POINTER_WATCH_MS = 100;
+let hudPointerWatch: ReturnType<typeof setInterval> | null = null;
+
+function stopHudPointerWatch() {
+	if (hudPointerWatch) clearInterval(hudPointerWatch);
+	hudPointerWatch = null;
+}
+
+function startHudPointerWatch(win: BrowserWindow) {
+	if (hudPointerWatch || process.platform === "linux") return;
+	hudPointerWatch = setInterval(() => {
+		if (win.isDestroyed()) {
+			stopHudPointerWatch();
+			return;
+		}
+		if (hudDragOrigin) return;
+		const local = hudPointerProbe(screen.getCursorScreenPoint(), win.getContentBounds());
+		if (!local) {
+			stopHudPointerWatch();
+			win.setIgnoreMouseEvents(true, { forward: true });
+		}
+		win.webContents.send("hud-overlay-pointer-check", local);
+	}, HUD_POINTER_WATCH_MS);
+}
+
 ipcMain.on("hud-overlay-ignore-mouse-events", (_event, ignore: boolean) => {
 	if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
 		hudOverlayWindow.setIgnoreMouseEvents(ignore, { forward: true });
+		if (ignore) stopHudPointerWatch();
+		else startHudPointerWatch(hudOverlayWindow);
 	}
 });
 

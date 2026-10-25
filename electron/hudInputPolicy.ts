@@ -14,3 +14,25 @@ export function shouldStartHudClickThrough(platform: NodeJS.Platform): boolean {
 export function shouldShowHudInactive(platform: NodeJS.Platform): boolean {
 	return platform === "darwin";
 }
+
+interface Point {
+	x: number;
+	y: number;
+}
+
+interface Rect extends Point {
+	width: number;
+	height: number;
+}
+
+/**
+ * Where the cursor sits inside the HUD's content, or null once it has left the window.
+ * While the HUD takes the mouse, an inactive app may get no pointer events to say the
+ * pointer left the pill, so the main process asks this on a timer instead.
+ */
+export function hudPointerProbe(cursor: Point, content: Rect): Point | null {
+	const x = cursor.x - content.x;
+	const y = cursor.y - content.y;
+	if (x < 0 || y < 0 || x >= content.width || y >= content.height) return null;
+	return { x, y };
+}

@@ -115,6 +115,8 @@ interface Window {
 		selectSource: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
 		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
 		onSelectedSourceChanged: (callback: (source: ProcessedDesktopSource) => void) => () => void;
+		/** Where the cursor sits in the HUD while it takes the mouse; null once it left the window. */
+		onHudPointerCheck?: (callback: (point: { x: number; y: number } | null) => void) => () => void;
 		onHudVisibilityChanged?: (callback: (visible: boolean) => void) => () => void;
 		/** Work area of the display under the HUD's pill, which the window may extend past. */
 		onHudWorkAreaChanged?: (

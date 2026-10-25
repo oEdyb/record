@@ -810,9 +810,9 @@ export function LaunchWindow() {
 
 	const hudIgnoreMouseEventsRef = useRef<boolean | undefined>(undefined);
 	const setHudMouseEventsEnabled = useCallback(
-		(enabled: boolean) => {
+		(enabled: boolean, force = false) => {
 			const shouldIgnoreMouseEvents = !enabled && !isLinuxHud;
-			if (hudIgnoreMouseEventsRef.current === shouldIgnoreMouseEvents) {
+			if (!force && hudIgnoreMouseEventsRef.current === shouldIgnoreMouseEvents) {
 				return;
 			}
 			hudIgnoreMouseEventsRef.current = shouldIgnoreMouseEvents;
@@ -1455,6 +1455,26 @@ export function LaunchWindow() {
 				isPaintedHudSurface(event.target instanceof Element ? event.target : null),
 			);
 		},
+		[setHudMouseEventsEnabled],
+	);
+
+	// The main process reports the cursor while the HUD takes the mouse, because an inactive
+	// app can miss the pointer leaving the pill.
+	useEffect(
+		() =>
+			window.electronAPI?.onHudPointerCheck?.((point) => {
+				if (isDraggingHudRef.current) return;
+				if (!point) {
+					lastPointerRef.current = null;
+					setHudMouseEventsEnabled(false);
+					return;
+				}
+				lastPointerRef.current = point;
+				// The main process only asks while the window takes the mouse, so answer even
+				// when this side already believed it was click-through.
+				const painted = isPaintedHudSurface(document.elementFromPoint(point.x, point.y));
+				setHudMouseEventsEnabled(painted, !painted);
+			}),
 		[setHudMouseEventsEnabled],
 	);
 

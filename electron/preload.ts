@@ -300,6 +300,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("hud-overlay-work-area", listener);
 		return () => ipcRenderer.removeListener("hud-overlay-work-area", listener);
 	},
+	onHudPointerCheck: (callback: (point: { x: number; y: number } | null) => void) => {
+		const listener = (_event: unknown, point: { x: number; y: number } | null) => callback(point);
+		ipcRenderer.on("hud-overlay-pointer-check", listener);
+		return () => ipcRenderer.removeListener("hud-overlay-pointer-check", listener);
+	},
 	onHudVisibilityChanged: (callback: (visible: boolean) => void) => {
 		const listener = (_event: unknown, visible: boolean) => callback(visible === true);
 		ipcRenderer.on("hud-visibility-changed", listener);
