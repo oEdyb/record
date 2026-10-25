@@ -10,6 +10,7 @@
 		"openStudio": "Abrir Studio",
 		"minimizeHud": "Haz clic para minimizar, arrastra para mover",
 		"expandHud": "Haz clic para ver todos los controles, arrastra para mover",
+		"tuckHud": "Esconder arriba",
 		"notesToolbar": {
 			"bold": "Negrita",
 			"italic": "Cursiva",

@@ -2465,6 +2465,46 @@ describe("LaunchWindow minimized pill", () => {
 
 		expect(pill()).toHaveAttribute("data-tucked", "top");
 	});
+
+	it("tucks the pill into the top edge from its button, sliding it out of sight first", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("hud-tuck-button"));
+
+		expect(pill()).toHaveAttribute("data-tucked", "top");
+		expect(window.electronAPI.setHudDock).not.toHaveBeenCalled();
+		await waitFor(() => expect(window.electronAPI.setHudDock).toHaveBeenCalledWith("top"));
+
+		dock("top");
+		expect(screen.getByTestId("hud-dock-tab")).toHaveAttribute("data-side", "top");
+	});
+
+	it("brings the pill back when main will not tuck it into the top edge", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("hud-tuck-button"));
+		await waitFor(() => expect(window.electronAPI.setHudDock).toHaveBeenCalledWith("top"));
+
+		dock(null);
+
+		expect(pill()).not.toHaveAttribute("data-tucked");
+	});
+
+	it("offers the tuck button while recording but not on the folded pill", async () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudMinimized: true }));
+		const view = renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		expect(screen.queryByTestId("hud-tuck-button")).toBeNull();
+
+		recorderState.value.recording = true;
+		recorderState.value.elapsedSeconds = 3;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("hud-tuck-button")).toBeInTheDocument();
+	});
 });
 
 describe("LaunchWindow panel placement", () => {

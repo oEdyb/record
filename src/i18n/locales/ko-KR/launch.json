@@ -10,6 +10,7 @@
 		"openStudio": "스튜디오 열기",
 		"minimizeHud": "클릭하여 최소화, 드래그하여 이동",
 		"expandHud": "클릭하여 모든 컨트롤 표시, 드래그하여 이동",
+		"tuckHud": "위쪽에 숨기기",
 		"notesToolbar": {
 			"bold": "굵게",
 			"italic": "기울임꼴",

@@ -325,6 +325,29 @@ export const HudSettingsButton = memo(function HudSettingsButton({
 	);
 });
 
+/** Sends the pill up into the top edge as a tab, one click instead of a drag. */
+export const HudTuckButton = memo(function HudTuckButton({
+	label,
+	onClick,
+}: {
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<Tooltip content={label}>
+			<button
+				type="button"
+				data-testid="hud-tuck-button"
+				aria-label={label}
+				className={hudIconBtnClasses}
+				onClick={onClick}
+			>
+				<ChevronUp size={18} aria-hidden />
+			</button>
+		</Tooltip>
+	);
+});
+
 export const HudRemovePreviousClipButton = memo(function HudRemovePreviousClipButton({
 	disabled,
 	label,

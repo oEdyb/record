@@ -10,6 +10,7 @@
 		"openStudio": "スタジオを開く",
 		"minimizeHud": "クリックで最小化、ドラッグで移動",
 		"expandHud": "クリックですべてのコントロールを表示、ドラッグで移動",
+		"tuckHud": "上端にしまう",
 		"notesToolbar": {
 			"bold": "太字",
 			"italic": "斜体",

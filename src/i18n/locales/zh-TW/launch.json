@@ -10,6 +10,7 @@
 		"openStudio": "開啟工作室",
 		"minimizeHud": "按一下以最小化，拖曳以移動",
 		"expandHud": "按一下以顯示所有控制項，拖曳以移動",
+		"tuckHud": "收到頂部",
 		"notesToolbar": {
 			"bold": "粗體",
 			"italic": "斜體",

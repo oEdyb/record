@@ -38,6 +38,14 @@
 	pointer-events: none;
 }
 
+/* The top edge is no screen edge: the menu bar sits above it. Going into it or
+   coming out of it, the pill and its tab are cut off at the pill's top, so they
+   pass behind that line instead of over the menu bar. Nothing floats above a
+   tucked pill, so nothing else is cut. */
+.hudAnchor[data-top-edge] {
+	clip-path: inset(0 -2000px -2000px -2000px);
+}
+
 /* Floats beside the pill without moving it: above by default, below when the
    pill is near the top of the display. The first child sits closest to the bar. */
 .hudAbove {

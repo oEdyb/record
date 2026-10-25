@@ -10,6 +10,7 @@
 		"openStudio": "Open Studio",
 		"minimizeHud": "Click to minimize, drag to move",
 		"expandHud": "Click to show all controls, drag to move",
+		"tuckHud": "Tuck to the top",
 		"notesToolbar": {
 			"bold": "Bold",
 			"italic": "Italic",

@@ -42,6 +42,7 @@ import {
 	HudSourceChip,
 	HudStopButton,
 	HudSystemAudioButton,
+	HudTuckButton,
 } from "./HudControls";
 import {
 	HudDeviceSettings,
@@ -92,6 +93,8 @@ const HUD_PILL_WIDTH = 424;
 const HUD_PILL_HEIGHT = 50;
 /** How long the tab takes to slide back into its edge; matches .hudDockTab[data-closing]. */
 const HUD_DOCK_TAB_EXIT_MS = 160;
+/** How long the pill takes to slide out of sight; matches .hudBar[data-tucked]. */
+const HUD_TUCK_SLIDE_MS = 240;
 /** A pointer resting on the tab this long slides the pill out; one passing by does not. */
 const HUD_DOCK_PEEK_OPEN_MS = 150;
 /** How long the pill stays out after the pointer leaves it. */
@@ -246,7 +249,10 @@ export function LaunchWindow() {
 	const [hudDock, setHudDock] = useState<HudDockSide | null>(null);
 	const dockedSide = canMinimize ? hudDock : null;
 	const [dockPeek, setDockPeek] = useState(false);
-	const tuckedSide = dockedSide && !dockPeek ? dockedSide : null;
+	// The tuck button slides the pill up out of sight first; main then moves the
+	// hidden pill to the top edge and the tab slides down there.
+	const [tuckingTop, setTuckingTop] = useState(false);
+	const tuckedSide = dockedSide && !dockPeek ? dockedSide : tuckingTop ? "top" : null;
 	const dockedSideRef = useRef(dockedSide);
 	dockedSideRef.current = dockedSide;
 	// Tucking back in on launch happens before the pill is ever seen, so it does not slide.
@@ -502,6 +508,7 @@ export function LaunchWindow() {
 		const off = window.electronAPI?.onHudDockChanged?.((side) => {
 			// Panels close as the pill tucks in; one that opens later brings it back out.
 			if (side) closePopovers();
+			setTuckingTop(false);
 			setDockInstant(side !== null && side === restoring);
 			restoring = null;
 			setHudDock(side);
@@ -514,6 +521,23 @@ export function LaunchWindow() {
 	useEffect(() => {
 		if (!dockedSide) setDockPeek(false);
 	}, [dockedSide]);
+
+	const tuckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	useEffect(
+		() => () => {
+			if (tuckTimerRef.current) clearTimeout(tuckTimerRef.current);
+		},
+		[],
+	);
+	const tuckToTop = useCallback(() => {
+		closePopovers();
+		setTuckingTop(true);
+		if (tuckTimerRef.current) clearTimeout(tuckTimerRef.current);
+		tuckTimerRef.current = setTimeout(
+			() => window.electronAPI?.setHudDock?.("top"),
+			HUD_TUCK_SLIDE_MS,
+		);
+	}, [closePopovers]);
 
 	const undockHud = useCallback((fromKeyboard: boolean) => {
 		refocusGripRef.current = fromKeyboard;
@@ -1966,7 +1990,12 @@ export function LaunchWindow() {
 			    beside it stacks above it, or below it when the pill is near the top of the display.
 			    Everything is laid out by flexbox relative to the pill, so no popover
 			    needs a measured position and none of them can move the window. */}
-			<div ref={hudAnchorRef} className={styles.hudAnchor} data-placement={stackPlacement}>
+			<div
+				ref={hudAnchorRef}
+				className={styles.hudAnchor}
+				data-placement={stackPlacement}
+				data-top-edge={tuckedSide === "top" || shownDockSide === "top" || undefined}
+			>
 				<div
 					ref={setHudBarEl}
 					data-hud-interactive="true"
@@ -2025,6 +2054,9 @@ export function LaunchWindow() {
 								label={t("peek.open")}
 								onClick={togglePeek}
 							/>
+							{canMinimize ? (
+								<HudTuckButton label={t("tooltips.tuckHud")} onClick={tuckToTop} />
+							) : null}
 							<HudSettingsButton
 								disabled={starting || saving}
 								expanded={isDeviceSettingsOpen}
@@ -2093,6 +2125,9 @@ export function LaunchWindow() {
 								label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
 								onClick={toggleWebcam}
 							/>
+							{canMinimize ? (
+								<HudTuckButton label={t("tooltips.tuckHud")} onClick={tuckToTop} />
+							) : null}
 							<HudSettingsButton
 								disabled={starting || saving}
 								expanded={isDeviceSettingsOpen}
