@@ -87,18 +87,12 @@ export function CleanCutStage(props: CleanCutStageProps) {
 					<CleanCutSheet
 						open={listOpen}
 						model={props.model}
-						moments={props.moments}
 						guide={props.guide}
 						clips={props.clips}
 						fromSec={props.fromSec}
 						toSec={props.toSec}
 						toPlaybackSec={props.toPlaybackSec}
 						onClose={() => onListOpen(false)}
-						onPick={(cut) => {
-							onCollapse(false);
-							props.onSelectCut(cut);
-							onListOpen(false);
-						}}
 						onSelectCut={props.onSelectCut}
 						onSeekRaw={props.onSeekRaw}
 					/>

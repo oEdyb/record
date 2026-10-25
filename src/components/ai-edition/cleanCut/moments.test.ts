@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { ReviewCut } from "@/lib/cleanCut/reviewModel";
 import type { CleanCutKind } from "@/lib/cleanCut/types";
 import { blockTarget, layoutCutBlocks } from "./cutBlocks";
-import { buildCutRows } from "./cutRows";
 import {
 	groupMoments,
 	momentsById,
@@ -69,45 +68,6 @@ describe("groupMoments", () => {
 	it("leaves pauses out: they are not word cuts", () => {
 		const cuts = [cut("p", 5, 6, { kind: "pause" }), cut("w", 50, 51)];
 		expect(groupMoments(cuts, (sec) => sec).map((m) => m.key)).toEqual(["w"]);
-	});
-});
-
-describe("buildCutRows", () => {
-	const cuts = [
-		cut("a", 240, 270, { risky: true, words: ["now", "the", "skills"] }),
-		cut("b", 270, 290, { words: ["skills", "again"] }),
-		cut("c", 290, 291, { kind: "filler", words: ["um"] }),
-	];
-	const moments = groupMoments(cuts, removed(cuts));
-
-	it("lists each moment once, with the same count and time, unsure moments first", () => {
-		const sections = buildCutRows(moments, "", new Set());
-		expect(
-			sections.map((s) => [s.unsure, s.count, s.removedSec, s.rows.map((r) => r.key)]),
-		).toEqual([[true, 1, 51, ["m:a"]]]);
-		const [row] = sections[0].rows;
-		expect(row.type === "moment" && row.moment.cuts.length).toBe(3);
-	});
-
-	it("opens a moment to show each of its cuts", () => {
-		const [unsure] = buildCutRows(moments, "", new Set(["a"]));
-		expect(unsure.rows.map((r) => r.key)).toEqual(["m:a", "c:a", "c:b", "c:c"]);
-	});
-
-	it("keeps moments with a matching cut, opened on the matches, figures whole", () => {
-		const sections = buildCutRows(moments, "Again", new Set());
-		expect(sections.flatMap((s) => s.rows.map((r) => r.key))).toEqual(["m:a", "c:b"]);
-		expect(sections[0].removedSec).toBe(51);
-		expect(buildCutRows(moments, "nothing like this", new Set())).toEqual([]);
-	});
-
-	it("puts sure moments in their own section", () => {
-		const sure = [cut("x", 10, 12), cut("y", 500, 503, { risky: true })];
-		const sections = buildCutRows(groupMoments(sure, removed(sure)), "", new Set());
-		expect(sections.map((s) => [s.unsure, s.count, s.rows.map((r) => r.key)])).toEqual([
-			[true, 1, ["c:y"]],
-			[false, 1, ["c:x"]],
-		]);
 	});
 });
 

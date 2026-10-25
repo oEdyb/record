@@ -1,23 +1,5 @@
-import {
-	AlignLeft,
-	AudioLines,
-	List,
-	Play,
-	Repeat,
-	RotateCcw,
-	Scissors,
-	Search,
-	X,
-} from "lucide-react";
-import {
-	type KeyboardEvent,
-	type ReactNode,
-	useEffect,
-	useId,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { AlignLeft, List, Scissors, Search, X } from "lucide-react";
+import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { formatPlayerTime } from "@/lib/ai-edition/timeline/format";
@@ -25,12 +7,10 @@ import type { CleanCutReviewModel, ReviewCut } from "@/lib/cleanCut/reviewModel"
 import { useCleanCutStore } from "@/lib/cleanCut/store";
 import { userCutRegion } from "@/lib/cleanCut/userCuts";
 import { BasicCutNotice } from "./BasicCutNotice";
-import { CleanCutList } from "./CleanCutList";
+import { CleanCutRows, CutControls, CutWhy, useCutLabel } from "./CleanCutRows";
 import styles from "./CleanCutSheet.module.css";
-import { CleanCutTranscript, type TranscriptChip } from "./CleanCutTranscript";
-import { buildCutRows, type CutRow } from "./cutRows";
-import { cleanCutKindKey } from "./labels";
-import { type CutMoment, pauseCuts, spokenSecByRegion } from "./moments";
+import { CleanCutTranscript } from "./CleanCutTranscript";
+import { pauseCuts, spokenSecByRegion } from "./moments";
 import { PausesRow } from "./PausesRow";
 import { RollingTime } from "./RollingTime";
 import { StrengthSwitch } from "./StrengthSwitch";
@@ -39,7 +19,6 @@ import type { CleanCutGuide } from "./useCleanCutGuide";
 interface CleanCutSheetProps {
 	open: boolean;
 	model: CleanCutReviewModel;
-	moments: readonly CutMoment[];
 	/** Plays the picked cut with or without it, once or on a loop. */
 	guide: CleanCutGuide;
 	clips: readonly AxcutClip[];
@@ -47,154 +26,51 @@ interface CleanCutSheetProps {
 	toSec: number;
 	toPlaybackSec: (rawSec: number) => number;
 	onClose: () => void;
-	/** Shows a cut on the card and closes the sheet. */
-	onPick: (cut: ReviewCut) => void;
-	/** Shows a cut on the card and keeps the sheet open, for reading the transcript. */
+	/** Picks a cut and plays it, keeping the sheet open. */
 	onSelectCut: (cut: ReviewCut) => void;
 	onSeekRaw: (rawSec: number) => void;
 }
 
-/** The picked cut: hear it without or with, once or on a loop, and restore it. */
-function ListenBar({ guide, cut }: { guide: CleanCutGuide; cut: ReviewCut }) {
-	const t = useScopedT("editor");
-	return (
-		<div className={styles.listenBar}>
-			<p className={styles.listenWhy}>
-				<strong>{t(cleanCutKindKey(cut.region.kind))}</strong>
-				{cut.region.reason ? ` · ${cut.region.reason}` : null}
-			</p>
-			<div className={styles.listenRow}>
-				<div className={styles.listenSwitch} role="group" aria-label={t("cleanCut.hud.listen")}>
-					{(["without", "with"] as const).map((mode) => (
-						<button
-							key={mode}
-							type="button"
-							aria-pressed={guide.listen === mode}
-							title={t(mode === "with" ? "cleanCut.hud.withTitle" : "cleanCut.hud.withoutTitle")}
-							onClick={() => guide.setListen(mode)}
-						>
-							{mode === "without" ? (
-								<Scissors size={13} aria-hidden="true" />
-							) : (
-								<AudioLines size={13} aria-hidden="true" />
-							)}
-							{t(`cleanCut.hud.${mode}`)}
-						</button>
-					))}
-				</div>
-				<button
-					type="button"
-					className={styles.listenIcon}
-					aria-label={t("cleanCut.hud.listen")}
-					title={t("cleanCut.hud.listen")}
-					onClick={guide.replay}
-				>
-					<Play size={13} aria-hidden="true" />
-				</button>
-				<button
-					type="button"
-					className={styles.listenIcon}
-					aria-pressed={guide.looping}
-					aria-label={t("cleanCut.hud.loopTitle")}
-					title={`${t("cleanCut.hud.loopTitle")} (L)`}
-					onClick={guide.toggleLoop}
-				>
-					<Repeat size={13} aria-hidden="true" />
-				</button>
-				<button
-					type="button"
-					className={styles.listenRestore}
-					data-restored={cut.restored || undefined}
-					onClick={() => useCleanCutStore.getState().toggleRestore(cut.region.id)}
-				>
-					{cut.restored ? (
-						<Scissors size={13} aria-hidden="true" />
-					) : (
-						<RotateCcw size={13} aria-hidden="true" />
-					)}
-					{cut.restored ? t("cleanCut.cutAgain") : t("cleanCut.restore")}
-				</button>
-			</div>
-		</div>
-	);
+/** Whether a search matches a cut by its words or its kind. */
+function matchesCut(cut: ReviewCut, label: string, query: string): boolean {
+	const needle = query.trim().toLowerCase();
+	if (!needle) return true;
+	return `${label} ${cut.region.words.join(" ")}`.toLowerCase().includes(needle);
 }
 
 /**
- * Every cut, one key away (⌘K or C). Everything reads the whole recording with each cut
- * struck and named by a chip; Only cuts lists them. Search is focused on open; in the list the
- * arrows move, Return shows a cut, Shift-Return restores it. The bar at the bottom plays the
- * picked cut without or with it.
+ * Every cut, one key away (⌘K or C). Cuts lists them in recording order and opens the picked
+ * one in place; Transcript reads the whole recording with cut words struck. The arrows move
+ * between cuts, Space plays the picked one again, Esc closes.
  */
 export function CleanCutSheet(props: CleanCutSheetProps) {
 	const t = useScopedT("editor");
-	const listId = useId();
+	const label = useCutLabel();
 	const snapshot = useCleanCutStore((s) => s.snapshot);
 	const strength = useCleanCutStore((s) => s.strength);
 	const selectedId = useCleanCutStore((s) => s.selectedId);
 	const view = useCleanCutStore((s) => s.view);
 	const [query, setQuery] = useState("");
-	const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(new Set());
-	const [activeKey, setActiveKey] = useState<string | null>(null);
+	const [sentence, setSentence] = useState<[number, number] | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	const sections = useMemo(
-		() => buildCutRows(props.moments, query, openKeys),
-		[props.moments, query, openKeys],
-	);
-	const rows = useMemo(() => sections.flatMap((section) => section.rows), [sections]);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: each opening starts from the cut on the card.
 	useEffect(() => {
 		if (!props.open) return;
-		const moment = props.moments.find((entry) =>
-			entry.cuts.some((cut) => cut.region.id === selectedId),
-		);
-		if (moment) setOpenKeys((keys) => new Set(keys).add(moment.key));
-		setActiveKey(selectedId ? `c:${selectedId}` : null);
 		const frame = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
 		return () => cancelAnimationFrame(frame);
 	}, [props.open]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a picked cut or another view drops the sentence.
+	useEffect(() => setSentence(null), [selectedId, view]);
 
-	const activeIndex = Math.max(
-		0,
-		rows.findIndex((row) => row.key === activeKey),
+	const cuts = useMemo(
+		() =>
+			props.model.strip
+				.filter((cut) => cut.region.kind !== "pause")
+				.filter((cut) => matchesCut(cut, label(cut), query)),
+		[props.model.strip, label, query],
 	);
-	const active = rows[activeIndex] ?? null;
-
-	const toggleMoment = (key: string) =>
-		setOpenKeys((keys) => {
-			const next = new Set(keys);
-			if (next.has(key)) next.delete(key);
-			else next.add(key);
-			return next;
-		});
-	const activate = (row: CutRow) => {
-		setActiveKey(row.key);
-		if (row.type === "moment") toggleMoment(row.moment.key);
-		else props.onPick(row.cut);
-	};
-	const toggleRestore = (cut: ReviewCut) =>
-		useCleanCutStore.getState().toggleRestore(cut.region.id);
-
-	const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-		if (event.key === "Escape") {
-			event.preventDefault();
-			event.stopPropagation();
-			props.onClose();
-			return;
-		}
-		if (view !== "cuts" || rows.length === 0) return;
-		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-			event.preventDefault();
-			const step = event.key === "ArrowDown" ? 1 : -1;
-			setActiveKey(rows[Math.min(rows.length - 1, Math.max(0, activeIndex + step))].key);
-		} else if (event.key === "Enter" && active) {
-			event.preventDefault();
-			if (event.shiftKey && active.type === "cut") toggleRestore(active.cut);
-			else if (!event.shiftKey) activate(active);
-		}
-	};
-
+	const spoken = useMemo(() => spokenSecByRegion(snapshot.words), [snapshot.words]);
+	const pauses = useMemo(() => pauseCuts(props.model.strip), [props.model.strip]);
 	const cutIds = useMemo(
 		() => new Set(props.model.strip.filter((cut) => !cut.restored).map((cut) => cut.region.id)),
 		[props.model.strip],
@@ -204,19 +80,26 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 		[props.model.strip],
 	);
 	const byId = (id: string) => props.model.strip.find((cut) => cut.region.id === id);
-	const chips = useMemo(() => {
-		const map = new Map<string, TranscriptChip>();
-		for (const cut of props.model.strip)
-			map.set(cut.region.id, {
-				label: t(cleanCutKindKey(cut.region.kind)),
-				removedSec: cut.removedSec,
-				unsure: cut.region.risky,
-			});
-		return map;
-	}, [props.model.strip, t]);
 	const picked = props.guide.current ? byId(props.guide.current.region.id) : undefined;
-	const spoken = useMemo(() => spokenSecByRegion(snapshot.words), [snapshot.words]);
-	const pauses = useMemo(() => pauseCuts(props.model.strip), [props.model.strip]);
+
+	const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			props.onClose();
+			return;
+		}
+		if (view !== "cuts" || cuts.length === 0) return;
+		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+			event.preventDefault();
+			const index = cuts.findIndex((cut) => cut.region.id === selectedId);
+			const next =
+				index === -1
+					? 0
+					: Math.min(cuts.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)));
+			props.onSelectCut(cuts[next]);
+		}
+	};
 
 	let body: ReactNode;
 	if (view === "transcript") {
@@ -227,25 +110,18 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				clips={props.clips}
 				cutIds={cutIds}
 				restoredIds={restoredIds}
-				chips={chips}
 				selectedId={selectedId}
+				sentence={sentence}
 				query={query}
 				label={t("cleanCut.transcript")}
 				toPlaybackSec={props.toPlaybackSec}
 				onSelectRegion={(id) => {
 					const cut = byId(id);
+					setSentence(null);
 					if (cut) props.onSelectCut(cut);
 				}}
 				onSeekRaw={props.onSeekRaw}
-				onToggleRestore={(id) => {
-					const cut = byId(id);
-					if (cut) toggleRestore(cut);
-				}}
-				onCutSentence={(first, last) =>
-					useCleanCutStore
-						.getState()
-						.cutSentence(userCutRegion(snapshot.words, snapshot.keep, first, last))
-				}
+				onPickSentence={(first, last) => setSentence([first, last])}
 			/>
 		);
 	} else if (props.model.cuts.length === 0) {
@@ -263,7 +139,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				) : null}
 			</div>
 		);
-	} else if (rows.length === 0) {
+	} else if (cuts.length === 0) {
 		body = (
 			<div className={styles.message}>
 				<strong>{t("cleanCut.noMatch")}</strong>
@@ -272,22 +148,66 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 	} else {
 		body = (
 			<>
-				<CleanCutList
-					id={listId}
-					sections={sections}
-					activeKey={active?.key ?? null}
+				<CleanCutRows
+					cuts={cuts}
 					selectedId={selectedId}
+					guide={props.guide}
 					spoken={spoken}
-					onHover={setActiveKey}
-					onActivate={activate}
-					onToggleRestore={toggleRestore}
+					onSelect={props.onSelectCut}
 				/>
-				{query.trim() ? null : (
+				{query.trim() || pauses.length === 0 ? null : (
 					<div className={styles.pauses}>
 						<PausesRow pauses={pauses} />
 					</div>
 				)}
 			</>
+		);
+	}
+
+	let footer: ReactNode = null;
+	if (view === "transcript" && sentence) {
+		footer = (
+			<div className={styles.footer}>
+				<p className={styles.footerWords}>
+					{snapshot.words
+						.slice(sentence[0], sentence[1] + 1)
+						.map((word) => word.text)
+						.join(" ")}
+				</p>
+				<div className={styles.footerActions}>
+					<button type="button" className={styles.secondary} onClick={() => setSentence(null)}>
+						{t("cleanCut.hud.close")}
+					</button>
+					<button
+						type="button"
+						className={styles.cutSentence}
+						onClick={() => {
+							useCleanCutStore
+								.getState()
+								.cutSentence(
+									userCutRegion(snapshot.words, snapshot.keep, sentence[0], sentence[1]),
+								);
+							setSentence(null);
+						}}
+					>
+						<Scissors size={13} aria-hidden="true" />
+						{t("cleanCut.cutSentence")}
+					</button>
+				</div>
+			</div>
+		);
+	} else if (view === "transcript" && picked) {
+		footer = (
+			<div className={styles.footer}>
+				<p className={styles.footerTitle}>
+					<span data-unsure={(picked.region.risky && !picked.restored) || undefined}>
+						{label(picked)}
+					</span>
+					<span className={styles.footerTime}>{formatPlayerTime(picked.rawStartSec)}</span>
+				</p>
+				<CutWhy cut={picked} spoken={spoken} />
+				<CutControls guide={props.guide} cut={picked} />
+			</div>
 		);
 	}
 
@@ -307,17 +227,10 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 					value={query}
 					placeholder={t(view === "transcript" ? "cleanCut.searchTranscript" : "cleanCut.search")}
 					aria-label={t(view === "transcript" ? "cleanCut.searchTranscript" : "cleanCut.search")}
-					role="combobox"
 					autoComplete="off"
 					autoCorrect="off"
 					spellCheck={false}
-					aria-expanded={view === "cuts"}
-					aria-controls={listId}
-					aria-activedescendant={view === "cuts" && active ? `${listId}-${active.key}` : undefined}
-					onChange={(event) => {
-						setQuery(event.target.value);
-						setActiveKey(null);
-					}}
+					onChange={(event) => setQuery(event.target.value)}
 				/>
 				<button
 					type="button"
@@ -341,7 +254,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				</div>
 			) : null}
 			<div className={styles.tabs} role="tablist" aria-label={t("cleanCut.panel")}>
-				{(["transcript", "cuts"] as const).map((value) => (
+				{(["cuts", "transcript"] as const).map((value) => (
 					<button
 						key={value}
 						type="button"
@@ -362,7 +275,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				))}
 			</div>
 			<div className={styles.body}>{body}</div>
-			{picked ? <ListenBar guide={props.guide} cut={picked} /> : null}
+			{footer}
 		</div>
 	);
 }

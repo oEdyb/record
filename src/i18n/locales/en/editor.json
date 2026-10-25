@@ -252,7 +252,7 @@
 		"restore": "Keep it",
 		"cutAgain": "Cut again",
 		"cutSentence": "Cut",
-		"restored": "Restored",
+		"restored": "Kept",
 		"none": "No cuts found.",
 		"noneGentle": "No cuts two checks agree on.",
 		"useClean": "Use Clean",

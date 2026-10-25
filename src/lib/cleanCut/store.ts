@@ -94,13 +94,13 @@ export const useCleanCutStore = create<CleanCutStore>((set, get) => ({
 	enabled: false,
 	projectId: null,
 	strength: "clean",
-	view: "transcript",
+	view: "cuts",
 	attempt: 0,
 	...FRESH,
 	setEnabled: (enabled, projectId) => {
 		const state = get();
 		if (state.enabled === enabled && state.projectId === projectId) return;
-		set({ enabled, projectId, ...FRESH, view: "transcript" });
+		set({ enabled, projectId, ...FRESH, view: "cuts" });
 	},
 	receive: (snapshot) => {
 		const state = get();
