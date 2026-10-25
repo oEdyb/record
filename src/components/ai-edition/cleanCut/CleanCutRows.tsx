@@ -1,4 +1,4 @@
-import { AudioLines, Play, Repeat, RotateCcw, Scissors } from "lucide-react";
+import { AudioLines, Repeat, RotateCcw, Scissors } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { formatPlayerTime } from "@/lib/ai-edition/timeline/format";
@@ -31,7 +31,7 @@ export function CutWhy({ cut, spoken }: { cut: ReviewCut; spoken: ReadonlyMap<st
 	return <p className={styles.why}>{parts.join(" · ")}</p>;
 }
 
-/** Hear the picked cut without or with it, again or on a loop, and keep or cut it. */
+/** Hear the picked cut without or with it (each plays on a click), on a loop, and keep or cut it. */
 export function CutControls({ guide, cut }: { guide: CleanCutGuide; cut: ReviewCut }) {
 	const t = useScopedT("editor");
 	return (
@@ -57,18 +57,6 @@ export function CutControls({ guide, cut }: { guide: CleanCutGuide; cut: ReviewC
 					</button>
 				))}
 			</div>
-			<button
-				type="button"
-				className={styles.icon}
-				aria-label={t("cleanCut.hud.listen")}
-				title={`${t("cleanCut.hud.listen")} (Space)`}
-				onClick={(event) => {
-					event.stopPropagation();
-					guide.replay();
-				}}
-			>
-				<Play size={13} aria-hidden="true" />
-			</button>
 			<button
 				type="button"
 				className={styles.icon}

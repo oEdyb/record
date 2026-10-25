@@ -74,3 +74,18 @@ it("replays the picked cut on a second click and keeps it with its button", () =
 	fireEvent.click(screen.getByRole("button", { name: "cleanCut.restore" }));
 	expect(toggleRestore).toHaveBeenCalledWith("a");
 });
+
+it("plays the cut without or with it straight from its switch", () => {
+	const g = guide();
+	render(
+		<CleanCutRows
+			cuts={[cut("a", 10, true)]}
+			selectedId="a"
+			guide={g}
+			spoken={new Map()}
+			onSelect={vi.fn()}
+		/>,
+	);
+	fireEvent.click(screen.getByRole("button", { name: "cleanCut.hud.with" }));
+	expect(g.setListen).toHaveBeenCalledWith("with");
+});
