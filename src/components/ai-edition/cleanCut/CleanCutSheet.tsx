@@ -59,58 +59,62 @@ function ListenBar({ guide, cut }: { guide: CleanCutGuide; cut: ReviewCut }) {
 	const t = useScopedT("editor");
 	return (
 		<div className={styles.listenBar}>
-			<span className={styles.listenWhat}>{t(cleanCutKindKey(cut.region.kind))}</span>
-			<div className={styles.listenSwitch} role="group" aria-label={t("cleanCut.hud.listen")}>
-				{(["without", "with"] as const).map((mode) => (
-					<button
-						key={mode}
-						type="button"
-						aria-pressed={guide.listen === mode}
-						aria-label={t(`cleanCut.hud.${mode}`)}
-						title={t(mode === "with" ? "cleanCut.hud.withTitle" : "cleanCut.hud.withoutTitle")}
-						onClick={() => guide.setListen(mode)}
-					>
-						{mode === "without" ? (
-							<Scissors size={13} aria-hidden="true" />
-						) : (
-							<AudioLines size={13} aria-hidden="true" />
-						)}
-					</button>
-				))}
+			<p className={styles.listenWhy}>
+				<strong>{t(cleanCutKindKey(cut.region.kind))}</strong>
+				{cut.region.reason ? ` · ${cut.region.reason}` : null}
+			</p>
+			<div className={styles.listenRow}>
+				<div className={styles.listenSwitch} role="group" aria-label={t("cleanCut.hud.listen")}>
+					{(["without", "with"] as const).map((mode) => (
+						<button
+							key={mode}
+							type="button"
+							aria-pressed={guide.listen === mode}
+							title={t(mode === "with" ? "cleanCut.hud.withTitle" : "cleanCut.hud.withoutTitle")}
+							onClick={() => guide.setListen(mode)}
+						>
+							{mode === "without" ? (
+								<Scissors size={13} aria-hidden="true" />
+							) : (
+								<AudioLines size={13} aria-hidden="true" />
+							)}
+							{t(`cleanCut.hud.${mode}`)}
+						</button>
+					))}
+				</div>
+				<button
+					type="button"
+					className={styles.listenIcon}
+					aria-label={t("cleanCut.hud.listen")}
+					title={t("cleanCut.hud.listen")}
+					onClick={guide.replay}
+				>
+					<Play size={13} aria-hidden="true" />
+				</button>
+				<button
+					type="button"
+					className={styles.listenIcon}
+					aria-pressed={guide.looping}
+					aria-label={t("cleanCut.hud.loopTitle")}
+					title={`${t("cleanCut.hud.loopTitle")} (L)`}
+					onClick={guide.toggleLoop}
+				>
+					<Repeat size={13} aria-hidden="true" />
+				</button>
+				<button
+					type="button"
+					className={styles.listenRestore}
+					data-restored={cut.restored || undefined}
+					onClick={() => useCleanCutStore.getState().toggleRestore(cut.region.id)}
+				>
+					{cut.restored ? (
+						<Scissors size={13} aria-hidden="true" />
+					) : (
+						<RotateCcw size={13} aria-hidden="true" />
+					)}
+					{cut.restored ? t("cleanCut.cutAgain") : t("cleanCut.restore")}
+				</button>
 			</div>
-			<button
-				type="button"
-				className={styles.listenIcon}
-				aria-label={t("cleanCut.hud.listen")}
-				title={t("cleanCut.hud.listen")}
-				onClick={guide.replay}
-			>
-				<Play size={13} aria-hidden="true" />
-			</button>
-			<button
-				type="button"
-				className={styles.listenIcon}
-				aria-pressed={guide.looping}
-				aria-label={t("cleanCut.hud.loopTitle")}
-				title={`${t("cleanCut.hud.loopTitle")} (L)`}
-				onClick={guide.toggleLoop}
-			>
-				<Repeat size={13} aria-hidden="true" />
-			</button>
-			<button
-				type="button"
-				className={styles.listenRestore}
-				data-restored={cut.restored || undefined}
-				aria-label={cut.restored ? t("cleanCut.cutAgain") : t("cleanCut.restore")}
-				title={cut.restored ? t("cleanCut.cutAgain") : t("cleanCut.restore")}
-				onClick={() => useCleanCutStore.getState().toggleRestore(cut.region.id)}
-			>
-				{cut.restored ? (
-					<Scissors size={13} aria-hidden="true" />
-				) : (
-					<RotateCcw size={13} aria-hidden="true" />
-				)}
-			</button>
 		</div>
 	);
 }
@@ -230,9 +234,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				toPlaybackSec={props.toPlaybackSec}
 				onSelectRegion={(id) => {
 					const cut = byId(id);
-					if (!cut) return;
-					if (id === selectedId) toggleRestore(cut);
-					else props.onSelectCut(cut);
+					if (cut) props.onSelectCut(cut);
 				}}
 				onSeekRaw={props.onSeekRaw}
 				onToggleRestore={(id) => {
@@ -345,8 +347,6 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 						type="button"
 						role="tab"
 						aria-selected={view === value}
-						aria-label={value === "cuts" ? t("cleanCut.onlyCuts") : t("cleanCut.everything")}
-						title={value === "cuts" ? t("cleanCut.onlyCuts") : t("cleanCut.everything")}
 						onClick={() => useCleanCutStore.getState().setView(value)}
 					>
 						{value === "cuts" ? (
@@ -354,6 +354,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 						) : (
 							<AlignLeft size={14} aria-hidden="true" />
 						)}
+						{value === "cuts" ? t("cleanCut.cuts") : t("cleanCut.transcript")}
 						{value === "cuts" ? (
 							<span className={styles.count}>{props.model.cuts.length}</span>
 						) : null}

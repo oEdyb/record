@@ -269,7 +269,7 @@ describe("clean cut toggle", () => {
 				}}
 			/>,
 		);
-		fireEvent.click(screen.getByRole("button", { name: "cleanCut.reviewCuts (5)" }));
+		fireEvent.click(screen.getByRole("button", { name: "cleanCut.reviewCuts 5" }));
 		expect(onReview).toHaveBeenCalled();
 	});
 

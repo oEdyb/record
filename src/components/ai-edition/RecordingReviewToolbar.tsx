@@ -303,10 +303,10 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 							type="button"
 							className={`${styles.ghost} ${styles.reviewCuts}`}
 							onClick={props.cleanCut.onReview}
-							aria-label={`${t("cleanCut.reviewCuts")} (${props.cleanCut.cutCount})`}
 							title={`${t("cleanCut.reviewCuts")} (${modifier}K)`}
 						>
 							<ListChecks size={15} aria-hidden="true" />
+							{t("cleanCut.reviewCuts")}{" "}
 							<span className={styles.reviewCount}>{props.cleanCut.cutCount}</span>
 						</button>
 					) : null}

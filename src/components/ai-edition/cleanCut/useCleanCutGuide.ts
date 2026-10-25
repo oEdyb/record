@@ -106,9 +106,10 @@ export function useCleanCutGuide({
 	const queue = model ? model.cuts.slice(0, model.unsureCount) : [];
 	const index = queue.findIndex((cut) => cut.region.id === selectedId);
 	const picked = model?.cuts.find((cut) => cut.region.id === selectedId) ?? null;
+	// With nothing unsure the card rests on its summary until a cut is picked to hear.
 	const finished =
 		model !== null &&
-		(queue.length === 0 || (finishedOn !== undefined && finishedOn === selectedId));
+		(queue.length === 0 ? picked === null : finishedOn !== undefined && finishedOn === selectedId);
 	const current = finished ? null : picked;
 
 	const firstId = queue[0]?.region.id;

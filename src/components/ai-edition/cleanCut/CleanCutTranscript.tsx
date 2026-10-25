@@ -258,7 +258,12 @@ export const CleanCutTranscript = memo(function CleanCutTranscript({
 												}}
 											>
 												{state === "cut" ? (
-													formatRemoved(chip.removedSec)
+													<>
+														<span className={styles.chipKind}>
+															{chip.unsure ? `${chip.label}?` : chip.label}
+														</span>
+														{formatRemoved(chip.removedSec)}
+													</>
 												) : (
 													<Play size={10} aria-hidden="true" />
 												)}

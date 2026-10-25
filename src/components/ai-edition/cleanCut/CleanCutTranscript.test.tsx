@@ -79,6 +79,7 @@ it("names each cut with a chip that plays it on a tap and restores it with its b
 			onCutSentence={vi.fn()}
 		/>,
 	);
+	expect(screen.getByText("Retake?")).toBeTruthy();
 	fireEvent.click(screen.getByRole("button", { name: "Retake −1.4 s" }));
 	expect(onSelectRegion).toHaveBeenCalledWith("a:0");
 	fireEvent.click(screen.getByRole("button", { name: "cleanCut.restore: Hi there." }));

@@ -47,6 +47,39 @@ beforeEach(() => {
 });
 
 describe("useCleanCutGuide", () => {
+	it("lets a picked cut be heard with and without when no cut is unsure", () => {
+		const audition = vi.fn();
+		const sure = { ...cut("s", 10), region: { ...cut("s", 10).region, risky: false } };
+		const sureModel: CleanCutReviewModel = {
+			keep: [],
+			trimRanges: [],
+			cuts: [sure],
+			unsureCount: 0,
+			strip: [sure],
+			keptSec: 0,
+		};
+		const select = (c: ReviewCut) => useCleanCutStore.getState().select(c.region.id);
+		const { result } = renderHook(() =>
+			useCleanCutGuide({
+				model: sureModel,
+				resetKey: "r",
+				active: true,
+				select,
+				audition,
+				stop: vi.fn(),
+			}),
+		);
+		expect(result.current.current).toBeNull();
+		act(() => result.current.show(sure));
+		expect(result.current.current?.region.id).toBe("s");
+		act(() => result.current.setListen("with"));
+		expect(audition).toHaveBeenLastCalledWith(
+			expect.objectContaining({ rawStartSec: 10 }),
+			"with",
+			false,
+		);
+	});
+
 	it("plays the first card as soon as it is in sight, once", () => {
 		const { result, audition, rerender } = setup(false);
 		expect(result.current.current?.region.id).toBe("a");
