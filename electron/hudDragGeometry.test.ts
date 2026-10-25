@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
 	clampHudDragPosition,
 	HUD_DOCK_PUSH,
+	HUD_UNDOCK_PULL,
 	hudBoundsAtEdge,
 	hudDockPush,
+	hudPulledOffEdge,
 	initialHudBounds,
 	openDisplaySides,
 	pillCenterOf,
@@ -184,5 +186,21 @@ describe("hudBoundsAtEdge", () => {
 	it("keeps a side tab inside the work area when dragged past the top", () => {
 		const top = hudBoundsAtEdge({ x: 0, y: -900 }, size, tab, workArea, "left");
 		expect(pillRect(top, tab).top).toBe(34);
+	});
+});
+
+describe("hudPulledOffEdge", () => {
+	const tab = { width: 57, height: 50 };
+
+	it("untucks only once the pill is pulled well clear of its edge", () => {
+		const atLeft = (gap: number) => ({ x: gap + tab.width / 2, y: 500 });
+		expect(hudPulledOffEdge(atLeft(0), tab, workArea, "left")).toBe(false);
+		expect(hudPulledOffEdge(atLeft(HUD_UNDOCK_PULL - 1), tab, workArea, "left")).toBe(false);
+		expect(hudPulledOffEdge(atLeft(HUD_UNDOCK_PULL), tab, workArea, "left")).toBe(true);
+		const atRight = { x: 1710 - HUD_UNDOCK_PULL - tab.width / 2, y: 500 };
+		expect(hudPulledOffEdge(atRight, tab, workArea, "right")).toBe(true);
+		const atTop = { x: 800, y: 34 + HUD_UNDOCK_PULL + tab.height / 2 };
+		expect(hudPulledOffEdge(atTop, tab, workArea, "top")).toBe(true);
+		expect(hudPulledOffEdge({ x: 800, y: 34 + 25 + 10 }, tab, workArea, "top")).toBe(false);
 	});
 });

@@ -64,6 +64,9 @@
    controls are 36px circles centred on the same 40px track, so every control
    sits the same distance from the pill's edge. */
 .hudBar {
+	/* Above the tab of a tucked pill, which it slides out over on hover. */
+	position: relative;
+	z-index: 1;
 	pointer-events: auto;
 	display: flex;
 	box-sizing: border-box;
@@ -150,14 +153,17 @@
 		0 12px 32px -14px rgba(0, 0, 0, 0.7),
 		0 2px 6px -2px rgba(0, 0, 0, 0.4);
 	animation: hud-dock-tab-in 220ms cubic-bezier(0.23, 1, 0.32, 1) 140ms backwards;
-	transition: transform 160ms cubic-bezier(0.77, 0, 0.175, 1);
+	/* Shows again once the pill has slid back in over it. */
+	transition:
+		transform 160ms cubic-bezier(0.77, 0, 0.175, 1),
+		opacity 120ms ease 200ms;
 }
 
-/* 4 + grip 48 + 4 + 1. */
+/* At least 4 + grip 48 + 4 + 1; wider for a take's timer. */
 .hudDockTab[data-side="left"],
 .hudDockTab[data-side="right"] {
 	top: 0;
-	width: 57px;
+	min-width: 57px;
 	height: 50px;
 	padding: 4px;
 }
@@ -176,15 +182,25 @@
 	border-radius: 25px 0 0 25px;
 }
 
+/* Centred under the pill without a transform, which the slide owns. */
 .hudDockTab[data-side="top"] {
 	--hud-dock-out: translateY(-100%);
 	top: 0;
-	left: calc(50% - 32px);
-	width: 64px;
+	left: 0;
+	right: 0;
+	width: max-content;
+	min-width: 64px;
+	margin-inline: auto;
 	height: 40px;
 	padding: 0 4px;
 	border-top-width: 0;
 	border-radius: 0 0 20px 20px;
+}
+
+/* The pill slid out over its tab on hover; the tab would show through its glass. */
+.hudDockTab[data-covered] {
+	opacity: 0;
+	transition: opacity 120ms ease;
 }
 
 .hudDockTab[data-closing] {
@@ -212,21 +228,39 @@
 	flex-direction: row-reverse;
 }
 
-.hudDockBrand {
-	position: relative;
-	display: flex;
-}
-
-/* A take is still open (paused), so the tab says so. */
+/* A take is open: red while it captures, grey while paused. */
 .hudDockTake {
-	position: absolute;
-	top: -2px;
-	right: -3px;
-	width: 7px;
-	height: 7px;
+	width: 8px;
+	height: 8px;
+	flex-shrink: 0;
 	border-radius: 50%;
 	background: #f2675d;
-	box-shadow: 0 0 0 1.5px var(--hud-surface);
+	box-shadow: 0 0 0 3px rgba(242, 103, 93, 0.18);
+}
+
+.hudDockMark[data-take="paused"] .hudDockTake {
+	width: 8px;
+	border-radius: 1.5px;
+	background: linear-gradient(90deg, #9aa3ae 0 3px, transparent 3px 5px, #9aa3ae 5px);
+	box-shadow: none;
+}
+
+.hudDockTimer {
+	color: var(--hud-ink);
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 12px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+
+.hudDockMark[data-take="paused"] .hudDockTimer {
+	color: #9aa3ae;
+}
+
+.hudDockMark[data-take] {
+	flex-direction: row;
+	gap: 6px;
+	padding: 0 6px;
 }
 
 .hudDockChevron {

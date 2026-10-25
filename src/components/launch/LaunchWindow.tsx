@@ -92,6 +92,10 @@ const HUD_PILL_WIDTH = 424;
 const HUD_PILL_HEIGHT = 50;
 /** How long the tab takes to slide back into its edge; matches .hudDockTab[data-closing]. */
 const HUD_DOCK_TAB_EXIT_MS = 160;
+/** A pointer resting on the tab this long slides the pill out; one passing by does not. */
+const HUD_DOCK_PEEK_OPEN_MS = 150;
+/** How long the pill stays out after the pointer leaves it. */
+const HUD_DOCK_PEEK_CLOSE_MS = 350;
 
 type HudDockSide = "left" | "right" | "top";
 /** Toasts sit next to the pill, which is centred in the window: half its height and one stack gap. */
@@ -237,11 +241,12 @@ export function LaunchWindow() {
 	const canMinimize = !isLinuxHud;
 	const pillMinimized = canMinimize && hudMinimized && !pillRecording;
 	// The pill can tuck into a side or the top edge as a tab, out of the way until it is
-	// needed. Main tucks it in when a drag shoves it past the edge; a capturing take
-	// always brings it back out, and a paused one may stay tucked.
+	// needed, recording or not. Main tucks it in when a drag shoves it past the edge.
+	// Hovering the tab slides the whole pill back out until the pointer leaves it.
 	const [hudDock, setHudDock] = useState<HudDockSide | null>(null);
-	const capturing = pillRecording && !presentation.paused;
-	const dockedSide = canMinimize && !capturing ? hudDock : null;
+	const dockedSide = canMinimize ? hudDock : null;
+	const [dockPeek, setDockPeek] = useState(false);
+	const tuckedSide = dockedSide && !dockPeek ? dockedSide : null;
 	const dockedSideRef = useRef(dockedSide);
 	dockedSideRef.current = dockedSide;
 	// Tucking back in on launch happens before the pill is ever seen, so it does not slide.
@@ -507,8 +512,8 @@ export function LaunchWindow() {
 	}, [closePopovers]);
 
 	useEffect(() => {
-		if (capturing && hudDock) window.electronAPI?.setHudDock?.(null);
-	}, [capturing, hudDock]);
+		if (!dockedSide) setDockPeek(false);
+	}, [dockedSide]);
 
 	const undockHud = useCallback((fromKeyboard: boolean) => {
 		refocusGripRef.current = fromKeyboard;
@@ -1554,6 +1559,46 @@ export function LaunchWindow() {
 		setHudMouseEventsEnabled(false);
 	}, [setHudMouseEventsEnabled]);
 
+	// Hovering a tucked pill's tab slides the pill out after a beat, so a pointer only
+	// passing the edge leaves it alone; leaving the pill and the tab slides it back in.
+	const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const cancelDockPeek = useCallback(() => {
+		if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+		peekTimerRef.current = null;
+	}, []);
+	const scheduleDockPeek = useCallback(
+		(open: boolean) => {
+			cancelDockPeek();
+			if (!dockedSideRef.current || (open && isDraggingHudRef.current)) return;
+			peekTimerRef.current = setTimeout(
+				() => setDockPeek(open),
+				open ? HUD_DOCK_PEEK_OPEN_MS : HUD_DOCK_PEEK_CLOSE_MS,
+			);
+		},
+		[cancelDockPeek],
+	);
+	useEffect(() => cancelDockPeek, [cancelDockPeek]);
+	const handleBarPointerEnter = useCallback(() => {
+		enableHudMouseEvents();
+		if (dockedSideRef.current) cancelDockPeek();
+	}, [cancelDockPeek, enableHudMouseEvents]);
+	const handleBarPointerLeave = useCallback(() => {
+		handlePointerLeave();
+		if (dockedSideRef.current) scheduleDockPeek(false);
+	}, [handlePointerLeave, scheduleDockPeek]);
+	const handleTabPointerEnter = useCallback(() => {
+		enableHudMouseEvents();
+		scheduleDockPeek(true);
+	}, [enableHudMouseEvents, scheduleDockPeek]);
+	const handleTabPointerLeave = useCallback(() => {
+		handlePointerLeave();
+		scheduleDockPeek(false);
+	}, [handlePointerLeave, scheduleDockPeek]);
+	const handleTabPointerDown = useCallback(() => {
+		enableHudMouseEvents();
+		cancelDockPeek();
+	}, [cancelDockPeek, enableHudMouseEvents]);
+
 	const dismissSoftwareFallbackForever = useCallback(() => {
 		dismissSoftwareEncoderFallbackNotice(true);
 	}, [dismissSoftwareEncoderFallbackNotice]);
@@ -1927,7 +1972,7 @@ export function LaunchWindow() {
 					data-hud-interactive="true"
 					data-recording-layout={pillRecording ? "recording" : "idle"}
 					data-minimized={pillMinimized}
-					data-tucked={dockedSide ?? undefined}
+					data-tucked={tuckedSide ?? undefined}
 					data-instant={dockInstant || undefined}
 					data-starting={starting && !recordingHudActive}
 					className={`${styles.hudBar} ${
@@ -1937,10 +1982,10 @@ export function LaunchWindow() {
 								? styles.hudPillMinimized
 								: styles.hudPillIdle
 					}`}
-					onPointerEnter={enableHudMouseEvents}
+					onPointerEnter={handleBarPointerEnter}
 					onPointerDown={enableHudMouseEvents}
 					onMouseEnter={enableHudMouseEvents}
-					onMouseLeave={handlePointerLeave}
+					onMouseLeave={handleBarPointerLeave}
 				>
 					{pillRecording ? (
 						<div key="recording" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
@@ -2066,12 +2111,13 @@ export function LaunchWindow() {
 						data-testid="hud-dock-tab"
 						data-side={shownDockSide}
 						data-closing={dockPresence.closing || undefined}
+						data-covered={(dockedSide && !tuckedSide) || undefined}
 						data-instant={dockInstant || undefined}
 						className={styles.hudDockTab}
-						onPointerEnter={enableHudMouseEvents}
-						onPointerDown={enableHudMouseEvents}
+						onPointerEnter={handleTabPointerEnter}
+						onPointerDown={handleTabPointerDown}
 						onMouseEnter={enableHudMouseEvents}
-						onMouseLeave={handlePointerLeave}
+						onMouseLeave={handleTabPointerLeave}
 					>
 						<HudDragHandle
 							{...dragHandleProps}
@@ -2080,7 +2126,11 @@ export function LaunchWindow() {
 							tapExpanded={false}
 							roomy
 						>
-							<HudDockMark side={shownDockSide} takeOpen={pillRecording} />
+							<HudDockMark
+								side={shownDockSide}
+								take={pillRecording ? (presentation.paused ? "paused" : "recording") : null}
+								elapsedSeconds={presentation.elapsedSeconds}
+							/>
 						</HudDragHandle>
 					</div>
 				) : null}

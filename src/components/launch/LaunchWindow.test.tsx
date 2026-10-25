@@ -2414,28 +2414,56 @@ describe("LaunchWindow minimized pill", () => {
 		expect(window.electronAPI.setHudDock).toHaveBeenCalledWith(null);
 	});
 
-	it("brings the full pill out while a take captures, and keeps a paused take tucked with a dot", async () => {
+	it("keeps a take tucked, showing on the tab whether it captures or is paused and for how long", async () => {
 		const dock = stubDock();
 		recorderState.value.recording = true;
-		recorderState.value.paused = true;
-		recorderState.value.elapsedSeconds = 4;
+		recorderState.value.paused = false;
+		recorderState.value.elapsedSeconds = 65;
 		const view = renderLaunchWindow();
 		dock("right");
 
 		expect(pill()).toHaveAttribute("data-tucked", "right");
-		expect(screen.getByTestId("hud-dock-take-open")).toBeInTheDocument();
+		const tab = screen.getByTestId("hud-dock-tab");
+		expect(tab.querySelector("[data-take]")).toHaveAttribute("data-take", "recording");
+		expect(tab).toHaveTextContent("01:05");
 		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
 
-		recorderState.value.paused = false;
+		recorderState.value.paused = true;
 		view.rerender(
 			<TooltipProvider>
 				<LaunchWindow />
 			</TooltipProvider>,
 		);
+		expect(tab.querySelector("[data-take]")).toHaveAttribute("data-take", "paused");
+	});
 
-		expect(pill()).not.toHaveAttribute("data-tucked");
-		expect(screen.getByTestId("hud-recording-timer")).toBeInTheDocument();
-		expect(window.electronAPI.setHudDock).toHaveBeenCalledWith(null);
+	it("slides the whole pill out while the tab is hovered, and back in once the pointer leaves", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("left");
+		const tab = screen.getByTestId("hud-dock-tab");
+
+		fireEvent.pointerEnter(tab);
+		await waitFor(() => expect(pill()).not.toHaveAttribute("data-tucked"));
+		fireEvent.pointerEnter(pill());
+		fireEvent.mouseLeave(pill());
+		await waitFor(() => expect(pill()).toHaveAttribute("data-tucked", "left"));
+		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
+	});
+
+	it("leaves the pill tucked when the pointer only passes over the tab", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		const tab = screen.getByTestId("hud-dock-tab");
+
+		fireEvent.pointerEnter(tab);
+		fireEvent.mouseLeave(tab);
+		await new Promise((resolve) => setTimeout(resolve, 250));
+
+		expect(pill()).toHaveAttribute("data-tucked", "top");
 	});
 });
 

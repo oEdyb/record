@@ -92,6 +92,21 @@ export type HudDockSide = "left" | "right" | "top";
 
 /** How far past an edge a drag must shove the pill before it tucks into that edge. */
 export const HUD_DOCK_PUSH = 24;
+/** How far away from its edge a drag must pull a tucked pill before it comes untucked. */
+export const HUD_UNDOCK_PULL = 48;
+
+/** Whether a drag pulls a tucked pill far enough off its edge to untuck it. */
+export function hudPulledOffEdge(
+	pillCenter: { x: number; y: number },
+	pill: Size,
+	workArea: Rect,
+	side: HudDockSide,
+): boolean {
+	if (side === "left") return pillCenter.x - pill.width / 2 - workArea.x >= HUD_UNDOCK_PULL;
+	if (side === "right")
+		return workArea.x + workArea.width - (pillCenter.x + pill.width / 2) >= HUD_UNDOCK_PULL;
+	return pillCenter.y - pill.height / 2 - workArea.y >= HUD_UNDOCK_PULL;
+}
 
 /**
  * The edge a drag shoves the pill past, if any. The pill itself is clamped on screen,

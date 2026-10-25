@@ -130,21 +130,34 @@ export function HudBrandMark() {
 	return <KlipptMark className={styles.hudBrandMark} />;
 }
 
-/** The tab a pill tucked into an edge leaves: the mark, pointing back out. */
+/**
+ * The tab a pill tucked into an edge leaves. With no take it is the mark, pointing back
+ * out; with one it says the take is open and how long it runs, so nothing is hidden
+ * while recording.
+ */
 export function HudDockMark({
 	side,
-	takeOpen,
+	take,
+	elapsedSeconds,
 }: {
 	side: "left" | "right" | "top";
-	takeOpen: boolean;
+	take: "recording" | "paused" | null;
+	elapsedSeconds: number;
 }) {
+	if (take) {
+		return (
+			<span className={styles.hudDockMark} data-side={side} data-take={take}>
+				<span data-testid="hud-dock-take" className={styles.hudDockTake} />
+				<span role="timer" className={styles.hudDockTimer}>
+					{formatTimePadded(elapsedSeconds)}
+				</span>
+			</span>
+		);
+	}
 	const Chevron = side === "left" ? ChevronRight : side === "right" ? ChevronLeft : ChevronDown;
 	return (
 		<span className={styles.hudDockMark} data-side={side}>
-			<span className={styles.hudDockBrand}>
-				<KlipptMark className={styles.hudBrandMark} />
-				{takeOpen ? <span data-testid="hud-dock-take-open" className={styles.hudDockTake} /> : null}
-			</span>
+			<KlipptMark className={styles.hudBrandMark} />
 			<Chevron size={12} strokeWidth={2.5} aria-hidden="true" className={styles.hudDockChevron} />
 		</span>
 	);

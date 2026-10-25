@@ -19,6 +19,7 @@ import {
 	type HudDockSide,
 	hudBoundsAtEdge,
 	hudDockPush,
+	hudPulledOffEdge,
 	initialHudBounds,
 	openDisplaySides,
 	pillCenterOf,
@@ -510,7 +511,12 @@ ipcMain.on("hud-overlay-drag-to", (_event, deltaX: number, deltaY: number) => {
 	const [width, height] = hudOverlayWindow.getSize();
 	const pillCenter = pillCenterOf({ x, y }, { width, height }, hudPillSize);
 	const display = displayUnderPill(pillCenter);
-	// The tab slides only along its edge.
+	// Pulled well away from its edge, a tucked pill comes untucked and drags freely.
+	if (hudDockSide && hudPulledOffEdge(pillCenter, hudPillSize, display.workArea, hudDockSide)) {
+		hudDockSide = null;
+		sendHudDock();
+	}
+	// Tucked, it slides only along its edge.
 	const next = hudDockSide
 		? hudBoundsAtEdge(pillCenter, { width, height }, hudPillSize, display.workArea, hudDockSide)
 		: clampHudDragPosition({ x, y }, { width, height }, hudPillSize, display.workArea);
