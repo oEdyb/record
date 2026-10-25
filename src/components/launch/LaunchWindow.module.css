@@ -127,8 +127,16 @@
 	initial-value: 0;
 }
 
-/* The pill's border and top highlight. Under the bump, a 50px gap in its top two
-   rows hands the outline over to the bump's own, so the two read as one shape. */
+/* The bump's width with its feet: 74px, or 50px on the folded pill, whose flat top
+   is only 50px. Registered, so it morphs with the pill's width. */
+@property --hud-bump-gap {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 74px;
+}
+
+/* The pill's border and top highlight. Under the bump, a gap in its top two rows
+   hands the outline over to the bump's own, so the two read as one shape. */
 .hudBar::after {
 	content: "";
 	position: absolute;
@@ -138,17 +146,27 @@
 	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 	pointer-events: none;
 	--hud-bump-cut: 0;
+	--hud-bump-gap: 74px;
 	mask:
-		linear-gradient(#000 0 0) top left / calc(50% - 25px) 2px no-repeat,
-		linear-gradient(#000 0 0) top right / calc(50% - 25px) 2px no-repeat,
-		linear-gradient(rgb(0 0 0 / calc(1 - var(--hud-bump-cut))) 0 0) top center / 50px 2px no-repeat,
+		linear-gradient(#000 0 0) top left / calc(50% - var(--hud-bump-gap) / 2) 2px no-repeat,
+		linear-gradient(#000 0 0) top right / calc(50% - var(--hud-bump-gap) / 2) 2px no-repeat,
+		linear-gradient(rgb(0 0 0 / calc(1 - var(--hud-bump-cut))) 0 0) top center /
+			var(--hud-bump-gap) 2px no-repeat,
 		linear-gradient(#000 0 0) bottom / 100% calc(100% - 2px) no-repeat;
-	transition: --hud-bump-cut 80ms ease;
+	transition:
+		--hud-bump-cut 80ms ease,
+		--hud-bump-gap 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.hudBar[data-minimized="true"]::after {
+	--hud-bump-gap: 50px;
 }
 
 .hudBar[data-bump-cut]::after {
 	--hud-bump-cut: 1;
-	transition: --hud-bump-cut 140ms ease 160ms;
+	transition:
+		--hud-bump-cut 140ms ease 160ms,
+		--hud-bump-gap 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .hudBar[data-instant]::after {
@@ -239,35 +257,63 @@
    from the pill's. Nothing overlaps the pill's fill, so no seam darkens. */
 .hudTuckBump {
 	position: relative;
-	width: 40px;
+	width: 64px;
 	height: var(--hud-tuck-bump-height);
 	border-radius: 9px 9px 0 0;
 }
 
-/* 50x16: the 40px bump, a 5px foot either side, and the pill's top two rows. */
+.hudTuckRail[data-narrow] .hudTuckBump {
+	width: 40px;
+}
+
+/* 74x16: the 64px bump, a 5px foot either side, and the pill's top two rows. On
+   the folded pill the same paths narrow to a 40px bump, morphing with the pill. */
 .hudTuckShape {
 	position: absolute;
 	top: 0;
-	left: -5px;
-	width: 50px;
+	left: calc(50% - 37px);
+	width: 74px;
 	height: calc(var(--hud-tuck-bump-height) + 2px);
 	overflow: hidden;
 	pointer-events: none;
 }
 
+.hudTuckShape > path {
+	transition: d 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 .hudTuckShape > path:nth-child(1) {
+	d: path("M0 14A5 5 0 0 0 5 9A9 9 0 0 1 14 0L60 0A9 9 0 0 1 69 9A5 5 0 0 0 74 14Z");
 	fill: var(--hud-surface);
 }
 
 .hudTuckShape > path:nth-child(2) {
+	d: path(
+		"M0 15A6 6 0 0 0 6 9A8 8 0 0 1 14 1L60 1A8 8 0 0 1 68 9A6 6 0 0 0 74 15L74 16L0 16ZM0 16A6 6 0 0 0 6 10A8 8 0 0 1 14 2L60 2A8 8 0 0 1 68 10A6 6 0 0 0 74 16L74 17L0 17Z"
+	);
 	fill: rgba(255, 255, 255, 0.12);
 	fill-rule: evenodd;
 }
 
 .hudTuckShape > path:nth-child(3) {
+	d: path("M0 14.5A5.5 5.5 0 0 0 5.5 9A8.5 8.5 0 0 1 14 0.5L60 0.5A8.5 8.5 0 0 1 68.5 9A5.5 5.5 0 0 0 74 14.5");
 	fill: none;
 	stroke: var(--hud-border);
 	stroke-width: 1;
+}
+
+.hudTuckRail[data-narrow] .hudTuckShape > path:nth-child(1) {
+	d: path("M12 14A5 5 0 0 0 17 9A9 9 0 0 1 26 0L48 0A9 9 0 0 1 57 9A5 5 0 0 0 62 14Z");
+}
+
+.hudTuckRail[data-narrow] .hudTuckShape > path:nth-child(2) {
+	d: path(
+		"M12 15A6 6 0 0 0 18 9A8 8 0 0 1 26 1L48 1A8 8 0 0 1 56 9A6 6 0 0 0 62 15L62 16L12 16ZM12 16A6 6 0 0 0 18 10A8 8 0 0 1 26 2L48 2A8 8 0 0 1 56 10A6 6 0 0 0 62 16L62 17L12 17Z"
+	);
+}
+
+.hudTuckRail[data-narrow] .hudTuckShape > path:nth-child(3) {
+	d: path("M12 14.5A5.5 5.5 0 0 0 17.5 9A8.5 8.5 0 0 1 26 0.5L48 0.5A8.5 8.5 0 0 1 56.5 9A5.5 5.5 0 0 0 62 14.5");
 }
 
 .hudTuckBump > button {
@@ -483,18 +529,8 @@
 	color: var(--hud-muted);
 }
 
-.hudSourceChipChevron {
-	flex: none;
-	color: var(--hud-faint);
-	transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
 .hudSourceChip[aria-expanded="true"] {
 	background: rgba(255, 255, 255, 0.09);
-}
-
-.hudSourceChip[aria-expanded="true"] .hudSourceChipChevron {
-	transform: rotate(180deg);
 }
 
 /* Live mic level: a thin line inside the bottom of the mic button. */

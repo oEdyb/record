@@ -199,7 +199,6 @@ export const HudSourceChip = memo(function HudSourceChip({
 				<SourceIcon className={styles.hudSourceChipIcon} />
 			)}
 			<span className="min-w-0 flex-1 truncate text-left">{label}</span>
-			<ChevronDown size={14} className={styles.hudSourceChipChevron} aria-hidden />
 		</button>
 	);
 });

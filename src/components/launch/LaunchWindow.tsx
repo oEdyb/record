@@ -2160,13 +2160,14 @@ export function LaunchWindow() {
 						data-hidden={(!tuckedSide && tuckBumpHidden) || undefined}
 						data-tucked={tuckedSide ?? undefined}
 						data-instant={dockInstant || undefined}
+						data-narrow={pillMinimized || undefined}
 						className={styles.hudTuckRail}
 					>
 						<div className={styles.hudTuckBump}>
-							<svg className={styles.hudTuckShape} viewBox="0 0 50 16" aria-hidden>
-								<path d="M0 14A5 5 0 0 0 5 9A9 9 0 0 1 14 0L36 0A9 9 0 0 1 45 9A5 5 0 0 0 50 14Z" />
-								<path d="M0 15A6 6 0 0 0 6 9A8 8 0 0 1 14 1L36 1A8 8 0 0 1 44 9A6 6 0 0 0 50 15L50 16L0 16ZM0 16A6 6 0 0 0 6 10A8 8 0 0 1 14 2L36 2A8 8 0 0 1 44 10A6 6 0 0 0 50 16L50 17L0 17Z" />
-								<path d="M0 14.5A5.5 5.5 0 0 0 5.5 9A8.5 8.5 0 0 1 14 0.5L36 0.5A8.5 8.5 0 0 1 44.5 9A5.5 5.5 0 0 0 50 14.5" />
+							<svg className={styles.hudTuckShape} viewBox="0 0 74 16" aria-hidden>
+								<path />
+								<path />
+								<path />
 							</svg>
 							<HudTuckButton
 								label={t("tooltips.tuckHud")}

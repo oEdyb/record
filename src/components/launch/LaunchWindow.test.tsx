@@ -2495,6 +2495,7 @@ describe("LaunchWindow minimized pill", () => {
 		const view = renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");
 		expect(screen.getByTestId("hud-tuck-bump")).not.toHaveAttribute("data-hidden");
+		expect(screen.getByTestId("hud-tuck-bump")).toHaveAttribute("data-narrow");
 
 		recorderState.value.recording = true;
 		recorderState.value.elapsedSeconds = 3;
@@ -2504,6 +2505,7 @@ describe("LaunchWindow minimized pill", () => {
 			</TooltipProvider>,
 		);
 		expect(screen.getByTestId("hud-tuck-button")).toBeInTheDocument();
+		expect(screen.getByTestId("hud-tuck-bump")).not.toHaveAttribute("data-narrow");
 	});
 
 	it("slides the tuck bump into the edge with the pill", async () => {
