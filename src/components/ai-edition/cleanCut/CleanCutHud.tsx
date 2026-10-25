@@ -165,30 +165,15 @@ function ListenToggle({
 	);
 }
 
-/**
- * A quiet line under the header, only where it adds something: this cut's own time when it
- * shares its moment with others, and the silence inside it from one second up.
- */
-function CutDetail({
-	cut,
-	inMoment,
-	spoken,
-}: {
-	cut: ReviewCut;
-	inMoment: boolean;
-	spoken: ReadonlyMap<string, number>;
-}) {
+/** Why the engine cut this, and the silence inside it from one second up. */
+function CutDetail({ cut, spoken }: { cut: ReviewCut; spoken: ReadonlyMap<string, number> }) {
 	const t = useScopedT("editor");
 	const silence = cut.restored ? 0 : silenceSecOf(cut, spoken);
-	const own = inMoment
-		? t("cleanCut.hud.thisCut", {
-				removed: cut.restored ? t("cleanCut.restored") : formatRemoved(cut.removedSec),
-			})
-		: null;
 	const quiet =
 		silence > 0 ? t("cleanCut.silence", { duration: formatRemoved(silence).slice(1) }) : null;
-	if (!own && !quiet) return null;
-	return <p className={styles.detail}>{[own, quiet].filter(Boolean).join(" · ")}</p>;
+	const why = cut.region.reason || null;
+	if (!why && !quiet) return null;
+	return <p className={styles.detail}>{[why, quiet].filter(Boolean).join(" · ")}</p>;
 }
 
 /**
@@ -400,8 +385,6 @@ export function CleanCutHud(props: CleanCutHudProps) {
 		);
 	}
 
-	const moment = moments.get(cut.region.id);
-	const together = moment && moment.cuts.length > 1 ? moment.cuts : null;
 	const flashing = guide.flashId === cut.region.id;
 	return (
 		<section
@@ -415,31 +398,8 @@ export function CleanCutHud(props: CleanCutHudProps) {
 			<div className={styles.card} key={cut.region.id} data-dir={guide.direction}>
 				<header className={styles.meta}>
 					<span className={styles.kind}>{t(cleanCutKindKey(cut.region.kind))}</span>
-					{together ? (
-						<span
-							className={styles.moment}
-							title={t("cleanCut.hud.together", { count: together.length })}
-						>
-							×{together.length}
-							<span className={styles.momentDots} aria-hidden="true">
-								{together.map((entry) => (
-									<span
-										key={entry.region.id}
-										data-current={entry.region.id === cut.region.id || undefined}
-										data-restored={entry.restored || undefined}
-									/>
-								))}
-							</span>
-						</span>
-					) : null}
 					<span className={styles.mono}>
-						{together && moment
-							? moment.removedSec > 0
-								? formatRemoved(moment.removedSec)
-								: t("cleanCut.restored")
-							: cut.restored
-								? t("cleanCut.restored")
-								: formatRemoved(cut.removedSec)}
+						{cut.restored ? t("cleanCut.restored") : formatRemoved(cut.removedSec)}
 					</span>
 					<span className={styles.spacer} />
 					{guide.looping ? (
@@ -465,7 +425,7 @@ export function CleanCutHud(props: CleanCutHudProps) {
 					</span>
 					{minimise}
 				</header>
-				<CutDetail cut={cut} inMoment={together !== null} spoken={spoken} />
+				<CutDetail cut={cut} spoken={spoken} />
 				<Sentence cut={cut} words={snapshot.words} cutIds={cutIds} listen={guide.listen} />
 				<div className={styles.actions}>
 					<ListenToggle mode={guide.listen} onChange={guide.setListen} />

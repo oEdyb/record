@@ -133,9 +133,8 @@
 
 .detail {
 	margin: 4px 2px -4px;
-	color: rgba(231, 231, 236, 0.42);
-	font: 400 12px/1.4 var(--font-mono);
-	font-variant-numeric: tabular-nums;
+	color: rgba(231, 231, 236, 0.62);
+	font: 400 12.5px/1.4 var(--font-body);
 }
 .sentence {
 	margin: 10px 2px 16px;
@@ -558,30 +557,6 @@
 }
 
 /* Cuts that close into one seam: the count, and a dot for each with this one lit. */
-.moment {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	color: var(--fg-2);
-	font: 500 12px/1 var(--font-mono);
-}
-.momentDots {
-	display: inline-flex;
-	gap: 3px;
-}
-.momentDots > span {
-	width: 5px;
-	height: 5px;
-	border-radius: 50%;
-	background: rgba(255, 255, 255, 0.22);
-}
-.momentDots > span[data-restored] {
-	background: transparent;
-	box-shadow: inset 0 0 0 1px var(--editor-accent);
-}
-.momentDots > span[data-current] {
-	background: #f5f5f7;
-}
 
 .unsureDot {
 	flex: none;
