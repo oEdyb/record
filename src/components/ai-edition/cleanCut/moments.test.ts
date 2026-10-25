@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewCut } from "@/lib/cleanCut/reviewModel";
 import type { CleanCutKind } from "@/lib/cleanCut/types";
-import { blockTarget, layoutCutBlocks } from "./cutBlocks";
+import { layoutCutMarks, markTarget } from "./cutBlocks";
 import {
 	groupMoments,
 	momentsById,
@@ -95,37 +95,26 @@ describe("totals", () => {
 	});
 });
 
-describe("layoutCutBlocks", () => {
+describe("layoutCutMarks", () => {
 	const at = (id: string, sec: number, removedSec: number, risky = false) => {
 		const [moment] = groupMoments([cut(id, sec, sec + removedSec, { risky })], () => sec);
 		return moment;
 	};
 
-	it("sizes a block by the time it removes, centred on its seam, at least 3 px", () => {
-		const blocks = layoutCutBlocks(
-			[at("a", 100, 20), at("b", 500, 0.1)],
-			(m) => m.atSec,
-			1000,
-			1000,
-		);
-		expect(blocks.map((b) => [b.left, b.right])).toEqual([
-			[90, 110],
-			[498.5, 501.5],
-		]);
-		expect(blockTarget(blocks[1])).toEqual({ left: 494, width: 12 });
+	it("puts a mark on each seam, whatever time it removes", () => {
+		const marks = layoutCutMarks([at("a", 100, 20), at("b", 500, 0.1)], (m) => m.atSec, 1000, 1000);
+		expect(marks.map((m) => m.x)).toEqual([100, 500]);
+		expect(markTarget(marks[1])).toEqual({ left: 494, width: 12 });
 	});
 
-	it("never lets two blocks overlap", () => {
-		const blocks = layoutCutBlocks(
-			[at("a", 100, 30), at("b", 110, 30), at("c", 111, 0.1)],
+	it("nudges close marks apart and keeps them inside the bar", () => {
+		const marks = layoutCutMarks(
+			[at("a", 996, 1), at("b", 998, 1), at("c", 1000, 1)],
 			(m) => m.atSec,
 			1000,
 			1000,
 		);
-		for (let i = 1; i < blocks.length; i += 1) {
-			expect(blocks[i].left).toBeGreaterThanOrEqual(blocks[i - 1].right + 1);
-			expect(blocks[i].right - blocks[i].left).toBeGreaterThanOrEqual(3);
-		}
+		expect(marks.map((m) => m.x)).toEqual([986, 993, 1000]);
 	});
 });
 

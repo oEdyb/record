@@ -1,12 +1,12 @@
 /* What plays, drawn on the play bar. White is speech, steel is speech brought back.
-   Each block is a moment the clean cut closes: amber while unsure, a quiet fill once sure. */
+   Each dot is a moment the clean cut closes, over the seam where playback jumps past it. */
 .wave {
 	position: relative;
 	width: 100%;
-	height: 38px;
+	height: 36px;
 }
 .wave[data-compact] {
-	height: 14px;
+	height: 12px;
 }
 
 .svg {
@@ -31,37 +31,48 @@
 	fill: rgba(255, 255, 255, 0.2);
 }
 
-.block {
-	fill: rgba(255, 255, 255, 0.34);
+.dot {
+	fill: rgba(255, 255, 255, 0.42);
 	transition:
 		fill 160ms var(--ease),
-		stroke 160ms var(--ease);
+		r 160ms var(--ease);
 }
-.block[data-unsure] {
+.seam {
+	fill: rgba(255, 255, 255, 0.22);
+	transition: fill 160ms var(--ease);
+}
+.mark[data-unsure] .dot {
 	fill: var(--warn);
 }
-.block[data-restored] {
+.mark[data-unsure] .seam {
+	fill: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.mark[data-restored] .dot {
 	fill: none;
 	stroke: var(--editor-accent);
-	stroke-width: 1;
+	stroke-width: 1.25;
 }
-.block[data-hover] {
+.mark[data-hover] .dot {
+	fill: rgba(255, 255, 255, 0.8);
+}
+.mark[data-unsure][data-hover] .dot {
+	fill: color-mix(in srgb, var(--warn) 75%, white);
+}
+.mark[data-hover] .seam,
+.mark[data-selected] .seam {
 	fill: rgba(255, 255, 255, 0.6);
 }
-.block[data-unsure][data-hover] {
-	fill: color-mix(in srgb, var(--warn) 80%, white);
-}
-.block[data-selected] {
+.mark[data-selected] .dot {
 	stroke: #f5f5f7;
 	stroke-width: 1.5;
 	paint-order: stroke;
 }
 
-/* A block's click target: the lane over it, never narrower than 12 px. */
+/* A mark's click target: the lane over it, 12 px wide. */
 .target {
 	position: absolute;
 	top: -2px;
-	height: 18px;
+	height: 16px;
 	padding: 0;
 	border: 0;
 	border-radius: 5px;
@@ -114,7 +125,7 @@
 
 .playhead {
 	position: absolute;
-	top: 14px;
+	top: 12px;
 	bottom: 0;
 	width: 1.5px;
 	border-radius: 1px;
@@ -125,7 +136,8 @@
 
 @media (prefers-reduced-motion: reduce) {
 	.bar,
-	.block {
+	.dot,
+	.seam {
 		transition: none;
 	}
 	.tip {

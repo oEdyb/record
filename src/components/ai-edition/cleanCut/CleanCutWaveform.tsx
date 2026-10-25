@@ -3,14 +3,15 @@ import { useScopedT } from "@/contexts/I18nContext";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import type { ReviewCut } from "@/lib/cleanCut/reviewModel";
 import styles from "./CleanCutWaveform.module.css";
-import { blockTarget, layoutCutBlocks } from "./cutBlocks";
+import { layoutCutMarks, markTarget } from "./cutBlocks";
 import { cleanCutKindKey, formatRemoved } from "./labels";
 import { type CutMoment, sharedKind } from "./moments";
 import { type SpokenSpan, speechBins } from "./speechLevels";
 import { useElementWidth } from "./useElementWidth";
 
 const PITCH = 3;
-const LANE = 14;
+const LANE = 12;
+const DOT = 3;
 const WAVE = 24;
 
 interface CleanCutWaveformProps {
@@ -24,7 +25,7 @@ interface CleanCutWaveformProps {
 	toPlaybackSec: (rawSec: number) => number;
 	onSelect: (cut: ReviewCut) => void;
 	onSeek?: (playbackSec: number) => void;
-	/** The small player: the cut blocks alone, without the speech. */
+	/** The small player: the cut dots alone, without the speech. */
 	compact?: boolean;
 }
 
@@ -40,7 +41,7 @@ function Playhead({
 	return <span className={styles.playhead} style={{ left: `${at * 100}%` }} aria-hidden="true" />;
 }
 
-/** The next cut a click on a block shows: the first unsure one, then each in turn. */
+/** The next cut a click on a mark shows: the first unsure one, then each in turn. */
 function pickInMoment(moment: CutMoment, selectedId: string | null): ReviewCut {
 	const index = moment.cuts.findIndex((cut) => cut.region.id === selectedId);
 	if (index !== -1) return moment.cuts[(index + 1) % moment.cuts.length];
@@ -48,9 +49,9 @@ function pickInMoment(moment: CutMoment, selectedId: string | null): ReviewCut {
 }
 
 /**
- * What plays, on the play bar's own clock. Every moment the clean cut closes is one block
- * on its seam, as wide as the time it removes: amber while unsure, a quiet fill once sure.
- * Pauses are faint ticks. Speech sits under the blocks, restored words in steel.
+ * What plays, on the play bar's own clock. Every moment the clean cut closes is a dot over
+ * the seam where playback jumps past it: amber while unsure, quiet once sure, a ring once
+ * kept. Pauses are faint ticks. Speech sits under the dots, restored words in steel.
  */
 export const CleanCutWaveform = memo(function CleanCutWaveform(props: CleanCutWaveformProps) {
 	const t = useScopedT("editor");
@@ -63,9 +64,9 @@ export const CleanCutWaveform = memo(function CleanCutWaveform(props: CleanCutWa
 		() => speechBins(props.spans, totalSec, count),
 		[props.spans, totalSec, count],
 	);
-	const blocks = useMemo(
+	const marks = useMemo(
 		() =>
-			layoutCutBlocks(
+			layoutCutMarks(
 				props.moments,
 				(moment) => {
 					const live = moment.cuts.find((cut) => !cut.restored);
@@ -78,16 +79,16 @@ export const CleanCutWaveform = memo(function CleanCutWaveform(props: CleanCutWa
 	);
 	const ticks = useMemo(() => {
 		if (totalSec <= 0 || width <= 0) return [];
-		const inBlock = (x: number) => blocks.some((b) => x >= b.left - 1 && x <= b.right + 1);
+		const nearMark = (x: number) => marks.some((mark) => Math.abs(x - mark.x) < DOT + 2);
 		const xs = new Set<number>();
 		for (const pause of props.pauses) {
 			if (pause.restored) continue;
 			const x = Math.round((toPlaybackSec(pause.rawStartSec) / totalSec) * width);
-			if (!inBlock(x)) xs.add(Math.min(width - 1, x));
+			if (!nearMark(x)) xs.add(Math.min(width - 1, x));
 		}
 		return [...xs];
-	}, [props.pauses, blocks, toPlaybackSec, totalSec, width]);
-	const seams = blocks.filter((block) => !block.restored).map((block) => block.seam);
+	}, [props.pauses, marks, toPlaybackSec, totalSec, width]);
+	const seams = marks.filter((mark) => !mark.restored).map((mark) => mark.x);
 	const nearSeam = (barX: number) =>
 		seams.some((seam) => Math.abs(barX + (PITCH - 1) / 2 - seam) < 2.5);
 	const label = (moment: CutMoment) => {
@@ -100,7 +101,7 @@ export const CleanCutWaveform = memo(function CleanCutWaveform(props: CleanCutWa
 			moment.removedSec > 0 ? formatRemoved(moment.removedSec) : t("cleanCut.restored");
 		return `${name}${many} · ${removed}`;
 	};
-	const hovered = blocks.find((block) => block.moment.key === hover) ?? null;
+	const hovered = marks.find((mark) => mark.moment.key === hover) ?? null;
 	const height = compact ? LANE : LANE + WAVE;
 
 	return (
@@ -144,48 +145,60 @@ export const CleanCutWaveform = memo(function CleanCutWaveform(props: CleanCutWa
 						{ticks.map((x) => (
 							<rect key={x} x={x} y={5} width={1} height={5} className={styles.tick} />
 						))}
-						{blocks.map((block) => (
-							<rect
-								key={block.moment.key}
-								x={block.left}
-								y={3}
-								width={block.right - block.left}
-								height={8}
-								rx={1.5}
-								className={styles.block}
-								data-unsure={block.moment.unsure || undefined}
-								data-restored={block.restored || undefined}
-								data-hover={block.moment.key === hover || undefined}
-								data-selected={
-									block.moment.cuts.some((cut) => cut.region.id === props.selectedId) || undefined
-								}
-							/>
-						))}
+						{marks.map((mark) => {
+							const selected = mark.moment.cuts.some((cut) => cut.region.id === props.selectedId);
+							return (
+								<g
+									key={mark.moment.key}
+									className={styles.mark}
+									data-unsure={mark.moment.unsure || undefined}
+									data-restored={mark.restored || undefined}
+									data-hover={mark.moment.key === hover || undefined}
+									data-selected={selected || undefined}
+								>
+									{compact || mark.restored ? null : (
+										<rect
+											x={mark.x - 0.5}
+											y={LANE}
+											width={1}
+											height={WAVE}
+											className={styles.seam}
+										/>
+									)}
+									<circle
+										cx={mark.x}
+										cy={LANE / 2}
+										r={selected ? DOT + 1 : DOT}
+										className={styles.dot}
+									/>
+								</g>
+							);
+						})}
 					</svg>
-					{blocks.map((block) => {
-						const target = blockTarget(block);
-						const selected = block.moment.cuts.some((cut) => cut.region.id === props.selectedId);
+					{marks.map((mark) => {
+						const target = markTarget(mark);
+						const selected = mark.moment.cuts.some((cut) => cut.region.id === props.selectedId);
 						return (
 							<button
-								key={block.moment.key}
+								key={mark.moment.key}
 								type="button"
 								className={styles.target}
 								style={{ left: target.left, width: target.width }}
-								aria-label={label(block.moment)}
+								aria-label={label(mark.moment)}
 								aria-pressed={selected}
-								data-testid="clean-cut-block"
-								onPointerEnter={() => setHover(block.moment.key)}
-								onPointerLeave={() => setHover((key) => (key === block.moment.key ? null : key))}
-								onFocus={() => setHover(block.moment.key)}
-								onBlur={() => setHover((key) => (key === block.moment.key ? null : key))}
-								onClick={() => props.onSelect(pickInMoment(block.moment, props.selectedId))}
+								data-testid="clean-cut-mark"
+								onPointerEnter={() => setHover(mark.moment.key)}
+								onPointerLeave={() => setHover((key) => (key === mark.moment.key ? null : key))}
+								onFocus={() => setHover(mark.moment.key)}
+								onBlur={() => setHover((key) => (key === mark.moment.key ? null : key))}
+								onClick={() => props.onSelect(pickInMoment(mark.moment, props.selectedId))}
 							/>
 						);
 					})}
 					{hovered ? (
 						<span
 							className={styles.tip}
-							style={{ left: Math.min(width - 70, Math.max(70, hovered.seam)) }}
+							style={{ left: Math.min(width - 70, Math.max(70, hovered.x)) }}
 							aria-hidden="true"
 						>
 							{hovered.moment.unsure ? <span className={styles.tipDot} /> : null}
