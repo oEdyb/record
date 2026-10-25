@@ -2156,16 +2156,20 @@ export function LaunchWindow() {
 					<div
 						ref={tuckBumpRef}
 						data-testid="hud-tuck-bump"
-						data-hidden={tuckBumpHidden || undefined}
-						className={styles.hudTuckBump}
+						data-hidden={(!tuckedSide && tuckBumpHidden) || undefined}
+						data-tucked={tuckedSide ?? undefined}
+						data-instant={dockInstant || undefined}
+						className={styles.hudTuckRail}
 					>
-						<HudTuckButton
-							label={t("tooltips.tuckHud")}
-							hidden={tuckBumpHidden}
-							onClick={tuckToTop}
-							onMouseEnter={enableHudMouseEvents}
-							onMouseLeave={handlePointerLeave}
-						/>
+						<div className={styles.hudTuckBump}>
+							<HudTuckButton
+								label={t("tooltips.tuckHud")}
+								hidden={tuckBumpHidden}
+								onClick={tuckToTop}
+								onMouseEnter={enableHudMouseEvents}
+								onMouseLeave={handlePointerLeave}
+							/>
+						</div>
 					</div>
 				) : null}
 

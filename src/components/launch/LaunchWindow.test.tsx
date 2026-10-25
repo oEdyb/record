@@ -2506,14 +2506,14 @@ describe("LaunchWindow minimized pill", () => {
 		expect(screen.getByTestId("hud-tuck-button")).toBeInTheDocument();
 	});
 
-	it("hides the tuck bump while the pill is tucked", async () => {
+	it("slides the tuck bump into the edge with the pill", async () => {
 		const dock = stubDock();
 		renderLaunchWindow();
 		await screen.findByTestId("hud-tuck-button");
 
 		dock("left");
 
-		expect(screen.getByTestId("hud-tuck-bump")).toHaveAttribute("data-hidden");
+		expect(screen.getByTestId("hud-tuck-bump")).toHaveAttribute("data-tucked", "left");
 		expect(screen.getByTestId("hud-tuck-button")).toHaveAttribute("tabindex", "-1");
 	});
 });
