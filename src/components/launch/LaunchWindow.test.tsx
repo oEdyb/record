@@ -2490,11 +2490,11 @@ describe("LaunchWindow minimized pill", () => {
 		expect(pill()).not.toHaveAttribute("data-tucked");
 	});
 
-	it("offers the tuck button while recording but not on the folded pill", async () => {
+	it("offers the tuck bump on the folded pill and while recording", async () => {
 		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudMinimized: true }));
 		const view = renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");
-		expect(screen.queryByTestId("hud-tuck-button")).toBeNull();
+		expect(screen.getByTestId("hud-tuck-bump")).not.toHaveAttribute("data-hidden");
 
 		recorderState.value.recording = true;
 		recorderState.value.elapsedSeconds = 3;
@@ -2504,6 +2504,17 @@ describe("LaunchWindow minimized pill", () => {
 			</TooltipProvider>,
 		);
 		expect(screen.getByTestId("hud-tuck-button")).toBeInTheDocument();
+	});
+
+	it("hides the tuck bump while the pill is tucked", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("hud-tuck-button");
+
+		dock("left");
+
+		expect(screen.getByTestId("hud-tuck-bump")).toHaveAttribute("data-hidden");
+		expect(screen.getByTestId("hud-tuck-button")).toHaveAttribute("tabindex", "-1");
 	});
 });
 

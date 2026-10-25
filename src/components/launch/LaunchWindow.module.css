@@ -23,6 +23,8 @@
    centre on the pill when it clamps a drag or a resize. */
 .hudAnchor {
 	--hud-idle-pill-width: 424px;
+	/* How far the tuck bump stands above the pill. */
+	--hud-tuck-bump-height: 14px;
 	position: fixed;
 	top: 50%;
 	/* Anchored at the idle pill's left end: the pill grows and shrinks to the
@@ -43,7 +45,7 @@
    pass behind that line instead of over the menu bar. Nothing floats above a
    tucked pill, so nothing else is cut. */
 .hudAnchor[data-top-edge] {
-	clip-path: inset(0 -2000px -2000px -2000px);
+	clip-path: inset(calc(var(--hud-tuck-bump-height) * -1) -2000px -2000px -2000px);
 }
 
 /* Floats beside the pill without moving it: above by default, below when the
@@ -146,6 +148,37 @@
 	transition: none;
 }
 
+/* A small bump centred on the pill's top edge that tucks it into the top of the
+   screen. It overlaps the pill's border and top highlight so the two read as one
+   shape. It comes back once a closing panel or an untucking pill is out of the way. */
+.hudTuckBump {
+	position: absolute;
+	bottom: calc(100% - 2px);
+	left: 0;
+	right: 0;
+	z-index: 2;
+	width: 40px;
+	height: calc(var(--hud-tuck-bump-height) + 2px);
+	margin-inline: auto;
+	box-sizing: border-box;
+	border: 1px solid var(--hud-border);
+	border-bottom-width: 0;
+	border-radius: 10px 10px 0 0;
+	background: var(--hud-surface);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+	transition: opacity 140ms ease 160ms;
+}
+
+.hudTuckBump[data-hidden] {
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 80ms ease;
+}
+
+.hudTuckBump:not([data-hidden]) > button {
+	pointer-events: auto;
+}
+
 /* A half pill flush with its edge, where the pill went in. It sits against the
    pill's own box, so tucking and untucking never move the window. */
 .hudDockTab {
@@ -191,9 +224,11 @@
 }
 
 /* Centred under the pill without a transform, which the slide owns. */
+/* It starts where the tuck bump does, so the pill comes back out flush with the
+   top edge, bump included, without the window moving. */
 .hudDockTab[data-side="top"] {
 	--hud-dock-out: translateY(-100%);
-	top: 0;
+	top: calc(var(--hud-tuck-bump-height) * -1);
 	left: 0;
 	right: 0;
 	width: max-content;

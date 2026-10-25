@@ -703,6 +703,7 @@ export function LaunchWindow() {
 	const hudAllocatedSizeRef = useRef({ width: 0, height: 0 });
 	const reportedPillSizeRef = useRef({ width: 0, height: 0, offsetX: 0, offsetY: 0 });
 	const dockTabRef = useRef<HTMLDivElement | null>(null);
+	const tuckBumpRef = useRef<HTMLDivElement | null>(null);
 	const isDraggingHudRef = useRef(false);
 
 	const horizontalHudWidth = Math.min(HUD_PILL_WIDTH, getAvailableScreenWidth() - 32);
@@ -818,9 +819,16 @@ export function LaunchWindow() {
 		const anchorRect = hudAnchorRef.current?.getBoundingClientRect();
 		const pillEl = tabEl ?? barEl;
 		const pillWidth = tabEl ? tabEl.offsetWidth : Math.round(barRect.width || HUD_PILL_WIDTH);
-		const pillHeight = tabEl ? tabEl.offsetHeight : Math.round(barHeight);
+		// The tuck bump above the pill counts as pill, so it is never pushed off screen.
+		const pillTopOffset = Math.min(
+			pillEl.offsetTop,
+			tabEl ? pillEl.offsetTop : (tuckBumpRef.current?.offsetTop ?? pillEl.offsetTop),
+		);
+		const pillHeight = tabEl
+			? tabEl.offsetHeight
+			: Math.round(barHeight) + pillEl.offsetTop - pillTopOffset;
 		const pillLeft = (anchorRect?.left ?? 0) + pillEl.offsetLeft;
-		const pillTop = (anchorRect?.top ?? 0) + pillEl.offsetTop;
+		const pillTop = (anchorRect?.top ?? 0) + pillTopOffset;
 		const pillOffsetX = Math.round(pillLeft + pillWidth / 2 - window.innerWidth / 2);
 		const pillOffsetY = Math.round(pillTop + pillHeight / 2 - window.innerHeight / 2);
 		const reportedPill = reportedPillSizeRef.current;
@@ -1902,6 +1910,17 @@ export function LaunchWindow() {
 			canPeek ||
 			hasNotices ||
 			Boolean(shownRemovedClip));
+	// Hidden while the pill is tucked or a panel stands where it sits.
+	const tuckBumpHidden =
+		Boolean(dockedSide || tuckedSide) ||
+		(stackVisible &&
+			stackPlacement === "above" &&
+			(showSetup ||
+				showSource ||
+				permissionPresence.present ||
+				peekOpen ||
+				hasNotices ||
+				Boolean(shownRemovedClip)));
 	// Pick the stack's side before the first frame it is visible in, while the
 	// window is still: a pill near the top opens its panels below it.
 	useLayoutEffect(() => {
@@ -2054,9 +2073,6 @@ export function LaunchWindow() {
 								label={t("peek.open")}
 								onClick={togglePeek}
 							/>
-							{canMinimize ? (
-								<HudTuckButton label={t("tooltips.tuckHud")} onClick={tuckToTop} />
-							) : null}
 							<HudSettingsButton
 								disabled={starting || saving}
 								expanded={isDeviceSettingsOpen}
@@ -2125,9 +2141,6 @@ export function LaunchWindow() {
 								label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
 								onClick={toggleWebcam}
 							/>
-							{canMinimize ? (
-								<HudTuckButton label={t("tooltips.tuckHud")} onClick={tuckToTop} />
-							) : null}
 							<HudSettingsButton
 								disabled={starting || saving}
 								expanded={isDeviceSettingsOpen}
@@ -2138,6 +2151,23 @@ export function LaunchWindow() {
 						</div>
 					)}
 				</div>
+
+				{canMinimize ? (
+					<div
+						ref={tuckBumpRef}
+						data-testid="hud-tuck-bump"
+						data-hidden={tuckBumpHidden || undefined}
+						className={styles.hudTuckBump}
+					>
+						<HudTuckButton
+							label={t("tooltips.tuckHud")}
+							hidden={tuckBumpHidden}
+							onClick={tuckToTop}
+							onMouseEnter={enableHudMouseEvents}
+							onMouseLeave={handlePointerLeave}
+						/>
+					</div>
+				) : null}
 
 				{shownDockSide ? (
 					<div

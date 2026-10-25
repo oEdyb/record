@@ -326,23 +326,35 @@ export const HudSettingsButton = memo(function HudSettingsButton({
 });
 
 /** Sends the pill up into the top edge as a tab, one click instead of a drag. */
+/** The bump on the pill's top edge that tucks the pill into the top of the screen. */
 export const HudTuckButton = memo(function HudTuckButton({
 	label,
+	hidden,
 	onClick,
+	onMouseEnter,
+	onMouseLeave,
 }: {
 	label: string;
+	hidden: boolean;
 	onClick: () => void;
+	onMouseEnter: () => void;
+	onMouseLeave: () => void;
 }) {
 	return (
 		<Tooltip content={label}>
 			<button
 				type="button"
 				data-testid="hud-tuck-button"
+				data-hud-interactive={hidden ? undefined : "true"}
 				aria-label={label}
-				className={hudIconBtnClasses}
+				aria-hidden={hidden || undefined}
+				tabIndex={hidden ? -1 : undefined}
+				className="flex h-full w-full cursor-pointer items-center justify-center rounded-[inherit] text-[#7d8794] transition-colors duration-150 hover:text-[#f5f7fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
 				onClick={onClick}
+				onMouseEnter={onMouseEnter}
+				onMouseLeave={onMouseLeave}
 			>
-				<ChevronUp size={18} aria-hidden />
+				<ChevronUp size={14} strokeWidth={2.5} aria-hidden />
 			</button>
 		</Tooltip>
 	);
