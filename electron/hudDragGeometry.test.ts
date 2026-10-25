@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { clampHudDragPosition, initialHudBounds, resizeHudAroundPill } from "./hudDragGeometry";
+import {
+	clampHudDragPosition,
+	HUD_DOCK_PUSH,
+	hudBoundsAtEdge,
+	hudDockPush,
+	initialHudBounds,
+	openDisplaySides,
+	pillCenterOf,
+	resizeHudAroundPill,
+} from "./hudDragGeometry";
 
 const workArea = { x: 0, y: 34, width: 1710, height: 995 };
 // Taller than the display: the window reserves menu room above and below the pill.
@@ -104,5 +113,76 @@ describe("initialHudBounds", () => {
 		const bounds = initialHudBounds(size, pill, workArea);
 		expect(bounds.x + bounds.width / 2).toBe(855);
 		expect(bounds.y + bounds.height / 2 + pill.height / 2).toBe(34 + 995 - 25);
+	});
+});
+
+describe("hudDockPush", () => {
+	const all = new Set(["left", "right", "top"] as const);
+	// Where the window goes for the pill's top-left corner to be asked to sit at (left, top).
+	const at = (left: number, top = 500) => ({
+		x: left + pill.width / 2 - size.width / 2,
+		y: top + pill.height / 2 - size.height / 2,
+	});
+
+	it("tucks in only once the pill is shoved past the edge, not when it touches it", () => {
+		expect(hudDockPush(at(0), size, pill, workArea, all)).toBeNull();
+		expect(hudDockPush(at(-HUD_DOCK_PUSH + 1), size, pill, workArea, all)).toBeNull();
+		expect(hudDockPush(at(-HUD_DOCK_PUSH), size, pill, workArea, all)).toBe("left");
+		expect(hudDockPush(at(1710 - pill.width + HUD_DOCK_PUSH), size, pill, workArea, all)).toBe(
+			"right",
+		);
+		expect(hudDockPush(at(600, 34), size, pill, workArea, all)).toBeNull();
+		expect(hudDockPush(at(600, 34 - HUD_DOCK_PUSH), size, pill, workArea, all)).toBe("top");
+	});
+
+	it("never tucks into an edge another display continues past", () => {
+		const leftOnly = new Set(["left"] as const);
+		expect(hudDockPush(at(1710 - pill.width + 200), size, pill, workArea, leftOnly)).toBeNull();
+		expect(hudDockPush(at(600, -200), size, pill, workArea, leftOnly)).toBeNull();
+	});
+});
+
+describe("openDisplaySides", () => {
+	const display = { x: 0, y: 0, width: 1710, height: 1107 };
+
+	it("keeps every edge open for a lone display", () => {
+		expect([...openDisplaySides(display, [])].sort()).toEqual(["left", "right", "top"]);
+	});
+
+	it("closes the edge a neighbouring display sits against", () => {
+		const right = { x: 1710, y: -200, width: 2560, height: 1440 };
+		expect([...openDisplaySides(display, [right])].sort()).toEqual(["left", "top"]);
+		const above = { x: -300, y: -1440, width: 2560, height: 1440 };
+		expect([...openDisplaySides(display, [above])].sort()).toEqual(["left", "right"]);
+	});
+
+	it("ignores a display beside it that does not overlap", () => {
+		const belowRight = { x: 1710, y: 1107, width: 1920, height: 1080 };
+		expect([...openDisplaySides(display, [belowRight])].sort()).toEqual(["left", "right", "top"]);
+	});
+});
+
+describe("hudBoundsAtEdge", () => {
+	const tab = { width: 57, height: 50, offsetX: 28.5 - 212, offsetY: 0 };
+
+	it("holds a tab flush against its side edge at the asked-for height", () => {
+		const left = hudBoundsAtEdge({ x: 300, y: 500 }, size, tab, workArea, "left");
+		expect(pillRect(left, tab).left).toBe(0);
+		expect(pillCenterOf(left, size, tab).y).toBe(500);
+		const right = hudBoundsAtEdge({ x: 300, y: 500 }, size, tab, workArea, "right");
+		expect(pillRect(right, tab).right).toBe(1710);
+	});
+
+	it("holds a top tab flush under the top of the work area, above the window centre", () => {
+		const topTab = { width: 64, height: 40, offsetX: -180, offsetY: -5 };
+		const bounds = hudBoundsAtEdge({ x: 800, y: 900 }, size, topTab, workArea, "top");
+		const center = pillCenterOf(bounds, size, topTab);
+		expect(center.y - topTab.height / 2).toBe(34);
+		expect(center.x).toBe(800);
+	});
+
+	it("keeps a side tab inside the work area when dragged past the top", () => {
+		const top = hudBoundsAtEdge({ x: 0, y: -900 }, size, tab, workArea, "left");
+		expect(pillRect(top, tab).top).toBe(34);
 	});
 });

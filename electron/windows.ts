@@ -16,7 +16,12 @@ import { COMPACT_REVIEW_MIN_SIZE, type WindowBounds } from "./compactReviewGeome
 import {
 	clampHudDragPosition,
 	DEFAULT_HUD_PILL_SIZE,
+	type HudDockSide,
+	hudBoundsAtEdge,
+	hudDockPush,
 	initialHudBounds,
+	openDisplaySides,
+	pillCenterOf,
 	resizeHudAroundPill,
 } from "./hudDragGeometry";
 import {
@@ -378,6 +383,50 @@ let hudDragOrigin: { x: number; y: number } | null = null;
 // Size of the painted pill, reported by the renderer. Only the pill must stay on
 // the display; the transparent window around it may reach past the edges.
 let hudPillSize = { ...DEFAULT_HUD_PILL_SIZE };
+// The edge the pill is tucked into as a tab. The window does not move to tuck or
+// untuck: the pill already touches that edge, and the renderer slides it in and out.
+let hudDockSide: HudDockSide | null = null;
+// The edge the current drag is shoving the pill past; it tucks in there on release.
+let hudDockPushSide: HudDockSide | null = null;
+
+function sendHudDock() {
+	if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return;
+	hudOverlayWindow.webContents.send("hud-overlay-dock-changed", hudDockSide);
+}
+
+/** The display under the painted pill, which may sit far from the window's centre. */
+function displayUnderPill(pillCenter: { x: number; y: number }) {
+	return screen.getDisplayNearestPoint({
+		x: Math.round(pillCenter.x),
+		y: Math.round(pillCenter.y),
+	});
+}
+
+// The renderer tucks the pill back in on launch and slides it out on a click on the
+// tab or when a take starts capturing. Tucking first sets the pill against that edge.
+ipcMain.on("hud-overlay-set-dock", (event, side: unknown) => {
+	if (!isHudSender(event.sender.id)) return;
+	const win = hudOverlayWindow;
+	if ((side === "left" || side === "right" || side === "top") && win && !win.isDestroyed()) {
+		const bounds = win.getBounds();
+		const center = pillCenterOf(bounds, bounds, hudPillSize);
+		const display = displayUnderPill(center);
+		const others = screen
+			.getAllDisplays()
+			.filter((other) => other.id !== display.id)
+			.map((other) => other.bounds);
+		// A restored edge another display now continues past stays untucked.
+		if (openDisplaySides(display.bounds, others).has(side)) {
+			if (hudDockSide !== side)
+				win.setBounds(hudBoundsAtEdge(center, bounds, hudPillSize, display.workArea, side));
+			hudDockSide = side;
+		}
+	} else if (side === null) {
+		hudDockSide = null;
+	}
+	// Always answered, so a reloaded renderer learns where the pill stands.
+	sendHudDock();
+});
 
 ipcMain.on("hud-overlay-hide", () => {
 	if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
@@ -435,6 +484,7 @@ ipcMain.on("hud-overlay-drag-start", () => {
 	// finiteness check only keeps a garbage origin from reaching a native setter.
 	const [x, y] = hudOverlayWindow.getPosition();
 	hudDragOrigin = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+	hudDockPushSide = null;
 });
 
 ipcMain.on("hud-overlay-drag-to", (_event, deltaX: number, deltaY: number) => {
@@ -458,17 +508,36 @@ ipcMain.on("hud-overlay-drag-to", (_event, deltaX: number, deltaY: number) => {
 	const x = Math.round(hudDragOrigin.x + deltaX) | 0;
 	const y = Math.round(hudDragOrigin.y + deltaY) | 0;
 	const [width, height] = hudOverlayWindow.getSize();
-	const display = screen.getDisplayNearestPoint({
-		x: Math.round(x + width / 2),
-		y: Math.round(y + height / 2),
-	});
-	const next = clampHudDragPosition({ x, y }, { width, height }, hudPillSize, display.workArea);
+	const pillCenter = pillCenterOf({ x, y }, { width, height }, hudPillSize);
+	const display = displayUnderPill(pillCenter);
+	// The tab slides only along its edge.
+	const next = hudDockSide
+		? hudBoundsAtEdge(pillCenter, { width, height }, hudPillSize, display.workArea, hudDockSide)
+		: clampHudDragPosition({ x, y }, { width, height }, hudPillSize, display.workArea);
+	if (!hudDockSide) {
+		const others = screen
+			.getAllDisplays()
+			.filter((other) => other.id !== display.id)
+			.map((other) => other.bounds);
+		hudDockPushSide = hudDockPush(
+			{ x, y },
+			{ width, height },
+			hudPillSize,
+			display.workArea,
+			openDisplaySides(display.bounds, others),
+		);
+	}
 
 	hudOverlayWindow.setPosition(next.x, next.y, false);
 });
 
 ipcMain.on("hud-overlay-drag-end", () => {
 	hudDragOrigin = null;
+	if (hudDockPushSide) {
+		hudDockSide = hudDockPushSide;
+		sendHudDock();
+	}
+	hudDockPushSide = null;
 });
 
 // The HUD window can reach onto a neighbouring display, where Chromium's
@@ -491,11 +560,11 @@ function sendHudWorkArea(win: BrowserWindow) {
 /** Moves or resizes the HUD so its pill stays where it was and on the display. */
 function placeHudAroundPill(win: BrowserWindow, size: { width: number; height: number }) {
 	const bounds = win.getBounds();
-	const { workArea } = screen.getDisplayNearestPoint({
-		x: Math.round(bounds.x + bounds.width / 2),
-		y: Math.round(bounds.y + bounds.height / 2),
-	});
-	const next = resizeHudAroundPill(bounds, size, hudPillSize, workArea);
+	const pillCenter = pillCenterOf(bounds, bounds, hudPillSize);
+	const { workArea } = displayUnderPill(pillCenter);
+	const next = hudDockSide
+		? hudBoundsAtEdge(pillCenter, size, hudPillSize, workArea, hudDockSide)
+		: resizeHudAroundPill(bounds, size, hudPillSize, workArea);
 	if (
 		next.x === bounds.x &&
 		next.y === bounds.y &&
@@ -536,27 +605,32 @@ ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
 });
 
 // The painted pill changes size without the window doing so (minimize, expand,
-// Record). It grows and shrinks from its left end, so the renderer also says how
-// far its centre sits from the window's. A pill that grows at a screen edge is
+// Record, tucking into an edge). It grows and shrinks from its left end, so the
+// renderer also says how far its centre sits from the window's. A pill that grows at a screen edge is
 // pulled back onto the display.
-ipcMain.on("hud-overlay-set-pill-size", (event, width: number, height: number, offsetX = 0) => {
-	if (
-		!isHudSender(event.sender.id) ||
-		!Number.isFinite(width) ||
-		!Number.isFinite(height) ||
-		!Number.isFinite(offsetX)
-	) {
-		return;
-	}
-	hudPillSize = {
-		width: Math.max(1, Math.round(width)),
-		height: Math.max(1, Math.round(height)),
-		offsetX: Math.round(offsetX),
-	};
-	if (!hudOverlayWindow || hudOverlayWindow.isDestroyed() || hudDragOrigin) return;
-	const [currentWidth, currentHeight] = hudOverlayWindow.getSize();
-	placeHudAroundPill(hudOverlayWindow, { width: currentWidth, height: currentHeight });
-});
+ipcMain.on(
+	"hud-overlay-set-pill-size",
+	(event, width: number, height: number, offsetX = 0, offsetY = 0) => {
+		if (
+			!isHudSender(event.sender.id) ||
+			!Number.isFinite(width) ||
+			!Number.isFinite(height) ||
+			!Number.isFinite(offsetX) ||
+			!Number.isFinite(offsetY)
+		) {
+			return;
+		}
+		hudPillSize = {
+			width: Math.max(1, Math.round(width)),
+			height: Math.max(1, Math.round(height)),
+			offsetX: Math.round(offsetX),
+			offsetY: Math.round(offsetY),
+		};
+		if (!hudOverlayWindow || hudOverlayWindow.isDestroyed() || hudDragOrigin) return;
+		const [currentWidth, currentHeight] = hudOverlayWindow.getSize();
+		placeHudAroundPill(hudOverlayWindow, { width: currentWidth, height: currentHeight });
+	},
+);
 
 /**
  * Frameless transparent HUD overlay, always-on-top, with its pill centred near
@@ -571,6 +645,7 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	// resize itself the instant it becomes visible. See
 	// src/components/launch/hudGeometry.ts.
 	hudPillSize = { ...DEFAULT_HUD_PILL_SIZE };
+	hudDockSide = null;
 	const {
 		x,
 		y,

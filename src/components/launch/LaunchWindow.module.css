@@ -81,7 +81,13 @@
 	   and the helper is starting at the same moment. No backdrop blur: at 94%
 	   opacity it was invisible but repainted on every frame of this morph. */
 	interpolate-size: allow-keywords;
-	transition: width 200ms cubic-bezier(0.23, 1, 0.32, 1);
+	/* Width for the morph; the rest brings a tucked pill back out of its edge once
+	   the tab has slid in. */
+	transition:
+		width 200ms cubic-bezier(0.23, 1, 0.32, 1),
+		transform 260ms cubic-bezier(0.23, 1, 0.32, 1) 80ms,
+		opacity 120ms ease 80ms,
+		visibility 0s 80ms;
 }
 
 .hudPillIdle {
@@ -98,6 +104,140 @@
    value and would snap instead of animating. 1 + 4 + grip 48 + 2 + Record 40 + 4 + 1. */
 .hudPillMinimized {
 	width: 100px;
+}
+
+/* Tucking into an edge. Nothing moves the window: the pill already touches the
+   edge, slides through it and out of sight, and the tab slides out of the same edge
+   where the pill went in. Coming back runs the other way. */
+.hudBar[data-tucked] {
+	visibility: hidden;
+	opacity: 0;
+	pointer-events: none;
+	transition:
+		transform 240ms cubic-bezier(0.77, 0, 0.175, 1),
+		opacity 80ms ease 160ms,
+		visibility 0s 240ms;
+}
+
+.hudBar[data-tucked="left"] {
+	transform: translateX(calc(-100% - 24px));
+}
+
+.hudBar[data-tucked="right"] {
+	transform: translateX(calc(100% + 24px));
+}
+
+.hudBar[data-tucked="top"] {
+	transform: translateY(calc(-100% - 24px));
+}
+
+.hudBar[data-instant] {
+	transition: none;
+}
+
+/* A half pill flush with its edge, where the pill went in. It sits against the
+   pill's own box, so tucking and untucking never move the window. */
+.hudDockTab {
+	position: absolute;
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	box-sizing: border-box;
+	border: 1px solid var(--hud-border);
+	background: var(--hud-surface);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.12),
+		0 12px 32px -14px rgba(0, 0, 0, 0.7),
+		0 2px 6px -2px rgba(0, 0, 0, 0.4);
+	animation: hud-dock-tab-in 220ms cubic-bezier(0.23, 1, 0.32, 1) 140ms backwards;
+	transition: transform 160ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* 4 + grip 48 + 4 + 1. */
+.hudDockTab[data-side="left"],
+.hudDockTab[data-side="right"] {
+	top: 0;
+	width: 57px;
+	height: 50px;
+	padding: 4px;
+}
+
+.hudDockTab[data-side="left"] {
+	--hud-dock-out: translateX(-100%);
+	left: 0;
+	border-left-width: 0;
+	border-radius: 0 25px 25px 0;
+}
+
+.hudDockTab[data-side="right"] {
+	--hud-dock-out: translateX(100%);
+	right: 0;
+	border-right-width: 0;
+	border-radius: 25px 0 0 25px;
+}
+
+.hudDockTab[data-side="top"] {
+	--hud-dock-out: translateY(-100%);
+	top: 0;
+	left: calc(50% - 32px);
+	width: 64px;
+	height: 40px;
+	padding: 0 4px;
+	border-top-width: 0;
+	border-radius: 0 0 20px 20px;
+}
+
+.hudDockTab[data-closing] {
+	transform: var(--hud-dock-out);
+	pointer-events: none;
+}
+
+.hudDockTab[data-instant] {
+	animation: none;
+}
+
+@keyframes hud-dock-tab-in {
+	from {
+		transform: var(--hud-dock-out);
+	}
+}
+
+.hudDockMark {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+}
+
+.hudDockMark[data-side="right"] {
+	flex-direction: row-reverse;
+}
+
+.hudDockBrand {
+	position: relative;
+	display: flex;
+}
+
+/* A take is still open (paused), so the tab says so. */
+.hudDockTake {
+	position: absolute;
+	top: -2px;
+	right: -3px;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: #f2675d;
+	box-shadow: 0 0 0 1.5px var(--hud-surface);
+}
+
+.hudDockChevron {
+	color: var(--hud-muted);
+	transition: color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.hudDockTab:hover .hudDockChevron {
+		color: var(--hud-ink);
+	}
 }
 
 .hudPillRow {

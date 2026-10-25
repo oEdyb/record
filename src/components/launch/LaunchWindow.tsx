@@ -32,6 +32,7 @@ import {
 	HudCompactPauseButton,
 	HudCompactRecordButton,
 	HudCompactTimer,
+	HudDockMark,
 	HudDragHandle,
 	HudExpandButton,
 	HudMicButton,
@@ -89,6 +90,10 @@ const FALLBACK_SCREEN_HEIGHT = 1080;
 const FALLBACK_SCREEN_WIDTH = 1920;
 const HUD_PILL_WIDTH = 424;
 const HUD_PILL_HEIGHT = 50;
+/** How long the tab takes to slide back into its edge; matches .hudDockTab[data-closing]. */
+const HUD_DOCK_TAB_EXIT_MS = 160;
+
+type HudDockSide = "left" | "right" | "top";
 /** Toasts sit next to the pill, which is centred in the window: half its height and one stack gap. */
 const HUD_TOAST_OFFSET = `calc(50% + ${HUD_PILL_HEIGHT / 2 + HUD_STACK_GAP}px)`;
 const REMOVED_CLIP_FEEDBACK_MS = 4_000;
@@ -231,6 +236,20 @@ export function LaunchWindow() {
 	// Linux hands the grip to the compositor as a drag region, so it gets no clicks.
 	const canMinimize = !isLinuxHud;
 	const pillMinimized = canMinimize && hudMinimized && !pillRecording;
+	// The pill can tuck into a side or the top edge as a tab, out of the way until it is
+	// needed. Main tucks it in when a drag shoves it past the edge; a capturing take
+	// always brings it back out, and a paused one may stay tucked.
+	const [hudDock, setHudDock] = useState<HudDockSide | null>(null);
+	const capturing = pillRecording && !presentation.paused;
+	const dockedSide = canMinimize && !capturing ? hudDock : null;
+	const dockedSideRef = useRef(dockedSide);
+	dockedSideRef.current = dockedSide;
+	// Tucking back in on launch happens before the pill is ever seen, so it does not slide.
+	const [dockInstant, setDockInstant] = useState(false);
+	const dockPresence = usePresence(dockedSide !== null, HUD_DOCK_TAB_EXIT_MS);
+	const lastDockSideRef = useRef<HudDockSide>("left");
+	if (dockedSide) lastDockSideRef.current = dockedSide;
+	const shownDockSide = dockPresence.present ? lastDockSideRef.current : null;
 
 	const keptClipCount = presentation.recordedClips.filter((clip) => !clip.removed).length;
 	// The replay reads finished clip files, so it exists only while a completed
@@ -279,6 +298,12 @@ export function LaunchWindow() {
 	useEffect(() => {
 		if (!canPeek) setIsPeekOpen(false);
 	}, [canPeek]);
+
+	// Record from the tray or a shortcut can ask for the source picker or a permission
+	// while the pill is tucked away; it comes out so the question is seen.
+	useEffect(() => {
+		if (dockedSide && isPopoverOpen) window.electronAPI?.setHudDock?.(null);
+	}, [dockedSide, isPopoverOpen]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -467,6 +492,29 @@ export function LaunchWindow() {
 		[closePopovers],
 	);
 
+	useEffect(() => {
+		let restoring = loadUserPreferences().hudDock;
+		const off = window.electronAPI?.onHudDockChanged?.((side) => {
+			// Panels close as the pill tucks in; one that opens later brings it back out.
+			if (side) closePopovers();
+			setDockInstant(side !== null && side === restoring);
+			restoring = null;
+			setHudDock(side);
+			saveUserPreferences({ hudDock: side });
+		});
+		if (restoring) window.electronAPI?.setHudDock?.(restoring);
+		return off;
+	}, [closePopovers]);
+
+	useEffect(() => {
+		if (capturing && hudDock) window.electronAPI?.setHudDock?.(null);
+	}, [capturing, hudDock]);
+
+	const undockHud = useCallback((fromKeyboard: boolean) => {
+		refocusGripRef.current = fromKeyboard;
+		window.electronAPI?.setHudDock?.(null);
+	}, []);
+
 	const openPermissionPanel = useCallback(
 		(permissions: CapturePermissions, then: (() => void) | null) => {
 			pendingPermissionActionRef.current = then;
@@ -624,7 +672,8 @@ export function LaunchWindow() {
 	//      down as CSS custom properties.
 	// ---------------------------------------------------------------------------
 	const hudAllocatedSizeRef = useRef({ width: 0, height: 0 });
-	const reportedPillSizeRef = useRef({ width: 0, height: 0, offsetX: 0 });
+	const reportedPillSizeRef = useRef({ width: 0, height: 0, offsetX: 0, offsetY: 0 });
+	const dockTabRef = useRef<HTMLDivElement | null>(null);
 	const isDraggingHudRef = useRef(false);
 
 	const horizontalHudWidth = Math.min(HUD_PILL_WIDTH, getAvailableScreenWidth() - 32);
@@ -733,18 +782,32 @@ export function LaunchWindow() {
 		});
 
 		// The painted pill is what drags and resizes keep on screen, so main hears
-		// about it whenever it changes, even when the window itself does not.
-		const pillWidth = Math.round(barRect.width || HUD_PILL_WIDTH);
-		const pillHeight = Math.round(barHeight);
-		const pillOffsetX = Math.round(barRect.left + pillWidth / 2 - window.innerWidth / 2);
+		// about it whenever it changes, even when the window itself does not. While
+		// tucked, that is the tab. Positions come from layout, not paint: the pill and
+		// the tab slide in and out of their edge on a transform.
+		const tabEl = dockedSideRef.current ? dockTabRef.current : null;
+		const anchorRect = hudAnchorRef.current?.getBoundingClientRect();
+		const pillEl = tabEl ?? barEl;
+		const pillWidth = tabEl ? tabEl.offsetWidth : Math.round(barRect.width || HUD_PILL_WIDTH);
+		const pillHeight = tabEl ? tabEl.offsetHeight : Math.round(barHeight);
+		const pillLeft = (anchorRect?.left ?? 0) + pillEl.offsetLeft;
+		const pillTop = (anchorRect?.top ?? 0) + pillEl.offsetTop;
+		const pillOffsetX = Math.round(pillLeft + pillWidth / 2 - window.innerWidth / 2);
+		const pillOffsetY = Math.round(pillTop + pillHeight / 2 - window.innerHeight / 2);
 		const reportedPill = reportedPillSizeRef.current;
 		if (
 			reportedPill.width !== pillWidth ||
 			reportedPill.height !== pillHeight ||
-			reportedPill.offsetX !== pillOffsetX
+			reportedPill.offsetX !== pillOffsetX ||
+			reportedPill.offsetY !== pillOffsetY
 		) {
-			reportedPillSizeRef.current = { width: pillWidth, height: pillHeight, offsetX: pillOffsetX };
-			window.electronAPI.setHudPillSize?.(pillWidth, pillHeight, pillOffsetX);
+			reportedPillSizeRef.current = {
+				width: pillWidth,
+				height: pillHeight,
+				offsetX: pillOffsetX,
+				offsetY: pillOffsetY,
+			};
+			window.electronAPI.setHudPillSize?.(pillWidth, pillHeight, pillOffsetX, pillOffsetY);
 		}
 
 		const allocated = hudAllocatedSizeRef.current;
@@ -800,6 +863,13 @@ export function LaunchWindow() {
 		(el: HTMLDivElement | null) => observeHudElement(el, hudBarRef),
 		[observeHudElement],
 	);
+	const setDockTabEl = useCallback(
+		(el: HTMLDivElement | null) => observeHudElement(el, dockTabRef),
+		[observeHudElement],
+	);
+	// Main hears about the tab, or the pill again, the moment it tucks in or comes out.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-measures on each tuck and untuck
+	useLayoutEffect(() => measureHudSize(), [dockedSide, measureHudSize]);
 	const setHudNoticesEl = useCallback(
 		(el: HTMLDivElement | null) => observeHudElement(el, hudNoticesRef),
 		[observeHudElement],
@@ -1439,12 +1509,13 @@ export function LaunchWindow() {
 
 	// The idle and recording pills each render their own grip, so a press can
 	// outlive the element that started it. Any switch ends the drag.
-	const gripRecordingRef = useRef(pillRecording);
+	const gripKey = `${pillRecording}:${dockedSide}`;
+	const gripRecordingRef = useRef(gripKey);
 	useEffect(() => {
-		if (gripRecordingRef.current === pillRecording) return;
-		gripRecordingRef.current = pillRecording;
+		if (gripRecordingRef.current === gripKey) return;
+		gripRecordingRef.current = gripKey;
 		endHudDrag();
-	}, [pillRecording, endHudDrag]);
+	}, [gripKey, endHudDrag]);
 
 	const handleRootPointerMove = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
@@ -1751,16 +1822,17 @@ export function LaunchWindow() {
 		if (!refocusGripRef.current) return;
 		refocusGripRef.current = false;
 		document.querySelector<HTMLElement>("[data-testid='hud-drag-handle']")?.focus();
-	}, [pillMinimized]);
+	}, [pillMinimized, dockedSide]);
 
 	const stackVisible =
-		isPopoverOpen ||
-		showSetup ||
-		showSource ||
-		permissionPresence.present ||
-		canPeek ||
-		hasNotices ||
-		Boolean(shownRemovedClip);
+		!dockedSide &&
+		(isPopoverOpen ||
+			showSetup ||
+			showSource ||
+			permissionPresence.present ||
+			canPeek ||
+			hasNotices ||
+			Boolean(shownRemovedClip));
 	// Pick the stack's side before the first frame it is visible in, while the
 	// window is still: a pill near the top opens its panels below it.
 	useLayoutEffect(() => {
@@ -1855,6 +1927,8 @@ export function LaunchWindow() {
 					data-hud-interactive="true"
 					data-recording-layout={pillRecording ? "recording" : "idle"}
 					data-minimized={pillMinimized}
+					data-tucked={dockedSide ?? undefined}
+					data-instant={dockInstant || undefined}
 					data-starting={starting && !recordingHudActive}
 					className={`${styles.hudBar} ${
 						pillRecording
@@ -1984,6 +2058,32 @@ export function LaunchWindow() {
 						</div>
 					)}
 				</div>
+
+				{shownDockSide ? (
+					<div
+						ref={setDockTabEl}
+						data-hud-interactive="true"
+						data-testid="hud-dock-tab"
+						data-side={shownDockSide}
+						data-closing={dockPresence.closing || undefined}
+						data-instant={dockInstant || undefined}
+						className={styles.hudDockTab}
+						onPointerEnter={enableHudMouseEvents}
+						onPointerDown={enableHudMouseEvents}
+						onMouseEnter={enableHudMouseEvents}
+						onMouseLeave={handlePointerLeave}
+					>
+						<HudDragHandle
+							{...dragHandleProps}
+							label={t("tooltips.expandHud")}
+							onTap={undockHud}
+							tapExpanded={false}
+							roomy
+						>
+							<HudDockMark side={shownDockSide} takeOpen={pillRecording} />
+						</HudDragHandle>
+					</div>
+				) : null}
 
 				{stackVisible && (
 					// The first child sits closest to the bar on either side.

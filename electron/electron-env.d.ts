@@ -118,6 +118,8 @@ interface Window {
 		/** Where the cursor sits in the HUD while it takes the mouse; null once it left the window. */
 		onHudPointerCheck?: (callback: (point: { x: number; y: number } | null) => void) => () => void;
 		onHudVisibilityChanged?: (callback: (visible: boolean) => void) => () => void;
+		/** The edge the pill is tucked into as a tab, or null while it is out. */
+		onHudDockChanged?: (callback: (side: "left" | "right" | "top" | null) => void) => () => void;
 		/** Work area of the display under the HUD's pill, which the window may extend past. */
 		onHudWorkAreaChanged?: (
 			callback: (area: { x: number; y: number; width: number; height: number }) => void,
@@ -557,7 +559,9 @@ interface Window {
 		endHudOverlayDrag: () => void;
 		setHudOverlaySize: (width: number, height: number) => void;
 		/** The painted pill, which drags and resizes keep on the display. */
-		setHudPillSize: (width: number, height: number, offsetX: number) => void;
+		setHudPillSize: (width: number, height: number, offsetX: number, offsetY?: number) => void;
+		/** Tucks the pill into an edge as a tab, or slides it out with null. */
+		setHudDock?: (side: "left" | "right" | "top" | null) => void;
 		setHudDirectionExclusionRectangles: (
 			rectangles: Array<{ x: number; y: number; width: number; height: number }>,
 		) => void;

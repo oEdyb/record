@@ -24,6 +24,8 @@ export interface UserPreferences {
 	trayLayout: "horizontal" | "vertical";
 	/** Idle recording pill folded down to the mark and Record */
 	hudMinimized: boolean;
+	/** Edge the pill is tucked into as a tab, so it stays out of the way across launches */
+	hudDock: "left" | "right" | "top" | null;
 	/** Last native screen position of the recording-mode webcam confidence monitor */
 	cameraPreviewPosition: { x: number; y: number } | null;
 	/** Last compact window size of the webcam confidence monitor; never camera layout */
@@ -53,6 +55,7 @@ export const DEFAULT_PREFS: UserPreferences = {
 	projectFolder: null,
 	trayLayout: "horizontal",
 	hudMinimized: false,
+	hudDock: null,
 	cameraPreviewPosition: null,
 	cameraPreviewSize: null,
 	cameraMonitorHidden: false,
@@ -142,6 +145,8 @@ export function loadUserPreferences(): UserPreferences {
 				: DEFAULT_PREFS.trayLayout,
 		hudMinimized:
 			typeof raw.hudMinimized === "boolean" ? raw.hudMinimized : DEFAULT_PREFS.hudMinimized,
+		hudDock:
+			raw.hudDock === "left" || raw.hudDock === "right" ? raw.hudDock : DEFAULT_PREFS.hudDock,
 		cameraPreviewPosition:
 			raw.cameraPreviewPosition &&
 			typeof raw.cameraPreviewPosition === "object" &&

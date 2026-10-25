@@ -132,8 +132,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setHudOverlaySize: (width: number, height: number) => {
 		ipcRenderer.send("hud-overlay-set-size", width, height);
 	},
-	setHudPillSize: (width: number, height: number, offsetX: number) => {
-		ipcRenderer.send("hud-overlay-set-pill-size", width, height, offsetX);
+	setHudPillSize: (width: number, height: number, offsetX: number, offsetY = 0) => {
+		ipcRenderer.send("hud-overlay-set-pill-size", width, height, offsetX, offsetY);
+	},
+	setHudDock: (side: "left" | "right" | "top" | null) => {
+		ipcRenderer.send("hud-overlay-set-dock", side);
 	},
 	setHudDirectionExclusionRectangles: (
 		rectangles: Array<{ x: number; y: number; width: number; height: number }>,
@@ -304,6 +307,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = (_event: unknown, point: { x: number; y: number } | null) => callback(point);
 		ipcRenderer.on("hud-overlay-pointer-check", listener);
 		return () => ipcRenderer.removeListener("hud-overlay-pointer-check", listener);
+	},
+	onHudDockChanged: (callback: (side: "left" | "right" | "top" | null) => void) => {
+		const listener = (_event: unknown, side: unknown) =>
+			callback(side === "left" || side === "right" || side === "top" ? side : null);
+		ipcRenderer.on("hud-overlay-dock-changed", listener);
+		return () => ipcRenderer.removeListener("hud-overlay-dock-changed", listener);
 	},
 	onHudVisibilityChanged: (callback: (visible: boolean) => void) => {
 		const listener = (_event: unknown, visible: boolean) => callback(visible === true);
