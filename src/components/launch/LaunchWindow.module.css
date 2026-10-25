@@ -82,10 +82,10 @@
 	box-sizing: border-box;
 	height: 50px;
 	border-radius: 25px;
-	border: 1px solid var(--hud-border);
+	/* The border is drawn by ::after, so it can open under the tuck bump. */
+	padding: 1px;
 	background: var(--hud-surface);
 	box-shadow:
-		inset 0 1px 0 rgba(255, 255, 255, 0.12),
 		0 12px 32px -14px rgba(0, 0, 0, 0.7),
 		0 2px 6px -2px rgba(0, 0, 0, 0.4);
 	overflow: hidden;
@@ -117,6 +117,42 @@
    value and would snap instead of animating. 1 + 4 + grip 48 + 2 + Record 40 + 4 + 1. */
 .hudPillMinimized {
 	width: 100px;
+}
+
+/* How much of the outline is open under the tuck bump: 1 open, 0 closed. A
+   registered number, so it fades with the bump instead of snapping. */
+@property --hud-bump-cut {
+	syntax: "<number>";
+	inherits: false;
+	initial-value: 0;
+}
+
+/* The pill's border and top highlight. Under the bump, a 50px gap in its top two
+   rows hands the outline over to the bump's own, so the two read as one shape. */
+.hudBar::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	border: 1px solid var(--hud-border);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+	pointer-events: none;
+	--hud-bump-cut: 0;
+	mask:
+		linear-gradient(#000 0 0) top left / calc(50% - 25px) 2px no-repeat,
+		linear-gradient(#000 0 0) top right / calc(50% - 25px) 2px no-repeat,
+		linear-gradient(rgb(0 0 0 / calc(1 - var(--hud-bump-cut))) 0 0) top center / 50px 2px no-repeat,
+		linear-gradient(#000 0 0) bottom / 100% calc(100% - 2px) no-repeat;
+	transition: --hud-bump-cut 80ms ease;
+}
+
+.hudBar[data-bump-cut]::after {
+	--hud-bump-cut: 1;
+	transition: --hud-bump-cut 140ms ease 160ms;
+}
+
+.hudBar[data-instant]::after {
+	transition: none;
 }
 
 /* Tucking into an edge. Nothing moves the window: the pill already touches the
@@ -152,7 +188,7 @@
    travels with the pill into an edge and back out on the same curve. */
 .hudTuckRail {
 	position: absolute;
-	bottom: calc(100% - 2px);
+	bottom: 100%;
 	left: 0;
 	right: 0;
 	z-index: 2;
@@ -198,19 +234,44 @@
 }
 
 /* A small bump centred on the pill's top edge that tucks it into the top of the
-   screen. It overlaps the pill's border and top highlight so the two read as one
-   shape. */
+   screen. Its shape is one SVG drawn into the gap ::after leaves in the pill's
+   outline: curved feet, sides and top, with the border and highlight running on
+   from the pill's. Nothing overlaps the pill's fill, so no seam darkens. */
 .hudTuckBump {
+	position: relative;
 	width: 40px;
+	height: var(--hud-tuck-bump-height);
+	border-radius: 9px 9px 0 0;
+}
+
+/* 50x16: the 40px bump, a 5px foot either side, and the pill's top two rows. */
+.hudTuckShape {
+	position: absolute;
+	top: 0;
+	left: -5px;
+	width: 50px;
 	height: calc(var(--hud-tuck-bump-height) + 2px);
-	box-sizing: border-box;
-	border: 1px solid var(--hud-border);
-	border-bottom-width: 0;
-	border-radius: 10px 10px 0 0;
-	background: var(--hud-surface);
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-	transform-origin: bottom;
-	transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.hudTuckShape > path:nth-child(1) {
+	fill: var(--hud-surface);
+}
+
+.hudTuckShape > path:nth-child(2) {
+	fill: rgba(255, 255, 255, 0.12);
+	fill-rule: evenodd;
+}
+
+.hudTuckShape > path:nth-child(3) {
+	fill: none;
+	stroke: var(--hud-border);
+	stroke-width: 1;
+}
+
+.hudTuckBump > button {
+	position: relative;
 }
 
 .hudTuckBump > button > svg {
@@ -228,8 +289,10 @@
 	}
 }
 
-.hudTuckBump:active {
-	transform: scale(0.94);
+/* Press squeezes the chevron, not the shape, which must stay joined to the pill. */
+.hudTuckBump > button:active > svg {
+	transform: scale(0.85);
+	transition-duration: 100ms;
 }
 
 /* A half pill flush with its edge, where the pill went in. It sits against the

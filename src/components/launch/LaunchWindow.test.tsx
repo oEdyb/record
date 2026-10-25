@@ -2516,6 +2516,19 @@ describe("LaunchWindow minimized pill", () => {
 		expect(screen.getByTestId("hud-tuck-bump")).toHaveAttribute("data-tucked", "left");
 		expect(screen.getByTestId("hud-tuck-button")).toHaveAttribute("tabindex", "-1");
 	});
+
+	it("opens the pill's outline under the bump only while the bump stands there", async () => {
+		window.electronAPI.getSources = vi.fn(async () => [displayOneSource]);
+		renderLaunchWindow();
+		await screen.findByTestId("hud-tuck-button");
+		expect(pill()).toHaveAttribute("data-bump-cut");
+
+		fireEvent.click(screen.getByTestId("launch-source-selector-button"));
+		await screen.findByTestId("hud-source-panel");
+
+		expect(screen.getByTestId("hud-tuck-bump")).toHaveAttribute("data-hidden");
+		expect(pill()).not.toHaveAttribute("data-bump-cut");
+	});
 });
 
 describe("LaunchWindow panel placement", () => {
