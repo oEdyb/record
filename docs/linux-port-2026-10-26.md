@@ -1,3 +1,7 @@
+> Historical engineering log. For the current candidate, acceptance and open gates,
+> read [Linux acceptance](linux-port-acceptance-2026-10-26.md). Runtime hashes and
+> limitations below describe their own checkpoint.
+
 # Linux port — execution and evidence
 
 Date: 2026-10-26. Source: `oEdyb/record`, `main`. Working branch: `feat/linux-port`.
@@ -1096,3 +1100,32 @@ unchanged dependencies remains applicable; no repeated distro installs.
 Inventory: `release/linux-port-20261026-2d432312/`; build recipe, checksums,
 comparison and screenshots accompany the identity evidence. Only affected
 checks ran. Private lab and owned build container stopped.
+
+
+## Four-source handoff and screen-authoritative export tail
+
+The exact `2d432312` AppImage records two clips with screen, synthetic camera,
+660 Hz microphone and 440 Hz system audio in the private lab. Separate files
+produces eight byte-identical, fully decoded originals and no warnings. OTIO
+contains Screen/Camera/Microphone/System audio tracks; all span 871 frames, with
+a two-frame gap where the second camera ends. FCPXML excludes embedded screen
+audio and references each isolated original once.
+
+Rendered One video uses NVENC with no fallback, but the baseline caps clip two
+to its 3.2-second camera instead of its 3.233-second screen, losing two frames.
+The shared native walker now bounds by screen duration and uses its existing
+EOF frame hold for shorter camera media. Two real-render regressions fail
+before (41 vs 120 frames) and pass after, including a request beyond screen EOF.
+The same real project exported through the rebuilt host-addon override changes
+from 869 muxer-reported video frames/14.483 s to 871/14.516 s. Both decode fully.
+Audio retains system unity and the existing 1.4 microphone boost across both
+clips; no embedded-mix doubling. Container frame counts are not source-cadence
+claims. Portable delivery is pending in the acceptance record.
+
+Evidence: `artifacts/linux-port-2026-10-26/four-source-export/`. Only the two
+affected native integration tests ran; formatting and whitespace pass. Strict
+compositor Clippy remains blocked by pre-existing generated/unused-code
+findings; no lint suppressions or unrelated refactors. The lab is stopped.
+An independent strategic review supports the shared architecture and recommends
+one final candidate checkpoint and finite acceptance over repeated rebuilds.
+The current handoff is condensed; its full history remains linked in Git.

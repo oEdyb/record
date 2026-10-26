@@ -1,0 +1,42 @@
+
+running 2 tests
+[d3d] adaptateur Vulkan : NVIDIA GeForce RTX 4070 (DiscreteGpu, Vulkan) -> backend Hardware
+[d3d] adaptateur Vulkan : NVIDIA GeForce RTX 4070 (DiscreteGpu, Vulkan) -> backend Hardware
+[pipeline] export video: 64x64 @ 60 fps, bitrate=2000000 bits/s
+[pipeline] export video: 64x64 @ 60 fps, bitrate=2000000 bits/s
+[h264_nvenc @ 0x7f2ab9079500] InitializeEncoder failed: invalid param (8): Frame Dimension less than the minimum supported value.
+[libopenh264 @ 0x7f2ab9079500] [OpenH264] this = 0x0x7f2aba172b40, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7f2ab9079500] [OpenH264] this = 0x0x7f2aba172b40, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[pipeline] encodeur video : libopenh264 (hardware=false, fallback=true, CPU YUV420P input)
+[h264_nvenc @ 0x7f2ab092dd00] InitializeEncoder failed: invalid param (8): Frame Dimension less than the minimum supported value.
+[pipeline] warning: clip #0 raccourci de 2.317s (fin demandée 3.000s, fin disponible 0.683s; screen="/home/olle/dev/screenrec-linux/crates/compositor/tests/fixtures/seek-eof-vfr.mp4", webcam="/home/olle/dev/screenrec-linux/crates/compositor/tests/fixtures/seek-eof-fragmented.mp4")
+[libopenh264 @ 0x7f2ab092dd00] [OpenH264] this = 0x0x7f2ab09dd0f0, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7f2ab092dd00] [OpenH264] this = 0x0x7f2ab09dd0f0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[pipeline] encodeur video : libopenh264 (hardware=false, fallback=true, CPU YUV420P input)
+[pipeline] warning: clip #0 raccourci de 1.317s (fin demandée 2.000s, fin disponible 0.683s; screen="/home/olle/dev/screenrec-linux/crates/compositor/tests/fixtures/seek-eof-vfr.mp4", webcam="/home/olle/dev/screenrec-linux/crates/compositor/tests/fixtures/seek-eof-fragmented.mp4")
+[mp4 @ 0x7f2ab8f0ed40] Starting second pass: moving the moov atom to the beginning of the file
+[aac @ 0x7f2ab90c5f40] Qavg: 65536.000
+
+thread 'screen_eof_still_bounds_a_request_beyond_the_screen_media' (2998756) panicked at compositor/tests/linux_export_camera_tail.rs:71:5:
+assertion `left == right` failed: screen media remains the authoritative bound
+  left: 41
+ right: 120
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[mp4 @ 0x7f2ab1093880] Starting second pass: moving the moov atom to the beginning of the file
+[aac @ 0x7f2ab09c9800] Qavg: 65536.000
+test screen_eof_still_bounds_a_request_beyond_the_screen_media ... FAILED
+
+thread 'shorter_camera_holds_its_last_frame_without_trimming_the_screen' (2998757) panicked at compositor/tests/linux_export_camera_tail.rs:65:5:
+assertion `left == right` failed: camera EOF must not shorten the screen timeline
+  left: 41
+ right: 120
+test shorter_camera_holds_its_last_frame_without_trimming_the_screen ... FAILED
+
+failures:
+
+failures:
+    screen_eof_still_bounds_a_request_beyond_the_screen_media
+    shorter_camera_holds_its_last_frame_without_trimming_the_screen
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+

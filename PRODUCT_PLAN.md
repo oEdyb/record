@@ -1,7 +1,7 @@
 # Klippt product plan
 
 - Status: active
-- Updated: 2026-10-04
+- Updated: 2026-10-26
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Product source of truth: [`AGENTS.md`](AGENTS.md)
 - Upstream historical roadmap: [`ROADMAP.md`](ROADMAP.md)
@@ -21,9 +21,11 @@ Capture scheduling, long-session acceptance and fast native source handoff are d
 
 The inherited editor delivery sections below are historical or compatibility work, not the
 active feature queue. Its current private repository
-remains `github.com/oEdyb/record` until the compatibility-safe rebrand. It is not an
-OpenScreen distribution, a generic AI editor, or a cross-platform project for the current
-release.
+remains `github.com/oEdyb/record` until the compatibility-safe rebrand.
+The Mac-first commercial alpha and the active Linux engineering candidate share
+the creator workflow. Linux support claims follow the
+[current acceptance record](docs/linux-port-acceptance-2026-10-26.md); Windows remains
+later work. Historical editor sections do not expand the current feature queue.
 
 The first commercial release is a subscription-first paid private alpha. One Klippt Pro
 entitlement covers the full product at a founding price of $19 per month or $99 per year. Lemon
@@ -1043,7 +1045,7 @@ Only after the Mac product is dependable:
   clarify a change; they must not become constant activity added only to chase retention;
 - cloud sharing;
 - direct upload;
-- Windows and Linux product work;
+- Windows product work and broader Linux hardware/desktop coverage;
 - larger media-library workflows;
 - broader caption and translation features;
 - AI chat and provider integrations.

@@ -1,0 +1,6 @@
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793034298874,"video":"nvenc"}
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793034311552,"video":"nvenc"}
+[pipeline] export video: 1920x1080 @ 60 fps, bitrate=15000000 bits/s
+[pipeline] encodeur video : h264_nvenc (hardware=true, fallback=false, CPU YUV420P input)
+[pipeline] warning: clip #1 raccourci de 0.033s (fin demandée 3.233s, fin disponible 3.200s; screen="/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0002.mp4", webcam="/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0002-webcam.mp4")
+agent-lab-klippt-client-f49007db.service: Consumed 34.550s CPU time over 7min 20.861s wall clock time, 2.4G memory peak, 435M memory swap peak.

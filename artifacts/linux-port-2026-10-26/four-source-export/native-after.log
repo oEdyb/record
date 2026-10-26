@@ -1,0 +1,24 @@
+
+running 2 tests
+[d3d] adaptateur Vulkan : NVIDIA GeForce RTX 4070 (DiscreteGpu, Vulkan) -> backend Hardware
+[d3d] adaptateur Vulkan : NVIDIA GeForce RTX 4070 (DiscreteGpu, Vulkan) -> backend Hardware
+[pipeline] export video: 64x64 @ 60 fps, bitrate=2000000 bits/s
+[pipeline] export video: 64x64 @ 60 fps, bitrate=2000000 bits/s
+[h264_nvenc @ 0x7f76f48c8e00] InitializeEncoder failed: invalid param (8): Frame Dimension less than the minimum supported value.
+[libopenh264 @ 0x7f76f48c8e00] [OpenH264] this = 0x0x7f76f40221a0, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7f76f48c8e00] [OpenH264] this = 0x0x7f76f40221a0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[pipeline] encodeur video : libopenh264 (hardware=false, fallback=true, CPU YUV420P input)
+[pipeline] warning: clip #0 raccourci de 1.000s (fin demandée 3.000s, fin disponible 2.000s; screen="/home/olle/dev/screenrec-linux/crates/compositor/tests/fixtures/seek-eof-vfr.mp4", webcam="/home/olle/dev/screenrec-linux/crates/compositor/tests/fixtures/seek-eof-fragmented.mp4")
+[h264_nvenc @ 0x7f76ecf2b900] InitializeEncoder failed: invalid param (8): Frame Dimension less than the minimum supported value.
+[libopenh264 @ 0x7f76ecf2b900] [OpenH264] this = 0x0x7f76ecf2ce50, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7f76ecf2b900] [OpenH264] this = 0x0x7f76ecf2ce50, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[pipeline] encodeur video : libopenh264 (hardware=false, fallback=true, CPU YUV420P input)
+[mp4 @ 0x7f76f48db4c0] Starting second pass: moving the moov atom to the beginning of the file
+[aac @ 0x7f76f48efa00] Qavg: 65536.000
+test screen_eof_still_bounds_a_request_beyond_the_screen_media ... ok
+[mp4 @ 0x7f76ecea5ac0] Starting second pass: moving the moov atom to the beginning of the file
+[aac @ 0x7f76ecf4b640] Qavg: 65536.000
+test shorter_camera_holds_its_last_frame_without_trimming_the_screen ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+

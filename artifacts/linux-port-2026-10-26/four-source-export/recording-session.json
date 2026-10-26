@@ -1,0 +1,32 @@
+{
+  "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0001.mp4",
+  "cursorCaptureMode": "system",
+  "createdAt": 1793034278407,
+  "clips": [
+    {
+      "webcamVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0001-webcam.mp4",
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0001-microphone.mov",
+      "systemAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0001-system.mov",
+      "webcamOffsetMs": 1,
+      "microphoneAudioOffsetMs": 0,
+      "systemAudioOffsetMs": 0,
+      "index": 0,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0001.mp4",
+      "durationMs": 11283,
+      "cursorCaptureMode": "system"
+    },
+    {
+      "webcamVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0002-webcam.mp4",
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0002-microphone.mov",
+      "systemAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0002-system.mov",
+      "webcamOffsetMs": 0,
+      "microphoneAudioOffsetMs": 0,
+      "systemAudioOffsetMs": 1.1526076666666683,
+      "index": 1,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/export-four-source/recordings/recording-1793034278407-clip-0002.mp4",
+      "durationMs": 3233,
+      "cursorCaptureMode": "system"
+    }
+  ],
+  "schemaVersion": 2
+}

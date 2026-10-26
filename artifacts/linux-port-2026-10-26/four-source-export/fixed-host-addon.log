@@ -1,0 +1,4 @@
+[pipeline] export video: 1920x1080 @ 60 fps, bitrate=15000000 bits/s
+[pipeline] encodeur video : h264_nvenc (hardware=true, fallback=false, CPU YUV420P input)
+{"event":"done","success":true,"outputPath":"/home/olle/.local/state/agent-lab/klippt/export-four-source/exports/one-video-fixed.mp4","format":"mp4","width":1920,"height":1080}
+agent-lab-klippt-client-8cc81fec.service: Consumed 7.547s CPU time over 5.589s wall clock time, 1.2G memory peak.
