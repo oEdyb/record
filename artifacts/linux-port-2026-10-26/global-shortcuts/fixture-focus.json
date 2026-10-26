@@ -1,0 +1,26 @@
+[
+  {
+    "id": "{b9a33e44-b5bf-465a-aace-4ac50c9813f5}",
+    "caption": "Klippt",
+    "app": "co.dyberg.klippt",
+    "active": false,
+    "geometry": {
+      "x": 724,
+      "y": 343,
+      "width": 472,
+      "height": 394
+    }
+  },
+  {
+    "id": "{63934a6a-0cbe-4202-ad5c-000616504a15}",
+    "caption": "Agent Lab Fixture",
+    "app": "electron",
+    "active": true,
+    "geometry": {
+      "x": 0,
+      "y": 0,
+      "width": 1920,
+      "height": 1080
+    }
+  }
+]

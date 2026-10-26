@@ -1022,3 +1022,33 @@ review project. Inventory: `release/linux-port-20261026-844348aa/`. Evidence
 is alongside the host/probe proof. Private lab and build container stopped.
 No full suite. Physical devices, exact Niri, Mac/Windows and final performance
 gates remain separate.
+
+
+## Private KDE shortcut integration — October 26
+
+The unchanged `844348aa` normal-FUSE AppImage now has bounded shortcut evidence
+in `artifacts/linux-port-2026-10-26/global-shortcuts/`. The private lab previously
+routed unspecified portals to GTK, which supplies no GlobalShortcuts backend.
+Only the klippt instance now routes GlobalShortcuts to KDE. A valid installed-style
+`co.dyberg.klippt.desktop` was staged only in its private XDG data directory, with
+an absolute AppImage Exec path so GIO can resolve it outside an AppImage mount.
+KDE consent correctly displayed Klippt and both accelerators. No host desktop
+configuration, input or audio was used.
+
+With the owned fixture focused, real Ctrl+Shift+Space finalized the first clip,
+continued into a second clip, and paused it. Stop opened review with both clips
+(2.983 s and 3.100 s); both fully decode. NVENC was selected. This is a functional
+shortcut check under the lab CPU cap, not performance or physical Niri proof.
+
+Open App remains unresolved: its initial portal Activated signal arrived, but
+the focused fixture still covered the HUD. After app relaunch on the same private
+desktop, ListShortcuts returned saved IDs without further observed Activated
+signals. Do not infer a product fix from either symptom: isolate Electron callback,
+Wayland activation/stacking and KDE session reuse before changing registration.
+The native helper's ScreenCast picker still identifies its caller as an
+unidentifiable application; Electron's resolved shortcut identity does not prove
+helper identity. The lab is stopped. No product code or package changed and no
+full suite ran.
+
+Contracts: [Electron 44.9.1 globalShortcut](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/global-shortcut.md),
+[XDG GlobalShortcuts activation](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.GlobalShortcuts.html).

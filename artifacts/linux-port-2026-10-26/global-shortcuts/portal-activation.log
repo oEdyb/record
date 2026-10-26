@@ -1,0 +1,195 @@
+signal time=1793032647.579583 sender=:1.16 -> destination=(null destination) serial=167 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032647.579755 sender=:1.9 -> destination=:1.52 serial=335 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032647.629656 sender=:1.16 -> destination=(null destination) serial=168 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032647.629774 sender=:1.9 -> destination=:1.52 serial=336 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032846.999709 sender=:1.16 -> destination=(null destination) serial=185 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032846.999834 sender=:1.9 -> destination=:1.52 serial=355 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032847.049806 sender=:1.16 -> destination=(null destination) serial=186 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032847.049965 sender=:1.9 -> destination=:1.52 serial=356 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032917.679611 sender=:1.16 -> destination=(null destination) serial=223 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032917.679757 sender=:1.9 -> destination=:1.52 serial=413 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032917.729797 sender=:1.16 -> destination=(null destination) serial=224 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032917.729931 sender=:1.9 -> destination=:1.52 serial=414 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032927.165627 sender=:1.16 -> destination=(null destination) serial=227 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032927.165774 sender=:1.9 -> destination=:1.52 serial=419 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032927.215664 sender=:1.16 -> destination=(null destination) serial=228 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032927.215839 sender=:1.9 -> destination=:1.52 serial=420 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "9B2B24E35E2EEFEFF7CD2A8145E9445B-Ctrl+Shift+O"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032961.346838 sender=:1.16 -> destination=(null destination) serial=262 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032961.346974 sender=:1.9 -> destination=:1.52 serial=442 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032961.397153 sender=:1.16 -> destination=(null destination) serial=263 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032961.397351 sender=:1.9 -> destination=:1.52 serial=443 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032982.768614 sender=:1.16 -> destination=(null destination) serial=275 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032982.768736 sender=:1.9 -> destination=:1.52 serial=452 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032982.818719 sender=:1.16 -> destination=(null destination) serial=276 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032982.818857 sender=:1.9 -> destination=:1.52 serial=453 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032985.965716 sender=:1.16 -> destination=(null destination) serial=277 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032985.965860 sender=:1.9 -> destination=:1.52 serial=454 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Activated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032986.015855 sender=:1.16 -> destination=(null destination) serial=278 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.impl.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
+
+signal time=1793032986.016014 sender=:1.9 -> destination=:1.52 serial=455 path=/org/freedesktop/portal/desktop; interface=org.freedesktop.portal.GlobalShortcuts; member=Deactivated
+   object path "/org/freedesktop/portal/desktop/session/1_52/co_dyberg_klippt_global_shortcuts"
+   string "4B52E7603A59D9AC073655676E5E0D92-Ctrl+Shift+Space"
+   uint64 0
+   array [
+   ]
