@@ -1,0 +1,8 @@
+{
+  "startedAtEpochMs": 1793027815029,
+  "cpuBefore": "usage_usec 10699025525\nuser_usec 9395929584\nsystem_usec 1303095941\nnice_usec 2917207524\ncore_sched.force_idle_usec 0\nnr_periods 150856\nnr_throttled 22578\nthrottled_usec 8244991761\nnr_bursts 0\nburst_usec 0\n",
+  "events": [],
+  "playClickedAtEpochMs": 1793027815520,
+  "endedAtEpochMs": 1793027867621,
+  "cpuAfter": "usage_usec 10777424348\nuser_usec 9443132065\nsystem_usec 1334292282\nnice_usec 2917209513\ncore_sched.force_idle_usec 0\nnr_periods 151382\nnr_throttled 22598\nthrottled_usec 8245418545\nnr_bursts 0\nburst_usec 0\n"
+}

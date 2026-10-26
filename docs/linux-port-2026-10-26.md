@@ -914,3 +914,32 @@ Continue adds no clip. Evidence is alongside the video-only proof. The private
 lab is stopped. No cursor-loss regression is reproduced across this recovery
 path; the earlier missing-sidecar diagnostic alone does not justify a code fix.
 No additional suite was run because runtime and test code are unchanged.
+
+
+### Current packaged preview workload
+
+The exact `3a177e66` normal-FUSE AppImage reopened the owned three-clip
+48.633-second video-only take and played continuously through the tail at
+1800×1012 in the private KWin lab. The two-core/6 GiB cap remained in place.
+2,898 native publications span 48.287 seconds: 59.995 fps. Publication
+intervals are 20 ms p95, 21 ms p99, 38 ms maximum; one exceeds 33.333 ms.
+Native GPU readback is 8.652 ms p95, 11.083 ms p99, 25.621 ms maximum.
+
+The view report records 2,829 consumed/drawn frames, native-boundary p95
+1.842 ms, renderer IPC p95 12.105 ms and drawing p95 2.1 ms. These stage
+percentiles cannot be added to infer an end-to-end percentile. View metrics
+include idle polls; native publication rows are restricted to the playback
+window. Ten resource samples in that window show app working set from
+about 1.39 to 1.69 GiB, including all reported app processes. GPU process
+memory is an estimate, not measured GPU allocation. The packaged diagnostic
+UI probe emitted no console data, so there is no browser-rAF/input-latency
+claim. This is a bounded fixture result, not general Mac performance parity.
+
+A clean review close exits the app (unit inactive/dead, PID zero) but leaves
+its preview report `running`. Explicit `destroyView` IPC finishes reports;
+ordinary shutdown does not currently await equivalent finalization. A later
+launch misclassifies this report as interrupted. Fix clean-quit finalization
+and durable persistence before interpreting terminal states as crash rates.
+The unmodified report and measured window remain evidence of the timing pass.
+Evidence: `artifacts/linux-port-2026-10-26/preview-workload/`. No runtime code
+changed; no full suite. Private lab stopped.

@@ -1,0 +1,128 @@
+{
+  "sourceCommit": "3a177e66d6d108fbebaa6e7fe4323d3cfb20d1df",
+  "recordingId": 1793025310117,
+  "sourceDurationSec": 48.633,
+  "previewSize": [
+    1800,
+    1012
+  ],
+  "windowStartEpochMs": 1793027815520,
+  "windowEndEpochMs": 1793027867621,
+  "nativePublishedFrames": 2898,
+  "nativePublicationSpanSec": 48.287,
+  "nativePublicationFps": 59.9954439082983,
+  "nativeReadbackMs": {
+    "count": 2898,
+    "mean": 3.226446514837819,
+    "p50": 2.481,
+    "p95": 8.6523,
+    "p99": 11.083420000000004,
+    "max": 25.621
+  },
+  "nativePublicationIntervalMs": {
+    "count": 2897,
+    "mean": 16.667932343803937,
+    "p50": 16.0,
+    "p95": 20.0,
+    "p99": 21.0,
+    "max": 38
+  },
+  "nativeIntervalsOver33_333Ms": 1,
+  "nativeIntervalsOver50Ms": 0,
+  "clipSourceTimeResets": [
+    [
+      41.366667,
+      0.0
+    ],
+    [
+      3.6,
+      0.0
+    ],
+    [
+      3.5,
+      0.0
+    ]
+  ],
+  "workloadMetrics": {
+    "preview.native_boundary_ms": {
+      "count": 2829,
+      "min": 0.615248000016436,
+      "max": 7.570575999998255,
+      "mean": 1.255006051961737,
+      "p50": 1.1843759999901522,
+      "p95": 1.8420780000102233,
+      "p99": 2.539259200008814
+    },
+    "preview.gpu_readback_ms": {
+      "count": 2829,
+      "min": 1.315045,
+      "max": 66.83395300000001,
+      "mean": 3.287387077765994,
+      "p50": 2.487632,
+      "p95": 8.720332599999999,
+      "p99": 11.217360479999988
+    },
+    "preview.ipc_ms": {
+      "count": 4301,
+      "min": 0.09999999403953552,
+      "max": 183,
+      "mean": 7.352731922734507,
+      "p50": 10.100000001490116,
+      "p95": 11.899999998509884,
+      "p99": 14.699999995529652
+    },
+    "preview.draw_ms": {
+      "count": 2829,
+      "min": 1.3999999985098839,
+      "max": 16.399999998509884,
+      "mean": 1.6853658536185052,
+      "p50": 1.6000000014901161,
+      "p95": 2.100000001490116,
+      "p99": 2.5999999994039538
+    }
+  },
+  "resourceWindow": {
+    "appWorkingSetKb": {
+      "count": 10,
+      "mean": 1650937.2,
+      "p50": 1625406.0,
+      "p95": 1753145.8,
+      "p99": 1770769.96,
+      "max": 1775176
+    },
+    "mainPrivateMemoryKb": {
+      "count": 10,
+      "mean": 238873.6,
+      "p50": 228592.0,
+      "p95": 299448.99999999994,
+      "p99": 318248.2,
+      "max": 322948
+    },
+    "gpuMemoryEstimatedBytes": {
+      "count": 10,
+      "mean": 343717888,
+      "p50": 341184512.0,
+      "p95": 349932748.8,
+      "p99": 349956341.76,
+      "max": 349962240
+    },
+    "appCpuPercent": {
+      "count": 10,
+      "mean": 12.632841986103479,
+      "p50": 12.998559561446994,
+      "p95": 13.553441278595317,
+      "p99": 13.633324532125716,
+      "max": 13.653295345508315
+    }
+  },
+  "constraints": {
+    "cpuQuotaCores": 2,
+    "sliceMemoryMaxBytes": 6442450944,
+    "sharedGpu": true,
+    "compositor": "private KWin",
+    "videoOnly": true,
+    "uiProbeConsoleEvents": 0,
+    "normalQuitLeavesReportRunning": true
+  },
+  "unitFinalState": "ActiveState=inactive\nSubState=dead\nMainPID=0"
+}

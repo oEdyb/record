@@ -1,0 +1,461 @@
+{
+  "format": "klippt-workload-v1",
+  "id": "d24d51b9-dfe3-4f11-9dc1-0c9f899f3112",
+  "kind": "preview",
+  "operation": "native-preview",
+  "platform": "linux",
+  "status": "running",
+  "startedAtEpochMs": 1793027754644,
+  "updatedAtEpochMs": 1793027943451,
+  "configuration": {
+    "previewWidthPx": 1799,
+    "previewHeightPx": 1012
+  },
+  "phases": [
+    {
+      "phase": "preview-active",
+      "startedAtElapsedMs": 0
+    }
+  ],
+  "events": [
+    {
+      "code": "preview-started",
+      "elapsedMs": 0
+    }
+  ],
+  "fallbacks": [],
+  "mediaPaths": [
+    "vulkan"
+  ],
+  "metrics": {
+    "preview.native_boundary_ms": {
+      "count": 2829,
+      "min": 0.615248000016436,
+      "max": 7.570575999998255,
+      "mean": 1.255006051961737,
+      "p50": 1.1843759999901522,
+      "p95": 1.8420780000102233,
+      "p99": 2.539259200008814
+    },
+    "preview.gpu_readback_ms": {
+      "count": 2829,
+      "min": 1.315045,
+      "max": 66.83395300000001,
+      "mean": 3.287387077765994,
+      "p50": 2.487632,
+      "p95": 8.720332599999999,
+      "p99": 11.217360479999988
+    },
+    "preview.ipc_ms": {
+      "count": 4301,
+      "min": 0.09999999403953552,
+      "max": 183,
+      "mean": 7.352731922734507,
+      "p50": 10.100000001490116,
+      "p95": 11.899999998509884,
+      "p99": 14.699999995529652
+    },
+    "preview.draw_ms": {
+      "count": 2829,
+      "min": 1.3999999985098839,
+      "max": 16.399999998509884,
+      "mean": 1.6853658536185052,
+      "p50": 1.6000000014901161,
+      "p95": 2.100000001490116,
+      "p99": 2.5999999994039538
+    }
+  },
+  "resources": [
+    {
+      "elapsedMs": 3729,
+      "mainPrivateMemoryKb": 168192,
+      "appWorkingSetKb": 1525744,
+      "appCpuPercent": 1.332378331180555,
+      "systemAvailableMemoryKb": 22910408,
+      "gpuMemoryEstimatedBytes": 331804672,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 8732,
+      "mainPrivateMemoryKb": 161604,
+      "appWorkingSetKb": 1461708,
+      "appCpuPercent": 0.1998765096298667,
+      "systemAvailableMemoryKb": 22943780,
+      "gpuMemoryEstimatedBytes": 331694080,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 13734,
+      "mainPrivateMemoryKb": 160032,
+      "appWorkingSetKb": 1457100,
+      "appCpuPercent": 0.1999273464032164,
+      "systemAvailableMemoryKb": 22979900,
+      "gpuMemoryEstimatedBytes": 331698176,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 18739,
+      "mainPrivateMemoryKb": 160040,
+      "appWorkingSetKb": 1457408,
+      "appCpuPercent": 0.14986494837055808,
+      "systemAvailableMemoryKb": 22981268,
+      "gpuMemoryEstimatedBytes": 331698176,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 23742,
+      "mainPrivateMemoryKb": 160044,
+      "appWorkingSetKb": 1457704,
+      "appCpuPercent": 0.1498914619276912,
+      "systemAvailableMemoryKb": 23050388,
+      "gpuMemoryEstimatedBytes": 331698176,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 28746,
+      "mainPrivateMemoryKb": 160888,
+      "appWorkingSetKb": 1458848,
+      "appCpuPercent": 0.1665548284305124,
+      "systemAvailableMemoryKb": 23053424,
+      "gpuMemoryEstimatedBytes": 331698176,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 33750,
+      "mainPrivateMemoryKb": 160860,
+      "appWorkingSetKb": 1459300,
+      "appCpuPercent": 0.1665313033624752,
+      "systemAvailableMemoryKb": 23069788,
+      "gpuMemoryEstimatedBytes": 331702272,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 38754,
+      "mainPrivateMemoryKb": 160880,
+      "appWorkingSetKb": 1459564,
+      "appCpuPercent": 0.14987474468178302,
+      "systemAvailableMemoryKb": 23044224,
+      "gpuMemoryEstimatedBytes": 331702272,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 43758,
+      "mainPrivateMemoryKb": 160884,
+      "appWorkingSetKb": 1459852,
+      "appCpuPercent": 0.14988369025712728,
+      "systemAvailableMemoryKb": 22991476,
+      "gpuMemoryEstimatedBytes": 331698176,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 48759,
+      "mainPrivateMemoryKb": 160900,
+      "appWorkingSetKb": 1460136,
+      "appCpuPercent": 0.16662621649828083,
+      "systemAvailableMemoryKb": 22947040,
+      "gpuMemoryEstimatedBytes": 331698176,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 53763,
+      "mainPrivateMemoryKb": 161176,
+      "appWorkingSetKb": 1460796,
+      "appCpuPercent": 0.1498863195651724,
+      "systemAvailableMemoryKb": 22967480,
+      "gpuMemoryEstimatedBytes": 331698176,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 58768,
+      "mainPrivateMemoryKb": 161032,
+      "appWorkingSetKb": 1460916,
+      "appCpuPercent": 0.166508074410958,
+      "systemAvailableMemoryKb": 22963480,
+      "gpuMemoryEstimatedBytes": 331882496,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 63778,
+      "mainPrivateMemoryKb": 270728,
+      "appWorkingSetKb": 1617780,
+      "appCpuPercent": 8.748740871065653,
+      "systemAvailableMemoryKb": 22872384,
+      "gpuMemoryEstimatedBytes": 340774912,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 68777,
+      "mainPrivateMemoryKb": 237264,
+      "appWorkingSetKb": 1633032,
+      "appCpuPercent": 13.653295345508315,
+      "systemAvailableMemoryKb": 23563248,
+      "gpuMemoryEstimatedBytes": 340889600,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 73778,
+      "mainPrivateMemoryKb": 229744,
+      "appWorkingSetKb": 1609712,
+      "appCpuPercent": 13.047369933641368,
+      "systemAvailableMemoryKb": 24783468,
+      "gpuMemoryEstimatedBytes": 341012480,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 78777,
+      "mainPrivateMemoryKb": 227256,
+      "appWorkingSetKb": 1608740,
+      "appCpuPercent": 12.834102109387576,
+      "systemAvailableMemoryKb": 25523232,
+      "gpuMemoryEstimatedBytes": 341090304,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 83777,
+      "mainPrivateMemoryKb": 205964,
+      "appWorkingSetKb": 1595912,
+      "appCpuPercent": 13.017799205201136,
+      "systemAvailableMemoryKb": 25999680,
+      "gpuMemoryEstimatedBytes": 341147648,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 88775,
+      "mainPrivateMemoryKb": 227440,
+      "appWorkingSetKb": 1678128,
+      "appCpuPercent": 12.853978731577918,
+      "systemAvailableMemoryKb": 26074240,
+      "gpuMemoryEstimatedBytes": 341221376,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 93776,
+      "mainPrivateMemoryKb": 224144,
+      "appWorkingSetKb": 1664608,
+      "appCpuPercent": 12.681862407328488,
+      "systemAvailableMemoryKb": 26168888,
+      "gpuMemoryEstimatedBytes": 341311488,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 98777,
+      "mainPrivateMemoryKb": 207036,
+      "appWorkingSetKb": 1600064,
+      "appCpuPercent": 13.080553920596486,
+      "systemAvailableMemoryKb": 26370808,
+      "gpuMemoryEstimatedBytes": 349896704,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 103778,
+      "mainPrivateMemoryKb": 236212,
+      "appWorkingSetKb": 1726220,
+      "appCpuPercent": 12.979319917692852,
+      "systemAvailableMemoryKb": 26423976,
+      "gpuMemoryEstimatedBytes": 349872128,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 108779,
+      "mainPrivateMemoryKb": 322948,
+      "appWorkingSetKb": 1775176,
+      "appCpuPercent": 13.431397419034987,
+      "systemAvailableMemoryKb": 26593512,
+      "gpuMemoryEstimatedBytes": 349962240,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 113772,
+      "mainPrivateMemoryKb": 168544,
+      "appWorkingSetKb": 1650036,
+      "appCpuPercent": 1.6022236126611906,
+      "systemAvailableMemoryKb": 26710632,
+      "gpuMemoryEstimatedBytes": 349544448,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 118772,
+      "mainPrivateMemoryKb": 168288,
+      "appWorkingSetKb": 1557912,
+      "appCpuPercent": 0.26667831717572293,
+      "systemAvailableMemoryKb": 27081660,
+      "gpuMemoryEstimatedBytes": 349523968,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 123777,
+      "mainPrivateMemoryKb": 168224,
+      "appWorkingSetKb": 1557448,
+      "appCpuPercent": 0.18315789138622918,
+      "systemAvailableMemoryKb": 27113064,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 128781,
+      "mainPrivateMemoryKb": 168272,
+      "appWorkingSetKb": 1557784,
+      "appCpuPercent": 0.19984897080366415,
+      "systemAvailableMemoryKb": 27245464,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 133780,
+      "mainPrivateMemoryKb": 168324,
+      "appWorkingSetKb": 1558172,
+      "appCpuPercent": 0.20002236250015554,
+      "systemAvailableMemoryKb": 27363840,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 138785,
+      "mainPrivateMemoryKb": 168360,
+      "appWorkingSetKb": 1558116,
+      "appCpuPercent": 0.19980694652831626,
+      "systemAvailableMemoryKb": 27391664,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 143787,
+      "mainPrivateMemoryKb": 168400,
+      "appWorkingSetKb": 1558604,
+      "appCpuPercent": 0.19990727634176447,
+      "systemAvailableMemoryKb": 27365084,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 148789,
+      "mainPrivateMemoryKb": 168428,
+      "appWorkingSetKb": 1558848,
+      "appCpuPercent": 0.19994334938441882,
+      "systemAvailableMemoryKb": 27316076,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 153792,
+      "mainPrivateMemoryKb": 168460,
+      "appWorkingSetKb": 1557852,
+      "appCpuPercent": 0.19984246085751478,
+      "systemAvailableMemoryKb": 27319412,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 158793,
+      "mainPrivateMemoryKb": 168500,
+      "appWorkingSetKb": 1558172,
+      "appCpuPercent": 0.16666026024697977,
+      "systemAvailableMemoryKb": 27334352,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 163794,
+      "mainPrivateMemoryKb": 168540,
+      "appWorkingSetKb": 1558516,
+      "appCpuPercent": 0.19992881201613127,
+      "systemAvailableMemoryKb": 27325660,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 168796,
+      "mainPrivateMemoryKb": 168576,
+      "appWorkingSetKb": 1558548,
+      "appCpuPercent": 0.19993110374178646,
+      "systemAvailableMemoryKb": 27327232,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 173800,
+      "mainPrivateMemoryKb": 168620,
+      "appWorkingSetKb": 1558760,
+      "appCpuPercent": 0.18318872082670218,
+      "systemAvailableMemoryKb": 27332236,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 178803,
+      "mainPrivateMemoryKb": 168656,
+      "appWorkingSetKb": 1558804,
+      "appCpuPercent": 0.21653204036923793,
+      "systemAvailableMemoryKb": 27342596,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 183804,
+      "mainPrivateMemoryKb": 171980,
+      "appWorkingSetKb": 1562236,
+      "appCpuPercent": 0.21662617756834585,
+      "systemAvailableMemoryKb": 27346084,
+      "gpuMemoryEstimatedBytes": 349507584,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 188807,
+      "mainPrivateMemoryKb": 182740,
+      "appWorkingSetKb": 1573068,
+      "appCpuPercent": 0.19989912423861284,
+      "systemAvailableMemoryKb": 27300224,
+      "gpuMemoryEstimatedBytes": 349503488,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    }
+  ],
+  "privacy": {
+    "localOnly": true,
+    "excluded": [
+      "filenames and paths",
+      "URLs",
+      "project and window names",
+      "transcripts",
+      "cursor and keyboard events",
+      "audio and video"
+    ]
+  }
+}
