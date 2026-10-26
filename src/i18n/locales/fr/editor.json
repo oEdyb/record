@@ -137,7 +137,7 @@
 		"saveVideoAction": "Enregistrer la vidéo…",
 		"savedSummary": "{{name}}, {{duration}}",
 		"sourcesCopying": "Copie des fichiers originaux…",
-		"sourcesIncluded": "Les enregistrements originaux, plus un fichier de montage (timeline.otio) avec vos coupes et la synchronisation de la caméra, que la plupart des logiciels de montage vidéo savent importer. L’écran, la caméra, le microphone et le son du système restent sur des pistes séparées. Le curseur modifiable et les effets visuels ne sont pas appliqués.",
+		"sourcesIncluded": "Les enregistrements originaux, plus un fichier de montage (timeline.otio / timeline.fcpxml) avec vos coupes et la synchronisation de la caméra, que la plupart des logiciels de montage vidéo savent importer. L’écran, la caméra, le microphone et le son du système restent sur des pistes séparées. Le curseur modifiable et les effets visuels ne sont pas appliqués.",
 		"sourcesIncludedTitle": "Contenu inclus",
 		"sourcesIntro": "Chaque clip enregistré entre deux pauses est conservé avec ses fichiers originaux d’écran, de caméra, de microphone et de son du système, sans modification.",
 		"sourcesPreparing": "Préparation des fichiers…",
@@ -145,7 +145,7 @@
 		"sourcesSaveAgain": "Enregistrer à nouveau…",
 		"sourcesSaved": "Fichiers enregistrés",
 		"sourcesSubtitle": "Écran, caméra et audio en fichiers séparés pour votre logiciel de montage.",
-		"sourcesTimelineHint": "Importez timeline.otio dans votre logiciel de montage pour continuer à monter.",
+		"sourcesTimelineHint": "Importez timeline.otio / timeline.fcpxml dans votre logiciel de montage pour continuer à monter.",
 		"sourcesWarning": "{{count}} avertissement",
 		"sourcesWarnings": "{{count}} avertissements"
 	},

@@ -109,6 +109,20 @@ it("copies kept sources once, preserves originals and hidden camera, and writes 
 	expect(manifest.sources[0].camera).not.toHaveProperty("startMs");
 	expect(manifest.sources).toHaveLength(1);
 	expect(manifest.timeline).toEqual({ file: "timeline.otio", frameRate: 60 });
+	expect(manifest.finalCutTimeline).toEqual({ file: "timeline.fcpxml", frameRate: 60 });
+	expect(result.fcpxmlPath).toBe(path.join(result.directory, "timeline.fcpxml"));
+	const fcpxml = await fs.readFile(result.fcpxmlPath, "utf8");
+	expect(fcpxml).toContain('<project name="../My take">');
+	expect(fcpxml).toContain('<media-rep kind="original-media" src="./001-screen.mp4"/>');
+	expect(fcpxml).toContain(
+		'<asset-clip ref="r3" offset="0s" name="001-screen.mp4" start="0s" duration="2s"',
+	);
+	expect(fcpxml).toContain(
+		'<asset-clip ref="r3" offset="2s" name="001-screen.mp4" start="4s" duration="6s"',
+	);
+	expect(fcpxml).toContain(
+		'lane="1" offset="0s" name="001-camera.mp4" start="47/60s" duration="2s"',
+	);
 	const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
 	expect(
 		timeline.tracks.children[0].children.map(
@@ -120,7 +134,7 @@ it("copies kept sources once, preserves originals and hidden camera, and writes 
 	expect(again.directory).not.toBe(result.directory);
 });
 
-it("writes the clean cut as a second timeline with reason markers and leaves timeline.otio whole", async () => {
+it("exports Clean Cut markers alongside unchanged OTIO and Final Cut timelines", async () => {
 	const doc = await fixture();
 	const result = await exportSourceHandoff(doc, root, (file) => file, {
 		keep: [
@@ -144,6 +158,14 @@ it("writes the clean cut as a second timeline with reason markers and leaves tim
 	expect(await exportedClips(result.timelinePath)).toHaveLength(2);
 	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
 	expect(manifest.cleanCutTimeline).toEqual({ file: "timeline-clean-cut.otio" });
+	expect(manifest.finalCutTimeline).toEqual({ file: "timeline.fcpxml", frameRate: 60 });
+	expect(result.fcpxmlPath).toBe(path.join(result.directory, "timeline.fcpxml"));
+	const xml = await fs.readFile(result.fcpxmlPath, "utf8");
+	expect(xml).toContain('name="001-screen.mp4" start="4s" duration="6s"');
+	expect(clean.tracks.children[0].children[2].markers[0].marked_range.start_time.value).toBe(420);
+	expect(await fs.readFile(path.join(result.directory, "README.txt"), "utf8")).toContain(
+		"For Final Cut Pro, open timeline.fcpxml",
+	);
 	expect(await fs.readFile(path.join(result.directory, "README.txt"), "utf8")).toContain(
 		"timeline-clean-cut.otio",
 	);

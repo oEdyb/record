@@ -137,7 +137,7 @@
 		"saveVideoAction": "Videoyu kaydet…",
 		"savedSummary": "{{name}} · {{duration}}",
 		"sourcesCopying": "Orijinal dosyalar kopyalanıyor…",
-		"sourcesIncluded": "Orijinal kayıtlar ve çoğu video düzenleyicinin içe aktarabildiği, kesimlerinizi ve kamera senkronunu içeren bir zaman çizelgesi dosyası (timeline.otio). Ekran, kamera, mikrofon ve sistem sesi ayrı izlerde kalır. Düzenlenebilir imleç ve görsel efektler uygulanmaz.",
+		"sourcesIncluded": "Orijinal kayıtlar ve çoğu video düzenleyicinin içe aktarabildiği, kesimlerinizi ve kamera senkronunu içeren bir zaman çizelgesi dosyası (timeline.otio / timeline.fcpxml). Ekran, kamera, mikrofon ve sistem sesi ayrı izlerde kalır. Düzenlenebilir imleç ve görsel efektler uygulanmaz.",
 		"sourcesIncludedTitle": "Neler dahil",
 		"sourcesIntro": "Duraklatmalar arasında kaydettiğiniz her klip, orijinal ekran, kamera, mikrofon ve sistem sesi dosyaları olarak değiştirilmeden kaydedilir.",
 		"sourcesPreparing": "Dosyalar hazırlanıyor…",
@@ -145,7 +145,7 @@
 		"sourcesSaveAgain": "Tekrar kaydet…",
 		"sourcesSaved": "Dosyalar kaydedildi",
 		"sourcesSubtitle": "Editörünüz için ekran, kamera ve ses ayrı dosyalar olarak.",
-		"sourcesTimelineHint": "Düzenlemeye devam etmek için timeline.otio dosyasını video düzenleyicinize aktarın.",
+		"sourcesTimelineHint": "Düzenlemeye devam etmek için timeline.otio / timeline.fcpxml dosyasını video düzenleyicinize aktarın.",
 		"sourcesWarning": "{{count}} uyarı",
 		"sourcesWarnings": "{{count}} uyarı"
 	},

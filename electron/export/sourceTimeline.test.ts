@@ -148,7 +148,7 @@ it("pads writer tails with silent one-frame gaps and warns only about real losse
 	expect(kinds(3)).toEqual(["Gap.1", "Clip.2", "Gap.1"]);
 	expect(kinds(1)).toEqual(["Clip.2", "Gap.1"]);
 	expect(result.warnings).toEqual([
-		"001-camera.mov: 8.3 s of source time is missing and left as a gap in timeline.otio.",
+		"001-camera.mov: 8.3 s of source time is missing and left as a gap in the timelines.",
 	]);
 });
 
@@ -199,7 +199,7 @@ it("reports sub-frame omissions and rejects unknown media duration", () => {
 	);
 	expect(
 		buildSourceTimeline("Short", [source], [span(0, 0.001), span(1, 2, 0.001)]).warnings,
-	).toEqual(["A kept span shorter than one timeline frame was omitted from timeline.otio."]);
+	).toEqual(["A kept span shorter than one timeline frame was omitted from the timelines."]);
 	expect(() =>
 		buildSourceTimeline(
 			"Unknown",
@@ -248,4 +248,35 @@ it("hosts markers on the screen clip when there is no microphone original", () =
 	);
 	const screen = timeline.tracks.children[0];
 	expect(screen.children[0]?.markers.map((m) => m.marked_range.start_time.value)).toEqual([60]);
+});
+
+it("keeps marker source time after audio gaps, offsets and cuts in the shared frame plan", () => {
+	const delayed: HandoffSource = {
+		...source,
+		screen: {
+			...source.screen,
+			audio: [{ role: "microphone", file: "mic.wav", durationSec: 10, offsetSec: 0.2 }],
+		},
+	};
+	const { timeline, plan } = buildSourceTimeline(
+		"Delayed markers",
+		[delayed],
+		[span(), span(4, 6, 2)],
+		[
+			{ timelineSec: 0.1, name: "In gap", comment: "", color: "RED" },
+			{ timelineSec: 0.2, name: "At audio start", comment: "", color: "GREEN" },
+			{ timelineSec: 2.5, name: "After cut", comment: "source note", color: "BLUE" },
+			{ timelineSec: 4, name: "Past end", comment: "", color: "RED" },
+		],
+	);
+	const microphone = timeline.tracks.children[2];
+	expect(microphone.children.flatMap((child) => child.markers)).toMatchObject([
+		{ name: "At audio start", marked_range: { start_time: { value: 0 } } },
+		{ name: "After cut", marked_range: { start_time: { value: 258 } } },
+	]);
+	expect(plan.tracks[2].items).toMatchObject([
+		{ type: "gap", duration: 12 },
+		{ type: "clip", start: 0, duration: 108 },
+		{ type: "clip", start: 228, duration: 120 },
+	]);
 });

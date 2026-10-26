@@ -137,7 +137,7 @@
 		"saveVideoAction": "Lưu video…",
 		"savedSummary": "{{name}} · {{duration}}",
 		"sourcesCopying": "Đang sao chép tệp gốc…",
-		"sourcesIncluded": "Các bản ghi gốc, kèm một tệp dòng thời gian (timeline.otio) chứa các đoạn cắt và đồng bộ camera của bạn mà hầu hết trình chỉnh sửa video đều nhập được. Màn hình, camera, micro và âm thanh hệ thống nằm trên các track riêng. Con trỏ có thể chỉnh sửa và hiệu ứng hình ảnh không được áp dụng.",
+		"sourcesIncluded": "Các bản ghi gốc, kèm một tệp dòng thời gian (timeline.otio / timeline.fcpxml) chứa các đoạn cắt và đồng bộ camera của bạn mà hầu hết trình chỉnh sửa video đều nhập được. Màn hình, camera, micro và âm thanh hệ thống nằm trên các track riêng. Con trỏ có thể chỉnh sửa và hiệu ứng hình ảnh không được áp dụng.",
 		"sourcesIncludedTitle": "Nội dung bao gồm",
 		"sourcesIntro": "Mỗi clip bạn ghi giữa các lần tạm dừng được lưu thành các tệp gốc của màn hình, camera, micro và âm thanh hệ thống, không thay đổi.",
 		"sourcesPreparing": "Đang chuẩn bị tệp…",
@@ -145,7 +145,7 @@
 		"sourcesSaveAgain": "Lưu lại…",
 		"sourcesSaved": "Đã lưu tệp",
 		"sourcesSubtitle": "Màn hình, camera và âm thanh dưới dạng tệp riêng cho trình chỉnh sửa của bạn.",
-		"sourcesTimelineHint": "Nhập timeline.otio vào trình chỉnh sửa video để tiếp tục chỉnh sửa.",
+		"sourcesTimelineHint": "Nhập timeline.otio / timeline.fcpxml vào trình chỉnh sửa video để tiếp tục chỉnh sửa.",
 		"sourcesWarning": "{{count}} cảnh báo",
 		"sourcesWarnings": "{{count}} cảnh báo"
 	},

@@ -116,13 +116,29 @@ function clip(
 type Item = ReturnType<typeof gap> | ReturnType<typeof clip>;
 type TrackSource = { file: string; durationSec: number | null; offsetSec: number };
 
-/** Markers sit on the clips of one host track, in that clip's media time, the way Resolve reads them. */
-export function buildSourceTimeline(
-	title: string,
-	sources: HandoffSource[],
-	spans: HandoffSpan[],
-	markers: TimelineMarker[] = [],
-) {
+export type SourceTrackRole = "screen" | "camera" | "microphone" | "system" | "audio";
+
+export type PlannedItem =
+	| { type: "gap"; duration: number }
+	| {
+			type: "clip";
+			file: string;
+			start: number;
+			duration: number;
+			available: number;
+			span: HandoffSpan;
+			offsetSec: number;
+	  };
+
+export interface PlannedTrack {
+	name: string;
+	kind: "Video" | "Audio";
+	role: SourceTrackRole;
+	items: PlannedItem[];
+}
+
+/** Frame-grid placement of every kept span on every source track, shared by each timeline format. */
+export function planSourceTimeline(sources: HandoffSource[], spans: HandoffSpan[]) {
 	const sourceById = new Map(sources.map((source) => [source.assetId, source]));
 	const frame = (sec: number) => Math.round(sec * SOURCE_TIMELINE_RATE + 1e-8);
 	if (!spans.some((span) => frame(span.timelineEndSec) > frame(span.timelineStartSec)))
@@ -130,27 +146,25 @@ export function buildSourceTimeline(
 			"The kept edit is shorter than one timeline frame. Keep a longer span to export.",
 		);
 	const warnings = new Set<string>();
-	const markerFrames = markers.map((entry) => ({ entry, frame: frame(entry.timelineSec) }));
 	const track = (
 		name: string,
 		kind: "Video" | "Audio",
+		role: SourceTrackRole,
 		select: (source: HandoffSource) => TrackSource | undefined,
-		hostsMarkers = false,
-	) => {
-		const children: Item[] = [];
-		let position = 0;
+	): PlannedTrack => {
+		const items: PlannedItem[] = [];
+		const pushGap = (duration: number) => items.push({ type: "gap", duration });
 		for (const span of spans) {
 			const duration = frame(span.timelineEndSec) - frame(span.timelineStartSec);
 			if (duration <= 0) {
-				warnings.add("A kept span shorter than one timeline frame was omitted from timeline.otio.");
+				warnings.add("A kept span shorter than one timeline frame was omitted from the timelines.");
 				continue;
 			}
 			const source = sourceById.get(span.assetId);
 			if (!source) throw new Error(`Missing timeline source: ${span.assetId}`);
 			const media = select(source);
 			if (!media) {
-				children.push(gap(duration));
-				position += duration;
+				pushGap(duration);
 				continue;
 			}
 			if (media.durationSec === null || !Number.isFinite(media.durationSec)) {
@@ -163,34 +177,25 @@ export function buildSourceTimeline(
 			const lead = Math.min(duration, Math.max(0, -start));
 			const sourceStart = Math.max(0, start);
 			const length = Math.max(0, Math.min(duration - lead, available - sourceStart));
-			if (lead) children.push(gap(lead));
-			if (length) {
-				const piece = clip(media.file, sourceStart, length, available, span, media.offsetSec);
-				const from = position + lead;
-				if (hostsMarkers)
-					for (const { entry, frame: at } of markerFrames)
-						if (at >= from && at < from + length)
-							piece.markers.push(marker(entry, sourceStart + at - from));
-				children.push(piece);
-			}
-			if (duration > lead + length) children.push(gap(duration - lead - length));
-			position += duration;
+			if (lead) pushGap(lead);
+			if (length)
+				items.push({
+					type: "clip",
+					file: media.file,
+					start: sourceStart,
+					duration: length,
+					available,
+					span,
+					offsetSec: media.offsetSec,
+				});
+			if (duration > lead + length) pushGap(duration - lead - length);
 			const missingSec = (duration - length) / SOURCE_TIMELINE_RATE;
 			if (missingSec > SOURCE_GAP_WARNING_SEC)
 				warnings.add(
-					`${media.file}: ${missingSec.toFixed(1)} s of source time is missing and left as a gap in timeline.otio.`,
+					`${media.file}: ${missingSec.toFixed(1)} s of source time is missing and left as a gap in the timelines.`,
 				);
 		}
-		return {
-			OTIO_SCHEMA: "Track.1",
-			name,
-			kind,
-			children,
-			source_range: null,
-			effects: [],
-			markers: [],
-			metadata: {},
-		};
+		return { name, kind, role, items };
 	};
 	const audio = (role: string) => (source: HandoffSource) => {
 		const media = source.screen.audio.find((item) => item.role === role);
@@ -203,21 +208,69 @@ export function buildSourceTimeline(
 				}
 			: undefined;
 	};
-	const micHostsMarkers = sources.some((source) =>
-		source.screen.audio.some((item) => item.role === "microphone"),
-	);
 	const tracks = [
-		track("Screen", "Video", (source) => ({ ...source.screen, offsetSec: 0 }), !micHostsMarkers),
-		track("Camera", "Video", (source) =>
+		track("Screen", "Video", "screen", (source) => ({ ...source.screen, offsetSec: 0 })),
+		track("Camera", "Video", "camera", (source) =>
 			source.camera
 				? { ...source.camera, offsetSec: (source.camera.startMs + source.camera.offsetMs) / 1000 }
 				: undefined,
 		),
-		track("Microphone", "Audio", audio("microphone"), micHostsMarkers),
-		track("System audio", "Audio", audio("system")),
+		track("Microphone", "Audio", "microphone", audio("microphone")),
+		track("System audio", "Audio", "system", audio("system")),
 	];
 	if (sources.some((source) => source.screen.audio.some((item) => item.role === "audio")))
-		tracks.push(track("Original audio (unidentified)", "Audio", audio("audio")));
+		tracks.push(track("Original audio (unidentified)", "Audio", "audio", audio("audio")));
+	return { tracks, warnings: [...warnings] };
+}
+
+/** Markers sit on one host track's clips in source media time, as Resolve expects. */
+export function buildSourceTimeline(
+	title: string,
+	sources: HandoffSource[],
+	spans: HandoffSpan[],
+	markers: TimelineMarker[] = [],
+) {
+	const plan = planSourceTimeline(sources, spans);
+	const markerFrames = markers.map((entry) => ({
+		entry,
+		frame: Math.round(entry.timelineSec * SOURCE_TIMELINE_RATE + 1e-8),
+	}));
+	const hostRole = sources.some((source) =>
+		source.screen.audio.some((item) => item.role === "microphone"),
+	)
+		? "microphone"
+		: "screen";
+	const tracks = plan.tracks.map((track) => {
+		let position = 0;
+		const children = track.items.map((item): Item => {
+			const from = position;
+			position += item.duration;
+			if (item.type === "gap") return gap(item.duration);
+			const piece = clip(
+				item.file,
+				item.start,
+				item.duration,
+				item.available,
+				item.span,
+				item.offsetSec,
+			);
+			if (track.role === hostRole)
+				for (const { entry, frame: at } of markerFrames)
+					if (at >= from && at < position)
+						piece.markers.push(marker(entry, item.start + at - from));
+			return piece;
+		});
+		return {
+			OTIO_SCHEMA: "Track.1",
+			name: track.name,
+			kind: track.kind,
+			children,
+			source_range: null,
+			effects: [],
+			markers: [],
+			metadata: {},
+		};
+	});
 	return {
 		timeline: {
 			OTIO_SCHEMA: "Timeline.1",
@@ -234,6 +287,7 @@ export function buildSourceTimeline(
 				metadata: {},
 			},
 		},
-		warnings: [...warnings],
+		plan,
+		warnings: plan.warnings,
 	};
 }

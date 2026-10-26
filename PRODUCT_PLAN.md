@@ -1002,6 +1002,9 @@ Order:
 3. FCPXML export for Final Cut Pro, using rational timeline times and file URLs. Apple documents
    FCPXML as the interchange format for media, timeline sequences, and editing decisions:
    [FCPXML Reference](https://developer.apple.com/documentation/professional-video-applications/fcpxml-reference).
+   **Implemented 2026-10-20:** Separate takes writes `timeline.fcpxml` (1.10) from the same plan
+   as `timeline.otio`; DTD-valid on a real nine-take export. A real Final Cut import is not yet
+   verified. See `docs/fcpxml-source-timeline-2026-10-20.md`.
 4. Verify the same export against supported DaVinci Resolve versions before labeling it a Resolve
    workflow. Add an adapter only when the round trip is measured.
 5. Transparent cursor-only export through an alpha-capable format such as ProRes 4444 or an image

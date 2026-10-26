@@ -137,7 +137,7 @@
 		"saveVideoAction": "Salva video…",
 		"savedSummary": "{{name}}, {{duration}}",
 		"sourcesCopying": "Copia dei file originali…",
-		"sourcesIncluded": "Le registrazioni originali, più un file di timeline (timeline.otio) con i tuoi tagli e la sincronizzazione della fotocamera, importabile dalla maggior parte degli editor video. Schermo, fotocamera, microfono e audio di sistema restano su tracce separate. Il cursore modificabile e gli effetti visivi non vengono applicati.",
+		"sourcesIncluded": "Le registrazioni originali, più un file di timeline (timeline.otio / timeline.fcpxml) con i tuoi tagli e la sincronizzazione della fotocamera, importabile dalla maggior parte degli editor video. Schermo, fotocamera, microfono e audio di sistema restano su tracce separate. Il cursore modificabile e gli effetti visivi non vengono applicati.",
 		"sourcesIncludedTitle": "Cosa è incluso",
 		"sourcesIntro": "Ogni clip registrato tra una pausa e l’altra viene salvato con i suoi file originali di schermo, fotocamera, microfono e audio di sistema, senza modifiche.",
 		"sourcesPreparing": "Preparazione dei file…",
@@ -145,7 +145,7 @@
 		"sourcesSaveAgain": "Salva di nuovo…",
 		"sourcesSaved": "File salvati",
 		"sourcesSubtitle": "Schermo, fotocamera e audio come file separati per il tuo editor.",
-		"sourcesTimelineHint": "Importa timeline.otio nel tuo editor video per continuare a modificare.",
+		"sourcesTimelineHint": "Importa timeline.otio / timeline.fcpxml nel tuo editor video per continuare a modificare.",
 		"sourcesWarning": "{{count}} avviso",
 		"sourcesWarnings": "{{count}} avvisi"
 	},

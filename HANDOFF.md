@@ -1,3 +1,11 @@
+# October 26: consolidated source for the Linux handoff
+
+The recorder morph changes are committed, and the remaining Final Cut source-timeline worktree is merged while preserving Clean Cut source markers, OTIO output, both export manifest paths and original media. Every registered worktree head is included in the combined history. The generated design-token mirror is synchronized with the existing production tokens.
+
+Combined gates: 3,008 unit tests passed, 5 skipped; both typechecks, lint (existing oversized Cargo evidence warning only), i18n, docs and design checks pass. Two fresh independent export reviews passed, including marker coexistence/source timing and 250 byte-identical OTIO fixtures. Actual Final Cut/Premiere import and a Linux runtime pass remain unverified. Linux build commands already exist; this handoff does not claim the full Linux port is complete.
+
+Actual installed hover: real global cursor movement, no keyboard, clicks or renderer event injection, completed three in/out cycles (center, bottom edge, upper-right edge). Each stayed expanded through a two-second stationary hold. Evidence: `artifacts/hud-installed-hover/three-cycles-then-interruption.json`. A later physical cursor change interrupted the upper-left attempt; a further run also stopped on cursor movement. Those partial runs do not establish the full 20-cycle or flicker-free acceptance gate. The installed app's paused 11-second take was not restarted or modified. The reported spacing gap and occasional flicker are retained as polish follow-ups, not claimed fixed by this consolidation.
+
 # October 26: continuous recorder morph and interaction audit
 
 Current implementation replaces the top tab/control crossfade with one persistent center mark or actual recording timer, natural-size control wings and a shared moving surface/mask. Top docking reserves the full expanded footprint. Click/Enter/Space pins the attached pill; Escape collapses it. One controller owns native/DOM hover, focus, panel and drag holds. Native probes remain available while click-through is enabled, do no cursor reads while hidden, and recover on visibility changes even when Electron panel hide/show events are missing. Explicit collapse stays latched through spring undershoot at a stationary tab edge. Opaque overlapping surface pieces remove compositing seams.
@@ -55,6 +63,15 @@ Later on October 24 (HEAD `a57556f6`): the draggable, foldable recording pill is
 - Fresh closeout checks pass: `npm run docs:check` (28 files and token sync), `npm run design:check`, and 11 evidence/record consistency checks. One verified vault milestone was read back from the project ledger; the vault checker reports no errors or warnings. Code suites and builds were not repeated during this documentation-only closeout.
 
 Next: longer sessions and the nonfatal Mach Port cleanup diagnostics seen on fast CLI exits. Remaining gates: second Mac/clean account, Meet 2 daylight, ProMotion, 5K/6K, N→N+1 updates, native font-picker interaction, and a reviewed commit with same-commit helper/release artifacts. The source-loss proof covers a missing window while paused and recovery after reselection, not every interruption during active capture. This is not a release approval. Evidence: `docs/audits/2026-10-24/release-optimization.md` and `artifacts/release-optimization-2026-10-24/`.
+# October 20: Final Cut Pro timeline in Separate takes (branch `claude/clever-yalow-8c1dcd`)
+
+Separate takes now writes `timeline.fcpxml` beside `timeline.otio`. Both come from one shared
+frame-grid plan (`planSourceTimeline`); OTIO output is byte-identical to before. Screen is the
+primary storyline; camera lane 1, microphone −1, system −2, unidentified audio −3. Real nine-take
+export: 36 media files byte-identical, FCPXML passes Apple's 1.10 DTD. **Not imported into Final
+Cut or Premiere yet**: neither is installed. Premiere 25.6+ reportedly imports `timeline.otio`.
+Next: install the Final Cut trial (needs Olle's OK), import, screenshot. Details:
+`docs/fcpxml-source-timeline-2026-10-20.md`.
 
 # October 20: local release path and the co.dyberg.klippt identity (branch `fix/launch-readiness`)
 

@@ -52,7 +52,9 @@ it("uses an explicit action and reports the saved source folder", async () => {
 	expect(await screen.findByText("Files saved")).toBeVisible();
 	expect(screen.getByText("/exports/raw")).toBeVisible();
 	expect(
-		screen.getByText("Import timeline.otio in your video editor to keep editing."),
+		screen.getByText(
+			"Import timeline.otio / timeline.fcpxml in your video editor to keep editing.",
+		),
 	).toBeVisible();
 	expect(nativeBridgeClient.aiEdition.exportSources).toHaveBeenCalledTimes(1);
 	expect(screen.queryByText(/Resolve/)).toBeNull();
