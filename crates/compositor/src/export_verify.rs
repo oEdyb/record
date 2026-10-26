@@ -8,6 +8,7 @@
 use std::ffi::CString;
 use std::ptr;
 
+use crate::ffi::sn_fmt_duration;
 use anyhow::{bail, Context, Result};
 
 use crate::ffi::{
@@ -156,8 +157,8 @@ fn open_input(path: &str) -> Result<InputGuard> {
 pub fn probe_media_duration(path: &str) -> Result<f64> {
     let input = open_input(path)?;
     unsafe {
-        let duration_s = if (*input.format).duration > 0 {
-            (*input.format).duration as f64 / AV_TIME_BASE
+        let duration_s = if sn_fmt_duration(input.format) > 0 {
+            sn_fmt_duration(input.format) as f64 / AV_TIME_BASE
         } else {
             let (_, video_stream) = find_stream(input.format, AVMediaType::AVMEDIA_TYPE_VIDEO)?;
             let time_base = rational_value((*video_stream).time_base)
@@ -490,8 +491,8 @@ pub fn verify_video_export_with_cancel(
             bail!("export frame rate is {fps:.6}, expected {:.6}", spec.fps);
         }
 
-        let duration_s = if (*input.format).duration > 0 {
-            (*input.format).duration as f64 / AV_TIME_BASE
+        let duration_s = if sn_fmt_duration(input.format) > 0 {
+            sn_fmt_duration(input.format) as f64 / AV_TIME_BASE
         } else {
             let time_base = rational_value((*video_stream).time_base)
                 .context("export video stream has an invalid time base")?;
@@ -635,8 +636,8 @@ pub fn verify_gif_export_with_cancel(
                 spec.height
             );
         }
-        let duration_s = if (*input.format).duration > 0 {
-            (*input.format).duration as f64 / AV_TIME_BASE
+        let duration_s = if sn_fmt_duration(input.format) > 0 {
+            sn_fmt_duration(input.format) as f64 / AV_TIME_BASE
         } else {
             let time_base = rational_value((*video_stream).time_base)
                 .context("GIF stream has an invalid time base")?;

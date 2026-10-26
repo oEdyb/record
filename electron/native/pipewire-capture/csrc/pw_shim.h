@@ -166,8 +166,9 @@ int osc_pw_cursor_meta_accepts_producer_size(uint32_t width, uint32_t height);
  * `with_modifier` picks which of our two EnumFormat objects to test: 0 for the
  * shared-memory one sent first, 1 for the DMA-BUF one sent as a fallback. Such a
  * producer must reject the former and accept the latter — that asymmetry is the
- * whole fix for issue #287, and this is how it is asserted without niri, a
- * portal or a screen.
+ * fix for issue #287, and this is how it is asserted without niri, a
+ * portal or a screen. This offline fixture offers LINEAR and the explicit
+ * NVIDIA modifier 0x0300000000e08012; live negotiation queries the EGL device.
  */
 int osc_pw_enum_format_accepts_dmabuf_producer(int with_modifier, int64_t producer_modifier);
 
@@ -193,9 +194,9 @@ const char *osc_pw_library_version(void);
  * close — the caller is on its way to reporting a fatal error either way.
  *
  * `want_video` decides whether pixels are mapped at all. With it set the stream
- * asks for PW_STREAM_FLAG_MAP_BUFFERS and restricts itself to shared-memory
- * buffer types; without it neither happens, and a cursor-only session never pays
- * to map a full-screen framebuffer per frame.
+ * asks for PW_STREAM_FLAG_MAP_BUFFERS. Shared memory is preferred; DMA-BUF
+ * fallback uses EGL GPU import, or synchronized mmap for explicit LINEAR when
+ * EGL is unavailable. A cursor-only session never maps framebuffer pixels.
  *
  * Returns NULL on failure, with a message in `err`.
  */

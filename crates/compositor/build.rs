@@ -94,10 +94,13 @@ fn main() {
 
     // shim C : accesseurs pour les structs que bindgen rend opaques (AVFormatContext).
     // Sur macOS, cc utilise clang par défaut ; sur Windows, MSVC via vcvars (cf. x.bat).
-    cc::Build::new()
-        .file("shim.c")
-        .include(&include_dir)
-        .compile("sn_shim");
+    let mut shim = cc::Build::new();
+    shim.file("shim.c").include(&include_dir);
+    if let Ok(prefix) = std::env::var("OPENSCREEN_FFMPEG_SYMBOL_PREFIX") {
+        let symbol = format!("{prefix}av_dict_get");
+        shim.define("av_dict_get", symbol.as_str());
+    }
+    shim.compile("sn_shim");
 
     // --- bindings générés sur les VRAIS headers 8.x (immunisé contre la version) ---
     // Cible clang explicite pour que les layouts matchent le runtime de prod (FFmpeg

@@ -208,8 +208,8 @@ impl Decoder {
     }
 }
 
-/// Encodeur video SOFTWARE (`libopenh264` / `libkvazaar`). Pas de zero-copy HW
-/// (VAAPI/Vulkan-encode = suivi) : la frame composee est relue RGBA par
+/// Encodeur video NVENC, avec repli LGPL (`libopenh264` / `libkvazaar`).
+/// Pas de zero-copy : la frame composee est relue RGBA par
 /// l'appelant puis convertie YUV420P par `sws_scale`. Surface
 /// `open`/`send_rgba`/`flush` alignee sur le chemin software de
 /// `pipeline_macos::VideoEncoder`.
@@ -230,12 +230,12 @@ pub struct VideoEncoder {
 unsafe impl Send for VideoEncoder {}
 
 impl VideoEncoder {
-    /// Encodeurs software candidats du build LGPL, par codec. La premiere qui
+    /// Encodeurs candidats du build LGPL, par codec. La premiere qui
     /// ouvre gagne ; `OPENSCREEN_EXPORT_ENCODER=<name>` force un choix.
     fn candidate_names(codec: &ExportCodec) -> &'static [&'static str] {
         match codec {
-            ExportCodec::H264 => &["libopenh264"],
-            ExportCodec::H265 => &["libkvazaar"],
+            ExportCodec::H264 => &["h264_nvenc", "libopenh264"],
+            ExportCodec::H265 => &["hevc_nvenc", "libkvazaar"],
         }
     }
 
@@ -262,7 +262,7 @@ impl VideoEncoder {
             match unsafe { Self::try_open(name, w, h, fps, bit_rate) } {
                 Ok(mut enc) => {
                     enc.fallback = !refused.is_empty();
-                    eprintln!("[pipeline] encodeur video : {name} (software YUV420P)");
+                    eprintln!("[pipeline] encodeur video : {name} (hardware={}, fallback={}, CPU YUV420P input)", enc.hardware, enc.fallback);
                     return Ok(enc);
                 }
                 Err(e) => refused.push(format!("{name}: {e}")),

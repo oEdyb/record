@@ -221,15 +221,17 @@ impl FrameMailbox {
     ///
     /// Runs on the PipeWire thread and must stay short: the buffer it reads from
     /// is re-queued to the compositor the moment the callback returns.
-    fn put(&self, source: &[u8], meta: &RawFrame) {
+    fn put(&self, source: &[u8], meta: &RawFrame) -> bool {
         use std::sync::atomic::Ordering;
 
         let Ok(mut inner) = self.inner.lock() else {
             // A poisoned lock means a previous holder panicked. Dropping the
             // frame is the only safe option, and it is already counted below.
             self.dropped.fetch_add(1, Ordering::Relaxed);
-            return;
+            return false;
         };
+
+        let notify = inner.pending.is_none();
 
         // Recycle, in order of preference: the buffer of the frame we are about
         // to discard, then the one the consumer handed back, then a new one.
@@ -259,6 +261,7 @@ impl FrameMailbox {
             has_crop: meta.has_crop != 0,
         });
         self.received.fetch_add(1, Ordering::Relaxed);
+        notify
     }
 
     /// Takes the pending frame, if any. Returns `None` when the consumer was
@@ -319,7 +322,8 @@ impl AudioRing {
         use std::sync::atomic::Ordering;
 
         let Ok(mut queue) = self.inner.lock() else {
-            self.dropped.fetch_add(samples.len() as u64, Ordering::Relaxed);
+            self.dropped
+                .fetch_add(samples.len() as u64, Ordering::Relaxed);
             return;
         };
         queue.extend(samples.iter().copied());
@@ -429,7 +433,9 @@ pub fn list_audio_sources() -> Result<Vec<AudioSourceInfo>, String> {
         return Err(take_error(&err));
     }
     // SAFETY: the C side always NUL-terminates within the buffer it was given.
-    let text = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_string_lossy().into_owned();
+    let text = unsafe { CStr::from_ptr(buffer.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
     Ok(text
         .split('\u{1e}')
         .filter(|record| !record.is_empty())
@@ -489,7 +495,9 @@ impl AudioSession {
         // every callback.
         let raw = unsafe {
             osc_pw_audio_start(
-                target_c.as_ref().map_or(std::ptr::null(), |name| name.as_ptr()),
+                target_c
+                    .as_ref()
+                    .map_or(std::ptr::null(), |name| name.as_ptr()),
                 i32::from(capture_sink),
                 rate,
                 channels,
@@ -544,13 +552,19 @@ extern "C" fn on_audio_state(user: *mut c_void, state_name: *const c_char, error
         } else {
             // SAFETY: libpipewire's pw_stream_state_as_string returns a static
             // NUL-terminated string.
-            unsafe { CStr::from_ptr(state_name) }.to_string_lossy().into_owned()
+            unsafe { CStr::from_ptr(state_name) }
+                .to_string_lossy()
+                .into_owned()
         };
         let error = if error.is_null() {
             None
         } else {
             // SAFETY: non-NULL implies a NUL-terminated string that outlives the call.
-            Some(unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned())
+            Some(
+                unsafe { CStr::from_ptr(error) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         };
         (state.on_state)(name, error);
     });
@@ -584,7 +598,11 @@ pub fn library_version() -> Option<String> {
         return None;
     }
     // SAFETY: non-NULL implies a NUL-terminated string from pw_get_library_version.
-    Some(unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned())
+    Some(
+        unsafe { CStr::from_ptr(raw) }
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 /// Would our SPA_META_Cursor declaration survive negotiation against a producer
@@ -608,7 +626,9 @@ pub const DRM_FORMAT_MOD_INVALID: i64 = 0x00ff_ffff_ffff_ffff;
 #[cfg(test)]
 pub fn enum_format_accepts_dmabuf_producer(with_modifier: bool, producer_modifier: i64) -> i32 {
     // SAFETY: no arguments to validate; the shim builds and frees its own PODs.
-    unsafe { osc_pw_enum_format_accepts_dmabuf_producer(i32::from(with_modifier), producer_modifier) }
+    unsafe {
+        osc_pw_enum_format_accepts_dmabuf_producer(i32::from(with_modifier), producer_modifier)
+    }
 }
 
 /// SPA enum values as compiled from the vendored headers.
@@ -751,8 +771,9 @@ extern "C" fn on_frame(user: *mut c_void, frame: *const RawFrame) {
         // the callback, `rows <= size` was just checked, and the mapping stays
         // live until this returns.
         let pixels = unsafe { std::slice::from_raw_parts(frame.data, rows) };
-        mailbox.put(pixels, frame);
-        (state.sink)(StreamEvent::FrameReady);
+        if mailbox.put(pixels, frame) {
+            (state.sink)(StreamEvent::FrameReady);
+        }
     });
 }
 
@@ -770,7 +791,9 @@ extern "C" fn on_buffer_info(
         } else {
             // SAFETY: the shim always passes a NUL-terminated stack buffer that
             // outlives the callback.
-            unsafe { CStr::from_ptr(metas) }.to_string_lossy().into_owned()
+            unsafe { CStr::from_ptr(metas) }
+                .to_string_lossy()
+                .into_owned()
         };
         sink(StreamEvent::BufferInfo {
             data_type,
@@ -790,25 +813,23 @@ extern "C" fn on_cursor(user: *mut c_void, cursor: *const RawCursor) {
         // SAFETY: non-NULL for the duration of the callback, by contract.
         let cursor = unsafe { &*cursor };
 
-        let bitmap = if cursor.has_bitmap != 0
-            && !cursor.bitmap_data.is_null()
-            && cursor.bitmap_len > 0
-        {
-            // SAFETY: the shim validated that `bitmap_len` bytes starting at
-            // `bitmap_data` lie inside the metadata block before setting
-            // has_bitmap; the region stays mapped until the callback returns.
-            let pixels =
-                unsafe { std::slice::from_raw_parts(cursor.bitmap_data, cursor.bitmap_len) };
-            Some(CursorBitmap {
-                format: cursor.bitmap_format,
-                width: cursor.bitmap_width,
-                height: cursor.bitmap_height,
-                stride: cursor.bitmap_stride,
-                pixels: pixels.to_vec(),
-            })
-        } else {
-            None
-        };
+        let bitmap =
+            if cursor.has_bitmap != 0 && !cursor.bitmap_data.is_null() && cursor.bitmap_len > 0 {
+                // SAFETY: the shim validated that `bitmap_len` bytes starting at
+                // `bitmap_data` lie inside the metadata block before setting
+                // has_bitmap; the region stays mapped until the callback returns.
+                let pixels =
+                    unsafe { std::slice::from_raw_parts(cursor.bitmap_data, cursor.bitmap_len) };
+                Some(CursorBitmap {
+                    format: cursor.bitmap_format,
+                    width: cursor.bitmap_width,
+                    height: cursor.bitmap_height,
+                    stride: cursor.bitmap_stride,
+                    pixels: pixels.to_vec(),
+                })
+            } else {
+                None
+            };
 
         sink(StreamEvent::Cursor(CursorEvent {
             x: cursor.x,
@@ -828,7 +849,11 @@ extern "C" fn on_state(user: *mut c_void, state: *const c_char, error: *const c_
                 None
             } else {
                 // SAFETY: libpipewire hands us NUL-terminated static/owned strings.
-                Some(unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned())
+                Some(
+                    unsafe { CStr::from_ptr(raw) }
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             }
         };
         sink(StreamEvent::State {
@@ -903,7 +928,8 @@ mod tests {
     /// and that would mean GNOME had quietly moved to the DMA-BUF path.
     #[test]
     fn enum_format_survives_a_dmabuf_only_producer() {
-        for modifier in [DRM_FORMAT_MOD_LINEAR, DRM_FORMAT_MOD_INVALID] {
+        // The offline producer fixture represents queried explicit GPU layouts.
+        for modifier in [DRM_FORMAT_MOD_LINEAR, 0x0300_0000_00e0_8012] {
             assert_eq!(
                 enum_format_accepts_dmabuf_producer(false, modifier),
                 0,
@@ -917,6 +943,12 @@ mod tests {
             );
         }
 
+        assert_eq!(
+            enum_format_accepts_dmabuf_producer(true, DRM_FORMAT_MOD_INVALID),
+            0,
+            "implicit layouts must not displace queried explicit modifiers"
+        );
+
         // The advertised modifier set is a real set, not a wildcard: a tiled or
         // compressed buffer cannot be read through a plain mmap, so it must fail
         // negotiation rather than be accepted and decoded into garbage.
@@ -927,6 +959,33 @@ mod tests {
             "a modifier we cannot mmap must not intersect — accepting it would ship \
              a scrambled recording instead of an error"
         );
+    }
+
+    #[test]
+    fn frame_mailbox_coalesces_notifications_until_consumed() {
+        let mailbox = FrameMailbox::default();
+        let meta = RawFrame {
+            data: std::ptr::null(),
+            size: 4,
+            stride: 4,
+            width: 1,
+            height: 1,
+            video_format: 0,
+            pts_ns: 0,
+            crop_x: 0,
+            crop_y: 0,
+            crop_width: 1,
+            crop_height: 1,
+            has_crop: 0,
+        };
+        assert!(mailbox.put(&[1; 4], &meta));
+        for _ in 0..1000 {
+            assert!(!mailbox.put(&[2; 4], &meta));
+        }
+        assert_eq!(mailbox.received(), 1001);
+        assert_eq!(mailbox.dropped(), 1000);
+        assert_eq!(mailbox.take().expect("pending frame").pixels, [2; 4]);
+        assert!(mailbox.put(&[3; 4], &meta));
     }
 
     /// End-to-end exercise of the PipeWire half with NO portal involved.
@@ -965,8 +1024,8 @@ mod tests {
 
         load().expect("libpipewire must load");
         let runtime = std::env::var("XDG_RUNTIME_DIR").expect("XDG_RUNTIME_DIR");
-        let socket = UnixStream::connect(format!("{runtime}/pipewire-0"))
-            .expect("PipeWire daemon socket");
+        let socket =
+            UnixStream::connect(format!("{runtime}/pipewire-0")).expect("PipeWire daemon socket");
 
         let (sender, receiver) = mpsc::channel();
         let session = Session::start(
@@ -995,7 +1054,12 @@ mod tests {
         while std::time::Instant::now() < observe_until {
             match receiver.recv_timeout(Duration::from_millis(250)) {
                 Ok(StreamEvent::Format(value)) => {
-                    println!("[{:>5}ms] format {}x{}", stamp(std::time::Instant::now()), value.width, value.height);
+                    println!(
+                        "[{:>5}ms] format {}x{}",
+                        stamp(std::time::Instant::now()),
+                        value.width,
+                        value.height
+                    );
                     format = Some(value);
                 }
                 Ok(StreamEvent::BufferInfo {
@@ -1022,7 +1086,10 @@ mod tests {
                     );
                 }
                 Ok(StreamEvent::Cursor(cursor)) => {
-                    println!("[{:>5}ms] cursor {cursor:?}", stamp(std::time::Instant::now()));
+                    println!(
+                        "[{:>5}ms] cursor {cursor:?}",
+                        stamp(std::time::Instant::now())
+                    );
                 }
                 // Unreachable: this session was started with no mailbox, so the
                 // C side was never asked for frames. Matched rather than
@@ -1036,11 +1103,20 @@ mod tests {
         // Teardown, watched. Whatever the stream reports while being stopped is
         // what a maintainer's log will show at the end of every clean run, so it
         // must not be mistaken for a failure.
-        println!("[{:>5}ms] -- dropping session --", stamp(std::time::Instant::now()));
+        println!(
+            "[{:>5}ms] -- dropping session --",
+            stamp(std::time::Instant::now())
+        );
         drop(session);
-        println!("[{:>5}ms] -- session dropped --", stamp(std::time::Instant::now()));
+        println!(
+            "[{:>5}ms] -- session dropped --",
+            stamp(std::time::Instant::now())
+        );
         while let Ok(event) = receiver.recv_timeout(Duration::from_millis(250)) {
-            println!("[{:>5}ms] after-drop {event:?}", stamp(std::time::Instant::now()));
+            println!(
+                "[{:>5}ms] after-drop {event:?}",
+                stamp(std::time::Instant::now())
+            );
         }
 
         let format = format.expect("param_changed must deliver a negotiated format");
@@ -1070,6 +1146,9 @@ mod source_tests {
         for source in &sources {
             println!("  {}  <-  {}", source.name, source.description);
         }
-        assert!(!sources.is_empty(), "a desktop session always has at least one capture node");
+        assert!(
+            !sources.is_empty(),
+            "a desktop session always has at least one capture node"
+        );
     }
 }
