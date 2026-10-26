@@ -313,6 +313,45 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 		).rejects.toThrow(/Invalid generated Linux resource/);
 	});
 
+	it("verifies branded icons in the extracted AppImage layout", async () => {
+		const packageDir = await packageFixture();
+		await rename(
+			path.join(packageDir, "Contents", "Resources"),
+			path.join(packageDir, "resources"),
+		);
+		for (const fileName of [".DirIcon", "klippt.png"]) {
+			await copyFile(
+				path.join(REPO_ROOT, "icons", "icons", "png", "1024x1024.png"),
+				path.join(packageDir, fileName),
+			);
+		}
+		for (const size of [16, 24, 32, 48, 64, 128, 256, 512, 1024]) {
+			const target = path.join(
+				packageDir,
+				"usr",
+				"share",
+				"icons",
+				"hicolor",
+				`${size}x${size}`,
+				"apps",
+				"klippt.png",
+			);
+			await mkdir(path.dirname(target), { recursive: true });
+			await copyFile(path.join(REPO_ROOT, "icons", "icons", "png", `${size}x${size}.png`), target);
+		}
+		const options = { root: REPO_ROOT, packageDir, platform: "linux", arch: "x64" };
+		await expect(verifyPackagedDistribution(options)).resolves.toMatchObject({
+			webAssemblyFiles: 1,
+		});
+		await copyFile(
+			path.join(REPO_ROOT, "icons", "icons", "png", "128x128.png"),
+			path.join(packageDir, ".DirIcon"),
+		);
+		await expect(verifyPackagedDistribution(options)).rejects.toThrow(
+			"Packaged klippt-brand asset differs from policy: .DirIcon",
+		);
+	});
+
 	it("accepts reviewed locale JSON assets", async () => {
 		const packageDir = await packageFixture();
 		await expect(

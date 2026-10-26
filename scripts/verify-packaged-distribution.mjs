@@ -364,10 +364,12 @@ function resourceKey(entry) {
 	const normalized = `/${portable(entry.path)}`;
 	const marker = "/resources/";
 	const index = normalized.toLowerCase().lastIndexOf(marker);
-	return index === -1 ? undefined : `physical:${normalized.slice(index + marker.length)}`;
+	return index === -1
+		? `file:${portable(entry.path)}`
+		: `physical:${normalized.slice(index + marker.length)}`;
 }
 
-async function exactAssetPolicy(root) {
+async function exactAssetPolicy(root, platform) {
 	const exact = new Map();
 	const add = async (key, sourcePath, component) => {
 		const bytes = await readFile(path.join(root, sourcePath));
@@ -394,6 +396,18 @@ async function exactAssetPolicy(root) {
 		size: appArmor.length,
 		sha256: sha256(appArmor),
 	});
+	if (platform === "linux") {
+		for (const fileName of [".DirIcon", "klippt.png"]) {
+			await add(`file:${fileName}`, "icons/icons/png/1024x1024.png", "klippt-brand");
+		}
+		for (const size of [16, 24, 32, 48, 64, 128, 256, 512, 1024]) {
+			await add(
+				`file:usr/share/icons/hicolor/${size}x${size}/apps/klippt.png`,
+				`icons/icons/png/${size}x${size}.png`,
+				"klippt-brand",
+			);
+		}
+	}
 	await add("physical:icon.icns", "icons/icons/mac/icon.icns", "klippt-brand");
 	await add("physical:icon.ico", "icons/icons/win/icon.ico", "klippt-brand");
 	for (const fileName of [
@@ -781,7 +795,7 @@ export async function verifyPackagedDistribution({
 	}
 	const entries = [...physical, ...archivedEntries];
 	const violations = [];
-	const exactAssets = await exactAssetPolicy(root);
+	const exactAssets = await exactAssetPolicy(root, platform);
 	const builtOutputs = await buildOutputPolicy(root, buildOutputRoots);
 
 	for (const entry of entries) {

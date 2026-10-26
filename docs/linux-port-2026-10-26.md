@@ -265,3 +265,26 @@ Source contracts: pinned SDK `AVCodecContext` and `ffmpeg_shim.c`; pinned
 `app-builder-lib/templates/linux/apparmor-profile.tpl` and `FpmTarget.js`;
 [Khronos EGL thread cleanup](https://registry.khronos.org/EGL/sdk/docs/man/html/eglReleaseThread.xhtml)
 and [PipeWire loop invocation](https://docs.pipewire.org/group__pw__loop.html).
+
+### Portable artifact verification
+
+All four Ubuntu-baseline formats were regenerated from runtime source
+`575c432b7693fd99709bab139f1c04d84c349bbc`, with the strict symbol floor and
+complete local provenance manifest. Clean installation/loader checks passed again
+for the final deb, pacman and rpm: 27 ELFs resolve; Klippt, Whisper and the capture
+helper reach main. The installed package marker matches each format, and the deb
+maintainer is Dyberg & Co AB. The floor-built addon also remuxed the real crashed
+camera on Ubuntu: 615 packets, 30.75-second result, no GPU required.
+
+The extracted AppImage contains additional icons outside `resources/`. Its policy
+now maps only the exact expected paths to the matching branded PNG bytes, including
+`.DirIcon`, the root icon and each hicolor size. Unrecognized locations and changed
+bytes remain rejected. Actual extracted-artifact policy passes; 43 focused policy
+tests include replacing `.DirIcon` with another reviewed but incorrect-size image.
+This verification-only change does not alter the immutable runtime artifacts.
+
+Artifacts and SHA-256 inventory are under
+`artifacts/linux-port-2026-10-26/portable-build/output/`. Host desktop launch of the
+final AppImage remains pending until the concurrent endurance capture finishes.
+GitHub's latest CI jobs still executed zero steps; the check annotations identify
+failed account payments or the spending limit as the reason.
