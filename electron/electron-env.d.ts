@@ -184,6 +184,9 @@ interface Window {
 			error?: string;
 		}>;
 		openRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>;
+		registerNativeRecordingWebcam: (
+			registration: import("../src/lib/nativeMacRecording").NativeRecordingWebcamRegistration,
+		) => Promise<{ success: boolean; registered?: boolean; error?: string }>;
 		appendRecordingChunk: (
 			fileName: string,
 			chunk: ArrayBuffer,

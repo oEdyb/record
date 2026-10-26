@@ -7,6 +7,7 @@ import type {
 	NativeMacStorageStatus,
 	NativeRecordingAppStopAcknowledgement,
 	NativeRecordingAppStopRequest,
+	NativeRecordingWebcamRegistration,
 } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
 import type {
@@ -355,6 +356,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openRecordingStream: (fileName: string) => {
 		return ipcRenderer.invoke("open-recording-stream", fileName);
 	},
+	registerNativeRecordingWebcam: (registration: NativeRecordingWebcamRegistration) =>
+		ipcRenderer.invoke("register-native-recording-webcam", registration),
 	appendRecordingChunk: (fileName: string, chunk: ArrayBuffer) => {
 		return ipcRenderer.invoke("append-recording-chunk", fileName, chunk);
 	},

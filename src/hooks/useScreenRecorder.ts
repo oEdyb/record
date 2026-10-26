@@ -1354,6 +1354,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		if (!webcamEnabled) return null;
 		if (!webcamReady.current || !webcamStream.current)
 			throw new Error("The selected camera is not ready to record.");
+		const owner = nativeMacRecording.current?.rendererStop;
+		const offsetMs = Math.max(0, Date.now() - (activeClipStartedAt.current ?? Date.now()));
 		return createRecorderHandle(
 			webcamStream.current,
 			{
@@ -1365,6 +1367,29 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				),
 			},
 			nativeMacWebcamFileName(activeRecordingId, clipIndex),
+			async () => {
+				const active = nativeMacRecording.current;
+				if (
+					!owner ||
+					!active ||
+					active.finalizing ||
+					active.recordingId !== activeRecordingId ||
+					active.rendererStop?.token !== owner.token
+				)
+					return;
+				try {
+					const result = await window.electronAPI.registerNativeRecordingWebcam({
+						...owner,
+						clipIndex,
+						offsetMs,
+					});
+					if (!result.success)
+						throw new Error(result.error ?? "Camera recovery metadata could not be saved.");
+				} catch (error) {
+					console.error("Camera recovery registration failed:", error);
+					toast.error("Camera crash recovery failed. Stop to save your take.");
+				}
+			},
 		);
 	};
 

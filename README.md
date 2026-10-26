@@ -71,6 +71,7 @@ GNOME portal backend. Vulkan compositing also needs a working Vulkan driver.
 
 ```fish
 npm ci
+npx install-electron --no
 npm run fetch:ffmpeg
 npm run build:native:linux
 npm run build:native:compositor:linux

@@ -37,8 +37,42 @@ function driver(handle: { recorder: MediaRecorder }): FakeMediaRecorder {
 }
 
 describe("createRecorderHandle", () => {
+	it("awaits the first durable chunk callback once before appending later chunks", async () => {
+		let finishRegistration: (() => void) | undefined;
+		const registration = new Promise<void>((resolve) => {
+			finishRegistration = resolve;
+		});
+		const appended: string[] = [];
+		stubElectronAPI({
+			openRecordingStream: vi.fn(async () => ({ success: true })),
+			appendRecordingChunk: vi.fn(async (_name: string, data: ArrayBuffer) => {
+				appended.push(decode(data));
+				return { success: true };
+			}),
+		});
+		const onFirstChunkWritten = vi.fn(() => registration);
+		const handle = createRecorderHandle(
+			new MediaStream(),
+			{ mimeType: "video/webm" },
+			"camera.webm",
+			onFirstChunkWritten,
+		);
+		await tick();
+		driver(handle).emit(new Blob(["first"]));
+		driver(handle).emit(new Blob(["second"]));
+		await tick();
+		expect(appended).toEqual(["first"]);
+		expect(onFirstChunkWritten).toHaveBeenCalledOnce();
+		finishRegistration?.();
+		driver(handle).stop();
+		await handle.recordedBlobPromise;
+		expect(appended).toEqual(["first", "second"]);
+		expect(onFirstChunkWritten).toHaveBeenCalledOnce();
+	});
+
 	beforeEach(() => {
 		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		vi.stubGlobal("MediaStream", class extends EventTarget {});
 	});
 
 	afterEach(() => {

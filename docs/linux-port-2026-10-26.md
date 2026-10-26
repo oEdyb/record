@@ -200,3 +200,25 @@ Additional primary contracts used:
 [niri screencasting](https://niri-wm.github.io/niri/Screencasting.html),
 [Electron 44 global shortcuts](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/global-shortcut.md),
 [Electron 44 BrowserWindow](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/browser-window.md).
+
+### Follow-up: renderer camera crash journal
+
+Renderer camera streams now register their canonical path and captured offset after
+first successful disk append, authenticated by the take token and owning WebContents.
+The existing recovery journal commits that metadata before further chunks. Startup
+recovery can reindex unfinished WebM through the native remuxer; live Stop never
+replaces an open camera file. Prepare/Start wait for startup recovery to finish,
+so a new take cannot be mistaken for crashed media. Native MOV/audio originals
+still require validated finalization or recovery; the renderer merge is WebM-only.
+
+Validation: 169 focused tests; both TypeScript checks and Biome pass. Three Start/
+Prepare regressions fail without the startup barrier, and unreadable native-source
+regressions fail when all provisional originals are blindly merged into Stop.
+Fresh review found no remaining P1/P2 issues after those corrections. The actual
+hard-crash desktop pass is pending; driver allocation failures interrupted its
+first attempt. The concurrent hour test completed with audio-drop warnings in
+clip two and is retained for diagnosis, not counted as an endurance pass.
+
+Linux packaging now refuses a missing pinned Electron Chromium notice before
+building. The bare-install loader script uses the current Klippt layout and requires
+all three expected executables instead of silently skipping missing ones.

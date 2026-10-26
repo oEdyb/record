@@ -688,13 +688,19 @@ export class NativeMacRecordingService {
 							: {}),
 					};
 				}
-				this.clips = mergeNativeMacStoppedClips(stopped.clips, this.clips).map((clip) => ({
-					...clip,
-					cursorCaptureMode:
-						clip.cursorCaptureMode ??
-						this.clipCursorModes.get(clip.index) ??
-						this.cursorCaptureMode,
-				}));
+				this.clips = mergeNativeMacStoppedClips(stopped.clips, this.clips).map((clip) => {
+					const camera = this.originals.get(clip.index);
+					return {
+						...(camera?.webcamVideoPath?.endsWith(".webm")
+							? { webcamVideoPath: camera.webcamVideoPath, webcamOffsetMs: camera.webcamOffsetMs }
+							: {}),
+						...clip,
+						cursorCaptureMode:
+							clip.cursorCaptureMode ??
+							this.clipCursorModes.get(clip.index) ??
+							this.cursorCaptureMode,
+					};
+				});
 				if (!discard) {
 					// Probing every source takes ~130 ms; skip it when the helper's final
 					// event already reported everything the journal knows about.
@@ -959,6 +965,28 @@ export class NativeMacRecordingService {
 		await write;
 	}
 
+	async registerRendererWebcam(
+		recordingId: number,
+		original: NativeMacOriginalStarted,
+	): Promise<boolean> {
+		if (this.recordingId !== recordingId || this.stopOperation || !this.acceptsOriginalMetadata)
+			return false;
+		if (original.key !== "webcamVideoPath") return false;
+		const generation = this.sessionGeneration;
+		const file = await fs.lstat(original.path);
+		if (!file.isFile() || file.isSymbolicLink() || file.size === 0) return false;
+		if (
+			generation !== this.sessionGeneration ||
+			this.recordingId !== recordingId ||
+			this.stopOperation
+		)
+			return false;
+		this.storeOriginalStarted(original, generation);
+		if (this.originals.get(original.clipIndex)?.webcamVideoPath !== original.path) return false;
+		await this.recoveryWrites;
+		return true;
+	}
+
 	private storeOriginalStarted(original: NativeMacOriginalStarted, generation: number): void {
 		if (generation !== this.sessionGeneration || !this.targetPath || !this.acceptsOriginalMetadata)
 			return;
@@ -972,7 +1000,9 @@ export class NativeMacRecordingService {
 				: original.key === "microphoneAudioPath"
 					? "microphone"
 					: "system";
-		if (path.resolve(original.path) !== `${stem}-${suffix}.mov`) return;
+		const expectedPaths = [`${stem}-${suffix}.mov`];
+		if (original.key === "webcamVideoPath") expectedPaths.push(`${stem}-webcam.webm`);
+		if (!expectedPaths.includes(path.resolve(original.path))) return;
 		const originals = this.originals.get(original.clipIndex) ?? {};
 		const offsetKey =
 			original.key === "webcamVideoPath"

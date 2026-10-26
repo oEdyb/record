@@ -41,7 +41,10 @@ import type {
 	NativeMacRecordingRequest,
 	NativeMacRecordingStartResult,
 } from "../../src/lib/nativeMacRecording";
-import { parseNativeMacRecordingClip } from "../../src/lib/nativeMacRecording";
+import {
+	parseNativeMacRecordingClip,
+	parseNativeRecordingWebcamRegistration,
+} from "../../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../../src/lib/nativeWindowsRecording";
 import {
 	isSupportedProjectFile,
@@ -49,6 +52,7 @@ import {
 	SUPPORTED_PROJECT_FILE_EXTENSIONS,
 	withCanonicalProjectExtension,
 } from "../../src/lib/projectFileFormat";
+import { nativeMacWebcamFileName } from "../../src/lib/recording/capturePolicy";
 import {
 	type CursorCaptureMode,
 	normalizeCursorCaptureMode,
@@ -1716,6 +1720,29 @@ export function registerIpcHandlers(
 		console.warn("[export] startup recovery failed:", error);
 	});
 
+	const startupRecordingRecovery = (async () => {
+		await exportRecovery;
+		if (
+			(process.platform !== "darwin" && process.platform !== "linux") ||
+			options.restoreInterruptedRecording === false
+		) {
+			return false;
+		}
+		try {
+			const recoveredSession = await restoreLatestNativeMacRecoverySession(RECORDINGS_DIR);
+			if (!recoveredSession) return false;
+			setCurrentRecordingSessionState(recoveredSession);
+			currentProjectPath = null;
+			console.info(
+				`[capture-mac] restoring interrupted recording ${recoveredSession.createdAt} in the editor`,
+			);
+			return true;
+		} catch (error) {
+			console.warn("[capture-mac] could not inspect recovery journals:", error);
+			return false;
+		}
+	})();
+
 	let recordingActive = false;
 	let thermalState: CleanVoiceThermalState = "unknown";
 	let cpuSpeedLimitPercent: number | undefined;
@@ -2480,6 +2507,7 @@ export function registerIpcHandlers(
 		request: NativeMacRecordingRequest,
 	): Promise<NativeMacRecordingStartResult> =>
 		withHiddenPortalHud(getMainWindow, async () => {
+			await startupRecordingRecovery;
 			if (!nativeMacRecordingService)
 				return { success: false, error: "Native Linux capture is unavailable." };
 			return nativeMacRecordingService.prepare(request);
@@ -2515,6 +2543,7 @@ export function registerIpcHandlers(
 		async (event, request: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
 			const rejection = await rejectWithoutEntitlement("record");
 			if (rejection) return rejection;
+			await startupRecordingRecovery;
 			const result = await invokeNativeLinux(async (service) => {
 				const config = linuxClipRecordingRequest(request);
 				if (!service.isRunning()) {
@@ -3028,6 +3057,28 @@ export function registerIpcHandlers(
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
 		}
 	};
+	ipcMain.handle("register-native-recording-webcam", (event, payload: unknown) =>
+		invokeNativeMac(async () => {
+			const registration = parseNativeRecordingWebcamRegistration(payload);
+			if (
+				!registration ||
+				!rendererRecordingStop.owns(event.sender, registration.recordingId, registration.token)
+			)
+				return { success: false, error: "The recording HUD no longer owns this camera source." };
+			const registered = await getNativeMacRecordingService().registerRendererWebcam(
+				registration.recordingId,
+				{
+					clipIndex: registration.clipIndex,
+					key: "webcamVideoPath",
+					path: resolveRecordingOutputPath(
+						nativeMacWebcamFileName(registration.recordingId, registration.clipIndex),
+					),
+					offsetMs: registration.offsetMs,
+				},
+			);
+			return { success: true, registered };
+		}),
+	);
 
 	ipcMain.handle(
 		"start-native-mac-recording",
@@ -3038,6 +3089,7 @@ export function registerIpcHandlers(
 			const rejection = await rejectWithoutEntitlement("record");
 			if (rejection) return rejection;
 			timeline.mark("entitled");
+			await startupRecordingRecovery;
 			let result = await invokeNativeMac(() => getNativeMacRecordingService().start(request));
 			if (result.success && "recordingId" in result && typeof result.recordingId === "number")
 				result = {
@@ -4777,26 +4829,5 @@ export function registerIpcHandlers(
 		ipcMain,
 	);
 
-	return (async () => {
-		await exportRecovery;
-		if (
-			(process.platform !== "darwin" && process.platform !== "linux") ||
-			options.restoreInterruptedRecording === false
-		) {
-			return false;
-		}
-		try {
-			const recoveredSession = await restoreLatestNativeMacRecoverySession(RECORDINGS_DIR);
-			if (!recoveredSession) return false;
-			setCurrentRecordingSessionState(recoveredSession);
-			currentProjectPath = null;
-			console.info(
-				`[capture-mac] restoring interrupted recording ${recoveredSession.createdAt} in the editor`,
-			);
-			return true;
-		} catch (error) {
-			console.warn("[capture-mac] could not inspect recovery journals:", error);
-			return false;
-		}
-	})();
+	return startupRecordingRecovery;
 }

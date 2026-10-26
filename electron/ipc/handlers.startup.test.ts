@@ -87,7 +87,7 @@ async function register(options: { restoreInterruptedRecording?: boolean } = {})
 	return { recovery, channels, handlers };
 }
 
-async function journalInterruptedTake() {
+async function journalInterruptedTake(clip: { provisionalDuration?: true } = {}) {
 	const recordingsDir = path.join(paths.userData, "recordings");
 	await fs.mkdir(recordingsDir, { recursive: true });
 	const screenVideoPath = path.join(recordingsDir, "recording-77-clip-0001.mp4");
@@ -96,7 +96,7 @@ async function journalInterruptedTake() {
 		schemaVersion: 2,
 		createdAt: 77,
 		screenVideoPath,
-		clips: [{ index: 0, screenVideoPath, durationMs: 2_000 }],
+		clips: [{ index: 0, screenVideoPath, durationMs: 2_000, ...clip }],
 	};
 	await persistNativeMacRecoveryJournal(recordingsDir, session);
 }
@@ -132,6 +132,71 @@ describe("registerIpcHandlers startup contract", () => {
 		expect(recovery).toBeInstanceOf(Promise);
 		expect(channels.size).toBeGreaterThan(20);
 		await recovery;
+	});
+
+	it.each([
+		"prepare-native-linux-recording",
+		"start-native-linux-recording",
+		"start-native-mac-recording",
+	])("waits for startup recovery before %s can create a new take", async (channel) => {
+		pinPlatform("linux");
+		await journalInterruptedTake({ provisionalDuration: true });
+		let inspectionStarted: (() => void) | undefined;
+		const inspectionEntered = new Promise<void>((resolve) => {
+			inspectionStarted = resolve;
+		});
+		let finishInspection: (() => void) | undefined;
+		const inspectionGate = new Promise<void>((resolve) => {
+			finishInspection = resolve;
+		});
+		const { inspectHandoffSourceMedia: inspect } = await import("../export/sourceHandoffMedia");
+		vi.mocked(inspect).mockImplementation(async () => {
+			inspectionStarted?.();
+			await inspectionGate;
+			return {
+				hasAudio: false,
+				hasKlipptMetadata: false,
+				roles: [],
+				durationSec: 2,
+				video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
+			};
+		});
+		const { EntitlementService } = await import("../entitlements/service");
+		const entitlement = vi
+			.spyOn(EntitlementService.prototype, "assertCapability")
+			.mockResolvedValue();
+		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+		const prepare = vi
+			.spyOn(NativeMacRecordingService.prototype, "prepare")
+			.mockResolvedValue({ success: false, error: "capture probe" });
+		const start = vi
+			.spyOn(NativeMacRecordingService.prototype, "start")
+			.mockResolvedValue({ success: false, error: "capture probe" });
+		const { recovery, handlers } = await register();
+		await inspectionEntered;
+		const invoke = handlers.get(channel);
+		if (!invoke) throw new Error("Capture IPC missing");
+		const capture = Reflect.apply(invoke, undefined, [
+			{},
+			{
+				schemaVersion: 1,
+				video: { fps: 60 },
+				webcam: { enabled: false },
+			},
+		]);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			expect(prepare).not.toHaveBeenCalled();
+			expect(start).not.toHaveBeenCalled();
+		} finally {
+			finishInspection?.();
+		}
+		await expect(recovery).resolves.toBe(true);
+		await expect(capture).resolves.toMatchObject({ success: false, error: "capture probe" });
+		expect(prepare.mock.calls.length + start.mock.calls.length).toBe(1);
+		prepare.mockRestore();
+		start.mockRestore();
+		entitlement.mockRestore();
 	});
 
 	it("reports an interrupted native take left in the recovery journal", async () => {
@@ -257,6 +322,61 @@ describe("registerIpcHandlers startup contract", () => {
 			await fs.readFile(path.join(recordingsDir, "recording-77.recovery.json"), "utf8"),
 		);
 		expect(journal.session.clips).toEqual(stored?.clips);
+	});
+
+	it("accepts early camera recovery metadata only from the current take's owning HUD", async () => {
+		pinPlatform("linux");
+		const { recovery, handlers } = await register();
+		await recovery;
+		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+		const start = vi
+			.spyOn(NativeMacRecordingService.prototype, "start")
+			.mockResolvedValue({ success: true, recordingId: 77 });
+		const registerCamera = vi
+			.spyOn(NativeMacRecordingService.prototype, "registerRendererWebcam")
+			.mockResolvedValue(true);
+		const invokeStart = handlers.get("start-native-mac-recording");
+		const invokeRegister = handlers.get("register-native-recording-webcam");
+		const invokeAck = handlers.get("acknowledge-native-recording-app-stop");
+		if (!invokeStart || !invokeRegister || !invokeAck) throw new Error("Recording IPC missing");
+		const owner = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		const other = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		const result: unknown = await Reflect.apply(invokeStart, undefined, [
+			{ sender: owner },
+			{ video: { fps: 60 }, webcam: { enabled: false } },
+		]);
+		if (
+			!result ||
+			typeof result !== "object" ||
+			!("rendererStop" in result) ||
+			!result.rendererStop ||
+			typeof result.rendererStop !== "object"
+		)
+			throw new Error("No renderer token");
+		const request = result.rendererStop;
+		const metadata = { ...request, clipIndex: 0, offsetMs: 23.5 };
+		await expect(
+			Reflect.apply(invokeRegister, undefined, [{ sender: other }, metadata]),
+		).resolves.toMatchObject({ success: false });
+		await expect(
+			Reflect.apply(invokeRegister, undefined, [{ sender: owner }, { ...metadata, clipIndex: -1 }]),
+		).resolves.toMatchObject({ success: false });
+		expect(registerCamera).not.toHaveBeenCalled();
+		await expect(
+			Reflect.apply(invokeRegister, undefined, [{ sender: owner }, metadata]),
+		).resolves.toEqual({ success: true, registered: true });
+		expect(registerCamera).toHaveBeenCalledExactlyOnceWith(77, {
+			clipIndex: 0,
+			key: "webcamVideoPath",
+			path: path.join(paths.userData, "recordings", "recording-77-clip-0001-webcam.webm"),
+			offsetMs: 23.5,
+		});
+		Reflect.apply(invokeAck, undefined, [{ sender: owner }, { ...request, success: true }]);
+		await expect(
+			Reflect.apply(invokeRegister, undefined, [{ sender: owner }, metadata]),
+		).resolves.toMatchObject({ success: false });
+		registerCamera.mockRestore();
+		start.mockRestore();
 	});
 
 	it("reports attachment failure when the durable manifest cannot be committed", async () => {

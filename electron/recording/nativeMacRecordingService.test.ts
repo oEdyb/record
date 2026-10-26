@@ -68,6 +68,30 @@ const baseRequest: NativeMacRecordingRequest = {
 };
 
 describe("NativeMacRecordingService", () => {
+	it("journals a renderer camera after its first written bytes while capture is active", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const webcam = path.join(recordingsDir, "recording-100-clip-0001-webcam.webm");
+		await fs.writeFile(webcam, "written camera fragment");
+		await expect(
+			service.registerRendererWebcam(100, {
+				clipIndex: 0,
+				key: "webcamVideoPath",
+				path: webcam,
+				offsetMs: 27,
+			}),
+		).resolves.toBe(true);
+		const journal: unknown = JSON.parse(
+			await fs.readFile(path.join(recordingsDir, "recording-100.recovery.json"), "utf8"),
+		);
+		expect(journal).toMatchObject({
+			session: {
+				clips: [{ webcamVideoPath: webcam, webcamOffsetMs: 27, provisionalDuration: true }],
+			},
+		});
+		await service.stop(true);
+	});
+
 	let recordingsDir: string;
 	let helper: FakeHelper;
 	let deps: NativeMacRecordingServiceDependencies;
@@ -205,6 +229,30 @@ describe("NativeMacRecordingService", () => {
 			error: expect.stringContaining("missing a source"),
 		});
 		expect(deps.createHelper).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"microphoneAudioPath",
+		"webcamVideoPath",
+	] as const)("does not restore an unreadable native %s omitted at finalization", async (key) => {
+		let reportOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _fatal, callback) => {
+			reportOriginal = callback;
+			return helper;
+		});
+		const stem = path.join(recordingsDir, "recording-100-clip-0001");
+		const originalPath = `${stem}-${key === "webcamVideoPath" ? "webcam" : "microphone"}.mov`;
+		await fs.writeFile(`${stem}.mp4`, "screen");
+		await fs.writeFile(originalPath, "unreadable original");
+		vi.mocked(inspectHandoffSourceMedia).mockRejectedValue(new Error("unreadable source"));
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		reportOriginal?.({ clipIndex: 0, key, path: originalPath, offsetMs: 20 });
+		helper.stopClips = [{ index: 0, screenVideoPath: `${stem}.mp4`, durationMs: 1000 }];
+		const result = await service.stop();
+		expect(result.success).toBe(true);
+		expect(result.session?.clips?.[0][key]).toBeUndefined();
+		expect(inspectHandoffSourceMedia).toHaveBeenCalledWith(originalPath);
 	});
 
 	it("reattaches a readable original fragment when finalization returns only the committed screen", async () => {

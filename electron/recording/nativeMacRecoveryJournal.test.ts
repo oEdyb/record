@@ -13,13 +13,17 @@ import {
 	restoreNativeMacRecoverySession,
 	updateNativeMacRecoveryJournalIfPresent,
 } from "./nativeMacRecoveryJournal";
+import { reindexRecordingOnDisk } from "./webm-seek-index";
 
 vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
+vi.mock("./webm-seek-index", () => ({ reindexRecordingOnDisk: vi.fn() }));
 
 describe("native macOS recovery journal", () => {
 	let recordingsDir: string;
 
 	beforeEach(async () => {
+		vi.mocked(reindexRecordingOnDisk).mockReset();
+		vi.mocked(reindexRecordingOnDisk).mockResolvedValue({ reindexed: false, reason: "no-addon" });
 		vi.mocked(inspectHandoffSourceMedia).mockReset();
 		vi.mocked(inspectHandoffSourceMedia).mockResolvedValue({
 			hasAudio: false,
@@ -77,6 +81,45 @@ describe("native macOS recovery journal", () => {
 		expect(recovered?.clips?.[0]).toMatchObject(originals);
 		expect(recovered?.recoveryWarnings).toBeUndefined();
 		expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(4);
+	});
+
+	it("reindexes an interrupted renderer camera on startup but never during live Stop recovery", async () => {
+		const screenVideoPath = path.join(recordingsDir, "recording-63-clip-0001.mp4");
+		const webcamVideoPath = path.join(recordingsDir, "recording-63-clip-0001-webcam.webm");
+		await fs.writeFile(screenVideoPath, "screen");
+		await fs.writeFile(webcamVideoPath, "unfinished camera");
+		let indexed = false;
+		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+			hasAudio: false,
+			hasKlipptMetadata: false,
+			roles: [],
+			video: { codec: "h264", width: 1920, height: 1080, fps: 30 },
+			durationSec: file === webcamVideoPath && !indexed ? null : 1.8,
+		}));
+		vi.mocked(reindexRecordingOnDisk).mockImplementation(async () => {
+			indexed = true;
+			return { reindexed: true, packets: 54, streams: 1, wallS: 0.01 };
+		});
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			createdAt: 63,
+			screenVideoPath,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath,
+					durationMs: 60_000,
+					provisionalDuration: true,
+					webcamVideoPath,
+					webcamOffsetMs: 18,
+				},
+			],
+		});
+		const live = await restoreNativeMacRecoverySession(recordingsDir, 63);
+		expect(live?.clips?.[0].webcamVideoPath).toBeUndefined();
+		expect(reindexRecordingOnDisk).not.toHaveBeenCalled();
+		const recovered = await restoreLatestNativeMacRecoverySession(recordingsDir);
+		expect(recovered?.clips?.[0]).toMatchObject({ webcamVideoPath, webcamOffsetMs: 18 });
+		expect(reindexRecordingOnDisk).toHaveBeenCalledExactlyOnceWith(webcamVideoPath);
 	});
 
 	it("keeps the screen and valid microphone when another original has no readable media duration", async () => {

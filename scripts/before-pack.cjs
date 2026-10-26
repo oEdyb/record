@@ -950,6 +950,13 @@ exports.default = async function beforePack(context) {
 		return;
 	}
 	if (platform === "linux") {
+		if (
+			!fs.existsSync(path.join(ROOT, "node_modules", "electron", "dist", "LICENSES.chromium.html"))
+		) {
+			throw new Error(
+				"Refusing to package Linux without the pinned Electron Chromium notices. Run: npx install-electron --no",
+			);
+		}
 		const tag = `linux-${archTagFor(context)}`;
 		const dir = path.join(ROOT, "electron", "native", "bin", tag);
 		checkLinuxNativePayload(context);

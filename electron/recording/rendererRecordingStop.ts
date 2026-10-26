@@ -32,6 +32,17 @@ export class RendererRecordingStop {
 		return this.take && !this.take.completed ? this.take.request.recordingId : null;
 	}
 
+	owns(sender: unknown, recordingId: number, token: string): boolean {
+		return Boolean(
+			this.take &&
+				!this.take.completed &&
+				!this.take.owner.isDestroyed() &&
+				this.take.owner === sender &&
+				this.take.request.recordingId === recordingId &&
+				this.take.request.token === token,
+		);
+	}
+
 	wait(recordingId: number, signal: AbortSignal): Promise<void> {
 		const take = this.take;
 		if (take?.completed && take.request.recordingId === recordingId)

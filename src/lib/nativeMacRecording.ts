@@ -68,6 +68,38 @@ export type NativeMacRecordingRequest = {
 };
 
 export type NativeRecordingAppStopRequest = { recordingId: number; token: string };
+export type NativeRecordingWebcamRegistration = NativeRecordingAppStopRequest & {
+	clipIndex: number;
+	offsetMs: number;
+};
+
+export function parseNativeRecordingWebcamRegistration(
+	value: unknown,
+): NativeRecordingWebcamRegistration | null {
+	if (!value || typeof value !== "object") return null;
+	if (!("recordingId" in value && "token" in value && "clipIndex" in value && "offsetMs" in value))
+		return null;
+	if (
+		typeof value.recordingId !== "number" ||
+		!Number.isSafeInteger(value.recordingId) ||
+		value.recordingId < 0 ||
+		typeof value.token !== "string" ||
+		!value.token ||
+		typeof value.clipIndex !== "number" ||
+		!Number.isSafeInteger(value.clipIndex) ||
+		value.clipIndex < 0 ||
+		typeof value.offsetMs !== "number" ||
+		!Number.isFinite(value.offsetMs) ||
+		value.offsetMs < 0
+	)
+		return null;
+	return {
+		recordingId: value.recordingId,
+		token: value.token,
+		clipIndex: value.clipIndex,
+		offsetMs: value.offsetMs,
+	};
+}
 export type NativeRecordingAppStopAcknowledgement = NativeRecordingAppStopRequest & {
 	success: boolean;
 	error?: string;
