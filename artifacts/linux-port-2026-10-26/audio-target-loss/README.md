@@ -47,3 +47,13 @@ Contracts: [PipeWire target properties](https://docs.pipewire.org/page_man_pipew
 WirePlumber 0.4.8 recognizes no-reconnect after the first link but lacks
 no-fallback handling. Initial target loss on that older policy remains an
 integration gate; this live workstation test establishes current-host behavior.
+
+Final source `aeae26ec` builds all four Ubuntu-floor formats and passes strict
+normal/extracted AppImage policy. Clean Ubuntu/Arch/Fedora loaders resolve 27
+ELFs and start three executables. The exact normal-FUSE AppImage repeats real
+HUD input selection, Pause/Continue and selected-source removal: both clips and
+microphone originals decode, every measured microphone window is 440 Hz,
+committed sources are unchanged, and review shows seven seconds / two clips.
+Bundled helper hash and file proofs: `packaged-verification.json`. This exact
+source proof supersedes the earlier host binary for final-source provenance.
+Inventory: `release/linux-port-20261026-aeae26ec/`. Lab/build container stopped.

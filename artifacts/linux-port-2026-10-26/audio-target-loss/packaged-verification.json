@@ -1,0 +1,87 @@
+{
+  "helperPid": 1851524,
+  "helperPath": "/tmp/.mount_KlipptrBnaRH/resources/electron/native/bin/linux-x64/openscreen-pipewire-helper",
+  "helperSha256": "5008f7f29e78b9a542cfa44123f31c27701e297a3d708f9b521d65415ef18567",
+  "recordingId": 1793015428273,
+  "requestMicrophone": {
+    "enabled": true,
+    "deviceId": "a01dd0d9256592d7a1d75f91fc0d505cfa5cd5cfb9541a0e2251c4da78bea84a",
+    "deviceName": "LabMicrophoneA",
+    "gain": 1.4
+  },
+  "committedClip": {
+    "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793015428273-clip-0001-microphone.mov",
+    "microphoneAudioOffsetMs": 0,
+    "index": 0,
+    "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793015428273-clip-0001.mp4",
+    "durationMs": 4066,
+    "cursorCaptureMode": "editable-overlay"
+  },
+  "committedSourceHashes": {
+    "microphoneAudioPath": "4f214bc143948621d8b03cf7b5e1685d55d3136effc262b5f167656950f15afe",
+    "screenVideoPath": "21e81112a0df4bd73063eec135e18b315db5c8e30015c854c1ecc985049b7146"
+  },
+  "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793015428273.session.json",
+  "interruption": {
+    "code": "capture-stopped-with-error",
+    "message": "microphone stream failed in error: defined target not found"
+  },
+  "clips": [
+    {
+      "index": 0,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793015428273-clip-0001.mp4",
+      "durationMs": 4066,
+      "cursorCaptureMode": "editable-overlay",
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793015428273-clip-0001-microphone.mov",
+      "microphoneAudioOffsetMs": 0,
+      "sources": {
+        "screenVideoPath": {
+          "sha256": "21e81112a0df4bd73063eec135e18b315db5c8e30015c854c1ecc985049b7146",
+          "fullDecodeExit": 0
+        },
+        "microphoneAudioPath": {
+          "sha256": "4f214bc143948621d8b03cf7b5e1685d55d3136effc262b5f167656950f15afe",
+          "fullDecodeExit": 0
+        }
+      },
+      "probedScreenDurationSec": 4.088021,
+      "wholeSecondMicrophonePeaksHz": [
+        440.0,
+        440.0,
+        440.0,
+        440.0
+      ],
+      "decodedMicrophoneDurationSec": 4.074666666666666
+    },
+    {
+      "index": 1,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793015428273-clip-0002.mp4",
+      "durationMs": 60000,
+      "provisionalDuration": true,
+      "cursorCaptureMode": "editable-overlay",
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793015428273-clip-0002-microphone.mov",
+      "microphoneAudioOffsetMs": 0,
+      "sources": {
+        "screenVideoPath": {
+          "sha256": "d394138432dc87013d6158770650fbac8b0da5bc1308619054897602b5002291",
+          "fullDecodeExit": 0
+        },
+        "microphoneAudioPath": {
+          "sha256": "e9fefb155019fd640885034f7b0887cb294f0cee64b0eddc2f6c0b0bdc87a250",
+          "fullDecodeExit": 0
+        }
+      },
+      "probedScreenDurationSec": 2.788021,
+      "wholeSecondMicrophonePeaksHz": [
+        440.0,
+        440.0
+      ],
+      "decodedMicrophoneDurationSec": 2.3253333333333335
+    }
+  ],
+  "committedFilesUnchanged": true,
+  "reviewText": "Recording 10/26/2026, 12:51:37 PM\n0:07 total, 2 clips\nAdd clip\nNew recording\nClean cut\nSave video\n0:00/0:06",
+  "sourceCommit": "aeae26ec1a55ad40a2885cea11cdf8d55584e166",
+  "normalFuseAppImage": true,
+  "appImageSha256": "d73db5d5c985feafd8d641ef0a0e09e1c975fde54508d325ff6354aeb55f0f7f"
+}

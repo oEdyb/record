@@ -711,3 +711,16 @@ Contracts: [PipeWire target and reconnection properties](https://docs.pipewire.o
 recognizes no-reconnect after a first link but lacks no-fallback handling. Its
 initial target-disappearance race is not proven safe by this current-host pass
 and remains an older-session-manager integration gate.
+
+The new portable runtime is `aeae26ec` (fix `17fadc25`, probe formatting follow-up).
+All four Ubuntu-floor formats pass strict policy; extracted AppImage policy and
+clean Ubuntu/Arch/Fedora loaders pass (27 ELFs, three executables). The exact
+normal-FUSE AppImage selects A through the real device list, commits one clip,
+continues, loses A and opens interruption review with seven seconds / two clips.
+All four screen/microphone sources fully decode; microphone windows contain only
+440 Hz and committed sources retain their hashes. Bundled helper SHA-256:
+`5008f7f29e78b9a542cfa44123f31c27701e297a3d708f9b521d65415ef18567`.
+Inventory: `release/linux-port-20261026-aeae26ec/`. Both lab and build container
+are stopped. Subsequent local checks should cover paused microphone loss and
+reconfiguration as well as the older-session-manager initial-link race; this
+active-capture test does not establish those paths.

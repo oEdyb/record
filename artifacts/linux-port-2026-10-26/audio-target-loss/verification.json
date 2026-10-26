@@ -111,5 +111,6 @@
   "sourceSha256": {
     "electron/native/pipewire-capture/csrc/pw_audio.c": "80cebd94ba0006be404186366b472e17aafe52cd9dfcd48b331f3542ad397474",
     "electron/native/pipewire-capture/src/shim.rs": "2063700d457043d75edb61f601fedf940b2843ce126389d5ecfbae145b549a49"
-  }
+  },
+  "sourceNote": "Review snapshot hashes; host smoke preceded final module documentation and an extra test assertion. Exact final-source portable helper evidence is in packaged-verification.json."
 }
