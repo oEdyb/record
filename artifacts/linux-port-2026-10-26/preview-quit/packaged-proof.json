@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "c8bc38120a552347a60c53824cc28909911b3d2a",
+  "reportFile": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/diagnostics/workloads/181250ff-fc05-4bec-98ac-e7f1fe358f1f.json",
+  "reportId": "181250ff-fc05-4bec-98ac-e7f1fe358f1f",
+  "statusAfterCleanClose": "succeeded",
+  "exit": {
+    "pid": 2704541,
+    "exitCode": 0,
+    "endedAtMs": 1793029695140
+  },
+  "exitObservedWithinMs": 254,
+  "appImageSha256": "4a99002d5237b843c24bd15cea4cd3759460d92eb83b9c8ae2c8a9f178f391d9",
+  "addonSha256": "ba72fcf50ee2abbde58054966864d3e6f42345e2392f6c14e62a4dd9b65a974d",
+  "reportSha256AfterClose": "a32c10bdcff27708b51ddc346004a1218cda7153948c80ad6bb8cc339d388792",
+  "loadedAddonPath": "/tmp/.mount_Klipptw6o3qr/resources/electron/native/bin/linux-x64/compositor_view.node",
+  "statusAfterRelaunch": "succeeded",
+  "reportUnchangedAfterRelaunch": true
+}

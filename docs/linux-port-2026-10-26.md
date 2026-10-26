@@ -974,3 +974,14 @@ formats need rebuilding with the updated JS/addon, followed by exact-AppImage
 exit verification. Shared Mac hardware regression remains unverified.
 
 Contract: [Electron 44.9.1 app lifecycle](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/app.md).
+
+
+Portable runtime `c8bc3812` now delivers this follow-up in all four Ubuntu-floor
+formats, with strict unpacked/extracted policy and bare Ubuntu/Arch/Fedora
+loader checks passing (27 ELFs, three executables). The exact normal-FUSE
+AppImage plays an owned recording, closes and exits with child code 0 (observed
+within 254 ms). Its mounted addon matches the floor artifact, and its completed
+report remains byte-identical after a new AppImage launch. Inventory:
+`release/linux-port-20261026-c8bc3812/`. Evidence is alongside the host pass.
+Private lab and build container stopped. Active capture/camera Quit remains
+the next affected integration check; this playback-exit result does not replace it.
