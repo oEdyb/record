@@ -380,7 +380,7 @@ Focused regressions cover a 60-second stream with alternating 100 μs clock jitt
 a timed microphone returning after legacy Pause/Continue, a measured gap in both
 original and compatibility AAC, delayed post-Continue return, multiple queued
 blocks, long gaps/overflow, unavailable timestamps and Pause clearing. The independent review found jitter, legacy Continue and delayed-return defects;
-all were corrected, with a final fresh review pending. Native helper tests: 95 pass,
+all were corrected and cleared by fresh reviews. Native helper tests: 95 pass,
 one existing live test ignored; strict Clippy and formatting pass.
 The C ABI review passed 13 runtime-version cases and protected-page tests with
 24-byte/32-byte older buffers plus current 64-bit timestamps.
@@ -390,9 +390,8 @@ AAC remained about 7.09/7.08 seconds, fully decodable; pulse-to-flash offsets be
 and after the stall stayed within one output frame. Missing captured content during
 the stall remains missing; its time is preserved as silence/held video. This first
 live pass preceded the jitter refinement. Evidence and binary provenance are under
-`artifacts/linux-port-2026-10-26/audio-cycle-time/`. Updated package generation is
-pending final review and checks; the immutable `d7b0dafc` candidate above does not
-contain this follow-up.
+`artifacts/linux-port-2026-10-26/audio-cycle-time/`. The older immutable `d7b0dafc`
+candidate does not contain this follow-up; `f7ca5dfd` below supersedes it.
 
 
 A regressing capture-cycle clock is now rejected before admitting its PCM. The
@@ -414,4 +413,50 @@ Continue gets a fresh watchdog deadline and is acknowledged only after a new
 encoded packet. A real 2.1-second legacy Pause/Continue regression reproduces the
 old stale watchdog failure; fresh-packet readiness has a separate regression.
 These preserve the legacy single-file request while canonical recordings continue
-to create fresh clip writers. Final review/package generation remains pending.
+to create fresh clip writers. Fresh review and package generation pass.
+
+
+### Current candidate: f7ca5dfd
+
+Runtime source `f7ca5dfd2f10cca67f6440089260d075f7523397` includes the producer-cycle
+correction, invalid-clock failure boundary, shared active clip clock and Continue
+readiness/watchdog fixes. Final independent review passed. Native tests: 95 passed,
+one existing live test ignored; strict Clippy, formatting and whitespace checks
+pass. No full JS rerun was needed for this native-only follow-up.
+
+All four package formats were rebuilt on the Ubuntu 22.04 baseline with strict
+symbol checks and complete local provenance. Unpacked policy and extracted
+AppImage policy pass against the original container build outputs; comparing with
+a different host build correctly rejects its mismatched JavaScript output hashes.
+Fresh bare Ubuntu/Arch/Fedora installations of the final deb/pacman/rpm pass:
+27 ELFs resolve and all three expected executables reach main. Candidates and
+SHA-256 inventory: `release/linux-port-20261026-f7ca5dfd/`. Reproducible output:
+`artifacts/linux-port-2026-10-26/portable-build/output/audio-cycle-f7ca5dfd/`.
+The earlier `3960aa8c`/`705357d9` intermediate builds are superseded.
+
+The actual AppImage passed OS-driven Record/Pause/Continue/Stop with two synthetic
+camera clips, bundled Vulkan preview through the last frame, and Separate files
+export. All four screen/camera originals fully decode and their exported hashes
+match; both OTIO and FCPXML are present. The WebM compatibility warnings remain.
+A separate ordinary FUSE launch also opened its HUD; extract-and-run is not
+required on this host. Test user data stayed isolated from normal recordings.
+
+The exact packaged helper hash matches the floor-built helper used in a separate
+private-audio live test. It retained NVENC through a 500 ms process SIGSTOP and a
+three-second legacy Pause/Continue. The resulting file has 484 video frames,
+8.088 seconds total and 8.085 seconds of audio; it fully decodes. Initial/late
+pulse-to-flash differences stayed within one 60 Hz frame (approximately −31 ms
+initially and −40 to −23 ms after Continue). This is relative alignment evidence,
+not calibrated physical-device latency. The helper reported 23 superseded source
+frames during the deliberate stall. A prior canonical two-clip floor capture also
+fully decoded its four screen/audio files. The newer full-hour claim is unchanged:
+its exact earlier binary provenance is recorded; these final bits did not run for
+an additional hour.
+
+Evidence, logs, source-copy hashes and helper hash matching are under
+`artifacts/linux-port-2026-10-26/audio-cycle-time/`, especially
+`appimage-f7ca5dfd/` and `legacy-floor-capture-f7ca5dfd/`. All owned apps, fixtures
+and private audio jobs exited, and the build container is stopped. GitHub CI still
+requires the external account billing/spending-limit gate to be resolved. Physical
+camera, other hardware/desktops, Mac regression, older untimed PipeWire and initial
+offset/rate calibration remain unverified; Windows remains the later port.
