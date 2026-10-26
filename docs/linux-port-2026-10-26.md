@@ -492,3 +492,36 @@ fresh-context reviews found no concrete P1/P2 regressions. Current React Doctor
 reports 75 on both the unchanged baseline and this slice, with the same existing
 HUD cleanup finding; no camera-change finding. The earlier score of 82 used an
 older tool revision and is not a directly comparable baseline.
+
+
+The exact Ubuntu-baseline candidate at runtime `af35b212` launches normally through
+FUSE and passes extracted-AppImage provenance/policy. Fresh deb/pacman/rpm installs
+resolve all 27 ELFs and reach the three expected executables. Its bundled capture
+helper is byte-identical to the verified `f7ca5dfd` floor helper
+(`3445c0b1ce5f9f33393c372b5d7e2904ff38ae28735de09d722615b8cb4cff70`);
+this slice changes renderer recording and orchestration, not native capture.
+
+OS-driven recording produced two screen/camera pairs. After Pause/Continue, all
+owned app processes and the helper were frozen and killed during the second clip.
+Restart recovered both clips and cameras into a saved project. All four media
+files retain exactly their crash-time SHA-256 hashes and fully decode: 1,922/2,310
+screen frames and 641/774 camera frames. The interrupted camera's readable duration
+is 38.700 seconds versus the recovered screen's 38.500 seconds; recovery retains
+the complete original and review uses the screen clip boundary. The saved project
+contains both camera paths and offsets. Preview played through 70.533 seconds with
+the camera overlay and no compositor error. Separate files exported four identical
+originals plus OTIO/FCPXML with MP4 camera paths and zero handoff warnings.
+
+One video completed with `h264_nvenc` (`hardware=true`, `fallback=false`), producing
+4,231 video frames and a 70.533-second AAC stream. Full decoding passes; the final
+rendered frame contains the screen and camera. All audio settings were disabled
+in this synthetic-camera run; this does not replace the earlier isolated-audio
+checks. Logs, crash snapshots, project, timelines, hashes and inspected final-frame
+images: `artifacts/linux-port-2026-10-26/camera-container-probe/packaged-crash/`.
+The private package inventory is `release/linux-port-20261026-af35b212/`, with source
+commit, helper manifest and SHA-256 sums. Build output is
+`artifacts/linux-port-2026-10-26/portable-build/output/camera-mp4-af35b212/`.
+No physical webcam or additional endurance run was performed. The initial MP4
+header alone has no recoverable pictures; the first usable fragment and any
+unwritten tail remain subject to recorder/encoder timing. Owned apps/fixture and
+the build container are stopped.
