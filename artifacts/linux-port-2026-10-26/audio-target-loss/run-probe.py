@@ -1,12 +1,13 @@
 """Run only inside agent-lab, after creating the documented private tone sources."""
+
 import argparse
 import json
 import os
-from pathlib import Path
 import selectors
 import shlex
 import subprocess
 import time
+from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("probe")
@@ -14,16 +15,26 @@ parser.add_argument("label", choices=["before", "after", "default"])
 parser.add_argument("target")
 args = parser.parse_args()
 runtime = os.environ.get("AGENT_LAB_RUNTIME", "")
-if runtime != os.environ.get("XDG_RUNTIME_DIR") or not runtime.startswith(f"/run/user/{os.getuid()}/agent-lab/"):
+if runtime != os.environ.get("XDG_RUNTIME_DIR") or not runtime.startswith(
+    f"/run/user/{os.getuid()}/agent-lab/"
+):
     raise RuntimeError("Private lab required")
 output = Path(os.environ["AGENT_LAB_STATE"]) / "audio-routing"
 output.mkdir(exist_ok=True)
-modules = json.loads(subprocess.check_output(["pactl", "-f", "json", "list", "modules"], text=True))
-selected = [m["index"] for m in modules if "source_name=lab_mic_source_a" in shlex.split(m["argument"])]
+modules = json.loads(
+    subprocess.check_output(["pactl", "-f", "json", "list", "modules"], text=True)
+)
+selected = [
+    m["index"]
+    for m in modules
+    if "source_name=lab_mic_source_a" in shlex.split(m["argument"])
+]
 if len(selected) != 1:
     raise RuntimeError("Expected exactly one owned microphone A remap module")
 with (output / f"{args.label}.raw").open("wb") as pcm:
-    process = subprocess.Popen([args.probe, args.target, "9"], stdout=pcm, stderr=subprocess.PIPE)
+    process = subprocess.Popen(
+        [args.probe, args.target, "9"], stdout=pcm, stderr=subprocess.PIPE
+    )
     if process.stderr is None:
         raise RuntimeError("Probe stderr unavailable")
     selector = selectors.DefaultSelector()
