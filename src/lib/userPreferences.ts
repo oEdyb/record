@@ -146,7 +146,9 @@ export function loadUserPreferences(): UserPreferences {
 		hudMinimized:
 			typeof raw.hudMinimized === "boolean" ? raw.hudMinimized : DEFAULT_PREFS.hudMinimized,
 		hudDock:
-			raw.hudDock === "left" || raw.hudDock === "right" ? raw.hudDock : DEFAULT_PREFS.hudDock,
+			raw.hudDock === "left" || raw.hudDock === "right" || raw.hudDock === "top"
+				? raw.hudDock
+				: DEFAULT_PREFS.hudDock,
 		cameraPreviewPosition:
 			raw.cameraPreviewPosition &&
 			typeof raw.cameraPreviewPosition === "object" &&

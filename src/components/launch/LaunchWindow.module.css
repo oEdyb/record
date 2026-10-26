@@ -25,6 +25,16 @@
 	--hud-idle-pill-width: 424px;
 	/* How far the tuck bump stands above the pill. */
 	--hud-tuck-bump-height: 14px;
+	/* Damping 0.8, response 0.4s, sampled every 20ms through the settle. */
+	--hud-dock-duration: 600ms;
+	--hud-dock-spring: linear(
+		0, 0.04169, 0.14064, 0.26662, 0.39925, 0.52571,
+		0.63869, 0.73484, 0.8134, 0.87528, 0.92231, 0.95674,
+		0.98089, 0.99697, 1.00694, 1.01243, 1.01479, 1.01509,
+		1.0141, 1.01242, 1.01045, 1.00845, 1.0066, 1.00496,
+		1.00359, 1.00249, 1.00163, 1.00098, 1.00052, 1.0002,
+		1
+	);
 	position: fixed;
 	top: 50%;
 	/* Anchored at the idle pill's left end: the pill grows and shrinks to the
@@ -198,6 +208,155 @@
 	transform: translateY(calc(-100% - 24px));
 }
 
+.hudBar[data-docked="left"] {
+	border-radius: 0 25px 25px 0;
+}
+
+.hudBar[data-docked="right"] {
+	border-radius: 25px 0 0 25px;
+}
+
+.hudBar[data-docked="top"] {
+	width: var(--hud-idle-pill-width);
+	border-radius: 0 0 25px 25px;
+	transform: translateY(calc(var(--hud-tuck-bump-height) * -1));
+	background: transparent;
+	box-shadow: none;
+	overflow: visible;
+	pointer-events: none;
+}
+
+.hudBar[data-docked="top"]::after {
+	display: none;
+}
+
+.hudBar[data-docked="top"][data-tucked] {
+	visibility: visible;
+	opacity: 1;
+}
+
+.hudDockSurface {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.hudDockSurface > span {
+	position: absolute;
+	top: 0;
+	height: 50px;
+	box-sizing: border-box;
+	background: var(--hud-surface);
+	/* Composite a single opaque shape: translucent overlapping pieces leave seams. */
+	background: rgb(from var(--hud-surface) r g b / 1);
+	border-bottom: 1px solid var(--hud-border);
+	pointer-events: auto;
+	transition: transform var(--hud-dock-duration) var(--hud-dock-spring);
+}
+
+.hudDockSurface > span:first-child {
+	left: 0;
+	/* Overlap the middle by one pixel to prevent composited hairline seams. */
+	width: 26px;
+	border-left: 1px solid var(--hud-border);
+	border-bottom-left-radius: 25px;
+	transform-origin: left top;
+	transform: translateX(0) scale(1);
+}
+
+.hudDockSurface > span:nth-child(2) {
+	left: 25px;
+	right: 25px;
+	transform-origin: center top;
+	transform: scale(1, 1);
+}
+
+.hudDockSurface > span:last-child {
+	right: 0;
+	width: 26px;
+	border-right: 1px solid var(--hud-border);
+	border-bottom-right-radius: 25px;
+	transform-origin: right top;
+	transform: translateX(0) scale(1);
+}
+
+.hudBar[data-tucked] .hudDockSurface > span:first-child {
+	transform: translateX(var(--hud-dock-cap-offset, 180px)) scale(0.8);
+}
+
+.hudBar[data-tucked] .hudDockSurface > span:nth-child(2) {
+	transform: scale(var(--hud-dock-center-scale, 0.064171), 0.8);
+}
+
+.hudBar[data-tucked] .hudDockSurface > span:last-child {
+	transform: translateX(calc(var(--hud-dock-cap-offset, 180px) * -1)) scale(0.8);
+}
+
+.hudDockWing {
+	display: contents;
+}
+
+.hudBar[data-docked="top"] > .hudPillRow {
+	--hud-dock-identity-width: 48px;
+	position: relative;
+	z-index: 1;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) var(--hud-dock-identity-width) minmax(0, 1fr);
+	visibility: visible;
+	opacity: 1;
+	pointer-events: none;
+	clip-path: inset(0 0 0 0 round 0 0 25px 25px);
+	animation: none;
+	transition: clip-path var(--hud-dock-duration) var(--hud-dock-spring);
+}
+
+.hudBar[data-docked="top"][data-recording-layout="recording"] > .hudPillRow {
+	--hud-dock-identity-width: 80px;
+}
+
+.hudBar[data-docked="top"] .hudDockWing {
+	display: flex;
+	min-width: 0;
+	align-items: center;
+	gap: 2px;
+	visibility: visible;
+	pointer-events: auto;
+	transition: visibility 0s;
+}
+
+.hudBar[data-docked="top"] .hudDockWing:last-child {
+	justify-content: flex-end;
+}
+
+.hudBar[data-docked="top"] .hudPillRow > [data-testid="hud-drag-handle"] {
+	z-index: 2;
+	width: var(--hud-dock-identity-width);
+	min-width: 0;
+	justify-self: center;
+	pointer-events: auto;
+	transform: translateY(0);
+	transition: transform var(--hud-dock-duration) var(--hud-dock-spring);
+}
+
+.hudBar[data-docked="top"][data-tucked] > .hudPillRow {
+	clip-path: inset(0 calc(var(--hud-dock-cap-offset, 180px) - 1px) 9px round 0 0 20px 20px);
+}
+
+.hudBar[data-docked="top"][data-tucked] .hudDockWing {
+	visibility: hidden;
+	pointer-events: none;
+	transition: visibility 0s var(--hud-dock-duration);
+}
+
+.hudBar[data-docked="top"][data-tucked] .hudPillRow > [data-testid="hud-drag-handle"] {
+	transform: translateY(-5px);
+}
+
+.hudBar[data-instant] .hudDockSurface > span {
+	transition: none;
+}
+
 .hudBar[data-instant] {
 	transition: none;
 }
@@ -321,6 +480,7 @@
 }
 
 .hudTuckBump > button > svg {
+	transform: translateY(2px);
 	transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -331,19 +491,20 @@
 /* Hover hints the way it goes: the chevron lifts toward the top edge. */
 @media (hover: hover) and (pointer: fine) {
 	.hudTuckBump:hover > button > svg {
-		transform: translateY(-1.5px);
+		transform: translateY(1px);
 	}
 }
 
 /* Press squeezes the chevron, not the shape, which must stay joined to the pill. */
 .hudTuckBump > button:active > svg {
-	transform: scale(0.85);
+	transform: translateY(2px) scale(0.85);
 	transition-duration: 100ms;
 }
 
 /* A half pill flush with its edge, where the pill went in. It sits against the
    pill's own box, so tucking and untucking never move the window. */
 .hudDockTab {
+	visibility: visible;
 	position: absolute;
 	pointer-events: auto;
 	display: flex;
@@ -355,11 +516,11 @@
 		inset 0 1px 0 rgba(255, 255, 255, 0.12),
 		0 12px 32px -14px rgba(0, 0, 0, 0.7),
 		0 2px 6px -2px rgba(0, 0, 0, 0.4);
-	animation: hud-dock-tab-in 220ms cubic-bezier(0.23, 1, 0.32, 1) 140ms backwards;
 	/* Shows again once the pill has slid back in over it. */
 	transition:
 		transform 160ms cubic-bezier(0.77, 0, 0.175, 1),
-		opacity 120ms ease 200ms;
+		opacity 120ms ease 200ms,
+		visibility 0s;
 }
 
 /* At least 4 + grip 48 + 4 + 1; wider for a take's timer. */
@@ -389,6 +550,14 @@
 /* It starts where the tuck bump does, so the pill comes back out flush with the
    top edge, bump included, without the window moving. */
 .hudDockTab[data-side="top"] {
+	pointer-events: none;
+	z-index: 2;
+	background: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	transition:
+		opacity 140ms ease,
+		visibility 0s;
 	--hud-dock-out: translateY(-100%);
 	top: calc(var(--hud-tuck-bump-height) * -1);
 	left: 0;
@@ -404,8 +573,19 @@
 
 /* The pill slid out over its tab on hover; the tab would show through its glass. */
 .hudDockTab[data-covered] {
+	visibility: hidden;
 	opacity: 0;
-	transition: opacity 120ms ease;
+	transition:
+		opacity 120ms ease,
+		visibility 0s 120ms;
+}
+
+.hudDockTab[data-side="top"][data-covered] {
+	pointer-events: none;
+}
+
+.hudDockTab[data-side="top"][data-recording] {
+	width: 96px;
 }
 
 .hudDockTab[data-closing] {
@@ -417,8 +597,8 @@
 	animation: none;
 }
 
-@keyframes hud-dock-tab-in {
-	from {
+@starting-style {
+	.hudDockTab:not([data-instant]) {
 		transform: var(--hud-dock-out);
 	}
 }
@@ -804,8 +984,19 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.hudBar {
+	.hudBar,
+	.hudBar[data-docked],
+	.hudBar[data-docked="top"] > .hudPillRow,
+	.hudBar[data-docked="top"][data-tucked] > .hudPillRow,
+	.hudTuckRail,
+	.hudBar[data-docked="top"] .hudDockWing,
+	.hudBar[data-docked="top"] .hudPillRow > [data-testid="hud-drag-handle"],
+	.hudDockSurface > span,
+	.hudBar[data-tucked] .hudDockSurface > span,
+	.hudDockTab,
+	.hudDockTab[data-side="top"] {
 		transition: none;
+		animation: none;
 	}
 
 	.hudPanel,

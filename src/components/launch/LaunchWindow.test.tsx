@@ -2167,6 +2167,8 @@ describe("LaunchWindow HUD drag", () => {
 });
 
 describe("LaunchWindow minimized pill", () => {
+	const originalElementFromPoint = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+
 	beforeEach(() => {
 		platformState.value = "darwin";
 		resetLaunchMocks();
@@ -2180,6 +2182,13 @@ describe("LaunchWindow minimized pill", () => {
 	afterEach(() => {
 		cleanup();
 		vi.unstubAllGlobals();
+		vi.useRealTimers();
+		Reflect.deleteProperty(window.electronAPI, "onHudPointerCheck");
+		if (originalElementFromPoint) {
+			Object.defineProperty(document, "elementFromPoint", originalElementFromPoint);
+		} else {
+			Reflect.deleteProperty(document, "elementFromPoint");
+		}
 	});
 
 	function clickGrip(grip: HTMLElement) {
@@ -2354,7 +2363,24 @@ describe("LaunchWindow minimized pill", () => {
 		return (side: "left" | "right" | "top" | null) => act(() => setDock(side));
 	}
 
-	it("slides the pill into the edge main tucks it into, and asks for it back from the tab", async () => {
+	function stubNativePointer() {
+		let report: (point: { x: number; y: number } | null) => void = vi.fn();
+		let target: Element | null = null;
+		window.electronAPI.onHudPointerCheck = vi.fn((callback) => {
+			report = callback;
+			return vi.fn();
+		});
+		Object.defineProperty(document, "elementFromPoint", {
+			configurable: true,
+			value: vi.fn(() => target),
+		});
+		return (underPointer: Element | null) => {
+			target = underPointer;
+			act(() => report({ x: 20, y: 20 }));
+		};
+	}
+
+	it("pins the top pill open from its persistent grip without changing its dock", async () => {
 		const dock = stubDock();
 		renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");
@@ -2367,9 +2393,14 @@ describe("LaunchWindow minimized pill", () => {
 		expect(JSON.parse(localStorage.getItem("openscreen_user_preferences") ?? "{}")).toMatchObject({
 			hudDock: "top",
 		});
-		const tabGrip = screen.getByTestId("hud-dock-tab").querySelector("[data-hud-grip]");
-		clickGrip(tabGrip as HTMLElement);
-		expect(window.electronAPI.setHudDock).toHaveBeenCalledWith(null);
+		const tab = screen.getByTestId("hud-dock-tab");
+		expect(tab).toHaveAttribute("aria-hidden", "true");
+		expect(tab.querySelector("[data-hud-grip]")).toBeNull();
+		clickGrip(screen.getByTestId("hud-drag-handle"));
+		expect(bar).not.toHaveAttribute("data-tucked");
+		expect(bar).toHaveAttribute("data-pinned", "true");
+		expect(bar).toHaveAttribute("data-docked", "top");
+		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
 
 		dock(null);
 		expect(bar).not.toHaveAttribute("data-tucked");
@@ -2377,16 +2408,24 @@ describe("LaunchWindow minimized pill", () => {
 		await waitFor(() => expect(screen.queryByTestId("hud-dock-tab")).toBeNull());
 	});
 
-	it("tucks the pill back into its edge on launch without sliding", async () => {
-		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudDock: "right" }));
+	it.each([
+		"left",
+		"right",
+		"top",
+	] as const)("restores the %s dock without disabling later hover motion", async (side) => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudDock: side }));
 		const dock = stubDock();
 		renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");
 
-		expect(window.electronAPI.setHudDock).toHaveBeenCalledWith("right");
-		dock("right");
+		expect(window.electronAPI.setHudDock).toHaveBeenCalledWith(side);
+		dock(side);
 		expect(pill()).toHaveAttribute("data-instant", "true");
 		expect(screen.getByTestId("hud-dock-tab")).toHaveAttribute("data-instant", "true");
+		await waitFor(() => expect(pill()).not.toHaveAttribute("data-instant"));
+		fireEvent.pointerEnter(screen.getByTestId("hud-dock-tab"));
+		await waitFor(() => expect(pill()).not.toHaveAttribute("data-tucked"));
+		expect(pill()).toHaveAttribute("data-docked", side);
 	});
 
 	it("closes an open panel when the pill tucks in", async () => {
@@ -2403,7 +2442,7 @@ describe("LaunchWindow minimized pill", () => {
 		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
 	});
 
-	it("brings the pill out when a panel opens while it is tucked", async () => {
+	it("brings the pill out while keeping its dock when a panel opens", async () => {
 		const dock = stubDock();
 		renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");
@@ -2411,7 +2450,10 @@ describe("LaunchWindow minimized pill", () => {
 
 		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
 
-		expect(window.electronAPI.setHudDock).toHaveBeenCalledWith(null);
+		await screen.findByTestId("hud-device-settings");
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		expect(pill()).toHaveAttribute("data-docked", "left");
+		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
 	});
 
 	it("keeps a take tucked, showing on the tab whether it captures or is paused and for how long", async () => {
@@ -2452,6 +2494,36 @@ describe("LaunchWindow minimized pill", () => {
 		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
 	});
 
+	it("keeps the top peek open when the pill slides under the tab's stationary pointer", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		const tab = screen.getByTestId("hud-dock-tab");
+		fireEvent.pointerEnter(tab);
+		await waitFor(() => expect(pill()).not.toHaveAttribute("data-tucked"));
+		fireEvent.pointerEnter(pill());
+		fireEvent.mouseLeave(tab, { relatedTarget: pill() });
+		await new Promise((resolve) => setTimeout(resolve, 450));
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		expect(pill()).toHaveAttribute("data-docked", "top");
+		fireEvent.mouseLeave(pill(), { relatedTarget: document.body });
+		await waitFor(() => expect(pill()).toHaveAttribute("data-tucked", "top"));
+	});
+
+	it("reverses a top-dock close immediately when the pointer returns to its surface", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		fireEvent.pointerEnter(screen.getByTestId("hud-dock-tab"));
+		await waitFor(() => expect(pill()).not.toHaveAttribute("data-tucked"));
+		fireEvent.mouseLeave(pill(), { relatedTarget: document.body });
+		await waitFor(() => expect(pill()).toHaveAttribute("data-tucked", "top"));
+		fireEvent.pointerMove(screen.getByTestId("hud-dock-surface"));
+		expect(pill()).not.toHaveAttribute("data-tucked");
+	});
+
 	it("leaves the pill tucked when the pointer only passes over the tab", async () => {
 		const dock = stubDock();
 		renderLaunchWindow();
@@ -2464,6 +2536,153 @@ describe("LaunchWindow minimized pill", () => {
 		await new Promise((resolve) => setTimeout(resolve, 250));
 
 		expect(pill()).toHaveAttribute("data-tucked", "top");
+	});
+
+	it("opens from repeated stationary native probes without a DOM entry or a renewed deadline", async () => {
+		const dock = stubDock();
+		const report = stubNativePointer();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		const grip = screen.getByTestId("hud-drag-handle");
+		vi.useFakeTimers();
+		report(grip);
+		for (let i = 0; i < 2; i++) {
+			act(() => vi.advanceTimersByTime(40));
+			report(grip);
+		}
+		expect(pill()).toHaveAttribute("data-tucked", "top");
+		act(() => vi.advanceTimersByTime(40));
+		report(grip);
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		expect(window.electronAPI.setHudOverlayIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+		fireEvent.mouseLeave(grip);
+		act(() => vi.advanceTimersByTime(1000));
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		report(null);
+		for (let i = 0; i < 7; i++) {
+			act(() => vi.advanceTimersByTime(40));
+			report(null);
+		}
+		expect(pill()).toHaveAttribute("data-tucked", "top");
+		expect(window.electronAPI.setHudOverlayIgnoreMouseEvents).toHaveBeenLastCalledWith(true);
+	});
+
+	it("pins from Enter and Space and collapses with Escape without changing the dock preference", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		const grip = screen.getByTestId("hud-drag-handle");
+		fireEvent.keyDown(grip, { key: "Enter" });
+		expect(pill()).toHaveAttribute("data-pinned", "true");
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		fireEvent.keyDown(grip, { key: "Escape" });
+		expect(pill()).toHaveAttribute("data-tucked", "top");
+		expect(pill()).not.toHaveAttribute("data-pinned");
+		expect(grip).toHaveFocus();
+		fireEvent.keyDown(grip, { key: " " });
+		expect(pill()).toHaveAttribute("data-pinned", "true");
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
+		expect(loadUserPreferences().hudDock).toBe("top");
+	});
+
+	it("keeps top expansion while keyboard focus stays inside and releases it after blur", async () => {
+		const dock = stubDock();
+		const report = stubNativePointer();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		const grip = screen.getByTestId("hud-drag-handle");
+		fireEvent.focus(grip);
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		vi.useFakeTimers();
+		report(null);
+		act(() => vi.advanceTimersByTime(1000));
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		fireEvent.blur(grip, { relatedTarget: document.body });
+		act(() => vi.advanceTimersByTime(280));
+		expect(pill()).toHaveAttribute("data-tucked", "top");
+	});
+
+	it.each([
+		{ control: "launch-device-settings-button", panel: "hud-device-settings" },
+		{ control: "launch-source-selector-button", panel: "hud-source-panel" },
+	])("keeps $panel attached and expanded while the pointer is outside", async ({
+		control,
+		panel,
+	}) => {
+		const dock = stubDock();
+		const report = stubNativePointer();
+		window.electronAPI.getSources = vi.fn(async () => [displayOneSource]);
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		fireEvent.click(screen.getByTestId(control));
+		await screen.findByTestId(panel);
+		vi.useFakeTimers();
+		report(null);
+		act(() => vi.advanceTimersByTime(1000));
+		expect(screen.getByTestId(panel)).toBeInTheDocument();
+		expect(pill()).not.toHaveAttribute("data-tucked");
+		expect(pill()).toHaveAttribute("data-docked", "top");
+		expect(window.electronAPI.setHudDock).not.toHaveBeenCalledWith(null);
+	});
+
+	it("keeps one recording timer and grip throughout top expansion and collapse", async () => {
+		const dock = stubDock();
+		recorderState.value.recording = true;
+		recorderState.value.elapsedSeconds = 65;
+		const view = renderLaunchWindow();
+		const timer = screen.getByTestId("hud-recording-timer");
+		const grip = screen.getByTestId("hud-drag-handle");
+		dock("top");
+		expect(screen.getAllByTestId("hud-recording-timer")).toHaveLength(1);
+		expect(screen.getAllByTestId("hud-drag-handle")).toHaveLength(1);
+		expect(screen.getByTestId("hud-dock-tab")).toBeEmptyDOMElement();
+		fireEvent.pointerEnter(grip);
+		await waitFor(() => expect(pill()).not.toHaveAttribute("data-tucked"));
+		recorderState.value.paused = true;
+		recorderState.value.elapsedSeconds = 66;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(screen.getByTestId("hud-recording-timer")).toBe(timer);
+		expect(screen.getByTestId("hud-drag-handle")).toBe(grip);
+		expect(timer).toHaveTextContent("01:06");
+		fireEvent.keyDown(grip, { key: "Escape" });
+		expect(pill()).toHaveAttribute("data-tucked", "top");
+		expect(screen.getByTestId("hud-recording-timer")).toBe(timer);
+	});
+
+	it("keeps the full top-dock footprint and controls despite a remembered folded preference", async () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ hudMinimized: true }));
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		expect(pill()).toHaveAttribute("data-minimized", "false");
+		expect(screen.getByTestId("launch-device-settings-button")).toBeInTheDocument();
+		stubBox(pill(), 444, 50);
+		Object.defineProperties(screen.getByTestId("hud-dock-tab"), {
+			offsetWidth: { value: 64, configurable: true },
+			offsetHeight: { value: 40, configurable: true },
+		});
+		await flushResizeObservers();
+		const size = vi.mocked(window.electronAPI.setHudPillSize);
+		const tuckedFootprint = size.mock.lastCall;
+		expect(tuckedFootprint?.slice(0, 2)).toEqual([444, 50]);
+		fireEvent.pointerEnter(screen.getByTestId("hud-drag-handle"));
+		await waitFor(() => expect(pill()).not.toHaveAttribute("data-tucked"));
+		await flushResizeObservers();
+		expect(size.mock.lastCall).toEqual(tuckedFootprint);
+		fireEvent.keyDown(screen.getByTestId("hud-drag-handle"), { key: "Escape" });
+		await flushResizeObservers();
+		expect(size.mock.lastCall).toEqual(tuckedFootprint);
+		expect(loadUserPreferences().hudMinimized).toBe(true);
 	});
 
 	it("tucks the pill into the top edge from its button, sliding it out of sight first", async () => {

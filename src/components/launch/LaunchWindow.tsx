@@ -71,6 +71,7 @@ import {
 	type SourcePickerKind,
 	warmPickerSources,
 } from "./SourceSelector";
+import { useHudDockInteraction } from "./useHudDockInteraction";
 import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 
@@ -95,10 +96,6 @@ const HUD_PILL_HEIGHT = 50;
 const HUD_DOCK_TAB_EXIT_MS = 160;
 /** How long the pill takes to slide out of sight; matches .hudBar[data-tucked]. */
 const HUD_TUCK_SLIDE_MS = 240;
-/** A pointer resting on the tab this long slides the pill out; one passing by does not. */
-const HUD_DOCK_PEEK_OPEN_MS = 150;
-/** How long the pill stays out after the pointer leaves it. */
-const HUD_DOCK_PEEK_CLOSE_MS = 350;
 
 type HudDockSide = "left" | "right" | "top";
 /** Toasts sit next to the pill, which is centred in the window: half its height and one stack gap. */
@@ -242,21 +239,25 @@ export function LaunchWindow() {
 	const [hudMinimized, setHudMinimized] = useState(() => loadUserPreferences().hudMinimized);
 	// Linux hands the grip to the compositor as a drag region, so it gets no clicks.
 	const canMinimize = !isLinuxHud;
-	const pillMinimized = canMinimize && hudMinimized && !pillRecording;
 	// The pill can tuck into a side or the top edge as a tab, out of the way until it is
 	// needed, recording or not. Main tucks it in when a drag shoves it past the edge.
 	// Hovering the tab slides the whole pill back out until the pointer leaves it.
 	const [hudDock, setHudDock] = useState<HudDockSide | null>(null);
 	const dockedSide = canMinimize ? hudDock : null;
-	const [dockPeek, setDockPeek] = useState(false);
+	const [hudDragging, setHudDragging] = useState(false);
+	const pillMinimized = canMinimize && hudMinimized && !pillRecording && dockedSide !== "top";
 	// The tuck button slides the pill up out of sight first; main then moves the
 	// hidden pill to the top edge and the tab slides down there.
 	const [tuckingTop, setTuckingTop] = useState(false);
-	const tuckedSide = dockedSide && !dockPeek ? dockedSide : tuckingTop ? "top" : null;
 	const dockedSideRef = useRef(dockedSide);
 	dockedSideRef.current = dockedSide;
 	// Tucking back in on launch happens before the pill is ever seen, so it does not slide.
 	const [dockInstant, setDockInstant] = useState(false);
+	useEffect(() => {
+		if (!dockInstant) return;
+		const frame = requestAnimationFrame(() => setDockInstant(false));
+		return () => cancelAnimationFrame(frame);
+	}, [dockInstant]);
 	const dockPresence = usePresence(dockedSide !== null, HUD_DOCK_TAB_EXIT_MS);
 	const lastDockSideRef = useRef<HudDockSide>("left");
 	if (dockedSide) lastDockSideRef.current = dockedSide;
@@ -282,6 +283,19 @@ export function LaunchWindow() {
 	permissionNeedsRef.current = permissionNeeds;
 	const isPopoverOpen =
 		isDeviceSettingsOpen || peekOpen || isSourcePanelOpen || permissionPanelOpen;
+	const {
+		expanded: dockPeek,
+		pinned: dockPinned,
+		samplePointer,
+		setFocusWithin,
+		togglePinned,
+		collapse: collapseDock,
+	} = useHudDockInteraction({
+		docked: Boolean(dockedSide),
+		dragging: hudDragging,
+		panelOpen: isPopoverOpen,
+	});
+	const tuckedSide = dockedSide && !dockPeek ? dockedSide : tuckingTop ? "top" : null;
 	const setupPresence = usePresence(isDeviceSettingsOpen, 150);
 	const sourcePresence = usePresence(isSourcePanelOpen, 150);
 	// Setup and Source are two pages of one popover: switching between them swaps
@@ -309,12 +323,6 @@ export function LaunchWindow() {
 	useEffect(() => {
 		if (!canPeek) setIsPeekOpen(false);
 	}, [canPeek]);
-
-	// Record from the tray or a shortcut can ask for the source picker or a permission
-	// while the pill is tucked away; it comes out so the question is seen.
-	useEffect(() => {
-		if (dockedSide && isPopoverOpen) window.electronAPI?.setHudDock?.(null);
-	}, [dockedSide, isPopoverOpen]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -491,6 +499,7 @@ export function LaunchWindow() {
 
 	// The grip remounts when the pill folds or unfolds; a keyboard toggle keeps focus on it.
 	const refocusGripRef = useRef(false);
+	const transferringGripFocusRef = useRef(false);
 	const toggleHudMinimized = useCallback(
 		(fromKeyboard: boolean) => {
 			refocusGripRef.current = fromKeyboard;
@@ -518,10 +527,6 @@ export function LaunchWindow() {
 		return off;
 	}, [closePopovers]);
 
-	useEffect(() => {
-		if (!dockedSide) setDockPeek(false);
-	}, [dockedSide]);
-
 	const tuckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	useEffect(
 		() => () => {
@@ -539,10 +544,13 @@ export function LaunchWindow() {
 		);
 	}, [closePopovers]);
 
-	const undockHud = useCallback((fromKeyboard: boolean) => {
-		refocusGripRef.current = fromKeyboard;
-		window.electronAPI?.setHudDock?.(null);
-	}, []);
+	const toggleDock = useCallback(
+		(fromKeyboard: boolean) => {
+			refocusGripRef.current = fromKeyboard;
+			togglePinned();
+		},
+		[togglePinned],
+	);
 
 	const openPermissionPanel = useCallback(
 		(permissions: CapturePermissions, then: (() => void) | null) => {
@@ -815,10 +823,23 @@ export function LaunchWindow() {
 		// about it whenever it changes, even when the window itself does not. While
 		// tucked, that is the tab. Positions come from layout, not paint: the pill and
 		// the tab slide in and out of their edge on a transform.
-		const tabEl = dockedSideRef.current ? dockTabRef.current : null;
+		const tabEl =
+			dockedSideRef.current && dockedSideRef.current !== "top" ? dockTabRef.current : null;
 		const anchorRect = hudAnchorRef.current?.getBoundingClientRect();
 		const pillEl = tabEl ?? barEl;
 		const pillWidth = tabEl ? tabEl.offsetWidth : Math.round(barRect.width || HUD_PILL_WIDTH);
+		if (dockTabRef.current && dockedSideRef.current) {
+			const tabWidth = dockTabRef.current.offsetWidth;
+			const barWidth = barRect.width || HUD_PILL_WIDTH;
+			hudAnchorRef.current?.style.setProperty(
+				"--hud-dock-cap-offset",
+				`${(barWidth - tabWidth) / 2}px`,
+			);
+			hudAnchorRef.current?.style.setProperty(
+				"--hud-dock-center-scale",
+				`${(tabWidth - 40) / (barWidth - 50)}`,
+			);
+		}
 		// The tuck bump above the pill counts as pill, so it is never pushed off screen.
 		const pillTopOffset = Math.min(
 			pillEl.offsetTop,
@@ -914,6 +935,32 @@ export function LaunchWindow() {
 	const setPopoverEl = useCallback((el: HTMLDivElement | null) => {
 		popoverRef.current = el;
 	}, []);
+	const panelFocusOriginRef = useRef<HTMLElement | null>(null);
+	useEffect(() => {
+		if (isDeviceSettingsOpen || isSourcePanelOpen) {
+			if (!panelFocusOriginRef.current && document.activeElement instanceof HTMLElement) {
+				panelFocusOriginRef.current = document.activeElement;
+			}
+			const frame = requestAnimationFrame(() => {
+				const panel = popoverRef.current;
+				const target =
+					panel?.querySelector<HTMLElement>("[role='tab'][tabindex='0']") ??
+					panel?.querySelector<HTMLElement>("button:not(:disabled), [tabindex='0']");
+				target?.focus({ preventScroll: true });
+			});
+			return () => cancelAnimationFrame(frame);
+		}
+		const origin = panelFocusOriginRef.current;
+		panelFocusOriginRef.current = null;
+		if (
+			origin?.isConnected &&
+			document.hasFocus() &&
+			(document.activeElement === document.body ||
+				hudAnchorRef.current?.contains(document.activeElement))
+		) {
+			origin.focus({ preventScroll: true });
+		}
+	}, [isDeviceSettingsOpen, isSourcePanelOpen]);
 
 	const hudIgnoreMouseEventsRef = useRef<boolean | undefined>(undefined);
 	const setHudMouseEventsEnabled = useCallback(
@@ -1498,6 +1545,7 @@ export function LaunchWindow() {
 			dragOriginRef.current = { x: event.screenX, y: event.screenY };
 			lastDragDeltaRef.current = { x: 0, y: 0 };
 			isDraggingHudRef.current = true;
+			setHudDragging(true);
 			window.electronAPI?.beginHudOverlayDrag?.();
 		},
 		[setHudMouseEventsEnabled],
@@ -1507,6 +1555,7 @@ export function LaunchWindow() {
 		if (!dragOriginRef.current) return;
 		dragOriginRef.current = null;
 		isDraggingHudRef.current = false;
+		setHudDragging(false);
 		window.electronAPI?.endHudOverlayDrag?.();
 		measureHudSize();
 		// The renderer learns its new screen position a moment after the last
@@ -1554,82 +1603,45 @@ export function LaunchWindow() {
 		endHudDrag();
 	}, [gripKey, endHudDrag]);
 
+	const reconcilePointer = useCallback(
+		(point: { x: number; y: number } | null, fallback: Element | null = null, force = false) => {
+			if (isDraggingHudRef.current) return;
+			lastPointerRef.current = point;
+			const target = point ? (document.elementFromPoint?.(point.x, point.y) ?? fallback) : null;
+			const inside = isPaintedHudSurface(target);
+			samplePointer(inside);
+			setHudMouseEventsEnabled(inside, force);
+		},
+		[samplePointer, setHudMouseEventsEnabled],
+	);
 	const handleRootPointerMove = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
-			lastPointerRef.current = { x: event.clientX, y: event.clientY };
-			// The pointer is captured by the drag handle anyway; skip the DOM walk.
-			if (isDraggingHudRef.current) return;
-			setHudMouseEventsEnabled(
-				isPaintedHudSurface(event.target instanceof Element ? event.target : null),
+			reconcilePointer(
+				{ x: event.clientX, y: event.clientY },
+				event.target instanceof Element ? event.target : null,
 			);
 		},
-		[setHudMouseEventsEnabled],
+		[reconcilePointer],
 	);
-
-	// The main process reports the cursor while the HUD takes the mouse, because an inactive
-	// app can miss the pointer leaving the pill.
-	useEffect(
-		() =>
-			window.electronAPI?.onHudPointerCheck?.((point) => {
-				if (isDraggingHudRef.current) return;
-				if (!point) {
-					lastPointerRef.current = null;
-					setHudMouseEventsEnabled(false);
-					return;
-				}
-				lastPointerRef.current = point;
-				// The main process only asks while the window takes the mouse, so answer even
-				// when this side already believed it was click-through.
-				const painted = isPaintedHudSurface(document.elementFromPoint(point.x, point.y));
-				setHudMouseEventsEnabled(painted, !painted);
-			}),
-		[setHudMouseEventsEnabled],
-	);
-
+	const nativePointerActiveRef = useRef(false);
+	useEffect(() => {
+		const off = window.electronAPI?.onHudPointerCheck?.((point) =>
+			reconcilePointer(point, null, true),
+		);
+		nativePointerActiveRef.current = typeof off === "function";
+		return () => {
+			nativePointerActiveRef.current = false;
+			off?.();
+		};
+	}, [reconcilePointer]);
 	const handlePointerLeave = useCallback(() => {
-		lastPointerRef.current = null;
-		setHudMouseEventsEnabled(false);
-	}, [setHudMouseEventsEnabled]);
-
-	// Hovering a tucked pill's tab slides the pill out after a beat, so a pointer only
-	// passing the edge leaves it alone; leaving the pill and the tab slides it back in.
-	const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const cancelDockPeek = useCallback(() => {
-		if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
-		peekTimerRef.current = null;
-	}, []);
-	const scheduleDockPeek = useCallback(
-		(open: boolean) => {
-			cancelDockPeek();
-			if (!dockedSideRef.current || (open && isDraggingHudRef.current)) return;
-			peekTimerRef.current = setTimeout(
-				() => setDockPeek(open),
-				open ? HUD_DOCK_PEEK_OPEN_MS : HUD_DOCK_PEEK_CLOSE_MS,
-			);
-		},
-		[cancelDockPeek],
-	);
-	useEffect(() => cancelDockPeek, [cancelDockPeek]);
-	const handleBarPointerEnter = useCallback(() => {
+		if (!nativePointerActiveRef.current || isLinuxHud) reconcilePointer(null);
+		else setHudMouseEventsEnabled(false);
+	}, [isLinuxHud, reconcilePointer, setHudMouseEventsEnabled]);
+	const handleSurfacePointerEnter = useCallback(() => {
 		enableHudMouseEvents();
-		if (dockedSideRef.current) cancelDockPeek();
-	}, [cancelDockPeek, enableHudMouseEvents]);
-	const handleBarPointerLeave = useCallback(() => {
-		handlePointerLeave();
-		if (dockedSideRef.current) scheduleDockPeek(false);
-	}, [handlePointerLeave, scheduleDockPeek]);
-	const handleTabPointerEnter = useCallback(() => {
-		enableHudMouseEvents();
-		scheduleDockPeek(true);
-	}, [enableHudMouseEvents, scheduleDockPeek]);
-	const handleTabPointerLeave = useCallback(() => {
-		handlePointerLeave();
-		scheduleDockPeek(false);
-	}, [handlePointerLeave, scheduleDockPeek]);
-	const handleTabPointerDown = useCallback(() => {
-		enableHudMouseEvents();
-		cancelDockPeek();
-	}, [cancelDockPeek, enableHudMouseEvents]);
+		samplePointer(true);
+	}, [enableHudMouseEvents, samplePointer]);
 
 	const dismissSoftwareFallbackForever = useCallback(() => {
 		dismissSoftwareEncoderFallbackNotice(true);
@@ -1712,6 +1724,8 @@ export function LaunchWindow() {
 			unmute: t("peek.unmute"),
 			volume: t("peek.volume"),
 			seek: t("peek.seek"),
+			playbackError: t("peek.playbackError"),
+			retry: t("peek.retry"),
 		}),
 		[t],
 	);
@@ -1894,22 +1908,24 @@ export function LaunchWindow() {
 	});
 
 	const hasNotices = Boolean(systemLocaleSuggestion) || softwareEncoderFallbackNoticeVisible;
-	// biome-ignore lint/correctness/useExhaustiveDependencies: runs once the folded or unfolded grip has mounted
+	// biome-ignore lint/correctness/useExhaustiveDependencies: transfer keyboard focus when the visible grip changes
 	useEffect(() => {
 		if (!refocusGripRef.current) return;
 		refocusGripRef.current = false;
-		document.querySelector<HTMLElement>("[data-testid='hud-drag-handle']")?.focus();
-	}, [pillMinimized, dockedSide]);
+		const container = tuckedSide && tuckedSide !== "top" ? dockTabRef.current : hudBarRef.current;
+		transferringGripFocusRef.current = true;
+		container?.querySelector<HTMLElement>("[data-testid='hud-drag-handle']")?.focus();
+		transferringGripFocusRef.current = false;
+	}, [pillMinimized, dockedSide, tuckedSide, dockPinned]);
 
 	const stackVisible =
-		!dockedSide &&
-		(isPopoverOpen ||
-			showSetup ||
-			showSource ||
-			permissionPresence.present ||
-			canPeek ||
-			hasNotices ||
-			Boolean(shownRemovedClip));
+		isPopoverOpen ||
+		showSetup ||
+		showSource ||
+		permissionPresence.present ||
+		canPeek ||
+		hasNotices ||
+		Boolean(shownRemovedClip);
 	// Hidden while the pill is tucked or a panel stands where it sits.
 	const tuckBumpHidden =
 		Boolean(dockedSide || tuckedSide) ||
@@ -1978,6 +1994,69 @@ export function LaunchWindow() {
 		/>
 	);
 
+	const topDock = dockedSide === "top";
+	const dockGripLabel = dockPinned
+		? t("tooltips.collapseDock")
+		: dockPeek
+			? t("tooltips.pinDock")
+			: t("tooltips.openDock");
+	const setWingInert = (element: HTMLDivElement | null) => {
+		if (element) element.inert = topDock && Boolean(tuckedSide);
+	};
+	const sourceControl = portalOwnsSource ? (
+		<span className="flex-1" />
+	) : (
+		<HudSourceChip
+			label={localizedSourceLabel}
+			kind={selectedSourceKind}
+			expanded={isSourcePanelOpen}
+			disabled={controlsLocked}
+			onClick={toggleSourcePanel}
+			onIntent={isLinuxHud ? undefined : sourceChipIntent}
+		/>
+	);
+	const audioControl = (
+		<HudSystemAudioButton
+			enabled={systemAudioEnabled}
+			disabled={controlsLocked}
+			label={systemAudioEnabled ? t("audio.disableSystemAudio") : t("audio.enableSystemAudio")}
+			onClick={toggleSystemAudio}
+		/>
+	);
+	const settingsControl = (
+		<HudSettingsButton
+			disabled={starting || saving}
+			expanded={isDeviceSettingsOpen}
+			label={t("deviceSettings.title")}
+			onClick={toggleDeviceSettings}
+		/>
+	);
+	const removeControl = (
+		<HudRemovePreviousClipButton
+			disabled={saving || clipFinalizing || !canRemovePreviousClip}
+			label={removePreviousLabel}
+			tooltip={removePreviousTooltip}
+			onClick={handleRemovePreviousClip}
+		/>
+	);
+	const replayControl = (
+		<HudExpandButton
+			expanded={peekOpen}
+			disabled={!canPeek}
+			label={t("peek.open")}
+			onClick={togglePeek}
+		/>
+	);
+	const stopControl = (
+		<HudStopButton
+			saving={saving}
+			disabled={saving || clipFinalizing}
+			label={recordingHudActive ? t("tooltips.stopRecording") : t("tooltips.cancelRecording")}
+			savingLabel={t("recording.saving")}
+			onClick={handleRecordClick}
+		/>
+	);
+
 	const dragHandleProps = {
 		nativeDrag: isLinuxHud,
 		onPointerDown: handleHudDragPointerDown,
@@ -2012,6 +2091,26 @@ export function LaunchWindow() {
 			<div
 				ref={hudAnchorRef}
 				className={styles.hudAnchor}
+				onFocusCapture={() => {
+					if (!transferringGripFocusRef.current) setFocusWithin(true);
+				}}
+				onBlurCapture={(event) => {
+					if (
+						!(event.relatedTarget instanceof Node) ||
+						!event.currentTarget.contains(event.relatedTarget)
+					) {
+						setFocusWithin(false);
+					}
+				}}
+				onKeyDown={(event) => {
+					if (event.key !== "Escape" || !dockedSide || isPopoverOpen) return;
+					event.preventDefault();
+					event.stopPropagation();
+					refocusGripRef.current = true;
+					collapseDock();
+				}}
+				onPointerEnter={handleSurfacePointerEnter}
+				onMouseLeave={handlePointerLeave}
 				data-placement={stackPlacement}
 				data-top-edge={tuckedSide === "top" || shownDockSide === "top" || undefined}
 			>
@@ -2021,6 +2120,8 @@ export function LaunchWindow() {
 					data-recording-layout={pillRecording ? "recording" : "idle"}
 					data-minimized={pillMinimized}
 					data-tucked={tuckedSide ?? undefined}
+					data-docked={dockedSide ?? undefined}
+					data-pinned={dockPinned || undefined}
 					data-instant={dockInstant || undefined}
 					data-bump-cut={(canMinimize && (tuckedSide || !tuckBumpHidden)) || undefined}
 					data-starting={starting && !recordingHudActive}
@@ -2031,63 +2132,77 @@ export function LaunchWindow() {
 								? styles.hudPillMinimized
 								: styles.hudPillIdle
 					}`}
-					onPointerEnter={handleBarPointerEnter}
+					onPointerEnter={handleSurfacePointerEnter}
 					onPointerDown={enableHudMouseEvents}
 					onMouseEnter={enableHudMouseEvents}
-					onMouseLeave={handleBarPointerLeave}
 				>
+					{dockedSide === "top" ? (
+						<div
+							className={styles.hudDockSurface}
+							data-testid="hud-dock-surface"
+							onPointerMove={handleRootPointerMove}
+							aria-hidden
+						>
+							<span />
+							<span />
+							<span />
+						</div>
+					) : null}
 					{pillRecording ? (
 						<div key="recording" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
-							<HudCompactPauseButton
-								paused={presentation.paused}
-								busy={clipFinalizing}
-								disabled={saving || clipFinalizing || !canPauseRecording}
-								label={
-									presentation.paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")
-								}
-								onClick={togglePaused}
-							/>
-							<HudDragHandle {...dragHandleProps}>
+							<div className={styles.hudDockWing} ref={setWingInert}>
+								<HudCompactPauseButton
+									paused={presentation.paused}
+									busy={clipFinalizing}
+									disabled={saving || clipFinalizing || !canPauseRecording}
+									label={
+										presentation.paused
+											? t("tooltips.resumeRecording")
+											: t("tooltips.pauseRecording")
+									}
+									onClick={togglePaused}
+								/>
+								{topDock ? (
+									<>
+										{removeControl}
+										{replayControl}
+									</>
+								) : null}
+							</div>
+							<HudDragHandle
+								{...dragHandleProps}
+								label={dockedSide ? dockGripLabel : undefined}
+								onTap={dockedSide ? toggleDock : undefined}
+								tapExpanded={dockedSide ? dockPeek : undefined}
+							>
 								<HudCompactTimer
 									elapsedSeconds={presentation.elapsedSeconds}
 									paused={presentation.paused || saving || !recordingHudActive}
 								/>
 							</HudDragHandle>
-							<HudStopButton
-								saving={saving}
-								disabled={saving || clipFinalizing}
-								label={
-									recordingHudActive ? t("tooltips.stopRecording") : t("tooltips.cancelRecording")
-								}
-								savingLabel={t("recording.saving")}
-								onClick={handleRecordClick}
-							/>
-							<HudRemovePreviousClipButton
-								disabled={saving || clipFinalizing || !canRemovePreviousClip}
-								label={removePreviousLabel}
-								tooltip={removePreviousTooltip}
-								onClick={handleRemovePreviousClip}
-							/>
-							<HudExpandButton
-								expanded={peekOpen}
-								disabled={!canPeek}
-								label={t("peek.open")}
-								onClick={togglePeek}
-							/>
-							<HudSettingsButton
-								disabled={starting || saving}
-								expanded={isDeviceSettingsOpen}
-								label={t("deviceSettings.title")}
-								onClick={toggleDeviceSettings}
-							/>
+							<div className={styles.hudDockWing} ref={setWingInert}>
+								{topDock ? (
+									<>
+										{settingsControl}
+										{stopControl}
+									</>
+								) : (
+									<>
+										{stopControl}
+										{removeControl}
+										{replayControl}
+										{settingsControl}
+									</>
+								)}
+							</div>
 						</div>
 					) : pillMinimized ? (
 						<div key="minimized" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
 							<HudDragHandle
 								{...dragHandleProps}
-								label={t("tooltips.expandHud")}
-								onTap={toggleHudMinimized}
-								tapExpanded={false}
+								label={dockedSide ? dockGripLabel : t("tooltips.expandHud")}
+								onTap={dockedSide ? toggleDock : toggleHudMinimized}
+								tapExpanded={dockedSide ? dockPeek : false}
 								roomy
 							>
 								<HudBrandMark />
@@ -2096,59 +2211,49 @@ export function LaunchWindow() {
 						</div>
 					) : (
 						<div key="idle" className={`${styles.hudPillRow} ${styles.hudContentEnter}`}>
+							<div className={styles.hudDockWing} ref={setWingInert}>
+								{topDock ? (
+									<>
+										{sourceControl}
+										{audioControl}
+									</>
+								) : null}
+							</div>
 							<HudDragHandle
 								{...dragHandleProps}
-								label={canMinimize ? t("tooltips.minimizeHud") : "Klippt"}
-								onTap={canMinimize ? toggleHudMinimized : undefined}
-								tapExpanded
+								label={
+									dockedSide ? dockGripLabel : canMinimize ? t("tooltips.minimizeHud") : "Klippt"
+								}
+								onTap={dockedSide ? toggleDock : canMinimize ? toggleHudMinimized : undefined}
+								tapExpanded={dockedSide ? dockPeek : true}
 							>
 								<HudBrandMark />
 							</HudDragHandle>
-							{/* No source chip on Linux: the ScreenCast portal owns the choice and
-							    asks when recording starts, so nothing picked here could reach the
-							    capture. */}
-							{portalOwnsSource ? (
-								<span className="flex-1" />
-							) : (
-								<HudSourceChip
-									label={localizedSourceLabel}
-									kind={selectedSourceKind}
-									expanded={isSourcePanelOpen}
+							<div className={styles.hudDockWing} ref={setWingInert}>
+								{!topDock ? (
+									<>
+										{sourceControl}
+										{audioControl}
+									</>
+								) : null}
+								<HudMicButton
+									enabled={microphoneEnabled}
 									disabled={controlsLocked}
-									onClick={toggleSourcePanel}
-									onIntent={isLinuxHud ? undefined : sourceChipIntent}
+									label={
+										microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")
+									}
+									level={idleMicMeterOn ? idleMicLevel : undefined}
+									onClick={toggleMicrophone}
 								/>
-							)}
-							<HudSystemAudioButton
-								enabled={systemAudioEnabled}
-								disabled={controlsLocked}
-								label={
-									systemAudioEnabled ? t("audio.disableSystemAudio") : t("audio.enableSystemAudio")
-								}
-								onClick={toggleSystemAudio}
-							/>
-							<HudMicButton
-								enabled={microphoneEnabled}
-								disabled={controlsLocked}
-								label={
-									microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")
-								}
-								level={idleMicMeterOn ? idleMicLevel : undefined}
-								onClick={toggleMicrophone}
-							/>
-							<HudCameraButton
-								enabled={webcamEnabled}
-								disabled={controlsLocked}
-								label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
-								onClick={toggleWebcam}
-							/>
-							<HudSettingsButton
-								disabled={starting || saving}
-								expanded={isDeviceSettingsOpen}
-								label={t("deviceSettings.title")}
-								onClick={toggleDeviceSettings}
-							/>
-							{recordButton}
+								<HudCameraButton
+									enabled={webcamEnabled}
+									disabled={controlsLocked}
+									label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
+									onClick={toggleWebcam}
+								/>
+								{settingsControl}
+								{recordButton}
+							</div>
 						</div>
 					)}
 				</div>
@@ -2186,28 +2291,31 @@ export function LaunchWindow() {
 						data-hud-interactive="true"
 						data-testid="hud-dock-tab"
 						data-side={shownDockSide}
+						data-recording={pillRecording || undefined}
+						aria-hidden={shownDockSide === "top" || undefined}
 						data-closing={dockPresence.closing || undefined}
 						data-covered={(dockedSide && !tuckedSide) || undefined}
 						data-instant={dockInstant || undefined}
 						className={styles.hudDockTab}
-						onPointerEnter={handleTabPointerEnter}
-						onPointerDown={handleTabPointerDown}
+						onPointerEnter={handleSurfacePointerEnter}
+						onPointerDown={enableHudMouseEvents}
 						onMouseEnter={enableHudMouseEvents}
-						onMouseLeave={handleTabPointerLeave}
 					>
-						<HudDragHandle
-							{...dragHandleProps}
-							label={t("tooltips.expandHud")}
-							onTap={undockHud}
-							tapExpanded={false}
-							roomy
-						>
-							<HudDockMark
-								side={shownDockSide}
-								take={pillRecording ? (presentation.paused ? "paused" : "recording") : null}
-								elapsedSeconds={presentation.elapsedSeconds}
-							/>
-						</HudDragHandle>
+						{shownDockSide !== "top" ? (
+							<HudDragHandle
+								{...dragHandleProps}
+								label={dockGripLabel}
+								onTap={toggleDock}
+								tapExpanded={dockPeek}
+								roomy
+							>
+								<HudDockMark
+									side={shownDockSide}
+									take={pillRecording ? (presentation.paused ? "paused" : "recording") : null}
+									elapsedSeconds={presentation.elapsedSeconds}
+								/>
+							</HudDragHandle>
+						) : null}
 					</div>
 				) : null}
 

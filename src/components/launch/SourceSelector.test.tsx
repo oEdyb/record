@@ -243,3 +243,66 @@ describe("SourceSelector", () => {
 		expect(card).toHaveAttribute("aria-pressed", "false");
 	});
 });
+
+describe("SourcePicker keyboard tabs", () => {
+	const screenSource = {
+		id: "screen:1:0",
+		name: "Entire Screen",
+		thumbnail: null,
+		display_id: "1",
+		appIcon: null,
+	};
+	const windowSource = { ...screenSource, id: "window:9:0", name: "Editor" };
+
+	beforeEach(() => {
+		forgetPickerSources();
+		window.electronAPI = {
+			...window.electronAPI,
+			getCachedSources: vi.fn(async () => []),
+			getSelectedSource: vi.fn(async () => null),
+			getSources: vi.fn(async () => [screenSource, windowSource]),
+			selectSource: vi.fn(async (source) => source),
+		};
+	});
+
+	it("provides linked panels and one tab stop, wrapping arrows and Home/End", async () => {
+		render(<SourcePicker variant="panel" onClose={vi.fn()} />);
+		await screen.findByText("Entire Screen");
+		const screens = screen.getByRole("tab", { name: "Screens (1)" });
+		const windows = screen.getByRole("tab", { name: "Windows (1)" });
+		expect(screens).toHaveAttribute("tabindex", "0");
+		expect(windows).toHaveAttribute("tabindex", "-1");
+		for (const tab of [screens, windows]) {
+			const panel = document.getElementById(tab.getAttribute("aria-controls") ?? "");
+			expect(panel).toHaveAttribute("role", "tabpanel");
+			expect(panel).toHaveAttribute("aria-labelledby", tab.id);
+		}
+		fireEvent.keyDown(screens, { key: "ArrowLeft" });
+		expect(windows).toHaveFocus();
+		expect(windows).toHaveAttribute("aria-selected", "true");
+		expect(windows).toHaveAttribute("tabindex", "0");
+		expect(screens).toHaveAttribute("tabindex", "-1");
+		expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Windows (1)");
+		expect(screen.getByText("Editor")).toBeVisible();
+		fireEvent.keyDown(windows, { key: "ArrowRight" });
+		expect(screens).toHaveFocus();
+		fireEvent.keyDown(screens, { key: "End" });
+		expect(windows).toHaveFocus();
+		fireEvent.keyDown(windows, { key: "Home" });
+		expect(screens).toHaveFocus();
+		expect(screens).toHaveAttribute("aria-selected", "true");
+		fireEvent.keyDown(screens, { key: "ArrowDown" });
+		expect(screens).toHaveAttribute("aria-selected", "true");
+		expect(window.electronAPI.selectSource).not.toHaveBeenCalled();
+	});
+
+	it("sends the source from the keyboard-selected tab through the existing selection IPC", async () => {
+		const onChosen = vi.fn();
+		render(<SourcePicker variant="panel" onClose={vi.fn()} onChosen={onChosen} />);
+		await screen.findByText("Entire Screen");
+		fireEvent.keyDown(screen.getByRole("tab", { name: "Screens (1)" }), { key: "ArrowRight" });
+		fireEvent.click(screen.getByRole("button", { name: "Editor" }));
+		await waitFor(() => expect(window.electronAPI.selectSource).toHaveBeenCalledWith(windowSource));
+		expect(onChosen).toHaveBeenCalledTimes(1);
+	});
+});

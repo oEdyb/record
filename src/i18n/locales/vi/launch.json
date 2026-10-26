@@ -8,6 +8,9 @@
 		"useVerticalTray": "Dùng khay dọc",
 		"useHorizontalTray": "Dùng khay ngang",
 		"openStudio": "Mở Studio",
+		"openDock": "Mở bảng điều khiển",
+		"pinDock": "Giữ bảng điều khiển mở",
+		"collapseDock": "Thu gọn bảng điều khiển",
 		"minimizeHud": "Nhấp để thu nhỏ, kéo để di chuyển",
 		"expandHud": "Nhấp để hiện mọi điều khiển, kéo để di chuyển",
 		"tuckHud": "Thu lên cạnh trên",
@@ -132,7 +135,9 @@
 		"unmute": "Bật tiếng",
 		"volume": "Âm lượng phát lại",
 		"seek": "Tua bản ghi",
-		"open": "Xem lại bản ghi"
+		"open": "Xem lại bản ghi",
+		"playbackError": "Không thể phát đoạn này",
+		"retry": "Thử lại"
 	},
 	"transcript": {
 		"title": "Bản ghi lời",

@@ -8,6 +8,9 @@
 		"useVerticalTray": "Utiliser la barre verticale",
 		"useHorizontalTray": "Utiliser la barre horizontale",
 		"openStudio": "Ouvrir le Studio",
+		"openDock": "Ouvrir les commandes",
+		"pinDock": "Garder les commandes ouvertes",
+		"collapseDock": "Replier les commandes",
 		"minimizeHud": "Cliquez pour réduire, faites glisser pour déplacer",
 		"expandHud": "Cliquez pour afficher toutes les commandes, faites glisser pour déplacer",
 		"tuckHud": "Ranger en haut",
@@ -132,7 +135,9 @@
 		"unmute": "Réactiver le son",
 		"volume": "Volume de la relecture",
 		"seek": "Parcourir l'enregistrement",
-		"open": "Revoir l'enregistrement"
+		"open": "Revoir l'enregistrement",
+		"playbackError": "Impossible de lire ce clip",
+		"retry": "Réessayer"
 	},
 	"transcript": {
 		"title": "Transcription",

@@ -8,6 +8,9 @@
 		"useVerticalTray": "세로 트레이 사용",
 		"useHorizontalTray": "가로 트레이 사용",
 		"openStudio": "스튜디오 열기",
+		"openDock": "컨트롤 열기",
+		"pinDock": "컨트롤을 열린 상태로 유지",
+		"collapseDock": "컨트롤 접기",
 		"minimizeHud": "클릭하여 최소화, 드래그하여 이동",
 		"expandHud": "클릭하여 모든 컨트롤 표시, 드래그하여 이동",
 		"tuckHud": "위쪽에 숨기기",
@@ -132,7 +135,9 @@
 		"unmute": "음소거 해제",
 		"volume": "다시보기 볼륨",
 		"seek": "녹화 탐색",
-		"open": "지금까지의 녹화 다시 보기"
+		"open": "지금까지의 녹화 다시 보기",
+		"playbackError": "이 클립을 재생할 수 없습니다",
+		"retry": "다시 시도"
 	},
 	"transcript": {
 		"title": "자막 텍스트",

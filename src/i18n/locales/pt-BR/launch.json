@@ -8,6 +8,9 @@
 		"useVerticalTray": "Usar bandeja vertical",
 		"useHorizontalTray": "Usar bandeja horizontal",
 		"openStudio": "Abrir Studio",
+		"openDock": "Abrir controles",
+		"pinDock": "Manter os controles abertos",
+		"collapseDock": "Recolher controles",
 		"minimizeHud": "Clique para minimizar, arraste para mover",
 		"expandHud": "Clique para mostrar todos os controles, arraste para mover",
 		"tuckHud": "Esconder no topo",
@@ -132,7 +135,9 @@
 		"unmute": "Ativar som",
 		"volume": "Volume da repetição",
 		"seek": "Navegar na gravação",
-		"open": "Rever a gravação até agora"
+		"open": "Rever a gravação até agora",
+		"playbackError": "Não foi possível reproduzir este clipe",
+		"retry": "Tentar novamente"
 	},
 	"transcript": {
 		"title": "Transcrição",

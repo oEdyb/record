@@ -350,6 +350,27 @@ used to be stuck in a strip at the bottom). When the pill sits near the top, Set
 Replay, the permission panel, notices and recorder errors open below it instead of above it,
 shrunk to the room on that side.
 
+A tucked pill stays attached while expanded (2026-10-26). At the top, one central
+Klippt mark or actual recording timer stays mounted as the small tab grows into the full pill.
+Controls remain natural size and are revealed through the same moving boundary as the
+connected surface; there is no tab/control opacity swap. The top remains flat against the
+work-area edge, with rounded bottom corners. The full expanded footprint is reserved when
+docking, so expansion does not move or resize the native backing window.
+
+Opening and closing share a sampled spring easing: damping 0.8, response 0.4 s and a 600 ms
+settle window. A small overshoot softens the landing. Re-entering during closing reverses
+from the current shape. Startup alone skips the tuck animation. Reduced motion removes
+shape travel. Hidden wings become inert immediately and leave keyboard navigation.
+
+Hover opens after 120 ms; leaving the complete painted surface starts a 280 ms grace period.
+Native pointer samples and DOM input feed one controller, including when the panel ignores
+mouse events. Repeated stationary samples do not restart deadlines. Click, Enter or Space pins
+the same attached pill open; activating the pinned grip collapses it. Escape dismisses an open
+panel first, then collapses the pill while retaining grip focus. Focus, dragging and child panels
+hold expansion. Setup and Source open within the attached recorder and return focus to their
+invoker. Only dragging changes docking. The left, right or top dock is remembered across
+launches. A remembered floating fold does not hide controls when the top dock expands.
+
 The idle pill can be minimized (2026-10-24). Clicking the Klippt mark without dragging folds it
 to the mark and the Record ball; clicking the mark again restores the full pill. Enter or Space on
 the focused mark does the same, and its tooltip says "Click to minimize, drag to move" (or "Click

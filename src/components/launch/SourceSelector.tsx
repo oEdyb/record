@@ -1,5 +1,12 @@
 import { AppWindow, Monitor, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+	type KeyboardEvent as ReactKeyboardEvent,
+	useCallback,
+	useEffect,
+	useId,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { Button } from "../ui/button";
@@ -107,6 +114,11 @@ export function SourcePicker({
 }) {
 	const t = useScopedT("launch");
 	const tc = useScopedT("common");
+	const tabsId = useId();
+	const tabRefs = useRef<Record<SourcePickerKind, HTMLButtonElement | null>>({
+		screens: null,
+		windows: null,
+	});
 	const [sources, setSources] = useState<DesktopSource[]>(shownSources);
 	const [selectedSource, setSelectedSource] = useState<DesktopSource | null>(shownSelection);
 	const [loading, setLoading] = useState(shownSources.length === 0);
@@ -186,6 +198,29 @@ export function SourcePicker({
 			? "windows"
 			: "screens");
 	const visibleSources = activeKind === "screens" ? screenSources : windowSources;
+	const handleTabKeyDown = (
+		event: ReactKeyboardEvent<HTMLButtonElement>,
+		current: SourcePickerKind,
+	) => {
+		let next: SourcePickerKind;
+		switch (event.key) {
+			case "ArrowLeft":
+			case "ArrowRight":
+				next = current === "screens" ? "windows" : "screens";
+				break;
+			case "Home":
+				next = "screens";
+				break;
+			case "End":
+				next = "windows";
+				break;
+			default:
+				return;
+		}
+		event.preventDefault();
+		setKind(next);
+		tabRefs.current[next]?.focus();
+	};
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -298,6 +333,13 @@ export function SourcePicker({
 					<button
 						type="button"
 						role="tab"
+						id={`${tabsId}-screens-tab`}
+						aria-controls={`${tabsId}-screens-panel`}
+						tabIndex={activeKind === "screens" ? 0 : -1}
+						ref={(element) => {
+							tabRefs.current.screens = element;
+						}}
+						onKeyDown={(event) => handleTabKeyDown(event, "screens")}
 						aria-selected={activeKind === "screens"}
 						className={styles.segment}
 						onClick={() => setKind("screens")}
@@ -308,6 +350,13 @@ export function SourcePicker({
 					<button
 						type="button"
 						role="tab"
+						id={`${tabsId}-windows-tab`}
+						aria-controls={`${tabsId}-windows-panel`}
+						tabIndex={activeKind === "windows" ? 0 : -1}
+						ref={(element) => {
+							tabRefs.current.windows = element;
+						}}
+						onKeyDown={(event) => handleTabKeyDown(event, "windows")}
 						aria-selected={activeKind === "windows"}
 						className={styles.segment}
 						onClick={() => setKind("windows")}
@@ -327,25 +376,33 @@ export function SourcePicker({
 					<X size={16} aria-hidden />
 				</button>
 			</div>
-			<div
-				className={`${styles.grid} ${styles.sourceGridScroll}`}
-				role="tabpanel"
-				aria-busy={loading}
-			>
-				{loading ? (
-					<>
-						<span className="sr-only">{t("sourceSelector.loading")}</span>
-						{[0, 1, 2, 3].map((slot) => (
-							<div key={slot} className={styles.sourceCard} data-placeholder aria-hidden>
-								<div className={styles.thumb} />
-								<div className={styles.caption} />
-							</div>
-						))}
-					</>
-				) : (
-					visibleSources.map(renderSourceCard)
-				)}
-			</div>
+			{(["screens", "windows"] satisfies SourcePickerKind[]).map((panelKind) => (
+				<div
+					key={panelKind}
+					id={`${tabsId}-${panelKind}-panel`}
+					className={`${styles.grid} ${styles.sourceGridScroll}`}
+					role="tabpanel"
+					aria-labelledby={`${tabsId}-${panelKind}-tab`}
+					aria-busy={loading}
+					hidden={activeKind !== panelKind}
+					style={activeKind !== panelKind ? { display: "none" } : undefined}
+					tabIndex={loading || visibleSources.length === 0 ? 0 : undefined}
+				>
+					{activeKind !== panelKind ? null : loading ? (
+						<>
+							<span className="sr-only">{t("sourceSelector.loading")}</span>
+							{[0, 1, 2, 3].map((slot) => (
+								<div key={slot} className={styles.sourceCard} data-placeholder aria-hidden>
+									<div className={styles.thumb} />
+									<div className={styles.caption} />
+								</div>
+							))}
+						</>
+					) : (
+						visibleSources.map(renderSourceCard)
+					)}
+				</div>
+			))}
 		</div>
 	);
 }

@@ -20,6 +20,8 @@ export interface HudClipPeekLabels {
 	unmute: string;
 	volume: string;
 	seek: string;
+	playbackError?: string;
+	retry?: string;
 }
 
 interface PeekClip {
@@ -109,6 +111,9 @@ export function HudClipPeek({
 	const [clipIndex, setClipIndex] = useState(initial.index);
 	const [position, setPosition] = useState((timeline[initial.index]?.start ?? 0) + initial.offset);
 	const [playing, setPlaying] = useState(false);
+	const [playbackFailed, setPlaybackFailed] = useState(false);
+	const [mediaGeneration, setMediaGeneration] = useState(0);
+	const playbackGenerationRef = useRef(0);
 	// The same listening level as the review, so the replay never surprises with its loudness.
 	const volume = usePreviewAudio((state) => state.volume);
 	const muted = usePreviewAudio((state) => state.muted);
@@ -118,17 +123,36 @@ export function HudClipPeek({
 	// The first clip that loads sets the frame; a clip of another size letterboxes inside it.
 	const [aspect, setAspect] = useState<number | null>(null);
 
-	// A src change aborts a pending play(); that is not the user pausing.
-	const stopUnlessInterrupted = useCallback((error: unknown) => {
-		if (!(error instanceof DOMException && error.name === "AbortError")) setPlaying(false);
+	const failPlayback = useCallback(() => {
+		playbackGenerationRef.current += 1;
+		videoRef.current?.pause();
+		cameraRef.current?.pause();
+		setPlaying(false);
+		setPlaybackFailed(true);
 	}, []);
 
 	const current = timeline[Math.min(clipIndex, timeline.length - 1)];
-	const source = current ? toKlipptMediaUrl(current.clip.screenVideoPath) : undefined;
+	const retryQuery = mediaGeneration > 0 ? `?replayRetry=${mediaGeneration}` : "";
+	const source = current
+		? `${toKlipptMediaUrl(current.clip.screenVideoPath)}${retryQuery}`
+		: undefined;
 	const cameraPath = current?.clip.webcamVideoPath;
-	const cameraSource = cameraPath ? toKlipptMediaUrl(cameraPath) : undefined;
+	const cameraSource = cameraPath ? `${toKlipptMediaUrl(cameraPath)}${retryQuery}` : undefined;
 	const cameraOffsetSec = (current?.clip.webcamOffsetMs ?? 0) / 1_000;
 	const cameraRef = useRef<HTMLVideoElement | null>(null);
+	const requestPlay = useCallback(
+		async (video: HTMLVideoElement) => {
+			const generation = playbackGenerationRef.current;
+			try {
+				await video.play();
+			} catch (error) {
+				if (generation !== playbackGenerationRef.current) return;
+				if (error instanceof DOMException && error.name === "AbortError") return;
+				failPlayback();
+			}
+		},
+		[failPlayback],
+	);
 	const [cameraPortrait, setCameraPortrait] = useState(false);
 	// Read when the replay opens: the creator may have moved the camera in review since.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: re-read on each open
@@ -149,12 +173,12 @@ export function HudClipPeek({
 			if (video.paused || video.ended) {
 				if (!camera.paused) camera.pause();
 			} else if (camera.paused && !camera.ended) {
-				camera.play()?.catch(() => undefined);
+				void requestPlay(camera);
 			}
 		};
 		frame = requestAnimationFrame(tick);
 		return () => cancelAnimationFrame(frame);
-	}, [open, showCamera, cameraOffsetSec]);
+	}, [open, showCamera, cameraOffsetSec, requestPlay]);
 
 	const seek = useCallback(
 		(time: number) => {
@@ -177,10 +201,13 @@ export function HudClipPeek({
 
 	useEffect(() => {
 		const video = videoRef.current;
-		if (!video) return;
-		if (playing) video.play()?.catch(stopUnlessInterrupted);
+		if (!video || !source) return;
+		if (open && playing) void requestPlay(video);
 		else video.pause();
-	}, [playing, stopUnlessInterrupted]);
+		return () => {
+			playbackGenerationRef.current += 1;
+		};
+	}, [open, playing, source, requestPlay]);
 
 	useEffect(() => {
 		if (!playing || !current) return;
@@ -218,9 +245,10 @@ export function HudClipPeek({
 		return () => window.removeEventListener("keydown", handleKey);
 	}, [clipIndex, current, onClose, open, position, seek, timeline, toggleMuted]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a retry mounts a fresh media element
 	useEffect(() => {
 		applyPreviewAudio(videoRef.current, { volume, muted });
-	}, [volume, muted]);
+	}, [volume, muted, mediaGeneration]);
 
 	const rootRef = useRef<HTMLDivElement | null>(null);
 	const attachPanel = useCallback(
@@ -238,6 +266,7 @@ export function HudClipPeek({
 	const seekRef = useRef(seek);
 	seekRef.current = seek;
 	useEffect(() => {
+		setPlaybackFailed(false);
 		if (!open) {
 			setPlaying(false);
 			return;
@@ -255,7 +284,7 @@ export function HudClipPeek({
 			setAspect(video.videoWidth / video.videoHeight);
 		}
 		if (video && offset !== null) video.currentTime = offset;
-		if (video && playing) video.play()?.catch(stopUnlessInterrupted);
+		if (video && playing) void requestPlay(video);
 	};
 
 	const handleEnded = () => {
@@ -269,8 +298,16 @@ export function HudClipPeek({
 	};
 
 	const togglePlaying = () => {
+		if (playbackFailed) return;
 		if (!playing && position >= total - 0.05) seek(0);
 		setPlaying((value) => !value);
+	};
+	const retryPlayback = () => {
+		playbackGenerationRef.current += 1;
+		pendingOffsetRef.current = Math.max(0, position - (current?.start ?? 0));
+		setPlaybackFailed(false);
+		setMediaGeneration((generation) => generation + 1);
+		setPlaying(true);
 	};
 
 	const seekFromPointer = (clientX: number) => {
@@ -294,6 +331,7 @@ export function HudClipPeek({
 		>
 			<div className={styles.clipPeekStage}>
 				<video
+					key={`screen-${mediaGeneration}`}
 					ref={videoRef}
 					data-testid="hud-clip-peek-video"
 					className={styles.clipPeekVideo}
@@ -302,10 +340,12 @@ export function HudClipPeek({
 					preload="auto"
 					onLoadedMetadata={handleLoadedMetadata}
 					onEnded={handleEnded}
+					onError={failPlayback}
 					onClick={togglePlaying}
 				/>
 				{showCamera && (
 					<video
+						key={`camera-${mediaGeneration}`}
 						ref={cameraRef}
 						data-testid="hud-clip-peek-camera"
 						className={styles.clipPeekCamera}
@@ -314,6 +354,7 @@ export function HudClipPeek({
 						muted
 						playsInline
 						preload="auto"
+						onError={failPlayback}
 						onLoadedMetadata={(event) => {
 							const camera = event.currentTarget;
 							setCameraPortrait(camera.videoHeight > camera.videoWidth);
@@ -358,6 +399,16 @@ export function HudClipPeek({
 					</div>
 				</div>
 			</div>
+			{playbackFailed && (
+				<div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+					<span role="alert" className="text-[var(--hud-ink)]">
+						{labels.playbackError ?? "Unable to play this clip"}
+					</span>
+					<button type="button" className={styles.hudSetupFooterButton} onClick={retryPlayback}>
+						{labels.retry ?? "Try again"}
+					</button>
+				</div>
+			)}
 			<div className={styles.clipPeekControls}>
 				<button
 					type="button"
@@ -366,6 +417,7 @@ export function HudClipPeek({
 					className={styles.clipPeekPlay}
 					aria-label={playing ? labels.pause : labels.play}
 					onClick={togglePlaying}
+					disabled={playbackFailed}
 				>
 					{playing ? <Pause size={15} aria-hidden /> : <Play size={15} aria-hidden />}
 				</button>

@@ -8,6 +8,9 @@
 		"useVerticalTray": "Dikey araç çubuğunu kullan",
 		"useHorizontalTray": "Yatay araç çubuğunu kullan",
 		"openStudio": "Stüdyoyu aç",
+		"openDock": "Denetimleri aç",
+		"pinDock": "Denetimleri açık tut",
+		"collapseDock": "Denetimleri daralt",
 		"minimizeHud": "Küçültmek için tıklayın, taşımak için sürükleyin",
 		"expandHud": "Tüm denetimleri göstermek için tıklayın, taşımak için sürükleyin",
 		"tuckHud": "Üste gizle",
@@ -132,7 +135,9 @@
 		"unmute": "Sesi aç",
 		"volume": "Tekrar ses düzeyi",
 		"seek": "Kayıtta gezin",
-		"open": "Şu ana kadarki kaydı izle"
+		"open": "Şu ana kadarki kaydı izle",
+		"playbackError": "Bu klip oynatılamıyor",
+		"retry": "Yeniden dene"
 	},
 	"transcript": {
 		"title": "Döküm",

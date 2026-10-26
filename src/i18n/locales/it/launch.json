@@ -8,6 +8,9 @@
 		"useVerticalTray": "Usa barra verticale",
 		"useHorizontalTray": "Usa barra orizzontale",
 		"openStudio": "Apri Studio",
+		"openDock": "Apri i controlli",
+		"pinDock": "Mantieni aperti i controlli",
+		"collapseDock": "Comprimi i controlli",
 		"minimizeHud": "Fai clic per ridurre, trascina per spostare",
 		"expandHud": "Fai clic per mostrare tutti i controlli, trascina per spostare",
 		"tuckHud": "Nascondi in alto",
@@ -132,7 +135,9 @@
 		"unmute": "Attiva audio",
 		"volume": "Volume della ripetizione",
 		"seek": "Scorri la registrazione",
-		"open": "Rivedi la registrazione"
+		"open": "Rivedi la registrazione",
+		"playbackError": "Impossibile riprodurre questa clip",
+		"retry": "Riprova"
 	},
 	"transcript": {
 		"title": "Trascrizione",

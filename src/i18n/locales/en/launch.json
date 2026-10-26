@@ -8,6 +8,9 @@
 		"useVerticalTray": "Use vertical tray",
 		"useHorizontalTray": "Use horizontal tray",
 		"openStudio": "Open Studio",
+		"openDock": "Open controls",
+		"pinDock": "Keep controls open",
+		"collapseDock": "Collapse controls",
 		"minimizeHud": "Click to minimize, drag to move",
 		"expandHud": "Click to show all controls, drag to move",
 		"tuckHud": "Tuck to the top",
@@ -132,7 +135,9 @@
 		"unmute": "Unmute",
 		"volume": "Replay volume",
 		"seek": "Seek recording",
-		"open": "Replay recording so far"
+		"open": "Replay recording so far",
+		"playbackError": "Unable to play this clip",
+		"retry": "Try again"
 	},
 	"transcript": {
 		"title": "Transcript",

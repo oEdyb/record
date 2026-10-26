@@ -12,7 +12,7 @@ import {
 	Video,
 	X,
 } from "lucide-react";
-import { memo, type ReactNode, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { AppSelect } from "@/components/ui/app-select";
 import { InspectorSwitch } from "@/components/ui/inspector";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
@@ -85,6 +85,29 @@ export interface HudSetupExtras {
 	windowControlsDisabled?: boolean;
 	footerLead?: ReactNode;
 	footer?: ReactNode;
+}
+
+function handleRadioKeyDown(event: KeyboardEvent<HTMLElement>) {
+	const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"];
+	if (!keys.includes(event.key)) return;
+	const buttons = Array.from(
+		event.currentTarget.querySelectorAll<HTMLButtonElement>("button[role='radio']"),
+	).filter((button) => !button.matches(":disabled"));
+	const index = buttons.findIndex((button) => button === event.target);
+	if (index < 0) return;
+	event.preventDefault();
+	const nextIndex =
+		event.key === "Home"
+			? 0
+			: event.key === "End"
+				? buttons.length - 1
+				: (index +
+						(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1) +
+						buttons.length) %
+					buttons.length;
+	const next = buttons[nextIndex];
+	next?.focus();
+	next?.click();
 }
 
 function SetupTile({
@@ -388,6 +411,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 				<div
 					className={styles.setupSources}
 					role="radiogroup"
+					onKeyDown={handleRadioKeyDown}
 					aria-label={labels.source ?? "Source"}
 					data-testid="hud-setup-source-group"
 					data-source={sourceKind}
@@ -397,6 +421,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 						type="button"
 						role="radio"
 						aria-checked={sourceKind === "display"}
+						tabIndex={sourceKind === "display" ? 0 : -1}
 						data-testid="hud-setup-source"
 						className={styles.setupSource}
 						disabled={extras.sourceDisabled}
@@ -411,6 +436,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 						type="button"
 						role="radio"
 						aria-checked={sourceKind === "window"}
+						tabIndex={sourceKind === "window" ? 0 : -1}
 						className={styles.setupSource}
 						disabled={extras.sourceDisabled}
 						onClick={extras.onOpenSource}
@@ -598,6 +624,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					<fieldset
 						className={styles.qualitySegments}
 						data-testid="hud-recording-quality"
+						role="radiogroup"
+						onKeyDown={handleRadioKeyDown}
 						aria-labelledby="hud-recording-quality-label"
 						disabled={controlsLocked}
 					>
@@ -607,6 +635,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 								type="button"
 								role="radio"
 								aria-checked={recordingQuality === quality}
+								tabIndex={recordingQuality === quality ? 0 : -1}
 								className={styles.qualitySegment}
 								onClick={() => onSelectRecordingQuality?.(quality)}
 							>

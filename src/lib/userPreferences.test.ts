@@ -57,6 +57,11 @@ describe("projectFolder preference", () => {
 		});
 	});
 
+	it.each(["left", "right", "top"] as const)("remembers the %s dock across loads", (hudDock) => {
+		saveUserPreferences({ hudDock });
+		expect(loadUserPreferences().hudDock).toBe(hudDock);
+	});
+
 	it("defaults to null when nothing is persisted", () => {
 		expect(loadUserPreferences().projectFolder).toBeNull();
 		expect(getProjectFolder()).toBeUndefined();

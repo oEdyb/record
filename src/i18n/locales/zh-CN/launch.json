@@ -8,6 +8,9 @@
 		"useVerticalTray": "使用竖向托盘",
 		"useHorizontalTray": "使用横向托盘",
 		"openStudio": "打开工作室",
+		"openDock": "打开控制面板",
+		"pinDock": "保持控制面板打开",
+		"collapseDock": "收起控制面板",
 		"minimizeHud": "点击最小化，拖动以移动",
 		"expandHud": "点击显示全部控件，拖动以移动",
 		"tuckHud": "收到顶部",
@@ -132,7 +135,9 @@
 		"unmute": "取消静音",
 		"volume": "回放音量",
 		"seek": "拖动录制进度",
-		"open": "回看目前的录制"
+		"open": "回看目前的录制",
+		"playbackError": "无法播放此片段",
+		"retry": "重试"
 	},
 	"transcript": {
 		"title": "转录",

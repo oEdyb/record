@@ -30,6 +30,7 @@ import {
 	shouldShowHudInactive,
 	shouldStartHudClickThrough,
 } from "./hudInputPolicy";
+import { createHudPointerWatch } from "./hudPointerWatch";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import {
 	localRectanglesContainScreenPoint,
@@ -435,40 +436,18 @@ ipcMain.on("hud-overlay-hide", () => {
 	}
 });
 
-// While the HUD takes the mouse, check where the cursor is: an inactive app can miss the
-// pointer leaving the pill, and the invisible window would then swallow the next click
-// meant for another app. Outside the window it goes click-through at once; inside, the
-// renderer decides from what is painted under the cursor.
-const HUD_POINTER_WATCH_MS = 100;
-let hudPointerWatch: ReturnType<typeof setInterval> | null = null;
+const hudIgnoredMouseEvents = new WeakMap<BrowserWindow, boolean>();
 
-function stopHudPointerWatch() {
-	if (hudPointerWatch) clearInterval(hudPointerWatch);
-	hudPointerWatch = null;
+function setHudIgnoreMouseEvents(win: BrowserWindow, ignore: boolean) {
+	if (hudIgnoredMouseEvents.get(win) === ignore) return;
+	win.setIgnoreMouseEvents(ignore, { forward: true });
+	hudIgnoredMouseEvents.set(win, ignore);
 }
 
-function startHudPointerWatch(win: BrowserWindow) {
-	if (hudPointerWatch || process.platform === "linux") return;
-	hudPointerWatch = setInterval(() => {
-		if (win.isDestroyed()) {
-			stopHudPointerWatch();
-			return;
-		}
-		if (hudDragOrigin) return;
-		const local = hudPointerProbe(screen.getCursorScreenPoint(), win.getContentBounds());
-		if (!local) {
-			stopHudPointerWatch();
-			win.setIgnoreMouseEvents(true, { forward: true });
-		}
-		win.webContents.send("hud-overlay-pointer-check", local);
-	}, HUD_POINTER_WATCH_MS);
-}
-
-ipcMain.on("hud-overlay-ignore-mouse-events", (_event, ignore: boolean) => {
+ipcMain.on("hud-overlay-ignore-mouse-events", (event, ignore: unknown) => {
+	if (!isHudSender(event.sender.id) || typeof ignore !== "boolean") return;
 	if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
-		hudOverlayWindow.setIgnoreMouseEvents(ignore, { forward: true });
-		if (ignore) stopHudPointerWatch();
-		else startHudPointerWatch(hudOverlayWindow);
+		setHudIgnoreMouseEvents(hudOverlayWindow, ignore);
 	}
 });
 
@@ -705,20 +684,12 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	// short gap before React mounts. Windows keeps the renderer-driven path below:
 	// Electron implements forwarding there with a global low-level mouse hook.
 	if (shouldStartHudClickThrough(process.platform)) {
-		win.setIgnoreMouseEvents(true, { forward: true });
+		setHudIgnoreMouseEvents(win, true);
 	}
 
-	// Windows is deliberately not born click-through: the renderer asks for it on
-	// mount over "hud-overlay-ignore-mouse-events". On Windows the `forward` option is a global
-	// WH_MOUSE_LL hook, and that hook is the only way out of the state, because
-	// Chromium sends no pointermove to a window it has made input-transparent — so
-	// the renderer can never ask to leave it on its own. Electron latches
-	// the install behind `forwarding_mouse_messages_` and retries only after a
-	// setIgnoreMouseEvents(false) — the very call a dead hook prevents. One refused
-	// or revoked hook (Windows drops any whose callback overruns the 300 ms
-	// LowLevelHooksTimeout — on this thread, still busy booting the app) and the HUD
-	// is painted, inert, forever. Asking later moves the install onto an IPC message,
-	// i.e. onto a main thread that is provably pumping.
+	// Windows starts interactive until the renderer or cursor probe supplies the
+	// first input decision. Native cursor probes can restore interaction even if
+	// Windows' forwarded-movement hook is unavailable.
 
 	// Keep the recording controls out of the recording (see applyContentProtection).
 	applyContentProtection(win, "HUD");
@@ -729,6 +700,16 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 		win.setAlwaysOnTop(true, "floating");
 	}
+
+	const pointerWatch = createHudPointerWatch({
+		platform: process.platform,
+		isVisible: () => !win.isDestroyed() && win.isVisible() && !win.isMinimized(),
+		isDragging: () => hudDragOrigin !== null,
+		readPoint: () => hudPointerProbe(screen.getCursorScreenPoint(), win.getContentBounds()),
+		onProbe: (point) => win.webContents.send("hud-overlay-pointer-check", point),
+		onOutside: () => setHudIgnoreMouseEvents(win, true),
+	});
+	if (!HEADLESS) pointerWatch.start();
 
 	// Show only once painted to avoid the black rectangle flash when a transparent
 	// window is shown before its first paint.
@@ -742,6 +723,7 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	// The renderer listens to the mic for its idle level line only while the pill
 	// is on screen, so tell it when the pill is minimized, hidden or back.
 	const sendHudVisible = (visible: boolean) => {
+		if (visible && !HEADLESS) pointerWatch.start();
 		if (!win.isDestroyed()) win.webContents.send("hud-visibility-changed", visible);
 	};
 	win.on("minimize", () => sendHudVisible(false));
@@ -772,6 +754,7 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	hudOverlayWindow = win;
 
 	win.on("closed", () => {
+		pointerWatch.stop();
 		screen.off("display-metrics-changed", resendHudWorkArea);
 		screen.off("display-added", resendHudWorkArea);
 		screen.off("display-removed", resendHudWorkArea);
