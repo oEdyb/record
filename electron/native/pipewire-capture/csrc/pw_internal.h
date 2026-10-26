@@ -47,6 +47,7 @@ struct osc_pw_audio_api {
                           const struct spa_pod **params, uint32_t n_params);
     struct pw_buffer *(*stream_dequeue_buffer)(struct pw_stream *stream);
     int (*stream_queue_buffer)(struct pw_stream *stream, struct pw_buffer *buffer);
+    uint32_t (*stream_get_node_id)(struct pw_stream *stream);
     const char *(*stream_state_as_string)(enum pw_stream_state state);
     /* Enumeration only (osc_pw_list_audio_sources): a synchronous main loop
      * rather than the thread loop the streams use. */

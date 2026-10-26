@@ -1,0 +1,9 @@
+{
+  "base": "19995181c19f9ecb85240048e9fd84160ca43f64",
+  "state": "reviewed uncommitted audio peer admission slice at time of native probes",
+  "sha256": {
+    "electron/native/pipewire-capture/csrc/pw_audio.c": "020d2482cfc318455759105541432cbb240c4d5e5d0571203284555462a6ca25",
+    "electron/native/pipewire-capture/csrc/pw_internal.h": "e160b131a34d625678780962e4372d7a7ca417deae9eafde8eab5974216f23eb",
+    "electron/native/pipewire-capture/csrc/pw_shim.c": "fad3a16c82fd03a1580e98d00217d780f153a2b0ca8174658484b754a2af2bcd"
+  }
+}

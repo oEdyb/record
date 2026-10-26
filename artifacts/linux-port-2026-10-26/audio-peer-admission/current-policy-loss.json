@@ -1,0 +1,11 @@
+{
+  "pipewire": "1.6.10",
+  "wireplumber": "0.5.18",
+  "selectedHz": 440.0,
+  "defaultHz": 880,
+  "pcmSeconds": 3.029333333333333,
+  "probeSeconds": 9,
+  "removedAfterFirstPcmSeconds": 3,
+  "pcmSha256": "37350a3e8506da323501cef5c4b40d8caf2e478d77965f386674e9822721d84a",
+  "explicitPeerError": true
+}

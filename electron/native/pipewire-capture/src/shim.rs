@@ -1097,6 +1097,49 @@ mod tests {
 #[cfg(test)]
 mod source_tests {
     #[test]
+    fn audio_peer_admission_checks_the_actual_c_callbacks_offline() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let scratch =
+            std::env::temp_dir().join(format!("klippt-audio-peer-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&scratch).unwrap();
+        let binary = scratch.join("peer-tests");
+        let result = (|| -> Result<(), String> {
+            let built = std::process::Command::new("cc")
+                .args([
+                    "-std=gnu11",
+                    "-O0",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-isystem",
+                ])
+                .arg(root.join("vendor/pipewire-1.0.5/include"))
+                .arg(root.join("csrc/pw_audio_peer_tests.c"))
+                .arg("-o")
+                .arg(&binary)
+                .output()
+                .map_err(|error| format!("could not compile audio peer tests: {error}"))?;
+            if !built.status.success() {
+                return Err(String::from_utf8_lossy(&built.stderr).into_owned());
+            }
+            let tested = std::process::Command::new(&binary)
+                .output()
+                .map_err(|error| format!("could not run audio peer tests: {error}"))?;
+            if !tested.status.success() {
+                return Err(String::from_utf8_lossy(&tested.stderr).into_owned());
+            }
+            Ok(())
+        })();
+        let cleanup = std::fs::remove_dir_all(&scratch);
+        result.expect("audio peer callback regressions");
+        cleanup.expect("remove the owned audio peer test directory");
+    }
+
+    #[test]
     fn audio_readiness_requires_pcm_and_never_masks_a_later_failure() {
         use std::sync::{atomic::AtomicBool, Arc, Mutex};
         let state = Box::new(super::AudioCallbackState {

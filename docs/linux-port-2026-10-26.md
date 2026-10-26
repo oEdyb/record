@@ -812,10 +812,9 @@ default B because this older policy reads `node.target`. Supplying both names
 changes both actual graph input links from B to A. Default capture still links
 from B. The actual C archive probe delivers PCM in each case.
 
-Missing explicit targets still link from B and deliver PCM on this older policy;
-this remains an unresolved admission failure. Do not treat the legacy target
-property as complete loss protection. The next native slice must reject wrong
-peers before their samples reach Rust. Graph identity, rather than tone identity,
+At this checkpoint, missing explicit targets still linked from B and delivered
+PCM on this older policy. The legacy target property alone was incomplete loss
+protection; the peer-admission follow-up below closes that failure. Graph identity, rather than tone identity,
 is the evidence: an attempted frequency setter did not change the test adapters'
 440 Hz defaults. No physical clock or performance claim follows.
 
@@ -831,10 +830,41 @@ JSON field.
 checks pass. One final JS run: 3,113 passed, 12 existing skips. Evidence and
 reproducer: `artifacts/linux-port-2026-10-26/legacy-audio-routing/`. Lab/container
 stopped. The last fully packaged candidate remains `81805667`; its source
-predates these changes. Finish the missing-target admission correction before
-rebuilding the next candidate.
+predates these changes. Peer-admission verification follows below.
 
 Version-specific contracts:
 [WirePlumber 0.4.8 target lookup and fallback](https://raw.githubusercontent.com/PipeWire/wireplumber/0.4.8/src/scripts/policy-node.lua),
 [PipeWire 0.3.48 stream target properties](https://raw.githubusercontent.com/PipeWire/pipewire/0.3.48/src/pipewire/stream.c),
 and [official test-source implementation](https://raw.githubusercontent.com/PipeWire/pipewire/0.3.48/spa/plugins/audiotestsrc/audiotestsrc.c).
+
+### Explicit audio peer admission — October 26
+
+The helper now checks the actual graph before forwarding explicitly targeted
+PCM. A registry on that audio stream's own core observes its selected node and
+input links after the stream has a bound ID. Admission stays closed until the
+latest core roundtrip completes. Queued buffers predating verification are
+discarded. Wrong peers, source disappearance, ambiguous names, native/core
+errors and bounded-link overflow latch failure for that session. A repaired
+input requires a fresh audio session through the existing paused preparation
+path. Untargeted default capture keeps its prior policy.
+
+The matching old stack still attempts B for a missing explicit target, but the
+callback now reports a wrong-peer error and admits zero bytes, compared with
+1,146,880 bytes before. Valid A and default B controls both deliver PCM from
+their observed intended graph peers. Removing A at one second ends PCM at
+1.0027 seconds with an error. The current-stack 440/880 Hz loss regression
+also passes, ending selected A PCM at 3.0293 seconds during a nine-second probe.
+These checks cover native admission on the tested old/current stacks, not all
+desktops or physical-device timing.
+
+116 native tests pass, including six offline C callback scenarios for stale
+barriers, pending-buffer discard, terminal errors, removal/ID reuse, malformed
+links/overflow and default bypass. One existing live test is ignored; opt-in
+live enumeration is filtered. Strict Clippy/formatting and fresh split reviews
+pass. JS runtime code is unchanged from the preceding 3,113-test checkpoint.
+Evidence: `artifacts/linux-port-2026-10-26/audio-peer-admission/`. Portable build
+and actual app verification follow the runtime commit.
+
+Contracts: [PipeWire core ordering/barrier](https://docs.pipewire.org/group__pw__core.html),
+[registry global and removal events](https://docs.pipewire.org/structpw__registry__events.html),
+and [older stream implementation](https://raw.githubusercontent.com/PipeWire/pipewire/0.3.48/src/pipewire/stream.c).

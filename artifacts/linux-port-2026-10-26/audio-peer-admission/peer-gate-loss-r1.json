@@ -1,0 +1,35 @@
+{
+  "graphInputSources": [
+    "lab_mic_source_a",
+    "lab_mic_source_a"
+  ],
+  "pcmBytes": 385024,
+  "probeProperties": {
+    "media.type": "Audio",
+    "media.category": "Capture",
+    "media.role": "Production",
+    "target.object": "lab_mic_source_a",
+    "node.target": "lab_mic_source_a",
+    "node.dont-fallback": true,
+    "node.dont-reconnect": true,
+    "media.name": "openscreen-audio",
+    "stream.is-live": true,
+    "node.name": "peer-gate-probe",
+    "node.autoconnect": true,
+    "media.class": "Stream/Input/Audio",
+    "adapt.follower.node": "",
+    "object.register": false,
+    "factory.id": 7,
+    "audio.adapt.follower": "",
+    "factory.mode": "merge",
+    "library.name": "audioconvert/libspa-audioconvert",
+    "clock.quantum-limit": 8192,
+    "client.id": 46,
+    "object.id": 47,
+    "object.serial": 50
+  },
+  "versions": "pipewire:amd64\t0.3.48-1ubuntu3.2\npipewire-pulse\t0.3.48-1ubuntu3.2\nwireplumber\t0.4.8-4\n",
+  "removedTargetAfterOneSecond": "lab_mic_source_a",
+  "pcmSha256": "b3c7116d4b51d8ea7dd0152a70c98f268d0a1fdbffbde6c0930e201ad2b35003",
+  "pcmSeconds": 1.0026666666666666
+}

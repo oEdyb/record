@@ -1,0 +1,6 @@
+STATE connecting
+STATE paused
+STATE error PipeWire linked a different audio source than the selected input
+STATE streaming
+STATE paused
+STATE unconnected

@@ -83,6 +83,16 @@ try:
         children.append(probe)
         time.sleep(1)
         (root / "graph.json").write_text(run("pw-dump"))
+        remove_target = os.environ.get("OSC_REMOVE_TARGET")
+        if remove_target:
+            assert remove_target == "lab_mic_source_a"
+            target = next(
+                node
+                for node in json.loads((root / "graph.json").read_text())
+                if node.get("info", {}).get("props", {}).get("node.name")
+                == remove_target
+            )
+            run("pw-cli", "destroy", str(target["id"]))
         assert probe.wait(timeout=5) == 0
     print((root / "selected-a.events.log").read_text(), flush=True)
     (root / "versions.txt").write_text(
@@ -92,10 +102,8 @@ try:
     probe_node = next(
         node
         for node in graph
-        if node.get("info", {})
-        .get("props", {})
-        .get("node.name", "")
-        .startswith("old-audio-probe")
+        if node.get("info", {}).get("props", {}).get("node.name")
+        == Path(os.environ["OSC_AUDIO_PROBE"]).name
     )
     source_names = {
         node["id"]: node.get("info", {}).get("props", {}).get("node.name")
@@ -124,6 +132,7 @@ try:
         "pcmBytes": pcm_bytes,
         "probeProperties": probe_node["info"]["props"],
         "versions": (root / "versions.txt").read_text(),
+        "removedTargetAfterOneSecond": remove_target,
     }
     (root / "proof.json").write_text(json.dumps(proof, indent=2) + "\n")
     print(json.dumps(proof), flush=True)

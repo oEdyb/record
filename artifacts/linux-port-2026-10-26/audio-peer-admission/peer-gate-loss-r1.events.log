@@ -1,0 +1,7 @@
+STATE connecting
+STATE paused
+STATE streaming
+FIRST 0
+STATE paused
+STATE error the selected audio source disappeared
+STATE unconnected
