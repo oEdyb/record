@@ -181,9 +181,10 @@ it no longer dereferences a null context during VAAPI/Vulkan setup.
   synthetic-camera SIGKILL/reopen pass restored both sources and the saved project;
   all 615 decoded camera-frame hashes survived container repair. The last unwritten
   MediaRecorder chunk can still be lost in a hard crash.
-- 30/60-minute endurance, sample-clock A/V drift, AMD/Intel encode hardware and other
-  desktop portal backends remain unverified. The five-minute NVIDIA result and
-  short export benchmark cannot establish Mac-equivalent performance universally.
+- The two-clip NVIDIA hour repeat completed; exact measurements and binary provenance
+  are below. Physical-device sample-clock parity, AMD/Intel encode hardware and other
+  desktop portal backends remain unverified. This host result and short export
+  benchmark cannot establish Mac-equivalent performance universally.
 - A real macOS hardware regression pass is still required for the shared lifecycle
   changes. Windows helper/lifecycle parity remains the next port, not a delivered
   Windows implementation from this branch.
@@ -194,8 +195,9 @@ it no longer dereferences a null context during VAAPI/Vulkan setup.
   with the fixture focused did not activate Pause. Portal identity is now correct;
   actual compositor/backend activation is still a desktop integration gate. No
   user compositor configuration or global environment was changed.
-- A portable AppImage/deb/pacman/rpm build on the pinned CI runner has not been
-  validated here. Do not publish the host-mode development artifact as a release.
+- Ubuntu 22.04 baseline builds and bare distro loader checks passed locally; the
+  final AppImage also passed the actual desktop recording/export flow. GitHub CI
+  has not executed because of account billing. These are private test candidates.
 
 Additional primary contracts used:
 [PipeWire DMA-BUF negotiation](https://docs.pipewire.org/page_dma_buf.html),
@@ -247,7 +249,7 @@ EGL still unbinds the context after each read but releases per-thread driver sta
 once at worker retirement. The PipeWire loop disconnects the producer, releases
 that state, and joins before owner teardown. This avoids rebuilding thread state
 at frame cadence. Native format/channel/admission tests and strict C compilation
-pass; a fresh visible 1920x1080/60 two-clip hour test is running separately. Do not
+pass; the fresh visible 1920x1080/60 two-clip hour result is recorded below. Do not
 attribute the original host driver failure conclusively to this cleanup pattern.
 
 Ubuntu 22.04 baseline builds produced AppImage/deb/pacman/rpm with the strict symbol
@@ -258,8 +260,8 @@ package markers must match the known values, and AppArmor content must match the
 pinned electron-builder template exactly; casing cannot bypass validation, and
 macOS rejects those Linux extras. The local Whisper manifest includes the actual
 pinned build's Parakeet sidecars. Linux maintainer metadata is Dyberg & Co AB.
-Final package regeneration and artifact verification remain pending the current
-native changes; older host-mode/first-build artifacts are not release candidates.
+Final package regeneration and artifact verification passed at runtime `d7b0dafc`;
+older host-mode/first-build artifacts are superseded.
 
 Source contracts: pinned SDK `AVCodecContext` and `ffmpeg_shim.c`; pinned
 `app-builder-lib/templates/linux/apparmor-profile.tpl` and `FpmTarget.js`;
@@ -269,9 +271,10 @@ and [PipeWire loop invocation](https://docs.pipewire.org/group__pw__loop.html).
 ### Portable artifact verification
 
 All four Ubuntu-baseline formats were regenerated from runtime source
-`575c432b7693fd99709bab139f1c04d84c349bbc`, with the strict symbol floor and
+`d7b0dafc2e1f3c47c9a4f3089b9e91eda51d3bdf`, with the strict symbol floor and
 complete local provenance manifest. Clean installation/loader checks passed again
-for the final deb, pacman and rpm: 27 ELFs resolve; Klippt, Whisper and the capture
+for the preceding `575c432b` native payload, unchanged by the final suspend-only
+JavaScript change: 27 ELFs resolve; Klippt, Whisper and the capture
 helper reach main. The installed package marker matches each format, and the deb
 maintainer is Dyberg & Co AB. The floor-built addon also remuxed the real crashed
 camera on Ubuntu: 615 packets, 30.75-second result, no GPU required.
@@ -284,8 +287,9 @@ tests include replacing `.DirIcon` with another reviewed but incorrect-size imag
 This verification-only change does not alter the immutable runtime artifacts.
 
 Artifacts and SHA-256 inventory are under
-`artifacts/linux-port-2026-10-26/portable-build/output/`. Host desktop launch of the
-final AppImage remains pending until the concurrent endurance capture finishes.
+`artifacts/linux-port-2026-10-26/portable-build/output/`, with user-facing copies
+and SHA-256 inventory at `release/linux-port-20261026-d7b0dafc/`. The actual final
+AppImage desktop result is below.
 GitHub's latest CI jobs still executed zero steps; the check annotations identify
 failed account payments or the spending limit as the reason.
 
@@ -299,3 +303,51 @@ machine was not suspended during validation. A real-handler simulated event
 regression fails before the wiring and passes after; the final combined focused
 run passed 213 tests on Node 22.22.1/npm 10.9.4, with both TypeScript checks clean.
 Contract: [Electron 44.9.1 powerMonitor](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/power-monitor.md).
+
+
+### Completed hour repeat and final packaged desktop pass
+
+The repeat recorded two 1,800.083-second clips in one portal session, separated by
+Pause/Continue. Both selected NVENC. All six screen/microphone/system originals
+fully decode; each screen has 108,005 output frames. No audio-overflow warnings
+occurred. Complete microphone pulse scans found 1,801 and 1,800 pulses, with no gap
+over 1.01 seconds. Initial/late A/V marker medians were −23.313/−39.979 ms for clip
+one and −42.313/−42.313 ms for clip two. The settled clip-one measurement was also
+−39.979 ms. These signed offsets include fixture rendering/audio latency; they are
+not calibrated physical-device offsets. Encoded source-clock barcodes changed by
+about ±6 ms between the settled minute-four and minute-29 windows, excluding a
+frozen source or whole-second marker alias.
+
+Pause finalized in about 80 ms; Stop in 81 ms. The helper reported 81 captured
+frames superseded before encoding, which is separate from decoder output cadence.
+From minute one, CPU averaged 61.3% of one core and RSS rose from 391.0 to 476.0 MiB;
+this is not a flat-memory claim. No new NVIDIA allocation/Xid errors occurred during
+the repeat, including a fresh AppImage/camera launch near its end. The first failed
+hour remains retained. This does not conclusively attribute its host driver failure
+to any one code path.
+
+The endurance binary includes the audio-ring loss fix and EGL worker cleanup but
+predates the final returning-source/atomic-clear and opaque-codec refinements.
+`soak-60m-rerun/binary-source.json` and `native-source.diff` preserve its exact
+provenance. Subsequent decoded-media regressions, strict Clippy and the final
+packaged NVENC smoke cover those later changes; the exact final bits did not run
+for an additional hour. Evidence is in
+`artifacts/linux-port-2026-10-26/soak-60m-rerun/`.
+
+The immutable `d7b0dafc` AppImage launched through extract-and-run with isolated
+user data. Real OS keyboard/mouse and native accessibility actions drove the owned
+fixture picker, Record, Pause, Continue, Stop, playback and Separate files export.
+CDP supplied inspection only. The test driver's absolute mouse reset touched niri's
+overview hot corner; dismissing overview before clicking corrected the harness.
+The app used its extracted bundled helper and Vulkan addon, verified by process
+arguments/maps. Both clips selected NVENC. The synthetic camera produced separate
+3840×2160 H.264 WebM files. All four media files fully decode; review renders the
+camera and plays through 15.982 seconds without a compositor error. Source export
+produced OTIO/FCPXML and all four original hashes match. The two handoff warnings
+identify WebM editor compatibility. Capture reported 53 superseded source frames
+during this short flow; physical camera and zero-drop claims are not established.
+Evidence: `artifacts/linux-port-2026-10-26/portable-final-smoke/`.
+
+All owned test apps, fixture and private audio jobs exited; the build container is
+stopped. No user compositor configuration, default audio device, installed Mac app,
+public release, production branch or existing recordings were changed.
