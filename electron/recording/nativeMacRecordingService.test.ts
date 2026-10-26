@@ -68,10 +68,13 @@ const baseRequest: NativeMacRecordingRequest = {
 };
 
 describe("NativeMacRecordingService", () => {
-	it("journals a renderer camera after its first written bytes while capture is active", async () => {
+	it.each([
+		"webm",
+		"mp4",
+	])("journals a renderer %s camera and retains it after Stop", async (container) => {
 		const service = new NativeMacRecordingService(deps);
 		await service.start(baseRequest);
-		const webcam = path.join(recordingsDir, "recording-100-clip-0001-webcam.webm");
+		const webcam = path.join(recordingsDir, `recording-100-clip-0001-webcam.${container}`);
 		await fs.writeFile(webcam, "written camera fragment");
 		await expect(
 			service.registerRendererWebcam(100, {
@@ -89,7 +92,37 @@ describe("NativeMacRecordingService", () => {
 				clips: [{ webcamVideoPath: webcam, webcamOffsetMs: 27, provisionalDuration: true }],
 			},
 		});
-		await service.stop(true);
+		const screenVideoPath = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		await fs.writeFile(screenVideoPath, "screen fragment");
+		helper.stopClips = [{ index: 0, screenVideoPath, durationMs: 500 }];
+		const result = await service.stop();
+		expect(result).toMatchObject({
+			session: { clips: [{ webcamVideoPath: webcam, webcamOffsetMs: 27 }] },
+		});
+	});
+
+	it("validates helper camera originals omitted after finalization instead of treating them as renderer files", async () => {
+		const screenVideoPath = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		const webcamVideoPath = path.join(recordingsDir, "recording-100-clip-0001-webcam.mp4");
+		await fs.writeFile(screenVideoPath, "screen");
+		await fs.writeFile(webcamVideoPath, "unreadable camera");
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _onFatal, onOriginal) => {
+			onOriginal?.({ clipIndex: 0, key: "webcamVideoPath", path: webcamVideoPath, offsetMs: 10 });
+			return helper;
+		});
+		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+			hasAudio: false,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: file === webcamVideoPath ? null : 0.5,
+			video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
+		}));
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.stopClips = [{ index: 0, screenVideoPath, durationMs: 500 }];
+		const stopped = await service.stop();
+		expect(stopped.session?.clips?.[0]?.webcamVideoPath).toBeUndefined();
+		expect(inspectHandoffSourceMedia).toHaveBeenCalledWith(webcamVideoPath);
 	});
 
 	let recordingsDir: string;

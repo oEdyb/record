@@ -68,9 +68,11 @@ export type NativeMacRecordingRequest = {
 };
 
 export type NativeRecordingAppStopRequest = { recordingId: number; token: string };
+export type RendererCameraContainer = "webm" | "mp4";
 export type NativeRecordingWebcamRegistration = NativeRecordingAppStopRequest & {
 	clipIndex: number;
 	offsetMs: number;
+	container?: RendererCameraContainer;
 };
 
 export function parseNativeRecordingWebcamRegistration(
@@ -93,7 +95,10 @@ export function parseNativeRecordingWebcamRegistration(
 		value.offsetMs < 0
 	)
 		return null;
+	const container = "container" in value ? value.container : undefined;
+	if (container !== undefined && container !== "webm" && container !== "mp4") return null;
 	return {
+		...(container ? { container } : {}),
 		recordingId: value.recordingId,
 		token: value.token,
 		clipIndex: value.clipIndex,

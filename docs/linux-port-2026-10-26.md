@@ -460,3 +460,35 @@ and private audio jobs exited, and the build container is stopped. GitHub CI sti
 requires the external account billing/spending-limit gate to be resolved. Physical
 camera, other hardware/desktops, Mac regression, older untimed PipeWire and initial
 offset/rate calibration remain unverified; Windows remains the later port.
+
+### Follow-up: fragmented MP4 camera originals
+
+Linux renderer cameras now prefer `video/mp4;codecs=avc1` when supported. Other
+platforms and unsupported runtimes retain their existing WebM selection. The
+camera filename travels with its recorder into the clip ledger; main derives the
+same canonical path from the validated container enum and existing HUD ownership
+token. Registered renderer paths have explicit provenance at Stop, so native
+originals omitted after failed finalization still require media validation.
+MP4 bypasses Matroska remux and WebM duration patching, including the memory
+fallback. Recovery validates canonical MP4 camera fragments without rewriting
+them; header-only files remain on disk and are not attached as readable media.
+
+The pinned Chromium muxer only considers a fragment flush at a video keyframe:
+[Chromium 152 MP4 muxer](https://raw.githubusercontent.com/chromium/chromium/152.0.7977.167/media/muxers/mp4_muxer.cc).
+The [MediaRecorder options definition](https://raw.githubusercontent.com/chromium/chromium/152.0.7977.167/third_party/blink/renderer/modules/mediarecorder/media_recorder_options.idl)
+exposes a duration-based keyframe interval. A hidden, isolated Electron 44.9.1 /
+Chromium 152.0.7977.167 fake-camera probe falsified the default: ordinary 1-second
+chunks held all MP4 payload until Stop. Using 500 ms keyframes and a 250 ms
+timeslice produced the first readable 4K/20 fps payload at 1,111 ms. That prefix
+fully decodes 21 frames; a later prefix decodes 42; the complete 4.944-second file
+decodes all 99 frames, reports finite duration and seeks near the end. No physical
+camera, camera CPU parity, or universal first-fragment deadline is established.
+More frequent keyframes increase file size; the probe's simple synthetic picture
+is not a compression benchmark. Evidence: `artifacts/linux-port-2026-10-26/camera-container-probe/`.
+
+Validation before desktop packaging: 194 affected-area tests pass, both typechecks
+and lint pass (one existing oversized evidence-file warning). Two independent
+fresh-context reviews found no concrete P1/P2 regressions. Current React Doctor
+reports 75 on both the unchanged baseline and this slice, with the same existing
+HUD cleanup finding; no camera-change finding. The earlier score of 82 used an
+older tool revision and is not a directly comparable baseline.

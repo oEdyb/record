@@ -14,7 +14,9 @@ class FakeMediaRecorder {
 	onerror: (() => void) | null = null;
 	state: "inactive" | "recording" = "inactive";
 
-	start(): void {
+	timeslice: number | undefined;
+	start(timeslice?: number): void {
+		this.timeslice = timeslice;
 		this.state = "recording";
 	}
 
@@ -37,6 +39,34 @@ function driver(handle: { recorder: MediaRecorder }): FakeMediaRecorder {
 }
 
 describe("createRecorderHandle", () => {
+	it.each([
+		{ mimeType: "video/mp4;codecs=avc1", fileName: "camera.mp4", timeslice: 250 },
+		{ mimeType: "video/webm;codecs=h264", fileName: "camera.webm", timeslice: 1000 },
+	])("streams $fileName unchanged with its container's flush cadence", async ({
+		mimeType,
+		fileName,
+		timeslice,
+	}) => {
+		const written: string[] = [];
+		stubElectronAPI({
+			openRecordingStream: vi.fn(async () => ({ success: true })),
+			appendRecordingChunk: vi.fn(async (_name, data) => {
+				written.push(decode(data));
+				return { success: true };
+			}),
+		});
+		const stream = Object.create(null);
+		const handle = createRecorderHandle(stream, { mimeType }, fileName);
+		expect(handle.fileName).toBe(fileName);
+		expect(driver(handle).timeslice).toBe(timeslice);
+		driver(handle).emit(new Blob(["header"]));
+		await tick();
+		driver(handle).emit(new Blob(["fragment"]));
+		driver(handle).stop();
+		await handle.recordedBlobPromise;
+		expect(written).toEqual(["header", "fragment"]);
+	});
+
 	it("awaits the first durable chunk callback once before appending later chunks", async () => {
 		let finishRegistration: (() => void) | undefined;
 		const registration = new Promise<void>((resolve) => {

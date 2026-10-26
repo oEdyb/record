@@ -1,9 +1,13 @@
+import { fixWebmDuration } from "@fix-webm-duration/fix";
 import { describe, expect, it, vi } from "vitest";
 import type { RecorderHandle } from "@/hooks/recorderHandle";
-import { NativeMacWebcamClipLedger } from "./webcamSidecars";
+import { finalizeWebcamAsset, NativeMacWebcamClipLedger } from "./webcamSidecars";
 
-function streamedRecorder(): RecorderHandle {
+vi.mock("@fix-webm-duration/fix", () => ({ fixWebmDuration: vi.fn() }));
+
+function streamedRecorder(fileName = "recording-9-clip-0001-webcam.webm"): RecorderHandle {
 	return {
+		fileName,
 		recorder: { state: "inactive" } as MediaRecorder,
 		recordedBlobPromise: Promise.resolve(new Blob()),
 		isStreaming: () => true,
@@ -12,26 +16,37 @@ function streamedRecorder(): RecorderHandle {
 }
 
 describe("native macOS webcam clip ledger", () => {
-	it("keeps only attached camera recorders and discards every other recorder", async () => {
-		const kept = streamedRecorder();
-		const removed = streamedRecorder();
+	it("keeps buffered MP4 bytes unchanged without applying a WebM duration patch", async () => {
+		const recorder = streamedRecorder("camera.mp4");
+		recorder.isStreaming = () => false;
+		recorder.recordedBlobPromise = Promise.resolve(new Blob(["mp4 fragments"]));
+		const result = await finalizeWebcamAsset(recorder, "camera.mp4", 1000, "Linux");
+		expect(new TextDecoder().decode(result.asset?.videoData)).toBe("mp4 fragments");
+		expect(fixWebmDuration).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"webm",
+		"mp4",
+	])("keeps attached %s cameras and discards every other recorder", async (container) => {
+		const kept = streamedRecorder(`recording-9-clip-0001-webcam.${container}`);
+		const removed = streamedRecorder("recording-9-clip-0002-webcam.webm");
 		const unfinished = streamedRecorder();
 		const ledger = new NativeMacWebcamClipLedger();
 
 		ledger.queue({
-			recordingId: 9,
 			clip: { index: 0, screenVideoPath: "/tmp/clip-1.mp4", durationMs: 1000 },
 			recorder: kept,
 			webcamOffsetMs: -20,
 		});
 		ledger.queue({
-			recordingId: 9,
 			clip: { index: 1, screenVideoPath: "/tmp/clip-2.mp4", durationMs: 500, removed: true },
 			recorder: removed,
 			webcamOffsetMs: 0,
 		});
 
 		const collected = await ledger.collectKept(new Set([0]));
+		expect(collected.webcams[0]?.webcam.fileName).toBe(kept.fileName);
 		expect(collected.webcams).toMatchObject([
 			{ clipIndex: 0, durationMs: 1020, webcamOffsetMs: -20 },
 		]);

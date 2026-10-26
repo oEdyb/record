@@ -740,6 +740,7 @@ describe("useScreenRecorder native Linux stop failure", () => {
 			.mockResolvedValue({ success: true, paused: true, clip });
 		stubNativeLinux({
 			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			registerNativeRecordingWebcam: vi.fn(async () => ({ success: true, registered: true })),
 			openRecordingStream: vi.fn(async () => ({ success: true })),
 			appendRecordingChunk: append,
 			closeRecordingStream: close,
@@ -759,6 +760,10 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		await startLinuxRecording(view);
 		const recorder = FakeMediaRecorder.instances[0];
 		if (!recorder?.ondataavailable) throw new Error("Camera recorder was not created");
+		expect(recorder.options).toMatchObject({
+			mimeType: "video/mp4;codecs=avc1",
+			videoKeyFrameIntervalDuration: 500,
+		});
 		const before = new Uint8Array([1, 2, 3]).buffer;
 		Reflect.apply(recorder.ondataavailable, recorder, [
 			{ data: { size: before.byteLength, arrayBuffer: async () => before } },
@@ -775,8 +780,8 @@ describe("useScreenRecorder native Linux stop failure", () => {
 			{ data: { size: after.byteLength, arrayBuffer: async () => after } },
 		]);
 		await settle();
-		expect(append).toHaveBeenNthCalledWith(1, "recording-7-clip-0001-webcam.webm", before);
-		expect(append).toHaveBeenNthCalledWith(2, "recording-7-clip-0001-webcam.webm", after);
+		expect(append).toHaveBeenNthCalledWith(1, "recording-7-clip-0001-webcam.mp4", before);
+		expect(append).toHaveBeenNthCalledWith(2, "recording-7-clip-0001-webcam.mp4", after);
 		if (nextAction === "pause") {
 			await act(async () => view.result.current.togglePaused());
 			await settle();
@@ -790,7 +795,7 @@ describe("useScreenRecorder native Linux stop failure", () => {
 				webcams: [
 					expect.objectContaining({
 						clipIndex: 0,
-						webcam: expect.objectContaining({ fileName: "recording-7-clip-0001-webcam.webm" }),
+						webcam: expect.objectContaining({ fileName: "recording-7-clip-0001-webcam.mp4" }),
 					}),
 				],
 			}),

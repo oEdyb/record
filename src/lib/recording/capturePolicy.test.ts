@@ -5,6 +5,7 @@ import {
 	computeCaptureBitrate,
 	isClipOwnedWebcamPath,
 	nativeMacWebcamFileName,
+	selectNativeWebcamFormat,
 	selectRecorderMimeType,
 } from "./capturePolicy";
 import {
@@ -23,6 +24,24 @@ describe("capture policy", () => {
 	it("chooses the first supported live recorder format", () => {
 		expect(selectRecorderMimeType((type) => type.includes("vp8"))).toBe("video/webm;codecs=vp8");
 		expect(selectRecorderMimeType(() => false)).toBe("video/webm");
+	});
+
+	it("selects fragmented H.264 MP4 only for a supporting Linux camera recorder", () => {
+		expect(selectNativeWebcamFormat("linux", () => true)).toEqual({
+			container: "mp4",
+			options: { mimeType: "video/mp4;codecs=avc1", videoKeyFrameIntervalDuration: 500 },
+		});
+		for (const platform of ["darwin", "win32"]) {
+			expect(selectNativeWebcamFormat(platform, () => true)).toEqual({
+				container: "webm",
+				options: { mimeType: "video/webm;codecs=h264" },
+			});
+		}
+		expect(selectNativeWebcamFormat("linux", (mime) => mime.includes("vp8"))).toEqual({
+			container: "webm",
+			options: { mimeType: "video/webm;codecs=vp8" },
+		});
+		expect(nativeMacWebcamFileName(123, 0, "mp4")).toBe("recording-123-clip-0001-webcam.mp4");
 	});
 
 	it("scales bitrate by resolution and frame rate", () => {

@@ -2,9 +2,10 @@ const RECORDER_TIMESLICE_MS = 1000;
 
 export type RecorderHandle = {
 	recorder: MediaRecorder;
+	readonly fileName?: string;
 	/**
 	 * Resolves once the recording drains. Empty blob when streamed (bytes already on
-	 * disk), full WebM when in-memory. Rejects on a mid-stream write failure so a
+	 * disk), full container when in-memory. Rejects on a mid-stream write failure so a
 	 * truncated recording surfaces as an error instead of a silent partial save.
 	 */
 	recordedBlobPromise: Promise<Blob>;
@@ -144,9 +145,11 @@ export function createRecorderHandle(
 		}
 	}
 
-	recorder.start(RECORDER_TIMESLICE_MS);
+	// A 1-second timeslice delays MP4 payloads for two keyframes in Chromium.
+	recorder.start(mimeType.startsWith("video/mp4") ? 250 : RECORDER_TIMESLICE_MS);
 	return {
 		recorder,
+		fileName,
 		recordedBlobPromise,
 		isStreaming: () => mode === "streaming" && !appendError,
 		discard,

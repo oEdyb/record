@@ -140,6 +140,7 @@ export class NativeMacRecordingService {
 	private lastDiagnosticOutput = "";
 	private sessionGeneration = 0;
 	private originals = new Map<number, Partial<RecordingSessionClip>>();
+	private rendererWebcamPaths = new Set<string>();
 	private recoveryWrites: Promise<void> = Promise.resolve();
 	private acceptsOriginalMetadata = false;
 	/** A take the app stopped on its own (quit), kept until the HUD's own Stop collects it. */
@@ -691,7 +692,7 @@ export class NativeMacRecordingService {
 				this.clips = mergeNativeMacStoppedClips(stopped.clips, this.clips).map((clip) => {
 					const camera = this.originals.get(clip.index);
 					return {
-						...(camera?.webcamVideoPath?.endsWith(".webm")
+						...(camera?.webcamVideoPath && this.rendererWebcamPaths.has(camera.webcamVideoPath)
 							? { webcamVideoPath: camera.webcamVideoPath, webcamOffsetMs: camera.webcamOffsetMs }
 							: {}),
 						...clip,
@@ -862,6 +863,7 @@ export class NativeMacRecordingService {
 	): void {
 		this.sessionGeneration += 1;
 		this.originals = new Map();
+		this.rendererWebcamPaths.clear();
 		this.acceptsOriginalMetadata = true;
 		this.recordingId = recordingId;
 		this.targetPath = outputPath;
@@ -885,6 +887,7 @@ export class NativeMacRecordingService {
 		this.storage.stop();
 		this.sessionGeneration += 1;
 		this.originals = new Map();
+		this.rendererWebcamPaths.clear();
 		this.acceptsOriginalMetadata = false;
 		this.lastDiagnosticOutput = this.helper?.output ?? this.lastDiagnosticOutput;
 		this.helper = null;
@@ -983,6 +986,7 @@ export class NativeMacRecordingService {
 			return false;
 		this.storeOriginalStarted(original, generation);
 		if (this.originals.get(original.clipIndex)?.webcamVideoPath !== original.path) return false;
+		this.rendererWebcamPaths.add(original.path);
 		await this.recoveryWrites;
 		return true;
 	}
@@ -1001,7 +1005,8 @@ export class NativeMacRecordingService {
 					? "microphone"
 					: "system";
 		const expectedPaths = [`${stem}-${suffix}.mov`];
-		if (original.key === "webcamVideoPath") expectedPaths.push(`${stem}-webcam.webm`);
+		if (original.key === "webcamVideoPath")
+			expectedPaths.push(`${stem}-webcam.webm`, `${stem}-webcam.mp4`);
 		if (!expectedPaths.includes(path.resolve(original.path))) return;
 		const originals = this.originals.get(original.clipIndex) ?? {};
 		const offsetKey =

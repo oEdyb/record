@@ -42,6 +42,7 @@ describe("native macOS recovery journal", () => {
 	it.each([
 		"mov",
 		"webm",
+		"mp4",
 	])("recovers journaled originals with a %s camera and their captured offsets", async (cameraExtension) => {
 		const stem = path.join(recordingsDir, "recording-61-clip-0001");
 		const screenVideoPath = `${stem}.mp4`;
@@ -81,6 +82,41 @@ describe("native macOS recovery journal", () => {
 		expect(recovered?.clips?.[0]).toMatchObject(originals);
 		expect(recovered?.recoveryWarnings).toBeUndefined();
 		expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(4);
+	});
+
+	it.each([
+		1.8,
+		null,
+	])("recovers only readable MP4 camera fragments (duration %s) without remuxing", async (durationSec) => {
+		const screenVideoPath = path.join(recordingsDir, "recording-64-clip-0001.mp4");
+		const webcamVideoPath = path.join(recordingsDir, "recording-64-clip-0001-webcam.mp4");
+		await fs.writeFile(screenVideoPath, "screen");
+		await fs.writeFile(webcamVideoPath, "camera fragment or header");
+		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+			hasAudio: false,
+			hasKlipptMetadata: false,
+			roles: [],
+			video: { codec: "h264", width: 1920, height: 1080, fps: 30 },
+			durationSec: file === webcamVideoPath ? durationSec : 2,
+		}));
+		await persistNativeMacRecoveryJournal(recordingsDir, {
+			createdAt: 64,
+			screenVideoPath,
+			clips: [
+				{
+					index: 0,
+					screenVideoPath,
+					durationMs: 60_000,
+					provisionalDuration: true,
+					webcamVideoPath,
+					webcamOffsetMs: 18,
+				},
+			],
+		});
+		const recovered = await restoreLatestNativeMacRecoverySession(recordingsDir);
+		expect(recovered?.clips?.[0]?.webcamVideoPath).toBe(durationSec ? webcamVideoPath : undefined);
+		expect(reindexRecordingOnDisk).not.toHaveBeenCalled();
+		expect(await fs.readFile(webcamVideoPath, "utf8")).toBe("camera fragment or header");
 	});
 
 	it("reindexes an interrupted renderer camera on startup but never during live Stop recovery", async () => {

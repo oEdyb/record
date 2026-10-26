@@ -187,7 +187,7 @@ async function recoverSession(
 				const extension = path.extname(originalPath);
 				if (
 					!(
-						(mediaType === "video" && [".mov", ".webm"].includes(extension)) ||
+						(mediaType === "video" && [".mov", ".webm", ".mp4"].includes(extension)) ||
 						(mediaType === "audio" && [".mov", ".m4a", ".mp4"].includes(extension))
 					) ||
 					path.resolve(originalPath) !== `${stem}-${suffix}${extension}`

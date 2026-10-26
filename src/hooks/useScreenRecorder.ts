@@ -25,6 +25,7 @@ import {
 	MIN_FRAME_RATE,
 	nativeMacWebcamFileName,
 	nativeMacWebcamRequest,
+	selectNativeWebcamFormat,
 	selectRecorderMimeType,
 	TARGET_FRAME_RATE,
 	TARGET_HEIGHT,
@@ -329,14 +330,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	}, []);
 
 	const queueNativeMacWebcamClipFinalization = useCallback(
-		(
-			activeRecording: NativeMacRecordingHandle,
-			clip: RecordingSessionClip,
-			recorder: RecorderHandle,
-			webcamOffsetMs: number,
-		) =>
+		(clip: RecordingSessionClip, recorder: RecorderHandle, webcamOffsetMs: number) =>
 			nativeMacWebcamClips.current.queue({
-				recordingId: activeRecording.recordingId,
 				clip,
 				recorder,
 				webcamOffsetMs,
@@ -850,7 +845,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						);
 						if (activeClip) {
 							queueNativeMacWebcamClipFinalization(
-								activeNativeRecording,
 								activeClip,
 								activeWebcamRecorder,
 								activeWebcamOffsetMs,
@@ -869,7 +863,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						);
 						if (pendingClip) {
 							queueNativeMacWebcamClipFinalization(
-								activeNativeRecording,
 								pendingClip,
 								pendingWebcamClip.recorder,
 								pendingWebcamClip.webcamOffsetMs ?? 0,
@@ -1356,17 +1349,21 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			throw new Error("The selected camera is not ready to record.");
 		const owner = nativeMacRecording.current?.rendererStop;
 		const offsetMs = Math.max(0, Date.now() - (activeClipStartedAt.current ?? Date.now()));
+		const format = selectNativeWebcamFormat(
+			window.electronAPI.getPlatform(),
+			MediaRecorder.isTypeSupported,
+		);
 		return createRecorderHandle(
 			webcamStream.current,
 			{
-				mimeType: selectMimeType(),
+				...format.options,
 				videoBitsPerSecond: computeBitrate(
 					activeWebcamFormat.current.width,
 					activeWebcamFormat.current.height,
 					activeWebcamFormat.current.fps,
 				),
 			},
-			nativeMacWebcamFileName(activeRecordingId, clipIndex),
+			nativeMacWebcamFileName(activeRecordingId, clipIndex, format.container),
 			async () => {
 				const active = nativeMacRecording.current;
 				if (
@@ -1382,6 +1379,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						...owner,
 						clipIndex,
 						offsetMs,
+						container: format.container,
 					});
 					if (!result.success)
 						throw new Error(result.error ?? "Camera recovery metadata could not be saved.");
@@ -2151,7 +2149,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						if (activeWebcamHandle) {
 							if (webcamRecorder.current === activeWebcamHandle) webcamRecorder.current = null;
 							queueNativeMacWebcamClipFinalization(
-								activeNativeMacRecording,
 								result.clip,
 								activeWebcamHandle,
 								activeNativeMacRecording.webcamOffsetMs ?? 0,

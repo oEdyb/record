@@ -590,6 +590,7 @@ async function finalizeRecordingFile(
  * the original file intact; a recording is never lost to a failed repair.
  */
 async function repairRecordingContainer(filePath: string, durationMs: number): Promise<void> {
+	if (path.extname(filePath) === ".mp4") return;
 	const reindexed = await reindexRecordingOnDisk(filePath);
 	if (reindexed.reindexed) {
 		console.info(
@@ -3071,7 +3072,11 @@ export function registerIpcHandlers(
 					clipIndex: registration.clipIndex,
 					key: "webcamVideoPath",
 					path: resolveRecordingOutputPath(
-						nativeMacWebcamFileName(registration.recordingId, registration.clipIndex),
+						nativeMacWebcamFileName(
+							registration.recordingId,
+							registration.clipIndex,
+							registration.container,
+						),
 					),
 					offsetMs: registration.offsetMs,
 				},

@@ -2,7 +2,6 @@ import { fixWebmDuration } from "@fix-webm-duration/fix";
 import type { RecorderHandle } from "@/hooks/recorderHandle";
 import type { NativeMacClipWebcamInput } from "@/lib/nativeMacRecording";
 import type { RecordedVideoAssetInput, RecordingSessionClip } from "@/lib/recordingSession";
-import { nativeMacWebcamFileName } from "./capturePolicy";
 
 export type WebcamFinalizationResult = {
 	asset?: RecordedVideoAssetInput;
@@ -35,7 +34,9 @@ export async function finalizeWebcamAsset(
 		if (!webcamBlob || webcamBlob.size === 0) {
 			return { error: "the webcam produced no data" };
 		}
-		const fixedWebcamBlob = await fixWebmDuration(webcamBlob, durationMs);
+		const fixedWebcamBlob = fileName.endsWith(".mp4")
+			? webcamBlob
+			: await fixWebmDuration(webcamBlob, durationMs);
 		return { asset: { videoData: await fixedWebcamBlob.arrayBuffer(), fileName } };
 	} catch (error) {
 		console.error(`Failed to finalize native ${platformLabel} webcam recording:`, error);
@@ -52,14 +53,13 @@ export async function discardWebcamRecorder(recorder: RecorderHandle): Promise<v
 }
 
 /**
- * Owns the camera files created alongside a native macOS clip session.
+ * Owns the camera files created alongside a native clip session.
  * Every recorder ends in one state: attached to a saved clip or discarded.
  */
 export class NativeMacWebcamClipLedger {
 	private readonly entries: NativeMacWebcamClipEntry[] = [];
 
 	queue(input: {
-		recordingId: number;
 		clip: RecordingSessionClip;
 		recorder: RecorderHandle;
 		webcamOffsetMs: number;
@@ -69,13 +69,14 @@ export class NativeMacWebcamClipLedger {
 		}
 
 		const durationMs = input.clip.durationMs + Math.max(0, -input.webcamOffsetMs);
-		const fileName = nativeMacWebcamFileName(input.recordingId, input.clip.index);
+		const fileName = input.recorder.fileName;
+		if (!fileName) throw new Error("Camera recorder has no output filename.");
 		this.entries.push({
 			clipIndex: input.clip.index,
 			recorder: input.recorder,
 			durationMs,
 			webcamOffsetMs: input.webcamOffsetMs,
-			result: finalizeWebcamAsset(input.recorder, fileName, durationMs, "macOS"),
+			result: finalizeWebcamAsset(input.recorder, fileName, durationMs, "clip"),
 			saved: false,
 		});
 	}

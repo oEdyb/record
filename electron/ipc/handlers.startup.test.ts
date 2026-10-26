@@ -363,7 +363,79 @@ describe("registerIpcHandlers startup contract", () => {
 		expect(journal.session.clips).toEqual(stored?.clips);
 	});
 
-	it("accepts early camera recovery metadata only from the current take's owning HUD", async () => {
+	it("attaches streamed MP4 bytes without invoking the Matroska remux or duration patch", async () => {
+		pinPlatform("linux");
+		const { handlers, recovery } = await register({ restoreInterruptedRecording: false });
+		await recovery;
+		const { CompositorViewService } = await import(
+			"../native-bridge/services/compositorViewService"
+		);
+		const durationPatch = await import("../recording/webm-duration");
+		const remux = vi
+			.spyOn(CompositorViewService.prototype, "remuxSeekable")
+			.mockResolvedValue(null);
+		const patch = vi.spyOn(durationPatch, "patchWebmDurationOnDisk");
+		try {
+			const recordingsDir = path.join(paths.userData, "recordings");
+			await fs.mkdir(recordingsDir, { recursive: true });
+			const screenVideoPath = path.join(recordingsDir, "recording-77-clip-0001.mp4");
+			const fileName = "recording-77-clip-0001-webcam.mp4";
+			await fs.writeFile(screenVideoPath, "screen bytes");
+			await fs.writeFile(
+				path.join(recordingsDir, "recording-77.session.json"),
+				JSON.stringify({
+					createdAt: 77,
+					screenVideoPath,
+					clips: [{ index: 0, screenVideoPath, durationMs: 1000 }],
+				}),
+			);
+			const open = handlers.get("open-recording-stream");
+			const append = handlers.get("append-recording-chunk");
+			const attach = handlers.get("attach-native-mac-clip-webcams");
+			if (!open || !append || !attach) throw new Error("Recording IPC missing");
+			await expect(Reflect.apply(open, undefined, [undefined, fileName])).resolves.toMatchObject({
+				success: true,
+			});
+			const bytes = new TextEncoder().encode("ftyp moov moof mdat exact camera bytes");
+			await expect(
+				Reflect.apply(append, undefined, [undefined, fileName, bytes.buffer]),
+			).resolves.toMatchObject({ success: true });
+			await expect(
+				Reflect.apply(attach, undefined, [
+					undefined,
+					{
+						recordingId: 77,
+						screenVideoPath,
+						webcams: [
+							{
+								clipIndex: 0,
+								webcam: { fileName, videoData: new ArrayBuffer(0) },
+								durationMs: 1000,
+								webcamOffsetMs: 15,
+							},
+						],
+					},
+				]),
+			).resolves.toMatchObject({
+				success: true,
+				session: {
+					clips: [{ webcamVideoPath: path.join(recordingsDir, fileName), webcamOffsetMs: 15 }],
+				},
+			});
+			expect(remux).not.toHaveBeenCalled();
+			expect(patch).not.toHaveBeenCalled();
+			expect(await fs.readFile(path.join(recordingsDir, fileName))).toEqual(Buffer.from(bytes));
+		} finally {
+			remux.mockRestore();
+			patch.mockRestore();
+		}
+	});
+
+	it.each([
+		undefined,
+		"webm",
+		"mp4",
+	])("accepts %s camera metadata only from the current take's owning HUD", async (container) => {
 		pinPlatform("linux");
 		const { recovery, handlers } = await register();
 		await recovery;
@@ -393,7 +465,12 @@ describe("registerIpcHandlers startup contract", () => {
 		)
 			throw new Error("No renderer token");
 		const request = result.rendererStop;
-		const metadata = { ...request, clipIndex: 0, offsetMs: 23.5 };
+		const metadata = {
+			...request,
+			clipIndex: 0,
+			offsetMs: 23.5,
+			...(container ? { container } : {}),
+		};
 		await expect(
 			Reflect.apply(invokeRegister, undefined, [{ sender: other }, metadata]),
 		).resolves.toMatchObject({ success: false });
@@ -407,7 +484,11 @@ describe("registerIpcHandlers startup contract", () => {
 		expect(registerCamera).toHaveBeenCalledExactlyOnceWith(77, {
 			clipIndex: 0,
 			key: "webcamVideoPath",
-			path: path.join(paths.userData, "recordings", "recording-77-clip-0001-webcam.webm"),
+			path: path.join(
+				paths.userData,
+				"recordings",
+				`recording-77-clip-0001-webcam.${container ?? "webm"}`,
+			),
 			offsetMs: 23.5,
 		});
 		Reflect.apply(invokeAck, undefined, [{ sender: owner }, { ...request, success: true }]);
