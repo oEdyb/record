@@ -22,6 +22,8 @@ struct osc_dmabuf_egl;
  * queries) are dynamically loaded, never linked. */
 struct osc_dmabuf_egl *osc_dmabuf_egl_create(char *err, size_t err_len);
 void osc_dmabuf_egl_destroy(struct osc_dmabuf_egl *reader);
+/* Call on each reading worker before it exits; not once per frame. */
+int osc_dmabuf_egl_release_thread(struct osc_dmabuf_egl *reader, char *err, size_t err_len);
 
 /* Borrowed, format-specific explicit modifiers supported by this EGL display
  * and verified as single-plane by GBM on its associated DRM render node. The

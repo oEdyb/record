@@ -202,7 +202,7 @@
     ],
     "icon": "icons/icons/png",
     "artifactName": "${productName}-Linux-${version}.${ext}",
-    "maintainer": "Etienne Lescot <etiennelescot@gmail.com>",
+    "maintainer": "Dyberg & Co AB",
     "category": "AudioVideo",
     "extraResources": [
       {

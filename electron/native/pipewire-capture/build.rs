@@ -202,6 +202,13 @@ fn link_ffmpeg(root: &Path) {
         .allowlist_function("avio_.*")
         .allowlist_function("sws_.*")
         .allowlist_function("swr_.*")
+        // Unused dump APIs pull stdio into these encoder-only bindings.
+        .blocklist_function("av_(hex_dump|pkt_dump.*)")
+        .blocklist_type("FILE")
+        // Only pointers cross Rust for these SDK-owned objects. Codec field
+        // access lives in ffmpeg_shim.c; index entries are never dereferenced.
+        .opaque_type("AVCodecContext")
+        .opaque_type("AVIndexEntry")
         .allowlist_type("AV.*")
         .allowlist_type("Sws.*")
         .allowlist_type("SwrContext")

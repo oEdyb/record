@@ -294,7 +294,7 @@ impl Clips {
             emitter
                 .emit(&Event::Warning {
                     code: "audio-dropped".into(),
-                    message: format!("{samples} {label} samples were dropped before encoding"),
+                    message: format!("{samples} {label} samples were lost before encoding; their intervals were replaced with silence"),
                 })
                 .map_err(|error| error.to_string())?;
         }

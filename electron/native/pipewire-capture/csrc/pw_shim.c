@@ -1476,17 +1476,31 @@ fail:
     return NULL;
 }
 
+static int osc_release_egl_thread(struct spa_loop *loop, bool async, uint32_t seq,
+                                  const void *data, size_t size, void *userdata)
+{
+    struct osc_pw_session *session = userdata;
+    char error[256];
+    (void)loop; (void)async; (void)seq; (void)data; (void)size;
+    if (session->stream != NULL) api.stream_disconnect(session->stream);
+    int result = osc_dmabuf_egl_release_thread(session->egl, error, sizeof(error));
+    if (result != 0) fprintf(stderr, "[osc-dmabuf] %s\n", error);
+    return result;
+}
+
 void osc_pw_stop(struct osc_pw_session *session)
 {
     if (session == NULL) {
         return;
     }
 
+    int result = pw_loop_invoke(api.thread_loop_get_loop(session->loop),
+        osc_release_egl_thread, 0, NULL, 0, true, session);
+    if (result < 0) fprintf(stderr, "[osc-dmabuf] worker release failed: %d\n", result);
     /* pw_thread_loop_stop must be called WITHOUT the lock: it joins the thread. */
     api.thread_loop_stop(session->loop);
 
     if (session->stream != NULL) {
-        api.stream_disconnect(session->stream);
         api.stream_destroy(session->stream);
     }
     /* After stream_destroy: remove_buffer fires during teardown and unmaps most

@@ -155,9 +155,11 @@ it no longer dereferences a null context during VAAPI/Vulkan setup.
   and supplied real-media tail probes passed.
 - App/test typechecks, Biome, documentation, design and all locale checks passed.
   Biome retains the existing oversized Cargo evidence warning.
-- Strict helper Clippy remains blocked by eight diagnostics in generated FFmpeg
-  bindings (acronym/type complexity/transmute); no new owned-source diagnostics,
-  generated-file edits or lint suppression were added.
+- Strict helper Clippy now passes with `-D warnings`. SDK codec field access moved
+  behind the existing C shim; codec/index objects remain opaque in Rust, and
+  unused stdio dump bindings are excluded. No generated files, dependency versions
+  or lint suppressions were changed. Native helper: 83 passed, one existing live
+  PipeWire test ignored.
 - Native helper and symbol-isolated compositor build and load. Opaque FFmpeg
   structs are accessed through compiled C shims, including duration/IO accessors.
 - Local unpacked package built and launched with the existing explicit
@@ -175,9 +177,10 @@ it no longer dereferences a null context during VAAPI/Vulkan setup.
   warns that some video editors require conversion; it preserves those originals.
 - A physical webcam is unavailable (`/dev/video*` absent). Per-clip camera and quit
   races have regression coverage and a synthetic-device desktop pass, but physical Linux camera capture remains unverified.
-  Camera WebM streams are attached after drain; a hard crash or quit timeout can
-  leave an unfinished/unassociated camera sidecar. Native screen/audio journaling
-  does not repair such an unregistered camera file.
+  Camera WebM streams now journal their path after first disk append. A real
+  synthetic-camera SIGKILL/reopen pass restored both sources and the saved project;
+  all 615 decoded camera-frame hashes survived container repair. The last unwritten
+  MediaRecorder chunk can still be lost in a hard crash.
 - 30/60-minute endurance, sample-clock A/V drift, AMD/Intel encode hardware and other
   desktop portal backends remain unverified. The five-minute NVIDIA result and
   short export benchmark cannot establish Mac-equivalent performance universally.
@@ -215,10 +218,50 @@ Validation: 169 focused tests; both TypeScript checks and Biome pass. Three Star
 Prepare regressions fail without the startup barrier, and unreadable native-source
 regressions fail when all provisional originals are blindly merged into Stop.
 Fresh review found no remaining P1/P2 issues after those corrections. The actual
-hard-crash desktop pass is pending; driver allocation failures interrupted its
-first attempt. The concurrent hour test completed with audio-drop warnings in
-clip two and is retained for diagnosis, not counted as an endurance pass.
+hard-crash desktop pass passed after the first attempt was interrupted by driver
+allocation failures. Both sources fully decode after reopen; the recovered project
+contains its camera, the review renders the overlay, and 615 decoded camera-frame
+hashes match before/after repair. The camera container changes; decoded pictures
+are unchanged. Evidence: `artifacts/linux-port-2026-10-26/camera-hard-crash/`.
+The concurrent hour test completed with audio-drop warnings in clip two and is
+retained for diagnosis, not counted as an endurance pass.
 
 Linux packaging now refuses a missing pinned Electron Chromium notice before
 building. The bare-install loader script uses the current Klippt layout and requires
 all three expected executables instead of silently skipping missing ones.
+
+### Follow-up: stalled audio and portable package policy
+
+The first half-hour source fully decoded (108,005 frames, no decoder errors or
+reported output drops); audio/video marker medians were 9.688 ms both initially
+and near minute 30. The full hour was not a pass: clip two lost about 67.8 seconds
+of PCM while the host logged NVIDIA GSP allocation errors. Ring overflow discarded
+samples without preserving their time. Missing intervals now become silence in
+both the source original and compatibility mix. A segmented queue represents gaps
+without allocating the whole missing duration; encoding uses blocks of 8,192
+samples. AAC regressions cover overflow, a source already advanced with silence,
+and an established microphone disappearing and returning. Ring loss is corrected;
+this does not add PipeWire graph timestamps or prove physical-device clock parity.
+
+EGL still unbinds the context after each read but releases per-thread driver state
+once at worker retirement. The PipeWire loop disconnects the producer, releases
+that state, and joins before owner teardown. This avoids rebuilding thread state
+at frame cadence. Native format/channel/admission tests and strict C compilation
+pass; a fresh visible 1920x1080/60 two-clip hour test is running separately. Do not
+attribute the original host driver failure conclusively to this cleanup pattern.
+
+Ubuntu 22.04 baseline builds produced AppImage/deb/pacman/rpm with the strict symbol
+floor. Bare Ubuntu/Arch/Fedora installations resolve every shipped ELF and reach
+all three expected executables. The verifier now recognizes root `resources/`
+paths for reviewed cursors, WebAssembly and Chromium notices. Generated Linux
+package markers must match the known values, and AppArmor content must match the
+pinned electron-builder template exactly; casing cannot bypass validation, and
+macOS rejects those Linux extras. The local Whisper manifest includes the actual
+pinned build's Parakeet sidecars. Linux maintainer metadata is Dyberg & Co AB.
+Final package regeneration and artifact verification remain pending the current
+native changes; older host-mode/first-build artifacts are not release candidates.
+
+Source contracts: pinned SDK `AVCodecContext` and `ffmpeg_shim.c`; pinned
+`app-builder-lib/templates/linux/apparmor-profile.tpl` and `FpmTarget.js`;
+[Khronos EGL thread cleanup](https://registry.khronos.org/EGL/sdk/docs/man/html/eglReleaseThread.xhtml)
+and [PipeWire loop invocation](https://docs.pipewire.org/group__pw__loop.html).

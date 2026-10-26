@@ -335,12 +335,15 @@ impl AudioRing {
     }
 
     /// Moves everything queued into `out`, appending.
-    pub fn drain_into(&self, out: &mut Vec<f32>) {
+    pub fn drain_into(&self, out: &mut Vec<f32>) -> u64 {
         let Ok(mut queue) = self.inner.lock() else {
-            return;
+            return self.dropped_samples();
         };
         out.reserve(queue.len());
         out.extend(queue.drain(..));
+        // Read under the same lock: a later producer overflow must not be
+        // charged before the samples that preceded it.
+        self.dropped_samples()
     }
 
     /// Discards everything queued, and forgets any overflow so far.
@@ -357,8 +360,8 @@ impl AudioRing {
     pub fn clear(&self) {
         if let Ok(mut queue) = self.inner.lock() {
             queue.clear();
+            self.dropped.store(0, std::sync::atomic::Ordering::Relaxed);
         }
-        self.dropped.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn dropped_samples(&self) -> u64 {

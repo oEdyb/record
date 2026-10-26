@@ -122,8 +122,15 @@ static int release_context(struct osc_dmabuf_egl *r, char *err, size_t len) {
   if (!r->eglMakeCurrent(r->display, EGL_NO_SURFACE, EGL_NO_SURFACE,
                          EGL_NO_CONTEXT))
     return egl_failure(r, err, len, "eglMakeCurrent(release)");
-  if (!r->eglReleaseThread())
-    return egl_failure(r, err, len, "eglReleaseThread");
+  return 0;
+}
+
+/* Release per-thread driver state once when its worker is retiring. Doing
+ * this after every frame tears down and rebuilds the driver's thread state at
+ * capture cadence; unbinding the context already permits safe handoff. */
+int osc_dmabuf_egl_release_thread(struct osc_dmabuf_egl *r, char *err, size_t len) {
+  if (!r) return 0;
+  if (!r->eglReleaseThread()) return egl_failure(r, err, len, "eglReleaseThread");
   return 0;
 }
 
@@ -409,6 +416,8 @@ void osc_dmabuf_egl_destroy(struct osc_dmabuf_egl *r) {
       fprintf(stderr, "%s\n", error);
     }
   }
+  if (r->eglReleaseThread && !r->eglReleaseThread())
+    fprintf(stderr, "eglReleaseThread(teardown) failed\n");
   if (r->context != EGL_NO_CONTEXT &&
       !r->eglDestroyContext(r->display, r->context))
     fprintf(stderr, "eglDestroyContext failed (EGL 0x%04x)\n",
@@ -667,6 +676,7 @@ static void *test_readback(void *userdata) {
       }
     }
   }
+  assert(osc_dmabuf_egl_release_thread(frame->reader, error, sizeof(error)) == 0);
   return NULL;
 }
 

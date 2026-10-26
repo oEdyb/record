@@ -24,6 +24,7 @@
 //! events, and /dev/input/event* is root:input. Every sample is therefore a
 //! "move"; there is no click detection to be had here at any effort level.
 
+mod audio_queue;
 mod bitmap;
 mod capture;
 mod clips;

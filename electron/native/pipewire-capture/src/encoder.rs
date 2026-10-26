@@ -307,43 +307,17 @@ impl VideoEncoder {
                 sws_threads: 0,
             };
 
-            (*codec_ctx).width = params.width;
-            (*codec_ctx).height = params.height;
-            // Constant frame rate: `time_base` is one frame, so a PTS is simply
-            // a frame index. Everything downstream — the muxer, the editor's
-            // timeline, the audio interleave — is easier to reason about than it
-            // would be with wall-clock timestamps, and duplicated frames of a
-            // static screen cost a few hundred bytes each.
-            (*codec_ctx).time_base = ff::AVRational {
-                num: 1,
-                den: params.fps,
-            };
-            (*codec_ctx).framerate = ff::AVRational {
-                num: params.fps,
-                den: 1,
-            };
-            (*codec_ctx).pix_fmt = backend.codec_pixel_format();
-            (*codec_ctx).bit_rate = params.bitrate;
-            (*codec_ctx).color_range = ff::AVCOL_RANGE_MPEG;
-            (*codec_ctx).colorspace = ff::AVCOL_SPC_BT709;
-            (*codec_ctx).color_primaries = ff::AVCOL_PRI_BT709;
-            (*codec_ctx).color_trc = ff::AVCOL_TRC_BT709;
-            // Half a second, not the two seconds a streaming preset would use.
-            //
-            // This file is an EDITING SOURCE, and the editor scrubs it. Seeking
-            // to an arbitrary point means decoding forward from the previous
-            // keyframe, so the GOP length is exactly the worst-case scrub cost:
-            // at 60 fps a two-second GOP makes the editor decode up to 120
-            // frames to show one. Halving it to 30 quarters that, and the extra
-            // keyframes cost a few percent of bitrate on screen content, which
-            // is mostly static and compresses well anyway.
-            (*codec_ctx).gop_size = (params.fps / 2).max(1);
-            // No B-frames. A screen recording has no use for them, they add
-            // reorder delay, and they force DTS bookkeeping the muxer would
-            // otherwise not need.
-            (*codec_ctx).max_b_frames = 0;
-            // The muxer needs an extradata-carrying global header for MP4.
-            (*codec_ctx).flags |= ff::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+            // A frame-index time base, half-second GOP, no B-frames and global
+            // headers keep the clip seekable with bounded decode/reorder work.
+            // Configure against the SDK's C layout, never duplicate its callbacks.
+            ff::osc_codec_configure_video(
+                codec_ctx,
+                params.width,
+                params.height,
+                params.fps,
+                backend.codec_pixel_format(),
+                params.bitrate,
+            );
 
             if let Some(device_type) = backend.hw_device_type() {
                 encoder.attach_hardware(device_type, params)?;
@@ -351,8 +325,12 @@ impl VideoEncoder {
 
             if backend == Backend::Nvenc {
                 for (key, value) in [(c"preset", c"p4"), (c"tune", c"ll")] {
-                    let set =
-                        ff::av_opt_set((*codec_ctx).priv_data, key.as_ptr(), value.as_ptr(), 0);
+                    let set = ff::av_opt_set(
+                        ff::osc_codec_private_data(codec_ctx),
+                        key.as_ptr(),
+                        value.as_ptr(),
+                        0,
+                    );
                     if set < 0 {
                         return Err(format!(
                             "NVENC {}: {}",
@@ -427,8 +405,7 @@ impl VideoEncoder {
             ));
         }
 
-        (*self.codec_ctx).hw_frames_ctx = ff::av_buffer_ref(self.hw_frames);
-        if (*self.codec_ctx).hw_frames_ctx.is_null() {
+        if ff::osc_codec_ref_hardware_frames(self.codec_ctx, self.hw_frames) == 0 {
             return Err("av_buffer_ref on the frames context returned null".to_owned());
         }
         Ok(())
@@ -822,24 +799,20 @@ impl AudioEncoder {
                 next_pts: 0,
             };
 
-            (*codec_ctx).sample_rate = AUDIO_SAMPLE_RATE;
-            // The native AAC encoder takes PLANAR float; interleaved is rejected
-            // outright by avcodec_open2, which is why `push` deinterleaves.
-            (*codec_ctx).sample_fmt = ff::AV_SAMPLE_FMT_FLTP;
-            (*codec_ctx).bit_rate = bitrate;
-            (*codec_ctx).time_base = ff::AVRational {
-                num: 1,
-                den: AUDIO_SAMPLE_RATE,
-            };
-            ff::av_channel_layout_default(&mut (*codec_ctx).ch_layout, AUDIO_CHANNELS as i32);
-            (*codec_ctx).flags |= ff::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+            // AAC accepts planar float. C owns its channel-layout and context fields.
+            ff::osc_codec_configure_audio(
+                codec_ctx,
+                AUDIO_SAMPLE_RATE,
+                AUDIO_CHANNELS as i32,
+                bitrate,
+            );
 
             let opened = ff::avcodec_open2(codec_ctx, codec, ptr::null_mut());
             if opened < 0 {
                 return Err(format!("aac avcodec_open2: {}", ff::err_to_string(opened)));
             }
             // Only valid after open: the encoder decides its own block size.
-            encoder.block = match (*codec_ctx).frame_size {
+            encoder.block = match ff::osc_codec_frame_size(codec_ctx) {
                 size if size > 0 => size as usize,
                 _ => 1024,
             };
@@ -1063,7 +1036,7 @@ impl Muxer {
             if stream.is_null() {
                 return Err("avformat_new_stream returned null".to_owned());
             }
-            let source_time_base = (*codec_ctx).time_base;
+            let source_time_base = ff::osc_codec_time_base(codec_ctx);
             (*stream).time_base = source_time_base;
             let copied = ff::avcodec_parameters_from_context((*stream).codecpar, codec_ctx);
             if copied < 0 {

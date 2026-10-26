@@ -45,6 +45,27 @@ extern "C" {
     pub fn osc_format_stream(context: *mut AVFormatContext, index: u32) -> *mut AVStream;
     pub fn osc_format_open_io(context: *mut AVFormatContext, path: *const std::ffi::c_char) -> i32;
     pub fn osc_format_close_io(context: *mut AVFormatContext) -> i32;
+    pub fn osc_codec_configure_video(
+        context: *mut AVCodecContext,
+        width: i32,
+        height: i32,
+        fps: i32,
+        pixel_format: i32,
+        bitrate: i64,
+    );
+    pub fn osc_codec_private_data(context: *mut AVCodecContext) -> *mut std::ffi::c_void;
+    pub fn osc_codec_ref_hardware_frames(
+        context: *mut AVCodecContext,
+        frames: *mut AVBufferRef,
+    ) -> i32;
+    pub fn osc_codec_configure_audio(
+        context: *mut AVCodecContext,
+        rate: i32,
+        channels: i32,
+        bitrate: i64,
+    );
+    pub fn osc_codec_frame_size(context: *const AVCodecContext) -> i32;
+    pub fn osc_codec_time_base(context: *const AVCodecContext) -> AVRational;
 }
 
 // The `SWS_*` rescaler flags are NOT redeclared here. They used to need it — the

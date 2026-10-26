@@ -48,7 +48,8 @@ struct AudioInput {
     ring: Arc<AudioRing>,
     gain: f32,
     /// Samples drained but not yet mixed, because the other inputs had fewer.
-    pending: Vec<f32>,
+    pending: crate::audio_queue::AudioQueue,
+    accounted_drops: u64,
     original: Option<crate::originals::OriginalWriter>,
     admitted_samples: usize,
 }
@@ -96,27 +97,49 @@ impl AudioMix {
     /// inputs are unevenly filled, because there will be no more samples to even
     /// them out.
     fn pump(&mut self, muxer: &mut Muxer, flush: bool, elapsed_ms: f64) -> Result<(), String> {
+        static SILENCE: [f32; 8192] = [0.0; 8192];
         for input in &mut self.inputs {
-            let before = input.pending.len();
-            input.ring.drain_into(&mut input.pending);
-            let samples = &input.pending[before..];
+            let mut samples = Vec::new();
+            let dropped = input.ring.drain_into(&mut samples);
+            let missing = usize::try_from(dropped.saturating_sub(input.accounted_drops))
+                .map_err(|_| "audio overflow exceeds the platform timeline")?;
+            input.accounted_drops = dropped;
             if let Some(original) = &mut input.original {
-                original.push(samples, elapsed_ms)?;
+                let mut remaining = missing;
+                while remaining > 0 {
+                    let count = remaining.min(SILENCE.len());
+                    remaining -= count;
+                    let tail_ms = (remaining + samples.len()) as f64 * 1000.0
+                        / (f64::from(AUDIO_SAMPLE_RATE) * AUDIO_CHANNELS as f64);
+                    original.push(&SILENCE[..count], elapsed_ms - tail_ms)?;
+                }
+                original.push(&samples, elapsed_ms)?;
             }
-            // A source joining late contributes silence before its first sample
-            // to the compatibility mix; its standalone original keeps the offset.
-            if input.admitted_samples == 0 && !samples.is_empty() {
-                let received_frames = samples.len() / AUDIO_CHANNELS;
+            let received = samples.len() + missing;
+            if input.admitted_samples == 0 && received > 0 {
                 let elapsed_frames = (elapsed_ms * f64::from(AUDIO_SAMPLE_RATE) / 1000.0) as usize;
-                let first_sample = elapsed_frames.saturating_sub(received_frames) * AUDIO_CHANNELS;
-                // Starvation may already have emitted part or all of this
-                // startup gap. Pending samples begin at the current mix head.
-                let silence = first_sample.saturating_sub(self.emitted_samples);
+                let first_sample =
+                    elapsed_frames.saturating_sub(received / AUDIO_CHANNELS) * AUDIO_CHANNELS;
                 input
                     .pending
-                    .splice(0..0, std::iter::repeat_n(0.0, silence));
+                    .silence(first_sample.saturating_sub(self.emitted_samples));
+                input.admitted_samples = first_sample;
             }
-            input.admitted_samples += input.pending.len().saturating_sub(before);
+            // Other inputs may already have advanced this interval with silence.
+            // Keep the original intact, but never insert that gap twice in the mix.
+            if missing == 0 && received > 0 && input.admitted_samples < self.emitted_samples {
+                // No overflow means these are fresh samples after a source
+                // outage, not a retained tail known to predate the mix head.
+                input.admitted_samples = self.emitted_samples;
+            }
+            let covered = self.emitted_samples.saturating_sub(input.admitted_samples);
+            input.pending.silence(missing.saturating_sub(covered));
+            let covered_samples = covered.saturating_sub(missing).min(samples.len());
+            if covered_samples > 0 {
+                samples.drain(..covered_samples);
+            }
+            input.pending.push(samples);
+            input.admitted_samples += received;
         }
 
         let shortest = self
@@ -145,32 +168,27 @@ impl AudioMix {
             return Ok(());
         }
 
-        self.scratch.clear();
-        self.scratch.resize(take, 0.0);
-        for input in &mut self.inputs {
-            let n = input.pending.len().min(take);
-            for (out, sample) in self.scratch.iter_mut().zip(input.pending.drain(..n)) {
-                // Summed, then clamped ONCE at the end rather than per input:
-                // clamping each contribution would quietly attenuate the mix
-                // whenever one source alone is already near full scale.
-                *out += sample * input.gain;
+        let mut remaining = take;
+        while remaining > 0 {
+            let count = remaining.min(SILENCE.len());
+            self.scratch.clear();
+            self.scratch.resize(count, 0.0);
+            for input in &mut self.inputs {
+                input.pending.mix_into(&mut self.scratch, input.gain);
             }
+            for sample in &mut self.scratch {
+                *sample = sample.clamp(-1.0, 1.0);
+            }
+            let id = self.track;
+            let scratch = std::mem::take(&mut self.scratch);
+            let result = self
+                .encoder
+                .push(&scratch, |packet| muxer.write(id, packet));
+            self.scratch = scratch;
+            result?;
+            self.emitted_samples += count;
+            remaining -= count;
         }
-        for sample in &mut self.scratch {
-            // A boosted microphone over loud system audio must clip flat. An
-            // out-of-range float survives until AAC quantises it and then wraps
-            // to the opposite polarity, which sounds like a burst of noise.
-            *sample = sample.clamp(-1.0, 1.0);
-        }
-
-        let id = self.track;
-        let scratch = std::mem::take(&mut self.scratch);
-        let result = self
-            .encoder
-            .push(&scratch, |packet| muxer.write(id, packet));
-        self.scratch = scratch;
-        result?;
-        self.emitted_samples += take;
         Ok(())
     }
 
@@ -315,7 +333,8 @@ impl Capture {
                         label: source.label,
                         ring: source.ring,
                         gain: source.gain,
-                        pending: Vec::new(),
+                        pending: crate::audio_queue::AudioQueue::default(),
+                        accounted_drops: 0,
                         original: None,
                         admitted_samples: 0,
                     })
@@ -458,6 +477,7 @@ impl Capture {
             if let Some(mix) = &mut self.audio {
                 for input in &mut mix.inputs {
                     input.ring.clear();
+                    input.accounted_drops = 0;
                     input.pending.clear();
                 }
             }
@@ -554,6 +574,7 @@ impl Capture {
             if let Some(mix) = &mut self.audio {
                 for input in &mut mix.inputs {
                     input.ring.clear();
+                    input.accounted_drops = 0;
                     input.pending.clear();
                 }
             }
@@ -1360,6 +1381,213 @@ mod tests {
                 std::fs::remove_file(source.path).expect("remove test original");
             }
             std::fs::remove_file(output).expect("remove test screen");
+        }
+    }
+
+    #[test]
+    fn established_microphone_is_audible_after_a_source_outage() {
+        let output = std::env::temp_dir().join("klippt-audio-source-return.mp4");
+        let system = Arc::new(AudioRing::new(
+            2,
+            AUDIO_SAMPLE_RATE as usize,
+            AUDIO_CHANNELS,
+        ));
+        let microphone = Arc::new(AudioRing::new(
+            2,
+            AUDIO_SAMPLE_RATE as usize,
+            AUDIO_CHANNELS,
+        ));
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            vec![
+                AudioSource {
+                    label: "system",
+                    ring: system.clone(),
+                    gain: 1.0,
+                    bitrate: 128_000,
+                },
+                AudioSource {
+                    label: "microphone",
+                    ring: microphone.clone(),
+                    gain: 1.0,
+                    bitrate: 128_000,
+                },
+            ],
+        )
+        .expect("capture");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("screen");
+        capture.advance().expect("start");
+        let frames = AUDIO_SAMPLE_RATE as usize / 10;
+        let tone: Vec<f32> = (0..frames)
+            .flat_map(|i| {
+                let sample = (i as f32 * 440.0 * std::f32::consts::TAU / AUDIO_SAMPLE_RATE as f32)
+                    .sin()
+                    * 0.3;
+                [sample; AUDIO_CHANNELS]
+            })
+            .collect();
+        for tick in 1..=20 {
+            system.push_for_test(&vec![0.0; frames * AUDIO_CHANNELS]);
+            if tick == 1 || tick > 10 {
+                microphone.push_for_test(&tone);
+            }
+            capture
+                .audio
+                .as_mut()
+                .expect("mix")
+                .pump(
+                    capture.muxer.as_mut().expect("muxer"),
+                    false,
+                    f64::from(tick) * 100.0,
+                )
+                .expect("pump");
+        }
+        capture.finish().expect("finish");
+        let decoded = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(&output)
+            .args(["-map", "0:a:0", "-ac", "1", "-f", "f32le", "-"])
+            .output()
+            .expect("decode");
+        assert!(decoded.status.success());
+        let audible = decoded
+            .stdout
+            .chunks_exact(4)
+            .skip(AUDIO_SAMPLE_RATE as usize * 3 / 2)
+            .any(|sample| f32::from_le_bytes(sample.try_into().expect("sample")).abs() > 0.05);
+        assert!(
+            audible,
+            "fresh microphone samples must resume after the outage"
+        );
+        std::fs::remove_file(output).expect("remove screen");
+    }
+
+    #[test]
+    fn ring_overflow_preserves_original_and_mixed_audio_time() {
+        for source_order in ["together", "system-first"] {
+            let output =
+                std::env::temp_dir().join(format!("klippt-audio-overflow-{source_order}.mp4"));
+            let system = Arc::new(AudioRing::new(
+                5,
+                AUDIO_SAMPLE_RATE as usize,
+                AUDIO_CHANNELS,
+            ));
+            let microphone = Arc::new(AudioRing::new(
+                1,
+                AUDIO_SAMPLE_RATE as usize,
+                AUDIO_CHANNELS,
+            ));
+            let (mut capture, _) = Capture::start(
+                &output,
+                320,
+                240,
+                30,
+                Some(1_000_000),
+                Some(Backend::Software),
+                vec![
+                    AudioSource {
+                        label: "system",
+                        ring: system.clone(),
+                        gain: 1.0,
+                        bitrate: 128_000,
+                    },
+                    AudioSource {
+                        label: "microphone",
+                        ring: microphone.clone(),
+                        gain: 1.0,
+                        bitrate: 128_000,
+                    },
+                ],
+            )
+            .expect("capture");
+            capture.enable_originals().expect("originals");
+            capture
+                .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+                .expect("screen");
+            capture.advance().expect("start");
+            for (frames, elapsed_ms) in [
+                (AUDIO_SAMPLE_RATE as usize / 5, 200.0),
+                (AUDIO_SAMPLE_RATE as usize * 3, 3200.0),
+            ] {
+                let tone: Vec<f32> = (0..frames)
+                    .flat_map(|i| {
+                        let sample = (i as f32 * 440.0 * std::f32::consts::TAU
+                            / AUDIO_SAMPLE_RATE as f32)
+                            .sin()
+                            * 0.3;
+                        [sample; AUDIO_CHANNELS]
+                    })
+                    .collect();
+                system.push_for_test(&vec![0.0; frames * AUDIO_CHANNELS]);
+                if source_order == "system-first" && elapsed_ms > 200.0 {
+                    capture
+                        .audio
+                        .as_mut()
+                        .expect("mix")
+                        .pump(capture.muxer.as_mut().expect("muxer"), false, elapsed_ms)
+                        .expect("system advances with microphone silence");
+                }
+                microphone.push_for_test(&tone);
+                capture
+                    .audio
+                    .as_mut()
+                    .expect("mix")
+                    .pump(capture.muxer.as_mut().expect("muxer"), false, elapsed_ms)
+                    .expect("pump");
+            }
+            let summary = capture.finish().expect("finish");
+            let original = summary
+                .originals
+                .iter()
+                .find(|source| source.label == "microphone")
+                .expect("mic");
+            for source in [&output, &PathBuf::from(&original.path)] {
+                let decoded = std::process::Command::new("ffmpeg")
+                    .args(["-v", "error", "-i"])
+                    .arg(source)
+                    .args(["-map", "0:a:0", "-ac", "1", "-f", "f32le", "-"])
+                    .output()
+                    .expect("decode");
+                assert!(
+                    decoded.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&decoded.stderr)
+                );
+                let samples: Vec<f32> = decoded
+                    .stdout
+                    .chunks_exact(4)
+                    .map(|b| f32::from_le_bytes(b.try_into().expect("sample")))
+                    .collect();
+                let duration = samples.len() as f64 / f64::from(AUDIO_SAMPLE_RATE);
+                assert!(
+                    (3.18..3.26).contains(&duration),
+                    "audio overflow shortened {source:?} to {duration}s"
+                );
+                let gap_start = AUDIO_SAMPLE_RATE as usize / 2;
+                let gap_end = AUDIO_SAMPLE_RATE as usize * 2;
+                assert!(
+                    samples[gap_start..gap_end]
+                        .iter()
+                        .all(|sample| sample.abs() < 0.01),
+                    "missing samples must be silence"
+                );
+                let tail_audible = samples[AUDIO_SAMPLE_RATE as usize * 5 / 2..]
+                    .iter()
+                    .any(|sample| sample.abs() > 0.1);
+                assert_eq!(tail_audible, source_order == "together" || source != &output,
+                "original retains its tail; a mix interval already emitted as silence must not be appended again");
+            }
+            for source in summary.originals {
+                std::fs::remove_file(source.path).expect("remove original");
+            }
+            std::fs::remove_file(output).expect("remove screen");
         }
     }
 
