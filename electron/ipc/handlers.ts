@@ -2946,9 +2946,13 @@ export function registerIpcHandlers(
 		createHelper: (helperPath, config, onFatalError, onOriginalStarted) => {
 			if (config.platform === "linux" && !linuxClipMetadata)
 				linuxClipMetadata = new LinuxClipCaptureMetadata(MAX_CURSOR_SAMPLES, Date.now());
+			const helperConfig =
+				config.platform === "linux"
+					? { ...config, portalStatePath: path.join(RECORDINGS_DIR, ".portal-source-grant.json") }
+					: config;
 			const child =
 				(process.platform === "darwin" ? nativeMacStandby.take(helperPath, config) : null) ??
-				spawn(helperPath, [JSON.stringify(config)], {
+				spawn(helperPath, [JSON.stringify(helperConfig)], {
 					cwd: RECORDINGS_DIR,
 					stdio: ["pipe", "pipe", "pipe"],
 				});

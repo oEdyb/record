@@ -107,6 +107,7 @@ type UseScreenRecorderReturn = {
 	/** Starts recording with no countdown overlay. Used by the headless CLI runner. */
 	startRecordingImmediately: () => Promise<void>;
 	togglePaused: () => void;
+	chooseRecordingSource: () => Promise<NativeLinuxSourceSelectionResult>;
 	selectRecordingSource: (
 		cursorMode?: CursorCaptureMode,
 	) => Promise<NativeLinuxSourceSelectionResult>;
@@ -309,6 +310,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const nativeMacToggleInFlight = useRef(false);
 	const sourceSelectionInFlight = useRef(false);
 	const [sourceSelecting, setSourceSelecting] = useState(false);
+	const idleSourceCancellationRequested = useRef(false);
 	const pendingNativeMacInterruption = useRef<Exclude<
 		NativeMacRecordingInterruption,
 		"source-active"
@@ -1616,7 +1618,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		currentNativeMacRequest({ id: "portal:selected" }, activeRecordingId);
 
 	const startRecordCountdown = async () => {
-		if (pendingStartRunId.current !== null || recording) return;
+		if (pendingStartRunId.current !== null || recording || sourceSelectionInFlight.current) return;
 
 		startMarks.current = [];
 		markStart("click");
@@ -1683,6 +1685,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	) => {
 		if (
 			recordingStartPending.current ||
+			sourceSelectionInFlight.current ||
 			recording ||
 			nativeMacRecording.current ||
 			nativeWindowsRecording.current ||
@@ -2000,6 +2003,47 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			teardownMedia();
 		} finally {
 			recordingStartPending.current = false;
+		}
+	};
+
+	const chooseRecordingSource = async (): Promise<NativeLinuxSourceSelectionResult> => {
+		if (
+			window.electronAPI.getPlatform() !== "linux" ||
+			recording ||
+			recordingStartPending.current ||
+			pendingStartRunId.current !== null ||
+			sourceSelectionInFlight.current
+		)
+			return { success: false, error: "Source selection requires an idle recorder." };
+		sourceSelectionInFlight.current = true;
+		idleSourceCancellationRequested.current = false;
+		setSourceSelecting(true);
+		try {
+			const request = currentNativeMacRequest({ id: "portal:choose" }, Date.now());
+			const result = await window.electronAPI.prepareNativeLinuxRecording({
+				...request,
+				source: { ...request.source, sourceId: "portal:choose" },
+				audio: {
+					system: { enabled: false },
+					microphone: { ...request.audio.microphone, enabled: false },
+				},
+				webcam: { ...request.webcam, enabled: false },
+			});
+			if (!result.success)
+				return {
+					success: false,
+					cancelled:
+						idleSourceCancellationRequested.current ||
+						result.error === "The screen capture request was cancelled.",
+					error: result.error,
+				};
+			const stopped = await window.electronAPI.stopNativeMacRecording(true);
+			return { success: stopped.success, error: stopped.error };
+		} catch (error) {
+			return { success: false, error: ipcErrorMessage(error) };
+		} finally {
+			sourceSelectionInFlight.current = false;
+			setSourceSelecting(false);
 		}
 	};
 
@@ -2322,6 +2366,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	};
 
 	const toggleRecording = () => {
+		if (sourceSelectionInFlight.current && !recording) {
+			idleSourceCancellationRequested.current = true;
+			void window.electronAPI.cancelNativeLinuxPrepare().catch((error) => {
+				toast.error(t("recording.startFailed"), { description: ipcErrorMessage(error) });
+			});
+			return;
+		}
 		if (recording) {
 			stopRecording.current();
 			return;
@@ -2479,7 +2530,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	return {
 		recording,
-		starting: countdownActive,
+		starting: countdownActive || (sourceSelecting && !recording),
 		paused,
 		saving,
 		clipFinalizing,
@@ -2491,6 +2542,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		startRecordingImmediately: () => startRecording(),
 		togglePaused,
 		selectRecordingSource,
+		chooseRecordingSource,
 		canPauseRecording,
 		canReconfigureWhilePaused,
 		canRemovePreviousClip,

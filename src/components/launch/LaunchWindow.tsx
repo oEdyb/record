@@ -166,6 +166,7 @@ export function LaunchWindow() {
 		toggleRecording,
 		togglePaused,
 		selectRecordingSource,
+		chooseRecordingSource,
 		canPauseRecording,
 		canReconfigureWhilePaused,
 		canRemovePreviousClip,
@@ -1668,11 +1669,8 @@ export function LaunchWindow() {
 		dismissSoftwareEncoderFallbackNotice();
 	}, [dismissSoftwareEncoderFallbackNotice]);
 
-	// On Linux the ScreenCast portal owns the choice, so there is no in-app
-	// selection to name and none to demand: the idle label says what pressing
-	// record will do, and the recording label stays neutral because the portal
-	// reports a KIND, never a window title. Naming a source we were never told
-	// is what put a window's name on a full-screen recording.
+	// The portal can restore a prior grant; keep labels neutral because it does
+	// not provide the window title or promise that another picker will appear.
 	const prewarmCapture = useCallback(() => {
 		void window.electronAPI.prewarmNativeMacCapture?.().catch(() => undefined);
 	}, []);
@@ -1683,7 +1681,7 @@ export function LaunchWindow() {
 			: portalOwnsSource
 				? recording
 					? t("recording.inProgress")
-					: t("recording.systemPicker")
+					: editorT("recordingReview.record")
 				: hasSelectedSource || recording
 					? selectedSource
 					: t("recording.selectSource");
@@ -1863,18 +1861,18 @@ export function LaunchWindow() {
 		}
 	}, [applySelectedSource, openSourceSelector, selectedSourceKind, t]);
 
-	const choosePausedSource = useCallback(async () => {
-		const result = await selectRecordingSource();
+	const chooseSource = useCallback(async () => {
+		const result = await (recording ? selectRecordingSource() : chooseRecordingSource());
 		if (!result.success && !result.cancelled)
 			toast.error(t("sourceSelector.selectFailed"), { description: result.error });
-	}, [selectRecordingSource, t]);
+	}, [recording, selectRecordingSource, chooseRecordingSource, t]);
 
 	const setupExtras = useMemo<HudSetupExtras>(
 		() => ({
 			sourceLabel: portalOwnsSource ? undefined : localizedSourceLabel,
 			sourceKind: selectedSourceKind,
 			sourceDisabled: controlsLocked,
-			onChooseSource: portalOwnsSource && recording ? () => void choosePausedSource() : undefined,
+			onChooseSource: portalOwnsSource ? () => void chooseSource() : undefined,
 			onSelectDisplay: portalOwnsSource ? undefined : () => void selectDisplaySource(),
 			onOpenSource: portalOwnsSource ? undefined : () => void openSourceSelector("windows"),
 			editableCursor: cursorCaptureMode === "editable-overlay",
@@ -1905,7 +1903,7 @@ export function LaunchWindow() {
 			locale,
 			openSourceSelector,
 			portalOwnsSource,
-			choosePausedSource,
+			chooseSource,
 			localizedSourceLabel,
 			sendHudOverlayHide,
 			setupFooter,

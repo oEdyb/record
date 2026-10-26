@@ -35,6 +35,7 @@ mod events;
 mod ffmpeg;
 mod originals;
 mod portal;
+mod portal_grants;
 mod request;
 mod shim;
 mod source_selection;
@@ -161,7 +162,7 @@ fn main() {
 
     let (sender, receiver) = mpsc::channel::<Message>();
     spawn_stdin_reader(sender.clone());
-    spawn_portal(sender.clone(), cursor_mode);
+    spawn_portal(sender.clone(), cursor_mode, request.portal_selection());
 
     let session = RunConfig {
         tick,
@@ -454,9 +455,13 @@ fn read_commands(reader: impl BufRead, sender: &Sender<Message>) {
 /// The portal runs on its own thread because `Start()` blocks on the user for
 /// an unbounded time, and a `stop` arriving during the picker must still be
 /// honoured.
-fn spawn_portal(sender: Sender<Message>, cursor_mode: portal::CursorMode) {
+fn spawn_portal(
+    sender: Sender<Message>,
+    cursor_mode: portal::CursorMode,
+    remembered: Option<portal_grants::SelectionRequest>,
+) {
     std::thread::spawn(move || {
-        let result = pollster::block_on(portal::negotiate(cursor_mode));
+        let result = pollster::block_on(portal::negotiate(cursor_mode, remembered));
         let _ = sender.send(Message::Portal(Box::new(result)));
     });
 }
@@ -561,7 +566,16 @@ fn reject_audio_preparation<W: Write>(
     }
 }
 
+fn remember_source(grant: Option<portal_grants::PendingGrant>) {
+    if let Some(grant) = grant {
+        if let Err(error) = grant.commit() {
+            eprintln!("could not remember screen source: {error}");
+        }
+    }
+}
+
 struct CandidateSource {
+    remembered_grant: Option<portal_grants::PendingGrant>,
     generation: u64,
     session: shim::Session,
     info: StreamInfo,
@@ -577,6 +591,7 @@ impl CandidateSource {
         sender: &Sender<Message>,
     ) -> Result<Self, String> {
         let portal::PortalStream {
+            remembered_grant,
             fd,
             lease,
             node_id,
@@ -595,6 +610,7 @@ impl CandidateSource {
             Some(frames.clone()),
         )?;
         Ok(Self {
+            remembered_grant,
             generation,
             session,
             info: StreamInfo {
@@ -675,6 +691,7 @@ fn run<W: Write>(
     config: RunConfig,
 ) -> i32 {
     let constants = shim::constants();
+    let remembered_source_path = config.request.portal_state_path.clone();
     // Held for the whole loop: dropping it stops and joins the PipeWire thread.
     let mut session: Option<shim::Session> = None;
     let mut portal_stream: Option<StreamInfo> = None;
@@ -872,9 +889,15 @@ fn run<W: Write>(
                     control,
                     cursor,
                 });
+                let remembered = remembered_source_path
+                    .clone()
+                    .map(portal_grants::SelectionRequest::Choose);
                 std::thread::spawn(move || {
-                    let result =
-                        pollster::block_on(portal::negotiate_selected(mode, &worker_control));
+                    let result = pollster::block_on(portal::negotiate_selected(
+                        mode,
+                        &worker_control,
+                        remembered,
+                    ));
                     let _ = forward.send(Message::ReplacementPortal {
                         generation,
                         result: Box::new(result),
@@ -952,6 +975,7 @@ fn run<W: Write>(
                         {
                             clips.request.cursor = Some(cursor);
                         }
+                        remember_source(chosen.remembered_grant.take());
                         previous_dropped_frames +=
                             frames.as_ref().map_or(0, |frames| frames.dropped());
                         drop(session.take());
@@ -1171,7 +1195,8 @@ fn run<W: Write>(
             }
 
             Ok(Message::Portal(result)) => match *result {
-                Ok(stream) => {
+                Ok(mut stream) => {
+                    remember_source(stream.remembered_grant.take());
                     // The portal's size is in the compositor's coordinate space
                     // and can differ from the negotiated pixel size on a scaled
                     // display. Logged rather than used: cursor positions arrive

@@ -381,6 +381,88 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		expect(view.result.current.recording).toBe(true);
 	}
 
+	it("chooses a fresh source while idle without recording or opening audio, then releases preparation", async () => {
+		const prepare = vi.fn(async () => ({ success: true, recordingId: 7 }));
+		const stop = vi.fn(async () => ({ success: true }));
+		stubNativeLinux({ prepareNativeLinuxRecording: prepare, stopNativeMacRecording: stop });
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await expect(view.result.current.chooseRecordingSource()).resolves.toEqual({ success: true });
+		});
+		expect(prepare).toHaveBeenCalledWith(
+			expect.objectContaining({
+				source: expect.objectContaining({ sourceId: "portal:choose" }),
+				audio: {
+					system: { enabled: false },
+					microphone: expect.objectContaining({ enabled: false }),
+				},
+				webcam: expect.objectContaining({ enabled: false }),
+			}),
+		);
+		expect(stop).toHaveBeenCalledWith(true);
+		expect(window.electronAPI.startNativeMacRecording).not.toHaveBeenCalled();
+		expect(view.result.current.recording).toBe(false);
+		expect(view.result.current.starting).toBe(false);
+	});
+
+	it("blocks Record and duplicate source choices while the idle picker is pending, and unlocks after cancellation", async () => {
+		let cancel: ((result: { success: false; error: string }) => void) | undefined;
+		const prepare = vi.fn(
+			() =>
+				new Promise<{ success: false; error: string }>((resolve) => {
+					cancel = resolve;
+				}),
+		);
+		stubNativeLinux({ prepareNativeLinuxRecording: prepare });
+		const view = renderHook(() => useScreenRecorder());
+		let choosing: Promise<unknown> | undefined;
+		act(() => {
+			choosing = view.result.current.chooseRecordingSource();
+		});
+		expect(view.result.current.starting).toBe(true);
+		await act(async () => {
+			await view.result.current.startRecordingImmediately();
+			view.result.current.toggleRecording();
+			await expect(view.result.current.chooseRecordingSource()).resolves.toMatchObject({
+				success: false,
+			});
+		});
+		expect(prepare).toHaveBeenCalledOnce();
+		await act(async () => {
+			cancel?.({ success: false, error: "The screen capture request was cancelled." });
+			await expect(choosing).resolves.toMatchObject({ success: false, cancelled: true });
+		});
+		expect(window.electronAPI.startNativeMacRecording).not.toHaveBeenCalled();
+		expect(view.result.current.starting).toBe(false);
+	});
+
+	it("cancels idle source preparation through the primary Cancel control without starting a take", async () => {
+		let rejectChoice: ((result: { success: false; error: string }) => void) | undefined;
+		const prepare = vi.fn(
+			() =>
+				new Promise<{ success: false; error: string }>((resolve) => {
+					rejectChoice = resolve;
+				}),
+		);
+		const cancel = vi.fn(async () => {
+			rejectChoice?.({ success: false, error: "Native capture exited before source selection." });
+			return { success: true };
+		});
+		stubNativeLinux({ prepareNativeLinuxRecording: prepare, cancelNativeLinuxPrepare: cancel });
+		const view = renderHook(() => useScreenRecorder());
+		let choosing: Promise<unknown> | undefined;
+		act(() => {
+			choosing = view.result.current.chooseRecordingSource();
+		});
+		await act(async () => {
+			view.result.current.toggleRecording();
+			await expect(choosing).resolves.toMatchObject({ success: false, cancelled: true });
+		});
+		expect(cancel).toHaveBeenCalledOnce();
+		expect(view.result.current.starting).toBe(false);
+		expect(window.electronAPI.startNativeMacRecording).not.toHaveBeenCalled();
+	});
+
 	it("offers retry guidance for an acknowledged paused Continue rejection", async () => {
 		const stop = vi.fn(async () => ({ success: true }));
 		const resume = vi

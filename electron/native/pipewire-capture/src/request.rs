@@ -41,6 +41,8 @@ pub struct MicrophoneRequest {
 #[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Request {
+    /// Main-process-owned permission cache; never supplied by the renderer.
+    pub portal_state_path: Option<std::path::PathBuf>,
     pub source: Option<serde_json::Value>,
     pub outputs: Option<Outputs>,
     pub cursor: Option<CursorRequest>,
@@ -84,6 +86,21 @@ pub struct CursorRequest {
 }
 
 impl Request {
+    pub fn portal_selection(&self) -> Option<crate::portal_grants::SelectionRequest> {
+        self.portal_state_path.clone().map(|path| {
+            if self
+                .source
+                .as_ref()
+                .and_then(|source| source.get("sourceId"))
+                .and_then(serde_json::Value::as_str)
+                == Some("portal:choose")
+            {
+                crate::portal_grants::SelectionRequest::Choose(path)
+            } else {
+                crate::portal_grants::SelectionRequest::Reuse(path)
+            }
+        })
+    }
     pub fn screen_path(&self) -> Option<&str> {
         self.outputs
             .as_ref()
@@ -278,6 +295,22 @@ mod tests {
             "cursor":{"mode":"system"}, "deferStart":true
         })).expect("Mac request")
     }
+    #[test]
+    fn grants_require_main_owned_state_and_explicit_choice_bypasses_reuse() {
+        let mut request = request();
+        assert!(request.portal_selection().is_none());
+        request.portal_state_path = Some("/private/grant.json".into());
+        assert!(matches!(
+            request.portal_selection(),
+            Some(crate::portal_grants::SelectionRequest::Reuse(_))
+        ));
+        request.source = Some(serde_json::json!({ "sourceId": "portal:choose" }));
+        assert!(matches!(
+            request.portal_selection(),
+            Some(crate::portal_grants::SelectionRequest::Choose(_))
+        ));
+    }
+
     #[test]
     fn accepts_mac_request_without_treating_source_id_as_a_portal_target() {
         let request = request();

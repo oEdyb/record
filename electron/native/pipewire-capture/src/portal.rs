@@ -37,7 +37,8 @@ use ashpd::WindowIdentifier;
 /// out of the pixels and describes it separately — and `Embedded` is the
 /// "system cursor" setting, where the compositor paints it in and the editor
 /// leaves it alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum CursorMode {
     Metadata,
     Embedded,
@@ -183,6 +184,7 @@ impl Selection {
 
 /// Everything the PipeWire half needs, plus what the helper reports upward.
 pub struct PortalStream {
+    pub remembered_grant: Option<crate::portal_grants::PendingGrant>,
     pub lease: Arc<PortalLease>,
     pub fd: OwnedFd,
     pub node_id: u32,
@@ -296,15 +298,25 @@ async fn register_host_application(
 /// picker is up: `Start()` is what raises it.
 ///
 /// The returned lease closes the portal when its last owner releases it.
-pub async fn negotiate(cursor_mode: CursorMode) -> Result<PortalStream, PortalError> {
-    negotiate_selected(cursor_mode, &Selection::default()).await
+pub async fn negotiate(
+    cursor_mode: CursorMode,
+    remembered: Option<crate::portal_grants::SelectionRequest>,
+) -> Result<PortalStream, PortalError> {
+    negotiate_selected(cursor_mode, &Selection::default(), remembered).await
 }
 
 pub async fn negotiate_selected(
     cursor_mode: CursorMode,
     selection: &Selection,
+    remembered: Option<crate::portal_grants::SelectionRequest>,
 ) -> Result<PortalStream, PortalError> {
     selection.check_active()?;
+    let restore_token = remembered
+        .as_ref()
+        .map(|request| request.claim(cursor_mode))
+        .transpose()
+        .map_err(|error| failed("remembered source", error))?
+        .flatten();
     let proxy = Screencast::new().await.map_err(portal_unavailable)?;
 
     let cursor_modes = proxy
@@ -345,19 +357,10 @@ pub async fn negotiate_selected(
             cursor_mode.to_portal(),
             types,
             false,
-            // NO RESTORE TOKEN, AND NOTHING TO PERSIST. This used to replay a
-            // token from the previous run so the picker would not reappear —
-            // and that is precisely how "record this window" produced a
-            // recording of the whole screen. A token is bound to the source it
-            // was minted for, so once any monitor had been approved the portal
-            // restored that monitor on every later run and never raised the
-            // picker again; the app had no way to ask for anything else,
-            // because `SelectSources` cannot name a source. The picker IS the
-            // source chooser on Wayland, so suppressing it removed the only
-            // control the user had. Asking every time is the cost of letting
-            // them choose at all.
-            None,
-            PersistMode::DoNot,
+            restore_token.as_deref(),
+            remembered
+                .as_ref()
+                .map_or(PersistMode::DoNot, |_| PersistMode::ExplicitlyRevoked),
         )
         .await
         .map_err(|error| failed("SelectSources", error))?
@@ -388,6 +391,9 @@ pub async fn negotiate_selected(
 
     selection.check_active()?;
     Ok(PortalStream {
+        remembered_grant: remembered
+            .zip(streams.restore_token())
+            .map(|(request, token)| request.granted(cursor_mode, token.to_owned())),
         lease,
         fd,
         node_id: stream.pipe_wire_node_id(),
@@ -481,7 +487,7 @@ mod tests {
         let selection = Selection::default();
         selection.cancel().expect("cancel before CreateSession");
         selection.cancel().expect("repeat cancel");
-        let result = pollster::block_on(negotiate_selected(CursorMode::Embedded, &selection));
+        let result = pollster::block_on(negotiate_selected(CursorMode::Embedded, &selection, None));
         let Err(error) = result else {
             panic!("cancelled selection must not produce a grant");
         };

@@ -171,6 +171,14 @@ must change before Continue. Keep all completed clips in the same logical record
 must not wait for transcription, thumbnail generation, waveforms, proxy creation, cleanup,
 concat, remux, or re-encoding.
 
+On Linux, Record reuses the last compatible portal source grant when the compositor
+supports remembering consent. Settings → Source is available before recording and while
+paused; it always opens a fresh system chooser. Idle source selection records no media.
+Keep approval tokens private to the native helper and rotate them after every use.
+Changing cursor mode or losing/revoking a grant can require another chooser. Cancelling
+an explicit choice preserves an existing paused recording, but discards the remembered
+grant so the next take asks again rather than silently recording the former source.
+
 If the selected source disappears while paused, preserve the completed clips and allow
 reselection before Continue. A stopped stream needs a freshly configured replacement; a
 filter update alone does not establish restarted capture. An explicit failed Continue that

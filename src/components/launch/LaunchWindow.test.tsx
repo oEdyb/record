@@ -52,6 +52,7 @@ const recorderState = vi.hoisted(() => ({
 		toggleRecording: vi.fn(),
 		togglePaused: vi.fn(),
 		selectRecordingSource: vi.fn(async () => ({ success: true })),
+		chooseRecordingSource: vi.fn(async () => ({ success: true })),
 		canPauseRecording: false,
 		canReconfigureWhilePaused: false,
 		canRemovePreviousClip: false,
@@ -392,6 +393,7 @@ function resetLaunchMocks() {
 	recorderState.value.restoreRemovedClip.mockResolvedValue(null);
 	recorderState.value.togglePaused.mockClear();
 	recorderState.value.selectRecordingSource.mockClear();
+	recorderState.value.chooseRecordingSource.mockClear();
 	recorderState.value.microphoneEnabled = false;
 	recorderState.value.setMicrophoneEnabled.mockClear();
 	recorderState.value.setMicrophoneDeviceId.mockClear();
@@ -954,6 +956,18 @@ describe("LaunchWindow record button", () => {
 		});
 	});
 
+	it("offers a fresh native source chooser before the first Linux recording", async () => {
+		platformState.value = "linux";
+		renderLaunchWindow();
+		await waitFor(() =>
+			expect(window.electronAPI.isNativeLinuxCaptureAvailable).toHaveBeenCalled(),
+		);
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByTestId("hud-setup-choose-source"));
+		await waitFor(() => expect(recorderState.value.chooseRecordingSource).toHaveBeenCalledOnce());
+		expect(recorderState.value.selectRecordingSource).not.toHaveBeenCalled();
+	});
+
 	it("opens the native portal from the paused Linux source settings", async () => {
 		platformState.value = "linux";
 		recorderState.value.recording = true;
@@ -1008,7 +1022,7 @@ describe("LaunchWindow record button", () => {
 		const recordButton = await screen.findByTestId("launch-record-button");
 		expect(recordButton).toBeEnabled();
 		await waitFor(() => {
-			expect(recordButton).toHaveAttribute("title", "Your system will ask what to share");
+			expect(recordButton).toHaveAttribute("title", "Record");
 		});
 
 		fireEvent.click(recordButton);

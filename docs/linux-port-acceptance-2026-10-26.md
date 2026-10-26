@@ -7,6 +7,11 @@ and responsive native capture/review/export. Windows remains later work.
 
 ## Candidate
 
+Branch follow-up: remembered Linux source grants and an explicit idle Source chooser
+are implemented and verified in private KWin. See [focused evidence](../artifacts/linux-port-2026-10-26/remembered-source/README.md).
+These changes are newer than the portable runtime below; Niri persistence remains
+a separate check. No repeated full suite or packaging checkpoint was run for this slice.
+
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
 - Latest portable runtime: `6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb`.
 - Inventory: `release/linux-port-20261026-6bdd95af/` (`SOURCE_SHA`, `SHA256SUMS`).
