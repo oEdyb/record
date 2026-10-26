@@ -1,0 +1,5 @@
+{
+  "hostEnvironmentRejected": true,
+  "exitCode": 2,
+  "message": "Refusing input outside a private agent-lab runtime."
+}

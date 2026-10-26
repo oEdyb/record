@@ -1,0 +1,43 @@
+{
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080,
+        "nb_read_frames": "183"
+      },
+      {
+        "codec_name": "aac",
+        "nb_read_frames": "286"
+      }
+    ],
+    "format": {
+      "duration": "6.121354"
+    }
+  },
+  "videoFlashOnsetsSec": [
+    0.5666666666666667,
+    1.5666666666666667,
+    2.566666666666667,
+    3.566666666666667,
+    4.566666666666666,
+    5.566666666666666
+  ],
+  "audioPulseOnsetsSec": [
+    0.53,
+    1.53,
+    2.5300000000000002,
+    3.5300000000000002,
+    4.53,
+    5.53
+  ],
+  "audioPeak": 0.4351491332054138,
+  "videoDecode": "pass",
+  "audioDecode": "pass",
+  "hostWindowsExposed": false,
+  "encoder": "nvenc",
+  "note": "Bounded smoke under aggregate 2-core/6-GiB lab cap; not a native Niri or performance-parity benchmark."
+}

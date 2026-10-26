@@ -589,3 +589,35 @@ helper probe with a deliberately nonexistent child-only D-Bus address emits the
 corrected error and exits without opening a picker. Strict Clippy and formatting
 pass. Probe evidence: `artifacts/linux-port-2026-10-26/portal-diagnostic/`.
 This diagnostic-only follow-up is not in the earlier `af35b212` candidate packages.
+
+
+### Invisible routine Linux testing
+
+Olle's October 26 instruction moves routine GUI, browser, input, audio and portal
+tests into `agent-lab`, with no host pointer, focus, clipboard, tones or picker
+interaction. The installed tool and commands are documented in
+`~/.local/share/agent-lab/README.md`. It uses a private 1920×1080 KWin 6.8.1 display,
+D-Bus, profiles and PipeWire/Pulse graph with a null sink/monitor. All named
+instances share a low-priority two-core/6 GiB cgroup, with no login service.
+Stopping a core stops its bound test applications. Input refuses the host
+environment; screenshots verify the compositor belongs to that lab. Startup
+serializes callers and matches published readiness to the current systemd unit
+generation. A live paused-start regression and independent re-review pass.
+
+The lab passed real portal capture with NVENC (183 1080p frames), separate audio,
+six matching visual/audio markers and full decode. Constant relative offset was
+about 37 ms in this six-second smoke; this is not calibrated device latency or
+performance parity. The actual packaged app also passed Record, Pause, source
+replacement, Continue, Stop and review, with two fully decodable clips whose
+background colors identify the two owned sources. Private typing/Unicode,
+Ctrl+A and Alt-Tab pass. No fixture/picker appeared on the host; the owning lab
+was stopped afterwards. Evidence: `artifacts/linux-port-2026-10-26/agent-lab/`.
+A final background JS run passed 3,100 tests, with 12 platform skips.
+
+The lab shares the host GPU, UID and project filesystem and is not a hostile-code
+sandbox. Stock [Niri's nested backend](https://github.com/YaLTeR/niri/blob/8ed0da4/src/backend/mod.rs)
+returns no GBM device, which [its screencast path requires](https://github.com/YaLTeR/niri/blob/8ed0da4/src/screencasting/mod.rs).
+Nested Niri UI can run invisibly, but media checks use the installed
+[KWin virtual backend](https://github.com/KDE/kwin/blob/v6.8.1/src/backends/virtual/virtual_backend.cpp).
+Do not report these as exact Niri capture, physical webcam, hotplug or suspend
+coverage; visible physical-session checks require explicit authorization.

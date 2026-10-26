@@ -154,6 +154,7 @@ not prove the helper contains the current source.
   capture validation.
 - Read `technical-documentation/testing/manual-e2e-checklist.md` before a release-candidate
   smoke test.
+- Routine Linux GUI tests use `agent-lab` with private compositor input/audio/portals; see `~/.local/share/agent-lab/README.md`. Do not drive the visible host desktop without explicit authorization. KWin lab evidence does not establish exact Niri capture parity.
 
 ## Working discipline
 

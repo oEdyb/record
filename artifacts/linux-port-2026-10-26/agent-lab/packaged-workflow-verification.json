@@ -1,0 +1,27 @@
+{
+  "runtime": "b6c90b0a",
+  "portal": "KDE in headless KWin",
+  "clips": [
+    {
+      "index": 0,
+      "durationMs": 1183,
+      "backgroundRGB": [
+        28,
+        37,
+        39
+      ],
+      "decode": "pass"
+    },
+    {
+      "index": 1,
+      "durationMs": 26283,
+      "backgroundRGB": [
+        40,
+        29,
+        43
+      ],
+      "decode": "pass"
+    }
+  ],
+  "hostDesktopInputUsed": false
+}
