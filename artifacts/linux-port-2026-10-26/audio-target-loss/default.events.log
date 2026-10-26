@@ -1,0 +1,9 @@
+STATE connecting 
+STATE paused 
+STATE streaming 
+FIRST 41984613523852
+REMOVED selected source A; default source B remains active
+STATE paused 
+STATE streaming 
+STATE paused 
+STATE unconnected 

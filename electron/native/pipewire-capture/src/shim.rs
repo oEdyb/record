@@ -4,10 +4,9 @@
 //! matched pair; the compiler cannot check that for you, so if you touch one,
 //! touch the other.
 //!
-//! Nothing here interprets PipeWire semantics — the shim already validated the
-//! metadata offsets. This module's only jobs are (1) owning the raw handle
-//! safely and (2) turning callback pointers into channel messages without ever
-//! letting a Rust panic unwind into C.
+//! The C shim validates metadata layout. This module owns raw handles, reports
+//! unexpected audio disconnection, and turns callback pointers into channel
+//! messages without ever letting a Rust panic unwind into C.
 
 use std::ffi::{c_char, c_void, CStr};
 use std::os::fd::{IntoRawFd, OwnedFd};
@@ -374,12 +373,13 @@ pub type AudioStateSink = Box<dyn Fn(String, Option<String>) + Send>;
 struct AudioCallbackState {
     ring: std::sync::Arc<AudioRing>,
     on_state: AudioStateSink,
+    stopping: std::sync::atomic::AtomicBool,
 }
 
 /// One running audio capture stream. Dropping it joins its PipeWire thread.
 pub struct AudioSession {
     raw: *mut RawAudioSession,
-    _state: Box<AudioCallbackState>,
+    state: Box<AudioCallbackState>,
 }
 
 impl AudioSession {
@@ -401,7 +401,11 @@ impl AudioSession {
             ),
             None => None,
         };
-        let state = Box::new(AudioCallbackState { ring, on_state });
+        let state = Box::new(AudioCallbackState {
+            ring,
+            on_state,
+            stopping: std::sync::atomic::AtomicBool::new(false),
+        });
         let callbacks = RawAudioCallbacks {
             user: &*state as *const AudioCallbackState as *mut c_void,
             on_samples: on_audio_samples,
@@ -428,12 +432,15 @@ impl AudioSession {
         if raw.is_null() {
             return Err(take_error(&err));
         }
-        Ok(Self { raw, _state: state })
+        Ok(Self { raw, state })
     }
 }
 
 impl Drop for AudioSession {
     fn drop(&mut self) {
+        self.state
+            .stopping
+            .store(true, std::sync::atomic::Ordering::Release);
         // SAFETY: `raw` came from osc_pw_audio_start and is stopped exactly once.
         unsafe { osc_pw_audio_stop(self.raw) };
     }
@@ -485,6 +492,10 @@ extern "C" fn on_audio_state(user: *mut c_void, state_name: *const c_char, error
                     .into_owned(),
             )
         };
+        let error = error.or_else(|| {
+            (name == "unconnected" && !state.stopping.load(std::sync::atomic::Ordering::Acquire))
+                .then(|| "the audio source disconnected".to_owned())
+        });
         (state.on_state)(name, error);
     });
 }
@@ -1051,6 +1062,34 @@ mod tests {
 
 #[cfg(test)]
 mod source_tests {
+    #[test]
+    fn unexpected_audio_disconnect_is_reported_but_normal_teardown_is_not() {
+        use std::sync::{atomic::Ordering, Arc, Mutex};
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let received = events.clone();
+        let state = super::AudioCallbackState {
+            ring: Arc::new(super::AudioRing::new(1, 48000, 2)),
+            on_state: Box::new(move |name, error| received.lock().unwrap().push((name, error))),
+            stopping: std::sync::atomic::AtomicBool::new(false),
+        };
+        let user = std::ptr::from_ref(&state).cast_mut().cast();
+        super::on_audio_state(user, c"unconnected".as_ptr(), std::ptr::null());
+        super::on_audio_state(user, c"error".as_ptr(), c"permission denied".as_ptr());
+        state.stopping.store(true, Ordering::Release);
+        super::on_audio_state(user, c"unconnected".as_ptr(), std::ptr::null());
+        let events = events.lock().unwrap();
+        assert_eq!(events[0].0, "unconnected");
+        assert_eq!(
+            events[0].1.as_deref(),
+            Some("the audio source disconnected")
+        );
+        assert_eq!(
+            events[1],
+            ("error".into(), Some("permission denied".into()))
+        );
+        assert_eq!(events[2], ("unconnected".into(), None));
+    }
+
     /// Prints the graph's capture nodes. Opt-in — it needs a live PipeWire
     /// session, so CI skips it; run it by hand when the microphone a user picked
     /// does not match what got recorded.

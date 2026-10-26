@@ -670,3 +670,44 @@ An initial proof sampled before Pause acknowledgement; its hash assertion was
 invalid. The repeat waits for the acknowledged Resume control before hashing.
 Both lab and build container are stopped. No further full suite was run for
 this package/documentation verification.
+
+
+### Explicit microphone target loss — October 26
+
+Private graph testing found a real device-selection failure: after the selected
+440 Hz microphone disappeared, PipeWire silently linked its capture stream to
+the 880 Hz default microphone. Existing label-to-node resolution was correct;
+the session manager's fallback/reconnection policy changed the actual source.
+
+Explicit targets now set `node.dont-fallback` and `node.dont-reconnect`. Untargeted
+default capture keeps its existing policy. Rust reports an unexpected
+`unconnected` state as an audio failure even when PipeWire supplies no error
+string, while an atomic stopping marker suppresses normal teardown. The callback
+regression fails before the correction and passes after it, including native
+error preservation. No C ABI, dependencies or shared public API changed.
+
+The private 48 kHz stereo PCM probe uses the actual helper C archive. Before:
+440/880/880 Hz at 1/5/7 seconds after selecting A and removing it at three seconds.
+After: 440 Hz, then no new PCM; the stream reports target failure at about 3.03
+seconds. Default capture still yields 440/880/880 Hz. The production Electron
+HUD selected the real private Chromium device `LabMicrophoneA`, resolved it to
+`lab_mic_source_a`, recorded two clips, and opened interruption review on loss.
+Both screens and microphone originals fully decode, measured microphone windows
+contain only 440 Hz, and committed files retain their pre-failure hashes. The
+partial tail remains provisional until review probes it; review shows 57 seconds
+and two clips. This resource-capped run reports drops and is not a performance
+or physical-device timing benchmark. Lab stopped after verification.
+
+Checks: 105 native tests pass (one existing ignored, two live filtered), 168
+affected JS tests pass, strict Clippy/formatting/lint pass, independent review
+reports no introduced P1/P2. No full JS suite rerun for this native-only slice.
+Evidence: `artifacts/linux-port-2026-10-26/audio-target-loss/`. The fcf6b7dd
+portable candidates predate this correction; rebuild verification follows.
+
+Contracts: [PipeWire target and reconnection properties](https://docs.pipewire.org/page_man_pipewire-props_7.html),
+[stream target identity](https://docs.pipewire.org/group__pw__stream.html), and
+[WirePlumber 0.5.18 policy](https://raw.githubusercontent.com/PipeWire/wireplumber/0.5.18/src/scripts/linking/prepare-link.lua).
+[WirePlumber 0.4.8](https://raw.githubusercontent.com/PipeWire/wireplumber/0.4.8/src/scripts/policy-node.lua)
+recognizes no-reconnect after a first link but lacks no-fallback handling. Its
+initial target-disappearance race is not proven safe by this current-host pass
+and remains an older-session-manager integration gate.

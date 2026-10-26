@@ -190,6 +190,11 @@ struct osc_pw_audio *osc_pw_audio_start(const char *target_object, int capture_s
     }
     if (target_object != NULL && target_object[0] != '\0') {
         osc_audio_api.properties_set(props, PW_KEY_TARGET_OBJECT, target_object);
+        /* An explicitly selected microphone must never become another device
+         * when its target disappears or cannot be linked. Default capture has
+         * no target and intentionally keeps the session manager's policy. */
+        osc_audio_api.properties_set(props, "node.dont-fallback", "true");
+        osc_audio_api.properties_set(props, PW_KEY_NODE_DONT_RECONNECT, "true");
     }
 
     audio->stream = osc_audio_api.stream_new(audio->core, "openscreen-audio", props);

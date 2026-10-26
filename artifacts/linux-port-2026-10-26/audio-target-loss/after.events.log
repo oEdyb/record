@@ -1,0 +1,8 @@
+STATE connecting 
+STATE paused 
+STATE streaming 
+FIRST 41636656196084
+REMOVED selected source A; default source B remains active
+STATE paused 
+STATE error defined target not found
+STATE unconnected 
