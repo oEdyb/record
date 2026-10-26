@@ -100,7 +100,7 @@ impl AudioMix {
         static SILENCE: [f32; 8192] = [0.0; 8192];
         for input in &mut self.inputs {
             let mut samples = Vec::new();
-            let drained = input.ring.drain_into(&mut samples);
+            let drained = input.ring.drain_into(&mut samples)?;
             let dropped = drained.dropped_samples;
             let missing = usize::try_from(dropped.saturating_sub(input.accounted_drops))
                 .map_err(|_| "audio overflow exceeds the platform timeline")?;
@@ -1477,10 +1477,9 @@ mod tests {
 
     #[test]
     fn timed_microphone_is_audible_after_legacy_pause_and_source_return() {
-        for (case, pause_tick, return_tick, clock_shift) in [
-            ("resume-immediate", Some(11), 11, 0),
-            ("resume-delayed", Some(11), 16, 0),
-            ("clock-reset", None, 16, 1_550_000_000),
+        for (case, pause_tick, return_tick) in [
+            ("resume-immediate", Some(11), 11),
+            ("resume-delayed", Some(11), 16),
         ] {
             let output =
                 std::env::temp_dir().join(format!("klippt-audio-source-return-{case}.mp4"));
@@ -1537,14 +1536,7 @@ mod tests {
                 }
                 system.push_for_test(&vec![0.0; frames * AUDIO_CHANNELS]);
                 if tick == 1 || tick >= return_tick {
-                    microphone.push_at_for_test(
-                        &tone,
-                        (u64::from(tick) * 100_000_000).saturating_sub(if tick >= return_tick {
-                            clock_shift
-                        } else {
-                            0
-                        }),
-                    );
+                    microphone.push_at_for_test(&tone, u64::from(tick) * 100_000_000);
                 }
                 capture
                     .audio

@@ -379,9 +379,8 @@ starved before or after Pause audible after Continue.
 Focused regressions cover a 60-second stream with alternating 100 μs clock jitter,
 a timed microphone returning after legacy Pause/Continue, a measured gap in both
 original and compatibility AAC, delayed post-Continue return, multiple queued
-blocks, long gaps/overflow, clock
-reset, unavailable timestamps and Pause clearing. The independent review found jitter, legacy Continue and delayed-return defects;
-all were corrected, with a final fresh review pending. Native helper tests: 90 pass,
+blocks, long gaps/overflow, unavailable timestamps and Pause clearing. The independent review found jitter, legacy Continue and delayed-return defects;
+all were corrected, with a final fresh review pending. Native helper tests: 92 pass,
 one existing live test ignored; strict Clippy and formatting pass.
 The C ABI review passed 13 runtime-version cases and protected-page tests with
 24-byte/32-byte older buffers plus current 64-bit timestamps.
@@ -394,3 +393,14 @@ live pass preceded the jitter refinement. Evidence and binary provenance are und
 `artifacts/linux-port-2026-10-26/audio-cycle-time/`. Updated package generation is
 pending final review and checks; the immutable `d7b0dafc` candidate above does not
 contain this follow-up.
+
+
+A regressing capture-cycle clock is now rejected before admitting its PCM. The
+cycle uses PipeWire's monotonic clock; guessing a new epoch could reorder queued
+originals or compress an outage while the compatibility mix looked correct. That
+condition therefore follows the existing visible writer-failure/recovery path,
+while ordinary forward-clock outages and post-Continue delays recover automatically.
+An integration regression verifies the error, rejects the bad clip, retains the
+previous committed clip and fully decodes its original. Pause clears the failed
+clock state for a new clip. This supersedes the initial attempted backward-clock
+reanchor behavior; no source timing recovery from an invalid backward clock is claimed.

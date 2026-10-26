@@ -8,6 +8,7 @@ struct QueuedAudio {
     samples: VecDeque<f32>,
     clock: Option<AudioClock>,
     clock_reanchored: bool,
+    invalid_clock: bool,
 }
 
 /// Anchor the cursor once, then advance by exact PCM frames. Buffer-cycle
@@ -28,6 +29,7 @@ impl AudioClock {
 
 const CLOCK_JITTER_NS: u64 = 2_000_000;
 
+#[derive(Debug)]
 pub struct AudioDrain {
     pub dropped_samples: u64,
     pub cycle_ns: Option<u64>,
@@ -64,6 +66,17 @@ impl AudioRing {
                 .fetch_add(samples.len() as u64, Ordering::Relaxed);
             return;
         };
+        if queued.invalid_clock {
+            return;
+        }
+        if let Some(clock) = &queued.clock {
+            if cycle_ns < clock.last_cycle_ns {
+                // A capture-cycle timestamp is monotonic. A backward epoch
+                // cannot be positioned safely among already queued originals.
+                queued.invalid_clock = true;
+                return;
+            }
+        }
         if cycle_ns == 0 {
             queued.clock = None;
         } else {
@@ -75,11 +88,6 @@ impl AudioRing {
                 frames: 0,
                 last_cycle_ns: cycle_ns,
             });
-            if cycle_ns < clock.last_cycle_ns {
-                queued.clock_reanchored = true;
-                clock.anchor_ns = cycle_ns;
-                clock.frames = 0;
-            }
             let gap = cycle_ns.saturating_sub(clock.expected_ns(self.sample_rate));
             if gap > CLOCK_JITTER_NS {
                 let frames =
@@ -129,17 +137,16 @@ impl AudioRing {
         self.dropped.fetch_add(excess as u64, Ordering::Relaxed);
     }
 
-    pub fn drain_into(&self, out: &mut Vec<f32>) -> AudioDrain {
+    pub fn drain_into(&self, out: &mut Vec<f32>) -> Result<AudioDrain, String> {
         let Ok(mut queued) = self.inner.lock() else {
-            return AudioDrain {
-                dropped_samples: self.dropped_samples(),
-                cycle_ns: None,
-                clock_reanchored: false,
-            };
+            return Err("audio sample queue lock is poisoned".to_owned());
         };
+        if queued.invalid_clock {
+            return Err("PipeWire audio cycle clock moved backwards; recording cannot preserve source timing".to_owned());
+        }
         out.reserve(queued.samples.len());
         out.extend(queued.samples.drain(..));
-        AudioDrain {
+        Ok(AudioDrain {
             // Snapshot loss and PCM under the same lock, before another push.
             dropped_samples: self.dropped_samples(),
             cycle_ns: queued
@@ -147,7 +154,7 @@ impl AudioRing {
                 .as_ref()
                 .map(|clock| clock.expected_ns(self.sample_rate)),
             clock_reanchored: std::mem::take(&mut queued.clock_reanchored),
-        }
+        })
     }
 
     /// Audio before the video epoch and during Pause belongs to no clip.
@@ -156,6 +163,7 @@ impl AudioRing {
             queued.samples.clear();
             queued.clock = None;
             queued.clock_reanchored = false;
+            queued.invalid_clock = false;
             self.dropped.store(0, Ordering::Relaxed);
         }
     }
@@ -185,7 +193,7 @@ mod tests {
         ring.push_at(&[0.25; 2], 1_000_000_000);
         ring.push_at(&[0.75; 2], 1_400_000_000);
         let mut samples = Vec::new();
-        let drained = ring.drain_into(&mut samples);
+        let drained = ring.drain_into(&mut samples).expect("valid audio clock");
         assert_eq!(
             samples,
             [0.25, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.75, 0.75]
@@ -199,7 +207,7 @@ mod tests {
         ring.push_at(&[0.25; 2], 1_000_000_000);
         ring.push_at(&[0.75; 2], 61_000_000_000);
         let mut samples = Vec::new();
-        let drained = ring.drain_into(&mut samples);
+        let drained = ring.drain_into(&mut samples).expect("valid audio clock");
         assert_eq!(samples.len(), 40);
         assert!(samples[..38].iter().all(|sample| *sample == 0.0));
         assert_eq!(&samples[38..], &[0.75; 2]);
@@ -213,7 +221,7 @@ mod tests {
         ring.clear();
         ring.push_at(&[0.75; 2], 61_000_000_000);
         let mut samples = Vec::new();
-        let drained = ring.drain_into(&mut samples);
+        let drained = ring.drain_into(&mut samples).expect("valid audio clock");
         assert_eq!(samples, [0.75; 2]);
         assert_eq!(drained.dropped_samples, 0);
     }
@@ -225,7 +233,7 @@ mod tests {
         for block in 0_u64..6_000 {
             let jitter = if block % 2 == 0 { 0 } else { 100_000 };
             ring.push_at(&[0.25; 960], 1_000_000_000 + block * 10_000_000 + jitter);
-            let drained = ring.drain_into(&mut samples);
+            let drained = ring.drain_into(&mut samples).expect("valid audio clock");
             assert_eq!(drained.dropped_samples, 0);
         }
         assert_eq!(samples.len(), 60 * 48_000 * 2);
@@ -233,14 +241,30 @@ mod tests {
     }
 
     #[test]
-    fn unavailable_or_reset_clock_never_creates_a_wrapped_gap() {
+    fn old_runtimes_keep_contiguous_untimed_audio() {
         let ring = AudioRing::new(2, 10, 2);
-        for clock in [61_000_000_000, 1_000_000_000, 0, 81_000_000_000] {
-            ring.push_at(&[0.25; 2], clock);
+        for _ in 0..4 {
+            ring.push_at(&[0.25; 2], 0);
         }
         let mut samples = Vec::new();
-        let drained = ring.drain_into(&mut samples);
+        let drained = ring.drain_into(&mut samples).expect("untimed audio");
         assert_eq!(samples, [0.25; 8]);
-        assert_eq!(drained.dropped_samples, 0);
+        assert!(drained.cycle_ns.is_none());
+    }
+
+    #[test]
+    fn backward_clock_is_rejected_until_the_clip_clears() {
+        let ring = AudioRing::new(2, 10, 2);
+        ring.push_at(&[0.25; 2], 61_000_000_000);
+        ring.push_at(&[0.75; 2], 1_000_000_000);
+        let mut samples = Vec::new();
+        assert!(ring
+            .drain_into(&mut samples)
+            .expect_err("invalid clock")
+            .contains("moved backwards"));
+        ring.clear();
+        ring.push_at(&[0.75; 2], 1_000_000_000);
+        ring.drain_into(&mut samples).expect("new clip clock");
+        assert_eq!(samples, [0.75; 2]);
     }
 }

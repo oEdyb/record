@@ -540,3 +540,52 @@ fn paused_encode_changes_apply_to_the_next_file_and_leave_the_first_untouched() 
     assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "60/1");
     assert_eq!(std::fs::read(first_path).unwrap(), first_bytes);
 }
+
+#[test]
+fn backward_audio_clock_fails_visibly_and_preserves_the_committed_clip() {
+    let fixture = Fixture::new();
+    let ring = Arc::new(shim::AudioRing::new(2, 48000, 2));
+    let source = AudioSource {
+        label: "microphone",
+        ring: ring.clone(),
+        gain: 1.0,
+        bitrate: 128000,
+    };
+    let mut clips = Clips::new(fixture.request(), vec![source], Some(Backend::Software));
+    let mut bytes = Vec::new();
+    let mut emitter = Emitter::new(&mut bytes, false);
+    clips.frame(frame(), &mut emitter).expect("screen");
+    ring.push_at_for_test(&tone(4800), 1_000_000_000);
+    clips.advance(&mut emitter).expect("first audio");
+    clips.pause(&mut emitter).expect("commit first clip");
+    clips.resume(&mut emitter).expect("continue");
+    ring.push_at_for_test(&tone(4800), 2_000_000_000);
+    clips.advance(&mut emitter).expect("valid second audio");
+    ring.push_at_for_test(&tone(4800), 1_000_000_000);
+    let error = clips
+        .advance(&mut emitter)
+        .expect_err("invalid source clock");
+    assert!(error.contains("moved backwards"));
+    clips.fail(&error);
+    assert!(clips.stop(&mut emitter).is_err());
+    assert_eq!(
+        clips.completed.len(),
+        1,
+        "invalid clip must not be committed"
+    );
+    assert!(!decode(
+        clips.completed[0]
+            .microphone_audio_path
+            .as_deref()
+            .expect("committed original")
+    )
+    .is_empty());
+    let events = values(&bytes);
+    let stopped = events
+        .iter()
+        .find(|event| event["event"] == "recording-stopped")
+        .expect("stop event");
+    assert_eq!(stopped["clips"].as_array().expect("clips").len(), 1);
+    assert_eq!(stopped["warning"]["code"], "final-clip-failed");
+    assert!(events.iter().any(|event| event["event"] == "error"));
+}
