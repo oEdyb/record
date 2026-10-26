@@ -1,0 +1,12 @@
+[capture-linux] audio source {"event":"audio-source","node":"lab_mic_source_a","requested":"LabMicrophoneA","role":"microphone","schemaVersion":1,"timestampMs":1793027364769}
+[capture-mac] helper warning at 2026-10-26T15:09:54.175Z: {"code":"window-crop-missing","event":"warning","message":"window supplied no crop; recording the full PipeWire stream","schemaVersion":1,"timestampMs":1793027394175}
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793027394300,"video":"nvenc"}
+[capture-mac] helper warning at 2026-10-26T15:10:20.139Z: {"code":"audio-input-disconnected","event":"warning","message":"microphone stream failed in error: the selected audio source disappeared","schemaVersion":1,"timestampMs":1793027420139}
+[capture-mac] helper warning at 2026-10-26T15:10:20.143Z: {"code":"audio-input-disconnected","event":"warning","message":"microphone stream failed in error: defined target not found","schemaVersion":1,"timestampMs":1793027420143}
+[capture-mac] helper warning at 2026-10-26T15:10:20.143Z: {"code":"audio-input-disconnected","event":"warning","message":"microphone stream failed in unconnected: the audio source disconnected","schemaVersion":1,"timestampMs":1793027420143}
+[capture-linux] audio source {"event":"audio-source","node":null,"requested":"LabMicrophoneA","role":"microphone","schemaVersion":1,"timestampMs":1793027420358}
+[capture-mac] helper warning at 2026-10-26T15:10:20.359Z: {"code":"microphone-not-found","event":"warning","message":"no PipeWire capture node matches \"LabMicrophoneA\"","schemaVersion":1,"timestampMs":1793027420358}
+[capture-linux] audio source {"event":"audio-source","node":"lab_mic_source_a","requested":"LabMicrophoneA","role":"microphone","schemaVersion":1,"timestampMs":1793027444715}
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793027444896,"video":"nvenc"}
+[capture-mac] helper warning at 2026-10-26T15:10:49.204Z: {"code":"frames-dropped","event":"warning","message":"17 captured frames were superseded before encoding","schemaVersion":1,"timestampMs":1793027449204}
+[live] cursor: path=/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793027364664-clip-0002.mp4.cursor.json loaded=ok samples=85

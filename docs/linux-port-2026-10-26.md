@@ -898,7 +898,19 @@ source hash is unchanged. Evidence and bounds:
 
 21 affected tests pass across clip cursor splitting, Linux capture metadata and
 the PipeWire accumulator. No runtime changes, rebuild or full suite were needed.
-The private lab is stopped. This proves the bounded video-only workflow, not the
-reason the earlier paused-audio-loss/reconfigure take lacked sidecars. Repeat
-that condition with deliberate pointer motion before closing its diagnostic.
+The private lab is stopped. This proves the bounded video-only workflow. The
+combined paused-audio-loss/reconfigure condition is checked separately below.
 All subsequent checks should run only affected tests, per Olle’s instruction.
+
+
+The combined paused-audio recovery check also passes on the same AppImage:
+Record with explicit private A and deliberate cursor motion, Pause, remove A,
+Continue rejected while paused, restore A, Continue with new motion, Stop.
+Two clips (19.616/4.316 seconds) retain native cursor sidecars (64/85 samples)
+with valid assets and local timestamps. The recovered clip loads its 85 samples
+and renders the cursor in preview. All four screen/microphone files decode and
+both first-clip source hashes remain unchanged. One helper survives; rejected
+Continue adds no clip. Evidence is alongside the video-only proof. The private
+lab is stopped. No cursor-loss regression is reproduced across this recovery
+path; the earlier missing-sidecar diagnostic alone does not justify a code fix.
+No additional suite was run because runtime and test code are unchanged.

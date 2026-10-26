@@ -1,0 +1,50 @@
+{
+  "sourceCommit": "3a177e66d6d108fbebaa6e7fe4323d3cfb20d1df",
+  "recordingId": 1793027364664,
+  "helperPid": 2559532,
+  "helperSha256": "3b1b4fef32f80a769dca831567424f06ffa1d20a6ff156764dda513eb23808e7",
+  "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793027364664.session.json",
+  "clips": [
+    {
+      "index": 0,
+      "durationMs": 19616,
+      "sourceHashes": {
+        "microphoneAudioPath": "f3a1c20cc3b363112ef3c63e7b5132461f76ec5162de69a93227306b2f5b0187",
+        "screenVideoPath": "48c1660cabeda9f72c21c945fab7f373bbfcb5d13424906efb0b9ea2975af47d"
+      },
+      "cursorSha256": "aa89a746b3c170ee27eda34c466992a1055efae393ac7f2183c0409fbae6f50e",
+      "samples": 64,
+      "assets": 1,
+      "firstSampleMs": 3731,
+      "lastSampleMs": 19285,
+      "fullyDecoded": true
+    },
+    {
+      "index": 1,
+      "durationMs": 4316,
+      "sourceHashes": {
+        "microphoneAudioPath": "06297085049c3054488604cf629472dd545cd0c47aad0ec98a737bdc8b0bb777",
+        "screenVideoPath": "805018b6770ec2af9bf301365f58f9e77dec10eab1cd96251f138545e005c0e4"
+      },
+      "cursorSha256": "babad46a0322a1d6f2f6ad950d4b374cc3ab35cdea7cddd249613c7fb663533c",
+      "samples": 85,
+      "assets": 1,
+      "firstSampleMs": 886,
+      "lastSampleMs": 4036,
+      "fullyDecoded": true
+    }
+  ],
+  "recoveredClipCursorWhitePixels": 27,
+  "recoveredClipCursorBounds": [
+    965,
+    761,
+    973,
+    774
+  ],
+  "physicalPointerDuringPreview": [
+    110,
+    210
+  ],
+  "failedContinueAddedNoClip": true,
+  "firstClipSourcesUnchanged": true
+}
