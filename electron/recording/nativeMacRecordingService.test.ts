@@ -45,6 +45,7 @@ class FakeHelper implements NativeMacCaptureHelper {
 	resume = vi.fn().mockResolvedValue(1);
 	selectSource = vi.fn().mockResolvedValue(true);
 	cancelSourceSelection = vi.fn();
+	cancelAudioPreparation = vi.fn();
 	stop = vi.fn(async () => ({
 		screenPath: this.stopClips[0]?.screenVideoPath ?? "",
 		clips: this.stopClips,
@@ -70,6 +71,99 @@ const baseRequest: NativeMacRecordingRequest = {
 };
 
 describe("NativeMacRecordingService", () => {
+	it("Stop during Continue permissions prevents a later helper command", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		let finishPermissions: (() => void) | undefined;
+		vi.mocked(deps.prepareCapturePermissions).mockClear();
+		vi.mocked(deps.prepareCapturePermissions).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishPermissions = resolve;
+				}),
+		);
+		const continued = service.resume({ ...request, video: { ...request.video, fps: 30 } });
+		await vi.waitFor(() => expect(deps.prepareCapturePermissions).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		finishPermissions?.();
+		await expect(continued).resolves.toMatchObject({ success: false });
+		await expect(stopped).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+	it("Stop cancels a Linux Continue waiting for fresh audio without fatal recovery", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		let rejectResume: ((error: Error) => void) | undefined;
+		helper.resume.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					rejectResume = reject;
+				}),
+		);
+		helper.cancelAudioPreparation.mockImplementation(() =>
+			rejectResume?.(new NativeMacResumeRejectedError("audio preparation cancelled", 0)),
+		);
+		const continued = service.resume(request);
+		await vi.waitFor(() => expect(helper.resume).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		await expect(continued).resolves.toMatchObject({ success: false, paused: true });
+		await expect(stopped).resolves.toMatchObject({ success: true });
+		expect(helper.cancelAudioPreparation).toHaveBeenCalledOnce();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+	it("cancels pending Linux audio configuration before Stop joins the command queue", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		await service.pause();
+		let rejectSetup: ((error: Error) => void) | undefined;
+		helper.reconfigure.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					rejectSetup = reject;
+				}),
+		);
+		helper.cancelAudioPreparation.mockImplementation(() =>
+			rejectSetup?.(new Error("audio setup cancelled")),
+		);
+		const continued = service.resume({
+			...baseRequest,
+			platform: "linux",
+			audio: {
+				...baseRequest.audio,
+				microphone: { enabled: true, deviceName: "new input", gain: 1 },
+			},
+		});
+		await vi.waitFor(() => expect(helper.reconfigure).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		try {
+			expect(helper.cancelAudioPreparation).toHaveBeenCalledOnce();
+		} finally {
+			rejectSetup?.(new Error("audio setup cancelled"));
+			await expect(continued).resolves.toMatchObject({ success: false });
+			await expect(stopped).resolves.toMatchObject({ success: true });
+		}
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+
+	it("an immediate Stop prevents a queued Continue from reopening Linux audio", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		const continued = service.resume(request);
+		const stopped = service.stop(true);
+		await expect(continued).resolves.toMatchObject({ success: false });
+		await stopped;
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
 	it.each([
 		"webm",
 		"mp4",

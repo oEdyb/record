@@ -115,6 +115,14 @@ impl Clips {
     pub fn has_writer(&self) -> bool {
         self.writer.is_some()
     }
+
+    pub fn reject_resume<W: Write>(&self, emitter: &mut Emitter<W>, message: String) {
+        let _ = emitter.emit(&Event::ClipResumeRejected {
+            code: "clip-resume-rejected",
+            clip_index: self.completed.len(),
+            message,
+        });
+    }
     fn canonical(&self) -> bool {
         self.request.outputs.is_some()
     }

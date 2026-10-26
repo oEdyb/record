@@ -256,6 +256,11 @@ export class NativeMacHelperClient {
 		this.process.stdin.write("cancel-select-source\n");
 	}
 
+	cancelAudioPreparation(): void {
+		this.requireWritableCommandChannel();
+		this.process.stdin.write("cancel-audio-preparation\n");
+	}
+
 	async resume(): Promise<number> {
 		const event = await this.sendAndWait({
 			command: "resume\n",

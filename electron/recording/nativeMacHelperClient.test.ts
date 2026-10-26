@@ -41,6 +41,27 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("cancels Linux audio preparation and leaves a rejected Continue retryable", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { platform: "linux", onFatalError });
+		const write = vi.spyOn(process.stdin, "write");
+		const continued = client.resume();
+		const rejected = expect(continued).rejects.toBeInstanceOf(NativeMacResumeRejectedError);
+		client.cancelAudioPreparation();
+		expect(write).toHaveBeenLastCalledWith("cancel-audio-preparation\n");
+		emit(process, {
+			event: "error",
+			code: "clip-resume-rejected",
+			clipIndex: 1,
+			message: "audio setup cancelled; still paused",
+		});
+		await rejected;
+		expect(onFatalError).not.toHaveBeenCalled();
+		const retry = client.resume();
+		emit(process, { event: "recording-resumed", clipIndex: 1 });
+		await expect(retry).resolves.toBe(1);
+	});
 	it("requests a new cursor grant and waits for source adoption", async () => {
 		const process = fakeProcess();
 		const client = new NativeMacHelperClient(process, { platform: "linux" });

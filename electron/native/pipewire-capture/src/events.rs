@@ -202,6 +202,12 @@ pub enum Event {
         code: String,
         message: String,
     },
+    #[serde(rename = "error", rename_all = "camelCase")]
+    ClipResumeRejected {
+        code: &'static str,
+        clip_index: usize,
+        message: String,
+    },
     /// Stage 1 instrumentation. `data` is free-form on purpose: these are
     /// answers to open questions, not a contract anything parses.
     #[serde(rename_all = "camelCase")]
@@ -302,6 +308,21 @@ pub fn timestamp_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paused_audio_rejection_uses_the_shared_correlated_error_contract() {
+        let event = Event::ClipResumeRejected {
+            code: "clip-resume-rejected",
+            clip_index: 2,
+            message: "input missing; still paused".into(),
+        };
+        let line = emit_one(&event, false);
+        let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["event"], "error");
+        assert_eq!(value["code"], "clip-resume-rejected");
+        assert_eq!(value["clipIndex"], 2);
+        assert_eq!(value["schemaVersion"], SCHEMA_VERSION);
+    }
 
     fn emit_one(event: &Event, debug: bool) -> String {
         let mut buffer = Vec::new();

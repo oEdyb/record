@@ -303,6 +303,11 @@ struct osc_pw_enum {
     struct spa_hook registry_listener;
     struct spa_hook core_listener;
     int sync_seq;
+    struct spa_source *timeout;
+    int completed;
+    int failed;
+    char *error;
+    size_t error_len;
     /* Caller's buffer, filled as "name\037description\036" records. */
     char *out;
     size_t out_len;
@@ -364,13 +369,38 @@ static void osc_enum_on_core_done(void *data, uint32_t id, int seq)
      * a matching `done` means the initial dump is complete. Without this we
      * would have to guess at a timeout and would race a busy graph. */
     if (id == PW_ID_CORE && seq == e->sync_seq) {
+        e->completed = 1;
         osc_audio_api.main_loop_quit(e->loop);
     }
+}
+
+static void osc_enum_on_timeout(void *data, uint64_t expirations)
+{
+    struct osc_pw_enum *e = data;
+    (void)expirations;
+    e->failed = 1;
+    osc_pw_set_error(e->error, e->error_len, "PipeWire audio registry did not respond within one second");
+    osc_audio_api.main_loop_quit(e->loop);
+}
+
+static void osc_enum_on_core_error(void *data, uint32_t id, int seq, int result,
+                                   const char *message)
+{
+    struct osc_pw_enum *e = data;
+    (void)seq;
+    if (id != PW_ID_CORE || result >= 0) {
+        return;
+    }
+    e->failed = 1;
+    osc_pw_set_error(e->error, e->error_len, "PipeWire audio registry failed: %s",
+                     message != NULL ? message : "connection lost");
+    osc_audio_api.main_loop_quit(e->loop);
 }
 
 static const struct pw_core_events osc_enum_core_events = {
     PW_VERSION_CORE_EVENTS,
     .done = osc_enum_on_core_done,
+    .error = osc_enum_on_core_error,
 };
 
 int osc_pw_list_audio_sources(char *out, size_t out_len, char *err, size_t err_len)
@@ -385,6 +415,8 @@ int osc_pw_list_audio_sources(char *out, size_t out_len, char *err, size_t err_l
     memset(&e, 0, sizeof(e));
     e.out = out;
     e.out_len = out_len;
+    e.error = err;
+    e.error_len = err_len;
     if (out_len > 0) {
         out[0] = '\0';
     }
@@ -416,11 +448,30 @@ int osc_pw_list_audio_sources(char *out, size_t out_len, char *err, size_t err_l
     pw_registry_add_listener(e.registry, &e.registry_listener, &osc_enum_registry_events, &e);
     pw_core_add_listener(e.core, &e.core_listener, &osc_enum_core_events, &e);
     e.sync_seq = pw_core_sync(e.core, PW_ID_CORE, 0);
+    if (e.sync_seq < 0) {
+        osc_pw_set_error(err, err_len, "PipeWire audio registry sync failed");
+        goto out;
+    }
+    struct pw_loop *loop = osc_audio_api.main_loop_get_loop(e.loop);
+    struct timespec deadline = { .tv_sec = 1 };
+    e.timeout = pw_loop_add_timer(loop, osc_enum_on_timeout, &e);
+    if (e.timeout == NULL || pw_loop_update_timer(loop, e.timeout, &deadline, NULL, false) < 0) {
+        osc_pw_set_error(err, err_len, "could not arm the audio registry deadline");
+        goto out;
+    }
 
-    osc_audio_api.main_loop_run(e.loop);
-    result = 0;
+    if (osc_audio_api.main_loop_run(e.loop) < 0) {
+        osc_pw_set_error(err, err_len, "PipeWire audio registry loop failed");
+    } else if (e.completed && !e.failed) {
+        result = 0;
+    } else if (!e.failed) {
+        osc_pw_set_error(err, err_len, "PipeWire audio registry closed before sync");
+    }
 
 out:
+    if (e.timeout != NULL) {
+        pw_loop_destroy_source(osc_audio_api.main_loop_get_loop(e.loop), e.timeout);
+    }
     if (e.registry != NULL) {
         osc_audio_api.proxy_destroy((struct pw_proxy *)e.registry);
     }

@@ -374,6 +374,8 @@ struct AudioCallbackState {
     ring: std::sync::Arc<AudioRing>,
     on_state: AudioStateSink,
     stopping: std::sync::atomic::AtomicBool,
+    received_samples: std::sync::atomic::AtomicBool,
+    failure: std::sync::Mutex<Option<String>>,
 }
 
 /// One running audio capture stream. Dropping it joins its PipeWire thread.
@@ -381,6 +383,12 @@ pub struct AudioSession {
     raw: *mut RawAudioSession,
     state: Box<AudioCallbackState>,
 }
+
+// SAFETY: the C handle owns a PipeWire thread loop, not a thread-local resource.
+// Moving the owner keeps its boxed callback address stable. Readiness accesses
+// only atomic/mutex fields; Drop joins the callback loop before freeing the box.
+// This permits worker-to-command-loop transfer, not concurrent use (Sync).
+unsafe impl Send for AudioSession {}
 
 impl AudioSession {
     /// `target` names a specific PipeWire node, or `None` for the session
@@ -405,6 +413,8 @@ impl AudioSession {
             ring,
             on_state,
             stopping: std::sync::atomic::AtomicBool::new(false),
+            received_samples: std::sync::atomic::AtomicBool::new(false),
+            failure: std::sync::Mutex::new(None),
         });
         let callbacks = RawAudioCallbacks {
             user: &*state as *const AudioCallbackState as *mut c_void,
@@ -433,6 +443,22 @@ impl AudioSession {
             return Err(take_error(&err));
         }
         Ok(Self { raw, state })
+    }
+
+    /// Connection alone is insufficient: a replacement must produce real PCM.
+    pub fn readiness(&self) -> Result<bool, String> {
+        let failure = self
+            .state
+            .failure
+            .lock()
+            .map_err(|_| "audio state lock is poisoned")?;
+        if let Some(message) = failure.as_ref() {
+            return Err(message.clone());
+        }
+        Ok(self
+            .state
+            .received_samples
+            .load(std::sync::atomic::Ordering::Acquire))
     }
 }
 
@@ -468,6 +494,9 @@ extern "C" fn on_audio_samples(user: *mut c_void, samples: *const f32, count: u3
         // before the call, and the mapping outlives it.
         let slice = unsafe { std::slice::from_raw_parts(samples, count as usize) };
         state.ring.push_at(slice, cycle_ns);
+        state
+            .received_samples
+            .store(true, std::sync::atomic::Ordering::Release);
     });
 }
 
@@ -496,6 +525,11 @@ extern "C" fn on_audio_state(user: *mut c_void, state_name: *const c_char, error
             (name == "unconnected" && !state.stopping.load(std::sync::atomic::Ordering::Acquire))
                 .then(|| "the audio source disconnected".to_owned())
         });
+        if let Some(message) = &error {
+            if let Ok(mut failure) = state.failure.lock() {
+                failure.get_or_insert_with(|| message.clone());
+            }
+        }
         (state.on_state)(name, error);
     });
 }
@@ -1063,6 +1097,34 @@ mod tests {
 #[cfg(test)]
 mod source_tests {
     #[test]
+    fn audio_readiness_requires_pcm_and_never_masks_a_later_failure() {
+        use std::sync::{atomic::AtomicBool, Arc, Mutex};
+        let state = Box::new(super::AudioCallbackState {
+            ring: Arc::new(super::AudioRing::new(1, 48000, 2)),
+            on_state: Box::new(|_, _| {}),
+            stopping: AtomicBool::new(false),
+            received_samples: AtomicBool::new(false),
+            failure: Mutex::new(None),
+        });
+        let session = super::AudioSession {
+            raw: std::ptr::null_mut(),
+            state,
+        };
+        let user = std::ptr::from_ref(&*session.state).cast_mut().cast();
+        assert!(!session.readiness().unwrap());
+        super::on_audio_state(user, c"streaming".as_ptr(), std::ptr::null());
+        assert!(!session.readiness().unwrap());
+        let silence = [0_f32; 4];
+        super::on_audio_samples(user, silence.as_ptr(), silence.len() as u32, 0);
+        assert!(session.readiness().unwrap());
+        super::on_audio_state(user, c"unconnected".as_ptr(), std::ptr::null());
+        assert_eq!(
+            session.readiness(),
+            Err("the audio source disconnected".into())
+        );
+    }
+
+    #[test]
     fn unexpected_audio_disconnect_is_reported_but_normal_teardown_is_not() {
         use std::sync::{atomic::Ordering, Arc, Mutex};
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -1071,6 +1133,8 @@ mod source_tests {
             ring: Arc::new(super::AudioRing::new(1, 48000, 2)),
             on_state: Box::new(move |name, error| received.lock().unwrap().push((name, error))),
             stopping: std::sync::atomic::AtomicBool::new(false),
+            received_samples: std::sync::atomic::AtomicBool::new(false),
+            failure: std::sync::Mutex::new(None),
         };
         let user = std::ptr::from_ref(&state).cast_mut().cast();
         super::on_audio_state(user, c"unconnected".as_ptr(), std::ptr::null());

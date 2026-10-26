@@ -62,7 +62,11 @@ export type NativeMacCaptureHelper = Pick<
 	Partial<
 		Pick<
 			NativeMacHelperClient,
-			"waitForSourceSelected" | "arm" | "selectSource" | "cancelSourceSelection"
+			| "waitForSourceSelected"
+			| "arm"
+			| "selectSource"
+			| "cancelSourceSelection"
+			| "cancelAudioPreparation"
 		>
 	>;
 
@@ -487,6 +491,7 @@ export class NativeMacRecordingService {
 		return this.enqueue(async () => {
 			const helper = this.helper;
 			if (
+				this.stopOperation ||
 				!helper ||
 				!this.paused ||
 				this.fatalError ||
@@ -498,6 +503,8 @@ export class NativeMacRecordingService {
 			}
 			try {
 				await this.deps.prepareCapturePermissions(request);
+				if (this.stopOperation)
+					return { success: false, prepared: false, error: "The recording is stopping." };
 				const { config } = this.deps.resolveCapture(request, this.recordingId, this.targetPath);
 				if (this.captureConfigKey(config) !== this.captureConfigKey(this.captureConfig)) {
 					await helper.reconfigure(config);
@@ -566,6 +573,8 @@ export class NativeMacRecordingService {
 
 	resume(request?: NativeMacRecordingRequest) {
 		return this.enqueue(async () => {
+			const stopping = { success: false, paused: true, error: "The recording is stopping." };
+			if (this.stopOperation) return stopping;
 			const helper = this.requireHelper();
 			if (!this.paused) return { success: true };
 			let resumeRequested = false;
@@ -595,11 +604,13 @@ export class NativeMacRecordingService {
 						}
 					}
 					if (this.captureConfigKey(config) !== this.captureConfigKey(this.captureConfig)) {
+						if (this.stopOperation) return stopping;
 						await helper.reconfigure(config);
 						this.captureConfig = config;
 					}
 					this.cursorCaptureMode = cursorCaptureMode;
 				}
+				if (this.stopOperation) return stopping;
 				resumeRequested = true;
 				const clipIndex = await helper.resume();
 				this.completeCursorPauseRange();
@@ -696,6 +707,13 @@ export class NativeMacRecordingService {
 		if (this.stopOperation) return this.stopOperation;
 		// Abort queued choices as well as a picker already waiting for a human.
 		this.sourceSelectionCancellation?.abort();
+		if (this.captureConfig?.platform === "linux" && this.helper?.isRunning()) {
+			try {
+				this.helper.cancelAudioPreparation?.();
+			} catch (error) {
+				console.warn("[capture-linux] could not cancel audio preparation:", error);
+			}
+		}
 		const operation = this.enqueue(async () => {
 			const helper = this.helper;
 			if (!helper) {

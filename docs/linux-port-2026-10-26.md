@@ -724,3 +724,42 @@ Inventory: `release/linux-port-20261026-aeae26ec/`. Both lab and build container
 are stopped. Subsequent local checks should cover paused microphone loss and
 reconfiguration as well as the older-session-manager initial-link race; this
 active-capture test does not establish those paths.
+
+### Recoverable paused microphone loss — October 26
+
+An acknowledged Pause has already committed its clip. Losing an input while
+paused now preserves that take and portal, emits a warning, and lets Continue
+retry or the user choose another microphone or disable it. Active-recording
+loss still follows fatal recovery. A missing input rejects Continue with the
+existing correlated `clip-resume-rejected` contract; it does not start a writer
+or end the take.
+
+Replacement audio opens on a worker. Its two-second preparation deadline starts
+before opening, and acknowledgment requires PCM from every requested stream
+(valid silence counts). Failed or cancelled candidates cannot replace active
+configuration. Stop cancels pending preparation before joining shared command
+serialization; queued Continue and delayed permission completion cannot start a
+new clip after Stop. Ready candidates yield to queued Cancel/Stop. Registry
+enumeration has a one-second timer and core-error exit, so a stalled daemon
+cannot hold the command loop indefinitely. Session transfer retains boxed
+callback addresses; teardown stops and joins the owned PipeWire thread before
+freeing callback state.
+
+The private native pass produces four fully decodable clips: microphone A,
+restored A after two rejected attempts, microphone B, then video without audio.
+Measured originals contain 440/440/880 Hz. One helper/portal survives throughout,
+and committed first-clip hashes remain unchanged. Freezing only the private
+daemon makes enumeration fail at 1.002 seconds; Cancel/Stop exits the helper in
+22.92 ms while the daemon is still frozen, preserving one clip and creating no
+tail. The daemon is always resumed. These bounded native tests do not establish
+renderer, physical-device or long-run timing parity.
+
+115 native tests, 173 affected JS tests, both typechecks, strict Clippy and lint
+pass. One final full JS run passes 3,110 tests with 12 existing platform/opt-in
+skips. Fresh native control-flow and ownership reviews pass. Evidence:
+`artifacts/linux-port-2026-10-26/paused-audio/`. Portable packages and the actual
+Electron pass follow the runtime commit; `aeae26ec` packages predate this slice.
+
+Contracts: [PipeWire thread-loop ownership](https://docs.pipewire.org/group__pw__thread__loop.html),
+[loop timer/update/destroy API](https://docs.pipewire.org/group__pw__loop.html),
+and [explicit-target policy](https://docs.pipewire.org/page_man_pipewire-props_7.html).

@@ -24,6 +24,7 @@
 //! events, and /dev/input/event* is root:input. Every sample is therefore a
 //! "move"; there is no click detection to be had here at any effort level.
 
+mod audio_preparation;
 mod audio_queue;
 mod audio_ring;
 mod bitmap;
@@ -72,6 +73,11 @@ enum Message {
     },
     SelectSource(Option<CursorRequest>),
     CancelSelectSource,
+    CancelAudioPreparation,
+    AudioOpened {
+        generation: u64,
+        opened: Box<audio_preparation::Opened>,
+    },
     /// Arm a deferred session: connect to PipeWire and start encoding.
     Record,
     Pause,
@@ -192,13 +198,14 @@ struct RunConfig {
 /// picture and no system audio is worth far more to the user than no recording
 /// at all, and the most likely cause — a sandbox without the PipeWire socket —
 /// is not something the helper can fix.
-fn start_audio<W: Write>(
-    emitter: &mut Emitter<W>,
+fn start_audio(
     configs: &[AudioSourceConfig],
     sender: &Sender<Message>,
     generation: u64,
-) -> (Vec<shim::AudioSession>, Vec<capture::AudioSource>) {
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> audio_preparation::Opened {
     let mut sessions = Vec::new();
+    let mut events = Vec::new();
     let mut sources = Vec::new();
     // Enumerated ONCE for the whole recording, not per stream: it opens its own
     // PipeWire connection and runs a loop to completion, so doing it per source
@@ -207,12 +214,9 @@ fn start_audio<W: Write>(
         match shim::list_audio_sources() {
             Ok(list) => list,
             Err(message) => {
-                let _ = emitter.emit(&Event::Warning {
+                events.push(Event::Warning {
                     code: "audio-enumeration-failed".to_owned(),
-                    message: format!(
-                        "the PipeWire graph could not be listed, so the requested microphone \
-                         cannot be resolved and the session default will be used instead: {message}"
-                    ),
+                    message: format!("the PipeWire audio graph could not be listed: {message}"),
                 });
                 Vec::new()
             }
@@ -222,6 +226,9 @@ fn start_audio<W: Write>(
     };
 
     for config in configs {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            break;
+        }
         let ring = Arc::new(shim::AudioRing::new(
             AUDIO_RING_SECONDS,
             encoder::AUDIO_SAMPLE_RATE as usize,
@@ -235,20 +242,16 @@ fn start_audio<W: Write>(
             .target
             .as_deref()
             .and_then(|wanted| resolve_microphone_node(wanted, &graph));
-        let _ = emitter.emit(&Event::AudioSource {
+        events.push(Event::AudioSource {
             role: label.to_owned(),
             requested: config.target.clone(),
             node: resolved.clone(),
         });
         if let Some(wanted) = config.target.as_deref() {
             if resolved.is_none() {
-                let _ = emitter.emit(&Event::Warning {
+                events.push(Event::Warning {
                     code: "microphone-not-found".to_owned(),
-                    message: format!(
-                        "no PipeWire capture node matches {wanted:?}, so the session default \
-                         source will be recorded instead — which is often not the microphone \
-                         the user picked."
-                    ),
+                    message: format!("no PipeWire capture node matches {wanted:?}"),
                 });
             }
         }
@@ -287,7 +290,7 @@ fn start_audio<W: Write>(
                 });
             }
             Err(message) => {
-                let _ = emitter.emit(&Event::Warning {
+                events.push(Event::Warning {
                     code: "audio-unavailable".to_owned(),
                     message: format!(
                         "the {} audio stream could not be opened, so the recording will \
@@ -298,7 +301,36 @@ fn start_audio<W: Write>(
             }
         }
     }
-    (sessions, sources)
+    audio_preparation::Opened {
+        sessions,
+        sources,
+        events,
+        expected: configs.len(),
+    }
+}
+
+fn prepare_audio(
+    generation: u64,
+    configs: Vec<AudioSourceConfig>,
+    action: audio_preparation::Action,
+    sender: &Sender<Message>,
+) -> audio_preparation::Preparation {
+    let preparation = audio_preparation::Preparation::new(generation, action);
+    let cancelled = preparation.cancellation();
+    let sender = sender.clone();
+    std::thread::spawn(move || {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return;
+        }
+        let opened = start_audio(&configs, &sender, generation, &cancelled);
+        if !cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = sender.send(Message::AudioOpened {
+                generation,
+                opened: Box::new(opened),
+            });
+        }
+    });
+    preparation
 }
 
 fn parse_request() -> Result<Request, String> {
@@ -355,6 +387,11 @@ fn read_commands(reader: impl BufRead, sender: &Sender<Message>) {
             }
             "cancel-select-source" => {
                 if sender.send(Message::CancelSelectSource).is_err() {
+                    return;
+                }
+            }
+            "cancel-audio-preparation" => {
+                if sender.send(Message::CancelAudioPreparation).is_err() {
                     return;
                 }
             }
@@ -507,6 +544,23 @@ struct SourceSelection {
     cursor: Option<CursorRequest>,
 }
 
+fn reject_audio_preparation<W: Write>(
+    preparation: audio_preparation::Preparation,
+    clips: &clips::Clips,
+    emitter: &mut Emitter<W>,
+    message: String,
+) {
+    match preparation.action {
+        audio_preparation::Action::Resume => clips.reject_resume(emitter, message),
+        audio_preparation::Action::Reconfigure(_) => {
+            let _ = emitter.emit(&Event::Error {
+                code: "reconfigure-rejected".into(),
+                message,
+            });
+        }
+    }
+}
+
 struct CandidateSource {
     generation: u64,
     session: shim::Session,
@@ -654,8 +708,19 @@ fn run<W: Write>(
     // `_audio_sessions` is bound, not dropped: dropping one stops its thread.
     let mut audio_generation = 0;
     let mut next_audio_generation = 1;
-    let (mut audio_sessions, audio_sources) =
-        start_audio(emitter, &config.audio, &sender, audio_generation);
+    let mut paused_audio_error = None;
+    let mut pending_audio: Option<audio_preparation::Preparation> = None;
+    let opened = start_audio(
+        &config.audio,
+        &sender,
+        audio_generation,
+        &std::sync::atomic::AtomicBool::new(false),
+    );
+    for event in opened.events {
+        let _ = emitter.emit(&event);
+    }
+    let mut audio_sessions = opened.sessions;
+    let audio_sources = opened.sources;
     let mut clips = clips::Clips::new(config.request, audio_sources, config.forced_encoder);
     if clips.request.outputs.is_some() && clips.audio.len() != config.audio.len() {
         let _ = emitter.emit(&Event::Error {
@@ -680,8 +745,49 @@ fn run<W: Write>(
     let mut candidate_source: Option<CandidateSource> = None;
     let mut previous_dropped_frames = 0_u64;
     let mut adopted_cursor = None;
+    let mut queued_message = None;
 
     loop {
+        let audio_result = pending_audio
+            .as_ref()
+            .map(|preparation| preparation.poll(Instant::now()));
+        match audio_result {
+            Some(Ok(true)) if audio_can_commit(&receiver, &adopted_cursor, &mut queued_message) => {
+                if let Some(mut prepared) = pending_audio.take() {
+                    let opened = prepared
+                        .opened
+                        .take()
+                        .expect("ready preparation has opened inputs");
+                    audio_generation = prepared.generation;
+                    audio_sessions = opened.sessions;
+                    clips.audio = opened.sources;
+                    paused_audio_error = None;
+                    match prepared.action {
+                        audio_preparation::Action::Reconfigure(next) => {
+                            clips.request = *next;
+                            let _ = emitter.emit(&Event::RecordingReconfigured {});
+                        }
+                        audio_preparation::Action::Resume => {
+                            if let Err(message) = clips.resume(emitter) {
+                                clips.fail(&message);
+                                let _ = emitter.emit(&Event::Error {
+                                    code: "capture-stopped-with-error".into(),
+                                    message,
+                                });
+                                exit_code = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            Some(Err(message)) => {
+                if let Some(preparation) = pending_audio.take() {
+                    reject_audio_preparation(preparation, &clips, emitter, message);
+                }
+            }
+            _ => {}
+        }
         if candidate_source
             .as_ref()
             .is_some_and(|candidate| candidate.readiness.expired(Instant::now()))
@@ -693,7 +799,12 @@ fn run<W: Write>(
                 "replacement source supplied no usable frame within eight seconds".into(),
             );
         }
-        let incoming = match receive_message(&receiver, &mut adopted_cursor, config.tick) {
+        let incoming = match receive_message(
+            &receiver,
+            &mut adopted_cursor,
+            &mut queued_message,
+            config.tick,
+        ) {
             Ok(Message::SourceEvent { generation, event }) if generation == source_generation => {
                 Ok(Message::Stream(event))
             }
@@ -702,11 +813,37 @@ fn run<W: Write>(
         match incoming {
             Ok(Message::Stop) => break,
 
+            Ok(Message::AudioOpened {
+                generation,
+                mut opened,
+            }) => {
+                if let Some(preparation) = pending_audio
+                    .as_mut()
+                    .filter(|p| p.generation == generation)
+                {
+                    for event in opened.events.drain(..) {
+                        let _ = emitter.emit(&event);
+                    }
+                    preparation.opened = Some(*opened);
+                }
+            }
+            Ok(Message::CancelAudioPreparation) => {
+                if let Some(preparation) = pending_audio.take() {
+                    reject_audio_preparation(
+                        preparation,
+                        &clips,
+                        emitter,
+                        "audio input preparation cancelled; recording remains paused".into(),
+                    );
+                }
+            }
+
             Ok(Message::SelectSource(cursor)) => {
                 if source_selection.is_some() {
                     continue;
                 }
-                if !clips.is_paused() || clips.request.outputs.is_none() {
+                if !clips.is_paused() || clips.request.outputs.is_none() || pending_audio.is_some()
+                {
                     let _ = emitter.emit(&Event::Error { code: "source-selection-rejected".into(),
                         message: "source selection requires a paused clip-native recording with no pending selection".into() });
                     continue;
@@ -875,6 +1012,27 @@ fn run<W: Write>(
                     });
                     continue;
                 }
+                if pending_audio.is_some() {
+                    clips.reject_resume(emitter, "audio input setup is still pending".into());
+                    continue;
+                }
+                let failed_audio = paused_audio_error.clone().or_else(|| {
+                    audio_sessions
+                        .iter()
+                        .find_map(|session| session.readiness().err())
+                });
+                if failed_audio.is_some() {
+                    let configs = clips.request.audio_sources();
+                    let generation = next_audio_generation;
+                    next_audio_generation += 1;
+                    pending_audio = Some(prepare_audio(
+                        generation,
+                        configs,
+                        audio_preparation::Action::Resume,
+                        &sender,
+                    ));
+                    continue;
+                }
                 if let Err(message) = clips.resume(emitter) {
                     clips.fail(&message);
                     let _ = emitter.emit(&Event::Error {
@@ -890,6 +1048,8 @@ fn run<W: Write>(
                     Err("reconfigure requires the clip-native outputs request".into())
                 } else if !clips.is_paused() {
                     Err("reconfigure requires a paused recording".into())
+                } else if pending_audio.is_some() || source_selection.is_some() {
+                    Err("finish or cancel the pending input selection first".into())
                 } else {
                     clips.request.validate_reconfigure(&next)
                 };
@@ -901,23 +1061,20 @@ fn run<W: Write>(
                     continue;
                 }
                 let configs = next.audio_sources();
-                if clips.request.audio_topology() != next.audio_topology() {
+                if clips.request.audio_topology() != next.audio_topology()
+                    || paused_audio_error.is_some()
+                {
                     // New inputs are prepared while paused. Keep old sessions
                     // intact until every replacement has opened successfully.
                     let candidate_generation = next_audio_generation;
                     next_audio_generation += 1;
-                    let (sessions, sources) =
-                        start_audio(emitter, &configs, &sender, candidate_generation);
-                    if sources.len() != configs.len() {
-                        let _ = emitter.emit(&Event::Error {
-                            code: "reconfigure-rejected".into(),
-                            message: "could not prepare every requested audio input".into(),
-                        });
-                        continue;
-                    }
-                    audio_generation = candidate_generation;
-                    audio_sessions = sessions;
-                    clips.audio = sources;
+                    pending_audio = Some(prepare_audio(
+                        candidate_generation,
+                        configs,
+                        audio_preparation::Action::Reconfigure(next),
+                        &sender,
+                    ));
+                    continue;
                 }
                 for source in &mut clips.audio {
                     if let Some(config) = configs.iter().find(|config| config.label == source.label)
@@ -939,6 +1096,14 @@ fn run<W: Write>(
                 message,
             }) => {
                 if generation != audio_generation {
+                    continue;
+                }
+                if clips.is_paused() && clips.request.outputs.is_some() {
+                    paused_audio_error = Some(message.clone());
+                    let _ = emitter.emit(&Event::Warning {
+                        code: "audio-input-disconnected".into(),
+                        message,
+                    });
                     continue;
                 }
                 clips.fail(&message);
@@ -1325,12 +1490,28 @@ fn emit_sample<W: Write>(
     });
 }
 
+fn audio_can_commit(
+    receiver: &mpsc::Receiver<Message>,
+    priority: &Option<Message>,
+    queued: &mut Option<Message>,
+) -> bool {
+    if priority.is_some() || queued.is_some() {
+        return false;
+    }
+    if let Ok(message) = receiver.try_recv() {
+        *queued = Some(message);
+        return false;
+    }
+    true
+}
+
 fn receive_message(
     receiver: &mpsc::Receiver<Message>,
     priority: &mut Option<Message>,
+    queued: &mut Option<Message>,
     timeout: Duration,
 ) -> Result<Message, RecvTimeoutError> {
-    match priority.take() {
+    match priority.take().or_else(|| queued.take()) {
         Some(message) => Ok(message),
         None => receiver.recv_timeout(timeout),
     }
@@ -1478,6 +1659,29 @@ mod microphone_resolution_tests {
 #[cfg(test)]
 mod command_tests {
     use super::*;
+
+    #[test]
+    fn a_ready_audio_candidate_yields_to_queued_cancel_and_stop() {
+        for cancel in [Message::CancelAudioPreparation, Message::Stop] {
+            let (sender, receiver) = mpsc::channel();
+            let mut preparation =
+                audio_preparation::Preparation::new(1, audio_preparation::Action::Resume);
+            preparation.opened = Some(audio_preparation::Opened {
+                sessions: Vec::new(),
+                sources: Vec::new(),
+                events: Vec::new(),
+                expected: 0,
+            });
+            assert!(preparation.poll(Instant::now()).unwrap());
+            sender.send(cancel).expect("queued cancellation");
+            let mut queued = None;
+            assert!(!audio_can_commit(&receiver, &None, &mut queued));
+            assert!(matches!(
+                receive_message(&receiver, &mut None, &mut queued, Duration::ZERO).unwrap(),
+                Message::CancelAudioPreparation | Message::Stop
+            ));
+        }
+    }
     #[test]
     fn adopted_cursor_precedes_newer_queued_cursor_updates() {
         let cursor = |id| {
@@ -1494,7 +1698,9 @@ mod command_tests {
         sender.send(cursor(2)).expect("new sprite queued");
         let mut adopted = Some(cursor(1));
         for expected in [1, 2] {
-            match receive_message(&receiver, &mut adopted, Duration::ZERO).expect("cursor event") {
+            match receive_message(&receiver, &mut adopted, &mut None, Duration::ZERO)
+                .expect("cursor event")
+            {
                 Message::Stream(StreamEvent::Cursor(event)) => assert_eq!(event.id, expected),
                 _ => panic!("expected cursor"),
             }
@@ -1536,6 +1742,20 @@ mod command_tests {
             Message::CancelSelectSource
         ));
         assert!(matches!(receiver.try_recv().expect("stop"), Message::Stop));
+    }
+
+    #[test]
+    fn audio_preparation_cancellation_is_delivered_before_stop() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(
+            std::io::Cursor::new("cancel-audio-preparation\nstop\n"),
+            &sender,
+        );
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Message::CancelAudioPreparation
+        ));
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Stop));
     }
 
     #[test]

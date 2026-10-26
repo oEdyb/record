@@ -1,0 +1,6 @@
+{
+  "sourceBase": "4f065298",
+  "sourceState": "uncommitted paused-audio slice, reviewed round 2",
+  "helperSha256": "eb22f065524a3cd71ed11c6135ca4be8c3e6500a5442ecd3b86602251974e256",
+  "scope": "host-built native helper; portable package verification follows"
+}

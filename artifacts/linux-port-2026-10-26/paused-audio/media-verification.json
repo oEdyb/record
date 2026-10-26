@@ -1,0 +1,94 @@
+{
+  "allSourcesFullyDecode": true,
+  "clipCount": 4,
+  "micFrequenciesHz": [
+    440,
+    440,
+    880
+  ],
+  "fourthClipHasNoAudio": true,
+  "clips": [
+    {
+      "index": 0,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "0365d7c75bc0e2b41a24133a0cba784be428c4a3df8fae87bd92d486ad024d43",
+          "duration": 2.112,
+          "codecs": [
+            "aac"
+          ],
+          "dominantHz": 440.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "d80e603424f1377c1825eec9753909be0e79c4910f863ee3db4bd6814b258e45",
+          "duration": 2.121354,
+          "codecs": [
+            "h264",
+            "aac"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "8f251fa8c2e321aae61859b629ed57eb423cec33b209022ba9bc12296e89d3ab",
+          "duration": 2.069333,
+          "codecs": [
+            "aac"
+          ],
+          "dominantHz": 440.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "7e657005d4d0923977486e2d0147284d4b2482c39abd3ddc9540d36a4943d633",
+          "duration": 2.121354,
+          "codecs": [
+            "h264",
+            "aac"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "d97284dbc5cf327d2fba8598098acecb9226f3b1be63869dbe6d294cf5cdf3ab",
+          "duration": 2.069333,
+          "codecs": [
+            "aac"
+          ],
+          "dominantHz": 880.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "321045980b548d8c1bb86a838b5a917d1ac25a6a7d41901aac1625aeac708447",
+          "duration": 2.121354,
+          "codecs": [
+            "h264",
+            "aac"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "sources": [
+        {
+          "key": "screenVideoPath",
+          "sha256": "c8ca564d973eddfd747a7d2db5e89a94621b5e2fd95ceb286586ef843e7e2ac6",
+          "duration": 2.1,
+          "codecs": [
+            "h264"
+          ]
+        }
+      ]
+    }
+  ]
+}
