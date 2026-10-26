@@ -9,7 +9,7 @@ import {
 	parseNativeMacOriginalStarted,
 	parseNativeMacRecordingClip,
 } from "../../src/lib/nativeMacRecording";
-import type { RecordingSessionClip } from "../../src/lib/recordingSession";
+import type { CursorCaptureMode, RecordingSessionClip } from "../../src/lib/recordingSession";
 
 /** SIGTERM finalizes the open clip (about 0.5 s under load) before the helper exits. */
 export const HELPER_FINALIZE_GRACE_MS = 3_000;
@@ -224,7 +224,7 @@ export class NativeMacHelperClient {
 		});
 	}
 
-	async selectSource(): Promise<boolean> {
+	async selectSource(cursorMode?: CursorCaptureMode): Promise<boolean> {
 		this.requireWritableCommandChannel();
 		const pending = new Promise<boolean>((resolve, reject) => {
 			const cleanup = this.observe({
@@ -243,7 +243,11 @@ export class NativeMacHelperClient {
 				onError: reject,
 			});
 		});
-		this.process.stdin.write("select-source\n");
+		this.process.stdin.write(
+			cursorMode
+				? `${JSON.stringify({ command: "select-source", cursor: { mode: cursorMode } })}\n`
+				: "select-source\n",
+		);
 		return pending;
 	}
 

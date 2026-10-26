@@ -107,7 +107,9 @@ type UseScreenRecorderReturn = {
 	/** Starts recording with no countdown overlay. Used by the headless CLI runner. */
 	startRecordingImmediately: () => Promise<void>;
 	togglePaused: () => void;
-	selectRecordingSource: () => Promise<NativeLinuxSourceSelectionResult>;
+	selectRecordingSource: (
+		cursorMode?: CursorCaptureMode,
+	) => Promise<NativeLinuxSourceSelectionResult>;
 	canPauseRecording: boolean;
 	canReconfigureWhilePaused: boolean;
 	/** Rebuilds a paused take's capture for a likely next source before Continue. */
@@ -2001,28 +2003,33 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
-	const selectRecordingSource = useCallback(async (): Promise<NativeLinuxSourceSelectionResult> => {
-		const active = nativeMacRecording.current;
-		if (
-			window.electronAPI.getPlatform() !== "linux" ||
-			!active?.paused ||
-			active.finalizing ||
-			nativeMacToggleInFlight.current ||
-			sourceSelectionInFlight.current ||
-			!active.rendererStop
-		)
-			return { success: false, error: "Source selection requires a paused recording." };
-		sourceSelectionInFlight.current = true;
-		setSourceSelecting(true);
-		try {
-			return await window.electronAPI.selectNativeLinuxSource(active.rendererStop);
-		} catch (error) {
-			return { success: false, error: ipcErrorMessage(error) };
-		} finally {
-			sourceSelectionInFlight.current = false;
-			setSourceSelecting(false);
-		}
-	}, []);
+	const selectRecordingSource = useCallback(
+		async (cursorMode?: CursorCaptureMode): Promise<NativeLinuxSourceSelectionResult> => {
+			const active = nativeMacRecording.current;
+			if (
+				window.electronAPI.getPlatform() !== "linux" ||
+				!active?.paused ||
+				active.finalizing ||
+				nativeMacToggleInFlight.current ||
+				sourceSelectionInFlight.current ||
+				!active.rendererStop
+			)
+				return { success: false, error: "Source selection requires a paused recording." };
+			sourceSelectionInFlight.current = true;
+			setSourceSelecting(true);
+			try {
+				return await (cursorMode
+					? window.electronAPI.selectNativeLinuxSource(active.rendererStop, cursorMode)
+					: window.electronAPI.selectNativeLinuxSource(active.rendererStop));
+			} catch (error) {
+				return { success: false, error: ipcErrorMessage(error) };
+			} finally {
+				sourceSelectionInFlight.current = false;
+				setSourceSelecting(false);
+			}
+		},
+		[],
+	);
 
 	const togglePaused = () => {
 		if (sourceSelectionInFlight.current) return;

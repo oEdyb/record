@@ -1,0 +1,29 @@
+
+ RUN  v4.1.12 /home/olle/dev/screenrec-linux
+
+ ❯ electron/ipc/handlers.startup.test.ts (20 tests | 1 failed | 19 skipped) 345ms
+     × preserves cursor telemetry within a take and releases it after the terminal snapshot 344ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  electron/ipc/handlers.startup.test.ts > registerIpcHandlers startup contract > preserves cursor telemetry within a take and releases it after the terminal snapshot
+AssertionError: expected PipeWireCursorAccumulator{ …(4) } not to be PipeWireCursorAccumulator{ …(4) } // Object.is equality
+
+Compared values have no visual difference.
+
+ ❯ electron/ipc/handlers.startup.test.ts:309:23
+    307|    const second = snapshots.mock.contexts.at(-1);
+    308|    if (!(second instanceof PipeWireCursorAccumulator)) throw new Error…
+    309|    expect(second).not.toBe(first);
+       |                       ^
+    310|    expect(second.toRecordingData().samples).toEqual([]);
+    311|    second.addSample({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 19 skipped (20)
+   Start at  12:08:02
+   Duration  535ms (transform 357ms, setup 13ms, import 126ms, tests 345ms, environment 0ms)
+

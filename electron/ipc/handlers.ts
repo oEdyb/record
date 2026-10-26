@@ -2990,12 +2990,13 @@ export function registerIpcHandlers(
 		onStopStage: (stage) => activeStopTimeline?.mark(stage),
 		startCursor: async (startTimeMs) => {
 			if (process.platform !== "linux") return startCursorRecording(startTimeMs);
-			linuxClipMetadata = new LinuxClipCaptureMetadata(MAX_CURSOR_SAMPLES, startTimeMs);
+			linuxClipMetadata ??= new LinuxClipCaptureMetadata(MAX_CURSOR_SAMPLES, startTimeMs);
 			return true;
 		},
 		stopCursor: async () => {
 			if (process.platform !== "linux") return stopCursorRecording();
 			pendingCursorRecordingData = linuxClipMetadata?.cursor.toRecordingData() ?? null;
+			linuxClipMetadata = null;
 		},
 		clearCursor: () => {
 			pendingCursorRecordingData = null;
@@ -3153,22 +3154,28 @@ export function registerIpcHandlers(
 		return result;
 	});
 
-	ipcMain.handle("select-native-linux-source", async (event, owner: unknown) => {
-		if (process.platform !== "linux")
-			return { success: false, error: "Source selection requires Linux." };
-		if (
-			!owner ||
-			typeof owner !== "object" ||
-			!("recordingId" in owner && "token" in owner) ||
-			typeof owner.recordingId !== "number" ||
-			typeof owner.token !== "string" ||
-			!rendererRecordingStop.owns(event.sender, owner.recordingId, owner.token)
-		)
-			return { success: false, error: "The recording HUD no longer owns this source selection." };
-		return withHiddenPortalHud(getMainWindow, () =>
-			invokeNativeMac(() => getNativeMacRecordingService().selectSource()),
-		);
-	});
+	ipcMain.handle(
+		"select-native-linux-source",
+		async (event, owner: unknown, cursorMode: unknown) => {
+			if (process.platform !== "linux")
+				return { success: false, error: "Source selection requires Linux." };
+			if (
+				!owner ||
+				typeof owner !== "object" ||
+				!("recordingId" in owner && "token" in owner) ||
+				typeof owner.recordingId !== "number" ||
+				typeof owner.token !== "string" ||
+				!rendererRecordingStop.owns(event.sender, owner.recordingId, owner.token)
+			)
+				return { success: false, error: "The recording HUD no longer owns this source selection." };
+			const mode = normalizeCursorCaptureMode(cursorMode);
+			if (cursorMode !== undefined && !mode)
+				return { success: false, error: "Invalid cursor mode." };
+			return withHiddenPortalHud(getMainWindow, () =>
+				invokeNativeMac(() => getNativeMacRecordingService().selectSource(mode)),
+			);
+		},
+	);
 
 	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
 		const result = await timeClipBoundary("continue", () =>

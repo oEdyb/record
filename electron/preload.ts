@@ -431,8 +431,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	startNativeMacRecording: (request: NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("start-native-mac-recording", request);
 	},
-	selectNativeLinuxSource: (owner: NativeRecordingAppStopRequest) => {
-		return ipcRenderer.invoke("select-native-linux-source", owner);
+	selectNativeLinuxSource: (
+		owner: NativeRecordingAppStopRequest,
+		cursorMode?: import("../src/lib/recordingSession").CursorCaptureMode,
+	) => {
+		return ipcRenderer.invoke("select-native-linux-source", owner, cursorMode);
 	},
 	pauseNativeMacRecording: () => {
 		return ipcRenderer.invoke("pause-native-mac-recording");

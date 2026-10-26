@@ -127,6 +127,28 @@ describe("NativeMacRecordingService", () => {
 		expect(inspectHandoffSourceMedia).toHaveBeenCalledWith(webcamVideoPath);
 	});
 
+	it("commits a paused Linux cursor grant only after successful selection", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		helper.selectSource.mockResolvedValueOnce(false);
+		await expect(service.selectSource("system")).resolves.toMatchObject({ cancelled: true });
+		await expect(service.prepareResume(request)).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		await expect(service.selectSource("system")).resolves.toMatchObject({ success: true });
+		expect(helper.selectSource).toHaveBeenLastCalledWith("system");
+		await expect(
+			service.resume({
+				...request,
+				cursor: { mode: "system" },
+				video: { ...request.video, hideSystemCursor: false },
+			}),
+		).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		await service.stop(true);
+	});
+
 	it("cancels a pending source picker before joining Stop's serialized command queue", async () => {
 		const service = new NativeMacRecordingService(deps);
 		await service.start({ ...baseRequest, platform: "linux" });

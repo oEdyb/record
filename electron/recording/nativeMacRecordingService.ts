@@ -510,7 +510,7 @@ export class NativeMacRecordingService {
 		});
 	}
 
-	selectSource(): Promise<NativeLinuxSourceSelectionResult> {
+	selectSource(cursorMode?: CursorCaptureMode): Promise<NativeLinuxSourceSelectionResult> {
 		if (this.sourceSelectionOperation) return this.sourceSelectionOperation;
 		const cancellation = new AbortController();
 		this.sourceSelectionCancellation = cancellation;
@@ -529,7 +529,18 @@ export class NativeMacRecordingService {
 			};
 			cancellation.signal.addEventListener("abort", cancel, { once: true });
 			try {
-				const selected = await helper.selectSource();
+				const selected = await helper.selectSource(cursorMode);
+				if (selected && cursorMode && this.captureConfig) {
+					this.captureConfig = {
+						...this.captureConfig,
+						cursor: { mode: cursorMode },
+						video: {
+							...this.captureConfig.video,
+							hideSystemCursor: cursorMode === "editable-overlay",
+						},
+					};
+					this.cursorCaptureMode = cursorMode;
+				}
 				return selected && !cancellation.signal.aborted
 					? { success: true }
 					: { success: false, cancelled: true };

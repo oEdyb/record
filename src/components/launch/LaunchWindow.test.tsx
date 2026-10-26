@@ -969,6 +969,37 @@ describe("LaunchWindow record button", () => {
 		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		true,
+		false,
+	])("commits the paused cursor preference only after portal adoption: %s", async (success) => {
+		platformState.value = "linux";
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.canReconfigureWhilePaused = true;
+		recorderState.value.setCursorCaptureMode.mockClear();
+		let resolveSelection: ((result: { success: boolean }) => void) | undefined;
+		recorderState.value.selectRecordingSource.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					resolveSelection = resolve;
+				}),
+		);
+		renderLaunchWindow();
+		await waitFor(() =>
+			expect(window.electronAPI.isNativeLinuxCaptureAvailable).toHaveBeenCalled(),
+		);
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByRole("button", { name: /deviceSettings.editableCursor/ }));
+		await waitFor(() =>
+			expect(recorderState.value.selectRecordingSource).toHaveBeenCalledWith("system"),
+		);
+		expect(recorderState.value.setCursorCaptureMode).not.toHaveBeenCalled();
+		await act(async () => resolveSelection?.({ success }));
+		if (success) expect(recorderState.value.setCursorCaptureMode).toHaveBeenCalledWith("system");
+		else expect(recorderState.value.setCursorCaptureMode).not.toHaveBeenCalled();
+	});
+
 	it("records straight away on Linux instead of demanding a source that cannot be selected", async () => {
 		platformState.value = "linux";
 

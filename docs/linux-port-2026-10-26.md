@@ -188,9 +188,8 @@ it no longer dereferences a null context during VAAPI/Vulkan setup.
 - A real macOS hardware regression pass is still required for the shared lifecycle
   changes. Windows helper/lifecycle parity remains the next port, not a delivered
   Windows implementation from this branch.
-- Unchanged Continue reuses one portal session. A paused source or portal-fixed
-  cursor-mode change is rejected visibly and retryably; source replacement needs
-  another portal session. Wayland has no portable own-window exclusion.
+- Unchanged Continue reuses one portal session. Paused source and cursor-mode changes use a transactional replacement
+  portal session; cancellation preserves the previous paused grant. Wayland has no portable own-window exclusion.
 - Electron reported global shortcut registration on niri, but Ctrl+Shift+Space
   with the fixture focused did not activate Pause. Portal identity is now correct;
   actual compositor/backend activation is still a desktop integration gate. No
@@ -576,7 +575,8 @@ both clips. Closing the old fixture after adoption did not interrupt capture.
 Final-host One video uses NVENC without fallback: 1,352 frames, 22.55 seconds,
 fully decoded, with the replacement fixture visible at the tail. The earlier
 `af35b212` packages do not include replacement.
-Changing the portal-fixed cursor mode while paused is still rejected.
+At that source-replacement checkpoint, changing the portal-fixed cursor mode
+while paused was still rejected; the cursor-grant follow-up below removes that gap.
 
 Source-replacement inspection also exposed an incorrect existing setup diagnostic:
 it recommended the GTK fallback backend for ScreenCast. The helper now names only
@@ -621,3 +621,39 @@ Nested Niri UI can run invisibly, but media checks use the installed
 [KWin virtual backend](https://github.com/KDE/kwin/blob/v6.8.1/src/backends/virtual/virtual_backend.cpp).
 Do not report these as exact Niri capture, physical webcam, hotplug or suspend
 coverage; visible physical-session checks require explicit authorization.
+
+
+### Paused cursor grant replacement — October 26
+
+The paused Editable cursor toggle now asks for a replacement ScreenCast grant with
+the requested cursor mode. The old grant stays live until the replacement supplies
+a usable frame. Cancellation or admission failure preserves the paused source,
+cursor mode and kept clips. Only adoption commits the native request, service
+configuration and renderer preference. Unchanged Continue remains picker-free;
+Stop uses the existing cancellation path outside the serialized helper queue.
+
+This uses the [official ScreenCast contract](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html):
+SelectSources is once per session, and cursor mode belongs to that selection. It
+does not pretend an in-place reconfigure can change compositor cursor pixels.
+
+Cursor telemetry is retained through paused grant changes, then released after
+the terminal snapshot. Independent review caught a cross-recording accumulator
+leak; the regression fails before the cleanup correction and passes after it.
+Fresh review reports no remaining P1/P2. Focused validation: 317 JS tests, 104 native
+tests (one existing ignored, two live filtered), both typechecks, strict Clippy,
+formatting and local policy checks pass. React Doctor reports no findings in the
+changed slice; its branch-wide scan reports an existing HUD cleanup diagnostic.
+
+Private desktop evidence and final runtime provenance are recorded in
+`artifacts/linux-port-2026-10-26/cursor-grant/`. Earlier `b6c90b0a` portable packages
+remain source-replacement candidates and do not contain this follow-up. The Mac
+hardware regression and broader platform/performance gates above remain open.
+
+Final production-bundle lab pass: two consecutive recordings in one Electron
+process produced four fully decoded clips. The second recording changed
+editable → system → editable across three clips, retaining the same helper PID
+and the first finalized clip hash. The stationary cursor region contained up to
+48 white cursor pixels in the system clip and zero in the editable clip; its
+editable cursor sidecar contains a matching sprite and bounded samples. Both
+recordings have independent telemetry origins. A single full JS run passes
+3,105 tests with 12 platform skips. The lab was stopped after verification.

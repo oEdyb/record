@@ -392,11 +392,16 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		await act(async () => view.result.current.togglePaused());
 		await settle();
 		await act(async () => {
-			await expect(view.result.current.selectRecordingSource()).resolves.toMatchObject({
+			await expect(
+				view.result.current.selectRecordingSource("editable-overlay"),
+			).resolves.toMatchObject({
 				success: false,
 			});
 		});
-		expect(choose).toHaveBeenCalledWith({ recordingId: 7, token: "take-generation" });
+		expect(choose).toHaveBeenCalledWith(
+			{ recordingId: 7, token: "take-generation" },
+			"editable-overlay",
+		);
 		expect(view.result.current.paused).toBe(true);
 		expect(view.result.current.recording).toBe(true);
 		await act(async () => view.result.current.togglePaused());

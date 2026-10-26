@@ -1377,12 +1377,29 @@ export function LaunchWindow() {
 		});
 	}, [controlsLocked, setSystemAudioEnabled, systemAudioEnabled]);
 
-	const toggleCursorMode = useCallback(() => {
+	const toggleCursorMode = useCallback(async () => {
 		if (controlsLocked) return;
 		const mode = cursorCaptureMode === "editable-overlay" ? "system" : "editable-overlay";
+		if (isLinuxHud && recording && paused) {
+			const result = await selectRecordingSource(mode);
+			if (!result.success) {
+				if (!result.cancelled)
+					toast.error(t("sourceSelector.selectFailed"), { description: result.error });
+				return;
+			}
+		}
 		setCursorCaptureMode(mode);
 		void window.electronAPI?.setRecordingPrefs?.({ cursorCaptureMode: mode });
-	}, [controlsLocked, cursorCaptureMode, setCursorCaptureMode]);
+	}, [
+		controlsLocked,
+		cursorCaptureMode,
+		isLinuxHud,
+		recording,
+		paused,
+		selectRecordingSource,
+		setCursorCaptureMode,
+		t,
+	]);
 
 	// The monitor window reads the same preference and hides itself on the
 	// storage event; the camera keeps recording either way.

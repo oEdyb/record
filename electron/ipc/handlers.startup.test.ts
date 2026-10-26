@@ -6,6 +6,7 @@ import { BrowserWindow, desktopCapturer, powerMonitor } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeRecordingSession, type RecordingSession } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
+import type { NativeMacRecordingServiceDependencies } from "../recording/nativeMacRecordingService";
 import { persistNativeMacRecoveryJournal } from "../recording/nativeMacRecoveryJournal";
 import type { RendererIpcMain } from "./trustedRendererIpc";
 
@@ -264,6 +265,71 @@ describe("registerIpcHandlers startup contract", () => {
 		enumerate.mockRestore();
 	});
 
+	it("preserves cursor telemetry within a take and releases it after the terminal snapshot", async () => {
+		pinPlatform("linux");
+		const serviceModule = await import("../recording/nativeMacRecordingService");
+		const { PipeWireCursorAccumulator } = await import(
+			"../native-bridge/cursor/recording/pipeWireCursorAccumulator"
+		);
+		const Service = serviceModule.NativeMacRecordingService;
+		let dependencies: NativeMacRecordingServiceDependencies | undefined;
+		const serviceConstructor = vi
+			.spyOn(serviceModule, "NativeMacRecordingService")
+			.mockImplementation(
+				class extends Service {
+					constructor(deps: NativeMacRecordingServiceDependencies) {
+						super(deps);
+						dependencies = deps;
+					}
+				},
+			);
+		const snapshots = vi.spyOn(PipeWireCursorAccumulator.prototype, "toRecordingData");
+		try {
+			const { recovery, handlers } = await register({ restoreInterruptedRecording: false });
+			await recovery;
+			const pause = handlers.get("pause-native-mac-recording");
+			if (!pause) throw new Error("Pause IPC missing");
+			await Reflect.apply(pause, undefined, [{}]);
+			if (!dependencies) throw new Error("Service dependencies missing");
+			await dependencies.startCursor(1000);
+			await dependencies.startCursor(1500);
+			await dependencies.stopCursor();
+			const first = snapshots.mock.contexts[0];
+			if (!(first instanceof PipeWireCursorAccumulator))
+				throw new Error("First cursor snapshot missing");
+			first.addSample({
+				event: "cursor-sample",
+				timestampMs: 1100,
+				x: 10,
+				y: 10,
+				width: 100,
+				height: 100,
+				visible: true,
+			});
+			expect(first.toRecordingData().samples[0]?.timeMs).toBe(100);
+			await dependencies.startCursor(2000);
+			await dependencies.stopCursor();
+			const second = snapshots.mock.contexts.at(-1);
+			if (!(second instanceof PipeWireCursorAccumulator))
+				throw new Error("Second cursor snapshot missing");
+			expect(second).not.toBe(first);
+			expect(second.toRecordingData().samples).toEqual([]);
+			second.addSample({
+				event: "cursor-sample",
+				timestampMs: 2100,
+				x: 20,
+				y: 20,
+				width: 100,
+				height: 100,
+				visible: true,
+			});
+			expect(second.toRecordingData().samples[0]?.timeMs).toBe(100);
+		} finally {
+			serviceConstructor.mockRestore();
+			snapshots.mockRestore();
+		}
+	});
+
 	it("keeps the outer quit guard active after native Stop until its owning renderer acknowledges", async () => {
 		pinPlatform("linux");
 		const { recovery, handlers } = await register();
@@ -304,9 +370,14 @@ describe("registerIpcHandlers startup contract", () => {
 		}
 		expect(choose).not.toHaveBeenCalled();
 		await expect(
-			Reflect.apply(invokeChoose, undefined, [{ sender: owner }, request]),
+			Reflect.apply(invokeChoose, undefined, [{ sender: owner }, request, "invalid"]),
+		).resolves.toMatchObject({ success: false, error: "Invalid cursor mode." });
+		expect(choose).not.toHaveBeenCalled();
+		await expect(
+			Reflect.apply(invokeChoose, undefined, [{ sender: owner }, request, "system"]),
 		).resolves.toEqual({ success: false, cancelled: true });
 		expect(choose).toHaveBeenCalledOnce();
+		expect(choose).toHaveBeenCalledWith("system");
 		choose.mockRestore();
 
 		expect(

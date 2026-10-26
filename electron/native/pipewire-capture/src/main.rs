@@ -45,7 +45,7 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use request::{AudioSourceConfig, Request};
+use request::{AudioSourceConfig, CursorRequest, Request};
 
 use events::{timestamp_ms, CursorAsset, Emitter, Event};
 use shim::{FrameMailbox, StreamEvent};
@@ -70,7 +70,7 @@ enum Message {
         generation: u64,
         result: Box<Result<portal::PortalStream, portal::PortalError>>,
     },
-    SelectSource,
+    SelectSource(Option<CursorRequest>),
     CancelSelectSource,
     /// Arm a deferred session: connect to PipeWire and start encoding.
     Record,
@@ -349,7 +349,7 @@ fn read_commands(reader: impl BufRead, sender: &Sender<Message>) {
                 }
             }
             "select-source" => {
-                if sender.send(Message::SelectSource).is_err() {
+                if sender.send(Message::SelectSource(None)).is_err() {
                     return;
                 }
             }
@@ -378,6 +378,17 @@ fn read_commands(reader: impl BufRead, sender: &Sender<Message>) {
                             }) {
                             Ok(request) => Message::Reconfigure(Box::new(request)),
                             Err(error) => Message::CommandError(error),
+                        }
+                    }
+                    Ok(value)
+                        if value.get("command").and_then(|command| command.as_str())
+                            == Some("select-source") =>
+                    {
+                        match serde_json::from_value::<Option<CursorRequest>>(
+                            value.get("cursor").cloned().unwrap_or_default(),
+                        ) {
+                            Ok(cursor) => Message::SelectSource(cursor),
+                            Err(error) => Message::CommandError(error.to_string()),
                         }
                     }
                     Ok(_) => Message::CommandError("unsupported structured command".into()),
@@ -493,6 +504,7 @@ struct StreamInfo {
 struct SourceSelection {
     generation: u64,
     control: portal::Selection,
+    cursor: Option<CursorRequest>,
 }
 
 struct CandidateSource {
@@ -690,7 +702,7 @@ fn run<W: Write>(
         match incoming {
             Ok(Message::Stop) => break,
 
-            Ok(Message::SelectSource) => {
+            Ok(Message::SelectSource(cursor)) => {
                 if source_selection.is_some() {
                     continue;
                 }
@@ -704,7 +716,11 @@ fn run<W: Write>(
                 let control = portal::Selection::default();
                 let worker_control = control.clone();
                 let forward = sender.clone();
-                let mode = match clips.request.cursor_mode() {
+                let mut next_request = clips.request.clone();
+                if cursor.is_some() {
+                    next_request.cursor.clone_from(&cursor);
+                }
+                let mode = match next_request.cursor_mode() {
                     Ok(mode) => mode,
                     Err(message) => {
                         let _ = emitter.emit(&Event::Error {
@@ -717,6 +733,7 @@ fn run<W: Write>(
                 source_selection = Some(SourceSelection {
                     generation,
                     control,
+                    cursor,
                 });
                 std::thread::spawn(move || {
                     let result =
@@ -791,6 +808,12 @@ fn run<W: Write>(
                                 message,
                             );
                             continue;
+                        }
+                        if let Some(cursor) = source_selection
+                            .as_mut()
+                            .and_then(|selection| selection.cursor.take())
+                        {
+                            clips.request.cursor = Some(cursor);
                         }
                         previous_dropped_frames +=
                             frames.as_ref().map_or(0, |frames| frames.dropped());
@@ -1506,13 +1529,27 @@ mod command_tests {
         );
         assert!(matches!(
             receiver.try_recv().expect("selection"),
-            Message::SelectSource
+            Message::SelectSource(None)
         ));
         assert!(matches!(
             receiver.try_recv().expect("cancellation"),
             Message::CancelSelectSource
         ));
         assert!(matches!(receiver.try_recv().expect("stop"), Message::Stop));
+    }
+
+    #[test]
+    fn cursor_grant_replacement_is_distinct_from_in_place_reconfiguration() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(std::io::Cursor::new("{\"command\":\"select-source\",\"cursor\":{\"mode\":\"editable-overlay\"}}\ncancel-select-source\n"), &sender);
+        match receiver.try_recv().expect("cursor selection") {
+            Message::SelectSource(Some(cursor)) => assert_eq!(cursor.mode, "editable-overlay"),
+            _ => panic!("cursor grant replacement expected"),
+        }
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Message::CancelSelectSource
+        ));
     }
 
     #[test]

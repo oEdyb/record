@@ -41,6 +41,17 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("requests a new cursor grant and waits for source adoption", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process, { platform: "linux" });
+		const write = vi.spyOn(process.stdin, "write");
+		const selected = client.selectSource("editable-overlay");
+		expect(write).toHaveBeenCalledWith(
+			`${JSON.stringify({ command: "select-source", cursor: { mode: "editable-overlay" } })}\n`,
+		);
+		emit(process, { event: "source-reselected" });
+		await expect(selected).resolves.toBe(true);
+	});
 	it("keeps a rejected source choice recoverable and allows selection retry without a human timeout", async () => {
 		vi.useFakeTimers();
 		try {

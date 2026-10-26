@@ -245,6 +245,7 @@ interface Window {
 		) => Promise<import("../src/lib/nativeMacRecording").NativeMacRecordingStartResult>;
 		selectNativeLinuxSource: (
 			owner: import("../src/lib/nativeMacRecording").NativeRecordingAppStopRequest,
+			cursorMode?: import("../src/lib/recordingSession").CursorCaptureMode,
 		) => Promise<import("../src/lib/nativeLinuxRecording").NativeLinuxSourceSelectionResult>;
 		pauseNativeMacRecording: () => Promise<{
 			success: boolean;
