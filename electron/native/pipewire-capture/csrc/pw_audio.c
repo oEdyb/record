@@ -190,6 +190,9 @@ struct osc_pw_audio *osc_pw_audio_start(const char *target_object, int capture_s
     }
     if (target_object != NULL && target_object[0] != '\0') {
         osc_audio_api.properties_set(props, PW_KEY_TARGET_OBJECT, target_object);
+        /* Ubuntu 22.04's WirePlumber 0.4.8 reads node.target rather than
+         * target.object. Both accept the resolved PipeWire node name. */
+        osc_audio_api.properties_set(props, "node.target", target_object);
         /* An explicitly selected microphone must never become another device
          * when its target disappears or cannot be linked. Default capture has
          * no target and intentionally keeps the session manager's policy. */

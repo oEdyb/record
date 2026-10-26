@@ -1,0 +1,5 @@
+[aac @ 0x7fd3d83056c0] Qavg: nan
+[aac @ 0x7fd3d824a800] Qavg: nan
+test clips::tests::sub_aac_block_source_fails_the_readiness_deadline_after_screen_started ... ok
+
+test result: ok. 115 passed; 0 failed; 1 ignored; 0 measured; 1 filtered out; finished in 5.65s

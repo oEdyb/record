@@ -1,0 +1,45 @@
+
+ RUN  v4.1.12 /home/olle/dev/screenrec-linux
+
+stderr | src/hooks/useScreenRecorder.nativeStopFailure.test.tsx > useScreenRecorder native Linux stop failure > offers retry guidance for an acknowledged paused Continue rejection
+Failed to toggle native pause state: Error: Microphone unavailable
+    at /home/olle/dev/screenrec-linux/src/hooks/useScreenRecorder.ts:2114:14
+
+ ❯ src/hooks/useScreenRecorder.nativeStopFailure.test.tsx (53 tests | 1 failed | 52 skipped) 19ms
+     × offers retry guidance for an acknowledged paused Continue rejection 18ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/hooks/useScreenRecorder.nativeStopFailure.test.tsx > useScreenRecorder native Linux stop failure > offers retry guidance for an acknowledged paused Continue rejection
+AssertionError: expected "vi.fn()" to be called with arguments: [ …(2) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   "Still paused. Check settings and try Continue again.",
++   "Could not continue recording. Press Stop, then check Recordings.",
+    {
+      "description": "Microphone unavailable",
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/hooks/useScreenRecorder.nativeStopFailure.test.tsx:401:23
+    399|   expect(view.result.current.paused).toBe(true);
+    400|   expect(view.result.current.recording).toBe(true);
+    401|   expect(toast.error).toHaveBeenCalledWith(
+       |                       ^
+    402|    "Still paused. Check settings and try Continue again.",
+    403|    { description: "Microphone unavailable" },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 skipped (53)
+   Start at  14:17:12
+   Duration  498ms (transform 145ms, setup 15ms, import 191ms, tests 19ms, environment 223ms)

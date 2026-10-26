@@ -1,0 +1,35 @@
+
+ RUN  v4.1.12 /home/olle/dev/screenrec-linux
+
+ ❯ electron/recording/nativeMacRecordingService.test.ts (80 tests | 1 failed | 79 skipped) 10ms
+     × confirms a rejected pre-writer configuration remains paused for correction and retry 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  electron/recording/nativeMacRecordingService.test.ts > NativeMacRecordingService > confirms a rejected pre-writer configuration remains paused for correction and retry
+AssertionError: expected { success: false, …(1) } to match object { success: false, paused: true, …(1) }
+
+- Expected
++ Received
+
+  {
+    "error": "Microphone unavailable",
+-   "paused": true,
+    "success": false,
+  }
+
+ ❯ electron/recording/nativeMacRecordingService.test.ts:84:39
+     82|    audio: { ...request.audio, microphone: { enabled: true, deviceName:…
+     83|   };
+     84|   await expect(service.resume(changed)).resolves.toMatchObject({
+       |                                       ^
+     85|    success: false,
+     86|    paused: true,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 79 skipped (80)
+   Start at  14:36:13
+   Duration  254ms (transform 145ms, setup 13ms, import 180ms, tests 10ms, environment 0ms)

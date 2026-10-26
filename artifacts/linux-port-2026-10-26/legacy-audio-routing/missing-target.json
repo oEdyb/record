@@ -1,0 +1,32 @@
+{
+  "inputLinkSources": [
+    "lab_mic_source_b",
+    "lab_mic_source_b"
+  ],
+  "pcmBytes": 1146880,
+  "probeProperties": {
+    "media.type": "Audio",
+    "media.category": "Capture",
+    "media.role": "Production",
+    "target.object": "lab_mic_missing",
+    "node.target": "lab_mic_missing",
+    "node.dont-fallback": true,
+    "node.dont-reconnect": true,
+    "media.name": "openscreen-audio",
+    "stream.is-live": true,
+    "node.name": "old-audio-probe",
+    "node.autoconnect": true,
+    "media.class": "Stream/Input/Audio",
+    "adapt.follower.node": "",
+    "object.register": false,
+    "factory.id": 7,
+    "audio.adapt.follower": "",
+    "factory.mode": "merge",
+    "library.name": "audioconvert/libspa-audioconvert",
+    "clock.quantum-limit": 8192,
+    "client.id": 46,
+    "object.id": 47,
+    "object.serial": 53
+  },
+  "scope": "Private Ubuntu 22.04 matching audio stack; target absence still falls back, pending additional protection."
+}

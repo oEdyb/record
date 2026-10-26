@@ -793,3 +793,40 @@ helper change or new packaged verification yet.
 
 Reference: [W3C error suggestion guidance](https://www.w3.org/WAI/WCAG22/Understanding/error-suggestion.html):
 provide a known corrective action when an input is rejected.
+
+The shared service also confirms `paused: true` for a rejected pre-writer setup
+when its helper is alive and no fatal error exists. This lets the same retry
+guidance cover changed microphone configurations, not just helper Resume
+rejection. Dead helpers and unconfirmed writer failures retain recovery
+guidance. The regression verifies correction/retry without stopping the take. The Electron
+API declaration now includes the already-existing optional `paused` response
+field, so the renderer reads this confirmation without a cast.
+
+### Ubuntu 22.04 explicit microphone identity — October 26
+
+A complete matching PipeWire 0.3.48 / WirePlumber 0.4.8 stack now runs privately
+inside the Ubuntu-floor container, launched through `agent-lab klippt-oldwp`.
+It exposes no physical audio device. This found a broader bug than the suspected
+initial-loss race: even while A exists, `target.object=A` links the stream from
+default B because this older policy reads `node.target`. Supplying both names
+changes both actual graph input links from B to A. Default capture still links
+from B. The actual C archive probe delivers PCM in each case.
+
+Missing explicit targets still link from B and deliver PCM on this older policy;
+this remains an unresolved admission failure. Do not treat the legacy target
+property as complete loss protection. The next native slice must reject wrong
+peers before their samples reach Rust. Graph identity, rather than tone identity,
+is the evidence: an attempted frequency setter did not change the test adapters'
+440 Hz defaults. No physical clock or performance claim follows.
+
+176 affected JS tests, 115 native tests, both typechecks, strict Clippy and local
+checks pass. One final JS run: 3,113 passed, 12 existing skips. Evidence and
+reproducer: `artifacts/linux-port-2026-10-26/legacy-audio-routing/`. Lab/container
+stopped. The last fully packaged candidate remains `81805667`; its source
+predates these changes. Finish the missing-target admission correction before
+rebuilding the next candidate.
+
+Version-specific contracts:
+[WirePlumber 0.4.8 target lookup and fallback](https://raw.githubusercontent.com/PipeWire/wireplumber/0.4.8/src/scripts/policy-node.lua),
+[PipeWire 0.3.48 stream target properties](https://raw.githubusercontent.com/PipeWire/pipewire/0.3.48/src/pipewire/stream.c),
+and [official test-source implementation](https://raw.githubusercontent.com/PipeWire/pipewire/0.3.48/spa/plugins/audiotestsrc/audiotestsrc.c).
