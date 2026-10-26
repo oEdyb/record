@@ -46,3 +46,31 @@ host/package checks. No media bytes or preload binary are committed.
 
 Primary contract: https://github.com/electron/electron/blob/v44.9.1/shell/browser/browser.cc
 (Quit and NotifyAndShutdown), plus the pinned app lifecycle documentation.
+
+## Portable runtime 844348aa
+
+All four Ubuntu 22.04 floor packages now contain
+`844348aaec7eecdf3fafe3d8fa88b82b714cf69e`. Strict unpacked and extracted-AppImage
+policy pass. Inventory: `release/linux-port-20261026-844348aa/`; rebuild script:
+`../portable-build/rebuild-quit-turn-844348aa.sh`.
+
+All 27 native ELF files are byte-identical to the c8bc3812 packages, as are the
+packaging dependency configuration and loader-check script. The prior bare
+Ubuntu/Arch/Fedora loader evidence therefore applies to the same bits; those
+installs were not repeated for this JavaScript scheduling change.
+`native-identity.json` records the comparison and each SHA-256.
+
+The exact normal-FUSE AppImage records the owned screen plus synthetic camera
+and closes through real private Alt+F4 while capture is active. Exit code is 0
+within 210 ms. The mounted capture helper matches the previous verified helper
+SHA. The screen contains 429 fully decoded H.264 frames at 1920×1080/60 fps
+over 7.15 seconds; the camera contains 144 frames at 3840×2160/about 20 fps
+over 7.19985 seconds. The camera offset is 1 ms. Relaunch restores review with
+the camera association, and both original hashes remain unchanged. The durable
+session/journal precede exit; the review project is created on restoration.
+No physical timing/sync parity is inferred from container durations.
+
+Proof, package hashes, policy result and owned-fixture screenshot are retained.
+No debug preload or lifecycle wrapper was injected into this passing package.
+The child observer only records process exit and enables Chromium's synthetic
+media flags. The private lab and owned build container are stopped.

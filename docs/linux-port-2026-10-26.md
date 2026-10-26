@@ -1007,3 +1007,18 @@ host pass is not yet an updated portable package. Evidence:
 `artifacts/linux-port-2026-10-26/active-camera-quit/`.
 
 Contract: [Electron 44.9.1 Quit and NotifyAndShutdown](https://github.com/electron/electron/blob/v44.9.1/shell/browser/browser.cc).
+
+
+Portable runtime `844348aa` now delivers the deferred Quit in all four
+Ubuntu-floor formats with strict normal/extracted policy passing. All 27 native
+ELFs, packaging dependency configuration and loader script are byte-identical
+to c8bc3812, retaining its Ubuntu/Arch/Fedora loader proof without repeated
+installs for this JS-only correction. The exact normal-FUSE AppImage records
+active screen/synthetic camera, closes via WM Alt+F4, and exits 0 within 210 ms.
+Screen (429 frames, 7.15 s) and camera (144 frames, 7.19985 s, 1 ms offset)
+fully decode. Relaunch restores the camera association with unchanged original
+hashes. The session/journal is durable before exit; restoration creates the
+review project. Inventory: `release/linux-port-20261026-844348aa/`. Evidence
+is alongside the host/probe proof. Private lab and build container stopped.
+No full suite. Physical devices, exact Niri, Mac/Windows and final performance
+gates remain separate.

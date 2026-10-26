@@ -1,0 +1,94 @@
+{
+  "sourceCommit": "844348aaec7eecdf3fafe3d8fa88b82b714cf69e",
+  "appImageSha256": "97d5a54ba34c294bc47a6e114ba956dfe8e603dab894a33d67bb12ba16cb7f08",
+  "helper": {
+    "pid": 2836840,
+    "path": "/tmp/.mount_KlipptllHlmy/resources/electron/native/bin/linux-x64/openscreen-pipewire-helper",
+    "sha256": "3b1b4fef32f80a769dca831567424f06ffa1d20a6ff156764dda513eb23808e7"
+  },
+  "exit": {
+    "pid": 2834829,
+    "exitCode": 0,
+    "endedAtMs": 1793031905195
+  },
+  "quitToExitMs": 210,
+  "session": {
+    "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed-package/recordings/recording-1793031827714-clip-0001.mp4",
+    "cursorCaptureMode": "system",
+    "createdAt": 1793031827714,
+    "clips": [
+      {
+        "webcamVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed-package/recordings/recording-1793031827714-clip-0001-webcam.mp4",
+        "webcamOffsetMs": 1,
+        "index": 0,
+        "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed-package/recordings/recording-1793031827714-clip-0001.mp4",
+        "durationMs": 7150,
+        "cursorCaptureMode": "system"
+      }
+    ],
+    "schemaVersion": 2
+  },
+  "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed-package/recordings/recording-1793031827714.session.json",
+  "hashes": {
+    "screenVideoPath": "917980b11a994056c1ecc09616f6513515e12945245209d3aab3a198aeee2ec2",
+    "webcamVideoPath": "f95c49e5c0be7b8f98701e542e32d4a7bf6c75445ed6ab2b7454a5300ad569b0"
+  },
+  "media": [
+    {
+      "key": "screenVideoPath",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080,
+            "avg_frame_rate": "60/1",
+            "start_time": "0.000000",
+            "duration": "7.150000",
+            "nb_read_frames": "429"
+          }
+        ],
+        "format": {
+          "duration": "7.150000"
+        }
+      },
+      "fullyDecoded": true
+    },
+    {
+      "key": "webcamVideoPath",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 3840,
+            "height": 2160,
+            "avg_frame_rate": "2880000/143681",
+            "start_time": "0.000000",
+            "duration": "7.199850",
+            "nb_read_frames": "144"
+          }
+        ],
+        "format": {
+          "duration": "7.199850"
+        }
+      },
+      "fullyDecoded": true
+    }
+  ],
+  "sessionDurableBeforeRelaunch": true,
+  "projectAfterReopen": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed-package/projects/proj_78d29eff-0534-40aa-b59b-8c9e3bd4e69d.klippt",
+  "cameraAssociatedAfterReopen": true,
+  "sourcesUnchangedAfterReopen": true,
+  "cameraTrackAfterReopen": {
+    "sourcePath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed-package/recordings/recording-1793031827714-clip-0001-webcam.mp4",
+    "startMs": 0,
+    "offsetMs": 1,
+    "visible": true,
+    "width": 3840,
+    "height": 2160
+  }
+}
