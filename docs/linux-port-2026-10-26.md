@@ -883,3 +883,22 @@ resource-capped pass reports 22 superseded frames and establishes no performance
 or physical-device parity. Its clip-three legacy cursor lookup logs a missing
 sidecar; verify whether the shared take-level cursor data is used before treating
 that diagnostic as a preview bug.
+
+
+### Packaged multi-clip editable-cursor preview
+
+The exact `3a177e66` normal-FUSE AppImage now passes a separate video-only
+three-clip capture with deliberate pointer movement. All three native cursor
+sidecars have clip-local timestamps, known asset references and a valid sprite
+(823/86/60 samples). Seeking and automatic clip changes visibly render the
+recorded cursor; the actual private pointer stays outside the preview. Sampled
+raw-source body regions contain no white cursor pixels, and the first screen
+source hash is unchanged. Evidence and bounds:
+`artifacts/linux-port-2026-10-26/cursor-preview/`.
+
+21 affected tests pass across clip cursor splitting, Linux capture metadata and
+the PipeWire accumulator. No runtime changes, rebuild or full suite were needed.
+The private lab is stopped. This proves the bounded video-only workflow, not the
+reason the earlier paused-audio-loss/reconfigure take lacked sidecars. Repeat
+that condition with deliberate pointer motion before closing its diagnostic.
+All subsequent checks should run only affected tests, per Olle’s instruction.
