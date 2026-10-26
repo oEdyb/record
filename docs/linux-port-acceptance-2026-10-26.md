@@ -7,18 +7,21 @@ and responsive native capture/review/export. Windows remains later work.
 
 ## Candidate
 
-Branch follow-up: remembered Linux source grants and an explicit idle Source chooser
+Current candidate follow-up: remembered Linux source grants and an explicit idle Source chooser
 are implemented and verified in private KWin. See [focused evidence](../artifacts/linux-port-2026-10-26/remembered-source/README.md).
-These changes are newer than the portable runtime below; Niri persistence remains
-a separate check. No repeated full suite or packaging checkpoint was run for this slice.
+The exact normal AppImage passed OS-driven Source → Record without another picker
+→ Stop/review in the private lab, with a fully decodable 2.35-second clip. Niri
+persistence remains a separate check. Affected suites and one packaging checkpoint
+were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest portable runtime: `6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb`.
-- Inventory: `release/linux-port-20261026-6bdd95af/` (`SOURCE_SHA`, `SHA256SUMS`).
-- All four Ubuntu-floor formats pass package policy. The normal-FUSE AppImage
-  exports the real project using its packaged addon, without an override.
-- The corrected render reports 871 frames/14.516 s, fully decodes, preserves the
-  original hashes and expected audio levels, and exits 0.
+- Latest portable runtime: `a4f92422d7cfb871edf1e50a417063274985edab`.
+- Inventory: `release/linux-port-20261026-a4f92422/` (`SOURCE_SHA`, `SHA256SUMS`).
+- All four Ubuntu-floor formats pass package policy. Its normal-FUSE AppImage
+  passed source-grant reuse with the packaged helper, without an override.
+- The compositor addon is byte-identical to `6bdd95af`; retain its 871-frame/14.516 s
+  export, original-hash and audio-level evidence. Only the capture helper changed
+  among 27 regular ELFs.
 - Supported evidence configuration: CachyOS, NVIDIA RTX 4070, private KWin/KDE
   portal, PipeWire and synthetic camera/audio. This is a development candidate,
   not a claim that every Linux configuration or physical device is verified.
@@ -33,7 +36,7 @@ a separate check. No repeated full suite or packaging checkpoint was run for thi
 | Reopen media and camera associations | Packaged restart and original hashes; `active-camera-quit/` | Passed with synthetic camera |
 | Separate takes preserves all originals | Two clips × four sources, eight identical hashes, full decoding; `four-source-export/` | Passed on latest package |
 | OTIO/FCPXML preserve roles/order/offsets | Four 871-frame tracks; camera's two-frame tail gap; video-only screen references; zero warnings | Passed |
-| One video preserves screen tail and audio | Packaged correction restores 871 frames/14.516 s, correct 440/660 Hz levels; full decode and unchanged originals | Passed on final candidate |
+| One video preserves screen tail and audio | Packaged correction restores 871 frames/14.516 s, correct 440/660 Hz levels; full decode and unchanged originals | Retain identical-addon evidence |
 | Quit and interruptions preserve recoverable work | Real active capture close and restart; scoped failure/recovery checks; `active-camera-quit/` | Passed within documented crash limits |
 | Responsive capture/preview and actual encoder | NVENC selection, bounded packaged preview and earlier hour run | Encouraging bounded evidence; no universal parity claim |
 

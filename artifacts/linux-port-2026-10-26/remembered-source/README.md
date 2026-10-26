@@ -36,10 +36,24 @@ private `remembered-source/` directory; `result.json` contains no tokens.
   still required consent in that case; backend restoration is not guaranteed. No host input,
   clipboard, picker or audio was used.
 
+The final Ubuntu-floor candidate is `a4f92422`, in
+`release/linux-port-20261026-a4f92422/` with source SHA and package checksums.
+All four formats built and passed the distribution boundary. The exact normal-FUSE
+AppImage passed real private compositor input: Settings → Source → owned window,
+idle with only a mode-0600 grant receipt, Record without another picker, and Stop
+to review. Its 2.35-second NVENC clip fully decodes. `packaged-result.json` records
+the AppImage and packaged-helper hashes. Normal mounted-package verification used
+the matching floor-build outputs, rather than stale host renderer output.
+
+Among 27 regular ELF files, only the capture helper changed from `6bdd95af`;
+`elf-comparison.json` records that comparison. Export/compositor and earlier loader
+evidence are retained for unchanged binaries. The private lab and build container
+were stopped after verification.
+
 Protocol probes ran during implementation; their first binary hash was not
 retained. `result.json` separately identifies the rebuilt helper used by the app
-checks after the immutable cache-path correction. This is development evidence,
-not a new immutable portable release or a complete manual release checklist.
+checks after the immutable cache-path correction. The final package check above
+has separate exact provenance. This is not a complete manual release checklist.
 
 Affected checks: portal/grant and request native tests, focused renderer/HUD and
 IPC suites, both TypeScript checks, touched-file Biome, helper strict Clippy and

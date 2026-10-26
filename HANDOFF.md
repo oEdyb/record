@@ -18,15 +18,17 @@ identifiers and persisted data; no global Mac-name cleanup is needed to ship.
 
 ## Current delivery
 
-Source follow-up on this branch: Linux Record restores compatible portal grants;
+Source follow-up in the current candidate: Linux Record restores compatible portal grants;
 Settings → Source chooses afresh before recording or while paused. Private KWin
 native and built-app checks pass; exact Niri grant reuse remains unverified.
 See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.md).
-This source change is not yet included in the portable runtime below.
+The normal-FUSE AppImage passed private OS-driven Source → Record without another
+picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable runtime: `6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb`,
-`release/linux-port-20261026-6bdd95af/`. All four Ubuntu-floor formats and
-normal/extracted package policy pass. Its packaged addon exports the real
+Latest portable runtime: `a4f92422d7cfb871edf1e50a417063274985edab`,
+`release/linux-port-20261026-a4f92422/`. All four Ubuntu-floor formats and
+normal mounted package policy pass. The addon is byte-identical to `6bdd95af`,
+whose packaged export preserved the real
 four-source take without an override, restoring the screen's two missing frames:
 871 muxer-reported frames/14.516 s, full decoding, correct audio and unchanged
 originals. Normal CLI exit is 0. This closes the final software candidate checkpoint.
