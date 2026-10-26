@@ -10,8 +10,14 @@ pixels, sidecar asset references, clip bounds and fresh recording origins pass.
 The earlier desktop cancellation pass kept the old paused system mode; the accepted
 replacement then produced fully decoded system/editable clips. That first pass
 preceded the terminal accumulator cleanup. The final two-recording pass uses the
-rebuilt Electron bundle including that correction. No packaged-portability claim
-is made for this new slice: b6c90b0a portable candidates predate it.
+rebuilt Electron bundle including that correction. The Ubuntu-floor packages now pass strict distribution policy and extracted
+AppImage policy; three bare distro loader checks resolve all 27 ELFs and start
+all three executables. `packaged-verification.json` records the normal-FUSE
+AppImage system → editable cursor pass, fully decoded 1,290/813 frames, one
+helper PID, unchanged first clip hash, and pixel/sidecar checks. Private inventory:
+`release/linux-port-20261026-fcf6b7dd/`. The first packaged hash attempt sampled
+before Pause acknowledgement and was invalid; the repeat explicitly waits for
+the acknowledged Resume control before sampling. No application fix was needed.
 
 `checks.txt` contains bounded check summaries. Regression logs demonstrate the
 missing request behavior and the cross-recording accumulator leak before fixes.

@@ -646,7 +646,7 @@ changed slice; its branch-wide scan reports an existing HUD cleanup diagnostic.
 
 Private desktop evidence and final runtime provenance are recorded in
 `artifacts/linux-port-2026-10-26/cursor-grant/`. Earlier `b6c90b0a` portable packages
-remain source-replacement candidates and do not contain this follow-up. The Mac
+remain historical source-replacement candidates and do not contain this follow-up. The Mac
 hardware regression and broader platform/performance gates above remain open.
 
 Final production-bundle lab pass: two consecutive recordings in one Electron
@@ -657,3 +657,16 @@ and the first finalized clip hash. The stationary cursor region contained up to
 editable cursor sidecar contains a matching sprite and bounded samples. Both
 recordings have independent telemetry origins. A single full JS run passes
 3,105 tests with 12 platform skips. The lab was stopped after verification.
+
+All four Ubuntu-floor formats now contain runtime `fcf6b7dd`; immutable private
+inventory: `release/linux-port-20261026-fcf6b7dd/`. Strict normal/extracted package
+policy and clean Ubuntu/Arch/Fedora loaders pass (27 ELFs, three executables).
+The exact normal-FUSE AppImage passes system → editable cursor replacement:
+1,290 and 813 fully decoded frames, preserved acknowledged first-clip hash, same
+helper PID, 48 versus zero white cursor pixels in the tested region, and 358
+bounded editable samples with a resolved sprite. Bundled helper SHA-256:
+`7aabc4a2c18bde4e7765cf8e399dc0902cf6b2f2c1aaa6fd78635e1d5b859c54`.
+An initial proof sampled before Pause acknowledgement; its hash assertion was
+invalid. The repeat waits for the acknowledged Resume control before hashing.
+Both lab and build container are stopped. No further full suite was run for
+this package/documentation verification.
