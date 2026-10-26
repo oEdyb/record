@@ -1129,3 +1129,16 @@ findings; no lint suppressions or unrelated refactors. The lab is stopped.
 An independent strategic review supports the shared architecture and recommends
 one final candidate checkpoint and finite acceptance over repeated rebuilds.
 The current handoff is condensed; its full history remains linked in Git.
+
+
+Final candidate `6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb` delivers the
+screen-authoritative tail in all four Ubuntu-floor formats. Normal/extracted
+package policy passes. The exact normal-FUSE AppImage exports the same real
+project with its packaged addon and no override: 871 muxer-reported frames,
+14.516 s, full decode, expected 440/660 Hz levels and eight unchanged originals.
+Normal CLI exit is 0. Only the addon changes among 33 ELFs relative to 2d432312;
+its loader dependency list is unchanged. Inventory and hashes:
+`release/linux-port-20261026-6bdd95af/`; proof accompanies the four-source
+evidence. Private lab/build container stopped. This finishes the final scoped
+software candidate checkpoint. Remaining physical/Niri, compatibility and
+external release gates are explicit in the acceptance record.

@@ -18,12 +18,12 @@ identifiers and persisted data; no global Mac-name cleanup is needed to ship.
 
 ## Current delivery
 
-Latest portable runtime: `2d4323129ead891855c7475b578ad45e4588f9f3`,
-`release/linux-port-20261026-2d432312/`. It includes the helper portal identity
-fix in all four Ubuntu-floor formats. The pending camera-tail correction makes
-screen duration authoritative during rendered export; two affected real-render
-tests pass, and the recorded project gains its missing two frames with the
-rebuilt host addon. Finish one portable candidate check before delivery.
+Latest portable runtime: `6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb`,
+`release/linux-port-20261026-6bdd95af/`. All four Ubuntu-floor formats and
+normal/extracted package policy pass. Its packaged addon exports the real
+four-source take without an override, restoring the screen's two missing frames:
+871 muxer-reported frames/14.516 s, full decoding, correct audio and unchanged
+originals. Normal CLI exit is 0. This closes the final software candidate checkpoint.
 
 Four-source handoff evidence is in
 `artifacts/linux-port-2026-10-26/four-source-export/`: two clips, eight original
@@ -32,15 +32,14 @@ reproduced/fixed rendered-tail mismatch. No full-suite rerun.
 
 ## What is left, in priority order
 
-1. Deliver the camera-tail correction in one immutable floor-built candidate.
-   Verify the same recorded project with its packaged addon, retaining unchanged
-   evidence rather than repeating unrelated checks.
+1. Actual Niri and physical-device acceptance remains user-driven unless Olle
+   explicitly authorizes physical-session automation. Existing private KWin
+   evidence does not establish that coverage.
 2. Keep the finite acceptance record current. No routine full suites, hour soaks
    or four-format rebuilds without a concrete changed risk.
-3. Actual Niri and physical-device acceptance remains user-driven unless Olle
-   explicitly authorizes physical-session automation. Existing private KWin
-   evidence does not establish that coverage. Broader GPU/desktops and Mac
-   regression are separate compatibility gates; Windows is later work.
+3. Broader GPU/desktops, physical timing and Mac regression are compatibility
+   gates. Windows is later work. Do not turn those into indefinite synthetic
+   retesting or a claim of universal parity.
 
 Global Pause/Continue works in the private lab. Open App's callback arrives but
 Wayland focus is denied; KDE shortcut admission becomes inactive after relaunch

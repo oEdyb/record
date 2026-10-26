@@ -8,10 +8,12 @@ and responsive native capture/review/export. Windows remains later work.
 ## Candidate
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest portable runtime: `2d4323129ead891855c7475b578ad45e4588f9f3`.
-- Inventory: `release/linux-port-20261026-2d432312/` (`SOURCE_SHA`, `SHA256SUMS`).
-- Pending: package the screen-authoritative export-tail correction. The host
-  addon passes the real project; the immutable package still needs that check.
+- Latest portable runtime: `6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb`.
+- Inventory: `release/linux-port-20261026-6bdd95af/` (`SOURCE_SHA`, `SHA256SUMS`).
+- All four Ubuntu-floor formats pass package policy. The normal-FUSE AppImage
+  exports the real project using its packaged addon, without an override.
+- The corrected render reports 871 frames/14.516 s, fully decodes, preserves the
+  original hashes and expected audio levels, and exits 0.
 - Supported evidence configuration: CachyOS, NVIDIA RTX 4070, private KWin/KDE
   portal, PipeWire and synthetic camera/audio. This is a development candidate,
   not a claim that every Linux configuration or physical device is verified.
@@ -26,7 +28,7 @@ and responsive native capture/review/export. Windows remains later work.
 | Reopen media and camera associations | Packaged restart and original hashes; `active-camera-quit/` | Passed with synthetic camera |
 | Separate takes preserves all originals | Two clips × four sources, eight identical hashes, full decoding; `four-source-export/` | Passed on latest package |
 | OTIO/FCPXML preserve roles/order/offsets | Four 871-frame tracks; camera's two-frame tail gap; video-only screen references; zero warnings | Passed |
-| One video preserves screen tail and audio | Baseline loses two frames to shorter camera; host correction restores 871 frames/14.516 s, correct 440/660 Hz levels | Portable verification pending |
+| One video preserves screen tail and audio | Packaged correction restores 871 frames/14.516 s, correct 440/660 Hz levels; full decode and unchanged originals | Passed on final candidate |
 | Quit and interruptions preserve recoverable work | Real active capture close and restart; scoped failure/recovery checks; `active-camera-quit/` | Passed within documented crash limits |
 | Responsive capture/preview and actual encoder | NVENC selection, bounded packaged preview and earlier hour run | Encouraging bounded evidence; no universal parity claim |
 
@@ -58,8 +60,8 @@ prove physical A/V clock parity.
 
 ## Verification discipline
 
-Finish the confirmed tail correction, build one candidate, verify its affected
-packaged export and record the hash. Then hand over that bounded candidate.
+The confirmed tail correction and its packaged check are complete. The candidate
+and hashes above are the handoff. Private lab and build container are stopped.
 Do not continue rebuilding four formats, investigating platform focus behavior
 or running synthetic permutations without a new issue that blocks the critical
 workflow. Existing compositor strict-Clippy findings remain visible; they are

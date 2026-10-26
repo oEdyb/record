@@ -19,7 +19,14 @@ override, the same project exports 871 reported video frames and 14.516 seconds.
 Both outputs fully decode; 440/660 Hz amplitudes retain system unity and the
 existing 1.4 microphone boost across both clips. Exact probe data is retained;
 container nb_frames is not a claim about captured or decoded source cadence.
-This host-addon result still requires the final portable candidate check.
+Portable candidate `6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb` now passes
+the same real project through its packaged addon without an override. It
+reports 871 video frames/14.516 seconds, fully decodes, retains the expected
+audio levels and exits 0. All eight originals remain unchanged. All four
+Ubuntu-floor formats and normal/extracted package policy pass. Of 33 ELFs,
+only the addon differs from 2d432312; its DT_NEEDED list is unchanged.
+Inventory: `release/linux-port-20261026-6bdd95af/`. Private lab and build
+container stopped.
 
 Only affected tests ran. Private lab stopped. See the current acceptance record
 for the final candidate rather than treating this baseline as the latest build.
