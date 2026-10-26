@@ -1,0 +1,16 @@
+const fs=require('node:fs');const path=require('node:path');
+const {app,BrowserWindow}=require('electron');
+const ts=require('/home/olle/dev/screenrec-linux/node_modules/typescript');
+if(process.env.AGENT_LAB_RUNTIME!='/run/user/1000/agent-lab/klippt')throw Error('Private lab required');
+const label=process.env.QUIT_PROBE_LABEL;if(!['before','after'].includes(label))throw Error('Invalid probe label');
+app.setPath('userData',path.join(process.env.AGENT_LAB_STATE,'profiles','quit-window-turn-'+label));
+const src=fs.readFileSync(process.env.QUIT_PROBE_GUARD_FILE ?? '/home/olle/dev/screenrec-linux/electron/diagnostics/workloadQuitGuard.ts','utf8');
+const code=ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021}}).outputText;
+const exported={};new Function('exports',code)(exported);
+let deadlineFired=false;const events=[];const out='/tmp/klippt-quit-window-turn-r2-'+label+'.json';
+const save=extra=>fs.writeFileSync(out,JSON.stringify({electron:process.versions.electron,events,...extra},null,2));
+const guard=exported.createWorkloadQuitGuard({finishPreviews:async()=>{events.push('empty-flush');},quit:()=>{events.push('resume-quit');app.quit();},onError:error=>events.push(String(error))});
+app.on('before-quit',()=>events.push('before-quit'));
+app.on('will-quit',event=>{events.push('will-quit');guard.willQuit(event);});
+app.on('quit',(_event,exitCode)=>{events.push('quit');save({cleanExit:!deadlineFired,exitCode,deadlineFired});});
+app.whenReady().then(()=>{const window=new BrowserWindow({show:false});window.loadURL('data:text/html,owned%20quit%20probe');setTimeout(()=>app.quit(),300);setTimeout(()=>{deadlineFired=true;events.push('deadline');save({cleanExit:false});app.exit(3);},2000);});

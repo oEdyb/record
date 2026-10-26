@@ -985,3 +985,25 @@ report remains byte-identical after a new AppImage launch. Inventory:
 `release/linux-port-20261026-c8bc3812/`. Evidence is alongside the host pass.
 Private lab and build container stopped. Active capture/camera Quit remains
 the next affected integration check; this playback-exit result does not replace it.
+
+
+### Active capture Quit must leave the native close callback
+
+The exact `c8bc3812` AppImage saved screen/camera originals on active WM close
+but remained alive after its windows closed. A full-app trace shows the final
+Quit returning without another before-quit event. Electron resets is_quitting_
+after the will-quit observer returns; a promise-only flush can reenter Quit
+before that reset when reached from a native window-close callback.
+
+Final Quit now runs via setImmediate after teardown/report completion. A real
+Electron 44.9.1 hidden-window probe fails before the change (two-second diagnostic
+deadline, exit 3) and passes after it (exit 0). The no-window probe did not
+reproduce the event ordering and was not accepted as proof. 24 affected tests
+pass, plus app/build and test types. No full suite. The rebuilt host bundle
+exits 0 within 223 ms on active screen/synthetic-camera WM close. Its 7.2-second
+screen and 7.2499-second camera fully decode; the durable session/journal
+restores the camera in review on relaunch with unchanged source hashes. This
+host pass is not yet an updated portable package. Evidence:
+`artifacts/linux-port-2026-10-26/active-camera-quit/`.
+
+Contract: [Electron 44.9.1 Quit and NotifyAndShutdown](https://github.com/electron/electron/blob/v44.9.1/shell/browser/browser.cc).

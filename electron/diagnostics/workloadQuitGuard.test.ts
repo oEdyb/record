@@ -4,6 +4,22 @@ import { createWorkloadQuitGuard } from "./workloadQuitGuard";
 afterEach(() => vi.useRealTimers());
 
 describe("workload quit guard", () => {
+	it("resumes quit on a later event-loop turn when there are no report writes", async () => {
+		vi.useFakeTimers();
+		const quit = vi.fn();
+		const guard = createWorkloadQuitGuard({
+			finishPreviews: async () => undefined,
+			quit,
+			onError: vi.fn(),
+		});
+		guard.willQuit({ preventDefault: vi.fn() });
+		// Model V8 draining promises inside Electron's native window-close callback.
+		for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+		expect(quit).not.toHaveBeenCalled();
+		await vi.runAllTimersAsync();
+		expect(quit).toHaveBeenCalledOnce();
+	});
+
 	it("holds repeated quits until reports finish, then permits the completing quit", async () => {
 		let finish: () => void = () => undefined;
 		const finishPreviews = vi.fn(
@@ -59,6 +75,7 @@ describe("workload quit guard", () => {
 		await vi.advanceTimersByTimeAsync(1_999);
 		expect(deps.quit).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(1);
+		await vi.runAllTimersAsync();
 		expect(deps.quit).toHaveBeenCalledOnce();
 		expect(deps.onError).toHaveBeenCalledWith(
 			expect.objectContaining({ message: "Workload report flush timed out" }),

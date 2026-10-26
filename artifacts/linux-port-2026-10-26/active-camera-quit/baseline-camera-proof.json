@@ -1,0 +1,116 @@
+{
+  "helperPid": 2729690,
+  "request": {
+    "schemaVersion": 1,
+    "recordingId": 1793030018419,
+    "source": {
+      "type": "display",
+      "sourceId": "portal:selected"
+    },
+    "video": {
+      "fps": 60,
+      "width": 3840,
+      "height": 2160,
+      "quality": "high",
+      "bitrate": 136000000,
+      "hideSystemCursor": true
+    },
+    "audio": {
+      "system": {
+        "enabled": false
+      },
+      "microphone": {
+        "enabled": false,
+        "deviceId": "a01dd0d9256592d7a1d75f91fc0d505cfa5cd5cfb9541a0e2251c4da78bea84a",
+        "gain": 1.4
+      }
+    },
+    "webcam": {
+      "enabled": false,
+      "deviceId": "b9e1760574db9c2b6b8f231f076bf2b6b5fc5f138b8207bfa66916bee6fadaf5",
+      "deviceName": "fake_device_0",
+      "width": 3840,
+      "height": 2160,
+      "fps": 20,
+      "exactFormat": false
+    },
+    "cursor": {
+      "mode": "editable-overlay"
+    },
+    "outputs": {
+      "screenPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793030018419-clip-0001.mp4",
+      "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793030018419.session.json"
+    },
+    "platform": "linux",
+    "deferStart": true
+  },
+  "helperSha256": "3b1b4fef32f80a769dca831567424f06ffa1d20a6ff156764dda513eb23808e7",
+  "cameraBytesBeforeQuit": 9842552,
+  "quitAtEpochMs": 1793030112827,
+  "savedSession": {
+    "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793030018419-clip-0001.mp4",
+    "cursorCaptureMode": "editable-overlay",
+    "createdAt": 1793030018419,
+    "clips": [
+      {
+        "webcamVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793030018419-clip-0001-webcam.mp4",
+        "webcamOffsetMs": 0,
+        "index": 0,
+        "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793030018419-clip-0001.mp4",
+        "durationMs": 52000,
+        "cursorCaptureMode": "editable-overlay"
+      }
+    ],
+    "schemaVersion": 2
+  },
+  "media": [
+    {
+      "key": "screenVideoPath",
+      "path": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793030018419-clip-0001.mp4",
+      "sha256": "979cbd803e198d14f3ad55e6c6381753fe56eb3ffc483f3424d96a9262290c3a",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080,
+            "avg_frame_rate": "60/1",
+            "duration": "52.000000"
+          }
+        ],
+        "format": {
+          "duration": "52.000000"
+        }
+      },
+      "fullyDecoded": true
+    },
+    {
+      "key": "webcamVideoPath",
+      "path": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793030018419-clip-0001-webcam.mp4",
+      "sha256": "53935e42002a75d245c6fb0870fe7710150b31b6d2fb853104a4f7e6a59a6255",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 3840,
+            "height": 2160,
+            "avg_frame_rate": "20480000/1039149",
+            "duration": "52.063700"
+          }
+        ],
+        "format": {
+          "duration": "52.063700"
+        }
+      },
+      "fullyDecoded": true
+    }
+  ],
+  "observedExitTimeoutMs": 20000,
+  "hangObservedAtEpochMs": 1793030584664,
+  "stillAliveAfterWindowsClosed": true,
+  "diagnosticTerminationSignal": "SIGTERM"
+}

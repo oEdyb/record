@@ -1,0 +1,79 @@
+{
+  "exit": {
+    "pid": 2794773,
+    "exitCode": 0,
+    "endedAtMs": 1793031173283
+  },
+  "quitToExitMs": 223,
+  "session": {
+    "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed/recordings/recording-1793031138250-clip-0001.mp4",
+    "cursorCaptureMode": "system",
+    "createdAt": 1793031138250,
+    "clips": [
+      {
+        "webcamVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed/recordings/recording-1793031138250-clip-0001-webcam.mp4",
+        "webcamOffsetMs": 1,
+        "index": 0,
+        "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed/recordings/recording-1793031138250-clip-0001.mp4",
+        "durationMs": 7200,
+        "cursorCaptureMode": "system"
+      }
+    ],
+    "schemaVersion": 2
+  },
+  "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed/recordings/recording-1793031138250.session.json",
+  "hashes": {
+    "screenVideoPath": "801b9f1ccc3cdb01357b6e56d4e0f62962f41267aea3d322e1f5fc6c34a05310",
+    "webcamVideoPath": "538b3b0c1b7b4d8253d73bff139c8c82bd85dfdf247860ec6dfc39186c74def2"
+  },
+  "media": [
+    {
+      "key": "screenVideoPath",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080,
+            "avg_frame_rate": "60/1",
+            "start_time": "0.000000",
+            "duration": "7.200000",
+            "nb_read_frames": "432"
+          }
+        ],
+        "format": {
+          "duration": "7.200000"
+        }
+      },
+      "fullyDecoded": true
+    },
+    {
+      "key": "webcamVideoPath",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 3840,
+            "height": 2160,
+            "avg_frame_rate": "2900000/144889",
+            "start_time": "0.000000",
+            "duration": "7.249900",
+            "nb_read_frames": "145"
+          }
+        ],
+        "format": {
+          "duration": "7.249900"
+        }
+      },
+      "fullyDecoded": true
+    }
+  ],
+  "sessionDurableBeforeRelaunch": true,
+  "projectAfterReopen": "/home/olle/.local/state/agent-lab/klippt/profiles/quit-fixed/projects/proj_c4656da3-0c3a-490e-bdd4-48faf782c635.klippt",
+  "sourcesUnchangedAfterReopen": true,
+  "cameraAssociatedAfterReopen": true
+}

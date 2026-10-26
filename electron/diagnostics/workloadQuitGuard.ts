@@ -26,7 +26,8 @@ export function createWorkloadQuitGuard(deps: {
 				.finally(() => {
 					clearTimeout(timer);
 					finished = true;
-					deps.quit();
+					// Window-close callbacks drain promises before Electron resets is_quitting_.
+					setImmediate(deps.quit);
 				});
 		},
 	};
