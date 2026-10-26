@@ -1,0 +1,12 @@
+{
+  "baseCommit": "7bc8e9ea07cf42a27507fdb8aa7cc90cba5e9831",
+  "files": {
+    "crates/compositor-view-napi/src/lib.rs": "df8ecbfe25c7db87b6c6b34c272e5832a32f773f3e5111eee20f2638796d11f2",
+    "electron/diagnostics/workloadQuitGuard.ts": "58a5837ffc1c766e953bf76b1326141c4044318bb78b0b010613873d4a30aaf3",
+    "electron/diagnostics/workloadTelemetry.ts": "cd80aed25aae48b679a22d7228a04797ce2aaf6977eb0531ffce3b82b74c1e33",
+    "electron/ipc/handlers.ts": "07e71518f28651fca3d5ea8780eb8cb22b93765186e4680d264d67cfd4857fa2",
+    "electron/ipc/nativeBridge.ts": "f8dc61006f1e244c63b98c61130a469b32da2a790c103f0b0c0860b65d3e6a98",
+    "electron/native-bridge/services/compositorViewService.ts": "9c2d7ad7d3c503878bae9e52ce9d7d619a6049d63c031fd11357b6a75e9c0573",
+    "electron/native/compositor-view/addon.d.ts": "6888f8c9e98a4ddab51caa9e3e62ec36f8170340314801ce55287d22f987bc10"
+  }
+}

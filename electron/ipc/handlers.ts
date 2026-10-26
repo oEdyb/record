@@ -76,6 +76,7 @@ import { privacySettingsPane, readCapturePermissions } from "../capturePermissio
 import { createDiagnosticReport, type DiagnosticRequest } from "../diagnostics/diagnostic-report";
 import { createElectronWorkloadResourceSampler } from "../diagnostics/electronWorkloadResources";
 import { mainLogBuffer } from "../diagnostics/main-log-buffer";
+import { createWorkloadQuitGuard } from "../diagnostics/workloadQuitGuard";
 import {
 	type WorkloadFailureCode,
 	type WorkloadOperation,
@@ -4816,7 +4817,7 @@ export function registerIpcHandlers(
 				cleanVoiceServiceReady.then((service) => service?.syncDocument(document)),
 		},
 	);
-	registerNativeBridgeHandlers(
+	const shutdownPreviews = registerNativeBridgeHandlers(
 		{
 			workloadTelemetry,
 			assertEntitlement: (capability) => entitlementService.assertCapability(capability),
@@ -4858,6 +4859,17 @@ export function registerIpcHandlers(
 		},
 		ipcMain,
 	);
+
+	const workloadQuitGuard = createWorkloadQuitGuard({
+		finishPreviews: async () => {
+			shutdownPreviews();
+			await workloadTelemetry.finishPreviewsBeforeQuit();
+		},
+		quit: () => app.quit(),
+		onError: (error) => console.warn("[diagnostics] workload quit flush failed:", error),
+	});
+	app.on("will-quit", workloadQuitGuard.willQuit);
+	powerMonitor.on("shutdown", workloadQuitGuard.systemPoweringOff);
 
 	return startupRecordingRecovery;
 }

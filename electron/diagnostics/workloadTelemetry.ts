@@ -339,6 +339,7 @@ export class WorkloadTelemetryService {
 	private readonly maxReportAgeMs: number;
 	private sampler: ReturnType<typeof setInterval> | undefined;
 	private initialization: Promise<void> | undefined;
+	private persistenceFailure: Error | null = null;
 
 	constructor(private readonly deps: WorkloadTelemetryDependencies) {
 		this.now = deps.now ?? Date.now;
@@ -557,6 +558,17 @@ export class WorkloadTelemetryService {
 			.slice(0, Math.max(0, limit));
 	}
 
+	async finishPreviewsBeforeQuit(): Promise<void> {
+		for (const [id, active] of this.active) {
+			if (active.report.kind !== "preview") continue;
+			this.event(id, "preview-completed");
+			this.finish(id, "succeeded");
+		}
+		this.dispose();
+		await this.flush();
+		if (this.persistenceFailure) throw this.persistenceFailure;
+	}
+
 	async flush(): Promise<void> {
 		while (this.writes.size > 0) await Promise.all([...this.writes]);
 	}
@@ -593,7 +605,11 @@ export class WorkloadTelemetryService {
 				await writeJsonDurably(this.reportPath(id), snapshot);
 				if (final) await this.prune();
 			})
-			.catch(() => undefined);
+			.catch((error: unknown) => {
+				this.persistenceFailure = new Error(
+					`Workload report persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			});
 		this.writeChains.set(id, promise);
 		this.writes.add(promise);
 		void promise.finally(() => {

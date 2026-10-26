@@ -1,0 +1,12 @@
+     |                                      |
+     |                                      help: replace this with: `i32::cast_unsigned`
+
+warning: `openscreen-compositor` (lib) generated 15 warnings (run `cargo fix --lib -p openscreen-compositor` to apply 9 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.95s
+     Running unittests src/lib.rs (target/debug/deps/compositor_view-ee3e73f5d8769aac)
+
+running 1 test
+test shutdown_tests::shutdown_joins_previously_detached_preview_teardown ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

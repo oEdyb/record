@@ -1,0 +1,148 @@
+{
+  "format": "klippt-workload-v1",
+  "id": "5514ea94-4b2e-4a53-bead-ba0e9346369f",
+  "kind": "preview",
+  "operation": "native-preview",
+  "platform": "linux",
+  "status": "succeeded",
+  "startedAtEpochMs": 1793028946060,
+  "updatedAtEpochMs": 1793028977125,
+  "configuration": {
+    "previewWidthPx": 1280,
+    "previewHeightPx": 720
+  },
+  "phases": [
+    {
+      "phase": "preview-active",
+      "startedAtElapsedMs": 0,
+      "endedAtElapsedMs": 31065
+    }
+  ],
+  "events": [
+    {
+      "code": "preview-started",
+      "elapsedMs": 0
+    },
+    {
+      "code": "preview-completed",
+      "elapsedMs": 31065
+    }
+  ],
+  "fallbacks": [],
+  "mediaPaths": [
+    "vulkan"
+  ],
+  "metrics": {
+    "preview.native_boundary_ms": {
+      "count": 169,
+      "min": 0.7198180000050343,
+      "max": 7.834134000004269,
+      "mean": 1.4875615443786352,
+      "p50": 1.356274999998277,
+      "p95": 2.297215999996115,
+      "p99": 4.630005080004912
+    },
+    "preview.gpu_readback_ms": {
+      "count": 169,
+      "min": 1.381986,
+      "max": 71.906857,
+      "mean": 3.7125474792899413,
+      "p50": 2.030262,
+      "p95": 4.618616599999993,
+      "p99": 47.65417015999991
+    },
+    "preview.ipc_ms": {
+      "count": 559,
+      "min": 0.09999999403953552,
+      "max": 38.69999999552965,
+      "mean": 3.6391771019091546,
+      "p50": 0.30000000447034836,
+      "p95": 11.409999998658897,
+      "p99": 14.242000003606076
+    },
+    "preview.draw_ms": {
+      "count": 168,
+      "min": 1.5,
+      "max": 7.699999995529652,
+      "mean": 1.7708333334663795,
+      "p50": 1.6999999955296516,
+      "p95": 2.100000001490116,
+      "p99": 2.863000000491752
+    }
+  },
+  "resources": [
+    {
+      "elapsedMs": 5019,
+      "mainPrivateMemoryKb": 167348,
+      "appWorkingSetKb": 1460848,
+      "appCpuPercent": 0,
+      "systemAvailableMemoryKb": 28394372,
+      "gpuMemoryEstimatedBytes": 279195648,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 10010,
+      "mainPrivateMemoryKb": 167528,
+      "appWorkingSetKb": 1461896,
+      "appCpuPercent": 0.18368125903469346,
+      "systemAvailableMemoryKb": 28250576,
+      "gpuMemoryEstimatedBytes": 279085056,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 15010,
+      "mainPrivateMemoryKb": 164832,
+      "appWorkingSetKb": 1459452,
+      "appCpuPercent": 0.14999876334364723,
+      "systemAvailableMemoryKb": 28124436,
+      "gpuMemoryEstimatedBytes": 279085056,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 20010,
+      "mainPrivateMemoryKb": 165584,
+      "appWorkingSetKb": 1460716,
+      "appCpuPercent": 0.13332092115608696,
+      "systemAvailableMemoryKb": 28585544,
+      "gpuMemoryEstimatedBytes": 279085056,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 25010,
+      "mainPrivateMemoryKb": 159352,
+      "appWorkingSetKb": 1455164,
+      "appCpuPercent": 0.21665787369092143,
+      "systemAvailableMemoryKb": 28634572,
+      "gpuMemoryEstimatedBytes": 279085056,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    },
+    {
+      "elapsedMs": 30025,
+      "mainPrivateMemoryKb": 208384,
+      "appWorkingSetKb": 1654580,
+      "appCpuPercent": 6.364049326781635,
+      "systemAvailableMemoryKb": 27960232,
+      "gpuMemoryEstimatedBytes": 296280064,
+      "thermalState": "unknown",
+      "onBatteryPower": false
+    }
+  ],
+  "privacy": {
+    "localOnly": true,
+    "excluded": [
+      "filenames and paths",
+      "URLs",
+      "project and window names",
+      "transcripts",
+      "cursor and keyboard events",
+      "audio and video"
+    ]
+  },
+  "endedAtEpochMs": 1793028977125,
+  "durationMs": 31065
+}

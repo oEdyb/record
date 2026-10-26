@@ -943,3 +943,34 @@ and durable persistence before interpreting terminal states as crash rates.
 The unmodified report and measured window remain evidence of the timing pass.
 Evidence: `artifacts/linux-port-2026-10-26/preview-workload/`. No runtime code
 changed; no full suite. Private lab stopped.
+
+
+### Clean preview shutdown and completed workload reports
+
+The source follow-up fixes ordinary exit leaving preview telemetry running.
+Electron’s final `will-quit` event runs after capture’s existing `before-quit`
+save guard and after windows close. It stops/joins native preview workers,
+then marks live previews successful and waits for durable report writes. Other
+workload kinds and failed previews keep their own outcomes. Repeated Quit waits;
+logout/shutdown bypasses the wait. Async report writes have a two-second deadline
+and persistence failures are reported. Native joining is synchronous after window
+closure; the timer cannot interrupt a blocked native join.
+
+A telemetry-only development pass exposed an active NVIDIA render-thread crash
+during exit. Final native shutdown now joins both live registry entries and
+previously detached view teardown before GPU library unload, while ordinary
+view changes retain their asynchronous teardown. The corrected production
+bundle/host-addon pass plays an owned recording, closes and exits with child
+code 0 (observed within 253 ms). Its completed report remains byte-identical
+and successful after relaunch. This is source/host verification, not a new
+portable package. `3a177e66` remains the last verified portable runtime.
+
+92 affected JS tests pass (one existing skip), plus one native shutdown test,
+app/build and test TypeScript checks, touched-file Biome and fresh scoped review.
+Strict addon Clippy is blocked by the unchanged eight-argument `sync_transport`
+API; it was not suppressed or refactored. No full suite. Evidence:
+`artifacts/linux-port-2026-10-26/preview-quit/`. Private lab stopped. All portable
+formats need rebuilding with the updated JS/addon, followed by exact-AppImage
+exit verification. Shared Mac hardware regression remains unverified.
+
+Contract: [Electron 44.9.1 app lifecycle](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/app.md).

@@ -1,0 +1,17 @@
+{
+  "reportFile": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/diagnostics/workloads/5514ea94-4b2e-4a53-bead-ba0e9346369f.json",
+  "reportId": "5514ea94-4b2e-4a53-bead-ba0e9346369f",
+  "statusAfterCleanClose": "succeeded",
+  "exit": {
+    "pid": 2653131,
+    "exitCode": 0,
+    "endedAtMs": 1793028977193
+  },
+  "exitObservedWithinMs": 253,
+  "bootstrapSha256": "6d8cd2f2a0b0b41e35fa73292ed9a5a0b8c9398366f3c50045f33d4f13386439",
+  "addonSha256": "1f16fb5037e984e94c121dc2471d928c28c79333070ebcdc00b5dec8db8ac751",
+  "reportSha256AfterClose": "7a7ff2867efa6d24796d7e221de7539c4fd0ba08b61928c5bce68a707da9caff",
+  "loadedAddonPath": "/home/olle/dev/screenrec-linux/electron/native/bin/linux-x64/compositor_view.node",
+  "statusAfterRelaunch": "succeeded",
+  "reportUnchangedAfterRelaunch": true
+}

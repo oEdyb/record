@@ -809,6 +809,11 @@ export class CompositorViewService {
 		addon.setActiveClip(id, screenPath, webcamPath, webcamOffsetSec, clipIndex, sourceTimeSec);
 	}
 
+	shutdownPreviews(): void {
+		this.addon?.shutdownPreviews();
+		this.rects.clear();
+	}
+
 	destroyView(id: number): void {
 		const addon = this.ensureAddon();
 		this.rects.delete(id);
