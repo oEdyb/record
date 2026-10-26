@@ -1083,3 +1083,16 @@ platform gates open; no shortcut workaround was added.
 Primary contracts: [host Registry](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.host.portal.Registry.html),
 [Electron 44.9.1 shortcut implementation](https://raw.githubusercontent.com/electron/electron/v44.9.1/shell/browser/api/electron_api_global_shortcut.cc),
 [KDE 6.8.1 shortcut sessions](https://raw.githubusercontent.com/KDE/xdg-desktop-portal-kde/v6.8.1/src/globalshortcuts.cpp).
+
+
+Portable delivery `2d432312` now includes the helper identity correction in all
+four Ubuntu-floor packages. Normal and extracted AppImage policy pass. The
+exact normal-FUSE AppImage displays Klippt in the picker, records the owned
+window, opens review, fully decodes its media, and closes with exit 0. See
+`packaged-media.json` for exact duration and artifact hash. Comparing
+all 33 extracted ELFs against `844348aa`, only the capture helper changes; its
+DT_NEEDED list is identical. The previous bare-distro loader evidence for the
+unchanged dependencies remains applicable; no repeated distro installs.
+Inventory: `release/linux-port-20261026-2d432312/`; build recipe, checksums,
+comparison and screenshots accompany the identity evidence. Only affected
+checks ran. Private lab and owned build container stopped.

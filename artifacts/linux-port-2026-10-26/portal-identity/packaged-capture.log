@@ -1,0 +1,3 @@
+[capture-mac] helper warning at 2026-10-26T16:57:57.642Z: {"code":"window-crop-missing","event":"warning","message":"window supplied no crop; recording the full PipeWire stream","schemaVersion":1,"timestampMs":1793033877642}
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793033877753,"video":"nvenc"}
+[capture-mac] helper warning at 2026-10-26T16:58:15.075Z: {"code":"frames-dropped","event":"warning","message":"5 captured frames were superseded before encoding","schemaVersion":1,"timestampMs":1793033895075}
