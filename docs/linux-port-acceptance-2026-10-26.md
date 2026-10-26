@@ -10,8 +10,11 @@ and responsive native capture/review/export. Windows remains later work.
 Current candidate follow-up: remembered Linux source grants and an explicit idle Source chooser
 are implemented and verified in private KWin. See [focused evidence](../artifacts/linux-port-2026-10-26/remembered-source/README.md).
 The exact normal AppImage passed OS-driven Source → Record without another picker
-→ Stop/review in the private lab, with a fully decodable 2.35-second clip. Niri
-persistence remains a separate check. Affected suites and one packaging checkpoint
+→ Stop/review in the private lab, with a fully decodable 2.35-second clip. The
+exact packaged helper also restored an owned-window grant on actual Niri without
+a second chooser after the missing user desktop registration was installed. Both
+2.1-second NVENC clips fully decode. Physical devices remain separate.
+Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.

@@ -20,7 +20,8 @@ identifiers and persisted data; no global Mac-name cleanup is needed to ship.
 
 Source follow-up in the current candidate: Linux Record restores compatible portal grants;
 Settings → Source chooses afresh before recording or while paused. Private KWin
-native and built-app checks pass; exact Niri grant reuse remains unverified.
+native and built-app checks pass. Actual Niri grant reuse also passes after
+registering the portable AppImage with its user desktop launcher.
 See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.md).
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.

@@ -61,10 +61,35 @@ formatting. No full suite or new hour soak. Latest React Doctor reports a generi
 complexity warning in the existing large hook; no new correctness finding in this
 slice. Its branch-wide scan also flags the unchanged HUD geometry hook.
 
-Exact Niri/GNOME portal persistence and physical devices remain unverified by this
-KWin pass. Backends may still require consent; Klippt requests supported grant
-reuse rather than bypassing compositor policy. Mac is unchanged by the grant path.
+Physical devices remain outside these grant checks. Backends may still require
+consent; Klippt requests supported grant reuse rather than bypassing compositor
+policy. Mac is unchanged by the grant path.
 
 Contract: [ScreenCast v4+ persistence and single-use restore tokens](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html),
 checked against the pinned ashpd 0.9.3 source (`PersistMode::ExplicitlyRevoked`,
 `StartResponse::restore_token`).
+
+## Actual Niri follow-up
+
+Olle explicitly requested the physical-session check. The exact packaged helper
+(`831f5b5b…cc06`) passed on Niri 26.04 (`8ed0da4`) with the GNOME portal:
+
+- Initial registry lookup failed because `co.dyberg.klippt.desktop` was absent.
+  The generated native packages already install that filename. The portable
+  AppImage had not been registered in this user's application directory.
+- Installed a valid user launcher pointing at the immutable candidate, validated
+  it and refreshed the desktop database. No portal/compositor service restart.
+- Selected the owned fixture through the Window tab using accessibility actions
+  and keyboard focus. Remember this selection was checked. Deferred start and a
+  source-kind guard prevented recording a monitor while choosing.
+- First process: approved window, 2.1-second NVENC clip, saved mode-0600 receipt.
+- Second fresh process: same window restored without a chooser; source-selected
+  arrived at 28 ms. Its 2.1-second NVENC clip also fully decodes. This is grant
+  readiness, not a first-encoded-packet performance benchmark.
+- Closed the fixture and restored the original window focus. Pointer and clipboard
+  were untouched; no audio source or physical camera was opened. Earlier
+  picker-only automation attempts timed out without recording.
+
+`niri-result.json` contains the scoped result, without approval tokens or host
+media. This establishes actual Niri grant reuse, not the remaining physical-device
+or full-workflow acceptance. No source change, rebuild or full suite was needed.
