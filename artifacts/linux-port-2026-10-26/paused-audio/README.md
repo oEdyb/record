@@ -28,9 +28,24 @@ enumeration probe must be compiled from `enumeration-probe.c` and the helper's
 current C archive to `/tmp/klippt-audio-enum-probe`. Scripts overwrite only their
 named lab evidence files. Media remains local in the lab, outside Git.
 
-Host helper provenance is in `helper-provenance.json`. Portable package and
-actual Electron verification will be recorded separately after the runtime
-commit; these direct-helper checks do not establish renderer behavior.
+Host helper provenance is in `helper-provenance.json`. The portable runtime is
+`81805667bafc97ab839503aa25bae99b7f9a2892`. All four Ubuntu-floor formats pass
+strict package policy; extracted AppImage policy and clean Ubuntu/Arch/Fedora
+loaders pass (27 ELFs, three executables). Immutable private inventory:
+`release/linux-port-20261026-81805667/`; checksums: `package-SHA256SUMS`.
+
+The exact normal-FUSE AppImage passes real HUD Record A → Pause → remove A →
+rejected Continue, still paused → restore A → Continue → additional unchanged
+Pause/Continue → Pause → choose B in the real device list → Continue → Stop.
+Review shows 1:42 / four clips and plays the captured fixture. All eight media
+sources fully decode, measured microphone windows contain 440/440/440/880 Hz,
+and the first clip's acknowledged hashes remain unchanged. The same mounted
+helper PID survives the take; its actual bytes match the floor package helper:
+`4ea2dd0f8de78ef72ee090ab592e15551838d3ebecc414add86feb26f5e54dd3`.
+Proof: `packaged-verification.json`, `packaged-app.log`, and two screenshots.
+The log reports 40 superseded frames under the lab CPU cap; no throughput claim.
+The generic failed-Continue toast still says “Press Stop” despite retry being
+available; its copy needs a follow-up. Lab and owned build container stopped.
 
 Checks: 115 native tests passed, one existing live test ignored and the opt-in
 live enumeration test filtered; 173 affected JS tests and both typechecks pass.

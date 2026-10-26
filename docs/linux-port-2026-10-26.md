@@ -758,8 +758,23 @@ renderer, physical-device or long-run timing parity.
 pass. One final full JS run passes 3,110 tests with 12 existing platform/opt-in
 skips. Fresh native control-flow and ownership reviews pass. Evidence:
 `artifacts/linux-port-2026-10-26/paused-audio/`. Portable packages and the actual
-Electron pass follow the runtime commit; `aeae26ec` packages predate this slice.
+Electron pass are recorded below; `aeae26ec` packages predate this slice.
 
 Contracts: [PipeWire thread-loop ownership](https://docs.pipewire.org/group__pw__thread__loop.html),
 [loop timer/update/destroy API](https://docs.pipewire.org/group__pw__loop.html),
 and [explicit-target policy](https://docs.pipewire.org/page_man_pipewire-props_7.html).
+
+Runtime `81805667` now builds all four Ubuntu-floor formats, with strict normal
+and extracted AppImage policy and clean Ubuntu/Arch/Fedora loaders passing
+(27 ELFs, three executables). Inventory: `release/linux-port-20261026-81805667/`.
+The exact normal-FUSE AppImage passes paused microphone loss, rejected Continue
+without leaving the take, restored-input retry, unchanged Pause/Continue,
+real settings selection of B, and Stop/review. Its four clips total 1:42; all
+eight screen/microphone files fully decode, originals measure 440/440/440/880 Hz,
+and the first committed source hashes remain unchanged. The mounted helper
+matches the floor build at SHA-256
+`4ea2dd0f8de78ef72ee090ab592e15551838d3ebecc414add86feb26f5e54dd3`.
+Review plays the owned fixture. Lab and build container stopped. This run
+reports 40 superseded frames and does not establish performance parity. The
+generic rejected-Continue toast still suggests Stop despite recoverable retry;
+correct that copy in a follow-up.
