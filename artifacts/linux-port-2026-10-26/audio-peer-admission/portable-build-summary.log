@@ -1,0 +1,6 @@
+  • building        target=AppImage arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.AppImage
+  • building        target=deb arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.deb
+  • building        target=pacman arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.pacman
+  • building        target=rpm arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.rpm
+Packaged distribution approved for linux-x64: 1 WebAssembly, 0 models
+FINAL_PORTABLE_PACKAGE_POLICY_PASS

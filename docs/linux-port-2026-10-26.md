@@ -868,3 +868,18 @@ and actual app verification follow the runtime commit.
 Contracts: [PipeWire core ordering/barrier](https://docs.pipewire.org/group__pw__core.html),
 [registry global and removal events](https://docs.pipewire.org/structpw__registry__events.html),
 and [older stream implementation](https://raw.githubusercontent.com/PipeWire/pipewire/0.3.48/src/pipewire/stream.c).
+
+Runtime `3a177e66` now builds all four Ubuntu-floor formats. Strict normal and
+extracted AppImage policy and clean Ubuntu/Arch/Fedora loaders pass (27 ELFs,
+three executables). Inventory: `release/linux-port-20261026-3a177e66/`. The exact
+normal-FUSE AppImage passes real HUD source selection, paused loss, the new
+retry guidance, restored-input Continue, a switch to B and Stop/review. All six
+screen/microphone files decode, original windows measure 440/440/880 Hz, and
+acknowledged first-clip hashes are unchanged. Review seeks/plays to the final
+frame. The mounted helper matches the floor package at SHA-256
+`3b1b4fef32f80a769dca831567424f06ffa1d20a6ff156764dda513eb23808e7`.
+The three clips total about 45 seconds. Labs/build container stopped. This
+resource-capped pass reports 22 superseded frames and establishes no performance
+or physical-device parity. Its clip-three legacy cursor lookup logs a missing
+sidecar; verify whether the shared take-level cursor data is used before treating
+that diagnostic as a preview bug.

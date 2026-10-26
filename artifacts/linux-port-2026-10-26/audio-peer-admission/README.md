@@ -34,6 +34,22 @@ second. Source fingerprints: `source-provenance.json`. No new package is claimed
 by these direct C archive probes; portable verification follows the runtime
 commit.
 
+Portable runtime `3a177e66d6d108fbebaa6e7fe4323d3cfb20d1df` is now verified.
+All four Ubuntu-floor formats pass strict policy; extracted AppImage policy and
+clean Ubuntu/Arch/Fedora loaders pass (27 ELFs, three executables). Inventory:
+`release/linux-port-20261026-3a177e66/`; checksums: `package-SHA256SUMS`.
+
+The exact normal-FUSE AppImage uses the real HUD to choose A, record/Pause,
+lose A, reject Continue with the corrected retry guidance, restore A,
+Continue/Pause, choose B, and Continue/Stop/review. Three clips total about
+45 seconds. All six screen/microphone files fully decode; original windows
+measure 440/440/880 Hz and acknowledged first-clip hashes remain unchanged.
+One helper survives the take. Its mounted bytes match the floor package:
+`3b1b4fef32f80a769dca831567424f06ffa1d20a6ff156764dda513eb23808e7`.
+Review plays/seeks to the final frame. Proof: `packaged-verification.json`,
+app log and screenshots. The resource-capped pass reports 22 superseded frames;
+it is not a performance benchmark. Labs and owned build container are stopped.
+
 116 native tests pass, one existing live test ignored and one opt-in live
 enumeration test filtered. This includes six offline C scenarios executing the
 actual callbacks: stale barriers and queued PCM, wrong/missing peers, terminal
