@@ -351,3 +351,46 @@ Evidence: `artifacts/linux-port-2026-10-26/portable-final-smoke/`.
 All owned test apps, fixture and private audio jobs exited; the build container is
 stopped. No user compositor configuration, default audio device, installed Mac app,
 public release, production branch or existing recordings were changed.
+
+### Producer-cycle audio gaps
+
+A decoded regression confirmed a remaining source-timeline defect: a two-second
+microphone timeline with a 900 ms outage became an approximately 1.1-second original.
+Ring-overflow accounting alone could not represent time when no callbacks arrived.
+PipeWire audio header metadata was absent even when requested on this host. The
+per-buffer cycle timestamp is available from PipeWire 1.0.5 and is assigned before
+deferred callback execution. C forwards that clock with each PCM block, guarded by
+the loaded runtime version so older, shorter `pw_buffer` allocations are never read
+past their end. Older runtimes retain the untimed behavior. Initial source offsets
+remain estimated; physical-device latency and whole-clock rate correction remain
+gates. Contracts: [pw_buffer timing](https://docs.pipewire.org/structpw__buffer.html)
+and [the pinned implementation](https://raw.githubusercontent.com/PipeWire/pipewire/1.0.5/src/pipewire/stream.c).
+
+The bounded ring now restores producer-clock gaps larger than two milliseconds
+with silence at their original positions. A cumulative PCM-frame cursor tolerates
+smaller clock jitter without repeatedly moving its anchor and stretching continuous
+audio. Long gaps consume only the normal ring capacity, with the omitted prefix
+preserved by existing missing-sample accounting. Pause clears the clock history;
+retained-writer Continue also rebases every input at the emitted mix position.
+The ring also reports a new clock anchor to the mixer, which places the first
+fresh block after a delayed return on the current timeline. This keeps a source
+starved before or after Pause audible after Continue.
+
+Focused regressions cover a 60-second stream with alternating 100 μs clock jitter,
+a timed microphone returning after legacy Pause/Continue, a measured gap in both
+original and compatibility AAC, delayed post-Continue return, multiple queued
+blocks, long gaps/overflow, clock
+reset, unavailable timestamps and Pause clearing. The independent review found jitter, legacy Continue and delayed-return defects;
+all were corrected, with a final fresh review pending. Native helper tests: 90 pass,
+one existing live test ignored; strict Clippy and formatting pass.
+The C ABI review passed 13 runtime-version cases and protected-page tests with
+24-byte/32-byte older buffers plus current 64-bit timestamps.
+
+A live NVENC capture deliberately stopped the helper for 500 ms. Video and source
+AAC remained about 7.09/7.08 seconds, fully decodable; pulse-to-flash offsets before
+and after the stall stayed within one output frame. Missing captured content during
+the stall remains missing; its time is preserved as silence/held video. This first
+live pass preceded the jitter refinement. Evidence and binary provenance are under
+`artifacts/linux-port-2026-10-26/audio-cycle-time/`. Updated package generation is
+pending final review and checks; the immutable `d7b0dafc` candidate above does not
+contain this follow-up.

@@ -221,7 +221,9 @@ struct osc_pw_audio_callbacks {
     void *user;
     /* `interleaved` holds `n_samples` floats — that is n_samples/channels frames
      * — and is borrowed for the duration of the call. */
-    void (*on_samples)(void *user, const float *interleaved, uint32_t n_samples);
+    /* cycle_ns is the capture buffer cycle clock, or zero on older runtimes. */
+    void (*on_samples)(void *user, const float *interleaved, uint32_t n_samples,
+                       uint64_t cycle_ns);
     void (*on_state)(void *user, const char *state, const char *error);
 };
 

@@ -1,5 +1,6 @@
-//! Standalone, unboosted source audio. The ring has PCM but no host timestamps:
-//! estimate its first sample from the drain boundary minus the block duration.
+//! Standalone, unboosted source audio. The ring restores producer-clock gaps
+//! before encoding. Estimate the initial offset from the drain boundary minus
+//! the first block duration; this writer receives contiguous PCM.
 use crate::encoder::{AudioEncoder, Muxer, TrackId, AUDIO_CHANNELS, AUDIO_SAMPLE_RATE};
 use std::path::{Path, PathBuf};
 

@@ -28,6 +28,7 @@
 
 #include "pw_internal.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -43,6 +44,7 @@ struct osc_pw_audio {
     struct spa_hook stream_listener;
     struct osc_pw_audio_callbacks callbacks;
     uint32_t channels;
+    int has_buffer_time;
 };
 
 static void osc_audio_on_state_changed(void *userdata, enum pw_stream_state old,
@@ -99,7 +101,8 @@ static void osc_audio_on_process(void *userdata)
                 const float *samples = SPA_PTROFF(data->data, offset, const float);
 
                 audio->callbacks.on_samples(audio->callbacks.user, samples,
-                                            size / (uint32_t)sizeof(float));
+                                            size / (uint32_t)sizeof(float),
+                                            audio->has_buffer_time ? b->time : 0);
             }
         }
         osc_audio_api.stream_queue_buffer(audio->stream, b);
@@ -138,6 +141,16 @@ struct osc_pw_audio *osc_pw_audio_start(const char *target_object, int capture_s
     }
     audio->callbacks = *callbacks;
     audio->channels = channels;
+    /* pw_buffer grew in 1.0.5. Never read the trailing field from an older
+     * library's shorter allocation (Ubuntu 22.04 ships an older runtime). */
+    {
+        unsigned int major = 0, minor = 0, micro = 0;
+        const char *version = osc_pw_library_version();
+        if (version != NULL && sscanf(version, "%u.%u.%u", &major, &minor, &micro) == 3) {
+            audio->has_buffer_time = major > 1 ||
+                (major == 1 && (minor > 0 || micro >= 5));
+        }
+    }
 
     audio->loop = osc_audio_api.thread_loop_new("openscreen-audio", NULL);
     if (audio->loop == NULL) {
