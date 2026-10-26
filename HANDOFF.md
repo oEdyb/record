@@ -39,11 +39,16 @@ Four-source handoff evidence is in
 hashes preserved, isolated 660/440 Hz audio, correct OTIO/FCPXML tracks, and a
 reproduced/fixed rendered-tail mismatch. No full-suite rerun.
 
+Actual Niri everyday check also passes the focused recording/review/export
+journey: two clips, six identical originals, and a fully decodable 740-frame /
+12.333-second One video. Default mic PCM was nearly silent, so spoken-voice
+quality remains unverified. [Evidence](artifacts/linux-port-2026-10-26/niri-everyday/README.md).
+
 ## What is left, in priority order
 
-1. Actual Niri and physical-device acceptance remains user-driven unless Olle
-   explicitly authorizes physical-session automation. Existing private KWin
-   evidence does not establish that coverage.
+1. Spoken microphone quality, physical camera and calibrated device timing
+   remain unverified. The authorized actual-Niri recording, Pause/Continue,
+   review, both exports and normal Quit have passed within their stated scope.
 2. Keep the finite acceptance record current. No routine full suites, hour soaks
    or four-format rebuilds without a concrete changed risk.
 3. Broader GPU/desktops, physical timing and Mac regression are compatibility

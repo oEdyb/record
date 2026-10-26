@@ -13,7 +13,10 @@ The exact normal AppImage passed OS-driven Source → Record without another pic
 → Stop/review in the private lab, with a fully decodable 2.35-second clip. The
 exact packaged helper also restored an owned-window grant on actual Niri without
 a second chooser after the missing user desktop registration was installed. Both
-2.1-second NVENC clips fully decode. Physical devices remain separate.
+2.1-second NVENC clips fully decode. A subsequent authorized actual-Niri workflow
+with the default microphone and system output passed two clips, review, both
+exports and normal Quit; see [everyday evidence](../artifacts/linux-port-2026-10-26/niri-everyday/README.md).
+Microphone PCM was nearly silent, so spoken-voice quality remains unverified.
 Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
@@ -33,7 +36,7 @@ were used; no repeated full suite or hour soak.
 
 | Requirement | Current evidence | State |
 | --- | --- | --- |
-| Record, Pause/Continue, Stop and review | Real packaged portal flows; `global-shortcuts/`, `audio-peer-admission/` | Passed on private KWin |
+| Record, Pause/Continue, Stop and review | Actual Niri two-clip workflow plus private portal flows; `niri-everyday/` | Passed within stated audio limits |
 | Remove/Undo and recovery persistence | Shared lifecycle/journal regressions and earlier desktop recovery checks in implementation log | Retain unchanged evidence |
 | Paused source/cursor/audio changes preserve earlier clips | Transactional replacement, cancellation and source hashes; `audio-peer-admission/`, `cursor-preview/` | Passed in scoped checks |
 | Reopen media and camera associations | Packaged restart and original hashes; `active-camera-quit/` | Passed with synthetic camera |
@@ -50,10 +53,11 @@ new observed failure invalidates its coverage. Only affected tests run.
 
 ## Explicit remaining gates
 
-- One bounded, user-driven real Niri session with Olle's microphone/system audio,
-  recording controls, review and both exports. Physical automation needs explicit
-  authorization; routine private-lab work must not drive the visible desktop.
-- Physical webcam and hardware clock/timing; exact Niri portal/focus integration.
+- Spoken microphone quality/balance: the authorized actual-Niri check captured
+  the default input, but the room/processed signal was nearly silent. Its GUI
+  workflow, system audio, review and both exports passed. Future physical
+  automation still requires explicit authorization.
+- Physical webcam and calibrated hardware clock/timing; monitor/HUD exclusion.
 - Wayland own-window exclusion; global shortcut activation/focus/backend reuse.
   Independent Electron reproduction exists; no speculative Klippt rewrite.
 - Representative responsiveness/resource use on the intended session. The hour
