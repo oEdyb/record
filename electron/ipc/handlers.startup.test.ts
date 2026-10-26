@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { desktopCapturer } from "electron";
+import { BrowserWindow, desktopCapturer, powerMonitor } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeRecordingSession, type RecordingSession } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
@@ -24,7 +24,18 @@ vi.mock("electron", () => {
 			off: noop,
 			whenReady: () => Promise.resolve(),
 		},
-		BrowserWindow: { fromWebContents: () => null, getAllWindows: () => [] },
+		BrowserWindow: class {
+			static fromWebContents() {
+				return null;
+			}
+			static getAllWindows() {
+				return [];
+			}
+			webContents = { send: vi.fn() };
+			isDestroyed() {
+				return false;
+			}
+		},
 		clipboard: {},
 		desktopCapturer: { getSources: () => Promise.resolve([]) },
 		dialog: {},
@@ -67,7 +78,10 @@ function fakeIpcMain() {
 	return { ipcMain, channels, handlers };
 }
 
-async function register(options: { restoreInterruptedRecording?: boolean } = {}) {
+async function register(
+	options: { restoreInterruptedRecording?: boolean } = {},
+	mainWindow?: BrowserWindow,
+) {
 	const { registerIpcHandlers } = await import("./handlers");
 	const { ipcMain, channels, handlers } = fakeIpcMain();
 	const recovery = registerIpcHandlers(
@@ -75,7 +89,7 @@ async function register(options: { restoreInterruptedRecording?: boolean } = {})
 		vi.fn() as never,
 		vi.fn() as never,
 		vi.fn() as never,
-		() => null,
+		() => mainWindow ?? null,
 		() => null,
 		() => null,
 		() => null,
@@ -197,6 +211,31 @@ describe("registerIpcHandlers startup contract", () => {
 		prepare.mockRestore();
 		start.mockRestore();
 		entitlement.mockRestore();
+	});
+
+	it("routes Linux suspend through the existing recording interruption notification", async () => {
+		pinPlatform("linux");
+		const listen = vi.spyOn(powerMonitor, "on");
+		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+		const running = vi
+			.spyOn(NativeMacRecordingService.prototype, "isRunning")
+			.mockReturnValue(true);
+		try {
+			const window = new BrowserWindow();
+			const { recovery } = await register({}, window);
+			await recovery;
+			const suspend = listen.mock.calls.find(([event]) => ["suspend"].includes(event));
+			if (!suspend) throw new Error("Linux suspend listener missing");
+			Reflect.apply(suspend[1], undefined, []);
+			expect(window.webContents.send).toHaveBeenCalledWith(
+				"native-mac-recording-interrupted",
+				"system-sleep",
+			);
+			expect(listen.mock.calls.some(([event]) => ["lock-screen"].includes(event))).toBe(false);
+		} finally {
+			running.mockRestore();
+			listen.mockRestore();
+		}
 	});
 
 	it("reports an interrupted native take left in the recovery journal", async () => {

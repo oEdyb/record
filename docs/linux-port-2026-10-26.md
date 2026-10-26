@@ -288,3 +288,14 @@ Artifacts and SHA-256 inventory are under
 final AppImage remains pending until the concurrent endurance capture finishes.
 GitHub's latest CI jobs still executed zero steps; the check annotations identify
 failed account payments or the spending limit as the reason.
+
+### Linux suspend parity
+
+Linux now forwards Electron's supported `suspend` event through the shared recording
+interruption path. The renderer pauses the active clip and drains its camera,
+allowing explicit Continue after wake. macOS keeps its existing lock/suspend
+handling; Linux does not register the unsupported lock-screen event. The actual
+machine was not suspended during validation. A real-handler simulated event
+regression fails before the wiring and passes after; the final combined focused
+run passed 213 tests on Node 22.22.1/npm 10.9.4, with both TypeScript checks clean.
+Contract: [Electron 44.9.1 powerMonitor](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/power-monitor.md).

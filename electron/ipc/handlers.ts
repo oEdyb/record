@@ -2921,14 +2921,14 @@ export function registerIpcHandlers(
 	};
 	if (process.platform === "darwin") {
 		const onLockScreen = () => notifyNativeMacInterruption("screen-locked");
-		const onSuspend = () => notifyNativeMacInterruption("system-sleep");
 		powerMonitor.on("lock-screen", onLockScreen);
+		app.once("will-quit", () => powerMonitor.off("lock-screen", onLockScreen));
+	}
+	if (process.platform === "darwin" || process.platform === "linux") {
+		const onSuspend = () => notifyNativeMacInterruption("system-sleep");
 		powerMonitor.on("suspend", onSuspend);
 		// A quit can still be cancelled at before-quit, and the take carries on.
-		app.once("will-quit", () => {
-			powerMonitor.off("lock-screen", onLockScreen);
-			powerMonitor.off("suspend", onSuspend);
-		});
+		app.once("will-quit", () => powerMonitor.off("suspend", onSuspend));
 	}
 
 	nativeMacRecordingService = new NativeMacRecordingService({
