@@ -51,7 +51,7 @@
 		"startFailed": "Impossible de démarrer l’enregistrement. Appuyez à nouveau sur Enregistrer ou rouvrez Klippt.",
 		"pauseFailed": "Impossible de mettre en pause et d’enregistrer ce clip. Appuyez sur Arrêter, puis vérifiez Enregistrements.",
 		"continueFailed": "Impossible de poursuivre l’enregistrement. Appuyez sur Arrêter, puis vérifiez Enregistrements.",
-		"continueRetry": "L’enregistrement est toujours en pause. Vérifiez les réglages et réessayez Continuer.",
+		"continueRetry": "L’enregistrement est toujours en pause. Vérifiez les réglages et appuyez à nouveau sur Continuer.",
 		"stopFailed": "Impossible de terminer l’arrêt ou d’ouvrir la révision. Rouvrez Klippt, puis vérifiez Enregistrements.",
 		"selectSource": "Veuillez sélectionner une source à enregistrer"
 	},

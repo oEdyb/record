@@ -624,13 +624,15 @@ export class NativeMacRecordingService {
 				const rejectedIndex =
 					error instanceof NativeMacResumeRejectedError ? error.clipIndex : null;
 				let safelyPaused =
-					resumeRequested &&
-					rejectedIndex !== null &&
-					rejectedIndex ===
-						Math.max(this.activeClipIndex ?? -1, ...this.clips.map((clip) => clip.index)) + 1 &&
+					this.paused &&
+					(!resumeRequested ||
+						(rejectedIndex !== null &&
+							rejectedIndex ===
+								Math.max(this.activeClipIndex ?? -1, ...this.clips.map((clip) => clip.index)) +
+									1)) &&
 					helper.isRunning() &&
 					!this.fatalError;
-				if (safelyPaused && rejectedIndex !== null) {
+				if (resumeRequested && safelyPaused && rejectedIndex !== null) {
 					const metadataChanged = this.originals.delete(rejectedIndex);
 					this.clipCursorModes.delete(rejectedIndex);
 					try {

@@ -258,6 +258,7 @@ interface Window {
 		) => Promise<{
 			success: boolean;
 			clipIndex?: number;
+			paused?: boolean;
 			error?: string;
 		}>;
 		prepareNativeMacContinue: (

@@ -71,6 +71,41 @@ const baseRequest: NativeMacRecordingRequest = {
 };
 
 describe("NativeMacRecordingService", () => {
+	it("confirms a rejected pre-writer configuration remains paused for correction and retry", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		helper.reconfigure.mockRejectedValueOnce(new Error("Microphone unavailable"));
+		const changed: NativeMacRecordingRequest = {
+			...request,
+			audio: { ...request.audio, microphone: { enabled: true, deviceName: "input", gain: 1 } },
+		};
+		await expect(service.resume(changed)).resolves.toMatchObject({
+			success: false,
+			paused: true,
+			error: "Microphone unavailable",
+		});
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+		await expect(service.resume(changed)).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).toHaveBeenCalledTimes(2);
+		expect(helper.resume).toHaveBeenCalledOnce();
+	});
+
+	it("does not confirm a paused retry when the helper dies during configuration", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		helper.reconfigure.mockImplementationOnce(async () => {
+			helper.running = false;
+			throw new Error("Helper exited");
+		});
+		await expect(
+			service.resume({ ...baseRequest, video: { ...baseRequest.video, fps: 30 } }),
+		).resolves.toEqual({ success: false, error: "Helper exited" });
+	});
+
 	it("Stop during Continue permissions prevents a later helper command", async () => {
 		const service = new NativeMacRecordingService(deps);
 		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
