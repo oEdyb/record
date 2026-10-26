@@ -525,3 +525,46 @@ No physical webcam or additional endurance run was performed. The initial MP4
 header alone has no recoverable pictures; the first usable fragment and any
 unwritten tail remain subject to recorder/encoder timing. Owned apps/fixture and
 the build container are stopped.
+
+
+### Next parity slice: paused source replacement (not implemented)
+
+Inspection confirms Linux hides the source chip and rejects a changed source or
+cursor mode in `Request::validate_reconfigure`. Unchanged Continue correctly
+reuses the existing portal session. Explicit source replacement must create a new
+session because [SelectSources is once per session](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html).
+The pinned ashpd 0.9.3 exposes `Session::close`, including cancellation of related
+picker interaction. Its sessions do not close on Drop, so replacement also needs
+explicit ownership; simply opening another stream would leak portal sessions.
+
+The implementation boundary will retain the existing helper and committed clip
+list. A paused-only select command prepares a candidate portal/PipeWire source;
+the current source remains intact until a valid candidate frame arrives. Source
+events carry a generation so queued old callbacks cannot enter the new clip.
+Commit clears the old frame/PTS and cursor state, preserves all completed clips,
+and adopts the candidate frame/geometry before acknowledging selection. Cancel,
+connection failure and bounded post-selection readiness failure discard the
+candidate and retain the paused source. Picker time is human time and must not
+share the writer readiness deadline. Stop/quit must cancel an outstanding picker
+outside the serialized recording command queue; otherwise Stop waits behind the
+human dialog. The HUD is hidden through the existing portal wrapper and restored
+on success or rejection. Normal Continue remains picker-free.
+
+Focused acceptance: duplicate selection commands; picker cancellation followed by
+Continue; failed candidate connection/first frame; stale queued events; immediate
+Stop/WM close while choosing; different source size/PTS origin; three clips across
+a replacement with original paths/offsets intact; and actual OS-driven selection
+of two owned fixtures followed by preview and untouched-source export. No runtime
+behavior above is claimed by the current `af35b212` packages.
+
+Source-replacement inspection also exposed an incorrect existing setup diagnostic:
+it recommended the GTK fallback backend for ScreenCast. The helper now names only
+ScreenCast-capable backend choices and explicitly maps niri to GNOME. The official
+[GTK backend descriptor](https://raw.githubusercontent.com/flatpak/xdg-desktop-portal-gtk/main/data/gtk.portal.in)
+has no ScreenCast interface; [niri's setup contract](https://niri-wm.github.io/niri/Important-Software.html)
+requires the GNOME backend for screencasting. Installed descriptors agree.
+A focused regression fails before and passes after the correction; an actual debug
+helper probe with a deliberately nonexistent child-only D-Bus address emits the
+corrected error and exits without opening a picker. Strict Clippy and formatting
+pass. Probe evidence: `artifacts/linux-port-2026-10-26/portal-diagnostic/`.
+This diagnostic-only follow-up is not in the earlier `af35b212` candidate packages.

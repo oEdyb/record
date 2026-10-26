@@ -158,10 +158,9 @@ fn portal_unavailable(error: impl std::fmt::Display) -> PortalError {
     PortalError::Failed(format!(
         "no ScreenCast portal is available on this session ({error}). Screen capture on Linux \
          goes through xdg-desktop-portal, which needs the backend matching your desktop: \
-         xdg-desktop-portal-gnome (GNOME), xdg-desktop-portal-kde (KDE Plasma), \
+         xdg-desktop-portal-gnome (GNOME and niri), xdg-desktop-portal-kde (KDE Plasma), \
          xdg-desktop-portal-hyprland (Hyprland), xdg-desktop-portal-wlr (Sway and other wlroots \
-         compositors), or xdg-desktop-portal-gtk (anything else). Install one, then log out and \
-         back in."
+         compositors). Install the backend matching your desktop, then log out and back in."
     ))
 }
 
@@ -267,4 +266,19 @@ pub async fn negotiate(cursor_mode: CursorMode) -> Result<PortalStream, PortalEr
         size: stream.size(),
         source_kind: stream.source_type().map(SourceKind::from_portal),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::portal_unavailable;
+
+    #[test]
+    fn missing_portal_names_a_screencast_backend_for_niri_not_the_gtk_fallback() {
+        let error = portal_unavailable("no session bus");
+        assert_eq!(error.code(), "portal-failed");
+        let message = error.message();
+        assert!(message.contains("xdg-desktop-portal-gnome (GNOME and niri)"));
+        assert!(!message.contains("xdg-desktop-portal-gtk"));
+        assert!(message.contains("no session bus"));
+    }
 }
