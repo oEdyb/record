@@ -14,6 +14,9 @@ export type RecordStartMark = { stage: string; atMs: number };
 
 export type NativeMacRecordingRequest = {
 	schemaVersion: 1;
+	/** Linux portal selection owns the source; no desktopCapturer id is trusted. */
+	platform?: "linux";
+	deferStart?: boolean;
 	recordingId?: number;
 	/** The renderer's steps since the click, so main can log where start time goes. */
 	startTiming?: RecordStartMark[];
@@ -62,6 +65,12 @@ export type NativeMacRecordingRequest = {
 		screenPath: string;
 		manifestPath?: string;
 	};
+};
+
+export type NativeRecordingAppStopRequest = { recordingId: number; token: string };
+export type NativeRecordingAppStopAcknowledgement = NativeRecordingAppStopRequest & {
+	success: boolean;
+	error?: string;
 };
 
 export type NativeMacOriginalStarted = {
@@ -143,6 +152,7 @@ export type NativeMacCaptureTelemetry = {
 
 export type NativeMacRecordingStartResult = {
 	success: boolean;
+	rendererStop?: NativeRecordingAppStopRequest;
 	recordingId?: number;
 	path?: string;
 	helperPath?: string;

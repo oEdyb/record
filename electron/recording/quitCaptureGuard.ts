@@ -7,20 +7,34 @@ export function createQuitCaptureGuard(deps: {
 	quit: () => void;
 }) {
 	let stopping = false;
+	let completingQuit = false;
 	let poweringOff = false;
+	const beforeQuit = (event: { preventDefault: () => void }) => {
+		if (poweringOff || completingQuit) return;
+		if (stopping) {
+			event.preventDefault();
+			return;
+		}
+		if (!deps.isCaptureRunning()) return;
+		event.preventDefault();
+		stopping = true;
+		void deps.stopCapture().finally(() => {
+			completingQuit = true;
+			deps.quit();
+			completingQuit = false;
+			// A window can still cancel this quit; the next one must stop a new take again.
+			stopping = false;
+		});
+	};
 	return {
 		systemPoweringOff() {
 			poweringOff = true;
 		},
-		beforeQuit(event: { preventDefault: () => void }) {
-			if (stopping || poweringOff || !deps.isCaptureRunning()) return;
-			event.preventDefault();
-			stopping = true;
-			void deps.stopCapture().finally(() => {
-				deps.quit();
-				// A window can still cancel this quit; the next one must stop a new take again.
-				stopping = false;
-			});
+		beforeQuit,
+		protectWindow(window: {
+			on: (event: "close", listener: (event: { preventDefault: () => void }) => void) => unknown;
+		}): void {
+			window.on("close", beforeQuit);
 		},
 	};
 }

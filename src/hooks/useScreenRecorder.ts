@@ -4,14 +4,13 @@ import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
 import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
-import {
-	type NativeLinuxRecordingRequest,
-	portalOwnsSourceSelection,
-} from "@/lib/nativeLinuxRecording";
+import { portalOwnsSourceSelection } from "@/lib/nativeLinuxRecording";
 import { getKeptRecordingDurationMs } from "@/lib/nativeMacClipSession";
 import type {
+	NativeMacRecordingFailure,
 	NativeMacRecordingInterruption,
 	NativeMacRecordingRequest,
+	NativeRecordingAppStopRequest,
 	RecordStartMark,
 } from "@/lib/nativeMacRecording";
 import {
@@ -19,9 +18,12 @@ import {
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
 import {
+	buildNativeLinuxClipRecordingRequest,
 	buildNativeMacRecordingRequest,
+	type CaptureSource,
 	computeCaptureBitrate,
 	MIN_FRAME_RATE,
+	nativeMacWebcamFileName,
 	nativeMacWebcamRequest,
 	selectRecorderMimeType,
 	TARGET_FRAME_RATE,
@@ -33,16 +35,8 @@ import {
 	normalizeRecordingQuality,
 	type RecordingQuality,
 } from "@/lib/recording/recordingQuality";
-import {
-	discardWebcamRecorder,
-	finalizeWebcamAsset,
-	NativeMacWebcamClipLedger,
-} from "@/lib/recording/webcamSidecars";
-import type {
-	CursorCaptureMode,
-	RecordedVideoAssetInput,
-	RecordingSessionClip,
-} from "@/lib/recordingSession";
+import { NativeMacWebcamClipLedger } from "@/lib/recording/webcamSidecars";
+import type { CursorCaptureMode, RecordingSessionClip } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import {
@@ -74,7 +68,7 @@ const CAMERA_ACQUIRE_RETRY_DELAYS_MS = [250, 750] as const;
 const NATIVE_MAC_INTERRUPTION_MESSAGES = {
 	"source-inactive": "The recorded window closed, so recording paused.",
 	"screen-locked": "The screen locked, so recording paused.",
-	"system-sleep": "The Mac is going to sleep, so recording paused.",
+	"system-sleep": "The system is going to sleep, so recording paused.",
 	"disk-low": "The disk is almost full, so recording paused. Free space before you continue.",
 } as const;
 
@@ -152,6 +146,7 @@ type NativeWindowsRecordingHandle = {
 
 type NativeMacRecordingHandle = {
 	recordingId: number;
+	rendererStop?: NativeRecordingAppStopRequest;
 	finalizing: boolean;
 	paused: boolean;
 	currentClipIndex: number;
@@ -163,25 +158,18 @@ type NativeMacRecordingHandle = {
 	webcamOffsetMs: number | null;
 };
 
+type NativeMacSavedRecording = { success: boolean; review: boolean; error?: string };
+type NativeMacSaveJob = {
+	recordingId: number;
+	rendererStop?: NativeRecordingAppStopRequest;
+	promise: Promise<NativeMacSavedRecording>;
+};
+
 type PendingNativeMacWebcamClip = {
 	recordingId: number;
 	clipIndex: number;
 	recorder: RecorderHandle;
 	startedAtMs: number;
-	webcamOffsetMs: number | null;
-};
-
-type NativeLinuxRecordingHandle = {
-	recordingId: number;
-	finalizing: boolean;
-	paused: boolean;
-	/**
-	 * As on macOS: the webcam MediaRecorder starts immediately in the renderer,
-	 * while the helper has to spawn, negotiate a portal session and WAIT FOR THE
-	 * USER to answer a picker before its first frame exists. That last part makes
-	 * the gap here unbounded rather than merely a process spawn, so trimming it
-	 * matters more than it does on macOS. `null` when no webcam was recorded.
-	 */
 	webcamOffsetMs: number | null;
 };
 
@@ -277,9 +265,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const webcamRecorder = useRef<RecorderHandle | null>(null);
 	const nativeWindowsRecording = useRef<NativeWindowsRecordingHandle | null>(null);
 	const nativeMacRecording = useRef<NativeMacRecordingHandle | null>(null);
+	const nativeMacStartFailure = useRef<NativeMacRecordingFailure | null>(null);
+	const nativeMacSaveJob = useRef<NativeMacSaveJob | null>(null);
+	const nativeMacAppStopCompletion = useRef<Promise<void> | null>(null);
 	const nativeMacWebcamClips = useRef(new NativeMacWebcamClipLedger());
 	const pendingNativeMacWebcamClip = useRef<PendingNativeMacWebcamClip | null>(null);
-	const nativeLinuxRecording = useRef<NativeLinuxRecordingHandle | null>(null);
 	const stream = useRef<MediaStream | null>(null);
 	const screenStream = useRef<MediaStream | null>(null);
 	const microphoneStream = useRef<MediaStream | null>(null);
@@ -323,7 +313,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		Boolean(
 			(nativeWindowsRecording.current && !nativeWindowsRecording.current.finalizing) ||
 				(nativeMacRecording.current && !nativeMacRecording.current.finalizing) ||
-				(nativeLinuxRecording.current && !nativeLinuxRecording.current.finalizing) ||
 				(screenRecorder.current && screenRecorder.current.recorder.state !== "inactive"),
 		);
 	const canReconfigureWhilePaused = Boolean(
@@ -776,287 +765,234 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		[t],
 	);
 
-	const finalizeNativeMacRecording = useCallback(
-		async (discard = false) => {
+	const saveNativeMacRecording = useCallback(
+		(discard = false): Promise<NativeMacSavedRecording> => {
 			const activeNativeRecording = nativeMacRecording.current;
 			if (!activeNativeRecording || activeNativeRecording.finalizing) {
-				return false;
+				return (
+					nativeMacSaveJob.current?.promise ??
+					Promise.resolve({
+						success: false,
+						review: false,
+						error: "The recording HUD no longer owns this take.",
+					})
+				);
 			}
 
 			activeNativeRecording.finalizing = true;
-			const clickedAtMs = Date.now();
-			if (!discard) {
-				setSaving(true);
-			}
-			const activeWebcamRecorder = webcamRecorder.current;
-			const pendingWebcamClip = pendingNativeMacWebcamClip.current;
-			if (pendingNativeMacWebcamClip.current === pendingWebcamClip) {
-				pendingNativeMacWebcamClip.current = null;
-			}
-			const activeWebcamOffsetMs = activeNativeRecording.webcamOffsetMs ?? 0;
-			if (activeWebcamRecorder && webcamRecorder.current === activeWebcamRecorder) {
-				webcamRecorder.current = null;
-			}
-			if (activeWebcamRecorder?.recorder.state !== "inactive") {
-				activeWebcamRecorder?.recorder.stop();
-			}
-			let activeWebcamRecorderQueued = false;
-			if (
-				pendingWebcamClip?.recordingId === activeNativeRecording.recordingId &&
-				pendingWebcamClip.recorder.recorder.state !== "inactive"
-			) {
-				pendingWebcamClip.recorder.recorder.stop();
-			}
-			let pendingWebcamRecorderQueued = false;
+			const promise = (async (): Promise<NativeMacSavedRecording> => {
+				const clickedAtMs = Date.now();
+				if (!discard) {
+					setSaving(true);
+				}
+				const activeWebcamRecorder = webcamRecorder.current;
+				const pendingWebcamClip = pendingNativeMacWebcamClip.current;
+				if (pendingNativeMacWebcamClip.current === pendingWebcamClip) {
+					pendingNativeMacWebcamClip.current = null;
+				}
+				const activeWebcamOffsetMs = activeNativeRecording.webcamOffsetMs ?? 0;
+				if (activeWebcamRecorder && webcamRecorder.current === activeWebcamRecorder) {
+					webcamRecorder.current = null;
+				}
+				if (activeWebcamRecorder?.recorder.state !== "inactive") {
+					activeWebcamRecorder?.recorder.stop();
+				}
+				let activeWebcamRecorderQueued = false;
+				if (
+					pendingWebcamClip?.recordingId === activeNativeRecording.recordingId &&
+					pendingWebcamClip.recorder.recorder.state !== "inactive"
+				) {
+					pendingWebcamClip.recorder.recorder.stop();
+				}
+				let pendingWebcamRecorderQueued = false;
 
-			const clearNativeRecordingState = () => {
-				nativeMacRecording.current = null;
-				setRecording(false);
-				setPaused(false);
-				setElapsedSeconds(0);
-				accumulatedDurationMs.current = 0;
-				segmentStartedAt.current = null;
-				activeClipStartedAt.current = null;
-				setActiveClipElapsedMs(0);
-				setRecordedClips([]);
-				setClipFinalizing(false);
+				const clearNativeRecordingState = () => {
+					nativeMacRecording.current = null;
+					setRecording(false);
+					setPaused(false);
+					setElapsedSeconds(0);
+					accumulatedDurationMs.current = 0;
+					segmentStartedAt.current = null;
+					activeClipStartedAt.current = null;
+					setActiveClipElapsedMs(0);
+					setRecordedClips([]);
+					setClipFinalizing(false);
+				};
+
+				try {
+					const result = await window.electronAPI.stopNativeMacRecording(discard, clickedAtMs);
+					window.electronAPI.markStopStage?.("renderer-stop-returned");
+					if (discard || result.discarded) {
+						clearNativeRecordingState();
+						return { success: true, review: false };
+					}
+					if (!result.success) {
+						console.error("Failed to stop native recording:", result.error);
+						toast.error(t("recording.stopFailed"), {
+							description: ipcErrorMessage(result.error ?? "Failed to stop native recording"),
+						});
+						// See the Windows finalizer: the main process has already
+						// released its helper handle, so keeping ours leaves the HUD
+						// stuck in a recording state the app can never be stopped out
+						// of (issue #252).
+						clearNativeRecordingState();
+						return { success: false, review: false, error: result.error ?? "Native Stop failed." };
+					}
+					if (result.warning) {
+						toast.error(`${result.warning} Earlier completed clips were kept.`);
+					}
+
+					let cameraAttachmentError: string | undefined;
+					const sessionClips = result.session?.clips ?? [];
+					if (activeWebcamRecorder) {
+						const activeClip = sessionClips.find(
+							(clip) => clip.index === activeNativeRecording.currentClipIndex,
+						);
+						if (activeClip) {
+							queueNativeMacWebcamClipFinalization(
+								activeNativeRecording,
+								activeClip,
+								activeWebcamRecorder,
+								activeWebcamOffsetMs,
+							);
+							activeWebcamRecorderQueued = true;
+							if (pendingWebcamClip?.recorder === activeWebcamRecorder)
+								pendingWebcamRecorderQueued = true;
+						}
+					}
+					if (
+						pendingWebcamClip?.recordingId === activeNativeRecording.recordingId &&
+						!pendingWebcamRecorderQueued
+					) {
+						const pendingClip = sessionClips.find(
+							(clip) => clip.index === pendingWebcamClip.clipIndex,
+						);
+						if (pendingClip) {
+							queueNativeMacWebcamClipFinalization(
+								activeNativeRecording,
+								pendingClip,
+								pendingWebcamClip.recorder,
+								pendingWebcamClip.webcamOffsetMs ?? 0,
+							);
+							pendingWebcamRecorderQueued = true;
+							if (pendingWebcamClip.recorder === activeWebcamRecorder)
+								activeWebcamRecorderQueued = true;
+						}
+					}
+
+					const keptIndexes = new Set(
+						sessionClips.filter((clip) => !clip.removed).map((clip) => clip.index),
+					);
+					const { webcams: webcamInputs, failures: webcamFailures } =
+						await nativeMacWebcamClips.current.collectKept(keptIndexes);
+					for (const failure of webcamFailures) {
+						toast.error(
+							`Camera clip ${failure.clipIndex + 1} was not saved (${failure.error}). The screen recording was kept.`,
+						);
+					}
+
+					if (webcamInputs.length > 0 && result.path) {
+						const attachResult = await window.electronAPI.attachNativeMacClipWebcams({
+							screenVideoPath: result.path,
+							recordingId: activeNativeRecording.recordingId,
+							clips: sessionClips,
+							webcams: webcamInputs,
+						});
+						if (attachResult.success) {
+							result.session = attachResult.session;
+							nativeMacWebcamClips.current.markSaved(webcamInputs);
+						} else {
+							cameraAttachmentError = attachResult.error ?? "Failed to store camera clips";
+							console.error("Failed to attach native clip cameras:", attachResult.error);
+							toast.error(attachResult.error ?? "Failed to store camera clips");
+						}
+					}
+
+					window.electronAPI.markStopStage?.("webcams-collected");
+					clearNativeRecordingState();
+					if (result.session) {
+						await window.electronAPI.setCurrentRecordingSession(result.session);
+					} else if (result.path) {
+						await window.electronAPI.setCurrentVideoPath(result.path);
+					}
+					window.electronAPI.markStopStage?.("session-set");
+
+					const error =
+						cameraAttachmentError ??
+						(webcamFailures.length > 0 ? "Some camera clips could not be saved." : undefined);
+					return { success: !error, review: true, ...(error ? { error } : {}) };
+				} catch (error) {
+					console.error("Error saving native recording:", error);
+					toast.error(t("recording.stopFailed"), { description: ipcErrorMessage(error) });
+					clearNativeRecordingState();
+					return { success: false, review: false, error: ipcErrorMessage(error) };
+				} finally {
+					// A webcam stream that wasn't folded into a saved session has to be closed
+					// and its partial file removed, or a discarded or failed capture orphans a
+					// half-written .webm now that the bytes go to disk as they arrive.
+					const unclaimedWebcamRecorders = new Set<RecorderHandle>();
+					if (activeWebcamRecorder && !activeWebcamRecorderQueued) {
+						unclaimedWebcamRecorders.add(activeWebcamRecorder);
+					}
+					if (pendingWebcamClip && !pendingWebcamRecorderQueued) {
+						unclaimedWebcamRecorders.add(pendingWebcamClip.recorder);
+					}
+					await nativeMacWebcamClips.current.discardUnclaimed([...unclaimedWebcamRecorders]);
+					nativeMacWebcamClips.current.clear();
+					if (discardRecordingId.current === activeNativeRecording.recordingId) {
+						discardRecordingId.current = null;
+					}
+					setSaving(false);
+				}
+			})()
+				.catch((error: unknown): NativeMacSavedRecording => {
+					console.error("Recording source cleanup failed:", error);
+					toast.error(ipcErrorMessage(error));
+					return { success: false, review: false, error: ipcErrorMessage(error) };
+				})
+				.then(async (saved) => {
+					const request = activeNativeRecording.rendererStop;
+					if (!request) return saved;
+					try {
+						const acknowledged = await window.electronAPI.acknowledgeNativeRecordingAppStop({
+							...request,
+							success: saved.success,
+							...(saved.error ? { error: saved.error } : {}),
+						});
+						if (!acknowledged.success)
+							throw new Error("The camera handoff acknowledgement was rejected or expired.");
+						return saved;
+					} catch (error) {
+						console.error("Could not acknowledge recording source completion:", error);
+						toast.error(ipcErrorMessage(error));
+						return { ...saved, success: false, error: ipcErrorMessage(error) };
+					}
+				});
+			nativeMacSaveJob.current = {
+				recordingId: activeNativeRecording.recordingId,
+				rendererStop: activeNativeRecording.rendererStop,
+				promise,
 			};
-
-			try {
-				const result = await window.electronAPI.stopNativeMacRecording(discard, clickedAtMs);
-				window.electronAPI.markStopStage?.("renderer-stop-returned");
-				if (discard || result.discarded) {
-					clearNativeRecordingState();
-					return true;
-				}
-				if (!result.success) {
-					console.error("Failed to stop native macOS recording:", result.error);
-					toast.error(t("recording.stopFailed"), {
-						description: ipcErrorMessage(result.error ?? "Failed to stop native macOS recording"),
-					});
-					// See the Windows finalizer: the main process has already
-					// released its helper handle, so keeping ours leaves the HUD
-					// stuck in a recording state the app can never be stopped out
-					// of (issue #252).
-					clearNativeRecordingState();
-					return true;
-				}
-				if (result.warning) {
-					toast.error(`${result.warning} Earlier completed clips were kept.`);
-				}
-
-				const sessionClips = result.session?.clips ?? [];
-				if (activeWebcamRecorder) {
-					const activeClip = sessionClips.find(
-						(clip) => clip.index === activeNativeRecording.currentClipIndex,
-					);
-					if (activeClip) {
-						queueNativeMacWebcamClipFinalization(
-							activeNativeRecording,
-							activeClip,
-							activeWebcamRecorder,
-							activeWebcamOffsetMs,
-						);
-						activeWebcamRecorderQueued = true;
-					}
-				}
-				if (pendingWebcamClip?.recordingId === activeNativeRecording.recordingId) {
-					const pendingClip = sessionClips.find(
-						(clip) => clip.index === pendingWebcamClip.clipIndex,
-					);
-					if (pendingClip) {
-						queueNativeMacWebcamClipFinalization(
-							activeNativeRecording,
-							pendingClip,
-							pendingWebcamClip.recorder,
-							pendingWebcamClip.webcamOffsetMs ?? 0,
-						);
-						pendingWebcamRecorderQueued = true;
-					}
-				}
-
-				const keptIndexes = new Set(
-					sessionClips.filter((clip) => !clip.removed).map((clip) => clip.index),
-				);
-				const { webcams: webcamInputs, failures: webcamFailures } =
-					await nativeMacWebcamClips.current.collectKept(keptIndexes);
-				for (const failure of webcamFailures) {
-					toast.error(
-						`Camera clip ${failure.clipIndex + 1} was not saved (${failure.error}). The screen recording was kept.`,
-					);
-				}
-
-				if (webcamInputs.length > 0 && result.path) {
-					const attachResult = await window.electronAPI.attachNativeMacClipWebcams({
-						screenVideoPath: result.path,
-						recordingId: activeNativeRecording.recordingId,
-						clips: sessionClips,
-						webcams: webcamInputs,
-					});
-					if (attachResult.success) {
-						result.session = attachResult.session;
-						nativeMacWebcamClips.current.markSaved(webcamInputs);
-					} else {
-						console.error("Failed to attach native macOS clip cameras:", attachResult.error);
-						toast.error(attachResult.error ?? "Failed to store camera clips");
-					}
-				}
-
-				window.electronAPI.markStopStage?.("webcams-collected");
-				clearNativeRecordingState();
-				if (result.session) {
-					await window.electronAPI.setCurrentRecordingSession(result.session);
-				} else if (result.path) {
-					await window.electronAPI.setCurrentVideoPath(result.path);
-				}
-				window.electronAPI.markStopStage?.("session-set");
-
-				await window.electronAPI.switchToEditor({ compactReview: true });
-				window.electronAPI.markStopStage?.("editor-switched");
-				return true;
-			} catch (error) {
-				console.error("Error saving native macOS recording:", error);
-				toast.error(t("recording.stopFailed"), { description: ipcErrorMessage(error) });
-				clearNativeRecordingState();
-				return true;
-			} finally {
-				// A webcam stream that wasn't folded into a saved session has to be closed
-				// and its partial file removed, or a discarded or failed capture orphans a
-				// half-written .webm now that the bytes go to disk as they arrive.
-				const unclaimedWebcamRecorders = new Set<RecorderHandle>();
-				if (activeWebcamRecorder && !activeWebcamRecorderQueued) {
-					unclaimedWebcamRecorders.add(activeWebcamRecorder);
-				}
-				if (pendingWebcamClip && !pendingWebcamRecorderQueued) {
-					unclaimedWebcamRecorders.add(pendingWebcamClip.recorder);
-				}
-				await nativeMacWebcamClips.current.discardUnclaimed([...unclaimedWebcamRecorders]);
-				nativeMacWebcamClips.current.clear();
-				if (discardRecordingId.current === activeNativeRecording.recordingId) {
-					discardRecordingId.current = null;
-				}
-				setSaving(false);
-			}
+			return promise;
 		},
 		[queueNativeMacWebcamClipFinalization, t],
 	);
 
-	/**
-	 * The Linux twin of `finalizeNativeMacRecording`. Same shape, because the two
-	 * platforms make the same split: helper owns screen and audio, renderer owns
-	 * the webcam, and the two are reconciled here.
-	 */
-	const finalizeNativeLinuxRecording = useCallback(
+	const finalizeNativeMacRecording = useCallback(
 		async (discard = false) => {
-			const activeNativeRecording = nativeLinuxRecording.current;
-			if (!activeNativeRecording || activeNativeRecording.finalizing) {
-				return false;
+			const saved = await saveNativeMacRecording(discard);
+			const appStop = nativeMacAppStopCompletion.current;
+			if (appStop) {
+				await appStop;
+				return saved.success;
 			}
-
-			activeNativeRecording.finalizing = true;
-			if (!discard) {
-				setSaving(true);
-			}
-			const duration = Math.max(0, getRecordingDurationMs());
-			const activeWebcamRecorder = webcamRecorder.current;
-			if (activeWebcamRecorder && webcamRecorder.current === activeWebcamRecorder) {
-				webcamRecorder.current = null;
-			}
-			// See the identical comment in finalizeNativeMacRecording: the
-			// leading footage recorded while the portal picker was up must
-			// stay seekable, so the declared duration includes it.
-			const webcamHeadStartMs = Math.max(0, -(activeNativeRecording.webcamOffsetMs ?? 0));
-			const webcamDurationMs = duration + webcamHeadStartMs;
-			const webcamFileName = `${RECORDING_FILE_PREFIX}${activeNativeRecording.recordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`;
-			const webcamResultPromise: Promise<{
-				asset?: RecordedVideoAssetInput;
-				error?: string;
-			}> = activeWebcamRecorder
-				? finalizeWebcamAsset(activeWebcamRecorder, webcamFileName, webcamDurationMs, "Linux")
-				: Promise.resolve({});
-
-			const clearNativeRecordingState = () => {
-				nativeLinuxRecording.current = null;
-				setRecording(false);
-				setPaused(false);
-				setElapsedSeconds(0);
-				accumulatedDurationMs.current = 0;
-				segmentStartedAt.current = null;
-			};
-
-			let webcamSaved = false;
-			try {
-				const result = await window.electronAPI.stopNativeLinuxRecording(discard);
-				const webcamResult = await webcamResultPromise;
-				if (discard || result.discarded) {
-					clearNativeRecordingState();
-					return true;
-				}
-				if (!result.success) {
-					console.error("Failed to stop native Linux recording:", result.error);
-					toast.error(t("recording.stopFailed"), {
-						description: ipcErrorMessage(result.error ?? "Failed to stop native Linux recording"),
-					});
-					// See the Windows finalizer: the main process has already
-					// released its helper handle, so keeping ours leaves the HUD
-					// stuck in a recording state the app can never be stopped out
-					// of (issue #252).
-					clearNativeRecordingState();
-					return true;
-				}
-
-				if (webcamResult.asset && result.path) {
-					const attachResult = await window.electronAPI.attachNativeLinuxWebcamRecording({
-						screenVideoPath: result.path,
-						recordingId: activeNativeRecording.recordingId,
-						webcam: webcamResult.asset,
-						cursorCaptureMode,
-						durationMs: webcamDurationMs,
-						...(typeof activeNativeRecording.webcamOffsetMs === "number"
-							? { webcamOffsetMs: activeNativeRecording.webcamOffsetMs }
-							: {}),
-					});
-					if (attachResult.success) {
-						result.session = attachResult.session;
-						webcamSaved = true;
-					} else {
-						console.error("Failed to attach native Linux webcam recording:", attachResult.error);
-						toast.error(attachResult.error ?? "Failed to store webcam recording");
-					}
-				} else if (webcamResult.error) {
-					// The screen recording still saves, so without this the editor just
-					// opens with the camera missing and nothing said about it (#253).
-					toast.error(`Webcam not saved (${webcamResult.error}). The screen recording was kept.`);
-				}
-
-				clearNativeRecordingState();
-				if (result.session) {
-					await window.electronAPI.setCurrentRecordingSession(result.session);
-				} else if (result.path) {
-					await window.electronAPI.setCurrentVideoPath(result.path);
-				}
-
+			if (saved.review) {
 				await window.electronAPI.switchToEditor({ compactReview: true });
-				return true;
-			} catch (error) {
-				console.error("Error saving native Linux recording:", error);
-				toast.error(t("recording.stopFailed"), { description: ipcErrorMessage(error) });
-				clearNativeRecordingState();
-				return true;
-			} finally {
-				// A webcam stream that wasn't folded into a saved session has to be closed
-				// and its partial file removed, or a discarded or failed capture orphans a
-				// half-written .webm now that the bytes go to disk as they arrive.
-				if (activeWebcamRecorder && !webcamSaved) {
-					await activeWebcamRecorder.discard().catch(() => undefined);
-				}
-				if (discardRecordingId.current === activeNativeRecording.recordingId) {
-					discardRecordingId.current = null;
-				}
-				setSaving(false);
+				window.electronAPI.markStopStage?.("editor-switched");
 			}
+			return saved.success;
 		},
-		[cursorCaptureMode, getRecordingDurationMs, t],
+		[saveNativeMacRecording],
 	);
 
 	const stopRecording = useRef(() => {
@@ -1066,10 +1002,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 		if (nativeMacRecording.current) {
 			void finalizeNativeMacRecording(false);
-			return;
-		}
-		if (nativeLinuxRecording.current) {
-			void finalizeNativeLinuxRecording(false);
 			return;
 		}
 
@@ -1123,11 +1055,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	const finalizeNativeWindowsRecordingRef = useRef(finalizeNativeWindowsRecording);
 	const finalizeNativeMacRecordingRef = useRef(finalizeNativeMacRecording);
+	const saveNativeMacRecordingRef = useRef(saveNativeMacRecording);
 	const togglePausedRef = useRef<() => void>(() => undefined);
-	const finalizeNativeLinuxRecordingRef = useRef(finalizeNativeLinuxRecording);
 	finalizeNativeWindowsRecordingRef.current = finalizeNativeWindowsRecording;
 	finalizeNativeMacRecordingRef.current = finalizeNativeMacRecording;
-	finalizeNativeLinuxRecordingRef.current = finalizeNativeLinuxRecording;
+	saveNativeMacRecordingRef.current = saveNativeMacRecording;
 
 	useEffect(() => {
 		let cleanupTray: (() => void) | undefined;
@@ -1144,7 +1076,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		if (window.electronAPI?.onNativeMacRecordingError) {
 			cleanupNativeMacError = window.electronAPI.onNativeMacRecordingError((failure) => {
 				const activeRecording = nativeMacRecording.current;
-				if (!activeRecording || activeRecording.finalizing) return;
+				if (!activeRecording) {
+					if (recordingStartPending.current) nativeMacStartFailure.current = failure;
+					return;
+				}
+				if (activeRecording.finalizing) return;
 
 				activeRecording.paused = true;
 				accumulatedDurationMs.current = getRecordingDurationMs();
@@ -1189,12 +1125,36 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			});
 		}
 		if (window.electronAPI?.onNativeMacRecordingStoppedByApp) {
-			// Main already stopped and saved the take; Stop collects that result and opens review.
-			cleanupNativeMacAppStop = window.electronAPI.onNativeMacRecordingStoppedByApp(() => {
-				const activeRecording = nativeMacRecording.current;
-				if (!activeRecording || activeRecording.finalizing) return;
-				void finalizeNativeMacRecordingRef.current(false);
-			});
+			cleanupNativeMacAppStop = window.electronAPI.onNativeMacRecordingStoppedByApp(
+				(request: NativeRecordingAppStopRequest) => {
+					const complete = async () => {
+						const active = nativeMacRecording.current;
+						const job = nativeMacSaveJob.current;
+						const expected = active?.rendererStop ?? job?.rendererStop;
+						if (expected?.recordingId !== request.recordingId || expected.token !== request.token) {
+							await window.electronAPI.acknowledgeNativeRecordingAppStop({
+								...request,
+								success: false,
+								error: "The recording HUD no longer owns this take.",
+							});
+							return;
+						}
+						// An ordinary Stop may already be draining. Join that job; it acknowledges
+						// the same take after sources are durable, without another native Stop.
+						const saved = await saveNativeMacRecordingRef.current(false);
+						if (saved.review) await window.electronAPI.switchToEditor({ compactReview: true });
+					};
+					const completion = complete().catch((error: unknown) => {
+						console.error("Could not finish recording before quit:", error);
+						toast.error(ipcErrorMessage(error));
+					});
+					nativeMacAppStopCompletion.current = completion;
+					void completion.finally(() => {
+						if (nativeMacAppStopCompletion.current === completion)
+							nativeMacAppStopCompletion.current = null;
+					});
+				},
+			);
 		}
 
 		return () => {
@@ -1206,6 +1166,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			cleanupNativeMacStorage?.();
 			countdownRunId.current += 1;
 			void safeHideCountdownOverlay(activeRunId);
+			if (window.electronAPI.getPlatform() === "linux")
+				void window.electronAPI.cancelNativeLinuxPrepare?.();
 			allowAutoFinalize.current = false;
 			restarting.current = false;
 			discardRecordingId.current = null;
@@ -1216,9 +1178,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				// Keep an interrupted recording recoverable. A renderer reload or app
 				// shutdown must not turn window cleanup into an explicit media discard.
 				void finalizeNativeMacRecordingRef.current(false);
-			}
-			if (nativeLinuxRecording.current) {
-				void finalizeNativeLinuxRecordingRef.current(true);
 			}
 
 			if (
@@ -1251,6 +1210,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		countdownRunId.current += 1;
 		setCountdownActive(false);
 		void safeHideCountdownOverlay(activeRunId);
+		if (window.electronAPI.getPlatform() === "linux")
+			void window.electronAPI.cancelNativeLinuxPrepare?.();
 	};
 	const isCountdownRunActive = (runId?: number) =>
 		runId === undefined || countdownRunId.current === runId;
@@ -1275,7 +1236,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	};
 
 	const startNativeWindowsRecordingIfAvailable = async (
-		selectedSource: ProcessedDesktopSource,
+		selectedSource: CaptureSource,
 		countdownRunToken?: number,
 	) => {
 		try {
@@ -1386,11 +1347,34 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
+	const startNativeClipWebcam = (
+		activeRecordingId: number,
+		clipIndex: number,
+	): RecorderHandle | null => {
+		if (!webcamEnabled) return null;
+		if (!webcamReady.current || !webcamStream.current)
+			throw new Error("The selected camera is not ready to record.");
+		return createRecorderHandle(
+			webcamStream.current,
+			{
+				mimeType: selectMimeType(),
+				videoBitsPerSecond: computeBitrate(
+					activeWebcamFormat.current.width,
+					activeWebcamFormat.current.height,
+					activeWebcamFormat.current.fps,
+				),
+			},
+			nativeMacWebcamFileName(activeRecordingId, clipIndex),
+		);
+	};
+
 	const currentNativeMacRequest = (
-		selectedSource: ProcessedDesktopSource,
+		selectedSource: CaptureSource,
 		activeRecordingId: number,
 	): NativeMacRecordingRequest =>
-		buildNativeMacRecordingRequest({
+		(window.electronAPI.getPlatform() === "linux"
+			? buildNativeLinuxClipRecordingRequest
+			: buildNativeMacRecordingRequest)({
 			source: selectedSource,
 			recordingId: activeRecordingId,
 			settings: {
@@ -1437,27 +1421,31 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	}, []);
 
 	const startNativeMacRecordingIfAvailable = async (
-		selectedSource: ProcessedDesktopSource,
+		selectedSource: CaptureSource,
 		countdownRunToken?: number,
+		preparedRecordingId?: number | null,
 	) => {
+		let boundStart: NativeRecordingAppStopRequest | undefined;
 		try {
 			const platform = window.electronAPI.getPlatform();
-			if (platform !== "darwin") {
+			if (platform !== "darwin" && platform !== "linux") {
 				return false;
 			}
 
 			markStart("native-start");
-			const availability = await window.electronAPI.isNativeMacCaptureAvailable();
+			const availability = await (platform === "linux"
+				? window.electronAPI.isNativeLinuxCaptureAvailable()
+				: window.electronAPI.isNativeMacCaptureAvailable());
 			markStart("helper-available");
 			if (!availability.success || !availability.available) {
-				if (availability.reason === "unsupported-platform") {
+				if (availability.reason === "unsupported-platform" && platform !== "linux") {
 					return false;
 				}
 
 				throw new Error(
 					availability.reason === "missing-helper"
-						? "Native macOS capture helper is not available."
-						: (availability.error ?? "Native macOS capture is not available."),
+						? "Native capture helper is not available."
+						: (availability.error ?? "Native capture is not available."),
 				);
 			}
 
@@ -1478,7 +1466,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				if (!webcamReady.current) throw new Error("The selected camera is not ready to record.");
 				markStart("camera-ready");
 			}
-			const activeRecordingId = Date.now();
+			const activeRecordingId = preparedRecordingId ?? Date.now();
 
 			if (!isCountdownRunActive(countdownRunToken)) {
 				return true;
@@ -1488,12 +1476,39 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				...currentNativeMacRequest(selectedSource, activeRecordingId),
 				startTiming: startMarks.current,
 			};
-			const result = await window.electronAPI.startNativeMacRecording(request);
-			if (!result.success || !result.recordingId) {
-				throw new Error(result.error ?? "Native macOS capture failed.");
+			if (platform === "linux" && !preparedRecordingId) {
+				const prepared = await window.electronAPI.prepareNativeLinuxRecording(request);
+				if (!prepared.success)
+					throw new Error(prepared.error ?? "Native Linux capture preparation failed.");
+				if (!isCountdownRunActive(countdownRunToken)) {
+					await window.electronAPI.cancelNativeLinuxPrepare();
+					return true;
+				}
 			}
+			nativeMacStartFailure.current = null;
+			const readStartupFailure = (): NativeMacRecordingFailure | null =>
+				nativeMacStartFailure.current;
+			const result = await window.electronAPI.startNativeMacRecording(request);
+			boundStart = result.rendererStop;
+			if (!result.success || !result.recordingId) {
+				throw new Error(result.error ?? "Native capture failed.");
+			}
+			const startupFailure = readStartupFailure();
+			if (startupFailure) throw new Error(startupFailure.message);
 			if (!isCountdownRunActive(countdownRunToken)) {
-				await window.electronAPI.stopNativeMacRecording(true);
+				const discarded = await window.electronAPI.stopNativeMacRecording(true);
+				if (boundStart) {
+					const completion = boundStart;
+					boundStart = undefined;
+					const acknowledged = await window.electronAPI.acknowledgeNativeRecordingAppStop({
+						...completion,
+						success: discarded.success,
+						...(!discarded.success
+							? { error: discarded.error ?? "Cancelled recording could not be discarded." }
+							: {}),
+					});
+					if (!acknowledged.success) throw new Error("The cancelled take completion was rejected.");
+				}
 				return true;
 			}
 
@@ -1502,8 +1517,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			// electron/ipc/handlers.ts), so this is a reliable proxy for the native
 			// recording's real t=0 in the same clock the webcam timestamp used above.
 			recordingId.current = result.recordingId;
+			nativeMacSaveJob.current = null;
 			nativeMacRecording.current = {
 				recordingId: result.recordingId,
+				rendererStop: result.rendererStop,
 				finalizing: false,
 				paused: false,
 				currentClipIndex: 0,
@@ -1514,157 +1531,20 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			setClipFinalizing(false);
 			activeClipStartedAt.current = Date.now();
 			setActiveClipElapsedMs(0);
-			webcamRecorder.current = null;
-			accumulatedDurationMs.current = 0;
-			segmentStartedAt.current = Date.now();
-			allowAutoFinalize.current = true;
-			setRecording(true);
-			setPaused(false);
-			setElapsedSeconds(0);
-			return true;
-		} catch (error) {
-			console.error("Native macOS capture failed:", error instanceof Error ? error.message : error);
-			throw error;
-		}
-	};
-
-	/**
-	 * The Linux native path.
-	 *
-	 * Two things make it shorter than its Windows and macOS siblings, and both
-	 * come from Wayland rather than from anything being unfinished:
-	 *
-	 *   * No `source`. The ScreenCast portal raises its OWN picker and the
-	 *     compositor decides what it hands over. `selectedSource` is a
-	 *     placeholder there, so passing it along would be passing a guess.
-	 *   * The IPC call does not resolve until the user has answered that picker,
-	 *     which has no upper bound. That is also what makes the returned instant
-	 *     a trustworthy t=0 for the webcam offset below.
-	 */
-	/**
-	 * The helper request, built in ONE place because it is now sent TWICE: once
-	 * to negotiate the portal before the countdown, once to start recording after
-	 * it. The two must describe the same capture — the session armed at the end
-	 * is the one negotiated at the start, so a divergence in audio or cursor
-	 * settings would record something the second call never asked for.
-	 */
-	const buildNativeLinuxRequest = (recordingId?: number): NativeLinuxRecordingRequest => ({
-		...(recordingId === undefined ? {} : { recordingId }),
-		video: {
-			// No bitrate on purpose. TARGET_WIDTH/HEIGHT are the app's 4K ceiling,
-			// not the capture size — on Wayland nobody knows that until the portal
-			// has negotiated it, and the user may well have picked a single window.
-			// Sending computeBitrate() of the ceiling asked for 76.5 Mbit/s for a
-			// 1080p capture. The helper derives it from the size it actually got.
-			fps: TARGET_FRAME_RATE,
-		},
-		audio: {
-			system: { enabled: systemAudioEnabled },
-			microphone: {
-				enabled: microphoneEnabled,
-				// The device LABEL, not the id. Chromium's deviceId is an opaque
-				// per-origin hash that means nothing to PipeWire, whereas on a
-				// PipeWire system the label IS the node's `node.description` — which
-				// is what the helper matches against the graph it enumerates.
-				// Sending nothing here is what made a user who picked their built-in
-				// microphone get the empty headphone jack recorded, because the
-				// helper then fell back to the session default source.
-				...(microphoneDeviceName ? { deviceName: microphoneDeviceName } : {}),
-				gain: MIC_GAIN_BOOST,
-			},
-		},
-		cursor: { mode: cursorCaptureMode },
-	});
-
-	const startNativeLinuxRecordingIfAvailable = async (
-		countdownRunToken?: number,
-		preparedRecordingId?: number | null,
-	) => {
-		try {
-			const platform = window.electronAPI.getPlatform();
-			if (platform !== "linux") {
-				return false;
-			}
-
-			const availability = await window.electronAPI.isNativeLinuxCaptureAvailable();
-			if (!availability.success || !availability.available) {
-				if (availability.reason === "unsupported-platform") {
-					return false;
-				}
-				if (availability.reason === "missing-helper") {
-					// The browser path still works, just without hardware encode,
-					// cursor telemetry or a single picker. Falling back beats
-					// refusing to record.
-					console.warn("Native Linux capture helper is not available; using browser capture.");
-					return false;
-				}
-				throw new Error(availability.error ?? "Native Linux capture is not available.");
-			}
-
-			if (!isCountdownRunActive(countdownRunToken)) {
-				return true;
-			}
-
-			// Reuse the prepared recording's id, or the main process cannot match
-			// the session it is holding to the recording being started and would
-			// discard it — negotiating a second portal session, and raising a
-			// second picker, for a grant it already had.
-			const activeRecordingId = preparedRecordingId ?? Date.now();
-			let nativeWebcamRecorder: RecorderHandle | null = null;
-			let nativeWebcamRecorderStartedAtMs: number | null = null;
-			if (webcamEnabled) {
-				await waitForWebcamReady();
-				if (!isCountdownRunActive(countdownRunToken)) {
-					return true;
-				}
-				if (webcamStream.current) {
-					nativeWebcamRecorderStartedAtMs = performance.now();
-					// See the identical comment in the macOS path: stream to disk so a long
-					// recording is never flattened into one ArrayBuffer at finalize (#253).
-					nativeWebcamRecorder = createRecorderHandle(
-						webcamStream.current,
-						{
-							mimeType: selectMimeType(),
-							videoBitsPerSecond: computeBitrate(
-								activeWebcamFormat.current.width,
-								activeWebcamFormat.current.height,
-								activeWebcamFormat.current.fps,
-							),
-						},
-						`${RECORDING_FILE_PREFIX}${activeRecordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`,
+			if (platform === "linux") {
+				try {
+					webcamRecorder.current = startNativeClipWebcam(result.recordingId, 0);
+					if (webcamRecorder.current)
+						nativeMacRecording.current.webcamOffsetMs = Math.max(
+							0,
+							Date.now() - (activeClipStartedAt.current ?? Date.now()),
+						);
+				} catch (error) {
+					toast.error(
+						`Camera recording failed: ${ipcErrorMessage(error)}. The screen recording continues.`,
 					);
-				} else {
-					webcamAcquireId.current++;
-					setWebcamEnabledState(false);
 				}
-			}
-
-			const result = await window.electronAPI.startNativeLinuxRecording(
-				buildNativeLinuxRequest(activeRecordingId),
-			);
-			if (!result.success || !result.recordingId) {
-				throw new Error(result.error ?? "Native Linux capture failed.");
-			}
-			if (!isCountdownRunActive(countdownRunToken)) {
-				await window.electronAPI.stopNativeLinuxRecording(true);
-				return true;
-			}
-
-			// Resolved only after the helper's first encoded frame, so this is the
-			// native recording's real t=0 in the same clock the webcam used above.
-			const nativeRecordingConfirmedStartedAtMs = performance.now();
-			recordingId.current = result.recordingId;
-			nativeLinuxRecording.current = {
-				recordingId: result.recordingId,
-				finalizing: false,
-				paused: false,
-				webcamOffsetMs: webcamOffsetMsFrom(
-					nativeWebcamRecorder,
-					nativeWebcamRecorderStartedAtMs,
-					nativeRecordingConfirmedStartedAtMs,
-				),
-			};
-			webcamRecorder.current = nativeWebcamRecorder;
+			} else webcamRecorder.current = null;
 			accumulatedDurationMs.current = 0;
 			segmentStartedAt.current = Date.now();
 			allowAutoFinalize.current = true;
@@ -1673,10 +1553,33 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			setElapsedSeconds(0);
 			return true;
 		} catch (error) {
-			console.error("Native Linux capture failed:", error);
+			if (boundStart) {
+				const completion = boundStart;
+				try {
+					if (nativeMacRecording.current?.recordingId === completion.recordingId) {
+						await saveNativeMacRecordingRef.current(false);
+					} else {
+						try {
+							await window.electronAPI.stopNativeMacRecording(false);
+						} finally {
+							await window.electronAPI.acknowledgeNativeRecordingAppStop({
+								...completion,
+								success: false,
+								error: ipcErrorMessage(error),
+							});
+						}
+					}
+				} catch (cleanupError) {
+					console.error("Failed to complete an interrupted recording start:", cleanupError);
+				}
+			}
+			console.error("Native capture failed:", error instanceof Error ? error.message : error);
 			throw error;
 		}
 	};
+
+	const buildNativeLinuxRequest = (activeRecordingId = Date.now()) =>
+		currentNativeMacRequest({ id: "portal:selected" }, activeRecordingId);
 
 	const startRecordCountdown = async () => {
 		if (pendingStartRunId.current !== null || recording) return;
@@ -1697,7 +1600,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}),
 				portalOwnsSourceSelection(window.electronAPI),
 			]);
-			portalOwnsSource = portalSelection;
+			portalOwnsSource = window.electronAPI.getPlatform() === "linux" || portalSelection;
 			markStart("source-read");
 			if (!isCountdownRunActive(runId)) return;
 			if (!selectedSource && !portalOwnsSource) {
@@ -1715,16 +1618,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 			let preparedRecordingId: number | null = null;
 			if (portalOwnsSource) {
-				try {
-					const prepared = await window.electronAPI.prepareNativeLinuxRecording(
-						buildNativeLinuxRequest(),
-					);
-					if (prepared.success && typeof prepared.recordingId === "number") {
-						preparedRecordingId = prepared.recordingId;
-					}
-				} catch (error) {
-					console.warn("Failed to prepare the native Linux capture:", error);
-				}
+				const prepared = await window.electronAPI.prepareNativeLinuxRecording(
+					buildNativeLinuxRequest(),
+				);
+				if (!prepared.success || typeof prepared.recordingId !== "number")
+					throw new Error(prepared.error ?? "Native Linux capture preparation failed.");
+				preparedRecordingId = prepared.recordingId;
 			}
 			if (!isCountdownRunActive(runId)) return;
 
@@ -1753,7 +1652,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			recording ||
 			nativeMacRecording.current ||
 			nativeWindowsRecording.current ||
-			nativeLinuxRecording.current ||
 			screenRecorder.current
 		)
 			return;
@@ -1764,18 +1662,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return;
 			}
 
-			// BEFORE THE SOURCE GATE, on purpose. On Wayland the portal raises its
-			// own picker and is the only thing that can choose a source, so there
-			// is nothing for the app to have selected — and the helper needs no
-			// `selectedSource` to run. Gating here demanded an answer to a
-			// question this platform never asks the app. It returns false when the
-			// native helper is missing, and the browser fallback below does need a
-			// source, so the gate still guards the path that uses one.
-			if (await startNativeLinuxRecordingIfAvailable(countdownRunToken, preparedRecordingId)) {
-				return;
-			}
-
-			const selectedSource = await window.electronAPI.getSelectedSource();
+			const platform = window.electronAPI.getPlatform();
+			const selectedSource =
+				platform === "linux"
+					? { id: "portal:selected" }
+					: await window.electronAPI.getSelectedSource();
 			if (!selectedSource) {
 				alert(t("recording.selectSource"));
 				return;
@@ -1784,7 +1675,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (await startNativeWindowsRecordingIfAvailable(selectedSource, countdownRunToken)) {
 				return;
 			}
-			if (await startNativeMacRecordingIfAvailable(selectedSource, countdownRunToken)) {
+			if (
+				await startNativeMacRecordingIfAvailable(
+					selectedSource,
+					countdownRunToken,
+					preparedRecordingId,
+				)
+			) {
 				return;
 			}
 
@@ -2119,7 +2016,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				try {
 					if (activeNativeMacRecording.paused) {
 						setClipFinalizing(true);
-						const selectedSource = await window.electronAPI.getSelectedSource();
+						const selectedSource =
+							window.electronAPI.getPlatform() === "linux"
+								? { id: "portal:selected" }
+								: await window.electronAPI.getSelectedSource();
 						if (activeNativeMacRecording.finalizing) return;
 						if (!selectedSource) {
 							throw new Error("Select a screen or window before continuing.");
@@ -2148,7 +2048,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						const result = await window.electronAPI.resumeNativeMacRecording(request);
 						if (!result.success) {
 							if (activeNativeMacRecording.finalizing) return;
-							throw new Error(result.error ?? "Failed to resume native macOS recording");
+							throw new Error(result.error ?? "Failed to resume native recording");
 						}
 						const authoritativeClipIndex = result.clipIndex;
 						if (
@@ -2156,7 +2056,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							!Number.isInteger(authoritativeClipIndex) ||
 							authoritativeClipIndex < 0
 						) {
-							throw new Error("Native macOS Continue did not return a valid clip index.");
+							throw new Error("Native Continue did not return a valid clip index.");
 						}
 						if (activeNativeMacRecording.finalizing) return;
 						webcamRecorder.current = null;
@@ -2165,6 +2065,23 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						activeNativeMacRecording.paused = false;
 						segmentStartedAt.current = Date.now();
 						activeClipStartedAt.current = Date.now();
+						if (window.electronAPI.getPlatform() === "linux") {
+							try {
+								webcamRecorder.current = startNativeClipWebcam(
+									activeNativeMacRecording.recordingId,
+									authoritativeClipIndex,
+								);
+								if (webcamRecorder.current)
+									activeNativeMacRecording.webcamOffsetMs = Math.max(
+										0,
+										Date.now() - activeClipStartedAt.current,
+									);
+							} catch (error) {
+								toast.error(
+									`Camera recording failed: ${ipcErrorMessage(error)}. The screen recording continues.`,
+								);
+							}
+						}
 						setActiveClipElapsedMs(0);
 						setPaused(false);
 						return;
@@ -2178,9 +2095,34 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					activeClipStartedAt.current = null;
 					setPaused(true);
 					setClipFinalizing(true);
+					if (activeWebcamHandle) {
+						// Stop may take ownership while Pause waits for the native writer.
+						// Keep the camera writing until the helper acknowledges Pause.
+						pendingNativeMacWebcamClip.current = {
+							recordingId: activeNativeMacRecording.recordingId,
+							clipIndex: activeNativeMacRecording.currentClipIndex,
+							recorder: activeWebcamHandle,
+							startedAtMs: activeClipStartedAtMs ?? Date.now(),
+							webcamOffsetMs: activeNativeMacRecording.webcamOffsetMs,
+						};
+					}
 					const result = await window.electronAPI.pauseNativeMacRecording();
 					if (activeNativeMacRecording.finalizing) return;
+					if (!result.success && result.paused !== true) {
+						if (pendingNativeMacWebcamClip.current?.recorder === activeWebcamHandle)
+							pendingNativeMacWebcamClip.current = null;
+						activeNativeMacRecording.paused = false;
+						activeClipStartedAt.current = activeClipStartedAtMs;
+						setPaused(false);
+						throw new Error(result.error ?? "Failed to pause native recording");
+					}
+					if (activeWebcamHandle) {
+						if (activeWebcamHandle.recorder.state !== "inactive")
+							activeWebcamHandle.recorder.stop();
+						if (webcamRecorder.current === activeWebcamHandle) webcamRecorder.current = null;
+					}
 					if (result.clip) {
+						pendingNativeMacWebcamClip.current = null;
 						if (activeWebcamHandle) {
 							if (webcamRecorder.current === activeWebcamHandle) webcamRecorder.current = null;
 							queueNativeMacWebcamClipFinalization(
@@ -2197,42 +2139,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 								: [...clips, result.clip as RecordingSessionClip].sort((a, b) => a.index - b.index),
 						);
 					}
-					if (!result.success) {
-						if (result.paused !== true) {
-							activeNativeMacRecording.paused = false;
-							activeClipStartedAt.current = activeClipStartedAtMs;
-							setPaused(false);
-						} else {
-							if (!result.clip && activeWebcamHandle) {
-								if (webcamRecorder.current === activeWebcamHandle) webcamRecorder.current = null;
-								await discardWebcamRecorder(activeWebcamHandle);
-								activeNativeMacRecording.webcamOffsetMs = null;
-							}
-							accumulatedDurationMs.current = pausedAtMs;
-							segmentStartedAt.current = null;
-							setElapsedSeconds(Math.floor(pausedAtMs / 1000));
-						}
-						throw new Error(result.error ?? "Failed to pause native macOS recording");
-					}
-					if (!result.clip && activeWebcamHandle) {
-						if (webcamRecorder.current === activeWebcamHandle) webcamRecorder.current = null;
-						await discardWebcamRecorder(activeWebcamHandle);
-						activeNativeMacRecording.webcamOffsetMs = null;
-					}
+
 					accumulatedDurationMs.current = pausedAtMs;
 					segmentStartedAt.current = null;
 					setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
+					if (!result.success) throw new Error(result.error ?? "Failed to pause native recording");
 				} catch (error) {
-					const pendingWebcamClip = pendingNativeMacWebcamClip.current;
-					if (
-						pendingWebcamClip?.recordingId === activeNativeMacRecording.recordingId &&
-						!activeNativeMacRecording.finalizing
-					) {
-						pendingNativeMacWebcamClip.current = null;
-						await discardWebcamRecorder(pendingWebcamClip.recorder);
-					}
+					// An unconfirmed Pause keeps the live recorder. An acknowledged Pause
+					// without clip metadata keeps its pending camera for recovery Stop.
 					if (activeNativeMacRecording.finalizing) return;
-					console.error("Failed to toggle native macOS pause state:", error);
+					console.error("Failed to toggle native pause state:", error);
 					toast.error(t(continuing ? "recording.continueFailed" : "recording.pauseFailed"), {
 						description: ipcErrorMessage(error),
 					});
@@ -2250,49 +2166,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						toast.warning(NATIVE_MAC_INTERRUPTION_MESSAGES[interruption]);
 						if (!nativeMacRecording.current.paused) togglePausedRef.current();
 					}
-				}
-			})();
-			return;
-		}
-
-		const activeNativeLinuxRecording = nativeLinuxRecording.current;
-		if (activeNativeLinuxRecording && !activeNativeLinuxRecording.finalizing) {
-			void (async () => {
-				const continuing = activeNativeLinuxRecording.paused;
-				const activeWebcamRecorder = webcamRecorder.current?.recorder;
-				try {
-					if (activeNativeLinuxRecording.paused) {
-						const result = await window.electronAPI.resumeNativeLinuxRecording();
-						if (!result.success) {
-							throw new Error(result.error ?? "Failed to resume native Linux recording");
-						}
-						if (activeWebcamRecorder?.state === "paused") {
-							activeWebcamRecorder.resume();
-						}
-						activeNativeLinuxRecording.paused = false;
-						segmentStartedAt.current = Date.now();
-						setPaused(false);
-						return;
-					}
-
-					const pausedAtMs = getRecordingDurationMs();
-					const result = await window.electronAPI.pauseNativeLinuxRecording();
-					if (!result.success) {
-						throw new Error(result.error ?? "Failed to pause native Linux recording");
-					}
-					if (activeWebcamRecorder?.state === "recording") {
-						activeWebcamRecorder.pause();
-					}
-					activeNativeLinuxRecording.paused = true;
-					accumulatedDurationMs.current = pausedAtMs;
-					segmentStartedAt.current = null;
-					setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
-					setPaused(true);
-				} catch (error) {
-					console.error("Failed to toggle native Linux pause state:", error);
-					toast.error(t(continuing ? "recording.continueFailed" : "recording.pauseFailed"), {
-						description: ipcErrorMessage(error),
-					});
 				}
 			})();
 			return;
@@ -2423,18 +2296,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 			return;
 		}
-		if (nativeLinuxRecording.current) {
-			const activeRecordingId = recordingId.current;
-			restarting.current = true;
-			discardRecordingId.current = activeRecordingId;
-			try {
-				await finalizeNativeLinuxRecording(true);
-				await startRecording();
-			} finally {
-				restarting.current = false;
-			}
-			return;
-		}
 
 		const activeScreenRecorder = screenRecorder.current;
 		if (!activeScreenRecorder || activeScreenRecorder.recorder.state === "inactive") return;
@@ -2521,13 +2382,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			discardRecordingId.current = activeRecordingId;
 			allowAutoFinalize.current = false;
 			void finalizeNativeMacRecording(true);
-			return;
-		}
-		if (nativeLinuxRecording.current) {
-			const activeRecordingId = recordingId.current;
-			discardRecordingId.current = activeRecordingId;
-			allowAutoFinalize.current = false;
-			void finalizeNativeLinuxRecording(true);
 			return;
 		}
 

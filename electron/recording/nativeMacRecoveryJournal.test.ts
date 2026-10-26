@@ -35,11 +35,14 @@ describe("native macOS recovery journal", () => {
 		await fs.rm(recordingsDir, { recursive: true, force: true });
 	});
 
-	it("recovers all three journaled originals after a killed helper with their captured offsets", async () => {
+	it.each([
+		"mov",
+		"webm",
+	])("recovers journaled originals with a %s camera and their captured offsets", async (cameraExtension) => {
 		const stem = path.join(recordingsDir, "recording-61-clip-0001");
 		const screenVideoPath = `${stem}.mp4`;
 		const originals = {
-			webcamVideoPath: `${stem}-webcam.mov`,
+			webcamVideoPath: `${stem}-webcam.${cameraExtension}`,
 			webcamOffsetMs: 0,
 			microphoneAudioPath: `${stem}-microphone.mov`,
 			microphoneAudioOffsetMs: 23.5,
@@ -54,11 +57,11 @@ describe("native macOS recovery journal", () => {
 		])
 			await fs.writeFile(file, "durable fragment");
 		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
-			hasAudio: !file.endsWith("webcam.mov"),
+			hasAudio: !file.includes("-webcam."),
 			hasKlipptMetadata: false,
 			roles: [],
 			durationSec: 5.95,
-			...(file.endsWith("webcam.mov") || file.endsWith(".mp4")
+			...(file.includes("-webcam.") || file.endsWith(".mp4")
 				? { video: { codec: "h264", width: 1920, height: 1080, fps: 30 } }
 				: {}),
 		}));

@@ -1,8 +1,10 @@
+import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { desktopCapturer } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RecordingSession } from "../../src/lib/recordingSession";
+import { normalizeRecordingSession, type RecordingSession } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
 import { persistNativeMacRecoveryJournal } from "../recording/nativeMacRecoveryJournal";
 import type { RendererIpcMain } from "./trustedRendererIpc";
@@ -45,8 +47,12 @@ function pinPlatform(platform: NodeJS.Platform) {
 
 function fakeIpcMain() {
 	const channels = new Set<string>();
+	const handlers = new Map<string, Parameters<RendererIpcMain["handle"]>[1]>();
 	const ipcMain: RendererIpcMain = {
-		handle: (channel: string) => void channels.add(channel),
+		handle: (channel: string, listener: Parameters<RendererIpcMain["handle"]>[1]) => {
+			channels.add(channel);
+			handlers.set(channel, listener);
+		},
 		on: (channel: string) => {
 			channels.add(channel);
 			return ipcMain;
@@ -58,12 +64,12 @@ function fakeIpcMain() {
 		removeAllListeners: () => ipcMain,
 		removeHandler: () => undefined,
 	} as unknown as RendererIpcMain;
-	return { ipcMain, channels };
+	return { ipcMain, channels, handlers };
 }
 
 async function register(options: { restoreInterruptedRecording?: boolean } = {}) {
 	const { registerIpcHandlers } = await import("./handlers");
-	const { ipcMain, channels } = fakeIpcMain();
+	const { ipcMain, channels, handlers } = fakeIpcMain();
 	const recovery = registerIpcHandlers(
 		vi.fn(),
 		vi.fn() as never,
@@ -78,7 +84,7 @@ async function register(options: { restoreInterruptedRecording?: boolean } = {})
 		() => false,
 		{ ...options, enableCleanVoiceJobs: false, ipcMain },
 	);
-	return { recovery, channels };
+	return { recovery, channels, handlers };
 }
 
 async function journalInterruptedTake() {
@@ -137,6 +143,178 @@ describe("registerIpcHandlers startup contract", () => {
 		await expect(recovery).resolves.toBe(true);
 	});
 
+	it("never enumerates Electron sources on Linux, including startup and explicit refresh", async () => {
+		pinPlatform("linux");
+		const enumerate = vi.spyOn(desktopCapturer, "getSources");
+		const { recovery, handlers } = await register();
+		await recovery;
+		const readSources = handlers.get("get-sources");
+		if (!readSources) throw new Error("get-sources IPC was not registered");
+		await expect(
+			Reflect.apply(readSources, undefined, [
+				undefined,
+				{ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 } },
+			]),
+		).resolves.toEqual([]);
+		expect(enumerate).not.toHaveBeenCalled();
+		enumerate.mockRestore();
+	});
+
+	it("keeps the outer quit guard active after native Stop until its owning renderer acknowledges", async () => {
+		pinPlatform("linux");
+		const { recovery, handlers } = await register();
+		await recovery;
+		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+		const { isNativeMacCaptureRunning } = await import("./handlers");
+		const start = vi
+			.spyOn(NativeMacRecordingService.prototype, "start")
+			.mockResolvedValue({ success: true, recordingId: 77 });
+		const invokeStart = handlers.get("start-native-mac-recording");
+		const invokeAck = handlers.get("acknowledge-native-recording-app-stop");
+		if (!invokeStart || !invokeAck) throw new Error("Recording IPC was not registered");
+		const owner = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		const result: unknown = await Reflect.apply(invokeStart, undefined, [
+			{ sender: owner },
+			{ video: { fps: 60 }, webcam: { enabled: false } },
+		]);
+		if (!result || typeof result !== "object" || !("rendererStop" in result))
+			throw new Error("The start response had no renderer take token");
+		expect(isNativeMacCaptureRunning()).toBe(true);
+		const request = result.rendererStop;
+		if (!request || typeof request !== "object") throw new Error("Invalid renderer take token");
+		const other = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		expect(
+			Reflect.apply(invokeAck, undefined, [{ sender: other }, { ...request, success: true }]),
+		).toEqual({ success: false });
+		expect(isNativeMacCaptureRunning()).toBe(true);
+		expect(
+			Reflect.apply(invokeAck, undefined, [{ sender: owner }, { ...request, success: true }]),
+		).toEqual({ success: true });
+		expect(isNativeMacCaptureRunning()).toBe(false);
+		start.mockRestore();
+	});
+
+	it("persists per-clip camera paths and offsets in the canonical manifest before attachment succeeds", async () => {
+		pinPlatform("linux");
+		const { handlers, recovery } = await register({ restoreInterruptedRecording: false });
+		await recovery;
+		const recordingsDir = path.join(paths.userData, "recordings");
+		await fs.mkdir(recordingsDir, { recursive: true });
+		const clips = [0, 1, 2].map((index) => ({
+			index,
+			screenVideoPath: path.join(
+				recordingsDir,
+				`recording-77-clip-${String(index + 1).padStart(4, "0")}.mp4`,
+			),
+			durationMs: 1_000 + index,
+			...(index === 2 ? { removed: true } : {}),
+		}));
+		const first = clips[0];
+		if (!first) throw new Error("Missing screen clip");
+		const session: RecordingSession = {
+			schemaVersion: 2,
+			createdAt: 77,
+			screenVideoPath: first.screenVideoPath,
+			cursorCaptureMode: "system",
+			clips,
+		};
+		const manifestPath = path.join(recordingsDir, "recording-77.session.json");
+		await fs.writeFile(manifestPath, JSON.stringify(session));
+		await Promise.all(
+			clips.map((clip) => fs.writeFile(clip.screenVideoPath, `screen bytes ${clip.index}`)),
+		);
+		await persistNativeMacRecoveryJournal(recordingsDir, session);
+		const attach = handlers.get("attach-native-mac-clip-webcams");
+		if (!attach) throw new Error("Camera attachment IPC was not registered");
+		const webcams = [1, 0].map((clipIndex) => ({
+			clipIndex,
+			webcam: {
+				fileName: `recording-77-clip-${String(clipIndex + 1).padStart(4, "0")}-webcam.webm`,
+				videoData: new Uint8Array([clipIndex + 1, 2, 3]).buffer,
+			},
+			durationMs: 1_000,
+			webcamOffsetMs: clipIndex === 0 ? 12 : 34,
+		}));
+		const result: unknown = await Reflect.apply(attach, undefined, [
+			undefined,
+			{ recordingId: 77, screenVideoPath: first.screenVideoPath, webcams },
+		]);
+		expect(result).toMatchObject({ success: true });
+		const stored = normalizeRecordingSession(JSON.parse(await fs.readFile(manifestPath, "utf8")));
+		expect(stored?.clips?.[0]).toMatchObject({
+			...clips[0],
+			webcamVideoPath: path.join(recordingsDir, "recording-77-clip-0001-webcam.webm"),
+			webcamOffsetMs: 12,
+		});
+		expect(stored?.clips?.[1]).toMatchObject({
+			...clips[1],
+			webcamVideoPath: path.join(recordingsDir, "recording-77-clip-0002-webcam.webm"),
+			webcamOffsetMs: 34,
+		});
+		expect(stored?.clips?.[2]).toEqual(clips[2]);
+		expect(result).toMatchObject({ session: stored });
+		const journal = JSON.parse(
+			await fs.readFile(path.join(recordingsDir, "recording-77.recovery.json"), "utf8"),
+		);
+		expect(journal.session.clips).toEqual(stored?.clips);
+	});
+
+	it("reports attachment failure when the durable manifest cannot be committed", async () => {
+		pinPlatform("linux");
+		const { handlers, recovery } = await register({ restoreInterruptedRecording: false });
+		await recovery;
+		const recordingsDir = path.join(paths.userData, "recordings");
+		await fs.mkdir(recordingsDir, { recursive: true });
+		const screenVideoPath = path.join(recordingsDir, "recording-77-clip-0001.mp4");
+		const session: RecordingSession = {
+			schemaVersion: 2,
+			createdAt: 77,
+			screenVideoPath,
+			clips: [{ index: 0, screenVideoPath, durationMs: 1_000 }],
+		};
+		const manifestPath = path.join(recordingsDir, "recording-77.session.json");
+		await fs.writeFile(screenVideoPath, "screen bytes");
+		await fs.writeFile(manifestPath, JSON.stringify(session));
+		const rename = fs.rename.bind(fs);
+		const failManifest = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+			if (to === manifestPath) throw new Error("Manifest commit failed");
+			return rename(from, to);
+		});
+		try {
+			const attach = handlers.get("attach-native-mac-clip-webcams");
+			if (!attach) throw new Error("Camera attachment IPC was not registered");
+			const result: unknown = await Reflect.apply(attach, undefined, [
+				undefined,
+				{
+					recordingId: 77,
+					screenVideoPath,
+					webcams: [
+						{
+							clipIndex: 0,
+							webcam: {
+								fileName: "recording-77-clip-0001-webcam.webm",
+								videoData: new Uint8Array([1, 2, 3]).buffer,
+							},
+							durationMs: 1_000,
+							webcamOffsetMs: 12,
+						},
+					],
+				},
+			]);
+			expect(result).toMatchObject({ success: false, error: "Manifest commit failed" });
+			expect(JSON.parse(await fs.readFile(manifestPath, "utf8"))).toEqual(session);
+		} finally {
+			failManifest.mockRestore();
+		}
+	});
+
+	it("restores an interrupted Linux clip session through the shared recovery journal", async () => {
+		pinPlatform("linux");
+		await journalInterruptedTake();
+		const { recovery } = await register();
+		await expect(recovery).resolves.toBe(true);
+	});
+
 	it("reports nothing to recover on a clean start", async () => {
 		pinPlatform("darwin");
 
@@ -145,8 +323,8 @@ describe("registerIpcHandlers startup contract", () => {
 		await expect(recovery).resolves.toBe(false);
 	});
 
-	it("never offers a native-take recovery off macOS", async () => {
-		pinPlatform("linux");
+	it("does not enable the clip-native recovery path on Windows yet", async () => {
+		pinPlatform("win32");
 		await journalInterruptedTake();
 
 		const { recovery } = await register();

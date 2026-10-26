@@ -32,6 +32,7 @@ import {
 } from "./hudInputPolicy";
 import { createHudPointerWatch } from "./hudPointerWatch";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
+import { LINUX_HUD_INITIAL_SIZE, linuxHudWindowSize } from "./linuxHudGeometry";
 import {
 	localRectanglesContainScreenPoint,
 	normalizePrivateUiRectangles,
@@ -157,6 +158,15 @@ function isHudSender(senderId: number) {
 ipcMain.on("hud-overlay-set-direction-exclusion-rects", (event, rectangles: unknown) => {
 	if (!isHudSender(event.sender.id)) return;
 	hudDirectionExclusionRectangles = normalizePrivateUiRectangles(rectangles);
+	if (process.platform !== "linux" || !hudOverlayWindow) return;
+	const size = linuxHudWindowSize(hudDirectionExclusionRectangles);
+	if (!size) return;
+	const [width, height] = hudOverlayWindow.getSize();
+	if (width !== size.width || height !== size.height) {
+		// Wayland owns global position. Resizing from local content must not run
+		// the screen-coordinate pill clamping used by macOS and Windows.
+		hudOverlayWindow.setSize(size.width, size.height);
+	}
 });
 
 /** True only for painted private surfaces, not the HUD's large transparent backing window. */
@@ -419,7 +429,7 @@ ipcMain.on("hud-overlay-set-dock", (event, side: unknown) => {
 			.map((other) => other.bounds);
 		// A restored edge another display now continues past stays untucked.
 		if (openDisplaySides(display.bounds, others).has(side)) {
-			if (hudDockSide !== side)
+			if (hudDockSide !== side && process.platform !== "linux")
 				win.setBounds(hudBoundsAtEdge(center, bounds, hudPillSize, display.workArea, side));
 			hudDockSide = side;
 		}
@@ -439,9 +449,13 @@ ipcMain.on("hud-overlay-hide", () => {
 const hudIgnoredMouseEvents = new WeakMap<BrowserWindow, boolean>();
 
 function setHudIgnoreMouseEvents(win: BrowserWindow, ignore: boolean) {
-	if (hudIgnoredMouseEvents.get(win) === ignore) return;
-	win.setIgnoreMouseEvents(ignore, { forward: true });
-	hudIgnoredMouseEvents.set(win, ignore);
+	// Electron 44 supports ignored input on Wayland, but forwarding is only
+	// supported on macOS/Windows. Ignoring Linux input would lose all re-entry.
+	const effectiveIgnore = process.platform === "linux" ? false : ignore;
+	if (hudIgnoredMouseEvents.get(win) === effectiveIgnore) return;
+	if (process.platform === "linux") win.setIgnoreMouseEvents(false);
+	else win.setIgnoreMouseEvents(effectiveIgnore, { forward: true });
+	hudIgnoredMouseEvents.set(win, effectiveIgnore);
 }
 
 ipcMain.on("hud-overlay-ignore-mouse-events", (event, ignore: unknown) => {
@@ -544,6 +558,7 @@ function sendHudWorkArea(win: BrowserWindow) {
 
 /** Moves or resizes the HUD so its pill stays where it was and on the display. */
 function placeHudAroundPill(win: BrowserWindow, size: { width: number; height: number }) {
+	if (process.platform === "linux") return;
 	const bounds = win.getBounds();
 	const pillCenter = pillCenterOf(bounds, bounds, hudPillSize);
 	const { workArea } = displayUnderPill(pillCenter);
@@ -636,7 +651,11 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 		y,
 		width: windowWidth,
 		height: windowHeight,
-	} = initialHudBounds({ width: 940, height: 1400 }, hudPillSize, workArea);
+	} = initialHudBounds(
+		process.platform === "linux" ? LINUX_HUD_INITIAL_SIZE : { width: 940, height: 1400 },
+		hudPillSize,
+		workArea,
+	);
 
 	const win = new BrowserWindow({
 		width: windowWidth,

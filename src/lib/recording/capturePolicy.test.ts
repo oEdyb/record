@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildNativeLinuxClipRecordingRequest,
 	buildNativeMacRecordingRequest,
 	computeCaptureBitrate,
 	isClipOwnedWebcamPath,
@@ -61,6 +62,36 @@ describe("capture policy", () => {
 			webcam: { width: 2560, height: 1440, fps: 30, exactFormat: true },
 			cursor: { mode: "system" },
 		});
+	});
+
+	it.each<{ quality: "standard" | "high"; bitrate: number }>([
+		{ quality: "standard", bitrate: 68_000_000 },
+		{ quality: "high", bitrate: 136_000_000 },
+	])("Linux $quality requests the shared bitrate, 60 fps, portal source and renderer camera", ({
+		quality,
+		bitrate,
+	}) => {
+		const request = buildNativeLinuxClipRecordingRequest({
+			recordingId: 123,
+			settings: {
+				recordingQuality: quality,
+				systemAudioEnabled: true,
+				microphone: { enabled: true, deviceName: "Studio Mic", gain: 1.5 },
+				webcam: { enabled: true, format: { width: 1920, height: 1080, fps: 60 }, formatAuto: true },
+				cursorCaptureMode: "system",
+			},
+		});
+		expect(request).toMatchObject({
+			platform: "linux",
+			source: { sourceId: "portal:selected" },
+			video: { quality, bitrate, fps: 60, hideSystemCursor: false },
+			webcam: { enabled: false },
+			audio: { microphone: { deviceName: "Studio Mic" } },
+			cursor: { mode: "system" },
+			outputs: { screenPath: "" },
+		});
+		expect(request.source.displayId).toBeUndefined();
+		expect(request.source.windowId).toBeUndefined();
 	});
 
 	it("uses stable per-clip webcam names", () => {

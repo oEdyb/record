@@ -280,7 +280,14 @@ interface Window {
 			callback: (status: import("../src/lib/nativeMacRecording").NativeMacStorageStatus) => void,
 		) => () => void;
 		/** The app stopped the take itself (a quit that was later cancelled). */
-		onNativeMacRecordingStoppedByApp?: (callback: () => void) => () => void;
+		onNativeMacRecordingStoppedByApp?: (
+			callback: (
+				request: import("../src/lib/nativeMacRecording").NativeRecordingAppStopRequest,
+			) => void,
+		) => () => void;
+		acknowledgeNativeRecordingAppStop: (
+			acknowledgement: import("../src/lib/nativeMacRecording").NativeRecordingAppStopAcknowledgement,
+		) => Promise<{ success: boolean }>;
 		/** Names a Stop step for the stop timing log; ignored when no Stop is being timed. */
 		markStopStage?: (stage: string) => void;
 		stopNativeMacRecording: (
@@ -333,10 +340,12 @@ interface Window {
 		 * Raises the compositor's picker and holds the grant until the recording
 		 * actually starts, so a countdown can run AFTER the user has chosen.
 		 *
-		 * Best-effort: a `success: false` means "start normally", never "fail".
+		 * A failed preparation cancels Record; never count down before portal consent.
 		 */
 		prepareNativeLinuxRecording: (
-			request: import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest,
+			request:
+				| import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest
+				| import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
 		) => Promise<{
 			success: boolean;
 			recordingId?: number;
@@ -347,14 +356,22 @@ interface Window {
 		/** Drops a prepared session when the countdown was abandoned. */
 		cancelNativeLinuxPrepare: () => Promise<{ success: boolean }>;
 		startNativeLinuxRecording: (
-			request: import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest,
+			request:
+				| import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest
+				| import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
 		) => Promise<import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingStartResult>;
 		pauseNativeLinuxRecording: () => Promise<{
 			success: boolean;
+			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
+			paused?: boolean;
 			error?: string;
 		}>;
-		resumeNativeLinuxRecording: () => Promise<{
+		resumeNativeLinuxRecording: (
+			request?: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
+		) => Promise<{
 			success: boolean;
+			clipIndex?: number;
+			paused?: boolean;
 			error?: string;
 		}>;
 		stopNativeLinuxRecording: (discard?: boolean) => Promise<{

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { portalOwnsSourceSelection } from "./nativeLinuxRecording";
+import { linuxClipRecordingRequest, portalOwnsSourceSelection } from "./nativeLinuxRecording";
 
 function probe(platform: string, available: boolean | Error) {
 	return {
@@ -27,7 +27,7 @@ describe("portalOwnsSourceSelection", () => {
 		await expect(portalOwnsSourceSelection(probe("linux", true))).resolves.toBe(true);
 	});
 
-	it("is false on Linux without the helper, where the browser fallback needs a source id", async () => {
+	it("is false when the Linux native helper is unavailable", async () => {
 		await expect(portalOwnsSourceSelection(probe("linux", false))).resolves.toBe(false);
 	});
 
@@ -59,5 +59,24 @@ describe("portalOwnsSourceSelection", () => {
 				isNativeLinuxCaptureAvailable: async () => ({ success: false, available: true }),
 			}),
 		).resolves.toBe(false);
+	});
+});
+
+describe("legacy Linux clip request adapter", () => {
+	it("keeps explicit capture settings while supplying the canonical output/source/camera contract", () => {
+		const request = linuxClipRecordingRequest({
+			recordingId: 7,
+			video: { fps: 60, bitrate: 68_000_000 },
+			audio: { system: { enabled: true }, microphone: { enabled: false, gain: 1 } },
+			cursor: { mode: "system" },
+		});
+		expect(request).toMatchObject({
+			platform: "linux",
+			recordingId: 7,
+			source: { sourceId: "portal:selected" },
+			video: { fps: 60, bitrate: 68_000_000, hideSystemCursor: false },
+			webcam: { enabled: false },
+			outputs: { screenPath: "" },
+		});
 	});
 });

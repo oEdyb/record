@@ -126,6 +126,18 @@ export function buildNativeMacRecordingRequest(input: {
 	};
 }
 
+/** Linux source identity comes exclusively from the portal, never a guessed display id. */
+export function buildNativeLinuxClipRecordingRequest(input: {
+	recordingId: number;
+	settings: NativeMacCaptureSettings;
+}): NativeMacRecordingRequest {
+	const request = buildNativeMacRecordingRequest({
+		...input,
+		source: { id: "portal:selected" },
+	});
+	return { ...request, platform: "linux", webcam: { ...request.webcam, enabled: false } };
+}
+
 export function nativeMacWebcamFileName(recordingId: number, clipIndex: number): string {
 	return `recording-${recordingId}-clip-${String(clipIndex + 1).padStart(4, "0")}-webcam.webm`;
 }

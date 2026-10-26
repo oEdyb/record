@@ -195,6 +195,7 @@ function createWindow() {
 	}
 
 	mainWindow = createHudOverlayWindow();
+	quitCaptureGuard.protectWindow(mainWindow);
 	if (isMac) createCameraPreviewWindow();
 }
 
@@ -1108,6 +1109,7 @@ appReady?.then(async () => {
 		}
 		const previousWindow = mainWindow;
 		const hudWindow = createHudOverlayWindow({ returnToReview: true });
+		quitCaptureGuard.protectWindow(hudWindow);
 		if (isMac) createCameraPreviewWindow();
 		workspaceTransition = { target: "hud", window: hudWindow };
 		mainWindow = hudWindow;

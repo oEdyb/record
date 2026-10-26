@@ -5,6 +5,8 @@ import type {
 	NativeMacRecordingInterruption,
 	NativeMacRecordingRequest,
 	NativeMacStorageStatus,
+	NativeRecordingAppStopAcknowledgement,
+	NativeRecordingAppStopRequest,
 } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
 import type {
@@ -379,20 +381,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	isNativeLinuxCaptureAvailable: () => {
 		return ipcRenderer.invoke("is-native-linux-capture-available");
 	},
-	prepareNativeLinuxRecording: (request: NativeLinuxRecordingRequest) => {
+	prepareNativeLinuxRecording: (
+		request: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
+	) => {
 		return ipcRenderer.invoke("prepare-native-linux-recording", request);
 	},
 	cancelNativeLinuxPrepare: () => {
 		return ipcRenderer.invoke("cancel-native-linux-prepare");
 	},
-	startNativeLinuxRecording: (request: NativeLinuxRecordingRequest) => {
+	startNativeLinuxRecording: (request: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("start-native-linux-recording", request);
 	},
 	pauseNativeLinuxRecording: () => {
 		return ipcRenderer.invoke("pause-native-linux-recording");
 	},
-	resumeNativeLinuxRecording: () => {
-		return ipcRenderer.invoke("resume-native-linux-recording");
+	resumeNativeLinuxRecording: (
+		request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
+	) => {
+		return ipcRenderer.invoke("resume-native-linux-recording", request);
 	},
 	stopNativeLinuxRecording: (discard?: boolean) => {
 		return ipcRenderer.invoke("stop-native-linux-recording", discard);
@@ -459,11 +465,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("native-mac-recording-storage-low", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-storage-low", listener);
 	},
-	onNativeMacRecordingStoppedByApp: (callback: () => void) => {
-		const listener = () => callback();
+	onNativeMacRecordingStoppedByApp: (
+		callback: (request: NativeRecordingAppStopRequest) => void,
+	) => {
+		const listener = (_event: Electron.IpcRendererEvent, request: NativeRecordingAppStopRequest) =>
+			callback(request);
 		ipcRenderer.on("native-mac-recording-stopped-by-app", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-stopped-by-app", listener);
 	},
+	acknowledgeNativeRecordingAppStop: (acknowledgement: NativeRecordingAppStopAcknowledgement) =>
+		ipcRenderer.invoke("acknowledge-native-recording-app-stop", acknowledgement),
 	stopNativeMacRecording: (discard?: boolean, clickedAtMs?: number) => {
 		return ipcRenderer.invoke("stop-native-mac-recording", discard, clickedAtMs);
 	},

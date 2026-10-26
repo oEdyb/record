@@ -34,7 +34,7 @@ export async function persistNativeMacRecoveryJournal(
 	session: RecordingSession,
 ): Promise<void> {
 	const normalized = normalizeRecordingSession(session);
-	if (!normalized) throw new Error("Cannot persist an invalid native macOS recovery session.");
+	if (!normalized) throw new Error("Cannot persist an invalid native recovery session.");
 	const envelope: NativeMacRecoveryEnvelope = {
 		schemaVersion: JOURNAL_SCHEMA_VERSION,
 		session: normalized,
@@ -185,7 +185,7 @@ async function recoverSession(
 				const extension = path.extname(originalPath);
 				if (
 					!(
-						(mediaType === "video" && extension === ".mov") ||
+						(mediaType === "video" && [".mov", ".webm"].includes(extension)) ||
 						(mediaType === "audio" && [".mov", ".m4a", ".mp4"].includes(extension))
 					) ||
 					path.resolve(originalPath) !== `${stem}-${suffix}${extension}`

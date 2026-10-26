@@ -41,6 +41,79 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("waits for human portal consent without a timer and only starts on recording-started", async () => {
+		vi.useFakeTimers();
+		try {
+			const process = fakeProcess();
+			const onProtocolEvent = vi.fn();
+			const client = new NativeMacHelperClient(process, { platform: "linux", onProtocolEvent });
+			let selected = false;
+			const preparation = client.waitForSourceSelected().then(() => {
+				selected = true;
+			});
+			await vi.advanceTimersByTimeAsync(600_000);
+			expect(selected).toBe(false);
+			emit(process, { event: "source-selected", sourceKind: "window" });
+			await preparation;
+			await client.waitForSourceSelected();
+			const commands: string[] = [];
+			process.stdin.on("data", (chunk: Buffer) => commands.push(chunk.toString()));
+			client.arm();
+			expect(commands).toEqual(["record\n"]);
+			let started = false;
+			const start = client.waitForStart().then(() => {
+				started = true;
+			});
+			emit(process, { event: "capture-started" });
+			await vi.advanceTimersByTimeAsync(1);
+			expect(started).toBe(false);
+			emit(process, {
+				event: "recording-started",
+				captureBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+			});
+			await start;
+			await client.waitForStart();
+			expect(client.captureBounds).toMatchObject({ width: 1920, height: 1080 });
+			expect(
+				onProtocolEvent.mock.calls.filter(([event]) => event.event === "source-selected"),
+			).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("rejects a cancelled portal picker when its helper closes", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process, { platform: "linux" });
+		const preparation = client.waitForSourceSelected();
+		const assertion = expect(preparation).rejects.toThrow("before source selection");
+		process.emit("close", 0, null);
+		await assertion;
+	});
+
+	it("reports Linux runtime failures loudly and rejects a clean exit without the stop acknowledgement", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { platform: "linux", onFatalError });
+		emit(process, { event: "recording-started" });
+		emit(process, { event: "error", code: "pipewire-stream-lost", message: "Portal was closed" });
+		expect(onFatalError).toHaveBeenCalledWith({
+			code: "pipewire-stream-lost",
+			message: "Portal was closed",
+		});
+		const stopped = client.stop({ screenPath: "/tmp/unfinished.mp4", clips: [] });
+		const assertion = expect(stopped).rejects.toThrow();
+		process.emit("close", 0, null);
+		await assertion;
+	});
+
+	it("retains an early source-selection error for a late waiter", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process, { platform: "linux" });
+		emit(process, { event: "error", message: "User cancelled sharing" });
+		await expect(client.waitForSourceSelected()).rejects.toThrow("User cancelled sharing");
+	});
+
 	it("reads events from stdout even when stderr writes in the middle of a line", async () => {
 		const process = fakeProcess();
 		const client = new NativeMacHelperClient(process);
@@ -57,6 +130,33 @@ describe("NativeMacHelperClient", () => {
 			clips: [expect.objectContaining({ index: 0, durationMs: 1200 })],
 		});
 		expect(client.output).toContain("framework log line");
+	});
+
+	it("keeps a rejected Linux reconfiguration paused and permits a corrected retry", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { platform: "linux", onFatalError });
+		emit(process, { event: "recording-started" });
+		const paused = client.pause();
+		emit(process, { event: "recording-paused" });
+		await paused;
+		const rejected = client.reconfigure(request);
+		const rejection = expect(rejected).rejects.toThrow("portal cursor mode cannot change");
+		emit(process, {
+			event: "error",
+			code: "reconfigure-rejected",
+			message: "portal cursor mode cannot change",
+		});
+		await rejection;
+		expect(onFatalError).not.toHaveBeenCalled();
+		expect(client.isRunning()).toBe(true);
+		const corrected = client.reconfigure(request);
+		emit(process, { event: "recording-reconfigured" });
+		await corrected;
+		const resumed = client.resume();
+		emit(process, { event: "recording-resumed", clipIndex: 1 });
+		await expect(resumed).resolves.toBe(1);
+		expect(onFatalError).not.toHaveBeenCalled();
 	});
 
 	it("keeps an acknowledged paused Continue rejection retryable", async () => {

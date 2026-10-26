@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import { EventEmitter } from "node:events";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RendererRecordingStop } from "../../electron/recording/rendererRecordingStop";
 
 vi.mock("@/contexts/I18nContext", () => {
 	const messages: Record<string, string> = {
@@ -20,7 +22,8 @@ vi.mock("sonner", () => ({
 }));
 
 import { toast } from "sonner";
-import type { RecordingSessionClip } from "@/lib/recordingSession";
+import type { NativeRecordingAppStopRequest } from "@/lib/nativeMacRecording";
+import type { RecordingSession, RecordingSessionClip } from "@/lib/recordingSession";
 import { useScreenRecorder } from "./useScreenRecorder";
 
 type ElectronAPI = Window["electronAPI"];
@@ -104,6 +107,7 @@ function stubElectronAPI(overrides: Record<string, unknown> = {}) {
 		setCurrentRecordingSession: vi.fn(async () => undefined),
 		setCurrentVideoPath: vi.fn(async () => undefined),
 		switchToEditor: vi.fn(async () => undefined),
+		acknowledgeNativeRecordingAppStop: vi.fn(async () => ({ success: true })),
 	};
 	window.electronAPI = { ...api, ...overrides } as unknown as ElectronAPI;
 }
@@ -357,8 +361,14 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		stubElectronAPI({
 			getPlatform: vi.fn(() => "linux"),
 			isNativeLinuxCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
-			startNativeLinuxRecording: vi.fn(async () => ({ success: true, recordingId: 7 })),
-			stopNativeLinuxRecording: vi.fn(async () => ({ success: true })),
+			prepareNativeLinuxRecording: vi.fn(async () => ({ success: true, recordingId: 7 })),
+			cancelNativeLinuxPrepare: vi.fn(async () => ({ success: true })),
+			startNativeMacRecording: vi.fn(async () => ({
+				success: true,
+				recordingId: 7,
+				rendererStop: { recordingId: 7, token: "take-generation" },
+			})),
+			stopNativeMacRecording: vi.fn(async () => ({ success: true })),
 			...overrides,
 		});
 	}
@@ -370,9 +380,461 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		expect(view.result.current.recording).toBe(true);
 	}
 
+	it("never falls back to browser capture when the Linux helper is missing", async () => {
+		const start = vi.fn();
+		stubNativeLinux({
+			isNativeLinuxCaptureAvailable: vi.fn(async () => ({
+				success: true,
+				available: false,
+				reason: "missing-helper",
+			})),
+			startNativeMacRecording: start,
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => view.result.current.startRecordingImmediately());
+		expect(view.result.current.recording).toBe(false);
+		expect(start).not.toHaveBeenCalled();
+		expect(toast.error).toHaveBeenCalledWith(expect.any(String), {
+			description: "Native capture helper is not available.",
+		});
+	});
+
+	it("waits for portal consent before start and sends Linux quality without native camera ownership", async () => {
+		let select: ((result: { success: boolean; recordingId: number }) => void) | undefined;
+		const prepare = vi.fn(
+			() =>
+				new Promise<{ success: boolean; recordingId: number }>((resolve) => {
+					select = resolve;
+				}),
+		);
+		const start = vi.fn(async () => ({ success: true, recordingId: 7 }));
+		stubNativeLinux({
+			getSelectedSource: vi.fn(async () => null),
+			prepareNativeLinuxRecording: prepare,
+			startNativeMacRecording: start,
+		});
+		const view = renderHook(() => useScreenRecorder());
+		act(() => view.result.current.toggleRecording());
+		await settle(60_000);
+		expect(prepare).toHaveBeenCalledOnce();
+		expect(start).not.toHaveBeenCalled();
+		expect(view.result.current.recording).toBe(false);
+		await act(async () => select?.({ success: true, recordingId: 7 }));
+		await settle(20);
+		expect(view.result.current.recording).toBe(true);
+		expect(start).toHaveBeenCalledWith(
+			expect.objectContaining({
+				platform: "linux",
+				recordingId: 7,
+				video: expect.objectContaining({
+					quality: "high",
+					bitrate: 136_000_000,
+					fps: 60,
+					hideSystemCursor: false,
+				}),
+				webcam: expect.objectContaining({ enabled: false }),
+			}),
+		);
+	});
+
+	it("cancels a pending portal picker immediately when Record is cancelled", async () => {
+		let finish: ((result: { success: boolean; error: string }) => void) | undefined;
+		const prepare = vi.fn(
+			() =>
+				new Promise<{ success: boolean; error: string }>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const cancel = vi.fn(async () => {
+			finish?.({ success: false, error: "Source selection cancelled." });
+			return { success: true };
+		});
+		const start = vi.fn();
+		stubNativeLinux({
+			prepareNativeLinuxRecording: prepare,
+			cancelNativeLinuxPrepare: cancel,
+			startNativeMacRecording: start,
+		});
+		const view = renderHook(() => useScreenRecorder());
+		act(() => view.result.current.toggleRecording());
+		await settle();
+		expect(prepare).toHaveBeenCalledOnce();
+		act(() => view.result.current.toggleRecording());
+		await settle();
+		expect(cancel).toHaveBeenCalled();
+		expect(start).not.toHaveBeenCalled();
+		expect(view.result.current.recording).toBe(false);
+	});
+
+	it("uses the same clip controls for Linux Pause, Backspace, Undo, and Continue without another portal", async () => {
+		const clip = { index: 0, screenVideoPath: "/tmp/recording-7-clip-0001.mp4", durationMs: 2_000 };
+		const prepare = vi.fn(async () => ({ success: true, recordingId: 7 }));
+		const resume = vi.fn(async () => ({ success: true, clipIndex: 1 }));
+		stubNativeLinux({
+			getSelectedSource: vi.fn(async () => null),
+			prepareNativeLinuxRecording: prepare,
+			pauseNativeMacRecording: vi.fn(async () => ({ success: true, paused: true, clip })),
+			removePreviousNativeMacClip: vi.fn(async () => ({ success: true, clip })),
+			restoreRemovedNativeMacClip: vi.fn(async () => ({ success: true, clip })),
+			resumeNativeMacRecording: resume,
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startLinuxRecording(view);
+		await settle(2_000);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.recordedClips).toEqual([clip]);
+		expect(view.result.current.canRemovePreviousClip).toBe(true);
+		await act(async () => {
+			await view.result.current.removePreviousClip();
+		});
+		await settle();
+		expect(view.result.current.recordedClips).toEqual([]);
+		expect(view.result.current.elapsedSeconds).toBe(0);
+		await act(async () => {
+			await view.result.current.restoreRemovedClip(0);
+		});
+		await settle();
+		expect(view.result.current.elapsedSeconds).toBe(2);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(false);
+		expect(resume).toHaveBeenCalledWith(
+			expect.objectContaining({
+				platform: "linux",
+				webcam: expect.objectContaining({ enabled: false }),
+			}),
+		);
+		expect(prepare).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		"app-stop",
+		"ordinary-stop",
+		"ordinary-stop-then-quit",
+	])("acknowledges %s only after camera drain and durable attachment", async (action) => {
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
+			},
+		});
+		const clip = { index: 0, screenVideoPath: "/tmp/recording-7-clip-0001.mp4", durationMs: 1_000 };
+		const session: RecordingSession = {
+			schemaVersion: 2,
+			createdAt: 7,
+			screenVideoPath: clip.screenVideoPath,
+			clips: [clip],
+		};
+		const attached: RecordingSession = {
+			...session,
+			clips: [
+				{ ...clip, webcamVideoPath: "/tmp/recording-7-clip-0001-webcam.webm", webcamOffsetMs: 0 },
+			],
+		};
+		let appStop: ((request: NativeRecordingAppStopRequest) => void) | undefined;
+		let finishAttachment:
+			| ((result: { success: boolean; session: RecordingSession }) => void)
+			| undefined;
+		const attach = vi.fn(
+			() =>
+				new Promise<{ success: boolean; session: RecordingSession }>((resolve) => {
+					finishAttachment = resolve;
+				}),
+		);
+		const acknowledge = vi.fn(async () => {
+			expect(window.electronAPI.setCurrentRecordingSession).toHaveBeenLastCalledWith(attached);
+			return { success: true };
+		});
+		stubNativeLinux({
+			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			openRecordingStream: vi.fn(async () => ({ success: true })),
+			appendRecordingChunk: vi.fn(async () => ({ success: true })),
+			closeRecordingStream: vi.fn(async () => ({ success: true })),
+			onNativeMacRecordingStoppedByApp: vi.fn((callback) => {
+				appStop = callback;
+				return vi.fn();
+			}),
+			acknowledgeNativeRecordingAppStop: acknowledge,
+			attachNativeMacClipWebcams: attach,
+			stopNativeMacRecording: vi.fn(async () => ({
+				success: true,
+				path: clip.screenVideoPath,
+				session,
+			})),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.setWebcamEnabled(true);
+		});
+		await settle();
+		await startLinuxRecording(view);
+		const recorder = FakeMediaRecorder.instances[0];
+		if (!recorder?.onstop) throw new Error("Camera recorder did not start");
+		const finishDrain = recorder.onstop;
+		recorder.onstop = null;
+		if (action === "app-stop") act(() => appStop?.({ recordingId: 7, token: "take-generation" }));
+		else act(() => view.result.current.toggleRecording());
+		await settle();
+		expect(window.electronAPI.stopNativeMacRecording).toHaveBeenCalledOnce();
+		if (action === "ordinary-stop-then-quit") {
+			act(() => appStop?.({ recordingId: 7, token: "take-generation" }));
+			await settle();
+			expect(window.electronAPI.stopNativeMacRecording).toHaveBeenCalledOnce();
+			expect(FakeMediaRecorder.instances).toHaveLength(1);
+		}
+		expect(recorder.state).toBe("inactive");
+		expect(attach).not.toHaveBeenCalled();
+		expect(acknowledge).not.toHaveBeenCalled();
+		expect(window.electronAPI.switchToEditor).not.toHaveBeenCalled();
+		await act(async () => finishDrain());
+		await settle();
+		expect(attach).toHaveBeenCalledOnce();
+		expect(acknowledge).not.toHaveBeenCalled();
+		await act(async () => finishAttachment?.({ success: true, session: attached }));
+		await settle();
+		expect(acknowledge).toHaveBeenCalledOnce();
+		expect(acknowledge).toHaveBeenCalledWith({
+			recordingId: 7,
+			token: "take-generation",
+			success: true,
+		});
+		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
+	});
+
+	it("completes a bound take when the helper fails before the renderer receives its start result", async () => {
+		let failure: ((value: { code: string; message: string }) => void) | undefined;
+		const acknowledge = vi.fn(async () => ({ success: true }));
+		const stop = vi.fn(async () => ({ success: true }));
+		stubNativeLinux({
+			onNativeMacRecordingError: vi.fn((callback) => {
+				failure = callback;
+				return vi.fn();
+			}),
+			acknowledgeNativeRecordingAppStop: acknowledge,
+			stopNativeMacRecording: stop,
+			startNativeMacRecording: vi.fn(async () => {
+				failure?.({ code: "capture-helper-exited", message: "Helper exited during startup" });
+				return {
+					success: true,
+					recordingId: 7,
+					rendererStop: { recordingId: 7, token: "take-generation" },
+				};
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => view.result.current.startRecordingImmediately());
+		expect(stop).toHaveBeenCalledWith(false);
+		expect(acknowledge).toHaveBeenCalledWith({
+			recordingId: 7,
+			token: "take-generation",
+			success: false,
+			error: "Helper exited during startup",
+		});
+		expect(view.result.current.recording).toBe(false);
+	});
+
+	it("reports a failed renderer handoff instead of acknowledging camera durability", async () => {
+		let appStop: ((request: NativeRecordingAppStopRequest) => void) | undefined;
+		const acknowledge = vi.fn(async () => ({ success: true }));
+		stubNativeLinux({
+			onNativeMacRecordingStoppedByApp: vi.fn((callback) => {
+				appStop = callback;
+				return vi.fn();
+			}),
+			acknowledgeNativeRecordingAppStop: acknowledge,
+			stopNativeMacRecording: vi.fn(async () => ({
+				success: false,
+				error: "The camera handoff could not be saved",
+			})),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startLinuxRecording(view);
+		act(() => appStop?.({ recordingId: 7, token: "take-generation" }));
+		await settle();
+		expect(acknowledge).toHaveBeenCalledWith({
+			recordingId: 7,
+			token: "take-generation",
+			success: false,
+			error: "The camera handoff could not be saved",
+		});
+		expect(window.electronAPI.switchToEditor).not.toHaveBeenCalled();
+	});
+
+	it("opens review when Stop races Pause with the same renderer camera pending", async () => {
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
+			},
+		});
+		const clip = { index: 0, screenVideoPath: "/tmp/recording-7-clip-0001.mp4", durationMs: 500 };
+		let finishPause:
+			| ((result: { success: boolean; paused: boolean; clip: RecordingSessionClip }) => void)
+			| undefined;
+		stubNativeLinux({
+			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			pauseNativeMacRecording: vi.fn(
+				() =>
+					new Promise((resolve) => {
+						finishPause = resolve;
+					}),
+			),
+			stopNativeMacRecording: vi.fn(async () => ({
+				success: true,
+				path: clip.screenVideoPath,
+				session: {
+					schemaVersion: 2,
+					createdAt: 7,
+					screenVideoPath: clip.screenVideoPath,
+					clips: [clip],
+				},
+			})),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.setWebcamEnabled(true);
+		});
+		await settle();
+		await startLinuxRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.clipFinalizing).toBe(true);
+		expect(FakeMediaRecorder.instances[0]?.state).toBe("recording");
+		await pressStop(view);
+		expect(window.electronAPI.switchToEditor).toHaveBeenCalledWith({ compactReview: true });
+		expect(view.result.current.recording).toBe(false);
+		await act(async () => finishPause?.({ success: true, paused: true, clip }));
+	});
+
+	it.each([
+		"pause",
+		"stop",
+	])("keeps Linux camera footage after a rejected Pause through a later %s", async (nextAction) => {
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
+			},
+		});
+		const clip = { index: 0, screenVideoPath: "/tmp/recording-7-clip-0001.mp4", durationMs: 1_000 };
+		const session = {
+			schemaVersion: 2,
+			createdAt: 7,
+			screenVideoPath: clip.screenVideoPath,
+			clips: [clip],
+		};
+		const append = vi.fn(async () => ({ success: true }));
+		const close = vi.fn(async () => ({ success: true }));
+		const attach = vi.fn(async () => ({ success: true, session }));
+		const pause = vi
+			.fn()
+			.mockResolvedValueOnce({
+				success: false,
+				paused: false,
+				error: "Pause command failed before pausing",
+			})
+			.mockResolvedValue({ success: true, paused: true, clip });
+		stubNativeLinux({
+			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			openRecordingStream: vi.fn(async () => ({ success: true })),
+			appendRecordingChunk: append,
+			closeRecordingStream: close,
+			pauseNativeMacRecording: pause,
+			attachNativeMacClipWebcams: attach,
+			stopNativeMacRecording: vi.fn(async () => ({
+				success: true,
+				path: clip.screenVideoPath,
+				session,
+			})),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.setWebcamEnabled(true);
+		});
+		await settle();
+		await startLinuxRecording(view);
+		const recorder = FakeMediaRecorder.instances[0];
+		if (!recorder?.ondataavailable) throw new Error("Camera recorder was not created");
+		const before = new Uint8Array([1, 2, 3]).buffer;
+		Reflect.apply(recorder.ondataavailable, recorder, [
+			{ data: { size: before.byteLength, arrayBuffer: async () => before } },
+		]);
+		await settle();
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.recording).toBe(true);
+		expect(view.result.current.paused).toBe(false);
+		expect(recorder.state).toBe("recording");
+		expect(close).not.toHaveBeenCalled();
+		const after = new Uint8Array([4, 5, 6]).buffer;
+		Reflect.apply(recorder.ondataavailable, recorder, [
+			{ data: { size: after.byteLength, arrayBuffer: async () => after } },
+		]);
+		await settle();
+		expect(append).toHaveBeenNthCalledWith(1, "recording-7-clip-0001-webcam.webm", before);
+		expect(append).toHaveBeenNthCalledWith(2, "recording-7-clip-0001-webcam.webm", after);
+		if (nextAction === "pause") {
+			await act(async () => view.result.current.togglePaused());
+			await settle();
+			expect(view.result.current.paused).toBe(true);
+			expect(recorder.state).toBe("inactive");
+		}
+		await pressStop(view);
+		expect(attach).toHaveBeenCalledOnce();
+		expect(attach).toHaveBeenCalledWith(
+			expect.objectContaining({
+				webcams: [
+					expect.objectContaining({
+						clipIndex: 0,
+						webcam: expect.objectContaining({ fileName: "recording-7-clip-0001-webcam.webm" }),
+					}),
+				],
+			}),
+		);
+		expect(close).not.toHaveBeenCalled();
+		expect(window.electronAPI.switchToEditor).toHaveBeenCalledWith({ compactReview: true });
+	});
+
+	it("creates a separate renderer webcam recorder for each Linux clip", async () => {
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
+			},
+		});
+		stubNativeLinux({
+			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			pauseNativeMacRecording: vi.fn(async () => ({
+				success: true,
+				paused: true,
+				clip: { index: 0, screenVideoPath: "/tmp/recording-7-clip-0001.mp4", durationMs: 500 },
+			})),
+			resumeNativeMacRecording: vi.fn(async () => ({ success: true, clipIndex: 1 })),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.setWebcamEnabled(true);
+		});
+		await settle();
+		await startLinuxRecording(view);
+		expect(FakeMediaRecorder.instances).toHaveLength(1);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(FakeMediaRecorder.instances[0]?.state).toBe("inactive");
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(FakeMediaRecorder.instances).toHaveLength(2);
+		expect(FakeMediaRecorder.instances[1]?.state).toBe("recording");
+	});
+
 	it("shows Stop guidance without opening review when native Stop reports failure", async () => {
 		stubNativeLinux({
-			stopNativeLinuxRecording: vi.fn(async () => ({
+			stopNativeMacRecording: vi.fn(async () => ({
 				success: false,
 				error: "Stop command failed",
 			})),
@@ -391,7 +853,7 @@ describe("useScreenRecorder native Linux stop failure", () => {
 
 	it("shows Stop guidance with the IPC detail when native Stop throws", async () => {
 		stubNativeLinux({
-			stopNativeLinuxRecording: vi.fn(async () => {
+			stopNativeMacRecording: vi.fn(async () => {
 				throw new Error("IPC channel closed");
 			}),
 		});
@@ -411,8 +873,8 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		const pause = vi.fn();
 		const resume = vi.fn();
 		stubNativeLinux({
-			pauseNativeLinuxRecording: pause,
-			resumeNativeLinuxRecording: resume,
+			pauseNativeMacRecording: pause,
+			resumeNativeMacRecording: resume,
 		});
 		pause.mockImplementationOnce(async () => ({ success: false, error: "Linux pause failed" }));
 		pause.mockResolvedValue({ success: true });
@@ -447,6 +909,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 			startNativeMacRecording: vi.fn(async () => ({
 				success: true,
 				recordingId: 7,
+				rendererStop: { recordingId: 7, token: "take-generation" },
 				path: "/tmp/recording-7-clip-0001.mp4",
 			})),
 			pauseNativeMacRecording: vi.fn(async () => ({ success: true, paused: true })),
@@ -524,15 +987,28 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
 			},
 		});
-		let confirmStart: ((value: { success: true; recordingId: number }) => void) | undefined;
+		let confirmStart:
+			| ((value: {
+					success: true;
+					recordingId: number;
+					rendererStop: NativeRecordingAppStopRequest;
+			  }) => void)
+			| undefined;
 		const close = vi.fn(async () => ({ success: true }));
 		const stop = vi.fn(async () => ({ success: true }));
+		const owner = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		const handoff = new RendererRecordingStop();
+		const rendererStop = handoff.bind(owner, 7);
+		const acknowledge = vi.fn(async (value: unknown) => ({
+			success: handoff.acknowledge(owner, value),
+		}));
 		stubNativeMac({
 			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
 			openRecordingStream: vi.fn(async () => ({ success: true })),
 			appendRecordingChunk: vi.fn(async () => ({ success: true })),
 			closeRecordingStream: close,
 			stopNativeMacRecording: stop,
+			acknowledgeNativeRecordingAppStop: acknowledge,
 			startNativeMacRecording: vi.fn(
 				() =>
 					new Promise((resolve) => {
@@ -550,9 +1026,19 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(view.result.current.starting).toBe(true);
 		expect(FakeMediaRecorder.instances).toHaveLength(0);
 		act(() => view.result.current.cancelRecording());
-		confirmStart?.({ success: true, recordingId: 7 });
+		confirmStart?.({
+			success: true,
+			recordingId: 7,
+			rendererStop,
+		});
 		await settle();
 		expect(stop).toHaveBeenCalledWith(true);
+		expect(window.electronAPI.acknowledgeNativeRecordingAppStop).toHaveBeenCalledOnce();
+		expect(window.electronAPI.acknowledgeNativeRecordingAppStop).toHaveBeenCalledWith({
+			...rendererStop,
+			success: true,
+		});
+		expect(handoff.pendingRecordingId()).toBeNull();
 		expect(view.result.current.recording).toBe(false);
 		expect(view.result.current.starting).toBe(false);
 		expect(FakeMediaRecorder.instances).toHaveLength(0);
@@ -1237,6 +1723,11 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(view.result.current.recording).toBe(false);
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
 		expect(toast.error).toHaveBeenCalledWith("The active clip failed. Saving completed clips now.");
+		expect(window.electronAPI.acknowledgeNativeRecordingAppStop).toHaveBeenCalledWith({
+			recordingId: 7,
+			token: "take-generation",
+			success: true,
+		});
 	});
 
 	it("pauses a live take when the screen locks and ignores a source that comes back", async () => {
@@ -1318,7 +1809,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 	});
 
 	it("leaves the recording state and opens review when the app stopped the take itself", async () => {
-		let appStopListener: (() => void) | undefined;
+		let appStopListener: ((request: NativeRecordingAppStopRequest) => void) | undefined;
 		stubNativeMac({
 			onNativeMacRecordingStoppedByApp: vi.fn((callback) => {
 				appStopListener = callback;
@@ -1329,10 +1820,15 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		const view = renderHook(() => useScreenRecorder());
 		await startNativeRecording(view);
 		expect(appStopListener).toBeTypeOf("function");
-		act(() => appStopListener?.());
+		act(() => appStopListener?.({ recordingId: 7, token: "take-generation" }));
 		await settle();
 
 		expect(window.electronAPI.stopNativeMacRecording).toHaveBeenCalledOnce();
+		expect(window.electronAPI.acknowledgeNativeRecordingAppStop).toHaveBeenCalledWith({
+			recordingId: 7,
+			token: "take-generation",
+			success: true,
+		});
 		expect(view.result.current.recording).toBe(false);
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
 	});

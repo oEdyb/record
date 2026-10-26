@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer } from "react";
+import { useLinuxHudGeometry } from "./useLinuxHudGeometry";
 
 const OPEN_DELAY_MS = 120;
 const CLOSE_DELAY_MS = 280;
@@ -104,6 +105,7 @@ export function useHudDockInteraction({
 	panelOpen,
 	closeDurationMs = HUD_DOCK_SETTLE_MS,
 }: Options & { closeDurationMs?: number }) {
+	useLinuxHudGeometry();
 	const [state, dispatch] = useReducer(reduce, { docked, dragging, panelOpen }, initialState);
 
 	useEffect(() => {
