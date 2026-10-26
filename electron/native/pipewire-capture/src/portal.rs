@@ -263,11 +263,33 @@ fn portal_unavailable(error: impl std::fmt::Display) -> PortalError {
 /// emit `ready` — before anything raises a dialog.
 pub async fn cursor_metadata_supported() -> Result<bool, PortalError> {
     let proxy = Screencast::new().await.map_err(portal_unavailable)?;
+    // This startup probe precedes CreateSession. Register the same D-Bus peer
+    // ashpd will use, so the separate helper has the app's installed identity.
+    // Older portals lack Registry; identity must not disable working capture.
+    if let Err(error) = register_host_application(proxy.connection()).await {
+        eprintln!("could not register Klippt's portal identity: {error}");
+    }
     let cursor_modes = proxy
         .available_cursor_modes()
         .await
         .map_err(|error| failed("AvailableCursorModes", error))?;
     Ok(cursor_modes.contains(PortalCursorMode::Metadata))
+}
+
+async fn register_host_application(
+    connection: &ashpd::zbus::Connection,
+) -> ashpd::zbus::Result<()> {
+    let registry = ashpd::zbus::Proxy::new(
+        connection,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.host.portal.Registry",
+    )
+    .await?;
+    let options = std::collections::HashMap::<&str, ashpd::zvariant::Value<'_>>::new();
+    registry
+        .call("Register", &("co.dyberg.klippt", options))
+        .await
 }
 
 /// Runs the negotiation to completion. Blocks on the user for as long as the
@@ -378,6 +400,81 @@ pub async fn negotiate_selected(
 #[cfg(test)]
 mod tests {
     use super::{negotiate_selected, portal_unavailable, CursorMode, Selection};
+
+    #[test]
+    fn host_registration_uses_installed_identity_and_preserves_errors() {
+        use ashpd::zbus::{blocking, connection::Builder};
+        use std::io::BufRead;
+        struct PrivateBus(std::process::Child);
+        impl Drop for PrivateBus {
+            fn drop(&mut self) {
+                self.0.kill().expect("stop private test bus");
+                self.0.wait().expect("reap private test bus");
+            }
+        }
+        let mut bus = PrivateBus(
+            std::process::Command::new("dbus-daemon")
+                .args(["--session", "--nofork", "--print-address=1"])
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .expect("private dbus-daemon"),
+        );
+        let mut address = String::new();
+        std::io::BufReader::new(bus.0.stdout.take().expect("bus stdout"))
+            .read_line(&mut address)
+            .expect("private bus address");
+        let address = address.trim().to_owned();
+        let server_address = address.clone();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let connection = blocking::connection::Builder::address(server_address.as_str())
+                .expect("server address")
+                .name("org.freedesktop.portal.Desktop")
+                .expect("portal name")
+                .build()
+                .expect("private registry server");
+            ready_tx.send(()).expect("registry ready");
+            let mut calls = Vec::new();
+            for message in blocking::MessageIterator::from(&connection) {
+                let message = message.expect("registry call");
+                if message.header().member().map(|name| name.as_str()) != Some("Register") {
+                    continue;
+                }
+                let (app_id, options): (
+                    String,
+                    std::collections::HashMap<String, ashpd::zvariant::OwnedValue>,
+                ) = message.body().deserialize().expect("Register signature");
+                assert!(options.is_empty());
+                calls.push(app_id);
+                if calls.len() == 1 {
+                    connection.reply(&message, &()).expect("success response");
+                } else {
+                    connection
+                        .reply_error(
+                            &message,
+                            "org.freedesktop.DBus.Error.UnknownMethod",
+                            &"Registry unavailable",
+                        )
+                        .expect("unsupported response");
+                    return calls;
+                }
+            }
+            panic!("registry client disconnected before both calls");
+        });
+        ready_rx.recv().expect("registry startup");
+        let client = pollster::block_on(
+            Builder::address(address.as_str())
+                .expect("client address")
+                .build(),
+        )
+        .expect("private registry client");
+        pollster::block_on(super::register_host_application(&client)).expect("register app");
+        assert!(pollster::block_on(super::register_host_application(&client)).is_err());
+        assert_eq!(
+            server.join().expect("registry thread"),
+            ["co.dyberg.klippt", "co.dyberg.klippt"]
+        );
+    }
 
     #[test]
     fn cancelled_selection_never_opens_a_portal_and_cancellation_is_idempotent() {

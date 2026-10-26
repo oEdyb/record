@@ -1,0 +1,12 @@
+{"cursorMetadataSupported":true,"event":"ready","pipewireVersion":"1.6.10","schemaVersion":1,"timestampMs":1793033536365}
+{"event":"source-selected","nodeId":52,"positionX":null,"positionY":null,"schemaVersion":1,"sourceKind":"window","timestampMs":1793033552080}
+{"event":"stream-started","height":1080,"nodeId":52,"positionX":null,"positionY":null,"schemaVersion":1,"sourceKind":"window","timestampMs":1793033552162,"width":1920}
+{"code":"window-crop-missing","event":"warning","message":"window supplied no crop; recording the full PipeWire stream","schemaVersion":1,"timestampMs":1793033552308}
+{"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793033552431,"video":"nvenc"}
+{"captureBounds":{"height":1080,"width":1920,"x":0,"y":0},"event":"recording-started","schemaVersion":1,"timestampMs":1793033552510}
+{"event":"capture-started","fps":30,"height":1080,"path":"/home/olle/.local/state/agent-lab/klippt/portal-identity/screen.mp4","schemaVersion":1,"timestampMs":1793033552510,"width":1920}
+{"code":"frames-dropped","event":"warning","message":"6 captured frames were superseded before encoding","schemaVersion":1,"timestampMs":1793033555184}
+{"clipIndex":0,"event":"clip-finalizing","schemaVersion":1,"timestampMs":1793033555184}
+{"convertMs":3.491669361445783,"dropped":6,"durationMs":2766,"encodeMs":0.1952976746987952,"event":"capture-stopped","frames":83,"path":"/home/olle/.local/state/agent-lab/klippt/portal-identity/screen.mp4","schemaVersion":1,"timestampMs":1793033555247,"uploadMs":0.00004951807228915663}
+{"clip":{"cursorCaptureMode":"system","durationMs":2766,"index":0,"screenVideoPath":"/home/olle/.local/state/agent-lab/klippt/portal-identity/screen.mp4"},"event":"clip-finalized","schemaVersion":1,"timestampMs":1793033555247}
+{"clips":[{"cursorCaptureMode":"system","durationMs":2766,"index":0,"screenVideoPath":"/home/olle/.local/state/agent-lab/klippt/portal-identity/screen.mp4"}],"event":"recording-stopped","schemaVersion":1,"screenPath":"/home/olle/.local/state/agent-lab/klippt/portal-identity/screen.mp4","timestampMs":1793033555247}

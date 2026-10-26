@@ -1052,3 +1052,34 @@ full suite ran.
 
 Contracts: [Electron 44.9.1 globalShortcut](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/global-shortcut.md),
 [XDG GlobalShortcuts activation](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.GlobalShortcuts.html).
+
+
+## Helper portal identity and shortcut isolation — October 26
+
+The native capture helper now registers `co.dyberg.klippt` using the host
+Registry interface on ashpd's existing D-Bus connection during its startup
+probe, before CreateSession. The real private KDE picker now says “Choose what
+to share with Klippt” instead of “an unidentifiable application.” A window
+selection records 83 NVENC frames at 1920×1080/30 fps and fully decodes after
+normal Stop. A private-D-Bus protocol regression verifies the exact ID, empty
+options and error propagation. Older/unavailable Registry errors are logged
+and do not disable the existing capture path. No dependencies changed.
+Three affected portal tests, strict helper Clippy and rustfmt pass; no full
+suite. This is currently host-helper evidence; `844348aa` remains the latest
+portable package until a floor rebuild is verified. Evidence:
+`artifacts/linux-port-2026-10-26/portal-identity/`. Lab stopped.
+
+An independent Electron 44.9.1 control also isolates the shortcut symptoms:
+Open App's callback executes, calls show/focus, and still reports focused=false
+while the fixture stays fullscreen. Relaunch on the same private desktop lists
+saved shortcuts but its KGlobalAccel component reports inactive; invoking its
+component action directly still reaches the Electron callback. Thus callback
+dispatch and physical accelerator admission are distinct. KDE 6.8.1's
+`loadActions` restores QAction metadata without the KGlobalAccel registration
+used by `setActions`. This source difference is consistent with the relaunch
+failure, not proof that a Klippt registration rewrite would fix it. Keep both
+platform gates open; no shortcut workaround was added.
+
+Primary contracts: [host Registry](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.host.portal.Registry.html),
+[Electron 44.9.1 shortcut implementation](https://raw.githubusercontent.com/electron/electron/v44.9.1/shell/browser/api/electron_api_global_shortcut.cc),
+[KDE 6.8.1 shortcut sessions](https://raw.githubusercontent.com/KDE/xdg-desktop-portal-kde/v6.8.1/src/globalshortcuts.cpp).

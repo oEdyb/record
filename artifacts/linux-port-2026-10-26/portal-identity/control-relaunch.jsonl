@@ -1,0 +1,9 @@
+{"event":"registered","time":1793033215956,"accelerator":"CommandOrControl+Shift+O","success":true}
+{"event":"registered","time":1793033215958,"accelerator":"CommandOrControl+Shift+Space","success":true}
+{"event":"ready","time":1793033215958,"electron":"44.9.1","chrome":"152.0.7977.167"}
+{"event":"window-focus","time":1793033216097}
+{"event":"window-blur","time":1793033217930}
+{"event":"callback","time":1793033239589,"accelerator":"CommandOrControl+Shift+O","minimized":false,"visible":true}
+{"event":"window-show","time":1793033239589}
+{"event":"after-open","time":1793033239890,"minimized":false,"visible":true,"focused":false}
+{"event":"quit","time":1793033269113}
