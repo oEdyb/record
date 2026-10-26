@@ -63,6 +63,7 @@
 		"startFailed": "Não foi possível iniciar a gravação. Pressione Gravar novamente ou reabra o Klippt.",
 		"pauseFailed": "Não foi possível pausar e salvar este clipe. Pressione Parar e confira Gravações.",
 		"continueFailed": "Não foi possível continuar a gravação. Pressione Parar e confira Gravações.",
+		"continueRetry": "A gravação continua pausada. Confira as configurações e tente Continuar novamente.",
 		"stopFailed": "Não foi possível concluir a parada ou abrir a revisão. Reabra o Klippt e confira Gravações.",
 		"selectSource": "Por favor, selecione uma fonte para gravar"
 	},

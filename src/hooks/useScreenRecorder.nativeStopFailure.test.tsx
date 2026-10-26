@@ -10,6 +10,7 @@ vi.mock("@/contexts/I18nContext", () => {
 		"recording.pauseFailed":
 			"Could not pause and save this clip. Press Stop, then check Recordings.",
 		"recording.continueFailed": "Could not continue recording. Press Stop, then check Recordings.",
+		"recording.continueRetry": "Still paused. Check settings and try Continue again.",
 		"recording.stopFailed":
 			"Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
 	};
@@ -379,6 +380,37 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		});
 		expect(view.result.current.recording).toBe(true);
 	}
+
+	it("offers retry guidance for an acknowledged paused Continue rejection", async () => {
+		const stop = vi.fn(async () => ({ success: true }));
+		const resume = vi
+			.fn()
+			.mockResolvedValueOnce({ success: false, paused: true, error: "Microphone unavailable" })
+			.mockResolvedValueOnce({ success: true, clipIndex: 1 });
+		stubNativeLinux({
+			pauseNativeMacRecording: vi.fn(async () => ({ success: true, paused: true })),
+			resumeNativeMacRecording: resume,
+			stopNativeMacRecording: stop,
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startLinuxRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(true);
+		expect(view.result.current.recording).toBe(true);
+		expect(toast.error).toHaveBeenCalledWith(
+			"Still paused. Check settings and try Continue again.",
+			{ description: "Microphone unavailable" },
+		);
+		expect(stop).not.toHaveBeenCalled();
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(resume).toHaveBeenCalledTimes(2);
+		expect(view.result.current.paused).toBe(false);
+		await pressStop(view);
+	});
 
 	it("keeps a source-choice rejection paused and Continue retryable", async () => {
 		const choose = vi.fn(async () => ({ success: false, error: "The picker was cancelled." }));

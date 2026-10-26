@@ -778,3 +778,18 @@ Review plays the owned fixture. Lab and build container stopped. This run
 reports 40 superseded frames and does not establish performance parity. The
 generic rejected-Continue toast still suggests Stop despite recoverable retry;
 correct that copy in a follow-up.
+
+### Recoverable Continue guidance — October 26
+
+When the shared service explicitly returns `paused: true` on a rejected
+Continue, the renderer now says “Still paused. Check settings and try Continue
+again.” The existing fatal-failure instruction stays separate. All 13 locale
+files carry the new key. A regression fails on the old instruction and verifies
+that the take stays paused without Stop, then successfully retries. The affected
+hook suite passes 53 tests; both typechecks, i18n validation and touched-file
+Biome pass. React Doctor reports no findings for this slice against HEAD; its
+branch-wide existing HUD effect diagnostic is outside the change. No native
+helper change or new packaged verification yet.
+
+Reference: [W3C error suggestion guidance](https://www.w3.org/WAI/WCAG22/Understanding/error-suggestion.html):
+provide a known corrective action when an input is rejected.

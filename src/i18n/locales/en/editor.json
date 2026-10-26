@@ -63,6 +63,7 @@
 		"startFailed": "Could not start recording. Press Record again, or reopen Klippt.",
 		"pauseFailed": "Could not pause and save this clip. Press Stop, then check Recordings.",
 		"continueFailed": "Could not continue recording. Press Stop, then check Recordings.",
+		"continueRetry": "Still paused. Check settings and try Continue again.",
 		"stopFailed": "Could not finish Stop or open review. Reopen Klippt, then check Recordings.",
 		"selectSource": "Please select a source to record"
 	},

@@ -63,6 +63,7 @@
 		"startFailed": "Impossibile avviare la registrazione. Premi di nuovo Registra o riapri Klippt.",
 		"pauseFailed": "Impossibile mettere in pausa e salvare questo clip. Premi Interrompi, poi controlla Registrazioni.",
 		"continueFailed": "Impossibile continuare la registrazione. Premi Interrompi, poi controlla Registrazioni.",
+		"continueRetry": "La registrazione è ancora in pausa. Controlla le impostazioni e riprova Continua.",
 		"stopFailed": "Impossibile completare l’interruzione o aprire la revisione. Riapri Klippt, poi controlla Registrazioni.",
 		"selectSource": "Seleziona una sorgente da registrare"
 	},

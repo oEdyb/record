@@ -2111,6 +2111,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						const result = await window.electronAPI.resumeNativeMacRecording(request);
 						if (!result.success) {
 							if (activeNativeMacRecording.finalizing) return;
+							if (result.paused === true) {
+								toast.error(t("recording.continueRetry"), { description: result.error });
+								return;
+							}
 							throw new Error(result.error ?? "Failed to resume native recording");
 						}
 						const authoritativeClipIndex = result.clipIndex;
