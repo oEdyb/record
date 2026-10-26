@@ -822,7 +822,7 @@ jobs:
       # rpmbuild (rpm) is what fpm shells out to for the rpm target; without it the
       # build fails at packaging, not at config parse.
       - name: Install Linux packaging dependencies
-        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm libegl1-mesa-dev libgles2-mesa-dev libwayland-dev
 
       # patchelf is what build-linux-compositor-addon.mjs renames the ffmpeg symbols
       # with, so the addon cannot bind to Chromium's bundled ffmpeg — an unconditional

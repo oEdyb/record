@@ -336,6 +336,18 @@ Electron-builder targets DMG for both `arm64` and `x64`, enables hardened runtim
 
 ### Linux and Nix
 
+The October 26 Linux capture helper uses dynamically loaded EGL/GLES and Wayland client
+libraries to import GPU buffers through the compositor's graphics driver. Build machines
+need EGL/GLES headers; packaged deb/rpm/pacman dependencies explicitly include the runtime
+libraries. Implicit DMA-BUF layouts are imported through EGL, never interpreted as linear
+CPU memory. The Linux build also fetches the pinned FFmpeg executable used for media
+inspection and source export, alongside the shared SDK.
+
+Use the pinned Linux CI runner for distributable packages. The existing
+`OPENSCREEN_SYMBOL_FLOOR=host` mode is only for development packages tested on their build
+machine; it does not establish compatibility with older distributions. Exact local helper
+provenance still applies. See [Linux port evidence](../../docs/linux-port-2026-10-26.md).
+
 Electron-builder produces AppImage, `.deb`, `.pacman`, and `.rpm` targets. Each fpm target carries its own `depends` list, which *replaces* electron-builder's default rather than extending it; all three package formats therefore repeat that default verbatim before adding the Vulkan ICD (`mesa-vulkan-drivers`, `vulkan-swrast` on Arch) the native compositor needs. The RPM list also restores `libsecret`, which electron-builder includes in its `deb` default but omits from its `rpm` one, and which `safeStorage` needs to encrypt LLM credentials. The flake separately supports `x86_64-linux` and `aarch64-linux`, offers NixOS and Home Manager modules, and builds a wrapper around nixpkgs' system Electron. `nix/package.nix` runs Vite directly, installs `dist/`, `dist-electron/`, production npm dependencies, wallpapers, icons, and a desktop entry; it does not invoke electron-builder. The release workflow later opens a PR to update the Nix package version and npm dependency hash after stable releases.
 
 ## Node and toolchain versions

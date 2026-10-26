@@ -188,6 +188,7 @@
     }
   },
   "linux": {
+    "syncDesktopName": true,
     // Cette liste ne suffit PAS à produire un artefact en CI : `build:linux` passe
     // ses cibles en ligne de commande (`electron-builder --linux AppImage deb pacman
     // rpm`), et la CLI REMPLACE `linux.target` au lieu de le compléter. Toute cible
@@ -292,6 +293,9 @@
       "libgbm1",
       "libasound2",
       "libgomp1",
+      "libegl1",
+      "libgles2",
+      "libwayland-client0",
       "xdg-desktop-portal"
     ]
   },
@@ -330,6 +334,8 @@
       "mesa",
       "alsa-lib",
       "libgomp",
+      "libglvnd",
+      "wayland",
       "xdg-desktop-portal"
     ]
   },
@@ -369,6 +375,9 @@
       "mesa-libgbm",
       "alsa-lib",
       "libgomp",
+      "mesa-libEGL",
+      "mesa-libGLES",
+      "libwayland-client",
       "xdg-desktop-portal"
     ]
   },
