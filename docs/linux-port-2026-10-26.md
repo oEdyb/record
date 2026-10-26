@@ -200,4 +200,3 @@ Additional primary contracts used:
 [niri screencasting](https://niri-wm.github.io/niri/Screencasting.html),
 [Electron 44 global shortcuts](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/global-shortcut.md),
 [Electron 44 BrowserWindow](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/browser-window.md).
-
