@@ -589,3 +589,32 @@ fn backward_audio_clock_fails_visibly_and_preserves_the_committed_clip() {
     assert_eq!(stopped["warning"]["code"], "final-clip-failed");
     assert!(events.iter().any(|event| event["event"] == "error"));
 }
+
+#[test]
+fn legacy_continue_after_a_long_pause_gets_a_fresh_writer_deadline() {
+    let fixture = Fixture::new();
+    let request: Request = serde_json::from_value(serde_json::json!({
+        "outputPath": fixture.directory.join("legacy.mp4"), "fps": 30, "bitrate": 1000000
+    }))
+    .expect("legacy request");
+    let mut clips = Clips::new(request, Vec::new(), Some(Backend::Software));
+    let mut bytes = Vec::new();
+    let mut emitter = Emitter::new(&mut bytes, false);
+    clips.frame(frame(), &mut emitter).expect("screen");
+    std::thread::sleep(Duration::from_millis(100));
+    clips.advance(&mut emitter).expect("initial video");
+    clips.pause(&mut emitter).expect("pause");
+    std::thread::sleep(Duration::from_millis(2100));
+    clips
+        .resume(&mut emitter)
+        .expect("Continue must not inherit a paused watchdog");
+    std::thread::sleep(Duration::from_millis(100));
+    clips.advance(&mut emitter).expect("new encoded packet");
+    clips.stop(&mut emitter).expect("stop");
+    let events = values(&bytes);
+    assert!(events
+        .iter()
+        .any(|event| event["event"] == "recording-resumed"));
+    assert!(!events.iter().any(|event| event["event"] == "error"));
+    assert_video(fixture.directory.join("legacy.mp4").to_str().expect("path"));
+}

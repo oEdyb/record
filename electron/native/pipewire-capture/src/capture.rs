@@ -276,6 +276,7 @@ pub struct Capture {
     next_index: i64,
     frames_written: u64,
     last_video_append: Option<Instant>,
+    resumed_at: Option<Instant>,
     /// The size the encoder was opened at, latched for the whole file.
     ///
     /// An MP4 track cannot change resolution mid-file, but a window's crop rect
@@ -366,6 +367,7 @@ impl Capture {
                 next_index: 0,
                 frames_written: 0,
                 last_video_append: None,
+                resumed_at: None,
                 committed_width: width,
                 committed_height: height,
             },
@@ -409,12 +411,17 @@ impl Capture {
     }
 
     pub fn ready(&self) -> bool {
-        self.last_video_append.is_some()
+        self.last_video_append
+            .is_some_and(|appended| self.resumed_at.is_none_or(|resumed| appended >= resumed))
     }
 
     pub fn writer_stalled(&self) -> bool {
+        if self.paused_at.is_some() {
+            return false;
+        }
         self.epoch.is_some_and(|epoch| {
-            self.last_video_append.unwrap_or(epoch).elapsed() >= Duration::from_secs(2)
+            let appended = self.last_video_append.unwrap_or(epoch);
+            self.resumed_at.unwrap_or(appended).max(appended).elapsed() >= Duration::from_secs(2)
         })
     }
 
@@ -423,8 +430,15 @@ impl Capture {
         self.frames_written
     }
 
+    /// The clip clock excludes completed pauses and freezes during a pause.
     pub fn elapsed(&self) -> Duration {
-        self.epoch.map(|epoch| epoch.elapsed()).unwrap_or_default()
+        let Some(epoch) = self.epoch else {
+            return Duration::ZERO;
+        };
+        self.paused_at
+            .unwrap_or_else(Instant::now)
+            .saturating_duration_since(epoch)
+            .saturating_sub(self.paused_total)
     }
 
     pub fn crop_diverged(&self, frame: &shim::Frame) -> bool {
@@ -572,6 +586,7 @@ impl Capture {
     pub fn resume(&mut self) {
         if let Some(since) = self.paused_at.take() {
             self.paused_total += since.elapsed();
+            self.resumed_at = Some(Instant::now());
             // Whatever arrived while paused is thrown away rather than encoded:
             // the video timeline did not advance across the pause, so keeping
             // the audio would push every later sample out of sync by the length
@@ -662,15 +677,10 @@ impl Capture {
 
     /// Output frame index the wall clock is currently on, excluding paused time.
     fn current_index(&self) -> i64 {
-        let Some(epoch) = self.epoch else {
+        if self.epoch.is_none() {
             return -1;
-        };
-        let mut elapsed = epoch.elapsed();
-        elapsed = elapsed.saturating_sub(self.paused_total);
-        if let Some(since) = self.paused_at {
-            elapsed = elapsed.saturating_sub(since.elapsed());
         }
-        (elapsed.as_nanos() as i64 * self.fps as i64) / 1_000_000_000
+        (self.elapsed().as_nanos() as i64 * self.fps as i64) / 1_000_000_000
     }
 }
 
@@ -1014,6 +1024,37 @@ mod tests {
         assert!(!capture.crop_diverged(&frame(320, 240, shim::constants().video_format_bgrx)));
         let _ = capture.finish();
         let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn continue_readiness_requires_a_new_encoded_packet() {
+        let output = std::env::temp_dir().join("klippt-resume-packet-readiness.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            Vec::new(),
+        )
+        .expect("capture");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+        capture.advance().expect("first packet");
+        assert!(capture.ready());
+        capture.pause();
+        capture.resume();
+        assert!(
+            !capture.ready(),
+            "a pre-pause packet cannot acknowledge Continue"
+        );
+        std::thread::sleep(Duration::from_millis(40));
+        capture.advance().expect("new packet");
+        assert!(capture.ready());
+        capture.finish().expect("finish");
+        std::fs::remove_file(output).expect("remove media");
     }
 
     #[test]
@@ -1677,6 +1718,86 @@ mod tests {
             std::fs::remove_file(original.path).expect("remove original");
         }
         std::fs::remove_file(output).expect("remove screen");
+    }
+
+    #[test]
+    fn timed_audio_uses_the_video_clock_after_a_real_pause() {
+        for final_drain in ["advance", "boundary", "finish"] {
+            let output =
+                std::env::temp_dir().join(format!("klippt-audio-real-pause-{final_drain}.mp4"));
+            let ring = Arc::new(AudioRing::new(
+                2,
+                AUDIO_SAMPLE_RATE as usize,
+                AUDIO_CHANNELS,
+            ));
+            let (mut capture, _) = Capture::start(
+                &output,
+                320,
+                240,
+                30,
+                Some(1_000_000),
+                Some(Backend::Software),
+                vec![AudioSource {
+                    label: "microphone",
+                    ring: ring.clone(),
+                    gain: 1.0,
+                    bitrate: 128_000,
+                }],
+            )
+            .expect("capture");
+            capture
+                .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+                .expect("stage");
+            capture.advance().expect("start");
+            let tone: Vec<f32> = (0..4_800)
+                .flat_map(|i| {
+                    let sample =
+                        (i as f32 * 440.0 * std::f32::consts::TAU / AUDIO_SAMPLE_RATE as f32).sin()
+                            * 0.3;
+                    [sample; AUDIO_CHANNELS]
+                })
+                .collect();
+            std::thread::sleep(Duration::from_millis(100));
+            ring.push_at_for_test(&tone, 1_000_000_000);
+            capture.advance().expect("first audio");
+            capture.pause();
+            std::thread::sleep(Duration::from_millis(500));
+            capture.resume();
+            std::thread::sleep(Duration::from_millis(100));
+            ring.push_at_for_test(&tone, 2_000_000_000);
+            match final_drain {
+                "advance" => {
+                    capture.advance().expect("resumed audio");
+                }
+                "boundary" => capture.close_boundary().expect("boundary audio"),
+                _ => {}
+            }
+            capture.finish().expect("finish");
+            let decoded = std::process::Command::new("ffmpeg")
+                .args(["-v", "error", "-i"])
+                .arg(&output)
+                .args(["-map", "0:a:0", "-ac", "1", "-f", "f32le", "-"])
+                .output()
+                .expect("decode");
+            assert!(decoded.status.success());
+            let frames = decoded.stdout.len() / 4;
+            assert!(
+                frames < AUDIO_SAMPLE_RATE as usize * 2 / 5,
+                "{final_drain} inserted the paused interval: {frames} decoded frames"
+            );
+            assert!(
+                decoded
+                    .stdout
+                    .chunks_exact(4)
+                    .skip(AUDIO_SAMPLE_RATE as usize * 3 / 20)
+                    .any(
+                        |sample| f32::from_le_bytes(sample.try_into().expect("sample")).abs()
+                            > 0.05
+                    ),
+                "resumed PCM must remain audible"
+            );
+            std::fs::remove_file(output).expect("remove media");
+        }
     }
 
     #[test]

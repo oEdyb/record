@@ -380,7 +380,7 @@ Focused regressions cover a 60-second stream with alternating 100 μs clock jitt
 a timed microphone returning after legacy Pause/Continue, a measured gap in both
 original and compatibility AAC, delayed post-Continue return, multiple queued
 blocks, long gaps/overflow, unavailable timestamps and Pause clearing. The independent review found jitter, legacy Continue and delayed-return defects;
-all were corrected, with a final fresh review pending. Native helper tests: 92 pass,
+all were corrected, with a final fresh review pending. Native helper tests: 95 pass,
 one existing live test ignored; strict Clippy and formatting pass.
 The C ABI review passed 13 runtime-version cases and protected-page tests with
 24-byte/32-byte older buffers plus current 64-bit timestamps.
@@ -404,3 +404,14 @@ An integration regression verifies the error, rejects the bad clip, retains the
 previous committed clip and fully decodes its original. Pause clears the failed
 clock state for a new clip. This supersedes the initial attempted backward-clock
 reanchor behavior; no source timing recovery from an invalid backward clock is claimed.
+
+
+Audio drain, source readiness and the video grid now share one clip clock that
+freezes during Pause and excludes completed pauses. A real 500 ms pause regression
+covers `advance`, close-boundary and final drain; before correction it decoded
+34,816 mono frames where only approximately 200 ms of source audio belonged.
+Continue gets a fresh watchdog deadline and is acknowledged only after a new
+encoded packet. A real 2.1-second legacy Pause/Continue regression reproduces the
+old stale watchdog failure; fresh-packet readiness has a separate regression.
+These preserve the legacy single-file request while canonical recordings continue
+to create fresh clip writers. Final review/package generation remains pending.
