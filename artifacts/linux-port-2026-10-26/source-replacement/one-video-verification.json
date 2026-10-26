@@ -1,0 +1,27 @@
+{
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 900,
+        "height": 980,
+        "nb_read_frames": "1352"
+      },
+      {
+        "codec_name": "aac",
+        "nb_read_frames": "1058"
+      }
+    ],
+    "format": {
+      "duration": "22.550000"
+    }
+  },
+  "decodeExit": 0,
+  "decodeErrors": "",
+  "sha256": "315f5b8e2710f641000c76fc95348ce6c7711d70271a35bc12894c639edbba6c",
+  "encoder": "h264_nvenc",
+  "hardware": true,
+  "fallback": false
+}

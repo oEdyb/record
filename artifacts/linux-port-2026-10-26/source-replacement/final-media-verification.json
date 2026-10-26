@@ -1,0 +1,40 @@
+[
+  {
+    "index": 0,
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 1262,
+          "height": 1374
+        }
+      ],
+      "format": {
+        "duration": "13.233333"
+      }
+    },
+    "sha256": "5e67553ed3790043ee60a1907cff9ea3bc66fd4fffd2c9a9c4874ab0c15b6c5b",
+    "decodeExit": 0
+  },
+  {
+    "index": 1,
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 900,
+          "height": 600
+        }
+      ],
+      "format": {
+        "duration": "9.316667"
+      }
+    },
+    "sha256": "105b4c9953204faca7b90484cf068becfc79423291b04e09f0994219ef2da140",
+    "decodeExit": 0
+  }
+]

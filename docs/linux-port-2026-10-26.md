@@ -561,9 +561,21 @@ That Stop cancelled selection in 9 ms and returned in 36 ms. The three files
 fully decode; the first clip hash is unchanged. Continue acknowledgements were
 117 and 119 ms. Preview crossed the replacement boundary without a compositor
 error. Evidence: `artifacts/linux-port-2026-10-26/source-replacement/`.
-This first pass preceded the final cursor replay ordering correction, whose
-focused queue regression and strict Clippy pass. Exact-final desktop/package
-verification is still pending; the `af35b212` packages do not include replacement.
+The first pass preceded the final cursor replay ordering correction. The final
+helper (`a2be969280b06fe04fef8f41f663907c5983a72d4495abdc7569aaa7059613f0`)
+then passed another actual two-source desktop capture, full decoding and preview
+boundary crossing. Continue returned in 141 ms. Final affected checks: 316 JS
+tests, 103 offline native tests (one existing ignored, two live tests filtered),
+both typechecks, strict Clippy, lint/docs/design/i18n. The changed-file React
+Doctor scan has no findings. All four Ubuntu 22.04 packages at runtime `b6c90b0a` pass strict policy;
+extracted AppImage and fresh Ubuntu/Arch/Fedora loader checks pass. Inventory:
+`release/linux-port-20261026-b6c90b0a/`. The normal FUSE AppImage passed actual
+OS-input source replacement with its bundled helper (`dd002d51e5283bc2b4f1c6facacc18a3913f44cb51dd04450ca3d4da3efbe31a`),
+retained the same helper PID, preserved the first clip hash and fully decoded
+both clips. Closing the old fixture after adoption did not interrupt capture.
+Final-host One video uses NVENC without fallback: 1,352 frames, 22.55 seconds,
+fully decoded, with the replacement fixture visible at the tail. The earlier
+`af35b212` packages do not include replacement.
 Changing the portal-fixed cursor mode while paused is still rejected.
 
 Source-replacement inspection also exposed an incorrect existing setup diagnostic:
