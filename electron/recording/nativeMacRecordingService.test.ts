@@ -43,6 +43,8 @@ class FakeHelper implements NativeMacCaptureHelper {
 	pause = vi.fn(() => this.pauseResult);
 	reconfigure = vi.fn().mockResolvedValue(undefined);
 	resume = vi.fn().mockResolvedValue(1);
+	selectSource = vi.fn().mockResolvedValue(true);
+	cancelSourceSelection = vi.fn();
 	stop = vi.fn(async () => ({
 		screenPath: this.stopClips[0]?.screenVideoPath ?? "",
 		clips: this.stopClips,
@@ -123,6 +125,55 @@ describe("NativeMacRecordingService", () => {
 		const stopped = await service.stop();
 		expect(stopped.session?.clips?.[0]?.webcamVideoPath).toBeUndefined();
 		expect(inspectHandoffSourceMedia).toHaveBeenCalledWith(webcamVideoPath);
+	});
+
+	it("cancels a pending source picker before joining Stop's serialized command queue", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		await service.pause();
+		let rejectSelection: ((error: Error) => void) | undefined;
+		helper.selectSource.mockImplementationOnce(
+			() =>
+				new Promise<boolean>((_resolve, reject) => {
+					rejectSelection = reject;
+				}),
+		);
+		helper.cancelSourceSelection.mockImplementation(() =>
+			rejectSelection?.(new Error("source selection cancelled")),
+		);
+		const selected = service.selectSource();
+		expect(service.selectSource()).toBe(selected);
+		await vi.waitFor(() => expect(helper.selectSource).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		expect(helper.cancelSourceSelection).toHaveBeenCalledOnce();
+		await expect(selected).resolves.toMatchObject({
+			success: false,
+			error: "source selection cancelled",
+		});
+		await expect(stopped).resolves.toMatchObject({ success: true });
+		expect(helper.stop).toHaveBeenCalledOnce();
+	});
+
+	it("an immediate Stop prevents a queued source choice from opening a picker", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		await service.pause();
+		const selected = service.selectSource();
+		const stopped = service.stop(true);
+		const result = await selected;
+		await stopped;
+		expect(result).toMatchObject({ success: false, cancelled: true });
+		expect(helper.selectSource).not.toHaveBeenCalled();
+	});
+
+	it("does not open the Linux source picker while recording or on macOS", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await expect(service.selectSource()).resolves.toMatchObject({ success: false });
+		await service.pause();
+		await expect(service.selectSource()).resolves.toMatchObject({ success: false });
+		expect(helper.selectSource).not.toHaveBeenCalled();
+		await service.stop(true);
 	});
 
 	let recordingsDir: string;
@@ -206,7 +257,7 @@ describe("NativeMacRecordingService", () => {
 		let rejectSelection: ((error: Error) => void) | undefined;
 		helper.waitForSourceSelected.mockImplementationOnce(
 			() =>
-				new Promise<void>((_resolve, reject) => {
+				new Promise<boolean>((_resolve, reject) => {
 					rejectSelection = reject;
 				}),
 		);

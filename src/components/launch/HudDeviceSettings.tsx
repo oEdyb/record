@@ -70,6 +70,7 @@ export interface HudSetupExtras {
 	sourceKind?: "display" | "window";
 	sourceDisabled?: boolean;
 	onOpenSource?: () => void;
+	onChooseSource?: () => void;
 	onSelectDisplay?: () => void;
 	editableCursor?: boolean;
 	onToggleCursor?: () => void;
@@ -406,6 +407,22 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					</button>
 				</span>
 			</div>
+
+			{extras.onChooseSource ? (
+				<div className={styles.setupSources} data-portal-source="true">
+					<button
+						type="button"
+						className={styles.setupSource}
+						data-testid="hud-setup-choose-source"
+						aria-haspopup="dialog"
+						disabled={extras.sourceDisabled}
+						onClick={extras.onChooseSource}
+					>
+						<Monitor size={20} strokeWidth={1.6} aria-hidden />
+						<span className={styles.setupSourceName}>{labels.source ?? "Source"}</span>
+					</button>
+				</div>
+			) : null}
 
 			{extras.onOpenSource && extras.sourceLabel ? (
 				<div

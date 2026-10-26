@@ -3152,6 +3152,24 @@ export function registerIpcHandlers(
 		}
 		return result;
 	});
+
+	ipcMain.handle("select-native-linux-source", async (event, owner: unknown) => {
+		if (process.platform !== "linux")
+			return { success: false, error: "Source selection requires Linux." };
+		if (
+			!owner ||
+			typeof owner !== "object" ||
+			!("recordingId" in owner && "token" in owner) ||
+			typeof owner.recordingId !== "number" ||
+			typeof owner.token !== "string" ||
+			!rendererRecordingStop.owns(event.sender, owner.recordingId, owner.token)
+		)
+			return { success: false, error: "The recording HUD no longer owns this source selection." };
+		return withHiddenPortalHud(getMainWindow, () =>
+			invokeNativeMac(() => getNativeMacRecordingService().selectSource()),
+		);
+	});
+
 	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
 		const result = await timeClipBoundary("continue", () =>
 			invokeNativeMac(() => getNativeMacRecordingService().resume(request)),

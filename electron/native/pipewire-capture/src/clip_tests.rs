@@ -618,3 +618,77 @@ fn legacy_continue_after_a_long_pause_gets_a_fresh_writer_deadline() {
     assert!(!events.iter().any(|event| event["event"] == "error"));
     assert_video(fixture.directory.join("legacy.mp4").to_str().expect("path"));
 }
+
+#[test]
+fn replacing_a_paused_source_preserves_clips_and_accepts_a_new_size_and_pts_origin() {
+    let fixture = Fixture::new();
+    let mut clips = Clips::new(fixture.request(), Vec::new(), Some(Backend::Software));
+    let mut bytes = Vec::new();
+    let mut emitter = Emitter::new(&mut bytes, false);
+    clips.connected();
+    let mut first = frame();
+    first.pts_ns = 10_000_000_000;
+    clips.frame(first, &mut emitter).expect("first source");
+    clips.pause(&mut emitter).expect("pause");
+    let first_path = clips.completed[0].screen_video_path.clone();
+    let committed = std::fs::read(&first_path).expect("committed clip");
+    let mut second = frame();
+    second.width = 128;
+    second.height = 96;
+    second.stride = 128 * 4;
+    second.pixels = vec![0x80; 128 * 96 * 4];
+    second.crop.width = 128;
+    second.crop.height = 96;
+    second.pts_ns = 1;
+    clips
+        .replace_source(second, Some((100, 200)))
+        .expect("replace while paused");
+    clips
+        .resume(&mut emitter)
+        .expect("continue on replacement frame");
+    clips.stop(&mut emitter).expect("stop");
+    assert_eq!(
+        std::fs::read(&first_path).expect("first clip unchanged"),
+        committed
+    );
+    assert_eq!(clips.completed.len(), 2);
+    let second_path = &clips.completed[1].screen_video_path;
+    let probe = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0",
+            second_path,
+        ])
+        .output()
+        .expect("probe replacement");
+    assert!(probe.status.success());
+    assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "128,96");
+    assert_video(second_path);
+}
+
+#[test]
+fn rejecting_a_source_replacement_keeps_the_current_paused_frame() {
+    let fixture = Fixture::new();
+    let mut clips = Clips::new(fixture.request(), Vec::new(), Some(Backend::Software));
+    let mut bytes = Vec::new();
+    let mut emitter = Emitter::new(&mut bytes, false);
+    clips.connected();
+    clips.frame(frame(), &mut emitter).expect("first source");
+    assert!(clips.replace_source(frame(), None).is_err());
+    clips.pause(&mut emitter).expect("pause");
+    let mut invalid = frame();
+    invalid.crop.width = 1;
+    assert!(clips.replace_source(invalid, None).is_err());
+    clips
+        .resume(&mut emitter)
+        .expect("old source remains usable");
+    clips.stop(&mut emitter).expect("stop");
+    assert_eq!(clips.completed.len(), 2);
+    assert_video(&clips.completed[1].screen_video_path);
+}

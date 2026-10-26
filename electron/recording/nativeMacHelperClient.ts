@@ -224,6 +224,34 @@ export class NativeMacHelperClient {
 		});
 	}
 
+	async selectSource(): Promise<boolean> {
+		this.requireWritableCommandChannel();
+		const pending = new Promise<boolean>((resolve, reject) => {
+			const cleanup = this.observe({
+				timeoutMs: null,
+				timeoutMessage: "Source selection has no human deadline",
+				onEvent: (event) => {
+					if (event.event === "source-reselected" || event.event === "source-selection-cancelled") {
+						cleanup();
+						resolve(event.event === "source-reselected");
+					} else if (event.event === "error") {
+						cleanup();
+						reject(new Error(this.eventError(event, "Source selection failed")));
+					}
+				},
+				onClose: () => reject(new Error("Native capture exited while selecting a source")),
+				onError: reject,
+			});
+		});
+		this.process.stdin.write("select-source\n");
+		return pending;
+	}
+
+	cancelSourceSelection(): void {
+		this.requireWritableCommandChannel();
+		this.process.stdin.write("cancel-select-source\n");
+	}
+
 	async resume(): Promise<number> {
 		const event = await this.sendAndWait({
 			command: "resume\n",
@@ -434,7 +462,8 @@ export class NativeMacHelperClient {
 			((this.options.platform === "linux" &&
 				this.recordingStarted &&
 				event.code !== "clip-resume-rejected" &&
-				event.code !== "reconfigure-rejected") ||
+				event.code !== "reconfigure-rejected" &&
+				event.code !== "source-selection-rejected") ||
 				event.fatal === true ||
 				event.code === "writer-failed-during-capture" ||
 				event.code === "capture-stopped-with-error");

@@ -380,6 +380,31 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		expect(view.result.current.recording).toBe(true);
 	}
 
+	it("keeps a source-choice rejection paused and Continue retryable", async () => {
+		const choose = vi.fn(async () => ({ success: false, error: "The picker was cancelled." }));
+		stubNativeLinux({
+			selectNativeLinuxSource: choose,
+			pauseNativeMacRecording: vi.fn(async () => ({ success: true, paused: true })),
+			resumeNativeMacRecording: vi.fn(async () => ({ success: true, clipIndex: 1 })),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startLinuxRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		await act(async () => {
+			await expect(view.result.current.selectRecordingSource()).resolves.toMatchObject({
+				success: false,
+			});
+		});
+		expect(choose).toHaveBeenCalledWith({ recordingId: 7, token: "take-generation" });
+		expect(view.result.current.paused).toBe(true);
+		expect(view.result.current.recording).toBe(true);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		expect(view.result.current.paused).toBe(false);
+		await pressStop(view);
+	});
+
 	it("never falls back to browser capture when the Linux helper is missing", async () => {
 		const start = vi.fn();
 		stubNativeLinux({

@@ -66,6 +66,11 @@ pub enum Event {
         position_y: Option<i32>,
     },
     #[serde(rename_all = "camelCase")]
+    SourceReselected {
+        capture_bounds: CaptureBounds,
+    },
+    SourceSelectionCancelled {},
+    #[serde(rename_all = "camelCase")]
     StreamStarted {
         timestamp_ms: u64,
         node_id: u32,

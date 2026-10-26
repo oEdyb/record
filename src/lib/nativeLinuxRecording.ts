@@ -4,6 +4,12 @@ import type {
 } from "./nativeMacRecording";
 import { recordingQualityBitrate } from "./recording/recordingQuality";
 
+export type NativeLinuxSourceSelectionResult = {
+	success: boolean;
+	cancelled?: boolean;
+	error?: string;
+};
+
 /** Legacy Linux IPC input, adapted to the shared clip-native request at the boundary.
  * Source selection belongs to the portal. The renderer records per-clip cameras;
  * complete microphone/system originals belong to the native helper.

@@ -41,6 +41,54 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("keeps a rejected source choice recoverable and allows selection retry without a human timeout", async () => {
+		vi.useFakeTimers();
+		try {
+			const process = fakeProcess();
+			const onFatalError = vi.fn();
+			const client = new NativeMacHelperClient(process, { platform: "linux", onFatalError });
+			emit(process, { event: "recording-started" });
+			const rejected = client.selectSource();
+			const checked = expect(rejected).rejects.toThrow("cancelled");
+			emit(process, { event: "error", code: "source-selection-rejected", message: "cancelled" });
+			await checked;
+			expect(onFatalError).not.toHaveBeenCalled();
+			let complete = false;
+			const retry = client.selectSource().then(() => {
+				complete = true;
+			});
+			await vi.advanceTimersByTimeAsync(120_000);
+			expect(complete).toBe(false);
+			emit(process, {
+				event: "source-reselected",
+				captureBounds: { x: 1, y: 2, width: 1280, height: 720 },
+			});
+			await retry;
+			expect(client.captureBounds).toEqual({ x: 1, y: 2, width: 1280, height: 720 });
+			client.cancelSourceSelection();
+			expect(onFatalError).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("treats picker cancellation as a normal result and permits another choice", async () => {
+		const process = fakeProcess();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, { platform: "linux", onFatalError });
+		emit(process, { event: "recording-started" });
+		const cancelled = client.selectSource();
+		emit(process, { event: "source-selection-cancelled" });
+		await expect(cancelled).resolves.toBe(false);
+		const retry = client.selectSource();
+		emit(process, {
+			event: "source-reselected",
+			captureBounds: { x: 0, y: 0, width: 640, height: 480 },
+		});
+		await expect(retry).resolves.toBe(true);
+		expect(onFatalError).not.toHaveBeenCalled();
+	});
+
 	it("waits for human portal consent without a timer and only starts on recording-started", async () => {
 		vi.useFakeTimers();
 		try {

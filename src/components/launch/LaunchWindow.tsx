@@ -165,6 +165,7 @@ export function LaunchWindow() {
 		recordedClips,
 		toggleRecording,
 		togglePaused,
+		selectRecordingSource,
 		canPauseRecording,
 		canReconfigureWhilePaused,
 		canRemovePreviousClip,
@@ -1845,11 +1846,18 @@ export function LaunchWindow() {
 		}
 	}, [applySelectedSource, openSourceSelector, selectedSourceKind, t]);
 
+	const choosePausedSource = useCallback(async () => {
+		const result = await selectRecordingSource();
+		if (!result.success && !result.cancelled)
+			toast.error(t("sourceSelector.selectFailed"), { description: result.error });
+	}, [selectRecordingSource, t]);
+
 	const setupExtras = useMemo<HudSetupExtras>(
 		() => ({
 			sourceLabel: portalOwnsSource ? undefined : localizedSourceLabel,
 			sourceKind: selectedSourceKind,
 			sourceDisabled: controlsLocked,
+			onChooseSource: portalOwnsSource && recording ? () => void choosePausedSource() : undefined,
 			onSelectDisplay: portalOwnsSource ? undefined : () => void selectDisplaySource(),
 			onOpenSource: portalOwnsSource ? undefined : () => void openSourceSelector("windows"),
 			editableCursor: cursorCaptureMode === "editable-overlay",
@@ -1880,6 +1888,7 @@ export function LaunchWindow() {
 			locale,
 			openSourceSelector,
 			portalOwnsSource,
+			choosePausedSource,
 			localizedSourceLabel,
 			sendHudOverlayHide,
 			setupFooter,

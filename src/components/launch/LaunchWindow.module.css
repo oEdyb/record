@@ -1184,6 +1184,10 @@
 }
 
 /* Source: two large choices with one thumb that slides between them. */
+.setupSources[data-portal-source="true"] {
+	grid-template-columns: 1fr;
+}
+
 .setupSources {
 	position: relative;
 	display: grid;

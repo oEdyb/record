@@ -87,6 +87,28 @@ impl Clips {
     pub fn set_position(&mut self, position: Option<(i32, i32)>) {
         self.position = position.unwrap_or((0, 0));
     }
+    /// Adopt only a usable candidate, after its portal/PipeWire connection succeeds.
+    pub fn replace_source(
+        &mut self,
+        frame: shim::Frame,
+        position: Option<(i32, i32)>,
+    ) -> Result<(), String> {
+        if !self.canonical() || !self.paused || self.writer.is_some() {
+            return Err("source selection requires a paused clip-native recording".into());
+        }
+        if frame.crop.width & !1 < 2 || frame.crop.height & !1 < 2 {
+            return Err("replacement capture rectangle is too small to encode".into());
+        }
+        // Portal streams have independent PTS origins. Do not reject a new source
+        // because its first timestamp precedes the previous source's final one.
+        self.last_pts_ns = (frame.pts_ns >= 0).then_some(frame.pts_ns);
+        self.latest = Some(frame);
+        self.set_position(position);
+        self.bounds = None;
+        self.crop_warned = false;
+        self.clear_audio();
+        Ok(())
+    }
     pub fn is_paused(&self) -> bool {
         self.paused
     }

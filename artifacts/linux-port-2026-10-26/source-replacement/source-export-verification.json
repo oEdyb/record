@@ -1,0 +1,74 @@
+{
+  "exports": [
+    {
+      "index": 0,
+      "file": "001-screen.mp4",
+      "sha256": "15c6c2130b13e073f57cc8cf7de0a7a91c40b6d291e38d6cf866667bdef43e04",
+      "byteIdentical": true
+    },
+    {
+      "index": 1,
+      "file": "002-screen.mp4",
+      "sha256": "eb89f95018b5753696743ff14e1450534cf224fd682e5f4c70a04b8e745b2074",
+      "byteIdentical": true
+    },
+    {
+      "index": 2,
+      "file": "003-screen.mp4",
+      "sha256": "e3a95601068f25e4c9e53f34968d598f8eea8dc84f7e340cf5109d831588705b",
+      "byteIdentical": true
+    }
+  ],
+  "otio": true,
+  "fcpxml": true,
+  "handoff": {
+    "version": 2,
+    "kind": "klippt-source-handoff",
+    "title": "Recording 10/26/2026, 9:52:21 AM",
+    "createdAt": "2026-10-26T08:54:45.003Z",
+    "videoEncoding": "unchanged",
+    "audioEncoding": "unchanged",
+    "mediaBytes": "unchanged",
+    "timeline": {
+      "file": "timeline.otio",
+      "frameRate": 60
+    },
+    "finalCutTimeline": {
+      "file": "timeline.fcpxml",
+      "frameRate": 60
+    },
+    "sources": [
+      {
+        "assetId": "asset_f776b6d5-a4ee-40b8-97a1-15ea0709cd01",
+        "screen": {
+          "file": "001-screen.mp4",
+          "label": "recording-1793003863204-clip-0001.mp4",
+          "durationSec": 574.07,
+          "audio": []
+        },
+        "camera": null
+      },
+      {
+        "assetId": "asset_c7514907-775c-4d33-bc0b-7ae12fc188ca",
+        "screen": {
+          "file": "002-screen.mp4",
+          "label": "recording-1793003863204-clip-0002.mp4",
+          "durationSec": 17.95,
+          "audio": []
+        },
+        "camera": null
+      },
+      {
+        "assetId": "asset_7adde4c2-6108-41a7-92f1-d56d40e19c6b",
+        "screen": {
+          "file": "003-screen.mp4",
+          "label": "recording-1793003863204-clip-0003.mp4",
+          "durationSec": 10.43,
+          "audio": []
+        },
+        "camera": null
+      }
+    ],
+    "warnings": []
+  }
+}

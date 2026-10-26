@@ -527,35 +527,44 @@ unwritten tail remain subject to recorder/encoder timing. Owned apps/fixture and
 the build container are stopped.
 
 
-### Next parity slice: paused source replacement (not implemented)
+### Paused source replacement
 
-Inspection confirms Linux hides the source chip and rejects a changed source or
-cursor mode in `Request::validate_reconfigure`. Unchanged Continue correctly
-reuses the existing portal session. Explicit source replacement must create a new
-session because [SelectSources is once per session](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html).
-The pinned ashpd 0.9.3 exposes `Session::close`, including cancellation of related
-picker interaction. Its sessions do not close on Drop, so replacement also needs
-explicit ownership; simply opening another stream would leak portal sessions.
+Linux now exposes one **Source** action in paused settings. It opens the native
+portal, retains the current paused source until the candidate supplies a usable
+frame, and applies the replacement only to the next clip. Normal Continue stays
+picker-free. Mac and Windows keep their existing controls.
 
-The implementation boundary will retain the existing helper and committed clip
-list. A paused-only select command prepares a candidate portal/PipeWire source;
-the current source remains intact until a valid candidate frame arrives. Source
-events carry a generation so queued old callbacks cannot enter the new clip.
-Commit clears the old frame/PTS and cursor state, preserves all completed clips,
-and adopts the candidate frame/geometry before acknowledging selection. Cancel,
-connection failure and bounded post-selection readiness failure discard the
-candidate and retain the paused source. Picker time is human time and must not
-share the writer readiness deadline. Stop/quit must cancel an outstanding picker
-outside the serialized recording command queue; otherwise Stop waits behind the
-human dialog. The HUD is hidden through the existing portal wrapper and restored
-on success or rejection. Normal Continue remains picker-free.
+A new portal session is required because
+[SelectSources is once per session](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html).
+The pinned ashpd 0.9.3 provides `Session::close` but does not close on Drop.
+Explicit leases therefore cover each PipeWire consumer and close abandoned or
+replaced grants. Generation-tagged events keep old callbacks out of the adopted
+source. Adoption resets geometry, frame timestamps and cursor assets; cached
+cursor sprites retain their bitmap across position updates and replay before
+newer queued updates. Completed clips remain untouched.
 
-Focused acceptance: duplicate selection commands; picker cancellation followed by
-Continue; failed candidate connection/first frame; stale queued events; immediate
-Stop/WM close while choosing; different source size/PTS origin; three clips across
-a replacement with original paths/offsets intact; and actual OS-driven selection
-of two owned fixtures followed by preview and untouched-source export. No runtime
-behavior above is claimed by the current `af35b212` packages.
+Picker consent has no human timeout. The candidate gets an eight-second usable
+frame deadline after connection. Cancellation and candidate failure retain the
+old paused source. Selection commands are serialized and deduplicated; Stop
+cancels both queued and active selection before joining that queue. IPC requires
+the recording owner's WebContents, recording ID and take token. The HUD hides
+for consent; clicking its existing tray icon restores it, allowing Stop while
+the dialog is still pending. No global shortcut availability is assumed.
+
+Focused tests cover candidate crop/deadline, independent PTS origins and output
+sizes, preserved first-clip bytes, cursor cache/order, normal cancellation/retry,
+immediate Stop, duplicate selection, owner rejection and paused settings.
+The first real desktop pass selected two owned fixture windows, continued into
+900×600 media from a 1262×1374 source, cancelled another picker and continued,
+then restored the HUD from its tray and stopped with another picker pending.
+That Stop cancelled selection in 9 ms and returned in 36 ms. The three files
+fully decode; the first clip hash is unchanged. Continue acknowledgements were
+117 and 119 ms. Preview crossed the replacement boundary without a compositor
+error. Evidence: `artifacts/linux-port-2026-10-26/source-replacement/`.
+This first pass preceded the final cursor replay ordering correction, whose
+focused queue regression and strict Clippy pass. Exact-final desktop/package
+verification is still pending; the `af35b212` packages do not include replacement.
+Changing the portal-fixed cursor mode while paused is still rejected.
 
 Source-replacement inspection also exposed an incorrect existing setup diagnostic:
 it recommended the GTK fallback backend for ScreenCast. The helper now names only

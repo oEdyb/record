@@ -4,7 +4,10 @@ import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
 import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
-import { portalOwnsSourceSelection } from "@/lib/nativeLinuxRecording";
+import {
+	type NativeLinuxSourceSelectionResult,
+	portalOwnsSourceSelection,
+} from "@/lib/nativeLinuxRecording";
 import { getKeptRecordingDurationMs } from "@/lib/nativeMacClipSession";
 import type {
 	NativeMacRecordingFailure,
@@ -104,6 +107,7 @@ type UseScreenRecorderReturn = {
 	/** Starts recording with no countdown overlay. Used by the headless CLI runner. */
 	startRecordingImmediately: () => Promise<void>;
 	togglePaused: () => void;
+	selectRecordingSource: () => Promise<NativeLinuxSourceSelectionResult>;
 	canPauseRecording: boolean;
 	canReconfigureWhilePaused: boolean;
 	/** Rebuilds a paused take's capture for a likely next source before Continue. */
@@ -301,6 +305,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	// Pause and Continue each finish before the next toggle; two hotkey presses can
 	// arrive before React re-renders the HUD with the finalizing state.
 	const nativeMacToggleInFlight = useRef(false);
+	const sourceSelectionInFlight = useRef(false);
+	const [sourceSelecting, setSourceSelecting] = useState(false);
 	const pendingNativeMacInterruption = useRef<Exclude<
 		NativeMacRecordingInterruption,
 		"source-active"
@@ -308,19 +314,22 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const webcamReady = useRef(false);
 	const activeWebcamFormat = useRef<WebcamFormat>(DEFAULT_WEBCAM_FORMAT);
 	const webcamAcquireId = useRef(0);
+	const clipControlsAvailable = !(clipFinalizing || sourceSelecting);
 	const canPauseRecording =
 		recording &&
-		!clipFinalizing &&
+		clipControlsAvailable &&
 		Boolean(
 			(nativeWindowsRecording.current && !nativeWindowsRecording.current.finalizing) ||
 				(nativeMacRecording.current && !nativeMacRecording.current.finalizing) ||
 				(screenRecorder.current && screenRecorder.current.recorder.state !== "inactive"),
 		);
 	const canReconfigureWhilePaused = Boolean(
-		recording && paused && nativeMacRecording.current && !clipFinalizing && !saving,
+		recording && paused && nativeMacRecording.current && clipControlsAvailable && !saving,
 	);
 	const canRemovePreviousClip = Boolean(
-		nativeMacRecording.current && !clipFinalizing && recordedClips.some((clip) => !clip.removed),
+		nativeMacRecording.current &&
+			clipControlsAvailable &&
+			recordedClips.some((clip) => !clip.removed),
 	);
 
 	const getRecordingDurationMs = useCallback(() => {
@@ -1992,7 +2001,31 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
+	const selectRecordingSource = useCallback(async (): Promise<NativeLinuxSourceSelectionResult> => {
+		const active = nativeMacRecording.current;
+		if (
+			window.electronAPI.getPlatform() !== "linux" ||
+			!active?.paused ||
+			active.finalizing ||
+			nativeMacToggleInFlight.current ||
+			sourceSelectionInFlight.current ||
+			!active.rendererStop
+		)
+			return { success: false, error: "Source selection requires a paused recording." };
+		sourceSelectionInFlight.current = true;
+		setSourceSelecting(true);
+		try {
+			return await window.electronAPI.selectNativeLinuxSource(active.rendererStop);
+		} catch (error) {
+			return { success: false, error: ipcErrorMessage(error) };
+		} finally {
+			sourceSelectionInFlight.current = false;
+			setSourceSelecting(false);
+		}
+	}, []);
+
 	const togglePaused = () => {
+		if (sourceSelectionInFlight.current) return;
 		const activeNativeWindowsRecording = nativeWindowsRecording.current;
 		if (activeNativeWindowsRecording && !activeNativeWindowsRecording.finalizing) {
 			void (async () => {
@@ -2446,6 +2479,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		preferencesReady,
 		startRecordingImmediately: () => startRecording(),
 		togglePaused,
+		selectRecordingSource,
 		canPauseRecording,
 		canReconfigureWhilePaused,
 		canRemovePreviousClip,

@@ -87,6 +87,21 @@ describe("HudDeviceSettings radio keyboard controls", () => {
 		expect(selected).toHaveBeenLastCalledWith("standard");
 	});
 
+	it("opens one portal source action and preserves its recording lock", () => {
+		const onChooseSource = vi.fn();
+		const props = settingsProps();
+		const { rerender } = render(<HudDeviceSettings {...props} extras={{ onChooseSource }} />);
+		const source = screen.getByTestId("hud-setup-choose-source");
+		expect(source).toHaveAttribute("aria-haspopup", "dialog");
+		expect(screen.queryByRole("radiogroup", { name: "Source" })).not.toBeInTheDocument();
+		fireEvent.click(source);
+		expect(onChooseSource).toHaveBeenCalledOnce();
+		rerender(<HudDeviceSettings {...props} extras={{ onChooseSource, sourceDisabled: true }} />);
+		expect(source).toBeDisabled();
+		fireEvent.click(source);
+		expect(onChooseSource).toHaveBeenCalledOnce();
+	});
+
 	it("uses existing screen-selection and window-picker callbacks from source arrows", () => {
 		const onOpenSource = vi.fn();
 		const onSelectDisplay = vi.fn();

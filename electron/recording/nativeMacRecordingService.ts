@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { NativeLinuxSourceSelectionResult } from "../../src/lib/nativeLinuxRecording";
 import {
 	mergeNativeMacStoppedClips,
 	removePreviousNativeMacClip,
@@ -58,7 +59,12 @@ export type NativeMacCaptureHelper = Pick<
 	| "resume"
 	| "stop"
 > &
-	Partial<Pick<NativeMacHelperClient, "waitForSourceSelected" | "arm">>;
+	Partial<
+		Pick<
+			NativeMacHelperClient,
+			"waitForSourceSelected" | "arm" | "selectSource" | "cancelSourceSelection"
+		>
+	>;
 
 export type NativeMacRecordingServiceDependencies = {
 	/** Names each start step as it finishes, for the start timing log. */
@@ -121,6 +127,8 @@ export class NativeMacRecordingService {
 	private prepared = false;
 	private preparationToken = 0;
 	private preparing = false;
+	private sourceSelectionOperation: Promise<NativeLinuxSourceSelectionResult> | null = null;
+	private sourceSelectionCancellation: AbortController | null = null;
 	private helper: NativeMacCaptureHelper | null = null;
 	private targetPath: string | null = null;
 	private recordingId: number | null = null;
@@ -502,6 +510,49 @@ export class NativeMacRecordingService {
 		});
 	}
 
+	selectSource(): Promise<NativeLinuxSourceSelectionResult> {
+		if (this.sourceSelectionOperation) return this.sourceSelectionOperation;
+		const cancellation = new AbortController();
+		this.sourceSelectionCancellation = cancellation;
+		const operation = this.enqueue(async () => {
+			if (cancellation.signal.aborted) return { success: false, cancelled: true };
+			const helper = this.helper;
+			if (this.captureConfig?.platform !== "linux" || !this.paused || !helper?.selectSource)
+				return { success: false, error: "Source selection requires a paused Linux recording." };
+			const cancel = () => {
+				try {
+					helper.cancelSourceSelection?.();
+				} catch (error) {
+					console.warn("[capture-linux] could not cancel source selection:", error);
+					void helper.kill();
+				}
+			};
+			cancellation.signal.addEventListener("abort", cancel, { once: true });
+			try {
+				const selected = await helper.selectSource();
+				return selected && !cancellation.signal.aborted
+					? { success: true }
+					: { success: false, cancelled: true };
+			} catch (error) {
+				return {
+					success: false,
+					cancelled: cancellation.signal.aborted,
+					error: this.errorMessage(error),
+				};
+			} finally {
+				cancellation.signal.removeEventListener("abort", cancel);
+			}
+		});
+		this.sourceSelectionOperation = operation;
+		const clear = () => {
+			if (this.sourceSelectionOperation !== operation) return;
+			this.sourceSelectionOperation = null;
+			this.sourceSelectionCancellation = null;
+		};
+		void operation.then(clear, clear);
+		return operation;
+	}
+
 	resume(request?: NativeMacRecordingRequest) {
 		return this.enqueue(async () => {
 			const helper = this.requireHelper();
@@ -632,6 +683,8 @@ export class NativeMacRecordingService {
 
 	stop(discard = false): Promise<NativeMacRecordingStopResult> {
 		if (this.stopOperation) return this.stopOperation;
+		// Abort queued choices as well as a picker already waiting for a human.
+		this.sourceSelectionCancellation?.abort();
 		const operation = this.enqueue(async () => {
 			const helper = this.helper;
 			if (!helper) {

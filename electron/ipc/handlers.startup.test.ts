@@ -287,6 +287,28 @@ describe("registerIpcHandlers startup contract", () => {
 		const request = result.rendererStop;
 		if (!request || typeof request !== "object") throw new Error("Invalid renderer take token");
 		const other = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		const choose = vi
+			.spyOn(NativeMacRecordingService.prototype, "selectSource")
+			.mockResolvedValue({ success: false, cancelled: true });
+		const invokeChoose = handlers.get("select-native-linux-source");
+		if (!invokeChoose) throw new Error("Source selection IPC missing");
+		for (const [sender, selectionOwner] of [
+			[other, request],
+			[owner, { ...request, token: "stale-token" }],
+			[owner, { ...request, recordingId: 78 }],
+			[owner, null],
+		]) {
+			await expect(
+				Reflect.apply(invokeChoose, undefined, [{ sender }, selectionOwner]),
+			).resolves.toMatchObject({ success: false });
+		}
+		expect(choose).not.toHaveBeenCalled();
+		await expect(
+			Reflect.apply(invokeChoose, undefined, [{ sender: owner }, request]),
+		).resolves.toEqual({ success: false, cancelled: true });
+		expect(choose).toHaveBeenCalledOnce();
+		choose.mockRestore();
+
 		expect(
 			Reflect.apply(invokeAck, undefined, [{ sender: other }, { ...request, success: true }]),
 		).toEqual({ success: false });

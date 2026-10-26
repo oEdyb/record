@@ -36,6 +36,7 @@ mod originals;
 mod portal;
 mod request;
 mod shim;
+mod source_selection;
 
 use std::collections::HashSet;
 use std::io::{BufRead, Write};
@@ -61,6 +62,16 @@ const AUDIO_RING_SECONDS: usize = 2;
 enum Message {
     Portal(Box<Result<portal::PortalStream, portal::PortalError>>),
     Stream(StreamEvent),
+    SourceEvent {
+        generation: u64,
+        event: StreamEvent,
+    },
+    ReplacementPortal {
+        generation: u64,
+        result: Box<Result<portal::PortalStream, portal::PortalError>>,
+    },
+    SelectSource,
+    CancelSelectSource,
     /// Arm a deferred session: connect to PipeWire and start encoding.
     Record,
     Pause,
@@ -337,6 +348,16 @@ fn read_commands(reader: impl BufRead, sender: &Sender<Message>) {
                     return;
                 }
             }
+            "select-source" => {
+                if sender.send(Message::SelectSource).is_err() {
+                    return;
+                }
+            }
+            "cancel-select-source" => {
+                if sender.send(Message::CancelSelectSource).is_err() {
+                    return;
+                }
+            }
             "resume" => {
                 if sender.send(Message::Resume).is_err() {
                     return;
@@ -422,6 +443,7 @@ fn begin_stream<W: Write>(
         node_id,
         position,
         source_kind,
+        lease,
         ..
     } = stream;
     let forward = sender.clone();
@@ -429,7 +451,10 @@ fn begin_stream<W: Write>(
         fd,
         node_id,
         Box::new(move |event| {
-            let _ = forward.send(Message::Stream(event));
+            let _ = forward.send(Message::SourceEvent {
+                generation: 0,
+                event,
+            });
         }),
         frames.clone(),
     ) {
@@ -437,6 +462,8 @@ fn begin_stream<W: Write>(
             *session = Some(started);
             *granted_kind = source_kind;
             *portal_stream = Some(StreamInfo {
+                _lease: lease,
+                announced: false,
                 node_id,
                 position,
                 source_kind,
@@ -456,9 +483,123 @@ fn begin_stream<W: Write>(
 /// What survives from the portal reply after its fd has been handed to
 /// libpipewire — everything `stream-started` needs to report.
 struct StreamInfo {
+    _lease: Arc<portal::PortalLease>,
+    announced: bool,
     node_id: u32,
     position: Option<(i32, i32)>,
     source_kind: Option<portal::SourceKind>,
+}
+
+struct SourceSelection {
+    generation: u64,
+    control: portal::Selection,
+}
+
+struct CandidateSource {
+    generation: u64,
+    session: shim::Session,
+    info: StreamInfo,
+    frames: Arc<FrameMailbox>,
+    readiness: source_selection::Readiness,
+    cursor: Option<shim::CursorEvent>,
+}
+
+impl CandidateSource {
+    fn connect(
+        generation: u64,
+        stream: portal::PortalStream,
+        sender: &Sender<Message>,
+    ) -> Result<Self, String> {
+        let portal::PortalStream {
+            fd,
+            lease,
+            node_id,
+            position,
+            source_kind,
+            ..
+        } = stream;
+        let frames = Arc::new(FrameMailbox::default());
+        let forward = sender.clone();
+        let session = shim::Session::start(
+            fd,
+            node_id,
+            Box::new(move |event| {
+                let _ = forward.send(Message::SourceEvent { generation, event });
+            }),
+            Some(frames.clone()),
+        )?;
+        Ok(Self {
+            generation,
+            session,
+            info: StreamInfo {
+                node_id,
+                position,
+                source_kind,
+                _lease: lease,
+                announced: true,
+            },
+            frames,
+            readiness: source_selection::Readiness::new(source_kind, Instant::now()),
+            cursor: None,
+        })
+    }
+
+    fn receive(&mut self, event: StreamEvent) -> Result<Option<shim::Frame>, String> {
+        match event {
+            StreamEvent::FrameReady => {
+                let Some(frame) = self.frames.take() else {
+                    return Ok(None);
+                };
+                if !self.readiness.accepts(&frame) {
+                    self.frames.recycle(frame.pixels);
+                    return Ok(None);
+                }
+                Ok(Some(frame))
+            }
+            StreamEvent::Cursor(cursor) => {
+                source_selection::remember_cursor(&mut self.cursor, cursor);
+                Ok(None)
+            }
+            StreamEvent::State { state, error } if error.is_some() || state == "unconnected" => {
+                Err(error.unwrap_or_else(|| "replacement PipeWire stream disconnected".into()))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+fn release_source_selection(
+    selection: &mut Option<SourceSelection>,
+    candidate: &mut Option<CandidateSource>,
+) {
+    drop(candidate.take());
+    if let Some(selection) = selection.take() {
+        if let Err(error) = selection.control.cancel() {
+            eprintln!("could not cancel replacement source: {}", error.message());
+        }
+    }
+}
+
+fn reject_source_selection<W: Write>(
+    emitter: &mut Emitter<W>,
+    selection: &mut Option<SourceSelection>,
+    candidate: &mut Option<CandidateSource>,
+    message: String,
+) {
+    release_source_selection(selection, candidate);
+    let _ = emitter.emit(&Event::Error {
+        code: "source-selection-rejected".into(),
+        message,
+    });
+}
+
+fn cancel_source_selection<W: Write>(
+    emitter: &mut Emitter<W>,
+    selection: &mut Option<SourceSelection>,
+    candidate: &mut Option<CandidateSource>,
+) {
+    release_source_selection(selection, candidate);
+    let _ = emitter.emit(&Event::SourceSelectionCancelled {});
 }
 
 fn run<W: Write>(
@@ -490,7 +631,7 @@ fn run<W: Write>(
     // Allocated up front so the PipeWire callback has somewhere to put frames
     // from the very first buffer; `None` in cursor-only mode, which is also what
     // tells `Session::start` not to map the buffers at all.
-    let frames: Option<Arc<FrameMailbox>> = config
+    let mut frames: Option<Arc<FrameMailbox>> = config
         .output_path
         .as_ref()
         .map(|_| Arc::new(FrameMailbox::default()));
@@ -521,11 +662,170 @@ fn run<W: Write>(
         .checked_sub(config.sample_interval)
         .unwrap_or_else(Instant::now);
     let mut exit_code = 0;
+    let mut source_generation = 0;
+    let mut next_source_generation = 1;
+    let mut source_selection: Option<SourceSelection> = None;
+    let mut candidate_source: Option<CandidateSource> = None;
+    let mut previous_dropped_frames = 0_u64;
+    let mut adopted_cursor = None;
 
     loop {
-        match receiver.recv_timeout(config.tick) {
+        if candidate_source
+            .as_ref()
+            .is_some_and(|candidate| candidate.readiness.expired(Instant::now()))
+        {
+            reject_source_selection(
+                emitter,
+                &mut source_selection,
+                &mut candidate_source,
+                "replacement source supplied no usable frame within eight seconds".into(),
+            );
+        }
+        let incoming = match receive_message(&receiver, &mut adopted_cursor, config.tick) {
+            Ok(Message::SourceEvent { generation, event }) if generation == source_generation => {
+                Ok(Message::Stream(event))
+            }
+            incoming => incoming,
+        };
+        match incoming {
             Ok(Message::Stop) => break,
 
+            Ok(Message::SelectSource) => {
+                if source_selection.is_some() {
+                    continue;
+                }
+                if !clips.is_paused() || clips.request.outputs.is_none() {
+                    let _ = emitter.emit(&Event::Error { code: "source-selection-rejected".into(),
+                        message: "source selection requires a paused clip-native recording with no pending selection".into() });
+                    continue;
+                }
+                let generation = next_source_generation;
+                next_source_generation += 1;
+                let control = portal::Selection::default();
+                let worker_control = control.clone();
+                let forward = sender.clone();
+                let mode = match clips.request.cursor_mode() {
+                    Ok(mode) => mode,
+                    Err(message) => {
+                        let _ = emitter.emit(&Event::Error {
+                            code: "source-selection-rejected".into(),
+                            message,
+                        });
+                        continue;
+                    }
+                };
+                source_selection = Some(SourceSelection {
+                    generation,
+                    control,
+                });
+                std::thread::spawn(move || {
+                    let result =
+                        pollster::block_on(portal::negotiate_selected(mode, &worker_control));
+                    let _ = forward.send(Message::ReplacementPortal {
+                        generation,
+                        result: Box::new(result),
+                    });
+                });
+            }
+            Ok(Message::CancelSelectSource) => {
+                if source_selection.is_some() {
+                    cancel_source_selection(emitter, &mut source_selection, &mut candidate_source);
+                }
+            }
+            Ok(Message::ReplacementPortal { generation, result }) => {
+                if source_selection
+                    .as_ref()
+                    .is_none_or(|selection| selection.generation != generation)
+                {
+                    continue;
+                }
+                match *result {
+                    Ok(stream) => match CandidateSource::connect(generation, stream, &sender) {
+                        Ok(candidate) => candidate_source = Some(candidate),
+                        Err(message) => reject_source_selection(
+                            emitter,
+                            &mut source_selection,
+                            &mut candidate_source,
+                            message,
+                        ),
+                    },
+                    Err(portal::PortalError::Cancelled) => cancel_source_selection(
+                        emitter,
+                        &mut source_selection,
+                        &mut candidate_source,
+                    ),
+                    Err(error) => reject_source_selection(
+                        emitter,
+                        &mut source_selection,
+                        &mut candidate_source,
+                        error.message(),
+                    ),
+                }
+            }
+            Ok(Message::SourceEvent { generation, event }) => {
+                let Some(candidate) = candidate_source
+                    .as_mut()
+                    .filter(|candidate| candidate.generation == generation)
+                else {
+                    continue;
+                };
+                let ready = candidate.receive(event);
+                match ready {
+                    Ok(Some(frame)) => {
+                        let Some(mut chosen) = candidate_source.take() else {
+                            continue;
+                        };
+                        let dimensions = (frame.width, frame.height);
+                        let bounds = events::CaptureBounds {
+                            x: chosen.info.position.map_or(0, |p| p.0),
+                            y: chosen.info.position.map_or(0, |p| p.1),
+                            width: frame.crop.width & !1,
+                            height: frame.crop.height & !1,
+                        };
+                        if let Err(message) = clips.replace_source(frame, chosen.info.position) {
+                            drop(chosen);
+                            reject_source_selection(
+                                emitter,
+                                &mut source_selection,
+                                &mut candidate_source,
+                                message,
+                            );
+                            continue;
+                        }
+                        previous_dropped_frames +=
+                            frames.as_ref().map_or(0, |frames| frames.dropped());
+                        drop(session.take());
+                        source_generation = generation;
+                        granted_kind = chosen.info.source_kind;
+                        size = Some(dimensions);
+                        frames_awaiting_crop = 0;
+                        cursor = None;
+                        known_assets.clear();
+                        pending_asset = None;
+                        reported_cursor_meta = false;
+                        // Replay the candidate snapshot before newer events already queued by
+                        // its PipeWire worker. Sending it to the channel tail restores stale sprites.
+                        adopted_cursor = chosen
+                            .cursor
+                            .take()
+                            .map(|event| Message::Stream(StreamEvent::Cursor(event)));
+                        session = Some(chosen.session);
+                        frames = Some(chosen.frames);
+                        portal_stream = Some(chosen.info);
+                        source_selection = None;
+                        let _ = emitter.emit(&Event::SourceReselected {
+                            capture_bounds: bounds,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(message) => reject_source_selection(
+                        emitter,
+                        &mut source_selection,
+                        &mut candidate_source,
+                        message,
+                    ),
+                }
+            }
             Ok(Message::Pause) => {
                 if let Err(message) = clips.pause(emitter) {
                     clips.fail(&message);
@@ -538,6 +838,13 @@ fn run<W: Write>(
                 }
             }
             Ok(Message::Resume) => {
+                if source_selection.is_some() {
+                    let _ = emitter.emit(&Event::Error {
+                        code: "source-selection-rejected".into(),
+                        message: "finish or cancel source selection before Continue".into(),
+                    });
+                    continue;
+                }
                 if !clips.is_paused() {
                     let _ = emitter.emit(&Event::Error {
                         code: "invalid-command".into(),
@@ -755,7 +1062,8 @@ fn run<W: Write>(
                         ("framerateDenom", format.framerate_denom.into()),
                     ]),
                 });
-                if let Some(stream) = portal_stream.take() {
+                if let Some(stream) = portal_stream.as_mut().filter(|stream| !stream.announced) {
+                    stream.announced = true;
                     let _ = emitter.emit(&Event::StreamStarted {
                         timestamp_ms: timestamp_ms(),
                         node_id: stream.node_id,
@@ -934,7 +1242,7 @@ fn run<W: Write>(
     // Freeze/finalize writers first, then join capture threads. Joining first
     // would put teardown latency and extra PCM into the end of the clip.
     if let Some(mailbox) = &frames {
-        let dropped = mailbox.dropped();
+        let dropped = previous_dropped_frames + mailbox.dropped();
         clips.set_dropped_frames(dropped);
         if dropped > 0 {
             let _ = emitter.emit(&Event::Warning {
@@ -951,6 +1259,15 @@ fn run<W: Write>(
         });
     }
     let finalized = clips.stop(emitter);
+    drop(candidate_source.take());
+    if let Some(selection) = source_selection.take() {
+        if let Err(error) = selection.control.cancel() {
+            eprintln!(
+                "could not cancel source selection on Stop: {}",
+                error.message()
+            );
+        }
+    }
     drop(session);
     drop(audio_sessions);
     if let Err(message) = finalized {
@@ -983,6 +1300,17 @@ fn emit_sample<W: Write>(
         asset_id: state.asset_id.clone(),
         asset: pending_asset.take(),
     });
+}
+
+fn receive_message(
+    receiver: &mpsc::Receiver<Message>,
+    priority: &mut Option<Message>,
+    timeout: Duration,
+) -> Result<Message, RecvTimeoutError> {
+    match priority.take() {
+        Some(message) => Ok(message),
+        None => receiver.recv_timeout(timeout),
+    }
 }
 
 fn data_type_name(constants: &shim::Constants, data_type: u32) -> &'static str {
@@ -1128,6 +1456,29 @@ mod microphone_resolution_tests {
 mod command_tests {
     use super::*;
     #[test]
+    fn adopted_cursor_precedes_newer_queued_cursor_updates() {
+        let cursor = |id| {
+            Message::Stream(StreamEvent::Cursor(shim::CursorEvent {
+                x: 0,
+                y: 0,
+                hotspot_x: 0,
+                hotspot_y: 0,
+                id,
+                bitmap: None,
+            }))
+        };
+        let (sender, receiver) = mpsc::channel();
+        sender.send(cursor(2)).expect("new sprite queued");
+        let mut adopted = Some(cursor(1));
+        for expected in [1, 2] {
+            match receive_message(&receiver, &mut adopted, Duration::ZERO).expect("cursor event") {
+                Message::Stream(StreamEvent::Cursor(event)) => assert_eq!(event.id, expected),
+                _ => panic!("expected cursor"),
+            }
+        }
+    }
+
+    #[test]
     fn eof_requests_stop_for_writer_finalization() {
         let (sender, receiver) = mpsc::channel();
         read_commands(std::io::Cursor::new(""), &sender);
@@ -1146,6 +1497,24 @@ mod command_tests {
         assert!(matches!(receiver.try_recv().unwrap(), Message::Stop));
         assert!(receiver.try_recv().is_err());
     }
+    #[test]
+    fn source_selection_and_cancellation_are_distinct_commands_before_stop() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(
+            std::io::Cursor::new("select-source\ncancel-select-source\nstop\n"),
+            &sender,
+        );
+        assert!(matches!(
+            receiver.try_recv().expect("selection"),
+            Message::SelectSource
+        ));
+        assert!(matches!(
+            receiver.try_recv().expect("cancellation"),
+            Message::CancelSelectSource
+        ));
+        assert!(matches!(receiver.try_recv().expect("stop"), Message::Stop));
+    }
+
     #[test]
     fn structured_reconfigure_is_parsed_and_bad_commands_are_reported() {
         let (sender, receiver) = mpsc::channel();
