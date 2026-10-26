@@ -24,6 +24,13 @@ The missing-target row remains a real failure and is **not fixed** by this
 compatibility change. The next capture change must prevent admitting fallback
 PCM when the intended source disappears between enumeration and linking.
 
+Current-policy regression (`current-policy-loss.json`): PipeWire 1.6.10 /
+WirePlumber 0.5.18 still captures A at 440 Hz and stops admitting PCM at
+3.029 seconds after A is removed three seconds after first PCM. The nine-second
+probe reports explicit target failure; it never records the 880 Hz default B.
+The retained runner now uses the source's owning module, avoiding a differing
+module-list JSON field. Both private test labs and the container are stopped.
+
 The attempted frequency setter did not change the adapters' default 440 Hz.
 Consequently these assertions use actual graph identity, not a distinct-tone
 claim. No media sample-rate or drift claim follows from this test.

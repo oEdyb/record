@@ -819,6 +819,14 @@ peers before their samples reach Rust. Graph identity, rather than tone identity
 is the evidence: an attempted frequency setter did not change the test adapters'
 440 Hz defaults. No physical clock or performance claim follows.
 
+The current-policy regression also passes with both target properties: A is
+440 Hz, and removing it after three seconds ends PCM at 3.029 seconds with an
+explicit target error during a nine-second probe. The 880 Hz default does not
+enter that stream. Evidence uses the actual current C archive in the private
+PipeWire 1.6.10 / WirePlumber 0.5.18 lab. The retained source-loss runner now
+resolves the owned source module directly instead of assuming a module-list
+JSON field.
+
 176 affected JS tests, 115 native tests, both typechecks, strict Clippy and local
 checks pass. One final JS run: 3,113 passed, 12 existing skips. Evidence and
 reproducer: `artifacts/linux-port-2026-10-26/legacy-audio-routing/`. Lab/container

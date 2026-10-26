@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import selectors
-import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -21,13 +20,13 @@ if runtime != os.environ.get("XDG_RUNTIME_DIR") or not runtime.startswith(
     raise RuntimeError("Private lab required")
 output = Path(os.environ["AGENT_LAB_STATE"]) / "audio-routing"
 output.mkdir(exist_ok=True)
-modules = json.loads(
-    subprocess.check_output(["pactl", "-f", "json", "list", "modules"], text=True)
+sources = json.loads(
+    subprocess.check_output(["pactl", "-f", "json", "list", "sources"], text=True)
 )
 selected = [
-    m["index"]
-    for m in modules
-    if "source_name=lab_mic_source_a" in shlex.split(m["argument"])
+    source["owner_module"]
+    for source in sources
+    if source["name"] == "lab_mic_source_a"
 ]
 if len(selected) != 1:
     raise RuntimeError("Expected exactly one owned microphone A remap module")
