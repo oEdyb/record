@@ -26,15 +26,15 @@ See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable AppImage: `c5cd55658fc1a0172d5e2842b3aa82911d1276e6`,
-`release/linux-port-20261027-c5cd5565/`. On Niri, retain a preview already wholly on
-an uncaptured monitor when exact cast and logical geometry prove eligibility;
-otherwise hide. Relevant changes revoke it until Pause. This is conditional
-visibility, not atomic compositor exclusion. Local camera default is right-hand
-DP-3. Fully quit/reopen to load it. 58 affected tests, both typechecks, two review
-passes and portable policy pass. Real OBSBOT + packaged two-clip recording now
-passes privately (231 screen / 229 camera frames, four files fully decode); the
-positive exemption across two physical monitors remains user-driven.
+Latest portable AppImage: `a6aad6b5`, `release/linux-port-20261027-a6aad6b5/`.
+Authorized actual Niri + OBSBOT + both physical monitors now passes: DP-1 recording
+retains camera on DP-3; Pause restores pill; Continue retains preview; moving the
+preview onto captured DP-1 while paused makes Continue hide it. Three clips and
+six originals fully decode. Fixes harmless cast activation invalidation and cold
+camera-format changes rejecting preparation. 24 guard/policy + 88 adapter/lifecycle
+tests, both typechecks, changed-file lint, independent activation review and
+portable policy pass. Same-monitor exclusion remains unsupported; placement is
+not atomic compositor exclusion. Local camera default remains right-hand DP-3.
 [Evidence](artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
 
 Previous portable AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`,

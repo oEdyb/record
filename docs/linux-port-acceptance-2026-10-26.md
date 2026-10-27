@@ -21,12 +21,12 @@ Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest AppImage: `c5cd55658fc1a0172d5e2842b3aa82911d1276e6`.
-  Inventory `release/linux-port-20261027-c5cd5565/`. Conditional Niri preview on an
-  uncaptured output, conservative invalidation and exact source matching pass 58
-  affected tests and real socket/CLI checks. Normal packaged actual OBSBOT capture
-  passes two clips with separate originals; the positive physical two-monitor
-  preview path remains user-driven. This is not atomic compositor exclusion.
+- Latest AppImage: `a6aad6b5`, inventory `release/linux-port-20261027-a6aad6b5/`.
+  Actual physical Niri DP-1/DP-3 + OBSBOT now passes first Record, off-monitor
+  preview, Pause/Continue, hiding after moving preview onto the captured monitor,
+  and three-clip Stop/review. All six originals fully decode. 24 guard/policy and
+  88 adapter/lifecycle tests, both typechecks, lint and portable policy pass.
+  Same-monitor clean exclusion remains unsupported; no atomic guarantee.
   [Evidence](../artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
 - Previous AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`.
   Inventory `release/linux-port-20261027-cde7e19b/`. Linux confidence monitor

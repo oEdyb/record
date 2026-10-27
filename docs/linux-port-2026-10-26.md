@@ -1266,3 +1266,12 @@ forced move/hotplug can race rendering, so no zero-frame guarantee is claimed.
 The local camera-only rule now defaults to right-hand DP-3. Recording that output
 still hides the preview. Connector changes, dynamic targets and missing metadata
 fall back to hiding. The pill itself continues to hide for monitor recording.
+
+## October 27 — authorized physical two-monitor camera verification
+
+See the [updated evidence](../artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
+`a6aad6b5` closes the positive physical Niri preview gate on this machine. The
+check reproduced and fixed harmless cast activation revoking preview and
+renderer camera readiness changing the disabled native webcam configuration.
+Three-clip positive/negative placement flow and all six originals pass. No full
+suite, broad platform claim, same-monitor exclusion or atomic exclusion claim.

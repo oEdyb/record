@@ -78,3 +78,46 @@ Raw camera footage remains only in the private lab profile. The lab and build
 container are stopped after verification. Host input, clipboard, audio routing,
 portal interaction and current windows were untouched; only validated launcher/
 Niri configuration files changed with backups.
+
+## Authorized physical Niri verification — October 27, 20:29
+
+User explicitly authorized the visible computer for this check. Final runtime
+`a6aad6b5` includes `de731925` (unchanged Niri cast activation no longer revokes
+an off-monitor preview) and a cold-camera correction: Linux's disabled native
+webcam config stays constant while the separate renderer camera opens. Before
+that fix a 30→60 fps automatic camera update rejected prepared screen capture;
+the focused adapter regression fails before and passes after the correction.
+
+Final normal-FUSE AppImage SHA256:
+`c86de4fbcb1713d71e2cf194384cf84dcf89a8ca83d46da06ba27278e66fd09d`.
+Directory: `release/linux-port-20261027-a6aad6b5/`. The launcher and Niri recorder
+bindings point to these same bits. Native payload is unchanged from the prior
+candidate; Ubuntu 22.04 floor packaging and distribution policy pass again.
+
+The actual OBSBOT, actual host Niri and DP-1/DP-3 passed:
+
+- Cold launch → first Record succeeds after camera readiness; no retry required.
+- Native portal grants DP-1. Camera remains mapped on right-hand DP-3; pill hides.
+- Pause restores the pill; Continue keeps the off-monitor camera visible.
+- While paused, explicitly move the camera onto DP-1. Continue hides both windows.
+- Stop opens populated review with three durable camera-linked clips.
+- All six originals fully decode: screen 163/105/105 frames, cameras 165/106/102.
+  Screens are 2560×1440 at 60 fps; cameras are 1920×1080 around 60 fps.
+- All 373 screen frames' former pill region match the unobstructed wallpaper
+  within max mean absolute RGB error 1.336/255, with zero red record-button pixels.
+  The third screen clip's first frame was also visually inspected: no camera or
+  pill. These are bounded observations, not atomic exclusion or performance proof.
+
+[Owned-window/cast observations](physical-niri-cycle.json),
+[decoded-media measurements](physical-niri-media.json).
+No physical camera imagery or raw screen recordings are committed. Temporary
+recordings remain in a separate private profile; user project/preferences were
+not changed. Microphone and system audio were disabled for this preview check.
+
+24 affected guard/policy tests and 88 affected adapter/lifecycle tests passed;
+both typechecks, changed-file Biome and diff checks pass. Independent read-only
+review of the activation fix found no P1/P2. No full suite or soak was run.
+The cast activation reproduction uses official version-pinned IPC event types
+already linked above. The previous user-driven two-monitor gate is now closed
+for this exact machine/build. General hotplug, thumbnail and compositor race
+limitations remain as described above.
