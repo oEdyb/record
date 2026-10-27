@@ -72,3 +72,16 @@ Documentation maintenance: shared development playbook updated locally; checker
 reports zero errors and 49 existing path/vendor warnings. The vault project card
 and log were updated, but the prescribed vault routing checker is unavailable
 on this machine (`/home/olle/dev/vault-tools` is absent).
+
+## Settings anchor recheck after user clarification
+
+The user confirms the cursor is present; stop the missing-pointer investigation.
+Normal packaged 7cfe5453, fresh private profile, nested Niri 26.04: three actual
+pointer-driven Settings open/close cycles keep pill position exactly [428,382]
+in compositor coordinates. Fifteen intermediate open samples and three closed
+samples show zero displacement. [Measurements](settings-anchor-cycles.json).
+The focused `keeps Linux Settings below the pill` test passes (one selected test).
+Screenshots inspected locally: `/tmp/klippt-settings-anchor-open-20261027.png` and
+`/tmp/klippt-settings-anchor-closed-20261027.png`. No code change or rebuild.
+The native backing window retained 472×466 after closing; shrinking its input
+footprint was not established. No host interaction. Lab stopped.

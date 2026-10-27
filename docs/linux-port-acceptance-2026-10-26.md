@@ -21,7 +21,13 @@ Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest AppImage: `7cfe5453559965211849fdc3ea8b6ae143d39d44`.
+- Latest AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`.
+  Inventory `release/linux-port-20261027-cde7e19b/`. Linux confidence monitor
+  creation, monitor preview hiding and explicit processed-microphone matching
+  pass scoped checks; normal AppImage camera workflow passes with synthetic
+  frames. Physical OBSBOT probe was busy in the user's running app.
+  [Evidence](../artifacts/linux-port-2026-10-27/camera-virtual-audio/README.md).
+- Previous AppImage: `7cfe5453559965211849fdc3ea8b6ae143d39d44`.
 - Inventory: `release/linux-port-20261027-7cfe5453/` (`SOURCE_SHA`, `SHA256SUMS`).
   Monitor/unknown-source HUD hides before capture; confirmed Pause restores it.
   Niri Ctrl+Alt+R/S/O controls coexist with Koett Ctrl+Shift+Space. Actual private
@@ -66,7 +72,7 @@ new observed failure invalidates its coverage. Only affected tests run.
 - Monitor auto-hide now passes scoped packaged private checks. Exact physical
   Niri keyboard/focus behavior still needs user confirmation after reopening.
   No second-monitor exemption or compositor-level own-window exclusion is claimed.
-  Editable-cursor telemetry in the user's take still requires direct verification.
+  User confirms the cursor is present; no missing-cursor fix is pending.
 
 - Spoken microphone quality/balance: the authorized actual-Niri check captured
   the default input, but the room/processed signal was nearly silent. Its GUI

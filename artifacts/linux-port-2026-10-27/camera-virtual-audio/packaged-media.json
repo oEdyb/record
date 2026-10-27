@@ -1,0 +1,26 @@
+[
+  {
+    "index": 0,
+    "durationMs": 31233,
+    "screenVideoPath": {
+      "decodedFrames": 1874,
+      "maxRedPixels": 0
+    },
+    "webcamVideoPath": {
+      "decodedFrames": 937,
+      "maxRedPixels": 9146
+    }
+  },
+  {
+    "index": 1,
+    "durationMs": 2000,
+    "screenVideoPath": {
+      "decodedFrames": 120,
+      "maxRedPixels": 0
+    },
+    "webcamVideoPath": {
+      "decodedFrames": 58,
+      "maxRedPixels": 9141
+    }
+  }
+]

@@ -1,0 +1,479 @@
+{
+  "source": "7cfe5453559965211849fdc3ea8b6ae143d39d44",
+  "environment": "normal-FUSE AppImage in private nested Niri 26.04; actual private pointer clicks",
+  "observations": [
+    {
+      "state": "initial",
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 1,
+      "tick": 0,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 1,
+      "tick": 1,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 1,
+      "tick": 2,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 1,
+      "tick": 3,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 1,
+      "tick": 4,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "closed",
+      "cycle": 1,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 2,
+      "tick": 0,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 2,
+      "tick": 1,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 2,
+      "tick": 2,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 2,
+      "tick": 3,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 2,
+      "tick": 4,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "closed",
+      "cycle": 2,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 3,
+      "tick": 0,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 3,
+      "tick": 1,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 3,
+      "tick": 2,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 3,
+      "tick": 3,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "open",
+      "cycle": 3,
+      "tick": 4,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    },
+    {
+      "state": "closed",
+      "cycle": 3,
+      "geometry": {
+        "window": [
+          404,
+          344
+        ],
+        "size": [
+          472,
+          466
+        ],
+        "bar": {
+          "x": 24,
+          "y": 38,
+          "width": 424,
+          "height": 50
+        },
+        "absolute": [
+          428,
+          382
+        ]
+      }
+    }
+  ],
+  "maxPillDisplacementPixels": 0,
+  "focusedRegressionTestsPassed": 1,
+  "note": "Native window retained its expanded backing size after collapse; pill anchoring remained fixed. No claim of shrinking input footprint from this check."
+}

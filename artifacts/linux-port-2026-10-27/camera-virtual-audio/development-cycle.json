@@ -1,0 +1,81 @@
+[
+  {
+    "state": "recording",
+    "windows": [
+      {
+        "id": "{1427ce76-e861-4b1b-b776-692bf4e71bf8}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": true,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      }
+    ]
+  },
+  {
+    "state": "paused",
+    "windows": [
+      {
+        "id": "{1427ce76-e861-4b1b-b776-692bf4e71bf8}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": false,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      {
+        "id": "{bae988c5-c697-45ae-b844-ad501ee6035f}",
+        "caption": "Klippt Camera",
+        "app": "co.dyberg.klippt",
+        "active": false,
+        "geometry": {
+          "x": 804,
+          "y": 447,
+          "width": 312,
+          "height": 186
+        }
+      },
+      {
+        "id": "{0b88e436-8bd5-4f54-8dd9-39285c5c7af3}",
+        "caption": "Klippt",
+        "app": "co.dyberg.klippt",
+        "active": true,
+        "geometry": {
+          "x": 724,
+          "y": 484,
+          "width": 472,
+          "height": 112
+        }
+      }
+    ]
+  },
+  {
+    "state": "resumed",
+    "windows": [
+      {
+        "id": "{1427ce76-e861-4b1b-b776-692bf4e71bf8}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": true,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      }
+    ]
+  },
+  {
+    "state": "review",
+    "text": "Recording 10/27/2026, 3:54:31 PM\n1:00 total, 2 clips\nAdd clip\nNew recording\nClean cut\nSave video\n0:00/1:00"
+  }
+]

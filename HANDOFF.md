@@ -26,7 +26,18 @@ See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable AppImage: `7cfe5453559965211849fdc3ea8b6ae143d39d44`,
+Latest portable AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`,
+`release/linux-port-20261027-cde7e19b/`. Linux now creates the shared live camera
+monitor and hides it with the pill during monitor/unknown capture, preserving
+separate camera recording. Explicit Easy Effects Source selection resolves its
+virtual node; actual wrong-source rejection remains intact. 46 affected tests,
+both typechecks and portable package policy pass; normal mounted camera workflow
+passes with synthetic video. Physical OBSBOT test returned EBUSY in the running
+user app, which was left untouched. Fully quit/reopen and intentionally select
+Easy Effects Source when using its processing. Local Niri camera placement/focus
+rule is installed and privately verified. [Evidence](artifacts/linux-port-2026-10-27/camera-virtual-audio/README.md).
+
+Previous portable AppImage: `7cfe5453559965211849fdc3ea8b6ae143d39d44`,
 `release/linux-port-20261027-7cfe5453/`. Monitor/unknown-source capture hides the
 pill before Start/Continue; acknowledged Pause restores it. Niri shortcuts:
 Ctrl+Alt+R Pause/Continue, Ctrl+Alt+S Stop, Ctrl+Alt+O controls. Koett keeps
@@ -66,7 +77,7 @@ quality remains unverified. [Evidence](artifacts/linux-port-2026-10-26/niri-ever
 1. Monitor auto-hide and noncolliding controls pass private packaged checks;
    exact physical Niri input and monitor placement remain unverified. Do not
    claim invisible own-window exclusion or a second-monitor exemption. The
-   user's missing editable-cursor sidecar still needs end-to-end investigation.
+   user confirmed the cursor is present; that investigation is closed.
 2. Spoken microphone quality, physical camera and calibrated device timing
    remain unverified. The authorized actual-Niri recording, Pause/Continue,
    review, both exports and normal Quit have passed within their stated scope.
