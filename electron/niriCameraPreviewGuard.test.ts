@@ -68,6 +68,31 @@ describe("Niri preview capture eligibility lifetime", () => {
 		guard.end();
 	});
 
+	it("retains the preview when its unchanged cast becomes active", async () => {
+		const { guard, unsafe, event, values } = setup();
+		await expect(guard.begin(91)).resolves.toBe(true);
+		event({ CastStartedOrChanged: { cast: { ...values.casts[0], is_active: true } } });
+		expect(unsafe).not.toHaveBeenCalled();
+		event({
+			CastStartedOrChanged: { cast: { ...values.casts[0], target: { Output: { name: "DP-2" } } } },
+		});
+		expect(unsafe).toHaveBeenCalledOnce();
+		guard.end();
+	});
+
+	it.each([
+		{ stream_id: 2 },
+		{ pw_node_id: 92 },
+		{ is_dynamic_target: true },
+		{ target: { Window: { id: 8 } } },
+	])("revokes on a changed cast footprint %j", async (change) => {
+		const { guard, unsafe, event, values } = setup();
+		await guard.begin(91);
+		event({ CastStartedOrChanged: { cast: { ...values.casts[0], ...change } } });
+		expect(unsafe).toHaveBeenCalledOnce();
+		guard.end();
+	});
+
 	it.each([undefined, 92])("hides when the granted node %s cannot be proven", async (nodeId) => {
 		const { guard } = setup();
 		await expect(guard.begin(nodeId)).resolves.toBe(false);

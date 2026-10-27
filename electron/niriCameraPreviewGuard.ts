@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { createConnection } from "node:net";
-import { ownedCameraPreviewId, previewOutsideCapture } from "./niriCameraPreviewPolicy";
+import {
+	ownedCameraPreviewId,
+	previewOutsideCapture,
+	unchangedCastTarget,
+} from "./niriCameraPreviewPolicy";
 
 type Snapshot = {
 	casts: unknown;
@@ -138,6 +142,7 @@ export class NiriCameraPreviewGuard {
 	private revision = 0;
 	private previewId: number | null = null;
 	private admitted = false;
+	private casts: unknown = null;
 	private monitor: Watch | null = null;
 
 	constructor(
@@ -155,6 +160,21 @@ export class NiriCameraPreviewGuard {
 			this.monitor = this.dependencies.watch(
 				(event) => {
 					if (generation !== this.generation) return;
+					if (
+						this.admitted &&
+						event &&
+						typeof event === "object" &&
+						"CastStartedOrChanged" in event
+					) {
+						const update = event.CastStartedOrChanged;
+						if (
+							update &&
+							typeof update === "object" &&
+							"cast" in update &&
+							unchangedCastTarget(this.casts, update.cast)
+						)
+							return;
+					}
 					if (this.previewId === null || concernsPreview(event, this.previewId, this.pid)) {
 						this.revision += 1;
 						this.invalidate();
@@ -176,6 +196,7 @@ export class NiriCameraPreviewGuard {
 				]);
 				if (generation !== this.generation || failed) return false;
 				if (revision !== this.revision) continue;
+				this.casts = casts;
 				this.previewId = ownedCameraPreviewId(windows, this.pid);
 				this.admitted = previewOutsideCapture({
 					pid: this.pid,
@@ -206,6 +227,7 @@ export class NiriCameraPreviewGuard {
 		this.generation += 1;
 		this.admitted = false;
 		this.previewId = null;
+		this.casts = null;
 		this.monitor?.close();
 		this.monitor = null;
 	}

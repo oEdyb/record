@@ -166,3 +166,11 @@ export function previewOutsideCapture(input: {
 		castsAvoidPreview(state, preview, location.name)
 	);
 }
+
+export function unchangedCastTarget(previous: unknown, update: unknown): boolean {
+	const before = z.array(cast).safeParse(previous);
+	const after = cast.safeParse(update);
+	if (!before.success || !after.success) return false;
+	const matches = before.data.filter((value) => value.stream_id === after.data.stream_id);
+	return matches.length === 1 && JSON.stringify(matches[0]) === JSON.stringify(after.data);
+}
