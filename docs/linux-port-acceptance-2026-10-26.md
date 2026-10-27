@@ -21,8 +21,15 @@ Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest portable runtime: `a4f92422d7cfb871edf1e50a417063274985edab`.
-- Inventory: `release/linux-port-20261026-a4f92422/` (`SOURCE_SHA`, `SHA256SUMS`).
+- Latest AppImage: `85a25a4985311f707286d20e47bba9984a44f4c8`.
+- Inventory: `release/linux-port-20261027-85a25a49/` (`SOURCE_SHA`, `SHA256SUMS`).
+  Restores logo dragging and visible Source chip. Normal FUSE launch, native
+  dragging, picker opening/cancellation and package policy pass in private KWin;
+  137 affected tests, both typechecks and changed-file lint pass. All 27 regular
+  ELFs match `a4f92422`. Niri decoration rule is locally validated; exact host
+  appearance and dragging await user confirmation after reopening.
+  [HUD evidence](../artifacts/linux-port-2026-10-27/hud-fixes/README.md).
+- Previous four-format inventory: `release/linux-port-20261026-a4f92422/`.
 - All four Ubuntu-floor formats pass package policy. Its normal-FUSE AppImage
   passed source-grant reuse with the packaged helper, without an override.
 - The compositor addon is byte-identical to `6bdd95af`; retain its 871-frame/14.516 s

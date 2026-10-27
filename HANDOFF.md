@@ -26,8 +26,17 @@ See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable runtime: `a4f92422d7cfb871edf1e50a417063274985edab`,
-`release/linux-port-20261026-a4f92422/`. All four Ubuntu-floor formats and
+Latest portable AppImage: `85a25a4985311f707286d20e47bba9984a44f4c8`,
+`release/linux-port-20261027-85a25a49/`. User-reported HUD issues corrected: native
+logo dragging survives platform initialization and the visible Source chip opens
+the real portal. The normal AppImage passed private compositor dragging and
+chooser/cancellation; 137 affected tests and both typechecks pass. The launcher
+points to this build. A validated local Niri rule removes the reported blue focus
+background for floating Klippt windows. Exact Niri appearance/dragging awaits the
+user reopening it. [Evidence](artifacts/linux-port-2026-10-27/hud-fixes/README.md).
+All 27 regular ELFs match `a4f92422`, retaining native media evidence.
+
+Previous four-format inventory: `release/linux-port-20261026-a4f92422/`. Its Ubuntu-floor formats and
 normal mounted package policy pass. The addon is byte-identical to `6bdd95af`,
 whose packaged export preserved the real
 four-source take without an override, restoring the screen's two missing frames:

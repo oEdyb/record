@@ -395,8 +395,9 @@ The source chip, Setup's Window choice and Record without a chosen source open t
 above the pill, Setup's width and glass (Olle, 2026-10-04): a Screens / Windows switch with a
 sliding thumb, a close control, and a two-column grid of live thumbnails with app icons. One
 click chooses and closes; Escape or a click outside closes without a change. It opens on the
-tab of the current source and marks it. If macOS screen access is not granted yet, the standalone picker window opens instead, because that path asks for access and lets
-the main process decide who owns the choice. On Linux the visible Source chip opens the native
+tab of the current source and marks it. If macOS screen access is not granted yet, the
+standalone picker window opens instead, because that path asks for access and lets the main
+process decide who owns the choice. On Linux the visible Source chip opens the native
 portal chooser directly, as does Settings → Source; Record can reuse the remembered grant.
 Linux keeps the logo as a compositor-owned drag region and does not offer click-to-fold.
 The panel opens on the last screens and windows it read and swaps in fresh thumbnails when
