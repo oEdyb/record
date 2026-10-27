@@ -5,6 +5,12 @@ const originalPlatform = process.platform;
 const fixture = vi.hoisted(() => {
 	const handlers = new Map<string, (...args: unknown[]) => void>();
 	const dimensions = { width: 472, height: 112 };
+	const previewGuard = {
+		begin: vi.fn().mockResolvedValue(false),
+		end: vi.fn(),
+		invalidate: vi.fn(),
+	};
+	let onUnsafe: () => void = () => undefined;
 	const win = {
 		webContents: { id: 1, on: vi.fn(), send: vi.fn() },
 		on: vi.fn(),
@@ -28,8 +34,30 @@ const fixture = vi.hoisted(() => {
 	const BrowserWindow = vi.fn(function () {
 		return win;
 	});
-	return { handlers, dimensions, win, BrowserWindow, workArea };
+	return {
+		handlers,
+		dimensions,
+		win,
+		BrowserWindow,
+		workArea,
+		previewGuard,
+		setUnsafe: (callback: () => void) => {
+			onUnsafe = callback;
+		},
+		revoke: () => onUnsafe(),
+	};
 });
+
+vi.mock("./niriCameraPreviewGuard", () => ({
+	NiriCameraPreviewGuard: class {
+		constructor(onUnsafe: () => void) {
+			fixture.setUnsafe(onUnsafe);
+		}
+		begin = fixture.previewGuard.begin;
+		end = fixture.previewGuard.end;
+		invalidate = fixture.previewGuard.invalidate;
+	},
+}));
 
 vi.mock("electron", () => ({
 	BrowserWindow: fixture.BrowserWindow,
@@ -53,6 +81,7 @@ beforeEach(async () => {
 	vi.resetModules();
 	vi.clearAllMocks();
 	fixture.handlers.clear();
+	fixture.previewGuard.begin.mockResolvedValue(false);
 	fixture.dimensions.width = 472;
 	fixture.dimensions.height = 112;
 	vi.stubEnv("HEADLESS", "true");
@@ -105,7 +134,7 @@ describe("Linux native HUD input", () => {
 describe("Linux camera preview capture privacy", () => {
 	it("suppresses late visibility requests and creation until capture releases it", async () => {
 		const { createCameraPreviewWindow, setCameraPreviewCaptureHidden } = await import("./windows");
-		setCameraPreviewCaptureHidden(true);
+		await setCameraPreviewCaptureHidden(true);
 		createCameraPreviewWindow();
 		expect(fixture.BrowserWindow).toHaveBeenLastCalledWith(
 			expect.objectContaining({ title: "Klippt Camera" }),
@@ -124,11 +153,31 @@ describe("Linux camera preview capture privacy", () => {
 		ready();
 		send("camera-preview-set-visible", true);
 		expect(fixture.win.showInactive).not.toHaveBeenCalled();
-		setCameraPreviewCaptureHidden(false);
+		await setCameraPreviewCaptureHidden(false);
 		expect(fixture.win.showInactive).toHaveBeenCalledOnce();
-		setCameraPreviewCaptureHidden(true);
+		await setCameraPreviewCaptureHidden(true);
 		send("camera-preview-set-visible", false);
-		setCameraPreviewCaptureHidden(false);
+		await setCameraPreviewCaptureHidden(false);
 		expect(fixture.win.showInactive).toHaveBeenCalledOnce();
 	});
+});
+
+it("keeps a proven second-monitor preview mapped until admission is revoked", async () => {
+	const { createCameraPreviewWindow, setCameraPreviewCaptureHidden } = await import("./windows");
+	createCameraPreviewWindow();
+	const ready = [...fixture.win.once.mock.calls]
+		.reverse()
+		.find(([event]) => event === "ready-to-show")?.[1];
+	if (!ready) throw new Error("Camera preview readiness missing");
+	ready();
+	send("camera-preview-set-visible", true);
+	fixture.win.hide.mockClear();
+	fixture.previewGuard.begin.mockResolvedValueOnce(true);
+	await setCameraPreviewCaptureHidden(true, 91);
+	expect(fixture.previewGuard.begin).toHaveBeenLastCalledWith(91);
+	expect(fixture.win.hide).not.toHaveBeenCalled();
+	fixture.revoke();
+	expect(fixture.win.hide).toHaveBeenCalledOnce();
+	await setCameraPreviewCaptureHidden(false);
+	expect(fixture.win.showInactive).toHaveBeenCalledTimes(2);
 });

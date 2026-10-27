@@ -40,6 +40,7 @@ export class LinuxClipCaptureMetadata {
 	readonly cursor: PipeWireCursorAccumulator;
 	sourceKind: "monitor" | "window" | "virtual" | undefined;
 	videoEncoder: string | undefined;
+	pipeWireNodeId: number | undefined;
 
 	constructor(maxSamples: number, startTimeMs: number) {
 		this.cursor = new PipeWireCursorAccumulator(maxSamples);
@@ -47,6 +48,16 @@ export class LinuxClipCaptureMetadata {
 	}
 
 	observe(event: Record<string, unknown>): void {
+		if (event.event === "source-reselected") this.pipeWireNodeId = undefined;
+		if (event.event === "source-selected" || event.event === "stream-started") {
+			this.pipeWireNodeId =
+				typeof event.nodeId === "number" &&
+				Number.isInteger(event.nodeId) &&
+				event.nodeId >= 0 &&
+				event.nodeId <= 0xffff_ffff
+					? event.nodeId
+					: undefined;
+		}
 		if (
 			event.sourceKind === "monitor" ||
 			event.sourceKind === "window" ||

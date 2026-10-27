@@ -67,6 +67,36 @@ describe("Linux recording controls", () => {
 		expect(previewHidden).toHaveBeenLastCalledWith(false);
 	});
 
+	it("waits for the preview location decision before admitting the writer", async () => {
+		const window = {
+			isDestroyed: () => false,
+			hide: vi.fn(),
+			show: vi.fn(),
+			focus: vi.fn(),
+			webContents: { send: vi.fn() },
+		};
+		let finish: (() => void) | undefined;
+		const decide = () =>
+			new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+		const record = vi.fn(async () => ({ success: true }));
+		const hud = new LinuxRecordingHud(
+			"linux",
+			() => window,
+			() => false,
+			() => true,
+			async () => undefined,
+			undefined,
+			decide,
+		);
+		const start = hud.capture(record);
+		expect(record).not.toHaveBeenCalled();
+		finish?.();
+		await start;
+		expect(record).toHaveBeenCalledOnce();
+	});
+
 	it("restores controls after failed start or rejected Continue", async () => {
 		const { hud, window } = setup();
 		await hud.capture(async () => ({ success: false }));
@@ -116,11 +146,13 @@ describe("Linux recording controls", () => {
 			() => new Promise<void>((resolve) => waits.push(resolve)),
 		);
 		const oldStart = hud.capture(async () => ({ success: true }));
+		await vi.waitFor(() => expect(waits).toHaveLength(1));
 		hud.cancelPending();
 		const newStart = hud.capture(async () => {
 			capturing = true;
 			return { success: true };
 		});
+		await vi.waitFor(() => expect(waits).toHaveLength(2));
 		waits[0]();
 		await expect(oldStart).rejects.toThrow("cancelled");
 		expect(window.show).not.toHaveBeenCalled();
@@ -155,6 +187,7 @@ describe("Linux recording controls", () => {
 			capturing = true;
 			return { success: true };
 		});
+		await vi.waitFor(() => expect(finishWait).toBeDefined());
 		hud.pauseCompleted();
 		expect(window.show).not.toHaveBeenCalled();
 		finishWait?.();

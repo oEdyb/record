@@ -1240,3 +1240,29 @@ camera originals remain decodable. The connected OBSBOT camera was busy in the
 user's running Klippt; no process was stopped or physical footage collected.
 A backed-up Niri rule places the camera top-right and suppresses automatic focus;
 the private nested compositor confirms position and focus independently.
+
+
+## October 27: online exclusion research and second-monitor preview
+
+Current Niri documentation and maintainer discussions still describe blackout
+rectangles, not transparent exclusion with underlying pixels restored. Layer-shell
+blocking shares that limitation. A nested desktop works only for apps launched
+inside it; mirroring an already composited desktop preserves its overlays.
+[Official screencasting contract](https://niri-wm.github.io/niri/Screencasting.html),
+[maintainer discussion](https://github.com/niri-wm/niri/discussions/3272).
+
+The installed 26.04 IPC provides Casts with exact pw_node_id/output targets and
+logical output/window/workspace geometry. Use that to retain an already visible
+camera preview on a distinct uncaptured output. Subscribe before taking the
+snapshot; wait for the decision before writer admission. An unsafe/unknown decision
+hides normally. Relevant changes revoke eligibility for the rest of the clip;
+Pause restores desired visibility and Continue evaluates again. Source replacement
+clears stale node identity. Never hide then remap based on the old coordinates:
+Wayland can place a remapped window on a different output. This is conditional
+placement and event-driven fallback, not atomic compositor-level exclusion. A
+forced move/hotplug can race rendering, so no zero-frame guarantee is claimed.
+[Exact IPC types](https://raw.githubusercontent.com/niri-wm/niri/v26.04/niri-ipc/src/lib.rs).
+
+The local camera-only rule now defaults to right-hand DP-3. Recording that output
+still hides the preview. Connector changes, dynamic targets and missing metadata
+fall back to hiding. The pill itself continues to hide for monitor recording.

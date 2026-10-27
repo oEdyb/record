@@ -1709,7 +1709,10 @@ export function registerIpcHandlers(
 	options: {
 		restoreInterruptedRecording?: boolean;
 		enableCleanVoiceJobs?: boolean;
-		setCameraPreviewCaptureHidden?: (hidden: boolean) => void;
+		setCameraPreviewCaptureHidden?: (
+			hidden: boolean,
+			pipeWireNodeId?: number,
+		) => void | Promise<void>;
 		ipcMain?: RendererIpcMain;
 	} = {},
 ): Promise<boolean> {
@@ -2961,7 +2964,7 @@ export function registerIpcHandlers(
 				console.warn("[capture-linux] recorder activation failed:", error),
 			);
 		},
-		options.setCameraPreviewCaptureHidden,
+		(hidden) => options.setCameraPreviewCaptureHidden?.(hidden, linuxClipMetadata?.pipeWireNodeId),
 	);
 	linuxRecordingHud = recordingHud;
 	nativeMacRecordingService = new NativeMacRecordingService({

@@ -11,6 +11,20 @@ describe("Linux clip capture metadata", () => {
 		expect(metadata.videoEncoder).toBe("nvenc");
 	});
 
+	it("tracks only the granted PipeWire node and clears it after source replacement", () => {
+		const metadata = new LinuxClipCaptureMetadata(10, 1_000);
+		metadata.observe({ event: "source-selected", nodeId: 91 });
+		expect(metadata.pipeWireNodeId).toBe(91);
+		metadata.observe({ event: "cursor-sample", nodeId: 99 });
+		expect(metadata.pipeWireNodeId).toBe(91);
+		metadata.observe({ event: "source-reselected" });
+		expect(metadata.pipeWireNodeId).toBeUndefined();
+		metadata.observe({ event: "stream-started", nodeId: 92 });
+		expect(metadata.pipeWireNodeId).toBe(92);
+		metadata.observe({ event: "stream-started", nodeId: -1 });
+		expect(metadata.pipeWireNodeId).toBeUndefined();
+	});
+
 	it("normalizes and bounds cursor samples from the same helper without another portal", () => {
 		const metadata = new LinuxClipCaptureMetadata(2, 1_000);
 		const sample = {

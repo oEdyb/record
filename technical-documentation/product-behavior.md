@@ -502,8 +502,15 @@ unknown-source capture, hide it with the HUD before Start/Continue and restore
 its requested visibility only after confirmed Pause or failed startup. A late
 renderer visibility request or renderer reload must not override capture hiding.
 The camera keeps recording into its separate original while its preview is hidden.
-Window-only capture can retain the preview. Niri integration places the uniquely
-titled `Klippt Camera` window away from the HUD without taking keyboard focus.
+Window-only capture can retain the preview. On Niri, a preview already wholly on
+another uncaptured output can remain mapped during monitor recording. Match the
+portal's exact PipeWire node against compositor casts and validate logical window,
+workspace and output geometry before writer admission. Unknown identities,
+dynamic casts, ambiguity or missing IPC retain hiding. Relevant layout/cast or
+monitor changes revoke this permission until Pause; do not remap a hidden preview
+mid-clip from a stale position. This is conditional placement, not compositor-level
+atomic capture exclusion. Niri integration places the uniquely titled `Klippt Camera`
+window away from the HUD without taking keyboard focus.
 
 - Keep the camera monitor as a separate preview-only window. Its position and shape never set
   the recorded camera's editor layout.

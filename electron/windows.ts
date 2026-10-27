@@ -33,6 +33,7 @@ import {
 import { createHudPointerWatch } from "./hudPointerWatch";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import { LINUX_HUD_INITIAL_SIZE, linuxHudWindowSize } from "./linuxHudGeometry";
+import { NiriCameraPreviewGuard } from "./niriCameraPreviewGuard";
 import {
 	localRectanglesContainScreenPoint,
 	normalizePrivateUiRectangles,
@@ -136,6 +137,12 @@ let cameraPreviewWindow: BrowserWindow | null = null;
 let cameraPreviewReady = false;
 let cameraPreviewVisible = false;
 let cameraPreviewCaptureHidden = false;
+let cameraPreviewOutsideCapture = false;
+let cameraPreviewCaptureGeneration = 0;
+const cameraPreviewGuard = new NiriCameraPreviewGuard(() => {
+	cameraPreviewOutsideCapture = false;
+	applyCameraPreviewVisibility();
+});
 let hudRendererReady = false;
 let cameraPreviewRendererReady = false;
 let cameraPreviewPortsConnected = false;
@@ -259,16 +266,29 @@ function placeCameraPreview(position?: CameraPreviewPoint): CameraPreviewPoint |
 
 function applyCameraPreviewVisibility() {
 	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed() || !cameraPreviewReady) return;
-	if (cameraPreviewVisible && !cameraPreviewCaptureHidden) {
+	if (cameraPreviewVisible && (!cameraPreviewCaptureHidden || cameraPreviewOutsideCapture)) {
 		cameraPreviewWindow.showInactive();
 	} else {
 		cameraPreviewWindow.hide();
 	}
 }
 
-export function setCameraPreviewCaptureHidden(hidden: boolean): void {
+export async function setCameraPreviewCaptureHidden(
+	hidden: boolean,
+	pipeWireNodeId?: number,
+): Promise<void> {
 	if (process.platform !== "linux") return;
+	const generation = ++cameraPreviewCaptureGeneration;
 	cameraPreviewCaptureHidden = hidden;
+	cameraPreviewOutsideCapture = false;
+	if (hidden && cameraPreviewVisible && cameraPreviewReady && cameraPreviewWindow?.isVisible()) {
+		const allowed = await cameraPreviewGuard.begin(pipeWireNodeId);
+		if (generation !== cameraPreviewCaptureGeneration) return;
+		cameraPreviewOutsideCapture = allowed;
+		if (!allowed) cameraPreviewGuard.end();
+		if (allowed && cameraPreviewVisible && cameraPreviewWindow?.isVisible()) return;
+		if (allowed) cameraPreviewGuard.invalidate();
+	} else cameraPreviewGuard.end();
 	applyCameraPreviewVisibility();
 }
 
@@ -884,6 +904,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 	});
 
 	const keepPreviewOnScreen = () => {
+		cameraPreviewGuard.invalidate();
 		if (cameraPreviewWindow !== win || win.isDestroyed()) return;
 		const [x, y] = win.getPosition();
 		const appliedPosition = placeCameraPreview({ x, y });
@@ -898,6 +919,8 @@ export function createCameraPreviewWindow(): BrowserWindow {
 		screen.off("display-removed", keepPreviewOnScreen);
 		screen.off("display-metrics-changed", keepPreviewOnScreen);
 		if (cameraPreviewWindow !== win) return;
+		cameraPreviewGuard.end();
+		cameraPreviewOutsideCapture = false;
 		cameraPreviewWindow = null;
 		cameraPreviewReady = false;
 		cameraPreviewVisible = false;
