@@ -26,8 +26,12 @@ See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable AppImage: `85a25a4985311f707286d20e47bba9984a44f4c8`,
-`release/linux-port-20261027-85a25a49/`. User-reported HUD issues corrected: native
+Latest portable AppImage: `8c3838db993f51004829913977afda6d7204c63a`,
+`release/linux-port-20261027-8c3838db/`. The no-camera toast correction passes a
+real private OS-input check: 360×40 notice, ten pixels beyond Setup, no overlap.
+138 affected tests, both typechecks, lint and package policy pass. No full suite.
+[Toast evidence](artifacts/linux-port-2026-10-27/toasts/README.md).
+The earlier `85a25a49` corrected dragging and Source access. User-reported HUD issues corrected: native
 logo dragging survives platform initialization and the visible Source chip opens
 the real portal. The normal AppImage passed private compositor dragging and
 chooser/cancellation; 137 affected tests and both typechecks pass. The launcher
@@ -55,12 +59,16 @@ quality remains unverified. [Evidence](artifacts/linux-port-2026-10-26/niri-ever
 
 ## What is left, in priority order
 
-1. Spoken microphone quality, physical camera and calibrated device timing
+1. User feedback confirms the recorder appears in full-monitor footage on Niri.
+   Automatic hiding with reliable Pause/Stop access remains open; do not claim
+   own-window exclusion. The user's editable-cursor take has no sidecar, so its
+   pointer needs end-to-end checking rather than relying on private KWin evidence.
+2. Spoken microphone quality, physical camera and calibrated device timing
    remain unverified. The authorized actual-Niri recording, Pause/Continue,
    review, both exports and normal Quit have passed within their stated scope.
-2. Keep the finite acceptance record current. No routine full suites, hour soaks
+3. Keep the finite acceptance record current. No routine full suites, hour soaks
    or four-format rebuilds without a concrete changed risk.
-3. Broader GPU/desktops, physical timing and Mac regression are compatibility
+4. Broader GPU/desktops, physical timing and Mac regression are compatibility
    gates. Windows is later work. Do not turn those into indefinite synthetic
    retesting or a claim of universal parity.
 
@@ -90,3 +98,5 @@ Historical Mac/editor/CLI handoffs remain in
 [the previous handoff](https://github.com/oEdyb/record/blob/f8ae4c1ef1097c98c7204e10e85df1759d04763a/HANDOFF.md).
 Current product and compatibility rules remain in `AGENTS.md` and
 `technical-documentation/product-behavior.md`.
+
+Reusable lessons and development-skill routing: [Linux porting playbook](docs/linux-porting-playbook.md).

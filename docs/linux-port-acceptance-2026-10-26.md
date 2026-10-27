@@ -21,9 +21,12 @@ Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest AppImage: `85a25a4985311f707286d20e47bba9984a44f4c8`.
-- Inventory: `release/linux-port-20261027-85a25a49/` (`SOURCE_SHA`, `SHA256SUMS`).
-  Restores logo dragging and visible Source chip. Normal FUSE launch, native
+- Latest AppImage: `8c3838db993f51004829913977afda6d7204c63a`.
+- Inventory: `release/linux-port-20261027-8c3838db/` (`SOURCE_SHA`, `SHA256SUMS`).
+  Adds compact notifications outside open panels: actual no-camera error is
+  360×40 with a ten-pixel gap beyond Setup. 138 affected tests and normal packaged
+  private UI/policy checks pass. [Toast evidence](../artifacts/linux-port-2026-10-27/toasts/README.md).
+  Retains the preceding `85a25a49` correction to logo dragging and visible Source chip. Normal FUSE launch, native
   dragging, picker opening/cancellation and package policy pass in private KWin;
   137 affected tests, both typechecks and changed-file lint pass. All 27 regular
   ELFs match `a4f92422`. Niri decoration rule is locally validated; exact host
@@ -59,6 +62,11 @@ require rerunning every previous check. Repeat a check when changed code or a
 new observed failure invalidates its coverage. Only affected tests run.
 
 ## Explicit remaining gates
+
+- First-user failure: recorder pill appears in full-monitor footage on Niri.
+  Auto-hide plus a discoverable, reliable Pause/Stop route remains unimplemented.
+  Editable-cursor telemetry in that user's take also needs direct verification.
+  Window-only and private KWin evidence do not close either issue.
 
 - Spoken microphone quality/balance: the authorized actual-Niri check captured
   the default input, but the room/processed signal was nearly silent. Its GUI
