@@ -930,6 +930,18 @@ describe("LaunchWindow record button", () => {
 		expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce();
 	});
 
+	it("keeps Linux Settings below the pill instead of shifting its local origin", async () => {
+		platformState.value = "linux";
+		renderLaunchWindow();
+		const grip = await screen.findByTestId("hud-drag-handle");
+		expect(grip.closest("[data-placement]")).toHaveAttribute("data-placement", "below");
+		expect(grip.closest("[data-placement]")).toHaveStyle({ top: "38px" });
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+		expect(grip.closest("[data-placement]")).toHaveAttribute("data-placement", "below");
+		expect(grip.closest("[data-placement]")).toHaveStyle({ top: "38px" });
+	});
+
 	it("keeps the HUD interactive on Linux so the drag handle can receive pointer events", async () => {
 		platformState.value = "linux";
 

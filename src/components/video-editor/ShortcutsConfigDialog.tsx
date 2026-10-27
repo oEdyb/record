@@ -13,7 +13,7 @@ import {
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts, useShortcutsDialogState } from "@/contexts/ShortcutsContext";
 import {
-	DEFAULT_SHORTCUTS,
+	defaultShortcuts,
 	FIXED_SHORTCUTS,
 	findConflict,
 	formatBinding,
@@ -119,7 +119,7 @@ export function ShortcutsConfigDialog() {
 	}, [draft, setShortcuts, persistShortcuts, closeConfig, t]);
 
 	const handleReset = useCallback(() => {
-		setDraft({ ...DEFAULT_SHORTCUTS });
+		setDraft(defaultShortcuts(window.electronAPI.getPlatform()));
 		toast.info(t("resetToast"));
 	}, [t]);
 

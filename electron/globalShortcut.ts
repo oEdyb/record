@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { globalShortcut } from "electron";
 import {
-	DEFAULT_SHORTCUTS,
+	defaultShortcuts,
 	mergeWithDefaults,
 	type ShortcutBinding,
 	type ShortcutsConfig,
@@ -114,10 +114,10 @@ export function registerGlobalShortcuts(
 export async function loadAndRegisterGlobalShortcuts(
 	handlers: GlobalShortcutHandlers,
 ): Promise<boolean> {
-	let shortcuts = DEFAULT_SHORTCUTS;
+	let shortcuts = defaultShortcuts(process.platform);
 	try {
 		const data = await fs.readFile(SHORTCUTS_FILE, "utf-8");
-		shortcuts = mergeWithDefaults(JSON.parse(data) as Partial<ShortcutsConfig>);
+		shortcuts = mergeWithDefaults(JSON.parse(data) as Partial<ShortcutsConfig>, process.platform);
 	} catch {
 		// The defaults are the safe first-run and invalid-file fallback.
 	}

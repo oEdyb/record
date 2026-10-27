@@ -214,6 +214,43 @@ describe("registerIpcHandlers startup contract", () => {
 		entitlement.mockRestore();
 	});
 
+	it("cancels Linux Start while the recorder unmap delay is pending", async () => {
+		pinPlatform("linux");
+		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+		const start = vi
+			.spyOn(NativeMacRecordingService.prototype, "start")
+			.mockResolvedValue({ success: false, error: "unexpected start" });
+		let hidden: (() => void) | undefined;
+		const hideEntered = new Promise<void>((resolve) => {
+			hidden = resolve;
+		});
+		const window = Object.assign(new BrowserWindow(), {
+			hide: () => hidden?.(),
+			show: vi.fn(),
+			focus: vi.fn(),
+		});
+		try {
+			const { recovery, handlers } = await register({ restoreInterruptedRecording: false }, window);
+			await recovery;
+			const invokeStart = handlers.get("start-native-mac-recording");
+			const cancel = handlers.get("cancel-native-linux-prepare");
+			if (!invokeStart || !cancel) throw new Error("Capture IPC missing");
+			const capture = Reflect.apply(invokeStart, undefined, [
+				{},
+				{ schemaVersion: 1, platform: "linux", video: { fps: 60 }, webcam: { enabled: false } },
+			]);
+			await hideEntered;
+			await Reflect.apply(cancel, undefined, [{}]);
+			await expect(capture).resolves.toMatchObject({
+				success: false,
+				error: "Recording start cancelled.",
+			});
+			expect(start).not.toHaveBeenCalled();
+		} finally {
+			start.mockRestore();
+		}
+	});
+
 	it("routes Linux suspend through the existing recording interruption notification", async () => {
 		pinPlatform("linux");
 		const listen = vi.spyOn(powerMonitor, "on");
@@ -280,6 +317,7 @@ describe("registerIpcHandlers startup contract", () => {
 					constructor(deps: NativeMacRecordingServiceDependencies) {
 						super(deps);
 						dependencies = deps;
+						this.isCapturing = () => false;
 					}
 				},
 			);

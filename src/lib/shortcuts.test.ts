@@ -57,3 +57,23 @@ describe("shortcut registry", () => {
 		expect(merged).not.toHaveProperty("addBlur");
 	});
 });
+
+describe("Linux recorder shortcut coexistence", () => {
+	it("reserves the legacy dictation shortcut for Koett", () => {
+		expect(mergeWithDefaults({}, "linux").toggleRecordingPause).toEqual({
+			key: "r",
+			ctrl: true,
+			alt: true,
+		});
+		expect(
+			mergeWithDefaults({ toggleRecordingPause: { key: " ", ctrl: true, shift: true } }, "linux")
+				.toggleRecordingPause,
+		).toEqual({ key: "r", ctrl: true, alt: true });
+	});
+	it("preserves custom bindings", () => {
+		const custom = { key: "p", ctrl: true, alt: true };
+		expect(
+			mergeWithDefaults({ toggleRecordingPause: custom }, "linux").toggleRecordingPause,
+		).toEqual(custom);
+	});
+});

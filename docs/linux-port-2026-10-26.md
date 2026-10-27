@@ -1172,3 +1172,45 @@ its empty state takes no space. HUD-only styling uses 360px width, 12px text and
 10px/12px padding, with one visible toast. The shared review host retains defaults.
 Primary contract inspected: pinned `node_modules/sonner/dist/styles.css` and
 `index.mjs` (positioning, measured height and visible-toast behavior).
+
+
+## October 27: Koett coexistence and hidden monitor controls
+
+The confirmed shortcut collision was Klippt's legacy Ctrl+Shift+Space versus
+Koett's existing compositor binding. Linux now defaults to Ctrl+Alt+R for
+Pause/Continue and Ctrl+Alt+O for controls; saved legacy defaults migrate while
+custom bindings survive. Mac/Windows defaults stay unchanged. Niri can dispatch
+`--recorder-pause-continue` and `--recorder-stop` through Electron's single-instance
+routing, without focusing or showing a recording window first.
+
+Monitor/unknown-source recording conceals the HUD before writer Start/Continue,
+with a bounded 150ms unmap allowance at those boundaries only. A confirmed window
+source can retain controls. There is no unreliable second-monitor guess. Showing
+concealed controls requests Pause; acknowledgement restores them. A small Niri
+adapter validates the window list and activates only the unique floating Klippt
+window with this process's PID. This addresses Wayland focus denial, not capture
+exclusion. Settings initially and consistently expands below the Linux pill's
+fixed local origin; the geometry hook's inline anchor supersedes centered CSS.
+
+Independent review reproduced cancellation and stale completion races. The fix
+invalidates pending transitions on Cancel/Stop/Quit, guards operation cleanup by
+identity, and prevents old Stop callbacks from revealing a replacement transition.
+Dedicated regressions cover each ordering. Final scoped recheck passes.
+
+Real private KWin monitor check: two clips (13.566s and 2.350s), 815/142 decoded
+frames. No red HUD pixels in its former 424×50 area across any frame, including
+Continue. Actual private Koett and Klippt concurrently opened the same virtual
+microphone; the 7.435s official model sample yielded a 21-word Koett transcript
+and nonzero separate Klippt microphone/system originals in an 8.183s take.
+This is not a physical speech-quality or unrestricted latency benchmark.
+
+Actual nested Niri verified owned-window activation from another app and stable
+absolute pill top382 before/after Settings. It proves UI/focus behavior, not native
+Niri screencasting (that nested backend lacks the required GBM capture device).
+KWin's fullscreen focus limitation remains outside the Niri-specific activation.
+No host pointer, clipboard, focus, fixtures or audio were driven for these checks.
+
+Sources: [Electron 44.9.1 app/single-instance contract](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/api/app.md),
+[Niri key bindings](https://niri-wm.github.io/niri/Configuration:-Key-Bindings.html),
+and installed `niri msg action move-floating-window --help`; the latter informed
+inspection only, and no compositor reposition workaround was shipped.

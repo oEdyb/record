@@ -192,6 +192,10 @@ export class NativeMacRecordingService {
 		return Boolean(this.helper?.isRunning());
 	}
 
+	isCapturing(): boolean {
+		return this.isRunning() && !this.prepared && !this.paused;
+	}
+
 	/** Committed clips with a microphone original, for the on-demand transcript. */
 	transcriptClipListing(): {
 		recordingId: number | null;

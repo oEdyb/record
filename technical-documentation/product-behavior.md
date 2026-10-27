@@ -400,6 +400,18 @@ standalone picker window opens instead, because that path asks for access and le
 process decide who owns the choice. On Linux the visible Source chip opens the native
 portal chooser directly, as does Settings → Source; Record can reuse the remembered grant.
 Linux keeps the logo as a compositor-owned drag region and does not offer click-to-fold.
+Linux opens Setup below a fixed local pill origin. During monitor capture (or when
+source isolation is unknown), hide the recorder before starting or continuing;
+Pause acknowledgement restores it. Recording another window can retain the HUD.
+Wayland does not expose reliable global window position through Electron, so a
+second-monitor exemption is not inferred. On Niri, restoration explicitly activates
+only this process's matching floating recorder window. Asking to show a concealed
+active recorder first requests Pause; it cannot silently place controls in footage.
+Linux defaults are Ctrl+Alt+O for controls and Ctrl+Alt+R for Pause/Continue, leaving
+Koett's Ctrl+Shift+Space untouched. The configured Niri fallback additionally maps
+Ctrl+Alt+S to Stop. These compositor bindings target the running app through its
+single-instance control flags and do not depend on portal shortcut callbacks.
+
 The panel opens on the last screens and windows it read and swaps in fresh thumbnails when
 they arrive; pointing at the source chip starts that read early (Olle, 2026-10-04).
 

@@ -120,8 +120,10 @@ import {
 	type ExportSourceMetadata,
 	type VideoBufferPublishSpec,
 } from "../native-bridge/services/compositorViewService";
+import { activateNiriHud } from "../niriHudFocus";
 import { mergeEnumeratedSources } from "../recording/enumeratedSources";
 import { LinuxClipCaptureMetadata } from "../recording/linuxClipCaptureMetadata";
+import { LinuxRecordingHud } from "../recording/linuxRecordingHud";
 import {
 	buildNativeMacCaptureHelperCandidates,
 	buildNativeWindowsCaptureHelperCandidates,
@@ -204,6 +206,11 @@ const AUDIO_OVERLAY_MEDIA_DIR = path.join(
 const RENDERER_EXPORT_TEMP_DIR = app.getPath("temp");
 let nativeMacRecordingService: NativeMacRecordingService | null = null;
 const rendererRecordingStop = new RendererRecordingStop();
+let linuxRecordingHud: LinuxRecordingHud | null = null;
+
+export function requestLinuxRecordingControls(): boolean {
+	return linuxRecordingHud?.requestControls() ?? false;
+}
 
 /** Clip listing for the transcript window; empty before the recorder exists. */
 export function isNativeMacCaptureRunning(): boolean {
@@ -214,6 +221,7 @@ export function isNativeMacCaptureRunning(): boolean {
 }
 
 export async function stopNativeMacCaptureForQuit(): Promise<void> {
+	linuxRecordingHud?.cancelPending();
 	await nativeMacRecordingService?.stopBeforeQuit();
 }
 
@@ -2526,6 +2534,7 @@ export function registerIpcHandlers(
 		},
 	);
 	ipcMain.handle("cancel-native-linux-prepare", async () => {
+		linuxRecordingHud?.cancelPending();
 		if (process.platform === "linux") await nativeMacRecordingService?.cancelPrepare();
 		return { success: true };
 	});
@@ -2551,9 +2560,11 @@ export function registerIpcHandlers(
 				if (!service.isRunning()) {
 					const prepared = await prepareNativeLinuxRecording(config);
 					if (!prepared.success) return prepared;
-					return service.start({ ...config, recordingId: prepared.recordingId });
+					return recordingHud.capture(() =>
+						service.start({ ...config, recordingId: prepared.recordingId }),
+					);
 				}
-				return service.start(config);
+				return recordingHud.capture(() => service.start(config));
 			});
 			if (result.success && "recordingId" in result && typeof result.recordingId === "number")
 				return {
@@ -2563,19 +2574,24 @@ export function registerIpcHandlers(
 			return result;
 		},
 	);
-	ipcMain.handle("pause-native-linux-recording", () =>
-		invokeNativeLinux((service) => service.pause()),
-	);
+	ipcMain.handle("pause-native-linux-recording", async () => {
+		const result = await invokeNativeLinux((service) => service.pause());
+		recordingHud.pauseCompleted();
+		return result;
+	});
 	ipcMain.handle(
 		"resume-native-linux-recording",
 		(_, request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest) =>
 			invokeNativeLinux((service) =>
-				service.resume(request ? linuxClipRecordingRequest(request) : undefined),
+				recordingHud.capture(() =>
+					service.resume(request ? linuxClipRecordingRequest(request) : undefined),
+				),
 			),
 	);
-	ipcMain.handle("stop-native-linux-recording", (_, discard?: boolean) =>
-		invokeNativeLinux((service) => service.stop(discard)),
-	);
+	ipcMain.handle("stop-native-linux-recording", (_, discard?: boolean) => {
+		recordingHud.cancelPending();
+		return invokeNativeLinux((service) => service.stop(discard));
+	});
 
 	ipcMain.handle(
 		"start-native-windows-recording",
@@ -2933,6 +2949,19 @@ export function registerIpcHandlers(
 		app.once("will-quit", () => powerMonitor.off("suspend", onSuspend));
 	}
 
+	const recordingHud = new LinuxRecordingHud(
+		process.platform,
+		getMainWindow,
+		() => nativeMacRecordingService?.isCapturing() ?? false,
+		() => linuxClipMetadata?.sourceKind !== "window",
+		() => new Promise((resolve) => setTimeout(resolve, 150)),
+		() => {
+			void activateNiriHud(process.pid).catch((error: unknown) =>
+				console.warn("[capture-linux] recorder activation failed:", error),
+			);
+		},
+	);
+	linuxRecordingHud = recordingHud;
 	nativeMacRecordingService = new NativeMacRecordingService({
 		recordingsDir: RECORDINGS_DIR,
 		now: Date.now,
@@ -3024,6 +3053,7 @@ export function registerIpcHandlers(
 				process.platform === "linux"
 					? linuxSourceLabel(linuxClipMetadata?.sourceKind)
 					: (selectedSource?.name ?? "Screen");
+			if (!recording) recordingHud.pauseCompleted();
 			notifyRecordingStateChange(recording, sourceName);
 		},
 		onFatalError: (failure) => {
@@ -3101,7 +3131,9 @@ export function registerIpcHandlers(
 			if (rejection) return rejection;
 			timeline.mark("entitled");
 			await startupRecordingRecovery;
-			let result = await invokeNativeMac(() => getNativeMacRecordingService().start(request));
+			let result = await invokeNativeMac(() =>
+				recordingHud.capture(() => getNativeMacRecordingService().start(request)),
+			);
 			if (result.success && "recordingId" in result && typeof result.recordingId === "number")
 				result = {
 					...result,
@@ -3156,6 +3188,7 @@ export function registerIpcHandlers(
 				activeCaptureFailure = "writer-failed";
 			}
 		}
+		linuxRecordingHud?.pauseCompleted();
 		return result;
 	});
 
@@ -3184,7 +3217,9 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
 		const result = await timeClipBoundary("continue", () =>
-			invokeNativeMac(() => getNativeMacRecordingService().resume(request)),
+			invokeNativeMac(() =>
+				recordingHud.capture(() => getNativeMacRecordingService().resume(request)),
+			),
 		);
 		if (activeCaptureWorkloadId && "success" in result && result.success) {
 			if (request) {
@@ -3471,6 +3506,7 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"stop-native-mac-recording",
 		async (_, discard?: boolean, clickedAtMs?: unknown) => {
+			recordingHud.cancelPending();
 			finishStopTimeline(false);
 			const timeline = new RecordStartTimeline(
 				Date.now,

@@ -50,6 +50,7 @@ import {
 	isNativeMacCaptureRunning,
 	listTranscriptClips,
 	registerIpcHandlers,
+	requestLinuxRecordingControls,
 	resolveApprovedRendererMediaPath,
 	stopNativeMacCaptureForQuit,
 } from "./ipc/handlers";
@@ -62,6 +63,7 @@ import {
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
 import { resolveFfmpeg } from "./media/audioPeaks";
+import { activateNiriHud } from "./niriHudFocus";
 import { createQuitCaptureGuard } from "./recording/quitCaptureGuard";
 import {
 	canDispatchRecordingReviewMenu,
@@ -200,12 +202,17 @@ function createWindow() {
 }
 
 function showMainWindow() {
+	if (requestLinuxRecordingControls()) return;
 	if (mainWindow && !mainWindow.isDestroyed()) {
 		if (mainWindow.isMinimized()) {
 			mainWindow.restore();
 		}
 		mainWindow.show();
 		mainWindow.focus();
+		if (mainWindow.webContents.getURL().includes("windowType=hud-overlay"))
+			void activateNiriHud(process.pid).catch((error: unknown) =>
+				console.warn("[hud] activation failed:", error),
+			);
 		return;
 	}
 
@@ -219,7 +226,15 @@ const hasSingleInstanceLock = cliCommand ? false : app.requestSingleInstanceLock
 if (cliCommand) {
 	runCli(cliCommand);
 } else if (hasSingleInstanceLock) {
-	app.on("second-instance", () => {
+	app.on("second-instance", (_event, argv) => {
+		if (argv.includes("--recorder-pause-continue")) {
+			toggleRecordingPauseFromShortcut();
+			return;
+		}
+		if (argv.includes("--recorder-stop")) {
+			mainWindow?.webContents.send("stop-recording-from-tray");
+			return;
+		}
 		showMainWindow();
 	});
 } else {

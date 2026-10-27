@@ -735,7 +735,9 @@ export function LaunchWindow() {
 	// The pill's display, from main. The window can reach onto a neighbour, where
 	// window.screen would describe the wrong display; that is only the fallback.
 	const workAreaRef = useRef<{ top: number; height: number } | null>(null);
-	const [stackPlacement, setStackPlacement] = useState<HudStackPlacement>("above");
+	const [stackPlacement, setStackPlacement] = useState<HudStackPlacement>(() =>
+		window.electronAPI?.getPlatform?.() === "linux" ? "below" : "above",
+	);
 
 	const updateHudPlacement = useCallback(() => {
 		const barEl = hudBarRef.current;
@@ -765,7 +767,7 @@ export function LaunchWindow() {
 			"--hud-modal-max-h",
 			`${fitHudStackCap(caps.modal, room, HUD_POPOVER_MIN_HEIGHT)}px`,
 		);
-		setStackPlacement(placement);
+		setStackPlacement(window.electronAPI?.getPlatform?.() === "linux" ? "below" : placement);
 	}, []);
 
 	useEffect(
