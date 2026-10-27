@@ -23,10 +23,12 @@ Project evidence stays here rather than being copied into the skill:
 | [Implementation history](linux-port-2026-10-26.md) | Chronological measurements and corrections |
 | [HUD corrections](../artifacts/linux-port-2026-10-27/hud-fixes/README.md) | Dragging, source access and Niri decoration |
 | [Toast correction](../artifacts/linux-port-2026-10-27/toasts/README.md) | Real missing-camera overlap and corrected package |
+| [Recording controls](../artifacts/linux-port-2026-10-27/recording-controls/README.md) | Monitor auto-hide, Koett coexistence and Niri controls |
 | [Product behavior](../technical-documentation/product-behavior.md) | Intended shared UX |
 
 Do not turn a window-only capture pass into a monitor-exclusion claim. The first
-user reported the pill in monitor footage; auto-hide with a reliable control-access
-path remains open. Editable cursor telemetry on that user's take also requires
-end-to-end verification. Those gaps belong in the acceptance record, not behind a
+user reported the pill in monitor footage; the candidate now conservatively hides
+it before monitor capture and supplies tested Niri command routes. Physical-seat
+confirmation and a second-monitor exemption remain separate. Editable cursor
+telemetry on that user's take also requires end-to-end verification. Those gaps belong in the acceptance record, not behind a
 claim of complete Mac/Linux parity.

@@ -1,0 +1,33 @@
+{
+  "source": "7cfe5453559965211849fdc3ea8b6ae143d39d44",
+  "session": "recording-1793095008917",
+  "environment": "private KWin monitor capture, nested Niri compositor keybindings; no host input",
+  "clips": [
+    {
+      "index": 0,
+      "durationMs": 42216,
+      "decodedFrames": 2534,
+      "maxRedPixelsIn480x270Frame": 0,
+      "framesWithRedPixels": 0,
+      "isolatedOriginalsDecode": true
+    },
+    {
+      "index": 1,
+      "durationMs": 11783,
+      "decodedFrames": 708,
+      "maxRedPixelsIn480x270Frame": 0,
+      "framesWithRedPixels": 0,
+      "isolatedOriginalsDecode": true
+    },
+    {
+      "index": 2,
+      "durationMs": 266,
+      "decodedFrames": 17,
+      "maxRedPixelsIn480x270Frame": 0,
+      "framesWithRedPixels": 0,
+      "isolatedOriginalsDecode": true
+    }
+  ],
+  "encoder": "nvenc",
+  "note": "Red record/Stop indicator absent in every downscaled decoded frame. Synthetic fixture has no other red content. This is a targeted pill check, not pixel-perfect universal exclusion."
+}

@@ -21,17 +21,17 @@ Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest AppImage: `8c3838db993f51004829913977afda6d7204c63a`.
-- Inventory: `release/linux-port-20261027-8c3838db/` (`SOURCE_SHA`, `SHA256SUMS`).
-  Adds compact notifications outside open panels: actual no-camera error is
-  360×40 with a ten-pixel gap beyond Setup. 138 affected tests and normal packaged
-  private UI/policy checks pass. [Toast evidence](../artifacts/linux-port-2026-10-27/toasts/README.md).
-  Retains the preceding `85a25a49` correction to logo dragging and visible Source chip. Normal FUSE launch, native
-  dragging, picker opening/cancellation and package policy pass in private KWin;
-  137 affected tests, both typechecks and changed-file lint pass. All 27 regular
-  ELFs match `a4f92422`. Niri decoration rule is locally validated; exact host
-  appearance and dragging await user confirmation after reopening.
-  [HUD evidence](../artifacts/linux-port-2026-10-27/hud-fixes/README.md).
+- Latest AppImage: `7cfe5453559965211849fdc3ea8b6ae143d39d44`.
+- Inventory: `release/linux-port-20261027-7cfe5453/` (`SOURCE_SHA`, `SHA256SUMS`).
+  Monitor/unknown-source HUD hides before capture; confirmed Pause restores it.
+  Niri Ctrl+Alt+R/S/O controls coexist with Koett Ctrl+Shift+Space. Actual private
+  shared-microphone dictation/capture and packaged three-clip binding path pass;
+  3,259 decoded frames contain no red pill indicator. Settings opening preserves
+  the pill's desktop position. All 33 regular ELFs match a4f92422. Affected tests,
+  both typechecks, lint, build and package policy pass; no full suite.
+  [Control evidence](../artifacts/linux-port-2026-10-27/recording-controls/README.md).
+  Includes earlier dragging/Source and compact toast fixes. Launcher and validated
+  Niri bindings installed; a running older app must fully quit/reopen.
 - Previous four-format inventory: `release/linux-port-20261026-a4f92422/`.
 - All four Ubuntu-floor formats pass package policy. Its normal-FUSE AppImage
   passed source-grant reuse with the packaged helper, without an override.
@@ -63,16 +63,16 @@ new observed failure invalidates its coverage. Only affected tests run.
 
 ## Explicit remaining gates
 
-- First-user failure: recorder pill appears in full-monitor footage on Niri.
-  Auto-hide plus a discoverable, reliable Pause/Stop route remains unimplemented.
-  Editable-cursor telemetry in that user's take also needs direct verification.
-  Window-only and private KWin evidence do not close either issue.
+- Monitor auto-hide now passes scoped packaged private checks. Exact physical
+  Niri keyboard/focus behavior still needs user confirmation after reopening.
+  No second-monitor exemption or compositor-level own-window exclusion is claimed.
+  Editable-cursor telemetry in the user's take still requires direct verification.
 
 - Spoken microphone quality/balance: the authorized actual-Niri check captured
   the default input, but the room/processed signal was nearly silent. Its GUI
   workflow, system audio, review and both exports passed. Future physical
   automation still requires explicit authorization.
-- Physical webcam and calibrated hardware clock/timing; monitor/HUD exclusion.
+- Physical webcam and calibrated hardware clock/timing; monitor placement.
 - Wayland own-window exclusion; global shortcut activation/focus/backend reuse.
   Independent Electron reproduction exists; no speculative Klippt rewrite.
 - Representative responsiveness/resource use on the intended session. The hour

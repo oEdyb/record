@@ -26,11 +26,15 @@ See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable AppImage: `8c3838db993f51004829913977afda6d7204c63a`,
-`release/linux-port-20261027-8c3838db/`. The no-camera toast correction passes a
-real private OS-input check: 360×40 notice, ten pixels beyond Setup, no overlap.
-138 affected tests, both typechecks, lint and package policy pass. No full suite.
-[Toast evidence](artifacts/linux-port-2026-10-27/toasts/README.md).
+Latest portable AppImage: `7cfe5453559965211849fdc3ea8b6ae143d39d44`,
+`release/linux-port-20261027-7cfe5453/`. Monitor/unknown-source capture hides the
+pill before Start/Continue; acknowledged Pause restores it. Niri shortcuts:
+Ctrl+Alt+R Pause/Continue, Ctrl+Alt+S Stop, Ctrl+Alt+O controls. Koett keeps
+Ctrl+Shift+Space; actual concurrent private microphone capture passes. The
+launcher and validated Niri bindings are installed; fully quit/reopen old builds.
+Settings opening stays below the stationary pill in private nested Niri.
+[Focused evidence](artifacts/linux-port-2026-10-27/recording-controls/README.md).
+The preceding `8c3838db` compact toast correction remains included.
 The earlier `85a25a49` corrected dragging and Source access. User-reported HUD issues corrected: native
 logo dragging survives platform initialization and the visible Source chip opens
 the real portal. The normal AppImage passed private compositor dragging and
@@ -59,10 +63,10 @@ quality remains unverified. [Evidence](artifacts/linux-port-2026-10-26/niri-ever
 
 ## What is left, in priority order
 
-1. User feedback confirms the recorder appears in full-monitor footage on Niri.
-   Automatic hiding with reliable Pause/Stop access remains open; do not claim
-   own-window exclusion. The user's editable-cursor take has no sidecar, so its
-   pointer needs end-to-end checking rather than relying on private KWin evidence.
+1. Monitor auto-hide and noncolliding controls pass private packaged checks;
+   exact physical Niri input and monitor placement remain unverified. Do not
+   claim invisible own-window exclusion or a second-monitor exemption. The
+   user's missing editable-cursor sidecar still needs end-to-end investigation.
 2. Spoken microphone quality, physical camera and calibrated device timing
    remain unverified. The authorized actual-Niri recording, Pause/Continue,
    review, both exports and normal Quit have passed within their stated scope.
@@ -76,7 +80,9 @@ Global Pause/Continue works in the private lab. Open App's callback arrives but
 Wayland focus is denied; KDE shortcut admission becomes inactive after relaunch
 despite listed bindings. The independent Electron control reproduces both.
 Keep the limitation explicit; do not rewrite registration without new evidence.
-Wayland own-window exclusion is also unresolved.
+The candidate uses conservative auto-hide instead of own-window exclusion.
+Owned Niri HUD activation and local compositor bindings address control access
+without claiming the independent Electron backend issue itself is repaired.
 
 ## Working rules
 
