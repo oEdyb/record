@@ -46,7 +46,11 @@ export function linuxClipRecordingRequest(
 	request: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
 ): NativeMacRecordingRequest {
 	if ("schemaVersion" in request) {
-		return { ...request, platform: "linux", webcam: { ...request.webcam, enabled: false } };
+		return {
+			...request,
+			platform: "linux",
+			webcam: { enabled: false, width: 1920, height: 1080, fps: 60 },
+		};
 	}
 	return {
 		schemaVersion: 1,

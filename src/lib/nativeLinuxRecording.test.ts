@@ -63,6 +63,25 @@ describe("portalOwnsSourceSelection", () => {
 });
 
 describe("legacy Linux clip request adapter", () => {
+	it("keeps native preparation stable when the renderer camera finishes opening", () => {
+		const base = linuxClipRecordingRequest({
+			recordingId: 7,
+			video: { fps: 60 },
+			audio: { system: { enabled: false }, microphone: { enabled: false, gain: 1 } },
+			cursor: { mode: "system" },
+		});
+		const before = linuxClipRecordingRequest({
+			...base,
+			webcam: { enabled: true, width: 1920, height: 1080, fps: 30 },
+		});
+		const after = linuxClipRecordingRequest({
+			...base,
+			webcam: { enabled: true, width: 1920, height: 1080, fps: 60, deviceId: "opened-camera" },
+		});
+		expect(after).toEqual(before);
+		expect(after.webcam.enabled).toBe(false);
+	});
+
 	it("keeps explicit capture settings while supplying the canonical output/source/camera contract", () => {
 		const request = linuxClipRecordingRequest({
 			recordingId: 7,
