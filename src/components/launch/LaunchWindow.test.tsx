@@ -940,20 +940,15 @@ describe("LaunchWindow record button", () => {
 		});
 	});
 
-	// The ScreenCast portal has no parameter naming a source, so nothing this
-	// picker returned could ever reach the capture — it only raised a second
-	// portal dialog whose grant was discarded. On Linux the compositor's own
-	// picker, shown when recording starts, is the only thing that decides.
-	it("hides the in-app source button on Linux", async () => {
+	it("opens the native chooser from the Linux HUD source chip", async () => {
 		platformState.value = "linux";
-
 		renderLaunchWindow();
-
-		// The helper-availability answer arrives asynchronously, so the button is
-		// still there on the first frame — wait for it to go rather than race it.
-		await waitFor(() => {
-			expect(screen.queryByTestId("launch-source-selector-button")).toBeNull();
-		});
+		await waitFor(() =>
+			expect(window.electronAPI.isNativeLinuxCaptureAvailable).toHaveBeenCalled(),
+		);
+		fireEvent.click(await screen.findByTestId("launch-source-selector-button"));
+		await waitFor(() => expect(recorderState.value.chooseRecordingSource).toHaveBeenCalledOnce());
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
 	});
 
 	it("offers a fresh native source chooser before the first Linux recording", async () => {

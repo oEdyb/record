@@ -2027,15 +2027,13 @@ export function LaunchWindow() {
 	const setWingInert = (element: HTMLDivElement | null) => {
 		if (element) element.inert = topDock && Boolean(tuckedSide);
 	};
-	const sourceControl = portalOwnsSource ? (
-		<span className="flex-1" />
-	) : (
+	const sourceControl = (
 		<HudSourceChip
-			label={localizedSourceLabel}
+			label={portalOwnsSource ? t("deviceSettings.source") : localizedSourceLabel}
 			kind={selectedSourceKind}
 			expanded={isSourcePanelOpen}
 			disabled={controlsLocked}
-			onClick={toggleSourcePanel}
+			onClick={portalOwnsSource ? () => void chooseSource() : toggleSourcePanel}
 			onIntent={isLinuxHud ? undefined : sourceChipIntent}
 		/>
 	);

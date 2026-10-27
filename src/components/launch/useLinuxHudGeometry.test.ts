@@ -56,6 +56,18 @@ async function flushLayout() {
 }
 
 describe("Linux local HUD layout", () => {
+	it("preserves the compositor grip while Linux platform state resolves", async () => {
+		const { bar } = fixture();
+		const grip = document.createElement("div");
+		grip.dataset.hudGrip = "";
+		const setProperty = vi.spyOn(grip.style, "setProperty");
+		bar.append(grip);
+		renderHook(useLinuxHudGeometry);
+		delete grip.dataset.hudGrip;
+		await flushLayout();
+		expect(setProperty).not.toHaveBeenCalledWith("-webkit-app-region", "no-drag");
+	});
+
 	it("pins the pill independently of viewport resizing and keeps the idle allocation compact", async () => {
 		const { anchor } = fixture();
 		renderHook(useLinuxHudGeometry);

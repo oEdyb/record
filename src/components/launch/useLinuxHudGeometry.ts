@@ -24,14 +24,6 @@ export function useLinuxHudGeometry() {
 		};
 		const measure = () => {
 			frame = 0;
-			// A native drag region consumes pointer presses before React sees them.
-			// Keep the tappable logo usable for folding; drag-only timer grips can
-			// still use compositor dragging. Niri also offers modifier+drag.
-			for (const grip of anchor.querySelectorAll<HTMLElement>("[data-hud-grip]")) {
-				if (grip.style.getPropertyValue("-webkit-app-region") !== "no-drag") {
-					grip.style.setProperty("-webkit-app-region", "no-drag");
-				}
-			}
 			const stack = anchor.querySelector<HTMLElement>(`.${styles.hudAbove}`);
 			const stackHeight = stack?.offsetHeight ?? 0;
 			const stackWidth = stack?.offsetWidth ?? 0;

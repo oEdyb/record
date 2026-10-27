@@ -1142,3 +1142,20 @@ its loader dependency list is unchanged. Inventory and hashes:
 evidence. Private lab/build container stopped. This finishes the final scoped
 software candidate checkpoint. Remaining physical/Niri, compatibility and
 external release gates are explicit in the acceptance record.
+
+
+## October 27: reported HUD dragging, hidden Source and Niri decoration
+
+Olle's first normal-use check exposed an old geometry workaround that set an inline
+`app-region: no-drag` while the asynchronous Linux platform state still marked the
+logo tappable. It survived the later native-drag class. Remove that mutation;
+the grip component already owns the native drag decision. The Linux source chip
+now calls the existing real native chooser, replacing the empty spacer.
+
+References: [Electron 44.9.1 custom draggable regions](https://raw.githubusercontent.com/electron/electron/v44.9.1/docs/tutorial/custom-window-interactions.md)
+and [Niri window decorations](https://niri-wm.github.io/niri/Configuration:-Window-Rules.html).
+The reported blue rectangle matches the configured focus-ring color and transparent
+window footprint. A backed-up, validated local Niri rule disables background-filled
+borders, focus-ring and compositor shadow only for floating `co.dyberg.klippt`
+windows titled exactly `Klippt`; other apps keep their configured decorations.
+This local integration rule is separate from the portable app correction.
