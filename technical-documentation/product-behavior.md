@@ -403,6 +403,11 @@ Linux keeps the logo as a compositor-owned drag region and does not offer click-
 The panel opens on the last screens and windows it read and swaps in fresh thumbnails when
 they arrive; pointing at the source chip starts that read early (Olle, 2026-10-04).
 
+Recorder toasts occupy their own compact stack slot beyond the open panel, separated
+by the normal stack gap. They never cover Setup or the transport controls. Show one
+notice at a time, using compact padding and readable text; dismissal releases the
+reserved space. Review keeps its existing notification layout.
+
 Setup floats above the idle pill at the same 424 px width, laid out like the approved prototype
 (Olle, 2026-10-04). Top: a Display / Window choice with a sliding thumb; Display picks the main
 display in one click (or opens the picker when a display is already chosen), Window opens the

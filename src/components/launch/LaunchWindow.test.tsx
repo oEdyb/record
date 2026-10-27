@@ -1200,15 +1200,20 @@ describe("LaunchWindow record button", () => {
 		expect(recorderState.value.removePreviousClip).toHaveBeenCalledOnce();
 	});
 
-	it("shows recorder errors at the bottom, right above the pill", async () => {
+	it("lays recorder errors outside the settings panel in the HUD stack", async () => {
 		renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
 
 		act(() => {
 			toast.error("Recording stopped: the writer failed");
 		});
 
 		const message = await screen.findByText("Recording stopped: the writer failed");
+		const toastRegion = screen.getByTestId("hud-toast-region");
+		expect(toastRegion).toContainElement(message);
+		expect(toastRegion.parentElement).toContainElement(screen.getByTestId("hud-device-settings"));
+		expect(screen.getByTestId("hud-device-settings")).not.toContainElement(message);
 		expect(message.closest("[data-sonner-toaster]")).toHaveAttribute("data-y-position", "bottom");
 	});
 

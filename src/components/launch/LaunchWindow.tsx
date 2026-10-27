@@ -98,8 +98,6 @@ const HUD_DOCK_TAB_EXIT_MS = 160;
 const HUD_TUCK_SLIDE_MS = 240;
 
 type HudDockSide = "left" | "right" | "top";
-/** Toasts sit next to the pill, which is centred in the window: half its height and one stack gap. */
-const HUD_TOAST_OFFSET = `calc(50% + ${HUD_PILL_HEIGHT / 2 + HUD_STACK_GAP}px)`;
 const REMOVED_CLIP_FEEDBACK_MS = 4_000;
 
 function formatClipDuration(durationMs: number): string {
@@ -2098,13 +2096,6 @@ export function LaunchWindow() {
 			onPointerMove={handleRootPointerMove}
 			onPointerLeave={handlePointerLeave}
 		>
-			{/* Recorder errors appear right above the pill, inside this root so a
-			    pointer over a toast makes the click-through window clickable. */}
-			<Toaster
-				position={stackPlacement === "below" ? "top-center" : "bottom-center"}
-				offset={HUD_TOAST_OFFSET}
-				duration={6000}
-			/>
 			{/* The pill's left end sits where the idle pill's does, so folding, unfolding
 			    and Record never move the grip out from under the pointer. Whatever floats
 			    beside it stacks above it, or below it when the pill is near the top of the display.
@@ -2341,141 +2332,154 @@ export function LaunchWindow() {
 					</div>
 				) : null}
 
-				{stackVisible && (
-					// The first child sits closest to the bar on either side.
-					<div className={styles.hudAbove}>
-						{showSetup && (
-							<HudDeviceSettings
-								closing={setupPresence.closing}
-								instant={setupSwappedIn}
-								micDevices={micDevices}
-								cameraDevices={cameraDevices}
-								activeMicId={microphoneDeviceId || selectedMicId}
-								activeCameraId={webcamDeviceId || selectedCameraId}
-								cameraEnabled={webcamEnabled}
-								cameraStream={webcamPreviewStream}
-								cameraHandoff={cameraHandoff}
-								recordingQuality={recordingQuality}
-								onSelectRecordingQuality={handleSelectRecordingQuality}
-								webcamFormat={webcamFormat}
-								webcamFormatAuto={webcamFormatAuto}
-								cameraLoading={isCameraDevicesLoading}
-								cameraError={cameraDevicesError}
-								labels={deviceSettingsLabels}
-								systemAudioEnabled={systemAudioEnabled}
-								microphoneEnabled={microphoneEnabled}
-								controlsLocked={controlsLocked}
-								cameraLocked={recording}
-								onToggleSystemAudio={toggleSystemAudio}
-								onToggleMicrophone={toggleMicrophone}
-								onToggleCamera={toggleWebcam}
-								extras={setupExtras}
-								onSelectMic={handleSelectMicDevice}
-								onSelectCamera={handleSelectCameraDevice}
-								onSelectWebcamFormat={handleSelectWebcamFormat}
-								onClose={closeDeviceSettings}
-								panelRef={isDeviceSettingsOpen ? setPopoverEl : undefined}
-							/>
-						)}
+				{/* The first child sits closest to the bar on either side. */}
+				<div className={styles.hudAbove}>
+					{showSetup && (
+						<HudDeviceSettings
+							closing={setupPresence.closing}
+							instant={setupSwappedIn}
+							micDevices={micDevices}
+							cameraDevices={cameraDevices}
+							activeMicId={microphoneDeviceId || selectedMicId}
+							activeCameraId={webcamDeviceId || selectedCameraId}
+							cameraEnabled={webcamEnabled}
+							cameraStream={webcamPreviewStream}
+							cameraHandoff={cameraHandoff}
+							recordingQuality={recordingQuality}
+							onSelectRecordingQuality={handleSelectRecordingQuality}
+							webcamFormat={webcamFormat}
+							webcamFormatAuto={webcamFormatAuto}
+							cameraLoading={isCameraDevicesLoading}
+							cameraError={cameraDevicesError}
+							labels={deviceSettingsLabels}
+							systemAudioEnabled={systemAudioEnabled}
+							microphoneEnabled={microphoneEnabled}
+							controlsLocked={controlsLocked}
+							cameraLocked={recording}
+							onToggleSystemAudio={toggleSystemAudio}
+							onToggleMicrophone={toggleMicrophone}
+							onToggleCamera={toggleWebcam}
+							extras={setupExtras}
+							onSelectMic={handleSelectMicDevice}
+							onSelectCamera={handleSelectCameraDevice}
+							onSelectWebcamFormat={handleSelectWebcamFormat}
+							onClose={closeDeviceSettings}
+							panelRef={isDeviceSettingsOpen ? setPopoverEl : undefined}
+						/>
+					)}
 
-						{showSource && (
-							<SourcePicker
-								variant="panel"
-								instant={sourceSwappedIn}
-								initialKind={sourcePanelKind}
-								className={styles.hudPanel}
-								closing={sourcePresence.closing}
-								onClose={closeSourcePanel}
-								onChosen={() => setIsSourcePanelOpen(false)}
-								panelRef={isSourcePanelOpen ? setPopoverEl : undefined}
-							/>
-						)}
+					{showSource && (
+						<SourcePicker
+							variant="panel"
+							instant={sourceSwappedIn}
+							initialKind={sourcePanelKind}
+							className={styles.hudPanel}
+							closing={sourcePresence.closing}
+							onClose={closeSourcePanel}
+							onChosen={() => setIsSourcePanelOpen(false)}
+							panelRef={isSourcePanelOpen ? setPopoverEl : undefined}
+						/>
+					)}
 
-						{permissionPresence.present && capturePermissions && (
-							<HudPermissionPanel
-								permissions={capturePermissions}
-								needs={permissionNeeds}
-								step={permissionStep(capturePermissions, permissionNeeds)}
-								labels={permissionLabels}
-								busy={permissionRequestBusy}
-								closing={permissionPresence.closing}
-								panelRef={permissionPanelOpen ? setPopoverEl : undefined}
-								onContinue={() => void requestNextPermission()}
-								onOpenSettings={openPrivacySettings}
-								onRelaunch={relaunchApp}
-								onClose={closePermissionPanel}
-							/>
-						)}
+					{permissionPresence.present && capturePermissions && (
+						<HudPermissionPanel
+							permissions={capturePermissions}
+							needs={permissionNeeds}
+							step={permissionStep(capturePermissions, permissionNeeds)}
+							labels={permissionLabels}
+							busy={permissionRequestBusy}
+							closing={permissionPresence.closing}
+							panelRef={permissionPanelOpen ? setPopoverEl : undefined}
+							onContinue={() => void requestNextPermission()}
+							onOpenSettings={openPrivacySettings}
+							onRelaunch={relaunchApp}
+							onClose={closePermissionPanel}
+						/>
+					)}
 
-						{canPeek && (
-							<HudClipPeek
-								clips={presentation.recordedClips}
-								labels={peekLabels}
-								open={peekOpen}
-								instant={peekInstant}
-								panelRef={peekOpen ? setPopoverEl : undefined}
-								onClose={closePeek}
-							/>
-						)}
+					{canPeek && (
+						<HudClipPeek
+							clips={presentation.recordedClips}
+							labels={peekLabels}
+							open={peekOpen}
+							instant={peekInstant}
+							panelRef={peekOpen ? setPopoverEl : undefined}
+							onClose={closePeek}
+						/>
+					)}
 
-						{(shownRemovedClip || hasNotices) && (
-							<div
-								ref={setHudNoticesEl}
-								data-testid="hud-notice-column"
-								className={styles.hudNoticeColumn}
-							>
-								{shownRemovedClip && (
-									<div
-										data-hud-interactive="true"
-										data-testid="clip-removal-feedback"
-										data-closing={removedClipPresence.closing}
-										className={`${styles.clipUndoNotice} ${styles.electronNoDrag}`}
-										onPointerEnter={enableHudMouseEvents}
-										role="status"
+					{(shownRemovedClip || hasNotices) && (
+						<div
+							ref={setHudNoticesEl}
+							data-testid="hud-notice-column"
+							className={styles.hudNoticeColumn}
+						>
+							{shownRemovedClip && (
+								<div
+									data-hud-interactive="true"
+									data-testid="clip-removal-feedback"
+									data-closing={removedClipPresence.closing}
+									className={`${styles.clipUndoNotice} ${styles.electronNoDrag}`}
+									onPointerEnter={enableHudMouseEvents}
+									role="status"
+								>
+									<span>{t("recording.clipRemoved")}</span>
+									<span className={styles.clipUndoDuration}>
+										{formatClipDuration(shownRemovedClip.durationMs)}
+									</span>
+									<button
+										type="button"
+										className={styles.clipUndoButton}
+										onClick={handleUndoRemovedClip}
 									>
-										<span>{t("recording.clipRemoved")}</span>
-										<span className={styles.clipUndoDuration}>
-											{formatClipDuration(shownRemovedClip.durationMs)}
-										</span>
-										<button
-											type="button"
-											className={styles.clipUndoButton}
-											onClick={handleUndoRemovedClip}
-										>
-											{commonT("actions.undo")}
-										</button>
-									</div>
-								)}
+										{commonT("actions.undo")}
+									</button>
+								</div>
+							)}
 
-								{systemLocaleSuggestion && (
-									<HudNotice
-										title={t("systemLanguagePrompt.title")}
-										description={t("systemLanguagePrompt.description", {
-											language: suggestedLanguageName,
-										})}
-										dismissLabel={t("systemLanguagePrompt.keepDefault")}
-										confirmLabel={t("systemLanguagePrompt.switch", {
-											language: suggestedLanguageName,
-										})}
-										onDismiss={dismissSystemLocaleSuggestion}
-										onConfirm={acceptSystemLocaleSuggestion}
-									/>
-								)}
+							{systemLocaleSuggestion && (
+								<HudNotice
+									title={t("systemLanguagePrompt.title")}
+									description={t("systemLanguagePrompt.description", {
+										language: suggestedLanguageName,
+									})}
+									dismissLabel={t("systemLanguagePrompt.keepDefault")}
+									confirmLabel={t("systemLanguagePrompt.switch", {
+										language: suggestedLanguageName,
+									})}
+									onDismiss={dismissSystemLocaleSuggestion}
+									onConfirm={acceptSystemLocaleSuggestion}
+								/>
+							)}
 
-								{softwareEncoderFallbackNoticeVisible && (
-									<HudNotice
-										title={t("softwareEncoderFallback.title")}
-										description={t("softwareEncoderFallback.description")}
-										dismissLabel={t("softwareEncoderFallback.dontShowAgain")}
-										confirmLabel={t("softwareEncoderFallback.dismiss")}
-										onDismiss={dismissSoftwareFallbackForever}
-										onConfirm={dismissSoftwareFallbackOnce}
-									/>
-								)}
-							</div>
-						)}
+							{softwareEncoderFallbackNoticeVisible && (
+								<HudNotice
+									title={t("softwareEncoderFallback.title")}
+									description={t("softwareEncoderFallback.description")}
+									dismissLabel={t("softwareEncoderFallback.dontShowAgain")}
+									confirmLabel={t("softwareEncoderFallback.dismiss")}
+									onDismiss={dismissSoftwareFallbackForever}
+									onConfirm={dismissSoftwareFallbackOnce}
+								/>
+							)}
+						</div>
+					)}
+					<div
+						data-testid="hud-toast-region"
+						data-hud-interactive="true"
+						className={styles.hudToastRegion}
+						onPointerEnter={enableHudMouseEvents}
+					>
+						<Toaster
+							className={styles.hudToaster}
+							position={stackPlacement === "below" ? "top-center" : "bottom-center"}
+							offset={0}
+							mobileOffset={0}
+							visibleToasts={1}
+							duration={4000}
+						/>
 					</div>
-				)}
+				</div>
 			</div>
 		</div>
 	);

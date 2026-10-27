@@ -1159,3 +1159,16 @@ window footprint. A backed-up, validated local Niri rule disables background-fil
 borders, focus-ring and compositor shadow only for floating `co.dyberg.klippt`
 windows titled exactly `Klippt`; other apps keep their configured decorations.
 This local integration rule is separate from the portable app correction.
+
+
+## October 27: compact recorder toasts outside controls
+
+The HUD's window-relative Sonner offset assumed a centered pill. Linux instead
+resizes and pins the window around open surfaces, so that offset could place a
+camera error over Setup and feed toast bounds back into window sizing. Move the
+existing Sonner host into a real slot at the outer end of the HUD stack. The slot
+uses Sonner 2.0.7's measured `--front-toast-height`, independent of viewport size;
+its empty state takes no space. HUD-only styling uses 360px width, 12px text and
+10px/12px padding, with one visible toast. The shared review host retains defaults.
+Primary contract inspected: pinned `node_modules/sonner/dist/styles.css` and
+`index.mjs` (positioning, measured height and visible-toast behavior).

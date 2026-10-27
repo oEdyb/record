@@ -1887,3 +1887,36 @@
 	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 }
+
+
+/* Toasts take a real stack slot outside Setup/Replay, independent of window size. */
+.hudToastRegion {
+	width: min(360px, var(--hud-horizontal-width, 424px));
+	pointer-events: auto;
+	--toast-radius: 12px;
+	--toast-font-size: 12px;
+	--toast-padding: 10px 12px;
+}
+
+.hudToastRegion:not(:has([data-sonner-toast])) {
+	display: none;
+}
+
+.hudToaster[data-sonner-toaster] {
+	position: relative;
+	inset: auto;
+	transform: none;
+	width: 100%;
+	height: var(--front-toast-height, 0px);
+	flex: none;
+}
+
+.hudToaster[data-sonner-toaster] [data-sonner-toast] {
+	width: 100%;
+	line-height: 1.4;
+}
+
+.hudToaster[data-sonner-toaster] [data-sonner-toast][data-front="false"] {
+	visibility: hidden;
+	pointer-events: none;
+}
