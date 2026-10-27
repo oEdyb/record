@@ -26,7 +26,18 @@ See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`,
+Latest portable AppImage: `c5cd55658fc1a0172d5e2842b3aa82911d1276e6`,
+`release/linux-port-20261027-c5cd5565/`. On Niri, retain a preview already wholly on
+an uncaptured monitor when exact cast and logical geometry prove eligibility;
+otherwise hide. Relevant changes revoke it until Pause. This is conditional
+visibility, not atomic compositor exclusion. Local camera default is right-hand
+DP-3. Fully quit/reopen to load it. 58 affected tests, both typechecks, two review
+passes and portable policy pass. Real OBSBOT + packaged two-clip recording now
+passes privately (231 screen / 229 camera frames, four files fully decode); the
+positive exemption across two physical monitors remains user-driven.
+[Evidence](artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
+
+Previous portable AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`,
 `release/linux-port-20261027-cde7e19b/`. Linux now creates the shared live camera
 monitor and hides it with the pill during monitor/unknown capture, preserving
 separate camera recording. Explicit Easy Effects Source selection resolves its
@@ -78,8 +89,8 @@ quality remains unverified. [Evidence](artifacts/linux-port-2026-10-26/niri-ever
    exact physical Niri input and monitor placement remain unverified. Do not
    claim invisible own-window exclusion or a second-monitor exemption. The
    user confirmed the cursor is present; that investigation is closed.
-2. Spoken microphone quality, physical camera and calibrated device timing
-   remain unverified. The authorized actual-Niri recording, Pause/Continue,
+2. Spoken microphone quality and calibrated device timing remain unverified.
+   A short actual OBSBOT packaged recording now passes; no timing calibration. The authorized actual-Niri recording, Pause/Continue,
    review, both exports and normal Quit have passed within their stated scope.
 3. Keep the finite acceptance record current. No routine full suites, hour soaks
    or four-format rebuilds without a concrete changed risk.

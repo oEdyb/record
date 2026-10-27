@@ -1,0 +1,117 @@
+[
+  {
+    "state": "recording",
+    "windows": [
+      {
+        "id": "{476bf1a6-63d4-4622-8121-e81fed047e35}",
+        "caption": "niri",
+        "app": "niri",
+        "active": false,
+        "geometry": {
+          "x": 320,
+          "y": 122,
+          "width": 1280,
+          "height": 836
+        }
+      },
+      {
+        "id": "{111bbc22-23de-4900-a497-49d826f83436}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": true,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      }
+    ]
+  },
+  {
+    "state": "paused",
+    "windows": [
+      {
+        "id": "{476bf1a6-63d4-4622-8121-e81fed047e35}",
+        "caption": "niri",
+        "app": "niri",
+        "active": false,
+        "geometry": {
+          "x": 320,
+          "y": 122,
+          "width": 1280,
+          "height": 836
+        }
+      },
+      {
+        "id": "{111bbc22-23de-4900-a497-49d826f83436}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": false,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      {
+        "id": "{f750fb13-7ea4-4796-bf0d-75612fc0e1dc}",
+        "caption": "Klippt Camera",
+        "app": "co.dyberg.klippt",
+        "active": false,
+        "geometry": {
+          "x": 804,
+          "y": 447,
+          "width": 312,
+          "height": 186
+        }
+      },
+      {
+        "id": "{a0cbfbc5-066a-4835-abcd-1c341c77768c}",
+        "caption": "Klippt",
+        "app": "co.dyberg.klippt",
+        "active": true,
+        "geometry": {
+          "x": 724,
+          "y": 484,
+          "width": 472,
+          "height": 112
+        }
+      }
+    ]
+  },
+  {
+    "state": "resumed",
+    "windows": [
+      {
+        "id": "{476bf1a6-63d4-4622-8121-e81fed047e35}",
+        "caption": "niri",
+        "app": "niri",
+        "active": false,
+        "geometry": {
+          "x": 320,
+          "y": 122,
+          "width": 1280,
+          "height": 836
+        }
+      },
+      {
+        "id": "{111bbc22-23de-4900-a497-49d826f83436}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": true,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      }
+    ]
+  },
+  {
+    "state": "review",
+    "text": "Recording 10/27/2026, 5:40:25 PM\n0:04 total, 2 clips\nAdd clip\nNew recording\nClean cut\nSave video\n0:00/0:03"
+  }
+]

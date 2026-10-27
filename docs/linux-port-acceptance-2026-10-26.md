@@ -21,7 +21,14 @@ Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`.
+- Latest AppImage: `c5cd55658fc1a0172d5e2842b3aa82911d1276e6`.
+  Inventory `release/linux-port-20261027-c5cd5565/`. Conditional Niri preview on an
+  uncaptured output, conservative invalidation and exact source matching pass 58
+  affected tests and real socket/CLI checks. Normal packaged actual OBSBOT capture
+  passes two clips with separate originals; the positive physical two-monitor
+  preview path remains user-driven. This is not atomic compositor exclusion.
+  [Evidence](../artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
+- Previous AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`.
   Inventory `release/linux-port-20261027-cde7e19b/`. Linux confidence monitor
   creation, monitor preview hiding and explicit processed-microphone matching
   pass scoped checks; normal AppImage camera workflow passes with synthetic
@@ -78,7 +85,8 @@ new observed failure invalidates its coverage. Only affected tests run.
   the default input, but the room/processed signal was nearly silent. Its GUI
   workflow, system audio, review and both exports passed. Future physical
   automation still requires explicit authorization.
-- Physical webcam and calibrated hardware clock/timing; monitor placement.
+- Short physical OBSBOT recording now passes. Calibrated hardware clock/timing
+  and the positive physical two-monitor preview path remain unverified.
 - Wayland own-window exclusion; global shortcut activation/focus/backend reuse.
   Independent Electron reproduction exists; no speculative Klippt rewrite.
 - Representative responsiveness/resource use on the intended session. The hour
