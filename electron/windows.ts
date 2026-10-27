@@ -135,6 +135,7 @@ let hudOverlayWindow: BrowserWindow | null = null;
 let cameraPreviewWindow: BrowserWindow | null = null;
 let cameraPreviewReady = false;
 let cameraPreviewVisible = false;
+let cameraPreviewCaptureHidden = false;
 let hudRendererReady = false;
 let cameraPreviewRendererReady = false;
 let cameraPreviewPortsConnected = false;
@@ -258,11 +259,17 @@ function placeCameraPreview(position?: CameraPreviewPoint): CameraPreviewPoint |
 
 function applyCameraPreviewVisibility() {
 	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed() || !cameraPreviewReady) return;
-	if (cameraPreviewVisible) {
+	if (cameraPreviewVisible && !cameraPreviewCaptureHidden) {
 		cameraPreviewWindow.showInactive();
 	} else {
 		cameraPreviewWindow.hide();
 	}
+}
+
+export function setCameraPreviewCaptureHidden(hidden: boolean): void {
+	if (process.platform !== "linux") return;
+	cameraPreviewCaptureHidden = hidden;
+	applyCameraPreviewVisibility();
 }
 
 function setCameraPreviewExpanded(expanded: boolean) {
@@ -806,6 +813,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 		cameraPreviewCompactSize,
 	);
 	const win = new BrowserWindow({
+		title: `${APP_DISPLAY_NAME} Camera`,
 		...cameraPreviewCompactSize,
 		x: initialPosition.x,
 		y: initialPosition.y,
@@ -833,6 +841,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 		},
 	});
 
+	win.on("page-title-updated", (event) => event.preventDefault());
 	applyContentProtection(win, "camera preview");
 	if (process.platform === "darwin") {
 		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });

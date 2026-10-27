@@ -1214,3 +1214,29 @@ Sources: [Electron 44.9.1 app/single-instance contract](https://raw.githubuserco
 [Niri key bindings](https://niri-wm.github.io/niri/Configuration:-Key-Bindings.html),
 and installed `niri msg action move-floating-window --help`; the latter informed
 inspection only, and no compositor reposition workaround was shipped.
+
+
+## October 27: virtual microphones and Linux confidence monitor
+
+The physical Xstrm selection was rerouted by EasyEffects to its processed virtual
+source. Native enumeration excluded exact `Audio/Source/Virtual`, so explicitly
+choosing Easy Effects Source could not resolve it either. Accept that exact class
+alongside `Audio/Source`; keep sinks, stream nodes and unknown subtypes excluded.
+Keep actual peer identity validation unchanged: intentionally choose the processed
+source rather than silently accepting it for a different selected physical input.
+Primary contracts: [PipeWire virtual source configuration](https://github.com/PipeWire/pipewire/blob/master/src/daemon/pipewire.conf.in)
+and [EasyEffects maintainer's matching-class correction](https://github.com/wwmm/easyeffects/discussions/4809).
+The actual C callback regression fails before and passes after. A live private
+virtual source resolves by label and produces nonzero captured PCM.
+
+The separate confidence window was still Mac-only. Enable the existing shared
+frame relay/window on Linux too. Its unique `Klippt Camera` title avoids ambiguity
+in owned HUD activation. A native visibility gate preserves the renderer's desired
+state while monitor/unknown capture conceals both windows before writer admission.
+It rejects late show requests and delayed creation until confirmed Pause or failed
+startup releases concealment. Separate camera recording is untouched. Private
+synthetic-camera clips prove that screen frames contain no preview while isolated
+camera originals remain decodable. The connected OBSBOT camera was busy in the
+user's running Klippt; no process was stopped or physical footage collected.
+A backed-up Niri rule places the camera top-right and suppresses automatic focus;
+the private nested compositor confirms position and focus independently.

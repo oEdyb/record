@@ -225,6 +225,27 @@ static void default_capture_is_not_gated(void)
     assert(samples_received == 4 && errors_received == 0);
 }
 
+static void source_enumeration_includes_virtual_microphones_only(void)
+{
+    char output[1024] = { 0 };
+    struct osc_pw_enum enumeration = { .out = output, .out_len = sizeof(output) };
+    const char *classes[] = {
+        "Audio/Source", "Audio/Source/Virtual", "Audio/Sink", "Audio/Sink/Virtual",
+        "Stream/Input/Audio", "Stream/Output/Audio", "Audio/Source/Unknown", "Video/Source",
+    };
+    for (size_t index = 0; index < sizeof(classes) / sizeof(classes[0]); ++index) {
+        struct spa_dict_item items[] = {
+            SPA_DICT_ITEM_INIT(PW_KEY_MEDIA_CLASS, classes[index]),
+            SPA_DICT_ITEM_INIT(PW_KEY_NODE_NAME, index == 1 ? "easyeffects_source" : "device"),
+            SPA_DICT_ITEM_INIT(PW_KEY_NODE_DESCRIPTION, index == 1 ? "Easy Effects Source" : "Device"),
+        };
+        struct spa_dict props = SPA_DICT_INIT_ARRAY(items);
+        osc_enum_on_global(&enumeration, (uint32_t)index, 0, PW_TYPE_INTERFACE_Node, 0, &props);
+    }
+    assert(strcmp(output,
+                  "device\037Device\036easyeffects_source\037Easy Effects Source\036") == 0);
+}
+
 int main(void)
 {
     valid_peer_waits_for_barrier_and_discards_earlier_pcm();
@@ -233,5 +254,6 @@ int main(void)
     malformed_links_and_overflow_fail_closed();
     core_failure_and_unknown_stream_do_not_admit_audio();
     default_capture_is_not_gated();
-    puts("audio peer admission: six offline scenarios passed");
+    source_enumeration_includes_virtual_microphones_only();
+    puts("audio peer admission: seven offline scenarios passed");
 }

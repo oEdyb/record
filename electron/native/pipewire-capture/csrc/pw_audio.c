@@ -546,10 +546,11 @@ static void osc_enum_on_global(void *data, uint32_t id, uint32_t permissions, co
         return;
     }
     media_class = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
-    /* Only real capture devices. "Audio/Source" covers microphones and line-in;
-     * a sink's monitor is "Audio/Sink" and is reached via capture_sink instead,
-     * so listing it here would offer the user a duplicate of system audio. */
-    if (media_class == NULL || strcmp(media_class, "Audio/Source") != 0) {
+    /* Virtual sources include processed microphones such as EasyEffects.
+     * Sink monitors remain separate system-audio capture targets. */
+    if (media_class == NULL ||
+        (strcmp(media_class, "Audio/Source") != 0 &&
+         strcmp(media_class, "Audio/Source/Virtual") != 0)) {
         return;
     }
     osc_enum_append(e, spa_dict_lookup(props, PW_KEY_NODE_NAME),

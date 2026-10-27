@@ -88,6 +88,7 @@ import {
 	createSourceSelectorWindow,
 	createTranscriptWindow,
 	isPointOverPrivateRecordingUi,
+	setCameraPreviewCaptureHidden,
 } from "./windows";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -198,7 +199,7 @@ function createWindow() {
 
 	mainWindow = createHudOverlayWindow();
 	quitCaptureGuard.protectWindow(mainWindow);
-	if (isMac) createCameraPreviewWindow();
+	if (isMac || process.platform === "linux") createCameraPreviewWindow();
 }
 
 function showMainWindow() {
@@ -1125,7 +1126,7 @@ appReady?.then(async () => {
 		const previousWindow = mainWindow;
 		const hudWindow = createHudOverlayWindow({ returnToReview: true });
 		quitCaptureGuard.protectWindow(hudWindow);
-		if (isMac) createCameraPreviewWindow();
+		if (isMac || process.platform === "linux") createCameraPreviewWindow();
 		workspaceTransition = { target: "hud", window: hudWindow };
 		mainWindow = hudWindow;
 		if (!hudWindow || !previousWindow || previousWindow.isDestroyed()) return;
@@ -1175,7 +1176,7 @@ appReady?.then(async () => {
 					(window): window is BrowserWindow => Boolean(window),
 				),
 			),
-		{ ipcMain },
+		{ ipcMain, setCameraPreviewCaptureHidden },
 	);
 
 	const sttModelsDir = path.join(app.getPath("userData"), "stt-models");

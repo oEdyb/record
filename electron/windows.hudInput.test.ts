@@ -13,6 +13,8 @@ const fixture = vi.hoisted(() => {
 		isVisible: () => true,
 		isMinimized: () => false,
 		setContentProtection: vi.fn(),
+		showInactive: vi.fn(),
+		hide: vi.fn(),
 		setIgnoreMouseEvents: vi.fn(),
 		loadURL: vi.fn(),
 		getSize: (): [number, number] => [dimensions.width, dimensions.height],
@@ -97,5 +99,36 @@ describe("Linux native HUD input", () => {
 		send("hud-overlay-set-direction-exclusion-rects", [bar]);
 		expect(fixture.win.setSize).toHaveBeenLastCalledWith(472, 112);
 		expect(fixture.win.setBounds).not.toHaveBeenCalled();
+	});
+});
+
+describe("Linux camera preview capture privacy", () => {
+	it("suppresses late visibility requests and creation until capture releases it", async () => {
+		const { createCameraPreviewWindow, setCameraPreviewCaptureHidden } = await import("./windows");
+		setCameraPreviewCaptureHidden(true);
+		createCameraPreviewWindow();
+		expect(fixture.BrowserWindow).toHaveBeenLastCalledWith(
+			expect.objectContaining({ title: "Klippt Camera" }),
+		);
+		const titleUpdate = fixture.win.on.mock.calls.find(
+			([event]) => event === "page-title-updated",
+		)?.[1];
+		if (!titleUpdate) throw new Error("Camera title guard missing");
+		const preventDefault = vi.fn();
+		titleUpdate({ preventDefault });
+		expect(preventDefault).toHaveBeenCalledOnce();
+		const ready = [...fixture.win.once.mock.calls]
+			.reverse()
+			.find(([event]) => event === "ready-to-show")?.[1];
+		if (!ready) throw new Error("Camera preview ready callback missing");
+		ready();
+		send("camera-preview-set-visible", true);
+		expect(fixture.win.showInactive).not.toHaveBeenCalled();
+		setCameraPreviewCaptureHidden(false);
+		expect(fixture.win.showInactive).toHaveBeenCalledOnce();
+		setCameraPreviewCaptureHidden(true);
+		send("camera-preview-set-visible", false);
+		setCameraPreviewCaptureHidden(false);
+		expect(fixture.win.showInactive).toHaveBeenCalledOnce();
 	});
 });

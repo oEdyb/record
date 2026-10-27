@@ -497,6 +497,14 @@ Disable transport and Replay while saving. Reduced motion removes the entrance a
 
 ### Camera confidence monitor
 
+On Linux, create the same separate confidence monitor as macOS. For monitor or
+unknown-source capture, hide it with the HUD before Start/Continue and restore
+its requested visibility only after confirmed Pause or failed startup. A late
+renderer visibility request or renderer reload must not override capture hiding.
+The camera keeps recording into its separate original while its preview is hidden.
+Window-only capture can retain the preview. Niri integration places the uniquely
+titled `Klippt Camera` window away from the HUD without taking keyboard focus.
+
 - Keep the camera monitor as a separate preview-only window. Its position and shape never set
   the recorded camera's editor layout.
 - Keep it always on top but non-focusable. Show it without activating OpenScreen so it does not

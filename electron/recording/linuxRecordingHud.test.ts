@@ -11,6 +11,7 @@ function setup(platform = "linux", sourceKind = "monitor") {
 		focus: vi.fn(),
 		webContents: { send: vi.fn() },
 	};
+	const previewHidden = vi.fn();
 	const hud = new LinuxRecordingHud(
 		platform,
 		() => window,
@@ -19,9 +20,12 @@ function setup(platform = "linux", sourceKind = "monitor") {
 		async () => {
 			order.push("unmap");
 		},
+		undefined,
+		previewHidden,
 	);
 	return {
 		hud,
+		previewHidden,
 		window,
 		order,
 		setCapturing: (value: boolean) => {
@@ -47,6 +51,20 @@ describe("Linux recording controls", () => {
 		setCapturing(false);
 		hud.pauseCompleted();
 		expect(window.show).toHaveBeenCalledOnce();
+	});
+
+	it("conceals live camera preview until capture is confirmed paused", async () => {
+		const { hud, previewHidden, setCapturing } = setup();
+		await hud.capture(async () => {
+			expect(previewHidden).toHaveBeenLastCalledWith(true);
+			setCapturing(true);
+			return { success: true };
+		});
+		hud.pauseCompleted();
+		expect(previewHidden).toHaveBeenCalledExactlyOnceWith(true);
+		setCapturing(false);
+		hud.pauseCompleted();
+		expect(previewHidden).toHaveBeenLastCalledWith(false);
 	});
 
 	it("restores controls after failed start or rejected Continue", async () => {
