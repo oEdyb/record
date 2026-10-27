@@ -63,6 +63,32 @@ describe("portalOwnsSourceSelection", () => {
 });
 
 describe("legacy Linux clip request adapter", () => {
+	it("opens the system default instead of resolving its display label as a device", () => {
+		const base = linuxClipRecordingRequest({
+			video: { fps: 60 },
+			audio: { system: { enabled: true }, microphone: { enabled: true, gain: 1 } },
+			cursor: { mode: "system" },
+		});
+		const result = linuxClipRecordingRequest({
+			...base,
+			audio: {
+				...base.audio,
+				microphone: { enabled: true, gain: 1.4, deviceId: "default", deviceName: "Default" },
+			},
+		});
+		expect(result.audio.microphone).toEqual({ enabled: true, gain: 1.4, deviceId: "default" });
+		const explicit = {
+			enabled: true,
+			gain: 1,
+			deviceId: "specific",
+			deviceName: "Easy Effects Source",
+		};
+		expect(
+			linuxClipRecordingRequest({ ...base, audio: { ...base.audio, microphone: explicit } }).audio
+				.microphone,
+		).toEqual(explicit);
+	});
+
 	it("keeps native preparation stable when the renderer camera finishes opening", () => {
 		const base = linuxClipRecordingRequest({
 			recordingId: 7,

@@ -46,9 +46,12 @@ export function linuxClipRecordingRequest(
 	request: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
 ): NativeMacRecordingRequest {
 	if ("schemaVersion" in request) {
+		const microphone = { ...request.audio.microphone };
+		if (microphone.deviceId === "default") delete microphone.deviceName;
 		return {
 			...request,
 			platform: "linux",
+			audio: { ...request.audio, microphone },
 			webcam: { enabled: false, width: 1920, height: 1080, fps: 60 },
 		};
 	}
