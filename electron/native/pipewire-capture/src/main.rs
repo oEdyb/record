@@ -995,10 +995,13 @@ fn run<W: Write>(
                             .map(|event| Message::Stream(StreamEvent::Cursor(event)));
                         session = Some(chosen.session);
                         frames = Some(chosen.frames);
+                        let node_id = chosen.info.node_id;
                         portal_stream = Some(chosen.info);
                         source_selection = None;
                         let _ = emitter.emit(&Event::SourceReselected {
                             capture_bounds: bounds,
+                            node_id,
+                            source_kind: granted_kind.map(|kind| kind.as_str().to_owned()),
                         });
                     }
                     Ok(None) => {}

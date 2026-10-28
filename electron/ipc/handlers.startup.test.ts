@@ -195,6 +195,7 @@ describe("registerIpcHandlers startup contract", () => {
 			{},
 			{
 				schemaVersion: 1,
+				audio: { system: { enabled: false }, microphone: { enabled: false, gain: 1 } },
 				video: { fps: 60 },
 				webcam: { enabled: false },
 			},

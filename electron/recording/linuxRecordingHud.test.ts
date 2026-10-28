@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { LinuxRecordingHud } from "./linuxRecordingHud";
+import { withHiddenPortalHud } from "./portalSelectionHud";
+
+function deferred<T>() {
+	let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
+	const promise = new Promise<T>((complete) => {
+		resolve = complete;
+	});
+	return { promise, resolve };
+}
 
 function setup(platform = "linux", sourceKind = "monitor") {
 	let capturing = false;
@@ -35,6 +44,34 @@ function setup(platform = "linux", sourceKind = "monitor") {
 }
 
 describe("Linux recording controls", () => {
+	it("keeps a proven second-monitor pill mapped and hides when its position becomes unsafe", async () => {
+		const { window } = setup();
+		const isolation = { begin: vi.fn().mockResolvedValue(true), end: vi.fn() };
+		let capturing = false;
+		const hud = new LinuxRecordingHud(
+			"linux",
+			() => window,
+			() => capturing,
+			() => true,
+			async () => undefined,
+			undefined,
+			undefined,
+			isolation,
+		);
+		await hud.capture(async () => {
+			capturing = true;
+			return { success: true };
+		});
+		expect(window.hide).not.toHaveBeenCalled();
+		expect(hud.requestControls()).toBe(false);
+		hud.conceal();
+		expect(window.hide).toHaveBeenCalledOnce();
+		expect(hud.requestControls()).toBe(true);
+		capturing = false;
+		hud.pauseCompleted();
+		expect(isolation.end).toHaveBeenCalled();
+	});
+
 	it("unmaps before capture and stays hidden until the writer pauses", async () => {
 		const { hud, window, order, setCapturing } = setup();
 		await hud.capture(async () => {
@@ -92,6 +129,7 @@ describe("Linux recording controls", () => {
 		);
 		const start = hud.capture(record);
 		expect(record).not.toHaveBeenCalled();
+		await vi.waitFor(() => expect(finish).toBeDefined());
 		finish?.();
 		await start;
 		expect(record).toHaveBeenCalledOnce();
@@ -205,4 +243,60 @@ describe("Linux recording controls", () => {
 		expect(window.hide).not.toHaveBeenCalled();
 		expect(window.show).not.toHaveBeenCalled();
 	});
+});
+
+it("waits for an old placement RPC before proving a replacement capture safe", async () => {
+	const { window } = setup();
+	const portalWindow = { ...window, isVisible: () => true, showInactive: vi.fn() };
+	const entered = deferred<void>();
+	const finish = deferred<void>();
+	const order: string[] = [];
+	const picker = withHiddenPortalHud(
+		() => portalWindow,
+		async () => "grant",
+		async () => async () => {
+			entered.resolve();
+			await finish.promise;
+			order.push("placement-finished");
+		},
+	);
+	const rejected = expect(picker).rejects.toThrow("Source selection cancelled");
+	await entered.promise;
+	let capturing = false;
+	const hud = new LinuxRecordingHud(
+		"linux",
+		() => portalWindow,
+		() => capturing,
+		() => true,
+		async () => undefined,
+		undefined,
+		undefined,
+		{
+			begin: async () => {
+				order.push("prove");
+				return true;
+			},
+			end: () => undefined,
+		},
+	);
+	const capture = hud.capture(async () => {
+		order.push("record");
+		capturing = true;
+		return { success: true };
+	});
+	expect(order).toEqual([]);
+	const cancelledCapture = expect(capture).rejects.toThrow("Recording start cancelled");
+	const replacement = hud.capture(async () => {
+		order.push("record");
+		capturing = true;
+		return { success: true };
+	});
+	expect(order).toEqual([]);
+	finish.resolve();
+	await cancelledCapture;
+	await replacement;
+	await rejected;
+	expect(order).toEqual(["placement-finished", "prove", "record"]);
+	expect(window.hide).toHaveBeenCalledOnce();
+	expect(window.show).not.toHaveBeenCalled();
 });

@@ -1,5 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { withHiddenPortalHud } from "./portalSelectionHud";
+import {
+	cancelPortalHudSelection,
+	supersedePortalHudSelection,
+	withHiddenPortalHud,
+} from "./portalSelectionHud";
+
+function deferred<T>() {
+	let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
+	const promise = new Promise<T>((complete) => {
+		resolve = complete;
+	});
+	return { promise, resolve };
+}
 
 function hudWindow() {
 	return {
@@ -115,4 +127,91 @@ describe("portal selection HUD visibility", () => {
 			),
 		).resolves.toBe("selected");
 	});
+});
+
+it("restores compositor placement before returning the selected source", async () => {
+	const window = hudWindow();
+	const order: string[] = [];
+	const restore = vi.fn(async () => {
+		order.push("placed");
+	});
+	const pending = withHiddenPortalHud(
+		() => window,
+		async () => {
+			order.push("selected");
+			return "grant";
+		},
+		async () => restore,
+	);
+	await expect(pending).resolves.toBe("grant");
+	expect(order).toEqual(["selected", "placed"]);
+	expect(window.showInactive).toHaveBeenCalledOnce();
+});
+
+it("cancels before preparation when placement lookup is still pending", async () => {
+	const window = hudWindow();
+	const lookup = deferred<undefined>();
+	const select = vi.fn(async () => "grant");
+	const pending = withHiddenPortalHud(
+		() => window,
+		select,
+		() => lookup.promise,
+	);
+	const rejected = expect(pending).rejects.toThrow("Source selection cancelled");
+	cancelPortalHudSelection(window);
+	lookup.resolve(undefined);
+	await rejected;
+	expect(select).not.toHaveBeenCalled();
+	expect(window.hide).not.toHaveBeenCalled();
+	expect(window.showInactive).not.toHaveBeenCalled();
+});
+
+it("does not restore an old picker over a replacement recording", async () => {
+	const window = hudWindow();
+	const grant = deferred<string>();
+	const restore = vi.fn(async () => undefined);
+	const pending = withHiddenPortalHud(
+		() => window,
+		() => grant.promise,
+		async () => restore,
+	);
+	const rejected = expect(pending).rejects.toThrow("Source selection cancelled");
+	await vi.waitFor(() => expect(window.hide).toHaveBeenCalledOnce());
+	supersedePortalHudSelection(window);
+	grant.resolve("old grant");
+	await rejected;
+	expect(window.showInactive).not.toHaveBeenCalled();
+	expect(restore).not.toHaveBeenCalled();
+});
+
+it("exposes in-flight placement and revokes later placement mutations", async () => {
+	const window = hudWindow();
+	const entered = deferred<void>();
+	const finish = deferred<void>();
+	const move = vi.fn();
+	const pending = withHiddenPortalHud(
+		() => window,
+		async () => "grant",
+		async () => async (mayRestore) => {
+			entered.resolve();
+			await finish.promise;
+			if (mayRestore()) move();
+		},
+	);
+	const rejected = expect(pending).rejects.toThrow("Source selection cancelled");
+	await entered.promise;
+	const restoring = supersedePortalHudSelection(window);
+	expect(restoring).toBeInstanceOf(Promise);
+	const successor = withHiddenPortalHud(
+		() => window,
+		async () => "replacement",
+	);
+	const successorRejected = expect(successor).rejects.toThrow("Source selection cancelled");
+	expect(supersedePortalHudSelection(window)).toBe(restoring);
+	expect(supersedePortalHudSelection(window)).toBe(restoring);
+	finish.resolve();
+	await restoring;
+	await rejected;
+	await successorRejected;
+	expect(move).not.toHaveBeenCalled();
 });

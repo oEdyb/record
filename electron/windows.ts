@@ -33,7 +33,7 @@ import {
 import { createHudPointerWatch } from "./hudPointerWatch";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import { LINUX_HUD_INITIAL_SIZE, linuxHudWindowSize } from "./linuxHudGeometry";
-import { NiriCameraPreviewGuard } from "./niriCameraPreviewGuard";
+import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
 import {
 	localRectanglesContainScreenPoint,
 	normalizePrivateUiRectangles,
@@ -139,7 +139,7 @@ let cameraPreviewVisible = false;
 let cameraPreviewCaptureHidden = false;
 let cameraPreviewOutsideCapture = false;
 let cameraPreviewCaptureGeneration = 0;
-const cameraPreviewGuard = new NiriCameraPreviewGuard(() => {
+const cameraPreviewGuard = new NiriCaptureWindowGuard("Klippt Camera", () => {
 	cameraPreviewOutsideCapture = false;
 	applyCameraPreviewVisibility();
 });

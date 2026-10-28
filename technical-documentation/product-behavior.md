@@ -400,13 +400,19 @@ standalone picker window opens instead, because that path asks for access and le
 process decide who owns the choice. On Linux the visible Source chip opens the native
 portal chooser directly, as does Settings → Source; Record can reuse the remembered grant.
 Linux keeps the logo as a compositor-owned drag region and does not offer click-to-fold.
-Linux opens Setup below a fixed local pill origin. During monitor capture (or when
-source isolation is unknown), hide the recorder before starting or continuing;
-Pause acknowledgement restores it. Recording another window can retain the HUD.
-Wayland does not expose reliable global window position through Electron, so a
-second-monitor exemption is not inferred. On Niri, restoration explicitly activates
-only this process's matching floating recorder window. Asking to show a concealed
-active recorder first requests Pause; it cannot silently place controls in footage.
+Linux opens Setup below a fixed local pill origin. During monitor capture or when
+source isolation is unknown, hide controls before Start/Continue unless Niri proves
+that this process's floating pill is on another uncaptured output. Match the exact
+portal PipeWire node and current logical window/workspace/output geometry; Electron
+coordinates alone do not prove isolation. Evaluate the pill and camera independently.
+Safe focus and layout updates retain visibility; unsafe placement, overview, output
+changes or lost IPC revoke retention until Pause. This is conditional placement,
+not atomic compositor-level capture exclusion. Pause restores hidden controls.
+The portal chooser temporarily hides the pill, then restores its saved Niri output
+and absolute local position before preparation completes. Cancellation invalidates
+pending selection/restoration; replacement capture waits for in-flight placement.
+Asking to show a concealed active recorder first requests Pause, so controls cannot
+silently appear in footage. Other Wayland compositors retain conservative hiding.
 Linux defaults are Ctrl+Alt+O for controls and Ctrl+Alt+R for Pause/Continue, leaving
 Koett's Ctrl+Shift+Space untouched. The configured Niri fallback additionally maps
 Ctrl+Alt+S to Stop. These compositor bindings target the running app through its
@@ -502,12 +508,13 @@ unknown-source capture, hide it with the HUD before Start/Continue and restore
 its requested visibility only after confirmed Pause or failed startup. A late
 renderer visibility request or renderer reload must not override capture hiding.
 The camera keeps recording into its separate original while its preview is hidden.
-Window-only capture can retain the preview. On Niri, a preview already wholly on
-another uncaptured output can remain mapped during monitor recording. Match the
+Window-only capture can retain the preview. On Niri, a preview already on
+another uncaptured output can remain mapped during monitor recording. Compositor-
+clipped edges are allowed only when they cannot intersect another output. Match the
 portal's exact PipeWire node against compositor casts and validate logical window,
 workspace and output geometry before writer admission. Unknown identities,
-dynamic casts, ambiguity or missing IPC retain hiding. Relevant layout/cast or
-monitor changes revoke this permission until Pause; do not remap a hidden preview
+dynamic casts, ambiguity or missing IPC retain hiding. Safe layout/cast updates are re-evaluated without hiding. Unsafe placement,
+monitor changes or lost compositor state revoke this permission until Pause; do not remap a hidden preview
 mid-clip from a stale position. This is conditional placement, not compositor-level
 atomic capture exclusion. Niri integration places the uniquely titled `Klippt Camera`
 window away from the HUD without taking keyboard focus.

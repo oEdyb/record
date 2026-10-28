@@ -43,6 +43,7 @@ const cast = z.object({
 const snapshot = z.object({
 	pid: processId,
 	pipeWireNodeId: nodeId,
+	windowTitle: z.enum(["Klippt", "Klippt Camera"]),
 	casts: z.array(cast),
 	outputs: z.record(z.string(), output),
 	workspaces: z.array(workspace),
@@ -53,21 +54,21 @@ type Window = z.infer<typeof window>;
 type Snapshot = z.infer<typeof snapshot>;
 type Rectangle = z.infer<typeof rectangle>;
 
-function ownedPreview(values: Window[], pid: number): Window | undefined {
+function ownedPreview(values: Window[], pid: number, title: string): Window | undefined {
 	const matches = values.filter(
 		(value) =>
 			value.pid === pid &&
 			value.app_id === "co.dyberg.klippt" &&
-			value.title === "Klippt Camera" &&
+			value.title === title &&
 			value.is_floating,
 	);
 	return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function ownedCameraPreviewId(value: unknown, pid: number): number | null {
+export function ownedCaptureWindowId(value: unknown, pid: number, title: string): number | null {
 	const parsed = windows.safeParse(value);
 	if (!parsed.success || !processId.safeParse(pid).success) return null;
-	return ownedPreview(parsed.data, pid)?.id ?? null;
+	return ownedPreview(parsed.data, pid, title)?.id ?? null;
 }
 
 function intersects(first: Rectangle, second: Rectangle): boolean {
@@ -76,15 +77,6 @@ function intersects(first: Rectangle, second: Rectangle): boolean {
 		first.x + first.width > second.x &&
 		first.y < second.y + second.height &&
 		first.y + first.height > second.y
-	);
-}
-
-function contains(outer: Rectangle, inner: Rectangle): boolean {
-	return (
-		inner.x >= outer.x &&
-		inner.y >= outer.y &&
-		inner.x + inner.width <= outer.x + outer.width &&
-		inner.y + inner.height <= outer.y + outer.height
 	);
 }
 
@@ -110,7 +102,7 @@ function previewLocation(state: Snapshot, preview: Window) {
 	const origin = state.outputs[name]?.logical;
 	if (!origin) return null;
 	const bounds = previewRectangle(preview, origin);
-	return bounds && contains(origin, bounds) ? { name, bounds } : null;
+	return bounds && intersects(origin, bounds) ? { name, bounds } : null;
 }
 
 function matchesMonitorCast(state: Snapshot): boolean {
@@ -145,18 +137,15 @@ function castsAvoidPreview(state: Snapshot, preview: Window, outputName: string)
 	});
 }
 
-export function previewOutsideCapture(input: {
-	pid: number;
-	pipeWireNodeId: number;
-	casts: unknown;
-	outputs: unknown;
-	workspaces: unknown;
-	windows: unknown;
-}): boolean {
+export function readCaptureWindowSnapshot(input: unknown): Snapshot | null {
 	const parsed = snapshot.safeParse(input);
-	if (!parsed.success) return false;
-	const state = parsed.data;
-	const preview = ownedPreview(state.windows, state.pid);
+	return parsed.success ? parsed.data : null;
+}
+
+export function windowOutsideCapture(input: unknown): boolean {
+	const state = readCaptureWindowSnapshot(input);
+	if (!state) return false;
+	const preview = ownedPreview(state.windows, state.pid, state.windowTitle);
 	if (!preview) return false;
 	const location = previewLocation(state, preview);
 	if (!location) return false;
@@ -167,10 +156,102 @@ export function previewOutsideCapture(input: {
 	);
 }
 
-export function unchangedCastTarget(previous: unknown, update: unknown): boolean {
-	const before = z.array(cast).safeParse(previous);
-	const after = cast.safeParse(update);
-	if (!before.success || !after.success) return false;
-	const matches = before.data.filter((value) => value.stream_id === after.data.stream_id);
-	return matches.length === 1 && JSON.stringify(matches[0]) === JSON.stringify(after.data);
+const captureEvent = z.union([
+	z.object({ WindowsChanged: z.object({ windows }) }).strict(),
+	z.object({ WindowOpenedOrChanged: z.object({ window }) }).strict(),
+	z.object({ WindowClosed: z.object({ id }) }).strict(),
+	z
+		.object({
+			WindowLayoutsChanged: z.object({ changes: z.array(z.tuple([id, window.shape.layout])) }),
+		})
+		.strict(),
+	z.object({ WorkspacesChanged: z.object({ workspaces: z.array(workspace) }) }).strict(),
+	z.object({ WorkspaceActivated: z.object({ id, focused: z.boolean() }) }).strict(),
+	z.object({ CastsChanged: z.object({ casts: z.array(cast) }) }).strict(),
+	z.object({ CastStartedOrChanged: z.object({ cast }) }).strict(),
+	z.object({ CastStopped: z.object({ stream_id: id }) }).strict(),
+	z.object({ OverviewOpenedOrClosed: z.object({ is_open: z.boolean() }) }).strict(),
+]);
+type CaptureEvent = z.infer<typeof captureEvent>;
+
+function updateWindows(state: Snapshot, event: CaptureEvent): Snapshot | undefined {
+	if ("WindowsChanged" in event) return { ...state, windows: event.WindowsChanged.windows };
+	if ("WindowOpenedOrChanged" in event) {
+		const next = event.WindowOpenedOrChanged.window;
+		return { ...state, windows: [...state.windows.filter((value) => value.id !== next.id), next] };
+	}
+	if ("WindowClosed" in event)
+		return {
+			...state,
+			windows: state.windows.filter((value) => value.id !== event.WindowClosed.id),
+		};
+	if ("WindowLayoutsChanged" in event) {
+		const layouts = new Map(event.WindowLayoutsChanged.changes);
+		return {
+			...state,
+			windows: state.windows.map((value) => ({
+				...value,
+				layout: layouts.get(value.id) ?? value.layout,
+			})),
+		};
+	}
+}
+
+function updateWorkspaces(state: Snapshot, event: CaptureEvent): Snapshot | undefined {
+	if ("WorkspacesChanged" in event)
+		return { ...state, workspaces: event.WorkspacesChanged.workspaces };
+	if ("WorkspaceActivated" in event) {
+		const active = state.workspaces.find((value) => value.id === event.WorkspaceActivated.id);
+		if (!active?.output) return { ...state, workspaces: [] };
+		return {
+			...state,
+			workspaces: state.workspaces.map((value) =>
+				value.output === active.output ? { ...value, is_active: value.id === active.id } : value,
+			),
+		};
+	}
+}
+
+function updateCasts(state: Snapshot, event: CaptureEvent): Snapshot | undefined {
+	if ("CastsChanged" in event) return { ...state, casts: event.CastsChanged.casts };
+	if ("CastStartedOrChanged" in event) {
+		const next = event.CastStartedOrChanged.cast;
+		return {
+			...state,
+			casts: [...state.casts.filter((value) => value.stream_id !== next.stream_id), next],
+		};
+	}
+	if ("CastStopped" in event)
+		return {
+			...state,
+			casts: state.casts.filter((value) => value.stream_id !== event.CastStopped.stream_id),
+		};
+}
+
+export function updateCaptureWindowSnapshot(input: unknown, value: unknown): Snapshot | null {
+	const parsed = snapshot.safeParse(input);
+	if (!parsed.success || !value || typeof value !== "object") return null;
+	const state = parsed.data;
+	const ignored = [
+		"WindowFocusChanged",
+		"WindowFocusTimestampChanged",
+		"WindowUrgencyChanged",
+		"WorkspaceUrgencyChanged",
+		"WorkspaceActiveWindowChanged",
+		"KeyboardLayoutsChanged",
+		"KeyboardLayoutSwitched",
+		"ScreenshotCaptured",
+	];
+	const keys = Object.keys(value);
+	if (keys.length === 1 && ignored.includes(keys[0])) return state;
+	const event = captureEvent.safeParse(value);
+	if (!event.success) return null;
+	if ("OverviewOpenedOrClosed" in event.data)
+		return event.data.OverviewOpenedOrClosed.is_open ? null : state;
+	return (
+		updateWindows(state, event.data) ??
+		updateWorkspaces(state, event.data) ??
+		updateCasts(state, event.data) ??
+		null
+	);
 }

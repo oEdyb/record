@@ -1,3 +1,5 @@
+import { cancelPortalHudSelection, supersedePortalHudSelection } from "./portalSelectionHud";
+
 type HudWindow = {
 	isDestroyed(): boolean;
 	hide(): void;
@@ -21,33 +23,53 @@ export class LinuxRecordingHud {
 		private readonly waitForUnmap: () => Promise<void>,
 		private readonly afterShow: () => void = () => undefined,
 		private readonly setPreviewHidden: (hidden: boolean) => void | Promise<void> = () => undefined,
+		private readonly windowIsolation?: { begin(): Promise<boolean>; end(): void },
 	) {}
 
 	async capture<T extends { success: boolean }>(operation: () => Promise<T>): Promise<T> {
-		if (this.platform !== "linux" || !this.shouldHide()) return operation();
+		if (this.platform !== "linux") return operation();
+		const previousPlacement = supersedePortalHudSelection(this.getWindow());
+		const shouldHide = this.shouldHide();
 		const generation = this.generation;
 		const operationId = ++this.operation;
 		this.transitioning = true;
-		this.concealed = true;
+		this.concealed = shouldHide;
 		this.pauseRequested = false;
-		const window = this.getWindow();
-		if (window && !window.isDestroyed()) window.hide();
 		try {
-			await this.setPreviewHidden(true);
-			await this.waitForUnmap();
+			if (previousPlacement) await previousPlacement;
+			if (generation !== this.generation || operationId !== this.operation)
+				throw new Error("Recording start cancelled.");
+			const retained = shouldHide ? await this.windowIsolation?.begin() : true;
+			if (generation !== this.generation || operationId !== this.operation)
+				throw new Error("Recording start cancelled.");
+			this.concealed = !retained;
+			if (!retained) this.conceal();
+			if (shouldHide) {
+				await this.setPreviewHidden(true);
+				await this.waitForUnmap();
+			}
 			if (generation !== this.generation || operationId !== this.operation)
 				throw new Error("Recording start cancelled.");
 			return await operation();
 		} finally {
 			if (operationId === this.operation) {
 				this.transitioning = false;
-				if (!this.isCapturing()) this.showControls();
+				if (shouldHide && !this.isCapturing()) this.showControls();
 			}
 		}
 	}
 
 	cancelPending(): void {
 		this.generation += 1;
+		cancelPortalHudSelection(this.getWindow());
+		this.windowIsolation?.end();
+	}
+
+	conceal(): void {
+		if (this.platform !== "linux") return;
+		this.concealed = true;
+		const window = this.getWindow();
+		if (window && !window.isDestroyed()) window.hide();
 	}
 
 	requestControls(): boolean {
@@ -69,6 +91,7 @@ export class LinuxRecordingHud {
 	}
 
 	private showControls(): void {
+		this.windowIsolation?.end();
 		this.concealed = false;
 		void this.setPreviewHidden(false);
 		const window = this.getWindow();

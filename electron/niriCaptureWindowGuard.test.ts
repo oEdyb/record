@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NiriCameraPreviewGuard } from "./niriCameraPreviewGuard";
+import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
 
-function setup() {
+function setup(title: "Klippt" | "Klippt Camera" = "Klippt Camera") {
 	const unsafe = vi.fn();
 	const close = vi.fn();
 	let changed: (event: unknown) => void = () => undefined;
@@ -26,7 +26,7 @@ function setup() {
 				id: 8,
 				pid: 42,
 				app_id: "co.dyberg.klippt",
-				title: "Klippt Camera",
+				title,
 				is_floating: true,
 				workspace_id: 7,
 				layout: {
@@ -41,9 +41,14 @@ function setup() {
 	const watch = vi.fn((onChanged: (event: unknown) => void, onFailed: () => void) => {
 		changed = onChanged;
 		failed = onFailed;
+		onChanged({ WorkspacesChanged: { workspaces: values.workspaces } });
+		onChanged({ WindowsChanged: { windows: values.windows } });
+		onChanged({ OverviewOpenedOrClosed: { is_open: false } });
+		onChanged({ ConfigLoaded: { failed: false } });
+		onChanged({ CastsChanged: { casts: values.casts } });
 		return { ready: Promise.resolve(), close };
 	});
-	const guard = new NiriCameraPreviewGuard(unsafe, { query, watch }, 42);
+	const guard = new NiriCaptureWindowGuard(title, unsafe, { query, watch }, 42);
 	return {
 		guard,
 		unsafe,
@@ -63,7 +68,22 @@ describe("Niri preview capture eligibility lifetime", () => {
 	it("retains an already visible preview on the uncaptured monitor", async () => {
 		const { guard, unsafe, query } = setup();
 		await expect(guard.begin(91)).resolves.toBe(true);
-		expect(query).toHaveBeenCalledTimes(4);
+		expect(query).toHaveBeenCalledTimes(1);
+		expect(unsafe).not.toHaveBeenCalled();
+		guard.end();
+	});
+
+	it("keeps the preview through safe focus, workspace and layout changes", async () => {
+		const { guard, unsafe, event, values } = setup();
+		await guard.begin(91);
+		event({ WorkspaceActivated: { id: 7, focused: true } });
+		event({ WorkspacesChanged: { workspaces: values.workspaces } });
+		event({ WindowOpenedOrChanged: { window: { ...values.windows[0], is_focused: false } } });
+		event({
+			WindowLayoutsChanged: {
+				changes: [[8, { ...values.windows[0].layout, tile_pos_in_workspace_view: [40, 40] }]],
+			},
+		});
 		expect(unsafe).not.toHaveBeenCalled();
 		guard.end();
 	});
@@ -81,7 +101,7 @@ describe("Niri preview capture eligibility lifetime", () => {
 	});
 
 	it.each([
-		{ stream_id: 2 },
+		{ stream_id: 2, target: { Output: { name: "DP-2" } } },
 		{ pw_node_id: 92 },
 		{ is_dynamic_target: true },
 		{ target: { Window: { id: 8 } } },
@@ -100,14 +120,14 @@ describe("Niri preview capture eligibility lifetime", () => {
 	});
 
 	it("hides on compositor changes and never readmits during the same clip", async () => {
-		const { guard, unsafe, event, query } = setup();
+		const { guard, unsafe, event, query, values } = setup();
 		await expect(guard.begin(91)).resolves.toBe(true);
-		event({ WindowLayoutsChanged: { changes: [[99, {}]] } });
+		event({ WindowLayoutsChanged: { changes: [[99, values.windows[0].layout]] } });
 		expect(unsafe).not.toHaveBeenCalled();
 		event({ WindowLayoutsChanged: { changes: [[8, {}]] } });
 		event({ CastStartedOrChanged: {} });
 		expect(unsafe).toHaveBeenCalledOnce();
-		expect(query).toHaveBeenCalledTimes(4);
+		expect(query).toHaveBeenCalledTimes(1);
 		guard.end();
 	});
 

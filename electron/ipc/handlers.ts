@@ -120,7 +120,8 @@ import {
 	type ExportSourceMetadata,
 	type VideoBufferPublishSpec,
 } from "../native-bridge/services/compositorViewService";
-import { activateNiriHud } from "../niriHudFocus";
+import { NiriCaptureWindowGuard } from "../niriCaptureWindowGuard";
+import { activateNiriHud, rememberNiriHudPlacement } from "../niriHudFocus";
 import { mergeEnumeratedSources } from "../recording/enumeratedSources";
 import { LinuxClipCaptureMetadata } from "../recording/linuxClipCaptureMetadata";
 import { LinuxRecordingHud } from "../recording/linuxRecordingHud";
@@ -2520,12 +2521,16 @@ export function registerIpcHandlers(
 	const prepareNativeLinuxRecording = (
 		request: NativeMacRecordingRequest,
 	): Promise<NativeMacRecordingStartResult> =>
-		withHiddenPortalHud(getMainWindow, async () => {
-			await startupRecordingRecovery;
-			if (!nativeMacRecordingService)
-				return { success: false, error: "Native Linux capture is unavailable." };
-			return nativeMacRecordingService.prepare(request);
-		});
+		withHiddenPortalHud(
+			getMainWindow,
+			async () => {
+				await startupRecordingRecovery;
+				if (!nativeMacRecordingService)
+					return { success: false, error: "Native Linux capture is unavailable." };
+				return nativeMacRecordingService.prepare(request);
+			},
+			() => rememberNiriHudPlacement(process.pid),
+		);
 
 	// Linux keeps its public IPC names while sharing the clip-native service.
 	ipcMain.handle(
@@ -2953,6 +2958,7 @@ export function registerIpcHandlers(
 		app.once("will-quit", () => powerMonitor.off("suspend", onSuspend));
 	}
 
+	const hudCaptureGuard = new NiriCaptureWindowGuard("Klippt", () => recordingHud.conceal());
 	const recordingHud = new LinuxRecordingHud(
 		process.platform,
 		getMainWindow,
@@ -2965,7 +2971,19 @@ export function registerIpcHandlers(
 			);
 		},
 		(hidden) => options.setCameraPreviewCaptureHidden?.(hidden, linuxClipMetadata?.pipeWireNodeId),
+		{
+			begin: () => hudCaptureGuard.begin(linuxClipMetadata?.pipeWireNodeId),
+			end: () => hudCaptureGuard.end(),
+		},
 	);
+	const invalidateHudCapture = () => hudCaptureGuard.invalidate();
+	screen.on("display-removed", invalidateHudCapture);
+	screen.on("display-metrics-changed", invalidateHudCapture);
+	app.once("will-quit", () => {
+		hudCaptureGuard.end();
+		screen.off("display-removed", invalidateHudCapture);
+		screen.off("display-metrics-changed", invalidateHudCapture);
+	});
 	linuxRecordingHud = recordingHud;
 	nativeMacRecordingService = new NativeMacRecordingService({
 		recordingsDir: RECORDINGS_DIR,
@@ -3214,8 +3232,10 @@ export function registerIpcHandlers(
 			const mode = normalizeCursorCaptureMode(cursorMode);
 			if (cursorMode !== undefined && !mode)
 				return { success: false, error: "Invalid cursor mode." };
-			return withHiddenPortalHud(getMainWindow, () =>
-				invokeNativeMac(() => getNativeMacRecordingService().selectSource(mode)),
+			return withHiddenPortalHud(
+				getMainWindow,
+				() => invokeNativeMac(() => getNativeMacRecordingService().selectSource(mode)),
+				() => rememberNiriHudPlacement(process.pid),
 			);
 		},
 	);

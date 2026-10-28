@@ -19,10 +19,19 @@ describe("Linux clip capture metadata", () => {
 		expect(metadata.pipeWireNodeId).toBe(91);
 		metadata.observe({ event: "source-reselected" });
 		expect(metadata.pipeWireNodeId).toBeUndefined();
-		metadata.observe({ event: "stream-started", nodeId: 92 });
+		metadata.observe({ event: "source-reselected", nodeId: 92, sourceKind: "monitor" });
+		expect(metadata.sourceKind).toBe("monitor");
 		expect(metadata.pipeWireNodeId).toBe(92);
 		metadata.observe({ event: "stream-started", nodeId: -1 });
 		expect(metadata.pipeWireNodeId).toBeUndefined();
+	});
+
+	it("clears a stale window exemption when replacement kind is unknown", () => {
+		const metadata = new LinuxClipCaptureMetadata(10, 1_000);
+		metadata.observe({ event: "source-selected", nodeId: 91, sourceKind: "window" });
+		metadata.observe({ event: "source-reselected", nodeId: 92, sourceKind: null });
+		expect(metadata.pipeWireNodeId).toBe(92);
+		expect(metadata.sourceKind).toBeUndefined();
 	});
 
 	it("normalizes and bounds cursor samples from the same helper without another portal", () => {
