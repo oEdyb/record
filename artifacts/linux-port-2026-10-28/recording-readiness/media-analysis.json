@@ -1,0 +1,274 @@
+{
+  "session": "recording-1793145377900.session.json",
+  "clips": [
+    {
+      "index": 0,
+      "durationMs": 9266,
+      "media": {
+        "screenVideoPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "h264",
+              "codec_type": "video",
+              "width": 1920,
+              "height": 1080,
+              "avg_frame_rate": "1067520/17833",
+              "duration": "9.288021"
+            },
+            {
+              "codec_name": "aac",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "avg_frame_rate": "0/0",
+              "duration": "9.280000"
+            }
+          ],
+          "format": {
+            "duration": "9.288021"
+          },
+          "signal": {
+            "peak": 0.5183578729629517,
+            "rms": 0.09554175287485123,
+            "decodedSamples": 445440,
+            "clippedSamples": 0
+          }
+        },
+        "webcamVideoPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "h264",
+              "codec_type": "video",
+              "width": 1920,
+              "height": 1080,
+              "avg_frame_rate": "4185000/139231",
+              "duration": "9.326433"
+            }
+          ],
+          "format": {
+            "duration": "9.326433"
+          }
+        },
+        "microphoneAudioPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "aac",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "avg_frame_rate": "0/0",
+              "duration": "9.280000"
+            }
+          ],
+          "format": {
+            "duration": "9.280000"
+          },
+          "signal": {
+            "peak": 0.0008140863501466811,
+            "rms": 6.201941141625866e-05,
+            "decodedSamples": 445440,
+            "clippedSamples": 0
+          }
+        },
+        "systemAudioPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "aac",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "avg_frame_rate": "0/0",
+              "duration": "9.280000"
+            }
+          ],
+          "format": {
+            "duration": "9.280000"
+          },
+          "signal": {
+            "peak": 0.4270780682563782,
+            "rms": 0.09600920975208282,
+            "decodedSamples": 445440,
+            "clippedSamples": 0
+          }
+        }
+      },
+      "alignment": {
+        "screenVideoPath": {
+          "sourceOffsetMs": 0.0,
+          "videoPulseCount": 10,
+          "audioPulseCount": 10,
+          "matchedPulses": 10,
+          "videoMinusAudioMedianMs": 14.02099999999984,
+          "videoMinusAudioRangeMs": [
+            -2.645999999999926,
+            41.68700000000025
+          ]
+        },
+        "microphoneAudioPath": {
+          "sourceOffsetMs": 0.0,
+          "videoPulseCount": 10,
+          "audioPulseCount": 0,
+          "matchedPulses": 0,
+          "videoMinusAudioMedianMs": null,
+          "videoMinusAudioRangeMs": null
+        },
+        "systemAudioPath": {
+          "sourceOffsetMs": 5.328948333333335,
+          "videoPulseCount": 10,
+          "audioPulseCount": 10,
+          "matchedPulses": 10,
+          "videoMinusAudioMedianMs": 14.692051666666206,
+          "videoMinusAudioRangeMs": [
+            -1.9749483333333373,
+            41.358051666666725
+          ]
+        }
+      }
+    },
+    {
+      "index": 1,
+      "durationMs": 9233,
+      "media": {
+        "screenVideoPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "h264",
+              "codec_type": "video",
+              "width": 1920,
+              "height": 1080,
+              "avg_frame_rate": "354560/5923",
+              "duration": "9.254687"
+            },
+            {
+              "codec_name": "aac",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "avg_frame_rate": "0/0",
+              "duration": "9.237333"
+            }
+          ],
+          "format": {
+            "duration": "9.254688"
+          },
+          "signal": {
+            "peak": 0.5961747169494629,
+            "rms": 0.12718434631824493,
+            "decodedSamples": 443392,
+            "clippedSamples": 0
+          }
+        },
+        "webcamVideoPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "h264",
+              "codec_type": "video",
+              "width": 1920,
+              "height": 1080,
+              "avg_frame_rate": "8190000/273163",
+              "duration": "9.126567"
+            }
+          ],
+          "format": {
+            "duration": "9.126567"
+          }
+        },
+        "microphoneAudioPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "aac",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "avg_frame_rate": "0/0",
+              "duration": "9.237333"
+            }
+          ],
+          "format": {
+            "duration": "9.237333"
+          },
+          "signal": {
+            "peak": 0.42611196637153625,
+            "rms": 0.0936342179775238,
+            "decodedSamples": 443392,
+            "clippedSamples": 0
+          }
+        },
+        "systemAudioPath": {
+          "decoded": true,
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "aac",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "avg_frame_rate": "0/0",
+              "duration": "9.237333"
+            }
+          ],
+          "format": {
+            "duration": "9.237333"
+          },
+          "signal": {
+            "peak": 0.42924726009368896,
+            "rms": 0.09363871812820435,
+            "decodedSamples": 443392,
+            "clippedSamples": 0
+          }
+        }
+      },
+      "alignment": {
+        "screenVideoPath": {
+          "sourceOffsetMs": 0.0,
+          "videoPulseCount": 9,
+          "audioPulseCount": 9,
+          "matchedPulses": 9,
+          "videoMinusAudioMedianMs": 34.020999999999965,
+          "videoMinusAudioRangeMs": [
+            34.02099999999919,
+            34.02100000000097
+          ]
+        },
+        "microphoneAudioPath": {
+          "sourceOffsetMs": 0.0,
+          "videoPulseCount": 9,
+          "audioPulseCount": 9,
+          "matchedPulses": 9,
+          "videoMinusAudioMedianMs": 13.02099999999995,
+          "videoMinusAudioRangeMs": [
+            13.020999999999283,
+            13.021000000000171
+          ]
+        },
+        "systemAudioPath": {
+          "sourceOffsetMs": 0.0,
+          "videoPulseCount": 9,
+          "audioPulseCount": 9,
+          "matchedPulses": 9,
+          "videoMinusAudioMedianMs": 34.020999999999965,
+          "videoMinusAudioRangeMs": [
+            34.02099999999919,
+            34.02100000000097
+          ]
+        }
+      }
+    }
+  ]
+}

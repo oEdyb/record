@@ -1,0 +1,121 @@
+[
+  {
+    "state": "physical-microphone-recording",
+    "windows": [
+      {
+        "id": "{16e357c9-c175-499c-8fc9-7fed42af08e3}",
+        "caption": "Global Shortcuts Requested",
+        "app": "org.freedesktop.impl.portal.desktop.kde",
+        "active": false,
+        "geometry": {
+          "x": 844,
+          "y": 469.5,
+          "width": 504,
+          "height": 576
+        }
+      },
+      {
+        "id": "{b11c0033-06e2-45dd-8669-d6ab4e7aa0d4}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": true,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      }
+    ]
+  },
+  {
+    "state": "paused-before-switch",
+    "windows": [
+      {
+        "id": "{16e357c9-c175-499c-8fc9-7fed42af08e3}",
+        "caption": "Global Shortcuts Requested",
+        "app": "org.freedesktop.impl.portal.desktop.kde",
+        "active": false,
+        "geometry": {
+          "x": 844,
+          "y": 469.5,
+          "width": 504,
+          "height": 576
+        }
+      },
+      {
+        "id": "{b11c0033-06e2-45dd-8669-d6ab4e7aa0d4}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": false,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      {
+        "id": "{eb0f302a-4d7c-4628-9a08-48ac885cca1c}",
+        "caption": "Klippt Camera",
+        "app": "co.dyberg.klippt",
+        "active": false,
+        "geometry": {
+          "x": 804,
+          "y": 447,
+          "width": 312,
+          "height": 186
+        }
+      },
+      {
+        "id": "{7334b133-e949-4bb4-a7fd-1f070d821da1}",
+        "caption": "Klippt",
+        "app": "co.dyberg.klippt",
+        "active": true,
+        "geometry": {
+          "x": 724,
+          "y": 484,
+          "width": 472,
+          "height": 112
+        }
+      }
+    ]
+  },
+  {
+    "state": "private-marker-microphone-connected",
+    "module": "536870918"
+  },
+  {
+    "state": "deterministic-markers-recording",
+    "windows": [
+      {
+        "id": "{16e357c9-c175-499c-8fc9-7fed42af08e3}",
+        "caption": "Global Shortcuts Requested",
+        "app": "org.freedesktop.impl.portal.desktop.kde",
+        "active": false,
+        "geometry": {
+          "x": 844,
+          "y": 469.5,
+          "width": 504,
+          "height": 576
+        }
+      },
+      {
+        "id": "{b11c0033-06e2-45dd-8669-d6ab4e7aa0d4}",
+        "caption": "Agent Lab Fixture",
+        "app": "electron",
+        "active": true,
+        "geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080
+        }
+      }
+    ]
+  },
+  {
+    "state": "review",
+    "text": "Recording 10/28/2026, 12:56:55 AM\n0:18 total, 2 clips\nAdd clip\nNew recording\nClean cut\nSave video\n0:00/0:18"
+  }
+]

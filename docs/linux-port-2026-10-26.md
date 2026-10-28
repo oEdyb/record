@@ -1275,3 +1275,13 @@ check reproduced and fixed harmless cast activation revoking preview and
 renderer camera readiness changing the disabled native webcam configuration.
 Three-clip positive/negative placement flow and all six originals pass. No full
 suite, broad platform claim, same-monitor exclusion or atomic exclusion claim.
+
+## October 28 — affected recording readiness check
+
+`e0659bff` fixes the Linux default-device sentinel; explicit peer checks remain.
+Saved raw Xstrm still fails under EasyEffects policy, so only the app microphone
+preference now selects verified Easy Effects Source. The final private mounted
+app passes two all-source clips, eight decodable originals and bounded private
+marker timing. Initial lab-resource stalls and the remaining physical speech /
+lip-sync limits are recorded in [readiness evidence](../artifacts/linux-port-2026-10-28/recording-readiness/README.md).
+No full suite or long soak was run.

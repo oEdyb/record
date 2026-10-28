@@ -26,16 +26,18 @@ See [focused evidence](artifacts/linux-port-2026-10-26/remembered-source/README.
 The normal-FUSE AppImage passed private OS-driven Source → Record without another
 picker → Stop/review; its 2.35-second native clip fully decodes.
 
-Latest portable AppImage: `a6aad6b5`, `release/linux-port-20261027-a6aad6b5/`.
-Authorized actual Niri + OBSBOT + both physical monitors now passes: DP-1 recording
-retains camera on DP-3; Pause restores pill; Continue retains preview; moving the
-preview onto captured DP-1 while paused makes Continue hide it. Three clips and
-six originals fully decode. Fixes harmless cast activation invalidation and cold
-camera-format changes rejecting preparation. 24 guard/policy + 88 adapter/lifecycle
-tests, both typechecks, changed-file lint, independent activation review and
-portable policy pass. Same-monitor exclusion remains unsupported; placement is
-not atomic compositor exclusion. Local camera default remains right-hand DP-3.
-[Evidence](artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
+Latest portable AppImage: `e0659bff`, `release/linux-port-20261028-e0659bff/`.
+Recording readiness check corrected Linux's Default microphone sentinel mapping.
+Olle's saved raw Xstrm selection still reproduced EasyEffects peer substitution;
+only Klippt's input preference changed to explicitly verified Easy Effects Source.
+Final normal mounted app passes actual webcam + actual processed mic + system
+sound, Pause/Continue, review, eight decoded originals and private marker checks.
+89 affected tests, both typechecks, lint, Ubuntu-floor build and package policy
+pass. No full suite. Physical speaking levels/lip-sync remain unverified; lab
+resource-limit stalls are documented, not counted as passes.
+[Readiness evidence](artifacts/linux-port-2026-10-28/recording-readiness/README.md).
+The prior `a6aad6b5` actual two-monitor preview/visibility pass remains applicable
+to the unchanged preview code; [evidence](artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
 
 Previous portable AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`,
 `release/linux-port-20261027-cde7e19b/`. Linux now creates the shared live camera

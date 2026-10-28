@@ -21,13 +21,17 @@ Affected suites and one packaging checkpoint
 were used; no repeated full suite or hour soak.
 
 - Branch: `feat/linux-port`; draft PR: https://github.com/oEdyb/record/pull/1.
-- Latest AppImage: `a6aad6b5`, inventory `release/linux-port-20261027-a6aad6b5/`.
-  Actual physical Niri DP-1/DP-3 + OBSBOT now passes first Record, off-monitor
-  preview, Pause/Continue, hiding after moving preview onto the captured monitor,
-  and three-clip Stop/review. All six originals fully decode. 24 guard/policy and
-  88 adapter/lifecycle tests, both typechecks, lint and portable policy pass.
-  Same-monitor clean exclusion remains unsupported; no atomic guarantee.
-  [Evidence](../artifacts/linux-port-2026-10-27/second-monitor-preview/README.md).
+- Latest AppImage: `e0659bff`, inventory `release/linux-port-20261028-e0659bff/`.
+  Default-input sentinel mapping fixed; actual saved microphone corrected to
+  explicitly verified Easy Effects Source without host routing changes. Final
+  private normal mounted app passes actual webcam + processed mic + system sound,
+  Pause/Continue, review, eight decoded originals and short private marker timing.
+  89 affected tests, both typechecks, lint, portable build/policy pass. Physical
+  speech/lip-sync and unconstrained performance remain separate gates.
+  [Readiness evidence](../artifacts/linux-port-2026-10-28/recording-readiness/README.md).
+  Prior a6aad6b5 physical two-monitor preview evidence still applies to unchanged
+  preview code; same-monitor clean exclusion remains unsupported.
+
 - Previous AppImage: `cde7e19b5a74fb3b5c4bbf22cfaeab66e27d3ffa`.
   Inventory `release/linux-port-20261027-cde7e19b/`. Linux confidence monitor
   creation, monitor preview hiding and explicit processed-microphone matching
