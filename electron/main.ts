@@ -19,6 +19,7 @@ import {
 import { APP_DISPLAY_NAME } from "../src/lib/brand";
 import { PRODUCT_SURFACE } from "../src/lib/productSurface";
 import type { ShortcutsConfig } from "../src/lib/shortcuts";
+import { AgentServer } from "./agent/agentServer";
 import {
 	blockedFromInstalling,
 	checkForSelfUpdate,
@@ -959,7 +960,54 @@ app.on("before-quit", (event) => {
 	quitCaptureGuard.beforeQuit(event);
 });
 
+let agentServer: AgentServer | null = null;
+let agentTranscriber: ParakeetProcess | null = null;
+
+/**
+ * The local agent socket: lets an agent on this machine review clean cuts and drive the open
+ * windows (electron/agent/agentServer.ts). Unix only; KLIPPT_AGENT_SOCKET=off disables it.
+ */
+function startAgentServer(sttModelsDir: string) {
+	if (process.platform === "win32" || process.env.KLIPPT_AGENT_SOCKET === "off") return;
+	const runtimeDir = process.env.XDG_RUNTIME_DIR;
+	const socketPath =
+		process.env.KLIPPT_AGENT_SOCKET ||
+		(runtimeDir
+			? path.join(runtimeDir, "klippt", "agent.sock")
+			: path.join(app.getPath("userData"), "agent.sock"));
+	const server = new AgentServer({
+		socketPath,
+		outDir: path.join(app.getPath("temp"), "klippt-agent"),
+		windows: () => BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed()),
+		reviewWindow: () => (editorWindow && !editorWindow.isDestroyed() ? editorWindow : null),
+		ffmpegPath: () => resolveFfmpeg(),
+		transcriber: async () => {
+			if (agentTranscriber?.running) return agentTranscriber;
+			const binaryPath = resolveParakeetBinaryPath();
+			if (!binaryPath) throw new Error("No speech helper on this machine.");
+			await ensureModels({ baseDir: sttModelsDir, only: [parakeetModelId()] });
+			agentTranscriber = new ParakeetProcess({
+				binaryPath,
+				modelDir: modelPaths(sttModelsDir)[parakeetModelId()],
+				startTimeoutMs: 10 * 60_000,
+			});
+			return agentTranscriber;
+		},
+		version: app.getVersion(),
+	});
+	ipcMain.on("agent-reply", (_event, reply) => server.receiveReply(reply ?? {}));
+	server.start().then(
+		() => {
+			agentServer = server;
+			console.log(`[agent] listening on ${socketPath}`);
+		},
+		(error) => console.warn("[agent] socket unavailable:", error),
+	);
+}
+
 app.on("will-quit", () => {
+	agentServer?.stop();
+	agentTranscriber?.stop();
 	unregisterAllGlobalShortcuts();
 });
 
@@ -1253,6 +1301,8 @@ appReady?.then(async () => {
 			cleanCutReceiver = receiver;
 		},
 	});
+
+	startAgentServer(sttModelsDir);
 
 	startup.mark("handlers-registered");
 	const shortcutsReady = loadAndRegisterGlobalShortcuts(globalShortcutHandlers);

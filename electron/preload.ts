@@ -266,6 +266,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			return () => ipcRenderer.removeListener("clean-cut-snapshot", listener);
 		},
 	},
+	agent: {
+		onRequest: (
+			callback: (request: { id: string; method: string; params: Record<string, unknown> }) => void,
+		) => {
+			const listener = (
+				_event: unknown,
+				request: { id: string; method: string; params: Record<string, unknown> },
+			) => callback(request);
+			ipcRenderer.on("agent-request", listener);
+			return () => ipcRenderer.removeListener("agent-request", listener);
+		},
+		reply: (id: string, result: unknown, error?: string) => {
+			ipcRenderer.send("agent-reply", { id, result, error });
+		},
+	},
 	setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => {
 		ipcRenderer.send("notes-window-set-bounds", bounds);
 	},
