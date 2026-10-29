@@ -75,7 +75,11 @@ import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./
 import { ensureModels, modelPaths } from "./stt/modelManager";
 import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
 import { LiveTranscriptService } from "./transcript/liveTranscript";
-import { ParakeetProcess, resolveParakeetBinaryPath } from "./transcript/parakeetProcess";
+import {
+	ParakeetProcess,
+	parakeetModelId,
+	resolveParakeetBinaryPath,
+} from "./transcript/parakeetProcess";
 import { checkLatestRelease } from "./update-checker";
 import {
 	ASSET_BASE_DIR,
@@ -1187,10 +1191,10 @@ appReady?.then(async () => {
 		ensureModel: async (onProgress) => {
 			await ensureModels({
 				baseDir: sttModelsDir,
-				only: ["parakeet-v3"],
+				only: [parakeetModelId()],
 				onProgress: (event) => onProgress(event.downloadedBytes, event.totalBytes),
 			});
-			return modelPaths(sttModelsDir)["parakeet-v3"];
+			return modelPaths(sttModelsDir)[parakeetModelId()];
 		},
 		tempDir: path.join(app.getPath("temp"), "klippt-transcript"),
 		cacheDir: path.join(app.getPath("userData"), "transcripts"),
@@ -1209,11 +1213,15 @@ appReady?.then(async () => {
 		transcriber: async () => {
 			const binaryPath = resolveParakeetBinaryPath();
 			if (!binaryPath)
-				throw new Error("Clean cut needs an Apple Silicon Mac on macOS 14 or newer.");
-			await ensureModels({ baseDir: sttModelsDir, only: ["parakeet-v3"] });
+				throw new Error(
+					process.platform === "linux"
+						? "Clean cut's speech helper is missing from this build."
+						: "Clean cut needs an Apple Silicon Mac on macOS 14 or newer.",
+				);
+			await ensureModels({ baseDir: sttModelsDir, only: [parakeetModelId()] });
 			return new ParakeetProcess({
 				binaryPath,
-				modelDir: modelPaths(sttModelsDir)["parakeet-v3"],
+				modelDir: modelPaths(sttModelsDir)[parakeetModelId()],
 				startTimeoutMs: 10 * 60_000,
 			});
 		},
