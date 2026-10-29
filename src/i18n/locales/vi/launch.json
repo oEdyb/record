@@ -173,5 +173,21 @@
 		"screenDetail": "Để ghi màn hình của bạn",
 		"settingsHint": "Bật Klippt trong Cài đặt hệ thống. Bảng này tự cập nhật.",
 		"title": "Trước khi ghi hình"
+	},
+	"studio": {
+		"title": "Studio",
+		"open": "Mở Studio",
+		"backToPill": "Chuyển sang thanh nhỏ",
+		"recording": "Đang ghi",
+		"paused": "Đã tạm dừng",
+		"noClips": "Các clip sẽ hiện ở đây sau khi bạn tạm dừng.",
+		"transcriptAfterPause": "Bản chép lời sẽ hiện sau khi bạn tạm dừng.",
+		"clipRecording": "Đang ghi…",
+		"transcribing": "Đang chép lời…",
+		"waiting": "Đang chờ chép lời",
+		"latest": "Clip mới nhất",
+		"seekTo": "Phát từ {{time}}",
+		"notTranscribed": "Chưa chép lời.",
+		"transcribeNow": "Chép lời ngay"
 	}
 }

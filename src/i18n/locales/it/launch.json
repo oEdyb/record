@@ -173,5 +173,21 @@
 		"screenDetail": "Per catturare lo schermo",
 		"settingsHint": "Attiva Klippt in Impostazioni di Sistema. Questo pannello si aggiorna da solo.",
 		"title": "Prima di registrare"
+	},
+	"studio": {
+		"title": "Studio",
+		"open": "Apri Studio",
+		"backToPill": "Passa alla pillola",
+		"recording": "Registrazione",
+		"paused": "In pausa",
+		"noClips": "I tuoi clip compaiono qui quando metti in pausa.",
+		"transcriptAfterPause": "La trascrizione compare quando metti in pausa.",
+		"clipRecording": "Registrazione…",
+		"transcribing": "Trascrizione…",
+		"waiting": "In attesa di trascrizione",
+		"latest": "Ultimo clip",
+		"seekTo": "Riproduci da {{time}}",
+		"notTranscribed": "Non ancora trascritto.",
+		"transcribeNow": "Trascrivi ora"
 	}
 }

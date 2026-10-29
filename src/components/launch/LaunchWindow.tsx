@@ -41,6 +41,7 @@ import {
 	HudSettingsButton,
 	HudSourceChip,
 	HudStopButton,
+	HudStudioButton,
 	HudSystemAudioButton,
 	HudTuckButton,
 } from "./HudControls";
@@ -1324,6 +1325,14 @@ export function LaunchWindow() {
 		});
 	}, [handleRecordButtonClick, recording, saving, starting]);
 
+	// The Studio's Remove button: the same predicate as the pill's own.
+	useEffect(() => {
+		return window.electronAPI?.onHudRemovePreviousClip?.(() => {
+			if (saving || clipFinalizing || !canRemovePreviousClip) return;
+			void handleRemovePreviousClip();
+		});
+	}, [canRemovePreviousClip, clipFinalizing, handleRemovePreviousClip, saving]);
+
 	useEffect(() => {
 		return window.electronAPI?.onHudToggleRecordingPause?.(() => {
 			if (!recording || saving || clipFinalizing || !canPauseRecording) return;
@@ -2069,6 +2078,13 @@ export function LaunchWindow() {
 			onClick={togglePeek}
 		/>
 	);
+	const studioControl = (
+		<HudStudioButton
+			disabled={saving}
+			label={t("studio.open")}
+			onClick={() => void window.electronAPI?.openRecordingStudio?.()}
+		/>
+	);
 	const stopControl = (
 		<HudStopButton
 			saving={saving}
@@ -2198,6 +2214,7 @@ export function LaunchWindow() {
 							<div className={styles.hudDockWing} ref={setWingInert}>
 								{topDock ? (
 									<>
+										{studioControl}
 										{settingsControl}
 										{stopControl}
 									</>
@@ -2206,6 +2223,7 @@ export function LaunchWindow() {
 										{stopControl}
 										{removeControl}
 										{replayControl}
+										{studioControl}
 										{settingsControl}
 									</>
 								)}

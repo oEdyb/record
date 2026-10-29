@@ -173,5 +173,21 @@
 		"screenDetail": "Ekranınızı yakalamak için",
 		"settingsHint": "Klippt'i Sistem Ayarları'nda açın. Bu panel kendiliğinden güncellenir.",
 		"title": "Kayıttan önce"
+	},
+	"studio": {
+		"title": "Stüdyo",
+		"open": "Stüdyoyu aç",
+		"backToPill": "Hapa geç",
+		"recording": "Kaydediliyor",
+		"paused": "Duraklatıldı",
+		"noClips": "Klipleriniz duraklattıktan sonra burada görünür.",
+		"transcriptAfterPause": "Transkriptiniz duraklattıktan sonra görünür.",
+		"clipRecording": "Kaydediliyor…",
+		"transcribing": "Yazıya dökülüyor…",
+		"waiting": "Yazıya dökülmeyi bekliyor",
+		"latest": "Son klip",
+		"seekTo": "{{time}} itibarıyla oynat",
+		"notTranscribed": "Henüz yazıya dökülmedi.",
+		"transcribeNow": "Şimdi yazıya dök"
 	}
 }

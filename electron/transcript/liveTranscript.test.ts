@@ -155,7 +155,74 @@ describe("LiveTranscriptService", () => {
 		const result = await makeService({ helperPath: () => null }).refresh();
 
 		expect(result.status).toBe("idle");
-		expect(result.error).toMatch(/Apple Silicon/);
+		expect(result.error).toMatch(/speech helper|Apple Silicon/);
 		expect(transcribe).not.toHaveBeenCalled();
+	});
+
+	it("transcribes after a clip only when the model is already on disk", async () => {
+		const ensureModel = vi.fn(async () => "/models/parakeet");
+		const missing = makeService({ modelReady: () => false, ensureModel });
+		expect(missing.refreshAfterClip()).toBeNull();
+		expect(ensureModel).not.toHaveBeenCalled();
+
+		const result = await makeService({ modelReady: () => true }).refreshAfterClip();
+		expect(result?.clips.map((entry) => entry.text)).toEqual(["text clip-0", "text clip-1"]);
+	});
+
+	it("runs once more when a clip finishes during a pass", async () => {
+		let release: () => void = () => undefined;
+		transcribe.mockImplementationOnce(async ({ id }: { id: string }) => {
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return { id, text: `text ${id}`, detectedLanguage: "en" };
+		});
+		const service = makeService();
+		const first = service.refresh();
+		await vi.waitFor(() => expect(transcribe).toHaveBeenCalledOnce());
+		listing = { ...listing, clips: [...listing.clips, clip(2)] };
+		const second = service.refresh();
+		release();
+		await first;
+		const result = await second;
+
+		expect(result.clips.map((entry) => entry.text)).toEqual([
+			"text clip-0",
+			"text clip-1",
+			"text clip-2",
+		]);
+	});
+
+	it("keeps the final clip of a stopped take after the recorder resets", async () => {
+		const service = makeService();
+		service.rememberStoppedTake({ ...listing, clips: [...listing.clips, clip(2)] });
+		listing = { recordingId: null, clips: [], live: false };
+		const result = await service.refresh();
+
+		expect(result.recordingId).toBe(7);
+		expect(result.clips.map((entry) => entry.text)).toEqual([
+			"text clip-0",
+			"text clip-1",
+			"text clip-2",
+		]);
+	});
+
+	it("leaves a clip cut short by a resume unfinished, not failed", async () => {
+		const service = makeService({
+			transcriber: () => ({
+				transcribe: transcribe as never,
+				stop: () => undefined,
+			}),
+		});
+		transcribe.mockImplementationOnce(async () => {
+			listing = { ...listing, live: true };
+			service.interrupt();
+			throw new Error("Parakeet helper stopped.");
+		});
+		const result = await service.refresh();
+
+		expect(result.status).toBe("blocked");
+		expect(result.clips[0]).toMatchObject({ text: null, error: null });
+		expect(transcribe).toHaveBeenCalledOnce();
 	});
 });

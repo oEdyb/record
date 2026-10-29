@@ -54,6 +54,7 @@ import {
 	requestLinuxRecordingControls,
 	resolveApprovedRendererMediaPath,
 	stopNativeMacCaptureForQuit,
+	studioTake,
 } from "./ipc/handlers";
 import {
 	createTrustedRendererIpcMain,
@@ -64,6 +65,7 @@ import {
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
 import { resolveFfmpeg } from "./media/audioPeaks";
+import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
 import { activateNiriHud } from "./niriHudFocus";
 import { createQuitCaptureGuard } from "./recording/quitCaptureGuard";
 import {
@@ -73,7 +75,9 @@ import {
 import { appendRecordStartTiming, RecordStartTimeline } from "./recording/recordStartTimeline";
 import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
-import { ensureModels, modelPaths } from "./stt/modelManager";
+import { ensureModels, isModelOnDisk, modelPaths } from "./stt/modelManager";
+import { registerStudioIpc } from "./studio/ipc";
+import { StudioController } from "./studio/studioController";
 import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
 import { LiveTranscriptService } from "./transcript/liveTranscript";
 import {
@@ -91,6 +95,7 @@ import {
 	createHudOverlayWindow,
 	createNotesWindow,
 	createSourceSelectorWindow,
+	createStudioWindow,
 	createTranscriptWindow,
 	isPointOverPrivateRecordingUi,
 	setCameraPreviewCaptureHidden,
@@ -182,6 +187,8 @@ let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
 let notesWindow: BrowserWindow | null = null;
 let transcriptWindow: BrowserWindow | null = null;
+let studio: StudioController | null = null;
+let quittingForStudio = false;
 let liveTranscript: LiveTranscriptService | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
@@ -957,6 +964,7 @@ app.on("before-quit", (event) => {
 	// dialog on a quitting app.
 	updateCheckAbort?.abort();
 	liveTranscript?.stop();
+	quittingForStudio = true;
 	quitCaptureGuard.beforeQuit(event);
 });
 
@@ -1213,6 +1221,7 @@ appReady?.then(async () => {
 		(recording: boolean, sourceName: string) => {
 			selectedSourceName = sourceName;
 			isRecording = recording;
+			studio?.sync();
 			scheduleReviewPrewarm(recording);
 			if (!tray) createTray();
 			updateTrayMenu(recording);
@@ -1228,7 +1237,39 @@ appReady?.then(async () => {
 					(window): window is BrowserWindow => Boolean(window),
 				),
 			),
-		{ ipcMain, setCameraPreviewCaptureHidden },
+		{
+			ipcMain,
+			setCameraPreviewCaptureHidden,
+			beforeCaptureResumes: async (capture) => {
+				await studio?.beforeCaptureResumes(capture);
+			},
+			onTakeEvent: (event) => {
+				studio?.sync();
+				if (!liveTranscript) return;
+				// Resuming: the recording gets the CPU back before its first frame.
+				if (event.kind === "resuming") return liveTranscript.interrupt();
+				if (event.kind === "stored") {
+					liveTranscript.rememberStoppedTake({
+						recordingId: event.session.createdAt,
+						clips: (event.session.clips ?? []).flatMap((clip) =>
+							!clip.removed && clip.microphoneAudioPath
+								? [
+										{
+											index: clip.index,
+											microphoneAudioPath: clip.microphoneAudioPath,
+											durationMs: clip.durationMs,
+										},
+									]
+								: [],
+						),
+						live: false,
+					});
+				}
+				liveTranscript.refreshAfterClip()?.catch((error: unknown) => {
+					console.warn("[transcript] automatic pass failed:", error);
+				});
+			},
+		},
 	);
 
 	const sttModelsDir = path.join(app.getPath("userData"), "stt-models");
@@ -1244,15 +1285,46 @@ appReady?.then(async () => {
 			});
 			return modelPaths(sttModelsDir)[parakeetModelId()];
 		},
+		modelReady: () =>
+			resolveParakeetBinaryPath() !== null && isModelOnDisk(sttModelsDir, parakeetModelId()),
 		tempDir: path.join(app.getPath("temp"), "klippt-transcript"),
 		cacheDir: path.join(app.getPath("userData"), "transcripts"),
-		onSnapshot: (snapshot) => sendTranscriptSnapshot(transcriptWindow, snapshot),
+		onSnapshot: (snapshot) => {
+			sendTranscriptSnapshot(transcriptWindow, snapshot);
+			studio?.publish();
+		},
 	});
 	registerTranscriptIpc(ipcMain, {
 		service: liveTranscript,
 		openWindow: createTranscriptWindowWrapper,
 		getWindow: () => transcriptWindow,
 	});
+	const studioCaptureGuard = new NiriCaptureWindowGuard("Klippt Studio", () => studio?.revoke());
+	studio = new StudioController({
+		take: studioTake,
+		transcript: () =>
+			liveTranscript?.snapshot() ?? {
+				recordingId: null,
+				clips: [],
+				status: "idle",
+				progress: null,
+				download: null,
+				error: null,
+				updatedAt: 0,
+			},
+		getPill: () => mainWindow,
+		createWindow: (near) => createStudioWindow(near),
+		sendToPill: (channel) => {
+			if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel);
+		},
+		// macOS keeps protected windows out of capture; on Linux only niri can confirm it.
+		outsideCapture: (nodeId) =>
+			process.platform === "darwin" ? Promise.resolve(true) : studioCaptureGuard.begin(nodeId),
+		endCaptureCheck: () => studioCaptureGuard.end(),
+		waitForUnmap: () => new Promise((resolve) => setTimeout(resolve, 150)),
+		quitting: () => quittingForStudio,
+	});
+	registerStudioIpc(ipcMain, studio);
 
 	let cleanCutReceiver: Electron.WebContents | null = null;
 	const claudeCli = findClaudeCli();

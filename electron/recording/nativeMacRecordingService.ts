@@ -196,6 +196,21 @@ export class NativeMacRecordingService {
 		return this.isRunning() && !this.prepared && !this.paused;
 	}
 
+	/** The take as the Studio shows it: committed kept clips and whether capture is live. */
+	studioTake(): {
+		recordingId: number | null;
+		clips: RecordingSessionClip[];
+		running: boolean;
+		paused: boolean;
+	} {
+		return {
+			recordingId: this.recordingId,
+			clips: this.clips.filter((clip) => !clip.removed).map((clip) => ({ ...clip })),
+			running: this.isRunning() && !this.prepared,
+			paused: this.paused,
+		};
+	}
+
 	/** Committed clips with a microphone original, for the on-demand transcript. */
 	transcriptClipListing(): {
 		recordingId: number | null;

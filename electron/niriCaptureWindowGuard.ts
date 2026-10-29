@@ -99,7 +99,7 @@ export class NiriCaptureWindowGuard {
 	private monitor: Watch | null = null;
 
 	constructor(
-		private readonly windowTitle: "Klippt" | "Klippt Camera",
+		private readonly windowTitle: "Klippt" | "Klippt Camera" | "Klippt Studio",
 		private readonly onUnsafe: () => void,
 		private readonly dependencies: Dependencies = { query, watch },
 		private readonly pid = process.pid,

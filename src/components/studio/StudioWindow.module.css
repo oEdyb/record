@@ -1,0 +1,246 @@
+/* The Studio is the pill's paused replay grown to a window: same HUD surface, ink,
+   radii and controls. No new palette. */
+.root {
+	display: flex;
+	height: 100vh;
+	width: 100vw;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--hud-surface-solid);
+	color: var(--hud-ink);
+	font-family: var(--font-body);
+	user-select: none;
+}
+
+.header {
+	display: flex;
+	height: 44px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 10px;
+	padding: 0 12px 0 16px;
+	-webkit-app-region: drag;
+}
+
+.header button {
+	-webkit-app-region: no-drag;
+}
+
+.title {
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.phase {
+	flex: 1;
+	min-width: 0;
+	color: var(--hud-muted);
+	font-size: 12px;
+}
+
+.phase[data-phase="recording"]::before {
+	content: "";
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	margin-right: 6px;
+	border-radius: 50%;
+	background: #ef4444;
+	vertical-align: 1px;
+}
+
+.pillButton {
+	flex-shrink: 0;
+}
+
+.body {
+	display: grid;
+	min-height: 0;
+	flex: 1;
+	grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 420px);
+	gap: 12px;
+	padding: 0 16px 16px;
+}
+
+.main {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.replay {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+/* The stage takes the room it is given and keeps the recording's shape: letterboxed,
+   never cropped. */
+.stageSlot {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	align-items: center;
+	justify-content: center;
+	container-type: size;
+}
+
+.stage {
+	width: min(100cqw, 100cqh * var(--peek-aspect));
+	height: auto;
+}
+
+.replayControls {
+	flex-shrink: 0;
+	padding: 8px 2px 0;
+}
+
+.replayError {
+	margin: 6px 0 0;
+	color: rgb(255 170 160 / 90%);
+	font-size: 12px;
+}
+
+.emptyStage {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--hud-radius-lg);
+	background: #000000;
+	color: var(--hud-muted);
+	font-size: 13px;
+}
+
+/* The pill's recording row, on its own surface. */
+.transport {
+	display: flex;
+	height: 48px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 6px;
+	align-self: center;
+	padding: 0 6px;
+	border: 1px solid var(--hud-border);
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-surface);
+}
+
+.transcript {
+	position: relative;
+	display: flex;
+	min-height: 0;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px 12px;
+	border: 1px solid var(--hud-border);
+	border-radius: var(--hud-radius-lg);
+	background: rgb(14 14 17 / 80%);
+}
+
+.transcriptHeader {
+	display: flex;
+	height: 28px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 8px;
+}
+
+.transcriptTitle {
+	flex: 1;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.transcriptBody {
+	min-height: 0;
+	flex: 1;
+}
+
+.section + .section {
+	margin-top: 14px;
+}
+
+.recordingDot {
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	margin-left: 6px;
+	border-radius: 50%;
+	background: #ef4444;
+	vertical-align: 1px;
+}
+
+/* A sentence reads as text and seeks on click. */
+.sentence {
+	display: inline;
+	padding: 0;
+	border: 0;
+	border-radius: var(--hud-radius-sm);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	user-select: text;
+	transition: background-color 120ms ease;
+}
+
+.sentence:hover {
+	background: var(--hud-fill-hover);
+}
+
+.sentence:focus-visible {
+	outline: 2px solid var(--hud-focus);
+	outline-offset: 1px;
+}
+
+.sentence[data-active="true"] {
+	background: var(--hud-fill-strong);
+}
+
+.placeholder {
+	margin: 0;
+	color: var(--hud-muted);
+	font-size: 12.5px;
+}
+
+.placeholder[data-tone="error"] {
+	color: rgb(255 170 160 / 90%);
+}
+
+.statusAction {
+	margin-left: 8px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--hud-ink);
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.latest {
+	position: absolute;
+	bottom: 14px;
+	left: 50%;
+	translate: -50% 0;
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 999px) {
+	.body {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(180px, 1.2fr) minmax(160px, 1fr);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sentence {
+		transition: none;
+	}
+}

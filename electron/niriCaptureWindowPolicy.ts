@@ -43,7 +43,7 @@ const cast = z.object({
 const snapshot = z.object({
 	pid: processId,
 	pipeWireNodeId: nodeId,
-	windowTitle: z.enum(["Klippt", "Klippt Camera"]),
+	windowTitle: z.enum(["Klippt", "Klippt Camera", "Klippt Studio"]),
 	casts: z.array(cast),
 	outputs: z.record(z.string(), output),
 	workspaces: z.array(workspace),

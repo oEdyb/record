@@ -245,6 +245,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	closeTranscriptWindow: () => {
 		ipcRenderer.send("transcript-window-close");
 	},
+	openRecordingStudio: () => {
+		return ipcRenderer.invoke("studio-open");
+	},
+	getStudioSnapshot: () => {
+		return ipcRenderer.invoke("studio-snapshot");
+	},
+	onStudioUpdated: (callback: (snapshot: unknown) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown) => callback(snapshot);
+		ipcRenderer.on("studio-updated", listener);
+		return () => ipcRenderer.removeListener("studio-updated", listener);
+	},
+	studioCommand: (command: string) => {
+		ipcRenderer.send("studio-command", command);
+	},
+	onHudRemovePreviousClip: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("hud-remove-previous-clip", listener);
+		return () => ipcRenderer.removeListener("hud-remove-previous-clip", listener);
+	},
 	getTranscriptSnapshot: () => {
 		return ipcRenderer.invoke("transcript-snapshot");
 	},

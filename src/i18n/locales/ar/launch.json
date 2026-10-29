@@ -173,5 +173,21 @@
 		"screenDetail": "لالتقاط شاشتك",
 		"settingsHint": "فعّل Klippt في إعدادات النظام. تتحدّث هذه اللوحة تلقائيًا.",
 		"title": "قبل أن تسجّل"
+	},
+	"studio": {
+		"title": "الاستوديو",
+		"open": "فتح الاستوديو",
+		"backToPill": "التبديل إلى الشريط",
+		"recording": "جارٍ التسجيل",
+		"paused": "متوقف مؤقتًا",
+		"noClips": "تظهر مقاطعك هنا بعد الإيقاف المؤقت.",
+		"transcriptAfterPause": "يظهر النص المكتوب بعد الإيقاف المؤقت.",
+		"clipRecording": "جارٍ التسجيل…",
+		"transcribing": "جارٍ التفريغ…",
+		"waiting": "بانتظار التفريغ",
+		"latest": "أحدث مقطع",
+		"seekTo": "تشغيل من {{time}}",
+		"notTranscribed": "لم يُفرَّغ بعد.",
+		"transcribeNow": "فرّغ الآن"
 	}
 }

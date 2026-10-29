@@ -173,5 +173,21 @@
 		"screenDetail": "화면을 캡처하려면",
 		"settingsHint": "시스템 설정에서 Klippt를 켜세요. 이 패널은 자동으로 업데이트됩니다.",
 		"title": "녹화하기 전에"
+	},
+	"studio": {
+		"title": "스튜디오",
+		"open": "스튜디오 열기",
+		"backToPill": "알약으로 전환",
+		"recording": "녹화 중",
+		"paused": "일시 정지됨",
+		"noClips": "일시 정지하면 클립이 여기에 표시됩니다.",
+		"transcriptAfterPause": "일시 정지하면 대본이 표시됩니다.",
+		"clipRecording": "녹화 중…",
+		"transcribing": "받아쓰는 중…",
+		"waiting": "받아쓰기 대기 중",
+		"latest": "최신 클립",
+		"seekTo": "{{time}}부터 재생",
+		"notTranscribed": "아직 받아쓰지 않았습니다.",
+		"transcribeNow": "지금 받아쓰기"
 	}
 }

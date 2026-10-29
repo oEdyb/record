@@ -173,5 +173,21 @@
 	},
 	"countdown": {
 		"cancelHint": "Press Record again to cancel"
+	},
+	"studio": {
+		"title": "Studio",
+		"open": "Open Studio",
+		"backToPill": "Switch to pill",
+		"recording": "Recording",
+		"paused": "Paused",
+		"noClips": "Your clips show here after you pause.",
+		"transcriptAfterPause": "Your transcript appears after you pause.",
+		"clipRecording": "Recording…",
+		"transcribing": "Transcribing…",
+		"waiting": "Waiting to transcribe",
+		"latest": "Latest clip",
+		"seekTo": "Play from {{time}}",
+		"notTranscribed": "Not transcribed yet.",
+		"transcribeNow": "Transcribe now"
 	}
 }

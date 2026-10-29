@@ -1191,6 +1191,47 @@ export function createTranscriptWindow(): BrowserWindow {
 	return win;
 }
 
+/**
+ * The full-size recording view: replay, transcript and controls in one window, used
+ * instead of the pill. Titled exactly "Klippt Studio" so the niri capture guard can find
+ * it; the title never follows the page.
+ */
+export function createStudioWindow(near?: { x: number; y: number }): BrowserWindow {
+	const display = near ? screen.getDisplayNearestPoint(near) : screen.getPrimaryDisplay();
+	const area = display.workArea;
+	const width = Math.round(Math.min(area.width, Math.max(960, area.width * 0.86)));
+	const height = Math.round(Math.min(area.height, Math.max(640, area.height * 0.86)));
+	const win = new BrowserWindow({
+		title: `${APP_DISPLAY_NAME} Studio`,
+		width,
+		height,
+		x: Math.round(area.x + (area.width - width) / 2),
+		y: Math.round(area.y + (area.height - height) / 2),
+		minWidth: 640,
+		minHeight: 560,
+		frame: false,
+		backgroundColor: "#111114",
+		resizable: true,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
+	win.on("page-title-updated", (event) => event.preventDefault());
+	if (process.platform !== "darwin") win.setAutoHideMenuBar(true);
+	applyContentProtection(win, "Studio");
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=studio");
+	} else {
+		win.loadURL("klippt://app/index.html?windowType=studio");
+	}
+	return win;
+}
+
 const NOTES_WINDOW_DEFAULT_SIZE = { width: 320, height: 420 } as const;
 const NOTES_WINDOW_MIN_SIZE = { width: 220, height: 140 } as const;
 

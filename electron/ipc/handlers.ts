@@ -226,6 +226,11 @@ export async function stopNativeMacCaptureForQuit(): Promise<void> {
 	await nativeMacRecordingService?.stopBeforeQuit();
 }
 
+/** The current take for the Studio; null before the recorder exists. */
+export function studioTake() {
+	return nativeMacRecordingService?.studioTake() ?? null;
+}
+
 export function listTranscriptClips() {
 	return (
 		nativeMacRecordingService?.transcriptClipListing() ?? {
@@ -1695,6 +1700,12 @@ async function resolveMediaLinksForVideo(videoPath: string): Promise<{
 		: { resolvedVia: "none" };
 }
 
+export type TakeEvent =
+	| { kind: "paused" }
+	| { kind: "resuming" }
+	| { kind: "changed" }
+	| { kind: "stored"; session: RecordingSession };
+
 export function registerIpcHandlers(
 	createEditorWindow: (options?: { compactReview?: boolean }) => void,
 	createSourceSelectorWindow: () => BrowserWindow,
@@ -1715,6 +1726,14 @@ export function registerIpcHandlers(
 			pipeWireNodeId?: number,
 		) => void | Promise<void>;
 		ipcMain?: RendererIpcMain;
+		/** A take's clips changed: a clip finished on Pause, capture is resuming, or Stop stored it. */
+		onTakeEvent?: (event: TakeEvent) => void;
+		/** Runs before capture resumes, so a window on the recorded screen can step aside first. */
+		beforeCaptureResumes?: (capture: {
+			pipeWireNodeId: number | undefined;
+			/** A single window is recorded, so other windows never appear in it. */
+			windowSource: boolean;
+		}) => Promise<void>;
 	} = {},
 ): Promise<boolean> {
 	const ipcMain = options.ipcMain ?? electronIpcMain;
@@ -2586,16 +2605,25 @@ export function registerIpcHandlers(
 	ipcMain.handle("pause-native-linux-recording", async () => {
 		const result = await invokeNativeLinux((service) => service.pause());
 		recordingHud.pauseCompleted();
+		if ("success" in result && result.success) options.onTakeEvent?.({ kind: "paused" });
 		return result;
 	});
 	ipcMain.handle(
 		"resume-native-linux-recording",
-		(_, request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest) =>
-			invokeNativeLinux((service) =>
+		async (_, request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
+			options.onTakeEvent?.({ kind: "resuming" });
+			await options.beforeCaptureResumes?.({
+				pipeWireNodeId: linuxClipMetadata?.pipeWireNodeId,
+				windowSource: linuxClipMetadata?.sourceKind === "window",
+			});
+			const result = await invokeNativeLinux((service) =>
 				recordingHud.capture(() =>
 					service.resume(request ? linuxClipRecordingRequest(request) : undefined),
 				),
-			),
+			);
+			options.onTakeEvent?.({ kind: "changed" });
+			return result;
+		},
 	);
 	ipcMain.handle("stop-native-linux-recording", (_, discard?: boolean) => {
 		recordingHud.cancelPending();
@@ -3070,6 +3098,7 @@ export function registerIpcHandlers(
 		onSessionStored: (session) => {
 			setCurrentRecordingSessionState(session);
 			currentProjectPath = null;
+			options.onTakeEvent?.({ kind: "stored", session });
 		},
 		onRecordingStateChange: (recording) => {
 			const sourceName =
@@ -3212,6 +3241,7 @@ export function registerIpcHandlers(
 			}
 		}
 		linuxRecordingHud?.pauseCompleted();
+		if ("success" in result && result.success) options.onTakeEvent?.({ kind: "paused" });
 		return result;
 	});
 
@@ -3241,11 +3271,14 @@ export function registerIpcHandlers(
 	);
 
 	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
+		options.onTakeEvent?.({ kind: "resuming" });
+		await options.beforeCaptureResumes?.({ pipeWireNodeId: undefined, windowSource: false });
 		const result = await timeClipBoundary("continue", () =>
 			invokeNativeMac(() =>
 				recordingHud.capture(() => getNativeMacRecordingService().resume(request)),
 			),
 		);
+		options.onTakeEvent?.({ kind: "changed" });
 		if (activeCaptureWorkloadId && "success" in result && result.success) {
 			if (request) {
 				workloadTelemetry.configure(activeCaptureWorkloadId, {
@@ -3277,12 +3310,18 @@ export function registerIpcHandlers(
 			invokeNativeMac(() => getNativeMacRecordingService().prepareResume(request)),
 		),
 	);
-	ipcMain.handle("remove-previous-native-mac-clip", () =>
-		invokeNativeMac(() => getNativeMacRecordingService().removePreviousClip()),
-	);
-	ipcMain.handle("restore-removed-native-mac-clip", (_, clipIndex: number) =>
-		invokeNativeMac(() => getNativeMacRecordingService().restoreRemovedClip(clipIndex)),
-	);
+	ipcMain.handle("remove-previous-native-mac-clip", async () => {
+		const result = await invokeNativeMac(() => getNativeMacRecordingService().removePreviousClip());
+		options.onTakeEvent?.({ kind: "changed" });
+		return result;
+	});
+	ipcMain.handle("restore-removed-native-mac-clip", async (_, clipIndex: number) => {
+		const result = await invokeNativeMac(() =>
+			getNativeMacRecordingService().restoreRemovedClip(clipIndex),
+		);
+		options.onTakeEvent?.({ kind: "changed" });
+		return result;
+	});
 
 	ipcMain.handle("pause-native-windows-recording", async () => {
 		const proc = nativeWindowsCaptureProcess;

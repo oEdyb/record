@@ -173,5 +173,21 @@
 		"screenDetail": "用於錄製你的螢幕",
 		"settingsHint": "請在「系統設定」中開啟 Klippt。此面板會自動更新。",
 		"title": "錄製之前"
+	},
+	"studio": {
+		"title": "工作室",
+		"open": "開啟工作室",
+		"backToPill": "切換到膠囊",
+		"recording": "正在錄製",
+		"paused": "已暫停",
+		"noClips": "暫停後，片段會顯示在這裡。",
+		"transcriptAfterPause": "暫停後會顯示逐字稿。",
+		"clipRecording": "正在錄製…",
+		"transcribing": "正在轉寫…",
+		"waiting": "等待轉寫",
+		"latest": "最新片段",
+		"seekTo": "從 {{time}} 播放",
+		"notTranscribed": "尚未轉寫。",
+		"transcribeNow": "立即轉寫"
 	}
 }

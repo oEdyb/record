@@ -1,7 +1,13 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { extractMicrophoneWav } from "./microphoneWav";
 import { ParakeetProcess, type TranscriptWord } from "./parakeetProcess";
+import {
+	type ClipTranscript,
+	cacheKey,
+	readTranscriptCache,
+	writeTranscriptCache,
+} from "./transcriptCache";
 
 export interface TranscriptClipSource {
 	index: number;
@@ -46,6 +52,8 @@ export interface LiveTranscriptDeps {
 	ensureModel: (
 		onProgress: (downloadedBytes: number, totalBytes: number) => void,
 	) => Promise<string>;
+	/** Whether the model is already on disk; automatic passes never start a download. */
+	modelReady?: () => boolean;
 	tempDir: string;
 	cacheDir: string;
 	onSnapshot?: (snapshot: TranscriptSnapshot) => void;
@@ -55,35 +63,6 @@ export interface LiveTranscriptDeps {
 		modelDir: string,
 	) => Pick<ParakeetProcess, "transcribe" | "stop">;
 	extract?: typeof extractMicrophoneWav;
-}
-
-interface ClipTranscript {
-	text: string;
-	words: TranscriptWord[] | null;
-}
-
-function isWord(value: unknown): value is TranscriptWord {
-	if (!value || typeof value !== "object") return false;
-	const word = value as Record<string, unknown>;
-	return (
-		typeof word.word === "string" &&
-		typeof word.startSec === "number" &&
-		typeof word.endSec === "number" &&
-		typeof word.confidence === "number"
-	);
-}
-
-function readCachedClip(value: unknown): ClipTranscript | null {
-	if (typeof value === "string") return { text: value, words: null };
-	if (!value || typeof value !== "object") return null;
-	const entry = value as Record<string, unknown>;
-	if (typeof entry.text !== "string") return null;
-	const words = Array.isArray(entry.words) && entry.words.every(isWord) ? entry.words : null;
-	return { text: entry.text, words };
-}
-
-function cacheKey(recordingId: number | null, clip: TranscriptClipSource): string {
-	return `${recordingId ?? "none"}:${clip.index}:${clip.microphoneAudioPath}`;
 }
 
 /**
@@ -96,6 +75,9 @@ export class LiveTranscriptService {
 	private loadedCacheFor: number | null | undefined;
 	private helper: Pick<ParakeetProcess, "transcribe" | "stop"> | null = null;
 	private inFlight: Promise<TranscriptSnapshot> | null = null;
+	private rerun: Promise<TranscriptSnapshot> | null = null;
+	/** Bumped when capture resumes, so a clip cut short reads as unfinished rather than failed. */
+	private generation = 0;
 	private lastListing: TranscriptClipListing = { recordingId: null, clips: [], live: false };
 	private current: TranscriptSnapshot = {
 		recordingId: null,
@@ -113,13 +95,39 @@ export class LiveTranscriptService {
 		return this.current;
 	}
 
-	/** Runs at most one pass at a time; a request during a pass gets that pass's result. */
+	/**
+	 * Runs at most one pass at a time. A request during a pass queues one more pass after
+	 * it, so a clip that finished meanwhile is never skipped.
+	 */
 	refresh(): Promise<TranscriptSnapshot> {
-		if (this.inFlight) return this.inFlight;
+		if (this.inFlight) {
+			this.rerun ??= this.inFlight.then(() => {
+				this.rerun = null;
+				return this.refresh();
+			});
+			return this.rerun;
+		}
 		this.inFlight = this.run().finally(() => {
 			this.inFlight = null;
 		});
 		return this.inFlight;
+	}
+
+	/** After a clip finishes. Null when the model is not on disk: never a surprise download. */
+	refreshAfterClip(): Promise<TranscriptSnapshot> | null {
+		if (this.deps.modelReady && !this.deps.modelReady()) return null;
+		return this.refresh();
+	}
+
+	/** The take just stopped: keep its clips, since the recorder forgets them right after. */
+	rememberStoppedTake(listing: TranscriptClipListing) {
+		if (listing.clips.length > 0) this.lastListing = { ...listing, live: false };
+	}
+
+	/** Capture is resuming: end the clip in progress now instead of competing with it. */
+	interrupt() {
+		this.generation += 1;
+		this.stop();
 	}
 
 	stop() {
@@ -156,6 +164,7 @@ export class LiveTranscriptService {
 	}
 
 	private async run(): Promise<TranscriptSnapshot> {
+		const generation = this.generation;
 		const listing = this.listing();
 		const errors = new Map<number, string>();
 		await this.loadCache(listing.recordingId);
@@ -190,7 +199,11 @@ export class LiveTranscriptService {
 			if (!ffmpeg) throw new Error("Bundled FFmpeg is unavailable.");
 			const helperPath = this.deps.helperPath();
 			if (!helperPath)
-				throw new Error("Transcription needs an Apple Silicon Mac on macOS 14 or newer.");
+				throw new Error(
+					process.platform === "linux"
+						? "Transcription's speech helper is missing from this build."
+						: "Transcription needs an Apple Silicon Mac on macOS 14 or newer.",
+				);
 			this.publish({
 				recordingId: listing.recordingId,
 				clips: this.entries(listing, errors),
@@ -209,8 +222,8 @@ export class LiveTranscriptService {
 			await mkdir(this.deps.tempDir, { recursive: true });
 			let done = 0;
 			for (const clip of pending) {
-				// Continue during a pass: finish this clip at most, never transcribe alongside capture.
-				if (this.deps.listClips().live) {
+				// Continue during a pass: interrupt() ends the clip in progress, never transcribe alongside capture.
+				if (generation !== this.generation || this.deps.listClips().live) {
 					await this.saveCache(listing);
 					this.publish({
 						clips: this.entries(listing, errors),
@@ -239,7 +252,9 @@ export class LiveTranscriptService {
 						words: result.words,
 					});
 				} catch (error) {
-					errors.set(clip.index, error instanceof Error ? error.message : String(error));
+					// Cut short by a resume: unfinished, not failed; the next pause picks it up.
+					if (generation === this.generation)
+						errors.set(clip.index, error instanceof Error ? error.message : String(error));
 				} finally {
 					await rm(wavPath, { force: true }).catch(() => undefined);
 				}
@@ -265,24 +280,11 @@ export class LiveTranscriptService {
 		return this.current;
 	}
 
-	private cachePath(recordingId: number | null): string {
-		return path.join(this.deps.cacheDir, `${recordingId ?? "none"}.json`);
-	}
-
 	private async loadCache(recordingId: number | null) {
 		if (this.loadedCacheFor === recordingId) return;
 		this.loadedCacheFor = recordingId;
-		try {
-			const raw = JSON.parse(await readFile(this.cachePath(recordingId), "utf8")) as unknown;
-			if (raw && typeof raw === "object") {
-				for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-					const clip = readCachedClip(value);
-					if (clip) this.texts.set(key, clip);
-				}
-			}
-		} catch {
-			// No cache yet, or an unreadable one: transcribe again.
-		}
+		for (const [key, clip] of await readTranscriptCache(this.deps.cacheDir, recordingId))
+			this.texts.set(key, clip);
 	}
 
 	private async saveCache(listing: TranscriptClipListing) {
@@ -292,11 +294,6 @@ export class LiveTranscriptService {
 			const text = this.texts.get(key);
 			if (text !== undefined) entries[key] = text;
 		}
-		try {
-			await mkdir(this.deps.cacheDir, { recursive: true });
-			await writeFile(this.cachePath(listing.recordingId), JSON.stringify(entries));
-		} catch {
-			// The cache is a convenience; losing it only costs a re-run.
-		}
+		await writeTranscriptCache(this.deps.cacheDir, listing.recordingId, entries);
 	}
 }

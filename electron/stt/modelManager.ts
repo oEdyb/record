@@ -295,6 +295,12 @@ export async function areModelsPresent(baseDir: string): Promise<boolean> {
 	}
 }
 
+/** Every file of a model is on disk. Cheap and synchronous; it does not verify hashes. */
+export function isModelOnDisk(baseDir: string, id: SttModelId): boolean {
+	const model = STT_MODELS[id];
+	return model.files.every((file) => existsSync(path.join(baseDir, model.cacheDir, file.name)));
+}
+
 /** Hash a file as a bounded stream. Cancellation destroys the read immediately. */
 export async function sha256OfFile(filePath: string, signal?: AbortSignal): Promise<string> {
 	if (signal?.aborted) throw signal.reason;
