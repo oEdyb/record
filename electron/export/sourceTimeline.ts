@@ -17,6 +17,8 @@ export interface HandoffSpan {
 	sourceEndSec?: number;
 	timelineStartSec: number;
 	timelineEndSec: number;
+	keepIndex?: number;
+	reason?: string;
 }
 
 export type MarkerColor =
@@ -83,10 +85,11 @@ function clip(
 	available: number,
 	span: HandoffSpan,
 	offsetSec: number,
+	provenance: ReturnType<typeof clipProvenance>,
 ) {
 	return {
 		OTIO_SCHEMA: "Clip.2",
-		name: file,
+		name: provenance.name,
 		source_range: range(start, duration),
 		media_references: {
 			DEFAULT_MEDIA: {
@@ -102,18 +105,16 @@ function clip(
 		metadata: {
 			klippt: {
 				clipId: span.id,
-				assetId: span.assetId,
-				sourceStartSec: span.sourceStartSec,
-				sourceEndSec: span.sourceEndSec,
 				timelineStartSec: span.timelineStartSec,
 				timelineEndSec: span.timelineEndSec,
 				sourceOffsetSec: offsetSec,
+				...provenance.metadata,
 			},
 		},
 	};
 }
 
-type Item = ReturnType<typeof gap> | ReturnType<typeof clip>;
+type Item = ReturnType<typeof gap> | (ReturnType<typeof clip> & { enabled?: boolean });
 type TrackSource = { file: string; durationSec: number | null; offsetSec: number };
 
 export type SourceTrackRole = "screen" | "camera" | "microphone" | "system" | "audio";
@@ -128,6 +129,8 @@ export type PlannedItem =
 			available: number;
 			span: HandoffSpan;
 			offsetSec: number;
+			take?: number;
+			screenStartSec?: number;
 	  };
 
 export interface PlannedTrack {
@@ -187,6 +190,8 @@ export function planSourceTimeline(sources: HandoffSource[], spans: HandoffSpan[
 					available,
 					span,
 					offsetSec: media.offsetSec,
+					take: sources.indexOf(source) + 1,
+					screenStartSec: (frame(span.sourceStartSec) + lead) / SOURCE_TIMELINE_RATE,
 				});
 			if (duration > lead + length) pushGap(duration - lead - length);
 			const missingSec = (duration - length) / SOURCE_TIMELINE_RATE;
@@ -229,17 +234,18 @@ export function buildSourceTimeline(
 	sources: HandoffSource[],
 	spans: HandoffSpan[],
 	markers: TimelineMarker[] = [],
+	cleanDialogue?: { file: string; samples: number },
 ) {
 	const plan = planSourceTimeline(sources, spans);
 	const markerFrames = markers.map((entry) => ({
 		entry,
 		frame: Math.round(entry.timelineSec * SOURCE_TIMELINE_RATE + 1e-8),
 	}));
-	const hostRole = sources.some((source) =>
-		source.screen.audio.some((item) => item.role === "microphone"),
-	)
-		? "microphone"
-		: "screen";
+	const hostRole =
+		!cleanDialogue &&
+		sources.some((source) => source.screen.audio.some((item) => item.role === "microphone"))
+			? "microphone"
+			: "screen";
 	const tracks = plan.tracks.map((track) => {
 		let position = 0;
 		const children = track.items.map((item): Item => {
@@ -253,12 +259,13 @@ export function buildSourceTimeline(
 				item.available,
 				item.span,
 				item.offsetSec,
+				clipProvenance(item, track.role, from),
 			);
 			if (track.role === hostRole)
 				for (const { entry, frame: at } of markerFrames)
 					if (at >= from && at < position)
 						piece.markers.push(marker(entry, item.start + at - from));
-			return piece;
+			return cleanDialogue && track.role === "microphone" ? { ...piece, enabled: false } : piece;
 		});
 		return {
 			OTIO_SCHEMA: "Track.1",
@@ -271,6 +278,48 @@ export function buildSourceTimeline(
 			metadata: {},
 		};
 	});
+	if (cleanDialogue) {
+		const duration = cleanDialogue.samples / 800;
+		const span: HandoffSpan = {
+			id: "clean-dialogue",
+			assetId: "clean-dialogue",
+			sourceStartSec: 0,
+			timelineStartSec: 0,
+			timelineEndSec: duration / SOURCE_TIMELINE_RATE,
+		};
+		tracks.push({
+			OTIO_SCHEMA: "Track.1",
+			name: "Clean dialogue",
+			kind: "Audio",
+			children: [
+				clip(
+					cleanDialogue.file,
+					0,
+					duration,
+					duration,
+					span,
+					0,
+					clipProvenance(
+						{
+							type: "clip",
+							file: cleanDialogue.file,
+							start: 0,
+							duration,
+							available: duration,
+							span,
+							offsetSec: 0,
+						},
+						"clean-dialogue",
+						0,
+					),
+				),
+			],
+			source_range: null,
+			effects: [],
+			markers: [],
+			metadata: {},
+		});
+	}
 	return {
 		timeline: {
 			OTIO_SCHEMA: "Timeline.1",
@@ -289,5 +338,35 @@ export function buildSourceTimeline(
 		},
 		plan,
 		warnings: plan.warnings,
+	};
+}
+
+export function clipProvenance(
+	item: Extract<PlannedItem, { type: "clip" }>,
+	role: string,
+	timelineStartFrame: number,
+) {
+	const sourceStartSec = item.start / SOURCE_TIMELINE_RATE;
+	const sourceEndSec = (item.start + item.duration) / SOURCE_TIMELINE_RATE;
+	const take = item.take ?? 0;
+	return {
+		name: `T${String(take).padStart(3, "0")} ${role} ${sourceStartSec.toFixed(2)}–${sourceEndSec.toFixed(2)}s`,
+		metadata: {
+			assetId: item.span.assetId,
+			take,
+			role,
+			sourceStartSec: item.span.sourceStartSec,
+			sourceEndSec:
+				item.span.sourceEndSec ??
+				item.span.sourceStartSec + item.span.timelineEndSec - item.span.timelineStartSec,
+			streamSourceStartSec: sourceStartSec,
+			streamSourceEndSec: sourceEndSec,
+			sourceStartFrame: item.start,
+			sourceEndFrame: item.start + item.duration,
+			timelineStartFrame,
+			timelineEndFrame: timelineStartFrame + item.duration,
+			...(item.span.keepIndex === undefined ? {} : { keepIndex: item.span.keepIndex }),
+			...(item.span.reason ? { reason: item.span.reason } : {}),
+		},
 	};
 }

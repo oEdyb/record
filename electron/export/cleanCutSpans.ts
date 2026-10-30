@@ -48,6 +48,8 @@ export function cleanCutTimeline(retained: HandoffSpan[], cut: CleanCut) {
 			spans.push({
 				id: `${piece.span.id}:clean-${spans.length}`,
 				assetId: keep.assetId,
+				keepIndex,
+				reason: cut.markers.find((marker) => marker.keepIndex === keepIndex)?.comment,
 				sourceStartSec: piece.start,
 				sourceEndSec: piece.end,
 				timelineStartSec: at,
