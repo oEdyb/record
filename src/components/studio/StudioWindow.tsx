@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
 	HudCompactPauseButton,
+	HudCompactRecordButton,
 	HudCompactTimer,
 	HudRemovePreviousClipButton,
 	HudStopButton,
@@ -16,6 +17,8 @@ type StudioSnapshot = Awaited<ReturnType<Window["electronAPI"]["getStudioSnapsho
 type StudioCommand = Parameters<Window["electronAPI"]["studioCommand"]>[0];
 
 const MB = 1024 * 1024;
+/** A command that changes nothing within this long gets its buttons back. */
+const COMMAND_TIMEOUT_MS = 5_000;
 
 function useStudioSnapshot(): StudioSnapshot | null {
 	const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
@@ -56,6 +59,7 @@ function useElapsedSeconds(snapshot: StudioSnapshot | null): number {
  */
 export function StudioWindow() {
 	const t = useScopedT("launch");
+	const editorT = useScopedT("editor");
 	const snapshot = useStudioSnapshot();
 	const elapsed = useElapsedSeconds(snapshot);
 	const [playheadSec, setPlayheadSec] = useState(0);
@@ -64,12 +68,23 @@ export function StudioWindow() {
 	const phase = snapshot?.phase ?? "idle";
 	const paused = phase === "paused";
 
-	// The next snapshot is the answer to a command; until then the buttons wait.
+	// The next snapshot is the answer to a command; until then the buttons wait, not forever.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: any new snapshot settles it
 	useEffect(() => setPending(false), [snapshot]);
+	useEffect(() => {
+		if (!pending) return;
+		const timer = setTimeout(() => setPending(false), COMMAND_TIMEOUT_MS);
+		return () => clearTimeout(timer);
+	}, [pending]);
+
+	const [resumeAsked, setResumeAsked] = useState(false);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: any new snapshot settles it
+	useEffect(() => setResumeAsked(false), [snapshot]);
 
 	const send = useCallback((command: StudioCommand) => {
 		if (command !== "pill") setPending(true);
+		// Silence the replay now; main holds it too, but this click needs no round trip.
+		if (command === "resume") setResumeAsked(true);
 		window.electronAPI.studioCommand(command);
 	}, []);
 
@@ -91,8 +106,10 @@ export function StudioWindow() {
 	const status = (() => {
 		const transcript = snapshot?.transcript;
 		if (!transcript) return { text: "", tone: "info" as const };
-		if (transcript.error) return { text: transcript.error, tone: "error" as const };
-		if (transcript.status === "downloading-model" && transcript.download)
+		// The transcriber keeps its last take until it runs again; that one's news is old.
+		const ours = transcript.recordingId === snapshot?.recordingId;
+		if (ours && transcript.error) return { text: transcript.error, tone: "error" as const };
+		if (ours && transcript.status === "downloading-model" && transcript.download)
 			return {
 				text: t("transcript.downloading", {
 					done: Math.round(transcript.download.downloadedBytes / MB),
@@ -101,7 +118,11 @@ export function StudioWindow() {
 				tone: "info" as const,
 			};
 		// Nothing runs on its own without the speech model: offer it, never download unasked.
-		if (paused && transcript.status === "idle" && sections.some((s) => s.state === "waiting"))
+		if (
+			paused &&
+			(!ours || transcript.status === "idle") &&
+			sections.some((s) => s.state === "waiting")
+		)
 			return {
 				text: t("studio.notTranscribed"),
 				tone: "info" as const,
@@ -138,7 +159,8 @@ export function StudioWindow() {
 						<StudioReplay
 							clips={clips}
 							seekRequest={seekRequest}
-							hold={phase === "recording"}
+							shown={snapshot?.shown ?? true}
+							hold={Boolean(snapshot?.holdPlayback) || phase === "recording" || resumeAsked}
 							onPosition={setPlayheadSec}
 							labels={{
 								clipOf: (current, total) => t("peek.clipOf", { current, total }),
@@ -154,27 +176,38 @@ export function StudioWindow() {
 						<div className={styles.emptyStage}>{t("studio.noClips")}</div>
 					)}
 					<div className={styles.transport} role="toolbar" aria-label={t("studio.title")}>
-						<HudCompactPauseButton
-							testId="studio-pause-button"
-							paused={paused}
-							busy={pending}
-							disabled={busy}
-							label={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
-							onClick={() => send(paused ? "resume" : "pause")}
-						/>
-						<HudCompactTimer elapsedSeconds={elapsed} paused={phase !== "recording"} />
-						<HudStopButton
-							saving={false}
-							disabled={busy}
-							label={t("tooltips.stopRecording")}
-							savingLabel={t("recording.saving")}
-							onClick={() => send("stop")}
-						/>
-						<HudRemovePreviousClipButton
-							disabled={busy || !paused || clips.length === 0}
-							label={t("recording.removePreviousClip")}
-							onClick={() => send("remove-last")}
-						/>
+						{phase === "idle" ? (
+							// The pill starts the take and asks for a screen; the Studio stays open.
+							<HudCompactRecordButton
+								disabled={pending}
+								label={editorT("recordingReview.record")}
+								onClick={() => send("record")}
+							/>
+						) : (
+							<>
+								<HudCompactPauseButton
+									testId="studio-pause-button"
+									paused={paused}
+									busy={pending}
+									disabled={busy}
+									label={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
+									onClick={() => send(paused ? "resume" : "pause")}
+								/>
+								<HudCompactTimer elapsedSeconds={elapsed} paused={phase !== "recording"} />
+								<HudStopButton
+									saving={false}
+									disabled={busy}
+									label={t("tooltips.stopRecording")}
+									savingLabel={t("recording.saving")}
+									onClick={() => send("stop")}
+								/>
+								<HudRemovePreviousClipButton
+									disabled={busy || !paused || clips.length === 0}
+									label={t("recording.removePreviousClip")}
+									onClick={() => send("remove-last")}
+								/>
+							</>
+						)}
 					</div>
 				</main>
 				<StudioTranscript

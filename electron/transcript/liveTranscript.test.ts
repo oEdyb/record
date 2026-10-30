@@ -207,6 +207,21 @@ describe("LiveTranscriptService", () => {
 		]);
 	});
 
+	it("transcribes the final clip when Stop comes during capture", async () => {
+		const service = makeService();
+		// Stop stores the take while the recorder still reports it as capturing.
+		listing = { ...listing, live: true };
+		service.rememberStoppedTake({ ...listing, live: false });
+		const stopped = await service.refreshAfterClip();
+		expect(stopped?.status).toBe("idle");
+		expect(stopped?.clips.map((entry) => entry.text)).toEqual(["text clip-0", "text clip-1"]);
+
+		// The next take replaces it.
+		listing = { recordingId: 8, clips: [clip(0)], live: false };
+		const next = await service.refresh();
+		expect(next.recordingId).toBe(8);
+	});
+
 	it("leaves a clip cut short by a resume unfinished, not failed", async () => {
 		const service = makeService({
 			transcriber: () => ({

@@ -231,6 +231,22 @@ export function studioTake() {
 	return nativeMacRecordingService?.studioTake() ?? null;
 }
 
+/**
+ * The pill renderer that runs the take is gone, so nothing can pause or stop it.
+ * Stop natively: the recorder stores the session as a normal Stop does. True when a
+ * take was stopped and saved.
+ */
+export async function stopTakeWithoutPill(): Promise<boolean> {
+	const service = nativeMacRecordingService;
+	if (!service?.studioTake()?.running) return false;
+	rendererRecordingStop.abandon();
+	const result = await service.stop(false).catch((error: unknown) => {
+		console.warn("[recording] stop after the pill crashed failed:", error);
+		return null;
+	});
+	return Boolean(result && "success" in result && result.success);
+}
+
 export function listTranscriptClips() {
 	return (
 		nativeMacRecordingService?.transcriptClipListing() ?? {
@@ -1728,8 +1744,8 @@ export function registerIpcHandlers(
 		ipcMain?: RendererIpcMain;
 		/** A take's clips changed: a clip finished on Pause, capture is resuming, or Stop stored it. */
 		onTakeEvent?: (event: TakeEvent) => void;
-		/** Runs before capture resumes, so a window on the recorded screen can step aside first. */
-		beforeCaptureResumes?: (capture: {
+		/** Runs before capture starts or resumes, so a window on the recorded screen can step aside first. */
+		beforeCapture?: (capture: {
 			pipeWireNodeId: number | undefined;
 			/** A single window is recorded, so other windows never appear in it. */
 			windowSource: boolean;
@@ -2585,13 +2601,20 @@ export function registerIpcHandlers(
 			await startupRecordingRecovery;
 			const result = await invokeNativeLinux(async (service) => {
 				const config = linuxClipRecordingRequest(request);
+				const studioAside = () =>
+					options.beforeCapture?.({
+						pipeWireNodeId: linuxClipMetadata?.pipeWireNodeId,
+						windowSource: linuxClipMetadata?.sourceKind === "window",
+					});
 				if (!service.isRunning()) {
 					const prepared = await prepareNativeLinuxRecording(config);
 					if (!prepared.success) return prepared;
+					await studioAside();
 					return recordingHud.capture(() =>
 						service.start({ ...config, recordingId: prepared.recordingId }),
 					);
 				}
+				await studioAside();
 				return recordingHud.capture(() => service.start(config));
 			});
 			if (result.success && "recordingId" in result && typeof result.recordingId === "number")
@@ -2612,7 +2635,7 @@ export function registerIpcHandlers(
 		"resume-native-linux-recording",
 		async (_, request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
 			options.onTakeEvent?.({ kind: "resuming" });
-			await options.beforeCaptureResumes?.({
+			await options.beforeCapture?.({
 				pipeWireNodeId: linuxClipMetadata?.pipeWireNodeId,
 				windowSource: linuxClipMetadata?.sourceKind === "window",
 			});
@@ -3183,6 +3206,7 @@ export function registerIpcHandlers(
 			if (rejection) return rejection;
 			timeline.mark("entitled");
 			await startupRecordingRecovery;
+			await options.beforeCapture?.({ pipeWireNodeId: undefined, windowSource: false });
 			let result = await invokeNativeMac(() =>
 				recordingHud.capture(() => getNativeMacRecordingService().start(request)),
 			);
@@ -3272,7 +3296,7 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
 		options.onTakeEvent?.({ kind: "resuming" });
-		await options.beforeCaptureResumes?.({ pipeWireNodeId: undefined, windowSource: false });
+		await options.beforeCapture?.({ pipeWireNodeId: undefined, windowSource: false });
 		const result = await timeClipBoundary("continue", () =>
 			invokeNativeMac(() =>
 				recordingHud.capture(() => getNativeMacRecordingService().resume(request)),

@@ -5,6 +5,7 @@ import { loadEditingPreferences } from "@/lib/ai-edition/store/editingPreference
 import { webcamSizeToFraction } from "@/lib/compositeLayout";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
+import { useReleasingMediaRef } from "@/lib/releasingMediaRef";
 import { formatTimePadded } from "@/utils/timeUtils";
 import styles from "./LaunchWindow.module.css";
 
@@ -140,6 +141,12 @@ export function HudClipPeek({
 	const cameraSource = cameraPath ? `${toKlipptMediaUrl(cameraPath)}${retryQuery}` : undefined;
 	const cameraOffsetSec = (current?.clip.webcamOffsetMs ?? 0) / 1_000;
 	const cameraRef = useRef<HTMLVideoElement | null>(null);
+	const attachVideo = useReleasingMediaRef(videoRef);
+	const attachCamera = useReleasingMediaRef(cameraRef);
+	// No media until the replay is first opened: a hidden decoder at every pause costs the
+	// pill's memory. Once opened it stays loaded, so toggling never reloads it.
+	const [loaded, setLoaded] = useState(open);
+	if (open && !loaded) setLoaded(true);
 	const requestPlay = useCallback(
 		async (video: HTMLVideoElement) => {
 			const generation = playbackGenerationRef.current;
@@ -184,7 +191,7 @@ export function HudClipPeek({
 		(time: number) => {
 			const target = locatePeekTime(timeline, Math.min(total, Math.max(0, time)));
 			setPosition(timeline[target.index].start + target.offset);
-			if (target.index === clipIndex && videoRef.current) {
+			if (target.index === clipIndex && videoRef.current && videoRef.current.readyState >= 1) {
 				pendingOffsetRef.current = null;
 				videoRef.current.currentTime = target.offset;
 				return;
@@ -330,23 +337,25 @@ export function HudClipPeek({
 			className={`${styles.clipPeek} ${styles.hudPanel} ${styles.electronNoDrag}`}
 		>
 			<div className={styles.clipPeekStage}>
-				<video
-					key={`screen-${mediaGeneration}`}
-					ref={videoRef}
-					data-testid="hud-clip-peek-video"
-					className={styles.clipPeekVideo}
-					src={source}
-					playsInline
-					preload="auto"
-					onLoadedMetadata={handleLoadedMetadata}
-					onEnded={handleEnded}
-					onError={failPlayback}
-					onClick={togglePlaying}
-				/>
-				{showCamera && (
+				{loaded && (
+					<video
+						key={`screen-${mediaGeneration}`}
+						ref={attachVideo}
+						data-testid="hud-clip-peek-video"
+						className={styles.clipPeekVideo}
+						src={source}
+						playsInline
+						preload="auto"
+						onLoadedMetadata={handleLoadedMetadata}
+						onEnded={handleEnded}
+						onError={failPlayback}
+						onClick={togglePlaying}
+					/>
+				)}
+				{loaded && showCamera && (
 					<video
 						key={`camera-${mediaGeneration}`}
-						ref={cameraRef}
+						ref={attachCamera}
 						data-testid="hud-clip-peek-camera"
 						className={styles.clipPeekCamera}
 						style={peekCameraStyle(cameraPlacement, cameraPortrait)}

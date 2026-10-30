@@ -4,9 +4,10 @@ import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/pre
 import { loadEditingPreferences } from "@/lib/ai-edition/store/editingPreferences";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
-import { formatTimePadded } from "@/utils/timeUtils";
+import { useReleasingMediaRef } from "@/lib/releasingMediaRef";
 import { buildPeekTimeline, locatePeekTime, peekCameraStyle } from "../launch/HudClipPeek";
 import peek from "../launch/LaunchWindow.module.css";
+import { StudioSeekBar } from "./StudioSeekBar";
 import styles from "./StudioWindow.module.css";
 
 /** Where a fresh replay waits: just before the end, like the pill's replay. */
@@ -32,6 +33,7 @@ export function StudioReplay({
 	labels,
 	seekRequest,
 	hold,
+	shown,
 	onPosition,
 }: {
 	clips: readonly RecordingSessionClip[];
@@ -40,13 +42,16 @@ export function StudioReplay({
 	seekRequest: { takeSec: number; nonce: number } | null;
 	/** Capture is running: stop playback. */
 	hold: boolean;
+	/** The window is on screen. Hidden, it holds no media; the playhead stays in state. */
+	shown: boolean;
 	onPosition: (takeSec: number) => void;
 }) {
 	const timeline = useMemo(() => buildPeekTimeline(clips), [clips]);
 	const total = timeline.reduce((sum, entry) => sum + entry.duration, 0);
 	const videoRef = useRef<HTMLVideoElement | null>(null);
 	const cameraRef = useRef<HTMLVideoElement | null>(null);
-	const trackRef = useRef<HTMLDivElement | null>(null);
+	const attachVideo = useReleasingMediaRef(videoRef);
+	const attachCamera = useReleasingMediaRef(cameraRef);
 	const pendingOffsetRef = useRef<number | null>(null);
 	const touchedRef = useRef(false);
 	const [clipIndex, setClipIndex] = useState(0);
@@ -71,7 +76,7 @@ export function StudioReplay({
 			if (timeline.length === 0) return;
 			const target = locatePeekTime(timeline, Math.min(total, Math.max(0, time)));
 			setPosition(timeline[target.index].start + target.offset);
-			if (target.index === clipIndex && videoRef.current) {
+			if (target.index === clipIndex && videoRef.current && videoRef.current.readyState >= 1) {
 				pendingOffsetRef.current = null;
 				videoRef.current.currentTime = target.offset;
 				return;
@@ -96,8 +101,25 @@ export function StudioReplay({
 	}, [seekRequest]);
 
 	useEffect(() => {
-		if (hold) setPlaying(false);
+		if (!hold) return;
+		setPlaying(false);
+		// Pause right away rather than on the next render: capture is about to start.
+		videoRef.current?.pause();
+		cameraRef.current?.pause();
 	}, [hold]);
+
+	// A hidden Studio keeps its page alive; it must not keep playing, or decoding, out of sight.
+	const resumeAtRef = useRef(0);
+	resumeAtRef.current = position - (current?.start ?? 0);
+	useEffect(() => {
+		if (shown) {
+			pendingOffsetRef.current = Math.max(0, resumeAtRef.current);
+			return;
+		}
+		setPlaying(false);
+		videoRef.current?.pause();
+		cameraRef.current?.pause();
+	}, [shown]);
 
 	useEffect(() => {
 		const video = videoRef.current;
@@ -164,36 +186,31 @@ export function StudioReplay({
 		setPlaying((value) => !value);
 	};
 
-	const seekFromPointer = (clientX: number) => {
-		const rect = trackRef.current?.getBoundingClientRect();
-		if (!rect || rect.width <= 0) return;
-		touchedRef.current = true;
-		seek(((clientX - rect.left) / rect.width) * total);
-	};
-
 	if (!current) return null;
 	const silent = muted || volume === 0;
 	return (
 		<div className={styles.replay} style={{ "--peek-aspect": String(aspect) } as CSSProperties}>
 			<div className={styles.stageSlot}>
 				<div className={`${peek.clipPeekStage} ${styles.stage}`}>
-					<video
-						ref={videoRef}
-						className={peek.clipPeekVideo}
-						src={source}
-						playsInline
-						preload="auto"
-						onLoadedMetadata={handleLoadedMetadata}
-						onEnded={handleEnded}
-						onError={() => {
-							setPlaying(false);
-							setFailed(true);
-						}}
-						onClick={togglePlaying}
-					/>
-					{showCamera && cameraPath ? (
+					{shown ? (
 						<video
-							ref={cameraRef}
+							ref={attachVideo}
+							className={peek.clipPeekVideo}
+							src={source}
+							playsInline
+							preload="auto"
+							onLoadedMetadata={handleLoadedMetadata}
+							onEnded={handleEnded}
+							onError={() => {
+								setPlaying(false);
+								setFailed(true);
+							}}
+							onClick={togglePlaying}
+						/>
+					) : null}
+					{shown && showCamera && cameraPath ? (
+						<video
+							ref={attachCamera}
 							className={peek.clipPeekCamera}
 							style={peekCameraStyle(placement, cameraPortrait)}
 							src={toKlipptMediaUrl(cameraPath)}
@@ -236,53 +253,16 @@ export function StudioReplay({
 				>
 					{playing ? <Pause size={15} aria-hidden /> : <Play size={15} aria-hidden />}
 				</button>
-				<div
-					ref={trackRef}
-					role="slider"
-					tabIndex={0}
-					aria-label={labels.seek}
-					aria-valuemin={0}
-					aria-valuemax={Math.round(total)}
-					aria-valuenow={Math.round(position)}
-					className={peek.clipPeekTrack}
-					onKeyDown={(event) => {
-						const step = { ArrowLeft: -5, ArrowRight: 5 }[event.key as "ArrowLeft"];
-						if (step === undefined) return;
-						event.preventDefault();
+				<StudioSeekBar
+					timeline={timeline}
+					total={total}
+					position={position}
+					label={labels.seek}
+					onSeek={(time) => {
 						touchedRef.current = true;
-						seek(position + step);
+						seek(time);
 					}}
-					onPointerDown={(event) => {
-						event.currentTarget.setPointerCapture(event.pointerId);
-						seekFromPointer(event.clientX);
-					}}
-					onPointerMove={(event) => {
-						if (event.currentTarget.hasPointerCapture(event.pointerId))
-							seekFromPointer(event.clientX);
-					}}
-				>
-					{timeline.map((entry) => {
-						const filled =
-							entry.duration > 0
-								? Math.min(1, Math.max(0, (position - entry.start) / entry.duration))
-								: 0;
-						return (
-							<span
-								key={entry.clip.index}
-								className={peek.clipPeekSegment}
-								style={{ flexGrow: Math.max(entry.duration, 0.001) }}
-							>
-								<span
-									className={peek.clipPeekSegmentFill}
-									style={{ transform: `scaleX(${filled})` }}
-								/>
-							</span>
-						);
-					})}
-				</div>
-				<span className={peek.clipPeekTime}>
-					{formatTimePadded(Math.floor(position))} / {formatTimePadded(Math.round(total))}
-				</span>
+				/>
 			</div>
 		</div>
 	);

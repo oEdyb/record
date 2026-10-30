@@ -18,8 +18,12 @@ export interface StudioSnapshot {
 	 * while recording; false otherwise.
 	 */
 	hiddenForCapture: boolean;
+	/** Capture runs or is about to: replay stays paused so its sound is not recorded. */
+	holdPlayback: boolean;
+	/** The window is on screen. Hidden, the replay stops and lets go of its media. */
+	shown: boolean;
 	transcript: TranscriptSnapshot;
 }
 
 /** What the Studio asks for. Recording commands run through the pill's own handlers. */
-export type StudioCommand = "pause" | "resume" | "stop" | "remove-last" | "pill";
+export type StudioCommand = "record" | "pause" | "resume" | "stop" | "remove-last" | "pill";

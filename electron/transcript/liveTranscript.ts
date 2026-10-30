@@ -1,48 +1,26 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { extractMicrophoneWav } from "./microphoneWav";
-import { ParakeetProcess, type TranscriptWord } from "./parakeetProcess";
+import { ParakeetProcess } from "./parakeetProcess";
 import {
 	type ClipTranscript,
 	cacheKey,
 	readTranscriptCache,
 	writeTranscriptCache,
 } from "./transcriptCache";
+import type {
+	TranscriptClipEntry,
+	TranscriptClipListing,
+	TranscriptSnapshot,
+} from "./transcriptTypes";
 
-export interface TranscriptClipSource {
-	index: number;
-	microphoneAudioPath: string;
-	durationMs: number;
-}
-
-export interface TranscriptClipListing {
-	recordingId: number | null;
-	clips: TranscriptClipSource[];
-	/** A take is running and not paused: transcribing now would compete with capture. */
-	live: boolean;
-}
-
-export interface TranscriptClipEntry {
-	index: number;
-	durationMs: number;
-	text: string | null;
-	/** Clip-relative word times; null until transcribed, or for a cache written before word times. */
-	words: TranscriptWord[] | null;
-	error: string | null;
-}
-
-export type TranscriptStatus = "idle" | "downloading-model" | "transcribing" | "blocked";
-
-export interface TranscriptSnapshot {
-	recordingId: number | null;
-	clips: TranscriptClipEntry[];
-	status: TranscriptStatus;
-	/** Clips finished of clips pending in the current pass. */
-	progress: { done: number; total: number } | null;
-	download: { downloadedBytes: number; totalBytes: number } | null;
-	error: string | null;
-	updatedAt: number;
-}
+export type {
+	TranscriptClipEntry,
+	TranscriptClipListing,
+	TranscriptClipSource,
+	TranscriptSnapshot,
+	TranscriptStatus,
+} from "./transcriptTypes";
 
 export interface LiveTranscriptDeps {
 	listClips: () => TranscriptClipListing;
@@ -79,6 +57,7 @@ export class LiveTranscriptService {
 	/** Bumped when capture resumes, so a clip cut short reads as unfinished rather than failed. */
 	private generation = 0;
 	private lastListing: TranscriptClipListing = { recordingId: null, clips: [], live: false };
+	private stoppedTake: TranscriptClipListing | null = null;
 	private current: TranscriptSnapshot = {
 		recordingId: null,
 		clips: [],
@@ -119,9 +98,15 @@ export class LiveTranscriptService {
 		return this.refresh();
 	}
 
-	/** The take just stopped: keep its clips, since the recorder forgets them right after. */
+	/**
+	 * The take just stopped: keep its clips, since the recorder forgets them right after.
+	 * Until another take starts, the recorder's own listing of it (still live for a moment
+	 * when Stop came during capture) gives way to this one.
+	 */
 	rememberStoppedTake(listing: TranscriptClipListing) {
-		if (listing.clips.length > 0) this.lastListing = { ...listing, live: false };
+		if (listing.clips.length === 0) return;
+		this.stoppedTake = { ...listing, live: false };
+		this.lastListing = this.stoppedTake;
 	}
 
 	/** Capture is resuming: end the clip in progress now instead of competing with it. */
@@ -137,6 +122,11 @@ export class LiveTranscriptService {
 
 	private listing(): TranscriptClipListing {
 		const listing = this.deps.listClips();
+		if (this.stoppedTake) {
+			if (listing.recordingId === null || listing.recordingId === this.stoppedTake.recordingId)
+				return this.stoppedTake;
+			this.stoppedTake = null;
+		}
 		// After Stop the recorder forgets its take; keep showing the last one that had clips.
 		if (listing.clips.length > 0 || listing.recordingId !== null) this.lastListing = listing;
 		return this.lastListing;
@@ -223,7 +213,7 @@ export class LiveTranscriptService {
 			let done = 0;
 			for (const clip of pending) {
 				// Continue during a pass: interrupt() ends the clip in progress, never transcribe alongside capture.
-				if (generation !== this.generation || this.deps.listClips().live) {
+				if (generation !== this.generation || this.listing().live) {
 					await this.saveCache(listing);
 					this.publish({
 						clips: this.entries(listing, errors),

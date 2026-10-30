@@ -30,8 +30,12 @@ const SENTENCE_END = /[.?!…]["')\]]?$/;
  */
 export function buildStudioSections(snapshot: StudioSnapshot): StudioSection[] {
 	const timeline = buildPeekTimeline(snapshot.clips);
-	const byIndex = new Map(snapshot.transcript.clips.map((entry) => [entry.index, entry]));
-	const transcribing = snapshot.transcript.status === "transcribing";
+	// The transcriber keeps its last take until it runs again: clip 0 of an older take is not this one's.
+	const ours = snapshot.transcript.recordingId === snapshot.recordingId;
+	const byIndex = new Map(
+		ours ? snapshot.transcript.clips.map((entry) => [entry.index, entry]) : [],
+	);
+	const transcribing = ours && snapshot.transcript.status === "transcribing";
 	const sections: StudioSection[] = timeline.map(({ clip, start, duration }) => {
 		const entry = byIndex.get(clip.index);
 		const offsetSec = (clip.microphoneAudioOffsetMs ?? 0) / 1000;

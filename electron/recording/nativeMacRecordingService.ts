@@ -205,7 +205,18 @@ export class NativeMacRecordingService {
 	} {
 		return {
 			recordingId: this.recordingId,
-			clips: this.clips.filter((clip) => !clip.removed).map((clip) => ({ ...clip })),
+			// The camera is recorded by the renderer, so its file joins the clip as Stop joins it.
+			clips: this.clips
+				.filter((clip) => !clip.removed)
+				.map((clip) => {
+					const camera = this.originals.get(clip.index);
+					return {
+						...(camera?.webcamVideoPath && this.rendererWebcamPaths.has(camera.webcamVideoPath)
+							? { webcamVideoPath: camera.webcamVideoPath, webcamOffsetMs: camera.webcamOffsetMs }
+							: {}),
+						...clip,
+					};
+				}),
 			running: this.isRunning() && !this.prepared,
 			paused: this.paused,
 		};

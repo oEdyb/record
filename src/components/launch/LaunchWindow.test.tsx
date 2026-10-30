@@ -1284,7 +1284,12 @@ describe("LaunchWindow record button", () => {
 			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
 		];
 		renderLaunchWindow();
+		await screen.findByTestId("hud-clip-peek");
+		// Nothing decodes until the replay is first opened.
+		expect(screen.queryByTestId("hud-clip-peek-video")).toBeNull();
+		fireEvent.keyDown(window, { key: "ArrowUp" });
 		const video = await screen.findByTestId("hud-clip-peek-video");
+		fireEvent.keyDown(window, { key: "ArrowDown" });
 		expect(screen.getByTestId("hud-clip-peek")).not.toBeVisible();
 
 		for (let index = 0; index < 4; index += 1) {

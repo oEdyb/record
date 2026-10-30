@@ -21,6 +21,8 @@ function snapshot(overrides: Partial<StudioSnapshot> = {}): StudioSnapshot {
 		committedMs: 18_000,
 		liveSinceMs: null,
 		hiddenForCapture: false,
+		holdPlayback: false,
+		shown: true,
 		transcript: {
 			recordingId: 1,
 			status: "idle",
@@ -76,6 +78,12 @@ describe("buildStudioSections", () => {
 			[2, "transcribing"],
 			[3, "recording"],
 		]);
+	});
+
+	it("never shows an older take's text on a new take", () => {
+		const sections = buildStudioSections(snapshot({ recordingId: 2 }));
+		expect(sections.map((section) => section.state)).toEqual(["waiting", "waiting"]);
+		expect(studioTranscriptText(sections)).toBe("");
 	});
 
 	it("copies finished clips as paragraphs", () => {

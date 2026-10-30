@@ -2284,6 +2284,7 @@ export function LaunchWindow() {
 									label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
 									onClick={toggleWebcam}
 								/>
+								{studioControl}
 								{settingsControl}
 								{recordButton}
 							</div>

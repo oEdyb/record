@@ -75,7 +75,7 @@ describe("StudioController", () => {
 		const { controller, studio, state, outsideCapture } = setup(paused, false);
 		controller.open();
 		studio.ready();
-		await controller.beforeCaptureResumes({ pipeWireNodeId: 42, windowSource: false });
+		await controller.beforeCapture({ pipeWireNodeId: 42, windowSource: false });
 		expect(outsideCapture).toHaveBeenCalledWith(42);
 		expect(studio.visible()).toBe(false);
 		state.take = recording;
@@ -88,7 +88,7 @@ describe("StudioController", () => {
 		const { controller, studio, state } = setup(paused, true);
 		controller.open();
 		studio.ready();
-		await controller.beforeCaptureResumes({ pipeWireNodeId: 42, windowSource: false });
+		await controller.beforeCapture({ pipeWireNodeId: 42, windowSource: false });
 		state.take = recording;
 		controller.sync();
 		expect(studio.visible()).toBe(true);
@@ -99,6 +99,43 @@ describe("StudioController", () => {
 		state.take = paused;
 		controller.sync();
 		expect(studio.visible()).toBe(true);
+	});
+
+	it("holds replay before capture resumes, even with the Studio hidden", async () => {
+		const { controller, studio, state } = setup(paused, true);
+		controller.open();
+		studio.ready();
+		controller.backToPill();
+		await controller.beforeCapture({ pipeWireNodeId: 42, windowSource: false });
+		expect(studio.sent.at(-1)).toMatchObject({ holdPlayback: true });
+		state.take = recording;
+		controller.sync();
+		expect(controller.snapshot().holdPlayback).toBe(true);
+		state.take = paused;
+		controller.sync();
+		expect(controller.snapshot().holdPlayback).toBe(false);
+	});
+
+	it("hides at once when the compositor revokes it while capture is resuming", async () => {
+		const { controller, studio } = setup(paused, true);
+		controller.open();
+		studio.ready();
+		await controller.beforeCapture({ pipeWireNodeId: 42, windowSource: false });
+		expect(studio.visible()).toBe(true);
+		// The take still reads as paused: capture has not reported running yet.
+		controller.revoke();
+		expect(studio.visible()).toBe(false);
+	});
+
+	it("tells the page when its window hides and shows, since it is never throttled", () => {
+		const { controller, studio } = setup(paused);
+		controller.open();
+		studio.ready();
+		expect(studio.sent.at(-1)).toMatchObject({ shown: true });
+		controller.backToPill();
+		expect(studio.sent.at(-1)).toMatchObject({ shown: false });
+		controller.open();
+		expect(studio.sent.at(-1)).toMatchObject({ shown: true });
 	});
 
 	it("keeps the pill tucked away when switching back during capture", () => {
@@ -133,6 +170,42 @@ describe("StudioController", () => {
 		state.take = paused;
 		controller.sync();
 		expect(studio.visible()).toBe(false);
+	});
+
+	it("opens idle, starts a take through the pill and stays expanded", () => {
+		const { controller, studio, pill, state, sendToPill } = setup(null);
+		controller.open();
+		studio.ready();
+		expect(studio.visible()).toBe(true);
+		expect(pill.visible()).toBe(false);
+		controller.sync();
+		expect(studio.visible()).toBe(true);
+		controller.command("record");
+		expect(sendToPill).toHaveBeenCalledWith("hud-start-recording");
+		state.take = recording;
+		controller.command("record");
+		expect(sendToPill).toHaveBeenCalledOnce();
+	});
+
+	it("moves to another screen instead of hiding, and back on pause", async () => {
+		const { controller, studio, state, outsideCapture } = setup(paused, false);
+		const moveOffCapture = vi.fn(async () => "DP-3");
+		const returnTo = vi.fn(async () => undefined);
+		Object.assign((controller as unknown as { deps: Record<string, unknown> }).deps, {
+			moveOffCapture,
+			returnTo,
+		});
+		outsideCapture.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+		controller.open();
+		studio.ready();
+		await controller.beforeCapture({ pipeWireNodeId: 42, windowSource: false });
+		expect(moveOffCapture).toHaveBeenCalledWith(42);
+		state.take = recording;
+		controller.sync();
+		expect(studio.visible()).toBe(true);
+		state.take = paused;
+		controller.sync();
+		expect(returnTo).toHaveBeenCalledWith("DP-3");
 	});
 
 	it("asks the pill to run each command, only when it applies", () => {

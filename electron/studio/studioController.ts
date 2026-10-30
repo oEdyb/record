@@ -32,6 +32,13 @@ export interface StudioControllerDeps {
 	/** True only when the compositor confirms the Studio is off the recorded output. */
 	outsideCapture: (pipeWireNodeId: number | undefined) => Promise<boolean>;
 	endCaptureCheck: () => void;
+	/**
+	 * Moves the Studio off the screen about to be recorded, to another screen. Resolves to
+	 * the screen it left, or null when it did not move.
+	 */
+	moveOffCapture?: (pipeWireNodeId: number | undefined) => Promise<string | null>;
+	/** Puts the Studio back on the screen it left for capture. */
+	returnTo?: (output: string) => Promise<void>;
 	/** How long a hidden window takes to leave the screen before capture resumes. */
 	waitForUnmap: () => Promise<void>;
 	now?: () => number;
@@ -49,6 +56,12 @@ export class StudioController {
 	private ready = false;
 	private mode: "pill" | "studio" = "pill";
 	private outside = false;
+	/** Between asking capture to resume and it running: replay must already be silent. */
+	private resuming = false;
+	/** The screen the Studio left so it would not be recorded; it goes back on pause. */
+	private movedFrom: string | null = null;
+	/** Whether a take was running at the last look; its end hands over to the review. */
+	private wasRunning = false;
 	private liveSinceMs: number | null = null;
 
 	constructor(private readonly deps: StudioControllerDeps) {}
@@ -64,6 +77,8 @@ export class StudioController {
 			committedMs: clips.reduce((sum, clip) => sum + Math.max(0, clip.durationMs), 0),
 			liveSinceMs: capturing ? this.liveSinceMs : null,
 			hiddenForCapture: capturing && !this.outside,
+			holdPlayback: capturing || this.resuming,
+			shown: this.visible(),
 			transcript: this.deps.transcript(),
 		};
 	}
@@ -71,6 +86,7 @@ export class StudioController {
 	/** Pill -> Studio. */
 	open() {
 		this.mode = "studio";
+		this.wasRunning = Boolean(this.deps.take()?.running);
 		const pill = this.deps.getPill();
 		const bounds = pill && !pill.isDestroyed() ? pill.getBounds() : undefined;
 		if (!this.window || this.window.isDestroyed()) {
@@ -107,6 +123,10 @@ export class StudioController {
 	command(command: StudioCommand) {
 		const take = this.deps.take();
 		if (command === "pill") return this.backToPill();
+		if (command === "record") {
+			if (!take?.running) this.deps.sendToPill("hud-start-recording");
+			return;
+		}
 		if (!take?.running) return;
 		if (command === "pause" && !take.paused) this.deps.sendToPill("hud-toggle-recording-pause");
 		if (command === "resume" && take.paused) this.deps.sendToPill("hud-toggle-recording-pause");
@@ -115,38 +135,56 @@ export class StudioController {
 	}
 
 	/** Capture is about to resume: keep the Studio only off the recorded screen. */
-	async beforeCaptureResumes(capture: {
-		pipeWireNodeId: number | undefined;
-		windowSource: boolean;
-	}) {
+	async beforeCapture(capture: { pipeWireNodeId: number | undefined; windowSource: boolean }) {
 		this.outside = capture.windowSource;
-		if (this.mode !== "studio" || !this.visible()) return;
-		if (!capture.windowSource)
-			this.outside = await this.deps.outsideCapture(capture.pipeWireNodeId);
-		if (!this.outside) {
-			this.hideStudio();
-			await this.deps.waitForUnmap();
+		// Replay sound must not reach the microphone, even from a hidden Studio.
+		this.resuming = true;
+		this.publish();
+		if (!this.window || this.window.isDestroyed()) return;
+		if (this.mode === "studio" && this.visible()) {
+			if (!capture.windowSource) {
+				this.outside = await this.deps.outsideCapture(capture.pipeWireNodeId);
+				// On the recorded screen: stay expanded on another screen rather than shrink.
+				const from = this.outside ? null : await this.deps.moveOffCapture?.(capture.pipeWireNodeId);
+				if (from) {
+					this.movedFrom = from;
+					await this.deps.waitForUnmap();
+					this.outside = await this.deps.outsideCapture(capture.pipeWireNodeId);
+				}
+			}
+			if (!this.outside) this.hideStudio();
 		}
+		// One wait covers both: the window leaving the screen and the replay pausing.
+		await this.deps.waitForUnmap();
 	}
 
 	/** The compositor saw the Studio move onto the recorded screen. */
 	revoke() {
 		this.outside = false;
-		if (this.capturing()) this.hideStudio();
+		// Capture may start any moment once resume began, before the take reports it.
+		if (this.capturing() || this.resuming) this.hideStudio();
 		this.publish();
 	}
 
 	/** The take changed: a clip started, finished, was removed, or the take ended. */
 	sync() {
 		const take = this.deps.take();
+		this.resuming = false;
 		if (this.capturing()) this.liveSinceMs ??= (this.deps.now ?? Date.now)();
 		else {
 			this.liveSinceMs = null;
 			this.outside = false;
 			this.deps.endCaptureCheck();
+			if (this.movedFrom) {
+				void this.deps.returnTo?.(this.movedFrom);
+				this.movedFrom = null;
+			}
 		}
-		// The take is over: the review takes it from here.
-		if (!take?.running && this.mode === "studio") {
+		// The take is over: the review takes it from here. Opened idle, it waits for one.
+		const running = Boolean(take?.running);
+		const ended = this.wasRunning && !running;
+		this.wasRunning = running;
+		if (ended && this.mode === "studio") {
 			this.mode = "pill";
 			this.hideStudio();
 		}
@@ -168,7 +206,10 @@ export class StudioController {
 	}
 
 	private hideStudio() {
-		if (this.window && !this.window.isDestroyed() && this.window.isVisible()) this.window.hide();
+		if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return;
+		this.window.hide();
+		// The page never learns it was hidden (it runs unthrottled), so say it.
+		this.publish();
 	}
 
 	private apply() {
@@ -178,6 +219,7 @@ export class StudioController {
 		if (!this.window.isVisible()) {
 			this.window.show();
 			this.window.focus();
+			this.publish();
 		}
 		const pill = this.deps.getPill();
 		if (pill && !pill.isDestroyed() && pill.isVisible()) pill.hide();

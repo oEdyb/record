@@ -54,6 +54,7 @@ import {
 	requestLinuxRecordingControls,
 	resolveApprovedRendererMediaPath,
 	stopNativeMacCaptureForQuit,
+	stopTakeWithoutPill,
 	studioTake,
 } from "./ipc/handlers";
 import {
@@ -77,6 +78,7 @@ import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
 import { ensureModels, isModelOnDisk, modelPaths } from "./stt/modelManager";
 import { registerStudioIpc } from "./studio/ipc";
+import { moveStudioOffCapture, returnStudioTo } from "./studio/niriStudioPlacement";
 import { StudioController } from "./studio/studioController";
 import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
 import { LiveTranscriptService } from "./transcript/liveTranscript";
@@ -1240,8 +1242,8 @@ appReady?.then(async () => {
 		{
 			ipcMain,
 			setCameraPreviewCaptureHidden,
-			beforeCaptureResumes: async (capture) => {
-				await studio?.beforeCaptureResumes(capture);
+			beforeCapture: async (capture) => {
+				await studio?.beforeCapture(capture);
 			},
 			onTakeEvent: (event) => {
 				studio?.sync();
@@ -1321,10 +1323,24 @@ appReady?.then(async () => {
 		outsideCapture: (nodeId) =>
 			process.platform === "darwin" ? Promise.resolve(true) : studioCaptureGuard.begin(nodeId),
 		endCaptureCheck: () => studioCaptureGuard.end(),
+		moveOffCapture: (nodeId) =>
+			process.platform === "linux" ? moveStudioOffCapture(nodeId) : Promise.resolve(null),
+		returnTo: returnStudioTo,
 		waitForUnmap: () => new Promise((resolve) => setTimeout(resolve, 150)),
 		quitting: () => quittingForStudio,
 	});
 	registerStudioIpc(ipcMain, studio);
+	// The pill runs the take; if its page dies nothing can pause or stop it any more.
+	// Save what was recorded and open the review, as Stop would.
+	app.on("render-process-gone", (_event, contents, details) => {
+		if (details.reason === "clean-exit" || !mainWindow || mainWindow.isDestroyed()) return;
+		if (contents !== mainWindow.webContents) return;
+		if (!contents.getURL().includes("windowType=hud-overlay")) return;
+		console.error("[hud] the recording pill crashed:", details.reason, details.exitCode);
+		void stopTakeWithoutPill().then((saved) => {
+			if (saved) createEditorWindowWrapper({ compactReview: true });
+		});
+	});
 
 	let cleanCutReceiver: Electron.WebContents | null = null;
 	const claudeCli = findClaudeCli();

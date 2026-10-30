@@ -78,6 +78,18 @@ export class RendererRecordingStop {
 		});
 	}
 
+	/**
+	 * The owning renderer crashed. Its page is gone but its webContents lives on, so nothing
+	 * would ever answer: settle the handoff as failed now instead of at the deadline.
+	 */
+	abandon(): void {
+		const take = this.take;
+		if (!take || take.completed) return;
+		take.completed = true;
+		take.error = new Error("The recording HUD crashed before its camera handoff.");
+		this.pending?.finish(take.error);
+	}
+
 	acknowledge(sender: RecordingRenderer, value: unknown): boolean {
 		const take = this.take;
 		if (!take || take.completed || sender !== take.owner || !value || typeof value !== "object")
