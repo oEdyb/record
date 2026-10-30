@@ -26,6 +26,7 @@ import {
 	downloadSelfUpdate,
 	installSelfUpdate,
 } from "./auto-updater";
+import { ensureAlignerModel } from "./cleanCut/alignerModel";
 import { claudeCliModel, findClaudeCli } from "./cleanCut/claudeCliModel";
 import { registerCleanCutIpc } from "./cleanCut/ipc";
 import { CleanCutService } from "./cleanCut/service";
@@ -1343,6 +1344,7 @@ appReady?.then(async () => {
 	});
 
 	let cleanCutReceiver: Electron.WebContents | null = null;
+	let alignerDir: Promise<string | null> | null = null;
 	const claudeCli = findClaudeCli();
 	const cleanCut = new CleanCutService({
 		ffmpegPath: () => resolveFfmpeg(),
@@ -1362,8 +1364,13 @@ appReady?.then(async () => {
 			});
 		},
 		alignerModels: async () => {
-			const dir = path.join(sttModelsDir, "wav2vec2-base-960h-coreml");
-			return (await fs.stat(path.join(dir, "labels.json")).catch(() => null)) ? dir : null;
+			if (process.platform !== "darwin") return null;
+			alignerDir ??= ensureAlignerModel(sttModelsDir).catch((error) => {
+				console.warn("[clean-cut] aligner unavailable, cutting on recognizer times:", error);
+				alignerDir = null;
+				return null;
+			});
+			return alignerDir;
 		},
 		model: () =>
 			claudeCli
