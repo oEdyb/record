@@ -21,6 +21,7 @@ const fixture = vi.hoisted(() => {
 		setContentProtection: vi.fn(),
 		showInactive: vi.fn(),
 		hide: vi.fn(),
+		minimize: vi.fn(),
 		setIgnoreMouseEvents: vi.fn(),
 		loadURL: vi.fn(),
 		getSize: (): [number, number] => [dimensions.width, dimensions.height],
@@ -101,6 +102,13 @@ function send(channel: string, ...args: unknown[]) {
 }
 
 describe("Linux native HUD input", () => {
+	it.each(["linux", "darwin", "win32"])("uses the platform hide behavior on %s", (platform) => {
+		Object.defineProperty(process, "platform", { value: platform });
+		send("hud-overlay-hide");
+		expect(fixture.win.hide).toHaveBeenCalledTimes(platform === "linux" ? 1 : 0);
+		expect(fixture.win.minimize).toHaveBeenCalledTimes(platform === "linux" ? 0 : 1);
+	});
+
 	it("creates a compact real window and ignores the shared transparent reserve", () => {
 		expect(fixture.BrowserWindow).toHaveBeenCalledWith(
 			expect.objectContaining({ width: 472, height: 112 }),

@@ -70,6 +70,7 @@ import { installMainProcessErrorGuards } from "./main-process-errors";
 import { resolveFfmpeg } from "./media/audioPeaks";
 import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
 import { activateNiriHud } from "./niriHudFocus";
+import { setDisplaySleepBlocked } from "./recording/displaySleepBlocker";
 import { createQuitCaptureGuard } from "./recording/quitCaptureGuard";
 import {
 	canDispatchRecordingReviewMenu,
@@ -90,6 +91,7 @@ import {
 	resolveParakeetBinaryPath,
 } from "./transcript/parakeetProcess";
 import { checkLatestRelease } from "./update-checker";
+import { configureWaylandSupport } from "./wayland";
 import {
 	ASSET_BASE_DIR,
 	closeWithoutAnimation,
@@ -126,21 +128,8 @@ if (process.platform === "darwin") {
 	app.commandLine.appendSwitch("disable-accelerated-video-encode");
 }
 
-// Wayland support for screen capture and window management on Wayland compositors.
 if (process.platform === "linux") {
-	const isWayland =
-		process.env.XDG_SESSION_TYPE === "wayland" || process.env.WAYLAND_DISPLAY !== undefined;
-	if (isWayland) {
-		app.commandLine.appendSwitch("ozone-platform", "wayland");
-		// Enable WebRTCPipeWireCapturer for screen capture on Wayland
-		app.commandLine.appendSwitch("enable-features", "WaylandWindowDrag,WebRTCPipeWireCapturer");
-		// Chromium's Wayland Ozone backend can't use Vulkan. When it tries, the WebRTC
-		// PipeWire capturer fails to import DMA-BUF frames into EGL (EGL_BAD_MATCH), the
-		// stream renegotiates, and screen recording yields no usable frames. Force the
-		// GL/EGL path so DMA-BUF import works. (Chromium itself logs this suggestion:
-		// "'--ozone-platform=wayland' is not compatible with Vulkan ... disabling Vulkan".)
-		app.commandLine.appendSwitch("disable-features", "Vulkan");
-	}
+	configureWaylandSupport(app.commandLine, process.env);
 }
 
 installMainProcessErrorGuards();
@@ -1036,6 +1025,7 @@ function startAgentServer(sttModelsDir: string) {
 }
 
 app.on("will-quit", () => {
+	setDisplaySleepBlocked(false);
 	agentServer?.stop();
 	agentTranscriber?.stop();
 	unregisterAllGlobalShortcuts();
@@ -1255,6 +1245,7 @@ appReady?.then(async () => {
 		(recording: boolean, sourceName: string) => {
 			selectedSourceName = sourceName;
 			isRecording = recording;
+			setDisplaySleepBlocked(recording);
 			studio?.sync();
 			scheduleReviewPrewarm(recording);
 			if (!tray) createTray();

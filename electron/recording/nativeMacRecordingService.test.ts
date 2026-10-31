@@ -9,7 +9,7 @@ import type {
 	NativeMacOriginalStarted,
 	NativeMacRecordingRequest,
 } from "../../src/lib/nativeMacRecording";
-import type { RecordingSessionClip } from "../../src/lib/recordingSession";
+import type { CursorCaptureMode, RecordingSessionClip } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
 import {
 	NativeMacHelperClient,
@@ -33,6 +33,7 @@ vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.f
 
 class FakeHelper implements NativeMacCaptureHelper {
 	captureBounds = null;
+	negotiatedCursorCaptureMode: CursorCaptureMode | undefined;
 	output = "";
 	running = true;
 	pauseResult: Promise<RecordingSessionClip | undefined> = Promise.resolve(undefined);
@@ -71,6 +72,88 @@ const baseRequest: NativeMacRecordingRequest = {
 };
 
 describe("NativeMacRecordingService", () => {
+	it("keeps a prepared metadata fallback compatible with the requested system cursor", async () => {
+		helper.negotiatedCursorCaptureMode = "editable-overlay";
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = {
+			...baseRequest,
+			platform: "linux",
+			cursor: { mode: "system" },
+		};
+		await expect(service.prepare(request)).resolves.toMatchObject({ success: true });
+		await expect(service.start(request)).resolves.toMatchObject({ success: true });
+		expect(helper.arm).toHaveBeenCalledOnce();
+		await service.stop(true);
+	});
+
+	it("reports a failed Linux Continue as stopped even without a helper fatal event", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		await service.pause();
+		helper.resume.mockRejectedValueOnce(new Error("writer failed"));
+		await expect(service.resume()).resolves.toMatchObject({ success: false });
+		expect(deps.onRecordingStateChange).toHaveBeenLastCalledWith(false);
+		await service.stop(true);
+	});
+
+	it("preserves fallback cursor metadata through Pause, Continue and Stop", async () => {
+		helper.negotiatedCursorCaptureMode = "editable-overlay";
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = {
+			...baseRequest,
+			platform: "linux",
+			cursor: { mode: "system" },
+		};
+		await expect(service.start(request)).resolves.toMatchObject({ success: true });
+		const clip = {
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "first.mp4"),
+			durationMs: 500,
+		};
+		helper.pauseResult = Promise.resolve(clip);
+		await expect(service.pause()).resolves.toMatchObject({
+			clip: { cursorCaptureMode: "editable-overlay" },
+		});
+		await expect(service.resume(request)).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		helper.stopClips = [clip, { ...clip, index: 1 }];
+		const stopped = await service.stop();
+		expect(stopped).toMatchObject({
+			success: true,
+			session: { cursorCaptureMode: "editable-overlay" },
+		});
+		expect(stopped.session?.clips?.map((c) => c.cursorCaptureMode)).toEqual([
+			"editable-overlay",
+			"editable-overlay",
+		]);
+		expect(deps.stopCursor).toHaveBeenCalledOnce();
+		expect(deps.finalizeCursor).toHaveBeenCalledOnce();
+		expect(deps.registerMediaLinks).toHaveBeenCalledWith(clip.screenVideoPath, "editable-overlay");
+	});
+
+	it("keeps a Mac system-cursor take unchanged by Linux fallback metadata", async () => {
+		helper.negotiatedCursorCaptureMode = "editable-overlay";
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, cursor: { mode: "system" } });
+		helper.stopClips = [
+			{ index: 0, screenVideoPath: path.join(recordingsDir, "first.mp4"), durationMs: 500 },
+		];
+		const stopped = await service.stop();
+		expect(stopped.session?.cursorCaptureMode).toBe("system");
+		expect(deps.finalizeCursor).not.toHaveBeenCalled();
+	});
+
+	it("reports a failed Linux writer as stopped so display sleep is released", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		vi.mocked(deps.createHelper).mock.calls[0][2]({
+			code: "writer-failed-during-capture",
+			message: "disk full",
+		});
+		expect(deps.onRecordingStateChange).toHaveBeenLastCalledWith(false);
+		await service.stop(true);
+	});
+
 	it("confirms a rejected pre-writer configuration remains paused for correction and retry", async () => {
 		const service = new NativeMacRecordingService(deps);
 		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };

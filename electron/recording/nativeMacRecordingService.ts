@@ -62,6 +62,7 @@ export type NativeMacCaptureHelper = Pick<
 	Partial<
 		Pick<
 			NativeMacHelperClient,
+			| "negotiatedCursorCaptureMode"
 			| "waitForSourceSelected"
 			| "arm"
 			| "selectSource"
@@ -283,6 +284,7 @@ export class NativeMacRecordingService {
 					this.prepared = false;
 					helper.arm();
 					await helper.waitForStart();
+					await this.syncLinuxCursorMode();
 					await this.recoveryWrites;
 					if (!helper.isRunning() || this.fatalError)
 						throw new Error(this.fatalError?.message ?? "Native capture exited during startup.");
@@ -363,7 +365,7 @@ export class NativeMacRecordingService {
 						void this.persistRecoverySession().catch((error) => {
 							console.warn("[capture-mac] could not preserve interruption status:", error);
 						});
-						this.deps.onFatalError(failure);
+						this.notifyFatalError(failure);
 					},
 					(original) => this.storeOriginalStarted(original, generation),
 				);
@@ -373,6 +375,7 @@ export class NativeMacRecordingService {
 					if (!helper.waitForSourceSelected)
 						throw new Error("Native capture does not support source preparation.");
 					await helper.waitForSourceSelected();
+					await this.syncLinuxCursorMode();
 					if (preparationToken !== this.preparationToken || !helper.isRunning())
 						throw new Error("Source selection cancelled.");
 					this.preparing = false;
@@ -380,6 +383,7 @@ export class NativeMacRecordingService {
 					return { success: true, recordingId, path: outputPath, helperPath };
 				}
 				await helper.waitForStart();
+				await this.syncLinuxCursorMode();
 				// The journal written before the helper spawned already covers this clip. Originals
 				// reported before readiness queued their own entries; wait only for those instead of
 				// a further durable rewrite on the way to the HUD's first second.
@@ -578,6 +582,7 @@ export class NativeMacRecordingService {
 					};
 					this.cursorCaptureMode = cursorMode;
 				}
+				if (selected) await this.syncLinuxCursorMode();
 				return selected && !cancellation.signal.aborted
 					? { success: true }
 					: { success: false, cancelled: true };
@@ -643,6 +648,7 @@ export class NativeMacRecordingService {
 				if (this.stopOperation) return stopping;
 				resumeRequested = true;
 				const clipIndex = await helper.resume();
+				await this.syncLinuxCursorMode();
 				this.completeCursorPauseRange();
 				this.paused = false;
 				this.activeClipIndex = clipIndex;
@@ -673,7 +679,7 @@ export class NativeMacRecordingService {
 								code: "capture-recovery-failed",
 								message: `Rejected clip recovery metadata could not be cleared: ${this.errorMessage(recoveryError)}`,
 							};
-							this.deps.onFatalError(this.fatalError);
+							this.notifyFatalError(this.fatalError);
 						}
 						return { success: false, error: this.fatalError.message };
 					}
@@ -681,7 +687,7 @@ export class NativeMacRecordingService {
 				}
 				if (resumeRequested && !this.fatalError && !safelyPaused) {
 					this.fatalError = { code: "capture-resume-failed", message: this.errorMessage(error) };
-					this.deps.onFatalError(this.fatalError);
+					this.notifyFatalError(this.fatalError);
 				}
 				return {
 					success: false,
@@ -1141,7 +1147,7 @@ export class NativeMacRecordingService {
 				code: "capture-recovery-failed",
 				message: `Original recording recovery metadata could not be saved: ${this.errorMessage(error)}`,
 			};
-			this.deps.onFatalError(this.fatalError);
+			this.notifyFatalError(this.fatalError);
 		});
 	}
 
@@ -1227,6 +1233,23 @@ export class NativeMacRecordingService {
 				...(hidesByProcess ? { excludedProcessIds } : {}),
 			},
 		});
+	}
+
+	private notifyFatalError(failure: NativeMacRecordingFailure): void {
+		if (this.captureConfig?.platform === "linux") this.deps.onRecordingStateChange(false);
+		this.deps.onFatalError(failure);
+	}
+
+	private async syncLinuxCursorMode(): Promise<void> {
+		const mode = this.helper?.negotiatedCursorCaptureMode;
+		if (this.captureConfig?.platform !== "linux" || !mode) return;
+		const index = this.activeClipIndex ?? this.clips.length;
+		const changed = this.cursorCaptureMode !== mode || this.clipCursorModes.get(index) !== mode;
+		this.cursorCaptureMode = mode;
+		this.clipCursorModes.set(index, mode);
+		// Linux cursor samples share the screen helper, including a system-to-metadata fallback.
+		if (mode === "editable-overlay") this.cursorTelemetryStarted = true;
+		if (changed) await this.persistRecoverySession();
 	}
 
 	private withSystemCursor(config: NativeMacRecordingRequest): NativeMacRecordingRequest {

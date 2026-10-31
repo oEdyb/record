@@ -17,13 +17,14 @@ int osc_format_close_io(AVFormatContext *context) {
 
 /* Codec callbacks and private layout stay on the C side of the SDK boundary. */
 void osc_codec_configure_video(AVCodecContext *context, int width, int height,
-                               int fps, int pixel_format, int64_t bitrate) {
+                               int fps, int pixel_format, int64_t bitrate, int max_qp) {
     context->width = width;
     context->height = height;
     context->time_base = (AVRational){1, fps};
     context->framerate = (AVRational){fps, 1};
     context->pix_fmt = pixel_format;
     context->bit_rate = bitrate;
+    if (max_qp > 0) context->qmax = max_qp;
     context->color_range = AVCOL_RANGE_MPEG;
     context->colorspace = AVCOL_SPC_BT709;
     context->color_primaries = AVCOL_PRI_BT709;

@@ -27,7 +27,12 @@ export interface PipeWireCursorAssetPayload {
 }
 
 export type PipeWireHelperEvent =
-	| { event: "ready"; timestampMs: number; pipewireVersion?: string | null }
+	| {
+			event: "ready";
+			timestampMs: number;
+			pipewireVersion?: string | null;
+			cursorMode?: "metadata" | "embedded" | "hidden";
+	  }
 	| {
 			/** The picker has been answered. Fires before any pixel moves. */
 			event: "source-selected";

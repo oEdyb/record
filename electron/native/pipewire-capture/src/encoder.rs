@@ -46,6 +46,14 @@ impl Backend {
         }
     }
 
+    // AMD's first VA-API IDR otherwise raises lower macroblocks to QP 51.
+    fn max_qp(self) -> Option<i32> {
+        match self {
+            Self::Vaapi => Some(30),
+            Self::Nvenc | Self::Vulkan | Self::Software => None,
+        }
+    }
+
     fn codec_name(self) -> &'static CStr {
         match self {
             Self::Nvenc => c"h264_nvenc",
@@ -317,6 +325,7 @@ impl VideoEncoder {
                 params.fps,
                 backend.codec_pixel_format(),
                 params.bitrate,
+                backend.max_qp().unwrap_or(0),
             );
 
             if let Some(device_type) = backend.hw_device_type() {
@@ -1388,5 +1397,49 @@ mod tests {
         prepare_environment();
         assert_eq!(std::env::var("RADV_PERFTEST").unwrap(), value);
         std::env::remove_var("RADV_PERFTEST");
+    }
+}
+
+#[cfg(test)]
+mod qp_tests {
+    use super::*;
+
+    #[test]
+    fn only_vaapi_caps_qmax_and_the_c_configuration_reaches_ffmpeg() {
+        for backend in LADDER {
+            // SAFETY: the allocated context is used only here and freed below.
+            unsafe {
+                let mut context = ff::avcodec_alloc_context3(ptr::null());
+                assert!(!context.is_null());
+                let mut default_qmax = 0;
+                assert_eq!(
+                    ff::av_opt_get_int(context.cast(), c"qmax".as_ptr(), 0, &mut default_qmax),
+                    0
+                );
+                ff::osc_codec_configure_video(
+                    context,
+                    320,
+                    240,
+                    30,
+                    backend.codec_pixel_format(),
+                    1_000_000,
+                    backend.max_qp().unwrap_or(0),
+                );
+                let mut configured_qmax = 0;
+                assert_eq!(
+                    ff::av_opt_get_int(context.cast(), c"qmax".as_ptr(), 0, &mut configured_qmax),
+                    0
+                );
+                assert_eq!(
+                    configured_qmax,
+                    if backend == Backend::Vaapi {
+                        30
+                    } else {
+                        default_qmax
+                    }
+                );
+                ff::avcodec_free_context(&mut context);
+            }
+        }
     }
 }

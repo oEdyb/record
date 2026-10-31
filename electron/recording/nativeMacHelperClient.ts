@@ -64,6 +64,7 @@ export class NativeMacHelperClient {
 	private fatalReported = false;
 	private recordingStarted = false;
 	private sourceSelected = false;
+	private linuxCursorMode: CursorCaptureMode | undefined;
 	private startupError: string | null = null;
 	private terminationRequested = false;
 	private stoppedResult: NativeMacStopResult | null = null;
@@ -92,6 +93,10 @@ export class NativeMacHelperClient {
 
 	get output(): string {
 		return this.outputBuffer;
+	}
+
+	get negotiatedCursorCaptureMode(): CursorCaptureMode | undefined {
+		return this.linuxCursorMode;
 	}
 
 	get captureBounds(): Rectangle | null {
@@ -440,6 +445,13 @@ export class NativeMacHelperClient {
 			this.options.onEvent?.(
 				named && typeof detail === "string" ? `${event.event}:${detail}` : event.event,
 			);
+		}
+		if (
+			this.options.platform === "linux" &&
+			(event.event === "ready" || event.event === "source-reselected")
+		) {
+			if (event.cursorMode === "metadata") this.linuxCursorMode = "editable-overlay";
+			else if (event.cursorMode === "embedded") this.linuxCursorMode = "system";
 		}
 		this.options.onProtocolEvent?.(event);
 		if (event.event === "source-selected") this.sourceSelected = true;

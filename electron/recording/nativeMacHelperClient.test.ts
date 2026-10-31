@@ -41,6 +41,23 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it("tracks the actual Linux cursor mode across source replacement", () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process, { platform: "linux" });
+		expect(client.negotiatedCursorCaptureMode).toBeUndefined();
+		emit(process, { event: "ready", cursorMode: "metadata" });
+		expect(client.negotiatedCursorCaptureMode).toBe("editable-overlay");
+		emit(process, { event: "source-reselected", cursorMode: "embedded" });
+		expect(client.negotiatedCursorCaptureMode).toBe("system");
+	});
+
+	it("ignores Linux cursor protocol fields for the Mac client", () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		emit(process, { event: "ready", cursorMode: "metadata" });
+		expect(client.negotiatedCursorCaptureMode).toBeUndefined();
+	});
+
 	it("cancels Linux audio preparation and leaves a rejected Continue retryable", async () => {
 		const process = fakeProcess();
 		const onFatalError = vi.fn();
