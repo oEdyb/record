@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, desktopCapturer, powerMonitor } from "electron";
+import { BrowserWindow, desktopCapturer, powerMonitor, systemPreferences } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeRecordingSession, type RecordingSession } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
@@ -45,7 +45,10 @@ vi.mock("electron", () => {
 		screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({}), on: noop },
 		safeStorage: { isEncryptionAvailable: () => false },
 		shell: {},
-		systemPreferences: { getMediaAccessStatus: () => "granted" },
+		systemPreferences: {
+			getMediaAccessStatus: () => "granted",
+			isTrustedAccessibilityClient: vi.fn(() => false),
+		},
 	};
 });
 
@@ -117,6 +120,19 @@ async function journalInterruptedTake(clip: { provisionalDuration?: true } = {})
 }
 
 describe("registerIpcHandlers startup contract", () => {
+	it("keeps optional Accessibility non-prompting across repeated Record requests", async () => {
+		pinPlatform("darwin");
+		const { handlers } = await register();
+		const request = handlers.get("request-native-mac-cursor-access");
+		if (!request) throw new Error("Cursor access IPC missing");
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await expect(Reflect.apply(request, undefined, [{}])).resolves.toMatchObject({
+				granted: false,
+			});
+		}
+		expect(systemPreferences.isTrustedAccessibilityClient).toHaveBeenCalledWith(false);
+		expect(systemPreferences.isTrustedAccessibilityClient).not.toHaveBeenCalledWith(true);
+	});
 	beforeEach(async () => {
 		vi.resetModules();
 		paths.userData = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-handlers-user-"));

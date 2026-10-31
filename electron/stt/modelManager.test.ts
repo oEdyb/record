@@ -3,10 +3,18 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { areModelsPresent, ensureModels, modelPaths, STT_MODELS } from "./modelManager";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { areModelsPresent, ensureModels, fetchModel, modelPaths, STT_MODELS } from "./modelManager";
+
+const netFetch = vi.hoisted(() => vi.fn(async () => new Response("model")));
+vi.mock("electron", () => ({ net: { fetch: netFetch } }));
 
 describe("modelManager", () => {
+	it("uses Chromium proxy resolution for model URLs", async () => {
+		const signal = new AbortController().signal;
+		await fetchModel(new URL("https://huggingface.co/model"), { signal });
+		expect(netFetch).toHaveBeenCalledWith("https://huggingface.co/model", { signal });
+	});
 	let dir: string;
 	beforeEach(async () => {
 		dir = await mkdtemp(path.join(tmpdir(), "stt-models-"));

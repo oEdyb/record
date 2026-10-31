@@ -33,6 +33,7 @@ vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.f
 
 class FakeHelper implements NativeMacCaptureHelper {
 	captureBounds = null;
+	firstFrameStartedAtMs: number | undefined;
 	output = "";
 	running = true;
 	pauseResult: Promise<RecordingSessionClip | undefined> = Promise.resolve(undefined);
@@ -71,6 +72,18 @@ const baseRequest: NativeMacRecordingRequest = {
 };
 
 describe("NativeMacRecordingService", () => {
+	it.each([
+		false,
+		true,
+	])("returns the written frame stamp with deferred start=%s", async (deferred) => {
+		helper.firstFrameStartedAtMs = 80;
+		const service = new NativeMacRecordingService(deps);
+		if (deferred) await service.prepare({ ...baseRequest, platform: "linux" });
+		await expect(
+			service.start({ ...baseRequest, platform: deferred ? "linux" : undefined }),
+		).resolves.toMatchObject({ success: true, startedAtMs: 80 });
+	});
+
 	it("confirms a rejected pre-writer configuration remains paused for correction and retry", async () => {
 		const service = new NativeMacRecordingService(deps);
 		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };

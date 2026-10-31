@@ -1099,6 +1099,38 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		});
 	}
 
+	it.each([false, true])("records with cursor access granted=%s", async (granted) => {
+		vi.mocked(toast.warning).mockClear();
+		stubNativeMac({
+			getRecordingPrefs: vi.fn(async () => ({ cursorCaptureMode: "editable-overlay" })),
+			requestNativeMacCursorAccess: vi.fn(async () => ({ granted, status: "not-determined" })),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await settle();
+		await startNativeRecording(view);
+		expect(window.electronAPI.startNativeMacRecording).toHaveBeenCalledWith(
+			expect.objectContaining({
+				cursor: { mode: granted ? "editable-overlay" : "system" },
+				video: expect.objectContaining({ hideSystemCursor: granted }),
+			}),
+		);
+		if (granted) expect(toast.warning).not.toHaveBeenCalled();
+		else expect(toast.warning).toHaveBeenCalledWith("recording.editableCursorOff");
+	});
+
+	it("counts from the written frame even when the start reply is delayed", async () => {
+		stubNativeMac({
+			startNativeMacRecording: vi.fn(async () => ({
+				success: true,
+				recordingId: 7,
+				startedAtMs: Date.now() - 20_000,
+			})),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		expect(view.result.current.elapsedSeconds).toBe(20);
+	});
+
 	it("uses an ordinary captured cursor by default", async () => {
 		const start = vi.fn(async () => ({ success: true, recordingId: 7 }));
 		const cursorAccess = vi.fn(async () => ({ granted: true }));

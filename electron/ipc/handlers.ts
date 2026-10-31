@@ -2374,35 +2374,10 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("request-native-mac-cursor-access", async () => {
-		const access = await requestMacCursorAccessibilityAccess();
-
-		// When the editable cursor can't get Accessibility trust, pop a native dialog
-		// that deep-links to the Accessibility pane (mirrors the Screen Recording flow).
-		if (process.platform === "darwin" && !access.granted) {
-			const mainWin = getMainWindow();
-			const missingHelper = access.status === "missing-helper";
-			const messageOptions = {
-				type: "warning",
-				buttons: missingHelper
-					? [mainT("common", "actions.close")]
-					: [mainT("common", "permissions.openSettings"), mainT("common", "actions.cancel")],
-				defaultId: 0,
-				cancelId: missingHelper ? 0 : 1,
-				message: mainT("common", "permissions.accessibilityTitle"),
-				detail: missingHelper
-					? mainT("common", "permissions.accessibilityMissingHelper", { app: APP_DISPLAY_NAME })
-					: mainT("common", "permissions.accessibilityDetail", { app: APP_DISPLAY_NAME }),
-			} satisfies Electron.MessageBoxOptions;
-			const result =
-				mainWin && !mainWin.isDestroyed()
-					? await dialog.showMessageBox(mainWin, messageOptions)
-					: await dialog.showMessageBox(messageOptions);
-			if (!missingHelper && result.response === 0) {
-				await shell.openExternal(
-					"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-				);
-			}
+		if (process.platform === "darwin" && !systemPreferences.isTrustedAccessibilityClient(false)) {
+			return { success: true, granted: false, status: "not-determined" };
 		}
+		const access = await requestMacCursorAccessibilityAccess();
 
 		return access;
 	});

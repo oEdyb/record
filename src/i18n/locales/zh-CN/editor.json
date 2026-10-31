@@ -52,6 +52,7 @@
 		"failedToLoad": "加载项目失败"
 	},
 	"recording": {
+		"editableCursorOff": "本次录制已关闭可编辑光标，将使用系统光标。",
 		"failedCameraAccess": "请求摄像头权限失败。",
 		"cameraBlocked": "摄像头权限已被阻止。请在系统设置中启用以使用摄像头。",
 		"openCameraSettings": "打开设置",

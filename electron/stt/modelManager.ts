@@ -423,10 +423,15 @@ async function fetchWithRetry(url: string, fetcher: typeof fetch): Promise<Respo
 	throw lastErr;
 }
 
+export const fetchModel: typeof fetch = async (input, init) => {
+	const { net } = await import("electron");
+	return net.fetch(input instanceof URL ? input.href : input, init);
+};
+
 export interface DownloadOptions {
 	/** Called with cumulative bytes for progress reporting. */
 	onProgress?: (bytes: number) => void;
-	/** Override fetch (for tests); defaults to `globalThis.fetch`. */
+	/** Override Chromium fetch for tests. */
 	fetcher?: typeof fetch;
 }
 
@@ -460,7 +465,7 @@ async function ensureFile(
 
 	await mkdir(path.dirname(filePath), { recursive: true });
 
-	const fetcher = options.fetcher ?? fetch;
+	const fetcher = options.fetcher ?? fetchModel;
 	const res = await fetchWithRetry(fileUrl, fetcher);
 	const tmp = `${filePath}.partial`;
 	let downloaded = 0;

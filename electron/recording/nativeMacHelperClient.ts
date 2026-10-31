@@ -63,6 +63,7 @@ export class NativeMacHelperClient {
 	private closed = false;
 	private fatalReported = false;
 	private recordingStarted = false;
+	firstFrameStartedAtMs: number | undefined;
 	private sourceSelected = false;
 	private startupError: string | null = null;
 	private terminationRequested = false;
@@ -445,7 +446,15 @@ export class NativeMacHelperClient {
 		if (event.event === "source-selected") this.sourceSelected = true;
 		if (event.event === "error" && !this.recordingStarted)
 			this.startupError = this.eventError(event, "Native capture failed.");
-		if (event.event === "recording-started") this.recordingStarted = true;
+		if (event.event === "recording-started" && !this.recordingStarted) {
+			this.recordingStarted = true;
+			this.firstFrameStartedAtMs =
+				typeof event.timestampMs === "number" &&
+				Number.isFinite(event.timestampMs) &&
+				event.timestampMs > 0
+					? event.timestampMs
+					: Date.now();
+		}
 		if (event.event === "warning") {
 			console.warn(
 				`[capture-mac] helper warning at ${new Date().toISOString()}:`,

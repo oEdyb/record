@@ -40,6 +40,7 @@
 		"failedToLoad": "Proje yüklenemedi"
 	},
 	"recording": {
+		"editableCursorOff": "Bu çekimde düzenlenebilir imleç kapalı. Sistem imleci kaydediliyor.",
 		"failedCameraAccess": "Kamera erişimi istenemedi.",
 		"cameraBlocked": "Kamera erişimi engellendi. Kamerayı kullanmak için sistem ayarlarından izin verin.",
 		"openCameraSettings": "Ayarları Aç",

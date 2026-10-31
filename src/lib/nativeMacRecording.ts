@@ -188,6 +188,7 @@ export type NativeMacCaptureTelemetry = {
 };
 
 export type NativeMacRecordingStartResult = {
+	startedAtMs?: number;
 	success: boolean;
 	rendererStop?: NativeRecordingAppStopRequest;
 	recordingId?: number;

@@ -41,6 +41,28 @@ const request = {
 } satisfies NativeMacRecordingRequest;
 
 describe("NativeMacHelperClient", () => {
+	it.each([
+		undefined,
+		"linux",
+	] as const)("retains the helper first frame stamp on %s", async (platform) => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process, { platform });
+		emit(process, { event: "recording-started", timestampMs: 1234 });
+		await client.waitForStart();
+		expect(client.firstFrameStartedAtMs).toBe(1234);
+	});
+	it.each([
+		undefined,
+		Number.NaN,
+		-1,
+	])("falls back for an invalid first frame stamp %s", async (timestampMs) => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process);
+		const before = Date.now();
+		emit(process, { event: "recording-started", timestampMs });
+		await client.waitForStart();
+		expect(client.firstFrameStartedAtMs).toBeGreaterThanOrEqual(before);
+	});
 	it("cancels Linux audio preparation and leaves a rejected Continue retryable", async () => {
 		const process = fakeProcess();
 		const onFatalError = vi.fn();

@@ -52,6 +52,7 @@
 		"failedToLoad": "Falha ao carregar o projeto"
 	},
 	"recording": {
+		"editableCursorOff": "O cursor editável está desativado nesta tomada. A gravação usa o cursor do sistema.",
 		"failedCameraAccess": "Falha ao solicitar acesso à câmera.",
 		"cameraBlocked": "O acesso à câmera está bloqueado. Ative-o nas configurações do sistema para usar a webcam.",
 		"openCameraSettings": "Abrir Ajustes",

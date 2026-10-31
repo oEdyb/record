@@ -233,6 +233,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
 	const [webcamEnabled, setWebcamEnabledState] = useState(false);
 	const [webcamPreviewStream, setWebcamPreviewStream] = useState<MediaStream | null>(null);
+	const takeUsesSystemCursor = useRef(false);
 	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("system");
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
@@ -1432,7 +1433,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							: activeWebcamFormat.current,
 					formatAuto: webcamFormatAuto,
 				},
-				cursorCaptureMode,
+				cursorCaptureMode: takeUsesSystemCursor.current ? "system" : cursorCaptureMode,
 			},
 		});
 
@@ -1548,10 +1549,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return true;
 			}
 
-			// The IPC call above only resolves once the helper's stdout confirms its
-			// screen capture has truly started (see waitForNativeMacCaptureStart in
-			// electron/ipc/handlers.ts), so this is a reliable proxy for the native
-			// recording's real t=0 in the same clock the webcam timestamp used above.
 			recordingId.current = result.recordingId;
 			nativeMacSaveJob.current = null;
 			nativeMacRecording.current = {
@@ -1565,8 +1562,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			nativeMacWebcamClips.current.clear();
 			setRecordedClips([]);
 			setClipFinalizing(false);
-			activeClipStartedAt.current = Date.now();
-			setActiveClipElapsedMs(0);
+			activeClipStartedAt.current = result.startedAtMs ?? Date.now();
+			setActiveClipElapsedMs(Math.max(0, Date.now() - activeClipStartedAt.current));
 			if (platform === "linux") {
 				try {
 					webcamRecorder.current = startNativeClipWebcam(result.recordingId, 0);
@@ -1582,11 +1579,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			} else webcamRecorder.current = null;
 			accumulatedDurationMs.current = 0;
-			segmentStartedAt.current = Date.now();
+			segmentStartedAt.current = activeClipStartedAt.current;
 			allowAutoFinalize.current = true;
 			setRecording(true);
 			setPaused(false);
-			setElapsedSeconds(0);
+			setElapsedSeconds(
+				Math.floor(Math.max(0, Date.now() - (segmentStartedAt.current ?? Date.now())) / 1000),
+			);
+			if (takeUsesSystemCursor.current) toast.warning(t("recording.editableCursorOff"));
 			return true;
 		} catch (error) {
 			if (boundStart) {
@@ -1620,6 +1620,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const startRecordCountdown = async () => {
 		if (pendingStartRunId.current !== null || recording || sourceSelectionInFlight.current) return;
 
+		takeUsesSystemCursor.current = false;
 		startMarks.current = [];
 		markStart("click");
 		const runId = countdownRunId.current + 1;
@@ -1648,8 +1649,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				window.electronAPI.getPlatform() === "darwin" &&
 				cursorCaptureMode === "editable-overlay"
 			) {
-				const access = await window.electronAPI.requestNativeMacCursorAccess();
-				if (!access.granted || !isCountdownRunActive(runId)) return;
+				const access = await window.electronAPI
+					.requestNativeMacCursorAccess()
+					.catch(() => ({ granted: false }));
+				if (!isCountdownRunActive(runId)) return;
+				takeUsesSystemCursor.current = !access.granted;
 			}
 
 			let preparedRecordingId: number | null = null;

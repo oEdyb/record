@@ -247,7 +247,11 @@ Finalize every source before committing the clip; failures remain visible and al
 media remain recoverable.
 
 Baked system cursor is the fresh-recording default. Preserve explicitly saved editable-cursor
-preferences. While paused, retain only the latest complete frame for the current source; seed
+preferences. Optional macOS Accessibility never blocks Record or opens a permission dialog
+from Record. If cursor access is denied or unresolved, use the system cursor for that take
+and tell the user the editable cursor is off; retain the saved preference for a later take.
+The HUD and Studio timer count from the helper’s first written frame, including start-reply latency.
+While paused, retain only the latest complete frame for the current source; seed
 Continue at its new host-clock boundary, then accept newer live frames. When a static source
 produces no new frame, preserve Pause/Stop duration with a closing frame. High completes the
 remaining 60 Hz grid through the frozen boundary, allowing one partial final interval. A terminal

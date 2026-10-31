@@ -52,6 +52,7 @@
 		"failedToLoad": "Failed to load project"
 	},
 	"recording": {
+		"editableCursorOff": "Editable cursor is off for this take. Recording uses the system cursor.",
 		"failedCameraAccess": "Failed to request camera access.",
 		"cameraBlocked": "Camera access is blocked. Enable it in system settings to use the webcam.",
 		"openCameraSettings": "Open Settings",

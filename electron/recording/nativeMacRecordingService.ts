@@ -62,6 +62,7 @@ export type NativeMacCaptureHelper = Pick<
 	Partial<
 		Pick<
 			NativeMacHelperClient,
+			| "firstFrameStartedAtMs"
 			| "waitForSourceSelected"
 			| "arm"
 			| "selectSource"
@@ -283,13 +284,19 @@ export class NativeMacRecordingService {
 					this.prepared = false;
 					helper.arm();
 					await helper.waitForStart();
+					const startedAtMs = helper.firstFrameStartedAtMs ?? this.deps.now();
 					await this.recoveryWrites;
 					if (!helper.isRunning() || this.fatalError)
 						throw new Error(this.fatalError?.message ?? "Native capture exited during startup.");
-					this.cursorOffsetMs = Math.max(0, this.deps.now() - this.cursorRecordingStartMs);
+					this.cursorOffsetMs = Math.max(0, startedAtMs - this.cursorRecordingStartMs);
 					this.storage.start();
 					this.deps.onRecordingStateChange(true);
-					return { success: true, recordingId: this.recordingId, path: this.targetPath };
+					return {
+						success: true,
+						recordingId: this.recordingId,
+						path: this.targetPath,
+						startedAtMs,
+					};
 				} catch (error) {
 					await this.helper?.kill();
 					this.reset();
@@ -380,6 +387,7 @@ export class NativeMacRecordingService {
 					return { success: true, recordingId, path: outputPath, helperPath };
 				}
 				await helper.waitForStart();
+				const startedAtMs = helper.firstFrameStartedAtMs ?? this.deps.now();
 				// The journal written before the helper spawned already covers this clip. Originals
 				// reported before readiness queued their own entries; wait only for those instead of
 				// a further durable rewrite on the way to the HUD's first second.
@@ -388,10 +396,10 @@ export class NativeMacRecordingService {
 				if (!helper.isRunning() || this.fatalError) {
 					throw new Error(this.fatalError?.message ?? "Native capture exited during startup.");
 				}
-				this.cursorOffsetMs = Math.max(0, this.deps.now() - cursorStartTimeMs);
+				this.cursorOffsetMs = Math.max(0, startedAtMs - cursorStartTimeMs);
 				this.storage.start();
 				this.deps.onRecordingStateChange(true);
-				return { success: true, recordingId, path: outputPath, helperPath };
+				return { success: true, recordingId, path: outputPath, helperPath, startedAtMs };
 			} catch (error) {
 				const failedRecordingId = this.recordingId;
 				await this.deps.stopCursor();

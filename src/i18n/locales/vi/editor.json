@@ -52,6 +52,7 @@
 		"failedToLoad": "Tải dự án thất bại"
 	},
 	"recording": {
+		"editableCursorOff": "Con trỏ có thể chỉnh sửa đã tắt cho lần quay này. Bản ghi dùng con trỏ hệ thống.",
 		"failedCameraAccess": "Yêu cầu quyền truy cập máy ảnh thất bại.",
 		"cameraBlocked": "Quyền truy cập máy ảnh bị chặn. Hãy bật nó trong cài đặt hệ thống để sử dụng webcam.",
 		"openCameraSettings": "Mở Cài đặt",

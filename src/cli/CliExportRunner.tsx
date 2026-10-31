@@ -1,3 +1,10 @@
+import {
+	checkVoiceoverDuration,
+	readBoundedVoiceoverInput,
+	VOICEOVER_AUDIO_LIMIT,
+	VOICEOVER_OUTPUT_LIMIT,
+	VOICEOVER_VIDEO_LIMIT,
+} from "@/lib/exporter/voiceoverLimits";
 // Hidden-window runner for `klippt export`. Loads a Klippt or legacy project,
 // migrates it to the AxcutDocument the native Rust compositor consumes, and
 // drives exportMultiNative/exportGifNative — mirroring the v4 ExportDialog so
@@ -406,21 +413,24 @@ export async function runExport(
 				percentage: 100,
 				phase: "mixing-voiceover",
 			});
-			const [videoResponse, audioResponse] = await Promise.all([
-				fetch(toFileUrl(nativeOutputPath)),
-				fetch(toFileUrl(request.audioPath)),
-			]);
-			if (!videoResponse.ok) {
-				throw new Error(`Failed to read the exported video back for mixing: ${outPath}`);
-			}
-			if (!audioResponse.ok) {
-				throw new Error(`Failed to read voiceover file: ${request.audioPath}`);
-			}
-			const mixed = await mixVoiceoverIntoVideo(await videoResponse.blob(), {
-				voiceoverData: await audioResponse.arrayBuffer(),
+			checkVoiceoverDuration(exportStats.videoDurationS);
+			const video = await readBoundedVoiceoverInput(
+				toFileUrl(nativeOutputPath),
+				VOICEOVER_VIDEO_LIMIT,
+				signal,
+			);
+			const audio = await readBoundedVoiceoverInput(
+				toFileUrl(request.audioPath),
+				VOICEOVER_AUDIO_LIMIT,
+				signal,
+			);
+			const mixed = await mixVoiceoverIntoVideo(video, {
+				voiceoverData: await audio.arrayBuffer(),
 				mode: request.audioMode,
 				offsetSec: request.audioOffsetSec,
 			});
+			if (mixed.size > VOICEOVER_OUTPUT_LIMIT)
+				throw new Error("Mixed voiceover exceeds the memory limit.");
 			throwIfCancelled(signal, "rendering");
 			const mixedBuffer = await mixed.arrayBuffer();
 			const bufferExportId = crypto.randomUUID();
