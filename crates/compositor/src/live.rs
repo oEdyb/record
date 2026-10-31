@@ -2272,7 +2272,11 @@ unsafe fn render_thread(
             }
         } else if first || ip_changed || scene_changed || clip_changed || resized {
             // pause : recompose la frame courante (param / scène / clip / résolution changés).
-            stepped = player.recompose(&comp, &cfg)?;
+            // A failed paused recompose keeps the previous picture instead of ending the preview.
+            stepped = player.recompose(&comp, &cfg).unwrap_or_else(|error| {
+                eprintln!("[live] paused recompose failed: {error:#}");
+                false
+            });
         }
 
         if stepped {
