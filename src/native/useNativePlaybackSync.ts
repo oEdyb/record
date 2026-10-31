@@ -38,6 +38,7 @@ export function useNativePlaybackSync(
 		notePreviewTransportAnchor({
 			viewId: next.viewId,
 			sceneIdentity: next.sceneIdentity,
+			screenPath: next.screenPath,
 			generation,
 			clipIndex: next.clipIndex,
 			sourceTimeSec: next.sourceTimeSec,

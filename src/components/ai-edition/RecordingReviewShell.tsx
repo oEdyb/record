@@ -1,4 +1,12 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { toast } from "sonner";
 import type { EditorProjectData } from "@/components/video-editor/projectPersistence";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
@@ -42,6 +50,8 @@ import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
+import { isPreviewScreenReady, subscribePreviewFrames } from "@/native/previewSettledFrames";
+import { buildCompositorClipInputs } from "@/native/sceneDescription";
 import { agentReviewMethods } from "./agentReviewMethods";
 import { AmbientBackdrop } from "./cleanCut/AmbientBackdrop";
 import { CleanCutHudPill } from "./cleanCut/CleanCutHud";
@@ -428,18 +438,24 @@ export function RecordingReviewShell() {
 
 	const [finishingTake, setFinishingTake] = useState(false);
 	const [handoffToken, setHandoffToken] = useState<number | null>(null);
-	// A warm window still holds the previous take's decoded frame; only a frame presented
-	// after the hand-off began belongs to the take being finished.
-	const [handoffFramePresented, setHandoffFramePresented] = useState(false);
-	useEffect(() => {
-		if (!finishingTake || handoffFramePresented || !videoElement) return;
-		const id = videoElement.requestVideoFrameCallback(() => setHandoffFramePresented(true));
-		return () => videoElement.cancelVideoFrameCallback(id);
-	}, [finishingTake, handoffFramePresented, videoElement]);
+	const handoffClips = useMemo(
+		() => (document ? buildCompositorClipInputs(document) : []),
+		[document],
+	);
+	const handoffFramePresented = useSyncExternalStore(
+		subscribePreviewFrames,
+		() => {
+			if (!document) return false;
+			const primary =
+				document.assets.find((asset) => asset.id === document.project.primaryAssetId) ??
+				document.assets[0];
+			return Boolean(primary && isPreviewScreenReady(document, primary.originalPath, handoffClips));
+		},
+		() => false,
+	);
 	useEffect(() => {
 		let alive = true;
 		const prepare = async (token: number) => {
-			setHandoffFramePresented(false);
 			setFinishingTake(true);
 			try {
 				await resumeRecordingWorkspace();

@@ -1,5 +1,6 @@
 export interface PreviewPosition {
 	viewId: number;
+	screenPath?: string;
 	playing?: boolean;
 	sceneIdentity?: object;
 	clipIndex: number;
@@ -11,10 +12,19 @@ export interface PreviewFrameIdentity extends PreviewPosition {
 
 let latestAnchor: PreviewFrameIdentity | null = null;
 let lastPainted: PreviewFrameIdentity | null = null;
+const listeners = new Set<() => void>();
+export function subscribePreviewFrames(listener: () => void): () => void {
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+	};
+}
+
 const waiters = new Set<(cancel?: boolean) => void>();
 
 export function notePreviewTransportAnchor(anchor: PreviewFrameIdentity): void {
 	latestAnchor = anchor;
+	for (const listener of listeners) listener();
 }
 
 export function notePreviewPaintedFrame(
@@ -22,6 +32,7 @@ export function notePreviewPaintedFrame(
 ): void {
 	lastPainted = { ...frame, generation: frame.transportGeneration };
 	for (const wake of [...waiters]) wake();
+	for (const listener of listeners) listener();
 }
 
 /** Identity of the pixels last painted, not the requested playhead or HTML video. */
@@ -76,4 +87,23 @@ export function resetPreviewSettledFrames(): void {
 	latestAnchor = null;
 	lastPainted = null;
 	for (const wake of [...waiters]) wake(true);
+	for (const listener of listeners) listener();
+}
+
+export function isPreviewScreenReady(
+	sceneIdentity: object,
+	screenPath: string,
+	clips: readonly { screenPath: string; sourceStartSec: number; sourceEndSec: number }[],
+): boolean {
+	if (!latestAnchor || !lastPainted || !isPreviewFrameSettled()) return false;
+	const clip = clips[lastPainted.clipIndex];
+	return (
+		latestAnchor.generation > 0 &&
+		latestAnchor.sceneIdentity === sceneIdentity &&
+		latestAnchor.screenPath === screenPath &&
+		clip?.screenPath === screenPath &&
+		Number.isFinite(lastPainted.sourceTimeSec) &&
+		lastPainted.sourceTimeSec >= clip.sourceStartSec &&
+		lastPainted.sourceTimeSec < clip.sourceEndSec
+	);
 }

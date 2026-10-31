@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import {
+	notePreviewPaintedFrame,
+	notePreviewTransportAnchor,
+	resetPreviewSettledFrames,
+} from "@/native/previewSettledFrames";
 
 const mocks = vi.hoisted(() => ({
 	preview: vi.fn(),
+	video: null as HTMLVideoElement | null,
 	exportDialog: vi.fn(),
 	openProject: vi.fn(),
 	applyTheme: vi.fn(),
@@ -58,6 +65,10 @@ vi.mock("./recordingImport", () => ({
 }));
 vi.mock("./Preview", () => ({
 	Preview: (props: Record<string, unknown>) => {
+		useEffect(() => {
+			const onVideoElement = props.onVideoElement;
+			if (typeof onVideoElement === "function" && mocks.video) onVideoElement(mocks.video);
+		}, [props.onVideoElement]);
 		mocks.preview(props);
 		return <div data-testid="preview" />;
 	},
@@ -152,6 +163,8 @@ function loadDocument(document: AxcutDocument) {
 
 beforeEach(() => {
 	installElectronApi();
+	mocks.video = null;
+	resetPreviewSettledFrames();
 	mocks.entitlement.snapshot.access = "full";
 	mocks.importPendingRecording.mockResolvedValue(false);
 	mocks.listProjects.mockResolvedValue([]);
@@ -167,6 +180,87 @@ afterEach(() => {
 });
 
 describe("recording review shell", () => {
+	it.each([
+		false,
+		true,
+	])("waits for the new take's composed screen before revealing review (warm=%s)", async (warm) => {
+		const take = recordingDocument();
+		const old = recordingDocument();
+		old.assets[0].originalPath = "/tmp/old.mp4";
+		mocks.video = document.createElement("video");
+		Object.defineProperty(mocks.video, "readyState", { value: 2 });
+		const videoFrameCallback = vi.fn();
+		mocks.video.requestVideoFrameCallback = videoFrameCallback;
+		const reviewReady = vi.fn();
+		let handoff: ((token: number) => void) | undefined;
+		Object.assign(window.electronAPI ?? {}, {
+			reviewReady,
+			onReviewHandoff: (listener: (token: number) => void) => {
+				handoff = listener;
+				return () => undefined;
+			},
+		});
+		if (warm) loadDocument(old);
+		render(<RecordingReviewShell />);
+		await waitFor(() => expect(handoff).toBeDefined());
+		mocks.importPendingRecording.mockImplementation(async () => {
+			loadDocument(take);
+			return true;
+		});
+		await act(async () => {
+			handoff?.(42);
+		});
+		const anchor = {
+			viewId: 7,
+			generation: 3,
+			clipIndex: 0,
+			sourceTimeSec: 0,
+			sceneIdentity: take,
+			screenPath: "/tmp/screen.mp4",
+		};
+		const frame = { viewId: 7, transportGeneration: 3, clipIndex: 0, sourceTimeSec: 0 };
+		const paint = async (patch: Partial<typeof frame>) => {
+			await act(async () => {
+				notePreviewPaintedFrame({ ...frame, ...patch });
+			});
+		};
+		await act(async () => {
+			notePreviewTransportAnchor(anchor);
+		});
+		await paint({ transportGeneration: 0 });
+		expect(screen.getByTestId("review-loading")).toHaveAttribute("data-ready", "false");
+		for (const patch of [
+			{ transportGeneration: 2 },
+			{ sourceTimeSec: Number.NaN },
+			{ sourceTimeSec: -0.1 },
+			{ sourceTimeSec: 12 },
+			{ clipIndex: 1 },
+			{ viewId: 6 },
+		]) {
+			await paint(patch);
+			expect(screen.getByTestId("review-loading")).toHaveAttribute("data-ready", "false");
+			expect(reviewReady).not.toHaveBeenCalled();
+		}
+		for (const patch of [{ sceneIdentity: old }, { screenPath: "/tmp/old.mp4" }]) {
+			await act(async () => {
+				notePreviewTransportAnchor({ ...anchor, ...patch });
+			});
+			await paint({});
+			expect(screen.getByTestId("review-loading")).toHaveAttribute("data-ready", "false");
+			expect(reviewReady).not.toHaveBeenCalled();
+		}
+		expect(videoFrameCallback).not.toHaveBeenCalled();
+		expect(screen.getByTestId("review-loading")).toHaveAttribute("data-ready", "false");
+		await act(async () => {
+			notePreviewTransportAnchor(anchor);
+		});
+		await paint({});
+		expect(useProjectStore.getState().document).toBe(take);
+		expect(screen.getByTestId("review-loading")).toHaveAttribute("data-ready", "true");
+		await waitFor(() => expect(reviewReady).toHaveBeenCalledWith(42));
+		expect(screen.getByTestId("review-loading")).toHaveAttribute("data-ready", "true");
+	});
+
 	it("shows the ready state and starts a new recording without an open project context", async () => {
 		render(<RecordingReviewShell />);
 		expect(screen.getByText("recordingReview.ready")).toBeInTheDocument();

@@ -1,3 +1,8 @@
+Review handoff patch: canvas readiness now requires the current take's composed screen,
+with native pre-decode publication suppressed. Local build and automated gates are recorded
+in [Studio review frame readiness](docs/studio-review-frame-readiness.md).
+Parent still needs cold/warm screen-capture verification; the installed app is untouched.
+
 # Klippt Linux handoff — October 26, 2026
 
 Current worktree: `/home/olle/dev/screenrec-linux`, branch `feat/linux-port`.

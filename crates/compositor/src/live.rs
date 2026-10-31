@@ -2272,11 +2272,10 @@ unsafe fn render_thread(
             }
         } else if first || ip_changed || scene_changed || clip_changed || resized {
             // pause : recompose la frame courante (param / scène / clip / résolution changés).
-            let _ = player.recompose(&comp, &cfg);
-            stepped = true;
+            stepped = player.recompose(&comp, &cfg)?;
         }
 
-        if stepped || first {
+        if stepped {
             if pw > 0 && ph > 0 {
                 if let Some(time) = ip.preview_source_time_sec {
                     let clip_start = full_scene
@@ -2574,6 +2573,42 @@ mod tests {
             overlay_preparation_time(None, true, Some(idle), 1.0, 0.5),
             1.5
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn paused_preview_requires_a_decoded_screen_before_publication() {
+        let path = format!(
+            "{}/tests/fixtures/seek-eof-vfr.mp4",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let view = LiveView::create(128, 128, &path, &path, "").unwrap();
+        *view.shared.scene.lock().unwrap() = Some(scene_with_output(128, 128));
+        view.shared.scene_dirty.store(true, Ordering::Release);
+        view.shared.wake();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while view.shared.scene_dirty.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "scene was not applied");
+            assert!(view.fatal_error().is_none());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            view.latest_frame().is_none(),
+            "published before screen decode"
+        );
+        view.sync_transport(1, false, &path, &path, 0.0, 0, 0.0);
+        let frame = loop {
+            if let Some(frame) = view.latest_frame() {
+                break frame;
+            }
+            assert!(Instant::now() < deadline, "decoded frame was not published");
+            assert!(view.fatal_error().is_none());
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(frame.5, 1);
+        assert!(frame.3.is_finite());
+        assert_eq!(frame.7.len(), (frame.1 * frame.2 * 4) as usize);
     }
 
     #[cfg(target_os = "macos")]
