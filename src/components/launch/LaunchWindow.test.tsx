@@ -2487,6 +2487,25 @@ describe("LaunchWindow minimized pill", () => {
 		await waitFor(() => expect(screen.queryByTestId("hud-dock-tab")).toBeNull());
 	});
 
+	it("keeps dragging a top pill after the drag pulls it off its edge", async () => {
+		const dock = stubDock();
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		dock("top");
+		const grip = screen.getByTestId("hud-drag-handle");
+		fireEvent.pointerDown(grip, { pointerId: 7, button: 0, buttons: 1, screenX: 100, screenY: 10 });
+		expect(window.electronAPI.beginHudOverlayDrag).toHaveBeenCalled();
+
+		dock(null);
+		fireEvent.lostPointerCapture(grip, { pointerId: 7, buttons: 1 });
+		fireEvent.pointerMove(window, { pointerId: 7, buttons: 1, screenX: 130, screenY: 210 });
+
+		expect(window.electronAPI.dragHudOverlayTo).toHaveBeenLastCalledWith(30, 200);
+		expect(window.electronAPI.endHudOverlayDrag).not.toHaveBeenCalled();
+		fireEvent.pointerUp(window, { pointerId: 7, buttons: 0, screenX: 130, screenY: 210 });
+		expect(window.electronAPI.endHudOverlayDrag).toHaveBeenCalledOnce();
+	});
+
 	it.each([
 		"left",
 		"right",

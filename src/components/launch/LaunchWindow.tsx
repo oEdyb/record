@@ -1569,6 +1569,9 @@ export function LaunchWindow() {
 	// ---------------------------------------------------------------------------
 	const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
 	const lastDragDeltaRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+	// Window-level listeners keep a press alive when its grip is replaced mid-drag (a tab
+	// pulled out of its edge becomes the full pill under the pointer).
+	const dragListenersRef = useRef<(() => void) | null>(null);
 
 	const handleHudDragPointerDown = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
@@ -1581,12 +1584,39 @@ export function LaunchWindow() {
 			isDraggingHudRef.current = true;
 			setHudDragging(true);
 			window.electronAPI?.beginHudOverlayDrag?.();
+			const pointerId = event.pointerId;
+			const move = (moveEvent: PointerEvent) => {
+				if (moveEvent.pointerId !== pointerId) return;
+				// The replacement grip takes the press over, so moves outside it still arrive.
+				const target = moveEvent.target;
+				if (target instanceof Element && !target.hasPointerCapture(pointerId))
+					try {
+						target.setPointerCapture(pointerId);
+					} catch {
+						// The pointer left the window; the moves still arrive through it.
+					}
+				dragMoveRef.current(moveEvent);
+			};
+			const end = (endEvent: PointerEvent) => {
+				if (endEvent.pointerId === pointerId) endHudDragRef.current();
+			};
+			window.addEventListener("pointermove", move);
+			window.addEventListener("pointerup", end);
+			window.addEventListener("pointercancel", end);
+			dragListenersRef.current?.();
+			dragListenersRef.current = () => {
+				window.removeEventListener("pointermove", move);
+				window.removeEventListener("pointerup", end);
+				window.removeEventListener("pointercancel", end);
+			};
 		},
 		[setHudMouseEventsEnabled],
 	);
 
 	const endHudDrag = useCallback(() => {
 		if (!dragOriginRef.current) return;
+		dragListenersRef.current?.();
+		dragListenersRef.current = null;
 		dragOriginRef.current = null;
 		isDraggingHudRef.current = false;
 		setHudDragging(false);
@@ -1598,7 +1628,7 @@ export function LaunchWindow() {
 	}, [measureHudSize, updateHudPlacement]);
 
 	const handleHudDragPointerMove = useCallback(
-		(event: React.PointerEvent<HTMLDivElement>) => {
+		(event: Pick<PointerEvent, "buttons" | "screenX" | "screenY">) => {
 			const origin = dragOriginRef.current;
 			if (!origin) return;
 			// A release that never arrived (the grip swapped between idle and
@@ -1617,8 +1647,16 @@ export function LaunchWindow() {
 		[endHudDrag],
 	);
 
+	const dragMoveRef = useRef(handleHudDragPointerMove);
+	dragMoveRef.current = handleHudDragPointerMove;
+	const endHudDragRef = useRef(endHudDrag);
+	endHudDragRef.current = endHudDrag;
+
 	const handleHudDragPointerEnd = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
+			// A grip that lost the press to its replacement, with the button still down, is
+			// not a release.
+			if (event.type === "lostpointercapture" && (event.buttons & 1) === 1) return;
 			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
 				event.currentTarget.releasePointerCapture(event.pointerId);
 			}
@@ -1627,9 +1665,9 @@ export function LaunchWindow() {
 		[endHudDrag],
 	);
 
-	// The idle and recording pills each render their own grip, so a press can
-	// outlive the element that started it. Any switch ends the drag.
-	const gripKey = `${pillRecording}:${dockedSide}`;
+	// The idle and recording pills each render their own grip, so a press can outlive the
+	// element that started it. Starting or stopping a take ends the drag; untucking does not.
+	const gripKey = `${pillRecording}`;
 	const gripRecordingRef = useRef(gripKey);
 	useEffect(() => {
 		if (gripRecordingRef.current === gripKey) return;
