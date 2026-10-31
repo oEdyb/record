@@ -203,6 +203,70 @@ pub(super) fn align_tracks(
     Ok(clip)
 }
 
+// Keep the upstream atempo path bounded in memory: read and drain one block at a time.
+fn atempo_spool(
+    source: &mut PcmSpool,
+    start: usize,
+    input: usize,
+    target: usize,
+    check: &mut dyn FnMut() -> Result<()>,
+) -> Result<Option<PcmSpool>> {
+    let speed = input as f64 / target as f64;
+    let Some(factors) = atempo_factors(speed) else {
+        return Ok(None);
+    };
+    let tail = atempo_prime_tail(&factors, speed);
+    let mut run = |factors: &[f64], tail: usize| -> Result<Option<(PcmSpool, usize)>> {
+        let mut output = PcmSpool::new()?;
+        let failure = std::cell::RefCell::new(None);
+        let produced = unsafe {
+            atempo_stream_pass(
+                input,
+                &mut |offset, count| match check().and_then(|()| source.read(start + offset, count))
+                {
+                    Ok(block) => Some(block),
+                    Err(error) => {
+                        *failure.borrow_mut() = Some(error);
+                        None
+                    }
+                },
+                &mut |block| match output.append(&block) {
+                    Ok(()) => Some(()),
+                    Err(error) => {
+                        *failure.borrow_mut() = Some(error);
+                        None
+                    }
+                },
+                factors,
+                tail,
+                target,
+            )
+        };
+        if let Some(error) = failure.into_inner() {
+            return Err(error);
+        }
+        Ok(produced.map(|n| (output, n)))
+    };
+    let Some((mut output, produced)) = run(&factors, tail)? else {
+        return Ok(None);
+    };
+    let shortfall = (((input + tail) as f64 / speed).round() as usize).saturating_sub(produced);
+    if shortfall > 0 {
+        let corrected_speed = input as f64 / (target + shortfall + ATEMPO_LENGTH_GUARD) as f64;
+        let Some(corrected) = atempo_factors(corrected_speed) else {
+            return Ok(None);
+        };
+        if let Some((candidate, _)) =
+            run(&corrected, atempo_prime_tail(&corrected, corrected_speed))?
+        {
+            if candidate.samples >= target {
+                output = candidate;
+            }
+        }
+    }
+    Ok((output.samples >= target).then_some(output))
+}
+
 fn stretch(
     mut source: PcmSpool,
     segments: &[SpeedSegment],
@@ -224,6 +288,19 @@ fn stretch(
             let speed = input as f64 / target as f64;
             let passthrough =
                 input.abs_diff(target) <= 1 || (speed - 1.0).abs() < PASSTHROUGH_EPSILON;
+            if !passthrough {
+                if let Some(mut processed) =
+                    atempo_spool(&mut source, source_cursor, input, target, check)?
+                {
+                    for offset in (0..target).step_by(BLOCK) {
+                        check()?;
+                        output.append(&processed.read(offset, BLOCK.min(target - offset))?)?;
+                    }
+                    source_cursor += requested;
+                    continue;
+                }
+                eprintln!("[audio] atempo unavailable; using WSOLA");
+            }
             let mut stretcher = WsolaTimeStretcher::new(AUDIO_OUTPUT_SAMPLE_RATE, 2, speed, target);
             for offset in (0..input).step_by(BLOCK) {
                 check()?;
@@ -644,6 +721,8 @@ mod tests {
                     start_sec: 0.0,
                     end_sec: source_samples as f64 / 48000.0,
                     speed,
+                    output_start_sec: 0.0,
+                    first_frame: 0,
                     frame_count: (30.0 / speed) as u64,
                 }];
                 let expected = stretch_clip_pcm_by_speed(&pcm, &segments, 30.0);

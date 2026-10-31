@@ -26,7 +26,7 @@
 
 use crate::config::Cfg;
 use crate::d3d::Gpu;
-use crate::ffi::AVFrame;
+use crate::ffi::{AVColorSpace, AVFrame};
 // Le constant buffer est le MÊME struct des deux côtés — cf. `frame_geometry`.
 // Constant buffer, params runtime et constantes de sortie : une seule définition pour
 // les deux backends — cf. `frame_geometry`, qui documente les divergences que
@@ -42,6 +42,15 @@ use crate::scene::{Scene, SceneBackground};
 use anyhow::{anyhow, Result};
 use metal::foreign_types::ForeignType;
 use std::cell::RefCell;
+
+/// Budget du cache de textures image (`img_cache`), en octets. Même valeur et même raison que
+/// `compositor_windows::IMG_CACHE_BUDGET_BYTES`.
+///
+/// Doit tenir le JEU ACTIF d'une frame — au pire un wallpaper d'écran ET un fond de caméra, que
+/// rien n'empêche d'être deux 7680x7680 à 225 Mo pièce. Sous ce seuil l'éviction ne peut plus
+/// rendre de mémoire sans toucher au jeu actif, ce qu'elle refuse de faire. 512 Mo borne la fuite
+/// (1 774 Mo mesurés en parcourant les 18 wallpapers livrés) en laissant le jeu actif résident.
+const IMG_CACHE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // CVMetalTextureCache — le pont CVPixelBuffer → MTLTexture
@@ -88,7 +97,14 @@ extern "C" {
     fn CVPixelBufferGetHeightOfPlane(p: *mut std::ffi::c_void, plane_index: usize) -> usize;
     fn CVPixelBufferGetWidth(p: *mut std::ffi::c_void) -> usize;
     fn CVPixelBufferGetHeight(p: *mut std::ffi::c_void) -> usize;
+    fn CVPixelBufferGetPixelFormatType(p: *mut std::ffi::c_void) -> u32;
 }
+
+/// `kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange` ('x420') et sa variante pleine
+/// excursion ('xf20') : le P010 que VideoToolbox sort pour un flux 10 bits (HEVC Main 10).
+const CV_420_10_BIPLANAR_VIDEO: u32 = u32::from_be_bytes(*b"x420");
+const CV_420_10_BIPLANAR_FULL: u32 = u32::from_be_bytes(*b"xf20");
+const CV_420_8_BIPLANAR_FULL: u32 = u32::from_be_bytes(*b"420f");
 
 /// `retain` ObjC sur un `id`. `CVMetalTextureGetTexture` rend une référence
 /// *empruntée* au `CVMetalTextureRef` qui la porte : relâcher ce dernier sans
@@ -187,6 +203,50 @@ impl CVMetalTextureCache {
     }
 }
 
+// `MTLTextureSwizzle` ; absent des bindings `metal` 0.29.
+const SWZ_ZERO: u8 = 0;
+const SWZ_ONE: u8 = 1;
+const SWZ_RED: u8 = 2;
+const SWZ_GREEN: u8 = 3;
+const SWZ_ALPHA: u8 = 5;
+
+/// Vue de `tex` qui rend `swizzle` (rouge, vert, bleu, alpha). C'est ainsi que `sample_yuv`
+/// (`shaders.metal`) lit le format d'une frame sans rien lier de plus à chaque draw :
+/// - bleu à 1 sur le plan CbCr : pleine plage (`420f`, `xf20`) ;
+/// - vert ou bleu à 1 sur le plan Y : matrice BT.601 ou BT.2020.
+///
+/// Sans vue, `R` et `RG` rendent 0 sur les canaux libres : plage limitée et BT.709 par défaut.
+fn swizzled_view(tex: &metal::TextureRef, swizzle: [u8; 4]) -> metal::Texture {
+    use objc::{msg_send, sel, sel_impl};
+    #[repr(C)]
+    struct Swizzle([u8; 4]);
+    let one = metal::NSRange::new(0, 1);
+    unsafe {
+        msg_send![tex, newTextureViewWithPixelFormat:tex.pixel_format()
+                                         textureType:tex.texture_type()
+                                              levels:one
+                                               slices:one
+                                             swizzle:Swizzle(swizzle)]
+    }
+}
+
+/// Le swizzle du plan Y qui porte la matrice de la frame, ou `None` pour BT.709 (aussi le
+/// défaut d'un flux non tagué). La matrice vient de `AVFrame::colorspace`, que libavcodec lit
+/// dans le VUI : VideoToolbox ne pose pas `kCVImageBufferYCbCrMatrixKey` sur ses buffers.
+/// BT.2020 CL n'est pas une simple matrice : il garde le défaut plutôt qu'un rendu NCL faux.
+///
+/// Alpha à 0 : échantillons 10 bits (P010), que `yuv_matrix` convertit avec les bornes 10 bits.
+fn matrix_swizzle(colorspace: AVColorSpace::Type, ten_bit: bool) -> Option<[u8; 4]> {
+    let depth = if ten_bit { SWZ_ZERO } else { SWZ_ONE };
+    match colorspace {
+        AVColorSpace::AVCOL_SPC_BT470BG | AVColorSpace::AVCOL_SPC_SMPTE170M => {
+            Some([SWZ_RED, SWZ_ONE, SWZ_ZERO, depth])
+        }
+        AVColorSpace::AVCOL_SPC_BT2020_NCL => Some([SWZ_RED, SWZ_ZERO, SWZ_ONE, depth]),
+        _ => None,
+    }
+}
+
 impl Drop for CVMetalTextureCache {
     fn drop(&mut self) {
         unsafe {
@@ -227,8 +287,15 @@ pub struct Compositor {
     last_cmd: RefCell<Option<metal::CommandBuffer>>,
     /// Wallpapers décodés, indexés par chemin (ou par data-URI pour les annotations image).
     /// Le décode + upload coûte des millisecondes ; le faire à chaque frame ferait chuter la
-    /// preview sur un fond image.
-    img_cache: RefCell<std::collections::HashMap<String, (metal::Texture, u32, u32)>>,
+    /// preview sur un fond image. L'entrée reste néanmoins évinçable dès qu'elle sort du jeu
+    /// actif d'une frame — cf. `cached_image`.
+    img_cache: RefCell<std::collections::HashMap<String, (metal::Texture, u32, u32, u64)>>,
+    /// Compteur d'accès de `img_cache`, pour l'ordre LRU. Un compteur plutôt que l'index de
+    /// frame : une frame touche plusieurs entrées, et il faut pouvoir les ordonner entre elles.
+    img_tick: std::cell::Cell<u64>,
+    /// Valeur de `img_tick` au début de la frame en cours. Tout ce qui a été touché depuis
+    /// appartient au jeu actif et ne peut pas être évincé — voir `cached_image`.
+    img_frame_start: std::cell::Cell<u64>,
 
     // --- Engine : render targets ---
     /// Render target principal RGBA8. Cible de `compose_frame`. `Private` : c'est une
@@ -549,6 +616,8 @@ impl Compositor {
             metal_texture_cache: cache,
             last_cmd: RefCell::new(None),
             img_cache: RefCell::new(std::collections::HashMap::new()),
+            img_tick: std::cell::Cell::new(0),
+            img_frame_start: std::cell::Cell::new(0),
             rt,
             rt_read,
             rt_read_stride,
@@ -675,6 +744,11 @@ impl Compositor {
     /// Crée les `MTLTexture` Y (`R8Unorm`) et UV (`RG8Unorm`) de la frame. Zéro copie :
     /// les textures Metal partagent l'IOSurface du `CVPixelBuffer`. API symétrique de
     /// `compositor_windows::nv12_srvs`.
+    ///
+    /// Un flux 10 bits arrive en P010 : 16 bits par échantillon, valeur dans les bits de
+    /// poids fort. En `R16Unorm`/`RG16Unorm` le shader lit la même valeur normalisée qu'en
+    /// NV12 ; en `R8Unorm` chaque échantillon devenait deux texels, d'où l'image en bandes
+    /// d'une vidéo iPhone (#1390).
     pub unsafe fn nv12_srvs(
         &self,
         frame: *const AVFrame,
@@ -686,8 +760,32 @@ impl Compositor {
             )
         })?;
         let cache = &self.metal_texture_cache;
-        let y = cache.make_texture_from_pixel_buffer(pb, 0, metal::MTLPixelFormat::R8Unorm)?;
-        let uv = cache.make_texture_from_pixel_buffer(pb, 1, metal::MTLPixelFormat::RG8Unorm)?;
+        let pixel_format = CVPixelBufferGetPixelFormatType(pb);
+        let (y_fmt, uv_fmt) = match pixel_format {
+            CV_420_10_BIPLANAR_VIDEO | CV_420_10_BIPLANAR_FULL => (
+                metal::MTLPixelFormat::R16Unorm,
+                metal::MTLPixelFormat::RG16Unorm,
+            ),
+            _ => (
+                metal::MTLPixelFormat::R8Unorm,
+                metal::MTLPixelFormat::RG8Unorm,
+            ),
+        };
+        let mut y = cache.make_texture_from_pixel_buffer(pb, 0, y_fmt)?;
+        let mut uv = cache.make_texture_from_pixel_buffer(pb, 1, uv_fmt)?;
+        let ten_bit = matches!(
+            pixel_format,
+            CV_420_10_BIPLANAR_VIDEO | CV_420_10_BIPLANAR_FULL
+        );
+        if let Some(swizzle) = matrix_swizzle((*frame).colorspace, ten_bit) {
+            y = swizzled_view(&y, swizzle);
+        }
+        if matches!(
+            pixel_format,
+            CV_420_8_BIPLANAR_FULL | CV_420_10_BIPLANAR_FULL
+        ) {
+            uv = swizzled_view(&uv, [SWZ_RED, SWZ_GREEN, SWZ_ONE, SWZ_ALPHA]);
+        }
         Ok((y, uv))
     }
 
@@ -939,6 +1037,56 @@ impl Compositor {
         Ok((tex, w, h))
     }
 
+    /// Ouvre une frame du point de vue de `img_cache` : tout ce qui sera touché après cet appel
+    /// est le jeu actif, et devient inévinçable jusqu'à la frame suivante.
+    fn begin_image_frame(&self) {
+        // `+ 1` : la première entrée de cette frame recevra `img_tick + 1`, et la protection
+        // porte sur `tick >= img_frame_start`. Sans le décalage on protégerait aussi la
+        // DERNIÈRE entrée de la frame précédente, qui n'appartient plus au jeu actif — le
+        // résident pourrait alors dépasser le budget d'une texture entière.
+        self.img_frame_start.set(self.img_tick.get() + 1);
+    }
+
+    /// Texture d'un fichier image, décodée une seule fois puis réutilisée.
+    ///
+    /// Le cache était NON BORNÉ, et c'est un vrai coût : les wallpapers livrés pèsent 23,7 Mo sur
+    /// disque mais 1 774 Mo une fois décodés en RGBA8 — `wallpaper8.jpg` fait 7680x7680, soit
+    /// 225 Mo à lui seul. Parcourir le sélecteur les chargeait tous et n'en libérait aucun.
+    ///
+    /// L'éviction est LRU sous un budget en octets, et ne touche jamais une texture que la frame
+    /// EN COURS a déjà servie : sans ça, un fond d'écran et un fond de caméra un peu gros se
+    /// chasseraient l'un l'autre à chaque frame, et un décodage coûte 129 ms contre les ~3,5 ms
+    /// d'une frame. Si le jeu actif dépasse à lui seul le budget, on dépasse le budget.
+    fn cached_image(&self, path: &str) -> Result<(metal::Texture, u32, u32)> {
+        let tick = self.img_tick.get() + 1;
+        self.img_tick.set(tick);
+        // Emprunt isolé dans un `let` pour qu'il soit relâché AVANT le `borrow_mut` —
+        // même piège que côté Windows (double emprunt RefCell à la première frame image).
+        let hit = self.img_cache.borrow().get(path).cloned();
+        if let Some((tex, w, h, _)) = hit {
+            self.img_cache
+                .borrow_mut()
+                .insert(path.to_string(), (tex.clone(), w, h, tick));
+            return Ok((tex, w, h));
+        }
+        let (tex, w, h) = self.load_image_texture(path)?;
+        let mut cache = self.img_cache.borrow_mut();
+        cache.insert(path.to_string(), (tex.clone(), w, h, tick));
+        // La politique vit dans `frame_geometry` : les trois backends la partagent, comme la
+        // géométrie, plutôt que d'entretenir trois copies qui finiraient par diverger.
+        let entries: Vec<(String, u64, u64)> = cache
+            .iter()
+            .map(|(k, e)| (k.clone(), e.1 as u64 * e.2 as u64 * 4, e.3))
+            .collect();
+        let protect_from = self.img_frame_start.get();
+        for key in
+            crate::frame_geometry::lru_evictions(&entries, IMG_CACHE_BUDGET_BYTES, protect_from)
+        {
+            cache.remove(&key);
+        }
+        Ok((tex, w, h))
+    }
+
     /// Fond wallpaper image, cover-fit sur le ratio de SORTIE (mode 6).
     ///
     /// Le crop de recouvrement se calcule contre le vrai ratio de sortie, pas contre celui
@@ -951,17 +1099,7 @@ impl Compositor {
     ) -> Result<()> {
         // Emprunt isolé dans un `let` pour qu'il soit relâché AVANT le `borrow_mut` —
         // même piège que côté Windows (double emprunt RefCell à la première frame image).
-        let cached = self.img_cache.borrow().get(path).cloned();
-        let (tex, iw, ih) = match cached {
-            Some(v) => v,
-            None => {
-                let loaded = self.load_image_texture(path)?;
-                self.img_cache
-                    .borrow_mut()
-                    .insert(path.to_string(), loaded.clone());
-                loaded
-            }
-        };
+        let (tex, iw, ih) = self.cached_image(path)?;
         let ai = iw as f32 / ih.max(1) as f32;
         let ao = output_aspect;
         let (u0, v0, u1, v1) = if ai > ao {
@@ -1518,17 +1656,7 @@ impl Compositor {
         sprite: &crate::scene::SceneCursorSprite,
         clip: [f32; 4],
     ) -> Result<()> {
-        let cached = self.img_cache.borrow().get(sprite.path.as_str()).cloned();
-        let (tex, iw, ih) = match cached {
-            Some(v) => v,
-            None => {
-                let loaded = self.load_image_texture(&sprite.path)?;
-                self.img_cache
-                    .borrow_mut()
-                    .insert(sprite.path.clone(), loaded.clone());
-                loaded
-            }
-        };
+        let (tex, iw, ih) = self.cached_image(&sprite.path)?;
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
         let ar = iw as f32 / ih.max(1) as f32;
         let (pw, ph) = if ar >= 1.0 {
@@ -1645,6 +1773,7 @@ impl Compositor {
         overlay: *const AVFrame,
         overlay_region: Option<&crate::overlay_video::ActiveOverlay>,
     ) -> Result<()> {
+        self.begin_image_frame();
         if Self::pixel_buffer_of(screen).is_none() {
             return self.clear_rt();
         }
@@ -1786,7 +1915,9 @@ impl Compositor {
             // droit, quadrilatère projeté quand il est penché. Un rect droit derrière un écran
             // incliné se lit comme une seconde surface, pas comme son ombre.
             match tilt.as_ref() {
-                None => self.draw_shadow(enc, g.s_dst, s_px, g.s_radius, spread, offset, opacity, false),
+                None => self.draw_shadow(
+                    enc, g.s_dst, s_px, g.s_radius, spread, offset, opacity, false,
+                ),
                 Some(quad) => self.draw_quad_shadow(
                     enc,
                     &quad.corners,
@@ -2394,5 +2525,69 @@ mod tests {
         };
         let comp = super::Compositor::new_sized(&gpu, 640, 360).expect("Compositor::new_sized");
         assert_eq!(comp.render_size(), (640, 360));
+    }
+}
+
+#[cfg(test)]
+mod color_format_tests {
+    use super::*;
+    #[test]
+    fn videotoolbox_planes_preserve_depth_and_range() {
+        let gpu = crate::d3d::Gpu::create(false).expect("Metal device");
+        let comp = Compositor::new_sized(&gpu, 64, 64).expect("compositor");
+        for (fourcc, y_format, uv_format, full) in [
+            (
+                *b"420v",
+                metal::MTLPixelFormat::R8Unorm,
+                metal::MTLPixelFormat::RG8Unorm,
+                false,
+            ),
+            (
+                *b"420f",
+                metal::MTLPixelFormat::R8Unorm,
+                metal::MTLPixelFormat::RG8Unorm,
+                true,
+            ),
+            (
+                *b"x420",
+                metal::MTLPixelFormat::R16Unorm,
+                metal::MTLPixelFormat::RG16Unorm,
+                false,
+            ),
+            (
+                *b"xf20",
+                metal::MTLPixelFormat::R16Unorm,
+                metal::MTLPixelFormat::RG16Unorm,
+                true,
+            ),
+        ] {
+            let pb = unsafe {
+                crate::mac_frames::create_nv12_pixel_buffer(64, 64, u32::from_be_bytes(fourcc))
+            }
+            .expect("pixel buffer");
+            let mut frame: AVFrame = unsafe { std::mem::zeroed() };
+            frame.format = crate::ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX as i32;
+            frame.data[3] = pb.as_ptr() as *mut u8;
+            let (y, uv) = unsafe { comp.nv12_srvs(&frame) }.expect("plane textures");
+            assert_eq!(y.pixel_format(), y_format);
+            assert_eq!(uv.pixel_format(), uv_format);
+            #[repr(C)]
+            struct Swizzle([u8; 4]);
+            use objc::{msg_send, sel, sel_impl};
+            let swizzle: Swizzle = unsafe { msg_send![uv, swizzle] };
+            assert_eq!(swizzle.0[2] == SWZ_ONE, full);
+        }
+    }
+    #[test]
+    fn matrix_tags_mark_depth_and_coefficients() {
+        assert_eq!(
+            matrix_swizzle(AVColorSpace::AVCOL_SPC_SMPTE170M, false),
+            Some([SWZ_RED, SWZ_ONE, SWZ_ZERO, SWZ_ONE])
+        );
+        assert_eq!(
+            matrix_swizzle(AVColorSpace::AVCOL_SPC_BT2020_NCL, true),
+            Some([SWZ_RED, SWZ_ZERO, SWZ_ONE, SWZ_ZERO])
+        );
+        assert_eq!(matrix_swizzle(AVColorSpace::AVCOL_SPC_BT709, false), None);
     }
 }

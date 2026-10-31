@@ -2404,3 +2404,82 @@ mod tests {
         assert!((su1 - (960.0 + 720.0) * 0.5 / tex[0]).abs() < 1e-6);
     }
 }
+
+/// Evict the least recently used inactive textures until the byte budget is met.
+pub fn lru_evictions(
+    entries: &[(String, u64, u64)],
+    budget: u64,
+    protect_from: u64,
+) -> Vec<String> {
+    let mut total: u64 = entries.iter().map(|(_, bytes, _)| *bytes).sum();
+    if total <= budget {
+        return Vec::new();
+    }
+    let mut candidates: Vec<&(String, u64, u64)> = entries
+        .iter()
+        .filter(|(_, _, tick)| *tick < protect_from)
+        .collect();
+    candidates.sort_by_key(|(_, _, tick)| *tick);
+    let mut out = Vec::new();
+    for (key, bytes, _) in candidates {
+        if total <= budget {
+            break;
+        }
+        total -= bytes;
+        out.push(key.clone());
+    }
+    out
+}
+
+#[cfg(test)]
+mod image_cache_tests {
+    use super::lru_evictions;
+
+    /// `(clé, octets, tick)` — le tick croît avec l'usage, donc le plus petit est le plus ancien.
+    fn e(key: &str, mb: u64, tick: u64) -> (String, u64, u64) {
+        (key.to_string(), mb * 1024 * 1024, tick)
+    }
+
+    const BUDGET: u64 = 512 * 1024 * 1024;
+
+    #[test]
+    fn evicts_nothing_while_under_budget() {
+        assert!(lru_evictions(&[e("a", 100, 1), e("b", 100, 2)], BUDGET, 2).is_empty());
+    }
+
+    /// La plus ancienne part d'abord, et on s'arrête DÈS qu'on repasse sous le budget : évincer
+    /// au-delà ne rendrait que des rechargements.
+    #[test]
+    fn evicts_oldest_first_and_stops_at_the_budget() {
+        let entries = [e("vieux", 100, 1), e("moyen", 100, 2), e("neuf", 100, 9)];
+        assert_eq!(
+            lru_evictions(&entries, 250 * 1024 * 1024, 9),
+            vec!["vieux".to_string()]
+        );
+    }
+
+    /// TOUT le jeu actif de la frame est protégé, pas seulement la dernière entrée posée. Une
+    /// frame qui échantillonne un fond d'écran ET un fond de caméra ne doit pas voir le premier
+    /// évincé parce que le second vient d'arriver — sinon les deux se chassent l'un l'autre à
+    /// chaque frame.
+    #[test]
+    fn protects_every_texture_used_this_frame() {
+        // frame commencée au tick 5 : `ecran` et `camera` servent tous deux maintenant.
+        let entries = [e("vieux", 100, 2), e("ecran", 400, 5), e("camera", 400, 6)];
+        assert_eq!(
+            lru_evictions(&entries, BUDGET, 5),
+            vec!["vieux".to_string()]
+        );
+    }
+
+    /// Jeu actif plus gros que le budget : on rend ce qu'on peut et on reste au-dessus, plutôt que
+    /// de faire disparaître des textures dont cette frame a besoin.
+    #[test]
+    fn gives_up_rather_than_evicting_the_active_set() {
+        let entries = [e("a", 100, 1), e("actif", 900, 5)];
+        assert_eq!(
+            lru_evictions(&entries, 256 * 1024 * 1024, 5),
+            vec!["a".to_string()]
+        );
+    }
+}
