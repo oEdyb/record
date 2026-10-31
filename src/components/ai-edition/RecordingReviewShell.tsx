@@ -133,6 +133,8 @@ const TRIAL_DAYS = 14;
  * The review window that opens after Stop: watch the take, add a clip, record again,
  * open earlier recordings and export. Klippt is recording-only, so this is the only shell.
  */
+const SCREEN_PAINT_WAIT_MS = 1500;
+
 export function RecordingReviewShell() {
 	const te = useScopedT("editor");
 	const document = useProjectStore((s) => s.document);
@@ -453,6 +455,15 @@ export function RecordingReviewShell() {
 		},
 		() => false,
 	);
+	// The stage shows the wallpaper until the compositor paints the take's own screen; keep the
+	// cover up for that, but never longer than a short wait if the preview cannot paint.
+	const [screenWaitExpired, setScreenWaitExpired] = useState(false);
+	useEffect(() => {
+		setScreenWaitExpired(false);
+		if (!document || !stageRevealed || handoffFramePresented) return;
+		const timer = setTimeout(() => setScreenWaitExpired(true), SCREEN_PAINT_WAIT_MS);
+		return () => clearTimeout(timer);
+	}, [document, stageRevealed, handoffFramePresented]);
 	useEffect(() => {
 		let alive = true;
 		const prepare = async (token: number) => {
@@ -1485,7 +1496,8 @@ export function RecordingReviewShell() {
 										firstFrameReady &&
 										(videoElement?.readyState ?? 0) >= 2 &&
 										!recordingReviewPending
-									: stageRevealed || (startupLoaded && !hasAsset))
+									: (stageRevealed && (handoffFramePresented || screenWaitExpired)) ||
+										(startupLoaded && !hasAsset))
 							}
 							data-testid="review-loading"
 							aria-hidden="true"

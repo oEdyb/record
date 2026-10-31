@@ -8,18 +8,23 @@ export function splitLayout(layout: StudioLayout) {
 	return { replay: layout.view !== "camera", camera: layout.view !== "replay" };
 }
 export function studioKeyAllowed(
-	event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "metaKey" | "isComposing" | "defaultPrevented">,
+	event: Pick<
+		KeyboardEvent,
+		"key" | "altKey" | "ctrlKey" | "metaKey" | "isComposing" | "defaultPrevented"
+	>,
 	target: EventTarget | null,
 ): boolean {
 	if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey)
 		return false;
-	return (
-		target instanceof HTMLElement &&
-		Boolean(target.closest("[data-studio-document]")) &&
-		!target.closest(
-			'button,input,select,textarea,[contenteditable="true"],[role="separator"],[role="slider"]',
+	if (!(target instanceof HTMLElement) || !target.closest("[data-studio-document]")) return false;
+	if (
+		target.closest(
+			'input,select,textarea,[contenteditable="true"],[role="separator"],[role="slider"]',
 		)
-	);
+	)
+		return false;
+	// A focused button keeps Space, Enter, arrows and Backspace; letter shortcuts like M still work.
+	return !target.closest("button") || (event.key.length === 1 && event.key !== " ");
 }
 export function sentenceTarget(
 	times: readonly number[],

@@ -40,6 +40,7 @@ describe("Studio keyboard guards", () => {
 		metaKey: false,
 		isComposing: false,
 		defaultPrevented: false,
+		key: "Backspace",
 	};
 	it("runs only from the document", () => {
 		const main = document.createElement("main");
@@ -57,5 +58,17 @@ describe("Studio keyboard guards", () => {
 		node.setAttribute("role", "separator");
 		main.append(node);
 		expect(studioKeyAllowed(event, node)).toBe(false);
+	});
+	it("lets letter shortcuts through a focused button, but not its own keys", () => {
+		const main = document.createElement("main");
+		main.dataset.studioDocument = "";
+		const button = document.createElement("button");
+		main.append(button);
+		expect(studioKeyAllowed({ ...event, key: "m" }, button)).toBe(true);
+		for (const key of [" ", "Enter", "ArrowLeft", "Backspace"])
+			expect(studioKeyAllowed({ ...event, key }, button)).toBe(false);
+		const input = document.createElement("input");
+		main.append(input);
+		expect(studioKeyAllowed({ ...event, key: "m" }, input)).toBe(false);
 	});
 });
