@@ -697,7 +697,9 @@ ipcMain.on(
  * Frameless transparent HUD overlay, always-on-top, with its pill centred near
  * the bottom of the primary display. Follows the user across macOS Spaces so it isn't lost on switch.
  */
-export function createHudOverlayWindow(options: { returnToReview?: boolean } = {}): BrowserWindow {
+export function createHudOverlayWindow(
+	options: { returnToReview?: boolean; hidden?: boolean } = {},
+): BrowserWindow {
 	const primaryDisplay = screen.getPrimaryDisplay();
 	const { workArea } = primaryDisplay;
 
@@ -795,7 +797,7 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 	// window is shown before its first paint.
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "HUD");
-		if (HEADLESS) return;
+		if (HEADLESS || options.hidden) return;
 		if (shouldShowHudInactive(process.platform)) win.showInactive();
 		else win.show();
 	});

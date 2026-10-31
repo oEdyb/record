@@ -66,6 +66,10 @@ export function StudioReplay({
 	const [clipIndex, setClipIndex] = useState(0);
 	const [position, setPosition] = useState(0);
 	const [playing, setPlaying] = useState(false);
+	const [readySource, setReadySource] = useState<string | null>(null);
+	useEffect(() => {
+		if (!shown) setReadySource(null);
+	}, [shown]);
 	const [failed, setFailed] = useState(false);
 	const [aspect, setAspect] = useState(16 / 9);
 	const volume = usePreviewAudio((state) => state.volume);
@@ -228,7 +232,10 @@ export function StudioReplay({
 	return (
 		<div className={styles.replay} style={{ "--peek-aspect": String(aspect) } as CSSProperties}>
 			<div className={styles.stageSlot} hidden={cameraOnly}>
-				<div className={`${peek.clipPeekStage} ${styles.stage}`}>
+				<div
+					className={`${peek.clipPeekStage} ${styles.stage}`}
+					data-ready={readySource === source && shown}
+				>
 					{shown ? (
 						<video
 							ref={attachVideo}
@@ -237,6 +244,13 @@ export function StudioReplay({
 							playsInline
 							preload="auto"
 							onLoadedMetadata={handleLoadedMetadata}
+							onLoadStart={() => setReadySource(null)}
+							onLoadedData={(event) => {
+								if (!event.currentTarget.seeking) setReadySource(source ?? null);
+							}}
+							onSeeked={(event) => {
+								if (event.currentTarget.readyState >= 2) setReadySource(source ?? null);
+							}}
 							onEnded={handleEnded}
 							onError={() => {
 								setPlaying(false);

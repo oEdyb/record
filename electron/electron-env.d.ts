@@ -107,6 +107,9 @@ interface Window {
 		onStudioUpdated: (
 			callback: (snapshot: import("./studio/types").StudioSnapshot) => void,
 		) => () => void;
+		getReviewHandoffToken?: () => Promise<number | null>;
+		reviewReady?: (token: number) => void;
+		onReviewHandoff?: (callback: (token: number) => void) => () => void;
 		studioCommand: (command: import("./studio/types").StudioCommand) => void;
 		studioPillNeedsUser: () => void;
 		reportStudioPillState: (state: import("./studio/types").StudioPillState) => void;

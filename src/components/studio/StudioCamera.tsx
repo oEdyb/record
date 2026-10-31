@@ -16,9 +16,11 @@ export function StudioCamera({
 	const ready = useStudioLiveCamera(ref, active);
 	const t = useScopedT("launch");
 	return (
-		<div className={styles.camera} data-dim={dim}>
+		<div className={styles.camera} data-dim={dim} data-ready={active && ready}>
 			<canvas ref={ref} aria-label={t("studio.live")} hidden={!active || !ready} />
-			<span className={styles.liveChip}>{t("studio.live")}</span>
+			<span className={styles.liveChip} hidden={!active || !ready}>
+				{t("studio.live")}
+			</span>
 			{guides && active ? (
 				<div className={styles.guides} aria-hidden="true">
 					<i />

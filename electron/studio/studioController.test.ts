@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioController, type StudioTake, type StudioWindowLike } from "./studioController";
 import { IDLE_PILL_STATE } from "./types";
 
 function fakeWindow() {
 	let visible = false;
+	let opacity = 1;
 	const listeners: Record<string, (event?: { preventDefault(): void }) => void> = {};
 	const win = {
 		visible: () => visible,
@@ -17,6 +18,10 @@ function fakeWindow() {
 		window: {
 			isDestroyed: () => false,
 			isVisible: () => visible,
+			getOpacity: () => opacity,
+			setOpacity: (value: number) => {
+				opacity = value;
+			},
 			show: vi.fn(() => (visible = true)),
 			hide: vi.fn(() => (visible = false)),
 			focus: vi.fn(),
@@ -81,6 +86,7 @@ const paused: StudioTake = { recordingId: 1, clips: [], running: true, paused: t
 const recording: StudioTake = { ...paused, paused: false };
 
 describe("StudioController", () => {
+	afterEach(() => vi.useRealTimers());
 	it("owns controls between opening Studio and returning to the pill", () => {
 		const { controller, studio } = setup(null);
 		expect(controller.ownsControls()).toBe(false);
@@ -273,7 +279,12 @@ describe("StudioController", () => {
 
 		controller.command("finish");
 		expect(openReview).toHaveBeenCalledOnce();
-		expect(openReview).toHaveBeenCalledWith({ x: 10, y: 20, width: 400, height: 60 });
+		expect(openReview).toHaveBeenCalledWith(
+			{ x: 10, y: 20, width: 400, height: 60 },
+			expect.any(Function),
+		);
+		expect(studio.visible()).toBe(true);
+		openReview.mock.calls[0][1]();
 		expect(studio.visible()).toBe(false);
 		expect(controller.keepsReview()).toBe(false);
 	});
@@ -301,6 +312,7 @@ describe("StudioController", () => {
 		expect(studio.visible()).toBe(true);
 		controller.setPillState({ ...pillState, saving: false, transportBusy: false });
 		expect(openReview).toHaveBeenCalledOnce();
+		openReview.mock.calls[0][1]();
 		expect(studio.visible()).toBe(false);
 	});
 
@@ -353,7 +365,7 @@ describe("StudioController", () => {
 	});
 
 	it("drops an older read-back when a later take is saved from the pill", () => {
-		const { controller, studio, state } = setup(paused);
+		const { controller, studio, state, openReview } = setup(paused);
 		controller.open();
 		studio.ready();
 		controller.sync();
@@ -361,6 +373,7 @@ describe("StudioController", () => {
 		state.take = { recordingId: 7, clips: [], running: false, paused: false };
 		controller.sync();
 		controller.command("finish");
+		openReview.mock.calls[0][1]();
 		controller.stored({ recordingId: 8, clips: [] });
 		expect(controller.keepsReview()).toBe(false);
 		expect(controller.snapshot().phase).not.toBe("review");
@@ -396,4 +409,71 @@ describe("StudioController", () => {
 		expect(controller.snapshot().pill.undoClipIndex).toBe(3);
 		expect(controller.snapshot().setup.micEnabled).toBe(true);
 	});
+});
+
+describe("Studio handoff cancellation", () => {
+	afterEach(() => vi.useRealTimers());
+	function finishing() {
+		const result = setup(null);
+		result.controller.open();
+		result.studio.ready();
+		result.controller.stored({ recordingId: 7, clips: [] });
+		return result;
+	}
+	it("holds Studio until review signals a painted frame without showing the pill", () => {
+		vi.useFakeTimers();
+		const { controller, studio, pill, openReview } = finishing();
+		vi.mocked(pill.window.show).mockClear();
+		controller.command("finish");
+		vi.advanceTimersByTime(1499);
+		expect(studio.visible()).toBe(true);
+		expect(pill.window.show).not.toHaveBeenCalled();
+		openReview.mock.calls[0][1]();
+		expect(studio.visible()).toBe(false);
+		expect(controller.ownsControls()).toBe(true);
+	});
+	it("times out after 1500ms and ignores a late signal after Studio reopens", () => {
+		vi.useFakeTimers();
+		const { controller, studio, openReview } = finishing();
+		controller.command("finish");
+		vi.advanceTimersByTime(1500);
+		expect(studio.visible()).toBe(false);
+		controller.open();
+		openReview.mock.calls[0][1]();
+		expect(studio.visible()).toBe(true);
+	});
+	it("cancels an unfinished handoff when Studio is reopened", () => {
+		vi.useFakeTimers();
+		const { controller, studio, openReview } = finishing();
+		controller.command("finish");
+		controller.open();
+		openReview.mock.calls[0][1]();
+		vi.advanceTimersByTime(2000);
+		expect(studio.visible()).toBe(true);
+	});
+});
+
+it("keeps an outgoing window visible and retargets rapid pill/Studio reversals", () => {
+	vi.useFakeTimers();
+	try {
+		const { controller, studio, pill } = setup(null, { motionEnabled: () => true });
+		controller.open();
+		studio.ready();
+		expect(studio.visible()).toBe(true);
+		expect(studio.window.focus).toHaveBeenCalled();
+		expect(pill.visible()).toBe(true);
+		vi.advanceTimersByTime(48);
+		controller.backToPill();
+		expect(pill.window.focus).toHaveBeenCalled();
+		vi.advanceTimersByTime(32);
+		const current = studio.window.getOpacity?.();
+		controller.open();
+		expect(studio.window.getOpacity?.()).toBe(current);
+		vi.advanceTimersByTime(200);
+		expect(studio.visible()).toBe(true);
+		expect(studio.window.getOpacity?.()).toBe(1);
+		expect(pill.visible()).toBe(false);
+	} finally {
+		vi.useRealTimers();
+	}
 });

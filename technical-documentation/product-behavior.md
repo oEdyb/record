@@ -297,6 +297,17 @@ disable Continue until the clip is safe.
 
 ## Floating recording panel
 
+Studio Finish holds its current frame until review imports the take and paints its first
+video frame. A renderer-to-main handoff token identifies each Finish, with a 1.5-second
+fallback to a covered loading stage. Review inherits the Studio bounds. Studio mode persists
+across review and Record more: the recording pill is created hidden during these handoffs.
+On macOS, Studio enters over 180 ms and exits over 120 ms; Finish fades Studio over the
+loaded review over 180 ms. Focus changes immediately. Reversing retargets the current native
+opacity. Reduced motion and Linux window swaps are instant. Capture exclusion always hides
+Studio immediately, without waiting for motion. Camera and replay reveal over 120 ms only
+after drawable media arrives; the Live badge is concealed until its camera frame is ready.
+
+
 Capture and review are two states of the recorder. App launch opens the floating panel with
 a usable screen selected when available. Record starts capture directly; no project-creation
 step or source-picker click is required for the default screen. Explicit source selections

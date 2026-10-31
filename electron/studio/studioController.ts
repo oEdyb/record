@@ -7,11 +7,14 @@ import {
 	type StudioSetup,
 	type StudioSnapshot,
 } from "./types";
+import { WindowFade } from "./windowFade";
 
 /** The parts of a BrowserWindow the controller drives. */
 export interface StudioWindowLike {
 	isDestroyed(): boolean;
 	isVisible(): boolean;
+	getOpacity?(): number;
+	setOpacity?(opacity: number): void;
 	show(): void;
 	hide(): void;
 	focus(): void;
@@ -43,7 +46,12 @@ export interface StudioControllerDeps {
 	 * Hands a stopped take to the normal review, where it is saved and exported. `from` is
 	 * the Studio's frame, so the review opens in its place instead of jumping elsewhere.
 	 */
-	openReview: (from?: { x: number; y: number; width: number; height: number }) => void;
+	openReview: (
+		from: { x: number; y: number; width: number; height: number } | undefined,
+		ready: () => void,
+	) => void;
+	motionEnabled?: () => boolean;
+	cancelReview?: () => void;
 	/** True only when the compositor confirms the Studio is off the recorded output. */
 	outsideCapture: (pipeWireNodeId: number | undefined) => Promise<boolean>;
 	endCaptureCheck: () => void;
@@ -69,7 +77,7 @@ export interface StudioControllerDeps {
 export class StudioController {
 	private window: StudioWindowLike | null = null;
 	private ready = false;
-	private mode: "pill" | "studio" = "pill";
+	private mode: "pill" | "studio" | "review" = "pill";
 	private outside = false;
 	/** Between asking capture to resume and it running: replay must already be silent. */
 	private resuming = false;
@@ -84,7 +92,12 @@ export class StudioController {
 	/** Finish was asked for while the pill was still saving; it runs once the save ends. */
 	private finishWhenSaved = false;
 
-	constructor(private readonly deps: StudioControllerDeps) {}
+	private handoff = 0;
+	private finishTimer: ReturnType<typeof setTimeout> | undefined;
+	private readonly fade: WindowFade;
+	constructor(private readonly deps: StudioControllerDeps) {
+		this.fade = new WindowFade(() => Boolean(deps.motionEnabled?.()));
+	}
 
 	snapshot(): StudioSnapshot {
 		const take = this.deps.take();
@@ -107,11 +120,14 @@ export class StudioController {
 	}
 
 	ownsControls(): boolean {
-		return this.mode === "studio";
+		return this.mode !== "pill";
 	}
 
 	/** Pill -> Studio. */
 	open() {
+		this.handoff++;
+		clearTimeout(this.finishTimer);
+		this.deps.cancelReview?.();
 		this.mode = "studio";
 		if (!this.deps.getPill()) {
 			if (process.platform === "linux")
@@ -143,8 +159,16 @@ export class StudioController {
 	/** Studio -> pill. While recording the pill stays tucked away until the next pause, as before. */
 	backToPill() {
 		this.mode = "pill";
-		this.hideStudio();
-		if (this.capturing()) return;
+		this.handoff++;
+		clearTimeout(this.finishTimer);
+		if (this.capturing()) return this.hideStudio();
+		if (this.window) {
+			const window = this.window;
+			window.webContents.send("studio-motion", { expanded: false });
+			this.fade.to(window, 0, 120, () => {
+				if (this.mode === "pill") this.hideStudio();
+			});
+		}
 		const pill = this.deps.getPill();
 		if (pill && !pill.isDestroyed()) {
 			pill.show();
@@ -290,12 +314,38 @@ export class StudioController {
 			this.finishWhenSaved = true;
 			return;
 		}
-		this.review = null;
-		this.mode = "pill";
+		const handoff = ++this.handoff;
 		const from = this.visible() ? this.window?.getBounds() : undefined;
-		// The review shows first, in the Studio's place, so the swap has no empty moment.
-		this.deps.openReview(from);
-		this.hideStudio();
+		let completed = false;
+		const ready = () => {
+			if (completed || handoff !== this.handoff) return;
+			completed = true;
+			clearTimeout(this.finishTimer);
+			this.review = null;
+			this.mode = "review";
+			if (this.window)
+				this.fade.to(this.window, 0, 180, () => {
+					if (handoff === this.handoff) this.hideStudio();
+				});
+		};
+		this.finishTimer = setTimeout(ready, 1500);
+		this.deps.openReview(from, ready);
+	}
+
+	private motionOrigin() {
+		const pill = this.deps.getPill();
+		if (!pill || pill.isDestroyed() || !this.window) return "center bottom";
+		const anchor = pill.getBounds();
+		const frame = this.window.getBounds();
+		const x = Math.max(
+			0,
+			Math.min(100, ((anchor.x + anchor.width / 2 - frame.x) / frame.width) * 100),
+		);
+		const y = Math.max(
+			0,
+			Math.min(100, ((anchor.y + anchor.height / 2 - frame.y) / frame.height) * 100),
+		);
+		return `${x}% ${y}%`;
 	}
 
 	private capturing(): boolean {
@@ -309,7 +359,9 @@ export class StudioController {
 
 	private hideStudio() {
 		if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return;
+		this.fade.cancel(this.window);
 		this.window.hide();
+		this.window.setOpacity?.(1);
 		// The page never learns it was hidden (it runs unthrottled), so say it.
 		this.publish();
 	}
@@ -319,12 +371,22 @@ export class StudioController {
 		if (this.mode !== "studio" || !this.ready || !this.window || this.window.isDestroyed()) return;
 		if (this.capturing() && !this.outside) return this.hideStudio();
 		if (!this.window.isVisible()) {
+			this.window.webContents.send("studio-motion", {
+				expanded: false,
+				origin: this.motionOrigin(),
+			});
+			if (this.deps.motionEnabled?.() && this.window.getOpacity?.() === 1)
+				this.window.setOpacity?.(0);
 			this.window.show();
 			this.window.focus();
 			this.publish();
 		}
+		this.window.webContents.send("studio-motion", { expanded: true });
 		const pill = this.deps.getPill();
-		if (pill && !pill.isDestroyed() && pill.isVisible()) pill.hide();
+		this.fade.to(this.window, 1, 180, () => {
+			if (this.mode === "studio" && pill && !pill.isDestroyed() && pill.isVisible()) pill.hide();
+		});
+		this.publish();
 	}
 }
 

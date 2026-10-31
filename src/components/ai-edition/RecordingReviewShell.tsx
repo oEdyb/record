@@ -426,6 +426,61 @@ export function RecordingReviewShell() {
 		return resume;
 	}, [loadProject, setCurrentTime]);
 
+	const [finishingTake, setFinishingTake] = useState(false);
+	const [handoffToken, setHandoffToken] = useState<number | null>(null);
+	useEffect(() => {
+		let alive = true;
+		const prepare = async (token: number) => {
+			setFinishingTake(true);
+			try {
+				await resumeRecordingWorkspace();
+			} catch {
+				return;
+			}
+			setLeavingForRecorder(false);
+			if (alive) setHandoffToken(token);
+		};
+		const unsubscribe = window.electronAPI?.onReviewHandoff?.((token) => void prepare(token));
+		void window.electronAPI?.getReviewHandoffToken?.().then((token) => {
+			if (token !== null && alive) void prepare(token);
+		});
+		return () => {
+			alive = false;
+			unsubscribe?.();
+		};
+	}, [resumeRecordingWorkspace]);
+	useEffect(() => {
+		if (
+			handoffToken === null ||
+			recordingReviewPending ||
+			!document ||
+			!stageRevealed ||
+			!firstFrameReady ||
+			!videoElement ||
+			videoElement.readyState < 2 ||
+			videoElement.seeking
+		)
+			return;
+		let alive = true;
+		void nextPaint().then(() => {
+			if (alive && videoElement.readyState >= 2 && !videoElement.seeking) {
+				window.electronAPI?.reviewReady?.(handoffToken);
+				setHandoffToken(null);
+				setFinishingTake(false);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, [
+		handoffToken,
+		recordingReviewPending,
+		document,
+		stageRevealed,
+		firstFrameReady,
+		videoElement,
+	]);
+
 	// A cold review window consumes a pending recording on mount. A warm one is hidden
 	// while the HUD records, then consumes the hand-off when Electron shows it again.
 	useEffect(() => {
@@ -1396,7 +1451,14 @@ export function RecordingReviewShell() {
 						)}
 						<div
 							className={styles.reviewLoading}
-							data-ready={!leavingForRecorder && (stageRevealed || (startupLoaded && !hasAsset))}
+							data-ready={
+								!leavingForRecorder &&
+								(finishingTake
+									? firstFrameReady &&
+										(videoElement?.readyState ?? 0) >= 2 &&
+										!recordingReviewPending
+									: stageRevealed || (startupLoaded && !hasAsset))
+							}
 							data-testid="review-loading"
 							aria-hidden="true"
 						>

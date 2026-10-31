@@ -725,6 +725,26 @@ function compactReviewBoundsNear(window: BrowserWindow | null) {
 const compactReviewWindows = new WeakSet<BrowserWindow>();
 /** A review that took the Studio's place keeps the Studio's frame instead of shrinking to fit. */
 const reviewsInStudioFrame = new WeakSet<BrowserWindow>();
+let reviewHandoffSequence = 0;
+let reviewHandoff: { token: number; window: BrowserWindow | null; ready: () => void } | null = null;
+ipcMain.handle("review-handoff-token", (event) =>
+	reviewHandoff?.window?.webContents === event.sender ? reviewHandoff.token : null,
+);
+ipcMain.on("review-ready", (event, token: unknown) => {
+	if (reviewHandoff?.window?.webContents !== event.sender || token !== reviewHandoff?.token) return;
+	revealStudioReview();
+});
+function revealStudioReview() {
+	const handoff = reviewHandoff;
+	if (!handoff) return;
+	reviewHandoff = null;
+	if (handoff.window && !handoff.window.isDestroyed()) {
+		handoff.window.webContents.setBackgroundThrottling(true);
+		handoff.window.show();
+		handoff.window.focus();
+	}
+	handoff.ready();
+}
 
 /** Tells review whether it is the small player, so Expand appears only then. */
 function setReviewWindowCompact(window: BrowserWindow, compact: boolean) {
@@ -767,6 +787,10 @@ function createEditorWindowWrapper(
 	options: { compactReview?: boolean; bounds?: Electron.Rectangle } = {},
 ) {
 	if (workspaceTransition?.target === "editor" && !workspaceTransition.window.isDestroyed()) {
+		if (reviewHandoff) {
+			reviewHandoff.window = workspaceTransition.window;
+			reviewHandoff.window.webContents.setBackgroundThrottling(false);
+		}
 		return;
 	}
 	const compactBounds = options.compactReview
@@ -788,8 +812,13 @@ function createEditorWindowWrapper(
 			editorWindow.setMinimumSize(800, 600);
 			editorWindow.maximize();
 		}
-		editorWindow.show();
-		editorWindow.focus();
+		if (!reviewHandoff) {
+			editorWindow.show();
+			editorWindow.focus();
+		} else {
+			reviewHandoff.window = editorWindow;
+			editorWindow.webContents.setBackgroundThrottling(false);
+		}
 		editorWindow.webContents.send("recording-workspace-returned");
 		if (previousWindow && previousWindow !== editorWindow && !previousWindow.isDestroyed()) {
 			isForceClosing = true;
@@ -799,8 +828,15 @@ function createEditorWindowWrapper(
 		return;
 	}
 	const previousWindow = mainWindow;
-	const nextEditorWindow = createEditorWindow({}, { compactBounds });
+	const nextEditorWindow = createEditorWindow(
+		{},
+		{ compactBounds, hidden: Boolean(reviewHandoff) },
+	);
 	adoptEditorWindow(nextEditorWindow, Boolean(compactBounds));
+	if (reviewHandoff) {
+		reviewHandoff.window = nextEditorWindow;
+		nextEditorWindow.webContents.setBackgroundThrottling(false);
+	}
 	if (options.bounds) reviewsInStudioFrame.add(nextEditorWindow);
 	workspaceTransition = { target: "editor", window: nextEditorWindow };
 	mainWindow = nextEditorWindow;
@@ -1191,6 +1227,7 @@ appReady?.then(async () => {
 	}
 
 	function switchToHudWrapper() {
+		const studioMode = Boolean(studio?.ownsControls());
 		if (workspaceTransition?.target === "hud" && !workspaceTransition.window.isDestroyed()) {
 			return;
 		}
@@ -1199,16 +1236,19 @@ appReady?.then(async () => {
 			!mainWindow.isDestroyed() &&
 			mainWindow.webContents.getURL().includes("windowType=hud-overlay")
 		) {
-			mainWindow.show();
-			mainWindow.focus();
+			if (!studioMode) {
+				mainWindow.show();
+				mainWindow.focus();
+			} else studio?.open();
 			return;
 		}
 		const previousWindow = mainWindow;
-		const hudWindow = createHudOverlayWindow({ returnToReview: true });
+		const hudWindow = createHudOverlayWindow({ returnToReview: true, hidden: studioMode });
 		quitCaptureGuard.protectWindow(hudWindow);
 		if (isMac || process.platform === "linux") createCameraPreviewWindow();
 		workspaceTransition = { target: "hud", window: hudWindow };
 		mainWindow = hudWindow;
+		if (studioMode) studio?.open();
 		if (!hudWindow || !previousWindow || previousWindow.isDestroyed()) return;
 		// The editor stays visible while the transparent HUD loads. Close it only
 		// when the HUD can paint, so Record feels like one workspace changing shape
@@ -1342,7 +1382,25 @@ appReady?.then(async () => {
 	studio = new StudioController({
 		take: studioTake,
 		setup: studioSetup,
-		openReview: (from) => createEditorWindowWrapper({ compactReview: true, bounds: from }),
+		openReview: (from, ready) => {
+			const token = ++reviewHandoffSequence;
+			reviewHandoff = { token, window: null, ready };
+			createEditorWindowWrapper({ compactReview: true, bounds: from });
+			reviewHandoff?.window?.webContents.send("review-handoff", token);
+			setTimeout(() => {
+				if (reviewHandoff?.token === token) revealStudioReview();
+			}, 1500);
+		},
+		cancelReview: () => {
+			if (reviewHandoff?.window && !reviewHandoff.window.isDestroyed()) {
+				reviewHandoff.window.hide();
+				reviewHandoff.window.webContents.setBackgroundThrottling(true);
+			}
+			reviewHandoff = null;
+		},
+		motionEnabled: () =>
+			process.platform === "darwin" &&
+			!systemPreferences.getAnimationSettings().prefersReducedMotion,
 		transcript: () =>
 			liveTranscript?.snapshot() ?? {
 				recordingId: null,
@@ -1358,9 +1416,6 @@ appReady?.then(async () => {
 		ensurePill: () => {
 			if (currentHudWindow()) return;
 			switchToHudWrapper();
-			const hud = currentHudWindow();
-			// The new pill shows itself once it can paint; the Studio then takes over again.
-			hud?.once("ready-to-show", () => setImmediate(() => studio?.open()));
 		},
 		createWindow: (near) => createStudioWindow(near),
 		sendToPill: (channel, payload) => currentHudWindow()?.webContents.send(channel, payload),

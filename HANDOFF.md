@@ -201,3 +201,17 @@ files match SHA-256. Full suite has 8 supply-chain policy failures across
 check-approved-dependencies, check-cargo-graphs and generate-release-inventory:
 parakeet-linux inputs are missing from the existing approval/graph policies.
 No editor import, packaged-app or new desktop capture validation was performed.
+
+
+## Studio transitions (October 31, 2026)
+
+Branch `t3/smooth-window-transitions`: Finish waits for token-matched review-ready
+or 1500 ms, preserves Studio bounds, and fades only after review can show. Studio
+mode survives review without a pill flash. Camera/replay surfaces wait for media;
+native fades retarget rapid reversals. Implementation, sources and gate evidence:
+[Studio transitions](docs/studio-window-transitions-2026-10-31.md).
+Both TypeScript checks and touched-source Biome pass; 75 targeted tests pass.
+Full suite with Homebrew FFmpeg: 3326 passed, 13 failed (eight known policy failures,
+five export tests missing compositor_view.node). Parent owns packaging, real
+60 fps transition/capture-exclusion validation and Finish/re-record cycles.
+No installed app was changed or driven.

@@ -263,6 +263,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("studio-updated", listener);
 		return () => ipcRenderer.removeListener("studio-updated", listener);
 	},
+	getReviewHandoffToken: () => ipcRenderer.invoke("review-handoff-token"),
+	reviewReady: (token: number) => ipcRenderer.send("review-ready", token),
+	onReviewHandoff: (callback: (token: number) => void) => {
+		const listener = (_event: unknown, token: number) => callback(token);
+		ipcRenderer.on("review-handoff", listener);
+		return () => ipcRenderer.removeListener("review-handoff", listener);
+	},
 	studioCommand: (command: unknown) => {
 		ipcRenderer.send("studio-command", command);
 	},
@@ -809,4 +816,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("cli-cancel-export", listener);
 		return () => ipcRenderer.removeListener("cli-cancel-export", listener);
 	},
+});
+
+let studioMotionFrame = 0;
+ipcRenderer.on("studio-motion", (_event, state: { expanded: boolean; origin?: string }) => {
+	cancelAnimationFrame(studioMotionFrame);
+	if (state.origin) document.documentElement.style.setProperty("--studio-origin", state.origin);
+	const apply = () => {
+		document.documentElement.dataset.studioExpanded = String(state.expanded);
+	};
+	if (state.expanded)
+		studioMotionFrame = requestAnimationFrame(() => {
+			studioMotionFrame = requestAnimationFrame(apply);
+		});
+	else apply();
 });
