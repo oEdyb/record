@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { StudioController, type StudioTake, type StudioWindowLike } from "./studioController";
+import { IDLE_PILL_STATE } from "./types";
 
 function fakeWindow() {
 	let visible = false;
@@ -80,6 +81,16 @@ const paused: StudioTake = { recordingId: 1, clips: [], running: true, paused: t
 const recording: StudioTake = { ...paused, paused: false };
 
 describe("StudioController", () => {
+	it("owns controls between opening Studio and returning to the pill", () => {
+		const { controller, studio } = setup(null);
+		expect(controller.ownsControls()).toBe(false);
+		controller.open();
+		studio.ready();
+		expect(controller.ownsControls()).toBe(true);
+		controller.backToPill();
+		expect(controller.ownsControls()).toBe(false);
+	});
+
 	it("shows the Studio once it is ready and tucks the pill away", () => {
 		const { controller, studio, pill } = setup(paused);
 		controller.open();
@@ -306,6 +317,23 @@ describe("StudioController", () => {
 		expect(controller.snapshot().clips).toEqual([clip]);
 		controller.sessionUpdated({ recordingId: 8, clips: [] });
 		expect(controller.snapshot().clips).toEqual([clip]);
+	});
+
+	it.each([
+		"linux",
+		"darwin",
+	] as const)("waits for the replacement pill's state on %s", (platform) => {
+		const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+		try {
+			const { controller } = setup(null, { getPill: () => null, ensurePill: vi.fn() });
+			controller.open();
+			expect(controller.snapshot().pill.controlsLocked).toBe(platform === "linux");
+			expect(controller.snapshot().pill.transportBusy).toBe(platform === "linux");
+			controller.setPillState(IDLE_PILL_STATE);
+			expect(controller.snapshot().pill.controlsLocked).toBe(false);
+		} finally {
+			platformSpy.mockRestore();
+		}
 	});
 
 	it("asks for a pill when the Studio opens without one", () => {

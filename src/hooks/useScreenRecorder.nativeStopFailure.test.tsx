@@ -381,6 +381,20 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		expect(view.result.current.recording).toBe(true);
 	}
 
+	it("finishes Linux startup while the hidden pill receives no animation frames", async () => {
+		stubNativeLinux();
+		vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+		const view = renderHook(() => useScreenRecorder());
+		await settle();
+		act(() => view.result.current.toggleRecording());
+		await settle(20);
+		expect(window.electronAPI.getPlatform()).toBe("linux");
+		expect(view.result.current.recording).toBe(true);
+		expect(view.result.current.starting).toBe(false);
+		expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+		view.unmount();
+	});
+
 	it("chooses a fresh source while idle without recording or opening audio, then releases preparation", async () => {
 		const prepare = vi.fn(async () => ({ success: true, recordingId: 7 }));
 		const stop = vi.fn(async () => ({ success: true }));

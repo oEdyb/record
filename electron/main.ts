@@ -1259,7 +1259,7 @@ appReady?.then(async () => {
 			scheduleReviewPrewarm(recording);
 			if (!tray) createTray();
 			updateTrayMenu(recording);
-			if (!recording) {
+			if (!recording && !(process.platform === "linux" && studio?.ownsControls())) {
 				showMainWindow();
 			}
 		},
@@ -1273,6 +1273,7 @@ appReady?.then(async () => {
 			),
 		{
 			ipcMain,
+			studioOwnsControls: () => studio?.ownsControls() ?? false,
 			setCameraPreviewCaptureHidden,
 			beforeCapture: async (capture) => {
 				await studio?.beforeCapture(capture);

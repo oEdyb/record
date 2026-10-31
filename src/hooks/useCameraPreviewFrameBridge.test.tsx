@@ -83,6 +83,8 @@ describe("useCameraPreviewFrameBridge", () => {
 		} else {
 			Reflect.deleteProperty(HTMLVideoElement.prototype, "cancelVideoFrameCallback");
 		}
+		Reflect.deleteProperty(HTMLVideoElement.prototype, "getVideoPlaybackQuality");
+		vi.useRealTimers();
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 	});
@@ -93,7 +95,11 @@ describe("useCameraPreviewFrameBridge", () => {
 		const reportCapturePerformance = vi.fn();
 		Object.defineProperty(window, "electronAPI", {
 			configurable: true,
-			value: { requestCameraPreviewConnection, reportCapturePerformance },
+			value: {
+				getPlatform: () => "darwin",
+				requestCameraPreviewConnection,
+				reportCapturePerformance,
+			},
 		});
 		const stream = {
 			getVideoTracks: () => [{ id: "camera-track", getSettings: () => ({ frameRate: 30 }) }],
@@ -150,11 +156,62 @@ describe("useCameraPreviewFrameBridge", () => {
 		expect(port.postMessage).toHaveBeenLastCalledWith({ type: "clear" });
 	});
 
+	it("keeps relaying on Linux when the hidden pill gets no compositor callbacks", async () => {
+		vi.useFakeTimers();
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { getPlatform: () => "linux", requestCameraPreviewConnection: vi.fn() },
+		});
+		let mediaTime = 1;
+		vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(4);
+		vi.spyOn(HTMLMediaElement.prototype, "currentTime", "get").mockImplementation(() => mediaTime);
+		const quality = vi.fn(() => ({ totalVideoFrames: 30 }));
+		Object.defineProperty(HTMLVideoElement.prototype, "getVideoPlaybackQuality", {
+			configurable: true,
+			value: quality,
+		});
+		const port = new PreviewPort();
+		const stream = {
+			getVideoTracks: () => [{ getSettings: () => ({ frameRate: 30 }) }],
+		} as unknown as MediaStream;
+		const view = renderHook(() => useCameraPreviewFrameBridge(stream));
+		await act(async () => {
+			const event = new MessageEvent("message", {
+				data: { type: "openscreen-camera-preview-port", role: "producer", consumer: "studio" },
+				source: window,
+			});
+			Object.defineProperty(event, "ports", { value: [port] });
+			window.dispatchEvent(event);
+		});
+		expect(frameCallback).toBeNull();
+		expect(transferToImageBitmap).toHaveBeenCalledOnce();
+		await act(async () => {
+			mediaTime = 2;
+			await vi.advanceTimersByTimeAsync(84);
+		});
+		expect(transferToImageBitmap).toHaveBeenCalledOnce();
+		act(() => port.dispatchEvent(new MessageEvent("message", { data: { type: "consumed" } })));
+		await act(async () => vi.advanceTimersByTimeAsync(84));
+		expect(transferToImageBitmap).toHaveBeenCalledOnce();
+		await act(async () => {
+			mediaTime = 3;
+			await vi.advanceTimersByTimeAsync(84);
+		});
+		expect(transferToImageBitmap).toHaveBeenCalledTimes(2);
+		view.unmount();
+		expect(vi.getTimerCount()).toBe(0);
+		expect(port.postMessage).toHaveBeenLastCalledWith({ type: "clear" });
+	});
+
 	it("relays at the size the monitor configures, within the 1440p cap", async () => {
 		const port = new PreviewPort();
 		Object.defineProperty(window, "electronAPI", {
 			configurable: true,
-			value: { requestCameraPreviewConnection: vi.fn(), reportCapturePerformance: vi.fn() },
+			value: {
+				getPlatform: () => "darwin",
+				requestCameraPreviewConnection: vi.fn(),
+				reportCapturePerformance: vi.fn(),
+			},
 		});
 		const stream = {
 			getVideoTracks: () => [{ id: "camera-track", getSettings: () => ({ frameRate: 30 }) }],
@@ -218,7 +275,11 @@ describe("useCameraPreviewFrameBridge", () => {
 		const studio = new PreviewPort();
 		Object.defineProperty(window, "electronAPI", {
 			configurable: true,
-			value: { requestCameraPreviewConnection: vi.fn(), reportCapturePerformance: vi.fn() },
+			value: {
+				getPlatform: () => "darwin",
+				requestCameraPreviewConnection: vi.fn(),
+				reportCapturePerformance: vi.fn(),
+			},
 		});
 		const stream = {
 			getVideoTracks: () => [{ id: "camera-track", getSettings: () => ({ frameRate: 30 }) }],

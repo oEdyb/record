@@ -24,6 +24,7 @@ export class LinuxRecordingHud {
 		private readonly afterShow: () => void = () => undefined,
 		private readonly setPreviewHidden: (hidden: boolean) => void | Promise<void> = () => undefined,
 		private readonly windowIsolation?: { begin(): Promise<boolean>; end(): void },
+		private readonly shouldShowControls: () => boolean = () => true,
 	) {}
 
 	async capture<T extends { success: boolean }>(operation: () => Promise<T>): Promise<T> {
@@ -94,6 +95,7 @@ export class LinuxRecordingHud {
 		this.windowIsolation?.end();
 		this.concealed = false;
 		void this.setPreviewHidden(false);
+		if (!this.shouldShowControls()) return;
 		const window = this.getWindow();
 		if (!window || window.isDestroyed()) return;
 		window.show();

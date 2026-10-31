@@ -368,6 +368,11 @@
 	align-self: start;
 }
 
+.root[data-platform="linux"][data-phase="idle"] .dock {
+	max-height: 100%;
+	overflow-y: auto;
+}
+
 .root[data-phase="idle"] .panes {
 	flex: none;
 }

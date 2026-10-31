@@ -10,7 +10,7 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 
-function setup(platform = "linux", sourceKind = "monitor") {
+function setup(platform = "linux", sourceKind = "monitor", shouldShowControls = () => true) {
 	let capturing = false;
 	const order: string[] = [];
 	const window = {
@@ -31,6 +31,8 @@ function setup(platform = "linux", sourceKind = "monitor") {
 		},
 		undefined,
 		previewHidden,
+		undefined,
+		shouldShowControls,
 	);
 	return {
 		hud,
@@ -44,6 +46,18 @@ function setup(platform = "linux", sourceKind = "monitor") {
 }
 
 describe("Linux recording controls", () => {
+	it("keeps the pill hidden after a Linux source choice or failure while Studio owns controls", () => {
+		let studio = true;
+		const { hud, window, previewHidden } = setup("linux", "monitor", () => !studio);
+		hud.pauseCompleted();
+		expect(window.show).not.toHaveBeenCalled();
+		expect(window.focus).not.toHaveBeenCalled();
+		expect(previewHidden).toHaveBeenCalledWith(false);
+		studio = false;
+		hud.pauseCompleted();
+		expect(window.show).toHaveBeenCalledOnce();
+	});
+
 	it("keeps a proven second-monitor pill mapped and hides when its position becomes unsafe", async () => {
 		const { window } = setup();
 		const isolation = { begin: vi.fn().mockResolvedValue(true), end: vi.fn() };

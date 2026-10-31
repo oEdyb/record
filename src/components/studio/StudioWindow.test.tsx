@@ -66,11 +66,12 @@ function snapshot(phase: StudioSnapshot["phase"]): StudioSnapshot {
 let listener: (value: StudioSnapshot) => void;
 const command = vi.fn();
 const unsubscribe = vi.fn();
-function mount(value: StudioSnapshot) {
+function mount(value: StudioSnapshot, platform = "darwin") {
 	Object.defineProperty(window, "electronAPI", {
 		configurable: true,
 		value: {
-			getPlatform: () => "darwin",
+			getPlatform: () => platform,
+			getSources: vi.fn(async () => []),
 			getStudioSnapshot: vi.fn(async () => value),
 			onStudioUpdated: (cb: typeof listener) => {
 				listener = cb;
@@ -126,6 +127,22 @@ describe("Studio phase controls", () => {
 		);
 		expect(screen.getAllByRole("status")).toHaveLength(1);
 	});
+	it("asks the pill for the Linux portal instead of enumerating an empty picker", async () => {
+		mount(snapshot("idle"), "linux");
+		fireEvent.click(await screen.findByRole("button", { name: "Display" }));
+		expect(screen.getByTestId("studio-window")).toHaveAttribute("data-platform", "linux");
+		expect(command).toHaveBeenCalledWith("choose-source");
+		expect(window.electronAPI.getSources).not.toHaveBeenCalled();
+		expect(screen.queryByRole("dialog")).toBeNull();
+	});
+	it("keeps the shared source dialog on macOS", async () => {
+		mount(snapshot("idle"), "darwin");
+		fireEvent.click(await screen.findByRole("button", { name: "Display" }));
+		expect(await screen.findByRole("dialog")).toBeInTheDocument();
+		expect(window.electronAPI.getSources).toHaveBeenCalled();
+		expect(command).not.toHaveBeenCalledWith("choose-source");
+	});
+
 	it("sends setup intents and waits for acknowledgement", async () => {
 		mount(snapshot("idle"));
 		fireEvent.click(await screen.findByRole("button", { name: "permissions.microphone" }));

@@ -148,6 +148,7 @@ export function StudioWindow() {
 			className={styles.root}
 			data-testid="studio-window"
 			data-phase={phase}
+			data-platform={platform}
 			style={{ "--studio-font-delta": `${fontDelta}px` } as CSSProperties}
 		>
 			<StudioHeader

@@ -1766,6 +1766,7 @@ export function registerIpcHandlers(
 	isPrivateRecordingUiPoint?: (point: { x: number; y: number }) => boolean,
 	options: {
 		restoreInterruptedRecording?: boolean;
+		studioOwnsControls?: () => boolean;
 		enableCleanVoiceJobs?: boolean;
 		setCameraPreviewCaptureHidden?: (
 			hidden: boolean,
@@ -2593,6 +2594,12 @@ export function registerIpcHandlers(
 		success: rendererRecordingStop.acknowledge(event.sender, acknowledgement),
 	}));
 
+	const beforeNativeCapture = () =>
+		options.beforeCapture?.({
+			pipeWireNodeId: process.platform === "linux" ? linuxClipMetadata?.pipeWireNodeId : undefined,
+			windowSource: process.platform === "linux" && linuxClipMetadata?.sourceKind === "window",
+		});
+
 	const prepareNativeLinuxRecording = (
 		request: NativeMacRecordingRequest,
 	): Promise<NativeMacRecordingStartResult> =>
@@ -2641,11 +2648,7 @@ export function registerIpcHandlers(
 			await startupRecordingRecovery;
 			const result = await invokeNativeLinux(async (service) => {
 				const config = linuxClipRecordingRequest(request);
-				const studioAside = () =>
-					options.beforeCapture?.({
-						pipeWireNodeId: linuxClipMetadata?.pipeWireNodeId,
-						windowSource: linuxClipMetadata?.sourceKind === "window",
-					});
+				const studioAside = beforeNativeCapture;
 				if (!service.isRunning()) {
 					const prepared = await prepareNativeLinuxRecording(config);
 					if (!prepared.success) return prepared;
@@ -2675,10 +2678,7 @@ export function registerIpcHandlers(
 		"resume-native-linux-recording",
 		async (_, request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
 			options.onTakeEvent?.({ kind: "resuming" });
-			await options.beforeCapture?.({
-				pipeWireNodeId: linuxClipMetadata?.pipeWireNodeId,
-				windowSource: linuxClipMetadata?.sourceKind === "window",
-			});
+			await beforeNativeCapture();
 			const result = await invokeNativeLinux((service) =>
 				recordingHud.capture(() =>
 					service.resume(request ? linuxClipRecordingRequest(request) : undefined),
@@ -3066,6 +3066,7 @@ export function registerIpcHandlers(
 			begin: () => hudCaptureGuard.begin(linuxClipMetadata?.pipeWireNodeId),
 			end: () => hudCaptureGuard.end(),
 		},
+		() => !options.studioOwnsControls?.(),
 	);
 	const invalidateHudCapture = () => hudCaptureGuard.invalidate();
 	screen.on("display-removed", invalidateHudCapture);
@@ -3246,7 +3247,7 @@ export function registerIpcHandlers(
 			if (rejection) return rejection;
 			timeline.mark("entitled");
 			await startupRecordingRecovery;
-			await options.beforeCapture?.({ pipeWireNodeId: undefined, windowSource: false });
+			await beforeNativeCapture();
 			let result = await invokeNativeMac(() =>
 				recordingHud.capture(() => getNativeMacRecordingService().start(request)),
 			);
@@ -3336,7 +3337,7 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
 		options.onTakeEvent?.({ kind: "resuming" });
-		await options.beforeCapture?.({ pipeWireNodeId: undefined, windowSource: false });
+		await beforeNativeCapture();
 		const result = await timeClipBoundary("continue", () =>
 			invokeNativeMac(() =>
 				recordingHud.capture(() => getNativeMacRecordingService().resume(request)),

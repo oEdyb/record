@@ -106,10 +106,18 @@ export class StudioController {
 		};
 	}
 
+	ownsControls(): boolean {
+		return this.mode === "studio";
+	}
+
 	/** Pill -> Studio. */
 	open() {
 		this.mode = "studio";
-		if (!this.deps.getPill()) this.deps.ensurePill?.();
+		if (!this.deps.getPill()) {
+			if (process.platform === "linux")
+				this.pill = { ...IDLE_PILL_STATE, controlsLocked: true, transportBusy: true };
+			this.deps.ensurePill?.();
+		}
 		this.wasRunning = Boolean(this.deps.take()?.running);
 		const pill = this.deps.getPill();
 		const bounds = pill && !pill.isDestroyed() ? pill.getBounds() : undefined;

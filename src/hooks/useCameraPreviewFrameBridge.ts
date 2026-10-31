@@ -171,15 +171,22 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 
 		let stopped = false;
 		let callbackId = 0;
+		let timerId: ReturnType<typeof setTimeout> | undefined;
+		const linux = window.electronAPI?.getPlatform?.() === "linux";
+		let previousPresentedFrames: number | null = null;
 		let deliveryStartedAt = 0;
 		let deliveredFrames = 0;
 		let clockOrigin: { mediaTime: number; presentedFrames: number } | null = null;
 		let latestTimestampDriftMs: number | undefined;
 		const sourceFrameRate = track.getSettings().frameRate;
 		const frameIntervalMs = 1_000 / MAX_PREVIEW_FPS;
-		const sendFrame: VideoFrameRequestCallback = (now, metadata) => {
+		const sendFrame = (
+			now: number,
+			metadata: Pick<VideoFrameCallbackMetadata, "mediaTime" | "presentedFrames">,
+		) => {
 			if (stopped) return;
 			if (
+				!linux &&
 				typeof sourceFrameRate === "number" &&
 				sourceFrameRate > 0 &&
 				Number.isFinite(metadata.mediaTime) &&
@@ -198,7 +205,11 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 				}
 			}
 			if (deliveryStartedAt === 0) deliveryStartedAt = now;
-			deliveredFrames += 1;
+			deliveredFrames +=
+				linux && previousPresentedFrames !== null
+					? Math.max(0, metadata.presentedFrames - previousPresentedFrames)
+					: 1;
+			previousPresentedFrames = metadata.presentedFrames;
 			const deliveryWindowMs = now - deliveryStartedAt;
 			if (deliveryWindowMs >= 5_000 && deliveredFrames > 1) {
 				window.electronAPI?.reportCapturePerformance?.({
@@ -221,13 +232,31 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 				consumer.inFlight = true;
 				consumer.port.postMessage({ type: "frame", bitmap }, [bitmap]);
 			}
-			callbackId = video.requestVideoFrameCallback(sendFrame);
+		};
+		const onVideoFrame: VideoFrameRequestCallback = (now, metadata) => {
+			sendFrame(now, metadata);
+			if (!stopped) callbackId = video.requestVideoFrameCallback(onVideoFrame);
+		};
+		// Wayland stops compositor callbacks for a hidden pill, even with backgroundThrottling off.
+		let previousMediaTime = -1;
+		const pollFrame = () => {
+			if (stopped) return;
+			if (video.readyState >= 2 && video.currentTime !== previousMediaTime) {
+				previousMediaTime = video.currentTime;
+				sendFrame(performance.now(), {
+					mediaTime: video.currentTime,
+					presentedFrames: video.getVideoPlaybackQuality().totalVideoFrames,
+				});
+			}
+			timerId = setTimeout(pollFrame, Math.ceil(frameIntervalMs));
 		};
 
 		void video
 			.play()
 			.then(() => {
-				if (!stopped) callbackId = video.requestVideoFrameCallback(sendFrame);
+				if (stopped) return;
+				if (linux) pollFrame();
+				else callbackId = video.requestVideoFrameCallback(onVideoFrame);
 			})
 			.catch(() => {
 				if (!stopped) clearAll();
@@ -236,6 +265,7 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 		return () => {
 			stopped = true;
 			if (callbackId) video.cancelVideoFrameCallback(callbackId);
+			if (timerId !== undefined) clearTimeout(timerId);
 			video.pause();
 			video.srcObject = null;
 			for (const consumer of consumers.current.values()) consumer.inFlight = false;

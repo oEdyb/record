@@ -151,7 +151,15 @@ export function StudioSetup({
 	return (
 		<>
 			<div className={styles.setup}>
-				<button type="button" disabled={locked} onClick={() => setDialog("source")}>
+				<button
+					type="button"
+					disabled={locked}
+					onClick={() =>
+						window.electronAPI.getPlatform() === "linux"
+							? send("choose-source")
+							: setDialog("source")
+					}
+				>
 					<Monitor size={16} />
 					{setup.source?.name ?? t("deviceSettings.source")}
 				</button>
