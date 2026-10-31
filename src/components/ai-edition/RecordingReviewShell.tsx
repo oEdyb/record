@@ -428,9 +428,18 @@ export function RecordingReviewShell() {
 
 	const [finishingTake, setFinishingTake] = useState(false);
 	const [handoffToken, setHandoffToken] = useState<number | null>(null);
+	// A warm window still holds the previous take's decoded frame; only a frame presented
+	// after the hand-off began belongs to the take being finished.
+	const [handoffFramePresented, setHandoffFramePresented] = useState(false);
+	useEffect(() => {
+		if (!finishingTake || handoffFramePresented || !videoElement) return;
+		const id = videoElement.requestVideoFrameCallback(() => setHandoffFramePresented(true));
+		return () => videoElement.cancelVideoFrameCallback(id);
+	}, [finishingTake, handoffFramePresented, videoElement]);
 	useEffect(() => {
 		let alive = true;
 		const prepare = async (token: number) => {
+			setHandoffFramePresented(false);
 			setFinishingTake(true);
 			try {
 				await resumeRecordingWorkspace();
@@ -452,6 +461,7 @@ export function RecordingReviewShell() {
 	useEffect(() => {
 		if (
 			handoffToken === null ||
+			!handoffFramePresented ||
 			recordingReviewPending ||
 			!document ||
 			!stageRevealed ||
@@ -474,6 +484,7 @@ export function RecordingReviewShell() {
 		};
 	}, [
 		handoffToken,
+		handoffFramePresented,
 		recordingReviewPending,
 		document,
 		stageRevealed,
@@ -1454,7 +1465,8 @@ export function RecordingReviewShell() {
 							data-ready={
 								!leavingForRecorder &&
 								(finishingTake
-									? firstFrameReady &&
+									? handoffFramePresented &&
+										firstFrameReady &&
 										(videoElement?.readyState ?? 0) >= 2 &&
 										!recordingReviewPending
 									: stageRevealed || (startupLoaded && !hasAsset))
