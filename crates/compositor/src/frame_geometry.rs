@@ -1602,7 +1602,7 @@ mod tests {
             screen_tex_px: [1920.0, 1088.0],
             screen_visible_px: [1920.0, 1080.0],
             webcam_visible_px: [1280.0, 720.0],
-            u_max: 1920.0 / 1920.0,
+            u_max: 1.0,
             v_max: 1080.0 / 1088.0,
             frame: 90.0,
             cfg,

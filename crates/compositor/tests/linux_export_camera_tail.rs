@@ -4,7 +4,7 @@ use openscreen_compositor::{
     compositor::Compositor,
     config::Cfg,
     d3d::Gpu,
-    pipeline::{run_composited_multi, ClipSource, ExportParams},
+    pipeline::{run_composited_multi, ClipSource, Decoder, ExportParams},
 };
 use std::path::PathBuf;
 
@@ -17,7 +17,7 @@ fn fixture(name: &str) -> String {
         .into_owned()
 }
 
-fn export_frames(requested_end: f64) -> u64 {
+fn export_frames(requested_end: f64, width: u32, height: u32) -> u64 {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock")
@@ -27,7 +27,7 @@ fn export_frames(requested_end: f64) -> u64 {
     std::fs::create_dir(&directory).expect("export directory");
     let output = directory.join("render.mp4");
     let gpu = Gpu::create_auto(false).expect("Vulkan export backend");
-    let comp = Compositor::new_sized(&gpu, 64, 64).expect("compositor");
+    let comp = Compositor::new_sized(&gpu, width, height).expect("compositor");
     let clip = ClipSource {
         screen: fixture("seek-eof-vfr.mp4"),
         webcam: fixture("seek-eof-fragmented.mp4"),
@@ -38,8 +38,8 @@ fn export_frames(requested_end: f64) -> u64 {
         clean_microphone: None,
     };
     let params = ExportParams {
-        width: 64,
-        height: 64,
+        width,
+        height,
         fps: Some(60),
         ..ExportParams::default()
     };
@@ -53,13 +53,22 @@ fn export_frames(requested_end: f64) -> u64 {
         &mut |_| Ok(()),
     )
     .expect("render and finalize shorter-camera export");
+    let mut decoded = 0;
+    unsafe {
+        let mut decoder = Decoder::open(output.to_str().expect("output path"), &gpu)
+            .expect("open finalized export");
+        while !decoder.next().expect("decode exported frame").is_null() {
+            decoded += 1;
+        }
+    }
     std::fs::remove_dir_all(directory).expect("remove test export");
+    assert_eq!(decoded, stats.frames, "every encoded frame must decode");
     stats.frames
 }
 
 #[test]
 fn shorter_camera_holds_its_last_frame_without_trimming_the_screen() {
-    let frames = export_frames(2.0);
+    let frames = export_frames(2.0, 64, 64);
     assert_eq!(
         frames, 120,
         "camera EOF must not shorten the screen timeline"
@@ -68,6 +77,11 @@ fn shorter_camera_holds_its_last_frame_without_trimming_the_screen() {
 
 #[test]
 fn screen_eof_still_bounds_a_request_beyond_the_screen_media() {
-    let frames = export_frames(3.0);
+    let frames = export_frames(3.0, 64, 64);
     assert_eq!(frames, 120, "screen media remains the authoritative bound");
+}
+
+#[test]
+fn finalized_export_decodes_every_composited_frame() {
+    assert_eq!(export_frames(2.0, 320, 180), 120);
 }
