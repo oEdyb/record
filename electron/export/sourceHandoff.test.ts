@@ -471,7 +471,8 @@ it("exports a self-contained clock, file hashes, edit maps and unchanged cursor 
 		],
 	});
 	await fs.writeFile(`${doc.assets[0].originalPath}.cursor.json`, sidecar);
-	const result = await exportSourceHandoff(doc, root, (file) => file, {
+	const mediaOnly = (file: string) => (file.endsWith(".json") ? null : file);
+	const result = await exportSourceHandoff(doc, root, mediaOnly, {
 		keep: [
 			{ assetId: "a", startSec: 0, endSec: 1 },
 			{ assetId: "a", startSec: 5, endSec: 7 },
@@ -539,6 +540,16 @@ it("exports a self-contained clock, file hashes, edit maps and unchanged cursor 
 		}),
 	);
 	expect(manifest.transcript.available).toBe(false);
+});
+
+it("refuses a cursor sidecar that links away from its screen recording", async () => {
+	const doc = await fixture();
+	const elsewhere = path.join(root, "elsewhere.json");
+	await fs.writeFile(elsewhere, "{}");
+	await fs.symlink(elsewhere, `${doc.assets[0].originalPath}.cursor.json`);
+	await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow(
+		"Cursor telemetry must be a regular file next to its screen recording.",
+	);
 });
 
 it("names different recordings distinctly and declares absent cursor data", async () => {

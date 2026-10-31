@@ -42,12 +42,7 @@ async function cursorCaptureMode(screen: string) {
 	);
 }
 
-export async function copyHandoffCursor(
-	screen: string,
-	prefix: string,
-	directory: string,
-	approve: (file: string) => string | null,
-) {
+export async function copyHandoffCursor(screen: string, prefix: string, directory: string) {
 	const source = `${screen}.cursor.json`;
 	const captureMode = await cursorCaptureMode(screen);
 	const exists = await fs.stat(source).catch((error: NodeJS.ErrnoException) => {
@@ -62,7 +57,8 @@ export async function copyHandoffCursor(
 			reason: "No cursor sidecar next to the screen file.",
 		};
 	const canonical = await fs.realpath(source);
-	if (!approve(canonical)) throw new Error("Cursor telemetry was not approved.");
+	if (canonical !== source)
+		throw new Error("Cursor telemetry must be a regular file next to its screen recording.");
 	const bytes = await fs.readFile(canonical);
 	const data = sidecarSchema.parse(JSON.parse(bytes.toString("utf8")));
 	const file = `${prefix}-cursor.json`;

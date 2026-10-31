@@ -193,7 +193,6 @@ export async function exportSourceHandoff(
 				paths.get(asset.originalPath)!,
 				`${String(index + 1).padStart(3, "0")}-${shortSourceId(asset.id)}`,
 				directory,
-				resolveApprovedPath,
 			);
 			sources.push({
 				assetId: asset.id,
