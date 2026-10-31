@@ -108,6 +108,10 @@ interface Window {
 			callback: (snapshot: import("./studio/types").StudioSnapshot) => void,
 		) => () => void;
 		studioCommand: (command: import("./studio/types").StudioCommand) => void;
+		reportStudioPillState: (state: import("./studio/types").StudioPillState) => void;
+		onStudioSetupCommand: (
+			callback: (command: import("./studio/types").PillSetupCommand) => void,
+		) => () => void;
 		onHudRemovePreviousClip?: (callback: () => void) => () => void;
 		getTranscriptSnapshot: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
 		refreshTranscript: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;

@@ -23,7 +23,7 @@ export function StudioSeekBar({
 	const seekFromPointer = (clientX: number) => {
 		const rect = trackRef.current?.getBoundingClientRect();
 		if (!rect || rect.width <= 0) return;
-		onSeek(((clientX - rect.left) / rect.width) * total);
+		onSeek(Math.min(total, Math.max(0, ((clientX - rect.left) / rect.width) * total)));
 	};
 	return (
 		<>
@@ -35,6 +35,7 @@ export function StudioSeekBar({
 				aria-valuemin={0}
 				aria-valuemax={Math.round(total)}
 				aria-valuenow={Math.round(position)}
+				aria-valuetext={`${formatTimePadded(Math.floor(position))} / ${formatTimePadded(Math.round(total))}`}
 				className={peek.clipPeekTrack}
 				onKeyDown={(event) => {
 					const target = {
@@ -45,7 +46,8 @@ export function StudioSeekBar({
 					}[event.key];
 					if (target === undefined) return;
 					event.preventDefault();
-					onSeek(target);
+					event.stopPropagation();
+					onSeek(Math.min(total, Math.max(0, target)));
 				}}
 				onPointerDown={(event) => {
 					event.currentTarget.setPointerCapture(event.pointerId);

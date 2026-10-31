@@ -172,6 +172,7 @@ import { RendererRecordingStop } from "../recording/rendererRecordingStop";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { recordingsDirectory } from "../recordingPaths";
+import type { StudioSetup } from "../studio/types";
 import { registerLocalFontIpc } from "./localFont";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
@@ -227,6 +228,29 @@ export async function stopNativeMacCaptureForQuit(): Promise<void> {
 }
 
 /** The current take for the Studio; null before the recorder exists. */
+/** The recording setup the Studio shows: main's saved choices and the selected source. */
+export function studioSetup(): StudioSetup {
+	const prefs = recordingPrefsStore.peek();
+	const source = selectedSource;
+	return {
+		source:
+			source && typeof source.id === "string"
+				? {
+						id: source.id,
+						name: source.name,
+						kind: source.id.startsWith("window:") ? "window" : "display",
+					}
+				: null,
+		micEnabled: prefs.micEnabled,
+		micDeviceId: prefs.micDeviceId,
+		cameraEnabled: prefs.camEnabled,
+		cameraDeviceId: prefs.camDeviceId,
+		systemAudioEnabled: prefs.systemAudioEnabled,
+		cursorCaptureMode: prefs.cursorCaptureMode,
+		recordingQuality: prefs.recordingQuality,
+	};
+}
+
 export function studioTake() {
 	return nativeMacRecordingService?.studioTake() ?? null;
 }
@@ -1742,6 +1766,8 @@ export function registerIpcHandlers(
 			pipeWireNodeId?: number,
 		) => void | Promise<void>;
 		ipcMain?: RendererIpcMain;
+		/** The saved recording setup or the selected source changed. */
+		onRecordingSetupChanged?: () => void;
 		/** A take's clips changed: a clip finished on Pause, capture is resuming, or Stop stored it. */
 		onTakeEvent?: (event: TakeEvent) => void;
 		/** Runs before capture starts or resumes, so a window on the recorded screen can step aside first. */
@@ -1753,6 +1779,11 @@ export function registerIpcHandlers(
 	} = {},
 ): Promise<boolean> {
 	const ipcMain = options.ipcMain ?? electronIpcMain;
+	// The Studio reads the setup synchronously; load it once so it never shows defaults.
+	void recordingPrefsStore.get().then(
+		() => options.onRecordingSetupChanged?.(),
+		() => undefined,
+	);
 	isDirectionExcludedPoint = isPrivateRecordingUiPoint ?? (() => false);
 	const { config: entitlementConfig, service: entitlementService } = createEntitlementService({
 		userDataPath: app.getPath("userData"),
@@ -2227,6 +2258,7 @@ export function registerIpcHandlers(
 				if (mainWin && !mainWin.isDestroyed()) {
 					mainWin.webContents.send("selected-source-changed", selectedSource);
 				}
+				options.onRecordingSetupChanged?.();
 				const sourceSelectorWin = getSourceSelectorWindow();
 				if (sourceSelectorWin) {
 					sourceSelectorWin.close();
@@ -2262,6 +2294,7 @@ export function registerIpcHandlers(
 					appWindow.webContents.send("recording-prefs-changed", recordingPrefs);
 				}
 			}
+			options.onRecordingSetupChanged?.();
 			return recordingPrefs;
 		}),
 	);

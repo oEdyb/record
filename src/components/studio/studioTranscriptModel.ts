@@ -10,7 +10,13 @@ export interface StudioSentence {
 	endTakeSec: number;
 }
 
-export type StudioSectionState = "text" | "recording" | "transcribing" | "waiting" | "error";
+export type StudioSectionState =
+	| "text"
+	| "silent"
+	| "recording"
+	| "transcribing"
+	| "waiting"
+	| "error";
 
 export interface StudioSection {
 	clipIndex: number;
@@ -73,9 +79,11 @@ export function buildStudioSections(snapshot: StudioSnapshot): StudioSection[] {
 			? "text"
 			: entry?.error
 				? "error"
-				: transcribing
-					? "transcribing"
-					: "waiting";
+				: typeof entry?.text === "string"
+					? "silent"
+					: transcribing
+						? "transcribing"
+						: "waiting";
 		return {
 			clipIndex: clip.index,
 			startSec: start,

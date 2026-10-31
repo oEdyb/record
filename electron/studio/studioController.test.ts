@@ -35,6 +35,7 @@ function setup(take: StudioTake | null, outside = false) {
 	pill.window.show();
 	const state = { take };
 	const sendToPill = vi.fn();
+	const openReview = vi.fn();
 	const outsideCapture = vi.fn(async () => outside);
 	const controller = new StudioController({
 		take: () => state.take,
@@ -47,6 +48,17 @@ function setup(take: StudioTake | null, outside = false) {
 			error: null,
 			updatedAt: 0,
 		}),
+		setup: () => ({
+			source: null,
+			micEnabled: true,
+			micDeviceId: null,
+			cameraEnabled: true,
+			cameraDeviceId: null,
+			systemAudioEnabled: false,
+			cursorCaptureMode: "system",
+			recordingQuality: "high",
+		}),
+		openReview,
 		getPill: () => pill.window,
 		createWindow: () => studio.window,
 		sendToPill,
@@ -55,7 +67,7 @@ function setup(take: StudioTake | null, outside = false) {
 		waitForUnmap: async () => undefined,
 		now: () => 1_000,
 	});
-	return { controller, studio, pill, state, sendToPill, outsideCapture };
+	return { controller, studio, pill, state, sendToPill, outsideCapture, openReview };
 }
 
 const paused: StudioTake = { recordingId: 1, clips: [], running: true, paused: true };
@@ -223,5 +235,99 @@ describe("StudioController", () => {
 		sendToPill.mockClear();
 		controller.command("stop");
 		expect(sendToPill).not.toHaveBeenCalled();
+	});
+
+	it("keeps a take stopped in the Studio for read-back, and Finish hands it to the review", () => {
+		const { controller, studio, state, openReview } = setup(paused);
+		controller.open();
+		studio.ready();
+		controller.sync();
+		const clip = { index: 0, durationMs: 1_000, removed: false } as StudioTake["clips"][number];
+		const removed = { ...clip, index: 1, removed: true };
+		controller.stored({ recordingId: 7, clips: [clip, removed] });
+		state.take = { recordingId: 7, clips: [], running: false, paused: false };
+		controller.sync();
+		expect(controller.keepsReview()).toBe(true);
+		expect(studio.visible()).toBe(true);
+		const snapshot = controller.snapshot();
+		expect(snapshot.phase).toBe("review");
+		expect(snapshot.recordingId).toBe(7);
+		expect(snapshot.clips).toEqual([clip]);
+
+		controller.command("finish");
+		expect(openReview).toHaveBeenCalledOnce();
+		expect(studio.visible()).toBe(false);
+		expect(controller.keepsReview()).toBe(false);
+	});
+
+	it("waits for the pill to finish saving before Finish opens the review", () => {
+		const { controller, studio, state, openReview } = setup(paused);
+		controller.open();
+		studio.ready();
+		controller.sync();
+		const pillState = {
+			controlsLocked: true,
+			canRemovePreviousClip: false,
+			undoClipIndex: null,
+			countingDown: false,
+			transportBusy: true,
+			canPause: false,
+			saving: true,
+		};
+		controller.setPillState(pillState);
+		controller.stored({ recordingId: 7, clips: [] });
+		state.take = { recordingId: 7, clips: [], running: false, paused: false };
+		controller.sync();
+		controller.command("pill");
+		expect(openReview).not.toHaveBeenCalled();
+		expect(studio.visible()).toBe(true);
+		controller.setPillState({ ...pillState, saving: false, transportBusy: false });
+		expect(openReview).toHaveBeenCalledOnce();
+		expect(studio.visible()).toBe(false);
+	});
+
+	it("drops an older read-back when a later take is saved from the pill", () => {
+		const { controller, studio, state } = setup(paused);
+		controller.open();
+		studio.ready();
+		controller.sync();
+		controller.stored({ recordingId: 7, clips: [] });
+		state.take = { recordingId: 7, clips: [], running: false, paused: false };
+		controller.sync();
+		controller.command("finish");
+		controller.stored({ recordingId: 8, clips: [] });
+		expect(controller.keepsReview()).toBe(false);
+		expect(controller.snapshot().phase).not.toBe("review");
+	});
+
+	it("lets the normal review open when the take ends from the pill", () => {
+		const { controller, state } = setup(paused);
+		controller.stored({ recordingId: 7, clips: [] });
+		state.take = { recordingId: 7, clips: [], running: false, paused: false };
+		controller.sync();
+		expect(controller.keepsReview()).toBe(false);
+	});
+
+	it("routes setup commands to the pill's own handlers and mirrors its state", () => {
+		const { controller, sendToPill } = setup(paused);
+		controller.command("toggle-camera");
+		controller.command({ kind: "select-mic", deviceId: "mic-2", name: "USB" });
+		expect(sendToPill).toHaveBeenCalledWith("studio-setup-command", "toggle-camera");
+		expect(sendToPill).toHaveBeenCalledWith("studio-setup-command", {
+			kind: "select-mic",
+			deviceId: "mic-2",
+			name: "USB",
+		});
+		controller.setPillState({
+			controlsLocked: true,
+			canRemovePreviousClip: true,
+			undoClipIndex: 3,
+			countingDown: false,
+			transportBusy: false,
+			canPause: false,
+			saving: false,
+		});
+		expect(controller.snapshot().pill.undoClipIndex).toBe(3);
+		expect(controller.snapshot().setup.micEnabled).toBe(true);
 	});
 });

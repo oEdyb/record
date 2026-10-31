@@ -1,6 +1,12 @@
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
 import type { TranscriptSnapshot } from "../transcript/liveTranscript";
-import type { StudioCommand, StudioSnapshot } from "./types";
+import {
+	IDLE_PILL_STATE,
+	type StudioCommand,
+	type StudioPillState,
+	type StudioSetup,
+	type StudioSnapshot,
+} from "./types";
 
 /** The parts of a BrowserWindow the controller drives. */
 export interface StudioWindowLike {
@@ -25,10 +31,14 @@ export interface StudioTake {
 export interface StudioControllerDeps {
 	take: () => StudioTake | null;
 	transcript: () => TranscriptSnapshot;
+	/** The recording setup as main stores it; the pill applies every change to it. */
+	setup: () => StudioSetup;
 	getPill: () => StudioWindowLike | null;
 	createWindow: (near: { x: number; y: number } | undefined) => StudioWindowLike;
 	/** Sends one of the pill's existing commands, so its own predicates decide. */
-	sendToPill: (channel: string) => void;
+	sendToPill: (channel: string, payload?: unknown) => void;
+	/** Hands a stopped take to the normal review, where it is saved and exported. */
+	openReview: () => void;
 	/** True only when the compositor confirms the Studio is off the recorded output. */
 	outsideCapture: (pipeWireNodeId: number | undefined) => Promise<boolean>;
 	endCaptureCheck: () => void;
@@ -63,16 +73,22 @@ export class StudioController {
 	/** Whether a take was running at the last look; its end hands over to the review. */
 	private wasRunning = false;
 	private liveSinceMs: number | null = null;
+	/** A stopped take the Studio keeps for read-back until Finish hands it to the review. */
+	private review: { recordingId: number; clips: RecordingSessionClip[] } | null = null;
+	private pill: StudioPillState = IDLE_PILL_STATE;
+	/** Finish was asked for while the pill was still saving; it runs once the save ends. */
+	private finishWhenSaved = false;
 
 	constructor(private readonly deps: StudioControllerDeps) {}
 
 	snapshot(): StudioSnapshot {
 		const take = this.deps.take();
 		const capturing = Boolean(take?.running && !take.paused);
-		const clips = take?.clips ?? [];
+		const review = take?.running ? null : this.review;
+		const clips = review?.clips ?? take?.clips ?? [];
 		return {
-			phase: !take?.running ? "idle" : take.paused ? "paused" : "recording",
-			recordingId: take?.recordingId ?? null,
+			phase: review ? "review" : !take?.running ? "idle" : take.paused ? "paused" : "recording",
+			recordingId: review?.recordingId ?? take?.recordingId ?? null,
 			clips,
 			committedMs: clips.reduce((sum, clip) => sum + Math.max(0, clip.durationMs), 0),
 			liveSinceMs: capturing ? this.liveSinceMs : null,
@@ -80,6 +96,8 @@ export class StudioController {
 			holdPlayback: capturing || this.resuming,
 			shown: this.visible(),
 			transcript: this.deps.transcript(),
+			setup: this.deps.setup(),
+			pill: this.pill,
 		};
 	}
 
@@ -122,16 +140,55 @@ export class StudioController {
 
 	command(command: StudioCommand) {
 		const take = this.deps.take();
-		if (command === "pill") return this.backToPill();
-		if (command === "record") {
-			if (!take?.running) this.deps.sendToPill("hud-start-recording");
+		if (typeof command === "object" || isSetupCommand(command)) {
+			this.deps.sendToPill("studio-setup-command", command);
 			return;
 		}
+		// Leaving a stopped take, by Finish or by going back to the pill, hands it to the review.
+		if (command === "finish" || (command === "pill" && this.reviewing())) return this.finish();
+		if (command === "pill") return this.backToPill();
+		if (command === "record") {
+			if (take?.running) return;
+			this.review = null;
+			this.deps.sendToPill("hud-start-recording");
+			return;
+		}
+		if (command === "record-more") return;
 		if (!take?.running) return;
 		if (command === "pause" && !take.paused) this.deps.sendToPill("hud-toggle-recording-pause");
 		if (command === "resume" && take.paused) this.deps.sendToPill("hud-toggle-recording-pause");
 		if (command === "stop") this.deps.sendToPill("stop-recording-from-tray");
 		if (command === "remove-last") this.deps.sendToPill("hud-remove-previous-clip");
+	}
+
+	/** The take was saved. Shown in the Studio, it stays there for read-back. */
+	stored(take: { recordingId: number; clips: RecordingSessionClip[] }) {
+		// A take saved from the pill replaces any older read-back the Studio still held.
+		if (this.mode !== "studio") {
+			this.review = null;
+			this.finishWhenSaved = false;
+			return this.publish();
+		}
+		this.review = { recordingId: take.recordingId, clips: take.clips.filter((c) => !c.removed) };
+		this.publish();
+	}
+
+	/**
+	 * The pill asks for the normal review after Stop. True when the Studio keeps the take
+	 * instead; Finish opens the review later.
+	 */
+	keepsReview(): boolean {
+		return this.mode === "studio" && this.review !== null;
+	}
+
+	/** The pill reports its own locks and Undo, which the Studio mirrors. */
+	setPillState(state: StudioPillState) {
+		this.pill = state;
+		if (this.finishWhenSaved && !state.saving) {
+			this.finishWhenSaved = false;
+			return this.finish();
+		}
+		this.publish();
 	}
 
 	/** Capture is about to resume: keep the Studio only off the recorded screen. */
@@ -184,7 +241,7 @@ export class StudioController {
 		const running = Boolean(take?.running);
 		const ended = this.wasRunning && !running;
 		this.wasRunning = running;
-		if (ended && this.mode === "studio") {
+		if (ended && this.mode === "studio" && !this.review) {
 			this.mode = "pill";
 			this.hideStudio();
 		}
@@ -194,6 +251,23 @@ export class StudioController {
 	publish() {
 		if (this.window && !this.window.isDestroyed())
 			this.window.webContents.send("studio-updated", this.snapshot());
+	}
+
+	private reviewing(): boolean {
+		return this.review !== null && !this.deps.take()?.running;
+	}
+
+	private finish() {
+		if (!this.reviewing()) return;
+		// Opening the review while the pill still attaches camera clips would cut that save short.
+		if (this.pill.saving) {
+			this.finishWhenSaved = true;
+			return;
+		}
+		this.review = null;
+		this.mode = "pill";
+		this.hideStudio();
+		this.deps.openReview();
 	}
 
 	private capturing(): boolean {
@@ -224,4 +298,18 @@ export class StudioController {
 		const pill = this.deps.getPill();
 		if (pill && !pill.isDestroyed() && pill.isVisible()) pill.hide();
 	}
+}
+
+const SETUP_COMMANDS = new Set<StudioCommand>([
+	"undo-remove",
+	"toggle-mic",
+	"toggle-camera",
+	"toggle-system-audio",
+	"choose-source",
+	"open-notes",
+	"cancel-countdown",
+]);
+
+function isSetupCommand(command: StudioCommand): boolean {
+	return SETUP_COMMANDS.has(command);
 }

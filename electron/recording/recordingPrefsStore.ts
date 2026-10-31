@@ -95,6 +95,11 @@ export class RecordingPrefsStore {
 		return copyRecordingPrefs(loaded);
 	}
 
+	/** The last loaded value without waiting: defaults until the first read finishes. */
+	peek(): RecordingPrefs {
+		return copyRecordingPrefs(this.cached ?? DEFAULT_RECORDING_PREFS);
+	}
+
 	update(patch: Partial<RecordingPrefs>): Promise<RecordingPrefs> {
 		let resolveResult: (value: RecordingPrefs) => void;
 		let rejectResult: (reason?: unknown) => void;

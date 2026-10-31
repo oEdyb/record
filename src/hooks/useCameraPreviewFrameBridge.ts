@@ -64,11 +64,40 @@ function drawCover(
 	return true;
 }
 
-/** Sends small transferable frames to the private camera window without reopening the camera. */
+interface Consumer {
+	port: MessagePort;
+	inFlight: boolean;
+	size: RelaySize;
+	canvas: OffscreenCanvas | null;
+	context: OffscreenCanvasRenderingContext2D | null;
+	lastFrameAt: number;
+}
+
+function consumerContext(consumer: Consumer) {
+	const { width, height } = consumer.size;
+	if (!consumer.canvas || !consumer.context) {
+		consumer.canvas = new OffscreenCanvas(width, height);
+		consumer.context = consumer.canvas.getContext("2d", { alpha: false });
+	} else if (consumer.canvas.width !== width || consumer.canvas.height !== height) {
+		consumer.canvas.width = width;
+		consumer.canvas.height = height;
+	}
+	// Creating or resizing resets the 2D context state, so smoothing is applied each time.
+	if (consumer.context) {
+		consumer.context.imageSmoothingEnabled = true;
+		consumer.context.imageSmoothingQuality = "high";
+	}
+	return consumer.context;
+}
+
+/**
+ * Sends small transferable frames to the private camera window and the Studio without
+ * reopening the camera. Each viewer has its own port, size and one-frame-in-flight budget,
+ * so a slow or hidden viewer never holds back the other.
+ */
 export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
-	const [port, setPort] = useState<MessagePort | null>(null);
-	const frameInFlight = useRef(false);
-	const relaySize = useRef<RelaySize>({ width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT });
+	const [ports, setPorts] = useState<Record<string, MessagePort>>({});
+	const consumers = useRef(new Map<string, Consumer>());
 
 	useEffect(() => {
 		const receivePort = (event: MessageEvent) => {
@@ -80,11 +109,12 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 			) {
 				return;
 			}
+			const name = event.data?.consumer === "studio" ? "studio" : "monitor";
 			const nextPort = event.ports[0];
 			nextPort.start();
-			setPort((previousPort) => {
-				previousPort?.close();
-				return nextPort;
+			setPorts((previous) => {
+				previous[name]?.close();
+				return { ...previous, [name]: nextPort };
 			});
 		};
 		window.addEventListener("message", receivePort);
@@ -93,27 +123,44 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 	}, []);
 
 	useEffect(() => {
-		if (!port) return;
-		frameInFlight.current = false;
-		const receiveAcknowledgement = (event: MessageEvent) => {
-			if (event.data?.type === "consumed") frameInFlight.current = false;
-			if (event.data?.type === "configure") {
-				const next = clampRelaySize(event.data);
-				if (next) relaySize.current = next;
-			}
-		};
-		port.addEventListener("message", receiveAcknowledgement);
+		const map = consumers.current;
+		const cleanups = Object.entries(ports).map(([name, port]) => {
+			const consumer: Consumer = {
+				port,
+				inFlight: false,
+				size: map.get(name)?.size ?? { width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT },
+				canvas: null,
+				context: null,
+				lastFrameAt: -Infinity,
+			};
+			map.set(name, consumer);
+			const receive = (event: MessageEvent) => {
+				if (event.data?.type === "consumed") consumer.inFlight = false;
+				if (event.data?.type === "configure") {
+					const next = clampRelaySize(event.data);
+					if (next) consumer.size = next;
+				}
+			};
+			port.addEventListener("message", receive);
+			return () => {
+				port.removeEventListener("message", receive);
+				if (map.get(name) === consumer) map.delete(name);
+			};
+		});
 		return () => {
-			port.removeEventListener("message", receiveAcknowledgement);
-			frameInFlight.current = false;
+			for (const cleanup of cleanups) cleanup();
 		};
-	}, [port]);
+	}, [ports]);
 
 	useEffect(() => {
-		if (!port) return;
+		const targets = Object.values(ports);
+		if (targets.length === 0) return;
+		const clearAll = () => {
+			for (const port of targets) port.postMessage({ type: "clear" });
+		};
 		const track = stream?.getVideoTracks()[0];
 		if (!stream || !track) {
-			port.postMessage({ type: "clear" });
+			clearAll();
 			return;
 		}
 
@@ -121,29 +168,9 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 		video.muted = true;
 		video.playsInline = true;
 		video.srcObject = stream;
-		const canvas = new OffscreenCanvas(relaySize.current.width, relaySize.current.height);
-		const context = canvas.getContext("2d", { alpha: false });
-		if (!context) {
-			port.postMessage({ type: "clear" });
-			return;
-		}
-		const applySmoothing = () => {
-			context.imageSmoothingEnabled = true;
-			context.imageSmoothingQuality = "high";
-		};
-		applySmoothing();
-		const fitCanvasToRelaySize = () => {
-			const { width, height } = relaySize.current;
-			if (canvas.width === width && canvas.height === height) return;
-			// Resizing resets the 2D context state, so smoothing must be applied again.
-			canvas.width = width;
-			canvas.height = height;
-			applySmoothing();
-		};
 
 		let stopped = false;
 		let callbackId = 0;
-		let lastFrameAt = -Infinity;
 		let deliveryStartedAt = 0;
 		let deliveredFrames = 0;
 		let clockOrigin: { mediaTime: number; presentedFrames: number } | null = null;
@@ -183,18 +210,16 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 				deliveryStartedAt = now;
 				deliveredFrames = 1;
 			}
-			if (!frameInFlight.current && now - lastFrameAt >= frameIntervalMs) {
-				fitCanvasToRelaySize();
-			}
-			if (
-				!frameInFlight.current &&
-				now - lastFrameAt >= frameIntervalMs &&
-				drawCover(context, video, canvas.width, canvas.height)
-			) {
-				lastFrameAt = now;
+			for (const consumer of consumers.current.values()) {
+				if (consumer.inFlight || now - consumer.lastFrameAt < frameIntervalMs) continue;
+				const context = consumerContext(consumer);
+				const canvas = consumer.canvas;
+				if (!context || !canvas || !drawCover(context, video, canvas.width, canvas.height))
+					continue;
+				consumer.lastFrameAt = now;
 				const bitmap = canvas.transferToImageBitmap();
-				frameInFlight.current = true;
-				port.postMessage({ type: "frame", bitmap }, [bitmap]);
+				consumer.inFlight = true;
+				consumer.port.postMessage({ type: "frame", bitmap }, [bitmap]);
 			}
 			callbackId = video.requestVideoFrameCallback(sendFrame);
 		};
@@ -205,7 +230,7 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 				if (!stopped) callbackId = video.requestVideoFrameCallback(sendFrame);
 			})
 			.catch(() => {
-				if (!stopped) port.postMessage({ type: "clear" });
+				if (!stopped) clearAll();
 			});
 
 		return () => {
@@ -213,7 +238,8 @@ export function useCameraPreviewFrameBridge(stream: MediaStream | null) {
 			if (callbackId) video.cancelVideoFrameCallback(callbackId);
 			video.pause();
 			video.srcObject = null;
-			port.postMessage({ type: "clear" });
+			for (const consumer of consumers.current.values()) consumer.inFlight = false;
+			clearAll();
 		};
-	}, [port, stream]);
+	}, [ports, stream]);
 }

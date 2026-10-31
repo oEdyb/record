@@ -212,4 +212,45 @@ describe("useCameraPreviewFrameBridge", () => {
 		);
 		view.unmount();
 	});
+
+	it("feeds the Studio from its own port without one viewer holding back the other", async () => {
+		const monitor = new PreviewPort();
+		const studio = new PreviewPort();
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { requestCameraPreviewConnection: vi.fn(), reportCapturePerformance: vi.fn() },
+		});
+		const stream = {
+			getVideoTracks: () => [{ id: "camera-track", getSettings: () => ({ frameRate: 30 }) }],
+		} as unknown as MediaStream;
+		const view = renderHook(() => useCameraPreviewFrameBridge(stream));
+		const connect = (port: PreviewPort, consumer?: string) =>
+			act(() => {
+				const event = new MessageEvent("message", {
+					data: { type: "openscreen-camera-preview-port", role: "producer", consumer },
+					source: window,
+				});
+				Object.defineProperty(event, "ports", { value: [port] });
+				window.dispatchEvent(event);
+			});
+		connect(monitor);
+		connect(studio, "studio");
+		await waitFor(() => expect(frameCallback).not.toBeNull());
+		const metadata = (mediaTime: number, presentedFrames: number) =>
+			({ mediaTime, presentedFrames }) as VideoFrameCallbackMetadata;
+		const frames = (port: PreviewPort) =>
+			port.postMessage.mock.calls.filter(([message]) => message?.type === "frame").length;
+
+		act(() => frameCallback?.(100, metadata(0, 1)));
+		expect(frames(monitor)).toBe(1);
+		expect(frames(studio)).toBe(1);
+		expect(monitor.close).not.toHaveBeenCalled();
+
+		// The hidden Studio never acknowledges; the monitor keeps getting frames.
+		act(() => monitor.dispatchEvent(new MessageEvent("message", { data: { type: "consumed" } })));
+		act(() => frameCallback?.(200, metadata(1 / 30, 2)));
+		expect(frames(monitor)).toBe(2);
+		expect(frames(studio)).toBe(1);
+		view.unmount();
+	});
 });

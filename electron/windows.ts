@@ -88,12 +88,11 @@ const CONTENT_PROTECTION_FORCED = process.env["OPENSCREEN_FORCE_CONTENT_PROTECTI
  * older macOS — where it may well work — would be a privacy regression made on
  * no evidence.
  *
- * NOTE: this leaves the HUD capturable on macOS 26. Apple already made that
- * partly true regardless — ScreenCaptureKit ignores `sharingType`, so any
- * SCK-based recorder (including *ours*, see
- * `electron/native/screencapturekit/`) captures these windows anyway. The
- * durable fix is to exclude our own windows via `SCContentFilter`'s
- * `excludingWindows:`, which that helper currently passes as `[]`.
+ * NOTE: this leaves our windows capturable by other recorders on macOS 26;
+ * ScreenCaptureKit ignores `sharingType` anyway. Our own display capture keeps
+ * them out with an `SCContentFilter` that excludes the whole Klippt process
+ * (`addNativeMacDisplayPrivacyExclusions`), which also covers windows opened
+ * later, such as the Studio.
  */
 const CONTENT_PROTECTION_BREAKS_DISPLAY = (() => {
 	if (process.platform !== "darwin") return false;
@@ -134,6 +133,8 @@ export const ASSET_BASE_URL_ARG = "--asset-base-url=klippt://app/__resources__/"
 
 let hudOverlayWindow: BrowserWindow | null = null;
 let cameraPreviewWindow: BrowserWindow | null = null;
+/** The Studio gets its own camera relay port from the same producer; it never opens the camera. */
+let studioWindow: BrowserWindow | null = null;
 let cameraPreviewReady = false;
 let cameraPreviewVisible = false;
 let cameraPreviewCaptureHidden = false;
@@ -232,6 +233,34 @@ function connectCameraPreviewRenderers() {
 	cameraPreviewWindow.webContents.postMessage("camera-preview-port", { role: "consumer" }, [port2]);
 }
 
+function connectStudioCameraRelay() {
+	if (
+		!hudRendererReady ||
+		!hudOverlayWindow ||
+		hudOverlayWindow.isDestroyed() ||
+		!studioWindow ||
+		studioWindow.isDestroyed()
+	)
+		return;
+	const { port1, port2 } = new MessageChannelMain();
+	hudOverlayWindow.webContents.postMessage(
+		"camera-preview-port",
+		{ role: "producer", consumer: "studio" },
+		[port1],
+	);
+	studioWindow.webContents.postMessage(
+		"camera-preview-port",
+		{ role: "consumer", consumer: "studio" },
+		[port2],
+	);
+}
+
+function isStudioSender(senderId: number): boolean {
+	return Boolean(
+		studioWindow && !studioWindow.isDestroyed() && studioWindow.webContents.id === senderId,
+	);
+}
+
 function isCameraPreviewSender(senderId: number): boolean {
 	return Boolean(
 		cameraPreviewWindow &&
@@ -245,11 +274,14 @@ function isCameraPreviewSender(senderId: number): boolean {
 // mounted page request a fresh pair so the preview cannot remain on Loading.
 ipcMain.on("camera-preview-request-connection", (event) => {
 	const senderId = event.sender.id;
+	if (isStudioSender(senderId)) return connectStudioCameraRelay();
 	if (isHudSender(senderId)) hudRendererReady = true;
 	else if (isCameraPreviewSender(senderId)) cameraPreviewRendererReady = true;
 	else return;
 	cameraPreviewPortsConnected = false;
 	connectCameraPreviewRenderers();
+	// A remounted pill drops every port it produced for; the Studio needs a fresh one too.
+	if (isHudSender(senderId)) connectStudioCameraRelay();
 });
 
 function placeCameraPreview(position?: CameraPreviewPoint): CameraPreviewPoint | null {
@@ -1209,7 +1241,10 @@ export function createStudioWindow(near?: { x: number; y: number }): BrowserWind
 		y: Math.round(area.y + (area.height - height) / 2),
 		minWidth: 640,
 		minHeight: 560,
-		frame: false,
+		// The Mac keeps its own window buttons over the Studio's title strip.
+		...(process.platform === "darwin"
+			? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 13 } }
+			: { frame: false }),
 		backgroundColor: "#111114",
 		resizable: true,
 		show: false,
@@ -1224,6 +1259,10 @@ export function createStudioWindow(near?: { x: number; y: number }): BrowserWind
 	win.on("page-title-updated", (event) => event.preventDefault());
 	if (process.platform !== "darwin") win.setAutoHideMenuBar(true);
 	applyContentProtection(win, "Studio");
+	studioWindow = win;
+	win.on("closed", () => {
+		if (studioWindow === win) studioWindow = null;
+	});
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=studio");
 	} else {

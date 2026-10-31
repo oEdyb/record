@@ -75,6 +75,7 @@ import {
 import { useHudDockInteraction } from "./useHudDockInteraction";
 import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
+import { useStudioPillBridge } from "./useStudioPillBridge";
 
 // Locale list is computed once at module load; keeping the reference stable lets
 // the setup panel sit behind a memo boundary.
@@ -1875,6 +1876,37 @@ export function LaunchWindow() {
 		if (!result.success && !result.cancelled)
 			toast.error(t("sourceSelector.selectFailed"), { description: result.error });
 	}, [recording, selectRecordingSource, chooseRecordingSource, t]);
+
+	useStudioPillBridge(
+		{
+			toggleMicrophone,
+			toggleWebcam,
+			toggleSystemAudio,
+			// The pill's own path: the portal on Linux, the source picker window elsewhere.
+			chooseSource: () => void (portalOwnsSource ? chooseSource() : openSourceSelector()),
+			openNotes,
+			// The pill's own Cancel during the countdown; Record would be ignored then.
+			cancelCountdown: () => {
+				if (starting && !recording) toggleRecording();
+			},
+			undoRemovedClip: () => void handleUndoRemovedClip(),
+			selectMic: handleSelectMicDevice,
+			selectCamera: handleSelectCameraDevice,
+			selectQuality: handleSelectRecordingQuality,
+			setCursorMode: (mode) => {
+				if (mode !== cursorCaptureMode) void toggleCursorMode();
+			},
+		},
+		{
+			controlsLocked,
+			canRemovePreviousClip,
+			undoClipIndex: removedClipFeedback?.index ?? null,
+			countingDown: starting,
+			saving,
+			transportBusy: saving || clipFinalizing,
+			canPause: recording && canPauseRecording,
+		},
+	);
 
 	const setupExtras = useMemo<HudSetupExtras>(
 		() => ({

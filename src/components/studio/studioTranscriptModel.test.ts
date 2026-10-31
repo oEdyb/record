@@ -12,6 +12,25 @@ const word = (text: string, startSec: number, endSec = startSec + 0.3) => ({
 function snapshot(overrides: Partial<StudioSnapshot> = {}): StudioSnapshot {
 	return {
 		phase: "paused",
+		setup: {
+			source: null,
+			micEnabled: false,
+			micDeviceId: null,
+			cameraEnabled: false,
+			cameraDeviceId: null,
+			systemAudioEnabled: false,
+			cursorCaptureMode: "system",
+			recordingQuality: "high",
+		},
+		pill: {
+			controlsLocked: false,
+			canRemovePreviousClip: false,
+			undoClipIndex: null,
+			countingDown: false,
+			transportBusy: false,
+			canPause: false,
+			saving: false,
+		},
 		recordingId: 1,
 		clips: [
 			{ index: 0, screenVideoPath: "/r/0.mp4", durationMs: 10_000, microphoneAudioOffsetMs: 200 },
@@ -84,6 +103,12 @@ describe("buildStudioSections", () => {
 		const sections = buildStudioSections(snapshot({ recordingId: 2 }));
 		expect(sections.map((section) => section.state)).toEqual(["waiting", "waiting"]);
 		expect(studioTranscriptText(sections)).toBe("");
+	});
+
+	it("marks a transcribed clip without speech as silent, not waiting", () => {
+		const value = snapshot();
+		value.transcript.clips[1] = { index: 2, durationMs: 8_000, text: "", words: [], error: null };
+		expect(buildStudioSections(value).map((section) => section.state)).toEqual(["text", "silent"]);
 	});
 
 	it("copies finished clips as paragraphs", () => {

@@ -2,6 +2,7 @@ import { Pause, Play, Volume2, VolumeX } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import { loadEditingPreferences } from "@/lib/ai-edition/store/editingPreferences";
+import { followCamera } from "@/lib/followCamera";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { useReleasingMediaRef } from "@/lib/releasingMediaRef";
@@ -21,6 +22,7 @@ export interface StudioReplayLabels {
 	unmute: string;
 	seek: string;
 	playbackError: string;
+	recorded: string;
 }
 
 /**
@@ -35,16 +37,22 @@ export function StudioReplay({
 	hold,
 	shown,
 	onPosition,
+	playbackRequest = 0,
+	speed = 1,
+	cameraOnly = false,
 }: {
 	clips: readonly RecordingSessionClip[];
 	labels: StudioReplayLabels;
 	/** A transcript click: jump here on the take's timeline. */
-	seekRequest: { takeSec: number; nonce: number } | null;
+	seekRequest: { takeSec: number; nonce: number; play?: boolean } | null;
 	/** Capture is running: stop playback. */
 	hold: boolean;
 	/** The window is on screen. Hidden, it holds no media; the playhead stays in state. */
 	shown: boolean;
 	onPosition: (takeSec: number) => void;
+	playbackRequest?: number;
+	speed?: number;
+	cameraOnly?: boolean;
 }) {
 	const timeline = useMemo(() => buildPeekTimeline(clips), [clips]);
 	const total = timeline.reduce((sum, entry) => sum + entry.duration, 0);
@@ -98,7 +106,8 @@ export function StudioReplay({
 		if (!seekRequest) return;
 		touchedRef.current = true;
 		seekRef.current(seekRequest.takeSec);
-	}, [seekRequest]);
+		if (seekRequest.play && !hold) setPlaying(true);
+	}, [seekRequest, hold]);
 
 	useEffect(() => {
 		if (!hold) return;
@@ -144,12 +153,13 @@ export function StudioReplay({
 			if (playing && pendingOffsetRef.current === null)
 				setPosition(current.start + Math.min(current.duration, video.currentTime));
 			const camera = cameraRef.current;
-			if (!camera || camera.readyState < 1) return;
-			const target = Math.max(0, video.currentTime - cameraOffsetSec);
-			if (Math.abs(camera.currentTime - target) > 0.15) camera.currentTime = target;
-			if (video.paused || video.ended) {
-				if (!camera.paused) camera.pause();
-			} else if (camera.paused && !camera.ended) void camera.play().catch(() => undefined);
+			if (camera)
+				followCamera(
+					video,
+					camera,
+					cameraOffsetSec,
+					(cam) => void cam.play().catch(() => undefined),
+				);
 		};
 		frame = requestAnimationFrame(tick);
 		return () => cancelAnimationFrame(frame);
@@ -161,6 +171,7 @@ export function StudioReplay({
 	const handleLoadedMetadata = () => {
 		const video = videoRef.current;
 		if (!video) return;
+		video.playbackRate = speed;
 		if (video.videoWidth > 0 && video.videoHeight > 0)
 			setAspect(video.videoWidth / video.videoHeight);
 		const offset = pendingOffsetRef.current;
@@ -179,6 +190,19 @@ export function StudioReplay({
 		setPlaying(false);
 	};
 
+	const lastPlaybackRequest = useRef(playbackRequest);
+	useEffect(() => {
+		if (lastPlaybackRequest.current === playbackRequest) return;
+		lastPlaybackRequest.current = playbackRequest;
+		if (hold || failed || !timeline.length) return;
+		if (position >= total - 0.05) seekRef.current(0);
+		setPlaying((p) => !p);
+	}, [playbackRequest, hold, failed, timeline.length, position, total]);
+	useEffect(() => {
+		if (videoRef.current) videoRef.current.playbackRate = speed;
+		if (cameraRef.current) cameraRef.current.playbackRate = speed;
+	}, [speed]);
+
 	const togglePlaying = () => {
 		if (failed || hold) return;
 		touchedRef.current = true;
@@ -190,7 +214,7 @@ export function StudioReplay({
 	const silent = muted || volume === 0;
 	return (
 		<div className={styles.replay} style={{ "--peek-aspect": String(aspect) } as CSSProperties}>
-			<div className={styles.stageSlot}>
+			<div className={styles.stageSlot} hidden={cameraOnly}>
 				<div className={`${peek.clipPeekStage} ${styles.stage}`}>
 					{shown ? (
 						<video
@@ -224,6 +248,7 @@ export function StudioReplay({
 					) : null}
 					<span className={peek.clipPeekLabel}>
 						{labels.clipOf(clipIndex + 1, timeline.length)}
+						{showCamera ? ` · ${labels.recorded}` : ""}
 					</span>
 					<div className={peek.clipPeekVolume} data-silent={silent}>
 						<button
@@ -253,6 +278,25 @@ export function StudioReplay({
 				>
 					{playing ? <Pause size={15} aria-hidden /> : <Play size={15} aria-hidden />}
 				</button>
+				<button
+					type="button"
+					className={peek.clipPeekPlay}
+					aria-label={`${labels.seek} −5`}
+					disabled={hold}
+					onClick={() => seek(position - 5)}
+				>
+					‹
+				</button>
+				<button
+					type="button"
+					className={peek.clipPeekPlay}
+					aria-label={`${labels.seek} +5`}
+					disabled={hold}
+					onClick={() => seek(position + 5)}
+				>
+					›
+				</button>
+				<span className={peek.clipPeekTime}>{speed}×</span>
 				<StudioSeekBar
 					timeline={timeline}
 					total={total}

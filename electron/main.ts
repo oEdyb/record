@@ -55,6 +55,7 @@ import {
 	resolveApprovedRendererMediaPath,
 	stopNativeMacCaptureForQuit,
 	stopTakeWithoutPill,
+	studioSetup,
 	studioTake,
 } from "./ipc/handlers";
 import {
@@ -1212,7 +1213,11 @@ appReady?.then(async () => {
 	}
 
 	const interruptedRecordingCheck = registerIpcHandlers(
-		createEditorWindowWrapper,
+		// A stopped take shown in the Studio stays there; Finish opens this review later.
+		(options) => {
+			if (options?.compactReview && studio?.keepsReview()) return;
+			createEditorWindowWrapper(options);
+		},
 		createSourceSelectorWindowWrapper,
 		createCountdownOverlayWindowWrapper,
 		createNotesWindowWrapper,
@@ -1245,7 +1250,13 @@ appReady?.then(async () => {
 			beforeCapture: async (capture) => {
 				await studio?.beforeCapture(capture);
 			},
+			onRecordingSetupChanged: () => studio?.publish(),
 			onTakeEvent: (event) => {
+				if (event.kind === "stored")
+					studio?.stored({
+						recordingId: event.session.createdAt,
+						clips: event.session.clips ?? [],
+					});
 				studio?.sync();
 				if (!liveTranscript) return;
 				// Resuming: the recording gets the CPU back before its first frame.
@@ -1304,6 +1315,8 @@ appReady?.then(async () => {
 	const studioCaptureGuard = new NiriCaptureWindowGuard("Klippt Studio", () => studio?.revoke());
 	studio = new StudioController({
 		take: studioTake,
+		setup: studioSetup,
+		openReview: () => createEditorWindowWrapper({ compactReview: true }),
 		transcript: () =>
 			liveTranscript?.snapshot() ?? {
 				recordingId: null,
@@ -1316,8 +1329,8 @@ appReady?.then(async () => {
 			},
 		getPill: () => mainWindow,
 		createWindow: (near) => createStudioWindow(near),
-		sendToPill: (channel) => {
-			if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel);
+		sendToPill: (channel, payload) => {
+			if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
 		},
 		// macOS keeps protected windows out of capture; on Linux only niri can confirm it.
 		outsideCapture: (nodeId) =>

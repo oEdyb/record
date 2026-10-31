@@ -14,13 +14,13 @@ export interface StudioTranscriptLabels {
 	recording: string;
 	transcribing: string;
 	waiting: string;
+	silent: string;
 	empty: string;
 	latest: string;
 	seekTo: (time: string) => string;
 }
 
 /** Reading near the bottom means following along; anything above is the creator's own place. */
-const FOLLOW_SLACK_PX = 48;
 
 /**
  * The take's transcript, one section per kept clip. A sentence click seeks the replay.
@@ -33,6 +33,7 @@ export function StudioTranscript({
 	playheadSec,
 	labels,
 	onSeek,
+	followRequest = 0,
 }: {
 	sections: StudioSection[];
 	/** One line about the transcriber: downloading, an error, or blocked. Empty when quiet. */
@@ -40,9 +41,11 @@ export function StudioTranscript({
 	playheadSec: number;
 	labels: StudioTranscriptLabels;
 	onSeek: (sentence: StudioSentence) => void;
+	followRequest?: number;
 }) {
 	const bodyRef = useRef<HTMLDivElement | null>(null);
 	const followRef = useRef(true);
+	const focusedSentence = useRef<HTMLButtonElement | null>(null);
 	const [offscreenNew, setOffscreenNew] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const text = studioTranscriptText(sections);
@@ -53,6 +56,10 @@ export function StudioTranscript({
 	useLayoutEffect(() => {
 		const body = bodyRef.current;
 		if (!body || !contentKey) return;
+		if (focusedSentence.current && !focusedSentence.current.isConnected) {
+			body.querySelector<HTMLButtonElement>("[data-time]")?.focus();
+			focusedSentence.current = null;
+		}
 		if (followRef.current) body.scrollTop = body.scrollHeight;
 		else setOffscreenNew(true);
 	}, [contentKey]);
@@ -63,20 +70,31 @@ export function StudioTranscript({
 		return () => clearTimeout(timer);
 	}, [copied]);
 
-	const onScroll = () => {
-		const body = bodyRef.current;
-		if (!body) return;
-		followRef.current = body.scrollHeight - body.scrollTop - body.clientHeight < FOLLOW_SLACK_PX;
-		if (followRef.current) setOffscreenNew(false);
-	};
-
 	const jumpToLatest = () => {
 		const body = bodyRef.current;
-		if (body) body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+		if (body)
+			body.scrollTo({
+				top: body.scrollHeight,
+				behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+					? "instant"
+					: "smooth",
+			});
 		followRef.current = true;
 		setOffscreenNew(false);
 	};
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: follow the current sentence as playback advances
+	useEffect(() => {
+		const body = bodyRef.current;
+		if (!body || !followRef.current) return;
+		body.querySelector('[aria-current="true"]')?.scrollIntoView?.({ block: "nearest" });
+	}, [playheadSec]);
+	useEffect(() => {
+		if (!followRequest) return;
+		followRef.current = true;
+		setOffscreenNew(false);
+		bodyRef.current?.querySelector('[aria-current="true"]')?.scrollIntoView?.({ block: "center" });
+	}, [followRequest]);
 	return (
 		<aside className={styles.transcript} aria-label={labels.title}>
 			<div className={styles.transcriptHeader}>
@@ -94,7 +112,7 @@ export function StudioTranscript({
 				</button>
 			</div>
 			{status.text ? (
-				<div className="transcript-status" data-tone={status.tone} role="status">
+				<div className="transcript-status" data-tone={status.tone}>
 					{status.text}
 					{status.action ? (
 						<button type="button" className={styles.statusAction} onClick={status.action.run}>
@@ -103,7 +121,21 @@ export function StudioTranscript({
 					) : null}
 				</div>
 			) : null}
-			<div ref={bodyRef} className={`transcript-body ${styles.transcriptBody}`} onScroll={onScroll}>
+			<div
+				data-studio-document
+				tabIndex={0}
+				ref={bodyRef}
+				className={`transcript-body ${styles.transcriptBody}`}
+				data-studio-reader
+				onWheel={() => {
+					followRef.current = false;
+					setOffscreenNew(true);
+				}}
+				onTouchMove={() => {
+					followRef.current = false;
+					setOffscreenNew(true);
+				}}
+			>
 				{sections.length === 0 ? <p className={styles.placeholder}>{labels.empty}</p> : null}
 				{sections.map((section) => {
 					const playing =
@@ -128,7 +160,12 @@ export function StudioTranscript({
 												<button
 													type="button"
 													className={styles.sentence}
+													onFocus={(event) => {
+														focusedSentence.current = event.currentTarget;
+													}}
 													data-active={active}
+													aria-current={active ? "true" : undefined}
+													data-time={formatTimePadded(Math.floor(sentence.takeSec))}
 													title={labels.seekTo(formatTimePadded(Math.floor(sentence.takeSec)))}
 													onClick={() => {
 														// Selecting text is reading, not seeking.
@@ -153,22 +190,25 @@ export function StudioTranscript({
 											? labels.recording
 											: section.state === "transcribing"
 												? labels.transcribing
-												: labels.waiting}
+												: section.state === "silent"
+													? labels.silent
+													: labels.waiting}
 								</p>
 							)}
 						</section>
 					);
 				})}
 			</div>
-			{offscreenNew ? (
+			{
 				<button
 					type="button"
+					hidden={!offscreenNew}
 					className={`transcript-control ${styles.latest}`}
 					onClick={jumpToLatest}
 				>
 					{labels.latest}
 				</button>
-			) : null}
+			}
 		</aside>
 	);
 }

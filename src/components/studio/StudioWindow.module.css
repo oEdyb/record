@@ -1,84 +1,419 @@
-/* The Studio is the pill's paused replay grown to a window: same HUD surface, ink,
-   radii and controls. No new palette. */
+/* The Studio is the big pill: the HUD's dark glass, its hairline border and light top
+   edge, 22px panels holding 14px tiles, all from the --hud-* tokens. */
 .root {
+	--ink: var(--hud-ink);
+	--ink-2: var(--hud-ink-2);
+	--muted: var(--hud-muted);
+	--line: var(--hud-border);
+	--glass-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 24px 48px -16px rgba(0, 0, 0, 0.7),
+		0 4px 12px rgba(0, 0, 0, 0.4);
 	display: flex;
 	height: 100vh;
 	width: 100vw;
+	min-width: 660px;
 	flex-direction: column;
 	overflow: hidden;
-	background: var(--hud-surface-solid);
-	color: var(--hud-ink);
+	background: radial-gradient(120% 80% at 50% 0%, #17171c 0%, #0b0b0e 70%);
+	color: var(--ink);
 	font-family: var(--font-body);
-	user-select: none;
+	font-size: 13px;
+	-webkit-font-smoothing: antialiased;
+}
+
+.root [hidden] {
+	display: none !important;
+}
+
+.root button {
+	cursor: default;
+	color: inherit;
+	font: inherit;
+}
+
+.root button:disabled {
+	opacity: 0.4;
+}
+
+.root button:focus-visible,
+.root select:focus-visible,
+.root [tabindex]:focus-visible {
+	outline: 2px solid var(--hud-focus);
+	outline-offset: 2px;
+}
+
+/* One glass surface for every panel. */
+.setup,
+.document,
+.dock,
+.transport,
+.dialog {
+	border: 1px solid var(--line);
+	background: var(--hud-surface);
+	box-shadow: var(--glass-shadow);
 }
 
 .header {
 	display: flex;
-	height: 44px;
-	flex-shrink: 0;
 	align-items: center;
-	gap: 10px;
+	gap: 4px;
+	height: 40px;
+	flex-shrink: 0;
 	padding: 0 12px 0 16px;
 	-webkit-app-region: drag;
 }
 
 .header button {
 	-webkit-app-region: no-drag;
+	display: grid;
+	place-items: center;
+	min-width: 28px;
+	height: 28px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: var(--hud-radius-md);
+	background: none;
+	color: var(--muted);
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.header button:hover {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
 }
 
 .title {
-	font-size: 13px;
 	font-weight: 500;
+	color: var(--ink-2);
 }
 
 .phase {
 	flex: 1;
-	min-width: 0;
-	color: var(--hud-muted);
+	color: var(--muted);
 	font-size: 12px;
+	text-align: center;
 }
 
-.phase[data-phase="recording"]::before {
-	content: "";
-	display: inline-block;
-	width: 7px;
-	height: 7px;
-	margin-right: 6px;
-	border-radius: 50%;
-	background: #ef4444;
-	vertical-align: 1px;
-}
-
-.pillButton {
+.setup {
+	display: flex;
+	height: 50px;
 	flex-shrink: 0;
+	align-items: center;
+	gap: 2px;
+	margin: 0 12px;
+	padding: 0 7px;
+	border-radius: 25px;
+}
+
+.setup button {
+	display: flex;
+	height: 36px;
+	align-items: center;
+	gap: 8px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 18px;
+	background: none;
+	color: var(--muted);
+	white-space: nowrap;
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.setup button:hover:not(:disabled) {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
+}
+
+.setup button:first-child {
+	max-width: 260px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.setup button[aria-pressed="true"] {
+	background: var(--hud-fill);
+	color: var(--ink);
+}
+
+.spacer {
+	flex: 1;
+}
+
+.meter {
+	width: 40px;
+	height: 6px;
+	margin: 0 6px 0 -2px;
+	accent-color: var(--hud-success);
 }
 
 .body {
 	display: grid;
 	min-height: 0;
 	flex: 1;
-	grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 420px);
-	gap: 12px;
-	padding: 0 16px 16px;
+	overflow: hidden;
+	padding: 12px;
 }
 
-.main {
+.document {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	padding: 14px clamp(32px, 6vw, 120px) 0;
+	border-radius: var(--hud-radius-xl);
+	grid-column: 1;
+	grid-row: 1;
+}
+
+.body[data-dock="left"] .document {
+	grid-column: 3;
+}
+
+.body[data-live="true"] .document {
+	grid-column: 1;
+}
+
+/* Segmented controls: tiles inside a recessed track, like the pill's toggles. */
+.documentTabs,
+.viewSwitch {
+	display: flex;
+	flex-shrink: 0;
+	align-self: flex-start;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill);
+}
+
+.documentTabs button,
+.viewSwitch button {
+	display: grid;
+	place-items: center;
+	height: 28px;
+	min-width: 32px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.viewSwitch button {
+	padding: 0 6px;
+}
+
+.documentTabs button:hover,
+.viewSwitch button:hover {
+	color: var(--ink);
+}
+
+.documentTabs button[aria-pressed="true"],
+.viewSwitch button[aria-pressed="true"] {
+	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.documentContent {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+}
+
+.notes {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	padding: 20px 0;
+	white-space: pre-wrap;
+	font: 400 calc(clamp(20px, 1.75vw, 30px) + var(--studio-font-delta, 0px)) / 1.55
+		var(--font-body);
+	letter-spacing: -0.01em;
+	color: var(--ink-2);
+}
+
+.dock {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+	padding: 8px;
+	border-radius: var(--hud-radius-xl);
+	grid-column: 3;
+	grid-row: 1;
+}
+
+.body[data-dock="left"] .dock {
+	grid-column: 1;
+}
+
+.dockHeader {
+	display: flex;
+	height: 32px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+	padding-left: 6px;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.dockHeader > button {
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+}
+
+.dockHeader > button:hover {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
+}
+
+.panes {
+	display: grid;
+	flex: 1;
+	min-height: 0;
+}
+
+.cameraSlot,
+.replaySlot {
 	display: flex;
 	min-height: 0;
 	min-width: 0;
-	flex-direction: column;
-	gap: 10px;
+	overflow: hidden;
+}
+
+.cameraSlot {
+	align-items: center;
+	justify-content: center;
+	container-type: size;
+}
+
+/* The camera box is the frame itself: 16:9, as large as the pane allows. */
+.cameraSlot .camera {
+	width: min(100cqw, 100cqh * 16 / 9);
+	height: auto;
+	aspect-ratio: 16 / 9;
+}
+
+.camera {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	max-height: 100%;
+	overflow: hidden;
+	border-radius: var(--hud-radius-lg);
+	background: #08080a;
+	box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.camera canvas {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	transform: scaleX(-1);
+}
+
+.camera[data-dim="true"] canvas {
+	opacity: 0.55;
+}
+
+.liveChip {
+	position: absolute;
+	top: 10px;
+	left: 10px;
+	display: flex;
+	height: 22px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 9px;
+	border-radius: var(--hud-radius-pill);
+	background: rgba(14, 14, 17, 0.72);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	box-shadow: inset 0 0 0 1px var(--line);
+	color: var(--ink);
+	font: 500 11px/1 var(--font-body);
+}
+
+.liveChip::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--hud-success);
+}
+
+.guides {
+	position: absolute;
+	inset: 30% 0 0;
+	border-top: 1px dashed rgba(255, 255, 255, 0.35);
+	pointer-events: none;
+}
+
+.guides i {
+	display: block;
+	width: 35%;
+	height: 70%;
+	margin: -12% auto 0;
+	border: 1px dashed rgba(255, 255, 255, 0.35);
+	border-radius: 50%;
+}
+
+.separator,
+.verticalSeparator {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	touch-action: none;
+}
+
+.separator {
+	cursor: row-resize;
+}
+
+.separator::after {
+	content: "";
+	width: 36px;
+	height: 4px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.18);
+	transition: background 120ms ease;
+}
+
+.verticalSeparator {
+	grid-column: 2;
+	grid-row: 1;
+	cursor: col-resize;
+}
+
+.verticalSeparator::after {
+	content: "";
+	width: 4px;
+	height: 36px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.18);
+	transition: background 120ms ease;
+}
+
+.separator:hover::after,
+.verticalSeparator:hover::after {
+	background: rgba(255, 255, 255, 0.45);
 }
 
 .replay {
 	display: flex;
-	min-height: 0;
-	flex: 1;
 	flex-direction: column;
+	min-height: 0;
+	width: 100%;
 }
 
-/* The stage takes the room it is given and keeps the recording's shape: letterboxed,
-   never cropped. */
 .stageSlot {
 	display: flex;
 	min-height: 0;
@@ -91,55 +426,25 @@
 .stage {
 	width: min(100cqw, 100cqh * var(--peek-aspect));
 	height: auto;
+	overflow: hidden;
+	border-radius: var(--hud-radius-lg);
 }
 
 .replayControls {
 	flex-shrink: 0;
-	padding: 8px 2px 0;
+	padding: 10px 4px 2px;
 }
 
 .replayError {
-	margin: 6px 0 0;
-	color: rgb(255 170 160 / 90%);
-	font-size: 12px;
-}
-
-.emptyStage {
-	display: flex;
-	min-height: 0;
-	flex: 1;
-	align-items: center;
-	justify-content: center;
-	border-radius: var(--hud-radius-lg);
-	background: #000000;
-	color: var(--hud-muted);
-	font-size: 13px;
-}
-
-/* The pill's recording row, on its own surface. */
-.transport {
-	display: flex;
-	height: 48px;
-	flex-shrink: 0;
-	align-items: center;
-	gap: 6px;
-	align-self: center;
-	padding: 0 6px;
-	border: 1px solid var(--hud-border);
-	border-radius: var(--hud-radius-pill);
-	background: var(--hud-surface);
+	color: #ff9b8f;
 }
 
 .transcript {
 	position: relative;
 	display: flex;
-	min-height: 0;
+	flex: 1;
 	flex-direction: column;
-	gap: 8px;
-	padding: 10px 12px 12px;
-	border: 1px solid var(--hud-border);
-	border-radius: var(--hud-radius-lg);
-	background: rgb(14 14 17 / 80%);
+	min-height: 0;
 }
 
 .transcriptHeader {
@@ -147,100 +452,380 @@
 	height: 28px;
 	flex-shrink: 0;
 	align-items: center;
-	gap: 8px;
+	justify-content: flex-end;
+}
+
+.transcriptHeader button {
+	display: flex;
+	height: 28px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill);
+	color: var(--muted);
+}
+
+.transcriptHeader button:hover {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
 }
 
 .transcriptTitle {
-	flex: 1;
-	font-size: 13px;
-	font-weight: 500;
+	display: none;
 }
 
 .transcriptBody {
-	min-height: 0;
 	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-anchor: none;
+	mask-image: linear-gradient(transparent, black 32px, black calc(100% - 32px), transparent);
 }
 
-.section + .section {
-	margin-top: 14px;
+.section {
+	padding-top: 36px;
 }
 
-.recordingDot {
-	display: inline-block;
-	width: 6px;
-	height: 6px;
-	margin-left: 6px;
-	border-radius: 50%;
-	background: #ef4444;
-	vertical-align: 1px;
+.section :global(.transcript-clip-label) {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 16px;
+	color: var(--muted);
+	font: 500 11px var(--font-mono);
 }
 
-/* A sentence reads as text and seeks on click. */
+.section :global(.transcript-clip-label)::after {
+	content: "";
+	height: 1px;
+	flex: 1;
+	background: var(--line);
+}
+
+.section :global(.transcript-clip-text) {
+	margin: 0;
+	color: var(--ink-2);
+	font: 400 calc(clamp(20px, 1.75vw, 30px) + var(--studio-font-delta, 0px)) / 1.5
+		var(--font-body);
+	letter-spacing: -0.01em;
+}
+
 .sentence {
 	display: inline;
-	padding: 0;
+	padding: 2px 0;
 	border: 0;
-	border-radius: var(--hud-radius-sm);
-	background: transparent;
+	border-radius: 6px;
+	background: none;
 	color: inherit;
 	font: inherit;
 	text-align: left;
-	cursor: pointer;
 	user-select: text;
-	transition: background-color 120ms ease;
+	transition: background 120ms ease, color 120ms ease;
 }
 
-.sentence:hover {
-	background: var(--hud-fill-hover);
-}
-
-.sentence:focus-visible {
-	outline: 2px solid var(--hud-focus);
-	outline-offset: 1px;
-}
-
+.sentence:hover,
 .sentence[data-active="true"] {
 	background: var(--hud-fill-strong);
+	color: var(--ink);
 }
 
 .placeholder {
-	margin: 0;
-	color: var(--hud-muted);
-	font-size: 12.5px;
+	color: var(--muted);
+	font-size: 13px;
 }
 
 .placeholder[data-tone="error"] {
-	color: rgb(255 170 160 / 90%);
+	color: #ff9b8f;
 }
 
 .statusAction {
-	margin-left: 8px;
+	margin-left: 6px;
 	padding: 0;
 	border: 0;
-	background: transparent;
-	color: var(--hud-ink);
-	font: inherit;
+	background: none;
+	color: var(--ink) !important;
 	text-decoration: underline;
-	cursor: pointer;
+	text-underline-offset: 3px;
 }
 
 .latest {
 	position: absolute;
-	bottom: 14px;
+	bottom: 16px;
 	left: 50%;
-	translate: -50% 0;
-	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+	height: 30px;
+	padding: 0 14px;
+	border: 1px solid var(--line);
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-surface);
+	box-shadow: var(--glass-shadow);
+	transform: translateX(-50%);
 }
 
-@media (max-width: 999px) {
-	.body {
-		grid-template-columns: minmax(0, 1fr);
-		grid-template-rows: minmax(180px, 1.2fr) minmax(160px, 1fr);
+/* The transport is the recording pill itself, floating over the bottom edge. */
+.capture {
+	position: relative;
+	display: flex;
+	height: 74px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	padding: 0 24px 12px;
+}
+
+.transport {
+	display: flex;
+	height: 50px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 5px;
+	border-radius: 25px;
+}
+
+.transport > :global(*:only-child) {
+	margin: 0 4px;
+}
+
+.undo {
+	position: absolute;
+	left: 24px;
+	display: flex;
+	height: 36px;
+	align-items: center;
+	gap: 4px;
+	padding: 0 6px 0 14px;
+	border: 1px solid var(--line);
+	border-radius: 18px;
+	background: var(--hud-surface);
+	box-shadow: var(--glass-shadow);
+	color: var(--muted);
+}
+
+.undo button {
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 14px;
+	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.finish {
+	position: absolute;
+	right: 24px;
+	height: 40px;
+	padding: 0 22px;
+	border: 0;
+	border-radius: 20px;
+	background: var(--hud-ink);
+	box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.8);
+	color: #111114 !important;
+	font-weight: 500 !important;
+	transition: transform 120ms ease, background 120ms ease;
+}
+
+.finish:hover {
+	background: #ffffff;
+}
+
+.finish:active {
+	transform: scale(0.97);
+}
+
+.calm {
+	position: relative;
+	display: flex;
+	min-height: 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 20px;
+	padding: 40px;
+}
+
+.calm .camera {
+	width: min(720px, 70%);
+	height: auto;
+	max-height: 65%;
+	aspect-ratio: 16 / 9;
+}
+
+.calm .notes {
+	width: min(700px, 90%);
+	flex: 0 1 auto;
+	max-height: 60%;
+	overflow: hidden;
+}
+
+.liveTimer {
+	color: var(--ink);
+	font: 300 64px var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+}
+
+.dialog {
+	width: min(560px, 90vw);
+	max-height: 85vh;
+	padding: 20px;
+	border-radius: var(--hud-radius-xl);
+	color: var(--ink);
+}
+
+.dialog::backdrop {
+	background: rgba(0, 0, 0, 0.55);
+}
+
+.dialog header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 20px;
+	font-weight: 500;
+}
+
+.dialog button {
+	height: 28px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: var(--hud-radius-md);
+	background: var(--hud-fill-strong);
+	color: inherit;
+}
+
+.fields {
+	display: grid;
+	gap: 8px;
+	padding: 0;
+	border: 0;
+}
+
+.fields label {
+	display: flex;
+	min-height: 44px;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
+	padding: 0 8px 0 14px;
+	border-radius: var(--hud-radius-lg);
+	background: var(--hud-fill);
+	color: var(--ink-2);
+}
+
+.fields label > :last-child {
+	max-width: 65%;
+}
+
+.keymap {
+	color: var(--ink-2);
+	line-height: 2;
+	white-space: pre-line;
+}
+
+.srOnly {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.rail {
+	position: absolute;
+	top: 28px;
+	bottom: 28px;
+	left: 12px;
+	display: flex;
+	width: 32px;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.rail button {
+	position: relative;
+	display: block;
+	min-height: 5px;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--muted);
+}
+
+.rail span {
+	position: absolute;
+	top: 0;
+	left: 0;
+	font: 10px var(--font-mono);
+}
+
+.rail i {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 22px;
+	width: 3px;
+	border-radius: 2px;
+	background: var(--hud-fill-strong);
+}
+
+.rail button[aria-current] i {
+	background: var(--ink);
+}
+
+.sentence[data-time] {
+	position: relative;
+}
+
+.sentence[data-active="true"]::before {
+	content: attr(data-time);
+	position: absolute;
+	top: 8px;
+	left: -52px;
+	color: var(--muted);
+	font: 11px var(--font-mono);
+}
+
+@media (max-width: 1000px) {
+	.setup button {
+		gap: 4px;
+		padding: 0 8px;
+		font-size: 12px;
+	}
+
+	.setup button:first-child {
+		max-width: 140px;
+	}
+
+	.meter {
+		width: 24px;
+	}
+
+	.document {
+		padding: 12px 24px 0 44px;
+	}
+
+	.section {
+		padding-top: 28px;
+	}
+
+	.rail {
+		left: 4px;
+		width: 28px;
+	}
+
+	.sentence::before {
+		display: none;
 	}
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.sentence {
-		transition: none;
+	.root *,
+	.root *::before {
+		animation: none !important;
+		transition: none !important;
+		scroll-behavior: auto !important;
 	}
 }

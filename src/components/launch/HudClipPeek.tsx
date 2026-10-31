@@ -3,6 +3,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import { loadEditingPreferences } from "@/lib/ai-edition/store/editingPreferences";
 import { webcamSizeToFraction } from "@/lib/compositeLayout";
+import { followCamera } from "@/lib/followCamera";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { useReleasingMediaRef } from "@/lib/releasingMediaRef";
@@ -174,14 +175,8 @@ export function HudClipPeek({
 			frame = requestAnimationFrame(tick);
 			const video = videoRef.current;
 			const camera = cameraRef.current;
-			if (!video || !camera || camera.readyState < 1) return;
-			const target = Math.max(0, video.currentTime - cameraOffsetSec);
-			if (Math.abs(camera.currentTime - target) > 0.15) camera.currentTime = target;
-			if (video.paused || video.ended) {
-				if (!camera.paused) camera.pause();
-			} else if (camera.paused && !camera.ended) {
-				void requestPlay(camera);
-			}
+			if (!video || !camera) return;
+			followCamera(video, camera, cameraOffsetSec, (cam) => void requestPlay(cam));
 		};
 		frame = requestAnimationFrame(tick);
 		return () => cancelAnimationFrame(frame);
