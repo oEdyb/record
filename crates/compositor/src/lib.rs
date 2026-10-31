@@ -109,7 +109,7 @@ use mac_frames as cpu_frames;
 mod linux_frames;
 #[cfg(target_os = "linux")]
 use linux_frames as cpu_frames;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", all(test, target_os = "macos")))]
 mod linux_decode;
 
 // Moteur de composition + rastériseur de texte + pipeline : un fichier par plateforme.

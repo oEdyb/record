@@ -684,9 +684,18 @@ impl Decoder {
         }
     }
 
-    /// Durée réellement annoncée par le flux vidéo (symétrique de
-    /// `pipeline_windows::Decoder::available_duration_sec`).
+    /// Durée disponible de la source : le plus long du flux vidéo et du conteneur (cf.
+    /// `cover_container_duration`). Symétrique de
+    /// `pipeline_windows::Decoder::available_duration_sec`.
     pub unsafe fn available_duration_sec(&self) -> Option<f64> {
+        crate::timeline_walk::cover_container_duration(
+            self.video_stream_duration_sec(),
+            crate::ffi::sn_fmt_duration(self.fmt),
+        )
+    }
+
+    /// Durée annoncée par le seul flux vidéo, `nb_frames / fps` en repli.
+    unsafe fn video_stream_duration_sec(&self) -> Option<f64> {
         let stream = crate::ffi::sn_fmt_stream(self.fmt, self.vidx);
         let duration = (*stream).duration;
         let tb_sec = self.tb_sec();
@@ -1551,6 +1560,7 @@ fn index_reserve_bytes(
     let fps = out_fps.max(1) as f64;
     let max_frames = (24.0 * 3600.0 * fps) as u64;
     let mut frames = 0_u64;
+    let mut programme_sec = 0.0;
     for (index, clip) in clips.iter().enumerate() {
         if !clip.source_start_sec.is_finite()
             || !clip.source_end_sec.is_finite()
@@ -1567,8 +1577,12 @@ fn index_reserve_bytes(
                 .unwrap_or(&[]),
             clip.source_start_sec,
             clip.source_end_sec,
+            programme_sec,
             fps,
         );
+        if let Some(last) = segments.last() {
+            programme_sec = last.output_end_sec();
+        }
         for segment in segments {
             frames = frames.saturating_add(segment.frame_count);
         }
@@ -1603,6 +1617,11 @@ unsafe fn drain_encoder(
             return Ok(());
         }
         averr(r, "receive_packet")?;
+        // VideoToolbox may leave duration unknown. On our CFR encoder time base,
+        // one tick is one frame; otherwise MP4 can discard the final zero-length sample.
+        if (*opkt).duration <= 0 {
+            (*opkt).duration = 1;
+        }
         av_packet_rescale_ts(opkt, (*ectx).time_base, (*ostream).time_base);
         averr(
             av_interleaved_write_frame(octx, opkt),

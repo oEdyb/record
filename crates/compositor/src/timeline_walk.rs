@@ -21,7 +21,7 @@ use crate::frame_geometry::webcam_is_real;
 use crate::pipeline::{ClipSource, Decoder};
 use crate::regions::{speed_segments_for_window, SpeedSegment};
 use crate::scene::Scene;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 
 /// Ce que le décodeur sait de la PROCHAINE frame, sans l'adopter.
@@ -72,6 +72,49 @@ pub(crate) fn frame_step(next: NextFrameTime, offset_sec: f64, target_sec: f64) 
         NextFrameTime::At(t) if t + offset_sec > target_sec => FrameStep::Hold,
         NextFrameTime::At(_) => FrameStep::Commit,
     }
+}
+
+/// Durée disponible d'une source vidéo : le plus long de la durée annoncée par le flux et de
+/// celle du conteneur (`container_us`, en µs, négatif si inconnue).
+///
+/// Une capture d'écran statique (ScreenCaptureKit ne livre rien tant que l'écran ne change
+/// pas) ne contient parfois qu'UNE frame : `duration=0.067` pour un fichier de 87 s dont la
+/// piste audio, elle, couvre tout. Borner le clip à la durée du flux le raccourcissait à une
+/// frame, voire l'écartait sans bruit s'il commençait après. La sémantique de hold de
+/// `advance_decoder_to` tient déjà la dernière frame jusqu'au bout de la fenêtre ; la borne
+/// doit donc être celle du conteneur, qui couvre aussi l'audio.
+pub(crate) fn cover_container_duration(stream_sec: Option<f64>, container_us: i64) -> Option<f64> {
+    let container_sec = (container_us > 0)
+        .then(|| container_us as f64 / 1_000_000.0)
+        .filter(|s| s.is_finite() && *s > 0.0);
+    match (stream_sec, container_sec) {
+        (Some(stream), Some(container)) => Some(stream.max(container)),
+        (stream, container) => stream.or(container),
+    }
+}
+
+const CLIP_START_TAIL_TOLERANCE_SEC: f64 = 0.5;
+
+fn accepts_clip_start(current: f64, target: f64, hold_tail_sec: f64) -> Option<bool> {
+    if current <= target {
+        return Some(target - current <= hold_tail_sec + 1e-6);
+    }
+    if current - target <= CLIP_START_TAIL_TOLERANCE_SEC + 1e-6 {
+        return Some(true);
+    }
+    None
+}
+
+unsafe fn seek_clip_start(decoder: &mut Decoder, target: f64, hold_tail_sec: f64) -> Result<bool> {
+    let frame = decoder.seek_to(target)?;
+    if frame.is_null() {
+        return Ok(false);
+    }
+    if let Some(accepted) = accepts_clip_start(decoder.cur_time_sec(), target, hold_tail_sec) {
+        return Ok(accepted);
+    }
+    let first = decoder.seek_to(0.0)?;
+    Ok(!first.is_null() && decoder.cur_time_sec() > target)
 }
 
 /// Avance un décodeur vers `target_source_time`, sémantique de "hold" : à l'instant t on
@@ -177,6 +220,7 @@ pub(crate) unsafe fn walk_composited_timeline(
     let mut overlays = crate::overlay_video::OverlayDecoders::default();
 
     let mut frames: u64 = 0;
+    let mut programme_sec = 0.0;
     let mut result = WalkResult::default();
 
     for (clip_index, clip) in clips.iter().enumerate() {
@@ -188,10 +232,26 @@ pub(crate) unsafe fn walk_composited_timeline(
         retain_current(&mut cursor_tracks, Some(&clip.screen));
         comp.set_has_webcam(has_camera);
         if !screen_decs.contains_key(&clip.screen) {
-            screen_decs.insert(clip.screen.clone(), Decoder::open(&clip.screen, gpu)?);
+            screen_decs.insert(
+                clip.screen.clone(),
+                Decoder::open(&clip.screen, gpu).with_context(|| {
+                    format!(
+                        "Cannot export clip {}: unreadable screen video",
+                        clip_index + 1
+                    )
+                })?,
+            );
         }
         if has_camera && !webcam_decs.contains_key(&clip.webcam) {
-            webcam_decs.insert(clip.webcam.clone(), Decoder::open(&clip.webcam, gpu)?);
+            webcam_decs.insert(
+                clip.webcam.clone(),
+                Decoder::open(&clip.webcam, gpu).with_context(|| {
+                    format!(
+                        "Cannot export clip {}: unreadable camera video",
+                        clip_index + 1
+                    )
+                })?,
+            );
         }
 
         for decoder in screen_decs.values().chain(webcam_decs.values()) {
@@ -241,7 +301,10 @@ pub(crate) unsafe fn walk_composited_timeline(
             );
         }
         if source_end_sec <= clip.source_start_sec {
-            continue;
+            bail!(
+                "Cannot export clip {}: screen video ends before the clip starts",
+                clip_index + 1
+            );
         }
 
         let clip_scene = scene.as_ref().map(|base_scene| {
@@ -254,6 +317,7 @@ pub(crate) unsafe fn walk_composited_timeline(
                 .unwrap_or(&[]),
             clip.source_start_sec,
             source_end_sec,
+            programme_sec,
             out_fps as f64,
         );
         if clip_scene.is_some() {
@@ -269,15 +333,38 @@ pub(crate) unsafe fn walk_composited_timeline(
 
         // A screen-only clip reuses the screen frame as the compositor's unused webcam
         // input. Opening a second decoder for the same H.264 file doubled VideoToolbox work.
-        if sdec.seek_to(clip.source_start_sec)?.is_null() {
-            continue; // clip vide / au-delà de la source
+        let screen_hold = if screen_available_duration.is_some_and(|d| d > clip.source_start_sec) {
+            f64::INFINITY
+        } else {
+            CLIP_START_TAIL_TOLERANCE_SEC
+        };
+        if !seek_clip_start(sdec, clip.source_start_sec, screen_hold).with_context(|| {
+            format!(
+                "Cannot export clip {}: unreadable screen video",
+                clip_index + 1
+            )
+        })? {
+            bail!(
+                "Cannot export clip {}: no readable screen frame at clip start",
+                clip_index + 1
+            );
         }
         if let Some(decoder) = wdec.as_deref_mut() {
-            if decoder
-                .seek_to((clip.source_start_sec - clip.webcam_offset_sec).max(0.0))?
-                .is_null()
-            {
-                continue;
+            if !seek_clip_start(
+                decoder,
+                (clip.source_start_sec - clip.webcam_offset_sec).max(0.0),
+                CLIP_START_TAIL_TOLERANCE_SEC,
+            )
+            .with_context(|| {
+                format!(
+                    "Cannot export clip {}: unreadable camera video",
+                    clip_index + 1
+                )
+            })? {
+                bail!(
+                    "Cannot export clip {}: no readable camera frame at clip start",
+                    clip_index + 1
+                );
             }
         }
 
@@ -303,22 +390,30 @@ pub(crate) unsafe fn walk_composited_timeline(
         }
 
         let frames_before_clip = frames;
-        'clip_frames: for segment in &speed_segments {
+        for segment in &speed_segments {
             for segment_frame in 0..segment.frame_count {
-                let target_source_time =
-                    segment.start_sec + segment_frame as f64 * segment.speed / out_fps as f64;
+                let target_source_time = segment.source_time(segment_frame, out_fps as f64);
                 if !advance_decoder_to(sdec, target_source_time, 0.0)? {
-                    break 'clip_frames;
+                    bail!(
+                        "Cannot export clip {}: video decoder lost its frame",
+                        clip_index + 1
+                    );
                 }
                 if let Some(decoder) = wdec.as_deref_mut() {
                     if !advance_decoder_to(decoder, target_source_time, clip.webcam_offset_sec)? {
-                        break 'clip_frames;
+                        bail!(
+                            "Cannot export clip {}: video decoder lost its frame",
+                            clip_index + 1
+                        );
                     }
                 }
                 let sf = sdec.cur_frame();
                 let wf = wdec.as_deref().map_or(sf, |decoder| decoder.cur_frame());
                 if sf.is_null() || wf.is_null() {
-                    break 'clip_frames;
+                    bail!(
+                        "Cannot export clip {}: video decoder lost its frame",
+                        clip_index + 1
+                    );
                 }
 
                 comp.set_timeline_time(Some(target_source_time as f32));
@@ -333,6 +428,10 @@ pub(crate) unsafe fn walk_composited_timeline(
                 frames += 1;
             }
         }
+
+        if let Some(last) = speed_segments.last() {
+            programme_sec = last.output_end_sec();
+        }
         on_clip_end(
             clip_index,
             source_end_sec,
@@ -345,12 +444,40 @@ pub(crate) unsafe fn walk_composited_timeline(
     comp.set_timeline_time(None);
     screen_decs.clear();
     webcam_decs.clear();
+    if frames == 0 {
+        bail!("No video frames were exported");
+    }
     result.frames = frames;
     Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn clip_start_rejects_missing_footage_and_holds_static_screen() {
+        assert_eq!(super::accepts_clip_start(0.0, 5.0, 0.5), Some(false));
+        assert_eq!(super::accepts_clip_start(9.8, 10.2, 0.5), Some(true));
+        assert_eq!(
+            super::accepts_clip_start(0.0, 5.0, f64::INFINITY),
+            Some(true)
+        );
+        assert_eq!(super::accepts_clip_start(20.0, 15.0, f64::INFINITY), None);
+    }
+    #[test]
+    fn static_video_uses_container_duration() {
+        assert_eq!(
+            super::cover_container_duration(Some(0.067), 87_380_000),
+            Some(87.38)
+        );
+        assert_eq!(super::cover_container_duration(None, 5_000_000), Some(5.0));
+        assert_eq!(
+            super::cover_container_duration(Some(5.0), i64::MIN),
+            Some(5.0)
+        );
+        assert_eq!(super::cover_container_duration(None, i64::MIN), None);
+    }
+
     use super::{frame_step, FrameStep, NextFrameTime};
 
     /// La cadence de lecture, en une phrase : à 24 fps, une seconde réelle doit adopter 24

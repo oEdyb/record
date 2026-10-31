@@ -34,6 +34,7 @@ use crate::ffi::{
 /// crate pour tous les accesseurs du shim.
 extern "C" {
     fn sn_fmt_stream(s: *mut AVFormatContext, i: i32) -> *mut AVStream;
+    fn sn_fmt_duration(s: *mut AVFormatContext) -> i64;
 }
 
 /// `SEEK_SET` constant — la position de seek `av_seek_frame` interprète
@@ -343,6 +344,7 @@ impl SwDecoder {
                                                                 // comme `live::Player::step` rattrape la webcam par une boucle monotone vers
                                                                 // l'avant, une fois garée dans le futur elle ne revient jamais — elle fige.
         let seek_flags = SEEK_SET | AVSEEK_FLAG_BACKWARD;
+        let target_ts_seconds = target_ts / 1_000_000.0;
         let r = av_seek_frame(self.fmt, -1, target_ts as i64, seek_flags);
         if r < 0 {
             // Repli : rembobiner au début et balayer en avant.
@@ -355,7 +357,7 @@ impl SwDecoder {
             // écrivent des fichiers indexés.
             //
             // Rembobiner à 0 reste possible sans index (c'est le début du fichier), et
-            // la boucle ci-dessous sait déjà avancer jusqu'à `target_ts`. Le coût est
+            // `pump_to_target` sait déjà avancer jusqu'à `target_ts`. Le coût est
             // linéaire, ce qui n'est acceptable que depuis le pompage séquentiel : le
             // décodage mesure ~0,07 ms/frame, donc rejoindre la seconde 14 d'un
             // enregistrement coûte quelques dizaines de ms au lieu d'échouer.
@@ -374,8 +376,24 @@ impl SwDecoder {
         // Le seek rouvre le flux : le drapeau EOF du pompage sequentiel retombe.
         self.sent_eof = false;
 
+        let mut found = self.pump_to_target(target_ts_seconds)?;
+        if found.is_null() && av_seek_frame(self.fmt, -1, 0, seek_flags) >= 0 {
+            avcodec_flush_buffers(self.dec);
+            self.sent_eof = false;
+            found = self.pump_to_target(target_ts_seconds)?;
+        }
+        if found.is_null() {
+            bail!("decode_at(frame_idx={frame_idx}) : aucune frame reçue");
+        }
+        let pts = (*found).best_effort_timestamp;
+        self.cur_pts = if pts == i64::MIN { None } else { Some(pts) };
+        Ok(found)
+    }
+
+    /// Cadence reelle du flux (images/s). Sert a convertir un temps en secondes
+    /// vers un index de frame pour le seek du preview Linux.
+    unsafe fn pump_to_target(&mut self, target_ts_seconds: f64) -> Result<*mut AVFrame> {
         let mut found: *mut AVFrame = ptr::null_mut();
-        let target_ts_seconds = target_ts / 1_000_000.0;
         // Use the sequential pump, including its NULL-packet drain at demux EOF.
         // A short final GOP can remain entirely buffered by frame threading.
         loop {
@@ -401,16 +419,9 @@ impl SwDecoder {
                 break;
             }
         }
-        if found.is_null() {
-            bail!("decode_at(frame_idx={frame_idx}) : aucune frame reçue");
-        }
-        let pts = (*found).best_effort_timestamp;
-        self.cur_pts = if pts == i64::MIN { None } else { Some(pts) };
+
         Ok(found)
     }
-
-    /// Cadence reelle du flux (images/s). Sert a convertir un temps en secondes
-    /// vers un index de frame pour le seek du preview Linux.
     pub fn fps(&self) -> f64 {
         self.fps
     }
@@ -425,13 +436,14 @@ impl SwDecoder {
                 return None;
             }
             let duration = (*stream).duration;
-            if duration > 0 && self.stream_timebase > 0.0 {
-                let s = duration as f64 * self.stream_timebase;
-                if s.is_finite() && s > 0.0 {
-                    return Some(s);
-                }
-            }
-            None
+            let stream_sec = if duration > 0 && self.stream_timebase > 0.0 {
+                Some(duration as f64 * self.stream_timebase).filter(|s| s.is_finite() && *s > 0.0)
+            } else {
+                None
+            };
+            // Le plus long du flux et du conteneur : un flux d'une seule frame (écran
+            // statique) ne doit pas raccourcir le clip (cf. `cover_container_duration`).
+            crate::timeline_walk::cover_container_duration(stream_sec, sn_fmt_duration(self.fmt))
         }
     }
 
@@ -503,5 +515,56 @@ mod tests {
     fn open_sur_chemin_inexistant_renvoie_err() {
         let r = SwDecoder::open("Z:/does/not/exist.mp4");
         assert!(r.is_err());
+    }
+
+    /// Régression : `decode_at` doit rendre une frame pour TOUT index de 0 jusqu'à
+    /// AU-DELÀ de la dernière frame — jamais « aucune frame reçue ». Le dépassement
+    /// couvre le cas des captures à frames droppées (`avg_frame_rate` < 60), où un
+    /// index calculé sur la grille 60 fps demande une frame passé le compte réel :
+    /// le seek BACKWARD atterrit sur un packet isolé non décodable en fin de fichier
+    /// et `decode_at` doit basculer sur le repli rembobinage → dernière frame.
+    ///
+    /// Env-gated comme les tests `OPENSCREEN_GOLDEN_*` (pas de fixture mp4 commitée) :
+    /// `OPENSCREEN_SWEEP_FILE=/path/to.mp4 cargo test decode_at_never_fails_past_end -- --ignored`
+    #[test]
+    #[ignore]
+    fn decode_at_never_fails_past_end() {
+        let path = std::env::var("OPENSCREEN_SWEEP_FILE").expect("set OPENSCREEN_SWEEP_FILE");
+        let mut dec = SwDecoder::open(&path).expect("open");
+        let n = ((dec.duration_sec().unwrap_or(0.0) * dec.fps()).ceil() as u32) + 30;
+        let mut failures: Vec<u32> = Vec::new();
+        for idx in 0..n {
+            unsafe {
+                match dec.decode_at(idx) {
+                    Ok(f) => SwDecoder::free_frame(f),
+                    Err(_) => failures.push(idx),
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "decode_at failed at indices {failures:?} (of 0..{n})"
+        );
+    }
+}
+
+#[cfg(test)]
+mod eof_regressions {
+    use super::*;
+    #[test]
+    fn seeks_at_and_beyond_eof_hold_the_last_decodable_frame() {
+        for name in ["seek-eof-vfr.mp4", "seek-eof-fragmented.mp4"] {
+            let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+            let mut decoder = SwDecoder::open(&path).expect("fixture decoder");
+            for index in [0, 10, 100, 1000] {
+                unsafe {
+                    let frame = decoder
+                        .decode_at(index)
+                        .expect("EOF seek must hold a frame");
+                    assert!(!frame.is_null());
+                    SwDecoder::free_frame(frame);
+                }
+            }
+        }
     }
 }
