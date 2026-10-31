@@ -171,6 +171,8 @@ export class StudioController {
 		}
 		const pill = this.deps.getPill();
 		if (pill && !pill.isDestroyed()) {
+			this.fade.cancel(pill);
+			pill.setOpacity?.(1);
 			pill.show();
 			pill.focus();
 		}
@@ -382,10 +384,15 @@ export class StudioController {
 			this.publish();
 		}
 		this.window.webContents.send("studio-motion", { expanded: true });
+		this.fade.to(this.window, 1, 180);
+		// The pill leaves while the Studio arrives, not after it, so the two never sit together.
 		const pill = this.deps.getPill();
-		this.fade.to(this.window, 1, 180, () => {
-			if (this.mode === "studio" && pill && !pill.isDestroyed() && pill.isVisible()) pill.hide();
-		});
+		if (pill && !pill.isDestroyed() && pill.isVisible())
+			this.fade.to(pill, 0, 90, () => {
+				if (pill.isDestroyed()) return;
+				if (this.mode === "studio") pill.hide();
+				pill.setOpacity?.(1);
+			});
 		this.publish();
 	}
 }

@@ -477,3 +477,23 @@ it("keeps an outgoing window visible and retargets rapid pill/Studio reversals",
 		vi.useRealTimers();
 	}
 });
+
+it("fades the pill out while the Studio fades in, and brings it back opaque", () => {
+	vi.useFakeTimers();
+	try {
+		const { controller, studio, pill } = setup(null, { motionEnabled: () => true });
+		controller.open();
+		studio.ready();
+		vi.advanceTimersByTime(48);
+		expect(pill.window.getOpacity?.()).toBeLessThan(1);
+		vi.advanceTimersByTime(80);
+		expect(pill.visible()).toBe(false);
+		expect(studio.window.getOpacity?.()).toBeLessThan(1);
+		expect(pill.window.getOpacity?.()).toBe(1);
+		controller.backToPill();
+		expect(pill.visible()).toBe(true);
+		expect(pill.window.getOpacity?.()).toBe(1);
+	} finally {
+		vi.useRealTimers();
+	}
+});
