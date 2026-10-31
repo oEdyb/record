@@ -1,4 +1,5 @@
 import { ArrowDownUp, Camera, Monitor, PanelsTopLeft } from "lucide-react";
+import type { ReactNode } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { StudioLayout } from "@/lib/userPreferences";
 import type { StudioSnapshot } from "../../../electron/studio/types";
@@ -22,6 +23,7 @@ export function StudioDock({
 	onPosition,
 	playbackRequest,
 	speed,
+	devices,
 }: {
 	snapshot: StudioSnapshot;
 	layout: StudioLayout;
@@ -31,14 +33,19 @@ export function StudioDock({
 	onPosition: (value: number) => void;
 	playbackRequest: number;
 	speed: number;
+	/** Shown under the camera before a take. */
+	devices: ReactNode;
 }) {
 	const t = useScopedT("launch");
 	const idle = snapshot.phase === "idle";
-	const panes = splitLayout(layout);
+	// With the camera off there is no live camera pane: the replay gets the whole dock.
+	const cameraOn = snapshot.setup.cameraEnabled;
+	const view = cameraOn ? layout.view : "replay";
+	const panes = splitLayout({ ...layout, view });
 	const camera = (
 		<div key="camera" className={styles.cameraSlot} id="studio-live">
 			<StudioCamera
-				active={snapshot.shown && snapshot.setup.cameraEnabled && (idle || panes.camera)}
+				active={snapshot.shown && cameraOn && (idle || panes.camera)}
 				guides={idle && layout.guides}
 			/>
 		</div>
@@ -53,7 +60,7 @@ export function StudioDock({
 				onPosition={onPosition}
 				playbackRequest={playbackRequest}
 				speed={speed}
-				cameraOnly={layout.view === "camera"}
+				cameraOnly={view === "camera"}
 				labels={{
 					clipOf: (current, total) => t("peek.clipOf", { current, total }),
 					play: t("peek.play"),
@@ -69,7 +76,7 @@ export function StudioDock({
 	);
 	return (
 		<aside className={styles.dock} id="studio-dock">
-			<div className={styles.dockHeader}>
+			<div className={styles.dockHeader} hidden={!idle && !cameraOn}>
 				{idle ? (
 					<>
 						<span>{t("permissions.camera")}</span>
@@ -81,7 +88,7 @@ export function StudioDock({
 							{t("studio.guides")}
 						</button>
 					</>
-				) : (
+				) : cameraOn ? (
 					<>
 						<div className={styles.viewSwitch}>
 							{(["replay", "both", "camera"] as const).map((view, i) => (
@@ -114,15 +121,15 @@ export function StudioDock({
 							) : null}
 						</div>
 					</>
-				)}
+				) : null}
 			</div>
 			<div
 				className={styles.panes}
 				style={{
 					gridTemplateRows:
-						idle || layout.view === "replay"
+						idle || view === "replay"
 							? "minmax(0,1fr)"
-							: layout.view === "camera"
+							: view === "camera"
 								? "minmax(0,1fr) auto"
 								: layout.order === "replay"
 									? `minmax(0,${layout.split}fr) 14px minmax(0,${1 - layout.split}fr)`
@@ -131,7 +138,7 @@ export function StudioDock({
 			>
 				{idle ? (
 					camera
-				) : layout.view === "camera" ? (
+				) : view === "camera" ? (
 					<>
 						{camera}
 						{replay}
@@ -145,7 +152,7 @@ export function StudioDock({
 							: panes.camera
 								? camera
 								: null}
-						{layout.view === "both" ? (
+						{view === "both" ? (
 							<StudioSeparator
 								controls="studio-replay studio-live"
 								value={layout.split}
@@ -167,6 +174,7 @@ export function StudioDock({
 					</>
 				)}
 			</div>
+			{idle ? <div className={styles.dockDevices}>{devices}</div> : null}
 		</aside>
 	);
 }

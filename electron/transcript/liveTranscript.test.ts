@@ -69,6 +69,14 @@ describe("LiveTranscriptService", () => {
 		]);
 	});
 
+	it("records a clip under 300 ms as silent instead of asking the model", async () => {
+		listing = { recordingId: 7, clips: [clip(0, 237), clip(1)], live: false };
+		const result = await makeService().refresh();
+		expect(result.clips.map((entry) => entry.text)).toEqual(["", "text clip-1"]);
+		expect(result.clips[0]?.error).toBeNull();
+		expect(transcribe).toHaveBeenCalledTimes(1);
+	});
+
 	it("reads a text-only cache from before word times without transcribing again", async () => {
 		await mkdir(path.join(dir, "cache"), { recursive: true });
 		await writeFile(

@@ -266,6 +266,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	studioCommand: (command: unknown) => {
 		ipcRenderer.send("studio-command", command);
 	},
+	/** Pill -> main: the pill opened a panel only it can show (permissions), so bring it forward. */
+	studioPillNeedsUser: () => {
+		ipcRenderer.send("studio-pill-needs-user");
+	},
 	/** Pill -> main: its own locks and Undo, which the Studio mirrors. */
 	reportStudioPillState: (state: unknown) => {
 		ipcRenderer.send("studio-pill-state", state);

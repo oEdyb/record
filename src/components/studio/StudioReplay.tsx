@@ -6,8 +6,9 @@ import { followCamera } from "@/lib/followCamera";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { useReleasingMediaRef } from "@/lib/releasingMediaRef";
-import { buildPeekTimeline, locatePeekTime, peekCameraStyle } from "../launch/HudClipPeek";
+import { buildPeekTimeline, locatePeekTime } from "../launch/HudClipPeek";
 import peek from "../launch/LaunchWindow.module.css";
+import { StudioReplayCamera } from "./StudioReplayCamera";
 import { StudioSeekBar } from "./StudioSeekBar";
 import styles from "./StudioWindow.module.css";
 
@@ -67,11 +68,10 @@ export function StudioReplay({
 	const [playing, setPlaying] = useState(false);
 	const [failed, setFailed] = useState(false);
 	const [aspect, setAspect] = useState(16 / 9);
-	const [cameraPortrait, setCameraPortrait] = useState(false);
 	const volume = usePreviewAudio((state) => state.volume);
 	const muted = usePreviewAudio((state) => state.muted);
 	const toggleMuted = usePreviewAudio((state) => state.toggleMuted);
-	const placement = useMemo(() => loadEditingPreferences().editor, []);
+	const [placement, setPlacement] = useState(() => loadEditingPreferences().editor);
 
 	const current = timeline[Math.min(clipIndex, timeline.length - 1)];
 	const source = current ? toKlipptMediaUrl(current.clip.screenVideoPath) : undefined;
@@ -96,6 +96,17 @@ export function StudioReplay({
 	);
 	const seekRef = useRef(seek);
 	seekRef.current = seek;
+
+	// A removed clip can take the one being shown: land on what is still there.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reconciles only when the clips change
+	useEffect(() => {
+		if (timeline.length > 0 && (clipIndex > timeline.length - 1 || position > total))
+			seekRef.current(Math.min(position, total));
+	}, [timeline]);
+
+	// One unreadable clip must not block the others: each new source gets its own chance.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset per source
+	useEffect(() => setFailed(false), [source]);
 
 	// A new clip arrived: wait near its end, unless the creator is looking at something else.
 	useEffect(() => {
@@ -137,11 +148,11 @@ export function StudioReplay({
 		else video.pause();
 	}, [playing, source]);
 
-	// A new clip loads a new source: give it the same listening level.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: re-applied per source
+	// A new clip, or the video made again after the Studio was hidden, gets the same listening level.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-applied per source and per mount
 	useEffect(() => {
 		applyPreviewAudio(videoRef.current, { volume, muted });
-	}, [volume, muted, source]);
+	}, [volume, muted, source, shown]);
 
 	// The position follows the video; the camera file follows the screen file.
 	useEffect(() => {
@@ -171,6 +182,8 @@ export function StudioReplay({
 	const handleLoadedMetadata = () => {
 		const video = videoRef.current;
 		if (!video) return;
+		setFailed(false);
+		applyPreviewAudio(video, { volume, muted });
 		video.playbackRate = speed;
 		if (video.videoWidth > 0 && video.videoHeight > 0)
 			setAspect(video.videoWidth / video.videoHeight);
@@ -233,17 +246,12 @@ export function StudioReplay({
 						/>
 					) : null}
 					{shown && showCamera && cameraPath ? (
-						<video
-							ref={attachCamera}
-							className={peek.clipPeekCamera}
-							style={peekCameraStyle(placement, cameraPortrait)}
+						<StudioReplayCamera
+							attach={attachCamera}
 							src={toKlipptMediaUrl(cameraPath)}
-							muted
-							playsInline
-							preload="auto"
-							onLoadedMetadata={(event) =>
-								setCameraPortrait(event.currentTarget.videoHeight > event.currentTarget.videoWidth)
-							}
+							placement={placement}
+							onPlacement={setPlacement}
+							label={labels.recorded}
 						/>
 					) : null}
 					<span className={peek.clipPeekLabel}>

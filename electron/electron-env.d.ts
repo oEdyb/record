@@ -108,6 +108,7 @@ interface Window {
 			callback: (snapshot: import("./studio/types").StudioSnapshot) => void,
 		) => () => void;
 		studioCommand: (command: import("./studio/types").StudioCommand) => void;
+		studioPillNeedsUser: () => void;
 		reportStudioPillState: (state: import("./studio/types").StudioPillState) => void;
 		onStudioSetupCommand: (
 			callback: (command: import("./studio/types").PillSetupCommand) => void,

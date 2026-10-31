@@ -215,7 +215,8 @@
 		"nothing": "없음",
 		"enableShortcuts": "키보드 단축키 사용",
 		"transcriptsReady": "대본 {{count}}개 준비됨",
-		"keymap": "Space: 재생 / 일시 정지\n← / →: 5초 이동 · Shift: 10초\n↑ / ↓: 이전 / 다음 문장 · Enter: 문장 재생\n[ / ]: 이전 / 다음 클립 · 1–9: 클립 이동\nHome / End: 처음 / 끝 · T: 방향 · F: 따라가기\n− / =: 글자 크기 · , / .: 속도\nBackspace: 이전 클립 제거\nM: 실시간 보기 · V: 입력 레벨 · G: 가이드\n?: 단축키 · Escape: 닫기",
-		"recorded": "녹화됨"
+		"keymap": "Space: 재생 / 일시 정지\n← / →: 5초 이동 · ⇧← / ⇧→: 10초\n↑ / ↓: 이전 / 다음 문장 · Enter: 문장 재생\n[ / ]: 이전 / 다음 클립 · 1–9: 클립 이동\nHome / End: 처음 / 끝 · T: 방향 · F: 따라가기\n− / =: 글자 크기 · , / .: 속도\nBackspace: 이전 클립 제거\nM: 실시간 보기 · V: 입력 레벨 · G: 가이드\n?: 단축키 · Escape: 닫기",
+		"recorded": "녹화됨",
+		"notesAndCamera": "메모 + 카메라"
 	}
 }

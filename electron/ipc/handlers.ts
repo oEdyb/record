@@ -1552,9 +1552,13 @@ function readNativeWindowsEncoderSelection(output: string) {
 	}
 }
 
+/** Told whenever the current take's session changes after Stop (camera clips attached, edits). */
+let currentSessionListener: ((session: RecordingSession) => void) | null = null;
+
 function setCurrentRecordingSessionState(session: RecordingSession | null) {
 	currentRecordingSession = session;
 	currentVideoPath = session?.screenVideoPath ?? null;
+	if (session) currentSessionListener?.(session);
 }
 
 /**
@@ -1744,7 +1748,9 @@ export type TakeEvent =
 	| { kind: "paused" }
 	| { kind: "resuming" }
 	| { kind: "changed" }
-	| { kind: "stored"; session: RecordingSession };
+	| { kind: "stored"; session: RecordingSession }
+	/** The stored session was rewritten, e.g. its camera clips were attached. */
+	| { kind: "session-updated"; session: RecordingSession };
 
 export function registerIpcHandlers(
 	createEditorWindow: (options?: { compactReview?: boolean }) => void,
@@ -1778,6 +1784,7 @@ export function registerIpcHandlers(
 		}) => Promise<void>;
 	} = {},
 ): Promise<boolean> {
+	currentSessionListener = (session) => options.onTakeEvent?.({ kind: "session-updated", session });
 	const ipcMain = options.ipcMain ?? electronIpcMain;
 	// The Studio reads the setup synchronously; load it once so it never shows defaults.
 	void recordingPrefsStore.get().then(

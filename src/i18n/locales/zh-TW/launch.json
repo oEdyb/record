@@ -215,7 +215,8 @@
 		"nothing": "不顯示",
 		"enableShortcuts": "啟用鍵盤快速鍵",
 		"transcriptsReady": "{{count}} 份逐字稿已完成",
-		"keymap": "Space：播放／暫停\n← / →：跳轉5秒 · Shift：10秒\n↑ / ↓：上一句／下一句 · Enter：播放目前句子\n[ / ]：上一段／下一段 · 1–9：跳轉片段\nHome / End：開頭／結尾 · T：切換側邊 · F：跟隨\n− / =：文字大小 · , / .：速度\nBackspace：移除上一片段\nM：即時檢視 · V：輸入音量 · G：輔助線\n?：快速鍵 · Escape：關閉",
-		"recorded": "已錄製"
+		"keymap": "Space：播放／暫停\n← / →：跳轉5秒 · ⇧← / ⇧→：10秒\n↑ / ↓：上一句／下一句 · Enter：播放目前句子\n[ / ]：上一段／下一段 · 1–9：跳轉片段\nHome / End：開頭／結尾 · T：切換側邊 · F：跟隨\n− / =：文字大小 · , / .：速度\nBackspace：移除上一片段\nM：即時檢視 · V：輸入音量 · G：輔助線\n?：快速鍵 · Escape：關閉",
+		"recorded": "已錄製",
+		"notesAndCamera": "備註 + 攝影機"
 	}
 }

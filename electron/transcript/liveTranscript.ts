@@ -14,6 +14,8 @@ import type {
 	TranscriptSnapshot,
 } from "./transcriptTypes";
 
+const MIN_TRANSCRIBABLE_MS = 300;
+
 export type {
 	TranscriptClipEntry,
 	TranscriptClipListing,
@@ -222,6 +224,12 @@ export class LiveTranscriptService {
 						download: null,
 					});
 					return this.current;
+				}
+				// The speech models refuse audio under 300 ms; such a clip has no words to find.
+				if ((clip.durationMs ?? Number.POSITIVE_INFINITY) < MIN_TRANSCRIBABLE_MS) {
+					this.texts.set(cacheKey(listing.recordingId, clip), { text: "", words: [] });
+					done += 1;
+					continue;
 				}
 				const wavPath = path.join(
 					this.deps.tempDir,

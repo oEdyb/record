@@ -46,12 +46,7 @@ export function useStudioKeyboard({
 				if (event.key === "m")
 					return () =>
 						update({
-							liveMode:
-								layout.liveMode === "mirror"
-									? "notes"
-									: layout.liveMode === "notes"
-										? "nothing"
-										: "mirror",
+							liveMode: LIVE_MODES[(LIVE_MODES.indexOf(layout.liveMode) + 1) % LIVE_MODES.length],
 						});
 				if (event.key === "v") return toggleMeters;
 				if (event.key === "g" && snapshot.phase === "idle")
@@ -122,3 +117,5 @@ export function useStudioKeyboard({
 		return () => window.removeEventListener("keydown", key);
 	});
 }
+
+const LIVE_MODES = ["both", "notes", "mirror", "nothing"] as const;

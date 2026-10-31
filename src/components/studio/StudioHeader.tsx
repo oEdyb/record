@@ -6,14 +6,12 @@ export function StudioHeader({
 	mac,
 	phaseLabel,
 	help,
-	resize,
 	side,
 	pill,
 }: {
 	mac: boolean;
 	phaseLabel: string;
 	help: () => void;
-	resize: (delta: number) => void;
 	side: () => void;
 	pill: () => void;
 }) {
@@ -24,12 +22,6 @@ export function StudioHeader({
 			<span className={styles.phase}>{phaseLabel}</span>
 			<button type="button" aria-label={t("studio.shortcuts")} onClick={help}>
 				?
-			</button>
-			<button type="button" aria-label={t("studio.smaller")} onClick={() => resize(-1)}>
-				A−
-			</button>
-			<button type="button" aria-label={t("studio.larger")} onClick={() => resize(1)}>
-				A+
 			</button>
 			<button type="button" id="studio-side" aria-label={t("studio.side")} onClick={side}>
 				<PanelsLeftRight size={16} />

@@ -34,11 +34,16 @@ export interface StudioControllerDeps {
 	/** The recording setup as main stores it; the pill applies every change to it. */
 	setup: () => StudioSetup;
 	getPill: () => StudioWindowLike | null;
+	/** Brings back a pill that was closed (the review replaced it), so the take has an owner. */
+	ensurePill?: () => void;
 	createWindow: (near: { x: number; y: number } | undefined) => StudioWindowLike;
 	/** Sends one of the pill's existing commands, so its own predicates decide. */
 	sendToPill: (channel: string, payload?: unknown) => void;
-	/** Hands a stopped take to the normal review, where it is saved and exported. */
-	openReview: () => void;
+	/**
+	 * Hands a stopped take to the normal review, where it is saved and exported. `from` is
+	 * the Studio's frame, so the review opens in its place instead of jumping elsewhere.
+	 */
+	openReview: (from?: { x: number; y: number; width: number; height: number }) => void;
 	/** True only when the compositor confirms the Studio is off the recorded output. */
 	outsideCapture: (pipeWireNodeId: number | undefined) => Promise<boolean>;
 	endCaptureCheck: () => void;
@@ -104,6 +109,7 @@ export class StudioController {
 	/** Pill -> Studio. */
 	open() {
 		this.mode = "studio";
+		if (!this.deps.getPill()) this.deps.ensurePill?.();
 		this.wasRunning = Boolean(this.deps.take()?.running);
 		const pill = this.deps.getPill();
 		const bounds = pill && !pill.isDestroyed() ? pill.getBounds() : undefined;
@@ -138,6 +144,11 @@ export class StudioController {
 		}
 	}
 
+	/** The pill opened a panel the user must answer (permissions): show it, keep the take. */
+	pillNeedsUser() {
+		if (this.mode === "studio") this.backToPill();
+	}
+
 	command(command: StudioCommand) {
 		const take = this.deps.take();
 		if (typeof command === "object" || isSetupCommand(command)) {
@@ -169,6 +180,13 @@ export class StudioController {
 			this.finishWhenSaved = false;
 			return this.publish();
 		}
+		this.review = { recordingId: take.recordingId, clips: take.clips.filter((c) => !c.removed) };
+		this.publish();
+	}
+
+	/** The stored take was rewritten (its camera clips attached): the read-back follows it. */
+	sessionUpdated(take: { recordingId: number; clips: RecordingSessionClip[] }) {
+		if (!this.review || this.review.recordingId !== take.recordingId) return;
 		this.review = { recordingId: take.recordingId, clips: take.clips.filter((c) => !c.removed) };
 		this.publish();
 	}
@@ -266,8 +284,10 @@ export class StudioController {
 		}
 		this.review = null;
 		this.mode = "pill";
+		const from = this.visible() ? this.window?.getBounds() : undefined;
+		// The review shows first, in the Studio's place, so the swap has no empty moment.
+		this.deps.openReview(from);
 		this.hideStudio();
-		this.deps.openReview();
 	}
 
 	private capturing(): boolean {

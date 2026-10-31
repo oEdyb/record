@@ -69,6 +69,7 @@ export function registerStudioIpc(ipcMain: RendererIpcMain, studio: StudioContro
 		const command = parseStudioCommand(raw);
 		if (command) studio.command(command);
 	});
+	ipcMain.on("studio-pill-needs-user", () => studio.pillNeedsUser());
 	ipcMain.on("studio-pill-state", (_event, raw: unknown) => {
 		const state = parsePillState(raw);
 		if (state) studio.setPillState(state);

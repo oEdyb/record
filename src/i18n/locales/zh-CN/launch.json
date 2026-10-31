@@ -215,7 +215,8 @@
 		"nothing": "不显示",
 		"enableShortcuts": "启用键盘快捷键",
 		"transcriptsReady": "{{count}} 份转录已完成",
-		"keymap": "Space：播放／暂停\n← / →：跳转5秒 · Shift：10秒\n↑ / ↓：上一句／下一句 · Enter：播放当前句\n[ / ]：上一段／下一段 · 1–9：跳转片段\nHome / End：开头／结尾 · T：切换侧边 · F：跟随\n− / =：文字大小 · , / .：速度\nBackspace：移除上一片段\nM：实时视图 · V：输入音量 · G：辅助线\n?：快捷键 · Escape：关闭",
-		"recorded": "已录制"
+		"keymap": "Space：播放／暂停\n← / →：跳转5秒 · ⇧← / ⇧→：10秒\n↑ / ↓：上一句／下一句 · Enter：播放当前句\n[ / ]：上一段／下一段 · 1–9：跳转片段\nHome / End：开头／结尾 · T：切换侧边 · F：跟随\n− / =：文字大小 · , / .：速度\nBackspace：移除上一片段\nM：实时视图 · V：输入音量 · G：辅助线\n?：快捷键 · Escape：关闭",
+		"recorded": "已录制",
+		"notesAndCamera": "备注 + 摄像头"
 	}
 }

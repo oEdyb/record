@@ -22,7 +22,7 @@ const studioLayoutSchema = z.object({
 		.finite()
 		.transform((v) => Math.min(0.6, Math.max(0.18, v)))
 		.catch(0.32),
-	liveMode: z.enum(["mirror", "notes", "nothing"]).catch("mirror"),
+	liveMode: z.enum(["both", "mirror", "notes", "nothing"]).catch("both"),
 	guides: z.boolean().catch(false),
 	shortcuts: z.boolean().catch(true),
 });

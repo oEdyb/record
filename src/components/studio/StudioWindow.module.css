@@ -120,7 +120,7 @@
 }
 
 .setup button:hover:not(:disabled) {
-	background: var(--hud-fill-hover);
+	background: rgba(255, 255, 255, 0.04);
 	color: var(--ink);
 }
 
@@ -130,20 +130,51 @@
 	text-overflow: ellipsis;
 }
 
-.setup button[aria-pressed="true"] {
-	background: var(--hud-fill);
+/* On reads as a lit tile with a plain icon; off is flat, muted and crossed out. */
+.setup button[aria-pressed="true"],
+.setup button[aria-pressed="true"]:hover:not(:disabled) {
+	background: var(--hud-fill-strong);
 	color: var(--ink);
+}
+
+.setup button[aria-pressed="false"] {
+	color: var(--muted);
 }
 
 .spacer {
 	flex: 1;
 }
 
-.meter {
-	width: 40px;
-	height: 6px;
-	margin: 0 6px 0 -2px;
-	accent-color: var(--hud-success);
+/* The input level, drawn along the bottom of the Microphone button. */
+.micGroup {
+	position: relative;
+	display: flex;
+}
+
+.level {
+	pointer-events: none;
+}
+
+.level {
+	position: absolute;
+	right: 14px;
+	bottom: 5px;
+	left: 14px;
+	height: 2px;
+	overflow: hidden;
+	border-radius: 1px;
+	background: var(--hud-fill-strong);
+}
+
+.level::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	background: var(--hud-success);
+	transform: scaleX(var(--level, 0));
+	transform-origin: left;
+	transition: transform 60ms linear;
 }
 
 .body {
@@ -212,6 +243,36 @@
 .documentTabs button[aria-pressed="true"],
 .viewSwitch button[aria-pressed="true"] {
 	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.documentBar {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.textSize {
+	display: flex;
+	gap: 2px;
+	margin-left: auto;
+}
+
+.textSize button {
+	height: 28px;
+	min-width: 32px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.textSize button:hover {
+	background: var(--hud-fill-hover);
 	color: var(--ink);
 }
 
@@ -300,6 +361,23 @@
 	width: min(100cqw, 100cqh * 16 / 9);
 	height: auto;
 	aspect-ratio: 16 / 9;
+}
+
+/* Before recording the dock holds only the camera: the card hugs the picture, not the window. */
+.root[data-phase="idle"] .dock {
+	align-self: start;
+}
+
+.root[data-phase="idle"] .panes {
+	flex: none;
+}
+
+.root[data-phase="idle"] .cameraSlot {
+	container-type: normal;
+}
+
+.root[data-phase="idle"] .cameraSlot .camera {
+	width: 100%;
 }
 
 .camera {
@@ -428,6 +506,80 @@
 	height: auto;
 	overflow: hidden;
 	border-radius: var(--hud-radius-lg);
+}
+
+/* The recorded camera reads as a tile you can grab, not as part of the screen behind it. */
+.replayCamera {
+	position: absolute;
+	overflow: hidden;
+	border-radius: 8px;
+	box-shadow:
+		0 0 0 1.5px rgba(255, 255, 255, 0.55),
+		0 8px 20px rgba(0, 0, 0, 0.55);
+	cursor: grab;
+	touch-action: none;
+}
+
+.replayCamera:active {
+	cursor: grabbing;
+}
+
+.replayCameraHandle {
+	position: absolute;
+	right: 4px;
+	bottom: 4px;
+	width: 14px;
+	height: 14px;
+	border-right: 2px solid rgba(255, 255, 255, 0.85);
+	border-bottom: 2px solid rgba(255, 255, 255, 0.85);
+	border-radius: 0 0 4px;
+	opacity: 0;
+	cursor: nwse-resize;
+	transition: opacity 120ms ease;
+}
+
+.replayCameraHandle[data-left="true"] {
+	right: auto;
+	left: 4px;
+	border-right: 0;
+	border-left: 2px solid rgba(255, 255, 255, 0.85);
+	border-radius: 0 0 0 4px;
+}
+
+.replayCameraHandle[data-top="true"] {
+	top: 4px;
+	bottom: auto;
+	border-top: 2px solid rgba(255, 255, 255, 0.85);
+	border-bottom: 0;
+}
+
+.replayCameraHandle[data-left="true"][data-top="true"] {
+	border-radius: 4px 0 0;
+}
+
+.replayCameraHandle[data-left="false"][data-top="true"] {
+	border-radius: 0 4px 0 0;
+}
+
+.replayCameraHandle[data-left="true"][data-top="false"],
+.replayCameraHandle[data-left="false"][data-top="true"] {
+	cursor: nesw-resize;
+}
+
+.replayCamera:hover .replayCameraHandle {
+	opacity: 1;
+}
+
+/* Narrow docks put the seek bar on its own line instead of crushing it into the time. */
+.replayControls {
+	flex-wrap: wrap;
+	height: auto;
+	row-gap: 6px;
+}
+
+.replayControls > [role="slider"] {
+	flex: 1 1 140px;
+	min-width: 140px;
 }
 
 .replayControls {
@@ -633,29 +785,71 @@
 	transform: scale(0.97);
 }
 
+/* While recording: notes and the camera share the window, each as large as it can be. */
 .calm {
 	position: relative;
-	display: flex;
+	display: grid;
 	min-height: 0;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 20px;
-	padding: 40px;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr);
+	gap: 12px;
+	padding: 0 0 44px;
 }
 
-.calm .camera {
-	width: min(720px, 70%);
-	height: auto;
-	max-height: 65%;
-	aspect-ratio: 16 / 9;
+.calm[data-mode="both"] {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-.calm .notes {
-	width: min(700px, 90%);
-	flex: 0 1 auto;
-	max-height: 60%;
-	overflow: hidden;
+.calm > .notes,
+.calm > .cameraSlot {
+	min-height: 0;
+	border: 1px solid var(--line);
+	border-radius: var(--hud-radius-xl);
+	background: var(--hud-surface);
+}
+
+.calm > .notes {
+	padding: 24px clamp(24px, 4vw, 72px);
+}
+
+.calm > .cameraSlot {
+	padding: 8px;
+}
+
+.calm[data-mode="nothing"] {
+	place-items: center;
+}
+
+.liveModes {
+	position: absolute;
+	bottom: 0;
+	left: 50%;
+	display: flex;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill);
+	transform: translateX(-50%);
+}
+
+.liveModes button {
+	height: 28px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+	white-space: nowrap;
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.liveModes button:hover {
+	color: var(--ink);
+}
+
+.liveModes button[aria-pressed="true"] {
+	background: var(--hud-fill-strong);
+	color: var(--ink);
 }
 
 .liveTimer {
@@ -666,61 +860,187 @@
 }
 
 .dialog {
-	width: min(560px, 90vw);
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	z-index: 101;
+	transform: translate(-50%, -50%);
+	width: min(440px, 90vw);
 	max-height: 85vh;
-	padding: 20px;
+	padding: 16px;
 	border-radius: var(--hud-radius-xl);
 	color: var(--ink);
 }
 
-.dialog::backdrop {
+.dialogLayer {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
 	background: rgba(0, 0, 0, 0.55);
+}
+
+/* A panel with its own frame, such as the source picker, sits in the dialog as is. */
+.dialog[data-bare="true"] {
+	width: fit-content;
+	height: fit-content;
+	padding: 0;
+	border: 0;
+	background: none;
+	box-shadow: none;
+}
+
+/* The pill's source panel, given the room the Studio has. */
+.dialog[data-bare="true"] .sourcePanel {
+	--source-columns: 3;
+	width: min(760px, 86vw);
+	height: min(560px, 80vh);
 }
 
 .dialog header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	margin-bottom: 20px;
+	margin: 0 0 14px 6px;
 	font-weight: 500;
 }
 
-.dialog button {
+.dialog header button {
 	height: 28px;
 	padding: 0 12px;
 	border: 0;
-	border-radius: var(--hud-radius-md);
+	border-radius: var(--hud-radius-pill);
 	background: var(--hud-fill-strong);
 	color: inherit;
 }
 
-.fields {
-	display: grid;
-	gap: 8px;
-	padding: 0;
-	border: 0;
+.dialog header button:hover {
+	background: var(--hud-fill-hover);
 }
 
-.fields label {
-	display: flex;
-	min-height: 44px;
-	align-items: center;
-	justify-content: space-between;
-	gap: 20px;
-	padding: 0 8px 0 14px;
+/* One grouped list: rows split by hairlines, labels left, controls right. */
+/* A fieldset is never narrower than its content unless told; the list must fit any pane. */
+.fields {
+	container-type: inline-size;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	min-width: 0;
+	margin: 0;
+	padding: 0 4px;
+	border: 0;
 	border-radius: var(--hud-radius-lg);
 	background: var(--hud-fill);
+}
+
+.fieldRow {
+	display: flex;
+	min-height: 48px;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 0 6px 0 12px;
 	color: var(--ink-2);
 }
 
-.fields label > :last-child {
-	max-width: 65%;
+.fieldRow + .fieldRow {
+	box-shadow: inset 0 1px 0 var(--line);
+}
+
+.fieldRow > [data-klippt-select-trigger] {
+	width: 230px;
+	min-width: 0;
+	max-width: 62%;
+	overflow: hidden;
+}
+
+/* A long device name ends in an ellipsis inside the box; the arrow keeps its place. */
+.fieldRow > [data-klippt-select-trigger] > span:first-child,
+.fieldRow > [data-klippt-select-trigger] > span:first-child * {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.fieldRow > [data-klippt-select-trigger] > svg {
+	flex: none;
+}
+
+.dockDevices {
+	margin-top: 8px;
+}
+
+/* In a narrow pane each control goes under its label, full width. */
+@container (max-width: 360px) {
+	.fieldRow:has(> [data-klippt-select-trigger]) {
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 10px 12px;
+	}
+
+	.fieldRow > [data-klippt-select-trigger] {
+		width: 100%;
+		max-width: 100%;
+	}
+}
+
+.fields [role="alert"] {
+	padding: 10px 12px;
+	color: #ff9b8f;
+}
+
+.dialog:has(.keymap) {
+	display: flex;
+	flex-direction: column;
+	width: min(480px, 90vw);
 }
 
 .keymap {
+	min-height: 0;
+	margin: 12px 0 0;
+	padding: 0 4px;
+	overflow-y: auto;
+	border-radius: var(--hud-radius-lg);
+	background: var(--hud-fill);
+}
+
+.keymapRow {
+	display: flex;
+	min-height: 36px;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 0 8px 0 12px;
+}
+
+.keymapRow + .keymapRow {
+	box-shadow: inset 0 1px 0 var(--line);
+}
+
+.keymapRow dt {
+	min-width: 0;
 	color: var(--ink-2);
-	line-height: 2;
-	white-space: pre-line;
+}
+
+.keymapRow dd {
+	display: flex;
+	flex: none;
+	gap: 4px;
+	margin: 0;
+}
+
+.keymapRow kbd {
+	min-width: 24px;
+	height: 22px;
+	padding: 0 6px;
+	border-radius: var(--hud-radius-sm);
+	background: var(--hud-fill-strong);
+	box-shadow: inset 0 -1px 0 var(--line);
+	color: var(--ink);
+	font: inherit;
+	font-size: 12px;
+	line-height: 22px;
+	text-align: center;
 }
 
 .srOnly {
@@ -797,10 +1117,6 @@
 
 	.setup button:first-child {
 		max-width: 140px;
-	}
-
-	.meter {
-		width: 24px;
 	}
 
 	.document {

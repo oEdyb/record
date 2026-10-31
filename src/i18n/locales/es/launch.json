@@ -215,7 +215,8 @@
 		"nothing": "Nada",
 		"enableShortcuts": "Activar atajos de teclado",
 		"transcriptsReady": "{{count}} transcripciones listas",
-		"keymap": "Espacio: Reproducir / pausar\n← / →: Avanzar 5 s · Mayús: 10 s\n↑ / ↓: Frase anterior / siguiente · Intro: Reproducir frase\n[ / ]: Clip anterior / siguiente · 1–9: Ir al clip\nInicio / Fin: Límites · T: Cambiar lado · F: Seguir\n− / =: Tamaño del texto · , / .: Velocidad\nRetroceso: Eliminar clip anterior\nM: Vista en directo · V: Nivel de entrada · G: Guías\n?: Atajos · Esc: Cerrar",
-		"recorded": "Grabado"
+		"keymap": "Espacio: Reproducir / pausar\n← / →: Avanzar 5 s · ⇧← / ⇧→: 10 s\n↑ / ↓: Frase anterior / siguiente · Intro: Reproducir frase\n[ / ]: Clip anterior / siguiente · 1–9: Ir al clip\nInicio / Fin: Límites · T: Cambiar lado · F: Seguir\n− / =: Tamaño del texto · , / .: Velocidad\nRetroceso: Eliminar clip anterior\nM: Vista en directo · V: Nivel de entrada · G: Guías\n?: Atajos · Esc: Cerrar",
+		"recorded": "Grabado",
+		"notesAndCamera": "Notas + cámara"
 	}
 }

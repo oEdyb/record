@@ -215,7 +215,8 @@
 		"nothing": "非表示",
 		"enableShortcuts": "キーボードショートカットを有効化",
 		"transcriptsReady": "文字起こし{{count}}件が完了",
-		"keymap": "Space: 再生／一時停止\n← / →: 5秒移動 · Shift: 10秒\n↑ / ↓: 前／次の文 · Enter: 文を再生\n[ / ]: 前／次のクリップ · 1–9: クリップへ移動\nHome / End: 先頭／末尾 · T: 左右切替 · F: 追従\n− / =: 文字サイズ · , / .: 速度\nBackspace: 前のクリップを削除\nM: ライブ表示 · V: 入力レベル · G: ガイド\n?: ショートカット · Escape: 閉じる",
-		"recorded": "録画"
+		"keymap": "Space: 再生／一時停止\n← / →: 5秒移動 · ⇧← / ⇧→: 10秒\n↑ / ↓: 前／次の文 · Enter: 文を再生\n[ / ]: 前／次のクリップ · 1–9: クリップへ移動\nHome / End: 先頭／末尾 · T: 左右切替 · F: 追従\n− / =: 文字サイズ · , / .: 速度\nBackspace: 前のクリップを削除\nM: ライブ表示 · V: 入力レベル · G: ガイド\n?: ショートカット · Escape: 閉じる",
+		"recorded": "録画",
+		"notesAndCamera": "メモ + カメラ"
 	}
 }

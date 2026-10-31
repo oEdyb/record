@@ -213,7 +213,7 @@ describe("Studio phase controls", () => {
 		act(() => listener(snapshot("paused")));
 		command.mockClear();
 		fireEvent.click(screen.getByRole("button", { name: "studio.shortcuts" }));
-		fireEvent.click(screen.getByRole("checkbox", { name: "studio.enableShortcuts" }));
+		fireEvent.click(screen.getByRole("switch", { name: "studio.enableShortcuts" }));
 		fireEvent.click(screen.getByRole("button", { name: "deviceSettings.done" }));
 		fireEvent.keyDown(main, { key: "Backspace" });
 		expect(command).not.toHaveBeenCalled();

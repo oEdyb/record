@@ -1,6 +1,8 @@
 import type { StudioSnapshot } from "../../../electron/studio/types";
 import { buildPeekTimeline } from "../launch/HudClipPeek";
 
+const MIN_TRANSCRIBABLE_SEC = 0.3;
+
 export interface StudioSentence {
 	text: string;
 	/** Where the sentence starts in the clip's screen video, in seconds. */
@@ -75,21 +77,25 @@ export function buildStudioSections(snapshot: StudioSnapshot): StudioSection[] {
 				});
 			}
 		}
+		// The speech models need 300 ms; a clip shorter than that simply has no speech to show.
+		const tooShort = duration < MIN_TRANSCRIBABLE_SEC;
 		const state: StudioSectionState = sentences.length
 			? "text"
-			: entry?.error
-				? "error"
-				: typeof entry?.text === "string"
-					? "silent"
-					: transcribing
-						? "transcribing"
-						: "waiting";
+			: tooShort
+				? "silent"
+				: entry?.error
+					? "error"
+					: typeof entry?.text === "string"
+						? "silent"
+						: transcribing
+							? "transcribing"
+							: "waiting";
 		return {
 			clipIndex: clip.index,
 			startSec: start,
 			state,
 			sentences,
-			error: entry?.error ?? null,
+			error: tooShort ? null : (entry?.error ?? null),
 		};
 	});
 	if (snapshot.phase === "recording") {

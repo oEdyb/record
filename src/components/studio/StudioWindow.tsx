@@ -1,4 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InspectorSwitch } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
 import { applyTheme } from "@/hooks/useTheme";
 import {
@@ -8,15 +9,15 @@ import {
 	saveUserPreferences,
 } from "@/lib/userPreferences";
 import type { StudioCommand } from "../../../electron/studio/types";
-import { AppSelect } from "../ui/app-select";
 import { StudioCamera } from "./StudioCamera";
 import { StudioDialog } from "./StudioDialog";
 import { StudioDock, type StudioSeekRequest } from "./StudioDock";
 import { StudioHeader } from "./StudioHeader";
+import { StudioKeymap } from "./StudioKeymap";
 import { StudioNotes } from "./StudioNotes";
 import { StudioRail } from "./StudioRail";
 import { StudioSeparator } from "./StudioSeparator";
-import { StudioSetup } from "./StudioSetup";
+import { StudioDevices, StudioSetup, setupLocked } from "./StudioSetup";
 import { StudioTranscript } from "./StudioTranscript";
 import { StudioTransport } from "./StudioTransport";
 import styles from "./StudioWindow.module.css";
@@ -28,6 +29,10 @@ import { useElapsedSeconds, useStudioSnapshot } from "./useStudioSnapshot";
 import { useStudioTranscriptStatus } from "./useStudioTranscriptStatus";
 
 const COMMAND_TIMEOUT_MS = 5_000;
+const BODY_PADDING_PX = 12;
+const SEPARATOR_PX = 12;
+/** The notes or transcript never get narrower than this; the dock gives way first. */
+const MIN_DOCUMENT_PX = 300;
 export function StudioWindow() {
 	const t = useScopedT("launch");
 	const snapshot = useStudioSnapshot();
@@ -117,6 +122,9 @@ export function StudioWindow() {
 	const status = useStudioTranscriptStatus(snapshot, sections);
 
 	const fraction = dockFraction(paused ? pausedFraction : layout.dockFrac, width - 12);
+	// The body's own content width: the window less its 12px padding each side and the separator.
+	const paneWidth = Math.max(0, width - 2 * BODY_PADDING_PX - SEPARATOR_PX);
+	const dockPx = Math.max(0, Math.min(fraction * paneWidth, paneWidth - MIN_DOCUMENT_PX));
 	const phaseLabel = t(
 		live
 			? "studio.recording"
@@ -127,6 +135,14 @@ export function StudioWindow() {
 					: "studio.newTake",
 	);
 	const completed = sections.filter((s) => s.state === "text").length;
+	const cameraOn = Boolean(snapshot?.setup.cameraEnabled);
+	// Without a camera, a new take has nothing for the dock to show: the notes take the room.
+	const dockShown = !live && !dockHidden && (phase !== "idle" || cameraOn);
+	const liveMode = cameraOn ? layout.liveMode : layout.liveMode === "nothing" ? "nothing" : "notes";
+	const resizeText = (d: number) => {
+		preserveStudioReader();
+		setFontDelta((n) => Math.max(-5, Math.min(8, n + d)));
+	};
 	return (
 		<div
 			className={styles.root}
@@ -138,10 +154,6 @@ export function StudioWindow() {
 				mac={platform === "darwin"}
 				phaseLabel={phaseLabel}
 				help={() => setHelp(true)}
-				resize={(d) => {
-					preserveStudioReader();
-					setFontDelta((n) => Math.max(-5, Math.min(8, n + d)));
-				}}
 				side={() =>
 					dockHidden
 						? setDockHidden(false)
@@ -150,21 +162,26 @@ export function StudioWindow() {
 				pill={() => send("pill")}
 			/>
 			{snapshot ? (
-				<StudioSetup snapshot={snapshot} send={send} pending={pending} meters={meters} />
+				<StudioSetup
+					snapshot={snapshot}
+					send={send}
+					pending={pending}
+					meters={meters}
+					devicesInline={phase === "idle" && dockShown}
+				/>
 			) : null}
 			<main
 				className={styles.body}
 				data-studio-document
 				tabIndex={0}
 				data-live={live}
-				data-dock={dockHidden ? "right" : layout.dock}
+				data-dock={dockShown ? layout.dock : "right"}
 				style={{
-					gridTemplateColumns:
-						live || dockHidden
-							? "minmax(0,1fr)"
-							: layout.dock === "right"
-								? `minmax(380px,1fr) 12px ${fraction * (width - 12)}px`
-								: `${fraction * (width - 12)}px 12px minmax(380px,1fr)`,
+					gridTemplateColumns: !dockShown
+						? "minmax(0,1fr)"
+						: layout.dock === "right"
+							? `minmax(0,1fr) ${SEPARATOR_PX}px ${dockPx}px`
+							: `${dockPx}px ${SEPARATOR_PX}px minmax(0,1fr)`,
 				}}
 			>
 				<div className={styles.document} id="studio-document" hidden={live}>
@@ -174,22 +191,33 @@ export function StudioWindow() {
 						position={playheadSec}
 						seek={seek}
 					/>
-					<nav className={styles.documentTabs}>
-						<button
-							type="button"
-							aria-pressed={!notes && phase !== "idle"}
-							onClick={() => setNotes(false)}
-						>
-							{t("transcript.title")}
-						</button>
-						<button
-							type="button"
-							aria-pressed={notes || phase === "idle"}
-							onClick={() => setNotes(true)}
-						>
-							{t("setup.notes")}
-						</button>
-					</nav>
+					<div className={styles.documentBar}>
+						{/* Before the first clip there is no transcript: the notes stand alone. */}
+						<nav className={styles.documentTabs} hidden={phase === "idle"}>
+							<button
+								type="button"
+								aria-pressed={!notes && phase !== "idle"}
+								onClick={() => setNotes(false)}
+							>
+								{t("transcript.title")}
+							</button>
+							<button
+								type="button"
+								aria-pressed={notes || phase === "idle"}
+								onClick={() => setNotes(true)}
+							>
+								{t("setup.notes")}
+							</button>
+						</nav>
+						<div className={styles.textSize}>
+							<button type="button" aria-label={t("studio.smaller")} onClick={() => resizeText(-1)}>
+								A−
+							</button>
+							<button type="button" aria-label={t("studio.larger")} onClick={() => resizeText(1)}>
+								A+
+							</button>
+						</div>
+					</div>
 					<div className={styles.documentContent} hidden={phase === "idle" || notes}>
 						<StudioTranscript
 							sections={sections}
@@ -214,7 +242,7 @@ export function StudioWindow() {
 					</div>
 					{phase === "idle" || notes ? <StudioNotes /> : null}
 				</div>
-				{!live && !dockHidden ? (
+				{dockShown ? (
 					<>
 						<StudioSeparator
 							vertical
@@ -241,44 +269,45 @@ export function StudioWindow() {
 								onPosition={setPlayheadSec}
 								playbackRequest={playbackRequest}
 								speed={speed}
+								devices={
+									<StudioDevices
+										snapshot={snapshot}
+										send={send}
+										locked={setupLocked(snapshot, pending)}
+									/>
+								}
 							/>
 						) : null}
 					</>
 				) : null}
 				{live ? (
-					<div className={styles.calm}>
-						{layout.liveMode === "mirror" ? (
-							<StudioCamera
-								active={Boolean(snapshot?.shown && snapshot.setup.cameraEnabled)}
-								guides={false}
-								dim
-							/>
-						) : layout.liveMode === "notes" ? (
-							<StudioNotes />
+					<div className={styles.calm} data-mode={liveMode}>
+						{liveMode === "notes" || liveMode === "both" ? <StudioNotes /> : null}
+						{liveMode === "mirror" || liveMode === "both" ? (
+							<div className={styles.cameraSlot}>
+								<StudioCamera active={Boolean(snapshot?.shown && cameraOn)} guides={false} />
+							</div>
 						) : null}
-						<div className={styles.liveTimer} aria-hidden="true">
-							{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
-						</div>
-						<AppSelect
-							aria-label={t("studio.liveMode")}
-							value={layout.liveMode}
-							onChange={(e) =>
-								update({
-									liveMode:
-										e.target.value === "notes"
-											? "notes"
-											: e.target.value === "nothing"
-												? "nothing"
-												: "mirror",
-								})
-							}
-						>
-							{(["mirror", "notes", "nothing"] as const).map((mode) => (
-								<option key={mode} value={mode}>
-									{t(`studio.${mode}`)}
-								</option>
+						{liveMode === "nothing" ? (
+							<div className={styles.liveTimer} aria-hidden="true">
+								{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+							</div>
+						) : null}
+						<div className={styles.liveModes} role="group" aria-label={t("studio.liveMode")}>
+							{(cameraOn
+								? (["both", "notes", "mirror", "nothing"] as const)
+								: (["notes", "nothing"] as const)
+							).map((mode) => (
+								<button
+									type="button"
+									key={mode}
+									aria-pressed={liveMode === mode}
+									onClick={() => update({ liveMode: mode })}
+								>
+									{t(`studio.${mode === "both" ? "notesAndCamera" : mode}`)}
+								</button>
 							))}
-						</AppSelect>
+						</div>
 					</div>
 				) : null}
 			</main>
@@ -294,15 +323,17 @@ export function StudioWindow() {
 			</div>
 			{help ? (
 				<StudioDialog title={t("studio.shortcuts")} onClose={() => setHelp(false)}>
-					<label>
-						<input
-							type="checkbox"
-							checked={layout.shortcuts}
-							onChange={(e) => update({ shortcuts: e.target.checked })}
-						/>
-						{t("studio.enableShortcuts")}
-					</label>
-					<p className={styles.keymap}>{t("studio.keymap")}</p>
+					<div className={styles.fields}>
+						<div className={styles.fieldRow}>
+							<span>{t("studio.enableShortcuts")}</span>
+							<InspectorSwitch
+								label={t("studio.enableShortcuts")}
+								checked={layout.shortcuts}
+								onCheckedChange={(checked) => update({ shortcuts: checked })}
+							/>
+						</div>
+					</div>
+					<StudioKeymap keymap={t("studio.keymap")} />
 				</StudioDialog>
 			) : null}
 		</div>

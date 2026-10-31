@@ -79,7 +79,7 @@ import { appendRecordStartTiming, RecordStartTimeline } from "./recording/record
 import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
 import { ensureModels, isModelOnDisk, modelPaths } from "./stt/modelManager";
-import { registerStudioIpc } from "./studio/ipc";
+import { parseStudioCommand, registerStudioIpc } from "./studio/ipc";
 import { moveStudioOffCapture, returnStudioTo } from "./studio/niriStudioPlacement";
 import { StudioController } from "./studio/studioController";
 import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
@@ -734,6 +734,8 @@ function compactReviewBoundsNear(window: BrowserWindow | null) {
 }
 
 const compactReviewWindows = new WeakSet<BrowserWindow>();
+/** A review that took the Studio's place keeps the Studio's frame instead of shrinking to fit. */
+const reviewsInStudioFrame = new WeakSet<BrowserWindow>();
 
 /** Tells review whether it is the small player, so Expand appears only then. */
 function setReviewWindowCompact(window: BrowserWindow, compact: boolean) {
@@ -750,6 +752,7 @@ ipcMain.handle(
 		const window = BrowserWindow.fromWebContents(event.sender);
 		if (!window || window.isDestroyed() || !compactReviewWindows.has(window)) return false;
 		if (window.isFullScreen() || window.isMaximized()) return false;
+		if (reviewsInStudioFrame.has(window)) return false;
 		const current = window.getBounds();
 		const display = screen.getDisplayMatching(current);
 		// A visible player eases into its new shape instead of jumping.
@@ -771,14 +774,20 @@ ipcMain.handle("is-review-window-compact", (event) => {
 	return Boolean(window && compactReviewWindows.has(window));
 });
 
-function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
+function createEditorWindowWrapper(
+	options: { compactReview?: boolean; bounds?: Electron.Rectangle } = {},
+) {
 	if (workspaceTransition?.target === "editor" && !workspaceTransition.window.isDestroyed()) {
 		return;
 	}
-	const compactBounds = options.compactReview ? compactReviewBoundsNear(mainWindow) : undefined;
+	const compactBounds = options.compactReview
+		? (options.bounds ?? compactReviewBoundsNear(mainWindow))
+		: undefined;
 	if (editorWindow && !editorWindow.isDestroyed()) {
 		const previousWindow = mainWindow;
 		mainWindow = editorWindow;
+		if (options.bounds) reviewsInStudioFrame.add(editorWindow);
+		else reviewsInStudioFrame.delete(editorWindow);
 		// A review the user put in native fullscreen stays there.
 		if (compactBounds && !editorWindow.isFullScreen()) {
 			if (editorWindow.isMaximized()) editorWindow.unmaximize();
@@ -803,6 +812,7 @@ function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
 	const previousWindow = mainWindow;
 	const nextEditorWindow = createEditorWindow({}, { compactBounds });
 	adoptEditorWindow(nextEditorWindow, Boolean(compactBounds));
+	if (options.bounds) reviewsInStudioFrame.add(nextEditorWindow);
 	workspaceTransition = { target: "editor", window: nextEditorWindow };
 	mainWindow = nextEditorWindow;
 	editorHasUnsavedChanges = false;
@@ -992,6 +1002,14 @@ function startAgentServer(sttModelsDir: string) {
 		outDir: path.join(app.getPath("temp"), "klippt-agent"),
 		windows: () => BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed()),
 		reviewWindow: () => (editorWindow && !editorWindow.isDestroyed() ? editorWindow : null),
+		openStudio: () => studio?.open(),
+		studioState: () => studio?.snapshot() ?? null,
+		studioCommand: (raw) => {
+			const command = parseStudioCommand(raw);
+			if (!command || !studio) return false;
+			studio.command(command);
+			return true;
+		},
 		ffmpegPath: () => resolveFfmpeg(),
 		transcriber: async () => {
 			if (agentTranscriber?.running) return agentTranscriber;
@@ -1174,6 +1192,14 @@ appReady?.then(async () => {
 	setupApplicationMenu();
 	await ensureRecordingsDir();
 
+	function currentHudWindow() {
+		return mainWindow &&
+			!mainWindow.isDestroyed() &&
+			mainWindow.webContents.getURL().includes("windowType=hud-overlay")
+			? mainWindow
+			: null;
+	}
+
 	function switchToHudWrapper() {
 		if (workspaceTransition?.target === "hud" && !workspaceTransition.window.isDestroyed()) {
 			return;
@@ -1253,6 +1279,13 @@ appReady?.then(async () => {
 			},
 			onRecordingSetupChanged: () => studio?.publish(),
 			onTakeEvent: (event) => {
+				if (event.kind === "session-updated") {
+					studio?.sessionUpdated({
+						recordingId: event.session.createdAt,
+						clips: event.session.clips ?? [],
+					});
+					return;
+				}
 				if (event.kind === "stored")
 					studio?.stored({
 						recordingId: event.session.createdAt,
@@ -1317,7 +1350,7 @@ appReady?.then(async () => {
 	studio = new StudioController({
 		take: studioTake,
 		setup: studioSetup,
-		openReview: () => createEditorWindowWrapper({ compactReview: true }),
+		openReview: (from) => createEditorWindowWrapper({ compactReview: true, bounds: from }),
 		transcript: () =>
 			liveTranscript?.snapshot() ?? {
 				recordingId: null,
@@ -1328,11 +1361,17 @@ appReady?.then(async () => {
 				error: null,
 				updatedAt: 0,
 			},
-		getPill: () => mainWindow,
-		createWindow: (near) => createStudioWindow(near),
-		sendToPill: (channel, payload) => {
-			if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+		// Only the recording HUD is the pill; after Finish the main window is the review.
+		getPill: () => currentHudWindow(),
+		ensurePill: () => {
+			if (currentHudWindow()) return;
+			switchToHudWrapper();
+			const hud = currentHudWindow();
+			// The new pill shows itself once it can paint; the Studio then takes over again.
+			hud?.once("ready-to-show", () => setImmediate(() => studio?.open()));
 		},
+		createWindow: (near) => createStudioWindow(near),
+		sendToPill: (channel, payload) => currentHudWindow()?.webContents.send(channel, payload),
 		// macOS keeps protected windows out of capture; on Linux only niri can confirm it.
 		outsideCapture: (nodeId) =>
 			process.platform === "darwin" ? Promise.resolve(true) : studioCaptureGuard.begin(nodeId),

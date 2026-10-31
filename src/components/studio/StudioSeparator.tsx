@@ -58,7 +58,12 @@ export function StudioSeparator({
 			onPointerCancel={() => {
 				dragging.current = false;
 			}}
+			onLostPointerCapture={() => {
+				dragging.current = false;
+			}}
 			onPointerMove={(e) => {
+				// A release the separator never saw (capture lost) must not leave it following the pointer.
+				if (dragging.current && (e.buttons & 1) === 0) dragging.current = false;
 				if (!dragging.current) return;
 				const bounds = e.currentTarget.parentElement?.getBoundingClientRect();
 				if (!bounds) return;

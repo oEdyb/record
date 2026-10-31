@@ -1239,7 +1239,7 @@ export function createStudioWindow(near?: { x: number; y: number }): BrowserWind
 		height,
 		x: Math.round(area.x + (area.width - width) / 2),
 		y: Math.round(area.y + (area.height - height) / 2),
-		minWidth: 640,
+		minWidth: 660,
 		minHeight: 560,
 		// The Mac keeps its own window buttons over the Studio's title strip.
 		...(process.platform === "darwin"

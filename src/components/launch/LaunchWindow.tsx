@@ -277,6 +277,11 @@ export function LaunchWindow() {
 	const [permissionRequestBusy, setPermissionRequestBusy] = useState(false);
 	const pendingPermissionActionRef = useRef<(() => void) | null>(null);
 	const permissionPresence = usePresence(permissionPanelOpen, 150);
+	// A Record pressed in the Studio can need permissions only this panel grants; the
+	// Studio hides the pill, so ask for it back.
+	useEffect(() => {
+		if (permissionPanelOpen) window.electronAPI?.studioPillNeedsUser?.();
+	}, [permissionPanelOpen]);
 	const permissionNeeds = useMemo(
 		() => ({ microphone: microphoneEnabled, camera: webcamEnabled }),
 		[microphoneEnabled, webcamEnabled],

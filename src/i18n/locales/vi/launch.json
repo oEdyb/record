@@ -215,7 +215,8 @@
 		"nothing": "Không hiển thị",
 		"enableShortcuts": "Bật phím tắt",
 		"transcriptsReady": "{{count}} bản chép lời đã sẵn sàng",
-		"keymap": "Space: Phát / tạm dừng\n← / →: 5 giây · Shift: 10 giây\n↑ / ↓: Câu trước / sau · Enter: Phát câu\n[ / ]: Đoạn trước / sau · 1–9: Chuyển đoạn\nHome / End: Đầu / cuối · T: Đổi bên · F: Theo dõi\n− / =: Cỡ chữ · , / .: Tốc độ\nBackspace: Xóa đoạn trước\nM: Chế độ trực tiếp · V: Mức đầu vào · G: Đường căn\n?: Phím tắt · Escape: Đóng",
-		"recorded": "Đã quay"
+		"keymap": "Space: Phát / tạm dừng\n← / →: 5 giây · ⇧← / ⇧→: 10 giây\n↑ / ↓: Câu trước / sau · Enter: Phát câu\n[ / ]: Đoạn trước / sau · 1–9: Chuyển đoạn\nHome / End: Đầu / cuối · T: Đổi bên · F: Theo dõi\n− / =: Cỡ chữ · , / .: Tốc độ\nBackspace: Xóa đoạn trước\nM: Chế độ trực tiếp · V: Mức đầu vào · G: Đường căn\n?: Phím tắt · Escape: Đóng",
+		"recorded": "Đã quay",
+		"notesAndCamera": "Ghi chú + camera"
 	}
 }

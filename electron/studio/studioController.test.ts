@@ -29,14 +29,19 @@ function fakeWindow() {
 	return win;
 }
 
-function setup(take: StudioTake | null, outside = false) {
+function setup(
+	take: StudioTake | null,
+	outside: boolean | Partial<ConstructorParameters<typeof StudioController>[0]> = false,
+) {
+	const overrides = typeof outside === "object" ? outside : {};
+	const outsideValue = typeof outside === "boolean" ? outside : false;
 	const studio = fakeWindow();
 	const pill = fakeWindow();
 	pill.window.show();
 	const state = { take };
 	const sendToPill = vi.fn();
 	const openReview = vi.fn();
-	const outsideCapture = vi.fn(async () => outside);
+	const outsideCapture = vi.fn(async () => outsideValue);
 	const controller = new StudioController({
 		take: () => state.take,
 		transcript: () => ({
@@ -66,6 +71,7 @@ function setup(take: StudioTake | null, outside = false) {
 		endCaptureCheck: vi.fn(),
 		waitForUnmap: async () => undefined,
 		now: () => 1_000,
+		...overrides,
 	});
 	return { controller, studio, pill, state, sendToPill, outsideCapture, openReview };
 }
@@ -256,6 +262,7 @@ describe("StudioController", () => {
 
 		controller.command("finish");
 		expect(openReview).toHaveBeenCalledOnce();
+		expect(openReview).toHaveBeenCalledWith({ x: 10, y: 20, width: 400, height: 60 });
 		expect(studio.visible()).toBe(false);
 		expect(controller.keepsReview()).toBe(false);
 	});
@@ -283,6 +290,37 @@ describe("StudioController", () => {
 		expect(studio.visible()).toBe(true);
 		controller.setPillState({ ...pillState, saving: false, transportBusy: false });
 		expect(openReview).toHaveBeenCalledOnce();
+		expect(studio.visible()).toBe(false);
+	});
+
+	it("follows the stored take when its camera clips are attached later", () => {
+		const clip = { index: 0, durationMs: 1_000, removed: false } as StudioTake["clips"][number];
+		const { controller, studio, state } = setup(paused);
+		controller.open();
+		studio.ready();
+		controller.sync();
+		controller.stored({ recordingId: 7, clips: [] });
+		state.take = { recordingId: 7, clips: [], running: false, paused: false };
+		controller.sync();
+		controller.sessionUpdated({ recordingId: 7, clips: [clip] });
+		expect(controller.snapshot().clips).toEqual([clip]);
+		controller.sessionUpdated({ recordingId: 8, clips: [] });
+		expect(controller.snapshot().clips).toEqual([clip]);
+	});
+
+	it("asks for a pill when the Studio opens without one", () => {
+		const ensurePill = vi.fn();
+		const { controller } = setup(paused, { getPill: () => null, ensurePill });
+		controller.open();
+		expect(ensurePill).toHaveBeenCalledOnce();
+	});
+
+	it("brings the pill back when the pill needs the user", () => {
+		const { controller, studio } = setup(paused);
+		controller.open();
+		studio.ready();
+		controller.sync();
+		controller.pillNeedsUser();
 		expect(studio.visible()).toBe(false);
 	});
 

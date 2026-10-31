@@ -215,7 +215,8 @@
 		"nothing": "Nothing",
 		"enableShortcuts": "Enable keyboard shortcuts",
 		"transcriptsReady": "{{count}} transcripts ready",
-		"keymap": "Space: Play / pause\n← / →: Seek 5 s · Shift: 10 s\n↑ / ↓: Previous / next sentence · Enter: Play sentence\n[ / ]: Previous / next clip · 1–9: Jump to clip\nHome / End: Start / end · T: Switch side · F: Follow\n− / =: Text size · , / .: Speed\nBackspace: Remove previous clip\nM: Mirror / Notes / Nothing · V: Input meter · G: Guides\n?: Shortcuts · Escape: Close",
-		"recorded": "Recorded"
+		"keymap": "Space: Play / pause\n← / →: Seek 5 s · ⇧← / ⇧→: Seek 10 s\n↑ / ↓: Previous / next sentence · Enter: Play sentence\n[ / ]: Previous / next clip · 1–9: Jump to clip\nHome / End: Start / end · T: Switch side · F: Follow\n− / =: Text size · , / .: Speed\nBackspace: Remove previous clip\nM: Live view · V: Input meter · G: Guides\n?: Shortcuts · Escape: Close",
+		"recorded": "Recorded",
+		"notesAndCamera": "Notes + camera"
 	}
 }
