@@ -2550,6 +2550,7 @@ export function LaunchWindow() {
 									})}
 									onDismiss={dismissSystemLocaleSuggestion}
 									onConfirm={acceptSystemLocaleSuggestion}
+									confirmOnEnter={!isPopoverOpen}
 								/>
 							)}
 

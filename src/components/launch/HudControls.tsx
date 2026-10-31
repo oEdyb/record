@@ -8,7 +8,7 @@ import {
 	Maximize2,
 	SlidersHorizontal,
 } from "lucide-react";
-import { memo, type ReactNode, useRef } from "react";
+import { memo, type ReactNode, useEffect, useRef } from "react";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { KlipptMark } from "../brand/KlipptMark";
 import { Button } from "../ui/button";
@@ -591,6 +591,7 @@ export const HudNotice = memo(function HudNotice({
 	confirmLabel,
 	onDismiss,
 	onConfirm,
+	confirmOnEnter = false,
 }: {
 	title: string;
 	description: string;
@@ -598,7 +599,20 @@ export const HudNotice = memo(function HudNotice({
 	confirmLabel: string;
 	onDismiss: () => void;
 	onConfirm: () => void;
+	/** Enter confirms while no control has focus; a focused control keeps its own Enter. */
+	confirmOnEnter?: boolean;
 }) {
+	useEffect(() => {
+		if (!confirmOnEnter) return;
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Enter" || event.repeat || event.target !== document.body) return;
+			if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+			onConfirm();
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [confirmOnEnter, onConfirm]);
+
 	return (
 		<div
 			data-hud-interactive="true"
