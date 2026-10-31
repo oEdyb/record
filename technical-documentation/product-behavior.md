@@ -1159,11 +1159,37 @@ product requirement, not as an optional maximum-quality mode.
   gaps, and bound camera source time after applying its offset. Round shared cumulative cut
   boundaries to the timeline frame grid; do not accumulate a rounding error per cut. Use relative
   media references so the folder can move. Keep exact source offsets in OTIO metadata; cuts and
-  synchronization belong only in the timeline files. `handoff.json` lists the unchanged media files.
+  synchronization are also described in `handoff.json`, alongside unchanged media files.
   Whole source files retain material outside partial trims. Camera remains a full separate layer;
   captions, layouts, editable cursor overlays, speed changes, B-roll and audio processing are not
   transferred. Say this on the export surface and in the handoff. DaVinci Resolve is the first
   verified interchange target; keep the export labels editor-neutral.
+- Separate takes handoff v4 names media `<take>-<sha1(assetId)[0:8]>-<role>.<ext>`;
+  dialogue derivatives use a unique export id. OTIO and FCPXML clip names identify take,
+  role and source range; OTIO metadata and manifest edit maps share the same frame plan.
+  Source seconds are half-open screen-clock ranges; stream frame fields describe actual
+  quantized media reads. Explicit offsets follow `streamTimeSec = screenTimeSec - offsetSec`.
+  Keep camera start/offset milliseconds, file bytes/SHA-256, ffprobe stream facts, full/clean
+  per-track edits, removed-range marker text, available transcript words and active dialogue.
+  Copy cursor JSON unchanged and decode its embedded PNG assets into a per-take folder.
+  Declare capture mode from the matching recording session, or unknown; missing telemetry
+  is explicit. Cursor coordinates are normalized, top-left; hotspots use image pixels.
+  Native sidecars already remove pre-roll/pauses and rebase clips: screen seconds = timeMs/1000.
+  Clean dialogue reads `round((screenTimeSec - microphoneOffsetSec) * 48000)` samples,
+  preserving frame-planned lengths and keeping sub-frame offsets out of video quantization.
+  Contracts checked against [OTIO metadata](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-file-format-specification.html)
+  and [ffprobe stream output](https://ffmpeg.org/ffprobe.html); originals remain unchanged.
+- A Clean cut source export with an isolated microphone also writes derived
+  `clean-dialogue.wav`: 48 kHz, 24-bit, original channel count, exact frame-planned
+  duration. Soft audio joins may shift within half a video frame; video cuts stay
+  fixed. Handles may borrow only within the project's retained source ranges;
+  project trims use short fades without restoring removed material. Only the
+  clean-cut OTIO adds Clean dialogue and disables the replaced microphone clips.
+  System audio and the full timelines stay unchanged. Missing isolated microphone
+  audio produces a warning, never a stem from embedded mixed audio. Original files
+  remain byte copies; the manifest labels the stem as derived. There is no clean-cut
+  FCPXML or in-app soft-join playback parity in this slice. Resolve's handling of
+  disabled clips still requires import verification.
 - Beside `timeline.otio`, write `timeline.fcpxml` (FCPXML 1.10) for Final Cut Pro from the same
   frame-grid plan, never a second sync calculation. Screen clips and gaps form the primary storyline; camera
   connects on lane 1, microphone on lane −1 (dialogue role), system audio on lane −2 (effects

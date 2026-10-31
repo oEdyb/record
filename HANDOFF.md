@@ -130,3 +130,74 @@ Current product and compatibility rules remain in `AGENTS.md` and
 `technical-documentation/product-behavior.md`.
 
 Reusable lessons and development-skill routing: [Linux porting playbook](docs/linux-porting-playbook.md).
+
+## Clean dialogue, slice 1 (October 30, 2026)
+
+Clean-cut source handoff now derives `clean-dialogue.wav` from isolated microphones at
+48 kHz / 24-bit, retaining channel count. Its sample map comes directly from the
+60 fps microphone plan (800 samples/frame), including offset and gaps. Only the
+clean-cut OTIO adds Clean dialogue and disables replaced original microphone clips;
+full OTIO, FCPXML and original media stay unchanged. No mixed-audio fallback.
+
+The pure plan centers a 20 ms equal-power blend on the frame-locked seam (a blind
+listening test rated a shift toward the energy minimum no better). Speech-neighbor gap measurements are
+not available on this export input, so it uses the agreed 20 ms fallback. Fades
+are bounded to one third of adjacent pieces. Handles must stay inside the pre-clean-cut project's retained frame ranges;
+otherwise use a 3 ms fade out/in without borrowing. Seam-local peak attenuation
+prevents blend overload. Decoding spools float PCM to temporary disk, with bounded
+sample windows and incremental output, abort cleanup, and no whole-take PCM in RAM.
+Different microphone channel counts fail explicitly rather than silently downmixing;
+classic WAV output fails above its 4 GiB limit. Allow staging disk space for decoded
+float sources as well as the derived WAV.
+
+Contracts checked: [OTIO format](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-file-format-specification.html),
+[OTIO enabled serialization](https://github.com/AcademySoftwareFoundation/OpenTimelineIO/blob/main/src/opentimelineio/item.cpp),
+existing bundled FFmpeg runner and timeline writer, and read-only `seam/framelock.py`
+in the STT bakeoff. Verified in Resolve Studio 21.1 on a real 62 s recording: imported
+with the source folder, all clips link, original microphone clips arrive disabled, and the
+Clean dialogue clip matches the microphone sample for sample at every piece.
+
+## Forced aligner download (October 31, 2026)
+
+Clean cut never aligned on installed Macs: `alignerModels` looked for a model only a dev
+script (`scripts/convert-wav2vec2-coreml.py`) produced, in a folder the app does not read.
+The app now downloads `ssmall256/wav2vec2-base-960h-ctc-coreml` (MIT, torchaudio
+WAV2VEC2_ASR_BASE_960H, compiled Core ML, about 189 MB, pinned revision and SHA-256) to
+`stt-models/wav2vec2-base-960h-ctc-coreml` on the first Clean cut, writes `labels.json`
+beside it, and falls back to recognizer times when the download fails. The helper now reads
+the model's input and output names from `labels.json`. On the same recording, its times
+match the dev conversion for 95% of words, at most 20 ms apart; a word Parakeet stretched over
+4.5 s is placed at 0.2 s and a 1.7 s silence is cut. Add the model to the release notices.
+
+Next: in-app review playback parity; move user cuts to energy minima through
+main-process IPC; clean-cut FCPXML lane; system-audio stems; generative healing.
+A real desktop capture and editor import/listening pass remain required; synthetic
+media evidence alone does not establish those gates.
+
+Slice verification: both TypeScript checks and Biome pass. Targeted planner,
+renderer and source-handoff tests: 41 passed, including real bundled-FFmpeg
+stereo PCM equality outside blends, duration/offset, overload and abort cleanup.
+Synthetic complete handoff verifies originals, disabled microphone clips only in
+the clean OTIO, derived manifest/README and one-second WAV duration (FFmpeg;
+ffprobe when available). Full suite run: 3,209 passed, eight failed, 15 skipped;
+failures are unchanged dependency-approval/Cargo graph/release-inventory policy
+checks (missing parakeet-linux policy coverage). Native-addon and atomic-export
+failures did not occur in this run. No application installation or commits.
+
+## Separate takes provenance
+
+Handoff v4 carries stable recording ids in media names, per-clip provenance,
+full/clean edit maps, explicit stream offsets, hashes and ffprobe stream facts.
+Cursor JSON is copied unchanged with extracted embedded PNGs and clock/coordinate
+contracts. Clean dialogue uses sample-precision mic offsets with frame-locked lengths.
+Existing Clean dialogue and aligner-download changes are preserved; no commit or reset.
+Real-project evidence is in `/tmp/klippt-provenance/evidence.json`; source userData was read only.
+
+Provenance verification: both TypeScript gates and `biome check electron` pass;
+focused export/cleanCut/stt run: 221 passed, 3 skipped. Real cached clean cut:
+11 pieces, 3 markers; exact 89.800458 ms mic offset gives source sample 48490
+at screen frame 66, cross-correlation lag 0 (8,000 samples). Five original
+files match SHA-256. Full suite has 8 supply-chain policy failures across
+check-approved-dependencies, check-cargo-graphs and generate-release-inventory:
+parakeet-linux inputs are missing from the existing approval/graph policies.
+No editor import, packaged-app or new desktop capture validation was performed.

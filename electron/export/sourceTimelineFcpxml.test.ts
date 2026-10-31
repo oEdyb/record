@@ -62,6 +62,9 @@ interface Placed {
 function placements(xml: string) {
 	const spine = /<spine>(.*)<\/spine>/s.exec(xml)![1];
 	const placed: Placed[] = [];
+	const names = new Map(
+		[...xml.matchAll(/<asset id="([^"]+)" name="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+	);
 	const pieces = [...spine.matchAll(/<(asset-clip|gap)( [^>]*?)(\/>|>(.*?)<\/\1>)/gs)];
 	for (const piece of pieces) {
 		const parent = attributes(piece[2]);
@@ -69,7 +72,7 @@ function placements(xml: string) {
 		const parentStart = frames(parent.start);
 		if (piece[1] === "asset-clip")
 			placed.push({
-				file: parent.name,
+				file: names.get(parent.ref)!,
 				lane: 0,
 				at: parentAt,
 				start: parentStart,
@@ -79,7 +82,7 @@ function placements(xml: string) {
 		for (const child of (piece[4] ?? "").matchAll(/<asset-clip( [^>]*)\/>/g)) {
 			const attrs = attributes(child[1]);
 			placed.push({
-				file: attrs.name,
+				file: names.get(attrs.ref)!,
 				lane: Number(attrs.lane),
 				at: parentAt + frames(attrs.offset) - parentStart,
 				start: frames(attrs.start),
@@ -197,7 +200,7 @@ it("anchors a source that starts after a short screen tail to the spine gap", ()
 	expect(pieces).toEqual(["asset-clip", "gap"]);
 	expect(sorted(placed)).toEqual(sorted(planned([tail], [span()])));
 	expect(xml).toContain(
-		'<gap name="Gap" offset="1s" start="0s" duration="1s"><asset-clip ref="r4" lane="1" offset="1/2s" name="001-camera.mov" start="0s" duration="1/2s" srcEnable="video"/></gap>',
+		'<gap name="Gap" offset="1s" start="0s" duration="1s"><asset-clip ref="r4" lane="1" offset="1/2s" name="T001 camera 0.00–0.50s" start="0s" duration="1/2s" srcEnable="video"/></gap>',
 	);
 });
 

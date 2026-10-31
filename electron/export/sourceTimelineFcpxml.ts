@@ -1,4 +1,10 @@
-import { type PlannedTrack, SOURCE_TIMELINE_RATE, type SourceTrackRole } from "./sourceTimeline";
+import {
+	clipProvenance,
+	type PlannedItem,
+	type PlannedTrack,
+	SOURCE_TIMELINE_RATE,
+	type SourceTrackRole,
+} from "./sourceTimeline";
 
 export const FCPXML_VERSION = "1.10";
 
@@ -58,7 +64,7 @@ function element(name: string, attributes: Record<string, string | undefined>, c
 	return children ? `<${name}${attrs}>${children}</${name}>` : `<${name}${attrs}/>`;
 }
 
-interface Placed {
+interface Placed extends Omit<Extract<PlannedItem, { type: "clip" }>, "type"> {
 	role: SourceTrackRole;
 	at: number;
 	file: string;
@@ -98,7 +104,7 @@ export function buildSourceFcpxml(title: string, tracks: PlannedTrack[], options
 			ref: assets.get(clip.file)!.id,
 			lane: role === "screen" ? undefined : String(LANES[role]),
 			offset: fcpxmlTime(offset),
-			name: clip.file,
+			name: clipProvenance({ type: "clip", ...clip }, role, clip.at).name,
 			start: fcpxmlTime(clip.start),
 			duration: fcpxmlTime(clip.duration),
 			srcEnable: isAudio ? "audio" : "video",

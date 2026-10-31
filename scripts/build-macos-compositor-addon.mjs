@@ -287,10 +287,13 @@ installAtomically(builtDylib, archDest);
 const ffmpegDest = path.join(archBinDir, "ffmpeg");
 installAtomically(path.join(macFfmpegDir, "bin", "ffmpeg"), ffmpegDest);
 fs.chmodSync(ffmpegDest, 0o755);
+const ffprobeDest = path.join(archBinDir, "ffprobe");
+installAtomically(path.join(macFfmpegDir, "bin", "ffprobe"), ffprobeDest);
+fs.chmodSync(ffprobeDest, 0o755);
 
 // Only the arch-tagged copy ships (mac `extraResources`, filter `darwin-*/*`), so that
 // is the one that gets its dylibs and its @rpath.
-vendorFfmpegDylibs(archDest, macFfmpegDir, [ffmpegDest]);
+vendorFfmpegDylibs(archDest, macFfmpegDir, [ffmpegDest, ffprobeDest]);
 
 console.log(`Built  ${builtDylib}`);
 console.log(`Copied ${dest}`);
