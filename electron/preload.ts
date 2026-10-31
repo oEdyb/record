@@ -396,7 +396,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	getCapturePermissions: () => ipcRenderer.invoke("get-capture-permissions"),
 	requestMicrophoneAccess: () => ipcRenderer.invoke("request-microphone-access"),
-	openPrivacySettings: (kind: "screen" | "microphone" | "camera") =>
+	openPrivacySettings: (kind: "screen" | "microphone" | "camera" | "accessibility") =>
 		ipcRenderer.invoke("open-privacy-settings", kind),
 	relaunchApp: () => ipcRenderer.invoke("relaunch-app"),
 	requestNativeMacCursorAccess: () => {

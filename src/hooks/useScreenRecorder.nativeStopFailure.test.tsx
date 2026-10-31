@@ -1115,7 +1115,10 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 			}),
 		);
 		if (granted) expect(toast.warning).not.toHaveBeenCalled();
-		else expect(toast.warning).toHaveBeenCalledWith("recording.editableCursorOff");
+		else
+			expect(toast.warning).toHaveBeenCalledWith("recording.editableCursorOff", {
+				action: expect.objectContaining({ label: "recording.allowEditableCursor" }),
+			});
 	});
 
 	it("counts from the written frame even when the start reply is delayed", async () => {

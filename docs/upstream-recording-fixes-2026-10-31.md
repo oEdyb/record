@@ -26,17 +26,10 @@ launch, permission changes, sound, push, or merge.
    test fetchers. `electron/cleanCut/alignerModel.ts:54` already calls this manager,
    so inherits proxy support without another adapter. Test verifies URL normalization
    and request options reach Chromium; existing model/aligner tests pass.
-4. **DONE — #1385, bounded alternative.** `src/cli/CliExportRunner.tsx:416` reads input
-   response streams with hard byte accounting, regardless of absent or false
-   Content-Length. `src/lib/exporter/voiceoverLimits.ts:1` sets 128 MiB video,
-   32 MiB voiceover, 144 MiB output and five-minute duration limits.
-   `src/lib/exporter/voiceoverMix.ts:98` also checks actual container durations,
-   channels (maximum stereo), sample rates (maximum 48 kHz), and output writes,
-   bounding decoded audio and output buffering. This retains the existing memory
-   mixer for small inputs; large/long inputs now fail explicitly rather than risk
-   exhausting memory. It is not an unrestricted streaming mixer. Tests cover missing,
-   false and oversized lengths, cancellation of rejected bodies, duration limits,
-   successful mixing publication, and rejection before mixing/publication with cleanup.
+4. **NOT DONE — #1385.** A bounded version (hard 128 MiB / five-minute limits) was
+   reverted: it made longer CLI voiceover exports fail where they worked before. The
+   real fix streams the mux through FFmpeg in the main process instead of mediabunny
+   buffers in the hidden renderer.
 
 ## Sources and adaptation
 

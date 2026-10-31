@@ -1586,7 +1586,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			setElapsedSeconds(
 				Math.floor(Math.max(0, Date.now() - (segmentStartedAt.current ?? Date.now())) / 1000),
 			);
-			if (takeUsesSystemCursor.current) toast.warning(t("recording.editableCursorOff"));
+			if (takeUsesSystemCursor.current)
+				toast.warning(t("recording.editableCursorOff"), {
+					action: {
+						label: t("recording.allowEditableCursor"),
+						onClick: () => void window.electronAPI.openPrivacySettings?.("accessibility"),
+					},
+				});
 			return true;
 		} catch (error) {
 			if (boundStart) {

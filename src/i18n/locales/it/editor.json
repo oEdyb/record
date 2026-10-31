@@ -53,6 +53,7 @@
 	},
 	"recording": {
 		"editableCursorOff": "Il cursore modificabile è disattivato per questa ripresa. Si registra il cursore di sistema.",
+		"allowEditableCursor": "Consenti",
 		"failedCameraAccess": "Impossibile richiedere l'accesso alla fotocamera.",
 		"cameraBlocked": "L'accesso alla fotocamera è bloccato. Abilita nelle impostazioni di sistema l'utilizzo della webcam.",
 		"openCameraSettings": "Apri Impostazioni",

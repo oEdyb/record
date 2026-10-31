@@ -39,12 +39,13 @@ describe("readCapturePermissions", () => {
 describe("privacySettingsPane", () => {
 	it("maps each capture kind to its Privacy & Security pane", () => {
 		expect(privacySettingsPane("screen")).toBe("Privacy_ScreenCapture");
+		expect(privacySettingsPane("accessibility")).toBe("Privacy_Accessibility");
 		expect(privacySettingsPane("microphone")).toBe("Privacy_Microphone");
 		expect(privacySettingsPane("camera")).toBe("Privacy_Camera");
 	});
 
 	it("refuses anything else", () => {
-		expect(privacySettingsPane("accessibility")).toBeNull();
+		expect(privacySettingsPane("files")).toBeNull();
 		expect(privacySettingsPane(42)).toBeNull();
 		expect(privacySettingsPane("toString")).toBeNull();
 	});

@@ -41,6 +41,7 @@
 	},
 	"recording": {
 		"editableCursorOff": "Bu çekimde düzenlenebilir imleç kapalı. Sistem imleci kaydediliyor.",
+		"allowEditableCursor": "İzin ver",
 		"failedCameraAccess": "Kamera erişimi istenemedi.",
 		"cameraBlocked": "Kamera erişimi engellendi. Kamerayı kullanmak için sistem ayarlarından izin verin.",
 		"openCameraSettings": "Ayarları Aç",

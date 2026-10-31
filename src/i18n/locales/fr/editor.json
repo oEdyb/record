@@ -41,6 +41,7 @@
 	},
 	"recording": {
 		"editableCursorOff": "Le curseur modifiable est désactivé pour cette prise. Le curseur système est enregistré.",
+		"allowEditableCursor": "Autoriser",
 		"failedCameraAccess": "Échec de la demande d'accès à la caméra.",
 		"cameraBlocked": "L'accès à la caméra est bloqué. Activez-le dans les paramètres système pour utiliser la webcam.",
 		"openCameraSettings": "Ouvrir les réglages",

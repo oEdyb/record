@@ -261,34 +261,6 @@ describe("runExport", () => {
 		expect((transaction as { expectedBytes: number }).expectedBytes).toBeGreaterThan(0);
 	});
 
-	it("rejects oversized voiceover inputs before mixing or publishing", async () => {
-		nativeMocks.loadProjectFileFromPath.mockResolvedValue({
-			success: true,
-			project: currentMultiAssetProject(),
-		});
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response("x", { headers: { "content-length": "1000000000" } })),
-		);
-		await expect(
-			runExport({
-				kind: "export",
-				projectPath: "/projects/demo.klippt",
-				outPath: "/exports/mixed.mp4",
-				quality: null,
-				gifFrameRate: null,
-				gifSizePreset: null,
-				format: "mp4",
-				audioPath: "/media/voiceover.wav",
-				audioMode: "mix",
-				audioOffsetSec: 0,
-			}),
-		).rejects.toThrow("memory limit");
-		expect(nativeMocks.mixVoiceoverIntoVideo).not.toHaveBeenCalled();
-		expect(window.electronAPI.writeExportToPath).not.toHaveBeenCalled();
-		expect(window.electronAPI.removeTemporaryExportPath).toHaveBeenCalled();
-	});
-
 	it("keeps a voiceover export temporary until the mixed MP4 is atomically published", async () => {
 		nativeMocks.loadProjectFileFromPath.mockResolvedValue({
 			success: true,
@@ -296,7 +268,11 @@ describe("runExport", () => {
 		});
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => new Response(new Uint8Array([5, 6, 7]))),
+			vi.fn(async () => ({
+				ok: true,
+				blob: async () => new Blob([new Uint8Array([5, 6, 7])]),
+				arrayBuffer: async () => new Uint8Array([8, 9]).buffer,
+			})),
 		);
 
 		const result = await runExport({
@@ -360,7 +336,11 @@ describe("runExport", () => {
 		nativeMocks.loadProjectFileFromPath.mockResolvedValue({ success: true, project });
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => new Response(new Uint8Array([5, 6, 7]))),
+			vi.fn(async () => ({
+				ok: true,
+				blob: async () => new Blob([new Uint8Array([5, 6, 7])]),
+				arrayBuffer: async () => new Uint8Array([8, 9]).buffer,
+			})),
 		);
 
 		const result = await runExport({

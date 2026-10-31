@@ -177,7 +177,7 @@ interface Window {
 		requestMicrophoneAccess?: () => Promise<{ granted: boolean; status: string }>;
 		/** Opens the Privacy & Security pane where Klippt's access is switched on. */
 		openPrivacySettings?: (
-			kind: import("../src/lib/capturePermissions").CapturePermissionKind,
+			kind: import("../src/lib/capturePermissions").CapturePermissionKind | "accessibility",
 		) => Promise<boolean>;
 		/** Quits and reopens Klippt, which macOS needs before a new Screen Recording grant applies. */
 		relaunchApp?: () => Promise<void>;

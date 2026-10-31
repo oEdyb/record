@@ -30,6 +30,8 @@ export function readCapturePermissions(
 }
 
 export function privacySettingsPane(kind: unknown): string | null {
+	// The editable cursor's optional grant; not a capture permission Record waits for.
+	if (kind === "accessibility") return "Privacy_Accessibility";
 	const match = CAPTURE_PERMISSION_KINDS.find((candidate) => candidate === kind);
 	return match ? PRIVACY_PANES[match] : null;
 }

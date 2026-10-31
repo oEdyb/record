@@ -9,7 +9,6 @@ import {
 	ALL_FORMATS,
 	AudioBufferSource,
 	BlobSource,
-	BufferSource,
 	BufferTarget,
 	EncodedPacketSink,
 	EncodedVideoPacketSource,
@@ -17,13 +16,6 @@ import {
 	Mp4OutputFormat,
 	Output,
 } from "mediabunny";
-
-import {
-	checkVoiceoverDuration,
-	VOICEOVER_AUDIO_LIMIT,
-	VOICEOVER_OUTPUT_LIMIT,
-	VOICEOVER_VIDEO_LIMIT,
-} from "./voiceoverLimits";
 
 type VoiceoverMixMode = "mix" | "replace";
 
@@ -95,23 +87,6 @@ export async function mixVoiceoverIntoVideo(
 	videoBlob: Blob,
 	options: VoiceoverMixOptions,
 ): Promise<Blob> {
-	if (
-		videoBlob.size > VOICEOVER_VIDEO_LIMIT ||
-		options.voiceoverData.byteLength > VOICEOVER_AUDIO_LIMIT
-	)
-		throw new Error("Voiceover mixing input exceeds the memory limit.");
-	const audioInput = new Input({
-		source: new BufferSource(options.voiceoverData),
-		formats: ALL_FORMATS,
-	});
-	try {
-		checkVoiceoverDuration(await audioInput.computeDuration());
-		const audioTrack = await audioInput.getPrimaryAudioTrack();
-		if (!audioTrack || audioTrack.numberOfChannels > 2 || audioTrack.sampleRate > 48_000)
-			throw new Error("Voiceover mixing supports mono or stereo audio up to 48 kHz.");
-	} finally {
-		audioInput.dispose();
-	}
 	const input = new Input({ source: new BlobSource(videoBlob), formats: ALL_FORMATS });
 	try {
 		const videoTrack = await input.getPrimaryVideoTrack();
@@ -127,10 +102,6 @@ export async function mixVoiceoverIntoVideo(
 			throw new Error("Exported file's video decoder config could not be read");
 		}
 		const durationSec = await input.computeDuration();
-		checkVoiceoverDuration(durationSec);
-		const originalAudio = options.mode === "mix" ? await input.getPrimaryAudioTrack() : null;
-		if (originalAudio && (originalAudio.numberOfChannels > 2 || originalAudio.sampleRate > 48_000))
-			throw new Error("Voiceover mixing supports mono or stereo audio up to 48 kHz.");
 
 		// The full-file bytes are only needed to decode the original bed in
 		// "mix" mode; "replace" skips the copy entirely.
@@ -138,10 +109,6 @@ export async function mixVoiceoverIntoVideo(
 		const mixedAudio = await renderMixedAudio(videoData, durationSec, options);
 
 		const target = new BufferTarget();
-		target.onwrite = (_start, end) => {
-			if (end > VOICEOVER_OUTPUT_LIMIT)
-				throw new Error("Mixed voiceover exceeds the memory limit.");
-		};
 		const output = new Output({
 			format: new Mp4OutputFormat({ fastStart: "in-memory" }),
 			target,
