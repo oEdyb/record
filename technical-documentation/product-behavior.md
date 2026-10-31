@@ -156,7 +156,12 @@ large library redesign.
 
 Do not invent a video format.
 
-- Keep one live ScreenCaptureKit `SCStream` for the recording session.
+- Keep one live ScreenCaptureKit video `SCStream` for the recording session. Window capture
+  uses an additional display-wide audio-only stream when system audio is enabled, so other
+  applications remain audible. Feed that unprocessed mix to the separate system-audio original.
+- Resolve microphone IDs before names, accepting Chromium transport and USB label suffixes
+  only when the name is unambiguous. Warn visibly if a selected input falls back to the
+  system default; an explicit Default selection does not warn.
 - Each Pause finalizes one standard fragmented H.264/AAC MP4 clip.
 - Continue creates a fresh `AVAssetWriter` and starts it on the first valid sample.
 - Store clip order and state in a versioned JSON project document.

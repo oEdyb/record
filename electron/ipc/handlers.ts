@@ -3031,7 +3031,7 @@ export function registerIpcHandlers(
 	// The HUD pauses a live take when there is nothing left to record: the captured window
 	// closed, the screen locked, or the Mac is going to sleep.
 	const notifyNativeMacInterruption = (reason: NativeMacRecordingInterruption) => {
-		if (!nativeMacRecordingService?.isRunning()) return;
+		if (reason !== "microphone-defaulted" && !nativeMacRecordingService?.isRunning()) return;
 		const hudWindow = getMainWindow();
 		if (hudWindow && !hudWindow.isDestroyed()) {
 			hudWindow.webContents.send("native-mac-recording-interrupted", reason);
@@ -3112,7 +3112,11 @@ export function registerIpcHandlers(
 					activeClipBoundaryTimeline?.mark(`helper:${name}`);
 				},
 				onWarning: (warning) => {
-					if (warning.code === "source-inactive" || warning.code === "source-active") {
+					if (
+						warning.code === "source-inactive" ||
+						warning.code === "source-active" ||
+						warning.code === "microphone-defaulted"
+					) {
 						notifyNativeMacInterruption(warning.code);
 					}
 					void appendDiagnosticRow(helperWarningsFile(), {

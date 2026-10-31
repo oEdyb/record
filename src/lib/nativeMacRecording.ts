@@ -210,6 +210,7 @@ export type NativeMacRecordingFailure = {
 
 /** Why the app asks the HUD to pause, or that the captured content came back. */
 export type NativeMacRecordingInterruption =
+	| "microphone-defaulted"
 	| "source-inactive"
 	| "source-active"
 	| "screen-locked"

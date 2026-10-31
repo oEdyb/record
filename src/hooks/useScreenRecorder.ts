@@ -313,7 +313,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const idleSourceCancellationRequested = useRef(false);
 	const pendingNativeMacInterruption = useRef<Exclude<
 		NativeMacRecordingInterruption,
-		"source-active"
+		"source-active" | "microphone-defaulted"
 	> | null>(null);
 	const webcamReady = useRef(false);
 	const activeWebcamFormat = useRef<WebcamFormat>(DEFAULT_WEBCAM_FORMAT);
@@ -1105,6 +1105,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		if (window.electronAPI?.onNativeMacRecordingInterrupted) {
 			cleanupNativeMacInterruption = window.electronAPI.onNativeMacRecordingInterrupted(
 				(reason) => {
+					if (reason === "microphone-defaulted") {
+						toast.warning(
+							"The selected microphone could not be found. Recording the system default microphone.",
+						);
+						return;
+					}
 					const activeRecording = nativeMacRecording.current;
 					if (!activeRecording || activeRecording.finalizing) return;
 					if (reason === "source-active") {

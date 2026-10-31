@@ -6,6 +6,7 @@ import ScreenCaptureKit
 @available(macOS 13.0, *)
 struct CaptureSetup {
 	let filter: SCContentFilter
+	let systemAudioFilter: SCContentFilter?
 	let configuration: SCStreamConfiguration
 	let width: Int
 	let height: Int
@@ -35,8 +36,18 @@ final class CaptureSetupBuilder {
 			height: target.height,
 			displayID: target.displayID
 		)
+		let systemAudioFilter: SCContentFilter?
+		if Self.usesIndependentSystemAudio(sourceType: request.source.type, enabled: request.audio.system.enabled) {
+			guard let display = content.displays.first else {
+				throw HelperError.sourceNotFound("System audio requires an available display.")
+			}
+			systemAudioFilter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+		} else {
+			systemAudioFilter = nil
+		}
 		return CaptureSetup(
 			filter: target.filter,
+			systemAudioFilter: systemAudioFilter,
 			configuration: streamSettings.configuration,
 			width: target.width,
 			height: target.height,
@@ -44,6 +55,23 @@ final class CaptureSetupBuilder {
 			microphoneEnabled: streamSettings.microphoneEnabled,
 			ignoresExcludedWindows: target.ignoresExcludedWindows
 		)
+	}
+
+	static func usesIndependentSystemAudio(sourceType: String, enabled: Bool) -> Bool {
+		enabled && sourceType == "window"
+	}
+
+	static func systemAudioConfiguration() -> SCStreamConfiguration {
+		let configuration = SCStreamConfiguration()
+		configuration.width = 2
+		configuration.height = 2
+		configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+		configuration.queueDepth = 3
+		configuration.capturesAudio = true
+		configuration.sampleRate = 48_000
+		configuration.channelCount = 2
+		configuration.excludesCurrentProcessAudio = true
+		return configuration
 	}
 
 	private func makeCaptureTarget(
@@ -143,7 +171,7 @@ final class CaptureSetupBuilder {
 		configuration.sampleRate = 48_000
 		configuration.channelCount = 2
 		configuration.excludesCurrentProcessAudio = true
-		configuration.capturesAudio = request.audio.system.enabled
+		configuration.capturesAudio = request.audio.system.enabled && request.source.type != "window"
 
 		guard request.audio.microphone.enabled else {
 			return (configuration, false)
@@ -161,6 +189,12 @@ final class CaptureSetupBuilder {
 		let selectedDeviceID = resolveMicrophoneCaptureDeviceID(for: request)
 		if let deviceId = selectedDeviceID {
 			configuration.microphoneCaptureDeviceID = deviceId
+		}
+		if let message = microphoneFallbackWarning(
+			deviceID: request.audio.microphone.deviceId,
+			deviceName: request.audio.microphone.deviceName, resolvedID: selectedDeviceID
+		) {
+			emit(["event": "warning", "code": "microphone-defaulted", "message": message])
 		}
 		if ProcessInfo.processInfo.environment["OPENSCREEN_CAPTURE_DIAGNOSTICS"] == "1" {
 			let systemDefault = AVCaptureDevice.default(for: .audio)
@@ -242,19 +276,10 @@ final class CaptureSetupBuilder {
 			position: .unspecified
 		).devices
 
-		if let deviceName = request.audio.microphone.deviceName?.trimmingCharacters(in: .whitespacesAndNewlines),
-			!deviceName.isEmpty,
-			let device = devices.first(where: { $0.localizedName == deviceName })
-		{
-			return device.uniqueID
-		}
-
-		if let deviceId = request.audio.microphone.deviceId?.trimmingCharacters(in: .whitespacesAndNewlines),
-			!deviceId.isEmpty,
-			devices.contains(where: { $0.uniqueID == deviceId })
-		{
-			return deviceId
-		}
-		return nil
+		return resolveMicrophoneDeviceID(
+			deviceID: request.audio.microphone.deviceId,
+			deviceName: request.audio.microphone.deviceName,
+			devices: devices.map { (id: $0.uniqueID, name: $0.localizedName) }
+		)
 	}
 }

@@ -4,6 +4,21 @@ import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
 final class RecordingStreamRecoveryTests: XCTestCase {
+	func testIndependentAudioAcceptsOnlyFullMixAndRejectsRetiredStreams() {
+		let screen = NSObject()
+		let audio = NSObject()
+		let retired = NSObject()
+		var recovery = RecordingStreamRecovery()
+		recovery.install(screen)
+		XCTAssertTrue(recovery.acceptsSamples(from: audio, systemAudioStream: audio, isSystemAudio: true))
+		XCTAssertFalse(recovery.acceptsSamples(from: screen, systemAudioStream: audio, isSystemAudio: true))
+		XCTAssertFalse(recovery.acceptsSamples(from: audio, systemAudioStream: audio, isSystemAudio: false))
+		XCTAssertFalse(recovery.acceptsSamples(from: retired, systemAudioStream: audio, isSystemAudio: true))
+		XCTAssertTrue(recovery.acceptsSamples(from: screen, systemAudioStream: audio, isSystemAudio: false))
+		XCTAssertTrue(recovery.acceptsSamples(from: screen, systemAudioStream: nil, isSystemAudio: true))
+		XCTAssertFalse(recovery.acceptsSamples(from: audio, systemAudioStream: nil, isSystemAudio: true))
+	}
+
 	func testClosedPausedSourceCanBeReplacedWithoutEndingTheLogicalSession() {
 		let closedSource = NSObject(), selectedSource = NSObject()
 		var recovery = RecordingStreamRecovery()

@@ -43,6 +43,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private let processActivity = RecordingProcessActivity()
 	private var recordingActivity: RecordingProcessActivity.Lease?
 	private var stream: SCStream?
+	private var systemAudioStream: SCStream?
+	private var activeSystemAudioFilter: SCContentFilter?
 	private var streamRecovery = RecordingStreamRecovery()
 	private var activeFilter: SCContentFilter?
 	private var activeConfiguration: SCStreamConfiguration?
@@ -186,7 +188,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			"event": "ready",
 			"schemaVersion": 1,
 		])
-		try await stream.startCapture()
+		do {
+			try await startSystemAudioIfNeeded(filter: setup.systemAudioFilter)
+			try await stream.startCapture()
+		} catch {
+			await stopSystemAudio()
+			try? await stream.stopCapture()
+			throw error
+		}
+		activeSystemAudioFilter = setup.systemAudioFilter
 		started = true
 	}
 
@@ -204,6 +214,35 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				"code": "stop-capture-failed",
 				"message": "\(error)",
 			])
+		}
+		await stopSystemAudio()
+	}
+
+	private func startSystemAudioIfNeeded(filter: SCContentFilter?) async throws {
+		guard let filter, stateQueue.sync(execute: { systemAudioStream == nil }) else { return }
+		let candidate = SCStream(filter: filter, configuration: CaptureSetupBuilder.systemAudioConfiguration(), delegate: self)
+		try candidate.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleDelivery.queue)
+		stateQueue.sync { systemAudioStream = candidate }
+		do {
+			try await candidate.startCapture()
+			guard stateQueue.sync(execute: { systemAudioStream === candidate }) else {
+				throw HelperError.writerSetupFailed("System audio stopped while capture was starting.")
+			}
+		} catch {
+			stateQueue.sync { systemAudioStream = nil }
+			try? await candidate.stopCapture()
+			throw error
+		}
+	}
+
+	private func stopSystemAudio() async {
+		let previous = stateQueue.sync {
+			let previous = systemAudioStream
+			systemAudioStream = nil
+			return previous
+		}
+		do { try await previous?.stopCapture() } catch {
+			emit(["event": "warning", "code": "stop-audio-capture-failed", "message": "\(error)"])
 		}
 	}
 
@@ -315,9 +354,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				throw HelperError.writerSetupFailed("The active ScreenCaptureKit setup is missing.")
 			}
 
+			let hadSystemAudio = stateQueue.sync { systemAudioStream != nil }
 			// Await both operations before changing the writer settings. Continue stays
 			// disabled in the renderer until this acknowledgement arrives.
 			do {
+				try await startSystemAudioIfNeeded(filter: setup.systemAudioFilter)
 				if Self.cameraNeedsRestart(from: request, to: nextRequest, running: cameraCapture?.isRunning ?? false) {
 					try await configureCamera(for: nextRequest)
 					emit(["event": "reconfigure-stage", "key": "camera"])
@@ -337,6 +378,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					emit(["event": "reconfigure-stage", "key": "replaced-stream"])
 				}
 			} catch {
+				if !hadSystemAudio { await stopSystemAudio() }
 				var rollback: [(String, () async throws -> Void)] = []
 				if stateQueue.sync(execute: { streamRecovery.isSourceUsable }) {
 					rollback.append(("configuration", { try await stream.updateConfiguration(previousConfiguration) }))
@@ -355,6 +397,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				}
 				throw error
 			}
+			if setup.systemAudioFilter == nil { await stopSystemAudio() }
+			activeSystemAudioFilter = setup.systemAudioFilter
 			request = nextRequest
 			cadence = RecordingCadence(fps: nextRequest.video.fps)
 			activeFilter = setup.filter
@@ -506,6 +550,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		defer { if !resumed { endRecordingActivity() } }
 		do {
 			try await restorePausedStreamRate()
+			try await startSystemAudioIfNeeded(filter: activeSystemAudioFilter)
 			if stateQueue.sync(execute: { streamRecovery.needsReplacement }), let activeFilter, let activeConfiguration {
 				try await replaceCaptureStream(filter: activeFilter, configuration: activeConfiguration)
 				resumeGeneration = stateQueue.sync { streamRecovery.generation }
@@ -684,6 +729,26 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func handleStreamStop(_ stream: AnyObject, error: Error) {
+		let audioFailure = stateQueue.sync { () -> Bool in
+			guard stream === systemAudioStream else { return false }
+			systemAudioStream = nil
+			return !isStopping
+		}
+		if audioFailure {
+			let paused = syncOnSampleQueue { stateQueue.sync { isPaused && pendingResume == nil } }
+			if paused {
+				emit(["event": "warning", "code": "system-audio-unavailable", "message": "System audio stopped: \(error). Continue will retry."])
+			} else {
+				stateQueue.sync {
+					terminationBoundary.recordFailure(at: CMClockGetTime(CMClockGetHostTimeClock()))
+					isPaused = true
+					hasTerminalFailure = true
+				}
+				endRecordingActivity()
+				unexpectedStopHandler(self, error)
+			}
+			return
+		}
 		let disposition = syncOnSampleQueue {
 			let resumePending = pendingResume != nil
 			return stateQueue.sync { () -> RecordingStreamRecovery.StopDisposition in
@@ -751,7 +816,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 			if time.isNumeric { trackTiming(stage: "screenSourceAge", durationMs: CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()) - time) * 1000, hostTime: CMClockGetTime(CMClockGetHostTimeClock())) }
 		}
-		guard measureCaptureStage("streamStateWait", { stateQueue.sync(execute: { streamRecovery.acceptsSamples(from: stream) }) }), CMSampleBufferDataIsReady(sampleBuffer) else {
+		guard measureCaptureStage("streamStateWait", { stateQueue.sync(execute: {
+			streamRecovery.acceptsSamples(from: stream, systemAudioStream: systemAudioStream, isSystemAudio: type == .audio)
+		}) }), CMSampleBufferDataIsReady(sampleBuffer) else {
 			return
 		}
 		let inactive = measureCaptureStage("streamPausedStateWait", { stateQueue.sync(execute: { isPaused || isStopping }) })

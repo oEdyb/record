@@ -1,10 +1,23 @@
 import CoreGraphics
 import CoreMedia
 import CoreVideo
+import ScreenCaptureKit
 import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
 final class CaptureSetupTests: XCTestCase {
+	func testWindowSystemAudioUsesAnIndependentFullMix() {
+		XCTAssertTrue(CaptureSetupBuilder.usesIndependentSystemAudio(sourceType: "window", enabled: true))
+		XCTAssertFalse(CaptureSetupBuilder.usesIndependentSystemAudio(sourceType: "window", enabled: false))
+		XCTAssertFalse(CaptureSetupBuilder.usesIndependentSystemAudio(sourceType: "display", enabled: true))
+		let configuration = CaptureSetupBuilder.systemAudioConfiguration()
+		XCTAssertTrue(configuration.capturesAudio)
+		XCTAssertTrue(configuration.excludesCurrentProcessAudio)
+		XCTAssertEqual(configuration.sampleRate, 48_000)
+		XCTAssertEqual(configuration.channelCount, 2)
+		if #available(macOS 15.0, *) { XCTAssertFalse(configuration.captureMicrophone) }
+	}
+
 	/// Frames arrive on refreshes: the first refresh at least `interval` after the last frame.
 	private func deliveredFps(refreshHz: Double, fps: Int) -> Double {
 		let interval = CMTimeGetSeconds(

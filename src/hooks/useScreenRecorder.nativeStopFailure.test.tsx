@@ -1893,6 +1893,27 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		});
 	});
 
+	it("shows microphone fallback during startup and recording without pausing", async () => {
+		let listener: ((reason: string) => void) | undefined;
+		stubNativeMac({
+			onNativeMacRecordingInterrupted: vi.fn((callback) => {
+				listener = callback;
+				return vi.fn();
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await settle();
+		act(() => listener?.("microphone-defaulted"));
+		expect(toast.warning).toHaveBeenCalledWith(
+			"The selected microphone could not be found. Recording the system default microphone.",
+		);
+		await startNativeRecording(view);
+		act(() => listener?.("microphone-defaulted"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).not.toHaveBeenCalled();
+		expect(view.result.current.recording).toBe(true);
+	});
+
 	it("pauses a live take when the screen locks and ignores a source that comes back", async () => {
 		let interruptionListener: ((reason: string) => void) | undefined;
 		stubNativeMac({

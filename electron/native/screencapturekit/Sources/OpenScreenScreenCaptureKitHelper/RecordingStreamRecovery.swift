@@ -31,6 +31,14 @@ struct RecordingStreamRecovery {
 		current == ObjectIdentifier(stream) && isSourceUsable
 	}
 
+	func acceptsSamples(from stream: AnyObject, systemAudioStream: AnyObject?, isSystemAudio: Bool) -> Bool {
+		if let systemAudioStream {
+			if isSystemAudio { return stream === systemAudioStream }
+			if stream === systemAudioStream { return false }
+		}
+		return acceptsSamples(from: stream)
+	}
+
 	mutating func becameInactive(_ stream: AnyObject) -> Bool {
 		guard current == ObjectIdentifier(stream), !needsReplacement, !sourceIsInactive else { return false }
 		sourceIsInactive = true
