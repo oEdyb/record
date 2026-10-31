@@ -501,7 +501,9 @@ ipcMain.on("hud-overlay-set-dock", (event, side: unknown) => {
 
 ipcMain.on("hud-overlay-hide", () => {
 	if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
-		hudOverlayWindow.minimize();
+		// Wayland has no unminimize request; hide/show remaps the toplevel.
+		if (process.platform === "linux") hudOverlayWindow.hide();
+		else hudOverlayWindow.minimize();
 	}
 });
 

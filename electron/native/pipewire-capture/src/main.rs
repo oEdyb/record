@@ -30,6 +30,7 @@ mod audio_ring;
 mod bitmap;
 mod capture;
 mod clips;
+mod crop_wait;
 mod encoder;
 mod events;
 mod ffmpeg;
@@ -58,7 +59,6 @@ const MIN_SAMPLE_INTERVAL_MS: u64 = 8;
 
 const DEFAULT_FPS: i32 = 30;
 const DEFAULT_AUDIO_BITRATE: i64 = 128_000;
-const MAX_FRAMES_AWAITING_CROP: u32 = 8;
 const AUDIO_RING_SECONDS: usize = 2;
 
 enum Message {
@@ -98,7 +98,7 @@ fn main() {
         .unwrap_or(false);
     let mut emitter = Emitter::new(std::io::stdout(), debug);
 
-    let request = match parse_request() {
+    let mut request = match parse_request() {
         Ok(request) => request,
         Err(message) => {
             fail(&mut emitter, "invalid-arguments", &message);
@@ -107,10 +107,6 @@ fn main() {
     if let Err(message) = request.validate() {
         fail(&mut emitter, "invalid-arguments", &message);
     }
-    let cursor_mode = match request.cursor_mode() {
-        Ok(mode) => mode,
-        Err(message) => fail(&mut emitter, "invalid-arguments", &message),
-    };
     let output_path = request.screen_path().map(PathBuf::from);
     let forced_encoder = match encoder::forced_backend_from_env() {
         Ok(backend) => backend,
@@ -141,9 +137,14 @@ fn main() {
     // compositor fails immediately instead of after a pointless picker. Only
     // fatal when METADATA is the mode actually requested — a recording that
     // wants the system cursor painted in has no use for it.
-    let cursor_metadata_supported = match pollster::block_on(portal::cursor_metadata_supported()) {
-        Ok(supported) => supported,
+    let offered_cursor_modes = match pollster::block_on(portal::offered_cursor_modes()) {
+        Ok(modes) => modes,
         Err(error) => fail(&mut emitter, error.code(), &error.message()),
+    };
+    let cursor_metadata_supported = offered_cursor_modes.contains(&portal::CursorMode::Metadata);
+    let cursor_mode = match request.resolve_cursor_mode(&offered_cursor_modes) {
+        Ok(mode) => mode,
+        Err(message) => fail(&mut emitter, "invalid-arguments", &message),
     };
     if !cursor_metadata_supported && cursor_mode.reports_cursor() {
         let error = portal::PortalError::CursorMetadataUnsupported;
@@ -154,6 +155,7 @@ fn main() {
         timestamp_ms: timestamp_ms(),
         pipewire_version: shim::library_version(),
         cursor_metadata_supported,
+        cursor_mode: cursor_mode.as_str(),
     });
 
     if request.probe_only {
@@ -171,6 +173,7 @@ fn main() {
         forced_encoder,
         audio: request.audio_sources(),
         defer_start: request.defer_start,
+        offered_cursor_modes,
         request,
     };
     let exit_code = run(&mut emitter, receiver, sender, session);
@@ -178,6 +181,7 @@ fn main() {
 }
 
 struct RunConfig {
+    offered_cursor_modes: Vec<portal::CursorMode>,
     request: Request,
     /// How often the loop wakes when nothing arrives.
     tick: Duration,
@@ -581,6 +585,7 @@ struct CandidateSource {
     info: StreamInfo,
     frames: Arc<FrameMailbox>,
     readiness: source_selection::Readiness,
+    crop_wait: crop_wait::CropWait,
     cursor: Option<shim::CursorEvent>,
 }
 
@@ -621,23 +626,20 @@ impl CandidateSource {
                 announced: true,
             },
             frames,
-            readiness: source_selection::Readiness::new(source_kind, Instant::now()),
+            readiness: source_selection::Readiness::new(Instant::now()),
+            crop_wait: crop_wait::CropWait::default(),
             cursor: None,
         })
     }
 
     fn receive(&mut self, event: StreamEvent) -> Result<Option<shim::Frame>, String> {
         match event {
-            StreamEvent::FrameReady => {
-                let Some(frame) = self.frames.take() else {
-                    return Ok(None);
-                };
-                if !self.readiness.accepts(&frame) {
-                    self.frames.recycle(frame.pixels);
-                    return Ok(None);
-                }
-                Ok(Some(frame))
-            }
+            StreamEvent::FrameReady => Ok(self.crop_wait.take(
+                self.frames.take(),
+                &self.frames,
+                self.info.source_kind == Some(portal::SourceKind::Window),
+                Instant::now(),
+            )),
             StreamEvent::Cursor(cursor) => {
                 source_selection::remember_cursor(&mut self.cursor, cursor);
                 Ok(None)
@@ -699,8 +701,8 @@ fn run<W: Write>(
     // What the portal granted, kept past the `StreamInfo` that is consumed at
     // Format: only a window stream is expected to carry a crop.
     let mut granted_kind: Option<portal::SourceKind> = None;
-    // Frames skipped while waiting for a window's first usable crop rectangle.
-    let mut frames_awaiting_crop: u32 = 0;
+    // Retain the latest frame until a crop arrives or the wait expires.
+    let mut crop_wait = crop_wait::CropWait::default();
 
     // A `deferStart` grant held while the caller runs its countdown.
     let mut pending_portal: Option<portal::PortalStream> = None;
@@ -816,6 +818,23 @@ fn run<W: Write>(
                 "replacement source supplied no usable frame within eight seconds".into(),
             );
         }
+        // A still KWin window may never send another frame. Replay the held
+        // frame through the same path when its bounded crop wait expires.
+        if crop_wait.due(Instant::now()) {
+            let _ = sender.send(Message::SourceEvent {
+                generation: source_generation,
+                event: StreamEvent::FrameReady,
+            });
+        }
+        if let Some(candidate) = candidate_source
+            .as_ref()
+            .filter(|c| c.crop_wait.due(Instant::now()))
+        {
+            let _ = sender.send(Message::SourceEvent {
+                generation: candidate.generation,
+                event: StreamEvent::FrameReady,
+            });
+        }
         let incoming = match receive_message(
             &receiver,
             &mut adopted_cursor,
@@ -874,7 +893,7 @@ fn run<W: Write>(
                 if cursor.is_some() {
                     next_request.cursor.clone_from(&cursor);
                 }
-                let mode = match next_request.cursor_mode() {
+                let mode = match next_request.resolve_cursor_mode(&config.offered_cursor_modes) {
                     Ok(mode) => mode,
                     Err(message) => {
                         let _ = emitter.emit(&Event::Error {
@@ -887,7 +906,7 @@ fn run<W: Write>(
                 source_selection = Some(SourceSelection {
                     generation,
                     control,
-                    cursor,
+                    cursor: next_request.cursor,
                 });
                 let remembered = remembered_source_path
                     .clone()
@@ -982,7 +1001,7 @@ fn run<W: Write>(
                         source_generation = generation;
                         granted_kind = chosen.info.source_kind;
                         size = Some(dimensions);
-                        frames_awaiting_crop = 0;
+                        crop_wait = crop_wait::CropWait::default();
                         cursor = None;
                         known_assets.clear();
                         pending_asset = None;
@@ -1002,6 +1021,10 @@ fn run<W: Write>(
                             capture_bounds: bounds,
                             node_id,
                             source_kind: granted_kind.map(|kind| kind.as_str().to_owned()),
+                            cursor_mode: clips
+                                .request
+                                .cursor_mode()
+                                .map_or("metadata", |mode| mode.as_str()),
                         });
                     }
                     Ok(None) => {}
@@ -1070,7 +1093,14 @@ fn run<W: Write>(
                     break;
                 }
             }
-            Ok(Message::Reconfigure(next)) => {
+            Ok(Message::Reconfigure(mut next)) => {
+                if let Err(message) = next.resolve_cursor_mode(&config.offered_cursor_modes) {
+                    let _ = emitter.emit(&Event::Error {
+                        code: "reconfigure-rejected".into(),
+                        message,
+                    });
+                    continue;
+                }
                 let result = if clips.request.outputs.is_none() {
                     Err("reconfigure requires the clip-native outputs request".into())
                 } else if !clips.is_paused() {
@@ -1145,15 +1175,15 @@ fn run<W: Write>(
                 let Some(mailbox) = frames.as_ref() else {
                     continue;
                 };
-                if let Some(frame) = mailbox.take() {
+                let waiting = !clips.has_writer()
+                    && !clips.is_paused()
+                    && granted_kind == Some(portal::SourceKind::Window);
+                if let Some(frame) =
+                    crop_wait.take(mailbox.take(), mailbox, waiting, Instant::now())
+                {
                     if !clips.has_writer() && !clips.is_paused() {
                         let expecting_crop =
                             granted_kind == Some(portal::SourceKind::Window) && !frame.has_crop;
-                        if expecting_crop && frames_awaiting_crop < MAX_FRAMES_AWAITING_CROP {
-                            frames_awaiting_crop += 1;
-                            mailbox.recycle(frame.pixels);
-                            continue;
-                        }
                         if expecting_crop {
                             let _ = emitter.emit(&Event::Warning {
                                 code: "window-crop-missing".into(),

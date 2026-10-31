@@ -52,6 +52,7 @@ extern "C" {
         fps: i32,
         pixel_format: i32,
         bitrate: i64,
+        max_qp: i32,
     );
     pub fn osc_codec_private_data(context: *mut AVCodecContext) -> *mut std::ffi::c_void;
     pub fn osc_codec_ref_hardware_frames(

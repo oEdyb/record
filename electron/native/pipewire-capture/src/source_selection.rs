@@ -1,41 +1,20 @@
 //! Candidate readiness is separate from the unbounded human portal wait.
-use crate::{
-    portal::SourceKind,
-    shim::{CursorEvent, Frame},
-};
+use crate::shim::CursorEvent;
 use std::time::{Duration, Instant};
 
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(8);
-const MAX_FRAMES_AWAITING_CROP: usize = 8;
 
 pub struct Readiness {
     connected_at: Instant,
-    kind: Option<SourceKind>,
-    frames_awaiting_crop: usize,
 }
 
 impl Readiness {
-    pub fn new(kind: Option<SourceKind>, connected_at: Instant) -> Self {
-        Self {
-            connected_at,
-            kind,
-            frames_awaiting_crop: 0,
-        }
+    pub fn new(connected_at: Instant) -> Self {
+        Self { connected_at }
     }
 
     pub fn expired(&self, now: Instant) -> bool {
         now.saturating_duration_since(self.connected_at) >= FIRST_FRAME_TIMEOUT
-    }
-
-    pub fn accepts(&mut self, frame: &Frame) -> bool {
-        if self.kind == Some(SourceKind::Window)
-            && !frame.has_crop
-            && self.frames_awaiting_crop < MAX_FRAMES_AWAITING_CROP
-        {
-            self.frames_awaiting_crop += 1;
-            return false;
-        }
-        true
     }
 }
 
@@ -99,28 +78,8 @@ mod tests {
     #[test]
     fn readiness_deadline_starts_at_connection_not_picker_creation() {
         let connected = Instant::now();
-        let ready = Readiness::new(None, connected);
+        let ready = Readiness::new(connected);
         assert!(!ready.expired(connected + Duration::from_secs(7)));
         assert!(ready.expired(connected + Duration::from_secs(8)));
-    }
-
-    #[test]
-    fn windows_wait_for_crop_but_static_full_streams_remain_selectable() {
-        let mut ready = Readiness::new(Some(SourceKind::Window), Instant::now());
-        for _ in 0..MAX_FRAMES_AWAITING_CROP {
-            assert!(!ready.accepts(&Frame::default()));
-        }
-        assert!(ready.accepts(&Frame::default()));
-    }
-
-    #[test]
-    fn cropped_windows_and_monitors_are_ready_on_the_first_frame() {
-        let mut window = Readiness::new(Some(SourceKind::Window), Instant::now());
-        assert!(window.accepts(&Frame {
-            has_crop: true,
-            ..Frame::default()
-        }));
-        let mut monitor = Readiness::new(Some(SourceKind::Monitor), Instant::now());
-        assert!(monitor.accepts(&Frame::default()));
     }
 }

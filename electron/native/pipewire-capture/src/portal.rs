@@ -60,6 +60,22 @@ impl CursorMode {
     pub fn reports_cursor(self) -> bool {
         matches!(self, Self::Metadata)
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Metadata => "metadata",
+            Self::Embedded => "embedded",
+            Self::Hidden => "hidden",
+        }
+    }
+
+    pub fn resolve(self, offered: &[Self]) -> Self {
+        if self == Self::Embedded && !offered.contains(&self) && offered.contains(&Self::Metadata) {
+            Self::Metadata
+        } else {
+            self
+        }
+    }
 }
 
 /// Which kind of source the compositor actually handed over.
@@ -259,11 +275,11 @@ fn portal_unavailable(error: impl std::fmt::Display) -> PortalError {
     ))
 }
 
-/// Cheap, non-interactive probe: does this portal offer METADATA cursor mode?
+/// Cheap, non-interactive probe of the portal's cursor modes.
 ///
 /// Split out from [`negotiate`] so the helper can answer that question — and
 /// emit `ready` — before anything raises a dialog.
-pub async fn cursor_metadata_supported() -> Result<bool, PortalError> {
+pub async fn offered_cursor_modes() -> Result<Vec<CursorMode>, PortalError> {
     let proxy = Screencast::new().await.map_err(portal_unavailable)?;
     // This startup probe precedes CreateSession. Register the same D-Bus peer
     // ashpd will use, so the separate helper has the app's installed identity.
@@ -275,7 +291,14 @@ pub async fn cursor_metadata_supported() -> Result<bool, PortalError> {
         .available_cursor_modes()
         .await
         .map_err(|error| failed("AvailableCursorModes", error))?;
-    Ok(cursor_modes.contains(PortalCursorMode::Metadata))
+    Ok([
+        CursorMode::Metadata,
+        CursorMode::Embedded,
+        CursorMode::Hidden,
+    ]
+    .into_iter()
+    .filter(|mode| cursor_modes.contains(mode.to_portal()))
+    .collect())
 }
 
 async fn register_host_application(
@@ -323,10 +346,6 @@ pub async fn negotiate_selected(
         .available_cursor_modes()
         .await
         .map_err(|error| failed("AvailableCursorModes", error))?;
-    // Only METADATA is treated as mandatory, and only when it was asked for.
-    // EMBEDDED is in the portal spec's baseline and every compositor implements
-    // it; refusing to start because a mode we are not using is missing would be
-    // the Stage 1 check applied where it no longer belongs.
     if !cursor_modes.contains(cursor_mode.to_portal()) {
         return Err(match cursor_mode {
             CursorMode::Metadata => PortalError::CursorMetadataUnsupported,
@@ -406,6 +425,16 @@ pub async fn negotiate_selected(
 #[cfg(test)]
 mod tests {
     use super::{negotiate_selected, portal_unavailable, CursorMode, Selection};
+
+    #[test]
+    fn system_cursor_falls_back_only_when_metadata_is_offered() {
+        use CursorMode::{Embedded, Hidden, Metadata};
+        assert_eq!(Embedded.resolve(&[Metadata, Hidden]), Metadata);
+        assert_eq!(Embedded.resolve(&[Embedded, Metadata]), Embedded);
+        assert_eq!(Embedded.resolve(&[Hidden]), Embedded);
+        assert_eq!(Metadata.resolve(&[Embedded]), Metadata);
+        assert_eq!(Hidden.resolve(&[Metadata]), Hidden);
+    }
 
     #[test]
     fn host_registration_uses_installed_identity_and_preserves_errors() {

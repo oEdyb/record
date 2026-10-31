@@ -192,6 +192,20 @@ impl Request {
         Ok(())
     }
 
+    pub fn resolve_cursor_mode(
+        &mut self,
+        offered: &[portal::CursorMode],
+    ) -> Result<portal::CursorMode, String> {
+        let requested = self.cursor_mode()?;
+        let resolved = requested.resolve(offered);
+        if resolved != requested {
+            self.cursor = Some(CursorRequest {
+                mode: resolved.as_str().into(),
+            });
+        }
+        Ok(resolved)
+    }
+
     pub fn cursor_mode(&self) -> Result<portal::CursorMode, String> {
         match self
             .cursor
@@ -377,5 +391,24 @@ mod tests {
         next = request();
         next.audio.as_mut().unwrap().microphone.gain = Some(-1.0);
         assert!(next.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod cursor_fallback_tests {
+    use super::*;
+
+    #[test]
+    fn fallback_survives_reconfigure_and_records_editable_cursor_clips() {
+        let mut request: Request = serde_json::from_str(r#"{"cursor":{"mode":"system"}}"#).unwrap();
+        let mut next = request.clone();
+        let offered = [portal::CursorMode::Metadata];
+        assert_eq!(
+            request.resolve_cursor_mode(&offered).unwrap(),
+            portal::CursorMode::Metadata
+        );
+        next.resolve_cursor_mode(&offered).unwrap();
+        assert!(request.validate_reconfigure(&next).is_ok());
+        assert_eq!(request.cursor_mode().unwrap(), portal::CursorMode::Metadata);
     }
 }

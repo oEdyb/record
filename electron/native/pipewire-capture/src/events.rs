@@ -48,6 +48,7 @@ pub enum Event {
         pipewire_version: Option<String>,
         /// Whether the portal advertises METADATA cursor mode at all.
         cursor_metadata_supported: bool,
+        cursor_mode: &'static str,
     },
     /// The user has answered the compositor's picker and a source was granted.
     ///
@@ -67,6 +68,7 @@ pub enum Event {
     },
     #[serde(rename_all = "camelCase")]
     SourceReselected {
+        cursor_mode: &'static str,
         capture_bounds: CaptureBounds,
         node_id: u32,
         source_kind: Option<String>,
@@ -343,6 +345,7 @@ mod tests {
                 timestamp_ms: 42,
                 pipewire_version: Some("1.0.5".to_owned()),
                 cursor_metadata_supported: true,
+                cursor_mode: "metadata",
             },
             false,
         );
@@ -365,6 +368,7 @@ mod tests {
             timestamp_ms: 7,
             pipewire_version: None,
             cursor_metadata_supported: false,
+            cursor_mode: "embedded",
         });
         assert_eq!(value["event"], "ready");
         assert_eq!(value["timestampMs"], 7);
@@ -375,6 +379,7 @@ mod tests {
     #[test]
     fn replacement_reports_its_committed_node_and_source_kind() {
         let value = parse_one(&Event::SourceReselected {
+            cursor_mode: "metadata",
             capture_bounds: CaptureBounds {
                 x: 0,
                 y: 0,
