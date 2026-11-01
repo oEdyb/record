@@ -172,7 +172,7 @@ export class StudioController {
 		const pill = this.deps.getPill();
 		if (pill && !pill.isDestroyed()) {
 			this.fade.cancel(pill);
-			pill.setOpacity?.(1);
+			this.fade.setOpacity(pill, 1);
 			pill.show();
 			pill.focus();
 		}
@@ -363,7 +363,7 @@ export class StudioController {
 		if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return;
 		this.fade.cancel(this.window);
 		this.window.hide();
-		this.window.setOpacity?.(1);
+		this.fade.setOpacity(this.window, 1);
 		// The page never learns it was hidden (it runs unthrottled), so say it.
 		this.publish();
 	}
@@ -377,8 +377,12 @@ export class StudioController {
 				expanded: false,
 				origin: this.motionOrigin(),
 			});
-			if (this.deps.motionEnabled?.() && this.window.getOpacity?.() === 1)
-				this.window.setOpacity?.(0);
+			if (
+				process.platform !== "linux" &&
+				this.deps.motionEnabled?.() &&
+				this.window.getOpacity?.() === 1
+			)
+				this.fade.setOpacity(this.window, 0);
 			this.window.show();
 			this.window.focus();
 			this.publish();
@@ -391,7 +395,7 @@ export class StudioController {
 			this.fade.to(pill, 0, 90, () => {
 				if (pill.isDestroyed()) return;
 				if (this.mode === "studio") pill.hide();
-				pill.setOpacity?.(1);
+				this.fade.setOpacity(pill, 1);
 			});
 		this.publish();
 	}

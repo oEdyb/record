@@ -454,6 +454,7 @@ describe("Studio handoff cancellation", () => {
 });
 
 it("keeps an outgoing window visible and retargets rapid pill/Studio reversals", () => {
+	const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
 	vi.useFakeTimers();
 	try {
 		const { controller, studio, pill } = setup(null, { motionEnabled: () => true });
@@ -474,11 +475,13 @@ it("keeps an outgoing window visible and retargets rapid pill/Studio reversals",
 		expect(studio.window.getOpacity?.()).toBe(1);
 		expect(pill.visible()).toBe(false);
 	} finally {
+		platformSpy.mockRestore();
 		vi.useRealTimers();
 	}
 });
 
 it("fades the pill out while the Studio fades in, and brings it back opaque", () => {
+	const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
 	vi.useFakeTimers();
 	try {
 		const { controller, studio, pill } = setup(null, { motionEnabled: () => true });
@@ -494,6 +497,36 @@ it("fades the pill out while the Studio fades in, and brings it back opaque", ()
 		expect(pill.visible()).toBe(true);
 		expect(pill.window.getOpacity?.()).toBe(1);
 	} finally {
+		platformSpy.mockRestore();
+		vi.useRealTimers();
+	}
+});
+
+it.each([
+	false,
+	true,
+])("switches Linux windows instantly without opacity calls (motion %s)", (motion) => {
+	vi.useFakeTimers();
+	try {
+		vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+		const { controller, studio, pill } = setup(null, { motionEnabled: () => motion });
+		const studioOpacity = vi.spyOn(studio.window, "setOpacity");
+		const pillOpacity = vi.spyOn(pill.window, "setOpacity");
+		controller.open();
+		studio.ready();
+		expect(studio.visible()).toBe(true);
+		expect(pill.visible()).toBe(false);
+		expect(studioOpacity).not.toHaveBeenCalled();
+		expect(pillOpacity).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+		expect(studio.close()).toBe(true);
+		expect(studio.visible()).toBe(false);
+		expect(pill.visible()).toBe(true);
+		expect(studioOpacity).not.toHaveBeenCalled();
+		expect(pillOpacity).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	} finally {
+		vi.restoreAllMocks();
 		vi.useRealTimers();
 	}
 });

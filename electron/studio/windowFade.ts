@@ -14,9 +14,17 @@ export class WindowFade {
 		this.timers.delete(window);
 	}
 
+	setOpacity(window: FadeWindow, opacity: number) {
+		if (process.platform !== "linux") window.setOpacity?.(opacity);
+	}
+
 	to(window: FadeWindow, target: number, duration: number, done = () => undefined) {
 		this.cancel(window);
 		if (window.isDestroyed()) return;
+		if (process.platform === "linux") {
+			done();
+			return;
+		}
 		if (!this.enabled() || !window.setOpacity || !window.getOpacity) {
 			window.setOpacity?.(target);
 			done();

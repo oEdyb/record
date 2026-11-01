@@ -1,7 +1,11 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WindowFade } from "./windowFade";
 
-afterEach(() => vi.useRealTimers());
+beforeEach(() => vi.spyOn(process, "platform", "get").mockReturnValue("darwin"));
+afterEach(() => {
+	vi.restoreAllMocks();
+	vi.useRealTimers();
+});
 it("retargets the current opacity and cancels stale completions", () => {
 	vi.useFakeTimers();
 	let opacity = 1;
