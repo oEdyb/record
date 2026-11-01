@@ -11,6 +11,7 @@ import { persistNativeMacRecoveryJournal } from "../recording/nativeMacRecoveryJ
 import type { RendererIpcMain } from "./trustedRendererIpc";
 
 const paths = vi.hoisted(() => ({ userData: "", temp: "" }));
+const powerBlocker = vi.hoisted(() => ({ start: vi.fn(() => 41), stop: vi.fn() }));
 
 vi.mock("electron", () => {
 	const noop = () => undefined;
@@ -42,6 +43,7 @@ vi.mock("electron", () => {
 		dialog: {},
 		ipcMain: { handle: noop, on: noop, once: noop, removeAllListeners: noop, removeHandler: noop },
 		powerMonitor: { on: noop, off: noop, getCurrentThermalState: () => "nominal" },
+		powerSaveBlocker: powerBlocker,
 		screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({}), on: noop },
 		safeStorage: { isEncryptionAvailable: () => false },
 		shell: {},
@@ -136,6 +138,8 @@ describe("registerIpcHandlers startup contract", () => {
 		await fs.rm(paths.userData, { recursive: true, force: true, maxRetries: 5 });
 		await fs.rm(paths.temp, { recursive: true, force: true, maxRetries: 5 });
 		vi.mocked(inspectHandoffSourceMedia).mockReset();
+		powerBlocker.start.mockClear();
+		powerBlocker.stop.mockClear();
 	});
 
 	it("has every renderer channel registered before the recovery check settles", async () => {
@@ -727,5 +731,24 @@ describe("registerIpcHandlers startup contract", () => {
 		const { recovery } = await register({ restoreInterruptedRecording: false });
 
 		await expect(recovery).resolves.toBe(false);
+	});
+
+	it.each([
+		["linux", 1, 1],
+		["darwin", 0, 0],
+	] as const)("on %s, the recording state holds the display awake only for Linux", async (platform, starts, stops) => {
+		pinPlatform(platform);
+		const { handlers } = await register();
+		const setRecordingState = handlers.get("set-recording-state");
+		if (!setRecordingState) throw new Error("set-recording-state missing");
+
+		await Reflect.apply(setRecordingState, undefined, [{}, true, 5, "system"]);
+		await Reflect.apply(setRecordingState, undefined, [{}, true, 5, "system"]);
+		expect(powerBlocker.start).toHaveBeenCalledTimes(starts);
+		if (starts) expect(powerBlocker.start).toHaveBeenCalledWith("prevent-display-sleep");
+
+		await Reflect.apply(setRecordingState, undefined, [{}, false, 5, "system"]);
+		expect(powerBlocker.stop).toHaveBeenCalledTimes(stops);
+		if (stops) expect(powerBlocker.stop).toHaveBeenCalledWith(41);
 	});
 });

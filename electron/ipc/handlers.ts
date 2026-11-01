@@ -13,6 +13,7 @@ import {
 	dialog,
 	ipcMain as electronIpcMain,
 	powerMonitor,
+	powerSaveBlocker,
 	screen,
 	shell,
 	systemPreferences,
@@ -162,6 +163,7 @@ import {
 import { type RecordingPrefs, RecordingPrefsStore } from "../recording/recordingPrefsStore";
 import { createRecordingStartupOverlayController } from "../recording/recordingStartupOverlay";
 import { freeDiskBytes } from "../recording/recordingStorage";
+import { RecordingWakeLock } from "../recording/recordingWakeLock";
 import {
 	appendDiagnosticRow,
 	appendRecordStartTiming,
@@ -1758,6 +1760,15 @@ export function registerIpcHandlers(
 	})();
 
 	let recordingActive = false;
+	// Linux's helper cannot inhibit idle itself the way macOS's does; see the class doc.
+	const recordingWakeLock = new RecordingWakeLock(
+		process.platform,
+		{
+			start: (type) => powerSaveBlocker.start(type),
+			stop: (id) => powerSaveBlocker.stop(id),
+		},
+		(error) => console.warn("[capture-linux] could not keep the display awake:", error),
+	);
 	let thermalState: CleanVoiceThermalState = "unknown";
 	let cpuSpeedLimitPercent: number | undefined;
 	const workloadTelemetry = new WorkloadTelemetryService({
@@ -1950,6 +1961,7 @@ export function registerIpcHandlers(
 				});
 	const notifyRecordingStateChange = (recording: boolean, sourceName: string) => {
 		recordingActive = recording;
+		recordingWakeLock.set(recording);
 		cleanVoiceService?.setRecordingActive(recording);
 		if (recording && !activeCaptureWorkloadId) {
 			activeCaptureWorkloadId = workloadTelemetry.begin({
