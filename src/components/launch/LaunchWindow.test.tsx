@@ -1247,6 +1247,21 @@ describe("LaunchWindow record button", () => {
 		expect(mic.querySelector("span[aria-hidden]")).not.toBeNull();
 	});
 
+	it("drops focus when the pill hides, so it comes back as it was", async () => {
+		let setVisible: (visible: boolean) => void = vi.fn();
+		window.electronAPI.onHudVisibilityChanged = vi.fn((callback) => {
+			setVisible = callback;
+			return vi.fn();
+		});
+		renderLaunchWindow();
+		const mic = await screen.findByTestId("launch-microphone-button");
+		mic.focus();
+		expect(document.activeElement).toBe(mic);
+
+		act(() => setVisible(false));
+		expect(document.activeElement).not.toBe(mic);
+	});
+
 	it("sets the replay's listening level from the volume slider and shares it with the review", async () => {
 		usePreviewAudio.setState({ volume: 1, muted: false });
 		recorderState.value.recording = true;

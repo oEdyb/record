@@ -2002,7 +2002,17 @@ export function LaunchWindow() {
 	// before Record, only while the pill is on screen. Setup runs its own meter,
 	// and capture owns the mic once a take starts.
 	const [hudVisible, setHudVisible] = useState(true);
-	useEffect(() => window.electronAPI?.onHudVisibilityChanged?.(setHudVisible), []);
+	// A hidden pill drops focus: the window regains it when shown again, and a focused
+	// tucked pill would unfold the moment it comes back.
+	useEffect(
+		() =>
+			window.electronAPI?.onHudVisibilityChanged?.((visible) => {
+				setHudVisible(visible);
+				if (!visible && document.activeElement instanceof HTMLElement)
+					document.activeElement.blur();
+			}),
+		[],
+	);
 	const idleMicMeterOn =
 		hudVisible &&
 		microphoneEnabled &&
