@@ -29,20 +29,7 @@ export function useMicrophoneDevices(enabled: boolean = true) {
 				setIsLoading(true);
 				setError(null);
 
-				// Request permission first to get actual device labels
-				const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-				const allDevices = await navigator.mediaDevices.enumerateDevices();
-				const audioInputs = allDevices
-					.filter((device) => device.kind === "audioinput")
-					.map((device) => ({
-						deviceId: device.deviceId,
-						label: device.label || `Microphone ${device.deviceId.slice(0, 8)}`,
-						groupId: device.groupId,
-					}));
-
-				// Stop the permission stream
-				stream.getTracks().forEach((track) => track.stop());
+				const audioInputs = await listAudioInputs();
 
 				if (mounted) {
 					setDevices(audioInputs);
@@ -85,4 +72,27 @@ export function useMicrophoneDevices(enabled: boolean = true) {
 		isLoading,
 		error,
 	};
+}
+
+// Opening a stream lights the OS microphone indicator, so only do it when the
+// list comes back without names, which means mic permission was never granted.
+async function listAudioInputs(): Promise<MicrophoneDevice[]> {
+	const read = async () =>
+		(await navigator.mediaDevices.enumerateDevices()).filter(
+			(device) => device.kind === "audioinput",
+		);
+	let inputs = await read();
+	if (inputs.length === 0 || inputs.some((device) => !device.label)) {
+		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		try {
+			inputs = await read();
+		} finally {
+			for (const track of stream.getTracks()) track.stop();
+		}
+	}
+	return inputs.map((device) => ({
+		deviceId: device.deviceId,
+		label: device.label || `Microphone ${device.deviceId.slice(0, 8)}`,
+		groupId: device.groupId,
+	}));
 }
