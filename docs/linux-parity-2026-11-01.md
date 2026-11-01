@@ -157,3 +157,11 @@ Product-behavior text for F3 is in `technical-documentation/product-behavior.md`
 - `npx tsc --noEmit`, `npx tsc -p tsconfig.test.json --noEmit` and `biome check electron`
   clean after F3.
 - The full suite result is in the final section below.
+
+## Full unit suite
+
+`npm run test`, once, at the end, `nice -n 19`: 309 files passed (6 skipped), 3,194 tests
+passed (13 skipped), 0 failed. The two `check-docs` problem lines in its output come from
+the doc checker's own probe cases, not from failures. `npx tsc --noEmit` and
+`npx tsc -p tsconfig.test.json --noEmit` clean. The full suite includes the two handler
+tests that failed on the PR head before F1.
