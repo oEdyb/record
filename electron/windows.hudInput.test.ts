@@ -48,9 +48,9 @@ const fixture = vi.hoisted(() => {
 	};
 });
 
-vi.mock("./niriCameraPreviewGuard", () => ({
-	NiriCameraPreviewGuard: class {
-		constructor(onUnsafe: () => void) {
+vi.mock("./niriCaptureWindowGuard", () => ({
+	NiriCaptureWindowGuard: class {
+		constructor(_title: string, onUnsafe: () => void) {
 			fixture.setUnsafe(onUnsafe);
 		}
 		begin = fixture.previewGuard.begin;

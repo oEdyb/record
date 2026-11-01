@@ -400,16 +400,27 @@ standalone picker window opens instead, because that path asks for access and le
 process decide who owns the choice. On Linux the visible Source chip opens the native
 portal chooser directly, as does Settings → Source; Record can reuse the remembered grant.
 Linux keeps the logo as a compositor-owned drag region and does not offer click-to-fold.
-Linux opens Setup below a fixed local pill origin. During monitor capture (or when
-source isolation is unknown), hide the recorder before starting or continuing;
-Pause acknowledgement restores it. Recording another window can retain the HUD.
-Notes and Transcript follow the same rule: Electron's content protection is
+Linux opens Setup below a fixed local pill origin. During monitor capture or when
+source isolation is unknown, hide controls before Start/Continue unless Niri proves
+that this process's floating pill is on another uncaptured output. Recording another
+window can retain the HUD. Match the exact
+portal PipeWire node and current logical window/workspace/output geometry; Electron
+coordinates alone do not prove isolation, and Wayland does not expose reliable global
+window position through Electron, so a second-monitor exemption is never inferred
+elsewhere. Evaluate the pill and camera independently.
+Safe focus and layout updates retain visibility; unsafe placement, overview, output
+changes or lost IPC revoke retention until Pause. This is conditional placement,
+not atomic compositor-level capture exclusion. Pause restores hidden controls.
+Notes and Transcript follow the unconditional rule: Electron's content protection is
 macOS/Windows only, so on Linux they unmap with the recorder for monitor or
 unknown-source capture and return, unfocused, at Pause.
-Wayland does not expose reliable global window position through Electron, so a
-second-monitor exemption is not inferred. On Niri, restoration explicitly activates
-only this process's matching floating recorder window. Asking to show a concealed
-active recorder first requests Pause; it cannot silently place controls in footage.
+The portal chooser temporarily hides the pill, then restores its saved Niri output
+and absolute local position before preparation completes. Cancellation invalidates
+pending selection/restoration; replacement capture waits for in-flight placement.
+On Niri, restoration explicitly activates only this process's matching floating
+recorder window. Asking to show a concealed active recorder first requests Pause, so
+controls cannot silently appear in footage. Other Wayland compositors retain
+conservative hiding.
 Linux defaults are Ctrl+Alt+O for controls and Ctrl+Alt+R for Pause/Continue, leaving
 Koett's Ctrl+Shift+Space untouched. The configured Niri fallback additionally maps
 Ctrl+Alt+S to Stop. These compositor bindings target the running app through its
@@ -505,12 +516,13 @@ unknown-source capture, hide it with the HUD before Start/Continue and restore
 its requested visibility only after confirmed Pause or failed startup. A late
 renderer visibility request or renderer reload must not override capture hiding.
 The camera keeps recording into its separate original while its preview is hidden.
-Window-only capture can retain the preview. On Niri, a preview already wholly on
-another uncaptured output can remain mapped during monitor recording. Match the
+Window-only capture can retain the preview. On Niri, a preview already on
+another uncaptured output can remain mapped during monitor recording. Compositor-
+clipped edges are allowed only when they cannot intersect another output. Match the
 portal's exact PipeWire node against compositor casts and validate logical window,
 workspace and output geometry before writer admission. Unknown identities,
-dynamic casts, ambiguity or missing IPC retain hiding. Relevant layout/cast or
-monitor changes revoke this permission until Pause; do not remap a hidden preview
+dynamic casts, ambiguity or missing IPC retain hiding. Safe layout/cast updates are re-evaluated without hiding. Unsafe placement,
+monitor changes or lost compositor state revoke this permission until Pause; do not remap a hidden preview
 mid-clip from a stale position. This is conditional placement, not compositor-level
 atomic capture exclusion. Niri integration places the uniquely titled `Klippt Camera`
 window away from the HUD without taking keyboard focus.
@@ -1155,11 +1167,37 @@ product requirement, not as an optional maximum-quality mode.
   gaps, and bound camera source time after applying its offset. Round shared cumulative cut
   boundaries to the timeline frame grid; do not accumulate a rounding error per cut. Use relative
   media references so the folder can move. Keep exact source offsets in OTIO metadata; cuts and
-  synchronization belong only in the timeline files. `handoff.json` lists the unchanged media files.
+  synchronization are also described in `handoff.json`, alongside unchanged media files.
   Whole source files retain material outside partial trims. Camera remains a full separate layer;
   captions, layouts, editable cursor overlays, speed changes, B-roll and audio processing are not
   transferred. Say this on the export surface and in the handoff. DaVinci Resolve is the first
   verified interchange target; keep the export labels editor-neutral.
+- Separate takes handoff v4 names media `<take>-<sha1(assetId)[0:8]>-<role>.<ext>`;
+  dialogue derivatives use a unique export id. OTIO and FCPXML clip names identify take,
+  role and source range; OTIO metadata and manifest edit maps share the same frame plan.
+  Source seconds are half-open screen-clock ranges; stream frame fields describe actual
+  quantized media reads. Explicit offsets follow `streamTimeSec = screenTimeSec - offsetSec`.
+  Keep camera start/offset milliseconds, file bytes/SHA-256, ffprobe stream facts, full/clean
+  per-track edits, removed-range marker text, available transcript words and active dialogue.
+  Copy cursor JSON unchanged and decode its embedded PNG assets into a per-take folder.
+  Declare capture mode from the matching recording session, or unknown; missing telemetry
+  is explicit. Cursor coordinates are normalized, top-left; hotspots use image pixels.
+  Native sidecars already remove pre-roll/pauses and rebase clips: screen seconds = timeMs/1000.
+  Clean dialogue reads `round((screenTimeSec - microphoneOffsetSec) * 48000)` samples,
+  preserving frame-planned lengths and keeping sub-frame offsets out of video quantization.
+  Contracts checked against [OTIO metadata](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-file-format-specification.html)
+  and [ffprobe stream output](https://ffmpeg.org/ffprobe.html); originals remain unchanged.
+- A Clean cut source export with an isolated microphone also writes derived
+  `clean-dialogue.wav`: 48 kHz, 24-bit, original channel count, exact frame-planned
+  duration. Soft audio joins may shift within half a video frame; video cuts stay
+  fixed. Handles may borrow only within the project's retained source ranges;
+  project trims use short fades without restoring removed material. Only the
+  clean-cut OTIO adds Clean dialogue and disables the replaced microphone clips.
+  System audio and the full timelines stay unchanged. Missing isolated microphone
+  audio produces a warning, never a stem from embedded mixed audio. Original files
+  remain byte copies; the manifest labels the stem as derived. There is no clean-cut
+  FCPXML or in-app soft-join playback parity in this slice. Resolve's handling of
+  disabled clips still requires import verification.
 - Beside `timeline.otio`, write `timeline.fcpxml` (FCPXML 1.10) for Final Cut Pro from the same
   frame-grid plan, never a second sync calculation. Screen clips and gaps form the primary storyline; camera
   connects on lane 1, microphone on lane −1 (dialogue role), system audio on lane −2 (effects

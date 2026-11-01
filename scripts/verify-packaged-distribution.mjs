@@ -106,6 +106,7 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-arm64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
+		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),
 		...Object.fromEntries(
@@ -115,6 +116,7 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-x64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
+		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),
 		...Object.fromEntries(

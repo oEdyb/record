@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ownedCameraPreviewId, previewOutsideCapture } from "./niriCameraPreviewPolicy";
+import { ownedCaptureWindowId, windowOutsideCapture } from "./niriCaptureWindowPolicy";
 
 function fixture() {
 	return {
 		pid: 42,
 		pipeWireNodeId: 91,
+		windowTitle: "Klippt Camera",
 		casts: [
 			{
 				stream_id: 1,
@@ -39,11 +40,11 @@ function fixture() {
 
 describe("Niri second-monitor camera preview policy", () => {
 	it("allows only a complete preview on a distinct uncaptured logical output", () => {
-		expect(previewOutsideCapture(fixture())).toBe(true);
+		expect(windowOutsideCapture(fixture())).toBe(true);
 		const value = fixture();
 		value.outputs["DP-1"].logical.scale = 1.25;
 		value.outputs["DP-2"].logical.scale = 2;
-		expect(previewOutsideCapture(value)).toBe(true);
+		expect(windowOutsideCapture(value)).toBe(true);
 	});
 
 	it("supports negative output origins and fractional logical positions", () => {
@@ -51,43 +52,57 @@ describe("Niri second-monitor camera preview policy", () => {
 		value.outputs["DP-2"].logical.x = -1920;
 		value.outputs["DP-2"].logical.y = -200;
 		value.windows[0].layout.tile_pos_in_workspace_view = [14.5, 20.25];
-		expect(previewOutsideCapture(value)).toBe(true);
+		expect(windowOutsideCapture(value)).toBe(true);
 	});
 
 	it("hides on the recorded output, a disabled output, or a single-monitor desktop", () => {
 		const value = fixture();
 		value.workspaces[0].output = "DP-1";
-		expect(previewOutsideCapture(value)).toBe(false);
+		expect(windowOutsideCapture(value)).toBe(false);
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...fixture(),
 				outputs: { ...fixture().outputs, "DP-2": { name: "DP-2", logical: null } },
 			}),
 		).toBe(false);
 		expect(
-			previewOutsideCapture({ ...fixture(), outputs: { "DP-1": fixture().outputs["DP-1"] } }),
+			windowOutsideCapture({ ...fixture(), outputs: { "DP-1": fixture().outputs["DP-1"] } }),
 		).toBe(false);
 	});
 
-	it("rejects a preview straddling or leaving its output, including its tile offset", () => {
-		for (const position of [
-			[-3, 24],
-			[1607, 24],
-			[24, 893],
-		]) {
-			const value = fixture();
-			value.windows[0].layout.tile_pos_in_workspace_view = position;
-			expect(previewOutsideCapture(value)).toBe(false);
-		}
+	it("rejects visible overlap with another output but permits compositor-clipped edges", () => {
 		const value = fixture();
-		value.windows[0].layout.window_offset_in_tile = [-40, 0];
-		expect(previewOutsideCapture(value)).toBe(false);
+		value.windows[0].layout.tile_pos_in_workspace_view = [-3, 24];
+		expect(windowOutsideCapture(value)).toBe(false);
+		value.windows[0].layout.tile_pos_in_workspace_view = [24, 1000];
+		expect(windowOutsideCapture(value)).toBe(true);
+		value.windows[0].layout.tile_pos_in_workspace_view = [24, 1200];
+		expect(windowOutsideCapture(value)).toBe(false);
+	});
+
+	it("evaluates the pill independently of the preview using actual compositor bounds", () => {
+		const value = fixture();
+		const pill = {
+			...value.windows[0],
+			id: 9,
+			title: "Klippt",
+			layout: {
+				...value.windows[0].layout,
+				window_size: [472, 680],
+				tile_pos_in_workspace_view: [342, 405],
+			},
+		};
+		const input = { ...value, windows: [...value.windows, pill], windowTitle: "Klippt" };
+		expect(windowOutsideCapture(input)).toBe(true);
+		pill.workspace_id = 99;
+		expect(windowOutsideCapture(input)).toBe(false);
+		expect(windowOutsideCapture({ ...input, windowTitle: "Klippt Camera" })).toBe(true);
 	});
 
 	it("does not allow a monitor whose global rectangle overlaps the preview", () => {
 		const value = fixture();
 		value.outputs["DP-1"].logical.width = 1400;
-		expect(previewOutsideCapture(value)).toBe(false);
+		expect(windowOutsideCapture(value)).toBe(false);
 	});
 
 	it("hides when another cast captures the preview output or the preview window", () => {
@@ -98,9 +113,9 @@ describe("Niri second-monitor camera preview policy", () => {
 			pw_node_id: 92,
 			target: { Output: { name: "DP-2" } },
 		});
-		expect(previewOutsideCapture(value)).toBe(false);
+		expect(windowOutsideCapture(value)).toBe(false);
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...fixture(),
 				casts: [
 					...fixture().casts,
@@ -112,7 +127,7 @@ describe("Niri second-monitor camera preview policy", () => {
 
 	it("permits an unrelated captured application window", () => {
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...fixture(),
 				casts: [
 					...fixture().casts,
@@ -124,25 +139,23 @@ describe("Niri second-monitor camera preview policy", () => {
 
 	it("requires exactly one matching PipeWire monitor cast and stable known targets", () => {
 		const value = fixture();
-		expect(previewOutsideCapture({ ...value, casts: [] })).toBe(false);
-		expect(previewOutsideCapture({ ...value, pipeWireNodeId: 92 })).toBe(false);
-		expect(previewOutsideCapture({ ...value, casts: [...value.casts, ...value.casts] })).toBe(
-			false,
-		);
+		expect(windowOutsideCapture({ ...value, casts: [] })).toBe(false);
+		expect(windowOutsideCapture({ ...value, pipeWireNodeId: 92 })).toBe(false);
+		expect(windowOutsideCapture({ ...value, casts: [...value.casts, ...value.casts] })).toBe(false);
 		expect(
-			previewOutsideCapture({ ...value, casts: [{ ...value.casts[0], kind: "WlrScreencopy" }] }),
+			windowOutsideCapture({ ...value, casts: [{ ...value.casts[0], kind: "WlrScreencopy" }] }),
 		).toBe(false);
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...value,
 				casts: [{ ...value.casts[0], target: { Window: { id: 99 } } }],
 			}),
 		).toBe(false);
 		expect(
-			previewOutsideCapture({ ...value, casts: [{ ...value.casts[0], is_dynamic_target: true }] }),
+			windowOutsideCapture({ ...value, casts: [{ ...value.casts[0], is_dynamic_target: true }] }),
 		).toBe(false);
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...value,
 				casts: [...value.casts, { ...value.casts[0], stream_id: 2, target: { Nothing: {} } }],
 			}),
@@ -159,25 +172,25 @@ describe("Niri second-monitor camera preview policy", () => {
 		]) {
 			const value = fixture();
 			expect(
-				previewOutsideCapture({ ...value, windows: [{ ...value.windows[0], ...changed }] }),
+				windowOutsideCapture({ ...value, windows: [{ ...value.windows[0], ...changed }] }),
 			).toBe(false);
 		}
 		const value = fixture();
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...value,
 				windows: [...value.windows, { ...value.windows[0], id: 9 }],
 			}),
 		).toBe(false);
-		expect(previewOutsideCapture({ ...value, workspaces: [] })).toBe(false);
+		expect(windowOutsideCapture({ ...value, workspaces: [] })).toBe(false);
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...value,
 				workspaces: [{ ...value.workspaces[0], is_active: false }],
 			}),
 		).toBe(false);
 		expect(
-			previewOutsideCapture({ ...value, workspaces: [...value.workspaces, ...value.workspaces] }),
+			windowOutsideCapture({ ...value, workspaces: [...value.workspaces, ...value.workspaces] }),
 		).toBe(false);
 	});
 
@@ -199,14 +212,14 @@ describe("Niri second-monitor camera preview policy", () => {
 				},
 			},
 		])
-			expect(previewOutsideCapture({ ...value, ...changed })).toBe(false);
+			expect(windowOutsideCapture({ ...value, ...changed })).toBe(false);
 		for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
 			const candidate = fixture();
 			candidate.windows[0].layout.tile_pos_in_workspace_view[0] = bad;
-			expect(previewOutsideCapture(candidate)).toBe(false);
+			expect(windowOutsideCapture(candidate)).toBe(false);
 		}
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...value,
 				outputs: {
 					...value.outputs,
@@ -214,17 +227,17 @@ describe("Niri second-monitor camera preview policy", () => {
 				},
 			}),
 		).toBe(false);
+		expect(windowOutsideCapture({ ...value, windows: [{ ...value.windows[0], layout: {} }] })).toBe(
+			false,
+		);
 		expect(
-			previewOutsideCapture({ ...value, windows: [{ ...value.windows[0], layout: {} }] }),
-		).toBe(false);
-		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...value,
 				windows: [{ ...value.windows[0], id: Number.MAX_SAFE_INTEGER + 1 }],
 			}),
 		).toBe(false);
 		expect(
-			previewOutsideCapture({
+			windowOutsideCapture({
 				...value,
 				casts: [{ ...value.casts[0], target: { Output: { name: "missing" } } }],
 			}),
@@ -235,10 +248,14 @@ describe("Niri second-monitor camera preview policy", () => {
 describe("owned camera preview identity", () => {
 	it("returns only a unique valid window owned by this process", () => {
 		const value = fixture();
-		expect(ownedCameraPreviewId(value.windows, 42)).toBe(8);
-		expect(ownedCameraPreviewId(value.windows, 99)).toBeNull();
-		expect(ownedCameraPreviewId([...value.windows, { ...value.windows[0], id: 9 }], 42)).toBeNull();
-		expect(ownedCameraPreviewId(null, 42)).toBeNull();
-		expect(ownedCameraPreviewId(value.windows, Number.POSITIVE_INFINITY)).toBeNull();
+		expect(ownedCaptureWindowId(value.windows, 42, "Klippt Camera")).toBe(8);
+		expect(ownedCaptureWindowId(value.windows, 99, "Klippt Camera")).toBeNull();
+		expect(
+			ownedCaptureWindowId([...value.windows, { ...value.windows[0], id: 9 }], 42, "Klippt Camera"),
+		).toBeNull();
+		expect(ownedCaptureWindowId(null, 42, "Klippt Camera")).toBeNull();
+		expect(
+			ownedCaptureWindowId(value.windows, Number.POSITIVE_INFINITY, "Klippt Camera"),
+		).toBeNull();
 	});
 });

@@ -163,4 +163,35 @@ describe("PipeWireCursorAccumulator", () => {
 		expect(point.cx).toBe(0);
 		expect(point.cy).toBe(1);
 	});
+
+	it("holds the last on-stream position while the pointer is on another output", () => {
+		// Recorded on Niri: leaving the captured monitor arrives as a transparent
+		// 1x1 sprite at (0,0), still flagged visible. Passed through, the editor's
+		// themed cursor jumped to the top-left corner.
+		const accumulator = new PipeWireCursorAccumulator(10);
+		accumulator.reset(0);
+		const arrow = {
+			id: "arrow",
+			imageDataUrl: "data:image/png;base64,A",
+			width: 24,
+			height: 24,
+			hotspotX: 1,
+			hotspotY: 1,
+		};
+		const blank = { ...arrow, id: "blank", width: 1, height: 1, hotspotX: 0, hotspotY: 0 };
+		accumulator.addSample(sample(5, 0, 0, { assetId: "blank", asset: blank })); // starts elsewhere
+		accumulator.addSample(sample(10, 1824, 540, { assetId: "arrow", asset: arrow }));
+		accumulator.addSample(sample(20, 0, 0, { assetId: "blank" }));
+		accumulator.addSample(sample(30, 960, 5000, { assetId: "arrow", visible: false }));
+		accumulator.addSample(sample(40, 960, 540, { assetId: "arrow" }));
+
+		const { samples } = accumulator.toRecordingData();
+		expect(samples.map(({ timeMs, cx, cy, visible }) => [timeMs, cx, cy, visible])).toEqual([
+			[10, 0.95, 0.5, true],
+			[20, 0.95, 0.5, false],
+			[30, 0.95, 0.5, false],
+			[40, 0.5, 0.5, true],
+		]);
+		expect(samples[1].assetId).toBe("arrow");
+	});
 });

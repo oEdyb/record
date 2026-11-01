@@ -5,6 +5,7 @@ import {
 	ChevronRight,
 	ChevronUp,
 	Delete,
+	Maximize2,
 	SlidersHorizontal,
 } from "lucide-react";
 import { memo, type ReactNode, useRef } from "react";
@@ -381,6 +382,32 @@ export const HudRemovePreviousClipButton = memo(function HudRemovePreviousClipBu
 				aria-label={label}
 			>
 				<Delete size={18} aria-hidden />
+			</button>
+		</Tooltip>
+	);
+});
+
+/** Pill -> Studio, the full-size recording view. */
+export const HudStudioButton = memo(function HudStudioButton({
+	disabled,
+	label,
+	onClick,
+}: {
+	disabled: boolean;
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<Tooltip content={label}>
+			<button
+				type="button"
+				data-testid="hud-open-studio-button"
+				className={hudIconBtnClasses}
+				onClick={onClick}
+				disabled={disabled}
+				aria-label={label}
+			>
+				<Maximize2 size={18} aria-hidden />
 			</button>
 		</Tooltip>
 	);

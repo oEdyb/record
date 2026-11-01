@@ -172,7 +172,7 @@ it("bounds short audio independently and keeps unidentified audio separate", () 
 	]);
 	expect(tracks[3].children[0].OTIO_SCHEMA).toBe("Gap.1");
 	expect(tracks[4].name).toBe("Original audio (unidentified)");
-	expect(tracks[4].children[0].name).toBe("old.wav");
+	expect(tracks[4].children[0].name).toBe("T001 audio 0.00–2.00s");
 });
 
 it("rounds cumulative boundaries without a frame of drift for each fractional cut", () => {
@@ -238,6 +238,19 @@ it("puts each marker on the microphone clip that plays at its timeline time, in 
 	});
 });
 
+it("hosts markers on the screen clip when Clean dialogue replaces the microphone", () => {
+	const { timeline } = buildSourceTimeline(
+		"Test",
+		[source],
+		[span()],
+		[{ timelineSec: 1, name: "Filler", comment: "", color: "GREEN" }],
+		{ file: "clean-dialogue.wav", samples: 96000 },
+	);
+	const [screen, , microphone] = timeline.tracks.children;
+	expect(screen.children[0]?.markers.map((m) => m.marked_range.start_time.value)).toEqual([60]);
+	expect(microphone.children.flatMap((child) => child.markers)).toEqual([]);
+});
+
 it("hosts markers on the screen clip when there is no microphone original", () => {
 	const silent: HandoffSource = { ...source, screen: { ...source.screen, audio: [] } };
 	const { timeline } = buildSourceTimeline(
@@ -279,4 +292,29 @@ it("keeps marker source time after audio gaps, offsets and cuts in the shared fr
 		{ type: "clip", start: 0, duration: 108 },
 		{ type: "clip", start: 228, duration: 120 },
 	]);
+});
+
+it("adds Clean dialogue and disables only original mic clips in the clean timeline", () => {
+	const spans = [span(), span(4, 6, 2)];
+	const full = buildSourceTimeline("Full", [source], spans);
+	const clean = buildSourceTimeline("Clean", [source], spans, [], {
+		file: "clean-dialogue.wav",
+		samples: 4 * 48000,
+	});
+	const mic = clean.timeline.tracks.children.find((track) => track.name === "Microphone")!;
+	expect(mic.children).toHaveLength(2);
+	for (const child of mic.children) expect(child).toMatchObject({ enabled: false });
+	const dialogue = clean.timeline.tracks.children.at(-1)!;
+	expect(dialogue.name).toBe("Clean dialogue");
+	expect(dialogue.children).toHaveLength(1);
+	expect(dialogue.children[0]).toMatchObject({
+		source_range: { start_time: { value: 0 }, duration: { value: 240 } },
+		media_references: { DEFAULT_MEDIA: { target_url: "clean-dialogue.wav" } },
+	});
+	for (const timeline of [full.timeline, clean.timeline])
+		for (const track of timeline.tracks.children) {
+			if (timeline === clean.timeline && track.name === "Microphone") continue;
+			for (const child of track.children) expect(child).not.toHaveProperty("enabled", false);
+		}
+	expect(full.timeline.tracks.children).toHaveLength(4);
 });

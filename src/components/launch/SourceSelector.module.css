@@ -142,7 +142,7 @@
 	flex: 1;
 	min-height: 0;
 	grid-auto-rows: min-content;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: repeat(var(--source-columns, 2), minmax(0, 1fr));
 	gap: 8px;
 	overflow-y: auto;
 }

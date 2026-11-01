@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { createConnection } from "node:net";
 import {
-	ownedCameraPreviewId,
-	previewOutsideCapture,
-	unchangedCastTarget,
-} from "./niriCameraPreviewPolicy";
+	captureWindowVerdict,
+	readCaptureWindowSnapshot,
+	updateCaptureWindowSnapshot,
+	windowOutsideCapture,
+} from "./niriCaptureWindowPolicy";
 
 type Snapshot = {
 	casts: unknown;
@@ -91,61 +92,15 @@ function watch(changed: (event: unknown) => void, failed: () => void): Watch {
 	};
 }
 
-function concernsPreview(event: unknown, previewId: number, pid: number): boolean {
-	if (!event || typeof event !== "object") return true;
-	if ("WindowClosed" in event) {
-		const value = event.WindowClosed;
-		return !value || typeof value !== "object" || !("id" in value) || value.id === previewId;
-	}
-	if ("WindowOpenedOrChanged" in event) {
-		const value = event.WindowOpenedOrChanged;
-		if (!value || typeof value !== "object" || !("window" in value)) return true;
-		const window = value.window;
-		if (!window || typeof window !== "object" || !("id" in window)) return true;
-		return (
-			window.id === previewId ||
-			("pid" in window &&
-				window.pid === pid &&
-				"title" in window &&
-				window.title === "Klippt Camera")
-		);
-	}
-	if ("WindowLayoutsChanged" in event) {
-		const value = event.WindowLayoutsChanged;
-		if (
-			!value ||
-			typeof value !== "object" ||
-			!("changes" in value) ||
-			!Array.isArray(value.changes)
-		)
-			return true;
-		return value.changes.some((change) => !Array.isArray(change) || change[0] === previewId);
-	}
-	return Object.keys(event).some((key) =>
-		[
-			"WindowsChanged",
-			"WindowOpenedOrChanged",
-			"WindowClosed",
-			"WorkspacesChanged",
-			"WorkspaceActivated",
-			"CastsChanged",
-			"CastStartedOrChanged",
-			"CastStopped",
-			"ConfigLoaded",
-			"OverviewOpenedOrClosed",
-		].includes(key),
-	);
-}
-
-export class NiriCameraPreviewGuard {
+export class NiriCaptureWindowGuard {
 	private generation = 0;
-	private revision = 0;
-	private previewId: number | null = null;
 	private admitted = false;
-	private casts: unknown = null;
+	private revoked = false;
+	private snapshot: ReturnType<typeof readCaptureWindowSnapshot> = null;
 	private monitor: Watch | null = null;
 
 	constructor(
+		private readonly windowTitle: "Klippt" | "Klippt Camera" | "Klippt Studio",
 		private readonly onUnsafe: () => void,
 		private readonly dependencies: Dependencies = { query, watch },
 		private readonly pid = process.pid,
@@ -153,69 +108,104 @@ export class NiriCameraPreviewGuard {
 
 	async begin(pipeWireNodeId: number | undefined): Promise<boolean> {
 		this.end();
-		if (!process.env.NIRI_SOCKET || pipeWireNodeId === undefined) return false;
+		if (!process.env.NIRI_SOCKET) return false;
+		if (pipeWireNodeId === undefined) {
+			console.info(`[capture-linux] "${this.windowTitle}" hides: no screen stream id yet`);
+			return false;
+		}
 		const generation = this.generation;
-		let failed = false;
+		this.snapshot = {
+			pid: this.pid,
+			pipeWireNodeId,
+			windowTitle: this.windowTitle,
+			casts: [],
+			windows: [],
+			workspaces: [],
+			outputs: {},
+		};
+		const initial = new Set<string>();
+		let complete: () => void = () => undefined;
+		const initialized = new Promise<void>((resolve) => {
+			complete = resolve;
+		});
+		const deadline = setTimeout(() => {
+			this.invalidateGeneration(generation);
+			complete();
+		}, 1000);
 		try {
 			this.monitor = this.dependencies.watch(
 				(event) => {
-					if (generation !== this.generation) return;
-					if (
-						this.admitted &&
-						event &&
-						typeof event === "object" &&
-						"CastStartedOrChanged" in event
-					) {
-						const update = event.CastStartedOrChanged;
-						if (
-							update &&
-							typeof update === "object" &&
-							"cast" in update &&
-							unchangedCastTarget(this.casts, update.cast)
-						)
+					if (generation !== this.generation || this.revoked) return;
+					if (this.initialConfig(event, initial)) {
+						initial.add("ConfigLoaded");
+					} else {
+						this.snapshot = updateCaptureWindowSnapshot(this.snapshot, event);
+						if (!this.snapshot || (this.admitted && !windowOutsideCapture(this.snapshot))) {
+							this.invalidate();
+							complete();
 							return;
+						}
 					}
-					if (this.previewId === null || concernsPreview(event, this.previewId, this.pid)) {
-						this.revision += 1;
-						this.invalidate();
+					for (const key of [
+						"WindowsChanged",
+						"WorkspacesChanged",
+						"CastsChanged",
+						"OverviewOpenedOrClosed",
+					]) {
+						if (event && typeof event === "object" && key in event) initial.add(key);
 					}
+					if (initial.size === 5) complete();
 				},
 				() => {
-					failed = true;
-					if (generation === this.generation) this.invalidate();
+					this.invalidateGeneration(generation);
+					complete();
 				},
 			);
-			await this.monitor.ready;
-			for (let attempt = 0; attempt < 3; attempt += 1) {
-				const revision = this.revision;
-				const [casts, outputs, workspaces, windows] = await Promise.all([
-					this.dependencies.query("casts"),
-					this.dependencies.query("outputs"),
-					this.dependencies.query("workspaces"),
-					this.dependencies.query("windows"),
-				]);
-				if (generation !== this.generation || failed) return false;
-				if (revision !== this.revision) continue;
-				this.casts = casts;
-				this.previewId = ownedCameraPreviewId(windows, this.pid);
-				this.admitted = previewOutsideCapture({
-					pid: this.pid,
-					pipeWireNodeId,
-					casts,
-					outputs,
-					workspaces,
-					windows,
-				});
-				return this.admitted;
+			const [, outputs] = await Promise.all([
+				this.monitor.ready,
+				this.dependencies.query("outputs"),
+				initialized,
+			]);
+			if (generation !== this.generation || this.revoked) {
+				console.info(
+					`[capture-linux] "${this.windowTitle}" hides: niri changed or did not answer within 1 s`,
+				);
+				return false;
 			}
+			this.snapshot = readCaptureWindowSnapshot({ ...this.snapshot, outputs });
+			const verdict = captureWindowVerdict(this.snapshot);
+			this.admitted = verdict === "outside";
+			if (!this.admitted) console.info(`[capture-linux] "${this.windowTitle}" hides: ${verdict}`);
+			return this.admitted;
 		} catch (error) {
 			if (generation === this.generation)
-				console.warn("[capture-linux] preview isolation unavailable:", error);
+				console.warn("[capture-linux] window isolation unavailable:", error);
+			return false;
+		} finally {
+			clearTimeout(deadline);
+			if (generation === this.generation && !this.admitted) {
+				this.monitor?.close();
+				this.monitor = null;
+			}
 		}
-		return false;
+	}
+
+	private initialConfig(event: unknown, initial: Set<string>): boolean {
+		if (this.admitted || initial.has("ConfigLoaded") || !event || typeof event !== "object")
+			return false;
+		if (!("ConfigLoaded" in event) || Object.keys(event).length !== 1) return false;
+		const config = event.ConfigLoaded;
+		return Boolean(
+			config && typeof config === "object" && "failed" in config && config.failed === false,
+		);
+	}
+
+	private invalidateGeneration(generation: number): void {
+		if (generation === this.generation) this.invalidate();
 	}
 
 	invalidate(): void {
+		this.revoked = true;
 		if (!this.admitted) return;
 		this.admitted = false;
 		this.monitor?.close();
@@ -226,8 +216,8 @@ export class NiriCameraPreviewGuard {
 	end(): void {
 		this.generation += 1;
 		this.admitted = false;
-		this.previewId = null;
-		this.casts = null;
+		this.revoked = false;
+		this.snapshot = null;
 		this.monitor?.close();
 		this.monitor = null;
 	}

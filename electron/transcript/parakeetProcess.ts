@@ -105,11 +105,23 @@ export function candidateParakeetBinaryPaths(here: string = process.cwd()): stri
 	].filter((candidate): candidate is string => Boolean(candidate));
 }
 
-/** Null on anything but Apple Silicon running macOS 14 or newer, where Core ML Parakeet runs. */
+/**
+ * Null where no Parakeet helper runs: macOS needs Apple Silicon on macOS 14 or newer (Core ML);
+ * Linux runs the same model through sherpa-onnx on the CPU (electron/native/parakeet-linux).
+ */
 export function resolveParakeetBinaryPath(here: string = process.cwd()): string | null {
-	if (process.platform !== "darwin" || process.arch !== "arm64") return null;
-	if (Number.parseInt(release().split(".")[0] ?? "0", 10) < 23) return null;
+	if (process.platform === "darwin") {
+		if (process.arch !== "arm64") return null;
+		if (Number.parseInt(release().split(".")[0] ?? "0", 10) < 23) return null;
+	} else if (process.platform !== "linux") {
+		return null;
+	}
 	return candidateParakeetBinaryPaths(here).find((candidate) => existsSync(candidate)) ?? null;
+}
+
+/** The model export this platform's helper loads. */
+export function parakeetModelId(): "parakeet-v3" | "parakeet-v3-onnx" {
+	return process.platform === "linux" ? "parakeet-v3-onnx" : "parakeet-v3";
 }
 
 /**

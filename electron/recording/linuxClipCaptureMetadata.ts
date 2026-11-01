@@ -48,8 +48,12 @@ export class LinuxClipCaptureMetadata {
 	}
 
 	observe(event: Record<string, unknown>): void {
-		if (event.event === "source-reselected") this.pipeWireNodeId = undefined;
-		if (event.event === "source-selected" || event.event === "stream-started") {
+		if (
+			event.event === "source-selected" ||
+			event.event === "stream-started" ||
+			event.event === "source-reselected"
+		) {
+			this.sourceKind = undefined;
 			this.pipeWireNodeId =
 				typeof event.nodeId === "number" &&
 				Number.isInteger(event.nodeId) &&

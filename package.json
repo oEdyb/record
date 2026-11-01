@@ -65,7 +65,7 @@
 		"build:native:compositor": "node scripts/build-windows-compositor-addon.mjs",
 		"build:native:compositor:mac": "node scripts/build-macos-compositor-addon.mjs",
 		"build:native:compositor:linux": "node scripts/build-linux-compositor-addon.mjs",
-		"build:native:linux": "node scripts/build-linux-pipewire-helper.mjs",
+		"build:native:linux": "node scripts/build-linux-pipewire-helper.mjs && node scripts/build-linux-parakeet-helper.mjs",
 		"build:win": "npm run build:native:win && npm run fetch:ffmpeg && npm run stage:vcomp && npm run build:native:compositor && npm run build-vite && electron-builder --win --config.npmRebuild=false",
 		"build:win:store": "npm run build:native:win && npm run fetch:ffmpeg && npm run stage:vcomp && npm run build:native:compositor && npm run build-vite && electron-builder --win appx --config.npmRebuild=false",
 		"build:linux": "npm run fetch:ffmpeg && npm run build:native:linux && npm run build:native:compositor:linux && npm run build-vite && electron-builder --linux AppImage deb pacman rpm --config.npmRebuild=false",

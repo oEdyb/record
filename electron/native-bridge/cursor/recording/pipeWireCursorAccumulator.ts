@@ -117,12 +117,14 @@ export class PipeWireCursorAccumulator {
 	private samples: CursorRecordingSample[] = [];
 	private assets = new Map<string, NativeCursorAsset>();
 	private startTimeMs = 0;
+	private lastVisible: CursorRecordingSample | undefined;
 
 	constructor(private readonly maxSamples: number) {}
 
 	reset(startTimeMs: number) {
 		this.samples = [];
 		this.assets.clear();
+		this.lastVisible = undefined;
 		this.startTimeMs = startTimeMs;
 	}
 
@@ -150,6 +152,22 @@ export class PipeWireCursorAccumulator {
 	addSample(payload: Extract<PipeWireHelperEvent, { event: "cursor-sample" }>) {
 		this.rememberAsset(payload.asset);
 
+		// Clamped, matching the behaviour this was extracted from: a sample
+		// stamped a few milliseconds before the recording's own start is a
+		// clock artefact, not a sample from before the recording.
+		const timeMs = Math.max(0, payload.timestampMs - this.startTimeMs);
+
+		// A pointer on another output is not reported as off-stream: Niri sends a
+		// transparent 1x1 sprite at (0,0) instead. Renderers draw a themed cursor
+		// from position alone, so passing that through teleports the cursor to the
+		// top-left corner. Hold the last on-stream position, marked hidden, instead.
+		if (!payload.visible || this.isBlankAsset(payload.assetId)) {
+			if (this.lastVisible) {
+				this.push({ ...this.lastVisible, timeMs, visible: false });
+			}
+			return;
+		}
+
 		// Normalised against the stream's own dimensions, which the helper repeats
 		// on every sample. Electron's display bounds are deliberately NOT used:
 		// they are in DIPs, whereas the portal reports stream pixels, and the
@@ -158,18 +176,26 @@ export class PipeWireCursorAccumulator {
 		const width = Math.max(1, payload.width);
 		const height = Math.max(1, payload.height);
 
-		this.samples.push({
-			// Clamped, matching the behaviour this was extracted from: a sample
-			// stamped a few milliseconds before the recording's own start is a
-			// clock artefact, not a sample from before the recording.
-			timeMs: Math.max(0, payload.timestampMs - this.startTimeMs),
+		const sample: CursorRecordingSample = {
+			timeMs,
 			cx: clamp(payload.x / width, 0, 1),
 			cy: clamp(payload.y / height, 0, 1),
-			visible: payload.visible,
+			visible: true,
 			// Wayland exposes no click events to an unprivileged process.
 			interactionType: "move",
 			...(payload.assetId ? { assetId: payload.assetId } : {}),
-		});
+		};
+		this.lastVisible = sample;
+		this.push(sample);
+	}
+
+	private isBlankAsset(assetId: string | undefined) {
+		const asset = assetId ? this.assets.get(assetId) : undefined;
+		return asset !== undefined && asset.width * asset.height <= 1;
+	}
+
+	private push(sample: CursorRecordingSample) {
+		this.samples.push(sample);
 
 		if (this.samples.length > this.maxSamples) {
 			this.samples.shift();

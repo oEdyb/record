@@ -101,6 +101,19 @@ interface Window {
 		closeNotesWindow: () => void;
 		openTranscript: () => Promise<{ opened: boolean }>;
 		closeTranscriptWindow: () => void;
+		/** Pill -> Studio, the full-size recording view. */
+		openRecordingStudio: () => Promise<{ opened: boolean }>;
+		getStudioSnapshot: () => Promise<import("./studio/types").StudioSnapshot>;
+		onStudioUpdated: (
+			callback: (snapshot: import("./studio/types").StudioSnapshot) => void,
+		) => () => void;
+		studioCommand: (command: import("./studio/types").StudioCommand) => void;
+		studioPillNeedsUser: () => void;
+		reportStudioPillState: (state: import("./studio/types").StudioPillState) => void;
+		onStudioSetupCommand: (
+			callback: (command: import("./studio/types").PillSetupCommand) => void,
+		) => () => void;
+		onHudRemovePreviousClip?: (callback: () => void) => () => void;
 		getTranscriptSnapshot: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
 		refreshTranscript: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
 		onTranscriptUpdated: (
@@ -108,6 +121,17 @@ interface Window {
 		) => () => void;
 		/** Clean cut analysis for the review window; absent until the main process provides it. */
 		cleanCut?: import("../src/lib/cleanCut/types").CleanCutBridge;
+		/** The local agent's requests to this window (electron/agent/agentServer.ts). */
+		agent?: {
+			onRequest: (
+				callback: (request: {
+					id: string;
+					method: string;
+					params: Record<string, unknown>;
+				}) => void,
+			) => () => void;
+			reply: (id: string, result: unknown, error?: string) => void;
+		};
 		setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
 		onNotesWindowBoundsChanged: (
 			callback: (bounds: { x: number; y: number; width: number; height: number }) => void,

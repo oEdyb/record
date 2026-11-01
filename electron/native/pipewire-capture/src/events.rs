@@ -68,6 +68,8 @@ pub enum Event {
     #[serde(rename_all = "camelCase")]
     SourceReselected {
         capture_bounds: CaptureBounds,
+        node_id: u32,
+        source_kind: Option<String>,
     },
     SourceSelectionCancelled {},
     #[serde(rename_all = "camelCase")]
@@ -368,6 +370,23 @@ mod tests {
         assert_eq!(value["timestampMs"], 7);
         assert!(value["pipewireVersion"].is_null());
         assert_eq!(value["cursorMetadataSupported"], false);
+    }
+
+    #[test]
+    fn replacement_reports_its_committed_node_and_source_kind() {
+        let value = parse_one(&Event::SourceReselected {
+            capture_bounds: CaptureBounds {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            node_id: 92,
+            source_kind: Some("monitor".to_owned()),
+        });
+        assert_eq!(value["event"], "source-reselected");
+        assert_eq!(value["nodeId"], 92);
+        assert_eq!(value["sourceKind"], "monitor");
     }
 
     #[test]

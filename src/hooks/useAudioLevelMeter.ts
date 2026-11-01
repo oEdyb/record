@@ -88,7 +88,10 @@ export function useAudioLevelMeter(options: AudioLevelMeterOptions) {
 
 				updateLevel();
 			} catch (err) {
-				console.error("Error starting audio level monitoring:", err);
+				console.error(
+					"Error starting audio level monitoring:",
+					err instanceof Error ? `${err.name}: ${err.message}` : err,
+				);
 				if (mounted) {
 					setLevel(0);
 				}

@@ -196,6 +196,32 @@ export class NativeMacRecordingService {
 		return this.isRunning() && !this.prepared && !this.paused;
 	}
 
+	/** The take as the Studio shows it: committed kept clips and whether capture is live. */
+	studioTake(): {
+		recordingId: number | null;
+		clips: RecordingSessionClip[];
+		running: boolean;
+		paused: boolean;
+	} {
+		return {
+			recordingId: this.recordingId,
+			// The camera is recorded by the renderer, so its file joins the clip as Stop joins it.
+			clips: this.clips
+				.filter((clip) => !clip.removed)
+				.map((clip) => {
+					const camera = this.originals.get(clip.index);
+					return {
+						...(camera?.webcamVideoPath && this.rendererWebcamPaths.has(camera.webcamVideoPath)
+							? { webcamVideoPath: camera.webcamVideoPath, webcamOffsetMs: camera.webcamOffsetMs }
+							: {}),
+						...clip,
+					};
+				}),
+			running: this.isRunning() && !this.prepared,
+			paused: this.paused,
+		};
+	}
+
 	/** Committed clips with a microphone original, for the on-demand transcript. */
 	transcriptClipListing(): {
 		recordingId: number | null;

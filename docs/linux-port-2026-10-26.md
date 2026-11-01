@@ -1285,3 +1285,25 @@ app passes two all-source clips, eight decodable originals and bounded private
 marker timing. Initial lab-resource stalls and the remaining physical speech /
 lip-sync limits are recorded in [readiness evidence](../artifacts/linux-port-2026-10-28/recording-readiness/README.md).
 No full suite or long soak was run.
+
+
+## October 28 — retain controls on an uncaptured Niri output
+
+User reproduction supersedes the prior camera-only acceptance claim: the pill
+still hid unconditionally, and conservative event invalidation could hide a safe
+camera. Both now use one strict per-window Niri policy. The EventStream's initial
+state supplies coherent windows/workspaces/casts; only output metadata is queried
+separately. Safe updates preserve admission; unsafe/unknown state revokes it.
+Native source replacement now reports the committed node and source kind, and an
+unknown replacement clears any previous window-only exemption.
+
+The chooser's temporary HUD unmap can change native identity and monitor. Restore
+its saved output and absolute position before preparation completes. Negative
+positions use structured `SetFixed`, since CLI negative values are relative.
+Cancellation and replacement capture invalidate old picker transactions; capture
+awaits already-issued placement before evaluating isolation. No polling is added
+during recording. No claim of atomic exclusion or physical two-monitor validation
+is made from private checks. See [focused evidence](../artifacts/linux-port-2026-10-28/second-display-controls/README.md).
+
+Primary contract: [Niri 26.04 IPC types](https://raw.githubusercontent.com/niri-wm/niri/v26.04/niri-ipc/src/lib.rs),
+including initial EventStream state, per-output WorkspaceActivated and SetFixed.
