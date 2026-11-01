@@ -38,6 +38,7 @@ mod portal;
 mod portal_grants;
 mod request;
 mod shim;
+mod source_loss;
 mod source_selection;
 
 use std::collections::HashSet;
@@ -763,6 +764,7 @@ fn run<W: Write>(
     let mut previous_dropped_frames = 0_u64;
     let mut adopted_cursor = None;
     let mut queued_message = None;
+    let mut source_health = source_loss::SourceHealth::default();
 
     loop {
         let audio_result = pending_audio
@@ -980,6 +982,7 @@ fn run<W: Write>(
                             frames.as_ref().map_or(0, |frames| frames.dropped());
                         drop(session.take());
                         source_generation = generation;
+                        source_health.reselected();
                         granted_kind = chosen.info.source_kind;
                         size = Some(dimensions);
                         frames_awaiting_crop = 0;
@@ -1034,6 +1037,10 @@ fn run<W: Write>(
                         code: "invalid-command".into(),
                         message: "resume requires a paused recording".into(),
                     });
+                    continue;
+                }
+                if let Err(message) = source_health.check_resume() {
+                    clips.reject_resume(emitter, message.into());
                     continue;
                 }
                 if pending_audio.is_some() {
@@ -1342,14 +1349,27 @@ fn run<W: Write>(
                         ("error", error.clone().into()),
                     ]),
                 });
-                if error.is_some() || (state == "unconnected" && session.is_some()) {
-                    clips.fail(error.as_deref().unwrap_or("PipeWire stream disconnected"));
-                    let _ = emitter.emit(&Event::Error {
-                        code: "capture-stopped-with-error".into(),
-                        message: error.unwrap_or_else(|| "PipeWire stream disconnected".into()),
-                    });
-                    exit_code = 1;
-                    break;
+                let take = source_loss::Take {
+                    has_session: session.is_some(),
+                    clip_native: clips.request.outputs.is_some(),
+                    started: clips.has_started(),
+                };
+                match source_health.on_stream_state(&state, error.as_deref(), take) {
+                    source_loss::Outcome::Ignore => {}
+                    // The app pauses on this (as for macOS `source-inactive`); the clip
+                    // is finalized by the normal Pause, and Continue waits for a source.
+                    source_loss::Outcome::SourceLost => {
+                        let _ = emitter.emit(&source_loss::inactive_warning(error.as_deref()));
+                    }
+                    source_loss::Outcome::Fatal => {
+                        clips.fail(error.as_deref().unwrap_or("PipeWire stream disconnected"));
+                        let _ = emitter.emit(&Event::Error {
+                            code: "capture-stopped-with-error".into(),
+                            message: error.unwrap_or_else(|| "PipeWire stream disconnected".into()),
+                        });
+                        exit_code = 1;
+                        break;
+                    }
                 }
             }
 
