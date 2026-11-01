@@ -279,6 +279,10 @@ disable Continue until the clip is safe.
 - A live take pauses on its own when there is nothing left to record: the recorded window
   closed (macOS 15.2+), the screen locked, or the Mac is going to sleep. A toast says why;
   Continue works as after any Pause. The display stays awake while a take records.
+  On Linux the helper reports the same `source-inactive` when the portal stream goes away
+  after a clip was confirmed; Continue then waits for Settings → Source to adopt a new
+  source. Screen lock has no Linux signal, and a Linux take keeps the display awake
+  through the session's idle inhibit.
 - **Backspace** removes the newest completed clip immediately.
 - Backspace has no confirmation dialog and no removal mode.
 - Repeated Backspace presses continue backward, including removing every completed clip.
@@ -402,17 +406,25 @@ portal chooser directly, as does Settings → Source; Record can reuse the remem
 Linux keeps the logo as a compositor-owned drag region and does not offer click-to-fold.
 Linux opens Setup below a fixed local pill origin. During monitor capture or when
 source isolation is unknown, hide controls before Start/Continue unless Niri proves
-that this process's floating pill is on another uncaptured output. Match the exact
+that this process's floating pill is on another uncaptured output. Recording another
+window can retain the HUD. Match the exact
 portal PipeWire node and current logical window/workspace/output geometry; Electron
-coordinates alone do not prove isolation. Evaluate the pill and camera independently.
+coordinates alone do not prove isolation, and Wayland does not expose reliable global
+window position through Electron, so a second-monitor exemption is never inferred
+elsewhere. Evaluate the pill and camera independently.
 Safe focus and layout updates retain visibility; unsafe placement, overview, output
 changes or lost IPC revoke retention until Pause. This is conditional placement,
 not atomic compositor-level capture exclusion. Pause restores hidden controls.
+Notes and Transcript follow the unconditional rule: Electron's content protection is
+macOS/Windows only, so on Linux they unmap with the recorder for monitor or
+unknown-source capture and return, unfocused, at Pause.
 The portal chooser temporarily hides the pill, then restores its saved Niri output
 and absolute local position before preparation completes. Cancellation invalidates
 pending selection/restoration; replacement capture waits for in-flight placement.
-Asking to show a concealed active recorder first requests Pause, so controls cannot
-silently appear in footage. Other Wayland compositors retain conservative hiding.
+On Niri, restoration explicitly activates only this process's matching floating
+recorder window. Asking to show a concealed active recorder first requests Pause, so
+controls cannot silently appear in footage. Other Wayland compositors retain
+conservative hiding.
 Linux defaults are Ctrl+Alt+O for controls and Ctrl+Alt+R for Pause/Continue, leaving
 Koett's Ctrl+Shift+Space untouched. The configured Niri fallback additionally maps
 Ctrl+Alt+S to Stop. These compositor bindings target the running app through its
@@ -1159,11 +1171,37 @@ product requirement, not as an optional maximum-quality mode.
   gaps, and bound camera source time after applying its offset. Round shared cumulative cut
   boundaries to the timeline frame grid; do not accumulate a rounding error per cut. Use relative
   media references so the folder can move. Keep exact source offsets in OTIO metadata; cuts and
-  synchronization belong only in the timeline files. `handoff.json` lists the unchanged media files.
+  synchronization are also described in `handoff.json`, alongside unchanged media files.
   Whole source files retain material outside partial trims. Camera remains a full separate layer;
   captions, layouts, editable cursor overlays, speed changes, B-roll and audio processing are not
   transferred. Say this on the export surface and in the handoff. DaVinci Resolve is the first
   verified interchange target; keep the export labels editor-neutral.
+- Separate takes handoff v4 names media `<take>-<sha1(assetId)[0:8]>-<role>.<ext>`;
+  dialogue derivatives use a unique export id. OTIO and FCPXML clip names identify take,
+  role and source range; OTIO metadata and manifest edit maps share the same frame plan.
+  Source seconds are half-open screen-clock ranges; stream frame fields describe actual
+  quantized media reads. Explicit offsets follow `streamTimeSec = screenTimeSec - offsetSec`.
+  Keep camera start/offset milliseconds, file bytes/SHA-256, ffprobe stream facts, full/clean
+  per-track edits, removed-range marker text, available transcript words and active dialogue.
+  Copy cursor JSON unchanged and decode its embedded PNG assets into a per-take folder.
+  Declare capture mode from the matching recording session, or unknown; missing telemetry
+  is explicit. Cursor coordinates are normalized, top-left; hotspots use image pixels.
+  Native sidecars already remove pre-roll/pauses and rebase clips: screen seconds = timeMs/1000.
+  Clean dialogue reads `round((screenTimeSec - microphoneOffsetSec) * 48000)` samples,
+  preserving frame-planned lengths and keeping sub-frame offsets out of video quantization.
+  Contracts checked against [OTIO metadata](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-file-format-specification.html)
+  and [ffprobe stream output](https://ffmpeg.org/ffprobe.html); originals remain unchanged.
+- A Clean cut source export with an isolated microphone also writes derived
+  `clean-dialogue.wav`: 48 kHz, 24-bit, original channel count, exact frame-planned
+  duration. Soft audio joins may shift within half a video frame; video cuts stay
+  fixed. Handles may borrow only within the project's retained source ranges;
+  project trims use short fades without restoring removed material. Only the
+  clean-cut OTIO adds Clean dialogue and disables the replaced microphone clips.
+  System audio and the full timelines stay unchanged. Missing isolated microphone
+  audio produces a warning, never a stem from embedded mixed audio. Original files
+  remain byte copies; the manifest labels the stem as derived. There is no clean-cut
+  FCPXML or in-app soft-join playback parity in this slice. Resolve's handling of
+  disabled clips still requires import verification.
 - Beside `timeline.otio`, write `timeline.fcpxml` (FCPXML 1.10) for Final Cut Pro from the same
   frame-grid plan, never a second sync calculation. Screen clips and gaps form the primary storyline; camera
   connects on lane 1, microphone on lane −1 (dialogue role), system audio on lane −2 (effects

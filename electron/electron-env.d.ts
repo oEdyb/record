@@ -101,6 +101,19 @@ interface Window {
 		closeNotesWindow: () => void;
 		openTranscript: () => Promise<{ opened: boolean }>;
 		closeTranscriptWindow: () => void;
+		/** Pill -> Studio, the full-size recording view. */
+		openRecordingStudio: () => Promise<{ opened: boolean }>;
+		getStudioSnapshot: () => Promise<import("./studio/types").StudioSnapshot>;
+		onStudioUpdated: (
+			callback: (snapshot: import("./studio/types").StudioSnapshot) => void,
+		) => () => void;
+		studioCommand: (command: import("./studio/types").StudioCommand) => void;
+		studioPillNeedsUser: () => void;
+		reportStudioPillState: (state: import("./studio/types").StudioPillState) => void;
+		onStudioSetupCommand: (
+			callback: (command: import("./studio/types").PillSetupCommand) => void,
+		) => () => void;
+		onHudRemovePreviousClip?: (callback: () => void) => () => void;
 		getTranscriptSnapshot: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
 		refreshTranscript: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
 		onTranscriptUpdated: (

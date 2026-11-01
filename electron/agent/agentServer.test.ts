@@ -46,6 +46,8 @@ afterEach(() => {
 	running = null;
 });
 
+let studioOpened = 0;
+const studioCommands: unknown[] = [];
 async function start(review: boolean) {
 	const dir = await mkdtemp(path.join(tmpdir(), "klippt-agent-test-"));
 	const socketPath = path.join(dir, "agent.sock");
@@ -56,6 +58,15 @@ async function start(review: boolean) {
 		reviewWindow: () => (review ? window : null),
 		ffmpegPath: () => null,
 		transcriber: null,
+		openStudio: () => {
+			studioOpened += 1;
+		},
+		studioState: () => ({ phase: "idle" }),
+		studioCommand: (command) => {
+			if (command !== "record") return false;
+			studioCommands.push(command);
+			return true;
+		},
 		version: "1.2.3",
 	});
 	const window = fakeWindow(
@@ -77,6 +88,26 @@ describe("AgentServer", () => {
 		const socketPath = await start(false);
 		const reply = await ask(socketPath, "ping");
 		expect(reply.result).toMatchObject({ app: "Klippt", version: "1.2.3" });
+	});
+
+	it("opens the Studio in the main process", async () => {
+		const socketPath = await start(false);
+		const before = studioOpened;
+		const reply = await ask(socketPath, "studio.open");
+		expect(reply.result).toEqual({ opened: true });
+		expect(studioOpened).toBe(before + 1);
+	});
+
+	it("reports the Studio state and runs known Studio commands only", async () => {
+		const socketPath = await start(false);
+		expect((await ask(socketPath, "studio.state")).result).toEqual({ phase: "idle" });
+		expect((await ask(socketPath, "studio.command", { command: "record" })).result).toEqual({
+			sent: "record",
+		});
+		expect(studioCommands).toEqual(["record"]);
+		const refused = await ask(socketPath, "studio.command", { command: "explode" });
+		expect(refused.error).toMatch(/Unknown Studio command/);
+		expect(studioCommands).toEqual(["record"]);
 	});
 
 	it("forwards review methods to the review window and relays its answer", async () => {

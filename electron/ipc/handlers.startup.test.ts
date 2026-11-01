@@ -11,6 +11,7 @@ import { persistNativeMacRecoveryJournal } from "../recording/nativeMacRecoveryJ
 import type { RendererIpcMain } from "./trustedRendererIpc";
 
 const paths = vi.hoisted(() => ({ userData: "", temp: "" }));
+const powerBlocker = vi.hoisted(() => ({ start: vi.fn(() => 41), stop: vi.fn() }));
 
 vi.mock("electron", () => {
 	const noop = () => undefined;
@@ -42,6 +43,7 @@ vi.mock("electron", () => {
 		dialog: {},
 		ipcMain: { handle: noop, on: noop, once: noop, removeAllListeners: noop, removeHandler: noop },
 		powerMonitor: { on: noop, off: noop, getCurrentThermalState: () => "nominal" },
+		powerSaveBlocker: powerBlocker,
 		screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({}), on: noop },
 		safeStorage: { isEncryptionAvailable: () => false },
 		shell: {},
@@ -80,7 +82,7 @@ function fakeIpcMain() {
 }
 
 async function register(
-	options: { restoreInterruptedRecording?: boolean } = {},
+	options: Parameters<typeof import("./handlers").registerIpcHandlers>[11] = {},
 	mainWindow?: BrowserWindow,
 ) {
 	const { registerIpcHandlers } = await import("./handlers");
@@ -136,6 +138,8 @@ describe("registerIpcHandlers startup contract", () => {
 		await fs.rm(paths.userData, { recursive: true, force: true, maxRetries: 5 });
 		await fs.rm(paths.temp, { recursive: true, force: true, maxRetries: 5 });
 		vi.mocked(inspectHandoffSourceMedia).mockReset();
+		powerBlocker.start.mockClear();
+		powerBlocker.stop.mockClear();
 	});
 
 	it("has every renderer channel registered before the recovery check settles", async () => {
@@ -213,6 +217,78 @@ describe("registerIpcHandlers startup contract", () => {
 		prepare.mockRestore();
 		start.mockRestore();
 		entitlement.mockRestore();
+	});
+
+	it.each([
+		"linux",
+		"darwin",
+	] as const)("passes %s capture identity to Studio through shared Start and Continue IPC", async (platform) => {
+		pinPlatform(platform);
+		const serviceModule = await import("../recording/nativeMacRecordingService");
+		const metadataModule = await import("../recording/linuxClipCaptureMetadata");
+		const Service = serviceModule.NativeMacRecordingService;
+		const Metadata = metadataModule.LinuxClipCaptureMetadata;
+		let dependencies: NativeMacRecordingServiceDependencies | undefined;
+		const serviceConstructor = vi
+			.spyOn(serviceModule, "NativeMacRecordingService")
+			.mockImplementation(
+				class extends Service {
+					constructor(deps: NativeMacRecordingServiceDependencies) {
+						super(deps);
+						dependencies = deps;
+						this.isCapturing = () => false;
+					}
+				},
+			);
+		const metadataConstructor = vi
+			.spyOn(metadataModule, "LinuxClipCaptureMetadata")
+			.mockImplementation(
+				class extends Metadata {
+					constructor(max: number, start: number) {
+						super(max, start);
+						this.sourceKind = "window";
+						this.pipeWireNodeId = 91;
+					}
+				},
+			);
+		const start = vi
+			.spyOn(Service.prototype, "start")
+			.mockResolvedValue({ success: false, error: "capture probe" });
+		const resume = vi
+			.spyOn(Service.prototype, "resume")
+			.mockResolvedValue({ success: false, error: "capture probe" });
+		const beforeCapture = vi.fn(async () => undefined);
+		try {
+			const { recovery, handlers } = await register({
+				restoreInterruptedRecording: false,
+				beforeCapture,
+			});
+			await recovery;
+			// The service is created lazily by a transport request.
+			const pause = handlers.get("pause-native-mac-recording");
+			if (!pause) throw new Error("Pause IPC missing");
+			await Reflect.apply(pause, undefined, [{}]);
+			if (!dependencies) throw new Error("Service dependencies missing");
+			if (platform === "linux") await dependencies.startCursor(1000);
+			for (const channel of ["start-native-mac-recording", "resume-native-mac-recording"]) {
+				const invoke = handlers.get(channel);
+				if (!invoke) throw new Error("Capture IPC missing");
+				await Reflect.apply(invoke, undefined, [
+					{},
+					{ video: { fps: 30 }, webcam: { enabled: false } },
+				]);
+				expect(beforeCapture).toHaveBeenLastCalledWith(
+					platform === "linux"
+						? { pipeWireNodeId: 91, windowSource: true }
+						: { pipeWireNodeId: undefined, windowSource: false },
+				);
+			}
+		} finally {
+			serviceConstructor.mockRestore();
+			metadataConstructor.mockRestore();
+			start.mockRestore();
+			resume.mockRestore();
+		}
 	});
 
 	it("cancels Linux Start while the recorder unmap delay is pending", async () => {
@@ -728,5 +804,24 @@ describe("registerIpcHandlers startup contract", () => {
 		const { recovery } = await register({ restoreInterruptedRecording: false });
 
 		await expect(recovery).resolves.toBe(false);
+	});
+
+	it.each([
+		["linux", 1, 1],
+		["darwin", 0, 0],
+	] as const)("on %s, the recording state holds the display awake only for Linux", async (platform, starts, stops) => {
+		pinPlatform(platform);
+		const { handlers } = await register();
+		const setRecordingState = handlers.get("set-recording-state");
+		if (!setRecordingState) throw new Error("set-recording-state missing");
+
+		await Reflect.apply(setRecordingState, undefined, [{}, true, 5, "system"]);
+		await Reflect.apply(setRecordingState, undefined, [{}, true, 5, "system"]);
+		expect(powerBlocker.start).toHaveBeenCalledTimes(starts);
+		if (starts) expect(powerBlocker.start).toHaveBeenCalledWith("prevent-display-sleep");
+
+		await Reflect.apply(setRecordingState, undefined, [{}, false, 5, "system"]);
+		expect(powerBlocker.stop).toHaveBeenCalledTimes(stops);
+		if (stops) expect(powerBlocker.stop).toHaveBeenCalledWith(41);
 	});
 });

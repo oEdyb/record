@@ -26,6 +26,7 @@ import {
 	downloadSelfUpdate,
 	installSelfUpdate,
 } from "./auto-updater";
+import { ensureAlignerModel } from "./cleanCut/alignerModel";
 import { claudeCliModel, findClaudeCli } from "./cleanCut/claudeCliModel";
 import { registerCleanCutIpc } from "./cleanCut/ipc";
 import { CleanCutService } from "./cleanCut/service";
@@ -54,6 +55,9 @@ import {
 	requestLinuxRecordingControls,
 	resolveApprovedRendererMediaPath,
 	stopNativeMacCaptureForQuit,
+	stopTakeWithoutPill,
+	studioSetup,
+	studioTake,
 } from "./ipc/handlers";
 import {
 	createTrustedRendererIpcMain,
@@ -64,6 +68,7 @@ import {
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
 import { resolveFfmpeg } from "./media/audioPeaks";
+import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
 import { activateNiriHud } from "./niriHudFocus";
 import { createQuitCaptureGuard } from "./recording/quitCaptureGuard";
 import {
@@ -73,7 +78,10 @@ import {
 import { appendRecordStartTiming, RecordStartTimeline } from "./recording/recordStartTimeline";
 import { recordingsDirectory } from "./recordingPaths";
 import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./security";
-import { ensureModels, modelPaths } from "./stt/modelManager";
+import { ensureModels, isModelOnDisk, modelPaths } from "./stt/modelManager";
+import { parseStudioCommand, registerStudioIpc } from "./studio/ipc";
+import { moveStudioOffCapture, returnStudioTo } from "./studio/niriStudioPlacement";
+import { StudioController } from "./studio/studioController";
 import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
 import { LiveTranscriptService } from "./transcript/liveTranscript";
 import {
@@ -91,6 +99,7 @@ import {
 	createHudOverlayWindow,
 	createNotesWindow,
 	createSourceSelectorWindow,
+	createStudioWindow,
 	createTranscriptWindow,
 	isPointOverPrivateRecordingUi,
 	setCameraPreviewCaptureHidden,
@@ -182,6 +191,8 @@ let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
 let notesWindow: BrowserWindow | null = null;
 let transcriptWindow: BrowserWindow | null = null;
+let studio: StudioController | null = null;
+let quittingForStudio = false;
 let liveTranscript: LiveTranscriptService | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
@@ -723,6 +734,8 @@ function compactReviewBoundsNear(window: BrowserWindow | null) {
 }
 
 const compactReviewWindows = new WeakSet<BrowserWindow>();
+/** A review that took the Studio's place keeps the Studio's frame instead of shrinking to fit. */
+const reviewsInStudioFrame = new WeakSet<BrowserWindow>();
 
 /** Tells review whether it is the small player, so Expand appears only then. */
 function setReviewWindowCompact(window: BrowserWindow, compact: boolean) {
@@ -739,6 +752,7 @@ ipcMain.handle(
 		const window = BrowserWindow.fromWebContents(event.sender);
 		if (!window || window.isDestroyed() || !compactReviewWindows.has(window)) return false;
 		if (window.isFullScreen() || window.isMaximized()) return false;
+		if (reviewsInStudioFrame.has(window)) return false;
 		const current = window.getBounds();
 		const display = screen.getDisplayMatching(current);
 		// A visible player eases into its new shape instead of jumping.
@@ -760,14 +774,20 @@ ipcMain.handle("is-review-window-compact", (event) => {
 	return Boolean(window && compactReviewWindows.has(window));
 });
 
-function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
+function createEditorWindowWrapper(
+	options: { compactReview?: boolean; bounds?: Electron.Rectangle } = {},
+) {
 	if (workspaceTransition?.target === "editor" && !workspaceTransition.window.isDestroyed()) {
 		return;
 	}
-	const compactBounds = options.compactReview ? compactReviewBoundsNear(mainWindow) : undefined;
+	const compactBounds = options.compactReview
+		? (options.bounds ?? compactReviewBoundsNear(mainWindow))
+		: undefined;
 	if (editorWindow && !editorWindow.isDestroyed()) {
 		const previousWindow = mainWindow;
 		mainWindow = editorWindow;
+		if (options.bounds) reviewsInStudioFrame.add(editorWindow);
+		else reviewsInStudioFrame.delete(editorWindow);
 		// A review the user put in native fullscreen stays there.
 		if (compactBounds && !editorWindow.isFullScreen()) {
 			if (editorWindow.isMaximized()) editorWindow.unmaximize();
@@ -792,6 +812,7 @@ function createEditorWindowWrapper(options: { compactReview?: boolean } = {}) {
 	const previousWindow = mainWindow;
 	const nextEditorWindow = createEditorWindow({}, { compactBounds });
 	adoptEditorWindow(nextEditorWindow, Boolean(compactBounds));
+	if (options.bounds) reviewsInStudioFrame.add(nextEditorWindow);
 	workspaceTransition = { target: "editor", window: nextEditorWindow };
 	mainWindow = nextEditorWindow;
 	editorHasUnsavedChanges = false;
@@ -957,6 +978,7 @@ app.on("before-quit", (event) => {
 	// dialog on a quitting app.
 	updateCheckAbort?.abort();
 	liveTranscript?.stop();
+	quittingForStudio = true;
 	quitCaptureGuard.beforeQuit(event);
 });
 
@@ -980,6 +1002,14 @@ function startAgentServer(sttModelsDir: string) {
 		outDir: path.join(app.getPath("temp"), "klippt-agent"),
 		windows: () => BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed()),
 		reviewWindow: () => (editorWindow && !editorWindow.isDestroyed() ? editorWindow : null),
+		openStudio: () => studio?.open(),
+		studioState: () => studio?.snapshot() ?? null,
+		studioCommand: (raw) => {
+			const command = parseStudioCommand(raw);
+			if (!command || !studio) return false;
+			studio.command(command);
+			return true;
+		},
 		ffmpegPath: () => resolveFfmpeg(),
 		transcriber: async () => {
 			if (agentTranscriber?.running) return agentTranscriber;
@@ -1162,6 +1192,14 @@ appReady?.then(async () => {
 	setupApplicationMenu();
 	await ensureRecordingsDir();
 
+	function currentHudWindow() {
+		return mainWindow &&
+			!mainWindow.isDestroyed() &&
+			mainWindow.webContents.getURL().includes("windowType=hud-overlay")
+			? mainWindow
+			: null;
+	}
+
 	function switchToHudWrapper() {
 		if (workspaceTransition?.target === "hud" && !workspaceTransition.window.isDestroyed()) {
 			return;
@@ -1202,7 +1240,11 @@ appReady?.then(async () => {
 	}
 
 	const interruptedRecordingCheck = registerIpcHandlers(
-		createEditorWindowWrapper,
+		// A stopped take shown in the Studio stays there; Finish opens this review later.
+		(options) => {
+			if (options?.compactReview && studio?.keepsReview()) return;
+			createEditorWindowWrapper(options);
+		},
 		createSourceSelectorWindowWrapper,
 		createCountdownOverlayWindowWrapper,
 		createNotesWindowWrapper,
@@ -1213,10 +1255,11 @@ appReady?.then(async () => {
 		(recording: boolean, sourceName: string) => {
 			selectedSourceName = sourceName;
 			isRecording = recording;
+			studio?.sync();
 			scheduleReviewPrewarm(recording);
 			if (!tray) createTray();
 			updateTrayMenu(recording);
-			if (!recording) {
+			if (!recording && !(process.platform === "linux" && studio?.ownsControls())) {
 				showMainWindow();
 			}
 		},
@@ -1228,7 +1271,53 @@ appReady?.then(async () => {
 					(window): window is BrowserWindow => Boolean(window),
 				),
 			),
-		{ ipcMain, setCameraPreviewCaptureHidden },
+		{
+			ipcMain,
+			studioOwnsControls: () => studio?.ownsControls() ?? false,
+			setCameraPreviewCaptureHidden,
+			beforeCapture: async (capture) => {
+				await studio?.beforeCapture(capture);
+			},
+			onRecordingSetupChanged: () => studio?.publish(),
+			onTakeEvent: (event) => {
+				if (event.kind === "session-updated") {
+					studio?.sessionUpdated({
+						recordingId: event.session.createdAt,
+						clips: event.session.clips ?? [],
+					});
+					return;
+				}
+				if (event.kind === "stored")
+					studio?.stored({
+						recordingId: event.session.createdAt,
+						clips: event.session.clips ?? [],
+					});
+				studio?.sync();
+				if (!liveTranscript) return;
+				// Resuming: the recording gets the CPU back before its first frame.
+				if (event.kind === "resuming") return liveTranscript.interrupt();
+				if (event.kind === "stored") {
+					liveTranscript.rememberStoppedTake({
+						recordingId: event.session.createdAt,
+						clips: (event.session.clips ?? []).flatMap((clip) =>
+							!clip.removed && clip.microphoneAudioPath
+								? [
+										{
+											index: clip.index,
+											microphoneAudioPath: clip.microphoneAudioPath,
+											durationMs: clip.durationMs,
+										},
+									]
+								: [],
+						),
+						live: false,
+					});
+				}
+				liveTranscript.refreshAfterClip()?.catch((error: unknown) => {
+					console.warn("[transcript] automatic pass failed:", error);
+				});
+			},
+		},
 	);
 
 	const sttModelsDir = path.join(app.getPath("userData"), "stt-models");
@@ -1244,17 +1333,71 @@ appReady?.then(async () => {
 			});
 			return modelPaths(sttModelsDir)[parakeetModelId()];
 		},
+		modelReady: () =>
+			resolveParakeetBinaryPath() !== null && isModelOnDisk(sttModelsDir, parakeetModelId()),
 		tempDir: path.join(app.getPath("temp"), "klippt-transcript"),
 		cacheDir: path.join(app.getPath("userData"), "transcripts"),
-		onSnapshot: (snapshot) => sendTranscriptSnapshot(transcriptWindow, snapshot),
+		onSnapshot: (snapshot) => {
+			sendTranscriptSnapshot(transcriptWindow, snapshot);
+			studio?.publish();
+		},
 	});
 	registerTranscriptIpc(ipcMain, {
 		service: liveTranscript,
 		openWindow: createTranscriptWindowWrapper,
 		getWindow: () => transcriptWindow,
 	});
+	const studioCaptureGuard = new NiriCaptureWindowGuard("Klippt Studio", () => studio?.revoke());
+	studio = new StudioController({
+		take: studioTake,
+		setup: studioSetup,
+		openReview: (from) => createEditorWindowWrapper({ compactReview: true, bounds: from }),
+		transcript: () =>
+			liveTranscript?.snapshot() ?? {
+				recordingId: null,
+				clips: [],
+				status: "idle",
+				progress: null,
+				download: null,
+				error: null,
+				updatedAt: 0,
+			},
+		// Only the recording HUD is the pill; after Finish the main window is the review.
+		getPill: () => currentHudWindow(),
+		ensurePill: () => {
+			if (currentHudWindow()) return;
+			switchToHudWrapper();
+			const hud = currentHudWindow();
+			// The new pill shows itself once it can paint; the Studio then takes over again.
+			hud?.once("ready-to-show", () => setImmediate(() => studio?.open()));
+		},
+		createWindow: (near) => createStudioWindow(near),
+		sendToPill: (channel, payload) => currentHudWindow()?.webContents.send(channel, payload),
+		// macOS keeps protected windows out of capture; on Linux only niri can confirm it.
+		outsideCapture: (nodeId) =>
+			process.platform === "darwin" ? Promise.resolve(true) : studioCaptureGuard.begin(nodeId),
+		endCaptureCheck: () => studioCaptureGuard.end(),
+		moveOffCapture: (nodeId) =>
+			process.platform === "linux" ? moveStudioOffCapture(nodeId) : Promise.resolve(null),
+		returnTo: returnStudioTo,
+		waitForUnmap: () => new Promise((resolve) => setTimeout(resolve, 150)),
+		quitting: () => quittingForStudio,
+	});
+	registerStudioIpc(ipcMain, studio);
+	// The pill runs the take; if its page dies nothing can pause or stop it any more.
+	// Save what was recorded and open the review, as Stop would.
+	app.on("render-process-gone", (_event, contents, details) => {
+		if (details.reason === "clean-exit" || !mainWindow || mainWindow.isDestroyed()) return;
+		if (contents !== mainWindow.webContents) return;
+		if (!contents.getURL().includes("windowType=hud-overlay")) return;
+		console.error("[hud] the recording pill crashed:", details.reason, details.exitCode);
+		void stopTakeWithoutPill().then((saved) => {
+			if (saved) createEditorWindowWrapper({ compactReview: true });
+		});
+	});
 
 	let cleanCutReceiver: Electron.WebContents | null = null;
+	let alignerDir: Promise<string | null> | null = null;
 	const claudeCli = findClaudeCli();
 	const cleanCut = new CleanCutService({
 		ffmpegPath: () => resolveFfmpeg(),
@@ -1274,8 +1417,13 @@ appReady?.then(async () => {
 			});
 		},
 		alignerModels: async () => {
-			const dir = path.join(sttModelsDir, "wav2vec2-base-960h-coreml");
-			return (await fs.stat(path.join(dir, "labels.json")).catch(() => null)) ? dir : null;
+			if (process.platform !== "darwin") return null;
+			alignerDir ??= ensureAlignerModel(sttModelsDir).catch((error) => {
+				console.warn("[clean-cut] aligner unavailable, cutting on recognizer times:", error);
+				alignerDir = null;
+				return null;
+			});
+			return alignerDir;
 		},
 		model: () =>
 			claudeCli

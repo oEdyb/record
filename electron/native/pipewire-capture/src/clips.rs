@@ -112,6 +112,10 @@ impl Clips {
     pub fn is_paused(&self) -> bool {
         self.paused
     }
+    /// A clip was confirmed at least once: the take is past startup.
+    pub fn has_started(&self) -> bool {
+        self.ever_started
+    }
     pub fn has_writer(&self) -> bool {
         self.writer.is_some()
     }

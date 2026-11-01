@@ -16,6 +16,12 @@ const HELP = `klippt-agent: control the running Klippt
 App and windows (any window; never moves your mouse or types on your keyboard):
   ping                               Is Klippt running? Version and pid
   windows                            Open windows: index, kind, title, focus
+  studio                             Open the Studio, as the pill's Studio button does
+  studio-state                       Studio phase, setup, clips and what is allowed now
+  studio-do COMMAND                  Press a Studio button: record, pause, resume, stop,
+                                     remove-last, undo-remove, toggle-mic, toggle-camera,
+                                     toggle-system-audio, record-more, finish, pill,
+                                     or JSON like {"kind":"set-quality","value":"standard"}
   screenshot [window=review|INDEX]   PNG of a window's own pixels; prints its path
   controls [window=...]              Visible buttons and fields with their labels, plus page text
   click LABEL [nth=N]                Click a control by its label (exact first, then contains)
@@ -57,6 +63,9 @@ const ALIASES = {
 	listen: ([id]) => ["cut.listen", { id }],
 	"cut-sentence": ([wordIndex]) => ["cut.sentence", { wordIndex: Number(wordIndex) }],
 	seek: ([sec]) => ["seek", { sec: Number(sec) }],
+	studio: () => ["studio.open", {}],
+	"studio-state": () => ["studio.state", {}],
+	"studio-do": ([command]) => ["studio.command", { command: parse(command) }],
 	controls: () => ["ui.controls", {}],
 	click: ([label]) => ["ui.click", { label }],
 	type: ([label, ...text]) => ["ui.type", { label, text: text.join(" ") }],

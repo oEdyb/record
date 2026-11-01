@@ -3,8 +3,10 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { applyPreviewAudio, usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
 import { loadEditingPreferences } from "@/lib/ai-edition/store/editingPreferences";
 import { webcamSizeToFraction } from "@/lib/compositeLayout";
+import { followCamera } from "@/lib/followCamera";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
+import { useReleasingMediaRef } from "@/lib/releasingMediaRef";
 import { formatTimePadded } from "@/utils/timeUtils";
 import styles from "./LaunchWindow.module.css";
 
@@ -140,6 +142,12 @@ export function HudClipPeek({
 	const cameraSource = cameraPath ? `${toKlipptMediaUrl(cameraPath)}${retryQuery}` : undefined;
 	const cameraOffsetSec = (current?.clip.webcamOffsetMs ?? 0) / 1_000;
 	const cameraRef = useRef<HTMLVideoElement | null>(null);
+	const attachVideo = useReleasingMediaRef(videoRef);
+	const attachCamera = useReleasingMediaRef(cameraRef);
+	// No media until the replay is first opened: a hidden decoder at every pause costs the
+	// pill's memory. Once opened it stays loaded, so toggling never reloads it.
+	const [loaded, setLoaded] = useState(open);
+	if (open && !loaded) setLoaded(true);
 	const requestPlay = useCallback(
 		async (video: HTMLVideoElement) => {
 			const generation = playbackGenerationRef.current;
@@ -167,14 +175,8 @@ export function HudClipPeek({
 			frame = requestAnimationFrame(tick);
 			const video = videoRef.current;
 			const camera = cameraRef.current;
-			if (!video || !camera || camera.readyState < 1) return;
-			const target = Math.max(0, video.currentTime - cameraOffsetSec);
-			if (Math.abs(camera.currentTime - target) > 0.15) camera.currentTime = target;
-			if (video.paused || video.ended) {
-				if (!camera.paused) camera.pause();
-			} else if (camera.paused && !camera.ended) {
-				void requestPlay(camera);
-			}
+			if (!video || !camera) return;
+			followCamera(video, camera, cameraOffsetSec, (cam) => void requestPlay(cam));
 		};
 		frame = requestAnimationFrame(tick);
 		return () => cancelAnimationFrame(frame);
@@ -184,7 +186,7 @@ export function HudClipPeek({
 		(time: number) => {
 			const target = locatePeekTime(timeline, Math.min(total, Math.max(0, time)));
 			setPosition(timeline[target.index].start + target.offset);
-			if (target.index === clipIndex && videoRef.current) {
+			if (target.index === clipIndex && videoRef.current && videoRef.current.readyState >= 1) {
 				pendingOffsetRef.current = null;
 				videoRef.current.currentTime = target.offset;
 				return;
@@ -330,23 +332,25 @@ export function HudClipPeek({
 			className={`${styles.clipPeek} ${styles.hudPanel} ${styles.electronNoDrag}`}
 		>
 			<div className={styles.clipPeekStage}>
-				<video
-					key={`screen-${mediaGeneration}`}
-					ref={videoRef}
-					data-testid="hud-clip-peek-video"
-					className={styles.clipPeekVideo}
-					src={source}
-					playsInline
-					preload="auto"
-					onLoadedMetadata={handleLoadedMetadata}
-					onEnded={handleEnded}
-					onError={failPlayback}
-					onClick={togglePlaying}
-				/>
-				{showCamera && (
+				{loaded && (
+					<video
+						key={`screen-${mediaGeneration}`}
+						ref={attachVideo}
+						data-testid="hud-clip-peek-video"
+						className={styles.clipPeekVideo}
+						src={source}
+						playsInline
+						preload="auto"
+						onLoadedMetadata={handleLoadedMetadata}
+						onEnded={handleEnded}
+						onError={failPlayback}
+						onClick={togglePlaying}
+					/>
+				)}
+				{loaded && showCamera && (
 					<video
 						key={`camera-${mediaGeneration}`}
-						ref={cameraRef}
+						ref={attachCamera}
 						data-testid="hud-clip-peek-camera"
 						className={styles.clipPeekCamera}
 						style={peekCameraStyle(cameraPlacement, cameraPortrait)}

@@ -208,3 +208,25 @@ describe("user preferences", () => {
 		expect(loadUserPreferences().hideSoftwareEncoderFallbackNotice).toBe(false);
 	});
 });
+
+describe("studio layout preference", () => {
+	it("normalizes corrupt values without losing valid fields", async () => {
+		const { normalizeStudioLayout } = await import("./userPreferences");
+		expect(
+			normalizeStudioLayout({
+				view: "camera",
+				split: 0,
+				order: "wrong",
+				dockFrac: Infinity,
+				guides: true,
+			}),
+		).toMatchObject({ view: "camera", split: 0.45, order: "replay", dockFrac: 0.32, guides: true });
+		expect(normalizeStudioLayout(null)).toEqual(DEFAULT_PREFS.studioLayout);
+	});
+	it("persists the layout alongside existing preferences", () => {
+		saveUserPreferences({
+			studioLayout: { ...DEFAULT_PREFS.studioLayout, dock: "left", liveMode: "notes" },
+		});
+		expect(loadUserPreferences().studioLayout).toMatchObject({ dock: "left", liveMode: "notes" });
+	});
+});

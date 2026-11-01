@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createConnection } from "node:net";
 import {
+	captureWindowVerdict,
 	readCaptureWindowSnapshot,
 	updateCaptureWindowSnapshot,
 	windowOutsideCapture,
@@ -99,7 +100,7 @@ export class NiriCaptureWindowGuard {
 	private monitor: Watch | null = null;
 
 	constructor(
-		private readonly windowTitle: "Klippt" | "Klippt Camera",
+		private readonly windowTitle: "Klippt" | "Klippt Camera" | "Klippt Studio",
 		private readonly onUnsafe: () => void,
 		private readonly dependencies: Dependencies = { query, watch },
 		private readonly pid = process.pid,
@@ -107,7 +108,11 @@ export class NiriCaptureWindowGuard {
 
 	async begin(pipeWireNodeId: number | undefined): Promise<boolean> {
 		this.end();
-		if (!process.env.NIRI_SOCKET || pipeWireNodeId === undefined) return false;
+		if (!process.env.NIRI_SOCKET) return false;
+		if (pipeWireNodeId === undefined) {
+			console.info(`[capture-linux] "${this.windowTitle}" hides: no screen stream id yet`);
+			return false;
+		}
 		const generation = this.generation;
 		this.snapshot = {
 			pid: this.pid,
@@ -161,9 +166,16 @@ export class NiriCaptureWindowGuard {
 				this.dependencies.query("outputs"),
 				initialized,
 			]);
-			if (generation !== this.generation || this.revoked) return false;
+			if (generation !== this.generation || this.revoked) {
+				console.info(
+					`[capture-linux] "${this.windowTitle}" hides: niri changed or did not answer within 1 s`,
+				);
+				return false;
+			}
 			this.snapshot = readCaptureWindowSnapshot({ ...this.snapshot, outputs });
-			this.admitted = windowOutsideCapture(this.snapshot);
+			const verdict = captureWindowVerdict(this.snapshot);
+			this.admitted = verdict === "outside";
+			if (!this.admitted) console.info(`[capture-linux] "${this.windowTitle}" hides: ${verdict}`);
 			return this.admitted;
 		} catch (error) {
 			if (generation === this.generation)

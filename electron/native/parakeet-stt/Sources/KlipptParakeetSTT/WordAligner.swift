@@ -27,6 +27,8 @@ struct AlignerLabels: Decodable {
     let sampleRate: Int
     let minSamples: Int
     let maxSamples: Int
+    let input: String?
+    let output: String?
 }
 
 enum AlignerError: LocalizedError {
@@ -221,9 +223,9 @@ final class Wav2Vec2Emitter: @unchecked Sendable {
         samples.withUnsafeBufferPointer { source in
             input.dataPointer.copyMemory(from: source.baseAddress!, byteCount: n * MemoryLayout<Float>.stride)
         }
-        let features = try MLDictionaryFeatureProvider(dictionary: ["audio": MLFeatureValue(multiArray: input)])
+        let features = try MLDictionaryFeatureProvider(dictionary: [labels.input ?? "audio": MLFeatureValue(multiArray: input)])
         let output = try model.prediction(from: features)
-        guard let emission = output.featureValue(for: "emission")?.multiArrayValue else {
+        guard let emission = output.featureValue(for: labels.output ?? "emission")?.multiArrayValue else {
             throw AlignerError.badOutput("no emission array")
         }
         guard emission.shape.count == 3, emission.shape[2].intValue == labels.labels.count else {

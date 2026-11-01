@@ -41,6 +41,18 @@ describe("modelManager", () => {
 		expect(vad.files[0].url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
 	});
 
+	it("pins the forced aligner's compiled Core ML files at one immutable revision", () => {
+		const aligner = STT_MODELS["wav2vec2-aligner"];
+		expect(aligner.files.map((file) => file.name)).toContain(
+			"wav2vec2-base-960h.mlmodelc/weights/weight.bin",
+		);
+		for (const file of aligner.files) {
+			expect(file.name.startsWith("wav2vec2-base-960h.mlmodelc/")).toBe(true);
+			expect(file.expectedSha256).toMatch(/^[0-9a-f]{64}$/);
+			expect(file.url).toMatch(/\/resolve\/[0-9a-f]{40}\/Wav2Vec2CTC\.mlmodelc\//);
+		}
+	});
+
 	it("pins only the Parakeet v3 INT8 runtime graph at one immutable revision", () => {
 		const parakeet = STT_MODELS["parakeet-v3"];
 		expect(parakeet.repoId).toBe("FluidInference/parakeet-tdt-0.6b-v3-coreml");

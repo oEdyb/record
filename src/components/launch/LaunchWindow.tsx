@@ -41,6 +41,7 @@ import {
 	HudSettingsButton,
 	HudSourceChip,
 	HudStopButton,
+	HudStudioButton,
 	HudSystemAudioButton,
 	HudTuckButton,
 } from "./HudControls";
@@ -74,6 +75,7 @@ import {
 import { useHudDockInteraction } from "./useHudDockInteraction";
 import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
+import { useStudioPillBridge } from "./useStudioPillBridge";
 
 // Locale list is computed once at module load; keeping the reference stable lets
 // the setup panel sit behind a memo boundary.
@@ -275,6 +277,11 @@ export function LaunchWindow() {
 	const [permissionRequestBusy, setPermissionRequestBusy] = useState(false);
 	const pendingPermissionActionRef = useRef<(() => void) | null>(null);
 	const permissionPresence = usePresence(permissionPanelOpen, 150);
+	// A Record pressed in the Studio can need permissions only this panel grants; the
+	// Studio hides the pill, so ask for it back.
+	useEffect(() => {
+		if (permissionPanelOpen) window.electronAPI?.studioPillNeedsUser?.();
+	}, [permissionPanelOpen]);
 	const permissionNeeds = useMemo(
 		() => ({ microphone: microphoneEnabled, camera: webcamEnabled }),
 		[microphoneEnabled, webcamEnabled],
@@ -1324,6 +1331,14 @@ export function LaunchWindow() {
 		});
 	}, [handleRecordButtonClick, recording, saving, starting]);
 
+	// The Studio's Remove button: the same predicate as the pill's own.
+	useEffect(() => {
+		return window.electronAPI?.onHudRemovePreviousClip?.(() => {
+			if (saving || clipFinalizing || !canRemovePreviousClip) return;
+			void handleRemovePreviousClip();
+		});
+	}, [canRemovePreviousClip, clipFinalizing, handleRemovePreviousClip, saving]);
+
 	useEffect(() => {
 		return window.electronAPI?.onHudToggleRecordingPause?.(() => {
 			if (!recording || saving || clipFinalizing || !canPauseRecording) return;
@@ -1867,6 +1882,37 @@ export function LaunchWindow() {
 			toast.error(t("sourceSelector.selectFailed"), { description: result.error });
 	}, [recording, selectRecordingSource, chooseRecordingSource, t]);
 
+	useStudioPillBridge(
+		{
+			toggleMicrophone,
+			toggleWebcam,
+			toggleSystemAudio,
+			// The pill's own path: the portal on Linux, the source picker window elsewhere.
+			chooseSource: () => void (portalOwnsSource ? chooseSource() : openSourceSelector()),
+			openNotes,
+			// The pill's own Cancel during the countdown; Record would be ignored then.
+			cancelCountdown: () => {
+				if (starting && !recording) toggleRecording();
+			},
+			undoRemovedClip: () => void handleUndoRemovedClip(),
+			selectMic: handleSelectMicDevice,
+			selectCamera: handleSelectCameraDevice,
+			selectQuality: handleSelectRecordingQuality,
+			setCursorMode: (mode) => {
+				if (mode !== cursorCaptureMode) void toggleCursorMode();
+			},
+		},
+		{
+			controlsLocked,
+			canRemovePreviousClip,
+			undoClipIndex: removedClipFeedback?.index ?? null,
+			countingDown: starting,
+			saving,
+			transportBusy: saving || clipFinalizing,
+			canPause: recording && canPauseRecording,
+		},
+	);
+
 	const setupExtras = useMemo<HudSetupExtras>(
 		() => ({
 			sourceLabel: portalOwnsSource ? undefined : localizedSourceLabel,
@@ -2069,6 +2115,13 @@ export function LaunchWindow() {
 			onClick={togglePeek}
 		/>
 	);
+	const studioControl = (
+		<HudStudioButton
+			disabled={saving}
+			label={t("studio.open")}
+			onClick={() => void window.electronAPI?.openRecordingStudio?.()}
+		/>
+	);
 	const stopControl = (
 		<HudStopButton
 			saving={saving}
@@ -2198,6 +2251,7 @@ export function LaunchWindow() {
 							<div className={styles.hudDockWing} ref={setWingInert}>
 								{topDock ? (
 									<>
+										{studioControl}
 										{settingsControl}
 										{stopControl}
 									</>
@@ -2206,6 +2260,7 @@ export function LaunchWindow() {
 										{stopControl}
 										{removeControl}
 										{replayControl}
+										{studioControl}
 										{settingsControl}
 									</>
 								)}
@@ -2266,6 +2321,7 @@ export function LaunchWindow() {
 									label={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
 									onClick={toggleWebcam}
 								/>
+								{studioControl}
 								{settingsControl}
 								{recordButton}
 							</div>

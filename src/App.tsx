@@ -34,6 +34,11 @@ const TranscriptWindow = lazy(() =>
 		default: module.TranscriptWindow,
 	})),
 );
+const StudioWindow = lazy(() =>
+	import("./components/studio/StudioWindow").then((module) => ({
+		default: module.StudioWindow,
+	})),
+);
 const NotesWindow = lazy(() =>
 	import("./components/launch/NotesWindow").then((module) => ({ default: module.NotesWindow })),
 );
@@ -142,6 +147,12 @@ export default function App() {
 				return (
 					<Suspense fallback={null}>
 						<TranscriptWindow />
+					</Suspense>
+				);
+			case "studio":
+				return (
+					<Suspense fallback={null}>
+						<StudioWindow />
 					</Suspense>
 				);
 			case "cli-export":

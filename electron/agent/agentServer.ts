@@ -29,6 +29,12 @@ export interface AgentServerDeps {
 	reviewWindow: () => BrowserWindow | null;
 	ffmpegPath: () => string | null;
 	transcriber: CutAudioRequest["transcriber"];
+	/** Opens the Studio, as the pill's Studio button does. */
+	openStudio?: () => void;
+	/** The Studio's snapshot, or null when there is no Studio. */
+	studioState?: () => unknown;
+	/** Runs a Studio command; false when the command is not one the Studio knows. */
+	studioCommand?: (command: unknown) => boolean;
 	version: string;
 }
 
@@ -126,6 +132,20 @@ export class AgentServer {
 					focused: window.isFocused(),
 					bounds: window.getBounds(),
 				}));
+			case "studio.open":
+				if (!this.deps.openStudio) throw new Error("This build has no Studio.");
+				this.deps.openStudio();
+				return { opened: true };
+			case "studio.state":
+				if (!this.deps.studioState) throw new Error("This build has no Studio.");
+				return this.deps.studioState();
+			case "studio.command":
+				if (!this.deps.studioCommand) throw new Error("This build has no Studio.");
+				if (!this.deps.studioCommand(params.command))
+					throw new Error(
+						"Unknown Studio command. Try record, pause, resume, stop, remove-last, undo-remove, toggle-mic, toggle-camera, toggle-system-audio, finish.",
+					);
+				return { sent: params.command };
 			case "screenshot": {
 				const window = this.pick(params.window);
 				const image = await window.webContents.capturePage();

@@ -1,0 +1,2 @@
+Inhibit app=dbus.String('/home/olle/dev/klippt-linux-parity/node_modules/electron/dist/electron') reason=dbus.String('Electron') -> cookie 1
+UnInhibit cookie=1

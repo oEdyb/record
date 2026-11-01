@@ -64,6 +64,17 @@ describe("renderer recording Stop acknowledgement", () => {
 		expect(owner.listenerCount("destroyed")).toBe(0);
 	});
 
+	it("settles at once when the owning HUD crashed, so nothing waits for it", async () => {
+		const owner = renderer();
+		const handoff = new RendererRecordingStop();
+		handoff.bind(owner, 7);
+		const pending = handoff.wait(7, new AbortController().signal);
+		handoff.abandon();
+		await expect(pending).rejects.toThrow("crashed");
+		expect(handoff.pendingRecordingId()).toBeNull();
+		await expect(handoff.wait(7, new AbortController().signal)).rejects.toThrow("crashed");
+	});
+
 	it("fails loudly if the HUD closes", async () => {
 		const owner = renderer();
 		const handoff = new RendererRecordingStop();

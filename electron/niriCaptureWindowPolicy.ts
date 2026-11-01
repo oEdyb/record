@@ -43,7 +43,7 @@ const cast = z.object({
 const snapshot = z.object({
 	pid: processId,
 	pipeWireNodeId: nodeId,
-	windowTitle: z.enum(["Klippt", "Klippt Camera"]),
+	windowTitle: z.enum(["Klippt", "Klippt Camera", "Klippt Studio"]),
 	casts: z.array(cast),
 	outputs: z.record(z.string(), output),
 	workspaces: z.array(workspace),
@@ -143,17 +143,22 @@ export function readCaptureWindowSnapshot(input: unknown): Snapshot | null {
 }
 
 export function windowOutsideCapture(input: unknown): boolean {
+	return captureWindowVerdict(input) === "outside";
+}
+
+/** Why a window may or may not stay up during capture, for the log. */
+export function captureWindowVerdict(input: unknown): string {
 	const state = readCaptureWindowSnapshot(input);
-	if (!state) return false;
+	if (!state) return "niri state unreadable";
 	const preview = ownedPreview(state.windows, state.pid, state.windowTitle);
-	if (!preview) return false;
+	if (!preview) return "window not found as one floating window";
 	const location = previewLocation(state, preview);
-	if (!location) return false;
-	return (
-		matchesMonitorCast(state) &&
-		unambiguousLocation(state, location) &&
-		castsAvoidPreview(state, preview, location.name)
-	);
+	if (!location) return "window position unknown or its workspace inactive";
+	if (!matchesMonitorCast(state)) return "no single screen cast with this stream";
+	if (!unambiguousLocation(state, location)) return "window overlaps another output";
+	if (!castsAvoidPreview(state, preview, location.name))
+		return `a screencast covers ${location.name}`;
+	return "outside";
 }
 
 const captureEvent = z.union([

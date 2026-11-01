@@ -89,6 +89,20 @@ describe("legacy Linux clip request adapter", () => {
 		).toEqual(explicit);
 	});
 
+	it("passes a request without an audio block through instead of throwing", () => {
+		const incomplete = {
+			schemaVersion: 1,
+			video: { fps: 60 },
+			webcam: { enabled: false },
+		} as unknown as Parameters<typeof linuxClipRecordingRequest>[0];
+		expect(() => linuxClipRecordingRequest(incomplete)).not.toThrow();
+		expect(linuxClipRecordingRequest(incomplete)).toMatchObject({
+			platform: "linux",
+			video: { fps: 60 },
+			webcam: { enabled: false },
+		});
+	});
+
 	it("keeps native preparation stable when the renderer camera finishes opening", () => {
 		const base = linuxClipRecordingRequest({
 			recordingId: 7,

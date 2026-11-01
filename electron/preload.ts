@@ -33,13 +33,20 @@ const PLATFORM = process.platform;
 // MessagePort is the one Electron primitive that can move transferable preview
 // frames renderer-to-renderer without copying them through the main process.
 // Forward the port from the isolated preload world into the page world.
-ipcRenderer.on("camera-preview-port", (event, payload: { role: "producer" | "consumer" }) => {
-	window.postMessage(
-		{ type: "openscreen-camera-preview-port", role: payload.role },
-		"*",
-		event.ports,
-	);
-});
+ipcRenderer.on(
+	"camera-preview-port",
+	(event, payload: { role: "producer" | "consumer"; consumer?: "monitor" | "studio" }) => {
+		window.postMessage(
+			{
+				type: "openscreen-camera-preview-port",
+				role: payload.role,
+				consumer: payload.consumer ?? "monitor",
+			},
+			"*",
+			event.ports,
+		);
+	},
+);
 
 contextBridge.exposeInMainWorld("electronAPI", {
 	assetBaseUrl,
@@ -244,6 +251,39 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	closeTranscriptWindow: () => {
 		ipcRenderer.send("transcript-window-close");
+	},
+	openRecordingStudio: () => {
+		return ipcRenderer.invoke("studio-open");
+	},
+	getStudioSnapshot: () => {
+		return ipcRenderer.invoke("studio-snapshot");
+	},
+	onStudioUpdated: (callback: (snapshot: unknown) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown) => callback(snapshot);
+		ipcRenderer.on("studio-updated", listener);
+		return () => ipcRenderer.removeListener("studio-updated", listener);
+	},
+	studioCommand: (command: unknown) => {
+		ipcRenderer.send("studio-command", command);
+	},
+	/** Pill -> main: the pill opened a panel only it can show (permissions), so bring it forward. */
+	studioPillNeedsUser: () => {
+		ipcRenderer.send("studio-pill-needs-user");
+	},
+	/** Pill -> main: its own locks and Undo, which the Studio mirrors. */
+	reportStudioPillState: (state: unknown) => {
+		ipcRenderer.send("studio-pill-state", state);
+	},
+	/** Main -> pill: a setup change asked for in the Studio, applied by the pill's own handlers. */
+	onStudioSetupCommand: (callback: (command: unknown) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, command: unknown) => callback(command);
+		ipcRenderer.on("studio-setup-command", listener);
+		return () => ipcRenderer.removeListener("studio-setup-command", listener);
+	},
+	onHudRemovePreviousClip: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("hud-remove-previous-clip", listener);
+		return () => ipcRenderer.removeListener("hud-remove-previous-clip", listener);
 	},
 	getTranscriptSnapshot: () => {
 		return ipcRenderer.invoke("transcript-snapshot");

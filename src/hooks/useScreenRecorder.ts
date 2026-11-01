@@ -1665,7 +1665,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 			await startRecording(runId, preparedRecordingId);
 			if (!isCountdownRunActive(runId)) return;
-			await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+			if (window.electronAPI.getPlatform() !== "linux")
+				await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 		} catch (error) {
 			console.error("Failed to prepare recording:", error);
 			toast.error(error instanceof Error ? error.message : "Failed to prepare recording");

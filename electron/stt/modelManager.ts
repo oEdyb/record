@@ -27,7 +27,12 @@ import { pipeline } from "node:stream/promises";
  */
 
 /** `parakeet-v3` is the Core ML export (macOS); `parakeet-v3-onnx` is the same model for sherpa-onnx (Linux). */
-export type SttModelId = "parakeet-v3" | "parakeet-v3-onnx" | "whisper" | "silero-vad";
+export type SttModelId =
+	| "parakeet-v3"
+	| "parakeet-v3-onnx"
+	| "whisper"
+	| "silero-vad"
+	| "wav2vec2-aligner";
 
 export interface SttModelFile {
 	/** Relative path within the model directory (e.g. "ggml-small-q8_0.bin"). */
@@ -75,6 +80,22 @@ const PARAKEET_REVISION = "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe";
 // (electron/native/parakeet-linux) runs on the CPU. Digests checked against this revision.
 const PARAKEET_ONNX_REPO = "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8";
 const PARAKEET_ONNX_REVISION = "2bda32ec70b097a55adaa07d9a7173915b43cc78";
+
+// torchaudio's WAV2VEC2_ASR_BASE_960H (MIT, from fairseq) as a compiled Core ML model, which the
+// macOS helper's forced aligner loads. Input "audio" [1, 1600...480000] at 16 kHz, output
+// "log_probs" [1, frames, 29]. Digests match the repo's manifest.json at this revision.
+const ALIGNER_REPO = "ssmall256/wav2vec2-base-960h-ctc-coreml";
+const ALIGNER_REVISION = "f4ec5a12ab136a151aea44b97de4bb320a899943";
+export const ALIGNER_COMPILED_NAME = "wav2vec2-base-960h.mlmodelc";
+
+function alignerFile(name: string, expectedSha256: string, approximateBytes: number): SttModelFile {
+	return {
+		name: `${ALIGNER_COMPILED_NAME}/${name}`,
+		url: `${MODEL_BASE}/${ALIGNER_REPO}/resolve/${ALIGNER_REVISION}/Wav2Vec2CTC.mlmodelc/${name}`,
+		expectedSha256,
+		approximateBytes,
+	};
+}
 
 function parakeetOnnxFile(
 	name: string,
@@ -245,6 +266,38 @@ export const STT_MODELS: Record<SttModelId, SttModelDescriptor> = {
 			),
 		],
 	},
+	"wav2vec2-aligner": {
+		cacheDir: "wav2vec2-base-960h-ctc-coreml",
+		repoId: ALIGNER_REPO,
+		revision: ALIGNER_REVISION,
+		files: [
+			alignerFile(
+				"analytics/coremldata.bin",
+				"1ac2cb502e4ae39062edc13569eccd46ffa4f6926d509009f8dc3bd0e8887888",
+				243,
+			),
+			alignerFile(
+				"coremldata.bin",
+				"7809bc5d04cd88a718a2887dc733dc27fe8ac05ce44684b499dc182db225e939",
+				480,
+			),
+			alignerFile(
+				"metadata.json",
+				"4ba8c6877270f7dbe7efb3cee369715201f8d60f9da94b346d478b6ef30d8368",
+				2_315,
+			),
+			alignerFile(
+				"model.mil",
+				"b5396b962cb00832af470822ae13d5a69ca0b99e591d832c8d621d47c8e20288",
+				164_996,
+			),
+			alignerFile(
+				"weights/weight.bin",
+				"de51193fe73fb3aad085f9c794f08bfde1b939fc12f92e0834edcd4cb712e642",
+				188_799_802,
+			),
+		],
+	},
 	whisper: {
 		cacheDir: "whisper-ggml",
 		repoId: MODEL_REPO,
@@ -279,6 +332,7 @@ export function modelPaths(baseDir: string): Record<SttModelId, string> {
 		"parakeet-v3-onnx": path.join(baseDir, STT_MODELS["parakeet-v3-onnx"].cacheDir),
 		whisper: path.join(baseDir, STT_MODELS.whisper.cacheDir, MODEL_FILE),
 		"silero-vad": path.join(baseDir, STT_MODELS["silero-vad"].cacheDir, VAD_FILE),
+		"wav2vec2-aligner": path.join(baseDir, STT_MODELS["wav2vec2-aligner"].cacheDir),
 	};
 }
 
@@ -293,6 +347,12 @@ export async function areModelsPresent(baseDir: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+/** Every file of a model is on disk. Cheap and synchronous; it does not verify hashes. */
+export function isModelOnDisk(baseDir: string, id: SttModelId): boolean {
+	const model = STT_MODELS[id];
+	return model.files.every((file) => existsSync(path.join(baseDir, model.cacheDir, file.name)));
 }
 
 /** Hash a file as a bounded stream. Cancellation destroys the read immediately. */
