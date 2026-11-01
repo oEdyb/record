@@ -84,6 +84,7 @@ const WINDOWS_FFMPEG = [
 ];
 const LINUX_FFMPEG_LIBRARIES = [
 	"libavcodec.so.62",
+	"libavfilter.so.11",
 	"libavformat.so.62",
 	"libavutil.so.60",
 	"libswresample.so.6",
@@ -106,6 +107,7 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-arm64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
+		ffprobe: "ffmpeg",
 		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),
@@ -116,6 +118,7 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-x64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
+		ffprobe: "ffmpeg",
 		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),

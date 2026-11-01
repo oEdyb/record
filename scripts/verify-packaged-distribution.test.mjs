@@ -267,6 +267,20 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
 	});
 
+	it.each(["x64", "arm64"])("accepts Linux %s media probing and filter libraries", async (arch) => {
+		const packageDir = await packageFixture();
+		const resources = path.join(packageDir, "resources");
+		await rename(path.join(packageDir, "Contents", "Resources"), resources);
+		const nativeDirectory = path.join(resources, "electron", "native", "bin", `linux-${arch}`);
+		await mkdir(nativeDirectory, { recursive: true });
+		for (const name of ["ffprobe", "libavfilter.so.11"]) {
+			await writeFile(path.join(nativeDirectory, name), "binary", { mode: 0o755 });
+		}
+		await expect(
+			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch }),
+		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
+	});
+
 	it.each([
 		"package-type",
 		"apparmor-profile",
