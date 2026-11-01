@@ -321,8 +321,11 @@
 	align-items: center;
 	gap: 2px;
 	visibility: visible;
+	opacity: 1;
 	pointer-events: auto;
-	transition: visibility 0s;
+	transition:
+		opacity 200ms cubic-bezier(0.23, 1, 0.32, 1) 60ms,
+		visibility 0s;
 }
 
 .hudBar[data-docked="top"] .hudDockWing:last-child {
@@ -343,10 +346,19 @@
 	clip-path: inset(0 calc(var(--hud-dock-cap-offset, 180px) - 1px) 9px round 0 0 20px 20px);
 }
 
+/* The controls fade before the pill finishes shrinking, so none lingers beside
+   the logo while the spring settles. */
 .hudBar[data-docked="top"][data-tucked] .hudDockWing {
 	visibility: hidden;
+	opacity: 0;
 	pointer-events: none;
-	transition: visibility 0s var(--hud-dock-duration);
+	transition:
+		opacity 120ms ease-out,
+		visibility 0s var(--hud-dock-duration);
+}
+
+.hudBar[data-instant] .hudDockWing {
+	transition: none;
 }
 
 .hudBar[data-docked="top"][data-tucked] .hudPillRow > [data-testid="hud-drag-handle"] {
