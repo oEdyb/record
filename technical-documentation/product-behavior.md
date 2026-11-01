@@ -403,6 +403,9 @@ Linux keeps the logo as a compositor-owned drag region and does not offer click-
 Linux opens Setup below a fixed local pill origin. During monitor capture (or when
 source isolation is unknown), hide the recorder before starting or continuing;
 Pause acknowledgement restores it. Recording another window can retain the HUD.
+Notes and Transcript follow the same rule: Electron's content protection is
+macOS/Windows only, so on Linux they unmap with the recorder for monitor or
+unknown-source capture and return, unfocused, at Pause.
 Wayland does not expose reliable global window position through Electron, so a
 second-monitor exemption is not inferred. On Niri, restoration explicitly activates
 only this process's matching floating recorder window. Asking to show a concealed
