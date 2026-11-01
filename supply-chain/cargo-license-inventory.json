@@ -15,6 +15,11 @@
 			"lockfile": "electron/native/pipewire-capture/Cargo.lock",
 			"manifest": "electron/native/pipewire-capture/Cargo.toml",
 			"scope": "required"
+		},
+		{
+			"lockfile": "electron/native/parakeet-linux/Cargo.lock",
+			"manifest": "electron/native/parakeet-linux/Cargo.toml",
+			"scope": "required"
 		}
 	],
 	"packages": [
@@ -47,6 +52,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -745,6 +751,7 @@
 			],
 			"repository": "https://github.com/marshallpierce/rust-base64",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -936,6 +943,33 @@
 			],
 			"scopes": [
 				"excluded",
+				"required"
+			]
+		},
+		{
+			"name": "bitflags",
+			"version": "2.13.2",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1071,
+					"sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+				}
+			],
+			"repository": "https://github.com/bitflags/bitflags",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
 				"required"
 			]
 		},
@@ -1201,6 +1235,87 @@
 			]
 		},
 		{
+			"name": "bzip2-sys",
+			"version": "0.1.13+1.0.8",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT/Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1079,
+					"sha256": "c8c6324cf2f0f076e3ed5dea4a21f00bd4dd6fce44f72b110bc52e7fe06f6e1e"
+				}
+			],
+			"repository": "https://github.com/alexcrichton/bzip2-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "bzip2",
+			"version": "0.4.4",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT/Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1057,
+					"sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+				}
+			],
+			"repository": "https://github.com/alexcrichton/bzip2-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "cc",
+			"version": "1.10.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1057,
+					"sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+				}
+			],
+			"repository": "https://github.com/rust-lang/cc-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "cc",
 			"version": "1.2.67",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -1358,6 +1473,33 @@
 			],
 			"scopes": [
 				"excluded",
+				"required"
+			]
+		},
+		{
+			"name": "cfg-if",
+			"version": "1.0.5",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1057,
+					"sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+				}
+			],
+			"repository": "https://github.com/rust-lang/cfg-if",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
 				"required"
 			]
 		},
@@ -1574,7 +1716,8 @@
 			],
 			"repository": "https://github.com/servo/core-foundation-rs",
 			"graphs": [
-				"crates/Cargo.lock"
+				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -1601,7 +1744,8 @@
 			],
 			"repository": "https://github.com/servo/core-foundation-rs",
 			"graphs": [
-				"crates/Cargo.lock"
+				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -1741,6 +1885,33 @@
 			],
 			"scopes": [
 				"excluded"
+			]
+		},
+		{
+			"name": "crc32fast",
+			"version": "1.5.3",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 11358,
+					"sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1097,
+					"sha256": "61d383b05b87d78f94d2937e2580cce47226d17823c0430fbcad09596537efcf"
+				}
+			],
+			"repository": "https://github.com/srijs/rust-crc32fast",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
 			]
 		},
 		{
@@ -2028,6 +2199,7 @@
 			],
 			"repository": "https://github.com/yaahc/displaydoc",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -2411,6 +2583,7 @@
 			"repository": "https://github.com/lambda-fairy/rust-errno",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -2550,10 +2723,12 @@
 			],
 			"repository": "https://github.com/alexcrichton/filetime",
 			"graphs": [
-				"electron/native/clean-voice/Cargo.lock"
+				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
-				"excluded"
+				"excluded",
+				"required"
 			]
 		},
 		{
@@ -2585,6 +2760,33 @@
 		},
 		{
 			"name": "find-msvc-tools",
+			"version": "0.1.15",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1057,
+					"sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+				}
+			],
+			"repository": "https://github.com/rust-lang/cc-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "find-msvc-tools",
 			"version": "0.1.9",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
 			"license": "MIT OR Apache-2.0",
@@ -2606,6 +2808,33 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "flate2",
+			"version": "1.1.10",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1062,
+					"sha256": "025436edff4cfcdde17a5811fdea78892d8482efd1abdec5a17872d07a4f2112"
+				}
+			],
+			"repository": "https://github.com/rust-lang/flate2-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -2860,6 +3089,7 @@
 			],
 			"repository": "https://github.com/servo/rust-url",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -3134,6 +3364,7 @@
 			"repository": "https://github.com/rust-random/getrandom",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -3784,6 +4015,27 @@
 			]
 		},
 		{
+			"name": "icu_collections",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "icu_locale_core",
 			"version": "2.2.0",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -3799,6 +4051,27 @@
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "icu_locale_core",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -3826,6 +4099,27 @@
 			]
 		},
 		{
+			"name": "icu_normalizer_data",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "icu_normalizer",
 			"version": "2.2.0",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -3841,6 +4135,27 @@
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "icu_normalizer",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -3868,6 +4183,27 @@
 			]
 		},
 		{
+			"name": "icu_properties_data",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "icu_properties",
 			"version": "2.2.0",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -3883,6 +4219,27 @@
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "icu_properties",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -3910,6 +4267,27 @@
 			]
 		},
 		{
+			"name": "icu_provider",
+			"version": "2.4.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "idna_adapter",
 			"version": "1.2.2",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -3930,6 +4308,7 @@
 			],
 			"repository": "https://github.com/hsivonen/idna_adapter",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -3957,6 +4336,7 @@
 			],
 			"repository": "https://github.com/servo/rust-url/",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -4123,6 +4503,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -4415,6 +4796,33 @@
 			]
 		},
 		{
+			"name": "libc",
+			"version": "0.2.191",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 9723,
+					"sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1066,
+					"sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+				}
+			],
+			"repository": "https://github.com/rust-lang/libc",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "libloading",
 			"version": "0.8.9",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -4526,6 +4934,7 @@
 			"repository": "https://github.com/sunfishcode/linux-raw-sys",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -4663,6 +5072,27 @@
 			]
 		},
 		{
+			"name": "litemap",
+			"version": "0.8.3",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "litrs",
 			"version": "1.0.0",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -4765,10 +5195,12 @@
 			],
 			"repository": "https://github.com/rust-lang/log",
 			"graphs": [
-				"electron/native/clean-voice/Cargo.lock"
+				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
-				"excluded"
+				"excluded",
+				"required"
 			]
 		},
 		{
@@ -4881,6 +5313,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -5092,6 +5525,45 @@
 			],
 			"scopes": [
 				"excluded",
+				"required"
+			]
+		},
+		{
+			"name": "miniz_oxide",
+			"version": "0.9.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Zlib OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 1213,
+					"sha256": "4108245a1f2df9d4e94df8abed5b4ba0759bb2f9b40a6b939f1be141077ae50b"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE.md",
+					"size": 10174,
+					"sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT.md",
+					"size": 1212,
+					"sha256": "799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-ZLIB.md",
+					"size": 984,
+					"sha256": "0a54e647fe54104658b5e563c04c6f9edf251710e47bce692e0bd990a4ddaa39"
+				}
+			],
+			"repository": "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
 				"required"
 			]
 		},
@@ -5606,10 +6078,38 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
 				"excluded",
+				"required"
+			]
+		},
+		{
+			"name": "openssl-probe",
+			"version": "0.1.6",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT/Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1057,
+					"sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+				}
+			],
+			"repository": "https://github.com/alexcrichton/openssl-probe",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
 				"required"
 			]
 		},
@@ -5820,6 +6320,7 @@
 			"repository": "https://github.com/servo/rust-url/",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -6018,6 +6519,33 @@
 			]
 		},
 		{
+			"name": "pkg-config",
+			"version": "0.3.34",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1057,
+					"sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+				}
+			],
+			"repository": "https://github.com/rust-lang/pkg-config-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "png",
 			"version": "0.17.16",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -6142,6 +6670,27 @@
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "potential_utf",
+			"version": "0.1.6",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -6361,6 +6910,7 @@
 			"repository": "https://github.com/dtolnay/proc-macro2",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -6519,6 +7069,7 @@
 			"repository": "https://github.com/dtolnay/quote",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -7101,6 +7652,39 @@
 			]
 		},
 		{
+			"name": "ring",
+			"version": "0.17.14",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0 AND ISC",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 499,
+					"sha256": "b3d734001a94efff3579978d953391aa7115f877657d25eb54037a43875d078a"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-BoringSSL",
+					"size": 14870,
+					"sha256": "005fc765ddc5115da796cca915baa9557abae13ff35e0a47c47affc56f6c414d"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-other-bits",
+					"size": 731,
+					"sha256": "f025ccfb7dfb6bdfedc75ca0f67acc69e6fb4998143d834f7c2f38a29989680f"
+				}
+			],
+			"repository": "https://github.com/briansmith/ring",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "roxmltree",
 			"version": "0.20.0",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -7293,6 +7877,204 @@
 			]
 		},
 		{
+			"name": "rustix",
+			"version": "1.1.6",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "COPYRIGHT",
+					"size": 853,
+					"sha256": "377c2e7c53250cc5905c0b0532d35973392af16ffb9596a41d99d202cf3617c9"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-Apache-2.0_WITH_LLVM-exception",
+					"size": 12243,
+					"sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1023,
+					"sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+				}
+			],
+			"repository": "https://github.com/bytecodealliance/rustix",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "rustls-native-certs",
+			"version": "0.7.3",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0 OR ISC OR MIT",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 286,
+					"sha256": "d75967ce788187f83c3bd3328210974acfc443d4dc44909f1d7e34f21623a0c6"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-ISC",
+					"size": 775,
+					"sha256": "7cfafc877eccc46c0e346ccbaa5c51bb6b894d2b818e617d970211e232785ad4"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1082,
+					"sha256": "709e3175b4212f7b13aa93971c9f62ff8c69ec45ad8c6532a7e0c41d7a7d6f8c"
+				}
+			],
+			"repository": "https://github.com/rustls/rustls-native-certs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "rustls-pemfile",
+			"version": "2.2.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0 OR ISC OR MIT",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 294,
+					"sha256": "c5dae4585d8520d1bc3d435dc5dd813be63046ebccc3c4eb866044eff304f0f0"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-ISC",
+					"size": 775,
+					"sha256": "7cfafc877eccc46c0e346ccbaa5c51bb6b894d2b818e617d970211e232785ad4"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1082,
+					"sha256": "709e3175b4212f7b13aa93971c9f62ff8c69ec45ad8c6532a7e0c41d7a7d6f8c"
+				}
+			],
+			"repository": "https://github.com/rustls/pemfile",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "rustls-pki-types",
+			"version": "1.15.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10835,
+					"sha256": "45fd05c4865e7c350b98ad7ac50e1b15462d49af4a91e9b0c9dd933dc9a69742"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1080,
+					"sha256": "9117d922e667125508dde62b02c1f57ed22f5ad21eb536aa2e2d99e1c796e639"
+				}
+			],
+			"repository": "https://github.com/rustls/pki-types",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "rustls-webpki",
+			"version": "0.103.16",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "ISC",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 916,
+					"sha256": "5b698ca13897be3afdb7174256fa1574f8c6892b8bea1a66dd6469d3fe27885a"
+				}
+			],
+			"repository": "https://github.com/rustls/webpki",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "rustls",
+			"version": "0.23.46",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0 OR ISC OR MIT",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-ISC",
+					"size": 775,
+					"sha256": "7cfafc877eccc46c0e346ccbaa5c51bb6b894d2b818e617d970211e232785ad4"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1082,
+					"sha256": "709e3175b4212f7b13aa93971c9f62ff8c69ec45ad8c6532a7e0c41d7a7d6f8c"
+				}
+			],
+			"repository": "https://github.com/rustls/rustls",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "rustversion",
 			"version": "1.0.23",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -7374,6 +8156,27 @@
 			]
 		},
 		{
+			"name": "schannel",
+			"version": "0.1.30",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE.md",
+					"size": 1053,
+					"sha256": "aa72991ac35b4de0034da0afe943e62b48c4092fc2ba13ae47806d8e9a4ad551"
+				}
+			],
+			"repository": "https://github.com/steffengy/schannel-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "scopeguard",
 			"version": "1.2.0",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -7395,6 +8198,60 @@
 			"repository": "https://github.com/bluss/scopeguard",
 			"graphs": [
 				"crates/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "security-framework-sys",
+			"version": "2.17.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1081,
+					"sha256": "91e934255ba3b2f21103d68c5581c23ef34aa95c4628e4405b8c901935e11c69"
+				}
+			],
+			"repository": "https://github.com/kornelski/rust-security-framework",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "security-framework",
+			"version": "2.11.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1081,
+					"sha256": "91e934255ba3b2f21103d68c5581c23ef34aa95c4628e4405b8c901935e11c69"
+				}
+			],
+			"repository": "https://github.com/kornelski/rust-security-framework",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -7503,6 +8360,7 @@
 			"repository": "https://github.com/serde-rs/serde",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -7559,6 +8417,7 @@
 			"repository": "https://github.com/serde-rs/serde",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -7619,6 +8478,33 @@
 			],
 			"scopes": [
 				"excluded",
+				"required"
+			]
+		},
+		{
+			"name": "serde_json",
+			"version": "1.0.154",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 9723,
+					"sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1023,
+					"sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+				}
+			],
+			"repository": "https://github.com/serde-rs/json",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
 				"required"
 			]
 		},
@@ -7698,6 +8584,7 @@
 			"repository": "https://github.com/serde-rs/serde",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -7760,6 +8647,48 @@
 			]
 		},
 		{
+			"name": "sherpa-onnx-sys",
+			"version": "1.13.5",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 11358,
+					"sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+				}
+			],
+			"repository": "https://github.com/k2-fsa/sherpa-onnx",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "sherpa-onnx",
+			"version": "1.13.5",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 11358,
+					"sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+				}
+			],
+			"repository": "https://github.com/k2-fsa/sherpa-onnx",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "shlex",
 			"version": "1.3.0",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -7810,6 +8739,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -7861,6 +8791,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -7996,6 +8927,33 @@
 			]
 		},
 		{
+			"name": "smallvec",
+			"version": "1.16.4",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1072,
+					"sha256": "0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9"
+				}
+			],
+			"repository": "https://github.com/servo/rust-smallvec",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "smol_str",
 			"version": "0.3.6",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -8076,6 +9034,7 @@
 			],
 			"repository": "https://github.com/storyyeller/stable_deref_trait",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -8203,6 +9162,27 @@
 			"repository": "https://github.com/Peternator7/strum",
 			"graphs": [
 				"crates/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "subtle",
+			"version": "2.6.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "BSD-3-Clause",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 1582,
+					"sha256": "d1fc1bc0d155df60b2e7705b6b2ae02a05c96f948e1cec6e2fb86360b09f346b"
+				}
+			],
+			"repository": "https://github.com/dalek-cryptography/subtle",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -8348,6 +9328,33 @@
 			]
 		},
 		{
+			"name": "syn",
+			"version": "3.0.9",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 9723,
+					"sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1023,
+					"sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+				}
+			],
+			"repository": "https://github.com/dtolnay/syn",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "synstructure",
 			"version": "0.13.2",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -8363,6 +9370,27 @@
 			"repository": "https://github.com/mystor/synstructure",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "synstructure",
+			"version": "0.14.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 1052,
+					"sha256": "219920e865eee70b7dcfc948a86b099e7f4fe2de01bcca2ca9a20c0a033f2b59"
+				}
+			],
+			"repository": "https://github.com/mystor/synstructure",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -8416,10 +9444,12 @@
 			],
 			"repository": "https://github.com/composefs/tar-rs",
 			"graphs": [
-				"electron/native/clean-voice/Cargo.lock"
+				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
-				"excluded"
+				"excluded",
+				"required"
 			]
 		},
 		{
@@ -8713,6 +9743,27 @@
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "tinystr",
+			"version": "0.8.5",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -9440,6 +10491,39 @@
 			]
 		},
 		{
+			"name": "unicode-ident",
+			"version": "1.0.27",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 9723,
+					"sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1023,
+					"sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-UNICODE",
+					"size": 1995,
+					"sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+				}
+			],
+			"repository": "https://github.com/dtolnay/unicode-ident",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "unicode-linebreak",
 			"version": "0.1.5",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -9622,6 +10706,27 @@
 			]
 		},
 		{
+			"name": "untrusted",
+			"version": "0.9.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "ISC",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE.txt",
+					"size": 769,
+					"sha256": "7abd9b6960dcf7d4d0a48606a5b71bfe37d472db68d70637f3a58a56785f1621"
+				}
+			],
+			"repository": "https://github.com/briansmith/untrusted",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "url",
 			"version": "2.5.8",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -9642,6 +10747,7 @@
 			],
 			"repository": "https://github.com/servo/rust-url",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -9675,6 +10781,7 @@
 			],
 			"repository": "https://github.com/hsivonen/utf8_iter",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -9772,6 +10879,7 @@
 			"repository": "https://github.com/bytecodealliance/wasi",
 			"graphs": [
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10124,6 +11232,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10152,6 +11261,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10180,6 +11290,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10208,6 +11319,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10236,6 +11348,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10264,6 +11377,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10292,6 +11406,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10320,6 +11435,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10430,6 +11546,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10512,6 +11629,7 @@
 			],
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10568,6 +11686,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10597,6 +11716,7 @@
 			"repository": "https://github.com/microsoft/windows-rs",
 			"graphs": [
 				"crates/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [
@@ -10673,6 +11793,27 @@
 			]
 		},
 		{
+			"name": "writeable",
+			"version": "0.6.4",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "xattr",
 			"version": "1.6.1",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -10697,6 +11838,33 @@
 			],
 			"scopes": [
 				"excluded"
+			]
+		},
+		{
+			"name": "xattr",
+			"version": "1.7.0",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "MIT OR Apache-2.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 10847,
+					"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1056,
+					"sha256": "8b427f5bc501764575e52ba4f9d95673cf8f6d80a86d0d06599852e1a9a20a36"
+				}
+			],
+			"repository": "https://github.com/Stebalien/xattr",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
 			]
 		},
 		{
@@ -10790,6 +11958,27 @@
 			]
 		},
 		{
+			"name": "yoke-derive",
+			"version": "0.8.4",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "yoke",
 			"version": "0.8.3",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -10805,6 +11994,27 @@
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "yoke",
+			"version": "0.8.4",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -11054,6 +12264,27 @@
 			]
 		},
 		{
+			"name": "zerofrom-derive",
+			"version": "0.1.8",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "zerofrom",
 			"version": "0.1.8",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -11068,7 +12299,35 @@
 			],
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "zeroize",
+			"version": "1.9.1",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Apache-2.0 OR MIT",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-APACHE",
+					"size": 11358,
+					"sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+				},
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE-MIT",
+					"size": 1082,
+					"sha256": "8c7516d4b27b1e495be5e38b612298b63de48d05f49cdac94f70f3cd70f8864b"
+				}
+			],
+			"repository": "https://github.com/RustCrypto/utils",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -11096,6 +12355,27 @@
 			]
 		},
 		{
+			"name": "zerotrie",
+			"version": "0.2.5",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "zerovec-derive",
 			"version": "0.11.3",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -11111,6 +12391,27 @@
 			"repository": "https://github.com/unicode-org/icu4x",
 			"graphs": [
 				"electron/native/pipewire-capture/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "zerovec-derive",
+			"version": "0.11.7",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
 			],
 			"scopes": [
 				"required"
@@ -11138,6 +12439,48 @@
 			]
 		},
 		{
+			"name": "zerovec",
+			"version": "0.11.9",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Unicode-3.0",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 2195,
+					"sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
+				}
+			],
+			"repository": "https://github.com/unicode-org/icu4x",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
+			"name": "zlib-rs",
+			"version": "0.6.8",
+			"source": "registry+https://github.com/rust-lang/crates.io-index",
+			"license": "Zlib",
+			"licenseEvidence": [
+				{
+					"path": "third-party-licenses/Cargo-Evidence.json",
+					"sourceFile": "LICENSE",
+					"size": 856,
+					"sha256": "e72111c52b7d96ebe25348dee19f0744f444d3c95ae6b1ecb6ccaecc5bce05ba"
+				}
+			],
+			"repository": "https://github.com/trifectatechfoundation/zlib-rs",
+			"graphs": [
+				"electron/native/parakeet-linux/Cargo.lock"
+			],
+			"scopes": [
+				"required"
+			]
+		},
+		{
 			"name": "zmij",
 			"version": "1.0.23",
 			"source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -11154,6 +12497,7 @@
 			"graphs": [
 				"crates/Cargo.lock",
 				"electron/native/clean-voice/Cargo.lock",
+				"electron/native/parakeet-linux/Cargo.lock",
 				"electron/native/pipewire-capture/Cargo.lock"
 			],
 			"scopes": [

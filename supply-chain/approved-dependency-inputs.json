@@ -1,9 +1,7 @@
 {
 	"schemaVersion": 1,
-	"reviewedAt": "2026-10-24",
+	"reviewedAt": "2026-11-01",
 	"inputs": {
-		"package-lock.json": "620e9c2b83546bb320f8dafe05fc45d3b8ebafe93e5a5adf4e076b1d6b55329d",
-		"website/package-lock.json": "2f0d225bab90886f58ab1376c5ac21459e95d8019d828073059881f42f434b81",
 		"crates/Cargo.lock": "3d97accbf3163710c81c9b9c67db87c6fe38c85235bb9ee83b73a005c7f09f52",
 		"crates/Cargo.toml": "65c9703a7549d92b88227e95f783c1c2f9710679c926a7986081b498f55e8246",
 		"crates/compositor-view-napi/Cargo.toml": "87932d67ad8b4de701be37a25718e74f7e1e9feeda0bb95053ccc67a70a21502",
@@ -11,18 +9,23 @@
 		"crates/poc-d3d/Cargo.toml": "d85590a7c668639363a17753ddd96e9bd45d3d5fcf1d14d1f9dc3ab4a627255e",
 		"electron/native/clean-voice/Cargo.lock": "aac761750f4e6d008e7d2751bcca04e573e6ae2a71df6e7a4d975b22b62e27f8",
 		"electron/native/clean-voice/Cargo.toml": "525385ec3104b3cc98cec0803a44b4333172b58464f33f903966ccae0fa4162a",
-		"electron/native/pipewire-capture/Cargo.lock": "01ddef35f4f968946c1012b46ca89fb381555f3485ba30a881c343608ec466d3",
-		"electron/native/pipewire-capture/Cargo.toml": "8c88a13212c392f687bf56ab1d1b6ed267319c17599e7689e947398473a16d12",
+		"electron/native/parakeet-linux/Cargo.lock": "b8a424ac492a039cfceabc35a44ac7c310fcf8ffbd88d3b711ce615eeec805d0",
+		"electron/native/parakeet-linux/Cargo.toml": "833d01ecbd449e4ec3c8ab745324448a65f40d9f44fc9ca34caf45c3c5011f9c",
+		"electron/native/parakeet-linux/vendor/ureq/Cargo.toml": "1c8d1781ec04f943392eb044d45573fc559c4151988947466f1e403ea7212475",
 		"electron/native/parakeet-stt/Package.resolved": "acdb341108dd007b3307915e1130996b5e90cf2a0b438aa967b380093bf2a517",
 		"electron/native/parakeet-stt/Package.swift": "8ca39e2a8f55236b3595c77a1f605464ce6f6bd127c42c6f798b4791cdb9f330",
+		"electron/native/pipewire-capture/Cargo.lock": "01ddef35f4f968946c1012b46ca89fb381555f3485ba30a881c343608ec466d3",
+		"electron/native/pipewire-capture/Cargo.toml": "8c88a13212c392f687bf56ab1d1b6ed267319c17599e7689e947398473a16d12",
 		"electron/native/screencapturekit/Package.swift": "9a0d745305bf652f05f1b144fb15f826e59e5a61cd43fbd31c5b86404d0fca9b",
 		"electron/native/wgc-capture/CMakeLists.txt": "4b91454a84f166399caf97949f30c03fb88c4d1523a4a16adfa6ac5f2e4d0230",
 		"electron/native/whisper-stt/CMakeLists.txt": "26f955915de272fc13bc4ae9a0366d28605472f9deeaf23b0017c330b315b959",
 		"electron/stt/modelManager.ts": "e1de3254b30cc529d6b4375ec5e3a9c3a758aa179d77c345f14b7f7042643f87",
+		"package-lock.json": "620e9c2b83546bb320f8dafe05fc45d3b8ebafe93e5a5adf4e076b1d6b55329d",
 		"scripts/ffmpeg-pins.mjs": "85225f1eb8abc9374bb4cdfe36b30dc0c236d8f93757cab773c02cd1b1984e60",
 		"supply-chain/bundled-assets.json": "8c55b80c140e1377c9165c55cdc3c7fb190f2b97e47e544c8abb83d7004b8512",
 		"supply-chain/cargo-license-supplements.json": "ae44078c43ef8d5f31bbc3d79afdab8b2d407465f905b986ed70bf7f8e9762da",
 		"supply-chain/model-rights.json": "ca13433b8e977e46eed130b895ba2d1e6877871cdabf62e0a19a1f359766f8be",
-		"supply-chain/web-demuxer.json": "9e4f26d92c3104f0691b5ec1cc781fbb0924d2c48d0b455ee4f30d3e0477c855"
+		"supply-chain/web-demuxer.json": "9e4f26d92c3104f0691b5ec1cc781fbb0924d2c48d0b455ee4f30d3e0477c855",
+		"website/package-lock.json": "2f0d225bab90886f58ab1376c5ac21459e95d8019d828073059881f42f434b81"
 	}
 }
