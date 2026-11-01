@@ -31,7 +31,7 @@ Status: **Works** (with evidence), **Fixed** (broken, repaired tonight), **Block
 | 8 | Replay of kept clips from the pill | Works, unit level | `HudClipPeek*.test.ts(x)`; no retained Linux desktop run |
 | 9 | Display stays awake while a take records | **Fixed** (F2) | `recordingWakeLock.test.ts`, `handlers.startup.test.ts`, `artifacts/linux-parity-2026-11-01/wake-lock/` |
 | 10 | Auto-pause on suspend and low disk | Works | `handlers.startup.test.ts` ("routes Linux suspend…"), shared `disk-low` path with `freeDiskBytes` wired on Linux |
-| 11 | Auto-pause when the recorded window closes | **Blocked** (B1) | helper treats a disconnected stream as fatal |
+| 11 | Auto-pause when the recorded window closes | **Implemented, unverified on a real stream** (F4) | `source_loss.rs` state-machine tests, `nativeMacHelperClient.test.ts`; never run against a portal stream |
 | 12 | Auto-pause when the screen locks | **Blocked** (B2) | Electron `lock-screen` is darwin/win32 only |
 | 13 | Review: play, scrub, Add clip, Original files, Record, Save video | Works | `niri-everyday/`; `src/components/ai-edition` suites (73 files pass) |
 | 14 | Separate takes: untouched originals, OTIO/FCPXML, remembered choice | Works | `four-source-export/` (eight identical hashes), `ExportDialog.flow.test.tsx` (default + remembered choice) |
@@ -51,8 +51,8 @@ Status: **Works** (with evidence), **Fixed** (broken, repaired tonight), **Block
 | 28 | Startup recovery of an interrupted take | Works | `handlers.startup.test.ts` (Linux gate), `active-camera-quit/` |
 
 Counts over the 28 rows: **Works 21** (1–8, 10, 13–22, 25, 28), **Fixed tonight 2**
-(9, 23), **Blocked 5** (11, 12, 24, 26, 27). Rows 21 and 22 work by concealment, not by
-compositor exclusion (B3).
+(9, 23), **Implemented but unverified on a real stream 1** (11), **Blocked 4** (12, 24, 26,
+27). Rows 21 and 22 work by concealment, not by compositor exclusion (B3).
 
 ## Fixes
 
@@ -89,22 +89,39 @@ clean after each.
   so nothing opens these windows on Linux today. F3 is a safeguard that makes
   re-enabling Notes safe; it does not change what a user sees now. See D1.
 
+- **F4 — recorded window closes: pause instead of end (UNVERIFIED on a real stream).**
+  Before: the helper's main loop (`pipewire-capture/src/main.rs`, `StreamEvent::State`)
+  treated any disconnected or errored stream as fatal: `clips.fail`,
+  `capture-stopped-with-error`, exit 1. The renderer then finalized to review, and because
+  `Clips::finalize` returns the recorded failure, the in-flight clip was *not* committed
+  (an earlier line of this log said "salvaged"; that was unchecked and wrong). After: a
+  stream that goes away once a clip-native take has started emits the macOS helper's
+  `source-inactive` warning and the take stays alive. The app already maps that warning to
+  Pause plus the "The recorded window closed, so recording paused." toast (shared with the
+  Mac path), so the clip is finalized by an ordinary Pause. Continue is refused with the
+  existing retryable `clip-resume-rejected` until Settings → Source adopts a replacement
+  (`SourceHealth::reselected`). Late teardown noise from the dead stream is ignored; Stop
+  still finalizes normally. Startup failures (before the first confirmed clip), the legacy
+  single-file protocol and sessions without a live stream keep the old fatal behavior.
+  Code: new `source_loss.rs` (pure state machine), three small hooks in `main.rs`,
+  `Clips::has_started`. Tests (`cargo test source_loss`, 12 tests, no encoder, no portal,
+  no GPU): loss and error after start, startup/legacy still fatal, teardown noise ignored,
+  loss while paused, Continue refused until reselect, repeat loss, and the exact NDJSON
+  events (`warning`/`source-inactive`, `error`/`clip-resume-rejected`) through the real
+  `Emitter`/`Clips::reject_resume`. TS: `nativeMacHelperClient.test.ts` pins that a Linux
+  `source-inactive` warning reaches the sink without a fatal error and that a refused
+  Continue stays retryable. **Not verified, and the reason this needs a daytime check:**
+  (a) which PipeWire state each compositor produces when a window closes — both
+  `unconnected` and an error state are treated as loss, but nobody has observed either;
+  (b) that the resumed clip after reselection records correctly; (c) the whole path under
+  NVENC. If the renderer fails to pause, the live clip keeps holding the last frame until
+  the user acts (the Mac path has the same shape). Test with the lab: capture an owned
+  window, close it, expect toast + paused HUD, pick a new source, Continue.
+
 Product-behavior text for F3 is in `technical-documentation/product-behavior.md`.
 
 ## Blockers
 
-- **B1 — Recorded window closes mid-take.** On macOS 15.2+ the take pauses with a toast
-  and Continue works after reselection. The Linux helper's main loop
-  (`electron/native/pipewire-capture/src/main.rs`, the `StreamEvent::State` arm) treats an
-  `unconnected` stream as fatal: `clips.fail`, `capture-stopped-with-error`, exit 1. The
-  renderer then pauses, toasts "…Saving completed clips now." and finalizes to review, so
-  earlier clips and the salvaged tail are kept, but the take cannot continue. The TypeScript
-  side already maps a `source-inactive` warning to the Mac pause-and-toast flow. Design for
-  parity: on stream loss while a clip-native take is recording or paused, emit
-  `Warning{source-inactive}` and stay alive; reject `Resume` with `clip-resume-rejected`
-  until `SelectSource` adopts a replacement. Not done tonight: it changes the native
-  recording loop and can only be verified with a real portal stream and NVENC, which this
-  pass was not allowed to run. Needs a daylight session with the lab.
 - **B2 — Screen lock.** Electron's `powerMonitor` `lock-screen` is `@platform darwin,win32`;
   the Linux build correctly registers only `suspend` (a test asserts `lock-screen` is not
   listened to). Parity would need a logind `Lock`/`Unlock` D-Bus subscription (new
@@ -157,6 +174,13 @@ Product-behavior text for F3 is in `technical-documentation/product-behavior.md`
 - `npx tsc --noEmit`, `npx tsc -p tsconfig.test.json --noEmit` and `biome check electron`
   clean after F3.
 - The full suite result is in the final section below.
+
+## Rust helper tests
+
+`cargo test --offline source_loss` (and `events::`, `command_tests`) run with
+`FFMPEG_DIR=<vendored ffmpeg>` and a reflink copy of the existing debug build cache, `-j 2`,
+`nice -n 19`. The helper's encoder-backed `clip_tests` were deliberately not run (they open a
+real encoder). `cargo clippy --all-targets` shows no finding in the new module.
 
 ## Full unit suite
 

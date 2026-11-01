@@ -279,6 +279,10 @@ disable Continue until the clip is safe.
 - A live take pauses on its own when there is nothing left to record: the recorded window
   closed (macOS 15.2+), the screen locked, or the Mac is going to sleep. A toast says why;
   Continue works as after any Pause. The display stays awake while a take records.
+  On Linux the helper reports the same `source-inactive` when the portal stream goes away
+  after a clip was confirmed; Continue then waits for Settings → Source to adopt a new
+  source. Screen lock has no Linux signal, and a Linux take keeps the display awake
+  through the session's idle inhibit.
 - **Backspace** removes the newest completed clip immediately.
 - Backspace has no confirmation dialog and no removal mode.
 - Repeated Backspace presses continue backward, including removing every completed clip.
