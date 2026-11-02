@@ -42,5 +42,11 @@
 		"manifest": "electron/native/pipewire-capture/Cargo.toml",
 		"scope": "required",
 		"advisoryIgnores": []
+	},
+	{
+		"lockfile": "electron/native/parakeet-linux/Cargo.lock",
+		"manifest": "electron/native/parakeet-linux/Cargo.toml",
+		"scope": "required",
+		"advisoryIgnores": []
 	}
 ]

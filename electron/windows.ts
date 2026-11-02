@@ -42,6 +42,7 @@ import {
 	rectangleContainsScreenPoint,
 	rectanglesContainScreenPoint,
 } from "./privateRecordingUi";
+import { LinuxCaptureConcealment } from "./recording/linuxCaptureConcealment";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -102,6 +103,12 @@ const CONTENT_PROTECTION_BREAKS_DISPLAY = (() => {
 	const macOSMajor = Number.parseInt(process.getSystemVersion().split(".")[0] ?? "", 10);
 	return Number.isFinite(macOSMajor) && macOSMajor >= 26;
 })();
+
+/**
+ * Linux has no content protection, so Notes and Transcript are concealed for the
+ * moments the HUD is (see `setCameraPreviewCaptureHidden` and `LinuxRecordingHud`).
+ */
+const utilityWindowConcealment = new LinuxCaptureConcealment(process.platform);
 
 function applyContentProtection(win: BrowserWindow, label: string) {
 	if (CONTENT_PROTECTION_DISABLED) {
@@ -310,6 +317,7 @@ export async function setCameraPreviewCaptureHidden(
 	pipeWireNodeId?: number,
 ): Promise<void> {
 	if (process.platform !== "linux") return;
+	utilityWindowConcealment.setConcealed(hidden);
 	const generation = ++cameraPreviewCaptureGeneration;
 	cameraPreviewCaptureHidden = hidden;
 	cameraPreviewOutsideCapture = false;
@@ -1215,9 +1223,10 @@ export function createTranscriptWindow(): BrowserWindow {
 		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 		win.setAlwaysOnTop(true, "floating");
 	}
+	win.once("closed", utilityWindowConcealment.track(win));
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "Transcript");
-		win.show();
+		if (utilityWindowConcealment.mayShow(win)) win.show();
 	});
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=transcript");
@@ -1377,9 +1386,10 @@ export function createNotesWindow(): BrowserWindow {
 	}
 	win.on("resize", () => publishNotesWindowBounds(win));
 	win.on("move", () => publishNotesWindowBounds(win));
+	win.once("closed", utilityWindowConcealment.track(win));
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "Notes");
-		win.show();
+		if (utilityWindowConcealment.mayShow(win)) win.show();
 	});
 
 	if (VITE_DEV_SERVER_URL) {

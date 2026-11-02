@@ -9,6 +9,10 @@ Current worktree: `/home/olle/dev/screenrec-linux`, branch `feat/linux-port`.
 Original `/home/olle/dev/screenrec` remains untouched. Draft PR:
 https://github.com/oEdyb/record/pull/1.
 
+Parity pass of November 1, 2026 (branch `linux/parity-2026-11-01`, based on this PR's head,
+unpushed): checklist, three fixes and five blockers in
+[Linux parity](docs/linux-parity-2026-11-01.md). No capture was run in that pass.
+
 The current candidate, evidence and remaining gates are maintained in
 [Linux acceptance](docs/linux-port-acceptance-2026-10-26.md). Read that record
 before running another check or packaging pass. The

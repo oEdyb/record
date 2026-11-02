@@ -288,6 +288,10 @@ disable Continue until the clip is safe.
 - A live take pauses on its own when there is nothing left to record: the recorded window
   closed (macOS 15.2+), the screen locked, or the Mac is going to sleep. A toast says why;
   Continue works as after any Pause. The display stays awake while a take records.
+  On Linux the helper reports the same `source-inactive` when the portal stream goes away
+  after a clip was confirmed; Continue then waits for Settings → Source to adopt a new
+  source. Screen lock has no Linux signal, and a Linux take keeps the display awake
+  through the session's idle inhibit.
 - **Backspace** removes the newest completed clip immediately.
 - Backspace has no confirmation dialog and no removal mode.
 - Repeated Backspace presses continue backward, including removing every completed clip.
@@ -422,17 +426,25 @@ portal chooser directly, as does Settings → Source; Record can reuse the remem
 Linux keeps the logo as a compositor-owned drag region and does not offer click-to-fold.
 Linux opens Setup below a fixed local pill origin. During monitor capture or when
 source isolation is unknown, hide controls before Start/Continue unless Niri proves
-that this process's floating pill is on another uncaptured output. Match the exact
+that this process's floating pill is on another uncaptured output. Recording another
+window can retain the HUD. Match the exact
 portal PipeWire node and current logical window/workspace/output geometry; Electron
-coordinates alone do not prove isolation. Evaluate the pill and camera independently.
+coordinates alone do not prove isolation, and Wayland does not expose reliable global
+window position through Electron, so a second-monitor exemption is never inferred
+elsewhere. Evaluate the pill and camera independently.
 Safe focus and layout updates retain visibility; unsafe placement, overview, output
 changes or lost IPC revoke retention until Pause. This is conditional placement,
 not atomic compositor-level capture exclusion. Pause restores hidden controls.
+Notes and Transcript follow the unconditional rule: Electron's content protection is
+macOS/Windows only, so on Linux they unmap with the recorder for monitor or
+unknown-source capture and return, unfocused, at Pause.
 The portal chooser temporarily hides the pill, then restores its saved Niri output
 and absolute local position before preparation completes. Cancellation invalidates
 pending selection/restoration; replacement capture waits for in-flight placement.
-Asking to show a concealed active recorder first requests Pause, so controls cannot
-silently appear in footage. Other Wayland compositors retain conservative hiding.
+On Niri, restoration explicitly activates only this process's matching floating
+recorder window. Asking to show a concealed active recorder first requests Pause, so
+controls cannot silently appear in footage. Other Wayland compositors retain
+conservative hiding.
 Linux defaults are Ctrl+Alt+O for controls and Ctrl+Alt+R for Pause/Continue, leaving
 Koett's Ctrl+Shift+Space untouched. The configured Niri fallback additionally maps
 Ctrl+Alt+S to Stop. These compositor bindings target the running app through its

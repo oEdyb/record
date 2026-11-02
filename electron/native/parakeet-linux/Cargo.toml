@@ -30,3 +30,9 @@ serde_json = "1"
 
 [profile.release]
 opt-level = 3
+
+[patch.crates-io]
+ureq = { path = "vendor/ureq" }
+
+[dev-dependencies]
+ureq = { version = "=2.12.1", features = ["proxy-from-env"] }

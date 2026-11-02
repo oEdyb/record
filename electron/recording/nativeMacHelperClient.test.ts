@@ -333,6 +333,36 @@ describe("NativeMacHelperClient", () => {
 		await assertion;
 	});
 
+	it("delivers a Linux source-inactive warning without ending the take, and keeps a refused Continue retryable", async () => {
+		const process = fakeProcess();
+		const onWarning = vi.fn();
+		const onFatalError = vi.fn();
+		const client = new NativeMacHelperClient(process, {
+			platform: "linux",
+			onWarning,
+			onFatalError,
+		});
+		emit(process, {
+			event: "warning",
+			code: "source-inactive",
+			message: "The captured content closed.",
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(onWarning).toHaveBeenCalledWith(expect.objectContaining({ code: "source-inactive" }));
+		expect(onFatalError).not.toHaveBeenCalled();
+
+		const refused = client.resume();
+		const rejected = expect(refused).rejects.toBeInstanceOf(NativeMacResumeRejectedError);
+		emit(process, {
+			event: "error",
+			code: "clip-resume-rejected",
+			clipIndex: 1,
+			message: "The recorded window closed. Choose a source before continuing.",
+		});
+		await rejected;
+		expect(onFatalError).not.toHaveBeenCalled();
+	});
+
 	it("hands every helper warning to the warning sink with its payload", async () => {
 		const process = fakeProcess();
 		const onWarning = vi.fn();

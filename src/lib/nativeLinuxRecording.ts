@@ -46,12 +46,14 @@ export function linuxClipRecordingRequest(
 	request: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
 ): NativeMacRecordingRequest {
 	if ("schemaVersion" in request) {
-		const microphone = { ...request.audio.microphone };
-		if (microphone.deviceId === "default") delete microphone.deviceName;
+		// The IPC boundary is typed but not validated: a request without an audio block
+		// must reach the service and fail there, not throw in this adapter.
+		const microphone = request.audio?.microphone ? { ...request.audio.microphone } : undefined;
+		if (microphone?.deviceId === "default") delete microphone.deviceName;
 		return {
 			...request,
 			platform: "linux",
-			audio: { ...request.audio, microphone },
+			...(microphone ? { audio: { ...request.audio, microphone } } : {}),
 			webcam: { enabled: false, width: 1920, height: 1080, fps: 60 },
 		};
 	}
