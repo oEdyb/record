@@ -36,7 +36,7 @@ stream-copy export. The confirmed separate-take source handoff is implemented be
   import edits or inherited effects now assert the explicitly requested plain defaults.
   Existing rendered-export tests select One video before exercising that unchanged flow.
 - Real Mac Electron 44.1.0 development build, launched from
-  `dist-electron/bootstrap.js`, with private test profiles. Original Kimi project SHA-256
+  `dist-electron/bootstrap.js`, with private test profiles. Original test project SHA-256
   stayed `8d975e72be0f7c40bdccf01028c5cd3f3ec73cf7e3f6e4d129bba489e095dac8`.
 - Existing 11-minute project cloned through the CLI: 988 captions use one strip;
   39 real B-roll thumbnails loaded. Caption click opened correction and sought to
@@ -114,4 +114,4 @@ Take boundaries come from Pause/Resume; one uninterrupted recording stays one ta
 Final failure-message refinement: 10 affected tests passed, test typecheck and lint
 passed again, and `build-verified.log` records the final Vite build. The final Mac
 UI displayed the writable-folder recovery message and a successful retry. Test-owned
-Electron instances were closed. Original recordings and Kimi project are unchanged.
+Electron instances were closed. Original recordings and test project are unchanged.

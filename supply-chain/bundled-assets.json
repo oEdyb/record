@@ -285,30 +285,6 @@
 	},
 	"excluded": [
 		{
-			"id": "legacy-sweezy-cursor-packs",
-			"paths": [
-				"public/cursors/among-us-sus-knife-and-red-animated/**",
-				"public/cursors/black-and-rainbow-stroke-gradient-animated/**",
-				"public/cursors/black-pixel/**",
-				"public/cursors/christmas-miles-morales/**",
-				"public/cursors/hello-kitty-watermelon/**",
-				"public/cursors/hollow-knight-and-game-arrow/**",
-				"public/cursors/hollow-knight-nail-sword-and-mask/**",
-				"public/cursors/mickey-mouse-black-hand-inflated-glove/**",
-				"public/cursors/naruto-akatsuki-cloud-arrow/**",
-				"public/cursors/old-roblox/**",
-				"public/cursors/pink-glossy-arrow-and-hand-3d/**",
-				"public/cursors/pinky-pixel/**",
-				"public/cursors/pokemon-neon-gengar/**",
-				"public/cursors/sanrio-gudetama-and-arrow-kawaii/**",
-				"public/cursors/sanrio-kuromi-skull-arrow/**",
-				"public/cursors/solo-leveling-sung-jinwoo-dark-flames/**",
-				"public/cursors/spring-gradient/**"
-			],
-			"license": "LicenseRef-Redistribution-Unconfirmed",
-			"reason": "No commercial redistribution grant was recorded. The paid package exposes no theme and copies only public/cursors/default."
-		},
-		{
 			"id": "legacy-marketing-assets",
 			"paths": ["public/openscreen.png", "public/vite.svg"],
 			"license": "LicenseRef-Not-Part-Of-Product",

@@ -117,7 +117,7 @@ the last two days, not a hypothetical:
 ## The map
 
 Each phase has a runnable acceptance check. Order is by dependency and by how often the failure
-happened. Phases 1–3 are one day of work each or less. Nothing here touches the Kimi project;
+happened. Phases 1–3 are one day of work each or less. Nothing here touches the live project;
 live tests run on clones.
 
 ### Phase 1: one entry path (skill and shim)
@@ -161,7 +161,7 @@ live tests run on clones.
   seek` and `cutpoint --time` accept edited input and convert; their replies carry all three
   values for the resolved instant.
 - Every reply that contains a time carries `time_base` next to it, as `state` already does.
-- Acceptance: a resolver test table with the Kimi clip 13 values (103 edited = 125.324 raw =
+- Acceptance: a resolver test table with real clip values (103 edited = 125.324 raw =
   10.418 source) and a `check --rule` that flags any reply field named `*Sec` without a base.
 
 ### Phase 4: proposals by default, and `shot`
@@ -174,7 +174,7 @@ live tests run on clones.
   anchors, the transcript ±5 s, the nearest cuts, staged proposals in range, and one image. The
   image is the saved render unless `--live` seeks the editor and grabs the live preview; the
   reply says which. This is audit recommendation 2, unchanged.
-- Acceptance: on a Kimi clone, `edges` with no flags leaves the project hash unchanged and
+- Acceptance: on a project clone, `edges` with no flags leaves the project hash unchanged and
   `staged` lists the cuts; `shot --at 4:25.7` returns the mid-sentence cut Olle reported with
   the sentence text and the staged pill that causes it.
 
@@ -208,7 +208,7 @@ live tests run on clones.
 
 - `scripts/agent-eval/` with the three audit cases plus the held-out ones: what is at 3:50 and
   is it live; place the round-one restrictions card; propose a pause removal then recover from
-  an interrupted reply; swap a B-roll; undo a batch. Each case is a prompt, a Kimi clone, and an
+  an interrupted reply; swap a B-roll; undo a batch. Each case is a prompt, a project clone, and an
   end-state grader (hash, staged count, check counts, transcript diff, frame presence). Graded
   on end state only, the Terminal-Bench rule. Run one agent at a time on this Mac.
 - Record runs in the skill's `evaluations` section: date, skill version, CLI version, pass/fail
@@ -220,7 +220,7 @@ live tests run on clones.
 
 Olle approved these additions after reviewing `kajisho5/ffmpeg-skill`. They extend the
 existing phases; they are requirements, not a claim that the running CLI implements them.
-Kimi chooses implementation order and agent assignments. Finish the current acceptance
+The orchestrator chooses implementation order and agent assignments. Finish the current acceptance
 pass first, retain its evidence, and identify already-satisfied requirements before adding
 work. Prioritize verification requirements and capability checks.
 
@@ -312,7 +312,7 @@ CLI-first decision.
 
 ## Evidence base
 
-Local, measured 2026-09-18 on this checkout with the dev editor open on the Kimi project:
+Local, measured 2026-09-18 on this checkout with the dev editor open on a real project:
 command latency, reply sizes, command count, symlink absence, envelope count in
 `electron/cli/agentMain.ts`, the audit's failed cutpoint probe. Failure history from
 `HANDOFF.md`, the orchestrator handoff, and the project memory.

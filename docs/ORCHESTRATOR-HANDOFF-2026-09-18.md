@@ -23,8 +23,8 @@ before and after, docs before code, evidence before done).
   intent, answer the intent, do not quote the mess back at him.
 - He hates sycophancy more than anything. Before agreeing, state the strongest counter-case,
   then one recommendation. Judge his idea as if a stranger said it. Push on follow-through.
-- He runs one YouTube channel about AI agents and this app, Klippt, is his product. Both matter
-  this week: the Kimi swarm video must ship, and the editor must get better while editing it.
+- He runs one YouTube channel about AI agents and this app, Klippt, is his product. The editor
+  must get better while he edits real videos with it.
 - He expects the tool to be right before he is asked to look. When he catches something the tool
   should have caught (a clipped word, a leftover silence) he asks "why did the tool leave this",
   and the correct answer is a general fix, not a one-off patch. "It can't be too hard-coded."
@@ -68,22 +68,19 @@ last two days:
   screencapturekit-helper` before any restart. Kill only the dev editor, never an
   `Electron . export` process.
 - **Restart the dev editor only with** `python3 artifacts/preview-broll-2026-09-18/restart.py`
-  after `npx vite build`. It refuses while a capture helper runs and reopens the Kimi project.
-- **Never write the Kimi project file directly.** Only guarded `plan`/`apply` through the CLI.
-  Workers may only stage proposed cuts, never Accept, on the Kimi project. For live tests that
+  after `npx vite build`. It refuses while a capture helper runs and reopens the live project.
+- **Never write the live project file directly.** Only guarded `plan`/`apply` through the CLI.
+  Workers may only stage proposed cuts, never Accept, on the live project. For live tests that
   must write, `clone` the project first.
 - **Do not install over `/Applications/Klippt.app`** without the signed-build gate (Developer ID
   Application: Dyberg & Co AB) and `afterSign` guard. The installed app is an old build that
-  cannot read schema 11; if Olle opens the Kimi project in it the edit looks empty. Back up the
+  cannot read schema 11; if Olle opens the live project in it the edit looks empty. Back up the
   file, kill the old app, start the dev editor.
 - **One Codex worker at a time** on this 24 GB Mac. Two concurrent vitest/cargo runs hit 12 GB
   of swap.
 - **Builds need** `DEVELOPER_DIR=/Library/Developer/CommandLineTools`.
 - **Measure every tightened cut** with ffmpeg RMS before applying, and tell Olle which cuts were
   measured and which were not (§10 has the command).
-- **Spec rules for the Kimi video:** never caption a claim footage contradicts; nothing from
-  Yicheng's confidential answer; never write the disclosure sentence (placeholder stays until
-  approved); keep developer counts off screen; do not edit canonical vault graphics.
 - **Vault:** before writing in `/Users/olle/Documents/Notes`, read its `AGENTS.md` and
   `Agent/Vault Routing.md`; run `vault.py check` after. Eight unrelated routing errors exist.
 - **Repo rules** in `AGENTS.md` (npm only, strict TypeScript, no `any`, no TestSprite, tests in
@@ -108,7 +105,7 @@ briefs, the 7 gameplay ops and the shot-map page live in `artifacts/orchestrator
 Every brief had the same shape, and it worked: goal in Olle's words → "what exists" with
 file:line pointers → required behavior numbered → boundaries → acceptance checks that are
 runnable commands → report format (plain words, ≤ 8 bullets). Always include: load the
-development skill, restart via restart.py, never Accept on Kimi, screenshot and LOOK at it.
+development skill, restart via restart.py, never Accept on the live project, screenshot and LOOK at it.
 
 After each worker: read `.last.md`, read the evidence README, spot-check the live claim
 yourself (project hash unchanged, `staged` count, a screenshot), then tell Olle in plain words.
@@ -205,87 +202,6 @@ XL 44 %; safe margin 4 %), `text add`, `broll add`, `zoom add`, `camera set`, `f
 render time (this removed the "double tap" Olle disliked). Task B left per-clip
 `cameraLayoutPreset`/`screenFraming` failing explicitly (needs Rust).
 
-## 6. The Kimi swarm video edit (the real job)
-
-- Project `proj_77f9202f-6dfd-4bff-891a-df2177b88760`, file
-  `/Users/olle/Library/Application Support/openscreen/projects/proj_77f9202f-6dfd-4bff-891a-df2177b88760.klippt`,
-  backup `…klippt.backup-20260918-0130.bak`. Edited length 677.1 s after today's tail cuts
-  (was 690.4). 95 trims, 75 camera regions, 11 zooms, 39 overlays at the overnight count.
-- Spec: `/Users/olle/dev/kimi-swarm-arena/_staging/edit-2026-09-17/EDIT-HANDOFF-2026-09-17.md`.
-  Script note (recording card, the "PLUG: Kimi sponsored the run; K3 in both seats. One line,
-  then back to the game" card, evidence list: cmux time-lapse, kimi vis, sprite sheet, round-2
-  prompt): `/Users/olle/Documents/Notes/Agent/02 - Content/YouTube/Videos/2026-09-06 One AI vs
-  an AI Swarm Same Game/… — Script.md`.
-- Assets: `_staging/edit-2026-09-17/{broll,graphics,cards}` (all B-roll cards are 40 s loops;
-  padded stills must be 1920×1242 to match his 3420×2214 screen layer or cover-fit crops the
-  sides), gameplay `_staging/play-2026-09-11/clips/*.mp4` (7–70 s, mixed aspect).
-- Applied today for Olle (request ids in HANDOFF): tails at 2:02, 2:28–2:30, 2:53, four studio
-  loose tails, the 5.3 s scoring silence at 4:57, clip 4 and clip 5 tails; three tightened tails
-  restored after "experiment"/"yourselves"/"possible" were clipped. The 5:47.6 silence he named
-  sits in a gameplay clip and is in the staged set below.
-- **Staged, not accepted:** 6 gameplay cuts (`artifacts/orchestrator-handoff-2026-09-18/gameplay-v6-ops.json`, 7 minus
-  one Codex rejected during its test). Olle accepts them in the GUI or says "accept" and the
-  orchestrator runs `ag accept --project_id …`. Do not accept without his word.
-- Open audio work: the remaining `gap.silence` warnings all sit in the four gameplay clips.
-  Next filter layer he asked for: fillers ("um", "uh", "like" when isolated), after blips.
-- 27 `gap.silence` warnings were never acted on overnight; the skill loop should list them.
-
-### The shot map (published at https://claude.ai/artifact/9xwXraz6yB58ZAC8G7Fn5k, nothing applied)
-
-Thirty bare stretches ≥ 2 s where the narration shows his desktop with the Obsidian recording
-card: 260 s, 39 % of the edit. Seven sliver overlays (3 ms each, edge-snapping leftovers) to
-delete. Two beats need captures he does not have. Three looks: B-roll full frame for evidence;
-camera full frame (size L) for opinion and set-up; real desktop only when the screen is the
-evidence (cmux or kimi vis, never the recording card); one lower-third line when no picture
-exists for an argument.
-
-Global fixes first: delete the 7 slivers; 0:57.0 restore the Warden death clip
-(`r2swarm-03-warden-death1`, clip 25 kept only a sliver); 1:01–1:13 sponsor line gets
-`r1swarm-03-boss-ring` under it and the disclosure marker moved bottom-left at 30 % width off
-his camera; extend six late-starting overlays to the first word of their beat.
-
-| At | Len | Beat | Proposed |
-|---|---|---|---|
-| 0:04.6 | 3.9 s | solo vs swarm line | split: r1solo-01-first-30s left, r1swarm-01-first-30s right |
-| 0:08.5 | 4.0 s | round one started | extend slot-kimi-vis to the first word |
-| 0:19.7 | 9.1 s | many separate parts | r1swarm-05-dead-close-in 0–9 s |
-| 0:28.8 | 17.2 s | the two fears | camera full 0–7 s, evo-swarm2-1s-per-10min 7–17 s |
-| 0:46.1 | 5.7 s | can an agent make a fun game | camera full, size L |
-| 0:57.0 | 2.9 s | not sure I do | continue r2swarm-03-warden-death1 |
-| 1:01.3 | 12.0 s | sponsor line | r1swarm-03-boss-ring under, marker bottom-left 30 % |
-| 1:13.4 | 5.9 s | the rules | camera full 0–3 s, prompts-side-by-side extended |
-| 1:37.2 | 25.0 s | orchestrator built a skeleton | evo-swarm-1s-per-10min 0–23 s, hold 2 s |
-| 2:02.3 | 18.7 s | 54 agents own tasks | NEEDS CAPTURE kimi vis tree; fallback slot-kimi-vis |
-| 2:27.5 | 16.9 s | merged, nothing overlapped | own-swarm-arena owned-files png 0–10 s, evo-swarm last 7 s |
-| 2:44.4 | 3.1 s | something still broke | camera full, size XL |
-| 2:53.3 | 3.6 s | base agent found the issue | extend qa-six-reviewers to the first word |
-| 3:04.5 | 2.1 s | fixed, cool | camera full |
-| 3:06.6 | 5.9 s | 54 agents in total | evo-swarm 12–18 s at 2× |
-| 3:12.5 | 4.7 s | thought it would cost a fortune | camera full |
-| 3:17.2 | 11.2 s | round one cost less | stat-pair-r1 0–11 s (drop its later use at 4:03) |
-| 3:34.6 | 8.3 s | the reason is context | camera full + lower third "Solo: rereads everything, every round" |
-| 3:42.9 | 12.0 s | swarm small contexts | lower third "Swarm: 54 small contexts" |
-| 3:54.9 | 5.1 s | base agent carries less | camera full, text stays |
-| 4:00.0 | 3.0 s | a typical worker | NEEDS CAPTURE one cmux worker pane; fallback camera full |
-| 5:57.8 | 23.8 s | what I came to think | camera full 0–8 s, prompts-side-by-side 8–24 s |
-| 6:21.6 | 14.0 s | follows a list verdict | camera full + lower third "Round 1: follows a list. Round 2: what does it choose?" |
-| 6:35.6 | 4.0 s | round two set-up | extend prompts-side-by-side to "round two" |
-| 9:31.1 | 5.1 s | final scores | scoreboard 0–5 s then the four grids |
-| 9:59.3 | 4.9 s | not everything perfect | extend r1swarm-07-max-swarm to the first word |
-| 10:14.8 | 8.7 s | 2D autoshooter not impressive | camera full, size L |
-| 10:23.5 | 7.5 s | real understanding of fun | r2swarm-05-chain-lightning 0–7.5 s |
-| 10:31.0 | 12.9 s | wish I picked Megabonk | camera full 0–7 s, missing-megabonk extended |
-| 10:45.9 | 8.4 s | ask to camera | camera full (do not tease the cut Astra bonus) |
-| 11:11.8 | 2.0 s | credit where due | camera full |
-
-Rules of taste used: no B-roll shorter than 2.5 s; B-roll starts on the first word and ends on
-a cut; an asset appears full-frame at most once; opinion to camera, evidence to B-roll, desktop
-only when the screen is the proof; text on camera one line only when no picture exists.
-
-Olle's calls still open: capture kimi vis for round 1 (session 53d0ecea) and one cmux worker
-pane, or accept the fallbacks; camera full frame on eleven beats, too much face or right; keep
-or drop the three lower-third lines.
-
 ## 7. In flight and queued
 
 ### Task F2 (running when I wrote this): make the proposed-cuts lane visible
@@ -315,7 +231,7 @@ offset`; longer span → trim end (default) or hold only if the compositor holds
 (worker must find out in `crates/compositor/src/compositor_macos.rs` `frame_at` and record
 file:line); shorter → keep span, report `unusedTailSec`; `available ≤ 0.5 s` → MEDIA_TOO_SHORT.
 Reuse an existing asset by resolved path, else import via the same `prepareVideoAsset` path as
-`broll add`. Reply mirrors `broll add` plus a `swap` block. Live test on a `clone` of the Kimi
+`broll add`. Reply mirrors `broll add` plus a `swap` block. Live test on a `clone` of the live
 project, never the original; `frames --at` across the swapped span, looked at. Evidence
 `artifacts/broll-swap-2026-09-18/`. Key files: `electron/cli/agentPlacement.ts` (`brollInput`,
 `buildPlacement`), `electron/cli/editorAgentBroker.ts` ~510–570 (import and clip-replace
@@ -328,7 +244,7 @@ If the chain died with my session, launch G by hand after F2's done-file appears
 
 ### Where things stood when Olle left (13:25)
 
-Task G was running (`codex/taskG.log`, done-file `taskG.done`). It works on a clone of the Kimi
+Task G was running (`codex/taskG.log`, done-file `taskG.done`). It works on a clone of the live
 project and writes its own evidence README plus a HANDOFF bullet, so it was left to finish. When
 you start: `cat taskG.done`; if it says `exit=0`, read `taskG.last.md` and review the diff; if
 the file is missing, `pgrep -fl 'codex exec'` tells you whether it is still alive. Do not start a
@@ -344,22 +260,17 @@ second worker while it runs.
    accepting 4:19.2 would move 4:30.0 to about 4:26.3, so it is probably that one after an
    Accept), an applied trim from today, or a pill he dragged. If applied, restore it. Then check
    every remaining staged cut against the transcript before he presses Accept.
-2. Olle answers the three shot-map calls. Then stage the shot map: delete the 7 slivers,
-   restore clip 25, sponsor gameplay + marker, extend the six late overlays, then the 30 rows
-   via `broll add --words`/`--from --to`, `camera set`, `text add`. One `apply` per beat,
-   `frames` after each group, `check --all` clean before telling him.
-3. Captures: kimi vis round 1 and a cmux worker pane. See §9 for the fastest path.
-4. **Transcript-first cut planning (Olle, 13:20: "you have to look at the transcript when it
+2. **Transcript-first cut planning (Olle, 13:20: "you have to look at the transcript when it
    makes sense to cut, like the majority part").** Today audio finds the gap and the transcript
    only vetoes. Invert it: the transcript decides whether a cut is allowed at all (between a
    sentence end and the next sentence start, or a transcript gap ≥ the pause minimum), and audio
    only sets the exact edges inside that window. A proposal with no transcript on both sides
    inside the clip still needs speech-probability silence, never mic level alone. Gameplay clips
    have sparse transcript, which is exactly where the last three mid-sentence cuts came from.
-   Add a test with a real Kimi transcript slice. This ranks above the fillers layer.
-5. Fillers layer of the pause pass (his "harsher and harsher" list): transcript words
+   Add a test with a real transcript slice. This ranks above the fillers layer.
+3. Fillers layer of the pause pass (his "harsher and harsher" list): transcript words
    `um/uh/erm` and isolated `like` as `kind: "filler"` proposals, off by default, same lane.
-6. **Applied-cut seam polish (Olle, 2026-09-18 13:10: "the UI of them is hella bad").** Applied
+4. **Applied-cut seam polish (Olle, 2026-09-18 13:10: "the UI of them is hella bad").** Applied
    trims collapse to a 2 px seam with a rotated scissors button (`V4Timeline.tsx` ~1780
    `styles.tlCut` / `.tlCutRestore`, CSS ~1814). Two problems: it looks unfinished, and on
    hover/highlight he sees a raw translation key beginning `timeline.trim…` instead of a label.
@@ -369,11 +280,10 @@ second worker while it runs.
    seam as a proper token-styled mark: removed length beside the scissors, kind colour matching
    the proposal that produced it (pause, blip, agent, fix), a clear hover state, and a tooltip
    in words ("Restore 3.9 s"). Screenshot gate like F2. Run this right after F2 and G.
-7. GUI gap: there is no video-overlay lane in `V4Timeline.tsx` (zero references to
+5. GUI gap: there is no video-overlay lane in `V4Timeline.tsx` (zero references to
    `videoOverlays`), so B-roll cannot be trimmed in time with the mouse. After swap lands,
    give overlays the same lane treatment as proposed cuts.
-8. Full export of the Kimi edit, watch every changed moment, transcript diff of the export.
-9. Only then: the Windows/Linux and billing work in `PRODUCT_PLAN.md`. Not this week.
+6. Only then: the Windows/Linux and billing work in `PRODUCT_PLAN.md`. Not this week.
 
 ## 8. Lessons that each cost a loop (keep them)
 
@@ -401,7 +311,7 @@ second worker while it runs.
 
 ## 9. His B-roll question today (answer, and the decision I recommend)
 
-He asked how to get me the kimi vis B-roll fastest, whether B-roll should be recorded OBS-style
+He asked how to get B-roll in fastest, whether B-roll should be recorded OBS-style
 during the main recording, and whether he can crop B-roll in time in the editor.
 
 What exists: B-roll enters only as a file. GUI: the Import media button in the top bar or a drag
@@ -411,11 +321,10 @@ plus `--offset` (source start); after Task G the swap command fits length automa
 no overlay lane in the timeline, so mouse trimming of B-roll in time does not exist yet (queue
 item 5). The recorder captures one screen or window per recording; there is no second source.
 
-Recommendation: do not build in-recording B-roll. Record the kimi vis window as its own Klippt
+Recommendation: do not build in-recording B-roll. Record the B-roll window as its own Klippt
 recording (or any screen recording; QuickTime is fine), then `ag assets --project_id
 <that project>` prints the clip's file path and the agent places it with `broll add` or swaps it
-in with `broll swap` once G lands. The evidence he needs (kimi vis tree round 1, session
-53d0ecea; one cmux worker pane) can be recorded any time; length does not matter, the fit rules
+in with `broll swap` once G lands. The B-roll he needs can be recorded any time; length does not matter, the fit rules
 trim it. Counter-case for OBS-style capture: it would add a second encoder to the recording
 path, the part of the product with the strictest reliability gates, to save one file import.
 

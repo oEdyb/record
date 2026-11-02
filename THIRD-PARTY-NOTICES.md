@@ -197,8 +197,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
   in repository commit `272293b08db37f8d1f9868ba887dded1267e05fe`.
 - **Default cursor sprites and bundled wallpapers**: OpenScreen repository contributions
   covered by the preserved upstream MIT licence.
-- **Legacy Sweezy cursor packs**: not distributed or selectable. No
-  redistribution grant was recorded, so builds copy only the reviewed default sprites.
 
 ## OpenScreen-derived native helpers
 

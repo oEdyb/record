@@ -56,6 +56,6 @@ Later cases should cover unsaved GUI changes, stale plans, missing transcripts/m
 
 ## Verification and limits
 
-Read-only probes saved under `artifacts/cli-skill-audit-2026-09-18`: `guide.stdout`, `cutpoint-guide.stdout`, `live.stdout`, `bad-cutpoint.stdout`, and `project-hashes.json`. The documented cutpoint example failed before analysis or mutation. The live editor was available. The Kimi project SHA-256 was identical before and after these probes.
+Read-only probes saved under `artifacts/cli-skill-audit-2026-09-18`: `guide.stdout`, `cutpoint-guide.stdout`, `live.stdout`, `bad-cutpoint.stdout`, and `project-hashes.json`. The documented cutpoint example failed before analysis or mutation. The live editor was available. The test project SHA-256 was identical before and after these probes.
 
 No skill or application source was changed. No new agent evaluation, full test suite, or export was run during this audit. Prior agent behavior supplies failure cases; it does not substitute for the proposed controlled evaluation.
