@@ -184,44 +184,6 @@
 		"videoPreview": "動画プレビュー",
 		"webcamPreview": "ウェブカメラのプレビュー（ドラッグで位置変更）"
 	},
-	"entitlement": {
-		"status": {
-			"trialNotStarted": "14日間のトライアル",
-			"trialDay": "残り{{count}}日",
-			"trialDays": "残り{{count}}日",
-			"offline": "Klippt Pro、オフライン",
-			"readOnly": "読み取り専用",
-			"reactivate": "ライセンスを再入力"
-		},
-		"eyebrowReadOnly": "読み取り専用アクセス",
-		"eyebrowPro": "Klippt Pro",
-		"titleExpired": "プロジェクトは安全です。",
-		"titleTrial": "すばやく録画。ファイルはすべて保存。",
-		"titleReactivate": "ライセンスキーをもう一度入力してください。",
-		"descriptionExpired": "Klippt は現在、読み取り専用です。{{capability}}には Pro をご利用ください。",
-		"descriptionTrial": "トライアルでは、録画、確認、2通りの保存方法まで、Klippt のすべてをお使いいただけます。",
-		"descriptionReactivate": "このMacに保存されたライセンスを読み取れませんでした。プロジェクトと試用開始日は保持されています。Proを続けるにはキーを一度入力してください。",
-		"capability": {
-			"record": "新しいクリップを録画する",
-			"edit": "このプロジェクトを編集する",
-			"import": "新しいメディアを読み込む",
-			"export": "完成した動画を書き出す",
-			"automatic-editing": "自動編集を実行する",
-			"default": "録画、編集、書き出しを行う"
-		},
-		"benefitClips": "録画中に一時停止、再開、直前のクリップの削除ができます",
-		"benefitExport": "録画と同じ画質の動画を1本",
-		"getPro": "Klippt Pro を入手",
-		"licenseKey": "ライセンスキー",
-		"activate": "有効化",
-		"filesSafe": "アクセス終了時もプロジェクトやソースファイルは削除されません。",
-		"manage": "管理",
-		"activated": "Klippt Pro は有効です。",
-		"benefitSources": "画面、カメラ、音声の元ファイルをそのまま編集ソフトへ",
-		"descriptionTrialNotStarted": "14日間のトライアルは最初の録画後に始まります。カードは不要です。",
-		"price": "月額 {{monthly}}、または年額 {{yearly}}",
-		"trialStarted": "14日間のトライアルが始まりました。録画したものはすべてMacに残ります。"
-	},
 	"cpuCompositor": {
 		"notice": "対応 GPU がないため CPU で描画しています。再生が遅くなります。",
 		"exportWarning": "対応 GPU がありません。この書き出しは CPU で実行されるため、通常よりはるかに時間がかかります。"

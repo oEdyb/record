@@ -52,14 +52,12 @@ export function parseArguments(args) {
 	const options = {
 		skipNative: false,
 		allowDirty: false,
-		allowUnconfiguredCommerce: false,
 		rehearsal: false,
 	};
 	for (const arg of args) {
 		if (arg === "--skip-native") options.skipNative = true;
 		else if (arg === "--rehearsal") options.rehearsal = true;
 		else if (arg === "--allow-dirty") options.allowDirty = true;
-		else if (arg === "--allow-unconfigured-commerce") options.allowUnconfiguredCommerce = true;
 		else throw new Error(`Unknown option: ${arg}`);
 	}
 	return options;
@@ -134,14 +132,6 @@ async function preflight(options, notaryProfile) {
 	const gateProblem = await releaseGateProblem();
 	if (gateProblem && !options.rehearsal) throw new Error(gateProblem);
 	if (gateProblem) console.warn(`REHEARSAL: ${gateProblem}`);
-	const { commercialReleaseProblem } = await import(
-		pathToFileURL(path.join(ROOT, "scripts", "commercial-config.mjs")).href
-	);
-	const problem = commercialReleaseProblem();
-	if (problem && !options.allowUnconfiguredCommerce) {
-		throw new Error(`${problem}\nPass --allow-unconfigured-commerce for a free private build.`);
-	}
-	if (problem) console.warn(`WARNING: ${problem}`);
 	return identity;
 }
 

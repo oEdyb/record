@@ -2,15 +2,13 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { toast } from "sonner";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { requireEntitlement } from "@/lib/entitlements/store";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CustomFont, getCustomFonts, loadAllCustomFonts, loadFont } from "./customFonts";
 import type { LocalFontFace } from "./localFont";
 
 vi.mock("sonner", () => ({
 	toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
-vi.mock("@/lib/entitlements/store", () => ({ requireEntitlement: vi.fn() }));
 
 const LOCAL_TTF_DATA_URL = `data:font/ttf;base64,${Buffer.from([0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).toString("base64")}`;
 
@@ -125,10 +123,6 @@ function expectNoStylesheet(font: CustomFont) {
 	expect(document.getElementById(`custom-font-${font.id}`)).toBeNull();
 	expect(document.head.querySelector("style")).toBeNull();
 }
-
-beforeEach(() => {
-	vi.mocked(requireEntitlement).mockReturnValue(true);
-});
 
 afterEach(() => {
 	cleanup();
@@ -290,7 +284,6 @@ describe("local legacy font migration", () => {
 		expect(chooseLocalFont).not.toHaveBeenCalled();
 		await clickRecoveryAction();
 
-		expect(requireEntitlement).toHaveBeenCalledWith("import");
 		expect(chooseLocalFont.mock.calls.map(([request]) => request)).toEqual([
 			{ family: "Roboto", style: "normal", weight: 400, styleLabel: "Normal" },
 			{ family: "Roboto", style: "normal", weight: 700, styleLabel: "Normal" },
@@ -369,7 +362,6 @@ describe("local legacy font migration", () => {
 		await loadAllCustomFonts();
 
 		expect(chooseLocalFont).not.toHaveBeenCalled();
-		expect(requireEntitlement).not.toHaveBeenCalled();
 		expect(save).not.toHaveBeenCalled();
 		expect(toast.warning).not.toHaveBeenCalled();
 		expect(toast.error).toHaveBeenCalledWith(
@@ -382,7 +374,7 @@ describe("local legacy font migration", () => {
 		expectNoRemoteStylesheet();
 	});
 
-	it("reloads saved local faces in read-only mode without import or writes", async () => {
+	it("reloads saved local faces without import or writes", async () => {
 		const font = {
 			...customFont(
 				"Roboto",
@@ -394,39 +386,15 @@ describe("local legacy font migration", () => {
 		const fonts = installLocalDocumentFonts();
 		const chooseLocalFont = installLocalFontPicker();
 		const save = vi.spyOn(Storage.prototype, "setItem");
-		vi.mocked(requireEntitlement).mockReturnValue(false);
 
 		await expect(loadAllCustomFonts()).resolves.toEqual([undefined]);
 
-		expect(requireEntitlement).not.toHaveBeenCalled();
 		expect(chooseLocalFont).not.toHaveBeenCalled();
 		expect(save).not.toHaveBeenCalled();
 		expect(fonts.load).toHaveBeenCalledTimes(2);
 		expect(toast.warning).not.toHaveBeenCalled();
 		expect(getCustomFonts()).toEqual([font]);
 		expectNoRemoteStylesheet();
-	});
-
-	it("uses the normal read-only explanation without a picker, save, or font error", async () => {
-		const font = customFont(
-			"Roboto",
-			"https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap",
-		);
-		localStorage.setItem("openscreen_custom_fonts", JSON.stringify([font]));
-		installLocalDocumentFonts();
-		const chooseLocalFont = installLocalFontPicker();
-		const save = vi.spyOn(Storage.prototype, "setItem");
-		vi.mocked(requireEntitlement).mockReturnValue(false);
-
-		await loadAllCustomFonts();
-		await clickRecoveryAction();
-
-		expect(requireEntitlement).toHaveBeenCalledWith("import");
-		expect(chooseLocalFont).not.toHaveBeenCalled();
-		expect(save).not.toHaveBeenCalled();
-		expect(getCustomFonts()).toEqual([font]);
-		expect(document.head.querySelector("style")).toBeNull();
-		expect(toast.error).not.toHaveBeenCalled();
 	});
 
 	it("rejects a partial local record instead of using an already loaded nearby face", async () => {

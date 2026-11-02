@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { requireEntitlement } from "@/lib/entitlements/store";
 import { nativeBridgeClient } from "@/native/client";
 import type {
 	AiEditionProjectVersion,
@@ -236,8 +235,6 @@ export async function resolveLocalTransactionConflict(
 			"NO_CONFLICT",
 			"The project has no conflict to recover",
 		);
-	if (strategy === "save-copy" && !requireEntitlement("edit"))
-		throw new Error("Editing access is required to save a recovery copy");
 	const assertCurrent = () => {
 		const current = useProjectStore.getState();
 		if (current.projectId !== projectId || current.revision !== before.revision)
@@ -889,7 +886,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 				"EDITOR_BUSY",
 				"Transaction reconciliation is pending",
 			);
-		if (!requireEntitlement("edit")) throw new Error("Klippt Pro is required to create a project.");
 		projectLoadGeneration += 1;
 		const currentProjectId = get().projectId;
 		const currentMutation = currentProjectId
@@ -953,7 +949,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			throw new ProjectTransactionSessionError("BUSY", "The project is synchronizing");
 		if (get().transactionVersion) return addGuardedAsset(path, label, options);
 
-		if (!requireEntitlement("import")) return null;
 		const { projectId } = get();
 		if (!projectId) throw new Error("No project loaded");
 		const mutation = beginTrackedProjectMutation(projectId);
@@ -1063,7 +1058,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			return;
 		}
 
-		if (!requireEntitlement("edit")) return;
 		const { projectId } = get();
 		if (!projectId) throw new Error("No project loaded");
 		const mutation = beginTrackedProjectMutation(projectId);
@@ -1083,7 +1077,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
 	async saveDocument(document) {
 		if (isProjectTransactionBlocked()) return false;
-		if (!requireEntitlement("edit")) return false;
 		const startingRevision = get().revision;
 		const base = get().document;
 		const mutation = beginSave(document);
@@ -1111,7 +1104,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async saveDocumentIfCurrent(document, guard) {
-		if (!requireEntitlement("edit")) return false;
 		const state = get();
 		if (
 			state.projectId !== document.project.id ||
@@ -1127,7 +1119,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
 	async saveDocumentAsEdit(document, historySnapshot, agentHistory, requestId) {
 		if (isProjectTransactionBlocked() && !externalSaveGuard) return false;
-		if (!requireEntitlement("edit")) return false;
 		const startingRevision = get().revision;
 		const base = get().document;
 		const mutation = beginSave(document);
@@ -1162,7 +1153,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
 	async applyDocumentPatch(projectId, patch, options) {
 		if (isProjectTransactionBlocked()) return "conflict";
-		if (!requireEntitlement("edit")) return "conflict";
 		if (options?.agentHistory && !get().transactionVersion)
 			await activateProjectTransactions(projectId);
 		const maximumAttempts = Math.max(1, Math.floor(options?.maximumAttempts ?? 5));
@@ -1203,7 +1193,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
 	setDocument(document) {
 		if (isProjectTransactionBlocked()) return;
-		if (!requireEntitlement("edit")) return;
 		const prev = get().document;
 		trackPublishedDraft(document, prev);
 		if (prev && prev !== document) {
@@ -1218,7 +1207,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
 	setDocumentLive(document) {
 		if (isProjectTransactionBlocked()) return;
-		if (!requireEntitlement("edit")) return;
 		trackPublishedDraft(document, get().document);
 		set({
 			document,
@@ -1229,7 +1217,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
 	restoreDocumentFromHistory(document) {
 		if (isProjectTransactionBlocked()) return;
-		if (!requireEntitlement("edit")) return;
 		trackPublishedDraft(document, get().document);
 		set({
 			document,
@@ -1239,7 +1226,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async replaceTimeline(intervals, reason) {
-		if (!requireEntitlement("edit")) return;
 		const doc = get().document;
 		if (!doc) throw new Error("No project loaded");
 		const next = replaceTimelineOp(doc, intervals, reason);
@@ -1247,7 +1233,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	},
 
 	async restoreFullTimeline() {
-		if (!requireEntitlement("edit")) return;
 		const doc = get().document;
 		if (!doc) throw new Error("No project loaded");
 		const next = restoreFullTimelineOp(doc);
@@ -1306,7 +1291,6 @@ async function addGuardedAsset(
 	label?: string,
 	options?: { recordingImportId?: string },
 ): Promise<AxcutAsset | null> {
-	if (!requireEntitlement("import")) return null;
 	const base = useProjectStore.getState();
 	if (!base.document || !base.projectId) throw new Error("No project loaded");
 	const mutation = beginTrackedProjectMutation(base.projectId);

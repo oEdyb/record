@@ -184,44 +184,6 @@
 		"videoPreview": "Xem trước video",
 		"webcamPreview": "Xem trước webcam (kéo để đổi vị trí)"
 	},
-	"entitlement": {
-		"status": {
-			"trialNotStarted": "Dùng thử 14 ngày",
-			"trialDay": "Còn {{count}} ngày",
-			"trialDays": "Còn {{count}} ngày",
-			"offline": "Klippt Pro, ngoại tuyến",
-			"readOnly": "Chỉ đọc",
-			"reactivate": "Nhập lại giấy phép"
-		},
-		"eyebrowReadOnly": "Quyền truy cập chỉ đọc",
-		"eyebrowPro": "Klippt Pro",
-		"titleExpired": "Các dự án của bạn vẫn an toàn.",
-		"titleTrial": "Ghi nhanh. Giữ lại mọi tệp.",
-		"titleReactivate": "Nhập lại khóa giấy phép của bạn.",
-		"descriptionExpired": "Klippt hiện ở chế độ chỉ đọc. Tiếp tục với Pro để {{capability}}.",
-		"descriptionTrial": "Bản dùng thử bao gồm toàn bộ Klippt: ghi hình, xem lại và cả hai cách lưu.",
-		"descriptionReactivate": "Klippt không đọc được giấy phép đã lưu trên máy Mac này. Dự án và ngày dùng thử của bạn vẫn được giữ. Nhập khóa một lần để tiếp tục dùng Pro.",
-		"capability": {
-			"record": "ghi các clip mới",
-			"edit": "chỉnh sửa dự án này",
-			"import": "nhập nội dung mới",
-			"export": "xuất video hoàn chỉnh",
-			"automatic-editing": "chạy chỉnh sửa tự động",
-			"default": "ghi, chỉnh sửa và xuất"
-		},
-		"benefitClips": "Tạm dừng, tiếp tục và xóa clip cuối cùng trong khi ghi",
-		"benefitExport": "Một video có cùng chất lượng với bản ghi",
-		"getPro": "Nhận Klippt Pro",
-		"licenseKey": "Mã giấy phép",
-		"activate": "Kích hoạt",
-		"filesSafe": "Không dự án hay tệp nguồn nào bị xóa khi quyền truy cập kết thúc.",
-		"manage": "Quản lý",
-		"activated": "Klippt Pro đã được kích hoạt.",
-		"benefitSources": "Tệp màn hình, camera và âm thanh nguyên bản cho trình chỉnh sửa của bạn",
-		"descriptionTrialNotStarted": "14 ngày dùng thử bắt đầu sau bản ghi đầu tiên của bạn. Không cần thẻ.",
-		"price": "{{monthly}} mỗi tháng hoặc {{yearly}} mỗi năm",
-		"trialStarted": "14 ngày dùng thử đã bắt đầu. Mọi thứ bạn ghi đều ở lại trên máy Mac của bạn."
-	},
 	"cpuCompositor": {
 		"notice": "Không có GPU tương thích — kết xuất trên CPU nên phát lại chậm hơn.",
 		"exportWarning": "Không có GPU tương thích: lần xuất này chạy trên CPU và sẽ lâu hơn bình thường rất nhiều."

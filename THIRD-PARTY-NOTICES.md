@@ -1,8 +1,10 @@
 # Third-party notices
 
-Klippt contains code derived from OpenScreen. OpenScreen is MIT licensed. The
-upstream copyright and permission notice are preserved in [LICENSE](LICENSE),
-which ships inside the application resources.
+Klippt is licensed under the GNU Affero General Public License v3.0 only
+([LICENSE](LICENSE)). It contains code derived from OpenScreen, which is MIT licensed. The
+upstream copyright and permission notice are preserved in
+[third-party-licenses/OpenScreen-MIT.txt](third-party-licenses/OpenScreen-MIT.txt). Both files
+ship inside the application resources.
 
 Each package also ships `THIRD-PARTY-INVENTORY.json`. The release gate regenerates
 that file from the locked npm, Cargo, Swift, model, FFmpeg, WebAssembly, and bundled
@@ -88,9 +90,9 @@ distributed components that need extra release attention.
   standard model delay without an audible state clock. The embedded model SHA-256 is
   `c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616`.
 - **Engine source licence selected for evaluation**: MIT. Copyright (c) 2021 Hendrik Schröter.
-- **Distribution status**: excluded. The exact embedded model artifact does not enter a paid
-  package until its commercial redistribution right is confirmed in writing. Klippt's helper
-  glue code remains proprietary; the engine's MIT option does not relicense that code.
+- **Distribution status**: excluded. The exact embedded model artifact does not enter a
+  package until its redistribution right is confirmed in writing. Klippt's helper glue code is
+  AGPL-3.0-only like the rest of Klippt.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -191,18 +193,19 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
   hash-checked after packaging.
 - **Geist and Geist Mono**: SIL Open Font License 1.1. The complete `OFL.txt` is
   preserved beside the source font files and the asset group is recorded in the inventory.
-- **Klippt icon and product mark**: original proprietary Klippt artwork, introduced
+- **Klippt icon and product mark**: original Klippt artwork, introduced
   in repository commit `272293b08db37f8d1f9868ba887dded1267e05fe`.
 - **Default cursor sprites and bundled wallpapers**: OpenScreen repository contributions
   covered by the preserved upstream MIT licence.
-- **Legacy Sweezy cursor packs**: not distributed or selectable. No commercial
-  redistribution grant was recorded, so paid builds copy only the reviewed default sprites.
+- **Legacy Sweezy cursor packs**: not distributed or selectable. No
+  redistribution grant was recorded, so builds copy only the reviewed default sprites.
 
 ## OpenScreen-derived native helpers
 
 `wgc-capture` (Windows Graphics Capture), the ScreenCaptureKit helper (macOS),
 the PipeWire helper (Linux) and the compositor addon are part of this repository
-and are covered by [LICENSE](LICENSE).
+and are covered by [LICENSE](LICENSE) (AGPL-3.0-only), with the OpenScreen-derived parts also
+under the preserved OpenScreen MIT notice.
 
 ---
 

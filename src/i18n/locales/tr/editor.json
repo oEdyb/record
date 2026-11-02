@@ -184,44 +184,6 @@
 		"videoPreview": "Video önizlemesi",
 		"webcamPreview": "Web kamerası önizlemesi (taşımak için sürükleyin)"
 	},
-	"entitlement": {
-		"status": {
-			"trialNotStarted": "14 günlük deneme",
-			"trialDay": "{{count}} gün kaldı",
-			"trialDays": "{{count}} gün kaldı",
-			"offline": "Klippt Pro, çevrimdışı",
-			"readOnly": "Salt okunur",
-			"reactivate": "Lisansı yeniden girin"
-		},
-		"eyebrowReadOnly": "Salt okunur erişim",
-		"eyebrowPro": "Klippt Pro",
-		"titleExpired": "Projelerin güvende.",
-		"titleTrial": "Hızlı kaydedin. Her dosyayı saklayın.",
-		"titleReactivate": "Lisans anahtarınızı yeniden girin.",
-		"descriptionExpired": "Klippt artık salt okunur. {{capability}} için Pro ile devam et.",
-		"descriptionTrial": "Deneme sürümünüz Klippt'in tamamını içerir: kayıt, gözden geçirme ve her iki kaydetme yöntemi.",
-		"descriptionReactivate": "Klippt bu Mac'te kayıtlı lisansı okuyamadı. Projeleriniz ve deneme tarihiniz korunuyor. Pro ile devam etmek için anahtarınızı bir kez girin.",
-		"capability": {
-			"record": "yeni klipler kaydetmek",
-			"edit": "bu projeyi düzenlemek",
-			"import": "yeni medya içe aktarmak",
-			"export": "bitmiş bir videoyu dışa aktarmak",
-			"automatic-editing": "otomatik düzenlemeyi çalıştırmak",
-			"default": "kaydetmek, düzenlemek ve dışa aktarmak"
-		},
-		"benefitClips": "Kayıt sırasında duraklatın, devam edin ve son klibi kaldırın",
-		"benefitExport": "Kaydınızla aynı kalitede tek bir video",
-		"getPro": "Klippt Pro'yu al",
-		"licenseKey": "Lisans anahtarı",
-		"activate": "Etkinleştir",
-		"filesSafe": "Erişim sona erdiğinde hiçbir proje veya kaynak dosya silinmez.",
-		"manage": "Yönet",
-		"activated": "Klippt Pro etkin.",
-		"benefitSources": "Editörünüz için dokunulmamış ekran, kamera ve ses dosyaları",
-		"descriptionTrialNotStarted": "14 günlük deneme süreniz ilk kaydınızdan sonra başlar. Kart gerekmez.",
-		"price": "Aylık {{monthly}} veya yıllık {{yearly}}",
-		"trialStarted": "14 günlük deneme süreniz başladı. Kaydettiğiniz her şey Mac'inizde kalır."
-	},
 	"cpuCompositor": {
 		"notice": "Uyumlu GPU yok — işleme CPU üzerinde yapılıyor, bu yüzden oynatma daha yavaş.",
 		"exportWarning": "Uyumlu GPU yok: bu dışa aktarma CPU üzerinde çalışır ve normalden çok daha uzun sürer."

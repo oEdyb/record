@@ -17,7 +17,6 @@ import {
 	Sparkles,
 } from "lucide-react";
 
-import { CHECKOUT_URL } from "../lib/commerce";
 import { jsonLd, SOFTWARE_APPLICATION_LD } from "../lib/structured-data";
 import styles from "./index.module.css";
 
@@ -248,49 +247,13 @@ export default function Home() {
 
 				<section className={styles.pricing}>
 					<div className={styles.pricingCopy}>
-						<span className={styles.pricingLabel}>Founding alpha</span>
-						<Heading as="h2" id="pricing">
-							One product. No feature maze.
+						<span className={styles.pricingLabel}>Open source</span>
+						<Heading as="h2" id="open-source">
+							Free, local, and open.
 						</Heading>
 						<p>
-							The private alpha will use one Klippt Pro subscription. Monthly and yearly plans
-							unlock the same recorder, editor, automatic direction, and export controls.
-						</p>
-					</div>
-					<div className={styles.priceCard}>
-						<div className={styles.priceRow}>
-							<div>
-								<strong>$19</strong>
-								<span>/ month</span>
-							</div>
-							<span className={styles.or}>or</span>
-							<div>
-								<strong>$99</strong>
-								<span>/ year</span>
-							</div>
-						</div>
-						<ul>
-							<li>
-								<Check size={14} /> 14-day trial after your first recording
-							</li>
-							<li>
-								<Check size={14} /> Existing projects stay viewable if access ends
-							</li>
-							<li>
-								<Check size={14} /> Cancel before the next billing period
-							</li>
-						</ul>
-						{CHECKOUT_URL ? (
-							<a className={styles.primaryAction} href={CHECKOUT_URL}>
-								Buy Klippt Pro <ArrowRight size={15} />
-							</a>
-						) : (
-							<Link className={styles.primaryAction} to="/download/">
-								Start with the free trial <ArrowRight size={15} />
-							</Link>
-						)}
-						<p className={styles.priceFoot}>
-							14-day money-back guarantee · <Link to="/refund/">Refund policy</Link>
+							Klippt is free and open source. Recording, editing, transcription, and export run on
+							your machine. <a href="https://github.com/oEdyb/record">Read the source on GitHub</a>.
 						</p>
 					</div>
 				</section>

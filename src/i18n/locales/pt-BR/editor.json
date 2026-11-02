@@ -184,44 +184,6 @@
 		"videoPreview": "Pré-visualização do vídeo",
 		"webcamPreview": "Pré-visualização da webcam (arraste para reposicionar)"
 	},
-	"entitlement": {
-		"status": {
-			"trialNotStarted": "Teste de 14 dias",
-			"trialDay": "{{count}} dia restante",
-			"trialDays": "{{count}} dias restantes",
-			"offline": "Klippt Pro (offline)",
-			"readOnly": "Somente leitura",
-			"reactivate": "Insira a licença novamente"
-		},
-		"eyebrowReadOnly": "Acesso somente leitura",
-		"eyebrowPro": "Klippt Pro",
-		"titleExpired": "Seus projetos estão seguros.",
-		"titleTrial": "Grave rápido. Guarde todos os arquivos.",
-		"titleReactivate": "Insira sua chave de licença novamente.",
-		"descriptionExpired": "O Klippt agora está em modo somente leitura. Continue com o Pro para {{capability}}.",
-		"descriptionTrial": "Seu teste inclui todo o Klippt: gravação, revisão e as duas formas de salvar.",
-		"descriptionReactivate": "O Klippt não conseguiu ler a licença salva neste Mac. Seus projetos e a data do teste foram mantidos. Insira sua chave uma vez para continuar com o Pro.",
-		"capability": {
-			"record": "gravar novos clipes",
-			"edit": "editar este projeto",
-			"import": "importar novas mídias",
-			"export": "exportar um vídeo finalizado",
-			"automatic-editing": "usar a edição automática",
-			"default": "gravar, editar e exportar"
-		},
-		"benefitClips": "Pause, continue e remova o último clipe enquanto grava",
-		"benefitExport": "Um vídeo com a mesma qualidade da gravação",
-		"getPro": "Obter Klippt Pro",
-		"licenseKey": "Chave de licença",
-		"activate": "Ativar",
-		"filesSafe": "Nenhum projeto ou arquivo de origem é removido quando o acesso termina.",
-		"manage": "Gerenciar",
-		"activated": "O Klippt Pro está ativo.",
-		"benefitSources": "Arquivos de tela, câmera e áudio intactos para o seu editor",
-		"descriptionTrialNotStarted": "Seu teste de 14 dias começa após a primeira gravação. Sem cartão.",
-		"price": "{{monthly}} por mês ou {{yearly}} por ano",
-		"trialStarted": "Seu teste de 14 dias começou. Tudo o que você gravar fica no seu Mac."
-	},
 	"cpuCompositor": {
 		"notice": "Sem GPU compatível — a renderização ocorre na CPU, então a reprodução fica mais lenta.",
 		"exportWarning": "Sem GPU compatível: esta exportação roda na CPU e vai demorar muito mais que o normal."

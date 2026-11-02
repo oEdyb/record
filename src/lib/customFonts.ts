@@ -1,7 +1,6 @@
 // Offline loading and migration helpers for legacy stored Google Fonts
 
 import { toast } from "sonner";
-import { requireEntitlement } from "@/lib/entitlements/store";
 import { getInitialLocale, translate } from "../i18n/loader";
 import { type LocalFontFace, type LocalFontVariation, validateLocalFontDataUrl } from "./localFont";
 
@@ -371,7 +370,6 @@ function showUnsupportedFontToast(font: CustomFont): void {
 type RecoveryResult =
 	| { status: "recovered" }
 	| { status: "cancelled" }
-	| { status: "entitlement-required" }
 	| { status: "unsupported-format" }
 	| { status: "import-failed"; variation: FontVariation }
 	| { status: "load-failed" }
@@ -380,7 +378,6 @@ type RecoveryResult =
 async function recoverCustomFontLocally(font: CustomFont): Promise<RecoveryResult> {
 	const variations = exactFontVariations(font);
 	if (!variations) return { status: "unsupported-format" };
-	if (!requireEntitlement("import")) return { status: "entitlement-required" };
 	const localFaces: LocalFontFace[] = [];
 	for (const variation of variations) {
 		try {
@@ -456,7 +453,6 @@ async function recoverAndReport(font: CustomFont): Promise<void> {
 			showUnsupportedFontToast(font);
 			return;
 		}
-		if (result.status === "entitlement-required") return;
 		if (result.status === "cancelled") {
 			showRecoveryToast(font);
 			return;

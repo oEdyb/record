@@ -28,9 +28,7 @@ function isValidRequest(value: unknown): value is ChooseLocalFontRequest {
 export async function chooseLocalFont(
 	value: unknown,
 	sender: WebContents,
-	assertImportEntitlement: () => Promise<void>,
 ): Promise<ChooseLocalFontResult> {
-	await assertImportEntitlement();
 	if (!isValidRequest(value)) {
 		return { success: false, canceled: false, error: "invalid-request" };
 	}
@@ -69,11 +67,8 @@ export async function chooseLocalFont(
 	}
 }
 
-export function registerLocalFontIpc(
-	ipcMain: Pick<RendererIpcMain, "handle">,
-	assertImportEntitlement: () => Promise<void>,
-): void {
+export function registerLocalFontIpc(ipcMain: Pick<RendererIpcMain, "handle">): void {
 	ipcMain.handle("choose-local-font", (event, request: unknown) =>
-		chooseLocalFont(request, event.sender, assertImportEntitlement),
+		chooseLocalFont(request, event.sender),
 	);
 }

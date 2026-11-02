@@ -1,6 +1,6 @@
 ---
 title: Terms of use
-description: The terms for using Klippt and the Klippt Pro subscription.
+description: The terms for using Klippt.
 ---
 
 {/* KLIPPT-DRAFT: needs owner approval before deploy. Remove this line and the caution box when approved. */}
@@ -18,30 +18,9 @@ installing or using Klippt you accept them.
 
 ## The software
 
-We grant you a personal, non-transferable license to use Klippt on Macs you own or control. The
-app stays our property. You may not resell it, or remove or work around its license checks.
-
-## Trial and subscription
-
-- Klippt is fully usable until your first recording finishes. Then a 14-day trial starts. No card
-  is needed.
-- After the trial, recording, importing, editing and exporting need an active Klippt Pro
-  subscription: $19 per month or $99 per year, plus any tax shown at checkout.
-- Lemon Squeezy sells the subscription as merchant of record. Its
-  [terms](https://www.lemonsqueezy.com/buyer-terms) cover payment, billing and tax.
-- A subscription renews until you cancel. If you cancel, it stays active until the end of the
-  paid period.
-- One subscription covers one person on up to [ACTIVATION_LIMIT] Macs.
-
-## When access ends
-
-Your recordings and projects stay on your Mac. Klippt keeps them viewable, and you can still
-recover the untouched source files. Recording, importing, editing and exporting stop until you
-subscribe again.
-
-## Refunds
-
-See the [refund policy](/refund/). Your statutory consumer rights are not affected.
+Klippt is open-source software. The licence in the [source repository](https://github.com/oEdyb/record)
+governs how you may use, copy, modify, and share it. Klippt is free; there is no trial,
+subscription, or licence key.
 
 ## Open-source components
 

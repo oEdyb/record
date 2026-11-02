@@ -184,44 +184,6 @@
 		"videoPreview": "معاينة الفيديو",
 		"webcamPreview": "معاينة كاميرا الويب (اسحب لتغيير الموضع)"
 	},
-	"entitlement": {
-		"status": {
-			"trialNotStarted": "تجربة لمدة 14 يومًا",
-			"trialDay": "متبقٍ {{count}} يوم",
-			"trialDays": "متبقٍ {{count}} أيام",
-			"offline": "Klippt Pro، دون اتصال",
-			"readOnly": "للقراءة فقط",
-			"reactivate": "أعد إدخال الترخيص"
-		},
-		"eyebrowReadOnly": "وصول للقراءة فقط",
-		"eyebrowPro": "Klippt Pro",
-		"titleExpired": "مشاريعك آمنة.",
-		"titleTrial": "سجّل بسرعة. احتفظ بكل ملف.",
-		"titleReactivate": "أدخل مفتاح الترخيص مرة أخرى.",
-		"descriptionExpired": "أصبح Klippt الآن للقراءة فقط. تابع مع Pro من أجل {{capability}}.",
-		"descriptionTrial": "تشمل تجربتك كل ما في Klippt: التسجيل والمراجعة وطريقتَي الحفظ.",
-		"descriptionReactivate": "تعذّر على Klippt قراءة الترخيص المحفوظ على هذا الجهاز. مشاريعك وتاريخ التجربة محفوظة. أدخل المفتاح مرة واحدة للمتابعة مع Pro.",
-		"capability": {
-			"record": "تسجيل مقاطع جديدة",
-			"edit": "تحرير هذا المشروع",
-			"import": "استيراد وسائط جديدة",
-			"export": "تصدير فيديو نهائي",
-			"automatic-editing": "تشغيل التحرير التلقائي",
-			"default": "التسجيل والتحرير والتصدير"
-		},
-		"benefitClips": "أوقف مؤقتًا وتابع واحذف آخر مقطع أثناء التسجيل",
-		"benefitExport": "فيديو واحد بنفس جودة تسجيلك",
-		"getPro": "احصل على Klippt Pro",
-		"licenseKey": "مفتاح الترخيص",
-		"activate": "تفعيل",
-		"filesSafe": "لا يُحذف أي مشروع أو ملف مصدر عند انتهاء الوصول.",
-		"manage": "إدارة",
-		"activated": "Klippt Pro مفعّل.",
-		"benefitSources": "ملفات الشاشة والكاميرا والصوت دون أي تعديل لمحرر الفيديو لديك",
-		"descriptionTrialNotStarted": "تبدأ تجربتك لمدة 14 يومًا بعد أول تسجيل. لا حاجة إلى بطاقة.",
-		"price": "{{monthly}} شهريًا أو {{yearly}} سنويًا",
-		"trialStarted": "بدأت تجربتك لمدة 14 يومًا. كل ما تسجّله يبقى على جهاز Mac الخاص بك."
-	},
 	"cpuCompositor": {
 		"notice": "لا توجد بطاقة رسومات متوافقة — تتم المعالجة على المعالج، لذا يكون التشغيل أبطأ.",
 		"exportWarning": "لا توجد بطاقة رسومات متوافقة: يتم هذا التصدير على المعالج وسيستغرق وقتًا أطول بكثير من المعتاد."

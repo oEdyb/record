@@ -21,10 +21,6 @@ const mocks = vi.hoisted(() => ({
 	listProjects: vi.fn(),
 	get: vi.fn(),
 	getLatest: vi.fn(),
-	entitlement: {
-		snapshot: { status: "active", access: "full", trialDaysRemaining: null },
-		openDialog: vi.fn(),
-	},
 }));
 
 vi.mock("@/contexts/I18nContext", () => ({ useScopedT: () => (key: string) => key }));
@@ -39,13 +35,6 @@ vi.mock("@/hooks/useCleanVoiceRuntime", () => ({
 	useCleanVoiceRuntime: () => ({ routes: new Map() }),
 }));
 vi.mock("@/hooks/useTheme", () => ({ applyTheme: mocks.applyTheme }));
-vi.mock("@/lib/entitlements/store", () => {
-	return {
-		requireEntitlement: () => mocks.entitlement.snapshot.access === "full",
-		useEntitlementStore: (select: (s: typeof mocks.entitlement) => unknown) =>
-			select(mocks.entitlement),
-	};
-});
 vi.mock("@/native", () => ({
 	nativeBridgeClient: {
 		aiEdition: { listProjects: mocks.listProjects, delete: vi.fn(), importProject: vi.fn() },
@@ -165,7 +154,6 @@ beforeEach(() => {
 	installElectronApi();
 	mocks.video = null;
 	resetPreviewSettledFrames();
-	mocks.entitlement.snapshot.access = "full";
 	mocks.importPendingRecording.mockResolvedValue(false);
 	mocks.listProjects.mockResolvedValue([]);
 	mocks.get.mockReset();
@@ -400,37 +388,6 @@ describe("recording review shell", () => {
 			expect(screen.getByTestId("export")).toHaveAttribute("data-quick", "false"),
 		);
 		expect(screen.getByTestId("export")).toHaveAttribute("data-source-only", "true");
-	});
-
-	it("keeps finished export, import, and deletion out of read-only mode but allows source recovery", async () => {
-		mocks.entitlement.snapshot.access = "read-only";
-		const loadProjectFile = vi.fn();
-		window.electronAPI!.loadProjectFile = loadProjectFile;
-		loadDocument(recordingDocument());
-		render(<RecordingReviewShell />);
-		await waitFor(() =>
-			expect(screen.getByRole("button", { name: "recordingReview.save" })).toBeDisabled(),
-		);
-		await act(async () => menuListeners.save?.());
-		expect(screen.queryByTestId("export")).not.toBeInTheDocument();
-		fireEvent.keyDown(screen.getByRole("button", { name: "recordingReview.more" }), {
-			key: "Enter",
-		});
-		fireEvent.click(screen.getByRole("menuitem", { name: "recordingReview.originals" }));
-		await waitFor(() =>
-			expect(screen.getByTestId("export")).toHaveAttribute("data-source-only", "true"),
-		);
-		const close = mocks.exportDialog.mock.lastCall?.[0] as { onClose: () => void };
-		act(() => close.onClose());
-		await act(async () => menuListeners.load?.());
-		const browse = mocks.openProject.mock.lastCall?.[0] as {
-			allowDelete: boolean;
-			allowImport: boolean;
-			onBrowse: () => void;
-		};
-		expect(browse).toMatchObject({ allowDelete: false, allowImport: false });
-		await act(async () => browse.onBrowse());
-		expect(loadProjectFile).not.toHaveBeenCalled();
 	});
 
 	it("opens Recordings from the File menu", async () => {

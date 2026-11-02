@@ -4,7 +4,7 @@
 	"private": true,
 	"version": "1.9.5",
 	"description": "A clip-native screen recorder and editor for creators.",
-	"license": "UNLICENSED",
+	"license": "AGPL-3.0-only",
 	"type": "module",
 	"packageManager": "npm@10.9.4",
 	"engines": {
@@ -12,7 +12,7 @@
 		"npm": "10.9.4"
 	},
 	"author": {
-		"name": "Dyberg & Co AB"
+		"name": "Olle Dyberg"
 	},
 	"repository": {
 		"type": "git",

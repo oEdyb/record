@@ -2,9 +2,10 @@ import Heading from "@theme/Heading";
 import Layout from "@theme/Layout";
 import { Download } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { CHECKOUT_URL, SUPPORT_EMAIL } from "../lib/commerce";
 import { fetchMacDownload, formatSize, type MacDownload, MINIMUM_MACOS } from "../lib/release";
 import styles from "./download.module.css";
+
+const SUPPORT_EMAIL = "support@klippt.app";
 
 type State = { kind: "loading" } | { kind: "ready"; download: MacDownload } | { kind: "missing" };
 
@@ -63,15 +64,10 @@ export default function DownloadPage(): ReactNode {
 					</li>
 				</ol>
 
-				<Heading as="h2">Try it, then subscribe</Heading>
+				<Heading as="h2">Free and open source</Heading>
 				<p>
-					Everything is unlocked until your first recording finishes. Then a 14-day trial starts,
-					with no card. After that, Klippt Pro is $19 a month or $99 a year.{" "}
-					{CHECKOUT_URL ? <a href={CHECKOUT_URL}>Buy Klippt Pro</a> : <>Checkout opens soon.</>}
-				</p>
-				<p>
-					If your trial or subscription ends, your recordings and projects stay on your Mac and stay
-					viewable. Recording and exporting need an active plan.
+					Klippt has no trial, licence key, or account.{" "}
+					<a href="https://github.com/oEdyb/record">The source is on GitHub</a>.
 				</p>
 			</main>
 		</Layout>

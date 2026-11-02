@@ -1,12 +1,11 @@
 # AGENTS.md — Klippt product and engineering guide
 
-This repository is the private working copy for **Klippt**, currently hosted at the legacy
-repository `github.com/oEdyb/record`. Klippt is a fast, recording-focused screen recorder with
+This repository is the source for **Klippt**, hosted at `github.com/oEdyb/record`. Klippt is a fast, recording-focused screen recorder with
 clip-native capture built into the core workflow. As of October 3, 2026, prioritize immediate
 high-quality capture, Pause/Continue, review, and untouched separate-source handoff by default.
 Keep One video as a remembered export choice. Do not build new editor features. Preserve
 existing projects, playback, source recovery, and export compatibility. It starts from the MIT-licensed OpenScreen
-continuation, but it is a separate, proprietary commercial product.
+continuation and is a separate open-source product.
 
 `Klippt` is the selected product name. `.klippt` is the canonical project extension. Keep reading
 legacy `.openscreen` and `.axcut` projects, copy them forward after validation, and do not delete the
@@ -60,38 +59,25 @@ Klippt is Mac-first, not Mac-only.
 - Do not rewrite the whole app in Swift merely to make the UI look native. Screen Studio
   itself proves that Electron plus native media helpers can produce a refined Mac app.
 
-## Commercial and licensing boundary
+## Open-source and licensing boundary
 
-This is a private proprietary product intended to make money.
+Klippt is free and open source under AGPL-3.0-only (`LICENSE`). The OpenScreen MIT notice is
+kept in `third-party-licenses/OpenScreen-MIT.txt`.
 
-- The first commercial release is a subscription-first paid private alpha. Keep one simple Klippt
-  Pro entitlement. The founding price is $19 per month or $99 per year; both prices unlock the same
-  product capability.
-- Keep billing behind a small provider adapter. Do not embed a provider API secret in the desktop
-  app. Store local license state with Electron `safeStorage`, allow a bounded offline grace period,
-  and validate again when the network returns.
-- Use Lemon Squeezy as the first provider and its subscription-linked license keys for activation.
-  The provider adapter, local entitlement service, and UI are implemented. Commercial enforcement
-  stays off until the public store, product, variant, and checkout identifiers are configured.
-- Start one 14-day no-card trial only after the first successful recording is durable. Before that
-  recording, the complete product remains available so setup is not part of the trial clock.
-- When the trial or subscription expires, keep existing projects available as a read-only viewer.
-  Allow playback and untouched source recovery. Block recording, imports, document edits,
-  automatic editing, regeneration, and finished exports. Never delete or hide project media.
-- An entitlement failure must never delete, corrupt, or hide the user's local recordings and
-  projects. Do not interrupt an active recording or export because a validation request fails.
-- The pinned OpenScreen base is MIT licensed and permits commercial proprietary use.
-- Preserve the exact upstream copyright and MIT permission notice in source and every
-  distribution.
+- There is no paywall, trial, licence key, account, or billing code. Do not add one.
+- The app contains no analytics or automatic crash reporting. Network calls are limited to the
+  update check, user-requested model downloads, and LLM providers the user configures.
+- The pinned OpenScreen base is MIT licensed.
+- Preserve the exact upstream copyright and MIT permission notice
+  (`third-party-licenses/OpenScreen-MIT.txt`) in source and every distribution.
 - Keep the public repository as fetch-only `upstream`. Never push product work there.
-- Add a private `origin` only when Olle supplies or creates the private remote.
 - Complete the runtime and visual rebrand before public distribution. Do not ship the OpenScreen
   name, logo, identity, screenshots, or marketing assets as Klippt.
 - Do not copy AGPL Recordly code.
-- Before a paid release, generate and review dependency and asset notices. Preserve LGPL
+- Before a release, generate and review dependency and asset notices. Preserve LGPL
   requirements for dynamically linked FFmpeg. Reject unapproved GPL/AGPL/nonfree or unknown
   components.
-- Customer updates use the owned generic feed at `updates.dyberg.co/klippt`. The private GitHub
+- Customer updates use the owned generic feed at `updates.dyberg.co/klippt`. The GitHub
   repository is not an update server and no repository credential may ship in the app. Publish
   versioned artifacts before the mutable feed manifests.
 - Diagnostic exports are local and user-triggered. Never include project documents, media,

@@ -184,44 +184,6 @@
 		"videoPreview": "Aperçu vidéo",
 		"webcamPreview": "Aperçu webcam (glisser pour repositionner)"
 	},
-	"entitlement": {
-		"status": {
-			"trialNotStarted": "Essai de 14 jours",
-			"trialDay": "{{count}} jour restant",
-			"trialDays": "{{count}} jours restants",
-			"offline": "Klippt Pro, hors ligne",
-			"readOnly": "Lecture seule",
-			"reactivate": "Saisir à nouveau la licence"
-		},
-		"eyebrowReadOnly": "Accès en lecture seule",
-		"eyebrowPro": "Klippt Pro",
-		"titleExpired": "Vos projets sont en sécurité.",
-		"titleTrial": "Enregistrez vite. Gardez chaque fichier.",
-		"titleReactivate": "Saisissez à nouveau votre clé de licence.",
-		"descriptionExpired": "Klippt est maintenant en lecture seule. Passez à Pro pour {{capability}}.",
-		"descriptionTrial": "Votre essai inclut tout Klippt : enregistrement, révision et les deux façons d’enregistrer.",
-		"descriptionReactivate": "Klippt n’a pas pu lire la licence enregistrée sur ce Mac. Vos projets et la date d’essai sont conservés. Saisissez votre clé une fois pour continuer avec Pro.",
-		"capability": {
-			"record": "enregistrer de nouveaux clips",
-			"edit": "modifier ce projet",
-			"import": "importer de nouveaux médias",
-			"export": "exporter une vidéo terminée",
-			"automatic-editing": "utiliser le montage automatique",
-			"default": "enregistrer, monter et exporter"
-		},
-		"benefitClips": "Mettez en pause, reprenez et supprimez le dernier clip pendant l’enregistrement",
-		"benefitExport": "Une seule vidéo, à la même qualité que votre enregistrement",
-		"getPro": "Obtenir Klippt Pro",
-		"licenseKey": "Clé de licence",
-		"activate": "Activer",
-		"filesSafe": "Aucun projet ni fichier source n’est supprimé à la fin de l’accès.",
-		"manage": "Gérer",
-		"activated": "Klippt Pro est activé.",
-		"benefitSources": "Fichiers d’écran, de caméra et d’audio intacts pour votre logiciel de montage",
-		"descriptionTrialNotStarted": "Votre essai de 14 jours commence après votre premier enregistrement. Aucune carte requise.",
-		"price": "{{monthly}} par mois ou {{yearly}} par an",
-		"trialStarted": "Votre essai de 14 jours a commencé. Tout ce que vous enregistrez reste sur votre Mac."
-	},
 	"cpuCompositor": {
 		"notice": "Aucun GPU compatible — rendu sur CPU, la lecture est donc plus lente.",
 		"exportWarning": "Aucun GPU compatible : cet export tourne sur CPU et sera beaucoup plus long que d'habitude."

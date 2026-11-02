@@ -16,10 +16,7 @@ what you did right before the problem. A screenshot helps.
   Screen & System Audio Recording, turn Klippt off and on again, then restart Klippt.
 - **No camera or microphone.** Check System Settings → Privacy & Security → Camera and Microphone.
 - **Updates do not install.** Move Klippt to the Applications folder and open it from there.
-- **Moving to a new Mac.** Deactivate your license in Klippt on the old Mac first, then activate
-  it on the new one.
 
-## Your subscription
+## Bugs and feature requests
 
-Manage or cancel your subscription from the link in your Lemon Squeezy receipt email. See the
-[refund policy](/refund/) and the [terms](/terms/).
+Open an issue on [GitHub](https://github.com/oEdyb/record/issues).

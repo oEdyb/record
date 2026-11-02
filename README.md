@@ -1,73 +1,33 @@
 # Klippt
 
-Klippt is a private, Mac-first screen recorder for creators. Record in clean clips, remove a bad
-section while recording, review the take, and hand off the untouched sources or save one video.
+Klippt is a native screen recorder and editor. Record in clips, pause and continue, drop a bad
+clip while you record, review the take, then save the untouched source files or one finished video.
+Speech-based cleanup ("Clean cut") runs a local Parakeet speech model on your machine; nothing is
+uploaded.
 
-The project started from the MIT-licensed OpenScreen continuation. Klippt is now a separate
-proprietary commercial product. Legacy OpenScreen identifiers remain only where a compatibility-safe
-migration has not happened yet. The upstream copyright and permission notice remain in
-[`LICENSE`](LICENSE), with the complete package inventory in
-[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+Linux is the main platform. macOS also works. It is free, with no account, trial, or telemetry.
 
-## Start here
+![Recording review on Linux](artifacts/linux-port-2026-10-26/cursor-preview/review.png)
 
-- [`HANDOFF.md`](HANDOFF.md) — current branch, completed work, verification, risks, and next actions.
-- [`AGENTS.md`](AGENTS.md) — durable product behavior and engineering rules.
-- [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md) — active delivery order and release gates.
-- [`technical-documentation/`](technical-documentation/README.md) — current architecture,
-  engineering, and test references.
-- [`design/DESIGN.md`](design/DESIGN.md) — production UI system.
+## Status
 
-## Current state
+Early and usable. The recorder, review, clip removal, source handoff, and MP4/GIF export work on
+Linux (Wayland, PipeWire) and macOS. There is no signed public release yet; build it yourself.
 
-The Mac core works: clip-native Record, Pause, Continue, Remove previous clip, Stop, review,
-untouched-source handoff, and native MP4/GIF export. The editor UI, in-app chat, `klippt agent`
-CLI, automatic direction, and transcription were archived on 2026-10-05 (tag
-`archive/pre-cleanup-2026-10-05`); existing projects still open and render their stored edits. The current checkpoint uses Electron `44.9.1`, a contained
-`klippt://app` origin, central privileged-IPC validation, production fuses, ASAR integrity, and an
-atomic export publisher.
+Known limitations:
 
-Klippt is not ready for an outside beta yet. The remaining gate is a fresh notarized package, a real
-N to N+1 update, a complete packaged 30–90 minute creator flow, and clean or second-Mac proof. See
-the [handoff](HANDOFF.md#what-is-left-in-priority-order) for the exact order.
+- Wayland cannot hide Klippt's own windows from a full-display recording. Record a window, or put
+  the controls on another display.
+- Speech models download on first use of Clean cut (several hundred MB).
+- The Windows capture helper exists but is not tested right now.
+- Packaged builds check `updates.dyberg.co` for new versions. That is the only automatic
+  network call.
 
-## Development
+## Build and run on Linux
 
-Use Node `22.22.1`, npm `10.9.4`, and npm only.
-
-```bash
-npm install
-npm run dev
-```
-
-Useful checks:
-
-```bash
-npx tsc --noEmit
-npx tsc -p tsconfig.test.json --noEmit
-npm run test
-npm run lint
-npm run i18n:check
-npm run docs:check
-npm run build-vite
-```
-
-The normal app build does not rebuild every native helper. Read
-[`technical-documentation/engineering/build-and-packaging.md`](technical-documentation/engineering/build-and-packaging.md)
-before you trust a package or native result.
-
-## Linux development port
-
-The Linux port keeps the same recorder and review interface, project files, and export
-pipeline. Rust owns portal/PipeWire capture and per-clip H.264/AAC files; the shared
-recording service owns persistence, recovery, Pause/Continue, and clip removal.
-See [implementation and verification](docs/linux-port-2026-10-26.md) for current evidence
-and the remaining platform gates. Windows continues to use its existing native helper.
-
-Build prerequisites include Rust/Cargo, a C compiler, libclang, EGL/GLES development
-headers, and patchelf 0.18 or newer. Runtime capture needs PipeWire, an XDG ScreenCast
-portal backend for the desktop, EGL/GLES, and Wayland client libraries. niri uses the
-GNOME portal backend. Vulkan compositing also needs a working Vulkan driver.
+You need Node `22.22.1`, npm `10.9.4`, Rust/Cargo, a C compiler, libclang, EGL/GLES headers, and
+patchelf 0.18 or newer. At runtime you need PipeWire, an XDG ScreenCast portal for your desktop,
+and a Vulkan driver for the compositor preview. niri uses the GNOME portal backend.
 
 ```fish
 npm ci
@@ -78,12 +38,44 @@ npm run build:native:compositor:linux
 npm run dev
 ```
 
-For an installer, build or stage the verified Whisper helper first, then use
-`npm run build:linux`. Its existing provenance and distro compatibility checks apply.
-Wayland cannot universally remove Klippt's own windows from a display recording;
-prefer a window source or place the controls on another display.
+Packages (AppImage, deb, pacman, rpm): `npm run build:linux`. Output lands in `release/<version>/`.
 
-## Product rule
+## Build and run on macOS
 
-Keep source media recoverable. Automatic edits, audio treatment, framing, and layout stay
-reversible. Optional analysis must never block the recording path.
+You need Xcode command-line tools, Node `22.22.1`, npm `10.9.4`, and Rust/Cargo.
+
+```fish
+npm ci
+npm run build:native:mac
+npm run build:native:parakeet:mac
+npm run fetch:ffmpeg:mac
+npm run build:native:compositor:mac
+npm run dev
+```
+
+`npm run build:mac` makes a DMG; signing and notarization need your own Apple Developer ID. See
+[`technical-documentation/engineering/build-and-packaging.md`](technical-documentation/engineering/build-and-packaging.md).
+
+## Checks
+
+```fish
+npx tsc --noEmit
+npm run lint
+npm run test
+```
+
+## More
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): how to send a change.
+- [`AGENTS.md`](AGENTS.md): product and engineering rules.
+- [`technical-documentation/`](technical-documentation/README.md): architecture and testing.
+
+## License
+
+Copyright (C) 2026 Olle Dyberg. Licensed under the GNU Affero General Public License v3.0 only;
+see [`LICENSE`](LICENSE).
+
+Klippt started from [OpenScreen](https://github.com/getopenscreen/openscreen), which is MIT
+licensed. Its notice is kept in
+[`third-party-licenses/OpenScreen-MIT.txt`](third-party-licenses/OpenScreen-MIT.txt). Bundled
+components and their licences are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

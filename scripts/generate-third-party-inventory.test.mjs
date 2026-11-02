@@ -63,7 +63,7 @@ describe("reviewed third-party inventory", () => {
 		).toThrow(/has no licence/);
 	});
 
-	it("does not classify proprietary workspace crates as third-party", () => {
+	it("does not classify first-party workspace crates as third-party", () => {
 		const inventory = buildReviewedNoticeInventory({
 			releaseInventory: releaseInventory([
 				{
@@ -72,7 +72,7 @@ describe("reviewed third-party inventory", () => {
 					name: "klippt-worker",
 					version: "1.0.0",
 					source: "workspace",
-					license: "LicenseRef-Klippt-Proprietary",
+					license: "AGPL-3.0-only",
 					scope: "required",
 				},
 			]),

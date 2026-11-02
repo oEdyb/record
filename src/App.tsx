@@ -8,13 +8,7 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { APP_DISPLAY_NAME } from "./lib/brand";
-import { initializeEntitlements } from "./lib/entitlements/store";
 
-const EntitlementDialog = lazy(() =>
-	import("./components/entitlements/EntitlementDialog").then((module) => ({
-		default: module.EntitlementDialog,
-	})),
-);
 const Toaster = lazy(() =>
 	import("./components/ui/sonner").then((module) => ({ default: module.Toaster })),
 );
@@ -118,21 +112,6 @@ export default function App() {
 		});
 	}, [windowType, showNotes]);
 
-	useEffect(() => {
-		let disposed = false;
-		let dispose: () => void = () => undefined;
-		void initializeEntitlements({ promptReactivation: windowType === "editor" })
-			.then((cleanup) => {
-				if (disposed) cleanup();
-				else dispose = cleanup;
-			})
-			.catch((error) => console.warn("Could not load Klippt entitlement:", error));
-		return () => {
-			disposed = true;
-			dispose();
-		};
-	}, [windowType]);
-
 	const content = (() => {
 		switch (windowType) {
 			case "hud-overlay":
@@ -225,7 +204,6 @@ export default function App() {
 		<TooltipProvider>
 			<Suspense fallback={null}>{showNotes ? <NotesWindow /> : content}</Suspense>
 			<Suspense fallback={null}>
-				<EntitlementDialog />
 				{/* The recorder pill hosts its own, just above the pill. */}
 				{windowType === "hud-overlay" ? null : <Toaster theme="dark" />}
 			</Suspense>

@@ -928,7 +928,6 @@ try {
 				await window.electronAPI.getSelectedSource(),
 			),
 			prefs: await window.electronAPI.getRecordingPrefs(),
-			entitlement: await window.electronAPI.getEntitlement(),
 			platform: window.electronAPI.getPlatform(),
 			native: await window.electronAPI.isNativeMacCaptureAvailable(),
 			controls: [...document.querySelectorAll("button")].map((b) => ({

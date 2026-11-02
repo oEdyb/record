@@ -18,16 +18,13 @@ function props() {
 	return {
 		title: "Recording",
 		canSave: true,
-		readOnly: false,
 		busy: false,
 		percent: null,
-		entitlementLabel: null,
 		onRecordings: vi.fn(),
 		onRecord: vi.fn(),
 		onSave: vi.fn(),
 		onOriginals: vi.fn(),
 		onSettings: vi.fn(),
-		onEntitlement: vi.fn(),
 	};
 }
 describe("recording review", () => {
@@ -49,8 +46,6 @@ describe("recording review", () => {
 		view.rerender(<RecordingReviewToolbar {...props()} onAddClip={addClip} />);
 		fireEvent.click(screen.getByRole("button", { name: "recordingReview.addClip" }));
 		expect(addClip).toHaveBeenCalledOnce();
-		view.rerender(<RecordingReviewToolbar {...props()} readOnly onAddClip={addClip} />);
-		expect(screen.getByRole("button", { name: "recordingReview.addClip" })).toBeDisabled();
 	});
 	it("replaces endless preparation with a retryable retained-handoff error", () => {
 		const retry = vi.fn();
@@ -71,16 +66,11 @@ describe("recording review", () => {
 	it("keeps an interruption visible with retry and original recovery", () => {
 		const actions = props();
 		const interruptions = [{ code: "writer-failed", message: "The writer stopped." }];
-		const { rerender } = render(
-			<RecordingReviewToolbar {...actions} interruptions={interruptions} />,
-		);
+		render(<RecordingReviewToolbar {...actions} interruptions={interruptions} />);
 		expect(screen.getByRole("status")).toHaveTextContent("recordingReview.interrupted");
 		expect(screen.getByText("The writer stopped.")).toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "recordingReview.recordAgain" }));
 		expect(actions.onRecord).toHaveBeenCalledOnce();
-		rerender(<RecordingReviewToolbar {...actions} interruptions={interruptions} readOnly />);
-		expect(screen.getByRole("button", { name: "recordingReview.recordAgain" })).toBeDisabled();
-		expect(menuItem("recordingReview.originals")).not.toHaveAttribute("aria-disabled");
 	});
 	it("shows pending feedback on Record while opening the recorder", () => {
 		render(<RecordingReviewToolbar {...props()} preparing openingRecorder isMac />);
@@ -126,12 +116,6 @@ describe("recording review", () => {
 		expect(
 			screen.queryByRole("button", { name: /caption|zoom|trim|import|regenerate/i }),
 		).toBeNull();
-	});
-	it("keeps original-file recovery available with expired access", () => {
-		render(<RecordingReviewToolbar {...props()} readOnly />);
-		expect(screen.getByRole("button", { name: "recordingReview.newRecording" })).toBeDisabled();
-		expect(screen.getByRole("button", { name: "recordingReview.save" })).toBeDisabled();
-		expect(menuItem("recordingReview.originals")).not.toHaveAttribute("aria-disabled");
 	});
 	it("can reopen a running save while preventing a new capture", () => {
 		const actions = props();

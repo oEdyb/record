@@ -147,8 +147,7 @@ export function readCargoComponents(root) {
 				source === "workspace"
 					? undefined
 					: cargoLicenseRecordFor(licenses, { name, version, source });
-			const license =
-				source === "workspace" ? "LicenseRef-Klippt-Proprietary" : licenseRecord?.license;
+			const license = source === "workspace" ? "AGPL-3.0-only" : licenseRecord?.license;
 			if (!license) {
 				throw new Error(`Cargo licence inventory does not cover ${name}@${version} from ${source}`);
 			}

@@ -44,7 +44,6 @@ import {
 	type ReviewCut,
 } from "@/lib/cleanCut/reviewModel";
 import { useCleanCutStore } from "@/lib/cleanCut/store";
-import { requireEntitlement, useEntitlementStore } from "@/lib/entitlements/store";
 import { formatExportEta } from "@/lib/exporter/mp4ExportSettings";
 import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
@@ -82,7 +81,6 @@ import { useCompactReviewFit, useReviewOutputRatio } from "./useCompactReviewFit
 import { useRecordingReviewMenu } from "./useRecordingReviewMenu";
 import { useRecordingReviewShortcuts } from "./useRecordingReviewShortcuts";
 import { useRevealLatch } from "./useRevealLatch";
-import { useTrialStartNotice } from "./useTrialStartNotice";
 import { FIRST_FRAME_TIMEOUT_MS, useVideoFirstFrame } from "./useVideoFirstFrame";
 
 const REVIEW_SPINNER_BARS = Array.from({ length: 12 }, (_, bar) => bar);
@@ -126,9 +124,6 @@ interface SeekTarget {
 	requestId: number;
 }
 
-/** The trial length set in `electron/entitlements/config.ts`, for the badge ring. */
-const TRIAL_DAYS = 14;
-
 /**
  * The review window that opens after Stop: watch the take, add a clip, record again,
  * open earlier recordings and export. Klippt is recording-only, so this is the only shell.
@@ -150,29 +145,7 @@ export function RecordingReviewShell() {
 	// playback reads/writes this store field, not a component-local copy.
 	const playing = useProjectStore((s) => s.playing);
 	const setPlaying = useProjectStore((s) => s.setPlaying);
-	const entitlement = useEntitlementStore((s) => s.snapshot);
 	const { routes: cleanVoiceRoutes } = useCleanVoiceRuntime(document);
-	const openEntitlement = useEntitlementStore((s) => s.openDialog);
-	const entitlementLabel = (() => {
-		if (entitlement.reactivationRequired) return te("entitlement.status.reactivate");
-		switch (entitlement.status) {
-			case "trial-not-started":
-				return te("entitlement.status.trialNotStarted");
-			case "trial-active":
-				return te(
-					entitlement.trialDaysRemaining === 1
-						? "entitlement.status.trialDay"
-						: "entitlement.status.trialDays",
-					{ count: entitlement.trialDaysRemaining ?? 0 },
-				);
-			case "offline-grace":
-				return te("entitlement.status.offline");
-			case "expired":
-				return te("entitlement.status.readOnly");
-			default:
-				return null;
-		}
-	})();
 
 	const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
 	const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
@@ -829,7 +802,6 @@ export function RecordingReviewShell() {
 	);
 
 	const handleBrowseProject = useCallback(async () => {
-		if (!requireEntitlement("import")) return;
 		const projectAtStart = useProjectStore.getState().projectId;
 		const navigationRevision = recordingNavigationRevisionRef.current;
 		const isCurrent = () =>
@@ -902,7 +874,7 @@ export function RecordingReviewShell() {
 	// the dialog says so before it asks.
 	const handleDeleteProject = useCallback(
 		async (id: string) => {
-			if (entitlement.access === "read-only" || recordingReviewNavigation.isBlocked()) return;
+			if (recordingReviewNavigation.isBlocked()) return;
 			try {
 				const result = await nativeBridgeClient.aiEdition.delete(id);
 				if (!result.success) throw new Error(result.error ?? "Failed to delete project");
@@ -919,7 +891,7 @@ export function RecordingReviewShell() {
 				});
 			}
 		},
-		[entitlement.access, recordingReviewNavigation],
+		[recordingReviewNavigation],
 	);
 
 	const handleConfirmUnsaved = useCallback(
@@ -958,7 +930,6 @@ export function RecordingReviewShell() {
 				isExportRunActive(useExportRunStore.getState().phase)
 			)
 				return;
-			if (!requireEntitlement("record")) return;
 			const api = window.electronAPI;
 			if (!api?.startNewRecording) return;
 			recordingReviewActionRef.current = true;
@@ -1008,10 +979,6 @@ export function RecordingReviewShell() {
 				const result = await api.startNewRecording(context);
 				if (!result.success) {
 					setLeavingForRecorder(false);
-					if (result.code === "ENTITLEMENT_REQUIRED") {
-						openEntitlement("record");
-						return;
-					}
 					throw new Error(result.error ?? "Could not open recording controls");
 				}
 			} catch (err) {
@@ -1024,13 +991,12 @@ export function RecordingReviewShell() {
 				setRecordingReviewActionPending(null);
 			}
 		},
-		[openEntitlement, resumeRecordingWorkspace, reviewInsertionBoundary, saveDocument, setPlaying],
+		[resumeRecordingWorkspace, reviewInsertionBoundary, saveDocument, setPlaying],
 	);
 
 	const openRecordingExport = useCallback(
 		async (sourceRecovery: boolean) => {
 			if (sourceExportBusyRef.current || recordingReviewActionRef.current) return;
-			if (!sourceRecovery && !requireEntitlement("export")) return;
 			recordingReviewActionRef.current = true;
 			setRecordingReviewActionPending("export");
 			try {
@@ -1319,7 +1285,6 @@ export function RecordingReviewShell() {
 	}, []);
 	useCompactReviewFit(compactReview && hasAsset, document);
 	const videoRatio = useReviewOutputRatio(document);
-	useTrialStartNotice(entitlement, hasAsset, te("entitlement.trialStarted"));
 
 	const uncutTotalSec = uncutSegments.reduce(
 		(sum, segment) => sum + (segment.timelineEndSec - segment.timelineStartSec),
@@ -1383,19 +1348,8 @@ export function RecordingReviewShell() {
 				preparing={recordingReviewPending || recordingReviewActionPending !== null}
 				openingRecorder={recordingReviewActionPending === "record"}
 				addingClip={recordingReviewActionPending === "add"}
-				readOnly={entitlement.access === "read-only"}
 				busy={sourceExportBusy || isExportRunActive(exportRunPhase)}
 				percent={sourceExportBusy ? null : (exportRun?.percent ?? null)}
-				entitlementLabel={entitlementLabel}
-				trialDays={
-					entitlement.status === "trial-active" && !entitlement.reactivationRequired
-						? {
-								left: entitlement.trialDaysRemaining ?? 0,
-								total: Math.max(TRIAL_DAYS, entitlement.trialDaysRemaining ?? 0),
-							}
-						: null
-				}
-				onEntitlement={() => openEntitlement()}
 				onRecordings={handleOpenRecordings}
 				onSettings={handleOpenSettings}
 				onRecord={() => void handleNewRecording()}
@@ -1466,13 +1420,8 @@ export function RecordingReviewShell() {
 								hasProject={hasProject}
 								hasAsset={hasAsset}
 								readOnly
-								// Direct camera placement only: off for a read-only entitlement
-								// and while an export reads the project.
-								cameraEditable={
-									entitlement.access !== "read-only" &&
-									!sourceExportBusy &&
-									!isExportRunActive(exportRunPhase)
-								}
+								// Direct camera placement only: off while an export reads the project.
+								cameraEditable={!sourceExportBusy && !isExportRunActive(exportRunPhase)}
 								videoSources={videoSources}
 								clips={clips}
 								zoomRegions={zoomRegions}
@@ -1604,7 +1553,7 @@ export function RecordingReviewShell() {
 						toPlaybackSec={toPlaybackSec}
 						listOpen={cleanCutListOpen}
 						onListOpen={setCleanCutListOpen}
-						saveDisabled={!hasAsset || entitlement.access === "read-only"}
+						saveDisabled={!hasAsset}
 						onSave={handleExport}
 						onSeekRaw={(rawSec) => {
 							followPlayheadForInsertion();
@@ -1637,8 +1586,6 @@ export function RecordingReviewShell() {
 				loading={projectListLoading}
 				loadFailed={projectListFailed}
 				recordingOnly
-				allowDelete={entitlement.access !== "read-only"}
-				allowImport={entitlement.access !== "read-only"}
 				open={openProjectOpen}
 				onClose={() => setOpenProjectOpen(false)}
 				projects={projectSummaries}

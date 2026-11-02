@@ -4,7 +4,6 @@ import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
-import { requireEntitlement } from "@/lib/entitlements/store";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
@@ -1109,9 +1108,6 @@ export function LaunchWindow() {
 				!portalOwnsSource &&
 				window.electronAPI.getPlatform?.() !== "linux"
 			) {
-				if (!requireEntitlement("record")) {
-					return { opened: false, reason: "entitlement-required" };
-				}
 				// Asking macOS directly would show its prompt with no explanation.
 				const permissions = await readCapturePermissions();
 				if (permissions) knownPermissionsRef.current = permissions;
@@ -1188,7 +1184,6 @@ export function LaunchWindow() {
 			if (saving) {
 				return;
 			}
-			if (!recording && !requireEntitlement("record")) return;
 			// Linux never detours through the in-app picker: there is nothing for
 			// it to select, and waiting for a selection that can never arrive left
 			// the record button opening a modal instead of recording.
@@ -1236,7 +1231,7 @@ export function LaunchWindow() {
 	);
 	const handleRecordClick = useCallback(() => {
 		closePopovers();
-		// Cancelling a start needs no entitlement or source check.
+		// Cancelling a start needs no source check.
 		if (starting && !recording) {
 			toggleRecording();
 			return;

@@ -37,7 +37,6 @@ interface RecordingReviewToolbarProps {
 	/** Total length and clip count, e.g. "0:28 total, 3 clips". */
 	meta?: string | null;
 	canSave: boolean;
-	readOnly: boolean;
 	busy: boolean;
 	preparing?: boolean;
 	openingRecorder?: boolean;
@@ -48,9 +47,6 @@ interface RecordingReviewToolbarProps {
 	onRetryHandoff?: () => void;
 	isMac?: boolean;
 	percent: number | null;
-	entitlementLabel: string | null;
-	/** Trial days left out of the full trial, drawn as a ring beside the label. */
-	trialDays?: { left: number; total: number } | null;
 	onRecordings: () => void;
 	onRecord: () => void;
 	/** Records another clip into this recording, at the marker on the progress bar. */
@@ -58,7 +54,6 @@ interface RecordingReviewToolbarProps {
 	onSave: () => void;
 	onOriginals: () => void;
 	onSettings: () => void;
-	onEntitlement: () => void;
 	/** Present while review is the small player; grows it into the full window. */
 	onExpand?: () => void;
 	cleanCut?: ReviewCleanCutControl;
@@ -153,7 +148,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 								))}
 								<button
 									type="button"
-									disabled={props.readOnly || props.busy || props.preparing}
+									disabled={props.busy || props.preparing}
 									onClick={props.onRecord}
 								>
 									{t("recordingReview.recordAgain")}
@@ -163,24 +158,6 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 					) : null}
 				</div>
 				<div className={styles.actions}>
-					{props.entitlementLabel ? (
-						<button type="button" className={styles.account} onClick={props.onEntitlement}>
-							{props.trialDays ? (
-								<svg viewBox="0 0 16 16" className={styles.trialRing} aria-hidden="true">
-									<circle cx="8" cy="8" r="6" pathLength={100} className={styles.trialTrack} />
-									<circle
-										cx="8"
-										cy="8"
-										r="6"
-										pathLength={100}
-										className={styles.trialValue}
-										strokeDasharray={`${Math.max(0, Math.min(1, props.trialDays.left / props.trialDays.total)) * 100} 100`}
-									/>
-								</svg>
-							) : null}
-							{props.entitlementLabel}
-						</button>
-					) : null}
 					<div className={styles.group}>
 						{props.onExpand ? (
 							<button
@@ -196,7 +173,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						{props.onAddClip && props.canSave ? (
 							<button
 								type="button"
-								disabled={props.readOnly || props.busy || props.preparing}
+								disabled={props.busy || props.preparing}
 								onClick={props.onAddClip}
 								className={styles.ghost}
 								aria-label={t("recordingReview.addClip")}
@@ -214,7 +191,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 						) : null}
 						<button
 							type="button"
-							disabled={props.readOnly || props.busy || props.preparing}
+							disabled={props.busy || props.preparing}
 							onClick={props.onRecord}
 							className={styles.ghost}
 							aria-label={t("recordingReview.newRecording")}
@@ -272,7 +249,6 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 							type="button"
 							aria-pressed={props.cleanCut.enabled}
 							aria-busy={props.cleanCut.enabled && props.cleanCut.state === "working"}
-							disabled={props.readOnly}
 							onClick={props.cleanCut.onToggle}
 							// Return belongs to the review while Clean cut is on: a toggle left
 							// focused by a click must not turn it off.
@@ -313,7 +289,7 @@ export function RecordingReviewToolbar(props: RecordingReviewToolbarProps) {
 					<button
 						type="button"
 						className={styles.primary}
-						disabled={!props.canSave || props.readOnly || props.preparing}
+						disabled={!props.canSave || props.preparing}
 						onClick={props.onSave}
 						title={`${t("recordingReview.save")} (${modifier}S)`}
 						aria-keyshortcuts={props.isMac ? "Meta+S" : "Control+S"}

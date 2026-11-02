@@ -18,24 +18,21 @@ const request = {
 	weight: 400,
 	styleLabel: "Kursiv",
 };
-const allowImport = vi.fn();
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	allowImport.mockResolvedValue(undefined);
 	vi.mocked(readLocalFontDataUrl).mockResolvedValue(LOCAL_TTF_DATA_URL);
 });
 
 describe("chooseLocalFont", () => {
-	it("names the exact variation and permits one supported font file with full access", async () => {
+	it("names the exact variation and permits one supported font file", async () => {
 		vi.mocked(dialog.showOpenDialog).mockResolvedValue({
 			canceled: false,
 			filePaths: ["/tmp/Roboto-Italic.ttf"],
 		});
 
-		const result = await chooseLocalFont(request, sender, allowImport);
+		const result = await chooseLocalFont(request, sender);
 
-		expect(allowImport).toHaveBeenCalledTimes(1);
 		expect(dialog.showOpenDialog).toHaveBeenCalledWith({
 			title: "Roboto · Kursiv 400",
 			filters: [{ name: "TTF, OTF, WOFF, WOFF2", extensions: ["ttf", "otf", "woff", "woff2"] }],
@@ -50,20 +47,10 @@ describe("chooseLocalFont", () => {
 		expect(result).not.toHaveProperty("path");
 	});
 
-	it("rejects read-only access before opening a picker or reading a file", async () => {
-		const denial = new Error("Klippt Pro is required to import");
-		allowImport.mockRejectedValue(denial);
-
-		await expect(chooseLocalFont(request, sender, allowImport)).rejects.toBe(denial);
-
-		expect(dialog.showOpenDialog).not.toHaveBeenCalled();
-		expect(readLocalFontDataUrl).not.toHaveBeenCalled();
-	});
-
 	it("returns cancellation without reading or changing anything", async () => {
 		vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] });
 
-		await expect(chooseLocalFont(request, sender, allowImport)).resolves.toEqual({
+		await expect(chooseLocalFont(request, sender)).resolves.toEqual({
 			success: false,
 			canceled: true,
 		});
@@ -79,7 +66,7 @@ describe("chooseLocalFont", () => {
 			new LocalFontValidationError("invalid-font", "invalid font"),
 		);
 
-		await expect(chooseLocalFont(request, sender, allowImport)).resolves.toEqual({
+		await expect(chooseLocalFont(request, sender)).resolves.toEqual({
 			success: false,
 			canceled: false,
 			error: "invalid-font",
@@ -87,7 +74,7 @@ describe("chooseLocalFont", () => {
 	});
 
 	it("rejects malformed requests before opening a dialog", async () => {
-		await expect(chooseLocalFont({ ...request, weight: 0 }, sender, allowImport)).resolves.toEqual({
+		await expect(chooseLocalFont({ ...request, weight: 0 }, sender)).resolves.toEqual({
 			success: false,
 			canceled: false,
 			error: "invalid-request",

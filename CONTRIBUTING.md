@@ -1,50 +1,35 @@
-# Contributing to Klippt
+# Contributing
 
-Klippt is a private proprietary product. Do not open upstream OpenScreen issues or pull requests for
-Klippt product work.
+Bug reports and pull requests are welcome.
 
-## Before a change
+## Reporting a bug
 
-1. Read [`HANDOFF.md`](HANDOFF.md), [`AGENTS.md`](AGENTS.md), and the relevant technical document.
-2. Inspect the current code, tests, lockfiles, and pinned versions.
-3. For a new feature or substantial change, read current official documentation and maintained
-   reference code before you choose an API or implementation pattern.
-4. Keep the change inside one clear product or runtime boundary.
+Open an issue with your OS and desktop (for Linux: distro, compositor, portal backend), the Klippt
+version or commit, what you did, and what happened. A screenshot or short recording helps.
 
-## Development rules
+## Sending a change
 
-- Use Node `22.22.1`, npm `10.9.4`, and npm only.
-- Keep TypeScript strict. Do not add explicit `any`.
-- Preserve unrelated changes in a dirty worktree.
-- Keep source media non-destructive and project writes atomic.
-- Add focused tests beside the changed behavior.
-- Do not use TestSprite.
-- Rebuild native helpers before you trust native capture, preview, or export behavior.
-- Use Conventional Commit messages for repository commits.
+1. Read [`AGENTS.md`](AGENTS.md) and the relevant page in
+   [`technical-documentation/`](technical-documentation/README.md).
+2. Keep one change per pull request, with a test beside the behavior you changed.
+3. Use Node `22.22.1` and npm `10.9.4`. Keep TypeScript strict; no explicit `any`.
+4. Keep source media non-destructive and project writes atomic.
+5. Run the checks before you open the pull request:
 
-## Verification
-
-Run focused checks while you work. Run the complete relevant gate before handoff.
-
-```bash
+```fish
 npx tsc --noEmit
 npx tsc -p tsconfig.test.json --noEmit
-npx vitest --run path/to/test.ts
 npm run lint
-npm run i18n:check
-npm run docs:check
-npm run build-vite
+npm run test
 ```
 
-Use `npm run test` once for a completed code slice. Native capture, preview, export, and packaging
-changes also need the real Mac checks in
-[`technical-documentation/testing/manual-e2e-checklist.md`](technical-documentation/testing/manual-e2e-checklist.md).
+Native capture, preview, and export changes need a real run on the platform you touched; say in
+the pull request what you ran.
 
-## Branches and releases
+Dependency changes go through the supply-chain gates in `supply-chain/` and `scripts/`. Do not
+loosen those checks to get a change through.
 
-The private remote is `origin`. The OpenScreen remote is fetch-only `upstream`; never push Klippt
-work there. Stable release branches use `release/vX.Y.Z`. Do not publish an artifact until its
-source commit, helper provenance, signature, notarization, notices, and update metadata all pass the
-release contract.
+## Licence
 
-Current status and remaining release work live in [`HANDOFF.md`](HANDOFF.md).
+Klippt is AGPL-3.0-only. By sending a contribution you agree it is licensed under the same terms.
+Do not send code you cannot license that way.

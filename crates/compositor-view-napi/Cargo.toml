@@ -3,6 +3,7 @@ name = "compositor-view-napi"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 description = "Addon napi-rs : expose openscreen_compositor::live::LiveView (vue offscreen multiplateforme) à Electron. C'est CE crate qui produit compositor_view.node, le binaire packagé dans l'app."
 
 [lib]

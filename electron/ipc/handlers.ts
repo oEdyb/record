@@ -83,8 +83,6 @@ import {
 	type WorkloadOperation,
 	WorkloadTelemetryService,
 } from "../diagnostics/workloadTelemetry";
-import { createEntitlementService } from "../entitlements/createService";
-import { registerEntitlementIpc } from "../entitlements/ipc";
 import { ExportTransactionError } from "../export/atomicExport";
 import {
 	cleanupOrphanedExportTemps,
@@ -1795,11 +1793,6 @@ export function registerIpcHandlers(
 		() => undefined,
 	);
 	isDirectionExcludedPoint = isPrivateRecordingUiPoint ?? (() => false);
-	const { config: entitlementConfig, service: entitlementService } = createEntitlementService({
-		userDataPath: app.getPath("userData"),
-		isPackaged: app.isPackaged,
-	});
-	registerEntitlementIpc(entitlementService, entitlementConfig, ipcMain);
 	const exportBufferService = new CompositorViewService({
 		exportJournalPath: path.join(app.getPath("userData"), "buffer-export-transactions.json"),
 	});
@@ -2095,25 +2088,6 @@ export function registerIpcHandlers(
 			} satisfies import("../../src/lib/cleanVoiceRuntime").CleanVoiceRuntimeSnapshot;
 		},
 	);
-	const rejectWithoutEntitlement = async (
-		capability: import("../../src/lib/entitlements/contracts").EntitlementCapability,
-	) => {
-		try {
-			await entitlementService.assertCapability(capability);
-			return null;
-		} catch (error) {
-			return {
-				success: false as const,
-				code: "ENTITLEMENT_REQUIRED" as const,
-				error: error instanceof Error ? error.message : "Klippt Pro is required.",
-			};
-		}
-	};
-	const markSuccessfulRecording = () => {
-		void entitlementService.noteSuccessfulRecording().catch((error) => {
-			console.error("Could not start the Klippt trial after recording:", error);
-		});
-	};
 	async function requestScreenAccess() {
 		if (process.platform !== "darwin") {
 			return { success: true, granted: true, status: "granted" };
@@ -2395,8 +2369,6 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("open-source-selector", async () => {
-		const rejection = await rejectWithoutEntitlement("record");
-		if (rejection) return { opened: false, reason: rejection.code, ...rejection };
 		// The portal owns Linux source selection. The selector's
 		// own `desktopCapturer.getSources()` raises a portal dialog — a SECOND
 		// one, for a session that is thrown away — and whatever it returns cannot
@@ -2481,8 +2453,6 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("start-new-recording", async (_event, context?: RecordingWorkspaceContext) =>
 		serializeRecordingSetup(async () => {
-			const rejection = await rejectWithoutEntitlement("record");
-			if (rejection) return rejection;
 			const workspace = normalizeRecordingWorkspaceContext(context);
 			const setup = workspace ? await projectRecordingSetupStore.get(workspace.projectId) : null;
 			if (setup) {
@@ -2605,8 +2575,6 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"prepare-native-linux-recording",
 		async (_, request: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
-			const rejection = await rejectWithoutEntitlement("record");
-			if (rejection) return rejection;
 			if (process.platform !== "linux") return { success: false, reason: "unsupported-platform" };
 			return prepareNativeLinuxRecording(linuxClipRecordingRequest(request));
 		},
@@ -2630,8 +2598,6 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"start-native-linux-recording",
 		async (event, request: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
-			const rejection = await rejectWithoutEntitlement("record");
-			if (rejection) return rejection;
 			await startupRecordingRecovery;
 			const result = await invokeNativeLinux(async (service) => {
 				const config = linuxClipRecordingRequest(request);
@@ -2683,8 +2649,6 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"start-native-windows-recording",
 		async (_, request: NativeWindowsRecordingRequest) => {
-			const rejection = await rejectWithoutEntitlement("record");
-			if (rejection) return rejection;
 			try {
 				if (!isWindowsGraphicsCaptureOsSupported()) {
 					return {
@@ -3234,9 +3198,6 @@ export function registerIpcHandlers(
 			const timeline = new RecordStartTimeline(Date.now, request?.startTiming);
 			timeline.mark("ipc-received");
 			activeStartTimeline = timeline;
-			const rejection = await rejectWithoutEntitlement("record");
-			if (rejection) return rejection;
-			timeline.mark("entitled");
 			await startupRecordingRecovery;
 			await beforeNativeCapture();
 			let result = await invokeNativeMac(() =>
@@ -3594,7 +3555,6 @@ export function registerIpcHandlers(
 				);
 			}
 			finishCaptureWorkload(recovered ? "recovered" : "succeeded");
-			markSuccessfulRecording();
 
 			return {
 				success: true,
@@ -3643,7 +3603,6 @@ export function registerIpcHandlers(
 			}
 			if ("success" in result && result.success) {
 				finishCaptureWorkload(discard ? "discarded" : "succeeded");
-				if (!discard) markSuccessfulRecording();
 			} else {
 				finishCaptureWorkload("failed", activeCaptureFailure ?? "capture-stop-failed");
 			}
@@ -4065,7 +4024,6 @@ export function registerIpcHandlers(
 			webcamOffsetMs,
 			cursorCaptureMode,
 		});
-		markSuccessfulRecording();
 
 		return {
 			success: true,
@@ -4178,8 +4136,6 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("pick-export-save-path", async (_, fileName: string, exportFolder?: string) => {
-		const rejection = await rejectWithoutEntitlement("export");
-		if (rejection) return rejection;
 		try {
 			const isGif = fileName.toLowerCase().endsWith(".gif");
 			const filters = isGif
@@ -4344,11 +4300,9 @@ export function registerIpcHandlers(
 		cancelled: typeof exportId === "string" && exportBufferService.cancelExport(exportId),
 	}));
 
-	registerLocalFontIpc(ipcMain, () => entitlementService.assertCapability("import"));
+	registerLocalFontIpc(ipcMain);
 
 	ipcMain.handle("open-video-file-picker", async () => {
-		const rejection = await rejectWithoutEntitlement("import");
-		if (rejection) return rejection;
 		try {
 			const dialogOptions = buildDialogOptions(
 				{
@@ -4536,8 +4490,6 @@ export function registerIpcHandlers(
 	ipcMain.handle(
 		"save-project-file",
 		async (_, projectData: unknown, suggestedName?: string, existingProjectPath?: string) => {
-			const rejection = await rejectWithoutEntitlement("edit");
-			if (rejection) return rejection;
 			return saveProjectFile(projectData, suggestedName, existingProjectPath);
 		},
 	);
@@ -4980,7 +4932,6 @@ export function registerIpcHandlers(
 	const shutdownPreviews = registerNativeBridgeHandlers(
 		{
 			workloadTelemetry,
-			assertEntitlement: (capability) => entitlementService.assertCapability(capability),
 			getPlatform: () => process.platform,
 			getCurrentProjectPath: () => currentProjectPath,
 			getCurrentVideoPath: () => currentVideoPath,

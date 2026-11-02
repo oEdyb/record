@@ -3,6 +3,7 @@ name = "openscreen-compositor"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 description = "Compositeur natif multiplateforme d'OpenScreen : décodage, pipeline, effets, scène, curseur, audio, et la vue live embarquable. Code de production — l'addon Electron (compositor-view-napi) s'y lie, le POC (poc-d3d) le consomme aussi.\n\nWindows : D3D11 + D3D11VA + shaders HLSL compilés à l'exécution. macOS : Metal + VideoToolbox + shaders MSL (port de ce PR)."
 
 [lib]

@@ -196,10 +196,6 @@ describe("registerIpcHandlers startup contract", () => {
 				video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
 			};
 		});
-		const { EntitlementService } = await import("../entitlements/service");
-		const entitlement = vi
-			.spyOn(EntitlementService.prototype, "assertCapability")
-			.mockResolvedValue();
 		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
 		const prepare = vi
 			.spyOn(NativeMacRecordingService.prototype, "prepare")
@@ -232,7 +228,6 @@ describe("registerIpcHandlers startup contract", () => {
 		expect(prepare.mock.calls.length + start.mock.calls.length).toBe(1);
 		prepare.mockRestore();
 		start.mockRestore();
-		entitlement.mockRestore();
 	});
 
 	it.each([

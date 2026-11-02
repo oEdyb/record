@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { documentSchema } from "../../src/lib/ai-edition/schema";
-import type { EntitlementCapability } from "../../src/lib/entitlements/contracts";
 import {
 	NATIVE_BRIDGE_CHANNEL,
 	NATIVE_BRIDGE_VERSION,
@@ -16,7 +15,6 @@ import {
 import type { DocumentService } from "../ai-edition/document-service";
 import { addNativeExportPaths } from "../diagnostics/nativeExportPaths";
 import type { WorkloadTelemetryService } from "../diagnostics/workloadTelemetry";
-import { EntitlementRequiredError } from "../entitlements/service";
 import { ExportTransactionError } from "../export/atomicExport";
 import { parseCleanCut } from "../export/cleanCutSpans";
 import { exportSourceHandoff } from "../export/sourceHandoff";
@@ -37,7 +35,6 @@ export interface NativeBridgeContext {
 	resolveApprovedRendererMediaPath?: (sourcePath: string) => string | null;
 	approveReadableRendererMediaPath?: (outputPath: string) => Promise<string | null>;
 	workloadTelemetry?: WorkloadTelemetryService;
-	assertEntitlement: (capability: EntitlementCapability) => Promise<void>;
 	getPlatform: () => NodeJS.Platform;
 	getCurrentProjectPath: () => string | null;
 	getCurrentVideoPath: () => string | null;
@@ -234,7 +231,6 @@ export function registerNativeBridgeHandlers(
 						case "getCurrentContext":
 							return createSuccessResponse(requestId, projectService.getCurrentContext());
 						case "saveProjectFile":
-							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await projectService.saveProjectFile(
@@ -466,7 +462,6 @@ export function registerNativeBridgeHandlers(
 						case "audioOverlayStem":
 							return createSuccessResponse(requestId, await audioOverlayStems.get(request.payload));
 						case "exportMulti": {
-							await context.assertEntitlement("export");
 							audioOverlayStems.validateSceneSources(request.payload.sceneJson);
 							const sender = event.sender;
 							const telemetryId = context.workloadTelemetry?.begin({
@@ -551,7 +546,6 @@ export function registerNativeBridgeHandlers(
 							return createSuccessResponse(requestId, stats);
 						}
 						case "exportGif": {
-							await context.assertEntitlement("export");
 							const sender = event.sender;
 							const telemetryId = context.workloadTelemetry?.begin({
 								kind: "export",
@@ -673,7 +667,6 @@ export function registerNativeBridgeHandlers(
 								await aiEditionService.get(request.payload.projectId),
 							);
 						case "document.create":
-							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.create(request.payload?.title),
@@ -692,7 +685,6 @@ export function registerNativeBridgeHandlers(
 								),
 							);
 						case "document.commit":
-							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.commit(
@@ -702,25 +694,21 @@ export function registerNativeBridgeHandlers(
 								),
 							);
 						case "document.save":
-							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.save(request.payload.document),
 							);
 						case "document.delete":
-							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.deleteProject(request.payload.projectId),
 							);
 						case "document.import":
-							await context.assertEntitlement("import");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.importProject(request.payload.document),
 							);
 						case "document.prepareAsset":
-							await context.assertEntitlement("import");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.prepareAsset(
@@ -732,7 +720,6 @@ export function registerNativeBridgeHandlers(
 							);
 
 						case "document.addAsset":
-							await context.assertEntitlement("import");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.addAsset(
@@ -743,7 +730,6 @@ export function registerNativeBridgeHandlers(
 								),
 							);
 						case "document.removeAsset":
-							await context.assertEntitlement("edit");
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.removeAsset(
@@ -784,7 +770,7 @@ export function registerNativeBridgeHandlers(
 			}
 			return createErrorResponse(
 				requestId,
-				error instanceof EntitlementRequiredError ? "ENTITLEMENT_REQUIRED" : "INTERNAL_ERROR",
+				"INTERNAL_ERROR",
 				redactPaths(error instanceof Error ? error.message : "Unknown native bridge error."),
 			);
 		}

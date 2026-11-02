@@ -184,44 +184,6 @@
 		"videoPreview": "Anteprima video",
 		"webcamPreview": "Anteprima webcam (trascina per riposizionare)"
 	},
-	"entitlement": {
-		"status": {
-			"trialNotStarted": "Prova di 14 giorni",
-			"trialDay": "{{count}} giorno rimasto",
-			"trialDays": "{{count}} giorni rimasti",
-			"offline": "Klippt Pro, offline",
-			"readOnly": "Sola lettura",
-			"reactivate": "Reinserisci la licenza"
-		},
-		"eyebrowReadOnly": "Accesso in sola lettura",
-		"eyebrowPro": "Klippt Pro",
-		"titleExpired": "I tuoi progetti sono al sicuro.",
-		"titleTrial": "Registra veloce. Conserva ogni file.",
-		"titleReactivate": "Inserisci di nuovo la chiave di licenza.",
-		"descriptionExpired": "Klippt è ora in sola lettura. Passa a Pro per {{capability}}.",
-		"descriptionTrial": "La prova include tutto Klippt: registrazione, revisione ed entrambi i modi di salvare.",
-		"descriptionReactivate": "Klippt non è riuscito a leggere la licenza salvata su questo Mac. I tuoi progetti e la data di prova sono conservati. Inserisci la chiave una volta per continuare con Pro.",
-		"capability": {
-			"record": "registrare nuove clip",
-			"edit": "modificare questo progetto",
-			"import": "importare nuovi contenuti",
-			"export": "esportare un video finito",
-			"automatic-editing": "usare il montaggio automatico",
-			"default": "registrare, modificare ed esportare"
-		},
-		"benefitClips": "Metti in pausa, riprendi e rimuovi l’ultima clip mentre registri",
-		"benefitExport": "Un solo video con la stessa qualità della registrazione",
-		"getPro": "Ottieni Klippt Pro",
-		"licenseKey": "Chiave di licenza",
-		"activate": "Attiva",
-		"filesSafe": "Nessun progetto o file sorgente viene rimosso al termine dell’accesso.",
-		"manage": "Gestisci",
-		"activated": "Klippt Pro è attivo.",
-		"benefitSources": "File di schermo, fotocamera e audio intatti per il tuo editor",
-		"descriptionTrialNotStarted": "La prova di 14 giorni inizia dopo la tua prima registrazione. Non serve la carta.",
-		"price": "{{monthly}} al mese o {{yearly}} all’anno",
-		"trialStarted": "La tua prova di 14 giorni è iniziata. Tutto ciò che registri resta sul tuo Mac."
-	},
 	"cpuCompositor": {
 		"notice": "Nessuna GPU compatibile: il rendering avviene sulla CPU, quindi la riproduzione è più lenta.",
 		"exportWarning": "Nessuna GPU compatibile: questa esportazione viene eseguita sulla CPU e richiederà molto più tempo del solito."

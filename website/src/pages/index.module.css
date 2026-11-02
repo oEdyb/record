@@ -658,8 +658,7 @@
 
 .pricing {
 	display: grid;
-	grid-template-columns: 1fr minmax(360px, 0.8fr);
-	gap: clamp(3rem, 8vw, 8rem);
+	grid-template-columns: 1fr;
 	align-items: center;
 }
 
@@ -672,76 +671,6 @@
 
 .pricingCopy p {
 	max-width: 520px;
-}
-
-.priceCard {
-	padding: 1.7rem;
-	border: 1px solid var(--k-border-strong);
-	border-radius: 17px;
-	background: #121215;
-	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
-}
-
-.priceRow {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 1rem;
-	padding-bottom: 1.3rem;
-	border-bottom: 1px solid var(--k-border);
-}
-
-.priceRow div {
-	display: flex;
-	align-items: baseline;
-	gap: 0.35rem;
-}
-
-.priceRow strong {
-	font-size: 2.1rem;
-	font-weight: 620;
-	letter-spacing: -0.045em;
-	color: var(--k-white);
-}
-
-.priceRow span {
-	font: 500 0.67rem/1 var(--k-utility);
-	color: var(--k-dim);
-}
-
-.or {
-	font-style: italic !important;
-}
-
-.priceCard ul {
-	display: grid;
-	gap: 0.7rem;
-	margin: 1.3rem 0;
-	padding: 0;
-	list-style: none;
-}
-
-.priceCard li {
-	display: flex;
-	align-items: center;
-	gap: 0.6rem;
-	font-size: 0.78rem;
-	color: var(--k-muted);
-}
-
-.priceCard li svg {
-	color: var(--k-accent);
-}
-
-.priceCard .primaryAction {
-	width: 100%;
-}
-
-.priceFoot {
-	margin: 0.8rem 0 0;
-	text-align: center;
-	font: 500 0.65rem/1.4 var(--k-utility);
-	color: var(--k-dim);
 }
 
 .closing {
@@ -882,13 +811,6 @@
 		margin-bottom: 1.6rem;
 	}
 
-	.priceRow {
-		align-items: flex-start;
-	}
-
-	.priceRow div {
-		flex-direction: column;
-	}
 }
 
 @media (prefers-reduced-motion: reduce) {

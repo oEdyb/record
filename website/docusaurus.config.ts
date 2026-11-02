@@ -90,7 +90,7 @@ const config: Config = {
 			items: [
 				{ to: "/#workflow", label: "Workflow", position: "left" },
 				{ to: "/#features", label: "Features", position: "left" },
-				{ to: "/#pricing", label: "Pricing", position: "left" },
+				{ href: "https://github.com/oEdyb/record", label: "GitHub", position: "left" },
 				{ to: "/support/", label: "Support", position: "right" },
 				{
 					to: "/download/",

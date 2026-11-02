@@ -1,4 +1,3 @@
-import { useEntitlementStore } from "@/lib/entitlements/store";
 import {
 	type AiEditionAssetResult,
 	type AiEditionDocumentResult,
@@ -62,9 +61,6 @@ async function invokeNativeBridge<TData = unknown>(
 export async function requireNativeBridgeData<TData>(request: NativeBridgeRequest): Promise<TData> {
 	const response = await invokeNativeBridge<TData>(request);
 	if (!response.ok) {
-		if (response.error.code === "ENTITLEMENT_REQUIRED") {
-			useEntitlementStore.getState().openDialog();
-		}
 		throw new NativeBridgeClientError(
 			response.error.message,
 			response.error.code,

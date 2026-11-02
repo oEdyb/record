@@ -451,7 +451,7 @@ async function fetchSharedDlls(tag, binDir) {
 			console.log(`Vendored ${libs.length} shared librar(ies) + ffmpeg-shared.exe -> ${binDir}`);
 		}
 		if (sdkDest) vendorFfmpegSdk(tmp, sdkDest);
-		console.log("LGPL verified: safe to ship with an MIT app.");
+		console.log("LGPL verified: no GPL or nonfree components.");
 	} finally {
 		fs.rmSync(tmp, { recursive: true, force: true });
 	}
@@ -554,7 +554,7 @@ async function main() {
 			console.log(`\n${banner}`);
 			reportEncoders(dest, process.platform);
 			console.log(`\nVendored -> ${dest}`);
-			console.log("LGPL verified: safe to ship with an MIT app.");
+			console.log("LGPL verified: no GPL or nonfree components.");
 		} finally {
 			fs.rmSync(tmp, { recursive: true, force: true });
 		}

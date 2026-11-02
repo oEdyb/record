@@ -109,7 +109,7 @@ checksum = "${"a".repeat(64)}"
 }
 
 describe("Cargo licence inventory", () => {
-	it("records every external locked package and ignores proprietary workspace crates", () => {
+	it("records every external locked package and ignores first-party workspace crates", () => {
 		const { root, dependencyRoot } = fixture();
 		const inventory = buildCargoLicenseInventory({
 			root,

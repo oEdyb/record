@@ -399,7 +399,6 @@ export type NativeBridgeErrorCode =
 	| "UNSUPPORTED_ACTION"
 	| "NOT_FOUND"
 	| "UNAVAILABLE"
-	| "ENTITLEMENT_REQUIRED"
 	| "EXPORT_FAILED"
 	| "INTERNAL_ERROR";
 

@@ -105,7 +105,7 @@ interface PreviewCanvasProps {
 	/**
 	 * Lets the viewer move and resize the picture-in-picture camera directly in the
 	 * preview. Independent of `readOnly`, which keeps every other layout control off in
-	 * review. The caller turns it off for a read-only entitlement and while exporting.
+	 * review. The caller turns it off while exporting.
 	 */
 	cameraEditable?: boolean;
 }

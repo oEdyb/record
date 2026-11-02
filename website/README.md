@@ -12,6 +12,4 @@ npm run deploy -- --yes   # upload to the Cloudflare Pages project "klippt" (own
 
 - The download page reads `https://updates.dyberg.co/klippt/latest.json` in the browser. The R2
   bucket needs a CORS rule that allows `GET` from `https://klippt.app`.
-- The checkout link comes from `electron/entitlements/commercial-config.json` (`live.checkoutUrl`),
-  the same file the app reads.
 - `static/_headers` sets the security headers Cloudflare Pages serves.

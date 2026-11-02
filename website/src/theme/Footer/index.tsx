@@ -16,7 +16,6 @@ export default function Footer(): ReactNode {
 					<Link to="/support/">Support</Link>
 					<Link to="/privacy/">Privacy</Link>
 					<Link to="/terms/">Terms</Link>
-					<Link to="/refund/">Refunds</Link>
 					<Link to="/notices/">Notices</Link>
 					<a href="mailto:support@klippt.app">support@klippt.app</a>
 					<a href="https://dyberg.co">Dyberg &amp; Co AB</a>

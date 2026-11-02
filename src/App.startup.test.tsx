@@ -10,10 +10,6 @@ vi.mock("./contexts/I18nContext", () => ({ useScopedT: () => (key: string) => ke
 vi.mock("./contexts/ShortcutsContext", () => ({
 	ShortcutsProvider: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("./lib/entitlements/store", () => ({
-	initializeEntitlements: async () => () => undefined,
-}));
-vi.mock("./components/entitlements/EntitlementDialog", () => ({ EntitlementDialog: () => null }));
 vi.mock("./components/ui/sonner", () => ({ Toaster: () => null }));
 vi.mock("./components/ui/tooltip", () => ({
 	TooltipProvider: ({ children }: { children: ReactNode }) => children,

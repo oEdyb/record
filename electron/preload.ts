@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { EntitlementSnapshot } from "../src/lib/entitlements/contracts";
 import type { NativeLinuxRecordingRequest } from "../src/lib/nativeLinuxRecording";
 import type {
 	NativeMacRecordingInterruption,
@@ -50,22 +49,6 @@ ipcRenderer.on(
 
 contextBridge.exposeInMainWorld("electronAPI", {
 	assetBaseUrl,
-	getEntitlement: () => ipcRenderer.invoke("entitlement:get") as Promise<EntitlementSnapshot>,
-	activateEntitlement: (licenseKey: string) =>
-		ipcRenderer.invoke("entitlement:activate", licenseKey) as Promise<EntitlementSnapshot>,
-	refreshEntitlement: () =>
-		ipcRenderer.invoke("entitlement:refresh") as Promise<EntitlementSnapshot>,
-	deactivateEntitlement: () =>
-		ipcRenderer.invoke("entitlement:deactivate") as Promise<EntitlementSnapshot>,
-	openEntitlementCheckout: () =>
-		ipcRenderer.invoke("entitlement:checkout") as Promise<{ opened: boolean }>,
-	openEntitlementManagement: () =>
-		ipcRenderer.invoke("entitlement:manage") as Promise<{ opened: boolean }>,
-	onEntitlementChanged: (callback: (snapshot: EntitlementSnapshot) => void) => {
-		const listener = (_event: unknown, snapshot: EntitlementSnapshot) => callback(snapshot);
-		ipcRenderer.on("entitlement:changed", listener);
-		return () => ipcRenderer.removeListener("entitlement:changed", listener);
-	},
 
 	// --- Native export encoder -------------------------------------------------
 	// The renderer composites and extracts frames but cannot spawn ffmpeg (it is
