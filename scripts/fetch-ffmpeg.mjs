@@ -457,6 +457,30 @@ async function fetchSharedDlls(tag, binDir) {
 	}
 }
 
+function matchesPin(file, pin) {
+	if (!fs.existsSync(file)) return false;
+	const bytes = fs.readFileSync(file);
+	return (
+		bytes.length === pin.size &&
+		crypto.createHash("sha256").update(bytes).digest("hex") === pin.sha256
+	);
+}
+
+/**
+ * ffprobe from the same pinned archive as ffmpeg. The app runs it beside the
+ * bundled ffmpeg to read stream facts for exported sources, and the package
+ * check accepts only these exact bytes.
+ */
+function vendorProbe(tmp, pin, dest) {
+	const found = findExe(tmp, pin.name);
+	if (!found) throw new Error(`${pin.name} not found inside the pinned ffmpeg archive`);
+	if (!matchesPin(found, pin)) throw new Error(`${pin.name} in the archive does not match its pin`);
+	if (process.platform === "linux") assertLgpl(found);
+	fs.copyFileSync(found, dest);
+	fs.chmodSync(dest, 0o755);
+	console.log(`Vendored -> ${dest}`);
+}
+
 async function main() {
 	const tag = `${process.platform}-${process.arch}`;
 
@@ -501,7 +525,12 @@ async function main() {
 		return;
 	}
 
-	if (fs.existsSync(dest) && !process.argv.includes("--force")) {
+	const probeDest = spec.probe ? path.join(binDir, spec.probe.name) : null;
+	if (
+		fs.existsSync(dest) &&
+		(!probeDest || matchesPin(probeDest, spec.probe)) &&
+		!process.argv.includes("--force")
+	) {
 		console.log(`Already present: ${dest}`);
 		console.log(assertLgpl(dest));
 		reportEncoders(dest, process.platform);
@@ -520,6 +549,7 @@ async function main() {
 			fs.mkdirSync(binDir, { recursive: true });
 			fs.copyFileSync(found, dest);
 			if (process.platform !== "win32") fs.chmodSync(dest, 0o755);
+			if (probeDest) vendorProbe(tmp, spec.probe, probeDest);
 
 			console.log(`\n${banner}`);
 			reportEncoders(dest, process.platform);

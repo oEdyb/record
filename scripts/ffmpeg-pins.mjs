@@ -22,11 +22,21 @@ export const FFMPEG_ARCHIVES = Object.freeze({
 		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-lgpl-8.1.tar.xz",
 		sha256: "8c8b2897f2a8093ae2d985f7f1867d218451d4c567c1b2437f86a7c73a950b9f",
 		exe: "ffmpeg",
+		probe: Object.freeze({
+			name: "ffprobe",
+			size: 114982280,
+			sha256: "f76afe5f9ad41be0b17b88504a91e7af891edde432c9a66f2444c7e121ba98fa",
+		}),
 	}),
 	"linux-arm64": Object.freeze({
 		asset: "ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-lgpl-8.1.tar.xz",
 		sha256: "0c8716a94ac1fe22eb56e7a0cedd0f00c1d8fae712ec19973d679a7a87916743",
 		exe: "ffmpeg",
+		probe: Object.freeze({
+			name: "ffprobe",
+			size: 93315328,
+			sha256: "0efca65af6fd16500f9c1c641f55ff480c798c5b5b2d966e8e16dc3714d619b9",
+		}),
 	}),
 });
 

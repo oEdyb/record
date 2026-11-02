@@ -1,14 +1,35 @@
+import { createHash } from "node:crypto";
 import { constants, globSync } from "node:fs";
 import { copyFile, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPackage } from "@electron/asar";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
 	normalizeAsarEntryPath,
 	verifyPackagedDistribution as verifyDistribution,
 } from "./verify-packaged-distribution.mjs";
+
+// The real pinned ffprobe is ~100 MB; stand in a tiny one with the same pin shape.
+const { PINNED_PROBE } = vi.hoisted(() => ({ PINNED_PROBE: "pinned ffprobe" }));
+vi.mock("./ffmpeg-pins.mjs", async (importOriginal) => {
+	const pins = await importOriginal();
+	const probe = {
+		name: "ffprobe",
+		size: Buffer.byteLength(PINNED_PROBE),
+		sha256: createHash("sha256").update(PINNED_PROBE).digest("hex"),
+	};
+	return {
+		...pins,
+		FFMPEG_ARCHIVES: Object.fromEntries(
+			Object.entries(pins.FFMPEG_ARCHIVES).map(([target, spec]) => [
+				target,
+				spec.probe ? { ...spec, probe } : spec,
+			]),
+		),
+	};
+});
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectories = [];
@@ -267,18 +288,49 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
 	});
 
-	it.each(["x64", "arm64"])("accepts Linux %s media probing and filter libraries", async (arch) => {
+	it.each([
+		"x64",
+		"arm64",
+	])("accepts the Linux %s filter library from the pinned SDK", async (arch) => {
 		const packageDir = await packageFixture();
 		const resources = path.join(packageDir, "resources");
 		await rename(path.join(packageDir, "Contents", "Resources"), resources);
 		const nativeDirectory = path.join(resources, "electron", "native", "bin", `linux-${arch}`);
 		await mkdir(nativeDirectory, { recursive: true });
-		for (const name of ["ffprobe", "libavfilter.so.11"]) {
-			await writeFile(path.join(nativeDirectory, name), "binary", { mode: 0o755 });
-		}
+		await writeFile(path.join(nativeDirectory, "libavfilter.so.11"), "binary", { mode: 0o755 });
 		await expect(
 			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch }),
 		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
+	});
+
+	it.each([
+		"x64",
+		"arm64",
+	])("accepts the Linux %s ffprobe pinned from the FFmpeg build", async (arch) => {
+		const packageDir = await packageFixture();
+		const resources = path.join(packageDir, "resources");
+		await rename(path.join(packageDir, "Contents", "Resources"), resources);
+		const nativeDirectory = path.join(resources, "electron", "native", "bin", `linux-${arch}`);
+		await mkdir(nativeDirectory, { recursive: true });
+		await writeFile(path.join(nativeDirectory, "ffprobe"), PINNED_PROBE, { mode: 0o755 });
+		await expect(
+			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch }),
+		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
+	});
+
+	it.each([
+		"x64",
+		"arm64",
+	])("rejects a Linux %s ffprobe that is not the pinned build", async (arch) => {
+		const packageDir = await packageFixture();
+		const resources = path.join(packageDir, "resources");
+		await rename(path.join(packageDir, "Contents", "Resources"), resources);
+		const nativeDirectory = path.join(resources, "electron", "native", "bin", `linux-${arch}`);
+		await mkdir(nativeDirectory, { recursive: true });
+		await writeFile(path.join(nativeDirectory, "ffprobe"), "system ffprobe", { mode: 0o755 });
+		await expect(
+			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch }),
+		).rejects.toThrow("Packaged ffprobe differs from the pinned FFmpeg build");
 	});
 
 	it.each([

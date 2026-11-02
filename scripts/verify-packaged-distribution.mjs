@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { extractFile, getRawHeader, listPackage, statFile } from "@electron/asar";
 import postcss from "postcss";
 import ts from "typescript";
+import { FFMPEG_ARCHIVES } from "./ffmpeg-pins.mjs";
 import { HELPER_MANIFEST_NAME, verifyHelperManifest } from "./helper-provenance.mjs";
 import { loadWebDemuxerPolicy } from "./web-demuxer-source.mjs";
 
@@ -107,7 +108,6 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-arm64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
-		ffprobe: "ffmpeg",
 		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),
@@ -118,7 +118,6 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-x64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
-		ffprobe: "ffmpeg",
 		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),
@@ -765,7 +764,16 @@ async function verifyNativeResources({ physical, target, sourceSha, violations }
 	if (hasWhisper && !manifestEntry) {
 		violations.push("Packaged Whisper helper has no provenance manifest");
 	}
+	// ffprobe ships only as the exact bytes pinned from the approved FFmpeg archive.
+	const probe = FFMPEG_ARCHIVES[target]?.probe;
 	for (const { entry, native } of expectedEntries) {
+		if (probe && native.relativePath === probe.name) {
+			const contents = await readFile(entry.resolved);
+			if (contents.length !== probe.size || sha256(contents) !== probe.sha256) {
+				violations.push(`Packaged ffprobe differs from the pinned FFmpeg build: ${entry.path}`);
+			}
+			continue;
+		}
 		const component = targetPolicy[native.relativePath];
 		if (!component && !helperPaths.has(native.relativePath)) {
 			violations.push(`Unmapped packaged native file: ${entry.path}`);
