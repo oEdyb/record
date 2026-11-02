@@ -1,6 +1,16 @@
 import { createHash } from "node:crypto";
 import { constants, globSync } from "node:fs";
-import { copyFile, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+	copyFile,
+	cp,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rename,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -316,6 +326,33 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 		await expect(
 			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch }),
 		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
+	});
+
+	it("rejects a Linux ffmpeg shipped without its pinned ffprobe", async () => {
+		const packageDir = await packageFixture();
+		const resources = path.join(packageDir, "resources");
+		await rename(path.join(packageDir, "Contents", "Resources"), resources);
+		const nativeDirectory = path.join(resources, "electron", "native", "bin", "linux-x64");
+		await mkdir(nativeDirectory, { recursive: true });
+		await writeFile(path.join(nativeDirectory, "ffmpeg"), "binary", { mode: 0o755 });
+		await expect(
+			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch: "x64" }),
+		).rejects.toThrow("Packaged ffmpeg has no pinned ffprobe beside it");
+	});
+
+	it("rejects a native directory reached through a symlink", async () => {
+		const packageDir = await packageFixture();
+		const resources = path.join(packageDir, "resources");
+		await rename(path.join(packageDir, "Contents", "Resources"), resources);
+		const payload = path.join(resources, "payload");
+		await mkdir(payload, { recursive: true });
+		await writeFile(path.join(payload, "ffprobe"), "system ffprobe", { mode: 0o755 });
+		const binDirectory = path.join(resources, "electron", "native", "bin");
+		await mkdir(binDirectory, { recursive: true });
+		await symlink(payload, path.join(binDirectory, "linux-x64"));
+		await expect(
+			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch: "x64" }),
+		).rejects.toThrow("Packaged directory symlink hides its files");
 	});
 
 	it.each([

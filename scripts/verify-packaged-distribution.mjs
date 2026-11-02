@@ -267,6 +267,13 @@ async function physicalFiles(root, current = root) {
 			}
 			const resolvedInfo = await stat(resolved);
 			if (resolvedInfo.isFile()) files.push({ filePath, resolved });
+			// Files behind a directory link are never walked, so the policy would not see
+			// them. macOS framework bundles are the only place that layout is expected.
+			else if (resolvedInfo.isDirectory() && !/\.framework\//.test(portable(filePath))) {
+				throw new Error(
+					`Packaged directory symlink hides its files: ${portable(path.relative(root, filePath))}`,
+				);
+			}
 			continue;
 		}
 		if (fileInfo.isDirectory()) files.push(...(await physicalFiles(root, filePath)));
@@ -764,8 +771,13 @@ async function verifyNativeResources({ physical, target, sourceSha, violations }
 	if (hasWhisper && !manifestEntry) {
 		violations.push("Packaged Whisper helper has no provenance manifest");
 	}
-	// ffprobe ships only as the exact bytes pinned from the approved FFmpeg archive.
+	// ffprobe ships only as the exact bytes pinned from the approved FFmpeg archive,
+	// and always beside the ffmpeg it belongs to.
 	const probe = FFMPEG_ARCHIVES[target]?.probe;
+	const shipped = new Set(expectedEntries.map(({ native }) => native.relativePath));
+	if (probe && shipped.has("ffmpeg") && !shipped.has(probe.name)) {
+		violations.push(`Packaged ffmpeg has no pinned ${probe.name} beside it`);
+	}
 	for (const { entry, native } of expectedEntries) {
 		if (probe && native.relativePath === probe.name) {
 			const contents = await readFile(entry.resolved);
