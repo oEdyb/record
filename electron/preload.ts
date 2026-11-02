@@ -5,6 +5,9 @@ import type {
 	NativeMacRecordingInterruption,
 	NativeMacRecordingRequest,
 	NativeMacStorageStatus,
+	NativeRecordingAppStopAcknowledgement,
+	NativeRecordingAppStopRequest,
+	NativeRecordingWebcamRegistration,
 } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
 import type {
@@ -30,13 +33,20 @@ const PLATFORM = process.platform;
 // MessagePort is the one Electron primitive that can move transferable preview
 // frames renderer-to-renderer without copying them through the main process.
 // Forward the port from the isolated preload world into the page world.
-ipcRenderer.on("camera-preview-port", (event, payload: { role: "producer" | "consumer" }) => {
-	window.postMessage(
-		{ type: "openscreen-camera-preview-port", role: payload.role },
-		"*",
-		event.ports,
-	);
-});
+ipcRenderer.on(
+	"camera-preview-port",
+	(event, payload: { role: "producer" | "consumer"; consumer?: "monitor" | "studio" }) => {
+		window.postMessage(
+			{
+				type: "openscreen-camera-preview-port",
+				role: payload.role,
+				consumer: payload.consumer ?? "monitor",
+			},
+			"*",
+			event.ports,
+		);
+	},
+);
 
 contextBridge.exposeInMainWorld("electronAPI", {
 	assetBaseUrl,
@@ -242,6 +252,39 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	closeTranscriptWindow: () => {
 		ipcRenderer.send("transcript-window-close");
 	},
+	openRecordingStudio: () => {
+		return ipcRenderer.invoke("studio-open");
+	},
+	getStudioSnapshot: () => {
+		return ipcRenderer.invoke("studio-snapshot");
+	},
+	onStudioUpdated: (callback: (snapshot: unknown) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown) => callback(snapshot);
+		ipcRenderer.on("studio-updated", listener);
+		return () => ipcRenderer.removeListener("studio-updated", listener);
+	},
+	studioCommand: (command: unknown) => {
+		ipcRenderer.send("studio-command", command);
+	},
+	/** Pill -> main: the pill opened a panel only it can show (permissions), so bring it forward. */
+	studioPillNeedsUser: () => {
+		ipcRenderer.send("studio-pill-needs-user");
+	},
+	/** Pill -> main: its own locks and Undo, which the Studio mirrors. */
+	reportStudioPillState: (state: unknown) => {
+		ipcRenderer.send("studio-pill-state", state);
+	},
+	/** Main -> pill: a setup change asked for in the Studio, applied by the pill's own handlers. */
+	onStudioSetupCommand: (callback: (command: unknown) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, command: unknown) => callback(command);
+		ipcRenderer.on("studio-setup-command", listener);
+		return () => ipcRenderer.removeListener("studio-setup-command", listener);
+	},
+	onHudRemovePreviousClip: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("hud-remove-previous-clip", listener);
+		return () => ipcRenderer.removeListener("hud-remove-previous-clip", listener);
+	},
 	getTranscriptSnapshot: () => {
 		return ipcRenderer.invoke("transcript-snapshot");
 	},
@@ -261,6 +304,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			const listener = (_event: unknown, snapshot: unknown) => callback(snapshot);
 			ipcRenderer.on("clean-cut-snapshot", listener);
 			return () => ipcRenderer.removeListener("clean-cut-snapshot", listener);
+		},
+	},
+	agent: {
+		onRequest: (
+			callback: (request: { id: string; method: string; params: Record<string, unknown> }) => void,
+		) => {
+			const listener = (
+				_event: unknown,
+				request: { id: string; method: string; params: Record<string, unknown> },
+			) => callback(request);
+			ipcRenderer.on("agent-request", listener);
+			return () => ipcRenderer.removeListener("agent-request", listener);
+		},
+		reply: (id: string, result: unknown, error?: string) => {
+			ipcRenderer.send("agent-reply", { id, result, error });
 		},
 	},
 	setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => {
@@ -353,6 +411,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openRecordingStream: (fileName: string) => {
 		return ipcRenderer.invoke("open-recording-stream", fileName);
 	},
+	registerNativeRecordingWebcam: (registration: NativeRecordingWebcamRegistration) =>
+		ipcRenderer.invoke("register-native-recording-webcam", registration),
 	appendRecordingChunk: (fileName: string, chunk: ArrayBuffer) => {
 		return ipcRenderer.invoke("append-recording-chunk", fileName, chunk);
 	},
@@ -379,20 +439,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	isNativeLinuxCaptureAvailable: () => {
 		return ipcRenderer.invoke("is-native-linux-capture-available");
 	},
-	prepareNativeLinuxRecording: (request: NativeLinuxRecordingRequest) => {
+	prepareNativeLinuxRecording: (
+		request: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
+	) => {
 		return ipcRenderer.invoke("prepare-native-linux-recording", request);
 	},
 	cancelNativeLinuxPrepare: () => {
 		return ipcRenderer.invoke("cancel-native-linux-prepare");
 	},
-	startNativeLinuxRecording: (request: NativeLinuxRecordingRequest) => {
+	startNativeLinuxRecording: (request: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("start-native-linux-recording", request);
 	},
 	pauseNativeLinuxRecording: () => {
 		return ipcRenderer.invoke("pause-native-linux-recording");
 	},
-	resumeNativeLinuxRecording: () => {
-		return ipcRenderer.invoke("resume-native-linux-recording");
+	resumeNativeLinuxRecording: (
+		request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
+	) => {
+		return ipcRenderer.invoke("resume-native-linux-recording", request);
 	},
 	stopNativeLinuxRecording: (discard?: boolean) => {
 		return ipcRenderer.invoke("stop-native-linux-recording", discard);
@@ -421,6 +485,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	startNativeMacRecording: (request: NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("start-native-mac-recording", request);
+	},
+	selectNativeLinuxSource: (
+		owner: NativeRecordingAppStopRequest,
+		cursorMode?: import("../src/lib/recordingSession").CursorCaptureMode,
+	) => {
+		return ipcRenderer.invoke("select-native-linux-source", owner, cursorMode);
 	},
 	pauseNativeMacRecording: () => {
 		return ipcRenderer.invoke("pause-native-mac-recording");
@@ -459,11 +529,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("native-mac-recording-storage-low", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-storage-low", listener);
 	},
-	onNativeMacRecordingStoppedByApp: (callback: () => void) => {
-		const listener = () => callback();
+	onNativeMacRecordingStoppedByApp: (
+		callback: (request: NativeRecordingAppStopRequest) => void,
+	) => {
+		const listener = (_event: Electron.IpcRendererEvent, request: NativeRecordingAppStopRequest) =>
+			callback(request);
 		ipcRenderer.on("native-mac-recording-stopped-by-app", listener);
 		return () => ipcRenderer.removeListener("native-mac-recording-stopped-by-app", listener);
 	},
+	acknowledgeNativeRecordingAppStop: (acknowledgement: NativeRecordingAppStopAcknowledgement) =>
+		ipcRenderer.invoke("acknowledge-native-recording-app-stop", acknowledgement),
 	stopNativeMacRecording: (discard?: boolean, clickedAtMs?: number) => {
 		return ipcRenderer.invoke("stop-native-mac-recording", discard, clickedAtMs);
 	},

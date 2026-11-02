@@ -1,0 +1,9 @@
+{
+  "privateDaemonPid": 1898066,
+  "generation": "b5143dde12554c2987d26a32ef4f2e6c",
+  "elapsedSec": 1.0015427830003318,
+  "result": "enumeration result=-1 error=PipeWire audio registry did not respond within one second\n",
+  "normalBefore": 0,
+  "normalAfter": 0,
+  "daemonResumed": true
+}

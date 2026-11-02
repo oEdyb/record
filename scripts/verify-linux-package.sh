@@ -93,7 +93,7 @@ if ! eval "$INSTALL_CMD" >/tmp/install.log 2>&1; then
 fi
 echo "ok install: declared depends resolved"
 
-ROOT=/opt/Openscreen
+ROOT=/opt/Klippt
 if [[ ! -d "$ROOT" ]]; then
 	echo "FAIL layout: $ROOT does not exist after install"
 	exit 1
@@ -156,10 +156,13 @@ echo "ok loader: all ${#ELVES[@]} ELF files resolve"
 # in ld.so. `timeout` because the Electron binary is the one thing here that might not
 # choose to exit.
 STARTED=0
-for exe in "$ROOT/openscreen" \
+for exe in "$ROOT/klippt" \
 	"$ROOT/resources/electron/native/bin/linux-x64/whisper-stt-server" \
 	"$ROOT/resources/electron/native/bin/linux-x64/openscreen-pipewire-helper"; do
-	[[ -x "$exe" ]] || continue
+	if [[ ! -x "$exe" ]]; then
+		echo "FAIL start: expected executable is missing: $exe"
+		exit 1
+	fi
 	err=$(timeout 60 "$exe" --help 2>&1 >/dev/null || true)
 	if grep -q "error while loading shared libraries" <<<"$err"; then
 		echo "FAIL start: $(basename "$exe") died in ld.so"

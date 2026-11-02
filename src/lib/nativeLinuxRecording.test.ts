@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { portalOwnsSourceSelection } from "./nativeLinuxRecording";
+import { linuxClipRecordingRequest, portalOwnsSourceSelection } from "./nativeLinuxRecording";
 
 function probe(platform: string, available: boolean | Error) {
 	return {
@@ -27,7 +27,7 @@ describe("portalOwnsSourceSelection", () => {
 		await expect(portalOwnsSourceSelection(probe("linux", true))).resolves.toBe(true);
 	});
 
-	it("is false on Linux without the helper, where the browser fallback needs a source id", async () => {
+	it("is false when the Linux native helper is unavailable", async () => {
 		await expect(portalOwnsSourceSelection(probe("linux", false))).resolves.toBe(false);
 	});
 
@@ -59,5 +59,83 @@ describe("portalOwnsSourceSelection", () => {
 				isNativeLinuxCaptureAvailable: async () => ({ success: false, available: true }),
 			}),
 		).resolves.toBe(false);
+	});
+});
+
+describe("legacy Linux clip request adapter", () => {
+	it("opens the system default instead of resolving its display label as a device", () => {
+		const base = linuxClipRecordingRequest({
+			video: { fps: 60 },
+			audio: { system: { enabled: true }, microphone: { enabled: true, gain: 1 } },
+			cursor: { mode: "system" },
+		});
+		const result = linuxClipRecordingRequest({
+			...base,
+			audio: {
+				...base.audio,
+				microphone: { enabled: true, gain: 1.4, deviceId: "default", deviceName: "Default" },
+			},
+		});
+		expect(result.audio.microphone).toEqual({ enabled: true, gain: 1.4, deviceId: "default" });
+		const explicit = {
+			enabled: true,
+			gain: 1,
+			deviceId: "specific",
+			deviceName: "Easy Effects Source",
+		};
+		expect(
+			linuxClipRecordingRequest({ ...base, audio: { ...base.audio, microphone: explicit } }).audio
+				.microphone,
+		).toEqual(explicit);
+	});
+
+	it("passes a request without an audio block through instead of throwing", () => {
+		const incomplete = {
+			schemaVersion: 1,
+			video: { fps: 60 },
+			webcam: { enabled: false },
+		} as unknown as Parameters<typeof linuxClipRecordingRequest>[0];
+		expect(() => linuxClipRecordingRequest(incomplete)).not.toThrow();
+		expect(linuxClipRecordingRequest(incomplete)).toMatchObject({
+			platform: "linux",
+			video: { fps: 60 },
+			webcam: { enabled: false },
+		});
+	});
+
+	it("keeps native preparation stable when the renderer camera finishes opening", () => {
+		const base = linuxClipRecordingRequest({
+			recordingId: 7,
+			video: { fps: 60 },
+			audio: { system: { enabled: false }, microphone: { enabled: false, gain: 1 } },
+			cursor: { mode: "system" },
+		});
+		const before = linuxClipRecordingRequest({
+			...base,
+			webcam: { enabled: true, width: 1920, height: 1080, fps: 30 },
+		});
+		const after = linuxClipRecordingRequest({
+			...base,
+			webcam: { enabled: true, width: 1920, height: 1080, fps: 60, deviceId: "opened-camera" },
+		});
+		expect(after).toEqual(before);
+		expect(after.webcam.enabled).toBe(false);
+	});
+
+	it("keeps explicit capture settings while supplying the canonical output/source/camera contract", () => {
+		const request = linuxClipRecordingRequest({
+			recordingId: 7,
+			video: { fps: 60, bitrate: 68_000_000 },
+			audio: { system: { enabled: true }, microphone: { enabled: false, gain: 1 } },
+			cursor: { mode: "system" },
+		});
+		expect(request).toMatchObject({
+			platform: "linux",
+			recordingId: 7,
+			source: { sourceId: "portal:selected" },
+			video: { fps: 60, bitrate: 68_000_000, hideSystemCursor: false },
+			webcam: { enabled: false },
+			outputs: { screenPath: "" },
+		});
 	});
 });

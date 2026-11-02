@@ -10,7 +10,12 @@
 //! Every value here is therefore derived, with the derivation shown, and pinned
 //! by a test at the bottom of the file rather than trusted.
 
-#![allow(non_upper_case_globals, non_camel_case_types, non_snake_case, dead_code)]
+#![allow(
+    non_upper_case_globals,
+    non_camel_case_types,
+    non_snake_case,
+    dead_code
+)]
 
 include!(concat!(env!("OUT_DIR"), "/ffmpeg_sys.rs"));
 
@@ -36,9 +41,32 @@ pub const AVERROR_EOF: i32 = fferrtag(b'E', b'O', b'F', b' ');
 pub const AVERROR_INVALIDDATA: i32 = fferrtag(b'I', b'N', b'D', b'A');
 pub const AVERROR_ENOMEM: i32 = -12;
 
-/// `AVIO_FLAG_WRITE` from libavformat/avio.h:618. A plain `#define` in a block
-/// bindgen skips, unlike the `SWS_*` flags below.
-pub const AVIO_FLAG_WRITE: i32 = 2;
+extern "C" {
+    pub fn osc_format_stream(context: *mut AVFormatContext, index: u32) -> *mut AVStream;
+    pub fn osc_format_open_io(context: *mut AVFormatContext, path: *const std::ffi::c_char) -> i32;
+    pub fn osc_format_close_io(context: *mut AVFormatContext) -> i32;
+    pub fn osc_codec_configure_video(
+        context: *mut AVCodecContext,
+        width: i32,
+        height: i32,
+        fps: i32,
+        pixel_format: i32,
+        bitrate: i64,
+    );
+    pub fn osc_codec_private_data(context: *mut AVCodecContext) -> *mut std::ffi::c_void;
+    pub fn osc_codec_ref_hardware_frames(
+        context: *mut AVCodecContext,
+        frames: *mut AVBufferRef,
+    ) -> i32;
+    pub fn osc_codec_configure_audio(
+        context: *mut AVCodecContext,
+        rate: i32,
+        channels: i32,
+        bitrate: i64,
+    );
+    pub fn osc_codec_frame_size(context: *const AVCodecContext) -> i32;
+    pub fn osc_codec_time_base(context: *const AVCodecContext) -> AVRational;
+}
 
 // The `SWS_*` rescaler flags are NOT redeclared here. They used to need it — the
 // compositor still carries its own copies (crates/compositor/src/linux_frames.rs)
@@ -76,7 +104,10 @@ mod tests {
         // hardcoded numbers, it checks them against the linked libavutil. A
         // wrong FourCC derivation shows up here as a mismatched message.
         assert_eq!(err_to_string(AVERROR_EOF), "End of file");
-        assert_eq!(err_to_string(AVERROR_INVALIDDATA), "Invalid data found when processing input");
+        assert_eq!(
+            err_to_string(AVERROR_INVALIDDATA),
+            "Invalid data found when processing input"
+        );
         assert_eq!(AVERROR_EAGAIN, -11);
     }
 

@@ -32,6 +32,8 @@ import {
 } from "./hudInputPolicy";
 import { createHudPointerWatch } from "./hudPointerWatch";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
+import { LINUX_HUD_INITIAL_SIZE, linuxHudWindowSize } from "./linuxHudGeometry";
+import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
 import {
 	localRectanglesContainScreenPoint,
 	normalizePrivateUiRectangles,
@@ -40,6 +42,7 @@ import {
 	rectangleContainsScreenPoint,
 	rectanglesContainScreenPoint,
 } from "./privateRecordingUi";
+import { LinuxCaptureConcealment } from "./recording/linuxCaptureConcealment";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -86,12 +89,11 @@ const CONTENT_PROTECTION_FORCED = process.env["OPENSCREEN_FORCE_CONTENT_PROTECTI
  * older macOS — where it may well work — would be a privacy regression made on
  * no evidence.
  *
- * NOTE: this leaves the HUD capturable on macOS 26. Apple already made that
- * partly true regardless — ScreenCaptureKit ignores `sharingType`, so any
- * SCK-based recorder (including *ours*, see
- * `electron/native/screencapturekit/`) captures these windows anyway. The
- * durable fix is to exclude our own windows via `SCContentFilter`'s
- * `excludingWindows:`, which that helper currently passes as `[]`.
+ * NOTE: this leaves our windows capturable by other recorders on macOS 26;
+ * ScreenCaptureKit ignores `sharingType` anyway. Our own display capture keeps
+ * them out with an `SCContentFilter` that excludes the whole Klippt process
+ * (`addNativeMacDisplayPrivacyExclusions`), which also covers windows opened
+ * later, such as the Studio.
  */
 const CONTENT_PROTECTION_BREAKS_DISPLAY = (() => {
 	if (process.platform !== "darwin") return false;
@@ -101,6 +103,12 @@ const CONTENT_PROTECTION_BREAKS_DISPLAY = (() => {
 	const macOSMajor = Number.parseInt(process.getSystemVersion().split(".")[0] ?? "", 10);
 	return Number.isFinite(macOSMajor) && macOSMajor >= 26;
 })();
+
+/**
+ * Linux has no content protection, so Notes and Transcript are concealed for the
+ * moments the HUD is (see `setCameraPreviewCaptureHidden` and `LinuxRecordingHud`).
+ */
+const utilityWindowConcealment = new LinuxCaptureConcealment(process.platform);
 
 function applyContentProtection(win: BrowserWindow, label: string) {
 	if (CONTENT_PROTECTION_DISABLED) {
@@ -132,8 +140,17 @@ export const ASSET_BASE_URL_ARG = "--asset-base-url=klippt://app/__resources__/"
 
 let hudOverlayWindow: BrowserWindow | null = null;
 let cameraPreviewWindow: BrowserWindow | null = null;
+/** The Studio gets its own camera relay port from the same producer; it never opens the camera. */
+let studioWindow: BrowserWindow | null = null;
 let cameraPreviewReady = false;
 let cameraPreviewVisible = false;
+let cameraPreviewCaptureHidden = false;
+let cameraPreviewOutsideCapture = false;
+let cameraPreviewCaptureGeneration = 0;
+const cameraPreviewGuard = new NiriCaptureWindowGuard("Klippt Camera", () => {
+	cameraPreviewOutsideCapture = false;
+	applyCameraPreviewVisibility();
+});
 let hudRendererReady = false;
 let cameraPreviewRendererReady = false;
 let cameraPreviewPortsConnected = false;
@@ -157,6 +174,15 @@ function isHudSender(senderId: number) {
 ipcMain.on("hud-overlay-set-direction-exclusion-rects", (event, rectangles: unknown) => {
 	if (!isHudSender(event.sender.id)) return;
 	hudDirectionExclusionRectangles = normalizePrivateUiRectangles(rectangles);
+	if (process.platform !== "linux" || !hudOverlayWindow) return;
+	const size = linuxHudWindowSize(hudDirectionExclusionRectangles);
+	if (!size) return;
+	const [width, height] = hudOverlayWindow.getSize();
+	if (width !== size.width || height !== size.height) {
+		// Wayland owns global position. Resizing from local content must not run
+		// the screen-coordinate pill clamping used by macOS and Windows.
+		hudOverlayWindow.setSize(size.width, size.height);
+	}
 });
 
 /** True only for painted private surfaces, not the HUD's large transparent backing window. */
@@ -214,6 +240,34 @@ function connectCameraPreviewRenderers() {
 	cameraPreviewWindow.webContents.postMessage("camera-preview-port", { role: "consumer" }, [port2]);
 }
 
+function connectStudioCameraRelay() {
+	if (
+		!hudRendererReady ||
+		!hudOverlayWindow ||
+		hudOverlayWindow.isDestroyed() ||
+		!studioWindow ||
+		studioWindow.isDestroyed()
+	)
+		return;
+	const { port1, port2 } = new MessageChannelMain();
+	hudOverlayWindow.webContents.postMessage(
+		"camera-preview-port",
+		{ role: "producer", consumer: "studio" },
+		[port1],
+	);
+	studioWindow.webContents.postMessage(
+		"camera-preview-port",
+		{ role: "consumer", consumer: "studio" },
+		[port2],
+	);
+}
+
+function isStudioSender(senderId: number): boolean {
+	return Boolean(
+		studioWindow && !studioWindow.isDestroyed() && studioWindow.webContents.id === senderId,
+	);
+}
+
 function isCameraPreviewSender(senderId: number): boolean {
 	return Boolean(
 		cameraPreviewWindow &&
@@ -227,11 +281,14 @@ function isCameraPreviewSender(senderId: number): boolean {
 // mounted page request a fresh pair so the preview cannot remain on Loading.
 ipcMain.on("camera-preview-request-connection", (event) => {
 	const senderId = event.sender.id;
+	if (isStudioSender(senderId)) return connectStudioCameraRelay();
 	if (isHudSender(senderId)) hudRendererReady = true;
 	else if (isCameraPreviewSender(senderId)) cameraPreviewRendererReady = true;
 	else return;
 	cameraPreviewPortsConnected = false;
 	connectCameraPreviewRenderers();
+	// A remounted pill drops every port it produced for; the Studio needs a fresh one too.
+	if (isHudSender(senderId)) connectStudioCameraRelay();
 });
 
 function placeCameraPreview(position?: CameraPreviewPoint): CameraPreviewPoint | null {
@@ -248,11 +305,31 @@ function placeCameraPreview(position?: CameraPreviewPoint): CameraPreviewPoint |
 
 function applyCameraPreviewVisibility() {
 	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed() || !cameraPreviewReady) return;
-	if (cameraPreviewVisible) {
+	if (cameraPreviewVisible && (!cameraPreviewCaptureHidden || cameraPreviewOutsideCapture)) {
 		cameraPreviewWindow.showInactive();
 	} else {
 		cameraPreviewWindow.hide();
 	}
+}
+
+export async function setCameraPreviewCaptureHidden(
+	hidden: boolean,
+	pipeWireNodeId?: number,
+): Promise<void> {
+	if (process.platform !== "linux") return;
+	utilityWindowConcealment.setConcealed(hidden);
+	const generation = ++cameraPreviewCaptureGeneration;
+	cameraPreviewCaptureHidden = hidden;
+	cameraPreviewOutsideCapture = false;
+	if (hidden && cameraPreviewVisible && cameraPreviewReady && cameraPreviewWindow?.isVisible()) {
+		const allowed = await cameraPreviewGuard.begin(pipeWireNodeId);
+		if (generation !== cameraPreviewCaptureGeneration) return;
+		cameraPreviewOutsideCapture = allowed;
+		if (!allowed) cameraPreviewGuard.end();
+		if (allowed && cameraPreviewVisible && cameraPreviewWindow?.isVisible()) return;
+		if (allowed) cameraPreviewGuard.invalidate();
+	} else cameraPreviewGuard.end();
+	applyCameraPreviewVisibility();
 }
 
 function setCameraPreviewExpanded(expanded: boolean) {
@@ -419,7 +496,7 @@ ipcMain.on("hud-overlay-set-dock", (event, side: unknown) => {
 			.map((other) => other.bounds);
 		// A restored edge another display now continues past stays untucked.
 		if (openDisplaySides(display.bounds, others).has(side)) {
-			if (hudDockSide !== side)
+			if (hudDockSide !== side && process.platform !== "linux")
 				win.setBounds(hudBoundsAtEdge(center, bounds, hudPillSize, display.workArea, side));
 			hudDockSide = side;
 		}
@@ -439,9 +516,13 @@ ipcMain.on("hud-overlay-hide", () => {
 const hudIgnoredMouseEvents = new WeakMap<BrowserWindow, boolean>();
 
 function setHudIgnoreMouseEvents(win: BrowserWindow, ignore: boolean) {
-	if (hudIgnoredMouseEvents.get(win) === ignore) return;
-	win.setIgnoreMouseEvents(ignore, { forward: true });
-	hudIgnoredMouseEvents.set(win, ignore);
+	// Electron 44 supports ignored input on Wayland, but forwarding is only
+	// supported on macOS/Windows. Ignoring Linux input would lose all re-entry.
+	const effectiveIgnore = process.platform === "linux" ? false : ignore;
+	if (hudIgnoredMouseEvents.get(win) === effectiveIgnore) return;
+	if (process.platform === "linux") win.setIgnoreMouseEvents(false);
+	else win.setIgnoreMouseEvents(effectiveIgnore, { forward: true });
+	hudIgnoredMouseEvents.set(win, effectiveIgnore);
 }
 
 ipcMain.on("hud-overlay-ignore-mouse-events", (event, ignore: unknown) => {
@@ -544,6 +625,7 @@ function sendHudWorkArea(win: BrowserWindow) {
 
 /** Moves or resizes the HUD so its pill stays where it was and on the display. */
 function placeHudAroundPill(win: BrowserWindow, size: { width: number; height: number }) {
+	if (process.platform === "linux") return;
 	const bounds = win.getBounds();
 	const pillCenter = pillCenterOf(bounds, bounds, hudPillSize);
 	const { workArea } = displayUnderPill(pillCenter);
@@ -636,7 +718,11 @@ export function createHudOverlayWindow(options: { returnToReview?: boolean } = {
 		y,
 		width: windowWidth,
 		height: windowHeight,
-	} = initialHudBounds({ width: 940, height: 1400 }, hudPillSize, workArea);
+	} = initialHudBounds(
+		process.platform === "linux" ? LINUX_HUD_INITIAL_SIZE : { width: 940, height: 1400 },
+		hudPillSize,
+		workArea,
+	);
 
 	const win = new BrowserWindow({
 		width: windowWidth,
@@ -787,6 +873,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 		cameraPreviewCompactSize,
 	);
 	const win = new BrowserWindow({
+		title: `${APP_DISPLAY_NAME} Camera`,
 		...cameraPreviewCompactSize,
 		x: initialPosition.x,
 		y: initialPosition.y,
@@ -814,6 +901,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 		},
 	});
 
+	win.on("page-title-updated", (event) => event.preventDefault());
 	applyContentProtection(win, "camera preview");
 	if (process.platform === "darwin") {
 		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -856,6 +944,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 	});
 
 	const keepPreviewOnScreen = () => {
+		cameraPreviewGuard.invalidate();
 		if (cameraPreviewWindow !== win || win.isDestroyed()) return;
 		const [x, y] = win.getPosition();
 		const appliedPosition = placeCameraPreview({ x, y });
@@ -870,6 +959,8 @@ export function createCameraPreviewWindow(): BrowserWindow {
 		screen.off("display-removed", keepPreviewOnScreen);
 		screen.off("display-metrics-changed", keepPreviewOnScreen);
 		if (cameraPreviewWindow !== win) return;
+		cameraPreviewGuard.end();
+		cameraPreviewOutsideCapture = false;
 		cameraPreviewWindow = null;
 		cameraPreviewReady = false;
 		cameraPreviewVisible = false;
@@ -1128,14 +1219,63 @@ export function createTranscriptWindow(): BrowserWindow {
 		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 		win.setAlwaysOnTop(true, "floating");
 	}
+	win.once("closed", utilityWindowConcealment.track(win));
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "Transcript");
-		win.show();
+		if (utilityWindowConcealment.mayShow(win)) win.show();
 	});
 	if (VITE_DEV_SERVER_URL) {
 		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=transcript");
 	} else {
 		win.loadURL("klippt://app/index.html?windowType=transcript");
+	}
+	return win;
+}
+
+/**
+ * The full-size recording view: replay, transcript and controls in one window, used
+ * instead of the pill. Titled exactly "Klippt Studio" so the niri capture guard can find
+ * it; the title never follows the page.
+ */
+export function createStudioWindow(near?: { x: number; y: number }): BrowserWindow {
+	const display = near ? screen.getDisplayNearestPoint(near) : screen.getPrimaryDisplay();
+	const area = display.workArea;
+	const width = Math.round(Math.min(area.width, Math.max(960, area.width * 0.86)));
+	const height = Math.round(Math.min(area.height, Math.max(640, area.height * 0.86)));
+	const win = new BrowserWindow({
+		title: `${APP_DISPLAY_NAME} Studio`,
+		width,
+		height,
+		x: Math.round(area.x + (area.width - width) / 2),
+		y: Math.round(area.y + (area.height - height) / 2),
+		minWidth: 660,
+		minHeight: 560,
+		// The Mac keeps its own window buttons over the Studio's title strip.
+		...(process.platform === "darwin"
+			? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 13 } }
+			: { frame: false }),
+		backgroundColor: "#111114",
+		resizable: true,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
+	win.on("page-title-updated", (event) => event.preventDefault());
+	if (process.platform !== "darwin") win.setAutoHideMenuBar(true);
+	applyContentProtection(win, "Studio");
+	studioWindow = win;
+	win.on("closed", () => {
+		if (studioWindow === win) studioWindow = null;
+	});
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=studio");
+	} else {
+		win.loadURL("klippt://app/index.html?windowType=studio");
 	}
 	return win;
 }
@@ -1242,9 +1382,10 @@ export function createNotesWindow(): BrowserWindow {
 	}
 	win.on("resize", () => publishNotesWindowBounds(win));
 	win.on("move", () => publishNotesWindowBounds(win));
+	win.once("closed", utilityWindowConcealment.track(win));
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "Notes");
-		win.show();
+		if (utilityWindowConcealment.mayShow(win)) win.show();
 	});
 
 	if (VITE_DEV_SERVER_URL) {

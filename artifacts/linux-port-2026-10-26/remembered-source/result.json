@@ -1,0 +1,116 @@
+{
+  "phases": [
+    {
+      "phase": "choose",
+      "selectedSeconds": 20.189,
+      "started": true,
+      "clips": [
+        {
+          "cursorCaptureMode": "system",
+          "durationMs": 2100,
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/remembered-source/choose-clip-0001.mp4"
+        }
+      ],
+      "exitCode": 0,
+      "grantSaved": true,
+      "grantPermissions": "0o600"
+    },
+    {
+      "phase": "reuse",
+      "selectedSeconds": 0.249,
+      "started": true,
+      "clips": [
+        {
+          "cursorCaptureMode": "system",
+          "durationMs": 2100,
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/remembered-source/reuse-clip-0001.mp4"
+        }
+      ],
+      "exitCode": 0,
+      "grantSaved": true,
+      "grantPermissions": "0o600"
+    },
+    {
+      "phase": "choose-again",
+      "selectedSeconds": 55.833,
+      "started": true,
+      "clips": [
+        {
+          "cursorCaptureMode": "system",
+          "durationMs": 2100,
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/remembered-source/choose-again-clip-0001.mp4"
+        }
+      ],
+      "exitCode": 0,
+      "grantSaved": true,
+      "grantPermissions": "0o600"
+    },
+    {
+      "phase": "cancel",
+      "selectedSeconds": null,
+      "started": false,
+      "clips": [],
+      "exitCode": 1,
+      "grantSaved": false
+    },
+    {
+      "phase": "reuse-after-cancel",
+      "selectedSeconds": 20.393,
+      "started": true,
+      "clips": [
+        {
+          "cursorCaptureMode": "system",
+          "durationMs": 2100,
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/remembered-source/reuse-after-cancel-clip-0001.mp4"
+        }
+      ],
+      "exitCode": 0,
+      "grantSaved": true,
+      "grantPermissions": "0o600"
+    }
+  ],
+  "media": [
+    {
+      "phase": "choose",
+      "backgroundRgb": [
+        26,
+        35,
+        38
+      ],
+      "fullyDecodes": true
+    },
+    {
+      "phase": "reuse",
+      "backgroundRgb": [
+        26,
+        35,
+        38
+      ],
+      "fullyDecodes": true
+    },
+    {
+      "phase": "choose-again",
+      "backgroundRgb": [
+        39,
+        27,
+        42
+      ],
+      "fullyDecodes": true
+    },
+    {
+      "phase": "reuse-after-cancel",
+      "backgroundRgb": [
+        39,
+        27,
+        42
+      ],
+      "fullyDecodes": true
+    }
+  ],
+  "builtAppHelperSha256": "4afd49192a9c485273c76d136a267b7d27c273817442fa47501cab3826d30090",
+  "provenance": "Native protocol probes ran during implementation; their initial binary hash was not retained. Built-app checks used builtAppHelperSha256 after the immutable cache-path correction."
+}

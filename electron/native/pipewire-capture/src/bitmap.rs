@@ -89,7 +89,9 @@ pub fn encode(constants: &Constants, bitmap: &CursorBitmap) -> Result<EncodedCur
     let width = bitmap.width as u32;
     let height = bitmap.height as u32;
     if width > MAX_DIMENSION || height > MAX_DIMENSION {
-        return Err(format!("cursor bitmap is implausibly large ({width}x{height})"));
+        return Err(format!(
+            "cursor bitmap is implausibly large ({width}x{height})"
+        ));
     }
 
     let order = channel_order(constants, bitmap.format)
@@ -224,7 +226,11 @@ mod tests {
         let mut sorted = ids.to_vec();
         sorted.sort_unstable();
         sorted.dedup();
-        assert_eq!(sorted.len(), ids.len(), "duplicate SPA video format ids: {ids:?}");
+        assert_eq!(
+            sorted.len(),
+            ids.len(),
+            "duplicate SPA video format ids: {ids:?}"
+        );
         assert_ne!(c.data_mem_ptr, c.data_dma_buf);
     }
 
@@ -233,8 +239,11 @@ mod tests {
         let c = constants();
         // Opaque on purpose: un-premultiplying by a=255 is the identity, so this
         // test stays about channel ORDER and nothing else.
-        let encoded = encode(&c, &bitmap(c.video_format_bgra, 1, 1, 4, vec![1, 2, 3, 0xff]))
-            .expect("encode");
+        let encoded = encode(
+            &c,
+            &bitmap(c.video_format_bgra, 1, 1, 4, vec![1, 2, 3, 0xff]),
+        )
+        .expect("encode");
         let (info, pixels) = decode(&encoded.image_data_url);
         assert_eq!((info.width, info.height), (1, 1));
         assert_eq!(&pixels[..4], &[3, 2, 1, 0xff]);
@@ -244,8 +253,11 @@ mod tests {
     fn argb_channels_are_reordered_to_rgba() {
         let c = constants();
         // One pixel: A=255, R=1, G=2, B=3.
-        let encoded = encode(&c, &bitmap(c.video_format_argb, 1, 1, 4, vec![0xff, 1, 2, 3]))
-            .expect("encode");
+        let encoded = encode(
+            &c,
+            &bitmap(c.video_format_argb, 1, 1, 4, vec![0xff, 1, 2, 3]),
+        )
+        .expect("encode");
         let (_, pixels) = decode(&encoded.image_data_url);
         assert_eq!(&pixels[..4], &[1, 2, 3, 0xff]);
     }
@@ -255,8 +267,11 @@ mod tests {
         let c = constants();
         // A half-transparent white pixel arrives premultiplied as 128/128/128
         // at a=128. Straight alpha puts the channels back at ~255.
-        let encoded = encode(&c, &bitmap(c.video_format_bgra, 1, 1, 4, vec![128, 128, 128, 128]))
-            .expect("encode");
+        let encoded = encode(
+            &c,
+            &bitmap(c.video_format_bgra, 1, 1, 4, vec![128, 128, 128, 128]),
+        )
+        .expect("encode");
         let (_, pixels) = decode(&encoded.image_data_url);
         assert_eq!(&pixels[..4], &[255, 255, 255, 128]);
     }
@@ -266,8 +281,8 @@ mod tests {
         let c = constants();
         // a=0 leaves the colour undefined; zeroing it is what makes two visually
         // identical sprites hash to the same asset id.
-        let encoded = encode(&c, &bitmap(c.video_format_bgra, 1, 1, 4, vec![9, 9, 9, 0]))
-            .expect("encode");
+        let encoded =
+            encode(&c, &bitmap(c.video_format_bgra, 1, 1, 4, vec![9, 9, 9, 0])).expect("encode");
         let (_, pixels) = decode(&encoded.image_data_url);
         assert_eq!(&pixels[..4], &[0, 0, 0, 0]);
     }
@@ -285,8 +300,11 @@ mod tests {
         let c = constants();
         // BGRx: the 4th byte is padding, not alpha. Dividing by it — or by the
         // 0xff we substitute — must leave the colours untouched.
-        let encoded = encode(&c, &bitmap(c.video_format_bgrx, 1, 1, 4, vec![10, 20, 30, 0]))
-            .expect("encode");
+        let encoded = encode(
+            &c,
+            &bitmap(c.video_format_bgrx, 1, 1, 4, vec![10, 20, 30, 0]),
+        )
+        .expect("encode");
         let (_, pixels) = decode(&encoded.image_data_url);
         assert_eq!(&pixels[..4], &[30, 20, 10, 0xff]);
     }
@@ -294,8 +312,8 @@ mod tests {
     #[test]
     fn padding_byte_becomes_opaque_for_formats_without_alpha() {
         let c = constants();
-        let encoded = encode(&c, &bitmap(c.video_format_bgrx, 1, 1, 4, vec![1, 2, 3, 0]))
-            .expect("encode");
+        let encoded =
+            encode(&c, &bitmap(c.video_format_bgrx, 1, 1, 4, vec![1, 2, 3, 0])).expect("encode");
         let (_, pixels) = decode(&encoded.image_data_url);
         assert_eq!(&pixels[..4], &[3, 2, 1, 0xff]);
     }
@@ -308,8 +326,7 @@ mod tests {
         let pixels = vec![
             1, 2, 3, 0xff, 0xaa, 0xaa, 0xaa, 0xaa, 5, 6, 7, 0xff, 0xbb, 0xbb, 0xbb, 0xbb,
         ];
-        let encoded =
-            encode(&c, &bitmap(c.video_format_bgra, 1, 2, 8, pixels)).expect("encode");
+        let encoded = encode(&c, &bitmap(c.video_format_bgra, 1, 2, 8, pixels)).expect("encode");
         let (_, decoded) = decode(&encoded.image_data_url);
         assert_eq!(&decoded[..8], &[3, 2, 1, 0xff, 7, 6, 5, 0xff]);
     }
@@ -344,16 +361,18 @@ mod tests {
     #[test]
     fn implausible_dimensions_are_rejected() {
         let c = constants();
-        let error = encode(&c, &bitmap(c.video_format_bgra, 4096, 1, 16384, vec![0; 16384]))
-            .expect_err("must reject");
+        let error = encode(
+            &c,
+            &bitmap(c.video_format_bgra, 4096, 1, 16384, vec![0; 16384]),
+        )
+        .expect_err("must reject");
         assert!(error.contains("implausibly large"), "{error}");
     }
 
     #[test]
     fn unknown_formats_are_reported_not_guessed() {
         let c = constants();
-        let error =
-            encode(&c, &bitmap(u32::MAX, 1, 1, 4, vec![0; 4])).expect_err("must reject");
+        let error = encode(&c, &bitmap(u32::MAX, 1, 1, 4, vec![0; 4])).expect_err("must reject");
         assert!(error.contains("unsupported"), "{error}");
     }
 }

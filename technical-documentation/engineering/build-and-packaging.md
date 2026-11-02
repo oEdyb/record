@@ -336,6 +336,18 @@ Electron-builder targets DMG for both `arm64` and `x64`, enables hardened runtim
 
 ### Linux and Nix
 
+The October 26 Linux capture helper uses dynamically loaded EGL/GLES and Wayland client
+libraries to import GPU buffers through the compositor's graphics driver. Build machines
+need EGL/GLES headers; packaged deb/rpm/pacman dependencies explicitly include the runtime
+libraries. Implicit DMA-BUF layouts are imported through EGL, never interpreted as linear
+CPU memory. The Linux build also fetches the pinned FFmpeg executable used for media
+inspection and source export, alongside the shared SDK.
+
+Use the pinned Linux CI runner for distributable packages. The existing
+`OPENSCREEN_SYMBOL_FLOOR=host` mode is only for development packages tested on their build
+machine; it does not establish compatibility with older distributions. Exact local helper
+provenance still applies. See [Linux port evidence](../../docs/linux-port-2026-10-26.md).
+
 Electron-builder produces AppImage, `.deb`, `.pacman`, and `.rpm` targets. Each fpm target carries its own `depends` list, which *replaces* electron-builder's default rather than extending it; all three package formats therefore repeat that default verbatim before adding the Vulkan ICD (`mesa-vulkan-drivers`, `vulkan-swrast` on Arch) the native compositor needs. The RPM list also restores `libsecret`, which electron-builder includes in its `deb` default but omits from its `rpm` one, and which `safeStorage` needs to encrypt LLM credentials. The flake separately supports `x86_64-linux` and `aarch64-linux`, offers NixOS and Home Manager modules, and builds a wrapper around nixpkgs' system Electron. `nix/package.nix` runs Vite directly, installs `dist/`, `dist-electron/`, production npm dependencies, wallpapers, icons, and a desktop entry; it does not invoke electron-builder. The release workflow later opens a PR to update the Nix package version and npm dependency hash after stable releases.
 
 ## Node and toolchain versions
@@ -343,3 +355,18 @@ Electron-builder produces AppImage, `.deb`, `.pacman`, and `.rpm` targets. Each 
 `package.json#engines` and `.nvmrc` both pin Node.js `22.22.1`. The package manifest pins npm `10.9.4` through both `packageManager` and `engines.npm`. The Nix shell supplies Node 22, while the shared GitHub Actions setup currently requests the Node 22 release line rather than the exact patch.
 
 TypeScript is `5.9.3`, Vite is `7.3.2`, Electron is `44.9.1`, and electron-builder is `26.8.1` in `package.json`. Native versions are controlled by their platform tools and project files rather than a single repository-wide compiler version.
+
+## Linux AppImage desktop identity
+
+The capture helper registers `co.dyberg.klippt` with the host portal. Native
+packages install `co.dyberg.klippt.desktop`. A standalone AppImage also needs a
+matching desktop entry in the user's applications directory for the portal to
+recognize that identity; simply executing the portable file does not install it.
+Its `Exec` must point to the actual AppImage and its icon to an existing resource.
+Validate the entry with `desktop-file-validate` and refresh the user desktop
+database after installation. Do not restart portal services to repair this.
+
+On the actual Niri setup, an absent entry produced `App info not found for
+'co.dyberg.klippt'`. After registering the candidate launcher, an approved owned
+window was restored in a fresh helper process with no chooser. See the scoped
+[Niri result](../../artifacts/linux-port-2026-10-26/remembered-source/README.md#actual-niri-follow-up).

@@ -106,6 +106,7 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-arm64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
+		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),
 		...Object.fromEntries(
@@ -115,6 +116,7 @@ const TARGET_NATIVE_COMPONENTS = {
 	"linux-x64": {
 		"compositor_view.node": "vulkan-compositor",
 		ffmpeg: "ffmpeg",
+		"klippt-parakeet-stt": "parakeet-stt",
 		"openscreen-pipewire-helper": "pipewire-capture",
 		...Object.fromEntries(LINUX_FFMPEG_LIBRARIES.map((file) => [file, "ffmpeg"])),
 		...Object.fromEntries(
@@ -166,7 +168,7 @@ function isCleanVoicePath(relativePath) {
 }
 
 function isExcludedAssetPath(relativePath) {
-	const normalized = relativePath.toLowerCase();
+	const normalized = `/${relativePath}`.toLowerCase();
 	const basename = path.basename(normalized);
 	if (LEGACY_ASSET.test(basename)) return true;
 	return normalized.includes("/cursors/") && !normalized.includes("/resources/cursors/default/");
@@ -364,15 +366,50 @@ function resourceKey(entry) {
 	const normalized = `/${portable(entry.path)}`;
 	const marker = "/resources/";
 	const index = normalized.toLowerCase().lastIndexOf(marker);
-	return index === -1 ? undefined : `physical:${normalized.slice(index + marker.length)}`;
+	return index === -1
+		? `file:${portable(entry.path)}`
+		: `physical:${normalized.slice(index + marker.length)}`;
 }
 
-async function exactAssetPolicy(root) {
+async function exactAssetPolicy(root, platform) {
 	const exact = new Map();
 	const add = async (key, sourcePath, component) => {
 		const bytes = await readFile(path.join(root, sourcePath));
 		exact.set(key, { component, size: bytes.length, sha256: sha256(bytes) });
 	};
+	const appArmorTemplate = await readFile(
+		path.join(
+			root,
+			"node_modules",
+			"app-builder-lib",
+			"templates",
+			"linux",
+			"apparmor-profile.tpl",
+		),
+		"utf8",
+	);
+	const appArmor = Buffer.from(
+		appArmorTemplate
+			.replaceAll("${executable}", "klippt")
+			.replaceAll("${sanitizedProductName}", "Klippt"),
+	);
+	exact.set("physical:apparmor-profile", {
+		component: "electron-builder",
+		size: appArmor.length,
+		sha256: sha256(appArmor),
+	});
+	if (platform === "linux") {
+		for (const fileName of [".DirIcon", "klippt.png"]) {
+			await add(`file:${fileName}`, "icons/icons/png/1024x1024.png", "klippt-brand");
+		}
+		for (const size of [16, 24, 32, 48, 64, 128, 256, 512, 1024]) {
+			await add(
+				`file:usr/share/icons/hicolor/${size}x${size}/apps/klippt.png`,
+				`icons/icons/png/${size}x${size}.png`,
+				"klippt-brand",
+			);
+		}
+	}
 	await add("physical:icon.icns", "icons/icons/mac/icon.icns", "klippt-brand");
 	await add("physical:icon.ico", "icons/icons/win/icon.ico", "klippt-brand");
 	for (const fileName of [
@@ -413,6 +450,7 @@ async function reviewedPhysicalResourcePaths(root, exactAssets) {
 			"THIRD-PARTY-INVENTORY.json",
 			"THIRD-PARTY-NOTICES.md",
 			"app-update.yml",
+			"package-type",
 			"app.asar",
 			"web-demuxer.wasm",
 		].map((value) => value.toLowerCase()),
@@ -428,11 +466,28 @@ async function reviewedPhysicalResourcePaths(root, exactAssets) {
 	return paths;
 }
 
-async function verifyPhysicalResourceBoundary({ root, exactAssets, physical, violations }) {
+async function verifyPhysicalResourceBoundary({
+	root,
+	exactAssets,
+	physical,
+	violations,
+	platform,
+}) {
 	const reviewed = await reviewedPhysicalResourcePaths(root, exactAssets);
 	for (const entry of physical) {
-		const relativePath = resourceRelativePath(entry.path);
+		const relativePath = resourceRelativePath(entry.path)?.toLowerCase();
 		if (!relativePath || nativePath(entry.path)) continue;
+		if (relativePath === "package-type" || relativePath === "apparmor-profile") {
+			const contents = await readFile(entry.resolved);
+			const profile = exactAssets.get("physical:apparmor-profile");
+			const valid =
+				relativePath === "package-type"
+					? ["deb", "rpm", "pacman"].includes(contents.toString("utf8"))
+					: profile && contents.length === profile.size && sha256(contents) === profile.sha256;
+			if (platform !== "linux" || !valid)
+				violations.push(`Invalid generated Linux resource: ${entry.path}`);
+		}
+
 		if (!reviewed.has(relativePath.toLowerCase())) {
 			violations.push(`Unmapped packaged resource: ${entry.path}`);
 		}
@@ -742,7 +797,7 @@ export async function verifyPackagedDistribution({
 	}
 	const entries = [...physical, ...archivedEntries];
 	const violations = [];
-	const exactAssets = await exactAssetPolicy(root);
+	const exactAssets = await exactAssetPolicy(root, platform);
 	const builtOutputs = await buildOutputPolicy(root, buildOutputRoots);
 
 	for (const entry of entries) {
@@ -767,7 +822,7 @@ export async function verifyPackagedDistribution({
 		sourceSha,
 		violations,
 	});
-	await verifyPhysicalResourceBoundary({ root, exactAssets, physical, violations });
+	await verifyPhysicalResourceBoundary({ root, exactAssets, physical, violations, platform });
 	verifyArchivedExecutables({ entries: archivedEntries, violations });
 	verifyAsarBuildOutputs({ entries: archivedEntries, policy: builtOutputs, violations });
 	await verifyReviewedAssets({ root, exact: exactAssets, entries, violations });
@@ -780,7 +835,7 @@ export async function verifyPackagedDistribution({
 	const approvedWebAssembly = webAssembly.filter(
 		(entry) =>
 			entry.archivePath === undefined &&
-			entry.path.toLowerCase().endsWith("/resources/web-demuxer.wasm"),
+			`/${entry.path}`.toLowerCase().endsWith("/resources/web-demuxer.wasm"),
 	);
 	for (const entry of webAssembly.filter((item) => !approvedWebAssembly.includes(item))) {
 		violations.push(`Unapproved packaged WebAssembly: ${entry.path}`);
@@ -797,7 +852,7 @@ export async function verifyPackagedDistribution({
 	}
 
 	const chromiumNotices = physical.filter((entry) =>
-		entry.path.toLowerCase().endsWith("/resources/licenses.chromium.html"),
+		`/${entry.path}`.toLowerCase().endsWith("/resources/licenses.chromium.html"),
 	);
 	const expectedChromiumNotice = await readFile(
 		path.join(root, "node_modules", "electron", "dist", "LICENSES.chromium.html"),

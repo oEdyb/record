@@ -1,0 +1,12 @@
+{
+  "sourceSha": "a4f92422d7cfb871edf1e50a417063274985edab",
+  "appImageSha256": "f4691b4a7dda10e9a3e65e63bbdbbb5da00e4f2451bc40efca5420e11d92890f",
+  "packagedHelperSha256": "831f5b5b5e10a82921733d702d81bfc5bd992546a82b2c493b8078712804cc06",
+  "normalFuseAppImage": true,
+  "osInput": true,
+  "idleChoiceCreatedMedia": false,
+  "recordReusedGrantWithoutPicker": true,
+  "clipDurationMs": 2350,
+  "fullyDecodes": true,
+  "grantPermissions": "0o600"
+}

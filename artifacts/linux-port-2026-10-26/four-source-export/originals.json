@@ -1,0 +1,66 @@
+[
+  {
+    "clipIndex": 0,
+    "role": "screen",
+    "sha256": "b362f2d4354503c8f0d89f1342f65762c43541f2dc9ca55182f427b57a057485",
+    "identical": true,
+    "fullDecodeExitCode": 0
+  },
+  {
+    "clipIndex": 0,
+    "role": "camera",
+    "sha256": "b02e3cc45f0856549c693bab2d087860dd651e0d922dd0997733613fcab1c1af",
+    "identical": true,
+    "fullDecodeExitCode": 0
+  },
+  {
+    "clipIndex": 0,
+    "role": "microphone",
+    "sha256": "e9916daf36c83f87dd5eca3b2145768710d6b7f90b8858a75f10831b4396a421",
+    "identical": true,
+    "fullDecodeExitCode": 0,
+    "frequencyHz": 660.0,
+    "rms": 0.08811870217323303
+  },
+  {
+    "clipIndex": 0,
+    "role": "system",
+    "sha256": "9288b7737ccdd405a6677b4f949dfd22b6ea56ba552738b278c03f5e2e23f979",
+    "identical": true,
+    "fullDecodeExitCode": 0,
+    "frequencyHz": 440.0,
+    "rms": 0.0882863700389862
+  },
+  {
+    "clipIndex": 1,
+    "role": "screen",
+    "sha256": "8c3e7f5b37205f941287f1d22024df51b32667c7bbed5a2499e7c700ca575127",
+    "identical": true,
+    "fullDecodeExitCode": 0
+  },
+  {
+    "clipIndex": 1,
+    "role": "camera",
+    "sha256": "7f06ce0efdbb7c3dd8ac47740c367a1b777a6bc16c4f70fcc0e2a7f4414800b2",
+    "identical": true,
+    "fullDecodeExitCode": 0
+  },
+  {
+    "clipIndex": 1,
+    "role": "microphone",
+    "sha256": "2fff4de260d49efe118f2cb51098fe6676b6c718f23fc9a5363dea7017168e66",
+    "identical": true,
+    "fullDecodeExitCode": 0,
+    "frequencyHz": 660.0,
+    "rms": 0.08801815658807755
+  },
+  {
+    "clipIndex": 1,
+    "role": "system",
+    "sha256": "d55afed383c16a6f3252b58d08d09ae141044498a0f68c3e2cb5ff4c79b990b4",
+    "identical": true,
+    "fullDecodeExitCode": 0,
+    "frequencyHz": 440.0,
+    "rms": 0.08824434876441956
+  }
+]

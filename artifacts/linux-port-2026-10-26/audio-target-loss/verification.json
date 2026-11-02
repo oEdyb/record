@@ -1,0 +1,116 @@
+{
+  "baseCommit": "c386b7c1",
+  "privateLab": "klippt",
+  "hostAudioDevicesUsed": false,
+  "probes": {
+    "before": {
+      "durationSec": 8.917333333333334,
+      "dominantHzAtSeconds": {
+        "1": 440.0,
+        "5": 880.0,
+        "7": 880.0
+      },
+      "rawPcmSha256": "4b767b8c949d30b806d768706c0db466f267f5ea9e458ec077e5ae9697cadf9f"
+    },
+    "after": {
+      "durationSec": 3.029333333333333,
+      "dominantHzAtSeconds": {
+        "1": 440.0,
+        "5": null,
+        "7": null
+      },
+      "rawPcmSha256": "2541ab01082b021a4d091aeb8f579ff50a8a2d38240c49d1130c63fcf9a79a70"
+    },
+    "default": {
+      "durationSec": 9.002666666666666,
+      "dominantHzAtSeconds": {
+        "1": 440.0,
+        "5": 880.0,
+        "7": 880.0
+      },
+      "rawPcmSha256": "6d9ab7634e56368c9c084104d1d5ccb160b84cc0284f6a5256ffba15ccfcea2e"
+    }
+  },
+  "app": {
+    "helperPid": 1795238,
+    "recordingId": 1793014620541,
+    "requestMicrophone": {
+      "enabled": true,
+      "deviceId": "a01dd0d9256592d7a1d75f91fc0d505cfa5cd5cfb9541a0e2251c4da78bea84a",
+      "deviceName": "LabMicrophoneA",
+      "gain": 1.4
+    },
+    "committedClip": {
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793014620541-clip-0001-microphone.mov",
+      "microphoneAudioOffsetMs": 3.7989643333333376,
+      "index": 0,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793014620541-clip-0001.mp4",
+      "durationMs": 35600,
+      "cursorCaptureMode": "editable-overlay"
+    },
+    "committedSourceHashes": {
+      "microphoneAudioPath": "4f0ba6455a10162bc7b1b92192735ffdd6bbe6a5aa4712712c7b5b3804c8d275",
+      "screenVideoPath": "f74056816d56c98d173c5e4c8ba8f405805f3af7e14f90865a8d8c67583dedae"
+    },
+    "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793014620541.session.json",
+    "interruption": {
+      "code": "capture-stopped-with-error",
+      "message": "microphone stream failed in error: defined target not found"
+    },
+    "clips": [
+      {
+        "index": 0,
+        "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793014620541-clip-0001.mp4",
+        "durationMs": 35600,
+        "cursorCaptureMode": "editable-overlay",
+        "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793014620541-clip-0001-microphone.mov",
+        "microphoneAudioOffsetMs": 3.7989643333333376,
+        "sources": {
+          "screenVideoPath": {
+            "sha256": "f74056816d56c98d173c5e4c8ba8f405805f3af7e14f90865a8d8c67583dedae",
+            "fullDecodeExit": 0
+          },
+          "microphoneAudioPath": {
+            "sha256": "4f0ba6455a10162bc7b1b92192735ffdd6bbe6a5aa4712712c7b5b3804c8d275",
+            "fullDecodeExit": 0
+          }
+        },
+        "microphoneDecodedDurationSec": 35.605333333333334,
+        "microphoneWholeSecondPeaksHz": [
+          440.0
+        ]
+      },
+      {
+        "index": 1,
+        "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793014620541-clip-0002.mp4",
+        "durationMs": 60000,
+        "provisionalDuration": true,
+        "cursorCaptureMode": "editable-overlay",
+        "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793014620541-clip-0002-microphone.mov",
+        "microphoneAudioOffsetMs": 2.161197333333341,
+        "sources": {
+          "screenVideoPath": {
+            "sha256": "cf0a8c0138618dca2efabafe7a5bf9692e853a333d74fdf8731adc805425a30c",
+            "fullDecodeExit": 0
+          },
+          "microphoneAudioPath": {
+            "sha256": "0a4171c9d0b62f50bb37ab59028b30b893e4914ba513b4046d8135b69c30cb2b",
+            "fullDecodeExit": 0
+          }
+        },
+        "microphoneDecodedDurationSec": 20.672,
+        "microphoneWholeSecondPeaksHz": [
+          440.0
+        ]
+      }
+    ],
+    "committedFilesUnchanged": true,
+    "provisionalTailNote": "Failure tail keeps a provisional manifest duration; normal review independently probes media and displays 57 seconds / 2 clips. This is not exact timing or performance evidence."
+  },
+  "helperSha256": "37cd9ef3f9f91217c1b3b4dcbc506026af2f549e8f45e9d0a06f98ff938b8642",
+  "sourceSha256": {
+    "electron/native/pipewire-capture/csrc/pw_audio.c": "80cebd94ba0006be404186366b472e17aafe52cd9dfcd48b331f3542ad397474",
+    "electron/native/pipewire-capture/src/shim.rs": "2063700d457043d75edb61f601fedf940b2843ce126389d5ecfbae145b549a49"
+  },
+  "sourceNote": "Review snapshot hashes; host smoke preceded final module documentation and an extra test assertion. Exact final-source portable helper evidence is in packaged-verification.json."
+}

@@ -1,0 +1,6 @@
+{
+  "transport": "real Unix socket plus installed niri CLI, synthetic two-monitor compositor replies",
+  "admitted": true,
+  "revoked": 1,
+  "elapsedMs": 18
+}

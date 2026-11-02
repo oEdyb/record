@@ -374,97 +374,32 @@ impl SwDecoder {
         // Le seek rouvre le flux : le drapeau EOF du pompage sequentiel retombe.
         self.sent_eof = false;
 
-        let mut pkt: *mut crate::ffi::AVPacket = ptr::null_mut();
-        let mut frame: *mut AVFrame = ptr::null_mut();
         let mut found: *mut AVFrame = ptr::null_mut();
-
         let target_ts_seconds = target_ts / 1_000_000.0;
-        let mut invalid_skips = 0u32;
-        'outer: loop {
-            pkt = av_packet_alloc();
-            if pkt.is_null() {
-                bail!("av_packet_alloc en boucle");
-            }
-            let r = av_read_frame(self.fmt, pkt);
-            if r < 0 {
-                // EOF ou erreur : on a épuisé le fichier sans atteindre la cible.
-                av_packet_free(&mut pkt);
-                break 'outer;
-            }
-            if (*pkt).stream_index != self.stream_idx {
-                // Pas un packet vidéo — on le jette et on continue.
-                av_packet_free(&mut pkt);
-                continue;
-            }
-            let send_r = avcodec_send_packet(self.dec, pkt);
-            av_packet_free(&mut pkt);
-            if send_r == -0x2A2A2A2A {
-                // AVERROR_INVALIDDATA — packet mal aligné après un seek. On le
-                // saute et on continue ; le decodeur attendra un packet propre.
-                // Valeur ffmpeg = -1094995529 (0xBEEBBEEB), ici écrite comme
-                // un nombre négatif littéral pour éviter la dépendance `ffi::`.
-                invalid_skips += 1;
-                if invalid_skips > 8 {
-                    bail!("plus de 8 packets invalides après seek — fichier ou codec cassé");
+        // Use the sequential pump, including its NULL-packet drain at demux EOF.
+        // A short final GOP can remain entirely buffered by frame threading.
+        loop {
+            let received = match self.receive_into(self.frame) {
+                Ok(received) => received,
+                Err(error) => {
+                    av_frame_free(&mut found);
+                    return Err(error);
                 }
-                continue;
+            };
+            if !received {
+                break;
             }
-            if send_r < 0 && send_r != -11 {
-                bail!("avcodec_send_packet: {send_r}");
-            }
-            frame = av_frame_alloc();
-            if frame.is_null() {
-                bail!("av_frame_alloc en boucle");
-            }
-            loop {
-                let recv_r = avcodec_receive_frame(self.dec, frame);
-                if recv_r == 0 {
-                    if found.is_null() {
-                        found = av_frame_alloc();
-                        if found.is_null() {
-                            bail!("av_frame_alloc pour resultat");
-                        }
-                    }
-                    // FUITE MÉMOIRE si on l'oublie. `av_frame_move_ref` écrase
-                    // `found` SANS déréférencer ce qu'il contenait — c'est écrit
-                    // noir sur blanc dans libavutil/frame.h : « dst is not
-                    // unreferenced, but directly overwritten without reading or
-                    // deallocating its contents. Call av_frame_unref(dst)
-                    // manually before calling this function to ensure that no
-                    // memory is leaked. »
-                    //
-                    // Cette boucle décode en avant depuis la keyframe jusqu'à la
-                    // cible, donc elle passe ici une fois par frame du GOP. Sans
-                    // ce unref, chaque frame intermédiaire abandonnait ses
-                    // buffers : ~3,1 Mo en 1080p YUV420P, plusieurs dizaines de
-                    // fois par scrub. Symptôme observé : le scrubbing ralentit
-                    // progressivement, puis l'app gèle et meurt.
-                    av_frame_unref(found);
-                    av_frame_move_ref(found, frame);
-                    av_frame_unref(frame);
-                    if (*found).best_effort_timestamp as f64 * self.stream_timebase
-                        >= target_ts_seconds
-                    {
-                        break 'outer;
-                    }
-                } else if recv_r == -11 {
-                    break;
-                } else if recv_r == -541478725 {
-                    // AVERROR_EOF
-                    break 'outer;
-                } else if recv_r < 0 {
-                    bail!("avcodec_receive_frame: {recv_r}");
-                } else {
-                    break;
+            if found.is_null() {
+                found = av_frame_alloc();
+                if found.is_null() {
+                    bail!("av_frame_alloc pour resultat");
                 }
             }
-            av_frame_free(&mut frame);
-        }
-        if !frame.is_null() {
-            av_frame_free(&mut frame);
-        }
-        if !pkt.is_null() {
-            av_packet_free(&mut pkt);
+            av_frame_unref(found);
+            av_frame_move_ref(found, self.frame);
+            if (*found).best_effort_timestamp as f64 * self.stream_timebase >= target_ts_seconds {
+                break;
+            }
         }
         if found.is_null() {
             bail!("decode_at(frame_idx={frame_idx}) : aucune frame reçue");
@@ -511,6 +446,55 @@ impl SwDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    unsafe fn assert_fragmented_tail_seeks(path: &str, last_index: u32) {
+        let mut decoder = SwDecoder::open(path).unwrap();
+        // Force frame-thread buffering even on single-core CI hosts. The final
+        // GOP has fewer packets than threads, so it yields nothing without drain.
+        let codec = (*decoder.dec).codec;
+        avcodec_free_context(&mut decoder.dec);
+        decoder.dec = avcodec_alloc_context3(codec);
+        assert!(!decoder.dec.is_null());
+        let stream = sn_fmt_stream(decoder.fmt, decoder.stream_idx);
+        assert_eq!(
+            avcodec_parameters_to_context(decoder.dec, (*stream).codecpar),
+            0
+        );
+        (*decoder.dec).thread_count = 16;
+        assert_eq!(avcodec_open2(decoder.dec, codec, ptr::null_mut()), 0);
+
+        for index in [last_index - 1, last_index, last_index + 1, 0, last_index] {
+            let frame = decoder.decode_at(index).unwrap();
+            let expected = index.min(last_index) as f64 / 60.0;
+            assert!((decoder.cur_time_sec().unwrap() - expected).abs() < 0.00001);
+            assert!((*frame).width > 0 && (*frame).height > 0);
+            SwDecoder::free_frame(frame);
+            if index == last_index - 1 {
+                assert!(!decoder.next_frame().unwrap().is_null());
+                assert!(
+                    (decoder.cur_time_sec().unwrap() - last_index as f64 / 60.0).abs() < 0.00001
+                );
+            }
+            if index >= last_index {
+                assert!(decoder.next_frame().unwrap().is_null());
+            }
+        }
+    }
+
+    #[test]
+    fn fragmented_tail_seek_drains_frame_threads() {
+        let path = std::env::temp_dir().join(format!(
+            "klippt-linux-fragmented-eof-{}.mp4",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            include_bytes!("../tests/fixtures/seek-eof-fragmented.mp4"),
+        )
+        .unwrap();
+        unsafe { assert_fragmented_tail_seeks(path.to_str().unwrap(), 40) };
+        std::fs::remove_file(path).unwrap();
+    }
 
     /// Le décodeur ne paniquera pas si le fichier n'existe pas — il renvoie
     /// `Err`. C'est ce que le test d'intégration attend pour skipper proprement

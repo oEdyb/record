@@ -1,0 +1,54 @@
+{
+  "runtimeSourceSha": "6bdd95af9f76b79a9b2674ed9a9f1df8c9db5edb",
+  "appImageSha256": "ba06ab2f6fc25a73582fe2df38ae1a12902e756eebcdffc55d88b1be980492b0",
+  "packagedAddonSha256": "fe053afb4a7a4885fea325708bd32be39bbdd9664ccc194cf63bfe9bf0c39fb9",
+  "usesAddonOverride": false,
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "duration": "14.500000",
+        "nb_frames": "871",
+        "nb_read_frames": "870"
+      },
+      {
+        "codec_name": "aac",
+        "duration": "14.516000",
+        "nb_frames": "682",
+        "nb_read_frames": "681"
+      }
+    ],
+    "format": {
+      "duration": "14.516000"
+    }
+  },
+  "fullDecodeExitCode": 0,
+  "normalCliExitCode": 0,
+  "audioWindows": [
+    {
+      "startSec": 1,
+      "amplitudes": {
+        "440": 0.12471341319734607,
+        "660": 0.17466135843261812
+      }
+    },
+    {
+      "startSec": 8,
+      "amplitudes": {
+        "440": 0.12486481330010905,
+        "660": 0.17484728045444192
+      }
+    },
+    {
+      "startSec": 12,
+      "amplitudes": {
+        "440": 0.12509692831294172,
+        "660": 0.17429491591076077
+      }
+    }
+  ],
+  "allEightOriginalHashesUnchanged": true,
+  "mediaSha256": "01a50447315bbf83f358d159d89e69f2896f2a2b9dedc7da52f071c5566f5b72"
+}

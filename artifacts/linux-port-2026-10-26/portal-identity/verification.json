@@ -1,0 +1,31 @@
+{
+  "baseCommit": "3f40a8e973ad0ededcb2c4ff80325656dd218e12",
+  "changedSource": "electron/native/pipewire-capture/src/portal.rs",
+  "changedSourceSha256": "15b59f3c61ba1ed986d41b543d78a053526d030f513300c6047c2f723184bfbc",
+  "hostHelperSha256": "af3a627ee4afd41b14ba3c1d47a7772885bda8c0602a857dfc8ed8d79ff1a93e",
+  "mediaSha256": "c59b49288cb71d91b02b592171f2f77cb9a230dc57ba27aafcb8880d3396177e",
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080
+      }
+    ],
+    "format": {
+      "duration": "2.766667"
+    }
+  },
+  "fullDecodeExitCode": 0,
+  "privateDesktop": "KWin 6.8.1 / KDE portal",
+  "labStopped": true,
+  "checks": {
+    "portalTests": 3,
+    "strictHelperClippy": "pass",
+    "rustfmt": "pass",
+    "fullSuiteRun": false
+  },
+  "packageState": "host-built helper only; portable runtime remains 844348aa"
+}

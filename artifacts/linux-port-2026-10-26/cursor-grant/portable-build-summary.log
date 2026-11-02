@@ -1,0 +1,7 @@
+{"source":{"commit":"fcf6b7dd025d15ccabddf6d908b69b69ba2731d7","workflowRunId":"0"},"files":20,"toolchains":{"cmake":"cmake version 3.22.1","compiler":"c++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0","node":"v22.22.1","runner":"local Ubuntu 22.04 container; workflow 0 is not a CI run","vulkanSdk":"1.4.304.1"}}
+  • building        target=AppImage arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.AppImage
+  • building        target=deb arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.deb
+  • building        target=pacman arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.pacman
+  • building        target=rpm arch=x64 file=release/1.9.5/Klippt-Linux-1.9.5.rpm
+Packaged distribution approved for linux-x64: 1 WebAssembly, 0 models
+FINAL_PORTABLE_PACKAGE_POLICY_PASS

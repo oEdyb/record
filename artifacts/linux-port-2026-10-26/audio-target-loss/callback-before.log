@@ -1,0 +1,21 @@
+   Compiling openscreen-pipewire-helper v0.0.0 (/home/olle/dev/screenrec-linux/electron/native/pipewire-capture)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.66s
+     Running unittests src/main.rs (electron/native/pipewire-capture/target/debug/deps/openscreen_pipewire_helper-7d4f97633af5ba2e)
+
+running 1 test
+
+thread 'shim::source_tests::unexpected_audio_disconnect_is_reported_but_normal_teardown_is_not' (1774555) panicked at src/shim.rs:1076:9:
+assertion `left == right` failed
+  left: None
+ right: Some("the audio source disconnected")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test shim::source_tests::unexpected_audio_disconnect_is_reported_but_normal_teardown_is_not ... FAILED
+
+failures:
+
+failures:
+    shim::source_tests::unexpected_audio_disconnect_is_reported_but_normal_teardown_is_not
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 107 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--bin openscreen-pipewire-helper`

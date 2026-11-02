@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "kind": "klippt-source-handoff",
+  "title": "Recording 10/26/2026, 6:05:39 PM",
+  "createdAt": "2026-10-26T17:06:30.751Z",
+  "videoEncoding": "unchanged",
+  "audioEncoding": "unchanged",
+  "mediaBytes": "unchanged",
+  "timeline": {
+    "file": "timeline.otio",
+    "frameRate": 60
+  },
+  "finalCutTimeline": {
+    "file": "timeline.fcpxml",
+    "frameRate": 60
+  },
+  "sources": [
+    {
+      "assetId": "asset_ef4ad696-0231-41cc-bef1-46361d0699fc",
+      "screen": {
+        "file": "001-screen.mp4",
+        "label": "recording-1793034278407-clip-0001.mp4",
+        "durationSec": 11.33,
+        "audio": [
+          {
+            "role": "microphone",
+            "file": "001-microphone.mov",
+            "durationSec": 11.29
+          },
+          {
+            "role": "system",
+            "file": "001-system.mov",
+            "durationSec": 11.33
+          }
+        ]
+      },
+      "camera": {
+        "file": "001-camera.mp4",
+        "label": "recording-1793034278407-clip-0001-webcam.mp4",
+        "durationSec": 11.3,
+        "audio": [],
+        "visibleInKlippt": true
+      }
+    },
+    {
+      "assetId": "asset_06457580-322d-49f1-873d-bdfca86e3035",
+      "screen": {
+        "file": "002-screen.mp4",
+        "label": "recording-1793034278407-clip-0002.mp4",
+        "durationSec": 3.26,
+        "audio": [
+          {
+            "role": "microphone",
+            "file": "002-microphone.mov",
+            "durationSec": 3.26
+          },
+          {
+            "role": "system",
+            "file": "002-system.mov",
+            "durationSec": 3.24
+          }
+        ]
+      },
+      "camera": {
+        "file": "002-camera.mp4",
+        "label": "recording-1793034278407-clip-0002-webcam.mp4",
+        "durationSec": 3.2,
+        "audio": [],
+        "visibleInKlippt": true
+      }
+    }
+  ],
+  "warnings": []
+}

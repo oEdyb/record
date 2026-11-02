@@ -24,13 +24,22 @@
 //! events, and /dev/input/event* is root:input. Every sample is therefore a
 //! "move"; there is no click detection to be had here at any effort level.
 
+mod audio_preparation;
+mod audio_queue;
+mod audio_ring;
 mod bitmap;
 mod capture;
+mod clips;
 mod encoder;
 mod events;
 mod ffmpeg;
+mod originals;
 mod portal;
+mod portal_grants;
+mod request;
 mod shim;
+mod source_loss;
+mod source_selection;
 
 use std::collections::HashSet;
 use std::io::{BufRead, Write};
@@ -39,9 +48,8 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
+use request::{AudioSourceConfig, CursorRequest, Request};
 
-use capture::Capture;
 use events::{timestamp_ms, CursorAsset, Emitter, Event};
 use shim::{FrameMailbox, StreamEvent};
 
@@ -50,169 +58,39 @@ const DEFAULT_SAMPLE_INTERVAL_MS: u64 = 33;
 const MIN_SAMPLE_INTERVAL_MS: u64 = 8;
 
 const DEFAULT_FPS: i32 = 30;
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct VideoRequest {
-    fps: Option<i32>,
-    bitrate: Option<i64>,
-}
-
-/// Mirrors the `audio` block of `NativeWindowsRecordingRequest`
-/// (src/lib/nativeWindowsRecording.ts) so the three platforms take the same
-/// request shape.
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct AudioRequest {
-    system: SystemAudioRequest,
-    microphone: MicrophoneRequest,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct SystemAudioRequest {
-    enabled: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct MicrophoneRequest {
-    enabled: bool,
-    /// A PipeWire node name (`node.name`), not the browser device id the UI
-    /// carries: the two namespaces are unrelated and there is no mapping
-    /// between them. Absent means the session default source.
-    device_name: Option<String>,
-    /// Linear multiplier the UI applies to microphone level.
-    gain: Option<f32>,
-}
-
 const DEFAULT_AUDIO_BITRATE: i64 = 128_000;
-/// How many frames a window stream may deliver without a crop rectangle before
-/// the helper gives up waiting and records the whole stream.
-///
-/// mutter records one frame synchronously when the stream is enabled, which can
-/// land before the picked window is mapped and therefore carry an empty rect. A
-/// handful of frames is ~100 ms at 60 fps — long enough to skip that, short
-/// enough that a compositor which never sends a crop still starts recording.
 const MAX_FRAMES_AWAITING_CROP: u32 = 8;
-/// How much audio may queue before the oldest is discarded. Generous: the drain
-/// runs every loop tick, so reaching this means the encoder stopped entirely.
 const AUDIO_RING_SECONDS: usize = 2;
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct Request {
-    sample_interval_ms: Option<u64>,
-    /// Where to write the MP4. Absent means cursor-only: no pixels are mapped,
-    /// no encoder is opened, and the helper behaves exactly as Stage 1 did.
-    output_path: Option<String>,
-    /// `"metadata"` (default) keeps the pointer out of the pixels so the editor
-    /// can draw its own; `"embedded"` asks the compositor to paint it in. These
-    /// are the two halves of the HUD's cursor-mode toggle.
-    cursor_mode: Option<String>,
-    video: Option<VideoRequest>,
-    audio: Option<AudioRequest>,
-    /// Negotiate the portal, report `source-selected`, then WAIT for `record` on
-    /// stdin before connecting to PipeWire.
-    ///
-    /// Splits "the user has chosen what to share" from "pixels are flowing", so a
-    /// caller can put a countdown between them instead of counting down before
-    /// the picker has even appeared. Defaults to false, which keeps the
-    /// single-shot behaviour every existing caller relies on.
-    defer_start: bool,
-    /// Emit `ready` and exit, without ever calling the portal's `Start()`.
-    ///
-    /// Everything up to that point is non-interactive; `Start()` is the single
-    /// call that raises the compositor's source picker. This flag is what makes
-    /// the dlopen path, the portal connection and the cursor-mode check testable
-    /// — in CI or by hand — without hijacking someone's screen.
-    probe_only: bool,
-}
-
-impl Request {
-    fn cursor_mode(&self) -> Result<portal::CursorMode, String> {
-        match self.cursor_mode.as_deref() {
-            None | Some("") | Some("metadata") => Ok(portal::CursorMode::Metadata),
-            Some("embedded") => Ok(portal::CursorMode::Embedded),
-            Some("hidden") => Ok(portal::CursorMode::Hidden),
-            Some(other) => Err(format!(
-                "cursorMode must be one of metadata, embedded, hidden — got {other:?}"
-            )),
-        }
-    }
-
-    fn fps(&self) -> i32 {
-        self.video
-            .as_ref()
-            .and_then(|video| video.fps)
-            .filter(|fps| *fps > 0 && *fps <= 240)
-            .unwrap_or(DEFAULT_FPS)
-    }
-
-    /// An explicit override, or `None` to let the encoder derive one from the
-    /// size the compositor negotiates. `None` is the normal case: on Wayland the
-    /// app cannot know the capture resolution in advance, so a bitrate chosen
-    /// caller-side is a guess about a picture nobody has seen yet.
-    fn bitrate(&self) -> Option<i64> {
-        self.video
-            .as_ref()
-            .and_then(|video| video.bitrate)
-            .filter(|bitrate| *bitrate > 0)
-    }
-
-    /// The audio streams to open, in the order they become MP4 tracks.
-    ///
-    /// Empty when no output file was requested: a cursor-only session has
-    /// nothing to mux audio into, and opening a capture stream would show the
-    /// user a recording indicator for a recording that is not happening.
-    fn audio_sources(&self) -> Vec<AudioSourceConfig> {
-        if self.output_path.is_none() {
-            return Vec::new();
-        }
-        let Some(audio) = self.audio.as_ref() else {
-            return Vec::new();
-        };
-        let mut sources = Vec::new();
-        if audio.system.enabled {
-            sources.push(AudioSourceConfig {
-                label: "system",
-                target: None,
-                // The default SINK's monitor: what is being played, not what a
-                // microphone hears.
-                capture_sink: true,
-                gain: 1.0,
-                bitrate: DEFAULT_AUDIO_BITRATE,
-            });
-        }
-        if audio.microphone.enabled {
-            sources.push(AudioSourceConfig {
-                label: "microphone",
-                target: audio.microphone.device_name.clone(),
-                capture_sink: false,
-                gain: audio.microphone.gain.filter(|gain| *gain > 0.0).unwrap_or(1.0),
-                bitrate: DEFAULT_AUDIO_BITRATE,
-            });
-        }
-        sources
-    }
-}
-
-struct AudioSourceConfig {
-    label: &'static str,
-    target: Option<String>,
-    capture_sink: bool,
-    gain: f32,
-    bitrate: i64,
-}
 
 enum Message {
     Portal(Box<Result<portal::PortalStream, portal::PortalError>>),
     Stream(StreamEvent),
+    SourceEvent {
+        generation: u64,
+        event: StreamEvent,
+    },
+    ReplacementPortal {
+        generation: u64,
+        result: Box<Result<portal::PortalStream, portal::PortalError>>,
+    },
+    SelectSource(Option<CursorRequest>),
+    CancelSelectSource,
+    CancelAudioPreparation,
+    AudioOpened {
+        generation: u64,
+        opened: Box<audio_preparation::Opened>,
+    },
     /// Arm a deferred session: connect to PipeWire and start encoding.
     Record,
     Pause,
     Resume,
     Stop,
+    Reconfigure(Box<Request>),
+    CommandError(String),
+    AudioError {
+        generation: u64,
+        message: String,
+    },
 }
 
 fn main() {
@@ -227,11 +105,14 @@ fn main() {
             fail(&mut emitter, "invalid-arguments", &message);
         }
     };
+    if let Err(message) = request.validate() {
+        fail(&mut emitter, "invalid-arguments", &message);
+    }
     let cursor_mode = match request.cursor_mode() {
         Ok(mode) => mode,
         Err(message) => fail(&mut emitter, "invalid-arguments", &message),
     };
-    let output_path = request.output_path.as_deref().map(PathBuf::from);
+    let output_path = request.screen_path().map(PathBuf::from);
     let forced_encoder = match encoder::forced_backend_from_env() {
         Ok(backend) => backend,
         Err(message) => fail(&mut emitter, "invalid-arguments", &message),
@@ -282,35 +163,30 @@ fn main() {
 
     let (sender, receiver) = mpsc::channel::<Message>();
     spawn_stdin_reader(sender.clone());
-    spawn_portal(sender.clone(), cursor_mode);
+    spawn_portal(sender.clone(), cursor_mode, request.portal_selection());
 
     let session = RunConfig {
         tick,
         sample_interval,
         output_path,
-        fps: request.fps(),
-        bitrate: request.bitrate(),
         forced_encoder,
-        cursor_mode,
         audio: request.audio_sources(),
         defer_start: request.defer_start,
+        request,
     };
     let exit_code = run(&mut emitter, receiver, sender, session);
     std::process::exit(exit_code);
 }
 
 struct RunConfig {
+    request: Request,
     /// How often the loop wakes when nothing arrives.
     tick: Duration,
     /// Minimum spacing between cursor samples on stdout.
     sample_interval: Duration,
     /// `None` for a cursor-only session.
     output_path: Option<PathBuf>,
-    fps: i32,
-    /// `None` lets the encoder derive one from the negotiated size.
-    bitrate: Option<i64>,
     forced_encoder: Option<encoder::Backend>,
-    cursor_mode: portal::CursorMode,
     audio: Vec<AudioSourceConfig>,
     /// Wait for `record` on stdin before connecting to PipeWire. See
     /// [`Request::defer_start`].
@@ -324,11 +200,14 @@ struct RunConfig {
 /// picture and no system audio is worth far more to the user than no recording
 /// at all, and the most likely cause — a sandbox without the PipeWire socket —
 /// is not something the helper can fix.
-fn start_audio<W: Write>(
-    emitter: &mut Emitter<W>,
+fn start_audio(
     configs: &[AudioSourceConfig],
-) -> (Vec<shim::AudioSession>, Vec<capture::AudioSource>) {
+    sender: &Sender<Message>,
+    generation: u64,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> audio_preparation::Opened {
     let mut sessions = Vec::new();
+    let mut events = Vec::new();
     let mut sources = Vec::new();
     // Enumerated ONCE for the whole recording, not per stream: it opens its own
     // PipeWire connection and runs a loop to completion, so doing it per source
@@ -337,12 +216,9 @@ fn start_audio<W: Write>(
         match shim::list_audio_sources() {
             Ok(list) => list,
             Err(message) => {
-                let _ = emitter.emit(&Event::Warning {
+                events.push(Event::Warning {
                     code: "audio-enumeration-failed".to_owned(),
-                    message: format!(
-                        "the PipeWire graph could not be listed, so the requested microphone \
-                         cannot be resolved and the session default will be used instead: {message}"
-                    ),
+                    message: format!("the PipeWire audio graph could not be listed: {message}"),
                 });
                 Vec::new()
             }
@@ -352,6 +228,9 @@ fn start_audio<W: Write>(
     };
 
     for config in configs {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            break;
+        }
         let ring = Arc::new(shim::AudioRing::new(
             AUDIO_RING_SECONDS,
             encoder::AUDIO_SAMPLE_RATE as usize,
@@ -365,23 +244,28 @@ fn start_audio<W: Write>(
             .target
             .as_deref()
             .and_then(|wanted| resolve_microphone_node(wanted, &graph));
-        let _ = emitter.emit(&Event::AudioSource {
+        events.push(Event::AudioSource {
             role: label.to_owned(),
             requested: config.target.clone(),
             node: resolved.clone(),
         });
         if let Some(wanted) = config.target.as_deref() {
             if resolved.is_none() {
-                let _ = emitter.emit(&Event::Warning {
+                events.push(Event::Warning {
                     code: "microphone-not-found".to_owned(),
-                    message: format!(
-                        "no PipeWire capture node matches {wanted:?}, so the session default \
-                         source will be recorded instead — which is often not the microphone \
-                         the user picked."
-                    ),
+                    message: format!("no PipeWire capture node matches {wanted:?}"),
                 });
             }
         }
+        if config.resolution == request::AudioResolution::Required
+            && config.target.is_some()
+            && resolved.is_none()
+        {
+            // A requested device must not silently become the default device.
+            // Legacy outputPath callers retain their historical fallback above.
+            continue;
+        }
+        let failures = sender.clone();
         let session = shim::AudioSession::start(
             resolved.as_deref(),
             config.capture_sink,
@@ -390,7 +274,10 @@ fn start_audio<W: Write>(
             ring.clone(),
             Box::new(move |state, error| {
                 if let Some(error) = error {
-                    eprintln!("[audio:{label}] stream error in state {state}: {error}");
+                    let _ = failures.send(Message::AudioError {
+                        generation,
+                        message: format!("{label} stream failed in {state}: {error}"),
+                    });
                 }
             }),
         );
@@ -405,7 +292,7 @@ fn start_audio<W: Write>(
                 });
             }
             Err(message) => {
-                let _ = emitter.emit(&Event::Warning {
+                events.push(Event::Warning {
                     code: "audio-unavailable".to_owned(),
                     message: format!(
                         "the {} audio stream could not be opened, so the recording will \
@@ -416,7 +303,36 @@ fn start_audio<W: Write>(
             }
         }
     }
-    (sessions, sources)
+    audio_preparation::Opened {
+        sessions,
+        sources,
+        events,
+        expected: configs.len(),
+    }
+}
+
+fn prepare_audio(
+    generation: u64,
+    configs: Vec<AudioSourceConfig>,
+    action: audio_preparation::Action,
+    sender: &Sender<Message>,
+) -> audio_preparation::Preparation {
+    let preparation = audio_preparation::Preparation::new(generation, action);
+    let cancelled = preparation.cancellation();
+    let sender = sender.clone();
+    std::thread::spawn(move || {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return;
+        }
+        let opened = start_audio(&configs, &sender, generation, &cancelled);
+        if !cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = sender.send(Message::AudioOpened {
+                generation,
+                opened: Box::new(opened),
+            });
+        }
+    });
+    preparation
 }
 
 fn parse_request() -> Result<Request, String> {
@@ -439,46 +355,114 @@ fn fail<W: Write>(emitter: &mut Emitter<W>, code: &str, message: &str) -> ! {
 ///
 /// The command vocabulary is the Windows and macOS helpers': `stop`, `pause`,
 /// `resume`, one per line on stdin (see the `proc.stdin.write("pause\n")` calls
-/// in electron/ipc/handlers.ts). Unknown lines are ignored rather than fatal —
-/// a newer parent talking to an older helper should degrade, not crash.
+/// in electron/ipc/handlers.ts). Invalid commands emit errors without terminating
+/// an otherwise healthy capture.
 fn spawn_stdin_reader(sender: Sender<Message>) {
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
-        for line in stdin.lock().lines() {
-            let Ok(line) = line else { break };
-            match line.trim() {
-                "stop" => break,
-                // Arms a `deferStart` session. Ignored by a session that was not
-                // deferred, and unknown verbs already fall through to `continue`,
-                // so an older helper receiving this degrades instead of dying.
-                "record" => {
-                    if sender.send(Message::Record).is_err() {
-                        return;
-                    }
+        read_commands(stdin.lock(), &sender);
+    });
+}
+
+fn read_commands(reader: impl BufRead, sender: &Sender<Message>) {
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        match line.trim() {
+            "stop" => break,
+            // Arms a `deferStart` session. Ignored by a session that was not
+            // deferred, and unknown verbs already fall through to `continue`,
+            // so an older helper receiving this degrades instead of dying.
+            "record" => {
+                if sender.send(Message::Record).is_err() {
+                    return;
                 }
-                "pause" => {
-                    if sender.send(Message::Pause).is_err() {
-                        return;
-                    }
+            }
+            "pause" => {
+                if sender.send(Message::Pause).is_err() {
+                    return;
                 }
-                "resume" => {
-                    if sender.send(Message::Resume).is_err() {
-                        return;
-                    }
+            }
+            "select-source" => {
+                if sender.send(Message::SelectSource(None)).is_err() {
+                    return;
                 }
-                _ => continue,
+            }
+            "cancel-select-source" => {
+                if sender.send(Message::CancelSelectSource).is_err() {
+                    return;
+                }
+            }
+            "cancel-audio-preparation" => {
+                if sender.send(Message::CancelAudioPreparation).is_err() {
+                    return;
+                }
+            }
+            "resume" => {
+                if sender.send(Message::Resume).is_err() {
+                    return;
+                }
+            }
+            raw if raw.starts_with('{') => {
+                let message = match serde_json::from_str::<serde_json::Value>(raw) {
+                    Ok(value)
+                        if value.get("command").and_then(|command| command.as_str())
+                            == Some("reconfigure") =>
+                    {
+                        match value
+                            .get("request")
+                            .cloned()
+                            .ok_or("reconfigure needs a request".to_owned())
+                            .and_then(|request| {
+                                serde_json::from_value(request).map_err(|error| error.to_string())
+                            }) {
+                            Ok(request) => Message::Reconfigure(Box::new(request)),
+                            Err(error) => Message::CommandError(error),
+                        }
+                    }
+                    Ok(value)
+                        if value.get("command").and_then(|command| command.as_str())
+                            == Some("select-source") =>
+                    {
+                        match serde_json::from_value::<Option<CursorRequest>>(
+                            value.get("cursor").cloned().unwrap_or_default(),
+                        ) {
+                            Ok(cursor) => Message::SelectSource(cursor),
+                            Err(error) => Message::CommandError(error.to_string()),
+                        }
+                    }
+                    Ok(_) => Message::CommandError("unsupported structured command".into()),
+                    Err(error) => Message::CommandError(error.to_string()),
+                };
+                if sender.send(message).is_err() {
+                    return;
+                }
+            }
+            "" => continue,
+            other => {
+                if sender
+                    .send(Message::CommandError(format!(
+                        "unknown capture command: {other}"
+                    )))
+                    .is_err()
+                {
+                    return;
+                }
             }
         }
-        let _ = sender.send(Message::Stop);
-    });
+    }
+    let _ = sender.send(Message::Stop);
 }
 
 /// The portal runs on its own thread because `Start()` blocks on the user for
 /// an unbounded time, and a `stop` arriving during the picker must still be
 /// honoured.
-fn spawn_portal(sender: Sender<Message>, cursor_mode: portal::CursorMode) {
+fn spawn_portal(
+    sender: Sender<Message>,
+    cursor_mode: portal::CursorMode,
+    remembered: Option<portal_grants::SelectionRequest>,
+) {
     std::thread::spawn(move || {
-        let result = pollster::block_on(portal::negotiate(cursor_mode));
+        let result = pollster::block_on(portal::negotiate(cursor_mode, remembered));
         let _ = sender.send(Message::Portal(Box::new(result)));
     });
 }
@@ -508,20 +492,36 @@ fn begin_stream<W: Write>(
 ) -> Result<(), ()> {
     // The fd is consumed by libpipewire; the rest is kept for the
     // `stream-started` event, emitted once the format is negotiated.
-    let portal::PortalStream { fd, node_id, position, source_kind, .. } = stream;
+    let portal::PortalStream {
+        fd,
+        node_id,
+        position,
+        source_kind,
+        lease,
+        ..
+    } = stream;
     let forward = sender.clone();
     match shim::Session::start(
         fd,
         node_id,
         Box::new(move |event| {
-            let _ = forward.send(Message::Stream(event));
+            let _ = forward.send(Message::SourceEvent {
+                generation: 0,
+                event,
+            });
         }),
         frames.clone(),
     ) {
         Ok(started) => {
             *session = Some(started);
             *granted_kind = source_kind;
-            *portal_stream = Some(StreamInfo { node_id, position, source_kind });
+            *portal_stream = Some(StreamInfo {
+                _lease: lease,
+                announced: false,
+                node_id,
+                position,
+                source_kind,
+            });
             Ok(())
         }
         Err(message) => {
@@ -537,9 +537,152 @@ fn begin_stream<W: Write>(
 /// What survives from the portal reply after its fd has been handed to
 /// libpipewire — everything `stream-started` needs to report.
 struct StreamInfo {
+    _lease: Arc<portal::PortalLease>,
+    announced: bool,
     node_id: u32,
     position: Option<(i32, i32)>,
     source_kind: Option<portal::SourceKind>,
+}
+
+struct SourceSelection {
+    generation: u64,
+    control: portal::Selection,
+    cursor: Option<CursorRequest>,
+}
+
+fn reject_audio_preparation<W: Write>(
+    preparation: audio_preparation::Preparation,
+    clips: &clips::Clips,
+    emitter: &mut Emitter<W>,
+    message: String,
+) {
+    match preparation.action {
+        audio_preparation::Action::Resume => clips.reject_resume(emitter, message),
+        audio_preparation::Action::Reconfigure(_) => {
+            let _ = emitter.emit(&Event::Error {
+                code: "reconfigure-rejected".into(),
+                message,
+            });
+        }
+    }
+}
+
+fn remember_source(grant: Option<portal_grants::PendingGrant>) {
+    if let Some(grant) = grant {
+        if let Err(error) = grant.commit() {
+            eprintln!("could not remember screen source: {error}");
+        }
+    }
+}
+
+struct CandidateSource {
+    remembered_grant: Option<portal_grants::PendingGrant>,
+    generation: u64,
+    session: shim::Session,
+    info: StreamInfo,
+    frames: Arc<FrameMailbox>,
+    readiness: source_selection::Readiness,
+    cursor: Option<shim::CursorEvent>,
+}
+
+impl CandidateSource {
+    fn connect(
+        generation: u64,
+        stream: portal::PortalStream,
+        sender: &Sender<Message>,
+    ) -> Result<Self, String> {
+        let portal::PortalStream {
+            remembered_grant,
+            fd,
+            lease,
+            node_id,
+            position,
+            source_kind,
+            ..
+        } = stream;
+        let frames = Arc::new(FrameMailbox::default());
+        let forward = sender.clone();
+        let session = shim::Session::start(
+            fd,
+            node_id,
+            Box::new(move |event| {
+                let _ = forward.send(Message::SourceEvent { generation, event });
+            }),
+            Some(frames.clone()),
+        )?;
+        Ok(Self {
+            remembered_grant,
+            generation,
+            session,
+            info: StreamInfo {
+                node_id,
+                position,
+                source_kind,
+                _lease: lease,
+                announced: true,
+            },
+            frames,
+            readiness: source_selection::Readiness::new(source_kind, Instant::now()),
+            cursor: None,
+        })
+    }
+
+    fn receive(&mut self, event: StreamEvent) -> Result<Option<shim::Frame>, String> {
+        match event {
+            StreamEvent::FrameReady => {
+                let Some(frame) = self.frames.take() else {
+                    return Ok(None);
+                };
+                if !self.readiness.accepts(&frame) {
+                    self.frames.recycle(frame.pixels);
+                    return Ok(None);
+                }
+                Ok(Some(frame))
+            }
+            StreamEvent::Cursor(cursor) => {
+                source_selection::remember_cursor(&mut self.cursor, cursor);
+                Ok(None)
+            }
+            StreamEvent::State { state, error } if error.is_some() || state == "unconnected" => {
+                Err(error.unwrap_or_else(|| "replacement PipeWire stream disconnected".into()))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+fn release_source_selection(
+    selection: &mut Option<SourceSelection>,
+    candidate: &mut Option<CandidateSource>,
+) {
+    drop(candidate.take());
+    if let Some(selection) = selection.take() {
+        if let Err(error) = selection.control.cancel() {
+            eprintln!("could not cancel replacement source: {}", error.message());
+        }
+    }
+}
+
+fn reject_source_selection<W: Write>(
+    emitter: &mut Emitter<W>,
+    selection: &mut Option<SourceSelection>,
+    candidate: &mut Option<CandidateSource>,
+    message: String,
+) {
+    release_source_selection(selection, candidate);
+    let _ = emitter.emit(&Event::Error {
+        code: "source-selection-rejected".into(),
+        message,
+    });
+}
+
+fn cancel_source_selection<W: Write>(
+    emitter: &mut Emitter<W>,
+    selection: &mut Option<SourceSelection>,
+    candidate: &mut Option<CandidateSource>,
+) {
+    release_source_selection(selection, candidate);
+    let _ = emitter.emit(&Event::SourceSelectionCancelled {});
 }
 
 fn run<W: Write>(
@@ -549,6 +692,7 @@ fn run<W: Write>(
     config: RunConfig,
 ) -> i32 {
     let constants = shim::constants();
+    let remembered_source_path = config.request.portal_state_path.clone();
     // Held for the whole loop: dropping it stops and joins the PipeWire thread.
     let mut session: Option<shim::Session> = None;
     let mut portal_stream: Option<StreamInfo> = None;
@@ -558,8 +702,7 @@ fn run<W: Write>(
     let mut granted_kind: Option<portal::SourceKind> = None;
     // Frames skipped while waiting for a window's first usable crop rectangle.
     let mut frames_awaiting_crop: u32 = 0;
-    // A crop change is reported once, not once per frame.
-    let mut crop_change_reported = false;
+
     // A `deferStart` grant held while the caller runs its countdown.
     let mut pending_portal: Option<portal::PortalStream> = None;
     // `record` has been received. Latched, because it can arrive before the
@@ -572,19 +715,41 @@ fn run<W: Write>(
     // Allocated up front so the PipeWire callback has somewhere to put frames
     // from the very first buffer; `None` in cursor-only mode, which is also what
     // tells `Session::start` not to map the buffers at all.
-    let frames: Option<Arc<FrameMailbox>> = config
+    let mut frames: Option<Arc<FrameMailbox>> = config
         .output_path
         .as_ref()
         .map(|_| Arc::new(FrameMailbox::default()));
-    let mut capture: Option<Capture> = None;
+
     // Started before the portal picker so the streams are warm and the graph
     // has settled by the time the first video frame arrives. Everything they
     // record before that first frame is discarded — see `Capture::stage`.
     // `_audio_sessions` is bound, not dropped: dropping one stops its thread.
-    let (_audio_sessions, mut audio_sources) = start_audio(emitter, &config.audio);
+    let mut audio_generation = 0;
+    let mut next_audio_generation = 1;
+    let mut paused_audio_error = None;
+    let mut pending_audio: Option<audio_preparation::Preparation> = None;
+    let opened = start_audio(
+        &config.audio,
+        &sender,
+        audio_generation,
+        &std::sync::atomic::AtomicBool::new(false),
+    );
+    for event in opened.events {
+        let _ = emitter.emit(&event);
+    }
+    let mut audio_sessions = opened.sessions;
+    let audio_sources = opened.sources;
+    let mut clips = clips::Clips::new(config.request, audio_sources, config.forced_encoder);
+    if clips.request.outputs.is_some() && clips.audio.len() != config.audio.len() {
+        let _ = emitter.emit(&Event::Error {
+            code: "capture-stopped-with-error".into(),
+            message: "an enabled audio source could not be opened".into(),
+        });
+        return 1;
+    }
     // Buffered until the format is negotiated: the encoder cannot be opened
     // before the frame size is known, and `pause` can arrive first.
-    let mut paused = false;
+
     // Backdated so the very first sample is not held back by the throttle.
     // `checked_sub` because a bare `Instant - Duration` panics on underflow, and
     // this runs milliseconds after process start.
@@ -592,187 +757,423 @@ fn run<W: Write>(
         .checked_sub(config.sample_interval)
         .unwrap_or_else(Instant::now);
     let mut exit_code = 0;
+    let mut source_generation = 0;
+    let mut next_source_generation = 1;
+    let mut source_selection: Option<SourceSelection> = None;
+    let mut candidate_source: Option<CandidateSource> = None;
+    let mut previous_dropped_frames = 0_u64;
+    let mut adopted_cursor = None;
+    let mut queued_message = None;
+    let mut source_health = source_loss::SourceHealth::default();
 
     loop {
-        match receiver.recv_timeout(config.tick) {
-            Ok(Message::Stop) => break,
-
-            Ok(Message::Pause) => {
-                paused = true;
-                if let Some(capture) = capture.as_mut() {
-                    capture.pause();
-                }
-            }
-
-            Ok(Message::Resume) => {
-                paused = false;
-                if let Some(capture) = capture.as_mut() {
-                    capture.resume();
-                }
-            }
-
-            Ok(Message::Stream(StreamEvent::FrameReady)) => {
-                let Some(mailbox) = frames.as_ref() else {
-                    continue;
-                };
-                // `take` can legitimately return None: several FrameReady
-                // notifications can arrive for frames that superseded each other
-                // in the mailbox before the loop got here.
-                if let Some(frame) = mailbox.take() {
-                    // Opening the encoder is deferred to here because only a
-                    // frame carries the crop, and the crop — not the negotiated
-                    // format — is the size of a window.
-                    if capture.is_none() {
-                        if let Some(path) = config.output_path.as_ref() {
-                            // A WINDOW WITHOUT A CROP IS NOT YET TRUSTWORTHY.
-                            // mutter's rectangle intersection reports success
-                            // even when it produced an empty rect, and it records
-                            // one frame synchronously from `enable()` — before
-                            // the picked window is necessarily mapped. Committing
-                            // the encoder to that frame would pin a window
-                            // recording at monitor size for its whole duration,
-                            // which is the very bug being fixed, only intermittent.
-                            let expecting_crop =
-                                granted_kind == Some(portal::SourceKind::Window) && !frame.has_crop;
-                            if expecting_crop && frames_awaiting_crop < MAX_FRAMES_AWAITING_CROP {
-                                frames_awaiting_crop += 1;
-                                mailbox.recycle(frame.pixels);
-                                continue;
-                            }
-                            if expecting_crop {
-                                let _ = emitter.emit(&Event::Warning {
-                                    code: "window-crop-missing".to_owned(),
-                                    message: format!(
-                                        "a window was granted but no crop rectangle arrived in \
-                                         {frames_awaiting_crop} frames; recording the full \
-                                         {}x{} stream instead",
-                                        frame.width, frame.height
-                                    ),
-                                });
-                            }
-
-                            // H.264 chroma is subsampled 2x2, so odd dimensions
-                            // are a per-encoder lottery. A window's rect is its
-                            // own pixel size and is routinely odd.
-                            let width = frame.crop.width & !1;
-                            let height = frame.crop.height & !1;
-                            if width <= 0 || height <= 0 {
+        let audio_result = pending_audio
+            .as_ref()
+            .map(|preparation| preparation.poll(Instant::now()));
+        match audio_result {
+            Some(Ok(true)) if audio_can_commit(&receiver, &adopted_cursor, &mut queued_message) => {
+                if let Some(mut prepared) = pending_audio.take() {
+                    let opened = prepared
+                        .opened
+                        .take()
+                        .expect("ready preparation has opened inputs");
+                    audio_generation = prepared.generation;
+                    audio_sessions = opened.sessions;
+                    clips.audio = opened.sources;
+                    paused_audio_error = None;
+                    match prepared.action {
+                        audio_preparation::Action::Reconfigure(next) => {
+                            clips.request = *next;
+                            let _ = emitter.emit(&Event::RecordingReconfigured {});
+                        }
+                        audio_preparation::Action::Resume => {
+                            if let Err(message) = clips.resume(emitter) {
+                                clips.fail(&message);
                                 let _ = emitter.emit(&Event::Error {
-                                    code: "encoder-unavailable".to_owned(),
-                                    message: format!(
-                                        "the compositor reported a {}x{} content rectangle, which \
-                                         cannot be encoded",
-                                        frame.crop.width, frame.crop.height
-                                    ),
+                                    code: "capture-stopped-with-error".into(),
+                                    message,
                                 });
                                 exit_code = 1;
                                 break;
                             }
-                            let _ = emitter.emit(&Event::Debug {
-                                code: "crop".to_owned(),
-                                data: json_map([
-                                    ("streamWidth", frame.width.into()),
-                                    ("streamHeight", frame.height.into()),
-                                    ("cropX", frame.crop.x.into()),
-                                    ("cropY", frame.crop.y.into()),
-                                    ("cropWidth", frame.crop.width.into()),
-                                    ("cropHeight", frame.crop.height.into()),
-                                    ("encodedWidth", width.into()),
-                                    ("encodedHeight", height.into()),
-                                    ("hasCrop", frame.has_crop.into()),
-                                    ("framesAwaited", frames_awaiting_crop.into()),
-                                ]),
-                            });
-
-                            match Capture::start(
-                                path,
-                                width,
-                                height,
-                                config.fps,
-                                config.bitrate,
-                                config.forced_encoder,
-                                std::mem::take(&mut audio_sources),
-                            ) {
-                                Ok((started, selection)) => {
-                                    let _ = emitter.emit(&Event::EncoderSelection {
-                                        video: selection.backend.as_str().to_owned(),
-                                        rejected: selection.rejected,
-                                    });
-                                    capture = Some(started);
-                                    if paused {
-                                        // A `pause` that arrived while the portal
-                                        // picker was still up applies to the
-                                        // capture that picker was for.
-                                        if let Some(capture) = capture.as_mut() {
-                                            capture.pause();
-                                        }
-                                    }
-                                }
-                                Err(message) => {
-                                    let _ = emitter.emit(&Event::Error {
-                                        code: "encoder-unavailable".to_owned(),
-                                        message,
-                                    });
-                                    exit_code = 1;
-                                    break;
-                                }
-                            }
                         }
                     }
+                }
+            }
+            Some(Err(message)) => {
+                if let Some(preparation) = pending_audio.take() {
+                    reject_audio_preparation(preparation, &clips, emitter, message);
+                }
+            }
+            _ => {}
+        }
+        if candidate_source
+            .as_ref()
+            .is_some_and(|candidate| candidate.readiness.expired(Instant::now()))
+        {
+            reject_source_selection(
+                emitter,
+                &mut source_selection,
+                &mut candidate_source,
+                "replacement source supplied no usable frame within eight seconds".into(),
+            );
+        }
+        let incoming = match receive_message(
+            &receiver,
+            &mut adopted_cursor,
+            &mut queued_message,
+            config.tick,
+        ) {
+            Ok(Message::SourceEvent { generation, event }) if generation == source_generation => {
+                Ok(Message::Stream(event))
+            }
+            incoming => incoming,
+        };
+        match incoming {
+            Ok(Message::Stop) => break,
 
-                    let Some(capture) = capture.as_mut() else {
-                        // Cursor-only session: no encoder, nothing to stage. The
-                        // recycle below still has to run.
-                        mailbox.recycle(frame.pixels);
-                        continue;
-                    };
-
-                    // A window that was resized mid-recording. The file keeps its
-                    // original dimensions — an MP4 track cannot change resolution
-                    // — so this is reported rather than silently reframed.
-                    if !crop_change_reported && capture.crop_diverged(&frame) {
-                        crop_change_reported = true;
-                        let _ = emitter.emit(&Event::Warning {
-                            code: "crop-changed".to_owned(),
-                            message: format!(
-                                "the recorded window changed size to {}x{} mid-recording; the \
-                                 file keeps the size it started at, so the framing may be cut \
-                                 off or padded from here on",
-                                frame.crop.width, frame.crop.height
-                            ),
-                        });
+            Ok(Message::AudioOpened {
+                generation,
+                mut opened,
+            }) => {
+                if let Some(preparation) = pending_audio
+                    .as_mut()
+                    .filter(|p| p.generation == generation)
+                {
+                    for event in opened.events.drain(..) {
+                        let _ = emitter.emit(&event);
                     }
+                    preparation.opened = Some(*opened);
+                }
+            }
+            Ok(Message::CancelAudioPreparation) => {
+                if let Some(preparation) = pending_audio.take() {
+                    reject_audio_preparation(
+                        preparation,
+                        &clips,
+                        emitter,
+                        "audio input preparation cancelled; recording remains paused".into(),
+                    );
+                }
+            }
 
-                    let first = !capture.started();
-                    let staged = capture.stage(&frame);
-                    let (width, height) = (frame.crop.width, frame.crop.height);
-                    mailbox.recycle(frame.pixels);
-                    if let Err(message) = staged {
+            Ok(Message::SelectSource(cursor)) => {
+                if source_selection.is_some() {
+                    continue;
+                }
+                if !clips.is_paused() || clips.request.outputs.is_none() || pending_audio.is_some()
+                {
+                    let _ = emitter.emit(&Event::Error { code: "source-selection-rejected".into(),
+                        message: "source selection requires a paused clip-native recording with no pending selection".into() });
+                    continue;
+                }
+                let generation = next_source_generation;
+                next_source_generation += 1;
+                let control = portal::Selection::default();
+                let worker_control = control.clone();
+                let forward = sender.clone();
+                let mut next_request = clips.request.clone();
+                if cursor.is_some() {
+                    next_request.cursor.clone_from(&cursor);
+                }
+                let mode = match next_request.cursor_mode() {
+                    Ok(mode) => mode,
+                    Err(message) => {
                         let _ = emitter.emit(&Event::Error {
-                            code: "encode-failed".to_owned(),
+                            code: "source-selection-rejected".into(),
                             message,
                         });
-                        exit_code = 1;
-                        break;
+                        continue;
                     }
-                    if first {
-                        let _ = emitter.emit(&Event::CaptureStarted {
-                            timestamp_ms: timestamp_ms(),
-                            path: config
-                                .output_path
-                                .as_ref()
-                                .map(|path| path.display().to_string())
-                                .unwrap_or_default(),
-                            width,
-                            height,
-                            fps: config.fps,
+                };
+                source_selection = Some(SourceSelection {
+                    generation,
+                    control,
+                    cursor,
+                });
+                let remembered = remembered_source_path
+                    .clone()
+                    .map(portal_grants::SelectionRequest::Choose);
+                std::thread::spawn(move || {
+                    let result = pollster::block_on(portal::negotiate_selected(
+                        mode,
+                        &worker_control,
+                        remembered,
+                    ));
+                    let _ = forward.send(Message::ReplacementPortal {
+                        generation,
+                        result: Box::new(result),
+                    });
+                });
+            }
+            Ok(Message::CancelSelectSource) => {
+                if source_selection.is_some() {
+                    cancel_source_selection(emitter, &mut source_selection, &mut candidate_source);
+                }
+            }
+            Ok(Message::ReplacementPortal { generation, result }) => {
+                if source_selection
+                    .as_ref()
+                    .is_none_or(|selection| selection.generation != generation)
+                {
+                    continue;
+                }
+                match *result {
+                    Ok(stream) => match CandidateSource::connect(generation, stream, &sender) {
+                        Ok(candidate) => candidate_source = Some(candidate),
+                        Err(message) => reject_source_selection(
+                            emitter,
+                            &mut source_selection,
+                            &mut candidate_source,
+                            message,
+                        ),
+                    },
+                    Err(portal::PortalError::Cancelled) => cancel_source_selection(
+                        emitter,
+                        &mut source_selection,
+                        &mut candidate_source,
+                    ),
+                    Err(error) => reject_source_selection(
+                        emitter,
+                        &mut source_selection,
+                        &mut candidate_source,
+                        error.message(),
+                    ),
+                }
+            }
+            Ok(Message::SourceEvent { generation, event }) => {
+                let Some(candidate) = candidate_source
+                    .as_mut()
+                    .filter(|candidate| candidate.generation == generation)
+                else {
+                    continue;
+                };
+                let ready = candidate.receive(event);
+                match ready {
+                    Ok(Some(frame)) => {
+                        let Some(mut chosen) = candidate_source.take() else {
+                            continue;
+                        };
+                        let dimensions = (frame.width, frame.height);
+                        let bounds = events::CaptureBounds {
+                            x: chosen.info.position.map_or(0, |p| p.0),
+                            y: chosen.info.position.map_or(0, |p| p.1),
+                            width: frame.crop.width & !1,
+                            height: frame.crop.height & !1,
+                        };
+                        if let Err(message) = clips.replace_source(frame, chosen.info.position) {
+                            drop(chosen);
+                            reject_source_selection(
+                                emitter,
+                                &mut source_selection,
+                                &mut candidate_source,
+                                message,
+                            );
+                            continue;
+                        }
+                        if let Some(cursor) = source_selection
+                            .as_mut()
+                            .and_then(|selection| selection.cursor.take())
+                        {
+                            clips.request.cursor = Some(cursor);
+                        }
+                        remember_source(chosen.remembered_grant.take());
+                        previous_dropped_frames +=
+                            frames.as_ref().map_or(0, |frames| frames.dropped());
+                        drop(session.take());
+                        source_generation = generation;
+                        source_health.reselected();
+                        granted_kind = chosen.info.source_kind;
+                        size = Some(dimensions);
+                        frames_awaiting_crop = 0;
+                        cursor = None;
+                        known_assets.clear();
+                        pending_asset = None;
+                        reported_cursor_meta = false;
+                        // Replay the candidate snapshot before newer events already queued by
+                        // its PipeWire worker. Sending it to the channel tail restores stale sprites.
+                        adopted_cursor = chosen
+                            .cursor
+                            .take()
+                            .map(|event| Message::Stream(StreamEvent::Cursor(event)));
+                        session = Some(chosen.session);
+                        frames = Some(chosen.frames);
+                        let node_id = chosen.info.node_id;
+                        portal_stream = Some(chosen.info);
+                        source_selection = None;
+                        let _ = emitter.emit(&Event::SourceReselected {
+                            capture_bounds: bounds,
+                            node_id,
+                            source_kind: granted_kind.map(|kind| kind.as_str().to_owned()),
                         });
                     }
+                    Ok(None) => {}
+                    Err(message) => reject_source_selection(
+                        emitter,
+                        &mut source_selection,
+                        &mut candidate_source,
+                        message,
+                    ),
                 }
-                if let Some(capture) = capture.as_mut() {
-                    if let Err(message) = capture.advance() {
+            }
+            Ok(Message::Pause) => {
+                if let Err(message) = clips.pause(emitter) {
+                    clips.fail(&message);
+                    let _ = emitter.emit(&Event::Error {
+                        code: "clip-finalize-failed".into(),
+                        message,
+                    });
+                    exit_code = 1;
+                    break;
+                }
+            }
+            Ok(Message::Resume) => {
+                if source_selection.is_some() {
+                    let _ = emitter.emit(&Event::Error {
+                        code: "source-selection-rejected".into(),
+                        message: "finish or cancel source selection before Continue".into(),
+                    });
+                    continue;
+                }
+                if !clips.is_paused() {
+                    let _ = emitter.emit(&Event::Error {
+                        code: "invalid-command".into(),
+                        message: "resume requires a paused recording".into(),
+                    });
+                    continue;
+                }
+                if let Err(message) = source_health.check_resume() {
+                    clips.reject_resume(emitter, message.into());
+                    continue;
+                }
+                if pending_audio.is_some() {
+                    clips.reject_resume(emitter, "audio input setup is still pending".into());
+                    continue;
+                }
+                let failed_audio = paused_audio_error.clone().or_else(|| {
+                    audio_sessions
+                        .iter()
+                        .find_map(|session| session.readiness().err())
+                });
+                if failed_audio.is_some() {
+                    let configs = clips.request.audio_sources();
+                    let generation = next_audio_generation;
+                    next_audio_generation += 1;
+                    pending_audio = Some(prepare_audio(
+                        generation,
+                        configs,
+                        audio_preparation::Action::Resume,
+                        &sender,
+                    ));
+                    continue;
+                }
+                if let Err(message) = clips.resume(emitter) {
+                    clips.fail(&message);
+                    let _ = emitter.emit(&Event::Error {
+                        code: "capture-stopped-with-error".into(),
+                        message,
+                    });
+                    exit_code = 1;
+                    break;
+                }
+            }
+            Ok(Message::Reconfigure(next)) => {
+                let result = if clips.request.outputs.is_none() {
+                    Err("reconfigure requires the clip-native outputs request".into())
+                } else if !clips.is_paused() {
+                    Err("reconfigure requires a paused recording".into())
+                } else if pending_audio.is_some() || source_selection.is_some() {
+                    Err("finish or cancel the pending input selection first".into())
+                } else {
+                    clips.request.validate_reconfigure(&next)
+                };
+                if let Err(message) = result {
+                    let _ = emitter.emit(&Event::Error {
+                        code: "reconfigure-rejected".into(),
+                        message,
+                    });
+                    continue;
+                }
+                let configs = next.audio_sources();
+                if clips.request.audio_topology() != next.audio_topology()
+                    || paused_audio_error.is_some()
+                {
+                    // New inputs are prepared while paused. Keep old sessions
+                    // intact until every replacement has opened successfully.
+                    let candidate_generation = next_audio_generation;
+                    next_audio_generation += 1;
+                    pending_audio = Some(prepare_audio(
+                        candidate_generation,
+                        configs,
+                        audio_preparation::Action::Reconfigure(next),
+                        &sender,
+                    ));
+                    continue;
+                }
+                for source in &mut clips.audio {
+                    if let Some(config) = configs.iter().find(|config| config.label == source.label)
+                    {
+                        source.gain = config.gain;
+                    }
+                }
+                clips.request = *next;
+                let _ = emitter.emit(&Event::RecordingReconfigured {});
+            }
+            Ok(Message::CommandError(message)) => {
+                let _ = emitter.emit(&Event::Error {
+                    code: "invalid-command".into(),
+                    message,
+                });
+            }
+            Ok(Message::AudioError {
+                generation,
+                message,
+            }) => {
+                if generation != audio_generation {
+                    continue;
+                }
+                if clips.is_paused() && clips.request.outputs.is_some() {
+                    paused_audio_error = Some(message.clone());
+                    let _ = emitter.emit(&Event::Warning {
+                        code: "audio-input-disconnected".into(),
+                        message,
+                    });
+                    continue;
+                }
+                clips.fail(&message);
+                let _ = emitter.emit(&Event::Error {
+                    code: "capture-stopped-with-error".into(),
+                    message,
+                });
+                exit_code = 1;
+                break;
+            }
+            Ok(Message::Stream(StreamEvent::FrameReady)) => {
+                let Some(mailbox) = frames.as_ref() else {
+                    continue;
+                };
+                if let Some(frame) = mailbox.take() {
+                    if !clips.has_writer() && !clips.is_paused() {
+                        let expecting_crop =
+                            granted_kind == Some(portal::SourceKind::Window) && !frame.has_crop;
+                        if expecting_crop && frames_awaiting_crop < MAX_FRAMES_AWAITING_CROP {
+                            frames_awaiting_crop += 1;
+                            mailbox.recycle(frame.pixels);
+                            continue;
+                        }
+                        if expecting_crop {
+                            let _ = emitter.emit(&Event::Warning {
+                                code: "window-crop-missing".into(),
+                                message:
+                                    "window supplied no crop; recording the full PipeWire stream"
+                                        .into(),
+                            });
+                        }
+                    }
+                    if let Err(message) = clips.frame(frame, emitter) {
+                        clips.fail(&message);
                         let _ = emitter.emit(&Event::Error {
-                            code: "encode-failed".to_owned(),
+                            code: "writer-failed-during-capture".into(),
                             message,
                         });
                         exit_code = 1;
@@ -804,7 +1205,8 @@ fn run<W: Write>(
             }
 
             Ok(Message::Portal(result)) => match *result {
-                Ok(stream) => {
+                Ok(mut stream) => {
+                    remember_source(stream.remembered_grant.take());
                     // The portal's size is in the compositor's coordinate space
                     // and can differ from the negotiated pixel size on a scaled
                     // display. Logged rather than used: cursor positions arrive
@@ -835,6 +1237,7 @@ fn run<W: Write>(
                         position_y: stream.position.map(|(_, y)| y),
                     });
                     granted_kind = stream.source_kind;
+                    clips.set_position(stream.position);
 
                     if config.defer_start && !armed {
                         // Hold the grant WITHOUT connecting a pw_stream. mutter
@@ -870,6 +1273,9 @@ fn run<W: Write>(
             },
 
             Ok(Message::Stream(StreamEvent::Format(format))) => {
+                if size.is_none() {
+                    clips.connected();
+                }
                 size = Some((format.width, format.height));
                 let _ = emitter.emit(&Event::Debug {
                     code: "format".to_owned(),
@@ -879,7 +1285,8 @@ fn run<W: Write>(
                         ("framerateDenom", format.framerate_denom.into()),
                     ]),
                 });
-                if let Some(stream) = portal_stream.take() {
+                if let Some(stream) = portal_stream.as_mut().filter(|stream| !stream.announced) {
+                    stream.announced = true;
                     let _ = emitter.emit(&Event::StreamStarted {
                         timestamp_ms: timestamp_ms(),
                         node_id: stream.node_id,
@@ -887,33 +1294,8 @@ fn run<W: Write>(
                         height: format.height,
                         position_x: stream.position.map(|(x, _)| x),
                         position_y: stream.position.map(|(_, y)| y),
-                        source_kind: stream
-                            .source_kind
-                            .map(|kind| kind.as_str().to_owned()),
+                        source_kind: stream.source_kind.map(|kind| kind.as_str().to_owned()),
                     });
-                }
-
-                // THE ENCODER IS NOT OPENED HERE ANY MORE, and that is the whole
-                // window-capture fix. `format` is the size of the STREAM, which
-                // for a window is the size of its monitor: a PipeWire stream
-                // cannot be resized once negotiated but a window can, so mutter
-                // pins the stream to the monitor and reports the window's live
-                // rectangle as SPA_META_VideoCrop instead. Sizing the encoder
-                // from `format` is what produced window recordings padded out to
-                // screen size with black. The size now comes from the first frame
-                // carrying a usable crop — see the FrameReady arm.
-                if config.output_path.is_some() {
-                    if capture.is_some() {
-                        let _ = emitter.emit(&Event::Warning {
-                            code: "format-renegotiated".to_owned(),
-                            message: format!(
-                                "the compositor renegotiated to {}x{} mid-recording; the \
-                                 encoder keeps its original size and the file may be letterboxed \
-                                 or cropped from here on",
-                                format.width, format.height
-                            ),
-                        });
-                    }
                 }
             }
 
@@ -940,7 +1322,12 @@ fn run<W: Write>(
                         ("metas", metas.clone().into()),
                     ]),
                 });
-                if !has_cursor_meta {
+                if !has_cursor_meta
+                    && clips
+                        .request
+                        .cursor_mode()
+                        .is_ok_and(|mode| mode.reports_cursor())
+                {
                     let _ = emitter.emit(&Event::Warning {
                         code: "no-cursor-metadata".to_owned(),
                         message: format!(
@@ -965,19 +1352,27 @@ fn run<W: Write>(
                         ("error", error.clone().into()),
                     ]),
                 });
-                if let Some(error) = error {
-                    let _ = emitter.emit(&Event::Warning {
-                        code: "stream-error".to_owned(),
-                        message: format!("PipeWire stream reported an error in state {state}: {error}"),
-                    });
-                }
-                if state == "unconnected" && session.is_some() {
-                    let _ = emitter.emit(&Event::Warning {
-                        code: "stream-unconnected".to_owned(),
-                        message: "The PipeWire stream disconnected; no further cursor samples \
-                                  will arrive."
-                            .to_owned(),
-                    });
+                let take = source_loss::Take {
+                    has_session: session.is_some(),
+                    clip_native: clips.request.outputs.is_some(),
+                    started: clips.has_started(),
+                };
+                match source_health.on_stream_state(&state, error.as_deref(), take) {
+                    source_loss::Outcome::Ignore => {}
+                    // The app pauses on this (as for macOS `source-inactive`); the clip
+                    // is finalized by the normal Pause, and Continue waits for a source.
+                    source_loss::Outcome::SourceLost => {
+                        let _ = emitter.emit(&source_loss::inactive_warning(error.as_deref()));
+                    }
+                    source_loss::Outcome::Fatal => {
+                        clips.fail(error.as_deref().unwrap_or("PipeWire stream disconnected"));
+                        let _ = emitter.emit(&Event::Error {
+                            code: "capture-stopped-with-error".into(),
+                            message: error.unwrap_or_else(|| "PipeWire stream disconnected".into()),
+                        });
+                        exit_code = 1;
+                        break;
+                    }
                 }
             }
 
@@ -1062,89 +1457,63 @@ fn run<W: Write>(
                     emit_sample(emitter, &cursor, size, &mut pending_asset);
                     last_emit = Instant::now();
                 }
-                // The heartbeat that keeps the output at a constant frame rate
-                // while the screen is static: no frame arrived, but the clock
-                // moved, so the last picture is held forward.
-                if let Some(capture) = capture.as_mut() {
-                    if let Err(message) = capture.advance() {
-                        let _ = emitter.emit(&Event::Error {
-                            code: "encode-failed".to_owned(),
-                            message,
-                        });
-                        exit_code = 1;
-                        break;
-                    }
-                }
             }
 
             Err(RecvTimeoutError::Disconnected) => break,
         }
-    }
-
-    // Before the file is closed: this joins the PipeWire thread, so no callback
-    // can fire against a freed Sender or write into a mailbox that is about to
-    // be dropped.
-    drop(session);
-
-    if let Some(capture) = capture {
-        finish_capture(emitter, capture, frames.as_deref(), &mut exit_code);
-    }
-    exit_code
-}
-
-/// Writes the trailer and reports what the recording cost.
-///
-/// Runs even when the loop broke on an error: a file whose moov atom was never
-/// written is unplayable, and a partial recording is worth more to the user than
-/// none.
-fn finish_capture<W: Write>(
-    emitter: &mut Emitter<W>,
-    capture: Capture,
-    frames: Option<&FrameMailbox>,
-    exit_code: &mut i32,
-) {
-    for (label, samples) in capture.dropped_audio() {
-        let _ = emitter.emit(&Event::Warning {
-            code: "audio-dropped".to_owned(),
-            message: format!(
-                "{samples} {label} sample(s) were discarded because the encoder could not \
-                 keep up. Unlike a dropped video frame, this is audible."
-            ),
-        });
-    }
-
-    match capture.finish() {
-        Ok(summary) => {
-            let dropped = frames.map(FrameMailbox::dropped).unwrap_or(0);
-            if dropped > 0 {
-                let _ = emitter.emit(&Event::Warning {
-                    code: "frames-dropped".to_owned(),
-                    message: format!(
-                        "{dropped} captured frame(s) were replaced before the encoder could \
-                         take them, so the recording holds an older picture across those \
-                         moments. The machine could not keep up with the capture rate."
-                    ),
-                });
-            }
-            let _ = emitter.emit(&Event::CaptureStopped {
-                timestamp_ms: timestamp_ms(),
-                path: summary.path.display().to_string(),
-                duration_ms: summary.duration_ms,
-                frames: summary.frames,
-                dropped,
-                convert_ms: summary.stats.convert_ms(),
-                upload_ms: summary.stats.upload_ms(),
-                encode_ms: summary.stats.encode_ms(),
-            });
+        if session.is_some() && size.is_none() {
+            clips.connected_if_waiting();
         }
-        Err(message) => {
+        if let Err(message) = clips.advance(emitter) {
+            clips.fail(&message);
             let _ = emitter.emit(&Event::Error {
-                code: "capture-finish-failed".to_owned(),
+                code: "writer-failed-during-capture".into(),
                 message,
             });
-            *exit_code = 1;
+            exit_code = 1;
+            break;
         }
     }
+
+    // Freeze/finalize writers first, then join capture threads. Joining first
+    // would put teardown latency and extra PCM into the end of the clip.
+    if let Some(mailbox) = &frames {
+        let dropped = previous_dropped_frames + mailbox.dropped();
+        clips.set_dropped_frames(dropped);
+        if dropped > 0 {
+            let _ = emitter.emit(&Event::Warning {
+                code: "frames-dropped".into(),
+                message: format!("{dropped} captured frames were superseded before encoding"),
+            });
+        }
+        let _ = emitter.emit(&Event::Debug {
+            code: "frame-delivery".into(),
+            data: json_map([
+                ("received", mailbox.received().into()),
+                ("dropped", mailbox.dropped().into()),
+            ]),
+        });
+    }
+    let finalized = clips.stop(emitter);
+    drop(candidate_source.take());
+    if let Some(selection) = source_selection.take() {
+        if let Err(error) = selection.control.cancel() {
+            eprintln!(
+                "could not cancel source selection on Stop: {}",
+                error.message()
+            );
+        }
+    }
+    drop(session);
+    drop(audio_sessions);
+    if let Err(message) = finalized {
+        let _ = emitter.emit(&Event::Error {
+            code: "clip-finalize-failed".into(),
+            message,
+        });
+        exit_code = 1;
+    }
+    exit_code
 }
 
 fn emit_sample<W: Write>(
@@ -1169,6 +1538,33 @@ fn emit_sample<W: Write>(
     });
 }
 
+fn audio_can_commit(
+    receiver: &mpsc::Receiver<Message>,
+    priority: &Option<Message>,
+    queued: &mut Option<Message>,
+) -> bool {
+    if priority.is_some() || queued.is_some() {
+        return false;
+    }
+    if let Ok(message) = receiver.try_recv() {
+        *queued = Some(message);
+        return false;
+    }
+    true
+}
+
+fn receive_message(
+    receiver: &mpsc::Receiver<Message>,
+    priority: &mut Option<Message>,
+    queued: &mut Option<Message>,
+    timeout: Duration,
+) -> Result<Message, RecvTimeoutError> {
+    match priority.take().or_else(|| queued.take()) {
+        Some(message) => Ok(message),
+        None => receiver.recv_timeout(timeout),
+    }
+}
+
 fn data_type_name(constants: &shim::Constants, data_type: u32) -> &'static str {
     if data_type == constants.data_mem_ptr {
         "MemPtr"
@@ -1189,7 +1585,6 @@ fn json_map<const N: usize>(
         .map(|(key, value)| (key.to_owned(), value))
         .collect()
 }
-
 
 /// Resolves the microphone the user picked in the app to a PipeWire `node.name`.
 ///
@@ -1214,7 +1609,10 @@ fn resolve_microphone_node(label: &str, sources: &[shim::AudioSourceInfo]) -> Op
         return Some(exact.name.clone());
     }
     let folded = wanted.to_lowercase();
-    if let Some(exact) = sources.iter().find(|s| s.description.to_lowercase() == folded) {
+    if let Some(exact) = sources
+        .iter()
+        .find(|s| s.description.to_lowercase() == folded)
+    {
         return Some(exact.name.clone());
     }
     // Chromium decorates labels ("Digital Microphone (Family 17h/19h ...)"),
@@ -1261,7 +1659,10 @@ mod microphone_resolution_tests {
             "Family 17h/19h HD Audio Controller Digital Microphone",
             &sources(),
         );
-        assert_eq!(node.as_deref(), Some("alsa_input.pci-0000_03_00.6.HiFi__hw_acp6x__source"));
+        assert_eq!(
+            node.as_deref(),
+            Some("alsa_input.pci-0000_03_00.6.HiFi__hw_acp6x__source")
+        );
     }
 
     #[test]
@@ -1276,7 +1677,10 @@ mod microphone_resolution_tests {
     #[test]
     fn a_node_name_passes_straight_through() {
         let name = "alsa_input.pci-0000_03_00.6.HiFi__hw_Generic_1__source";
-        assert_eq!(resolve_microphone_node(name, &sources()).as_deref(), Some(name));
+        assert_eq!(
+            resolve_microphone_node(name, &sources()).as_deref(),
+            Some(name)
+        );
     }
 
     #[test]
@@ -1297,5 +1701,141 @@ mod microphone_resolution_tests {
             Some("alsa_input.pci-0000_03_00.6.HiFi__hw_Generic_1__source"),
             "the longer description should win, deterministically"
         );
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+
+    #[test]
+    fn a_ready_audio_candidate_yields_to_queued_cancel_and_stop() {
+        for cancel in [Message::CancelAudioPreparation, Message::Stop] {
+            let (sender, receiver) = mpsc::channel();
+            let mut preparation =
+                audio_preparation::Preparation::new(1, audio_preparation::Action::Resume);
+            preparation.opened = Some(audio_preparation::Opened {
+                sessions: Vec::new(),
+                sources: Vec::new(),
+                events: Vec::new(),
+                expected: 0,
+            });
+            assert!(preparation.poll(Instant::now()).unwrap());
+            sender.send(cancel).expect("queued cancellation");
+            let mut queued = None;
+            assert!(!audio_can_commit(&receiver, &None, &mut queued));
+            assert!(matches!(
+                receive_message(&receiver, &mut None, &mut queued, Duration::ZERO).unwrap(),
+                Message::CancelAudioPreparation | Message::Stop
+            ));
+        }
+    }
+    #[test]
+    fn adopted_cursor_precedes_newer_queued_cursor_updates() {
+        let cursor = |id| {
+            Message::Stream(StreamEvent::Cursor(shim::CursorEvent {
+                x: 0,
+                y: 0,
+                hotspot_x: 0,
+                hotspot_y: 0,
+                id,
+                bitmap: None,
+            }))
+        };
+        let (sender, receiver) = mpsc::channel();
+        sender.send(cursor(2)).expect("new sprite queued");
+        let mut adopted = Some(cursor(1));
+        for expected in [1, 2] {
+            match receive_message(&receiver, &mut adopted, &mut None, Duration::ZERO)
+                .expect("cursor event")
+            {
+                Message::Stream(StreamEvent::Cursor(event)) => assert_eq!(event.id, expected),
+                _ => panic!("expected cursor"),
+            }
+        }
+    }
+
+    #[test]
+    fn eof_requests_stop_for_writer_finalization() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(std::io::Cursor::new(""), &sender);
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Stop));
+    }
+    #[test]
+    fn commands_are_delivered_in_order_and_stop_ignores_trailing_input() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(
+            std::io::Cursor::new("record\npause\nresume\nstop\nresume\n"),
+            &sender,
+        );
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Record));
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Pause));
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Resume));
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Stop));
+        assert!(receiver.try_recv().is_err());
+    }
+    #[test]
+    fn source_selection_and_cancellation_are_distinct_commands_before_stop() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(
+            std::io::Cursor::new("select-source\ncancel-select-source\nstop\n"),
+            &sender,
+        );
+        assert!(matches!(
+            receiver.try_recv().expect("selection"),
+            Message::SelectSource(None)
+        ));
+        assert!(matches!(
+            receiver.try_recv().expect("cancellation"),
+            Message::CancelSelectSource
+        ));
+        assert!(matches!(receiver.try_recv().expect("stop"), Message::Stop));
+    }
+
+    #[test]
+    fn audio_preparation_cancellation_is_delivered_before_stop() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(
+            std::io::Cursor::new("cancel-audio-preparation\nstop\n"),
+            &sender,
+        );
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Message::CancelAudioPreparation
+        ));
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Stop));
+    }
+
+    #[test]
+    fn cursor_grant_replacement_is_distinct_from_in_place_reconfiguration() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(std::io::Cursor::new("{\"command\":\"select-source\",\"cursor\":{\"mode\":\"editable-overlay\"}}\ncancel-select-source\n"), &sender);
+        match receiver.try_recv().expect("cursor selection") {
+            Message::SelectSource(Some(cursor)) => assert_eq!(cursor.mode, "editable-overlay"),
+            _ => panic!("cursor grant replacement expected"),
+        }
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Message::CancelSelectSource
+        ));
+    }
+
+    #[test]
+    fn structured_reconfigure_is_parsed_and_bad_commands_are_reported() {
+        let (sender, receiver) = mpsc::channel();
+        read_commands(std::io::Cursor::new("{\"command\":\"reconfigure\",\"request\":{\"outputs\":{\"screenPath\":\"/tmp/capture.mp4\"}}}\n{bad json}\nunknown\n"), &sender);
+        let Message::Reconfigure(request) = receiver.try_recv().unwrap() else {
+            panic!("reconfigure expected");
+        };
+        assert_eq!(request.screen_path(), Some("/tmp/capture.mp4"));
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Message::CommandError(_)
+        ));
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Message::CommandError(_)
+        ));
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Stop));
     }
 }

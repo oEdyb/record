@@ -3,9 +3,24 @@ import {
 	parseMacDisplayIdFromSourceId,
 	parseMacWindowIdFromSourceId,
 	parseNativeMacRecordingClip,
+	parseNativeRecordingWebcamRegistration,
 } from "./nativeMacRecording";
 
 describe("nativeMacRecording source parsing", () => {
+	it("validates camera containers without accepting a renderer-selected path", () => {
+		const base = { recordingId: 1, token: "owner", clipIndex: 0, offsetMs: 20 };
+		expect(parseNativeRecordingWebcamRegistration(base)).toEqual(base);
+		for (const container of ["webm", "mp4"]) {
+			expect(parseNativeRecordingWebcamRegistration({ ...base, container })).toEqual({
+				...base,
+				container,
+			});
+		}
+		for (const container of [null, "../camera.mp4", "mov", "video/mp4", 5]) {
+			expect(parseNativeRecordingWebcamRegistration({ ...base, container })).toBeNull();
+		}
+	});
+
 	it("preserves optional original paths and finite offsets in native clip acknowledgments", () => {
 		const clip = {
 			index: 0,

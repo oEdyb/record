@@ -6,6 +6,10 @@ import { createEmptyDocument } from "../../src/lib/ai-edition/schema";
 import { exportSourceHandoff } from "./sourceHandoff";
 import { inspectHandoffSourceMedia } from "./sourceHandoffMedia";
 
+vi.mock("./handoffProvenance", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./handoffProvenance")>()),
+	inspectFileFacts: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("./sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
 vi.mock("../media/audioPeaks", () => ({ resolveFfmpeg: () => null, audioTrackMapArgs: () => [] }));
 let root: string;
@@ -92,36 +96,36 @@ it("copies kept sources once, preserves originals and hidden camera, and writes 
 	expect(result.sourceCount).toBe(2);
 	expect(path.dirname(result.directory)).toBe(await fs.realpath(root));
 	expect(approved).toHaveBeenCalledTimes(2);
-	expect(await fs.readFile(path.join(result.directory, "001-screen.mp4"), "utf8")).toBe(
+	expect(await fs.readFile(path.join(result.directory, "001-86f7e437-screen.mp4"), "utf8")).toBe(
 		"screen-original",
 	);
 	expect(await fs.readFile(doc.assets[0].originalPath, "utf8")).toBe("screen-original");
 	expect(manifest.sources[0].camera).toMatchObject({
 		visibleInKlippt: false,
-		file: "001-camera.mp4",
+		file: "001-86f7e437-camera.mp4",
 	});
 	expect(await exportedClips(result.timelinePath)).toMatchObject([
 		{ sourceStartSec: 0, sourceEndSec: 2, timelineStartSec: 0, timelineEndSec: 2 },
 		{ sourceStartSec: 4, sourceEndSec: 10, timelineStartSec: 2, timelineEndSec: 8 },
 	]);
 	expect(manifest).not.toHaveProperty("clips");
-	expect(manifest.sources[0].camera).not.toHaveProperty("offsetMs");
-	expect(manifest.sources[0].camera).not.toHaveProperty("startMs");
+	expect(manifest.sources[0].camera.offsetMs).toBe(-775);
+	expect(manifest.sources[0].camera.startMs).toBe(0);
 	expect(manifest.sources).toHaveLength(1);
 	expect(manifest.timeline).toEqual({ file: "timeline.otio", frameRate: 60 });
 	expect(manifest.finalCutTimeline).toEqual({ file: "timeline.fcpxml", frameRate: 60 });
 	expect(result.fcpxmlPath).toBe(path.join(result.directory, "timeline.fcpxml"));
 	const fcpxml = await fs.readFile(result.fcpxmlPath, "utf8");
 	expect(fcpxml).toContain('<project name="../My take">');
-	expect(fcpxml).toContain('<media-rep kind="original-media" src="./001-screen.mp4"/>');
+	expect(fcpxml).toContain('<media-rep kind="original-media" src="./001-86f7e437-screen.mp4"/>');
 	expect(fcpxml).toContain(
-		'<asset-clip ref="r3" offset="0s" name="001-screen.mp4" start="0s" duration="2s"',
+		'<asset-clip ref="r3" offset="0s" name="T001 screen 0.00–2.00s" start="0s" duration="2s"',
 	);
 	expect(fcpxml).toContain(
-		'<asset-clip ref="r3" offset="2s" name="001-screen.mp4" start="4s" duration="6s"',
+		'<asset-clip ref="r3" offset="2s" name="T001 screen 4.00–10.00s" start="4s" duration="6s"',
 	);
 	expect(fcpxml).toContain(
-		'lane="1" offset="0s" name="001-camera.mp4" start="47/60s" duration="2s"',
+		'lane="1" offset="0s" name="T001 camera 0.78–2.78s" start="47/60s" duration="2s"',
 	);
 	const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
 	expect(
@@ -152,6 +156,10 @@ it("exports Clean Cut markers alongside unchanged OTIO and Final Cut timelines",
 	]);
 	const clean = JSON.parse(await fs.readFile(result.cleanCutPath!, "utf8"));
 	expect(clean.name).toBe("../My take (clean cut)");
+	expect(result.warnings).toContain(
+		"Clean dialogue skipped: no isolated microphone source is available.",
+	);
+	await expect(fs.access(path.join(result.directory, "clean-dialogue.wav"))).rejects.toThrow();
 	expect(clean.tracks.children[0].children[2].markers).toMatchObject([
 		{ name: "Retake", comment: "said again later", color: "RED" },
 	]);
@@ -161,7 +169,7 @@ it("exports Clean Cut markers alongside unchanged OTIO and Final Cut timelines",
 	expect(manifest.finalCutTimeline).toEqual({ file: "timeline.fcpxml", frameRate: 60 });
 	expect(result.fcpxmlPath).toBe(path.join(result.directory, "timeline.fcpxml"));
 	const xml = await fs.readFile(result.fcpxmlPath, "utf8");
-	expect(xml).toContain('name="001-screen.mp4" start="4s" duration="6s"');
+	expect(xml).toContain('name="T001 screen 4.00–10.00s" start="4s" duration="6s"');
 	expect(clean.tracks.children[0].children[2].markers[0].marked_range.start_time.value).toBe(420);
 	expect(await fs.readFile(path.join(result.directory, "README.txt"), "utf8")).toContain(
 		"For Final Cut Pro, open timeline.fcpxml",
@@ -298,10 +306,10 @@ it("byte-copies all four complete sources and stores their cuts and offsets only
 	}));
 	const result = await exportSourceHandoff(doc, root, (file) => file);
 	for (const [original, exported] of [
-		[doc.assets[0].originalPath, "001-screen.mp4"],
-		[doc.assets[0].cameraTrack!.sourcePath, "001-camera.mp4"],
-		[microphone, "001-microphone.m4a"],
-		[system, "001-system.m4a"],
+		[doc.assets[0].originalPath, "001-86f7e437-screen.mp4"],
+		[doc.assets[0].cameraTrack!.sourcePath, "001-86f7e437-camera.mp4"],
+		[microphone, "001-86f7e437-microphone.m4a"],
+		[system, "001-86f7e437-system.m4a"],
 	]) {
 		expect(await fs.readFile(path.join(result.directory, exported))).toEqual(
 			await fs.readFile(original),
@@ -311,17 +319,15 @@ it("byte-copies all four complete sources and stores their cuts and offsets only
 	expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(4);
 	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
 	expect(manifest).toMatchObject({
-		version: 2,
+		version: 4,
 		mediaBytes: "unchanged",
 		audioEncoding: "unchanged",
 	});
 	expect(manifest.sources[0].screen.audio).toEqual([
-		{ role: "microphone", file: "001-microphone.m4a", durationSec: 10 },
-		{ role: "system", file: "001-system.m4a", durationSec: 10 },
+		{ role: "microphone", file: "001-86f7e437-microphone.m4a", durationSec: 10, offsetSec: 0.2 },
+		{ role: "system", file: "001-86f7e437-system.m4a", durationSec: 10, offsetSec: 0.1 },
 	]);
-	expect(JSON.stringify(manifest)).not.toMatch(
-		/Offset|offset|sourceStartSec|sourceEndSec|timelineStartSec/,
-	);
+	expect(manifest.clock.rule).toBe("streamTimeSec = screenTimeSec - offsetSec");
 	const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
 	expect(timeline.tracks.children).toHaveLength(4);
 	expect(timeline.tracks.children[2].children[0]).toMatchObject({
@@ -329,7 +335,7 @@ it("byte-copies all four complete sources and stores their cuts and offsets only
 		source_range: { duration: { value: 12 } },
 	});
 	expect(timeline.tracks.children[2].children[1]).toMatchObject({
-		name: "001-microphone.m4a",
+		name: "T001 microphone 0.00–1.80s",
 		metadata: { klippt: { sourceOffsetSec: 0.2 } },
 	});
 	expect(timeline.tracks.children[3].children[0]).toMatchObject({
@@ -354,10 +360,10 @@ it("retains original MKV and WebM containers even when their video could be remu
 		video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
 	});
 	const result = await exportSourceHandoff(doc, root, (file) => file);
-	expect(await fs.readFile(path.join(result.directory, "001-screen.mkv"))).toEqual(
+	expect(await fs.readFile(path.join(result.directory, "001-86f7e437-screen.mkv"))).toEqual(
 		await fs.readFile(screen),
 	);
-	expect(await fs.readFile(path.join(result.directory, "001-camera.webm"))).toEqual(
+	expect(await fs.readFile(path.join(result.directory, "001-86f7e437-camera.webm"))).toEqual(
 		await fs.readFile(camera),
 	);
 	expect(
@@ -382,7 +388,7 @@ it("keeps legacy embedded audio raw and discloses its unavailable standalone ori
 	expect(result.warnings.join(" ")).toContain("it was not extracted");
 	const timeline = JSON.parse(await fs.readFile(result.timelinePath, "utf8"));
 	expect(timeline.tracks.children[2].children[0].OTIO_SCHEMA).toBe("Gap.1");
-	expect(timeline.tracks.children[4].children[0].name).toBe("001-screen.mp4");
+	expect(timeline.tracks.children[4].children[0].name).toBe("T001 audio 0.00–2.00s");
 });
 
 it("rejects a missing original audio file before publishing any source folder", async () => {
@@ -445,3 +451,160 @@ it.runIf(process.platform === "darwin")(
 		}
 	},
 );
+
+it("exports a self-contained clock, file hashes, edit maps and unchanged cursor assets", async () => {
+	const doc = await fixture();
+	const sidecar = JSON.stringify({
+		version: 5,
+		provider: "native",
+		samples: [{ timeMs: 500, cx: 0.25, cy: 0.75 }],
+		assets: [
+			{
+				id: "arrow",
+				imageDataUrl: "data:image/png;base64,AQID",
+				width: 3,
+				height: 4,
+				hotspotX: 1,
+				hotspotY: 2,
+				scaleFactor: 2,
+			},
+		],
+	});
+	await fs.writeFile(`${doc.assets[0].originalPath}.cursor.json`, sidecar);
+	const mediaOnly = (file: string) => (file.endsWith(".json") ? null : file);
+	const result = await exportSourceHandoff(doc, root, mediaOnly, {
+		keep: [
+			{ assetId: "a", startSec: 0, endSec: 1 },
+			{ assetId: "a", startSec: 5, endSec: 7 },
+		],
+		markers: [
+			{ keepIndex: 1, name: "Retake", comment: "Retake (Repeated): “hello again”", color: "RED" },
+		],
+	});
+	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
+	expect(manifest.version).toBe(4);
+	expect(manifest.clock).toMatchObject({
+		frameRate: 60,
+		rule: "streamTimeSec = screenTimeSec - offsetSec",
+	});
+	expect(manifest.sources[0].screen.offsetSec).toBe(0);
+	expect(manifest.sources[0].camera).toMatchObject({
+		offsetMs: -775,
+		startMs: 0,
+		offsetSec: -0.775,
+	});
+	expect(manifest.files[0]).toMatchObject({
+		bytes: 15,
+		sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+	});
+	expect(manifest.sources[0].cursor).toMatchObject({
+		available: true,
+		offsetSec: 0,
+		captureMode: "unknown",
+	});
+	expect(
+		await fs.readFile(path.join(result.directory, manifest.sources[0].cursor.file), "utf8"),
+	).toBe(sidecar);
+	expect(
+		await fs.readFile(path.join(result.directory, manifest.sources[0].cursor.assets[0].file)),
+	).toEqual(Buffer.from([1, 2, 3]));
+	const timeline = JSON.parse(await fs.readFile(result.cleanCutPath!, "utf8"));
+	const pieces = manifest.edit.clean.pieces;
+	expect(pieces).toHaveLength(2);
+	for (const [index, piece] of pieces.entries()) {
+		const { file: _file, ...metadata } = piece;
+		expect(timeline.tracks.children[0].children[index].metadata.klippt).toMatchObject(metadata);
+		expect(timeline.tracks.children[0].children[index].source_range.start_time.value).toBe(
+			piece.sourceStartFrame,
+		);
+	}
+	expect(timeline.tracks.children[0].children[1]).toMatchObject({
+		name: "T001 screen 5.00–7.00s",
+		metadata: {
+			klippt: {
+				assetId: "a",
+				take: 1,
+				role: "screen",
+				keepIndex: 1,
+				reason: "Retake (Repeated): “hello again”",
+				timelineStartFrame: 60,
+			},
+		},
+	});
+	expect(manifest.edit.clean.removed).toContainEqual(
+		expect.objectContaining({
+			sourceStartSec: 4,
+			sourceEndSec: 5,
+			kind: "Retake",
+			words: ["hello again"],
+		}),
+	);
+	expect(manifest.transcript.available).toBe(false);
+});
+
+it("refuses a cursor sidecar that links away from its screen recording", async () => {
+	const doc = await fixture();
+	const elsewhere = path.join(root, "elsewhere.json");
+	await fs.writeFile(elsewhere, "{}");
+	await fs.symlink(elsewhere, `${doc.assets[0].originalPath}.cursor.json`);
+	await expect(exportSourceHandoff(doc, root, (file) => file)).rejects.toThrow(
+		"Cursor telemetry must be a regular file next to its screen recording.",
+	);
+});
+
+it("names different recordings distinctly and declares absent cursor data", async () => {
+	const doc = await fixture();
+	const first = await exportSourceHandoff(doc, root, (file) => file);
+	doc.assets[0].id = "b";
+	doc.timeline.clips[0].assetId = "b";
+	doc.timeline.trimRanges = [];
+	const second = await exportSourceHandoff(doc, root, (file) => file);
+	const a = JSON.parse(await fs.readFile(first.manifestPath, "utf8"));
+	const b = JSON.parse(await fs.readFile(second.manifestPath, "utf8"));
+	expect(a.sources[0].screen.file).not.toBe(b.sources[0].screen.file);
+	expect(a.sources[0].cursor).toMatchObject({
+		available: false,
+		offsetSec: 0,
+		reason: expect.any(String),
+	});
+});
+
+it("preserves timed transcript words and confidence without synthesizing text", async () => {
+	const doc = await fixture();
+	doc.transcript = {
+		assetId: "a",
+		language: "en",
+		evidenceStatus: "legacy-unverified",
+		sources: [],
+		segments: [
+			{
+				id: "s",
+				kind: "speech",
+				startSec: 1,
+				endSec: 2,
+				text: "hello",
+				wordIds: ["w"],
+				sourceRole: "unknown-mixed",
+			},
+		],
+		words: [
+			{
+				id: "w",
+				segmentId: "s",
+				startSec: 1,
+				endSec: 2,
+				text: "hello",
+				confidence: 0.91,
+				sourceRole: "unknown-mixed",
+			},
+		],
+	};
+	const result = await exportSourceHandoff(doc, root, (file) => file);
+	const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
+	expect(manifest.transcript).toMatchObject({
+		available: true,
+		transcripts: [
+			{ assetId: "a", words: [{ text: "hello", startSec: 1, endSec: 2, confidence: 0.91 }] },
+		],
+	});
+});

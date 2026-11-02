@@ -1,0 +1,1152 @@
+/* The Studio is the big pill: the HUD's dark glass, its hairline border and light top
+   edge, 22px panels holding 14px tiles, all from the --hud-* tokens. */
+.root {
+	--ink: var(--hud-ink);
+	--ink-2: var(--hud-ink-2);
+	--muted: var(--hud-muted);
+	--line: var(--hud-border);
+	--glass-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 24px 48px -16px rgba(0, 0, 0, 0.7),
+		0 4px 12px rgba(0, 0, 0, 0.4);
+	display: flex;
+	height: 100vh;
+	width: 100vw;
+	min-width: 660px;
+	flex-direction: column;
+	overflow: hidden;
+	background: radial-gradient(120% 80% at 50% 0%, #17171c 0%, #0b0b0e 70%);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: 13px;
+	-webkit-font-smoothing: antialiased;
+}
+
+.root [hidden] {
+	display: none !important;
+}
+
+.root button {
+	cursor: default;
+	color: inherit;
+	font: inherit;
+}
+
+.root button:disabled {
+	opacity: 0.4;
+}
+
+.root button:focus-visible,
+.root select:focus-visible,
+.root [tabindex]:focus-visible {
+	outline: 2px solid var(--hud-focus);
+	outline-offset: 2px;
+}
+
+/* One glass surface for every panel. */
+.setup,
+.document,
+.dock,
+.transport,
+.dialog {
+	border: 1px solid var(--line);
+	background: var(--hud-surface);
+	box-shadow: var(--glass-shadow);
+}
+
+.header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	height: 40px;
+	flex-shrink: 0;
+	padding: 0 12px 0 16px;
+	-webkit-app-region: drag;
+}
+
+.header button {
+	-webkit-app-region: no-drag;
+	display: grid;
+	place-items: center;
+	min-width: 28px;
+	height: 28px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: var(--hud-radius-md);
+	background: none;
+	color: var(--muted);
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.header button:hover {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
+}
+
+.title {
+	font-weight: 500;
+	color: var(--ink-2);
+}
+
+.phase {
+	flex: 1;
+	color: var(--muted);
+	font-size: 12px;
+	text-align: center;
+}
+
+.setup {
+	display: flex;
+	height: 50px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 2px;
+	margin: 0 12px;
+	padding: 0 7px;
+	border-radius: 25px;
+}
+
+.setup button {
+	display: flex;
+	height: 36px;
+	align-items: center;
+	gap: 8px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 18px;
+	background: none;
+	color: var(--muted);
+	white-space: nowrap;
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.setup button:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--ink);
+}
+
+.setup button:first-child {
+	max-width: 260px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* On reads as a lit tile with a plain icon; off is flat, muted and crossed out. */
+.setup button[aria-pressed="true"],
+.setup button[aria-pressed="true"]:hover:not(:disabled) {
+	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.setup button[aria-pressed="false"] {
+	color: var(--muted);
+}
+
+.spacer {
+	flex: 1;
+}
+
+/* The input level, drawn along the bottom of the Microphone button. */
+.micGroup {
+	position: relative;
+	display: flex;
+}
+
+.level {
+	pointer-events: none;
+}
+
+.level {
+	position: absolute;
+	right: 14px;
+	bottom: 5px;
+	left: 14px;
+	height: 2px;
+	overflow: hidden;
+	border-radius: 1px;
+	background: var(--hud-fill-strong);
+}
+
+.level::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	background: var(--hud-success);
+	transform: scaleX(var(--level, 0));
+	transform-origin: left;
+	transition: transform 60ms linear;
+}
+
+.body {
+	display: grid;
+	min-height: 0;
+	flex: 1;
+	overflow: hidden;
+	padding: 12px;
+}
+
+.document {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	padding: 14px clamp(32px, 6vw, 120px) 0;
+	border-radius: var(--hud-radius-xl);
+	grid-column: 1;
+	grid-row: 1;
+}
+
+.body[data-dock="left"] .document {
+	grid-column: 3;
+}
+
+.body[data-live="true"] .document {
+	grid-column: 1;
+}
+
+/* Segmented controls: tiles inside a recessed track, like the pill's toggles. */
+.documentTabs,
+.viewSwitch {
+	display: flex;
+	flex-shrink: 0;
+	align-self: flex-start;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill);
+}
+
+.documentTabs button,
+.viewSwitch button {
+	display: grid;
+	place-items: center;
+	height: 28px;
+	min-width: 32px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.viewSwitch button {
+	padding: 0 6px;
+}
+
+.documentTabs button:hover,
+.viewSwitch button:hover {
+	color: var(--ink);
+}
+
+.documentTabs button[aria-pressed="true"],
+.viewSwitch button[aria-pressed="true"] {
+	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.documentBar {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.textSize {
+	display: flex;
+	gap: 2px;
+	margin-left: auto;
+}
+
+.textSize button {
+	height: 28px;
+	min-width: 32px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.textSize button:hover {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
+}
+
+.documentContent {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+}
+
+.notes {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	padding: 20px 0;
+	white-space: pre-wrap;
+	font: 400 calc(clamp(20px, 1.75vw, 30px) + var(--studio-font-delta, 0px)) / 1.55
+		var(--font-body);
+	letter-spacing: -0.01em;
+	color: var(--ink-2);
+}
+
+.dock {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+	padding: 8px;
+	border-radius: var(--hud-radius-xl);
+	grid-column: 3;
+	grid-row: 1;
+}
+
+.body[data-dock="left"] .dock {
+	grid-column: 1;
+}
+
+.dockHeader {
+	display: flex;
+	height: 32px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+	padding-left: 6px;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.dockHeader > button {
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+}
+
+.dockHeader > button:hover {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
+}
+
+.panes {
+	display: grid;
+	flex: 1;
+	min-height: 0;
+}
+
+.cameraSlot,
+.replaySlot {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.cameraSlot {
+	align-items: center;
+	justify-content: center;
+	container-type: size;
+}
+
+/* The camera box is the frame itself: 16:9, as large as the pane allows. */
+.cameraSlot .camera {
+	width: min(100cqw, 100cqh * 16 / 9);
+	height: auto;
+	aspect-ratio: 16 / 9;
+}
+
+/* Before recording the dock holds only the camera: the card hugs the picture, not the window. */
+.root[data-phase="idle"] .dock {
+	align-self: start;
+}
+
+.root[data-platform="linux"][data-phase="idle"] .dock {
+	max-height: 100%;
+	overflow-y: auto;
+}
+
+.root[data-phase="idle"] .panes {
+	flex: none;
+}
+
+.root[data-phase="idle"] .cameraSlot {
+	container-type: normal;
+}
+
+.root[data-phase="idle"] .cameraSlot .camera {
+	width: 100%;
+}
+
+.camera {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	max-height: 100%;
+	overflow: hidden;
+	border-radius: var(--hud-radius-lg);
+	background: #08080a;
+	box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.camera canvas {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	transform: scaleX(-1);
+}
+
+.camera[data-dim="true"] canvas {
+	opacity: 0.55;
+}
+
+.liveChip {
+	position: absolute;
+	top: 10px;
+	left: 10px;
+	display: flex;
+	height: 22px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 9px;
+	border-radius: var(--hud-radius-pill);
+	background: rgba(14, 14, 17, 0.72);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	box-shadow: inset 0 0 0 1px var(--line);
+	color: var(--ink);
+	font: 500 11px/1 var(--font-body);
+}
+
+.liveChip::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--hud-success);
+}
+
+.guides {
+	position: absolute;
+	inset: 30% 0 0;
+	border-top: 1px dashed rgba(255, 255, 255, 0.35);
+	pointer-events: none;
+}
+
+.guides i {
+	display: block;
+	width: 35%;
+	height: 70%;
+	margin: -12% auto 0;
+	border: 1px dashed rgba(255, 255, 255, 0.35);
+	border-radius: 50%;
+}
+
+.separator,
+.verticalSeparator {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	touch-action: none;
+}
+
+.separator {
+	cursor: row-resize;
+}
+
+.separator::after {
+	content: "";
+	width: 36px;
+	height: 4px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.18);
+	transition: background 120ms ease;
+}
+
+.verticalSeparator {
+	grid-column: 2;
+	grid-row: 1;
+	cursor: col-resize;
+}
+
+.verticalSeparator::after {
+	content: "";
+	width: 4px;
+	height: 36px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.18);
+	transition: background 120ms ease;
+}
+
+.separator:hover::after,
+.verticalSeparator:hover::after {
+	background: rgba(255, 255, 255, 0.45);
+}
+
+.replay {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	width: 100%;
+}
+
+.stageSlot {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	align-items: center;
+	justify-content: center;
+	container-type: size;
+}
+
+.stage {
+	width: min(100cqw, 100cqh * var(--peek-aspect));
+	height: auto;
+	overflow: hidden;
+	border-radius: var(--hud-radius-lg);
+}
+
+/* The recorded camera reads as a tile you can grab, not as part of the screen behind it. */
+.replayCamera {
+	position: absolute;
+	overflow: hidden;
+	border-radius: 8px;
+	box-shadow:
+		0 0 0 1.5px rgba(255, 255, 255, 0.55),
+		0 8px 20px rgba(0, 0, 0, 0.55);
+	cursor: grab;
+	touch-action: none;
+}
+
+.replayCamera:active {
+	cursor: grabbing;
+}
+
+.replayCameraHandle {
+	position: absolute;
+	right: 4px;
+	bottom: 4px;
+	width: 14px;
+	height: 14px;
+	border-right: 2px solid rgba(255, 255, 255, 0.85);
+	border-bottom: 2px solid rgba(255, 255, 255, 0.85);
+	border-radius: 0 0 4px;
+	opacity: 0;
+	cursor: nwse-resize;
+	transition: opacity 120ms ease;
+}
+
+.replayCameraHandle[data-left="true"] {
+	right: auto;
+	left: 4px;
+	border-right: 0;
+	border-left: 2px solid rgba(255, 255, 255, 0.85);
+	border-radius: 0 0 0 4px;
+}
+
+.replayCameraHandle[data-top="true"] {
+	top: 4px;
+	bottom: auto;
+	border-top: 2px solid rgba(255, 255, 255, 0.85);
+	border-bottom: 0;
+}
+
+.replayCameraHandle[data-left="true"][data-top="true"] {
+	border-radius: 4px 0 0;
+}
+
+.replayCameraHandle[data-left="false"][data-top="true"] {
+	border-radius: 0 4px 0 0;
+}
+
+.replayCameraHandle[data-left="true"][data-top="false"],
+.replayCameraHandle[data-left="false"][data-top="true"] {
+	cursor: nesw-resize;
+}
+
+.replayCamera:hover .replayCameraHandle {
+	opacity: 1;
+}
+
+/* Narrow docks put the seek bar on its own line instead of crushing it into the time. */
+.replayControls {
+	flex-wrap: wrap;
+	height: auto;
+	row-gap: 6px;
+}
+
+.replayControls > [role="slider"] {
+	flex: 1 1 140px;
+	min-width: 140px;
+}
+
+.replayControls {
+	flex-shrink: 0;
+	padding: 10px 4px 2px;
+}
+
+.replayError {
+	color: #ff9b8f;
+}
+
+.transcript {
+	position: relative;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.transcriptHeader {
+	display: flex;
+	height: 28px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.transcriptHeader button {
+	display: flex;
+	height: 28px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill);
+	color: var(--muted);
+}
+
+.transcriptHeader button:hover {
+	background: var(--hud-fill-hover);
+	color: var(--ink);
+}
+
+.transcriptTitle {
+	display: none;
+}
+
+.transcriptBody {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-anchor: none;
+	mask-image: linear-gradient(transparent, black 32px, black calc(100% - 32px), transparent);
+}
+
+.section {
+	padding-top: 36px;
+}
+
+.section :global(.transcript-clip-label) {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 16px;
+	color: var(--muted);
+	font: 500 11px var(--font-mono);
+}
+
+.section :global(.transcript-clip-label)::after {
+	content: "";
+	height: 1px;
+	flex: 1;
+	background: var(--line);
+}
+
+.section :global(.transcript-clip-text) {
+	margin: 0;
+	color: var(--ink-2);
+	font: 400 calc(clamp(20px, 1.75vw, 30px) + var(--studio-font-delta, 0px)) / 1.5
+		var(--font-body);
+	letter-spacing: -0.01em;
+}
+
+.sentence {
+	display: inline;
+	padding: 2px 0;
+	border: 0;
+	border-radius: 6px;
+	background: none;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	user-select: text;
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.sentence:hover,
+.sentence[data-active="true"] {
+	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.placeholder {
+	color: var(--muted);
+	font-size: 13px;
+}
+
+.placeholder[data-tone="error"] {
+	color: #ff9b8f;
+}
+
+.statusAction {
+	margin-left: 6px;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--ink) !important;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.latest {
+	position: absolute;
+	bottom: 16px;
+	left: 50%;
+	height: 30px;
+	padding: 0 14px;
+	border: 1px solid var(--line);
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-surface);
+	box-shadow: var(--glass-shadow);
+	transform: translateX(-50%);
+}
+
+/* The transport is the recording pill itself, floating over the bottom edge. */
+.capture {
+	position: relative;
+	display: flex;
+	height: 74px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	padding: 0 24px 12px;
+}
+
+.transport {
+	display: flex;
+	height: 50px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 5px;
+	border-radius: 25px;
+}
+
+.transport > :global(*:only-child) {
+	margin: 0 4px;
+}
+
+.undo {
+	position: absolute;
+	left: 24px;
+	display: flex;
+	height: 36px;
+	align-items: center;
+	gap: 4px;
+	padding: 0 6px 0 14px;
+	border: 1px solid var(--line);
+	border-radius: 18px;
+	background: var(--hud-surface);
+	box-shadow: var(--glass-shadow);
+	color: var(--muted);
+}
+
+.undo button {
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 14px;
+	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.finish {
+	position: absolute;
+	right: 24px;
+	height: 40px;
+	padding: 0 22px;
+	border: 0;
+	border-radius: 20px;
+	background: var(--hud-ink);
+	box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.8);
+	color: #111114 !important;
+	font-weight: 500 !important;
+	transition: transform 120ms ease, background 120ms ease;
+}
+
+.finish:hover {
+	background: #ffffff;
+}
+
+.finish:active {
+	transform: scale(0.97);
+}
+
+/* While recording: notes and the camera share the window, each as large as it can be. */
+.calm {
+	position: relative;
+	display: grid;
+	min-height: 0;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr);
+	gap: 12px;
+	padding: 0 0 44px;
+}
+
+.calm[data-mode="both"] {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.calm > .notes,
+.calm > .cameraSlot {
+	min-height: 0;
+	border: 1px solid var(--line);
+	border-radius: var(--hud-radius-xl);
+	background: var(--hud-surface);
+}
+
+.calm > .notes {
+	padding: 24px clamp(24px, 4vw, 72px);
+}
+
+.calm > .cameraSlot {
+	padding: 8px;
+}
+
+.calm[data-mode="nothing"] {
+	place-items: center;
+}
+
+.liveModes {
+	position: absolute;
+	bottom: 0;
+	left: 50%;
+	display: flex;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill);
+	transform: translateX(-50%);
+}
+
+.liveModes button {
+	height: 28px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: none;
+	color: var(--muted);
+	white-space: nowrap;
+	transition: background 120ms ease, color 120ms ease;
+}
+
+.liveModes button:hover {
+	color: var(--ink);
+}
+
+.liveModes button[aria-pressed="true"] {
+	background: var(--hud-fill-strong);
+	color: var(--ink);
+}
+
+.liveTimer {
+	color: var(--ink);
+	font: 300 64px var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+}
+
+.dialog {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	z-index: 101;
+	transform: translate(-50%, -50%);
+	width: min(440px, 90vw);
+	max-height: 85vh;
+	padding: 16px;
+	border-radius: var(--hud-radius-xl);
+	color: var(--ink);
+}
+
+.dialogLayer {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	background: rgba(0, 0, 0, 0.55);
+}
+
+/* A panel with its own frame, such as the source picker, sits in the dialog as is. */
+.dialog[data-bare="true"] {
+	width: fit-content;
+	height: fit-content;
+	padding: 0;
+	border: 0;
+	background: none;
+	box-shadow: none;
+}
+
+/* The pill's source panel, given the room the Studio has. */
+.dialog[data-bare="true"] .sourcePanel {
+	--source-columns: 3;
+	width: min(760px, 86vw);
+	height: min(560px, 80vh);
+}
+
+.dialog header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin: 0 0 14px 6px;
+	font-weight: 500;
+}
+
+.dialog header button {
+	height: 28px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: var(--hud-radius-pill);
+	background: var(--hud-fill-strong);
+	color: inherit;
+}
+
+.dialog header button:hover {
+	background: var(--hud-fill-hover);
+}
+
+/* One grouped list: rows split by hairlines, labels left, controls right. */
+/* A fieldset is never narrower than its content unless told; the list must fit any pane. */
+.fields {
+	container-type: inline-size;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	min-width: 0;
+	margin: 0;
+	padding: 0 4px;
+	border: 0;
+	border-radius: var(--hud-radius-lg);
+	background: var(--hud-fill);
+}
+
+.fieldRow {
+	display: flex;
+	min-height: 48px;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 0 6px 0 12px;
+	color: var(--ink-2);
+}
+
+.fieldRow + .fieldRow {
+	box-shadow: inset 0 1px 0 var(--line);
+}
+
+.fieldRow > [data-klippt-select-trigger] {
+	width: 230px;
+	min-width: 0;
+	max-width: 62%;
+	overflow: hidden;
+}
+
+/* A long device name ends in an ellipsis inside the box; the arrow keeps its place. */
+.fieldRow > [data-klippt-select-trigger] > span:first-child,
+.fieldRow > [data-klippt-select-trigger] > span:first-child * {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.fieldRow > [data-klippt-select-trigger] > svg {
+	flex: none;
+}
+
+.dockDevices {
+	margin-top: 8px;
+}
+
+/* In a narrow pane each control goes under its label, full width. */
+@container (max-width: 360px) {
+	.fieldRow:has(> [data-klippt-select-trigger]) {
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 10px 12px;
+	}
+
+	.fieldRow > [data-klippt-select-trigger] {
+		width: 100%;
+		max-width: 100%;
+	}
+}
+
+.fields [role="alert"] {
+	padding: 10px 12px;
+	color: #ff9b8f;
+}
+
+.dialog:has(.keymap) {
+	display: flex;
+	flex-direction: column;
+	width: min(480px, 90vw);
+}
+
+.keymap {
+	min-height: 0;
+	margin: 12px 0 0;
+	padding: 0 4px;
+	overflow-y: auto;
+	border-radius: var(--hud-radius-lg);
+	background: var(--hud-fill);
+}
+
+.keymapRow {
+	display: flex;
+	min-height: 36px;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 0 8px 0 12px;
+}
+
+.keymapRow + .keymapRow {
+	box-shadow: inset 0 1px 0 var(--line);
+}
+
+.keymapRow dt {
+	min-width: 0;
+	color: var(--ink-2);
+}
+
+.keymapRow dd {
+	display: flex;
+	flex: none;
+	gap: 4px;
+	margin: 0;
+}
+
+.keymapRow kbd {
+	min-width: 24px;
+	height: 22px;
+	padding: 0 6px;
+	border-radius: var(--hud-radius-sm);
+	background: var(--hud-fill-strong);
+	box-shadow: inset 0 -1px 0 var(--line);
+	color: var(--ink);
+	font: inherit;
+	font-size: 12px;
+	line-height: 22px;
+	text-align: center;
+}
+
+.srOnly {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.rail {
+	position: absolute;
+	top: 28px;
+	bottom: 28px;
+	left: 12px;
+	display: flex;
+	width: 32px;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.rail button {
+	position: relative;
+	display: block;
+	min-height: 5px;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--muted);
+}
+
+.rail span {
+	position: absolute;
+	top: 0;
+	left: 0;
+	font: 10px var(--font-mono);
+}
+
+.rail i {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 22px;
+	width: 3px;
+	border-radius: 2px;
+	background: var(--hud-fill-strong);
+}
+
+.rail button[aria-current] i {
+	background: var(--ink);
+}
+
+.sentence[data-time] {
+	position: relative;
+}
+
+.sentence[data-active="true"]::before {
+	content: attr(data-time);
+	position: absolute;
+	top: 8px;
+	left: -52px;
+	color: var(--muted);
+	font: 11px var(--font-mono);
+}
+
+@media (max-width: 1000px) {
+	.setup button {
+		gap: 4px;
+		padding: 0 8px;
+		font-size: 12px;
+	}
+
+	.setup button:first-child {
+		max-width: 140px;
+	}
+
+	.document {
+		padding: 12px 24px 0 44px;
+	}
+
+	.section {
+		padding-top: 28px;
+	}
+
+	.rail {
+		left: 4px;
+		width: 28px;
+	}
+
+	.sentence::before {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.root *,
+	.root *::before {
+		animation: none !important;
+		transition: none !important;
+		scroll-behavior: auto !important;
+	}
+}

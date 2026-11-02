@@ -1,21 +1,18 @@
-/**
- * The request the Linux capture helper takes as argv[1].
- *
- * Deliberately narrower than its Windows and macOS counterparts, because on
- * Wayland the app knows less:
- *
- *   * There is no `source`. The ScreenCast portal raises its own picker and the
- *     compositor decides what it hands over; `desktopCapturer` on Wayland
- *     returns a single placeholder entry and no usable id. Passing one would be
- *     passing a guess. The helper reports back what was actually picked.
- *   * There is no `webcam`. Like macOS, the camera stays with the renderer's
- *     MediaRecorder — V4L2 in the helper would buy nothing and cost a second
- *     exclusive claim on the device.
- *   * There is no `restoreToken`. One used to be replayed here so the portal
- *     would stop raising its picker, and that is exactly how picking a window
- *     produced a recording of the whole screen: a token is bound to the source
- *     it was minted for, so an approved monitor came back forever and the picker
- *     — the only source chooser Wayland offers — never reappeared.
+import type {
+	NativeMacRecordingRequest,
+	NativeRecordingAppStopRequest,
+} from "./nativeMacRecording";
+import { recordingQualityBitrate } from "./recording/recordingQuality";
+
+export type NativeLinuxSourceSelectionResult = {
+	success: boolean;
+	cancelled?: boolean;
+	error?: string;
+};
+
+/** Legacy Linux IPC input, adapted to the shared clip-native request at the boundary.
+ * Source selection belongs to the portal. The renderer records per-clip cameras;
+ * complete microphone/system originals belong to the native helper.
  */
 export type NativeLinuxRecordingRequest = {
 	recordingId?: number;
@@ -44,6 +41,42 @@ export type NativeLinuxRecordingRequest = {
 	};
 };
 
+/** Retains existing Linux IPC callers while using the shared clip-native helper contract. */
+export function linuxClipRecordingRequest(
+	request: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
+): NativeMacRecordingRequest {
+	if ("schemaVersion" in request) {
+		// The IPC boundary is typed but not validated: a request without an audio block
+		// must reach the service and fail there, not throw in this adapter.
+		const microphone = request.audio?.microphone ? { ...request.audio.microphone } : undefined;
+		if (microphone?.deviceId === "default") delete microphone.deviceName;
+		return {
+			...request,
+			platform: "linux",
+			...(microphone ? { audio: { ...request.audio, microphone } } : {}),
+			webcam: { enabled: false, width: 1920, height: 1080, fps: 60 },
+		};
+	}
+	return {
+		schemaVersion: 1,
+		platform: "linux",
+		recordingId: request.recordingId,
+		source: { type: "display", sourceId: "portal:selected" },
+		video: {
+			width: 3840,
+			height: 2160,
+			fps: request.video.fps,
+			quality: "high",
+			bitrate: request.video.bitrate ?? recordingQualityBitrate("high"),
+			hideSystemCursor: request.cursor.mode === "editable-overlay",
+		},
+		audio: request.audio,
+		webcam: { enabled: false, width: 1920, height: 1080, fps: 60 },
+		cursor: request.cursor,
+		outputs: { screenPath: "" },
+	};
+}
+
 /** The slice of `window.electronAPI` the check below needs. */
 type SourceSelectionProbe = {
 	getPlatform: () => string;
@@ -56,8 +89,8 @@ type SourceSelectionProbe = {
  * True only on Linux WITH the PipeWire helper. `SelectSources` has no parameter
  * naming a source, so there is nothing for the app to have selected and every
  * `selectedSource` gate must stand down. Everywhere else those gates are
- * load-bearing: both other native paths, and Linux's own browser fallback,
- * genuinely consume a source id.
+ * load-bearing: both other native paths consume a source id. The native Record
+ * path reports an unavailable helper explicitly; it never falls back to browser capture.
  *
  * Lives here rather than inline in `useScreenRecorder` because the recorder asks
  * this question in TWO places — once before the countdown and once before
@@ -72,9 +105,8 @@ export async function portalOwnsSourceSelection(api: SourceSelectionProbe): Prom
 		const availability = await api.isNativeLinuxCaptureAvailable();
 		return Boolean(availability?.success && availability.available);
 	} catch (error) {
-		// Keep the gate rather than drop it: without the helper a source id is
-		// still needed, and a missing source is a better failure than a capture
-		// that cannot start.
+		// Availability failures remain visible to callers. The recorder independently
+		// enforces Linux native capture and reports the helper error at Record.
 		console.warn("Failed to check native Linux capture availability:", error);
 		return false;
 	}
@@ -82,6 +114,7 @@ export async function portalOwnsSourceSelection(api: SourceSelectionProbe): Prom
 
 export type NativeLinuxRecordingStartResult = {
 	success: boolean;
+	rendererStop?: NativeRecordingAppStopRequest;
 	recordingId?: number;
 	path?: string;
 	helperPath?: string;

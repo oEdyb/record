@@ -241,6 +241,8 @@ export interface CompositorViewAddon {
 		sourceTimeSec: number,
 	): void;
 	destroyView(id: number): void;
+	/** Final process shutdown: stops active views and joins pending preview teardown. */
+	shutdownPreviews(): void;
 	/** Renders the fixture to `outPath` (C8), auto-pausing live previews. `onProgress`
 	 *  (frames encoded so far) is optional and called at most ~10/s from the render
 	 *  thread — cheap: the encode loop already ticks a progress hook every frame, this

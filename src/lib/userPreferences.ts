@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
 	DEFAULT_EDITOR_LAYOUT_SETTINGS,
 	DEFAULT_EXPORT_SETTINGS,
@@ -7,7 +8,31 @@ import { type AspectRatio, isAspectRatio } from "@/utils/aspectRatioUtils";
 
 const PREFS_KEY = "openscreen_user_preferences";
 
+const studioLayoutSchema = z.object({
+	view: z.enum(["replay", "both", "camera"]).catch("both"),
+	split: z
+		.number()
+		.finite()
+		.transform((v) => Math.min(0.85, Math.max(0.45, v)))
+		.catch(0.6),
+	order: z.enum(["replay", "camera"]).catch("replay"),
+	dock: z.enum(["left", "right"]).catch("right"),
+	dockFrac: z
+		.number()
+		.finite()
+		.transform((v) => Math.min(0.6, Math.max(0.18, v)))
+		.catch(0.32),
+	liveMode: z.enum(["both", "mirror", "notes", "nothing"]).catch("both"),
+	guides: z.boolean().catch(false),
+	shortcuts: z.boolean().catch(true),
+});
+export type StudioLayout = z.infer<typeof studioLayoutSchema>;
+export function normalizeStudioLayout(value: unknown): StudioLayout {
+	return studioLayoutSchema.parse(value && typeof value === "object" ? value : {});
+}
+
 export interface UserPreferences {
+	studioLayout: StudioLayout;
 	/** Default padding % */
 	padding: number;
 	/** Default aspect ratio */
@@ -47,6 +72,7 @@ export interface UserPreferences {
 }
 
 export const DEFAULT_PREFS: UserPreferences = {
+	studioLayout: normalizeStudioLayout(null),
 	padding: DEFAULT_EDITOR_LAYOUT_SETTINGS.padding,
 	aspectRatio: DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio,
 	exportQuality: DEFAULT_EXPORT_SETTINGS.quality,
@@ -113,6 +139,7 @@ export function loadUserPreferences(): UserPreferences {
 	if (!raw || typeof raw !== "object") return { ...DEFAULT_PREFS };
 
 	return {
+		studioLayout: normalizeStudioLayout(raw.studioLayout),
 		padding:
 			typeof raw.padding === "number" &&
 			Number.isFinite(raw.padding) &&

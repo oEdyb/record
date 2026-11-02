@@ -2,9 +2,10 @@ const RECORDER_TIMESLICE_MS = 1000;
 
 export type RecorderHandle = {
 	recorder: MediaRecorder;
+	readonly fileName?: string;
 	/**
 	 * Resolves once the recording drains. Empty blob when streamed (bytes already on
-	 * disk), full WebM when in-memory. Rejects on a mid-stream write failure so a
+	 * disk), full container when in-memory. Rejects on a mid-stream write failure so a
 	 * truncated recording surfaces as an error instead of a silent partial save.
 	 */
 	recordedBlobPromise: Promise<Blob>;
@@ -26,12 +27,14 @@ export type RecorderHandle = {
  * With `fileName`, chunks stream to disk through the main process so a long recording
  * never buffers the whole video in the renderer (#616). Chunks held in memory until the
  * stream confirms open; if the open fails, that buffer is the complete fallback. Webcam
- * sidecars omit `fileName` and buffer in memory, since finalize reads the blob directly.
+ * sidecars can use the same stream. The first successful write can durably register
+ * recovery metadata before later chunks are admitted.
  */
 export function createRecorderHandle(
 	stream: MediaStream,
 	options: MediaRecorderOptions,
 	fileName?: string,
+	onFirstChunkWritten?: () => Promise<void>,
 ): RecorderHandle {
 	const recorder = new MediaRecorder(stream, options);
 	const mimeType = options.mimeType || "video/webm";
@@ -43,6 +46,7 @@ export function createRecorderHandle(
 	let mode: "pending" | "streaming" | "buffering" = fileName ? "pending" : "buffering";
 	let streamOpened = false;
 	let appendError: Error | null = null;
+	let firstChunkWritten = false;
 
 	// Serialize writes so chunks land in arrival order and stop can await every in-flight
 	// write before the stream closes (a late chunk after close truncates the recording).
@@ -59,6 +63,9 @@ export function createRecorderHandle(
 				const result = await api.appendRecordingChunk(fileName, buffer);
 				if (!result.success) {
 					appendError = new Error(result.error ?? "Failed to write recording chunk to disk");
+				} else if (!firstChunkWritten) {
+					firstChunkWritten = true;
+					await onFirstChunkWritten?.();
 				}
 			} catch (error) {
 				appendError = error instanceof Error ? error : new Error(String(error));
@@ -138,9 +145,11 @@ export function createRecorderHandle(
 		}
 	}
 
-	recorder.start(RECORDER_TIMESLICE_MS);
+	// A 1-second timeslice delays MP4 payloads for two keyframes in Chromium.
+	recorder.start(mimeType.startsWith("video/mp4") ? 250 : RECORDER_TIMESLICE_MS);
 	return {
 		recorder,
+		fileName,
 		recordedBlobPromise,
 		isStreaming: () => mode === "streaming" && !appendError,
 		discard,

@@ -1,0 +1,15 @@
+{"at":1793030874871,"event":"imported"}
+{"at":1793030921911,"event":"quit-call-enter","id":1,"stack":"Error\n    at app.quit (/tmp/klippt-active-quit-trace.cjs:6:63)\n    at Object.quit (file:///home/olle/dev/screenrec-linux/dist-electron/main-DHOXKYyZ.js:23213:17)\n    at file:///home/olle/dev/screenrec-linux/dist-electron/main-DHOXKYyZ.js:21947:19\n    at <anonymous>"}
+{"at":1793030921911,"event":"before-quit-early","prevented":false,"windows":2}
+{"at":1793030921911,"event":"before-quit-late","prevented":false,"windows":2}
+{"at":1793030921911,"event":"quit-call-return","id":1}
+{"at":1793030921914,"event":"will-quit-early","prevented":false,"windows":0}
+{"at":1793030921914,"event":"will-quit-late","prevented":false,"windows":0}
+{"at":1793030921914,"event":"quit-call-enter","id":2,"stack":"Error\n    at app.quit (/tmp/klippt-active-quit-trace.cjs:6:63)\n    at Object.quit (file:///home/olle/dev/screenrec-linux/dist-electron/main-DHOXKYyZ.js:20605:19)\n    at file:///home/olle/dev/screenrec-linux/dist-electron/main-DHOXKYyZ.js:8837:36\n    at <anonymous>"}
+{"at":1793030921914,"event":"quit-call-return","id":2}
+{"at":1793031064709,"event":"before-quit-early","prevented":false,"windows":0}
+{"at":1793031064710,"event":"before-quit-late","prevented":false,"windows":0}
+{"at":1793031064710,"event":"will-quit-early","prevented":false,"windows":0}
+{"at":1793031064710,"event":"will-quit-late","prevented":false,"windows":0}
+{"at":1793031064710,"event":"quit-early","prevented":false,"windows":0}
+{"at":1793031064710,"event":"quit-late","prevented":false,"windows":0}

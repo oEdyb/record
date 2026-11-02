@@ -223,16 +223,10 @@ pub(crate) unsafe fn walk_composited_timeline(
                 clip.source_end_sec,
             );
         }
-        let webcam_available_screen_end = if has_camera {
-            webcam_available_duration.map(|duration| duration + clip.webcam_offset_sec)
-        } else {
-            None
-        };
+        // L'ecran borne la timeline. Une webcam plus courte tient sa derniere
+        // image via advance_decoder_to ; elle ne coupe ni l'ecran ni l'audio.
         let mut source_end_sec = clip.source_end_sec;
         if let Some(duration) = screen_available_duration {
-            source_end_sec = source_end_sec.min(duration);
-        }
-        if let Some(duration) = webcam_available_screen_end {
             source_end_sec = source_end_sec.min(duration);
         }
         if source_end_sec + 1e-6 < clip.source_end_sec {

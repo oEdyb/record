@@ -38,6 +38,7 @@ pub struct CompositorViewRect {
 
 static REGISTRY: OnceLock<Mutex<HashMap<i32, LiveView>>> = OnceLock::new();
 static NEXT_ID: Mutex<i32> = Mutex::new(1);
+static PREVIEW_TEARDOWNS: OnceLock<Mutex<Vec<std::thread::JoinHandle<()>>>> = OnceLock::new();
 
 /// Evaluate planned composition without opening media or allocating a GPU.
 #[napi]
@@ -49,6 +50,10 @@ static EXPORT_CANCELLATIONS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
 
 fn registry() -> &'static Mutex<HashMap<i32, LiveView>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn preview_teardowns() -> &'static Mutex<Vec<std::thread::JoinHandle<()>>> {
+    PREVIEW_TEARDOWNS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 fn export_cancellations() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
@@ -365,8 +370,37 @@ pub fn destroy_view(id: i32) {
     // opening decoders (~270 ms measured). The view owns no window handle, so finish
     // the teardown off the JS thread and keep Electron's main process responsive.
     if let Some(view) = registry().lock().unwrap().remove(&id) {
-        std::thread::spawn(move || drop(view));
+        let teardown = std::thread::spawn(move || drop(view));
+        let mut pending = preview_teardowns().lock().unwrap();
+        pending.retain(|thread| !thread.is_finished());
+        pending.push(teardown);
     }
+}
+
+/// Final process shutdown only: windows are closed, so joining cannot stall UI.
+/// Ordinary destroy_view remains asynchronous. Join its pending drops as well as
+/// active views before Electron unloads the GPU driver and native libraries.
+#[napi]
+pub fn shutdown_previews() -> Result<()> {
+    let views = std::mem::take(
+        &mut *registry()
+            .lock()
+            .map_err(|_| Error::from_reason("Preview registry lock poisoned"))?,
+    );
+    drop(views);
+    let pending = std::mem::take(
+        &mut *preview_teardowns()
+            .lock()
+            .map_err(|_| Error::from_reason("Preview teardown lock poisoned"))?,
+    );
+    let mut failed = false;
+    for thread in pending {
+        failed |= thread.join().is_err();
+    }
+    if failed {
+        return Err(Error::from_reason("Preview teardown thread panicked"));
+    }
+    Ok(())
 }
 
 /// Bilan d'un export natif (mesure §10 : une lecture d'horloge avant-après tout le run).
@@ -1198,4 +1232,28 @@ pub fn remux_seekable(input_path: String, output_path: String) -> AsyncTask<Remu
         input_path,
         output_path,
     })
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn shutdown_joins_previously_detached_preview_teardown() {
+        let (release, wait) = mpsc::channel();
+        let (dropped, observed) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            wait.recv().unwrap();
+            dropped.send(()).unwrap();
+        });
+        preview_teardowns().lock().unwrap().push(worker);
+        let shutdown = std::thread::spawn(shutdown_previews);
+        assert!(!shutdown.is_finished());
+        release.send(()).unwrap();
+        shutdown.join().unwrap().unwrap();
+        observed.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(preview_teardowns().lock().unwrap().is_empty());
+    }
 }

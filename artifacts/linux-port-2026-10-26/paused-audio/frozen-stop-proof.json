@@ -1,0 +1,10 @@
+{
+  "recordingId": 1793018623733,
+  "helperPid": 2017613,
+  "privateDaemonPid": 1898066,
+  "stopAckMs": 0.11945999722229317,
+  "helperExitMs": 22.917001995665487,
+  "daemonFrozenThroughExit": true,
+  "forcedResume": false,
+  "clipCount": 1
+}

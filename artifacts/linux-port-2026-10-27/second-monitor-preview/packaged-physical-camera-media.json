@@ -1,0 +1,51 @@
+{
+  "session": "recording-1793119219182.session.json",
+  "clips": [
+    {
+      "index": 0,
+      "durationMs": 1850,
+      "screenVideoPath": {
+        "fullyDecoded": true,
+        "width": 1920,
+        "height": 1080,
+        "avg_frame_rate": "60/1",
+        "nb_read_frames": "111"
+      },
+      "webcamVideoPath": {
+        "fullyDecoded": true,
+        "width": 1920,
+        "height": 1080,
+        "avg_frame_rate": "2260000/37567",
+        "nb_read_frames": "113"
+      },
+      "formerPreviewAndHudRegion": {
+        "decodedFrames": 111,
+        "maxChannelStandardDeviation": 0,
+        "expected": "uniform owned-fixture background, with no camera or HUD pixels"
+      }
+    },
+    {
+      "index": 1,
+      "durationMs": 2000,
+      "screenVideoPath": {
+        "fullyDecoded": true,
+        "width": 1920,
+        "height": 1080,
+        "avg_frame_rate": "60/1",
+        "nb_read_frames": "120"
+      },
+      "webcamVideoPath": {
+        "fullyDecoded": true,
+        "width": 1920,
+        "height": 1080,
+        "avg_frame_rate": "3480000/57961",
+        "nb_read_frames": "116"
+      },
+      "formerPreviewAndHudRegion": {
+        "decodedFrames": 120,
+        "maxChannelStandardDeviation": 0,
+        "expected": "uniform owned-fixture background, with no camera or HUD pixels"
+      }
+    }
+  ]
+}

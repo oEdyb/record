@@ -1,0 +1,38 @@
+{
+  "helperPid": 1709765,
+  "helperPath": "/tmp/.mount_KlipptVDML0Y/resources/electron/native/bin/linux-x64/openscreen-pipewire-helper",
+  "helperSha256": "7aabc4a2c18bde4e7765cf8e399dc0902cf6b2f2c1aaa6fd78635e1d5b859c54",
+  "recordingId": 1793013744656,
+  "firstClipSha256AfterAcknowledgedPause": "ff5513a39613fcb055e9b7c6d8dbf9ffa6e4c1d6f0c812edc38b9e04b3454c91",
+  "initialMode": "system",
+  "clips": [
+    {
+      "index": 0,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793013744656-clip-0001.mp4",
+      "durationMs": 21500,
+      "cursorCaptureMode": "system",
+      "sha256": "ff5513a39613fcb055e9b7c6d8dbf9ffa6e4c1d6f0c812edc38b9e04b3454c91",
+      "fullDecodeExit": 0,
+      "frames": 1290,
+      "cursorRoiMaxWhitePixels": 48
+    },
+    {
+      "index": 1,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793013744656-clip-0002.mp4",
+      "durationMs": 13550,
+      "cursorCaptureMode": "editable-overlay",
+      "sha256": "c2b138c8ea87d780702a4f766f63abe765467591ea6e5fe65434ae4ffdaf2f4d",
+      "fullDecodeExit": 0,
+      "frames": 813,
+      "cursorRoiMaxWhitePixels": 0,
+      "cursorSamples": 358,
+      "cursorAssets": 1
+    }
+  ],
+  "sourceCommit": "fcf6b7dd025d15ccabddf6d908b69b69ba2731d7",
+  "normalFuseAppImage": true,
+  "sameHelperAfterReplacement": true,
+  "privateLab": "klippt",
+  "allAssertionsPass": true,
+  "appImageSha256": "2d7723eb22c007e5c69146f60c79b232e705126738351f133955b7d78e9959d8"
+}

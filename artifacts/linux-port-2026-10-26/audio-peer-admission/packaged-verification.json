@@ -1,0 +1,78 @@
+{
+  "helperPid": 2362188,
+  "helperPath": "/tmp/.mount_KlipptTz4E5y/resources/electron/native/bin/linux-x64/openscreen-pipewire-helper",
+  "helperSha256": "3b1b4fef32f80a769dca831567424f06ffa1d20a6ff156764dda513eb23808e7",
+  "recordingId": 1793024312596,
+  "requestMicrophone": {
+    "enabled": true,
+    "deviceId": "a01dd0d9256592d7a1d75f91fc0d505cfa5cd5cfb9541a0e2251c4da78bea84a",
+    "deviceName": "LabMicrophoneA",
+    "gain": 1.4
+  },
+  "committedClip": {
+    "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793024312596-clip-0001-microphone.mov",
+    "microphoneAudioOffsetMs": 0,
+    "index": 0,
+    "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793024312596-clip-0001.mp4",
+    "durationMs": 24816,
+    "cursorCaptureMode": "editable-overlay"
+  },
+  "committedSourceHashes": {
+    "microphoneAudioPath": "a1a118e8a0a52f531994a6b91c329ee287881f3b21437f098a7b12f4869ad570",
+    "screenVideoPath": "dae9c2cd174e28b309b3e31129824b9dd3ae48efd36d3155d43a6f3f4faa68d8"
+  },
+  "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793024312596.session.json",
+  "sourceCommit": "3a177e66d6d108fbebaa6e7fe4323d3cfb20d1df",
+  "verifiedClips": [
+    {
+      "index": 0,
+      "durationMs": 24816,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "a1a118e8a0a52f531994a6b91c329ee287881f3b21437f098a7b12f4869ad570",
+          "dominantHz": 440.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "dae9c2cd174e28b309b3e31129824b9dd3ae48efd36d3155d43a6f3f4faa68d8"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "durationMs": 8333,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "53c3ac602a6650d26eaefc636846d0f0988f299e43287de7ff24b34c1a07c964",
+          "dominantHz": 440.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "c4d3a63b67cc90442e6b65f9987f6088c042d25ede6d24fa77e22b9cc0326eec"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "durationMs": 11833,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "18aab7fdc77679588c411fb3c79931ba7baf85602022b65224d4b6b405288c39",
+          "dominantHz": 880.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "b1327a39f11fbe26309eb2d1aaba51707bfa34e9c28a498b341fd0ad98dbe862"
+        }
+      ]
+    }
+  ],
+  "allSourcesFullyDecode": true,
+  "committedSourcesUnchanged": true,
+  "singleHelperThroughout": true,
+  "sequence": "Real HUD selects A; Record/Pause; remove A; Continue rejected with retry guidance, still paused; restore A; Continue/Pause; settings choose B; Continue/Stop/review",
+  "appImageSha256": "37b5baeddb16a2ce06cac96a49d9e8367364b07bc195c09bab47a917eefd6a62"
+}

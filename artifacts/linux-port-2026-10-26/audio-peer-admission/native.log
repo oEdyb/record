@@ -1,0 +1,7 @@
+[aac @ 0x7f047c305480] Qavg: nan
+[aac @ 0x7f047c24a5c0] Qavg: nan
+test clips::tests::sub_aac_block_source_fails_the_readiness_deadline_after_screen_started ... ok
+test capture::tests::timed_audio_uses_the_video_clock_after_a_real_pause ... ok
+test clips::tests::legacy_continue_after_a_long_pause_gets_a_fresh_writer_deadline ... ok
+
+test result: ok. 116 passed; 0 failed; 1 ignored; 0 measured; 1 filtered out; finished in 2.44s

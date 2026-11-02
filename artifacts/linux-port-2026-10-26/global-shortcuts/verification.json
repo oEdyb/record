@@ -1,0 +1,62 @@
+{
+  "runtimeCommit": "844348aaec7eecdf3fafe3d8fa88b82b714cf69e",
+  "desktop": "private KWin 6.8.1 / KDE portal; physical Niri untouched",
+  "setup": [
+    "Routed GlobalShortcuts to KDE in klippt private portals.conf; default GTK lacks it",
+    "Staged valid co.dyberg.klippt.desktop in private XDG_DATA_HOME; absolute AppImage Exec permits GIO lookup",
+    "Approved real KDE shortcut consent dialog"
+  ],
+  "confirmed": [
+    "Portal delivered Ctrl+Shift+O and Ctrl+Shift+Space activation signals",
+    "Real Ctrl+Shift+Space with owned fixture focused finalized clip 1, continued into clip 2, then paused it",
+    "Stop opened review with both clips; both fully decode"
+  ],
+  "unresolved": [
+    "Open App did not raise HUD over focused fixture despite initial portal event; callback versus Wayland activation remains unisolated",
+    "On same-desktop app relaunch ListShortcuts returned saved IDs, but no subsequent Activated signals were observed; backend versus client lifecycle remains unisolated",
+    "ScreenCast picker still names native helper an unidentifiable application, despite Electron shortcut identity resolving Klippt"
+  ],
+  "clips": [
+    {
+      "name": "recording-1793032863917-clip-0001.mp4",
+      "sha256": "d10c067173030a90a4a483ce3f354b1e2d7a540642aa3e18eafe64036bdc3e69",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080
+          }
+        ],
+        "format": {
+          "duration": "2.983333"
+        }
+      },
+      "fullDecodeExitCode": 0
+    },
+    {
+      "name": "recording-1793032863917-clip-0002.mp4",
+      "sha256": "ce3636d621349a0791d381ad313aea119fc0c2ce5225f2af919182836d43bedf",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080
+          }
+        ],
+        "format": {
+          "duration": "3.100000"
+        }
+      },
+      "fullDecodeExitCode": 0
+    }
+  ],
+  "labStopped": true,
+  "productCodeChanges": false,
+  "fullSuiteRun": false
+}

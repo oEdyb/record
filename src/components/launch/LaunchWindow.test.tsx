@@ -51,6 +51,8 @@ const recorderState = vi.hoisted(() => ({
 		recordedClips: [] as RecordingSessionClip[],
 		toggleRecording: vi.fn(),
 		togglePaused: vi.fn(),
+		selectRecordingSource: vi.fn(async () => ({ success: true })),
+		chooseRecordingSource: vi.fn(async () => ({ success: true })),
 		canPauseRecording: false,
 		canReconfigureWhilePaused: false,
 		canRemovePreviousClip: false,
@@ -390,6 +392,8 @@ function resetLaunchMocks() {
 	recorderState.value.restoreRemovedClip.mockReset();
 	recorderState.value.restoreRemovedClip.mockResolvedValue(null);
 	recorderState.value.togglePaused.mockClear();
+	recorderState.value.selectRecordingSource.mockClear();
+	recorderState.value.chooseRecordingSource.mockClear();
 	recorderState.value.microphoneEnabled = false;
 	recorderState.value.setMicrophoneEnabled.mockClear();
 	recorderState.value.setMicrophoneDeviceId.mockClear();
@@ -926,6 +930,18 @@ describe("LaunchWindow record button", () => {
 		expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce();
 	});
 
+	it("keeps Linux Settings below the pill instead of shifting its local origin", async () => {
+		platformState.value = "linux";
+		renderLaunchWindow();
+		const grip = await screen.findByTestId("hud-drag-handle");
+		expect(grip.closest("[data-placement]")).toHaveAttribute("data-placement", "below");
+		expect(grip.closest("[data-placement]")).toHaveStyle({ top: "38px" });
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+		expect(grip.closest("[data-placement]")).toHaveAttribute("data-placement", "below");
+		expect(grip.closest("[data-placement]")).toHaveStyle({ top: "38px" });
+	});
+
 	it("keeps the HUD interactive on Linux so the drag handle can receive pointer events", async () => {
 		platformState.value = "linux";
 
@@ -936,20 +952,73 @@ describe("LaunchWindow record button", () => {
 		});
 	});
 
-	// The ScreenCast portal has no parameter naming a source, so nothing this
-	// picker returned could ever reach the capture — it only raised a second
-	// portal dialog whose grant was discarded. On Linux the compositor's own
-	// picker, shown when recording starts, is the only thing that decides.
-	it("hides the in-app source button on Linux", async () => {
+	it("opens the native chooser from the Linux HUD source chip", async () => {
 		platformState.value = "linux";
-
 		renderLaunchWindow();
+		await waitFor(() =>
+			expect(window.electronAPI.isNativeLinuxCaptureAvailable).toHaveBeenCalled(),
+		);
+		fireEvent.click(await screen.findByTestId("launch-source-selector-button"));
+		await waitFor(() => expect(recorderState.value.chooseRecordingSource).toHaveBeenCalledOnce());
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+	});
 
-		// The helper-availability answer arrives asynchronously, so the button is
-		// still there on the first frame — wait for it to go rather than race it.
-		await waitFor(() => {
-			expect(screen.queryByTestId("launch-source-selector-button")).toBeNull();
-		});
+	it("offers a fresh native source chooser before the first Linux recording", async () => {
+		platformState.value = "linux";
+		renderLaunchWindow();
+		await waitFor(() =>
+			expect(window.electronAPI.isNativeLinuxCaptureAvailable).toHaveBeenCalled(),
+		);
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByTestId("hud-setup-choose-source"));
+		await waitFor(() => expect(recorderState.value.chooseRecordingSource).toHaveBeenCalledOnce());
+		expect(recorderState.value.selectRecordingSource).not.toHaveBeenCalled();
+	});
+
+	it("opens the native portal from the paused Linux source settings", async () => {
+		platformState.value = "linux";
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.canReconfigureWhilePaused = true;
+		renderLaunchWindow();
+		await waitFor(() =>
+			expect(window.electronAPI.isNativeLinuxCaptureAvailable).toHaveBeenCalled(),
+		);
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByTestId("hud-setup-choose-source"));
+		await waitFor(() => expect(recorderState.value.selectRecordingSource).toHaveBeenCalledOnce());
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		true,
+		false,
+	])("commits the paused cursor preference only after portal adoption: %s", async (success) => {
+		platformState.value = "linux";
+		recorderState.value.recording = true;
+		recorderState.value.paused = true;
+		recorderState.value.canReconfigureWhilePaused = true;
+		recorderState.value.setCursorCaptureMode.mockClear();
+		let resolveSelection: ((result: { success: boolean }) => void) | undefined;
+		recorderState.value.selectRecordingSource.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					resolveSelection = resolve;
+				}),
+		);
+		renderLaunchWindow();
+		await waitFor(() =>
+			expect(window.electronAPI.isNativeLinuxCaptureAvailable).toHaveBeenCalled(),
+		);
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		fireEvent.click(await screen.findByRole("button", { name: /deviceSettings.editableCursor/ }));
+		await waitFor(() =>
+			expect(recorderState.value.selectRecordingSource).toHaveBeenCalledWith("system"),
+		);
+		expect(recorderState.value.setCursorCaptureMode).not.toHaveBeenCalled();
+		await act(async () => resolveSelection?.({ success }));
+		if (success) expect(recorderState.value.setCursorCaptureMode).toHaveBeenCalledWith("system");
+		else expect(recorderState.value.setCursorCaptureMode).not.toHaveBeenCalled();
 	});
 
 	it("records straight away on Linux instead of demanding a source that cannot be selected", async () => {
@@ -960,7 +1029,7 @@ describe("LaunchWindow record button", () => {
 		const recordButton = await screen.findByTestId("launch-record-button");
 		expect(recordButton).toBeEnabled();
 		await waitFor(() => {
-			expect(recordButton).toHaveAttribute("title", "Your system will ask what to share");
+			expect(recordButton).toHaveAttribute("title", "Record");
 		});
 
 		fireEvent.click(recordButton);
@@ -1143,15 +1212,20 @@ describe("LaunchWindow record button", () => {
 		expect(recorderState.value.removePreviousClip).toHaveBeenCalledOnce();
 	});
 
-	it("shows recorder errors at the bottom, right above the pill", async () => {
+	it("lays recorder errors outside the settings panel in the HUD stack", async () => {
 		renderLaunchWindow();
 		await screen.findByTestId("launch-record-button");
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
 
 		act(() => {
 			toast.error("Recording stopped: the writer failed");
 		});
 
 		const message = await screen.findByText("Recording stopped: the writer failed");
+		const toastRegion = screen.getByTestId("hud-toast-region");
+		expect(toastRegion).toContainElement(message);
+		expect(toastRegion.parentElement).toContainElement(screen.getByTestId("hud-device-settings"));
+		expect(screen.getByTestId("hud-device-settings")).not.toContainElement(message);
 		expect(message.closest("[data-sonner-toaster]")).toHaveAttribute("data-y-position", "bottom");
 	});
 
@@ -1210,7 +1284,12 @@ describe("LaunchWindow record button", () => {
 			{ index: 0, screenVideoPath: "/recordings/clip-1.mp4", durationMs: 2_000 },
 		];
 		renderLaunchWindow();
+		await screen.findByTestId("hud-clip-peek");
+		// Nothing decodes until the replay is first opened.
+		expect(screen.queryByTestId("hud-clip-peek-video")).toBeNull();
+		fireEvent.keyDown(window, { key: "ArrowUp" });
 		const video = await screen.findByTestId("hud-clip-peek-video");
+		fireEvent.keyDown(window, { key: "ArrowDown" });
 		expect(screen.getByTestId("hud-clip-peek")).not.toBeVisible();
 
 		for (let index = 0; index < 4; index += 1) {

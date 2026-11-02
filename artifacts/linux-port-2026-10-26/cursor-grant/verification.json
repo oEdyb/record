@@ -1,0 +1,144 @@
+{
+  "recordingId": 1793013046358,
+  "appPid": 1650853,
+  "helperPid": 1655862,
+  "firstClipSha256AfterFirstPause": "e094d9792d1729a7d53aa999c554d0832078c8e0983e564ec5c5cac77b00dbb1",
+  "privateDesktop": "agent-lab klippt: headless KWin/KDE portal, private Wayland/input/D-Bus/PipeWire",
+  "hostDesktopDriven": false,
+  "baseCommit": "55d7567df16c81eeea3a9d3410ca08e04cb8ee98",
+  "sessions": [
+    {
+      "recordingId": 1793013006257,
+      "clips": [
+        {
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793013006257-clip-0001.mp4",
+          "durationMs": 11616,
+          "cursorCaptureMode": "editable-overlay",
+          "sha256": "0dbcb8e1328ea5aa46cd4503850fb26c0f10766abd8a0d479d10727a1869a92a",
+          "fullDecodeExit": 0,
+          "decodedFrames": 697,
+          "cursorRoi": {
+            "x": 380,
+            "y": 480,
+            "width": 80,
+            "height": 80,
+            "maxWhitePixels": 0,
+            "framesAbove10WhitePixels": 0
+          },
+          "cursor": {
+            "samples": 189,
+            "assets": 1,
+            "firstTimeMs": 0,
+            "lastTimeMs": 11499,
+            "allSamplesInsideClip": true,
+            "allAssetReferencesResolve": true,
+            "sha256": "275fb1208be72036f2786a6727deeb47d3c2978bac13aa84e692eb7c0d9d597b"
+          }
+        }
+      ]
+    },
+    {
+      "recordingId": 1793013046358,
+      "clips": [
+        {
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793013046358-clip-0001.mp4",
+          "durationMs": 7466,
+          "cursorCaptureMode": "editable-overlay",
+          "sha256": "e094d9792d1729a7d53aa999c554d0832078c8e0983e564ec5c5cac77b00dbb1",
+          "fullDecodeExit": 0,
+          "decodedFrames": 448,
+          "cursorRoi": {
+            "x": 380,
+            "y": 480,
+            "width": 80,
+            "height": 80,
+            "maxWhitePixels": 0,
+            "framesAbove10WhitePixels": 0
+          },
+          "cursor": {
+            "samples": 193,
+            "assets": 1,
+            "firstTimeMs": 0,
+            "lastTimeMs": 6454,
+            "allSamplesInsideClip": true,
+            "allAssetReferencesResolve": true,
+            "sha256": "0a8d6fd2cf8929947763d4a43d7300bdbaf766785c4a6ec3d9dde7bbf5c0918d"
+          }
+        },
+        {
+          "index": 1,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793013046358-clip-0002.mp4",
+          "durationMs": 24100,
+          "cursorCaptureMode": "system",
+          "sha256": "4380a83d9f87371fdf1d41d17706088ce48ca14f44516ef10bb89a15ced54ea4",
+          "fullDecodeExit": 0,
+          "decodedFrames": 1446,
+          "cursorRoi": {
+            "x": 380,
+            "y": 480,
+            "width": 80,
+            "height": 80,
+            "maxWhitePixels": 48,
+            "framesAbove10WhitePixels": 37
+          }
+        },
+        {
+          "index": 2,
+          "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793013046358-clip-0003.mp4",
+          "durationMs": 15000,
+          "cursorCaptureMode": "editable-overlay",
+          "sha256": "bd90319ed2f054af3bb28e98b98207f59350f2f6901f89b128058d761f7265d0",
+          "fullDecodeExit": 0,
+          "decodedFrames": 900,
+          "cursorRoi": {
+            "x": 380,
+            "y": 480,
+            "width": 80,
+            "height": 80,
+            "maxWhitePixels": 0,
+            "framesAbove10WhitePixels": 0
+          },
+          "cursor": {
+            "samples": 183,
+            "assets": 1,
+            "firstTimeMs": 7628,
+            "lastTimeMs": 13827,
+            "allSamplesInsideClip": true,
+            "allAssetReferencesResolve": true,
+            "sha256": "be087f92edddf6308e18e7178b43318d645a59ed76bbe2a7c63a8e087e3946c0"
+          }
+        }
+      ]
+    }
+  ],
+  "cursorPixelsAgreeWithModes": true,
+  "firstFinalizedClipUnchanged": true,
+  "helperStayedSameAcrossBothReplacements": true,
+  "note": "First cursor mode-change/cancellation desktop pass preceded terminal accumulator cleanup; these two sessions use the final rebuilt Electron runtime in one app process. All actions used compositor-level private input. No physical camera/audio or exact Niri capture claim.",
+  "sourceFileSha256": {
+    "electron/electron-env.d.ts": "cd8f225493a793c72cc861913de25ec2fd0e2c0bb6ff14182bf1e9e9e3fe560b",
+    "electron/ipc/handlers.startup.test.ts": "f956074b004f1204bb6625ed318e6ef7c02ea525b7fc26fe862c2a5ca6f32b8e",
+    "electron/ipc/handlers.ts": "82321eef0254907822a887594d99b6069f0da6bb6111d19c8b4662613e42acd3",
+    "electron/native/pipewire-capture/src/main.rs": "4c5eb27fe71fcb04ee74d79f83c199ac09d78c50e582824dab19db1fb2fbd12c",
+    "electron/preload.ts": "e74a1acf72cf78b763379c10f083d8d7acf1fc6e1fda7f4f74a8ecaa01e8ee92",
+    "electron/recording/nativeMacHelperClient.test.ts": "af3ff26ea426c348f7911cbef28a44d28da86ddebaf438384ba3e84d5d3da4e0",
+    "electron/recording/nativeMacHelperClient.ts": "b38c96634bca54bccca730fb111d5368d495e4750824cecdac19ca1f2cc15859",
+    "electron/recording/nativeMacRecordingService.test.ts": "37c794beaecb4518a5486bcdf74644ab6ad5847c6251274e4199f6be450a97dc",
+    "electron/recording/nativeMacRecordingService.ts": "f987eb83ce9bce6b715e5009c45c92648c165060a49944bf52e3d42bd49816f6",
+    "src/components/launch/LaunchWindow.test.tsx": "1936b8db6316e9c0a95f61868ca0941839c36a01ac5d73d3fea2784e9cb98835",
+    "src/components/launch/LaunchWindow.tsx": "fe95f25fb666ef853c0f09b4295bc7723661c051bafeec9fbfbc600789434797",
+    "src/hooks/useScreenRecorder.nativeStopFailure.test.tsx": "b0cf3526cd634c536ebb92ab8a6b4f0fe64eeabe012fd69efcda3eae75abc887",
+    "src/hooks/useScreenRecorder.ts": "fe21d3b2c21a8953f41c4f9f48808bd6774757fa0342c7f6674602712fcccc50"
+  },
+  "helperSha256": "0229621124c04a7a5f2de5e91db1ff09c0bc07633acd453c5bbc5db2dca2f277",
+  "productionElectronModulesSha256": {
+    "bootstrap.js": "68e52383dc0c0573a6b2d9e63bceb8965fb2d06de5c51e2a554baa43f27d02ad",
+    "currentProjectMedia-DJLndUv_.js": "0cb799b48058c3a807793c465986c5f8f089bf642cccd9b8fd8dc53c250bd146",
+    "main-BFbg5t9U.js": "0b991fc29808abe0236c5f661338aec610665b5c783237aeaeaf2b877da23d69",
+    "main-BWojygXu.js": "f111a3b4ff801aecd2116ab508757436a288009c7a51c0502e4111dd50e881d9",
+    "unmanagedProjectSave-vK2pw2AK.js": "710010fe8184b60b5dd07e559b426906168b1f44f361344c4c05c64f25422b83",
+    "localMediaProtocol-ooHSL-3v.js": "f7cc5c22cc7cef2a3dea72aee06d0436a7715ef47309aed1f06e5e89f566eaa3"
+  }
+}

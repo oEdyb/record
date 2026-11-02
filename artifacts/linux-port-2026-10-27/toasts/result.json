@@ -1,0 +1,51 @@
+{
+  "source": "8c3838db993f51004829913977afda6d7204c63a",
+  "appImageSha256": "ae06831b248159fcefeb5c18eee3a776b27a586dfbab56fed23d43c903dadf71",
+  "affectedTests": 138,
+  "typechecks": "both passed",
+  "lint": "changed TypeScript files passed",
+  "packagePolicy": "Ubuntu 22.04 linux-unpacked passed",
+  "nativeElfComparison": {
+    "comparedTo": "a4f92422",
+    "count": 27,
+    "changed": []
+  },
+  "noCamera": {
+    "before": {
+      "toast": {
+        "x": 185.5,
+        "y": 268,
+        "width": 356,
+        "height": 53.5
+      },
+      "overlapSettings": true
+    },
+    "after": {
+      "toast": {
+        "x": 56,
+        "y": 452,
+        "width": 360,
+        "height": 40
+      },
+      "panel": {
+        "x": 24,
+        "y": 96,
+        "width": 424,
+        "height": 346
+      },
+      "pill": {
+        "x": 24,
+        "y": 38,
+        "width": 424,
+        "height": 50
+      },
+      "gapPixels": 10,
+      "fontPx": 12,
+      "padding": "10px 12px",
+      "overlapSettings": false
+    }
+  },
+  "interaction": "private compositor keyboard; actual getUserMedia NotFoundError; normal FUSE AppImage; settings remain usable",
+  "reactDoctor": "unchanged effect-needs-cleanup finding in useLinuxHudGeometry",
+  "remaining": "User reports HUD in full-monitor recording; no automatic hiding implemented in this toast slice. Metadata cursor end-to-end on user take remains unverified."
+}

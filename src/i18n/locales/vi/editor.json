@@ -63,6 +63,7 @@
 		"startFailed": "Không thể bắt đầu ghi. Nhấn Ghi lại hoặc mở lại Klippt.",
 		"pauseFailed": "Không thể tạm dừng và lưu clip này. Nhấn Dừng, rồi kiểm tra Bản ghi.",
 		"continueFailed": "Không thể tiếp tục ghi. Nhấn Dừng, rồi kiểm tra Bản ghi.",
+		"continueRetry": "Bản ghi vẫn đang tạm dừng. Kiểm tra cài đặt rồi nhấn Tiếp tục lần nữa.",
 		"stopFailed": "Không thể hoàn tất dừng hoặc mở phần xem lại. Mở lại Klippt, rồi kiểm tra Bản ghi.",
 		"selectSource": "Vui lòng chọn một nguồn để ghi"
 	},

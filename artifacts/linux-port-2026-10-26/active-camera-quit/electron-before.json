@@ -1,0 +1,14 @@
+{
+  "electron": "44.9.1",
+  "events": [
+    "before-quit",
+    "will-quit",
+    "empty-flush",
+    "resume-quit",
+    "deadline",
+    "quit"
+  ],
+  "cleanExit": false,
+  "exitCode": 3,
+  "deadlineFired": true
+}

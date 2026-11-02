@@ -1,0 +1,26 @@
+{
+  "compositor": "actual private nested Niri",
+  "before": {
+    "id": 4,
+    "appId": "co.dyberg.klippt",
+    "position": [
+      -10,
+      120
+    ]
+  },
+  "remapped": {
+    "id": 5,
+    "position": [
+      100,
+      100
+    ]
+  },
+  "after": {
+    "id": 5,
+    "position": [
+      -10,
+      120
+    ]
+  },
+  "passed": true
+}

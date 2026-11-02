@@ -1,0 +1,20 @@
+{
+  "previousRuntime": "2d432312",
+  "runtime": "6bdd95af",
+  "allElfCount": 33,
+  "unchangedCount": 32,
+  "changedFiles": [
+    "resources/electron/native/bin/linux-x64/compositor_view.node"
+  ],
+  "dtNeededUnchanged": [
+    "[libavformat.so.62]",
+    "[libavcodec.so.62]",
+    "[libavutil.so.60]",
+    "[libswscale.so.9]",
+    "[libswresample.so.6]",
+    "[libgcc_s.so.1]",
+    "[libm.so.6]",
+    "[libc.so.6]",
+    "[ld-linux-x86-64.so.2]"
+  ]
+}

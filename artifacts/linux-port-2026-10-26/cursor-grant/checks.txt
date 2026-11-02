@@ -1,0 +1,97 @@
+final-tests
+Not implemented: HTMLMediaElement's pause() method
+Not implemented: HTMLMediaElement's pause() method
+Not implemented: HTMLMediaElement's play() method
+Not implemented: HTMLMediaElement's pause() method
+Not implemented: HTMLMediaElement's pause() method
+Not implemented: HTMLMediaElement's pause() method
+
+ Test Files  5 passed (5)
+      Tests  317 passed (317)
+   Start at  12:08:22
+   Duration  9.16s (transform 1.09s, setup 27ms, import 948ms, tests 10.57s, environment 537ms)
+
+
+full-tests
+ ↓ electron/cleanCut/parity.test.ts (1 test | 1 skipped)
+ ↓ electron/cleanCut/service.e2e.test.ts (1 test | 1 skipped)
+ ↓ electron/export/recordingFastExport.bench.test.ts (1 test | 1 skipped)
+ ↓ electron/export/recordingFastExport.media.test.ts (5 tests | 5 skipped)
+ ↓ electron/transcript/parakeetAlign.parity.test.ts (1 test | 1 skipped)
+ ↓ electron/export/sourceHandoff.media.test.ts (1 test | 1 skipped)
+
+ Test Files  301 passed | 6 skipped (307)
+      Tests  3105 passed | 12 skipped (3117)
+   Start at  12:09:47
+   Duration  83.39s (transform 7.41s, setup 1.78s, import 25.01s, tests 71.57s, environment 39.48s)
+
+
+native
+[aac @ 0x7fa6782b7e80] Qavg: 328.802
+[libopenh264 @ 0x7fa6782b7e80] [OpenH264] this = 0x0x7fa678000e10, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7fa6782b7e80] [OpenH264] this = 0x0x7fa678000e10, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[aac @ 0x7fa6781fe640] Qavg: 343.277
+test capture::tests::timed_audio_uses_the_video_clock_after_a_real_pause ... ok
+[aac @ 0x7fa668305400] Qavg: nan
+[aac @ 0x7fa66824a540] Qavg: nan
+test clips::tests::sub_aac_block_source_fails_the_readiness_deadline_after_screen_started ... ok
+test clips::tests::legacy_continue_after_a_long_pause_gets_a_fresh_writer_deadline ... ok
+
+test result: ok. 104 passed; 0 failed; 1 ignored; 0 measured; 2 filtered out; finished in 2.46s
+
+
+clippy
+    Checking openscreen-pipewire-helper v0.0.0 (/home/olle/dev/screenrec-linux/electron/native/pipewire-capture)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.67s
+
+final-types
+
+
+final-lint
+
+> klippt@1.9.5 lint
+> biome check .
+
+third-party-licenses/Cargo-Evidence.json check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! The size of the file is 1.4 MiB, which exceeds the configured maximum of 1.0 MiB for this project.
+    Use the `files.maxSize` configuration to change the maximum size of files processed, or `files.includes` to ignore the file.
+  
+
+Checked 885 files in 287ms. No fixes applied.
+Found 1 warning.
+
+final-docs
+
+> klippt@1.9.5 docs:check
+> node scripts/check-docs.mjs && node scripts/sync-design-tokens.mjs --check
+
+check-docs: OK (28 files)
+
+final-design
+
+> klippt@1.9.5 design:check
+> node scripts/check-design-policy.mjs
+
+Design policy: semantic control tokens and AppSelect checked
+
+final-i18n
+
+> klippt@1.9.5 i18n:check
+> node scripts/i18n-check.mjs
+
+i18n check PASSED — all 12 locales match en across 6 namespaces.
+
+react-scope
+  ────────────────────────────────────────────────────────────
+
+  Share: https://react.doctor/share?p=klippt&s=74
+  Tell others how you did on socials
+
+  Docs: https://react.doctor/docs
+  Learn more about fixing issues, setting up CI/CD, and
+  configuring rules with a config file
+
+  GitHub: https://github.com/millionco/react-doctor
+  Report issues and star the repository!
+

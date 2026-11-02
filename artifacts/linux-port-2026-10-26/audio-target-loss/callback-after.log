@@ -1,0 +1,9 @@
+   Compiling openscreen-pipewire-helper v0.0.0 (/home/olle/dev/screenrec-linux/electron/native/pipewire-capture)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.66s
+     Running unittests src/main.rs (electron/native/pipewire-capture/target/debug/deps/openscreen_pipewire_helper-7d4f97633af5ba2e)
+
+running 1 test
+test shim::source_tests::unexpected_audio_disconnect_is_reported_but_normal_teardown_is_not ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 107 filtered out; finished in 0.00s
+

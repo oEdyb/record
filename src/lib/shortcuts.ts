@@ -84,6 +84,15 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	playPause: { key: " " },
 };
 
+export function defaultShortcuts(platform: string): ShortcutsConfig {
+	if (platform !== "linux") return DEFAULT_SHORTCUTS;
+	return {
+		openApp: { key: "o", ctrl: true, alt: true },
+		toggleRecordingPause: { key: "r", ctrl: true, alt: true },
+		playPause: { key: " " },
+	};
+}
+
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	openApp: "Open App",
 	toggleRecordingPause: "Pause / Continue Recording",
@@ -128,11 +137,18 @@ export function formatBinding(binding: ShortcutBinding, isMac: boolean): string 
 	return parts.join(" + ");
 }
 
-export function mergeWithDefaults(partial: Partial<ShortcutsConfig>): ShortcutsConfig {
-	const merged = { ...DEFAULT_SHORTCUTS };
+export function mergeWithDefaults(
+	partial: Partial<ShortcutsConfig>,
+	platform = "darwin",
+): ShortcutsConfig {
+	const merged = { ...defaultShortcuts(platform) };
 	for (const action of SHORTCUT_ACTIONS) {
 		if (partial[action]) {
-			merged[action] = partial[action] as ShortcutBinding;
+			const binding = partial[action];
+			merged[action] =
+				platform === "linux" && bindingsEqual(binding, DEFAULT_SHORTCUTS[action])
+					? defaultShortcuts(platform)[action]
+					: binding;
 		}
 	}
 	return merged;

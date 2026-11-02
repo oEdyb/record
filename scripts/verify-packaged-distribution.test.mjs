@@ -1,5 +1,5 @@
 import { constants, globSync } from "node:fs";
-import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -254,6 +254,102 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 				arch: "arm64",
 			}),
 		).resolves.toMatchObject({ webAssemblyFiles: 1 });
+	});
+
+	it("accepts the root resources layout used by Linux packages", async () => {
+		const packageDir = await packageFixture();
+		await rename(
+			path.join(packageDir, "Contents", "Resources"),
+			path.join(packageDir, "resources"),
+		);
+		await expect(
+			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform: "linux", arch: "x64" }),
+		).resolves.toMatchObject({ webAssemblyFiles: 1, modelFiles: 0 });
+	});
+
+	it.each([
+		"package-type",
+		"apparmor-profile",
+	])("validates generated Linux %s content", async (fileName) => {
+		const packageDir = await packageFixture();
+		const resources = path.join(packageDir, "resources");
+		await rename(path.join(packageDir, "Contents", "Resources"), resources);
+		const template = await readFile(
+			path.join(
+				REPO_ROOT,
+				"node_modules",
+				"app-builder-lib",
+				"templates",
+				"linux",
+				"apparmor-profile.tpl",
+			),
+			"utf8",
+		);
+		const profile = template
+			.replaceAll("${executable}", "klippt")
+			.replaceAll("${sanitizedProductName}", "Klippt");
+		await writeFile(path.join(resources, "package-type"), "deb");
+		await writeFile(path.join(resources, "apparmor-profile"), profile);
+		const options = { root: REPO_ROOT, packageDir, platform: "linux", arch: "x64" };
+		await expect(verifyPackagedDistribution(options)).resolves.toMatchObject({
+			webAssemblyFiles: 1,
+		});
+		await writeFile(path.join(resources, fileName), "unreviewed generated content");
+		await expect(verifyPackagedDistribution(options)).rejects.toThrow(
+			/Invalid generated Linux resource/,
+		);
+	});
+
+	it.each([
+		["linux", "Package-Type"],
+		["linux", "AppArmor-Profile"],
+		["darwin", "Package-Type"],
+		["darwin", "AppArmor-Profile"],
+	])("rejects unreviewed mixed-case %s metadata %s", async (platform, fileName) => {
+		const packageDir = await packageFixture();
+		await writeFile(path.join(packageDir, "Contents", "Resources", fileName), "unreviewed content");
+		await expect(
+			verifyPackagedDistribution({ root: REPO_ROOT, packageDir, platform, arch: "x64" }),
+		).rejects.toThrow(/Invalid generated Linux resource/);
+	});
+
+	it("verifies branded icons in the extracted AppImage layout", async () => {
+		const packageDir = await packageFixture();
+		await rename(
+			path.join(packageDir, "Contents", "Resources"),
+			path.join(packageDir, "resources"),
+		);
+		for (const fileName of [".DirIcon", "klippt.png"]) {
+			await copyFile(
+				path.join(REPO_ROOT, "icons", "icons", "png", "1024x1024.png"),
+				path.join(packageDir, fileName),
+			);
+		}
+		for (const size of [16, 24, 32, 48, 64, 128, 256, 512, 1024]) {
+			const target = path.join(
+				packageDir,
+				"usr",
+				"share",
+				"icons",
+				"hicolor",
+				`${size}x${size}`,
+				"apps",
+				"klippt.png",
+			);
+			await mkdir(path.dirname(target), { recursive: true });
+			await copyFile(path.join(REPO_ROOT, "icons", "icons", "png", `${size}x${size}.png`), target);
+		}
+		const options = { root: REPO_ROOT, packageDir, platform: "linux", arch: "x64" };
+		await expect(verifyPackagedDistribution(options)).resolves.toMatchObject({
+			webAssemblyFiles: 1,
+		});
+		await copyFile(
+			path.join(REPO_ROOT, "icons", "icons", "png", "128x128.png"),
+			path.join(packageDir, ".DirIcon"),
+		);
+		await expect(verifyPackagedDistribution(options)).rejects.toThrow(
+			"Packaged klippt-brand asset differs from policy: .DirIcon",
+		);
 	});
 
 	it("accepts reviewed locale JSON assets", async () => {

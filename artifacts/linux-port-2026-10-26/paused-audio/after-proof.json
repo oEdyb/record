@@ -1,0 +1,61 @@
+{
+  "recordingId": 1793018388822,
+  "helperPid": 2005585,
+  "clips": [
+    {
+      "cursorCaptureMode": "system",
+      "durationMs": 2100,
+      "index": 0,
+      "microphoneAudioOffsetMs": 0.0,
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793018388822-clip-0001-microphone.mov",
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793018388822-clip-0001.mp4"
+    },
+    {
+      "cursorCaptureMode": "system",
+      "durationMs": 2100,
+      "index": 1,
+      "microphoneAudioOffsetMs": 2.346608333333336,
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793018388822-clip-0002-microphone.mov",
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793018388822-clip-0002.mp4"
+    },
+    {
+      "cursorCaptureMode": "system",
+      "durationMs": 2100,
+      "index": 2,
+      "microphoneAudioOffsetMs": 0.0,
+      "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793018388822-clip-0003-microphone.mov",
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793018388822-clip-0003.mp4"
+    },
+    {
+      "cursorCaptureMode": "system",
+      "durationMs": 2100,
+      "index": 3,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793018388822-clip-0004.mp4"
+    }
+  ],
+  "rejections": [
+    {
+      "clipIndex": 1,
+      "code": "clip-resume-rejected",
+      "event": "error",
+      "message": "could not prepare every requested audio input; recording remains paused",
+      "schemaVersion": 1,
+      "timestampMs": 1793018460307
+    },
+    {
+      "clipIndex": 1,
+      "code": "clip-resume-rejected",
+      "event": "error",
+      "message": "could not prepare every requested audio input; recording remains paused",
+      "schemaVersion": 1,
+      "timestampMs": 1793018460307
+    }
+  ],
+  "firstHashes": {
+    "microphoneAudioPath": "0365d7c75bc0e2b41a24133a0cba784be428c4a3df8fae87bd92d486ad024d43",
+    "screenVideoPath": "d80e603424f1377c1825eec9753909be0e79c4910f863ee3db4bd6814b258e45"
+  },
+  "stopElapsedMs": 0.34403999597998336,
+  "singlePortal": true,
+  "firstClipUnchanged": true
+}

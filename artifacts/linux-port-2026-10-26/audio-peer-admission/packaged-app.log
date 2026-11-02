@@ -1,0 +1,29 @@
+Started [systemd-run] /usr/bin/env -i HOME=/home/olle USER=olle LOGNAME=olle LANG=C.UTF-8 PATH=/usr/local/bin:/usr/bin XDG_RUNTIME_DIR=/run/user/1000/agent-lab/klippt XDG_CONFIG_HOME=/home/olle/.local/state/agent-lab/klippt/config XDG_CACHE_HOME=/home/olle/.local/state/agent-lab/klippt/cache XDG_DATA_HOME=/home/olle/.local/state/agent-lab/klippt/data XDG_STATE_HOME=/home/olle/.local/state/agent-lab/klippt/state XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=KDE PIPEWIRE_RUNTIME_DIR=/run/user/1000/agent-lab/klippt PIPEWIRE_REMOTE=pipewire-0 PULSE_SERVER=unix:/run/user/1000/agent-lab/klippt/pulse/native AGENT_LAB_RUNTIME=/run/user/1000/agent-lab/klippt AGENT_LAB_STATE=/home/olle/.local/state/agent-lab/klippt AGENT_LAB_GENERATION=982cf438b6284f38ba8f96e6f7f00914 ELECTRON_USER_DATA_DIR=/home/olle/.local/state/agent-lab/klippt/profiles/electron DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-fwm0hDBZNX,guid=addd9abba4b250bc610fd16c6adf5d1a WAYLAND_DISPLAY=wayland-agent-lab QT_QPA_PLATFORM=wayland /usr/bin/env OPENSCREEN_DISABLE_CONTENT_PROTECTION=1 /home/olle/dev/screenrec-linux/release/linux-port-20261026-3a177e66/Klippt-Linux-1.9.5.AppImage --remote-debugging-port=9350.
+DevTools listening on ws://127.0.0.1:9350/devtools/browser/45be24ac-b93d-489b-9c94-dc5fc828f6b8
+[2347066:1026/151632.669378:ERROR:content/browser/browser_main_loop.cc:279] Gtk: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+RECORDINGS_DIR: /home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings
+User Data Path: /home/olle/.local/state/agent-lab/klippt/profiles/electron
+[content-protection] OFF for the HUD window (OPENSCREEN_DISABLE_CONTENT_PROTECTION=1) — it will appear in screen captures, including recordings. Unset it for anything but automated testing.
+Global shortcuts registered: CommandOrControl+Shift+O, CommandOrControl+Shift+Space
+[2347454:1026/151632.864271:ERROR:ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc:249] '--ozone-platform=wayland' is not compatible with Vulkan. Consider switching to '--ozone-platform=x11' or disabling Vulkan
+[2347066:1026/151632.889130:ERROR:content/browser/browser_main_loop.cc:279] Gtk: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+[content-protection] OFF for the HUD window (OPENSCREEN_DISABLE_CONTENT_PROTECTION=1) — it will appear in screen captures, including recordings. Unset it for anything but automated testing.
+[capture-linux] audio source {"event":"audio-source","node":"lab_mic_source_a","requested":"LabMicrophoneA","role":"microphone","schemaVersion":1,"timestampMs":1793024312690}
+[capture-mac] helper warning at 2026-10-26T14:18:56.209Z: {"code":"window-crop-missing","event":"warning","message":"window supplied no crop; recording the full PipeWire stream","schemaVersion":1,"timestampMs":1793024336209}
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793024336334,"video":"nvenc"}
+[2347066:1026/151856.382063:ERROR:content/browser/browser_main_loop.cc:279] Gtk: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+[2347066:1026/151858.456903:ERROR:content/browser/browser_main_loop.cc:279] Gtk: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+[d3d] adaptateur Vulkan : NVIDIA GeForce RTX 4070 (DiscreteGpu, Vulkan) -> backend Hardware
+[capture-mac] helper warning at 2026-10-26T14:19:21.881Z: {"code":"audio-input-disconnected","event":"warning","message":"microphone stream failed in error: the selected audio source disappeared","schemaVersion":1,"timestampMs":1793024361881}
+[capture-mac] helper warning at 2026-10-26T14:19:21.887Z: {"code":"audio-input-disconnected","event":"warning","message":"microphone stream failed in error: defined target not found","schemaVersion":1,"timestampMs":1793024361887}
+[capture-mac] helper warning at 2026-10-26T14:19:21.887Z: {"code":"audio-input-disconnected","event":"warning","message":"microphone stream failed in unconnected: the audio source disconnected","schemaVersion":1,"timestampMs":1793024361887}
+[capture-linux] audio source {"event":"audio-source","node":null,"requested":"LabMicrophoneA","role":"microphone","schemaVersion":1,"timestampMs":1793024390419}
+[capture-mac] helper warning at 2026-10-26T14:19:50.420Z: {"code":"microphone-not-found","event":"warning","message":"no PipeWire capture node matches \"LabMicrophoneA\"","schemaVersion":1,"timestampMs":1793024390419}
+[capture-linux] audio source {"event":"audio-source","node":"lab_mic_source_a","requested":"LabMicrophoneA","role":"microphone","schemaVersion":1,"timestampMs":1793024437307}
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793024437474,"video":"nvenc"}
+[capture-linux] audio source {"event":"audio-source","node":"lab_mic_source_b","requested":"LabMicrophoneB","role":"microphone","schemaVersion":1,"timestampMs":1793024523715}
+[capture-linux] encoder {"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793024523848,"video":"nvenc"}
+[capture-mac] helper warning at 2026-10-26T14:22:15.668Z: {"code":"frames-dropped","event":"warning","message":"22 captured frames were superseded before encoding","schemaVersion":1,"timestampMs":1793024535668}
+[2347066:1026/152215.751904:ERROR:content/browser/browser_main_loop.cc:279] Gtk: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+[d3d] adaptateur Vulkan : NVIDIA GeForce RTX 4070 (DiscreteGpu, Vulkan) -> backend Hardware
+[live] cursor: path=/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793024312596-clip-0003.mp4.cursor.json loaded=FAIL — clear_cursor()

@@ -25,7 +25,9 @@ import {
 	nativeMacRecoveryJournalPath,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+import { createQuitCaptureGuard } from "./quitCaptureGuard";
 import { STORAGE_POLL_MS } from "./recordingStorage";
+import { RendererRecordingStop } from "./rendererRecordingStop";
 
 vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.fn() }));
 
@@ -36,9 +38,14 @@ class FakeHelper implements NativeMacCaptureHelper {
 	pauseResult: Promise<RecordingSessionClip | undefined> = Promise.resolve(undefined);
 	stopClips: RecordingSessionClip[] = [];
 	waitForStart = vi.fn().mockResolvedValue(undefined);
+	waitForSourceSelected = vi.fn().mockResolvedValue(undefined);
+	arm = vi.fn();
 	pause = vi.fn(() => this.pauseResult);
 	reconfigure = vi.fn().mockResolvedValue(undefined);
 	resume = vi.fn().mockResolvedValue(1);
+	selectSource = vi.fn().mockResolvedValue(true);
+	cancelSourceSelection = vi.fn();
+	cancelAudioPreparation = vi.fn();
 	stop = vi.fn(async () => ({
 		screenPath: this.stopClips[0]?.screenVideoPath ?? "",
 		clips: this.stopClips,
@@ -64,6 +71,262 @@ const baseRequest: NativeMacRecordingRequest = {
 };
 
 describe("NativeMacRecordingService", () => {
+	it("confirms a rejected pre-writer configuration remains paused for correction and retry", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		helper.reconfigure.mockRejectedValueOnce(new Error("Microphone unavailable"));
+		const changed: NativeMacRecordingRequest = {
+			...request,
+			audio: { ...request.audio, microphone: { enabled: true, deviceName: "input", gain: 1 } },
+		};
+		await expect(service.resume(changed)).resolves.toMatchObject({
+			success: false,
+			paused: true,
+			error: "Microphone unavailable",
+		});
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+		await expect(service.resume(changed)).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).toHaveBeenCalledTimes(2);
+		expect(helper.resume).toHaveBeenCalledOnce();
+	});
+
+	it("does not confirm a paused retry when the helper dies during configuration", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await service.pause();
+		helper.reconfigure.mockImplementationOnce(async () => {
+			helper.running = false;
+			throw new Error("Helper exited");
+		});
+		await expect(
+			service.resume({ ...baseRequest, video: { ...baseRequest.video, fps: 30 } }),
+		).resolves.toEqual({ success: false, error: "Helper exited" });
+	});
+
+	it("Stop during Continue permissions prevents a later helper command", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		let finishPermissions: (() => void) | undefined;
+		vi.mocked(deps.prepareCapturePermissions).mockClear();
+		vi.mocked(deps.prepareCapturePermissions).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishPermissions = resolve;
+				}),
+		);
+		const continued = service.resume({ ...request, video: { ...request.video, fps: 30 } });
+		await vi.waitFor(() => expect(deps.prepareCapturePermissions).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		finishPermissions?.();
+		await expect(continued).resolves.toMatchObject({ success: false });
+		await expect(stopped).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+	it("Stop cancels a Linux Continue waiting for fresh audio without fatal recovery", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		let rejectResume: ((error: Error) => void) | undefined;
+		helper.resume.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					rejectResume = reject;
+				}),
+		);
+		helper.cancelAudioPreparation.mockImplementation(() =>
+			rejectResume?.(new NativeMacResumeRejectedError("audio preparation cancelled", 0)),
+		);
+		const continued = service.resume(request);
+		await vi.waitFor(() => expect(helper.resume).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		await expect(continued).resolves.toMatchObject({ success: false, paused: true });
+		await expect(stopped).resolves.toMatchObject({ success: true });
+		expect(helper.cancelAudioPreparation).toHaveBeenCalledOnce();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+	it("cancels pending Linux audio configuration before Stop joins the command queue", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		await service.pause();
+		let rejectSetup: ((error: Error) => void) | undefined;
+		helper.reconfigure.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					rejectSetup = reject;
+				}),
+		);
+		helper.cancelAudioPreparation.mockImplementation(() =>
+			rejectSetup?.(new Error("audio setup cancelled")),
+		);
+		const continued = service.resume({
+			...baseRequest,
+			platform: "linux",
+			audio: {
+				...baseRequest.audio,
+				microphone: { enabled: true, deviceName: "new input", gain: 1 },
+			},
+		});
+		await vi.waitFor(() => expect(helper.reconfigure).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		try {
+			expect(helper.cancelAudioPreparation).toHaveBeenCalledOnce();
+		} finally {
+			rejectSetup?.(new Error("audio setup cancelled"));
+			await expect(continued).resolves.toMatchObject({ success: false });
+			await expect(stopped).resolves.toMatchObject({ success: true });
+		}
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+
+	it("an immediate Stop prevents a queued Continue from reopening Linux audio", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		const continued = service.resume(request);
+		const stopped = service.stop(true);
+		await expect(continued).resolves.toMatchObject({ success: false });
+		await stopped;
+		expect(helper.resume).not.toHaveBeenCalled();
+		expect(deps.onFatalError).not.toHaveBeenCalled();
+	});
+	it.each([
+		"webm",
+		"mp4",
+	])("journals a renderer %s camera and retains it after Stop", async (container) => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const webcam = path.join(recordingsDir, `recording-100-clip-0001-webcam.${container}`);
+		await fs.writeFile(webcam, "written camera fragment");
+		await expect(
+			service.registerRendererWebcam(100, {
+				clipIndex: 0,
+				key: "webcamVideoPath",
+				path: webcam,
+				offsetMs: 27,
+			}),
+		).resolves.toBe(true);
+		const journal: unknown = JSON.parse(
+			await fs.readFile(path.join(recordingsDir, "recording-100.recovery.json"), "utf8"),
+		);
+		expect(journal).toMatchObject({
+			session: {
+				clips: [{ webcamVideoPath: webcam, webcamOffsetMs: 27, provisionalDuration: true }],
+			},
+		});
+		const screenVideoPath = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		await fs.writeFile(screenVideoPath, "screen fragment");
+		helper.stopClips = [{ index: 0, screenVideoPath, durationMs: 500 }];
+		const result = await service.stop();
+		expect(result).toMatchObject({
+			session: { clips: [{ webcamVideoPath: webcam, webcamOffsetMs: 27 }] },
+		});
+	});
+
+	it("validates helper camera originals omitted after finalization instead of treating them as renderer files", async () => {
+		const screenVideoPath = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		const webcamVideoPath = path.join(recordingsDir, "recording-100-clip-0001-webcam.mp4");
+		await fs.writeFile(screenVideoPath, "screen");
+		await fs.writeFile(webcamVideoPath, "unreadable camera");
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _onFatal, onOriginal) => {
+			onOriginal?.({ clipIndex: 0, key: "webcamVideoPath", path: webcamVideoPath, offsetMs: 10 });
+			return helper;
+		});
+		vi.mocked(inspectHandoffSourceMedia).mockImplementation(async (file) => ({
+			hasAudio: false,
+			hasKlipptMetadata: false,
+			roles: [],
+			durationSec: file === webcamVideoPath ? null : 0.5,
+			video: { codec: "h264", width: 1920, height: 1080, fps: 60 },
+		}));
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.stopClips = [{ index: 0, screenVideoPath, durationMs: 500 }];
+		const stopped = await service.stop();
+		expect(stopped.session?.clips?.[0]?.webcamVideoPath).toBeUndefined();
+		expect(inspectHandoffSourceMedia).toHaveBeenCalledWith(webcamVideoPath);
+	});
+
+	it("commits a paused Linux cursor grant only after successful selection", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = { ...baseRequest, platform: "linux" };
+		await service.start(request);
+		await service.pause();
+		helper.selectSource.mockResolvedValueOnce(false);
+		await expect(service.selectSource("system")).resolves.toMatchObject({ cancelled: true });
+		await expect(service.prepareResume(request)).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		await expect(service.selectSource("system")).resolves.toMatchObject({ success: true });
+		expect(helper.selectSource).toHaveBeenLastCalledWith("system");
+		await expect(
+			service.resume({
+				...request,
+				cursor: { mode: "system" },
+				video: { ...request.video, hideSystemCursor: false },
+			}),
+		).resolves.toMatchObject({ success: true });
+		expect(helper.reconfigure).not.toHaveBeenCalled();
+		await service.stop(true);
+	});
+
+	it("cancels a pending source picker before joining Stop's serialized command queue", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		await service.pause();
+		let rejectSelection: ((error: Error) => void) | undefined;
+		helper.selectSource.mockImplementationOnce(
+			() =>
+				new Promise<boolean>((_resolve, reject) => {
+					rejectSelection = reject;
+				}),
+		);
+		helper.cancelSourceSelection.mockImplementation(() =>
+			rejectSelection?.(new Error("source selection cancelled")),
+		);
+		const selected = service.selectSource();
+		expect(service.selectSource()).toBe(selected);
+		await vi.waitFor(() => expect(helper.selectSource).toHaveBeenCalledOnce());
+		const stopped = service.stop(true);
+		expect(helper.cancelSourceSelection).toHaveBeenCalledOnce();
+		await expect(selected).resolves.toMatchObject({
+			success: false,
+			error: "source selection cancelled",
+		});
+		await expect(stopped).resolves.toMatchObject({ success: true });
+		expect(helper.stop).toHaveBeenCalledOnce();
+	});
+
+	it("an immediate Stop prevents a queued source choice from opening a picker", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start({ ...baseRequest, platform: "linux" });
+		await service.pause();
+		const selected = service.selectSource();
+		const stopped = service.stop(true);
+		const result = await selected;
+		await stopped;
+		expect(result).toMatchObject({ success: false, cancelled: true });
+		expect(helper.selectSource).not.toHaveBeenCalled();
+	});
+
+	it("does not open the Linux source picker while recording or on macOS", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await expect(service.selectSource()).resolves.toMatchObject({ success: false });
+		await service.pause();
+		await expect(service.selectSource()).resolves.toMatchObject({ success: false });
+		expect(helper.selectSource).not.toHaveBeenCalled();
+		await service.stop(true);
+	});
+
 	let recordingsDir: string;
 	let helper: FakeHelper;
 	let deps: NativeMacRecordingServiceDependencies;
@@ -108,6 +371,123 @@ describe("NativeMacRecordingService", () => {
 
 	afterEach(async () => {
 		await fs.rm(recordingsDir, { recursive: true, force: true });
+	});
+
+	it("prepares portal consent without recording, then arms the same helper and waits for its first frame", async () => {
+		const service = new NativeMacRecordingService(deps);
+		const request: NativeMacRecordingRequest = {
+			...baseRequest,
+			platform: "linux",
+			source: { type: "display", sourceId: "" },
+		};
+		await expect(service.prepare(request)).resolves.toMatchObject({
+			success: true,
+			recordingId: 100,
+		});
+		expect(helper.waitForSourceSelected).toHaveBeenCalledOnce();
+		expect(helper.waitForStart).not.toHaveBeenCalled();
+		expect(deps.onRecordingStateChange).not.toHaveBeenCalled();
+		let confirm: (() => void) | undefined;
+		helper.waitForStart.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					confirm = resolve;
+				}),
+		);
+		const started = service.start({ ...request, startTiming: [{ stage: "click", atMs: 1 }] });
+		await vi.waitFor(() => expect(helper.arm).toHaveBeenCalledOnce());
+		expect(deps.onRecordingStateChange).not.toHaveBeenCalled();
+		confirm?.();
+		await expect(started).resolves.toMatchObject({ success: true });
+		expect(deps.createHelper).toHaveBeenCalledOnce();
+		expect(deps.onRecordingStateChange).toHaveBeenCalledWith(true);
+		await service.stop(true);
+	});
+
+	it("cancels a portal picker outside the lifecycle queue and can prepare again", async () => {
+		let rejectSelection: ((error: Error) => void) | undefined;
+		helper.waitForSourceSelected.mockImplementationOnce(
+			() =>
+				new Promise<boolean>((_resolve, reject) => {
+					rejectSelection = reject;
+				}),
+		);
+		helper.kill.mockImplementation(async () => {
+			helper.running = false;
+			rejectSelection?.(new Error("Source selection cancelled."));
+		});
+		const service = new NativeMacRecordingService(deps);
+		const preparing = service.prepare({ ...baseRequest, platform: "linux" });
+		await vi.waitFor(() => expect(helper.waitForSourceSelected).toHaveBeenCalledOnce());
+		await service.cancelPrepare();
+		await expect(preparing).resolves.toMatchObject({ success: false });
+		expect(deps.onRecordingStateChange).not.toHaveBeenCalledWith(true);
+		helper.running = true;
+		await expect(service.prepare({ ...baseRequest, platform: "linux" })).resolves.toMatchObject({
+			success: true,
+		});
+		await service.cancelPrepare();
+	});
+
+	it("does not reuse a portal grant for changed settings or open a second picker", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.prepare({ ...baseRequest, platform: "linux" });
+		const changed = {
+			...baseRequest,
+			platform: "linux",
+			audio: { ...baseRequest.audio, system: { enabled: true } },
+		} satisfies NativeMacRecordingRequest;
+		await expect(service.start(changed)).resolves.toMatchObject({
+			success: false,
+			error: expect.stringContaining("settings changed"),
+		});
+		expect(deps.createHelper).toHaveBeenCalledOnce();
+		expect(helper.arm).not.toHaveBeenCalled();
+		expect(helper.kill).toHaveBeenCalled();
+	});
+
+	it("quitting while the portal is prepared cancels the grant without pretending to stop a clip", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.prepare({ ...baseRequest, platform: "linux" });
+		await expect(service.stopBeforeQuit()).resolves.toBe(false);
+		expect(helper.kill).toHaveBeenCalledOnce();
+		expect(helper.stop).not.toHaveBeenCalled();
+		expect(deps.onRecordingStateChange).not.toHaveBeenCalledWith(true);
+	});
+
+	it("keeps source-less requests invalid without the explicit Linux platform", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await expect(
+			service.start({ ...baseRequest, source: { type: "display", sourceId: "" } }),
+		).resolves.toMatchObject({
+			success: false,
+			error: expect.stringContaining("missing a source"),
+		});
+		expect(deps.createHelper).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"microphoneAudioPath",
+		"webcamVideoPath",
+	] as const)("does not restore an unreadable native %s omitted at finalization", async (key) => {
+		let reportOriginal: ((original: NativeMacOriginalStarted) => void) | undefined;
+		vi.mocked(deps.createHelper).mockImplementation((_path, _config, _fatal, callback) => {
+			reportOriginal = callback;
+			return helper;
+		});
+		const stem = path.join(recordingsDir, "recording-100-clip-0001");
+		const originalPath = `${stem}-${key === "webcamVideoPath" ? "webcam" : "microphone"}.mov`;
+		await fs.writeFile(`${stem}.mp4`, "screen");
+		await fs.writeFile(originalPath, "unreadable original");
+		vi.mocked(inspectHandoffSourceMedia).mockRejectedValue(new Error("unreadable source"));
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		reportOriginal?.({ clipIndex: 0, key, path: originalPath, offsetMs: 20 });
+		helper.stopClips = [{ index: 0, screenVideoPath: `${stem}.mp4`, durationMs: 1000 }];
+		const result = await service.stop();
+		expect(result.success).toBe(true);
+		expect(result.session?.clips?.[0][key]).toBeUndefined();
+		expect(inspectHandoffSourceMedia).toHaveBeenCalledWith(originalPath);
 	});
 
 	it("reattaches a readable original fragment when finalization returns only the committed screen", async () => {
@@ -514,6 +894,139 @@ describe("NativeMacRecordingService", () => {
 		await expect(service.stopBeforeQuit(20)).resolves.toBe(true);
 	});
 
+	it("holds the actual quit guard until the renderer has durably attached camera sources", async () => {
+		const screenVideoPath = path.join(recordingsDir, "recording-100-clip-0001.mp4");
+		helper.stopClips = [{ index: 0, screenVideoPath, durationMs: 1_000 }];
+		let cameraAttached: (() => void) | undefined;
+		let cameraDurable = false;
+		deps.onAppStopped = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					cameraAttached = resolve;
+				}),
+		);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const quit = vi.fn(() => {
+			expect(cameraDurable).toBe(true);
+		});
+		const guard = createQuitCaptureGuard({
+			isCaptureRunning: () => service.isRunning(),
+			stopCapture: async () => {
+				await service.stopBeforeQuit();
+			},
+			quit,
+		});
+		guard.beforeQuit({ preventDefault: vi.fn() });
+		await vi.waitFor(() => expect(deps.onAppStopped).toHaveBeenCalledOnce());
+		expect(deps.onSessionStored).toHaveBeenCalled();
+		expect(quit).not.toHaveBeenCalled();
+		cameraDurable = true;
+		cameraAttached?.();
+		await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce());
+	});
+
+	it("holds Quit after an ordinary native Stop while joining the existing renderer save", async () => {
+		helper.stopClips = [
+			{
+				index: 0,
+				screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+				durationMs: 1_000,
+			},
+		];
+		const owner = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		const renderer = new RendererRecordingStop();
+		const request = renderer.bind(owner, 100);
+		deps.pendingRendererRecordingId = () => renderer.pendingRecordingId();
+		deps.onAppStopped = (recordingId, signal) => renderer.wait(recordingId, signal);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		const nativeResult = await service.stop();
+		expect(nativeResult.success).toBe(true);
+		expect(service.isRunning()).toBe(false);
+		expect(renderer.pendingRecordingId()).toBe(100);
+		let cameraDurable = false;
+		const quit = vi.fn(() => expect(cameraDurable).toBe(true));
+		const guard = createQuitCaptureGuard({
+			isCaptureRunning: () => service.isRunning() || renderer.pendingRecordingId() !== null,
+			stopCapture: async () => {
+				await service.stopBeforeQuit();
+			},
+			quit,
+		});
+		const event = { preventDefault: vi.fn() };
+		guard.beforeQuit(event);
+		await vi.waitFor(() => expect(owner.send).toHaveBeenCalledOnce());
+		expect(event.preventDefault).toHaveBeenCalledOnce();
+		expect(quit).not.toHaveBeenCalled();
+		expect(helper.stop).toHaveBeenCalledOnce();
+		const repeated = { preventDefault: vi.fn() };
+		guard.beforeQuit(repeated);
+		expect(repeated.preventDefault).toHaveBeenCalledOnce();
+		cameraDurable = true;
+		expect(renderer.acknowledge(owner, { ...request, success: true })).toBe(true);
+		await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce());
+		expect(helper.stop).toHaveBeenCalledOnce();
+		expect(renderer.pendingRecordingId()).toBeNull();
+	});
+
+	it("finishes the quit handoff immediately when the HUD has no camera to drain", async () => {
+		helper.stopClips = [
+			{
+				index: 0,
+				screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+				durationMs: 1_000,
+			},
+		];
+		deps.onAppStopped = vi.fn(async () => undefined);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await expect(service.stopBeforeQuit()).resolves.toBe(true);
+		expect(deps.onAppStopped).toHaveBeenCalledWith(100, expect.any(AbortSignal));
+	});
+
+	it("reports a renderer camera handoff failure and still releases quit", async () => {
+		helper.stopClips = [
+			{
+				index: 0,
+				screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+				durationMs: 1_000,
+			},
+		];
+		const failure = new Error("Camera attachment failed");
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		deps.onAppStopped = vi.fn(async () => {
+			throw failure;
+		});
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await expect(service.stopBeforeQuit()).resolves.toBe(true);
+		expect(warn).toHaveBeenCalledWith("[capture-mac] Stop before quit failed:", failure);
+		warn.mockRestore();
+	});
+
+	it("bounds the renderer handoff by the existing quit deadline and aborts its waiter", async () => {
+		helper.stopClips = [
+			{
+				index: 0,
+				screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+				durationMs: 1_000,
+			},
+		];
+		let deadline: AbortSignal | undefined;
+		deps.onAppStopped = vi.fn((_recordingId, signal) => {
+			deadline = signal;
+			return new Promise<void>(() => undefined);
+		});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		await expect(service.stopBeforeQuit(200)).resolves.toBe(true);
+		expect(deadline?.aborted).toBe(true);
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining("camera sources may be incomplete"));
+		warn.mockRestore();
+	});
+
 	it("refuses to start a take on a nearly full disk", async () => {
 		vi.mocked(deps.freeDiskBytes!).mockResolvedValueOnce(200 * 1024 ** 2);
 		const service = new NativeMacRecordingService(deps);
@@ -789,6 +1302,8 @@ describe("NativeMacRecordingService", () => {
 			code: "writer-failed-during-capture",
 			message: "Writer failed",
 		});
+		// Fatal metadata writes run asynchronously; Stop drains them before fixture removal.
+		await service.stop(true);
 	});
 
 	it("reports failed first-frame Continue so the HUD can save completed clips", async () => {
@@ -825,6 +1340,8 @@ describe("NativeMacRecordingService", () => {
 			code: "writer-failed-during-capture",
 			message: "Writer failed",
 		});
+		// Fatal metadata writes run asynchronously; Stop drains them before fixture removal.
+		await service.stop(true);
 	});
 
 	it("applies changed paused settings before it continues with the next clip", async () => {
@@ -1189,7 +1706,7 @@ describe("NativeMacRecordingService", () => {
 		await expect(first).resolves.toMatchObject({ success: true });
 		await expect(second).resolves.toEqual({
 			success: false,
-			error: "Native macOS capture is already running.",
+			error: "Native capture is already running.",
 		});
 		expect(deps.createHelper).toHaveBeenCalledOnce();
 	});

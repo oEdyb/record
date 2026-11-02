@@ -1,0 +1,110 @@
+{
+  "sourceCommit": "3a177e66d6d108fbebaa6e7fe4323d3cfb20d1df",
+  "take": {
+    "helperPid": 2447143,
+    "recordingId": 1793025310117,
+    "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793025310117.session.json",
+    "firstClip": {
+      "index": 0,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793025310117-clip-0001.mp4",
+      "durationMs": 41433,
+      "cursorCaptureMode": "editable-overlay"
+    },
+    "firstSha256": "3d9cb0bec378d05cca243b5175c77aa1cd9f14eb90ed880d1faac4340b9dc3b0",
+    "helperSha256": "3b1b4fef32f80a769dca831567424f06ffa1d20a6ff156764dda513eb23808e7"
+  },
+  "clips": [
+    {
+      "index": 0,
+      "durationMs": 41433,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793025310117-clip-0001.mp4",
+      "screenSha256": "3d9cb0bec378d05cca243b5175c77aa1cd9f14eb90ed880d1faac4340b9dc3b0",
+      "cursorSha256": "280c27844598f6afd1f673e0dec19d35f4cd088088c4fb0c10cc765d82d400d3",
+      "samples": 823,
+      "assets": 1,
+      "maxSampleMs": 41371,
+      "rawBodyWhitePixels": 0
+    },
+    {
+      "index": 1,
+      "durationMs": 3650,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793025310117-clip-0002.mp4",
+      "screenSha256": "0cd0eee64a55971b452ba37d2519b7df450b8435c3b46a40bd1e1f69c81828e1",
+      "cursorSha256": "473a8675f4263962c4001d0cd9d8543d2ff44a3675234a1b03f1d7d1ec8223d1",
+      "samples": 86,
+      "assets": 1,
+      "maxSampleMs": 3316,
+      "rawBodyWhitePixels": 0
+    },
+    {
+      "index": 2,
+      "durationMs": 3550,
+      "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793025310117-clip-0003.mp4",
+      "screenSha256": "9466b684fd0517d8759edfa0fbbcba21802875e7d1b3b67c77a8d44f97fd819d",
+      "cursorSha256": "eaf6bca213bec0beaf1537ba58ddf4f4e3a1ec2cb20ef03c8b4bd5bf46f79d45",
+      "samples": 60,
+      "assets": 1,
+      "maxSampleMs": 3153,
+      "rawBodyWhitePixels": 0
+    }
+  ],
+  "previews": [
+    {
+      "capture": "review",
+      "cursorWhitePixels": 18,
+      "bounds": [
+        959,
+        629,
+        966,
+        643
+      ]
+    },
+    {
+      "capture": "preview-clip2",
+      "cursorWhitePixels": 18,
+      "bounds": [
+        783,
+        639,
+        792,
+        653
+      ]
+    },
+    {
+      "capture": "preview-clip3",
+      "cursorWhitePixels": 23,
+      "bounds": [
+        954,
+        688,
+        963,
+        702
+      ]
+    },
+    {
+      "capture": "auto-clip2",
+      "cursorWhitePixels": 18,
+      "bounds": [
+        783,
+        639,
+        792,
+        653
+      ]
+    },
+    {
+      "capture": "auto-clip3",
+      "cursorWhitePixels": 27,
+      "bounds": [
+        808,
+        688,
+        816,
+        701
+      ]
+    }
+  ],
+  "physicalPointerDuringPreview": [
+    110,
+    210
+  ],
+  "rawHasNoBakedCursor": true,
+  "cursorRenderedOnAllThreeClips": true,
+  "automaticAdvanceVerified": true
+}

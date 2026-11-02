@@ -1,0 +1,34 @@
+{
+  "source": "85a25a4985311f707286d20e47bba9984a44f4c8",
+  "appImageSha256": "442da28590946b58a7861c2787a33a4ea1c6dfa4c5b2f30023f5b07e8adb5336",
+  "affectedTests": 137,
+  "typechecks": "app and test passed",
+  "lint": "four changed TS files passed",
+  "packagePolicy": "Ubuntu 22.04 linux-unpacked passed",
+  "privateDesktop": {
+    "compositor": "KWin",
+    "launch": "normal FUSE AppImage",
+    "gripBefore": "inline app-region: no-drag; native input did not move HUD",
+    "gripAfter": "computed app-region: drag, no inline override",
+    "dragPixels": {
+      "before": [
+        748,
+        522
+      ],
+      "after": [
+        932,
+        614
+      ]
+    },
+    "source": "visible Source chip; native input opened KDE Screen Sharing Requested dialog",
+    "cancellation": "Escape returns to HUD"
+  },
+  "niriRule": "validated local config; scoped floating co.dyberg.klippt titled Klippt; focus-ring/border/shadow off; draw-border-with-background false",
+  "physicalSession": "no input or window actions; exact-Niri visual confirmation remains with user",
+  "reactDoctor": "existing effect-needs-cleanup diagnostic in useLinuxHudGeometry; explicit observer/timer/listener cleanup remains intact",
+  "nativeComparison": {
+    "comparedTo": "a4f92422",
+    "regularElfCount": 27,
+    "changed": []
+  }
+}

@@ -47,6 +47,8 @@ extern "C" {
     pub fn sn_fmt_stream(s: *mut AVFormatContext, i: i32) -> *mut AVStream;
     /// `s->nb_streams` (cf. `shim.c`).
     pub fn sn_fmt_nb_streams(s: *mut AVFormatContext) -> u32;
+    /// `s->duration` in AV_TIME_BASE units, accessed through the pinned headers.
+    pub fn sn_fmt_duration(s: *mut AVFormatContext) -> i64;
     /// `av_dict_get(s->streams[i]->metadata, key, NULL, 0)->value`, ou NULL.
     pub fn sn_fmt_stream_metadata(
         s: *mut AVFormatContext,

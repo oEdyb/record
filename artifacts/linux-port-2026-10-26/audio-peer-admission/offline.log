@@ -1,0 +1,7 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/main.rs (electron/native/pipewire-capture/target/debug/deps/openscreen_pipewire_helper-7d4f97633af5ba2e)
+
+running 1 test
+test shim::source_tests::audio_peer_admission_checks_the_actual_c_callbacks_offline ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 117 filtered out; finished in 0.09s

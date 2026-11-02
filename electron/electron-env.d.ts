@@ -101,6 +101,19 @@ interface Window {
 		closeNotesWindow: () => void;
 		openTranscript: () => Promise<{ opened: boolean }>;
 		closeTranscriptWindow: () => void;
+		/** Pill -> Studio, the full-size recording view. */
+		openRecordingStudio: () => Promise<{ opened: boolean }>;
+		getStudioSnapshot: () => Promise<import("./studio/types").StudioSnapshot>;
+		onStudioUpdated: (
+			callback: (snapshot: import("./studio/types").StudioSnapshot) => void,
+		) => () => void;
+		studioCommand: (command: import("./studio/types").StudioCommand) => void;
+		studioPillNeedsUser: () => void;
+		reportStudioPillState: (state: import("./studio/types").StudioPillState) => void;
+		onStudioSetupCommand: (
+			callback: (command: import("./studio/types").PillSetupCommand) => void,
+		) => () => void;
+		onHudRemovePreviousClip?: (callback: () => void) => () => void;
 		getTranscriptSnapshot: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
 		refreshTranscript: () => Promise<import("./transcript/liveTranscript").TranscriptSnapshot>;
 		onTranscriptUpdated: (
@@ -108,6 +121,17 @@ interface Window {
 		) => () => void;
 		/** Clean cut analysis for the review window; absent until the main process provides it. */
 		cleanCut?: import("../src/lib/cleanCut/types").CleanCutBridge;
+		/** The local agent's requests to this window (electron/agent/agentServer.ts). */
+		agent?: {
+			onRequest: (
+				callback: (request: {
+					id: string;
+					method: string;
+					params: Record<string, unknown>;
+				}) => void,
+			) => () => void;
+			reply: (id: string, result: unknown, error?: string) => void;
+		};
 		setNotesWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
 		onNotesWindowBoundsChanged: (
 			callback: (bounds: { x: number; y: number; width: number; height: number }) => void,
@@ -184,6 +208,9 @@ interface Window {
 			error?: string;
 		}>;
 		openRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>;
+		registerNativeRecordingWebcam: (
+			registration: import("../src/lib/nativeMacRecording").NativeRecordingWebcamRegistration,
+		) => Promise<{ success: boolean; registered?: boolean; error?: string }>;
 		appendRecordingChunk: (
 			fileName: string,
 			chunk: ArrayBuffer,
@@ -240,6 +267,10 @@ interface Window {
 		startNativeMacRecording: (
 			request: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
 		) => Promise<import("../src/lib/nativeMacRecording").NativeMacRecordingStartResult>;
+		selectNativeLinuxSource: (
+			owner: import("../src/lib/nativeMacRecording").NativeRecordingAppStopRequest,
+			cursorMode?: import("../src/lib/recordingSession").CursorCaptureMode,
+		) => Promise<import("../src/lib/nativeLinuxRecording").NativeLinuxSourceSelectionResult>;
 		pauseNativeMacRecording: () => Promise<{
 			success: boolean;
 			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
@@ -251,6 +282,7 @@ interface Window {
 		) => Promise<{
 			success: boolean;
 			clipIndex?: number;
+			paused?: boolean;
 			error?: string;
 		}>;
 		prepareNativeMacContinue: (
@@ -280,7 +312,14 @@ interface Window {
 			callback: (status: import("../src/lib/nativeMacRecording").NativeMacStorageStatus) => void,
 		) => () => void;
 		/** The app stopped the take itself (a quit that was later cancelled). */
-		onNativeMacRecordingStoppedByApp?: (callback: () => void) => () => void;
+		onNativeMacRecordingStoppedByApp?: (
+			callback: (
+				request: import("../src/lib/nativeMacRecording").NativeRecordingAppStopRequest,
+			) => void,
+		) => () => void;
+		acknowledgeNativeRecordingAppStop: (
+			acknowledgement: import("../src/lib/nativeMacRecording").NativeRecordingAppStopAcknowledgement,
+		) => Promise<{ success: boolean }>;
 		/** Names a Stop step for the stop timing log; ignored when no Stop is being timed. */
 		markStopStage?: (stage: string) => void;
 		stopNativeMacRecording: (
@@ -333,10 +372,12 @@ interface Window {
 		 * Raises the compositor's picker and holds the grant until the recording
 		 * actually starts, so a countdown can run AFTER the user has chosen.
 		 *
-		 * Best-effort: a `success: false` means "start normally", never "fail".
+		 * A failed preparation cancels Record; never count down before portal consent.
 		 */
 		prepareNativeLinuxRecording: (
-			request: import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest,
+			request:
+				| import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest
+				| import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
 		) => Promise<{
 			success: boolean;
 			recordingId?: number;
@@ -347,14 +388,22 @@ interface Window {
 		/** Drops a prepared session when the countdown was abandoned. */
 		cancelNativeLinuxPrepare: () => Promise<{ success: boolean }>;
 		startNativeLinuxRecording: (
-			request: import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest,
+			request:
+				| import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest
+				| import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
 		) => Promise<import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingStartResult>;
 		pauseNativeLinuxRecording: () => Promise<{
 			success: boolean;
+			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
+			paused?: boolean;
 			error?: string;
 		}>;
-		resumeNativeLinuxRecording: () => Promise<{
+		resumeNativeLinuxRecording: (
+			request?: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
+		) => Promise<{
 			success: boolean;
+			clipIndex?: number;
+			paused?: boolean;
 			error?: string;
 		}>;
 		stopNativeLinuxRecording: (discard?: boolean) => Promise<{

@@ -8,6 +8,7 @@ describe("ShortcutsProvider render boundaries", () => {
 	beforeEach(() => {
 		window.electronAPI = {
 			getShortcuts: vi.fn(async () => null),
+			getPlatform: () => "darwin",
 		} as unknown as Window["electronAPI"];
 	});
 

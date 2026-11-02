@@ -7,6 +7,7 @@ import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { useCleanVoiceRuntime } from "@/hooks/useCleanVoiceRuntime";
 import { useReviewWindowCompact } from "@/hooks/useReviewWindowCompact";
 import { applyTheme } from "@/hooks/useTheme";
+import { useAgentControl } from "@/lib/agent/useAgentControl";
 import { migrateRawDocumentToCurrent } from "@/lib/ai-edition/document/migrate";
 import { recordingInterruptions } from "@/lib/ai-edition/document/recordingInterruptions";
 import {
@@ -41,6 +42,7 @@ import { ipcErrorMessage } from "@/lib/ipcErrorMessage";
 import type { RecordingWorkspaceContext } from "@/lib/recordingSession";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
+import { agentReviewMethods } from "./agentReviewMethods";
 import { AmbientBackdrop } from "./cleanCut/AmbientBackdrop";
 import { CleanCutHudPill } from "./cleanCut/CleanCutHud";
 import { CleanCutStage } from "./cleanCut/CleanCutStage";
@@ -1097,6 +1099,30 @@ export function RecordingReviewShell() {
 	// A loop ends on its own when the viewer takes the playhead somewhere else.
 	const endLoopRef = useRef(cleanCutGuide.endLoop);
 	endLoopRef.current = cleanCutGuide.endLoop;
+	useAgentControl(
+		agentReviewMethods({
+			projectId,
+			projectTitle,
+			assets: document?.assets ?? [],
+			cleanCutAvailable,
+			review: cleanCutReview,
+			toPlaybackSec: (rawSec) => rawTimeToPlaybackTime(rawSec, reviewProjection),
+			toRawSec: (playbackSec) => playbackTimeToRawTime(playbackSec, reviewProjection, "after"),
+			playbackDurationSec: reviewSegments.reduce(
+				(sum, segment) => sum + (segment.timelineEndSec - segment.timelineStartSec),
+				0,
+			),
+			seekRaw: (rawSec) => {
+				followPlayheadForInsertion();
+				handleSeek(rawSec);
+			},
+			play: () => void videoElementRef.current?.play().catch(() => undefined),
+			pause: () => videoElementRef.current?.pause(),
+			selectCut: selectCleanCut,
+			audition: (cut, mode) => auditionCut(cut, mode, false),
+			save: handleExport,
+		}),
+	);
 	// A replay starts once the preview has the trim it asked for, plays across the cut and
 	// stops shortly after it, so each card is heard the same way.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: each replay runs once, by its nonce.

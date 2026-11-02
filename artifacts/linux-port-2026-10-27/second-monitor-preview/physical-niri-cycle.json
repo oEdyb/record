@@ -1,0 +1,296 @@
+[
+  {
+    "state": "recording-other-monitor",
+    "casts": [
+      {
+        "stream_id": 54,
+        "session_id": 54,
+        "kind": "PipeWire",
+        "target": {
+          "Output": {
+            "name": "DP-1"
+          }
+        },
+        "is_dynamic_target": false,
+        "is_active": true,
+        "pid": null,
+        "pw_node_id": 131
+      }
+    ],
+    "windows": [
+      {
+        "id": 348,
+        "title": "Klippt Camera",
+        "app_id": "co.dyberg.klippt",
+        "pid": 2985418,
+        "workspace_id": 6,
+        "is_focused": false,
+        "is_floating": true,
+        "is_urgent": false,
+        "layout": {
+          "pos_in_scrolling_layout": null,
+          "tile_size": [
+            312,
+            186
+          ],
+          "window_size": [
+            312,
+            186
+          ],
+          "tile_pos_in_workspace_view": [
+            2224,
+            66
+          ],
+          "window_offset_in_tile": [
+            0,
+            0
+          ]
+        },
+        "focus_timestamp": null
+      }
+    ]
+  },
+  {
+    "state": "paused",
+    "casts": [
+      {
+        "stream_id": 54,
+        "session_id": 54,
+        "kind": "PipeWire",
+        "target": {
+          "Output": {
+            "name": "DP-1"
+          }
+        },
+        "is_dynamic_target": false,
+        "is_active": true,
+        "pid": null,
+        "pw_node_id": 131
+      }
+    ],
+    "windows": [
+      {
+        "id": 348,
+        "title": "Klippt Camera",
+        "app_id": "co.dyberg.klippt",
+        "pid": 2985418,
+        "workspace_id": 6,
+        "is_focused": false,
+        "is_floating": true,
+        "is_urgent": false,
+        "layout": {
+          "pos_in_scrolling_layout": null,
+          "tile_size": [
+            312,
+            186
+          ],
+          "window_size": [
+            312,
+            186
+          ],
+          "tile_pos_in_workspace_view": [
+            2224,
+            66
+          ],
+          "window_offset_in_tile": [
+            0,
+            0
+          ]
+        },
+        "focus_timestamp": null
+      },
+      {
+        "id": 350,
+        "title": "Klippt",
+        "app_id": "co.dyberg.klippt",
+        "pid": 2985418,
+        "workspace_id": 15,
+        "is_focused": true,
+        "is_floating": true,
+        "is_urgent": false,
+        "layout": {
+          "pos_in_scrolling_layout": null,
+          "tile_size": [
+            472,
+            112
+          ],
+          "window_size": [
+            472,
+            112
+          ],
+          "tile_pos_in_workspace_view": [
+            1044,
+            685
+          ],
+          "window_offset_in_tile": [
+            0,
+            0
+          ]
+        },
+        "focus_timestamp": {
+          "secs": 156489,
+          "nanos": 328498151
+        }
+      }
+    ]
+  },
+  {
+    "state": "resumed-other-monitor",
+    "casts": [
+      {
+        "stream_id": 54,
+        "session_id": 54,
+        "kind": "PipeWire",
+        "target": {
+          "Output": {
+            "name": "DP-1"
+          }
+        },
+        "is_dynamic_target": false,
+        "is_active": true,
+        "pid": null,
+        "pw_node_id": 131
+      }
+    ],
+    "windows": [
+      {
+        "id": 348,
+        "title": "Klippt Camera",
+        "app_id": "co.dyberg.klippt",
+        "pid": 2985418,
+        "workspace_id": 6,
+        "is_focused": false,
+        "is_floating": true,
+        "is_urgent": false,
+        "layout": {
+          "pos_in_scrolling_layout": null,
+          "tile_size": [
+            312,
+            186
+          ],
+          "window_size": [
+            312,
+            186
+          ],
+          "tile_pos_in_workspace_view": [
+            2224,
+            66
+          ],
+          "window_offset_in_tile": [
+            0,
+            0
+          ]
+        },
+        "focus_timestamp": null
+      }
+    ]
+  },
+  {
+    "state": "paused-preview-on-captured-monitor",
+    "casts": [
+      {
+        "stream_id": 54,
+        "session_id": 54,
+        "kind": "PipeWire",
+        "target": {
+          "Output": {
+            "name": "DP-1"
+          }
+        },
+        "is_dynamic_target": false,
+        "is_active": true,
+        "pid": null,
+        "pw_node_id": 131
+      }
+    ],
+    "windows": [
+      {
+        "id": 348,
+        "title": "Klippt Camera",
+        "app_id": "co.dyberg.klippt",
+        "pid": 2985418,
+        "workspace_id": 15,
+        "is_focused": false,
+        "is_floating": true,
+        "is_urgent": false,
+        "layout": {
+          "pos_in_scrolling_layout": null,
+          "tile_size": [
+            312,
+            186
+          ],
+          "window_size": [
+            312,
+            186
+          ],
+          "tile_pos_in_workspace_view": [
+            2224,
+            66
+          ],
+          "window_offset_in_tile": [
+            0,
+            0
+          ]
+        },
+        "focus_timestamp": null
+      },
+      {
+        "id": 351,
+        "title": "Klippt",
+        "app_id": "co.dyberg.klippt",
+        "pid": 2985418,
+        "workspace_id": 15,
+        "is_focused": true,
+        "is_floating": true,
+        "is_urgent": false,
+        "layout": {
+          "pos_in_scrolling_layout": null,
+          "tile_size": [
+            472,
+            112
+          ],
+          "window_size": [
+            472,
+            112
+          ],
+          "tile_pos_in_workspace_view": [
+            1044,
+            685
+          ],
+          "window_offset_in_tile": [
+            0,
+            0
+          ]
+        },
+        "focus_timestamp": {
+          "secs": 156491,
+          "nanos": 897104471
+        }
+      }
+    ]
+  },
+  {
+    "state": "resumed-preview-must-hide",
+    "casts": [
+      {
+        "stream_id": 54,
+        "session_id": 54,
+        "kind": "PipeWire",
+        "target": {
+          "Output": {
+            "name": "DP-1"
+          }
+        },
+        "is_dynamic_target": false,
+        "is_active": true,
+        "pid": null,
+        "pw_node_id": 131
+      }
+    ],
+    "windows": []
+  },
+  {
+    "state": "review",
+    "text": "Recording 10/27/2026, 8:29:23 PM\n0:06 total, 3 clips\nAdd clip\nNew recording\nClean cut\nSave video\n0:00/0:06"
+  }
+]

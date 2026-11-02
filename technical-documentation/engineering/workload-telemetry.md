@@ -22,6 +22,11 @@ project ID or media identifier.
 - A terminal report is written when the workload succeeds, fails, is cancelled, is discarded, or
   recovers a partial capture.
 - A report left in `running` state after a process exit becomes `interrupted` on the next launch.
+- Clean quit stops and joins native previews after windows close, completes live preview reports,
+  and waits for durable writes. The async flush has a two-second deadline; failure is logged and
+  quit continues. Logout/shutdown skips waiting. Capture and export keep their own outcomes.
+  Final Quit is scheduled on a new event-loop turn so an empty flush cannot reenter Electron
+  before its native window-close callback resets the quitting flag.
 - The store keeps at most 100 reports and removes reports older than 30 days.
 - The support diagnostic ZIP includes the 20 newest reports. Normal reports never leave the Mac on
   their own.

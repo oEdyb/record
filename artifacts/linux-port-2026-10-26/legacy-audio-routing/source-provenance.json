@@ -1,0 +1,7 @@
+{
+  "baselineAudioSourceCommit": "81805667bafc97ab839503aa25bae99b7f9a2892",
+  "correctedAudioSourceSha256": "af05794600c6bcf735606ead443878088674255e00cc5fc21845071ad384c475",
+  "correctedAudioSource": "baseline plus legacy node.target property; uncommitted at time of probe",
+  "testScope": "actual C archive from Ubuntu-floor helper build; complete old PipeWire/WirePlumber stack",
+  "unresolved": "missing target still delivers fallback PCM"
+}

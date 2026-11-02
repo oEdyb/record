@@ -1,8 +1,9 @@
 // Two build inputs, with deliberately different linkage strategies.
 //
 // PIPEWIRE is compiled from csrc/pw_shim.c against the vendored headers and NOT
-// linked: the shim resolves every libpipewire symbol with dlsym at runtime, so
-// the only build requirement is a C compiler. That is what makes this crate
+// linked: the shim resolves every libpipewire symbol with dlsym at runtime.
+// DMA-BUF import also dlopens EGL/GLES/Wayland/GBM; EGL/GLES headers are needed at
+// build time, while those desktop libraries are optional at runtime. That is what makes this crate
 // buildable on a machine with no libpipewire-0.3-dev, which is most machines —
 // Ubuntu ships only the runtime .so.0.
 //
@@ -24,7 +25,7 @@ fn main() {
 
 fn build_pipewire_shim(root: &Path) {
     let vendor = root.join("vendor/pipewire-1.0.5/include");
-    let sources = ["csrc/pw_shim.c", "csrc/pw_audio.c"];
+    let sources = ["csrc/pw_shim.c", "csrc/pw_audio.c", "csrc/dmabuf_egl.c"];
 
     assert!(
         vendor.join("pipewire/pipewire.h").is_file(),
@@ -46,9 +47,20 @@ fn build_pipewire_shim(root: &Path) {
     for source in sources {
         println!("cargo:rerun-if-changed={}", root.join(source).display());
     }
-    println!("cargo:rerun-if-changed={}", root.join("csrc/pw_shim.h").display());
-    println!("cargo:rerun-if-changed={}", root.join("csrc/pw_internal.h").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("csrc/pw_shim.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("csrc/pw_internal.h").display()
+    );
     println!("cargo:rerun-if-changed={}", vendor.display());
+
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("csrc/dmabuf_egl.h").display()
+    );
 
     // dlopen/dlsym.
     println!("cargo:rustc-link-lib=dl");
@@ -126,6 +138,13 @@ fn link_ffmpeg(root: &Path) {
         include.display()
     );
 
+    let shim = root.join("csrc/ffmpeg_shim.c");
+    cc::Build::new()
+        .file(&shim)
+        .include(&include)
+        .compile("openscreen_ffmpeg_shim");
+    println!("cargo:rerun-if-changed={}", shim.display());
+
     println!("cargo:rustc-link-search=native={}", lib.display());
     for name in ["avcodec", "avformat", "avutil", "swscale", "swresample"] {
         println!("cargo:rustc-link-lib={name}");
@@ -183,6 +202,13 @@ fn link_ffmpeg(root: &Path) {
         .allowlist_function("avio_.*")
         .allowlist_function("sws_.*")
         .allowlist_function("swr_.*")
+        // Unused dump APIs pull stdio into these encoder-only bindings.
+        .blocklist_function("av_(hex_dump|pkt_dump.*)")
+        .blocklist_type("FILE")
+        // Only pointers cross Rust for these SDK-owned objects. Codec field
+        // access lives in ffmpeg_shim.c; index entries are never dereferenced.
+        .opaque_type("AVCodecContext")
+        .opaque_type("AVIndexEntry")
         .allowlist_type("AV.*")
         .allowlist_type("Sws.*")
         .allowlist_type("SwrContext")
@@ -201,7 +227,9 @@ fn link_ffmpeg(root: &Path) {
         .expect("bindgen failed on the ffmpeg headers");
 
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("ffmpeg_sys.rs");
-    bindings.write_to_file(&out).expect("could not write ffmpeg bindings");
+    bindings
+        .write_to_file(&out)
+        .expect("could not write ffmpeg bindings");
 
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
 }

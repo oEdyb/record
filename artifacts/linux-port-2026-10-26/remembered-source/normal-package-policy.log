@@ -1,0 +1,1 @@
+{ target: 'linux-x64', webAssemblyFiles: 1, modelFiles: 0 }

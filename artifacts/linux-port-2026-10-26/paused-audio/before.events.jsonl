@@ -1,0 +1,14 @@
+{"cursorMetadataSupported":true,"event":"ready","pipewireVersion":"1.6.10","schemaVersion":1,"timestampMs":1793016258829}
+{"event":"audio-source","node":"lab_mic_source_a","requested":"LabMicrophoneA","role":"microphone","schemaVersion":1,"timestampMs":1793016258831}
+{"event":"source-selected","nodeId":122,"positionX":null,"positionY":null,"schemaVersion":1,"sourceKind":"window","timestampMs":1793016281795}
+{"event":"stream-started","height":1080,"nodeId":122,"positionX":null,"positionY":null,"schemaVersion":1,"sourceKind":"window","timestampMs":1793016281856,"width":1920}
+{"code":"window-crop-missing","event":"warning","message":"window supplied no crop; recording the full PipeWire stream","schemaVersion":1,"timestampMs":1793016282009}
+{"event":"encoder-selection","rejected":[],"schemaVersion":1,"timestampMs":1793016282115,"video":"nvenc"}
+{"clipIndex":0,"event":"original-started","key":"microphoneAudioPath","offsetMs":0.0,"path":"/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793016258797-clip-0001-microphone.mov","schemaVersion":1,"timestampMs":1793016282147}
+{"captureBounds":{"height":1080,"width":1920,"x":0,"y":0},"event":"recording-started","schemaVersion":1,"timestampMs":1793016282195}
+{"clipIndex":0,"event":"clip-finalizing","schemaVersion":1,"timestampMs":1793016284196}
+{"clip":{"cursorCaptureMode":"system","durationMs":2100,"index":0,"microphoneAudioOffsetMs":0.0,"microphoneAudioPath":"/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793016258797-clip-0001-microphone.mov","screenVideoPath":"/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793016258797-clip-0001.mp4"},"event":"clip-finalized","schemaVersion":1,"timestampMs":1793016284288}
+{"event":"recording-paused","schemaVersion":1,"timestampMs":1793016284288}
+{"code":"capture-stopped-with-error","event":"error","message":"microphone stream failed in error: defined target not found","schemaVersion":1,"timestampMs":1793016284295}
+{"code":"frames-dropped","event":"warning","message":"9 captured frames were superseded before encoding","schemaVersion":1,"timestampMs":1793016284295}
+{"clips":[{"cursorCaptureMode":"system","durationMs":2100,"index":0,"microphoneAudioOffsetMs":0.0,"microphoneAudioPath":"/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793016258797-clip-0001-microphone.mov","screenVideoPath":"/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793016258797-clip-0001.mp4"}],"event":"recording-stopped","schemaVersion":1,"screenPath":"/home/olle/.local/state/agent-lab/klippt/paused-audio/recording-1793016258797-clip-0001.mp4","timestampMs":1793016284295,"warning":{"code":"final-clip-failed","message":"microphone stream failed in error: defined target not found"}}

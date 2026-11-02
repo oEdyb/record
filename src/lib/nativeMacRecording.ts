@@ -14,6 +14,9 @@ export type RecordStartMark = { stage: string; atMs: number };
 
 export type NativeMacRecordingRequest = {
 	schemaVersion: 1;
+	/** Linux portal selection owns the source; no desktopCapturer id is trusted. */
+	platform?: "linux";
+	deferStart?: boolean;
 	recordingId?: number;
 	/** The renderer's steps since the click, so main can log where start time goes. */
 	startTiming?: RecordStartMark[];
@@ -62,6 +65,49 @@ export type NativeMacRecordingRequest = {
 		screenPath: string;
 		manifestPath?: string;
 	};
+};
+
+export type NativeRecordingAppStopRequest = { recordingId: number; token: string };
+export type RendererCameraContainer = "webm" | "mp4";
+export type NativeRecordingWebcamRegistration = NativeRecordingAppStopRequest & {
+	clipIndex: number;
+	offsetMs: number;
+	container?: RendererCameraContainer;
+};
+
+export function parseNativeRecordingWebcamRegistration(
+	value: unknown,
+): NativeRecordingWebcamRegistration | null {
+	if (!value || typeof value !== "object") return null;
+	if (!("recordingId" in value && "token" in value && "clipIndex" in value && "offsetMs" in value))
+		return null;
+	if (
+		typeof value.recordingId !== "number" ||
+		!Number.isSafeInteger(value.recordingId) ||
+		value.recordingId < 0 ||
+		typeof value.token !== "string" ||
+		!value.token ||
+		typeof value.clipIndex !== "number" ||
+		!Number.isSafeInteger(value.clipIndex) ||
+		value.clipIndex < 0 ||
+		typeof value.offsetMs !== "number" ||
+		!Number.isFinite(value.offsetMs) ||
+		value.offsetMs < 0
+	)
+		return null;
+	const container = "container" in value ? value.container : undefined;
+	if (container !== undefined && container !== "webm" && container !== "mp4") return null;
+	return {
+		...(container ? { container } : {}),
+		recordingId: value.recordingId,
+		token: value.token,
+		clipIndex: value.clipIndex,
+		offsetMs: value.offsetMs,
+	};
+}
+export type NativeRecordingAppStopAcknowledgement = NativeRecordingAppStopRequest & {
+	success: boolean;
+	error?: string;
 };
 
 export type NativeMacOriginalStarted = {
@@ -143,6 +189,7 @@ export type NativeMacCaptureTelemetry = {
 
 export type NativeMacRecordingStartResult = {
 	success: boolean;
+	rendererStop?: NativeRecordingAppStopRequest;
 	recordingId?: number;
 	path?: string;
 	helperPath?: string;

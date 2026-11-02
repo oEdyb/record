@@ -1,0 +1,38 @@
+# Klippt's Linux speech helper for Clean cut.
+#
+# The macOS helper (electron/native/parakeet-stt, Swift + FluidAudio) runs
+# Parakeet TDT v3 on Core ML. This one runs the same model, exported to ONNX,
+# through sherpa-onnx on the CPU, and speaks the same stdin/stdout protocol, so
+# electron/transcript/parakeetProcess.ts drives either one unchanged.
+#
+# Standalone package for the same reason as pipewire-capture: it is a sidecar
+# executable, not part of the compositor workspace. The `static` feature links
+# sherpa-onnx and onnxruntime into the binary, so nothing extra ships beside it.
+
+[package]
+name = "klippt-parakeet-stt"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[workspace]
+
+[[bin]]
+name = "klippt-parakeet-stt"
+path = "src/main.rs"
+
+[dependencies]
+sherpa-onnx = { version = "=1.13.5", default-features = false, features = ["static"] }
+# Pinned with the wrapper: the -sys build script downloads the native archive of its own version.
+sherpa-onnx-sys = { version = "=1.13.5", default-features = false, features = ["static"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+
+[patch.crates-io]
+ureq = { path = "vendor/ureq" }
+
+[dev-dependencies]
+ureq = { version = "=2.12.1", features = ["proxy-from-env"] }

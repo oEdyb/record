@@ -1,0 +1,11 @@
+{
+  "transport": "real Unix sockets and installed niri CLI; typed two-output fixture",
+  "admitted": [
+    true,
+    true
+  ],
+  "harmlessUpdatesRetained": true,
+  "pillMovedOntoCaptureHidden": true,
+  "cameraStayedIndependent": true,
+  "cameraHiddenWhenItsOutputCaptured": true
+}

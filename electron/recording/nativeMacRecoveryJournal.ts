@@ -8,6 +8,7 @@ import {
 } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
 import { writeJsonDurably } from "../filesystem/durableJson";
+import { reindexRecordingOnDisk } from "./webm-seek-index";
 
 export type NativeMacRecoveredSession = RecordingSession & { recoveryWarnings?: string[] };
 
@@ -34,7 +35,7 @@ export async function persistNativeMacRecoveryJournal(
 	session: RecordingSession,
 ): Promise<void> {
 	const normalized = normalizeRecordingSession(session);
-	if (!normalized) throw new Error("Cannot persist an invalid native macOS recovery session.");
+	if (!normalized) throw new Error("Cannot persist an invalid native recovery session.");
 	const envelope: NativeMacRecoveryEnvelope = {
 		schemaVersion: JOURNAL_SCHEMA_VERSION,
 		session: normalized,
@@ -125,6 +126,7 @@ async function discoverUnjournaledClips(
 async function recoverSession(
 	recordingsDir: string,
 	session: RecordingSession,
+	inspectOriginal = inspectHandoffSourceMedia,
 ): Promise<NativeMacRecoveredSession | null> {
 	const recoveredClips: RecordingSessionClip[] = [];
 	const recoveryWarnings: string[] = [];
@@ -185,7 +187,7 @@ async function recoverSession(
 				const extension = path.extname(originalPath);
 				if (
 					!(
-						(mediaType === "video" && extension === ".mov") ||
+						(mediaType === "video" && [".mov", ".webm", ".mp4"].includes(extension)) ||
 						(mediaType === "audio" && [".mov", ".m4a", ".mp4"].includes(extension))
 					) ||
 					path.resolve(originalPath) !== `${stem}-${suffix}${extension}`
@@ -197,7 +199,7 @@ async function recoverSession(
 				const offsetMs = clip[offsetField];
 				if (typeof offsetMs !== "number" || !Number.isFinite(offsetMs) || offsetMs < 0)
 					throw new Error("missing captured source timing");
-				const media = await inspectHandoffSourceMedia(originalPath);
+				const media = await inspectOriginal(originalPath);
 				if (
 					!media.durationSec ||
 					!Number.isFinite(media.durationSec) ||
@@ -308,8 +310,18 @@ export async function restoreLatestNativeMacRecoverySession(
 
 	candidates.sort((left, right) => right.createdAt - left.createdAt);
 	for (const candidate of candidates) {
-		const recovered = await recoverSession(recordingsDir, candidate);
+		const recovered = await recoverSession(recordingsDir, candidate, inspectCrashedOriginal);
 		if (recovered) return recovered;
 	}
 	return null;
+}
+
+/** Startup owns these files exclusively. Live Stop must never replace a camera
+ * file while the renderer's write stream still points at its current inode. */
+async function inspectCrashedOriginal(sourcePath: string) {
+	const media = await inspectHandoffSourceMedia(sourcePath);
+	if (path.extname(sourcePath) !== ".webm" || !media.video || media.durationSec !== null)
+		return media;
+	const repaired = await reindexRecordingOnDisk(sourcePath);
+	return repaired.reindexed ? inspectHandoffSourceMedia(sourcePath) : media;
 }

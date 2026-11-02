@@ -66,6 +66,13 @@ pub enum Event {
         position_y: Option<i32>,
     },
     #[serde(rename_all = "camelCase")]
+    SourceReselected {
+        capture_bounds: CaptureBounds,
+        node_id: u32,
+        source_kind: Option<String>,
+    },
+    SourceSelectionCancelled {},
+    #[serde(rename_all = "camelCase")]
     StreamStarted {
         timestamp_ms: u64,
         node_id: u32,
@@ -157,9 +164,52 @@ pub enum Event {
         encode_ms: f64,
     },
     #[serde(rename_all = "camelCase")]
-    Warning { code: String, message: String },
+    RecordingStarted {
+        capture_bounds: CaptureBounds,
+    },
     #[serde(rename_all = "camelCase")]
-    Error { code: String, message: String },
+    OriginalStarted {
+        clip_index: usize,
+        key: String,
+        path: String,
+        offset_ms: f64,
+    },
+    #[serde(rename_all = "camelCase")]
+    ClipFinalizing {
+        clip_index: usize,
+    },
+    ClipFinalized {
+        clip: RecordingClip,
+    },
+    RecordingPaused {},
+    #[serde(rename_all = "camelCase")]
+    RecordingResumed {
+        clip_index: usize,
+    },
+    RecordingReconfigured {},
+    #[serde(rename_all = "camelCase")]
+    RecordingStopped {
+        screen_path: String,
+        clips: Vec<RecordingClip>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        warning: Option<RecordingWarning>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Warning {
+        code: String,
+        message: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Error {
+        code: String,
+        message: String,
+    },
+    #[serde(rename = "error", rename_all = "camelCase")]
+    ClipResumeRejected {
+        code: &'static str,
+        clip_index: usize,
+        message: String,
+    },
     /// Stage 1 instrumentation. `data` is free-form on purpose: these are
     /// answers to open questions, not a contract anything parses.
     #[serde(rename_all = "camelCase")]
@@ -168,6 +218,38 @@ pub enum Event {
         #[serde(flatten)]
         data: serde_json::Map<String, serde_json::Value>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct RecordingWarning {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingClip {
+    pub index: usize,
+    pub screen_video_path: String,
+    pub duration_ms: u64,
+    pub cursor_capture_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub microphone_audio_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub microphone_audio_offset_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_audio_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_audio_offset_ms: Option<f64>,
 }
 
 /// Writes events as NDJSON. Generic over the sink so the framing can be tested
@@ -229,6 +311,21 @@ pub fn timestamp_ms() -> u64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn paused_audio_rejection_uses_the_shared_correlated_error_contract() {
+        let event = Event::ClipResumeRejected {
+            code: "clip-resume-rejected",
+            clip_index: 2,
+            message: "input missing; still paused".into(),
+        };
+        let line = emit_one(&event, false);
+        let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["event"], "error");
+        assert_eq!(value["code"], "clip-resume-rejected");
+        assert_eq!(value["clipIndex"], 2);
+        assert_eq!(value["schemaVersion"], SCHEMA_VERSION);
+    }
+
     fn emit_one(event: &Event, debug: bool) -> String {
         let mut buffer = Vec::new();
         Emitter::new(&mut buffer, debug).emit(event).expect("emit");
@@ -273,6 +370,23 @@ mod tests {
         assert_eq!(value["timestampMs"], 7);
         assert!(value["pipewireVersion"].is_null());
         assert_eq!(value["cursorMetadataSupported"], false);
+    }
+
+    #[test]
+    fn replacement_reports_its_committed_node_and_source_kind() {
+        let value = parse_one(&Event::SourceReselected {
+            capture_bounds: CaptureBounds {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            node_id: 92,
+            source_kind: Some("monitor".to_owned()),
+        });
+        assert_eq!(value["event"], "source-reselected");
+        assert_eq!(value["nodeId"], 92);
+        assert_eq!(value["sourceKind"], "monitor");
     }
 
     #[test]
@@ -360,7 +474,10 @@ mod tests {
             asset_id: None,
             asset: None,
         });
-        assert_eq!(value["timestampMs"], 1234, "a sample's capture time must not be overwritten");
+        assert_eq!(
+            value["timestampMs"], 1234,
+            "a sample's capture time must not be overwritten"
+        );
     }
 
     #[test]

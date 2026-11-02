@@ -8,6 +8,7 @@
 
 AVStream* sn_fmt_stream(AVFormatContext* s, int i) { return s->streams[i]; }
 unsigned  sn_fmt_nb_streams(AVFormatContext* s)    { return s->nb_streams; }
+int64_t sn_fmt_duration(AVFormatContext* s)        { return s->duration; }
 const char* sn_fmt_stream_metadata(AVFormatContext* s, int i, const char* key) {
     const AVDictionaryEntry* entry = av_dict_get(s->streams[i]->metadata, key, NULL, 0);
     return entry ? entry->value : NULL;

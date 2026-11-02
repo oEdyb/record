@@ -1,0 +1,63 @@
+
+ RUN  v4.1.12 /home/olle/dev/screenrec-linux
+
+ ❯ electron/recording/nativeMacHelperClient.test.ts (42 tests | 1 failed) 24ms
+     × requests a new cursor grant and waits for source adoption 5ms
+ ❯ electron/recording/nativeMacRecordingService.test.ts (74 tests | 1 failed) 1312ms
+     × commits a paused Linux cursor grant only after successful selection 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  electron/recording/nativeMacHelperClient.test.ts > NativeMacHelperClient > requests a new cursor grant and waits for source adoption
+AssertionError: expected "Mock" to be called with arguments: [ Array(1) ]
+
+Received:
+
+  1st Mock call:
+
+  [
+-   "{\"command\":\"select-source\",\"cursor\":{\"mode\":\"editable-overlay\"}}
++   "select-source
+  ",
+  ]
+
+
+Number of calls: 1
+
+ ❯ electron/recording/nativeMacHelperClient.test.ts:49:17
+     47|   const write = vi.spyOn(process.stdin, "write");
+     48|   const selected = client.selectSource("editable-overlay");
+     49|   expect(write).toHaveBeenCalledWith(`${JSON.stringify({ command: "sel…
+       |                 ^
+     50|   emit(process, { event: "source-reselected" });
+     51|   await expect(selected).resolves.toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  electron/recording/nativeMacRecordingService.test.ts > NativeMacRecordingService > commits a paused Linux cursor grant only after successful selection
+AssertionError: expected last "vi.fn()" call to have been called with [ 'system' ]
+
+- Expected
++ Received
+
+- [
+-   "system",
+- ]
++ []
+
+ ❯ electron/recording/nativeMacRecordingService.test.ts:140:31
+    138|   expect(helper.reconfigure).not.toHaveBeenCalled();
+    139|   await expect(service.selectSource("system")).resolves.toMatchObject(…
+    140|   expect(helper.selectSource).toHaveBeenLastCalledWith("system");
+       |                               ^
+    141|   await expect(service.resume({
+    142|    ...request,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 114 passed (116)
+   Start at  12:00:11
+   Duration  1.54s (transform 211ms, setup 24ms, import 242ms, tests 1.34s, environment 0ms)
+

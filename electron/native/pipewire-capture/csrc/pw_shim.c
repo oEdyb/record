@@ -45,6 +45,7 @@
 #include <spa/utils/result.h>
 
 #include "pw_shim.h"
+#include "dmabuf_egl.h"
 
 /* Defined next to osc_map_dmabuf; used earlier, at format negotiation. */
 static int osc_debug_enabled(void);
@@ -53,23 +54,8 @@ static int osc_debug_enabled(void);
 
 #define OSC_PW_SONAME "libpipewire-0.3.so.0"
 
-/*
- * DRM format modifiers, spelled out rather than pulled from <drm/drm_fourcc.h>.
- *
- * They are ABI constants — LINEAR has been 0 and INVALID has been
- * ((1ULL << 56) - 1) since the modifier API was introduced — and taking the
- * header would put libdrm-dev in the build path of every contributor and CI
- * runner for two integers. That is the same trade the dlopen above makes.
- *
- * These two are the ONLY modifiers this helper advertises, and the reason is
- * osc_map_dmabuf(): a linear or implicit buffer can be read through a plain
- * mmap of the dmabuf fd, while a tiled or compression-enabled one cannot — its
- * bytes are not in raster order, so handing them to the encoder would produce a
- * scrambled recording rather than an error. Anything else needs a real GPU
- * import (EGL/gbm), which this helper deliberately does not link.
- */
-#define OSC_DRM_FORMAT_MOD_LINEAR 0ULL
-#define OSC_DRM_FORMAT_MOD_INVALID 0x00ffffffffffffffULL
+/* Only queried explicit single-plane layouts are negotiated with EGL.
+ * Without EGL, only explicit LINEAR can use the CPU mapping fallback. */
 
 /*
  * Mapped dmabuf fds, keyed by fd.
@@ -178,10 +164,13 @@ struct osc_pw_session {
     struct osc_pw_callbacks callbacks;
     struct spa_video_info_raw format;
     int buffer_info_reports;
+    int frame_debug_reports;
     int want_video;
     /* Set from the negotiated format's SPA_VIDEO_FLAG_MODIFIER, which is what
      * decides whether buffers arrive as dmabuf fds or shared memory. */
     int uses_dmabuf;
+    struct osc_dmabuf_egl *egl;
+    int import_failed;
     struct osc_dmabuf_map dmabuf_maps[OSC_MAX_DMABUF_MAPS];
     /* fd whose DMA_BUF_SYNC_START has not been closed by its END yet, or -1.
      * The bracket has to span the on_frame callback, not just osc_read_frame,
@@ -302,6 +291,7 @@ int osc_pw_load(char *err, size_t err_len)
     OSC_LOAD_AUDIO(stream_connect, "pw_stream_connect");
     OSC_LOAD_AUDIO(stream_dequeue_buffer, "pw_stream_dequeue_buffer");
     OSC_LOAD_AUDIO(stream_queue_buffer, "pw_stream_queue_buffer");
+    OSC_LOAD_AUDIO(stream_get_node_id, "pw_stream_get_node_id");
     OSC_LOAD_AUDIO(stream_state_as_string, "pw_stream_state_as_string");
     OSC_LOAD_AUDIO(main_loop_new, "pw_main_loop_new");
     OSC_LOAD_AUDIO(main_loop_destroy, "pw_main_loop_destroy");
@@ -363,74 +353,35 @@ static const struct spa_pod *osc_build_enum_format(struct spa_pod_builder *build
                                       &SPA_FRACTION(240, 1)));
 }
 
-/*
- * The same format, plus SPA_FORMAT_VIDEO_modifier — and the modifier property is
- * the entire reason this second object exists.
- *
- * WHAT BREAKS WITHOUT IT. A compositor that can only produce DMA-BUF publishes
- * its EnumFormat with `VideoModifier` carrying SPA_POD_PROP_FLAG_MANDATORY.
- * spa_pod_filter treats a mandatory producer property that the consumer does not
- * mention as fatal for the WHOLE object:
- *
- *     else if ((p1->flags & SPA_POD_PROP_FLAG_MANDATORY) != 0)
- *             res = -EINVAL;                     (spa/pod/filter.h:352)
- *
- * so every one of its formats is filtered out and the link dies reporting
- * "no more input formats" — issue #287, niri on Arch, reproduced against the
- * vendored headers by osc_pw_enum_format_accepts_dmabuf_producer() below.
- * mutter is not affected because it publishes shm pods too, several of them
- * without any modifier at all.
- *
- * ORDER IS THE SAFETY PROPERTY. osc_pw_start sends the shm object FIRST and this
- * one second, and pw_stream keeps that as a preference order. A compositor that
- * can do shared memory therefore still negotiates shared memory, exactly as
- * before this object existed — GNOME and KDE are bit-for-bit unchanged. Only a
- * producer with nothing to offer but DMA-BUF reaches this fallback.
- *
- * NO SPA_POD_PROP_FLAG_DONT_FIXATE. That flag asks the producer to leave the
- * modifier unresolved so the consumer can pick one after querying its GPU, and
- * it obliges us to renegotiate with a fixated format. We advertise exactly two
- * modifiers, both of which are readable through a plain mmap and neither of
- * which needs a GPU query, so letting the producer fixate is both simpler and
- * one fewer round trip that can go wrong.
- */
-static const struct spa_pod *osc_build_enum_format_dmabuf(struct spa_pod_builder *builder)
+/* A modifier list belongs to ONE DRM/SPA format. Sharing a list across RGB
+ * formats invents unsupported combinations. The producer allocates from the
+ * intersection and then republishes a fixed modifier without DONT_FIXATE.
+ * https://docs.pipewire.org/devel/page_dma_buf.html */
+static const struct spa_pod *osc_build_enum_format_dmabuf(struct spa_pod_builder *builder,
+                                                         uint32_t format,
+                                                         const uint64_t *modifiers,
+                                                         size_t count)
 {
     struct spa_pod_frame object_frame;
     struct spa_pod_frame choice_frame;
-
+    if (count == 0 || count > OSC_DMABUF_MAX_MODIFIERS) return NULL;
     spa_pod_builder_push_object(builder, &object_frame, SPA_TYPE_OBJECT_Format,
                                 SPA_PARAM_EnumFormat);
     spa_pod_builder_add(builder, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
                         SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
-                        SPA_FORMAT_VIDEO_format,
-                        SPA_POD_CHOICE_ENUM_Id(5, SPA_VIDEO_FORMAT_BGRx, SPA_VIDEO_FORMAT_BGRx,
-                                               SPA_VIDEO_FORMAT_RGBx, SPA_VIDEO_FORMAT_BGRA,
-                                               SPA_VIDEO_FORMAT_RGBA),
-                        0);
-
-    /* Built with the explicit prop/choice calls rather than the varargs macro
-     * because the macro has no way to set a property flag, and MANDATORY here is
-     * what tells the producer we genuinely handle modifiers rather than merely
-     * tolerating the key. */
-    spa_pod_builder_prop(builder, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
+                        SPA_FORMAT_VIDEO_format, SPA_POD_Id(format), 0);
+    spa_pod_builder_prop(builder, SPA_FORMAT_VIDEO_modifier,
+        SPA_POD_PROP_FLAG_MANDATORY | (count > 1 ? SPA_POD_PROP_FLAG_DONT_FIXATE : 0));
     spa_pod_builder_push_choice(builder, &choice_frame, SPA_CHOICE_Enum, 0);
-    /* Default first, then every alternative — the default is repeated, same
-     * idiom as SPA_POD_CHOICE_ENUM_Id above. */
-    spa_pod_builder_long(builder, (int64_t)OSC_DRM_FORMAT_MOD_LINEAR);
-    spa_pod_builder_long(builder, (int64_t)OSC_DRM_FORMAT_MOD_LINEAR);
-    spa_pod_builder_long(builder, (int64_t)OSC_DRM_FORMAT_MOD_INVALID);
+    spa_pod_builder_long(builder, (int64_t)modifiers[0]);
+    for (size_t i = 0; i < count; i++) spa_pod_builder_long(builder, (int64_t)modifiers[i]);
     spa_pod_builder_pop(builder, &choice_frame);
-
-    spa_pod_builder_add(
-        builder, SPA_FORMAT_VIDEO_size,
+    spa_pod_builder_add(builder, SPA_FORMAT_VIDEO_size,
         SPA_POD_CHOICE_RANGE_Rectangle(&SPA_RECTANGLE(1920, 1080), &SPA_RECTANGLE(1, 1),
                                        &SPA_RECTANGLE(16384, 16384)),
         SPA_FORMAT_VIDEO_framerate,
         SPA_POD_CHOICE_RANGE_Fraction(&SPA_FRACTION(30, 1), &SPA_FRACTION(0, 1),
-                                      &SPA_FRACTION(240, 1)),
-        0);
-
+                                      &SPA_FRACTION(240, 1)), 0);
     return spa_pod_builder_pop(builder, &object_frame);
 }
 
@@ -512,44 +463,38 @@ int osc_pw_cursor_meta_accepts_producer_size(uint32_t width, uint32_t height)
  * consumer property into -EINVAL for the entire object rather than a merely
  * narrower intersection.
  */
-int osc_pw_enum_format_accepts_dmabuf_producer(int with_modifier, int64_t producer_modifier)
+static int osc_enum_format_accepts_modifier(const struct spa_pod *consumer,
+                                             uint32_t format, uint64_t modifier)
 {
-    uint8_t ours_storage[1024];
-    uint8_t theirs_storage[1024];
-    uint8_t result_storage[2048];
-    struct spa_pod_builder ours = SPA_POD_BUILDER_INIT(ours_storage, sizeof(ours_storage));
+    uint8_t theirs_storage[512], result_storage[4096];
     struct spa_pod_builder theirs = SPA_POD_BUILDER_INIT(theirs_storage, sizeof(theirs_storage));
     struct spa_pod_builder result = SPA_POD_BUILDER_INIT(result_storage, sizeof(result_storage));
     struct spa_pod_frame object_frame;
-    struct spa_pod_frame choice_frame;
     struct spa_pod *filtered = NULL;
-    const struct spa_pod *consumer;
-    const struct spa_pod *producer;
-
-    consumer = with_modifier ? osc_build_enum_format_dmabuf(&ours) : osc_build_enum_format(&ours);
-    if (consumer == NULL) {
-        return -1;
-    }
-
-    spa_pod_builder_push_object(&theirs, &object_frame, SPA_TYPE_OBJECT_Format,
-                                SPA_PARAM_EnumFormat);
+    spa_pod_builder_push_object(&theirs, &object_frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
     spa_pod_builder_add(&theirs, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
-                        SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
-                        SPA_FORMAT_VIDEO_format, SPA_POD_Id(SPA_VIDEO_FORMAT_BGRx), 0);
+        SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+        SPA_FORMAT_VIDEO_format, SPA_POD_Id(format), 0);
     spa_pod_builder_prop(&theirs, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
-    spa_pod_builder_push_choice(&theirs, &choice_frame, SPA_CHOICE_Enum, 0);
-    spa_pod_builder_long(&theirs, producer_modifier);
-    spa_pod_builder_long(&theirs, producer_modifier);
-    spa_pod_builder_pop(&theirs, &choice_frame);
+    spa_pod_builder_long(&theirs, (int64_t)modifier);
     spa_pod_builder_add(&theirs, SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&SPA_RECTANGLE(2560, 1080)),
-                        SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&SPA_FRACTION(59978, 1000)),
-                        0);
-    producer = spa_pod_builder_pop(&theirs, &object_frame);
-    if (producer == NULL) {
-        return -1;
-    }
-
+        SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&SPA_FRACTION(59978, 1000)), 0);
+    const struct spa_pod *producer = spa_pod_builder_pop(&theirs, &object_frame);
+    if (consumer == NULL || producer == NULL) return -1;
     return spa_pod_filter(&result, &filtered, producer, consumer) < 0 ? 0 : 1;
+}
+
+int osc_pw_enum_format_accepts_dmabuf_producer(int with_modifier, int64_t producer_modifier)
+{
+    uint8_t storage[1024];
+    struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(storage, sizeof(storage));
+    /* Hardware-independent fixture: set intersection must work without asking
+     * a test host's GPU, and these values are not universal capabilities. */
+    const uint64_t modifiers[] = { OSC_DRM_FORMAT_MOD_LINEAR, UINT64_C(0x0300000000e08012) };
+    const struct spa_pod *consumer = with_modifier
+        ? osc_build_enum_format_dmabuf(&builder, SPA_VIDEO_FORMAT_BGRx, modifiers, SPA_N_ELEMENTS(modifiers))
+        : osc_build_enum_format(&builder);
+    return osc_enum_format_accepts_modifier(consumer, SPA_VIDEO_FORMAT_BGRx, (uint64_t)producer_modifier);
 }
 
 static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_pod *param)
@@ -559,6 +504,7 @@ static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_p
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
     const struct spa_pod *params[4];
     struct osc_pw_format reported;
+    struct spa_video_info_raw negotiated = {0};
     uint32_t media_type;
     uint32_t media_subtype;
 
@@ -571,9 +517,26 @@ static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_p
     if (media_type != SPA_MEDIA_TYPE_video || media_subtype != SPA_MEDIA_SUBTYPE_raw) {
         return;
     }
-    if (spa_format_video_raw_parse(param, &session->format) < 0) {
+    if (spa_format_video_raw_parse(param, &negotiated) < 0) return;
+    if ((negotiated.flags & SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED) != 0) {
+        if (osc_debug_enabled()) fprintf(stderr, "[osc-dmabuf] waiting for producer modifier fixation\n");
         return;
     }
+    if ((negotiated.flags & SPA_VIDEO_FLAG_MODIFIER) != 0 && session->egl != NULL) {
+        const uint64_t *modifiers;
+        size_t count = osc_dmabuf_egl_modifiers(session->egl,
+            OSC_DRM_FOURCC('X', 'R', '2', '4'), &modifiers);
+        int accepted = 0;
+        for (size_t i = 0; i < count; i++) {
+            if (modifiers[i] == negotiated.modifier) accepted = 1;
+        }
+        if (negotiated.format != SPA_VIDEO_FORMAT_BGRx || !accepted) {
+            if (session->callbacks.on_state != NULL) session->callbacks.on_state(
+                session->callbacks.user, "error", "producer selected an unadvertised DMA-BUF format/modifier");
+            return;
+        }
+    }
+    session->format = negotiated;
     reported.width = (int32_t)session->format.size.width;
     reported.height = (int32_t)session->format.size.height;
     reported.video_format = session->format.format;
@@ -590,6 +553,7 @@ static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_p
      * memory would intersect to nothing.
      */
     session->uses_dmabuf = (session->format.flags & SPA_VIDEO_FLAG_MODIFIER) != 0;
+    session->import_failed = 0;
 
     if (osc_debug_enabled()) {
         fprintf(stderr, "[osc-dmabuf] negotiated %ux%u uses_dmabuf=%d modifier=0x%llx\n",
@@ -651,6 +615,7 @@ static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_p
      * with them. Re-arm the reports so the instrumentation describes the buffer
      * set actually in use rather than a set that no longer exists. */
     session->buffer_info_reports = 0;
+    session->frame_debug_reports = 0;
 
     api.stream_update_params(session->stream, params, SPA_N_ELEMENTS(params));
 }
@@ -659,13 +624,12 @@ static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_p
  * Map a dmabuf fd for CPU reads.
  *
  * This is the cheap import, and it is only correct because of what
- * osc_build_enum_format_dmabuf advertises. A dmabuf whose modifier is LINEAR or
- * INVALID is in raster order, so the bytes behind a plain mmap are the bytes the
+ * osc_build_enum_format_dmabuf advertises. A dmabuf whose modifier is LINEAR
+ * is in raster order, so the bytes behind a plain mmap are the bytes the
  * encoder wants. A tiled or DCC-compressed buffer is not, and reading one this
  * way yields a scrambled image rather than a failure — which is exactly why
- * those modifiers are never offered. The real alternative is an EGL/gbm import,
- * a GPU context and two more link-time dependencies in a helper that
- * deliberately dlopens everything.
+ * those modifiers are never offered. Implicit layouts take the dynamically
+ * loaded EGL reader instead; they never reach this mapping.
  *
  * mmap on a dmabuf fd is optional for the exporter (it requires a .mmap in the
  * dma_buf_ops), so this can legitimately fail on some drivers. It returns NULL
@@ -758,21 +722,22 @@ static void *osc_find_dmabuf_map(struct osc_pw_session *session, int fd)
  * mapping. Skipping it does not fail — it tears, intermittently, which is the
  * worst way for this to be wrong.
  *
- * Best-effort by design: a driver that does not implement the ioctl returns
- * ENOTTY, and refusing the frame over that would be worse than reading it.
+ * A failed synchronization means CPU reads are not established as safe.
  */
-static void osc_dmabuf_sync(int fd, int start)
+static int osc_dmabuf_sync(int fd, int start)
 {
     struct dma_buf_sync sync;
+    int result;
 
     if (fd < 0) {
-        return;
+        return -1;
     }
     memset(&sync, 0, sizeof(sync));
     sync.flags = (start ? DMA_BUF_SYNC_START : DMA_BUF_SYNC_END) | DMA_BUF_SYNC_READ;
-    while (ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync) == -1 && errno == EINTR) {
-        /* retry */
-    }
+    do {
+        result = ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync);
+    } while (result == -1 && errno == EINTR);
+    return result;
 }
 
 static void osc_on_add_buffer(void *userdata, struct pw_buffer *pw_buf)
@@ -787,7 +752,9 @@ static void osc_on_add_buffer(void *userdata, struct pw_buffer *pw_buf)
         return;
     }
     data = &pw_buf->buffer->datas[0];
-    if (data->type != SPA_DATA_DmaBuf) {
+    if (!session->want_video || session->egl != NULL || data->type != SPA_DATA_DmaBuf ||
+        pw_buf->buffer->n_datas != 1 || !session->uses_dmabuf ||
+        session->format.modifier != OSC_DRM_FORMAT_MOD_LINEAR || data->mapoffset != 0) {
         return;
     }
 
@@ -965,6 +932,65 @@ static int osc_read_cursor(const struct spa_buffer *buffer, struct osc_pw_cursor
     return 1;
 }
 
+/* SPA names describe byte order; DRM names describe a little-endian word. */
+static uint32_t osc_drm_fourcc(uint32_t format)
+{
+    switch (format) {
+    case SPA_VIDEO_FORMAT_RGBx: return OSC_DRM_FOURCC('X', 'B', '2', '4');
+    case SPA_VIDEO_FORMAT_BGRx: return OSC_DRM_FOURCC('X', 'R', '2', '4');
+    case SPA_VIDEO_FORMAT_RGBA: return OSC_DRM_FOURCC('A', 'B', '2', '4');
+    case SPA_VIDEO_FORMAT_BGRA: return OSC_DRM_FOURCC('A', 'R', '2', '4');
+    default: return 0;
+    }
+}
+
+static int osc_read_dmabuf_egl(struct osc_pw_session *session, const struct spa_data *data,
+                                struct osc_pw_frame *out)
+{
+    char error[256];
+    int result;
+
+    if (session->import_failed) return 0;
+    result = osc_dmabuf_egl_read(session->egl, (int)data->fd,
+        session->format.size.width, session->format.size.height,
+        osc_drm_fourcc(session->format.format),
+        (uint64_t)data->mapoffset + data->chunk->offset, data->chunk->stride,
+        session->format.modifier, &out->data, &out->size, error, sizeof(error));
+    if (result != 0) {
+        session->import_failed = 1;
+        if (osc_debug_enabled()) fprintf(stderr, "[osc-dmabuf] EGL read failed: %s\n", error);
+        if (session->callbacks.on_state != NULL) {
+            session->callbacks.on_state(session->callbacks.user, "error", error);
+        }
+        return 0;
+    }
+    out->stride = (int32_t)session->format.size.width * 4;
+    out->video_format = SPA_VIDEO_FORMAT_RGBA;
+    return 1;
+}
+
+/* Bounded diagnostics before admission: a rejected frame otherwise looks like
+ * a healthy stream with no encoder. Include all fields used by EGL import. */
+static void osc_debug_frame(struct osc_pw_session *session, const struct spa_buffer *buffer)
+{
+    if (!osc_debug_enabled() || session->frame_debug_reports >= OSC_BUFFER_INFO_REPORTS) return;
+    session->frame_debug_reports++;
+    fprintf(stderr, "[osc-frame] n_datas=%u format=%u egl=%d\n",
+            buffer->n_datas, session->format.format, session->egl != NULL);
+    for (uint32_t i = 0; i < buffer->n_datas && i < 4; i++) {
+        const struct spa_data *data = &buffer->datas[i];
+        fprintf(stderr, "[osc-frame] plane=%u type=%u fd=%lld mapoffset=%u maxsize=%u chunk=%d",
+                i, data->type, (long long)data->fd, data->mapoffset, data->maxsize,
+                data->chunk != NULL);
+        if (data->chunk != NULL) {
+            fprintf(stderr, " offset=%u size=%u stride=%d flags=0x%x",
+                    data->chunk->offset, data->chunk->size, data->chunk->stride,
+                    (unsigned)data->chunk->flags);
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
 /*
  * Extracts the pixels of one buffer. Returns 1 when `out` describes a frame, 0
  * when this buffer carries none.
@@ -991,7 +1017,11 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
     memset(out, 0, sizeof(*out));
     out->pts_ns = -1;
 
-    if (buffer->n_datas < 1) {
+    osc_debug_frame(session, buffer);
+    /* We negotiate one RGB plane and no explicit synchronization metadata.
+     * Extra planes/sync FDs require their own import/synchronization contract;
+     * do not silently ignore them or race a producer's GPU writes. */
+    if (buffer->n_datas != 1) {
         return 0;
     }
     data = &buffer->datas[0];
@@ -999,7 +1029,25 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
         return 0;
     }
 
+    header = spa_buffer_find_meta_data(buffer, SPA_META_Header, sizeof(*header));
+    if ((data->chunk->flags & SPA_CHUNK_FLAG_CORRUPTED) != 0 ||
+        (header != NULL && (header->flags & SPA_META_HEADER_FLAG_CORRUPTED) != 0)) return 0;
+
+    /* GPU import must ignore maxsize and chunk size: producers may set either
+     * to zero. Only CPU reads use those fields to bound a byte-addressed view.
+     * https://docs.pipewire.org/devel/page_dma_buf.html */
+    if (data->type == SPA_DATA_DmaBuf && session->uses_dmabuf &&
+        (session->egl != NULL || session->format.modifier != OSC_DRM_FORMAT_MOD_LINEAR)) {
+        if (!osc_read_dmabuf_egl(session, data, out)) return 0;
+        out->width = (int32_t)session->format.size.width;
+        out->height = (int32_t)session->format.size.height;
+        goto metadata;
+    }
+
     if (data->type == SPA_DATA_DmaBuf) {
+        if (!session->uses_dmabuf || session->format.modifier != OSC_DRM_FORMAT_MOD_LINEAR || data->mapoffset != 0) {
+            return 0;
+        }
         /*
          * pw_stream never populates `datas[0].data` for a dmabuf, so the base
          * pointer comes from our own mapping, established once per buffer in
@@ -1030,7 +1078,7 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
 
     height = (int32_t)session->format.size.height;
     stride = data->chunk->stride;
-    if (stride <= 0 || height <= 0) {
+    if (stride <= 0 || height <= 0 || (uint64_t)stride < (uint64_t)session->format.size.width * 4) {
         return 0;
     }
     /* One short row is one row of garbage in the recording; refuse the whole
@@ -1045,8 +1093,13 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
      * osc_inspect_buffer once that callback has returned.
      */
     if (data->type == SPA_DATA_DmaBuf) {
+        if (osc_dmabuf_sync((int)data->fd, 1) != 0) {
+            if (session->callbacks.on_state != NULL) {
+                session->callbacks.on_state(session->callbacks.user, "error", "DMA-BUF CPU read synchronization failed");
+            }
+            return 0;
+        }
         session->dmabuf_sync_fd = (int)data->fd;
-        osc_dmabuf_sync(session->dmabuf_sync_fd, 1);
     }
 
     out->data = SPA_PTROFF(base, offset, const uint8_t);
@@ -1056,6 +1109,7 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
     out->height = height;
     out->video_format = session->format.format;
 
+metadata:
     header = spa_buffer_find_meta_data(buffer, SPA_META_Header, sizeof(*header));
     if (header != NULL) {
         out->pts_ns = header->pts;
@@ -1191,7 +1245,9 @@ static void osc_inspect_buffer(struct osc_pw_session *session, const struct spa_
          * here rather than inside it because the callback above is what actually
          * touches the pixels, and the window has to cover the read. */
         if (session->dmabuf_sync_fd >= 0) {
-            osc_dmabuf_sync(session->dmabuf_sync_fd, 0);
+            if (osc_dmabuf_sync(session->dmabuf_sync_fd, 0) != 0 && session->callbacks.on_state != NULL) {
+                session->callbacks.on_state(session->callbacks.user, "error", "DMA-BUF CPU read completion failed");
+            }
             session->dmabuf_sync_fd = -1;
         }
     }
@@ -1243,11 +1299,11 @@ struct osc_pw_session *osc_pw_start(int fd, uint32_t node_id, int want_video,
                                     size_t err_len)
 {
     struct osc_pw_session *session;
-    /* Two EnumFormat objects now, and the DMA-BUF one carries an extra choice —
-     * sized so a builder overflow stays impossible rather than merely unlikely. */
-    uint8_t buffer[2048];
+    /* One SHM object and up to 256 explicit modifiers for one BGRx object. */
+    uint8_t buffer[4096];
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
     const struct spa_pod *params[2];
+    uint32_t n_params = 1;
     int result;
 
     if (api_handle == NULL) {
@@ -1310,35 +1366,45 @@ struct osc_pw_session *osc_pw_start(int fd, uint32_t node_id, int want_video,
     api.stream_add_listener(session->stream, &session->stream_listener, &osc_stream_events,
                             session);
 
-    /*
-     * Shared memory FIRST, DMA-BUF second, and the order is the compatibility
-     * guarantee: pw_stream keeps this as a preference list, so a compositor able
-     * to produce shm still picks shm and nothing changes on GNOME or KDE. The
-     * second object only ever wins against a producer that has no shm path —
-     * niri and the other Smithay/wlroots compositors of issue #287, which
-     * previously failed the whole negotiation with "no more input formats".
-     */
+    /* Keep SHM first. DMA-BUF is constrained to BGRx with the compositor GPU's
+     * exact explicit modifier list; never prefer the broken implicit layout. */
     params[0] = osc_build_enum_format(&builder);
-    params[1] = osc_build_enum_format_dmabuf(&builder);
-
-    /*
-     * Test affordance. Every compositor available for local testing — mutter,
-     * sway via xdg-desktop-portal-wlr — offers shm, so params[0] always wins and
-     * the DMA-BUF branch below (osc_map_dmabuf, the DMA_BUF_IOCTL_SYNC bracket,
-     * the dmabuf arm of osc_read_frame) never executes outside niri. Dropping
-     * the shm object leaves the producer no choice, which is the only way to
-     * exercise that code without the compositor from issue #287.
-     *
-     * Never set in production: it would break exactly the compatibility the
-     * ordering above exists to preserve.
-     */
-    if (getenv("OPENSCREEN_PIPEWIRE_FORCE_DMABUF") != NULL) {
-        params[0] = params[1];
+    char egl_error[256];
+    session->egl = osc_dmabuf_egl_create(egl_error, sizeof(egl_error));
+    if (session->egl != NULL) {
+        const uint64_t *modifiers;
+        size_t count = osc_dmabuf_egl_modifiers(session->egl,
+            OSC_DRM_FOURCC('X', 'R', '2', '4'), &modifiers);
+        if (count > 0) {
+            params[n_params++] = osc_build_enum_format_dmabuf(&builder,
+                SPA_VIDEO_FORMAT_BGRx, modifiers, count);
+            if (osc_debug_enabled()) {
+                fprintf(stderr, "[osc-dmabuf] BGRx explicit single-plane modifiers (%zu):", count);
+                for (size_t i = 0; i < count; i++) fprintf(stderr, " 0x%llx", (unsigned long long)modifiers[i]);
+                fprintf(stderr, "\n");
+            }
+        }
+    } else {
+        /* No EGL means no opaque layout. Explicit LINEAR can still use the
+         * existing synchronized CPU mapping path on drivers that support it. */
+        const uint64_t linear = OSC_DRM_FORMAT_MOD_LINEAR;
+        params[n_params++] = osc_build_enum_format_dmabuf(&builder,
+            SPA_VIDEO_FORMAT_BGRx, &linear, 1);
+        if (osc_debug_enabled()) fprintf(stderr, "[osc-dmabuf] EGL unavailable: %s\n", egl_error);
     }
-
-    if (params[0] == NULL || params[1] == NULL) {
-        osc_set_error(err, err_len, "the EnumFormat PODs did not fit their builder");
-        goto fail;
+    if (getenv("OPENSCREEN_PIPEWIRE_FORCE_DMABUF") != NULL) {
+        if (n_params < 2) {
+            osc_set_error(err, err_len, "no single-plane BGRx DMA-BUF modifiers available");
+            goto fail;
+        }
+        params[0] = params[1];
+        n_params = 1;
+    }
+    for (uint32_t i = 0; i < n_params; i++) {
+        if (params[i] == NULL) {
+            osc_set_error(err, err_len, "the EnumFormat PODs did not fit their builder");
+            goto fail;
+        }
     }
 
     /*
@@ -1378,7 +1444,7 @@ struct osc_pw_session *osc_pw_start(int fd, uint32_t node_id, int want_video,
                                 want_video ? (PW_STREAM_FLAG_AUTOCONNECT |
                                               PW_STREAM_FLAG_MAP_BUFFERS)
                                            : PW_STREAM_FLAG_AUTOCONNECT,
-                                params, SPA_N_ELEMENTS(params));
+                                params, n_params);
     if (result < 0) {
         osc_set_error(err, err_len, "pw_stream_connect failed: %s", spa_strerror(result));
         goto fail;
@@ -1406,8 +1472,21 @@ fail:
         api.context_destroy(session->context);
     }
     api.thread_loop_destroy(session->loop);
+    osc_dmabuf_egl_destroy(session->egl);
     free(session);
     return NULL;
+}
+
+static int osc_release_egl_thread(struct spa_loop *loop, bool async, uint32_t seq,
+                                  const void *data, size_t size, void *userdata)
+{
+    struct osc_pw_session *session = userdata;
+    char error[256];
+    (void)loop; (void)async; (void)seq; (void)data; (void)size;
+    if (session->stream != NULL) api.stream_disconnect(session->stream);
+    int result = osc_dmabuf_egl_release_thread(session->egl, error, sizeof(error));
+    if (result != 0) fprintf(stderr, "[osc-dmabuf] %s\n", error);
+    return result;
 }
 
 void osc_pw_stop(struct osc_pw_session *session)
@@ -1416,11 +1495,13 @@ void osc_pw_stop(struct osc_pw_session *session)
         return;
     }
 
+    int result = pw_loop_invoke(api.thread_loop_get_loop(session->loop),
+        osc_release_egl_thread, 0, NULL, 0, true, session);
+    if (result < 0) fprintf(stderr, "[osc-dmabuf] worker release failed: %d\n", result);
     /* pw_thread_loop_stop must be called WITHOUT the lock: it joins the thread. */
     api.thread_loop_stop(session->loop);
 
     if (session->stream != NULL) {
-        api.stream_disconnect(session->stream);
         api.stream_destroy(session->stream);
     }
     /* After stream_destroy: remove_buffer fires during teardown and unmaps most
@@ -1434,5 +1515,60 @@ void osc_pw_stop(struct osc_pw_session *session)
         api.context_destroy(session->context);
     }
     api.thread_loop_destroy(session->loop);
+    osc_dmabuf_egl_destroy(session->egl);
     free(session);
 }
+
+#ifdef OSC_PW_FRAME_TEST
+int osc_pw_test_modifier_pod(struct osc_dmabuf_egl *reader)
+{
+    const uint64_t *modifiers;
+    size_t count = osc_dmabuf_egl_modifiers(reader, OSC_DRM_FOURCC('X','R','2','4'), &modifiers);
+    uint8_t storage[4096];
+    struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(storage, sizeof(storage));
+    const struct spa_pod *pod = osc_build_enum_format_dmabuf(&builder,
+        SPA_VIDEO_FORMAT_BGRx, modifiers, count);
+    const struct spa_pod_prop *property;
+    if (pod == NULL || count == 0) return -1;
+    property = spa_pod_find_prop(pod, NULL, SPA_FORMAT_VIDEO_modifier);
+    if (property == NULL || !(property->flags & SPA_POD_PROP_FLAG_MANDATORY) ||
+        ((property->flags & SPA_POD_PROP_FLAG_DONT_FIXATE) != 0) != (count > 1)) return -1;
+    for (size_t i = 0; i < count; i++) {
+        if (modifiers[i] == OSC_DRM_FORMAT_MOD_INVALID ||
+            osc_enum_format_accepts_modifier(pod, SPA_VIDEO_FORMAT_BGRx, modifiers[i]) != 1 ||
+            osc_enum_format_accepts_modifier(pod, SPA_VIDEO_FORMAT_RGBA, modifiers[i]) != 0) return -1;
+    }
+    if (osc_enum_format_accepts_modifier(pod, SPA_VIDEO_FORMAT_BGRx, OSC_DRM_FORMAT_MOD_INVALID) != 0 ||
+        osc_enum_format_accepts_modifier(pod, SPA_VIDEO_FORMAT_BGRx, UINT64_MAX) != 0) return -1;
+    fprintf(stdout, "PipeWire BGRx POD: %zu queried modifiers, producer fixation, no mixed formats or INVALID passed\n", count);
+    return 0;
+}
+
+/* Linked only by dmabuf_egl.c's native test. Exercise actual admission with
+ * zero CPU byte counts, including the corruption guard and the SHM exception. */
+int osc_pw_test_dmabuf_admission(struct osc_dmabuf_egl *reader, int fd, uint32_t fourcc,
+                                 int32_t stride, uint64_t modifier)
+{
+    struct osc_pw_session session = { .want_video = 1, .uses_dmabuf = 1, .egl = reader };
+    struct spa_chunk chunk = { .stride = stride, .flags = SPA_CHUNK_FLAG_CORRUPTED };
+    struct spa_data plane = { .type = SPA_DATA_DmaBuf, .fd = fd, .chunk = &chunk };
+    struct spa_buffer buffer = { .n_datas = 1, .datas = &plane };
+    struct osc_pw_frame frame;
+    const uint32_t formats[] = { SPA_VIDEO_FORMAT_BGRx, SPA_VIDEO_FORMAT_RGBx,
+                                 SPA_VIDEO_FORMAT_BGRA, SPA_VIDEO_FORMAT_RGBA };
+    session.format.size = SPA_RECTANGLE(64, 64);
+    session.format.modifier = modifier;
+    for (size_t i = 0; i < SPA_N_ELEMENTS(formats); i++) {
+        if (osc_drm_fourcc(formats[i]) == fourcc) session.format.format = formats[i];
+    }
+    if (osc_read_frame(&session, &buffer, &frame) != 0) return -1;
+    chunk.flags = 0;
+    if (osc_read_frame(&session, &buffer, &frame) != 1 || frame.size != 64 * 64 * 4 ||
+        frame.video_format != SPA_VIDEO_FORMAT_RGBA) return -1;
+    plane.type = SPA_DATA_MemPtr;
+    plane.data = (void *)frame.data;
+    plane.maxsize = (uint32_t)frame.size;
+    if (osc_read_frame(&session, &buffer, &frame) != 0) return -1;
+    return 0;
+}
+#endif

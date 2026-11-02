@@ -1,0 +1,51 @@
+{
+  "packagedHelperSha256": "831f5b5b5e10a82921733d702d81bfc5bd992546a82b2c493b8078712804cc06",
+  "phases": [
+    {
+      "phase": "choose",
+      "selectedSeconds": 8.946,
+      "recordingStarted": true,
+      "clips": [
+        {
+          "cursorCaptureMode": "system",
+          "durationMs": 2100,
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/klippt-verification/niri-grant-20261026/choose-clip-0001.mp4"
+        }
+      ],
+      "consentRequired": true,
+      "sourceKind": "window",
+      "exitCode": 0,
+      "grantSaved": true,
+      "grantPermissions": "0o600",
+      "fullyDecodes": true
+    },
+    {
+      "phase": "reuse",
+      "selectedSeconds": 0.028,
+      "recordingStarted": true,
+      "clips": [
+        {
+          "cursorCaptureMode": "system",
+          "durationMs": 2100,
+          "index": 0,
+          "screenVideoPath": "/home/olle/.local/state/klippt-verification/niri-grant-20261026/reuse-clip-0001.mp4"
+        }
+      ],
+      "consentRequired": false,
+      "sourceKind": "window",
+      "exitCode": 0,
+      "grantSaved": true,
+      "grantPermissions": "0o600",
+      "fullyDecodes": true
+    }
+  ],
+  "niriVersion": "niri 26.04 (8ed0da4)",
+  "desktopEntryInstalled": true,
+  "focusRestored": true,
+  "ownedWindowsClosed": true,
+  "scope": "Exact packaged helper on physical Niri: owned-window portal grant reuse only; no audio/camera/full workflow pass.",
+  "pointerAndClipboardUntouched": true,
+  "initialRegistryError": "Could not register app ID: App info not found for 'co.dyberg.klippt'",
+  "launcher": "/home/olle/.local/share/applications/co.dyberg.klippt.desktop"
+}

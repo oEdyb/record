@@ -1,0 +1,74 @@
+{
+  "session": "recording-1793129353899.session.json",
+  "clips": [
+    {
+      "index": 0,
+      "durationMs": 2716,
+      "media": {
+        "screenVideoPath": {
+          "width": 2560,
+          "height": 1440,
+          "avg_frame_rate": "60/1",
+          "nb_read_frames": "163"
+        },
+        "webcamVideoPath": {
+          "width": 1920,
+          "height": 1080,
+          "avg_frame_rate": "110000/1829",
+          "nb_read_frames": "165"
+        }
+      },
+      "hudRegion": {
+        "frames": 163,
+        "maxFrameMeanAbsoluteErrorAgainstUnobstructedDesktop": 1.335048426150121,
+        "maxRedPixelsPerFrame": 0
+      }
+    },
+    {
+      "index": 1,
+      "durationMs": 1750,
+      "media": {
+        "screenVideoPath": {
+          "width": 2560,
+          "height": 1440,
+          "avg_frame_rate": "60/1",
+          "nb_read_frames": "105"
+        },
+        "webcamVideoPath": {
+          "width": 1920,
+          "height": 1080,
+          "avg_frame_rate": "3180000/52967",
+          "nb_read_frames": "106"
+        }
+      },
+      "hudRegion": {
+        "frames": 105,
+        "maxFrameMeanAbsoluteErrorAgainstUnobstructedDesktop": 1.335048426150121,
+        "maxRedPixelsPerFrame": 0
+      }
+    },
+    {
+      "index": 2,
+      "durationMs": 1750,
+      "media": {
+        "screenVideoPath": {
+          "width": 2560,
+          "height": 1440,
+          "avg_frame_rate": "60/1",
+          "nb_read_frames": "105"
+        },
+        "webcamVideoPath": {
+          "width": 1920,
+          "height": 1080,
+          "avg_frame_rate": "36000/599",
+          "nb_read_frames": "102"
+        }
+      },
+      "hudRegion": {
+        "frames": 105,
+        "maxFrameMeanAbsoluteErrorAgainstUnobstructedDesktop": 1.335048426150121,
+        "maxRedPixelsPerFrame": 0
+      }
+    }
+  ]
+}

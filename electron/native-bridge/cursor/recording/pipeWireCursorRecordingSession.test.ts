@@ -174,24 +174,21 @@ describe("PipeWireCursorRecordingSession", () => {
 		});
 	});
 
-	it("clamps out-of-range positions and preserves the helper's visibility flag", async () => {
+	it("holds the last on-stream position for samples the helper marks hidden", async () => {
 		const session = newSession();
 		await startReady(session);
-		helper.emitEvent({
-			event: "cursor-sample",
-			timestampMs: 2_000,
-			x: -40,
-			y: 5_000,
-			width: 1920,
-			height: 1080,
-			visible: false,
-		});
+		const base = { event: "cursor-sample" as const, width: 1920, height: 1080 };
+		// Hidden before any on-stream position: nothing to hold, so nothing is kept.
+		helper.emitEvent({ ...base, timestampMs: 1_900, x: -40, y: 5_000, visible: false });
+		helper.emitEvent({ ...base, timestampMs: 2_000, x: 1920, y: 0, visible: true });
+		helper.emitEvent({ ...base, timestampMs: 2_100, x: -40, y: 5_000, visible: false });
 		await flushStdout();
 
-		const [sample] = (await session.stop()).samples;
-		expect(sample.cx).toBe(0);
-		expect(sample.cy).toBe(1);
-		expect(sample.visible).toBe(false);
+		const samples = (await session.stop()).samples;
+		expect(samples.map(({ cx, cy, visible }) => [cx, cy, visible])).toEqual([
+			[1, 0, true],
+			[1, 0, false],
+		]);
 	});
 
 	it("never reports a click: Wayland exposes no mouse buttons to this process", async () => {

@@ -4,10 +4,9 @@
 //! matched pair; the compiler cannot check that for you, so if you touch one,
 //! touch the other.
 //!
-//! Nothing here interprets PipeWire semantics — the shim already validated the
-//! metadata offsets. This module's only jobs are (1) owning the raw handle
-//! safely and (2) turning callback pointers into channel messages without ever
-//! letting a Rust panic unwind into C.
+//! The C shim validates metadata layout. This module owns raw handles, reports
+//! unexpected audio disconnection, and turns callback pointers into channel
+//! messages without ever letting a Rust panic unwind into C.
 
 use std::ffi::{c_char, c_void, CStr};
 use std::os::fd::{IntoRawFd, OwnedFd};
@@ -221,15 +220,17 @@ impl FrameMailbox {
     ///
     /// Runs on the PipeWire thread and must stay short: the buffer it reads from
     /// is re-queued to the compositor the moment the callback returns.
-    fn put(&self, source: &[u8], meta: &RawFrame) {
+    fn put(&self, source: &[u8], meta: &RawFrame) -> bool {
         use std::sync::atomic::Ordering;
 
         let Ok(mut inner) = self.inner.lock() else {
             // A poisoned lock means a previous holder panicked. Dropping the
             // frame is the only safe option, and it is already counted below.
             self.dropped.fetch_add(1, Ordering::Relaxed);
-            return;
+            return false;
         };
+
+        let notify = inner.pending.is_none();
 
         // Recycle, in order of preference: the buffer of the frame we are about
         // to discard, then the one the consumer handed back, then a new one.
@@ -259,6 +260,7 @@ impl FrameMailbox {
             has_crop: meta.has_crop != 0,
         });
         self.received.fetch_add(1, Ordering::Relaxed);
+        notify
     }
 
     /// Takes the pending frame, if any. Returns `None` when the consumer was
@@ -287,92 +289,12 @@ impl FrameMailbox {
     }
 }
 
-/// Interleaved samples waiting to be encoded.
-///
-/// UNLIKE THE VIDEO MAILBOX, THIS IS A QUEUE. A dropped video frame costs one
-/// duplicated picture that nobody notices; a dropped audio buffer is an audible
-/// click. So samples accumulate rather than being replaced, and the cap exists
-/// only as a backstop against a consumer that has stopped consuming entirely —
-/// 48 kHz stereo f32 is 384 KB/s, so two seconds is under a megabyte.
-///
-/// Overflow drops the OLDEST samples. If the encoder is that far behind, the
-/// recent audio is the part still worth keeping, and the alternative — refusing
-/// new samples — would freeze the track at the moment of the stall and leave
-/// everything after it misaligned.
-#[derive(Debug)]
-pub struct AudioRing {
-    inner: std::sync::Mutex<std::collections::VecDeque<f32>>,
-    capacity: usize,
-    dropped: std::sync::atomic::AtomicU64,
-}
-
-impl AudioRing {
-    pub fn new(seconds: usize, sample_rate: usize, channels: usize) -> Self {
-        Self {
-            inner: std::sync::Mutex::new(std::collections::VecDeque::new()),
-            capacity: seconds * sample_rate * channels,
-            dropped: std::sync::atomic::AtomicU64::new(0),
-        }
-    }
-
-    fn push(&self, samples: &[f32]) {
-        use std::sync::atomic::Ordering;
-
-        let Ok(mut queue) = self.inner.lock() else {
-            self.dropped.fetch_add(samples.len() as u64, Ordering::Relaxed);
-            return;
-        };
-        queue.extend(samples.iter().copied());
-        if queue.len() > self.capacity {
-            let excess = queue.len() - self.capacity;
-            queue.drain(..excess);
-            self.dropped.fetch_add(excess as u64, Ordering::Relaxed);
-        }
-    }
-
-    /// Moves everything queued into `out`, appending.
-    pub fn drain_into(&self, out: &mut Vec<f32>) {
-        let Ok(mut queue) = self.inner.lock() else {
-            return;
-        };
-        out.reserve(queue.len());
-        out.extend(queue.drain(..));
-    }
-
-    /// Discards everything queued, and forgets any overflow so far.
-    ///
-    /// Called when the video epoch is set and on resume: audio captured before
-    /// the first frame, or during a pause, belongs to no part of the recording,
-    /// and keeping it would offset the whole track.
-    ///
-    /// Resetting `dropped` is the point, not an afterthought. The stream is
-    /// opened before the portal picker is raised, so it records for however long
-    /// the user takes to click — easily past the ring's two-second cap. Counting
-    /// that overflow would report "the encoder could not keep up" on every
-    /// single recording, for audio that was always going to be thrown away.
-    pub fn clear(&self) {
-        if let Ok(mut queue) = self.inner.lock() {
-            queue.clear();
-        }
-        self.dropped.store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    pub fn dropped_samples(&self) -> u64 {
-        self.dropped.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Feeds samples as the PipeWire callback would. Test-only: in the shipped
-    /// binary the only writer is `on_audio_samples`.
-    #[cfg(test)]
-    pub fn push_for_test(&self, samples: &[f32]) {
-        self.push(samples);
-    }
-}
+pub use crate::audio_ring::AudioRing;
 
 #[repr(C)]
 struct RawAudioCallbacks {
     user: *mut c_void,
-    on_samples: extern "C" fn(*mut c_void, *const f32, u32),
+    on_samples: extern "C" fn(*mut c_void, *const f32, u32, u64),
     on_state: extern "C" fn(*mut c_void, *const c_char, *const c_char),
 }
 
@@ -429,7 +351,9 @@ pub fn list_audio_sources() -> Result<Vec<AudioSourceInfo>, String> {
         return Err(take_error(&err));
     }
     // SAFETY: the C side always NUL-terminates within the buffer it was given.
-    let text = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_string_lossy().into_owned();
+    let text = unsafe { CStr::from_ptr(buffer.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
     Ok(text
         .split('\u{1e}')
         .filter(|record| !record.is_empty())
@@ -449,13 +373,22 @@ pub type AudioStateSink = Box<dyn Fn(String, Option<String>) + Send>;
 struct AudioCallbackState {
     ring: std::sync::Arc<AudioRing>,
     on_state: AudioStateSink,
+    stopping: std::sync::atomic::AtomicBool,
+    received_samples: std::sync::atomic::AtomicBool,
+    failure: std::sync::Mutex<Option<String>>,
 }
 
 /// One running audio capture stream. Dropping it joins its PipeWire thread.
 pub struct AudioSession {
     raw: *mut RawAudioSession,
-    _state: Box<AudioCallbackState>,
+    state: Box<AudioCallbackState>,
 }
+
+// SAFETY: the C handle owns a PipeWire thread loop, not a thread-local resource.
+// Moving the owner keeps its boxed callback address stable. Readiness accesses
+// only atomic/mutex fields; Drop joins the callback loop before freeing the box.
+// This permits worker-to-command-loop transfer, not concurrent use (Sync).
+unsafe impl Send for AudioSession {}
 
 impl AudioSession {
     /// `target` names a specific PipeWire node, or `None` for the session
@@ -476,7 +409,13 @@ impl AudioSession {
             ),
             None => None,
         };
-        let state = Box::new(AudioCallbackState { ring, on_state });
+        let state = Box::new(AudioCallbackState {
+            ring,
+            on_state,
+            stopping: std::sync::atomic::AtomicBool::new(false),
+            received_samples: std::sync::atomic::AtomicBool::new(false),
+            failure: std::sync::Mutex::new(None),
+        });
         let callbacks = RawAudioCallbacks {
             user: &*state as *const AudioCallbackState as *mut c_void,
             on_samples: on_audio_samples,
@@ -489,7 +428,9 @@ impl AudioSession {
         // every callback.
         let raw = unsafe {
             osc_pw_audio_start(
-                target_c.as_ref().map_or(std::ptr::null(), |name| name.as_ptr()),
+                target_c
+                    .as_ref()
+                    .map_or(std::ptr::null(), |name| name.as_ptr()),
                 i32::from(capture_sink),
                 rate,
                 channels,
@@ -501,12 +442,31 @@ impl AudioSession {
         if raw.is_null() {
             return Err(take_error(&err));
         }
-        Ok(Self { raw, _state: state })
+        Ok(Self { raw, state })
+    }
+
+    /// Connection alone is insufficient: a replacement must produce real PCM.
+    pub fn readiness(&self) -> Result<bool, String> {
+        let failure = self
+            .state
+            .failure
+            .lock()
+            .map_err(|_| "audio state lock is poisoned")?;
+        if let Some(message) = failure.as_ref() {
+            return Err(message.clone());
+        }
+        Ok(self
+            .state
+            .received_samples
+            .load(std::sync::atomic::Ordering::Acquire))
     }
 }
 
 impl Drop for AudioSession {
     fn drop(&mut self) {
+        self.state
+            .stopping
+            .store(true, std::sync::atomic::Ordering::Release);
         // SAFETY: `raw` came from osc_pw_audio_start and is stopped exactly once.
         unsafe { osc_pw_audio_stop(self.raw) };
     }
@@ -525,7 +485,7 @@ where
     let _ = catch_unwind(AssertUnwindSafe(|| body(state)));
 }
 
-extern "C" fn on_audio_samples(user: *mut c_void, samples: *const f32, count: u32) {
+extern "C" fn on_audio_samples(user: *mut c_void, samples: *const f32, count: u32, cycle_ns: u64) {
     with_audio_state(user, |state| {
         if samples.is_null() || count == 0 {
             return;
@@ -533,7 +493,10 @@ extern "C" fn on_audio_samples(user: *mut c_void, samples: *const f32, count: u3
         // SAFETY: the shim clamped `count` against the buffer's mapped size
         // before the call, and the mapping outlives it.
         let slice = unsafe { std::slice::from_raw_parts(samples, count as usize) };
-        state.ring.push(slice);
+        state.ring.push_at(slice, cycle_ns);
+        state
+            .received_samples
+            .store(true, std::sync::atomic::Ordering::Release);
     });
 }
 
@@ -544,14 +507,29 @@ extern "C" fn on_audio_state(user: *mut c_void, state_name: *const c_char, error
         } else {
             // SAFETY: libpipewire's pw_stream_state_as_string returns a static
             // NUL-terminated string.
-            unsafe { CStr::from_ptr(state_name) }.to_string_lossy().into_owned()
+            unsafe { CStr::from_ptr(state_name) }
+                .to_string_lossy()
+                .into_owned()
         };
         let error = if error.is_null() {
             None
         } else {
             // SAFETY: non-NULL implies a NUL-terminated string that outlives the call.
-            Some(unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned())
+            Some(
+                unsafe { CStr::from_ptr(error) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         };
+        let error = error.or_else(|| {
+            (name == "unconnected" && !state.stopping.load(std::sync::atomic::Ordering::Acquire))
+                .then(|| "the audio source disconnected".to_owned())
+        });
+        if let Some(message) = &error {
+            if let Ok(mut failure) = state.failure.lock() {
+                failure.get_or_insert_with(|| message.clone());
+            }
+        }
         (state.on_state)(name, error);
     });
 }
@@ -584,7 +562,11 @@ pub fn library_version() -> Option<String> {
         return None;
     }
     // SAFETY: non-NULL implies a NUL-terminated string from pw_get_library_version.
-    Some(unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned())
+    Some(
+        unsafe { CStr::from_ptr(raw) }
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 /// Would our SPA_META_Cursor declaration survive negotiation against a producer
@@ -608,7 +590,9 @@ pub const DRM_FORMAT_MOD_INVALID: i64 = 0x00ff_ffff_ffff_ffff;
 #[cfg(test)]
 pub fn enum_format_accepts_dmabuf_producer(with_modifier: bool, producer_modifier: i64) -> i32 {
     // SAFETY: no arguments to validate; the shim builds and frees its own PODs.
-    unsafe { osc_pw_enum_format_accepts_dmabuf_producer(i32::from(with_modifier), producer_modifier) }
+    unsafe {
+        osc_pw_enum_format_accepts_dmabuf_producer(i32::from(with_modifier), producer_modifier)
+    }
 }
 
 /// SPA enum values as compiled from the vendored headers.
@@ -751,8 +735,9 @@ extern "C" fn on_frame(user: *mut c_void, frame: *const RawFrame) {
         // the callback, `rows <= size` was just checked, and the mapping stays
         // live until this returns.
         let pixels = unsafe { std::slice::from_raw_parts(frame.data, rows) };
-        mailbox.put(pixels, frame);
-        (state.sink)(StreamEvent::FrameReady);
+        if mailbox.put(pixels, frame) {
+            (state.sink)(StreamEvent::FrameReady);
+        }
     });
 }
 
@@ -770,7 +755,9 @@ extern "C" fn on_buffer_info(
         } else {
             // SAFETY: the shim always passes a NUL-terminated stack buffer that
             // outlives the callback.
-            unsafe { CStr::from_ptr(metas) }.to_string_lossy().into_owned()
+            unsafe { CStr::from_ptr(metas) }
+                .to_string_lossy()
+                .into_owned()
         };
         sink(StreamEvent::BufferInfo {
             data_type,
@@ -790,25 +777,23 @@ extern "C" fn on_cursor(user: *mut c_void, cursor: *const RawCursor) {
         // SAFETY: non-NULL for the duration of the callback, by contract.
         let cursor = unsafe { &*cursor };
 
-        let bitmap = if cursor.has_bitmap != 0
-            && !cursor.bitmap_data.is_null()
-            && cursor.bitmap_len > 0
-        {
-            // SAFETY: the shim validated that `bitmap_len` bytes starting at
-            // `bitmap_data` lie inside the metadata block before setting
-            // has_bitmap; the region stays mapped until the callback returns.
-            let pixels =
-                unsafe { std::slice::from_raw_parts(cursor.bitmap_data, cursor.bitmap_len) };
-            Some(CursorBitmap {
-                format: cursor.bitmap_format,
-                width: cursor.bitmap_width,
-                height: cursor.bitmap_height,
-                stride: cursor.bitmap_stride,
-                pixels: pixels.to_vec(),
-            })
-        } else {
-            None
-        };
+        let bitmap =
+            if cursor.has_bitmap != 0 && !cursor.bitmap_data.is_null() && cursor.bitmap_len > 0 {
+                // SAFETY: the shim validated that `bitmap_len` bytes starting at
+                // `bitmap_data` lie inside the metadata block before setting
+                // has_bitmap; the region stays mapped until the callback returns.
+                let pixels =
+                    unsafe { std::slice::from_raw_parts(cursor.bitmap_data, cursor.bitmap_len) };
+                Some(CursorBitmap {
+                    format: cursor.bitmap_format,
+                    width: cursor.bitmap_width,
+                    height: cursor.bitmap_height,
+                    stride: cursor.bitmap_stride,
+                    pixels: pixels.to_vec(),
+                })
+            } else {
+                None
+            };
 
         sink(StreamEvent::Cursor(CursorEvent {
             x: cursor.x,
@@ -828,7 +813,11 @@ extern "C" fn on_state(user: *mut c_void, state: *const c_char, error: *const c_
                 None
             } else {
                 // SAFETY: libpipewire hands us NUL-terminated static/owned strings.
-                Some(unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned())
+                Some(
+                    unsafe { CStr::from_ptr(raw) }
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             }
         };
         sink(StreamEvent::State {
@@ -903,7 +892,8 @@ mod tests {
     /// and that would mean GNOME had quietly moved to the DMA-BUF path.
     #[test]
     fn enum_format_survives_a_dmabuf_only_producer() {
-        for modifier in [DRM_FORMAT_MOD_LINEAR, DRM_FORMAT_MOD_INVALID] {
+        // The offline producer fixture represents queried explicit GPU layouts.
+        for modifier in [DRM_FORMAT_MOD_LINEAR, 0x0300_0000_00e0_8012] {
             assert_eq!(
                 enum_format_accepts_dmabuf_producer(false, modifier),
                 0,
@@ -917,6 +907,12 @@ mod tests {
             );
         }
 
+        assert_eq!(
+            enum_format_accepts_dmabuf_producer(true, DRM_FORMAT_MOD_INVALID),
+            0,
+            "implicit layouts must not displace queried explicit modifiers"
+        );
+
         // The advertised modifier set is a real set, not a wildcard: a tiled or
         // compressed buffer cannot be read through a plain mmap, so it must fail
         // negotiation rather than be accepted and decoded into garbage.
@@ -927,6 +923,33 @@ mod tests {
             "a modifier we cannot mmap must not intersect — accepting it would ship \
              a scrambled recording instead of an error"
         );
+    }
+
+    #[test]
+    fn frame_mailbox_coalesces_notifications_until_consumed() {
+        let mailbox = FrameMailbox::default();
+        let meta = RawFrame {
+            data: std::ptr::null(),
+            size: 4,
+            stride: 4,
+            width: 1,
+            height: 1,
+            video_format: 0,
+            pts_ns: 0,
+            crop_x: 0,
+            crop_y: 0,
+            crop_width: 1,
+            crop_height: 1,
+            has_crop: 0,
+        };
+        assert!(mailbox.put(&[1; 4], &meta));
+        for _ in 0..1000 {
+            assert!(!mailbox.put(&[2; 4], &meta));
+        }
+        assert_eq!(mailbox.received(), 1001);
+        assert_eq!(mailbox.dropped(), 1000);
+        assert_eq!(mailbox.take().expect("pending frame").pixels, [2; 4]);
+        assert!(mailbox.put(&[3; 4], &meta));
     }
 
     /// End-to-end exercise of the PipeWire half with NO portal involved.
@@ -965,8 +988,8 @@ mod tests {
 
         load().expect("libpipewire must load");
         let runtime = std::env::var("XDG_RUNTIME_DIR").expect("XDG_RUNTIME_DIR");
-        let socket = UnixStream::connect(format!("{runtime}/pipewire-0"))
-            .expect("PipeWire daemon socket");
+        let socket =
+            UnixStream::connect(format!("{runtime}/pipewire-0")).expect("PipeWire daemon socket");
 
         let (sender, receiver) = mpsc::channel();
         let session = Session::start(
@@ -995,7 +1018,12 @@ mod tests {
         while std::time::Instant::now() < observe_until {
             match receiver.recv_timeout(Duration::from_millis(250)) {
                 Ok(StreamEvent::Format(value)) => {
-                    println!("[{:>5}ms] format {}x{}", stamp(std::time::Instant::now()), value.width, value.height);
+                    println!(
+                        "[{:>5}ms] format {}x{}",
+                        stamp(std::time::Instant::now()),
+                        value.width,
+                        value.height
+                    );
                     format = Some(value);
                 }
                 Ok(StreamEvent::BufferInfo {
@@ -1022,7 +1050,10 @@ mod tests {
                     );
                 }
                 Ok(StreamEvent::Cursor(cursor)) => {
-                    println!("[{:>5}ms] cursor {cursor:?}", stamp(std::time::Instant::now()));
+                    println!(
+                        "[{:>5}ms] cursor {cursor:?}",
+                        stamp(std::time::Instant::now())
+                    );
                 }
                 // Unreachable: this session was started with no mailbox, so the
                 // C side was never asked for frames. Matched rather than
@@ -1036,11 +1067,20 @@ mod tests {
         // Teardown, watched. Whatever the stream reports while being stopped is
         // what a maintainer's log will show at the end of every clean run, so it
         // must not be mistaken for a failure.
-        println!("[{:>5}ms] -- dropping session --", stamp(std::time::Instant::now()));
+        println!(
+            "[{:>5}ms] -- dropping session --",
+            stamp(std::time::Instant::now())
+        );
         drop(session);
-        println!("[{:>5}ms] -- session dropped --", stamp(std::time::Instant::now()));
+        println!(
+            "[{:>5}ms] -- session dropped --",
+            stamp(std::time::Instant::now())
+        );
         while let Ok(event) = receiver.recv_timeout(Duration::from_millis(250)) {
-            println!("[{:>5}ms] after-drop {event:?}", stamp(std::time::Instant::now()));
+            println!(
+                "[{:>5}ms] after-drop {event:?}",
+                stamp(std::time::Instant::now())
+            );
         }
 
         let format = format.expect("param_changed must deliver a negotiated format");
@@ -1056,6 +1096,107 @@ mod tests {
 
 #[cfg(test)]
 mod source_tests {
+    #[test]
+    fn audio_peer_admission_checks_the_actual_c_callbacks_offline() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let scratch =
+            std::env::temp_dir().join(format!("klippt-audio-peer-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&scratch).unwrap();
+        let binary = scratch.join("peer-tests");
+        let result = (|| -> Result<(), String> {
+            let built = std::process::Command::new("cc")
+                .args([
+                    "-std=gnu11",
+                    "-O0",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-isystem",
+                ])
+                .arg(root.join("vendor/pipewire-1.0.5/include"))
+                .arg(root.join("csrc/pw_audio_peer_tests.c"))
+                .arg("-o")
+                .arg(&binary)
+                .output()
+                .map_err(|error| format!("could not compile audio peer tests: {error}"))?;
+            if !built.status.success() {
+                return Err(String::from_utf8_lossy(&built.stderr).into_owned());
+            }
+            let tested = std::process::Command::new(&binary)
+                .output()
+                .map_err(|error| format!("could not run audio peer tests: {error}"))?;
+            if !tested.status.success() {
+                return Err(String::from_utf8_lossy(&tested.stderr).into_owned());
+            }
+            Ok(())
+        })();
+        let cleanup = std::fs::remove_dir_all(&scratch);
+        result.expect("audio peer callback regressions");
+        cleanup.expect("remove the owned audio peer test directory");
+    }
+
+    #[test]
+    fn audio_readiness_requires_pcm_and_never_masks_a_later_failure() {
+        use std::sync::{atomic::AtomicBool, Arc, Mutex};
+        let state = Box::new(super::AudioCallbackState {
+            ring: Arc::new(super::AudioRing::new(1, 48000, 2)),
+            on_state: Box::new(|_, _| {}),
+            stopping: AtomicBool::new(false),
+            received_samples: AtomicBool::new(false),
+            failure: Mutex::new(None),
+        });
+        let session = super::AudioSession {
+            raw: std::ptr::null_mut(),
+            state,
+        };
+        let user = std::ptr::from_ref(&*session.state).cast_mut().cast();
+        assert!(!session.readiness().unwrap());
+        super::on_audio_state(user, c"streaming".as_ptr(), std::ptr::null());
+        assert!(!session.readiness().unwrap());
+        let silence = [0_f32; 4];
+        super::on_audio_samples(user, silence.as_ptr(), silence.len() as u32, 0);
+        assert!(session.readiness().unwrap());
+        super::on_audio_state(user, c"unconnected".as_ptr(), std::ptr::null());
+        assert_eq!(
+            session.readiness(),
+            Err("the audio source disconnected".into())
+        );
+    }
+
+    #[test]
+    fn unexpected_audio_disconnect_is_reported_but_normal_teardown_is_not() {
+        use std::sync::{atomic::Ordering, Arc, Mutex};
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let received = events.clone();
+        let state = super::AudioCallbackState {
+            ring: Arc::new(super::AudioRing::new(1, 48000, 2)),
+            on_state: Box::new(move |name, error| received.lock().unwrap().push((name, error))),
+            stopping: std::sync::atomic::AtomicBool::new(false),
+            received_samples: std::sync::atomic::AtomicBool::new(false),
+            failure: std::sync::Mutex::new(None),
+        };
+        let user = std::ptr::from_ref(&state).cast_mut().cast();
+        super::on_audio_state(user, c"unconnected".as_ptr(), std::ptr::null());
+        super::on_audio_state(user, c"error".as_ptr(), c"permission denied".as_ptr());
+        state.stopping.store(true, Ordering::Release);
+        super::on_audio_state(user, c"unconnected".as_ptr(), std::ptr::null());
+        let events = events.lock().unwrap();
+        assert_eq!(events[0].0, "unconnected");
+        assert_eq!(
+            events[0].1.as_deref(),
+            Some("the audio source disconnected")
+        );
+        assert_eq!(
+            events[1],
+            ("error".into(), Some("permission denied".into()))
+        );
+        assert_eq!(events[2], ("unconnected".into(), None));
+    }
+
     /// Prints the graph's capture nodes. Opt-in — it needs a live PipeWire
     /// session, so CI skips it; run it by hand when the microphone a user picked
     /// does not match what got recorded.
@@ -1070,6 +1211,9 @@ mod source_tests {
         for source in &sources {
             println!("  {}  <-  {}", source.name, source.description);
         }
-        assert!(!sources.is_empty(), "a desktop session always has at least one capture node");
+        assert!(
+            !sources.is_empty(),
+            "a desktop session always has at least one capture node"
+        );
     }
 }

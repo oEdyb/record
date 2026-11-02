@@ -54,7 +54,8 @@ Klippt is Mac-first, not Mac-only.
 - Shared app/editor: Electron, React, TypeScript, PixiJS, and the existing project model.
 - macOS capture: Swift, ScreenCaptureKit, AVFoundation, and `AVAssetWriter`.
 - Windows later: C++ and Windows Graphics Capture behind the same capture-helper contract.
-- Linux later: Rust and PipeWire/portal capture behind the same contract.
+- Linux capture: Rust and PipeWire/portal behind the shared clip lifecycle; see
+  [current implementation and platform gates](docs/linux-port-2026-10-26.md).
 - Do not duplicate the editor per operating system.
 - Do not rewrite the whole app in Swift merely to make the UI look native. Screen Studio
   itself proves that Electron plus native media helpers can produce a refined Mac app.
@@ -153,6 +154,7 @@ not prove the helper contains the current source.
   capture validation.
 - Read `technical-documentation/testing/manual-e2e-checklist.md` before a release-candidate
   smoke test.
+- Routine Linux GUI tests use `agent-lab` with private compositor input/audio/portals; see `~/.local/share/agent-lab/README.md`. Do not drive the visible host desktop without explicit authorization. KWin lab evidence does not establish exact Niri capture parity.
 
 ## Working discipline
 

@@ -1,0 +1,22 @@
+{
+  "sourceSha": "2d4323129ead891855c7475b578ad45e4588f9f3",
+  "appImageSha256": "3a1df903af59f75ff8d6058ef5e4512bf567f7e34e29d473272140dfa51bb655",
+  "fullDecodeExitCode": 0,
+  "normalQuitExitCode": 0,
+  "privateLabStopped": true,
+  "mediaSha256": "0f13501cbeba0b9f764363c8ce3931a25e6bd2b6ec6a46d81a8310253442efe7",
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080
+      }
+    ],
+    "format": {
+      "duration": "17.333333"
+    }
+  }
+}

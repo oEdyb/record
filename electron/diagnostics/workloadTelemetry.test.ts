@@ -46,6 +46,66 @@ afterEach(async () => {
 });
 
 describe("workload telemetry", () => {
+	it("reports a failed preview write to the bounded quit guard", async () => {
+		await fs.mkdir(path.join(directory, "workload-1000.json"));
+		const service = createService();
+		service.begin({ kind: "preview", operation: "native-preview", platform: "linux" });
+		await expect(service.finishPreviewsBeforeQuit()).rejects.toThrow(
+			"Workload report persistence failed",
+		);
+	});
+
+	it("durably completes live previews on clean quit without completing other workloads", async () => {
+		const service = createService();
+		const preview = service.begin({
+			kind: "preview",
+			operation: "native-preview",
+			platform: "linux",
+		});
+		service.startPhase(preview, "preview-active");
+		now++;
+		const failed = service.begin({
+			kind: "preview",
+			operation: "native-preview",
+			platform: "linux",
+		});
+		service.finish(failed, "failed", "preview-failed");
+		now++;
+		const capture = service.begin({
+			kind: "capture",
+			operation: "linux-pipewire",
+			platform: "linux",
+		});
+		now++;
+		const exporting = service.begin({
+			kind: "export",
+			operation: "native-video-export",
+			platform: "linux",
+		});
+		now = 2_000;
+		await service.finishPreviewsBeforeQuit();
+		const readReport = async (id: string): Promise<WorkloadReport> =>
+			JSON.parse(await fs.readFile(path.join(directory, `${id}.json`), "utf8"));
+		expect(await readReport(preview)).toMatchObject({
+			status: "succeeded",
+			endedAtEpochMs: 2_000,
+			durationMs: 1_000,
+			phases: [{ phase: "preview-active", endedAtElapsedMs: 1_000 }],
+		});
+		expect(
+			(await readReport(preview)).events.filter((event) => event.code === "preview-completed"),
+		).toHaveLength(1);
+		expect((await readReport(failed)).status).toBe("failed");
+		expect((await readReport(capture)).status).toBe("running");
+		expect((await readReport(exporting)).status).toBe("running");
+		const restarted = createService();
+		await restarted.initialize();
+		expect((await readReport(preview)).status).toBe("succeeded");
+		expect((await readReport(capture)).status).toBe("interrupted");
+		expect((await readReport(exporting)).status).toBe("interrupted");
+		restarted.dispose();
+	});
+
 	it("writes a local running journal without private string fields", async () => {
 		const service = createService();
 		const id = service.begin({

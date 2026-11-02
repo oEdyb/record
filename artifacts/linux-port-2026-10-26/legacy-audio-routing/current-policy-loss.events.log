@@ -1,0 +1,8 @@
+STATE connecting
+STATE paused
+STATE streaming
+FIRST 49486119860115
+REMOVED owned microphone A; default B remains available
+STATE paused
+STATE error defined target not found
+STATE unconnected

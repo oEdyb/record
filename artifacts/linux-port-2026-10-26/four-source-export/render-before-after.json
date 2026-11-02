@@ -1,0 +1,100 @@
+{
+  "one-video.mp4.mp4": {
+    "sha256": "2a1268a9a15977bfed59362f3b12d1c3ac2a3a2d5c906f5072185243ddc2343c",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "duration": "14.466016",
+          "nb_frames": "869"
+        },
+        {
+          "codec_name": "aac",
+          "duration": "14.483000",
+          "nb_frames": "680"
+        }
+      ],
+      "format": {
+        "duration": "14.483000"
+      }
+    },
+    "fullDecodeExitCode": 0,
+    "audioWindows": [
+      {
+        "startSec": 1,
+        "rms": 0.15166425704956055,
+        "amplitudes": {
+          "440": 0.12471341319734607,
+          "660": 0.17466135843261812
+        }
+      },
+      {
+        "startSec": 8,
+        "rms": 0.15193307399749756,
+        "amplitudes": {
+          "440": 0.12486481330010905,
+          "660": 0.17484728045444192
+        }
+      },
+      {
+        "startSec": 12,
+        "rms": 0.15177375078201294,
+        "amplitudes": {
+          "440": 0.12509692831294172,
+          "660": 0.17429491591076077
+        }
+      }
+    ]
+  },
+  "one-video-fixed.mp4": {
+    "sha256": "01a50447315bbf83f358d159d89e69f2896f2a2b9dedc7da52f071c5566f5b72",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "duration": "14.500000",
+          "nb_frames": "871"
+        },
+        {
+          "codec_name": "aac",
+          "duration": "14.516000",
+          "nb_frames": "682"
+        }
+      ],
+      "format": {
+        "duration": "14.516000"
+      }
+    },
+    "fullDecodeExitCode": 0,
+    "audioWindows": [
+      {
+        "startSec": 1,
+        "rms": 0.15166425704956055,
+        "amplitudes": {
+          "440": 0.12471341319734607,
+          "660": 0.17466135843261812
+        }
+      },
+      {
+        "startSec": 8,
+        "rms": 0.15193307399749756,
+        "amplitudes": {
+          "440": 0.12486481330010905,
+          "660": 0.17484728045444192
+        }
+      },
+      {
+        "startSec": 12,
+        "rms": 0.15177375078201294,
+        "amplitudes": {
+          "440": 0.12509692831294172,
+          "660": 0.17429491591076077
+        }
+      }
+    ]
+  }
+}

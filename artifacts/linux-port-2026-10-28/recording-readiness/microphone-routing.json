@@ -1,0 +1,21 @@
+{
+  "savedBefore": "Endgame Gear Xstrm Analog Stereo",
+  "savedAfter": "Easy Effects Source",
+  "systemDefaultUnchanged": "easyeffects_source",
+  "changedPreferenceKeys": [
+    "micDeviceId"
+  ],
+  "rawSelection": {
+    "samples": 0,
+    "rms": 0.0,
+    "peak": 0.0,
+    "sourceError": true
+  },
+  "processedSelection": {
+    "samples": 286720,
+    "rms": 1.031e-05,
+    "peak": 0.00020774,
+    "sourceError": false
+  },
+  "rawError": "PipeWire linked a different audio source than the selected input"
+}

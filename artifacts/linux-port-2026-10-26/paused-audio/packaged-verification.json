@@ -1,0 +1,93 @@
+{
+  "helperPid": 2051238,
+  "helperPath": "/tmp/.mount_KlipptpBe05k/resources/electron/native/bin/linux-x64/openscreen-pipewire-helper",
+  "helperSha256": "4ea2dd0f8de78ef72ee090ab592e15551838d3ebecc414add86feb26f5e54dd3",
+  "recordingId": 1793019187607,
+  "requestMicrophone": {
+    "enabled": true,
+    "deviceId": "a01dd0d9256592d7a1d75f91fc0d505cfa5cd5cfb9541a0e2251c4da78bea84a",
+    "deviceName": "LabMicrophoneA",
+    "gain": 1.4
+  },
+  "committedClip": {
+    "microphoneAudioPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793019187607-clip-0001-microphone.mov",
+    "microphoneAudioOffsetMs": 0,
+    "index": 0,
+    "screenVideoPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793019187607-clip-0001.mp4",
+    "durationMs": 22233,
+    "cursorCaptureMode": "editable-overlay"
+  },
+  "committedSourceHashes": {
+    "microphoneAudioPath": "600a0e5b10e2891e6fe63b837f5cb2e707f345ff9763b95f85e6dd1b32ff70b5",
+    "screenVideoPath": "2da010ed3f2733dfb8767b30cf942ddef102f6deea4e4e78e6af5287e5ad91a6"
+  },
+  "manifestPath": "/home/olle/.local/state/agent-lab/klippt/profiles/electron/recordings/recording-1793019187607.session.json",
+  "sourceCommit": "81805667bafc97ab839503aa25bae99b7f9a2892",
+  "appImageSha256": "a8d59d086449d0c7b13a0e14d7f770f926effc0fc073673cdb9e8d54050ec67b",
+  "allSourcesFullyDecode": true,
+  "committedSourcesUnchanged": true,
+  "verifiedClips": [
+    {
+      "index": 0,
+      "durationMs": 22233,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "600a0e5b10e2891e6fe63b837f5cb2e707f345ff9763b95f85e6dd1b32ff70b5",
+          "dominantHz": 440.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "2da010ed3f2733dfb8767b30cf942ddef102f6deea4e4e78e6af5287e5ad91a6"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "durationMs": 16816,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "0fafcd0f8528633655a40bc184bb2e9033bdc6c5abdfa0846f406a0f0792d294",
+          "dominantHz": 440.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "e6dfaa00a9adb1c3c8a3d10db309040e13d5cf23a0855026b2d215758056ae80"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "durationMs": 47950,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "1c8883563dbfe82769d9dc518cc1dd2dd18d875ff44aa6ed36c3949a88392698",
+          "dominantHz": 440.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "dd6a57ce3b93e66390b06697a8c8a01b936a9304afe7f532577fa4c31923f6b4"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "durationMs": 15433,
+      "sources": [
+        {
+          "key": "microphoneAudioPath",
+          "sha256": "c61dc9bb8bfa542e2e194c9b84e5318f96f79802ce1a9bb5e79a478c33d5c981",
+          "dominantHz": 880.0
+        },
+        {
+          "key": "screenVideoPath",
+          "sha256": "b70baa47087c38c168a99d6f3b6c3231a55bf24c1137b0a834e44c8d22d10305"
+        }
+      ]
+    }
+  ],
+  "sequence": "Record A, Pause, remove A, Continue rejected and still paused, restore A, Continue, extra unchanged Pause/Continue, Pause, real settings choose B, Continue, Stop/review",
+  "singleHelperThroughout": true
+}

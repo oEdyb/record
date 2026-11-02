@@ -1,11 +1,21 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePlaybackSegments } from "../../src/lib/ai-edition/document/timeline";
 import { documentSchema } from "../../src/lib/ai-edition/schema";
 import { resolveClipSourceEndSec } from "../../src/lib/ai-edition/timeline/clipDuration";
+import { renderCleanAudio } from "../cleanCut/renderCleanAudio";
 import { availableBytes, formatGigabytes } from "./atomicExport";
 import { type CleanCut, cleanCutTimeline } from "./cleanCutSpans";
 import { copyOriginalFile } from "./copyOriginalFile";
+import { copyHandoffCursor } from "./handoffCursor";
+import {
+	editMap,
+	fileIdentity,
+	inspectFileFactsOrNull,
+	removedRanges,
+	shortSourceId,
+} from "./handoffProvenance";
 import { inspectHandoffSourceMedia } from "./sourceHandoffMedia";
 import { buildSourceTimeline, type HandoffMedia, SOURCE_TIMELINE_RATE } from "./sourceTimeline";
 import { buildSourceFcpxml, type FcpxmlMediaInfo } from "./sourceTimelineFcpxml";
@@ -43,6 +53,7 @@ export async function exportSourceHandoff(
 	destination: string,
 	resolveApprovedPath: (file: string) => string | null,
 	cleanCut?: CleanCut,
+	signal?: AbortSignal,
 ) {
 	const document = documentSchema.parse(input);
 	const assetById = new Map(document.assets.map((asset) => [asset.id, asset]));
@@ -88,6 +99,8 @@ export async function exportSourceHandoff(
 	const directory = await fs.mkdtemp(path.join(parent, `${safeTitle}-sources-`)).catch(() => {
 		throw new Error("Could not create the source folder. Choose a writable folder and try again.");
 	});
+	const exportId = randomUUID();
+	const files = [];
 	const written = new Map<string, SourceFile>();
 	const inspected = new Map<string, Awaited<ReturnType<typeof inspectHandoffSourceMedia>>>();
 	const warnings: string[] = [];
@@ -96,6 +109,7 @@ export async function exportSourceHandoff(
 			source: string,
 			label: string,
 			takeNumber: number,
+			assetId: string,
 		): Promise<SourceFile> => {
 			const canonical = paths.get(source);
 			if (!canonical) throw new Error("Source was not approved.");
@@ -109,8 +123,13 @@ export async function exportSourceHandoff(
 			if (existing) return existing;
 			const prefix = String(takeNumber).padStart(3, "0");
 			const extension = path.extname(canonical).toLowerCase();
-			const file = `${prefix}-${label}${extension}`;
+			const file = `${prefix}-${shortSourceId(assetId)}-${label}${extension}`;
 			await copyOriginalFile(canonical, path.join(directory, file));
+			files.push({
+				file,
+				...(await fileIdentity(path.join(directory, file))),
+				streams: await inspectFileFactsOrNull(path.join(directory, file)),
+			});
 			if ([".webm", ".mkv"].includes(extension))
 				warnings.push(
 					`${file}: original container retained; your video editor may require conversion.`,
@@ -126,14 +145,14 @@ export async function exportSourceHandoff(
 		};
 		const sources = [];
 		for (const [index, asset] of assets.entries()) {
-			const screen = await copySource(asset.originalPath, "screen", index + 1);
+			const screen = await copySource(asset.originalPath, "screen", index + 1, asset.id);
 			const audio: SourceFile["audio"] = [];
 			for (const [role, source, offsetMs] of [
 				["microphone", asset.microphoneAudioPath, asset.microphoneAudioOffsetMs],
 				["system", asset.systemAudioPath, asset.systemAudioOffsetMs],
 			] as const) {
 				if (!source) continue;
-				const original = await copySource(source, role, index + 1);
+				const original = await copySource(source, role, index + 1, asset.id);
 				audio.push({
 					role,
 					file: original.file,
@@ -143,7 +162,12 @@ export async function exportSourceHandoff(
 			}
 			const layout = inspected.get(paths.get(asset.originalPath)!);
 			if (layout?.hasAudio && audio.length === 0) {
-				audio.push({ role: "audio", file: screen.file, durationSec: screen.durationSec });
+				audio.push({
+					role: "audio",
+					file: screen.file,
+					durationSec: screen.durationSec,
+					offsetSec: 0,
+				});
 				warnings.push(
 					`${screen.file}: standalone microphone and system originals are unavailable. Embedded audio is retained unchanged on an Original audio track; it was not extracted.`,
 				);
@@ -158,13 +182,25 @@ export async function exportSourceHandoff(
 			}
 			const camera = asset.cameraTrack
 				? {
-						...(await copySource(asset.cameraTrack.sourcePath, "camera", index + 1)),
+						...(await copySource(asset.cameraTrack.sourcePath, "camera", index + 1, asset.id)),
 						startMs: asset.cameraTrack.startMs,
 						offsetMs: asset.cameraTrack.offsetMs,
+						offsetSec: (asset.cameraTrack.startMs + asset.cameraTrack.offsetMs) / 1000,
 						visibleInKlippt: asset.cameraTrack.visible,
 					}
 				: null;
-			sources.push({ assetId: asset.id, screen: { ...screen, audio }, camera });
+			const cursor = await copyHandoffCursor(
+				paths.get(asset.originalPath)!,
+				`${String(index + 1).padStart(3, "0")}-${shortSourceId(asset.id)}`,
+				directory,
+			);
+			sources.push({
+				assetId: asset.id,
+				take: index + 1,
+				screen: { ...screen, offsetSec: 0, audio },
+				camera,
+				cursor,
+			});
 		}
 		const durations = new Map(sources.map((source) => [source.assetId, source.screen.durationSec]));
 		const keptClips = clips.filter(
@@ -192,16 +228,43 @@ export async function exportSourceHandoff(
 		await fs.writeFile(timelinePath, `${JSON.stringify(interchange.timeline, null, 2)}\n`, {
 			flag: "wx",
 		});
+		let cleanEdit: ReturnType<typeof editMap> | null = null;
 		let cleanCutPath: string | null = null;
+		let cleanDialogue: Awaited<ReturnType<typeof renderCleanAudio>> | undefined;
 		if (cleanCut) {
 			const layout = cleanCutTimeline(handoffClips, cleanCut);
 			if (!layout.spans.length) throw new Error("The clean cut keeps nothing from this recording.");
-			const cleanInterchange = buildSourceTimeline(
+			let cleanInterchange = buildSourceTimeline(
 				`${document.project.title} (clean cut)`,
 				sources,
 				layout.spans,
 				layout.markers,
 			);
+			const microphone = cleanInterchange.plan.tracks.find((track) => track.role === "microphone");
+			const originalMicrophone = interchange.plan.tracks.find(
+				(track) => track.role === "microphone",
+			);
+			if (microphone?.items.some((item) => item.type === "clip") && originalMicrophone) {
+				cleanDialogue = await renderCleanAudio({
+					items: microphone.items,
+					retained: originalMicrophone.items,
+					directory,
+					output: path.join(directory, `000-${shortSourceId(exportId)}-clean-dialogue.wav`),
+					signal,
+				});
+				cleanInterchange = buildSourceTimeline(
+					`${document.project.title} (clean cut)`,
+					sources,
+					layout.spans,
+					layout.markers,
+					cleanDialogue,
+				);
+				if (microphone.items.some((item) => item.type === "gap"))
+					warnings.push(
+						"Clean dialogue has silence where isolated microphone audio is unavailable.",
+					);
+			} else warnings.push("Clean dialogue skipped: no isolated microphone source is available.");
+			cleanEdit = editMap(cleanInterchange.plan.tracks);
 			warnings.push(...cleanInterchange.warnings.filter((warning) => !warnings.includes(warning)));
 			cleanCutPath = path.join(directory, CLEAN_CUT_TIMELINE);
 			await fs.writeFile(cleanCutPath, `${JSON.stringify(cleanInterchange.timeline, null, 2)}\n`, {
@@ -227,8 +290,59 @@ export async function exportSourceHandoff(
 			}),
 			{ flag: "wx" },
 		);
+		if (cleanDialogue)
+			files.push({
+				file: cleanDialogue.file,
+				...(await fileIdentity(path.join(directory, cleanDialogue.file))),
+				streams: await inspectFileFactsOrNull(path.join(directory, cleanDialogue.file)),
+			});
+		const transcripts = [
+			...document.transcripts,
+			...(document.transcript ? [document.transcript] : []),
+		].filter((entry) => entry.words.length > 0);
+		const fullEdit = editMap(interchange.plan.tracks);
 		const manifest = {
-			version: 2,
+			exportId,
+			clock: {
+				reference: "Each take’s screen file",
+				takes: sources.map((source) => ({
+					assetId: source.assetId,
+					take: source.take,
+					reference: source.screen.file,
+				})),
+				frameRate: SOURCE_TIMELINE_RATE,
+				sourceRanges: "half-open [start,end)",
+				rule: "streamTimeSec = screenTimeSec - offsetSec",
+				cleanDialogue: cleanDialogue
+					? { file: cleanDialogue.file, offsetSec: 0, reference: "clean timeline" }
+					: null,
+			},
+			files,
+			edit: {
+				full: {
+					pieces: fullEdit.find((track) => track.role === "screen")?.pieces,
+					tracks: fullEdit,
+				},
+				clean: cleanEdit
+					? {
+							pieces: cleanEdit.find((track) => track.role === "screen")?.pieces,
+							tracks: cleanEdit,
+							removed: removedRanges(fullEdit, cleanEdit, cleanCut?.markers ?? []),
+						}
+					: null,
+			},
+			transcript: transcripts.length
+				? { available: true, transcripts }
+				: { available: false, reason: "Project document contains no timed transcript words." },
+			activeDialogue: cleanDialogue
+				? {
+						file: cleanDialogue.file,
+						track: "Clean dialogue",
+						offsetSec: 0,
+						replaces: cleanEdit?.find((track) => track.role === "microphone")?.pieces,
+					}
+				: null,
+			version: 4,
 			kind: "klippt-source-handoff",
 			title: document.project.title,
 			createdAt: new Date().toISOString(),
@@ -236,44 +350,49 @@ export async function exportSourceHandoff(
 			audioEncoding: "unchanged",
 			mediaBytes: "unchanged",
 			timeline: { file: "timeline.otio", frameRate: SOURCE_TIMELINE_RATE },
+			...(cleanDialogue
+				? {
+						cleanDialogue: {
+							kind: "derived-dialogue",
+							offsetSec: 0,
+							encoding: "pcm_s24le",
+							file: cleanDialogue.file,
+							sampleRate: cleanDialogue.sampleRate,
+							samples: cleanDialogue.samples,
+							channels: cleanDialogue.channels,
+							peak: cleanDialogue.peak,
+							attenuatedSeams: cleanDialogue.attenuatedSeams,
+							plan: cleanDialogue.plan,
+						},
+					}
+				: {}),
 			...(cleanCutPath ? { cleanCutTimeline: { file: CLEAN_CUT_TIMELINE } } : {}),
 			finalCutTimeline: { file: "timeline.fcpxml", frameRate: SOURCE_TIMELINE_RATE },
-			sources: sources.map(({ assetId, screen, camera }) => ({
-				assetId,
-				screen: {
-					...screen,
-					audio: screen.audio.map(({ role, file, durationSec }) => ({ role, file, durationSec })),
-				},
-				camera: camera
-					? {
-							file: camera.file,
-							label: camera.label,
-							durationSec: camera.durationSec,
-							audio: camera.audio,
-							visibleInKlippt: camera.visibleInKlippt,
-						}
-					: null,
-			})),
+			sources,
 			warnings,
 		};
 		await fs.writeFile(
 			path.join(directory, "README.txt"),
 			[
 				"Klippt source files",
-				"",
-				"Import timeline.otio as a timeline in your video editor. In DaVinci Resolve, use File > Import > Timeline. Keep this folder together so the relative media links resolve. If prompted, select this folder as the source clips location.",
-				"For Final Cut Pro, open timeline.fcpxml with File > Import > XML. It holds the same cuts and sync: Screen in the primary storyline, Camera connected above it, Microphone and System audio connected below it.",
-				"The 60 fps timeline contains Screen V1, Camera V2, Microphone A1 and System audio A2. Missing source time remains a gap. Only original standalone audio files are placed on the microphone and system tracks. Legacy embedded-only audio has an Original audio (unidentified) track.",
+				"Names: <take>-<stable recording id>-<role>.<ext>; derived dialogue uses an export id. Keep this folder together.",
+				"Provenance: clip names and OTIO metadata. handoff.json v4 holds hashes, stream facts, exact offsets and per-track edit maps. Ranges are half-open; frame fields are authoritative for timeline placement.",
+				"Sync: streamTimeSec = screenTimeSec - offsetSec. All offsets, including zero, are explicit. Clean dialogue uses exact microphone offsets at 48 kHz; timelines use 60 fps.",
+				"Cursor: per-take cursor JSON is unchanged; decoded PNG assets and coordinate/timebase details are in handoff.json. Missing cursor data is explicit. Editors do not automatically recreate overlays.",
+
+				"Import timeline.otio in your editor. For Final Cut Pro, open timeline.fcpxml. Relink to this folder if prompted.",
+				"Tracks: Screen, Camera, Microphone, System audio; missing source time is a gap. Embedded-only audio stays unidentified; disable embedded audio when separate originals exist.",
+				"Original media bytes are unchanged. Complete files include material outside the cuts. Camera is a separate full layer; visual effects and layouts are not transferred.",
 				...(cleanCutPath
 					? [
-							`${CLEAN_CUT_TIMELINE} is the same recording with retakes, false starts and stumbles cut, one marker per cut naming why. Import it as a second timeline; timeline.otio keeps everything.`,
+							`${CLEAN_CUT_TIMELINE} contains the clean cut; timeline.otio and timeline.fcpxml contain the full edit.`,
 						]
 					: []),
-				"Cuts, clip order and camera sync are stored only in timeline.otio and timeline.fcpxml. Boundaries are rounded to the nearest timeline frame. Complete source files retain all material outside the kept spans.",
-				"Camera is a full, separate video layer above the screen; resize or disable it in your editor. This timeline does not recreate the Klippt visual layout. Camera-file audio, if present, is exported but not added to the timeline.",
-				"Every media file is an unchanged byte copy of its complete original. Nothing is trimmed, remuxed, extracted, decoded, re-encoded, cleaned, or normalized during export.",
-				"If separate audio is present, disable the screen file's embedded audio to avoid doubling it. Older untagged audio is labelled audio; it is not assumed to be an isolated microphone.",
-				"Captions, zooms, speed changes, layouts, B-roll and other editor effects are not baked into these source files. Removed clips are omitted. The original project and media are unchanged.",
+				...(cleanDialogue
+					? [
+							`${cleanDialogue.file}: derived 48 kHz, 24-bit dialogue. The clean OTIO disables replaced microphone clips; system audio stays enabled. Check disabled clips after import.`,
+						]
+					: []),
 				...warnings,
 			].join("\n"),
 			{ flag: "wx" },

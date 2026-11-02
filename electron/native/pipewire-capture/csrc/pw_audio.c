@@ -28,12 +28,16 @@
 
 #include "pw_internal.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <spa/param/audio/format-utils.h>
 #include <spa/pod/builder.h>
 #include <spa/utils/result.h>
+#include <spa/utils/string.h>
+
+#define OSC_AUDIO_MAX_LINKS 64
 
 struct osc_pw_audio {
     struct pw_thread_loop *loop;
@@ -43,7 +47,170 @@ struct osc_pw_audio {
     struct spa_hook stream_listener;
     struct osc_pw_audio_callbacks callbacks;
     uint32_t channels;
+    int has_buffer_time;
+    char *target_name;
+    uint32_t target_node;
+    struct pw_registry *peer_registry;
+    struct spa_hook peer_registry_listener;
+    struct spa_hook peer_core_listener;
+    uint32_t peer_links[OSC_AUDIO_MAX_LINKS];
+    size_t peer_link_count;
+    int peer_sync_seq;
+    int peer_streaming;
+    int peer_allowed;
+    int peer_failed;
 };
+
+static void osc_audio_on_process(void *userdata);
+
+static void osc_audio_peer_fail(struct osc_pw_audio *audio, const char *message)
+{
+    audio->peer_allowed = 0;
+    if (audio->peer_failed) {
+        return;
+    }
+    audio->peer_failed = 1;
+    if (audio->callbacks.on_state != NULL) {
+        audio->callbacks.on_state(audio->callbacks.user, "error", message);
+    }
+}
+
+static void osc_audio_peer_sync(struct osc_pw_audio *audio)
+{
+    audio->peer_allowed = 0;
+    if (audio->peer_failed) {
+        return;
+    }
+    audio->peer_sync_seq = pw_core_sync(audio->core, PW_ID_CORE, audio->peer_sync_seq);
+    if (audio->peer_sync_seq < 0) {
+        osc_audio_peer_fail(audio, "could not verify the selected audio source");
+    }
+}
+
+static void osc_audio_peer_done(void *data, uint32_t id, int seq)
+{
+    struct osc_pw_audio *audio = data;
+    if (id != PW_ID_CORE || seq != audio->peer_sync_seq || audio->peer_failed) {
+        return;
+    }
+    /* The core barrier covers the registry's preceding peer events. Discard
+     * queued PCM while admission is closed: it predates that verification. */
+    audio->peer_allowed = 0;
+    osc_audio_on_process(audio);
+    audio->peer_allowed = audio->peer_streaming && audio->target_node != PW_ID_ANY &&
+        audio->peer_link_count > 0;
+}
+
+static void osc_audio_peer_core_error(void *data, uint32_t id, int seq, int result,
+                                      const char *message)
+{
+    (void)id;
+    (void)seq;
+    if (result < 0) {
+        osc_audio_peer_fail(data, message != NULL ? message : "audio peer verification failed");
+    }
+}
+
+static const struct pw_core_events osc_audio_peer_core_events = {
+    PW_VERSION_CORE_EVENTS,
+    .done = osc_audio_peer_done,
+    .error = osc_audio_peer_core_error,
+};
+
+static void osc_audio_peer_global(void *data, uint32_t id, uint32_t permissions,
+                                   const char *type, uint32_t version,
+                                   const struct spa_dict *props)
+{
+    struct osc_pw_audio *audio = data;
+    (void)permissions;
+    (void)version;
+    if (audio->peer_failed || props == NULL || type == NULL) {
+        return;
+    }
+    if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0) {
+        const char *name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
+        if (name != NULL && strcmp(name, audio->target_name) == 0) {
+            if (audio->target_node != PW_ID_ANY && audio->target_node != id) {
+                osc_audio_peer_fail(audio, "the selected audio source name is ambiguous");
+                return;
+            }
+            audio->target_node = id;
+        }
+        return;
+    }
+    if (strcmp(type, PW_TYPE_INTERFACE_Link) != 0) {
+        return;
+    }
+    uint32_t input, output;
+    const char *input_text = spa_dict_lookup(props, PW_KEY_LINK_INPUT_NODE);
+    const char *output_text = spa_dict_lookup(props, PW_KEY_LINK_OUTPUT_NODE);
+    if (input_text == NULL || !spa_atou32(input_text, &input, 10) ||
+        input != osc_audio_api.stream_get_node_id(audio->stream)) {
+        return;
+    }
+    if (output_text == NULL || !spa_atou32(output_text, &output, 10) ||
+        audio->target_node == PW_ID_ANY || output != audio->target_node) {
+        osc_audio_peer_fail(audio, "PipeWire linked a different audio source than the selected input");
+        return;
+    }
+    for (size_t i = 0; i < audio->peer_link_count; ++i) {
+        if (audio->peer_links[i] == id) {
+            return;
+        }
+    }
+    if (audio->peer_link_count == OSC_AUDIO_MAX_LINKS) {
+        osc_audio_peer_fail(audio, "the selected audio source exceeded the link limit");
+        return;
+    }
+    audio->peer_links[audio->peer_link_count++] = id;
+    osc_audio_peer_sync(audio);
+}
+
+static void osc_audio_peer_remove(void *data, uint32_t id)
+{
+    struct osc_pw_audio *audio = data;
+    if (id == audio->target_node) {
+        osc_audio_peer_fail(audio, "the selected audio source disappeared");
+        return;
+    }
+    for (size_t i = 0; i < audio->peer_link_count; ++i) {
+        if (audio->peer_links[i] == id) {
+            audio->peer_links[i] = audio->peer_links[--audio->peer_link_count];
+            osc_audio_peer_sync(audio);
+            return;
+        }
+    }
+}
+
+static const struct pw_registry_events osc_audio_peer_registry_events = {
+    PW_VERSION_REGISTRY_EVENTS,
+    .global = osc_audio_peer_global,
+    .global_remove = osc_audio_peer_remove,
+};
+
+static void osc_audio_watch_peers(struct osc_pw_audio *audio)
+{
+    if (audio->peer_failed || audio->peer_registry != NULL) {
+        return;
+    }
+    if (osc_audio_api.stream_get_node_id(audio->stream) == PW_ID_ANY) {
+        if (audio->peer_streaming) {
+            osc_audio_peer_fail(audio, "the audio stream has no verifiable node identity");
+        }
+        return;
+    }
+    /* Start after our stream has a bound node ID. The registry's initial dump
+     * includes any links created before this listener was installed. */
+    audio->peer_registry = pw_core_get_registry(audio->core, PW_VERSION_REGISTRY, 0);
+    if (audio->peer_registry == NULL) {
+        osc_audio_peer_fail(audio, "could not observe the selected audio source");
+        return;
+    }
+    pw_core_add_listener(audio->core, &audio->peer_core_listener,
+                         &osc_audio_peer_core_events, audio);
+    pw_registry_add_listener(audio->peer_registry, &audio->peer_registry_listener,
+                             &osc_audio_peer_registry_events, audio);
+}
 
 static void osc_audio_on_state_changed(void *userdata, enum pw_stream_state old,
                                        enum pw_stream_state state, const char *error)
@@ -51,6 +218,19 @@ static void osc_audio_on_state_changed(void *userdata, enum pw_stream_state old,
     struct osc_pw_audio *audio = userdata;
 
     (void)old;
+    if (audio->target_name != NULL) {
+        audio->peer_streaming = state == PW_STREAM_STATE_STREAMING;
+        audio->peer_allowed = 0;
+        if (state == PW_STREAM_STATE_ERROR || state == PW_STREAM_STATE_UNCONNECTED) {
+            audio->peer_failed = 1;
+        }
+        if (state == PW_STREAM_STATE_PAUSED || state == PW_STREAM_STATE_STREAMING) {
+            osc_audio_watch_peers(audio);
+            if (audio->peer_registry != NULL) {
+                osc_audio_peer_sync(audio);
+            }
+        }
+    }
     if (audio->callbacks.on_state != NULL) {
         audio->callbacks.on_state(audio->callbacks.user,
                                   osc_audio_api.stream_state_as_string(state), error);
@@ -84,9 +264,10 @@ static void osc_audio_on_process(void *userdata)
     struct pw_buffer *b;
 
     while ((b = osc_audio_api.stream_dequeue_buffer(audio->stream)) != NULL) {
-        struct spa_data *data = &b->buffer->datas[0];
+        struct spa_data *data = b->buffer->datas;
 
-        if (b->buffer->n_datas > 0 && data->data != NULL && data->chunk != NULL &&
+        if ((audio->target_name == NULL || audio->peer_allowed) &&
+            b->buffer->n_datas > 0 && data != NULL && data->data != NULL && data->chunk != NULL &&
             audio->callbacks.on_samples != NULL) {
             uint32_t offset;
             uint32_t size;
@@ -99,7 +280,8 @@ static void osc_audio_on_process(void *userdata)
                 const float *samples = SPA_PTROFF(data->data, offset, const float);
 
                 audio->callbacks.on_samples(audio->callbacks.user, samples,
-                                            size / (uint32_t)sizeof(float));
+                                            size / (uint32_t)sizeof(float),
+                                            audio->has_buffer_time ? b->time : 0);
             }
         }
         osc_audio_api.stream_queue_buffer(audio->stream, b);
@@ -138,6 +320,17 @@ struct osc_pw_audio *osc_pw_audio_start(const char *target_object, int capture_s
     }
     audio->callbacks = *callbacks;
     audio->channels = channels;
+    audio->target_node = PW_ID_ANY;
+    /* pw_buffer grew in 1.0.5. Never read the trailing field from an older
+     * library's shorter allocation (Ubuntu 22.04 ships an older runtime). */
+    {
+        unsigned int major = 0, minor = 0, micro = 0;
+        const char *version = osc_pw_library_version();
+        if (version != NULL && sscanf(version, "%u.%u.%u", &major, &minor, &micro) == 3) {
+            audio->has_buffer_time = major > 1 ||
+                (major == 1 && (minor > 0 || micro >= 5));
+        }
+    }
 
     audio->loop = osc_audio_api.thread_loop_new("openscreen-audio", NULL);
     if (audio->loop == NULL) {
@@ -164,6 +357,13 @@ struct osc_pw_audio *osc_pw_audio_start(const char *target_object, int capture_s
         goto fail;
     }
 
+    if (target_object != NULL && target_object[0] != '\0') {
+        audio->target_name = strdup(target_object);
+        if (audio->target_name == NULL) {
+            osc_pw_set_error(err, err_len, "out of memory");
+            goto fail;
+        }
+    }
     props = osc_audio_api.properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY,
                                          "Capture", PW_KEY_MEDIA_ROLE, "Production", NULL);
     if (props == NULL) {
@@ -177,6 +377,14 @@ struct osc_pw_audio *osc_pw_audio_start(const char *target_object, int capture_s
     }
     if (target_object != NULL && target_object[0] != '\0') {
         osc_audio_api.properties_set(props, PW_KEY_TARGET_OBJECT, target_object);
+        /* Ubuntu 22.04's WirePlumber 0.4.8 reads node.target rather than
+         * target.object. Both accept the resolved PipeWire node name. */
+        osc_audio_api.properties_set(props, "node.target", target_object);
+        /* An explicitly selected microphone must never become another device
+         * when its target disappears or cannot be linked. Default capture has
+         * no target and intentionally keeps the session manager's policy. */
+        osc_audio_api.properties_set(props, "node.dont-fallback", "true");
+        osc_audio_api.properties_set(props, PW_KEY_NODE_DONT_RECONNECT, "true");
     }
 
     audio->stream = osc_audio_api.stream_new(audio->core, "openscreen-audio", props);
@@ -226,9 +434,13 @@ struct osc_pw_audio *osc_pw_audio_start(const char *target_object, int capture_s
     return audio;
 
 fail:
+    audio->peer_failed = 1;
     osc_audio_api.thread_loop_unlock(audio->loop);
     if (audio->stream != NULL) {
         osc_audio_api.stream_destroy(audio->stream);
+    }
+    if (audio->peer_registry != NULL) {
+        osc_audio_api.proxy_destroy((struct pw_proxy *)audio->peer_registry);
     }
     if (audio->core != NULL) {
         osc_audio_api.core_disconnect(audio->core);
@@ -237,6 +449,7 @@ fail:
         osc_audio_api.context_destroy(audio->context);
     }
     osc_audio_api.thread_loop_destroy(audio->loop);
+    free(audio->target_name);
     free(audio);
     return NULL;
 }
@@ -249,8 +462,12 @@ void osc_pw_audio_stop(struct osc_pw_audio *audio)
     /* Stop the loop BEFORE destroying anything it might still be running a
      * callback against; this joins the thread. */
     osc_audio_api.thread_loop_stop(audio->loop);
+    audio->peer_failed = 1;
     if (audio->stream != NULL) {
         osc_audio_api.stream_destroy(audio->stream);
+    }
+    if (audio->peer_registry != NULL) {
+        osc_audio_api.proxy_destroy((struct pw_proxy *)audio->peer_registry);
     }
     if (audio->core != NULL) {
         osc_audio_api.core_disconnect(audio->core);
@@ -259,6 +476,7 @@ void osc_pw_audio_stop(struct osc_pw_audio *audio)
         osc_audio_api.context_destroy(audio->context);
     }
     osc_audio_api.thread_loop_destroy(audio->loop);
+    free(audio->target_name);
     free(audio);
 }
 
@@ -285,6 +503,11 @@ struct osc_pw_enum {
     struct spa_hook registry_listener;
     struct spa_hook core_listener;
     int sync_seq;
+    struct spa_source *timeout;
+    int completed;
+    int failed;
+    char *error;
+    size_t error_len;
     /* Caller's buffer, filled as "name\037description\036" records. */
     char *out;
     size_t out_len;
@@ -323,10 +546,11 @@ static void osc_enum_on_global(void *data, uint32_t id, uint32_t permissions, co
         return;
     }
     media_class = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
-    /* Only real capture devices. "Audio/Source" covers microphones and line-in;
-     * a sink's monitor is "Audio/Sink" and is reached via capture_sink instead,
-     * so listing it here would offer the user a duplicate of system audio. */
-    if (media_class == NULL || strcmp(media_class, "Audio/Source") != 0) {
+    /* Virtual sources include processed microphones such as EasyEffects.
+     * Sink monitors remain separate system-audio capture targets. */
+    if (media_class == NULL ||
+        (strcmp(media_class, "Audio/Source") != 0 &&
+         strcmp(media_class, "Audio/Source/Virtual") != 0)) {
         return;
     }
     osc_enum_append(e, spa_dict_lookup(props, PW_KEY_NODE_NAME),
@@ -346,13 +570,38 @@ static void osc_enum_on_core_done(void *data, uint32_t id, int seq)
      * a matching `done` means the initial dump is complete. Without this we
      * would have to guess at a timeout and would race a busy graph. */
     if (id == PW_ID_CORE && seq == e->sync_seq) {
+        e->completed = 1;
         osc_audio_api.main_loop_quit(e->loop);
     }
+}
+
+static void osc_enum_on_timeout(void *data, uint64_t expirations)
+{
+    struct osc_pw_enum *e = data;
+    (void)expirations;
+    e->failed = 1;
+    osc_pw_set_error(e->error, e->error_len, "PipeWire audio registry did not respond within one second");
+    osc_audio_api.main_loop_quit(e->loop);
+}
+
+static void osc_enum_on_core_error(void *data, uint32_t id, int seq, int result,
+                                   const char *message)
+{
+    struct osc_pw_enum *e = data;
+    (void)seq;
+    if (id != PW_ID_CORE || result >= 0) {
+        return;
+    }
+    e->failed = 1;
+    osc_pw_set_error(e->error, e->error_len, "PipeWire audio registry failed: %s",
+                     message != NULL ? message : "connection lost");
+    osc_audio_api.main_loop_quit(e->loop);
 }
 
 static const struct pw_core_events osc_enum_core_events = {
     PW_VERSION_CORE_EVENTS,
     .done = osc_enum_on_core_done,
+    .error = osc_enum_on_core_error,
 };
 
 int osc_pw_list_audio_sources(char *out, size_t out_len, char *err, size_t err_len)
@@ -367,6 +616,8 @@ int osc_pw_list_audio_sources(char *out, size_t out_len, char *err, size_t err_l
     memset(&e, 0, sizeof(e));
     e.out = out;
     e.out_len = out_len;
+    e.error = err;
+    e.error_len = err_len;
     if (out_len > 0) {
         out[0] = '\0';
     }
@@ -398,11 +649,30 @@ int osc_pw_list_audio_sources(char *out, size_t out_len, char *err, size_t err_l
     pw_registry_add_listener(e.registry, &e.registry_listener, &osc_enum_registry_events, &e);
     pw_core_add_listener(e.core, &e.core_listener, &osc_enum_core_events, &e);
     e.sync_seq = pw_core_sync(e.core, PW_ID_CORE, 0);
+    if (e.sync_seq < 0) {
+        osc_pw_set_error(err, err_len, "PipeWire audio registry sync failed");
+        goto out;
+    }
+    struct pw_loop *loop = osc_audio_api.main_loop_get_loop(e.loop);
+    struct timespec deadline = { .tv_sec = 1 };
+    e.timeout = pw_loop_add_timer(loop, osc_enum_on_timeout, &e);
+    if (e.timeout == NULL || pw_loop_update_timer(loop, e.timeout, &deadline, NULL, false) < 0) {
+        osc_pw_set_error(err, err_len, "could not arm the audio registry deadline");
+        goto out;
+    }
 
-    osc_audio_api.main_loop_run(e.loop);
-    result = 0;
+    if (osc_audio_api.main_loop_run(e.loop) < 0) {
+        osc_pw_set_error(err, err_len, "PipeWire audio registry loop failed");
+    } else if (e.completed && !e.failed) {
+        result = 0;
+    } else if (!e.failed) {
+        osc_pw_set_error(err, err_len, "PipeWire audio registry closed before sync");
+    }
 
 out:
+    if (e.timeout != NULL) {
+        pw_loop_destroy_source(osc_audio_api.main_loop_get_loop(e.loop), e.timeout);
+    }
     if (e.registry != NULL) {
         osc_audio_api.proxy_destroy((struct pw_proxy *)e.registry);
     }

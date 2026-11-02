@@ -1,0 +1,25 @@
+{
+  "otioTracks": [
+    [
+      "Screen",
+      "Video"
+    ],
+    [
+      "Camera",
+      "Video"
+    ],
+    [
+      "Microphone",
+      "Audio"
+    ],
+    [
+      "System audio",
+      "Audio"
+    ]
+  ],
+  "totalFramesPerTrack": 871,
+  "cameraGapFrames": 2,
+  "fcpxmlClips": 8,
+  "screenEmbeddedAudioDisabled": true,
+  "warnings": []
+}

@@ -20,6 +20,10 @@
 //! lives in csrc/pw_shim.c instead.
 
 use std::os::fd::OwnedFd;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 use ashpd::desktop::screencast::{CursorMode as PortalCursorMode, Screencast, SourceType};
 use ashpd::desktop::PersistMode;
@@ -33,7 +37,8 @@ use ashpd::WindowIdentifier;
 /// out of the pixels and describes it separately — and `Embedded` is the
 /// "system cursor" setting, where the compositor paints it in and the editor
 /// leaves it alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum CursorMode {
     Metadata,
     Embedded,
@@ -89,8 +94,98 @@ impl SourceKind {
     }
 }
 
+/// Owns the grant independently of the PipeWire fd. ashpd does not close it on Drop.
+pub struct PortalLease {
+    session: Arc<ashpd::desktop::Session<'static, Screencast<'static>>>,
+    closed: AtomicBool,
+}
+
+impl PortalLease {
+    fn close(&self) -> Result<(), PortalError> {
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        if let Err(error) = pollster::block_on(self.session.close()) {
+            self.closed.store(false, Ordering::Release);
+            return Err(failed("Session.Close", error));
+        }
+        Ok(())
+    }
+}
+
+impl Drop for PortalLease {
+    fn drop(&mut self) {
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let session = self.session.clone();
+        // Teardown must not block the capture/command loop on a D-Bus response.
+        std::thread::spawn(move || {
+            if let Err(error) = pollster::block_on(session.close()) {
+                eprintln!("could not close ScreenCast session: {error}");
+            }
+        });
+    }
+}
+
+#[derive(Default)]
+enum SelectionState {
+    #[default]
+    Pending,
+    Open(Arc<PortalLease>),
+    Cancelled,
+}
+
+/// Cancellation is available even before CreateSession returns.
+#[derive(Clone, Default)]
+pub struct Selection(Arc<Mutex<SelectionState>>);
+
+impl Selection {
+    fn check_active(&self) -> Result<(), PortalError> {
+        let state = self
+            .0
+            .lock()
+            .map_err(|error| failed("selection state", error))?;
+        if matches!(*state, SelectionState::Cancelled) {
+            return Err(PortalError::Cancelled);
+        }
+        Ok(())
+    }
+
+    fn install(&self, lease: Arc<PortalLease>) -> Result<(), PortalError> {
+        let mut state = self
+            .0
+            .lock()
+            .map_err(|error| failed("selection state", error))?;
+        match *state {
+            SelectionState::Pending => {
+                *state = SelectionState::Open(lease);
+                Ok(())
+            }
+            SelectionState::Cancelled => Err(PortalError::Cancelled),
+            SelectionState::Open(_) => Err(failed("selection state", "session already created")),
+        }
+    }
+
+    pub fn cancel(&self) -> Result<(), PortalError> {
+        let previous = {
+            let mut state = self
+                .0
+                .lock()
+                .map_err(|error| failed("selection state", error))?;
+            std::mem::replace(&mut *state, SelectionState::Cancelled)
+        };
+        if let SelectionState::Open(lease) = previous {
+            lease.close()?;
+        }
+        Ok(())
+    }
+}
+
 /// Everything the PipeWire half needs, plus what the helper reports upward.
 pub struct PortalStream {
+    pub remembered_grant: Option<crate::portal_grants::PendingGrant>,
+    pub lease: Arc<PortalLease>,
     pub fd: OwnedFd,
     pub node_id: u32,
     pub position: Option<(i32, i32)>,
@@ -158,10 +253,9 @@ fn portal_unavailable(error: impl std::fmt::Display) -> PortalError {
     PortalError::Failed(format!(
         "no ScreenCast portal is available on this session ({error}). Screen capture on Linux \
          goes through xdg-desktop-portal, which needs the backend matching your desktop: \
-         xdg-desktop-portal-gnome (GNOME), xdg-desktop-portal-kde (KDE Plasma), \
+         xdg-desktop-portal-gnome (GNOME and niri), xdg-desktop-portal-kde (KDE Plasma), \
          xdg-desktop-portal-hyprland (Hyprland), xdg-desktop-portal-wlr (Sway and other wlroots \
-         compositors), or xdg-desktop-portal-gtk (anything else). Install one, then log out and \
-         back in."
+         compositors). Install the backend matching your desktop, then log out and back in."
     ))
 }
 
@@ -171,6 +265,12 @@ fn portal_unavailable(error: impl std::fmt::Display) -> PortalError {
 /// emit `ready` — before anything raises a dialog.
 pub async fn cursor_metadata_supported() -> Result<bool, PortalError> {
     let proxy = Screencast::new().await.map_err(portal_unavailable)?;
+    // This startup probe precedes CreateSession. Register the same D-Bus peer
+    // ashpd will use, so the separate helper has the app's installed identity.
+    // Older portals lack Registry; identity must not disable working capture.
+    if let Err(error) = register_host_application(proxy.connection()).await {
+        eprintln!("could not register Klippt's portal identity: {error}");
+    }
     let cursor_modes = proxy
         .available_cursor_modes()
         .await
@@ -178,14 +278,45 @@ pub async fn cursor_metadata_supported() -> Result<bool, PortalError> {
     Ok(cursor_modes.contains(PortalCursorMode::Metadata))
 }
 
+async fn register_host_application(
+    connection: &ashpd::zbus::Connection,
+) -> ashpd::zbus::Result<()> {
+    let registry = ashpd::zbus::Proxy::new(
+        connection,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.host.portal.Registry",
+    )
+    .await?;
+    let options = std::collections::HashMap::<&str, ashpd::zvariant::Value<'_>>::new();
+    registry
+        .call("Register", &("co.dyberg.klippt", options))
+        .await
+}
+
 /// Runs the negotiation to completion. Blocks on the user for as long as the
 /// picker is up: `Start()` is what raises it.
 ///
-/// The returned `PortalStream` outlives the ashpd `Session` object on purpose.
-/// ashpd has no `Drop` impl for sessions and holds its D-Bus connection in a
-/// process-global `OnceLock`, so the portal session stays open until this
-/// process exits — which is exactly the lifetime we want.
-pub async fn negotiate(cursor_mode: CursorMode) -> Result<PortalStream, PortalError> {
+/// The returned lease closes the portal when its last owner releases it.
+pub async fn negotiate(
+    cursor_mode: CursorMode,
+    remembered: Option<crate::portal_grants::SelectionRequest>,
+) -> Result<PortalStream, PortalError> {
+    negotiate_selected(cursor_mode, &Selection::default(), remembered).await
+}
+
+pub async fn negotiate_selected(
+    cursor_mode: CursorMode,
+    selection: &Selection,
+    remembered: Option<crate::portal_grants::SelectionRequest>,
+) -> Result<PortalStream, PortalError> {
+    selection.check_active()?;
+    let restore_token = remembered
+        .as_ref()
+        .map(|request| request.claim(cursor_mode))
+        .transpose()
+        .map_err(|error| failed("remembered source", error))?
+        .flatten();
     let proxy = Screencast::new().await.map_err(portal_unavailable)?;
 
     let cursor_modes = proxy
@@ -209,29 +340,27 @@ pub async fn negotiate(cursor_mode: CursorMode) -> Result<PortalStream, PortalEr
         .create_session()
         .await
         .map_err(|error| failed("CreateSession", error))?;
+    let session = Arc::new(session);
+    let lease = Arc::new(PortalLease {
+        session: session.clone(),
+        closed: AtomicBool::new(false),
+    });
+    selection.install(lease.clone())?;
+    selection.check_active()?;
 
     // Monitors and windows both; the picker decides which. Virtual sources are
     // excluded — a virtual monitor has no cursor to report.
     let types: BitFlags<SourceType> = SourceType::Monitor | SourceType::Window;
     proxy
         .select_sources(
-            &session,
+            session.as_ref(),
             cursor_mode.to_portal(),
             types,
             false,
-            // NO RESTORE TOKEN, AND NOTHING TO PERSIST. This used to replay a
-            // token from the previous run so the picker would not reappear —
-            // and that is precisely how "record this window" produced a
-            // recording of the whole screen. A token is bound to the source it
-            // was minted for, so once any monitor had been approved the portal
-            // restored that monitor on every later run and never raised the
-            // picker again; the app had no way to ask for anything else,
-            // because `SelectSources` cannot name a source. The picker IS the
-            // source chooser on Wayland, so suppressing it removed the only
-            // control the user had. Asking every time is the cost of letting
-            // them choose at all.
-            None,
-            PersistMode::DoNot,
+            restore_token.as_deref(),
+            remembered
+                .as_ref()
+                .map_or(PersistMode::DoNot, |_| PersistMode::ExplicitlyRevoked),
         )
         .await
         .map_err(|error| failed("SelectSources", error))?
@@ -239,7 +368,7 @@ pub async fn negotiate(cursor_mode: CursorMode) -> Result<PortalStream, PortalEr
         .map_err(|error| failed("SelectSources response", error))?;
 
     let streams = proxy
-        .start(&session, &WindowIdentifier::default())
+        .start(session.as_ref(), &WindowIdentifier::default())
         .await
         .map_err(|error| failed("Start", error))?
         .response()
@@ -256,15 +385,122 @@ pub async fn negotiate(cursor_mode: CursorMode) -> Result<PortalStream, PortalEr
         .ok_or_else(|| PortalError::Failed("the portal returned no stream".to_owned()))?;
 
     let fd = proxy
-        .open_pipe_wire_remote(&session)
+        .open_pipe_wire_remote(session.as_ref())
         .await
         .map_err(|error| failed("OpenPipeWireRemote", error))?;
 
+    selection.check_active()?;
     Ok(PortalStream {
+        remembered_grant: remembered
+            .zip(streams.restore_token())
+            .map(|(request, token)| request.granted(cursor_mode, token.to_owned())),
+        lease,
         fd,
         node_id: stream.pipe_wire_node_id(),
         position: stream.position(),
         size: stream.size(),
         source_kind: stream.source_type().map(SourceKind::from_portal),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{negotiate_selected, portal_unavailable, CursorMode, Selection};
+
+    #[test]
+    fn host_registration_uses_installed_identity_and_preserves_errors() {
+        use ashpd::zbus::{blocking, connection::Builder};
+        use std::io::BufRead;
+        struct PrivateBus(std::process::Child);
+        impl Drop for PrivateBus {
+            fn drop(&mut self) {
+                self.0.kill().expect("stop private test bus");
+                self.0.wait().expect("reap private test bus");
+            }
+        }
+        let mut bus = PrivateBus(
+            std::process::Command::new("dbus-daemon")
+                .args(["--session", "--nofork", "--print-address=1"])
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .expect("private dbus-daemon"),
+        );
+        let mut address = String::new();
+        std::io::BufReader::new(bus.0.stdout.take().expect("bus stdout"))
+            .read_line(&mut address)
+            .expect("private bus address");
+        let address = address.trim().to_owned();
+        let server_address = address.clone();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let connection = blocking::connection::Builder::address(server_address.as_str())
+                .expect("server address")
+                .name("org.freedesktop.portal.Desktop")
+                .expect("portal name")
+                .build()
+                .expect("private registry server");
+            ready_tx.send(()).expect("registry ready");
+            let mut calls = Vec::new();
+            for message in blocking::MessageIterator::from(&connection) {
+                let message = message.expect("registry call");
+                if message.header().member().map(|name| name.as_str()) != Some("Register") {
+                    continue;
+                }
+                let (app_id, options): (
+                    String,
+                    std::collections::HashMap<String, ashpd::zvariant::OwnedValue>,
+                ) = message.body().deserialize().expect("Register signature");
+                assert!(options.is_empty());
+                calls.push(app_id);
+                if calls.len() == 1 {
+                    connection.reply(&message, &()).expect("success response");
+                } else {
+                    connection
+                        .reply_error(
+                            &message,
+                            "org.freedesktop.DBus.Error.UnknownMethod",
+                            &"Registry unavailable",
+                        )
+                        .expect("unsupported response");
+                    return calls;
+                }
+            }
+            panic!("registry client disconnected before both calls");
+        });
+        ready_rx.recv().expect("registry startup");
+        let client = pollster::block_on(
+            Builder::address(address.as_str())
+                .expect("client address")
+                .build(),
+        )
+        .expect("private registry client");
+        pollster::block_on(super::register_host_application(&client)).expect("register app");
+        assert!(pollster::block_on(super::register_host_application(&client)).is_err());
+        assert_eq!(
+            server.join().expect("registry thread"),
+            ["co.dyberg.klippt", "co.dyberg.klippt"]
+        );
+    }
+
+    #[test]
+    fn cancelled_selection_never_opens_a_portal_and_cancellation_is_idempotent() {
+        let selection = Selection::default();
+        selection.cancel().expect("cancel before CreateSession");
+        selection.cancel().expect("repeat cancel");
+        let result = pollster::block_on(negotiate_selected(CursorMode::Embedded, &selection, None));
+        let Err(error) = result else {
+            panic!("cancelled selection must not produce a grant");
+        };
+        assert_eq!(error.code(), "portal-cancelled");
+    }
+
+    #[test]
+    fn missing_portal_names_a_screencast_backend_for_niri_not_the_gtk_fallback() {
+        let error = portal_unavailable("no session bus");
+        assert_eq!(error.code(), "portal-failed");
+        let message = error.message();
+        assert!(message.contains("xdg-desktop-portal-gnome (GNOME and niri)"));
+        assert!(!message.contains("xdg-desktop-portal-gtk"));
+        assert!(message.contains("no session bus"));
+    }
 }

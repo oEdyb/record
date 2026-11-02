@@ -1,7 +1,8 @@
 # Windows and Linux plan (research, 2026-10-15)
 
-Olle decided on 2026-10-15 that Klippt should not stay Mac-only. This note records the research and
-the delivery order. Nothing here is built yet.
+Olle decided on 2026-10-15 that Klippt should not stay Mac-only. This note records the original
+research and delivery order. On October 26 he prioritized Linux first; the
+[Linux implementation and verification](linux-port-2026-10-26.md) owns current status.
 
 ## Decision
 

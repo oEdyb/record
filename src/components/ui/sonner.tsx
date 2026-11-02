@@ -44,12 +44,13 @@ const Toaster = ({ className, ...props }: ToasterProps) => {
 			visibleToasts={2}
 			toastOptions={{
 				style: {
-					borderRadius: 16,
+					borderRadius: "var(--toast-radius, 16px)",
 					border: "1px solid rgba(255, 255, 255, 0.09)",
 					background: "rgba(18, 21, 26, 0.96)",
 					boxShadow: "0 24px 48px -16px rgba(0, 0, 0, 0.7), 0 4px 12px rgba(0, 0, 0, 0.4)",
 					color: "#e8ebef",
-					fontSize: 13,
+					fontSize: "var(--toast-font-size, 13px)",
+					padding: "var(--toast-padding, 16px)",
 				},
 				classNames: {
 					toast: "group toast",

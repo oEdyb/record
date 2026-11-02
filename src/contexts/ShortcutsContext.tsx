@@ -43,12 +43,15 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		setIsMac(getIsMac());
+		setShortcuts(mergeWithDefaults({}, window.electronAPI.getPlatform()));
 
 		window.electronAPI
 			.getShortcuts?.()
 			.then((saved) => {
 				if (saved) {
-					setShortcuts(mergeWithDefaults(saved as Partial<ShortcutsConfig>));
+					setShortcuts(
+						mergeWithDefaults(saved as Partial<ShortcutsConfig>, window.electronAPI.getPlatform()),
+					);
 				}
 			})
 			.catch(() => {

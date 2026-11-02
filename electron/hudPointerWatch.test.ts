@@ -121,11 +121,15 @@ describe("visible HUD cursor probes", () => {
 		watch.stop();
 	});
 
-	it("leaves Linux input handling unchanged", () => {
-		const { watch, onProbe } = setup("linux");
+	it("never probes unsupported global coordinates or ignores input on Linux", () => {
+		const { watch, onProbe, readPoint, onOutside } = setup("linux");
+		watch.start();
 		watch.start();
 		vi.advanceTimersByTime(200);
+		expect(readPoint).not.toHaveBeenCalled();
+		expect(onOutside).not.toHaveBeenCalled();
 		expect(onProbe).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
+		watch.stop();
 	});
 });

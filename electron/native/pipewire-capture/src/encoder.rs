@@ -1,16 +1,16 @@
 //! H.264 encoding and MP4 muxing for the captured screen.
 //!
-//! THE LADDER. Three backends are tried in order and the first one that actually
+//! THE LADDER. Native hardware backends are tried before software; the first that
 //! opens wins. "Actually opens" is the whole point: `avcodec_find_encoder_by_name`
 //! succeeds for every encoder compiled into the library, including ones this
 //! machine's GPU cannot run, so the only honest capability probe is to open the
 //! encoder with the real parameters and see what happens.
 //!
-//!   1. VAAPI   — the broadest hardware path on Linux (AMD, Intel, and NVIDIA
-//!                through nvidia-vaapi-driver).
-//!   2. Vulkan  — VK_KHR_video_encode_queue. Newer, and on RADV it needs
-//!                `RADV_PERFTEST=video_encode`; see [`prepare_environment`].
-//!   3. libopenh264 — software. Always available, always last.
+//!   1. NVENC   — NVIDIA's dedicated encoder, accepting CPU-side NV12 frames.
+//!   2. VAAPI   — AMD and Intel. nvidia-vaapi-driver supports decode, not encode.
+//!   3. Vulkan  — VK_KHR_video_encode_queue. Newer, and on RADV it needs
+//!      `RADV_PERFTEST=video_encode`; see [`prepare_environment`].
+//!   4. libopenh264 — software. Always available, always last.
 //!
 //! WHY VAAPI IS GUARDED BY A dlsym. The vendored ffmpeg 8.1 calls `vaMapBuffer2`,
 //! which libva only grew in 2.22. On a system with an older libva (Ubuntu 24.04
@@ -28,6 +28,7 @@ use crate::ffmpeg as ff;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
+    Nvenc,
     Vaapi,
     Vulkan,
     Software,
@@ -38,6 +39,7 @@ impl Backend {
     /// vocabulary as the Windows helper's `encoder-selection` event.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Nvenc => "nvenc",
             Self::Vaapi => "vaapi",
             Self::Vulkan => "vulkan",
             Self::Software => "software",
@@ -46,6 +48,7 @@ impl Backend {
 
     fn codec_name(self) -> &'static CStr {
         match self {
+            Self::Nvenc => c"h264_nvenc",
             Self::Vaapi => c"h264_vaapi",
             Self::Vulkan => c"h264_vulkan",
             Self::Software => c"libopenh264",
@@ -56,7 +59,7 @@ impl Backend {
         match self {
             Self::Vaapi => Some(ff::AV_HWDEVICE_TYPE_VAAPI),
             Self::Vulkan => Some(ff::AV_HWDEVICE_TYPE_VULKAN),
-            Self::Software => None,
+            Self::Nvenc | Self::Software => None,
         }
     }
 
@@ -64,6 +67,7 @@ impl Backend {
     /// opaque handle; the real pixels live in [`Self::upload_format`].
     fn codec_pixel_format(self) -> ff::AVPixelFormat {
         match self {
+            Self::Nvenc => ff::AV_PIX_FMT_NV12,
             Self::Vaapi => ff::AV_PIX_FMT_VAAPI,
             Self::Vulkan => ff::AV_PIX_FMT_VULKAN,
             Self::Software => ff::AV_PIX_FMT_YUV420P,
@@ -75,7 +79,7 @@ impl Backend {
         match self {
             // Every VCN/QuickSync/NVENC block wants NV12; YUV420P would force
             // ffmpeg into an extra internal conversion on upload.
-            Self::Vaapi | Self::Vulkan => ff::AV_PIX_FMT_NV12,
+            Self::Nvenc | Self::Vaapi | Self::Vulkan => ff::AV_PIX_FMT_NV12,
             Self::Software => ff::AV_PIX_FMT_YUV420P,
         }
     }
@@ -83,7 +87,16 @@ impl Backend {
 
 /// Order of preference. Public so the probe can be driven from a test or from
 /// `OPENSCREEN_LINUX_ENCODER` without duplicating the list.
-pub const LADDER: [Backend; 3] = [Backend::Vaapi, Backend::Vulkan, Backend::Software];
+pub const LADDER: [Backend; 4] = [
+    Backend::Nvenc,
+    Backend::Vaapi,
+    Backend::Vulkan,
+    Backend::Software,
+];
+
+#[cfg(test)]
+#[path = "encoder_recovery_tests.rs"]
+mod recovery_tests;
 
 /// Must run before anything creates a Vulkan instance — which, in this process,
 /// means before the first `av_hwdevice_ctx_create`.
@@ -96,7 +109,10 @@ pub const LADDER: [Backend; 3] = [Backend::Vaapi, Backend::Vulkan, Backend::Soft
 pub fn prepare_environment() {
     const KEY: &str = "RADV_PERFTEST";
     match std::env::var(KEY) {
-        Ok(existing) if existing.split(',').any(|flag| flag.trim() == "video_encode") => {}
+        Ok(existing)
+            if existing
+                .split(',')
+                .any(|flag| flag.trim() == "video_encode") => {}
         Ok(existing) if !existing.is_empty() => {
             std::env::set_var(KEY, format!("{existing},video_encode"));
         }
@@ -291,36 +307,38 @@ impl VideoEncoder {
                 sws_threads: 0,
             };
 
-            (*codec_ctx).width = params.width;
-            (*codec_ctx).height = params.height;
-            // Constant frame rate: `time_base` is one frame, so a PTS is simply
-            // a frame index. Everything downstream — the muxer, the editor's
-            // timeline, the audio interleave — is easier to reason about than it
-            // would be with wall-clock timestamps, and duplicated frames of a
-            // static screen cost a few hundred bytes each.
-            (*codec_ctx).time_base = ff::AVRational { num: 1, den: params.fps };
-            (*codec_ctx).framerate = ff::AVRational { num: params.fps, den: 1 };
-            (*codec_ctx).pix_fmt = backend.codec_pixel_format();
-            (*codec_ctx).bit_rate = params.bitrate;
-            // Half a second, not the two seconds a streaming preset would use.
-            //
-            // This file is an EDITING SOURCE, and the editor scrubs it. Seeking
-            // to an arbitrary point means decoding forward from the previous
-            // keyframe, so the GOP length is exactly the worst-case scrub cost:
-            // at 60 fps a two-second GOP makes the editor decode up to 120
-            // frames to show one. Halving it to 30 quarters that, and the extra
-            // keyframes cost a few percent of bitrate on screen content, which
-            // is mostly static and compresses well anyway.
-            (*codec_ctx).gop_size = (params.fps / 2).max(1);
-            // No B-frames. A screen recording has no use for them, they add
-            // reorder delay, and they force DTS bookkeeping the muxer would
-            // otherwise not need.
-            (*codec_ctx).max_b_frames = 0;
-            // The muxer needs an extradata-carrying global header for MP4.
-            (*codec_ctx).flags |= ff::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+            // A frame-index time base, half-second GOP, no B-frames and global
+            // headers keep the clip seekable with bounded decode/reorder work.
+            // Configure against the SDK's C layout, never duplicate its callbacks.
+            ff::osc_codec_configure_video(
+                codec_ctx,
+                params.width,
+                params.height,
+                params.fps,
+                backend.codec_pixel_format(),
+                params.bitrate,
+            );
 
             if let Some(device_type) = backend.hw_device_type() {
                 encoder.attach_hardware(device_type, params)?;
+            }
+
+            if backend == Backend::Nvenc {
+                for (key, value) in [(c"preset", c"p4"), (c"tune", c"ll")] {
+                    let set = ff::av_opt_set(
+                        ff::osc_codec_private_data(codec_ctx),
+                        key.as_ptr(),
+                        value.as_ptr(),
+                        0,
+                    );
+                    if set < 0 {
+                        return Err(format!(
+                            "NVENC {}: {}",
+                            key.to_string_lossy(),
+                            ff::err_to_string(set)
+                        ));
+                    }
+                }
             }
 
             let opened = ff::avcodec_open2(codec_ctx, codec, ptr::null_mut());
@@ -387,8 +405,7 @@ impl VideoEncoder {
             ));
         }
 
-        (*self.codec_ctx).hw_frames_ctx = ff::av_buffer_ref(self.hw_frames);
-        if (*self.codec_ctx).hw_frames_ctx.is_null() {
+        if ff::osc_codec_ref_hardware_frames(self.codec_ctx, self.hw_frames) == 0 {
             return Err("av_buffer_ref on the frames context returned null".to_owned());
         }
         Ok(())
@@ -448,9 +465,7 @@ impl VideoEncoder {
         // the tail is short by the offset even though every row is complete.
         let needed = stride
             .checked_mul(self.params.height.saturating_sub(1) as usize)
-            .and_then(|rows| {
-                rows.checked_add(self.params.width as usize * BYTES_PER_SOURCE_PIXEL)
-            })
+            .and_then(|rows| rows.checked_add(self.params.width as usize * BYTES_PER_SOURCE_PIXEL))
             .ok_or_else(|| "frame size overflows".to_owned())?;
         if pixels.len() < needed {
             return Err(format!(
@@ -527,10 +542,7 @@ impl VideoEncoder {
             } else {
                 let got = ff::av_hwframe_get_buffer(self.hw_frames, self.hw_frame, 0);
                 if got < 0 {
-                    return Err(format!(
-                        "av_hwframe_get_buffer: {}",
-                        ff::err_to_string(got)
-                    ));
+                    return Err(format!("av_hwframe_get_buffer: {}", ff::err_to_string(got)));
                 }
                 let transferred = ff::av_hwframe_transfer_data(self.hw_frame, self.sw_frame, 0);
                 if transferred < 0 {
@@ -562,6 +574,7 @@ impl VideoEncoder {
 
     /// [`Self::stage`] then [`Self::encode_staged`], for callers with nothing to
     /// gain from the split.
+    #[cfg(test)]
     pub fn submit(
         &mut self,
         pixels: &[u8],
@@ -604,6 +617,11 @@ impl VideoEncoder {
                     "avcodec_receive_packet: {}",
                     ff::err_to_string(received)
                 ));
+            }
+            // A CFR frame occupies one codec tick, including the last frame in
+            // a fragment. Zero asks the muxer to guess and can shorten a clip.
+            if (*self.packet).duration <= 0 {
+                (*self.packet).duration = 1;
             }
             let result = on_packet(self.packet);
             ff::av_packet_unref(self.packet);
@@ -662,6 +680,26 @@ impl VideoEncoder {
                 ff::err_to_string(initialised)
             ));
         }
+        // PipeWire supplies full-range RGB. Match the conversion matrix to
+        // the H.264 tags so technical text and UI colours decode consistently.
+        let coefficients = ff::sws_getCoefficients(ff::SWS_CS_ITU709 as i32);
+        let colorspace = ff::sws_setColorspaceDetails(
+            self.sws,
+            coefficients,
+            1,
+            coefficients,
+            0,
+            0,
+            1 << 16,
+            1 << 16,
+        );
+        if colorspace < 0 {
+            return Err(format!(
+                "BT.709 conversion: {}",
+                ff::err_to_string(colorspace)
+            ));
+        }
+
         // Read back rather than assume: libswscale is free to ignore a thread
         // count it cannot use for a given conversion, and a request that was
         // silently dropped looks exactly like threading that did not help.
@@ -678,6 +716,7 @@ impl VideoEncoder {
     }
 
     /// Threads libswscale actually granted, once a frame has been submitted.
+    #[cfg(test)]
     pub fn sws_threads(&self) -> i64 {
         self.sws_threads
     }
@@ -760,21 +799,20 @@ impl AudioEncoder {
                 next_pts: 0,
             };
 
-            (*codec_ctx).sample_rate = AUDIO_SAMPLE_RATE;
-            // The native AAC encoder takes PLANAR float; interleaved is rejected
-            // outright by avcodec_open2, which is why `push` deinterleaves.
-            (*codec_ctx).sample_fmt = ff::AV_SAMPLE_FMT_FLTP;
-            (*codec_ctx).bit_rate = bitrate;
-            (*codec_ctx).time_base = ff::AVRational { num: 1, den: AUDIO_SAMPLE_RATE };
-            ff::av_channel_layout_default(&mut (*codec_ctx).ch_layout, AUDIO_CHANNELS as i32);
-            (*codec_ctx).flags |= ff::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+            // AAC accepts planar float. C owns its channel-layout and context fields.
+            ff::osc_codec_configure_audio(
+                codec_ctx,
+                AUDIO_SAMPLE_RATE,
+                AUDIO_CHANNELS as i32,
+                bitrate,
+            );
 
             let opened = ff::avcodec_open2(codec_ctx, codec, ptr::null_mut());
             if opened < 0 {
                 return Err(format!("aac avcodec_open2: {}", ff::err_to_string(opened)));
             }
             // Only valid after open: the encoder decides its own block size.
-            encoder.block = match (*codec_ctx).frame_size {
+            encoder.block = match ff::osc_codec_frame_size(codec_ctx) {
                 size if size > 0 => size as usize,
                 _ => 1024,
             };
@@ -784,13 +822,10 @@ impl AudioEncoder {
             if encoder.packet.is_null() || encoder.frame.is_null() {
                 return Err("av_packet_alloc/av_frame_alloc returned null".to_owned());
             }
-            (*encoder.frame).format = ff::AV_SAMPLE_FMT_FLTP as i32;
+            (*encoder.frame).format = ff::AV_SAMPLE_FMT_FLTP;
             (*encoder.frame).nb_samples = encoder.block as i32;
             (*encoder.frame).sample_rate = AUDIO_SAMPLE_RATE;
-            ff::av_channel_layout_default(
-                &mut (*encoder.frame).ch_layout,
-                AUDIO_CHANNELS as i32,
-            );
+            ff::av_channel_layout_default(&mut (*encoder.frame).ch_layout, AUDIO_CHANNELS as i32);
             let allocated = ff::av_frame_get_buffer(encoder.frame, 0);
             if allocated < 0 {
                 return Err(format!(
@@ -875,7 +910,10 @@ impl AudioEncoder {
     ) -> Result<(), String> {
         let sent = ff::avcodec_send_frame(self.codec_ctx, frame);
         if sent < 0 && sent != ff::AVERROR_EOF {
-            return Err(format!("aac avcodec_send_frame: {}", ff::err_to_string(sent)));
+            return Err(format!(
+                "aac avcodec_send_frame: {}",
+                ff::err_to_string(sent)
+            ));
         }
         loop {
             let received = ff::avcodec_receive_packet(self.codec_ctx, self.packet);
@@ -934,10 +972,8 @@ struct MuxTrack {
 /// its own timestamps and the container reconciles them.
 ///
 /// `+faststart` is not used: it rewrites the whole file on close, which on a
-/// long recording means copying gigabytes. The moov atom is written at the end
-/// as usual, and the app reads these files locally, where a trailing moov costs
-/// nothing. This is the difference from the WebM path, which had NO index at all
-/// and could not be seeked even locally (see electron/recording/webm-seek-index.ts).
+/// long recording means copying gigabytes. An initial track index and regular
+/// fragments make already-written media recoverable if the helper crashes.
 pub struct Muxer {
     fmt: *mut ff::AVFormatContext,
     tracks: Vec<MuxTrack>,
@@ -968,9 +1004,13 @@ impl Muxer {
                 ));
             }
 
-            let muxer = Self { fmt, tracks: Vec::new(), header_written: false };
+            let muxer = Self {
+                fmt,
+                tracks: Vec::new(),
+                header_written: false,
+            };
 
-            let opened = ff::avio_open(&mut (*fmt).pb, path_c.as_ptr(), ff::AVIO_FLAG_WRITE as i32);
+            let opened = ff::osc_format_open_io(fmt, path_c.as_ptr());
             if opened < 0 {
                 return Err(format!(
                     "avio_open({}): {}",
@@ -996,7 +1036,7 @@ impl Muxer {
             if stream.is_null() {
                 return Err("avformat_new_stream returned null".to_owned());
             }
-            let source_time_base = (*codec_ctx).time_base;
+            let source_time_base = ff::osc_codec_time_base(codec_ctx);
             (*stream).time_base = source_time_base;
             let copied = ff::avcodec_parameters_from_context((*stream).codecpar, codec_ctx);
             if copied < 0 {
@@ -1021,7 +1061,24 @@ impl Muxer {
         }
         // SAFETY: `fmt` is ours and every stream was added through add_stream.
         unsafe {
-            let header = ff::avformat_write_header(self.fmt, ptr::null_mut());
+            let mut options = ptr::null_mut();
+            for (key, value) in [
+                (c"movflags", c"frag_keyframe+empty_moov+default_base_moof"),
+                (c"frag_duration", c"1000000"),
+                (c"flush_packets", c"1"),
+            ] {
+                let set = ff::av_dict_set(&mut options, key.as_ptr(), value.as_ptr(), 0);
+                if set < 0 {
+                    ff::av_dict_free(&mut options);
+                    return Err(format!(
+                        "MP4 {}: {}",
+                        key.to_string_lossy(),
+                        ff::err_to_string(set)
+                    ));
+                }
+            }
+            let header = ff::avformat_write_header(self.fmt, &mut options);
+            ff::av_dict_free(&mut options);
             if header < 0 {
                 return Err(format!(
                     "avformat_write_header: {}",
@@ -1035,7 +1092,7 @@ impl Muxer {
             // the value it CHOSE, not the value we asked for — using ours
             // produces a file whose duration is wrong by the ratio between them.
             for track in &mut self.tracks {
-                let stream = *(*self.fmt).streams.add(track.index as usize);
+                let stream = ff::osc_format_stream(self.fmt, track.index as u32);
                 track.stream_time_base = (*stream).time_base;
             }
         }
@@ -1091,9 +1148,7 @@ impl Drop for Muxer {
             if self.header_written {
                 ff::av_write_trailer(self.fmt);
             }
-            if !(*self.fmt).pb.is_null() {
-                ff::avio_closep(&mut (*self.fmt).pb);
-            }
+            ff::osc_format_close_io(self.fmt);
             ff::avformat_free_context(self.fmt);
             self.fmt = ptr::null_mut();
         }
@@ -1131,11 +1186,12 @@ pub fn forced_backend_from_env() -> Result<Option<Backend>, String> {
     };
     match raw.trim().to_ascii_lowercase().as_str() {
         "" | "auto" => Ok(None),
+        "nvenc" | "h264_nvenc" => Ok(Some(Backend::Nvenc)),
         "vaapi" => Ok(Some(Backend::Vaapi)),
         "vulkan" => Ok(Some(Backend::Vulkan)),
         "software" | "openh264" | "libopenh264" => Ok(Some(Backend::Software)),
         other => Err(format!(
-            "OPENSCREEN_LINUX_ENCODER={other} is not one of auto, vaapi, vulkan, software"
+            "OPENSCREEN_LINUX_ENCODER={other} is not one of auto, nvenc, vaapi, vulkan, software"
         )),
     }
 }
@@ -1165,7 +1221,12 @@ mod tests {
         // The bottom of the ladder is the one rung that must never fail, on any
         // machine, with no GPU at all.
         let encoder = VideoEncoder::open(
-            VideoParams { width: 320, height: 240, fps: 30, bitrate: 1_000_000 },
+            VideoParams {
+                width: 320,
+                height: 240,
+                fps: 30,
+                bitrate: 1_000_000,
+            },
             Some(Backend::Software),
             |_, _| {},
         )
@@ -1176,7 +1237,12 @@ mod tests {
     #[test]
     fn software_encodes_a_frame_into_packets() {
         let mut encoder = VideoEncoder::open(
-            VideoParams { width: 320, height: 240, fps: 30, bitrate: 1_000_000 },
+            VideoParams {
+                width: 320,
+                height: 240,
+                fps: 30,
+                bitrate: 1_000_000,
+            },
             Some(Backend::Software),
             |_, _| {},
         )
@@ -1204,7 +1270,12 @@ mod tests {
     #[test]
     fn a_truncated_frame_is_refused_rather_than_read_past() {
         let mut encoder = VideoEncoder::open(
-            VideoParams { width: 320, height: 240, fps: 30, bitrate: 1_000_000 },
+            VideoParams {
+                width: 320,
+                height: 240,
+                fps: 30,
+                bitrate: 1_000_000,
+            },
             Some(Backend::Software),
             |_, _| {},
         )
@@ -1244,7 +1315,12 @@ mod tests {
         let _ = std::fs::remove_file(&output);
 
         let mut encoder = VideoEncoder::open(
-            VideoParams { width, height, fps, bitrate: 8_000_000 },
+            VideoParams {
+                width,
+                height,
+                fps,
+                bitrate: 8_000_000,
+            },
             forced_backend_from_env().expect("valid encoder override"),
             |backend, error| eprintln!("  {} unavailable: {error}", backend.as_str()),
         )
@@ -1252,7 +1328,9 @@ mod tests {
         eprintln!("selected backend: {}", encoder.backend().as_str());
 
         let mut muxer = Muxer::create(&output).expect("muxer");
-        let track = muxer.add_stream(encoder.codec_context()).expect("video track");
+        let track = muxer
+            .add_stream(encoder.codec_context())
+            .expect("video track");
         muxer.write_header().expect("header");
         let stride = width as usize * 4;
         let mut frame = vec![0u8; stride * height as usize];
@@ -1266,10 +1344,14 @@ mod tests {
                 *byte = ((index as i64 + pts * 7919) % 251) as u8;
             }
             encoder
-                .submit(&frame, stride, ff::AV_PIX_FMT_BGRA, pts, |packet| muxer.write(track, packet))
+                .submit(&frame, stride, ff::AV_PIX_FMT_BGRA, pts, |packet| {
+                    muxer.write(track, packet)
+                })
                 .expect("submit");
         }
-        encoder.finish(|packet| muxer.write(track, packet)).expect("finish");
+        encoder
+            .finish(|packet| muxer.write(track, packet))
+            .expect("finish");
         let elapsed = started.elapsed();
         muxer.finish().expect("trailer");
 
@@ -1286,7 +1368,10 @@ mod tests {
         );
 
         let size = std::fs::metadata(&output).expect("output exists").len();
-        assert!(size > 1024, "the muxed file is {size} bytes, which cannot be 120 frames");
+        assert!(
+            size > 1024,
+            "the muxed file is {size} bytes, which cannot be 120 frames"
+        );
     }
 
     #[test]
@@ -1294,7 +1379,10 @@ mod tests {
         std::env::set_var("RADV_PERFTEST", "gpl");
         prepare_environment();
         let value = std::env::var("RADV_PERFTEST").unwrap();
-        assert!(value.contains("gpl"), "existing flags must survive: {value}");
+        assert!(
+            value.contains("gpl"),
+            "existing flags must survive: {value}"
+        );
         assert!(value.contains("video_encode"), "{value}");
         // Idempotent: a second call must not append a duplicate.
         prepare_environment();

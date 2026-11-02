@@ -789,4 +789,5 @@ export function registerNativeBridgeHandlers(
 			);
 		}
 	});
+	return () => compositorViewService.shutdownPreviews();
 }

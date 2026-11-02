@@ -1,0 +1,17 @@
+{
+  "beforeElfCount": 27,
+  "afterElfCount": 27,
+  "changed": [
+    "resources/electron/native/bin/linux-x64/openscreen-pipewire-helper"
+  ],
+  "removed": [],
+  "captureHelperNeededUnchanged": true,
+  "needed": [
+    "libavcodec.so.62",
+    "libavformat.so.62",
+    "libavutil.so.60",
+    "libswscale.so.9",
+    "libgcc_s.so.1",
+    "libc.so.6"
+  ]
+}

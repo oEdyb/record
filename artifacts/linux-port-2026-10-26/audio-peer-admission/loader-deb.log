@@ -1,0 +1,7 @@
+Verifying Klippt-Linux-1.9.5.deb in a bare docker.io/library/ubuntu:22.04 via docker
+ok install: declared depends resolved
+ok loader: all 27 ELF files resolve
+ok start: klippt reached main()
+ok start: whisper-stt-server reached main()
+ok start: openscreen-pipewire-helper reached main()
+PASS

@@ -63,6 +63,7 @@
 		"startFailed": "无法开始录制。请再次按“录制”，或重新打开 Klippt。",
 		"pauseFailed": "无法暂停并保存此片段。请按“停止”，然后检查“录制内容”。",
 		"continueFailed": "无法继续录制。请按“停止”，然后检查“录制内容”。",
+		"continueRetry": "录制仍处于暂停状态。请检查设置，然后再次点击“继续”。",
 		"stopFailed": "无法完成停止或打开回顾。请重新打开 Klippt，然后检查“录制内容”。",
 		"selectSource": "请选择要录制的源"
 	},

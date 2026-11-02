@@ -56,6 +56,33 @@ The normal app build does not rebuild every native helper. Read
 [`technical-documentation/engineering/build-and-packaging.md`](technical-documentation/engineering/build-and-packaging.md)
 before you trust a package or native result.
 
+## Linux development port
+
+The Linux port keeps the same recorder and review interface, project files, and export
+pipeline. Rust owns portal/PipeWire capture and per-clip H.264/AAC files; the shared
+recording service owns persistence, recovery, Pause/Continue, and clip removal.
+See [implementation and verification](docs/linux-port-2026-10-26.md) for current evidence
+and the remaining platform gates. Windows continues to use its existing native helper.
+
+Build prerequisites include Rust/Cargo, a C compiler, libclang, EGL/GLES development
+headers, and patchelf 0.18 or newer. Runtime capture needs PipeWire, an XDG ScreenCast
+portal backend for the desktop, EGL/GLES, and Wayland client libraries. niri uses the
+GNOME portal backend. Vulkan compositing also needs a working Vulkan driver.
+
+```fish
+npm ci
+npx install-electron --no
+npm run fetch:ffmpeg
+npm run build:native:linux
+npm run build:native:compositor:linux
+npm run dev
+```
+
+For an installer, build or stage the verified Whisper helper first, then use
+`npm run build:linux`. Its existing provenance and distro compatibility checks apply.
+Wayland cannot universally remove Klippt's own windows from a display recording;
+prefer a window source or place the controls on another display.
+
 ## Product rule
 
 Keep source media recoverable. Automatic edits, audio treatment, framing, and layout stay

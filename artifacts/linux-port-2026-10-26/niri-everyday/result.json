@@ -1,0 +1,157 @@
+{
+  "recordingId": 1793046134199,
+  "expectedDurationMs": 12333,
+  "originals": [
+    {
+      "clip": 0,
+      "source": "screenVideoPath",
+      "fullyDecodes": true,
+      "sha256": "e665ecc74096d1303e7da94d4988866f302244c4ea8555e2eaef7fe9452057c7"
+    },
+    {
+      "clip": 0,
+      "source": "microphoneAudioPath",
+      "fullyDecodes": true,
+      "sha256": "f7837c0f333c58c7fd3cbe8a6e84b6850c9645f3cb3112146b3dd928767db3fd"
+    },
+    {
+      "clip": 0,
+      "source": "systemAudioPath",
+      "fullyDecodes": true,
+      "sha256": "c68238d7fb235c53a85d48f29db8cce983a21461ed6c49ca40a6c1c49a8e86a9"
+    },
+    {
+      "clip": 1,
+      "source": "screenVideoPath",
+      "fullyDecodes": true,
+      "sha256": "9cc6b9d10de3d4a7ce43ddf4815a533c179d3f100d2a2e85ea95d4c66922a9bb"
+    },
+    {
+      "clip": 1,
+      "source": "microphoneAudioPath",
+      "fullyDecodes": true,
+      "sha256": "84edb4e063fff0c724f9d58f90e22433a1686fc70902b3e78a70126869c5407f"
+    },
+    {
+      "clip": 1,
+      "source": "systemAudioPath",
+      "fullyDecodes": true,
+      "sha256": "6f6acfc5abdfaaeacd0639c03b88e81ab6d767f2353b8989f842834ad4cc1020"
+    }
+  ],
+  "oneVideoFullyDecodes": true,
+  "oneVideoProbe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "start_time": "0.000000",
+        "duration": "12.316016",
+        "nb_frames": "740"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "start_time": "0.000000",
+        "duration": "12.333000",
+        "nb_frames": "580"
+      }
+    ],
+    "format": {
+      "duration": "12.333000"
+    }
+  },
+  "oneVideoSha256": "ba222f6356fb5aae5365a37ae8b85aaa321ddd21b80b1e02fe9a584f36300ea6",
+  "mixVsSystemOriginalRmsDb": -0.03,
+  "microphoneDefault": "Easy Effects Source",
+  "microphoneVoiceQuality": "Unverified: room/processed input nearly silent, no person speaking.",
+  "audioSummary": {
+    "recordingId": 1793046134199,
+    "durationMs": 12333,
+    "clips": [
+      {
+        "index": 0,
+        "durationMs": 7250,
+        "microphoneAudioPath": {
+          "rmsDbfs": -85.99,
+          "peakDbfs": -54.41,
+          "sampleCount": 349184
+        },
+        "systemAudioPath": {
+          "rmsDbfs": -36.2,
+          "peakDbfs": -22.89,
+          "sampleCount": 349184
+        }
+      },
+      {
+        "index": 1,
+        "durationMs": 5083,
+        "microphoneAudioPath": {
+          "rmsDbfs": -92.12,
+          "peakDbfs": -66.74,
+          "sampleCount": 243712
+        },
+        "systemAudioPath": {
+          "rmsDbfs": -35.57,
+          "peakDbfs": -21.96,
+          "sampleCount": 244736
+        }
+      }
+    ]
+  },
+  "handoff": {
+    "originals": [
+      {
+        "clip": 0,
+        "source": "screenVideoPath",
+        "identical": true
+      },
+      {
+        "clip": 0,
+        "source": "microphoneAudioPath",
+        "identical": true
+      },
+      {
+        "clip": 0,
+        "source": "systemAudioPath",
+        "identical": true
+      },
+      {
+        "clip": 1,
+        "source": "screenVideoPath",
+        "identical": true
+      },
+      {
+        "clip": 1,
+        "source": "microphoneAudioPath",
+        "identical": true
+      },
+      {
+        "clip": 1,
+        "source": "systemAudioPath",
+        "identical": true
+      }
+    ],
+    "otioPresent": true,
+    "fcpxmlPresent": true,
+    "warnings": []
+  },
+  "keyboardQuitExitedApp": true,
+  "ownedWindowsClosed": true,
+  "focusRestored": true,
+  "pauseClockHeld": true,
+  "reviewPlaybackAdvanced": true,
+  "reviewTailSeconds": 12.333,
+  "reviewNativeErrors": 0,
+  "sourceWindowOnly": true,
+  "cameraTested": false,
+  "osKeyboardControls": true,
+  "nativeDialogAccessibilityActions": true,
+  "runtimeSourceSha": "a4f92422d7cfb871edf1e50a417063274985edab",
+  "appImageSha256": "f4691b4a7dda10e9a3e65e63bbdbbb5da00e4f2451bc40efca5420e11d92890f",
+  "niriVersion": "niri 26.04 (8ed0da4)",
+  "globalShortcutBackend": "Known BindShortcuts failure, error 5; not passed.",
+  "pointerAndClipboardUntouched": true
+}
