@@ -19,7 +19,7 @@
 		"electron/native/screencapturekit/Package.swift": "9a0d745305bf652f05f1b144fb15f826e59e5a61cd43fbd31c5b86404d0fca9b",
 		"electron/native/wgc-capture/CMakeLists.txt": "4b91454a84f166399caf97949f30c03fb88c4d1523a4a16adfa6ac5f2e4d0230",
 		"electron/native/whisper-stt/CMakeLists.txt": "26f955915de272fc13bc4ae9a0366d28605472f9deeaf23b0017c330b315b959",
-		"electron/stt/modelManager.ts": "e1de3254b30cc529d6b4375ec5e3a9c3a758aa179d77c345f14b7f7042643f87",
+		"electron/stt/modelManager.ts": "a52d4a4fac0b9bff017da49b9aae06ba180cec35de93009dd6a06b69bc9d9341",
 		"package-lock.json": "620e9c2b83546bb320f8dafe05fc45d3b8ebafe93e5a5adf4e076b1d6b55329d",
 		"scripts/ffmpeg-pins.mjs": "85225f1eb8abc9374bb4cdfe36b30dc0c236d8f93757cab773c02cd1b1984e60",
 		"supply-chain/bundled-assets.json": "8c55b80c140e1377c9165c55cdc3c7fb190f2b97e47e544c8abb83d7004b8512",
