@@ -200,3 +200,123 @@ fn a_stalled_audio_track_does_not_hold_screen_frames_back_from_disk() {
     );
     std::fs::remove_file(output).expect("remove owned test output");
 }
+
+const KILL_TEST_OUTPUT: &str = "KLIPPT_KILL_TEST_OUTPUT";
+const KILL_TEST_STALLED_AUDIO: &str = "KLIPPT_KILL_TEST_STALLED_AUDIO";
+const KILL_TEST_SECONDS: i64 = 8;
+const KILL_TEST_FPS: i64 = 30;
+
+/// Runs in a child process: writes a take through the real encoders and muxer,
+/// reports that it has done so, then waits for the parent to kill it.
+#[test]
+#[ignore = "child of the SIGKILL tests; it never exits on its own"]
+fn take_that_waits_to_be_killed() {
+    let output = std::path::PathBuf::from(std::env::var_os(KILL_TEST_OUTPUT).expect("output path"));
+    let stalled = std::env::var_os(KILL_TEST_STALLED_AUDIO).is_some();
+    let mut video = VideoEncoder::open(
+        VideoParams {
+            width: 320,
+            height: 240,
+            fps: KILL_TEST_FPS as i32,
+            bitrate: 1_000_000,
+        },
+        Some(Backend::Software),
+        |_, _| {},
+    )
+    .expect("software encoder");
+    let mut audio = AudioEncoder::open(128_000).expect("audio encoder");
+    let mut muxer = Muxer::create(&output).expect("muxer");
+    let video_track = muxer.add_stream(video.codec_context()).expect("video");
+    let audio_track = muxer.add_stream(audio.codec_context()).expect("audio");
+    muxer.write_header().expect("header");
+
+    let frame = [0, 0, 255, 255].repeat(320 * 240);
+    let stereo_samples_per_frame = (48_000 * 2 / KILL_TEST_FPS) as usize;
+    let tone: Vec<f32> = (0..stereo_samples_per_frame)
+        .map(|index| (index as f32 * 0.03).sin() * 0.3)
+        .collect();
+    for pts in 0..KILL_TEST_FPS * KILL_TEST_SECONDS {
+        if !stalled || pts < KILL_TEST_FPS / 4 {
+            audio
+                .push(&tone, |packet| muxer.write(audio_track, packet))
+                .expect("audio");
+        }
+        video
+            .submit(&frame, 320 * 4, ff::AV_PIX_FMT_BGRA, pts, |packet| {
+                muxer.write(video_track, packet)
+            })
+            .expect("encode");
+    }
+    std::fs::write(output.with_extension("written"), b"").expect("marker");
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+}
+
+/// Starts a real take in a child process, sends it SIGKILL and counts the screen
+/// frames ffprobe can still read from the file left behind.
+fn screen_frames_after_sigkill(name: &str, stalled_audio: bool) -> i64 {
+    let output =
+        std::env::temp_dir().join(format!("klippt-kill-{name}-{}.mp4", std::process::id()));
+    let marker = output.with_extension("written");
+    let mut command = std::process::Command::new(std::env::current_exe().expect("test binary"));
+    command
+        .args([
+            "--exact",
+            "encoder::recovery_tests::take_that_waits_to_be_killed",
+            "--ignored",
+        ])
+        .env(KILL_TEST_OUTPUT, &output)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if stalled_audio {
+        command.env(KILL_TEST_STALLED_AUDIO, "1");
+    }
+    let mut child = command.spawn().expect("start take");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    while !marker.exists() {
+        assert!(std::time::Instant::now() < deadline, "take never finished");
+        assert!(child.try_wait().expect("poll take").is_none(), "take died");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    child.kill().expect("SIGKILL");
+    child.wait().expect("reap");
+
+    let probe = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&output)
+        .output()
+        .expect("ffprobe");
+    let frames = String::from_utf8_lossy(&probe.stdout)
+        .trim()
+        .trim_end_matches(',')
+        .parse()
+        .unwrap_or(0);
+    std::fs::remove_file(&output).expect("remove owned test output");
+    std::fs::remove_file(&marker).expect("remove owned test marker");
+    frames
+}
+
+#[test]
+fn sigkill_with_a_stalled_microphone_keeps_all_but_the_last_seconds_of_screen() {
+    let frames = screen_frames_after_sigkill("stalled", true);
+    eprintln!("stalled audio: {frames} of 240 screen frames readable after SIGKILL");
+    assert!(frames >= KILL_TEST_FPS * 6, "{frames} of 240 screen frames");
+}
+
+#[test]
+fn sigkill_with_healthy_audio_keeps_all_but_the_last_seconds_of_screen() {
+    let frames = screen_frames_after_sigkill("healthy", false);
+    eprintln!("healthy audio: {frames} of 240 screen frames readable after SIGKILL");
+    assert!(frames >= KILL_TEST_FPS * 6, "{frames} of 240 screen frames");
+}
