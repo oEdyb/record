@@ -1075,6 +1075,9 @@ impl Muxer {
                 (c"movflags", c"frag_keyframe+empty_moov+default_base_moof"),
                 (c"frag_duration", c"1000000"),
                 (c"flush_packets", c"1"),
+                // A silent audio track must not keep encoded frames in memory,
+                // where a crash loses them. The default holds back ten seconds.
+                (c"max_interleave_delta", c"1000000"),
             ] {
                 let set = ff::av_dict_set(&mut options, key.as_ptr(), value.as_ptr(), 0);
                 if set < 0 {
