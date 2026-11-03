@@ -1612,6 +1612,116 @@ mod tests {
     }
 
     #[test]
+    fn microphone_on_a_faster_usb_clock_never_punches_a_hole_in_system_audio() {
+        // A USB mic and a USB headset are separate PipeWire drivers, so their
+        // streams tick on separate crystals. 2000 ppm compresses a long take:
+        // 125 s here equals ~42 min at 100 ppm of real skew between the two.
+        const PPM: f64 = 2000.0;
+        const SECONDS: u64 = 150;
+        let output = std::env::temp_dir().join("klippt-audio-two-clocks.mp4");
+        let ring = || {
+            Arc::new(AudioRing::new(
+                2,
+                AUDIO_SAMPLE_RATE as usize,
+                AUDIO_CHANNELS,
+            ))
+        };
+        let (system, microphone) = (ring(), ring());
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            vec![
+                AudioSource {
+                    label: "system",
+                    ring: system.clone(),
+                    gain: 1.0,
+                    bitrate: 128_000,
+                },
+                AudioSource {
+                    label: "microphone",
+                    ring: microphone.clone(),
+                    gain: 1.0,
+                    bitrate: 128_000,
+                },
+            ],
+        )
+        .expect("capture");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("screen");
+        capture.advance().expect("start");
+        const BLOCK: usize = 1024;
+        let rate = f64::from(AUDIO_SAMPLE_RATE);
+        let mut phase = 0_u64;
+        let mic_block = vec![0.0_f32; BLOCK * AUDIO_CHANNELS];
+        let mut system_ns = 1_000_000_000_f64;
+        let mut mic_ns = 1_000_000_000_f64;
+        let mut clock_ns = 0_f64;
+        let blocks = SECONDS * AUDIO_SAMPLE_RATE as u64 / BLOCK as u64;
+        for _ in 0..blocks {
+            let tone: Vec<f32> = (0..BLOCK)
+                .flat_map(|_| {
+                    phase += 1;
+                    let sample =
+                        (phase as f32 % 48_000.0 * 440.0 * std::f32::consts::TAU / rate as f32)
+                            .sin()
+                            * 0.3;
+                    [sample; AUDIO_CHANNELS]
+                })
+                .collect();
+            system.push_at_for_test(&tone, system_ns as u64);
+            system_ns += BLOCK as f64 * 1e9 / rate;
+            clock_ns += BLOCK as f64 * 1e9 / rate;
+            // The faster crystal delivers a block sooner on the monotonic clock.
+            while mic_ns <= system_ns {
+                microphone.push_at_for_test(&mic_block, mic_ns as u64);
+                mic_ns += BLOCK as f64 * 1e9 / (rate * (1.0 + PPM / 1e6));
+            }
+            capture
+                .audio
+                .as_mut()
+                .expect("mix")
+                .pump(
+                    capture.muxer.as_mut().expect("muxer"),
+                    false,
+                    clock_ns / 1e6,
+                )
+                .expect("pump");
+        }
+        capture.finish().expect("finish");
+        let decoded = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(&output)
+            .args(["-map", "0:a:0", "-ac", "1", "-f", "f32le", "-"])
+            .output()
+            .expect("decode");
+        assert!(decoded.status.success());
+        let mono: Vec<f32> = decoded
+            .stdout
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        // The encoder pads its last frames with silence where the take ends. Each
+        // AAC frame is 1024 samples, so that tail is not a hole in the take.
+        let tail_start = mono.len().saturating_sub(2 * 1024);
+        let (mut run, mut longest) = (0_usize, 0_usize);
+        for sample in &mono[AUDIO_SAMPLE_RATE as usize..tail_start] {
+            run = if sample.abs() < 0.002 { run + 1 } else { 0 };
+            longest = longest.max(run);
+        }
+        let hole_ms = longest as f64 * 1000.0 / rate;
+        assert!(
+            hole_ms < 10.0,
+            "system audio has a {hole_ms:.0} ms hole because the mic clock ran ahead"
+        );
+        std::fs::remove_file(output).expect("remove owned test output");
+    }
+
+    #[test]
     fn source_cycle_gap_preserves_standalone_original_timing() {
         let output = std::env::temp_dir().join("klippt-audio-source-clock-gap.mp4");
         let system = Arc::new(AudioRing::new(
