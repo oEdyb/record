@@ -203,6 +203,10 @@ Add `-KeepRegistered` to leave the package installed and click through the app a
 
 Two things it deliberately does not do. It never records: a real capture needs a GPU and a desktop session that a CI runner does not usefully have, and a flaky gate gets switched off — the loader is the part that broke both times, and it can be tested without either. And it proves nothing about a machine that lacks a runtime, because every runner and every developer machine has the Visual C++ Redistributable; that half is held by the import-table check in `before-pack.cjs`.
 
+### Linux test builds for people outside
+
+Run `build.yml` with `linux_draft: true` to build only Linux on the Ubuntu 22.04 floor and attach AppImage, deb, pacman, rpm and checksums to a draft release named `linux-draft-<sha>`. It still waits for every supply-chain gate, so it stays red until the dependency approval signature is valid. It never publishes and never touches the update feed. A launch still goes through a signed `v*` tag and `publish-release`.
+
 ### Verifying a Linux package resolves on a clean machine
 
 Linux repeated the Windows lesson one release later. 1.9.1 fixed the symbol-version floor and shipped three sonames that nothing declared and nothing bundled: `libgbm.so.1` and `libasound.so.2`, needed by the Electron binary itself, so a clean Ubuntu 22.04 exited `127` before any window appeared; and `libgomp.so.1`, needed by all 32 ELFs of the STT stack, so the app started and only transcription died in `ld.so`.
