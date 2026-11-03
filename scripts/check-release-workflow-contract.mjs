@@ -8,6 +8,7 @@ import { parse } from "yaml";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, "..");
 const EXACT_SOURCE = "${{ needs.resolve-source.outputs.source_sha }}";
+const HELPER_TAGS = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
 const CALL_SOURCE = "${{ inputs.source_sha || github.sha }}";
 
 function workflow(root, name) {
@@ -102,6 +103,11 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 		);
 	}
 
+	requireValue(
+		build.jobs?.["build-whisper-stt"]?.with?.only_tag ===
+			"${{ inputs.linux_draft == true && 'linux-x64' || '' }}",
+		"Only a Linux draft may narrow the helper build, and only to linux-x64",
+	);
 	for (const jobName of ["build-windows", "build-windows-store", "build-macos", "build-linux"]) {
 		const job = build.jobs?.[jobName];
 		const dependencies = needs(job);
@@ -328,7 +334,22 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 		helper.on?.workflow_call?.inputs?.source_sha?.required === true,
 		"Helper workflow needs source_sha",
 	);
-	for (const job of Object.values(helper.jobs ?? {})) {
+	const planner = helper.jobs?.plan;
+	const planText = steps(planner)
+		.map((step) => String(step.run ?? ""))
+		.join("\n");
+	requireValue(
+		HELPER_TAGS.every((tag) => planText.includes(`"tag":"${tag}"`)) &&
+			planText.includes('$only == "" or .tag == $only'),
+		"The helper plan must list every platform and build all of them unless one is requested",
+	);
+	const helperBuilders = Object.entries(helper.jobs ?? {}).filter(([name]) => name !== "plan");
+	for (const [, job] of helperBuilders) {
+		requireValue(
+			needs(job).includes("plan") &&
+				job.strategy?.matrix === "${{ fromJSON(needs.plan.outputs.matrix) }}",
+			"Every helper build must take its targets from the helper plan",
+		);
 		requireValue(
 			checkoutStep(job)?.with?.ref === CALL_SOURCE,
 			"Every helper build must check out the caller source SHA",
@@ -359,7 +380,7 @@ export function checkReleaseWorkflowContract(root = DEFAULT_ROOT) {
 
 	checkPreparedTagWorkflow(root, "prerelease.yml");
 	checkPreparedTagWorkflow(root, "promote.yml");
-	return { packageJobs: 4, helperJobs: Object.keys(helper.jobs ?? {}).length };
+	return { packageJobs: 4, helperJobs: helperBuilders.length };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
