@@ -362,10 +362,37 @@ describe("Mach-O link-edit canonicalisation", () => {
 		expect(differing.every((index) => index >= 32 + 72 + 32 && index < 32 + 72 + 40)).toBe(true);
 	});
 
-	it("refuses fat images and images without a link-edit segment", () => {
-		const fat = Buffer.alloc(64);
+	it("canonicalises every slice of a universal image", () => {
+		const slices = [
+			machOWithLinkedit({ cputype: x64, filesize: 91888n, vmsize: 0x20000n }),
+			machOWithLinkedit({ cputype: arm64, filesize: 91888n, vmsize: 0x40000n }),
+		];
+		const fat = Buffer.alloc(8 + 2 * 20);
 		fat.writeUInt32BE(0xcafebabe, 0);
-		expect(() => canonicalizeMachOLinkedit(fat)).toThrow(/thin little-endian/);
+		fat.writeUInt32BE(2, 4);
+		const body = [];
+		let offset = 0x4000;
+		for (const [index, slice] of slices.entries()) {
+			const entry = 8 + index * 20;
+			fat.writeUInt32BE(offset, entry + 8);
+			fat.writeUInt32BE(slice.length, entry + 12);
+			body.push({ offset, slice });
+			offset += 0x4000;
+		}
+		const image = Buffer.alloc(offset);
+		fat.copy(image);
+		for (const { offset: at, slice } of body) slice.copy(image, at);
+		canonicalizeMachOLinkedit(image);
+		expect(linkeditVmsize(image.subarray(0x4000))).toBe(0x17000n);
+		expect(linkeditVmsize(image.subarray(0x8000))).toBe(0x18000n);
+	});
+
+	it("refuses fat images and images without a link-edit segment", () => {
+		const truncated = Buffer.alloc(64);
+		truncated.writeUInt32BE(0xcafebabe, 0);
+		truncated.writeUInt32BE(9, 4);
+		expect(() => canonicalizeMachOLinkedit(truncated)).toThrow(/malformed universal/);
+		expect(() => canonicalizeMachOLinkedit(Buffer.alloc(64))).toThrow(/thin little-endian/);
 		const bare = machOWithLinkedit({ cputype: x64, filesize: 1n, vmsize: 1n });
 		bare.write("__DATA", 32 + 72 + 8, "latin1");
 		bare.fill(0, 32 + 72 + 14, 32 + 72 + 24);
