@@ -9,7 +9,8 @@
 
 ## Product decision
 
-Klippt is a proprietary, Mac-first, clip-native recorder. October 3 direction: strictly focus on
+Klippt is a free, open-source (AGPL-3.0-only) clip-native recorder. Linux is the main platform and
+macOS also works. October 3 direction: strictly focus on
 fast high-quality capture, Pause/Continue, review, and untouched separate-source handoff by default;
 do not build editor features. Retain
 existing project and export compatibility. The immediate performance work and acceptance gates
@@ -20,20 +21,15 @@ Capture scheduling, long-session acceptance and fast native source handoff are d
 [`docs/capture-queue-2026-10-04.md`](docs/capture-queue-2026-10-04.md).
 
 The inherited editor delivery sections below are historical or compatibility work, not the
-active feature queue. Its current private repository
+active feature queue. Its public repository
 remains `github.com/oEdyb/record` until the compatibility-safe rebrand.
-The Mac-first commercial alpha and the active Linux engineering candidate share
-the creator workflow. Linux support claims follow the
+Linux and macOS share the creator workflow. Linux support claims follow the
 [current acceptance record](docs/linux-port-acceptance-2026-10-26.md); Windows remains
 later work. Historical editor sections do not expand the current feature queue.
 
-The first commercial release is a subscription-first paid private alpha. One Klippt Pro
-entitlement covers the full product at a founding price of $19 per month or $99 per year. Lemon
-Squeezy is the selected first merchant of record and license provider. A 14-day no-card trial starts
-after the first successful recording. Expired access becomes a read-only viewer: projects and
-untouched source recovery remain available, while recording, importing, editing, automatic editing,
-regeneration, and finished export are blocked. Public Lemon Squeezy identifiers are still required
-before commercial enforcement turns on.
+Klippt has no paid tier. The project went open source on 2026-11-02 and removed its paywall, trial
+and licence code. There is no account or billing. Older sections below that describe private-alpha
+work are history, not plans.
 
 The core workflow is:
 
@@ -59,14 +55,14 @@ unsafe media-mutation path.
 
 ## Post-alpha growth — 80/20 SEO and GEO
 
-After the paid-alpha product, checkout, legal pages, and reliable download path are live, build one
+After the legal pages and a reliable download path are live, build one
 small search and generative-discovery foundation. GEO means making Klippt easy for AI answer engines
 to understand, verify, and recommend. It is not a separate content farm or a reason to delay the
 product gate.
 
 The first pass should target most of the value with little recurring work:
 
-1. Create one fast, crawlable canonical website with clear product, pricing, download, privacy,
+1. Create one fast, crawlable canonical website with clear product, download, privacy,
    support, and company pages. Add a sitemap, canonical URLs, useful metadata, and valid SoftwareApp,
    Organization, FAQ, and VideoObject structured data where each type truthfully applies.
 2. Publish a small set of high-intent pages around the jobs Klippt solves: clip-native screen
@@ -78,13 +74,13 @@ The first pass should target most of the value with little recurring work:
    makes it, supported platforms, price, privacy model, core workflow, limitations, and update date.
    Keep each fact in one canonical page and do not publish invented reviews or synthetic authority.
 5. Register the site with Google Search Console and Bing Webmaster Tools. Track indexed pages,
-   high-intent queries, branded searches, download starts, trial starts, and paid conversion. Review
+   high-intent queries, branded searches, download starts, and installs. Review
    the small page set monthly and improve pages that produce qualified users.
 6. Earn a few relevant references through the real launch, creator demonstrations, product
    directories, technical write-ups, and direct comparisons. Do not buy links or generate bulk AI
    articles.
 
-The initial success test is qualified discovery and trial conversion, not traffic volume. Expand
+The initial success test is qualified discovery and installs, not traffic volume. Expand
 SEO or GEO only after the small page set shows which queries and recommendations bring real users.
 
 ## Delivery rules
@@ -135,7 +131,7 @@ Do not restart the old queue below. Finish these gates in order:
 2. Prove the complete packaged 30–90 minute creator flow and high-risk recovery cases.
 3. Build a fresh notarized artifact and prove the first quarantined N-to-N+1 update.
 4. Freeze and migrate to a Dyberg-owned bundle identifier.
-5. Finish Lemon Squeezy activation, legal/support pages, `klippt.app`, and clean/second-Mac proof.
+5. Finish legal/support pages, `klippt.app`, and clean/second-Mac proof.
 
 [`HANDOFF.md`](HANDOFF.md) contains the evidence, local permission state, risks, and exact next slice.
 
@@ -146,7 +142,7 @@ Swift ScreenCaptureKit for capture, Rust and Metal for composition, and VideoToo
 export. Do not rewrite Klippt in Swift and do not add automatic-editing detectors only because a new
 model or paper exists.
 
-The next commercial gate is a trust gate. Complete these items before broad feature expansion:
+The next release gate is a trust gate. Complete these items before broad feature expansion:
 
 1. Create and push a reviewed known-good checkpoint of the current product. The private remote now
    exists, but the live product is far ahead of the last pushed checkpoint.
@@ -171,7 +167,7 @@ The next commercial gate is a trust gate. Complete these items before broad feat
 10. Tune automatic direction only against a versioned labelled corpus. Measure unchanged rate,
     correction time, delete rate, scale and framing corrections, cursor containment, privacy
     boundaries, and preview/export parity.
-11. Freeze a Dyberg-owned bundle identifier before paid distribution. Migrate and test existing
+11. Freeze a Dyberg-owned bundle identifier before public distribution. Migrate and test existing
     user data, TCC permissions, Keychain data, file associations, updates, recovery, rollback, and
     side-by-side installation.
 12. Give each window the smallest preload surface it needs. Validate exact origin, top-level frame,
@@ -187,7 +183,7 @@ protected by a verified private checkpoint. Every release platform build now wai
 dependency, static-analysis, secret-scan, inventory, notice, and CycloneDX gates. New dependency
 inputs require an exact reviewed hash and Olle's detached Ed25519 approval signature. The private
 approval key stays outside GitHub. The exact WebAssembly source offer, Cargo licence inventory,
-model and asset rights, and generated paid-package notice inventory now travel through the same
+model and asset rights, and generated release-package notice inventory now travel through the same
 release contract. W0.4 is complete: the clean, signed Apple Silicon package passed exact physical
 resource, ASAR build-output, helper-provenance, notice, WebAssembly, model-exclusion, and inventory
 checks. Its release inventory and CycloneDX SBOM each contain 1,214 components.
@@ -556,13 +552,8 @@ Exit criteria:
    distribution: [Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 6. Add a private alpha update channel and crash-report export that does not upload project content
    without consent.
-7. The first Klippt Pro entitlement slice is implemented behind a provider adapter. It includes a
-   Lemon Squeezy License API adapter, OS-backed encrypted license storage, a seven-day offline grace
-   period, a trial that starts after the first durable recording, main-process capability checks,
-   renderer read-only guards, localized access UI, and safe project/source retention. Add the public
-   store, product, variant, checkout, and management identifiers before the paid alpha. Never put a
-   provider secret in the app, and never let a validation request interrupt active capture or export.
-8. Publish short privacy, terms/EULA, refund, and support pages before accepting payment. Review
+7. Removed on 2026-11-02: the licence and entitlement slice. Klippt has no paid tier.
+8. Publish short privacy, terms, and support pages before the first public release. Review
    the generated production dependency inventory and every bundled asset at the same release gate.
 
 ## Phase 4 — complete the editable master
@@ -713,7 +704,7 @@ cancelled, stale, or corrupt routes use the complete original clip. No cache pat
 and recording still cancels optional processing.
 
 The next gate is the labelled Swedish/English creator corpus, decoded delivery verification,
-explicit commercial model-license confirmation, and real 30-60+ minute creator-session evidence.
+explicit model redistribution confirmation, and real 30-60+ minute creator-session evidence.
 Do not package the helper in the normal release or enable Clean Voice by default before this gate.
 
 **Audio pane implemented on 2026-08-25:** the old Pauses facet is now one flat **Audio** pane with
@@ -1058,8 +1049,7 @@ Only after the Mac product is dependable:
 - Slice 1 complete;
 - Gate 2 complete;
 - branded, signed, notarized build on a clean Mac;
-- one working Klippt Pro purchase, activation, offline-grace, cancellation, and restore flow;
-- privacy, terms/EULA, refund, support, and third-party notice pages;
+- privacy, terms, support, and third-party notice pages;
 - a tested private update path or an explicit manual-update process for the invite-only group.
 
 ### Creator beta

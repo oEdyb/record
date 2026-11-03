@@ -1236,8 +1236,8 @@ product requirement, not as an optional maximum-quality mode.
 - Source handoff uses the native folder picker, existing media grants and a fresh unique folder.
   Use native APFS cloning on macOS for independent local copies, with ordinary copying on
   unsupported or different filesystems. Never hard-link originals or overwrite an existing file.
-  Write the completion manifest last and clean up an incomplete handoff on failure. Keep source
-  recovery available without a paid entitlement; finished video rendering retains its export gate.
+  Write the completion manifest last and clean up an incomplete handoff on failure. Source
+  recovery is always available.
   Use editor-neutral UI labels; do not name an external editor as a product requirement.
 - While a source picker or source copy is pending, disable project replacement through Record,
   library navigation, File/Open and shortcuts. Release the lock after the operation settles.

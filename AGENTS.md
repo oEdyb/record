@@ -77,7 +77,7 @@ kept in `third-party-licenses/OpenScreen-MIT.txt`.
 - Before a release, generate and review dependency and asset notices. Preserve LGPL
   requirements for dynamically linked FFmpeg. Reject unapproved GPL/AGPL/nonfree or unknown
   components.
-- Customer updates use the owned generic feed at `updates.dyberg.co/klippt`. The GitHub
+- App updates use the owned generic feed at `updates.dyberg.co/klippt`. The GitHub
   repository is not an update server and no repository credential may ship in the app. Publish
   versioned artifacts before the mutable feed manifests.
 - Diagnostic exports are local and user-triggered. Never include project documents, media,

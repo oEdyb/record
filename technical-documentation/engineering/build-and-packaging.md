@@ -95,7 +95,7 @@ Electron-builder also places these reviewed resources outside `app.asar`:
 - only the reviewed built-in cursor sprites under `cursors/default`.
 
 The renderer resolves packaged WebAssembly through `Contents/Resources/web-demuxer.wasm`. Vite's
-copied `dist/wasm` file is excluded from ASAR so the binary does not ship twice. Paid packages also
+copied `dist/wasm` file is excluded from ASAR so the binary does not ship twice. Release packages also
 exclude inherited third-party cursor packs and legacy demo, OpenScreen, preview, and Vite artwork.
 The source tree can keep those files for migration and audit history, but production UI must not
 offer them and the package must not contain them.

@@ -1,11 +1,27 @@
 # Klippt
 
-Klippt is a native screen recorder and editor. Record in clips, pause and continue, drop a bad
+Free, open-source Linux screen recorder that records in clips, with local speech cleanup and no
+account.
+
+Record in clips, pause and continue, drop a bad
 clip while you record, review the take, then save the untouched source files or one finished video.
 Speech-based cleanup ("Clean cut") runs a local Parakeet speech model on your machine; nothing is
 uploaded.
 
-Linux is the main platform. macOS also works. It is free, with no account, trial, or telemetry.
+Linux is the main platform. macOS also works. There is no trial or telemetry.
+
+## Built on OpenScreen
+
+Klippt is a fork of [OpenScreen](https://github.com/getopenscreen/openscreen).
+[Siddharth Vaddem](https://github.com/siddharthvaddem) created OpenScreen.
+[Etienne Lescot](https://github.com/EtienneLescot) and the OpenScreen contributors maintain the
+current continuation. Inherited code keeps its MIT notice, in
+[`third-party-licenses/OpenScreen-MIT.txt`](third-party-licenses/OpenScreen-MIT.txt). Klippt as a
+whole is AGPL-3.0-only. It is a separate project.
+
+Klippt changed the recording flow to clips with pause and continue and clip removal, added a Linux
+PipeWire capture helper, added Clean cut with a local Parakeet speech model, added untouched source
+handoff, added the `.klippt` project format, and removed the inherited third-party cursor packs.
 
 ![Recording review on Linux](artifacts/linux-port-2026-10-26/cursor-preview/review.png)
 
@@ -75,7 +91,4 @@ npm run test
 Copyright (C) 2026 Olle Dyberg. Licensed under the GNU Affero General Public License v3.0 only;
 see [`LICENSE`](LICENSE).
 
-Klippt started from [OpenScreen](https://github.com/getopenscreen/openscreen), which is MIT
-licensed. Its notice is kept in
-[`third-party-licenses/OpenScreen-MIT.txt`](third-party-licenses/OpenScreen-MIT.txt). Bundled
-components and their licences are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+Bundled components and their licences are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
