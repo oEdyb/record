@@ -46,7 +46,7 @@ Known limitations:
 
 ## Build and run on Linux
 
-You need Node `22.22.1`, npm `10.9.4`, Rust/Cargo, a C compiler, libclang, EGL/GLES headers, and
+You need Node `22.22.1`, npm `10.9.4`, Rust/Cargo with rustfmt (rustup's default install has it), a C compiler, libclang, EGL/GLES headers, and
 patchelf 0.18 or newer. At runtime you need PipeWire, an XDG ScreenCast portal for your desktop,
 and a Vulkan driver for the compositor preview. niri uses the GNOME portal backend.
 
