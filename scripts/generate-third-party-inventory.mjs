@@ -92,16 +92,16 @@ function verifyBundledAssetPolicy(root, policy) {
 	requireValue(
 		builder.includes('"from": "public/cursors/default"') &&
 			!builder.includes('"from": "public/cursors",'),
-		"Paid packages must copy only the reviewed default cursor sprites",
+		"Release packages must copy only the reviewed default cursor sprites",
 	);
 	requireValue(
 		builder.includes('"!dist/cursors{,/**/*}"'),
-		"Paid packages must exclude public cursor packs copied by Vite",
+		"Release packages must exclude public cursor packs copied by Vite",
 	);
 	for (const fileName of ["demo.gif", "openscreen.png", "preview*.png", "vite.svg"]) {
 		requireValue(
 			builder.includes(`"!dist/${fileName}"`),
-			`Paid packages must exclude legacy asset ${fileName}`,
+			`Release packages must exclude legacy asset ${fileName}`,
 		);
 	}
 	requireValue(

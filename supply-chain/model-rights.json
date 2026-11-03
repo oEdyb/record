@@ -8,6 +8,20 @@
 			"distributionStatus": "downloaded-on-demand",
 			"evidence": "https://huggingface.co/api/models/FluidInference/parakeet-tdt-0.6b-v3-coreml"
 		},
+		"parakeet-v3-onnx": {
+			"repository": "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+			"revision": "2bda32ec70b097a55adaa07d9a7173915b43cc78",
+			"license": "CC-BY-4.0",
+			"distributionStatus": "downloaded-on-demand",
+			"evidence": "The csukuangfj repository declares no licence tag at this revision. It is k2-fsa's INT8 ONNX export of nvidia/parakeet-tdt-0.6b-v3, so the licence is inherited from that source model: https://huggingface.co/api/models/nvidia/parakeet-tdt-0.6b-v3 (license:cc-by-4.0, revision 541d1f99c6b0c3cd0b11a95167540bb8edefd82b). Export script: https://github.com/k2-fsa/sherpa-onnx/blob/master/scripts/nemo/parakeet-tdt-0.6b-v3/run.sh"
+		},
+		"wav2vec2-aligner": {
+			"repository": "ssmall256/wav2vec2-base-960h-ctc-coreml",
+			"revision": "f4ec5a12ab136a151aea44b97de4bb320a899943",
+			"license": "MIT",
+			"distributionStatus": "downloaded-on-demand",
+			"evidence": "https://huggingface.co/api/models/ssmall256/wav2vec2-base-960h-ctc-coreml"
+		},
 		"whisper": {
 			"repository": "ggerganov/whisper.cpp",
 			"revision": "5359861c739e955e79d9a303bcbc70fb988958b1",

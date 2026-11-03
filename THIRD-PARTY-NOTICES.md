@@ -78,6 +78,34 @@ distributed components that need extra release attention.
   `7dd20fe6b1797d35f5e3307e8b1732d9a178edfe` and verified by SHA-256 in
   `electron/stt/modelManager.ts` before publication to the live cache.
 
+## sherpa-onnx and the Linux Parakeet TDT 0.6B v3 export
+
+- **Component**: `klippt-parakeet-stt` on Linux, built from `electron/native/parakeet-linux`. It
+  links the `sherpa-onnx` crate 1.13.5 and ONNX Runtime statically. Their licences are recorded in
+  `supply-chain/cargo-license-inventory.json`.
+- **Speech model**: `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8` —
+  <https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8>.
+- **Attribution**: "Parakeet TDT 0.6B v3" by NVIDIA, licensed under Creative Commons Attribution 4.0
+  (<https://creativecommons.org/licenses/by/4.0/>) —
+  <https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3>.
+- **Changes**: k2-fsa (Fangjun Kuang) exported the NVIDIA model to ONNX and quantized it to INT8 for
+  sherpa-onnx. Klippt uses that export unmodified.
+- **Licence basis**: the export repository declares no licence of its own. Klippt treats it as
+  CC-BY-4.0 because it derives from the NVIDIA model above.
+- The model is not bundled. Klippt downloads it into the user's data directory. Every file URL is
+  pinned to commit `2bda32ec70b097a55adaa07d9a7173915b43cc78` and verified by SHA-256 in
+  `electron/stt/modelManager.ts`.
+
+## wav2vec 2.0 forced aligner
+
+- **Component**: the Core ML aligner loaded by the macOS speech helper.
+- **Model**: `ssmall256/wav2vec2-base-960h-ctc-coreml`, a conversion of torchaudio's
+  `WAV2VEC2_ASR_BASE_960H` from fairseq, MIT License —
+  <https://huggingface.co/ssmall256/wav2vec2-base-960h-ctc-coreml>.
+- The model is not bundled. Every file URL is pinned to commit
+  `f4ec5a12ab136a151aea44b97de4bb320a899943` and verified by SHA-256 in
+  `electron/stt/modelManager.ts`.
+
 ## DeepFilterNet and libDF
 
 - **Component**: the development-only `klippt-clean-voice` evaluation helper and its embedded

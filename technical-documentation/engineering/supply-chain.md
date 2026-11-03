@@ -66,22 +66,17 @@ pins the one matching public Ed25519 key, the signer identity `olle@klippt.app`,
 and inventory generation. A matching hash is evidence of a recorded review decision, not evidence
 that the dependency is safe by itself.
 
-After a dependency review, update the baseline and replace its signature with:
-
-```bash
-ssh-keygen -Y sign \
-  -f ~/.ssh/klippt_dependency_approval \
-  -n klippt-dependency-approval \
-  supply-chain/approved-dependency-inputs.json
-```
+After a dependency review, refresh the baseline hashes, sign, and regenerate the notices with
+`npm run supply-chain:approve`. The steps and the reason the gate stays now that Klippt is open
+source are in [`docs/dependency-approval-signing.md`](../../docs/dependency-approval-signing.md).
 
 Back up the private key in Olle's encrypted credential backup. If the private key is lost or
 compromised, stop releases, create a new Ed25519 key, replace the pinned public key, re-review the
 complete dependency baseline, and sign it with the new key. Record the rotation in the project log
 before the next release.
 
-GitHub's current private-repository plan does not support required environment reviewers. Olle is
-also the only maintainer, so pull-request self-review cannot form an independent approval boundary.
+Olle is the only maintainer, so pull-request self-review cannot form an independent approval
+boundary.
 Release workflows therefore prepare commits but never create tags. Olle signs each exact release
 commit locally with the private Ed25519 key. The matching public key lives outside the source tree
 in `KLIPPT_RELEASE_PUBLIC_KEY`, and `build.yml` verifies the annotated tag before any package job.
@@ -140,7 +135,7 @@ configure flags, and release-exclusion state that a generic SBOM cannot always e
 
 ## Licences, models, and bundled assets
 
-The paid-package notice set has four reviewed input families:
+The release-package notice set has four reviewed input families:
 
 - `supply-chain/cargo-license-inventory.json` is generated from every discovered locked Cargo graph
   with `cargo metadata --locked`. It records 410 unique external package identities and fails when
@@ -156,7 +151,7 @@ The paid-package notice set has four reviewed input families:
 - `supply-chain/model-rights.json` records the exact source revision, licence evidence, and release
   status for each speech or audio model. The DeepFilterNet engine can use MIT code, but its embedded
   model artifact remains excluded until the artifact's commercial distribution right is confirmed.
-- `supply-chain/bundled-assets.json` records reviewed shipped and excluded asset groups. Paid builds
+- `supply-chain/bundled-assets.json` records reviewed shipped and excluded asset groups. Release builds
   ship Klippt-owned icons, the reviewed default cursor sprites, Geist and 15 Google families under
   OFL-1.1, and Permanent Marker under Apache-2.0. Each Google family has exact WOFF2 output patterns
   and a pinned license notice; binary URLs and hashes are recorded in

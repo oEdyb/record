@@ -580,10 +580,10 @@ describe("packaged distribution policy", { timeout: 30_000 }, () => {
 		).rejects.toThrow(/Unmapped packaged native file/);
 	});
 
-	it("rejects an unlisted paid-package visual asset", async () => {
+	it("rejects an unlisted release-package visual asset", async () => {
 		const packageDir = await packageFixture();
 		await writeFile(
-			path.join(packageDir, "Contents", "Resources", "unapproved-paid-asset.png"),
+			path.join(packageDir, "Contents", "Resources", "unapproved-release-asset.png"),
 			"asset",
 		);
 		await expect(
