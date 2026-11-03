@@ -167,3 +167,76 @@ fn remux_reports_an_error_for_a_missing_input() {
         "message: {err}"
     );
 }
+
+/// Une erreur de lecture au milieu du fichier (disque défaillant) ne doit pas
+/// produire de sortie « réussie » : le caller la renommerait par-dessus
+/// l'original, qui perdrait tout ce qui n'a pas été lu.
+///
+/// L'entrée passe par une socket Unix : quand le pair se ferme sans avoir lu ce
+/// qu'on lui a envoyé, le noyau rend d'abord les données en attente, puis
+/// ECONNRESET. C'est une vraie erreur de `read(2)` à un endroit choisi.
+#[cfg(unix)]
+#[test]
+fn remux_fails_on_a_read_error_instead_of_keeping_the_first_half() {
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::net::UnixStream;
+
+    unsafe { av_log_set_level(AV_LOG_QUIET) };
+    let dir = std::env::temp_dir().join(format!("openscreen-remux-eio-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("live.webm");
+    let output = dir.join("indexed.webm");
+    write_live_matroska(input.to_str().unwrap(), 2000);
+    let bytes = std::fs::read(&input).unwrap();
+
+    let (mut feeder, mut reader) = UnixStream::pair().unwrap();
+    reader.write_all(&[0]).unwrap();
+    let writer = std::thread::spawn(move || {
+        feeder.write_all(&bytes[..bytes.len() / 2]).unwrap();
+    });
+    let result = remux_to_seekable_matroska(
+        &format!("pipe:{}", reader.as_raw_fd()),
+        output.to_str().unwrap(),
+    );
+    writer.join().unwrap();
+
+    let error = match result {
+        Ok(stats) => panic!(
+            "read error reported as success after {} of 2000 packets",
+            stats.packets
+        ),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("av_read_frame"), "{error}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Le correctif ci-dessus ne doit pas priver un enregistrement coupé net (crash,
+/// batterie) de son index : sa fin de fichier reste une fin normale.
+#[test]
+fn remux_keeps_what_a_recording_cut_at_a_crash_still_has() {
+    unsafe { av_log_set_level(AV_LOG_QUIET) };
+    let dir = std::env::temp_dir().join(format!("openscreen-remux-cut-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("live.webm");
+    let output = dir.join("indexed.webm");
+    write_live_matroska(input.to_str().unwrap(), 2000);
+    let size = std::fs::metadata(&input).unwrap().len();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_len(size / 2 + 7)
+        .unwrap();
+
+    let stats = remux_to_seekable_matroska(input.to_str().unwrap(), output.to_str().unwrap())
+        .expect("a file cut short still remuxes");
+    assert!(
+        (900..=1100).contains(&stats.packets),
+        "{} packets",
+        stats.packets
+    );
+    assert!(contains(&std::fs::read(&output).unwrap(), CUES_ID));
+    let _ = std::fs::remove_dir_all(&dir);
+}

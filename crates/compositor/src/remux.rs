@@ -50,7 +50,7 @@ use crate::ffi::{
     avformat_alloc_output_context2, avformat_close_input, avformat_find_stream_info,
     avformat_free_context, avformat_new_stream, avformat_open_input, avformat_write_header,
     avio_closep, avio_open, sn_fmt_nb_streams, sn_fmt_set_pb, sn_fmt_stream, AVFormatContext,
-    AVIOContext, AVMediaType, AVPacket, AVIO_FLAG_WRITE,
+    AVIOContext, AVMediaType, AVPacket, AVERROR_EOF, AVIO_FLAG_WRITE,
 };
 
 /// Bilan d'un remux, remonté jusqu'à la glue TS pour la journalisation.
@@ -208,12 +208,15 @@ pub fn remux_to_seekable_matroska(input: &str, output: &str) -> Result<RemuxStat
         let mut packets: u64 = 0;
         loop {
             let r = av_read_frame(guard.ictx, guard.pkt);
-            if r < 0 {
-                // Fin de fichier ou flux tronqué : dans les deux cas on écrit le
-                // trailer sur ce qu'on a. Un enregistrement coupé net (crash,
-                // batterie) reste lisible et devient seekable jusqu'à sa coupure.
+            if r == AVERROR_EOF {
+                // Un enregistrement coupé net (crash, batterie) finit ici aussi : il
+                // reste lisible et devient seekable jusqu'à sa coupure.
                 break;
             }
+            // Toute autre erreur (EIO d'un disque défaillant) laisse des paquets non
+            // lus. Le caller renomme la sortie par-dessus l'original : écrire le
+            // trailer ici remplacerait l'enregistrement par son début.
+            averr(r, "av_read_frame")?;
             let in_idx = (*guard.pkt).stream_index;
             let out_idx = stream_map.get(in_idx as usize).copied().unwrap_or(-1);
             if out_idx < 0 {
