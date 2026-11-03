@@ -814,6 +814,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					pendingWebcamClip.recorder.recorder.stop();
 				}
 				let pendingWebcamRecorderQueued = false;
+				let discardedTake = discard;
 
 				const clearNativeRecordingState = () => {
 					nativeMacRecording.current = null;
@@ -832,6 +833,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					const result = await window.electronAPI.stopNativeMacRecording(discard, clickedAtMs);
 					window.electronAPI.markStopStage?.("renderer-stop-returned");
 					if (discard || result.discarded) {
+						discardedTake = true;
 						clearNativeRecordingState();
 						return { success: true, review: false };
 					}
@@ -934,9 +936,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					clearNativeRecordingState();
 					return { success: false, review: false, error: ipcErrorMessage(error) };
 				} finally {
-					// A webcam stream that wasn't folded into a saved session has to be closed
-					// and its partial file removed, or a discarded or failed capture orphans a
-					// half-written .webm now that the bytes go to disk as they arrive.
+					// A webcam stream that wasn't folded into a saved session still has to be
+					// closed. Only a take the owner discarded may lose its file: after a failed
+					// attach or Stop, the session or recovery journal can still point at it.
 					const unclaimedWebcamRecorders = new Set<RecorderHandle>();
 					if (activeWebcamRecorder && !activeWebcamRecorderQueued) {
 						unclaimedWebcamRecorders.add(activeWebcamRecorder);
@@ -944,7 +946,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					if (pendingWebcamClip && !pendingWebcamRecorderQueued) {
 						unclaimedWebcamRecorders.add(pendingWebcamClip.recorder);
 					}
-					await nativeMacWebcamClips.current.discardUnclaimed([...unclaimedWebcamRecorders]);
+					if (discardedTake) {
+						await nativeMacWebcamClips.current.discardUnclaimed([...unclaimedWebcamRecorders]);
+					} else {
+						await nativeMacWebcamClips.current.releaseUnclaimed([...unclaimedWebcamRecorders]);
+					}
 					nativeMacWebcamClips.current.clear();
 					if (discardRecordingId.current === activeNativeRecording.recordingId) {
 						discardRecordingId.current = null;

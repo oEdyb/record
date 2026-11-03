@@ -205,6 +205,7 @@ interface Window {
 			chunk: ArrayBuffer,
 		) => Promise<{ success: boolean; error?: string }>;
 		closeRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>;
+		finalizeRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>;
 		getRecordedVideoPath: () => Promise<{
 			success: boolean;
 			path?: string;
