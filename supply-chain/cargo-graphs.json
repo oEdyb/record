@@ -41,12 +41,30 @@
 		"lockfile": "electron/native/pipewire-capture/Cargo.lock",
 		"manifest": "electron/native/pipewire-capture/Cargo.toml",
 		"scope": "required",
-		"advisoryIgnores": []
+		"advisoryIgnores": [
+			{
+				"id": "RUSTSEC-2026-0370",
+				"reason": "zvariant is unmaintained, not vulnerable (the notice lists no patched version and no CVE); it was merged into zbus 6, but the newest ashpd (0.13.13, 2026-07-17) still requires zbus 5, which pulls the standalone crate, so no update exists. It only serialises D-Bus messages in the Linux capture helper's portal calls, and zbus is mid-migration upstream (z-galaxy/zbus#2043). Revisit when ashpd moves to zbus 6."
+			},
+			{
+				"id": "RUSTSEC-2026-0371",
+				"reason": "zbus_names is unmaintained, not vulnerable; merged into zbus 6 like zvariant (RUSTSEC-2026-0370), and the newest ashpd still requires zbus 5. It only validates D-Bus bus and interface names in the Linux capture helper. Revisit when ashpd moves to zbus 6."
+			},
+			{
+				"id": "RUSTSEC-2026-0372",
+				"reason": "zvariant_derive is unmaintained, not vulnerable; it is the derive macro for zvariant (RUSTSEC-2026-0370) and leaves with it when ashpd moves to zbus 6. It runs at build time only."
+			}
+		]
 	},
 	{
 		"lockfile": "electron/native/parakeet-linux/Cargo.lock",
 		"manifest": "electron/native/parakeet-linux/Cargo.toml",
 		"scope": "required",
-		"advisoryIgnores": []
+		"advisoryIgnores": [
+			{
+				"id": "RUSTSEC-2025-0134",
+				"reason": "rustls-pemfile is unmaintained, not vulnerable. It is pinned by rustls-native-certs 0.7 inside the vendored ureq 2.12.1 (the final 2.x), which sherpa-onnx-sys uses only at build time to download prebuilt libraries. Moving to rustls-native-certs 0.8 means patching vendored third-party code for a build-time-only path, so it waits for a ureq upgrade."
+			}
+		]
 	}
 ]
