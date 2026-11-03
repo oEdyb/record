@@ -274,7 +274,11 @@
 		"recordedAt": "Tại {{time}} trong bản ghi",
 		"unsureCount": "{{count}} chưa chắc",
 		"basic": "Cơ bản",
-		"basicNotice": "Bản cắt cơ bản: AI chưa kiểm tra bản ghi này, nên có thể vẫn còn vài đoạn nói lại."
+		"basicNotice": "Bản cắt cơ bản: AI chưa kiểm tra bản ghi này, nên có thể vẫn còn vài đoạn nói lại.",
+		"offNotice": "Bản cắt cơ bản, thực hiện ngay trên máy này. Kiểm tra bằng Claude tìm được nhiều đoạn nói lại hơn, nhưng sẽ gửi văn bản phiên âm của bản ghi này tới Claude qua Claude CLI.",
+		"sendTranscript": "Gửi bản phiên âm tới Claude",
+		"claudeCheckedNotice": "Kiểm tra bằng Claude đang bật: văn bản phiên âm của bản ghi này đã được gửi tới Claude qua Claude CLI.",
+		"turnOffClaude": "Tắt"
 	},
 	"saveRecovery": {
 		"label": "Khôi phục lưu",

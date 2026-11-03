@@ -274,7 +274,11 @@
 		"recordedAt": "At {{time}} in the recording",
 		"unsureCount": "{{count}} unsure",
 		"basic": "Basic",
-		"basicNotice": "Basic cut: AI didn't check this recording, so some retakes may still be in."
+		"basicNotice": "Basic cut: AI didn't check this recording, so some retakes may still be in.",
+		"offNotice": "Basic cut, made on this computer. The Claude check finds more retakes, but it sends this recording's transcript text to Claude through the Claude CLI.",
+		"sendTranscript": "Send transcript to Claude",
+		"claudeCheckedNotice": "Claude check is on: this recording's transcript text was sent to Claude through the Claude CLI.",
+		"turnOffClaude": "Turn off"
 	},
 	"saveRecovery": {
 		"label": "Save recovery",

@@ -25,6 +25,7 @@ function service(overrides: Partial<CleanCutServiceDeps> = {}) {
 	const deps: CleanCutServiceDeps = {
 		ffmpegPath: () => "/bin/ffmpeg",
 		transcriber: async () => ({ transcribe, stop: vi.fn() }),
+		claudeCheck: async () => true,
 		model: () => null,
 		tempDir: path.join(dir, "tmp"),
 		cacheDir: path.join(dir, "cache"),
@@ -115,16 +116,26 @@ it("reports a failure as a failed snapshot", async () => {
 it("says whether Claude checked the cut", async () => {
 	const model = { ask: vi.fn(async () => "") };
 	const cases = [
-		{ model: null, skipped: [], expected: "unavailable" },
-		{ model, skipped: ["whole-session model pass: offline"], expected: "failed" },
-		{ model, skipped: [], expected: "done" },
+		{ on: false, model, skipped: [], expected: "off" },
+		{ on: true, model: null, skipped: [], expected: "unavailable" },
+		{ on: true, model, skipped: ["whole-session model pass: offline"], expected: "failed" },
+		{ on: true, model, skipped: [], expected: "done" },
 	] as const;
-	for (const { model: m, skipped, expected } of cases) {
+	for (const { on, model: m, skipped, expected } of cases) {
 		const { service: s } = service({
+			claudeCheck: async () => on,
 			model: () => m,
 			plan: vi.fn(async () => ({ ...plan, skipped: [...skipped] })),
 		});
 		await s.start("p", [{ assetId: "a", audioPath: audio, offsetSec: 0 }], 1);
 		expect(s.snapshot()).toMatchObject({ state: "ready", modelCheck: expected });
 	}
+});
+
+it("never asks for a model while the Claude check is off", async () => {
+	const model = vi.fn(() => ({ ask: vi.fn(async () => "") }));
+	const { service: s, deps } = service({ claudeCheck: async () => false, model });
+	await s.start("p", [{ assetId: "a", audioPath: audio, offsetSec: 0 }], 1);
+	expect(model).not.toHaveBeenCalled();
+	expect(deps.plan).toHaveBeenCalledWith(expect.objectContaining({ model: null }));
 });

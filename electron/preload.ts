@@ -294,6 +294,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		start: (projectId: string, strength: "gentle" | "clean", document: unknown): Promise<void> =>
 			ipcRenderer.invoke("clean-cut-start", { projectId, strength, document }),
 		cancel: (): Promise<void> => ipcRenderer.invoke("clean-cut-cancel"),
+		getClaudeCheck: (): Promise<boolean> => ipcRenderer.invoke("clean-cut-get-claude-check"),
+		setClaudeCheck: (enabled: boolean): Promise<void> =>
+			ipcRenderer.invoke("clean-cut-set-claude-check", enabled),
 		onSnapshot: (callback: (snapshot: unknown) => void) => {
 			const listener = (_event: unknown, snapshot: unknown) => callback(snapshot);
 			ipcRenderer.on("clean-cut-snapshot", listener);

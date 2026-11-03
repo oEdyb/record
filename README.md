@@ -5,8 +5,11 @@ account.
 
 Record in clips, pause and continue, drop a bad
 clip while you record, review the take, then save the untouched source files or one finished video.
-Speech-based cleanup ("Clean cut") runs a local Parakeet speech model on your machine; nothing is
-uploaded.
+Speech-based cleanup ("Clean cut") runs a local Parakeet speech model on your machine. Your audio
+and video never leave it. Clean cut has one optional extra, the Claude check, which is off until you
+turn it on in the Clean cut panel. When on, the recording's transcript text (words, not audio or
+video) is sent to Claude by running the `claude` command-line tool you have installed, under your
+Claude account and Anthropic's terms. Without it, nothing is uploaded.
 
 Linux is the main platform. macOS also works. There is no trial or telemetry.
 
@@ -34,7 +37,8 @@ Known limitations:
 
 - Wayland cannot hide Klippt's own windows from a full-display recording. Record a window, or put
   the controls on another display.
-- Speech models download on first use of Clean cut (several hundred MB).
+- Speech models download from `huggingface.co` the first time you use Clean cut or the transcript
+  (several hundred MB). That request carries no recording data.
 - The Windows capture helper exists but is not tested right now.
 - Klippt makes no automatic network calls for updates. Choosing Check for Updates in the tray menu
   contacts `updates.dyberg.co`, which has nothing to serve until the first signed release, so the

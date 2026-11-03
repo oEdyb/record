@@ -19,7 +19,8 @@ personal data described here. Contact: [support@klippt.app](mailto:support@klipp
 ## Your recordings stay on your Mac
 
 Klippt records and stores your screen, camera, microphone and system audio locally. We never
-receive your recordings, projects, transcripts, cursor or keyboard activity. The app contains no
+receive your recordings, projects, transcripts, cursor or keyboard activity, and nothing leaves your
+computer unless you turn on the Claude check described below. The app contains no
 analytics and no automatic crash reporting.
 
 ## What the app sends, and to whom
@@ -27,6 +28,13 @@ analytics and no automatic crash reporting.
 - **Update checks, to updates.dyberg.co.** When Klippt checks for an update, it downloads a small
   file from our update server, hosted by Cloudflare. Like any web request, this exposes your IP
   address and app version to Cloudflare.
+- **Speech models, from Hugging Face.** The first time you use Clean cut or the transcript, Klippt
+  downloads its speech models from huggingface.co. The request exposes your IP address to Hugging
+  Face and carries no recording data.
+- **Clean cut's Claude check, to Anthropic, only if you turn it on.** It is off by default. When on,
+  Klippt runs the `claude` command-line tool installed on your computer and sends it the recording's
+  transcript text (not audio or video). That goes to Anthropic under your own Claude account and
+  Anthropic's terms, not to us.
 - **Fonts, to Google.** The current version loads some interface fonts from Google Fonts, which
   exposes your IP address to Google. We are moving these fonts into the app.
 

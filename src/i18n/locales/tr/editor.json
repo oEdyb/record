@@ -274,7 +274,11 @@
 		"recordedAt": "Kayıtta {{time}} anında",
 		"unsureCount": "{{count}} emin olunmayan",
 		"basic": "Temel",
-		"basicNotice": "Temel kesim: Yapay zekâ bu kaydı kontrol etmedi, bu yüzden bazı tekrar çekimler hâlâ içinde olabilir."
+		"basicNotice": "Temel kesim: Yapay zekâ bu kaydı kontrol etmedi, bu yüzden bazı tekrar çekimler hâlâ içinde olabilir.",
+		"offNotice": "Bu bilgisayarda yapılan temel kesim. Claude kontrolü daha fazla tekrar çekimi bulur, ancak bu kaydın döküm metnini Claude CLI üzerinden Claude'a gönderir.",
+		"sendTranscript": "Dökümü Claude'a gönder",
+		"claudeCheckedNotice": "Claude kontrolü açık: bu kaydın döküm metni Claude CLI üzerinden Claude'a gönderildi.",
+		"turnOffClaude": "Kapat"
 	},
 	"saveRecovery": {
 		"label": "Kaydetme kurtarma",

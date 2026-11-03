@@ -274,7 +274,11 @@
 		"recordedAt": "عند {{time}} في التسجيل",
 		"unsureCount": "{{count}} غير مؤكدة",
 		"basic": "أساسي",
-		"basicNotice": "قص أساسي: لم يراجع الذكاء الاصطناعي هذا التسجيل، لذا قد تبقى فيه بعض الإعادات."
+		"basicNotice": "قص أساسي: لم يراجع الذكاء الاصطناعي هذا التسجيل، لذا قد تبقى فيه بعض الإعادات.",
+		"offNotice": "قص أساسي تم على هذا الكمبيوتر. يجد فحص Claude مزيدًا من الإعادات، لكنه يرسل نص تفريغ هذا التسجيل إلى Claude عبر واجهة Claude CLI.",
+		"sendTranscript": "إرسال النص إلى Claude",
+		"claudeCheckedNotice": "فحص Claude مفعّل: أُرسل نص تفريغ هذا التسجيل إلى Claude عبر واجهة Claude CLI.",
+		"turnOffClaude": "إيقاف"
 	},
 	"saveRecovery": {
 		"label": "استعادة الحفظ",

@@ -349,7 +349,7 @@ export function CleanCutHud(props: CleanCutHudProps) {
 										restored: guide.restoredCount,
 									})}
 						</p>
-						{snapshot.modelCheck === "unavailable" || snapshot.modelCheck === "failed" ? (
+						{snapshot.modelCheck !== null ? (
 							<div className={styles.basic}>
 								<BasicCutNotice modelCheck={snapshot.modelCheck} />
 							</div>

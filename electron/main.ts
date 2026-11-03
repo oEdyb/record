@@ -27,7 +27,7 @@ import {
 	installSelfUpdate,
 } from "./auto-updater";
 import { ensureAlignerModel } from "./cleanCut/alignerModel";
-import { claudeCliModel, findClaudeCli } from "./cleanCut/claudeCliModel";
+import { ClaudeCheckSetting, cleanCutModelDeps } from "./cleanCut/claudeCheck";
 import { registerCleanCutIpc } from "./cleanCut/ipc";
 import { CleanCutService } from "./cleanCut/service";
 import { parseCliArgs } from "./cli/args";
@@ -1442,7 +1442,9 @@ appReady?.then(async () => {
 
 	let cleanCutReceiver: Electron.WebContents | null = null;
 	let alignerDir: Promise<string | null> | null = null;
-	const claudeCli = findClaudeCli();
+	const claudeCheckSetting = new ClaudeCheckSetting(
+		path.join(app.getPath("userData"), "clean-cut", "settings.json"),
+	);
 	const cleanCut = new CleanCutService({
 		ffmpegPath: () => resolveFfmpeg(),
 		transcriber: async () => {
@@ -1469,16 +1471,13 @@ appReady?.then(async () => {
 			});
 			return alignerDir;
 		},
-		model: () =>
-			claudeCli
-				? claudeCliModel({
-						binary: claudeCli,
-						cacheDir:
-							process.env.KLIPPT_CLEAN_CUT_REPLY_CACHE ??
-							path.join(app.getPath("userData"), "clean-cut", "replies"),
-						cacheOnly: process.env.KLIPPT_CLEAN_CUT_CACHE_ONLY === "1",
-					})
-				: null,
+		...cleanCutModelDeps({
+			setting: claudeCheckSetting,
+			cacheDir:
+				process.env.KLIPPT_CLEAN_CUT_REPLY_CACHE ??
+				path.join(app.getPath("userData"), "clean-cut", "replies"),
+			cacheOnly: process.env.KLIPPT_CLEAN_CUT_CACHE_ONLY === "1",
+		}),
 		tempDir: path.join(app.getPath("temp"), "klippt-clean-cut"),
 		cacheDir: path.join(app.getPath("userData"), "clean-cut"),
 		onSnapshot: (snapshot) => {
@@ -1488,6 +1487,7 @@ appReady?.then(async () => {
 	});
 	registerCleanCutIpc(ipcMain, {
 		service: cleanCut,
+		claudeCheck: claudeCheckSetting,
 		resolveApprovedPath: resolveApprovedRendererMediaPath,
 		setReceiver: (receiver) => {
 			cleanCutReceiver = receiver;

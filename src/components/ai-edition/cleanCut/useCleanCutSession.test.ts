@@ -11,6 +11,8 @@ const listeners: ((snapshot: CleanCutSnapshot) => void)[] = [];
 const bridge: CleanCutBridge = {
 	start: vi.fn(async () => undefined),
 	cancel: vi.fn(async () => undefined),
+	getClaudeCheck: vi.fn(async () => false),
+	setClaudeCheck: vi.fn(async () => undefined),
 	onSnapshot: (callback) => {
 		listeners.push(callback);
 		return () => undefined;

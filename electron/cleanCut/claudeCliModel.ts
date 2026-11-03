@@ -14,9 +14,12 @@ const SEARCH_PATH = [
 	path.join(process.env.HOME ?? "", ".local/bin"),
 ];
 
-/** The Claude Code CLI on this Mac, if any. A stopgap until the decision model is settled. */
-export function findClaudeCli(): string | null {
-	for (const dir of SEARCH_PATH) {
+/**
+ * The Claude Code CLI on this computer, if any. Finding it sends nothing; only calling `ask` does,
+ * and only after the person has turned the Claude check on (see claudeCheck.ts).
+ */
+export function findClaudeCli(searchPath: readonly string[] = SEARCH_PATH): string | null {
+	for (const dir of searchPath) {
 		const candidate = path.join(dir, "claude");
 		if (existsSync(candidate)) return candidate;
 	}

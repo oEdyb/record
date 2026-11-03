@@ -14,8 +14,12 @@ const CHUNK_SEC = 300;
 export type CleanCutState = "off" | "working" | "ready" | "failed";
 /** What a working run is doing now. */
 export type CleanCutStage = "listening" | "aligning" | "checking" | "placing";
-/** Whether Claude checked the cut: not installed, or its calls failed, leaves a rules-only cut. */
-export type CleanCutModelCheck = "done" | "unavailable" | "failed";
+/**
+ * Whether Claude checked the cut. "off" is the default: the transcript stayed on this computer.
+ * "unavailable" (no CLI found) and "failed" (its calls failed) are checks the person asked for that
+ * did not run. All three leave a rules-only cut.
+ */
+export type CleanCutModelCheck = "done" | "off" | "unavailable" | "failed";
 
 export interface CleanCutSnapshot extends PlanView {
 	projectId: string | null;
@@ -53,6 +57,8 @@ export interface CleanCutServiceDeps {
 	transcriber: () => Promise<CleanCutTranscriber>;
 	/** The forced aligner's model folder, or null to place cuts on recognizer times. */
 	alignerModels?: () => Promise<string | null>;
+	/** Whether the person turned the Claude check on. Nothing leaves the machine while this is false. */
+	claudeCheck: () => Promise<boolean>;
 	model: () => DecisionModel | null;
 	tempDir: string;
 	cacheDir: string;
@@ -187,7 +193,8 @@ export class CleanCutService {
 				});
 			}
 			transcriber ??= await this.deps.transcriber();
-			const model = this.deps.model();
+			const claudeCheck = await this.deps.claudeCheck();
+			const model = claudeCheck ? this.deps.model() : null;
 			const plan = await (this.deps.plan ?? planCleanCut)({
 				takes,
 				model,
@@ -204,11 +211,13 @@ export class CleanCutService {
 					words: takes[index]!.words,
 				})),
 			);
-			const modelCheck: CleanCutModelCheck = !model
-				? "unavailable"
-				: plan.skipped.some((step) => step.includes("model"))
-					? "failed"
-					: "done";
+			const modelCheck: CleanCutModelCheck = !claudeCheck
+				? "off"
+				: !model
+					? "unavailable"
+					: plan.skipped.some((step) => step.includes("model"))
+						? "failed"
+						: "done";
 			publish({
 				...view,
 				projectId,

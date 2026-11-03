@@ -248,7 +248,7 @@ export function CleanCutSheet(props: CleanCutSheetProps) {
 				<span className={styles.spacer} />
 				<StrengthSwitch />
 			</div>
-			{snapshot.modelCheck === "unavailable" || snapshot.modelCheck === "failed" ? (
+			{snapshot.modelCheck !== null ? (
 				<div className={styles.basic}>
 					<BasicCutNotice modelCheck={snapshot.modelCheck} />
 				</div>

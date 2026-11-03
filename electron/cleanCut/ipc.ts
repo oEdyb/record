@@ -4,10 +4,12 @@ import { resolvePlaybackSegments } from "../../src/lib/ai-edition/document/timel
 import { documentSchema } from "../../src/lib/ai-edition/schema";
 import { resolveClipSourceEndSec } from "../../src/lib/ai-edition/timeline/clipDuration";
 import type { RendererIpcMain } from "../ipc/trustedRendererIpc";
+import type { ClaudeCheckSetting } from "./claudeCheck";
 import type { CleanCutMedia, CleanCutService } from "./service";
 
 export interface CleanCutIpcDeps {
 	service: CleanCutService;
+	claudeCheck: Pick<ClaudeCheckSetting, "get" | "set">;
 	resolveApprovedPath: (file: string) => string | null;
 	/** Where snapshots go; the review window that started the run. */
 	setReceiver: (receiver: WebContents | null) => void;
@@ -59,6 +61,10 @@ export function registerCleanCutIpc(ipcMain: RendererIpcMain, deps: CleanCutIpcD
 			throw new Error("The clean cut request does not match its project.");
 		deps.setReceiver(event.sender);
 		void deps.service.start(projectId, media, rawDurationSec);
+	});
+	ipcMain.handle("clean-cut-get-claude-check", () => deps.claudeCheck.get());
+	ipcMain.handle("clean-cut-set-claude-check", async (_event, enabled: unknown) => {
+		await deps.claudeCheck.set(enabled === true);
 	});
 	ipcMain.handle("clean-cut-cancel", async () => {
 		deps.service.cancel();

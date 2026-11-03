@@ -53,6 +53,7 @@ import { isPreviewScreenReady, subscribePreviewFrames } from "@/native/previewSe
 import { buildCompositorClipInputs } from "@/native/sceneDescription";
 import { agentReviewMethods } from "./agentReviewMethods";
 import { AmbientBackdrop } from "./cleanCut/AmbientBackdrop";
+import { isBasicCut } from "./cleanCut/BasicCutNotice";
 import { CleanCutHudPill } from "./cleanCut/CleanCutHud";
 import { CleanCutStage } from "./cleanCut/CleanCutStage";
 import { CleanCutWaveform } from "./cleanCut/CleanCutWaveform";
@@ -1572,10 +1573,7 @@ export function RecordingReviewShell() {
 					<div className={styles.compactPill}>
 						<CleanCutHudPill
 							count={cleanCutReview.unsureCount}
-							basic={
-								cleanCutSnapshot.modelCheck === "unavailable" ||
-								cleanCutSnapshot.modelCheck === "failed"
-							}
+							basic={isBasicCut(cleanCutSnapshot.modelCheck)}
 							onOpen={() => void window.electronAPI?.expandReviewWindow?.()}
 						/>
 					</div>

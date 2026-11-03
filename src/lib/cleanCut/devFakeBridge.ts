@@ -4,7 +4,8 @@ import { type CleanCutBridge, type CleanCutSnapshot, EMPTY_CLEAN_CUT_SNAPSHOT } 
 
 /**
  * Dev builds only: set this localStorage key to "1", "slow" or "fail" to use the fake, or to
- * "no-claude" / "claude-failed" for a ready result whose Claude check did not run.
+ * "no-claude" / "claude-failed" for a ready result whose Claude check did not run once it is
+ * turned on. The check starts off, as in the app.
  */
 export const DEV_FAKE_CLEAN_CUT_KEY = "klippt.dev.fakeCleanCut";
 
@@ -26,6 +27,7 @@ export function createDevFakeCleanCutBridge(mode: string): CleanCutBridge {
 	const emit = (snapshot: CleanCutSnapshot) => {
 		for (const listener of listeners) listener(snapshot);
 	};
+	let claudeCheck = false;
 	const steps = mode === "slow" ? 40 : 14;
 	return {
 		async start(projectId) {
@@ -56,10 +58,21 @@ export function createDevFakeCleanCutBridge(mode: string): CleanCutBridge {
 				const fixture = await import("../../../tests/fixtures/clean-cut-obs-session.json");
 				if (id !== run) return;
 				const ready = snapshotFromFixture(fixture.default, assetId, projectId);
-				const modelCheck =
-					mode === "no-claude" ? "unavailable" : mode === "claude-failed" ? "failed" : "done";
+				const modelCheck = !claudeCheck
+					? "off"
+					: mode === "no-claude"
+						? "unavailable"
+						: mode === "claude-failed"
+							? "failed"
+							: "done";
 				emit({ ...ready, modelCheck });
 			})();
+		},
+		async getClaudeCheck() {
+			return claudeCheck;
+		},
+		async setClaudeCheck(enabled) {
+			claudeCheck = enabled;
 		},
 		async cancel() {
 			run += 1;

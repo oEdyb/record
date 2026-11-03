@@ -55,6 +55,7 @@ describe.skipIf(process.env.CLEAN_CUT_PARITY !== "1")("clean cut service end to 
 					startTimeoutMs: 10 * 60_000,
 				}),
 			alignerModels: async () => path.join(MODELS, "wav2vec2-base-960h-coreml"),
+			claudeCheck: async () => true,
 			model: () => replay,
 			tempDir: path.join(dir, "tmp"),
 			cacheDir: dir,

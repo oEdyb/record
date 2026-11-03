@@ -47,7 +47,7 @@ export interface CleanCutWord {
 	regionId: string | null;
 }
 
-export type CleanCutModelCheck = "done" | "unavailable" | "failed";
+export type CleanCutModelCheck = "done" | "off" | "unavailable" | "failed";
 
 export interface CleanCutSnapshot {
 	/** The project this analysis belongs to; snapshots for another project are ignored. */
@@ -58,7 +58,7 @@ export interface CleanCutSnapshot {
 	stage?: CleanCutStage | null;
 	error: string | null;
 	rawDurationSec: number | null;
-	/** Whether Claude checked the cut. "unavailable" or "failed" means a rules-only cut that finds less. */
+	/** Whether Claude checked the cut. "off" (the default), "unavailable" or "failed" mean a rules-only cut that finds less. */
 	modelCheck: CleanCutModelCheck | null;
 	/** Kept stretches in edit order, with every region cut. */
 	keep: CleanCutKeep[];
@@ -100,6 +100,9 @@ export interface CleanCutExport {
 export interface CleanCutBridge {
 	start: (projectId: string, strength: CleanCutStrength, document: unknown) => Promise<void>;
 	cancel: () => Promise<void>;
+	/** Whether the transcript may be sent to Claude through the Claude CLI. Off until turned on. */
+	getClaudeCheck: () => Promise<boolean>;
+	setClaudeCheck: (enabled: boolean) => Promise<void>;
 	onSnapshot: (callback: (snapshot: CleanCutSnapshot) => void) => () => void;
 }
 

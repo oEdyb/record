@@ -274,7 +274,11 @@
 		"recordedAt": "À {{time}} dans l’enregistrement",
 		"unsureCount": "{{count}} incertaines",
 		"basic": "Basique",
-		"basicNotice": "Coupe basique : l’IA n’a pas vérifié cet enregistrement, il peut donc rester des reprises."
+		"basicNotice": "Coupe basique : l’IA n’a pas vérifié cet enregistrement, il peut donc rester des reprises.",
+		"offNotice": "Coupe basique, faite sur cet ordinateur. La vérification par Claude trouve plus de reprises, mais elle envoie le texte de la transcription de cet enregistrement à Claude via la CLI Claude.",
+		"sendTranscript": "Envoyer la transcription à Claude",
+		"claudeCheckedNotice": "La vérification par Claude est activée : le texte de la transcription de cet enregistrement a été envoyé à Claude via la CLI Claude.",
+		"turnOffClaude": "Désactiver"
 	},
 	"saveRecovery": {
 		"label": "Récupération de l’enregistrement",

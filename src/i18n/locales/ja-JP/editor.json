@@ -274,7 +274,11 @@
 		"recordedAt": "録画の {{time}} 時点",
 		"unsureCount": "未確定 {{count}} 件",
 		"basic": "簡易",
-		"basicNotice": "簡易カット：AI がこの録画を確認していないため、撮り直しが残っている場合があります。"
+		"basicNotice": "簡易カット：AI がこの録画を確認していないため、撮り直しが残っている場合があります。",
+		"offNotice": "このコンピューター上で行った簡易カットです。Claude チェックは撮り直しをより多く見つけますが、この録画の文字起こしテキストを Claude CLI 経由で Claude に送信します。",
+		"sendTranscript": "文字起こしを Claude に送信",
+		"claudeCheckedNotice": "Claude チェックはオンです。この録画の文字起こしテキストを Claude CLI 経由で Claude に送信しました。",
+		"turnOffClaude": "オフにする"
 	},
 	"saveRecovery": {
 		"label": "保存の復旧",

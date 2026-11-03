@@ -274,7 +274,11 @@
 		"recordedAt": "En el {{time}} de la grabación",
 		"unsureCount": "{{count}} dudosos",
 		"basic": "Básico",
-		"basicNotice": "Corte básico: la IA no revisó esta grabación, así que puede que queden algunas repeticiones."
+		"basicNotice": "Corte básico: la IA no revisó esta grabación, así que puede que queden algunas repeticiones.",
+		"offNotice": "Corte básico, hecho en este equipo. La revisión de Claude encuentra más repeticiones, pero envía el texto de la transcripción de esta grabación a Claude mediante la CLI de Claude.",
+		"sendTranscript": "Enviar transcripción a Claude",
+		"claudeCheckedNotice": "La revisión de Claude está activada: el texto de la transcripción de esta grabación se envió a Claude mediante la CLI de Claude.",
+		"turnOffClaude": "Desactivar"
 	},
 	"saveRecovery": {
 		"label": "Recuperar guardado",

@@ -274,7 +274,11 @@
 		"recordedAt": "A {{time}} nella registrazione",
 		"unsureCount": "{{count}} incerti",
 		"basic": "Base",
-		"basicNotice": "Taglio di base: l’IA non ha controllato questa registrazione, quindi potrebbero restare alcune ripetizioni."
+		"basicNotice": "Taglio di base: l’IA non ha controllato questa registrazione, quindi potrebbero restare alcune ripetizioni.",
+		"offNotice": "Taglio di base, fatto su questo computer. Il controllo di Claude trova più ripetizioni, ma invia il testo della trascrizione di questa registrazione a Claude tramite la CLI di Claude.",
+		"sendTranscript": "Invia la trascrizione a Claude",
+		"claudeCheckedNotice": "Il controllo di Claude è attivo: il testo della trascrizione di questa registrazione è stato inviato a Claude tramite la CLI di Claude.",
+		"turnOffClaude": "Disattiva"
 	},
 	"saveRecovery": {
 		"label": "Recupero salvataggio",

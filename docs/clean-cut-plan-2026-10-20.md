@@ -55,3 +55,13 @@ Rough total: about two working days of agent time, plus Olle's answers on the tw
 - The repo has uncommitted dependency-approval work from another session (2026-10-20). Build on a branch or worktree.
 - Final Cut: Klippt exports OTIO only. FCP needs FCPXML, so FCP is out of v1.
 - Mockups that led here: six takes plus a combined version, in the 2026-10-20 session scratchpad (not in the repo).
+
+## Update 2026-11-03: the Claude check is opt-in
+
+Clean cut no longer calls `claude -p` by itself. `findClaudeCli` used to find a `claude` in
+`~/.local/bin`, `/usr/local/bin` or `/opt/homebrew/bin` and send the full transcript to it with no
+setting and no notice. The Claude check is now a setting stored in
+`<userData>/clean-cut/settings.json` as `{"claudeCheck": true}`; anything else, including a missing
+file, is off. `electron/cleanCut/claudeCheck.ts` reads it on every run, before the CLI is looked
+for. Off gives a rules-only cut and `modelCheck: "off"`. The Clean cut panel states that turning it
+on sends the transcript text to Claude, and says so again after a run that sent it.

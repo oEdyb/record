@@ -274,7 +274,11 @@
 		"recordedAt": "錄製中的 {{time}}",
 		"unsureCount": "{{count}} 個待定",
 		"basic": "基本",
-		"basicNotice": "基本剪輯：AI 未檢查此錄製，因此可能仍有部分重錄片段。"
+		"basicNotice": "基本剪輯：AI 未檢查此錄製，因此可能仍有部分重錄片段。",
+		"offNotice": "在此電腦上完成的基本剪輯。Claude 檢查能找出更多重錄片段，但會透過 Claude CLI 把此錄製的轉錄文字傳送給 Claude。",
+		"sendTranscript": "將轉錄文字傳送給 Claude",
+		"claudeCheckedNotice": "Claude 檢查已開啟：此錄製的轉錄文字已透過 Claude CLI 傳送給 Claude。",
+		"turnOffClaude": "關閉"
 	},
 	"saveRecovery": {
 		"label": "儲存復原",
