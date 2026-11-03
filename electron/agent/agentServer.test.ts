@@ -6,6 +6,8 @@ import type { BrowserWindow } from "electron";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentServer } from "./agentServer";
 
+const inputEvents: Record<string, unknown>[] = [];
+
 function fakeWindow(server: () => AgentServer, answer: (method: string) => unknown) {
 	return {
 		isDestroyed: () => false,
@@ -14,6 +16,7 @@ function fakeWindow(server: () => AgentServer, answer: (method: string) => unkno
 		getTitle: () => "Klippt",
 		getBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }),
 		webContents: {
+			sendInputEvent: (event: Record<string, unknown>) => inputEvents.push(event),
 			getURL: () => "klippt://app/index.html?windowType=editor",
 			// The renderer answers over ipc "agent-reply"; here it answers straight back.
 			send: (_channel: string, request: { id: string; method: string }) =>
@@ -88,6 +91,34 @@ describe("AgentServer", () => {
 		const socketPath = await start(false);
 		const reply = await ask(socketPath, "ping");
 		expect(reply.result).toMatchObject({ app: "Klippt", version: "1.2.3" });
+	});
+
+	it("drags with the left button held through the window's input path", async () => {
+		const socketPath = await start(true);
+		inputEvents.length = 0;
+		const reply = await ask(socketPath, "ui.drag", {
+			fromX: 100,
+			fromY: 50,
+			toX: 300,
+			toY: 50,
+			steps: 2,
+		});
+		expect(reply.result).toMatchObject({ steps: 2 });
+		expect(inputEvents.map((event) => event.type)).toEqual([
+			"mouseMove",
+			"mouseDown",
+			"mouseMove",
+			"mouseMove",
+			"mouseUp",
+		]);
+		expect(inputEvents[2]).toMatchObject({ x: 200, y: 50, modifiers: ["leftbuttondown"] });
+		expect(inputEvents[4]).toMatchObject({ x: 300, y: 50, button: "left" });
+	});
+
+	it("refuses a drag without coordinates", async () => {
+		const socketPath = await start(true);
+		const reply = await ask(socketPath, "ui.drag", { fromX: 1 });
+		expect(reply.error).toContain("ui.drag needs");
 	});
 
 	it("opens the Studio in the main process", async () => {

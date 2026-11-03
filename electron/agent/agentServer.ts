@@ -167,6 +167,8 @@ export class AgentServer {
 					params.window,
 					typeScript(String(params.label ?? ""), String(params.text ?? "")),
 				);
+			case "ui.drag":
+				return this.drag(params);
 			case "ui.key": {
 				// Delivered to this window's page only; the host keyboard never sees it.
 				const window = this.pick(params.window);
@@ -203,6 +205,42 @@ export class AgentServer {
 		if (result && typeof result === "object" && "error" in result)
 			throw new Error(String((result as { error: unknown }).error));
 		return result;
+	}
+
+	/** A held left-button drag through Chromium's input path; the real pointer never moves. */
+	private async drag(params: Record<string, unknown>) {
+		const [fromX, fromY, toX, toY] = [params.fromX, params.fromY, params.toX, params.toY].map(
+			Number,
+		);
+		if (![fromX, fromY, toX, toY].every(Number.isFinite)) {
+			throw new Error("ui.drag needs fromX, fromY, toX and toY in window coordinates.");
+		}
+		const contents = this.pick(params.window).webContents;
+		const steps = Math.max(1, Math.min(120, Math.round(Number(params.steps ?? 20)) || 20));
+		const at = (x: number, y: number) => ({ x: Math.round(x), y: Math.round(y) });
+		contents.sendInputEvent({ type: "mouseMove", ...at(fromX, fromY) });
+		contents.sendInputEvent({
+			type: "mouseDown",
+			button: "left",
+			clickCount: 1,
+			...at(fromX, fromY),
+		});
+		for (let step = 1; step <= steps; step += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 16));
+			contents.sendInputEvent({
+				type: "mouseMove",
+				button: "left",
+				modifiers: ["leftbuttondown"],
+				...at(fromX + ((toX - fromX) * step) / steps, fromY + ((toY - fromY) * step) / steps),
+			});
+		}
+		contents.sendInputEvent({
+			type: "mouseUp",
+			button: "left",
+			clickCount: 1,
+			...at(toX, toY),
+		});
+		return { dragged: { fromX, fromY, toX, toY }, steps };
 	}
 
 	private pick(selector: unknown): BrowserWindow {

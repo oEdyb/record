@@ -1290,9 +1290,7 @@ appReady?.then(async () => {
 			scheduleReviewPrewarm(recording);
 			if (!tray) createTray();
 			updateTrayMenu(recording);
-			if (!recording && !(process.platform === "linux" && studio?.ownsControls())) {
-				showMainWindow();
-			}
+			if (!recording && !studio?.ownsControls()) showMainWindow();
 		},
 		switchToHudWrapper,
 		(point) =>

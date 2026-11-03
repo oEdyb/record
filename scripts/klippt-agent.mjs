@@ -27,6 +27,7 @@ App and windows (any window; never moves your mouse or types on your keyboard):
   click LABEL [nth=N]                Click a control by its label (exact first, then contains)
   type LABEL TEXT                    Type into a text field
   key KEY [mods=Control,Shift]       Press a key inside the window, e.g. key Space, key z mods=Control
+  drag X1 Y1 X2 Y2 [steps=N]         Drag with the left button inside the window (window coordinates)
 
 Review window, clean cut:
   state                              Project, playhead, clean cut status and counts
@@ -70,6 +71,7 @@ const ALIASES = {
 	click: ([label]) => ["ui.click", { label }],
 	type: ([label, ...text]) => ["ui.type", { label, text: text.join(" ") }],
 	key: ([key]) => ["ui.key", { key }],
+	drag: ([fromX, fromY, toX, toY]) => ["ui.drag", { fromX, fromY, toX, toY }],
 	screenshot: ([window]) => ["screenshot", window === undefined ? {} : { window: parse(window) }],
 };
 
