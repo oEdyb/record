@@ -69,3 +69,12 @@ alter approval or bypass the failing gate. The broad suites ran on `24304c0c6`,
 before incorporating main's later remux and Clean cut updates by rebase.
 Installation is explicitly deferred while the PC is in use for a game; the
 existing `~/Applications/Klippt` and settings remain untouched.
+
+Merged code: `81e64b124e7ead13de03a0dea9801a5f5234505b` on main.
+Local capture, Parakeet, compositor addon and TypeScript/Vite rebuilds passed.
+A complete installable package was not produced: `beforePack` rejected missing
+Whisper/ggml assets. The installed helper manifest names an older source commit,
+so it was not copied and relabelled as this build. Packaging that helper with
+valid current-source provenance, and then reinstalling, remain deferred with
+the installation while the PC is being used for a game. No package guard was
+bypassed and the installed app was not launched or replaced.
