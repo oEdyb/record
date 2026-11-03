@@ -61,6 +61,35 @@ async function isMachO(filePath) {
 	}
 }
 
+function diagnose(filePath) {
+	const sh = (label, cmd) => {
+		let out = "";
+		try {
+			out = execFileSync("/bin/bash", ["-c", `${cmd} 2>&1`], { encoding: "utf8" });
+		} catch (e) {
+			out = `EXIT ${e.status}: ${e.stdout ?? ""}`;
+		}
+		console.log(`DIAG[${label}] ${cmd}\n${out}`);
+	};
+	const d = fs.mkdtempSync(path.join(os.tmpdir(), "diag-"));
+	const f = path.join(d, path.basename(filePath));
+	fs.copyFileSync(filePath, f);
+	sh("orig-ls", `ls -l '${f}'; file '${f}'; codesign -dv '${f}'`);
+	sh("orig-otool", `otool -l '${f}' | grep -E -A6 'LC_SEGMENT_64|LC_CODE_SIGNATURE|LC_SYMTAB|LC_DYLD|LC_DYSYMTAB|LC_FUNCTION|LC_DATA_IN|LC_BUILD|LC_DYLD_CHAINED' | grep -E 'cmd |__LINKEDIT|segname|vmsize|fileoff|filesize|dataoff|datasize|symoff|stroff|strsize|nsyms|rebase_off|bind_off|export_off|size|minos|sdk'`);
+	for (const [label, steps] of [
+		["B-strip-signed", `strip -S '${f}'`],
+		["C-remove-only", `codesign --remove-signature '${f}'`],
+		["D-remove-then-strip-x", `codesign --remove-signature '${f}' && strip -S -x '${f}'`],
+		["E-remove-then-strip-u", `codesign --remove-signature '${f}' && strip -u -r '${f}'`],
+		["F-remove-then-strip-noargs", `codesign --remove-signature '${f}' && strip '${f}'`],
+	]) {
+		const g = path.join(d, label);
+		fs.copyFileSync(filePath, g);
+		sh(label, steps.split(f).join(g));
+		sh(`${label}-otool`, `ls -l '${g}'; otool -l '${g}' | grep -E -A5 '__LINKEDIT|LC_CODE_SIGNATURE' | grep -E 'cmd |vmsize|filesize|fileoff|dataoff|datasize'`);
+	}
+}
+
 async function fileIdentity(filePath, target) {
 	if (!target.startsWith("darwin-") || !(await isMachO(filePath))) {
 		const info = await stat(filePath);
@@ -96,6 +125,7 @@ async function fileIdentity(filePath, target) {
 			contentSha256: await sha256File(temporaryFile),
 		};
 	} catch (error) {
+		diagnose(filePath);
 		const detail = String(error.stderr ?? error.message).trim();
 		throw new Error(`Could not normalize signed Mach-O helper ${filePath}: ${detail}`);
 	} finally {
@@ -238,6 +268,7 @@ function gitOutput(directory, args) {
 			stdio: ["ignore", "pipe", "pipe"],
 		}).trim();
 	} catch (error) {
+		diagnose(filePath);
 		const detail = String(error.stderr ?? error.message).trim();
 		throw new Error(`Could not inspect built dependency ${directory}: ${detail}`);
 	}
