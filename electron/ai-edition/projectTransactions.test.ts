@@ -36,6 +36,34 @@ describe("project transaction storage (not external writer ownership)", () => {
 			rename(title),
 		);
 	}
+	it("opens a project whose Undo recovery snapshot predates the current schema", async () => {
+		await store.commit(
+			{
+				requestId: "agent-edit",
+				payload: { title: "Agent" },
+				expected: (await store.read()).version,
+				recordUndo: true,
+			},
+			rename("Agent"),
+		);
+		// Exactly what an older build left on disk: document and its Undo snapshot
+		// both at the schema that build wrote.
+		const stored = JSON.parse(await fs.readFile(file, "utf8"));
+		const { _klipptTransactions: metadata, ...content } = stored;
+		content.schemaVersion = 10;
+		delete content.videoOverlays;
+		metadata.undoRecovery.beforeDocument.schemaVersion = 10;
+		delete metadata.undoRecovery.beforeDocument.videoOverlays;
+		metadata.contentHash = createHash("sha256")
+			.update(canonicalTransactionPayload(content))
+			.digest("hex");
+		await fs.writeFile(file, JSON.stringify({ ...content, _klipptTransactions: metadata }));
+
+		const snapshot = await store.read();
+		expect(snapshot.document.project.title).toBe("Agent");
+		expect(snapshot.undoRecovery?.beforeDocument.project.title).toBe("Original");
+		expect(snapshot.undoRecovery?.beforeDocument.schemaVersion).toBe(snapshot.document.schemaVersion);
+	});
 	it("loads old snapshots deterministically without writing or leaking metadata into document history", async () => {
 		const raw = await fs.readFile(file, "utf8");
 		expect(await store.read()).toEqual(await new ProjectTransactionStore(file).read());

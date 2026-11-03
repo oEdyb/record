@@ -7,6 +7,7 @@ import path from "node:path";
 import { z } from "zod";
 import {
 	type AxcutDocument,
+	axcutSchemaVersion,
 	documentSchema,
 	migrateRawDocumentToCurrent,
 } from "../../src/lib/ai-edition/schema";
@@ -48,7 +49,14 @@ const undoRecoverySchema = z
 	.object({
 		requestId: z.string().min(1).max(256),
 		afterRevision: z.string().min(1),
-		beforeDocument: documentSchema,
+		// Written by whichever build made the commit; a later schema must still open it.
+		beforeDocument: z.preprocess(
+			(raw) =>
+				(raw as { schemaVersion?: unknown } | null)?.schemaVersion === axcutSchemaVersion
+					? raw
+					: migrateRawDocumentToCurrent(raw),
+			documentSchema,
+		),
 	})
 	.strict();
 const metadataSchema = z
