@@ -61,6 +61,54 @@ async function isMachO(filePath) {
 	}
 }
 
+const LC_SEGMENT_64 = 0x19;
+const MH_MAGIC_64 = 0xfeedfacf;
+const CPU_TYPE_X86_64 = 0x01000007;
+const CPU_TYPE_ARM64 = 0x0100000c;
+const MACH_HEADER_64_SIZE = 32;
+
+export function canonicalLinkeditVmsize(cputype, filesize) {
+	const pageSize = cputype === CPU_TYPE_ARM64 ? 0x4000 : 0x1000;
+	return BigInt(Math.ceil(Number(filesize) / pageSize) * pageSize);
+}
+
+export function canonicalizeMachOLinkedit(image) {
+	if (image.length < MACH_HEADER_64_SIZE || image.readUInt32LE(0) !== MH_MAGIC_64) {
+		throw new Error("only thin little-endian 64-bit Mach-O images are supported");
+	}
+	const cputype = image.readUInt32LE(4);
+	if (cputype !== CPU_TYPE_X86_64 && cputype !== CPU_TYPE_ARM64) {
+		throw new Error(`unsupported Mach-O CPU type 0x${cputype.toString(16)}`);
+	}
+	const commandCount = image.readUInt32LE(16);
+	let offset = MACH_HEADER_64_SIZE;
+	for (let index = 0; index < commandCount; index += 1) {
+		const command = image.readUInt32LE(offset);
+		const size = image.readUInt32LE(offset + 4);
+		if (size < 8 || offset + size > image.length) throw new Error("malformed Mach-O load command");
+		if (
+			command === LC_SEGMENT_64 &&
+			image
+				.subarray(offset + 8, offset + 24)
+				.toString("latin1")
+				.replace(/\0+$/, "") === "__LINKEDIT"
+		) {
+			const filesize = image.readBigUInt64LE(offset + 48);
+			image.writeBigUInt64LE(canonicalLinkeditVmsize(cputype, filesize), offset + 32);
+			return image;
+		}
+		offset += size;
+	}
+	throw new Error("Mach-O image has no __LINKEDIT segment");
+}
+
+async function canonicalizeLinkeditExtent(filePath) {
+	await fs.promises.writeFile(
+		filePath,
+		canonicalizeMachOLinkedit(await fs.promises.readFile(filePath)),
+	);
+}
+
 async function fileIdentity(filePath, target) {
 	if (!target.startsWith("darwin-") || !(await isMachO(filePath))) {
 		const info = await stat(filePath);
@@ -83,12 +131,12 @@ async function fileIdentity(filePath, target) {
 		// A hardened-runtime signature can enlarge __LINKEDIT. `codesign
 		// --remove-signature` removes the signature bytes but leaves that segment's
 		// virtual size behind, so the same executable hashes differently before and
-		// after distribution signing. Apple's strip tool rewrites the temporary
-		// link-edit metadata deterministically. `-S` also removes debug symbols,
-		// which do not affect executable behavior and are not shipped as provenance.
-		execFileSync("/usr/bin/strip", ["-S", temporaryFile], {
-			stdio: ["ignore", "ignore", "pipe"],
-		});
+		// after distribution signing. Apple's `strip` used to rewrite that field, but it
+		// refuses any image whose link-edit data stops short of the signature's 16-byte
+		// alignment ("does not fill the __LINKEDIT segment"), which depends on string-table
+		// length and so failed on one x64 dylib and passed on arm64 by luck. The virtual
+		// size is the only field that differs, so it is set to its canonical value here.
+		await canonicalizeLinkeditExtent(temporaryFile);
 		const info = await stat(temporaryFile);
 		return {
 			contentIdentity: "mach-o-without-code-signature",

@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	canonicalizeMachOLinkedit,
 	createHelperManifest,
 	HELPER_MANIFEST_NAME,
 	readCmakeUpstreams,
@@ -310,5 +311,64 @@ describe("native helper provenance", () => {
 		await writeFile(path.join(checkout, "README"), "second");
 		execFileSync("git", ["commit", "-qam", "changed"], { cwd: checkout });
 		await expect(verifyBuiltUpstreams(buildRoot, upstream)).rejects.toThrow(/revision mismatch/);
+	});
+});
+
+function machOWithLinkedit({ cputype, filesize, vmsize }) {
+	const image = Buffer.alloc(32 + 72 + 72 + 16);
+	image.writeUInt32LE(0xfeedfacf, 0);
+	image.writeUInt32LE(cputype, 4);
+	image.writeUInt32LE(2, 16);
+	image.writeUInt32LE(144, 20);
+	let offset = 32;
+	for (const [name, size, vm] of [
+		["__TEXT", 4096n, 4096n],
+		["__LINKEDIT", filesize, vmsize],
+	]) {
+		image.writeUInt32LE(0x19, offset);
+		image.writeUInt32LE(72, offset + 4);
+		image.write(name, offset + 8, "latin1");
+		image.writeBigUInt64LE(vm, offset + 32);
+		image.writeBigUInt64LE(size, offset + 48);
+		offset += 72;
+	}
+	return image;
+}
+
+describe("Mach-O link-edit canonicalisation", () => {
+	const x64 = 0x01000007;
+	const arm64 = 0x0100000c;
+	const linkeditVmsize = (image) => image.readBigUInt64LE(32 + 72 + 32);
+
+	it("gives a signed and an unsigned image the same virtual size", () => {
+		const unsigned = machOWithLinkedit({ cputype: x64, filesize: 91888n, vmsize: 0x20000n });
+		const signed = machOWithLinkedit({ cputype: x64, filesize: 91888n, vmsize: 0x28000n });
+		canonicalizeMachOLinkedit(unsigned);
+		canonicalizeMachOLinkedit(signed);
+		expect(unsigned.equals(signed)).toBe(true);
+		expect(linkeditVmsize(unsigned)).toBe(0x17000n);
+	});
+
+	it("rounds to the 16 KiB page size on arm64", () => {
+		const image = machOWithLinkedit({ cputype: arm64, filesize: 91888n, vmsize: 0x40000n });
+		canonicalizeMachOLinkedit(image);
+		expect(linkeditVmsize(image)).toBe(0x18000n);
+	});
+
+	it("changes nothing but the link-edit virtual size", () => {
+		const before = machOWithLinkedit({ cputype: x64, filesize: 5000n, vmsize: 0x9000n });
+		const after = canonicalizeMachOLinkedit(Buffer.from(before));
+		const differing = [...before.keys()].filter((index) => before[index] !== after[index]);
+		expect(differing.every((index) => index >= 32 + 72 + 32 && index < 32 + 72 + 40)).toBe(true);
+	});
+
+	it("refuses fat images and images without a link-edit segment", () => {
+		const fat = Buffer.alloc(64);
+		fat.writeUInt32BE(0xcafebabe, 0);
+		expect(() => canonicalizeMachOLinkedit(fat)).toThrow(/thin little-endian/);
+		const bare = machOWithLinkedit({ cputype: x64, filesize: 1n, vmsize: 1n });
+		bare.write("__DATA", 32 + 72 + 8, "latin1");
+		bare.fill(0, 32 + 72 + 14, 32 + 72 + 24);
+		expect(() => canonicalizeMachOLinkedit(bare)).toThrow(/no __LINKEDIT/);
 	});
 });
