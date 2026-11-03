@@ -1,0 +1,39 @@
+name: Diag README Linux
+
+on:
+  push:
+    branches: [ci/readme-linux-diag]
+
+permissions:
+  contents: read
+
+jobs:
+  readme:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container: ubuntu:22.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Only what a fresh machine has
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates curl git xz-utils sudo
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prerequisites exactly as the README names them
+        run: |
+          apt-get install -y build-essential libclang-dev libegl1-mesa-dev libgles2-mesa-dev
+          curl -fsSL https://nodejs.org/dist/v22.22.1/node-v22.22.1-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+          npm install -g npm@10.9.4
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/patchelf.tar.gz https://github.com/NixOS/patchelf/releases/download/0.18.0/patchelf-0.18.0-x86_64.tar.gz
+          tar -xzf /tmp/patchelf.tar.gz -C /usr/local
+          node --version; npm --version; patchelf --version
+      - run: npm ci
+      - run: npx install-electron --no
+      - run: npm run fetch:ffmpeg
+      - run: npm run build:native:linux
+      - run: npm run build:native:compositor:linux
