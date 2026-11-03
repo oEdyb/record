@@ -72,7 +72,7 @@ export function canonicalLinkeditVmsize(cputype, filesize) {
 	return BigInt(Math.ceil(Number(filesize) / pageSize) * pageSize);
 }
 
-export function canonicalizeMachOLinkedit(image) {
+function canonicalizeThinMachO(image) {
 	if (image.length < MACH_HEADER_64_SIZE || image.readUInt32LE(0) !== MH_MAGIC_64) {
 		throw new Error("only thin little-endian 64-bit Mach-O images are supported");
 	}
@@ -100,6 +100,28 @@ export function canonicalizeMachOLinkedit(image) {
 		offset += size;
 	}
 	throw new Error("Mach-O image has no __LINKEDIT segment");
+}
+
+const FAT_MAGIC = 0xcafebabe;
+const FAT_MAGIC_64 = 0xcafebabf;
+
+export function canonicalizeMachOLinkedit(image) {
+	const magic = image.length >= 8 ? image.readUInt32BE(0) : 0;
+	if (magic !== FAT_MAGIC && magic !== FAT_MAGIC_64) return canonicalizeThinMachO(image);
+	const wide = magic === FAT_MAGIC_64;
+	const entrySize = wide ? 32 : 20;
+	const sliceCount = image.readUInt32BE(4);
+	if (sliceCount > 16 || 8 + sliceCount * entrySize > image.length) {
+		throw new Error("malformed universal Mach-O header");
+	}
+	for (let index = 0; index < sliceCount; index += 1) {
+		const entry = 8 + index * entrySize;
+		const offset = wide ? Number(image.readBigUInt64BE(entry + 8)) : image.readUInt32BE(entry + 8);
+		const size = wide ? Number(image.readBigUInt64BE(entry + 16)) : image.readUInt32BE(entry + 12);
+		if (offset + size > image.length) throw new Error("universal Mach-O slice is out of range");
+		canonicalizeThinMachO(image.subarray(offset, offset + size));
+	}
+	return image;
 }
 
 async function canonicalizeLinkeditExtent(filePath) {
