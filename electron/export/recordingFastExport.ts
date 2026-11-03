@@ -68,6 +68,10 @@ export async function runRecordingFfmpeg(
 const SOURCE_READ_FAILURE =
 	/partial file|file ended prematurely|packet corrupt|error (?:during )?demuxing/i;
 
+/** A crash or full disk stops a fragmented take inside a fragment of about a
+ * second. That take still exports everything it holds; losing more is damage. */
+const CUT_TAKE_TAIL_SEC = 1.5;
+
 export function sourceReadFailure(stderr: string): string | null {
 	return (
 		stderr
@@ -461,8 +465,28 @@ export async function prepareRecordingFastExport(
 					read.append(chunk);
 					report(onProgress, 0, read.spanSeconds / durationS);
 				});
+				let cutTailS = 0;
 				const readFailure = sourceReadFailure(header);
-				if (readFailure) throw new Error(`A recording source is incomplete: ${readFailure}`);
+				if (readFailure) {
+					for (const [index, clip] of clips.entries()) {
+						let span = 0;
+						const take = await probeRecordingPackets(
+							ffmpeg,
+							clip.screenPath,
+							signal,
+							timeoutMs,
+							(seconds) => {
+								span = seconds;
+							},
+						);
+						if (!sourceReadFailure(take.header)) continue;
+						const declared = headers[index]!.durationSec;
+						const lost = declared === null ? Number.POSITIVE_INFINITY : declared - span;
+						if (lost > CUT_TAKE_TAIL_SEC)
+							throw new Error(`A recording source is incomplete: ${readFailure}`);
+						cutTailS += Math.max(0, lost);
+					}
+				}
 				const original = read.finish();
 				const staged = await probeRecordingPackets(ffmpeg, stagingPath, signal, timeoutMs, (s) =>
 					report(onProgress, 1, s / durationS),
@@ -484,7 +508,7 @@ export async function prepareRecordingFastExport(
 					stagedMedia.audioStreamIndex === null ||
 					(originalDuration !== null &&
 						stagedDuration !== null &&
-						Math.abs(originalDuration - stagedDuration) > 0.020000001 * clips.length) ||
+						Math.abs(originalDuration - stagedDuration) > 0.020000001 * clips.length + cutTailS) ||
 					staged.packets.frames !== original.frames ||
 					staged.packets.digest !== original.digest ||
 					staged.packets.averageFps !== original.averageFps

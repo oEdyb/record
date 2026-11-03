@@ -455,7 +455,7 @@ describe("a take cut short on disk", () => {
 		);
 	}
 
-	async function exportTakes(directory: string, cutFirstTake: boolean) {
+	async function exportTakes(directory: string, cutFirstTake: boolean, movflags = "+faststart") {
 		const encoder = await h264Encoder();
 		if (!encoder) throw new Error("This FFmpeg has no H.264 encoder.");
 		const takes = [0, 1].map((index) => path.join(directory, `take-${index}.mp4`));
@@ -489,7 +489,7 @@ describe("a take cut short on disk", () => {
 					"-ac",
 					"2",
 					"-movflags",
-					"+faststart",
+					movflags,
 					take,
 				],
 				signal,
@@ -539,6 +539,22 @@ describe("a take cut short on disk", () => {
 			const cut = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-take-cut-"));
 			temporary.push(cut);
 			await expect(exportTakes(cut, true)).rejects.toThrow(/recording source is incomplete/);
+		},
+		120_000,
+	);
+
+	it.runIf(!!ffmpeg)(
+		"still exports a take that a crash cut inside its last fragment",
+		async () => {
+			const directory = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-take-crash-"));
+			temporary.push(directory);
+			const result = await exportTakes(
+				directory,
+				true,
+				"frag_keyframe+empty_moov+default_base_moof",
+			);
+			expect(result.frames).toBeGreaterThan(150);
+			expect(result.frames).toBeLessThan(240);
 		},
 		120_000,
 	);
