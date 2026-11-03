@@ -73,6 +73,40 @@ fn sample_yuv(uv: vec2<f32>) -> vec3<f32> {
     return yuv709_limited(y, cbcr);
 }
 
+// Taps per axis when reducing by `scale` source texels per output pixel.
+// 1 keeps the original sharp path: at 1:1 or when enlarging, no pixels get mixed.
+fn minify_taps(scale: f32) -> i32 {
+    if scale <= 1.001 { return 1; }
+    return clamp(i32(ceil(scale)), 2, 4);
+}
+
+// Video reduction. The texture has no mips, so one linear fetch reads only 2 texels per
+// axis: below 1:1 it skips source pixels and fine text comes out with uneven stroke
+// weight (measured in docs/blur-investigation-2026-11-03.md). This averages the output
+// pixel's whole footprint. `uv_dx`/`uv_dy` come from the top of `fs_main`, the only
+// place derivatives are in uniform control flow.
+fn sample_yuv_minified(uv: vec2<f32>, uv_dx: vec2<f32>, uv_dy: vec2<f32>) -> vec3<f32> {
+    let dims = vec2<f32>(textureDimensions(texY, 0));
+    let nx = minify_taps(length(uv_dx * dims));
+    let ny = minify_taps(length(uv_dy * dims));
+    if nx == 1 && ny == 1 {
+        return sample_yuv(uv);
+    }
+    var y = 0.0;
+    var cbcr = vec2<f32>(0.0);
+    for (var iy: i32 = 0; iy < ny; iy = iy + 1) {
+        for (var ix: i32 = 0; ix < nx; ix = ix + 1) {
+            let fx = (f32(ix) + 0.5) / f32(nx) - 0.5;
+            let fy = (f32(iy) + 0.5) / f32(ny) - 0.5;
+            let p = uv + uv_dx * fx + uv_dy * fy;
+            y = y + textureSampleLevel(texY, samp, p, 0.0).r;
+            cbcr = cbcr + textureSampleLevel(texUV, samp, p, 0.0).rg;
+        }
+    }
+    let n = f32(nx * ny);
+    return yuv709_limited(y / n, cbcr / n);
+}
+
 // SDF rectangle à coins arrondis (< 0 dedans). Identique au HLSL.
 fn sd_round_rect(p: vec2<f32>, halfsz: vec2<f32>, r: f32) -> f32 {
     let q = abs(p) - halfsz + vec2<f32>(r);
@@ -215,6 +249,8 @@ fn quad_inverse_bilinear(P: vec2<f32>, c00: vec2<f32>, c10: vec2<f32>, c11: vec2
 fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
     var rgb: vec3<f32>;
     var alpha: f32;
+    let uv_dx = dpdx(i.uv);
+    let uv_dy = dpdy(i.uv);
 
     if layer.mode < 0.5 {
         // Mode 0 — vidéo NV12 + flou de mouvement par vélocité (§8), port 1:1 du
@@ -227,13 +263,13 @@ fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
         // la division par `dst_prev.zw` produirait des UV infinis. Dégrader vers
         // le chemin net est le seul échec acceptable pour un effet cosmétique.
         if taps <= 1 || layer.dst_prev.z <= 0.0 || layer.dst_prev.w <= 0.0 {
-            rgb = sample_yuv(i.uv);
+            rgb = sample_yuv_minified(i.uv, uv_dx, uv_dy);
         } else {
             let localp = (i.pout - layer.dst_prev.xy) / layer.dst_prev.zw;
             let uv_prev = layer.src_prev.xy + localp * (layer.src_prev.zw - layer.src_prev.xy);
             let duv = i.uv - uv_prev;
             if dot(duv, duv) < 1e-9 {
-                rgb = sample_yuv(i.uv);
+                rgb = sample_yuv_minified(i.uv, uv_dx, uv_dy);
             } else {
                 // Borne 16 en dur, identique au HLSL et au MSL : `taps` vient d'un
                 // uniform et une boucle sans borne statique ne se déroule pas.
