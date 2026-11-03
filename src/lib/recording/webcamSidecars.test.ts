@@ -12,6 +12,7 @@ function streamedRecorder(fileName = "recording-9-clip-0001-webcam.webm"): Recor
 		recordedBlobPromise: Promise.resolve(new Blob()),
 		isStreaming: () => true,
 		discard: vi.fn().mockResolvedValue(undefined),
+		release: vi.fn().mockResolvedValue(undefined),
 	};
 }
 

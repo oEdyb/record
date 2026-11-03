@@ -135,6 +135,18 @@ export function registerRecordingStreamHandlers(
 	);
 
 	ipcMain.handle(
+		"finalize-recording-stream",
+		async (_, fileName: string): Promise<{ success: boolean; error?: string }> => {
+			try {
+				await registry.finalize(fileName);
+				return { success: true };
+			} catch (error) {
+				return { success: false, error: String(error) };
+			}
+		},
+	);
+
+	ipcMain.handle(
 		"close-recording-stream",
 		async (_, fileName: string): Promise<{ success: boolean; error?: string }> => {
 			try {

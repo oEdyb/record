@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import { EventEmitter } from "node:events";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	RecordingStreamRegistry,
+	registerRecordingStreamHandlers,
+} from "../../electron/ipc/recordingStream";
 import { RendererRecordingStop } from "../../electron/recording/rendererRecordingStop";
 
 vi.mock("@/contexts/I18nContext", () => {
@@ -2050,5 +2057,179 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		});
 		expect(view.result.current.recording).toBe(false);
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledOnce();
+	});
+});
+
+describe("useScreenRecorder camera files after Stop", () => {
+	const CAMERA = "recording-7-clip-0001-webcam.mp4";
+
+	// These tests watch real file I/O, which fake timers cannot wait for.
+	beforeEach(() => {
+		vi.useRealTimers();
+	});
+	const flush = () =>
+		act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 50));
+		});
+	const pressRealStop = async (view: RecorderView) => {
+		act(() => view.result.current.toggleRecording());
+		await flush();
+	};
+
+	/** Routes the renderer's stream API through the real IPC handlers and real files. */
+	async function realCameraStreams() {
+		const dir = await mkdtemp(path.join(tmpdir(), "klippt-camera-files-"));
+		const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+		registerRecordingStreamHandlers(
+			{
+				handle: (channel: string, handler: (...args: never[]) => unknown) =>
+					handlers.set(channel, handler as never),
+			} as never,
+			new RecordingStreamRegistry(),
+			(fileName) => path.join(dir, fileName),
+		);
+		const invoke = (channel: string) =>
+			vi.fn((...args: unknown[]) => handlers.get(channel)?.({}, ...args));
+		return {
+			cameraPath: path.join(dir, CAMERA),
+			api: {
+				openRecordingStream: invoke("open-recording-stream"),
+				appendRecordingChunk: invoke("append-recording-chunk"),
+				closeRecordingStream: invoke("close-recording-stream"),
+				finalizeRecordingStream: invoke("finalize-recording-stream"),
+			},
+		};
+	}
+
+	async function recordCamera(overrides: Record<string, unknown>) {
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => fakeWebcamStream({ width: 1920, height: 1080, fps: 30 })),
+			},
+		});
+		stubElectronAPI({
+			getPlatform: vi.fn(() => "linux"),
+			isNativeLinuxCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
+			prepareNativeLinuxRecording: vi.fn(async () => ({ success: true, recordingId: 7 })),
+			startNativeMacRecording: vi.fn(async () => ({
+				success: true,
+				recordingId: 7,
+				rendererStop: { recordingId: 7, token: "take-generation" },
+			})),
+			requestCameraAccess: vi.fn(async () => ({ success: true, granted: true })),
+			registerNativeRecordingWebcam: vi.fn(async () => ({ success: true, registered: true })),
+			...overrides,
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await act(async () => {
+			await view.result.current.setWebcamEnabled(true);
+		});
+		await flush();
+		await act(async () => {
+			await view.result.current.startRecordingImmediately();
+		});
+		expect(view.result.current.recording).toBe(true);
+		const recorder = FakeMediaRecorder.instances.at(-1);
+		if (!recorder?.ondataavailable) throw new Error("Camera recorder was not created");
+		const footage = new Uint8Array([1, 2, 3]).buffer;
+		Reflect.apply(recorder.ondataavailable, recorder, [
+			{ data: { size: footage.byteLength, arrayBuffer: async () => footage } },
+		]);
+		await flush();
+		return { view, recorder };
+	}
+
+	const clip = {
+		index: 0,
+		screenVideoPath: "/tmp/recording-7-clip-0001.mp4",
+		durationMs: 2_000,
+	};
+	const savedSession = (clips: RecordingSessionClip[]): RecordingSession => ({
+		createdAt: 7,
+		schemaVersion: 2,
+		screenVideoPath: clip.screenVideoPath,
+		clips,
+	});
+	const stopWith = (session: RecordingSession) =>
+		vi.fn(async () => ({ success: true, path: clip.screenVideoPath, session }));
+
+	it("keeps the camera file when attaching it to the saved session fails", async () => {
+		const { api, cameraPath } = await realCameraStreams();
+		const { view } = await recordCamera({
+			...api,
+			stopNativeMacRecording: stopWith(savedSession([clip])),
+			attachNativeMacClipWebcams: vi.fn(async () => ({
+				success: false,
+				error: "ENOSPC: the manifest could not be written",
+			})),
+		});
+
+		await pressRealStop(view);
+
+		expect(window.electronAPI.attachNativeMacClipWebcams).toHaveBeenCalledOnce();
+		expect([...(await readFile(cameraPath))]).toEqual([1, 2, 3]);
+	});
+
+	it("keeps the footage already on disk when a later camera write fails", async () => {
+		const { api, cameraPath } = await realCameraStreams();
+		const append = api.appendRecordingChunk;
+		const { view, recorder } = await recordCamera({
+			...api,
+			stopNativeMacRecording: stopWith(savedSession([clip])),
+			attachNativeMacClipWebcams: vi.fn(async () => ({ success: true })),
+		});
+		append.mockImplementationOnce(async () => ({ success: false, error: "EIO" }));
+		const late = new Uint8Array([4]).buffer;
+		Reflect.apply(recorder.ondataavailable as never, recorder, [
+			{ data: { size: late.byteLength, arrayBuffer: async () => late } },
+		]);
+		await flush();
+
+		await pressRealStop(view);
+
+		expect(window.electronAPI.attachNativeMacClipWebcams).not.toHaveBeenCalled();
+		expect([...(await readFile(cameraPath))]).toEqual([1, 2, 3]);
+	});
+
+	it("keeps the camera file of a removed clip", async () => {
+		const { api, cameraPath } = await realCameraStreams();
+		const { view } = await recordCamera({
+			...api,
+			stopNativeMacRecording: stopWith(savedSession([{ ...clip, removed: true }])),
+		});
+
+		await pressRealStop(view);
+
+		expect([...(await readFile(cameraPath))]).toEqual([1, 2, 3]);
+	});
+
+	it("keeps the camera file for crash recovery when native Stop fails", async () => {
+		const { api, cameraPath } = await realCameraStreams();
+		const { view } = await recordCamera({
+			...api,
+			stopNativeMacRecording: vi.fn(async () => ({
+				success: false,
+				error: "ENOSPC: the manifest could not be written",
+			})),
+		});
+
+		await pressRealStop(view);
+
+		expect([...(await readFile(cameraPath))]).toEqual([1, 2, 3]);
+	});
+
+	it("still deletes the camera file when the owner discards the take", async () => {
+		const { api, cameraPath } = await realCameraStreams();
+		const { view } = await recordCamera({
+			...api,
+			stopNativeMacRecording: vi.fn(async () => ({ success: true, discarded: true })),
+		});
+
+		act(() => view.result.current.cancelRecording());
+		await flush();
+
+		await expect(readFile(cameraPath)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 });

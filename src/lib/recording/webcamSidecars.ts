@@ -52,9 +52,21 @@ export async function discardWebcamRecorder(recorder: RecorderHandle): Promise<v
 	await recorder.discard().catch(() => undefined);
 }
 
+/** Stops a camera recorder that no saved clip claimed, keeping what reached its file. */
+async function releaseWebcamRecorder(recorder: RecorderHandle): Promise<void> {
+	if (recorder.recorder.state !== "inactive") {
+		recorder.recorder.stop();
+	}
+	await recorder.recordedBlobPromise.catch(() => undefined);
+	await recorder.release().catch((error: unknown) => {
+		console.warn("Could not close the camera file:", error);
+	});
+}
+
 /**
  * Owns the camera files created alongside a native clip session.
- * Every recorder ends in one state: attached to a saved clip or discarded.
+ * Every recorder ends in one state: attached to a saved clip, released with its
+ * file kept, or (only when the owner discards the take) deleted.
  */
 export class NativeMacWebcamClipLedger {
 	private readonly entries: NativeMacWebcamClipEntry[] = [];
@@ -113,13 +125,28 @@ export class NativeMacWebcamClipLedger {
 		}
 	}
 
-	async discardUnclaimed(extraRecorders: readonly RecorderHandle[] = []): Promise<void> {
-		const recorders = new Set([
+	private unclaimed(extraRecorders: readonly RecorderHandle[]): Set<RecorderHandle> {
+		return new Set([
 			...this.entries.filter((entry) => !entry.saved).map((entry) => entry.recorder),
 			...extraRecorders,
 		]);
-		for (const recorder of recorders) {
+	}
+
+	/** The owner threw this take away: delete its camera files too. */
+	async discardUnclaimed(extraRecorders: readonly RecorderHandle[] = []): Promise<void> {
+		for (const recorder of this.unclaimed(extraRecorders)) {
 			await discardWebcamRecorder(recorder);
+		}
+	}
+
+	/**
+	 * A failed attach or Stop, a failed later write, or a removed clip leaves camera
+	 * footage nothing has claimed yet. The session and recovery journal can still point
+	 * at these files, so close them and never delete them.
+	 */
+	async releaseUnclaimed(extraRecorders: readonly RecorderHandle[] = []): Promise<void> {
+		for (const recorder of this.unclaimed(extraRecorders)) {
+			await releaseWebcamRecorder(recorder);
 		}
 	}
 

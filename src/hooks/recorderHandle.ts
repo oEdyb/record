@@ -19,6 +19,8 @@ export type RecorderHandle = {
 	 * is discarded or fails before save, so cancelled runs don't leak. No-op in-memory.
 	 */
 	discard: () => Promise<void>;
+	/** Close the disk stream (if any) and keep its file, so its footage stays recoverable. */
+	release: () => Promise<void>;
 };
 
 /**
@@ -145,6 +147,12 @@ export function createRecorderHandle(
 		}
 	}
 
+	async function release(): Promise<void> {
+		if (streamOpened && fileName && api?.finalizeRecordingStream) {
+			await api.finalizeRecordingStream(fileName);
+		}
+	}
+
 	// A 1-second timeslice delays MP4 payloads for two keyframes in Chromium.
 	recorder.start(mimeType.startsWith("video/mp4") ? 250 : RECORDER_TIMESLICE_MS);
 	return {
@@ -153,5 +161,6 @@ export function createRecorderHandle(
 		recordedBlobPromise,
 		isStreaming: () => mode === "streaming" && !appendError,
 		discard,
+		release,
 	};
 }
