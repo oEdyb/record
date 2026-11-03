@@ -1,7 +1,8 @@
 name: Diag provenance
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [ci/macos-provenance-diag]
 
 permissions:
   contents: read
