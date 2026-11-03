@@ -118,6 +118,8 @@ mod tests {
         qmin: i32,
         qmax: i32,
         gop_size: i32,
+        /// Primaires, transfert, matrice, plage de `codecpar`, ce que le muxer écrit.
+        color: (i32, i32, i32, i32),
     }
 
     /// Encode `n` images 320x180 par le chemin RÉEL de l'export — `VideoEncoder::open`,
@@ -143,12 +145,22 @@ mod tests {
             qmin: 0,
             qmax: 0,
             gop_size: 0,
+            color: (0, 0, 0, 0),
         };
         unsafe {
             use crate::ffi::*;
             out.qmin = (*enc.ctx).qmin;
             out.qmax = (*enc.ctx).qmax;
             out.gop_size = (*enc.ctx).gop_size;
+            let mut par = avcodec_parameters_alloc();
+            avcodec_parameters_from_context(par, enc.ctx);
+            out.color = (
+                (*par).color_primaries as i32,
+                (*par).color_trc as i32,
+                (*par).color_space as i32,
+                (*par).color_range as i32,
+            );
+            avcodec_parameters_free(&mut par);
             let (ptr, len) = ((*enc.ctx).extradata, (*enc.ctx).extradata_size);
             if !ptr.is_null() && len > 0 {
                 out.extradata = std::slice::from_raw_parts(ptr, len as usize).to_vec();
@@ -204,6 +216,26 @@ mod tests {
     /// image clé pour tout le fichier — mesuré 1 image I sur 300 avant ce correctif.
     /// Le MP4 reste lisible, mais tout seek redécode depuis le début et un paquet
     /// abîmé emporte le reste. C'est le test qui aurait attrapé ça.
+    /// Le MP4 dit sa matrice : BT.601, celle de la conversion `sws_getContext`.
+    /// Sans étiquette un lecteur qui suppose BT.709 décale les couleurs saturées.
+    #[test]
+    fn l_export_h264_porte_son_etiquette_couleur() {
+        let Some(enc) = encode(10, 5) else {
+            eprintln!("libopenh264 indisponible — test sauté");
+            return;
+        };
+        use crate::ffi::*;
+        assert_eq!(
+            enc.color,
+            (
+                AVColorPrimaries::AVCOL_PRI_BT709 as i32,
+                AVColorTransferCharacteristic::AVCOL_TRC_BT709 as i32,
+                AVColorSpace::AVCOL_SPC_SMPTE170M as i32,
+                AVColorRange::AVCOL_RANGE_MPEG as i32,
+            )
+        );
+    }
+
     #[test]
     fn l_export_h264_emet_des_images_cles_periodiques() {
         let Some(enc) = encode(10, 45) else {
@@ -455,6 +487,8 @@ impl VideoEncoder {
         Self::tune_openh264(ctx, name);
         // MP4 : header global dans l'extradata (pas par-paquet).
         (*ctx).flags |= AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+        // `sws_getContext` RGBA -> YUV420P sans `sws_setColorspaceDetails` : BT.601 limité.
+        tag_export_color(ctx, AVColorSpace::AVCOL_SPC_SMPTE170M);
         if let Err(e) = averr(
             avcodec_open2(ctx, enc, ptr::null_mut()),
             "avcodec_open2(enc)",

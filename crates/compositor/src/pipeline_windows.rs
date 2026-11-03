@@ -1292,6 +1292,8 @@ impl VideoEncoder {
         if pix_fmt == AVPixelFormat::AV_PIX_FMT_D3D11 {
             (*ctx).hw_frames_ctx = av_buffer_ref(hw_frames);
         }
+        // `rgb2y` / `rgb2uv` de `shaders.hlsl` : BT.709 limité.
+        crate::ffi::tag_export_color(ctx, crate::ffi::AVColorSpace::AVCOL_SPC_BT709);
         if let Err(error) = averr(
             avcodec_open2(ctx, enc, ptr::null_mut()),
             "avcodec_open2(enc)",

@@ -1076,6 +1076,8 @@ impl VideoEncoder {
             crate::ffi::av_buffer_unref(&mut hw_device);
         }
 
+        // `rgb2y` / `rgb2uv` de `shaders.metal` : BT.709 limité.
+        crate::ffi::tag_export_color(ctx, crate::ffi::AVColorSpace::AVCOL_SPC_BT709);
         if let Err(e) = crate::ffi::averr(
             crate::ffi::avcodec_open2(ctx, enc, ptr::null_mut()),
             "avcodec_open2(enc)",
