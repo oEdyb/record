@@ -180,4 +180,26 @@ describe("release workflow contract", () => {
 			/must prepare a source but never create a tag/,
 		);
 	});
+
+	it("rejects a helper plan that drops a platform from a full build", async () => {
+		const root = await copyWorkflows();
+		const file = path.join(root, ".github", "workflows", "build-whisper-stt.yml");
+		const source = await readFile(file, "utf8");
+		await writeFile(file, source.replace('"tag":"darwin-x64"', '"tag":"darwin-x64-gone"'));
+		expect(() => checkReleaseWorkflowContract(root)).toThrow(/must list every platform/);
+	});
+
+	it("rejects narrowing the helper build outside a Linux draft", async () => {
+		const root = await copyWorkflows();
+		const file = path.join(root, ".github", "workflows", "build.yml");
+		const source = await readFile(file, "utf8");
+		await writeFile(
+			file,
+			source.replace(
+				"only_tag: ${{ inputs.linux_draft == true && 'linux-x64' || '' }}",
+				"only_tag: linux-x64",
+			),
+		);
+		expect(() => checkReleaseWorkflowContract(root)).toThrow(/Only a Linux draft may narrow/);
+	});
 });

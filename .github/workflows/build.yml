@@ -68,6 +68,7 @@ jobs:
     uses: ./.github/workflows/build-whisper-stt.yml
     with:
       source_sha: ${{ needs.resolve-source.outputs.source_sha }}
+      only_tag: ${{ inputs.linux_draft == true && 'linux-x64' || '' }}
 
   build-windows:
     name: Windows installer

@@ -21,6 +21,11 @@ on:
         description: Exact source commit required by the packaging workflow
         required: true
         type: string
+      only_tag:
+        description: Build the helper for this one target only (for example linux-x64); empty builds all four
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       enable_cuda:
@@ -41,44 +46,50 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    name: Plan helper targets
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      # One object per platform; `only_tag` narrows the list so a Linux-only draft does
+      # not wait on (or fail with) a macOS or Windows helper it will never package.
+      #
+      # `tag` matches `os_arch_tag()` in scripts/build-whisper-stt.sh — the directory the
+      # build script actually stages into (electron/native/bin/<tag>/), NOT `os-arch`.
+      #
+      # The Linux leg is PINNED to ubuntu-22.04, and not `ubuntu-latest` — see the long
+      # comment on build.yml's build-linux job. It produces the WORST offender of the two:
+      # built on 24.04, whisper-stt-server and the libggml backends needed GLIBC_2.38 and
+      # GLIBCXX_3.4.32, so they died in ld.so on Ubuntu 22.04, Debian 12 and RHEL 9 and
+      # transcription failed there with an unactionable developer error. The symbols were
+      # never asked for: `__isoc23_strtol` is glibc 2.38's C23 redirect and
+      # `_ZSt21ios_base_library_initv` is emitted into every TU that includes <iostream>
+      # by GCC 13.2+. 22.04 has the CMake (3.22 >= the 3.20 required) and a C++20
+      # compiler; nothing here uses a GCC 13-only library feature.
+      - name: Select helper targets
+        id: plan
+        env:
+          ONLY_TAG: ${{ inputs.only_tag }}
+        run: |
+          set -euo pipefail
+          all='[
+            {"os":"macos-latest","arch":"arm64","tag":"darwin-arm64","label":"macOS arm64 (Metal)","vulkan":false},
+            {"os":"macos-15-intel","arch":"x64","tag":"darwin-x64","label":"macOS x64 (CPU)","vulkan":false},
+            {"os":"ubuntu-22.04","arch":"x64","tag":"linux-x64","label":"Linux x64 (Vulkan + CPU fallback)","vulkan":true},
+            {"os":"windows-latest","arch":"x64","tag":"win32-x64","label":"Windows x64 (Vulkan + CPU fallback)","vulkan":true}
+          ]'
+          selected="$(jq -c --arg only "$ONLY_TAG" '{include: map(select($only == "" or .tag == $only))}' <<< "$all")"
+          test "$(jq '.include | length' <<< "$selected")" -gt 0 \
+            || { echo "::error::only_tag '$ONLY_TAG' matches no helper target"; exit 1; }
+          echo "matrix=$selected" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.label }}
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            arch: arm64
-            # Matches `os_arch_tag()` in scripts/build-whisper-stt.sh — this is
-            # the directory name the build script actually stages into
-            # (electron/native/bin/<tag>/), NOT `${{ matrix.os }}-${{ matrix.arch }}`.
-            tag: darwin-arm64
-            label: macOS arm64 (Metal)
-            vulkan: false
-          - os: macos-15-intel
-            arch: x64
-            tag: darwin-x64
-            label: macOS x64 (CPU)
-            vulkan: false
-          # PINNED, and not `ubuntu-latest` — see the long comment on build.yml's
-          # build-linux job. This leg produces the WORST offender of the two: built on
-          # 24.04, whisper-stt-server and the libggml backends needed GLIBC_2.38 and
-          # GLIBCXX_3.4.32, so they died in ld.so on Ubuntu 22.04, Debian 12 and RHEL 9
-          # and transcription failed there with an unactionable developer error. The
-          # symbols were never asked for: `__isoc23_strtol` is glibc 2.38's C23 redirect
-          # and `_ZSt21ios_base_library_initv` is emitted into every TU that includes
-          # <iostream> by GCC 13.2+. 22.04 has the CMake (3.22 >= the 3.20 required) and
-          # a C++20 compiler; nothing here uses a GCC 13-only library feature.
-          - os: ubuntu-22.04
-            arch: x64
-            tag: linux-x64
-            label: Linux x64 (Vulkan + CPU fallback)
-            vulkan: true
-          - os: windows-latest
-            arch: x64
-            tag: win32-x64
-            label: Windows x64 (Vulkan + CPU fallback)
-            vulkan: true
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
