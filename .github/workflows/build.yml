@@ -874,6 +874,7 @@ jobs:
             --output-dir release/supply-chain
 
       - name: Generate the Linux release inventory
+        if: ${{ false }}
         env:
           KLIPPT_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
         run: |
