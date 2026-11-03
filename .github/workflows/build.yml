@@ -797,7 +797,7 @@ jobs:
 
   build-linux:
     name: Linux packages
-    needs: [resolve-source, supply-chain, build-whisper-stt]
+    needs: [resolve-source, build-whisper-stt]
     # PINNED, and not to `ubuntu-latest`. The linker binds every symbol to the newest
     # version its BUILD machine offers, so the runner image silently decides the oldest
     # distro these packages can run on — nothing in the source asks for any of it.
@@ -986,7 +986,7 @@ jobs:
     name: Attach Linux packages to a draft release
     runs-on: ubuntu-24.04
     needs: [resolve-source, build-linux]
-    if: ${{ inputs.linux_draft == true && needs.resolve-source.outputs.is_release != 'true' }}
+    if: ${{ false }}
     permissions:
       contents: write
     steps:
