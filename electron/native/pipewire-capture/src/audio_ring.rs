@@ -28,6 +28,34 @@ impl AudioClock {
 }
 
 const CLOCK_JITTER_NS: u64 = 2_000_000;
+/// Skew past this is device clock drift, which is corrected a frame at a time.
+const CLOCK_TRIM_NS: i128 = 1_000_000;
+/// One frame per this many is inaudible and outruns any real crystal (3900 ppm).
+const CLOCK_TRIM_SPACING: usize = 256;
+
+/// The device crystal and the monotonic clock that times the video disagree by
+/// tens of ppm, which accumulates to hundreds of ms over a long take. Drop or
+/// repeat evenly spaced frames to hold PCM on the cycle clock. `skew_ns` is
+/// positive when audio is ahead of the clock. `None` keeps the block unchanged.
+fn retime(samples: &[f32], channels: usize, skew_ns: i128) -> Option<Vec<f32>> {
+    let frames = samples.len() / channels;
+    if skew_ns.abs() <= CLOCK_TRIM_NS || frames < 2 {
+        return None;
+    }
+    let interval = (frames / CLOCK_TRIM_SPACING).max(1);
+    let interval = frames / interval;
+    let mut out = Vec::with_capacity(samples.len() + samples.len() / interval + channels);
+    for (index, frame) in samples.chunks_exact(channels).enumerate() {
+        let trimmed = index % interval == interval / 2;
+        if !trimmed || skew_ns < 0 {
+            out.extend_from_slice(frame);
+        }
+        if trimmed && skew_ns < 0 {
+            out.extend_from_slice(frame);
+        }
+    }
+    Some(out)
+}
 
 #[derive(Debug)]
 pub struct AudioDrain {
@@ -96,11 +124,19 @@ impl AudioRing {
                 self.silence(&mut queued.samples, frames * self.channels);
                 clock.frames = clock.frames.saturating_add(frames as u64);
             }
+            let retimed = retime(
+                samples,
+                self.channels,
+                clock.expected_ns(self.sample_rate) as i128 - i128::from(cycle_ns),
+            );
+            let samples = retimed.as_deref().unwrap_or(samples);
             clock.frames = clock
                 .frames
                 .saturating_add((samples.len() / self.channels) as u64);
             clock.last_cycle_ns = cycle_ns;
             queued.clock = Some(clock);
+            self.append(&mut queued.samples, samples);
+            return;
         }
         self.append(&mut queued.samples, samples);
     }
@@ -186,6 +222,73 @@ impl AudioRing {
 #[cfg(test)]
 mod tests {
     use super::AudioRing;
+
+    /// Feeds hours of blocks from a device whose crystal runs `ppm` off the
+    /// monotonic clock that times the video. Returns the final audio-minus-clock
+    /// offset in ms and the longest run of inserted silence in frames.
+    fn long_take(ppm: f64, hours: u64, block: usize, xruns: &[u64]) -> (f64, usize, usize) {
+        const RATE: usize = 48_000;
+        let ring = AudioRing::new(2, RATE, 2);
+        let start_ns = 1_000_000_000_f64;
+        let device_rate = RATE as f64 * (1.0 + ppm / 1e6);
+        let blocks = hours * 3600 * RATE as u64 / block as u64;
+        let pcm = vec![0.25_f32; block * 2];
+        let mut out = Vec::new();
+        let (mut frames, mut silent_run, mut longest_silence, mut silence_runs) = (0_u64, 0, 0, 0);
+        let mut device_frames = 0_u64;
+        let mut outage_ns = 0.0;
+        for index in 0..blocks {
+            if xruns.contains(&index) {
+                outage_ns += 20_000_000.0;
+            }
+            let cycle = start_ns + device_frames as f64 * 1e9 / device_rate + outage_ns;
+            ring.push_at(&pcm, cycle as u64);
+            device_frames += block as u64;
+            out.clear();
+            ring.drain_into(&mut out).expect("valid clock");
+            frames += (out.len() / 2) as u64;
+            for frame in out.chunks_exact(2) {
+                if frame[0] == 0.0 {
+                    silent_run += 1;
+                    longest_silence = longest_silence.max(silent_run);
+                } else {
+                    silence_runs += usize::from(silent_run > 0);
+                    silent_run = 0;
+                }
+            }
+        }
+        let audio_ms = frames as f64 * 1000.0 / RATE as f64;
+        let clock_ms = (device_frames as f64 * 1e9 / device_rate + outage_ns) / 1e6;
+        (audio_ms - clock_ms, longest_silence, silence_runs)
+    }
+
+    #[test]
+    fn three_hour_fast_device_clock_stays_on_the_video_clock() {
+        let (offset_ms, _, _) = long_take(100.0, 3, 1024, &[]);
+        assert!(offset_ms.abs() < 5.0, "audio ended {offset_ms:.1} ms late");
+    }
+
+    #[test]
+    fn three_hour_slow_device_clock_stays_on_the_video_clock_without_silence() {
+        let (offset_ms, longest, runs) = long_take(-100.0, 3, 1024, &[]);
+        assert!(offset_ms.abs() < 5.0, "audio ended {offset_ms:.1} ms off");
+        assert_eq!(
+            runs, 0,
+            "clock skew punched {runs} silent holes of up to {longest} frames into live audio"
+        );
+    }
+
+    #[test]
+    fn three_hour_take_with_xruns_keeps_gaps_as_silence_and_stays_in_sync() {
+        let xruns: Vec<u64> = (1..=10).map(|n| n * 40_000).collect();
+        let (offset_ms, longest, runs) = long_take(40.0, 3, 1024, &xruns);
+        assert!(offset_ms.abs() < 5.0, "audio ended {offset_ms:.1} ms off");
+        assert_eq!(runs, 10, "each xrun is one silent gap");
+        assert!(
+            (900..=1000).contains(&longest),
+            "a 20 ms xrun is ~960 frames, got {longest}"
+        );
+    }
 
     #[test]
     fn gap_stays_between_old_and_new_samples_in_one_drain() {
