@@ -168,7 +168,7 @@ jobs:
           set -euo pipefail
           flatpak-builder --user --install-deps-from=flathub --force-clean \
             --disable-rofiles-fuse \
-            /tmp/flatpak-build build/flatpak/com.getopenscreen.OpenScreen.yml \
+            /tmp/flatpak-build build/flatpak/co.dyberg.klippt.yml \
             2>&1 | tee /tmp/flatpak-build.log
 
       - name: Collect artifacts

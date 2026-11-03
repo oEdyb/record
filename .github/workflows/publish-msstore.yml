@@ -1,5 +1,8 @@
 name: Publish to Microsoft Store (retry)
 
+# Disabled: electron-builder.json5 still carries the OpenScreen Store identity
+# (EtienneLescot.OpenScreen). Klippt has no Store listing of its own.
+
 # Submits an already-built appx to the Store, without rebuilding anything.
 #
 # build.yml's own publish-msstore job is the normal path. This exists because
@@ -43,6 +46,7 @@ concurrency:
 
 jobs:
   submit:
+    if: false
     name: Submit ${{ inputs.release_tag }} to the Store
     runs-on: windows-latest
     # No job-level `if` on MSSTORE_PRODUCT_ID, deliberately. build.yml can afford

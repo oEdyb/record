@@ -1421,10 +1421,8 @@ jobs:
     # Stable tags only, and never a fork: an RC reaching the Store would go through
     # certification and land on every user's machine as an automatic update.
     # `!contains(…, '-')` is what separates v1.9.1 from v1.9.1-rc.2.
-    if: >-
-      ${{ vars.MSSTORE_PRODUCT_ID != ''
-       && needs.resolve-source.outputs.is_release == 'true'
-       && !contains(needs.resolve-source.outputs.release_tag, '-') }}
+    # Disabled: the appx identity is still OpenScreen's (EtienneLescot.OpenScreen).
+    if: false
     steps:
       # Same all-or-nothing gate as the macOS signing job: a half-configured
       # publisher is a misnamed secret, and the quiet failure mode — shipping

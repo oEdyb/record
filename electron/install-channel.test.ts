@@ -41,9 +41,7 @@ describe("classifyInstall", () => {
 
 	it("classifies the channels a package manager owns", () => {
 		expect(classifyInstall(probe({ platform: "win32", windowsStore: true }))).toBe("store");
-		expect(classifyInstall(probe({ env: { FLATPAK_ID: "com.getopenscreen.OpenScreen" } }))).toBe(
-			"flatpak",
-		);
+		expect(classifyInstall(probe({ env: { FLATPAK_ID: "co.dyberg.klippt" } }))).toBe("flatpak");
 		expect(classifyInstall(probe({ hasFlatpakInfo: true }))).toBe("flatpak");
 		expect(
 			classifyInstall(probe({ env: { SNAP: "/snap/openscreen/42", SNAP_REVISION: "42" } })),

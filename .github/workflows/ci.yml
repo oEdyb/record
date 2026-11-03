@@ -97,7 +97,7 @@ jobs:
       # a metadata check into a flaky one on unrelated PRs. Dead screenshot URLs
       # are caught by Flathub at submission time, which is the only place the
       # answer actually matters.
-      - run: appstreamcli validate --no-net --explain build/com.getopenscreen.OpenScreen.metainfo.xml
+      - run: appstreamcli validate --no-net --explain build/co.dyberg.klippt.metainfo.xml
 
   test:
     name: Test

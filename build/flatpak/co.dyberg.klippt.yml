@@ -9,7 +9,7 @@
 #
 # Every value marked SPIKE below is a guess the CI run is supposed to confirm or
 # refute. Do not treat this as a reviewed manifest.
-app-id: com.getopenscreen.OpenScreen
+app-id: co.dyberg.klippt
 runtime: org.freedesktop.Platform
 # SPIKE: 24.08 is the runtime the Electron2 BaseApp is known to publish against.
 # If the spike reports the base is missing for this version, bump both together —
