@@ -63,6 +63,20 @@ export async function runRecordingFfmpeg(
 	});
 }
 
+/** FFmpeg logs a failed source read, exits 0 and carries on. Both sides of the
+ * packet proof below then hold the same missing packets, so check the log too. */
+const SOURCE_READ_FAILURE =
+	/partial file|file ended prematurely|packet corrupt|error (?:during )?demuxing/i;
+
+export function sourceReadFailure(stderr: string): string | null {
+	return (
+		stderr
+			.split("\n")
+			.find((line) => SOURCE_READ_FAILURE.test(line))
+			?.trim() ?? null
+	);
+}
+
 export interface RecordingSourceMetadata {
 	codec: "h264" | "hevc";
 	width: number;
@@ -447,6 +461,8 @@ export async function prepareRecordingFastExport(
 					read.append(chunk);
 					report(onProgress, 0, read.spanSeconds / durationS);
 				});
+				const readFailure = sourceReadFailure(header);
+				if (readFailure) throw new Error(`A recording source is incomplete: ${readFailure}`);
 				const original = read.finish();
 				const staged = await probeRecordingPackets(ffmpeg, stagingPath, signal, timeoutMs, (s) =>
 					report(onProgress, 1, s / durationS),

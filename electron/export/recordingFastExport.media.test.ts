@@ -11,6 +11,7 @@ import {
 	parseRecordingSourceMetadata,
 	prepareRecordingFastExport,
 	runRecordingFfmpeg,
+	sourceReadFailure,
 } from "./recordingFastExport";
 
 const ffmpeg = resolveFfmpeg();
@@ -38,6 +39,44 @@ async function topLevelBoxes(file: string): Promise<string[]> {
 	} finally {
 		await handle.close();
 	}
+}
+
+function identityScene(clips: SceneDescription["clips"]): SceneDescription {
+	return {
+		clips,
+		layout: {
+			preset: "no-webcam",
+			webcamSize: 0.25,
+			webcamZoom: 1,
+			webcamFocalPoint: { cx: 0.5, cy: 0.5 },
+			screenZoom: 1,
+			screenFocalPoint: { cx: 0.5, cy: 0.5 },
+			webcamShape: "rectangle",
+			webcamMirror: false,
+			webcamPosition: null,
+			webcamReactiveZoom: false,
+			webcamRect: null,
+			screenRect: { x: 0, y: 0, width: 1, height: 1 },
+			screenCover: false,
+		},
+		effects: { padding: 0, blur: false, shadow: 0, roundnessFrac: 0, motionBlur: 0 },
+		background: { kind: "color", color: "#000000" },
+		zoomRegions: [],
+		annotations: [],
+		cameraFullscreenRegions: [],
+		speedRegions: [],
+		cursor: {
+			show: true,
+			size: 1,
+			smoothing: 0,
+			motionBlur: 0,
+			clickBounce: 0,
+			clipToBounds: false,
+			theme: "default",
+		},
+		cropByClip: [null, null, null],
+		output: { width: 160, height: 90, fps: 60 },
+	};
 }
 
 describe("real source-preserving media export", () => {
@@ -311,41 +350,7 @@ describe("real joined-takes media export", () => {
 				webcamOffsetSec: 0,
 				hasAudio: true,
 			}));
-			const scene = {
-				clips,
-				layout: {
-					preset: "no-webcam",
-					webcamSize: 0.25,
-					webcamZoom: 1,
-					webcamFocalPoint: { cx: 0.5, cy: 0.5 },
-					screenZoom: 1,
-					screenFocalPoint: { cx: 0.5, cy: 0.5 },
-					webcamShape: "rectangle",
-					webcamMirror: false,
-					webcamPosition: null,
-					webcamReactiveZoom: false,
-					webcamRect: null,
-					screenRect: { x: 0, y: 0, width: 1, height: 1 },
-					screenCover: false,
-				},
-				effects: { padding: 0, blur: false, shadow: 0, roundnessFrac: 0, motionBlur: 0 },
-				background: { kind: "color", color: "#000000" },
-				zoomRegions: [],
-				annotations: [],
-				cameraFullscreenRegions: [],
-				speedRegions: [],
-				cursor: {
-					show: true,
-					size: 1,
-					smoothing: 0,
-					motionBlur: 0,
-					clickBounce: 0,
-					clipToBounds: false,
-					theme: "default",
-				},
-				cropByClip: [null, null, null],
-				output: { width: 160, height: 90, fps: 60 },
-			} satisfies SceneDescription;
+			const scene = identityScene(clips);
 			const plan = await prepareRecordingFastExport({
 				clips,
 				sceneJson: JSON.stringify(scene),
@@ -426,5 +431,115 @@ describe("real joined-takes media export", () => {
 			});
 		},
 		60_000,
+	);
+});
+
+describe("a take cut short on disk", () => {
+	it("recognises a failed source read in FFmpeg's log", () => {
+		expect(sourceReadFailure("[mov @ 0x1] stream 0, offset 0x13a: partial file\n")).toContain(
+			"partial file",
+		);
+		expect(sourceReadFailure("[h264 @ 0x1] Reinit context to 160x96\n")).toBeNull();
+	});
+
+	const signal = new AbortController().signal;
+
+	async function h264Encoder(): Promise<string | null> {
+		let encoders = "";
+		await runRecordingFfmpeg(ffmpeg!, ["-v", "quiet", "-encoders"], signal, 20_000, (chunk) => {
+			encoders += chunk;
+		});
+		return (
+			["libx264", "libopenh264", "h264_videotoolbox"].find((name) => encoders.includes(name)) ??
+			null
+		);
+	}
+
+	async function exportTakes(directory: string, cutFirstTake: boolean) {
+		const encoder = await h264Encoder();
+		if (!encoder) throw new Error("This FFmpeg has no H.264 encoder.");
+		const takes = [0, 1].map((index) => path.join(directory, `take-${index}.mp4`));
+		for (const [index, take] of takes.entries()) {
+			await runRecordingFfmpeg(
+				ffmpeg!,
+				[
+					"-v",
+					"error",
+					"-n",
+					"-f",
+					"lavfi",
+					"-i",
+					"testsrc2=size=160x90:rate=24",
+					"-f",
+					"lavfi",
+					"-i",
+					`sine=frequency=${440 + index * 220}:sample_rate=48000`,
+					"-t",
+					"5",
+					"-c:v",
+					encoder,
+					"-g",
+					"12",
+					"-pix_fmt",
+					"yuv420p",
+					"-c:a",
+					"aac",
+					"-ar",
+					"48000",
+					"-ac",
+					"2",
+					"-movflags",
+					"+faststart",
+					take,
+				],
+				signal,
+				60_000,
+			);
+		}
+		if (cutFirstTake) {
+			const { size } = await fs.stat(takes[0]!);
+			await fs.truncate(takes[0]!, Math.floor(size / 2));
+		}
+		const clips = takes.map((screenPath) => ({
+			screenPath,
+			webcamPath: "",
+			sourceStartSec: 0,
+			sourceEndSec: 5,
+			webcamOffsetSec: 0,
+			hasAudio: true,
+		}));
+		const scene = identityScene(clips);
+		scene.output = { width: 160, height: 90, fps: 24 };
+		scene.cropByClip = [null, null];
+		const plan = await prepareRecordingFastExport({
+			clips,
+			sceneJson: JSON.stringify(scene),
+			sourceDurationsSec: [5, 5],
+			params: {
+				width: 160,
+				height: 90,
+				fps: 24,
+				codec: "h264",
+				preserveRecordingSource: true,
+				normalizeAudio: false,
+				evenVolume: false,
+			},
+			signal,
+		});
+		expect(plan).not.toBeNull();
+		return await plan!.render(path.join(directory, "joined.mp4"), signal, () => undefined);
+	}
+
+	it.runIf(!!ffmpeg)(
+		"refuses to pass a joined export with frames missing from one take",
+		async () => {
+			const whole = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-take-whole-"));
+			temporary.push(whole);
+			expect((await exportTakes(whole, false)).frames).toBe(240);
+			const cut = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-take-cut-"));
+			temporary.push(cut);
+			await expect(exportTakes(cut, true)).rejects.toThrow(/recording source is incomplete/);
+		},
+		120_000,
 	);
 });
