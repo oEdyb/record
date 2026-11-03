@@ -16,6 +16,7 @@ export interface StudioWindowLike {
 	getOpacity?(): number;
 	setOpacity?(opacity: number): void;
 	show(): void;
+	showInactive(): void;
 	hide(): void;
 	focus(): void;
 	getBounds(): { x: number; y: number; width: number; height: number };
@@ -78,6 +79,7 @@ export class StudioController {
 	private window: StudioWindowLike | null = null;
 	private ready = false;
 	private mode: "pill" | "studio" | "review" = "pill";
+	private pillNoticeShown = false;
 	private outside = false;
 	/** Between asking capture to resume and it running: replay must already be silent. */
 	private resuming = false;
@@ -173,6 +175,7 @@ export class StudioController {
 		if (pill && !pill.isDestroyed()) {
 			this.fade.cancel(pill);
 			this.fade.setOpacity(pill, 1);
+			this.pillNoticeShown = false;
 			pill.show();
 			pill.focus();
 		}
@@ -181,6 +184,22 @@ export class StudioController {
 	/** The pill opened a panel the user must answer (permissions): show it, keep the take. */
 	pillNeedsUser() {
 		if (this.mode === "studio") this.backToPill();
+	}
+
+	/** A pill warning has to be seen, and the pill is where it shows: keep the Studio, lift the pill. */
+	pillNotice(active: boolean) {
+		if (this.mode === "pill") return;
+		const pill = this.deps.getPill();
+		if (!pill || pill.isDestroyed()) return;
+		if (active) {
+			this.fade.cancel(pill);
+			this.fade.setOpacity(pill, 1);
+			pill.showInactive();
+			this.pillNoticeShown = true;
+		} else if (this.pillNoticeShown) {
+			this.pillNoticeShown = false;
+			pill.hide();
+		}
 	}
 
 	command(command: StudioCommand) {

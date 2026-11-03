@@ -23,6 +23,7 @@ function fakeWindow() {
 				opacity = value;
 			},
 			show: vi.fn(() => (visible = true)),
+			showInactive: vi.fn(() => (visible = true)),
 			hide: vi.fn(() => (visible = false)),
 			focus: vi.fn(),
 			getBounds: () => ({ x: 10, y: 20, width: 400, height: 60 }),
@@ -529,4 +530,23 @@ it.each([
 		vi.restoreAllMocks();
 		vi.useRealTimers();
 	}
+});
+
+it("lifts the pill over the Studio while a warning shows, and keeps the Studio up", () => {
+	const { controller, studio, pill } = setup(null);
+	controller.open();
+	studio.ready();
+	expect(pill.visible()).toBe(false);
+	controller.pillNotice(true);
+	expect(pill.visible()).toBe(true);
+	expect(studio.visible()).toBe(true);
+	controller.pillNotice(false);
+	expect(pill.visible()).toBe(false);
+	expect(studio.visible()).toBe(true);
+});
+
+it("leaves the pill alone when the warning ends and the Studio does not own the controls", () => {
+	const { controller, pill } = setup(null);
+	controller.pillNotice(false);
+	expect(pill.visible()).toBe(true);
 });

@@ -260,6 +260,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	studioPillNeedsUser: () => {
 		ipcRenderer.send("studio-pill-needs-user");
 	},
+	/** Pill -> main: a warning toast is up, so the pill must be seen over the Studio. */
+	studioPillNotice: (active: boolean) => {
+		ipcRenderer.send("studio-pill-notice", active);
+	},
 	/** Pill -> main: its own locks and Undo, which the Studio mirrors. */
 	reportStudioPillState: (state: unknown) => {
 		ipcRenderer.send("studio-pill-state", state);

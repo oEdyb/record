@@ -70,6 +70,7 @@ export function registerStudioIpc(ipcMain: RendererIpcMain, studio: StudioContro
 		if (command) studio.command(command);
 	});
 	ipcMain.on("studio-pill-needs-user", () => studio.pillNeedsUser());
+	ipcMain.on("studio-pill-notice", (_event, active: unknown) => studio.pillNotice(active === true));
 	ipcMain.on("studio-pill-state", (_event, raw: unknown) => {
 		const state = parsePillState(raw);
 		if (state) studio.setPillState(state);

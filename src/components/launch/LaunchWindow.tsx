@@ -75,6 +75,7 @@ import { useHudDockInteraction } from "./useHudDockInteraction";
 import { usePresence } from "./usePresence";
 import { useRecordingHudPresentation } from "./useRecordingHudPresentation";
 import { useStudioPillBridge } from "./useStudioPillBridge";
+import { useStudioPillNotice } from "./useStudioPillNotice";
 
 // Locale list is computed once at module load; keeping the reference stable lets
 // the setup panel sit behind a memo boundary.
@@ -2019,6 +2020,8 @@ export function LaunchWindow() {
 		enabled: idleMicMeterOn,
 		deviceId: microphoneDeviceId || selectedMicId,
 	});
+
+	useStudioPillNotice();
 
 	const hasNotices = Boolean(systemLocaleSuggestion) || softwareEncoderFallbackNoticeVisible;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: transfer keyboard focus when the visible grip changes
