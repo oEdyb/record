@@ -2,3 +2,9 @@
 # old Figma token. Keep the exception bound to this exact commit, path, rule,
 # and line; never replace it with a path or rule allowlist.
 6e6ecba1722d2d03da7eec6e8a40a1f10ad64c3f:.kiro/settings/mcp.json:generic-api-key:7
+# Reviewed false positives, each bound to one commit, path, rule and line: ureq's own test
+# fixture for a throwaway TLS key, a test fixture that base64-encodes "secret-key", and an
+# aria-keyshortcuts attribute listing arrow keys.
+b8c8cf269fb2392a46a9b42f66113d7226ac5943:electron/native/parakeet-linux/vendor/ureq/tests/https-agent.rs:private-key:67
+cdcd9d12aa6dd0861a4abad6db51b127d240abe5:electron/entitlements/service.test.ts:generic-api-key:342
+b7924a2b6b5703f16a5b4abb3de311f085f59603:src/components/ai-edition/Modals.tsx:generic-api-key:950

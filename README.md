@@ -20,8 +20,9 @@ Known limitations:
   the controls on another display.
 - Speech models download on first use of Clean cut (several hundred MB).
 - The Windows capture helper exists but is not tested right now.
-- Packaged builds check `updates.dyberg.co` for new versions. That is the only automatic
-  network call.
+- Klippt makes no automatic network calls for updates. Choosing Check for Updates in the tray menu
+  contacts `updates.dyberg.co`, which has nothing to serve until the first signed release, so the
+  check reports an error for now.
 
 ## Build and run on Linux
 
