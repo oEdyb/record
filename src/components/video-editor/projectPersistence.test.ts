@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
+import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import {
 	createProjectData,
 	createProjectSnapshot,
@@ -8,7 +9,20 @@ import {
 	PROJECT_VERSION,
 	resolveProjectMedia,
 	validateProjectData,
+	toFileUrl,
 } from "./projectPersistence";
+
+describe("file URLs with a literal percent sign", () => {
+	it.each([
+		["file:///clips/100%.mp4", "/clips/100%.mp4"],
+		["file:///clips/100%25.mp4", "/clips/100%.mp4"],
+		["file:///clips/caf%C3%A9%20100%.mp4", "/clips/café 100%.mp4"],
+		["file:///clips/bad%FF%.mp4", "/clips/bad%FF%.mp4"],
+		["/clips/100%.mp4", "/clips/100%.mp4"],
+	])("opens %s as %s", (saved, filePath) => {
+		expect(toFileUrl(saved)).toBe(toKlipptMediaUrl(filePath));
+	});
+});
 
 describe("projectPersistence media compatibility", () => {
 	it("accepts legacy projects with a single videoPath", () => {
