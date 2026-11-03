@@ -25,7 +25,7 @@ use crate::ffi::{
     avcodec_parameters_to_context, avcodec_receive_frame, avcodec_send_packet,
     avformat_close_input, avformat_find_stream_info, avformat_open_input, AVCodecContext,
     AVFormatContext, AVFrame, AVMediaType, AVPacket, AVStream, AVERROR_EAGAIN, AVERROR_EOF,
-    AVERROR_INVALIDDATA, AVSEEK_FLAG_BACKWARD,
+    AVERROR_INVALIDDATA, AVSEEK_FLAG_BACKWARD, AV_PKT_FLAG_CORRUPT,
 };
 
 /// `sn_fmt_stream` est défini dans `crates/compositor/shim.c` — bindgen ne le voit pas
@@ -35,6 +35,15 @@ use crate::ffi::{
 extern "C" {
     fn sn_fmt_stream(s: *mut AVFormatContext, i: i32) -> *mut AVStream;
     fn sn_fmt_duration(s: *mut AVFormatContext) -> i64;
+}
+
+/// Un crash ou un disque plein coupe une prise fragmentée dans son dernier fragment,
+/// qui dure au plus une seconde. Un paquet corrompu aussi près de la fin annoncée est
+/// cette coupure, et ce qui précède reste exportable ; plus loin, le fichier est abîmé.
+const CUT_TAIL_SEC: f64 = 1.5;
+
+fn in_cut_tail(corrupt_at_sec: f64, declared_sec: f64) -> bool {
+    declared_sec - corrupt_at_sec <= CUT_TAIL_SEC
 }
 
 /// `SEEK_SET` constant — la position de seek `av_seek_frame` interprète
@@ -56,6 +65,8 @@ pub struct SwDecoder {
     stream_timebase: f64,
     /// Cadence reelle du flux (avg_frame_rate), PAS 1/time_base.
     fps: f64,
+    /// Temps du dernier paquet que le demuxer a signalé tronqué (fichier coupé).
+    corrupt_packet_sec: Option<f64>,
     /// Packet/frame persistants du pompage SEQUENTIEL (`next_frame`).
     pkt: *mut AVPacket,
     frame: *mut AVFrame,
@@ -199,6 +210,7 @@ impl SwDecoder {
             dec,
             stream_idx,
             stream_timebase,
+            corrupt_packet_sec: None,
             fps,
             pkt,
             frame,
@@ -237,6 +249,14 @@ impl SwDecoder {
             if r == AVERROR_EOF {
                 return Ok(false);
             }
+            if r == AVERROR_INVALIDDATA
+                && self
+                    .corrupt_packet_sec
+                    .zip(self.duration_sec())
+                    .is_some_and(|(at, declared)| in_cut_tail(at, declared))
+            {
+                continue;
+            }
             if r != AVERROR_EAGAIN {
                 bail!("avcodec_receive_frame: {r}");
             }
@@ -250,6 +270,10 @@ impl SwDecoder {
                 self.sent_eof = true;
             } else {
                 if (*self.pkt).stream_index == self.stream_idx {
+                    if (*self.pkt).flags & AV_PKT_FLAG_CORRUPT as i32 != 0 {
+                        self.corrupt_packet_sec =
+                            Some((*self.pkt).dts as f64 * self.stream_timebase);
+                    }
                     let sr = avcodec_send_packet(self.dec, self.pkt);
                     // AVERROR_INVALIDDATA : packet mal aligne apres un seek, on saute.
                     // La valeur etait ecrite en dur a -0x2A2A2A2A, soit le tag `****`,
@@ -551,6 +575,33 @@ mod tests {
 #[cfg(test)]
 mod eof_regressions {
     use super::*;
+    #[test]
+    fn a_take_cut_inside_its_last_fragment_decodes_to_the_cut() {
+        let fixture = include_bytes!("../tests/fixtures/seek-eof-fragmented.mp4");
+        let path = std::env::temp_dir().join(format!("klippt-cut-take-{}.mp4", std::process::id()));
+        for percent in 60..100 {
+            std::fs::write(&path, &fixture[..fixture.len() * percent / 100]).unwrap();
+            let mut decoder = SwDecoder::open(path.to_str().unwrap()).expect("cut take opens");
+            let mut frames = 0;
+            loop {
+                let frame = unsafe { decoder.next_frame() }
+                    .unwrap_or_else(|error| panic!("cut at {percent}%: {error} after {frames}"));
+                if frame.is_null() {
+                    break;
+                }
+                frames += 1;
+            }
+            assert!(frames > 0, "cut at {percent}% decoded nothing");
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn only_damage_near_the_declared_end_counts_as_a_cut() {
+        assert!(in_cut_tail(2.52, 3.03));
+        assert!(!in_cut_tail(2.5, 5.0));
+    }
+
     #[test]
     fn seeks_at_and_beyond_eof_hold_the_last_decodable_frame() {
         for name in ["seek-eof-vfr.mp4", "seek-eof-fragmented.mp4"] {
