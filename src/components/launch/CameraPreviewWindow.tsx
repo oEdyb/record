@@ -39,6 +39,8 @@ export function CameraPreviewWindow() {
 	const portRef = useRef<MessagePort | null>(null);
 	const resizeOriginRef = useRef<{ x: number; y: number } | null>(null);
 
+	useEffect(() => window.electronAPI.onCameraPreviewExpandedChanged?.(setExpanded), []);
+
 	const toggleExpanded = useCallback(() => {
 		setExpanded((current) => {
 			const next = !current;

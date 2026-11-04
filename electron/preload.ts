@@ -142,6 +142,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setCameraPreviewExpanded: (expanded: boolean) => {
 		ipcRenderer.send("camera-preview-set-expanded", expanded);
 	},
+	onCameraPreviewExpandedChanged: (callback: (expanded: boolean) => void) => {
+		const listener = (_event: unknown, expanded: boolean) => callback(expanded);
+		ipcRenderer.on("camera-preview-expanded-changed", listener);
+		return () => ipcRenderer.removeListener("camera-preview-expanded-changed", listener);
+	},
 	requestCameraPreviewConnection: () => {
 		ipcRenderer.send("camera-preview-request-connection");
 	},

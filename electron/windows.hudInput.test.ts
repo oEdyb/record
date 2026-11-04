@@ -20,6 +20,8 @@ const fixture = vi.hoisted(() => {
 		isMinimized: () => false,
 		isMaximized: vi.fn(() => false),
 		isFullScreen: vi.fn(() => false),
+		unmaximize: vi.fn(),
+		getNormalBounds: () => ({ x: 100, y: 80, width: 312, height: 186 }),
 		setContentProtection: vi.fn(),
 		showInactive: vi.fn(),
 		hide: vi.fn(),
@@ -274,4 +276,25 @@ it("keeps the original niri placement through re-expansion during restore", asyn
 	await Promise.resolve();
 	await Promise.resolve();
 	expect(restore).toHaveBeenCalledTimes(2);
+});
+
+it("collapses a compositor-maximized camera with its own control", async () => {
+	const { createCameraPreviewWindow } = await import("./windows");
+	createCameraPreviewWindow();
+	fixture.win.isMaximized.mockReturnValue(true);
+	const maximize = fixture.win.on.mock.calls
+		.filter(([event]) => event === "maximize")
+		.slice(-1)[0]?.[1];
+	expect(maximize).toBeTypeOf("function");
+	maximize?.();
+	expect(fixture.win.webContents.send).toHaveBeenCalledWith(
+		"camera-preview-expanded-changed",
+		true,
+	);
+	send("camera-preview-set-expanded", false);
+	expect(fixture.win.unmaximize).toHaveBeenCalledOnce();
+	expect(fixture.win.setBounds).toHaveBeenLastCalledWith(
+		{ x: 100, y: 80, width: 312, height: 186 },
+		false,
+	);
 });

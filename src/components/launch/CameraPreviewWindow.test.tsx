@@ -15,6 +15,7 @@ const enabledPreferences = {
 	cursorCaptureMode: "editable-overlay" as const,
 };
 
+let nativeExpanded: ((expanded: boolean) => void) | undefined;
 let preferencesChanged: ((preferences: typeof enabledPreferences) => void) | null = null;
 let positionChanged: ((position: { x: number; y: number }) => void) | null = null;
 let sizeChanged: ((size: { width: number; height: number }) => void) | null = null;
@@ -52,6 +53,7 @@ beforeEach(() => {
 	vi.stubGlobal("localStorage", memoryStorage());
 	localStorage.clear();
 	preferencesChanged = null;
+	nativeExpanded = undefined;
 	positionChanged = null;
 	sizeChanged = null;
 	setCameraPreviewVisible.mockClear();
@@ -89,6 +91,10 @@ beforeEach(() => {
 			}),
 			setCameraPreviewVisible,
 			setCameraPreviewExpanded,
+			onCameraPreviewExpandedChanged: vi.fn((listener: (expanded: boolean) => void) => {
+				nativeExpanded = listener;
+				return vi.fn();
+			}),
 			requestCameraPreviewConnection,
 			setCameraPreviewPosition,
 			setCameraPreviewSize,
@@ -289,4 +295,13 @@ it("can show a hidden monitor even when animation frames are suspended", async (
 		window.dispatchEvent(new StorageEvent("storage"));
 	});
 	await waitFor(() => expect(setCameraPreviewVisible).toHaveBeenLastCalledWith(true));
+});
+
+it("shows Collapse after native maximize and requests a single restore", async () => {
+	render(<CameraPreviewWindow />);
+	await screen.findByTestId("camera-preview-loading");
+	expect(nativeExpanded).toBeTypeOf("function");
+	act(() => nativeExpanded?.(true));
+	fireEvent.click(screen.getByRole("button", { name: "Collapse camera preview" }));
+	expect(setCameraPreviewExpanded).toHaveBeenLastCalledWith(false);
 });

@@ -289,8 +289,13 @@ ipcMain.on("camera-preview-request-connection", (event) => {
 	const senderId = event.sender.id;
 	if (isStudioSender(senderId)) return connectStudioCameraRelay();
 	if (isHudSender(senderId)) hudRendererReady = true;
-	else if (isCameraPreviewSender(senderId)) cameraPreviewRendererReady = true;
-	else return;
+	else if (isCameraPreviewSender(senderId)) {
+		cameraPreviewRendererReady = true;
+		cameraPreviewWindow?.webContents.send(
+			"camera-preview-expanded-changed",
+			cameraPreviewExpanded || cameraPreviewWindow.isMaximized(),
+		);
+	} else return;
 	cameraPreviewPortsConnected = false;
 	connectCameraPreviewRenderers();
 	// A remounted pill drops every port it produced for; the Studio needs a fresh one too.
@@ -340,10 +345,13 @@ export async function setCameraPreviewCaptureHidden(
 
 async function setCameraPreviewExpanded(expanded: boolean) {
 	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed()) return;
-	if (expanded === cameraPreviewExpanded) return;
+	if (expanded === cameraPreviewExpanded && (expanded || !cameraPreviewWindow.isMaximized()))
+		return;
 	cameraPreviewExpanded = expanded;
 	const generation = ++cameraPreviewExpansionGeneration;
 	const win = cameraPreviewWindow;
+	win.webContents.send("camera-preview-expanded-changed", expanded);
+	if (!expanded && win.isMaximized()) win.unmaximize();
 	if (expanded) {
 		const [x, y] = cameraPreviewWindow.getPosition();
 		cameraPreviewCompactPosition = { x, y };
@@ -959,6 +967,26 @@ export function createCameraPreviewWindow(): BrowserWindow {
 	cameraPreviewCompactPosition = null;
 	cameraPreviewRendererReady = false;
 	cameraPreviewPortsConnected = false;
+	if (process.platform === "linux") {
+		win.on("maximize", () => {
+			if (!cameraPreviewExpanded) {
+				const normal = win.getNormalBounds();
+				cameraPreviewCompactPosition = { x: normal.x, y: normal.y };
+			}
+			cameraPreviewExpansionGeneration += 1;
+			cameraPreviewExpanded = true;
+			win.webContents.send("camera-preview-expanded-changed", true);
+		});
+		win.on("unmaximize", () => {
+			if (cameraPreviewExpanded) {
+				void setCameraPreviewExpanded(false).catch((error: unknown) =>
+					console.warn("[camera-preview] native restore failed:", error),
+				);
+			} else if (!win.isDestroyed()) {
+				win.setBounds({ ...win.getBounds(), ...cameraPreviewCompactSize }, false);
+			}
+		});
+	}
 
 	win.once("ready-to-show", () => {
 		if (cameraPreviewWindow !== win || win.isDestroyed()) return;

@@ -605,6 +605,7 @@ interface Window {
 		) => void;
 		setCameraPreviewVisible: (visible: boolean) => void;
 		setCameraPreviewExpanded: (expanded: boolean) => void;
+		onCameraPreviewExpandedChanged?: (callback: (expanded: boolean) => void) => () => void;
 		requestCameraPreviewConnection: () => void;
 		reportCapturePerformance: (sample: {
 			cameraDeliveredFps: number;
