@@ -19,6 +19,7 @@ const fixture = vi.hoisted(() => {
 		isVisible: () => true,
 		isMinimized: () => false,
 		isMaximized: vi.fn(() => false),
+		isFullScreen: vi.fn(() => false),
 		setContentProtection: vi.fn(),
 		showInactive: vi.fn(),
 		hide: vi.fn(),
@@ -44,6 +45,7 @@ const fixture = vi.hoisted(() => {
 	});
 	return {
 		handlers,
+		rememberPlacement: vi.fn(),
 		dimensions,
 		win,
 		BrowserWindow,
@@ -55,6 +57,8 @@ const fixture = vi.hoisted(() => {
 		revoke: () => onUnsafe(),
 	};
 });
+
+vi.mock("./niriHudFocus", () => ({ rememberNiriHudPlacement: fixture.rememberPlacement }));
 
 vi.mock("./niriCaptureWindowGuard", () => ({
 	NiriCaptureWindowGuard: class {
@@ -91,6 +95,7 @@ beforeEach(async () => {
 	vi.resetModules();
 	vi.clearAllMocks();
 	fixture.handlers.clear();
+	fixture.rememberPlacement.mockResolvedValue(undefined);
 	fixture.previewGuard.begin.mockResolvedValue(false);
 	fixture.win.isMaximized.mockReturnValue(false);
 	fixture.dimensions.width = 472;
@@ -216,7 +221,7 @@ it("restores the fixed camera window with atomic bounds after expansion", async 
 
 it("restores the requested recording bar size after native maximize", () => {
 	fixture.win.isMaximized.mockReturnValue(true);
-	send("hud-overlay-set-direction-exclusion-rects", [{ x: 700, y: 500, width: 424, height: 50 }]);
+	send("hud-overlay-set-direction-exclusion-rects", [{ x: 24, y: 38, width: 424, height: 50 }]);
 	expect(fixture.win.setSize).not.toHaveBeenCalled();
 	fixture.win.isMaximized.mockReturnValue(false);
 	const restore = fixture.win.on.mock.calls.find(([event]) => event === "unmaximize")?.[1];
@@ -226,4 +231,47 @@ it("restores the requested recording bar size after native maximize", () => {
 		{ x: 100, y: 80, width: 472, height: 112 },
 		false,
 	);
+});
+
+it("restores new popup bounds measured during maximize or fullscreen", () => {
+	for (const event of ["unmaximize", "leave-full-screen"]) {
+		fixture.win.isMaximized.mockReturnValue(true);
+		send("hud-overlay-set-direction-exclusion-rects", [{ x: 24, y: 96, width: 652, height: 400 }]);
+		fixture.win.isMaximized.mockReturnValue(false);
+		fixture.win.on.mock.calls.find(([name]) => name === event)?.[1]();
+		expect(fixture.win.setBounds).toHaveBeenLastCalledWith(
+			{ x: 100, y: 80, width: 700, height: 520 },
+			false,
+		);
+	}
+});
+
+it("keeps the original niri placement through re-expansion during restore", async () => {
+	vi.stubEnv("NIRI_SOCKET", "private-test-socket");
+	let finish: () => void = () => undefined;
+	const pending = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	let count = 0;
+	const restore = vi.fn(async () => {
+		if (++count === 1) await pending;
+	});
+	fixture.rememberPlacement.mockResolvedValue(restore);
+	const { createCameraPreviewWindow } = await import("./windows");
+	createCameraPreviewWindow();
+	send("camera-preview-set-expanded", true);
+	await Promise.resolve();
+	await Promise.resolve();
+	send("camera-preview-set-expanded", false);
+	send("camera-preview-set-expanded", true);
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(fixture.rememberPlacement).toHaveBeenCalledTimes(1);
+	finish();
+	await Promise.resolve();
+	await Promise.resolve();
+	send("camera-preview-set-expanded", false);
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(restore).toHaveBeenCalledTimes(2);
 });

@@ -143,8 +143,8 @@ export function loadUserPreferences(): UserPreferences {
 		studioLayout: ((): StudioLayout => {
 			const saved = raw.studioLayout;
 			const layout = normalizeStudioLayout(saved);
-			// Old separator drags persisted replay-only as an accidental camera collapse.
-			if (saved && typeof saved === "object" && !("version" in saved) && layout.view === "replay") {
+			// Old separator drags persisted single-pane views as an accidental camera collapse.
+			if (saved && typeof saved === "object" && !("version" in saved) && layout.view !== "both") {
 				return { ...layout, view: "both" };
 			}
 			return layout;

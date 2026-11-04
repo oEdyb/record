@@ -178,10 +178,11 @@ function isHudSender(senderId: number) {
 ipcMain.on("hud-overlay-set-direction-exclusion-rects", (event, rectangles: unknown) => {
 	if (!isHudSender(event.sender.id)) return;
 	hudDirectionExclusionRectangles = normalizePrivateUiRectangles(rectangles);
-	if (process.platform !== "linux" || !hudOverlayWindow || hudOverlayWindow.isMaximized()) return;
+	if (process.platform !== "linux" || !hudOverlayWindow) return;
 	const size = linuxHudWindowSize(hudDirectionExclusionRectangles);
 	if (!size) return;
 	linuxHudRequestedSize = size;
+	if (hudOverlayWindow.isMaximized() || hudOverlayWindow.isFullScreen()) return;
 	const [width, height] = hudOverlayWindow.getSize();
 	if (width !== size.width || height !== size.height) {
 		// Wayland owns global position. Resizing from local content must not run
@@ -351,7 +352,7 @@ async function setCameraPreviewExpanded(expanded: boolean) {
 			x: bounds.x + Math.round(bounds.width / 2),
 			y: bounds.y + Math.round(bounds.height / 2),
 		});
-		if (process.platform === "linux" && process.env.NIRI_SOCKET) {
+		if (process.platform === "linux" && process.env.NIRI_SOCKET && !cameraPreviewRestorePlacement) {
 			const restorePlacement = await rememberNiriHudPlacement(process.pid, "Klippt Camera").catch(
 				(error: unknown) => {
 					console.warn("[camera-preview] could not remember placement:", error);
@@ -375,8 +376,8 @@ async function setCameraPreviewExpanded(expanded: boolean) {
 	placeCameraPreview(cameraPreviewCompactPosition ?? undefined);
 	cameraPreviewCompactPosition = null;
 	const restore = cameraPreviewRestorePlacement;
-	cameraPreviewRestorePlacement = undefined;
 	await restore?.(() => generation === cameraPreviewExpansionGeneration && !win.isDestroyed());
+	if (generation === cameraPreviewExpansionGeneration) cameraPreviewRestorePlacement = undefined;
 }
 
 function cameraPreviewWorkArea() {
@@ -795,10 +796,12 @@ export function createHudOverlayWindow(
 	});
 	if (process.platform === "linux") {
 		linuxHudRequestedSize = { width: windowWidth, height: windowHeight };
-		win.on("unmaximize", () => {
+		const restoreSize = () => {
 			if (win.isDestroyed()) return;
 			win.setBounds({ ...win.getBounds(), ...linuxHudRequestedSize }, false);
-		});
+		};
+		win.on("unmaximize", restoreSize);
+		win.on("leave-full-screen", restoreSize);
 	}
 	hudRendererReady = false;
 	cameraPreviewPortsConnected = false;

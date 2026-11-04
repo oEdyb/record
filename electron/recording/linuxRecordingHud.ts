@@ -2,6 +2,7 @@ import { cancelPortalHudSelection, supersedePortalHudSelection } from "./portalS
 
 type HudWindow = {
 	isDestroyed(): boolean;
+	isVisible?(): boolean;
 	hide(): void;
 	show(): void;
 	focus(): void;
@@ -14,6 +15,8 @@ export class LinuxRecordingHud {
 	private generation = 0;
 	private concealed = false;
 	private operation = 0;
+	private recoveryRequested = false;
+	private retry: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(
 		private readonly platform: string,
@@ -36,6 +39,8 @@ export class LinuxRecordingHud {
 		this.transitioning = true;
 		this.concealed = shouldHide;
 		this.pauseRequested = false;
+		this.recoveryRequested = false;
+		this.clearRetry();
 		try {
 			if (previousPlacement) await previousPlacement;
 			if (generation !== this.generation || operationId !== this.operation)
@@ -56,12 +61,16 @@ export class LinuxRecordingHud {
 			if (operationId === this.operation) {
 				this.transitioning = false;
 				if (shouldHide && !this.isCapturing()) this.showControls();
+				else if (this.recoveryRequested) this.requestControls();
 			}
 		}
 	}
 
 	cancelPending(): void {
 		this.generation += 1;
+		this.clearRetry();
+		this.recoveryRequested = false;
+		this.pauseRequested = false;
 		cancelPortalHudSelection(this.getWindow());
 		this.windowIsolation?.end();
 	}
@@ -71,20 +80,45 @@ export class LinuxRecordingHud {
 		this.concealed = true;
 		const window = this.getWindow();
 		if (window && !window.isDestroyed()) window.hide();
-		// If isolation is revoked mid-take, return controls after an acknowledged pause.
-		// Never leave a running writer silently hidden with no visible Stop button.
+	}
+
+	dismiss(): void {
+		this.recoveryRequested = false;
+		this.pauseRequested = false;
+		this.clearRetry();
+		this.windowIsolation?.end();
+		this.concealed = true;
+	}
+
+	revoke(): void {
+		const window = this.getWindow();
+		// Hide and Studio deliberately unmap the pill. They must not pause the take.
+		if (window && !window.isDestroyed() && window.isVisible?.() === false) {
+			this.dismiss();
+			return;
+		}
+		this.recoveryRequested = true;
+		this.conceal();
 		this.requestControls();
 	}
 
 	requestControls(): boolean {
 		if (this.platform !== "linux" || !this.concealed) return false;
-		if (this.transitioning) return true;
-		if (!this.isCapturing()) return false;
+		this.recoveryRequested = true;
+		if (this.transitioning) {
+			this.scheduleRetry();
+			return true;
+		}
+		if (!this.isCapturing()) {
+			this.showControls();
+			return true;
+		}
 		if (!this.pauseRequested) {
 			this.pauseRequested = true;
 			const window = this.getWindow();
 			if (window && !window.isDestroyed()) window.webContents.send("hud-toggle-recording-pause");
 		}
+		this.scheduleRetry();
 		return true;
 	}
 
@@ -92,9 +126,29 @@ export class LinuxRecordingHud {
 		if (this.platform !== "linux" || this.transitioning) return;
 		this.pauseRequested = false;
 		if (!this.isCapturing()) this.showControls();
+		else if (this.recoveryRequested) this.scheduleRetry();
+	}
+
+	private clearRetry(): void {
+		if (this.retry) clearTimeout(this.retry);
+		this.retry = null;
+	}
+
+	private scheduleRetry(): void {
+		if (this.retry || !this.recoveryRequested) return;
+		this.retry = setTimeout(() => {
+			this.retry = null;
+			if (!this.recoveryRequested) return;
+			this.pauseRequested = false;
+			this.requestControls();
+		}, 500);
+		this.retry.unref?.();
 	}
 
 	private showControls(): void {
+		this.clearRetry();
+		this.recoveryRequested = false;
+		this.pauseRequested = false;
 		this.windowIsolation?.end();
 		this.concealed = false;
 		void this.setPreviewHidden(false);

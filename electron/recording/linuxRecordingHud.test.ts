@@ -318,13 +318,66 @@ it("waits for an old placement RPC before proving a replacement capture safe", a
 it("pauses and restores controls when isolation is lost during a take", () => {
 	const { hud, window, setCapturing } = setup();
 	setCapturing(true);
-	hud.conceal();
+	hud.revoke();
 	expect(window.hide).toHaveBeenCalledOnce();
 	expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
-	hud.conceal();
+	hud.revoke();
 	expect(window.webContents.send).toHaveBeenCalledTimes(1);
 	expect(window.show).not.toHaveBeenCalled();
 	setCapturing(false);
 	hud.pauseCompleted();
 	expect(window.show).toHaveBeenCalledOnce();
+});
+
+it("does not pause when a deliberate Hide or Studio unmaps the pill", () => {
+	const { hud, window, setCapturing } = setup();
+	setCapturing(true);
+	Object.assign(window, { isVisible: () => false });
+	hud.revoke();
+	expect(window.webContents.send).not.toHaveBeenCalled();
+	expect(hud.requestControls()).toBe(true);
+	expect(window.webContents.send).toHaveBeenCalledOnce();
+	hud.cancelPending();
+});
+
+it("retries a dropped pause after transitions and stops when the writer pauses", async () => {
+	vi.useFakeTimers();
+	try {
+		const { hud, window, setCapturing } = setup();
+		setCapturing(true);
+		hud.revoke();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(window.webContents.send).toHaveBeenCalledTimes(2);
+		setCapturing(false);
+		await vi.advanceTimersByTimeAsync(500);
+		expect(window.show).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(window.webContents.send).toHaveBeenCalledTimes(2);
+		hud.cancelPending();
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it("recovers a revocation that arrives before capture finishes transitioning", async () => {
+	const { hud, window, setCapturing } = setup();
+	await hud.capture(async () => {
+		setCapturing(true);
+		hud.revoke();
+		expect(window.webContents.send).not.toHaveBeenCalled();
+		return { success: true };
+	});
+	expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+	hud.cancelPending();
+});
+
+it("does not mark a safely captured visible pill concealed when cancelling stale prepare work", async () => {
+	const { hud, setCapturing, window } = setup("linux", "window");
+	await hud.capture(async () => {
+		setCapturing(true);
+		return { success: true };
+	});
+	hud.cancelPending();
+	expect(hud.requestControls()).toBe(false);
+	expect(window.webContents.send).not.toHaveBeenCalled();
 });

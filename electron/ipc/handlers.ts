@@ -3000,7 +3000,7 @@ export function registerIpcHandlers(
 		app.once("will-quit", () => powerMonitor.off("suspend", onSuspend));
 	}
 
-	const hudCaptureGuard = new NiriCaptureWindowGuard("Klippt", () => recordingHud.conceal());
+	const hudCaptureGuard = new NiriCaptureWindowGuard("Klippt", () => recordingHud.revoke());
 	const recordingHud = new LinuxRecordingHud(
 		process.platform,
 		getMainWindow,

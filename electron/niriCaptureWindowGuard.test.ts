@@ -169,3 +169,38 @@ describe("Niri preview capture eligibility lifetime", () => {
 		expect(watch).not.toHaveBeenCalled();
 	});
 });
+
+it.each([
+	true,
+	false,
+])("distinguishes deliberate unmap=%s from a live niri revocation", async (deliberate) => {
+	const { LinuxRecordingHud } = await import("./recording/linuxRecordingHud");
+	const state = setup("Klippt");
+	let visible = !deliberate;
+	const send = vi.fn();
+	const window = {
+		isDestroyed: () => false,
+		isVisible: () => visible,
+		hide: () => {
+			visible = false;
+		},
+		show: vi.fn(),
+		focus: vi.fn(),
+		webContents: { send },
+	};
+	const hud = new LinuxRecordingHud(
+		"linux",
+		() => window,
+		() => true,
+		() => true,
+		async () => undefined,
+		undefined,
+		undefined,
+		{ begin: () => state.guard.begin(91), end: () => state.guard.end() },
+	);
+	state.unsafe.mockImplementation(() => hud.revoke());
+	await expect(state.guard.begin(91)).resolves.toBe(true);
+	state.event({ WindowClosed: { id: 8 } });
+	expect(send).toHaveBeenCalledTimes(deliberate ? 0 : 1);
+	hud.cancelPending();
+});
