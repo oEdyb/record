@@ -235,6 +235,19 @@ describe("Studio phase controls", () => {
 		fireEvent.keyDown(main, { key: "Backspace" });
 		expect(command).not.toHaveBeenCalled();
 	});
+	it("keeps both dock panels when either separator reaches keyboard extremes", async () => {
+		mount(snapshot("paused"));
+		await screen.findByRole("button", { name: "studio.both" });
+		for (const separator of screen.getAllByRole("separator")) {
+			for (const key of ["Home", "End"]) {
+				fireEvent.keyDown(separator, { key });
+				expect(document.getElementById("studio-dock")).toBeVisible();
+				expect(document.getElementById("studio-live")).toBeVisible();
+				expect(document.getElementById("studio-replay")).toBeVisible();
+			}
+		}
+	});
+
 	it("releases its snapshot subscription", async () => {
 		const view = mount(snapshot("idle"));
 		await screen.findByRole("button", { name: "permissions.microphone" });

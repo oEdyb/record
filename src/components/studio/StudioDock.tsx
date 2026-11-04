@@ -158,10 +158,6 @@ export function StudioDock({
 								value={layout.split}
 								reverse={layout.order === "camera"}
 								onChange={(split) => update({ split: Math.min(0.85, Math.max(0.45, split)) })}
-								onCollapse={(end) => {
-									update({ view: end ? "replay" : "camera" });
-									document.getElementById("studio-side")?.focus();
-								}}
 							/>
 						) : null}
 						{layout.order === "replay"

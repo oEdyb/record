@@ -6,14 +6,12 @@ export function StudioSeparator({
 	vertical,
 	value,
 	onChange,
-	onCollapse,
 	controls,
 	reverse = false,
 }: {
 	vertical?: boolean;
 	value: number;
 	onChange: (value: number) => void;
-	onCollapse: (end: boolean) => void;
 	controls: string;
 	reverse?: boolean;
 }) {
@@ -44,7 +42,7 @@ export function StudioSeparator({
 					onChange(vertical ? 0.32 : 0.6);
 				} else if (e.key === "Home" || e.key === "End") {
 					e.preventDefault();
-					onCollapse(e.key === "End");
+					onChange(e.key === "End" ? 1 : 0);
 				} else if ([" ", "Backspace"].includes(e.key)) e.preventDefault();
 			}}
 			onPointerDown={(e) => {
@@ -71,10 +69,7 @@ export function StudioSeparator({
 					? (e.clientX - bounds.left) / bounds.width
 					: (e.clientY - bounds.top) / bounds.height;
 				if (reverse) next = 1 - next;
-				if (next < 0.1 || next > 0.9) {
-					dragging.current = false;
-					onCollapse(next > 0.9);
-				} else onChange(next);
+				onChange(next);
 			}}
 		/>
 	);

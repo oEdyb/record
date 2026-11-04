@@ -60,7 +60,6 @@ export function StudioWindow() {
 	const [meters, setMeters] = useState(false);
 	const [help, setHelp] = useState(false);
 	const [notes, setNotes] = useState(false);
-	const [dockHidden, setDockHidden] = useState(false);
 	const [pausedFraction, setPausedFraction] = useState(0.5);
 	const [width, setWidth] = useState(window.innerWidth);
 	const [platform, setPlatform] = useState("");
@@ -137,7 +136,7 @@ export function StudioWindow() {
 	const completed = sections.filter((s) => s.state === "text").length;
 	const cameraOn = Boolean(snapshot?.setup.cameraEnabled);
 	// Without a camera, a new take has nothing for the dock to show: the notes take the room.
-	const dockShown = !live && !dockHidden && (phase !== "idle" || cameraOn);
+	const dockShown = !live && (phase !== "idle" || cameraOn);
 	const liveMode = cameraOn ? layout.liveMode : layout.liveMode === "nothing" ? "nothing" : "notes";
 	const resizeText = (d: number) => {
 		preserveStudioReader();
@@ -155,11 +154,7 @@ export function StudioWindow() {
 				mac={platform === "darwin"}
 				phaseLabel={phaseLabel}
 				help={() => setHelp(true)}
-				side={() =>
-					dockHidden
-						? setDockHidden(false)
-						: update({ dock: layout.dock === "left" ? "right" : "left" })
-				}
+				side={() => update({ dock: layout.dock === "left" ? "right" : "left" })}
 				pill={() => send("pill")}
 			/>
 			{snapshot ? (
@@ -255,10 +250,6 @@ export function StudioWindow() {
 									? setPausedFraction(dockFraction(dockFrac, width - 12))
 									: update({ dockFrac: dockFraction(dockFrac, width - 12) })
 							}
-							onCollapse={() => {
-								setDockHidden(true);
-								document.getElementById("studio-side")?.focus();
-							}}
 						/>
 						{snapshot ? (
 							<StudioDock

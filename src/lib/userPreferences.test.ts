@@ -223,6 +223,21 @@ describe("studio layout preference", () => {
 		).toMatchObject({ view: "camera", split: 0.45, order: "replay", dockFrac: 0.32, guides: true });
 		expect(normalizeStudioLayout(null)).toEqual(DEFAULT_PREFS.studioLayout);
 	});
+
+	it.each([-999, 999])("recovers saved split extremes %s on load", (value) => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({
+				studioLayout: { view: "both", split: value, dockFrac: value },
+			}),
+		);
+		const { studioLayout } = loadUserPreferences();
+		expect(studioLayout.view).toBe("both");
+		expect(studioLayout.split).toBeGreaterThanOrEqual(0.45);
+		expect(studioLayout.split).toBeLessThanOrEqual(0.85);
+		expect(studioLayout.dockFrac).toBeGreaterThanOrEqual(0.18);
+		expect(studioLayout.dockFrac).toBeLessThanOrEqual(0.6);
+	});
 	it("persists the layout alongside existing preferences", () => {
 		saveUserPreferences({
 			studioLayout: { ...DEFAULT_PREFS.studioLayout, dock: "left", liveMode: "notes" },
