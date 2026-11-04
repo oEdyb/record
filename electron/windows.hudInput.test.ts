@@ -29,7 +29,13 @@ const fixture = vi.hoisted(() => {
 			dimensions.width = width;
 			dimensions.height = height;
 		}),
-		setBounds: vi.fn(),
+		getPosition: (): [number, number] => [100, 80],
+		getBounds: () => ({ x: 100, y: 80, ...dimensions }),
+		setPosition: vi.fn(),
+		setBounds: vi.fn((bounds: { width: number; height: number }) => {
+			dimensions.width = bounds.width;
+			dimensions.height = bounds.height;
+		}),
 	};
 	const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
 	const BrowserWindow = vi.fn(function () {
@@ -66,6 +72,8 @@ vi.mock("electron", () => ({
 	MessageChannelMain: vi.fn(),
 	screen: {
 		getPrimaryDisplay: () => ({ workArea: fixture.workArea }),
+		getDisplayNearestPoint: () => ({ workArea: fixture.workArea }),
+		getDisplayMatching: () => ({ workArea: fixture.workArea }),
 		on: vi.fn(),
 	},
 }));
@@ -188,4 +196,18 @@ it("keeps a proven second-monitor preview mapped until admission is revoked", as
 	expect(fixture.win.hide).toHaveBeenCalledOnce();
 	await setCameraPreviewCaptureHidden(false);
 	expect(fixture.win.showInactive).toHaveBeenCalledTimes(2);
+});
+
+it("restores the fixed camera window with atomic bounds after expansion", async () => {
+	const { createCameraPreviewWindow } = await import("./windows");
+	createCameraPreviewWindow();
+	send("camera-preview-set-expanded", true);
+	expect(fixture.dimensions.width).toBeGreaterThan(312);
+	fixture.win.setBounds.mockClear();
+	send("camera-preview-set-expanded", false);
+	expect(fixture.win.setBounds).toHaveBeenCalledWith(
+		{ x: 100, y: 80, width: 312, height: 186 },
+		false,
+	);
+	expect(fixture.win.setPosition).toHaveBeenLastCalledWith(100, 80, false);
 });

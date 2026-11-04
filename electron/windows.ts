@@ -347,9 +347,12 @@ function setCameraPreviewExpanded(expanded: boolean) {
 		cameraPreviewWindow.setBounds(expandedCameraPreviewBounds(display.workArea), false);
 		return;
 	}
-	cameraPreviewWindow.setSize(
-		cameraPreviewCompactSize.width,
-		cameraPreviewCompactSize.height,
+	// setSize alone leaves Electron's fixed Wayland min/max at the expanded size.
+	cameraPreviewWindow.setBounds(
+		{
+			...cameraPreviewWindow.getBounds(),
+			...cameraPreviewCompactSize,
+		},
 		false,
 	);
 	placeCameraPreview(cameraPreviewCompactPosition ?? undefined);
@@ -369,9 +372,12 @@ function applyCameraPreviewCompactSize(width: number) {
 	cameraPreviewCompactSize = clampCameraPreviewSize(width, workArea);
 	if (cameraPreviewExpanded) return;
 	const [x, y] = cameraPreviewWindow.getPosition();
-	cameraPreviewWindow.setSize(
-		cameraPreviewCompactSize.width,
-		cameraPreviewCompactSize.height,
+	// setSize alone leaves Electron's fixed Wayland min/max at the expanded size.
+	cameraPreviewWindow.setBounds(
+		{
+			...cameraPreviewWindow.getBounds(),
+			...cameraPreviewCompactSize,
+		},
 		false,
 	);
 	const appliedPosition = placeCameraPreview({ x, y });
